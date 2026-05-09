@@ -72,7 +72,12 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("POST /api/v1/scripts", cors(log(http.HandlerFunc(s.handleCreateScript))))
 	s.mux.Handle("GET /api/v1/scripts", cors(log(http.HandlerFunc(s.handleListScripts))))
 	s.mux.Handle("GET /api/v1/scripts/{id}", cors(log(http.HandlerFunc(s.handleGetScript))))
+	s.mux.Handle("PUT /api/v1/scripts/{id}", cors(log(http.HandlerFunc(s.handleUpdateScript))))
+	s.mux.Handle("DELETE /api/v1/scripts/{id}", cors(log(http.HandlerFunc(s.handleDeleteScript))))
 	s.mux.Handle("POST /api/v1/scripts/{id}/validate", cors(log(http.HandlerFunc(s.handleValidateScript))))
+	s.mux.Handle("POST /api/v1/scripts/{id}/export", cors(log(http.HandlerFunc(s.handleExportScript))))
+	s.mux.Handle("GET /api/v1/scripts/{id}/download", cors(log(http.HandlerFunc(s.handleDownloadScript))))
+	s.mux.Handle("POST /api/v1/scripts/import/loadrunner", cors(log(http.HandlerFunc(s.handleImportLoadRunner))))
 
 	s.mux.Handle("GET /api/v1/system/health", cors(log(http.HandlerFunc(s.handleHealthCheck))))
 

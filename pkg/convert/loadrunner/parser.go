@@ -1,0 +1,386 @@
+package loadrunner
+
+import (
+	"bufio"
+	"fmt"
+	"regexp"
+	"strconv"
+	"strings"
+)
+
+// ParsedFunction represents a single LoadRunner C function call extracted from a script.
+type ParsedFunction struct {
+	Name       string            // e.g. "web_url", "web_submit_data", "lr_think_time"
+	StepName   string            // The first string argument (step name)
+	Args       map[string]string // Named key-value arguments extracted from ITEMDATA/LAST pairs
+	RawArgs    []string          // Raw string arguments in order
+	Headers    map[string]string // Extracted header key-value pairs
+	Body       string            // Request body if present
+	Method     string            // HTTP method (for web_custom_request)
+	URL        string            // Target URL
+	Action     string            // Action/target URL for form submissions
+	LineNumber int               // Source line number for diagnostics
+}
+
+// ParsedAction represents a parsed .c action file.
+type ParsedAction struct {
+	Filename  string
+	Functions []ParsedFunction
+}
+
+// ProjectConfig holds parsed .usr file settings.
+type ProjectConfig struct {
+	ScriptType   string // e.g. "Web"
+	ActionFiles  []string
+	RuntimeFile  string
+	ParamFiles   []string
+	BaseURL      string
+	ThinkTimeMin float64
+	ThinkTimeMax float64
+}
+
+// regex patterns for LoadRunner C function parsing
+var (
+	// Matches function calls like: web_url("StepName", ...)
+	reFuncCall = regexp.MustCompile(`^\s*(web_url|web_submit_data|web_submit_form|web_custom_request|web_reg_save_param|web_reg_find|lr_think_time|lr_start_transaction|lr_end_transaction|web_add_header|web_add_auto_header)\s*\(`)
+
+	// Matches key=value patterns inside ITEMDATA sections
+	reKeyValue = regexp.MustCompile(`"([^"]+)=([^"]*)"`)
+
+	// Matches "Name=value" patterns for named arguments
+	reNamedArg = regexp.MustCompile(`"(\w+)=(.+?)"`)
+
+	// Matches simple string arguments like "StepName"
+	reStringArg = regexp.MustCompile(`"([^"]*)"`)
+
+	// Matches numeric arguments
+	reNumArg = regexp.MustCompile(`(\d+)`)
+
+	// URL pattern within arguments
+	reURLArg = regexp.MustCompile(`"URL=(.+?)"`)
+
+	// Action pattern
+	reActionArg = regexp.MustCompile(`"Action=(.+?)"`)
+
+	// Method pattern
+	reMethodArg = regexp.MustCompile(`"Method=(.+?)"`)
+
+	// Body pattern
+	reBodyArg = regexp.MustCompile(`"Body=(.+?)"`)
+
+	// RecContentType pattern
+	reRecContentType = regexp.MustCompile(`"RecContentType=(.+?)"`)
+
+	// .usr file section header
+	reSectionHeader = regexp.MustCompile(`^\[(.+)\]$`)
+)
+
+// ParseActionFile parses a LoadRunner .c action file and extracts function calls.
+func ParseActionFile(filename string, content string) (*ParsedAction, error) {
+	parsed := &ParsedAction{
+		Filename:  filename,
+		Functions: make([]ParsedFunction, 0),
+	}
+
+	scanner := bufio.NewScanner(strings.NewReader(content))
+	lineNum := 0
+	var currentBlock strings.Builder
+	inBlock := false
+	blockStartLine := 0
+
+	for scanner.Scan() {
+		lineNum++
+		line := scanner.Text()
+		trimmed := strings.TrimSpace(line)
+
+		// Skip empty lines, comments
+		if !inBlock {
+			if trimmed == "" || strings.HasPrefix(trimmed, "//") || strings.HasPrefix(trimmed, "/*") {
+				continue
+			}
+			// Skip standard includes and function declarations
+			if strings.HasPrefix(trimmed, "#include") || strings.HasPrefix(trimmed, "return ") ||
+				trimmed == "{" || trimmed == "}" ||
+				strings.HasPrefix(trimmed, "Action()") || strings.HasPrefix(trimmed, "vuser_init()") ||
+				strings.HasPrefix(trimmed, "vuser_end()") || strings.HasPrefix(trimmed, "int ") {
+				continue
+			}
+		}
+
+		// Check if this line starts a recognized function call
+		if !inBlock && reFuncCall.MatchString(trimmed) {
+			inBlock = true
+			blockStartLine = lineNum
+			currentBlock.Reset()
+		}
+
+		if inBlock {
+			currentBlock.WriteString(trimmed)
+			currentBlock.WriteString(" ")
+
+			// Check if the block is complete (ends with ");")
+			blockStr := currentBlock.String()
+			if strings.Contains(blockStr, ");") {
+				fn, err := parseFunctionBlock(blockStr, blockStartLine)
+				if err == nil {
+					parsed.Functions = append(parsed.Functions, fn)
+				}
+				inBlock = false
+				currentBlock.Reset()
+			}
+		}
+	}
+
+	return parsed, nil
+}
+
+// parseFunctionBlock parses a complete function call block.
+func parseFunctionBlock(block string, lineNum int) (ParsedFunction, error) {
+	fn := ParsedFunction{
+		Args:       make(map[string]string),
+		Headers:    make(map[string]string),
+		LineNumber: lineNum,
+	}
+
+	// Extract function name
+	idx := strings.Index(block, "(")
+	if idx < 0 {
+		return fn, fmt.Errorf("no opening parenthesis found")
+	}
+	fn.Name = strings.TrimSpace(block[:idx])
+
+	// Extract everything between outer parentheses
+	inner := block[idx+1:]
+	// Find matching closing paren + semicolon
+	endIdx := strings.LastIndex(inner, ");")
+	if endIdx >= 0 {
+		inner = inner[:endIdx]
+	}
+
+	// Extract all string arguments
+	allStrings := reStringArg.FindAllStringSubmatch(inner, -1)
+	for _, m := range allStrings {
+		fn.RawArgs = append(fn.RawArgs, m[1])
+	}
+
+	switch fn.Name {
+	case "web_url":
+		parseWebURL(&fn, inner)
+	case "web_submit_data", "web_submit_form":
+		parseWebSubmitData(&fn, inner)
+	case "web_custom_request":
+		parseWebCustomRequest(&fn, inner)
+	case "web_reg_save_param":
+		parseWebRegSaveParam(&fn, inner)
+	case "web_reg_find":
+		parseWebRegFind(&fn, inner)
+	case "lr_think_time":
+		parseLRThinkTime(&fn, inner)
+	case "lr_start_transaction", "lr_end_transaction":
+		if len(fn.RawArgs) > 0 {
+			fn.StepName = fn.RawArgs[0]
+		}
+	case "web_add_header", "web_add_auto_header":
+		parseWebAddHeader(&fn, inner)
+	}
+
+	return fn, nil
+}
+
+func parseWebURL(fn *ParsedFunction, inner string) {
+	if len(fn.RawArgs) > 0 {
+		fn.StepName = fn.RawArgs[0]
+	}
+	fn.Method = "GET"
+
+	if m := reURLArg.FindStringSubmatch(inner); len(m) > 1 {
+		fn.URL = m[1]
+	}
+
+	// Extract named args
+	extractNamedArgs(fn, inner)
+}
+
+func parseWebSubmitData(fn *ParsedFunction, inner string) {
+	if len(fn.RawArgs) > 0 {
+		fn.StepName = fn.RawArgs[0]
+	}
+	fn.Method = "POST"
+
+	if m := reActionArg.FindStringSubmatch(inner); len(m) > 1 {
+		fn.URL = m[1]
+	}
+
+	// Collect ITEMDATA fields
+	extractNamedArgs(fn, inner)
+	extractItemData(fn, inner)
+}
+
+func parseWebCustomRequest(fn *ParsedFunction, inner string) {
+	if len(fn.RawArgs) > 0 {
+		fn.StepName = fn.RawArgs[0]
+	}
+
+	if m := reURLArg.FindStringSubmatch(inner); len(m) > 1 {
+		fn.URL = m[1]
+	}
+	if m := reMethodArg.FindStringSubmatch(inner); len(m) > 1 {
+		fn.Method = m[1]
+	}
+	if m := reBodyArg.FindStringSubmatch(inner); len(m) > 1 {
+		fn.Body = m[1]
+	}
+	if m := reRecContentType.FindStringSubmatch(inner); len(m) > 1 {
+		fn.Headers["Content-Type"] = m[1]
+	}
+
+	extractNamedArgs(fn, inner)
+}
+
+func parseWebRegSaveParam(fn *ParsedFunction, inner string) {
+	// web_reg_save_param("ParamName", "LB=...", "RB=...", ..., LAST)
+	if len(fn.RawArgs) > 0 {
+		fn.StepName = fn.RawArgs[0]
+	}
+	extractNamedArgs(fn, inner)
+}
+
+func parseWebRegFind(fn *ParsedFunction, inner string) {
+	if len(fn.RawArgs) > 0 {
+		fn.StepName = fn.RawArgs[0]
+	}
+	extractNamedArgs(fn, inner)
+}
+
+func parseLRThinkTime(fn *ParsedFunction, inner string) {
+	fn.StepName = "think_time"
+	if m := reNumArg.FindStringSubmatch(inner); len(m) > 1 {
+		fn.Args["seconds"] = m[1]
+	}
+}
+
+func parseWebAddHeader(fn *ParsedFunction, inner string) {
+	// web_add_header("Header-Name", "Header-Value")
+	if len(fn.RawArgs) >= 2 {
+		fn.StepName = fn.RawArgs[0]
+		fn.Headers[fn.RawArgs[0]] = fn.RawArgs[1]
+	}
+}
+
+// extractNamedArgs pulls out "Key=Value" patterns from the inner string.
+func extractNamedArgs(fn *ParsedFunction, inner string) {
+	matches := reNamedArg.FindAllStringSubmatch(inner, -1)
+	for _, m := range matches {
+		key := m[1]
+		value := m[2]
+		fn.Args[key] = value
+	}
+}
+
+// extractItemData attempts to extract ITEMDATA form field pairs.
+func extractItemData(fn *ParsedFunction, inner string) {
+	// Look for patterns like "Name=fieldname", "Value=fieldvalue" pairs
+	// These come after ITEMDATA marker in web_submit_data calls
+	parts := strings.Split(inner, "ITEMDATA")
+	if len(parts) < 2 {
+		return
+	}
+
+	itemSection := parts[1]
+	// Extract Name/Value pairs
+	nameMatches := regexp.MustCompile(`"Name=([^"]+)"`).FindAllStringSubmatch(itemSection, -1)
+	valueMatches := regexp.MustCompile(`"Value=([^"]*?)"`).FindAllStringSubmatch(itemSection, -1)
+
+	formData := make(map[string]string)
+	for i, nm := range nameMatches {
+		val := ""
+		if i < len(valueMatches) {
+			val = valueMatches[i][1]
+		}
+		formData[nm[1]] = val
+	}
+
+	if len(formData) > 0 {
+		// Build URL-encoded body
+		pairs := make([]string, 0, len(formData))
+		for k, v := range formData {
+			pairs = append(pairs, k+"="+v)
+		}
+		fn.Body = strings.Join(pairs, "&")
+		fn.Headers["Content-Type"] = "application/x-www-form-urlencoded"
+	}
+}
+
+// ParseUSRFile parses a LoadRunner .usr project configuration file.
+func ParseUSRFile(content string) (*ProjectConfig, error) {
+	cfg := &ProjectConfig{
+		ActionFiles: make([]string, 0),
+		ParamFiles:  make([]string, 0),
+	}
+
+	scanner := bufio.NewScanner(strings.NewReader(content))
+	section := ""
+
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, ";") {
+			continue
+		}
+
+		if m := reSectionHeader.FindStringSubmatch(line); len(m) > 1 {
+			section = m[1]
+			continue
+		}
+
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(parts[0])
+		value := strings.TrimSpace(parts[1])
+
+		switch section {
+		case "General":
+			switch key {
+			case "Type":
+				cfg.ScriptType = value
+			}
+		case "Actions":
+			if strings.HasSuffix(value, ".c") {
+				cfg.ActionFiles = append(cfg.ActionFiles, value)
+			}
+		case "RunLogicFiles":
+			if key == "RunAction" || key == "Actions" {
+				for _, f := range strings.Split(value, ",") {
+					f = strings.TrimSpace(f)
+					if f != "" && strings.HasSuffix(f, ".c") {
+						cfg.ActionFiles = append(cfg.ActionFiles, f)
+					}
+				}
+			}
+		}
+	}
+
+	// Ensure standard action files if none found explicitly
+	if len(cfg.ActionFiles) == 0 {
+		cfg.ActionFiles = []string{"Action.c"}
+	}
+
+	return cfg, nil
+}
+
+// extractThinkTime extracts think time value in seconds from an lr_think_time call.
+func ExtractThinkTimeSeconds(fn ParsedFunction) (float64, bool) {
+	if fn.Name != "lr_think_time" {
+		return 0, false
+	}
+	secStr, ok := fn.Args["seconds"]
+	if !ok {
+		return 0, false
+	}
+	sec, err := strconv.ParseFloat(secStr, 64)
+	if err != nil {
+		return 0, false
+	}
+	return sec, true
+}

@@ -143,6 +143,31 @@ func (tr *TestRunner) ListScripts() []*StoredScript {
 	return out
 }
 
+func (tr *TestRunner) UpdateScript(id string, script *dsl.Script) (*StoredScript, bool) {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	existing, ok := tr.scripts[id]
+	if !ok {
+		return nil, false
+	}
+	existing.Name = script.Name
+	existing.Protocol = script.Protocol
+	existing.Version = script.Version
+	existing.Script = script
+	return existing, true
+}
+
+func (tr *TestRunner) DeleteScript(id string) bool {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	_, ok := tr.scripts[id]
+	if !ok {
+		return false
+	}
+	delete(tr.scripts, id)
+	return true
+}
+
 type CreateTestRequest struct {
 	Name     string             `json:"name"`
 	Duration string             `json:"duration"`

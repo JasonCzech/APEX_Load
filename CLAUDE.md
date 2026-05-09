@@ -73,7 +73,12 @@ WS     /api/v1/tests/{id}/stream     — WebSocket stream for one test
 POST   /api/v1/scripts               — Upload a script (JSON DSL)
 GET    /api/v1/scripts               — List scripts
 GET    /api/v1/scripts/{id}          — Get script details
+PUT    /api/v1/scripts/{id}          — Update a script in-place
+DELETE /api/v1/scripts/{id}          — Delete a script
 POST   /api/v1/scripts/{id}/validate — Dry-run validation
+POST   /api/v1/scripts/{id}/export   — Export script JSON to disk
+GET    /api/v1/scripts/{id}/download — Download script as JSON file
+POST   /api/v1/scripts/import/loadrunner — Upload LR .zip, get converted DSL
 GET    /api/v1/system/health         — Health check
 WS     /api/v1/ws                    — Global WebSocket (all test events)
 ```

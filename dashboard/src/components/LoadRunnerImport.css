@@ -1,0 +1,82 @@
+.lr-import {
+  display: flex; flex-direction: column; gap: 20px;
+}
+.lr-import-header { display: flex; justify-content: space-between; align-items: flex-start; }
+.lr-import-header h2 { font-size: 20px; margin-bottom: 6px; }
+.lr-subtitle { color: var(--text-muted); font-size: 13px; line-height: 1.6; max-width: 640px; }
+.lr-subtitle code { background: var(--bg-hover); padding: 1px 5px; border-radius: 3px; font-size: 12px; color: var(--accent); }
+
+/* Drop zone */
+.lr-dropzone {
+  border: 2px dashed var(--border); border-radius: var(--radius);
+  padding: 40px 24px; text-align: center; cursor: pointer;
+  transition: all 0.2s; background: var(--bg-card);
+}
+.lr-dropzone:hover, .lr-dropzone.drag-over {
+  border-color: var(--accent); background: rgba(99,102,241,0.04);
+}
+.lr-dropzone.has-file { border-style: solid; }
+.lr-drop-content { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.lr-drop-content p { color: var(--text-secondary); font-size: 14px; margin: 0; }
+.lr-drop-hint { color: var(--text-muted); font-size: 12px; }
+.lr-file-info { display: flex; align-items: center; gap: 14px; justify-content: center; }
+.lr-filename { font-weight: 600; font-size: 14px; display: block; }
+.lr-filesize { color: var(--text-muted); font-size: 12px; }
+
+/* Options */
+.lr-options {
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 20px;
+}
+.lr-section-title { font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-secondary); font-weight: 600; margin: 0 0 12px 0; }
+.lr-options-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.lr-options-grid label { display: flex; flex-direction: column; gap: 4px; }
+.lr-options-grid label span { font-size: 12px; color: var(--text-muted); font-weight: 500; }
+.lr-options-grid input[type="text"], .lr-options-grid input:not([type]) {
+  background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 6px;
+  padding: 8px 12px; color: var(--text-primary); font-size: 13px; outline: none;
+}
+.lr-options-grid input:focus { border-color: var(--accent); }
+.lr-checkbox { flex-direction: row !important; align-items: center !important; gap: 8px !important; font-size: 13px; color: var(--text-secondary); grid-column: 1 / -1; }
+.lr-checkbox input[type="checkbox"] { accent-color: var(--accent); }
+
+/* Button */
+.btn-lg { padding: 12px 24px; font-size: 15px; font-weight: 600; }
+.spinner {
+  display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,0.3);
+  border-top-color: #fff; border-radius: 50%; animation: spin 0.6s linear infinite; margin-right: 8px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Error */
+.lr-error {
+  padding: 10px 16px; border-radius: 6px; font-size: 13px; font-weight: 500;
+  background: rgba(239,68,68,0.12); color: var(--danger); border: 1px solid rgba(239,68,68,0.2);
+}
+
+/* Result */
+.lr-result {
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
+  overflow: hidden; animation: slideIn 0.3s ease;
+}
+.lr-result-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 14px 20px; border-bottom: 1px solid var(--border);
+}
+.lr-result-header h3 { font-size: 15px; margin: 0; color: var(--success); }
+.lr-stats-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 1px;
+  background: var(--border); border-bottom: 1px solid var(--border);
+}
+.lr-stat { background: var(--bg-card); padding: 14px 16px; text-align: center; }
+.lr-stat-val { display: block; font-size: 22px; font-weight: 700; color: var(--text-primary); }
+.lr-stat-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.lr-warnings { padding: 14px 20px; border-bottom: 1px solid var(--border); }
+.lr-warnings h4 { font-size: 13px; color: var(--warning); margin: 0 0 8px 0; }
+.lr-warnings ul { margin: 0; padding-left: 18px; font-size: 12px; color: var(--text-secondary); line-height: 1.8; max-height: 160px; overflow-y: auto; }
+.lr-preview { padding: 14px 20px; }
+.lr-preview h4 { font-size: 13px; color: var(--text-secondary); margin: 0 0 8px 0; text-transform: uppercase; letter-spacing: 0.04em; }
+.lr-preview pre {
+  background: var(--bg-primary); border: 1px solid var(--border); border-radius: 6px;
+  padding: 16px; font-size: 12px; line-height: 1.5; max-height: 400px; overflow: auto;
+  color: var(--text-secondary); white-space: pre-wrap;
+}
