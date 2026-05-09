@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, memo } from 'react'
 import { useApi } from '../hooks/useApi'
 import { TestSummary } from '../types'
 import StatusBadge from './StatusBadge'
@@ -8,7 +8,7 @@ interface Props {
   onSelectTest: (id: string) => void
 }
 
-export default function ResultsPage({ testStatuses, onSelectTest }: Props) {
+function ResultsPage({ testStatuses, onSelectTest }: Props) {
   const api = useApi()
   const [tests, setTests] = useState<TestSummary[]>([])
 
@@ -85,3 +85,4 @@ export default function ResultsPage({ testStatuses, onSelectTest }: Props) {
     </div>
   )
 }
+export default memo(ResultsPage)

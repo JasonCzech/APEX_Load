@@ -88,6 +88,7 @@ func (s *Server) handleGetMetrics(w http.ResponseWriter, r *http.Request) {
 		"test_id": id,
 		"status":  test.Status,
 		"metrics": test.LiveMetrics,
+		"history": test.History,
 	})
 }
 

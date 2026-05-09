@@ -39,6 +39,17 @@ export default function App() {
           point[`${name}_vusers`] = gm.vusers
         }
       }
+      if (msg.data.resources) {
+        const r = msg.data.resources
+        point.cpuProcess = Math.round(r.cpu_process_pct * 10) / 10
+        point.cpuFree = Math.round(r.cpu_free_pct * 10) / 10
+        point.memProcess = Math.round(r.mem_process_mb * 10) / 10
+        point.memFree = Math.round(r.mem_free_mb * 10) / 10
+        point.netSent = Math.round(r.net_sent_kbps * 10) / 10
+        point.netRecv = Math.round(r.net_recv_kbps * 10) / 10
+        point.diskRead = Math.round(r.disk_read_kbps * 10) / 10
+        point.diskWrite = Math.round(r.disk_write_kbps * 10) / 10
+      }
       setMetricsHistory((prev) => {
         const existing = prev[msg.test_id] || []
         const updated = [...existing, point].slice(-300)

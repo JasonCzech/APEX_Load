@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, memo } from 'react'
 import { useApi } from '../hooks/useApi'
 import { TestSummary, StoredScript } from '../types'
 import CreateTestModal from './CreateTestModal'
@@ -10,7 +10,7 @@ interface Props {
   onSelectTest: (id: string) => void
 }
 
-export default function TestHub({ testStatuses, onSelectTest }: Props) {
+function TestHub({ testStatuses, onSelectTest }: Props) {
   const api = useApi()
   const [tests, setTests] = useState<TestSummary[]>([])
   const [scripts, setScripts] = useState<StoredScript[]>([])
@@ -165,3 +165,4 @@ export default function TestHub({ testStatuses, onSelectTest }: Props) {
     </div>
   )
 }
+export default memo(TestHub)

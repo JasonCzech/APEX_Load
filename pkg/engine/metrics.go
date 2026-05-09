@@ -13,6 +13,7 @@ type MetricsCollector struct {
 	snapshots   []MetricsSnapshot
 	snapshotsMu sync.RWMutex
 	current     *liveCounters
+	resCollector *ResourceCollector
 	done        chan struct{}
 }
 
@@ -36,6 +37,18 @@ type MetricsSnapshot struct {
 	P99          time.Duration
 	ByAction     map[string]*ActionMetrics
 	ByGroup      map[string]*GroupMetrics
+	Resources    *SystemResources `json:"resources,omitempty"`
+}
+
+type SystemResources struct {
+	CPUProcessPct float64 `json:"cpu_process_pct"` // CPU used by vuser processes
+	CPUFreePct    float64 `json:"cpu_free_pct"`    // CPU headroom
+	MemProcessMb  float64 `json:"mem_process_mb"`  // Memory used by vuser processes
+	MemFreeMb     float64 `json:"mem_free_mb"`     // Total system memory free
+	NetSentKbps   float64 `json:"net_sent_kbps"`   // Network egress
+	NetRecvKbps   float64 `json:"net_recv_kbps"`   // Network ingress
+	DiskReadKbps  float64 `json:"disk_read_kbps"`  // Disk Read I/O
+	DiskWriteKbps float64 `json:"disk_write_kbps"` // Disk Write I/O
 }
 
 type GroupMetrics struct {
@@ -71,6 +84,7 @@ func NewMetricsCollector(bufferSize int) *MetricsCollector {
 	return &MetricsCollector{
 		ch:      make(chan *protocol.Result, bufferSize),
 		current: &liveCounters{},
+		resCollector: NewResourceCollector(),
 		done:    make(chan struct{}),
 	}
 }
@@ -141,6 +155,9 @@ func (mc *MetricsCollector) aggregate(interval time.Duration) {
 				continue
 			}
 			snap := mc.computeSnapshot(batch, interval)
+			if mc.resCollector != nil {
+				snap.Resources = mc.resCollector.Collect()
+			}
 			mc.snapshotsMu.Lock()
 			mc.snapshots = append(mc.snapshots, snap)
 			// keep last 3600 snapshots (1 hour at 1s interval)

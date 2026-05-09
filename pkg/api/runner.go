@@ -32,6 +32,7 @@ type ManagedTest struct {
 	StartedAt   *time.Time `json:"started_at,omitempty"`
 	EndedAt     *time.Time `json:"ended_at,omitempty"`
 	LiveMetrics *LiveMetrics `json:"live_metrics,omitempty"`
+	History     []*LiveMetrics `json:"history,omitempty"`
 	Error       string     `json:"error,omitempty"`
 
 	// deprecated single-script fields kept for backwards compat in JSON
@@ -68,6 +69,7 @@ type LiveMetrics struct {
 	P99Ms        float64                     `json:"p99_ms"`
 	Transactions map[string]*TxMetrics       `json:"transactions,omitempty"`
 	GroupMetrics map[string]*GroupLiveMetrics `json:"groups,omitempty"`
+	Resources    *engine.SystemResources     `json:"resources,omitempty"`
 }
 
 type TxMetrics struct {
@@ -439,6 +441,7 @@ func (tr *TestRunner) broadcastMetrics(test *ManagedTest, mge *engine.MultiGroup
 				P99Ms:         float64(snap.P99.Microseconds()) / 1000.0,
 				Transactions:  make(map[string]*TxMetrics),
 				GroupMetrics:  make(map[string]*GroupLiveMetrics),
+				Resources:     snap.Resources,
 			}
 
 			if live.TotalTx > 0 {
@@ -471,7 +474,10 @@ func (tr *TestRunner) broadcastMetrics(test *ManagedTest, mge *engine.MultiGroup
 				}
 			}
 
+			tr.mu.Lock()
 			test.LiveMetrics = live
+			test.History = append(test.History, live)
+			tr.mu.Unlock()
 
 			tr.hub.BroadcastJSON(map[string]any{
 				"type":      "metrics_update",

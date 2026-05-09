@@ -47,6 +47,18 @@ export interface LiveMetrics {
   p99_ms: number
   transactions?: Record<string, TxMetrics>
   groups?: Record<string, GroupLiveMetrics>
+  resources?: SystemResources
+}
+
+export interface SystemResources {
+  cpu_process_pct: number
+  cpu_free_pct: number
+  mem_process_mb: number
+  mem_free_mb: number
+  net_sent_kbps: number
+  net_recv_kbps: number
+  disk_read_kbps: number
+  disk_write_kbps: number
 }
 
 export interface TxMetrics {
@@ -97,6 +109,15 @@ export interface MetricsHistoryPoint {
   p50: number
   p90: number
   p99: number
+  // System Resources
+  cpuProcess?: number
+  cpuFree?: number
+  memProcess?: number
+  memFree?: number
+  netSent?: number
+  netRecv?: number
+  diskRead?: number
+  diskWrite?: number
   [key: string]: string | number // dynamic group keys like "Group A_tps"
 }
 

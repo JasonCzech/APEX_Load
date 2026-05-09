@@ -1,4 +1,4 @@
-import { useCallback } from 'react'
+import { useCallback, useMemo } from 'react'
 
 const BASE = '/api/v1'
 
@@ -99,23 +99,43 @@ export function useApi() {
 
   const getHealth = useCallback(() => request<any>('/system/health'), [])
 
-  return {
-    listTests,
-    getTest,
-    createTest,
-    startTest,
-    stopTest,
-    abortTest,
-    getMetrics,
-    listScripts,
-    createScript,
-    getScript,
-    updateScript,
-    deleteScript,
-    validateScript,
-    exportScript,
-    importLoadRunner,
-    getHealth,
-  }
+  return useMemo(
+    () => ({
+      listTests,
+      getTest,
+      createTest,
+      startTest,
+      stopTest,
+      abortTest,
+      getMetrics,
+      listScripts,
+      createScript,
+      getScript,
+      updateScript,
+      deleteScript,
+      validateScript,
+      exportScript,
+      importLoadRunner,
+      getHealth,
+    }),
+    [
+      listTests,
+      getTest,
+      createTest,
+      startTest,
+      stopTest,
+      abortTest,
+      getMetrics,
+      listScripts,
+      createScript,
+      getScript,
+      updateScript,
+      deleteScript,
+      validateScript,
+      exportScript,
+      importLoadRunner,
+      getHealth,
+    ],
+  )
 }
 
