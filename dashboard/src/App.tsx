@@ -1,15 +1,22 @@
 import { useState, useCallback } from 'react'
 import { useWebSocket } from './hooks/useWebSocket'
 import { WSMessage, MetricsHistoryPoint } from './types'
-import Header from './components/Header'
+import Sidebar, { NavPage } from './components/Sidebar'
 import TestHub from './components/TestHub'
 import TestExecution from './components/TestExecution'
+import ScriptsPage from './components/ScriptsPage'
+import ResultsPage from './components/ResultsPage'
+import MonitoringPage from './components/MonitoringPage'
+import SettingsPage from './components/SettingsPage'
 import './App.css'
+import './components/Pages.css'
 
-type View = { page: 'hub' } | { page: 'test'; testId: string }
+type View =
+  | { page: NavPage }
+  | { page: 'test'; testId: string }
 
 export default function App() {
-  const [view, setView] = useState<View>({ page: 'hub' })
+  const [view, setView] = useState<View>({ page: 'dashboard' })
   const [metricsHistory, setMetricsHistory] = useState<Record<string, MetricsHistoryPoint[]>>({})
   const [testStatuses, setTestStatuses] = useState<Record<string, string>>({})
 
@@ -25,7 +32,6 @@ export default function App() {
         p90: Math.round(msg.data.p90_ms * 10) / 10,
         p99: Math.round(msg.data.p99_ms * 10) / 10,
       }
-      // Inject per-group metrics as dynamic keys for chart rendering
       if (msg.data.groups) {
         for (const [name, gm] of Object.entries(msg.data.groups)) {
           point[`${name}_tps`] = Math.round(gm.tps * 10) / 10
@@ -35,7 +41,7 @@ export default function App() {
       }
       setMetricsHistory((prev) => {
         const existing = prev[msg.test_id] || []
-        const updated = [...existing, point].slice(-300) // keep 5 min at 1s intervals
+        const updated = [...existing, point].slice(-300)
         return { ...prev, [msg.test_id]: updated }
       })
     }
@@ -47,26 +53,49 @@ export default function App() {
 
   const { connected } = useWebSocket({ onMessage: handleWSMessage })
 
+  const navigateToTest = (id: string) => setView({ page: 'test', testId: id })
+  const activePage = view.page === 'test' ? 'tests' : view.page
+
+  const handleNavigate = (page: NavPage) => {
+    setView({ page })
+  }
+
   return (
-    <div className="app">
-      <Header
+    <div className="app-layout">
+      <Sidebar
+        active={activePage}
+        onNavigate={handleNavigate}
         connected={connected}
-        onNavigate={() => setView({ page: 'hub' })}
       />
-      <main className="main">
-        {view.page === 'hub' && (
+      <main className="main-content">
+        {view.page === 'dashboard' && (
           <TestHub
             testStatuses={testStatuses}
-            onSelectTest={(id) => setView({ page: 'test', testId: id })}
+            onSelectTest={navigateToTest}
+          />
+        )}
+        {view.page === 'tests' && (
+          <TestHub
+            testStatuses={testStatuses}
+            onSelectTest={navigateToTest}
           />
         )}
         {view.page === 'test' && (
           <TestExecution
             testId={view.testId}
             history={metricsHistory[view.testId] || []}
-            onBack={() => setView({ page: 'hub' })}
+            onBack={() => setView({ page: 'tests' })}
           />
         )}
+        {view.page === 'scripts' && <ScriptsPage />}
+        {view.page === 'results' && (
+          <ResultsPage
+            testStatuses={testStatuses}
+            onSelectTest={navigateToTest}
+          />
+        )}
+        {view.page === 'monitoring' && <MonitoringPage connected={connected} />}
+        {view.page === 'settings' && <SettingsPage />}
       </main>
     </div>
   )
