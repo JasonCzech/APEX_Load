@@ -119,6 +119,61 @@
 .btn-icon.danger:hover { color: var(--danger); background: rgba(239,68,68,0.1); }
 .btn-icon:disabled { opacity: 0.3; cursor: not-allowed; }
 
+/* Runtime Settings Accordion */
+.runtime-settings {
+  display: flex; flex-direction: column; gap: 0;
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
+  overflow: hidden;
+}
+.settings-heading {
+  font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--text-secondary); font-weight: 600; margin: 0;
+  padding: 14px 20px 10px; border-bottom: 1px solid var(--border);
+}
+.settings-section {
+  border-bottom: 1px solid var(--border);
+  transition: background 0.2s;
+}
+.settings-section:last-child { border-bottom: none; }
+.settings-section.open {
+  background: rgba(99, 102, 241, 0.03);
+}
+.section-toggle {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 12px 20px; border: none; background: transparent;
+  cursor: pointer; text-align: left; transition: background 0.15s;
+  color: var(--text-primary); font-size: 13px;
+}
+.section-toggle:hover { background: var(--bg-hover); }
+.section-icon { font-size: 16px; width: 22px; text-align: center; flex-shrink: 0; }
+.section-label { font-weight: 600; flex-shrink: 0; }
+.section-summary {
+  flex: 1; text-align: right; color: var(--text-muted); font-size: 12px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.chevron {
+  color: var(--text-muted); font-size: 14px; flex-shrink: 0;
+  transition: transform 0.2s;
+}
+.settings-section.open .chevron { transform: rotate(0deg); }
+.section-body {
+  padding: 4px 20px 16px;
+  animation: sectionReveal 0.2s ease;
+}
+@keyframes sectionReveal {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.settings-sub-group {
+  padding: 12px 0; border-top: 1px solid rgba(99, 102, 241, 0.1);
+}
+.settings-sub-group:first-child { border-top: none; padding-top: 0; }
+.settings-sub-group h5 {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--accent); font-weight: 600; margin: 0 0 10px 0;
+}
+
 @media (max-width: 900px) {
   .actions-layout { flex-direction: column; }
   .actions-sidebar { width: 100%; border-right: none; border-bottom: 1px solid var(--border); }

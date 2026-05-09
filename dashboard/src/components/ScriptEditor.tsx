@@ -10,9 +10,48 @@ interface Action {
 }
 interface Extractor { name: string; source: string; type: string; expression: string }
 interface Assertion { type: string; expected?: any; value?: string; max?: number }
+
+interface ThinkTimeConfig {
+  type: string; mean_ms: number; std_ms?: number; min_ms?: number; max_ms?: number
+  multiplier?: number; limit_ms?: number; ignore?: boolean
+}
+interface PacingConfig {
+  type: string; delay_ms?: number; min_delay_ms?: number; max_delay_ms?: number
+  interval_ms?: number; min_interval_ms?: number; max_interval_ms?: number; tps?: number
+}
+interface RunLogicConfig {
+  iterations?: number; auto_transactions?: string
+}
+interface ErrorHandlingConfig {
+  continue_on_error?: boolean; max_retries?: number; retry_delay_ms?: number
+  retry_backoff?: string; snapshot_on_error?: boolean
+}
+interface LogConfig {
+  level?: string; on_error_only?: boolean
+}
+interface HTTPConfig {
+  connect_timeout_ms?: number; request_timeout_ms?: number; tls_timeout_ms?: number; idle_timeout_ms?: number
+  version?: string; max_conns_per_host?: number; keep_alive?: boolean
+  user_agent?: string; accept_encoding?: string; accept_language?: string
+  max_redirects?: number
+  tls?: { min_version?: string; insecure_skip_verify?: boolean; client_cert_file?: string; client_key_file?: string; ca_cert_file?: string }
+  proxy?: { url?: string; username?: string; password?: string }
+  auth?: { type?: string; username?: string; password?: string; token?: string }
+}
+
+interface ScriptConfig {
+  base_url: string
+  think_time?: ThinkTimeConfig
+  pacing?: PacingConfig
+  run_logic?: RunLogicConfig
+  error_handling?: ErrorHandlingConfig
+  log?: LogConfig
+  http?: HTTPConfig
+}
+
 interface ScriptData {
   name: string; version: string; protocol: string
-  config: { base_url: string; think_time?: { type: string; mean_ms: number; std_ms?: number } }
+  config: ScriptConfig
   actions: Action[]
 }
 
@@ -25,7 +64,14 @@ interface Props {
 
 const EMPTY_SCRIPT: ScriptData = {
   name: '', version: '1.0.0', protocol: 'http',
-  config: { base_url: '', think_time: { type: 'fixed', mean_ms: 1000 } },
+  config: {
+    base_url: '',
+    think_time: { type: 'fixed', mean_ms: 1000 },
+    pacing: { type: 'none' },
+    run_logic: { iterations: 0, auto_transactions: 'none' },
+    error_handling: { continue_on_error: false },
+    log: { level: 'standard' },
+  },
   actions: []
 }
 
@@ -43,6 +89,9 @@ export default function ScriptEditor({ scriptId, initialScript, onSave, onClose 
   const [success, setSuccess] = useState('')
   const [jsonMode, setJsonMode] = useState(false)
   const [jsonText, setJsonText] = useState('')
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({})
+
+  const toggleSection = (id: string) => setOpenSections(prev => ({ ...prev, [id]: !prev[id] }))
 
   useEffect(() => {
     if (scriptId && !initialScript) {
@@ -270,18 +319,381 @@ export default function ScriptEditor({ scriptId, initialScript, onSave, onClose 
                 <span>Base URL</span>
                 <input value={script.config.base_url} onChange={e => updateField('config.base_url', e.target.value)} placeholder="https://api.example.com" />
               </label>
-              <label>
-                <span>Think Time Type</span>
-                <select value={script.config.think_time?.type || 'fixed'} onChange={e => updateField('config.think_time', { ...script.config.think_time, type: e.target.value })}>
-                  <option value="fixed">Fixed</option>
-                  <option value="normal">Normal Distribution</option>
-                  <option value="uniform">Uniform</option>
-                </select>
-              </label>
-              <label>
-                <span>Think Time (ms)</span>
-                <input type="number" value={script.config.think_time?.mean_ms || 0} onChange={e => updateField('config.think_time', { ...script.config.think_time, mean_ms: Number(e.target.value) })} />
-              </label>
+            </div>
+          </div>
+
+          {/* Runtime Settings Panels */}
+          <div className="runtime-settings">
+            <h3 className="settings-heading">Runtime Settings</h3>
+
+            {/* Think Time */}
+            <div className={`settings-section ${openSections['think'] ? 'open' : ''}`}>
+              <button className="section-toggle" onClick={() => toggleSection('think')}>
+                <span className="section-icon">{'\u23f1'}</span>
+                <span className="section-label">Think Time</span>
+                <span className="section-summary">
+                  {script.config.think_time?.ignore ? 'Disabled' : `${script.config.think_time?.type || 'fixed'} — ${script.config.think_time?.mean_ms || 0}ms`}
+                </span>
+                <span className="chevron">{openSections['think'] ? '▾' : '▸'}</span>
+              </button>
+              {openSections['think'] && (
+                <div className="section-body">
+                  <div className="form-grid">
+                    <label>
+                      <span>Distribution</span>
+                      <select value={script.config.think_time?.type || 'fixed'}
+                        onChange={e => updateField('config.think_time', { ...script.config.think_time, type: e.target.value })}>
+                        <option value="fixed">Fixed</option>
+                        <option value="gaussian">Gaussian (Normal)</option>
+                        <option value="uniform">Uniform (Random)</option>
+                      </select>
+                    </label>
+                    <label>
+                      <span>Mean (ms)</span>
+                      <input type="number" value={script.config.think_time?.mean_ms || 0}
+                        onChange={e => updateField('config.think_time', { ...script.config.think_time, mean_ms: Number(e.target.value) })} />
+                    </label>
+                    {script.config.think_time?.type === 'gaussian' && (
+                      <label>
+                        <span>Std Dev (ms)</span>
+                        <input type="number" value={script.config.think_time?.std_ms || 0}
+                          onChange={e => updateField('config.think_time', { ...script.config.think_time, std_ms: Number(e.target.value) })} />
+                      </label>
+                    )}
+                    {(script.config.think_time?.type === 'uniform' || script.config.think_time?.type === 'gaussian') && (
+                      <>
+                        <label>
+                          <span>Min (ms)</span>
+                          <input type="number" value={script.config.think_time?.min_ms || 0}
+                            onChange={e => updateField('config.think_time', { ...script.config.think_time, min_ms: Number(e.target.value) })} />
+                        </label>
+                        <label>
+                          <span>Max (ms)</span>
+                          <input type="number" value={script.config.think_time?.max_ms || 0}
+                            onChange={e => updateField('config.think_time', { ...script.config.think_time, max_ms: Number(e.target.value) })} />
+                        </label>
+                      </>
+                    )}
+                    <label>
+                      <span>Multiplier</span>
+                      <input type="number" step="0.1" value={script.config.think_time?.multiplier || 1.0}
+                        onChange={e => updateField('config.think_time', { ...script.config.think_time, multiplier: Number(e.target.value) })} />
+                    </label>
+                    <label>
+                      <span>Limit (ms)</span>
+                      <input type="number" value={script.config.think_time?.limit_ms || 0} placeholder="0 = no limit"
+                        onChange={e => updateField('config.think_time', { ...script.config.think_time, limit_ms: Number(e.target.value) })} />
+                    </label>
+                    <label className="checkbox-label">
+                      <input type="checkbox" checked={script.config.think_time?.ignore || false}
+                        onChange={e => updateField('config.think_time', { ...script.config.think_time, ignore: e.target.checked })} />
+                      <span>Ignore all think times</span>
+                    </label>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Pacing */}
+            <div className={`settings-section ${openSections['pacing'] ? 'open' : ''}`}>
+              <button className="section-toggle" onClick={() => toggleSection('pacing')}>
+                <span className="section-icon">{'\ud83d\udd04'}</span>
+                <span className="section-label">Iteration Pacing</span>
+                <span className="section-summary">{script.config.pacing?.type || 'none'}</span>
+                <span className="chevron">{openSections['pacing'] ? '▾' : '▸'}</span>
+              </button>
+              {openSections['pacing'] && (
+                <div className="section-body">
+                  <div className="form-grid">
+                    <label className="full-width">
+                      <span>Pacing Mode</span>
+                      <select value={script.config.pacing?.type || 'none'}
+                        onChange={e => updateField('config.pacing', { ...script.config.pacing, type: e.target.value })}>
+                        <option value="none">No delay (as fast as possible)</option>
+                        <option value="fixed_delay">Fixed delay after iteration</option>
+                        <option value="random_delay">Random delay after iteration</option>
+                        <option value="fixed_interval">Fixed interval from iteration start</option>
+                        <option value="random_interval">Random interval from iteration start</option>
+                      </select>
+                    </label>
+                    {script.config.pacing?.type === 'fixed_delay' && (
+                      <label><span>Delay (ms)</span>
+                        <input type="number" value={script.config.pacing?.delay_ms || 0}
+                          onChange={e => updateField('config.pacing', { ...script.config.pacing, delay_ms: Number(e.target.value) })} />
+                      </label>
+                    )}
+                    {script.config.pacing?.type === 'random_delay' && (
+                      <>
+                        <label><span>Min Delay (ms)</span>
+                          <input type="number" value={script.config.pacing?.min_delay_ms || 0}
+                            onChange={e => updateField('config.pacing', { ...script.config.pacing, min_delay_ms: Number(e.target.value) })} />
+                        </label>
+                        <label><span>Max Delay (ms)</span>
+                          <input type="number" value={script.config.pacing?.max_delay_ms || 0}
+                            onChange={e => updateField('config.pacing', { ...script.config.pacing, max_delay_ms: Number(e.target.value) })} />
+                        </label>
+                      </>
+                    )}
+                    {script.config.pacing?.type === 'fixed_interval' && (
+                      <label><span>Interval (ms)</span>
+                        <input type="number" value={script.config.pacing?.interval_ms || 0}
+                          onChange={e => updateField('config.pacing', { ...script.config.pacing, interval_ms: Number(e.target.value) })} />
+                      </label>
+                    )}
+                    {script.config.pacing?.type === 'random_interval' && (
+                      <>
+                        <label><span>Min Interval (ms)</span>
+                          <input type="number" value={script.config.pacing?.min_interval_ms || 0}
+                            onChange={e => updateField('config.pacing', { ...script.config.pacing, min_interval_ms: Number(e.target.value) })} />
+                        </label>
+                        <label><span>Max Interval (ms)</span>
+                          <input type="number" value={script.config.pacing?.max_interval_ms || 0}
+                            onChange={e => updateField('config.pacing', { ...script.config.pacing, max_interval_ms: Number(e.target.value) })} />
+                        </label>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Run Logic */}
+            <div className={`settings-section ${openSections['runlogic'] ? 'open' : ''}`}>
+              <button className="section-toggle" onClick={() => toggleSection('runlogic')}>
+                <span className="section-icon">{'\ud83d\udd01'}</span>
+                <span className="section-label">Run Logic</span>
+                <span className="section-summary">
+                  {script.config.run_logic?.iterations ? `${script.config.run_logic.iterations} iterations` : 'Run until duration'}
+                </span>
+                <span className="chevron">{openSections['runlogic'] ? '▾' : '▸'}</span>
+              </button>
+              {openSections['runlogic'] && (
+                <div className="section-body">
+                  <div className="form-grid">
+                    <label>
+                      <span>Iterations</span>
+                      <input type="number" value={script.config.run_logic?.iterations || 0} placeholder="0 = run until duration"
+                        onChange={e => updateField('config.run_logic', { ...script.config.run_logic, iterations: Number(e.target.value) })} />
+                    </label>
+                    <label>
+                      <span>Auto-Transactions</span>
+                      <select value={script.config.run_logic?.auto_transactions || 'none'}
+                        onChange={e => updateField('config.run_logic', { ...script.config.run_logic, auto_transactions: e.target.value })}>
+                        <option value="none">None</option>
+                        <option value="per_action">Per Action</option>
+                        <option value="per_iteration">Per Iteration</option>
+                      </select>
+                    </label>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Error Handling */}
+            <div className={`settings-section ${openSections['errors'] ? 'open' : ''}`}>
+              <button className="section-toggle" onClick={() => toggleSection('errors')}>
+                <span className="section-icon">{'\u26a0\ufe0f'}</span>
+                <span className="section-label">Error Handling</span>
+                <span className="section-summary">
+                  {script.config.error_handling?.continue_on_error ? 'Continue on error' : 'Stop on error'}
+                </span>
+                <span className="chevron">{openSections['errors'] ? '▾' : '▸'}</span>
+              </button>
+              {openSections['errors'] && (
+                <div className="section-body">
+                  <div className="form-grid">
+                    <label className="checkbox-label">
+                      <input type="checkbox" checked={script.config.error_handling?.continue_on_error || false}
+                        onChange={e => updateField('config.error_handling', { ...script.config.error_handling, continue_on_error: e.target.checked })} />
+                      <span>Continue on error</span>
+                    </label>
+                    <label className="checkbox-label">
+                      <input type="checkbox" checked={script.config.error_handling?.snapshot_on_error || false}
+                        onChange={e => updateField('config.error_handling', { ...script.config.error_handling, snapshot_on_error: e.target.checked })} />
+                      <span>Capture snapshot on error</span>
+                    </label>
+                    <label>
+                      <span>Max Retries</span>
+                      <input type="number" value={script.config.error_handling?.max_retries || 0}
+                        onChange={e => updateField('config.error_handling', { ...script.config.error_handling, max_retries: Number(e.target.value) })} />
+                    </label>
+                    {(script.config.error_handling?.max_retries || 0) > 0 && (
+                      <>
+                        <label>
+                          <span>Retry Delay (ms)</span>
+                          <input type="number" value={script.config.error_handling?.retry_delay_ms || 1000}
+                            onChange={e => updateField('config.error_handling', { ...script.config.error_handling, retry_delay_ms: Number(e.target.value) })} />
+                        </label>
+                        <label>
+                          <span>Retry Backoff</span>
+                          <select value={script.config.error_handling?.retry_backoff || 'fixed'}
+                            onChange={e => updateField('config.error_handling', { ...script.config.error_handling, retry_backoff: e.target.value })}>
+                            <option value="fixed">Fixed</option>
+                            <option value="exponential">Exponential</option>
+                          </select>
+                        </label>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* HTTP Protocol */}
+            <div className={`settings-section ${openSections['http'] ? 'open' : ''}`}>
+              <button className="section-toggle" onClick={() => toggleSection('http')}>
+                <span className="section-icon">{'\ud83c\udf10'}</span>
+                <span className="section-label">HTTP Protocol</span>
+                <span className="section-summary">
+                  {script.config.http?.proxy?.url ? 'Proxy configured' : script.config.http?.auth?.type ? `Auth: ${script.config.http.auth.type}` : 'Default'}
+                </span>
+                <span className="chevron">{openSections['http'] ? '▾' : '▸'}</span>
+              </button>
+              {openSections['http'] && (
+                <div className="section-body">
+                  <div className="settings-sub-group">
+                    <h5>Timeouts</h5>
+                    <div className="form-grid">
+                      <label><span>Connect (ms)</span>
+                        <input type="number" value={script.config.http?.connect_timeout_ms || 30000}
+                          onChange={e => updateField('config.http', { ...script.config.http, connect_timeout_ms: Number(e.target.value) })} /></label>
+                      <label><span>Request (ms)</span>
+                        <input type="number" value={script.config.http?.request_timeout_ms || 60000}
+                          onChange={e => updateField('config.http', { ...script.config.http, request_timeout_ms: Number(e.target.value) })} /></label>
+                      <label><span>TLS Handshake (ms)</span>
+                        <input type="number" value={script.config.http?.tls_timeout_ms || 10000}
+                          onChange={e => updateField('config.http', { ...script.config.http, tls_timeout_ms: Number(e.target.value) })} /></label>
+                      <label><span>Idle Connection (ms)</span>
+                        <input type="number" value={script.config.http?.idle_timeout_ms || 90000}
+                          onChange={e => updateField('config.http', { ...script.config.http, idle_timeout_ms: Number(e.target.value) })} /></label>
+                    </div>
+                  </div>
+                  <div className="settings-sub-group">
+                    <h5>Connection</h5>
+                    <div className="form-grid">
+                      <label><span>HTTP Version</span>
+                        <select value={script.config.http?.version || 'auto'}
+                          onChange={e => updateField('config.http', { ...script.config.http, version: e.target.value })}>
+                          <option value="auto">Auto-negotiate</option>
+                          <option value="1.1">HTTP/1.1</option>
+                          <option value="2">HTTP/2</option>
+                        </select></label>
+                      <label><span>Max Conns/Host</span>
+                        <input type="number" value={script.config.http?.max_conns_per_host || 100}
+                          onChange={e => updateField('config.http', { ...script.config.http, max_conns_per_host: Number(e.target.value) })} /></label>
+                      <label><span>Max Redirects</span>
+                        <input type="number" value={script.config.http?.max_redirects ?? 10}
+                          onChange={e => updateField('config.http', { ...script.config.http, max_redirects: Number(e.target.value) })} /></label>
+                    </div>
+                  </div>
+                  <div className="settings-sub-group">
+                    <h5>TLS / SSL</h5>
+                    <div className="form-grid">
+                      <label><span>Min TLS Version</span>
+                        <select value={script.config.http?.tls?.min_version || '1.2'}
+                          onChange={e => updateField('config.http', { ...script.config.http, tls: { ...script.config.http?.tls, min_version: e.target.value } })}>
+                          <option value="1.0">TLS 1.0</option><option value="1.1">TLS 1.1</option>
+                          <option value="1.2">TLS 1.2</option><option value="1.3">TLS 1.3</option>
+                        </select></label>
+                      <label className="checkbox-label">
+                        <input type="checkbox" checked={script.config.http?.tls?.insecure_skip_verify || false}
+                          onChange={e => updateField('config.http', { ...script.config.http, tls: { ...script.config.http?.tls, insecure_skip_verify: e.target.checked } })} />
+                        <span>Skip certificate verification</span>
+                      </label>
+                    </div>
+                  </div>
+                  <div className="settings-sub-group">
+                    <h5>Proxy</h5>
+                    <div className="form-grid">
+                      <label className="full-width"><span>Proxy URL</span>
+                        <input value={script.config.http?.proxy?.url || ''} placeholder="http://proxy:8080"
+                          onChange={e => updateField('config.http', { ...script.config.http, proxy: { ...script.config.http?.proxy, url: e.target.value } })} /></label>
+                      {script.config.http?.proxy?.url && (
+                        <>
+                          <label><span>Proxy Username</span>
+                            <input value={script.config.http?.proxy?.username || ''}
+                              onChange={e => updateField('config.http', { ...script.config.http, proxy: { ...script.config.http?.proxy, username: e.target.value } })} /></label>
+                          <label><span>Proxy Password</span>
+                            <input type="password" value={script.config.http?.proxy?.password || ''}
+                              onChange={e => updateField('config.http', { ...script.config.http, proxy: { ...script.config.http?.proxy, password: e.target.value } })} /></label>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  <div className="settings-sub-group">
+                    <h5>Authentication</h5>
+                    <div className="form-grid">
+                      <label><span>Auth Type</span>
+                        <select value={script.config.http?.auth?.type || ''}
+                          onChange={e => updateField('config.http', { ...script.config.http, auth: { ...script.config.http?.auth, type: e.target.value } })}>
+                          <option value="">None</option>
+                          <option value="basic">Basic</option>
+                          <option value="bearer">Bearer Token</option>
+                          <option value="ntlm">NTLM</option>
+                        </select></label>
+                      {(script.config.http?.auth?.type === 'basic' || script.config.http?.auth?.type === 'ntlm') && (
+                        <>
+                          <label><span>Username</span>
+                            <input value={script.config.http?.auth?.username || ''}
+                              onChange={e => updateField('config.http', { ...script.config.http, auth: { ...script.config.http?.auth, username: e.target.value } })} /></label>
+                          <label><span>Password</span>
+                            <input type="password" value={script.config.http?.auth?.password || ''}
+                              onChange={e => updateField('config.http', { ...script.config.http, auth: { ...script.config.http?.auth, password: e.target.value } })} /></label>
+                        </>
+                      )}
+                      {script.config.http?.auth?.type === 'bearer' && (
+                        <label className="full-width"><span>Token</span>
+                          <input value={script.config.http?.auth?.token || ''} placeholder="eyJhbGciOiJIUzI1NiIs..."
+                            onChange={e => updateField('config.http', { ...script.config.http, auth: { ...script.config.http?.auth, token: e.target.value } })} /></label>
+                      )}
+                    </div>
+                  </div>
+                  <div className="settings-sub-group">
+                    <h5>Browser Emulation</h5>
+                    <div className="form-grid">
+                      <label className="full-width"><span>User-Agent</span>
+                        <input value={script.config.http?.user_agent || ''} placeholder="Mozilla/5.0 ..."
+                          onChange={e => updateField('config.http', { ...script.config.http, user_agent: e.target.value })} /></label>
+                      <label><span>Accept-Encoding</span>
+                        <input value={script.config.http?.accept_encoding || ''} placeholder="gzip, deflate, br"
+                          onChange={e => updateField('config.http', { ...script.config.http, accept_encoding: e.target.value })} /></label>
+                      <label><span>Accept-Language</span>
+                        <input value={script.config.http?.accept_language || ''} placeholder="en-US,en;q=0.9"
+                          onChange={e => updateField('config.http', { ...script.config.http, accept_language: e.target.value })} /></label>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Logging */}
+            <div className={`settings-section ${openSections['log'] ? 'open' : ''}`}>
+              <button className="section-toggle" onClick={() => toggleSection('log')}>
+                <span className="section-icon">{'\ud83d\udccb'}</span>
+                <span className="section-label">Logging</span>
+                <span className="section-summary">{script.config.log?.level || 'standard'}</span>
+                <span className="chevron">{openSections['log'] ? '▾' : '▸'}</span>
+              </button>
+              {openSections['log'] && (
+                <div className="section-body">
+                  <div className="form-grid">
+                    <label>
+                      <span>Log Level</span>
+                      <select value={script.config.log?.level || 'standard'}
+                        onChange={e => updateField('config.log', { ...script.config.log, level: e.target.value })}>
+                        <option value="disabled">Disabled</option>
+                        <option value="standard">Standard</option>
+                        <option value="extended">Extended (verbose)</option>
+                      </select>
+                    </label>
+                    <label className="checkbox-label">
+                      <input type="checkbox" checked={script.config.log?.on_error_only || false}
+                        onChange={e => updateField('config.log', { ...script.config.log, on_error_only: e.target.checked })} />
+                      <span>Extended log on error only</span>
+                    </label>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 

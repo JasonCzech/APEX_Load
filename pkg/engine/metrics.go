@@ -130,6 +130,26 @@ func (mc *MetricsCollector) TotalErrors() int64 {
 	return mc.current.totalErrors.Load()
 }
 
+// RecordTransaction records an automatic transaction as a synthetic result.
+// This is used by the auto-transactions feature to track per-action or per-iteration timings.
+func (mc *MetricsCollector) RecordTransaction(name string, duration time.Duration, success bool, group string) {
+	r := &protocol.Result{
+		ActionName: "tx:" + name,
+		Group:      group,
+		StartTime:  time.Now().Add(-duration),
+		Duration:   duration,
+		Success:    success,
+	}
+	if !success {
+		r.ErrorMessage = "transaction failed"
+	}
+	// Don't count transactions in the main counters — they are synthetic
+	select {
+	case mc.ch <- r:
+	default:
+	}
+}
+
 func (mc *MetricsCollector) aggregate(interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()

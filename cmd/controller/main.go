@@ -9,6 +9,7 @@ import (
 
 	"github.com/jasonczech/stormrunner/pkg/api"
 	_ "github.com/jasonczech/stormrunner/pkg/protocol/http"
+	"github.com/jasonczech/stormrunner/pkg/storage"
 )
 
 func main() {
@@ -19,9 +20,22 @@ func main() {
 		addr = ":8080"
 	}
 
+	dbPath := os.Getenv("STORMRUNNER_DB")
+	if dbPath == "" {
+		dbPath = "stormrunner.db"
+	}
+
+	store, err := storage.NewSQLiteStore(dbPath)
+	if err != nil {
+		slog.Error("failed to initialize storage", "err", err)
+		os.Exit(1)
+	}
+	defer store.Close()
+
 	server := api.NewServer(api.ServerConfig{
 		Addr:          addr,
 		MaxConcurrent: 10,
+		Store:         store,
 	})
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

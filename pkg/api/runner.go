@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -10,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jasonczech/stormrunner/pkg/dsl"
 	"github.com/jasonczech/stormrunner/pkg/engine"
+	"github.com/jasonczech/stormrunner/pkg/storage"
 )
 
 type TestRunner struct {
@@ -18,6 +20,7 @@ type TestRunner struct {
 	mu       sync.RWMutex
 	hub      *Hub
 	maxTests int
+	store    storage.Store
 }
 
 type ManagedTest struct {
@@ -103,27 +106,104 @@ type StoredScript struct {
 	Script    *dsl.Script `json:"script"`
 }
 
-func NewTestRunner(maxTests int, hub *Hub) *TestRunner {
-	return &TestRunner{
+func NewTestRunner(maxTests int, hub *Hub, store storage.Store) *TestRunner {
+	tr := &TestRunner{
 		tests:    make(map[string]*ManagedTest),
 		scripts:  make(map[string]*StoredScript),
 		hub:      hub,
 		maxTests: maxTests,
+		store:    store,
 	}
+
+	// Load existing scripts from store
+	if store != nil {
+		scripts, err := store.ListScripts()
+		if err == nil {
+			for _, s := range scripts {
+				tr.scripts[s.ID] = &StoredScript{
+					ID:        s.ID,
+					Name:      s.Name,
+					Protocol:  s.Protocol,
+					Version:   s.Version,
+					CreatedAt: s.CreatedAt,
+					Script:    s,
+				}
+			}
+		}
+
+		// Load recent tests
+		tests, err := store.ListTests()
+		if err == nil {
+			for _, t := range tests {
+				mt := &ManagedTest{
+					ID:          t.ID,
+					Name:        t.Name,
+					Status:      t.Status,
+					TotalVUsers: t.TotalVUsers,
+					Duration:    time.Duration(t.Duration),
+					Error:       t.Error,
+					// Groups need to be reconstructed if we want full detail in history
+				}
+				if t.EndTime != nil {
+					mt.EndedAt = t.EndTime
+				}
+				// Load history for this test
+				hist, err := store.GetHistory(t.ID)
+				if err == nil {
+					for _, h := range hist {
+						if m, ok := h.(map[string]any); ok {
+							// This is a bit lossy due to any -> map conversion, 
+							// but works for basic history display
+							mt.History = append(mt.History, mapToLiveMetrics(m))
+						}
+					}
+					if len(mt.History) > 0 {
+						mt.LiveMetrics = mt.History[len(mt.History)-1]
+					}
+				}
+				tr.tests[t.ID] = mt
+			}
+		}
+	}
+
+	return tr
+}
+
+// Helper to convert map back to LiveMetrics (since GetHistory returns any)
+func mapToLiveMetrics(m map[string]any) *LiveMetrics {
+	// Re-marshal to JSON and unmarshal to struct to handle all fields robustly
+	data, err := json.Marshal(m)
+	if err != nil {
+		return &LiveMetrics{}
+	}
+	var lm LiveMetrics
+	if err := json.Unmarshal(data, &lm); err != nil {
+		return &LiveMetrics{}
+	}
+	return &lm
 }
 
 func (tr *TestRunner) StoreScript(script *dsl.Script) *StoredScript {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 
+	if script.ID == "" {
+		script.ID = uuid.New().String()
+	}
+
 	stored := &StoredScript{
-		ID:        uuid.New().String(),
+		ID:        script.ID,
 		Name:      script.Name,
 		Protocol:  script.Protocol,
 		Version:   script.Version,
 		CreatedAt: time.Now(),
 		Script:    script,
 	}
+
+	if tr.store != nil {
+		tr.store.SaveScript(script)
+	}
+
 	tr.scripts[stored.ID] = stored
 	return stored
 }
@@ -156,6 +236,9 @@ func (tr *TestRunner) UpdateScript(id string, script *dsl.Script) (*StoredScript
 	existing.Protocol = script.Protocol
 	existing.Version = script.Version
 	existing.Script = script
+	if tr.store != nil {
+		tr.store.SaveScript(script)
+	}
 	return existing, true
 }
 
@@ -167,6 +250,9 @@ func (tr *TestRunner) DeleteScript(id string) bool {
 		return false
 	}
 	delete(tr.scripts, id)
+	if tr.store != nil {
+		tr.store.DeleteScript(id)
+	}
 	return true
 }
 
@@ -178,6 +264,19 @@ type CreateTestRequest struct {
 	ScriptID string `json:"script_id,omitempty"`
 	VUsers   int    `json:"vusers,omitempty"`
 	RampUp   string `json:"ramp_up,omitempty"`
+	// Test-level runtime overrides (mirrors LR Controller override behavior)
+	RuntimeSettings *RuntimeSettingsOverride `json:"runtime_settings,omitempty"`
+}
+
+// RuntimeSettingsOverride allows overriding script-level runtime settings at test time,
+// mirroring LoadRunner Controller's override capability.
+type RuntimeSettingsOverride struct {
+	Iterations      *int                     `json:"iterations,omitempty"`
+	Pacing          *dsl.PacingConfig        `json:"pacing,omitempty"`
+	ThinkTime       *dsl.ThinkTimeConfig     `json:"think_time,omitempty"`
+	ErrorHandling   *dsl.ErrorHandlingConfig `json:"error_handling,omitempty"`
+	LogLevel        string                   `json:"log_level,omitempty"`
+	AutoTransactions string                  `json:"auto_transactions,omitempty"`
 }
 
 type CreateGroupEntry struct {
@@ -261,9 +360,15 @@ func (tr *TestRunner) CreateTest(req CreateTestRequest) (*ManagedTest, error) {
 			script:     script.Script,
 		})
 
+		// Apply test-level runtime overrides to a copy of the script
+		scriptCopy := *script.Script
+		if req.RuntimeSettings != nil {
+			applyRuntimeOverrides(&scriptCopy, req.RuntimeSettings)
+		}
+
 		engineGroups = append(engineGroups, engine.GroupConfig{
 			Name:   name,
-			Script: script.Script,
+			Script: &scriptCopy,
 			VUsers: vusers,
 			RampUp: rampUp,
 		})
@@ -299,6 +404,19 @@ func (tr *TestRunner) CreateTest(req CreateTestRequest) (*ManagedTest, error) {
 	}
 
 	tr.tests[test.ID] = test
+
+	if tr.store != nil {
+		tr.store.SaveTest(&storage.TestRecord{
+			ID:          test.ID,
+			Name:        test.Name,
+			Status:      test.Status,
+			TotalVUsers: test.TotalVUsers,
+			Duration:    int64(test.Duration),
+			StartTime:   test.CreatedAt,
+			Groups:      test.Groups,
+		})
+	}
+
 	tr.broadcastEvent("test_created", test)
 	return test, nil
 }
@@ -318,6 +436,23 @@ func (tr *TestRunner) ListTests() []*ManagedTest {
 		out = append(out, t)
 	}
 	return out
+}
+
+func (tr *TestRunner) DeleteTest(id string) bool {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	test, ok := tr.tests[id]
+	if !ok {
+		return false
+	}
+	if test.Status == "RUNNING" || test.Status == "INITIALIZING" || test.Status == "STOPPING" {
+		return false // Can't delete active tests
+	}
+	delete(tr.tests, id)
+	if tr.store != nil {
+		tr.store.DeleteTest(id)
+	}
+	return true
 }
 
 func (tr *TestRunner) StartTest(id string) error {
@@ -396,8 +531,12 @@ func (tr *TestRunner) runTest(test *ManagedTest) {
 		tr.broadcastEvent("test_failed", test)
 	} else {
 		test.Status = "COMPLETE"
-		tr.broadcastEvent("test_complete", test)
 	}
+	test.EndedAt = &now
+	if tr.store != nil {
+		tr.store.UpdateTestStatus(test.ID, test.Status, test.EndedAt, test.Error)
+	}
+	tr.broadcastEvent("test_complete", test)
 
 	slog.Info("test finished",
 		"id", test.ID,
@@ -479,6 +618,10 @@ func (tr *TestRunner) broadcastMetrics(test *ManagedTest, mge *engine.MultiGroup
 			test.History = append(test.History, live)
 			tr.mu.Unlock()
 
+			if tr.store != nil {
+				tr.store.SaveHistory(test.ID, live.Timestamp, live)
+			}
+
 			tr.hub.BroadcastJSON(map[string]any{
 				"type":      "metrics_update",
 				"test_id":   test.ID,
@@ -498,4 +641,30 @@ func (tr *TestRunner) broadcastEvent(eventType string, test *ManagedTest) {
 		"status":    test.Status,
 		"timestamp": time.Now(),
 	})
+}
+
+// applyRuntimeOverrides merges test-level runtime settings into a script config,
+// mirroring LoadRunner Controller's override behavior (test-level wins where specified).
+func applyRuntimeOverrides(script *dsl.Script, overrides *RuntimeSettingsOverride) {
+	if overrides == nil {
+		return
+	}
+	if overrides.Iterations != nil {
+		script.Config.RunLogic.Iterations = *overrides.Iterations
+	}
+	if overrides.Pacing != nil {
+		script.Config.Pacing = *overrides.Pacing
+	}
+	if overrides.ThinkTime != nil {
+		script.Config.ThinkTime = *overrides.ThinkTime
+	}
+	if overrides.ErrorHandling != nil {
+		script.Config.ErrorHandling = *overrides.ErrorHandling
+	}
+	if overrides.LogLevel != "" {
+		script.Config.Log.Level = overrides.LogLevel
+	}
+	if overrides.AutoTransactions != "" {
+		script.Config.RunLogic.AutoTransactions = overrides.AutoTransactions
+	}
 }

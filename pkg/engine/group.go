@@ -90,6 +90,105 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 			"base_url": group.Script.Config.BaseURL,
 		}
 
+		// Pass full HTTP config if present
+		httpCfg := group.Script.Config.HTTP
+		if httpCfg.ConnectTimeoutMs > 0 {
+			protoConfig["connect_timeout_ms"] = float64(httpCfg.ConnectTimeoutMs)
+		}
+		if httpCfg.RequestTimeoutMs > 0 {
+			protoConfig["request_timeout_ms"] = float64(httpCfg.RequestTimeoutMs)
+		}
+		if httpCfg.TLSTimeoutMs > 0 {
+			protoConfig["tls_timeout_ms"] = float64(httpCfg.TLSTimeoutMs)
+		}
+		if httpCfg.IdleTimeoutMs > 0 {
+			protoConfig["idle_timeout_ms"] = float64(httpCfg.IdleTimeoutMs)
+		}
+		if httpCfg.MaxConnsPerHost > 0 {
+			protoConfig["max_conns_per_host"] = float64(httpCfg.MaxConnsPerHost)
+		}
+		if httpCfg.MaxIdleConns > 0 {
+			protoConfig["max_idle_conns"] = float64(httpCfg.MaxIdleConns)
+		}
+		if httpCfg.KeepAlive != nil {
+			protoConfig["keep_alive"] = *httpCfg.KeepAlive
+		}
+		if httpCfg.Version != "" {
+			protoConfig["http_version"] = httpCfg.Version
+		}
+		if httpCfg.MaxRedirects != nil {
+			protoConfig["max_redirects"] = float64(*httpCfg.MaxRedirects)
+		}
+		if httpCfg.CookiesEnabled != nil {
+			protoConfig["cookies_enabled"] = *httpCfg.CookiesEnabled
+		}
+		if httpCfg.UserAgent != "" {
+			protoConfig["user_agent"] = httpCfg.UserAgent
+		}
+		if httpCfg.AcceptEncoding != "" {
+			protoConfig["accept_encoding"] = httpCfg.AcceptEncoding
+		}
+		if httpCfg.AcceptLanguage != "" {
+			protoConfig["accept_language"] = httpCfg.AcceptLanguage
+		}
+		if len(httpCfg.DefaultHeaders) > 0 {
+			protoConfig["default_headers"] = httpCfg.DefaultHeaders
+		}
+
+		// TLS config
+		tls := httpCfg.TLS
+		if tls.MinVersion != "" {
+			protoConfig["tls_min_version"] = tls.MinVersion
+		}
+		if tls.MaxVersion != "" {
+			protoConfig["tls_max_version"] = tls.MaxVersion
+		}
+		if tls.InsecureSkipVerify {
+			protoConfig["tls_insecure_skip_verify"] = true
+		}
+		if tls.ClientCertFile != "" {
+			protoConfig["tls_client_cert_file"] = tls.ClientCertFile
+		}
+		if tls.ClientKeyFile != "" {
+			protoConfig["tls_client_key_file"] = tls.ClientKeyFile
+		}
+		if tls.CACertFile != "" {
+			protoConfig["tls_ca_cert_file"] = tls.CACertFile
+		}
+
+		// Proxy config
+		proxy := httpCfg.Proxy
+		if proxy.URL != "" {
+			protoConfig["proxy_url"] = proxy.URL
+		}
+		if proxy.Username != "" {
+			protoConfig["proxy_username"] = proxy.Username
+		}
+		if proxy.Password != "" {
+			protoConfig["proxy_password"] = proxy.Password
+		}
+		if len(proxy.NoProxy) > 0 {
+			protoConfig["proxy_no_proxy"] = proxy.NoProxy
+		}
+
+		// Auth config
+		auth := httpCfg.Auth
+		if auth.Type != "" {
+			protoConfig["auth_type"] = auth.Type
+		}
+		if auth.Username != "" {
+			protoConfig["auth_username"] = auth.Username
+		}
+		if auth.Password != "" {
+			protoConfig["auth_password"] = auth.Password
+		}
+		if auth.Token != "" {
+			protoConfig["auth_token"] = auth.Token
+		}
+		if auth.Domain != "" {
+			protoConfig["auth_domain"] = auth.Domain
+		}
+
 		rampDelay := time.Duration(0)
 		if group.RampUp > 0 && group.VUsers > 1 {
 			rampDelay = group.RampUp / time.Duration(group.VUsers)

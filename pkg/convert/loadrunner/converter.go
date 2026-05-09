@@ -1,6 +1,7 @@
 package loadrunner
 
 import (
+	"bufio"
 	"fmt"
 	"math"
 	"net/url"
@@ -36,6 +37,9 @@ type ConvertOptions struct {
 	DefaultThinkTimeMs float64 // Default think time if none in script (0 = no default)
 	IncludeAssertions  bool    // Add default status_code assertions
 	PreserveTransactions bool  // Wrap actions in transaction markers (as comments in name)
+
+	// HTTP runtime settings (mapped from VuGen runtime config)
+	HTTPConfig *dsl.HTTPConfig // Pre-built HTTP config to embed in script
 }
 
 // Convert transforms parsed LoadRunner action files into a Stormrunner DSL Script.
@@ -194,6 +198,11 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 
 	if len(result.Script.Actions) == 0 {
 		return nil, fmt.Errorf("no HTTP actions could be converted from the LoadRunner script")
+	}
+
+	// Apply HTTP runtime config if provided
+	if opts.HTTPConfig != nil {
+		result.Script.Config.HTTP = *opts.HTTPConfig
 	}
 
 	return result, nil
@@ -414,5 +423,177 @@ func computeThinkTimeStats(times []float64) (mean, std float64) {
 	return mean, std
 }
 
-// Ensure strconv is used (for future parameter parsing)
-var _ = strconv.Atoi
+// RuntimeConfig holds parsed VuGen runtime settings from a .cfg file.
+type RuntimeConfig struct {
+	ConnectTimeoutSec int
+	ReceiveTimeoutSec int
+	StepTimeoutSec    int
+	HTTPVersion       string // "1.0" or "1.1"
+	KeepAlive         bool
+	ProxyURL          string
+	ProxyUser         string
+	ProxyPass         string
+	UserAgent         string
+	AcceptLanguage    string
+	UseGzip           bool
+	SSLVersion        string
+	AuthUser          string
+	AuthPass          string
+	MaxRedirects      int
+}
+
+// ParseRuntimeCfg parses a VuGen default.cfg / runtime settings .cfg file.
+func ParseRuntimeCfg(content string) *RuntimeConfig {
+	rc := &RuntimeConfig{
+		KeepAlive:    true,
+		HTTPVersion:  "1.1",
+		MaxRedirects: 10,
+	}
+
+	scanner := bufio.NewScanner(strings.NewReader(content))
+	section := ""
+
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, ";") {
+			continue
+		}
+
+		if m := reSectionHeader.FindStringSubmatch(line); len(m) > 1 {
+			section = m[1]
+			continue
+		}
+
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(parts[0])
+		value := strings.TrimSpace(parts[1])
+
+		switch section {
+		case "HTTP", "Internet Protocol":
+			switch key {
+			case "ConnectTimeout":
+				rc.ConnectTimeoutSec, _ = strconv.Atoi(value)
+			case "ReceiveTimeout":
+				rc.ReceiveTimeoutSec, _ = strconv.Atoi(value)
+			case "StepDownloadTimeout":
+				rc.StepTimeoutSec, _ = strconv.Atoi(value)
+			case "HTTPVersion":
+				rc.HTTPVersion = value
+			case "KeepAlive":
+				rc.KeepAlive = value != "0"
+			case "MaxRedirections":
+				rc.MaxRedirects, _ = strconv.Atoi(value)
+			}
+		case "Proxy":
+			switch key {
+			case "ProxyServer":
+				rc.ProxyURL = value
+			case "ProxyUserName":
+				rc.ProxyUser = value
+			case "ProxyPassword":
+				rc.ProxyPass = value
+			}
+		case "Browser Emulation", "Browser":
+			switch key {
+			case "UserAgent":
+				rc.UserAgent = value
+			case "AcceptLanguage":
+				rc.AcceptLanguage = value
+			case "AcceptEncoding":
+				rc.UseGzip = strings.Contains(value, "gzip")
+			}
+		case "SSL", "Security":
+			switch key {
+			case "SSLVersion":
+				rc.SSLVersion = value
+			}
+		case "Authentication":
+			switch key {
+			case "UserName":
+				rc.AuthUser = value
+			case "Password":
+				rc.AuthPass = value
+			}
+		}
+	}
+
+	return rc
+}
+
+// ToHTTPConfig converts parsed VuGen runtime settings into a Stormrunner HTTPConfig.
+func (rc *RuntimeConfig) ToHTTPConfig() *dsl.HTTPConfig {
+	cfg := &dsl.HTTPConfig{}
+
+	if rc.ConnectTimeoutSec > 0 {
+		cfg.ConnectTimeoutMs = rc.ConnectTimeoutSec * 1000
+	}
+	if rc.ReceiveTimeoutSec > 0 {
+		cfg.RequestTimeoutMs = rc.ReceiveTimeoutSec * 1000
+	}
+	if rc.StepTimeoutSec > 0 && rc.ReceiveTimeoutSec == 0 {
+		cfg.RequestTimeoutMs = rc.StepTimeoutSec * 1000
+	}
+
+	cfg.Version = rc.HTTPVersion
+
+	ka := rc.KeepAlive
+	cfg.KeepAlive = &ka
+
+	if rc.MaxRedirects != 10 {
+		mr := rc.MaxRedirects
+		cfg.MaxRedirects = &mr
+	}
+
+	if rc.ProxyURL != "" {
+		cfg.Proxy = dsl.ProxyConfig{
+			URL:      rc.ProxyURL,
+			Username: rc.ProxyUser,
+			Password: rc.ProxyPass,
+		}
+	}
+
+	if rc.UserAgent != "" {
+		cfg.UserAgent = rc.UserAgent
+	}
+	if rc.AcceptLanguage != "" {
+		cfg.AcceptLanguage = rc.AcceptLanguage
+	}
+	if rc.UseGzip {
+		cfg.AcceptEncoding = "gzip, deflate"
+	}
+
+	if rc.SSLVersion != "" {
+		cfg.TLS = dsl.TLSConfig{
+			MinVersion: mapSSLVersion(rc.SSLVersion),
+		}
+	}
+
+	if rc.AuthUser != "" {
+		cfg.Auth = dsl.AuthConfig{
+			Type:     "basic",
+			Username: rc.AuthUser,
+			Password: rc.AuthPass,
+		}
+	}
+
+	return cfg
+}
+
+// mapSSLVersion converts VuGen SSL version identifiers to standard version strings.
+func mapSSLVersion(v string) string {
+	switch strings.ToLower(v) {
+	case "tls1.0", "tls 1.0", "tls10":
+		return "1.0"
+	case "tls1.1", "tls 1.1", "tls11":
+		return "1.1"
+	case "tls1.2", "tls 1.2", "tls12", "tls":
+		return "1.2"
+	case "tls1.3", "tls 1.3", "tls13":
+		return "1.3"
+	default:
+		return "1.2" // safe default
+	}
+}

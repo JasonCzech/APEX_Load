@@ -69,6 +69,15 @@ func (s *Server) handleAbortTest(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "aborted", "test_id": id})
 }
 
+func (s *Server) handleDeleteTest(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if !s.runner.DeleteTest(id) {
+		writeError(w, http.StatusNotFound, "test not found or currently running")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})
+}
+
 func (s *Server) handleGetMetrics(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	test, ok := s.runner.GetTest(id)
