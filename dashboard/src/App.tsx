@@ -4,6 +4,7 @@ import { WSMessage, MetricsHistoryPoint } from './types'
 import Sidebar, { NavPage } from './components/Sidebar'
 import TestHub from './components/TestHub'
 import TestExecution from './components/TestExecution'
+import DashboardPage from './components/DashboardPage'
 import ScriptsPage from './components/ScriptsPage'
 import ResultsPage from './components/ResultsPage'
 import MonitoringPage from './components/MonitoringPage'
@@ -80,8 +81,10 @@ export default function App() {
       />
       <main className="main-content">
         {view.page === 'dashboard' && (
-          <TestHub
+          <DashboardPage
             testStatuses={testStatuses}
+            metricsHistory={metricsHistory}
+            connected={connected}
             onSelectTest={navigateToTest}
           />
         )}

@@ -170,7 +170,7 @@ function ResultsPage({ testStatuses, onSelectTest }: Props) {
                     <td><StatusBadge status={testStatuses[test.id] || test.status} /></td>
                     <td>{test.total_vusers}</td>
                     <td>{test.groups?.length || 1}</td>
-                    <td className="cell-muted">{new Date(test.start_time).toLocaleDateString()}</td>
+                    <td className="cell-muted">{new Date(test.start_time || test.created_at).toLocaleDateString()}</td>
                     <td className="cell-muted">{test.duration}</td>
                     <td style={{ textAlign: 'right' }}>
                       <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={(e) => handleDelete(test.id, e)}>Delete</button>

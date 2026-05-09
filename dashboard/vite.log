@@ -96,3 +96,92 @@
       at TypeScriptParserMixin.withSmartMixTopicForbiddingContext (/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/node_modules/@babel/parser/lib/index.js:12420:14)
       at TypeScriptParserMixin.parseFunction (/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/node_modules/@babel/parser/lib/index.js:13461:10)
 6:29:24 PM [vite] hmr update /src/components/Pages.css
+6:37:24 PM [vite] hmr update /src/components/TestHub.tsx, /src/components/ResultsPage.tsx, /src/components/ScriptsPage.tsx, /src/components/MonitoringPage.tsx, /src/components/TestExecution.tsx, /src/components/CreateTestModal.tsx, /src/components/ScriptEditor.tsx, /src/components/LoadRunnerImport.tsx
+6:37:24 PM [vite] Internal server error: /Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/src/components/ScriptsPage.tsx: Adjacent JSX elements must be wrapped in an enclosing tag. Did you want a JSX fragment <>...</>? (140:6)
+
+  138 |       </div>
+  139 |
+> 140 |       <div className="page-section">
+      |       ^
+  141 |         <h3 className="section-title">Script Library ({scripts.length})</h3>
+  142 |         {scripts.length === 0 ? (
+  143 |           <div className="empty-card">
+  Plugin: vite:react-babel
+  File: /Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/src/components/ScriptsPage.tsx:140:6
+  138|        </div>
+  139|  
+  140|        <div className="page-section">
+     |        ^
+  141|          <h3 className="section-title">Script Library ({scripts.length})</h3>
+  142|          {scripts.length === 0 ? (
+      at constructor (/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/node_modules/@babel/parser/lib/index.js:365:19)
+      at TypeScriptParserMixin.raise (/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/node_modules/@babel/parser/lib/index.js:6616:19)
+      at TypeScriptParserMixin.jsxParseElementAt (/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/node_modules/@babel/parser/lib/index.js:4754:18)
+      at TypeScriptParserMixin.jsxParseElement (/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/node_modules/@babel/parser/lib/index.js:4761:17)
+      at TypeScriptParserMixin.parseExprAtom (/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/node_modules/@babel/parser/lib/index.js:4771:19)
+      at TypeScriptParserMixin.parseExprSubscripts (/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/node_modules/@babel/parser/lib/index.js:11098:23)
+      at TypeScriptParserMixin.parseUpdate (/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/node_modules/@babel/parser/lib/index.js:11083:21)
+      at TypeScriptParserMixin.parseMaybeUnary (/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/node_modules/@babel/parser/lib/index.js:11063:23)
+      at TypeScriptParserMixin.parseMaybeUnary (/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/node_modules/@babel/parser/lib/index.js:9854:18)
+      at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/node_modules/@babel/parser/lib/index.js:10916:61)
+      at TypeScriptParserMixin.parseExprOps (/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/node_modules/@babel/parser/lib/index.js:10921:23)
+      at TypeScriptParserMixin.parseMaybeConditional (/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/node_modules/@babel/parser/lib/index.js:10898:23)
+      at TypeScriptParserMixin.parseMaybeAssign (/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/node_modules/@babel/parser/lib/index.js:10848:21)
+      at /Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/node_modules/@babel/parser/lib/index.js:9792:39
+      at TypeScriptParserMixin.tryParse (/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/node_modules/@babel/parser/lib/index.js:6924:20)
+      at TypeScriptParserMixin.parseMaybeAssign (/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/node_modules/@babel/parser/lib/index.js:9792:18)
+      at /Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/node_modules/@babel/parser/lib/index.js:10817:39
+      at TypeScriptParserMixin.allowInAnd (/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/node_modules/@babel/parser/lib/index.js:12443:12)
+      at TypeScriptParserMixin.parseMaybeAssignAllowIn (/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/node_modules/@babel/parser/lib/index.js:10817:17)
+      at TypeScriptParserMixin.parseMaybeAssignAllowInOrVoidPattern (/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/node_modules/@babel/parser/lib/index.js:12510:17)
+      at TypeScriptParserMixin.parseParenAndDistinguishExpression (/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/node_modules/@babel/parser/lib/index.js:11692:28)
+      at TypeScriptParserMixin.parseExprAtom (/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/node_modules/@babel/parser/lib/index.js:11348:23)
+      at TypeScriptParserMixin.parseExprAtom (/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/node_modules/@babel/parser/lib/index.js:4776:20)
+      at TypeScriptParserMixin.parseExprSubscripts (/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/node_modules/@babel/parser/lib/index.js:11098:23)
+      at TypeScriptParserMixin.parseUpdate (/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/node_modules/@babel/parser/lib/index.js:11083:21)
+      at TypeScriptParserMixin.parseMaybeUnary (/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/node_modules/@babel/parser/lib/index.js:11063:23)
+      at TypeScriptParserMixin.parseMaybeUnary (/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/node_modules/@babel/parser/lib/index.js:9854:18)
+      at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/node_modules/@babel/parser/lib/index.js:10916:61)
+      at TypeScriptParserMixin.parseExprOps (/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/node_modules/@babel/parser/lib/index.js:10921:23)
+      at TypeScriptParserMixin.parseMaybeConditional (/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/node_modules/@babel/parser/lib/index.js:10898:23)
+      at TypeScriptParserMixin.parseMaybeAssign (/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/node_modules/@babel/parser/lib/index.js:10848:21)
+      at TypeScriptParserMixin.parseMaybeAssign (/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/node_modules/@babel/parser/lib/index.js:9803:20)
+      at TypeScriptParserMixin.parseExpressionBase (/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/node_modules/@babel/parser/lib/index.js:10801:23)
+      at /Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/node_modules/@babel/parser/lib/index.js:10797:39
+      at TypeScriptParserMixin.allowInAnd (/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/node_modules/@babel/parser/lib/index.js:12438:16)
+      at TypeScriptParserMixin.parseExpression (/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/node_modules/@babel/parser/lib/index.js:10797:17)
+      at TypeScriptParserMixin.parseReturnStatement (/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/node_modules/@babel/parser/lib/index.js:13159:28)
+      at TypeScriptParserMixin.parseStatementContent (/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/node_modules/@babel/parser/lib/index.js:12815:21)
+      at TypeScriptParserMixin.parseStatementContent (/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/node_modules/@babel/parser/lib/index.js:9525:18)
+      at TypeScriptParserMixin.parseStatementLike (/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/node_modules/@babel/parser/lib/index.js:12784:17)
+      at TypeScriptParserMixin.parseStatementListItem (/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/node_modules/@babel/parser/lib/index.js:12764:17)
+      at TypeScriptParserMixin.parseBlockOrModuleBlockBody (/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/node_modules/@babel/parser/lib/index.js:13333:61)
+      at TypeScriptParserMixin.parseBlockBody (/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/node_modules/@babel/parser/lib/index.js:13326:10)
+      at TypeScriptParserMixin.parseBlock (/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/node_modules/@babel/parser/lib/index.js:13314:10)
+      at TypeScriptParserMixin.parseFunctionBody (/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/node_modules/@babel/parser/lib/index.js:12117:24)
+      at TypeScriptParserMixin.parseFunctionBodyAndFinish (/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/node_modules/@babel/parser/lib/index.js:12103:10)
+      at TypeScriptParserMixin.parseFunctionBodyAndFinish (/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/node_modules/@babel/parser/lib/index.js:9189:18)
+      at /Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/node_modules/@babel/parser/lib/index.js:13462:12
+      at TypeScriptParserMixin.withSmartMixTopicForbiddingContext (/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/node_modules/@babel/parser/lib/index.js:12420:14)
+      at TypeScriptParserMixin.parseFunction (/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/node_modules/@babel/parser/lib/index.js:13461:10)
+6:37:30 PM [vite] hmr update /src/components/TestExecution.tsx
+6:37:36 PM [vite] hmr update /src/components/TestExecution.tsx
+6:37:44 PM [vite] hmr update /src/components/TestExecution.tsx
+6:37:58 PM [vite] hmr update /src/components/TestExecution.tsx
+6:38:26 PM [vite] hmr update /src/components/TestExecution.css
+6:44:25 PM [vite] hmr update /src/components/ScriptsPage.tsx
+6:44:59 PM [vite] hmr update /src/components/TestHub.tsx, /src/components/ResultsPage.tsx, /src/components/ScriptsPage.tsx, /src/components/MonitoringPage.tsx, /src/components/TestExecution.tsx, /src/components/CreateTestModal.tsx, /src/components/ScriptEditor.tsx, /src/components/LoadRunnerImport.tsx
+6:45:10 PM [vite] hmr update /src/components/TestHub.tsx, /src/components/ResultsPage.tsx, /src/components/ScriptsPage.tsx, /src/components/MonitoringPage.tsx, /src/components/TestExecution.tsx, /src/components/CreateTestModal.tsx, /src/components/ScriptEditor.tsx, /src/components/LoadRunnerImport.tsx
+6:45:29 PM [vite] hmr update /src/components/TestExecution.tsx
+6:45:35 PM [vite] hmr update /src/components/TestExecution.tsx
+6:45:42 PM [vite] hmr update /src/components/TestExecution.tsx
+6:45:45 PM [vite] hmr update /src/components/TestExecution.tsx
+6:45:54 PM [vite] hmr update /src/components/TestExecution.tsx
+6:46:00 PM [vite] hmr update /src/components/TestExecution.tsx
+6:46:09 PM [vite] hmr update /src/components/TestExecution.tsx
+6:46:20 PM [vite] hmr update /src/components/ResultsPage.tsx
+6:46:25 PM [vite] hmr update /src/components/TestExecution.tsx
+7:28:09 PM [vite] hmr update /src/App.tsx
+7:28:20 PM [vite] hmr update /src/App.tsx
+7:34:02 PM [vite] hmr update /src/components/TestHub.tsx
+7:34:31 PM [vite] hmr update /src/components/TestHub.css

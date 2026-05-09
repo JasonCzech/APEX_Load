@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import {
   LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Legend, ReferenceArea,
@@ -25,9 +25,13 @@ export default function TestExecution({ testId, history, onBack }: Props) {
   const [error, setError] = useState('')
   const [expandedChart, setExpandedChart] = useState<string | null>(null)
   const [timeRange, setTimeRange] = useState<'3m' | '10m' | 'all' | 'custom'>('all')
-  const [zoomRange, setZoomRange] = useState<{ left: number; right: number } | null>(null)
+  const [zoomRange, setZoomRange] = useState<{ left: string | number; right: string | number } | null>(null)
   const [refAreaLeft, setRefAreaLeft] = useState<string | number>('')
   const [refAreaRight, setRefAreaRight] = useState<string | number>('')
+  const [showControls, setShowControls] = useState(false)
+  const [vuserTargets, setVuserTargets] = useState<Record<string, number>>({})
+  const [durationInput, setDurationInput] = useState('')
+  const [controlFeedback, setControlFeedback] = useState('')
 
   useEffect(() => {
     const load = async () => {
@@ -44,12 +48,45 @@ export default function TestExecution({ testId, history, onBack }: Props) {
   }, [api, testId])
 
   const isRunning = test?.status === 'RUNNING' || test?.status === 'INITIALIZING'
+
+  // Initialize vuser targets when test loads
+  useEffect(() => {
+    if (test?.groups && Object.keys(vuserTargets).length === 0) {
+      const targets: Record<string, number> = {}
+      test.groups.forEach((g: any) => { targets[g.name] = g.vusers })
+      setVuserTargets(targets)
+      setDurationInput(test.duration || '')
+    }
+  }, [test?.groups])
+
+  const handleScaleVUsers = useCallback(async (groupName: string) => {
+    const target = vuserTargets[groupName]
+    if (target === undefined || target < 0) return
+    try {
+      await api.scaleVUsers(testId, groupName, target)
+      setControlFeedback(`Scaled ${groupName} to ${target} VUsers`)
+      setTimeout(() => setControlFeedback(''), 3000)
+    } catch (e: any) {
+      setControlFeedback(`Error: ${e.message}`)
+    }
+  }, [api, testId, vuserTargets])
+
+  const handleAdjustDuration = useCallback(async () => {
+    if (!durationInput) return
+    try {
+      await api.adjustDuration(testId, durationInput)
+      setControlFeedback(`Duration adjusted to ${durationInput}`)
+      setTimeout(() => setControlFeedback(''), 3000)
+    } catch (e: any) {
+      setControlFeedback(`Error: ${e.message}`)
+    }
+  }, [api, testId, durationInput])
   
   // If we don't have WebSocket history (completed test), use backend history
   const chartData = useMemo(() => {
     if (history.length > 0) return history
     if (!test?.history) return []
-    return test.history.map((m: any) => {
+    return (test.history as any[]).map((m: any) => {
       const p: MetricsHistoryPoint = {
         time: new Date(m.timestamp).toLocaleTimeString(),
         vusers: m.active_vusers,
@@ -81,8 +118,8 @@ export default function TestExecution({ testId, history, onBack }: Props) {
 
   const filteredData = useMemo(() => {
     if (timeRange === 'custom' && zoomRange) {
-      const left = chartData.findIndex(d => d.time === zoomRange.left)
-      const right = chartData.findIndex(d => d.time === zoomRange.right)
+      const left = chartData.findIndex((d: MetricsHistoryPoint) => d.time === zoomRange.left)
+      const right = chartData.findIndex((d: MetricsHistoryPoint) => d.time === zoomRange.right)
       if (left !== -1 && right !== -1) {
         return chartData.slice(Math.min(left, right), Math.max(left, right) + 1)
       }
@@ -94,7 +131,7 @@ export default function TestExecution({ testId, history, onBack }: Props) {
 
   const summary = useMemo(() => {
     if (filteredData.length === 0) return null
-    const sum = filteredData.reduce((acc, d) => ({
+    const sum = filteredData.reduce((acc: { tps: number; avgMs: number; errorPct: number; vusers: number }, d: MetricsHistoryPoint) => ({
       tps: acc.tps + d.tps,
       avgMs: acc.avgMs + d.avgMs,
       errorPct: acc.errorPct + d.errorPct,
@@ -184,6 +221,80 @@ export default function TestExecution({ testId, history, onBack }: Props) {
         </div>
       </div>
 
+      {/* Live Controls Panel */}
+      {isRunning && (
+        <div className="live-controls-section">
+          <button
+            className="btn btn-secondary live-controls-toggle"
+            onClick={() => setShowControls(!showControls)}
+          >
+            {showControls ? 'Hide Controls' : 'Live Controls'}
+          </button>
+          {showControls && (
+            <div className="live-controls-panel">
+              <div className="control-group">
+                <h4 className="control-title">VUser Scaling</h4>
+                {(test?.groups || []).map((g: any) => (
+                  <div key={g.name} className="vuser-control-row">
+                    <span className="control-label">{g.name}</span>
+                    <span className="control-current">Current: {g.vusers}</span>
+                    <input
+                      type="range"
+                      className="vuser-slider"
+                      min={0}
+                      max={Math.max(g.vusers * 3, 100)}
+                      value={vuserTargets[g.name] ?? g.vusers}
+                      onChange={e => setVuserTargets(prev => ({ ...prev, [g.name]: parseInt(e.target.value) }))}
+                    />
+                    <input
+                      type="number"
+                      className="vuser-input"
+                      min={0}
+                      value={vuserTargets[g.name] ?? g.vusers}
+                      onChange={e => setVuserTargets(prev => ({ ...prev, [g.name]: parseInt(e.target.value) || 0 }))}
+                    />
+                    <button
+                      className="btn btn-sm btn-accent"
+                      onClick={() => handleScaleVUsers(g.name)}
+                      disabled={(vuserTargets[g.name] ?? g.vusers) === g.vusers}
+                    >
+                      Apply
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <div className="control-group">
+                <h4 className="control-title">Duration</h4>
+                <div className="duration-control-row">
+                  <span className="control-label">Target</span>
+                  <input
+                    type="text"
+                    className="duration-input"
+                    placeholder="e.g. 10m, 1h30m"
+                    value={durationInput}
+                    onChange={e => setDurationInput(e.target.value)}
+                  />
+                  <div className="duration-quick-btns">
+                    <button className="btn btn-sm btn-secondary" onClick={() => setDurationInput('5m')}>5m</button>
+                    <button className="btn btn-sm btn-secondary" onClick={() => setDurationInput('10m')}>10m</button>
+                    <button className="btn btn-sm btn-secondary" onClick={() => setDurationInput('30m')}>30m</button>
+                    <button className="btn btn-sm btn-secondary" onClick={() => setDurationInput('1h')}>1h</button>
+                  </div>
+                  <button className="btn btn-sm btn-accent" onClick={handleAdjustDuration}>
+                    Apply
+                  </button>
+                </div>
+              </div>
+              {controlFeedback && (
+                <div className={`control-feedback ${controlFeedback.startsWith('Error') ? 'error' : 'success'}`}>
+                  {controlFeedback}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Group config summary */}
       {isMultiGroup && (
         <div className="group-config-bar">
@@ -267,8 +378,8 @@ export default function TestExecution({ testId, history, onBack }: Props) {
               { id: 'vusers', title: 'Virtual Users', type: 'area', dataKey: 'vusers', color: 'var(--chart-1)' },
               { id: 'tps', title: 'Transactions Per Second', type: 'line-multi', totalKey: 'tps' },
               { id: 'latency', title: 'Response Time (ms)', type: 'line-latency' },
-              { id: 'errors', title: 'Error Rate (%)', type: 'area', dataKey: 'errorPct', color: 'var(--chart-4)', domain: [0, 'auto'] },
-              { id: 'cpu', title: 'CPU Usage (%)', type: 'area-multi', keys: [{k:'cpuProcess', n:'VUsers', c:'var(--chart-1)'}, {k:'cpuFree', n:'System', c:'var(--chart-2)'}], domain: [0, 100] },
+              { id: 'errors', title: 'Error Rate (%)', type: 'area', dataKey: 'errorPct', color: 'var(--chart-4)', domain: [0, 'auto'] as [number, string] },
+              { id: 'cpu', title: 'CPU Usage (%)', type: 'area-multi', keys: [{k:'cpuProcess', n:'VUsers', c:'var(--chart-1)'}, {k:'cpuFree', n:'System', c:'var(--chart-2)'}], domain: [0, 100] as [number, number] },
               { id: 'mem', title: 'Memory Usage (MB)', type: 'area-multi', keys: [{k:'memProcess', n:'VUsers', c:'var(--chart-4)'}, {k:'memFree', n:'System', c:'var(--chart-5)'}] },
               { id: 'io', title: 'Network & Disk I/O (KB/s)', type: 'line-io' }
             ]
@@ -293,13 +404,13 @@ export default function TestExecution({ testId, history, onBack }: Props) {
                     <AreaChart 
                       data={filteredData} 
                       syncId="metrics"
-                      onMouseDown={e => e && setRefAreaLeft(e.activeLabel)}
-                      onMouseMove={e => e && refAreaLeft && setRefAreaRight(e.activeLabel)}
+                      onMouseDown={e => e && setRefAreaLeft(e.activeLabel ?? '')}
+                      onMouseMove={e => e && refAreaLeft && setRefAreaRight(e.activeLabel ?? '')}
                       onMouseUp={handleZoom}
                     >
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                       <XAxis dataKey="time" stroke="var(--text-muted)" fontSize={11} />
-                      <YAxis stroke="var(--text-muted)" fontSize={11} domain={c.domain} />
+                      <YAxis stroke="var(--text-muted)" fontSize={11} domain={c.domain as any} />
                       <Tooltip
                         contentStyle={{ background: 'rgba(33, 36, 47, 0.2)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.2)' }}
                         labelStyle={{ color: 'var(--text-primary)', fontWeight: 700, marginBottom: 4 }}
@@ -314,8 +425,8 @@ export default function TestExecution({ testId, history, onBack }: Props) {
                     <LineChart 
                       data={filteredData} 
                       syncId="metrics"
-                      onMouseDown={e => e && setRefAreaLeft(e.activeLabel)}
-                      onMouseMove={e => e && refAreaLeft && setRefAreaRight(e.activeLabel)}
+                      onMouseDown={e => e && setRefAreaLeft(e.activeLabel ?? '')}
+                      onMouseMove={e => e && refAreaLeft && setRefAreaRight(e.activeLabel ?? '')}
                       onMouseUp={handleZoom}
                     >
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
@@ -339,8 +450,8 @@ export default function TestExecution({ testId, history, onBack }: Props) {
                     <LineChart 
                       data={filteredData} 
                       syncId="metrics"
-                      onMouseDown={e => e && setRefAreaLeft(e.activeLabel)}
-                      onMouseMove={e => e && refAreaLeft && setRefAreaRight(e.activeLabel)}
+                      onMouseDown={e => e && setRefAreaLeft(e.activeLabel ?? '')}
+                      onMouseMove={e => e && refAreaLeft && setRefAreaRight(e.activeLabel ?? '')}
                       onMouseUp={handleZoom}
                     >
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
@@ -366,13 +477,13 @@ export default function TestExecution({ testId, history, onBack }: Props) {
                     <AreaChart 
                       data={filteredData} 
                       syncId="metrics"
-                      onMouseDown={e => e && setRefAreaLeft(e.activeLabel)}
-                      onMouseMove={e => e && refAreaLeft && setRefAreaRight(e.activeLabel)}
+                      onMouseDown={e => e && setRefAreaLeft(e.activeLabel ?? '')}
+                      onMouseMove={e => e && refAreaLeft && setRefAreaRight(e.activeLabel ?? '')}
                       onMouseUp={handleZoom}
                     >
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                       <XAxis dataKey="time" stroke="var(--text-muted)" fontSize={11} />
-                      <YAxis stroke="var(--text-muted)" fontSize={11} domain={c.domain} />
+                      <YAxis stroke="var(--text-muted)" fontSize={11} domain={c.domain as any} />
                       <Tooltip
                         contentStyle={{ background: 'rgba(33, 36, 47, 0.2)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.2)' }}
                         labelStyle={{ color: 'var(--text-primary)', fontWeight: 700, marginBottom: 4 }}
@@ -390,8 +501,8 @@ export default function TestExecution({ testId, history, onBack }: Props) {
                     <LineChart 
                       data={filteredData} 
                       syncId="metrics"
-                      onMouseDown={e => e && setRefAreaLeft(e.activeLabel)}
-                      onMouseMove={e => e && refAreaLeft && setRefAreaRight(e.activeLabel)}
+                      onMouseDown={e => e && setRefAreaLeft(e.activeLabel ?? '')}
+                      onMouseMove={e => e && refAreaLeft && setRefAreaRight(e.activeLabel ?? '')}
                       onMouseUp={handleZoom}
                     >
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />

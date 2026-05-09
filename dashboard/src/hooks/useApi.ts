@@ -97,7 +97,30 @@ export function useApi() {
     return res.json()
   }, [])
 
+  const deleteTest = useCallback(
+    (id: string) => request<any>(`/tests/${id}`, { method: 'DELETE' }),
+    [],
+  )
+
   const getHealth = useCallback(() => request<any>('/system/health'), [])
+
+  const scaleVUsers = useCallback(
+    (testId: string, group: string, targetVUsers: number) =>
+      request<any>(`/tests/${testId}/vusers`, {
+        method: 'PATCH',
+        body: JSON.stringify({ group, target_vusers: targetVUsers }),
+      }),
+    [],
+  )
+
+  const adjustDuration = useCallback(
+    (testId: string, duration: string) =>
+      request<any>(`/tests/${testId}/duration`, {
+        method: 'PATCH',
+        body: JSON.stringify({ duration }),
+      }),
+    [],
+  )
 
   return useMemo(
     () => ({
@@ -107,6 +130,7 @@ export function useApi() {
       startTest,
       stopTest,
       abortTest,
+      deleteTest,
       getMetrics,
       listScripts,
       createScript,
@@ -117,6 +141,8 @@ export function useApi() {
       exportScript,
       importLoadRunner,
       getHealth,
+      scaleVUsers,
+      adjustDuration,
     }),
     [
       listTests,
@@ -125,6 +151,7 @@ export function useApi() {
       startTest,
       stopTest,
       abortTest,
+      deleteTest,
       getMetrics,
       listScripts,
       createScript,
@@ -135,6 +162,8 @@ export function useApi() {
       exportScript,
       importLoadRunner,
       getHealth,
+      scaleVUsers,
+      adjustDuration,
     ],
   )
 }

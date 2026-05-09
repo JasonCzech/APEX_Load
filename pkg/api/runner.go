@@ -513,6 +513,84 @@ func (tr *TestRunner) AbortTest(id string) error {
 	return tr.StopTest(id)
 }
 
+func (tr *TestRunner) ScaleVUsers(id string, groupName string, targetVUsers int) error {
+	tr.mu.RLock()
+	test, ok := tr.tests[id]
+	tr.mu.RUnlock()
+	if !ok {
+		return fmt.Errorf("test not found: %s", id)
+	}
+	if test.Status != "RUNNING" {
+		return fmt.Errorf("test is %s, must be RUNNING to scale", test.Status)
+	}
+	if test.multiEngine == nil {
+		return fmt.Errorf("engine not initialized")
+	}
+	if targetVUsers < 0 {
+		return fmt.Errorf("target vusers must be non-negative")
+	}
+
+	if err := test.multiEngine.ScaleVUsers(groupName, targetVUsers); err != nil {
+		return err
+	}
+
+	// Update the test's group metadata
+	tr.mu.Lock()
+	totalVUsers := 0
+	for i := range test.Groups {
+		if test.Groups[i].Name == groupName {
+			test.Groups[i].VUsers = targetVUsers
+		}
+		totalVUsers += test.Groups[i].VUsers
+	}
+	test.TotalVUsers = totalVUsers
+	tr.mu.Unlock()
+
+	tr.hub.BroadcastJSON(map[string]any{
+		"type":          "vusers_changed",
+		"test_id":       id,
+		"group":         groupName,
+		"target_vusers": targetVUsers,
+		"total_vusers":  totalVUsers,
+		"timestamp":     time.Now(),
+	})
+
+	return nil
+}
+
+func (tr *TestRunner) AdjustDuration(id string, newDuration time.Duration) error {
+	tr.mu.RLock()
+	test, ok := tr.tests[id]
+	tr.mu.RUnlock()
+	if !ok {
+		return fmt.Errorf("test not found: %s", id)
+	}
+	if test.Status != "RUNNING" {
+		return fmt.Errorf("test is %s, must be RUNNING to adjust duration", test.Status)
+	}
+	if test.multiEngine == nil {
+		return fmt.Errorf("engine not initialized")
+	}
+
+	if err := test.multiEngine.AdjustDuration(newDuration); err != nil {
+		return err
+	}
+
+	tr.mu.Lock()
+	test.Duration = newDuration
+	test.DurationStr = newDuration.String()
+	tr.mu.Unlock()
+
+	tr.hub.BroadcastJSON(map[string]any{
+		"type":         "duration_changed",
+		"test_id":      id,
+		"new_duration": newDuration.String(),
+		"timestamp":    time.Now(),
+	})
+
+	return nil
+}
+
 func (tr *TestRunner) runTest(test *ManagedTest) {
 	mge, err := engine.NewMultiGroup(engine.MultiGroupConfig{
 		Groups:   test.groupSpecs,

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/jasonczech/stormrunner/pkg/dsl"
 )
@@ -161,6 +162,70 @@ func (s *Server) handleValidateScript(w http.ResponseWriter, r *http.Request) {
 		"script_id": id,
 		"valid":     valid,
 		"issues":    issues,
+	})
+}
+
+func (s *Server) handleScaleVUsers(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var req struct {
+		Group       string `json:"group"`
+		TargetVUsers int   `json:"target_vusers"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+	if req.Group == "" {
+		writeError(w, http.StatusBadRequest, "group name is required")
+		return
+	}
+	if req.TargetVUsers < 0 {
+		writeError(w, http.StatusBadRequest, "target_vusers must be non-negative")
+		return
+	}
+
+	if err := s.runner.ScaleVUsers(id, req.Group, req.TargetVUsers); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"test_id":       id,
+		"group":         req.Group,
+		"target_vusers": req.TargetVUsers,
+		"status":        "scaled",
+	})
+}
+
+func (s *Server) handleAdjustDuration(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var req struct {
+		Duration string `json:"duration"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+
+	dur, err := time.ParseDuration(req.Duration)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid duration %q: %v", req.Duration, err))
+		return
+	}
+	if dur <= 0 {
+		writeError(w, http.StatusBadRequest, "duration must be positive")
+		return
+	}
+
+	if err := s.runner.AdjustDuration(id, dur); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"test_id":      id,
+		"new_duration": req.Duration,
+		"status":       "adjusted",
 	})
 }
 

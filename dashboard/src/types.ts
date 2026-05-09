@@ -19,6 +19,8 @@ export interface TestSummary {
   ended_at?: string
   live_metrics?: LiveMetrics
   error?: string
+  history?: any[]
+  start_time?: string
   // backwards compat
   script_id?: string
   script_name?: string
@@ -118,7 +120,7 @@ export interface MetricsHistoryPoint {
   netRecv?: number
   diskRead?: number
   diskWrite?: number
-  [key: string]: string | number // dynamic group keys like "Group A_tps"
+  [key: string]: string | number | undefined
 }
 
 export interface HealthResponse {

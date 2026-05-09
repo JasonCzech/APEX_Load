@@ -123,7 +123,6 @@ export default function ScriptsPage() {
           <h2>Scripts</h2>
           <p className="page-subtitle">Manage your test scripts and upload new ones</p>
         </div>
-        </div>
         <div style={{ display: 'flex', gap: 8 }}>
           {selectedIds.size > 0 && (
             <button className="btn btn-ghost" style={{ color: 'var(--danger)' }} onClick={handleDeleteSelected}>
