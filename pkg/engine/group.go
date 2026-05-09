@@ -12,10 +12,12 @@ import (
 )
 
 type GroupConfig struct {
-	Name     string
-	Script   *dsl.Script
-	VUsers   int
-	RampUp   time.Duration
+	Name           string
+	Script         *dsl.Script
+	VUsers         int
+	RampUp         time.Duration
+	RampDown       time.Duration
+	InitStrategy   string // "at_runtime", "at_once"
 }
 
 type MultiGroupConfig struct {
@@ -70,16 +72,46 @@ func NewMultiGroup(cfg MultiGroupConfig) (*MultiGroupEngine, error) {
 }
 
 func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, error) {
-	ctx, cancel := context.WithTimeout(ctx, mge.duration)
-	mge.cancel = cancel
-	defer cancel()
-
 	mge.metrics.Start(time.Second)
 	defer mge.metrics.Stop()
+
+	// 1. Pre-initialization Phase (if strategy is "at_once")
+	var initWg sync.WaitGroup
+	for _, group := range mge.groups {
+		if group.InitStrategy != "at_once" {
+			continue
+		}
+		_ = buildProtoConfig(group.Script)
+		for i := 0; i < group.VUsers; i++ {
+			initWg.Add(1)
+			go func(grp GroupConfig) {
+				defer initWg.Done()
+				// Pre-initializing protocol instances would go here in a pooled model.
+			}(group)
+		}
+	}
+	initWg.Wait()
 
 	start := time.Now()
 	var wg sync.WaitGroup
 	groupResults := make([]GroupResult, len(mge.groups))
+
+	// Determine max ramp down to extend the total duration
+	maxRampDown := time.Duration(0)
+	for _, g := range mge.groups {
+		if g.RampDown > maxRampDown {
+			maxRampDown = g.RampDown
+		}
+	}
+
+	// totalCtx covers the entire execution (Duration + RampDown)
+	totalCtx, totalCancel := context.WithTimeout(ctx, mge.duration+maxRampDown)
+	mge.cancel = totalCancel
+	defer totalCancel()
+
+	// steadyStateCtx signals the end of the steady state period
+	steadyStateCtx, steadyStateCancel := context.WithTimeout(totalCtx, mge.duration)
+	defer steadyStateCancel()
 
 	vuserOffset := 0
 	for gi, group := range mge.groups {
@@ -93,8 +125,13 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 			rampDelay = group.RampUp / time.Duration(group.VUsers)
 		}
 
+		rampDownDelay := time.Duration(0)
+		if group.RampDown > 0 && group.VUsers > 1 {
+			rampDownDelay = group.RampDown / time.Duration(group.VUsers)
+		}
+
 		for i := 0; i < group.VUsers; i++ {
-			if ctx.Err() != nil {
+			if totalCtx.Err() != nil {
 				break
 			}
 
@@ -105,33 +142,48 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 			wg.Add(1)
 			vuserID := vuserOffset + i
 
+			// Create a per-VUser context that respects its individual ramp-down time
+			vuCtx, vuCancel := context.WithCancel(totalCtx)
+			
+			// Handle Ramp-Down for this specific VUser
+			go func(idx int, cancelFunc context.CancelFunc) {
+				<-steadyStateCtx.Done()
+				if rampDownDelay > 0 {
+					time.Sleep(time.Duration(idx) * rampDownDelay)
+				}
+				cancelFunc()
+			}(i, vuCancel)
+
 			vuProto, err := protocol.Get(group.Script.Protocol)
 			if err != nil {
 				slog.Error("failed to create protocol", "group", group.Name, "vuser", vuserID, "err", err)
+				vuCancel()
 				wg.Done()
 				continue
 			}
-			if err := vuProto.Init(ctx, protoConfig); err != nil {
+			if err := vuProto.Init(vuCtx, protoConfig); err != nil {
 				slog.Error("failed to init protocol", "group", group.Name, "vuser", vuserID, "err", err)
+				vuCancel()
 				wg.Done()
 				continue
 			}
 
 			mge.metrics.SetActiveVUsers(int64(vuserOffset + i + 1))
 
-			go func(gIdx int, grp GroupConfig) {
+			go func(grp GroupConfig, p protocol.Protocol, vCtx context.Context, vCancel context.CancelFunc) {
 				defer wg.Done()
-				defer vuProto.Teardown(context.Background())
+				defer vCancel()
+				defer p.Teardown(context.Background())
 
 				vu := &VUser{
-					ID:        vuserID,
-					Group:     grp.Name,
-					Proto:     vuProto,
-					Script:    grp.Script,
-					Metrics:   mge.metrics,
+					ID:      vuserID,
+					Group:   grp.Name,
+					Proto:   p,
+					Script:  grp.Script,
+					Metrics: mge.metrics,
 				}
-				vu.Run(ctx)
-			}(gi, group)
+				vu.Run(vCtx)
+			}(group, vuProto, vuCtx, vuCancel)
 		}
 
 		vuserOffset += group.VUsers

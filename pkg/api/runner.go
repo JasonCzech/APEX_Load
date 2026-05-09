@@ -48,14 +48,16 @@ type ManagedTest struct {
 }
 
 type TestGroup struct {
-	Name       string `json:"name"`
-	ScriptID   string `json:"script_id"`
-	ScriptName string `json:"script_name"`
-	Protocol   string `json:"protocol"`
-	VUsers     int    `json:"vusers"`
-	RampUp     string `json:"ramp_up,omitempty"`
-	rampUpDur  time.Duration
-	script     *dsl.Script
+	Name           string `json:"name"`
+	ScriptID       string `json:"script_id"`
+	ScriptName     string `json:"script_name"`
+	Protocol       string `json:"protocol"`
+	VUsers         int    `json:"vusers"`
+	RampUp         string `json:"ramp_up,omitempty"`
+	RampDown       string `json:"ramp_down,omitempty"`
+	Initialization string `json:"initialization,omitempty"`
+	rampUpDur      time.Duration
+	script         *dsl.Script
 }
 
 type LiveMetrics struct {
@@ -280,10 +282,12 @@ type RuntimeSettingsOverride struct {
 }
 
 type CreateGroupEntry struct {
-	Name     string `json:"name"`
-	ScriptID string `json:"script_id"`
-	VUsers   int    `json:"vusers"`
-	RampUp   string `json:"ramp_up,omitempty"`
+	Name           string `json:"name"`
+	ScriptID       string `json:"script_id"`
+	VUsers         int    `json:"vusers"`
+	RampUp         string `json:"ramp_up,omitempty"`
+	RampDown       string `json:"ramp_down,omitempty"`
+	InitStrategy   string `json:"initialization,omitempty"` // "at_runtime", "at_once"
 }
 
 func (tr *TestRunner) CreateTest(req CreateTestRequest) (*ManagedTest, error) {
@@ -349,15 +353,30 @@ func (tr *TestRunner) CreateTest(req CreateTestRequest) (*ManagedTest, error) {
 			}
 		}
 
+		var rampDown time.Duration
+		if g.RampDown != "" {
+			rampDown, err = time.ParseDuration(g.RampDown)
+			if err != nil {
+				return nil, fmt.Errorf("group[%d]: invalid ramp_down: %w", i, err)
+			}
+		}
+
+		initStrategy := g.InitStrategy
+		if initStrategy == "" {
+			initStrategy = "at_runtime"
+		}
+
 		testGroups = append(testGroups, TestGroup{
-			Name:       name,
-			ScriptID:   g.ScriptID,
-			ScriptName: script.Name,
-			Protocol:   script.Protocol,
-			VUsers:     vusers,
-			RampUp:     g.RampUp,
-			rampUpDur:  rampUp,
-			script:     script.Script,
+			Name:           name,
+			ScriptID:       g.ScriptID,
+			ScriptName:     script.Name,
+			Protocol:       script.Protocol,
+			VUsers:         vusers,
+			RampUp:         g.RampUp,
+			RampDown:       g.RampDown,
+			Initialization: initStrategy,
+			rampUpDur:      rampUp,
+			script:         script.Script,
 		})
 
 		// Apply test-level runtime overrides to a copy of the script
@@ -367,10 +386,12 @@ func (tr *TestRunner) CreateTest(req CreateTestRequest) (*ManagedTest, error) {
 		}
 
 		engineGroups = append(engineGroups, engine.GroupConfig{
-			Name:   name,
-			Script: &scriptCopy,
-			VUsers: vusers,
-			RampUp: rampUp,
+			Name:         name,
+			Script:       &scriptCopy,
+			VUsers:       vusers,
+			RampUp:       rampUp,
+			RampDown:     rampDown,
+			InitStrategy: initStrategy,
 		})
 
 		totalVUsers += vusers

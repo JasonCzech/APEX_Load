@@ -200,8 +200,9 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 	}
 
 	var totalDuration time.Duration
-	durations := make([]time.Duration, 0, len(results))
-	groupDurations := make(map[string][]time.Duration)
+	td := NewTDigest(200)
+	groupDigests := make(map[string]*TDigest)
+	groupDurationSum := make(map[string]time.Duration)
 
 	for _, r := range results {
 		snap.Transactions++
@@ -209,7 +210,7 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 			snap.Errors++
 		}
 		totalDuration += r.Duration
-		durations = append(durations, r.Duration)
+		td.Add(float64(r.Duration))
 
 		am, ok := snap.ByAction[r.ActionName]
 		if !ok {
@@ -243,7 +244,11 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 			if !r.Success {
 				gm.Errors++
 			}
-			groupDurations[r.Group] = append(groupDurations[r.Group], r.Duration)
+			groupDurationSum[r.Group] += r.Duration
+			if _, ok := groupDigests[r.Group]; !ok {
+				groupDigests[r.Group] = NewTDigest(200)
+			}
+			groupDigests[r.Group].Add(float64(r.Duration))
 		}
 	}
 
@@ -251,49 +256,22 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 		snap.AvgDuration = totalDuration / time.Duration(snap.Transactions)
 		snap.TPS = float64(snap.Transactions) / window.Seconds()
 
-		sortDurations(durations)
-		snap.P50 = percentile(durations, 0.50)
-		snap.P90 = percentile(durations, 0.90)
-		snap.P95 = percentile(durations, 0.95)
-		snap.P99 = percentile(durations, 0.99)
+		snap.P50 = time.Duration(td.Quantile(0.50))
+		snap.P90 = time.Duration(td.Quantile(0.90))
+		snap.P95 = time.Duration(td.Quantile(0.95))
+		snap.P99 = time.Duration(td.Quantile(0.99))
 	}
 
 	for name, gm := range snap.ByGroup {
 		if gm.Transactions > 0 {
-			gd := groupDurations[name]
-			var sum time.Duration
-			for _, d := range gd {
-				sum += d
-			}
-			gm.AvgDuration = sum / time.Duration(gm.Transactions)
+			gd := groupDigests[name]
+			gm.AvgDuration = groupDurationSum[name] / time.Duration(gm.Transactions)
 			gm.TPS = float64(gm.Transactions) / window.Seconds()
-			sortDurations(gd)
-			gm.P50 = percentile(gd, 0.50)
-			gm.P90 = percentile(gd, 0.90)
-			gm.P99 = percentile(gd, 0.99)
+			gm.P50 = time.Duration(gd.Quantile(0.50))
+			gm.P90 = time.Duration(gd.Quantile(0.90))
+			gm.P99 = time.Duration(gd.Quantile(0.99))
 		}
 	}
 
 	return snap
-}
-
-func sortDurations(d []time.Duration) {
-	// insertion sort — fast for typical batch sizes (<10k)
-	for i := 1; i < len(d); i++ {
-		key := d[i]
-		j := i - 1
-		for j >= 0 && d[j] > key {
-			d[j+1] = d[j]
-			j--
-		}
-		d[j+1] = key
-	}
-}
-
-func percentile(sorted []time.Duration, p float64) time.Duration {
-	if len(sorted) == 0 {
-		return 0
-	}
-	idx := int(p * float64(len(sorted)-1))
-	return sorted[idx]
 }

@@ -86,6 +86,17 @@ WS     /api/v1/ws                    — Global WebSocket (all test events)
 WebSocket messages are JSON with `type` field: `metrics_update`, `test_created`,
 `test_started`, `test_complete`, `test_failed`, `test_stopping`.
 
+## Testing Policy
+Every new feature, bug fix, or refactor **must** include corresponding tests. This is a default
+requirement — not optional. When adding or modifying code:
+- Add unit tests for new functions and methods in `*_test.go` files alongside the source.
+- Cover both the happy path and meaningful edge cases (empty inputs, error conditions, boundary values).
+- Run `go test ./...` before considering any Go change complete.
+- If a change touches the dashboard, verify UI behavior in a browser (type checking alone is insufficient).
+- Test files live next to the code they test (e.g. `pkg/engine/metrics_test.go` tests `metrics.go`).
+- Use table-driven tests where multiple input/output combinations exist.
+- Do not mock internal packages unless required for isolation; prefer testing against real implementations.
+
 ## Build & Run
 ```bash
 # Build all binaries
