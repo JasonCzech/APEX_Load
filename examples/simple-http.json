@@ -1,0 +1,43 @@
+{
+  "script": {
+    "name": "Simple_HTTP_Test",
+    "version": "1.0.0",
+    "protocol": "http",
+
+    "config": {
+      "base_url": "https://httpbin.org",
+      "think_time": { "type": "fixed", "mean_ms": 1000 }
+    },
+
+    "actions": [
+      {
+        "name": "GET_Homepage",
+        "type": "GET",
+        "target": "/get",
+        "headers": { "Accept": "application/json" },
+        "assertions": [
+          { "type": "status_code", "expected": 200 }
+        ],
+        "think_time_after": true
+      },
+      {
+        "name": "POST_Data",
+        "type": "POST",
+        "target": "/post",
+        "headers": {
+          "Content-Type": "application/json",
+          "Accept": "application/json"
+        },
+        "body": "{\"test\": \"stormrunner\", \"timestamp\": \"{{fn.timestamp()}}\"}",
+        "extractors": [
+          { "name": "origin", "source": "body", "type": "jsonpath", "expression": "$.origin" }
+        ],
+        "assertions": [
+          { "type": "status_code", "expected": 200 },
+          { "type": "response_time_ms", "max": 5000 }
+        ],
+        "think_time_after": true
+      }
+    ]
+  }
+}

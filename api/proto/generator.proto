@@ -1,0 +1,135 @@
+syntax = "proto3";
+
+package stormrunner.v1;
+
+option go_package = "github.com/jasonczech/stormrunner/api/proto";
+
+// GeneratorControl is the gRPC service between the controller and generator pods.
+// Phase 1 uses direct in-process execution; this proto is defined for Phase 2 distribution.
+service GeneratorControl {
+  // AssignWork sends a test script and VUser allocation to a generator.
+  rpc AssignWork(WorkAssignment) returns (AssignmentAck);
+
+  // AdjustVUsers changes the VUser count for a running test on this generator.
+  rpc AdjustVUsers(VUserAdjustment) returns (AdjustmentAck);
+
+  // StopTest requests graceful shutdown of a test on this generator.
+  rpc StopTest(StopRequest) returns (StopAck);
+
+  // StreamMetrics is a bidirectional stream: generator sends metric batches,
+  // controller sends control signals (pause, adjust, stop).
+  rpc StreamMetrics(stream MetricsBatch) returns (stream ControlSignal);
+
+  // Heartbeat is a bidirectional keepalive stream.
+  rpc Heartbeat(stream HeartbeatPing) returns (stream HeartbeatPong);
+
+  // DistributeScript sends a compiled script to a generator for caching.
+  rpc DistributeScript(ScriptPayload) returns (ScriptAck);
+}
+
+message WorkAssignment {
+  string test_id = 1;
+  string script_id = 2;
+  bytes script_content = 3;
+  int32 vuser_count = 4;
+  int32 ramp_up_seconds = 5;
+  map<string, string> environment = 6;
+  repeated DataFile data_files = 7;
+}
+
+message DataFile {
+  string name = 1;
+  bytes content = 2;
+}
+
+message AssignmentAck {
+  bool accepted = 1;
+  string error_message = 2;
+  int32 available_capacity = 3;
+}
+
+message VUserAdjustment {
+  string test_id = 1;
+  int32 target_vusers = 2;
+  int32 ramp_seconds = 3;
+}
+
+message AdjustmentAck {
+  bool accepted = 1;
+  int32 current_vusers = 2;
+}
+
+message StopRequest {
+  string test_id = 1;
+  bool graceful = 2;
+}
+
+message StopAck {
+  bool acknowledged = 1;
+  int32 pending_vusers = 2;
+}
+
+message MetricsBatch {
+  string test_id = 1;
+  string generator_id = 2;
+  int64 timestamp_unix_ms = 3;
+  repeated TransactionMetric transactions = 4;
+  GeneratorStats stats = 5;
+}
+
+message TransactionMetric {
+  string name = 1;
+  int64 start_time_unix_ms = 2;
+  double duration_ms = 3;
+  double dns_ms = 4;
+  double connect_ms = 5;
+  double tls_ms = 6;
+  double ttfb_ms = 7;
+  int64 bytes_sent = 8;
+  int64 bytes_received = 9;
+  int32 status_code = 10;
+  bool success = 11;
+  string error_message = 12;
+}
+
+message GeneratorStats {
+  int32 active_vusers = 1;
+  double cpu_percent = 2;
+  int64 memory_bytes = 3;
+  int32 goroutine_count = 4;
+}
+
+message ControlSignal {
+  oneof signal {
+    VUserAdjustment adjust = 1;
+    StopRequest stop = 2;
+    PauseRequest pause = 3;
+  }
+}
+
+message PauseRequest {
+  string test_id = 1;
+  bool pause = 2;
+}
+
+message HeartbeatPing {
+  string generator_id = 1;
+  int64 timestamp_unix_ms = 2;
+  GeneratorStats stats = 3;
+}
+
+message HeartbeatPong {
+  int64 timestamp_unix_ms = 1;
+  repeated string active_test_ids = 2;
+}
+
+message ScriptPayload {
+  string script_id = 1;
+  bytes content = 2;
+  string content_hash = 3;
+}
+
+message ScriptAck {
+  bool cached = 1;
+  string content_hash = 2;
+}
