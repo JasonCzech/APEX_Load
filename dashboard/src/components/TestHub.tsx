@@ -54,19 +54,19 @@ function TestHub({ testStatuses, onSelectTest }: Props) {
     <div className="test-hub">
       <div className="hub-header">
         <div>
-          <h2>Test Hub</h2>
+          <h2>Scenario Hub</h2>
           <p className="hub-subtitle">
             {health ? `v${health.version} · ${health.ws_clients} connected` : 'Connecting...'}
           </p>
         </div>
         <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
-          New Test
+          New Scenario
         </button>
       </div>
 
       {activeTests.length > 0 && (
         <section className="hub-section">
-          <h3 className="section-title">Active Tests</h3>
+          <h3 className="section-title">Active Scenarios</h3>
           <div className="test-grid">
             {activeTests.map((test) => (
               <div key={test.id} className="test-card active" onClick={() => onSelectTest(test.id)}>
@@ -118,7 +118,7 @@ function TestHub({ testStatuses, onSelectTest }: Props) {
       <section className="hub-section">
         <h3 className="section-title">Recent Results</h3>
         {recentTests.length === 0 ? (
-          <p className="empty-state">No completed tests yet. Create and run a test to see results here.</p>
+          <p className="empty-state">No completed scenarios yet. Create and run a scenario to see results here.</p>
         ) : (
           <div className="test-list">
             {recentTests.map((test) => (
@@ -134,22 +134,7 @@ function TestHub({ testStatuses, onSelectTest }: Props) {
         )}
       </section>
 
-      <section className="hub-section">
-        <h3 className="section-title">Scripts ({scripts.length})</h3>
-        {scripts.length === 0 ? (
-          <p className="empty-state">No scripts uploaded. Use the API to upload a script first.</p>
-        ) : (
-          <div className="test-list">
-            {scripts.map((s) => (
-              <div key={s.id} className="test-row">
-                <span className="row-name">{s.name}</span>
-                <span className="row-meta">{s.protocol} · v{s.version}</span>
-                <span className="script-id">{s.id.slice(0, 8)}</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
+      {/* Scripts section removed per request - available in separate Scripts tab */}
 
       {showCreate && (
         <CreateTestModal

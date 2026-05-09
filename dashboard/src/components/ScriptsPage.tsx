@@ -12,6 +12,9 @@ export default function ScriptsPage() {
   const [subView, setSubView] = useState<SubView>('list')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingScript, setEditingScript] = useState<any>(null)
+  const [sortField, setSortField] = useState<string>('name')
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
 
   const refresh = useCallback(async () => {
     try {
@@ -38,6 +41,56 @@ export default function ScriptsPage() {
 
   const handleSaved = () => { refresh(); setSubView('list'); setEditingId(null); setEditingScript(null) }
   const handleImported = () => { refresh(); setSubView('list') }
+
+  const handleSort = (field: string) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortField(field)
+      setSortDirection('asc')
+    }
+  }
+
+  const sortedScripts = [...scripts].sort((a: any, b: any) => {
+    let vA = a[sortField]
+    let vB = b[sortField]
+    if (sortField === 'created_at') {
+      vA = new Date(vA).getTime()
+      vB = new Date(vB).getTime()
+    }
+    if (vA < vB) return sortDirection === 'asc' ? -1 : 1
+    if (vA > vB) return sortDirection === 'asc' ? 1 : -1
+    return 0
+  })
+
+  const SortIcon = ({ field }: { field: string }) => {
+    if (sortField !== field) return <span className="sort-icon">↕</span>
+    return <span className="sort-icon active">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+  }
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === scripts.length) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(scripts.map((s) => s.id)))
+    }
+  }
+
+  const toggleSelect = (id: string) => {
+    const next = new Set(selectedIds)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    setSelectedIds(next)
+  }
+
+  const handleDeleteSelected = async () => {
+    if (!confirm(`Delete ${selectedIds.size} selected scripts?`)) return
+    try {
+      await Promise.all(Array.from(selectedIds).map((id) => api.deleteScript(id)))
+      refresh()
+      setSelectedIds(new Set())
+    } catch { /* ignore */ }
+  }
 
   if (subView === 'create') {
     return (
@@ -70,7 +123,13 @@ export default function ScriptsPage() {
           <h2>Scripts</h2>
           <p className="page-subtitle">Manage your test scripts and upload new ones</p>
         </div>
+        </div>
         <div style={{ display: 'flex', gap: 8 }}>
+          {selectedIds.size > 0 && (
+            <button className="btn btn-ghost" style={{ color: 'var(--danger)' }} onClick={handleDeleteSelected}>
+              Delete Selected ({selectedIds.size})
+            </button>
+          )}
           <button className="btn btn-ghost" onClick={() => setSubView('import')}>
             <span style={{ marginRight: 6 }}>⬆</span>Import LoadRunner
           </button>
@@ -96,24 +155,38 @@ export default function ScriptsPage() {
             <table>
               <thead>
                 <tr>
-                  <th>Name</th>
-                  <th>Protocol</th>
-                  <th>Version</th>
-                  <th>Created</th>
+                  <th style={{ width: 40 }}>
+                    <input
+                      type="checkbox"
+                      checked={scripts.length > 0 && selectedIds.size === scripts.length}
+                      onChange={toggleSelectAll}
+                    />
+                  </th>
+                  <th onClick={() => handleSort('name')} className="sortable">Name <SortIcon field="name" /></th>
+                  <th onClick={() => handleSort('protocol')} className="sortable">Protocol <SortIcon field="protocol" /></th>
+                  <th onClick={() => handleSort('version')} className="sortable">Version <SortIcon field="version" /></th>
+                  <th onClick={() => handleSort('created_at')} className="sortable">Date Added <SortIcon field="created_at" /></th>
                   <th>ID</th>
-                  <th>Actions</th>
+                  <th style={{ textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {scripts.map((s) => (
-                  <tr key={s.id}>
+                {sortedScripts.map((s) => (
+                  <tr key={s.id} className={selectedIds.has(s.id) ? 'selected' : ''}>
+                    <td>
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(s.id)}
+                        onChange={() => toggleSelect(s.id)}
+                      />
+                    </td>
                     <td className="cell-name">{s.name}</td>
                     <td><span className="protocol-badge">{s.protocol}</span></td>
                     <td>{s.version || '—'}</td>
                     <td className="cell-muted">{new Date(s.created_at).toLocaleDateString()}</td>
                     <td className="cell-mono">{s.id.slice(0, 8)}</td>
-                    <td>
-                      <div style={{ display: 'flex', gap: 4 }}>
+                    <td style={{ textAlign: 'right' }}>
+                      <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
                         <button className="btn btn-sm btn-ghost" onClick={() => handleEdit(s.id)}>Edit</button>
                         <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={() => handleDelete(s.id)}>Delete</button>
                       </div>

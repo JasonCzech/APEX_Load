@@ -176,14 +176,14 @@ export default function CreateTestModal({ scripts, onClose, onCreated }: Props) 
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h3>Create Test</h3>
+          <h3>Create Scenario</h3>
           <span className="total-vusers">{totalVUsers} total VUsers</span>
         </div>
         <form onSubmit={handleSubmit} className="modal-form">
           <div className="form-row">
             <div className="form-column flex-2">
               <label>
-                <span>Test Name</span>
+                <span>Scenario Name</span>
                 <input
                   type="text"
                   value={name}
@@ -395,7 +395,7 @@ export default function CreateTestModal({ scripts, onClose, onCreated }: Props) 
               className="btn btn-primary"
               disabled={loading || groups.every((g) => !g.scriptId)}
             >
-              {loading ? 'Creating...' : `Create Test (${groups.length} group${groups.length > 1 ? 's' : ''})`}
+              {loading ? 'Creating...' : `Create Scenario (${groups.length} group${groups.length > 1 ? 's' : ''})`}
             </button>
           </div>
         </form>

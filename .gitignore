@@ -10,6 +10,7 @@ stormctl
 *.dylib
 *.test
 *.prof
+dashboard/dist/
 
 # OS specific
 .DS_Store
@@ -45,4 +46,11 @@ coverage.html
 vendor/
 .env
 *.pem
+
+# Data and Logs
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+*.log
 

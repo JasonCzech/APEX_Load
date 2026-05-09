@@ -24,7 +24,7 @@ const NAV_ITEMS: { id: NavPage; label: string; icon: JSX.Element }[] = [
   },
   {
     id: 'tests',
-    label: 'Tests',
+    label: 'Scenarios',
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
