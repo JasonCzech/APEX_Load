@@ -63,9 +63,7 @@ func (e *Engine) Run(ctx context.Context) (*RunResult, error) {
 		return nil, fmt.Errorf("protocol init: %w", err)
 	}
 
-	protoConfig := map[string]any{
-		"base_url": e.script.Config.BaseURL,
-	}
+	protoConfig := buildProtoConfig(e.script)
 	if err := proto.HealthCheck(ctx); err != nil {
 		slog.Warn("health check failed, proceeding anyway", "err", err)
 	}
