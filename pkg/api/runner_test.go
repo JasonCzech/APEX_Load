@@ -25,6 +25,10 @@ type metricsStoreSpy struct {
 	deletedScriptIDs      []string
 	savedTests            []*storage.TestRecord
 	deletedTestIDs        []string
+	listedScripts         []*dsl.Script
+	listedTests           []*storage.TestRecord
+	historyByTestID       map[string][]any
+	archiveByTestID       map[string]*storage.RunArchiveRecord
 }
 
 func (s *metricsStoreSpy) SaveScript(script *dsl.Script) error {
@@ -32,7 +36,7 @@ func (s *metricsStoreSpy) SaveScript(script *dsl.Script) error {
 	return nil
 }
 func (s *metricsStoreSpy) GetScript(id string) (*dsl.Script, error)                       { return nil, nil }
-func (s *metricsStoreSpy) ListScripts() ([]*dsl.Script, error)                            { return nil, nil }
+func (s *metricsStoreSpy) ListScripts() ([]*dsl.Script, error)                            { return s.listedScripts, nil }
 func (s *metricsStoreSpy) DeleteScript(id string) error {
 	s.deletedScriptIDs = append(s.deletedScriptIDs, id)
 	return nil
@@ -42,7 +46,7 @@ func (s *metricsStoreSpy) SaveTest(test *storage.TestRecord) error {
 	return nil
 }
 func (s *metricsStoreSpy) GetTest(id string) (*storage.TestRecord, error)                 { return nil, nil }
-func (s *metricsStoreSpy) ListTests() ([]*storage.TestRecord, error)                      { return nil, nil }
+func (s *metricsStoreSpy) ListTests() ([]*storage.TestRecord, error)                      { return s.listedTests, nil }
 func (s *metricsStoreSpy) UpdateTestStatus(id string, status string, endTime *time.Time, errStr string) error {
 	return nil
 }
@@ -57,9 +61,19 @@ func (s *metricsStoreSpy) SaveHistory(testID string, timestamp time.Time, metric
 	s.saveHistoryCalls++
 	return nil
 }
-func (s *metricsStoreSpy) GetHistory(testID string) ([]any, error)                     { return nil, nil }
+func (s *metricsStoreSpy) GetHistory(testID string) ([]any, error) {
+	if s.historyByTestID == nil {
+		return nil, nil
+	}
+	return s.historyByTestID[testID], nil
+}
 func (s *metricsStoreSpy) SaveRunArchive(record *storage.RunArchiveRecord) error       { return nil }
-func (s *metricsStoreSpy) GetRunArchive(testID string) (*storage.RunArchiveRecord, error) { return nil, nil }
+func (s *metricsStoreSpy) GetRunArchive(testID string) (*storage.RunArchiveRecord, error) {
+	if s.archiveByTestID == nil {
+		return nil, nil
+	}
+	return s.archiveByTestID[testID], nil
+}
 func (s *metricsStoreSpy) SaveSetting(key string, value string) error                  { return nil }
 func (s *metricsStoreSpy) GetSetting(key string) (string, error)                       { return "", nil }
 func (s *metricsStoreSpy) Close() error                                                { return nil }
@@ -610,6 +624,73 @@ func TestScriptAndTestCrudPersistThroughStoreHelpers(t *testing.T) {
 	}
 	if len(store.deletedTestIDs) != 1 || store.deletedTestIDs[0] != testRun.ID {
 		t.Fatalf("expected DeleteTest store call for %s, got %#v", testRun.ID, store.deletedTestIDs)
+	}
+}
+
+func TestNewTestRunnerLoadsPersistedScriptsAndTests(t *testing.T) {
+	archive := &storage.RunArchiveRecord{TestID: "test-1", ArchivePath: "/tmp/archive", ManifestPath: "/tmp/archive/manifest.json"}
+	store := &metricsStoreSpy{
+		listedScripts: []*dsl.Script{{
+			ID:       "script-1",
+			Name:     "Checkout",
+			Protocol: "http",
+			Version:  "1.0.0",
+			CreatedAt: time.Date(2026, time.May, 10, 12, 0, 0, 0, time.UTC),
+		}},
+		listedTests: []*storage.TestRecord{{
+			ID:               "test-1",
+			Name:             "Recovered Run",
+			Status:           "COMPLETE",
+			ScenarioMode:     "goal_oriented",
+			ScriptShakeout:   true,
+			ResourceBaseline: true,
+			TotalVUsers:      25,
+			Duration:         int64(45 * time.Second),
+			StartTime:        time.Date(2026, time.May, 10, 12, 1, 0, 0, time.UTC),
+			Groups: []TestGroup{{
+				Name:       "buyers",
+				ScriptID:   "script-1",
+				ScriptName: "Checkout",
+				Protocol:   "http",
+				VUsers:     25,
+			}},
+		}},
+		historyByTestID: map[string][]any{
+			"test-1": {map[string]any{
+				"timestamp": time.Date(2026, time.May, 10, 12, 1, 30, 0, time.UTC),
+				"active_vusers": float64(20),
+				"tps": float64(12.5),
+				"avg_response_ms": float64(150),
+				"error_pct": float64(0),
+				"total_transactions": float64(100),
+				"total_errors": float64(0),
+			}},
+		},
+		archiveByTestID: map[string]*storage.RunArchiveRecord{"test-1": archive},
+	}
+
+	runner := NewTestRunner(2, NewHub(), store)
+
+	script, ok := runner.GetScript("script-1")
+	if !ok || script.Name != "Checkout" {
+		t.Fatalf("expected persisted script to be loaded, got %#v ok=%v", script, ok)
+	}
+
+	testRun, ok := runner.GetTest("test-1")
+	if !ok {
+		t.Fatal("expected persisted test to be loaded")
+	}
+	if testRun.Name != "Recovered Run" || testRun.Status != "COMPLETE" {
+		t.Fatalf("unexpected loaded test metadata: %#v", testRun)
+	}
+	if len(testRun.History) != 1 || testRun.LiveMetrics == nil {
+		t.Fatalf("expected persisted history to be loaded, got history=%#v live=%#v", testRun.History, testRun.LiveMetrics)
+	}
+	if testRun.Archive != archive {
+		t.Fatalf("expected persisted archive to be attached, got %#v", testRun.Archive)
+	}
+	if cachedArchive, ok := runner.GetRunArchive("test-1"); !ok || cachedArchive != archive {
+		t.Fatalf("expected archive cache lookup to return persisted archive, got %#v ok=%v", cachedArchive, ok)
 	}
 }
 

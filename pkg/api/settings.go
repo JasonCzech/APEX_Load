@@ -173,12 +173,12 @@ func validateSystemSettings(settings SystemSettings) error {
 
 func (tr *TestRunner) loadSystemSettings(defaultMaxConcurrent int) {
 	tr.settings = defaultSystemSettings(defaultMaxConcurrent)
-	if tr.store == nil {
+	if tr.settingsStore == nil {
 		tr.maxTests = tr.settings.General.MaxConcurrentTests
 		return
 	}
 
-	raw, err := tr.store.GetSetting(systemSettingsStoreKey)
+	raw, err := tr.settingsStore.GetSetting(systemSettingsStoreKey)
 	if err != nil || raw == "" {
 		tr.maxTests = tr.settings.General.MaxConcurrentTests
 		return
@@ -215,8 +215,8 @@ func (tr *TestRunner) UpdateSystemSettings(settings SystemSettings) (SystemSetti
 		return SystemSettings{}, fmt.Errorf("encode settings: %w", err)
 	}
 
-	if tr.store != nil {
-		if err := tr.store.SaveSetting(systemSettingsStoreKey, string(encoded)); err != nil {
+	if tr.settingsStore != nil {
+		if err := tr.settingsStore.SaveSetting(systemSettingsStoreKey, string(encoded)); err != nil {
 			return SystemSettings{}, fmt.Errorf("persist settings: %w", err)
 		}
 	}

@@ -16,15 +16,47 @@ import (
 	"github.com/jasonczech/stormrunner/pkg/storage"
 )
 
+type scriptPersistence interface {
+	SaveScript(script *dsl.Script) error
+	DeleteScript(id string) error
+	ListScripts() ([]*dsl.Script, error)
+}
+
+type testPersistence interface {
+	SaveTest(test *storage.TestRecord) error
+	ListTests() ([]*storage.TestRecord, error)
+	UpdateTestStatus(id string, status string, endTime *time.Time, errStr string) error
+	DeleteTest(id string) error
+}
+
+type historyPersistence interface {
+	SaveHistory(testID string, timestamp time.Time, metrics any) error
+	GetHistory(testID string) ([]any, error)
+}
+
+type archivePersistence interface {
+	SaveRunArchive(record *storage.RunArchiveRecord) error
+	GetRunArchive(testID string) (*storage.RunArchiveRecord, error)
+}
+
+type settingsPersistence interface {
+	SaveSetting(key string, value string) error
+	GetSetting(key string) (string, error)
+}
+
 type TestRunner struct {
-	tests    map[string]*ManagedTest
-	scripts  map[string]*StoredScript
-	archives map[string]*storage.RunArchiveRecord
-	mu       sync.RWMutex
-	hub      *Hub
-	maxTests int
-	settings SystemSettings
-	store    storage.Store
+	tests             map[string]*ManagedTest
+	scripts           map[string]*StoredScript
+	archives          map[string]*storage.RunArchiveRecord
+	mu                sync.RWMutex
+	hub               *Hub
+	maxTests          int
+	settings          SystemSettings
+	scriptStore       scriptPersistence
+	testStore         testPersistence
+	historyStore      historyPersistence
+	archiveStore      archivePersistence
+	settingsStore     settingsPersistence
 }
 
 type ManagedTest struct {
@@ -159,81 +191,113 @@ type StoredScript struct {
 
 func NewTestRunner(maxTests int, hub *Hub, store storage.Store) *TestRunner {
 	tr := &TestRunner{
-		tests:    make(map[string]*ManagedTest),
-		scripts:  make(map[string]*StoredScript),
-		archives: make(map[string]*storage.RunArchiveRecord),
-		hub:      hub,
-		maxTests: maxTests,
-		store:    store,
+		tests:         make(map[string]*ManagedTest),
+		scripts:       make(map[string]*StoredScript),
+		archives:      make(map[string]*storage.RunArchiveRecord),
+		hub:           hub,
+		maxTests:      maxTests,
+		scriptStore:   store,
+		testStore:     store,
+		historyStore:  store,
+		archiveStore:  store,
+		settingsStore: store,
 	}
 	tr.loadSystemSettings(maxTests)
-
-	// Load existing scripts from store
-	if store != nil {
-		scripts, err := store.ListScripts()
-		if err == nil {
-			for _, s := range scripts {
-				tr.scripts[s.ID] = &StoredScript{
-					ID:        s.ID,
-					Name:      s.Name,
-					Protocol:  s.Protocol,
-					Version:   s.Version,
-					CreatedAt: s.CreatedAt,
-					Script:    s,
-				}
-			}
-		}
-
-		// Load recent tests
-		tests, err := store.ListTests()
-		if err == nil {
-			for _, t := range tests {
-				groups := decodeStoredGroups(t.Groups)
-				goalConfig := decodeStoredGoalConfig(t.GoalConfig)
-				runtimeSettings := decodeStoredRuntimeSettings(t.RuntimeSettings)
-				mt := &ManagedTest{
-					ID:               t.ID,
-					Name:             t.Name,
-					Status:           t.Status,
-					Groups:           groups,
-					ScenarioMode:     normalizeScenarioMode(t.ScenarioMode),
-					ScriptShakeout:   t.ScriptShakeout,
-					ResourceBaseline: t.ResourceBaseline,
-					GoalConfig:       goalConfig,
-					RuntimeSettings:  runtimeSettings,
-					TotalVUsers:      t.TotalVUsers,
-					Duration:         time.Duration(t.Duration),
-					DurationStr:      time.Duration(t.Duration).String(),
-					CreatedAt:        t.StartTime,
-					Error:            t.Error,
-				}
-				if t.EndTime != nil {
-					mt.EndedAt = t.EndTime
-				}
-				// Load history for this test
-				hist, err := store.GetHistory(t.ID)
-				if err == nil {
-					for _, h := range hist {
-						if m, ok := h.(map[string]any); ok {
-							// This is a bit lossy due to any -> map conversion,
-							// but works for basic history display
-							mt.History = append(mt.History, mapToLiveMetrics(m))
-						}
-					}
-					if len(mt.History) > 0 {
-						mt.LiveMetrics = mt.History[len(mt.History)-1]
-					}
-				}
-				if archive, err := store.GetRunArchive(t.ID); err == nil {
-					mt.Archive = archive
-					tr.archives[t.ID] = archive
-				}
-				tr.tests[t.ID] = mt
-			}
-		}
-	}
+	tr.loadStoredScripts()
+	tr.loadStoredTests()
 
 	return tr
+}
+
+func (tr *TestRunner) loadStoredScripts() {
+	if tr.scriptStore == nil {
+		return
+	}
+	scripts, err := tr.scriptStore.ListScripts()
+	if err != nil {
+		return
+	}
+	for _, script := range scripts {
+		tr.scripts[script.ID] = &StoredScript{
+			ID:        script.ID,
+			Name:      script.Name,
+			Protocol:  script.Protocol,
+			Version:   script.Version,
+			CreatedAt: script.CreatedAt,
+			Script:    script,
+		}
+	}
+}
+
+func (tr *TestRunner) loadStoredTests() {
+	if tr.testStore == nil {
+		return
+	}
+	tests, err := tr.testStore.ListTests()
+	if err != nil {
+		return
+	}
+	for _, record := range tests {
+		managedTest := managedTestFromRecord(record)
+		tr.loadStoredTestHistory(managedTest)
+		tr.loadStoredTestArchive(managedTest)
+		tr.tests[record.ID] = managedTest
+	}
+}
+
+func managedTestFromRecord(record *storage.TestRecord) *ManagedTest {
+	managedTest := &ManagedTest{
+		ID:               record.ID,
+		Name:             record.Name,
+		Status:           record.Status,
+		Groups:           decodeStoredGroups(record.Groups),
+		ScenarioMode:     normalizeScenarioMode(record.ScenarioMode),
+		ScriptShakeout:   record.ScriptShakeout,
+		ResourceBaseline: record.ResourceBaseline,
+		GoalConfig:       decodeStoredGoalConfig(record.GoalConfig),
+		RuntimeSettings:  decodeStoredRuntimeSettings(record.RuntimeSettings),
+		TotalVUsers:      record.TotalVUsers,
+		Duration:         time.Duration(record.Duration),
+		DurationStr:      time.Duration(record.Duration).String(),
+		CreatedAt:        record.StartTime,
+		Error:            record.Error,
+	}
+	if record.EndTime != nil {
+		managedTest.EndedAt = record.EndTime
+	}
+	return managedTest
+}
+
+func (tr *TestRunner) loadStoredTestHistory(test *ManagedTest) {
+	if tr.historyStore == nil {
+		return
+	}
+	history, err := tr.historyStore.GetHistory(test.ID)
+	if err != nil {
+		return
+	}
+	for _, entry := range history {
+		if metrics, ok := entry.(map[string]any); ok {
+			// This is a bit lossy due to any -> map conversion,
+			// but works for basic history display.
+			test.History = append(test.History, mapToLiveMetrics(metrics))
+		}
+	}
+	if len(test.History) > 0 {
+		test.LiveMetrics = test.History[len(test.History)-1]
+	}
+}
+
+func (tr *TestRunner) loadStoredTestArchive(test *ManagedTest) {
+	if tr.archiveStore == nil {
+		return
+	}
+	archive, err := tr.archiveStore.GetRunArchive(test.ID)
+	if err != nil {
+		return
+	}
+	test.Archive = archive
+	tr.archives[test.ID] = archive
 }
 
 // Helper to convert map back to LiveMetrics (since GetHistory returns any)
@@ -773,10 +837,10 @@ func (tr *TestRunner) refreshCapacityAdvisoryLocked(test *ManagedTest) {
 }
 
 func (tr *TestRunner) loadRunArchiveFromStore(id string) (*storage.RunArchiveRecord, bool) {
-	if tr.store == nil {
+	if tr.archiveStore == nil {
 		return nil, false
 	}
-	record, err := tr.store.GetRunArchive(id)
+	record, err := tr.archiveStore.GetRunArchive(id)
 	if err != nil {
 		return nil, false
 	}
@@ -784,14 +848,14 @@ func (tr *TestRunner) loadRunArchiveFromStore(id string) (*storage.RunArchiveRec
 }
 
 func (tr *TestRunner) saveStoredScript(script *dsl.Script) {
-	if tr.store != nil {
-		tr.store.SaveScript(script)
+	if tr.scriptStore != nil {
+		tr.scriptStore.SaveScript(script)
 	}
 }
 
 func (tr *TestRunner) deleteStoredScript(id string) {
-	if tr.store != nil {
-		tr.store.DeleteScript(id)
+	if tr.scriptStore != nil {
+		tr.scriptStore.DeleteScript(id)
 	}
 }
 
@@ -816,34 +880,34 @@ func buildManagedTestRecord(test *ManagedTest) *storage.TestRecord {
 }
 
 func (tr *TestRunner) saveManagedTestRecord(test *ManagedTest) {
-	if tr.store != nil {
-		tr.store.SaveTest(buildManagedTestRecord(test))
+	if tr.testStore != nil {
+		tr.testStore.SaveTest(buildManagedTestRecord(test))
 	}
 }
 
 func (tr *TestRunner) deleteStoredTest(id string) {
-	if tr.store != nil {
-		tr.store.DeleteTest(id)
+	if tr.testStore != nil {
+		tr.testStore.DeleteTest(id)
 	}
 }
 
 func (tr *TestRunner) saveLiveMetricsHistory(testID string, timestamp time.Time, live *LiveMetrics) {
-	if tr.store != nil {
-		tr.store.SaveHistory(testID, timestamp, live)
+	if tr.historyStore != nil {
+		tr.historyStore.SaveHistory(testID, timestamp, live)
 	}
 }
 
 func (tr *TestRunner) updateStoredTestStatus(testID string, status string, endTime *time.Time, errStr string) {
-	if tr.store != nil {
-		tr.store.UpdateTestStatus(testID, status, endTime, errStr)
+	if tr.testStore != nil {
+		tr.testStore.UpdateTestStatus(testID, status, endTime, errStr)
 	}
 }
 
 func (tr *TestRunner) saveRunArchiveRecord(record *storage.RunArchiveRecord) error {
-	if tr.store == nil || record == nil {
+	if tr.archiveStore == nil || record == nil {
 		return nil
 	}
-	return tr.store.SaveRunArchive(record)
+	return tr.archiveStore.SaveRunArchive(record)
 }
 
 func (tr *TestRunner) hydrateCapacityGroupsLocked(groups []TestGroup) []TestGroup {
