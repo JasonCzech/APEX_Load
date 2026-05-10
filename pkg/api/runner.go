@@ -466,115 +466,22 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 		return nil, fmt.Errorf("invalid duration: %w", err)
 	}
 
-	scenarioMode := normalizeScenarioMode(req.ScenarioMode)
-	if scenarioMode == "goal_oriented" {
-		if req.GoalConfig == nil || !hasGoalConfig(req.GoalConfig) {
-			return nil, fmt.Errorf("goal-oriented scenarios require at least one goal or guardrail setting")
-		}
-		if req.GoalConfig.MinVUsers != nil && req.GoalConfig.MaxVUsers != nil && *req.GoalConfig.MinVUsers > *req.GoalConfig.MaxVUsers {
-			return nil, fmt.Errorf("goal-oriented scenarios require min_vusers to be less than or equal to max_vusers")
-		}
-		if req.GoalConfig.StopOnSLABreach && req.GoalConfig.SLABreachWindow != "" {
-			if _, err := time.ParseDuration(req.GoalConfig.SLABreachWindow); err != nil {
-				return nil, fmt.Errorf("invalid sla_breach_window: %w", err)
-			}
-		}
+	scenarioMode, err := validateScenarioRequest(req)
+	if err != nil {
+		return nil, err
 	}
 
-	groups := req.Groups
-	if len(groups) == 0 && req.ScriptID != "" {
-		groups = []CreateGroupEntry{{
-			ScriptID: req.ScriptID,
-			VUsers:   req.VUsers,
-			RampUp:   req.RampUp,
-		}}
-	}
-	if len(groups) == 0 {
-		return nil, fmt.Errorf("at least one group (or script_id) is required")
+	groups, err := normalizeCreateTestGroups(req)
+	if err != nil {
+		return nil, err
 	}
 
-	testGroups := make([]TestGroup, 0, len(groups))
-	engineGroups := make([]engine.GroupConfig, 0, len(groups))
-	totalVUsers := 0
-
-	for i, g := range groups {
-		script, ok := tr.scripts[g.ScriptID]
-		if !ok {
-			return nil, fmt.Errorf("group[%d]: script not found: %s", i, g.ScriptID)
-		}
-
-		vusers := g.VUsers
-		if vusers <= 0 {
-			vusers = 10
-		}
-
-		var rampUp time.Duration
-		if g.RampUp != "" {
-			rampUp, err = time.ParseDuration(g.RampUp)
-			if err != nil {
-				return nil, fmt.Errorf("group[%d]: invalid ramp_up: %w", i, err)
-			}
-		}
-
-		name := g.Name
-		if name == "" {
-			name = script.Name
-			if len(groups) > 1 {
-				name = fmt.Sprintf("%s (#%d)", script.Name, i+1)
-			}
-		}
-
-		var rampDown time.Duration
-		if g.RampDown != "" {
-			rampDown, err = time.ParseDuration(g.RampDown)
-			if err != nil {
-				return nil, fmt.Errorf("group[%d]: invalid ramp_down: %w", i, err)
-			}
-		}
-
-		initStrategy := g.InitStrategy
-		if initStrategy == "" {
-			initStrategy = "at_runtime"
-		}
-
-		testGroups = append(testGroups, TestGroup{
-			Name:           name,
-			ScriptID:       g.ScriptID,
-			ScriptName:     script.Name,
-			Protocol:       script.Protocol,
-			VUsers:         vusers,
-			RampUp:         g.RampUp,
-			RampDown:       g.RampDown,
-			Initialization: initStrategy,
-			rampUpDur:      rampUp,
-			script:         script.Script,
-		})
-
-		scriptCopy := *script.Script
-		if req.RuntimeSettings != nil {
-			applyRuntimeOverrides(&scriptCopy, req.RuntimeSettings)
-		}
-
-		engineGroups = append(engineGroups, engine.GroupConfig{
-			Name:         name,
-			Script:       &scriptCopy,
-			VUsers:       vusers,
-			RampUp:       rampUp,
-			RampDown:     rampDown,
-			InitStrategy: initStrategy,
-		})
-
-		totalVUsers += vusers
+	testGroups, engineGroups, totalVUsers, err := tr.compileManagedTestGroupsLocked(groups, req.RuntimeSettings)
+	if err != nil {
+		return nil, err
 	}
 
-	testName := req.Name
-	if testName == "" {
-		if len(testGroups) == 1 {
-			testName = testGroups[0].ScriptName
-		} else {
-			testName = fmt.Sprintf("Multi-group (%d groups)", len(testGroups))
-		}
-	}
+	testName := deriveManagedTestName(req.Name, testGroups)
 
 	test := &ManagedTest{
 		ID:               id,
@@ -600,6 +507,143 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 	}
 
 	return test, nil
+}
+
+func validateScenarioRequest(req CreateTestRequest) (string, error) {
+	scenarioMode := normalizeScenarioMode(req.ScenarioMode)
+	if scenarioMode != "goal_oriented" {
+		return scenarioMode, nil
+	}
+
+	if req.GoalConfig == nil || !hasGoalConfig(req.GoalConfig) {
+		return "", fmt.Errorf("goal-oriented scenarios require at least one goal or guardrail setting")
+	}
+	if req.GoalConfig.MinVUsers != nil && req.GoalConfig.MaxVUsers != nil && *req.GoalConfig.MinVUsers > *req.GoalConfig.MaxVUsers {
+		return "", fmt.Errorf("goal-oriented scenarios require min_vusers to be less than or equal to max_vusers")
+	}
+	if req.GoalConfig.StopOnSLABreach && req.GoalConfig.SLABreachWindow != "" {
+		if _, err := time.ParseDuration(req.GoalConfig.SLABreachWindow); err != nil {
+			return "", fmt.Errorf("invalid sla_breach_window: %w", err)
+		}
+	}
+
+	return scenarioMode, nil
+}
+
+func normalizeCreateTestGroups(req CreateTestRequest) ([]CreateGroupEntry, error) {
+	if len(req.Groups) > 0 {
+		return req.Groups, nil
+	}
+	if req.ScriptID != "" {
+		return []CreateGroupEntry{{
+			ScriptID: req.ScriptID,
+			VUsers:   req.VUsers,
+			RampUp:   req.RampUp,
+		}}, nil
+	}
+	return nil, fmt.Errorf("at least one group (or script_id) is required")
+}
+
+func (tr *TestRunner) compileManagedTestGroupsLocked(groups []CreateGroupEntry, runtimeSettings *RuntimeSettingsOverride) ([]TestGroup, []engine.GroupConfig, int, error) {
+	testGroups := make([]TestGroup, 0, len(groups))
+	engineGroups := make([]engine.GroupConfig, 0, len(groups))
+	totalVUsers := 0
+
+	for i, group := range groups {
+		testGroup, engineGroup, err := tr.compileManagedTestGroupLocked(i, len(groups), group, runtimeSettings)
+		if err != nil {
+			return nil, nil, 0, err
+		}
+		testGroups = append(testGroups, testGroup)
+		engineGroups = append(engineGroups, engineGroup)
+		totalVUsers += testGroup.VUsers
+	}
+
+	return testGroups, engineGroups, totalVUsers, nil
+}
+
+func (tr *TestRunner) compileManagedTestGroupLocked(index int, totalGroups int, group CreateGroupEntry, runtimeSettings *RuntimeSettingsOverride) (TestGroup, engine.GroupConfig, error) {
+	script, ok := tr.scripts[group.ScriptID]
+	if !ok {
+		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: script not found: %s", index, group.ScriptID)
+	}
+
+	vusers := group.VUsers
+	if vusers <= 0 {
+		vusers = 10
+	}
+
+	rampUp, err := parseOptionalGroupDuration(group.RampUp, index, "ramp_up")
+	if err != nil {
+		return TestGroup{}, engine.GroupConfig{}, err
+	}
+	rampDown, err := parseOptionalGroupDuration(group.RampDown, index, "ramp_down")
+	if err != nil {
+		return TestGroup{}, engine.GroupConfig{}, err
+	}
+
+	name := group.Name
+	if name == "" {
+		name = script.Name
+		if totalGroups > 1 {
+			name = fmt.Sprintf("%s (#%d)", script.Name, index+1)
+		}
+	}
+
+	initStrategy := group.InitStrategy
+	if initStrategy == "" {
+		initStrategy = "at_runtime"
+	}
+
+	testGroup := TestGroup{
+		Name:           name,
+		ScriptID:       group.ScriptID,
+		ScriptName:     script.Name,
+		Protocol:       script.Protocol,
+		VUsers:         vusers,
+		RampUp:         group.RampUp,
+		RampDown:       group.RampDown,
+		Initialization: initStrategy,
+		rampUpDur:      rampUp,
+		script:         script.Script,
+	}
+
+	scriptCopy := *script.Script
+	if runtimeSettings != nil {
+		applyRuntimeOverrides(&scriptCopy, runtimeSettings)
+	}
+
+	engineGroup := engine.GroupConfig{
+		Name:         name,
+		Script:       &scriptCopy,
+		VUsers:       vusers,
+		RampUp:       rampUp,
+		RampDown:     rampDown,
+		InitStrategy: initStrategy,
+	}
+
+	return testGroup, engineGroup, nil
+}
+
+func parseOptionalGroupDuration(value string, index int, fieldName string) (time.Duration, error) {
+	if value == "" {
+		return 0, nil
+	}
+	duration, err := time.ParseDuration(value)
+	if err != nil {
+		return 0, fmt.Errorf("group[%d]: invalid %s: %w", index, fieldName, err)
+	}
+	return duration, nil
+}
+
+func deriveManagedTestName(requestName string, groups []TestGroup) string {
+	if requestName != "" {
+		return requestName
+	}
+	if len(groups) == 1 {
+		return groups[0].ScriptName
+	}
+	return fmt.Sprintf("Multi-group (%d groups)", len(groups))
 }
 
 func (tr *TestRunner) GetTest(id string) (*ManagedTest, bool) {

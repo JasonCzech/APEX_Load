@@ -149,6 +149,32 @@ func TestCreateTestPreservesRuntimeSettingsAndGroups(t *testing.T) {
 	}
 }
 
+func TestNormalizeCreateTestGroupsUsesSingleScriptFallback(t *testing.T) {
+	groups, err := normalizeCreateTestGroups(CreateTestRequest{
+		ScriptID: "script-1",
+		VUsers:   25,
+		RampUp:   "15s",
+	})
+	if err != nil {
+		t.Fatalf("normalizeCreateTestGroups returned error: %v", err)
+	}
+	if len(groups) != 1 {
+		t.Fatalf("expected 1 group, got %d", len(groups))
+	}
+	if groups[0].ScriptID != "script-1" {
+		t.Fatalf("expected script-1, got %q", groups[0].ScriptID)
+	}
+	if groups[0].VUsers != 25 {
+		t.Fatalf("expected 25 vusers, got %d", groups[0].VUsers)
+	}
+	if groups[0].RampUp != "15s" {
+		t.Fatalf("expected ramp-up 15s, got %q", groups[0].RampUp)
+	}
+	if groups[0].RampDown != "" {
+		t.Fatalf("expected empty ramp-down, got %q", groups[0].RampDown)
+	}
+}
+
 func TestEvaluateGoalControllerPlansScaleUpWithinGuardrails(t *testing.T) {
 	targetTPS := 300.0
 	minVUsers := 10
