@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback, memo } from 'react'
+import { useState, useEffect, useCallback, useMemo, memo } from 'react'
+import { ResponsiveContainer, LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip, Legend } from 'recharts'
 import { useApi } from '../hooks/useApi'
-import { TestSummary } from '../types'
+import { IntervalSummaryRecord, RunArchiveReport, TestSummary } from '../types'
 import StatusBadge from './StatusBadge'
 
 interface Props {
@@ -14,6 +15,10 @@ function ResultsPage({ testStatuses, onSelectTest }: Props) {
   const [sortField, setSortField] = useState<string>('start_time')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [comparisonReports, setComparisonReports] = useState<Record<string, RunArchiveReport>>({})
+  const [comparisonSummaries, setComparisonSummaries] = useState<Record<string, IntervalSummaryRecord[]>>({})
+  const [comparisonLoading, setComparisonLoading] = useState(false)
+  const [comparisonError, setComparisonError] = useState('')
 
   const refresh = useCallback(async () => {
     try {
@@ -34,6 +39,59 @@ function ResultsPage({ testStatuses, onSelectTest }: Props) {
     const s = testStatuses[t.id] || t.status
     return s === 'COMPLETE' || s === 'FAILED' || s === 'ABORTED'
   })
+
+  const selectedTests = useMemo(
+    () => completedTests.filter((test) => selectedIds.has(test.id)),
+    [completedTests, selectedIds],
+  )
+
+  const comparableTests = useMemo(
+    () => selectedTests.filter((test) => test.archive).slice(0, 2),
+    [selectedTests],
+  )
+
+  useEffect(() => {
+    if (comparableTests.length !== 2) {
+      setComparisonReports({})
+      setComparisonSummaries({})
+      setComparisonError('')
+      setComparisonLoading(false)
+      return
+    }
+
+    let cancelled = false
+    const loadReports = async () => {
+      setComparisonLoading(true)
+      setComparisonError('')
+      try {
+        const reports = await Promise.all(comparableTests.map(async (test) => {
+          const report = await api.getTestArchiveReport(test.id)
+          return [test.id, report as RunArchiveReport] as const
+        }))
+        const summaries = await Promise.all(comparableTests.map(async (test) => {
+          const response = await api.getTestArchiveSummaries(test.id, { limit: 120, offset: 0 })
+          return [test.id, response.summaries || []] as const
+        }))
+        if (!cancelled) {
+          setComparisonReports(Object.fromEntries(reports))
+          setComparisonSummaries(Object.fromEntries(summaries))
+        }
+      } catch (error: any) {
+        if (!cancelled) {
+          setComparisonReports({})
+          setComparisonSummaries({})
+          setComparisonError(error.message || 'Unable to load comparison reports')
+        }
+      } finally {
+        if (!cancelled) setComparisonLoading(false)
+      }
+    }
+
+    loadReports()
+    return () => {
+      cancelled = true
+    }
+  }, [api, comparableTests])
 
   const handleSort = (field: string) => {
     if (sortField === field) {
@@ -102,6 +160,66 @@ function ResultsPage({ testStatuses, onSelectTest }: Props) {
     } catch { /* ignore */ }
   }
 
+  const handleDownloadArchive = async (test: TestSummary, e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (!test.archive) return
+    try {
+      const blob = await api.downloadTestArchive(test.id)
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `${test.name.replace(/\s+/g, '-').toLowerCase()}-${test.id}.zip`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+    } catch {
+      // ignore for now
+    }
+  }
+
+  const comparisonCards = useMemo(() => {
+    if (comparableTests.length !== 2) return []
+    return comparableTests.map((test) => ({
+      test,
+      report: comparisonReports[test.id],
+    }))
+  }, [comparableTests, comparisonReports])
+
+  const comparisonActionRows = useMemo(() => {
+    if (comparisonCards.length !== 2) return []
+    const [left, right] = comparisonCards
+    const actionNames = new Set<string>([
+      ...Object.keys(left.report?.by_action || {}),
+      ...Object.keys(right.report?.by_action || {}),
+    ])
+    return Array.from(actionNames)
+      .map((name) => ({
+        name,
+        left: left.report?.by_action?.[name],
+        right: right.report?.by_action?.[name],
+        deltaMs: (right.report?.by_action?.[name]?.avg_response_ms || 0) - (left.report?.by_action?.[name]?.avg_response_ms || 0),
+      }))
+      .sort((a, b) => Math.abs(b.deltaMs) - Math.abs(a.deltaMs))
+      .slice(0, 8)
+  }, [comparisonCards])
+
+  const comparisonChartData = useMemo(() => {
+    if (comparisonCards.length !== 2) return []
+    const [left, right] = comparisonCards
+    const leftSeries = comparisonSummaries[left.test.id] || []
+    const rightSeries = comparisonSummaries[right.test.id] || []
+    const maxLength = Math.max(leftSeries.length, rightSeries.length)
+
+    return Array.from({ length: maxLength }, (_, index) => ({
+      sample: index + 1,
+      leftTps: leftSeries[index]?.tps,
+      rightTps: rightSeries[index]?.tps,
+      leftP95: leftSeries[index]?.p95_ms,
+      rightP95: rightSeries[index]?.p95_ms,
+    }))
+  }, [comparisonCards, comparisonSummaries])
+
   return (
     <div className="page">
       <div className="page-header">
@@ -109,12 +227,129 @@ function ResultsPage({ testStatuses, onSelectTest }: Props) {
           <h2>Results</h2>
           <p className="page-subtitle">Historical scenario results and performance reports</p>
         </div>
-        {selectedIds.size > 0 && (
-          <button className="btn btn-ghost" style={{ color: 'var(--danger)' }} onClick={handleDeleteSelected}>
-            Delete Selected ({selectedIds.size})
-          </button>
-        )}
+        <div className="results-actions">
+          {selectedIds.size === 2 && comparableTests.length === 2 && (
+            <span className="results-compare-hint">Comparing 2 archived runs</span>
+          )}
+          {selectedIds.size > 0 && (
+            <button className="btn btn-ghost" style={{ color: 'var(--danger)' }} onClick={handleDeleteSelected}>
+              Delete Selected ({selectedIds.size})
+            </button>
+          )}
+        </div>
       </div>
+
+      {(comparisonCards.length === 2 || comparisonLoading || comparisonError) && (
+        <div className="page-section">
+          <div className="results-compare-card">
+            <div className="results-compare-header">
+              <div>
+                <h3 className="section-title">Run Comparison</h3>
+                <p className="page-subtitle">Side-by-side view of two archived runs using saved report data.</p>
+              </div>
+            </div>
+
+            {comparisonLoading && <p className="results-compare-status">Loading comparison…</p>}
+            {comparisonError && <p className="results-compare-status error">{comparisonError}</p>}
+
+            {comparisonCards.length === 2 && comparisonCards.every((item) => item.report) && (
+              <>
+                <div className="results-compare-grid">
+                  {comparisonCards.map(({ test, report }) => (
+                    <div key={test.id} className="results-compare-panel">
+                      <div className="results-compare-panel-header">
+                        <div>
+                          <h4>{test.name}</h4>
+                          <p>{new Date(test.start_time || test.created_at).toLocaleString()}</p>
+                        </div>
+                        <StatusBadge status={testStatuses[test.id] || test.status} />
+                      </div>
+                      <div className="results-compare-metrics">
+                        <div className="results-compare-metric">
+                          <span className="results-compare-label">Transactions</span>
+                          <span className="results-compare-value">{report!.overview.transactions}</span>
+                        </div>
+                        <div className="results-compare-metric">
+                          <span className="results-compare-label">Avg Latency</span>
+                          <span className="results-compare-value">{report!.overview.avg_response_ms.toFixed(1)} ms</span>
+                        </div>
+                        <div className="results-compare-metric">
+                          <span className="results-compare-label">Error Rate</span>
+                          <span className="results-compare-value">{report!.overview.error_pct.toFixed(2)}%</span>
+                        </div>
+                        <div className="results-compare-metric">
+                          <span className="results-compare-label">Peak TPS</span>
+                          <span className="results-compare-value">{report!.overview.peak_tps.toFixed(1)}</span>
+                        </div>
+                        <div className="results-compare-metric">
+                          <span className="results-compare-label">Peak VUsers</span>
+                          <span className="results-compare-value">{report!.overview.peak_active_vusers}</span>
+                        </div>
+                        <div className="results-compare-metric">
+                          <span className="results-compare-label">CPU Peak</span>
+                          <span className="results-compare-value">{report!.resource_peaks.cpu_process_pct.toFixed(1)}%</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="results-compare-table-wrap">
+                  {comparisonChartData.length > 0 && (
+                    <div className="results-compare-chart-card">
+                      <h4 className="results-compare-chart-title">Archived Summary Curves</h4>
+                      <ResponsiveContainer width="100%" height={260}>
+                        <LineChart data={comparisonChartData}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                          <XAxis dataKey="sample" stroke="var(--text-muted)" fontSize={11} />
+                          <YAxis yAxisId="tps" stroke="var(--text-muted)" fontSize={11} />
+                          <YAxis yAxisId="p95" orientation="right" stroke="var(--text-muted)" fontSize={11} />
+                          <Tooltip
+                            contentStyle={{ background: 'rgba(33, 36, 47, 0.94)', border: '1px solid var(--border)', borderRadius: 10 }}
+                            labelFormatter={(value) => `Sample ${value}`}
+                            isAnimationActive={false}
+                          />
+                          <Legend />
+                          <Line yAxisId="tps" type="monotone" dataKey="leftTps" name={`${comparisonCards[0].test.name} TPS`} stroke="var(--chart-1)" dot={false} isAnimationActive={false} />
+                          <Line yAxisId="tps" type="monotone" dataKey="rightTps" name={`${comparisonCards[1].test.name} TPS`} stroke="var(--chart-2)" dot={false} isAnimationActive={false} />
+                          <Line yAxisId="p95" type="monotone" dataKey="leftP95" name={`${comparisonCards[0].test.name} P95`} stroke="var(--chart-4)" dot={false} strokeDasharray="4 2" isAnimationActive={false} />
+                          <Line yAxisId="p95" type="monotone" dataKey="rightP95" name={`${comparisonCards[1].test.name} P95`} stroke="var(--chart-5)" dot={false} strokeDasharray="4 2" isAnimationActive={false} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
+                  <table className="results-compare-table">
+                    <thead>
+                      <tr>
+                        <th>Action</th>
+                        <th>{comparisonCards[0].test.name} Avg</th>
+                        <th>{comparisonCards[1].test.name} Avg</th>
+                        <th>Latency Delta</th>
+                        <th>{comparisonCards[0].test.name} Errors</th>
+                        <th>{comparisonCards[1].test.name} Errors</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {comparisonActionRows.map((row) => (
+                        <tr key={row.name}>
+                          <td className="cell-name">{row.name}</td>
+                          <td>{row.left?.avg_response_ms?.toFixed(1) || '0.0'} ms</td>
+                          <td>{row.right?.avg_response_ms?.toFixed(1) || '0.0'} ms</td>
+                          <td className={row.deltaMs > 0 ? 'text-danger' : row.deltaMs < 0 ? 'text-success' : 'cell-muted'}>
+                            {row.deltaMs >= 0 ? '+' : ''}{row.deltaMs.toFixed(1)} ms
+                          </td>
+                          <td>{row.left?.errors || 0}</td>
+                          <td>{row.right?.errors || 0}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="page-section">
         <h3 className="section-title">Completed Scenarios ({completedTests.length})</h3>
@@ -146,6 +381,7 @@ function ResultsPage({ testStatuses, onSelectTest }: Props) {
                   <th onClick={() => handleSort('status')} className="sortable">Status <SortIcon field="status" /></th>
                   <th onClick={() => handleSort('total_vusers')} className="sortable">VUsers <SortIcon field="total_vusers" /></th>
                   <th>Groups</th>
+                  <th>Archive</th>
                   <th onClick={() => handleSort('start_time')} className="sortable">Date <SortIcon field="start_time" /></th>
                   <th>Duration</th>
                   <th style={{ textAlign: 'right' }}>Actions</th>
@@ -170,9 +406,15 @@ function ResultsPage({ testStatuses, onSelectTest }: Props) {
                     <td><StatusBadge status={testStatuses[test.id] || test.status} /></td>
                     <td>{test.total_vusers}</td>
                     <td>{test.groups?.length || 1}</td>
+                    <td className="cell-muted">{test.archive ? `${test.archive.transaction_count} tx` : 'Pending'}</td>
                     <td className="cell-muted">{new Date(test.start_time || test.created_at).toLocaleDateString()}</td>
                     <td className="cell-muted">{test.duration}</td>
                     <td style={{ textAlign: 'right' }}>
+                      {test.archive && (
+                        <button className="btn btn-sm btn-secondary" onClick={(e) => handleDownloadArchive(test, e)}>
+                          Archive
+                        </button>
+                      )}
                       <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={(e) => handleDelete(test.id, e)}>Delete</button>
                     </td>
                   </tr>

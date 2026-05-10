@@ -80,6 +80,13 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("PATCH /api/v1/tests/{id}/duration", cors(log(http.HandlerFunc(s.handleAdjustDuration))))
 	s.mux.Handle("DELETE /api/v1/tests/{id}", cors(log(http.HandlerFunc(s.handleDeleteTest))))
 	s.mux.Handle("GET /api/v1/tests/{id}/metrics", cors(log(http.HandlerFunc(s.handleGetMetrics))))
+	s.mux.Handle("GET /api/v1/tests/{id}/archive", cors(log(http.HandlerFunc(s.handleDownloadRunArchive))))
+	s.mux.Handle("GET /api/v1/tests/{id}/archive/manifest", cors(log(http.HandlerFunc(s.handleGetRunArchiveManifest))))
+	s.mux.Handle("GET /api/v1/tests/{id}/archive/files/{name}", cors(log(http.HandlerFunc(s.handleDownloadRunArchiveArtifact))))
+	s.mux.Handle("GET /api/v1/tests/{id}/archive/transactions", cors(log(http.HandlerFunc(s.handleGetRunArchiveTransactions))))
+	s.mux.Handle("GET /api/v1/tests/{id}/archive/resources", cors(log(http.HandlerFunc(s.handleGetRunArchiveResources))))
+	s.mux.Handle("GET /api/v1/tests/{id}/archive/summaries", cors(log(http.HandlerFunc(s.handleGetRunArchiveSummaries))))
+	s.mux.Handle("GET /api/v1/tests/{id}/archive/report", cors(log(http.HandlerFunc(s.handleGetRunArchiveReport))))
 
 	s.mux.Handle("POST /api/v1/scripts", cors(log(http.HandlerFunc(s.handleCreateScript))))
 	s.mux.Handle("GET /api/v1/scripts", cors(log(http.HandlerFunc(s.handleListScripts))))
@@ -99,6 +106,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("DELETE /api/v1/recorder/{id}", cors(log(http.HandlerFunc(s.handleDeleteRecording))))
 	s.mux.Handle("POST /api/v1/recorder/{id}/convert", cors(log(http.HandlerFunc(s.handleConvertRecording))))
 	s.mux.Handle("GET /api/v1/recorder/status", cors(log(http.HandlerFunc(s.handleRecorderStatus))))
+	s.mux.Handle("GET /api/v1/recorder/ca.pem", cors(log(http.HandlerFunc(s.handleRecorderCACert))))
 
 	s.mux.Handle("GET /api/v1/system/health", cors(log(http.HandlerFunc(s.handleHealthCheck))))
 

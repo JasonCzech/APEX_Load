@@ -24,8 +24,22 @@ type Store interface {
 	// History
 	SaveHistory(testID string, timestamp time.Time, metrics any) error
 	GetHistory(testID string) ([]any, error)
+	SaveRunArchive(record *RunArchiveRecord) error
+	GetRunArchive(testID string) (*RunArchiveRecord, error)
 
 	Close() error
+}
+
+type RunArchiveRecord struct {
+	TestID               string    `json:"test_id"`
+	SchemaVersion        string    `json:"schema_version"`
+	ArchivePath          string    `json:"archive_path"`
+	ManifestPath         string    `json:"manifest_path"`
+	TransactionCount     int64     `json:"transaction_count"`
+	ResourceSampleCount  int64     `json:"resource_sample_count"`
+	IntervalSummaryCount int64     `json:"interval_summary_count"`
+	CreatedAt            time.Time `json:"created_at"`
+	CompletedAt          time.Time `json:"completed_at"`
 }
 
 // TestRecord represents a persisted test run.

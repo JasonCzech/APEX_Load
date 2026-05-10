@@ -68,9 +68,134 @@ export interface TestSummary {
   runtime_settings?: RuntimeSettingsOverride
   scenario_mode?: ScenarioMode
   goal_config?: GoalConfig
+  archive?: RunArchiveRecord
   // backwards compat
   script_id?: string
   script_name?: string
+}
+
+export interface RunArchiveRecord {
+  test_id: string
+  schema_version: string
+  archive_path: string
+  manifest_path: string
+  transaction_count: number
+  resource_sample_count: number
+  interval_summary_count: number
+  created_at: string
+  completed_at: string
+}
+
+export interface RunArchiveManifest {
+  schema_version: string
+  test_id: string
+  test_name: string
+  created_at: string
+  completed_at?: string
+  status?: string
+  error?: string
+  transactions_file: string
+  transactions_parquet_file?: string
+  resource_samples_file: string
+  resource_samples_parquet_file?: string
+  interval_summaries_file: string
+  interval_summaries_parquet_file?: string
+  transaction_count: number
+  resource_sample_count: number
+  interval_summary_count: number
+}
+
+export interface TransactionEvent {
+  timestamp: string
+  test_id: string
+  test_name: string
+  group?: string
+  action_name?: string
+  duration_ms: number
+  dns_ms?: number
+  connect_ms?: number
+  tls_ms?: number
+  ttfb_ms?: number
+  bytes_sent?: number
+  bytes_received?: number
+  status_code?: number
+  success: boolean
+  error_message?: string
+  extractions?: Record<string, string>
+  snapshot?: {
+    request_method: string
+    request_url: string
+    request_headers?: Record<string, string>
+    request_body?: string
+    response_status: number
+    response_headers?: Record<string, string>
+    response_body?: string
+  }
+}
+
+export interface IntervalSummaryRecord {
+  timestamp: string
+  test_id: string
+  test_name: string
+  active_vusers: number
+  tps: number
+  avg_response_ms: number
+  error_pct: number
+  total_transactions: number
+  total_errors: number
+  p50_ms: number
+  p90_ms: number
+  p95_ms: number
+  p99_ms: number
+}
+
+export interface ArchivePage<T> {
+  count: number
+  total: number
+  limit: number
+  offset: number
+  filters?: Record<string, unknown>
+  transactions?: T[]
+  resources?: T[]
+  summaries?: T[]
+}
+
+export interface RunArchiveActionStats {
+  transactions: number
+  errors: number
+  error_pct: number
+  avg_response_ms: number
+  min_response_ms: number
+  max_response_ms: number
+}
+
+export interface RunArchiveResourcePeaks {
+  cpu_process_pct: number
+  mem_process_mb: number
+  net_sent_kbps: number
+  net_recv_kbps: number
+  disk_read_kbps: number
+  disk_write_kbps: number
+}
+
+export interface RunArchiveOverview {
+  transactions: number
+  errors: number
+  error_pct: number
+  avg_response_ms: number
+  min_response_ms: number
+  max_response_ms: number
+  resource_samples: number
+  interval_summaries: number
+  peak_tps: number
+  peak_active_vusers: number
+}
+
+export interface RunArchiveReport {
+  manifest: RunArchiveManifest
+  overview: RunArchiveOverview
+  by_action: Record<string, RunArchiveActionStats>
+  resource_peaks: RunArchiveResourcePeaks
 }
 
 export interface ScenarioDraftGroup {

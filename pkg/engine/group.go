@@ -18,6 +18,11 @@ type GroupConfig struct {
 	RampUp         time.Duration
 	RampDown       time.Duration
 	InitStrategy   string // "at_runtime", "at_once"
+	ResultSink     ResultSink
+}
+
+type ResultSink interface {
+	RecordResult(result *protocol.Result) error
 }
 
 type MultiGroupConfig struct {
@@ -240,11 +245,12 @@ func (mge *MultiGroupEngine) spawnVUser(vuserID int, group GroupConfig, protoCon
 		}()
 
 		vu := &VUser{
-			ID:      vuserID,
-			Group:   group.Name,
-			Proto:   vuProto,
-			Script:  group.Script,
-			Metrics: mge.metrics,
+			ID:         vuserID,
+			Group:      group.Name,
+			Proto:      vuProto,
+			Script:     group.Script,
+			Metrics:    mge.metrics,
+			ResultSink: group.ResultSink,
 		}
 		vu.Run(vuCtx)
 	}()

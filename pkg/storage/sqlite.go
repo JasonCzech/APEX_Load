@@ -66,6 +66,18 @@ func (s *SQLiteStore) init() error {
 			metrics_json TEXT,
 			FOREIGN KEY(test_id) REFERENCES tests(id)
 		)`,
+		`CREATE TABLE IF NOT EXISTS run_archives (
+			test_id TEXT PRIMARY KEY,
+			schema_version TEXT,
+			archive_path TEXT,
+			manifest_path TEXT,
+			transaction_count INTEGER,
+			resource_sample_count INTEGER,
+			interval_summary_count INTEGER,
+			created_at DATETIME,
+			completed_at DATETIME,
+			FOREIGN KEY(test_id) REFERENCES tests(id)
+		)`,
 	}
 
 	for _, q := range queries {
@@ -269,6 +281,9 @@ func (s *SQLiteStore) DeleteTest(id string) error {
 	if _, err := tx.Exec(`DELETE FROM test_history WHERE test_id = ?`, id); err != nil {
 		return err
 	}
+	if _, err := tx.Exec(`DELETE FROM run_archives WHERE test_id = ?`, id); err != nil {
+		return err
+	}
 	if _, err := tx.Exec(`DELETE FROM tests WHERE id = ?`, id); err != nil {
 		return err
 	}
@@ -300,6 +315,50 @@ func (s *SQLiteStore) GetHistory(testID string) ([]any, error) {
 		history = append(history, metrics)
 	}
 	return history, nil
+}
+
+func (s *SQLiteStore) SaveRunArchive(record *RunArchiveRecord) error {
+	_, err := s.db.Exec(`INSERT INTO run_archives (test_id, schema_version, archive_path, manifest_path, transaction_count, resource_sample_count, interval_summary_count, created_at, completed_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(test_id) DO UPDATE SET
+		schema_version=excluded.schema_version,
+		archive_path=excluded.archive_path,
+		manifest_path=excluded.manifest_path,
+		transaction_count=excluded.transaction_count,
+		resource_sample_count=excluded.resource_sample_count,
+		interval_summary_count=excluded.interval_summary_count,
+		created_at=excluded.created_at,
+		completed_at=excluded.completed_at`,
+		record.TestID,
+		record.SchemaVersion,
+		record.ArchivePath,
+		record.ManifestPath,
+		record.TransactionCount,
+		record.ResourceSampleCount,
+		record.IntervalSummaryCount,
+		record.CreatedAt,
+		record.CompletedAt,
+	)
+	return err
+}
+
+func (s *SQLiteStore) GetRunArchive(testID string) (*RunArchiveRecord, error) {
+	var record RunArchiveRecord
+	err := s.db.QueryRow(`SELECT test_id, schema_version, archive_path, manifest_path, transaction_count, resource_sample_count, interval_summary_count, created_at, completed_at FROM run_archives WHERE test_id = ?`, testID).Scan(
+		&record.TestID,
+		&record.SchemaVersion,
+		&record.ArchivePath,
+		&record.ManifestPath,
+		&record.TransactionCount,
+		&record.ResourceSampleCount,
+		&record.IntervalSummaryCount,
+		&record.CreatedAt,
+		&record.CompletedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &record, nil
 }
 
 func (s *SQLiteStore) Close() error {

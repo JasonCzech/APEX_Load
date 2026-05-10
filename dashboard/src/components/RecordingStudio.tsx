@@ -55,6 +55,28 @@ export default function RecordingStudio() {
   const [converting, setConverting] = useState(false)
   const [convertResult, setConvertResult] = useState<{ script: any; correlations: Correlation[]; warnings: string[] } | null>(null)
   const [selectedSession, setSelectedSession] = useState<RecordingSession | null>(null)
+  const [showSetup, setShowSetup] = useState(true)
+
+  const proxyPort = (proxyAddr || ':8081').split(':').pop() || '8081'
+
+  const handleDownloadCA = async (format: 'crt' | 'pem' = 'crt') => {
+    try {
+      const url = format === 'pem' ? '/api/v1/recorder/ca.pem?format=pem' : '/api/v1/recorder/ca.pem'
+      const res = await fetch(url)
+      if (!res.ok) throw new Error('Failed to download CA certificate')
+      const blob = await res.blob()
+      const blobUrl = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = blobUrl
+      a.download = format === 'pem' ? 'stormrunner-ca.pem' : 'stormrunner-ca.crt'
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(blobUrl)
+    } catch (e: any) {
+      showFeedback(e.message || 'Failed to download CA certificate', 'error')
+    }
+  }
 
   const showFeedback = (msg: string, type: 'success' | 'error' = 'success') => {
     setFeedback(msg)
@@ -156,20 +178,91 @@ export default function RecordingStudio() {
         <div className={`rec-feedback ${feedbackType}`}>{feedback}</div>
       )}
 
-      {/* Proxy Setup Info */}
-      <div className="rec-proxy-info">
-        <div className="rec-proxy-header">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="12" cy="12" r="10" />
-            <line x1="12" y1="16" x2="12" y2="12" />
-            <line x1="12" y1="8" x2="12.01" y2="8" />
+      {/* Proxy Setup */}
+      <div className="rec-setup-section">
+        <div className="rec-setup-toggle" onClick={() => setShowSetup(!showSetup)}>
+          <div className="rec-proxy-header">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="16" x2="12" y2="12" />
+              <line x1="12" y1="8" x2="12.01" y2="8" />
+            </svg>
+            <span>Proxy Setup</span>
+          </div>
+          <svg
+            className={`rec-chevron ${showSetup ? 'open' : ''}`}
+            width="16" height="16" viewBox="0 0 24 24" fill="none"
+            stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+          >
+            <polyline points="6 9 12 15 18 9" />
           </svg>
-          <span>Proxy Configuration</span>
         </div>
-        <p className="rec-proxy-detail">
-          Configure your browser to use HTTP proxy at <code>{proxyAddr || ':8081'}</code> then
-          start a recording session below. All HTTP traffic through the proxy will be captured.
-        </p>
+
+        {showSetup && (
+          <div className="rec-setup-steps">
+            <div className="rec-step">
+              <div className="rec-step-number">1</div>
+              <div className="rec-step-content">
+                <div className="rec-step-title">Download &amp; Install CA Certificate</div>
+                <div className="rec-step-desc">
+                  Install the Stormrunner CA certificate so the proxy can intercept HTTPS traffic.
+                </div>
+                <div className="rec-download-row">
+                  <button className="rec-download-btn" onClick={() => handleDownloadCA('crt')}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                      <polyline points="7 10 12 15 17 10" />
+                      <line x1="12" y1="15" x2="12" y2="3" />
+                    </svg>
+                    Download CA Certificate (.crt)
+                  </button>
+                  <button className="rec-download-alt" onClick={() => handleDownloadCA('pem')}>
+                    PEM format (Firefox / Linux)
+                  </button>
+                </div>
+                <div className="rec-os-instructions">
+                  <div><span className="rec-os-label">macOS:</span> Double-click the .crt file &rarr; Keychain Access opens &rarr; Find &ldquo;Stormrunner Recording Proxy CA&rdquo; &rarr; Double-click &rarr; Trust &rarr; Always Trust</div>
+                  <div><span className="rec-os-label">Windows:</span> Double-click .crt &rarr; Install Certificate &rarr; Local Machine &rarr; Place in &ldquo;Trusted Root Certification Authorities&rdquo;</div>
+                  <div><span className="rec-os-label">Firefox:</span> Download PEM format &rarr; Settings &rarr; Privacy &amp; Security &rarr; Certificates &rarr; View &rarr; Import &rarr; Check &ldquo;Trust for websites&rdquo;</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="rec-step">
+              <div className="rec-step-number">2</div>
+              <div className="rec-step-content">
+                <div className="rec-step-title">Configure Browser Proxy</div>
+                <div className="rec-step-desc">
+                  Route browser traffic through <code>localhost:{proxyPort}</code>
+                </div>
+                <div className="rec-os-instructions">
+                  <div>Use a browser extension like SwitchyOmega (Chrome) or FoxyProxy (Firefox) to route traffic through the proxy.</div>
+                  <div><span className="rec-os-label">System proxy:</span> macOS System Settings &rarr; Network &rarr; Wi-Fi &rarr; Details &rarr; Proxies &rarr; Web Proxy (HTTP) &amp; Secure Web Proxy (HTTPS) &rarr; <code>localhost</code> port <code>{proxyPort}</code></div>
+                </div>
+              </div>
+            </div>
+
+            <div className="rec-step">
+              <div className="rec-step-number">3</div>
+              <div className="rec-step-content">
+                <div className="rec-step-title">Start Recording</div>
+                <div className="rec-step-desc">
+                  Click &ldquo;Start Recording&rdquo; below, then browse the target website. All HTTP and HTTPS traffic will be captured.
+                </div>
+              </div>
+            </div>
+
+            <div className="rec-step">
+              <div className="rec-step-number">4</div>
+              <div className="rec-step-content">
+                <div className="rec-step-title">Stop &amp; Convert</div>
+                <div className="rec-step-desc">
+                  When done, stop the recording and convert to a test script. Remember to disable the proxy.
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Recording Controls */}

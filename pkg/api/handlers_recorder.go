@@ -111,6 +111,18 @@ func (s *Server) handleConvertRecording(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
+func (s *Server) handleRecorderCACert(w http.ResponseWriter, r *http.Request) {
+	certPEM := s.recorder.GetCACertPEM()
+	if certPEM == nil {
+		// Initialize the CA lazily so the cert is available for download.
+		s.recorder.HandleCACert(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "application/x-pem-file")
+	w.Header().Set("Content-Disposition", `attachment; filename="stormrunner-ca.pem"`)
+	w.Write(certPEM)
+}
+
 func (s *Server) handleRecorderStatus(w http.ResponseWriter, r *http.Request) {
 	active := s.recorder.ActiveSession()
 	var activeInfo any

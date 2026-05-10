@@ -1,12 +1,35 @@
 package api
 
 import (
+	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/jasonczech/stormrunner/pkg/dsl"
+	"github.com/jasonczech/stormrunner/pkg/protocol"
+	"github.com/jasonczech/stormrunner/pkg/storage"
 )
+
+type archiveStubProtocol struct{}
+
+func (p *archiveStubProtocol) Name() string { return "archive-stub" }
+func (p *archiveStubProtocol) Init(_ context.Context, _ map[string]any) error { return nil }
+func (p *archiveStubProtocol) Execute(_ context.Context, action *protocol.Action) (*protocol.Result, error) {
+	return &protocol.Result{
+		ActionName:    action.Name,
+		StartTime:     time.Now(),
+		Duration:      5 * time.Millisecond,
+		BytesSent:     128,
+		BytesReceived: 512,
+		StatusCode:    200,
+		Success:       true,
+	}, nil
+}
+func (p *archiveStubProtocol) Teardown(_ context.Context) error { return nil }
+func (p *archiveStubProtocol) HealthCheck(_ context.Context) error { return nil }
 
 func TestCreateTestPreservesRuntimeSettingsAndGroups(t *testing.T) {
 	hub := NewHub()
@@ -249,9 +272,140 @@ func TestStartTestFailsWhenScriptShakeoutFails(t *testing.T) {
 	}
 }
 
+func TestRunTestCreatesArchiveBundle(t *testing.T) {
+	archiveDir := t.TempDir()
+	t.Setenv("STORMRUNNER_ARCHIVE_DIR", archiveDir)
+
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	protocolName := "archive-stub-" + strings.ReplaceAll(strings.ToLower(t.Name()), "/", "-")
+	protocol.Register(protocolName, func() protocol.Protocol {
+		return &archiveStubProtocol{}
+	})
+
+	hub := NewHub()
+	runner := NewTestRunner(1, hub, store)
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-archive",
+		Name:     "Archive Script",
+		Protocol: protocolName,
+		Version:  "1.0.0",
+		Config:   dsl.ScriptConfig{},
+		Actions: []dsl.Action{{Name: "step-1", Type: "request", Target: "/"}},
+	})
+
+	test, err := runner.CreateTest(CreateTestRequest{
+		Name:     "Archive Run",
+		Duration: "2200ms",
+		ScriptID: "script-archive",
+		VUsers:   1,
+	})
+	if err != nil {
+		t.Fatalf("CreateTest returned error: %v", err)
+	}
+
+	if err := runner.StartTest(test.ID); err != nil {
+		t.Fatalf("StartTest returned error: %v", err)
+	}
+
+	completed := waitForTestStatus(t, runner, test.ID, "COMPLETE")
+	if completed.Archive == nil {
+		t.Fatal("expected completed test to include archive metadata")
+	}
+	if completed.Archive.TransactionCount == 0 {
+		t.Fatal("expected archive to record transaction events")
+	}
+	if completed.Archive.IntervalSummaryCount == 0 {
+		t.Fatal("expected archive to record interval summaries")
+	}
+
+	manifest, err := runner.GetRunArchiveManifest(test.ID)
+	if err != nil {
+		t.Fatalf("GetRunArchiveManifest returned error: %v", err)
+	}
+	if manifest.TransactionCount != completed.Archive.TransactionCount {
+		t.Fatalf("expected manifest transaction count %d, got %d", completed.Archive.TransactionCount, manifest.TransactionCount)
+	}
+	if manifest.TransactionsParquetFile == "" || manifest.ResourceSamplesParquetFile == "" || manifest.IntervalSummariesParquetFile == "" {
+		t.Fatalf("expected manifest parquet files to be populated, got %#v", manifest)
+	}
+
+	for _, name := range []string{"manifest.json", "transactions.jsonl", "interval_summaries.jsonl", "transactions.parquet", "resources.parquet", "interval_summaries.parquet"} {
+		if _, err := os.Stat(filepath.Join(completed.Archive.ArchivePath, name)); err != nil {
+			t.Fatalf("expected archive file %s to exist: %v", name, err)
+		}
+	}
+}
+
+func TestDeleteTestRemovesArchiveBundle(t *testing.T) {
+	archiveDir := t.TempDir()
+	t.Setenv("STORMRUNNER_ARCHIVE_DIR", archiveDir)
+
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	protocolName := "archive-delete-" + strings.ReplaceAll(strings.ToLower(t.Name()), "/", "-")
+	protocol.Register(protocolName, func() protocol.Protocol {
+		return &archiveStubProtocol{}
+	})
+
+	hub := NewHub()
+	runner := NewTestRunner(1, hub, store)
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-delete-archive",
+		Name:     "Delete Archive Script",
+		Protocol: protocolName,
+		Version:  "1.0.0",
+		Config:   dsl.ScriptConfig{},
+		Actions:  []dsl.Action{{Name: "step-1", Type: "request", Target: "/"}},
+	})
+
+	test, err := runner.CreateTest(CreateTestRequest{
+		Name:     "Delete Archive Run",
+		Duration: "2200ms",
+		ScriptID: "script-delete-archive",
+		VUsers:   1,
+	})
+	if err != nil {
+		t.Fatalf("CreateTest returned error: %v", err)
+	}
+	if err := runner.StartTest(test.ID); err != nil {
+		t.Fatalf("StartTest returned error: %v", err)
+	}
+
+	completed := waitForTestStatus(t, runner, test.ID, "COMPLETE")
+	if completed.Archive == nil {
+		t.Fatal("expected archive metadata after completion")
+	}
+	archivePath := completed.Archive.ArchivePath
+	if _, err := os.Stat(archivePath); err != nil {
+		t.Fatalf("expected archive directory to exist before delete: %v", err)
+	}
+
+	if !runner.DeleteTest(test.ID) {
+		t.Fatal("expected DeleteTest to succeed for completed run")
+	}
+	if _, ok := runner.GetTest(test.ID); ok {
+		t.Fatal("expected deleted test to be removed from runner")
+	}
+	if _, err := os.Stat(archivePath); !os.IsNotExist(err) {
+		t.Fatalf("expected archive directory to be removed, stat err=%v", err)
+	}
+	if _, ok := runner.GetRunArchive(test.ID); ok {
+		t.Fatal("expected archive metadata to be removed after delete")
+	}
+}
+
 func waitForTestStatus(t *testing.T, runner *TestRunner, testID string, want string) *ManagedTest {
 	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(12 * time.Second)
 	for time.Now().Before(deadline) {
 		test, ok := runner.GetTest(testID)
 		if !ok {

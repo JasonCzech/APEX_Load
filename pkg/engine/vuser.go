@@ -16,6 +16,7 @@ type VUser struct {
 	Proto         protocol.Protocol
 	Script        *dsl.Script
 	Metrics       *MetricsCollector
+	ResultSink    ResultSink
 	Variables     map[string]string
 	DataProvider  *DataProvider
 	SnapshotStore *SnapshotStore
@@ -71,10 +72,7 @@ func (vu *VUser) Run(ctx context.Context) {
 			logger.Error("init action failed", "action", action.Name, "err", err)
 			return
 		}
-		result.Group = vu.Group
-		vu.Metrics.Record(result)
-		vu.mergeExtractions(result)
-		vu.handleSnapshot(result, cfg.ErrorHandling)
+		vu.recordResult(result, cfg.ErrorHandling)
 
 		if !result.Success {
 			if logCfg.OnErrorOnly || logCfg.Level == "extended" {
@@ -162,10 +160,7 @@ func (vu *VUser) Run(ctx context.Context) {
 				continue
 			}
 
-			result.Group = vu.Group
-			vu.Metrics.Record(result)
-			vu.mergeExtractions(result)
-			vu.handleSnapshot(result, cfg.ErrorHandling)
+			vu.recordResult(result, cfg.ErrorHandling)
 
 			// Record auto-transaction for this action
 			if autoTx == "per_action" {
@@ -232,8 +227,21 @@ teardown:
 		resolved := vu.resolveAction(action)
 		result, _ := vu.Proto.Execute(context.Background(), resolved)
 		if result != nil {
-			vu.Metrics.Record(result)
+			vu.recordResult(result, cfg.ErrorHandling)
 		}
+	}
+}
+
+func (vu *VUser) recordResult(result *protocol.Result, errCfg dsl.ErrorHandlingConfig) {
+	if result == nil {
+		return
+	}
+	result.Group = vu.Group
+	vu.Metrics.Record(result)
+	vu.mergeExtractions(result)
+	vu.handleSnapshot(result, errCfg)
+	if vu.ResultSink != nil {
+		_ = vu.ResultSink.RecordResult(result)
 	}
 }
 

@@ -42,6 +42,70 @@ export function useApi() {
 
   const getMetrics = useCallback((id: string) => request<any>(`/tests/${id}/metrics`), [])
 
+  const getTestArchiveManifest = useCallback(
+    (id: string) => request<any>(`/tests/${id}/archive/manifest`),
+    [],
+  )
+
+  const getTestArchiveTransactions = useCallback(
+    (id: string, params?: { limit?: number; offset?: number; action?: string; group?: string; success?: boolean }) => {
+      const query = new URLSearchParams()
+      if (params?.limit !== undefined) query.set('limit', String(params.limit))
+      if (params?.offset !== undefined) query.set('offset', String(params.offset))
+      if (params?.action) query.set('action', params.action)
+      if (params?.group) query.set('group', params.group)
+      if (params?.success !== undefined) query.set('success', String(params.success))
+      const suffix = query.toString() ? `?${query.toString()}` : ''
+      return request<any>(`/tests/${id}/archive/transactions${suffix}`)
+    },
+    [],
+  )
+
+  const getTestArchiveResources = useCallback(
+    (id: string, params?: { limit?: number; offset?: number }) => {
+      const query = new URLSearchParams()
+      if (params?.limit !== undefined) query.set('limit', String(params.limit))
+      if (params?.offset !== undefined) query.set('offset', String(params.offset))
+      const suffix = query.toString() ? `?${query.toString()}` : ''
+      return request<any>(`/tests/${id}/archive/resources${suffix}`)
+    },
+    [],
+  )
+
+  const getTestArchiveSummaries = useCallback(
+    (id: string, params?: { limit?: number; offset?: number }) => {
+      const query = new URLSearchParams()
+      if (params?.limit !== undefined) query.set('limit', String(params.limit))
+      if (params?.offset !== undefined) query.set('offset', String(params.offset))
+      const suffix = query.toString() ? `?${query.toString()}` : ''
+      return request<any>(`/tests/${id}/archive/summaries${suffix}`)
+    },
+    [],
+  )
+
+  const getTestArchiveReport = useCallback(
+    (id: string) => request<any>(`/tests/${id}/archive/report`),
+    [],
+  )
+
+  const downloadTestArchive = useCallback(async (id: string) => {
+    const res = await fetch(`${BASE}/tests/${id}/archive`)
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({ error: res.statusText }))
+      throw new Error(body.error || res.statusText)
+    }
+    return res.blob()
+  }, [])
+
+  const downloadTestArchiveArtifact = useCallback(async (id: string, name: string) => {
+    const res = await fetch(`${BASE}/tests/${id}/archive/files/${encodeURIComponent(name)}`)
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({ error: res.statusText }))
+      throw new Error(body.error || res.statusText)
+    }
+    return res.blob()
+  }, [])
+
   const listScripts = useCallback(() => request<{ scripts: any[]; count: number }>('/scripts'), [])
 
   const createScript = useCallback(
@@ -163,6 +227,13 @@ export function useApi() {
       abortTest,
       deleteTest,
       getMetrics,
+      getTestArchiveManifest,
+      getTestArchiveTransactions,
+      getTestArchiveResources,
+      getTestArchiveSummaries,
+      getTestArchiveReport,
+      downloadTestArchive,
+      downloadTestArchiveArtifact,
       listScripts,
       createScript,
       getScript,
@@ -191,6 +262,13 @@ export function useApi() {
       abortTest,
       deleteTest,
       getMetrics,
+      getTestArchiveManifest,
+      getTestArchiveTransactions,
+      getTestArchiveResources,
+      getTestArchiveSummaries,
+      getTestArchiveReport,
+      downloadTestArchive,
+      downloadTestArchiveArtifact,
       listScripts,
       createScript,
       getScript,

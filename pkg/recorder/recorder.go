@@ -1,7 +1,9 @@
 package recorder
 
 import (
+	"crypto/rsa"
 	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"io"
 	"log/slog"
@@ -64,6 +66,14 @@ type Recorder struct {
 	active   *Session
 	proxy    *http.Server
 	addr     string
+
+	// TLS interception fields
+	caOnce    sync.Once
+	caErr     error
+	caCert    *x509.Certificate
+	caKey     *rsa.PrivateKey
+	caCertPEM []byte
+	certCache sync.Map // map[string]*tls.Certificate
 }
 
 func New(proxyAddr string) *Recorder {
@@ -166,12 +176,9 @@ func (r *Recorder) ActiveSession() *Session {
 }
 
 func (r *Recorder) StartProxy() error {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", r.handleProxy)
-
 	r.proxy = &http.Server{
 		Addr:         r.addr,
-		Handler:      mux,
+		Handler:      http.HandlerFunc(r.handleProxy),
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 60 * time.Second,
 	}
@@ -266,7 +273,7 @@ func (r *Recorder) handleProxy(w http.ResponseWriter, req *http.Request) {
 }
 
 func (r *Recorder) handleConnect(w http.ResponseWriter, req *http.Request) {
-	http.Error(w, "HTTPS CONNECT tunneling requires TLS interception CA — use HTTP targets or configure the CA cert", http.StatusNotImplemented)
+	r.handleConnectMITM(w, req)
 }
 
 func (r *Recorder) recordRequest(s *Session, req *http.Request, reqBody []byte, resp *http.Response, respBody []byte, elapsed time.Duration) {

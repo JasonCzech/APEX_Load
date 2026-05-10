@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"os"
 	"sync"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 type TestRunner struct {
 	tests    map[string]*ManagedTest
 	scripts  map[string]*StoredScript
+	archives map[string]*storage.RunArchiveRecord
 	mu       sync.RWMutex
 	hub      *Hub
 	maxTests int
@@ -42,6 +44,7 @@ type ManagedTest struct {
 	EndedAt         *time.Time               `json:"ended_at,omitempty"`
 	LiveMetrics     *LiveMetrics             `json:"live_metrics,omitempty"`
 	History         []*LiveMetrics           `json:"history,omitempty"`
+	Archive         *storage.RunArchiveRecord `json:"archive,omitempty"`
 	Error           string                   `json:"error,omitempty"`
 
 	// deprecated single-script fields kept for backwards compat in JSON
@@ -156,6 +159,7 @@ func NewTestRunner(maxTests int, hub *Hub, store storage.Store) *TestRunner {
 	tr := &TestRunner{
 		tests:    make(map[string]*ManagedTest),
 		scripts:  make(map[string]*StoredScript),
+		archives: make(map[string]*storage.RunArchiveRecord),
 		hub:      hub,
 		maxTests: maxTests,
 		store:    store,
@@ -216,6 +220,10 @@ func NewTestRunner(maxTests int, hub *Hub, store storage.Store) *TestRunner {
 					if len(mt.History) > 0 {
 						mt.LiveMetrics = mt.History[len(mt.History)-1]
 					}
+				}
+				if archive, err := store.GetRunArchive(t.ID); err == nil {
+					mt.Archive = archive
+					tr.archives[t.ID] = archive
 				}
 				tr.tests[t.ID] = mt
 			}
@@ -552,6 +560,37 @@ func (tr *TestRunner) ListTests() []*ManagedTest {
 	return out
 }
 
+func (tr *TestRunner) GetRunArchive(id string) (*storage.RunArchiveRecord, bool) {
+	tr.mu.RLock()
+	record, ok := tr.archives[id]
+	tr.mu.RUnlock()
+	if ok {
+		return record, true
+	}
+	if tr.store == nil {
+		return nil, false
+	}
+	record, err := tr.store.GetRunArchive(id)
+	if err != nil {
+		return nil, false
+	}
+	tr.mu.Lock()
+	tr.archives[id] = record
+	if test, exists := tr.tests[id]; exists {
+		test.Archive = record
+	}
+	tr.mu.Unlock()
+	return record, true
+}
+
+func (tr *TestRunner) GetRunArchiveManifest(id string) (*RunArchiveManifest, error) {
+	record, ok := tr.GetRunArchive(id)
+	if !ok {
+		return nil, fmt.Errorf("archive not found: %s", id)
+	}
+	return loadRunArchiveManifest(record.ManifestPath)
+}
+
 func (tr *TestRunner) DeleteTest(id string) bool {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
@@ -562,9 +601,21 @@ func (tr *TestRunner) DeleteTest(id string) bool {
 	if test.Status == "RUNNING" || test.Status == "INITIALIZING" || test.Status == "STOPPING" {
 		return false // Can't delete active tests
 	}
+	archivePath := ""
+	if archive, exists := tr.archives[id]; exists {
+		archivePath = archive.ArchivePath
+	} else if test.Archive != nil {
+		archivePath = test.Archive.ArchivePath
+	}
 	delete(tr.tests, id)
+	delete(tr.archives, id)
 	if tr.store != nil {
 		tr.store.DeleteTest(id)
+	}
+	if archivePath != "" {
+		if err := os.RemoveAll(archivePath); err != nil {
+			slog.Warn("failed to remove archive directory", "test_id", id, "archive_path", archivePath, "error", err)
+		}
 	}
 	return true
 }
@@ -700,6 +751,25 @@ func (tr *TestRunner) runTest(test *ManagedTest) {
 			return
 		}
 	}
+	archiveWriter, err := newRunArchiveWriter(test)
+	if err != nil {
+		now := time.Now()
+		tr.mu.Lock()
+		test.Status = "FAILED"
+		test.Error = fmt.Sprintf("initialize archive writer: %v", err)
+		test.EndedAt = &now
+		tr.mu.Unlock()
+		if tr.store != nil {
+			tr.store.UpdateTestStatus(test.ID, test.Status, test.EndedAt, test.Error)
+		}
+		tr.broadcastEvent("test_failed", test)
+		return
+	}
+	groupSpecs := make([]engine.GroupConfig, len(test.groupSpecs))
+	copy(groupSpecs, test.groupSpecs)
+	for i := range groupSpecs {
+		groupSpecs[i].ResultSink = archiveWriter
+	}
 	baselineDuration := 5 * time.Minute
 	preBaseline := time.Duration(0)
 	postBaseline := time.Duration(0)
@@ -709,7 +779,7 @@ func (tr *TestRunner) runTest(test *ManagedTest) {
 	}
 
 	mge, err := engine.NewMultiGroup(engine.MultiGroupConfig{
-		Groups:       test.groupSpecs,
+		Groups:       groupSpecs,
 		Duration:     test.Duration,
 		PreBaseline:  preBaseline,
 		PostBaseline: postBaseline,
@@ -733,28 +803,63 @@ func (tr *TestRunner) runTest(test *ManagedTest) {
 	tr.broadcastEvent("test_started", test)
 
 	metricsDone := make(chan struct{})
+	metricsStopped := make(chan struct{})
 	test.goalControl = &goalControllerState{}
-	go tr.broadcastMetrics(test, mge, metricsDone)
+	go func() {
+		tr.broadcastMetrics(test, mge, archiveWriter, metricsDone)
+		close(metricsStopped)
+	}()
 
 	result, err := mge.Run(ctx)
 
 	close(metricsDone)
+	<-metricsStopped
 
 	endTime := time.Now()
-	test.EndedAt = &endTime
-
+	finalStatus := "COMPLETE"
+	finalError := ""
 	if err != nil {
-		test.Status = "FAILED"
-		test.Error = err.Error()
+		finalStatus = "FAILED"
+		finalError = err.Error()
+	}
+
+	archiveRecord, archiveErr := archiveWriter.Finalize(finalStatus, endTime, finalError)
+	if archiveErr != nil {
+		finalStatus = "FAILED"
+		if finalError != "" {
+			finalError = finalError + "; archive finalize failed: " + archiveErr.Error()
+		} else {
+			finalError = "archive finalize failed: " + archiveErr.Error()
+		}
+	} else {
+		if tr.store != nil {
+			if err := tr.store.SaveRunArchive(archiveRecord); err != nil {
+				finalStatus = "FAILED"
+				if finalError != "" {
+					finalError = finalError + "; archive metadata save failed: " + err.Error()
+				} else {
+					finalError = "archive metadata save failed: " + err.Error()
+				}
+			}
+		}
+	}
+	tr.mu.Lock()
+	test.Status = finalStatus
+	test.Error = finalError
+	test.EndedAt = &endTime
+	test.Archive = archiveRecord
+	if archiveRecord != nil {
+		tr.archives[test.ID] = archiveRecord
+	}
+	tr.mu.Unlock()
+	if tr.store != nil {
+		tr.store.UpdateTestStatus(test.ID, finalStatus, &endTime, finalError)
+	}
+	if finalStatus == "FAILED" {
 		tr.broadcastEvent("test_failed", test)
 	} else {
-		test.Status = "COMPLETE"
+		tr.broadcastEvent("test_complete", test)
 	}
-	test.EndedAt = &now
-	if tr.store != nil {
-		tr.store.UpdateTestStatus(test.ID, test.Status, test.EndedAt, test.Error)
-	}
-	tr.broadcastEvent("test_complete", test)
 
 	slog.Info("test finished",
 		"id", test.ID,
@@ -786,7 +891,7 @@ func (tr *TestRunner) runScriptShakeout(test *ManagedTest) error {
 	return nil
 }
 
-func (tr *TestRunner) broadcastMetrics(test *ManagedTest, mge *engine.MultiGroupEngine, done chan struct{}) {
+func (tr *TestRunner) broadcastMetrics(test *ManagedTest, mge *engine.MultiGroupEngine, archiveWriter *runArchiveWriter, done chan struct{}) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 
@@ -895,6 +1000,14 @@ func (tr *TestRunner) broadcastMetrics(test *ManagedTest, mge *engine.MultiGroup
 
 			if tr.store != nil {
 				tr.store.SaveHistory(test.ID, live.Timestamp, live)
+			}
+			if archiveWriter != nil {
+				if err := archiveWriter.RecordIntervalSummary(live); err != nil {
+					slog.Warn("failed to record interval summary", "test_id", test.ID, "error", err)
+				}
+				if err := archiveWriter.RecordResourceSample(live.Timestamp, live.ActiveVUsers, live.Resources); err != nil {
+					slog.Warn("failed to record resource sample", "test_id", test.ID, "error", err)
+				}
 			}
 
 			tr.hub.BroadcastJSON(map[string]any{
