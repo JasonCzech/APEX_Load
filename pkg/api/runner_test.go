@@ -31,8 +31,8 @@ func TestCreateTestPreservesRuntimeSettingsAndGroups(t *testing.T) {
 	minVUsers := 15
 	maxVUsers := 120
 	test, err := runner.CreateTest(CreateTestRequest{
-		Name:     "Checkout Replay",
-		Duration: "90s",
+		Name:         "Checkout Replay",
+		Duration:     "90s",
 		ScenarioMode: "goal_oriented",
 		GoalConfig: &GoalConfig{
 			TargetAverageTPS: &targetAverageTPS,

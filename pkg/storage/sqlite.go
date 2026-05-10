@@ -186,10 +186,10 @@ func (s *SQLiteStore) SaveTest(test *TestRecord) error {
 	groupsJSON, _ := json.Marshal(test.Groups)
 	runtimeSettingsJSON, _ := json.Marshal(test.RuntimeSettings)
 	goalConfigJSON, _ := json.Marshal(test.GoalConfig)
-	
+
 	query := `INSERT INTO tests (id, name, status, scenario_mode, total_vusers, duration_ns, start_time, end_time, error, groups_json, runtime_settings_json, goal_config_json)
 			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-	
+
 	_, err := s.db.Exec(query, test.ID, test.Name, test.Status, test.ScenarioMode, test.TotalVUsers, test.Duration, test.StartTime, test.EndTime, test.Error, string(groupsJSON), string(runtimeSettingsJSON), string(goalConfigJSON))
 	return err
 }
@@ -197,7 +197,7 @@ func (s *SQLiteStore) SaveTest(test *TestRecord) error {
 func (s *SQLiteStore) GetTest(id string) (*TestRecord, error) {
 	var test TestRecord
 	var groupsJSON, runtimeSettingsJSON, goalConfigJSON string
-	
+
 	query := `SELECT id, name, status, COALESCE(scenario_mode, ''), total_vusers, duration_ns, start_time, end_time, error, groups_json, COALESCE(runtime_settings_json, ''), COALESCE(goal_config_json, '') FROM tests WHERE id = ?`
 	err := s.db.QueryRow(query, id).Scan(&test.ID, &test.Name, &test.Status, &test.ScenarioMode, &test.TotalVUsers, &test.Duration, &test.StartTime, &test.EndTime, &test.Error, &groupsJSON, &runtimeSettingsJSON, &goalConfigJSON)
 	if err != nil {

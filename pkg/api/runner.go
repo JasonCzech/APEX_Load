@@ -25,22 +25,22 @@ type TestRunner struct {
 }
 
 type ManagedTest struct {
-	ID          string     `json:"id"`
-	Name        string     `json:"name"`
-	Status      string     `json:"status"`
-	Groups      []TestGroup `json:"groups"`
-	ScenarioMode string    `json:"scenario_mode,omitempty"`
-	GoalConfig  *GoalConfig `json:"goal_config,omitempty"`
+	ID              string                   `json:"id"`
+	Name            string                   `json:"name"`
+	Status          string                   `json:"status"`
+	Groups          []TestGroup              `json:"groups"`
+	ScenarioMode    string                   `json:"scenario_mode,omitempty"`
+	GoalConfig      *GoalConfig              `json:"goal_config,omitempty"`
 	RuntimeSettings *RuntimeSettingsOverride `json:"runtime_settings,omitempty"`
-	TotalVUsers int        `json:"total_vusers"`
-	Duration    time.Duration `json:"duration_ns"`
-	DurationStr string     `json:"duration"`
-	CreatedAt   time.Time  `json:"created_at"`
-	StartedAt   *time.Time `json:"started_at,omitempty"`
-	EndedAt     *time.Time `json:"ended_at,omitempty"`
-	LiveMetrics *LiveMetrics `json:"live_metrics,omitempty"`
-	History     []*LiveMetrics `json:"history,omitempty"`
-	Error       string     `json:"error,omitempty"`
+	TotalVUsers     int                      `json:"total_vusers"`
+	Duration        time.Duration            `json:"duration_ns"`
+	DurationStr     string                   `json:"duration"`
+	CreatedAt       time.Time                `json:"created_at"`
+	StartedAt       *time.Time               `json:"started_at,omitempty"`
+	EndedAt         *time.Time               `json:"ended_at,omitempty"`
+	LiveMetrics     *LiveMetrics             `json:"live_metrics,omitempty"`
+	History         []*LiveMetrics           `json:"history,omitempty"`
+	Error           string                   `json:"error,omitempty"`
 
 	// deprecated single-script fields kept for backwards compat in JSON
 	ScriptID   string `json:"script_id,omitempty"`
@@ -66,40 +66,40 @@ type TestGroup struct {
 }
 
 type LiveMetrics struct {
-	Timestamp    time.Time                   `json:"timestamp"`
-	ActiveVUsers int64                       `json:"active_vusers"`
-	TPS          float64                     `json:"tps"`
-	AvgResponseMs float64                    `json:"avg_response_ms"`
-	ErrorPct     float64                     `json:"error_pct"`
-	TotalTx      int64                       `json:"total_transactions"`
-	TotalErrors  int64                       `json:"total_errors"`
-	P50Ms        float64                     `json:"p50_ms"`
-	P90Ms        float64                     `json:"p90_ms"`
-	P95Ms        float64                     `json:"p95_ms"`
-	P99Ms        float64                     `json:"p99_ms"`
-	Transactions map[string]*TxMetrics       `json:"transactions,omitempty"`
-	GroupMetrics map[string]*GroupLiveMetrics `json:"groups,omitempty"`
-	GoalStatus   *GoalStatus                 `json:"goal_status,omitempty"`
-	Resources    *engine.SystemResources     `json:"resources,omitempty"`
+	Timestamp     time.Time                    `json:"timestamp"`
+	ActiveVUsers  int64                        `json:"active_vusers"`
+	TPS           float64                      `json:"tps"`
+	AvgResponseMs float64                      `json:"avg_response_ms"`
+	ErrorPct      float64                      `json:"error_pct"`
+	TotalTx       int64                        `json:"total_transactions"`
+	TotalErrors   int64                        `json:"total_errors"`
+	P50Ms         float64                      `json:"p50_ms"`
+	P90Ms         float64                      `json:"p90_ms"`
+	P95Ms         float64                      `json:"p95_ms"`
+	P99Ms         float64                      `json:"p99_ms"`
+	Transactions  map[string]*TxMetrics        `json:"transactions,omitempty"`
+	GroupMetrics  map[string]*GroupLiveMetrics `json:"groups,omitempty"`
+	GoalStatus    *GoalStatus                  `json:"goal_status,omitempty"`
+	Resources     *engine.SystemResources      `json:"resources,omitempty"`
 }
 
 type GoalStatus struct {
-	Mode                string   `json:"mode"`
-	CurrentTPS          float64  `json:"current_tps"`
-	CurrentTotalVUsers  int      `json:"current_total_vusers"`
-	TargetAverageTPS    *float64 `json:"target_average_tps,omitempty"`
-	MinVUsers           *int     `json:"min_vusers,omitempty"`
-	MaxVUsers           *int     `json:"max_vusers,omitempty"`
-	SuggestedTotalVUsers int     `json:"suggested_total_vusers,omitempty"`
-	LastScaleDirection  string   `json:"last_scale_direction,omitempty"`
-	LastScaleReason     string   `json:"last_scale_reason,omitempty"`
-	LastScaleAt         *time.Time `json:"last_scale_at,omitempty"`
-	LatencyBreached     bool     `json:"latency_breached,omitempty"`
-	ErrorBreached       bool     `json:"error_breached,omitempty"`
-	BreachActive        bool     `json:"breach_active,omitempty"`
-	BreachDurationSec   int      `json:"breach_duration_sec,omitempty"`
-	StopTriggered       bool     `json:"stop_triggered,omitempty"`
-	StopReason          string   `json:"stop_reason,omitempty"`
+	Mode                 string     `json:"mode"`
+	CurrentTPS           float64    `json:"current_tps"`
+	CurrentTotalVUsers   int        `json:"current_total_vusers"`
+	TargetAverageTPS     *float64   `json:"target_average_tps,omitempty"`
+	MinVUsers            *int       `json:"min_vusers,omitempty"`
+	MaxVUsers            *int       `json:"max_vusers,omitempty"`
+	SuggestedTotalVUsers int        `json:"suggested_total_vusers,omitempty"`
+	LastScaleDirection   string     `json:"last_scale_direction,omitempty"`
+	LastScaleReason      string     `json:"last_scale_reason,omitempty"`
+	LastScaleAt          *time.Time `json:"last_scale_at,omitempty"`
+	LatencyBreached      bool       `json:"latency_breached,omitempty"`
+	ErrorBreached        bool       `json:"error_breached,omitempty"`
+	BreachActive         bool       `json:"breach_active,omitempty"`
+	BreachDurationSec    int        `json:"breach_duration_sec,omitempty"`
+	StopTriggered        bool       `json:"stop_triggered,omitempty"`
+	StopReason           string     `json:"stop_reason,omitempty"`
 }
 
 type goalControllerState struct {
@@ -179,22 +179,22 @@ func NewTestRunner(maxTests int, hub *Hub, store storage.Store) *TestRunner {
 		tests, err := store.ListTests()
 		if err == nil {
 			for _, t := range tests {
-			groups := decodeStoredGroups(t.Groups)
-			goalConfig := decodeStoredGoalConfig(t.GoalConfig)
-			runtimeSettings := decodeStoredRuntimeSettings(t.RuntimeSettings)
+				groups := decodeStoredGroups(t.Groups)
+				goalConfig := decodeStoredGoalConfig(t.GoalConfig)
+				runtimeSettings := decodeStoredRuntimeSettings(t.RuntimeSettings)
 				mt := &ManagedTest{
-					ID:          t.ID,
-					Name:        t.Name,
-					Status:      t.Status,
-					Groups:      groups,
-					ScenarioMode: normalizeScenarioMode(t.ScenarioMode),
-					GoalConfig:  goalConfig,
+					ID:              t.ID,
+					Name:            t.Name,
+					Status:          t.Status,
+					Groups:          groups,
+					ScenarioMode:    normalizeScenarioMode(t.ScenarioMode),
+					GoalConfig:      goalConfig,
 					RuntimeSettings: runtimeSettings,
-					TotalVUsers: t.TotalVUsers,
-					Duration:    time.Duration(t.Duration),
-					DurationStr: time.Duration(t.Duration).String(),
-					CreatedAt:   t.StartTime,
-					Error:       t.Error,
+					TotalVUsers:     t.TotalVUsers,
+					Duration:        time.Duration(t.Duration),
+					DurationStr:     time.Duration(t.Duration).String(),
+					CreatedAt:       t.StartTime,
+					Error:           t.Error,
 				}
 				if t.EndTime != nil {
 					mt.EndedAt = t.EndTime
@@ -204,7 +204,7 @@ func NewTestRunner(maxTests int, hub *Hub, store storage.Store) *TestRunner {
 				if err == nil {
 					for _, h := range hist {
 						if m, ok := h.(map[string]any); ok {
-							// This is a bit lossy due to any -> map conversion, 
+							// This is a bit lossy due to any -> map conversion,
 							// but works for basic history display
 							mt.History = append(mt.History, mapToLiveMetrics(m))
 						}
@@ -309,11 +309,11 @@ func (tr *TestRunner) DeleteScript(id string) bool {
 }
 
 type CreateTestRequest struct {
-	Name     string             `json:"name"`
-	Duration string             `json:"duration"`
-	ScenarioMode string         `json:"scenario_mode,omitempty"`
-	GoalConfig *GoalConfig      `json:"goal_config,omitempty"`
-	Groups   []CreateGroupEntry `json:"groups,omitempty"`
+	Name         string             `json:"name"`
+	Duration     string             `json:"duration"`
+	ScenarioMode string             `json:"scenario_mode,omitempty"`
+	GoalConfig   *GoalConfig        `json:"goal_config,omitempty"`
+	Groups       []CreateGroupEntry `json:"groups,omitempty"`
 	// Single-script shorthand (backwards compatible)
 	ScriptID string `json:"script_id,omitempty"`
 	VUsers   int    `json:"vusers,omitempty"`
@@ -335,21 +335,21 @@ type GoalConfig struct {
 // RuntimeSettingsOverride allows overriding script-level runtime settings at test time,
 // mirroring LoadRunner Controller's override capability.
 type RuntimeSettingsOverride struct {
-	Iterations      *int                     `json:"iterations,omitempty"`
-	Pacing          *dsl.PacingConfig        `json:"pacing,omitempty"`
-	ThinkTime       *dsl.ThinkTimeConfig     `json:"think_time,omitempty"`
-	ErrorHandling   *dsl.ErrorHandlingConfig `json:"error_handling,omitempty"`
-	LogLevel        string                   `json:"log_level,omitempty"`
-	AutoTransactions string                  `json:"auto_transactions,omitempty"`
+	Iterations       *int                     `json:"iterations,omitempty"`
+	Pacing           *dsl.PacingConfig        `json:"pacing,omitempty"`
+	ThinkTime        *dsl.ThinkTimeConfig     `json:"think_time,omitempty"`
+	ErrorHandling    *dsl.ErrorHandlingConfig `json:"error_handling,omitempty"`
+	LogLevel         string                   `json:"log_level,omitempty"`
+	AutoTransactions string                   `json:"auto_transactions,omitempty"`
 }
 
 type CreateGroupEntry struct {
-	Name           string `json:"name"`
-	ScriptID       string `json:"script_id"`
-	VUsers         int    `json:"vusers"`
-	RampUp         string `json:"ramp_up,omitempty"`
-	RampDown       string `json:"ramp_down,omitempty"`
-	InitStrategy   string `json:"initialization,omitempty"` // "at_runtime", "at_once"
+	Name         string `json:"name"`
+	ScriptID     string `json:"script_id"`
+	VUsers       int    `json:"vusers"`
+	RampUp       string `json:"ramp_up,omitempty"`
+	RampDown     string `json:"ramp_down,omitempty"`
+	InitStrategy string `json:"initialization,omitempty"` // "at_runtime", "at_once"
 }
 
 func (tr *TestRunner) CreateTest(req CreateTestRequest) (*ManagedTest, error) {
@@ -484,18 +484,18 @@ func (tr *TestRunner) CreateTest(req CreateTestRequest) (*ManagedTest, error) {
 	}
 
 	test := &ManagedTest{
-		ID:          uuid.New().String(),
-		Name:        testName,
-		Status:      "QUEUED",
-		Groups:      testGroups,
-		ScenarioMode: scenarioMode,
-		GoalConfig:  cloneGoalConfig(req.GoalConfig),
+		ID:              uuid.New().String(),
+		Name:            testName,
+		Status:          "QUEUED",
+		Groups:          testGroups,
+		ScenarioMode:    scenarioMode,
+		GoalConfig:      cloneGoalConfig(req.GoalConfig),
 		RuntimeSettings: cloneRuntimeSettings(req.RuntimeSettings),
-		TotalVUsers: totalVUsers,
-		Duration:    dur,
-		DurationStr: req.Duration,
-		CreatedAt:   time.Now(),
-		groupSpecs:  engineGroups,
+		TotalVUsers:     totalVUsers,
+		Duration:        dur,
+		DurationStr:     req.Duration,
+		CreatedAt:       time.Now(),
+		groupSpecs:      engineGroups,
 	}
 
 	// Backwards-compat fields
@@ -508,15 +508,15 @@ func (tr *TestRunner) CreateTest(req CreateTestRequest) (*ManagedTest, error) {
 
 	if tr.store != nil {
 		tr.store.SaveTest(&storage.TestRecord{
-			ID:          test.ID,
-			Name:        test.Name,
-			Status:      test.Status,
-			ScenarioMode: test.ScenarioMode,
-			TotalVUsers: test.TotalVUsers,
-			Duration:    int64(test.Duration),
-			StartTime:   test.CreatedAt,
-			Groups:      test.Groups,
-			GoalConfig:  test.GoalConfig,
+			ID:              test.ID,
+			Name:            test.Name,
+			Status:          test.Status,
+			ScenarioMode:    test.ScenarioMode,
+			TotalVUsers:     test.TotalVUsers,
+			Duration:        int64(test.Duration),
+			StartTime:       test.CreatedAt,
+			Groups:          test.Groups,
+			GoalConfig:      test.GoalConfig,
 			RuntimeSettings: test.RuntimeSettings,
 		})
 	}
