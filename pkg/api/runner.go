@@ -267,9 +267,7 @@ func (tr *TestRunner) StoreScript(script *dsl.Script) *StoredScript {
 		Script:    script,
 	}
 
-	if tr.store != nil {
-		tr.store.SaveScript(script)
-	}
+	tr.saveStoredScript(script)
 
 	tr.scripts[stored.ID] = stored
 	return stored
@@ -303,9 +301,7 @@ func (tr *TestRunner) UpdateScript(id string, script *dsl.Script) (*StoredScript
 	existing.Protocol = script.Protocol
 	existing.Version = script.Version
 	existing.Script = script
-	if tr.store != nil {
-		tr.store.SaveScript(script)
-	}
+	tr.saveStoredScript(script)
 	return existing, true
 }
 
@@ -317,9 +313,7 @@ func (tr *TestRunner) DeleteScript(id string) bool {
 		return false
 	}
 	delete(tr.scripts, id)
-	if tr.store != nil {
-		tr.store.DeleteScript(id)
-	}
+	tr.deleteStoredScript(id)
 	return true
 }
 
@@ -439,22 +433,7 @@ func (tr *TestRunner) CreateTest(req CreateTestRequest) (*ManagedTest, error) {
 
 	tr.tests[test.ID] = test
 
-	if tr.store != nil {
-		tr.store.SaveTest(&storage.TestRecord{
-			ID:               test.ID,
-			Name:             test.Name,
-			Status:           test.Status,
-			ScenarioMode:     test.ScenarioMode,
-			ScriptShakeout:   test.ScriptShakeout,
-			ResourceBaseline: test.ResourceBaseline,
-			TotalVUsers:      test.TotalVUsers,
-			Duration:         int64(test.Duration),
-			StartTime:        test.CreatedAt,
-			Groups:           test.Groups,
-			GoalConfig:       test.GoalConfig,
-			RuntimeSettings:  test.RuntimeSettings,
-		})
-	}
+	tr.saveManagedTestRecord(test)
 
 	tr.broadcastEvent("test_created", test)
 	return test, nil
@@ -676,11 +655,8 @@ func (tr *TestRunner) GetRunArchive(id string) (*storage.RunArchiveRecord, bool)
 	if ok {
 		return record, true
 	}
-	if tr.store == nil {
-		return nil, false
-	}
-	record, err := tr.store.GetRunArchive(id)
-	if err != nil {
+	record, ok = tr.loadRunArchiveFromStore(id)
+	if !ok {
 		return nil, false
 	}
 	tr.mu.Lock()
@@ -718,9 +694,7 @@ func (tr *TestRunner) DeleteTest(id string) bool {
 	}
 	delete(tr.tests, id)
 	delete(tr.archives, id)
-	if tr.store != nil {
-		tr.store.DeleteTest(id)
-	}
+	tr.deleteStoredTest(id)
 	if archivePath != "" {
 		if err := os.RemoveAll(archivePath); err != nil {
 			slog.Warn("failed to remove archive directory", "test_id", id, "archive_path", archivePath, "error", err)
@@ -796,6 +770,80 @@ func (tr *TestRunner) refreshCapacityAdvisoryLocked(test *ManagedTest) {
 	}
 	groups := tr.hydrateCapacityGroupsLocked(test.Groups)
 	test.CapacityAdvisory = estimateCapacityAdvisory(tr.settings, groups, test.TotalVUsers, test.Duration, test.ResourceBaseline, test.RuntimeSettings)
+}
+
+func (tr *TestRunner) loadRunArchiveFromStore(id string) (*storage.RunArchiveRecord, bool) {
+	if tr.store == nil {
+		return nil, false
+	}
+	record, err := tr.store.GetRunArchive(id)
+	if err != nil {
+		return nil, false
+	}
+	return record, true
+}
+
+func (tr *TestRunner) saveStoredScript(script *dsl.Script) {
+	if tr.store != nil {
+		tr.store.SaveScript(script)
+	}
+}
+
+func (tr *TestRunner) deleteStoredScript(id string) {
+	if tr.store != nil {
+		tr.store.DeleteScript(id)
+	}
+}
+
+func buildManagedTestRecord(test *ManagedTest) *storage.TestRecord {
+	if test == nil {
+		return nil
+	}
+	return &storage.TestRecord{
+		ID:               test.ID,
+		Name:             test.Name,
+		Status:           test.Status,
+		ScenarioMode:     test.ScenarioMode,
+		ScriptShakeout:   test.ScriptShakeout,
+		ResourceBaseline: test.ResourceBaseline,
+		TotalVUsers:      test.TotalVUsers,
+		Duration:         int64(test.Duration),
+		StartTime:        test.CreatedAt,
+		Groups:           test.Groups,
+		GoalConfig:       test.GoalConfig,
+		RuntimeSettings:  test.RuntimeSettings,
+	}
+}
+
+func (tr *TestRunner) saveManagedTestRecord(test *ManagedTest) {
+	if tr.store != nil {
+		tr.store.SaveTest(buildManagedTestRecord(test))
+	}
+}
+
+func (tr *TestRunner) deleteStoredTest(id string) {
+	if tr.store != nil {
+		tr.store.DeleteTest(id)
+	}
+}
+
+func (tr *TestRunner) saveLiveMetricsHistory(testID string, timestamp time.Time, live *LiveMetrics) {
+	if tr.store != nil {
+		tr.store.SaveHistory(testID, timestamp, live)
+	}
+}
+
+func (tr *TestRunner) updateStoredTestStatus(testID string, status string, endTime *time.Time, errStr string) {
+	if tr.store != nil {
+		tr.store.UpdateTestStatus(testID, status, endTime, errStr)
+	}
+}
+
+func (tr *TestRunner) saveRunArchiveRecord(record *storage.RunArchiveRecord) error {
+	if tr.store == nil || record == nil {
+		return nil
+	}
+	return tr.store.SaveRunArchive(record)
 }
 
 func (tr *TestRunner) hydrateCapacityGroupsLocked(groups []TestGroup) []TestGroup {
@@ -1073,6 +1121,84 @@ func shouldStopForErrorThreshold(live *LiveMetrics, thresholds ThresholdSettings
 	return thresholds.MaxErrorRatePct != nil && live.ErrorPct > *thresholds.MaxErrorRatePct
 }
 
+func shouldStopForGoalStatus(live *LiveMetrics) bool {
+	return live.GoalStatus != nil && live.GoalStatus.StopTriggered
+}
+
+func (tr *TestRunner) publishLiveMetrics(test *ManagedTest, live *LiveMetrics, archiveWriter *runArchiveWriter) {
+	tr.mu.Lock()
+	test.LiveMetrics = live
+	test.History = append(test.History, live)
+	tr.mu.Unlock()
+
+	tr.saveLiveMetricsHistory(test.ID, live.Timestamp, live)
+	if archiveWriter != nil {
+		if err := archiveWriter.RecordIntervalSummary(live); err != nil {
+			slog.Warn("failed to record interval summary", "test_id", test.ID, "error", err)
+		}
+		if err := archiveWriter.RecordResourceSample(live.Timestamp, live.ActiveVUsers, live.Resources); err != nil {
+			slog.Warn("failed to record resource sample", "test_id", test.ID, "error", err)
+		}
+	}
+
+	tr.hub.BroadcastJSON(map[string]any{
+		"type":      "metrics_update",
+		"test_id":   test.ID,
+		"test_name": test.Name,
+		"timestamp": live.Timestamp,
+		"data":      live,
+	})
+}
+
+func applyGoalControllerUpdate(test *ManagedTest, live *LiveMetrics, groupVUsers map[string]int, update goalControllerUpdate, scaleVUsers func(groupName string, target int) error) {
+	live.GoalStatus = update.Status
+	if !update.ShouldScale {
+		return
+	}
+
+	targets := distributeTargetVUsers(test.Groups, groupVUsers, update.TargetTotal)
+	for _, group := range test.Groups {
+		target, exists := targets[group.Name]
+		if !exists || groupVUsers[group.Name] == target {
+			continue
+		}
+		if err := scaleVUsers(group.Name, target); err != nil {
+			slog.Warn("goal-oriented scale failed", "test_id", test.ID, "group", group.Name, "target_vusers", target, "error", err)
+			live.GoalStatus.LastScaleReason = fmt.Sprintf("scale failed: %v", err)
+			break
+		}
+		groupVUsers[group.Name] = target
+		for i := range test.Groups {
+			if test.Groups[i].Name == group.Name {
+				test.Groups[i].VUsers = target
+				break
+			}
+		}
+	}
+
+	now := live.Timestamp
+	test.goalControl.lastScaleAt = &now
+	test.goalControl.lastScaleDirection = update.ScaleDirection
+	test.goalControl.lastScaleReason = update.ScaleReason
+	live.GoalStatus.LastScaleAt = &now
+	live.GoalStatus.LastScaleDirection = update.ScaleDirection
+	live.GoalStatus.LastScaleReason = update.ScaleReason
+	live.GoalStatus.CurrentTotalVUsers = totalGroupVUsers(groupVUsers)
+	live.GoalStatus.SuggestedTotalVUsers = live.GoalStatus.CurrentTotalVUsers
+}
+
+func (tr *TestRunner) requestStopIfRunning(test *ManagedTest, warningMessage string) {
+	tr.mu.RLock()
+	status := test.Status
+	tr.mu.RUnlock()
+	if status != "RUNNING" {
+		return
+	}
+	if err := tr.StopTest(test.ID); err != nil {
+		slog.Warn(warningMessage, "test_id", test.ID, "error", err)
+	}
+}
+
 func (tr *TestRunner) startManagedTestRun(test *ManagedTest, mge *engine.MultiGroupEngine, archiveWriter *runArchiveWriter) (context.Context, chan struct{}, chan struct{}) {
 	ctx, cancel := context.WithCancel(context.Background())
 	test.cancel = cancel
@@ -1101,9 +1227,7 @@ func (tr *TestRunner) failTestBeforeRun(test *ManagedTest, message string) {
 	test.Error = message
 	test.EndedAt = &now
 	tr.mu.Unlock()
-	if tr.store != nil {
-		tr.store.UpdateTestStatus(test.ID, "FAILED", &now, message)
-	}
+	tr.updateStoredTestStatus(test.ID, "FAILED", &now, message)
 	tr.broadcastEvent("test_failed", test)
 }
 
@@ -1112,10 +1236,8 @@ func (tr *TestRunner) finalizeRunArchive(archiveWriter *runArchiveWriter, finalS
 	if archiveErr != nil {
 		return archiveRecord, "FAILED", appendRunError(finalError, "archive finalize failed", archiveErr)
 	}
-	if archiveRecord != nil && tr.store != nil {
-		if err := tr.store.SaveRunArchive(archiveRecord); err != nil {
-			return archiveRecord, "FAILED", appendRunError(finalError, "archive metadata save failed", err)
-		}
+	if err := tr.saveRunArchiveRecord(archiveRecord); err != nil {
+		return archiveRecord, "FAILED", appendRunError(finalError, "archive metadata save failed", err)
 	}
 	return archiveRecord, finalStatus, finalError
 }
@@ -1130,9 +1252,7 @@ func (tr *TestRunner) completeTestRun(test *ManagedTest, finalStatus string, end
 		tr.archives[test.ID] = archiveRecord
 	}
 	tr.mu.Unlock()
-	if tr.store != nil {
-		tr.store.UpdateTestStatus(test.ID, finalStatus, &endTime, finalError)
-	}
+	tr.updateStoredTestStatus(test.ID, finalStatus, &endTime, finalError)
 	if finalStatus == "FAILED" {
 		tr.broadcastEvent("test_failed", test)
 		return
@@ -1197,64 +1317,10 @@ func (tr *TestRunner) broadcastMetrics(test *ManagedTest, mge *engine.MultiGroup
 			if test.ScenarioMode == "goal_oriented" && test.GoalConfig != nil {
 				currentTotalVUsers := totalGroupVUsers(groupVUsers)
 				update := evaluateGoalController(live.Timestamp, currentTotalVUsers, live, test.GoalConfig, test.goalControl)
-				live.GoalStatus = update.Status
-
-				if update.ShouldScale {
-					targets := distributeTargetVUsers(test.Groups, groupVUsers, update.TargetTotal)
-					for _, group := range test.Groups {
-						target, exists := targets[group.Name]
-						if !exists || groupVUsers[group.Name] == target {
-							continue
-						}
-						if err := mge.ScaleVUsers(group.Name, target); err != nil {
-							slog.Warn("goal-oriented scale failed", "test_id", test.ID, "group", group.Name, "target_vusers", target, "error", err)
-							live.GoalStatus.LastScaleReason = fmt.Sprintf("scale failed: %v", err)
-							break
-						}
-						groupVUsers[group.Name] = target
-						for i := range test.Groups {
-							if test.Groups[i].Name == group.Name {
-								test.Groups[i].VUsers = target
-								break
-							}
-						}
-					}
-					now := live.Timestamp
-					test.goalControl.lastScaleAt = &now
-					test.goalControl.lastScaleDirection = update.ScaleDirection
-					test.goalControl.lastScaleReason = update.ScaleReason
-					live.GoalStatus.LastScaleAt = &now
-					live.GoalStatus.LastScaleDirection = update.ScaleDirection
-					live.GoalStatus.LastScaleReason = update.ScaleReason
-					live.GoalStatus.CurrentTotalVUsers = totalGroupVUsers(groupVUsers)
-					live.GoalStatus.SuggestedTotalVUsers = live.GoalStatus.CurrentTotalVUsers
-				}
+				applyGoalControllerUpdate(test, live, groupVUsers, update, mge.ScaleVUsers)
 			}
 
-			tr.mu.Lock()
-			test.LiveMetrics = live
-			test.History = append(test.History, live)
-			tr.mu.Unlock()
-
-			if tr.store != nil {
-				tr.store.SaveHistory(test.ID, live.Timestamp, live)
-			}
-			if archiveWriter != nil {
-				if err := archiveWriter.RecordIntervalSummary(live); err != nil {
-					slog.Warn("failed to record interval summary", "test_id", test.ID, "error", err)
-				}
-				if err := archiveWriter.RecordResourceSample(live.Timestamp, live.ActiveVUsers, live.Resources); err != nil {
-					slog.Warn("failed to record resource sample", "test_id", test.ID, "error", err)
-				}
-			}
-
-			tr.hub.BroadcastJSON(map[string]any{
-				"type":      "metrics_update",
-				"test_id":   test.ID,
-				"test_name": test.Name,
-				"timestamp": live.Timestamp,
-				"data":      live,
-			})
+			tr.publishLiveMetrics(test, live, archiveWriter)
 
 			settings := tr.GetSystemSettings()
 			for _, alert := range buildThresholdAlerts(test, live, settings.Thresholds) {
@@ -1262,20 +1328,11 @@ func (tr *TestRunner) broadcastMetrics(test *ManagedTest, mge *engine.MultiGroup
 			}
 
 			if shouldStopForErrorThreshold(live, settings.Thresholds) {
-				tr.mu.RLock()
-				status := test.Status
-				tr.mu.RUnlock()
-				if status == "RUNNING" {
-					if err := tr.StopTest(test.ID); err != nil {
-						slog.Warn("threshold stop failed", "test_id", test.ID, "error", err)
-					}
-				}
+				tr.requestStopIfRunning(test, "threshold stop failed")
 			}
 
-			if live.GoalStatus != nil && live.GoalStatus.StopTriggered && test.Status == "RUNNING" {
-				if err := tr.StopTest(test.ID); err != nil {
-					slog.Warn("goal-oriented stop failed", "test_id", test.ID, "error", err)
-				}
+			if shouldStopForGoalStatus(live) {
+				tr.requestStopIfRunning(test, "goal-oriented stop failed")
 			}
 		}
 	}

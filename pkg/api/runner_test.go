@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -14,6 +15,54 @@ import (
 	"github.com/jasonczech/stormrunner/pkg/protocol"
 	"github.com/jasonczech/stormrunner/pkg/storage"
 )
+
+type metricsStoreSpy struct {
+	savedHistoryTestID    string
+	savedHistoryTimestamp time.Time
+	savedHistoryMetrics   any
+	saveHistoryCalls      int
+	savedScripts          []*dsl.Script
+	deletedScriptIDs      []string
+	savedTests            []*storage.TestRecord
+	deletedTestIDs        []string
+}
+
+func (s *metricsStoreSpy) SaveScript(script *dsl.Script) error {
+	s.savedScripts = append(s.savedScripts, script)
+	return nil
+}
+func (s *metricsStoreSpy) GetScript(id string) (*dsl.Script, error)                       { return nil, nil }
+func (s *metricsStoreSpy) ListScripts() ([]*dsl.Script, error)                            { return nil, nil }
+func (s *metricsStoreSpy) DeleteScript(id string) error {
+	s.deletedScriptIDs = append(s.deletedScriptIDs, id)
+	return nil
+}
+func (s *metricsStoreSpy) SaveTest(test *storage.TestRecord) error {
+	s.savedTests = append(s.savedTests, test)
+	return nil
+}
+func (s *metricsStoreSpy) GetTest(id string) (*storage.TestRecord, error)                 { return nil, nil }
+func (s *metricsStoreSpy) ListTests() ([]*storage.TestRecord, error)                      { return nil, nil }
+func (s *metricsStoreSpy) UpdateTestStatus(id string, status string, endTime *time.Time, errStr string) error {
+	return nil
+}
+func (s *metricsStoreSpy) DeleteTest(id string) error {
+	s.deletedTestIDs = append(s.deletedTestIDs, id)
+	return nil
+}
+func (s *metricsStoreSpy) SaveHistory(testID string, timestamp time.Time, metrics any) error {
+	s.savedHistoryTestID = testID
+	s.savedHistoryTimestamp = timestamp
+	s.savedHistoryMetrics = metrics
+	s.saveHistoryCalls++
+	return nil
+}
+func (s *metricsStoreSpy) GetHistory(testID string) ([]any, error)                     { return nil, nil }
+func (s *metricsStoreSpy) SaveRunArchive(record *storage.RunArchiveRecord) error       { return nil }
+func (s *metricsStoreSpy) GetRunArchive(testID string) (*storage.RunArchiveRecord, error) { return nil, nil }
+func (s *metricsStoreSpy) SaveSetting(key string, value string) error                  { return nil }
+func (s *metricsStoreSpy) GetSetting(key string) (string, error)                       { return "", nil }
+func (s *metricsStoreSpy) Close() error                                                { return nil }
 
 type archiveStubProtocol struct{}
 
@@ -328,6 +377,239 @@ func TestBuildThresholdAlerts(t *testing.T) {
 	}
 	if shouldStopForErrorThreshold(&LiveMetrics{ErrorPct: 1.0}, ThresholdSettings{MaxErrorRatePct: &errorThreshold}) {
 		t.Fatal("did not expect stop below error threshold")
+	}
+}
+
+func TestPublishLiveMetricsUpdatesStatePersistsHistoryAndBroadcasts(t *testing.T) {
+	hub := NewHub()
+	store := &metricsStoreSpy{}
+	runner := NewTestRunner(2, hub, store)
+	timestamp := time.Date(2026, time.May, 10, 10, 15, 0, 0, time.UTC)
+	testRun := &ManagedTest{ID: "test-1", Name: "Checkout"}
+	live := &LiveMetrics{Timestamp: timestamp, ActiveVUsers: 12, TotalTx: 44}
+
+	runner.publishLiveMetrics(testRun, live, nil)
+
+	if testRun.LiveMetrics != live {
+		t.Fatal("expected live metrics pointer to be stored on test")
+	}
+	if len(testRun.History) != 1 || testRun.History[0] != live {
+		t.Fatalf("expected live metrics to be appended to history, got %#v", testRun.History)
+	}
+	if store.saveHistoryCalls != 1 {
+		t.Fatalf("expected SaveHistory to be called once, got %d", store.saveHistoryCalls)
+	}
+	if store.savedHistoryTestID != "test-1" || store.savedHistoryTimestamp != timestamp || store.savedHistoryMetrics != live {
+		t.Fatalf("unexpected SaveHistory inputs: %+v %+v %#v", store.savedHistoryTestID, store.savedHistoryTimestamp, store.savedHistoryMetrics)
+	}
+
+	select {
+	case msg := <-hub.broadcast:
+		var payload struct {
+			Type      string       `json:"type"`
+			TestID    string       `json:"test_id"`
+			TestName  string       `json:"test_name"`
+			Timestamp time.Time    `json:"timestamp"`
+			Data      *LiveMetrics `json:"data"`
+		}
+		if err := json.Unmarshal(msg, &payload); err != nil {
+			t.Fatalf("failed to decode broadcast payload: %v", err)
+		}
+		if payload.Type != "metrics_update" || payload.TestID != "test-1" || payload.TestName != "Checkout" {
+			t.Fatalf("unexpected broadcast identity: %#v", payload)
+		}
+		if payload.Timestamp != timestamp {
+			t.Fatalf("expected timestamp %s, got %s", timestamp, payload.Timestamp)
+		}
+		if payload.Data == nil || payload.Data.ActiveVUsers != 12 || payload.Data.TotalTx != 44 {
+			t.Fatalf("unexpected broadcast metrics payload: %#v", payload.Data)
+		}
+	default:
+		t.Fatal("expected metrics_update broadcast")
+	}
+}
+
+func TestApplyGoalControllerUpdateScalesGroupsAndUpdatesStatus(t *testing.T) {
+	timestamp := time.Date(2026, time.May, 10, 11, 0, 0, 0, time.UTC)
+	testRun := &ManagedTest{
+		ID: "test-1",
+		Groups: []TestGroup{
+			{Name: "buyers", VUsers: 20},
+			{Name: "admins", VUsers: 10},
+		},
+		goalControl: &goalControllerState{},
+	}
+	live := &LiveMetrics{Timestamp: timestamp}
+	groupVUsers := map[string]int{"buyers": 20, "admins": 10}
+	update := goalControllerUpdate{
+		Status: &GoalStatus{
+			CurrentTotalVUsers:   30,
+			SuggestedTotalVUsers: 45,
+		},
+		ShouldScale:    true,
+		TargetTotal:    45,
+		ScaleDirection: "up",
+		ScaleReason:    "tps below target",
+	}
+
+	var scaled []struct {
+		group  string
+		target int
+	}
+	applyGoalControllerUpdate(testRun, live, groupVUsers, update, func(groupName string, target int) error {
+		scaled = append(scaled, struct {
+			group  string
+			target int
+		}{group: groupName, target: target})
+		return nil
+	})
+
+	if len(scaled) != 2 {
+		t.Fatalf("expected 2 scale operations, got %d", len(scaled))
+	}
+	if totalGroupVUsers(groupVUsers) != 45 {
+		t.Fatalf("expected scaled group total 45, got %d", totalGroupVUsers(groupVUsers))
+	}
+	if testRun.Groups[0].VUsers != groupVUsers["buyers"] || testRun.Groups[1].VUsers != groupVUsers["admins"] {
+		t.Fatalf("expected group config vusers to track scaled map, got %+v vs %+v", testRun.Groups, groupVUsers)
+	}
+	if testRun.goalControl.lastScaleAt == nil || !testRun.goalControl.lastScaleAt.Equal(timestamp) {
+		t.Fatalf("expected goal control lastScaleAt %s, got %#v", timestamp, testRun.goalControl.lastScaleAt)
+	}
+	if testRun.goalControl.lastScaleDirection != "up" || testRun.goalControl.lastScaleReason != "tps below target" {
+		t.Fatalf("unexpected goal control metadata: %+v", testRun.goalControl)
+	}
+	if live.GoalStatus == nil {
+		t.Fatal("expected goal status to be preserved")
+	}
+	if live.GoalStatus.LastScaleAt == nil || !live.GoalStatus.LastScaleAt.Equal(timestamp) {
+		t.Fatalf("expected live goal status timestamp %s, got %#v", timestamp, live.GoalStatus.LastScaleAt)
+	}
+	if live.GoalStatus.LastScaleDirection != "up" || live.GoalStatus.LastScaleReason != "tps below target" {
+		t.Fatalf("unexpected live goal status metadata: %+v", live.GoalStatus)
+	}
+	if live.GoalStatus.CurrentTotalVUsers != 45 || live.GoalStatus.SuggestedTotalVUsers != 45 {
+		t.Fatalf("expected goal status totals to settle at 45, got %+v", live.GoalStatus)
+	}
+}
+
+func TestRequestStopIfRunningTransitionsAndBroadcasts(t *testing.T) {
+	hub := NewHub()
+	runner := NewTestRunner(2, hub, nil)
+	testRun := &ManagedTest{ID: "test-1", Name: "Checkout", Status: "RUNNING"}
+	runner.tests[testRun.ID] = testRun
+
+	runner.requestStopIfRunning(testRun, "threshold stop failed")
+
+	if testRun.Status != "STOPPING" {
+		t.Fatalf("expected STOPPING status, got %q", testRun.Status)
+	}
+
+	select {
+	case msg := <-hub.broadcast:
+		var payload struct {
+			Type   string `json:"type"`
+			TestID string `json:"test_id"`
+		}
+		if err := json.Unmarshal(msg, &payload); err != nil {
+			t.Fatalf("failed to decode broadcast payload: %v", err)
+		}
+		if payload.Type != "test_stopping" || payload.TestID != "test-1" {
+			t.Fatalf("unexpected stop payload: %#v", payload)
+		}
+	default:
+		t.Fatal("expected test_stopping broadcast")
+	}
+}
+
+func TestRequestStopIfRunningIgnoresNonRunningTests(t *testing.T) {
+	hub := NewHub()
+	runner := NewTestRunner(2, hub, nil)
+	testRun := &ManagedTest{ID: "test-1", Name: "Checkout", Status: "COMPLETE"}
+	runner.tests[testRun.ID] = testRun
+
+	runner.requestStopIfRunning(testRun, "goal-oriented stop failed")
+
+	if testRun.Status != "COMPLETE" {
+		t.Fatalf("expected COMPLETE status to remain unchanged, got %q", testRun.Status)
+	}
+	select {
+	case msg := <-hub.broadcast:
+		t.Fatalf("did not expect broadcast for non-running test, got %s", string(msg))
+	default:
+	}
+	if shouldStopForGoalStatus(&LiveMetrics{}) {
+		t.Fatal("did not expect empty live metrics to request goal stop")
+	}
+	if !shouldStopForGoalStatus(&LiveMetrics{GoalStatus: &GoalStatus{StopTriggered: true}}) {
+		t.Fatal("expected goal stop helper to detect triggered status")
+	}
+}
+
+func TestScriptAndTestCrudPersistThroughStoreHelpers(t *testing.T) {
+	hub := NewHub()
+	store := &metricsStoreSpy{}
+	runner := NewTestRunner(2, hub, store)
+
+	script := &dsl.Script{
+		ID:       "script-1",
+		Name:     "Checkout",
+		Protocol: "http",
+		Version:  "1.0.0",
+	}
+	runner.StoreScript(script)
+	if len(store.savedScripts) != 1 || store.savedScripts[0] != script {
+		t.Fatalf("expected initial SaveScript call with stored script, got %#v", store.savedScripts)
+	}
+
+	updatedScript := &dsl.Script{
+		ID:       "script-1",
+		Name:     "Checkout v2",
+		Protocol: "http",
+		Version:  "1.1.0",
+	}
+	if _, ok := runner.UpdateScript("script-1", updatedScript); !ok {
+		t.Fatal("expected UpdateScript to succeed")
+	}
+	if len(store.savedScripts) != 2 || store.savedScripts[1] != updatedScript {
+		t.Fatalf("expected SaveScript to be called for update, got %#v", store.savedScripts)
+	}
+	if !runner.DeleteScript("script-1") {
+		t.Fatal("expected DeleteScript to succeed")
+	}
+	if len(store.deletedScriptIDs) != 1 || store.deletedScriptIDs[0] != "script-1" {
+		t.Fatalf("expected DeleteScript store call for script-1, got %#v", store.deletedScriptIDs)
+	}
+
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-2",
+		Name:     "Search",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Config: dsl.ScriptConfig{
+			BaseURL: "https://example.com",
+		},
+	})
+	testRun, err := runner.CreateTest(CreateTestRequest{
+		Name:     "Queued Test",
+		Duration: "30s",
+		ScriptID: "script-2",
+		VUsers:   5,
+	})
+	if err != nil {
+		t.Fatalf("CreateTest returned error: %v", err)
+	}
+	if len(store.savedTests) != 1 {
+		t.Fatalf("expected one SaveTest call, got %d", len(store.savedTests))
+	}
+	if store.savedTests[0].ID != testRun.ID || store.savedTests[0].Status != "QUEUED" {
+		t.Fatalf("unexpected saved test record: %#v", store.savedTests[0])
+	}
+	if !runner.DeleteTest(testRun.ID) {
+		t.Fatal("expected DeleteTest to succeed for queued test")
+	}
+	if len(store.deletedTestIDs) != 1 || store.deletedTestIDs[0] != testRun.ID {
+		t.Fatalf("expected DeleteTest store call for %s, got %#v", testRun.ID, store.deletedTestIDs)
 	}
 }
 
