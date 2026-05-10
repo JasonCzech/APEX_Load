@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math"
 	"sync"
 	"time"
 
@@ -28,6 +29,9 @@ type ManagedTest struct {
 	Name        string     `json:"name"`
 	Status      string     `json:"status"`
 	Groups      []TestGroup `json:"groups"`
+	ScenarioMode string    `json:"scenario_mode,omitempty"`
+	GoalConfig  *GoalConfig `json:"goal_config,omitempty"`
+	RuntimeSettings *RuntimeSettingsOverride `json:"runtime_settings,omitempty"`
 	TotalVUsers int        `json:"total_vusers"`
 	Duration    time.Duration `json:"duration_ns"`
 	DurationStr string     `json:"duration"`
@@ -45,6 +49,7 @@ type ManagedTest struct {
 	multiEngine *engine.MultiGroupEngine
 	cancel      context.CancelFunc
 	groupSpecs  []engine.GroupConfig
+	goalControl *goalControllerState
 }
 
 type TestGroup struct {
@@ -74,7 +79,44 @@ type LiveMetrics struct {
 	P99Ms        float64                     `json:"p99_ms"`
 	Transactions map[string]*TxMetrics       `json:"transactions,omitempty"`
 	GroupMetrics map[string]*GroupLiveMetrics `json:"groups,omitempty"`
+	GoalStatus   *GoalStatus                 `json:"goal_status,omitempty"`
 	Resources    *engine.SystemResources     `json:"resources,omitempty"`
+}
+
+type GoalStatus struct {
+	Mode                string   `json:"mode"`
+	CurrentTPS          float64  `json:"current_tps"`
+	CurrentTotalVUsers  int      `json:"current_total_vusers"`
+	TargetAverageTPS    *float64 `json:"target_average_tps,omitempty"`
+	MinVUsers           *int     `json:"min_vusers,omitempty"`
+	MaxVUsers           *int     `json:"max_vusers,omitempty"`
+	SuggestedTotalVUsers int     `json:"suggested_total_vusers,omitempty"`
+	LastScaleDirection  string   `json:"last_scale_direction,omitempty"`
+	LastScaleReason     string   `json:"last_scale_reason,omitempty"`
+	LastScaleAt         *time.Time `json:"last_scale_at,omitempty"`
+	LatencyBreached     bool     `json:"latency_breached,omitempty"`
+	ErrorBreached       bool     `json:"error_breached,omitempty"`
+	BreachActive        bool     `json:"breach_active,omitempty"`
+	BreachDurationSec   int      `json:"breach_duration_sec,omitempty"`
+	StopTriggered       bool     `json:"stop_triggered,omitempty"`
+	StopReason          string   `json:"stop_reason,omitempty"`
+}
+
+type goalControllerState struct {
+	breachStartedAt    *time.Time
+	lastScaleAt        *time.Time
+	lastScaleDirection string
+	lastScaleReason    string
+}
+
+type goalControllerUpdate struct {
+	Status         *GoalStatus
+	ShouldScale    bool
+	TargetTotal    int
+	ScaleDirection string
+	ScaleReason    string
+	ShouldStop     bool
+	StopReason     string
 }
 
 type TxMetrics struct {
@@ -137,14 +179,22 @@ func NewTestRunner(maxTests int, hub *Hub, store storage.Store) *TestRunner {
 		tests, err := store.ListTests()
 		if err == nil {
 			for _, t := range tests {
+			groups := decodeStoredGroups(t.Groups)
+			goalConfig := decodeStoredGoalConfig(t.GoalConfig)
+			runtimeSettings := decodeStoredRuntimeSettings(t.RuntimeSettings)
 				mt := &ManagedTest{
 					ID:          t.ID,
 					Name:        t.Name,
 					Status:      t.Status,
+					Groups:      groups,
+					ScenarioMode: normalizeScenarioMode(t.ScenarioMode),
+					GoalConfig:  goalConfig,
+					RuntimeSettings: runtimeSettings,
 					TotalVUsers: t.TotalVUsers,
 					Duration:    time.Duration(t.Duration),
+					DurationStr: time.Duration(t.Duration).String(),
+					CreatedAt:   t.StartTime,
 					Error:       t.Error,
-					// Groups need to be reconstructed if we want full detail in history
 				}
 				if t.EndTime != nil {
 					mt.EndedAt = t.EndTime
@@ -261,6 +311,8 @@ func (tr *TestRunner) DeleteScript(id string) bool {
 type CreateTestRequest struct {
 	Name     string             `json:"name"`
 	Duration string             `json:"duration"`
+	ScenarioMode string         `json:"scenario_mode,omitempty"`
+	GoalConfig *GoalConfig      `json:"goal_config,omitempty"`
 	Groups   []CreateGroupEntry `json:"groups,omitempty"`
 	// Single-script shorthand (backwards compatible)
 	ScriptID string `json:"script_id,omitempty"`
@@ -268,6 +320,16 @@ type CreateTestRequest struct {
 	RampUp   string `json:"ramp_up,omitempty"`
 	// Test-level runtime overrides (mirrors LR Controller override behavior)
 	RuntimeSettings *RuntimeSettingsOverride `json:"runtime_settings,omitempty"`
+}
+
+type GoalConfig struct {
+	TargetAverageTPS *float64 `json:"target_average_tps,omitempty"`
+	P95LatencyMs     *float64 `json:"p95_latency_ms,omitempty"`
+	MaxErrorPct      *float64 `json:"max_error_pct,omitempty"`
+	MinVUsers        *int     `json:"min_vusers,omitempty"`
+	MaxVUsers        *int     `json:"max_vusers,omitempty"`
+	StopOnSLABreach  bool     `json:"stop_on_sla_breach,omitempty"`
+	SLABreachWindow  string   `json:"sla_breach_window,omitempty"`
 }
 
 // RuntimeSettingsOverride allows overriding script-level runtime settings at test time,
@@ -307,6 +369,21 @@ func (tr *TestRunner) CreateTest(req CreateTestRequest) (*ManagedTest, error) {
 	dur, err := time.ParseDuration(req.Duration)
 	if err != nil {
 		return nil, fmt.Errorf("invalid duration: %w", err)
+	}
+
+	scenarioMode := normalizeScenarioMode(req.ScenarioMode)
+	if scenarioMode == "goal_oriented" {
+		if req.GoalConfig == nil || !hasGoalConfig(req.GoalConfig) {
+			return nil, fmt.Errorf("goal-oriented scenarios require at least one goal or guardrail setting")
+		}
+		if req.GoalConfig.MinVUsers != nil && req.GoalConfig.MaxVUsers != nil && *req.GoalConfig.MinVUsers > *req.GoalConfig.MaxVUsers {
+			return nil, fmt.Errorf("goal-oriented scenarios require min_vusers to be less than or equal to max_vusers")
+		}
+		if req.GoalConfig.StopOnSLABreach && req.GoalConfig.SLABreachWindow != "" {
+			if _, err := time.ParseDuration(req.GoalConfig.SLABreachWindow); err != nil {
+				return nil, fmt.Errorf("invalid sla_breach_window: %w", err)
+			}
+		}
 	}
 
 	// Normalize: single-script shorthand → groups array
@@ -411,6 +488,9 @@ func (tr *TestRunner) CreateTest(req CreateTestRequest) (*ManagedTest, error) {
 		Name:        testName,
 		Status:      "QUEUED",
 		Groups:      testGroups,
+		ScenarioMode: scenarioMode,
+		GoalConfig:  cloneGoalConfig(req.GoalConfig),
+		RuntimeSettings: cloneRuntimeSettings(req.RuntimeSettings),
 		TotalVUsers: totalVUsers,
 		Duration:    dur,
 		DurationStr: req.Duration,
@@ -431,10 +511,13 @@ func (tr *TestRunner) CreateTest(req CreateTestRequest) (*ManagedTest, error) {
 			ID:          test.ID,
 			Name:        test.Name,
 			Status:      test.Status,
+			ScenarioMode: test.ScenarioMode,
 			TotalVUsers: test.TotalVUsers,
 			Duration:    int64(test.Duration),
 			StartTime:   test.CreatedAt,
 			Groups:      test.Groups,
+			GoalConfig:  test.GoalConfig,
+			RuntimeSettings: test.RuntimeSettings,
 		})
 	}
 
@@ -615,6 +698,7 @@ func (tr *TestRunner) runTest(test *ManagedTest) {
 	tr.broadcastEvent("test_started", test)
 
 	metricsDone := make(chan struct{})
+	test.goalControl = &goalControllerState{}
 	go tr.broadcastMetrics(test, mge, metricsDone)
 
 	result, err := mge.Run(ctx)
@@ -686,6 +770,43 @@ func (tr *TestRunner) broadcastMetrics(test *ManagedTest, mge *engine.MultiGroup
 				live.ErrorPct = float64(live.TotalErrors) / float64(live.TotalTx) * 100
 			}
 
+			if test.ScenarioMode == "goal_oriented" && test.GoalConfig != nil {
+				currentTotalVUsers := totalGroupVUsers(groupVUsers)
+				update := evaluateGoalController(live.Timestamp, currentTotalVUsers, live, test.GoalConfig, test.goalControl)
+				live.GoalStatus = update.Status
+
+				if update.ShouldScale {
+					targets := distributeTargetVUsers(test.Groups, groupVUsers, update.TargetTotal)
+					for _, group := range test.Groups {
+						target, exists := targets[group.Name]
+						if !exists || groupVUsers[group.Name] == target {
+							continue
+						}
+						if err := mge.ScaleVUsers(group.Name, target); err != nil {
+							slog.Warn("goal-oriented scale failed", "test_id", test.ID, "group", group.Name, "target_vusers", target, "error", err)
+							live.GoalStatus.LastScaleReason = fmt.Sprintf("scale failed: %v", err)
+							break
+						}
+						groupVUsers[group.Name] = target
+						for i := range test.Groups {
+							if test.Groups[i].Name == group.Name {
+								test.Groups[i].VUsers = target
+								break
+							}
+						}
+					}
+					now := live.Timestamp
+					test.goalControl.lastScaleAt = &now
+					test.goalControl.lastScaleDirection = update.ScaleDirection
+					test.goalControl.lastScaleReason = update.ScaleReason
+					live.GoalStatus.LastScaleAt = &now
+					live.GoalStatus.LastScaleDirection = update.ScaleDirection
+					live.GoalStatus.LastScaleReason = update.ScaleReason
+					live.GoalStatus.CurrentTotalVUsers = totalGroupVUsers(groupVUsers)
+					live.GoalStatus.SuggestedTotalVUsers = live.GoalStatus.CurrentTotalVUsers
+				}
+			}
+
 			for name, am := range snap.ByAction {
 				live.Transactions[name] = &TxMetrics{
 					Name:   name,
@@ -728,6 +849,12 @@ func (tr *TestRunner) broadcastMetrics(test *ManagedTest, mge *engine.MultiGroup
 				"timestamp": live.Timestamp,
 				"data":      live,
 			})
+
+			if live.GoalStatus != nil && live.GoalStatus.StopTriggered && test.Status == "RUNNING" {
+				if err := tr.StopTest(test.ID); err != nil {
+					slog.Warn("goal-oriented stop failed", "test_id", test.ID, "error", err)
+				}
+			}
 		}
 	}
 }
@@ -766,4 +893,335 @@ func applyRuntimeOverrides(script *dsl.Script, overrides *RuntimeSettingsOverrid
 	if overrides.AutoTransactions != "" {
 		script.Config.RunLogic.AutoTransactions = overrides.AutoTransactions
 	}
+}
+
+func cloneRuntimeSettings(overrides *RuntimeSettingsOverride) *RuntimeSettingsOverride {
+	if overrides == nil {
+		return nil
+	}
+	clone := *overrides
+	if overrides.Iterations != nil {
+		iterations := *overrides.Iterations
+		clone.Iterations = &iterations
+	}
+	if overrides.Pacing != nil {
+		pacing := *overrides.Pacing
+		clone.Pacing = &pacing
+	}
+	if overrides.ThinkTime != nil {
+		thinkTime := *overrides.ThinkTime
+		clone.ThinkTime = &thinkTime
+	}
+	if overrides.ErrorHandling != nil {
+		errorHandling := *overrides.ErrorHandling
+		clone.ErrorHandling = &errorHandling
+	}
+	return &clone
+}
+
+func cloneGoalConfig(config *GoalConfig) *GoalConfig {
+	if config == nil {
+		return nil
+	}
+	clone := *config
+	if config.TargetAverageTPS != nil {
+		value := *config.TargetAverageTPS
+		clone.TargetAverageTPS = &value
+	}
+	if config.P95LatencyMs != nil {
+		value := *config.P95LatencyMs
+		clone.P95LatencyMs = &value
+	}
+	if config.MaxErrorPct != nil {
+		value := *config.MaxErrorPct
+		clone.MaxErrorPct = &value
+	}
+	if config.MinVUsers != nil {
+		value := *config.MinVUsers
+		clone.MinVUsers = &value
+	}
+	if config.MaxVUsers != nil {
+		value := *config.MaxVUsers
+		clone.MaxVUsers = &value
+	}
+	return &clone
+}
+
+func normalizeScenarioMode(mode string) string {
+	if mode == "goal_oriented" {
+		return mode
+	}
+	return "vuser_driven"
+}
+
+func hasGoalConfig(config *GoalConfig) bool {
+	if config == nil {
+		return false
+	}
+	return config.TargetAverageTPS != nil ||
+		config.P95LatencyMs != nil ||
+		config.MaxErrorPct != nil ||
+		config.MinVUsers != nil ||
+		config.MaxVUsers != nil ||
+		config.StopOnSLABreach ||
+		config.SLABreachWindow != ""
+}
+
+func evaluateGoalController(now time.Time, currentTotalVUsers int, live *LiveMetrics, config *GoalConfig, state *goalControllerState) goalControllerUpdate {
+	status := &GoalStatus{
+		Mode:                 "goal_oriented",
+		CurrentTPS:           live.TPS,
+		CurrentTotalVUsers:   currentTotalVUsers,
+		TargetAverageTPS:     config.TargetAverageTPS,
+		MinVUsers:            config.MinVUsers,
+		MaxVUsers:            config.MaxVUsers,
+		SuggestedTotalVUsers: currentTotalVUsers,
+	}
+	if state != nil {
+		status.LastScaleAt = state.lastScaleAt
+		status.LastScaleDirection = state.lastScaleDirection
+		status.LastScaleReason = state.lastScaleReason
+	}
+
+	latencyBreached := config.P95LatencyMs != nil && live.P95Ms > *config.P95LatencyMs
+	errorBreached := config.MaxErrorPct != nil && live.ErrorPct > *config.MaxErrorPct
+	status.LatencyBreached = latencyBreached
+	status.ErrorBreached = errorBreached
+	status.BreachActive = latencyBreached || errorBreached
+
+	if status.BreachActive {
+		if state != nil && state.breachStartedAt == nil {
+			started := now
+			state.breachStartedAt = &started
+		}
+		if state != nil && state.breachStartedAt != nil {
+			status.BreachDurationSec = int(now.Sub(*state.breachStartedAt).Seconds())
+		}
+	} else if state != nil {
+		state.breachStartedAt = nil
+	}
+
+	if config.TargetAverageTPS != nil && shouldEvaluateScale(now, state) {
+		minTPS := *config.TargetAverageTPS * 0.95
+		maxTPS := *config.TargetAverageTPS * 1.05
+		desiredTotal := currentTotalVUsers
+		scaleDirection := ""
+		scaleReason := ""
+
+		if live.TPS < minTPS {
+			deltaRatio := (*config.TargetAverageTPS - live.TPS) / math.Max(*config.TargetAverageTPS, 1)
+			step := goalScaleStep(currentTotalVUsers, deltaRatio)
+			desiredTotal = currentTotalVUsers + step
+			scaleDirection = "up"
+			scaleReason = "below_target_tps"
+		} else if live.TPS > maxTPS {
+			deltaRatio := (live.TPS - *config.TargetAverageTPS) / math.Max(live.TPS, 1)
+			step := goalScaleStep(currentTotalVUsers, deltaRatio)
+			desiredTotal = currentTotalVUsers - step
+			scaleDirection = "down"
+			scaleReason = "above_target_tps"
+		}
+
+		desiredTotal = clampGoalVUsers(desiredTotal, config)
+		status.SuggestedTotalVUsers = desiredTotal
+		if desiredTotal != currentTotalVUsers {
+			return goalControllerUpdate{
+				Status:         status,
+				ShouldScale:    true,
+				TargetTotal:    desiredTotal,
+				ScaleDirection: scaleDirection,
+				ScaleReason:    scaleReason,
+			}
+		}
+	}
+
+	if config.StopOnSLABreach && status.BreachActive {
+		window := goalBreachWindow(config)
+		if time.Duration(status.BreachDurationSec)*time.Second >= window {
+			status.StopTriggered = true
+			status.StopReason = goalStopReason(latencyBreached, errorBreached)
+			return goalControllerUpdate{
+				Status:     status,
+				ShouldStop: true,
+				StopReason: status.StopReason,
+			}
+		}
+	}
+
+	return goalControllerUpdate{Status: status}
+}
+
+func shouldEvaluateScale(now time.Time, state *goalControllerState) bool {
+	if state == nil || state.lastScaleAt == nil {
+		return true
+	}
+	return now.Sub(*state.lastScaleAt) >= 5*time.Second
+}
+
+func goalScaleStep(currentTotalVUsers int, deltaRatio float64) int {
+	base := currentTotalVUsers
+	if base < 1 {
+		base = 1
+	}
+	step := int(math.Ceil(float64(base) * math.Min(math.Max(deltaRatio, 0.05), 0.25)))
+	if step < 1 {
+		return 1
+	}
+	return step
+}
+
+func clampGoalVUsers(value int, config *GoalConfig) int {
+	if config == nil {
+		if value < 0 {
+			return 0
+		}
+		return value
+	}
+	if config.MinVUsers != nil && value < *config.MinVUsers {
+		value = *config.MinVUsers
+	}
+	if config.MaxVUsers != nil && value > *config.MaxVUsers {
+		value = *config.MaxVUsers
+	}
+	if value < 0 {
+		return 0
+	}
+	return value
+}
+
+func goalBreachWindow(config *GoalConfig) time.Duration {
+	if config == nil || config.SLABreachWindow == "" {
+		return 30 * time.Second
+	}
+	window, err := time.ParseDuration(config.SLABreachWindow)
+	if err != nil || window <= 0 {
+		return 30 * time.Second
+	}
+	return window
+}
+
+func goalStopReason(latencyBreached bool, errorBreached bool) string {
+	switch {
+	case latencyBreached && errorBreached:
+		return "latency and error SLA breached"
+	case latencyBreached:
+		return "p95 latency SLA breached"
+	case errorBreached:
+		return "error rate SLA breached"
+	default:
+		return "SLA breached"
+	}
+}
+
+func totalGroupVUsers(groupVUsers map[string]int) int {
+	total := 0
+	for _, vusers := range groupVUsers {
+		total += vusers
+	}
+	return total
+}
+
+func distributeTargetVUsers(groups []TestGroup, current map[string]int, desiredTotal int) map[string]int {
+	if len(groups) == 0 {
+		return nil
+	}
+	if desiredTotal < 0 {
+		desiredTotal = 0
+	}
+
+	totalCurrent := 0
+	for _, group := range groups {
+		totalCurrent += current[group.Name]
+	}
+
+	targets := make(map[string]int, len(groups))
+	if totalCurrent <= 0 {
+		remaining := desiredTotal
+		for idx, group := range groups {
+			share := 0
+			if len(groups)-idx > 0 {
+				share = remaining / (len(groups) - idx)
+			}
+			targets[group.Name] = share
+			remaining -= share
+		}
+		return targets
+	}
+
+	type allocation struct {
+		name      string
+		base      int
+		remainder float64
+	}
+	allocations := make([]allocation, 0, len(groups))
+	assigned := 0
+	for _, group := range groups {
+		exact := float64(desiredTotal) * float64(current[group.Name]) / float64(totalCurrent)
+		base := int(math.Floor(exact))
+		allocations = append(allocations, allocation{name: group.Name, base: base, remainder: exact - float64(base)})
+		assigned += base
+	}
+
+	remaining := desiredTotal - assigned
+	for i := 0; i < len(allocations) && remaining > 0; i++ {
+		bestIdx := i
+		for j := i + 1; j < len(allocations); j++ {
+			if allocations[j].remainder > allocations[bestIdx].remainder {
+				bestIdx = j
+			}
+		}
+		allocations[i], allocations[bestIdx] = allocations[bestIdx], allocations[i]
+		allocations[i].base++
+		remaining--
+	}
+
+	for _, allocation := range allocations {
+		targets[allocation.name] = allocation.base
+	}
+	return targets
+}
+
+func decodeStoredGroups(value any) []TestGroup {
+	if value == nil {
+		return nil
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil
+	}
+	var groups []TestGroup
+	if err := json.Unmarshal(data, &groups); err != nil {
+		return nil
+	}
+	return groups
+}
+
+func decodeStoredRuntimeSettings(value any) *RuntimeSettingsOverride {
+	if value == nil {
+		return nil
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil
+	}
+	var overrides RuntimeSettingsOverride
+	if err := json.Unmarshal(data, &overrides); err != nil {
+		return nil
+	}
+	return cloneRuntimeSettings(&overrides)
+}
+
+func decodeStoredGoalConfig(value any) *GoalConfig {
+	if value == nil {
+		return nil
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil
+	}
+	var config GoalConfig
+	if err := json.Unmarshal(data, &config); err != nil {
+		return nil
+	}
+	return cloneGoalConfig(&config)
 }

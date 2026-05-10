@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, memo } from 'react'
 import { useApi } from '../hooks/useApi'
-import { TestSummary, TestStatus, StoredScript } from '../types'
+import { ScenarioDraft, TestSummary, TestStatus, StoredScript } from '../types'
 import CreateTestModal from './CreateTestModal'
 import StatusBadge from './StatusBadge'
 import './TestHub.css'
@@ -27,12 +27,55 @@ function formatDate(iso: string): string {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
+function buildScenarioDraft(test: TestSummary): ScenarioDraft {
+  const groups = test.groups?.length
+    ? test.groups.map((group) => ({
+        name: group.name,
+        scriptId: group.script_id,
+        vusers: group.vusers,
+        rampUp: group.ramp_up || '',
+        rampDown: group.ramp_down || '',
+        initialization: group.initialization || 'at_runtime',
+      }))
+    : [{
+        name: '',
+        scriptId: test.script_id || '',
+        vusers: test.total_vusers || 10,
+        rampUp: '',
+        rampDown: '',
+        initialization: 'at_runtime' as const,
+      }]
+
+  return {
+    name: test.name,
+    duration: test.duration,
+    scenarioMode: test.scenario_mode || 'vuser_driven',
+    goalConfig: {
+      target_average_tps: test.goal_config?.target_average_tps,
+      p95_latency_ms: test.goal_config?.p95_latency_ms,
+      max_error_pct: test.goal_config?.max_error_pct,
+      min_vusers: test.goal_config?.min_vusers,
+      max_vusers: test.goal_config?.max_vusers,
+      stop_on_sla_breach: test.goal_config?.stop_on_sla_breach,
+      sla_breach_window: test.goal_config?.sla_breach_window || '',
+    },
+    groups,
+    runtimeSettings: {
+      iterations: test.runtime_settings?.iterations,
+      log_level: test.runtime_settings?.log_level || '',
+      auto_transactions: test.runtime_settings?.auto_transactions || '',
+      snapshot_on_error: Boolean(test.runtime_settings?.error_handling?.snapshot_on_error),
+    },
+  }
+}
+
 function TestHub({ testStatuses, onSelectTest }: Props) {
   const api = useApi()
   const [tests, setTests] = useState<TestSummary[]>([])
   const [scripts, setScripts] = useState<StoredScript[]>([])
   const [showCreate, setShowCreate] = useState(false)
   const [expandedScenario, setExpandedScenario] = useState<string | null>(null)
+  const [editingScenario, setEditingScenario] = useState<ScenarioDraft | null>(null)
 
   const refresh = useCallback(async () => {
     try {
@@ -90,6 +133,16 @@ function TestHub({ testStatuses, onSelectTest }: Props) {
     setExpandedScenario(prev => prev === name ? null : name)
   }
 
+  const openCreate = () => {
+    setEditingScenario(null)
+    setShowCreate(true)
+  }
+
+  const openEdit = (test: TestSummary) => {
+    setEditingScenario(buildScenarioDraft(test))
+    setShowCreate(true)
+  }
+
   return (
     <div className="test-hub">
       <div className="hub-header">
@@ -97,7 +150,7 @@ function TestHub({ testStatuses, onSelectTest }: Props) {
           <h2>Scenarios</h2>
           <p className="hub-subtitle">{scenarios.length} scenario{scenarios.length !== 1 ? 's' : ''} · {tests.length} total run{tests.length !== 1 ? 's' : ''}</p>
         </div>
-        <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
+        <button className="btn btn-primary" onClick={openCreate}>
           New Scenario
         </button>
       </div>
@@ -148,6 +201,13 @@ function TestHub({ testStatuses, onSelectTest }: Props) {
                     onClick={(e) => { e.stopPropagation(); onSelectTest(latest.id) }}
                   >
                     Open
+                  </button>
+
+                  <button
+                    className="btn btn-sm btn-ghost scenario-edit-btn"
+                    onClick={(e) => { e.stopPropagation(); openEdit(latest) }}
+                  >
+                    Edit
                   </button>
                 </div>
 
@@ -202,9 +262,14 @@ function TestHub({ testStatuses, onSelectTest }: Props) {
       {showCreate && (
         <CreateTestModal
           scripts={scripts}
-          onClose={() => setShowCreate(false)}
+          initialScenario={editingScenario || undefined}
+          onClose={() => {
+            setShowCreate(false)
+            setEditingScenario(null)
+          }}
           onCreated={(test) => {
             setShowCreate(false)
+            setEditingScenario(null)
             refresh()
             onSelectTest(test.id)
           }}

@@ -20,7 +20,7 @@ export function useApi() {
   const getTest = useCallback((id: string) => request<any>(`/tests/${id}`), [])
 
   const createTest = useCallback(
-    (data: { name: string; script_id: string; vusers: number; duration: string; ramp_up?: string }) =>
+    (data: any) =>
       request<any>('/tests', { method: 'POST', body: JSON.stringify(data) }),
     [],
   )

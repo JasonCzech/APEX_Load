@@ -5,6 +5,48 @@ export interface TestGroup {
   protocol: string
   vusers: number
   ramp_up?: string
+  ramp_down?: string
+  initialization?: 'at_runtime' | 'at_once'
+}
+
+export interface RuntimeSettingsOverride {
+  iterations?: number
+  log_level?: string
+  auto_transactions?: string
+  error_handling?: {
+    snapshot_on_error?: boolean
+  }
+}
+
+export type ScenarioMode = 'vuser_driven' | 'goal_oriented'
+
+export interface GoalConfig {
+  target_average_tps?: number
+  p95_latency_ms?: number
+  max_error_pct?: number
+  min_vusers?: number
+  max_vusers?: number
+  stop_on_sla_breach?: boolean
+  sla_breach_window?: string
+}
+
+export interface GoalStatus {
+  mode: 'goal_oriented'
+  current_tps: number
+  current_total_vusers: number
+  target_average_tps?: number
+  min_vusers?: number
+  max_vusers?: number
+  suggested_total_vusers?: number
+  last_scale_direction?: 'up' | 'down'
+  last_scale_reason?: string
+  last_scale_at?: string
+  latency_breached?: boolean
+  error_breached?: boolean
+  breach_active?: boolean
+  breach_duration_sec?: number
+  stop_triggered?: boolean
+  stop_reason?: string
 }
 
 export interface TestSummary {
@@ -21,9 +63,35 @@ export interface TestSummary {
   error?: string
   history?: any[]
   start_time?: string
+  runtime_settings?: RuntimeSettingsOverride
+  scenario_mode?: ScenarioMode
+  goal_config?: GoalConfig
   // backwards compat
   script_id?: string
   script_name?: string
+}
+
+export interface ScenarioDraftGroup {
+  name: string
+  scriptId: string
+  vusers: number
+  rampUp: string
+  rampDown: string
+  initialization: 'at_runtime' | 'at_once'
+}
+
+export interface ScenarioDraft {
+  name: string
+  duration: string
+  scenarioMode: ScenarioMode
+  goalConfig: GoalConfig
+  groups: ScenarioDraftGroup[]
+  runtimeSettings: {
+    iterations?: number
+    log_level: string
+    auto_transactions: string
+    snapshot_on_error: boolean
+  }
 }
 
 export type TestStatus =
@@ -49,6 +117,7 @@ export interface LiveMetrics {
   p99_ms: number
   transactions?: Record<string, TxMetrics>
   groups?: Record<string, GroupLiveMetrics>
+  goal_status?: GoalStatus
   resources?: SystemResources
 }
 

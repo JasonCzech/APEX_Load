@@ -14,12 +14,15 @@ import './components/Pages.css'
 
 type View =
   | { page: NavPage }
+  | { page: 'scripts'; mode?: 'list' | 'create' | 'edit' | 'import'; scriptId?: string }
   | { page: 'test'; testId: string }
 
 export default function App() {
   const [view, setView] = useState<View>({ page: 'dashboard' })
   const [metricsHistory, setMetricsHistory] = useState<Record<string, MetricsHistoryPoint[]>>({})
   const [testStatuses, setTestStatuses] = useState<Record<string, string>>({})
+  const scriptMode = view.page === 'scripts' && 'mode' in view ? view.mode : undefined
+  const scriptEditId = view.page === 'scripts' && 'scriptId' in view ? view.scriptId : undefined
 
   const handleWSMessage = useCallback((msg: WSMessage) => {
     if (msg.type === 'metrics_update' && msg.data) {
@@ -68,6 +71,8 @@ export default function App() {
   const navigateToTest = (id: string) => setView({ page: 'test', testId: id })
   const activePage = view.page === 'test' ? 'tests' : view.page
 
+  const navigateToScriptEdit = (scriptId: string) => setView({ page: 'scripts', mode: 'edit', scriptId })
+
   const handleNavigate = (page: NavPage) => {
     setView({ page })
   }
@@ -99,9 +104,11 @@ export default function App() {
             testId={view.testId}
             history={metricsHistory[view.testId] || []}
             onBack={() => setView({ page: 'tests' })}
+            onEditScript={navigateToScriptEdit}
+            onSelectTest={navigateToTest}
           />
         )}
-        {view.page === 'scripts' && <ScriptsPage />}
+        {view.page === 'scripts' && <ScriptsPage initialMode={scriptMode} initialEditId={scriptEditId} />}
         {view.page === 'results' && (
           <ResultsPage
             testStatuses={testStatuses}

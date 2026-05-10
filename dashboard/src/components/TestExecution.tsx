@@ -4,8 +4,9 @@ import {
   Tooltip, ResponsiveContainer, Legend, ReferenceArea,
 } from 'recharts'
 import { useApi } from '../hooks/useApi'
-import { TestSummary, MetricsHistoryPoint, TxMetrics, GroupLiveMetrics } from '../types'
+import { TestSummary, MetricsHistoryPoint, TxMetrics, GroupLiveMetrics, GoalStatus } from '../types'
 import StatusBadge from './StatusBadge'
+import CreateTestModal from './CreateTestModal'
 import './TestExecution.css'
 
 const GROUP_COLORS = [
@@ -13,13 +14,198 @@ const GROUP_COLORS = [
   'var(--chart-4)', 'var(--chart-5)', 'var(--chart-6)',
 ]
 
+function parseDurationToSeconds(input?: string): number {
+  if (!input) return 0
+  let total = 0
+  const matches = input.matchAll(/(\d+)(h|m|s)/g)
+  for (const match of matches) {
+    const value = Number(match[1])
+    switch (match[2]) {
+      case 'h':
+        total += value * 3600
+        break
+      case 'm':
+        total += value * 60
+        break
+      case 's':
+        total += value
+        break
+    }
+  }
+  return total
+}
+
+function formatPreviewTime(seconds: number): string {
+  if (seconds <= 0) return 'now'
+  const hours = Math.floor(seconds / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+  const secs = seconds % 60
+  if (hours > 0) return `${hours}h ${minutes}m`
+  if (minutes > 0) return secs > 0 ? `${minutes}m ${secs}s` : `${minutes}m`
+  return `${secs}s`
+}
+
+function formatScenarioTimeline(seconds: number): string {
+  if (seconds <= 0) return '0s'
+  const hours = Math.floor(seconds / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+  const secs = seconds % 60
+  if (hours > 0) return `${hours}h${minutes > 0 ? ` ${minutes}m` : ''}`
+  if (minutes > 0) return secs > 0 ? `${minutes}m ${secs}s` : `${minutes}m`
+  return `${secs}s`
+}
+
 interface Props {
   testId: string
   history: MetricsHistoryPoint[]
   onBack: () => void
+  onEditScript: (scriptId: string) => void
+  onSelectTest: (testId: string) => void
 }
 
-export default function TestExecution({ testId, history, onBack }: Props) {
+interface ScenarioScriptDetail {
+  id: string
+  name: string
+  protocol: string
+  version?: string
+  script?: {
+    config?: {
+      base_url?: string
+      think_time?: {
+        type?: string
+        mean_ms?: number
+        ignore?: boolean
+      }
+      pacing?: {
+        type?: string
+        delay_ms?: number
+        interval_ms?: number
+        tps?: number
+      }
+      run_logic?: {
+        iterations?: number
+        auto_transactions?: string
+      }
+      log?: {
+        level?: string
+      }
+      error_handling?: {
+        continue_on_error?: boolean
+        snapshot_on_error?: boolean
+        max_retries?: number
+      }
+      http?: {
+        version?: string
+        max_conns_per_host?: number
+      }
+    }
+    data_sources?: Array<{ name?: string; type?: string; strategy?: string }>
+    init?: any[]
+    actions?: any[]
+    teardown?: any[]
+  }
+}
+
+function formatThinkTimeLabel(scriptDetail?: ScenarioScriptDetail): string {
+  const thinkTime = scriptDetail?.script?.config?.think_time
+  if (!thinkTime) return 'Script default'
+  if (thinkTime.ignore) return 'Disabled'
+  return `${thinkTime.type || 'fixed'} · ${thinkTime.mean_ms || 0}ms`
+}
+
+function formatPacingLabel(scriptDetail?: ScenarioScriptDetail): string {
+  const pacing = scriptDetail?.script?.config?.pacing
+  if (!pacing?.type || pacing.type === 'none') return 'None'
+  if (pacing.type === 'fixed_delay') return `Fixed delay · ${pacing.delay_ms || 0}ms`
+  if (pacing.type === 'fixed_interval') return `Fixed interval · ${pacing.interval_ms || 0}ms`
+  if (pacing.type === 'tps') return `Target TPS · ${pacing.tps || 0}`
+  return pacing.type.replace(/_/g, ' ')
+}
+
+function formatEffectiveIterations(scriptDetail: ScenarioScriptDetail | undefined, test: TestSummary | null): string {
+  const override = test?.runtime_settings?.iterations
+  if (override !== undefined) return `${override} (scenario override)`
+  const iterations = scriptDetail?.script?.config?.run_logic?.iterations
+  if (!iterations) return 'Duration driven'
+  return `${iterations}`
+}
+
+function formatEffectiveAutoTransactions(scriptDetail: ScenarioScriptDetail | undefined, test: TestSummary | null): string {
+  const override = test?.runtime_settings?.auto_transactions
+  if (override) return `${override} (scenario override)`
+  return scriptDetail?.script?.config?.run_logic?.auto_transactions || 'none'
+}
+
+function formatEffectiveLogLevel(scriptDetail: ScenarioScriptDetail | undefined, test: TestSummary | null): string {
+  const override = test?.runtime_settings?.log_level
+  if (override) return `${override} (scenario override)`
+  return scriptDetail?.script?.config?.log?.level || 'standard'
+}
+
+function formatSnapshotOnError(scriptDetail: ScenarioScriptDetail | undefined, test: TestSummary | null): string {
+  const override = test?.runtime_settings?.error_handling?.snapshot_on_error
+  if (override !== undefined) return override ? 'Enabled (scenario override)' : 'Disabled (scenario override)'
+  return scriptDetail?.script?.config?.error_handling?.snapshot_on_error ? 'Enabled' : 'Disabled'
+}
+
+function formatGoalScaleReason(reason?: string): string {
+  if (!reason) return 'Tracking target'
+  return reason.replace(/_/g, ' ')
+}
+
+function describeGoalController(status?: GoalStatus): string {
+  if (!status) return 'Waiting for live metrics'
+  if (status.stop_triggered) return `Stopping: ${status.stop_reason || 'SLA breached'}`
+  if (status.breach_active) return `SLA breach active for ${status.breach_duration_sec || 0}s`
+  if (status.last_scale_direction) {
+    return `Last scale ${status.last_scale_direction} due to ${formatGoalScaleReason(status.last_scale_reason)}`
+  }
+  return 'Tracking target'
+}
+
+function buildScenarioDraft(test: TestSummary) {
+  const groups = test.groups?.length
+    ? test.groups.map((group) => ({
+        name: group.name,
+        scriptId: group.script_id,
+        vusers: group.vusers,
+        rampUp: group.ramp_up || '',
+        rampDown: group.ramp_down || '',
+        initialization: group.initialization || 'at_runtime',
+      }))
+    : [{
+        name: '',
+        scriptId: test.script_id || '',
+        vusers: test.total_vusers || 10,
+        rampUp: '',
+        rampDown: '',
+        initialization: 'at_runtime' as const,
+      }]
+
+  return {
+    name: test.name,
+    duration: test.duration,
+    scenarioMode: test.scenario_mode || 'vuser_driven',
+    goalConfig: {
+      target_average_tps: test.goal_config?.target_average_tps,
+      p95_latency_ms: test.goal_config?.p95_latency_ms,
+      max_error_pct: test.goal_config?.max_error_pct,
+      min_vusers: test.goal_config?.min_vusers,
+      max_vusers: test.goal_config?.max_vusers,
+      stop_on_sla_breach: test.goal_config?.stop_on_sla_breach,
+      sla_breach_window: test.goal_config?.sla_breach_window || '',
+    },
+    groups,
+    runtimeSettings: {
+      iterations: test.runtime_settings?.iterations,
+      log_level: test.runtime_settings?.log_level || '',
+      auto_transactions: test.runtime_settings?.auto_transactions || '',
+      snapshot_on_error: Boolean(test.runtime_settings?.error_handling?.snapshot_on_error),
+    },
+  }
+}
+
+export default function TestExecution({ testId, history, onBack, onEditScript, onSelectTest }: Props) {
   const api = useApi()
   const [test, setTest] = useState<TestSummary | null>(null)
   const [error, setError] = useState('')
@@ -32,6 +218,12 @@ export default function TestExecution({ testId, history, onBack }: Props) {
   const [vuserTargets, setVuserTargets] = useState<Record<string, number>>({})
   const [durationInput, setDurationInput] = useState('')
   const [controlFeedback, setControlFeedback] = useState('')
+  const [scriptDetails, setScriptDetails] = useState<Record<string, ScenarioScriptDetail>>({})
+  const [expandedScenarioScript, setExpandedScenarioScript] = useState<string | null>(null)
+  const [scriptDetailsLoading, setScriptDetailsLoading] = useState(false)
+  const [scriptDetailsError, setScriptDetailsError] = useState('')
+  const [showScenarioEditor, setShowScenarioEditor] = useState(false)
+  const [availableScripts, setAvailableScripts] = useState<Array<{ id: string; name: string; protocol: string; version: string; created_at: string }>>([])
 
   useEffect(() => {
     const load = async () => {
@@ -46,6 +238,66 @@ export default function TestExecution({ testId, history, onBack }: Props) {
     const interval = setInterval(load, 2000)
     return () => clearInterval(interval)
   }, [api, testId])
+
+  useEffect(() => {
+    if (!test?.groups?.length) {
+      setScriptDetails({})
+      setScriptDetailsError('')
+      return
+    }
+
+    const uniqueScriptIds = [...new Set(test.groups.map((group) => group.script_id).filter(Boolean))]
+    if (uniqueScriptIds.length === 0) return
+
+    let cancelled = false
+
+    const loadScriptDetails = async () => {
+      setScriptDetailsLoading(true)
+      setScriptDetailsError('')
+      try {
+        const results = await Promise.all(uniqueScriptIds.map(async (scriptId) => {
+          const detail = await api.getScript(scriptId)
+          return [scriptId, detail as ScenarioScriptDetail] as const
+        }))
+        if (cancelled) return
+        setScriptDetails(Object.fromEntries(results))
+      } catch (e: any) {
+        if (cancelled) return
+        setScriptDetailsError(e.message || 'Unable to load script details')
+      } finally {
+        if (!cancelled) setScriptDetailsLoading(false)
+      }
+    }
+
+    loadScriptDetails()
+
+    return () => {
+      cancelled = true
+    }
+  }, [api, test])
+
+  useEffect(() => {
+    if (!showScenarioEditor) return
+    let cancelled = false
+
+    const loadScripts = async () => {
+      try {
+        const response = await api.listScripts()
+        if (!cancelled) {
+          setAvailableScripts(response.scripts || [])
+        }
+      } catch {
+        if (!cancelled) {
+          setAvailableScripts([])
+        }
+      }
+    }
+
+    loadScripts()
+    return () => {
+      cancelled = true
+    }
+  }, [api, showScenarioEditor])
 
   const isRunning = test?.status === 'RUNNING' || test?.status === 'INITIALIZING'
 
@@ -159,6 +411,162 @@ export default function TestExecution({ testId, history, onBack }: Props) {
     setRefAreaRight('')
   }
 
+  const handleChartMouseDown = (activeLabel?: string | number) => {
+    if (activeLabel === undefined) return
+    setRefAreaLeft(activeLabel)
+    setRefAreaRight(activeLabel)
+  }
+
+  const handleChartMouseMove = (activeLabel?: string | number) => {
+    if (activeLabel === undefined || refAreaLeft === '') return
+    setRefAreaRight(activeLabel)
+  }
+
+  const showRefArea = refAreaLeft !== ''
+  const refAreaEnd = refAreaRight === '' ? refAreaLeft : refAreaRight
+
+  const liveControlPreview = useMemo(() => {
+    if (!test?.groups?.length) {
+      return {
+        points: [],
+        currentTotal: 0,
+        projectedTotal: 0,
+        remainingSeconds: 0,
+        projectedDurationSeconds: 0,
+        hasPendingChanges: false,
+      }
+    }
+
+    const groupMetricsMap = test.live_metrics?.groups ?? {}
+    const startedAt = test.started_at || test.start_time
+    const elapsedSeconds = startedAt
+      ? Math.max(0, Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000))
+      : 0
+    const projectedDurationSeconds = parseDurationToSeconds(durationInput || test.duration)
+    const remainingSeconds = Math.max(projectedDurationSeconds - elapsedSeconds, 0)
+    const transitionSeconds = remainingSeconds > 0 ? Math.min(Math.max(Math.round(remainingSeconds * 0.06), 1), 30) : 1
+
+    const currentPoint: Record<string, number> = { second: 0, total: 0 }
+    const projectedPoint: Record<string, number> = { second: transitionSeconds, total: 0 }
+    const steadyPoint: Record<string, number> = { second: Math.max(transitionSeconds, remainingSeconds), total: 0 }
+    const endPoint: Record<string, number> = { second: Math.max(transitionSeconds + 1, remainingSeconds + 1), total: 0 }
+
+    let hasPendingChanges = durationInput !== '' && durationInput !== test.duration
+
+    test.groups.forEach((group, index) => {
+      const dataKey = `group${index}`
+      const liveGroup = groupMetricsMap[group.name]
+      const currentValue = liveGroup?.vusers ?? group.vusers
+      const projectedValue = vuserTargets[group.name] ?? group.vusers
+
+      currentPoint[dataKey] = currentValue
+      projectedPoint[dataKey] = projectedValue
+      steadyPoint[dataKey] = projectedValue
+      endPoint[dataKey] = 0
+
+      currentPoint.total += currentValue
+      projectedPoint.total += projectedValue
+      steadyPoint.total += projectedValue
+
+      if (projectedValue !== group.vusers) {
+        hasPendingChanges = true
+      }
+    })
+
+    return {
+      points: [currentPoint, projectedPoint, steadyPoint, endPoint],
+      currentTotal: currentPoint.total,
+      projectedTotal: projectedPoint.total,
+      remainingSeconds,
+      projectedDurationSeconds,
+      hasPendingChanges,
+    }
+  }, [durationInput, test, vuserTargets])
+
+  const queuedScenarioPreview = useMemo(() => {
+    if (!test?.groups?.length) {
+      return {
+        points: [],
+        totalVUsers: 0,
+        totalSeconds: 0,
+        steadySeconds: 0,
+      }
+    }
+
+    const steadySeconds = parseDurationToSeconds(test.duration)
+    let maxRampDown = 0
+    test.groups.forEach((group) => {
+      const rampDown = parseDurationToSeconds(group.ramp_down)
+      if (rampDown > maxRampDown) maxRampDown = rampDown
+    })
+
+    const totalSeconds = steadySeconds + maxRampDown
+    if (totalSeconds <= 0) {
+      return {
+        points: [],
+        totalVUsers: test.total_vusers,
+        totalSeconds: 0,
+        steadySeconds,
+      }
+    }
+
+    const step = Math.max(1, Math.floor(totalSeconds / 30))
+    const points: Array<Record<string, number>> = []
+
+    for (let second = 0; second <= totalSeconds; second += step) {
+      const point: Record<string, number> = { second, total: 0 }
+      test.groups.forEach((group, index) => {
+        const rampUp = parseDurationToSeconds(group.ramp_up)
+        const rampDown = parseDurationToSeconds(group.ramp_down)
+        let value = 0
+
+        if (second < rampUp) {
+          value = rampUp > 0 ? (second / rampUp) * group.vusers : group.vusers
+        } else if (second < steadySeconds) {
+          value = group.vusers
+        } else if (second < steadySeconds + rampDown) {
+          value = rampDown > 0 ? (1 - (second - steadySeconds) / rampDown) * group.vusers : 0
+        }
+
+        const roundedValue = Math.round(Math.max(0, value))
+        point[`group${index}`] = roundedValue
+        point.total += roundedValue
+      })
+      points.push(point)
+    }
+
+    const lastPoint = points[points.length - 1]
+    if (!lastPoint || lastPoint.second < totalSeconds) {
+      const finalPoint: Record<string, number> = { second: totalSeconds, total: 0 }
+      test.groups.forEach((_, index) => {
+        finalPoint[`group${index}`] = 0
+      })
+      points.push(finalPoint)
+    }
+
+    return {
+      points,
+      totalVUsers: test.total_vusers,
+      totalSeconds,
+      steadySeconds,
+    }
+  }, [test])
+
+  const queuedScenarioRows = useMemo(() => {
+    if (!test?.groups?.length) return []
+    return test.groups.map((group) => {
+      const detail = scriptDetails[group.script_id]
+      return {
+        group,
+        detail,
+        actionCount: detail?.script?.actions?.length || 0,
+        initCount: detail?.script?.init?.length || 0,
+        teardownCount: detail?.script?.teardown?.length || 0,
+        dataSourceCount: detail?.script?.data_sources?.length || 0,
+      }
+    })
+  }, [scriptDetails, test])
+
   if (error) {
     return (
       <div className="execution">
@@ -174,10 +582,12 @@ export default function TestExecution({ testId, history, onBack }: Props) {
 
 
   const metrics = test?.live_metrics
+  const goalStatus = metrics?.goal_status
   const transactions = metrics?.transactions ? Object.values(metrics.transactions) : []
   const groupMetrics = metrics?.groups ? Object.values(metrics.groups) : []
   const isMultiGroup = (test?.groups?.length || 0) > 1
   const groupNames = test?.groups?.map((g) => g.name) || []
+  const isGoalOriented = test.scenario_mode === 'goal_oriented'
 
   return (
     <div className="execution">
@@ -204,9 +614,14 @@ export default function TestExecution({ testId, history, onBack }: Props) {
             )}
           </div>
           {test.status === 'QUEUED' && (
-            <button className="btn btn-success" onClick={() => api.startTest(testId)}>
-              Start
-            </button>
+            <>
+              <button className="btn btn-secondary" onClick={() => setShowScenarioEditor(true)}>
+                Edit Scenario
+              </button>
+              <button className="btn btn-success" onClick={() => api.startTest(testId)}>
+                Start
+              </button>
+            </>
           )}
           {isRunning && (
             <>
@@ -232,57 +647,149 @@ export default function TestExecution({ testId, history, onBack }: Props) {
           </button>
           {showControls && (
             <div className="live-controls-panel">
-              <div className="control-group">
-                <h4 className="control-title">VUser Scaling</h4>
-                {(test?.groups || []).map((g: any) => (
-                  <div key={g.name} className="vuser-control-row">
-                    <span className="control-label">{g.name}</span>
-                    <span className="control-current">Current: {g.vusers}</span>
-                    <input
-                      type="range"
-                      className="vuser-slider"
-                      min={0}
-                      max={Math.max(g.vusers * 3, 100)}
-                      value={vuserTargets[g.name] ?? g.vusers}
-                      onChange={e => setVuserTargets(prev => ({ ...prev, [g.name]: parseInt(e.target.value) }))}
-                    />
-                    <input
-                      type="number"
-                      className="vuser-input"
-                      min={0}
-                      value={vuserTargets[g.name] ?? g.vusers}
-                      onChange={e => setVuserTargets(prev => ({ ...prev, [g.name]: parseInt(e.target.value) || 0 }))}
-                    />
-                    <button
-                      className="btn btn-sm btn-accent"
-                      onClick={() => handleScaleVUsers(g.name)}
-                      disabled={(vuserTargets[g.name] ?? g.vusers) === g.vusers}
-                    >
-                      Apply
-                    </button>
+              <div className="live-controls-layout">
+                <div className="control-group control-group-form">
+                  <h4 className="control-title">VUser Scaling</h4>
+                  {(test?.groups || []).map((g: any) => (
+                    <div key={g.name} className="vuser-control-row">
+                      <span className="control-label">{g.name}</span>
+                      <span className="control-current">Current: {g.vusers}</span>
+                      <input
+                        type="range"
+                        className="vuser-slider"
+                        min={0}
+                        max={Math.max(g.vusers * 3, 100)}
+                        value={vuserTargets[g.name] ?? g.vusers}
+                        onChange={e => setVuserTargets(prev => ({ ...prev, [g.name]: parseInt(e.target.value) }))}
+                      />
+                      <input
+                        type="number"
+                        className="vuser-input"
+                        min={0}
+                        value={vuserTargets[g.name] ?? g.vusers}
+                        onChange={e => setVuserTargets(prev => ({ ...prev, [g.name]: parseInt(e.target.value) || 0 }))}
+                      />
+                      <button
+                        className="btn btn-sm btn-accent"
+                        onClick={() => handleScaleVUsers(g.name)}
+                        disabled={(vuserTargets[g.name] ?? g.vusers) === g.vusers}
+                      >
+                        Apply
+                      </button>
+                    </div>
+                  ))}
+
+                  <div className="control-group control-group-nested">
+                    <h4 className="control-title">Duration</h4>
+                    <div className="duration-control-row">
+                      <span className="control-label">Target</span>
+                      <input
+                        type="text"
+                        className="duration-input"
+                        placeholder="e.g. 10m, 1h30m"
+                        value={durationInput}
+                        onChange={e => setDurationInput(e.target.value)}
+                      />
+                      <div className="duration-quick-btns">
+                        <button className="btn btn-sm btn-secondary" onClick={() => setDurationInput('5m')}>5m</button>
+                        <button className="btn btn-sm btn-secondary" onClick={() => setDurationInput('10m')}>10m</button>
+                        <button className="btn btn-sm btn-secondary" onClick={() => setDurationInput('30m')}>30m</button>
+                        <button className="btn btn-sm btn-secondary" onClick={() => setDurationInput('1h')}>1h</button>
+                      </div>
+                      <button className="btn btn-sm btn-accent" onClick={handleAdjustDuration}>
+                        Apply
+                      </button>
+                    </div>
                   </div>
-                ))}
-              </div>
-              <div className="control-group">
-                <h4 className="control-title">Duration</h4>
-                <div className="duration-control-row">
-                  <span className="control-label">Target</span>
-                  <input
-                    type="text"
-                    className="duration-input"
-                    placeholder="e.g. 10m, 1h30m"
-                    value={durationInput}
-                    onChange={e => setDurationInput(e.target.value)}
-                  />
-                  <div className="duration-quick-btns">
-                    <button className="btn btn-sm btn-secondary" onClick={() => setDurationInput('5m')}>5m</button>
-                    <button className="btn btn-sm btn-secondary" onClick={() => setDurationInput('10m')}>10m</button>
-                    <button className="btn btn-sm btn-secondary" onClick={() => setDurationInput('30m')}>30m</button>
-                    <button className="btn btn-sm btn-secondary" onClick={() => setDurationInput('1h')}>1h</button>
+                </div>
+
+                <div className="control-group control-group-preview">
+                  <div className="preview-header-row">
+                    <div>
+                      <h4 className="control-title">Projected Model</h4>
+                      <p className="control-preview-note">Preview uses the values currently entered on the left and shows the load shape from now until the adjusted stop time.</p>
+                    </div>
+                    {liveControlPreview.hasPendingChanges && (
+                      <span className="preview-pending-badge">Pending edits</span>
+                    )}
                   </div>
-                  <button className="btn btn-sm btn-accent" onClick={handleAdjustDuration}>
-                    Apply
-                  </button>
+
+                  <div className="preview-metrics">
+                    <div className="preview-metric-card">
+                      <span className="preview-metric-label">Now</span>
+                      <span className="preview-metric-value">{liveControlPreview.currentTotal}</span>
+                      <span className="preview-metric-detail">active VUsers</span>
+                    </div>
+                    <div className="preview-metric-card">
+                      <span className="preview-metric-label">After Apply</span>
+                      <span className="preview-metric-value">{liveControlPreview.projectedTotal}</span>
+                      <span className="preview-metric-detail">projected VUsers</span>
+                    </div>
+                    <div className="preview-metric-card">
+                      <span className="preview-metric-label">Remaining</span>
+                      <span className="preview-metric-value">{formatPreviewTime(liveControlPreview.remainingSeconds)}</span>
+                      <span className="preview-metric-detail">to stop</span>
+                    </div>
+                  </div>
+
+                  <div className="control-preview-chart">
+                    <ResponsiveContainer width="100%" height={220}>
+                      <AreaChart data={liveControlPreview.points} margin={{ top: 10, right: 12, left: -18, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                        <XAxis
+                          dataKey="second"
+                          stroke="var(--text-muted)"
+                          fontSize={11}
+                          tickLine={false}
+                          tickFormatter={(value) => formatPreviewTime(Number(value))}
+                        />
+                        <YAxis
+                          stroke="var(--text-muted)"
+                          fontSize={11}
+                          tickLine={false}
+                          allowDecimals={false}
+                        />
+                        <Tooltip
+                          labelFormatter={(value) => `T+${formatPreviewTime(Number(value))}`}
+                          contentStyle={{ background: 'rgba(33, 36, 47, 0.92)', border: '1px solid var(--border)', borderRadius: 10 }}
+                          formatter={(value: number, name: string) => [value, name === 'total' ? 'Total' : name]}
+                        />
+                        <Legend verticalAlign="top" height={28} />
+                        {(test?.groups || []).map((group, index) => (
+                          <Area
+                            key={group.name}
+                            type="stepAfter"
+                            dataKey={`group${index}`}
+                            name={group.name}
+                            stackId="projected"
+                            stroke={GROUP_COLORS[index % GROUP_COLORS.length]}
+                            fill={GROUP_COLORS[index % GROUP_COLORS.length]}
+                            fillOpacity={0.3}
+                            isAnimationActive={false}
+                          />
+                        ))}
+                        <Line
+                          type="stepAfter"
+                          dataKey="total"
+                          name="Total"
+                          stroke="var(--text-primary)"
+                          strokeWidth={2}
+                          dot={false}
+                          isAnimationActive={false}
+                        />
+                        <ReferenceArea
+                          x1={0}
+                          x2={Math.max(0, Math.min(liveControlPreview.points[1]?.second ?? 0, liveControlPreview.points[2]?.second ?? 0))}
+                          fill="var(--accent)"
+                          fillOpacity={0.06}
+                          strokeOpacity={0}
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                    <div className="control-preview-caption">
+                      The profile steps from the current live load to the entered targets, then holds until the projected end of the run.
+                    </div>
+                  </div>
                 </div>
               </div>
               {controlFeedback && (
@@ -307,7 +814,237 @@ export default function TestExecution({ testId, history, onBack }: Props) {
         </div>
       )}
 
+      {test.status === 'QUEUED' && queuedScenarioPreview.points.length > 0 && (
+        <div className="scenario-preview-card">
+          <div className="scenario-preview-header">
+            <div>
+              <h3 className="scenario-preview-title">Scenario Run Model</h3>
+              <p className="scenario-preview-subtitle">This is the saved load shape that will run when you start the scenario.</p>
+            </div>
+            <div className="scenario-preview-stats">
+              <div className="scenario-preview-stat">
+                <span className="scenario-preview-stat-label">Peak</span>
+                <span className="scenario-preview-stat-value">{queuedScenarioPreview.totalVUsers} VUsers</span>
+              </div>
+              <div className="scenario-preview-stat">
+                <span className="scenario-preview-stat-label">Steady State</span>
+                <span className="scenario-preview-stat-value">{formatScenarioTimeline(queuedScenarioPreview.steadySeconds)}</span>
+              </div>
+              <div className="scenario-preview-stat">
+                <span className="scenario-preview-stat-label">Total Timeline</span>
+                <span className="scenario-preview-stat-value">{formatScenarioTimeline(queuedScenarioPreview.totalSeconds)}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="scenario-preview-chart">
+            <ResponsiveContainer width="100%" height={260}>
+              <AreaChart data={queuedScenarioPreview.points} margin={{ top: 8, right: 12, left: -18, bottom: 4 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                <XAxis
+                  dataKey="second"
+                  stroke="var(--text-muted)"
+                  fontSize={11}
+                  tickLine={false}
+                  tickFormatter={(value) => formatScenarioTimeline(Number(value))}
+                />
+                <YAxis
+                  stroke="var(--text-muted)"
+                  fontSize={11}
+                  tickLine={false}
+                  allowDecimals={false}
+                />
+                <Tooltip
+                  labelFormatter={(value) => `T+${formatScenarioTimeline(Number(value))}`}
+                  contentStyle={{ background: 'rgba(33, 36, 47, 0.92)', border: '1px solid var(--border)', borderRadius: 10 }}
+                  formatter={(value: number, name: string) => [value, name === 'total' ? 'Total' : name]}
+                />
+                <Legend verticalAlign="top" height={32} />
+                {test.groups.map((group, index) => (
+                  <Area
+                    key={group.name}
+                    type="monotone"
+                    dataKey={`group${index}`}
+                    name={group.name}
+                    stackId="scenario"
+                    stroke={GROUP_COLORS[index % GROUP_COLORS.length]}
+                    fill={GROUP_COLORS[index % GROUP_COLORS.length]}
+                    fillOpacity={0.34}
+                    isAnimationActive={false}
+                  />
+                ))}
+                <Line
+                  type="monotone"
+                  dataKey="total"
+                  name="Total"
+                  stroke="var(--text-primary)"
+                  strokeWidth={2}
+                  dot={false}
+                  isAnimationActive={false}
+                />
+                <ReferenceArea
+                  x1={0}
+                  x2={queuedScenarioPreview.steadySeconds}
+                  fill="var(--accent)"
+                  fillOpacity={0.05}
+                  strokeOpacity={0}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+            <div className="scenario-preview-caption">
+              Ramp-up and ramp-down are derived from each group’s saved configuration. The shaded span marks the configured steady-state window.
+            </div>
+          </div>
+
+          <div className="scenario-settings-grid">
+            <div className="scenario-setting-card">
+              <span className="scenario-setting-label">Duration</span>
+              <span className="scenario-setting-value">{test.duration}</span>
+            </div>
+            <div className="scenario-setting-card">
+              <span className="scenario-setting-label">Iterations</span>
+              <span className="scenario-setting-value">{test.runtime_settings?.iterations ?? 'Script default'}</span>
+            </div>
+            <div className="scenario-setting-card">
+              <span className="scenario-setting-label">Log Level</span>
+              <span className="scenario-setting-value">{test.runtime_settings?.log_level || 'Script default'}</span>
+            </div>
+            <div className="scenario-setting-card">
+              <span className="scenario-setting-label">Auto Transactions</span>
+              <span className="scenario-setting-value">{test.runtime_settings?.auto_transactions || 'Script default'}</span>
+            </div>
+            <div className="scenario-setting-card">
+              <span className="scenario-setting-label">Snapshot On Error</span>
+              <span className="scenario-setting-value">{test.runtime_settings?.error_handling?.snapshot_on_error ? 'Enabled' : 'Script default'}</span>
+            </div>
+          </div>
+
+          <div className="scenario-script-section">
+            <div className="scenario-script-section-header">
+              <div>
+                <h4 className="scenario-script-section-title">Scenario Scripts</h4>
+                <p className="scenario-script-section-subtitle">Each row is a script group in this scenario. Expand a row to inspect the effective script configuration that will run.</p>
+              </div>
+            </div>
+
+            {scriptDetailsLoading && <p className="scenario-script-status">Loading script settings...</p>}
+            {scriptDetailsError && <p className="scenario-script-status error">{scriptDetailsError}</p>}
+
+            <div className="scenario-script-rows">
+              {queuedScenarioRows.map(({ group, detail, actionCount, initCount, teardownCount, dataSourceCount }, index) => {
+                const isExpanded = expandedScenarioScript === group.name
+                return (
+                  <div key={`${group.name}-${group.script_id}`} className={`scenario-script-row ${isExpanded ? 'expanded' : ''}`}>
+                    <button
+                      type="button"
+                      className="scenario-script-summary"
+                      onClick={() => setExpandedScenarioScript(isExpanded ? null : group.name)}
+                    >
+                      <span className="scenario-script-color" style={{ background: GROUP_COLORS[index % GROUP_COLORS.length] }}></span>
+                      <span className="scenario-script-cell scenario-script-name-cell">
+                        <span className="scenario-script-primary">{group.name}</span>
+                        <span className="scenario-script-secondary">{group.script_name}</span>
+                      </span>
+                      <span className="scenario-script-cell">{group.protocol.toUpperCase()}</span>
+                      <span className="scenario-script-cell">{group.vusers} VUsers</span>
+                      <span className="scenario-script-cell">{group.ramp_up || 'No ramp-up'}</span>
+                      <span className="scenario-script-cell">{group.ramp_down || 'No ramp-down'}</span>
+                      <span className="scenario-script-cell">{group.initialization || 'at_runtime'}</span>
+                      <span className="scenario-script-actions">
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-ghost scenario-script-edit-btn"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            onEditScript(group.script_id)
+                          }}
+                        >
+                          Edit Script
+                        </button>
+                        <span className="scenario-script-toggle">{isExpanded ? 'Hide' : 'Inspect'}</span>
+                      </span>
+                    </button>
+
+                    {isExpanded && (
+                      <div className="scenario-script-detail-panel">
+                        <div className="scenario-script-detail-grid">
+                          <div className="scenario-script-detail-card">
+                            <span className="scenario-script-detail-label">Base URL</span>
+                            <span className="scenario-script-detail-value">{detail?.script?.config?.base_url || 'Not configured'}</span>
+                          </div>
+                          <div className="scenario-script-detail-card">
+                            <span className="scenario-script-detail-label">Think Time</span>
+                            <span className="scenario-script-detail-value">{formatThinkTimeLabel(detail)}</span>
+                          </div>
+                          <div className="scenario-script-detail-card">
+                            <span className="scenario-script-detail-label">Pacing</span>
+                            <span className="scenario-script-detail-value">{formatPacingLabel(detail)}</span>
+                          </div>
+                          <div className="scenario-script-detail-card">
+                            <span className="scenario-script-detail-label">Iterations</span>
+                            <span className="scenario-script-detail-value">{formatEffectiveIterations(detail, test)}</span>
+                          </div>
+                          <div className="scenario-script-detail-card">
+                            <span className="scenario-script-detail-label">Auto Transactions</span>
+                            <span className="scenario-script-detail-value">{formatEffectiveAutoTransactions(detail, test)}</span>
+                          </div>
+                          <div className="scenario-script-detail-card">
+                            <span className="scenario-script-detail-label">Log Level</span>
+                            <span className="scenario-script-detail-value">{formatEffectiveLogLevel(detail, test)}</span>
+                          </div>
+                          <div className="scenario-script-detail-card">
+                            <span className="scenario-script-detail-label">Snapshot On Error</span>
+                            <span className="scenario-script-detail-value">{formatSnapshotOnError(detail, test)}</span>
+                          </div>
+                          <div className="scenario-script-detail-card">
+                            <span className="scenario-script-detail-label">HTTP Runtime</span>
+                            <span className="scenario-script-detail-value">{detail?.script?.config?.http?.version || 'auto'} · {detail?.script?.config?.http?.max_conns_per_host || 100} conns/host</span>
+                          </div>
+                        </div>
+
+                        <div className="scenario-script-asset-grid">
+                          <div className="scenario-script-asset-card">
+                            <span className="scenario-script-detail-label">Actions</span>
+                            <span className="scenario-script-detail-value">{actionCount}</span>
+                          </div>
+                          <div className="scenario-script-asset-card">
+                            <span className="scenario-script-detail-label">Init</span>
+                            <span className="scenario-script-detail-value">{initCount}</span>
+                          </div>
+                          <div className="scenario-script-asset-card">
+                            <span className="scenario-script-detail-label">Teardown</span>
+                            <span className="scenario-script-detail-value">{teardownCount}</span>
+                          </div>
+                          <div className="scenario-script-asset-card">
+                            <span className="scenario-script-detail-label">Data Sources</span>
+                            <span className="scenario-script-detail-value">{dataSourceCount}</span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Hero metrics */}
+      {showScenarioEditor && test && (
+        <CreateTestModal
+          scripts={availableScripts}
+          initialScenario={buildScenarioDraft(test)}
+          onClose={() => setShowScenarioEditor(false)}
+          onCreated={(createdTest) => {
+            setShowScenarioEditor(false)
+            if (createdTest?.id) {
+              onSelectTest(createdTest.id)
+            }
+          }}
+        />
+      )}
+
       <div className="hero-metrics">
         <div className="hero-card">
           <span className="hero-value">{summary?.maxVusers ?? metrics?.active_vusers ?? 0}</span>
@@ -332,6 +1069,63 @@ export default function TestExecution({ testId, history, onBack }: Props) {
           <span className="hero-label">Total Tx</span>
         </div>
       </div>
+
+      {isGoalOriented && (
+        <div className="goal-status-card">
+          <div className="goal-status-header">
+            <div>
+              <h3 className="goal-status-title">Goal Controller</h3>
+              <p className="goal-status-subtitle">
+                {describeGoalController(goalStatus)}
+              </p>
+            </div>
+            <div className={`goal-status-badge ${goalStatus?.stop_triggered ? 'danger' : goalStatus?.breach_active ? 'warning' : 'healthy'}`}>
+              {goalStatus?.stop_triggered ? 'Stopping' : goalStatus?.breach_active ? 'SLA Breach' : 'Active'}
+            </div>
+          </div>
+
+          <div className="goal-status-grid">
+            <div className="goal-status-metric">
+              <span className="goal-status-label">Target TPS</span>
+              <span className="goal-status-value">{(goalStatus?.target_average_tps ?? test.goal_config?.target_average_tps ?? 0).toFixed(1)}</span>
+            </div>
+            <div className="goal-status-metric">
+              <span className="goal-status-label">Current TPS</span>
+              <span className="goal-status-value">{(goalStatus?.current_tps ?? metrics?.tps ?? 0).toFixed(1)}</span>
+            </div>
+            <div className="goal-status-metric">
+              <span className="goal-status-label">Current VUsers</span>
+              <span className="goal-status-value">{goalStatus?.current_total_vusers ?? metrics?.active_vusers ?? test.total_vusers}</span>
+            </div>
+            <div className="goal-status-metric">
+              <span className="goal-status-label">Suggested VUsers</span>
+              <span className="goal-status-value">{goalStatus?.suggested_total_vusers ?? goalStatus?.current_total_vusers ?? test.total_vusers}</span>
+            </div>
+            <div className="goal-status-metric">
+              <span className="goal-status-label">Guardrails</span>
+              <span className="goal-status-value">
+                {(test.goal_config?.min_vusers ?? 0)} - {test.goal_config?.max_vusers ?? 'unbounded'}
+              </span>
+            </div>
+            <div className="goal-status-metric">
+              <span className="goal-status-label">SLA Window</span>
+              <span className="goal-status-value">{test.goal_config?.sla_breach_window || '30s'}</span>
+            </div>
+          </div>
+
+          <div className="goal-status-flags">
+            <span className={`goal-flag ${goalStatus?.latency_breached ? 'alert' : ''}`}>
+              P95 {goalStatus?.latency_breached ? 'breached' : 'healthy'}
+            </span>
+            <span className={`goal-flag ${goalStatus?.error_breached ? 'alert' : ''}`}>
+              Error rate {goalStatus?.error_breached ? 'breached' : 'healthy'}
+            </span>
+            <span className="goal-flag neutral">
+              Stop on breach {test.goal_config?.stop_on_sla_breach ? 'enabled' : 'disabled'}
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Per-group live metrics */}
       {isMultiGroup && groupMetrics.length > 0 && (
@@ -404,8 +1198,8 @@ export default function TestExecution({ testId, history, onBack }: Props) {
                     <AreaChart 
                       data={filteredData} 
                       syncId="metrics"
-                      onMouseDown={e => e && setRefAreaLeft(e.activeLabel ?? '')}
-                      onMouseMove={e => e && refAreaLeft && setRefAreaRight(e.activeLabel ?? '')}
+                      onMouseDown={e => handleChartMouseDown(e?.activeLabel)}
+                      onMouseMove={e => handleChartMouseMove(e?.activeLabel)}
                       onMouseUp={handleZoom}
                     >
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
@@ -417,16 +1211,16 @@ export default function TestExecution({ testId, history, onBack }: Props) {
                         isAnimationActive={false}
                       />
                       <Area type="monotone" dataKey={c.dataKey!} name="Total" stroke={c.color!} fill={c.color!} fillOpacity={0.15} isAnimationActive={false} />
-                      {(refAreaLeft && refAreaRight) && (
-                        <ReferenceArea x1={refAreaLeft} x2={refAreaRight} strokeOpacity={0.3} fill="var(--accent)" fillOpacity={0.1} />
+                      {showRefArea && (
+                        <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
                       )}
                     </AreaChart>
                   ) : c.type === 'line-multi' ? (
                     <LineChart 
                       data={filteredData} 
                       syncId="metrics"
-                      onMouseDown={e => e && setRefAreaLeft(e.activeLabel ?? '')}
-                      onMouseMove={e => e && refAreaLeft && setRefAreaRight(e.activeLabel ?? '')}
+                      onMouseDown={e => handleChartMouseDown(e?.activeLabel)}
+                      onMouseMove={e => handleChartMouseMove(e?.activeLabel)}
                       onMouseUp={handleZoom}
                     >
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
@@ -442,16 +1236,16 @@ export default function TestExecution({ testId, history, onBack }: Props) {
                       {isMultiGroup && groupNames.map((name, i) => (
                         <Line key={name} type="monotone" dataKey={`${name}_tps`} name={name} stroke={GROUP_COLORS[i % GROUP_COLORS.length]} dot={false} isAnimationActive={false} />
                       ))}
-                      {(refAreaLeft && refAreaRight) && (
-                        <ReferenceArea x1={refAreaLeft} x2={refAreaRight} strokeOpacity={0.3} fill="var(--accent)" fillOpacity={0.1} />
+                      {showRefArea && (
+                        <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
                       )}
                     </LineChart>
                   ) : c.type === 'line-latency' ? (
                     <LineChart 
                       data={filteredData} 
                       syncId="metrics"
-                      onMouseDown={e => e && setRefAreaLeft(e.activeLabel ?? '')}
-                      onMouseMove={e => e && refAreaLeft && setRefAreaRight(e.activeLabel ?? '')}
+                      onMouseDown={e => handleChartMouseDown(e?.activeLabel)}
+                      onMouseMove={e => handleChartMouseMove(e?.activeLabel)}
                       onMouseUp={handleZoom}
                     >
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
@@ -469,16 +1263,16 @@ export default function TestExecution({ testId, history, onBack }: Props) {
                       {isMultiGroup && groupNames.map((name, i) => (
                         <Line key={name} type="monotone" dataKey={`${name}_avgMs`} name={`${name} avg`} stroke={GROUP_COLORS[i % GROUP_COLORS.length]} dot={false} strokeWidth={1.5} strokeDasharray="2 2" isAnimationActive={false} />
                       ))}
-                      {(refAreaLeft && refAreaRight) && (
-                        <ReferenceArea x1={refAreaLeft} x2={refAreaRight} strokeOpacity={0.3} fill="var(--accent)" fillOpacity={0.1} />
+                      {showRefArea && (
+                        <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
                       )}
                     </LineChart>
                   ) : c.type === 'area-multi' ? (
                     <AreaChart 
                       data={filteredData} 
                       syncId="metrics"
-                      onMouseDown={e => e && setRefAreaLeft(e.activeLabel ?? '')}
-                      onMouseMove={e => e && refAreaLeft && setRefAreaRight(e.activeLabel ?? '')}
+                      onMouseDown={e => handleChartMouseDown(e?.activeLabel)}
+                      onMouseMove={e => handleChartMouseMove(e?.activeLabel)}
                       onMouseUp={handleZoom}
                     >
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
@@ -493,16 +1287,16 @@ export default function TestExecution({ testId, history, onBack }: Props) {
                       {c.keys!.map(k => (
                         <Area key={k.k} type="monotone" dataKey={k.k} name={k.n} stroke={k.c} fill={k.c} fillOpacity={0.2} isAnimationActive={false} />
                       ))}
-                      {(refAreaLeft && refAreaRight) && (
-                        <ReferenceArea x1={refAreaLeft} x2={refAreaRight} strokeOpacity={0.3} fill="var(--accent)" fillOpacity={0.1} />
+                      {showRefArea && (
+                        <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
                       )}
                     </AreaChart>
                   ) : (
                     <LineChart 
                       data={filteredData} 
                       syncId="metrics"
-                      onMouseDown={e => e && setRefAreaLeft(e.activeLabel ?? '')}
-                      onMouseMove={e => e && refAreaLeft && setRefAreaRight(e.activeLabel ?? '')}
+                      onMouseDown={e => handleChartMouseDown(e?.activeLabel)}
+                      onMouseMove={e => handleChartMouseMove(e?.activeLabel)}
                       onMouseUp={handleZoom}
                     >
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
@@ -518,8 +1312,8 @@ export default function TestExecution({ testId, history, onBack }: Props) {
                       <Line type="monotone" dataKey="netRecv" name="Net Ingress" stroke="var(--chart-2)" dot={false} strokeWidth={2} isAnimationActive={false} />
                       <Line type="monotone" dataKey="diskRead" name="Disk Read" stroke="var(--chart-3)" dot={false} strokeWidth={1} strokeDasharray="3 3" isAnimationActive={false} />
                       <Line type="monotone" dataKey="diskWrite" name="Disk Write" stroke="var(--chart-6)" dot={false} strokeWidth={1} strokeDasharray="3 3" isAnimationActive={false} />
-                      {(refAreaLeft && refAreaRight) && (
-                        <ReferenceArea x1={refAreaLeft} x2={refAreaRight} strokeOpacity={0.3} fill="var(--accent)" fillOpacity={0.1} />
+                      {showRefArea && (
+                        <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
                       )}
                     </LineChart>
                   )}

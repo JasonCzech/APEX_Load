@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useApi } from '../hooks/useApi'
-import { StoredScript } from '../types'
+import { GoalConfig, ScenarioDraft, ScenarioMode, StoredScript } from '../types'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import './CreateTestModal.css'
 
@@ -42,20 +42,42 @@ interface Props {
   scripts: StoredScript[]
   onClose: () => void
   onCreated: (test: any) => void
+  initialScenario?: ScenarioDraft
 }
 
-export default function CreateTestModal({ scripts, onClose, onCreated }: Props) {
+const buildDefaultGroup = (scripts: StoredScript[]): GroupEntry => ({
+  name: '',
+  scriptId: scripts[0]?.id || '',
+  vusers: 10,
+  rampUp: '',
+  rampDown: '',
+  initialization: 'at_runtime',
+})
+
+export default function CreateTestModal({ scripts, onClose, onCreated, initialScenario }: Props) {
   const api = useApi()
-  const [name, setName] = useState('')
-  const [duration, setDuration] = useState('1m')
-  const [groups, setGroups] = useState<GroupEntry[]>([
-    { name: '', scriptId: scripts[0]?.id || '', vusers: 10, rampUp: '', rampDown: '', initialization: 'at_runtime' },
-  ])
+  const [name, setName] = useState(initialScenario?.name || '')
+  const [duration, setDuration] = useState(initialScenario?.duration || '1m')
+  const [scenarioMode, setScenarioMode] = useState<ScenarioMode>(initialScenario?.scenarioMode || 'vuser_driven')
+  const [groups, setGroups] = useState<GroupEntry[]>(
+    initialScenario?.groups.length
+      ? initialScenario.groups
+      : [buildDefaultGroup(scripts)],
+  )
+  const [goalConfig, setGoalConfig] = useState<GoalConfig>({
+    target_average_tps: initialScenario?.goalConfig?.target_average_tps,
+    p95_latency_ms: initialScenario?.goalConfig?.p95_latency_ms,
+    max_error_pct: initialScenario?.goalConfig?.max_error_pct,
+    min_vusers: initialScenario?.goalConfig?.min_vusers,
+    max_vusers: initialScenario?.goalConfig?.max_vusers,
+    stop_on_sla_breach: initialScenario?.goalConfig?.stop_on_sla_breach || false,
+    sla_breach_window: initialScenario?.goalConfig?.sla_breach_window || '30s',
+  })
   const [runtimeSettings, setRuntimeSettings] = useState({
-    iterations: undefined as number | undefined,
-    log_level: '',
-    auto_transactions: '',
-    snapshot_on_error: false,
+    iterations: initialScenario?.runtimeSettings.iterations,
+    log_level: initialScenario?.runtimeSettings.log_level || '',
+    auto_transactions: initialScenario?.runtimeSettings.auto_transactions || '',
+    snapshot_on_error: initialScenario?.runtimeSettings.snapshot_on_error || false,
   })
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -67,7 +89,7 @@ export default function CreateTestModal({ scripts, onClose, onCreated }: Props) 
   const addGroup = () => {
     setGroups((prev) => [
       ...prev,
-      { name: '', scriptId: scripts[0]?.id || '', vusers: 10, rampUp: '', rampDown: '', initialization: 'at_runtime' },
+      buildDefaultGroup(scripts),
     ])
   }
 
@@ -77,6 +99,14 @@ export default function CreateTestModal({ scripts, onClose, onCreated }: Props) 
   }
 
   const totalVUsers = groups.reduce((sum, g) => sum + g.vusers, 0)
+  const hasGoalModeConfig = Boolean(
+    goalConfig.target_average_tps ||
+    goalConfig.p95_latency_ms ||
+    goalConfig.max_error_pct ||
+    goalConfig.min_vusers ||
+    goalConfig.max_vusers ||
+    goalConfig.stop_on_sla_breach,
+  )
 
   // Calculate chart data
   const chartData = (() => {
@@ -134,6 +164,7 @@ export default function CreateTestModal({ scripts, onClose, onCreated }: Props) 
     setLoading(true)
     try {
       const payload: any = { name: name || undefined, duration }
+      payload.scenario_mode = scenarioMode
 
       if (groups.length === 1 && !groups[0].name) {
         // Single group — use shorthand
@@ -151,6 +182,21 @@ export default function CreateTestModal({ scripts, onClose, onCreated }: Props) 
           ramp_down: g.rampDown || undefined,
           initialization: g.initialization,
         }))
+      }
+
+      if (scenarioMode === 'goal_oriented') {
+        if (!hasGoalModeConfig) {
+          throw new Error('Goal-oriented scenarios require at least one goal or guardrail setting')
+        }
+        payload.goal_config = {
+          target_average_tps: goalConfig.target_average_tps || undefined,
+          p95_latency_ms: goalConfig.p95_latency_ms || undefined,
+          max_error_pct: goalConfig.max_error_pct || undefined,
+          min_vusers: goalConfig.min_vusers || undefined,
+          max_vusers: goalConfig.max_vusers || undefined,
+          stop_on_sla_breach: goalConfig.stop_on_sla_breach || undefined,
+          sla_breach_window: goalConfig.sla_breach_window || undefined,
+        }
       }
 
       // Add runtime overrides if any are set
@@ -176,12 +222,28 @@ export default function CreateTestModal({ scripts, onClose, onCreated }: Props) 
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h3>Create Scenario</h3>
+          <h3>{initialScenario ? 'Edit Scenario' : 'Create Scenario'}</h3>
           <span className="total-vusers">{totalVUsers} total VUsers</span>
         </div>
         <form onSubmit={handleSubmit} className="modal-form">
           <div className="form-row">
             <div className="form-column flex-2">
+              <div className="scenario-mode-switcher">
+                <button
+                  type="button"
+                  className={`mode-chip ${scenarioMode === 'vuser_driven' ? 'active' : ''}`}
+                  onClick={() => setScenarioMode('vuser_driven')}
+                >
+                  VUser-Driven
+                </button>
+                <button
+                  type="button"
+                  className={`mode-chip ${scenarioMode === 'goal_oriented' ? 'active' : ''}`}
+                  onClick={() => setScenarioMode('goal_oriented')}
+                >
+                  Goal-Oriented
+                </button>
+              </div>
               <label>
                 <span>Scenario Name</span>
                 <input
@@ -247,9 +309,98 @@ export default function CreateTestModal({ scripts, onClose, onCreated }: Props) 
             </div>
           </div>
 
+          {scenarioMode === 'goal_oriented' && (
+            <div className="goal-settings">
+              <div className="goal-settings-header">
+                <h4>Goal Settings</h4>
+                <p>Define the target and guardrails. The script groups below still provide the starting seed load and script mix for the scenario.</p>
+              </div>
+              <div className="goal-settings-grid">
+                <label>
+                  <span>Target Avg TPS</span>
+                  <input
+                    type="number"
+                    min={1}
+                    step="1"
+                    value={goalConfig.target_average_tps || ''}
+                    onChange={(e) => setGoalConfig({ ...goalConfig, target_average_tps: e.target.value ? Number(e.target.value) : undefined })}
+                    placeholder="e.g. 300"
+                  />
+                </label>
+                <label>
+                  <span>P95 Latency Ceiling (ms)</span>
+                  <input
+                    type="number"
+                    min={1}
+                    step="1"
+                    value={goalConfig.p95_latency_ms || ''}
+                    onChange={(e) => setGoalConfig({ ...goalConfig, p95_latency_ms: e.target.value ? Number(e.target.value) : undefined })}
+                    placeholder="e.g. 800"
+                  />
+                </label>
+                <label>
+                  <span>Max Error %</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    step="0.1"
+                    value={goalConfig.max_error_pct || ''}
+                    onChange={(e) => setGoalConfig({ ...goalConfig, max_error_pct: e.target.value ? Number(e.target.value) : undefined })}
+                    placeholder="e.g. 2.5"
+                  />
+                </label>
+                <label>
+                  <span>Min VUsers</span>
+                  <input
+                    type="number"
+                    min={1}
+                    step="1"
+                    value={goalConfig.min_vusers || ''}
+                    onChange={(e) => setGoalConfig({ ...goalConfig, min_vusers: e.target.value ? Number(e.target.value) : undefined })}
+                    placeholder="e.g. 10"
+                  />
+                </label>
+                <label>
+                  <span>Max VUsers</span>
+                  <input
+                    type="number"
+                    min={1}
+                    step="1"
+                    value={goalConfig.max_vusers || ''}
+                    onChange={(e) => setGoalConfig({ ...goalConfig, max_vusers: e.target.value ? Number(e.target.value) : undefined })}
+                    placeholder="e.g. 300"
+                  />
+                </label>
+                <label>
+                  <span>SLA Breach Window</span>
+                  <input
+                    type="text"
+                    value={goalConfig.sla_breach_window || ''}
+                    onChange={(e) => setGoalConfig({ ...goalConfig, sla_breach_window: e.target.value })}
+                    placeholder="e.g. 30s"
+                  />
+                </label>
+                <label className="checkbox-label goal-checkbox-label">
+                  <input
+                    type="checkbox"
+                    checked={goalConfig.stop_on_sla_breach || false}
+                    onChange={(e) => setGoalConfig({ ...goalConfig, stop_on_sla_breach: e.target.checked })}
+                  />
+                  <span>Stop on sustained SLA breach</span>
+                </label>
+              </div>
+            </div>
+          )}
+
           <div className="groups-section">
             <div className="groups-header">
-              <h4>VUser Groups</h4>
+              <div>
+                <h4>{scenarioMode === 'goal_oriented' ? 'Script Seed Groups' : 'VUser Groups'}</h4>
+                {scenarioMode === 'goal_oriented' && (
+                  <p className="groups-note">Seed VUsers define the initial script distribution until goal-based autoscaling is implemented.</p>
+                )}
+              </div>
               <button type="button" className="btn btn-secondary btn-sm" onClick={addGroup}>
                 + Add Group
               </button>
@@ -284,7 +435,7 @@ export default function CreateTestModal({ scripts, onClose, onCreated }: Props) 
                     </select>
                   </label>
                   <label className="narrow">
-                    <span>VUsers</span>
+                    <span>{scenarioMode === 'goal_oriented' ? 'Seed VUsers' : 'VUsers'}</span>
                     <input
                       type="number"
                       value={group.vusers}
@@ -395,7 +546,7 @@ export default function CreateTestModal({ scripts, onClose, onCreated }: Props) 
               className="btn btn-primary"
               disabled={loading || groups.every((g) => !g.scriptId)}
             >
-              {loading ? 'Creating...' : `Create Scenario (${groups.length} group${groups.length > 1 ? 's' : ''})`}
+              {loading ? (initialScenario ? 'Saving...' : 'Creating...') : `${initialScenario ? 'Save Scenario' : 'Create Scenario'} (${groups.length} group${groups.length > 1 ? 's' : ''})`}
             </button>
           </div>
         </form>

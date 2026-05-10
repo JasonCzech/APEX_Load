@@ -49,12 +49,14 @@ func (s *SQLiteStore) init() error {
 			id TEXT PRIMARY KEY,
 			name TEXT,
 			status TEXT,
+			scenario_mode TEXT,
 			total_vusers INTEGER,
 			duration_ns INTEGER,
 			start_time DATETIME,
 			end_time DATETIME,
 			error TEXT,
-			groups_json TEXT
+			groups_json TEXT,
+			goal_config_json TEXT
 		)`,
 		`CREATE TABLE IF NOT EXISTS test_history (
 			test_id TEXT,
@@ -67,6 +69,24 @@ func (s *SQLiteStore) init() error {
 	for _, q := range queries {
 		if _, err := s.db.Exec(q); err != nil {
 			return fmt.Errorf("failed to run migration query: %w", err)
+		}
+	}
+
+	if _, err := s.db.Exec(`ALTER TABLE tests ADD COLUMN runtime_settings_json TEXT`); err != nil {
+		if err.Error() != "SQL logic error: duplicate column name: runtime_settings_json (1)" {
+			return fmt.Errorf("failed to add runtime_settings_json column: %w", err)
+		}
+	}
+
+	if _, err := s.db.Exec(`ALTER TABLE tests ADD COLUMN scenario_mode TEXT`); err != nil {
+		if err.Error() != "SQL logic error: duplicate column name: scenario_mode (1)" {
+			return fmt.Errorf("failed to add scenario_mode column: %w", err)
+		}
+	}
+
+	if _, err := s.db.Exec(`ALTER TABLE tests ADD COLUMN goal_config_json TEXT`); err != nil {
+		if err.Error() != "SQL logic error: duplicate column name: goal_config_json (1)" {
+			return fmt.Errorf("failed to add goal_config_json column: %w", err)
 		}
 	}
 
@@ -164,30 +184,38 @@ func (s *SQLiteStore) DeleteScript(id string) error {
 
 func (s *SQLiteStore) SaveTest(test *TestRecord) error {
 	groupsJSON, _ := json.Marshal(test.Groups)
+	runtimeSettingsJSON, _ := json.Marshal(test.RuntimeSettings)
+	goalConfigJSON, _ := json.Marshal(test.GoalConfig)
 	
-	query := `INSERT INTO tests (id, name, status, total_vusers, duration_ns, start_time, end_time, error, groups_json)
-			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	query := `INSERT INTO tests (id, name, status, scenario_mode, total_vusers, duration_ns, start_time, end_time, error, groups_json, runtime_settings_json, goal_config_json)
+			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	
-	_, err := s.db.Exec(query, test.ID, test.Name, test.Status, test.TotalVUsers, test.Duration, test.StartTime, test.EndTime, test.Error, string(groupsJSON))
+	_, err := s.db.Exec(query, test.ID, test.Name, test.Status, test.ScenarioMode, test.TotalVUsers, test.Duration, test.StartTime, test.EndTime, test.Error, string(groupsJSON), string(runtimeSettingsJSON), string(goalConfigJSON))
 	return err
 }
 
 func (s *SQLiteStore) GetTest(id string) (*TestRecord, error) {
 	var test TestRecord
-	var groupsJSON string
+	var groupsJSON, runtimeSettingsJSON, goalConfigJSON string
 	
-	query := `SELECT id, name, status, total_vusers, duration_ns, start_time, end_time, error, groups_json FROM tests WHERE id = ?`
-	err := s.db.QueryRow(query, id).Scan(&test.ID, &test.Name, &test.Status, &test.TotalVUsers, &test.Duration, &test.StartTime, &test.EndTime, &test.Error, &groupsJSON)
+	query := `SELECT id, name, status, COALESCE(scenario_mode, ''), total_vusers, duration_ns, start_time, end_time, error, groups_json, COALESCE(runtime_settings_json, ''), COALESCE(goal_config_json, '') FROM tests WHERE id = ?`
+	err := s.db.QueryRow(query, id).Scan(&test.ID, &test.Name, &test.Status, &test.ScenarioMode, &test.TotalVUsers, &test.Duration, &test.StartTime, &test.EndTime, &test.Error, &groupsJSON, &runtimeSettingsJSON, &goalConfigJSON)
 	if err != nil {
 		return nil, err
 	}
 
 	json.Unmarshal([]byte(groupsJSON), &test.Groups)
+	if runtimeSettingsJSON != "" && runtimeSettingsJSON != "null" {
+		json.Unmarshal([]byte(runtimeSettingsJSON), &test.RuntimeSettings)
+	}
+	if goalConfigJSON != "" && goalConfigJSON != "null" {
+		json.Unmarshal([]byte(goalConfigJSON), &test.GoalConfig)
+	}
 	return &test, nil
 }
 
 func (s *SQLiteStore) ListTests() ([]*TestRecord, error) {
-	rows, err := s.db.Query(`SELECT id, name, status, total_vusers, duration_ns, start_time, end_time, error, groups_json FROM tests ORDER BY start_time DESC`)
+	rows, err := s.db.Query(`SELECT id, name, status, COALESCE(scenario_mode, ''), total_vusers, duration_ns, start_time, end_time, error, groups_json, COALESCE(runtime_settings_json, ''), COALESCE(goal_config_json, '') FROM tests ORDER BY start_time DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -196,11 +224,17 @@ func (s *SQLiteStore) ListTests() ([]*TestRecord, error) {
 	var tests []*TestRecord
 	for rows.Next() {
 		var test TestRecord
-		var groupsJSON string
-		if err := rows.Scan(&test.ID, &test.Name, &test.Status, &test.TotalVUsers, &test.Duration, &test.StartTime, &test.EndTime, &test.Error, &groupsJSON); err != nil {
+		var groupsJSON, runtimeSettingsJSON, goalConfigJSON string
+		if err := rows.Scan(&test.ID, &test.Name, &test.Status, &test.ScenarioMode, &test.TotalVUsers, &test.Duration, &test.StartTime, &test.EndTime, &test.Error, &groupsJSON, &runtimeSettingsJSON, &goalConfigJSON); err != nil {
 			return nil, err
 		}
 		json.Unmarshal([]byte(groupsJSON), &test.Groups)
+		if runtimeSettingsJSON != "" && runtimeSettingsJSON != "null" {
+			json.Unmarshal([]byte(runtimeSettingsJSON), &test.RuntimeSettings)
+		}
+		if goalConfigJSON != "" && goalConfigJSON != "null" {
+			json.Unmarshal([]byte(goalConfigJSON), &test.GoalConfig)
+		}
 		tests = append(tests, &test)
 	}
 	return tests, nil

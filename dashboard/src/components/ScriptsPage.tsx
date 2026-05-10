@@ -6,11 +6,16 @@ import LoadRunnerImport from './LoadRunnerImport'
 
 type SubView = 'list' | 'create' | 'edit' | 'import'
 
-export default function ScriptsPage() {
+interface Props {
+  initialMode?: SubView
+  initialEditId?: string
+}
+
+export default function ScriptsPage({ initialMode = 'list', initialEditId }: Props) {
   const api = useApi()
   const [scripts, setScripts] = useState<StoredScript[]>([])
-  const [subView, setSubView] = useState<SubView>('list')
-  const [editingId, setEditingId] = useState<string | null>(null)
+  const [subView, setSubView] = useState<SubView>(initialMode)
+  const [editingId, setEditingId] = useState<string | null>(initialEditId || null)
   const [editingScript, setEditingScript] = useState<any>(null)
   const [sortField, setSortField] = useState<string>('name')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
@@ -24,6 +29,14 @@ export default function ScriptsPage() {
   }, [api])
 
   useEffect(() => { refresh() }, [refresh])
+
+  useEffect(() => {
+    if (initialMode === 'edit' && initialEditId) {
+      handleEdit(initialEditId)
+    } else if (initialMode && initialMode !== subView) {
+      setSubView(initialMode)
+    }
+  }, [initialEditId, initialMode])
 
   const handleEdit = async (id: string) => {
     try {
