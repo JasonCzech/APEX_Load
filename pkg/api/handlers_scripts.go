@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/jasonczech/stormrunner/pkg/convert/loadrunner"
+	"github.com/jasonczech/stormrunner/pkg/convert/sample"
 	"github.com/jasonczech/stormrunner/pkg/dsl"
 )
 
@@ -60,9 +61,9 @@ func (s *Server) handleImportLoadRunner(w http.ResponseWriter, r *http.Request) 
 
 	// Parse conversion options from query params or form values
 	opts := loadrunner.ConvertOptions{
-		ScriptName:         r.FormValue("name"),
-		BaseURL:            r.FormValue("base_url"),
-		IncludeAssertions:  r.FormValue("include_assertions") == "true",
+		ScriptName:           r.FormValue("name"),
+		BaseURL:              r.FormValue("base_url"),
+		IncludeAssertions:    r.FormValue("include_assertions") == "true",
 		PreserveTransactions: r.FormValue("preserve_transactions") == "true",
 	}
 
@@ -81,6 +82,37 @@ func (s *Server) handleImportLoadRunner(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
+// handleImportSample handles POST /api/v1/scripts/import/sample.
+// Accepts a JSON payload containing a supported sample format and returns a generated script preview.
+func (s *Server) handleImportSample(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 5<<20)
+
+	var req sample.ImportRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+
+	result, err := sample.Convert(req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "sample conversion failed: "+err.Error())
+		return
+	}
+
+	issues := validateScript(result.Script)
+	if len(issues) > 0 {
+		result.Warnings = append(result.Warnings, issues...)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"result":       result,
+		"script":       result.Script,
+		"warnings":     result.Warnings,
+		"stats":        result.Stats,
+		"correlations": result.Correlations,
+	})
+}
+
 // handleExportScript handles POST /api/v1/scripts/{id}/export
 // Exports a script as a JSON DSL file to disk.
 func (s *Server) handleExportScript(w http.ResponseWriter, r *http.Request) {
@@ -93,8 +125,8 @@ func (s *Server) handleExportScript(w http.ResponseWriter, r *http.Request) {
 
 	// Optional: specify output directory via request body
 	var req struct {
-		OutputDir  string `json:"output_dir,omitempty"`
-		Filename   string `json:"filename,omitempty"`
+		OutputDir string `json:"output_dir,omitempty"`
+		Filename  string `json:"filename,omitempty"`
 	}
 	if r.Body != nil {
 		json.NewDecoder(r.Body).Decode(&req)

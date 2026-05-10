@@ -98,6 +98,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("POST /api/v1/scripts/{id}/export", cors(log(http.HandlerFunc(s.handleExportScript))))
 	s.mux.Handle("GET /api/v1/scripts/{id}/download", cors(log(http.HandlerFunc(s.handleDownloadScript))))
 	s.mux.Handle("POST /api/v1/scripts/import/loadrunner", cors(log(http.HandlerFunc(s.handleImportLoadRunner))))
+	s.mux.Handle("POST /api/v1/scripts/import/sample", cors(log(http.HandlerFunc(s.handleImportSample))))
 
 	// Recording proxy
 	s.mux.Handle("POST /api/v1/recorder/start", cors(log(http.HandlerFunc(s.handleStartRecording))))

@@ -1,0 +1,16 @@
+{
+  "requests": [
+    {
+      "request": {
+        "method": "POST",
+        "url": "https://api.example.com/v1/session",
+        "headers": {"Content-Type": "application/json"},
+        "body": {"username": "demo", "password": "secret"}
+      },
+      "response": {
+        "status": 201,
+        "body": {"sessionId": "session-12345"}
+      }
+    }
+  ]
+}

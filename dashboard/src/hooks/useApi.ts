@@ -185,6 +185,22 @@ export function useApi() {
     return res.json()
   }, [])
 
+  const importSample = useCallback(
+    (data: {
+      name?: string
+      format: string
+      content: string
+      response_content?: string
+      options?: {
+        base_url?: string
+        include_assertions?: boolean
+        infer_extractors?: boolean
+        sanitize_sensitive?: boolean
+      }
+    }) => request<any>('/scripts/import/sample', { method: 'POST', body: JSON.stringify(data) }),
+    [],
+  )
+
   const deleteTest = useCallback(
     (id: string) => request<any>(`/tests/${id}`, { method: 'DELETE' }),
     [],
@@ -274,6 +290,7 @@ export function useApi() {
       validateScript,
       exportScript,
       importLoadRunner,
+      importSample,
       getHealth,
       getSystemSettings,
       updateSystemSettings,
@@ -312,6 +329,7 @@ export function useApi() {
       validateScript,
       exportScript,
       importLoadRunner,
+      importSample,
       getHealth,
       getSystemSettings,
       updateSystemSettings,

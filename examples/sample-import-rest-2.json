@@ -1,0 +1,15 @@
+{
+  "requests": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/v1/session/session-12345/orders",
+        "headers": {"Accept": "application/json"}
+      },
+      "response": {
+        "status": 200,
+        "body": {"orders": []}
+      }
+    }
+  ]
+}

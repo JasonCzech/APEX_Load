@@ -4,8 +4,9 @@ import { StoredScript } from '../types'
 import ScriptEditor from './ScriptEditor'
 import LoadRunnerImport from './LoadRunnerImport'
 import RecordingStudio from './RecordingStudio'
+import SampleScriptImport from './SampleScriptImport'
 
-type SubView = 'list' | 'create-options' | 'create' | 'edit' | 'import' | 'recorder'
+type SubView = 'list' | 'create-options' | 'create' | 'edit' | 'import' | 'recorder' | 'sample'
 
 interface Props {
   initialMode?: SubView
@@ -18,6 +19,7 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId }: Pro
   const [subView, setSubView] = useState<SubView>(initialMode === 'create' ? 'create-options' : initialMode)
   const [editingId, setEditingId] = useState<string | null>(initialEditId || null)
   const [editingScript, setEditingScript] = useState<any>(null)
+  const [draftScript, setDraftScript] = useState<any>(null)
   const [sortField, setSortField] = useState<string>('name')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -53,8 +55,9 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId }: Pro
     try { await api.deleteScript(id); refresh() } catch { /* ignore */ }
   }
 
-  const handleSaved = () => { refresh(); setSubView('list'); setEditingId(null); setEditingScript(null) }
+  const handleSaved = () => { refresh(); setSubView('list'); setEditingId(null); setEditingScript(null); setDraftScript(null) }
   const handleImported = () => { refresh(); setSubView('list') }
+  const handleSampleEdit = (script: any) => { setDraftScript(script); setEditingId(null); setEditingScript(null); setSubView('create') }
 
   const handleSort = (field: string) => {
     if (sortField === field) {
@@ -109,7 +112,7 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId }: Pro
   if (subView === 'create') {
     return (
       <div className="page">
-        <ScriptEditor onSave={handleSaved} onClose={() => setSubView('list')} />
+        <ScriptEditor initialScript={draftScript} onSave={handleSaved} onClose={() => setSubView('list')} />
       </div>
     )
   }
@@ -141,6 +144,11 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId }: Pro
           <button className="script-create-option" onClick={() => setSubView('import')}>
             <h3>Import LoadRunner</h3>
             <p>Upload a LoadRunner ZIP and convert it into Stormrunner DSL.</p>
+          </button>
+
+          <button className="script-create-option" onClick={() => setSubView('sample')}>
+            <h3>Build From Sample</h3>
+            <p>Paste a request/response, curl command, REST JSON, or HAR and generate a starter script with inferred details.</p>
           </button>
         </div>
       </div>
@@ -174,6 +182,17 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId }: Pro
     )
   }
 
+  if (subView === 'sample') {
+    return (
+      <div className="page">
+        <button className="btn btn-secondary" onClick={() => setSubView('create-options')} style={{ alignSelf: 'flex-start' }}>
+          Back to Create Script
+        </button>
+        <SampleScriptImport onImported={handleImported} onEdit={handleSampleEdit} onClose={() => setSubView('create-options')} />
+      </div>
+    )
+  }
+
   return (
     <div className="page">
       <div className="page-header">
@@ -202,7 +221,7 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId }: Pro
               </svg>
             </div>
             <p>No scripts uploaded yet.</p>
-            <p className="empty-hint">Click "Create Script" to choose Visual Editor, Script Recorder, or LoadRunner import.</p>
+            <p className="empty-hint">Click "Create Script" to choose Visual Editor, Script Recorder, sample-based import, or LoadRunner import.</p>
           </div>
         ) : (
           <div className="data-table">
