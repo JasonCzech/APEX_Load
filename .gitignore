@@ -11,6 +11,8 @@ stormctl
 *.test
 *.prof
 dashboard/dist/
+pkg/api/static/index.html
+pkg/api/static/assets/
 
 # OS specific
 .DS_Store

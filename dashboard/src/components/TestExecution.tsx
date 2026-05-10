@@ -9,12 +9,12 @@ import {
   RunArchiveReport,
   TransactionEvent,
 } from '../types'
-import CreateTestModal from './CreateTestModal'
 import TestExecutionArchive from './TestExecutionArchive'
 import TestExecutionCharts from './TestExecutionCharts'
 import TestExecutionHeader from './TestExecutionHeader'
 import TestExecutionHeroMetrics from './TestExecutionHeroMetrics'
 import TestExecutionLiveControls from './TestExecutionLiveControls'
+import TestExecutionScenarioEditor from './TestExecutionScenarioEditor'
 import TestExecutionScenarioPreview, { ScenarioScriptDetail } from './TestExecutionScenarioPreview'
 import TestExecutionStatusPanels from './TestExecutionStatusPanels'
 import TestExecutionSummary from './TestExecutionSummary'
@@ -55,50 +55,6 @@ function isTerminalStatus(status?: string): boolean {
   return status === 'COMPLETE' || status === 'FAILED' || status === 'ABORTED'
 }
 
-function buildScenarioDraft(test: TestSummary) {
-  const groups = test.groups?.length
-    ? test.groups.map((group) => ({
-        name: group.name,
-        scriptId: group.script_id,
-        vusers: group.vusers,
-        rampUp: group.ramp_up || '',
-        rampDown: group.ramp_down || '',
-        initialization: group.initialization || 'at_runtime',
-      }))
-    : [{
-        name: '',
-        scriptId: test.script_id || '',
-        vusers: test.total_vusers || 10,
-        rampUp: '',
-        rampDown: '',
-        initialization: 'at_runtime' as const,
-      }]
-
-  return {
-    name: test.name,
-    duration: test.duration,
-    scenarioMode: test.scenario_mode || 'vuser_driven',
-    scriptShakeout: Boolean(test.script_shakeout),
-    resourceBaseline: Boolean(test.resource_baseline),
-    goalConfig: {
-      target_average_tps: test.goal_config?.target_average_tps,
-      p95_latency_ms: test.goal_config?.p95_latency_ms,
-      max_error_pct: test.goal_config?.max_error_pct,
-      min_vusers: test.goal_config?.min_vusers,
-      max_vusers: test.goal_config?.max_vusers,
-      stop_on_sla_breach: test.goal_config?.stop_on_sla_breach,
-      sla_breach_window: test.goal_config?.sla_breach_window || '',
-    },
-    groups,
-    runtimeSettings: {
-      iterations: test.runtime_settings?.iterations,
-      log_level: test.runtime_settings?.log_level || '',
-      auto_transactions: test.runtime_settings?.auto_transactions || '',
-      snapshot_on_error: Boolean(test.runtime_settings?.error_handling?.snapshot_on_error),
-    },
-  }
-}
-
 export default function TestExecution({ testId, history, onBack, onEditScript, onSelectTest }: Props) {
   const api = useApi()
   const [test, setTest] = useState<TestSummary | null>(null)
@@ -117,7 +73,6 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
   const [scriptDetailsLoading, setScriptDetailsLoading] = useState(false)
   const [scriptDetailsError, setScriptDetailsError] = useState('')
   const [showScenarioEditor, setShowScenarioEditor] = useState(false)
-  const [availableScripts, setAvailableScripts] = useState<Array<{ id: string; name: string; protocol: string; version: string; created_at: string }>>([])
   const [archiveReport, setArchiveReport] = useState<RunArchiveReport | null>(null)
   const [archiveTransactions, setArchiveTransactions] = useState<TransactionEvent[]>([])
   const [archiveTransactionsTotal, setArchiveTransactionsTotal] = useState(0)
@@ -186,29 +141,6 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
       cancelled = true
     }
   }, [api, test])
-
-  useEffect(() => {
-    if (!showScenarioEditor) return
-    let cancelled = false
-
-    const loadScripts = async () => {
-      try {
-        const response = await api.listScripts()
-        if (!cancelled) {
-          setAvailableScripts(response.scripts || [])
-        }
-      } catch {
-        if (!cancelled) {
-          setAvailableScripts([])
-        }
-      }
-    }
-
-    loadScripts()
-    return () => {
-      cancelled = true
-    }
-  }, [api, showScenarioEditor])
 
   useEffect(() => {
     if (!test?.archive || !isTerminalStatus(test.status)) {
@@ -708,19 +640,12 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
       />
 
       {/* Hero metrics */}
-      {showScenarioEditor && test && (
-        <CreateTestModal
-          scripts={availableScripts}
-          initialScenario={buildScenarioDraft(test)}
-          onClose={() => setShowScenarioEditor(false)}
-          onCreated={(createdTest) => {
-            setShowScenarioEditor(false)
-            if (createdTest?.id) {
-              onSelectTest(createdTest.id)
-            }
-          }}
-        />
-      )}
+      <TestExecutionScenarioEditor
+        open={showScenarioEditor}
+        test={test}
+        onClose={() => setShowScenarioEditor(false)}
+        onSelectTest={onSelectTest}
+      />
 
       <TestExecutionHeroMetrics
         archiveReport={archiveReport}
