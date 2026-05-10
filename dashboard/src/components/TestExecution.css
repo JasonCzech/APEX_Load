@@ -525,6 +525,27 @@
   color: var(--text-secondary);
 }
 
+.scenario-alert-banner {
+  display: flex;
+  gap: 16px;
+  padding: 18px 20px;
+  border-radius: var(--radius);
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.16), rgba(127, 29, 29, 0.08));
+  border: 1px solid rgba(239, 68, 68, 0.28);
+}
+
+.scenario-alert-title {
+  margin: 0 0 6px;
+  font-size: 16px;
+  color: #ffd7d7;
+}
+
+.scenario-alert-message {
+  margin: 0;
+  color: var(--text-primary);
+  line-height: 1.5;
+}
+
 .btn-expand {
   background: transparent;
   border: 1px solid var(--border);

@@ -186,6 +186,7 @@ function buildScenarioDraft(test: TestSummary) {
     name: test.name,
     duration: test.duration,
     scenarioMode: test.scenario_mode || 'vuser_driven',
+    scriptShakeout: Boolean(test.script_shakeout),
     goalConfig: {
       target_average_tps: test.goal_config?.target_average_tps,
       p95_latency_ms: test.goal_config?.p95_latency_ms,
@@ -588,6 +589,7 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
   const isMultiGroup = (test?.groups?.length || 0) > 1
   const groupNames = test?.groups?.map((g) => g.name) || []
   const isGoalOriented = test.scenario_mode === 'goal_oriented'
+  const shakeoutFailed = test.status === 'FAILED' && Boolean(test.script_shakeout) && test.error?.toLowerCase().includes('shakeout')
 
   return (
     <div className="execution">
@@ -814,6 +816,15 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
         </div>
       )}
 
+      {shakeoutFailed && (
+        <div className="scenario-alert-banner" role="alert">
+          <div>
+            <h3 className="scenario-alert-title">Script shakeout failed</h3>
+            <p className="scenario-alert-message">{test.error}</p>
+          </div>
+        </div>
+      )}
+
       {test.status === 'QUEUED' && queuedScenarioPreview.points.length > 0 && (
         <div className="scenario-preview-card">
           <div className="scenario-preview-header">
@@ -916,6 +927,10 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
             <div className="scenario-setting-card">
               <span className="scenario-setting-label">Snapshot On Error</span>
               <span className="scenario-setting-value">{test.runtime_settings?.error_handling?.snapshot_on_error ? 'Enabled' : 'Script default'}</span>
+            </div>
+            <div className="scenario-setting-card">
+              <span className="scenario-setting-label">Script Shakeout</span>
+              <span className="scenario-setting-value">{test.script_shakeout ? 'Enabled' : 'Disabled'}</span>
             </div>
           </div>
 

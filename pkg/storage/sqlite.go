@@ -50,6 +50,7 @@ func (s *SQLiteStore) init() error {
 			name TEXT,
 			status TEXT,
 			scenario_mode TEXT,
+			shakeout_enabled INTEGER DEFAULT 0,
 			total_vusers INTEGER,
 			duration_ns INTEGER,
 			start_time DATETIME,
@@ -87,6 +88,12 @@ func (s *SQLiteStore) init() error {
 	if _, err := s.db.Exec(`ALTER TABLE tests ADD COLUMN goal_config_json TEXT`); err != nil {
 		if err.Error() != "SQL logic error: duplicate column name: goal_config_json (1)" {
 			return fmt.Errorf("failed to add goal_config_json column: %w", err)
+		}
+	}
+
+	if _, err := s.db.Exec(`ALTER TABLE tests ADD COLUMN shakeout_enabled INTEGER DEFAULT 0`); err != nil {
+		if err.Error() != "SQL logic error: duplicate column name: shakeout_enabled (1)" {
+			return fmt.Errorf("failed to add shakeout_enabled column: %w", err)
 		}
 	}
 
@@ -187,10 +194,10 @@ func (s *SQLiteStore) SaveTest(test *TestRecord) error {
 	runtimeSettingsJSON, _ := json.Marshal(test.RuntimeSettings)
 	goalConfigJSON, _ := json.Marshal(test.GoalConfig)
 
-	query := `INSERT INTO tests (id, name, status, scenario_mode, total_vusers, duration_ns, start_time, end_time, error, groups_json, runtime_settings_json, goal_config_json)
-			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	query := `INSERT INTO tests (id, name, status, scenario_mode, shakeout_enabled, total_vusers, duration_ns, start_time, end_time, error, groups_json, runtime_settings_json, goal_config_json)
+			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
-	_, err := s.db.Exec(query, test.ID, test.Name, test.Status, test.ScenarioMode, test.TotalVUsers, test.Duration, test.StartTime, test.EndTime, test.Error, string(groupsJSON), string(runtimeSettingsJSON), string(goalConfigJSON))
+	_, err := s.db.Exec(query, test.ID, test.Name, test.Status, test.ScenarioMode, test.ScriptShakeout, test.TotalVUsers, test.Duration, test.StartTime, test.EndTime, test.Error, string(groupsJSON), string(runtimeSettingsJSON), string(goalConfigJSON))
 	return err
 }
 
@@ -198,8 +205,8 @@ func (s *SQLiteStore) GetTest(id string) (*TestRecord, error) {
 	var test TestRecord
 	var groupsJSON, runtimeSettingsJSON, goalConfigJSON string
 
-	query := `SELECT id, name, status, COALESCE(scenario_mode, ''), total_vusers, duration_ns, start_time, end_time, error, groups_json, COALESCE(runtime_settings_json, ''), COALESCE(goal_config_json, '') FROM tests WHERE id = ?`
-	err := s.db.QueryRow(query, id).Scan(&test.ID, &test.Name, &test.Status, &test.ScenarioMode, &test.TotalVUsers, &test.Duration, &test.StartTime, &test.EndTime, &test.Error, &groupsJSON, &runtimeSettingsJSON, &goalConfigJSON)
+	query := `SELECT id, name, status, COALESCE(scenario_mode, ''), COALESCE(shakeout_enabled, 0), total_vusers, duration_ns, start_time, end_time, error, groups_json, COALESCE(runtime_settings_json, ''), COALESCE(goal_config_json, '') FROM tests WHERE id = ?`
+	err := s.db.QueryRow(query, id).Scan(&test.ID, &test.Name, &test.Status, &test.ScenarioMode, &test.ScriptShakeout, &test.TotalVUsers, &test.Duration, &test.StartTime, &test.EndTime, &test.Error, &groupsJSON, &runtimeSettingsJSON, &goalConfigJSON)
 	if err != nil {
 		return nil, err
 	}
@@ -215,7 +222,7 @@ func (s *SQLiteStore) GetTest(id string) (*TestRecord, error) {
 }
 
 func (s *SQLiteStore) ListTests() ([]*TestRecord, error) {
-	rows, err := s.db.Query(`SELECT id, name, status, COALESCE(scenario_mode, ''), total_vusers, duration_ns, start_time, end_time, error, groups_json, COALESCE(runtime_settings_json, ''), COALESCE(goal_config_json, '') FROM tests ORDER BY start_time DESC`)
+	rows, err := s.db.Query(`SELECT id, name, status, COALESCE(scenario_mode, ''), COALESCE(shakeout_enabled, 0), total_vusers, duration_ns, start_time, end_time, error, groups_json, COALESCE(runtime_settings_json, ''), COALESCE(goal_config_json, '') FROM tests ORDER BY start_time DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -225,7 +232,7 @@ func (s *SQLiteStore) ListTests() ([]*TestRecord, error) {
 	for rows.Next() {
 		var test TestRecord
 		var groupsJSON, runtimeSettingsJSON, goalConfigJSON string
-		if err := rows.Scan(&test.ID, &test.Name, &test.Status, &test.ScenarioMode, &test.TotalVUsers, &test.Duration, &test.StartTime, &test.EndTime, &test.Error, &groupsJSON, &runtimeSettingsJSON, &goalConfigJSON); err != nil {
+		if err := rows.Scan(&test.ID, &test.Name, &test.Status, &test.ScenarioMode, &test.ScriptShakeout, &test.TotalVUsers, &test.Duration, &test.StartTime, &test.EndTime, &test.Error, &groupsJSON, &runtimeSettingsJSON, &goalConfigJSON); err != nil {
 			return nil, err
 		}
 		json.Unmarshal([]byte(groupsJSON), &test.Groups)

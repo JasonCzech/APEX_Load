@@ -59,6 +59,7 @@ export default function CreateTestModal({ scripts, onClose, onCreated, initialSc
   const [name, setName] = useState(initialScenario?.name || '')
   const [duration, setDuration] = useState(initialScenario?.duration || '1m')
   const [scenarioMode, setScenarioMode] = useState<ScenarioMode>(initialScenario?.scenarioMode || 'vuser_driven')
+  const [scriptShakeout, setScriptShakeout] = useState(Boolean(initialScenario?.scriptShakeout))
   const [groups, setGroups] = useState<GroupEntry[]>(
     initialScenario?.groups.length
       ? initialScenario.groups
@@ -165,6 +166,7 @@ export default function CreateTestModal({ scripts, onClose, onCreated, initialSc
     try {
       const payload: any = { name: name || undefined, duration }
       payload.scenario_mode = scenarioMode
+      payload.script_shakeout = scriptShakeout
 
       if (groups.length === 1 && !groups[0].name) {
         // Single group — use shorthand
@@ -262,6 +264,17 @@ export default function CreateTestModal({ scripts, onClose, onCreated, initialSc
                   placeholder="e.g. 5m, 1h"
                   required
                 />
+              </label>
+              <label className="setting-checkbox-row">
+                <span>Pre-Run Script Shakeout</span>
+                <div className="setting-checkbox-control">
+                  <input
+                    type="checkbox"
+                    checked={scriptShakeout}
+                    onChange={(e) => setScriptShakeout(e.target.checked)}
+                  />
+                  <p>Run one instance of each script before full scale startup. Any failure halts the scenario and raises an alert.</p>
+                </div>
               </label>
             </div>
             

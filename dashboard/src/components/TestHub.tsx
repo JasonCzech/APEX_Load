@@ -14,6 +14,7 @@ interface Scenario {
   name: string
   runs: TestSummary[]
   latestRun: TestSummary
+  configRun: TestSummary
   hasActive: boolean
   totalRuns: number
 }
@@ -25,6 +26,14 @@ function resolveStatus(test: TestSummary, overrides: Record<string, string>): Te
 function formatDate(iso: string): string {
   const d = new Date(iso)
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+
+function resolveScenarioConfigRun(runs: TestSummary[]): TestSummary {
+  return runs.find((run) => run.status === 'QUEUED') || runs[0]
+}
+
+function hasShakeoutFailure(test: TestSummary): boolean {
+  return test.status === 'FAILED' && Boolean(test.script_shakeout) && Boolean(test.error?.toLowerCase().includes('shakeout'))
 }
 
 function buildScenarioDraft(test: TestSummary): ScenarioDraft {
@@ -50,6 +59,7 @@ function buildScenarioDraft(test: TestSummary): ScenarioDraft {
     name: test.name,
     duration: test.duration,
     scenarioMode: test.scenario_mode || 'vuser_driven',
+    scriptShakeout: Boolean(test.script_shakeout),
     goalConfig: {
       target_average_tps: test.goal_config?.target_average_tps,
       p95_latency_ms: test.goal_config?.p95_latency_ms,
@@ -107,6 +117,7 @@ function TestHub({ testStatuses, onSelectTest }: Props) {
       const sorted = [...runs].sort((a, b) =>
         new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       )
+      const configRun = resolveScenarioConfigRun(sorted)
       const hasActive = sorted.some(r => {
         const s = resolveStatus(r, testStatuses)
         return s === 'RUNNING' || s === 'INITIALIZING' || s === 'STOPPING'
@@ -115,6 +126,7 @@ function TestHub({ testStatuses, onSelectTest }: Props) {
         name,
         runs: sorted,
         latestRun: sorted[0],
+        configRun,
         hasActive,
         totalRuns: sorted.length,
       })
@@ -164,7 +176,9 @@ function TestHub({ testStatuses, onSelectTest }: Props) {
           {scenarios.map(scenario => {
             const isExpanded = expandedScenario === scenario.name
             const latest = scenario.latestRun
+            const configRun = scenario.configRun
             const latestStatus = resolveStatus(latest, testStatuses)
+            const latestShakeoutFailure = hasShakeoutFailure(latest)
 
             return (
               <div key={scenario.name} className={`scenario-item ${isExpanded ? 'expanded' : ''} ${scenario.hasActive ? 'has-active' : ''}`}>
@@ -189,6 +203,10 @@ function TestHub({ testStatuses, onSelectTest }: Props) {
                     <span className="scenario-live-badge">LIVE</span>
                   )}
 
+                  {latestShakeoutFailure && (
+                    <span className="scenario-shakeout-badge">Shakeout failed</span>
+                  )}
+
                   <div className="scenario-latest">
                     <span className="scenario-latest-label">Latest</span>
                     <StatusBadge status={latestStatus} />
@@ -198,7 +216,7 @@ function TestHub({ testStatuses, onSelectTest }: Props) {
 
                   <button
                     className="btn btn-sm btn-secondary scenario-open-btn"
-                    onClick={(e) => { e.stopPropagation(); onSelectTest(latest.id) }}
+                    onClick={(e) => { e.stopPropagation(); onSelectTest(configRun.id) }}
                   >
                     Open
                   </button>
@@ -225,6 +243,7 @@ function TestHub({ testStatuses, onSelectTest }: Props) {
                     {scenario.runs.map(run => {
                       const runStatus = resolveStatus(run, testStatuses)
                       const isActive = runStatus === 'RUNNING' || runStatus === 'INITIALIZING'
+                      const shakeoutFailure = hasShakeoutFailure(run)
                       return (
                         <div
                           key={run.id}
@@ -243,6 +262,9 @@ function TestHub({ testStatuses, onSelectTest }: Props) {
                               <span className="run-live-stats">
                                 {run.live_metrics.tps?.toFixed(1)} TPS · {run.live_metrics.avg_response_ms?.toFixed(0)}ms
                               </span>
+                            )}
+                            {shakeoutFailure && (
+                              <span className="run-alert-badge">Shakeout failed</span>
                             )}
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="run-arrow">
                               <polyline points="9 18 15 12 9 6" />

@@ -30,6 +30,7 @@ type ManagedTest struct {
 	Status          string                   `json:"status"`
 	Groups          []TestGroup              `json:"groups"`
 	ScenarioMode    string                   `json:"scenario_mode,omitempty"`
+	ScriptShakeout  bool                     `json:"script_shakeout,omitempty"`
 	GoalConfig      *GoalConfig              `json:"goal_config,omitempty"`
 	RuntimeSettings *RuntimeSettingsOverride `json:"runtime_settings,omitempty"`
 	TotalVUsers     int                      `json:"total_vusers"`
@@ -188,6 +189,7 @@ func NewTestRunner(maxTests int, hub *Hub, store storage.Store) *TestRunner {
 					Status:          t.Status,
 					Groups:          groups,
 					ScenarioMode:    normalizeScenarioMode(t.ScenarioMode),
+					ScriptShakeout:  t.ScriptShakeout,
 					GoalConfig:      goalConfig,
 					RuntimeSettings: runtimeSettings,
 					TotalVUsers:     t.TotalVUsers,
@@ -309,11 +311,12 @@ func (tr *TestRunner) DeleteScript(id string) bool {
 }
 
 type CreateTestRequest struct {
-	Name         string             `json:"name"`
-	Duration     string             `json:"duration"`
-	ScenarioMode string             `json:"scenario_mode,omitempty"`
-	GoalConfig   *GoalConfig        `json:"goal_config,omitempty"`
-	Groups       []CreateGroupEntry `json:"groups,omitempty"`
+	Name           string             `json:"name"`
+	Duration       string             `json:"duration"`
+	ScenarioMode   string             `json:"scenario_mode,omitempty"`
+	ScriptShakeout bool               `json:"script_shakeout,omitempty"`
+	GoalConfig     *GoalConfig        `json:"goal_config,omitempty"`
+	Groups         []CreateGroupEntry `json:"groups,omitempty"`
 	// Single-script shorthand (backwards compatible)
 	ScriptID string `json:"script_id,omitempty"`
 	VUsers   int    `json:"vusers,omitempty"`
@@ -489,6 +492,7 @@ func (tr *TestRunner) CreateTest(req CreateTestRequest) (*ManagedTest, error) {
 		Status:          "QUEUED",
 		Groups:          testGroups,
 		ScenarioMode:    scenarioMode,
+		ScriptShakeout:  req.ScriptShakeout,
 		GoalConfig:      cloneGoalConfig(req.GoalConfig),
 		RuntimeSettings: cloneRuntimeSettings(req.RuntimeSettings),
 		TotalVUsers:     totalVUsers,
@@ -512,6 +516,7 @@ func (tr *TestRunner) CreateTest(req CreateTestRequest) (*ManagedTest, error) {
 			Name:            test.Name,
 			Status:          test.Status,
 			ScenarioMode:    test.ScenarioMode,
+			ScriptShakeout:  test.ScriptShakeout,
 			TotalVUsers:     test.TotalVUsers,
 			Duration:        int64(test.Duration),
 			StartTime:       test.CreatedAt,
@@ -675,6 +680,22 @@ func (tr *TestRunner) AdjustDuration(id string, newDuration time.Duration) error
 }
 
 func (tr *TestRunner) runTest(test *ManagedTest) {
+	if test.ScriptShakeout {
+		if err := tr.runScriptShakeout(test); err != nil {
+			now := time.Now()
+			tr.mu.Lock()
+			test.Status = "FAILED"
+			test.Error = err.Error()
+			test.EndedAt = &now
+			tr.mu.Unlock()
+			if tr.store != nil {
+				tr.store.UpdateTestStatus(test.ID, test.Status, test.EndedAt, test.Error)
+			}
+			tr.broadcastEvent("test_failed", test)
+			return
+		}
+	}
+
 	mge, err := engine.NewMultiGroup(engine.MultiGroupConfig{
 		Groups:   test.groupSpecs,
 		Duration: test.Duration,
@@ -729,6 +750,26 @@ func (tr *TestRunner) runTest(test *ManagedTest) {
 		"errors", result.TotalErrors,
 		"duration", result.Duration,
 	)
+}
+
+func (tr *TestRunner) runScriptShakeout(test *ManagedTest) error {
+	for _, group := range test.groupSpecs {
+		if group.Script == nil {
+			return fmt.Errorf("script shakeout failed for %s: script is missing", group.Name)
+		}
+
+		shakeoutScript := *group.Script
+		shakeoutScript.Config.RunLogic.Iterations = 1
+
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		err := engine.RunScriptShakeout(ctx, group.Name, &shakeoutScript)
+		cancel()
+		if err != nil {
+			return fmt.Errorf("script shakeout failed for %s: %w", group.Name, err)
+		}
+	}
+
+	return nil
 }
 
 func (tr *TestRunner) broadcastMetrics(test *ManagedTest, mge *engine.MultiGroupEngine, done chan struct{}) {

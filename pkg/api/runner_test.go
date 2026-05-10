@@ -1,6 +1,7 @@
 package api
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -34,6 +35,7 @@ func TestCreateTestPreservesRuntimeSettingsAndGroups(t *testing.T) {
 		Name:         "Checkout Replay",
 		Duration:     "90s",
 		ScenarioMode: "goal_oriented",
+		ScriptShakeout: true,
 		GoalConfig: &GoalConfig{
 			TargetAverageTPS: &targetAverageTPS,
 			P95LatencyMs:     &p95LatencyMs,
@@ -80,6 +82,9 @@ func TestCreateTestPreservesRuntimeSettingsAndGroups(t *testing.T) {
 	}
 	if test.ScenarioMode != "goal_oriented" {
 		t.Fatalf("expected scenario mode goal_oriented, got %q", test.ScenarioMode)
+	}
+	if !test.ScriptShakeout {
+		t.Fatal("expected script shakeout to be preserved on managed test")
 	}
 	if test.GoalConfig == nil {
 		t.Fatal("expected goal config to be preserved on managed test")
@@ -201,4 +206,60 @@ func TestDistributeTargetVUsersPreservesTotal(t *testing.T) {
 	if targets["buyers"] <= targets["admins"] {
 		t.Fatalf("expected buyers to retain larger share, got buyers=%d admins=%d", targets["buyers"], targets["admins"])
 	}
+}
+
+func TestStartTestFailsWhenScriptShakeoutFails(t *testing.T) {
+	hub := NewHub()
+	runner := NewTestRunner(2, hub, nil)
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-bad",
+		Name:     "Broken Script",
+		Protocol: "definitely-not-supported",
+		Version:  "1.0.0",
+	})
+
+	test, err := runner.CreateTest(CreateTestRequest{
+		Name:           "Broken Scenario",
+		Duration:       "30s",
+		ScriptShakeout: true,
+		ScriptID:       "script-bad",
+		VUsers:         25,
+	})
+	if err != nil {
+		t.Fatalf("CreateTest returned error: %v", err)
+	}
+
+	if err := runner.StartTest(test.ID); err != nil {
+		t.Fatalf("StartTest returned error: %v", err)
+	}
+
+	failed := waitForTestStatus(t, runner, test.ID, "FAILED")
+	if failed.Error == "" {
+		t.Fatal("expected shakeout failure to populate test error")
+	}
+	if !strings.Contains(strings.ToLower(failed.Error), "shakeout") {
+		t.Fatalf("expected shakeout failure error, got %q", failed.Error)
+	}
+	if failed.StartedAt != nil {
+		t.Fatal("expected failed shakeout to halt before the main run starts")
+	}
+}
+
+func waitForTestStatus(t *testing.T, runner *TestRunner, testID string, want string) *ManagedTest {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		test, ok := runner.GetTest(testID)
+		if !ok {
+			t.Fatalf("test %s not found", testID)
+		}
+		if test.Status == want {
+			return test
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+
+	test, _ := runner.GetTest(testID)
+	t.Fatalf("timed out waiting for test %s to reach %s, current status %s", testID, want, test.Status)
+	return nil
 }
