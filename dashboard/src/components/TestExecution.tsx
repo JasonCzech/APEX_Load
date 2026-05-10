@@ -1,4 +1,4 @@
-import { Fragment, useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import {
   LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Legend, ReferenceArea,
@@ -9,15 +9,17 @@ import {
   TestSummary,
   MetricsHistoryPoint,
   TxMetrics,
-  GroupLiveMetrics,
   GoalStatus,
   RunArchiveReport,
   TransactionEvent,
 } from '../types'
-import StatusBadge from './StatusBadge'
 import CreateTestModal from './CreateTestModal'
+import TestExecutionArchive from './TestExecutionArchive'
+import TestExecutionCharts from './TestExecutionCharts'
 import TestExecutionHeader from './TestExecutionHeader'
 import TestExecutionLiveControls from './TestExecutionLiveControls'
+import TestExecutionStatusPanels from './TestExecutionStatusPanels'
+import TestExecutionSummary from './TestExecutionSummary'
 import { parseDurationToSeconds, formatTimeLong, formatTimeCompact } from '../utils/timeUtils'
 import { downloadBlob } from '../utils/fileUtils'
 import './TestExecution.css'
@@ -182,19 +184,6 @@ function describeGoalController(status?: GoalStatus): string {
 function isTerminalStatus(status?: string): boolean {
   return status === 'COMPLETE' || status === 'FAILED' || status === 'ABORTED'
 }
-
-function formatArchiveTimestamp(value?: string): string {
-  if (!value) return 'n/a'
-  return new Date(value).toLocaleString()
-}
-
-function formatHeaderPairs(headers?: Record<string, string>): string {
-  if (!headers || Object.keys(headers).length === 0) return 'n/a'
-  return Object.entries(headers)
-    .map(([key, value]) => `${key}: ${value}`)
-    .join('\n')
-}
-
 
 function buildScenarioDraft(test: TestSummary) {
   const groups = test.groups?.length
@@ -1211,639 +1200,76 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
         </div>
       </div>
 
-      {!isRunning && hasArchive && (
-        <div className="archive-report-card">
-          <div className="archive-report-header">
-            <div>
-              <h3 className="archive-report-title">Archive Report</h3>
-              <p className="archive-report-subtitle">
-                Post-run summary derived from the saved JSONL bundle. Completed {formatArchiveTimestamp(test.archive?.completed_at)}.
-              </p>
-            </div>
-            <div className="archive-report-badges">
-              <span className="archive-chip">{test.archive?.transaction_count || 0} transactions</span>
-              <span className="archive-chip">{test.archive?.resource_sample_count || 0} resource samples</span>
-              <span className="archive-chip">{test.archive?.interval_summary_count || 0} summaries</span>
-            </div>
-          </div>
-
-          {archiveError && <p className="scenario-script-status error">{archiveError}</p>}
-          {archiveLoading && <p className="scenario-script-status">Loading archive report…</p>}
-
-          {archiveReport && (
-            <>
-              <div className="archive-overview-grid">
-                <div className="scenario-script-detail-card">
-                  <span className="scenario-script-detail-label">Peak TPS</span>
-                  <span className="scenario-script-detail-value">{archiveReport.overview.peak_tps.toFixed(1)}</span>
-                </div>
-                <div className="scenario-script-detail-card">
-                  <span className="scenario-script-detail-label">Peak Active VUsers</span>
-                  <span className="scenario-script-detail-value">{archiveReport.overview.peak_active_vusers}</span>
-                </div>
-                <div className="scenario-script-detail-card">
-                  <span className="scenario-script-detail-label">Response Range</span>
-                  <span className="scenario-script-detail-value">{archiveReport.overview.min_response_ms.toFixed(1)} - {archiveReport.overview.max_response_ms.toFixed(1)} ms</span>
-                </div>
-                <div className="scenario-script-detail-card">
-                  <span className="scenario-script-detail-label">CPU Peak</span>
-                  <span className="scenario-script-detail-value">{archiveReport.resource_peaks.cpu_process_pct.toFixed(1)}%</span>
-                </div>
-                <div className="scenario-script-detail-card">
-                  <span className="scenario-script-detail-label">Memory Peak</span>
-                  <span className="scenario-script-detail-value">{archiveReport.resource_peaks.mem_process_mb.toFixed(1)} MB</span>
-                </div>
-                <div className="scenario-script-detail-card">
-                  <span className="scenario-script-detail-label">Network Peak</span>
-                  <span className="scenario-script-detail-value">{archiveReport.resource_peaks.net_sent_kbps.toFixed(1)} / {archiveReport.resource_peaks.net_recv_kbps.toFixed(1)} KB/s</span>
-                </div>
-              </div>
-
-              <div className="archive-artifact-row">
-                <div className="archive-artifact-group">
-                  <span className="archive-artifact-label">JSONL</span>
-                  <button className="btn btn-secondary btn-sm" onClick={() => handleDownloadArchiveArtifact(archiveReport.manifest.transactions_file || 'transactions.jsonl')}>
-                    Download Transactions JSONL
-                  </button>
-                  <button className="btn btn-secondary btn-sm" onClick={() => handleDownloadArchiveArtifact(archiveReport.manifest.resource_samples_file || 'resources.jsonl')}>
-                    Download Resources JSONL
-                  </button>
-                  <button className="btn btn-secondary btn-sm" onClick={() => handleDownloadArchiveArtifact(archiveReport.manifest.interval_summaries_file || 'interval_summaries.jsonl')}>
-                    Download Summaries JSONL
-                  </button>
-                </div>
-                <div className="archive-artifact-group">
-                  <span className="archive-artifact-label">Parquet</span>
-                  <button className="btn btn-secondary btn-sm" onClick={() => handleDownloadArchiveArtifact(archiveReport.manifest.transactions_parquet_file || 'transactions.parquet')}>
-                    Download Transactions Parquet
-                  </button>
-                  <button className="btn btn-secondary btn-sm" onClick={() => handleDownloadArchiveArtifact(archiveReport.manifest.resource_samples_parquet_file || 'resources.parquet')}>
-                    Download Resources Parquet
-                  </button>
-                  <button className="btn btn-secondary btn-sm" onClick={() => handleDownloadArchiveArtifact(archiveReport.manifest.interval_summaries_parquet_file || 'interval_summaries.parquet')}>
-                    Download Summaries Parquet
-                  </button>
-                </div>
-              </div>
-
-              <div className="archive-report-layout">
-                <div className="tx-section archive-action-section">
-                  <div className="archive-section-header">
-                    <div>
-                      <h3 className="chart-title">Action Summary</h3>
-                      <p className="archive-section-copy">Archived totals by transaction name.</p>
-                    </div>
-                  </div>
-                  <table className="tx-table">
-                    <thead>
-                      <tr>
-                        <th>Action</th>
-                        <th>Count</th>
-                        <th>Errors</th>
-                        <th>Error %</th>
-                        <th>Avg (ms)</th>
-                        <th>Max (ms)</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {archiveActionEntries.slice(0, 8).map(([name, stats]) => (
-                        <tr key={name}>
-                          <td className="tx-name">{name}</td>
-                          <td>{stats.transactions}</td>
-                          <td className={stats.errors > 0 ? 'error-cell' : ''}>{stats.errors}</td>
-                          <td>{stats.error_pct.toFixed(2)}%</td>
-                          <td>{stats.avg_response_ms.toFixed(1)}</td>
-                          <td>{stats.max_response_ms.toFixed(1)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                <div className="tx-section archive-drilldown-section">
-                  <div className="archive-section-header archive-section-header-stack">
-                    <div>
-                      <h3 className="chart-title">Transaction Drill-Down</h3>
-                      <p className="archive-section-copy">Sample archived events for a selected action.</p>
-                    </div>
-                    <div className="archive-filter-bar">
-                      <select
-                        className="archive-action-select"
-                        value={selectedArchiveAction}
-                        onChange={(event) => {
-                          setSelectedArchiveAction(event.target.value)
-                          setArchiveTransactionsOffset(0)
-                        }}
-                      >
-                        {archiveActionEntries.map(([name]) => (
-                          <option key={name} value={name}>{name}</option>
-                        ))}
-                      </select>
-                      <select
-                        className="archive-action-select archive-filter-select"
-                        value={selectedArchiveGroup}
-                        onChange={(event) => {
-                          setSelectedArchiveGroup(event.target.value)
-                          setArchiveTransactionsOffset(0)
-                        }}
-                      >
-                        <option value="">All groups</option>
-                        {archiveGroups.map((group) => (
-                          <option key={group} value={group}>{group}</option>
-                        ))}
-                      </select>
-                      <label className="archive-checkbox">
-                        <input
-                          type="checkbox"
-                          checked={archiveErrorsOnly}
-                          onChange={(event) => {
-                            setArchiveErrorsOnly(event.target.checked)
-                            setArchiveTransactionsOffset(0)
-                          }}
-                        />
-                        Errors only
-                      </label>
-                    </div>
-                  </div>
-                  <div className="archive-pagination-bar">
-                    <span className="archive-pagination-copy">
-                      {archiveTransactionsLoading ? 'Loading events…' : archiveTransactionsTotal > 0 ? `${archivePageStart}-${archivePageEnd} of ${archiveTransactionsTotal}` : 'No archived events'}
-                    </span>
-                    <div className="archive-pagination-actions">
-                      <button
-                        className="btn btn-sm btn-secondary"
-                        disabled={archiveTransactionsOffset === 0 || archiveTransactionsLoading}
-                        onClick={() => setArchiveTransactionsOffset((current) => Math.max(0, current - archivePageSize))}
-                      >
-                        Prev
-                      </button>
-                      <button
-                        className="btn btn-sm btn-secondary"
-                        disabled={archiveTransactionsOffset + archivePageSize >= archiveTransactionsTotal || archiveTransactionsLoading}
-                        onClick={() => setArchiveTransactionsOffset((current) => current + archivePageSize)}
-                      >
-                        Next
-                      </button>
-                    </div>
-                  </div>
-                  {!archiveTransactionsLoading && archiveTransactions.length === 0 ? (
-                    <p className="scenario-script-status">No archived transactions loaded for this action.</p>
-                  ) : (
-                    <table className="tx-table archive-events-table">
-                      <thead>
-                        <tr>
-                          <th>Time</th>
-                          <th>Group</th>
-                          <th>Status</th>
-                          <th>Duration</th>
-                          <th>Bytes</th>
-                          <th>Error</th>
-                          <th>Details</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {archiveTransactions.map((event, index) => (
-                          (() => {
-                            const rowKey = `${event.timestamp}-${index}`
-                            const hasSnapshot = Boolean(event.snapshot)
-                            const isExpanded = expandedArchiveEvent === rowKey
-                            return (
-                              <Fragment key={rowKey}>
-                                <tr key={rowKey}>
-                                  <td>{formatArchiveTimestamp(event.timestamp)}</td>
-                                  <td>{event.group || 'n/a'}</td>
-                                  <td className={event.success ? '' : 'error-cell'}>{event.status_code || (event.success ? 'OK' : 'ERR')}</td>
-                                  <td>{event.duration_ms.toFixed(1)} ms</td>
-                                  <td>{event.bytes_received || 0}</td>
-                                  <td className={!event.success ? 'error-cell' : ''}>{event.error_message || 'None'}</td>
-                                  <td>
-                                    {hasSnapshot ? (
-                                      <button
-                                        className="btn btn-sm btn-secondary archive-detail-toggle"
-                                        onClick={() => setExpandedArchiveEvent((current) => current === rowKey ? null : rowKey)}
-                                      >
-                                        {isExpanded ? 'Hide' : 'Inspect'}
-                                      </button>
-                                    ) : (
-                                      <span className="cell-muted">n/a</span>
-                                    )}
-                                  </td>
-                                </tr>
-                                {isExpanded && hasSnapshot && (
-                                  <tr className="archive-event-detail-row">
-                                    <td colSpan={7}>
-                                      <div className="archive-event-detail-grid">
-                                        <div className="archive-event-detail-card">
-                                          <span className="scenario-script-detail-label">Request</span>
-                                          <span className="scenario-script-detail-value">{event.snapshot?.request_method || 'n/a'} {event.snapshot?.request_url || ''}</span>
-                                          <pre className="archive-event-detail-pre">{formatHeaderPairs(event.snapshot?.request_headers)}</pre>
-                                          <pre className="archive-event-detail-pre">{event.snapshot?.request_body || 'No request body captured'}</pre>
-                                        </div>
-                                        <div className="archive-event-detail-card">
-                                          <span className="scenario-script-detail-label">Response</span>
-                                          <span className="scenario-script-detail-value">{event.snapshot?.response_status || event.status_code || 'n/a'}</span>
-                                          <pre className="archive-event-detail-pre">{formatHeaderPairs(event.snapshot?.response_headers)}</pre>
-                                          <pre className="archive-event-detail-pre">{event.snapshot?.response_body || 'No response body captured'}</pre>
-                                        </div>
-                                      </div>
-                                    </td>
-                                  </tr>
-                                )}
-                              </Fragment>
-                            )
-                          })()
-                        ))}
-                      </tbody>
-                    </table>
-                  )}
-                </div>
-              </div>
-            </>
-          )}
-        </div>
+      {!isRunning && (
+        <TestExecutionArchive
+          hasArchive={hasArchive}
+          test={test}
+          archiveError={archiveError}
+          archiveLoading={archiveLoading}
+          archiveReport={archiveReport}
+          onDownloadArchiveArtifact={handleDownloadArchiveArtifact}
+          archiveActionEntries={archiveActionEntries}
+          selectedArchiveAction={selectedArchiveAction}
+          onSelectedArchiveActionChange={(value) => {
+            setSelectedArchiveAction(value)
+            setArchiveTransactionsOffset(0)
+          }}
+          archiveGroups={archiveGroups}
+          selectedArchiveGroup={selectedArchiveGroup}
+          onSelectedArchiveGroupChange={(value) => {
+            setSelectedArchiveGroup(value)
+            setArchiveTransactionsOffset(0)
+          }}
+          archiveErrorsOnly={archiveErrorsOnly}
+          onArchiveErrorsOnlyChange={(value) => {
+            setArchiveErrorsOnly(value)
+            setArchiveTransactionsOffset(0)
+          }}
+          archiveTransactionsLoading={archiveTransactionsLoading}
+          archiveTransactionsTotal={archiveTransactionsTotal}
+          archivePageStart={archivePageStart}
+          archivePageEnd={archivePageEnd}
+          archiveTransactionsOffset={archiveTransactionsOffset}
+          archivePageSize={archivePageSize}
+          onPreviousPage={() => setArchiveTransactionsOffset((current) => Math.max(0, current - archivePageSize))}
+          onNextPage={() => setArchiveTransactionsOffset((current) => current + archivePageSize)}
+          archiveTransactions={archiveTransactions}
+          expandedArchiveEvent={expandedArchiveEvent}
+          onExpandedArchiveEventChange={setExpandedArchiveEvent}
+        />
       )}
 
-      {isGoalOriented && (
-        <div className="goal-status-card">
-          <div className="goal-status-header">
-            <div>
-              <h3 className="goal-status-title">Goal Controller</h3>
-              <p className="goal-status-subtitle">
-                {describeGoalController(goalStatus)}
-              </p>
-            </div>
-            <div className={`goal-status-badge ${goalStatus?.stop_triggered ? 'danger' : goalStatus?.breach_active ? 'warning' : 'healthy'}`}>
-              {goalStatus?.stop_triggered ? 'Stopping' : goalStatus?.breach_active ? 'SLA Breach' : 'Active'}
-            </div>
-          </div>
-
-          <div className="goal-status-grid">
-            <div className="goal-status-metric">
-              <span className="goal-status-label">Target TPS</span>
-              <span className="goal-status-value">{(goalStatus?.target_average_tps ?? test.goal_config?.target_average_tps ?? 0).toFixed(1)}</span>
-            </div>
-            <div className="goal-status-metric">
-              <span className="goal-status-label">Current TPS</span>
-              <span className="goal-status-value">{(goalStatus?.current_tps ?? metrics?.tps ?? 0).toFixed(1)}</span>
-            </div>
-            <div className="goal-status-metric">
-              <span className="goal-status-label">Current VUsers</span>
-              <span className="goal-status-value">{goalStatus?.current_total_vusers ?? metrics?.active_vusers ?? test.total_vusers}</span>
-            </div>
-            <div className="goal-status-metric">
-              <span className="goal-status-label">Suggested VUsers</span>
-              <span className="goal-status-value">{goalStatus?.suggested_total_vusers ?? goalStatus?.current_total_vusers ?? test.total_vusers}</span>
-            </div>
-            <div className="goal-status-metric">
-              <span className="goal-status-label">Guardrails</span>
-              <span className="goal-status-value">
-                {(test.goal_config?.min_vusers ?? 0)} - {test.goal_config?.max_vusers ?? 'unbounded'}
-              </span>
-            </div>
-            <div className="goal-status-metric">
-              <span className="goal-status-label">SLA Window</span>
-              <span className="goal-status-value">{test.goal_config?.sla_breach_window || '30s'}</span>
-            </div>
-          </div>
-
-          <div className="goal-status-flags">
-            <span className={`goal-flag ${goalStatus?.latency_breached ? 'alert' : ''}`}>
-              P95 {goalStatus?.latency_breached ? 'breached' : 'healthy'}
-            </span>
-            <span className={`goal-flag ${goalStatus?.error_breached ? 'alert' : ''}`}>
-              Error rate {goalStatus?.error_breached ? 'breached' : 'healthy'}
-            </span>
-            <span className="goal-flag neutral">
-              Stop on breach {test.goal_config?.stop_on_sla_breach ? 'enabled' : 'disabled'}
-            </span>
-          </div>
-        </div>
-      )}
-
-      {/* Per-group live metrics */}
-      {isMultiGroup && groupMetrics.length > 0 && (
-        <div className="group-metrics-grid">
-          {groupMetrics.map((gm: GroupLiveMetrics, i: number) => (
-            <div
-              key={gm.name}
-              className="group-metric-card"
-              style={{ borderTopColor: GROUP_COLORS[i % GROUP_COLORS.length] }}
-            >
-              <div className="gm-header">
-                <span className="gm-name">{gm.name}</span>
-                <span className="gm-vusers">{gm.vusers} VUsers</span>
-              </div>
-              <div className="gm-stats">
-                <div className="gm-stat">
-                  <span className="gm-value">{gm.tps?.toFixed(1)}</span>
-                  <span className="gm-label">TPS</span>
-                </div>
-                <div className="gm-stat">
-                  <span className="gm-value">{gm.avg_response_ms?.toFixed(0)}</span>
-                  <span className="gm-label">Avg ms</span>
-                </div>
-                <div className="gm-stat">
-                  <span className="gm-value">{gm.p90_ms?.toFixed(0)}</span>
-                  <span className="gm-label">P90</span>
-                </div>
-                <div className="gm-stat">
-                  <span className="gm-value">{gm.errors}</span>
-                  <span className="gm-label">Errors</span>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+      <TestExecutionStatusPanels
+        isGoalOriented={isGoalOriented}
+        goalDescription={describeGoalController(goalStatus)}
+        goalStatus={goalStatus}
+        test={test}
+        metrics={metrics}
+        isMultiGroup={isMultiGroup}
+        groupMetrics={groupMetrics}
+        groupColors={GROUP_COLORS}
+      />
 
       {/* Charts */}
-      {filteredData.length > 1 && (
-        <div className="charts-grid">
-          {(() => {
-            const latest = filteredData[filteredData.length - 1] || {}
-            const chartConfigs = [
-              { id: 'vusers', title: 'Virtual Users', type: 'area', dataKey: 'vusers', color: 'var(--chart-1)' },
-              { id: 'tps', title: 'Transactions Per Second', type: 'line-multi', totalKey: 'tps' },
-              { id: 'latency', title: 'Response Time (ms)', type: 'line-latency' },
-              { id: 'errors', title: 'Error Rate (%)', type: 'area', dataKey: 'errorPct', color: 'var(--chart-4)', domain: [0, 'auto'] as [number, string] },
-              { id: 'cpu', title: 'CPU Usage (%)', type: 'area-multi', keys: [{k:'cpuProcess', n:'VUsers', c:'var(--chart-1)'}, {k:'cpuFree', n:'System', c:'var(--chart-2)'}], domain: [0, 100] as [number, number] },
-              { id: 'mem', title: 'Memory Usage (MB)', type: 'area-multi', keys: [{k:'memProcess', n:'VUsers', c:'var(--chart-4)'}, {k:'memFree', n:'System', c:'var(--chart-5)'}] },
-              { id: 'io', title: 'Network & Disk I/O (KB/s)', type: 'line-io' }
-            ]
+      <TestExecutionCharts
+        filteredData={filteredData}
+        expandedChart={expandedChart}
+        onExpandedChartChange={setExpandedChart}
+        onChartMouseDown={handleChartMouseDown}
+        onChartMouseMove={handleChartMouseMove}
+        onZoom={handleZoom}
+        showRefArea={showRefArea}
+        refAreaLeft={refAreaLeft}
+        refAreaEnd={refAreaEnd}
+        isMultiGroup={isMultiGroup}
+        groupNames={groupNames}
+        groupColors={GROUP_COLORS}
+      />
 
-            // Sort so expanded is first
-            const sorted = [...chartConfigs].sort((a, b) => {
-              if (a.id === expandedChart) return -1
-              if (b.id === expandedChart) return 1
-              return 0
-            })
-
-            return sorted.map(c => (
-              <div key={c.id} className={`chart-card ${expandedChart === c.id ? 'expanded' : ''}`}>
-                <div className="chart-card-header">
-                  <h3 className="chart-title">{c.title}</h3>
-                  <button className="btn-icon btn-expand" onClick={() => setExpandedChart(expandedChart === c.id ? null : c.id)}>
-                    {expandedChart === c.id ? '↙' : '↗'}
-                  </button>
-                </div>
-                <ResponsiveContainer width="100%" height={expandedChart === c.id ? 400 : 200}>
-                  {c.type === 'area' ? (
-                    <AreaChart 
-                      data={filteredData} 
-                      syncId="metrics"
-                      onMouseDown={e => handleChartMouseDown(e?.activeLabel)}
-                      onMouseMove={e => handleChartMouseMove(e?.activeLabel)}
-                      onMouseUp={handleZoom}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                      <XAxis dataKey="time" stroke="var(--text-muted)" fontSize={11} />
-                      <YAxis stroke="var(--text-muted)" fontSize={11} domain={c.domain as any} />
-                      <Tooltip
-                        contentStyle={{ background: 'rgba(33, 36, 47, 0.2)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.2)' }}
-                        labelStyle={{ color: 'var(--text-primary)', fontWeight: 700, marginBottom: 4 }}
-                        isAnimationActive={false}
-                      />
-                      <Area type="monotone" dataKey={c.dataKey!} name="Total" stroke={c.color!} fill={c.color!} fillOpacity={0.15} isAnimationActive={false} />
-                      {showRefArea && (
-                        <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
-                      )}
-                    </AreaChart>
-                  ) : c.type === 'line-multi' ? (
-                    <LineChart 
-                      data={filteredData} 
-                      syncId="metrics"
-                      onMouseDown={e => handleChartMouseDown(e?.activeLabel)}
-                      onMouseMove={e => handleChartMouseMove(e?.activeLabel)}
-                      onMouseUp={handleZoom}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                      <XAxis dataKey="time" stroke="var(--text-muted)" fontSize={11} />
-                      <YAxis stroke="var(--text-muted)" fontSize={11} />
-                      <Tooltip
-                        contentStyle={{ background: 'rgba(33, 36, 47, 0.2)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.2)' }}
-                        labelStyle={{ color: 'var(--text-primary)', fontWeight: 700, marginBottom: 4 }}
-                        isAnimationActive={false}
-                      />
-                      {isMultiGroup && <Legend verticalAlign="bottom" height={36} />}
-                      <Line type="monotone" dataKey={c.totalKey!} name="Total" stroke="var(--text-muted)" dot={false} strokeWidth={2} strokeDasharray={isMultiGroup ? '4 2' : undefined} isAnimationActive={false} />
-                      {isMultiGroup && groupNames.map((name, i) => (
-                        <Line key={name} type="monotone" dataKey={`${name}_tps`} name={name} stroke={GROUP_COLORS[i % GROUP_COLORS.length]} dot={false} isAnimationActive={false} />
-                      ))}
-                      {showRefArea && (
-                        <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
-                      )}
-                    </LineChart>
-                  ) : c.type === 'line-latency' ? (
-                    <LineChart 
-                      data={filteredData} 
-                      syncId="metrics"
-                      onMouseDown={e => handleChartMouseDown(e?.activeLabel)}
-                      onMouseMove={e => handleChartMouseMove(e?.activeLabel)}
-                      onMouseUp={handleZoom}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                      <XAxis dataKey="time" stroke="var(--text-muted)" fontSize={11} />
-                      <YAxis stroke="var(--text-muted)" fontSize={11} />
-                      <Tooltip
-                        contentStyle={{ background: 'rgba(33, 36, 47, 0.2)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.2)' }}
-                        labelStyle={{ color: 'var(--text-primary)', fontWeight: 700, marginBottom: 4 }}
-                        isAnimationActive={false}
-                      />
-                      <Legend verticalAlign="bottom" height={36} />
-                      <Line type="monotone" dataKey="p50" name="P50" stroke="var(--chart-5)" dot={false} strokeWidth={2} isAnimationActive={false} />
-                      <Line type="monotone" dataKey="p90" name="P90" stroke="var(--chart-3)" dot={false} strokeWidth={2} isAnimationActive={false} />
-                      <Line type="monotone" dataKey="p99" name="P99" stroke="var(--chart-4)" dot={false} strokeWidth={1.5} strokeDasharray="4 2" isAnimationActive={false} />
-                      {isMultiGroup && groupNames.map((name, i) => (
-                        <Line key={name} type="monotone" dataKey={`${name}_avgMs`} name={`${name} avg`} stroke={GROUP_COLORS[i % GROUP_COLORS.length]} dot={false} strokeWidth={1.5} strokeDasharray="2 2" isAnimationActive={false} />
-                      ))}
-                      {showRefArea && (
-                        <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
-                      )}
-                    </LineChart>
-                  ) : c.type === 'area-multi' ? (
-                    <AreaChart 
-                      data={filteredData} 
-                      syncId="metrics"
-                      onMouseDown={e => handleChartMouseDown(e?.activeLabel)}
-                      onMouseMove={e => handleChartMouseMove(e?.activeLabel)}
-                      onMouseUp={handleZoom}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                      <XAxis dataKey="time" stroke="var(--text-muted)" fontSize={11} />
-                      <YAxis stroke="var(--text-muted)" fontSize={11} domain={c.domain as any} />
-                      <Tooltip
-                        contentStyle={{ background: 'rgba(33, 36, 47, 0.2)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.2)' }}
-                        labelStyle={{ color: 'var(--text-primary)', fontWeight: 700, marginBottom: 4 }}
-                        isAnimationActive={false}
-                      />
-                      <Legend verticalAlign="bottom" height={36} />
-                      {c.keys!.map(k => (
-                        <Area key={k.k} type="monotone" dataKey={k.k} name={k.n} stroke={k.c} fill={k.c} fillOpacity={0.2} isAnimationActive={false} />
-                      ))}
-                      {showRefArea && (
-                        <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
-                      )}
-                    </AreaChart>
-                  ) : (
-                    <LineChart 
-                      data={filteredData} 
-                      syncId="metrics"
-                      onMouseDown={e => handleChartMouseDown(e?.activeLabel)}
-                      onMouseMove={e => handleChartMouseMove(e?.activeLabel)}
-                      onMouseUp={handleZoom}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                      <XAxis dataKey="time" stroke="var(--text-muted)" fontSize={11} />
-                      <YAxis stroke="var(--text-muted)" fontSize={11} />
-                      <Tooltip
-                        contentStyle={{ background: 'rgba(33, 36, 47, 0.2)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.2)' }}
-                        labelStyle={{ color: 'var(--text-primary)', fontWeight: 700, marginBottom: 4 }}
-                        isAnimationActive={false}
-                      />
-                      <Legend />
-                      <Line type="monotone" dataKey="netSent" name="Net Egress" stroke="var(--chart-1)" dot={false} strokeWidth={2} isAnimationActive={false} />
-                      <Line type="monotone" dataKey="netRecv" name="Net Ingress" stroke="var(--chart-2)" dot={false} strokeWidth={2} isAnimationActive={false} />
-                      <Line type="monotone" dataKey="diskRead" name="Disk Read" stroke="var(--chart-3)" dot={false} strokeWidth={1} strokeDasharray="3 3" isAnimationActive={false} />
-                      <Line type="monotone" dataKey="diskWrite" name="Disk Write" stroke="var(--chart-6)" dot={false} strokeWidth={1} strokeDasharray="3 3" isAnimationActive={false} />
-                      {showRefArea && (
-                        <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
-                      )}
-                    </LineChart>
-                  )}
-                </ResponsiveContainer>
-
-                <div className="chart-metrics-footer">
-                  {c.id === 'vusers' && (
-                    <div className="footer-metric">
-                      <span className="dot" style={{ background: 'var(--chart-1)' }}></span>
-                      <span className="label">Active:</span>
-                      <span className="value">{latest.vusers}</span>
-                    </div>
-                  )}
-                  {c.id === 'tps' && (
-                    <>
-                      <div className="footer-metric">
-                        <span className="dot" style={{ background: 'var(--text-muted)' }}></span>
-                        <span className="label">Total:</span>
-                        <span className="value">{latest.tps}</span>
-                      </div>
-                      {isMultiGroup && groupNames.map((name, i) => (
-                        <div key={name} className="footer-metric">
-                          <span className="dot" style={{ background: GROUP_COLORS[i % GROUP_COLORS.length] }}></span>
-                          <span className="label">{name}:</span>
-                          <span className="value">{latest[`${name}_tps`]}</span>
-                        </div>
-                      ))}
-                    </>
-                  )}
-                  {c.id === 'latency' && (
-                    <>
-                      <div className="footer-metric">
-                        <span className="dot" style={{ background: 'var(--chart-5)' }}></span>
-                        <span className="label">P50:</span>
-                        <span className="value">{latest.p50}ms</span>
-                      </div>
-                      <div className="footer-metric">
-                        <span className="dot" style={{ background: 'var(--chart-3)' }}></span>
-                        <span className="label">P90:</span>
-                        <span className="value">{latest.p90}ms</span>
-                      </div>
-                      <div className="footer-metric">
-                        <span className="dot" style={{ background: 'var(--chart-4)' }}></span>
-                        <span className="label">P99:</span>
-                        <span className="value">{latest.p99}ms</span>
-                      </div>
-                    </>
-                  )}
-                  {c.id === 'errors' && (
-                    <div className="footer-metric">
-                      <span className="dot" style={{ background: 'var(--chart-4)' }}></span>
-                      <span className="label">Current:</span>
-                      <span className="value">{latest.errorPct}%</span>
-                    </div>
-                  )}
-                  {c.type === 'area-multi' && c.keys?.map(k => (
-                    <div key={k.k} className="footer-metric">
-                      <span className="dot" style={{ background: k.c }}></span>
-                      <span className="label">{k.n}:</span>
-                      <span className="value">{latest[k.k]}{c.id === 'cpu' ? '%' : ' MB'}</span>
-                    </div>
-                  ))}
-                  {c.id === 'io' && (
-                    <>
-                      <div className="footer-metric">
-                        <span className="dot" style={{ background: 'var(--chart-1)' }}></span>
-                        <span className="label">Net Out:</span>
-                        <span className="value">{latest.netSent} KB/s</span>
-                      </div>
-                      <div className="footer-metric">
-                        <span className="dot" style={{ background: 'var(--chart-2)' }}></span>
-                        <span className="label">Net In:</span>
-                        <span className="value">{latest.netRecv} KB/s</span>
-                      </div>
-                    </>
-                  )}
-                </div>
-              </div>
-            ))
-          })()}
-        </div>
-      )}
-
-      {/* Transaction breakdown */}
-      {transactions.length > 0 && (
-        <div className="tx-section">
-          <h3 className="chart-title">Transaction Breakdown</h3>
-          <table className="tx-table">
-            <thead>
-              <tr>
-                <th>Transaction</th>
-                <th>Count</th>
-                <th>Errors</th>
-                <th>Avg (ms)</th>
-                <th>P50 (ms)</th>
-                <th>P90 (ms)</th>
-                <th>P99 (ms)</th>
-              </tr>
-            </thead>
-            <tbody>
-              {transactions.map((tx: TxMetrics) => (
-                <tr key={tx.name}>
-                  <td className="tx-name">{tx.name}</td>
-                  <td>{tx.count}</td>
-                  <td className={tx.errors > 0 ? 'error-cell' : ''}>{tx.errors}</td>
-                  <td>{tx.avg_ms?.toFixed(1)}</td>
-                  <td>{tx.p50_ms?.toFixed(1)}</td>
-                  <td>{tx.p90_ms?.toFixed(1)}</td>
-                  <td>{tx.p99_ms?.toFixed(1)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* Percentile summary */}
-      {metrics && (
-        <div className="percentile-bar">
-          <div className="pct-item">
-            <span className="pct-label">P50</span>
-            <span className="pct-value">{metrics.p50_ms?.toFixed(1)} ms</span>
-          </div>
-          <div className="pct-item">
-            <span className="pct-label">P90</span>
-            <span className="pct-value">{metrics.p90_ms?.toFixed(1)} ms</span>
-          </div>
-          <div className="pct-item">
-            <span className="pct-label">P95</span>
-            <span className="pct-value">{metrics.p95_ms?.toFixed(1)} ms</span>
-          </div>
-          <div className="pct-item">
-            <span className="pct-label">P99</span>
-            <span className="pct-value">{metrics.p99_ms?.toFixed(1)} ms</span>
-          </div>
-        </div>
-      )}
+      <TestExecutionSummary
+        transactions={transactions}
+        metrics={metrics}
+      />
     </div>
   )
 }

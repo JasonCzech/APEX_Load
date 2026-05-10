@@ -4,16 +4,10 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
-	"crypto/x509"
-	"encoding/base64"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
-	"net/http/cookiejar"
 	"net/http/httptrace"
-	"net/url"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -43,202 +37,32 @@ func (h *HTTP) Name() string { return "http" }
 
 func (h *HTTP) Init(ctx context.Context, config map[string]any) error {
 	h.baseURL, _ = config["base_url"].(string)
+	transportSettings := parseTransportConfig(config)
+	h.requestTimeout = transportSettings.requestTimeout
 
-	// --- Connection pool ---
-	maxConnsPerHost := 100
-	if v, ok := config["max_conns_per_host"].(float64); ok {
-		maxConnsPerHost = int(v)
-	}
-	maxIdleConns := maxConnsPerHost
-	if v, ok := config["max_idle_conns"].(float64); ok {
-		maxIdleConns = int(v)
+	tlsCfg, err := buildTLSConfig(config)
+	if err != nil {
+		return err
 	}
 
-	// --- Timeouts ---
-	connectTimeout := 30 * time.Second
-	if v, ok := config["connect_timeout_ms"].(float64); ok {
-		connectTimeout = time.Duration(v) * time.Millisecond
-	}
-	tlsTimeout := 10 * time.Second
-	if v, ok := config["tls_timeout_ms"].(float64); ok {
-		tlsTimeout = time.Duration(v) * time.Millisecond
-	}
-	idleTimeout := 90 * time.Second
-	if v, ok := config["idle_timeout_ms"].(float64); ok {
-		idleTimeout = time.Duration(v) * time.Millisecond
-	}
-	h.requestTimeout = 60 * time.Second
-	if v, ok := config["request_timeout_ms"].(float64); ok {
-		h.requestTimeout = time.Duration(v) * time.Millisecond
+	h.transport = newTransport(transportSettings, tlsCfg)
+	applyHTTPVersion(h.transport, config)
+	if err := applyProxy(h.transport, config); err != nil {
+		return err
 	}
 
-	keepAlive := 30 * time.Second
-	disableKeepAlive := false
-	if v, ok := config["keep_alive"].(bool); ok && !v {
-		disableKeepAlive = true
-		keepAlive = 0
-	}
-
-	// --- TLS ---
-	tlsCfg := &tls.Config{MinVersion: tls.VersionTLS12}
-
-	if v, ok := config["tls_min_version"].(string); ok {
-		if ver, err := parseTLSVersion(v); err == nil {
-			tlsCfg.MinVersion = ver
-		}
-	}
-	if v, ok := config["tls_max_version"].(string); ok {
-		if ver, err := parseTLSVersion(v); err == nil {
-			tlsCfg.MaxVersion = ver
-		}
-	}
-	if v, ok := config["tls_insecure_skip_verify"].(bool); ok {
-		tlsCfg.InsecureSkipVerify = v
-	}
-
-	// Client certificates
-	certFile, _ := config["tls_client_cert_file"].(string)
-	keyFile, _ := config["tls_client_key_file"].(string)
-	if certFile != "" && keyFile != "" {
-		cert, err := tls.LoadX509KeyPair(certFile, keyFile)
-		if err != nil {
-			return fmt.Errorf("load client certificate: %w", err)
-		}
-		tlsCfg.Certificates = []tls.Certificate{cert}
-	}
-
-	// Custom CA
-	if caFile, ok := config["tls_ca_cert_file"].(string); ok && caFile != "" {
-		caCert, err := os.ReadFile(caFile)
-		if err != nil {
-			return fmt.Errorf("read CA certificate: %w", err)
-		}
-		pool := x509.NewCertPool()
-		if !pool.AppendCertsFromPEM(caCert) {
-			return fmt.Errorf("failed to parse CA certificate from %s", caFile)
-		}
-		tlsCfg.RootCAs = pool
-	}
-
-	// --- Transport ---
-	h.transport = &http.Transport{
-		DialContext: (&net.Dialer{
-			Timeout:   connectTimeout,
-			KeepAlive: keepAlive,
-		}).DialContext,
-		MaxIdleConns:        maxIdleConns,
-		MaxIdleConnsPerHost: maxConnsPerHost,
-		MaxConnsPerHost:     maxConnsPerHost,
-		IdleConnTimeout:     idleTimeout,
-		TLSHandshakeTimeout: tlsTimeout,
-		TLSClientConfig:     tlsCfg,
-		DisableKeepAlives:   disableKeepAlive,
-	}
-
-	// HTTP version
-	if v, ok := config["http_version"].(string); ok {
-		switch v {
-		case "2":
-			h.transport.ForceAttemptHTTP2 = true
-		case "1.1", "1.0":
-			// Disable HTTP/2 for explicit 1.x
-			h.transport.ForceAttemptHTTP2 = false
-			h.transport.TLSClientConfig.NextProtos = []string{"http/1.1"}
-		default:
-			h.transport.ForceAttemptHTTP2 = true
-		}
-	} else {
-		h.transport.ForceAttemptHTTP2 = true
-	}
-
-	// --- Proxy ---
-	if proxyURL, ok := config["proxy_url"].(string); ok && proxyURL != "" {
-		parsedProxy, err := url.Parse(proxyURL)
-		if err != nil {
-			return fmt.Errorf("parse proxy URL: %w", err)
-		}
-
-		// Proxy authentication
-		proxyUser, _ := config["proxy_username"].(string)
-		proxyPass, _ := config["proxy_password"].(string)
-		if proxyUser != "" {
-			parsedProxy.User = url.UserPassword(proxyUser, proxyPass)
-		}
-
-		h.transport.Proxy = http.ProxyURL(parsedProxy)
-	}
-
-	// --- Cookie jar ---
-	cookiesEnabled := true
-	if v, ok := config["cookies_enabled"].(bool); ok {
-		cookiesEnabled = v
-	}
-	var jar http.CookieJar
-	if cookiesEnabled {
-		jar, _ = cookiejar.New(nil)
-	}
-
-	// --- Redirect policy ---
-	h.maxRedirects = 10
-	if v, ok := config["max_redirects"].(float64); ok {
-		h.maxRedirects = int(v)
-	}
+	jar := buildCookieJar(config)
+	h.maxRedirects = parseMaxRedirects(config)
 
 	h.client = &http.Client{
 		Transport: h.transport,
 		Jar:       jar,
 		Timeout:   h.requestTimeout,
 	}
+	applyRedirectPolicy(h.client, h.maxRedirects)
 
-	if h.maxRedirects == -1 {
-		h.client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse
-		}
-	} else if h.maxRedirects != 10 {
-		maxR := h.maxRedirects
-		h.client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
-			if len(via) >= maxR {
-				return fmt.Errorf("stopped after %d redirects", maxR)
-			}
-			return nil
-		}
-	}
-
-	// --- Default headers ---
-	h.defaultHeaders = make(map[string]string)
-	if v, ok := config["user_agent"].(string); ok && v != "" {
-		h.defaultHeaders["User-Agent"] = v
-	}
-	if v, ok := config["accept_encoding"].(string); ok && v != "" {
-		h.defaultHeaders["Accept-Encoding"] = v
-	}
-	if v, ok := config["accept_language"].(string); ok && v != "" {
-		h.defaultHeaders["Accept-Language"] = v
-	}
-	if hdrs, ok := config["default_headers"].(map[string]string); ok {
-		for k, v := range hdrs {
-			h.defaultHeaders[k] = v
-		}
-	}
-
-	// --- Authentication ---
-	h.authType, _ = config["auth_type"].(string)
-	switch strings.ToLower(h.authType) {
-	case "basic":
-		user, _ := config["auth_username"].(string)
-		pass, _ := config["auth_password"].(string)
-		h.authHeader = "Basic " + base64.StdEncoding.EncodeToString([]byte(user+":"+pass))
-	case "bearer":
-		token, _ := config["auth_token"].(string)
-		h.authHeader = "Bearer " + token
-	case "ntlm":
-		// NTLM requires a specialized transport; log a warning for now
-		// Full NTLM support requires go-ntlmssp package
-		fmt.Println("[WARN] NTLM authentication is not yet fully supported; using basic auth fallback")
-		user, _ := config["auth_username"].(string)
-		pass, _ := config["auth_password"].(string)
-		h.authHeader = "Basic " + base64.StdEncoding.EncodeToString([]byte(user+":"+pass))
-	}
+	h.defaultHeaders = buildDefaultHeaders(config)
+	h.authType, h.authHeader = buildAuthHeader(config)
 
 	h.bufPool = sync.Pool{
 		New: func() any { return new(bytes.Buffer) },
