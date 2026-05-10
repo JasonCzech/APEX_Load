@@ -39,6 +39,8 @@ yarn-error.log*
 .env.development.local
 .env.test.local
 .env.production.local
+dashboard/.vite/
+dashboard/vite.log
 
 # Go
 coverage.out
