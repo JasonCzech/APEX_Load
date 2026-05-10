@@ -31,6 +31,7 @@ type ManagedTest struct {
 	Groups          []TestGroup              `json:"groups"`
 	ScenarioMode    string                   `json:"scenario_mode,omitempty"`
 	ScriptShakeout  bool                     `json:"script_shakeout,omitempty"`
+	ResourceBaseline bool                    `json:"resource_baseline,omitempty"`
 	GoalConfig      *GoalConfig              `json:"goal_config,omitempty"`
 	RuntimeSettings *RuntimeSettingsOverride `json:"runtime_settings,omitempty"`
 	TotalVUsers     int                      `json:"total_vusers"`
@@ -190,6 +191,7 @@ func NewTestRunner(maxTests int, hub *Hub, store storage.Store) *TestRunner {
 					Groups:          groups,
 					ScenarioMode:    normalizeScenarioMode(t.ScenarioMode),
 					ScriptShakeout:  t.ScriptShakeout,
+					ResourceBaseline: t.ResourceBaseline,
 					GoalConfig:      goalConfig,
 					RuntimeSettings: runtimeSettings,
 					TotalVUsers:     t.TotalVUsers,
@@ -315,6 +317,7 @@ type CreateTestRequest struct {
 	Duration       string             `json:"duration"`
 	ScenarioMode   string             `json:"scenario_mode,omitempty"`
 	ScriptShakeout bool               `json:"script_shakeout,omitempty"`
+	ResourceBaseline bool             `json:"resource_baseline,omitempty"`
 	GoalConfig     *GoalConfig        `json:"goal_config,omitempty"`
 	Groups         []CreateGroupEntry `json:"groups,omitempty"`
 	// Single-script shorthand (backwards compatible)
@@ -493,6 +496,7 @@ func (tr *TestRunner) CreateTest(req CreateTestRequest) (*ManagedTest, error) {
 		Groups:          testGroups,
 		ScenarioMode:    scenarioMode,
 		ScriptShakeout:  req.ScriptShakeout,
+		ResourceBaseline: req.ResourceBaseline,
 		GoalConfig:      cloneGoalConfig(req.GoalConfig),
 		RuntimeSettings: cloneRuntimeSettings(req.RuntimeSettings),
 		TotalVUsers:     totalVUsers,
@@ -517,6 +521,7 @@ func (tr *TestRunner) CreateTest(req CreateTestRequest) (*ManagedTest, error) {
 			Status:          test.Status,
 			ScenarioMode:    test.ScenarioMode,
 			ScriptShakeout:  test.ScriptShakeout,
+			ResourceBaseline: test.ResourceBaseline,
 			TotalVUsers:     test.TotalVUsers,
 			Duration:        int64(test.Duration),
 			StartTime:       test.CreatedAt,
@@ -695,10 +700,19 @@ func (tr *TestRunner) runTest(test *ManagedTest) {
 			return
 		}
 	}
+	baselineDuration := 5 * time.Minute
+	preBaseline := time.Duration(0)
+	postBaseline := time.Duration(0)
+	if test.ResourceBaseline {
+		preBaseline = baselineDuration
+		postBaseline = baselineDuration
+	}
 
 	mge, err := engine.NewMultiGroup(engine.MultiGroupConfig{
-		Groups:   test.groupSpecs,
-		Duration: test.Duration,
+		Groups:       test.groupSpecs,
+		Duration:     test.Duration,
+		PreBaseline:  preBaseline,
+		PostBaseline: postBaseline,
 	})
 	if err != nil {
 		test.Status = "FAILED"

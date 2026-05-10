@@ -14,6 +14,7 @@ type MetricsCollector struct {
 	snapshotsMu sync.RWMutex
 	current     *liveCounters
 	resCollector *ResourceCollector
+	emitIdleSnapshots bool
 	done        chan struct{}
 }
 
@@ -109,6 +110,10 @@ func (mc *MetricsCollector) Start(interval time.Duration) {
 	go mc.aggregate(interval)
 }
 
+func (mc *MetricsCollector) EnableIdleSnapshots(enabled bool) {
+	mc.emitIdleSnapshots = enabled
+}
+
 func (mc *MetricsCollector) Stop() {
 	close(mc.done)
 }
@@ -171,7 +176,7 @@ func (mc *MetricsCollector) aggregate(interval time.Duration) {
 				}
 			}
 		process:
-			if len(batch) == 0 {
+			if len(batch) == 0 && (!mc.emitIdleSnapshots || mc.current.activeVUsers.Load() > 0) {
 				continue
 			}
 			snap := mc.computeSnapshot(batch, interval)

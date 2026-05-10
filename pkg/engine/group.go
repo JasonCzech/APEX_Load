@@ -21,15 +21,19 @@ type GroupConfig struct {
 }
 
 type MultiGroupConfig struct {
-	Groups   []GroupConfig
-	Duration time.Duration
+	Groups       []GroupConfig
+	Duration     time.Duration
+	PreBaseline  time.Duration
+	PostBaseline time.Duration
 }
 
 type MultiGroupEngine struct {
-	groups   []GroupConfig
-	duration time.Duration
-	metrics  *MetricsCollector
-	cancel   context.CancelFunc
+	groups       []GroupConfig
+	duration     time.Duration
+	preBaseline  time.Duration
+	postBaseline time.Duration
+	metrics      *MetricsCollector
+	cancel       context.CancelFunc
 
 	// Dynamic control state
 	mu             sync.Mutex
@@ -64,6 +68,12 @@ func NewMultiGroup(cfg MultiGroupConfig) (*MultiGroupEngine, error) {
 	if cfg.Duration <= 0 {
 		return nil, fmt.Errorf("duration must be positive")
 	}
+	if cfg.PreBaseline < 0 {
+		return nil, fmt.Errorf("pre-baseline must be non-negative")
+	}
+	if cfg.PostBaseline < 0 {
+		return nil, fmt.Errorf("post-baseline must be non-negative")
+	}
 	for i, g := range cfg.Groups {
 		if g.Script == nil {
 			return nil, fmt.Errorf("group[%d] %q: script is required", i, g.Name)
@@ -76,13 +86,16 @@ func NewMultiGroup(cfg MultiGroupConfig) (*MultiGroupEngine, error) {
 		}
 	}
 	return &MultiGroupEngine{
-		groups:   cfg.Groups,
-		duration: cfg.Duration,
-		metrics:  NewMetricsCollector(10000),
+		groups:       cfg.Groups,
+		duration:     cfg.Duration,
+		preBaseline:  cfg.PreBaseline,
+		postBaseline: cfg.PostBaseline,
+		metrics:      NewMetricsCollector(10000),
 	}, nil
 }
 
 func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, error) {
+	mge.metrics.EnableIdleSnapshots(mge.preBaseline > 0 || mge.postBaseline > 0)
 	mge.metrics.Start(time.Second)
 	defer mge.metrics.Stop()
 
@@ -104,14 +117,18 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 		}
 	}
 
-	totalCtx, totalCancel := context.WithTimeout(ctx, mge.duration+maxRampDown)
+	totalCtx, totalCancel := context.WithTimeout(ctx, mge.preBaseline+mge.duration+maxRampDown+mge.postBaseline)
 	mge.cancel = totalCancel
 	mge.totalCtx = totalCtx
 	defer totalCancel()
 
-	steadyStateCtx, steadyStateCancel := context.WithTimeout(totalCtx, mge.duration)
+	steadyStateCtx, steadyStateCancel := context.WithTimeout(totalCtx, mge.preBaseline+mge.duration)
 	mge.deadlineCancel = steadyStateCancel
 	defer steadyStateCancel()
+
+	if err := waitForBaselineWindow(ctx, mge.preBaseline); err != nil {
+		return nil, err
+	}
 
 	vuserOffset := 0
 	for gi, group := range mge.groups {
@@ -151,6 +168,9 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 	mge.mu.Unlock()
 
 	wg.Wait()
+	if err := waitForBaselineWindow(ctx, mge.postBaseline); err != nil {
+		return nil, err
+	}
 	elapsed := time.Since(start)
 
 	result := &MultiGroupRunResult{
@@ -163,6 +183,18 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 		result.FinalSnapshot = snap
 	}
 	return result, nil
+}
+
+func waitForBaselineWindow(ctx context.Context, duration time.Duration) error {
+	if duration <= 0 {
+		return nil
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(duration):
+		return nil
+	}
 }
 
 func (mge *MultiGroupEngine) spawnVUser(vuserID int, group GroupConfig, protoConfig map[string]any, steadyCtx context.Context, rampDownDelay time.Duration, rampIdx int, wg *sync.WaitGroup) {

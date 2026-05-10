@@ -36,6 +36,7 @@ func TestCreateTestPreservesRuntimeSettingsAndGroups(t *testing.T) {
 		Duration:       "90s",
 		ScenarioMode:   "goal_oriented",
 		ScriptShakeout: true,
+		ResourceBaseline: true,
 		GoalConfig: &GoalConfig{
 			TargetAverageTPS: &targetAverageTPS,
 			P95LatencyMs:     &p95LatencyMs,
@@ -85,6 +86,9 @@ func TestCreateTestPreservesRuntimeSettingsAndGroups(t *testing.T) {
 	}
 	if !test.ScriptShakeout {
 		t.Fatal("expected script shakeout to be preserved on managed test")
+	}
+	if !test.ResourceBaseline {
+		t.Fatal("expected resource baseline to be preserved on managed test")
 	}
 	if test.GoalConfig == nil {
 		t.Fatal("expected goal config to be preserved on managed test")

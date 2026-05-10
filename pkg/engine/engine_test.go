@@ -178,3 +178,27 @@ func TestEngine_RampDelay_SingleVUser(t *testing.T) {
 		t.Error("rampDelay should be 0 for single vuser")
 	}
 }
+
+func TestMultiGroup_RunIncludesBaselinePeriods(t *testing.T) {
+	mge, err := NewMultiGroup(MultiGroupConfig{
+		Groups: []GroupConfig{{
+			Name:   "baseline-group",
+			Script: &dsl.Script{Name: "baseline", Protocol: "stub", Actions: []dsl.Action{{Name: "a", Type: "request", Target: "/"}}},
+			VUsers: 1,
+		}},
+		Duration:     60 * time.Millisecond,
+		PreBaseline:  40 * time.Millisecond,
+		PostBaseline: 40 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("NewMultiGroup: %v", err)
+	}
+
+	result, err := mge.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if result.Duration < 120*time.Millisecond {
+		t.Fatalf("expected runtime to include baseline windows, got %v", result.Duration)
+	}
+}

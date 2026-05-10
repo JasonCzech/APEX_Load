@@ -60,6 +60,7 @@ function buildScenarioDraft(test: TestSummary): ScenarioDraft {
     duration: test.duration,
     scenarioMode: test.scenario_mode || 'vuser_driven',
     scriptShakeout: Boolean(test.script_shakeout),
+    resourceBaseline: Boolean(test.resource_baseline),
     goalConfig: {
       target_average_tps: test.goal_config?.target_average_tps,
       p95_latency_ms: test.goal_config?.p95_latency_ms,

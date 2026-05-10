@@ -35,6 +35,7 @@ type TestRecord struct {
 	Status          string     `json:"status"`
 	ScenarioMode    string     `json:"scenario_mode,omitempty"`
 	ScriptShakeout  bool       `json:"script_shakeout,omitempty"`
+	ResourceBaseline bool      `json:"resource_baseline,omitempty"`
 	TotalVUsers     int        `json:"total_vusers"`
 	Duration        int64      `json:"duration_ns"`
 	StartTime       time.Time  `json:"start_time"`

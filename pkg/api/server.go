@@ -3,12 +3,14 @@ package api
 import (
 	"context"
 	"embed"
+	"fmt"
 	"io/fs"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/jasonczech/stormrunner/pkg/recorder"
 	"github.com/jasonczech/stormrunner/pkg/storage"
 )
 
@@ -19,11 +21,13 @@ type Server struct {
 	httpServer *http.Server
 	hub        *Hub
 	runner     *TestRunner
+	recorder   *recorder.Recorder
 	mux        *http.ServeMux
 }
 
 type ServerConfig struct {
 	Addr           string
+	ProxyAddr      string
 	MaxConcurrent  int
 	AllowedOrigins []string
 	Store          storage.Store
@@ -39,11 +43,13 @@ func NewServer(cfg ServerConfig) *Server {
 
 	hub := NewHub()
 	runner := NewTestRunner(cfg.MaxConcurrent, hub, cfg.Store)
+	rec := recorder.New(cfg.ProxyAddr)
 
 	s := &Server{
-		hub:    hub,
-		runner: runner,
-		mux:    http.NewServeMux(),
+		hub:      hub,
+		runner:   runner,
+		recorder: rec,
+		mux:      http.NewServeMux(),
 	}
 
 	s.routes(cfg.AllowedOrigins)
@@ -84,6 +90,15 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("POST /api/v1/scripts/{id}/export", cors(log(http.HandlerFunc(s.handleExportScript))))
 	s.mux.Handle("GET /api/v1/scripts/{id}/download", cors(log(http.HandlerFunc(s.handleDownloadScript))))
 	s.mux.Handle("POST /api/v1/scripts/import/loadrunner", cors(log(http.HandlerFunc(s.handleImportLoadRunner))))
+
+	// Recording proxy
+	s.mux.Handle("POST /api/v1/recorder/start", cors(log(http.HandlerFunc(s.handleStartRecording))))
+	s.mux.Handle("POST /api/v1/recorder/{id}/stop", cors(log(http.HandlerFunc(s.handleStopRecording))))
+	s.mux.Handle("GET /api/v1/recorder/{id}", cors(log(http.HandlerFunc(s.handleGetRecording))))
+	s.mux.Handle("GET /api/v1/recorder", cors(log(http.HandlerFunc(s.handleListRecordings))))
+	s.mux.Handle("DELETE /api/v1/recorder/{id}", cors(log(http.HandlerFunc(s.handleDeleteRecording))))
+	s.mux.Handle("POST /api/v1/recorder/{id}/convert", cors(log(http.HandlerFunc(s.handleConvertRecording))))
+	s.mux.Handle("GET /api/v1/recorder/status", cors(log(http.HandlerFunc(s.handleRecorderStatus))))
 
 	s.mux.Handle("GET /api/v1/system/health", cors(log(http.HandlerFunc(s.handleHealthCheck))))
 
@@ -127,6 +142,10 @@ func (s *Server) routes(allowedOrigins []string) {
 func (s *Server) Start() error {
 	go s.hub.Run()
 
+	if err := s.recorder.StartProxy(); err != nil {
+		return fmt.Errorf("starting recording proxy: %w", err)
+	}
+
 	slog.Info("stormrunner API server starting", "addr", s.httpServer.Addr)
 	if err := s.httpServer.ListenAndServe(); err != http.ErrServerClosed {
 		return err
@@ -136,5 +155,6 @@ func (s *Server) Start() error {
 
 func (s *Server) Shutdown(ctx context.Context) error {
 	s.hub.Stop()
+	s.recorder.StopProxy()
 	return s.httpServer.Shutdown(ctx)
 }

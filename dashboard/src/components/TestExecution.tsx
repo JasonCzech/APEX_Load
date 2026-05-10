@@ -13,6 +13,7 @@ const GROUP_COLORS = [
   'var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)',
   'var(--chart-4)', 'var(--chart-5)', 'var(--chart-6)',
 ]
+const RESOURCE_BASELINE_SECONDS = 5 * 60
 
 function parseDurationToSeconds(input?: string): number {
   if (!input) return 0
@@ -187,6 +188,7 @@ function buildScenarioDraft(test: TestSummary) {
     duration: test.duration,
     scenarioMode: test.scenario_mode || 'vuser_driven',
     scriptShakeout: Boolean(test.script_shakeout),
+    resourceBaseline: Boolean(test.resource_baseline),
     goalConfig: {
       target_average_tps: test.goal_config?.target_average_tps,
       p95_latency_ms: test.goal_config?.p95_latency_ms,
@@ -491,23 +493,29 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
         totalVUsers: 0,
         totalSeconds: 0,
         steadySeconds: 0,
+        preBaselineSeconds: 0,
+        postBaselineSeconds: 0,
       }
     }
 
     const steadySeconds = parseDurationToSeconds(test.duration)
+    const preBaselineSeconds = test.resource_baseline ? RESOURCE_BASELINE_SECONDS : 0
+    const postBaselineSeconds = test.resource_baseline ? RESOURCE_BASELINE_SECONDS : 0
     let maxRampDown = 0
     test.groups.forEach((group) => {
       const rampDown = parseDurationToSeconds(group.ramp_down)
       if (rampDown > maxRampDown) maxRampDown = rampDown
     })
 
-    const totalSeconds = steadySeconds + maxRampDown
+	    const totalSeconds = preBaselineSeconds + steadySeconds + maxRampDown + postBaselineSeconds
     if (totalSeconds <= 0) {
       return {
         points: [],
         totalVUsers: test.total_vusers,
         totalSeconds: 0,
         steadySeconds,
+        preBaselineSeconds,
+        postBaselineSeconds,
       }
     }
 
@@ -521,12 +529,16 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
         const rampDown = parseDurationToSeconds(group.ramp_down)
         let value = 0
 
-        if (second < rampUp) {
-          value = rampUp > 0 ? (second / rampUp) * group.vusers : group.vusers
-        } else if (second < steadySeconds) {
+        const loadSecond = Math.max(0, second - preBaselineSeconds)
+
+        if (second < preBaselineSeconds) {
+          value = 0
+        } else if (loadSecond < rampUp) {
+          value = rampUp > 0 ? (loadSecond / rampUp) * group.vusers : group.vusers
+        } else if (loadSecond < steadySeconds) {
           value = group.vusers
-        } else if (second < steadySeconds + rampDown) {
-          value = rampDown > 0 ? (1 - (second - steadySeconds) / rampDown) * group.vusers : 0
+        } else if (loadSecond < steadySeconds + rampDown) {
+          value = rampDown > 0 ? (1 - (loadSecond - steadySeconds) / rampDown) * group.vusers : 0
         }
 
         const roundedValue = Math.round(Math.max(0, value))
@@ -550,6 +562,8 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
       totalVUsers: test.total_vusers,
       totalSeconds,
       steadySeconds,
+        preBaselineSeconds,
+        postBaselineSeconds,
     }
   }, [test])
 
@@ -845,6 +859,10 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
                 <span className="scenario-preview-stat-label">Total Timeline</span>
                 <span className="scenario-preview-stat-value">{formatScenarioTimeline(queuedScenarioPreview.totalSeconds)}</span>
               </div>
+              <div className="scenario-preview-stat">
+                <span className="scenario-preview-stat-label">Baseline</span>
+                <span className="scenario-preview-stat-value">{test.resource_baseline ? '5m pre/post' : 'Disabled'}</span>
+              </div>
             </div>
           </div>
 
@@ -894,16 +912,34 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
                   isAnimationActive={false}
                 />
                 <ReferenceArea
-                  x1={0}
-                  x2={queuedScenarioPreview.steadySeconds}
+                  x1={queuedScenarioPreview.preBaselineSeconds}
+                  x2={queuedScenarioPreview.preBaselineSeconds + queuedScenarioPreview.steadySeconds}
                   fill="var(--accent)"
                   fillOpacity={0.05}
                   strokeOpacity={0}
                 />
+                {queuedScenarioPreview.preBaselineSeconds > 0 && (
+                  <ReferenceArea
+                    x1={0}
+                    x2={queuedScenarioPreview.preBaselineSeconds}
+                    fill="var(--warning)"
+                    fillOpacity={0.05}
+                    strokeOpacity={0}
+                  />
+                )}
+                {queuedScenarioPreview.postBaselineSeconds > 0 && (
+                  <ReferenceArea
+                    x1={queuedScenarioPreview.totalSeconds - queuedScenarioPreview.postBaselineSeconds}
+                    x2={queuedScenarioPreview.totalSeconds}
+                    fill="var(--warning)"
+                    fillOpacity={0.05}
+                    strokeOpacity={0}
+                  />
+                )}
               </AreaChart>
             </ResponsiveContainer>
             <div className="scenario-preview-caption">
-              Ramp-up and ramp-down are derived from each group’s saved configuration. The shaded span marks the configured steady-state window.
+              Ramp-up and ramp-down are derived from each group’s saved configuration. The blue span marks steady-state load, and the amber spans mark the optional zero-load resource baseline windows.
             </div>
           </div>
 
@@ -931,6 +967,10 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
             <div className="scenario-setting-card">
               <span className="scenario-setting-label">Script Shakeout</span>
               <span className="scenario-setting-value">{test.script_shakeout ? 'Enabled' : 'Disabled'}</span>
+            </div>
+            <div className="scenario-setting-card">
+              <span className="scenario-setting-label">Resource Baseline</span>
+              <span className="scenario-setting-value">{test.resource_baseline ? '5m before and after' : 'Disabled'}</span>
             </div>
           </div>
 

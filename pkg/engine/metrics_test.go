@@ -91,6 +91,30 @@ func TestMetricsCollector_AggregateProducesSnapshot(t *testing.T) {
 	}
 }
 
+func TestMetricsCollector_AggregateProducesIdleSnapshot(t *testing.T) {
+	mc := NewMetricsCollector(100)
+	mc.EnableIdleSnapshots(true)
+	mc.SetActiveVUsers(0)
+	mc.Start(50 * time.Millisecond)
+	defer mc.Stop()
+
+	time.Sleep(120 * time.Millisecond)
+
+	snap, ok := mc.LatestSnapshot()
+	if !ok {
+		t.Fatal("expected an idle snapshot after aggregation")
+	}
+	if snap.Transactions != 0 {
+		t.Errorf("transactions = %d, want 0", snap.Transactions)
+	}
+	if snap.ActiveVUsers != 0 {
+		t.Errorf("active vusers = %d, want 0", snap.ActiveVUsers)
+	}
+	if snap.Resources == nil {
+		t.Fatal("expected idle snapshot to include resources")
+	}
+}
+
 func TestMetricsCollector_ByAction(t *testing.T) {
 	mc := NewMetricsCollector(100)
 	mc.Start(50 * time.Millisecond)

@@ -7,6 +7,7 @@ import TestExecution from './components/TestExecution'
 import DashboardPage from './components/DashboardPage'
 import ScriptsPage from './components/ScriptsPage'
 import ResultsPage from './components/ResultsPage'
+import RecordingStudio from './components/RecordingStudio'
 import MonitoringPage from './components/MonitoringPage'
 import SettingsPage from './components/SettingsPage'
 import './App.css'
@@ -109,6 +110,7 @@ export default function App() {
           />
         )}
         {view.page === 'scripts' && <ScriptsPage initialMode={scriptMode} initialEditId={scriptEditId} />}
+        {view.page === 'recorder' && <RecordingStudio />}
         {view.page === 'results' && (
           <ResultsPage
             testStatuses={testStatuses}

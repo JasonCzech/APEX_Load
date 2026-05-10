@@ -56,10 +56,12 @@ const buildDefaultGroup = (scripts: StoredScript[]): GroupEntry => ({
 
 export default function CreateTestModal({ scripts, onClose, onCreated, initialScenario }: Props) {
   const api = useApi()
+  const baselineSeconds = 5 * 60
   const [name, setName] = useState(initialScenario?.name || '')
   const [duration, setDuration] = useState(initialScenario?.duration || '1m')
   const [scenarioMode, setScenarioMode] = useState<ScenarioMode>(initialScenario?.scenarioMode || 'vuser_driven')
   const [scriptShakeout, setScriptShakeout] = useState(Boolean(initialScenario?.scriptShakeout))
+  const [resourceBaseline, setResourceBaseline] = useState(Boolean(initialScenario?.resourceBaseline))
   const [groups, setGroups] = useState<GroupEntry[]>(
     initialScenario?.groups.length
       ? initialScenario.groups
@@ -118,7 +120,9 @@ export default function CreateTestModal({ scripts, onClose, onCreated, initialSc
       if (rd > maxRampDown) maxRampDown = rd
     })
 
-    const totalSec = durSec + maxRampDown
+    const preBaseline = resourceBaseline ? baselineSeconds : 0
+    const postBaseline = resourceBaseline ? baselineSeconds : 0
+    const totalSec = preBaseline + durSec + maxRampDown + postBaseline
     if (totalSec === 0) return []
 
     const points: any[] = []
@@ -132,12 +136,15 @@ export default function CreateTestModal({ scripts, onClose, onCreated, initialSc
         const gRampDown = parseDuration(g.rampDown)
 
         let v = 0
-        if (t < gRampUp) {
-          v = gRampUp > 0 ? (t / gRampUp) * gVUsers : gVUsers
-        } else if (t < durSec) {
+        const loadSecond = Math.max(0, t - preBaseline)
+        if (t < preBaseline) {
+          v = 0
+        } else if (loadSecond < gRampUp) {
+          v = gRampUp > 0 ? (loadSecond / gRampUp) * gVUsers : gVUsers
+        } else if (loadSecond < durSec) {
           v = gVUsers
-        } else if (t < durSec + gRampDown) {
-          v = gRampDown > 0 ? (1 - (t - durSec) / gRampDown) * gVUsers : 0
+        } else if (loadSecond < durSec + gRampDown) {
+          v = gRampDown > 0 ? (1 - (loadSecond - durSec) / gRampDown) * gVUsers : 0
         }
         
         const roundedV = Math.round(v)
@@ -167,6 +174,7 @@ export default function CreateTestModal({ scripts, onClose, onCreated, initialSc
       const payload: any = { name: name || undefined, duration }
       payload.scenario_mode = scenarioMode
       payload.script_shakeout = scriptShakeout
+      payload.resource_baseline = resourceBaseline
 
       if (groups.length === 1 && !groups[0].name) {
         // Single group — use shorthand
@@ -274,6 +282,17 @@ export default function CreateTestModal({ scripts, onClose, onCreated, initialSc
                     onChange={(e) => setScriptShakeout(e.target.checked)}
                   />
                   <p>Run one instance of each script before full scale startup. Any failure halts the scenario and raises an alert.</p>
+                </div>
+              </label>
+              <label className="setting-checkbox-row">
+                <span>Resource Baseline</span>
+                <div className="setting-checkbox-control">
+                  <input
+                    type="checkbox"
+                    checked={resourceBaseline}
+                    onChange={(e) => setResourceBaseline(e.target.checked)}
+                  />
+                  <p>Add a fixed 5 minute baseline before load starts and another 5 minute baseline after load stops so resource utilization can be observed without user traffic.</p>
                 </div>
               </label>
             </div>

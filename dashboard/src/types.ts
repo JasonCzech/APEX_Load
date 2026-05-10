@@ -55,6 +55,7 @@ export interface TestSummary {
   status: TestStatus
   groups: TestGroup[]
   script_shakeout?: boolean
+  resource_baseline?: boolean
   total_vusers: number
   duration: string
   created_at: string
@@ -86,6 +87,7 @@ export interface ScenarioDraft {
   duration: string
   scenarioMode: ScenarioMode
   scriptShakeout: boolean
+  resourceBaseline: boolean
   goalConfig: GoalConfig
   groups: ScenarioDraftGroup[]
   runtimeSettings: {
