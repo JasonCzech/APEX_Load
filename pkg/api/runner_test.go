@@ -35,8 +35,8 @@ func (s *metricsStoreSpy) SaveScript(script *dsl.Script) error {
 	s.savedScripts = append(s.savedScripts, script)
 	return nil
 }
-func (s *metricsStoreSpy) GetScript(id string) (*dsl.Script, error)                       { return nil, nil }
-func (s *metricsStoreSpy) ListScripts() ([]*dsl.Script, error)                            { return s.listedScripts, nil }
+func (s *metricsStoreSpy) GetScript(id string) (*dsl.Script, error) { return nil, nil }
+func (s *metricsStoreSpy) ListScripts() ([]*dsl.Script, error)      { return s.listedScripts, nil }
 func (s *metricsStoreSpy) DeleteScript(id string) error {
 	s.deletedScriptIDs = append(s.deletedScriptIDs, id)
 	return nil
@@ -45,8 +45,8 @@ func (s *metricsStoreSpy) SaveTest(test *storage.TestRecord) error {
 	s.savedTests = append(s.savedTests, test)
 	return nil
 }
-func (s *metricsStoreSpy) GetTest(id string) (*storage.TestRecord, error)                 { return nil, nil }
-func (s *metricsStoreSpy) ListTests() ([]*storage.TestRecord, error)                      { return s.listedTests, nil }
+func (s *metricsStoreSpy) GetTest(id string) (*storage.TestRecord, error) { return nil, nil }
+func (s *metricsStoreSpy) ListTests() ([]*storage.TestRecord, error)      { return s.listedTests, nil }
 func (s *metricsStoreSpy) UpdateTestStatus(id string, status string, endTime *time.Time, errStr string) error {
 	return nil
 }
@@ -67,16 +67,16 @@ func (s *metricsStoreSpy) GetHistory(testID string) ([]any, error) {
 	}
 	return s.historyByTestID[testID], nil
 }
-func (s *metricsStoreSpy) SaveRunArchive(record *storage.RunArchiveRecord) error       { return nil }
+func (s *metricsStoreSpy) SaveRunArchive(record *storage.RunArchiveRecord) error { return nil }
 func (s *metricsStoreSpy) GetRunArchive(testID string) (*storage.RunArchiveRecord, error) {
 	if s.archiveByTestID == nil {
 		return nil, nil
 	}
 	return s.archiveByTestID[testID], nil
 }
-func (s *metricsStoreSpy) SaveSetting(key string, value string) error                  { return nil }
-func (s *metricsStoreSpy) GetSetting(key string) (string, error)                       { return "", nil }
-func (s *metricsStoreSpy) Close() error                                                { return nil }
+func (s *metricsStoreSpy) SaveSetting(key string, value string) error { return nil }
+func (s *metricsStoreSpy) GetSetting(key string) (string, error)      { return "", nil }
+func (s *metricsStoreSpy) Close() error                               { return nil }
 
 type archiveStubProtocol struct{}
 
@@ -95,6 +95,34 @@ func (p *archiveStubProtocol) Execute(_ context.Context, action *protocol.Action
 }
 func (p *archiveStubProtocol) Teardown(_ context.Context) error    { return nil }
 func (p *archiveStubProtocol) HealthCheck(_ context.Context) error { return nil }
+
+type archiveRecorderStub struct {
+	finalizeRecord   *storage.RunArchiveRecord
+	finalizeErr      error
+	intervalCalls    int
+	resourceCalls    int
+	recordedLive     *LiveMetrics
+	recordedAt       time.Time
+	recordedVUsers   int64
+	recordedResource *engine.SystemResources
+}
+
+func (s *archiveRecorderStub) RecordResult(result *protocol.Result) error { return nil }
+func (s *archiveRecorderStub) RecordResourceSample(timestamp time.Time, activeVUsers int64, resources *engine.SystemResources) error {
+	s.resourceCalls++
+	s.recordedAt = timestamp
+	s.recordedVUsers = activeVUsers
+	s.recordedResource = resources
+	return nil
+}
+func (s *archiveRecorderStub) RecordIntervalSummary(live *LiveMetrics) error {
+	s.intervalCalls++
+	s.recordedLive = live
+	return nil
+}
+func (s *archiveRecorderStub) Finalize(status string, completedAt time.Time, errStr string) (*storage.RunArchiveRecord, error) {
+	return s.finalizeRecord, s.finalizeErr
+}
 
 func TestCreateTestPreservesRuntimeSettingsAndGroups(t *testing.T) {
 	hub := NewHub()
@@ -210,6 +238,34 @@ func TestCreateTestPreservesRuntimeSettingsAndGroups(t *testing.T) {
 	}
 	if test.DurationStr != "90s" {
 		t.Fatalf("expected duration string 90s, got %q", test.DurationStr)
+	}
+}
+
+func TestRunArtifactsFinalizePersistsArchiveRecord(t *testing.T) {
+	record := &storage.RunArchiveRecord{TestID: "test-1", ArchivePath: "/tmp/archive"}
+	recorder := &archiveRecorderStub{finalizeRecord: record}
+	persisted := 0
+	artifacts := &runArtifacts{
+		recorder: recorder,
+		saveRecord: func(saved *storage.RunArchiveRecord) error {
+			if saved != record {
+				t.Fatalf("expected persisted record %p, got %p", record, saved)
+			}
+			persisted++
+			return nil
+		},
+	}
+
+	archiveRecord, finalStatus, finalError := artifacts.finalize("COMPLETE", time.Now(), "")
+
+	if archiveRecord != record {
+		t.Fatalf("expected archive record %p, got %p", record, archiveRecord)
+	}
+	if finalStatus != "COMPLETE" || finalError != "" {
+		t.Fatalf("unexpected finalize outcome status=%q error=%q", finalStatus, finalError)
+	}
+	if persisted != 1 {
+		t.Fatalf("expected archive record persistence once, got %d", persisted)
 	}
 }
 
@@ -631,10 +687,10 @@ func TestNewTestRunnerLoadsPersistedScriptsAndTests(t *testing.T) {
 	archive := &storage.RunArchiveRecord{TestID: "test-1", ArchivePath: "/tmp/archive", ManifestPath: "/tmp/archive/manifest.json"}
 	store := &metricsStoreSpy{
 		listedScripts: []*dsl.Script{{
-			ID:       "script-1",
-			Name:     "Checkout",
-			Protocol: "http",
-			Version:  "1.0.0",
+			ID:        "script-1",
+			Name:      "Checkout",
+			Protocol:  "http",
+			Version:   "1.0.0",
 			CreatedAt: time.Date(2026, time.May, 10, 12, 0, 0, 0, time.UTC),
 		}},
 		listedTests: []*storage.TestRecord{{
@@ -657,13 +713,13 @@ func TestNewTestRunnerLoadsPersistedScriptsAndTests(t *testing.T) {
 		}},
 		historyByTestID: map[string][]any{
 			"test-1": {map[string]any{
-				"timestamp": time.Date(2026, time.May, 10, 12, 1, 30, 0, time.UTC),
-				"active_vusers": float64(20),
-				"tps": float64(12.5),
-				"avg_response_ms": float64(150),
-				"error_pct": float64(0),
+				"timestamp":          time.Date(2026, time.May, 10, 12, 1, 30, 0, time.UTC),
+				"active_vusers":      float64(20),
+				"tps":                float64(12.5),
+				"avg_response_ms":    float64(150),
+				"error_pct":          float64(0),
 				"total_transactions": float64(100),
-				"total_errors": float64(0),
+				"total_errors":       float64(0),
 			}},
 		},
 		archiveByTestID: map[string]*storage.RunArchiveRecord{"test-1": archive},
@@ -691,6 +747,52 @@ func TestNewTestRunnerLoadsPersistedScriptsAndTests(t *testing.T) {
 	}
 	if cachedArchive, ok := runner.GetRunArchive("test-1"); !ok || cachedArchive != archive {
 		t.Fatalf("expected archive cache lookup to return persisted archive, got %#v ok=%v", cachedArchive, ok)
+	}
+}
+
+func TestProcessMetricsSnapshotBroadcastsAlertAndStopRequest(t *testing.T) {
+	hub := NewHub()
+	runner := NewTestRunner(2, hub, nil)
+	maxErrorPct := 5.0
+	runner.settings.Thresholds.MaxErrorRatePct = &maxErrorPct
+
+	testRun := &ManagedTest{ID: "test-1", Name: "Checkout", Status: "RUNNING"}
+	runner.tests[testRun.ID] = testRun
+
+	runner.processMetricsSnapshot(testRun, engine.MetricsSnapshot{
+		Timestamp:    time.Date(2026, time.May, 10, 13, 0, 0, 0, time.UTC),
+		ActiveVUsers: 10,
+		Transactions: 20,
+		Errors:       2,
+		TPS:          15,
+		AvgDuration:  200 * time.Millisecond,
+	}, map[string]int{}, func(string, int) error { return nil }, nil)
+
+	if testRun.Status != "STOPPING" {
+		t.Fatalf("expected test status STOPPING, got %q", testRun.Status)
+	}
+	if testRun.LiveMetrics == nil || testRun.LiveMetrics.ErrorPct != 10 {
+		t.Fatalf("expected live metrics with 10%% error rate, got %#v", testRun.LiveMetrics)
+	}
+
+	messageTypes := make([]string, 0, 3)
+	for i := 0; i < 3; i++ {
+		select {
+		case msg := <-hub.broadcast:
+			var payload struct {
+				Type string `json:"type"`
+			}
+			if err := json.Unmarshal(msg, &payload); err != nil {
+				t.Fatalf("failed to decode broadcast payload: %v", err)
+			}
+			messageTypes = append(messageTypes, payload.Type)
+		default:
+			t.Fatalf("expected 3 broadcast messages, got %d", len(messageTypes))
+		}
+	}
+
+	if messageTypes[0] != "metrics_update" || messageTypes[1] != "threshold_alert" || messageTypes[2] != "test_stopping" {
+		t.Fatalf("unexpected broadcast order: %#v", messageTypes)
 	}
 }
 

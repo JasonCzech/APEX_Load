@@ -15,13 +15,13 @@ import (
 )
 
 type transportConfig struct {
-	maxConnsPerHost int
-	maxIdleConns    int
-	connectTimeout  time.Duration
-	tlsTimeout      time.Duration
-	idleTimeout     time.Duration
-	requestTimeout  time.Duration
-	keepAlive       time.Duration
+	maxConnsPerHost  int
+	maxIdleConns     int
+	connectTimeout   time.Duration
+	tlsTimeout       time.Duration
+	idleTimeout      time.Duration
+	requestTimeout   time.Duration
+	keepAlive        time.Duration
 	disableKeepAlive bool
 }
 

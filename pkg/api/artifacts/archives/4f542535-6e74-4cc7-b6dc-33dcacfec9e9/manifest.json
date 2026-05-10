@@ -1,0 +1,17 @@
+{
+  "schema_version": "stormrunner.archive.v1",
+  "test_id": "4f542535-6e74-4cc7-b6dc-33dcacfec9e9",
+  "test_name": "Override Scenario",
+  "created_at": "2026-05-10T18:24:11.278114-04:00",
+  "completed_at": "2026-05-10T18:24:11.31283-04:00",
+  "status": "COMPLETE",
+  "transactions_file": "transactions.jsonl",
+  "transactions_parquet_file": "transactions.parquet",
+  "resource_samples_file": "resources.jsonl",
+  "resource_samples_parquet_file": "resources.parquet",
+  "interval_summaries_file": "interval_summaries.jsonl",
+  "interval_summaries_parquet_file": "interval_summaries.parquet",
+  "transaction_count": 0,
+  "resource_sample_count": 0,
+  "interval_summary_count": 0
+}

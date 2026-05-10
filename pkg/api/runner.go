@@ -45,18 +45,18 @@ type settingsPersistence interface {
 }
 
 type TestRunner struct {
-	tests             map[string]*ManagedTest
-	scripts           map[string]*StoredScript
-	archives          map[string]*storage.RunArchiveRecord
-	mu                sync.RWMutex
-	hub               *Hub
-	maxTests          int
-	settings          SystemSettings
-	scriptStore       scriptPersistence
-	testStore         testPersistence
-	historyStore      historyPersistence
-	archiveStore      archivePersistence
-	settingsStore     settingsPersistence
+	tests         map[string]*ManagedTest
+	scripts       map[string]*StoredScript
+	archives      map[string]*storage.RunArchiveRecord
+	mu            sync.RWMutex
+	hub           *Hub
+	maxTests      int
+	settings      SystemSettings
+	scriptStore   scriptPersistence
+	testStore     testPersistence
+	historyStore  historyPersistence
+	archiveStore  archivePersistence
+	settingsStore settingsPersistence
 }
 
 type ManagedTest struct {
@@ -187,6 +187,18 @@ type StoredScript struct {
 	Version   string      `json:"version"`
 	CreatedAt time.Time   `json:"created_at"`
 	Script    *dsl.Script `json:"script"`
+}
+
+type archiveRecorder interface {
+	engine.ResultSink
+	RecordResourceSample(timestamp time.Time, activeVUsers int64, resources *engine.SystemResources) error
+	RecordIntervalSummary(live *LiveMetrics) error
+	Finalize(status string, completedAt time.Time, errStr string) (*storage.RunArchiveRecord, error)
+}
+
+type runArtifacts struct {
+	recorder   archiveRecorder
+	saveRecord func(record *storage.RunArchiveRecord) error
 }
 
 func NewTestRunner(maxTests int, hub *Hub, store storage.Store) *TestRunner {
@@ -1037,18 +1049,18 @@ func (tr *TestRunner) runTest(test *ManagedTest) {
 			return
 		}
 	}
-	archiveWriter, err := newRunArchiveWriter(test)
+	artifacts, err := newRunArtifacts(test, tr.saveRunArchiveRecord)
 	if err != nil {
 		tr.failTestBeforeRun(test, fmt.Sprintf("initialize archive writer: %v", err))
 		return
 	}
-	mge, err := tr.buildRunEngine(test, archiveWriter)
+	mge, err := tr.buildRunEngine(test, artifacts.resultSink())
 	if err != nil {
 		tr.failTestBeforeRun(test, err.Error())
 		return
 	}
 
-	ctx, metricsDone, metricsStopped := tr.startManagedTestRun(test, mge, archiveWriter)
+	ctx, metricsDone, metricsStopped := tr.startManagedTestRun(test, mge, artifacts)
 
 	result, err := mge.Run(ctx)
 
@@ -1063,7 +1075,7 @@ func (tr *TestRunner) runTest(test *ManagedTest) {
 		finalError = err.Error()
 	}
 
-	archiveRecord, finalStatus, finalError := tr.finalizeRunArchive(archiveWriter, finalStatus, endTime, finalError)
+	archiveRecord, finalStatus, finalError := artifacts.finalize(finalStatus, endTime, finalError)
 	tr.completeTestRun(test, finalStatus, endTime, finalError, archiveRecord)
 
 	slog.Info("test finished",
@@ -1076,10 +1088,53 @@ func (tr *TestRunner) runTest(test *ManagedTest) {
 	)
 }
 
-func (tr *TestRunner) buildRunEngine(test *ManagedTest, archiveWriter *runArchiveWriter) (*engine.MultiGroupEngine, error) {
+func newRunArtifacts(test *ManagedTest, saveRecord func(record *storage.RunArchiveRecord) error) (*runArtifacts, error) {
+	recorder, err := newRunArchiveWriter(test)
+	if err != nil {
+		return nil, err
+	}
+	return &runArtifacts{recorder: recorder, saveRecord: saveRecord}, nil
+}
+
+func (a *runArtifacts) resultSink() engine.ResultSink {
+	if a == nil {
+		return nil
+	}
+	return a.recorder
+}
+
+func (a *runArtifacts) recordLiveMetrics(test *ManagedTest, live *LiveMetrics) {
+	if a == nil || a.recorder == nil {
+		return
+	}
+	if err := a.recorder.RecordIntervalSummary(live); err != nil {
+		slog.Warn("failed to record interval summary", "test_id", test.ID, "error", err)
+	}
+	if err := a.recorder.RecordResourceSample(live.Timestamp, live.ActiveVUsers, live.Resources); err != nil {
+		slog.Warn("failed to record resource sample", "test_id", test.ID, "error", err)
+	}
+}
+
+func (a *runArtifacts) finalize(finalStatus string, endTime time.Time, finalError string) (*storage.RunArchiveRecord, string, string) {
+	if a == nil || a.recorder == nil {
+		return nil, finalStatus, finalError
+	}
+	archiveRecord, archiveErr := a.recorder.Finalize(finalStatus, endTime, finalError)
+	if archiveErr != nil {
+		return archiveRecord, "FAILED", appendRunError(finalError, "archive finalize failed", archiveErr)
+	}
+	if a.saveRecord != nil {
+		if err := a.saveRecord(archiveRecord); err != nil {
+			return archiveRecord, "FAILED", appendRunError(finalError, "archive metadata save failed", err)
+		}
+	}
+	return archiveRecord, finalStatus, finalError
+}
+
+func (tr *TestRunner) buildRunEngine(test *ManagedTest, resultSink engine.ResultSink) (*engine.MultiGroupEngine, error) {
 	preBaseline, postBaseline := resourceBaselineWindows(test.ResourceBaseline)
 	return engine.NewMultiGroup(engine.MultiGroupConfig{
-		Groups:       cloneGroupSpecsWithResultSink(test.groupSpecs, archiveWriter),
+		Groups:       cloneGroupSpecsWithResultSink(test.groupSpecs, resultSink),
 		Duration:     test.Duration,
 		PreBaseline:  preBaseline,
 		PostBaseline: postBaseline,
@@ -1189,21 +1244,14 @@ func shouldStopForGoalStatus(live *LiveMetrics) bool {
 	return live.GoalStatus != nil && live.GoalStatus.StopTriggered
 }
 
-func (tr *TestRunner) publishLiveMetrics(test *ManagedTest, live *LiveMetrics, archiveWriter *runArchiveWriter) {
+func (tr *TestRunner) publishLiveMetrics(test *ManagedTest, live *LiveMetrics, artifacts *runArtifacts) {
 	tr.mu.Lock()
 	test.LiveMetrics = live
 	test.History = append(test.History, live)
 	tr.mu.Unlock()
 
 	tr.saveLiveMetricsHistory(test.ID, live.Timestamp, live)
-	if archiveWriter != nil {
-		if err := archiveWriter.RecordIntervalSummary(live); err != nil {
-			slog.Warn("failed to record interval summary", "test_id", test.ID, "error", err)
-		}
-		if err := archiveWriter.RecordResourceSample(live.Timestamp, live.ActiveVUsers, live.Resources); err != nil {
-			slog.Warn("failed to record resource sample", "test_id", test.ID, "error", err)
-		}
-	}
+	artifacts.recordLiveMetrics(test, live)
 
 	tr.hub.BroadcastJSON(map[string]any{
 		"type":      "metrics_update",
@@ -1263,7 +1311,7 @@ func (tr *TestRunner) requestStopIfRunning(test *ManagedTest, warningMessage str
 	}
 }
 
-func (tr *TestRunner) startManagedTestRun(test *ManagedTest, mge *engine.MultiGroupEngine, archiveWriter *runArchiveWriter) (context.Context, chan struct{}, chan struct{}) {
+func (tr *TestRunner) startManagedTestRun(test *ManagedTest, mge *engine.MultiGroupEngine, artifacts *runArtifacts) (context.Context, chan struct{}, chan struct{}) {
 	ctx, cancel := context.WithCancel(context.Background())
 	test.cancel = cancel
 	test.multiEngine = mge
@@ -1277,7 +1325,7 @@ func (tr *TestRunner) startManagedTestRun(test *ManagedTest, mge *engine.MultiGr
 	metricsStopped := make(chan struct{})
 	test.goalControl = &goalControllerState{}
 	go func() {
-		tr.broadcastMetrics(test, mge, archiveWriter, metricsDone)
+		tr.broadcastMetrics(test, mge, artifacts, metricsDone)
 		close(metricsStopped)
 	}()
 
@@ -1293,17 +1341,6 @@ func (tr *TestRunner) failTestBeforeRun(test *ManagedTest, message string) {
 	tr.mu.Unlock()
 	tr.updateStoredTestStatus(test.ID, "FAILED", &now, message)
 	tr.broadcastEvent("test_failed", test)
-}
-
-func (tr *TestRunner) finalizeRunArchive(archiveWriter *runArchiveWriter, finalStatus string, endTime time.Time, finalError string) (*storage.RunArchiveRecord, string, string) {
-	archiveRecord, archiveErr := archiveWriter.Finalize(finalStatus, endTime, finalError)
-	if archiveErr != nil {
-		return archiveRecord, "FAILED", appendRunError(finalError, "archive finalize failed", archiveErr)
-	}
-	if err := tr.saveRunArchiveRecord(archiveRecord); err != nil {
-		return archiveRecord, "FAILED", appendRunError(finalError, "archive metadata save failed", err)
-	}
-	return archiveRecord, finalStatus, finalError
 }
 
 func (tr *TestRunner) completeTestRun(test *ManagedTest, finalStatus string, endTime time.Time, finalError string, archiveRecord *storage.RunArchiveRecord) {
@@ -1355,7 +1392,7 @@ func (tr *TestRunner) runScriptShakeout(test *ManagedTest) error {
 	return nil
 }
 
-func (tr *TestRunner) broadcastMetrics(test *ManagedTest, mge *engine.MultiGroupEngine, archiveWriter *runArchiveWriter, done chan struct{}) {
+func (tr *TestRunner) broadcastMetrics(test *ManagedTest, mge *engine.MultiGroupEngine, artifacts *runArtifacts, done chan struct{}) {
 	groupVUsers := make(map[string]int)
 	for _, g := range test.Groups {
 		groupVUsers[g.Name] = g.VUsers
@@ -1376,29 +1413,33 @@ func (tr *TestRunner) broadcastMetrics(test *ManagedTest, mge *engine.MultiGroup
 				continue
 			}
 
-			live := buildLiveMetricsFromSnapshot(snap, groupVUsers)
-
-			if test.ScenarioMode == "goal_oriented" && test.GoalConfig != nil {
-				currentTotalVUsers := totalGroupVUsers(groupVUsers)
-				update := evaluateGoalController(live.Timestamp, currentTotalVUsers, live, test.GoalConfig, test.goalControl)
-				applyGoalControllerUpdate(test, live, groupVUsers, update, mge.ScaleVUsers)
-			}
-
-			tr.publishLiveMetrics(test, live, archiveWriter)
-
-			settings := tr.GetSystemSettings()
-			for _, alert := range buildThresholdAlerts(test, live, settings.Thresholds) {
-				tr.hub.BroadcastJSON(alert)
-			}
-
-			if shouldStopForErrorThreshold(live, settings.Thresholds) {
-				tr.requestStopIfRunning(test, "threshold stop failed")
-			}
-
-			if shouldStopForGoalStatus(live) {
-				tr.requestStopIfRunning(test, "goal-oriented stop failed")
-			}
+			tr.processMetricsSnapshot(test, snap, groupVUsers, mge.ScaleVUsers, artifacts)
 		}
+	}
+}
+
+func (tr *TestRunner) processMetricsSnapshot(test *ManagedTest, snap engine.MetricsSnapshot, groupVUsers map[string]int, scaleVUsers func(groupName string, target int) error, artifacts *runArtifacts) {
+	live := buildLiveMetricsFromSnapshot(snap, groupVUsers)
+
+	if test.ScenarioMode == "goal_oriented" && test.GoalConfig != nil {
+		currentTotalVUsers := totalGroupVUsers(groupVUsers)
+		update := evaluateGoalController(live.Timestamp, currentTotalVUsers, live, test.GoalConfig, test.goalControl)
+		applyGoalControllerUpdate(test, live, groupVUsers, update, scaleVUsers)
+	}
+
+	tr.publishLiveMetrics(test, live, artifacts)
+
+	settings := tr.GetSystemSettings()
+	for _, alert := range buildThresholdAlerts(test, live, settings.Thresholds) {
+		tr.hub.BroadcastJSON(alert)
+	}
+
+	if shouldStopForErrorThreshold(live, settings.Thresholds) {
+		tr.requestStopIfRunning(test, "threshold stop failed")
+	}
+
+	if shouldStopForGoalStatus(live) {
+		tr.requestStopIfRunning(test, "goal-oriented stop failed")
 	}
 }
 
