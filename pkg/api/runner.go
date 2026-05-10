@@ -735,42 +735,59 @@ func (tr *TestRunner) StartTest(id string) error {
 
 func (tr *TestRunner) StartTestWithOptions(id string, opts StartTestOptions) error {
 	tr.mu.Lock()
-	running := 0
-	for _, t := range tr.tests {
-		if t.Status == "RUNNING" || t.Status == "INITIALIZING" {
-			running++
-		}
+	test, err := tr.prepareTestStartLocked(id, opts)
+	tr.mu.Unlock()
+	if err != nil {
+		return err
 	}
+
+	go tr.runTest(test)
+	return nil
+}
+
+func (tr *TestRunner) prepareTestStartLocked(id string, opts StartTestOptions) (*ManagedTest, error) {
 	maxConcurrent := tr.settings.General.MaxConcurrentTests
-	if running >= maxConcurrent {
-		tr.mu.Unlock()
-		return fmt.Errorf("max concurrent tests (%d) reached", maxConcurrent)
+	if tr.countActiveTestsLocked() >= maxConcurrent {
+		return nil, fmt.Errorf("max concurrent tests (%d) reached", maxConcurrent)
 	}
 
 	test, ok := tr.tests[id]
 	if !ok {
-		tr.mu.Unlock()
-		return fmt.Errorf("test not found: %s", id)
+		return nil, fmt.Errorf("test not found: %s", id)
 	}
 	if test.Status != "QUEUED" {
-		tr.mu.Unlock()
-		return fmt.Errorf("test is %s, must be QUEUED to start", test.Status)
+		return nil, fmt.Errorf("test is %s, must be QUEUED to start", test.Status)
 	}
+
 	tr.refreshCapacityAdvisoryLocked(test)
-	if test.CapacityAdvisory != nil && test.CapacityAdvisory.RequiresOverride && !opts.OverrideCapacityShortfall {
-		advisory := cloneCapacityAdvisory(test.CapacityAdvisory)
-		tr.mu.Unlock()
-		return &CapacityShortfallError{
-			TestID:   id,
-			Advisory: advisory,
-			Message:  fmt.Sprintf("capacity advisory recommends %d load generators but only %d are currently available", advisory.RecommendedGenerators, advisory.AvailableGenerators),
+	if err := buildCapacityShortfallStartError(id, test.CapacityAdvisory, opts); err != nil {
+		return nil, err
+	}
+
+	test.Status = "INITIALIZING"
+	return test, nil
+}
+
+func (tr *TestRunner) countActiveTestsLocked() int {
+	active := 0
+	for _, test := range tr.tests {
+		if test.Status == "RUNNING" || test.Status == "INITIALIZING" {
+			active++
 		}
 	}
-	test.Status = "INITIALIZING"
-	tr.mu.Unlock()
+	return active
+}
 
-	go tr.runTest(test)
-	return nil
+func buildCapacityShortfallStartError(id string, advisory *CapacityAdvisory, opts StartTestOptions) error {
+	if advisory == nil || !advisory.RequiresOverride || opts.OverrideCapacityShortfall {
+		return nil
+	}
+	cloned := cloneCapacityAdvisory(advisory)
+	return &CapacityShortfallError{
+		TestID:   id,
+		Advisory: cloned,
+		Message:  fmt.Sprintf("capacity advisory recommends %d load generators but only %d are currently available", cloned.RecommendedGenerators, cloned.AvailableGenerators),
+	}
 }
 
 func (tr *TestRunner) refreshCapacityAdvisoryLocked(test *ManagedTest) {
@@ -904,61 +921,159 @@ func (tr *TestRunner) AdjustDuration(id string, newDuration time.Duration) error
 func (tr *TestRunner) runTest(test *ManagedTest) {
 	if test.ScriptShakeout {
 		if err := tr.runScriptShakeout(test); err != nil {
-			now := time.Now()
-			tr.mu.Lock()
-			test.Status = "FAILED"
-			test.Error = err.Error()
-			test.EndedAt = &now
-			tr.mu.Unlock()
-			if tr.store != nil {
-				tr.store.UpdateTestStatus(test.ID, test.Status, test.EndedAt, test.Error)
-			}
-			tr.broadcastEvent("test_failed", test)
+			tr.failTestBeforeRun(test, err.Error())
 			return
 		}
 	}
 	archiveWriter, err := newRunArchiveWriter(test)
 	if err != nil {
-		now := time.Now()
-		tr.mu.Lock()
-		test.Status = "FAILED"
-		test.Error = fmt.Sprintf("initialize archive writer: %v", err)
-		test.EndedAt = &now
-		tr.mu.Unlock()
-		if tr.store != nil {
-			tr.store.UpdateTestStatus(test.ID, test.Status, test.EndedAt, test.Error)
-		}
-		tr.broadcastEvent("test_failed", test)
+		tr.failTestBeforeRun(test, fmt.Sprintf("initialize archive writer: %v", err))
 		return
 	}
-	groupSpecs := make([]engine.GroupConfig, len(test.groupSpecs))
-	copy(groupSpecs, test.groupSpecs)
-	for i := range groupSpecs {
-		groupSpecs[i].ResultSink = archiveWriter
-	}
-	baselineDuration := 5 * time.Minute
-	preBaseline := time.Duration(0)
-	postBaseline := time.Duration(0)
-	if test.ResourceBaseline {
-		preBaseline = baselineDuration
-		postBaseline = baselineDuration
+	mge, err := tr.buildRunEngine(test, archiveWriter)
+	if err != nil {
+		tr.failTestBeforeRun(test, err.Error())
+		return
 	}
 
-	mge, err := engine.NewMultiGroup(engine.MultiGroupConfig{
-		Groups:       groupSpecs,
+	ctx, metricsDone, metricsStopped := tr.startManagedTestRun(test, mge, archiveWriter)
+
+	result, err := mge.Run(ctx)
+
+	close(metricsDone)
+	<-metricsStopped
+
+	endTime := time.Now()
+	finalStatus := "COMPLETE"
+	finalError := ""
+	if err != nil {
+		finalStatus = "FAILED"
+		finalError = err.Error()
+	}
+
+	archiveRecord, finalStatus, finalError := tr.finalizeRunArchive(archiveWriter, finalStatus, endTime, finalError)
+	tr.completeTestRun(test, finalStatus, endTime, finalError, archiveRecord)
+
+	slog.Info("test finished",
+		"id", test.ID,
+		"status", test.Status,
+		"groups", len(test.Groups),
+		"transactions", result.TotalTransactions,
+		"errors", result.TotalErrors,
+		"duration", result.Duration,
+	)
+}
+
+func (tr *TestRunner) buildRunEngine(test *ManagedTest, archiveWriter *runArchiveWriter) (*engine.MultiGroupEngine, error) {
+	preBaseline, postBaseline := resourceBaselineWindows(test.ResourceBaseline)
+	return engine.NewMultiGroup(engine.MultiGroupConfig{
+		Groups:       cloneGroupSpecsWithResultSink(test.groupSpecs, archiveWriter),
 		Duration:     test.Duration,
 		PreBaseline:  preBaseline,
 		PostBaseline: postBaseline,
 	})
-	if err != nil {
-		test.Status = "FAILED"
-		test.Error = err.Error()
-		now := time.Now()
-		test.EndedAt = &now
-		tr.broadcastEvent("test_failed", test)
-		return
+}
+
+func cloneGroupSpecsWithResultSink(groupSpecs []engine.GroupConfig, resultSink engine.ResultSink) []engine.GroupConfig {
+	cloned := make([]engine.GroupConfig, len(groupSpecs))
+	copy(cloned, groupSpecs)
+	for i := range cloned {
+		cloned[i].ResultSink = resultSink
+	}
+	return cloned
+}
+
+func resourceBaselineWindows(enabled bool) (time.Duration, time.Duration) {
+	if !enabled {
+		return 0, 0
+	}
+	const baselineWindow = 5 * time.Minute
+	return baselineWindow, baselineWindow
+}
+
+func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[string]int) *LiveMetrics {
+	live := &LiveMetrics{
+		Timestamp:     snap.Timestamp,
+		ActiveVUsers:  snap.ActiveVUsers,
+		TPS:           snap.TPS,
+		AvgResponseMs: float64(snap.AvgDuration.Microseconds()) / 1000.0,
+		TotalTx:       snap.Transactions,
+		TotalErrors:   snap.Errors,
+		P50Ms:         float64(snap.P50.Microseconds()) / 1000.0,
+		P90Ms:         float64(snap.P90.Microseconds()) / 1000.0,
+		P95Ms:         float64(snap.P95.Microseconds()) / 1000.0,
+		P99Ms:         float64(snap.P99.Microseconds()) / 1000.0,
+		Transactions:  make(map[string]*TxMetrics),
+		GroupMetrics:  make(map[string]*GroupLiveMetrics),
+		Resources:     snap.Resources,
 	}
 
+	if live.TotalTx > 0 {
+		live.ErrorPct = float64(live.TotalErrors) / float64(live.TotalTx) * 100
+	}
+
+	for name, am := range snap.ByAction {
+		live.Transactions[name] = &TxMetrics{
+			Name:   name,
+			Count:  am.Count,
+			Errors: am.Errors,
+			AvgMs:  float64(am.AvgDuration.Microseconds()) / 1000.0,
+			P50Ms:  float64(am.P50.Microseconds()) / 1000.0,
+			P90Ms:  float64(am.P90.Microseconds()) / 1000.0,
+			P99Ms:  float64(am.P99.Microseconds()) / 1000.0,
+		}
+	}
+
+	for name, gm := range snap.ByGroup {
+		live.GroupMetrics[name] = &GroupLiveMetrics{
+			Name:          name,
+			VUsers:        groupVUsers[name],
+			Transactions:  gm.Transactions,
+			Errors:        gm.Errors,
+			TPS:           gm.TPS,
+			AvgResponseMs: float64(gm.AvgDuration.Microseconds()) / 1000.0,
+			P50Ms:         float64(gm.P50.Microseconds()) / 1000.0,
+			P90Ms:         float64(gm.P90.Microseconds()) / 1000.0,
+			P99Ms:         float64(gm.P99.Microseconds()) / 1000.0,
+		}
+	}
+
+	return live
+}
+
+func buildThresholdAlerts(test *ManagedTest, live *LiveMetrics, thresholds ThresholdSettings) []map[string]any {
+	alerts := make([]map[string]any, 0, 2)
+	if thresholds.MaxP99LatencyMs != nil && live.P99Ms > *thresholds.MaxP99LatencyMs {
+		alerts = append(alerts, map[string]any{
+			"type":      "threshold_alert",
+			"test_id":   test.ID,
+			"test_name": test.Name,
+			"timestamp": live.Timestamp,
+			"metric":    "p99_ms",
+			"value":     live.P99Ms,
+			"threshold": *thresholds.MaxP99LatencyMs,
+		})
+	}
+	if thresholds.MaxErrorRatePct != nil && live.ErrorPct > *thresholds.MaxErrorRatePct {
+		alerts = append(alerts, map[string]any{
+			"type":      "threshold_alert",
+			"test_id":   test.ID,
+			"test_name": test.Name,
+			"timestamp": live.Timestamp,
+			"metric":    "error_pct",
+			"value":     live.ErrorPct,
+			"threshold": *thresholds.MaxErrorRatePct,
+			"action":    "stop_requested",
+		})
+	}
+	return alerts
+}
+
+func shouldStopForErrorThreshold(live *LiveMetrics, thresholds ThresholdSettings) bool {
+	return thresholds.MaxErrorRatePct != nil && live.ErrorPct > *thresholds.MaxErrorRatePct
+}
+
+func (tr *TestRunner) startManagedTestRun(test *ManagedTest, mge *engine.MultiGroupEngine, archiveWriter *runArchiveWriter) (context.Context, chan struct{}, chan struct{}) {
 	ctx, cancel := context.WithCancel(context.Background())
 	test.cancel = cancel
 	test.multiEngine = mge
@@ -976,39 +1091,36 @@ func (tr *TestRunner) runTest(test *ManagedTest) {
 		close(metricsStopped)
 	}()
 
-	result, err := mge.Run(ctx)
+	return ctx, metricsDone, metricsStopped
+}
 
-	close(metricsDone)
-	<-metricsStopped
-
-	endTime := time.Now()
-	finalStatus := "COMPLETE"
-	finalError := ""
-	if err != nil {
-		finalStatus = "FAILED"
-		finalError = err.Error()
+func (tr *TestRunner) failTestBeforeRun(test *ManagedTest, message string) {
+	now := time.Now()
+	tr.mu.Lock()
+	test.Status = "FAILED"
+	test.Error = message
+	test.EndedAt = &now
+	tr.mu.Unlock()
+	if tr.store != nil {
+		tr.store.UpdateTestStatus(test.ID, "FAILED", &now, message)
 	}
+	tr.broadcastEvent("test_failed", test)
+}
 
+func (tr *TestRunner) finalizeRunArchive(archiveWriter *runArchiveWriter, finalStatus string, endTime time.Time, finalError string) (*storage.RunArchiveRecord, string, string) {
 	archiveRecord, archiveErr := archiveWriter.Finalize(finalStatus, endTime, finalError)
 	if archiveErr != nil {
-		finalStatus = "FAILED"
-		if finalError != "" {
-			finalError = finalError + "; archive finalize failed: " + archiveErr.Error()
-		} else {
-			finalError = "archive finalize failed: " + archiveErr.Error()
-		}
-	} else {
-		if tr.store != nil {
-			if err := tr.store.SaveRunArchive(archiveRecord); err != nil {
-				finalStatus = "FAILED"
-				if finalError != "" {
-					finalError = finalError + "; archive metadata save failed: " + err.Error()
-				} else {
-					finalError = "archive metadata save failed: " + err.Error()
-				}
-			}
+		return archiveRecord, "FAILED", appendRunError(finalError, "archive finalize failed", archiveErr)
+	}
+	if archiveRecord != nil && tr.store != nil {
+		if err := tr.store.SaveRunArchive(archiveRecord); err != nil {
+			return archiveRecord, "FAILED", appendRunError(finalError, "archive metadata save failed", err)
 		}
 	}
+	return archiveRecord, finalStatus, finalError
+}
+
+func (tr *TestRunner) completeTestRun(test *ManagedTest, finalStatus string, endTime time.Time, finalError string, archiveRecord *storage.RunArchiveRecord) {
 	tr.mu.Lock()
 	test.Status = finalStatus
 	test.Error = finalError
@@ -1023,18 +1135,20 @@ func (tr *TestRunner) runTest(test *ManagedTest) {
 	}
 	if finalStatus == "FAILED" {
 		tr.broadcastEvent("test_failed", test)
-	} else {
-		tr.broadcastEvent("test_complete", test)
+		return
 	}
+	tr.broadcastEvent("test_complete", test)
+}
 
-	slog.Info("test finished",
-		"id", test.ID,
-		"status", test.Status,
-		"groups", len(test.Groups),
-		"transactions", result.TotalTransactions,
-		"errors", result.TotalErrors,
-		"duration", result.Duration,
-	)
+func appendRunError(existing string, prefix string, err error) string {
+	if err == nil {
+		return existing
+	}
+	message := prefix + ": " + err.Error()
+	if existing == "" {
+		return message
+	}
+	return existing + "; " + message
 }
 
 func (tr *TestRunner) runScriptShakeout(test *ManagedTest) error {
@@ -1078,25 +1192,7 @@ func (tr *TestRunner) broadcastMetrics(test *ManagedTest, mge *engine.MultiGroup
 				continue
 			}
 
-			live := &LiveMetrics{
-				Timestamp:     snap.Timestamp,
-				ActiveVUsers:  snap.ActiveVUsers,
-				TPS:           snap.TPS,
-				AvgResponseMs: float64(snap.AvgDuration.Microseconds()) / 1000.0,
-				TotalTx:       snap.Transactions,
-				TotalErrors:   snap.Errors,
-				P50Ms:         float64(snap.P50.Microseconds()) / 1000.0,
-				P90Ms:         float64(snap.P90.Microseconds()) / 1000.0,
-				P95Ms:         float64(snap.P95.Microseconds()) / 1000.0,
-				P99Ms:         float64(snap.P99.Microseconds()) / 1000.0,
-				Transactions:  make(map[string]*TxMetrics),
-				GroupMetrics:  make(map[string]*GroupLiveMetrics),
-				Resources:     snap.Resources,
-			}
-
-			if live.TotalTx > 0 {
-				live.ErrorPct = float64(live.TotalErrors) / float64(live.TotalTx) * 100
-			}
+			live := buildLiveMetricsFromSnapshot(snap, groupVUsers)
 
 			if test.ScenarioMode == "goal_oriented" && test.GoalConfig != nil {
 				currentTotalVUsers := totalGroupVUsers(groupVUsers)
@@ -1135,32 +1231,6 @@ func (tr *TestRunner) broadcastMetrics(test *ManagedTest, mge *engine.MultiGroup
 				}
 			}
 
-			for name, am := range snap.ByAction {
-				live.Transactions[name] = &TxMetrics{
-					Name:   name,
-					Count:  am.Count,
-					Errors: am.Errors,
-					AvgMs:  float64(am.AvgDuration.Microseconds()) / 1000.0,
-					P50Ms:  float64(am.P50.Microseconds()) / 1000.0,
-					P90Ms:  float64(am.P90.Microseconds()) / 1000.0,
-					P99Ms:  float64(am.P99.Microseconds()) / 1000.0,
-				}
-			}
-
-			for name, gm := range snap.ByGroup {
-				live.GroupMetrics[name] = &GroupLiveMetrics{
-					Name:          name,
-					VUsers:        groupVUsers[name],
-					Transactions:  gm.Transactions,
-					Errors:        gm.Errors,
-					TPS:           gm.TPS,
-					AvgResponseMs: float64(gm.AvgDuration.Microseconds()) / 1000.0,
-					P50Ms:         float64(gm.P50.Microseconds()) / 1000.0,
-					P90Ms:         float64(gm.P90.Microseconds()) / 1000.0,
-					P99Ms:         float64(gm.P99.Microseconds()) / 1000.0,
-				}
-			}
-
 			tr.mu.Lock()
 			test.LiveMetrics = live
 			test.History = append(test.History, live)
@@ -1187,30 +1257,11 @@ func (tr *TestRunner) broadcastMetrics(test *ManagedTest, mge *engine.MultiGroup
 			})
 
 			settings := tr.GetSystemSettings()
-			if settings.Thresholds.MaxP99LatencyMs != nil && live.P99Ms > *settings.Thresholds.MaxP99LatencyMs {
-				tr.hub.BroadcastJSON(map[string]any{
-					"type":      "threshold_alert",
-					"test_id":   test.ID,
-					"test_name": test.Name,
-					"timestamp": live.Timestamp,
-					"metric":    "p99_ms",
-					"value":     live.P99Ms,
-					"threshold": *settings.Thresholds.MaxP99LatencyMs,
-				})
+			for _, alert := range buildThresholdAlerts(test, live, settings.Thresholds) {
+				tr.hub.BroadcastJSON(alert)
 			}
 
-			if settings.Thresholds.MaxErrorRatePct != nil && live.ErrorPct > *settings.Thresholds.MaxErrorRatePct {
-				tr.hub.BroadcastJSON(map[string]any{
-					"type":      "threshold_alert",
-					"test_id":   test.ID,
-					"test_name": test.Name,
-					"timestamp": live.Timestamp,
-					"metric":    "error_pct",
-					"value":     live.ErrorPct,
-					"threshold": *settings.Thresholds.MaxErrorRatePct,
-					"action":    "stop_requested",
-				})
-
+			if shouldStopForErrorThreshold(live, settings.Thresholds) {
 				tr.mu.RLock()
 				status := test.Status
 				tr.mu.RUnlock()

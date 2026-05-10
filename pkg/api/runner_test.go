@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/stormrunner/pkg/dsl"
+	"github.com/jasonczech/stormrunner/pkg/engine"
 	"github.com/jasonczech/stormrunner/pkg/protocol"
 	"github.com/jasonczech/stormrunner/pkg/storage"
 )
@@ -172,6 +173,161 @@ func TestNormalizeCreateTestGroupsUsesSingleScriptFallback(t *testing.T) {
 	}
 	if groups[0].RampDown != "" {
 		t.Fatalf("expected empty ramp-down, got %q", groups[0].RampDown)
+	}
+}
+
+func TestAppendRunErrorBuildsMessage(t *testing.T) {
+	msg := appendRunError("", "archive finalize failed", errors.New("disk full"))
+	if msg != "archive finalize failed: disk full" {
+		t.Fatalf("unexpected message: %q", msg)
+	}
+
+	msg = appendRunError("engine failed", "archive metadata save failed", errors.New("permission denied"))
+	if msg != "engine failed; archive metadata save failed: permission denied" {
+		t.Fatalf("unexpected appended message: %q", msg)
+	}
+}
+
+func TestResourceBaselineWindows(t *testing.T) {
+	pre, post := resourceBaselineWindows(false)
+	if pre != 0 || post != 0 {
+		t.Fatalf("expected disabled baseline windows to be zero, got pre=%s post=%s", pre, post)
+	}
+
+	pre, post = resourceBaselineWindows(true)
+	if pre != 5*time.Minute || post != 5*time.Minute {
+		t.Fatalf("expected enabled baseline windows to be 5m, got pre=%s post=%s", pre, post)
+	}
+}
+
+func TestBuildLiveMetricsFromSnapshot(t *testing.T) {
+	timestamp := time.Date(2026, time.May, 10, 8, 30, 0, 0, time.UTC)
+	resources := &engine.SystemResources{CPUProcessPct: 12.5, MemProcessMb: 256}
+
+	live := buildLiveMetricsFromSnapshot(engine.MetricsSnapshot{
+		Timestamp:    timestamp,
+		ActiveVUsers: 18,
+		TPS:          24.5,
+		Transactions: 40,
+		Errors:       5,
+		AvgDuration:  250 * time.Millisecond,
+		P50:          200 * time.Millisecond,
+		P90:          350 * time.Millisecond,
+		P95:          400 * time.Millisecond,
+		P99:          600 * time.Millisecond,
+		ByAction: map[string]*engine.ActionMetrics{
+			"login": {
+				Count:       10,
+				Errors:      1,
+				AvgDuration: 150 * time.Millisecond,
+				P50:         120 * time.Millisecond,
+				P90:         240 * time.Millisecond,
+				P99:         500 * time.Millisecond,
+			},
+		},
+		ByGroup: map[string]*engine.GroupMetrics{
+			"buyers": {
+				Transactions: 25,
+				Errors:       3,
+				TPS:          15.5,
+				AvgDuration:  300 * time.Millisecond,
+				P50:          210 * time.Millisecond,
+				P90:          420 * time.Millisecond,
+				P99:          900 * time.Millisecond,
+			},
+		},
+		Resources: resources,
+	}, map[string]int{"buyers": 12})
+
+	if live.Timestamp != timestamp {
+		t.Fatalf("expected timestamp %s, got %s", timestamp, live.Timestamp)
+	}
+	if live.ActiveVUsers != 18 {
+		t.Fatalf("expected 18 active vusers, got %d", live.ActiveVUsers)
+	}
+	if live.AvgResponseMs != 250 {
+		t.Fatalf("expected avg response 250ms, got %v", live.AvgResponseMs)
+	}
+	if live.ErrorPct != 12.5 {
+		t.Fatalf("expected error pct 12.5, got %v", live.ErrorPct)
+	}
+	if live.Resources != resources {
+		t.Fatal("expected resources pointer to be preserved")
+	}
+
+	login, ok := live.Transactions["login"]
+	if !ok {
+		t.Fatal("expected login transaction metrics")
+	}
+	if login.Count != 10 || login.Errors != 1 {
+		t.Fatalf("unexpected login metrics: %+v", login)
+	}
+	if login.AvgMs != 150 || login.P50Ms != 120 || login.P90Ms != 240 || login.P99Ms != 500 {
+		t.Fatalf("unexpected converted login percentiles: %+v", login)
+	}
+
+	buyers, ok := live.GroupMetrics["buyers"]
+	if !ok {
+		t.Fatal("expected buyers group metrics")
+	}
+	if buyers.VUsers != 12 {
+		t.Fatalf("expected buyers vusers 12, got %d", buyers.VUsers)
+	}
+	if buyers.Transactions != 25 || buyers.Errors != 3 {
+		t.Fatalf("unexpected buyers counts: %+v", buyers)
+	}
+	if buyers.AvgResponseMs != 300 || buyers.P50Ms != 210 || buyers.P90Ms != 420 || buyers.P99Ms != 900 {
+		t.Fatalf("unexpected converted buyers latencies: %+v", buyers)
+	}
+}
+
+func TestBuildThresholdAlerts(t *testing.T) {
+	p99Threshold := 750.0
+	errorThreshold := 2.5
+	timestamp := time.Date(2026, time.May, 10, 9, 0, 0, 0, time.UTC)
+
+	alerts := buildThresholdAlerts(&ManagedTest{ID: "test-1", Name: "Checkout"}, &LiveMetrics{
+		Timestamp: timestamp,
+		P99Ms:     900,
+		ErrorPct:  4.2,
+	}, ThresholdSettings{
+		MaxP99LatencyMs: &p99Threshold,
+		MaxErrorRatePct: &errorThreshold,
+	})
+
+	if len(alerts) != 2 {
+		t.Fatalf("expected 2 threshold alerts, got %d", len(alerts))
+	}
+
+	alertsByMetric := make(map[string]map[string]any, len(alerts))
+	for _, alert := range alerts {
+		metric, ok := alert["metric"].(string)
+		if !ok {
+			t.Fatalf("expected alert metric to be a string, got %#v", alert["metric"])
+		}
+		alertsByMetric[metric] = alert
+	}
+
+	p99Alert := alertsByMetric["p99_ms"]
+	if p99Alert["threshold"] != p99Threshold {
+		t.Fatalf("expected p99 threshold %v, got %#v", p99Threshold, p99Alert["threshold"])
+	}
+	if p99Alert["test_id"] != "test-1" || p99Alert["test_name"] != "Checkout" {
+		t.Fatalf("unexpected p99 alert identity: %#v", p99Alert)
+	}
+
+	errorAlert := alertsByMetric["error_pct"]
+	if errorAlert["threshold"] != errorThreshold {
+		t.Fatalf("expected error threshold %v, got %#v", errorThreshold, errorAlert["threshold"])
+	}
+	if errorAlert["action"] != "stop_requested" {
+		t.Fatalf("expected stop_requested action, got %#v", errorAlert["action"])
+	}
+	if !shouldStopForErrorThreshold(&LiveMetrics{ErrorPct: 4.2}, ThresholdSettings{MaxErrorRatePct: &errorThreshold}) {
+		t.Fatal("expected error threshold helper to request stop")
+	}
+	if shouldStopForErrorThreshold(&LiveMetrics{ErrorPct: 1.0}, ThresholdSettings{MaxErrorRatePct: &errorThreshold}) {
+		t.Fatal("did not expect stop below error threshold")
 	}
 }
 
@@ -382,6 +538,56 @@ func TestStartTestAllowsOverrideOnCapacityShortfall(t *testing.T) {
 	started := waitForStatusAny(t, runner, test.ID, 5*time.Second, "INITIALIZING", "RUNNING", "COMPLETE")
 	if started.Status == "QUEUED" {
 		t.Fatalf("expected override start to leave QUEUED state, got %s", started.Status)
+	}
+}
+
+func TestStartTestFailsWhenMaxConcurrentTestsReached(t *testing.T) {
+	hub := NewHub()
+	runner := NewTestRunner(1, hub, nil)
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-concurrency",
+		Name:     "Concurrency Script",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Actions:  []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+
+	first, err := runner.CreateTest(CreateTestRequest{
+		Name:     "First Scenario",
+		Duration: "30s",
+		ScriptID: "script-concurrency",
+		VUsers:   10,
+	})
+	if err != nil {
+		t.Fatalf("CreateTest(first) returned error: %v", err)
+	}
+	second, err := runner.CreateTest(CreateTestRequest{
+		Name:     "Second Scenario",
+		Duration: "30s",
+		ScriptID: "script-concurrency",
+		VUsers:   10,
+	})
+	if err != nil {
+		t.Fatalf("CreateTest(second) returned error: %v", err)
+	}
+
+	runner.mu.Lock()
+	runner.tests[first.ID].Status = "RUNNING"
+	runner.mu.Unlock()
+
+	err = runner.StartTest(second.ID)
+	if err == nil {
+		t.Fatal("expected StartTest to fail when max concurrent tests is reached")
+	}
+	if err.Error() != "max concurrent tests (1) reached" {
+		t.Fatalf("expected max concurrent error, got %q", err.Error())
+	}
+	queued, ok := runner.GetTest(second.ID)
+	if !ok {
+		t.Fatalf("expected queued test %s to remain in runner", second.ID)
+	}
+	if queued.Status != "QUEUED" {
+		t.Fatalf("test status = %s, want QUEUED", queued.Status)
 	}
 }
 
