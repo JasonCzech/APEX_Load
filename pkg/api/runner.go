@@ -23,29 +23,30 @@ type TestRunner struct {
 	mu       sync.RWMutex
 	hub      *Hub
 	maxTests int
+	settings SystemSettings
 	store    storage.Store
 }
 
 type ManagedTest struct {
-	ID              string                   `json:"id"`
-	Name            string                   `json:"name"`
-	Status          string                   `json:"status"`
-	Groups          []TestGroup              `json:"groups"`
-	ScenarioMode    string                   `json:"scenario_mode,omitempty"`
-	ScriptShakeout  bool                     `json:"script_shakeout,omitempty"`
-	ResourceBaseline bool                    `json:"resource_baseline,omitempty"`
-	GoalConfig      *GoalConfig              `json:"goal_config,omitempty"`
-	RuntimeSettings *RuntimeSettingsOverride `json:"runtime_settings,omitempty"`
-	TotalVUsers     int                      `json:"total_vusers"`
-	Duration        time.Duration            `json:"duration_ns"`
-	DurationStr     string                   `json:"duration"`
-	CreatedAt       time.Time                `json:"created_at"`
-	StartedAt       *time.Time               `json:"started_at,omitempty"`
-	EndedAt         *time.Time               `json:"ended_at,omitempty"`
-	LiveMetrics     *LiveMetrics             `json:"live_metrics,omitempty"`
-	History         []*LiveMetrics           `json:"history,omitempty"`
-	Archive         *storage.RunArchiveRecord `json:"archive,omitempty"`
-	Error           string                   `json:"error,omitempty"`
+	ID               string                    `json:"id"`
+	Name             string                    `json:"name"`
+	Status           string                    `json:"status"`
+	Groups           []TestGroup               `json:"groups"`
+	ScenarioMode     string                    `json:"scenario_mode,omitempty"`
+	ScriptShakeout   bool                      `json:"script_shakeout,omitempty"`
+	ResourceBaseline bool                      `json:"resource_baseline,omitempty"`
+	GoalConfig       *GoalConfig               `json:"goal_config,omitempty"`
+	RuntimeSettings  *RuntimeSettingsOverride  `json:"runtime_settings,omitempty"`
+	TotalVUsers      int                       `json:"total_vusers"`
+	Duration         time.Duration             `json:"duration_ns"`
+	DurationStr      string                    `json:"duration"`
+	CreatedAt        time.Time                 `json:"created_at"`
+	StartedAt        *time.Time                `json:"started_at,omitempty"`
+	EndedAt          *time.Time                `json:"ended_at,omitempty"`
+	LiveMetrics      *LiveMetrics              `json:"live_metrics,omitempty"`
+	History          []*LiveMetrics            `json:"history,omitempty"`
+	Archive          *storage.RunArchiveRecord `json:"archive,omitempty"`
+	Error            string                    `json:"error,omitempty"`
 
 	// deprecated single-script fields kept for backwards compat in JSON
 	ScriptID   string `json:"script_id,omitempty"`
@@ -164,6 +165,7 @@ func NewTestRunner(maxTests int, hub *Hub, store storage.Store) *TestRunner {
 		maxTests: maxTests,
 		store:    store,
 	}
+	tr.loadSystemSettings(maxTests)
 
 	// Load existing scripts from store
 	if store != nil {
@@ -189,20 +191,20 @@ func NewTestRunner(maxTests int, hub *Hub, store storage.Store) *TestRunner {
 				goalConfig := decodeStoredGoalConfig(t.GoalConfig)
 				runtimeSettings := decodeStoredRuntimeSettings(t.RuntimeSettings)
 				mt := &ManagedTest{
-					ID:              t.ID,
-					Name:            t.Name,
-					Status:          t.Status,
-					Groups:          groups,
-					ScenarioMode:    normalizeScenarioMode(t.ScenarioMode),
-					ScriptShakeout:  t.ScriptShakeout,
+					ID:               t.ID,
+					Name:             t.Name,
+					Status:           t.Status,
+					Groups:           groups,
+					ScenarioMode:     normalizeScenarioMode(t.ScenarioMode),
+					ScriptShakeout:   t.ScriptShakeout,
 					ResourceBaseline: t.ResourceBaseline,
-					GoalConfig:      goalConfig,
-					RuntimeSettings: runtimeSettings,
-					TotalVUsers:     t.TotalVUsers,
-					Duration:        time.Duration(t.Duration),
-					DurationStr:     time.Duration(t.Duration).String(),
-					CreatedAt:       t.StartTime,
-					Error:           t.Error,
+					GoalConfig:       goalConfig,
+					RuntimeSettings:  runtimeSettings,
+					TotalVUsers:      t.TotalVUsers,
+					Duration:         time.Duration(t.Duration),
+					DurationStr:      time.Duration(t.Duration).String(),
+					CreatedAt:        t.StartTime,
+					Error:            t.Error,
 				}
 				if t.EndTime != nil {
 					mt.EndedAt = t.EndTime
@@ -321,13 +323,13 @@ func (tr *TestRunner) DeleteScript(id string) bool {
 }
 
 type CreateTestRequest struct {
-	Name           string             `json:"name"`
-	Duration       string             `json:"duration"`
-	ScenarioMode   string             `json:"scenario_mode,omitempty"`
-	ScriptShakeout bool               `json:"script_shakeout,omitempty"`
-	ResourceBaseline bool             `json:"resource_baseline,omitempty"`
-	GoalConfig     *GoalConfig        `json:"goal_config,omitempty"`
-	Groups         []CreateGroupEntry `json:"groups,omitempty"`
+	Name             string             `json:"name"`
+	Duration         string             `json:"duration"`
+	ScenarioMode     string             `json:"scenario_mode,omitempty"`
+	ScriptShakeout   bool               `json:"script_shakeout,omitempty"`
+	ResourceBaseline bool               `json:"resource_baseline,omitempty"`
+	GoalConfig       *GoalConfig        `json:"goal_config,omitempty"`
+	Groups           []CreateGroupEntry `json:"groups,omitempty"`
 	// Single-script shorthand (backwards compatible)
 	ScriptID string `json:"script_id,omitempty"`
 	VUsers   int    `json:"vusers,omitempty"`
@@ -376,8 +378,9 @@ func (tr *TestRunner) CreateTest(req CreateTestRequest) (*ManagedTest, error) {
 			running++
 		}
 	}
-	if running >= tr.maxTests {
-		return nil, fmt.Errorf("max concurrent tests (%d) reached", tr.maxTests)
+	maxConcurrent := tr.settings.General.MaxConcurrentTests
+	if running >= maxConcurrent {
+		return nil, fmt.Errorf("max concurrent tests (%d) reached", maxConcurrent)
 	}
 
 	dur, err := time.ParseDuration(req.Duration)
@@ -498,20 +501,20 @@ func (tr *TestRunner) CreateTest(req CreateTestRequest) (*ManagedTest, error) {
 	}
 
 	test := &ManagedTest{
-		ID:              uuid.New().String(),
-		Name:            testName,
-		Status:          "QUEUED",
-		Groups:          testGroups,
-		ScenarioMode:    scenarioMode,
-		ScriptShakeout:  req.ScriptShakeout,
+		ID:               uuid.New().String(),
+		Name:             testName,
+		Status:           "QUEUED",
+		Groups:           testGroups,
+		ScenarioMode:     scenarioMode,
+		ScriptShakeout:   req.ScriptShakeout,
 		ResourceBaseline: req.ResourceBaseline,
-		GoalConfig:      cloneGoalConfig(req.GoalConfig),
-		RuntimeSettings: cloneRuntimeSettings(req.RuntimeSettings),
-		TotalVUsers:     totalVUsers,
-		Duration:        dur,
-		DurationStr:     req.Duration,
-		CreatedAt:       time.Now(),
-		groupSpecs:      engineGroups,
+		GoalConfig:       cloneGoalConfig(req.GoalConfig),
+		RuntimeSettings:  cloneRuntimeSettings(req.RuntimeSettings),
+		TotalVUsers:      totalVUsers,
+		Duration:         dur,
+		DurationStr:      req.Duration,
+		CreatedAt:        time.Now(),
+		groupSpecs:       engineGroups,
 	}
 
 	// Backwards-compat fields
@@ -524,18 +527,18 @@ func (tr *TestRunner) CreateTest(req CreateTestRequest) (*ManagedTest, error) {
 
 	if tr.store != nil {
 		tr.store.SaveTest(&storage.TestRecord{
-			ID:              test.ID,
-			Name:            test.Name,
-			Status:          test.Status,
-			ScenarioMode:    test.ScenarioMode,
-			ScriptShakeout:  test.ScriptShakeout,
+			ID:               test.ID,
+			Name:             test.Name,
+			Status:           test.Status,
+			ScenarioMode:     test.ScenarioMode,
+			ScriptShakeout:   test.ScriptShakeout,
 			ResourceBaseline: test.ResourceBaseline,
-			TotalVUsers:     test.TotalVUsers,
-			Duration:        int64(test.Duration),
-			StartTime:       test.CreatedAt,
-			Groups:          test.Groups,
-			GoalConfig:      test.GoalConfig,
-			RuntimeSettings: test.RuntimeSettings,
+			TotalVUsers:      test.TotalVUsers,
+			Duration:         int64(test.Duration),
+			StartTime:        test.CreatedAt,
+			Groups:           test.Groups,
+			GoalConfig:       test.GoalConfig,
+			RuntimeSettings:  test.RuntimeSettings,
 		})
 	}
 
@@ -622,6 +625,18 @@ func (tr *TestRunner) DeleteTest(id string) bool {
 
 func (tr *TestRunner) StartTest(id string) error {
 	tr.mu.Lock()
+	running := 0
+	for _, t := range tr.tests {
+		if t.Status == "RUNNING" || t.Status == "INITIALIZING" {
+			running++
+		}
+	}
+	maxConcurrent := tr.settings.General.MaxConcurrentTests
+	if running >= maxConcurrent {
+		tr.mu.Unlock()
+		return fmt.Errorf("max concurrent tests (%d) reached", maxConcurrent)
+	}
+
 	test, ok := tr.tests[id]
 	if !ok {
 		tr.mu.Unlock()
@@ -892,19 +907,21 @@ func (tr *TestRunner) runScriptShakeout(test *ManagedTest) error {
 }
 
 func (tr *TestRunner) broadcastMetrics(test *ManagedTest, mge *engine.MultiGroupEngine, archiveWriter *runArchiveWriter, done chan struct{}) {
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-
 	groupVUsers := make(map[string]int)
 	for _, g := range test.Groups {
 		groupVUsers[g.Name] = g.VUsers
 	}
 
 	for {
+		interval := tr.GetSystemSettings().General.MetricsIntervalSeconds
+		if interval < 1 {
+			interval = 1
+		}
+
 		select {
 		case <-done:
 			return
-		case <-ticker.C:
+		case <-time.After(time.Duration(interval) * time.Second):
 			snap, ok := mge.LatestSnapshot()
 			if !ok {
 				continue
@@ -1017,6 +1034,41 @@ func (tr *TestRunner) broadcastMetrics(test *ManagedTest, mge *engine.MultiGroup
 				"timestamp": live.Timestamp,
 				"data":      live,
 			})
+
+			settings := tr.GetSystemSettings()
+			if settings.Thresholds.MaxP99LatencyMs != nil && live.P99Ms > *settings.Thresholds.MaxP99LatencyMs {
+				tr.hub.BroadcastJSON(map[string]any{
+					"type":      "threshold_alert",
+					"test_id":   test.ID,
+					"test_name": test.Name,
+					"timestamp": live.Timestamp,
+					"metric":    "p99_ms",
+					"value":     live.P99Ms,
+					"threshold": *settings.Thresholds.MaxP99LatencyMs,
+				})
+			}
+
+			if settings.Thresholds.MaxErrorRatePct != nil && live.ErrorPct > *settings.Thresholds.MaxErrorRatePct {
+				tr.hub.BroadcastJSON(map[string]any{
+					"type":      "threshold_alert",
+					"test_id":   test.ID,
+					"test_name": test.Name,
+					"timestamp": live.Timestamp,
+					"metric":    "error_pct",
+					"value":     live.ErrorPct,
+					"threshold": *settings.Thresholds.MaxErrorRatePct,
+					"action":    "stop_requested",
+				})
+
+				tr.mu.RLock()
+				status := test.Status
+				tr.mu.RUnlock()
+				if status == "RUNNING" {
+					if err := tr.StopTest(test.ID); err != nil {
+						slog.Warn("threshold stop failed", "test_id", test.ID, "error", err)
+					}
+				}
+			}
 
 			if live.GoalStatus != nil && live.GoalStatus.StopTriggered && test.Status == "RUNNING" {
 				if err := tr.StopTest(test.ID); err != nil {

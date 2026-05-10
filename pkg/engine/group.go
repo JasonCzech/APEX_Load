@@ -12,13 +12,13 @@ import (
 )
 
 type GroupConfig struct {
-	Name           string
-	Script         *dsl.Script
-	VUsers         int
-	RampUp         time.Duration
-	RampDown       time.Duration
-	InitStrategy   string // "at_runtime", "at_once"
-	ResultSink     ResultSink
+	Name         string
+	Script       *dsl.Script
+	VUsers       int
+	RampUp       time.Duration
+	RampDown     time.Duration
+	InitStrategy string // "at_runtime", "at_once"
+	ResultSink   ResultSink
 }
 
 type ResultSink interface {

@@ -3,8 +3,9 @@ import { useApi } from '../hooks/useApi'
 import { StoredScript } from '../types'
 import ScriptEditor from './ScriptEditor'
 import LoadRunnerImport from './LoadRunnerImport'
+import RecordingStudio from './RecordingStudio'
 
-type SubView = 'list' | 'create' | 'edit' | 'import'
+type SubView = 'list' | 'create-options' | 'create' | 'edit' | 'import' | 'recorder'
 
 interface Props {
   initialMode?: SubView
@@ -14,7 +15,7 @@ interface Props {
 export default function ScriptsPage({ initialMode = 'list', initialEditId }: Props) {
   const api = useApi()
   const [scripts, setScripts] = useState<StoredScript[]>([])
-  const [subView, setSubView] = useState<SubView>(initialMode)
+  const [subView, setSubView] = useState<SubView>(initialMode === 'create' ? 'create-options' : initialMode)
   const [editingId, setEditingId] = useState<string | null>(initialEditId || null)
   const [editingScript, setEditingScript] = useState<any>(null)
   const [sortField, setSortField] = useState<string>('name')
@@ -34,7 +35,7 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId }: Pro
     if (initialMode === 'edit' && initialEditId) {
       handleEdit(initialEditId)
     } else if (initialMode && initialMode !== subView) {
-      setSubView(initialMode)
+      setSubView(initialMode === 'create' ? 'create-options' : initialMode)
     }
   }, [initialEditId, initialMode])
 
@@ -113,6 +114,39 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId }: Pro
     )
   }
 
+  if (subView === 'create-options') {
+    return (
+      <div className="page">
+        <div className="page-header">
+          <div>
+            <h2>Create Script</h2>
+            <p className="page-subtitle">Choose how you want to create a new script</p>
+          </div>
+          <button className="btn btn-secondary" onClick={() => setSubView('list')}>
+            Back to Library
+          </button>
+        </div>
+
+        <div className="script-create-grid">
+          <button className="script-create-option" onClick={() => setSubView('create')}>
+            <h3>Visual Editor</h3>
+            <p>Build a script from scratch with actions, assertions, and extractors.</p>
+          </button>
+
+          <button className="script-create-option" onClick={() => setSubView('recorder')}>
+            <h3>Script Recorder</h3>
+            <p>Record browser traffic and convert captured requests into a script.</p>
+          </button>
+
+          <button className="script-create-option" onClick={() => setSubView('import')}>
+            <h3>Import LoadRunner</h3>
+            <p>Upload a LoadRunner ZIP and convert it into Stormrunner DSL.</p>
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   if (subView === 'edit') {
     return (
       <div className="page">
@@ -125,6 +159,17 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId }: Pro
     return (
       <div className="page">
         <LoadRunnerImport onImported={handleImported} onClose={() => setSubView('list')} />
+      </div>
+    )
+  }
+
+  if (subView === 'recorder') {
+    return (
+      <div className="page">
+        <button className="btn btn-secondary" onClick={() => setSubView('create-options')} style={{ alignSelf: 'flex-start' }}>
+          Back to Create Script
+        </button>
+        <RecordingStudio />
       </div>
     )
   }
@@ -142,10 +187,7 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId }: Pro
               Delete Selected ({selectedIds.size})
             </button>
           )}
-          <button className="btn btn-ghost" onClick={() => setSubView('import')}>
-            <span style={{ marginRight: 6 }}>⬆</span>Import LoadRunner
-          </button>
-          <button className="btn btn-primary" onClick={() => setSubView('create')}>+ Create Script</button>
+          <button className="btn btn-primary" onClick={() => setSubView('create-options')}>+ Create Script</button>
         </div>
       </div>
 
@@ -160,7 +202,7 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId }: Pro
               </svg>
             </div>
             <p>No scripts uploaded yet.</p>
-            <p className="empty-hint">Click "Create Script" to build one with the visual editor, or "Import LoadRunner" to convert a VUser script.</p>
+            <p className="empty-hint">Click "Create Script" to choose Visual Editor, Script Recorder, or LoadRunner import.</p>
           </div>
         ) : (
           <div className="data-table">

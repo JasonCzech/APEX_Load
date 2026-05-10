@@ -15,7 +15,7 @@ import (
 
 type archiveStubProtocol struct{}
 
-func (p *archiveStubProtocol) Name() string { return "archive-stub" }
+func (p *archiveStubProtocol) Name() string                                   { return "archive-stub" }
 func (p *archiveStubProtocol) Init(_ context.Context, _ map[string]any) error { return nil }
 func (p *archiveStubProtocol) Execute(_ context.Context, action *protocol.Action) (*protocol.Result, error) {
 	return &protocol.Result{
@@ -28,7 +28,7 @@ func (p *archiveStubProtocol) Execute(_ context.Context, action *protocol.Action
 		Success:       true,
 	}, nil
 }
-func (p *archiveStubProtocol) Teardown(_ context.Context) error { return nil }
+func (p *archiveStubProtocol) Teardown(_ context.Context) error    { return nil }
 func (p *archiveStubProtocol) HealthCheck(_ context.Context) error { return nil }
 
 func TestCreateTestPreservesRuntimeSettingsAndGroups(t *testing.T) {
@@ -55,10 +55,10 @@ func TestCreateTestPreservesRuntimeSettingsAndGroups(t *testing.T) {
 	minVUsers := 15
 	maxVUsers := 120
 	test, err := runner.CreateTest(CreateTestRequest{
-		Name:           "Checkout Replay",
-		Duration:       "90s",
-		ScenarioMode:   "goal_oriented",
-		ScriptShakeout: true,
+		Name:             "Checkout Replay",
+		Duration:         "90s",
+		ScenarioMode:     "goal_oriented",
+		ScriptShakeout:   true,
 		ResourceBaseline: true,
 		GoalConfig: &GoalConfig{
 			TargetAverageTPS: &targetAverageTPS,
@@ -295,7 +295,7 @@ func TestRunTestCreatesArchiveBundle(t *testing.T) {
 		Protocol: protocolName,
 		Version:  "1.0.0",
 		Config:   dsl.ScriptConfig{},
-		Actions: []dsl.Action{{Name: "step-1", Type: "request", Target: "/"}},
+		Actions:  []dsl.Action{{Name: "step-1", Type: "request", Target: "/"}},
 	})
 
 	test, err := runner.CreateTest(CreateTestRequest{

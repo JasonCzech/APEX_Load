@@ -238,6 +238,27 @@ func (s *Server) handleHealthCheck(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) handleGetSystemSettings(w http.ResponseWriter, r *http.Request) {
+	settings := s.runner.GetSystemSettings()
+	writeJSON(w, http.StatusOK, settings)
+}
+
+func (s *Server) handleUpdateSystemSettings(w http.ResponseWriter, r *http.Request) {
+	var settings SystemSettings
+	if err := json.NewDecoder(r.Body).Decode(&settings); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+
+	updated, err := s.runner.UpdateSystemSettings(settings)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, updated)
+}
+
 func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	s.hub.serveWS(w, r, "")
 }

@@ -168,6 +168,13 @@ export function useApi() {
 
   const getHealth = useCallback(() => request<any>('/system/health'), [])
 
+  const getSystemSettings = useCallback(() => request<any>('/system/settings'), [])
+
+  const updateSystemSettings = useCallback(
+    (settings: any) => request<any>('/system/settings', { method: 'PUT', body: JSON.stringify(settings) }),
+    [],
+  )
+
   const scaleVUsers = useCallback(
     (testId: string, group: string, targetVUsers: number) =>
       request<any>(`/tests/${testId}/vusers`, {
@@ -243,6 +250,8 @@ export function useApi() {
       exportScript,
       importLoadRunner,
       getHealth,
+      getSystemSettings,
+      updateSystemSettings,
       scaleVUsers,
       adjustDuration,
       startRecording,
@@ -278,6 +287,8 @@ export function useApi() {
       exportScript,
       importLoadRunner,
       getHealth,
+      getSystemSettings,
+      updateSystemSettings,
       scaleVUsers,
       adjustDuration,
       startRecording,

@@ -109,6 +109,8 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("GET /api/v1/recorder/ca.pem", cors(log(http.HandlerFunc(s.handleRecorderCACert))))
 
 	s.mux.Handle("GET /api/v1/system/health", cors(log(http.HandlerFunc(s.handleHealthCheck))))
+	s.mux.Handle("GET /api/v1/system/settings", cors(log(http.HandlerFunc(s.handleGetSystemSettings))))
+	s.mux.Handle("PUT /api/v1/system/settings", cors(log(http.HandlerFunc(s.handleUpdateSystemSettings))))
 
 	// WebSocket — no CORS wrapper (handled by upgrade check)
 	s.mux.Handle("GET /api/v1/ws", log(http.HandlerFunc(s.handleWebSocket)))

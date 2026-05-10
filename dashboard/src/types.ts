@@ -327,3 +327,19 @@ export interface HealthResponse {
   ws_clients: number
   test_count: number
 }
+
+export interface DashboardThresholdSettings {
+  max_error_rate_pct?: number
+  max_p99_latency_ms?: number
+}
+
+export interface DashboardGeneralSettings {
+  api_endpoint: string
+  max_concurrent_tests: number
+  metrics_interval_seconds: number
+}
+
+export interface DashboardSystemSettings {
+  general: DashboardGeneralSettings
+  thresholds: DashboardThresholdSettings
+}

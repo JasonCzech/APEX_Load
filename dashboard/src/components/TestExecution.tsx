@@ -711,28 +711,14 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
     })
   }, [scriptDetails, test])
 
-  if (error) {
-    return (
-      <div className="execution">
-        <button className="btn btn-secondary" onClick={onBack}>Back</button>
-        <p className="error-msg">{error}</p>
-      </div>
-    )
-  }
-
-  if (!test) {
-    return <div className="execution"><p className="loading">Loading...</p></div>
-  }
-
-
   const metrics = test?.live_metrics
   const goalStatus = metrics?.goal_status
   const transactions = metrics?.transactions ? Object.values(metrics.transactions) : []
   const groupMetrics = metrics?.groups ? Object.values(metrics.groups) : []
   const isMultiGroup = (test?.groups?.length || 0) > 1
   const groupNames = test?.groups?.map((g) => g.name) || []
-  const isGoalOriented = test.scenario_mode === 'goal_oriented'
-  const shakeoutFailed = test.status === 'FAILED' && Boolean(test.script_shakeout) && test.error?.toLowerCase().includes('shakeout')
+  const isGoalOriented = test?.scenario_mode === 'goal_oriented'
+  const shakeoutFailed = test?.status === 'FAILED' && Boolean(test.script_shakeout) && test.error?.toLowerCase().includes('shakeout')
   const archiveActionEntries = archiveReport ? Object.entries(archiveReport.by_action || {}).sort((a, b) => b[1].transactions - a[1].transactions) : []
   const archiveGroups = test?.groups?.map((group) => group.name) || []
   const archivePageSize = 25
@@ -758,6 +744,19 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
       setArchiveError(e.message || `Unable to download ${artifactName}`)
     }
   }, [api, test])
+
+  if (error) {
+    return (
+      <div className="execution">
+        <button className="btn btn-secondary" onClick={onBack}>Back</button>
+        <p className="error-msg">{error}</p>
+      </div>
+    )
+  }
+
+  if (!test) {
+    return <div className="execution"><p className="loading">Loading...</p></div>
+  }
 
   return (
     <div className="execution">

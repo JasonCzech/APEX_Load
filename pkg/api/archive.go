@@ -1,8 +1,8 @@
 package api
 
 import (
-	"bufio"
 	"archive/zip"
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -20,22 +20,22 @@ import (
 const archiveSchemaVersion = "stormrunner.archive.v1"
 
 type RunArchiveManifest struct {
-	SchemaVersion      string    `json:"schema_version"`
-	TestID             string    `json:"test_id"`
-	TestName           string    `json:"test_name"`
-	CreatedAt          time.Time `json:"created_at"`
-	CompletedAt        time.Time `json:"completed_at,omitempty"`
-	Status             string    `json:"status,omitempty"`
-	Error              string    `json:"error,omitempty"`
-	TransactionsFile   string    `json:"transactions_file"`
-	TransactionsParquetFile string `json:"transactions_parquet_file,omitempty"`
-	ResourceSamplesFile string   `json:"resource_samples_file"`
-	ResourceSamplesParquetFile string `json:"resource_samples_parquet_file,omitempty"`
-	IntervalSummariesFile string `json:"interval_summaries_file"`
-	IntervalSummariesParquetFile string `json:"interval_summaries_parquet_file,omitempty"`
-	TransactionCount   int64     `json:"transaction_count"`
-	ResourceSampleCount int64    `json:"resource_sample_count"`
-	IntervalSummaryCount int64   `json:"interval_summary_count"`
+	SchemaVersion                string    `json:"schema_version"`
+	TestID                       string    `json:"test_id"`
+	TestName                     string    `json:"test_name"`
+	CreatedAt                    time.Time `json:"created_at"`
+	CompletedAt                  time.Time `json:"completed_at,omitempty"`
+	Status                       string    `json:"status,omitempty"`
+	Error                        string    `json:"error,omitempty"`
+	TransactionsFile             string    `json:"transactions_file"`
+	TransactionsParquetFile      string    `json:"transactions_parquet_file,omitempty"`
+	ResourceSamplesFile          string    `json:"resource_samples_file"`
+	ResourceSamplesParquetFile   string    `json:"resource_samples_parquet_file,omitempty"`
+	IntervalSummariesFile        string    `json:"interval_summaries_file"`
+	IntervalSummariesParquetFile string    `json:"interval_summaries_parquet_file,omitempty"`
+	TransactionCount             int64     `json:"transaction_count"`
+	ResourceSampleCount          int64     `json:"resource_sample_count"`
+	IntervalSummaryCount         int64     `json:"interval_summary_count"`
 }
 
 type TransactionEvent struct {
@@ -59,18 +59,18 @@ type TransactionEvent struct {
 }
 
 type ResourceSample struct {
-	Timestamp       time.Time `json:"timestamp"`
-	TestID          string    `json:"test_id"`
-	TestName        string    `json:"test_name"`
-	ActiveVUsers    int64     `json:"active_vusers"`
-	CPUProcessPct   float64   `json:"cpu_process_pct"`
-	CPUFreePct      float64   `json:"cpu_free_pct"`
-	MemProcessMB    float64   `json:"mem_process_mb"`
-	MemFreeMB       float64   `json:"mem_free_mb"`
-	NetSentKbps     float64   `json:"net_sent_kbps"`
-	NetRecvKbps     float64   `json:"net_recv_kbps"`
-	DiskReadKbps    float64   `json:"disk_read_kbps"`
-	DiskWriteKbps   float64   `json:"disk_write_kbps"`
+	Timestamp     time.Time `json:"timestamp"`
+	TestID        string    `json:"test_id"`
+	TestName      string    `json:"test_name"`
+	ActiveVUsers  int64     `json:"active_vusers"`
+	CPUProcessPct float64   `json:"cpu_process_pct"`
+	CPUFreePct    float64   `json:"cpu_free_pct"`
+	MemProcessMB  float64   `json:"mem_process_mb"`
+	MemFreeMB     float64   `json:"mem_free_mb"`
+	NetSentKbps   float64   `json:"net_sent_kbps"`
+	NetRecvKbps   float64   `json:"net_recv_kbps"`
+	DiskReadKbps  float64   `json:"disk_read_kbps"`
+	DiskWriteKbps float64   `json:"disk_write_kbps"`
 }
 
 type IntervalSummaryRecord struct {
@@ -139,16 +139,16 @@ type RunArchiveResourcePeaks struct {
 }
 
 type runArchiveWriter struct {
-	mu         sync.Mutex
-	manifest   RunArchiveManifest
-	rootDir    string
-	manifestPath string
-	txFile     *os.File
-	resourceFile *os.File
-	summaryFile *os.File
-	txEncoder  *json.Encoder
+	mu              sync.Mutex
+	manifest        RunArchiveManifest
+	rootDir         string
+	manifestPath    string
+	txFile          *os.File
+	resourceFile    *os.File
+	summaryFile     *os.File
+	txEncoder       *json.Encoder
 	resourceEncoder *json.Encoder
-	summaryEncoder *json.Encoder
+	summaryEncoder  *json.Encoder
 }
 
 func newRunArchiveWriter(test *ManagedTest) (*runArchiveWriter, error) {
@@ -184,25 +184,25 @@ func newRunArchiveWriter(test *ManagedTest) (*runArchiveWriter, error) {
 
 	return &runArchiveWriter{
 		manifest: RunArchiveManifest{
-			SchemaVersion: archiveSchemaVersion,
-			TestID: test.ID,
-			TestName: test.Name,
-			CreatedAt: time.Now(),
-			TransactionsFile: "transactions.jsonl",
-			TransactionsParquetFile: "transactions.parquet",
-			ResourceSamplesFile: "resources.jsonl",
-			ResourceSamplesParquetFile: "resources.parquet",
-			IntervalSummariesFile: "interval_summaries.jsonl",
+			SchemaVersion:                archiveSchemaVersion,
+			TestID:                       test.ID,
+			TestName:                     test.Name,
+			CreatedAt:                    time.Now(),
+			TransactionsFile:             "transactions.jsonl",
+			TransactionsParquetFile:      "transactions.parquet",
+			ResourceSamplesFile:          "resources.jsonl",
+			ResourceSamplesParquetFile:   "resources.parquet",
+			IntervalSummariesFile:        "interval_summaries.jsonl",
 			IntervalSummariesParquetFile: "interval_summaries.parquet",
 		},
-		rootDir: archiveDir,
-		manifestPath: filepath.Join(archiveDir, "manifest.json"),
-		txFile: txFile,
-		resourceFile: resourceFile,
-		summaryFile: summaryFile,
-		txEncoder: txEncoder,
+		rootDir:         archiveDir,
+		manifestPath:    filepath.Join(archiveDir, "manifest.json"),
+		txFile:          txFile,
+		resourceFile:    resourceFile,
+		summaryFile:     summaryFile,
+		txEncoder:       txEncoder,
 		resourceEncoder: resourceEncoder,
-		summaryEncoder: summaryEncoder,
+		summaryEncoder:  summaryEncoder,
 	}, nil
 }
 
@@ -220,23 +220,23 @@ func (w *runArchiveWriter) RecordResult(result *protocol.Result) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	event := TransactionEvent{
-		Timestamp: result.StartTime,
-		TestID: w.manifest.TestID,
-		TestName: w.manifest.TestName,
-		Group: result.Group,
-		ActionName: result.ActionName,
-		DurationMs: durationMillis(result.Duration),
-		DNSMs: durationMillis(result.DNSTime),
-		ConnectMs: durationMillis(result.ConnectTime),
-		TLSMs: durationMillis(result.TLSTime),
-		TTFBMs: durationMillis(result.TTFB),
-		BytesSent: result.BytesSent,
+		Timestamp:     result.StartTime,
+		TestID:        w.manifest.TestID,
+		TestName:      w.manifest.TestName,
+		Group:         result.Group,
+		ActionName:    result.ActionName,
+		DurationMs:    durationMillis(result.Duration),
+		DNSMs:         durationMillis(result.DNSTime),
+		ConnectMs:     durationMillis(result.ConnectTime),
+		TLSMs:         durationMillis(result.TLSTime),
+		TTFBMs:        durationMillis(result.TTFB),
+		BytesSent:     result.BytesSent,
 		BytesReceived: result.BytesReceived,
-		StatusCode: result.StatusCode,
-		Success: result.Success,
-		ErrorMessage: result.ErrorMessage,
-		Extractions: result.Extractions,
-		Snapshot: result.Snapshot,
+		StatusCode:    result.StatusCode,
+		Success:       result.Success,
+		ErrorMessage:  result.ErrorMessage,
+		Extractions:   result.Extractions,
+		Snapshot:      result.Snapshot,
 	}
 	if err := w.txEncoder.Encode(event); err != nil {
 		return err
@@ -252,17 +252,17 @@ func (w *runArchiveWriter) RecordResourceSample(timestamp time.Time, activeVUser
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	record := ResourceSample{
-		Timestamp: timestamp,
-		TestID: w.manifest.TestID,
-		TestName: w.manifest.TestName,
-		ActiveVUsers: activeVUsers,
+		Timestamp:     timestamp,
+		TestID:        w.manifest.TestID,
+		TestName:      w.manifest.TestName,
+		ActiveVUsers:  activeVUsers,
 		CPUProcessPct: resources.CPUProcessPct,
-		CPUFreePct: resources.CPUFreePct,
-		MemProcessMB: resources.MemProcessMb,
-		MemFreeMB: resources.MemFreeMb,
-		NetSentKbps: resources.NetSentKbps,
-		NetRecvKbps: resources.NetRecvKbps,
-		DiskReadKbps: resources.DiskReadKbps,
+		CPUFreePct:    resources.CPUFreePct,
+		MemProcessMB:  resources.MemProcessMb,
+		MemFreeMB:     resources.MemFreeMb,
+		NetSentKbps:   resources.NetSentKbps,
+		NetRecvKbps:   resources.NetRecvKbps,
+		DiskReadKbps:  resources.DiskReadKbps,
 		DiskWriteKbps: resources.DiskWriteKbps,
 	}
 	if err := w.resourceEncoder.Encode(record); err != nil {
@@ -279,19 +279,19 @@ func (w *runArchiveWriter) RecordIntervalSummary(live *LiveMetrics) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	record := IntervalSummaryRecord{
-		Timestamp: live.Timestamp,
-		TestID: w.manifest.TestID,
-		TestName: w.manifest.TestName,
-		ActiveVUsers: live.ActiveVUsers,
-		TPS: live.TPS,
+		Timestamp:     live.Timestamp,
+		TestID:        w.manifest.TestID,
+		TestName:      w.manifest.TestName,
+		ActiveVUsers:  live.ActiveVUsers,
+		TPS:           live.TPS,
 		AvgResponseMs: live.AvgResponseMs,
-		ErrorPct: live.ErrorPct,
-		TotalTx: live.TotalTx,
-		TotalErrors: live.TotalErrors,
-		P50Ms: live.P50Ms,
-		P90Ms: live.P90Ms,
-		P95Ms: live.P95Ms,
-		P99Ms: live.P99Ms,
+		ErrorPct:      live.ErrorPct,
+		TotalTx:       live.TotalTx,
+		TotalErrors:   live.TotalErrors,
+		P50Ms:         live.P50Ms,
+		P90Ms:         live.P90Ms,
+		P95Ms:         live.P95Ms,
+		P99Ms:         live.P99Ms,
 	}
 	if err := w.summaryEncoder.Encode(record); err != nil {
 		return err
@@ -330,15 +330,15 @@ func (w *runArchiveWriter) Finalize(status string, completedAt time.Time, errStr
 	}
 
 	return &storage.RunArchiveRecord{
-		TestID: w.manifest.TestID,
-		SchemaVersion: w.manifest.SchemaVersion,
-		ArchivePath: w.rootDir,
-		ManifestPath: w.manifestPath,
-		TransactionCount: w.manifest.TransactionCount,
-		ResourceSampleCount: w.manifest.ResourceSampleCount,
+		TestID:               w.manifest.TestID,
+		SchemaVersion:        w.manifest.SchemaVersion,
+		ArchivePath:          w.rootDir,
+		ManifestPath:         w.manifestPath,
+		TransactionCount:     w.manifest.TransactionCount,
+		ResourceSampleCount:  w.manifest.ResourceSampleCount,
 		IntervalSummaryCount: w.manifest.IntervalSummaryCount,
-		CreatedAt: w.manifest.CreatedAt,
-		CompletedAt: w.manifest.CompletedAt,
+		CreatedAt:            w.manifest.CreatedAt,
+		CompletedAt:          w.manifest.CompletedAt,
 	}, nil
 }
 

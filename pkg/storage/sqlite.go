@@ -78,6 +78,11 @@ func (s *SQLiteStore) init() error {
 			completed_at DATETIME,
 			FOREIGN KEY(test_id) REFERENCES tests(id)
 		)`,
+		`CREATE TABLE IF NOT EXISTS app_settings (
+			key TEXT PRIMARY KEY,
+			value TEXT,
+			updated_at DATETIME
+		)`,
 	}
 
 	for _, q := range queries {
@@ -359,6 +364,24 @@ func (s *SQLiteStore) GetRunArchive(testID string) (*RunArchiveRecord, error) {
 		return nil, err
 	}
 	return &record, nil
+}
+
+func (s *SQLiteStore) SaveSetting(key string, value string) error {
+	_, err := s.db.Exec(`INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?)
+		ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`, key, value, time.Now())
+	return err
+}
+
+func (s *SQLiteStore) GetSetting(key string) (string, error) {
+	var value string
+	err := s.db.QueryRow(`SELECT value FROM app_settings WHERE key = ?`, key).Scan(&value)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", nil
+		}
+		return "", err
+	}
+	return value, nil
 }
 
 func (s *SQLiteStore) Close() error {
