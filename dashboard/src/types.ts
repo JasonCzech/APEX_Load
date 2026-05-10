@@ -54,6 +54,7 @@ export interface TestSummary {
   name: string
   status: TestStatus
   groups: TestGroup[]
+  capacity_advisory?: CapacityAdvisory
   script_shakeout?: boolean
   resource_baseline?: boolean
   total_vusers: number
@@ -326,6 +327,13 @@ export interface HealthResponse {
   version: string
   ws_clients: number
   test_count: number
+  capacity_availability?: {
+    source: 'configured' | 'configured_plus_live'
+    configured_available_generators: number
+    effective_available_generators: number
+    live_available_generators?: number
+    warnings?: string[]
+  }
 }
 
 export interface DashboardThresholdSettings {
@@ -339,7 +347,69 @@ export interface DashboardGeneralSettings {
   metrics_interval_seconds: number
 }
 
+export interface DashboardCapacityGeneratorSettings {
+  cpu_cores: number
+  memory_mb: number
+  network_mbps: number
+  max_vusers: number
+}
+
+export interface DashboardCapacityAvailabilitySettings {
+  source: 'configured' | 'configured_plus_live'
+  configured_available_generators: number
+}
+
+export interface DashboardCapacityPlanningSettings {
+  headroom_pct: number
+  generator: DashboardCapacityGeneratorSettings
+  availability: DashboardCapacityAvailabilitySettings
+}
+
+export interface CapacityResourceEstimate {
+  cpu_cores: number
+  memory_mb: number
+  network_mbps: number
+}
+
+export interface CapacityDimensionRecommendations {
+  cpu: number
+  memory: number
+  network: number
+  vusers: number
+}
+
+export interface CapacityAdvisory {
+  total_vusers: number
+  duration_seconds: number
+  baseline_window_enabled: boolean
+  headroom_pct: number
+  complexity_score: number
+  bottleneck: 'cpu' | 'memory' | 'network' | 'vusers'
+  availability_source?: 'configured' | 'configured_plus_live'
+  configured_available_generators?: number
+  live_available_generators?: number
+  recommended_generators: number
+  available_generators: number
+  shortfall_generators?: number
+  requires_override?: boolean
+  estimated_per_vuser: CapacityResourceEstimate
+  estimated_total: CapacityResourceEstimate
+  usable_per_generator: CapacityResourceEstimate
+  dimension_recommendations: CapacityDimensionRecommendations
+  warnings?: string[]
+}
+
+export interface DraftCapacityEstimate {
+  scenario_mode?: ScenarioMode
+  total_vusers: number
+  duration: string
+  resource_baseline?: boolean
+  groups: TestGroup[]
+  capacity_advisory?: CapacityAdvisory
+}
+
 export interface DashboardSystemSettings {
   general: DashboardGeneralSettings
   thresholds: DashboardThresholdSettings
+  capacity_planning: DashboardCapacityPlanningSettings
 }

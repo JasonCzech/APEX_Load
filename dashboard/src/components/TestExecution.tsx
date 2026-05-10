@@ -3,8 +3,9 @@ import {
   LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Legend, ReferenceArea,
 } from 'recharts'
-import { useApi } from '../hooks/useApi'
+import { ApiError, useApi } from '../hooks/useApi'
 import {
+  CapacityAdvisory,
   TestSummary,
   MetricsHistoryPoint,
   TxMetrics,
@@ -62,6 +63,48 @@ function formatScenarioTimeline(seconds: number): string {
   if (hours > 0) return `${hours}h${minutes > 0 ? ` ${minutes}m` : ''}`
   if (minutes > 0) return secs > 0 ? `${minutes}m ${secs}s` : `${minutes}m`
   return `${secs}s`
+}
+
+function formatCapacityValue(value: number, decimals = 0): string {
+  return new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  }).format(value)
+}
+
+function formatCapacityBottleneck(advisory?: CapacityAdvisory): string {
+  if (!advisory) return 'Unknown'
+  switch (advisory.bottleneck) {
+    case 'cpu':
+      return 'CPU bound'
+    case 'memory':
+      return 'Memory bound'
+    case 'network':
+      return 'Network bound'
+    case 'vusers':
+      return 'VUser ceiling'
+    default:
+      return 'Unknown'
+  }
+}
+
+function formatAvailabilitySource(advisory?: CapacityAdvisory): string {
+  if (!advisory) return 'Configured inventory'
+  if (advisory.availability_source === 'configured_plus_live') {
+    return advisory.live_available_generators !== undefined ? 'Live snapshot + configured ceiling' : 'Configured ceiling'
+  }
+  return 'Configured inventory'
+}
+
+function formatAvailabilityDetail(advisory?: CapacityAdvisory): string {
+  if (!advisory) return 'Configured inventory only'
+  if (advisory.availability_source === 'configured_plus_live') {
+    if (advisory.live_available_generators !== undefined) {
+      return `${formatCapacityValue(advisory.live_available_generators)} live / ${formatCapacityValue(advisory.configured_available_generators || advisory.available_generators)} configured`
+    }
+    return `${formatCapacityValue(advisory.configured_available_generators || advisory.available_generators)} configured ceiling`
+  }
+  return `${formatCapacityValue(advisory.configured_available_generators || advisory.available_generators)} configured`
 }
 
 interface Props {
@@ -273,12 +316,18 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
   const [archiveErrorsOnly, setArchiveErrorsOnly] = useState(false)
   const [archiveTransactionsOffset, setArchiveTransactionsOffset] = useState(0)
   const [expandedArchiveEvent, setExpandedArchiveEvent] = useState<string | null>(null)
+  const [startCapacityConflict, setStartCapacityConflict] = useState<CapacityAdvisory | null>(null)
+  const [startFeedback, setStartFeedback] = useState('')
 
   useEffect(() => {
     const load = async () => {
       try {
         const data = await api.getTest(testId)
         setTest(data)
+        if (data.status !== 'QUEUED') {
+          setStartCapacityConflict(null)
+          setStartFeedback('')
+        }
       } catch (e: any) {
         setError(e.message)
       }
@@ -745,6 +794,21 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
     }
   }, [api, test])
 
+  const handleStart = useCallback(async (override = false) => {
+    setStartFeedback('')
+    try {
+      await api.startTest(testId, override ? { override_capacity_shortfall: true } : undefined)
+      setStartCapacityConflict(null)
+    } catch (e: any) {
+      if (e instanceof ApiError && e.code === 'capacity_shortfall') {
+        setStartCapacityConflict(e.payload?.capacity_advisory || test?.capacity_advisory || null)
+        setStartFeedback(e.message || 'Capacity advisory requires an explicit override before starting.')
+        return
+      }
+      setStartFeedback(e.message || 'Unable to start test')
+    }
+  }, [api, test?.capacity_advisory, testId])
+
   if (error) {
     return (
       <div className="execution">
@@ -787,7 +851,7 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
               <button className="btn btn-secondary" onClick={() => setShowScenarioEditor(true)}>
                 Edit Scenario
               </button>
-              <button className="btn btn-success" onClick={() => api.startTest(testId)}>
+              <button className="btn btn-success" onClick={() => handleStart()}>
                 Start
               </button>
             </>
@@ -997,6 +1061,29 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
         </div>
       )}
 
+      {test.status === 'QUEUED' && startCapacityConflict && (
+        <div className="scenario-alert-banner scenario-alert-warning" role="alert">
+          <div>
+            <h3 className="scenario-alert-title">Additional load generators recommended before start</h3>
+            <p className="scenario-alert-message">
+              This scenario is estimated to need {startCapacityConflict.recommended_generators} load generators, but only {startCapacityConflict.available_generators} are currently available. Bottleneck: {formatCapacityBottleneck(startCapacityConflict)}.
+            </p>
+            <p className="scenario-alert-message secondary">
+              Availability source: {formatAvailabilitySource(startCapacityConflict)}. Snapshot: {formatAvailabilityDetail(startCapacityConflict)}.
+            </p>
+            {startFeedback && <p className="scenario-alert-message secondary">{startFeedback}</p>}
+          </div>
+          <div className="scenario-alert-actions">
+            <button className="btn btn-secondary" onClick={() => setStartCapacityConflict(null)}>
+              Cancel
+            </button>
+            <button className="btn btn-warning" onClick={() => handleStart(true)}>
+              Start Anyway
+            </button>
+          </div>
+        </div>
+      )}
+
       {test.status === 'QUEUED' && queuedScenarioPreview.points.length > 0 && (
         <div className="scenario-preview-card">
           <div className="scenario-preview-header">
@@ -1023,6 +1110,76 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
               </div>
             </div>
           </div>
+
+          {test.capacity_advisory && (
+            <div className={`capacity-advisory-card ${test.capacity_advisory.requires_override ? 'warning' : 'ready'}`}>
+              <div className="capacity-advisory-header">
+                <div>
+                  <h3 className="capacity-advisory-title">Load Generator Advisory</h3>
+                  <p className="capacity-advisory-subtitle">
+                    Estimated from script complexity, generator baseline resources, {formatCapacityValue(test.capacity_advisory.headroom_pct)}% reserved headroom, and {formatAvailabilitySource(test.capacity_advisory).toLowerCase()}.
+                  </p>
+                </div>
+                <span className={`capacity-advisory-badge ${test.capacity_advisory.requires_override ? 'warning' : 'ready'}`}>
+                  {test.capacity_advisory.requires_override ? 'Capacity Shortfall' : 'Capacity Ready'}
+                </span>
+              </div>
+
+              <div className="capacity-advisory-grid">
+                <div className="capacity-advisory-metric">
+                  <span className="capacity-advisory-label">Recommended</span>
+                  <span className="capacity-advisory-value">{formatCapacityValue(test.capacity_advisory.recommended_generators)}</span>
+                  <span className="capacity-advisory-detail">load generators</span>
+                </div>
+                <div className="capacity-advisory-metric">
+                  <span className="capacity-advisory-label">Available</span>
+                  <span className="capacity-advisory-value">{formatCapacityValue(test.capacity_advisory.available_generators)}</span>
+                  <span className="capacity-advisory-detail">{formatAvailabilityDetail(test.capacity_advisory)}</span>
+                </div>
+                <div className="capacity-advisory-metric">
+                  <span className="capacity-advisory-label">Bottleneck</span>
+                  <span className="capacity-advisory-value text">{formatCapacityBottleneck(test.capacity_advisory)}</span>
+                  <span className="capacity-advisory-detail">primary sizing driver</span>
+                </div>
+                <div className="capacity-advisory-metric">
+                  <span className="capacity-advisory-label">Usable Per Generator</span>
+                  <span className="capacity-advisory-value text">{formatCapacityValue(test.capacity_advisory.usable_per_generator.cpu_cores, 1)} CPU / {formatCapacityValue(test.capacity_advisory.usable_per_generator.memory_mb)} MB</span>
+                  <span className="capacity-advisory-detail">after reserved headroom</span>
+                </div>
+              </div>
+
+              <div className="capacity-advisory-grid compact">
+                <div className="capacity-advisory-metric compact">
+                  <span className="capacity-advisory-label">Total CPU</span>
+                  <span className="capacity-advisory-value">{formatCapacityValue(test.capacity_advisory.estimated_total.cpu_cores, 2)}</span>
+                </div>
+                <div className="capacity-advisory-metric compact">
+                  <span className="capacity-advisory-label">Total Memory</span>
+                  <span className="capacity-advisory-value">{formatCapacityValue(test.capacity_advisory.estimated_total.memory_mb)}</span>
+                </div>
+                <div className="capacity-advisory-metric compact">
+                  <span className="capacity-advisory-label">Total Network</span>
+                  <span className="capacity-advisory-value">{formatCapacityValue(test.capacity_advisory.estimated_total.network_mbps)}</span>
+                </div>
+                <div className="capacity-advisory-metric compact">
+                  <span className="capacity-advisory-label">Availability Source</span>
+                  <span className="capacity-advisory-value text">{formatAvailabilitySource(test.capacity_advisory)}</span>
+                </div>
+                <div className="capacity-advisory-metric compact">
+                  <span className="capacity-advisory-label">Complexity</span>
+                  <span className="capacity-advisory-value">{formatCapacityValue(test.capacity_advisory.complexity_score, 2)}</span>
+                </div>
+              </div>
+
+              {test.capacity_advisory.warnings && test.capacity_advisory.warnings.length > 0 && (
+                <div className="capacity-advisory-warnings">
+                  {test.capacity_advisory.warnings.map((warning) => (
+                    <p key={warning}>{warning}</p>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="scenario-preview-chart">
             <ResponsiveContainer width="100%" height={260}>

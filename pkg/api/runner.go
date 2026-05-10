@@ -32,6 +32,7 @@ type ManagedTest struct {
 	Name             string                    `json:"name"`
 	Status           string                    `json:"status"`
 	Groups           []TestGroup               `json:"groups"`
+	CapacityAdvisory *CapacityAdvisory         `json:"capacity_advisory,omitempty"`
 	ScenarioMode     string                    `json:"scenario_mode,omitempty"`
 	ScriptShakeout   bool                      `json:"script_shakeout,omitempty"`
 	ResourceBaseline bool                      `json:"resource_baseline,omitempty"`
@@ -368,6 +369,54 @@ type CreateGroupEntry struct {
 	InitStrategy string `json:"initialization,omitempty"` // "at_runtime", "at_once"
 }
 
+type StartTestOptions struct {
+	OverrideCapacityShortfall bool `json:"override_capacity_shortfall,omitempty"`
+}
+
+type CapacityShortfallError struct {
+	TestID   string
+	Advisory *CapacityAdvisory
+	Message  string
+}
+
+type DraftCapacityEstimate struct {
+	ScenarioMode     string            `json:"scenario_mode,omitempty"`
+	TotalVUsers      int               `json:"total_vusers"`
+	Duration         string            `json:"duration"`
+	ResourceBaseline bool              `json:"resource_baseline,omitempty"`
+	Groups           []TestGroup       `json:"groups"`
+	CapacityAdvisory *CapacityAdvisory `json:"capacity_advisory,omitempty"`
+}
+
+func (e *CapacityShortfallError) Error() string {
+	if e == nil {
+		return "capacity shortfall"
+	}
+	if e.Message != "" {
+		return e.Message
+	}
+	return "insufficient load generator capacity"
+}
+
+func (tr *TestRunner) EstimateDraftCapacity(req CreateTestRequest) (*DraftCapacityEstimate, error) {
+	tr.mu.RLock()
+	defer tr.mu.RUnlock()
+
+	preview, err := tr.buildManagedTestLocked(req, "draft-estimate", "DRAFT")
+	if err != nil {
+		return nil, err
+	}
+
+	return &DraftCapacityEstimate{
+		ScenarioMode:     preview.ScenarioMode,
+		TotalVUsers:      preview.TotalVUsers,
+		Duration:         preview.DurationStr,
+		ResourceBaseline: preview.ResourceBaseline,
+		Groups:           preview.Groups,
+		CapacityAdvisory: cloneCapacityAdvisory(preview.CapacityAdvisory),
+	}, nil
+}
+
 func (tr *TestRunner) CreateTest(req CreateTestRequest) (*ManagedTest, error) {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
@@ -383,6 +432,35 @@ func (tr *TestRunner) CreateTest(req CreateTestRequest) (*ManagedTest, error) {
 		return nil, fmt.Errorf("max concurrent tests (%d) reached", maxConcurrent)
 	}
 
+	test, err := tr.buildManagedTestLocked(req, uuid.New().String(), "QUEUED")
+	if err != nil {
+		return nil, err
+	}
+
+	tr.tests[test.ID] = test
+
+	if tr.store != nil {
+		tr.store.SaveTest(&storage.TestRecord{
+			ID:               test.ID,
+			Name:             test.Name,
+			Status:           test.Status,
+			ScenarioMode:     test.ScenarioMode,
+			ScriptShakeout:   test.ScriptShakeout,
+			ResourceBaseline: test.ResourceBaseline,
+			TotalVUsers:      test.TotalVUsers,
+			Duration:         int64(test.Duration),
+			StartTime:        test.CreatedAt,
+			Groups:           test.Groups,
+			GoalConfig:       test.GoalConfig,
+			RuntimeSettings:  test.RuntimeSettings,
+		})
+	}
+
+	tr.broadcastEvent("test_created", test)
+	return test, nil
+}
+
+func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, status string) (*ManagedTest, error) {
 	dur, err := time.ParseDuration(req.Duration)
 	if err != nil {
 		return nil, fmt.Errorf("invalid duration: %w", err)
@@ -403,7 +481,6 @@ func (tr *TestRunner) CreateTest(req CreateTestRequest) (*ManagedTest, error) {
 		}
 	}
 
-	// Normalize: single-script shorthand → groups array
 	groups := req.Groups
 	if len(groups) == 0 && req.ScriptID != "" {
 		groups = []CreateGroupEntry{{
@@ -473,7 +550,6 @@ func (tr *TestRunner) CreateTest(req CreateTestRequest) (*ManagedTest, error) {
 			script:         script.Script,
 		})
 
-		// Apply test-level runtime overrides to a copy of the script
 		scriptCopy := *script.Script
 		if req.RuntimeSettings != nil {
 			applyRuntimeOverrides(&scriptCopy, req.RuntimeSettings)
@@ -501,10 +577,11 @@ func (tr *TestRunner) CreateTest(req CreateTestRequest) (*ManagedTest, error) {
 	}
 
 	test := &ManagedTest{
-		ID:               uuid.New().String(),
+		ID:               id,
 		Name:             testName,
-		Status:           "QUEUED",
+		Status:           status,
 		Groups:           testGroups,
+		CapacityAdvisory: estimateCapacityAdvisory(tr.settings, testGroups, totalVUsers, dur, req.ResourceBaseline, req.RuntimeSettings),
 		ScenarioMode:     scenarioMode,
 		ScriptShakeout:   req.ScriptShakeout,
 		ResourceBaseline: req.ResourceBaseline,
@@ -517,47 +594,32 @@ func (tr *TestRunner) CreateTest(req CreateTestRequest) (*ManagedTest, error) {
 		groupSpecs:       engineGroups,
 	}
 
-	// Backwards-compat fields
 	if len(testGroups) == 1 {
 		test.ScriptID = testGroups[0].ScriptID
 		test.ScriptName = testGroups[0].ScriptName
 	}
 
-	tr.tests[test.ID] = test
-
-	if tr.store != nil {
-		tr.store.SaveTest(&storage.TestRecord{
-			ID:               test.ID,
-			Name:             test.Name,
-			Status:           test.Status,
-			ScenarioMode:     test.ScenarioMode,
-			ScriptShakeout:   test.ScriptShakeout,
-			ResourceBaseline: test.ResourceBaseline,
-			TotalVUsers:      test.TotalVUsers,
-			Duration:         int64(test.Duration),
-			StartTime:        test.CreatedAt,
-			Groups:           test.Groups,
-			GoalConfig:       test.GoalConfig,
-			RuntimeSettings:  test.RuntimeSettings,
-		})
-	}
-
-	tr.broadcastEvent("test_created", test)
 	return test, nil
 }
 
 func (tr *TestRunner) GetTest(id string) (*ManagedTest, bool) {
-	tr.mu.RLock()
-	defer tr.mu.RUnlock()
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
 	t, ok := tr.tests[id]
+	if ok && t.Status == "QUEUED" {
+		tr.refreshCapacityAdvisoryLocked(t)
+	}
 	return t, ok
 }
 
 func (tr *TestRunner) ListTests() []*ManagedTest {
-	tr.mu.RLock()
-	defer tr.mu.RUnlock()
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
 	out := make([]*ManagedTest, 0, len(tr.tests))
 	for _, t := range tr.tests {
+		if t.Status == "QUEUED" {
+			tr.refreshCapacityAdvisoryLocked(t)
+		}
 		out = append(out, t)
 	}
 	return out
@@ -624,6 +686,10 @@ func (tr *TestRunner) DeleteTest(id string) bool {
 }
 
 func (tr *TestRunner) StartTest(id string) error {
+	return tr.StartTestWithOptions(id, StartTestOptions{})
+}
+
+func (tr *TestRunner) StartTestWithOptions(id string, opts StartTestOptions) error {
 	tr.mu.Lock()
 	running := 0
 	for _, t := range tr.tests {
@@ -646,11 +712,52 @@ func (tr *TestRunner) StartTest(id string) error {
 		tr.mu.Unlock()
 		return fmt.Errorf("test is %s, must be QUEUED to start", test.Status)
 	}
+	tr.refreshCapacityAdvisoryLocked(test)
+	if test.CapacityAdvisory != nil && test.CapacityAdvisory.RequiresOverride && !opts.OverrideCapacityShortfall {
+		advisory := cloneCapacityAdvisory(test.CapacityAdvisory)
+		tr.mu.Unlock()
+		return &CapacityShortfallError{
+			TestID:   id,
+			Advisory: advisory,
+			Message:  fmt.Sprintf("capacity advisory recommends %d load generators but only %d are currently available", advisory.RecommendedGenerators, advisory.AvailableGenerators),
+		}
+	}
 	test.Status = "INITIALIZING"
 	tr.mu.Unlock()
 
 	go tr.runTest(test)
 	return nil
+}
+
+func (tr *TestRunner) refreshCapacityAdvisoryLocked(test *ManagedTest) {
+	if test == nil {
+		return
+	}
+	groups := tr.hydrateCapacityGroupsLocked(test.Groups)
+	test.CapacityAdvisory = estimateCapacityAdvisory(tr.settings, groups, test.TotalVUsers, test.Duration, test.ResourceBaseline, test.RuntimeSettings)
+}
+
+func (tr *TestRunner) hydrateCapacityGroupsLocked(groups []TestGroup) []TestGroup {
+	if len(groups) == 0 {
+		return nil
+	}
+	hydrated := make([]TestGroup, len(groups))
+	for i := range groups {
+		hydrated[i] = groups[i]
+		if hydrated[i].script != nil {
+			continue
+		}
+		if script, ok := tr.scripts[hydrated[i].ScriptID]; ok {
+			hydrated[i].script = script.Script
+			if hydrated[i].Protocol == "" {
+				hydrated[i].Protocol = script.Protocol
+			}
+			if hydrated[i].ScriptName == "" {
+				hydrated[i].ScriptName = script.Name
+			}
+		}
+	}
+	return hydrated
 }
 
 func (tr *TestRunner) StopTest(id string) error {

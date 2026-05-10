@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useApi } from '../hooks/useApi'
-import { DashboardSystemSettings } from '../types'
+import { DashboardSystemSettings, HealthResponse } from '../types'
 
 const DEFAULT_SETTINGS: DashboardSystemSettings = {
   general: {
@@ -11,6 +11,19 @@ const DEFAULT_SETTINGS: DashboardSystemSettings = {
   thresholds: {
     max_error_rate_pct: undefined,
     max_p99_latency_ms: undefined,
+  },
+  capacity_planning: {
+    headroom_pct: 20,
+    generator: {
+      cpu_cores: 4,
+      memory_mb: 8192,
+      network_mbps: 1000,
+      max_vusers: 10000,
+    },
+    availability: {
+      source: 'configured',
+      configured_available_generators: 1,
+    },
   },
 }
 
@@ -40,12 +53,31 @@ function validateSettings(settings: DashboardSystemSettings): string[] {
   if (settings.thresholds.max_p99_latency_ms !== undefined && settings.thresholds.max_p99_latency_ms <= 0) {
     errors.push('Max P99 latency must be greater than 0 ms.')
   }
+  if (settings.capacity_planning.headroom_pct < 0 || settings.capacity_planning.headroom_pct >= 100) {
+    errors.push('Capacity planning headroom must be between 0 and 100%.')
+  }
+  if (settings.capacity_planning.generator.cpu_cores <= 0) {
+    errors.push('Generator CPU cores must be greater than 0.')
+  }
+  if (!Number.isInteger(settings.capacity_planning.generator.memory_mb) || settings.capacity_planning.generator.memory_mb < 1) {
+    errors.push('Generator memory must be an integer >= 1 MB.')
+  }
+  if (settings.capacity_planning.generator.network_mbps <= 0) {
+    errors.push('Generator network throughput must be greater than 0 Mbps.')
+  }
+  if (!Number.isInteger(settings.capacity_planning.generator.max_vusers) || settings.capacity_planning.generator.max_vusers < 1) {
+    errors.push('Generator max VUsers must be an integer >= 1.')
+  }
+  if (!Number.isInteger(settings.capacity_planning.availability.configured_available_generators) || settings.capacity_planning.availability.configured_available_generators < 1) {
+    errors.push('Configured available generators must be an integer >= 1.')
+  }
   return errors
 }
 
 export default function SettingsPage() {
   const api = useApi()
   const [settings, setSettings] = useState<DashboardSystemSettings>(DEFAULT_SETTINGS)
+  const [health, setHealth] = useState<HealthResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [saveMessage, setSaveMessage] = useState('')
   const [requestError, setRequestError] = useState('')
@@ -73,8 +105,32 @@ export default function SettingsPage() {
     }
   }, [api])
 
+  useEffect(() => {
+    let cancelled = false
+    const loadHealth = async () => {
+      try {
+        const response = await api.getHealth()
+        if (!cancelled) setHealth(response)
+      } catch {
+        if (!cancelled) setHealth(null)
+      }
+    }
+    loadHealth()
+    const interval = setInterval(loadHealth, 5000)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
+  }, [api])
+
   const validationErrors = useMemo(() => validateSettings(settings), [settings])
   const canSave = validationErrors.length === 0 && !loading
+  const availabilitySnapshot = health?.capacity_availability
+  const availabilitySourceLabel = availabilitySnapshot?.source === 'configured_plus_live'
+    ? availabilitySnapshot.live_available_generators !== undefined
+      ? 'Live snapshot + configured ceiling'
+      : 'Configured ceiling only'
+    : 'Configured inventory only'
 
   const updateGeneral = (key: keyof DashboardSystemSettings['general'], value: string) => {
     setSettings((prev) => ({
@@ -94,6 +150,51 @@ export default function SettingsPage() {
       thresholds: {
         ...prev.thresholds,
         [key]: parseOptionalNumber(value),
+      },
+    }))
+    setSaveMessage('')
+    setRequestError('')
+  }
+
+  const updateCapacityPlanning = (
+    key: keyof DashboardSystemSettings['capacity_planning'],
+    value: string,
+  ) => {
+    setSettings((prev) => ({
+      ...prev,
+      capacity_planning: {
+        ...prev.capacity_planning,
+        [key]: key === 'availability' || key === 'generator' ? prev.capacity_planning[key] : Number(value),
+      },
+    }))
+    setSaveMessage('')
+    setRequestError('')
+  }
+
+  const updateGenerator = (key: keyof DashboardSystemSettings['capacity_planning']['generator'], value: string) => {
+    setSettings((prev) => ({
+      ...prev,
+      capacity_planning: {
+        ...prev.capacity_planning,
+        generator: {
+          ...prev.capacity_planning.generator,
+          [key]: Math.max(0, Number(value) || 0),
+        },
+      },
+    }))
+    setSaveMessage('')
+    setRequestError('')
+  }
+
+  const updateAvailability = (key: keyof DashboardSystemSettings['capacity_planning']['availability'], value: string) => {
+    setSettings((prev) => ({
+      ...prev,
+      capacity_planning: {
+        ...prev.capacity_planning,
+        availability: {
+          ...prev.capacity_planning.availability,
+          [key]: key === 'source' ? value : Math.max(0, Number(value) || 0),
+        },
       },
     }))
     setSaveMessage('')
@@ -232,6 +333,147 @@ export default function SettingsPage() {
                 value={settings.thresholds.max_p99_latency_ms ?? ''}
                 onChange={(e) => updateThreshold('max_p99_latency_ms', e.target.value)}
                 placeholder="Not configured"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="settings-card">
+          <h3>Capacity Planning</h3>
+          <div className="settings-group">
+            <div className="settings-status-block">
+              <div className="settings-status-header">
+                <span className="settings-status-title">Current Availability Snapshot</span>
+                <span className={`settings-status-badge ${availabilitySnapshot ? 'ready' : 'unknown'}`}>
+                  {availabilitySnapshot ? 'Live status' : 'Unavailable'}
+                </span>
+              </div>
+              <div className="settings-status-grid">
+                <div className="settings-status-item">
+                  <span className="settings-status-label">Source</span>
+                  <strong>{availabilitySourceLabel}</strong>
+                </div>
+                <div className="settings-status-item">
+                  <span className="settings-status-label">Effective Available</span>
+                  <strong>{availabilitySnapshot?.effective_available_generators ?? settings.capacity_planning.availability.configured_available_generators}</strong>
+                </div>
+                <div className="settings-status-item">
+                  <span className="settings-status-label">Configured Ceiling</span>
+                  <strong>{availabilitySnapshot?.configured_available_generators ?? settings.capacity_planning.availability.configured_available_generators}</strong>
+                </div>
+                <div className="settings-status-item">
+                  <span className="settings-status-label">Live Snapshot</span>
+                  <strong>{availabilitySnapshot?.live_available_generators ?? 'Not provided'}</strong>
+                </div>
+              </div>
+              <p className="settings-status-copy">
+                Advisory calculations and pre-start checks use this snapshot when availability source is set to configured plus live.
+              </p>
+              {availabilitySnapshot?.warnings && availabilitySnapshot.warnings.length > 0 && (
+                <div className="settings-status-warnings" role="status">
+                  {availabilitySnapshot.warnings.map((warning) => (
+                    <p key={warning}>{warning}</p>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="setting-row">
+              <div className="setting-info">
+                <span className="setting-label">Headroom (%)</span>
+                <span className="setting-desc">Reserve spare generator capacity when estimating pod requirements</span>
+              </div>
+              <input
+                className="settings-input settings-input-number"
+                type="number"
+                min={0}
+                max={99}
+                step={1}
+                value={settings.capacity_planning.headroom_pct}
+                onChange={(e) => updateCapacityPlanning('headroom_pct', e.target.value)}
+              />
+            </div>
+            <div className="setting-row">
+              <div className="setting-info">
+                <span className="setting-label">Generator CPU (cores)</span>
+                <span className="setting-desc">Baseline CPU available per load generator pod or machine</span>
+              </div>
+              <input
+                className="settings-input settings-input-number"
+                type="number"
+                min={0.1}
+                step={0.1}
+                value={settings.capacity_planning.generator.cpu_cores}
+                onChange={(e) => updateGenerator('cpu_cores', e.target.value)}
+              />
+            </div>
+            <div className="setting-row">
+              <div className="setting-info">
+                <span className="setting-label">Generator Memory (MB)</span>
+                <span className="setting-desc">Baseline memory available per load generator pod or machine</span>
+              </div>
+              <input
+                className="settings-input settings-input-number"
+                type="number"
+                min={1}
+                step={256}
+                value={settings.capacity_planning.generator.memory_mb}
+                onChange={(e) => updateGenerator('memory_mb', e.target.value)}
+              />
+            </div>
+            <div className="setting-row">
+              <div className="setting-info">
+                <span className="setting-label">Generator Network (Mbps)</span>
+                <span className="setting-desc">Estimated network throughput budget per load generator</span>
+              </div>
+              <input
+                className="settings-input settings-input-number"
+                type="number"
+                min={1}
+                step={50}
+                value={settings.capacity_planning.generator.network_mbps}
+                onChange={(e) => updateGenerator('network_mbps', e.target.value)}
+              />
+            </div>
+            <div className="setting-row">
+              <div className="setting-info">
+                <span className="setting-label">Generator Max VUsers</span>
+                <span className="setting-desc">Safety ceiling for VUsers that one generator should carry before headroom</span>
+              </div>
+              <input
+                className="settings-input settings-input-number"
+                type="number"
+                min={1}
+                step={100}
+                value={settings.capacity_planning.generator.max_vusers}
+                onChange={(e) => updateGenerator('max_vusers', e.target.value)}
+              />
+            </div>
+            <div className="setting-row">
+              <div className="setting-info">
+                <span className="setting-label">Availability Source</span>
+                <span className="setting-desc">Choose whether capacity advice should stop at configured inventory or also honor the latest live generator snapshot</span>
+              </div>
+              <select
+                className="settings-input"
+                value={settings.capacity_planning.availability.source}
+                onChange={(e) => updateAvailability('source', e.target.value)}
+              >
+                <option value="configured">Configured generators only</option>
+                <option value="configured_plus_live">Configured plus live availability</option>
+              </select>
+            </div>
+            <div className="setting-row">
+              <div className="setting-info">
+                <span className="setting-label">Configured Available Generators</span>
+                <span className="setting-desc">Configured inventory ceiling. When live snapshots are enabled, the effective available count is the lower of this value and the latest runtime snapshot.</span>
+              </div>
+              <input
+                className="settings-input settings-input-number"
+                type="number"
+                min={1}
+                step={1}
+                value={settings.capacity_planning.availability.configured_available_generators}
+                onChange={(e) => updateAvailability('configured_available_generators', e.target.value)}
               />
             </div>
           </div>

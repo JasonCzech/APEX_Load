@@ -34,6 +34,15 @@ func TestSystemSettingsAPIAndPersistence(t *testing.T) {
 	if initial.General.MaxConcurrentTests != 10 {
 		t.Fatalf("initial max concurrent = %d, want 10", initial.General.MaxConcurrentTests)
 	}
+	if initial.CapacityPlanning.HeadroomPct != 20 {
+		t.Fatalf("initial headroom = %v, want 20", initial.CapacityPlanning.HeadroomPct)
+	}
+	if initial.CapacityPlanning.Generator.CPUCores != 4 {
+		t.Fatalf("initial generator cpu = %v, want 4", initial.CapacityPlanning.Generator.CPUCores)
+	}
+	if initial.CapacityPlanning.Availability.Source != capacityAvailabilityConfigured {
+		t.Fatalf("initial availability source = %q, want %q", initial.CapacityPlanning.Availability.Source, capacityAvailabilityConfigured)
+	}
 
 	maxErr := 1.5
 	maxP99 := 1800.0
@@ -46,6 +55,19 @@ func TestSystemSettingsAPIAndPersistence(t *testing.T) {
 		Thresholds: ThresholdSettings{
 			MaxErrorRatePct: &maxErr,
 			MaxP99LatencyMs: &maxP99,
+		},
+		CapacityPlanning: CapacityPlanningSettings{
+			HeadroomPct: 25,
+			Generator: GeneratorCapacitySettings{
+				CPUCores:    8,
+				MemoryMB:    16384,
+				NetworkMbps: 2500,
+				MaxVUsers:   18000,
+			},
+			Availability: AvailabilitySettings{
+				Source:                        capacityAvailabilityConfiguredPlusLive,
+				ConfiguredAvailableGenerators: 6,
+			},
 		},
 	}
 	body, _ := json.Marshal(update)
@@ -80,6 +102,15 @@ func TestSystemSettingsAPIAndPersistence(t *testing.T) {
 	if updated.Thresholds.MaxP99LatencyMs == nil || *updated.Thresholds.MaxP99LatencyMs != maxP99 {
 		t.Fatalf("max p99 latency = %#v, want %v", updated.Thresholds.MaxP99LatencyMs, maxP99)
 	}
+	if updated.CapacityPlanning.HeadroomPct != 25 {
+		t.Fatalf("headroom = %v, want 25", updated.CapacityPlanning.HeadroomPct)
+	}
+	if updated.CapacityPlanning.Generator.MemoryMB != 16384 {
+		t.Fatalf("generator memory = %d, want 16384", updated.CapacityPlanning.Generator.MemoryMB)
+	}
+	if updated.CapacityPlanning.Availability.ConfiguredAvailableGenerators != 6 {
+		t.Fatalf("configured available generators = %d, want 6", updated.CapacityPlanning.Availability.ConfiguredAvailableGenerators)
+	}
 
 	runner := NewTestRunner(10, NewHub(), store)
 	persisted := runner.GetSystemSettings()
@@ -88,6 +119,9 @@ func TestSystemSettingsAPIAndPersistence(t *testing.T) {
 	}
 	if persisted.General.MetricsIntervalSeconds != 2 {
 		t.Fatalf("persisted metrics interval = %d, want 2", persisted.General.MetricsIntervalSeconds)
+	}
+	if persisted.CapacityPlanning.Availability.Source != capacityAvailabilityConfiguredPlusLive {
+		t.Fatalf("persisted availability source = %q, want %q", persisted.CapacityPlanning.Availability.Source, capacityAvailabilityConfiguredPlusLive)
 	}
 }
 
@@ -110,6 +144,84 @@ func TestSystemSettingsValidation(t *testing.T) {
 	}
 }
 
+func TestSystemSettingsValidationRejectsInvalidCapacityPlanning(t *testing.T) {
+	err := validateSystemSettings(SystemSettings{
+		General: GeneralSettings{
+			APIEndpoint:            ":8080",
+			MaxConcurrentTests:     2,
+			MetricsIntervalSeconds: 1,
+		},
+		Thresholds: ThresholdSettings{},
+		CapacityPlanning: CapacityPlanningSettings{
+			HeadroomPct: 100,
+			Generator: GeneratorCapacitySettings{
+				CPUCores:    4,
+				MemoryMB:    8192,
+				NetworkMbps: 1000,
+				MaxVUsers:   10000,
+			},
+			Availability: AvailabilitySettings{
+				Source:                        capacityAvailabilityConfigured,
+				ConfiguredAvailableGenerators: 1,
+			},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected invalid headroom to fail validation")
+	}
+
+	_, err = json.Marshal(SystemSettings{})
+	if err != nil {
+		t.Fatalf("unexpected marshal error: %v", err)
+	}
+
+	err = validateSystemSettings(SystemSettings{
+		General: GeneralSettings{
+			APIEndpoint:            ":8080",
+			MaxConcurrentTests:     2,
+			MetricsIntervalSeconds: 1,
+		},
+		Thresholds: ThresholdSettings{},
+		CapacityPlanning: CapacityPlanningSettings{
+			HeadroomPct: 20,
+			Generator: GeneratorCapacitySettings{
+				CPUCores:    4,
+				MemoryMB:    8192,
+				NetworkMbps: 0,
+				MaxVUsers:   10000,
+			},
+			Availability: AvailabilitySettings{
+				Source:                        "invalid",
+				ConfiguredAvailableGenerators: 1,
+			},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected invalid capacity planning settings to fail validation")
+	}
+}
+
+func TestNormalizeLoadedSystemSettingsBackfillsCapacityPlanningDefaults(t *testing.T) {
+	normalized := normalizeLoadedSystemSettings(SystemSettings{
+		General: GeneralSettings{
+			APIEndpoint:            ":8080",
+			MaxConcurrentTests:     4,
+			MetricsIntervalSeconds: 2,
+		},
+		Thresholds: ThresholdSettings{},
+	}, 4)
+
+	if normalized.CapacityPlanning.HeadroomPct != 20 {
+		t.Fatalf("normalized headroom = %v, want 20", normalized.CapacityPlanning.HeadroomPct)
+	}
+	if normalized.CapacityPlanning.Generator.MaxVUsers != 10000 {
+		t.Fatalf("normalized max vusers = %d, want 10000", normalized.CapacityPlanning.Generator.MaxVUsers)
+	}
+	if normalized.CapacityPlanning.Availability.Source != capacityAvailabilityConfigured {
+		t.Fatalf("normalized availability source = %q, want %q", normalized.CapacityPlanning.Availability.Source, capacityAvailabilityConfigured)
+	}
+}
+
 func TestStartTestRespectsConfiguredMaxConcurrent(t *testing.T) {
 	runner := NewTestRunner(10, NewHub(), nil)
 
@@ -120,6 +232,19 @@ func TestStartTestRespectsConfiguredMaxConcurrent(t *testing.T) {
 			MetricsIntervalSeconds: 1,
 		},
 		Thresholds: ThresholdSettings{},
+		CapacityPlanning: CapacityPlanningSettings{
+			HeadroomPct: 20,
+			Generator: GeneratorCapacitySettings{
+				CPUCores:    4,
+				MemoryMB:    8192,
+				NetworkMbps: 1000,
+				MaxVUsers:   10000,
+			},
+			Availability: AvailabilitySettings{
+				Source:                        capacityAvailabilityConfigured,
+				ConfiguredAvailableGenerators: 1,
+			},
+		},
 	})
 	if err != nil {
 		t.Fatalf("UpdateSystemSettings returned error: %v", err)

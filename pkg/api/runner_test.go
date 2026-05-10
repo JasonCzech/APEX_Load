@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -272,6 +273,141 @@ func TestStartTestFailsWhenScriptShakeoutFails(t *testing.T) {
 	}
 }
 
+func TestStartTestBlocksWhenCapacityShortfallRequiresOverride(t *testing.T) {
+	hub := NewHub()
+	runner := NewTestRunner(2, hub, nil)
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-capacity",
+		Name:     "Capacity Script",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Actions:  []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+
+	settings := runner.GetSystemSettings()
+	settings.CapacityPlanning.Availability.ConfiguredAvailableGenerators = 1
+	settings.CapacityPlanning.Generator.MaxVUsers = 10000
+	if _, err := runner.UpdateSystemSettings(settings); err != nil {
+		t.Fatalf("UpdateSystemSettings returned error: %v", err)
+	}
+
+	test, err := runner.CreateTest(CreateTestRequest{
+		Name:     "Blocked Scenario",
+		Duration: "30s",
+		ScriptID: "script-capacity",
+		VUsers:   15000,
+	})
+	if err != nil {
+		t.Fatalf("CreateTest returned error: %v", err)
+	}
+
+	err = runner.StartTest(test.ID)
+	if err == nil {
+		t.Fatal("expected StartTest to fail when capacity shortfall requires override")
+	}
+	var capacityErr *CapacityShortfallError
+	if !errors.As(err, &capacityErr) {
+		t.Fatalf("expected CapacityShortfallError, got %T", err)
+	}
+	if capacityErr.Advisory == nil || !capacityErr.Advisory.RequiresOverride {
+		t.Fatalf("expected advisory requiring override, got %#v", capacityErr.Advisory)
+	}
+	queued, ok := runner.GetTest(test.ID)
+	if !ok {
+		t.Fatalf("expected queued test %s to remain in runner", test.ID)
+	}
+	if queued.Status != "QUEUED" {
+		t.Fatalf("test status = %s, want QUEUED", queued.Status)
+	}
+}
+
+func TestStartTestAllowsOverrideOnCapacityShortfall(t *testing.T) {
+	hub := NewHub()
+	runner := NewTestRunner(2, hub, nil)
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-capacity-override",
+		Name:     "Capacity Override Script",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Actions:  []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+
+	settings := runner.GetSystemSettings()
+	settings.CapacityPlanning.Availability.ConfiguredAvailableGenerators = 1
+	settings.CapacityPlanning.Generator.MaxVUsers = 10000
+	if _, err := runner.UpdateSystemSettings(settings); err != nil {
+		t.Fatalf("UpdateSystemSettings returned error: %v", err)
+	}
+
+	test, err := runner.CreateTest(CreateTestRequest{
+		Name:     "Override Scenario",
+		Duration: "30s",
+		ScriptID: "script-capacity-override",
+		VUsers:   15000,
+	})
+	if err != nil {
+		t.Fatalf("CreateTest returned error: %v", err)
+	}
+
+	if err := runner.StartTestWithOptions(test.ID, StartTestOptions{OverrideCapacityShortfall: true}); err != nil {
+		t.Fatalf("StartTestWithOptions returned error: %v", err)
+	}
+
+	started := waitForStatusAny(t, runner, test.ID, 5*time.Second, "INITIALIZING", "RUNNING", "COMPLETE")
+	if started.Status == "QUEUED" {
+		t.Fatalf("expected override start to leave QUEUED state, got %s", started.Status)
+	}
+}
+
+func TestGetTestRefreshesCapacityAdvisoryUsingLiveAvailability(t *testing.T) {
+	hub := NewHub()
+	runner := NewTestRunner(2, hub, nil)
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-refresh-capacity",
+		Name:     "Refresh Capacity Script",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Actions:  []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+
+	settings := runner.GetSystemSettings()
+	settings.CapacityPlanning.Availability.Source = capacityAvailabilityConfiguredPlusLive
+	settings.CapacityPlanning.Availability.ConfiguredAvailableGenerators = 5
+	settings.CapacityPlanning.Generator.MaxVUsers = 10000
+	if _, err := runner.UpdateSystemSettings(settings); err != nil {
+		t.Fatalf("UpdateSystemSettings returned error: %v", err)
+	}
+
+	t.Setenv("STORMRUNNER_LIVE_AVAILABLE_GENERATORS", "5")
+	test, err := runner.CreateTest(CreateTestRequest{
+		Name:     "Refresh Advisory Scenario",
+		Duration: "30s",
+		ScriptID: "script-refresh-capacity",
+		VUsers:   15000,
+	})
+	if err != nil {
+		t.Fatalf("CreateTest returned error: %v", err)
+	}
+	if test.CapacityAdvisory == nil || test.CapacityAdvisory.AvailableGenerators != 5 {
+		t.Fatalf("initial available generators = %#v, want 5", test.CapacityAdvisory)
+	}
+
+	t.Setenv("STORMRUNNER_LIVE_AVAILABLE_GENERATORS", "1")
+	refreshed, ok := runner.GetTest(test.ID)
+	if !ok {
+		t.Fatalf("expected test %s", test.ID)
+	}
+	if refreshed.CapacityAdvisory == nil {
+		t.Fatal("expected refreshed advisory")
+	}
+	if refreshed.CapacityAdvisory.AvailableGenerators != 1 {
+		t.Fatalf("refreshed available generators = %d, want 1", refreshed.CapacityAdvisory.AvailableGenerators)
+	}
+	if !refreshed.CapacityAdvisory.RequiresOverride {
+		t.Fatal("expected refreshed advisory to require override after live capacity shrank")
+	}
+}
+
 func TestRunTestCreatesArchiveBundle(t *testing.T) {
 	archiveDir := t.TempDir()
 	t.Setenv("STORMRUNNER_ARCHIVE_DIR", archiveDir)
@@ -419,5 +555,26 @@ func waitForTestStatus(t *testing.T, runner *TestRunner, testID string, want str
 
 	test, _ := runner.GetTest(testID)
 	t.Fatalf("timed out waiting for test %s to reach %s, current status %s", testID, want, test.Status)
+	return nil
+}
+
+func waitForStatusAny(t *testing.T, runner *TestRunner, testID string, timeout time.Duration, want ...string) *ManagedTest {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		test, ok := runner.GetTest(testID)
+		if !ok {
+			t.Fatalf("test %s not found", testID)
+		}
+		for _, status := range want {
+			if test.Status == status {
+				return test
+			}
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+
+	test, _ := runner.GetTest(testID)
+	t.Fatalf("timed out waiting for test %s to reach one of %v, current status %s", testID, want, test.Status)
 	return nil
 }

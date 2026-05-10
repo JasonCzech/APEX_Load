@@ -215,6 +215,129 @@
   min-width: 0;
 }
 
+.capacity-advisory-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02));
+}
+
+.capacity-advisory-card.ready {
+  border-color: rgba(34, 197, 94, 0.2);
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.1), rgba(255, 255, 255, 0.02));
+}
+
+.capacity-advisory-card.warning {
+  border-color: rgba(245, 158, 11, 0.26);
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.12), rgba(255, 255, 255, 0.02));
+}
+
+.capacity-advisory-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.capacity-advisory-title {
+  margin: 0;
+  font-size: 16px;
+}
+
+.capacity-advisory-subtitle {
+  margin: 6px 0 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.capacity-advisory-badge {
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.capacity-advisory-badge.ready {
+  background: rgba(34, 197, 94, 0.16);
+  color: var(--success);
+}
+
+.capacity-advisory-badge.warning {
+  background: rgba(245, 158, 11, 0.16);
+  color: var(--warning);
+}
+
+.capacity-advisory-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+.capacity-advisory-grid.compact {
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+}
+
+.capacity-advisory-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.capacity-advisory-metric.compact {
+  padding: 10px 12px;
+}
+
+.capacity-advisory-label {
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.capacity-advisory-value {
+  color: var(--text-primary);
+  font-size: 18px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.capacity-advisory-value.text {
+  font-size: 15px;
+  line-height: 1.4;
+}
+
+.capacity-advisory-detail {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.capacity-advisory-warnings {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px dashed rgba(255, 255, 255, 0.08);
+}
+
+.capacity-advisory-warnings p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .scenario-preview-caption {
   margin-top: 8px;
   color: var(--text-muted);
@@ -527,11 +650,18 @@
 
 .scenario-alert-banner {
   display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
   gap: 16px;
   padding: 18px 20px;
   border-radius: var(--radius);
   background: linear-gradient(135deg, rgba(239, 68, 68, 0.16), rgba(127, 29, 29, 0.08));
   border: 1px solid rgba(239, 68, 68, 0.28);
+}
+
+.scenario-alert-banner.scenario-alert-warning {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.16), rgba(120, 53, 15, 0.08));
+  border: 1px solid rgba(245, 158, 11, 0.28);
 }
 
 .scenario-alert-title {
@@ -540,10 +670,35 @@
   color: #ffd7d7;
 }
 
+.scenario-alert-warning .scenario-alert-title {
+  color: #ffe7b8;
+}
+
 .scenario-alert-message {
   margin: 0;
   color: var(--text-primary);
   line-height: 1.5;
+}
+
+.scenario-alert-message.secondary {
+  margin-top: 8px;
+  color: var(--text-muted);
+}
+
+.scenario-alert-actions {
+  display: flex;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.btn-warning {
+  background: var(--warning);
+  color: #1a1206;
+  border: none;
+}
+
+.btn-warning:hover {
+  opacity: 0.92;
 }
 
 .btn-expand {

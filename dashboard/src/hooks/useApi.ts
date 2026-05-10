@@ -2,6 +2,20 @@ import { useCallback, useMemo } from 'react'
 
 const BASE = '/api/v1'
 
+export class ApiError extends Error {
+  status: number
+  code?: string
+  payload?: any
+
+  constructor(message: string, status: number, payload?: any) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+    this.code = payload?.code
+    this.payload = payload
+  }
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -9,7 +23,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   })
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }))
-    throw new Error(body.error || res.statusText)
+    throw new ApiError(body.error || res.statusText, res.status, body)
   }
   return res.json()
 }
@@ -25,8 +39,18 @@ export function useApi() {
     [],
   )
 
+  const estimateTest = useCallback(
+    (data: any) =>
+      request<any>('/tests/estimate', { method: 'POST', body: JSON.stringify(data) }),
+    [],
+  )
+
   const startTest = useCallback(
-    (id: string) => request<any>(`/tests/${id}/start`, { method: 'POST' }),
+    (id: string, options?: { override_capacity_shortfall?: boolean }) =>
+      request<any>(`/tests/${id}/start`, {
+        method: 'POST',
+        body: options ? JSON.stringify(options) : undefined,
+      }),
     [],
   )
 
@@ -229,6 +253,7 @@ export function useApi() {
       listTests,
       getTest,
       createTest,
+      estimateTest,
       startTest,
       stopTest,
       abortTest,
@@ -266,6 +291,7 @@ export function useApi() {
       listTests,
       getTest,
       createTest,
+      estimateTest,
       startTest,
       stopTest,
       abortTest,

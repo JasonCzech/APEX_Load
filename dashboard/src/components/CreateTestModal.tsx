@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useApi } from '../hooks/useApi'
-import { GoalConfig, ScenarioDraft, ScenarioMode, StoredScript } from '../types'
+import { DraftCapacityEstimate, GoalConfig, ScenarioDraft, ScenarioMode, StoredScript } from '../types'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import './CreateTestModal.css'
 
@@ -45,6 +45,25 @@ interface Props {
   initialScenario?: ScenarioDraft
 }
 
+function formatDraftAvailabilitySource(source?: 'configured' | 'configured_plus_live', hasLive?: boolean): string {
+  if (source === 'configured_plus_live') {
+    return hasLive ? 'Live snapshot + configured ceiling' : 'Configured ceiling'
+  }
+  return 'Configured inventory'
+}
+
+function formatDraftAvailabilityDetail(estimate: DraftCapacityEstimate): string {
+  const advisory = estimate.capacity_advisory
+  if (!advisory) return 'Configured inventory only'
+  if (advisory.availability_source === 'configured_plus_live') {
+    if (advisory.live_available_generators !== undefined) {
+      return `${advisory.live_available_generators} live / ${advisory.configured_available_generators || advisory.available_generators} configured`
+    }
+    return `${advisory.configured_available_generators || advisory.available_generators} configured ceiling`
+  }
+  return `${advisory.configured_available_generators || advisory.available_generators} configured`
+}
+
 const buildDefaultGroup = (scripts: StoredScript[]): GroupEntry => ({
   name: '',
   scriptId: scripts[0]?.id || '',
@@ -82,6 +101,9 @@ export default function CreateTestModal({ scripts, onClose, onCreated, initialSc
     auto_transactions: initialScenario?.runtimeSettings.auto_transactions || '',
     snapshot_on_error: initialScenario?.runtimeSettings.snapshot_on_error || false,
   })
+  const [draftEstimate, setDraftEstimate] = useState<DraftCapacityEstimate | null>(null)
+  const [estimateLoading, setEstimateLoading] = useState(false)
+  const [estimateError, setEstimateError] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -166,56 +188,99 @@ export default function CreateTestModal({ scripts, onClose, onCreated, initialSc
 
   const GROUP_COLORS = ['#00a3ff', '#00ff94', '#ff006e', '#ffbe0b', '#8338ec', '#fb5607']
 
+  const buildPayload = () => {
+    const payload: any = { name: name || undefined, duration }
+    payload.scenario_mode = scenarioMode
+    payload.script_shakeout = scriptShakeout
+    payload.resource_baseline = resourceBaseline
+
+    if (groups.length === 1 && !groups[0].name) {
+      payload.script_id = groups[0].scriptId
+      payload.vusers = groups[0].vusers
+      payload.ramp_up = groups[0].rampUp || undefined
+      payload.ramp_down = groups[0].rampDown || undefined
+      payload.initialization = groups[0].initialization
+    } else {
+      payload.groups = groups.map((g) => ({
+        name: g.name || undefined,
+        script_id: g.scriptId,
+        vusers: g.vusers,
+        ramp_up: g.rampUp || undefined,
+        ramp_down: g.rampDown || undefined,
+        initialization: g.initialization,
+      }))
+    }
+
+    if (scenarioMode === 'goal_oriented') {
+      payload.goal_config = {
+        target_average_tps: goalConfig.target_average_tps || undefined,
+        p95_latency_ms: goalConfig.p95_latency_ms || undefined,
+        max_error_pct: goalConfig.max_error_pct || undefined,
+        min_vusers: goalConfig.min_vusers || undefined,
+        max_vusers: goalConfig.max_vusers || undefined,
+        stop_on_sla_breach: goalConfig.stop_on_sla_breach || undefined,
+        sla_breach_window: goalConfig.sla_breach_window || undefined,
+      }
+    }
+
+    if (runtimeSettings.iterations || runtimeSettings.log_level || runtimeSettings.auto_transactions || runtimeSettings.snapshot_on_error) {
+      payload.runtime_settings = {
+        iterations: runtimeSettings.iterations ? Number(runtimeSettings.iterations) : undefined,
+        log_level: runtimeSettings.log_level || undefined,
+        auto_transactions: runtimeSettings.auto_transactions || undefined,
+        error_handling: runtimeSettings.snapshot_on_error ? { snapshot_on_error: true } : undefined,
+      }
+    }
+
+    return payload
+  }
+
+  useEffect(() => {
+    const canEstimate = Boolean(duration.trim()) && groups.every((group) => group.scriptId)
+    if (!canEstimate) {
+      setDraftEstimate(null)
+      setEstimateError('')
+      setEstimateLoading(false)
+      return
+    }
+
+    let cancelled = false
+    setEstimateLoading(true)
+    setEstimateError('')
+    const timer = window.setTimeout(async () => {
+      try {
+        const estimate = await api.estimateTest(buildPayload())
+        if (!cancelled) {
+          setDraftEstimate(estimate)
+        }
+      } catch (err: any) {
+        if (!cancelled) {
+          setDraftEstimate(null)
+          setEstimateError(err.message || 'Unable to estimate load generator requirements')
+        }
+      } finally {
+        if (!cancelled) {
+          setEstimateLoading(false)
+        }
+      }
+    }, 300)
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [api, duration, goalConfig, groups, name, resourceBaseline, runtimeSettings, scenarioMode, scriptShakeout])
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
     setLoading(true)
     try {
-      const payload: any = { name: name || undefined, duration }
-      payload.scenario_mode = scenarioMode
-      payload.script_shakeout = scriptShakeout
-      payload.resource_baseline = resourceBaseline
-
-      if (groups.length === 1 && !groups[0].name) {
-        // Single group — use shorthand
-        payload.script_id = groups[0].scriptId
-        payload.vusers = groups[0].vusers
-        payload.ramp_up = groups[0].rampUp || undefined
-        payload.ramp_down = groups[0].rampDown || undefined
-        payload.initialization = groups[0].initialization
-      } else {
-        payload.groups = groups.map((g) => ({
-          name: g.name || undefined,
-          script_id: g.scriptId,
-          vusers: g.vusers,
-          ramp_up: g.rampUp || undefined,
-          ramp_down: g.rampDown || undefined,
-          initialization: g.initialization,
-        }))
-      }
+      const payload = buildPayload()
 
       if (scenarioMode === 'goal_oriented') {
         if (!hasGoalModeConfig) {
           throw new Error('Goal-oriented scenarios require at least one goal or guardrail setting')
-        }
-        payload.goal_config = {
-          target_average_tps: goalConfig.target_average_tps || undefined,
-          p95_latency_ms: goalConfig.p95_latency_ms || undefined,
-          max_error_pct: goalConfig.max_error_pct || undefined,
-          min_vusers: goalConfig.min_vusers || undefined,
-          max_vusers: goalConfig.max_vusers || undefined,
-          stop_on_sla_breach: goalConfig.stop_on_sla_breach || undefined,
-          sla_breach_window: goalConfig.sla_breach_window || undefined,
-        }
-      }
-
-      // Add runtime overrides if any are set
-      if (runtimeSettings.iterations || runtimeSettings.log_level || runtimeSettings.auto_transactions || runtimeSettings.snapshot_on_error) {
-        payload.runtime_settings = {
-          iterations: runtimeSettings.iterations ? Number(runtimeSettings.iterations) : undefined,
-          log_level: runtimeSettings.log_level || undefined,
-          auto_transactions: runtimeSettings.auto_transactions || undefined,
-          error_handling: runtimeSettings.snapshot_on_error ? { snapshot_on_error: true } : undefined,
         }
       }
 
@@ -337,6 +402,50 @@ export default function CreateTestModal({ scripts, onClose, onCreated, initialSc
                   </AreaChart>
                 </ResponsiveContainer>
                 <div className="chart-label">Scenario Load Profile</div>
+              </div>
+              <div className={`draft-capacity-card ${draftEstimate?.capacity_advisory?.requires_override ? 'warning' : 'ready'}`}>
+                <div className="draft-capacity-header">
+                  <h4>Draft Capacity Estimate</h4>
+                  {estimateLoading && <span className="draft-capacity-status">Refreshing...</span>}
+                </div>
+                {estimateError ? (
+                  <p className="draft-capacity-error">{estimateError}</p>
+                ) : draftEstimate?.capacity_advisory ? (
+                  <>
+                    <div className="draft-capacity-metrics">
+                      <div className="draft-capacity-metric">
+                        <span className="draft-capacity-label">Recommended</span>
+                        <strong>{draftEstimate.capacity_advisory.recommended_generators}</strong>
+                        <span>{draftEstimate.capacity_advisory.recommended_generators === 1 ? 'generator' : 'generators'}</span>
+                      </div>
+                      <div className="draft-capacity-metric">
+                        <span className="draft-capacity-label">Available</span>
+                        <strong>{draftEstimate.capacity_advisory.available_generators}</strong>
+                        <span>{formatDraftAvailabilityDetail(draftEstimate)}</span>
+                      </div>
+                      <div className="draft-capacity-metric">
+                        <span className="draft-capacity-label">Bottleneck</span>
+                        <strong>{draftEstimate.capacity_advisory.bottleneck}</strong>
+                        <span>{draftEstimate.capacity_advisory.headroom_pct}% headroom</span>
+                      </div>
+                    </div>
+                    <p className="draft-capacity-copy secondary">
+                      Availability source: {formatDraftAvailabilitySource(draftEstimate.capacity_advisory.availability_source, draftEstimate.capacity_advisory.live_available_generators !== undefined)}. Snapshot: {formatDraftAvailabilityDetail(draftEstimate)}.
+                    </p>
+                    <p className="draft-capacity-copy">
+                      Estimated total load: {draftEstimate.capacity_advisory.estimated_total.cpu_cores.toFixed(2)} CPU, {Math.round(draftEstimate.capacity_advisory.estimated_total.memory_mb)} MB memory, {Math.round(draftEstimate.capacity_advisory.estimated_total.network_mbps)} Mbps network.
+                    </p>
+                    {draftEstimate.capacity_advisory.warnings && draftEstimate.capacity_advisory.warnings.length > 0 && (
+                      <div className="draft-capacity-warnings">
+                        {draftEstimate.capacity_advisory.warnings.map((warning) => (
+                          <p key={warning}>{warning}</p>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <p className="draft-capacity-copy">Enter a complete scenario to estimate the required load generators.</p>
+                )}
               </div>
             </div>
           </div>

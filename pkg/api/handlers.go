@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -25,6 +26,22 @@ func (s *Server) handleCreateTest(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, test)
 }
 
+func (s *Server) handleEstimateTest(w http.ResponseWriter, r *http.Request) {
+	var req CreateTestRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+
+	estimate, err := s.runner.EstimateDraftCapacity(req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, estimate)
+}
+
 func (s *Server) handleListTests(w http.ResponseWriter, r *http.Request) {
 	tests := s.runner.ListTests()
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -45,7 +62,25 @@ func (s *Server) handleGetTest(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleStartTest(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if err := s.runner.StartTest(id); err != nil {
+	var req StartTestOptions
+	if r.Body != nil && r.ContentLength != 0 {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+			return
+		}
+	}
+	if err := s.runner.StartTestWithOptions(id, req); err != nil {
+		var capacityErr *CapacityShortfallError
+		if errors.As(err, &capacityErr) {
+			writeJSON(w, http.StatusConflict, map[string]any{
+				"error":              capacityErr.Error(),
+				"code":               "capacity_shortfall",
+				"test_id":            id,
+				"capacity_advisory":  capacityErr.Advisory,
+				"override_available": true,
+			})
+			return
+		}
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -168,8 +203,8 @@ func (s *Server) handleValidateScript(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleScaleVUsers(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	var req struct {
-		Group       string `json:"group"`
-		TargetVUsers int   `json:"target_vusers"`
+		Group        string `json:"group"`
+		TargetVUsers int    `json:"target_vusers"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
@@ -230,11 +265,20 @@ func (s *Server) handleAdjustDuration(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleHealthCheck(w http.ResponseWriter, r *http.Request) {
+	settings := s.runner.GetSystemSettings()
+	availability := resolveCapacityAvailability(settings)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"status":      "healthy",
-		"version":     "0.1.0",
-		"ws_clients":  s.hub.ClientCount(),
-		"test_count":  len(s.runner.tests),
+		"status":     "healthy",
+		"version":    "0.1.0",
+		"ws_clients": s.hub.ClientCount(),
+		"test_count": len(s.runner.tests),
+		"capacity_availability": map[string]any{
+			"source":                          availability.Source,
+			"configured_available_generators": availability.ConfiguredAvailableGenerators,
+			"effective_available_generators":  availability.EffectiveAvailableGenerators,
+			"live_available_generators":       availability.LiveAvailableGenerators,
+			"warnings":                        availability.Warnings,
+		},
 	})
 }
 
