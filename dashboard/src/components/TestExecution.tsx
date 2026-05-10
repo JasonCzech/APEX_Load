@@ -16,6 +16,8 @@ import {
 } from '../types'
 import StatusBadge from './StatusBadge'
 import CreateTestModal from './CreateTestModal'
+import TestExecutionHeader from './TestExecutionHeader'
+import TestExecutionLiveControls from './TestExecutionLiveControls'
 import { parseDurationToSeconds, formatTimeLong, formatTimeCompact } from '../utils/timeUtils'
 import { downloadBlob } from '../utils/fileUtils'
 import './TestExecution.css'
@@ -776,220 +778,37 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
 
   return (
     <div className="execution">
-      <div className="exec-header">
-        <button className="btn btn-secondary" onClick={onBack}>Back</button>
-        <div className="exec-title-area">
-          <h2>{test.name}</h2>
-          <div className="exec-meta">
-            <StatusBadge status={test.status} />
-            <span className="meta-item">{test.total_vusers} VUsers</span>
-            <span className="meta-item">{test.duration}</span>
-            {isMultiGroup && (
-              <span className="meta-item group-count">{test.groups.length} groups</span>
-            )}
-          </div>
-        </div>
-        <div className="exec-actions">
-          <div className="time-range-selector">
-            <button className={`btn-chip ${timeRange === '3m' ? 'active' : ''}`} onClick={() => setTimeRange('3m')}>3m</button>
-            <button className={`btn-chip ${timeRange === '10m' ? 'active' : ''}`} onClick={() => setTimeRange('10m')}>10m</button>
-            <button className={`btn-chip ${timeRange === 'all' ? 'active' : ''}`} onClick={() => setTimeRange('all')}>All</button>
-            {timeRange === 'custom' && (
-              <button className="btn-chip active zoom-reset" onClick={() => setTimeRange('all')}>Reset Zoom</button>
-            )}
-          </div>
-          {test.status === 'QUEUED' && (
-            <>
-              <button className="btn btn-secondary" onClick={() => setShowScenarioEditor(true)}>
-                Edit Scenario
-              </button>
-              <button className="btn btn-success" onClick={() => handleStart()}>
-                Start
-              </button>
-            </>
-          )}
-          {isRunning && (
-            <>
-              <button className="btn btn-secondary" onClick={() => api.stopTest(testId)}>
-                Stop
-              </button>
-              <button className="btn btn-danger" onClick={() => api.abortTest(testId)}>
-                Abort
-              </button>
-            </>
-          )}
-          {!isRunning && hasArchive && (
-            <button className="btn btn-secondary" onClick={handleDownloadArchive}>
-              Download Archive
-            </button>
-          )}
-        </div>
-      </div>
+      <TestExecutionHeader
+        test={test}
+        isMultiGroup={isMultiGroup}
+        timeRange={timeRange}
+        onTimeRangeChange={setTimeRange}
+        onBack={onBack}
+        onOpenScenarioEditor={() => setShowScenarioEditor(true)}
+        onStart={() => handleStart()}
+        isRunning={isRunning}
+        onStop={() => api.stopTest(testId)}
+        onAbort={() => api.abortTest(testId)}
+        hasArchive={hasArchive}
+        onDownloadArchive={handleDownloadArchive}
+      />
 
       {/* Live Controls Panel */}
       {isRunning && (
-        <div className="live-controls-section">
-          <button
-            className="btn btn-secondary live-controls-toggle"
-            onClick={() => setShowControls(!showControls)}
-          >
-            {showControls ? 'Hide Controls' : 'Live Controls'}
-          </button>
-          {showControls && (
-            <div className="live-controls-panel">
-              <div className="live-controls-layout">
-                <div className="control-group control-group-form">
-                  <h4 className="control-title">VUser Scaling</h4>
-                  {(test?.groups || []).map((g: any) => (
-                    <div key={g.name} className="vuser-control-row">
-                      <span className="control-label">{g.name}</span>
-                      <span className="control-current">Current: {g.vusers}</span>
-                      <input
-                        type="range"
-                        className="vuser-slider"
-                        min={0}
-                        max={Math.max(g.vusers * 3, 100)}
-                        value={vuserTargets[g.name] ?? g.vusers}
-                        onChange={e => setVuserTargets(prev => ({ ...prev, [g.name]: parseInt(e.target.value) }))}
-                      />
-                      <input
-                        type="number"
-                        className="vuser-input"
-                        min={0}
-                        value={vuserTargets[g.name] ?? g.vusers}
-                        onChange={e => setVuserTargets(prev => ({ ...prev, [g.name]: parseInt(e.target.value) || 0 }))}
-                      />
-                      <button
-                        className="btn btn-sm btn-accent"
-                        onClick={() => handleScaleVUsers(g.name)}
-                        disabled={(vuserTargets[g.name] ?? g.vusers) === g.vusers}
-                      >
-                        Apply
-                      </button>
-                    </div>
-                  ))}
-
-                  <div className="control-group control-group-nested">
-                    <h4 className="control-title">Duration</h4>
-                    <div className="duration-control-row">
-                      <span className="control-label">Target</span>
-                      <input
-                        type="text"
-                        className="duration-input"
-                        placeholder="e.g. 10m, 1h30m"
-                        value={durationInput}
-                        onChange={e => setDurationInput(e.target.value)}
-                      />
-                      <div className="duration-quick-btns">
-                        <button className="btn btn-sm btn-secondary" onClick={() => setDurationInput('5m')}>5m</button>
-                        <button className="btn btn-sm btn-secondary" onClick={() => setDurationInput('10m')}>10m</button>
-                        <button className="btn btn-sm btn-secondary" onClick={() => setDurationInput('30m')}>30m</button>
-                        <button className="btn btn-sm btn-secondary" onClick={() => setDurationInput('1h')}>1h</button>
-                      </div>
-                      <button className="btn btn-sm btn-accent" onClick={handleAdjustDuration}>
-                        Apply
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="control-group control-group-preview">
-                  <div className="preview-header-row">
-                    <div>
-                      <h4 className="control-title">Projected Model</h4>
-                      <p className="control-preview-note">Preview uses the values currently entered on the left and shows the load shape from now until the adjusted stop time.</p>
-                    </div>
-                    {liveControlPreview.hasPendingChanges && (
-                      <span className="preview-pending-badge">Pending edits</span>
-                    )}
-                  </div>
-
-                  <div className="preview-metrics">
-                    <div className="preview-metric-card">
-                      <span className="preview-metric-label">Now</span>
-                      <span className="preview-metric-value">{liveControlPreview.currentTotal}</span>
-                      <span className="preview-metric-detail">active VUsers</span>
-                    </div>
-                    <div className="preview-metric-card">
-                      <span className="preview-metric-label">After Apply</span>
-                      <span className="preview-metric-value">{liveControlPreview.projectedTotal}</span>
-                      <span className="preview-metric-detail">projected VUsers</span>
-                    </div>
-                    <div className="preview-metric-card">
-                      <span className="preview-metric-label">Remaining</span>
-                      <span className="preview-metric-value">{formatTimeLong(liveControlPreview.remainingSeconds)}</span>
-                      <span className="preview-metric-detail">to stop</span>
-                    </div>
-                  </div>
-
-                  <div className="control-preview-chart">
-                    <ResponsiveContainer width="100%" height={220}>
-                      <AreaChart data={liveControlPreview.points} margin={{ top: 10, right: 12, left: -18, bottom: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                        <XAxis
-                          dataKey="second"
-                          stroke="var(--text-muted)"
-                          fontSize={11}
-                          tickLine={false}
-                          tickFormatter={(value) => formatTimeLong(Number(value))}
-                        />
-                        <YAxis
-                          stroke="var(--text-muted)"
-                          fontSize={11}
-                          tickLine={false}
-                          allowDecimals={false}
-                        />
-                        <Tooltip
-                          labelFormatter={(value) => `T+${formatTimeLong(Number(value))}`}
-                          contentStyle={{ background: 'rgba(33, 36, 47, 0.92)', border: '1px solid var(--border)', borderRadius: 10 }}
-                          formatter={(value: number, name: string) => [value, name === 'total' ? 'Total' : name]}
-                        />
-                        <Legend verticalAlign="top" height={28} />
-                        {(test?.groups || []).map((group, index) => (
-                          <Area
-                            key={group.name}
-                            type="stepAfter"
-                            dataKey={`group${index}`}
-                            name={group.name}
-                            stackId="projected"
-                            stroke={GROUP_COLORS[index % GROUP_COLORS.length]}
-                            fill={GROUP_COLORS[index % GROUP_COLORS.length]}
-                            fillOpacity={0.3}
-                            isAnimationActive={false}
-                          />
-                        ))}
-                        <Line
-                          type="stepAfter"
-                          dataKey="total"
-                          name="Total"
-                          stroke="var(--text-primary)"
-                          strokeWidth={2}
-                          dot={false}
-                          isAnimationActive={false}
-                        />
-                        <ReferenceArea
-                          x1={0}
-                          x2={Math.max(0, Math.min(liveControlPreview.points[1]?.second ?? 0, liveControlPreview.points[2]?.second ?? 0))}
-                          fill="var(--accent)"
-                          fillOpacity={0.06}
-                          strokeOpacity={0}
-                        />
-                      </AreaChart>
-                    </ResponsiveContainer>
-                    <div className="control-preview-caption">
-                      The profile steps from the current live load to the entered targets, then holds until the projected end of the run.
-                    </div>
-                  </div>
-                </div>
-              </div>
-              {controlFeedback && (
-                <div className={`control-feedback ${controlFeedback.startsWith('Error') ? 'error' : 'success'}`}>
-                  {controlFeedback}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
+        <TestExecutionLiveControls
+          showControls={showControls}
+          onToggleControls={() => setShowControls(!showControls)}
+          test={test}
+          vuserTargets={vuserTargets}
+          onVuserTargetChange={(groupName, value) => setVuserTargets((prev) => ({ ...prev, [groupName]: value }))}
+          onScaleVUsers={handleScaleVUsers}
+          durationInput={durationInput}
+          onDurationInputChange={setDurationInput}
+          onAdjustDuration={handleAdjustDuration}
+          liveControlPreview={liveControlPreview}
+          controlFeedback={controlFeedback}
+          groupColors={GROUP_COLORS}
+        />
       )}
 
       {/* Group config summary */}

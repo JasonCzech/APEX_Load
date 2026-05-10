@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useReducer } from 'react'
 import { useApi } from '../hooks/useApi'
 import { DraftCapacityEstimate, GoalConfig, ScenarioDraft, ScenarioMode, StoredScript } from '../types'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
@@ -22,6 +23,22 @@ interface Props {
   initialScenario?: ScenarioDraft
 }
 
+interface RuntimeSettingsState {
+  iterations?: number
+  log_level: string
+  auto_transactions: string
+  snapshot_on_error: boolean
+}
+
+type GoalConfigAction = {
+  field: keyof GoalConfig
+  value: GoalConfig[keyof GoalConfig]
+}
+
+type RuntimeSettingsAction = {
+  field: keyof RuntimeSettingsState
+  value: RuntimeSettingsState[keyof RuntimeSettingsState]
+}
 function formatDraftAvailabilitySource(source?: 'configured' | 'configured_plus_live', hasLive?: boolean): string {
   if (source === 'configured_plus_live') {
     return hasLive ? 'Live snapshot + configured ceiling' : 'Configured ceiling'
@@ -50,6 +67,20 @@ const buildDefaultGroup = (scripts: StoredScript[]): GroupEntry => ({
   initialization: 'at_runtime',
 })
 
+function goalConfigReducer(state: GoalConfig, action: GoalConfigAction): GoalConfig {
+  return {
+    ...state,
+    [action.field]: action.value,
+  }
+}
+
+function runtimeSettingsReducer(state: RuntimeSettingsState, action: RuntimeSettingsAction): RuntimeSettingsState {
+  return {
+    ...state,
+    [action.field]: action.value,
+  }
+}
+
 export default function CreateTestModal({ scripts, onClose, onCreated, initialScenario }: Props) {
   const api = useApi()
   const baselineSeconds = 5 * 60
@@ -63,7 +94,7 @@ export default function CreateTestModal({ scripts, onClose, onCreated, initialSc
       ? initialScenario.groups
       : [buildDefaultGroup(scripts)],
   )
-  const [goalConfig, setGoalConfig] = useState<GoalConfig>({
+  const [goalConfig, dispatchGoalConfig] = useReducer(goalConfigReducer, {
     target_average_tps: initialScenario?.goalConfig?.target_average_tps,
     p95_latency_ms: initialScenario?.goalConfig?.p95_latency_ms,
     max_error_pct: initialScenario?.goalConfig?.max_error_pct,
@@ -72,7 +103,7 @@ export default function CreateTestModal({ scripts, onClose, onCreated, initialSc
     stop_on_sla_breach: initialScenario?.goalConfig?.stop_on_sla_breach || false,
     sla_breach_window: initialScenario?.goalConfig?.sla_breach_window || '30s',
   })
-  const [runtimeSettings, setRuntimeSettings] = useState({
+  const [runtimeSettings, dispatchRuntimeSettings] = useReducer(runtimeSettingsReducer, {
     iterations: initialScenario?.runtimeSettings.iterations,
     log_level: initialScenario?.runtimeSettings.log_level || '',
     auto_transactions: initialScenario?.runtimeSettings.auto_transactions || '',
@@ -93,6 +124,14 @@ export default function CreateTestModal({ scripts, onClose, onCreated, initialSc
       ...prev,
       buildDefaultGroup(scripts),
     ])
+  }
+
+  const updateGoalConfig = <K extends keyof GoalConfig>(field: K, value: GoalConfig[K]) => {
+    dispatchGoalConfig({ field, value })
+  }
+
+  const updateRuntimeSetting = <K extends keyof RuntimeSettingsState>(field: K, value: RuntimeSettingsState[K]) => {
+    dispatchRuntimeSettings({ field, value })
   }
 
   const removeGroup = (idx: number) => {
@@ -441,7 +480,7 @@ export default function CreateTestModal({ scripts, onClose, onCreated, initialSc
                     min={1}
                     step="1"
                     value={goalConfig.target_average_tps || ''}
-                    onChange={(e) => setGoalConfig({ ...goalConfig, target_average_tps: e.target.value ? Number(e.target.value) : undefined })}
+                    onChange={(e) => updateGoalConfig('target_average_tps', e.target.value ? Number(e.target.value) : undefined)}
                     placeholder="e.g. 300"
                   />
                 </label>
@@ -452,7 +491,7 @@ export default function CreateTestModal({ scripts, onClose, onCreated, initialSc
                     min={1}
                     step="1"
                     value={goalConfig.p95_latency_ms || ''}
-                    onChange={(e) => setGoalConfig({ ...goalConfig, p95_latency_ms: e.target.value ? Number(e.target.value) : undefined })}
+                    onChange={(e) => updateGoalConfig('p95_latency_ms', e.target.value ? Number(e.target.value) : undefined)}
                     placeholder="e.g. 800"
                   />
                 </label>
@@ -464,7 +503,7 @@ export default function CreateTestModal({ scripts, onClose, onCreated, initialSc
                     max={100}
                     step="0.1"
                     value={goalConfig.max_error_pct || ''}
-                    onChange={(e) => setGoalConfig({ ...goalConfig, max_error_pct: e.target.value ? Number(e.target.value) : undefined })}
+                    onChange={(e) => updateGoalConfig('max_error_pct', e.target.value ? Number(e.target.value) : undefined)}
                     placeholder="e.g. 2.5"
                   />
                 </label>
@@ -475,7 +514,7 @@ export default function CreateTestModal({ scripts, onClose, onCreated, initialSc
                     min={1}
                     step="1"
                     value={goalConfig.min_vusers || ''}
-                    onChange={(e) => setGoalConfig({ ...goalConfig, min_vusers: e.target.value ? Number(e.target.value) : undefined })}
+                    onChange={(e) => updateGoalConfig('min_vusers', e.target.value ? Number(e.target.value) : undefined)}
                     placeholder="e.g. 10"
                   />
                 </label>
@@ -486,7 +525,7 @@ export default function CreateTestModal({ scripts, onClose, onCreated, initialSc
                     min={1}
                     step="1"
                     value={goalConfig.max_vusers || ''}
-                    onChange={(e) => setGoalConfig({ ...goalConfig, max_vusers: e.target.value ? Number(e.target.value) : undefined })}
+                    onChange={(e) => updateGoalConfig('max_vusers', e.target.value ? Number(e.target.value) : undefined)}
                     placeholder="e.g. 300"
                   />
                 </label>
@@ -495,7 +534,7 @@ export default function CreateTestModal({ scripts, onClose, onCreated, initialSc
                   <input
                     type="text"
                     value={goalConfig.sla_breach_window || ''}
-                    onChange={(e) => setGoalConfig({ ...goalConfig, sla_breach_window: e.target.value })}
+                    onChange={(e) => updateGoalConfig('sla_breach_window', e.target.value)}
                     placeholder="e.g. 30s"
                   />
                 </label>
@@ -503,7 +542,7 @@ export default function CreateTestModal({ scripts, onClose, onCreated, initialSc
                   <input
                     type="checkbox"
                     checked={goalConfig.stop_on_sla_breach || false}
-                    onChange={(e) => setGoalConfig({ ...goalConfig, stop_on_sla_breach: e.target.checked })}
+                    onChange={(e) => updateGoalConfig('stop_on_sla_breach', e.target.checked)}
                   />
                   <span>Stop on sustained SLA breach</span>
                 </label>
@@ -614,7 +653,7 @@ export default function CreateTestModal({ scripts, onClose, onCreated, initialSc
                 <input
                   type="number"
                   value={runtimeSettings.iterations || ''}
-                  onChange={(e) => setRuntimeSettings({ ...runtimeSettings, iterations: e.target.value ? Number(e.target.value) : undefined })}
+                  onChange={(e) => updateRuntimeSetting('iterations', e.target.value ? Number(e.target.value) : undefined)}
                   placeholder="Script default"
                 />
               </label>
@@ -622,7 +661,7 @@ export default function CreateTestModal({ scripts, onClose, onCreated, initialSc
                 <span>Log Level</span>
                 <select
                   value={runtimeSettings.log_level}
-                  onChange={(e) => setRuntimeSettings({ ...runtimeSettings, log_level: e.target.value })}
+                  onChange={(e) => updateRuntimeSetting('log_level', e.target.value)}
                 >
                   <option value="">Script default</option>
                   <option value="disabled">Disabled</option>
@@ -634,7 +673,7 @@ export default function CreateTestModal({ scripts, onClose, onCreated, initialSc
                 <span>Auto-Transactions</span>
                 <select
                   value={runtimeSettings.auto_transactions}
-                  onChange={(e) => setRuntimeSettings({ ...runtimeSettings, auto_transactions: e.target.value })}
+                  onChange={(e) => updateRuntimeSetting('auto_transactions', e.target.value)}
                 >
                   <option value="">Script default</option>
                   <option value="none">None</option>
@@ -646,7 +685,7 @@ export default function CreateTestModal({ scripts, onClose, onCreated, initialSc
                 <input
                   type="checkbox"
                   checked={runtimeSettings.snapshot_on_error}
-                  onChange={(e) => setRuntimeSettings({ ...runtimeSettings, snapshot_on_error: e.target.checked })}
+                    onChange={(e) => updateRuntimeSetting('snapshot_on_error', e.target.checked)}
                 />
                 <span>Snapshot on error</span>
               </label>

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { downloadBlob } from '../utils/fileUtils'
+import { useAsyncTask } from '../hooks/useAsyncTask'
 import { useApi } from '../hooks/useApi'
 import './RecordingStudio.css'
 
@@ -53,10 +54,9 @@ export default function RecordingStudio() {
   const [excludeHosts, setExcludeHosts] = useState('')
   const [feedback, setFeedback] = useState('')
   const [feedbackType, setFeedbackType] = useState<'success' | 'error'>('success')
-  const [converting, setConverting] = useState(false)
-  const [convertResult, setConvertResult] = useState<{ script: any; correlations: Correlation[]; warnings: string[] } | null>(null)
   const [selectedSession, setSelectedSession] = useState<RecordingSession | null>(null)
   const [showSetup, setShowSetup] = useState(true)
+  const convertTask = useAsyncTask<{ script: any; correlations: Correlation[]; warnings: string[] }>()
 
   const proxyPort = (proxyAddr || ':8081').split(':').pop() || '8081'
 
@@ -135,16 +135,14 @@ export default function RecordingStudio() {
   }
 
   const handleConvert = async (session: RecordingSession) => {
-    setConverting(true)
-    setConvertResult(null)
     try {
-      const result = await api.convertRecording(session.id, session.name)
-      setConvertResult(result)
+      const result = await convertTask.run(
+        () => api.convertRecording(session.id, session.name),
+        { clearValue: true },
+      )
       showFeedback(`Script "${result.script.name}" created with ${result.correlations?.length || 0} correlations detected`)
     } catch (e: any) {
       showFeedback(e.message, 'error')
-    } finally {
-      setConverting(false)
     }
   }
 
@@ -159,6 +157,8 @@ export default function RecordingStudio() {
   }
 
   const stoppedSessions = sessions.filter(s => s.status === 'stopped')
+  const convertResult = convertTask.value
+  const converting = convertTask.pending
 
   return (
     <div className="page recording-studio">

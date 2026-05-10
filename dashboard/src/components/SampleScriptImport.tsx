@@ -1,4 +1,5 @@
-import { useRef, useState } from 'react'
+import { useReducer, useRef, useState } from 'react'
+import { useAsyncTask } from '../hooks/useAsyncTask'
 import { useApi } from '../hooks/useApi'
 import {
   describeMergedFiles,
@@ -15,6 +16,30 @@ import './SampleScriptImport.css'
 
 type AuthType = 'none' | 'basic' | 'bearer'
 type PacingType = 'none' | 'fixed_delay'
+
+type SampleImportOptions = {
+  name: string
+  base_url: string
+  include_assertions: boolean
+  infer_extractors: boolean
+  sanitize_sensitive: boolean
+  auth_type: AuthType
+  auth_username: string
+  auth_password: string
+  auth_token: string
+  think_time_ms: string
+  pacing_type: PacingType
+  pacing_delay_ms: string
+  continue_on_error: boolean
+  max_retries: string
+  request_timeout_ms: string
+  user_agent: string
+  default_headers: string
+}
+
+type SampleImportOptionsAction =
+  | { type: 'update'; field: keyof SampleImportOptions; value: SampleImportOptions[keyof SampleImportOptions] }
+  | { type: 'reset' }
 
 interface ConvertStats {
   format: string
@@ -97,7 +122,39 @@ const sampleTemplates: Record<SampleFormat, { primary: string; secondary?: strin
   },
 }
 
-const EMPTY_RESULT = null
+const initialOptions: SampleImportOptions = {
+  name: '',
+  base_url: '',
+  include_assertions: true,
+  infer_extractors: true,
+  sanitize_sensitive: true,
+  auth_type: 'none',
+  auth_username: '',
+  auth_password: '',
+  auth_token: '',
+  think_time_ms: '1000',
+  pacing_type: 'none',
+  pacing_delay_ms: '0',
+  continue_on_error: false,
+  max_retries: '0',
+  request_timeout_ms: '60000',
+  user_agent: '',
+  default_headers: '',
+}
+
+function sampleImportOptionsReducer(state: SampleImportOptions, action: SampleImportOptionsAction): SampleImportOptions {
+  switch (action.type) {
+    case 'update':
+      return {
+        ...state,
+        [action.field]: action.value,
+      }
+    case 'reset':
+      return initialOptions
+    default:
+      return state
+  }
+}
 
 export default function SampleScriptImport({ onImported, onEdit, onClose }: Props) {
   const api = useApi()
@@ -113,38 +170,24 @@ export default function SampleScriptImport({ onImported, onEdit, onClose }: Prop
   const [primaryMergedCount, setPrimaryMergedCount] = useState(0)
   const [secondaryMergedCount, setSecondaryMergedCount] = useState(0)
   const [dragTarget, setDragTarget] = useState<'primary' | 'secondary' | null>(null)
-  const [converting, setConverting] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-  const [result, setResult] = useState<{
+  const [messageError, setMessageError] = useState('')
+  const convertTask = useAsyncTask<{
     script: any
     warnings: string[]
     stats: ConvertStats
     correlations: Correlation[]
-  } | null>(EMPTY_RESULT)
-  const [options, setOptions] = useState({
-    name: '',
-    base_url: '',
-    include_assertions: true,
-    infer_extractors: true,
-    sanitize_sensitive: true,
-    auth_type: 'none' as AuthType,
-    auth_username: '',
-    auth_password: '',
-    auth_token: '',
-    think_time_ms: '1000',
-    pacing_type: 'none' as PacingType,
-    pacing_delay_ms: '0',
-    continue_on_error: false,
-    max_retries: '0',
-    request_timeout_ms: '60000',
-    user_agent: '',
-    default_headers: '',
-  })
+  }>()
+  const saveTask = useAsyncTask<boolean>()
+  const [options, dispatchOptions] = useReducer(sampleImportOptionsReducer, initialOptions)
 
-  const updateOption = (field: string, value: string | boolean) => {
-    setOptions(prev => ({ ...prev, [field]: value }))
+  const updateOption = <K extends keyof SampleImportOptions>(field: K, value: SampleImportOptions[K]) => {
+    dispatchOptions({ type: 'update', field, value })
   }
+
+  const result = convertTask.value
+  const error = messageError || convertTask.error || saveTask.error
+  const converting = convertTask.pending
+  const saving = saveTask.pending
 
   const handleFormatChange = (nextFormat: SampleFormat) => {
     setFormat(nextFormat)
@@ -156,8 +199,9 @@ export default function SampleScriptImport({ onImported, onEdit, onClose }: Prop
     setSecondaryFileNames([])
     setPrimaryMergedCount(0)
     setSecondaryMergedCount(0)
-    setResult(null)
-    setError('')
+    convertTask.reset()
+    saveTask.clearError()
+    setMessageError('')
   }
 
   const handleFileLoad = async (file: File, target: 'primary' | 'secondary') => {
@@ -183,10 +227,11 @@ export default function SampleScriptImport({ onImported, onEdit, onClose }: Prop
         setSecondaryFileNames(names)
         setSecondaryMergedCount(merged.mergedCount)
       }
-      setError('')
-      setResult(null)
+      setMessageError('')
+      convertTask.reset()
+      saveTask.clearError()
     } catch (error: any) {
-      setError(error?.message || `Failed to read ${files[0]?.name || 'sample file'}`)
+      setMessageError(error?.message || `Failed to read ${files[0]?.name || 'sample file'}`)
     }
   }
 
@@ -263,54 +308,62 @@ export default function SampleScriptImport({ onImported, onEdit, onClose }: Prop
 
   const handleConvert = async () => {
     if (!primaryContent.trim()) {
-      setError('Provide sample input before converting.')
+      setMessageError('Provide sample input before converting.')
       return
     }
     const headersValid = parseDefaultHeaders(options.default_headers, true)
     if (headersValid === false) {
-      setError('Default headers must be a valid JSON object.')
+      setMessageError('Default headers must be a valid JSON object.')
       return
     }
-    setConverting(true)
-    setError('')
-    setResult(null)
+
+    setMessageError('')
+    saveTask.clearError()
     try {
-      const res = await api.importSample({
-        name: options.name || undefined,
-        format,
-        content: primaryContent,
-        response_content: secondaryContent || undefined,
-        options: {
-          base_url: options.base_url || undefined,
-          include_assertions: options.include_assertions,
-          infer_extractors: options.infer_extractors,
-          sanitize_sensitive: options.sanitize_sensitive,
+      await convertTask.run(
+        async () => {
+          const res = await api.importSample({
+            name: options.name || undefined,
+            format,
+            content: primaryContent,
+            response_content: secondaryContent || undefined,
+            options: {
+              base_url: options.base_url || undefined,
+              include_assertions: options.include_assertions,
+              infer_extractors: options.infer_extractors,
+              sanitize_sensitive: options.sanitize_sensitive,
+            },
+          })
+
+          return {
+            script: buildScriptWithOptions(res.script),
+            warnings: res.warnings || [],
+            stats: res.stats,
+            correlations: res.correlations || [],
+          }
         },
-      })
-      setResult({
-        script: buildScriptWithOptions(res.script),
-        warnings: res.warnings || [],
-        stats: res.stats,
-        correlations: res.correlations || [],
-      })
+        { clearValue: true },
+      )
     } catch (e: any) {
-      setError(e.message || 'Sample conversion failed')
-    } finally {
-      setConverting(false)
+      if (!e?.message) {
+        setMessageError('Sample conversion failed')
+      }
     }
   }
 
   const handleSave = async () => {
     if (!result?.script) return
-    setSaving(true)
-    setError('')
+    setMessageError('')
     try {
-      await api.createScript(result.script)
+      await saveTask.run(async () => {
+        await api.createScript(result.script)
+        return true
+      })
       onImported?.(result.script)
     } catch (e: any) {
-      setError(e.message || 'Failed to save generated script')
-    } finally {
-      setSaving(false)
+      if (!e?.message) {
+        setMessageError('Failed to save generated script')
+      }
     }
   }
 
