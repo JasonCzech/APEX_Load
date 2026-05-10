@@ -1,10 +1,12 @@
-import { useEffect, useState } from 'react'
-import { useReducer } from 'react'
+import { useEffect, useReducer, useState } from 'react'
 import { useApi } from '../hooks/useApi'
 import { DraftCapacityEstimate, GoalConfig, ScenarioDraft, ScenarioMode, StoredScript } from '../types'
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import './CreateTestModal.css'
-import { parseDurationToSeconds, formatTimeCompact } from '../utils/timeUtils'
+import { parseDurationToSeconds } from '../utils/timeUtils'
+import CreateTestCapacityPreview from './CreateTestCapacityPreview'
+import CreateTestGoalSettings from './CreateTestGoalSettings'
+import CreateTestGroupsEditor from './CreateTestGroupsEditor'
+import CreateTestRuntimeOverrides from './CreateTestRuntimeOverrides'
 
 
 interface GroupEntry {
@@ -30,6 +32,15 @@ interface RuntimeSettingsState {
   snapshot_on_error: boolean
 }
 
+interface ScenarioDraftState {
+  name: string
+  duration: string
+  scenarioMode: ScenarioMode
+  scriptShakeout: boolean
+  resourceBaseline: boolean
+  groups: GroupEntry[]
+}
+
 type GoalConfigAction = {
   field: keyof GoalConfig
   value: GoalConfig[keyof GoalConfig]
@@ -39,24 +50,14 @@ type RuntimeSettingsAction = {
   field: keyof RuntimeSettingsState
   value: RuntimeSettingsState[keyof RuntimeSettingsState]
 }
-function formatDraftAvailabilitySource(source?: 'configured' | 'configured_plus_live', hasLive?: boolean): string {
-  if (source === 'configured_plus_live') {
-    return hasLive ? 'Live snapshot + configured ceiling' : 'Configured ceiling'
-  }
-  return 'Configured inventory'
-}
 
-function formatDraftAvailabilityDetail(estimate: DraftCapacityEstimate): string {
-  const advisory = estimate.capacity_advisory
-  if (!advisory) return 'Configured inventory only'
-  if (advisory.availability_source === 'configured_plus_live') {
-    if (advisory.live_available_generators !== undefined) {
-      return `${advisory.live_available_generators} live / ${advisory.configured_available_generators || advisory.available_generators} configured`
-    }
-    return `${advisory.configured_available_generators || advisory.available_generators} configured ceiling`
-  }
-  return `${advisory.configured_available_generators || advisory.available_generators} configured`
-}
+type ScenarioDraftField = keyof Omit<ScenarioDraftState, 'groups'>
+
+type ScenarioDraftAction =
+  | { type: 'setField'; field: ScenarioDraftField; value: ScenarioDraftState[ScenarioDraftField] }
+  | { type: 'updateGroup'; index: number; patch: Partial<GroupEntry> }
+  | { type: 'addGroup'; group: GroupEntry }
+  | { type: 'removeGroup'; index: number }
 
 const buildDefaultGroup = (scripts: StoredScript[]): GroupEntry => ({
   name: '',
@@ -66,6 +67,17 @@ const buildDefaultGroup = (scripts: StoredScript[]): GroupEntry => ({
   rampDown: '',
   initialization: 'at_runtime',
 })
+
+function buildInitialScenarioDraft(initialScenario: ScenarioDraft | undefined, scripts: StoredScript[]): ScenarioDraftState {
+  return {
+    name: initialScenario?.name || '',
+    duration: initialScenario?.duration || '1m',
+    scenarioMode: initialScenario?.scenarioMode || 'vuser_driven',
+    scriptShakeout: Boolean(initialScenario?.scriptShakeout),
+    resourceBaseline: Boolean(initialScenario?.resourceBaseline),
+    groups: initialScenario?.groups.length ? initialScenario.groups : [buildDefaultGroup(scripts)],
+  }
+}
 
 function goalConfigReducer(state: GoalConfig, action: GoalConfigAction): GoalConfig {
   return {
@@ -81,18 +93,44 @@ function runtimeSettingsReducer(state: RuntimeSettingsState, action: RuntimeSett
   }
 }
 
+function scenarioDraftReducer(state: ScenarioDraftState, action: ScenarioDraftAction): ScenarioDraftState {
+  switch (action.type) {
+    case 'setField':
+      return {
+        ...state,
+        [action.field]: action.value,
+      }
+    case 'updateGroup':
+      return {
+        ...state,
+        groups: state.groups.map((group, index) => (
+          index === action.index ? { ...group, ...action.patch } : group
+        )),
+      }
+    case 'addGroup':
+      return {
+        ...state,
+        groups: [...state.groups, action.group],
+      }
+    case 'removeGroup':
+      if (state.groups.length <= 1) {
+        return state
+      }
+      return {
+        ...state,
+        groups: state.groups.filter((_, index) => index !== action.index),
+      }
+    default:
+      return state
+  }
+}
+
 export default function CreateTestModal({ scripts, onClose, onCreated, initialScenario }: Props) {
   const api = useApi()
   const baselineSeconds = 5 * 60
-  const [name, setName] = useState(initialScenario?.name || '')
-  const [duration, setDuration] = useState(initialScenario?.duration || '1m')
-  const [scenarioMode, setScenarioMode] = useState<ScenarioMode>(initialScenario?.scenarioMode || 'vuser_driven')
-  const [scriptShakeout, setScriptShakeout] = useState(Boolean(initialScenario?.scriptShakeout))
-  const [resourceBaseline, setResourceBaseline] = useState(Boolean(initialScenario?.resourceBaseline))
-  const [groups, setGroups] = useState<GroupEntry[]>(
-    initialScenario?.groups.length
-      ? initialScenario.groups
-      : [buildDefaultGroup(scripts)],
+  const [scenarioDraft, dispatchScenarioDraft] = useReducer(
+    scenarioDraftReducer,
+    buildInitialScenarioDraft(initialScenario, scripts),
   )
   const [goalConfig, dispatchGoalConfig] = useReducer(goalConfigReducer, {
     target_average_tps: initialScenario?.goalConfig?.target_average_tps,
@@ -115,15 +153,18 @@ export default function CreateTestModal({ scripts, onClose, onCreated, initialSc
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
+  const { name, duration, scenarioMode, scriptShakeout, resourceBaseline, groups } = scenarioDraft
+
+  const updateScenarioField = <K extends ScenarioDraftField>(field: K, value: ScenarioDraftState[K]) => {
+    dispatchScenarioDraft({ type: 'setField', field, value })
+  }
+
   const updateGroup = (idx: number, patch: Partial<GroupEntry>) => {
-    setGroups((prev) => prev.map((g, i) => (i === idx ? { ...g, ...patch } : g)))
+    dispatchScenarioDraft({ type: 'updateGroup', index: idx, patch })
   }
 
   const addGroup = () => {
-    setGroups((prev) => [
-      ...prev,
-      buildDefaultGroup(scripts),
-    ])
+    dispatchScenarioDraft({ type: 'addGroup', group: buildDefaultGroup(scripts) })
   }
 
   const updateGoalConfig = <K extends keyof GoalConfig>(field: K, value: GoalConfig[K]) => {
@@ -135,8 +176,7 @@ export default function CreateTestModal({ scripts, onClose, onCreated, initialSc
   }
 
   const removeGroup = (idx: number) => {
-    if (groups.length <= 1) return
-    setGroups((prev) => prev.filter((_, i) => i !== idx))
+    dispatchScenarioDraft({ type: 'removeGroup', index: idx })
   }
 
   const totalVUsers = groups.reduce((sum, g) => sum + g.vusers, 0)
@@ -201,9 +241,6 @@ export default function CreateTestModal({ scripts, onClose, onCreated, initialSc
 
     return points
   })()
-
-  const GROUP_COLORS = ['#00a3ff', '#00ff94', '#ff006e', '#ffbe0b', '#8338ec', '#fb5607']
-
   const buildPayload = () => {
     const payload: any = { name: name || undefined, duration }
     payload.scenario_mode = scenarioMode
@@ -323,14 +360,14 @@ export default function CreateTestModal({ scripts, onClose, onCreated, initialSc
                 <button
                   type="button"
                   className={`mode-chip ${scenarioMode === 'vuser_driven' ? 'active' : ''}`}
-                  onClick={() => setScenarioMode('vuser_driven')}
+                  onClick={() => updateScenarioField('scenarioMode', 'vuser_driven')}
                 >
                   VUser-Driven
                 </button>
                 <button
                   type="button"
                   className={`mode-chip ${scenarioMode === 'goal_oriented' ? 'active' : ''}`}
-                  onClick={() => setScenarioMode('goal_oriented')}
+                  onClick={() => updateScenarioField('scenarioMode', 'goal_oriented')}
                 >
                   Goal-Oriented
                 </button>
@@ -340,7 +377,7 @@ export default function CreateTestModal({ scripts, onClose, onCreated, initialSc
                 <input
                   type="text"
                   value={name}
-                  onChange={(e) => setName(e.target.value)}
+                  onChange={(e) => updateScenarioField('name', e.target.value)}
                   placeholder="Optional — auto-generated if empty"
                 />
               </label>
@@ -349,7 +386,7 @@ export default function CreateTestModal({ scripts, onClose, onCreated, initialSc
                 <input
                   type="text"
                   value={duration}
-                  onChange={(e) => setDuration(e.target.value)}
+                  onChange={(e) => updateScenarioField('duration', e.target.value)}
                   placeholder="e.g. 5m, 1h"
                   required
                 />
@@ -360,7 +397,7 @@ export default function CreateTestModal({ scripts, onClose, onCreated, initialSc
                   <input
                     type="checkbox"
                     checked={scriptShakeout}
-                    onChange={(e) => setScriptShakeout(e.target.checked)}
+                    onChange={(e) => updateScenarioField('scriptShakeout', e.target.checked)}
                   />
                   <p>Run one instance of each script before full scale startup. Any failure halts the scenario and raises an alert.</p>
                 </div>
@@ -371,326 +408,42 @@ export default function CreateTestModal({ scripts, onClose, onCreated, initialSc
                   <input
                     type="checkbox"
                     checked={resourceBaseline}
-                    onChange={(e) => setResourceBaseline(e.target.checked)}
+                    onChange={(e) => updateScenarioField('resourceBaseline', e.target.checked)}
                   />
                   <p>Add a fixed 5 minute baseline before load starts and another 5 minute baseline after load stops so resource utilization can be observed without user traffic.</p>
                 </div>
               </label>
             </div>
             
-            <div className="load-profile-preview">
-              <div className="chart-container">
-                <ResponsiveContainer width="100%" height={160}>
-                  <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" vertical={false} />
-                    <XAxis 
-                      dataKey="time" 
-                      tickFormatter={(v) => formatTimeCompact(v)}
-                      stroke="var(--text-muted)"
-                      fontSize={10}
-                      tickLine={false}
-                      label={{ value: 'Time', position: 'insideBottomRight', offset: -5, fontSize: 10, fill: 'var(--text-muted)' }}
-                    />
-                    <YAxis 
-                      stroke="var(--text-muted)"
-                      fontSize={10}
-                      tickLine={false}
-                      label={{ value: 'VUsers', angle: -90, position: 'insideLeft', offset: 10, fontSize: 10, fill: 'var(--text-muted)' }}
-                    />
-                    <Tooltip 
-                      labelFormatter={(value) => `Time: ${formatTimeCompact(value)}`}
-                      contentStyle={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', fontSize: '12px' }}
-                      itemStyle={{ padding: '2px 0' }}
-                    />
-                    {groups.map((g, idx) => (
-                      <Area
-                        key={idx}
-                        type="monotone"
-                        dataKey={`group${idx}`}
-                        name={g.name || `Group ${idx + 1}`}
-                        stackId="1"
-                        stroke={GROUP_COLORS[idx % GROUP_COLORS.length]}
-                        fill={GROUP_COLORS[idx % GROUP_COLORS.length]}
-                        fillOpacity={0.4}
-                        animationDuration={300}
-                      />
-                    ))}
-                  </AreaChart>
-                </ResponsiveContainer>
-                <div className="chart-label">Scenario Load Profile</div>
-              </div>
-              <div className={`draft-capacity-card ${draftEstimate?.capacity_advisory?.requires_override ? 'warning' : 'ready'}`}>
-                <div className="draft-capacity-header">
-                  <h4>Draft Capacity Estimate</h4>
-                  {estimateLoading && <span className="draft-capacity-status">Refreshing...</span>}
-                </div>
-                {estimateError ? (
-                  <p className="draft-capacity-error">{estimateError}</p>
-                ) : draftEstimate?.capacity_advisory ? (
-                  <>
-                    <div className="draft-capacity-metrics">
-                      <div className="draft-capacity-metric">
-                        <span className="draft-capacity-label">Recommended</span>
-                        <strong>{draftEstimate.capacity_advisory.recommended_generators}</strong>
-                        <span>{draftEstimate.capacity_advisory.recommended_generators === 1 ? 'generator' : 'generators'}</span>
-                      </div>
-                      <div className="draft-capacity-metric">
-                        <span className="draft-capacity-label">Available</span>
-                        <strong>{draftEstimate.capacity_advisory.available_generators}</strong>
-                        <span>{formatDraftAvailabilityDetail(draftEstimate)}</span>
-                      </div>
-                      <div className="draft-capacity-metric">
-                        <span className="draft-capacity-label">Bottleneck</span>
-                        <strong>{draftEstimate.capacity_advisory.bottleneck}</strong>
-                        <span>{draftEstimate.capacity_advisory.headroom_pct}% headroom</span>
-                      </div>
-                    </div>
-                    <p className="draft-capacity-copy secondary">
-                      Availability source: {formatDraftAvailabilitySource(draftEstimate.capacity_advisory.availability_source, draftEstimate.capacity_advisory.live_available_generators !== undefined)}. Snapshot: {formatDraftAvailabilityDetail(draftEstimate)}.
-                    </p>
-                    <p className="draft-capacity-copy">
-                      Estimated total load: {draftEstimate.capacity_advisory.estimated_total.cpu_cores.toFixed(2)} CPU, {Math.round(draftEstimate.capacity_advisory.estimated_total.memory_mb)} MB memory, {Math.round(draftEstimate.capacity_advisory.estimated_total.network_mbps)} Mbps network.
-                    </p>
-                    {draftEstimate.capacity_advisory.warnings && draftEstimate.capacity_advisory.warnings.length > 0 && (
-                      <div className="draft-capacity-warnings">
-                        {draftEstimate.capacity_advisory.warnings.map((warning) => (
-                          <p key={warning}>{warning}</p>
-                        ))}
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <p className="draft-capacity-copy">Enter a complete scenario to estimate the required load generators.</p>
-                )}
-              </div>
-            </div>
+            <CreateTestCapacityPreview
+              chartData={chartData}
+              groups={groups}
+              draftEstimate={draftEstimate}
+              estimateLoading={estimateLoading}
+              estimateError={estimateError}
+            />
           </div>
 
           {scenarioMode === 'goal_oriented' && (
-            <div className="goal-settings">
-              <div className="goal-settings-header">
-                <h4>Goal Settings</h4>
-                <p>Define the target and guardrails. The script groups below still provide the starting seed load and script mix for the scenario.</p>
-              </div>
-              <div className="goal-settings-grid">
-                <label>
-                  <span>Target Avg TPS</span>
-                  <input
-                    type="number"
-                    min={1}
-                    step="1"
-                    value={goalConfig.target_average_tps || ''}
-                    onChange={(e) => updateGoalConfig('target_average_tps', e.target.value ? Number(e.target.value) : undefined)}
-                    placeholder="e.g. 300"
-                  />
-                </label>
-                <label>
-                  <span>P95 Latency Ceiling (ms)</span>
-                  <input
-                    type="number"
-                    min={1}
-                    step="1"
-                    value={goalConfig.p95_latency_ms || ''}
-                    onChange={(e) => updateGoalConfig('p95_latency_ms', e.target.value ? Number(e.target.value) : undefined)}
-                    placeholder="e.g. 800"
-                  />
-                </label>
-                <label>
-                  <span>Max Error %</span>
-                  <input
-                    type="number"
-                    min={0}
-                    max={100}
-                    step="0.1"
-                    value={goalConfig.max_error_pct || ''}
-                    onChange={(e) => updateGoalConfig('max_error_pct', e.target.value ? Number(e.target.value) : undefined)}
-                    placeholder="e.g. 2.5"
-                  />
-                </label>
-                <label>
-                  <span>Min VUsers</span>
-                  <input
-                    type="number"
-                    min={1}
-                    step="1"
-                    value={goalConfig.min_vusers || ''}
-                    onChange={(e) => updateGoalConfig('min_vusers', e.target.value ? Number(e.target.value) : undefined)}
-                    placeholder="e.g. 10"
-                  />
-                </label>
-                <label>
-                  <span>Max VUsers</span>
-                  <input
-                    type="number"
-                    min={1}
-                    step="1"
-                    value={goalConfig.max_vusers || ''}
-                    onChange={(e) => updateGoalConfig('max_vusers', e.target.value ? Number(e.target.value) : undefined)}
-                    placeholder="e.g. 300"
-                  />
-                </label>
-                <label>
-                  <span>SLA Breach Window</span>
-                  <input
-                    type="text"
-                    value={goalConfig.sla_breach_window || ''}
-                    onChange={(e) => updateGoalConfig('sla_breach_window', e.target.value)}
-                    placeholder="e.g. 30s"
-                  />
-                </label>
-                <label className="checkbox-label goal-checkbox-label">
-                  <input
-                    type="checkbox"
-                    checked={goalConfig.stop_on_sla_breach || false}
-                    onChange={(e) => updateGoalConfig('stop_on_sla_breach', e.target.checked)}
-                  />
-                  <span>Stop on sustained SLA breach</span>
-                </label>
-              </div>
-            </div>
+            <CreateTestGoalSettings
+              goalConfig={goalConfig}
+              onGoalConfigChange={updateGoalConfig}
+            />
           )}
 
-          <div className="groups-section">
-            <div className="groups-header">
-              <div>
-                <h4>{scenarioMode === 'goal_oriented' ? 'Script Seed Groups' : 'VUser Groups'}</h4>
-                {scenarioMode === 'goal_oriented' && (
-                  <p className="groups-note">Seed VUsers define the initial script distribution until goal-based autoscaling is implemented.</p>
-                )}
-              </div>
-              <button type="button" className="btn btn-secondary btn-sm" onClick={addGroup}>
-                + Add Group
-              </button>
-            </div>
+          <CreateTestGroupsEditor
+            scenarioMode={scenarioMode}
+            groups={groups}
+            scripts={scripts}
+            onAddGroup={addGroup}
+            onUpdateGroup={updateGroup}
+            onRemoveGroup={removeGroup}
+          />
 
-            {groups.map((group, idx) => (
-              <div key={idx} className="group-row">
-                <div className="group-number">{idx + 1}</div>
-                <div className="group-fields">
-                  <label>
-                    <span>Group Name</span>
-                    <input
-                      type="text"
-                      value={group.name}
-                      onChange={(e) => updateGroup(idx, { name: e.target.value })}
-                      placeholder={`Group ${idx + 1}`}
-                    />
-                  </label>
-                  <label>
-                    <span>Script</span>
-                    <select
-                      value={group.scriptId}
-                      onChange={(e) => updateGroup(idx, { scriptId: e.target.value })}
-                      required
-                    >
-                      {scripts.length === 0 && <option value="">No scripts</option>}
-                      {scripts.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.name} ({s.protocol})
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="narrow">
-                    <span>{scenarioMode === 'goal_oriented' ? 'Seed VUsers' : 'VUsers'}</span>
-                    <input
-                      type="number"
-                      value={group.vusers}
-                      onChange={(e) => updateGroup(idx, { vusers: Number(e.target.value) })}
-                      min={1}
-                      max={100000}
-                      required
-                    />
-                  </label>
-                  <label className="narrow">
-                    <span>Ramp-up</span>
-                    <input
-                      type="text"
-                      value={group.rampUp}
-                      onChange={(e) => updateGroup(idx, { rampUp: e.target.value })}
-                      placeholder="e.g. 30s"
-                    />
-                  </label>
-                  <label className="narrow">
-                    <span>Ramp-down</span>
-                    <input
-                      type="text"
-                      value={group.rampDown}
-                      onChange={(e) => updateGroup(idx, { rampDown: e.target.value })}
-                      placeholder="e.g. 30s"
-                    />
-                  </label>
-                  <label className="medium">
-                    <span>Initialization</span>
-                    <select
-                      value={group.initialization}
-                      onChange={(e) => updateGroup(idx, { initialization: e.target.value as any })}
-                    >
-                      <option value="at_runtime">At Runtime</option>
-                      <option value="at_once">At Once</option>
-                    </select>
-                  </label>
-                  {groups.length > 1 && (
-                    <button
-                      type="button"
-                      className="btn-remove"
-                      onClick={() => removeGroup(idx)}
-                      title="Remove group"
-                    >
-                      x
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <div className="runtime-overrides">
-            <h4>Runtime Settings Overrides</h4>
-            <div className="overrides-grid">
-              <label>
-                <span>Iterations</span>
-                <input
-                  type="number"
-                  value={runtimeSettings.iterations || ''}
-                  onChange={(e) => updateRuntimeSetting('iterations', e.target.value ? Number(e.target.value) : undefined)}
-                  placeholder="Script default"
-                />
-              </label>
-              <label>
-                <span>Log Level</span>
-                <select
-                  value={runtimeSettings.log_level}
-                  onChange={(e) => updateRuntimeSetting('log_level', e.target.value)}
-                >
-                  <option value="">Script default</option>
-                  <option value="disabled">Disabled</option>
-                  <option value="standard">Standard</option>
-                  <option value="extended">Extended</option>
-                </select>
-              </label>
-              <label>
-                <span>Auto-Transactions</span>
-                <select
-                  value={runtimeSettings.auto_transactions}
-                  onChange={(e) => updateRuntimeSetting('auto_transactions', e.target.value)}
-                >
-                  <option value="">Script default</option>
-                  <option value="none">None</option>
-                  <option value="per_action">Per Action</option>
-                  <option value="per_iteration">Per Iteration</option>
-                </select>
-              </label>
-              <label className="checkbox-label">
-                <input
-                  type="checkbox"
-                  checked={runtimeSettings.snapshot_on_error}
-                    onChange={(e) => updateRuntimeSetting('snapshot_on_error', e.target.checked)}
-                />
-                <span>Snapshot on error</span>
-              </label>
-            </div>
-          </div>
+          <CreateTestRuntimeOverrides
+            runtimeSettings={runtimeSettings}
+            onRuntimeSettingChange={updateRuntimeSetting}
+          />
 
           {error && <p className="form-error">{error}</p>}
 
