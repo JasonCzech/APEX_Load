@@ -16,6 +16,8 @@ import {
 } from '../types'
 import StatusBadge from './StatusBadge'
 import CreateTestModal from './CreateTestModal'
+import { parseDurationToSeconds, formatTimeLong, formatTimeCompact } from '../utils/timeUtils'
+import { downloadBlob } from '../utils/fileUtils'
 import './TestExecution.css'
 
 const GROUP_COLORS = [
@@ -24,46 +26,6 @@ const GROUP_COLORS = [
 ]
 const RESOURCE_BASELINE_SECONDS = 5 * 60
 
-function parseDurationToSeconds(input?: string): number {
-  if (!input) return 0
-  let total = 0
-  const matches = input.matchAll(/(\d+)(h|m|s)/g)
-  for (const match of matches) {
-    const value = Number(match[1])
-    switch (match[2]) {
-      case 'h':
-        total += value * 3600
-        break
-      case 'm':
-        total += value * 60
-        break
-      case 's':
-        total += value
-        break
-    }
-  }
-  return total
-}
-
-function formatPreviewTime(seconds: number): string {
-  if (seconds <= 0) return 'now'
-  const hours = Math.floor(seconds / 3600)
-  const minutes = Math.floor((seconds % 3600) / 60)
-  const secs = seconds % 60
-  if (hours > 0) return `${hours}h ${minutes}m`
-  if (minutes > 0) return secs > 0 ? `${minutes}m ${secs}s` : `${minutes}m`
-  return `${secs}s`
-}
-
-function formatScenarioTimeline(seconds: number): string {
-  if (seconds <= 0) return '0s'
-  const hours = Math.floor(seconds / 3600)
-  const minutes = Math.floor((seconds % 3600) / 60)
-  const secs = seconds % 60
-  if (hours > 0) return `${hours}h${minutes > 0 ? ` ${minutes}m` : ''}`
-  if (minutes > 0) return secs > 0 ? `${minutes}m ${secs}s` : `${minutes}m`
-  return `${secs}s`
-}
 
 function formatCapacityValue(value: number, decimals = 0): string {
   return new Intl.NumberFormat('en-US', {
@@ -231,16 +193,6 @@ function formatHeaderPairs(headers?: Record<string, string>): string {
     .join('\n')
 }
 
-function saveBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = filename
-  document.body.appendChild(link)
-  link.click()
-  link.remove()
-  URL.revokeObjectURL(url)
-}
 
 function buildScenarioDraft(test: TestSummary) {
   const groups = test.groups?.length
@@ -778,7 +730,7 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
     if (!test) return
     try {
       const blob = await api.downloadTestArchive(test.id)
-      saveBlob(blob, `${test.name.replace(/\s+/g, '-').toLowerCase()}-${test.id}.zip`)
+      downloadBlob(blob, `${test.name.replace(/\s+/g, '-').toLowerCase()}-${test.id}.zip`)
     } catch (e: any) {
       setArchiveError(e.message || 'Unable to download archive bundle')
     }
@@ -788,7 +740,7 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
     if (!test) return
     try {
       const blob = await api.downloadTestArchiveArtifact(test.id, artifactName)
-      saveBlob(blob, `${test.name.replace(/\s+/g, '-').toLowerCase()}-${test.id}-${artifactName}`)
+      downloadBlob(blob, `${test.name.replace(/\s+/g, '-').toLowerCase()}-${test.id}-${artifactName}`)
     } catch (e: any) {
       setArchiveError(e.message || `Unable to download ${artifactName}`)
     }
@@ -965,7 +917,7 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
                     </div>
                     <div className="preview-metric-card">
                       <span className="preview-metric-label">Remaining</span>
-                      <span className="preview-metric-value">{formatPreviewTime(liveControlPreview.remainingSeconds)}</span>
+                      <span className="preview-metric-value">{formatTimeLong(liveControlPreview.remainingSeconds)}</span>
                       <span className="preview-metric-detail">to stop</span>
                     </div>
                   </div>
@@ -979,7 +931,7 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
                           stroke="var(--text-muted)"
                           fontSize={11}
                           tickLine={false}
-                          tickFormatter={(value) => formatPreviewTime(Number(value))}
+                          tickFormatter={(value) => formatTimeLong(Number(value))}
                         />
                         <YAxis
                           stroke="var(--text-muted)"
@@ -988,7 +940,7 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
                           allowDecimals={false}
                         />
                         <Tooltip
-                          labelFormatter={(value) => `T+${formatPreviewTime(Number(value))}`}
+                          labelFormatter={(value) => `T+${formatTimeLong(Number(value))}`}
                           contentStyle={{ background: 'rgba(33, 36, 47, 0.92)', border: '1px solid var(--border)', borderRadius: 10 }}
                           formatter={(value: number, name: string) => [value, name === 'total' ? 'Total' : name]}
                         />
@@ -1098,11 +1050,11 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
               </div>
               <div className="scenario-preview-stat">
                 <span className="scenario-preview-stat-label">Steady State</span>
-                <span className="scenario-preview-stat-value">{formatScenarioTimeline(queuedScenarioPreview.steadySeconds)}</span>
+                <span className="scenario-preview-stat-value">{formatTimeCompact(queuedScenarioPreview.steadySeconds)}</span>
               </div>
               <div className="scenario-preview-stat">
                 <span className="scenario-preview-stat-label">Total Timeline</span>
-                <span className="scenario-preview-stat-value">{formatScenarioTimeline(queuedScenarioPreview.totalSeconds)}</span>
+                <span className="scenario-preview-stat-value">{formatTimeCompact(queuedScenarioPreview.totalSeconds)}</span>
               </div>
               <div className="scenario-preview-stat">
                 <span className="scenario-preview-stat-label">Baseline</span>
@@ -1190,7 +1142,7 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
                   stroke="var(--text-muted)"
                   fontSize={11}
                   tickLine={false}
-                  tickFormatter={(value) => formatScenarioTimeline(Number(value))}
+                  tickFormatter={(value) => formatTimeCompact(Number(value))}
                 />
                 <YAxis
                   stroke="var(--text-muted)"
@@ -1199,7 +1151,7 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
                   allowDecimals={false}
                 />
                 <Tooltip
-                  labelFormatter={(value) => `T+${formatScenarioTimeline(Number(value))}`}
+                  labelFormatter={(value) => `T+${formatTimeCompact(Number(value))}`}
                   contentStyle={{ background: 'rgba(33, 36, 47, 0.92)', border: '1px solid var(--border)', borderRadius: 10 }}
                   formatter={(value: number, name: string) => [value, name === 'total' ? 'Total' : name]}
                 />

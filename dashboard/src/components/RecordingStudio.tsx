@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { downloadBlob } from '../utils/fileUtils'
 import { useApi } from '../hooks/useApi'
 import './RecordingStudio.css'
 
@@ -65,14 +66,8 @@ export default function RecordingStudio() {
       const res = await fetch(url)
       if (!res.ok) throw new Error('Failed to download CA certificate')
       const blob = await res.blob()
-      const blobUrl = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = blobUrl
-      a.download = format === 'pem' ? 'stormrunner-ca.pem' : 'stormrunner-ca.crt'
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(blobUrl)
+      const filename = format === 'pem' ? 'stormrunner-ca.pem' : 'stormrunner-ca.crt'
+      downloadBlob(blob, filename)
     } catch (e: any) {
       showFeedback(e.message || 'Failed to download CA certificate', 'error')
     }

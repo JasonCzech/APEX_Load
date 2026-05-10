@@ -3,31 +3,8 @@ import { useApi } from '../hooks/useApi'
 import { DraftCapacityEstimate, GoalConfig, ScenarioDraft, ScenarioMode, StoredScript } from '../types'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import './CreateTestModal.css'
+import { parseDurationToSeconds, formatTimeCompact } from '../utils/timeUtils'
 
-// Helper to parse duration strings (e.g. "1m", "30s") to seconds
-function parseDuration(s: string): number {
-  if (!s) return 0
-  const match = s.match(/^(\d+)([smh])$/)
-  if (!match) return 0
-  const val = parseInt(match[1])
-  const unit = match[2]
-  switch (unit) {
-    case 's': return val
-    case 'm': return val * 60
-    case 'h': return val * 3600
-    default: return 0
-  }
-}
-
-// Helper to format seconds to time string
-function formatTime(seconds: number): string {
-  const h = Math.floor(seconds / 3600)
-  const m = Math.floor((seconds % 3600) / 60)
-  const s = seconds % 60
-  if (h > 0) return `${h}h${m}m${s}s`
-  if (m > 0) return `${m}m${s}s`
-  return `${s}s`
-}
 
 interface GroupEntry {
   name: string
@@ -135,10 +112,10 @@ export default function CreateTestModal({ scripts, onClose, onCreated, initialSc
 
   // Calculate chart data
   const chartData = (() => {
-    const durSec = parseDuration(duration)
+    const durSec = parseDurationToSeconds(duration)
     let maxRampDown = 0
     groups.forEach(g => {
-      const rd = parseDuration(g.rampDown)
+      const rd = parseDurationToSeconds(g.rampDown)
       if (rd > maxRampDown) maxRampDown = rd
     })
 
@@ -154,8 +131,8 @@ export default function CreateTestModal({ scripts, onClose, onCreated, initialSc
       const point: any = { time: t, total: 0 }
       groups.forEach((g, idx) => {
         const gVUsers = g.vusers
-        const gRampUp = parseDuration(g.rampUp)
-        const gRampDown = parseDuration(g.rampDown)
+        const gRampUp = parseDurationToSeconds(g.rampUp)
+        const gRampDown = parseDurationToSeconds(g.rampDown)
 
         let v = 0
         const loadSecond = Math.max(0, t - preBaseline)
@@ -369,7 +346,7 @@ export default function CreateTestModal({ scripts, onClose, onCreated, initialSc
                     <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" vertical={false} />
                     <XAxis 
                       dataKey="time" 
-                      tickFormatter={(v) => formatTime(v)}
+                      tickFormatter={(v) => formatTimeCompact(v)}
                       stroke="var(--text-muted)"
                       fontSize={10}
                       tickLine={false}
@@ -382,7 +359,7 @@ export default function CreateTestModal({ scripts, onClose, onCreated, initialSc
                       label={{ value: 'VUsers', angle: -90, position: 'insideLeft', offset: 10, fontSize: 10, fill: 'var(--text-muted)' }}
                     />
                     <Tooltip 
-                      labelFormatter={(value) => `Time: ${formatTime(value)}`}
+                      labelFormatter={(value) => `Time: ${formatTimeCompact(value)}`}
                       contentStyle={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', fontSize: '12px' }}
                       itemStyle={{ padding: '2px 0' }}
                     />

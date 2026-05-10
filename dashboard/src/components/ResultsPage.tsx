@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, memo } from 'react'
+import { downloadBlob } from '../utils/fileUtils'
 import { ResponsiveContainer, LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip, Legend } from 'recharts'
 import { useApi } from '../hooks/useApi'
 import { IntervalSummaryRecord, RunArchiveReport, TestSummary } from '../types'
@@ -165,14 +166,8 @@ function ResultsPage({ testStatuses, onSelectTest }: Props) {
     if (!test.archive) return
     try {
       const blob = await api.downloadTestArchive(test.id)
-      const url = URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = `${test.name.replace(/\s+/g, '-').toLowerCase()}-${test.id}.zip`
-      document.body.appendChild(link)
-      link.click()
-      link.remove()
-      URL.revokeObjectURL(url)
+      const filename = `${test.name.replace(/\\s+/g, '-').toLowerCase()}-${test.id}.zip`
+      downloadBlob(blob, filename)
     } catch {
       // ignore for now
     }
