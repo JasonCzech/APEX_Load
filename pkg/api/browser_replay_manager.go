@@ -14,6 +14,7 @@ import (
 const (
 	BrowserReplayQueued    = "queued"
 	BrowserReplayRunning   = "running"
+	BrowserReplayPaused    = "paused"
 	BrowserReplayCompleted = "completed"
 	BrowserReplayFailed    = "failed"
 	BrowserReplayStopped   = "stopped"
@@ -77,6 +78,12 @@ func (m *BrowserReplayManager) Start(scriptID string, script *dsl.Script, req Br
 	m.mu.Unlock()
 
 	m.broadcast("browser_replay_started", session, -1, nil, nil)
+	if req.StartPaused {
+		session.mu.Lock()
+		session.Status = BrowserReplayPaused
+		session.mu.Unlock()
+		m.broadcast("browser_replay_paused", session, -1, nil, nil)
+	}
 
 	ignoreThinkTime := true
 	if req.IgnoreThinkTime != nil {
@@ -84,6 +91,16 @@ func (m *BrowserReplayManager) Start(scriptID string, script *dsl.Script, req Br
 	}
 
 	go func() {
+		if !m.waitWhilePaused(ctx, session) {
+			completedAt := time.Now()
+			session.mu.Lock()
+			session.CompletedAt = &completedAt
+			eventIndex := session.CurrentEventIndex
+			session.mu.Unlock()
+			m.broadcast("browser_replay_stopped", session, eventIndex, nil, nil)
+			return
+		}
+
 		report, err := engine.ReplayScript(ctx, script, engine.ReplayOptions{
 			GroupName:       groupName,
 			Variables:       req.Variables,
@@ -106,6 +123,7 @@ func (m *BrowserReplayManager) Start(scriptID string, script *dsl.Script, req Br
 					}
 					session.mu.Unlock()
 					m.broadcast("browser_replay_event", session, event.EventIndex, event.Event, nil)
+					_ = m.waitWhilePaused(ctx, session)
 				}
 			},
 		})
@@ -149,6 +167,52 @@ func (m *BrowserReplayManager) Get(sessionID string) (*BrowserReplaySession, boo
 	return session.snapshot(), true
 }
 
+func (m *BrowserReplayManager) Pause(sessionID string) (*BrowserReplaySession, bool, bool) {
+	m.mu.RLock()
+	session, ok := m.sessions[sessionID]
+	m.mu.RUnlock()
+	if !ok {
+		return nil, false, false
+	}
+
+	session.mu.Lock()
+	changed := false
+	if session.Status == BrowserReplayRunning {
+		session.Status = BrowserReplayPaused
+		changed = true
+	}
+	snapshot := session.snapshotLocked()
+	session.mu.Unlock()
+
+	if changed {
+		m.broadcast("browser_replay_paused", snapshot, snapshot.CurrentEventIndex, nil, snapshot.FinalReport)
+	}
+	return snapshot, true, changed
+}
+
+func (m *BrowserReplayManager) Resume(sessionID string) (*BrowserReplaySession, bool, bool) {
+	m.mu.RLock()
+	session, ok := m.sessions[sessionID]
+	m.mu.RUnlock()
+	if !ok {
+		return nil, false, false
+	}
+
+	session.mu.Lock()
+	changed := false
+	if session.Status == BrowserReplayPaused {
+		session.Status = BrowserReplayRunning
+		changed = true
+	}
+	snapshot := session.snapshotLocked()
+	session.mu.Unlock()
+
+	if changed {
+		m.broadcast("browser_replay_resumed", snapshot, snapshot.CurrentEventIndex, nil, snapshot.FinalReport)
+	}
+	return snapshot, true, changed
+}
+
 func (m *BrowserReplayManager) Stop(sessionID string) (*BrowserReplaySession, bool) {
 	m.mu.RLock()
 	session, ok := m.sessions[sessionID]
@@ -164,8 +228,6 @@ func (m *BrowserReplayManager) Stop(sessionID string) (*BrowserReplaySession, bo
 	}
 	snapshot := session.snapshotLocked()
 	session.mu.Unlock()
-
-	m.broadcast("browser_replay_stopped", snapshot, snapshot.CurrentEventIndex, nil, snapshot.FinalReport)
 	return snapshot, true
 }
 
@@ -273,4 +335,25 @@ func cloneBrowserDOMSummary(summary *protocol.DOMSummary) *protocol.DOMSummary {
 		cloned.VisibleText = append([]string(nil), summary.VisibleText...)
 	}
 	return &cloned
+}
+
+func (m *BrowserReplayManager) waitWhilePaused(ctx context.Context, session *BrowserReplaySession) bool {
+	for {
+		session.mu.RLock()
+		status := session.Status
+		session.mu.RUnlock()
+
+		switch status {
+		case BrowserReplayPaused:
+			select {
+			case <-ctx.Done():
+				return false
+			case <-time.After(50 * time.Millisecond):
+			}
+		case BrowserReplayStopped, BrowserReplayFailed, BrowserReplayCompleted:
+			return false
+		default:
+			return true
+		}
+	}
 }

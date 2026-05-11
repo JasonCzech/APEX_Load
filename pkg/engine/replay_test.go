@@ -183,3 +183,52 @@ func TestReplayScriptPublishesProgressEvents(t *testing.T) {
 		t.Fatalf("event indexes = %d,%d want 0,1", progress[1].EventIndex, progress[2].EventIndex)
 	}
 }
+
+func TestReplayScriptCarriesBrowserArtifacts(t *testing.T) {
+	protocolName := registerReplayProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+		return &protocol.Result{
+			ActionName:       action.Name,
+			Success:          true,
+			PageURL:          "https://example.test/page",
+			PageTitle:        "Example",
+			HTML:             "<html><body>ok</body></html>",
+			ScreenshotBase64: "ZmFrZS1pbWFnZQ==",
+			ConsoleEntries:   []protocol.ConsoleEntry{{Level: "log", Text: "ready"}},
+			NetworkEntries:   []protocol.NetworkEntry{{URL: "https://example.test/page", Method: "GET", StatusCode: 200}},
+			DOMSummary:       &protocol.DOMSummary{Title: "Example", ReadyState: "complete", VisibleText: []string{"ok"}},
+		}, nil
+	})
+
+	report, err := ReplayScript(context.Background(), &dsl.Script{
+		Name:     "Browser Replay",
+		Protocol: protocolName,
+		Config:   dsl.ScriptConfig{},
+		Actions:  []dsl.Action{{Name: "open", Type: "browser_navigate", Target: "/page", Selector: "body", Value: "ignored"}},
+	}, ReplayOptions{IgnoreThinkTime: true})
+	if err != nil {
+		t.Fatalf("ReplayScript returned error: %v", err)
+	}
+	if len(report.Events) != 1 {
+		t.Fatalf("event count = %d, want 1", len(report.Events))
+	}
+
+	event := report.Events[0]
+	if event.PageURL != "https://example.test/page" || event.PageTitle != "Example" {
+		t.Fatalf("event page fields = %#v", event)
+	}
+	if event.Screenshot != "ZmFrZS1pbWFnZQ==" {
+		t.Fatalf("screenshot = %q, want ZmFrZS1pbWFnZQ==", event.Screenshot)
+	}
+	if event.HTML != "<html><body>ok</body></html>" {
+		t.Fatalf("html = %q", event.HTML)
+	}
+	if len(event.Console) != 1 || len(event.Network) != 1 {
+		t.Fatalf("console/network entries = %d/%d, want 1/1", len(event.Console), len(event.Network))
+	}
+	if event.DOMSummary == nil || event.DOMSummary.Title != "Example" {
+		t.Fatalf("dom summary = %#v", event.DOMSummary)
+	}
+	if event.Selector != "body" || event.Value != "ignored" {
+		t.Fatalf("selector/value = %q/%q, want body/ignored", event.Selector, event.Value)
+	}
+}

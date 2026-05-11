@@ -481,7 +481,7 @@ export interface BrowserReplayReport {
 export interface BrowserReplaySession {
   id: string
   script_id?: string
-  status: 'queued' | 'running' | 'completed' | 'failed' | 'stopped'
+  status: 'queued' | 'running' | 'paused' | 'completed' | 'failed' | 'stopped'
   group: string
   protocol: string
   started_at?: string

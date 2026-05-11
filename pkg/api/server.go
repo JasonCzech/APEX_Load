@@ -144,6 +144,8 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("POST /api/v1/scripts/import/loadrunner", cors(log(http.HandlerFunc(s.handleImportLoadRunner))))
 	s.mux.Handle("POST /api/v1/scripts/import/sample", cors(log(http.HandlerFunc(s.handleImportSample))))
 	s.mux.Handle("GET /api/v1/browser-replay/sessions/{session_id}", cors(log(http.HandlerFunc(s.handleGetBrowserReplaySession))))
+	s.mux.Handle("POST /api/v1/browser-replay/sessions/{session_id}/pause", cors(log(http.HandlerFunc(s.handlePauseBrowserReplaySession))))
+	s.mux.Handle("POST /api/v1/browser-replay/sessions/{session_id}/resume", cors(log(http.HandlerFunc(s.handleResumeBrowserReplaySession))))
 	s.mux.Handle("POST /api/v1/browser-replay/sessions/{session_id}/stop", cors(log(http.HandlerFunc(s.handleStopBrowserReplaySession))))
 
 	// Recording proxy control and artifact retrieval.

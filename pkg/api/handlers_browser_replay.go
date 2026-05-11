@@ -137,3 +137,31 @@ func (s *Server) handleStopBrowserReplaySession(w http.ResponseWriter, r *http.R
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"session": session})
 }
+
+func (s *Server) handlePauseBrowserReplaySession(w http.ResponseWriter, r *http.Request) {
+	sessionID := r.PathValue("session_id")
+	session, ok, changed := s.browserReplay.Pause(sessionID)
+	if !ok {
+		writeError(w, http.StatusNotFound, "browser replay session not found")
+		return
+	}
+	if !changed {
+		writeError(w, http.StatusConflict, "browser replay session is not running")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"session": session})
+}
+
+func (s *Server) handleResumeBrowserReplaySession(w http.ResponseWriter, r *http.Request) {
+	sessionID := r.PathValue("session_id")
+	session, ok, changed := s.browserReplay.Resume(sessionID)
+	if !ok {
+		writeError(w, http.StatusNotFound, "browser replay session not found")
+		return
+	}
+	if !changed {
+		writeError(w, http.StatusConflict, "browser replay session is not paused")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"session": session})
+}

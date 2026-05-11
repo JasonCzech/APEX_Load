@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -189,4 +190,107 @@ func TestApplyBrowserReplayOverrides(t *testing.T) {
 	if script.Config.Browser.CaptureScreenshots != "off" {
 		t.Fatalf("original script was mutated: %#v", script.Config.Browser)
 	}
+}
+
+func TestHandlePauseResumeBrowserReplaySessionNotFound(t *testing.T) {
+	server := NewServer(ServerConfig{})
+
+	pauseReq := httptest.NewRequest(http.MethodPost, "/api/v1/browser-replay/sessions/missing/pause", nil)
+	pauseResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(pauseResp, pauseReq)
+	if pauseResp.Code != http.StatusNotFound {
+		t.Fatalf("pause status = %d, want %d body=%s", pauseResp.Code, http.StatusNotFound, pauseResp.Body.String())
+	}
+
+	resumeReq := httptest.NewRequest(http.MethodPost, "/api/v1/browser-replay/sessions/missing/resume", nil)
+	resumeResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resumeResp, resumeReq)
+	if resumeResp.Code != http.StatusNotFound {
+		t.Fatalf("resume status = %d, want %d body=%s", resumeResp.Code, http.StatusNotFound, resumeResp.Body.String())
+	}
+}
+
+func TestHandleResumeBrowserReplaySessionFromStartPaused(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	body, _ := json.Marshal(map[string]any{
+		"start_paused": true,
+		"script": map[string]any{
+			"name":     "Paused Browser Draft",
+			"version":  "1.0.0",
+			"protocol": "browser",
+			"config": map[string]any{
+				"base_url": "https://example.com",
+			},
+			"actions": []map[string]any{{
+				"name": "shot",
+				"type": "browser_screenshot",
+			}},
+		},
+	})
+
+	startReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/browser-replay/sessions", bytes.NewReader(body))
+	startReq.Header.Set("Content-Type", "application/json")
+	startResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(startResp, startReq)
+	if startResp.Code != http.StatusOK {
+		t.Fatalf("start status = %d, want %d body=%s", startResp.Code, http.StatusOK, startResp.Body.String())
+	}
+
+	var startPayload struct {
+		ReplaySessionID string `json:"replay_session_id"`
+		Session         struct {
+			Status string `json:"status"`
+		} `json:"session"`
+	}
+	if err := json.Unmarshal(startResp.Body.Bytes(), &startPayload); err != nil {
+		t.Fatalf("json.Unmarshal start returned error: %v", err)
+	}
+	if startPayload.ReplaySessionID == "" {
+		t.Fatal("replay_session_id is empty")
+	}
+	if startPayload.Session.Status != BrowserReplayPaused {
+		t.Fatalf("start status = %q, want %q", startPayload.Session.Status, BrowserReplayPaused)
+	}
+
+	pauseReq := httptest.NewRequest(http.MethodPost, "/api/v1/browser-replay/sessions/"+startPayload.ReplaySessionID+"/pause", nil)
+	pauseResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(pauseResp, pauseReq)
+	if pauseResp.Code != http.StatusConflict {
+		t.Fatalf("pause status = %d, want %d body=%s", pauseResp.Code, http.StatusConflict, pauseResp.Body.String())
+	}
+	if !strings.Contains(pauseResp.Body.String(), "not running") {
+		t.Fatalf("pause conflict body = %q, want not running", pauseResp.Body.String())
+	}
+
+	resumeReq := httptest.NewRequest(http.MethodPost, "/api/v1/browser-replay/sessions/"+startPayload.ReplaySessionID+"/resume", nil)
+	resumeResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resumeResp, resumeReq)
+	if resumeResp.Code != http.StatusOK {
+		t.Fatalf("resume status = %d, want %d body=%s", resumeResp.Code, http.StatusOK, resumeResp.Body.String())
+	}
+
+	var resumePayload struct {
+		Session struct {
+			Status string `json:"status"`
+		} `json:"session"`
+	}
+	if err := json.Unmarshal(resumeResp.Body.Bytes(), &resumePayload); err != nil {
+		t.Fatalf("json.Unmarshal resume returned error: %v", err)
+	}
+	if resumePayload.Session.Status != BrowserReplayRunning {
+		t.Fatalf("resume status = %q, want %q", resumePayload.Session.Status, BrowserReplayRunning)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		session, ok := server.browserReplay.Get(startPayload.ReplaySessionID)
+		if !ok {
+			t.Fatal("session disappeared")
+		}
+		if session.Status == BrowserReplayCompleted || session.Status == BrowserReplayFailed || session.Status == BrowserReplayStopped {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("session did not reach terminal state after resume")
 }

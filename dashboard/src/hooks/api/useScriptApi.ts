@@ -76,6 +76,16 @@ export function useScriptApi() {
     [],
   )
 
+  const pauseBrowserReplaySession = useCallback(
+    (sessionId: string) => request<BrowserReplaySessionResponse>(`/browser-replay/sessions/${sessionId}/pause`, { method: 'POST' }),
+    [],
+  )
+
+  const resumeBrowserReplaySession = useCallback(
+    (sessionId: string) => request<BrowserReplaySessionResponse>(`/browser-replay/sessions/${sessionId}/resume`, { method: 'POST' }),
+    [],
+  )
+
   const exportScript = useCallback(
     (id: string, outputDir?: string, filename?: string) =>
       request<any>(`/scripts/${id}/export`, {
@@ -164,6 +174,8 @@ export function useScriptApi() {
       startDraftBrowserReplaySession,
       getBrowserReplaySession,
       stopBrowserReplaySession,
+      pauseBrowserReplaySession,
+      resumeBrowserReplaySession,
       exportScript,
       importLoadRunner,
       importSample,
@@ -188,6 +200,8 @@ export function useScriptApi() {
       startDraftBrowserReplaySession,
       getBrowserReplaySession,
       stopBrowserReplaySession,
+      pauseBrowserReplaySession,
+      resumeBrowserReplaySession,
       exportScript,
       importLoadRunner,
       importSample,

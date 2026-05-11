@@ -165,6 +165,7 @@ interface ReplayReport {
 interface ReplayOptionsState {
   groupName: string
   ignoreThinkTime: boolean
+  startPaused: boolean
   variablesText: string
 }
 
@@ -584,6 +585,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
   const [replayOptions, setReplayOptions] = useState<ReplayOptionsState>({
     groupName: '',
     ignoreThinkTime: true,
+    startPaused: false,
     variablesText: '{\n  \n}',
   })
   const isBrowserScript = script.protocol === 'browser'
@@ -680,7 +682,12 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
 
     if (msg.type === 'browser_replay_started' && msg.session) {
       const session = msg.session
-      setBrowserReplaySession(session)
+      setBrowserReplaySession(prev => {
+        if (prev?.id === session.id && prev.status === 'paused' && session.status === 'running') {
+          return { ...session, status: 'paused' }
+        }
+        return session
+      })
       setReplayReport(prev => prev ? {
         ...prev,
         group: session.group || prev.group,
@@ -793,6 +800,20 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
       if (typeof msg.event_index === 'number' && msg.event_index >= 0) {
         setExpandedReplayEvent(msg.event_index)
       }
+      return
+    }
+
+    if ((msg.type === 'browser_replay_paused' || msg.type === 'browser_replay_resumed') && msg.session) {
+      const session = msg.session
+      setBrowserReplaySession(session)
+      const isPaused = msg.type === 'browser_replay_paused'
+      setReplayActivity(prev => upsertReplayActivity(prev, {
+        id: isPaused ? 'paused' : 'resumed',
+        kind: 'event',
+        title: isPaused ? 'Browser replay paused' : 'Browser replay resumed',
+        detail: session.group || 'browser replay',
+        timestamp: new Date().toISOString(),
+      }))
       return
     }
 
@@ -1065,6 +1086,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
         group_name: replayGroup,
         replay_session_id: replaySessionId,
         ignore_think_time: replayOptions.ignoreThinkTime,
+        start_paused: currentScript.protocol === 'browser' ? replayOptions.startPaused : undefined,
         variables,
         script: currentScript,
         browser: currentScript.protocol === 'browser' ? {
@@ -1085,6 +1107,18 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
           ? await api.startBrowserReplaySession(scriptId, payload)
           : await api.startDraftBrowserReplaySession(payload)
         if (jsonMode) setScript(currentScript)
+        if (res.session) {
+          setBrowserReplaySession(res.session)
+          if (res.session.status === 'paused') {
+            setReplayActivity(prev => upsertReplayActivity(prev, {
+              id: 'paused',
+              kind: 'event',
+              title: 'Browser replay paused',
+              detail: res.session.group || 'browser replay',
+              timestamp: new Date().toISOString(),
+            }))
+          }
+        }
         setActiveReplaySessionId(res.replay_session_id || res.session?.id || replaySessionId)
         setSuccess('Browser replay started.')
         browserSessionStarted = true
@@ -1140,6 +1174,21 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
     }
   }
 
+  const handlePauseResumeReplay = async () => {
+    if (!isBrowserScript || !activeReplaySessionId || !browserReplaySession) return
+    try {
+      const isPaused = browserReplaySession.status === 'paused'
+      const res = isPaused
+        ? await api.resumeBrowserReplaySession(activeReplaySessionId)
+        : await api.pauseBrowserReplaySession(activeReplaySessionId)
+      if (res?.session) setBrowserReplaySession(res.session)
+      setError('')
+      setSuccess(isPaused ? 'Resuming browser replay…' : 'Pausing browser replay…')
+    } catch (e: any) {
+      setError(e.message || 'Failed to update browser replay state')
+    }
+  }
+
   const toggleJsonMode = () => {
     if (!jsonMode) {
       setJsonText(JSON.stringify({ script }, null, 2))
@@ -1177,6 +1226,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
   const replayVariableDiffs = replayReport
     ? buildReplayVariableDiffs(replaySeedVariables, replayReport.events)
     : []
+  const isReplayPaused = isBrowserScript && browserReplaySession?.status === 'paused'
 
   const addDataSource = () => {
     const nextIndex = (script.data_sources?.length || 0) + 1
@@ -1658,6 +1708,16 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
                     />
                     <span>Ignore think time for replay</span>
                   </label>
+                  {isBrowserScript && (
+                    <label className="checkbox-label replay-checkbox">
+                      <input
+                        type="checkbox"
+                        checked={replayOptions.startPaused}
+                        onChange={e => setReplayOptions(prev => ({ ...prev, startPaused: e.target.checked }))}
+                      />
+                      <span>Start paused</span>
+                    </label>
+                  )}
                   <label className="full-width replay-variables-field">
                     <span>Replay Variables JSON</span>
                     <textarea
@@ -1668,6 +1728,11 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
                   </label>
                 </div>
                 <div className="replay-panel-actions" style={{ marginTop: 12, justifyContent: 'flex-end' }}>
+                  {isBrowserScript && activeReplaySessionId && (
+                    <button className="btn btn-sm btn-ghost" onClick={handlePauseResumeReplay} disabled={!replaying || !browserReplaySession || browserReplaySession.status === 'completed' || browserReplaySession.status === 'failed' || browserReplaySession.status === 'stopped'}>
+                      {isReplayPaused ? 'Resume Replay' : 'Pause Replay'}
+                    </button>
+                  )}
                   {isBrowserScript && activeReplaySessionId && (
                     <button className="btn btn-sm btn-ghost" onClick={handleStopReplay} disabled={!replaying}>
                       Stop Replay
