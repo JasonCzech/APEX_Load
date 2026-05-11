@@ -42,7 +42,7 @@ type ProjectConfig struct {
 // regex patterns for LoadRunner C function parsing
 var (
 	// Matches function calls like: web_url("StepName", ...)
-	reFuncCall = regexp.MustCompile(`^\s*(web_url|web_submit_data|web_submit_form|web_custom_request|web_reg_save_param|web_reg_find|lr_think_time|lr_start_transaction|lr_end_transaction|web_add_header|web_add_auto_header)\s*\(`)
+	reFuncCall = regexp.MustCompile(`^\s*((?:web|lr)_[A-Za-z0-9_]+)\s*\(`)
 
 	// Matches key=value patterns inside ITEMDATA sections
 	reKeyValue = regexp.MustCompile(`"([^"]+)=([^"]*)"`)
@@ -182,6 +182,10 @@ func parseFunctionBlock(block string, lineNum int) (ParsedFunction, error) {
 		}
 	case "web_add_header", "web_add_auto_header":
 		parseWebAddHeader(&fn, inner)
+	default:
+		if len(fn.RawArgs) > 0 {
+			fn.StepName = fn.RawArgs[0]
+		}
 	}
 
 	return fn, nil
@@ -311,6 +315,44 @@ func extractItemData(fn *ParsedFunction, inner string) {
 	}
 }
 
+// ParseConfigSections parses INI-style section/key=value content into nested maps.
+func ParseConfigSections(content string) map[string]map[string]string {
+	sections := make(map[string]map[string]string)
+	scanner := bufio.NewScanner(strings.NewReader(content))
+	section := ""
+
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, ";") {
+			continue
+		}
+
+		if m := reSectionHeader.FindStringSubmatch(line); len(m) > 1 {
+			section = m[1]
+			if _, ok := sections[section]; !ok {
+				sections[section] = make(map[string]string)
+			}
+			continue
+		}
+
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+
+		if _, ok := sections[section]; !ok {
+			sections[section] = make(map[string]string)
+		}
+		sections[section][strings.TrimSpace(parts[0])] = strings.TrimSpace(parts[1])
+	}
+
+	if len(sections[""]) == 0 {
+		delete(sections, "")
+	}
+
+	return sections
+}
+
 // ParseUSRFile parses a LoadRunner .usr project configuration file.
 func ParseUSRFile(content string) (*ProjectConfig, error) {
 	cfg := &ProjectConfig{
@@ -338,6 +380,9 @@ func ParseUSRFile(content string) (*ProjectConfig, error) {
 		}
 		key := strings.TrimSpace(parts[0])
 		value := strings.TrimSpace(parts[1])
+		if cfg.RuntimeFile == "" && strings.HasSuffix(strings.ToLower(value), ".cfg") {
+			cfg.RuntimeFile = value
+		}
 
 		switch section {
 		case "General":

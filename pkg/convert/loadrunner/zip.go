@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"sort"
 	"strings"
+
+	"github.com/jasonczech/stormrunner/pkg/dsl"
 )
 
 // ConvertZip processes a ZIP archive containing a LoadRunner script folder
@@ -47,8 +50,12 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 
 	// Find and parse .usr file for project config
 	var projectConfig *ProjectConfig
+	var projectFileName string
+	var projectSections map[string]map[string]string
 	for name, content := range files {
 		if strings.HasSuffix(strings.ToLower(name), ".usr") {
+			projectFileName = name
+			projectSections = ParseConfigSections(content)
 			cfg, err := ParseUSRFile(content)
 			if err == nil {
 				projectConfig = cfg
@@ -59,6 +66,11 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 			}
 			break
 		}
+	}
+
+	runtimeFileName, runtimeContent := findRuntimeConfig(files, projectConfig)
+	if opts.HTTPConfig == nil && runtimeContent != "" {
+		opts.HTTPConfig = ParseRuntimeCfg(runtimeContent).ToHTTPConfig()
 	}
 
 	// Determine which .c files to parse
@@ -116,7 +128,13 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 	}
 
 	// Run the converter
-	return Convert(parsedActions, opts)
+	result, err := Convert(parsedActions, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	attachLoadRunnerMetadata(result.Script, result, projectFileName, projectSections, projectConfig, files, runtimeFileName)
+	return result, nil
 }
 
 // findFile looks up a file in the map by base name, handling path variations.
@@ -133,4 +151,105 @@ func findFile(files map[string]string, name string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+func findRuntimeConfig(files map[string]string, projectConfig *ProjectConfig) (string, string) {
+	if projectConfig != nil && projectConfig.RuntimeFile != "" {
+		if content, ok := findFile(files, projectConfig.RuntimeFile); ok {
+			return projectConfig.RuntimeFile, content
+		}
+	}
+
+	for name, content := range files {
+		if strings.EqualFold(filepath.Base(name), "default.cfg") {
+			return name, content
+		}
+	}
+
+	cfgNames := make([]string, 0)
+	for name := range files {
+		if strings.HasSuffix(strings.ToLower(name), ".cfg") {
+			cfgNames = append(cfgNames, name)
+		}
+	}
+	sort.Strings(cfgNames)
+	if len(cfgNames) == 0 {
+		return "", ""
+	}
+
+	name := cfgNames[0]
+	return name, files[name]
+}
+
+func collectRuntimeSections(files map[string]string) map[string]map[string]map[string]string {
+	sections := make(map[string]map[string]map[string]string)
+	fileNames := make([]string, 0)
+	for name := range files {
+		if strings.HasSuffix(strings.ToLower(name), ".cfg") {
+			fileNames = append(fileNames, name)
+		}
+	}
+	sort.Strings(fileNames)
+	for _, name := range fileNames {
+		sections[filepath.Base(name)] = ParseConfigSections(files[name])
+	}
+	return sections
+}
+
+func uniqueStrings(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	return result
+}
+
+func attachLoadRunnerMetadata(script *dsl.Script, result *ConvertResult, projectFileName string, projectSections map[string]map[string]string, projectConfig *ProjectConfig, files map[string]string, runtimeFileName string) {
+	if script == nil {
+		return
+	}
+
+	preserved := make(map[string]any)
+	if projectFileName != "" {
+		preserved["project_file"] = filepath.Base(projectFileName)
+	}
+	if len(projectSections) > 0 {
+		preserved["project_settings"] = projectSections
+	}
+	if projectConfig != nil && projectConfig.RuntimeFile != "" {
+		preserved["declared_runtime_file"] = filepath.Base(projectConfig.RuntimeFile)
+	}
+	runtimeSections := collectRuntimeSections(files)
+	if len(runtimeSections) > 0 {
+		preserved["runtime_files"] = runtimeSections
+	}
+	if runtimeFileName != "" {
+		preserved["mapped_runtime_file"] = filepath.Base(runtimeFileName)
+	}
+	if result != nil && len(result.Stats.UnsupportedFuncs) > 0 {
+		preserved["unsupported_functions"] = uniqueStrings(result.Stats.UnsupportedFuncs)
+	}
+	if result != nil && len(result.Warnings) > 0 {
+		preserved["warnings"] = append([]string(nil), result.Warnings...)
+	}
+	if len(preserved) == 0 {
+		return
+	}
+
+	if script.Metadata == nil {
+		script.Metadata = &dsl.ScriptMetadata{}
+	}
+	script.Metadata.Import = &dsl.ImportMetadata{
+		Source:           "loadrunner",
+		SourceScriptName: script.Name,
+		Preserved:        preserved,
+	}
 }

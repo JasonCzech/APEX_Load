@@ -37,6 +37,7 @@ func (s *SQLiteStore) init() error {
 			version TEXT,
 			generated_by TEXT,
 			generated_from TEXT,
+			metadata_json TEXT,
 			config TEXT,
 			data_sources TEXT,
 			init TEXT,
@@ -121,10 +122,17 @@ func (s *SQLiteStore) init() error {
 		}
 	}
 
+	if _, err := s.db.Exec(`ALTER TABLE scripts ADD COLUMN metadata_json TEXT`); err != nil {
+		if err.Error() != "SQL logic error: duplicate column name: metadata_json (1)" {
+			return fmt.Errorf("failed to add metadata_json column: %w", err)
+		}
+	}
+
 	return nil
 }
 
 func (s *SQLiteStore) SaveScript(script *dsl.Script) error {
+	metadataJSON, _ := json.Marshal(script.Metadata)
 	configJSON, _ := json.Marshal(script.Config)
 	dataSourcesJSON, _ := json.Marshal(script.DataSources)
 	initJSON, _ := json.Marshal(script.Init)
@@ -136,11 +144,12 @@ func (s *SQLiteStore) SaveScript(script *dsl.Script) error {
 	}
 	script.UpdatedAt = time.Now()
 
-	query := `INSERT INTO scripts (id, name, protocol, version, generated_by, generated_from, config, data_sources, init, actions, teardown, created_at, updated_at)
-			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	query := `INSERT INTO scripts (id, name, protocol, version, generated_by, generated_from, metadata_json, config, data_sources, init, actions, teardown, created_at, updated_at)
+			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			  ON CONFLICT(id) DO UPDATE SET
 			  name=excluded.name, protocol=excluded.protocol, version=excluded.version, 
 			  generated_by=excluded.generated_by, generated_from=excluded.generated_from,
+			  metadata_json=excluded.metadata_json,
 			  config=excluded.config, data_sources=excluded.data_sources, 
 			  init=excluded.init, actions=excluded.actions, teardown=excluded.teardown, 
 			  updated_at=excluded.updated_at`
@@ -148,26 +157,29 @@ func (s *SQLiteStore) SaveScript(script *dsl.Script) error {
 	_, err := s.db.Exec(query,
 		script.ID, script.Name, script.Protocol, script.Version,
 		script.GeneratedBy, script.GeneratedFrom,
-		string(configJSON), string(dataSourcesJSON), string(initJSON), string(actionsJSON), string(teardownJSON),
+		string(metadataJSON), string(configJSON), string(dataSourcesJSON), string(initJSON), string(actionsJSON), string(teardownJSON),
 		script.CreatedAt, script.UpdatedAt)
 	return err
 }
 
 func (s *SQLiteStore) GetScript(id string) (*dsl.Script, error) {
 	var script dsl.Script
-	var configJSON, dataSourcesJSON, initJSON, actionsJSON, teardownJSON string
+	var metadataJSON, configJSON, dataSourcesJSON, initJSON, actionsJSON, teardownJSON string
 
-	query := `SELECT id, name, protocol, version, generated_by, generated_from, config, data_sources, init, actions, teardown, created_at, updated_at 
+	query := `SELECT id, name, protocol, version, generated_by, generated_from, COALESCE(metadata_json, ''), config, data_sources, init, actions, teardown, created_at, updated_at 
 			  FROM scripts WHERE id = ?`
 	err := s.db.QueryRow(query, id).Scan(
 		&script.ID, &script.Name, &script.Protocol, &script.Version,
 		&script.GeneratedBy, &script.GeneratedFrom,
-		&configJSON, &dataSourcesJSON, &initJSON, &actionsJSON, &teardownJSON,
+		&metadataJSON, &configJSON, &dataSourcesJSON, &initJSON, &actionsJSON, &teardownJSON,
 		&script.CreatedAt, &script.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
 
+	if metadataJSON != "" && metadataJSON != "null" {
+		json.Unmarshal([]byte(metadataJSON), &script.Metadata)
+	}
 	json.Unmarshal([]byte(configJSON), &script.Config)
 	json.Unmarshal([]byte(dataSourcesJSON), &script.DataSources)
 	json.Unmarshal([]byte(initJSON), &script.Init)
@@ -178,7 +190,7 @@ func (s *SQLiteStore) GetScript(id string) (*dsl.Script, error) {
 }
 
 func (s *SQLiteStore) ListScripts() ([]*dsl.Script, error) {
-	query := `SELECT id, name, protocol, version, generated_by, generated_from, config, data_sources, init, actions, teardown, created_at, updated_at 
+	query := `SELECT id, name, protocol, version, generated_by, generated_from, COALESCE(metadata_json, ''), config, data_sources, init, actions, teardown, created_at, updated_at 
 			  FROM scripts ORDER BY created_at DESC`
 	rows, err := s.db.Query(query)
 	if err != nil {
@@ -189,14 +201,17 @@ func (s *SQLiteStore) ListScripts() ([]*dsl.Script, error) {
 	var scripts []*dsl.Script
 	for rows.Next() {
 		var script dsl.Script
-		var configJSON, dataSourcesJSON, initJSON, actionsJSON, teardownJSON string
+		var metadataJSON, configJSON, dataSourcesJSON, initJSON, actionsJSON, teardownJSON string
 		err := rows.Scan(
 			&script.ID, &script.Name, &script.Protocol, &script.Version,
 			&script.GeneratedBy, &script.GeneratedFrom,
-			&configJSON, &dataSourcesJSON, &initJSON, &actionsJSON, &teardownJSON,
+			&metadataJSON, &configJSON, &dataSourcesJSON, &initJSON, &actionsJSON, &teardownJSON,
 			&script.CreatedAt, &script.UpdatedAt)
 		if err != nil {
 			return nil, err
+		}
+		if metadataJSON != "" && metadataJSON != "null" {
+			json.Unmarshal([]byte(metadataJSON), &script.Metadata)
 		}
 		json.Unmarshal([]byte(configJSON), &script.Config)
 		json.Unmarshal([]byte(dataSourcesJSON), &script.DataSources)

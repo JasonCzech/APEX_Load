@@ -3,19 +3,30 @@ package dsl
 import "time"
 
 type Script struct {
-	ID            string       `json:"id"`
-	Name          string       `json:"name"`
-	Version       string       `json:"version"`
-	Protocol      string       `json:"protocol"`
-	GeneratedBy   string       `json:"generated_by,omitempty"`
-	GeneratedFrom string       `json:"generated_from,omitempty"`
-	Config        ScriptConfig `json:"config"`
-	DataSources   []DataSource `json:"data_sources,omitempty"`
-	Init          []Action     `json:"init,omitempty"`
-	Actions       []Action     `json:"actions"`
-	Teardown      []Action     `json:"teardown,omitempty"`
-	CreatedAt     time.Time    `json:"created_at,omitempty"`
-	UpdatedAt     time.Time    `json:"updated_at,omitempty"`
+	ID            string          `json:"id"`
+	Name          string          `json:"name"`
+	Version       string          `json:"version"`
+	Protocol      string          `json:"protocol"`
+	GeneratedBy   string          `json:"generated_by,omitempty"`
+	GeneratedFrom string          `json:"generated_from,omitempty"`
+	Metadata      *ScriptMetadata `json:"metadata,omitempty"`
+	Config        ScriptConfig    `json:"config"`
+	DataSources   []DataSource    `json:"data_sources,omitempty"`
+	Init          []Action        `json:"init,omitempty"`
+	Actions       []Action        `json:"actions"`
+	Teardown      []Action        `json:"teardown,omitempty"`
+	CreatedAt     time.Time       `json:"created_at,omitempty"`
+	UpdatedAt     time.Time       `json:"updated_at,omitempty"`
+}
+
+type ScriptMetadata struct {
+	Import *ImportMetadata `json:"import,omitempty"`
+}
+
+type ImportMetadata struct {
+	Source           string         `json:"source,omitempty"`
+	SourceScriptName string         `json:"source_script_name,omitempty"`
+	Preserved        map[string]any `json:"preserved,omitempty"`
 }
 
 type ScriptConfig struct {
@@ -36,24 +47,24 @@ type RunLogicConfig struct {
 
 // LogConfig controls per-VUser logging verbosity.
 type LogConfig struct {
-	Level      string `json:"level,omitempty"`        // "disabled", "standard" (default), "extended"
-	OnErrorOnly bool  `json:"on_error_only,omitempty"` // if true, use extended logging only when errors occur
+	Level       string `json:"level,omitempty"`         // "disabled", "standard" (default), "extended"
+	OnErrorOnly bool   `json:"on_error_only,omitempty"` // if true, use extended logging only when errors occur
 }
 
 // HTTPConfig holds all HTTP protocol runtime settings, modeled after
 // the configuration surface exposed by LoadRunner VuGen.
 type HTTPConfig struct {
 	// Connection
-	Version         string `json:"version,omitempty"`           // "1.0", "1.1", "2" (default: auto-negotiate)
+	Version         string `json:"version,omitempty"`            // "1.0", "1.1", "2" (default: auto-negotiate)
 	MaxConnsPerHost int    `json:"max_conns_per_host,omitempty"` // default: 100
 	MaxIdleConns    int    `json:"max_idle_conns,omitempty"`
-	KeepAlive       *bool  `json:"keep_alive,omitempty"`        // default: true
+	KeepAlive       *bool  `json:"keep_alive,omitempty"` // default: true
 
 	// Timeouts (milliseconds)
 	ConnectTimeoutMs int `json:"connect_timeout_ms,omitempty"` // default: 30000
 	RequestTimeoutMs int `json:"request_timeout_ms,omitempty"` // default: 60000
 	TLSTimeoutMs     int `json:"tls_timeout_ms,omitempty"`     // default: 10000
-	IdleTimeoutMs    int `json:"idle_timeout_ms,omitempty"`     // default: 90000
+	IdleTimeoutMs    int `json:"idle_timeout_ms,omitempty"`    // default: 90000
 
 	// TLS / SSL
 	TLS TLSConfig `json:"tls,omitempty"`
@@ -74,13 +85,13 @@ type HTTPConfig struct {
 	MaxRedirects *int `json:"max_redirects,omitempty"` // default: 10, -1 = disable
 
 	// Cookies
-	CookiesEnabled      *bool `json:"cookies_enabled,omitempty"`           // default: true
+	CookiesEnabled      *bool `json:"cookies_enabled,omitempty"` // default: true
 	ClearCookiesPerIter *bool `json:"clear_cookies_per_iteration,omitempty"`
 }
 
 // TLSConfig controls TLS/SSL behavior for the HTTP client.
 type TLSConfig struct {
-	MinVersion         string `json:"min_version,omitempty"`          // "1.0", "1.1", "1.2", "1.3"
+	MinVersion         string `json:"min_version,omitempty"` // "1.0", "1.1", "1.2", "1.3"
 	MaxVersion         string `json:"max_version,omitempty"`
 	InsecureSkipVerify bool   `json:"insecure_skip_verify,omitempty"` // skip server cert validation
 	ClientCertFile     string `json:"client_cert_file,omitempty"`     // path to PEM client cert
@@ -101,16 +112,16 @@ type AuthConfig struct {
 	Type     string `json:"type,omitempty"`     // "basic", "bearer", "ntlm", "digest"
 	Username string `json:"username,omitempty"` // for basic/ntlm/digest
 	Password string `json:"password,omitempty"`
-	Token    string `json:"token,omitempty"`    // for bearer
-	Domain   string `json:"domain,omitempty"`   // for ntlm
+	Token    string `json:"token,omitempty"`  // for bearer
+	Domain   string `json:"domain,omitempty"` // for ntlm
 }
 
 // ErrorHandlingConfig controls how execution errors are handled.
 type ErrorHandlingConfig struct {
 	ContinueOnError bool   `json:"continue_on_error,omitempty"`
-	MaxRetries      int    `json:"max_retries,omitempty"`     // default: 0
-	RetryDelayMs    int    `json:"retry_delay_ms,omitempty"`  // default: 1000
-	RetryBackoff    string `json:"retry_backoff,omitempty"`   // "fixed", "exponential"
+	MaxRetries      int    `json:"max_retries,omitempty"`       // default: 0
+	RetryDelayMs    int    `json:"retry_delay_ms,omitempty"`    // default: 1000
+	RetryBackoff    string `json:"retry_backoff,omitempty"`     // "fixed", "exponential"
 	SnapshotOnError bool   `json:"snapshot_on_error,omitempty"` // capture req/resp on failure
 }
 
@@ -126,24 +137,24 @@ type ThinkTimeConfig struct {
 }
 
 type PacingConfig struct {
-	Type          string `json:"type"`                      // "none", "fixed_delay", "random_delay", "fixed_interval", "random_interval", "tps"
-	DelayMs       int    `json:"delay_ms,omitempty"`         // for fixed_delay
-	MinDelayMs    int    `json:"min_delay_ms,omitempty"`     // for random_delay
-	MaxDelayMs    int    `json:"max_delay_ms,omitempty"`     // for random_delay
-	IntervalMs    int    `json:"interval_ms,omitempty"`      // for fixed_interval
-	MinIntervalMs int    `json:"min_interval_ms,omitempty"` // for random_interval
-	MaxIntervalMs int    `json:"max_interval_ms,omitempty"` // for random_interval
+	Type          string  `json:"type"`                      // "none", "fixed_delay", "random_delay", "fixed_interval", "random_interval", "tps"
+	DelayMs       int     `json:"delay_ms,omitempty"`        // for fixed_delay
+	MinDelayMs    int     `json:"min_delay_ms,omitempty"`    // for random_delay
+	MaxDelayMs    int     `json:"max_delay_ms,omitempty"`    // for random_delay
+	IntervalMs    int     `json:"interval_ms,omitempty"`     // for fixed_interval
+	MinIntervalMs int     `json:"min_interval_ms,omitempty"` // for random_interval
+	MaxIntervalMs int     `json:"max_interval_ms,omitempty"` // for random_interval
 	TPS           float64 `json:"tps,omitempty"`             // for tps mode
 }
 
 type DataSource struct {
 	Name           string   `json:"name"`
-	Type           string   `json:"type"`            // "csv", "dat"
+	Type           string   `json:"type"` // "csv", "dat"
 	Path           string   `json:"path"`
-	Strategy       string   `json:"strategy"`        // "sequential", "random", "unique"
-	Delimiter      string   `json:"delimiter,omitempty"`      // default ","
+	Strategy       string   `json:"strategy"`            // "sequential", "random", "unique"
+	Delimiter      string   `json:"delimiter,omitempty"` // default ","
 	FirstRowHeader bool     `json:"first_row_header,omitempty"`
-	Columns        []string `json:"columns,omitempty"`        // explicit column names if no header
+	Columns        []string `json:"columns,omitempty"` // explicit column names if no header
 }
 
 type Action struct {

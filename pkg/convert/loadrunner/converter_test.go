@@ -1,6 +1,10 @@
 package loadrunner
 
 import (
+	"archive/zip"
+	"bytes"
+	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -51,6 +55,8 @@ Action()
 		"RecContentType=application/json",
 		LAST);
 
+	web_set_max_html_param_len("4096");
+
 	return 0;
 }
 `
@@ -72,13 +78,14 @@ func TestParseActionFile(t *testing.T) {
 	}
 
 	expected := map[string]int{
-		"web_reg_save_param": 1,
-		"lr_start_transaction": 1,
-		"web_url": 1,
-		"lr_think_time": 2,
-		"web_submit_data": 1,
-		"lr_end_transaction": 1,
-		"web_custom_request": 2,
+		"web_reg_save_param":         1,
+		"lr_start_transaction":       1,
+		"web_url":                    1,
+		"lr_think_time":              2,
+		"web_submit_data":            1,
+		"lr_end_transaction":         1,
+		"web_custom_request":         2,
+		"web_set_max_html_param_len": 1,
 	}
 
 	for name, count := range expected {
@@ -149,6 +156,12 @@ func TestConvert(t *testing.T) {
 	if result.Stats.Transactions != 1 {
 		t.Errorf("expected 1 transaction, got %d", result.Stats.Transactions)
 	}
+	if result.Stats.Skipped != 1 {
+		t.Errorf("expected 1 skipped function, got %d", result.Stats.Skipped)
+	}
+	if len(result.Stats.UnsupportedFuncs) != 1 || result.Stats.UnsupportedFuncs[0] != "web_set_max_html_param_len" {
+		t.Fatalf("unsupported funcs = %#v, want [web_set_max_html_param_len]", result.Stats.UnsupportedFuncs)
+	}
 
 	// Check think time config was computed
 	if result.Script.Config.ThinkTime.MeanMs == 0 {
@@ -169,10 +182,10 @@ func TestConvert(t *testing.T) {
 
 func TestSanitizeName(t *testing.T) {
 	tests := map[string]string{
-		"Login Page":         "Login_Page",
-		"GET /api/orders":    "GET__api_orders",
-		"Step (1)":           "Step_1",
-		"":                   "unnamed_action",
+		"Login Page":      "Login_Page",
+		"GET /api/orders": "GET__api_orders",
+		"Step (1)":        "Step_1",
+		"":                "unnamed_action",
 	}
 	for input, expected := range tests {
 		got := sanitizeName(input)
@@ -196,6 +209,7 @@ func TestConvertParamReferences(t *testing.T) {
 func TestParseUSRFile(t *testing.T) {
 	content := `[General]
 Type=Web
+RuntimeSettings=default.cfg
 
 [Actions]
 Action0=vuser_init.c
@@ -211,5 +225,64 @@ Action2=vuser_end.c
 	}
 	if len(cfg.ActionFiles) < 2 {
 		t.Errorf("expected at least 2 action files, got %d", len(cfg.ActionFiles))
+	}
+	if cfg.RuntimeFile != "default.cfg" {
+		t.Fatalf("runtime file = %q, want default.cfg", cfg.RuntimeFile)
+	}
+}
+
+func TestConvertZipPreservesLoadRunnerMetadata(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	addFile := func(name string, content string) {
+		writer, err := zw.Create(name)
+		if err != nil {
+			t.Fatalf("Create(%q) returned error: %v", name, err)
+		}
+		if _, err := writer.Write([]byte(content)); err != nil {
+			t.Fatalf("Write(%q) returned error: %v", name, err)
+		}
+	}
+
+	addFile("Demo.usr", `[General]
+Type=Web
+RuntimeSettings=default.cfg
+
+[Actions]
+Action1=Action.c
+`)
+	addFile("Action.c", sampleActionC)
+	addFile("default.cfg", `[HTTP]
+ConnectTimeout=45
+ReceiveTimeout=20
+KeepAlive=0
+
+[Browser Emulation]
+UserAgent=VuGen Browser
+AcceptLanguage=en-US
+`)
+	if err := zw.Close(); err != nil {
+		t.Fatalf("zip.Close returned error: %v", err)
+	}
+
+	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip returned error: %v", err)
+	}
+	if result.Script.Config.HTTP.ConnectTimeoutMs != 45000 {
+		t.Fatalf("connect timeout = %d, want 45000", result.Script.Config.HTTP.ConnectTimeoutMs)
+	}
+	if result.Script.Metadata == nil || result.Script.Metadata.Import == nil {
+		t.Fatal("expected script import metadata to be populated")
+	}
+	payload, err := json.Marshal(result.Script.Metadata.Import)
+	if err != nil {
+		t.Fatalf("json.Marshal returned error: %v", err)
+	}
+	text := string(payload)
+	for _, want := range []string{"\"source\":\"loadrunner\"", "\"project_settings\"", "\"runtime_files\"", "default.cfg", "\"ConnectTimeout\":\"45\""} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("expected metadata JSON to contain %q, got %s", want, text)
+		}
 	}
 }

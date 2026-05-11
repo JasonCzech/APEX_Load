@@ -39,6 +39,16 @@ interface HTTPConfig {
   auth?: { type?: string; username?: string; password?: string; token?: string }
 }
 
+interface ImportMetadata {
+  source?: string
+  source_script_name?: string
+  preserved?: Record<string, any>
+}
+
+interface ScriptMetadata {
+  import?: ImportMetadata
+}
+
 interface ScriptConfig {
   base_url: string
   think_time?: ThinkTimeConfig
@@ -51,6 +61,7 @@ interface ScriptConfig {
 
 interface ScriptData {
   name: string; version: string; protocol: string
+  metadata?: ScriptMetadata
   config: ScriptConfig
   actions: Action[]
 }
@@ -80,6 +91,16 @@ const EMPTY_ACTION: Action = {
   extractors: [], assertions: [], think_time_after: true
 }
 
+function getImportSummary(metadata?: ImportMetadata | null) {
+  const preserved = metadata?.preserved || {}
+
+  return {
+    runtimeFiles: Object.keys(preserved.runtime_files || {}),
+    projectSections: Object.keys(preserved.project_settings || {}),
+    unsupportedFunctions: Array.isArray(preserved.unsupported_functions) ? preserved.unsupported_functions : [],
+  }
+}
+
 export default function ScriptEditor({ scriptId, initialScript, onSave, onClose }: Props) {
   const api = useApi()
   const [script, setScript] = useState<ScriptData>(initialScript || { ...EMPTY_SCRIPT })
@@ -90,6 +111,8 @@ export default function ScriptEditor({ scriptId, initialScript, onSave, onClose 
   const [jsonMode, setJsonMode] = useState(false)
   const [jsonText, setJsonText] = useState('')
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({})
+  const importMetadata = script.metadata?.import
+  const importSummary = getImportSummary(importMetadata)
 
   const toggleSection = (id: string) => setOpenSections(prev => ({ ...prev, [id]: !prev[id] }))
 
@@ -321,6 +344,45 @@ export default function ScriptEditor({ scriptId, initialScript, onSave, onClose 
               </label>
             </div>
           </div>
+
+          {importMetadata && (
+            <div className="import-metadata-panel">
+              <div className="import-metadata-header">
+                <div>
+                  <h3 className="panel-title">Imported Metadata</h3>
+                  <p>This script retains source-specific LoadRunner settings that Stormrunner does not edit directly.</p>
+                </div>
+                <span className="import-source-chip">{importMetadata.source || 'loadrunner'}</span>
+              </div>
+
+              <div className="import-metadata-grid">
+                <div className="import-metadata-card">
+                  <span>Source Script</span>
+                  <strong>{importMetadata.source_script_name || script.name}</strong>
+                </div>
+                <div className="import-metadata-card">
+                  <span>Project Sections</span>
+                  <strong>{importSummary.projectSections.length}</strong>
+                  <small>{importSummary.projectSections.join(', ') || 'None captured'}</small>
+                </div>
+                <div className="import-metadata-card">
+                  <span>Runtime Files</span>
+                  <strong>{importSummary.runtimeFiles.length}</strong>
+                  <small>{importSummary.runtimeFiles.join(', ') || 'None found'}</small>
+                </div>
+                <div className="import-metadata-card">
+                  <span>Unsupported Functions</span>
+                  <strong>{importSummary.unsupportedFunctions.length}</strong>
+                  <small>{importSummary.unsupportedFunctions.slice(0, 4).join(', ') || 'None'}</small>
+                </div>
+              </div>
+
+              <details className="import-metadata-details">
+                <summary>View preserved metadata JSON</summary>
+                <pre>{JSON.stringify(importMetadata, null, 2)}</pre>
+              </details>
+            </div>
+          )}
 
           {/* Runtime Settings Panels */}
           <div className="runtime-settings">

@@ -2,6 +2,26 @@ import { useState, useRef } from 'react'
 import { useApi } from '../hooks/useApi'
 import './LoadRunnerImport.css'
 
+interface ImportMetadata {
+  source?: string
+  source_script_name?: string
+  preserved?: Record<string, any>
+}
+
+function getImportMetadata(script: any): ImportMetadata | null {
+  return script?.metadata?.import || null
+}
+
+function getMetadataSummary(metadata: ImportMetadata | null) {
+  const preserved = metadata?.preserved || {}
+
+  return {
+    runtimeFiles: Object.keys(preserved.runtime_files || {}),
+    projectSections: Object.keys(preserved.project_settings || {}),
+    unsupportedFunctions: Array.isArray(preserved.unsupported_functions) ? preserved.unsupported_functions : [],
+  }
+}
+
 interface ConvertStats {
   total_functions: number; converted_actions: number; extractors: number
   think_times: number; transactions: number; skipped: number
@@ -27,6 +47,8 @@ export default function LoadRunnerImport({ onImported, onClose }: Props) {
   const [options, setOptions] = useState({
     name: '', base_url: '', include_assertions: true,
   })
+  const importMetadata = getImportMetadata(result?.script)
+  const metadataSummary = getMetadataSummary(importMetadata)
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault(); setDragOver(false)
@@ -150,6 +172,43 @@ export default function LoadRunnerImport({ onImported, onClose }: Props) {
             <div className="lr-warnings">
               <h4>⚠ Conversion Warnings ({result.warnings.length})</h4>
               <ul>{result.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>
+            </div>
+          )}
+
+          {importMetadata && (
+            <div className="lr-preserved">
+              <div className="lr-preserved-header">
+                <h4>Preserved LoadRunner Settings</h4>
+                <span>These values will be saved with the Stormrunner script.</span>
+              </div>
+
+              <div className="lr-preserved-grid">
+                <div className="lr-preserved-card">
+                  <span className="lr-preserved-label">Source</span>
+                  <strong>{importMetadata.source || 'loadrunner'}</strong>
+                  <small>{importMetadata.source_script_name || result.script.name}</small>
+                </div>
+                <div className="lr-preserved-card">
+                  <span className="lr-preserved-label">Project Sections</span>
+                  <strong>{metadataSummary.projectSections.length}</strong>
+                  <small>{metadataSummary.projectSections.join(', ') || 'None captured'}</small>
+                </div>
+                <div className="lr-preserved-card">
+                  <span className="lr-preserved-label">Runtime Files</span>
+                  <strong>{metadataSummary.runtimeFiles.length}</strong>
+                  <small>{metadataSummary.runtimeFiles.join(', ') || 'None found'}</small>
+                </div>
+                <div className="lr-preserved-card">
+                  <span className="lr-preserved-label">Unsupported Functions</span>
+                  <strong>{metadataSummary.unsupportedFunctions.length}</strong>
+                  <small>{metadataSummary.unsupportedFunctions.slice(0, 4).join(', ') || 'None'}</small>
+                </div>
+              </div>
+
+              <details className="lr-preserved-details">
+                <summary>View preserved metadata JSON</summary>
+                <pre>{JSON.stringify(importMetadata, null, 2)}</pre>
+              </details>
             </div>
           )}
 

@@ -32,12 +32,94 @@
 .config-panel, .actions-layout {
   background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden;
 }
+.import-metadata-panel {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+}
 .panel-title {
   font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em;
   color: var(--text-secondary); font-weight: 600; margin: 0;
 }
 .config-panel { padding: 16px 20px; }
 .config-panel .panel-title { margin-bottom: 14px; }
+.import-metadata-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  margin-bottom: 14px;
+}
+.import-metadata-header p {
+  margin: 6px 0 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+  max-width: 760px;
+}
+.import-source-chip {
+  border: 1px solid rgba(34,197,94,0.25);
+  background: rgba(34,197,94,0.08);
+  color: var(--success);
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.import-metadata-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+.import-metadata-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px;
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(34,197,94,0.05), rgba(34,197,94,0.01));
+  border: 1px solid var(--border);
+}
+.import-metadata-card span {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+.import-metadata-card strong {
+  font-size: 18px;
+  color: var(--text-primary);
+}
+.import-metadata-card small {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.import-metadata-details {
+  margin-top: 14px;
+}
+.import-metadata-details summary {
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+.import-metadata-details pre {
+  margin: 10px 0 0;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 14px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+  max-height: 260px;
+  overflow: auto;
+  white-space: pre-wrap;
+}
 .form-grid {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px;
 }
@@ -177,4 +259,5 @@
 @media (max-width: 900px) {
   .actions-layout { flex-direction: column; }
   .actions-sidebar { width: 100%; border-right: none; border-bottom: 1px solid var(--border); }
+  .import-metadata-header { flex-direction: column; }
 }
