@@ -119,6 +119,68 @@ func TestDeleteActiveSession(t *testing.T) {
 	}
 }
 
+func TestPauseResumeSessionSkipsCaptureWhilePaused(t *testing.T) {
+	rec := New(":0")
+	session, err := rec.StartSession("test", "Pause Test", SessionFilters{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rec.PauseSession("test"); err != nil {
+		t.Fatal(err)
+	}
+
+	req, _ := http.NewRequest("GET", "http://example.com/api/paused", nil)
+	resp := &http.Response{StatusCode: http.StatusOK, Header: make(http.Header)}
+	rec.recordRequest(session, req, nil, resp, []byte(`{"ok":true}`), 10*time.Millisecond)
+	if len(session.Requests) != 0 {
+		t.Fatalf("expected paused session to skip capture, got %d requests", len(session.Requests))
+	}
+
+	if _, err := rec.ResumeSession("test"); err != nil {
+		t.Fatal(err)
+	}
+	req, _ = http.NewRequest("GET", "http://example.com/api/resumed", nil)
+	rec.recordRequest(session, req, nil, resp, []byte(`{"ok":true}`), 10*time.Millisecond)
+
+	if len(session.Requests) != 1 {
+		t.Fatalf("expected resumed session to capture 1 request, got %d", len(session.Requests))
+	}
+}
+
+func TestUpdateRequestCurationFields(t *testing.T) {
+	rec := New(":0")
+	session, err := rec.StartSession("test", "Curation Test", SessionFilters{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session.Requests = append(session.Requests, RecordedRequest{Seq: 1, Method: "GET", Path: "/api/users"})
+
+	stepName := "Load Users"
+	transaction := "Browse Users"
+	note := "Keep this as the main API call"
+	excluded := true
+	think := int64(1500)
+	updated, err := rec.UpdateRequest("test", 1, RequestUpdate{
+		StepName:        &stepName,
+		TransactionName: &transaction,
+		Note:            &note,
+		Excluded:        &excluded,
+		ThinkTimeMs:     &think,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.StepName != stepName || updated.TransactionName != transaction || updated.Note != note {
+		t.Fatalf("unexpected updated labels: %+v", updated)
+	}
+	if !updated.Excluded {
+		t.Fatal("expected request to be excluded")
+	}
+	if updated.ThinkTimeMs != think {
+		t.Fatalf("expected think time %d, got %d", think, updated.ThinkTimeMs)
+	}
+}
+
 func TestProxyIntegration(t *testing.T) {
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -216,6 +278,51 @@ func TestProxyIntegration(t *testing.T) {
 
 	if len(captured) != 2 {
 		t.Fatalf("expected 2 events, got %d", len(captured))
+	}
+}
+
+func TestRecordRequestRichMetadataRedactionAndTruncation(t *testing.T) {
+	rec := New(":0")
+	session, err := rec.StartSession("test", "Metadata Test", SessionFilters{
+		ExcludeStatic:         true,
+		BodyCaptureLimitBytes: 12,
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req, _ := http.NewRequest("POST", "http://example.com/api/data?debug=true", strings.NewReader(`{"request":"abcdefghijklmnopqrstuvwxyz"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer secret")
+
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header: http.Header{
+			"Set-Cookie":   []string{"session=secret", "theme=dark"},
+			"Content-Type": []string{"application/json"},
+		},
+	}
+	rec.recordRequest(session, req, []byte(`{"request":"abcdefghijklmnopqrstuvwxyz"}`), resp, []byte(`{"payload":"abcdefghijklmnopqrstuvwxyz"}`), 10*time.Millisecond)
+
+	if len(session.Requests) != 1 {
+		t.Fatalf("expected 1 request, got %d", len(session.Requests))
+	}
+
+	recorded := session.Requests[0]
+	if recorded.QueryString != "debug=true" {
+		t.Fatalf("expected query string, got %q", recorded.QueryString)
+	}
+	if recorded.ResourceType != "api" {
+		t.Fatalf("expected api resource type, got %q", recorded.ResourceType)
+	}
+	if !recorded.BodyTruncated || !recorded.ResponseBodyTruncated {
+		t.Fatalf("expected request and response bodies to be marked truncated: %+v", recorded)
+	}
+	if recorded.Headers["Authorization"] != "[redacted]" {
+		t.Fatalf("expected authorization to be redacted, got %q", recorded.Headers["Authorization"])
+	}
+	if got := recorded.ResponseHeadersMulti["Set-Cookie"]; len(got) != 2 || got[0] != "[redacted]" || got[1] != "[redacted]" {
+		t.Fatalf("expected redacted multi set-cookie values, got %#v", got)
 	}
 }
 

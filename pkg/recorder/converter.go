@@ -10,13 +10,13 @@ import (
 )
 
 type Correlation struct {
-	Name          string `json:"name"`
-	Source        string `json:"source"`
-	Expression    string `json:"expression"`
-	ExtractType   string `json:"extract_type"`
-	FoundInSeq    int    `json:"found_in_seq"`
-	UsedInSeqs    []int  `json:"used_in_seqs"`
-	SampleValue   string `json:"sample_value"`
+	Name        string `json:"name"`
+	Source      string `json:"source"`
+	Expression  string `json:"expression"`
+	ExtractType string `json:"extract_type"`
+	FoundInSeq  int    `json:"found_in_seq"`
+	UsedInSeqs  []int  `json:"used_in_seqs"`
+	SampleValue string `json:"sample_value"`
 }
 
 type ConvertResult struct {
@@ -53,7 +53,7 @@ func ConvertSession(session *Session, name string) *ConvertResult {
 	}
 
 	for i, req := range session.Requests {
-		if req.IsStatic {
+		if req.IsStatic || req.Excluded {
 			continue
 		}
 
@@ -68,6 +68,9 @@ func ConvertSession(session *Session, name string) *ConvertResult {
 		target = applyCorrelationVars(target, corrMap)
 
 		actionName := fmt.Sprintf("%s %s", req.Method, simplifyPath(req.Path))
+		if req.StepName != "" {
+			actionName = req.StepName
+		}
 		if i < 10 {
 			actionName = fmt.Sprintf("%02d - %s", i+1, actionName)
 		} else {
@@ -180,7 +183,7 @@ type candidate struct {
 
 var (
 	tokenPatterns = []*regexp.Regexp{
-		regexp.MustCompile(`"(?:token|access_token|id_token|refresh_token|session_id|sessionid|sid|csrf|_token|xsrf|auth)"\s*:\s*"([^"]{8,})"`)  ,
+		regexp.MustCompile(`"(?:token|access_token|id_token|refresh_token|session_id|sessionid|sid|csrf|_token|xsrf|auth)"\s*:\s*"([^"]{8,})"`),
 		regexp.MustCompile(`"(?:id|Id|ID)"\s*:\s*"([0-9a-f-]{8,})"`),
 		regexp.MustCompile(`"(?:id|Id|ID)"\s*:\s*(\d{4,})`),
 	}

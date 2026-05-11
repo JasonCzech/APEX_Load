@@ -9,14 +9,25 @@ interface RecordedRequest {
   timestamp: string
   method: string
   url: string
+  scheme?: string
   path: string
+  query_string?: string
   host: string
   status_code: number
   response_time_ms: number
   content_type: string
   body: string
+  body_size_bytes?: number
+  body_truncated?: boolean
+  response_body_size_bytes?: number
+  response_body_truncated?: boolean
   think_time_ms: number
   is_static: boolean
+  resource_type?: string
+  step_name?: string
+  transaction_name?: string
+  note?: string
+  excluded?: boolean
 }
 
 interface RecordingSession {
@@ -55,6 +66,14 @@ export default function RecordingStudio() {
   const [feedback, setFeedback] = useState('')
   const [feedbackType, setFeedbackType] = useState<'success' | 'error'>('success')
   const [selectedSession, setSelectedSession] = useState<RecordingSession | null>(null)
+  const [selectedRequest, setSelectedRequest] = useState<RecordedRequest | null>(null)
+  const [requestDraft, setRequestDraft] = useState({
+    step_name: '',
+    transaction_name: '',
+    note: '',
+    think_time_ms: 0,
+    excluded: false,
+  })
   const [showSetup, setShowSetup] = useState(true)
   const convertTask = useAsyncTask<{ script: any; correlations: Correlation[]; warnings: string[] }>()
 
@@ -102,6 +121,17 @@ export default function RecordingStudio() {
     return () => clearInterval(interval)
   }, [refresh])
 
+  useEffect(() => {
+    if (!selectedRequest) return
+    setRequestDraft({
+      step_name: selectedRequest.step_name || '',
+      transaction_name: selectedRequest.transaction_name || '',
+      note: selectedRequest.note || '',
+      think_time_ms: selectedRequest.think_time_ms || 0,
+      excluded: !!selectedRequest.excluded,
+    })
+  }, [selectedRequest])
+
   const handleStart = async () => {
     try {
       const data: any = {
@@ -129,6 +159,81 @@ export default function RecordingStudio() {
       showFeedback(`Recording stopped — ${activeSession.requests?.length || 0} requests captured`)
       setActiveSession(null)
       refresh()
+    } catch (e: any) {
+      showFeedback(e.message, 'error')
+    }
+  }
+
+  const handlePauseResume = async () => {
+    if (!activeSession) return
+    try {
+      const next = activeSession.status === 'paused'
+        ? await api.resumeRecording(activeSession.id)
+        : await api.pauseRecording(activeSession.id)
+      setActiveSession(next)
+      showFeedback(next.status === 'paused' ? 'Recording paused' : 'Recording resumed')
+    } catch (e: any) {
+      showFeedback(e.message, 'error')
+    }
+  }
+
+  const replaceRequest = (sessionId: string, updated: RecordedRequest) => {
+    const apply = (session: RecordingSession | null) => {
+      if (!session || session.id !== sessionId) return session
+      return {
+        ...session,
+        requests: session.requests.map(req => req.seq === updated.seq ? updated : req),
+      }
+    }
+    setSelectedSession(apply)
+    setActiveSession(apply)
+    setSessions(prev => prev.map(session => apply(session) || session))
+    setSelectedRequest(current => current?.seq === updated.seq ? updated : current)
+  }
+
+  const handleToggleRequestExcluded = async (session: RecordingSession, req: RecordedRequest) => {
+    try {
+      const updated = await api.updateRecordedRequest(session.id, req.seq, { excluded: !req.excluded })
+      replaceRequest(session.id, updated)
+    } catch (e: any) {
+      showFeedback(e.message, 'error')
+    }
+  }
+
+  const handleSaveRequestDetails = async () => {
+    if (!selectedSession || !selectedRequest) return
+    try {
+      const updated = await api.updateRecordedRequest(selectedSession.id, selectedRequest.seq, requestDraft)
+      replaceRequest(selectedSession.id, updated)
+      showFeedback(`Request #${updated.seq} updated`)
+    } catch (e: any) {
+      showFeedback(e.message, 'error')
+    }
+  }
+
+  const handlePreviewConversion = async (session: RecordingSession) => {
+    try {
+      const result = await convertTask.run(
+        () => api.previewRecordingConversion(session.id, session.name),
+        { clearValue: true },
+      )
+      showFeedback(`Preview generated with ${result.script.actions?.length || 0} actions and ${result.correlations?.length || 0} correlations`)
+    } catch (e: any) {
+      showFeedback(e.message, 'error')
+    }
+  }
+
+  const handleExportHAR = async (session: RecordingSession) => {
+    try {
+      const res = await fetch(`/api/v1/recorder/${session.id}/export?format=har`)
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({ error: 'Failed to export HAR' }))
+        throw new Error(payload.error || 'Failed to export HAR')
+      }
+      const blob = await res.blob()
+      const safeName = (session.name || 'recording').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+      downloadBlob(blob, `${safeName || 'recording'}.har`)
+      showFeedback(`Exported "${session.name}" as HAR`)
     } catch (e: any) {
       showFeedback(e.message, 'error')
     }
@@ -266,7 +371,7 @@ export default function RecordingStudio() {
           {activeSession ? (
             <>
               <span className="rec-live-dot" />
-              Recording: {activeSession.name}
+              {activeSession.status === 'paused' ? 'Paused' : 'Recording'}: {activeSession.name}
             </>
           ) : (
             'New Recording'
@@ -348,6 +453,9 @@ export default function RecordingStudio() {
               <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2" /></svg>
               Stop Recording
             </button>
+            <button className="btn btn-secondary rec-stop-btn" onClick={handlePauseResume}>
+              {activeSession.status === 'paused' ? 'Resume Recording' : 'Pause Recording'}
+            </button>
           </div>
         )}
       </div>
@@ -361,7 +469,10 @@ export default function RecordingStudio() {
               <div
                 key={session.id}
                 className={`rec-session-card ${selectedSession?.id === session.id ? 'selected' : ''}`}
-                onClick={() => setSelectedSession(selectedSession?.id === session.id ? null : session)}
+                onClick={() => {
+                  setSelectedSession(selectedSession?.id === session.id ? null : session)
+                  setSelectedRequest(null)
+                }}
               >
                 <div className="rec-session-header">
                   <span className="rec-session-name">{session.name}</span>
@@ -378,6 +489,19 @@ export default function RecordingStudio() {
                     disabled={converting}
                   >
                     {converting ? 'Converting...' : 'Convert to Script'}
+                  </button>
+                  <button
+                    className="btn btn-sm btn-secondary"
+                    onClick={(e) => { e.stopPropagation(); handlePreviewConversion(session) }}
+                    disabled={converting}
+                  >
+                    Preview
+                  </button>
+                  <button
+                    className="btn btn-sm btn-secondary"
+                    onClick={(e) => { e.stopPropagation(); handleExportHAR(session) }}
+                  >
+                    Export HAR
                   </button>
                   <button
                     className="btn btn-sm btn-secondary"
@@ -411,23 +535,103 @@ export default function RecordingStudio() {
                   <th>Time</th>
                   <th>Think</th>
                   <th>Type</th>
+                  <th>Size</th>
+                  <th>Use</th>
                 </tr>
               </thead>
               <tbody>
                 {selectedSession.requests?.map(req => (
-                  <tr key={req.seq} className={req.is_static ? 'static' : ''}>
+                  <tr
+                    key={req.seq}
+                    className={`${req.is_static ? 'static' : ''} ${req.excluded ? 'static' : ''} ${selectedRequest?.seq === req.seq ? 'selected' : ''}`}
+                    onClick={() => setSelectedRequest(req)}
+                  >
                     <td className="cell-mono">{req.seq}</td>
                     <td><span className={`rec-method ${req.method.toLowerCase()}`}>{req.method}</span></td>
-                    <td className="cell-path" title={req.url}>{req.path}</td>
+                    <td className="cell-path" title={req.url}>{req.step_name || req.path}{req.query_string ? `?${req.query_string}` : ''}</td>
                     <td className={req.status_code >= 400 ? 'text-danger' : ''}>{req.status_code}</td>
                     <td className="cell-mono">{req.response_time_ms.toFixed(0)}ms</td>
                     <td className="cell-mono">{req.think_time_ms > 0 ? `${req.think_time_ms}ms` : '—'}</td>
-                    <td className="cell-muted">{req.content_type ? req.content_type.split(';')[0] : '—'}</td>
+                    <td className="cell-muted">{req.resource_type || (req.content_type ? req.content_type.split(';')[0] : '—')}</td>
+                    <td className="cell-mono">
+                      {(req.body_size_bytes || 0) + (req.response_body_size_bytes || 0)}B
+                      {(req.body_truncated || req.response_body_truncated) ? '*' : ''}
+                    </td>
+                    <td>
+                      <button
+                        className="btn btn-sm btn-secondary"
+                        onClick={(e) => { e.stopPropagation(); handleToggleRequestExcluded(selectedSession, req) }}
+                      >
+                        {req.excluded ? 'Include' : 'Exclude'}
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          {selectedRequest && (
+            <div className="rec-request-editor">
+              <div className="rec-editor-header">
+                <div>
+                  <span className={`rec-method ${selectedRequest.method.toLowerCase()}`}>{selectedRequest.method}</span>
+                  <code>{selectedRequest.path}{selectedRequest.query_string ? `?${selectedRequest.query_string}` : ''}</code>
+                </div>
+                <span className="cell-mono">#{selectedRequest.seq}</span>
+              </div>
+              <div className="rec-editor-grid">
+                <label className="rec-form-row">
+                  <span className="rec-label">Step Name</span>
+                  <input
+                    className="rec-input"
+                    value={requestDraft.step_name}
+                    onChange={e => setRequestDraft(prev => ({ ...prev, step_name: e.target.value }))}
+                    placeholder={`${selectedRequest.method} ${selectedRequest.path}`}
+                  />
+                </label>
+                <label className="rec-form-row">
+                  <span className="rec-label">Transaction</span>
+                  <input
+                    className="rec-input"
+                    value={requestDraft.transaction_name}
+                    onChange={e => setRequestDraft(prev => ({ ...prev, transaction_name: e.target.value }))}
+                    placeholder="e.g. Login, Browse Catalog, Checkout"
+                  />
+                </label>
+                <label className="rec-form-row">
+                  <span className="rec-label">Think Time (ms)</span>
+                  <input
+                    className="rec-input"
+                    type="number"
+                    min="0"
+                    value={requestDraft.think_time_ms}
+                    onChange={e => setRequestDraft(prev => ({ ...prev, think_time_ms: Math.max(0, Number(e.target.value) || 0) }))}
+                  />
+                </label>
+                <label className="rec-editor-check">
+                  <input
+                    type="checkbox"
+                    checked={!requestDraft.excluded}
+                    onChange={e => setRequestDraft(prev => ({ ...prev, excluded: !e.target.checked }))}
+                  />
+                  Use in generated script
+                </label>
+              </div>
+              <label className="rec-form-row">
+                <span className="rec-label">Note</span>
+                <textarea
+                  className="rec-input rec-textarea"
+                  value={requestDraft.note}
+                  onChange={e => setRequestDraft(prev => ({ ...prev, note: e.target.value }))}
+                  placeholder="Capture intent, manual correlation notes, or cleanup reminders"
+                />
+              </label>
+              <div className="rec-editor-actions">
+                <button className="btn btn-primary btn-sm" onClick={handleSaveRequestDetails}>Save Request</button>
+                <button className="btn btn-secondary btn-sm" onClick={() => setSelectedRequest(null)}>Close</button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

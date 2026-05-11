@@ -45,6 +45,16 @@ const NAV_ITEMS: { id: NavPage; label: string; icon: JSX.Element }[] = [
     )
   },
   {
+    id: 'recorder',
+    label: 'Recorder',
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="9" />
+        <circle cx="12" cy="12" r="3" fill="currentColor" />
+      </svg>
+    ),
+  },
+  {
     id: 'results',
     label: 'Results',
     icon: (

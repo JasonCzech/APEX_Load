@@ -1,6 +1,7 @@
 package recorder
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -106,6 +107,26 @@ func TestConvertSession_StaticFiltered(t *testing.T) {
 	result := ConvertSession(s, "")
 	if len(result.Script.Actions) != 1 {
 		t.Fatalf("expected 1 non-static action, got %d", len(result.Script.Actions))
+	}
+}
+
+func TestConvertSession_ExcludedRequestsAndStepNames(t *testing.T) {
+	s := &Session{
+		ID:      "test",
+		Name:    "Curated Test",
+		BaseURL: "http://example.com",
+		Requests: []RecordedRequest{
+			{Seq: 1, Method: "GET", URL: "http://example.com/api/keep", Path: "/api/keep", StatusCode: 200, StepName: "Load Keep API"},
+			{Seq: 2, Method: "GET", URL: "http://example.com/api/drop", Path: "/api/drop", StatusCode: 200, Excluded: true},
+		},
+	}
+
+	result := ConvertSession(s, "")
+	if len(result.Script.Actions) != 1 {
+		t.Fatalf("expected 1 included action, got %d", len(result.Script.Actions))
+	}
+	if !strings.Contains(result.Script.Actions[0].Name, "Load Keep API") {
+		t.Fatalf("expected custom step name, got %q", result.Script.Actions[0].Name)
 	}
 }
 
@@ -294,16 +315,16 @@ func TestConvertSession_CorrelationApplied(t *testing.T) {
 		BaseURL: "http://example.com",
 		Requests: []RecordedRequest{
 			{
-				Seq:          1,
-				Timestamp:    time.Now(),
-				Method:       "POST",
-				URL:          "http://example.com/auth",
-				Path:         "/auth",
-				Host:         "example.com",
-				StatusCode:   200,
-				ResponseBody: `{"token":"dynamic-token-value-12345678"}`,
+				Seq:             1,
+				Timestamp:       time.Now(),
+				Method:          "POST",
+				URL:             "http://example.com/auth",
+				Path:            "/auth",
+				Host:            "example.com",
+				StatusCode:      200,
+				ResponseBody:    `{"token":"dynamic-token-value-12345678"}`,
 				ResponseHeaders: map[string]string{},
-				Headers: map[string]string{},
+				Headers:         map[string]string{},
 			},
 			{
 				Seq:        2,

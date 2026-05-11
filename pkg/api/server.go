@@ -25,6 +25,7 @@ type Server struct {
 	mux        *http.ServeMux
 }
 
+// ServerConfig configures API server startup behavior and integrations.
 type ServerConfig struct {
 	Addr           string
 	ProxyAddr      string
@@ -33,6 +34,7 @@ type ServerConfig struct {
 	Store          storage.Store
 }
 
+// NewServer wires the HTTP server, test runner, websocket hub, recorder, and routes.
 func NewServer(cfg ServerConfig) *Server {
 	if cfg.Addr == "" {
 		cfg.Addr = ":8080"
@@ -69,7 +71,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	cors := corsMiddleware(allowedOrigins)
 	log := loggingMiddleware
 
-	// API routes
+	// Test lifecycle and archive endpoints.
 	s.mux.Handle("POST /api/v1/tests", cors(log(http.HandlerFunc(s.handleCreateTest))))
 	s.mux.Handle("POST /api/v1/tests/estimate", cors(log(http.HandlerFunc(s.handleEstimateTest))))
 	s.mux.Handle("GET /api/v1/tests", cors(log(http.HandlerFunc(s.handleListTests))))
@@ -89,6 +91,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("GET /api/v1/tests/{id}/archive/summaries", cors(log(http.HandlerFunc(s.handleGetRunArchiveSummaries))))
 	s.mux.Handle("GET /api/v1/tests/{id}/archive/report", cors(log(http.HandlerFunc(s.handleGetRunArchiveReport))))
 
+	// Script CRUD, validation, import, and export endpoints.
 	s.mux.Handle("POST /api/v1/scripts", cors(log(http.HandlerFunc(s.handleCreateScript))))
 	s.mux.Handle("GET /api/v1/scripts", cors(log(http.HandlerFunc(s.handleListScripts))))
 	s.mux.Handle("GET /api/v1/scripts/{id}", cors(log(http.HandlerFunc(s.handleGetScript))))
@@ -100,16 +103,22 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("POST /api/v1/scripts/import/loadrunner", cors(log(http.HandlerFunc(s.handleImportLoadRunner))))
 	s.mux.Handle("POST /api/v1/scripts/import/sample", cors(log(http.HandlerFunc(s.handleImportSample))))
 
-	// Recording proxy
+	// Recording proxy control and artifact retrieval.
 	s.mux.Handle("POST /api/v1/recorder/start", cors(log(http.HandlerFunc(s.handleStartRecording))))
+	s.mux.Handle("POST /api/v1/recorder/{id}/pause", cors(log(http.HandlerFunc(s.handlePauseRecording))))
+	s.mux.Handle("POST /api/v1/recorder/{id}/resume", cors(log(http.HandlerFunc(s.handleResumeRecording))))
 	s.mux.Handle("POST /api/v1/recorder/{id}/stop", cors(log(http.HandlerFunc(s.handleStopRecording))))
 	s.mux.Handle("GET /api/v1/recorder/{id}", cors(log(http.HandlerFunc(s.handleGetRecording))))
 	s.mux.Handle("GET /api/v1/recorder", cors(log(http.HandlerFunc(s.handleListRecordings))))
 	s.mux.Handle("DELETE /api/v1/recorder/{id}", cors(log(http.HandlerFunc(s.handleDeleteRecording))))
+	s.mux.Handle("PATCH /api/v1/recorder/{id}/requests/{seq}", cors(log(http.HandlerFunc(s.handleUpdateRecordedRequest))))
+	s.mux.Handle("POST /api/v1/recorder/{id}/convert/preview", cors(log(http.HandlerFunc(s.handlePreviewRecordingConversion))))
 	s.mux.Handle("POST /api/v1/recorder/{id}/convert", cors(log(http.HandlerFunc(s.handleConvertRecording))))
+	s.mux.Handle("GET /api/v1/recorder/{id}/export", cors(log(http.HandlerFunc(s.handleExportRecording))))
 	s.mux.Handle("GET /api/v1/recorder/status", cors(log(http.HandlerFunc(s.handleRecorderStatus))))
 	s.mux.Handle("GET /api/v1/recorder/ca.pem", cors(log(http.HandlerFunc(s.handleRecorderCACert))))
 
+	// System endpoints for health and global settings.
 	s.mux.Handle("GET /api/v1/system/health", cors(log(http.HandlerFunc(s.handleHealthCheck))))
 	s.mux.Handle("GET /api/v1/system/settings", cors(log(http.HandlerFunc(s.handleGetSystemSettings))))
 	s.mux.Handle("PUT /api/v1/system/settings", cors(log(http.HandlerFunc(s.handleUpdateSystemSettings))))
@@ -152,6 +161,7 @@ func (s *Server) routes(allowedOrigins []string) {
 }
 
 func (s *Server) Start() error {
+	// Start websocket broadcast loop before serving HTTP requests.
 	go s.hub.Run()
 
 	if err := s.recorder.StartProxy(); err != nil {
@@ -166,6 +176,7 @@ func (s *Server) Start() error {
 }
 
 func (s *Server) Shutdown(ctx context.Context) error {
+	// Stop background components before closing active HTTP listeners.
 	s.hub.Stop()
 	s.recorder.StopProxy()
 	return s.httpServer.Shutdown(ctx)

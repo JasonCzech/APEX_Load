@@ -13,6 +13,7 @@ stormctl
 dashboard/dist/
 pkg/api/static/index.html
 pkg/api/static/assets/
+.playwright-cli/
 
 # OS specific
 .DS_Store
@@ -57,4 +58,4 @@ vendor/
 *.db-shm
 *.db-wal
 *.log
-
+pkg/api/artifacts/archives/*/
