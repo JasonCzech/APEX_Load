@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useApi } from '../hooks/useApi'
-import { useProject } from '../hooks/useProject'
+import { useApplication } from '../hooks/useApplication'
 import { TestSummary, MetricsHistoryPoint } from '../types'
 import StatusBadge from './StatusBadge'
 import './DashboardPage.css'
@@ -22,7 +22,7 @@ interface HealthData {
 
 export default function DashboardPage({ testStatuses, metricsHistory, connected, onSelectTest }: Props) {
   const api = useApi()
-  const { activeProject } = useProject()
+  const { activeApplication } = useApplication()
   const [tests, setTests] = useState<TestSummary[]>([])
   const [health, setHealth] = useState<HealthData | null>(null)
   const [loadTime] = useState(() => new Date())
@@ -31,7 +31,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connected,
     const load = async () => {
       try {
         const [testRes, healthRes] = await Promise.all([
-          api.listTests(activeProject?.id),
+          api.listTests(activeApplication?.id ? { application_id: activeApplication.id } : undefined),
           api.getHealth().catch(() => null),
         ])
         setTests(testRes.tests || [])
@@ -41,7 +41,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connected,
     load()
     const interval = setInterval(load, 3000)
     return () => clearInterval(interval)
-  }, [api, activeProject?.id])
+  }, [api, activeApplication?.id])
 
   const resolvedTests = useMemo(() =>
     tests.map(t => ({

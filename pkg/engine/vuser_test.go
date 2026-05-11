@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"regexp"
 	"testing"
 
 	"github.com/jasonczech/stormrunner/pkg/dsl"
@@ -22,6 +23,7 @@ func TestVUser_Interpolate(t *testing.T) {
 		{"{{var.token}}", "abc123"},
 		{"https://{{var.host}}/api", "https://example.com/api"},
 		{"Bearer {{var.token}}", "Bearer abc123"},
+		{"{{data.host}}", "example.com"},
 		{"no-vars-here", "no-vars-here"},
 		{"", ""},
 	}
@@ -31,6 +33,25 @@ func TestVUser_Interpolate(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("interpolate(%q) = %q, want %q", tt.input, got, tt.want)
 		}
+	}
+}
+
+func TestVUser_Interpolate_EnvAndFn(t *testing.T) {
+	t.Setenv("STORMRUNNER_TEST_ENV", "env-value")
+	vu := &VUser{Variables: map[string]string{}}
+
+	if got := vu.interpolate("{{env.STORMRUNNER_TEST_ENV}}"); got != "env-value" {
+		t.Fatalf("env interpolation = %q, want %q", got, "env-value")
+	}
+
+	gotUUID := vu.interpolate("{{fn.uuid()}}")
+	uuidPattern := regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
+	if !uuidPattern.MatchString(gotUUID) {
+		t.Fatalf("fn.uuid() interpolation returned non-uuid value: %q", gotUUID)
+	}
+
+	if got := vu.interpolate("{{env.STORMRUNNER_MISSING_ENV}}"); got != "{{env.STORMRUNNER_MISSING_ENV}}" {
+		t.Fatalf("missing env should remain unchanged, got %q", got)
 	}
 }
 
@@ -78,8 +99,13 @@ func TestVUser_MergeExtractions(t *testing.T) {
 }
 
 func TestVUser_ResolveAction(t *testing.T) {
+	t.Setenv("STORMRUNNER_ACTION_ENV", "env-action")
+
 	vu := &VUser{
-		Variables: map[string]string{"base": "https://api.test.com"},
+		Variables: map[string]string{
+			"base":           "https://api.test.com",
+			"users.username": "alice",
+		},
 	}
 
 	action := dsl.Action{
@@ -89,6 +115,13 @@ func TestVUser_ResolveAction(t *testing.T) {
 		Target:  "{{var.base}}/users/1",
 		Headers: map[string]string{"Accept": "application/json"},
 		Body:    `{"key": "{{var.base}}"}`,
+		Params: map[string]any{
+			"user": "{{data.users.username}}",
+			"auth": map[string]any{
+				"token": "{{env.STORMRUNNER_ACTION_ENV}}",
+			},
+			"labels": []any{"{{var.base}}", 123},
+		},
 		Extractors: []dsl.Extractor{
 			{Name: "id", Source: "body", Type: "jsonpath", Expression: "$.id"},
 		},
@@ -107,6 +140,17 @@ func TestVUser_ResolveAction(t *testing.T) {
 	}
 	if string(resolved.Body) != `{"key": "https://api.test.com"}` {
 		t.Errorf("Body = %q", string(resolved.Body))
+	}
+	if resolved.Params["user"] != "alice" {
+		t.Errorf("Params[user] = %v, want alice", resolved.Params["user"])
+	}
+	auth, ok := resolved.Params["auth"].(map[string]any)
+	if !ok || auth["token"] != "env-action" {
+		t.Errorf("Params[auth] = %#v, want token env-action", resolved.Params["auth"])
+	}
+	labels, ok := resolved.Params["labels"].([]any)
+	if !ok || len(labels) != 2 || labels[0] != "https://api.test.com" || labels[1] != 123 {
+		t.Errorf("Params[labels] = %#v", resolved.Params["labels"])
 	}
 	if len(resolved.Extractors) != 1 {
 		t.Fatalf("Extractors count = %d", len(resolved.Extractors))

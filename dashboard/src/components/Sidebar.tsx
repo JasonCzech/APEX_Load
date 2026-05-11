@@ -1,18 +1,22 @@
 import { useState } from 'react'
-import { Project } from '../types'
+import { Application, Release } from '../types'
 import ProjectModal from './ProjectModal'
 import './Sidebar.css'
 
-export type NavPage = 'dashboard' | 'tests' | 'scripts' | 'results' | 'monitoring' | 'settings'
+export type NavPage = 'dashboard' | 'tests' | 'new-test' | 'scripts' | 'results' | 'monitoring' | 'settings'
 
 interface Props {
   active: NavPage
   onNavigate: (page: NavPage) => void
   connected: boolean
-  projects?: Project[]
-  activeProject?: Project | null
-  onProjectChange?: (project: Project) => void
-  onCreateProject?: (name: string) => Promise<Project>
+  applications?: Application[]
+  releases?: Release[]
+  activeApplication?: Application | null
+  activeRelease?: Release | null
+  onApplicationChange?: (application: Application) => void
+  onReleaseChange?: (release: Release) => void
+  onCreateApplication?: (name: string) => Promise<Application>
+  onCreateRelease?: (name: string) => Promise<Release | null>
 }
 
 const NAV_ITEMS: { id: NavPage; label: string; icon: JSX.Element }[] = [
@@ -34,6 +38,16 @@ const NAV_ITEMS: { id: NavPage; label: string; icon: JSX.Element }[] = [
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+      </svg>
+    ),
+  },
+  {
+    id: 'new-test',
+    label: 'New Test',
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="10" />
+        <polygon points="10 8 16 12 10 16 10 8" />
       </svg>
     ),
   },
@@ -83,14 +97,33 @@ const NAV_ITEMS: { id: NavPage; label: string; icon: JSX.Element }[] = [
 ]
 
 
-export default function Sidebar({ active, onNavigate, connected, projects = [], activeProject, onProjectChange, onCreateProject }: Props) {
+export default function Sidebar({
+  active,
+  onNavigate,
+  connected,
+  applications = [],
+  releases = [],
+  activeApplication,
+  activeRelease,
+  onApplicationChange,
+  onReleaseChange,
+  onCreateApplication,
+  onCreateRelease,
+}: Props) {
   const [collapsed, setCollapsed] = useState(false)
   const [projectOpen, setProjectOpen] = useState(false)
   const [showProjectModal, setShowProjectModal] = useState(false)
 
   const handleNewProject = async (name: string) => {
-    if (!onCreateProject) return
-    await onCreateProject(name)
+    if (!onCreateApplication) return
+    await onCreateApplication(name)
+    setProjectOpen(false)
+  }
+
+  const handleNewRelease = async () => {
+    const name = window.prompt('Release name')
+    if (!name?.trim() || !onCreateRelease) return
+    await onCreateRelease(name.trim())
     setProjectOpen(false)
   }
 
@@ -107,12 +140,12 @@ export default function Sidebar({ active, onNavigate, connected, projects = [], 
         <button
           className="project-selector"
           onClick={() => setProjectOpen(!projectOpen)}
-          title={collapsed ? activeProject?.name || 'Project' : undefined}
+          title={collapsed ? activeApplication?.name || 'Application' : undefined}
         >
           <span className="project-icon">▣</span>
           {!collapsed && (
             <>
-              <span className="project-name">{activeProject?.name || 'Project'}</span>
+              <span className="project-name">{activeApplication?.name || 'Application'}{activeRelease ? ` / ${activeRelease.name}` : ''}</span>
               <span className="project-chevron">⌄</span>
             </>
           )}
@@ -120,21 +153,38 @@ export default function Sidebar({ active, onNavigate, connected, projects = [], 
         {projectOpen && !collapsed && (
           <div className="project-menu">
             <div className="project-menu-list">
-              {projects.map(project => (
+              {applications.map(application => (
                 <button
-                  key={project.id}
-                  className={`project-menu-item ${activeProject?.id === project.id ? 'active' : ''}`}
+                  key={application.id}
+                  className={`project-menu-item ${activeApplication?.id === application.id ? 'active' : ''}`}
                   onClick={() => {
-                    onProjectChange?.(project)
+                    onApplicationChange?.(application)
                     setProjectOpen(false)
                   }}
                 >
-                  {project.name}
+                  {application.name}
                 </button>
               ))}
             </div>
-            <button className="project-menu-action" onClick={() => setShowProjectModal(true)}>+ New Project</button>
-            <button className="project-menu-action muted" onClick={() => { setProjectOpen(false); onNavigate('settings') }}>Manage Projects</button>
+            {releases.length > 0 && (
+              <div className="project-menu-list release-list">
+                {releases.map(release => (
+                  <button
+                    key={release.id}
+                    className={`project-menu-item ${activeRelease?.id === release.id ? 'active' : ''}`}
+                    onClick={() => {
+                      onReleaseChange?.(release)
+                      setProjectOpen(false)
+                    }}
+                  >
+                    ↳ {release.name}
+                  </button>
+                ))}
+              </div>
+            )}
+            <button className="project-menu-action" onClick={() => setShowProjectModal(true)}>+ New Application</button>
+            <button className="project-menu-action" onClick={handleNewRelease}>+ New Release</button>
+            <button className="project-menu-action muted" onClick={() => { setProjectOpen(false); onNavigate('settings') }}>Manage Applications</button>
           </div>
         )}
       </div>
@@ -176,6 +226,7 @@ export default function Sidebar({ active, onNavigate, connected, projects = [], 
       </div>
       {showProjectModal && (
         <ProjectModal
+          title="New Application"
           onClose={() => setShowProjectModal(false)}
           onSubmit={handleNewProject}
         />

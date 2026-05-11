@@ -1,0 +1,135 @@
+import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+
+import { Application, Release } from '../types'
+import { useApplicationApi } from './api/useApplicationApi'
+
+const STORAGE_KEY = 'stormrunner.activeApplicationId'
+const RELEASE_STORAGE_KEY = 'stormrunner.activeReleaseId'
+
+interface ApplicationContextValue {
+  applications: Application[]
+  releases: Release[]
+  activeApplication: Application | null
+  activeRelease: Release | null
+  setActiveApplication: (application: Application) => void
+  setActiveRelease: (release: Release) => void
+  refreshApplications: () => Promise<void>
+  refreshReleases: (applicationId?: string) => Promise<void>
+  createAndSelectApplication: (name: string) => Promise<Application>
+  createAndSelectRelease: (name: string) => Promise<Release | null>
+}
+
+const ApplicationContext = createContext<ApplicationContextValue | null>(null)
+
+export function ApplicationProvider({ children }: { children: ReactNode }) {
+  const api = useApplicationApi()
+  const [applications, setApplications] = useState<Application[]>([])
+  const [releases, setReleases] = useState<Release[]>([])
+  const [activeApplication, setActiveApplicationState] = useState<Application | null>(null)
+  const [activeRelease, setActiveReleaseState] = useState<Release | null>(null)
+
+  const setActiveApplication = useCallback((application: Application) => {
+    setActiveApplicationState(application)
+    localStorage.setItem(STORAGE_KEY, application.id)
+  }, [])
+
+  const setActiveRelease = useCallback((release: Release) => {
+    setActiveReleaseState(release)
+    localStorage.setItem(RELEASE_STORAGE_KEY, release.id)
+  }, [])
+
+  const refreshReleases = useCallback(async (applicationId?: string) => {
+    const appId = applicationId || activeApplication?.id
+    if (!appId) {
+      setReleases([])
+      setActiveReleaseState(null)
+      return
+    }
+    const res = await api.listReleases(appId)
+    const next = res.releases || []
+    setReleases(next)
+    const storedId = localStorage.getItem(RELEASE_STORAGE_KEY)
+    const selected = next.find(release => release.id === storedId) || next[0] || null
+    setActiveReleaseState(selected)
+    if (selected) localStorage.setItem(RELEASE_STORAGE_KEY, selected.id)
+  }, [api, activeApplication?.id])
+
+  const refreshApplications = useCallback(async () => {
+    const res = await api.listApplications()
+    let next = res.applications || []
+    if (next.length === 0) {
+      const created = await api.createApplication({ name: 'Legacy' })
+      next = [created]
+    }
+    setApplications(next)
+    const storedId = localStorage.getItem(STORAGE_KEY)
+    const selected = next.find(application => application.id === storedId) || next[0] || null
+    if (selected) {
+      setActiveApplicationState(selected)
+      localStorage.setItem(STORAGE_KEY, selected.id)
+      await refreshReleases(selected.id)
+    }
+  }, [api, refreshReleases])
+
+  const createAndSelectApplication = useCallback(async (name: string) => {
+    const created = await api.createApplication({ name })
+    setApplications(prev => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)))
+    setActiveApplication(created)
+    setReleases([])
+    setActiveReleaseState(null)
+    return created
+  }, [api, setActiveApplication])
+
+  const createAndSelectRelease = useCallback(async (name: string) => {
+    if (!activeApplication) return null
+    const created = await api.createRelease(activeApplication.id, { name })
+    setReleases(prev => [created, ...prev])
+    setActiveRelease(created)
+    return created
+  }, [api, activeApplication, setActiveRelease])
+
+  useEffect(() => {
+    refreshApplications().catch(() => {
+      const fallback: Application = {
+        id: 'legacy',
+        name: 'Legacy',
+        created_at: new Date(0).toISOString(),
+        updated_at: new Date(0).toISOString(),
+      }
+      setApplications([fallback])
+      setActiveApplicationState(fallback)
+    })
+  }, [])
+
+  useEffect(() => {
+    if (activeApplication?.id) {
+      refreshReleases(activeApplication.id).catch(() => undefined)
+    }
+  }, [activeApplication?.id])
+
+  const value = useMemo(
+    () => ({
+      applications,
+      releases,
+      activeApplication,
+      activeRelease,
+      setActiveApplication,
+      setActiveRelease,
+      refreshApplications,
+      refreshReleases,
+      createAndSelectApplication,
+      createAndSelectRelease,
+    }),
+    [applications, releases, activeApplication, activeRelease, setActiveApplication, setActiveRelease, refreshApplications, refreshReleases, createAndSelectApplication, createAndSelectRelease],
+  )
+
+  return <ApplicationContext.Provider value={value}>{children}</ApplicationContext.Provider>
+}
+
+export function useApplication() {
+  const context = useContext(ApplicationContext)
+  if (!context) {
+    throw new Error('useApplication must be used within ApplicationProvider')
+  }
+  return context
+}

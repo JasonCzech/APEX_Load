@@ -20,6 +20,8 @@ interface Props {
   items: TreeItem[]
   selectedFolderId?: string | null
   onSelectFolder: (folderId?: string | null) => void
+  selectedItemId?: string | null
+  details?: JSX.Element
   onSelectItem?: (id: string) => void
   onCreateFolder: (parentId: string | null) => void
   onRenameFolder: (id: string, name: string) => void
@@ -44,6 +46,8 @@ export default function FolderTree({
   items,
   selectedFolderId,
   onSelectFolder,
+  selectedItemId,
+  details,
   onSelectItem,
   onCreateFolder,
   onRenameFolder,
@@ -93,7 +97,7 @@ export default function FolderTree({
     return folderItems.map((item) => {
       const extra = renderItemExtra ? renderItemExtra(item) : null
       return (
-        <div key={item.id} className="folder-tree-item" style={{ paddingLeft: 12 + (depth + 1) * 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div key={item.id} className={`folder-tree-item ${selectedItemId === item.id ? 'active' : ''}`} style={{ paddingLeft: 12 + (depth + 1) * 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <button className="folder-tree-item-main" onClick={() => onSelectItem?.(item.id)} style={{ flex: 1, minWidth: 0 }}>
             <span className="folder-tree-icon">◻</span>
             <span>{item.name}</span>
@@ -170,17 +174,25 @@ export default function FolderTree({
         </div>
       </div>
 
-      <div className="folder-tree-section">
-        <button className={`folder-tree-row scope ${selectedFolderId === undefined ? 'active' : ''}`} onClick={() => onSelectFolder(undefined)}>
-          <span className="folder-tree-icon">⌂</span>
-          <span>{rootLabel}</span>
-          <span className="folder-tree-count">{items.length}</span>
-        </button>
-        {childrenByParent.get('root')?.map((folder) => renderFolder(folder))}
-        {rootItemCount === 0 && items.length === 0 && (
-          <div className="folder-tree-empty">No {folderLabel(category)}s here yet.</div>
+      <div className={details ? 'folder-layout' : ''}>
+        <div className="folder-tree-section">
+          <button className={`folder-tree-row scope ${selectedFolderId === undefined ? 'active' : ''}`} onClick={() => onSelectFolder(undefined)}>
+            <span className="folder-tree-icon">⌂</span>
+            <span>{rootLabel}</span>
+            <span className="folder-tree-count">{items.length}</span>
+          </button>
+          {childrenByParent.get('root')?.map((folder) => renderFolder(folder))}
+          {rootItemCount === 0 && items.length === 0 && (
+            <div className="folder-tree-empty">No {folderLabel(category)}s here yet.</div>
+          )}
+          {renderInlineItems(null, 0)}
+        </div>
+
+        {details && (
+          <div className="folder-tree-details">
+            {details}
+          </div>
         )}
-        {renderInlineItems(null, 0)}
       </div>
     </div>
   )

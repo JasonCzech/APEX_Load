@@ -1,3 +1,28 @@
+// Package engine implements the core VUser (virtual user) execution engine.
+//
+// The engine manages a pool of goroutines (one per VUser), schedules their execution
+// via a pacing algorithm (ramp-up, steady-state), and aggregates metrics in a
+// zero-lock hot path using buffered channels.
+//
+// Key design:
+//   - 1 VUser = 1 goroutine (~2–4 KB stack); supports 10k+ VUsers per pod
+//   - Metrics use buffered channels (cap 10,000) to avoid lock contention
+//   - sync.Pool reuses request/response buffers to reduce GC pressure
+//   - T-digest for streaming percentile (p50/p95/p99) computation
+//
+// Example usage:
+//
+//	cfg := engine.Config{
+//	    Script:   script,
+//	    VUsers:   100,
+//	    Duration: 5 * time.Minute,
+//	    RampUp:   30 * time.Second,
+//	}
+//	eng, err := engine.New(cfg)
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//	result, err := eng.Run(ctx)
 package engine
 
 import (
@@ -11,29 +36,50 @@ import (
 	"github.com/jasonczech/stormrunner/pkg/protocol"
 )
 
+// Engine orchestrates VUser goroutines and metrics collection.
+//
+// The engine manages the full lifecycle of a load test:
+//   - Init phase: Protocol initialization and setup actions
+//   - Ramp-up phase: Gradual increase of active VUsers per pacing config
+//   - Steady-state phase: All VUsers running; actions repeated until duration expires
+//   - Teardown phase: Cleanup actions, graceful shutdown
+//
+// Metrics are collected asynchronously via buffered channels to minimize
+// contention. Call MetricsSnapshot() periodically (e.g., every second) to
+// extract aggregated metrics during or after a run.
 type Engine struct {
-	script    *dsl.Script
-	vusers    int
-	duration  time.Duration
-	rampUp    time.Duration
-	metrics   *MetricsCollector
-	cancel    context.CancelFunc
+	script   *dsl.Script
+	vusers   int
+	duration time.Duration
+	rampUp   time.Duration
+	metrics  *MetricsCollector
+	cancel   context.CancelFunc
 }
 
+// Config contains configuration for Engine creation.
 type Config struct {
-	Script   *dsl.Script
-	VUsers   int
-	Duration time.Duration
-	RampUp   time.Duration
+	Script   *dsl.Script   // Test script (required)
+	VUsers   int           // Number of virtual users (required, > 0)
+	Duration time.Duration // Total test duration (required, > 0)
+	RampUp   time.Duration // Ramp-up period (can be 0 for immediate start)
 }
 
+// RunResult contains final test results after execution completes.
 type RunResult struct {
-	Duration          time.Duration
-	TotalTransactions int64
-	TotalErrors       int64
-	FinalSnapshot     MetricsSnapshot
+	Duration          time.Duration   // Actual test duration
+	TotalTransactions int64           // Total completed transactions across all VUsers
+	TotalErrors       int64           // Total failed transactions
+	FinalSnapshot     MetricsSnapshot // Aggregated metrics at end of run
 }
 
+// New creates a new Engine with the given config.
+//
+// Validation:
+//   - script must not be nil
+//   - vusers must be > 0
+//   - duration must be > 0
+//
+// The returned engine is not yet running; call Run() to start it.
 func New(cfg Config) (*Engine, error) {
 	if cfg.Script == nil {
 		return nil, fmt.Errorf("script is required")

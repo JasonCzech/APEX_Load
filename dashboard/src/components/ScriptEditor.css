@@ -44,6 +44,73 @@
 }
 .config-panel { padding: 16px 20px; }
 .config-panel .panel-title { margin-bottom: 14px; }
+.panel-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.panel-title-row .panel-title {
+  margin-bottom: 0;
+}
+.parameter-empty-state {
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  padding: 14px;
+  color: var(--text-muted);
+  background: var(--bg-primary);
+  font-size: 13px;
+}
+.parameter-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.parameter-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 980px;
+}
+.parameter-table thead th {
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+.parameter-table tbody td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.parameter-table tbody tr:last-child td {
+  border-bottom: none;
+}
+.parameter-table input,
+.parameter-table select {
+  width: 100%;
+  min-width: 110px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 10px;
+  color: var(--text-primary);
+  font-size: 12px;
+  outline: none;
+}
+.parameter-table input:focus,
+.parameter-table select:focus {
+  border-color: var(--accent);
+}
+.checkbox-label.compact {
+  gap: 6px;
+  font-size: 12px;
+}
 .import-metadata-header {
   display: flex;
   justify-content: space-between;

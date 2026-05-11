@@ -39,8 +39,18 @@ async function fetchBlob(path: string): Promise<Blob> {
 
 export function useTestApi() {
   const listTests = useCallback(
-    (projectId?: string, folderId?: string | null) =>
-      request<{ tests: any[]; count: number }>(`/tests${buildQuery({ project_id: projectId, folder_id: folderId === undefined ? undefined : folderId || '' })}`),
+    (params?: { project_id?: string; folder_id?: string | null; application_id?: string; release_id?: string; scenario_id?: string } | string, folderId?: string | null) => {
+      const queryParams = typeof params === 'string'
+        ? { project_id: params, folder_id: folderId === undefined ? undefined : folderId || '' }
+        : {
+            application_id: params?.application_id,
+            release_id: params?.release_id,
+            scenario_id: params?.scenario_id,
+            project_id: params?.project_id,
+            folder_id: params?.folder_id === undefined ? undefined : params.folder_id || '',
+          }
+      return request<{ tests: any[]; count: number }>(`/tests${buildQuery(queryParams)}`)
+    },
     [],
   )
 

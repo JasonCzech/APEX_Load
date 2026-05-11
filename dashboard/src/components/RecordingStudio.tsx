@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { downloadBlob } from '../utils/fileUtils'
 import { useAsyncTask } from '../hooks/useAsyncTask'
 import { useApi } from '../hooks/useApi'
+import { BASE } from '../hooks/apiClient'
 import { Project } from '../types'
 import './RecordingStudio.css'
 
@@ -82,7 +83,7 @@ export default function RecordingStudio({ activeProject }: { activeProject?: Pro
 
   const handleDownloadCA = async (format: 'crt' | 'pem' = 'crt') => {
     try {
-      const url = format === 'pem' ? '/api/v1/recorder/ca.pem?format=pem' : '/api/v1/recorder/ca.pem'
+      const url = format === 'pem' ? `${BASE}/recorder/ca.pem?format=pem` : `${BASE}/recorder/ca.pem`
       const res = await fetch(url)
       if (!res.ok) throw new Error('Failed to download CA certificate')
       const blob = await res.blob()
@@ -227,7 +228,7 @@ export default function RecordingStudio({ activeProject }: { activeProject?: Pro
 
   const handleExportHAR = async (session: RecordingSession) => {
     try {
-      const res = await fetch(`/api/v1/recorder/${session.id}/export?format=har`)
+      const res = await fetch(`${BASE}/recorder/${session.id}/export?format=har`)
       if (!res.ok) {
         const payload = await res.json().catch(() => ({ error: 'Failed to export HAR' }))
         throw new Error(payload.error || 'Failed to export HAR')

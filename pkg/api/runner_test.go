@@ -60,7 +60,32 @@ func (s *metricsStoreSpy) DeleteTest(id string) error {
 	return nil
 }
 func (s *metricsStoreSpy) MoveTest(id string, folderID *string) error { return nil }
-func (s *metricsStoreSpy) SaveProject(project *storage.Project) error { return nil }
+func (s *metricsStoreSpy) ListTestsByContext(applicationID string, releaseID string, scenarioID string) ([]*storage.TestRecord, error) {
+	return s.listedTests, nil
+}
+func (s *metricsStoreSpy) SaveApplication(application *storage.Application) error { return nil }
+func (s *metricsStoreSpy) GetApplication(id string) (*storage.Application, error) {
+	return nil, nil
+}
+func (s *metricsStoreSpy) ListApplications() ([]*storage.Application, error) { return nil, nil }
+func (s *metricsStoreSpy) DeleteApplication(id string) error                 { return nil }
+func (s *metricsStoreSpy) SaveRelease(release *storage.Release) error        { return nil }
+func (s *metricsStoreSpy) GetRelease(id string) (*storage.Release, error) {
+	return &storage.Release{ID: id, ApplicationID: storage.LegacyApplicationID, Name: id}, nil
+}
+func (s *metricsStoreSpy) ListReleases(applicationID string) ([]*storage.Release, error) {
+	return nil, nil
+}
+func (s *metricsStoreSpy) DeleteRelease(id string) error { return nil }
+func (s *metricsStoreSpy) SaveScenario(scenario *storage.Scenario, scripts []storage.ScenarioScript) error {
+	return nil
+}
+func (s *metricsStoreSpy) GetScenario(id string) (*storage.Scenario, []storage.ScenarioScript, error) {
+	return nil, nil, nil
+}
+func (s *metricsStoreSpy) ListScenarios() ([]*storage.Scenario, error) { return nil, nil }
+func (s *metricsStoreSpy) DeleteScenario(id string) error              { return nil }
+func (s *metricsStoreSpy) SaveProject(project *storage.Project) error  { return nil }
 func (s *metricsStoreSpy) GetProject(id string) (*storage.Project, error) {
 	return nil, nil
 }

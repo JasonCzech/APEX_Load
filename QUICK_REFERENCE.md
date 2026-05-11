@@ -1,0 +1,328 @@
+# Quick Reference
+
+## Essential Commands
+
+### Starting
+
+```bash
+# Start controller (API + dashboard)
+go run ./cmd/controller
+
+# Start with custom port
+STORMRUNNER_ADDR=:9000 go run ./cmd/controller
+
+# Run test locally (no controller needed)
+go run ./cmd/stormctl run --script test.json --vusers 50 --duration 2m
+```
+
+### Building
+
+```bash
+# Build all binaries
+make build
+
+# Build only controller
+go build -o bin/controller ./cmd/controller
+
+# Build dashboard
+cd dashboard && npm run build
+
+# Run frontend dev server (with hot reload)
+cd dashboard && npm run dev
+```
+
+### Testing
+
+```bash
+# Run all tests
+go test ./...
+
+# Run tests for one package
+go test ./pkg/engine
+
+# Run with coverage
+go test -cover ./...
+
+# Generate coverage HTML
+make test-cover
+
+# Run specific test
+go test -run TestMetricsCollection ./pkg/engine
+```
+
+### Database
+
+```bash
+# Query scripts
+sqlite3 stormrunner.db "SELECT id, name FROM scripts;"
+
+# Query tests
+sqlite3 stormrunner.db "SELECT id, name, status FROM tests;"
+
+# Reset database
+rm stormrunner.db
+# Restart controller to recreate
+
+# Backup database
+cp stormrunner.db stormrunner.db.backup
+```
+
+---
+
+## API Endpoints Quick List
+
+### Tests
+
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| POST | `/api/v1/tests` | Create test |
+| GET | `/api/v1/tests` | List tests |
+| GET | `/api/v1/tests/{id}` | Get test details |
+| POST | `/api/v1/tests/{id}/start` | Start test |
+| POST | `/api/v1/tests/{id}/stop` | Stop gracefully |
+| POST | `/api/v1/tests/{id}/abort` | Stop immediately |
+| GET | `/api/v1/tests/{id}/metrics` | Get current metrics |
+
+### Scripts
+
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| POST | `/api/v1/scripts` | Create script |
+| GET | `/api/v1/scripts` | List scripts |
+| GET | `/api/v1/scripts/{id}` | Get script |
+| PUT | `/api/v1/scripts/{id}` | Update script |
+| DELETE | `/api/v1/scripts/{id}` | Delete script |
+| POST | `/api/v1/scripts/{id}/validate` | Validate script |
+
+### WebSocket
+
+| Endpoint | Purpose |
+|----------|---------|
+| `WS /api/v1/ws` | Global events stream |
+| `WS /api/v1/tests/{id}/stream` | Test-specific metrics |
+
+### System
+
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| GET | `/api/v1/system/health` | Health check |
+
+---
+
+## DSL Script Skeleton
+
+```json
+{
+  "config": {
+    "protocol": "http",
+    "base_url": "https://api.example.com",
+    "timeout_seconds": 30
+  },
+  "data_sources": [
+    {
+      "name": "users",
+      "type": "csv",
+      "path": "users.csv",
+      "cycling": "sequential"
+    }
+  ],
+  "init": [
+    {
+      "name": "login",
+      "type": "http",
+      "method": "POST",
+      "target": "/auth/login",
+      "body": "{\"user\": \"{{data.users.email}}\", \"pass\": \"{{data.users.password}}\"}"
+    }
+  ],
+  "actions": [
+    {
+      "name": "get_profile",
+      "type": "http",
+      "method": "GET",
+      "target": "/profile"
+    }
+  ],
+  "teardown": []
+}
+```
+
+---
+
+## Template Variables
+
+```
+{{env.VARIABLE_NAME}}          # Environment variable
+{{data.source_name.column}}    # Data source column
+{{var.variable_name}}          # Extracted variable
+{{fn.uuid}}                    # UUID
+{{fn.random(1,100)}}           # Random number 1-100
+{{fn.timestamp.unix}}          # Unix timestamp
+{{fn.random_string(10)}}       # Random string (10 chars)
+```
+
+---
+
+## Think Time Configs
+
+```json
+// Fixed delay (1000 ms)
+{
+  "think_time": {
+    "type": "fixed",
+    "mean_ms": 1000
+  }
+}
+
+// Random (500-3000 ms)
+{
+  "think_time": {
+    "type": "random",
+    "min_ms": 500,
+    "max_ms": 3000
+  }
+}
+
+// Gaussian distribution
+{
+  "think_time": {
+    "type": "gaussian",
+    "mean_ms": 2000,
+    "std_ms": 500,
+    "min_ms": 500,
+    "max_ms": 5000
+  }
+}
+```
+
+---
+
+## CLI Flags
+
+### stormctl run
+
+```bash
+go run ./cmd/stormctl run \
+  --script path/to/script.json \
+  --vusers 100 \
+  --duration 5m \
+  --ramp-up 30s \
+  --log-level debug \
+  --output results.json
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--script, -s` | (required) | Path to DSL script |
+| `--vusers, -v` | 10 | Number of virtual users |
+| `--duration, -d` | 1m | Test duration |
+| `--ramp-up, -r` | 0s | Ramp-up period |
+| `--output, -o` | (none) | Results output file |
+
+---
+
+## Troubleshooting Quick Fixes
+
+| Issue | Quick Fix |
+|-------|-----------|
+| Dashboard won't load | Hard refresh (Ctrl+Shift+R), check port 8080 |
+| Metrics not updating | Check WebSocket connection (DevTools → Network → WS) |
+| Port already in use | `lsof -i :8080` then `kill -9 <PID>` |
+| Test won't start | Validate script, check target system is reachable |
+| Memory growing | Normal for long tests; check goroutine count |
+| No transactions recorded | Verify actions in script, increase duration |
+
+See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for detailed solutions.
+
+---
+
+## Environment Variables
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `STORMRUNNER_ADDR` | `:8080` | HTTP server bind address |
+| `STORMRUNNER_DB` | `stormrunner.db` | SQLite database path |
+| `LOG_LEVEL` | `info` | Logging level (debug, info, warn, error) |
+
+---
+
+## File Locations
+
+| File | Purpose |
+|------|---------|
+| `stormrunner.db` | SQLite database (auto-created) |
+| `coverage.html` | Test coverage report (after `make test-cover`) |
+| `pkg/api/static/` | Embedded dashboard assets |
+| `dashboard/dist/` | Built frontend (before embedding) |
+| `examples/` | Sample scripts and test data |
+
+---
+
+## Performance Tips
+
+- **Increase throughput**: Raise `connection_pool_size` in config
+- **Reduce errors**: Lower VUsers or increase `timeout_seconds`
+- **Faster ramp**: Reduce `--ramp-up` duration (trade-off: less stable)
+- **Smaller memory**: Reduce `--vusers` or test duration
+- **Better accuracy**: Increase test duration (more stable metrics)
+
+---
+
+## Documentation Map
+
+| Document | For |
+|----------|-----|
+| [README.md](README.md) | Overview, quick start, basic usage |
+| [DEVELOPMENT.md](DEVELOPMENT.md) | Development setup, conventions, architecture internals |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | System design, data flow, performance details |
+| [API_AND_DSL_REFERENCE.md](API_AND_DSL_REFERENCE.md) | Complete API docs, DSL syntax, examples |
+| [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | Common issues, debugging, solutions |
+| [QUICK_REFERENCE.md](QUICK_REFERENCE.md) | This file — fast lookup |
+
+---
+
+## Useful URLs
+
+- **Dashboard**: http://localhost:8080
+- **Health check**: http://localhost:8080/api/v1/system/health
+- **API docs**: See [API_AND_DSL_REFERENCE.md](API_AND_DSL_REFERENCE.md)
+
+---
+
+## Common Errors
+
+```
+"listen tcp :8080: bind: address already in use"
+→ Change port: STORMRUNNER_ADDR=:9000 go run ./cmd/controller
+
+"Error opening database: database is locked"
+→ Close other processes: pkill -f "cmd/controller"
+
+"Invalid script: protocol required"
+→ Add config.protocol to your script JSON
+
+"No tests currently running"
+→ Dashboard is working; just no active tests
+
+"Cannot GET /api/v1/scripts"
+→ Controller not started or wrong port
+```
+
+---
+
+## Go Package Structure
+
+```
+pkg/
+  engine/          # VUser execution, pacing, metrics
+  protocol/        # HTTP, JMS protocol implementations
+  dsl/            # Script parsing
+  api/            # REST handlers, WebSocket
+  config/         # Configuration types
+  storage/        # SQLite
+  controller/     # Test orchestration
+  recorder/       # HTTP recording
+  convert/        # LoadRunner conversion
+```
+
+See [DEVELOPMENT.md](DEVELOPMENT.md) for detailed package documentation.

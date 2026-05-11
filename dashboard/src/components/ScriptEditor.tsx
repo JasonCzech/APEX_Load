@@ -64,6 +64,17 @@ interface ScriptData {
   metadata?: ScriptMetadata
   config: ScriptConfig
   actions: Action[]
+  data_sources?: DataSourceConfig[]
+}
+
+interface DataSourceConfig {
+  name: string
+  type: string
+  path: string
+  strategy: string
+  delimiter?: string
+  first_row_header?: boolean
+  columns?: string[]
 }
 
 interface Props {
@@ -86,6 +97,16 @@ const EMPTY_SCRIPT: ScriptData = {
     log: { level: 'standard' },
   },
   actions: []
+}
+
+const EMPTY_DATA_SOURCE: DataSourceConfig = {
+  name: '',
+  type: 'csv',
+  path: '',
+  strategy: 'sequential',
+  delimiter: ',',
+  first_row_header: true,
+  columns: [],
 }
 
 const EMPTY_ACTION: Action = {
@@ -296,6 +317,34 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
     }
   }
 
+  const addDataSource = () => {
+    const nextIndex = (script.data_sources?.length || 0) + 1
+    const nextSource: DataSourceConfig = {
+      ...EMPTY_DATA_SOURCE,
+      name: `source_${nextIndex}`,
+    }
+    setScript(prev => ({
+      ...prev,
+      data_sources: [...(prev.data_sources || []), nextSource],
+    }))
+  }
+
+  const removeDataSource = (idx: number) => {
+    setScript(prev => ({
+      ...prev,
+      data_sources: (prev.data_sources || []).filter((_, i) => i !== idx),
+    }))
+  }
+
+  const updateDataSource = (idx: number, field: keyof DataSourceConfig, value: any) => {
+    setScript(prev => {
+      const sources = [...(prev.data_sources || [])]
+      const current = sources[idx] || { ...EMPTY_DATA_SOURCE }
+      sources[idx] = { ...current, [field]: value }
+      return { ...prev, data_sources: sources }
+    })
+  }
+
   return (
     <div className="script-editor">
       <div className="editor-header">
@@ -345,6 +394,98 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
                 <input value={script.config.base_url} onChange={e => updateField('config.base_url', e.target.value)} placeholder="https://api.example.com" />
               </label>
             </div>
+          </div>
+
+          <div className="config-panel">
+            <div className="panel-title-row">
+              <h3 className="panel-title">Parameter Data</h3>
+              <button className="btn btn-sm btn-accent" onClick={addDataSource}>+ Add Source</button>
+            </div>
+
+            {(script.data_sources?.length || 0) === 0 ? (
+              <div className="parameter-empty-state">No parameters defined. Add a data source to parameterize fields across requests.</div>
+            ) : (
+              <div className="parameter-table-wrap">
+                <table className="parameter-table">
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Type</th>
+                      <th>Strategy</th>
+                      <th>Header Row</th>
+                      <th>Columns</th>
+                      <th>Delimiter</th>
+                      <th>Data File Path</th>
+                      <th style={{ textAlign: 'right' }}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(script.data_sources || []).map((source, idx) => (
+                      <tr key={`${source.name || 'source'}-${idx}`}>
+                        <td>
+                          <input
+                            value={source.name || ''}
+                            onChange={e => updateDataSource(idx, 'name', e.target.value)}
+                            placeholder="users"
+                          />
+                        </td>
+                        <td>
+                          <select value={source.type || 'csv'} onChange={e => updateDataSource(idx, 'type', e.target.value)}>
+                            <option value="csv">csv</option>
+                            <option value="dat">dat</option>
+                          </select>
+                        </td>
+                        <td>
+                          <select value={source.strategy || 'sequential'} onChange={e => updateDataSource(idx, 'strategy', e.target.value)}>
+                            <option value="sequential">sequential</option>
+                            <option value="random">random</option>
+                            <option value="unique">unique</option>
+                          </select>
+                        </td>
+                        <td>
+                          <label className="checkbox-label compact">
+                            <input
+                              type="checkbox"
+                              checked={source.first_row_header !== false}
+                              onChange={e => updateDataSource(idx, 'first_row_header', e.target.checked)}
+                            />
+                            <span>{source.first_row_header !== false ? 'Yes' : 'No'}</span>
+                          </label>
+                        </td>
+                        <td>
+                          <input
+                            value={(source.columns || []).join(', ')}
+                            onChange={e => updateDataSource(
+                              idx,
+                              'columns',
+                              e.target.value.split(',').map(v => v.trim()).filter(Boolean),
+                            )}
+                            placeholder="username, password"
+                          />
+                        </td>
+                        <td>
+                          <input
+                            value={source.delimiter ?? (source.type === 'dat' ? '\t' : ',')}
+                            onChange={e => updateDataSource(idx, 'delimiter', e.target.value)}
+                            placeholder={source.type === 'dat' ? '\\t' : ','}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            value={source.path || ''}
+                            onChange={e => updateDataSource(idx, 'path', e.target.value)}
+                            placeholder="/absolute/path/to/data.csv"
+                          />
+                        </td>
+                        <td style={{ textAlign: 'right' }}>
+                          <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={() => removeDataSource(idx)}>Remove</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
 
           {importMetadata && (

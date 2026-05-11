@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react'
 import { useWebSocket } from './hooks/useWebSocket'
-import { ProjectProvider, useProject } from './hooks/useProject'
+import { ApplicationProvider, useApplication } from './hooks/useApplication'
 import { WSMessage, MetricsHistoryPoint } from './types'
 import Sidebar, { NavPage } from './components/Sidebar'
 import TestHub from './components/TestHub'
@@ -8,6 +8,7 @@ import TestExecution from './components/TestExecution'
 import DashboardPage from './components/DashboardPage'
 import ScriptsPage from './components/ScriptsPage'
 import ResultsPage from './components/ResultsPage'
+import NewTestPage from './components/NewTestPage'
 import MonitoringPage from './components/MonitoringPage'
 import SettingsPage from './components/SettingsPage'
 import './App.css'
@@ -68,7 +69,7 @@ function AppShell() {
   }, [])
 
   const { connected } = useWebSocket({ onMessage: handleWSMessage })
-  const { projects, activeProject, setActiveProject, createAndSelectProject } = useProject()
+  const { applications, releases, activeApplication, activeRelease, setActiveApplication, setActiveRelease, createAndSelectApplication, createAndSelectRelease } = useApplication()
 
   const navigateToTest = (id: string) => setView({ page: 'test', testId: id })
   const activePage = view.page === 'test' ? 'tests' : view.page
@@ -85,10 +86,14 @@ function AppShell() {
         active={activePage}
         onNavigate={handleNavigate}
         connected={connected}
-        projects={projects}
-        activeProject={activeProject}
-        onProjectChange={setActiveProject}
-        onCreateProject={createAndSelectProject}
+        applications={applications}
+        releases={releases}
+        activeApplication={activeApplication}
+        activeRelease={activeRelease}
+        onApplicationChange={setActiveApplication}
+        onReleaseChange={setActiveRelease}
+        onCreateApplication={createAndSelectApplication}
+        onCreateRelease={createAndSelectRelease}
       />
       <main className="main-content">
         {view.page === 'dashboard' && (
@@ -103,7 +108,15 @@ function AppShell() {
           <TestHub
             testStatuses={testStatuses}
             onSelectTest={navigateToTest}
-            activeProject={activeProject}
+          />
+        )}
+        {view.page === 'new-test' && (
+          <NewTestPage
+            activeApplication={activeApplication}
+            activeRelease={activeRelease}
+            releases={releases}
+            onSelectTest={navigateToTest}
+            onCreateRelease={createAndSelectRelease}
           />
         )}
         {view.page === 'test' && (
@@ -115,12 +128,13 @@ function AppShell() {
             onSelectTest={navigateToTest}
           />
         )}
-        {view.page === 'scripts' && <ScriptsPage initialMode={scriptMode} initialEditId={scriptEditId} activeProject={activeProject} />}
+        {view.page === 'scripts' && <ScriptsPage initialMode={scriptMode} initialEditId={scriptEditId} />}
         {view.page === 'results' && (
           <ResultsPage
             testStatuses={testStatuses}
             onSelectTest={navigateToTest}
-            activeProject={activeProject}
+            activeApplication={activeApplication}
+            activeRelease={activeRelease}
           />
         )}
         {view.page === 'monitoring' && <MonitoringPage connected={connected} />}
@@ -132,8 +146,8 @@ function AppShell() {
 
 export default function App() {
   return (
-    <ProjectProvider>
+    <ApplicationProvider>
       <AppShell />
-    </ProjectProvider>
+    </ApplicationProvider>
   )
 }

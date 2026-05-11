@@ -16,6 +16,27 @@ export interface Project {
   updated_at: string
 }
 
+export interface Application {
+  id: string
+  name: string
+  created_at: string
+  updated_at: string
+}
+
+export interface Release {
+  id: string
+  application_id: string
+  name: string
+  created_at: string
+  updated_at: string
+}
+
+export interface ReleaseRef {
+  id: string
+  name: string
+  application_id: string
+}
+
 export interface Folder {
   id: string
   project_id: string
@@ -70,6 +91,9 @@ export interface TestSummary {
   id: string
   name: string
   status: TestStatus
+  application_id?: string
+  release_id?: string
+  scenario_id?: string
   project_id?: string
   folder_id?: string | null
   groups: TestGroup[]
@@ -311,6 +335,38 @@ export interface StoredScript {
   project_id?: string
   folder_id?: string | null
   created_at: string
+  scenario_count?: number
+  associated_releases?: ReleaseRef[]
+  last_run_at?: string
+  script?: any
+}
+
+export interface StoredScenario {
+  id: string
+  name: string
+  duration: string
+  scenario_mode?: ScenarioMode
+  script_shakeout?: boolean
+  resource_baseline?: boolean
+  goal_config?: GoalConfig
+  runtime_settings?: RuntimeSettingsOverride
+  scripts: Array<{
+    order: number
+    name?: string
+    script_id: string
+    script_name?: string
+    protocol?: string
+    vusers: number
+    ramp_up?: string
+    ramp_down?: string
+    initialization?: 'at_runtime' | 'at_once'
+  }>
+  created_at: string
+  updated_at: string
+  script_count: number
+  result_count?: number
+  associated_releases?: ReleaseRef[]
+  last_run_at?: string
 }
 
 export interface WSMessage {

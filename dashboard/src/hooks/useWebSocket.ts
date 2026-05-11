@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { WSMessage } from '../types'
+import { wsUrl } from './apiClient'
 
 interface UseWebSocketOptions {
   testId?: string
@@ -14,10 +15,8 @@ export function useWebSocket({ testId, onMessage }: UseWebSocketOptions = {}) {
   onMessageRef.current = onMessage
 
   const connect = useCallback(() => {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const host = window.location.host
     const path = testId ? `/api/v1/tests/${testId}/stream` : '/api/v1/ws'
-    const url = `${protocol}//${host}${path}`
+    const url = wsUrl(path)
 
     const ws = new WebSocket(url)
     wsRef.current = ws

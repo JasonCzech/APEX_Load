@@ -1,42 +1,37 @@
-import { useState, useEffect, useCallback, useMemo, memo } from 'react'
-import { downloadBlob } from '../utils/fileUtils'
-import { ResponsiveContainer, LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip, Legend } from 'recharts'
+import { memo, useCallback, useEffect, useMemo, useState } from 'react'
+import { Application, Release, TestSummary } from '../types'
 import { useApi } from '../hooks/useApi'
-import { Folder, IntervalSummaryRecord, Project, RunArchiveReport, TestSummary } from '../types'
-import FolderTree from './FolderTree'
 import StatusBadge from './StatusBadge'
 
 interface Props {
   testStatuses: Record<string, string>
   onSelectTest: (id: string) => void
-  activeProject?: Project | null
+  activeApplication?: Application | null
+  activeRelease?: Release | null
 }
 
-function ResultsPage({ testStatuses, onSelectTest, activeProject }: Props) {
+function formatDate(value?: string) {
+  return value ? new Date(value).toLocaleString() : '—'
+}
+
+function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRelease }: Props) {
   const api = useApi()
   const [tests, setTests] = useState<TestSummary[]>([])
-  const [sortField, setSortField] = useState<string>('start_time')
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
-  const [comparisonReports, setComparisonReports] = useState<Record<string, RunArchiveReport>>({})
-  const [comparisonSummaries, setComparisonSummaries] = useState<Record<string, IntervalSummaryRecord[]>>({})
-  const [comparisonLoading, setComparisonLoading] = useState(false)
-  const [comparisonError, setComparisonError] = useState('')
-  const [folders, setFolders] = useState<Folder[]>([])
-  const [selectedFolderId, setSelectedFolderId] = useState<string | null | undefined>(undefined)
+  const [error, setError] = useState('')
 
   const refresh = useCallback(async () => {
-    try {
-      const [testRes, folderRes] = await Promise.all([
-        api.listTests(activeProject?.id),
-        activeProject?.id ? api.listFolders(activeProject.id, 'results') : Promise.resolve({ folders: [] }),
-      ])
-      setTests(testRes.tests || [])
-      setFolders(folderRes.folders || [])
-    } catch {
-      // API not available
+    if (!activeApplication?.id || !activeRelease?.id) {
+      setTests([])
+      return
     }
-  }, [api, activeProject?.id])
+    try {
+      const res = await api.listTests({ application_id: activeApplication.id, release_id: activeRelease.id })
+      setTests(res.tests || [])
+    } catch (err: any) {
+      setError(err.message || 'Unable to load results')
+    }
+  }, [api, activeApplication?.id, activeRelease?.id])
 
   useEffect(() => {
     refresh()
@@ -44,349 +39,86 @@ function ResultsPage({ testStatuses, onSelectTest, activeProject }: Props) {
     return () => clearInterval(interval)
   }, [refresh])
 
-  useEffect(() => {
-    setSelectedFolderId(undefined)
-    setSelectedIds(new Set())
-  }, [activeProject?.id])
+  useEffect(() => setSelectedIds(new Set()), [activeRelease?.id])
 
-  const completedTests = tests.filter((t) => {
-    const s = testStatuses[t.id] || t.status
-    const statusMatches = s === 'COMPLETE' || s === 'FAILED' || s === 'ABORTED'
-    if (!statusMatches) return false
-    if (selectedFolderId === undefined) return true
-    if (selectedFolderId === null) return !t.folder_id
-    return t.folder_id === selectedFolderId
-  })
+  const completed = useMemo(() => tests.filter(test => {
+    const status = testStatuses[test.id] || test.status
+    return status === 'COMPLETE' || status === 'FAILED' || status === 'ABORTED'
+  }), [tests, testStatuses])
 
-  const allCompletedTests = tests.filter((t) => {
-    const s = testStatuses[t.id] || t.status
-    return s === 'COMPLETE' || s === 'FAILED' || s === 'ABORTED'
-  })
-
-  const selectedTests = useMemo(
-    () => completedTests.filter((test) => selectedIds.has(test.id)),
-    [completedTests, selectedIds],
-  )
-
-  const comparableTests = useMemo(
-    () => selectedTests.filter((test) => test.archive).slice(0, 2),
-    [selectedTests],
-  )
-
-  useEffect(() => {
-    if (comparableTests.length !== 2) {
-      setComparisonReports({})
-      setComparisonSummaries({})
-      setComparisonError('')
-      setComparisonLoading(false)
-      return
-    }
-
-    let cancelled = false
-    const loadReports = async () => {
-      setComparisonLoading(true)
-      setComparisonError('')
-      try {
-        const reports = await Promise.all(comparableTests.map(async (test) => {
-          const report = await api.getTestArchiveReport(test.id)
-          return [test.id, report as RunArchiveReport] as const
-        }))
-        const summaries = await Promise.all(comparableTests.map(async (test) => {
-          const response = await api.getTestArchiveSummaries(test.id, { limit: 120, offset: 0 })
-          return [test.id, response.summaries || []] as const
-        }))
-        if (!cancelled) {
-          setComparisonReports(Object.fromEntries(reports))
-          setComparisonSummaries(Object.fromEntries(summaries))
-        }
-      } catch (error: any) {
-        if (!cancelled) {
-          setComparisonReports({})
-          setComparisonSummaries({})
-          setComparisonError(error.message || 'Unable to load comparison reports')
-        }
-      } finally {
-        if (!cancelled) setComparisonLoading(false)
-      }
-    }
-
-    loadReports()
-    return () => {
-      cancelled = true
-    }
-  }, [api, comparableTests])
-
-  const handleSort = (field: string) => {
-    if (sortField === field) {
-      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
-  const handleDelete = async (id: string, e: React.MouseEvent) => {
-    e.stopPropagation()
-    if (!confirm('Delete this scenario result?')) return
-    try {
-      await api.deleteTest(id)
-      refresh()
-      const next = new Set(selectedIds)
-      next.delete(id)
-      setSelectedIds(next)
-    } catch { /* ignore */ }
+  const toggleSelect = (id: string, event: React.MouseEvent) => {
+    event.stopPropagation()
+    const next = new Set(selectedIds)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    setSelectedIds(next)
   }
 
-  const handleDeleteSelected = async () => {
+  const deleteSelected = async () => {
     if (!confirm(`Delete ${selectedIds.size} selected results?`)) return
-    try {
-      await Promise.all(Array.from(selectedIds).map((id) => api.deleteTest(id)))
-      refresh()
-      setSelectedIds(new Set())
-    } catch { /* ignore */ }
-  }
-
-  const handleClearResults = async () => {
-    if (!confirm(`Delete ALL results in this view?`)) return
-    try {
-      await Promise.all(completedTests.map((t) => api.deleteTest(t.id)))
-      refresh()
-      setSelectedIds(new Set())
-    } catch { /* ignore */ }
-  }
-
-  const handleDownloadArchive = async (test: TestSummary, e: React.MouseEvent) => {
-    e.stopPropagation()
-    if (!test.archive) return
-    try {
-      const blob = await api.downloadTestArchive(test.id)
-      const filename = `${test.name.replace(/\\s+/g, '-').toLowerCase()}-${test.id}.zip`
-      downloadBlob(blob, filename)
-    } catch {
-      // ignore for now
-    }
-  }
-
-  const createFolder = async (parentId: string | null) => {
-    if (!activeProject?.id) return
-    const name = window.prompt('Folder name')
-    if (!name?.trim()) return
-    await api.createFolder(activeProject.id, { name: name.trim(), category: 'results', parent_id: parentId })
+    await Promise.all(Array.from(selectedIds).map(id => api.deleteTest(id)))
+    setSelectedIds(new Set())
     refresh()
   }
-
-  const renameFolder = async (id: string, name: string) => {
-    await api.updateFolder(id, { name })
-    refresh()
-  }
-
-  const deleteFolder = async (id: string) => {
-    await api.deleteFolder(id)
-    if (selectedFolderId === id) setSelectedFolderId(undefined)
-    refresh()
-  }
-
-  const moveResult = async (id: string, folderId: string | null) => {
-    await api.moveTest(id, folderId)
-    refresh()
-  }
-
-  const comparisonCards = useMemo(() => {
-    if (comparableTests.length !== 2) return []
-    return comparableTests.map((test) => ({
-      test,
-      report: comparisonReports[test.id],
-    }))
-  }, [comparableTests, comparisonReports])
-
-  const comparisonActionRows = useMemo(() => {
-    if (comparisonCards.length !== 2) return []
-    const [left, right] = comparisonCards
-    const actionNames = new Set<string>([
-      ...Object.keys(left.report?.by_action || {}),
-      ...Object.keys(right.report?.by_action || {}),
-    ])
-    return Array.from(actionNames)
-      .map((name) => ({
-        name,
-        left: left.report?.by_action?.[name],
-        right: right.report?.by_action?.[name],
-        deltaMs: (right.report?.by_action?.[name]?.avg_response_ms || 0) - (left.report?.by_action?.[name]?.avg_response_ms || 0),
-      }))
-      .sort((a, b) => Math.abs(b.deltaMs) - Math.abs(a.deltaMs))
-      .slice(0, 8)
-  }, [comparisonCards])
-
-  const comparisonChartData = useMemo(() => {
-    if (comparisonCards.length !== 2) return []
-    const [left, right] = comparisonCards
-    const leftSeries = comparisonSummaries[left.test.id] || []
-    const rightSeries = comparisonSummaries[right.test.id] || []
-    const maxLength = Math.max(leftSeries.length, rightSeries.length)
-
-    return Array.from({ length: maxLength }, (_, index) => ({
-      sample: index + 1,
-      leftTps: leftSeries[index]?.tps,
-      rightTps: rightSeries[index]?.tps,
-      leftP95: leftSeries[index]?.p95_ms,
-      rightP95: rightSeries[index]?.p95_ms,
-    }))
-  }, [comparisonCards, comparisonSummaries])
 
   return (
     <div className="page">
-      {(comparisonCards.length === 2 || comparisonLoading || comparisonError) && (
-        <div className="page-section">
-          <div className="results-compare-card">
-            <div className="results-compare-header">
-              <div>
-                <h3 className="section-title">Run Comparison</h3>
-                <p className="page-subtitle">Side-by-side view of two archived runs using saved report data.</p>
-              </div>
-            </div>
-
-            {comparisonLoading && <p className="results-compare-status">Loading comparison…</p>}
-            {comparisonError && <p className="results-compare-status error">{comparisonError}</p>}
-
-            {comparisonCards.length === 2 && comparisonCards.every((item) => item.report) && (
-              <>
-                <div className="results-compare-grid">
-                  {comparisonCards.map(({ test, report }) => (
-                    <div key={test.id} className="results-compare-panel">
-                      <div className="results-compare-panel-header">
-                        <div>
-                          <h4>{test.name}</h4>
-                          <p>{new Date(test.start_time || test.created_at).toLocaleString()}</p>
-                        </div>
-                        <StatusBadge status={testStatuses[test.id] || test.status} />
-                      </div>
-                      <div className="results-compare-metrics">
-                        <div className="results-compare-metric">
-                          <span className="results-compare-label">Transactions</span>
-                          <span className="results-compare-value">{report!.overview.transactions}</span>
-                        </div>
-                        <div className="results-compare-metric">
-                          <span className="results-compare-label">Avg Latency</span>
-                          <span className="results-compare-value">{report!.overview.avg_response_ms.toFixed(1)} ms</span>
-                        </div>
-                        <div className="results-compare-metric">
-                          <span className="results-compare-label">Error Rate</span>
-                          <span className="results-compare-value">{report!.overview.error_pct.toFixed(2)}%</span>
-                        </div>
-                        <div className="results-compare-metric">
-                          <span className="results-compare-label">Peak TPS</span>
-                          <span className="results-compare-value">{report!.overview.peak_tps.toFixed(1)}</span>
-                        </div>
-                        <div className="results-compare-metric">
-                          <span className="results-compare-label">Peak VUsers</span>
-                          <span className="results-compare-value">{report!.overview.peak_active_vusers}</span>
-                        </div>
-                        <div className="results-compare-metric">
-                          <span className="results-compare-label">CPU Peak</span>
-                          <span className="results-compare-value">{report!.resource_peaks.cpu_process_pct.toFixed(1)}%</span>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="results-compare-table-wrap">
-                  {comparisonChartData.length > 0 && (
-                    <div className="results-compare-chart-card">
-                      <h4 className="results-compare-chart-title">Archived Summary Curves</h4>
-                      <ResponsiveContainer width="100%" height={260}>
-                        <LineChart data={comparisonChartData}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                          <XAxis dataKey="sample" stroke="var(--text-muted)" fontSize={11} />
-                          <YAxis yAxisId="tps" stroke="var(--text-muted)" fontSize={11} />
-                          <YAxis yAxisId="p95" orientation="right" stroke="var(--text-muted)" fontSize={11} />
-                          <Tooltip
-                            contentStyle={{ background: 'rgba(33, 36, 47, 0.94)', border: '1px solid var(--border)', borderRadius: 10 }}
-                            labelFormatter={(value) => `Sample ${value}`}
-                            isAnimationActive={false}
-                          />
-                          <Legend />
-                          <Line yAxisId="tps" type="monotone" dataKey="leftTps" name={`${comparisonCards[0].test.name} TPS`} stroke="var(--chart-1)" dot={false} isAnimationActive={false} />
-                          <Line yAxisId="tps" type="monotone" dataKey="rightTps" name={`${comparisonCards[1].test.name} TPS`} stroke="var(--chart-2)" dot={false} isAnimationActive={false} />
-                          <Line yAxisId="p95" type="monotone" dataKey="leftP95" name={`${comparisonCards[0].test.name} P95`} stroke="var(--chart-4)" dot={false} strokeDasharray="4 2" isAnimationActive={false} />
-                          <Line yAxisId="p95" type="monotone" dataKey="rightP95" name={`${comparisonCards[1].test.name} P95`} stroke="var(--chart-5)" dot={false} strokeDasharray="4 2" isAnimationActive={false} />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </div>
-                  )}
-                  <table className="results-compare-table">
-                    <thead>
-                      <tr>
-                        <th>Action</th>
-                        <th>{comparisonCards[0].test.name} Avg</th>
-                        <th>{comparisonCards[1].test.name} Avg</th>
-                        <th>Latency Delta</th>
-                        <th>{comparisonCards[0].test.name} Errors</th>
-                        <th>{comparisonCards[1].test.name} Errors</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {comparisonActionRows.map((row) => (
-                        <tr key={row.name}>
-                          <td className="cell-name">{row.name}</td>
-                          <td>{row.left?.avg_response_ms?.toFixed(1) || '0.0'} ms</td>
-                          <td>{row.right?.avg_response_ms?.toFixed(1) || '0.0'} ms</td>
-                          <td className={row.deltaMs > 0 ? 'text-danger' : row.deltaMs < 0 ? 'text-success' : 'cell-muted'}>
-                            {row.deltaMs >= 0 ? '+' : ''}{row.deltaMs.toFixed(1)} ms
-                          </td>
-                          <td>{row.left?.errors || 0}</td>
-                          <td>{row.right?.errors || 0}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </>
-            )}
-          </div>
+      <div className="page-header">
+        <div>
+          <h2>Results</h2>
+          <p className="page-subtitle">
+            {activeApplication?.name || 'Application'} / {activeRelease?.name || 'Select a release'}
+          </p>
         </div>
-      )}
+        {selectedIds.size > 0 && (
+          <button className="btn btn-ghost" style={{ color: 'var(--danger)' }} onClick={deleteSelected}>
+            Delete Selected ({selectedIds.size})
+          </button>
+        )}
+      </div>
 
-      <FolderTree
-          title="Results"
-          headerActions={
-            <div className="results-actions">
-              {selectedIds.size > 0 && <button className="btn btn-sm btn-danger" onClick={handleDeleteSelected}>Delete Selected ({selectedIds.size})</button>}
-              <button className="btn btn-sm btn-secondary" onClick={handleClearResults}>Clear All Results</button>
-            </div>
-          }
-          rootLabel={activeProject?.name || 'Root'}
-          category="results"
-          folders={folders}
-          items={allCompletedTests}
-          selectedFolderId={selectedFolderId}
-          onSelectFolder={setSelectedFolderId}
-          onSelectItem={onSelectTest}
-          onCreateFolder={createFolder}
-          onRenameFolder={renameFolder}
-          onDeleteFolder={deleteFolder}
-          onMoveItem={moveResult}
-          renderItemExtra={(item) => {
-          const test = allCompletedTests.find((t) => t.id === item.id)
-          if (!test) return null
-          const status = testStatuses[test.id] || test.status
-          return (
-            <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginLeft: 'auto', flexShrink: 0 }}>
-              <input
-                type="checkbox"
-                checked={selectedIds.has(test.id)}
-                onChange={() => {
-                  const next = new Set(selectedIds)
-                  if (next.has(test.id)) next.delete(test.id); else next.add(test.id)
-                  setSelectedIds(next)
-                }}
-                onClick={(e) => e.stopPropagation()}
-              />
-              <StatusBadge status={status} />
-              <span className="cell-muted" style={{ fontSize: 12 }}>{new Date(test.start_time || test.created_at).toLocaleDateString()}</span>
-              {test.archive && (
-                <button className="btn btn-sm btn-secondary" onClick={(e) => handleDownloadArchive(test, e)}>Archive</button>
+      {error && <div className="settings-error-inline">{error}</div>}
+
+      <div className="page-section">
+        <h3 className="section-title">Release Results ({completed.length})</h3>
+        <div className="data-table">
+          <table>
+            <thead>
+              <tr>
+                <th style={{ width: 40 }}></th>
+                <th>Scenario</th>
+                <th>Status</th>
+                <th>VUsers</th>
+                <th>Groups</th>
+                <th>Started</th>
+                <th>Duration</th>
+                <th>Archive</th>
+                <th style={{ textAlign: 'right' }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {completed.map(test => (
+                <tr key={test.id} className="clickable-row" onClick={() => onSelectTest(test.id)}>
+                  <td><input type="checkbox" checked={selectedIds.has(test.id)} onClick={(event) => event.stopPropagation()} onChange={(event) => toggleSelect(test.id, event as any)} /></td>
+                  <td className="cell-name">{test.name}</td>
+                  <td><StatusBadge status={(testStatuses[test.id] || test.status) as any} /></td>
+                  <td>{test.total_vusers}</td>
+                  <td>{test.groups?.length || 1}</td>
+                  <td className="cell-muted">{formatDate(test.start_time || test.created_at)}</td>
+                  <td className="cell-muted">{test.duration}</td>
+                  <td className="cell-muted">{test.archive ? `${test.archive.transaction_count} tx` : 'Pending'}</td>
+                  <td style={{ textAlign: 'right' }}><button className="btn btn-sm btn-secondary" onClick={(event) => { event.stopPropagation(); onSelectTest(test.id) }}>Open</button></td>
+                </tr>
+              ))}
+              {completed.length === 0 && (
+                <tr><td colSpan={9} className="cell-muted">No completed results for this release yet.</td></tr>
               )}
-              <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={(e) => handleDelete(test.id, e)}>Delete</button>
-            </div>
-          )
-        }}
-      />
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   )
 }
+
 export default memo(ResultsPage)

@@ -1,22 +1,49 @@
 # Project Stormrunner
 
-Stormrunner is a Go-based load testing platform with three primary surfaces:
+Kubernetes-native performance testing platform replacing LoadRunner Enterprise. Stormrunner is a Go-based load testing platform with an agentic script generation engine, real-time React dashboard, and OpenTelemetry telemetry pipeline.
 
-- A controller API and embedded dashboard for authoring/running tests
-- A CLI (`stormctl`) for local script execution
-- A generator process placeholder for future distributed execution
+## What This Is
 
-The project is organized to support both direct local runs and an eventual controller-managed distributed model.
+Stormrunner provides **three primary surfaces**:
+
+- **Controller API + Dashboard**: Web UI for authoring, scheduling, and monitoring tests with real-time WebSocket-fed metrics
+- **CLI (`stormctl`)**: Local script execution for testing during development or in CI/CD pipelines
+- **Load Generator**: Kubernetes-native pods (StatefulSet) running goroutine-based virtual users, scalable 1–50 pods with ~10k VUsers/pod
+
+The project is organized to support both direct local runs and controller-managed distributed execution across multiple pods.
+
+## Key Design Principles
+
+- **Goroutine-based VUsers**: 1 VUser = 1 goroutine (~2–4 KB stack) for extreme concurrency
+- **Zero-lock metrics**: Buffered channels (cap 10,000) in hot path; metrics aggregated downstream
+- **Protocol plugins**: HTTP/1.1, HTTP/2, JMS (Solace, IBM MQ) — compiled-in, not runtime-loadable
+- **JSON DSL**: Human-readable test scripts with template variables and data sources
+- **Vendor-neutral telemetry**: OpenTelemetry native; exportable to Prometheus, Dynatrace, ELK
+- **Streaming percentiles**: T-digest for accurate p95/p99 computation without storing all samples
 
 ## Core Components
 
-- `cmd/controller`: starts the HTTP API server and serves the React dashboard
-- `cmd/stormctl`: CLI for running DSL scripts directly against the engine
-- `cmd/generator`: generator process scaffold for distributed mode
-- `pkg/api`: REST API, websocket streaming, settings/archive/recording handlers
-- `pkg/engine`: virtual-user execution engine, pacing, metrics, and runtime behavior
-- `pkg/dsl`: script structures and parser for load test definitions
-- `dashboard`: React + Vite frontend that compiles into `pkg/api/static`
+| Component | Purpose |
+|-----------|---------|
+| `cmd/controller` | HTTP API server + embedded React dashboard |
+| `cmd/stormctl` | CLI for direct script execution (no controller needed) |
+| `cmd/generator` | Distributed load generator (Kubernetes StatefulSet pod) |
+| `pkg/engine` | VUser goroutine engine, pacing, metrics, lifecycle |
+| `pkg/protocol` | Protocol interface; HTTP, JMS implementations |
+| `pkg/dsl` | Script parser and runtime structures |
+| `pkg/api` | REST handlers, WebSocket hub, test runner |
+| `dashboard` | React 18 + TypeScript + Recharts SPA (compiles to `pkg/api/static/`) |
+| `pkg/config` | Configuration types and validation |
+| `pkg/storage` | SQLite persistence layer |
+
+## Documentation
+
+- **[QUICK_REFERENCE.md](QUICK_REFERENCE.md)** — Fast lookup: commands, API endpoints, common errors
+- **[DEVELOPMENT.md](DEVELOPMENT.md)** — Developer setup, packages overview, frontend architecture, conventions, testing policy
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** — System architecture, data flow diagrams, engine internals, metrics collection, performance characteristics
+- **[API_AND_DSL_REFERENCE.md](API_AND_DSL_REFERENCE.md)** — Complete REST API reference, DSL syntax guide, example scripts, template variables
+- **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** — Common issues, debugging techniques, solutions
+- **[AGENTS.md](AGENTS.md)** — High-level platform overview, tech stack, release phases
 
 ## Requirements
 
@@ -25,7 +52,7 @@ The project is organized to support both direct local runs and an eventual contr
 
 ## Quick Start
 
-### 1) Start the controller API and dashboard
+### 1. Start the controller API and dashboard
 
 ```bash
 go run ./cmd/controller
@@ -33,11 +60,31 @@ go run ./cmd/controller
 
 By default the controller listens on `:8080`.
 
-### 2) Open the dashboard
+### 2. Open the dashboard
 
 Navigate to `http://127.0.0.1:8080`.
 
-### 3) Build dashboard assets (if developing frontend)
+### 3. Create and run a test
+
+1. **Create a script**:
+   - Go to **Scripts** page
+   - Click **New Script**
+   - Name: "API Load Test"
+   - Paste example from `examples/simple-http.json`
+   - Click **Save**
+
+2. **Create a scenario** (test configuration):
+   - Go to **Scenarios** page
+   - Click **New Scenario**
+   - Select your script
+   - Set VUsers: 50, Duration: 5 minutes, Ramp-up: 30 seconds
+   - Click **Start Test**
+
+3. **Monitor in real-time**:
+   - Watch metrics dashboard: throughput, latency (p50/p95/p99), error rate
+   - Results available after test completes
+
+### 4. Building dashboard (for development)
 
 ```bash
 cd dashboard
@@ -45,7 +92,14 @@ npm install
 npm run build
 ```
 
-`npm run build` emits static assets to `pkg/api/static`, which are served by the controller.
+`npm run build` emits static assets to `pkg/api/static/`, which are embedded into the controller binary.
+
+For hot-reload during frontend dev:
+```bash
+cd dashboard
+npm run dev
+# Starts dev server on :5173 with proxy to :8080 for API calls
+```
 
 ## Environment Variables
 
@@ -56,6 +110,8 @@ Controller runtime configuration:
 
 ## Build and Test
 
+### Building
+
 Use Make targets from repo root:
 
 ```bash
@@ -65,7 +121,7 @@ make test-cover  # race + coverage report (coverage.out / coverage.html)
 make lint        # runs golangci-lint (if installed)
 ```
 
-Frontend checks:
+### Frontend checks
 
 ```bash
 cd dashboard
@@ -73,48 +129,239 @@ npm run lint
 npm run test
 ```
 
-## stormctl CLI
-
-Run a DSL script locally:
+### Running tests
 
 ```bash
-go run ./cmd/stormctl run --script path/to/script.json --vusers 50 --duration 2m --ramp-up 30s
+# Run all Go tests
+go test ./...
+
+# Run specific package tests
+go test ./pkg/engine
+
+# Run with coverage
+go test -cover ./...
+
+# Benchmark performance
+go test -bench=BenchmarkEngine ./pkg/engine -benchmem
 ```
 
-Key flags:
+## CLI Usage
 
-- `--script, -s` required script path
-- `--vusers, -v` virtual user count (default `10`)
-- `--duration, -d` test duration (default `1m`)
-- `--ramp-up, -r` ramp period (default `0s`)
+### stormctl — Local script execution
 
-## API Surface (Controller)
+Run a DSL script without the controller:
 
-Representative endpoints:
+```bash
+go run ./cmd/stormctl run \
+  --script path/to/script.json \
+  --vusers 50 \
+  --duration 2m \
+  --ramp-up 30s
+```
 
-- Tests: `/api/v1/tests`, `/api/v1/tests/{id}`, `/api/v1/tests/{id}/start`
-- Scripts: `/api/v1/scripts`, `/api/v1/scripts/{id}`
-- Recorder: `/api/v1/recorder/*`
-- Health: `/api/v1/system/health`
-- WebSocket streams: `/api/v1/ws`, `/api/v1/tests/{id}/stream`
+**Key flags:**
 
-The dashboard relies on these endpoints for run management, live metrics, and script workflows.
+- `--script, -s` (required) — Path to DSL script file
+- `--vusers, -v` (default: 10) — Number of virtual users
+- `--duration, -d` (default: 1m) — Total test duration
+- `--ramp-up, -r` (default: 0s) — VUser ramp-up period
+
+**Example output:**
+```
+Results:
+  Duration: 2m5s
+  Total Transactions: 12,450
+  Total Errors: 8
+  Throughput: 99.6 req/sec
+  Latency (ms):
+    Min: 45.2
+    Avg: 156.3
+    P95: 482.5
+    P99: 892.1
+    Max: 1205.3
+```
+
+## API Endpoints (Controller)
+
+### Quick Reference
+
+**Tests:**
+```
+POST   /api/v1/tests                    — Create and queue test
+GET    /api/v1/tests                    — List all tests
+GET    /api/v1/tests/{id}               — Get test details
+POST   /api/v1/tests/{id}/start         — Start test
+POST   /api/v1/tests/{id}/stop          — Graceful stop
+POST   /api/v1/tests/{id}/abort         — Immediate abort
+WS     /api/v1/ws                       — Global WebSocket stream
+```
+
+**Scripts:**
+```
+POST   /api/v1/scripts                  — Create script
+GET    /api/v1/scripts                  — List scripts
+GET    /api/v1/scripts/{id}             — Get script
+PUT    /api/v1/scripts/{id}             — Update script
+DELETE /api/v1/scripts/{id}             — Delete script
+POST   /api/v1/scripts/{id}/validate    — Validate script
+```
+
+**System:**
+```
+GET    /api/v1/system/health            — Health check
+```
+
+See [API_AND_DSL_REFERENCE.md](API_AND_DSL_REFERENCE.md) for complete endpoint documentation.
+
+## DSL Script Structure
+
+Scripts are JSON with these sections:
+
+```json
+{
+  "config": {
+    "protocol": "http",
+    "base_url": "https://api.example.com",
+    "timeout_seconds": 30
+  },
+  "data_sources": [
+    {
+      "name": "users",
+      "type": "csv",
+      "path": "users.csv",
+      "cycling": "sequential"
+    }
+  ],
+  "init": [
+    {
+      "name": "login",
+      "type": "http",
+      "method": "POST",
+      "target": "/auth/login",
+      "body": "{\"user\": \"{{data.users.email}}\", \"pass\": \"{{data.users.password}}\"}"
+    }
+  ],
+  "actions": [
+    {
+      "name": "list_products",
+      "type": "http",
+      "method": "GET",
+      "target": "/products"
+    }
+  ],
+  "teardown": []
+}
+```
+
+**Features:**
+- **Template variables**: `{{env.VAR}}`, `{{data.source.column}}`, `{{var.name}}`, `{{fn.uuid()}}`
+- **Extractors**: Pull values from responses for use in subsequent requests
+- **Assertions**: Validate response status, headers, body content
+- **Think time**: Configurable delays between actions (fixed, random, gaussian)
+- **Data sources**: CSV or JSON for data-driven testing
+
+See [API_AND_DSL_REFERENCE.md](API_AND_DSL_REFERENCE.md) for complete DSL syntax.
 
 ## Repository Layout
 
-```text
-cmd/            # binary entrypoints
-dashboard/      # React frontend (build outputs embedded static assets)
-pkg/api/        # HTTP handlers, server wiring, websocket hub, archive/settings
-pkg/engine/     # load generation and metrics runtime
-pkg/dsl/        # script parser and types
-pkg/recorder/   # traffic recorder and conversion flows
-pkg/storage/    # storage abstractions and sqlite implementation
-examples/       # sample requests/scripts
+```
+cmd/
+  controller/         # Main API server + dashboard
+  stormctl/          # CLI tool
+  generator/         # Distributed load generator
+
+pkg/
+  engine/            # Core VUser engine, pacing, metrics
+  protocol/          # Protocol interface + HTTP/JMS implementations
+  dsl/              # Script parser and types
+  api/              # REST handlers, WebSocket, test runner
+  controller/       # Test orchestration logic
+  storage/          # SQLite persistence
+  recorder/         # HTTP recording + HAR conversion
+  config/           # Configuration
+
+dashboard/           # React 18 + TypeScript frontend
+  src/
+    components/     # React components (Sidebar, FolderTree, ScriptsPage, etc.)
+    hooks/         # Custom hooks (useApi, useWebSocket)
+    types.ts       # TypeScript interfaces
+    main.tsx       # Vite entry point
+  vite.config.ts
+  package.json
+
+deployments/         # Kubernetes manifests, Helm charts
+examples/            # Sample scripts and HAR files
 ```
 
-## Current State and Direction
+## Development Workflow
 
-- Controller + dashboard + local engine path is functional.
-- Generator binary currently runs as a scaffold while distributed orchestration is phased in.
-- Architecture already separates controller, engine, and generator concerns to support that expansion.
+### Common Tasks
+
+**Add a new API endpoint:**
+1. Define handler in `pkg/api/handlers.go`
+2. Register route in `pkg/api/server.go`
+3. Add REST tests in `pkg/api/handlers_test.go`
+4. Update [API_AND_DSL_REFERENCE.md](API_AND_DSL_REFERENCE.md)
+
+**Add a new protocol:**
+1. Create `pkg/protocol/myproto/myproto.go`
+2. Implement `protocol.Protocol` interface
+3. Register in `pkg/protocol/registry.go`
+4. Test with sample scripts
+
+**Update frontend:**
+1. Edit files in `dashboard/src/`
+2. If using dev server: changes hot-reload
+3. If serving from controller: `npm run build`, restart controller
+
+**Run tests:**
+```bash
+# Go tests
+go test ./...
+
+# Frontend tests
+cd dashboard && npm test
+
+# Coverage
+make test-cover
+```
+
+## Performance Targets
+
+| Metric | Target | Notes |
+|--------|--------|-------|
+| VUsers per pod | 10,000 | Memory-limited (~2–4 KB per goroutine) |
+| Throughput | 5,000–10,000 req/sec | Per pod; protocol/target dependent |
+| Latency overhead | < 50 μs | Harness overhead per transaction |
+| Metrics latency | < 2 sec | Collection to dashboard display |
+| Ramp-up rate | 500 VUsers/sec | Smooth scheduling |
+| Max pods | 50 | Total platform: 500k VUsers |
+
+## Project Status
+
+- ✅ Controller + dashboard fully functional
+- ✅ Local engine (stormctl) working
+- ✅ HTTP protocol (1.1, 2.0) complete
+- ✅ DSL parser and templating
+- ✅ Real-time metrics and WebSocket streaming
+- 🟡 Distributed generator (Kubernetes integration phase)
+- 🟡 JMS protocols (Solace, IBM MQ)
+- 🟡 Agentic script generation (LLM-powered)
+
+## Contributing
+
+See [DEVELOPMENT.md](DEVELOPMENT.md) for coding conventions, testing policy, and setup instructions.
+
+**All new features and bug fixes must include corresponding tests.**
+
+## References
+
+- **Go docs**: `go doc ./pkg/engine` — Engine package documentation
+- **Protocol interface**: `pkg/protocol/protocol.go` — All protocols implement this
+- **DSL types**: `pkg/dsl/types.go` — Script structures
+- **API handlers**: `pkg/api/handlers.go` — Endpoint implementations
+
+## License
+
+[License information here]
+

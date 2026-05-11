@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"math"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -26,9 +27,21 @@ type scriptPersistence interface {
 type testPersistence interface {
 	SaveTest(test *storage.TestRecord) error
 	ListTests(projectID string, folderID *string) ([]*storage.TestRecord, error)
+	ListTestsByContext(applicationID string, releaseID string, scenarioID string) ([]*storage.TestRecord, error)
 	UpdateTestStatus(id string, status string, endTime *time.Time, errStr string) error
 	DeleteTest(id string) error
 	MoveTest(id string, folderID *string) error
+}
+
+type scenarioPersistence interface {
+	SaveScenario(scenario *storage.Scenario, scripts []storage.ScenarioScript) error
+	GetScenario(id string) (*storage.Scenario, []storage.ScenarioScript, error)
+	ListScenarios() ([]*storage.Scenario, error)
+	DeleteScenario(id string) error
+}
+
+type releasePersistence interface {
+	GetRelease(id string) (*storage.Release, error)
 }
 
 type historyPersistence interface {
@@ -49,6 +62,7 @@ type settingsPersistence interface {
 type TestRunner struct {
 	tests         map[string]*ManagedTest
 	scripts       map[string]*StoredScript
+	scenarios     map[string]*StoredScenario
 	archives      map[string]*storage.RunArchiveRecord
 	mu            sync.RWMutex
 	hub           *Hub
@@ -56,6 +70,8 @@ type TestRunner struct {
 	settings      SystemSettings
 	scriptStore   scriptPersistence
 	testStore     testPersistence
+	scenarioStore scenarioPersistence
+	releaseStore  releasePersistence
 	historyStore  historyPersistence
 	archiveStore  archivePersistence
 	settingsStore settingsPersistence
@@ -65,6 +81,9 @@ type ManagedTest struct {
 	ID               string                    `json:"id"`
 	Name             string                    `json:"name"`
 	Status           string                    `json:"status"`
+	ApplicationID    string                    `json:"application_id,omitempty"`
+	ReleaseID        string                    `json:"release_id,omitempty"`
+	ScenarioID       string                    `json:"scenario_id,omitempty"`
 	ProjectID        string                    `json:"project_id,omitempty"`
 	FolderID         *string                   `json:"folder_id,omitempty"`
 	Groups           []TestGroup               `json:"groups"`
@@ -185,14 +204,53 @@ type GroupLiveMetrics struct {
 }
 
 type StoredScript struct {
-	ID        string      `json:"id"`
-	Name      string      `json:"name"`
-	Protocol  string      `json:"protocol"`
-	Version   string      `json:"version"`
-	ProjectID string      `json:"project_id,omitempty"`
-	FolderID  *string     `json:"folder_id,omitempty"`
-	CreatedAt time.Time   `json:"created_at"`
-	Script    *dsl.Script `json:"script"`
+	ID                 string       `json:"id"`
+	Name               string       `json:"name"`
+	Protocol           string       `json:"protocol"`
+	Version            string       `json:"version"`
+	ProjectID          string       `json:"project_id,omitempty"`
+	FolderID           *string      `json:"folder_id,omitempty"`
+	CreatedAt          time.Time    `json:"created_at"`
+	ScenarioCount      int          `json:"scenario_count,omitempty"`
+	AssociatedReleases []ReleaseRef `json:"associated_releases,omitempty"`
+	LastRunAt          *time.Time   `json:"last_run_at,omitempty"`
+	Script             *dsl.Script  `json:"script"`
+}
+
+type StoredScenario struct {
+	ID                 string                   `json:"id"`
+	Name               string                   `json:"name"`
+	Duration           string                   `json:"duration"`
+	ScenarioMode       string                   `json:"scenario_mode,omitempty"`
+	ScriptShakeout     bool                     `json:"script_shakeout,omitempty"`
+	ResourceBaseline   bool                     `json:"resource_baseline,omitempty"`
+	GoalConfig         *GoalConfig              `json:"goal_config,omitempty"`
+	RuntimeSettings    *RuntimeSettingsOverride `json:"runtime_settings,omitempty"`
+	Scripts            []ScenarioScriptRef      `json:"scripts"`
+	CreatedAt          time.Time                `json:"created_at"`
+	UpdatedAt          time.Time                `json:"updated_at"`
+	ScriptCount        int                      `json:"script_count"`
+	ResultCount        int                      `json:"result_count,omitempty"`
+	AssociatedReleases []ReleaseRef             `json:"associated_releases,omitempty"`
+	LastRunAt          *time.Time               `json:"last_run_at,omitempty"`
+}
+
+type ScenarioScriptRef struct {
+	Order          int    `json:"order"`
+	Name           string `json:"name,omitempty"`
+	ScriptID       string `json:"script_id"`
+	ScriptName     string `json:"script_name,omitempty"`
+	Protocol       string `json:"protocol,omitempty"`
+	VUsers         int    `json:"vusers"`
+	RampUp         string `json:"ramp_up,omitempty"`
+	RampDown       string `json:"ramp_down,omitempty"`
+	Initialization string `json:"initialization,omitempty"`
+}
+
+type ReleaseRef struct {
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	ApplicationID string `json:"application_id"`
 }
 
 type archiveRecorder interface {
@@ -211,17 +269,21 @@ func NewTestRunner(maxTests int, hub *Hub, store storage.Store) *TestRunner {
 	tr := &TestRunner{
 		tests:         make(map[string]*ManagedTest),
 		scripts:       make(map[string]*StoredScript),
+		scenarios:     make(map[string]*StoredScenario),
 		archives:      make(map[string]*storage.RunArchiveRecord),
 		hub:           hub,
 		maxTests:      maxTests,
 		scriptStore:   store,
 		testStore:     store,
+		scenarioStore: store,
+		releaseStore:  store,
 		historyStore:  store,
 		archiveStore:  store,
 		settingsStore: store,
 	}
 	tr.loadSystemSettings(maxTests)
 	tr.loadStoredScripts()
+	tr.loadStoredScenarios()
 	tr.loadStoredTests()
 
 	return tr
@@ -249,6 +311,63 @@ func (tr *TestRunner) loadStoredScripts() {
 	}
 }
 
+func (tr *TestRunner) loadStoredScenarios() {
+	if tr.scenarioStore == nil {
+		return
+	}
+	scenarios, err := tr.scenarioStore.ListScenarios()
+	if err != nil {
+		return
+	}
+	for _, scenario := range scenarios {
+		full, scripts, err := tr.scenarioStore.GetScenario(scenario.ID)
+		if err != nil {
+			full = scenario
+		}
+		tr.scenarios[scenario.ID] = tr.buildStoredScenario(full, scripts)
+	}
+}
+
+func (tr *TestRunner) buildStoredScenario(scenario *storage.Scenario, scripts []storage.ScenarioScript) *StoredScenario {
+	if scenario == nil {
+		return nil
+	}
+	refs := make([]ScenarioScriptRef, 0, len(scripts))
+	for _, script := range scripts {
+		ref := ScenarioScriptRef{
+			Order:          script.Order,
+			Name:           script.Name,
+			ScriptID:       script.ScriptID,
+			VUsers:         script.VUsers,
+			RampUp:         script.RampUp,
+			RampDown:       script.RampDown,
+			Initialization: script.Initialization,
+		}
+		if stored, ok := tr.scripts[script.ScriptID]; ok {
+			ref.ScriptName = stored.Name
+			ref.Protocol = stored.Protocol
+			if ref.Name == "" {
+				ref.Name = stored.Name
+			}
+		}
+		refs = append(refs, ref)
+	}
+	return &StoredScenario{
+		ID:               scenario.ID,
+		Name:             scenario.Name,
+		Duration:         scenario.Duration,
+		ScenarioMode:     normalizeScenarioMode(scenario.ScenarioMode),
+		ScriptShakeout:   scenario.ScriptShakeout,
+		ResourceBaseline: scenario.ResourceBaseline,
+		GoalConfig:       decodeStoredGoalConfig(scenario.GoalConfig),
+		RuntimeSettings:  decodeStoredRuntimeSettings(scenario.RuntimeSettings),
+		Scripts:          refs,
+		CreatedAt:        scenario.CreatedAt,
+		UpdatedAt:        scenario.UpdatedAt,
+		ScriptCount:      len(refs),
+	}
+}
+
 func (tr *TestRunner) loadStoredTests() {
 	if tr.testStore == nil {
 		return
@@ -270,6 +389,9 @@ func managedTestFromRecord(record *storage.TestRecord) *ManagedTest {
 		ID:               record.ID,
 		Name:             record.Name,
 		Status:           record.Status,
+		ApplicationID:    record.ApplicationID,
+		ReleaseID:        record.ReleaseID,
+		ScenarioID:       record.ScenarioID,
 		ProjectID:        record.ProjectID,
 		FolderID:         record.FolderID,
 		Groups:           decodeStoredGroups(record.Groups),
@@ -454,9 +576,227 @@ func (tr *TestRunner) DeleteScript(id string) bool {
 	return true
 }
 
+func (tr *TestRunner) StoreScenario(req CreateScenarioRequest) (*StoredScenario, error) {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	return tr.storeScenarioLocked(uuid.New().String(), req)
+}
+
+func (tr *TestRunner) UpdateScenario(id string, req CreateScenarioRequest) (*StoredScenario, bool, error) {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	if _, ok := tr.scenarios[id]; !ok {
+		return nil, false, nil
+	}
+	scenario, err := tr.storeScenarioLocked(id, req)
+	return scenario, true, err
+}
+
+func (tr *TestRunner) storeScenarioLocked(id string, req CreateScenarioRequest) (*StoredScenario, error) {
+	if strings.TrimSpace(req.Name) == "" {
+		return nil, fmt.Errorf("scenario name is required")
+	}
+	if strings.TrimSpace(req.Duration) == "" {
+		return nil, fmt.Errorf("scenario duration is required")
+	}
+	if _, err := validateScenarioRequest(CreateTestRequest{
+		ScenarioMode: req.ScenarioMode,
+		GoalConfig:   req.GoalConfig,
+	}); err != nil {
+		return nil, err
+	}
+	groups, err := normalizeCreateTestGroups(CreateTestRequest{Groups: req.Groups})
+	if err != nil {
+		return nil, err
+	}
+	if _, _, _, err := tr.compileManagedTestGroupsLocked(groups, req.RuntimeSettings); err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	existing := tr.scenarios[id]
+	createdAt := now
+	if existing != nil && !existing.CreatedAt.IsZero() {
+		createdAt = existing.CreatedAt
+	}
+	scenario := &storage.Scenario{
+		ID:               id,
+		Name:             req.Name,
+		Duration:         req.Duration,
+		ScenarioMode:     normalizeScenarioMode(req.ScenarioMode),
+		ScriptShakeout:   req.ScriptShakeout,
+		ResourceBaseline: req.ResourceBaseline,
+		GoalConfig:       req.GoalConfig,
+		RuntimeSettings:  req.RuntimeSettings,
+		CreatedAt:        createdAt,
+		UpdatedAt:        now,
+	}
+	scripts := make([]storage.ScenarioScript, 0, len(groups))
+	for i, group := range groups {
+		scripts = append(scripts, storage.ScenarioScript{
+			ScenarioID:     id,
+			Order:          i,
+			Name:           group.Name,
+			ScriptID:       group.ScriptID,
+			VUsers:         group.VUsers,
+			RampUp:         group.RampUp,
+			RampDown:       group.RampDown,
+			Initialization: group.InitStrategy,
+		})
+	}
+	if tr.scenarioStore != nil {
+		if err := tr.scenarioStore.SaveScenario(scenario, scripts); err != nil {
+			return nil, err
+		}
+	}
+	stored := tr.buildStoredScenario(scenario, scripts)
+	tr.scenarios[id] = stored
+	return stored, nil
+}
+
+func (tr *TestRunner) GetScenario(id string) (*StoredScenario, bool) {
+	tr.mu.RLock()
+	defer tr.mu.RUnlock()
+	scenario, ok := tr.scenarios[id]
+	if !ok {
+		return nil, false
+	}
+	return tr.enrichScenarioSummaryLocked(scenario), true
+}
+
+func (tr *TestRunner) ListScenarios() []*StoredScenario {
+	tr.mu.RLock()
+	defer tr.mu.RUnlock()
+	out := make([]*StoredScenario, 0, len(tr.scenarios))
+	for _, scenario := range tr.scenarios {
+		out = append(out, tr.enrichScenarioSummaryLocked(scenario))
+	}
+	return out
+}
+
+func (tr *TestRunner) DeleteScenario(id string) bool {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	if _, ok := tr.scenarios[id]; !ok {
+		return false
+	}
+	for _, test := range tr.tests {
+		if test.ScenarioID == id {
+			return false
+		}
+	}
+	delete(tr.scenarios, id)
+	if tr.scenarioStore != nil {
+		_ = tr.scenarioStore.DeleteScenario(id)
+	}
+	return true
+}
+
+func (tr *TestRunner) ListScriptsWithUsage() []*StoredScript {
+	tr.mu.RLock()
+	defer tr.mu.RUnlock()
+	out := make([]*StoredScript, 0, len(tr.scripts))
+	for _, script := range tr.scripts {
+		out = append(out, tr.enrichScriptSummaryLocked(script))
+	}
+	return out
+}
+
+func (tr *TestRunner) enrichScriptSummaryLocked(script *StoredScript) *StoredScript {
+	if script == nil {
+		return nil
+	}
+	copy := *script
+	scenarioSet := map[string]bool{}
+	releaseSet := map[string]ReleaseRef{}
+	var lastRun *time.Time
+	for _, scenario := range tr.scenarios {
+		for _, scenarioScript := range scenario.Scripts {
+			if scenarioScript.ScriptID == script.ID {
+				scenarioSet[scenario.ID] = true
+			}
+		}
+	}
+	for _, test := range tr.tests {
+		usesScript := false
+		for _, group := range test.Groups {
+			if group.ScriptID == script.ID {
+				usesScript = true
+				break
+			}
+		}
+		if !usesScript {
+			continue
+		}
+		if test.ReleaseID != "" {
+			releaseSet[test.ReleaseID] = tr.releaseRefLocked(test.ReleaseID)
+		}
+		if lastRun == nil || test.CreatedAt.After(*lastRun) {
+			t := test.CreatedAt
+			lastRun = &t
+		}
+	}
+	copy.ScenarioCount = len(scenarioSet)
+	copy.AssociatedReleases = releaseRefsFromSet(releaseSet)
+	copy.LastRunAt = lastRun
+	return &copy
+}
+
+func (tr *TestRunner) enrichScenarioSummaryLocked(scenario *StoredScenario) *StoredScenario {
+	if scenario == nil {
+		return nil
+	}
+	copy := *scenario
+	copy.Scripts = append([]ScenarioScriptRef(nil), scenario.Scripts...)
+	releaseSet := map[string]ReleaseRef{}
+	var lastRun *time.Time
+	resultCount := 0
+	for _, test := range tr.tests {
+		if test.ScenarioID != scenario.ID {
+			continue
+		}
+		if test.Status == "COMPLETE" || test.Status == "FAILED" || test.Status == "ABORTED" {
+			resultCount++
+		}
+		if test.ReleaseID != "" {
+			releaseSet[test.ReleaseID] = tr.releaseRefLocked(test.ReleaseID)
+		}
+		if lastRun == nil || test.CreatedAt.After(*lastRun) {
+			t := test.CreatedAt
+			lastRun = &t
+		}
+	}
+	copy.ResultCount = resultCount
+	copy.AssociatedReleases = releaseRefsFromSet(releaseSet)
+	copy.LastRunAt = lastRun
+	return &copy
+}
+
+func (tr *TestRunner) releaseRefLocked(id string) ReleaseRef {
+	ref := ReleaseRef{ID: id, Name: id}
+	if tr.releaseStore == nil {
+		return ref
+	}
+	release, err := tr.releaseStore.GetRelease(id)
+	if err != nil || release == nil {
+		return ref
+	}
+	return ReleaseRef{ID: release.ID, Name: release.Name, ApplicationID: release.ApplicationID}
+}
+
+func releaseRefsFromSet(set map[string]ReleaseRef) []ReleaseRef {
+	out := make([]ReleaseRef, 0, len(set))
+	for _, release := range set {
+		out = append(out, release)
+	}
+	return out
+}
+
 type CreateTestRequest struct {
 	Name             string             `json:"name"`
 	Duration         string             `json:"duration"`
+	ApplicationID    string             `json:"application_id,omitempty"`
+	ReleaseID        string             `json:"release_id,omitempty"`
+	ScenarioID       string             `json:"scenario_id,omitempty"`
 	ProjectID        string             `json:"project_id,omitempty"`
 	FolderID         *string            `json:"folder_id,omitempty"`
 	ScenarioMode     string             `json:"scenario_mode,omitempty"`
@@ -470,6 +810,17 @@ type CreateTestRequest struct {
 	RampUp   string `json:"ramp_up,omitempty"`
 	// Test-level runtime overrides (mirrors LR Controller override behavior)
 	RuntimeSettings *RuntimeSettingsOverride `json:"runtime_settings,omitempty"`
+}
+
+type CreateScenarioRequest struct {
+	Name             string                   `json:"name"`
+	Duration         string                   `json:"duration"`
+	ScenarioMode     string                   `json:"scenario_mode,omitempty"`
+	ScriptShakeout   bool                     `json:"script_shakeout,omitempty"`
+	ResourceBaseline bool                     `json:"resource_baseline,omitempty"`
+	GoalConfig       *GoalConfig              `json:"goal_config,omitempty"`
+	RuntimeSettings  *RuntimeSettingsOverride `json:"runtime_settings,omitempty"`
+	Groups           []CreateGroupEntry       `json:"groups"`
 }
 
 type GoalConfig struct {
@@ -579,6 +930,14 @@ func (tr *TestRunner) CreateTest(req CreateTestRequest) (*ManagedTest, error) {
 }
 
 func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, status string) (*ManagedTest, error) {
+	if req.ScenarioID != "" {
+		scenario, ok := tr.scenarios[req.ScenarioID]
+		if !ok {
+			return nil, fmt.Errorf("scenario not found: %s", req.ScenarioID)
+		}
+		req = createTestRequestFromScenario(req, scenario)
+	}
+
 	dur, err := time.ParseDuration(req.Duration)
 	if err != nil {
 		return nil, fmt.Errorf("invalid duration: %w", err)
@@ -601,11 +960,28 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 
 	testName := deriveManagedTestName(req.Name, testGroups)
 
+	if req.ReleaseID == "" && status != "DRAFT" {
+		req.ReleaseID = storage.LegacyReleaseID
+	}
+	applicationID := req.ApplicationID
+	if req.ReleaseID != "" && tr.releaseStore != nil {
+		if release, err := tr.releaseStore.GetRelease(req.ReleaseID); err == nil && release != nil {
+			applicationID = release.ApplicationID
+		}
+	}
+	if applicationID == "" && req.ReleaseID != "" {
+		applicationID = storage.LegacyApplicationID
+	}
+	projectID := normalizeProjectID(req.ProjectID)
+
 	test := &ManagedTest{
 		ID:               id,
 		Name:             testName,
 		Status:           status,
-		ProjectID:        normalizeProjectID(req.ProjectID),
+		ApplicationID:    applicationID,
+		ReleaseID:        req.ReleaseID,
+		ScenarioID:       req.ScenarioID,
+		ProjectID:        projectID,
 		FolderID:         req.FolderID,
 		Groups:           testGroups,
 		CapacityAdvisory: estimateCapacityAdvisory(tr.settings, testGroups, totalVUsers, dur, req.ResourceBaseline, req.RuntimeSettings),
@@ -627,6 +1003,45 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 	}
 
 	return test, nil
+}
+
+func createTestRequestFromScenario(req CreateTestRequest, scenario *StoredScenario) CreateTestRequest {
+	req.Name = firstNonEmpty(req.Name, scenario.Name)
+	req.Duration = firstNonEmpty(req.Duration, scenario.Duration)
+	req.ScenarioMode = firstNonEmpty(req.ScenarioMode, scenario.ScenarioMode)
+	if !req.ScriptShakeout {
+		req.ScriptShakeout = scenario.ScriptShakeout
+	}
+	if !req.ResourceBaseline {
+		req.ResourceBaseline = scenario.ResourceBaseline
+	}
+	if req.GoalConfig == nil {
+		req.GoalConfig = cloneGoalConfig(scenario.GoalConfig)
+	}
+	if req.RuntimeSettings == nil {
+		req.RuntimeSettings = cloneRuntimeSettings(scenario.RuntimeSettings)
+	}
+	if len(req.Groups) == 0 && req.ScriptID == "" {
+		req.Groups = make([]CreateGroupEntry, 0, len(scenario.Scripts))
+		for _, script := range scenario.Scripts {
+			req.Groups = append(req.Groups, CreateGroupEntry{
+				Name:         script.Name,
+				ScriptID:     script.ScriptID,
+				VUsers:       script.VUsers,
+				RampUp:       script.RampUp,
+				RampDown:     script.RampDown,
+				InitStrategy: script.Initialization,
+			})
+		}
+	}
+	return req
+}
+
+func firstNonEmpty(value string, fallback string) string {
+	if value != "" {
+		return value
+	}
+	return fallback
 }
 
 func validateScenarioRequest(req CreateTestRequest) (string, error) {
@@ -815,6 +1230,28 @@ func (tr *TestRunner) ListTestsFiltered(projectID string, folderID *string) []*M
 	return out
 }
 
+func (tr *TestRunner) ListTestsByContext(applicationID string, releaseID string, scenarioID string) []*ManagedTest {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	out := make([]*ManagedTest, 0, len(tr.tests))
+	for _, t := range tr.tests {
+		if applicationID != "" && t.ApplicationID != applicationID {
+			continue
+		}
+		if releaseID != "" && t.ReleaseID != releaseID {
+			continue
+		}
+		if scenarioID != "" && t.ScenarioID != scenarioID {
+			continue
+		}
+		if t.Status == "QUEUED" {
+			tr.refreshCapacityAdvisoryLocked(t)
+		}
+		out = append(out, t)
+	}
+	return out
+}
+
 func (tr *TestRunner) MoveTest(id string, folderID *string) bool {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
@@ -984,6 +1421,9 @@ func buildManagedTestRecord(test *ManagedTest) *storage.TestRecord {
 		ID:               test.ID,
 		Name:             test.Name,
 		Status:           test.Status,
+		ApplicationID:    test.ApplicationID,
+		ReleaseID:        test.ReleaseID,
+		ScenarioID:       test.ScenarioID,
 		ProjectID:        normalizeProjectID(test.ProjectID),
 		FolderID:         test.FolderID,
 		ScenarioMode:     test.ScenarioMode,

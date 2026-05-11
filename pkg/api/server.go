@@ -74,6 +74,17 @@ func (s *Server) routes(allowedOrigins []string) {
 	log := loggingMiddleware
 
 	// Test lifecycle and archive endpoints.
+	s.mux.Handle("POST /api/v1/applications", cors(log(http.HandlerFunc(s.handleCreateApplication))))
+	s.mux.Handle("GET /api/v1/applications", cors(log(http.HandlerFunc(s.handleListApplications))))
+	s.mux.Handle("GET /api/v1/applications/{id}", cors(log(http.HandlerFunc(s.handleGetApplication))))
+	s.mux.Handle("PUT /api/v1/applications/{id}", cors(log(http.HandlerFunc(s.handleUpdateApplication))))
+	s.mux.Handle("DELETE /api/v1/applications/{id}", cors(log(http.HandlerFunc(s.handleDeleteApplication))))
+	s.mux.Handle("POST /api/v1/applications/{id}/releases", cors(log(http.HandlerFunc(s.handleCreateRelease))))
+	s.mux.Handle("GET /api/v1/applications/{id}/releases", cors(log(http.HandlerFunc(s.handleListReleases))))
+	s.mux.Handle("GET /api/v1/releases/{id}", cors(log(http.HandlerFunc(s.handleGetRelease))))
+	s.mux.Handle("PUT /api/v1/releases/{id}", cors(log(http.HandlerFunc(s.handleUpdateRelease))))
+	s.mux.Handle("DELETE /api/v1/releases/{id}", cors(log(http.HandlerFunc(s.handleDeleteRelease))))
+
 	s.mux.Handle("POST /api/v1/projects", cors(log(http.HandlerFunc(s.handleCreateProject))))
 	s.mux.Handle("GET /api/v1/projects", cors(log(http.HandlerFunc(s.handleListProjects))))
 	s.mux.Handle("GET /api/v1/projects/{id}", cors(log(http.HandlerFunc(s.handleGetProject))))
@@ -103,6 +114,14 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("GET /api/v1/tests/{id}/archive/resources", cors(log(http.HandlerFunc(s.handleGetRunArchiveResources))))
 	s.mux.Handle("GET /api/v1/tests/{id}/archive/summaries", cors(log(http.HandlerFunc(s.handleGetRunArchiveSummaries))))
 	s.mux.Handle("GET /api/v1/tests/{id}/archive/report", cors(log(http.HandlerFunc(s.handleGetRunArchiveReport))))
+
+	// Reusable scenario definitions.
+	s.mux.Handle("POST /api/v1/scenarios", cors(log(http.HandlerFunc(s.handleCreateScenario))))
+	s.mux.Handle("GET /api/v1/scenarios", cors(log(http.HandlerFunc(s.handleListScenarios))))
+	s.mux.Handle("GET /api/v1/scenarios/{id}", cors(log(http.HandlerFunc(s.handleGetScenario))))
+	s.mux.Handle("PUT /api/v1/scenarios/{id}", cors(log(http.HandlerFunc(s.handleUpdateScenario))))
+	s.mux.Handle("DELETE /api/v1/scenarios/{id}", cors(log(http.HandlerFunc(s.handleDeleteScenario))))
+	s.mux.Handle("GET /api/v1/scenarios/{id}/results", cors(log(http.HandlerFunc(s.handleScenarioResults))))
 
 	// Script CRUD, validation, import, and export endpoints.
 	s.mux.Handle("POST /api/v1/scripts", cors(log(http.HandlerFunc(s.handleCreateScript))))

@@ -30,12 +30,16 @@ func (s *Server) handleCreateFolder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := time.Now()
+	category := req.Category
+	if category == "" {
+		category = "general"
+	}
 	folder := &storage.Folder{
 		ID:        uuid.New().String(),
 		ProjectID: r.PathValue("pid"),
 		ParentID:  req.ParentID,
 		Name:      strings.TrimSpace(req.Name),
-		Category:  req.Category,
+		Category:  category,
 		CreatedAt: now,
 		UpdatedAt: now,
 	}

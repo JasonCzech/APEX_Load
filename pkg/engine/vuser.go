@@ -4,8 +4,12 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
+	"regexp"
+	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jasonczech/stormrunner/pkg/dsl"
 	"github.com/jasonczech/stormrunner/pkg/protocol"
 )
@@ -21,6 +25,8 @@ type VUser struct {
 	DataProvider  *DataProvider
 	SnapshotStore *SnapshotStore
 }
+
+var templatePattern = regexp.MustCompile(`\{\{([^{}]+)\}\}`)
 
 // SnapshotStore collects error snapshots for post-test analysis.
 type SnapshotStore struct {
@@ -334,18 +340,27 @@ func (vu *VUser) resolveAction(action dsl.Action) *protocol.Action {
 		Target:     vu.interpolate(action.Target),
 		Headers:    vu.interpolateMap(action.Headers),
 		Body:       []byte(vu.interpolate(action.Body)),
-		Params:     action.Params,
+		Params:     vu.interpolateAnyMap(action.Params),
 		Extractors: toProtocolExtractors(action.Extractors),
 		Assertions: toProtocolAssertions(action.Assertions),
 	}
 }
 
 func (vu *VUser) interpolate(s string) string {
-	result := s
-	for k, v := range vu.Variables {
-		result = replaceAll(result, fmt.Sprintf("{{var.%s}}", k), v)
+	if s == "" {
+		return s
 	}
-	return result
+	return templatePattern.ReplaceAllStringFunc(s, func(token string) string {
+		// token is always {{...}} from the regex.
+		expr := strings.TrimSpace(token[2 : len(token)-2])
+		if expr == "" {
+			return token
+		}
+		if value, ok := vu.resolveTemplateValue(expr); ok {
+			return value
+		}
+		return token
+	})
 }
 
 func (vu *VUser) interpolateMap(m map[string]string) map[string]string {
@@ -357,6 +372,60 @@ func (vu *VUser) interpolateMap(m map[string]string) map[string]string {
 		out[k] = vu.interpolate(v)
 	}
 	return out
+}
+
+func (vu *VUser) interpolateAnyMap(m map[string]any) map[string]any {
+	if m == nil {
+		return nil
+	}
+	out := make(map[string]any, len(m))
+	for k, v := range m {
+		out[k] = vu.interpolateAny(v)
+	}
+	return out
+}
+
+func (vu *VUser) interpolateAny(v any) any {
+	switch typed := v.(type) {
+	case string:
+		return vu.interpolate(typed)
+	case []any:
+		out := make([]any, len(typed))
+		for i := range typed {
+			out[i] = vu.interpolateAny(typed[i])
+		}
+		return out
+	case map[string]any:
+		out := make(map[string]any, len(typed))
+		for k, nested := range typed {
+			out[k] = vu.interpolateAny(nested)
+		}
+		return out
+	default:
+		return v
+	}
+}
+
+func (vu *VUser) resolveTemplateValue(expr string) (string, bool) {
+	switch {
+	case strings.HasPrefix(expr, "var."):
+		key := strings.TrimSpace(strings.TrimPrefix(expr, "var."))
+		value, ok := vu.Variables[key]
+		return value, ok
+	case strings.HasPrefix(expr, "data."):
+		// Data variables are stored as "source.column", so map data.source.column -> source.column.
+		key := strings.TrimSpace(strings.TrimPrefix(expr, "data."))
+		value, ok := vu.Variables[key]
+		return value, ok
+	case strings.HasPrefix(expr, "env."):
+		key := strings.TrimSpace(strings.TrimPrefix(expr, "env."))
+		value, ok := os.LookupEnv(key)
+		return value, ok
+	case expr == "fn.uuid()":
+		return uuid.NewString(), true
+	default:
+		return "", false
+	}
 }
 
 func (vu *VUser) mergeExtractions(r *protocol.Result) {

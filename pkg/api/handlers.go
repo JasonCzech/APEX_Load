@@ -43,6 +43,18 @@ func (s *Server) handleEstimateTest(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListTests(w http.ResponseWriter, r *http.Request) {
+	applicationID := r.URL.Query().Get("application_id")
+	releaseID := r.URL.Query().Get("release_id")
+	scenarioID := r.URL.Query().Get("scenario_id")
+	if applicationID != "" || releaseID != "" || scenarioID != "" {
+		tests := s.runner.ListTestsByContext(applicationID, releaseID, scenarioID)
+		writeJSON(w, http.StatusOK, map[string]any{
+			"tests": tests,
+			"count": len(tests),
+		})
+		return
+	}
+
 	projectID := r.URL.Query().Get("project_id")
 	var folderID *string
 	if r.URL.Query().Has("folder_id") {
@@ -194,7 +206,7 @@ func (s *Server) handleListScripts(w http.ResponseWriter, r *http.Request) {
 		folderID = &value
 	}
 	if projectID == "" && folderID == nil {
-		scripts := s.runner.ListScripts()
+		scripts := s.runner.ListScriptsWithUsage()
 		writeJSON(w, http.StatusOK, map[string]any{
 			"scripts": scripts,
 			"count":   len(scripts),

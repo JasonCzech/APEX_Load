@@ -7,9 +7,27 @@ import (
 )
 
 const DefaultProjectID = "unassigned"
+const LegacyApplicationID = "legacy"
+const LegacyReleaseID = "legacy-imported"
 
 // Store defines the interface for persisting Stormrunner data.
 type Store interface {
+	// Applications and releases
+	SaveApplication(application *Application) error
+	GetApplication(id string) (*Application, error)
+	ListApplications() ([]*Application, error)
+	DeleteApplication(id string) error
+	SaveRelease(release *Release) error
+	GetRelease(id string) (*Release, error)
+	ListReleases(applicationID string) ([]*Release, error)
+	DeleteRelease(id string) error
+
+	// Reusable scenarios
+	SaveScenario(scenario *Scenario, scripts []ScenarioScript) error
+	GetScenario(id string) (*Scenario, []ScenarioScript, error)
+	ListScenarios() ([]*Scenario, error)
+	DeleteScenario(id string) error
+
 	// Projects
 	SaveProject(project *Project) error
 	GetProject(id string) (*Project, error)
@@ -34,6 +52,7 @@ type Store interface {
 	SaveTest(test *TestRecord) error
 	GetTest(id string) (*TestRecord, error)
 	ListTests(projectID string, folderID *string) ([]*TestRecord, error)
+	ListTestsByContext(applicationID string, releaseID string, scenarioID string) ([]*TestRecord, error)
 	UpdateTestStatus(id string, status string, endTime *time.Time, errStr string) error
 	DeleteTest(id string) error
 	MoveTest(id string, folderID *string) error
@@ -49,6 +68,45 @@ type Store interface {
 	GetSetting(key string) (string, error)
 
 	Close() error
+}
+
+type Application struct {
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+type Release struct {
+	ID            string    `json:"id"`
+	ApplicationID string    `json:"application_id"`
+	Name          string    `json:"name"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
+}
+
+type Scenario struct {
+	ID               string    `json:"id"`
+	Name             string    `json:"name"`
+	Duration         string    `json:"duration"`
+	ScenarioMode     string    `json:"scenario_mode,omitempty"`
+	ScriptShakeout   bool      `json:"script_shakeout,omitempty"`
+	ResourceBaseline bool      `json:"resource_baseline,omitempty"`
+	GoalConfig       any       `json:"goal_config,omitempty"`
+	RuntimeSettings  any       `json:"runtime_settings,omitempty"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
+}
+
+type ScenarioScript struct {
+	ScenarioID     string `json:"scenario_id,omitempty"`
+	Order          int    `json:"order"`
+	Name           string `json:"name,omitempty"`
+	ScriptID       string `json:"script_id"`
+	VUsers         int    `json:"vusers"`
+	RampUp         string `json:"ramp_up,omitempty"`
+	RampDown       string `json:"ramp_down,omitempty"`
+	Initialization string `json:"initialization,omitempty"`
 }
 
 type Project struct {
@@ -85,6 +143,9 @@ type TestRecord struct {
 	ID               string     `json:"id"`
 	Name             string     `json:"name"`
 	Status           string     `json:"status"`
+	ApplicationID    string     `json:"application_id,omitempty"`
+	ReleaseID        string     `json:"release_id,omitempty"`
+	ScenarioID       string     `json:"scenario_id,omitempty"`
 	ProjectID        string     `json:"project_id,omitempty"`
 	FolderID         *string    `json:"folder_id,omitempty"`
 	ScenarioMode     string     `json:"scenario_mode,omitempty"`

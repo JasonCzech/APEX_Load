@@ -87,6 +87,33 @@ export function useScriptApi() {
     [],
   )
 
+  const listScenarios = useCallback(() => request<any>('/scenarios'), [])
+
+  const createScenario = useCallback(
+    (data: any) => request<any>('/scenarios', { method: 'POST', body: JSON.stringify(data) }),
+    [],
+  )
+
+  const getScenario = useCallback((id: string) => request<any>(`/scenarios/${id}`), [])
+
+  const updateScenario = useCallback(
+    (id: string, data: any) => request<any>(`/scenarios/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    [],
+  )
+
+  const deleteScenario = useCallback((id: string) => request<any>(`/scenarios/${id}`, { method: 'DELETE' }), [])
+
+  const listScenarioResults = useCallback(
+    (id: string, params?: { application_id?: string; release_id?: string }) => {
+      const query = new URLSearchParams()
+      if (params?.application_id) query.set('application_id', params.application_id)
+      if (params?.release_id) query.set('release_id', params.release_id)
+      const suffix = query.toString()
+      return request<any>(`/scenarios/${id}/results${suffix ? `?${suffix}` : ''}`)
+    },
+    [],
+  )
+
   return useMemo(
     () => ({
       listScripts,
@@ -99,6 +126,12 @@ export function useScriptApi() {
       exportScript,
       importLoadRunner,
       importSample,
+      listScenarios,
+      createScenario,
+      getScenario,
+      updateScenario,
+      deleteScenario,
+      listScenarioResults,
     }),
     [
       listScripts,
@@ -111,6 +144,12 @@ export function useScriptApi() {
       exportScript,
       importLoadRunner,
       importSample,
+      listScenarios,
+      createScenario,
+      getScenario,
+      updateScenario,
+      deleteScenario,
+      listScenarioResults,
     ],
   )
 }

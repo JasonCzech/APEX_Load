@@ -1,260 +1,181 @@
-import { useState, useEffect, useCallback, useMemo, memo } from 'react'
+import { memo, useCallback, useEffect, useMemo, useState } from 'react'
+import { StoredScenario, StoredScript } from '../types'
 import { useApi } from '../hooks/useApi'
-import { Folder, Project, ScenarioDraft, TestSummary, TestStatus, StoredScript } from '../types'
-import CreateTestModal from './CreateTestModal'
-import FolderTree from './FolderTree'
-import StatusBadge from './StatusBadge'
 import './TestHub.css'
 
 interface Props {
   testStatuses: Record<string, string>
   onSelectTest: (id: string) => void
-  activeProject?: Project | null
 }
 
-interface Scenario {
-  name: string
-  runs: TestSummary[]
-  latestRun: TestSummary
-  configRun: TestSummary
-  hasActive: boolean
-  totalRuns: number
+function formatDate(value?: string) {
+  return value ? new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Never'
 }
 
-function resolveStatus(test: TestSummary, overrides: Record<string, string>): TestStatus {
-  return (overrides[test.id] || test.status) as TestStatus
+function releaseList(scenario: StoredScenario) {
+  const releases = scenario.associated_releases || []
+  if (releases.length === 0) return 'No releases yet'
+  return releases.map(release => release.name).join(', ')
 }
 
-function formatDate(iso: string): string {
-  const d = new Date(iso)
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-}
-
-function resolveScenarioConfigRun(runs: TestSummary[]): TestSummary {
-  return runs.find((run) => run.status === 'QUEUED') || runs[0]
-}
-
-function hasShakeoutFailure(test: TestSummary): boolean {
-  return test.status === 'FAILED' && Boolean(test.script_shakeout) && Boolean(test.error?.toLowerCase().includes('shakeout'))
-}
-
-function buildScenarioDraft(test: TestSummary): ScenarioDraft {
-  const groups = test.groups?.length
-    ? test.groups.map((group) => ({
-        name: group.name,
-        scriptId: group.script_id,
-        vusers: group.vusers,
-        rampUp: group.ramp_up || '',
-        rampDown: group.ramp_down || '',
-        initialization: group.initialization || 'at_runtime',
-      }))
-    : [{
-        name: '',
-        scriptId: test.script_id || '',
-        vusers: test.total_vusers || 10,
-        rampUp: '',
-        rampDown: '',
-        initialization: 'at_runtime' as const,
-      }]
-
-  return {
-    name: test.name,
-    duration: test.duration,
-    scenarioMode: test.scenario_mode || 'vuser_driven',
-    scriptShakeout: Boolean(test.script_shakeout),
-    resourceBaseline: Boolean(test.resource_baseline),
-    goalConfig: {
-      target_average_tps: test.goal_config?.target_average_tps,
-      p95_latency_ms: test.goal_config?.p95_latency_ms,
-      max_error_pct: test.goal_config?.max_error_pct,
-      min_vusers: test.goal_config?.min_vusers,
-      max_vusers: test.goal_config?.max_vusers,
-      stop_on_sla_breach: test.goal_config?.stop_on_sla_breach,
-      sla_breach_window: test.goal_config?.sla_breach_window || '',
-    },
-    groups,
-    runtimeSettings: {
-      iterations: test.runtime_settings?.iterations,
-      log_level: test.runtime_settings?.log_level || '',
-      auto_transactions: test.runtime_settings?.auto_transactions || '',
-      snapshot_on_error: Boolean(test.runtime_settings?.error_handling?.snapshot_on_error),
-    },
-  }
-}
-
-function TestHub({ testStatuses, onSelectTest, activeProject }: Props) {
+function TestHub({ onSelectTest }: Props) {
   const api = useApi()
-  const [tests, setTests] = useState<TestSummary[]>([])
+  const [scenarios, setScenarios] = useState<StoredScenario[]>([])
   const [scripts, setScripts] = useState<StoredScript[]>([])
-  const [folders, setFolders] = useState<Folder[]>([])
-  const [selectedFolderId, setSelectedFolderId] = useState<string | null | undefined>(undefined)
-  const [showCreate, setShowCreate] = useState(false)
-  const [editingScenario, setEditingScenario] = useState<ScenarioDraft | null>(null)
+  const [showForm, setShowForm] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [form, setForm] = useState<any>({ name: '', duration: '1m', script_id: '', vusers: 10 })
+  const [error, setError] = useState('')
 
   const refresh = useCallback(async () => {
     try {
-      const [testRes, scriptRes] = await Promise.all([
-        api.listTests(activeProject?.id),
-        api.listScripts(activeProject?.id),
-      ])
-      const folderRes = activeProject?.id ? await api.listFolders(activeProject.id, 'scenarios') : { folders: [] }
-      setTests(testRes.tests || [])
-      setScripts(scriptRes.scripts || [])
-      setFolders(folderRes.folders || [])
-    } catch { /* API not available yet */ }
-  }, [api, activeProject?.id])
-
-  useEffect(() => {
-    refresh()
-    const interval = setInterval(refresh, 5000)
-    return () => clearInterval(interval)
-  }, [refresh])
-
-  useEffect(() => {
-    setSelectedFolderId(undefined)
-  }, [activeProject?.id])
-
-  const scenarios = useMemo(() => {
-    const map = new Map<string, TestSummary[]>()
-    const visibleTests = tests.filter((test) => {
-      if (selectedFolderId === undefined) return true
-      if (selectedFolderId === null) return !test.folder_id
-      return test.folder_id === selectedFolderId
-    })
-
-    for (const test of visibleTests) {
-      const name = test.name
-      if (!map.has(name)) map.set(name, [])
-      map.get(name)!.push(test)
+      const [scenarioRes, scriptRes] = await Promise.all([api.listScenarios(), api.listScripts()])
+      const nextScenarios = scenarioRes.scenarios || []
+      const nextScripts = scriptRes.scripts || []
+      setScenarios(nextScenarios)
+      setScripts(nextScripts)
+      setForm((prev: any) => ({ ...prev, script_id: prev.script_id || nextScripts[0]?.id || '' }))
+    } catch (err: any) {
+      setError(err.message || 'Unable to load scenarios')
     }
+  }, [api])
 
-    const result: Scenario[] = []
-    for (const [name, runs] of map) {
-      const sorted = [...runs].sort((a, b) =>
-        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-      )
-      const configRun = resolveScenarioConfigRun(sorted)
-      const hasActive = sorted.some(r => {
-        const s = resolveStatus(r, testStatuses)
-        return s === 'RUNNING' || s === 'INITIALIZING' || s === 'STOPPING'
-      })
-      result.push({
-        name,
-        runs: sorted,
-        latestRun: sorted[0],
-        configRun,
-        hasActive,
-        totalRuns: sorted.length,
-      })
-    }
+  useEffect(() => { refresh() }, [refresh])
 
-    result.sort((a, b) => {
-      if (a.hasActive && !b.hasActive) return -1
-      if (!a.hasActive && b.hasActive) return 1
-      return new Date(b.latestRun.created_at).getTime() - new Date(a.latestRun.created_at).getTime()
-    })
-
-    return result
-  }, [tests, testStatuses, selectedFolderId])
-
-  const scenarioItems = useMemo(
-    () => scenarios.map((scenario) => ({
-      id: scenario.configRun.id,
-      name: scenario.name,
-      folder_id: scenario.configRun.folder_id,
-    })),
+  const sorted = useMemo(
+    () => [...scenarios].sort((a, b) => new Date(b.updated_at || b.created_at).getTime() - new Date(a.updated_at || a.created_at).getTime()),
     [scenarios],
   )
 
-  const createFolder = async (parentId: string | null) => {
-    if (!activeProject?.id) return
-    const name = window.prompt('Folder name')
-    if (!name?.trim()) return
-    await api.createFolder(activeProject.id, { name: name.trim(), category: 'scenarios', parent_id: parentId })
-    refresh()
-  }
-
-  const renameFolder = async (id: string, name: string) => {
-    await api.updateFolder(id, { name })
-    refresh()
-  }
-
-  const deleteFolder = async (id: string) => {
-    await api.deleteFolder(id)
-    if (selectedFolderId === id) setSelectedFolderId(undefined)
-    refresh()
-  }
-
-  const moveScenario = async (id: string, folderId: string | null) => {
-    await api.moveTest(id, folderId)
-    refresh()
-  }
-
   const openCreate = () => {
-    setEditingScenario(null)
-    setShowCreate(true)
+    setEditingId(null)
+    setForm({ name: '', duration: '1m', script_id: scripts[0]?.id || '', vusers: 10 })
+    setShowForm(true)
   }
 
-  const openEdit = (test: TestSummary) => {
-    setEditingScenario(buildScenarioDraft(test))
-    setShowCreate(true)
+  const openEdit = (scenario: StoredScenario) => {
+    const first = scenario.scripts[0]
+    setEditingId(scenario.id)
+    setForm({
+      name: scenario.name,
+      duration: scenario.duration,
+      script_id: first?.script_id || scripts[0]?.id || '',
+      vusers: first?.vusers || 10,
+    })
+    setShowForm(true)
   }
 
+  const saveScenario = async () => {
+    if (!form.name.trim() || !form.script_id) {
+      setError('Scenario name and script are required.')
+      return
+    }
+    const payload = {
+      name: form.name.trim(),
+      duration: form.duration || '1m',
+      scenario_mode: 'vuser_driven',
+      groups: [{
+        script_id: form.script_id,
+        vusers: Number(form.vusers) || 10,
+        initialization: 'at_runtime',
+      }],
+    }
+    try {
+      if (editingId) await api.updateScenario(editingId, payload)
+      else await api.createScenario(payload)
+      setShowForm(false)
+      setEditingId(null)
+      refresh()
+    } catch (err: any) {
+      setError(err.message || 'Unable to save scenario')
+    }
+  }
+
+  const deleteScenario = async (id: string) => {
+    if (!confirm('Delete this scenario? Scenarios with results cannot be deleted.')) return
+    try {
+      await api.deleteScenario(id)
+      refresh()
+    } catch (err: any) {
+      setError(err.message || 'Unable to delete scenario')
+    }
+  }
+
+  return (
     <div className="page">
-      <FolderTree
-        title="Scenarios"
-        rootLabel={activeProject?.name || 'Root'}
-        headerActions={<button className="btn btn-sm btn-primary" onClick={openCreate}>+ New Scenario</button>}
-        category="scenarios"
-        folders={folders}
-        items={scenarioItems}
-        selectedFolderId={selectedFolderId}
-        onSelectFolder={setSelectedFolderId}
-        onSelectItem={onSelectTest}
-        onCreateFolder={createFolder}
-        onRenameFolder={renameFolder}
-        onDeleteFolder={deleteFolder}
-        onMoveItem={moveScenario}
-        renderItemExtra={(item) => {
-          const scenario = scenarios.find((s) => s.configRun.id === item.id)
-          if (!scenario) return null
-          const latestStatus = resolveStatus(scenario.latestRun, testStatuses)
-          return (
-            <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginLeft: 'auto', flexShrink: 0 }}>
-              <span className="scenario-meta" style={{ fontSize: 12 }}>
-                {scenario.totalRuns} run{scenario.totalRuns !== 1 ? 's' : ''} · {scenario.latestRun.total_vusers} VUsers
-              </span>
-              <StatusBadge status={latestStatus} />
-              <button
-                className="btn btn-sm btn-ghost"
-                onClick={(e) => { e.stopPropagation(); openEdit(scenario.latestRun) }}
-              >
-                Edit
-              </button>
-            </div>
-          )
-        }}
-      />
+      <div className="page-header">
+        <div>
+          <h2>Scenarios</h2>
+          <p className="page-subtitle">Reusable scenario definitions linked to scripts, releases, and results.</p>
+        </div>
+        <button className="btn btn-primary" onClick={openCreate}>+ New Scenario</button>
+      </div>
 
-      {showCreate && (
-        <CreateTestModal
-          scripts={scripts}
-          projectId={activeProject?.id}
-          folderId={selectedFolderId || null}
-          initialScenario={editingScenario || undefined}
-          onClose={() => {
-            setShowCreate(false)
-            setEditingScenario(null)
-          }}
-          onCreated={(test) => {
-            setShowCreate(false)
-            setEditingScenario(null)
-            refresh()
-            onSelectTest(test.id)
-          }}
-        />
+      {error && <div className="settings-error-inline">{error}</div>}
+
+      {showForm && (
+        <div className="page-section">
+          <h3 className="section-title">{editingId ? 'Edit Scenario' : 'New Scenario'}</h3>
+          <div className="settings-grid">
+            <input className="settings-input" value={form.name} onChange={event => setForm({ ...form, name: event.target.value })} placeholder="Scenario name" />
+            <input className="settings-input" value={form.duration} onChange={event => setForm({ ...form, duration: event.target.value })} placeholder="Duration, e.g. 5m" />
+            <select className="settings-input" value={form.script_id} onChange={event => setForm({ ...form, script_id: event.target.value })}>
+              {scripts.map(script => <option key={script.id} value={script.id}>{script.name}</option>)}
+            </select>
+            <input className="settings-input" type="number" min={1} value={form.vusers} onChange={event => setForm({ ...form, vusers: Number(event.target.value) })} />
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
+            <button className="btn btn-secondary" onClick={() => setShowForm(false)}>Cancel</button>
+            <button className="btn btn-primary" onClick={saveScenario}>Save Scenario</button>
+          </div>
+        </div>
       )}
+
+      <div className="page-section">
+        <h3 className="section-title">Scenario Library ({scenarios.length})</h3>
+        <div className="data-table">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Scripts</th>
+                <th>Created</th>
+                <th>Associated Releases</th>
+                <th>Last Run</th>
+                <th>Results</th>
+                <th style={{ textAlign: 'right' }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.map(scenario => (
+                <tr key={scenario.id}>
+                  <td className="cell-name">{scenario.name}</td>
+                  <td>{scenario.scripts.map(script => script.script_name || script.name || script.script_id).join(', ')}</td>
+                  <td className="cell-muted">{formatDate(scenario.created_at)}</td>
+                  <td className="cell-muted">{releaseList(scenario)}</td>
+                  <td className="cell-muted">{formatDate(scenario.last_run_at)}</td>
+                  <td>{scenario.result_count || 0}</td>
+                  <td style={{ textAlign: 'right' }}>
+                    <button className="btn btn-sm btn-secondary" onClick={() => {
+                      api.listScenarioResults(scenario.id).then((res: any) => {
+                        const first = res.tests?.[0]
+                        if (first) onSelectTest(first.id)
+                      })
+                    }}>Results</button>
+                    <button className="btn btn-sm btn-ghost" onClick={() => openEdit(scenario)}>Edit</button>
+                    <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={() => deleteScenario(scenario.id)}>Delete</button>
+                  </td>
+                </tr>
+              ))}
+              {sorted.length === 0 && (
+                <tr><td colSpan={7} className="cell-muted">No scenarios yet. Create a scenario from an existing script.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   )
 }
+
 export default memo(TestHub)

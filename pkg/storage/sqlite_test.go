@@ -159,3 +159,74 @@ func TestSQLiteStoreBackfillsDefaultProject(t *testing.T) {
 		t.Fatalf("project id = %q, want %q", roundTrip.ProjectID, DefaultProjectID)
 	}
 }
+
+func TestSQLiteStoreApplicationsReleasesScenariosAndContext(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	app := &Application{ID: "app-1", Name: "Payments", CreatedAt: time.Now()}
+	if err := store.SaveApplication(app); err != nil {
+		t.Fatalf("SaveApplication returned error: %v", err)
+	}
+	release := &Release{ID: "rel-1", ApplicationID: app.ID, Name: "2026.05", CreatedAt: time.Now()}
+	if err := store.SaveRelease(release); err != nil {
+		t.Fatalf("SaveRelease returned error: %v", err)
+	}
+
+	script := &dsl.Script{
+		ID:       "script-context",
+		Name:     "Checkout",
+		Protocol: "http",
+		Version:  "1.0",
+		Config:   dsl.ScriptConfig{BaseURL: "https://example.com"},
+		Actions:  []dsl.Action{{Name: "Checkout", Type: "request", Method: "GET", Target: "/checkout"}},
+	}
+	if err := store.SaveScript(script); err != nil {
+		t.Fatalf("SaveScript returned error: %v", err)
+	}
+
+	scenario := &Scenario{
+		ID:           "scenario-1",
+		Name:         "Checkout Smoke",
+		Duration:     "2m",
+		ScenarioMode: "vuser_driven",
+		CreatedAt:    time.Now(),
+	}
+	groups := []ScenarioScript{{Order: 0, ScriptID: script.ID, VUsers: 25, Initialization: "at_runtime"}}
+	if err := store.SaveScenario(scenario, groups); err != nil {
+		t.Fatalf("SaveScenario returned error: %v", err)
+	}
+	roundTrip, scripts, err := store.GetScenario(scenario.ID)
+	if err != nil {
+		t.Fatalf("GetScenario returned error: %v", err)
+	}
+	if roundTrip.Name != scenario.Name || len(scripts) != 1 || scripts[0].ScriptID != script.ID {
+		t.Fatalf("unexpected scenario round trip: %#v scripts=%#v", roundTrip, scripts)
+	}
+
+	record := &TestRecord{
+		ID:            "test-1",
+		Name:          scenario.Name,
+		Status:        "COMPLETE",
+		ApplicationID: app.ID,
+		ReleaseID:     release.ID,
+		ScenarioID:    scenario.ID,
+		TotalVUsers:   25,
+		Duration:      int64(2 * time.Minute),
+		StartTime:     time.Now(),
+		Groups:        []map[string]any{{"script_id": script.ID, "vusers": 25}},
+	}
+	if err := store.SaveTest(record); err != nil {
+		t.Fatalf("SaveTest returned error: %v", err)
+	}
+	filtered, err := store.ListTestsByContext(app.ID, release.ID, scenario.ID)
+	if err != nil {
+		t.Fatalf("ListTestsByContext returned error: %v", err)
+	}
+	if len(filtered) != 1 || filtered[0].ReleaseID != release.ID || filtered[0].ScenarioID != scenario.ID {
+		t.Fatalf("unexpected filtered tests: %#v", filtered)
+	}
+}
