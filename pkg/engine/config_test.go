@@ -247,3 +247,43 @@ func TestBuildProtoConfig_EmptyConfig(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildProtoConfig_Browser(t *testing.T) {
+	headless := false
+	script := &dsl.Script{
+		Config: dsl.ScriptConfig{
+			Browser: dsl.BrowserConfig{
+				Engine:             "chromium",
+				Headless:           &headless,
+				SlowMoMs:           125,
+				UserAgent:          "StormrunnerBrowser/0.1",
+				CaptureScreenshots: "per_action",
+				Viewport: dsl.BrowserViewport{
+					Width:  1440,
+					Height: 900,
+				},
+			},
+		},
+	}
+
+	cfg := buildProtoConfig(script)
+
+	if cfg["browser_engine"] != "chromium" {
+		t.Errorf("browser_engine = %v, want chromium", cfg["browser_engine"])
+	}
+	if cfg["browser_headless"] != false {
+		t.Errorf("browser_headless = %v, want false", cfg["browser_headless"])
+	}
+	if cfg["browser_slow_mo_ms"] != float64(125) {
+		t.Errorf("browser_slow_mo_ms = %v, want 125", cfg["browser_slow_mo_ms"])
+	}
+	if cfg["browser_capture_screenshots"] != "per_action" {
+		t.Errorf("browser_capture_screenshots = %v, want per_action", cfg["browser_capture_screenshots"])
+	}
+	if cfg["browser_viewport_width"] != float64(1440) {
+		t.Errorf("browser_viewport_width = %v, want 1440", cfg["browser_viewport_width"])
+	}
+	if cfg["browser_viewport_height"] != float64(900) {
+		t.Errorf("browser_viewport_height = %v, want 900", cfg["browser_viewport_height"])
+	}
+}

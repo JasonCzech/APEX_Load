@@ -11,6 +11,7 @@ import (
 
 	"github.com/jasonczech/stormrunner/pkg/dsl"
 	"github.com/jasonczech/stormrunner/pkg/engine"
+	_ "github.com/jasonczech/stormrunner/pkg/protocol/browser"
 	_ "github.com/jasonczech/stormrunner/pkg/protocol/http"
 )
 

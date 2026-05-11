@@ -59,12 +59,51 @@ type Action struct {
 	Type       string            `json:"type"`
 	Method     string            `json:"method,omitempty"`
 	Target     string            `json:"target"`
+	Selector   string            `json:"selector,omitempty"`
+	Value      string            `json:"value,omitempty"`
 	Headers    map[string]string `json:"headers,omitempty"`
 	Body       []byte            `json:"body,omitempty"`
 	Params     map[string]any    `json:"params,omitempty"`
+	WaitFor    *WaitCondition    `json:"wait_for,omitempty"`
+	Capture    *BrowserCaptureOptions `json:"capture,omitempty"`
+	Metadata   map[string]any    `json:"metadata,omitempty"`
 	Extractors []Extractor       `json:"extractors,omitempty"`
 	Assertions []Assertion       `json:"assertions,omitempty"`
 	ThinkTime  ThinkTimeConfig   `json:"think_time,omitempty"`
+}
+
+type WaitCondition struct {
+	Type      string `json:"type,omitempty"`
+	Value     string `json:"value,omitempty"`
+	TimeoutMs int    `json:"timeout_ms,omitempty"`
+}
+
+type BrowserCaptureOptions struct {
+	Screenshot bool `json:"screenshot,omitempty"`
+	FullPage   bool `json:"full_page,omitempty"`
+	HTML       bool `json:"html,omitempty"`
+}
+
+type ConsoleEntry struct {
+	Level     string    `json:"level,omitempty"`
+	Text      string    `json:"text,omitempty"`
+	Source    string    `json:"source,omitempty"`
+	Timestamp time.Time `json:"timestamp,omitempty"`
+}
+
+type NetworkEntry struct {
+	URL           string `json:"url,omitempty"`
+	Method        string `json:"method,omitempty"`
+	StatusCode    int    `json:"status_code,omitempty"`
+	ResourceType  string `json:"resource_type,omitempty"`
+	DurationMs    float64 `json:"duration_ms,omitempty"`
+	BytesReceived int64  `json:"bytes_received,omitempty"`
+}
+
+type DOMSummary struct {
+	Title       string   `json:"title,omitempty"`
+	ReadyState  string   `json:"ready_state,omitempty"`
+	VisibleText []string `json:"visible_text,omitempty"`
 }
 
 // Extractor extracts a value from the response for use in later templates or variables.
@@ -118,6 +157,13 @@ type Result struct {
 	Success       bool
 	ErrorMessage  string
 	Extractions   map[string]string
+	PageURL       string
+	PageTitle     string
+	HTML          string
+	ScreenshotBase64 string
+	ConsoleEntries []ConsoleEntry
+	NetworkEntries []NetworkEntry
+	DOMSummary    *DOMSummary
 	Snapshot      *ErrorSnapshot // populated when snapshot_on_error is enabled
 }
 
@@ -130,4 +176,11 @@ type ErrorSnapshot struct {
 	ResponseStatus  int               `json:"response_status"`
 	ResponseHeaders map[string]string `json:"response_headers,omitempty"`
 	ResponseBody    string            `json:"response_body,omitempty"`
+	PageURL         string            `json:"page_url,omitempty"`
+	PageTitle       string            `json:"page_title,omitempty"`
+	HTML            string            `json:"html,omitempty"`
+	ScreenshotBase64 string           `json:"screenshot_base64,omitempty"`
+	ConsoleEntries  []ConsoleEntry    `json:"console_entries,omitempty"`
+	NetworkEntries  []NetworkEntry    `json:"network_entries,omitempty"`
+	DOMSummary      *DOMSummary       `json:"dom_summary,omitempty"`
 }

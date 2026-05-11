@@ -36,9 +36,36 @@ type ScriptConfig struct {
 	ThinkTime     ThinkTimeConfig     `json:"think_time,omitempty"`
 	Pacing        PacingConfig        `json:"pacing,omitempty"`
 	HTTP          HTTPConfig          `json:"http,omitempty"`
+	Browser       BrowserConfig       `json:"browser,omitempty"`
 	ErrorHandling ErrorHandlingConfig `json:"error_handling,omitempty"`
 	RunLogic      RunLogicConfig      `json:"run_logic,omitempty"`
 	Log           LogConfig           `json:"log,omitempty"`
+}
+
+type BrowserConfig struct {
+	Engine             string          `json:"engine,omitempty"`
+	Headless           *bool           `json:"headless,omitempty"`
+	SlowMoMs           int             `json:"slow_mo_ms,omitempty"`
+	UserAgent          string          `json:"user_agent,omitempty"`
+	CaptureScreenshots string          `json:"capture_screenshots,omitempty"`
+	Viewport           BrowserViewport `json:"viewport,omitempty"`
+}
+
+type BrowserViewport struct {
+	Width  int `json:"width,omitempty"`
+	Height int `json:"height,omitempty"`
+}
+
+type WaitCondition struct {
+	Type      string `json:"type,omitempty"`
+	Value     string `json:"value,omitempty"`
+	TimeoutMs int    `json:"timeout_ms,omitempty"`
+}
+
+type BrowserCaptureOptions struct {
+	Screenshot bool `json:"screenshot,omitempty"`
+	FullPage   bool `json:"full_page,omitempty"`
+	HTML       bool `json:"html,omitempty"`
 }
 
 // RunLogicConfig controls iteration behavior and automatic transaction wrapping.
@@ -165,9 +192,14 @@ type Action struct {
 	Type           string            `json:"type"`
 	Method         string            `json:"method,omitempty"`
 	Target         string            `json:"target"`
+	Selector       string            `json:"selector,omitempty"`
+	Value          string            `json:"value,omitempty"`
 	Headers        map[string]string `json:"headers,omitempty"`
 	Body           string            `json:"body,omitempty"`
 	Params         map[string]any    `json:"params,omitempty"`
+	WaitFor        *WaitCondition    `json:"wait_for,omitempty"`
+	Capture        *BrowserCaptureOptions `json:"capture,omitempty"`
+	Metadata       map[string]any    `json:"metadata,omitempty"`
 	Extractors     []Extractor       `json:"extractors,omitempty"`
 	Assertions     []Assertion       `json:"assertions,omitempty"`
 	ThinkTime      ThinkTimeConfig   `json:"think_time,omitempty"`

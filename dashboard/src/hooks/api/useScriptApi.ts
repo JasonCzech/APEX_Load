@@ -53,6 +53,28 @@ export function useScriptApi() {
     [],
   )
 
+  const startBrowserReplaySession = useCallback(
+		(id: string, payload?: { group_name?: string; replay_session_id?: string; variables?: Record<string, string>; ignore_think_time?: boolean; script?: any }) =>
+			request<any>(`/scripts/${id}/browser-replay/sessions`, { method: 'POST', body: JSON.stringify(payload || {}) }),
+		[],
+	)
+
+  const startDraftBrowserReplaySession = useCallback(
+    (payload: { script: any; group_name?: string; replay_session_id?: string; variables?: Record<string, string>; ignore_think_time?: boolean }) =>
+      request<any>('/scripts/browser-replay/sessions', { method: 'POST', body: JSON.stringify(payload) }),
+    [],
+  )
+
+  const getBrowserReplaySession = useCallback(
+    (sessionId: string) => request<any>(`/browser-replay/sessions/${sessionId}`),
+    [],
+  )
+
+  const stopBrowserReplaySession = useCallback(
+    (sessionId: string) => request<any>(`/browser-replay/sessions/${sessionId}/stop`, { method: 'POST' }),
+    [],
+  )
+
   const exportScript = useCallback(
     (id: string, outputDir?: string, filename?: string) =>
       request<any>(`/scripts/${id}/export`, {
@@ -137,6 +159,10 @@ export function useScriptApi() {
       validateScript,
   		replayScript,
   		replayDraftScript,
+      startBrowserReplaySession,
+      startDraftBrowserReplaySession,
+      getBrowserReplaySession,
+      stopBrowserReplaySession,
       exportScript,
       importLoadRunner,
       importSample,
@@ -157,6 +183,10 @@ export function useScriptApi() {
       validateScript,
   		replayScript,
   		replayDraftScript,
+      startBrowserReplaySession,
+      startDraftBrowserReplaySession,
+      getBrowserReplaySession,
+      stopBrowserReplaySession,
       exportScript,
       importLoadRunner,
       importSample,

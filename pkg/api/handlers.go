@@ -399,12 +399,27 @@ func (s *Server) handleTestStream(w http.ResponseWriter, r *http.Request) {
 
 func validateScript(script *dsl.Script) []string {
 	var issues []string
-	if script.Config.BaseURL == "" {
+	if script.Protocol != "browser" && script.Config.BaseURL == "" {
 		issues = append(issues, "config.base_url is empty")
 	}
 	for i, a := range script.Actions {
 		if a.Name == "" {
 			issues = append(issues, fmt.Sprintf("actions[%d]: missing name", i))
+		}
+		if script.Protocol == "browser" {
+			switch a.Type {
+			case "browser_screenshot":
+				continue
+			case "browser_wait":
+				if a.WaitFor == nil && a.Selector == "" && a.Target == "" {
+					issues = append(issues, fmt.Sprintf("actions[%d] %q: browser_wait requires wait_for, selector, or target", i, a.Name))
+				}
+			default:
+				if a.Target == "" && a.Selector == "" {
+					issues = append(issues, fmt.Sprintf("actions[%d] %q: missing target or selector", i, a.Name))
+				}
+			}
+			continue
 		}
 		if a.Target == "" {
 			issues = append(issues, fmt.Sprintf("actions[%d] %q: missing target", i, a.Name))

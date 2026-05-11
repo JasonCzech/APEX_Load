@@ -57,6 +57,29 @@ func buildProtoConfig(script *dsl.Script) map[string]any {
 		cfg["default_headers"] = httpCfg.DefaultHeaders
 	}
 
+	browserCfg := script.Config.Browser
+	if browserCfg.Engine != "" {
+		cfg["browser_engine"] = browserCfg.Engine
+	}
+	if browserCfg.Headless != nil {
+		cfg["browser_headless"] = *browserCfg.Headless
+	}
+	if browserCfg.SlowMoMs > 0 {
+		cfg["browser_slow_mo_ms"] = float64(browserCfg.SlowMoMs)
+	}
+	if browserCfg.UserAgent != "" {
+		cfg["browser_user_agent"] = browserCfg.UserAgent
+	}
+	if browserCfg.CaptureScreenshots != "" {
+		cfg["browser_capture_screenshots"] = browserCfg.CaptureScreenshots
+	}
+	if browserCfg.Viewport.Width > 0 {
+		cfg["browser_viewport_width"] = float64(browserCfg.Viewport.Width)
+	}
+	if browserCfg.Viewport.Height > 0 {
+		cfg["browser_viewport_height"] = float64(browserCfg.Viewport.Height)
+	}
+
 	// TLS
 	tls := httpCfg.TLS
 	if tls.MinVersion != "" {

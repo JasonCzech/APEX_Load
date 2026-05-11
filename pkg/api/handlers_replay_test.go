@@ -325,3 +325,17 @@ func TestHandleReplayDraftScriptBroadcastsProgress(t *testing.T) {
 		t.Fatalf("broadcast types = %#v", types)
 	}
 }
+
+func TestValidateScript_AllowsBrowserScreenshotWithoutTarget(t *testing.T) {
+	issues := validateScript(&dsl.Script{
+		Protocol: "browser",
+		Actions: []dsl.Action{{
+			Name: "Capture current page",
+			Type: "browser_screenshot",
+		}},
+	})
+
+	if len(issues) != 0 {
+		t.Fatalf("issues = %v, want none", issues)
+	}
+}

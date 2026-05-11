@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"github.com/jasonczech/stormrunner/pkg/api"
+	_ "github.com/jasonczech/stormrunner/pkg/protocol/browser"
 	_ "github.com/jasonczech/stormrunner/pkg/protocol/http"
 	"github.com/jasonczech/stormrunner/pkg/storage"
 )

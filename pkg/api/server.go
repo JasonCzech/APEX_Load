@@ -21,6 +21,7 @@ type Server struct {
 	httpServer *http.Server
 	hub        *Hub
 	runner     *TestRunner
+	browserReplay *BrowserReplayManager
 	recorder   *recorder.Recorder
 	store      storage.Store
 	mux        *http.ServeMux
@@ -51,6 +52,7 @@ func NewServer(cfg ServerConfig) *Server {
 	s := &Server{
 		hub:      hub,
 		runner:   runner,
+		browserReplay: NewBrowserReplayManager(hub),
 		recorder: rec,
 		store:    cfg.Store,
 		mux:      http.NewServeMux(),
@@ -131,12 +133,16 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("DELETE /api/v1/scripts/{id}", cors(log(http.HandlerFunc(s.handleDeleteScript))))
 	s.mux.Handle("PATCH /api/v1/scripts/{id}/move", cors(log(http.HandlerFunc(s.handleMoveScript))))
 	s.mux.Handle("POST /api/v1/scripts/replay", cors(log(http.HandlerFunc(s.handleReplayDraftScript))))
+	s.mux.Handle("POST /api/v1/scripts/browser-replay/sessions", cors(log(http.HandlerFunc(s.handleStartBrowserReplayDraftScript))))
 	s.mux.Handle("POST /api/v1/scripts/{id}/validate", cors(log(http.HandlerFunc(s.handleValidateScript))))
 	s.mux.Handle("POST /api/v1/scripts/{id}/replay", cors(log(http.HandlerFunc(s.handleReplayScript))))
+	s.mux.Handle("POST /api/v1/scripts/{id}/browser-replay/sessions", cors(log(http.HandlerFunc(s.handleStartBrowserReplayScript))))
 	s.mux.Handle("POST /api/v1/scripts/{id}/export", cors(log(http.HandlerFunc(s.handleExportScript))))
 	s.mux.Handle("GET /api/v1/scripts/{id}/download", cors(log(http.HandlerFunc(s.handleDownloadScript))))
 	s.mux.Handle("POST /api/v1/scripts/import/loadrunner", cors(log(http.HandlerFunc(s.handleImportLoadRunner))))
 	s.mux.Handle("POST /api/v1/scripts/import/sample", cors(log(http.HandlerFunc(s.handleImportSample))))
+	s.mux.Handle("GET /api/v1/browser-replay/sessions/{session_id}", cors(log(http.HandlerFunc(s.handleGetBrowserReplaySession))))
+	s.mux.Handle("POST /api/v1/browser-replay/sessions/{session_id}/stop", cors(log(http.HandlerFunc(s.handleStopBrowserReplaySession))))
 
 	// Recording proxy control and artifact retrieval.
 	s.mux.Handle("POST /api/v1/recorder/start", cors(log(http.HandlerFunc(s.handleStartRecording))))

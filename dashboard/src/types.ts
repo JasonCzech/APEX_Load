@@ -382,6 +382,104 @@ export interface WSMessage {
   data?: LiveMetrics
   event?: unknown
   report?: unknown
+  session?: unknown
+}
+
+export interface BrowserReplayConsoleEntry {
+  level?: string
+  text?: string
+  source?: string
+  timestamp?: string
+}
+
+export interface BrowserReplayNetworkEntry {
+  url?: string
+  method?: string
+  status_code?: number
+  resource_type?: string
+  duration_ms?: number
+  bytes_received?: number
+}
+
+export interface BrowserReplayDomSummary {
+  title?: string
+  ready_state?: string
+  visible_text?: string[]
+}
+
+export interface BrowserReplaySnapshot {
+  request_method?: string
+  request_url?: string
+  request_headers?: Record<string, string>
+  request_body?: string
+  response_status?: number
+  response_headers?: Record<string, string>
+  response_body?: string
+  page_url?: string
+  page_title?: string
+  html?: string
+  screenshot_base64?: string
+  console_entries?: BrowserReplayConsoleEntry[]
+  network_entries?: BrowserReplayNetworkEntry[]
+  dom_summary?: BrowserReplayDomSummary
+}
+
+export interface BrowserReplayEvent {
+  phase: string
+  action_name: string
+  action_type: string
+  method?: string
+  target: string
+  status_code?: number
+  success: boolean
+  error_message?: string
+  started_at: string
+  completed_at: string
+  duration_ms: number
+  extractions?: Record<string, string>
+  snapshot?: BrowserReplaySnapshot
+}
+
+export interface BrowserReplayReport {
+  group: string
+  protocol: string
+  started_at: string
+  completed_at: string
+  success: boolean
+  error?: string
+  events: BrowserReplayEvent[]
+  final_variables?: Record<string, string>
+}
+
+export interface BrowserReplaySession {
+  id: string
+  script_id?: string
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'stopped'
+  group: string
+  protocol: string
+  started_at?: string
+  completed_at?: string
+  current_event_index: number
+  report?: BrowserReplayReport
+  error?: string
+}
+
+export interface BrowserReplayStartRequest {
+  group_name?: string
+  replay_session_id?: string
+  variables?: Record<string, string>
+  ignore_think_time?: boolean
+  script?: any
+}
+
+export interface BrowserReplayStartResponse {
+  script_id: string
+  replay_session_id: string
+  session: BrowserReplaySession
+}
+
+export interface BrowserReplaySessionResponse {
+  session: BrowserReplaySession
 }
 
 export interface MetricsHistoryPoint {
