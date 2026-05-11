@@ -41,6 +41,15 @@ interface HTTPConfig {
   auth?: { type?: string; username?: string; password?: string; token?: string }
 }
 
+interface BrowserConfig {
+  engine?: string
+  headless?: boolean
+  slow_mo_ms?: number
+  user_agent?: string
+  capture_screenshots?: string
+  viewport?: { width?: number; height?: number }
+}
+
 interface ImportMetadata {
   source?: string
   source_script_name?: string
@@ -59,6 +68,7 @@ interface ScriptConfig {
   error_handling?: ErrorHandlingConfig
   log?: LogConfig
   http?: HTTPConfig
+  browser?: BrowserConfig
 }
 
 interface ScriptData {
@@ -130,6 +140,18 @@ interface ReplayWSMessage extends WSMessage {
   event_index?: number
   event?: ReplayActionEvent
   report?: ReplayReport
+  session?: {
+    id: string
+    script_id?: string
+    status: string
+    group: string
+    protocol: string
+    started_at?: string
+    completed_at?: string
+    current_event_index: number
+    report?: ReplayReport
+    error?: string
+  }
 }
 
 interface DataSourceConfig {
@@ -488,6 +510,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
     ignoreThinkTime: true,
     variablesText: '{\n  \n}',
   })
+  const isBrowserScript = script.protocol === 'browser'
   const importMetadata = script.metadata?.import
   const importSummary = getImportSummary(importMetadata)
 
@@ -579,6 +602,32 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
     const msg = message as ReplayWSMessage
     if (!activeReplaySessionId || msg.replay_session_id !== activeReplaySessionId) return
 
+    if (msg.type === 'browser_replay_started' && msg.session) {
+      const session = msg.session
+      setReplayReport(prev => prev ? {
+        ...prev,
+        group: session.group || prev.group,
+        protocol: session.protocol || prev.protocol,
+        started_at: session.started_at || prev.started_at,
+      } : {
+        group: session.group || 'browser-replay',
+        protocol: session.protocol || 'browser',
+        started_at: session.started_at || new Date().toISOString(),
+        completed_at: '',
+        success: true,
+        events: [],
+      })
+      setReplayActivity(prev => upsertReplayActivity(prev, {
+        id: 'start',
+        kind: 'start',
+        title: 'Browser replay started',
+        detail: session.group || 'browser replay',
+        timestamp: session.started_at || new Date().toISOString(),
+      }))
+      setExpandedReplayEvent(null)
+      return
+    }
+
     if (msg.type === 'replay_started' && msg.report) {
       const report = msg.report
       setReplayReport(report)
@@ -625,6 +674,38 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
       return
     }
 
+    if (msg.type === 'browser_replay_event' && msg.event) {
+      const replayEvent = msg.event
+      setReplayReport(prev => {
+        if (!prev) return prev
+        const nextEvents = [...prev.events]
+        const index = typeof msg.event_index === 'number' && msg.event_index >= 0 ? msg.event_index : nextEvents.length
+        nextEvents[index] = replayEvent
+        return {
+          ...prev,
+          events: nextEvents,
+          success: prev.success && replayEvent.success,
+          error: prev.error || replayEvent.error_message,
+        }
+      })
+      const replayIndex = typeof msg.event_index === 'number' && msg.event_index >= 0 ? msg.event_index : 0
+      setReplayActivity(prev => upsertReplayActivity(prev, {
+        id: `event-${replayIndex}`,
+        kind: 'event',
+        title: `${replayEvent.action_name || 'Action'} ${replayEvent.success ? 'completed' : 'failed'}`,
+        detail: replayEvent.success
+          ? `${replayEvent.method || replayEvent.action_type} ${replayEvent.target}`
+          : replayEvent.error_message || `${replayEvent.method || replayEvent.action_type} ${replayEvent.target}`,
+        timestamp: replayEvent.completed_at || replayEvent.started_at,
+        success: replayEvent.success,
+        changedVariables: Object.keys(replayEvent.extractions || {}),
+      }))
+      if (typeof msg.event_index === 'number' && msg.event_index >= 0) {
+        setExpandedReplayEvent(msg.event_index)
+      }
+      return
+    }
+
     if (msg.type === 'replay_complete' && msg.report) {
       const report = msg.report
       setReplayReport(report)
@@ -638,6 +719,41 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
       }))
       setExpandedReplayEvent(report.events.length ? report.events.length - 1 : null)
       setActiveReplaySessionId(null)
+      setReplaying(false)
+      return
+    }
+
+    if ((msg.type === 'browser_replay_completed' || msg.type === 'browser_replay_failed' || msg.type === 'browser_replay_stopped') && (msg.report || msg.session)) {
+      const report = msg.report || msg.session?.report || null
+      const completedAt = msg.session?.completed_at || report?.completed_at || new Date().toISOString()
+      if (report) {
+        setReplayReport(report)
+      } else {
+        setReplayReport(prev => prev ? {
+          ...prev,
+          completed_at: completedAt,
+          success: msg.type === 'browser_replay_completed',
+          error: msg.session?.error || prev.error,
+        } : prev)
+      }
+      const title = msg.type === 'browser_replay_completed'
+        ? 'Browser replay completed successfully'
+        : msg.type === 'browser_replay_stopped'
+          ? 'Browser replay stopped'
+          : 'Browser replay completed with failures'
+      setReplayActivity(prev => upsertReplayActivity(prev, {
+        id: 'complete',
+        kind: msg.type === 'browser_replay_stopped' ? 'complete' : msg.type === 'browser_replay_completed' ? 'complete' : 'error',
+        title,
+        detail: report?.error || msg.session?.error,
+        timestamp: completedAt,
+        success: msg.type === 'browser_replay_completed' ? true : msg.type === 'browser_replay_failed' ? false : undefined,
+      }))
+      if (report) {
+        setExpandedReplayEvent(report.events.length ? report.events.length - 1 : null)
+      }
+      setActiveReplaySessionId(null)
+      setReplaying(false)
     }
   }, [activeReplaySessionId])
 
@@ -812,6 +928,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
     setError('')
     setSuccess('')
     setReplaying(true)
+    let browserSessionStarted = false
     try {
       const currentScript = resolveCurrentScript()
       let variables: Record<string, string> | undefined
@@ -854,6 +971,17 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
         script: currentScript,
       }
 
+      if (currentScript.protocol === 'browser') {
+        const res = scriptId
+          ? await api.startBrowserReplaySession(scriptId, payload)
+          : await api.startDraftBrowserReplaySession(payload)
+        if (jsonMode) setScript(currentScript)
+        setActiveReplaySessionId(res.replay_session_id || res.session?.id || replaySessionId)
+        setSuccess('Browser replay started.')
+        browserSessionStarted = true
+        return
+      }
+
       const res = scriptId
         ? await api.replayScript(scriptId, payload)
         : await api.replayDraftScript(payload)
@@ -885,7 +1013,20 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
         success: false,
       }))
     } finally {
-      setReplaying(false)
+      if (!browserSessionStarted) {
+        setReplaying(false)
+      }
+    }
+  }
+
+  const handleStopReplay = async () => {
+    if (!isBrowserScript || !activeReplaySessionId) return
+    try {
+      await api.stopBrowserReplaySession(activeReplaySessionId)
+      setError('')
+      setSuccess('Stopping browser replay…')
+    } catch (e: any) {
+      setError(e.message || 'Failed to stop browser replay')
     }
   }
 
@@ -1267,8 +1408,13 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
             <button className="btn btn-ghost" onClick={toggleJsonMode}>
               {jsonMode ? '◧ Form' : '{ } JSON'}
             </button>
+            {isBrowserScript && activeReplaySessionId && (
+              <button className="btn btn-ghost" onClick={handleStopReplay} disabled={!replaying}>
+                Stop Replay
+              </button>
+            )}
             <button className="btn btn-ghost" onClick={handleReplay} disabled={replaying || saving || !script.name || script.actions.length === 0}>
-              {replaying ? 'Replaying…' : 'Replay'}
+              {replaying ? (isBrowserScript ? 'Browser Replay…' : 'Replaying…') : (isBrowserScript ? 'Browser Replay' : 'Replay')}
             </button>
             <button className="btn btn-primary" onClick={handleSave} disabled={saving || !script.name}>
               {saving ? 'Saving…' : 'Save Script'}
@@ -1299,6 +1445,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
                 <select value={script.protocol} onChange={e => updateField('protocol', e.target.value)}>
                   <option value="http">HTTP</option>
                   <option value="https">HTTPS</option>
+                  <option value="browser">Browser</option>
                 </select>
               </label>
               <label>
@@ -1310,6 +1457,11 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
                 <input value={script.config.base_url} onChange={e => updateField('config.base_url', e.target.value)} placeholder="https://api.example.com" />
               </label>
             </div>
+            {isBrowserScript && (
+              <div className="parameter-empty-state">
+                Browser replay is wired into the editor now. Advanced browser action fields such as <code>selector</code>, <code>wait_for</code>, and <code>capture</code> are currently easiest to author in JSON mode.
+              </div>
+            )}
             <div className="auto-parameter-toolbar">
               <button className="btn btn-sm btn-ghost" onClick={scanForAutoParameters}>Auto Parameterization</button>
               <span className="cell-muted">Scans targets, headers, and body fields for likely parameter candidates.</span>
@@ -1364,11 +1516,16 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
             <div className="panel-title-row">
               <div>
                 <h3 className="panel-title">Replay Output</h3>
-                <p className="replay-panel-subtitle">Run the current draft once and inspect resolved requests, extractions, failures, and final replay variables.</p>
+                <p className="replay-panel-subtitle">{isBrowserScript ? 'Start an asynchronous browser replay session and inspect live events, failures, and final replay state.' : 'Run the current draft once and inspect resolved requests, extractions, failures, and final replay variables.'}</p>
               </div>
               <div className="replay-panel-actions">
+                {isBrowserScript && activeReplaySessionId && (
+                  <button className="btn btn-sm btn-ghost" onClick={handleStopReplay} disabled={!replaying}>
+                    Stop Replay
+                  </button>
+                )}
                 <button className="btn btn-sm btn-accent" onClick={handleReplay} disabled={replaying || saving || !script.name || script.actions.length === 0}>
-                  {replaying ? 'Running…' : 'Run Replay'}
+                  {replaying ? (isBrowserScript ? 'Running Browser Replay…' : 'Running…') : (isBrowserScript ? 'Run Browser Replay' : 'Run Replay')}
                 </button>
               </div>
             </div>
@@ -1399,7 +1556,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
               </label>
             </div>
             {!replayReport ? (
-              <div className="replay-empty-state">No replay has been run yet. Use Replay to execute the current draft once.</div>
+              <div className="replay-empty-state">{isBrowserScript ? 'No browser replay has been started yet. Use Browser Replay to launch an asynchronous session for the current draft.' : 'No replay has been run yet. Use Replay to execute the current draft once.'}</div>
             ) : (
               <div className="replay-report">
                 <div className={`replay-live-banner ${replaying ? 'running' : replayReport.success ? 'success' : 'error'}`}>
