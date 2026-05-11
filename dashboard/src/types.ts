@@ -430,6 +430,10 @@ export interface BrowserReplayEvent {
   action_type: string
   method?: string
   target: string
+  selector?: string
+  value?: string
+  headers?: Record<string, string>
+  body?: string
   status_code?: number
   success: boolean
   error_message?: string
@@ -437,6 +441,13 @@ export interface BrowserReplayEvent {
   completed_at: string
   duration_ms: number
   extractions?: Record<string, string>
+  page_url?: string
+  page_title?: string
+  html?: string
+  screenshot_base64?: string
+  console_entries?: BrowserReplayConsoleEntry[]
+  network_entries?: BrowserReplayNetworkEntry[]
+  dom_summary?: BrowserReplayDomSummary
   snapshot?: BrowserReplaySnapshot
 }
 
@@ -460,6 +471,8 @@ export interface BrowserReplaySession {
   started_at?: string
   completed_at?: string
   current_event_index: number
+  current_event?: BrowserReplayEvent
+  events?: BrowserReplayEvent[]
   report?: BrowserReplayReport
   error?: string
 }
@@ -468,6 +481,17 @@ export interface BrowserReplayStartRequest {
   group_name?: string
   replay_session_id?: string
   variables?: Record<string, string>
+  start_paused?: boolean
+  breakpoints?: number[]
+  browser?: {
+    headless?: boolean
+    viewport?: {
+      width: number
+      height: number
+    }
+    capture_screenshots?: 'off' | 'on_error' | 'per_action'
+    slow_mo_ms?: number
+  }
   ignore_think_time?: boolean
   script?: any
 }

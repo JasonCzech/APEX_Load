@@ -181,29 +181,29 @@ type DataSource struct {
 	Type           string   `json:"type"` // "csv", "dat"
 	Path           string   `json:"path,omitempty"`
 	InlineData     string   `json:"inline_data,omitempty"` // optional inline CSV/DAT content
-	Strategy       string   `json:"strategy"`            // "sequential", "random", "unique"
-	Delimiter      string   `json:"delimiter,omitempty"` // default ","
+	Strategy       string   `json:"strategy"`              // "sequential", "random", "unique"
+	Delimiter      string   `json:"delimiter,omitempty"`   // default ","
 	FirstRowHeader bool     `json:"first_row_header,omitempty"`
 	Columns        []string `json:"columns,omitempty"` // explicit column names if no header
 }
 
 type Action struct {
-	Name           string            `json:"name"`
-	Type           string            `json:"type"`
-	Method         string            `json:"method,omitempty"`
-	Target         string            `json:"target"`
-	Selector       string            `json:"selector,omitempty"`
-	Value          string            `json:"value,omitempty"`
-	Headers        map[string]string `json:"headers,omitempty"`
-	Body           string            `json:"body,omitempty"`
-	Params         map[string]any    `json:"params,omitempty"`
-	WaitFor        *WaitCondition    `json:"wait_for,omitempty"`
+	Name           string                 `json:"name"`
+	Type           string                 `json:"type"`
+	Method         string                 `json:"method,omitempty"`
+	Target         string                 `json:"target"`
+	Selector       string                 `json:"selector,omitempty"`
+	Value          string                 `json:"value,omitempty"`
+	Headers        map[string]string      `json:"headers,omitempty"`
+	Body           string                 `json:"body,omitempty"`
+	Params         map[string]any         `json:"params,omitempty"`
+	WaitFor        *WaitCondition         `json:"wait_for,omitempty"`
 	Capture        *BrowserCaptureOptions `json:"capture,omitempty"`
-	Metadata       map[string]any    `json:"metadata,omitempty"`
-	Extractors     []Extractor       `json:"extractors,omitempty"`
-	Assertions     []Assertion       `json:"assertions,omitempty"`
-	ThinkTime      ThinkTimeConfig   `json:"think_time,omitempty"`
-	ThinkTimeAfter bool              `json:"think_time_after,omitempty"`
+	Metadata       map[string]any         `json:"metadata,omitempty"`
+	Extractors     []Extractor            `json:"extractors,omitempty"`
+	Assertions     []Assertion            `json:"assertions,omitempty"`
+	ThinkTime      ThinkTimeConfig        `json:"think_time,omitempty"`
+	ThinkTimeAfter bool                   `json:"think_time_after,omitempty"`
 	// Per-action overrides
 	Auth         *AuthConfig `json:"auth,omitempty"`          // override global auth
 	TimeoutMs    int         `json:"timeout_ms,omitempty"`    // override global request timeout

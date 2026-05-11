@@ -15,12 +15,12 @@ type replayTestProtocol struct {
 	execute func(action *protocol.Action) (*protocol.Result, error)
 }
 
-func (p *replayTestProtocol) Name() string { return "replay-test" }
+func (p *replayTestProtocol) Name() string                                   { return "replay-test" }
 func (p *replayTestProtocol) Init(_ context.Context, _ map[string]any) error { return nil }
 func (p *replayTestProtocol) Execute(_ context.Context, action *protocol.Action) (*protocol.Result, error) {
 	return p.execute(action)
 }
-func (p *replayTestProtocol) Teardown(_ context.Context) error { return nil }
+func (p *replayTestProtocol) Teardown(_ context.Context) error    { return nil }
 func (p *replayTestProtocol) HealthCheck(_ context.Context) error { return nil }
 
 func registerReplayProtocol(t *testing.T, execute func(action *protocol.Action) (*protocol.Result, error)) string {
@@ -37,10 +37,10 @@ func TestReplayScriptRunsAllPhasesAndInterpolatesExtractions(t *testing.T) {
 		switch action.Name {
 		case "login":
 			return &protocol.Result{
-				ActionName:   action.Name,
-				Success:      true,
-				StatusCode:   200,
-				Extractions:  map[string]string{"token": "abc123"},
+				ActionName:  action.Name,
+				Success:     true,
+				StatusCode:  200,
+				Extractions: map[string]string{"token": "abc123"},
 			}, nil
 		case "profile":
 			if action.Target != "/users/abc123" {
@@ -55,8 +55,8 @@ func TestReplayScriptRunsAllPhasesAndInterpolatesExtractions(t *testing.T) {
 	report, err := ReplayScript(context.Background(), &dsl.Script{
 		Name:     "Replay Script",
 		Protocol: protocolName,
-		Config: dsl.ScriptConfig{},
-		Init: []dsl.Action{{Name: "setup", Type: "setup", Target: "/setup"}},
+		Config:   dsl.ScriptConfig{},
+		Init:     []dsl.Action{{Name: "setup", Type: "setup", Target: "/setup"}},
 		Actions: []dsl.Action{
 			{Name: "login", Type: "POST", Method: "POST", Target: "/login"},
 			{Name: "profile", Type: "GET", Method: "GET", Target: "/users/{{var.token}}"},
@@ -97,7 +97,7 @@ func TestReplayScriptStopsAfterFailureWhenContinueOnErrorDisabled(t *testing.T) 
 	report, err := ReplayScript(context.Background(), &dsl.Script{
 		Name:     "Failure Script",
 		Protocol: protocolName,
-		Config: dsl.ScriptConfig{ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: false}},
+		Config:   dsl.ScriptConfig{ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: false}},
 		Actions: []dsl.Action{
 			{Name: "first", Type: "GET", Target: "/first"},
 			{Name: "second", Type: "GET", Target: "/second"},

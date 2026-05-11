@@ -49,6 +49,21 @@ func validate(s *Script) error {
 		if a.Type == "" {
 			return fmt.Errorf("action[%d] %q: type is required", i, a.Name)
 		}
+		if s.Protocol == "browser" {
+			switch a.Type {
+			case "browser_screenshot":
+				continue
+			case "browser_wait":
+				if a.WaitFor == nil && a.Selector == "" && a.Target == "" {
+					return fmt.Errorf("action[%d] %q: browser_wait requires wait_for, selector, or target", i, a.Name)
+				}
+			default:
+				if a.Target == "" && a.Selector == "" {
+					return fmt.Errorf("action[%d] %q: target or selector is required", i, a.Name)
+				}
+			}
+			continue
+		}
 		if a.Target == "" {
 			return fmt.Errorf("action[%d] %q: target is required", i, a.Name)
 		}

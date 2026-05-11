@@ -8,11 +8,14 @@ import (
 )
 
 type BrowserReplayStartRequest struct {
-	GroupName       string            `json:"group_name,omitempty"`
-	ReplaySessionID string            `json:"replay_session_id,omitempty"`
-	Variables       map[string]string `json:"variables,omitempty"`
-	IgnoreThinkTime *bool             `json:"ignore_think_time,omitempty"`
-	Script          *dsl.Script       `json:"script,omitempty"`
+	GroupName       string             `json:"group_name,omitempty"`
+	ReplaySessionID string             `json:"replay_session_id,omitempty"`
+	Variables       map[string]string  `json:"variables,omitempty"`
+	StartPaused     bool               `json:"start_paused,omitempty"`
+	Breakpoints     []int              `json:"breakpoints,omitempty"`
+	Browser         *dsl.BrowserConfig `json:"browser,omitempty"`
+	IgnoreThinkTime *bool              `json:"ignore_think_time,omitempty"`
+	Script          *dsl.Script        `json:"script,omitempty"`
 }
 
 func (s *Server) handleStartBrowserReplayDraftScript(w http.ResponseWriter, r *http.Request) {
@@ -63,6 +66,7 @@ func (s *Server) handleStartBrowserReplayScript(w http.ResponseWriter, r *http.R
 }
 
 func (s *Server) handleStartBrowserReplayRequest(w http.ResponseWriter, id string, script *dsl.Script, req BrowserReplayStartRequest) {
+	script = applyBrowserReplayOverrides(script, req)
 	issues := validateScript(script)
 	if len(issues) > 0 {
 		writeJSON(w, http.StatusBadRequest, map[string]any{
@@ -79,10 +83,39 @@ func (s *Server) handleStartBrowserReplayRequest(w http.ResponseWriter, id strin
 
 	session := s.browserReplay.Start(id, script, req)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"script_id":          id,
+		"script_id":         id,
 		"replay_session_id": session.ID,
-		"session":            session,
+		"session":           session,
 	})
+}
+
+func applyBrowserReplayOverrides(script *dsl.Script, req BrowserReplayStartRequest) *dsl.Script {
+	if script == nil || req.Browser == nil {
+		return script
+	}
+	clone := *script
+	clone.Config = script.Config
+	browserCfg := clone.Config.Browser
+	if req.Browser.Headless != nil {
+		browserCfg.Headless = req.Browser.Headless
+	}
+	if req.Browser.SlowMoMs > 0 {
+		browserCfg.SlowMoMs = req.Browser.SlowMoMs
+	}
+	if req.Browser.UserAgent != "" {
+		browserCfg.UserAgent = req.Browser.UserAgent
+	}
+	if req.Browser.CaptureScreenshots != "" {
+		browserCfg.CaptureScreenshots = req.Browser.CaptureScreenshots
+	}
+	if req.Browser.Viewport.Width > 0 {
+		browserCfg.Viewport.Width = req.Browser.Viewport.Width
+	}
+	if req.Browser.Viewport.Height > 0 {
+		browserCfg.Viewport.Height = req.Browser.Viewport.Height
+	}
+	clone.Config.Browser = browserCfg
+	return &clone
 }
 
 func (s *Server) handleGetBrowserReplaySession(w http.ResponseWriter, r *http.Request) {

@@ -338,9 +338,14 @@ func (vu *VUser) resolveAction(action dsl.Action) *protocol.Action {
 		Type:       action.Type,
 		Method:     action.Method,
 		Target:     vu.interpolate(action.Target),
+		Selector:   vu.interpolate(action.Selector),
+		Value:      vu.interpolate(action.Value),
 		Headers:    vu.interpolateMap(action.Headers),
 		Body:       []byte(vu.interpolate(action.Body)),
 		Params:     vu.interpolateAnyMap(action.Params),
+		WaitFor:    toProtocolWaitCondition(action.WaitFor, vu),
+		Capture:    toProtocolCaptureOptions(action.Capture),
+		Metadata:   vu.interpolateAnyMap(action.Metadata),
 		Extractors: toProtocolExtractors(action.Extractors),
 		Assertions: toProtocolAssertions(action.Assertions),
 	}
@@ -477,4 +482,26 @@ func toProtocolAssertions(asserts []dsl.Assertion) []protocol.Assertion {
 		}
 	}
 	return out
+}
+
+func toProtocolWaitCondition(wait *dsl.WaitCondition, vu *VUser) *protocol.WaitCondition {
+	if wait == nil {
+		return nil
+	}
+	return &protocol.WaitCondition{
+		Type:      wait.Type,
+		Value:     vu.interpolate(wait.Value),
+		TimeoutMs: wait.TimeoutMs,
+	}
+}
+
+func toProtocolCaptureOptions(capture *dsl.BrowserCaptureOptions) *protocol.BrowserCaptureOptions {
+	if capture == nil {
+		return nil
+	}
+	return &protocol.BrowserCaptureOptions{
+		Screenshot: capture.Screenshot,
+		FullPage:   capture.FullPage,
+		HTML:       capture.HTML,
+	}
 }

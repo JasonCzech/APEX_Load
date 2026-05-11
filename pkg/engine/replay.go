@@ -17,11 +17,11 @@ type ReplayOptions struct {
 }
 
 type ReplayProgressEvent struct {
-	Type      string
-	Timestamp time.Time
+	Type       string
+	Timestamp  time.Time
 	EventIndex int
-	Event     *ReplayActionEvent
-	Report    *ReplayReport
+	Event      *ReplayActionEvent
+	Report     *ReplayReport
 }
 
 const (
@@ -31,14 +31,14 @@ const (
 )
 
 type ReplayReport struct {
-	Group          string                 `json:"group"`
-	Protocol       string                 `json:"protocol"`
-	StartedAt      time.Time              `json:"started_at"`
-	CompletedAt    time.Time              `json:"completed_at"`
-	Success        bool                   `json:"success"`
-	Error          string                 `json:"error,omitempty"`
-	Events         []ReplayActionEvent    `json:"events"`
-	FinalVariables map[string]string      `json:"final_variables,omitempty"`
+	Group          string                    `json:"group"`
+	Protocol       string                    `json:"protocol"`
+	StartedAt      time.Time                 `json:"started_at"`
+	CompletedAt    time.Time                 `json:"completed_at"`
+	Success        bool                      `json:"success"`
+	Error          string                    `json:"error,omitempty"`
+	Events         []ReplayActionEvent       `json:"events"`
+	FinalVariables map[string]string         `json:"final_variables,omitempty"`
 	Snapshots      []*protocol.ErrorSnapshot `json:"snapshots,omitempty"`
 }
 
@@ -48,6 +48,8 @@ type ReplayActionEvent struct {
 	ActionType   string                  `json:"action_type"`
 	Method       string                  `json:"method,omitempty"`
 	Target       string                  `json:"target"`
+	Selector     string                  `json:"selector,omitempty"`
+	Value        string                  `json:"value,omitempty"`
 	Headers      map[string]string       `json:"headers,omitempty"`
 	Body         string                  `json:"body,omitempty"`
 	StartedAt    time.Time               `json:"started_at"`
@@ -57,6 +59,13 @@ type ReplayActionEvent struct {
 	Success      bool                    `json:"success"`
 	ErrorMessage string                  `json:"error_message,omitempty"`
 	Extractions  map[string]string       `json:"extractions,omitempty"`
+	PageURL      string                  `json:"page_url,omitempty"`
+	PageTitle    string                  `json:"page_title,omitempty"`
+	HTML         string                  `json:"html,omitempty"`
+	Screenshot   string                  `json:"screenshot_base64,omitempty"`
+	Console      []protocol.ConsoleEntry `json:"console_entries,omitempty"`
+	Network      []protocol.NetworkEntry `json:"network_entries,omitempty"`
+	DOMSummary   *protocol.DOMSummary    `json:"dom_summary,omitempty"`
 	Snapshot     *protocol.ErrorSnapshot `json:"snapshot,omitempty"`
 }
 
@@ -93,20 +102,20 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 		Events:    make([]ReplayActionEvent, 0, len(script.Init)+len(script.Actions)+len(script.Teardown)),
 	}
 	publishReplayProgress(opts.OnProgress, ReplayProgressEvent{
-		Type:      ReplayProgressStarted,
-		Timestamp: report.StartedAt,
+		Type:       ReplayProgressStarted,
+		Timestamp:  report.StartedAt,
 		EventIndex: -1,
-		Report:    cloneReplayReport(report),
+		Report:     cloneReplayReport(report),
 	})
 
 	vu := &VUser{
-		ID:           0,
-		Group:        groupName,
-		Proto:        proto,
-		Script:       script,
-		Metrics:      NewMetricsCollector(16),
-		Variables:    make(map[string]string),
-		DataProvider: dataProvider,
+		ID:            0,
+		Group:         groupName,
+		Proto:         proto,
+		Script:        script,
+		Metrics:       NewMetricsCollector(16),
+		Variables:     make(map[string]string),
+		DataProvider:  dataProvider,
 		SnapshotStore: NewSnapshotStore(128),
 	}
 	vu.loadDataRow()
@@ -139,10 +148,10 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 		report.Error = "replay stopped after action failure"
 	}
 	publishReplayProgress(opts.OnProgress, ReplayProgressEvent{
-		Type:      ReplayProgressComplete,
-		Timestamp: report.CompletedAt,
+		Type:       ReplayProgressComplete,
+		Timestamp:  report.CompletedAt,
 		EventIndex: -1,
-		Report:    cloneReplayReport(report),
+		Report:     cloneReplayReport(report),
 	})
 
 	return report, nil
@@ -201,6 +210,8 @@ func runReplayAction(
 		ActionType:  action.Type,
 		Method:      resolved.Method,
 		Target:      resolved.Target,
+		Selector:    resolved.Selector,
+		Value:       resolved.Value,
 		Headers:     cloneStringMap(resolved.Headers),
 		Body:        string(resolved.Body),
 		StartedAt:   start,
@@ -228,6 +239,13 @@ func runReplayAction(
 	event.Success = result.Success
 	event.ErrorMessage = result.ErrorMessage
 	event.Extractions = cloneStringMap(result.Extractions)
+	event.PageURL = result.PageURL
+	event.PageTitle = result.PageTitle
+	event.HTML = result.HTML
+	event.Screenshot = result.ScreenshotBase64
+	event.Console = cloneConsoleEntries(result.ConsoleEntries)
+	event.Network = cloneNetworkEntries(result.NetworkEntries)
+	event.DOMSummary = cloneDOMSummary(result.DOMSummary)
 	event.Snapshot = result.Snapshot
 	if result.Duration > 0 {
 		event.DurationMs = float64(result.Duration.Microseconds()) / 1000
@@ -284,10 +302,16 @@ func cloneReplayActionEvent(event ReplayActionEvent) *ReplayActionEvent {
 	cloned := event
 	cloned.Headers = cloneStringMap(event.Headers)
 	cloned.Extractions = cloneStringMap(event.Extractions)
+	cloned.Console = cloneConsoleEntries(event.Console)
+	cloned.Network = cloneNetworkEntries(event.Network)
+	cloned.DOMSummary = cloneDOMSummary(event.DOMSummary)
 	if event.Snapshot != nil {
 		snapshot := *event.Snapshot
 		snapshot.RequestHeaders = cloneStringMap(event.Snapshot.RequestHeaders)
 		snapshot.ResponseHeaders = cloneStringMap(event.Snapshot.ResponseHeaders)
+		snapshot.ConsoleEntries = cloneConsoleEntries(event.Snapshot.ConsoleEntries)
+		snapshot.NetworkEntries = cloneNetworkEntries(event.Snapshot.NetworkEntries)
+		snapshot.DOMSummary = cloneDOMSummary(event.Snapshot.DOMSummary)
 		cloned.Snapshot = &snapshot
 	}
 	return &cloned
@@ -325,4 +349,33 @@ func publishReplayProgress(callback func(ReplayProgressEvent), event ReplayProgr
 		return
 	}
 	callback(event)
+}
+
+func cloneConsoleEntries(entries []protocol.ConsoleEntry) []protocol.ConsoleEntry {
+	if len(entries) == 0 {
+		return nil
+	}
+	cloned := make([]protocol.ConsoleEntry, len(entries))
+	copy(cloned, entries)
+	return cloned
+}
+
+func cloneNetworkEntries(entries []protocol.NetworkEntry) []protocol.NetworkEntry {
+	if len(entries) == 0 {
+		return nil
+	}
+	cloned := make([]protocol.NetworkEntry, len(entries))
+	copy(cloned, entries)
+	return cloned
+}
+
+func cloneDOMSummary(summary *protocol.DOMSummary) *protocol.DOMSummary {
+	if summary == nil {
+		return nil
+	}
+	cloned := *summary
+	if len(summary.VisibleText) > 0 {
+		cloned.VisibleText = append([]string(nil), summary.VisibleText...)
+	}
+	return &cloned
 }

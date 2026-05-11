@@ -18,13 +18,13 @@ import (
 var staticFS embed.FS
 
 type Server struct {
-	httpServer *http.Server
-	hub        *Hub
-	runner     *TestRunner
+	httpServer    *http.Server
+	hub           *Hub
+	runner        *TestRunner
 	browserReplay *BrowserReplayManager
-	recorder   *recorder.Recorder
-	store      storage.Store
-	mux        *http.ServeMux
+	recorder      *recorder.Recorder
+	store         storage.Store
+	mux           *http.ServeMux
 }
 
 // ServerConfig configures API server startup behavior and integrations.
@@ -50,12 +50,12 @@ func NewServer(cfg ServerConfig) *Server {
 	rec := recorder.New(cfg.ProxyAddr)
 
 	s := &Server{
-		hub:      hub,
-		runner:   runner,
+		hub:           hub,
+		runner:        runner,
 		browserReplay: NewBrowserReplayManager(hub),
-		recorder: rec,
-		store:    cfg.Store,
-		mux:      http.NewServeMux(),
+		recorder:      rec,
+		store:         cfg.Store,
+		mux:           http.NewServeMux(),
 	}
 
 	s.routes(cfg.AllowedOrigins)

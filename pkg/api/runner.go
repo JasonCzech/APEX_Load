@@ -204,18 +204,18 @@ type GroupLiveMetrics struct {
 }
 
 type StoredScript struct {
-	ID                 string       `json:"id"`
-	Name               string       `json:"name"`
-	Protocol           string       `json:"protocol"`
-	Version            string       `json:"version"`
-	ProjectID          string       `json:"project_id,omitempty"`
-	FolderID           *string      `json:"folder_id,omitempty"`
-	CreatedAt          time.Time    `json:"created_at"`
-	ScenarioCount      int          `json:"scenario_count,omitempty"`
-	AssociatedReleases []ReleaseRef `json:"associated_releases,omitempty"`
+	ID                  string       `json:"id"`
+	Name                string       `json:"name"`
+	Protocol            string       `json:"protocol"`
+	Version             string       `json:"version"`
+	ProjectID           string       `json:"project_id,omitempty"`
+	FolderID            *string      `json:"folder_id,omitempty"`
+	CreatedAt           time.Time    `json:"created_at"`
+	ScenarioCount       int          `json:"scenario_count,omitempty"`
+	AssociatedReleases  []ReleaseRef `json:"associated_releases,omitempty"`
 	ScenarioRunReleases []ReleaseRef `json:"scenario_run_releases,omitempty"`
-	LastRunAt          *time.Time   `json:"last_run_at,omitempty"`
-	Script             *dsl.Script  `json:"script"`
+	LastRunAt           *time.Time   `json:"last_run_at,omitempty"`
+	Script              *dsl.Script  `json:"script"`
 }
 
 type StoredScenario struct {

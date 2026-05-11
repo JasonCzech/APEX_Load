@@ -217,6 +217,38 @@ func TestParse_WithExtractorsAndAssertions(t *testing.T) {
 	}
 }
 
+func TestParse_BrowserActionsAllowSelectorWaitAndScreenshot(t *testing.T) {
+	input := `{
+		"script": {
+			"name": "browser-flow",
+			"protocol": "browser",
+			"config": {
+				"base_url": "https://example.com"
+			},
+			"actions": [
+				{"name": "open", "type": "browser_navigate", "target": "/login"},
+				{"name": "fill", "type": "browser_fill", "selector": "#email", "value": "user@example.com"},
+				{"name": "wait", "type": "browser_wait", "wait_for": {"type": "text", "value": "Welcome", "timeout_ms": 5000}},
+				{"name": "shot", "type": "browser_screenshot", "capture": {"screenshot": true, "html": true}}
+			]
+		}
+	}`
+
+	script, err := Parse([]byte(input))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := script.Actions[1].Selector; got != "#email" {
+		t.Fatalf("selector = %q, want #email", got)
+	}
+	if script.Actions[2].WaitFor == nil || script.Actions[2].WaitFor.TimeoutMs != 5000 {
+		t.Fatalf("wait_for = %#v, want timeout", script.Actions[2].WaitFor)
+	}
+	if script.Actions[3].Capture == nil || !script.Actions[3].Capture.HTML {
+		t.Fatalf("capture = %#v, want html capture", script.Actions[3].Capture)
+	}
+}
+
 func TestParseFile(t *testing.T) {
 	content := `{"script": {"name": "file-test", "protocol": "http", "actions": [{"name": "a", "type": "request", "target": "/"}]}}`
 	dir := t.TempDir()

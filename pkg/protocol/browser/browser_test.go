@@ -2,6 +2,9 @@ package browser
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/jasonczech/stormrunner/pkg/protocol"
@@ -17,27 +20,174 @@ func TestBrowserProtocolRegistered(t *testing.T) {
 	}
 }
 
-func TestBrowserProtocolExecuteReturnsScaffoldError(t *testing.T) {
-	b := &Browser{}
-	if err := b.Init(context.Background(), map[string]any{"base_url": "https://example.com"}); err != nil {
-		t.Fatalf("Init returned error: %v", err)
+func TestBrowserConfigIntAcceptsEngineNumericTypes(t *testing.T) {
+	config := map[string]any{
+		"int":     12,
+		"int64":   int64(34),
+		"float64": float64(56),
+		"float32": float32(78),
+		"string":  "90",
 	}
 
-	result, err := b.Execute(context.Background(), &protocol.Action{
+	tests := map[string]int{
+		"int":     12,
+		"int64":   34,
+		"float64": 56,
+		"float32": 78,
+		"string":  0,
+		"missing": 0,
+	}
+	for key, want := range tests {
+		if got := configInt(config, key); got != want {
+			t.Fatalf("configInt(%q) = %d, want %d", key, got, want)
+		}
+	}
+}
+
+func TestBrowserExecuteNilActionReturnsFailureResult(t *testing.T) {
+	b := &Browser{}
+	result, err := b.Execute(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if result == nil {
+		t.Fatal("result = nil")
+	}
+	if result.Success {
+		t.Fatal("Success = true, want false")
+	}
+	if result.ErrorMessage != "browser action is required" {
+		t.Fatalf("ErrorMessage = %q, want browser action is required", result.ErrorMessage)
+	}
+}
+
+func TestBrowserProtocolExecuteBrowserActions(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`<!doctype html>
+<html>
+  <head>
+    <title>Browser Test</title>
+    <script>
+      function submitForm() {
+        const value = document.querySelector('#name').value;
+        document.querySelector('#status').textContent = 'Saved ' + value;
+        console.log('saved', value);
+      }
+      window.addEventListener('load', () => console.log('page loaded'));
+    </script>
+  </head>
+  <body>
+    <label for="name">Name</label>
+    <input id="name" />
+    <button id="submit" onclick="submitForm()">Save</button>
+    <div id="status">Idle</div>
+  </body>
+</html>`))
+	}))
+	defer server.Close()
+
+	b := &Browser{}
+	if err := b.Init(context.Background(), map[string]any{
+		"base_url":                    server.URL,
+		"browser_headless":            true,
+		"browser_capture_screenshots": "per_action",
+		"browser_viewport_width":      1280,
+		"browser_viewport_height":     720,
+	}); err != nil {
+		lower := strings.ToLower(err.Error())
+		if strings.Contains(lower, "executable") || strings.Contains(lower, "chrome") {
+			t.Skipf("browser runtime unavailable: %v", err)
+		}
+		t.Fatalf("Init returned error: %v", err)
+	}
+	defer b.Teardown(context.Background())
+
+	navigate, err := b.Execute(context.Background(), &protocol.Action{
 		Name:   "Open homepage",
 		Type:   "browser_navigate",
 		Target: "/",
 	})
 	if err != nil {
-		t.Fatalf("Execute returned error: %v", err)
+		t.Fatalf("navigate returned error: %v", err)
 	}
-	if result.PageURL != "https://example.com/" {
-		t.Fatalf("PageURL = %q, want https://example.com/", result.PageURL)
+	if !navigate.Success {
+		t.Fatalf("navigate failed: %s", navigate.ErrorMessage)
 	}
-	if result.Success {
-		t.Fatal("Success = true, want false while scaffold runtime is incomplete")
+	if navigate.PageTitle != "Browser Test" {
+		t.Fatalf("PageTitle = %q, want Browser Test", navigate.PageTitle)
 	}
-	if result.ErrorMessage != scaffoldError {
-		t.Fatalf("ErrorMessage = %q, want %q", result.ErrorMessage, scaffoldError)
+	if navigate.ScreenshotBase64 == "" {
+		t.Fatal("navigate did not capture per-action screenshot")
+	}
+	if len(navigate.NetworkEntries) == 0 {
+		t.Fatal("navigate did not capture network activity")
+	}
+
+	fill, err := b.Execute(context.Background(), &protocol.Action{
+		Name:     "Fill name",
+		Type:     "browser_fill",
+		Selector: "#name",
+		Value:    "stormrunner",
+	})
+	if err != nil {
+		t.Fatalf("fill returned error: %v", err)
+	}
+	if !fill.Success {
+		t.Fatalf("fill failed: %s", fill.ErrorMessage)
+	}
+
+	click, err := b.Execute(context.Background(), &protocol.Action{
+		Name:     "Click save",
+		Type:     "browser_click",
+		Selector: "#submit",
+	})
+	if err != nil {
+		t.Fatalf("click returned error: %v", err)
+	}
+	if !click.Success {
+		t.Fatalf("click failed: %s", click.ErrorMessage)
+	}
+	if len(click.ConsoleEntries) == 0 {
+		t.Fatal("click did not capture console activity")
+	}
+
+	wait, err := b.Execute(context.Background(), &protocol.Action{
+		Name: "Wait for saved state",
+		Type: "browser_wait",
+		WaitFor: &protocol.WaitCondition{
+			Type:      "text",
+			Value:     "Saved stormrunner",
+			TimeoutMs: 3000,
+		},
+	})
+	if err != nil {
+		t.Fatalf("wait returned error: %v", err)
+	}
+	if !wait.Success {
+		t.Fatalf("wait failed: %s", wait.ErrorMessage)
+	}
+
+	screenshot, err := b.Execute(context.Background(), &protocol.Action{
+		Name: "Capture page",
+		Type: "browser_screenshot",
+		Capture: &protocol.BrowserCaptureOptions{
+			Screenshot: true,
+			HTML:       true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("screenshot returned error: %v", err)
+	}
+	if !screenshot.Success {
+		t.Fatalf("screenshot failed: %s", screenshot.ErrorMessage)
+	}
+	if screenshot.ScreenshotBase64 == "" {
+		t.Fatal("ScreenshotBase64 = empty, want captured screenshot")
+	}
+	if !strings.Contains(screenshot.HTML, "Saved stormrunner") {
+		t.Fatalf("HTML did not contain saved marker: %q", screenshot.HTML)
+	}
+	if screenshot.DOMSummary == nil || screenshot.DOMSummary.Title != "Browser Test" {
+		t.Fatalf("DOMSummary = %#v, want title Browser Test", screenshot.DOMSummary)
 	}
 }

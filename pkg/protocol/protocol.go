@@ -55,21 +55,21 @@ type Protocol interface {
 
 // Action represents a single operation (HTTP request, message, etc.) to execute.
 type Action struct {
-	Name       string            `json:"name"`
-	Type       string            `json:"type"`
-	Method     string            `json:"method,omitempty"`
-	Target     string            `json:"target"`
-	Selector   string            `json:"selector,omitempty"`
-	Value      string            `json:"value,omitempty"`
-	Headers    map[string]string `json:"headers,omitempty"`
-	Body       []byte            `json:"body,omitempty"`
-	Params     map[string]any    `json:"params,omitempty"`
-	WaitFor    *WaitCondition    `json:"wait_for,omitempty"`
+	Name       string                 `json:"name"`
+	Type       string                 `json:"type"`
+	Method     string                 `json:"method,omitempty"`
+	Target     string                 `json:"target"`
+	Selector   string                 `json:"selector,omitempty"`
+	Value      string                 `json:"value,omitempty"`
+	Headers    map[string]string      `json:"headers,omitempty"`
+	Body       []byte                 `json:"body,omitempty"`
+	Params     map[string]any         `json:"params,omitempty"`
+	WaitFor    *WaitCondition         `json:"wait_for,omitempty"`
 	Capture    *BrowserCaptureOptions `json:"capture,omitempty"`
-	Metadata   map[string]any    `json:"metadata,omitempty"`
-	Extractors []Extractor       `json:"extractors,omitempty"`
-	Assertions []Assertion       `json:"assertions,omitempty"`
-	ThinkTime  ThinkTimeConfig   `json:"think_time,omitempty"`
+	Metadata   map[string]any         `json:"metadata,omitempty"`
+	Extractors []Extractor            `json:"extractors,omitempty"`
+	Assertions []Assertion            `json:"assertions,omitempty"`
+	ThinkTime  ThinkTimeConfig        `json:"think_time,omitempty"`
 }
 
 type WaitCondition struct {
@@ -92,12 +92,12 @@ type ConsoleEntry struct {
 }
 
 type NetworkEntry struct {
-	URL           string `json:"url,omitempty"`
-	Method        string `json:"method,omitempty"`
-	StatusCode    int    `json:"status_code,omitempty"`
-	ResourceType  string `json:"resource_type,omitempty"`
+	URL           string  `json:"url,omitempty"`
+	Method        string  `json:"method,omitempty"`
+	StatusCode    int     `json:"status_code,omitempty"`
+	ResourceType  string  `json:"resource_type,omitempty"`
 	DurationMs    float64 `json:"duration_ms,omitempty"`
-	BytesReceived int64  `json:"bytes_received,omitempty"`
+	BytesReceived int64   `json:"bytes_received,omitempty"`
 }
 
 type DOMSummary struct {
@@ -143,44 +143,44 @@ type ThinkTimeConfig struct {
 
 // Result contains the outcome of a single action execution.
 type Result struct {
-	ActionName    string        // Name of the executed action
-	Group         string        // Group/transaction name for metrics
-	StartTime     time.Time     // When the action started
-	Duration      time.Duration // Time to execute action
-	DNSTime       time.Duration // DNS lookup time (if applicable)
-	ConnectTime   time.Duration // Connection establishment time (if applicable)
-	TLSTime       time.Duration
-	TTFB          time.Duration
-	BytesSent     int64
-	BytesReceived int64
-	StatusCode    int
-	Success       bool
-	ErrorMessage  string
-	Extractions   map[string]string
-	PageURL       string
-	PageTitle     string
-	HTML          string
+	ActionName       string        // Name of the executed action
+	Group            string        // Group/transaction name for metrics
+	StartTime        time.Time     // When the action started
+	Duration         time.Duration // Time to execute action
+	DNSTime          time.Duration // DNS lookup time (if applicable)
+	ConnectTime      time.Duration // Connection establishment time (if applicable)
+	TLSTime          time.Duration
+	TTFB             time.Duration
+	BytesSent        int64
+	BytesReceived    int64
+	StatusCode       int
+	Success          bool
+	ErrorMessage     string
+	Extractions      map[string]string
+	PageURL          string
+	PageTitle        string
+	HTML             string
 	ScreenshotBase64 string
-	ConsoleEntries []ConsoleEntry
-	NetworkEntries []NetworkEntry
-	DOMSummary    *DOMSummary
-	Snapshot      *ErrorSnapshot // populated when snapshot_on_error is enabled
+	ConsoleEntries   []ConsoleEntry
+	NetworkEntries   []NetworkEntry
+	DOMSummary       *DOMSummary
+	Snapshot         *ErrorSnapshot // populated when snapshot_on_error is enabled
 }
 
 // ErrorSnapshot captures full request/response data for post-test debugging.
 type ErrorSnapshot struct {
-	RequestMethod   string            `json:"request_method"`
-	RequestURL      string            `json:"request_url"`
-	RequestHeaders  map[string]string `json:"request_headers,omitempty"`
-	RequestBody     string            `json:"request_body,omitempty"`
-	ResponseStatus  int               `json:"response_status"`
-	ResponseHeaders map[string]string `json:"response_headers,omitempty"`
-	ResponseBody    string            `json:"response_body,omitempty"`
-	PageURL         string            `json:"page_url,omitempty"`
-	PageTitle       string            `json:"page_title,omitempty"`
-	HTML            string            `json:"html,omitempty"`
-	ScreenshotBase64 string           `json:"screenshot_base64,omitempty"`
-	ConsoleEntries  []ConsoleEntry    `json:"console_entries,omitempty"`
-	NetworkEntries  []NetworkEntry    `json:"network_entries,omitempty"`
-	DOMSummary      *DOMSummary       `json:"dom_summary,omitempty"`
+	RequestMethod    string            `json:"request_method"`
+	RequestURL       string            `json:"request_url"`
+	RequestHeaders   map[string]string `json:"request_headers,omitempty"`
+	RequestBody      string            `json:"request_body,omitempty"`
+	ResponseStatus   int               `json:"response_status"`
+	ResponseHeaders  map[string]string `json:"response_headers,omitempty"`
+	ResponseBody     string            `json:"response_body,omitempty"`
+	PageURL          string            `json:"page_url,omitempty"`
+	PageTitle        string            `json:"page_title,omitempty"`
+	HTML             string            `json:"html,omitempty"`
+	ScreenshotBase64 string            `json:"screenshot_base64,omitempty"`
+	ConsoleEntries   []ConsoleEntry    `json:"console_entries,omitempty"`
+	NetworkEntries   []NetworkEntry    `json:"network_entries,omitempty"`
+	DOMSummary       *DOMSummary       `json:"dom_summary,omitempty"`
 }

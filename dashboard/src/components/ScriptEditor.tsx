@@ -1,17 +1,22 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useApi } from '../hooks/useApi'
 import { useWebSocket } from '../hooks/useWebSocket'
-import { WSMessage } from '../types'
+import { BrowserReplayEvent, BrowserReplaySession, WSMessage } from '../types'
+import BrowserReplayDebugger from './BrowserReplayDebugger'
 import './ScriptEditor.css'
 
 interface Action {
   name: string; type: string; method?: string; target: string
+  selector?: string; value?: string
   headers?: Record<string, string>; body?: string
+  wait_for?: WaitCondition; capture?: BrowserCaptureOptions
   extractors?: Extractor[]; assertions?: Assertion[]
   think_time_after?: boolean
 }
 interface Extractor { name: string; source: string; type: string; expression: string }
 interface Assertion { type: string; expected?: any; value?: string; max?: number }
+interface WaitCondition { type?: string; value?: string; timeout_ms?: number }
+interface BrowserCaptureOptions { screenshot?: boolean; full_page?: boolean; html?: boolean }
 
 interface ThinkTimeConfig {
   type: string; mean_ms: number; std_ms?: number; min_ms?: number; max_ms?: number
@@ -87,6 +92,35 @@ interface ReplaySnapshot {
   response_status?: number
   response_headers?: Record<string, string>
   response_body?: string
+  page_url?: string
+  page_title?: string
+  html?: string
+  screenshot_base64?: string
+  console_entries?: ConsoleEntry[]
+  network_entries?: NetworkEntry[]
+  dom_summary?: DOMSummary
+}
+
+interface ConsoleEntry {
+  level?: string
+  text?: string
+  source?: string
+  timestamp?: string
+}
+
+interface NetworkEntry {
+  url?: string
+  method?: string
+  status_code?: number
+  resource_type?: string
+  duration_ms?: number
+  bytes_received?: number
+}
+
+interface DOMSummary {
+  title?: string
+  ready_state?: string
+  visible_text?: string[]
 }
 
 interface ReplayActionEvent {
@@ -95,6 +129,8 @@ interface ReplayActionEvent {
   action_type: string
   method?: string
   target: string
+  selector?: string
+  value?: string
   headers?: Record<string, string>
   body?: string
   started_at: string
@@ -104,6 +140,13 @@ interface ReplayActionEvent {
   success: boolean
   error_message?: string
   extractions?: Record<string, string>
+  page_url?: string
+  page_title?: string
+  html?: string
+  screenshot_base64?: string
+  console_entries?: ConsoleEntry[]
+  network_entries?: NetworkEntry[]
+  dom_summary?: DOMSummary
   snapshot?: ReplaySnapshot
 }
 
@@ -140,18 +183,7 @@ interface ReplayWSMessage extends WSMessage {
   event_index?: number
   event?: ReplayActionEvent
   report?: ReplayReport
-  session?: {
-    id: string
-    script_id?: string
-    status: string
-    group: string
-    protocol: string
-    started_at?: string
-    completed_at?: string
-    current_event_index: number
-    report?: ReplayReport
-    error?: string
-  }
+  session?: BrowserReplaySession
 }
 
 interface DataSourceConfig {
@@ -221,6 +253,12 @@ const EMPTY_DATA_SOURCE: DataSourceConfig = {
 const EMPTY_ACTION: Action = {
   name: '', type: 'GET', target: '', headers: {}, body: '',
   extractors: [], assertions: [], think_time_after: true
+}
+
+const EMPTY_BROWSER_ACTION: Action = {
+  name: '', type: 'browser_navigate', target: '', selector: '', value: '',
+  capture: { screenshot: false, full_page: false, html: false },
+  think_time_after: true,
 }
 
 function getImportSummary(metadata?: ImportMetadata | null) {
@@ -416,6 +454,36 @@ function formatReplayHeaders(headers?: Record<string, string>): string {
   return Object.entries(headers).map(([key, value]) => `${key}: ${value}`).join('\n')
 }
 
+function formatConsoleEntries(entries?: ConsoleEntry[]): string {
+  if (!entries || entries.length === 0) return 'None'
+  return entries
+    .map(entry => `[${entry.level || 'log'}] ${entry.text || ''}${entry.source ? ` (${entry.source})` : ''}`)
+    .join('\n')
+}
+
+function formatNetworkEntries(entries?: NetworkEntry[]): string {
+  if (!entries || entries.length === 0) return 'None'
+  return entries
+    .map(entry => {
+      const status = entry.status_code ? ` ${entry.status_code}` : ''
+      const duration = typeof entry.duration_ms === 'number' ? ` ${entry.duration_ms.toFixed(1)} ms` : ''
+      return `${entry.method || 'GET'}${status} ${entry.url || ''}${duration}`
+    })
+    .join('\n')
+}
+
+function hasBrowserReplayArtifacts(event: ReplayActionEvent): boolean {
+  return !!(
+    event.page_url ||
+    event.page_title ||
+    event.dom_summary ||
+    event.console_entries?.length ||
+    event.network_entries?.length ||
+    event.html ||
+    event.screenshot_base64
+  )
+}
+
 function createReplaySessionId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID()
@@ -502,6 +570,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
   const [replayReport, setReplayReport] = useState<ReplayReport | null>(null)
   const [expandedReplayEvent, setExpandedReplayEvent] = useState<number | null>(null)
   const [activeReplaySessionId, setActiveReplaySessionId] = useState<string | null>(null)
+  const [browserReplaySession, setBrowserReplaySession] = useState<BrowserReplaySession | null>(null)
   const [replayActivity, setReplayActivity] = useState<ReplayActivityItem[]>([])
   const [replaySeedVariables, setReplaySeedVariables] = useState<Record<string, string>>({})
   const replayEventRefs = useRef<Record<number, HTMLDivElement | null>>({})
@@ -604,6 +673,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
 
     if (msg.type === 'browser_replay_started' && msg.session) {
       const session = msg.session
+      setBrowserReplaySession(session)
       setReplayReport(prev => prev ? {
         ...prev,
         group: session.group || prev.group,
@@ -676,6 +746,19 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
 
     if (msg.type === 'browser_replay_event' && msg.event) {
       const replayEvent = msg.event
+      setBrowserReplaySession(prev => {
+        if (msg.session) return msg.session
+        if (!prev) return prev
+        const index = typeof msg.event_index === 'number' && msg.event_index >= 0 ? msg.event_index : prev.events?.length || 0
+        const events = [...(prev.events || [])]
+        events[index] = replayEvent as unknown as BrowserReplayEvent
+        return {
+          ...prev,
+          current_event_index: index,
+          current_event: replayEvent as unknown as BrowserReplayEvent,
+          events,
+        }
+      })
       setReplayReport(prev => {
         if (!prev) return prev
         const nextEvents = [...prev.events]
@@ -724,6 +807,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
     }
 
     if ((msg.type === 'browser_replay_completed' || msg.type === 'browser_replay_failed' || msg.type === 'browser_replay_stopped') && (msg.report || msg.session)) {
+      if (msg.session) setBrowserReplaySession(msg.session)
       const report = msg.report || msg.session?.report || null
       const completedAt = msg.session?.completed_at || report?.completed_at || new Date().toISOString()
       if (report) {
@@ -781,7 +865,13 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
   }
 
   const addAction = () => {
-    const a = { ...EMPTY_ACTION, name: `Action_${script.actions.length + 1}`, extractors: [], assertions: [] }
+    const template = script.protocol === 'browser' ? EMPTY_BROWSER_ACTION : EMPTY_ACTION
+    const a = JSON.parse(JSON.stringify({
+      ...template,
+      name: `Action_${script.actions.length + 1}`,
+      extractors: template.extractors || [],
+      assertions: template.assertions || [],
+    })) as Action
     setScript(prev => ({ ...prev, actions: [...prev.actions, a] }))
     setActiveAction(script.actions.length)
   }
@@ -944,6 +1034,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
       const replaySessionId = createReplaySessionId()
       const replayGroup = replayOptions.groupName.trim() || `${currentScript.name || 'script'}-replay`
       setActiveReplaySessionId(replaySessionId)
+      setBrowserReplaySession(null)
       setReplaySeedVariables(variables || {})
       setReplayActivity([{
         id: 'queued',
@@ -969,6 +1060,17 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
         ignore_think_time: replayOptions.ignoreThinkTime,
         variables,
         script: currentScript,
+        browser: currentScript.protocol === 'browser' ? {
+          headless: currentScript.config.browser?.headless ?? true,
+          slow_mo_ms: currentScript.config.browser?.slow_mo_ms,
+          capture_screenshots: currentScript.config.browser?.capture_screenshots || 'per_action',
+          viewport: currentScript.config.browser?.viewport?.width || currentScript.config.browser?.viewport?.height
+            ? {
+                width: currentScript.config.browser?.viewport?.width || 1440,
+                height: currentScript.config.browser?.viewport?.height || 900,
+              }
+            : undefined,
+        } : undefined,
       }
 
       if (currentScript.protocol === 'browser') {
@@ -1003,6 +1105,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
       setError(issues || e.message || 'Replay failed')
       setReplayReport(null)
       setActiveReplaySessionId(null)
+      setBrowserReplaySession(null)
       setReplaySeedVariables({})
       setReplayActivity(prev => upsertReplayActivity(prev, {
         id: 'error',
@@ -1459,7 +1562,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
             </div>
             {isBrowserScript && (
               <div className="parameter-empty-state">
-                Browser replay is wired into the editor now. Advanced browser action fields such as <code>selector</code>, <code>wait_for</code>, and <code>capture</code> are currently easiest to author in JSON mode.
+                Browser scripts can use navigate, click, fill, wait, and screenshot actions with selector, wait, and capture settings in the action editor below.
               </div>
             )}
             <div className="auto-parameter-toolbar">
@@ -1593,6 +1696,16 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
                   </div>
                 </div>
                 {replayReport.error && <p className="replay-report-error">{replayReport.error}</p>}
+                {isBrowserScript && (
+                  <BrowserReplayDebugger
+                    sessionId={activeReplaySessionId}
+                    session={browserReplaySession}
+                    report={replayReport as unknown as any}
+                    running={replaying}
+                    selectedEventIndex={expandedReplayEvent}
+                    onSelectEvent={setExpandedReplayEvent}
+                  />
+                )}
                 {replayActivity.length > 0 && (
                   <div className="replay-activity-card">
                     <h4>Execution Timeline</h4>
@@ -1672,7 +1785,49 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
                                 <span className="replay-detail-label">Completed</span>
                                 <div>{formatReplayTime(event.completed_at)}</div>
                               </div>
+                              {event.page_url && (
+                                <div>
+                                  <span className="replay-detail-label">Page URL</span>
+                                  <div className="replay-page-url">{event.page_url}</div>
+                                </div>
+                              )}
+                              {event.page_title && (
+                                <div>
+                                  <span className="replay-detail-label">Page Title</span>
+                                  <div>{event.page_title}</div>
+                                </div>
+                              )}
                             </div>
+                            {hasBrowserReplayArtifacts(event) && (
+                              <div className="replay-browser-grid">
+                                {event.dom_summary && (
+                                  <div className="replay-code-block">
+                                    <span className="replay-detail-label">DOM Summary</span>
+                                    <pre>{JSON.stringify(event.dom_summary, null, 2)}</pre>
+                                  </div>
+                                )}
+                                <div className="replay-code-block">
+                                  <span className="replay-detail-label">Console</span>
+                                  <pre>{formatConsoleEntries(event.console_entries)}</pre>
+                                </div>
+                                <div className="replay-code-block">
+                                  <span className="replay-detail-label">Network</span>
+                                  <pre>{formatNetworkEntries(event.network_entries)}</pre>
+                                </div>
+                                {event.screenshot_base64 && (
+                                  <div className="replay-screenshot-block">
+                                    <span className="replay-detail-label">Screenshot</span>
+                                    <img src={`data:image/png;base64,${event.screenshot_base64}`} alt={`${event.action_name || 'Replay action'} screenshot`} />
+                                  </div>
+                                )}
+                                {event.html && (
+                                  <div className="replay-code-block replay-browser-html">
+                                    <span className="replay-detail-label">HTML</span>
+                                    <pre>{event.html}</pre>
+                                  </div>
+                                )}
+                              </div>
+                            )}
                             <div className="replay-code-block">
                               <span className="replay-detail-label">Resolved Headers</span>
                               <pre>{formatReplayHeaders(event.headers)}</pre>
@@ -2180,6 +2335,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
                   onUpdateHeader={updateHeader}
                   onRemoveHeader={removeHeader}
                   methodColor={methodColor}
+                  isBrowserScript={isBrowserScript}
                 />
               ) : (
                 <div className="action-placeholder">
@@ -2413,7 +2569,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
 }
 
 /* Sub-component for editing a single action's details */
-function ActionEditor({ action, index, onUpdate, onAddExtractor, onUpdateExtractor, onRemoveExtractor, onAddAssertion, onUpdateAssertion, onRemoveAssertion, onAddHeader, onUpdateHeader, onRemoveHeader, methodColor }: {
+function ActionEditor({ action, index, onUpdate, onAddExtractor, onUpdateExtractor, onRemoveExtractor, onAddAssertion, onUpdateAssertion, onRemoveAssertion, onAddHeader, onUpdateHeader, onRemoveHeader, methodColor, isBrowserScript }: {
   action: Action; index: number
   onUpdate: (i: number, f: string, v: any) => void
   onAddExtractor: (i: number) => void
@@ -2426,7 +2582,30 @@ function ActionEditor({ action, index, onUpdate, onAddExtractor, onUpdateExtract
   onUpdateHeader: (ai: number, ok: string, nk: string, v: string) => void
   onRemoveHeader: (ai: number, k: string) => void
   methodColor: (m: string) => string
+  isBrowserScript: boolean
 }) {
+  const browserActionTypes = ['browser_navigate', 'browser_click', 'browser_fill', 'browser_wait', 'browser_screenshot']
+  const waitFor = action.wait_for || {}
+  const capture = action.capture || {}
+  const showSelector = isBrowserScript && ['browser_click', 'browser_fill', 'browser_wait', 'browser_screenshot'].includes(action.type)
+  const showValue = isBrowserScript && action.type === 'browser_fill'
+  const targetLabel = isBrowserScript
+    ? action.type === 'browser_navigate'
+      ? 'URL or Path'
+      : action.type === 'browser_wait'
+        ? 'Wait Target or Duration'
+        : action.type === 'browser_screenshot'
+          ? 'Target Selector'
+          : 'Target Selector'
+    : 'Target (path)'
+  const targetPlaceholder = isBrowserScript
+    ? action.type === 'browser_navigate'
+      ? 'https://example.com or /login'
+      : action.type === 'browser_wait'
+        ? '#ready, text, or 750ms'
+        : '#submit'
+    : '/api/resource'
+
   return (
     <div className="action-editor-panel">
       <div className="action-editor-top">
@@ -2436,16 +2615,95 @@ function ActionEditor({ action, index, onUpdate, onAddExtractor, onUpdateExtract
 
       <div className="form-grid">
         <label><span>Name</span><input value={action.name} onChange={e => onUpdate(index, 'name', e.target.value)} /></label>
-        <label><span>Method</span>
+        <label><span>{isBrowserScript ? 'Action Type' : 'Method'}</span>
           <select value={action.type} onChange={e => onUpdate(index, 'type', e.target.value)}>
-            {['GET','POST','PUT','PATCH','DELETE','HEAD','OPTIONS'].map(m => <option key={m}>{m}</option>)}
+            {(isBrowserScript ? browserActionTypes : ['GET','POST','PUT','PATCH','DELETE','HEAD','OPTIONS']).map(m => <option key={m}>{m}</option>)}
           </select>
         </label>
-        <label className="full-width"><span>Target (path)</span><input value={action.target} onChange={e => onUpdate(index, 'target', e.target.value)} placeholder="/api/resource" /></label>
+        <label className="full-width"><span>{targetLabel}</span><input value={action.target} onChange={e => onUpdate(index, 'target', e.target.value)} placeholder={targetPlaceholder} /></label>
+        {showSelector && (
+          <label className="full-width"><span>Selector Override</span><input value={action.selector || ''} onChange={e => onUpdate(index, 'selector', e.target.value)} placeholder="#submit, input[name=email], [data-testid=save]" /></label>
+        )}
+        {showValue && (
+          <label className="full-width"><span>Value</span><input value={action.value || ''} onChange={e => onUpdate(index, 'value', e.target.value)} placeholder="{{data.users.email}}" /></label>
+        )}
       </div>
 
+      {isBrowserScript && (
+        <>
+          {action.type === 'browser_wait' && (
+            <div className="sub-section browser-action-section">
+              <div className="sub-header"><h4>Wait Condition</h4></div>
+              <div className="browser-action-grid">
+                <label>
+                  <span>Type</span>
+                  <select
+                    value={waitFor.type || 'selector'}
+                    onChange={e => onUpdate(index, 'wait_for', { ...waitFor, type: e.target.value })}
+                  >
+                    <option value="selector">Selector visible</option>
+                    <option value="hidden">Selector hidden</option>
+                    <option value="text">Text appears</option>
+                    <option value="url_contains">URL contains</option>
+                    <option value="duration">Duration</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Value</span>
+                  <input
+                    value={waitFor.value || ''}
+                    onChange={e => onUpdate(index, 'wait_for', { ...waitFor, value: e.target.value })}
+                    placeholder={waitFor.type === 'duration' ? '1000ms' : '#ready or expected text'}
+                  />
+                </label>
+                <label>
+                  <span>Timeout (ms)</span>
+                  <input
+                    type="number"
+                    min="0"
+                    value={waitFor.timeout_ms ?? 10000}
+                    onChange={e => onUpdate(index, 'wait_for', { ...waitFor, timeout_ms: Math.max(0, Number(e.target.value) || 0) })}
+                  />
+                </label>
+              </div>
+            </div>
+          )}
+
+          <div className="sub-section browser-action-section">
+            <div className="sub-header"><h4>Capture</h4></div>
+            <div className="browser-capture-row">
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={!!capture.screenshot || action.type === 'browser_screenshot'}
+                  disabled={action.type === 'browser_screenshot'}
+                  onChange={e => onUpdate(index, 'capture', { ...capture, screenshot: e.target.checked })}
+                />
+                <span>Screenshot</span>
+              </label>
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={!!capture.full_page}
+                  onChange={e => onUpdate(index, 'capture', { ...capture, full_page: e.target.checked })}
+                />
+                <span>Full page</span>
+              </label>
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={!!capture.html}
+                  onChange={e => onUpdate(index, 'capture', { ...capture, html: e.target.checked })}
+                />
+                <span>HTML</span>
+              </label>
+            </div>
+          </div>
+        </>
+      )}
+
       {/* Headers */}
-      <div className="sub-section">
+      {!isBrowserScript && <div className="sub-section">
         <div className="sub-header"><h4>Headers</h4><button className="btn btn-sm btn-ghost" onClick={() => onAddHeader(index)}>+ Add</button></div>
         {Object.entries(action.headers || {}).map(([k, v]) => (
           <div key={k} className="kv-row">
@@ -2454,10 +2712,10 @@ function ActionEditor({ action, index, onUpdate, onAddExtractor, onUpdateExtract
             <button className="btn-icon danger" onClick={() => onRemoveHeader(index, k)}>✕</button>
           </div>
         ))}
-      </div>
+      </div>}
 
       {/* Body */}
-      {['POST','PUT','PATCH'].includes(action.type) && (
+      {!isBrowserScript && ['POST','PUT','PATCH'].includes(action.type) && (
         <div className="sub-section">
           <h4>Body</h4>
           <textarea className="body-textarea" value={action.body || ''} onChange={e => onUpdate(index, 'body', e.target.value)} placeholder='{"key": "value"}' rows={4} />
@@ -2465,7 +2723,7 @@ function ActionEditor({ action, index, onUpdate, onAddExtractor, onUpdateExtract
       )}
 
       {/* Extractors */}
-      <div className="sub-section">
+      {!isBrowserScript && <div className="sub-section">
         <div className="sub-header"><h4>Extractors</h4><button className="btn btn-sm btn-ghost" onClick={() => onAddExtractor(index)}>+ Add</button></div>
         {(action.extractors || []).map((ext, ei) => (
           <div key={ei} className="extractor-row">
@@ -2480,10 +2738,10 @@ function ActionEditor({ action, index, onUpdate, onAddExtractor, onUpdateExtract
             <button className="btn-icon danger" onClick={() => onRemoveExtractor(index, ei)}>✕</button>
           </div>
         ))}
-      </div>
+      </div>}
 
       {/* Assertions */}
-      <div className="sub-section">
+      {!isBrowserScript && <div className="sub-section">
         <div className="sub-header"><h4>Assertions</h4><button className="btn btn-sm btn-ghost" onClick={() => onAddAssertion(index)}>+ Add</button></div>
         {(action.assertions || []).map((a, ai) => (
           <div key={ai} className="assertion-row">
@@ -2497,7 +2755,7 @@ function ActionEditor({ action, index, onUpdate, onAddExtractor, onUpdateExtract
             <button className="btn-icon danger" onClick={() => onRemoveAssertion(index, ai)}>✕</button>
           </div>
         ))}
-      </div>
+      </div>}
 
       {/* Think Time */}
       <div className="sub-section">

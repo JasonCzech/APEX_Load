@@ -107,9 +107,9 @@ func (s *Server) handleReplayRequest(w http.ResponseWriter, id string, script *d
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"script_id":          id,
+		"script_id":         id,
 		"replay_session_id": replaySessionID,
-		"report":             report,
+		"report":            report,
 	})
 }
 

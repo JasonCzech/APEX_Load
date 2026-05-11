@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jasonczech/stormrunner/pkg/dsl"
 	"github.com/jasonczech/stormrunner/pkg/engine"
+	"github.com/jasonczech/stormrunner/pkg/protocol"
 )
 
 const (
@@ -19,16 +20,18 @@ const (
 )
 
 type BrowserReplaySession struct {
-	ID               string               `json:"id"`
-	ScriptID         string               `json:"script_id,omitempty"`
-	Status           string               `json:"status"`
-	Group            string               `json:"group"`
-	Protocol         string               `json:"protocol"`
-	StartedAt        *time.Time           `json:"started_at,omitempty"`
-	CompletedAt      *time.Time           `json:"completed_at,omitempty"`
-	CurrentEventIndex int                 `json:"current_event_index"`
-	FinalReport      *engine.ReplayReport `json:"report,omitempty"`
-	Error            string               `json:"error,omitempty"`
+	ID                string                     `json:"id"`
+	ScriptID          string                     `json:"script_id,omitempty"`
+	Status            string                     `json:"status"`
+	Group             string                     `json:"group"`
+	Protocol          string                     `json:"protocol"`
+	StartedAt         *time.Time                 `json:"started_at,omitempty"`
+	CompletedAt       *time.Time                 `json:"completed_at,omitempty"`
+	CurrentEventIndex int                        `json:"current_event_index"`
+	CurrentEvent      *engine.ReplayActionEvent  `json:"current_event,omitempty"`
+	Events            []engine.ReplayActionEvent `json:"events,omitempty"`
+	FinalReport       *engine.ReplayReport       `json:"report,omitempty"`
+	Error             string                     `json:"error,omitempty"`
 
 	mu     sync.RWMutex
 	cancel context.CancelFunc
@@ -59,14 +62,14 @@ func (m *BrowserReplayManager) Start(scriptID string, script *dsl.Script, req Br
 	now := time.Now()
 	ctx, cancel := context.WithCancel(context.Background())
 	session := &BrowserReplaySession{
-		ID:        sessionID,
-		ScriptID:  scriptID,
-		Status:    BrowserReplayRunning,
-		Group:     groupName,
-		Protocol:  script.Protocol,
-		StartedAt: &now,
+		ID:                sessionID,
+		ScriptID:          scriptID,
+		Status:            BrowserReplayRunning,
+		Group:             groupName,
+		Protocol:          script.Protocol,
+		StartedAt:         &now,
 		CurrentEventIndex: -1,
-		cancel:    cancel,
+		cancel:            cancel,
 	}
 
 	m.mu.Lock()
@@ -89,6 +92,18 @@ func (m *BrowserReplayManager) Start(scriptID string, script *dsl.Script, req Br
 				if event.Type == engine.ReplayProgressEventRun {
 					session.mu.Lock()
 					session.CurrentEventIndex = event.EventIndex
+					if event.Event != nil {
+						cloned := cloneBrowserReplayEvent(*event.Event)
+						session.CurrentEvent = &cloned
+						if event.EventIndex >= 0 {
+							for len(session.Events) <= event.EventIndex {
+								session.Events = append(session.Events, engine.ReplayActionEvent{})
+							}
+							session.Events[event.EventIndex] = cloned
+						} else {
+							session.Events = append(session.Events, cloned)
+						}
+					}
 					session.mu.Unlock()
 					m.broadcast("browser_replay_event", session, event.EventIndex, event.Event, nil)
 				}
@@ -96,30 +111,29 @@ func (m *BrowserReplayManager) Start(scriptID string, script *dsl.Script, req Br
 		})
 
 		completedAt := time.Now()
+		messageType := "browser_replay_completed"
 		session.mu.Lock()
-		defer session.mu.Unlock()
 		session.CompletedAt = &completedAt
 		if report != nil {
 			session.FinalReport = report
 			session.Error = report.Error
 		}
 		if session.Status == BrowserReplayStopped {
-			m.broadcast("browser_replay_stopped", session, session.CurrentEventIndex, nil, report)
-			return
-		}
-		if err != nil {
+			messageType = "browser_replay_stopped"
+		} else if err != nil {
 			session.Status = BrowserReplayFailed
 			session.Error = err.Error()
-			m.broadcast("browser_replay_failed", session, session.CurrentEventIndex, nil, report)
-			return
-		}
-		if report != nil && !report.Success {
+			messageType = "browser_replay_failed"
+		} else if report != nil && !report.Success {
 			session.Status = BrowserReplayFailed
-			m.broadcast("browser_replay_failed", session, session.CurrentEventIndex, nil, report)
-			return
+			messageType = "browser_replay_failed"
+		} else {
+			session.Status = BrowserReplayCompleted
 		}
-		session.Status = BrowserReplayCompleted
-		m.broadcast("browser_replay_completed", session, session.CurrentEventIndex, nil, report)
+		eventIndex := session.CurrentEventIndex
+		session.mu.Unlock()
+
+		m.broadcast(messageType, session, eventIndex, nil, report)
 	}()
 
 	return session.snapshot()
@@ -159,12 +173,13 @@ func (m *BrowserReplayManager) broadcast(messageType string, session *BrowserRep
 	if m.hub == nil || session == nil {
 		return
 	}
+	sessionPayload := session.snapshot()
 	message := map[string]any{
 		"type":              messageType,
-		"replay_session_id": session.ID,
-		"script_id":         session.ScriptID,
+		"replay_session_id": sessionPayload.ID,
+		"script_id":         sessionPayload.ScriptID,
 		"timestamp":         time.Now(),
-		"session":           session,
+		"session":           sessionPayload,
 	}
 	if eventIndex >= 0 {
 		message["event_index"] = eventIndex
@@ -188,5 +203,74 @@ func (s *BrowserReplaySession) snapshotLocked() *BrowserReplaySession {
 	clone := *s
 	clone.mu = sync.RWMutex{}
 	clone.cancel = nil
+	if s.CurrentEvent != nil {
+		current := cloneBrowserReplayEvent(*s.CurrentEvent)
+		clone.CurrentEvent = &current
+	}
+	if len(s.Events) > 0 {
+		clone.Events = make([]engine.ReplayActionEvent, len(s.Events))
+		for i, event := range s.Events {
+			clone.Events[i] = cloneBrowserReplayEvent(event)
+		}
+	}
 	return &clone
+}
+
+func cloneBrowserReplayEvent(event engine.ReplayActionEvent) engine.ReplayActionEvent {
+	cloned := event
+	cloned.Headers = cloneBrowserStringMap(event.Headers)
+	cloned.Extractions = cloneBrowserStringMap(event.Extractions)
+	cloned.Console = cloneBrowserConsoleEntries(event.Console)
+	cloned.Network = cloneBrowserNetworkEntries(event.Network)
+	cloned.DOMSummary = cloneBrowserDOMSummary(event.DOMSummary)
+	if event.Snapshot != nil {
+		snapshot := *event.Snapshot
+		snapshot.RequestHeaders = cloneBrowserStringMap(event.Snapshot.RequestHeaders)
+		snapshot.ResponseHeaders = cloneBrowserStringMap(event.Snapshot.ResponseHeaders)
+		snapshot.ConsoleEntries = cloneBrowserConsoleEntries(event.Snapshot.ConsoleEntries)
+		snapshot.NetworkEntries = cloneBrowserNetworkEntries(event.Snapshot.NetworkEntries)
+		snapshot.DOMSummary = cloneBrowserDOMSummary(event.Snapshot.DOMSummary)
+		cloned.Snapshot = &snapshot
+	}
+	return cloned
+}
+
+func cloneBrowserStringMap(input map[string]string) map[string]string {
+	if len(input) == 0 {
+		return nil
+	}
+	cloned := make(map[string]string, len(input))
+	for key, value := range input {
+		cloned[key] = value
+	}
+	return cloned
+}
+
+func cloneBrowserConsoleEntries(entries []protocol.ConsoleEntry) []protocol.ConsoleEntry {
+	if len(entries) == 0 {
+		return nil
+	}
+	cloned := make([]protocol.ConsoleEntry, len(entries))
+	copy(cloned, entries)
+	return cloned
+}
+
+func cloneBrowserNetworkEntries(entries []protocol.NetworkEntry) []protocol.NetworkEntry {
+	if len(entries) == 0 {
+		return nil
+	}
+	cloned := make([]protocol.NetworkEntry, len(entries))
+	copy(cloned, entries)
+	return cloned
+}
+
+func cloneBrowserDOMSummary(summary *protocol.DOMSummary) *protocol.DOMSummary {
+	if summary == nil {
+		return nil
+	}
+	cloned := *summary
+	if len(summary.VisibleText) > 0 {
+		cloned.VisibleText = append([]string(nil), summary.VisibleText...)
+	}
+	return &cloned
 }

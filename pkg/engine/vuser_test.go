@@ -109,12 +109,14 @@ func TestVUser_ResolveAction(t *testing.T) {
 	}
 
 	action := dsl.Action{
-		Name:    "get-user",
-		Type:    "request",
-		Method:  "GET",
-		Target:  "{{var.base}}/users/1",
-		Headers: map[string]string{"Accept": "application/json"},
-		Body:    `{"key": "{{var.base}}"}`,
+		Name:     "get-user",
+		Type:     "request",
+		Method:   "GET",
+		Target:   "{{var.base}}/users/1",
+		Selector: "#{{data.users.username}}",
+		Value:    "{{env.STORMRUNNER_ACTION_ENV}}",
+		Headers:  map[string]string{"Accept": "application/json"},
+		Body:     `{"key": "{{var.base}}"}`,
 		Params: map[string]any{
 			"user": "{{data.users.username}}",
 			"auth": map[string]any{
@@ -124,6 +126,11 @@ func TestVUser_ResolveAction(t *testing.T) {
 		},
 		Extractors: []dsl.Extractor{
 			{Name: "id", Source: "body", Type: "jsonpath", Expression: "$.id"},
+		},
+		WaitFor: &dsl.WaitCondition{Type: "text", Value: "{{data.users.username}}", TimeoutMs: 2500},
+		Capture: &dsl.BrowserCaptureOptions{Screenshot: true, HTML: true},
+		Metadata: map[string]any{
+			"note": "{{var.base}}",
 		},
 		Assertions: []dsl.Assertion{
 			{Type: "status_code", Expected: 200},
@@ -137,6 +144,12 @@ func TestVUser_ResolveAction(t *testing.T) {
 	}
 	if resolved.Target != "https://api.test.com/users/1" {
 		t.Errorf("Target = %q", resolved.Target)
+	}
+	if resolved.Selector != "#alice" {
+		t.Errorf("Selector = %q, want #alice", resolved.Selector)
+	}
+	if resolved.Value != "env-action" {
+		t.Errorf("Value = %q, want env-action", resolved.Value)
 	}
 	if string(resolved.Body) != `{"key": "https://api.test.com"}` {
 		t.Errorf("Body = %q", string(resolved.Body))
@@ -154,6 +167,15 @@ func TestVUser_ResolveAction(t *testing.T) {
 	}
 	if len(resolved.Extractors) != 1 {
 		t.Fatalf("Extractors count = %d", len(resolved.Extractors))
+	}
+	if resolved.WaitFor == nil || resolved.WaitFor.Value != "alice" || resolved.WaitFor.TimeoutMs != 2500 {
+		t.Fatalf("WaitFor = %#v, want text wait with alice", resolved.WaitFor)
+	}
+	if resolved.Capture == nil || !resolved.Capture.Screenshot || !resolved.Capture.HTML {
+		t.Fatalf("Capture = %#v, want screenshot/html enabled", resolved.Capture)
+	}
+	if resolved.Metadata["note"] != "https://api.test.com" {
+		t.Errorf("Metadata[note] = %v, want https://api.test.com", resolved.Metadata["note"])
 	}
 	if len(resolved.Assertions) != 1 {
 		t.Fatalf("Assertions count = %d", len(resolved.Assertions))

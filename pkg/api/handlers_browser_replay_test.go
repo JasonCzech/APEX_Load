@@ -6,8 +6,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/jasonczech/stormrunner/pkg/dsl"
+	"github.com/jasonczech/stormrunner/pkg/protocol"
 )
 
 func TestHandleStartBrowserReplayDraftScriptReturnsSession(t *testing.T) {
@@ -41,7 +43,7 @@ func TestHandleStartBrowserReplayDraftScriptReturnsSession(t *testing.T) {
 
 	var payload struct {
 		ReplaySessionID string `json:"replay_session_id"`
-		Session struct {
+		Session         struct {
 			Group    string `json:"group"`
 			Protocol string `json:"protocol"`
 			Status   string `json:"status"`
@@ -94,5 +96,97 @@ func TestHandleStartBrowserReplayRejectsNonBrowserScript(t *testing.T) {
 
 	if resp.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusBadRequest, resp.Body.String())
+	}
+}
+
+func TestBrowserReplayManagerRetainsStreamedEvents(t *testing.T) {
+	protocolName := registerReplayAPIProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+		return &protocol.Result{
+			ActionName:       action.Name,
+			Success:          true,
+			PageURL:          "https://example.com/",
+			PageTitle:        "Example",
+			ScreenshotBase64: "c2NyZWVu",
+			DOMSummary:       &protocol.DOMSummary{Title: "Example", ReadyState: "complete"},
+		}, nil
+	})
+
+	manager := NewBrowserReplayManager(NewHub())
+	session := manager.Start("", &dsl.Script{
+		Name:     "Browser Session",
+		Protocol: protocolName,
+		Version:  "1.0.0",
+		Actions:  []dsl.Action{{Name: "shot", Type: "browser_screenshot"}},
+	}, BrowserReplayStartRequest{ReplaySessionID: "session-events"})
+	if session.ID != "session-events" {
+		t.Fatalf("session.ID = %q, want session-events", session.ID)
+	}
+
+	var got *BrowserReplaySession
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		var ok bool
+		got, ok = manager.Get("session-events")
+		if !ok {
+			t.Fatal("session not found")
+		}
+		if got.Status == BrowserReplayCompleted {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	if got.Status != BrowserReplayCompleted {
+		t.Fatalf("status = %q, want completed", got.Status)
+	}
+	if got.CurrentEventIndex != 0 {
+		t.Fatalf("current_event_index = %d, want 0", got.CurrentEventIndex)
+	}
+	if got.CurrentEvent == nil || got.CurrentEvent.PageTitle != "Example" {
+		t.Fatalf("current_event = %#v, want page title Example", got.CurrentEvent)
+	}
+	if len(got.Events) != 1 || got.Events[0].Screenshot != "c2NyZWVu" {
+		t.Fatalf("events = %#v, want retained screenshot event", got.Events)
+	}
+}
+
+func TestApplyBrowserReplayOverrides(t *testing.T) {
+	headless := false
+	script := &dsl.Script{
+		Name:     "Browser Script",
+		Protocol: "browser",
+		Config: dsl.ScriptConfig{
+			Browser: dsl.BrowserConfig{
+				CaptureScreenshots: "off",
+			},
+		},
+	}
+
+	updated := applyBrowserReplayOverrides(script, BrowserReplayStartRequest{
+		Browser: &dsl.BrowserConfig{
+			Headless:           &headless,
+			SlowMoMs:           125,
+			CaptureScreenshots: "per_action",
+			Viewport:           dsl.BrowserViewport{Width: 1280, Height: 720},
+		},
+	})
+
+	if updated == script {
+		t.Fatal("expected copy, got original script pointer")
+	}
+	if updated.Config.Browser.Headless == nil || *updated.Config.Browser.Headless != false {
+		t.Fatalf("headless = %#v, want false", updated.Config.Browser.Headless)
+	}
+	if updated.Config.Browser.SlowMoMs != 125 {
+		t.Fatalf("slow_mo_ms = %d, want 125", updated.Config.Browser.SlowMoMs)
+	}
+	if updated.Config.Browser.CaptureScreenshots != "per_action" {
+		t.Fatalf("capture_screenshots = %q, want per_action", updated.Config.Browser.CaptureScreenshots)
+	}
+	if updated.Config.Browser.Viewport.Width != 1280 || updated.Config.Browser.Viewport.Height != 720 {
+		t.Fatalf("viewport = %#v, want 1280x720", updated.Config.Browser.Viewport)
+	}
+	if script.Config.Browser.CaptureScreenshots != "off" {
+		t.Fatalf("original script was mutated: %#v", script.Config.Browser)
 	}
 }
