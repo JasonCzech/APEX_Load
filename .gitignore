@@ -58,4 +58,4 @@ vendor/
 *.db-shm
 *.db-wal
 *.log
-pkg/api/artifacts/archives/*/
+artifacts/
