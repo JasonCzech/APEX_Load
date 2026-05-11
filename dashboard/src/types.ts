@@ -292,6 +292,21 @@ export interface LiveMetrics {
   groups?: Record<string, GroupLiveMetrics>
   goal_status?: GoalStatus
   resources?: SystemResources
+  latency?: NetworkLatency
+}
+
+export interface NetworkLatency {
+  targets: LatencyTarget[]
+}
+
+export interface LatencyTarget {
+  name: string
+  endpoint: string
+  latency_ms: number
+  ip?: string
+  hops?: number
+  last_success: boolean
+  timestamp: string
 }
 
 export interface SystemResources {

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"net"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -143,6 +145,21 @@ type LiveMetrics struct {
 	GroupMetrics  map[string]*GroupLiveMetrics `json:"groups,omitempty"`
 	GoalStatus    *GoalStatus                  `json:"goal_status,omitempty"`
 	Resources     *engine.SystemResources      `json:"resources,omitempty"`
+	Latency       *NetworkLatency              `json:"latency,omitempty"`
+}
+
+type NetworkLatency struct {
+	Targets []LatencyTarget `json:"targets"`
+}
+
+type LatencyTarget struct {
+	Name        string        `json:"name"`
+	Endpoint    string        `json:"endpoint"`
+	LatencyMs   float64       `json:"latency_ms"`
+	IP          string        `json:"ip,omitempty"`
+	Hops        int           `json:"hops,omitempty"`
+	LastSuccess bool          `json:"last_success"`
+	Timestamp   time.Time     `json:"timestamp"`
 }
 
 type GoalStatus struct {
@@ -2006,6 +2023,9 @@ func (tr *TestRunner) processMetricsSnapshot(test *ManagedTest, snap engine.Metr
 
 	tr.publishLiveMetrics(test, live, artifacts)
 
+	// Measure network latency in background if not already measured for this interval
+	go tr.measureNetworkLatency(test, live)
+
 	settings := tr.GetSystemSettings()
 	for _, alert := range buildThresholdAlerts(test, live, settings.Thresholds) {
 		tr.hub.BroadcastJSON(alert)
@@ -2385,4 +2405,94 @@ func decodeStoredGoalConfig(value any) *GoalConfig {
 		return nil
 	}
 	return cloneGoalConfig(&config)
+}
+
+func (tr *TestRunner) measureNetworkLatency(test *ManagedTest, live *LiveMetrics) {
+	// Identify unique base URLs across all groups
+	endpoints := make(map[string]string)
+	for _, g := range test.Groups {
+		if g.script != nil && g.script.Config.BaseURL != "" {
+			u, err := url.Parse(g.script.Config.BaseURL)
+			if err == nil {
+				endpoints[u.Host] = g.script.Config.BaseURL
+			}
+		}
+	}
+
+	if len(endpoints) == 0 {
+		return
+	}
+
+	latency := &NetworkLatency{
+		Targets: make([]LatencyTarget, 0, len(endpoints)),
+	}
+
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	for host, raw := range endpoints {
+		wg.Add(1)
+		go func(h, r string) {
+			defer wg.Done()
+			target := tr.measureEndpointLatency(h, r)
+			mu.Lock()
+			latency.Targets = append(latency.Targets, target)
+			mu.Unlock()
+		}(host, raw)
+	}
+	wg.Wait()
+
+	tr.mu.Lock()
+	live.Latency = latency
+	tr.mu.Unlock()
+
+	// Broadcast the latency update specifically if needed, 
+	// though it will be part of the next metrics broadcast too.
+	tr.hub.BroadcastJSON(map[string]any{
+		"type":    "latency_update",
+		"test_id": test.ID,
+		"latency": latency,
+	})
+}
+
+func (tr *TestRunner) measureEndpointLatency(host, endpoint string) LatencyTarget {
+	target := LatencyTarget{
+		Name:      host,
+		Endpoint:  endpoint,
+		Timestamp: time.Now(),
+	}
+
+	start := time.Now()
+	
+	// We'll use a simple TCP dial to measure base R/T latency to the host.
+	// This is more reliable than ICMP ping which is often blocked.
+	dialer := &net.Dialer{Timeout: 5 * time.Second}
+	
+	// Default to port 80 or 443 if not specified
+	dialHost := host
+	if !strings.Contains(host, ":") {
+		if strings.HasPrefix(endpoint, "https") {
+			dialHost += ":443"
+		} else {
+			dialHost += ":80"
+		}
+	}
+
+	conn, err := dialer.Dial("tcp", dialHost)
+	if err != nil {
+		target.LastSuccess = false
+		return target
+	}
+	defer conn.Close()
+
+	target.LatencyMs = float64(time.Since(start).Microseconds()) / 1000.0
+	target.LastSuccess = true
+	
+	if addr, ok := conn.RemoteAddr().(*net.TCPAddr); ok {
+		target.IP = addr.IP.String()
+	}
+
+	// Note: hop count/route info typically requires raw sockets or external tools.
+	// We'll leave it as 0 for now or implement a basic traceroute later if requested.
+
+	return target
 }

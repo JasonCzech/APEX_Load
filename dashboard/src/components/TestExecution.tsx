@@ -290,6 +290,11 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
           p[`${name}_vusers`] = gm.vusers
         })
       }
+      if (m.latency?.targets) {
+        m.latency.targets.forEach((t: any) => {
+          p[`latency_${t.name}`] = t.latency_ms
+        })
+      }
       return p
     })
   }, [history, test?.history])

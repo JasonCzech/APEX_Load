@@ -15,7 +15,7 @@ import {
 interface ChartConfig {
   id: string
   title: string
-  type: 'area' | 'line-multi' | 'line-latency' | 'area-multi' | 'line-io'
+  type: 'area' | 'line-multi' | 'line-latency' | 'area-multi' | 'line-io' | 'line-network'
   dataKey?: string
   color?: string
   totalKey?: string
@@ -63,6 +63,7 @@ const chartConfigs: ChartConfig[] = [
     ],
   },
   { id: 'io', title: 'Network & Disk I/O (KB/s)', type: 'line-io' },
+  { id: 'network_latency', title: 'Route Latency (ms)', type: 'line-network' },
 ]
 
 export default function TestExecutionCharts({
@@ -198,6 +199,41 @@ export default function TestExecutionCharts({
                   <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
                 )}
               </AreaChart>
+            ) : chart.type === 'line-network' ? (
+              <LineChart
+                data={filteredData}
+                syncId="metrics"
+                onMouseDown={(event) => onChartMouseDown(event?.activeLabel)}
+                onMouseMove={(event) => onChartMouseMove(event?.activeLabel)}
+                onMouseUp={onZoom}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                <XAxis dataKey="time" stroke="var(--text-muted)" fontSize={11} />
+                <YAxis stroke="var(--text-muted)" fontSize={11} />
+                <Tooltip
+                  contentStyle={{ background: 'rgba(33, 36, 47, 0.2)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.2)' }}
+                  labelStyle={{ color: 'var(--text-primary)', fontWeight: 700, marginBottom: 4 }}
+                  isAnimationActive={false}
+                />
+                <Legend verticalAlign="bottom" height={36} />
+                {Object.keys(latest)
+                  .filter(key => key.startsWith('latency_'))
+                  .map((key, index) => (
+                    <Line
+                      key={key}
+                      type="monotone"
+                      dataKey={key}
+                      name={key.replace('latency_', '')}
+                      stroke={groupColors[index % groupColors.length]}
+                      dot={false}
+                      strokeWidth={2}
+                      isAnimationActive={false}
+                    />
+                  ))}
+                {showRefArea && (
+                  <ReferenceArea x1={refAreaLeft} x2={refAreaEnd} strokeOpacity={0.25} fill="var(--accent)" fillOpacity={0.12} />
+                )}
+              </LineChart>
             ) : (
               <LineChart
                 data={filteredData}
@@ -295,6 +331,19 @@ export default function TestExecutionCharts({
                   <span className="label">Net In:</span>
                   <span className="value">{latest.netRecv} KB/s</span>
                 </div>
+              </>
+            )}
+            {chart.id === 'network_latency' && (
+              <>
+                {Object.keys(latest)
+                  .filter(key => key.startsWith('latency_'))
+                  .map((key, index) => (
+                    <div key={key} className="footer-metric">
+                      <span className="dot" style={{ background: groupColors[index % groupColors.length] }}></span>
+                      <span className="label">{key.replace('latency_', '')}:</span>
+                      <span className="value">{latest[key]}ms</span>
+                    </div>
+                  ))}
               </>
             )}
           </div>
