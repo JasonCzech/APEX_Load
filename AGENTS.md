@@ -39,6 +39,9 @@ dashboard/       — React 18 + TypeScript + Recharts SPA
   src/hooks/      — useWebSocket (real-time), useApi (REST client)
 deployments/
   k8s/           — Kubernetes manifests, Helm charts
+mcp/
+  server.py      — Model Context Protocol (MCP) server for AI agents
+  README.md      — Setup and configuration instructions
 ```
 
 ## Key Design Decisions
@@ -49,6 +52,9 @@ deployments/
 - t-digest for streaming percentile computation
 - JSON DSL scripts — no proprietary language
 - OpenTelemetry-native metrics, vendor-neutral export
+- Real-time Network Latency monitoring via concurrent TCP dialer
+- "Soft Pause" execution gate (pauses between actions to preserve transaction integrity)
+- Manual timer-based duration management to support robust pause/resume
 
 ## Protocol Interface
 All protocols implement `pkg/protocol.Protocol`. Register new protocols in `pkg/protocol/registry.go`.
@@ -68,6 +74,10 @@ GET    /api/v1/tests/{id}            — Get test status + live metrics
 POST   /api/v1/tests/{id}/start      — Start a queued test
 POST   /api/v1/tests/{id}/stop       — Graceful stop
 POST   /api/v1/tests/{id}/abort      — Immediate abort
+POST   /api/v1/tests/{id}/pause      — Pause execution between actions
+POST   /api/v1/tests/{id}/resume     — Resume paused test
+PATCH  /api/v1/tests/{id}/vusers     — Scale VUsers for a group at runtime
+PATCH  /api/v1/tests/{id}/duration   — Extend/shorten test duration at runtime
 GET    /api/v1/tests/{id}/metrics    — Current metrics snapshot
 WS     /api/v1/tests/{id}/stream     — WebSocket stream for one test
 POST   /api/v1/scripts               — Upload a script (JSON DSL)
@@ -84,7 +94,8 @@ WS     /api/v1/ws                    — Global WebSocket (all test events)
 ```
 
 WebSocket messages are JSON with `type` field: `metrics_update`, `test_created`,
-`test_started`, `test_complete`, `test_failed`, `test_stopping`.
+`test_started`, `test_complete`, `test_failed`, `test_stopping`, `test_paused`, 
+`test_resumed`, `vusers_changed`, `duration_changed`, `latency_update`.
 
 ## Testing Policy
 Every new feature, bug fix, or refactor **must** include corresponding tests. This is a default
