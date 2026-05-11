@@ -1658,10 +1658,7 @@ func (tr *TestRunner) PauseTest(id string) error {
 	test.Status = "PAUSED"
 	tr.mu.Unlock()
 
-	tr.hub.BroadcastJSON(map[string]any{
-		"type":    "test_paused",
-		"test_id": id,
-	})
+	tr.broadcastEvent("test_paused", test)
 
 	return nil
 }
@@ -1688,10 +1685,7 @@ func (tr *TestRunner) ResumeTest(id string) error {
 	test.Status = "RUNNING"
 	tr.mu.Unlock()
 
-	tr.hub.BroadcastJSON(map[string]any{
-		"type":    "test_resumed",
-		"test_id": id,
-	})
+	tr.broadcastEvent("test_resumed", test)
 
 	return nil
 }

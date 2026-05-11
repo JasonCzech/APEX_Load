@@ -562,8 +562,8 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
     try {
       await api.pauseTest(testId)
       setControlFeedback('Test paused')
+      setTest(prev => prev ? { ...prev, status: 'PAUSED' } : null)
       setTimeout(() => setControlFeedback(''), 3000)
-      // Optimistically update status if possible, or wait for poll
     } catch (e: any) {
       setControlFeedback(`Error pausing: ${e.message}`)
     }
@@ -573,6 +573,7 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
     try {
       await api.resumeTest(testId)
       setControlFeedback('Test resumed')
+      setTest(prev => prev ? { ...prev, status: 'RUNNING' } : null)
       setTimeout(() => setControlFeedback(''), 3000)
     } catch (e: any) {
       setControlFeedback(`Error resuming: ${e.message}`)
