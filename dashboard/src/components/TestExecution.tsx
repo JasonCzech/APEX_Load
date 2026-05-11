@@ -558,6 +558,26 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
       setStartFeedback(e.message || 'Unable to start test')
     }
   }, [api, test?.capacity_advisory, testId])
+  const handlePause = useCallback(async () => {
+    try {
+      await api.pauseTest(testId)
+      setControlFeedback('Test paused')
+      setTimeout(() => setControlFeedback(''), 3000)
+      // Optimistically update status if possible, or wait for poll
+    } catch (e: any) {
+      setControlFeedback(`Error pausing: ${e.message}`)
+    }
+  }, [api, testId])
+
+  const handleResume = useCallback(async () => {
+    try {
+      await api.resumeTest(testId)
+      setControlFeedback('Test resumed')
+      setTimeout(() => setControlFeedback(''), 3000)
+    } catch (e: any) {
+      setControlFeedback(`Error resuming: ${e.message}`)
+    }
+  }, [api, testId])
 
   if (error) {
     return (
@@ -585,14 +605,14 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
         isRunning={isRunning}
         onStop={() => api.stopTest(testId)}
         onAbort={() => api.abortTest(testId)}
-        onPause={() => api.pauseTest(testId)}
-        onResume={() => api.resumeTest(testId)}
+        onPause={handlePause}
+        onResume={handleResume}
         hasArchive={hasArchive}
         onDownloadArchive={handleDownloadArchive}
       />
 
       {/* Live Controls Panel */}
-      {isRunning && (
+      {(isRunning || test.status === 'PAUSED') && (
         <TestExecutionLiveControls
           showControls={showControls}
           onToggleControls={() => setShowControls(!showControls)}

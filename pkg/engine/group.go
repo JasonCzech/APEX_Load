@@ -347,6 +347,10 @@ func (mge *MultiGroupEngine) AdjustDuration(newDuration time.Duration) error {
 	mge.mu.Lock()
 	defer mge.mu.Unlock()
 
+	return mge.adjustDurationLocked(newDuration)
+}
+
+func (mge *MultiGroupEngine) adjustDurationLocked(newDuration time.Duration) error {
 	if mge.baseCtx == nil || mge.baseCtx.Err() != nil {
 		return fmt.Errorf("engine not running")
 	}
@@ -405,9 +409,7 @@ func (mge *MultiGroupEngine) Resume() error {
 
 	// Adjust duration to account for time spent paused
 	newDuration := mge.targetDuration + pauseDuration
-	mge.mu.Unlock()
-	err := mge.AdjustDuration(newDuration)
-	mge.mu.Lock()
+	err := mge.adjustDurationLocked(newDuration)
 
 	slog.Info("test execution resumed", "pause_duration", pauseDuration)
 	return err
