@@ -260,9 +260,8 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
     }
   }, [api, testId, durationInput])
   
-  // If we don't have WebSocket history (completed test), use backend history
-  const chartData = useMemo(() => {
-    if (history.length > 0) return history
+  // Memoize the mapped backend history to avoid re-mapping it on every WebSocket update
+  const mappedBackendHistory = useMemo(() => {
     if (!test?.history) return []
     return (test.history as any[]).map((m: any) => {
       const p: MetricsHistoryPoint = {
@@ -297,7 +296,55 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
       }
       return p
     })
-  }, [history, test?.history])
+  }, [test?.history])
+
+  // Combine WebSocket history with backend history for a continuous timeline
+  const chartData = useMemo(() => {
+    let combined: MetricsHistoryPoint[] = []
+
+    if (history.length > 0) {
+      // If we have local WS history, it's usually the most fresh
+      // But we might want to prepend backend history if WS history is short
+      if (mappedBackendHistory.length > 0 && history.length < 10) {
+         combined = [...mappedBackendHistory, ...history]
+      } else {
+         combined = [...history]
+      }
+    } else {
+      combined = mappedBackendHistory
+    }
+
+    // Deduplicate by time string efficiently (O(N))
+    const seen = new Set()
+    const deduped: MetricsHistoryPoint[] = []
+    for (let i = combined.length - 1; i >= 0; i--) {
+      if (!seen.has(combined[i].time)) {
+        seen.add(combined[i].time)
+        deduped.unshift(combined[i])
+      }
+    }
+
+    // PAUSE GRAPH LOGIC: Stop refreshing once TPS hits 0 when paused
+    if (test?.status === 'PAUSED' && deduped.length > 0) {
+      const lastPoint = deduped[deduped.length - 1]
+      // If we are already at effectively zero TPS, look for the wind-down point
+      if (lastPoint.tps < 0.1) {
+        let lastNonZeroIdx = -1
+        for (let i = deduped.length - 1; i >= 0; i--) {
+          if (deduped[i].tps > 0.1) {
+            lastNonZeroIdx = i
+            break
+          }
+        }
+        // Freeze at lastNonZeroIdx + small buffer to show it hitting zero
+        if (lastNonZeroIdx !== -1) {
+          return deduped.slice(0, lastNonZeroIdx + 6)
+        }
+      }
+    }
+
+    return deduped
+  }, [history, test?.history, test?.status])
 
   const filteredData = useMemo(() => {
     if (timeRange === 'custom' && zoomRange) {

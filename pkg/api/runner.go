@@ -2046,22 +2046,40 @@ func (tr *TestRunner) broadcastMetrics(test *ManagedTest, mge *engine.MultiGroup
 		groupVUsers[g.Name] = g.VUsers
 	}
 
-	for {
-		interval := tr.GetSystemSettings().General.MetricsIntervalSeconds
-		if interval < 1 {
-			interval = 1
-		}
+	intervalSec := tr.GetSystemSettings().General.MetricsIntervalSeconds
+	if intervalSec < 1 {
+		intervalSec = 1
+	}
+	ticker := time.NewTicker(time.Duration(intervalSec) * time.Second)
+	defer ticker.Stop()
 
+	lastLatencyCheck := time.Time{}
+
+	for {
 		select {
 		case <-done:
 			return
-		case <-time.After(time.Duration(interval) * time.Second):
+		case <-ticker.C:
 			snap, ok := mge.LatestSnapshot()
 			if !ok {
 				continue
 			}
 
-			tr.processMetricsSnapshot(test, snap, groupVUsers, mge.ScaleVUsers, artifacts)
+			live := buildLiveMetricsFromSnapshot(snap, groupVUsers)
+
+			if test.ScenarioMode == "goal_oriented" && test.GoalConfig != nil {
+				currentTotalVUsers := totalGroupVUsers(groupVUsers)
+				update := evaluateGoalController(live.Timestamp, currentTotalVUsers, live, test.GoalConfig, test.goalControl)
+				applyGoalControllerUpdate(test, live, groupVUsers, update, mge.ScaleVUsers)
+			}
+
+			// Throttle network latency pings to every 5 seconds
+			if time.Since(lastLatencyCheck) >= 5*time.Second {
+				go tr.measureNetworkLatency(test, live)
+				lastLatencyCheck = time.Now()
+			}
+
+			tr.publishLiveMetrics(test, live, artifacts)
 		}
 	}
 }
