@@ -561,7 +561,14 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
   const [success, setSuccess] = useState('')
   const [jsonMode, setJsonMode] = useState(false)
   const [jsonText, setJsonText] = useState('')
-  const [openSections, setOpenSections] = useState<Record<string, boolean>>({})
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({
+    config: true,
+    actions: true,
+    parameters: true,
+    runtime: false,
+    import: true,
+    replay: true,
+  })
   const [openDataEditor, setOpenDataEditor] = useState<number | null>(null)
   const [dataEditorMode, setDataEditorMode] = useState<Record<number, 'grid' | 'raw'>>({})
   const [dataSourceHistory, setDataSourceHistory] = useState<Record<number, DataSourceHistory>>({})
@@ -1536,909 +1543,946 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
       ) : (
         <div className="editor-body">
           {/* Script Config Panel */}
-          <div className="config-panel">
-            <h3 className="panel-title">Script Configuration</h3>
-            <div className="form-grid">
-              <label>
-                <span>Name</span>
-                <input value={script.name} onChange={e => updateField('name', e.target.value)} placeholder="My_Test_Script" />
-              </label>
-              <label>
-                <span>Protocol</span>
-                <select value={script.protocol} onChange={e => updateField('protocol', e.target.value)}>
-                  <option value="http">HTTP</option>
-                  <option value="https">HTTPS</option>
-                  <option value="browser">Browser</option>
-                </select>
-              </label>
-              <label>
-                <span>Version</span>
-                <input value={script.version} onChange={e => updateField('version', e.target.value)} placeholder="1.0.0" />
-              </label>
-              <label>
-                <span>Base URL</span>
-                <input value={script.config.base_url} onChange={e => updateField('config.base_url', e.target.value)} placeholder="https://api.example.com" />
-              </label>
-            </div>
-            {isBrowserScript && (
-              <div className="parameter-empty-state">
-                Browser scripts can use navigate, click, fill, wait, and screenshot actions with selector, wait, and capture settings in the action editor below.
-              </div>
-            )}
-            <div className="auto-parameter-toolbar">
-              <button className="btn btn-sm btn-ghost" onClick={scanForAutoParameters}>Auto Parameterization</button>
-              <span className="cell-muted">Scans targets, headers, and body fields for likely parameter candidates.</span>
-            </div>
-            {parameterCandidates.length > 0 && (
-              <div className="auto-parameter-panel">
-                <div className="auto-parameter-header">
-                  <h4>Review Candidates</h4>
-                  <button className="btn btn-sm btn-accent" onClick={applyAutoParameterization}>Apply Selected</button>
+          <div className={`config-panel ${openSections['config'] ? 'open' : ''}`}>
+            <button className="panel-header-toggle" onClick={() => toggleSection('config')}>
+              <h3 className="panel-title">Script Configuration</h3>
+              <span className="chevron">{openSections['config'] ? '▾' : '▸'}</span>
+            </button>
+            {openSections['config'] && (
+              <div className="panel-body">
+                <div className="form-grid">
+                  <label>
+                    <span>Name</span>
+                    <input value={script.name} onChange={e => updateField('name', e.target.value)} placeholder="My_Test_Script" />
+                  </label>
+                  <label>
+                    <span>Protocol</span>
+                    <select value={script.protocol} onChange={e => updateField('protocol', e.target.value)}>
+                      <option value="http">HTTP</option>
+                      <option value="https">HTTPS</option>
+                      <option value="browser">Browser</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>Version</span>
+                    <input value={script.version} onChange={e => updateField('version', e.target.value)} placeholder="1.0.0" />
+                  </label>
+                  <label>
+                    <span>Base URL</span>
+                    <input value={script.config.base_url} onChange={e => updateField('config.base_url', e.target.value)} placeholder="https://api.example.com" />
+                  </label>
                 </div>
-                <div className="auto-parameter-table-wrap">
-                  <table className="auto-parameter-table">
-                    <thead>
-                      <tr>
-                        <th>Use</th>
-                        <th>Field Hint</th>
-                        <th>Current Value</th>
-                        <th>Variable Name</th>
-                        <th>Hits</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {parameterCandidates.map(candidate => (
-                        <tr key={candidate.id}>
-                          <td>
-                            <input
-                              type="checkbox"
-                              checked={candidate.selected}
-                              onChange={e => updateCandidate(candidate.id, { selected: e.target.checked })}
-                            />
-                          </td>
-                          <td className="cell-mono">{candidate.keyHint}</td>
-                          <td className="cell-mono">{candidate.value}</td>
-                          <td>
-                            <input
-                              value={candidate.varName}
-                              onChange={e => updateCandidate(candidate.id, { varName: sanitizeVarName(e.target.value) })}
-                              placeholder="parameter_name"
-                            />
-                          </td>
-                          <td>{candidate.occurrences.length}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                {isBrowserScript && (
+                  <div className="parameter-empty-state" style={{ marginTop: 12 }}>
+                    Browser scripts can use navigate, click, fill, wait, and screenshot actions with selector, wait, and capture settings in the action editor below.
+                  </div>
+                )}
+                <div className="auto-parameter-toolbar">
+                  <button className="btn btn-sm btn-ghost" onClick={scanForAutoParameters}>Auto Parameterization</button>
+                  <span className="cell-muted">Scans targets, headers, and body fields for likely parameter candidates.</span>
                 </div>
+                {parameterCandidates.length > 0 && (
+                  <div className="auto-parameter-panel">
+                    <div className="auto-parameter-header">
+                      <h4>Review Candidates</h4>
+                      <button className="btn btn-sm btn-accent" onClick={applyAutoParameterization}>Apply Selected</button>
+                    </div>
+                    <div className="auto-parameter-table-wrap">
+                      <table className="auto-parameter-table">
+                        <thead>
+                          <tr>
+                            <th>Use</th>
+                            <th>Field Hint</th>
+                            <th>Current Value</th>
+                            <th>Variable Name</th>
+                            <th>Hits</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {parameterCandidates.map(candidate => (
+                            <tr key={candidate.id}>
+                              <td>
+                                <input
+                                  type="checkbox"
+                                  checked={candidate.selected}
+                                  onChange={e => updateCandidate(candidate.id, { selected: e.target.checked })}
+                                />
+                              </td>
+                              <td className="cell-mono">{candidate.keyHint}</td>
+                              <td className="cell-mono">{candidate.value}</td>
+                              <td>
+                                <input
+                                  value={candidate.varName}
+                                  onChange={e => updateCandidate(candidate.id, { varName: sanitizeVarName(e.target.value) })}
+                                  placeholder="parameter_name"
+                                />
+                              </td>
+                              <td>{candidate.occurrences.length}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
 
-          <div className="config-panel replay-panel">
-            <div className="panel-title-row">
-              <div>
-                <h3 className="panel-title">Replay Output</h3>
+          <div className={`config-panel replay-panel ${openSections['replay'] ? 'open' : ''}`}>
+            <button className="panel-header-toggle" onClick={() => toggleSection('replay')}>
+              <div className="panel-title-row">
+                <div>
+                  <h3 className="panel-title">Replay Output {replaying && <span className="replaying-dot" />}</h3>
+                </div>
+              </div>
+              <span className="chevron">{openSections['replay'] ? '▾' : '▸'}</span>
+            </button>
+            {openSections['replay'] && (
+              <div className="panel-body">
                 <p className="replay-panel-subtitle">{isBrowserScript ? 'Start an asynchronous browser replay session and inspect live events, failures, and final replay state.' : 'Run the current draft once and inspect resolved requests, extractions, failures, and final replay variables.'}</p>
-              </div>
-              <div className="replay-panel-actions">
-                {isBrowserScript && activeReplaySessionId && (
-                  <button className="btn btn-sm btn-ghost" onClick={handleStopReplay} disabled={!replaying}>
-                    Stop Replay
+                <div className="replay-options-grid">
+                  <label>
+                    <span>Replay Group</span>
+                    <input
+                      value={replayOptions.groupName}
+                      onChange={e => setReplayOptions(prev => ({ ...prev, groupName: e.target.value }))}
+                      placeholder={`${script.name || 'script'}-replay`}
+                    />
+                  </label>
+                  <label className="checkbox-label replay-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={replayOptions.ignoreThinkTime}
+                      onChange={e => setReplayOptions(prev => ({ ...prev, ignoreThinkTime: e.target.checked }))}
+                    />
+                    <span>Ignore think time for replay</span>
+                  </label>
+                  <label className="full-width replay-variables-field">
+                    <span>Replay Variables JSON</span>
+                    <textarea
+                      value={replayOptions.variablesText}
+                      onChange={e => setReplayOptions(prev => ({ ...prev, variablesText: e.target.value }))}
+                      spellCheck={false}
+                    />
+                  </label>
+                </div>
+                <div className="replay-panel-actions" style={{ marginTop: 12, justifyContent: 'flex-end' }}>
+                  {isBrowserScript && activeReplaySessionId && (
+                    <button className="btn btn-sm btn-ghost" onClick={handleStopReplay} disabled={!replaying}>
+                      Stop Replay
+                    </button>
+                  )}
+                  <button className="btn btn-sm btn-accent" onClick={handleReplay} disabled={replaying || saving || !script.name || script.actions.length === 0}>
+                    {replaying ? (isBrowserScript ? 'Running Browser Replay…' : 'Running…') : (isBrowserScript ? 'Run Browser Replay' : 'Run Replay')}
                   </button>
-                )}
-                <button className="btn btn-sm btn-accent" onClick={handleReplay} disabled={replaying || saving || !script.name || script.actions.length === 0}>
-                  {replaying ? (isBrowserScript ? 'Running Browser Replay…' : 'Running…') : (isBrowserScript ? 'Run Browser Replay' : 'Run Replay')}
-                </button>
-              </div>
-            </div>
-            <div className="replay-options-grid">
-              <label>
-                <span>Replay Group</span>
-                <input
-                  value={replayOptions.groupName}
-                  onChange={e => setReplayOptions(prev => ({ ...prev, groupName: e.target.value }))}
-                  placeholder={`${script.name || 'script'}-replay`}
-                />
-              </label>
-              <label className="checkbox-label replay-checkbox">
-                <input
-                  type="checkbox"
-                  checked={replayOptions.ignoreThinkTime}
-                  onChange={e => setReplayOptions(prev => ({ ...prev, ignoreThinkTime: e.target.checked }))}
-                />
-                <span>Ignore think time for replay</span>
-              </label>
-              <label className="full-width replay-variables-field">
-                <span>Replay Variables JSON</span>
-                <textarea
-                  value={replayOptions.variablesText}
-                  onChange={e => setReplayOptions(prev => ({ ...prev, variablesText: e.target.value }))}
-                  spellCheck={false}
-                />
-              </label>
-            </div>
-            {!replayReport ? (
-              <div className="replay-empty-state">{isBrowserScript ? 'No browser replay has been started yet. Use Browser Replay to launch an asynchronous session for the current draft.' : 'No replay has been run yet. Use Replay to execute the current draft once.'}</div>
-            ) : (
-              <div className="replay-report">
-                <div className={`replay-live-banner ${replaying ? 'running' : replayReport.success ? 'success' : 'error'}`}>
-                  <div className="replay-live-banner-main">
-                    <span className="replay-live-badge">{replaying ? 'Streaming live' : 'Replay finished'}</span>
-                    <strong>{replayLatestActivity?.title || 'Replay status available'}</strong>
-                    <span>{replayLatestActivity?.detail || 'Inspect the timeline below for request-by-request execution details.'}</span>
-                  </div>
-                  <div className="replay-live-banner-meta">
-                    <span>{replayReport.events.length} / {script.actions.length} actions reported</span>
-                    <span>{formatReplayTime(replayLatestActivity?.timestamp || replayReport.completed_at || replayReport.started_at)}</span>
-                  </div>
                 </div>
-                <div className="replay-summary-grid">
-                  <div className="replay-summary-card">
-                    <span>Status</span>
-                    <strong className={replayStatusLabel === 'Failed' ? 'text-danger' : replayStatusLabel === 'Running' ? '' : 'text-success'}>{replayStatusLabel}</strong>
-                  </div>
-                  <div className="replay-summary-card">
-                    <span>Group</span>
-                    <strong>{replayReport.group || 'replay'}</strong>
-                  </div>
-                  <div className="replay-summary-card">
-                    <span>Protocol</span>
-                    <strong>{replayReport.protocol}</strong>
-                  </div>
-                  <div className="replay-summary-card">
-                    <span>Events</span>
-                    <strong>{replayReport.events.length}</strong>
-                  </div>
-                  <div className="replay-summary-card">
-                    <span>Completed</span>
-                    <strong>{formatReplayTime(replayReport.completed_at)}</strong>
-                  </div>
-                </div>
-                {replayReport.error && <p className="replay-report-error">{replayReport.error}</p>}
-                {isBrowserScript && (
-                  <BrowserReplayDebugger
-                    sessionId={activeReplaySessionId}
-                    session={browserReplaySession}
-                    report={replayReport as unknown as any}
-                    running={replaying}
-                    selectedEventIndex={expandedReplayEvent}
-                    onSelectEvent={setExpandedReplayEvent}
-                  />
-                )}
-                {replayActivity.length > 0 && (
-                  <div className="replay-activity-card">
-                    <h4>Execution Timeline</h4>
-                    <div className="replay-activity-list">
-                      {replayActivity.map(item => (
-                        <div key={item.id} className={`replay-activity-item ${item.kind} ${item.success === false ? 'error' : item.success === true ? 'success' : ''}`}>
-                          <div className="replay-activity-marker" />
-                          <div className="replay-activity-content">
-                            <div className="replay-activity-header-row">
-                              <strong>{item.title}</strong>
-                              <span>{formatReplayTime(item.timestamp)}</span>
-                            </div>
-                            {item.detail && <div className="replay-activity-detail">{item.detail}</div>}
-                            {item.changedVariables && item.changedVariables.length > 0 && (
-                              <div className="replay-variable-chip-row">
-                                {item.changedVariables.map(name => (
-                                  <span key={`${item.id}-${name}`} className="replay-variable-chip">{name}</span>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      ))}
+
+                {!replayReport ? (
+                  <div className="replay-empty-state">{isBrowserScript ? 'No browser replay has been started yet. Use Browser Replay to launch an asynchronous session for the current draft.' : 'No replay has been run yet. Use Replay to execute the current draft once.'}</div>
+                ) : (
+                  <div className="replay-report">
+                    <div className={`replay-live-banner ${replaying ? 'running' : replayReport.success ? 'success' : 'error'}`}>
+                      <div className="replay-live-banner-main">
+                        <span className="replay-live-badge">{replaying ? 'Streaming live' : 'Replay finished'}</span>
+                        <strong>{replayLatestActivity?.title || 'Replay status available'}</strong>
+                        <span>{replayLatestActivity?.detail || 'Inspect the timeline below for request-by-request execution details.'}</span>
+                      </div>
+                      <div className="replay-live-banner-meta">
+                        <span>{replayReport.events.length} / {script.actions.length} actions reported</span>
+                        <span>{formatReplayTime(replayLatestActivity?.timestamp || replayReport.completed_at || replayReport.started_at)}</span>
+                      </div>
                     </div>
-                  </div>
-                )}
-                {replayVariableInspector && (
-                  <div className="replay-variables-card">
-                    <h4>{replaying ? 'Live Variables' : 'Variable Inspector'}</h4>
-                    {Object.keys(replayVariableInspector).length > 0 ? (
-                      <pre>{JSON.stringify(replayVariableInspector, null, 2)}</pre>
-                    ) : (
-                      <div className="replay-variables-empty">
-                        {replaying
-                          ? 'No replay variables have been captured yet.'
-                          : 'Replay completed without any extracted or seeded variables.'}
+                    <div className="replay-summary-grid">
+                      <div className="replay-summary-card">
+                        <span>Status</span>
+                        <strong className={replayStatusLabel === 'Failed' ? 'text-danger' : replayStatusLabel === 'Running' ? '' : 'text-success'}>{replayStatusLabel}</strong>
+                      </div>
+                      <div className="replay-summary-card">
+                        <span>Group</span>
+                        <strong>{replayReport.group || 'replay'}</strong>
+                      </div>
+                      <div className="replay-summary-card">
+                        <span>Protocol</span>
+                        <strong>{replayReport.protocol}</strong>
+                      </div>
+                      <div className="replay-summary-card">
+                        <span>Events</span>
+                        <strong>{replayReport.events.length}</strong>
+                      </div>
+                      <div className="replay-summary-card">
+                        <span>Completed</span>
+                        <strong>{formatReplayTime(replayReport.completed_at)}</strong>
+                      </div>
+                    </div>
+                    {replayReport.error && <p className="replay-report-error">{replayReport.error}</p>}
+                    {isBrowserScript && (
+                      <BrowserReplayDebugger
+                        sessionId={activeReplaySessionId}
+                        session={browserReplaySession}
+                        report={replayReport as unknown as any}
+                        running={replaying}
+                        selectedEventIndex={expandedReplayEvent}
+                        onSelectEvent={setExpandedReplayEvent}
+                      />
+                    )}
+                    {replayActivity.length > 0 && (
+                      <div className="replay-activity-card">
+                        <h4>Execution Timeline</h4>
+                        <div className="replay-activity-list">
+                          {replayActivity.map(item => (
+                            <div key={item.id} className={`replay-activity-item ${item.kind} ${item.success === false ? 'error' : item.success === true ? 'success' : ''}`}>
+                              <div className="replay-activity-marker" />
+                              <div className="replay-activity-content">
+                                <div className="replay-activity-header-row">
+                                  <strong>{item.title}</strong>
+                                  <span>{formatReplayTime(item.timestamp)}</span>
+                                </div>
+                                {item.detail && <div className="replay-activity-detail">{item.detail}</div>}
+                                {item.changedVariables && item.changedVariables.length > 0 && (
+                                  <div className="replay-variable-chip-row">
+                                    {item.changedVariables.map(name => (
+                                      <span key={`${item.id}-${name}`} className="replay-variable-chip">{name}</span>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     )}
-                  </div>
-                )}
-                <div className="replay-events-list">
-                  {replayReport.events.map((event, index) => {
-                    const isOpen = expandedReplayEvent === index
-                    const variableDiff = replayVariableDiffs[index] || {}
-                    const changedVariables = Object.entries(variableDiff)
-                    return (
-                      <div
-                        key={`${event.phase}-${event.action_name}-${index}`}
-                        className={`replay-event-card ${event.success ? 'success' : 'error'}`}
-                        ref={node => {
-                          replayEventRefs.current[index] = node
-                        }}
-                      >
-                        <button className="replay-event-header" onClick={() => setExpandedReplayEvent(isOpen ? null : index)}>
-                          <div className="replay-event-header-main">
-                            <span className="replay-event-phase">{event.phase}</span>
-                            <strong>{event.action_name || 'Unnamed action'}</strong>
-                            <span className="replay-event-target">{event.method || event.action_type} {event.target}</span>
-                          </div>
-                          <div className="replay-event-header-meta">
-                            {changedVariables.length > 0 && (
-                              <span className="replay-event-diff-count">{changedVariables.length} variable{changedVariables.length === 1 ? '' : 's'} changed</span>
-                            )}
-                            <span className={event.success ? 'text-success' : 'text-danger'}>{event.success ? `HTTP ${event.status_code || 'OK'}` : event.error_message || 'Failed'}</span>
-                            <span>{event.duration_ms.toFixed(1)} ms</span>
-                            <span>{isOpen ? '▾' : '▸'}</span>
-                          </div>
-                        </button>
-                        {isOpen && (
-                          <div className="replay-event-body">
-                            <div className="replay-event-detail-grid">
-                              <div>
-                                <span className="replay-detail-label">Started</span>
-                                <div>{formatReplayTime(event.started_at)}</div>
-                              </div>
-                              <div>
-                                <span className="replay-detail-label">Completed</span>
-                                <div>{formatReplayTime(event.completed_at)}</div>
-                              </div>
-                              {event.page_url && (
-                                <div>
-                                  <span className="replay-detail-label">Page URL</span>
-                                  <div className="replay-page-url">{event.page_url}</div>
-                                </div>
-                              )}
-                              {event.page_title && (
-                                <div>
-                                  <span className="replay-detail-label">Page Title</span>
-                                  <div>{event.page_title}</div>
-                                </div>
-                              )}
-                            </div>
-                            {hasBrowserReplayArtifacts(event) && (
-                              <div className="replay-browser-grid">
-                                {event.dom_summary && (
-                                  <div className="replay-code-block">
-                                    <span className="replay-detail-label">DOM Summary</span>
-                                    <pre>{JSON.stringify(event.dom_summary, null, 2)}</pre>
-                                  </div>
-                                )}
-                                <div className="replay-code-block">
-                                  <span className="replay-detail-label">Console</span>
-                                  <pre>{formatConsoleEntries(event.console_entries)}</pre>
-                                </div>
-                                <div className="replay-code-block">
-                                  <span className="replay-detail-label">Network</span>
-                                  <pre>{formatNetworkEntries(event.network_entries)}</pre>
-                                </div>
-                                {event.screenshot_base64 && (
-                                  <div className="replay-screenshot-block">
-                                    <span className="replay-detail-label">Screenshot</span>
-                                    <img src={`data:image/png;base64,${event.screenshot_base64}`} alt={`${event.action_name || 'Replay action'} screenshot`} />
-                                  </div>
-                                )}
-                                {event.html && (
-                                  <div className="replay-code-block replay-browser-html">
-                                    <span className="replay-detail-label">HTML</span>
-                                    <pre>{event.html}</pre>
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                            <div className="replay-code-block">
-                              <span className="replay-detail-label">Resolved Headers</span>
-                              <pre>{formatReplayHeaders(event.headers)}</pre>
-                            </div>
-                            {event.body && (
-                              <div className="replay-code-block">
-                                <span className="replay-detail-label">Resolved Body</span>
-                                <pre>{event.body}</pre>
-                              </div>
-                            )}
-                            {event.extractions && Object.keys(event.extractions).length > 0 && (
-                              <div className="replay-code-block">
-                                <span className="replay-detail-label">Extractions</span>
-                                <pre>{JSON.stringify(event.extractions, null, 2)}</pre>
-                              </div>
-                            )}
-                            {changedVariables.length > 0 && (
-                              <div className="replay-code-block">
-                                <span className="replay-detail-label">Variable Changes</span>
-                                <div className="replay-variable-diff-list">
-                                  {changedVariables.map(([name, diff]) => (
-                                    <div key={`${index}-${name}`} className="replay-variable-diff-item">
-                                      <div className="replay-variable-diff-name">{name}</div>
-                                      <div className="replay-variable-diff-values">
-                                        <span className="replay-variable-diff-before">{diff.previous ?? 'unset'}</span>
-                                        <span className="replay-variable-diff-arrow">{'->'}</span>
-                                        <span className="replay-variable-diff-after">{diff.next}</span>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-                            {event.snapshot && (
-                              <div className="replay-code-block">
-                                <span className="replay-detail-label">Snapshot</span>
-                                <pre>{JSON.stringify(event.snapshot, null, 2)}</pre>
-                              </div>
-                            )}
+                    {replayVariableInspector && (
+                      <div className="replay-variables-card">
+                        <h4>{replaying ? 'Live Variables' : 'Variable Inspector'}</h4>
+                        {Object.keys(replayVariableInspector).length > 0 ? (
+                          <pre>{JSON.stringify(replayVariableInspector, null, 2)}</pre>
+                        ) : (
+                          <div className="replay-variables-empty">
+                            {replaying
+                              ? 'No replay variables have been captured yet.'
+                              : 'Replay completed without any extracted or seeded variables.'}
                           </div>
                         )}
                       </div>
-                    )
-                  })}
-                </div>
+                    )}
+                    <div className="replay-events-list">
+                      {replayReport.events.map((event, index) => {
+                        const isOpen = expandedReplayEvent === index
+                        const variableDiff = replayVariableDiffs[index] || {}
+                        const changedVariables = Object.entries(variableDiff)
+                        return (
+                          <div
+                            key={`${event.phase}-${event.action_name}-${index}`}
+                            className={`replay-event-card ${event.success ? 'success' : 'error'}`}
+                            ref={node => {
+                              replayEventRefs.current[index] = node
+                            }}
+                          >
+                            <button className="replay-event-header" onClick={() => setExpandedReplayEvent(isOpen ? null : index)}>
+                              <div className="replay-event-header-main">
+                                <span className="replay-event-phase">{event.phase}</span>
+                                <strong>{event.action_name || 'Unnamed action'}</strong>
+                                <span className="replay-event-target">{event.method || event.action_type} {event.target}</span>
+                              </div>
+                              <div className="replay-event-header-meta">
+                                {changedVariables.length > 0 && (
+                                  <span className="replay-event-diff-count">{changedVariables.length} variable{changedVariables.length === 1 ? '' : 's'} changed</span>
+                                )}
+                                <span className={event.success ? 'text-success' : 'text-danger'}>{event.success ? `HTTP ${event.status_code || 'OK'}` : event.error_message || 'Failed'}</span>
+                                <span>{event.duration_ms.toFixed(1)} ms</span>
+                                <span>{isOpen ? '▾' : '▸'}</span>
+                              </div>
+                            </button>
+                            {isOpen && (
+                              <div className="replay-event-body">
+                                <div className="replay-event-detail-grid">
+                                  <div>
+                                    <span className="replay-detail-label">Started</span>
+                                    <div>{formatReplayTime(event.started_at)}</div>
+                                  </div>
+                                  <div>
+                                    <span className="replay-detail-label">Completed</span>
+                                    <div>{formatReplayTime(event.completed_at)}</div>
+                                  </div>
+                                  {event.page_url && (
+                                    <div>
+                                      <span className="replay-detail-label">Page URL</span>
+                                      <div className="replay-page-url">{event.page_url}</div>
+                                    </div>
+                                  )}
+                                  {event.page_title && (
+                                    <div>
+                                      <span className="replay-detail-label">Page Title</span>
+                                      <div>{event.page_title}</div>
+                                    </div>
+                                  )}
+                                </div>
+                                {hasBrowserReplayArtifacts(event) && (
+                                  <div className="replay-browser-grid">
+                                    {event.dom_summary && (
+                                      <div className="replay-code-block">
+                                        <span className="replay-detail-label">DOM Summary</span>
+                                        <pre>{JSON.stringify(event.dom_summary, null, 2)}</pre>
+                                      </div>
+                                    )}
+                                    <div className="replay-code-block">
+                                      <span className="replay-detail-label">Console</span>
+                                      <pre>{formatConsoleEntries(event.console_entries)}</pre>
+                                    </div>
+                                    <div className="replay-code-block">
+                                      <span className="replay-detail-label">Network</span>
+                                      <pre>{formatNetworkEntries(event.network_entries)}</pre>
+                                    </div>
+                                    {event.screenshot_base64 && (
+                                      <div className="replay-screenshot-block">
+                                        <span className="replay-detail-label">Screenshot</span>
+                                        <img src={`data:image/png;base64,${event.screenshot_base64}`} alt={`${event.action_name || 'Replay action'} screenshot`} />
+                                      </div>
+                                    )}
+                                    {event.html && (
+                                      <div className="replay-code-block replay-browser-html">
+                                        <span className="replay-detail-label">HTML</span>
+                                        <pre>{event.html}</pre>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                                <div className="replay-code-block">
+                                  <span className="replay-detail-label">Resolved Headers</span>
+                                  <pre>{formatReplayHeaders(event.headers)}</pre>
+                                </div>
+                                {event.body && (
+                                  <div className="replay-code-block">
+                                    <span className="replay-detail-label">Resolved Body</span>
+                                    <pre>{event.body}</pre>
+                                  </div>
+                                )}
+                                {event.extractions && Object.keys(event.extractions).length > 0 && (
+                                  <div className="replay-code-block">
+                                    <span className="replay-detail-label">Extractions</span>
+                                    <pre>{JSON.stringify(event.extractions, null, 2)}</pre>
+                                  </div>
+                                )}
+                                {changedVariables.length > 0 && (
+                                  <div className="replay-code-block">
+                                    <span className="replay-detail-label">Variable Changes</span>
+                                    <div className="replay-variable-diff-list">
+                                      {changedVariables.map(([name, diff]) => (
+                                        <div key={`${index}-${name}`} className="replay-variable-diff-item">
+                                          <div className="replay-variable-diff-name">{name}</div>
+                                          <div className="replay-variable-diff-values">
+                                            <span className="replay-variable-diff-before">{diff.previous ?? 'unset'}</span>
+                                            <span className="replay-variable-diff-arrow">{'->'}</span>
+                                            <span className="replay-variable-diff-after">{diff.next}</span>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                                {event.snapshot && (
+                                  <div className="replay-code-block">
+                                    <span className="replay-detail-label">Snapshot</span>
+                                    <pre>{JSON.stringify(event.snapshot, null, 2)}</pre>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
 
           {importMetadata && (
-            <div className="import-metadata-panel">
-              <div className="import-metadata-header">
-                <div>
-                  <h3 className="panel-title">Imported Metadata</h3>
-                  <p>This script retains source-specific LoadRunner settings that Stormrunner does not edit directly.</p>
+            <div className={`import-metadata-panel config-panel ${openSections['import'] ? 'open' : ''}`} style={{ padding: 0 }}>
+              <button className="panel-header-toggle" onClick={() => toggleSection('import')} style={{ padding: '16px 20px' }}>
+                <div className="import-metadata-header" style={{ marginBottom: 0 }}>
+                  <div>
+                    <h3 className="panel-title">Imported Metadata</h3>
+                  </div>
+                  <span className="import-source-chip">{importMetadata.source || 'loadrunner'}</span>
                 </div>
-                <span className="import-source-chip">{importMetadata.source || 'loadrunner'}</span>
-              </div>
+                <span className="chevron">{openSections['import'] ? '▾' : '▸'}</span>
+              </button>
 
-              <div className="import-metadata-grid">
-                <div className="import-metadata-card">
-                  <span>Source Script</span>
-                  <strong>{importMetadata.source_script_name || script.name}</strong>
-                </div>
-                <div className="import-metadata-card">
-                  <span>Project Sections</span>
-                  <strong>{importSummary.projectSections.length}</strong>
-                  <small>{importSummary.projectSections.join(', ') || 'None captured'}</small>
-                </div>
-                <div className="import-metadata-card">
-                  <span>Runtime Files</span>
-                  <strong>{importSummary.runtimeFiles.length}</strong>
-                  <small>{importSummary.runtimeFiles.join(', ') || 'None found'}</small>
-                </div>
-                <div className="import-metadata-card">
-                  <span>Unsupported Functions</span>
-                  <strong>{importSummary.unsupportedFunctions.length}</strong>
-                  <small>{importSummary.unsupportedFunctions.slice(0, 4).join(', ') || 'None'}</small>
-                </div>
-              </div>
+              {openSections['import'] && (
+                <div className="panel-body" style={{ padding: '0 20px 20px' }}>
+                  <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 14 }}>This script retains source-specific LoadRunner settings that Stormrunner does not edit directly.</p>
+                  <div className="import-metadata-grid">
+                    <div className="import-metadata-card">
+                      <span>Source Script</span>
+                      <strong>{importMetadata.source_script_name || script.name}</strong>
+                    </div>
+                    <div className="import-metadata-card">
+                      <span>Project Sections</span>
+                      <strong>{importSummary.projectSections.length}</strong>
+                      <small>{importSummary.projectSections.join(', ') || 'None captured'}</small>
+                    </div>
+                    <div className="import-metadata-card">
+                      <span>Runtime Files</span>
+                      <strong>{importSummary.runtimeFiles.length}</strong>
+                      <small>{importSummary.runtimeFiles.join(', ') || 'None found'}</small>
+                    </div>
+                    <div className="import-metadata-card">
+                      <span>Unsupported Functions</span>
+                      <strong>{importSummary.unsupportedFunctions.length}</strong>
+                      <small>{importSummary.unsupportedFunctions.slice(0, 4).join(', ') || 'None'}</small>
+                    </div>
+                  </div>
 
-              <details className="import-metadata-details">
-                <summary>View preserved metadata JSON</summary>
-                <pre>{JSON.stringify(importMetadata, null, 2)}</pre>
-              </details>
+                  <details className="import-metadata-details">
+                    <summary>View preserved metadata JSON</summary>
+                    <pre>{JSON.stringify(importMetadata, null, 2)}</pre>
+                  </details>
+                </div>
+              )}
             </div>
           )}
 
           {/* Runtime Settings Panels */}
-          <div className="runtime-settings">
-            <h3 className="settings-heading">Runtime Settings</h3>
-            <div className="runtime-settings-grid">
-
-            {/* Think Time */}
-            <div className={`settings-section ${openSections['think'] ? 'open' : ''}`}>
-              <button className="section-toggle" onClick={() => toggleSection('think')}>
-                <span className="section-icon">{'\u23f1'}</span>
-                <span className="section-label">Think Time</span>
-                <span className="section-summary">
-                  {script.config.think_time?.ignore ? 'Disabled' : `${script.config.think_time?.type || 'fixed'} — ${script.config.think_time?.mean_ms || 0}ms`}
-                </span>
-                <span className="chevron">{openSections['think'] ? '▾' : '▸'}</span>
-              </button>
-              {openSections['think'] && (
-                <div className="section-body">
-                  <div className="form-grid">
-                    <label>
-                      <span>Distribution</span>
-                      <select value={script.config.think_time?.type || 'fixed'}
-                        onChange={e => updateField('config.think_time', { ...script.config.think_time, type: e.target.value })}>
-                        <option value="fixed">Fixed</option>
-                        <option value="gaussian">Gaussian (Normal)</option>
-                        <option value="uniform">Uniform (Random)</option>
-                      </select>
-                    </label>
-                    <label>
-                      <span>Mean (ms)</span>
-                      <input type="number" value={script.config.think_time?.mean_ms || 0}
-                        onChange={e => updateField('config.think_time', { ...script.config.think_time, mean_ms: Number(e.target.value) })} />
-                    </label>
-                    {script.config.think_time?.type === 'gaussian' && (
-                      <label>
-                        <span>Std Dev (ms)</span>
-                        <input type="number" value={script.config.think_time?.std_ms || 0}
-                          onChange={e => updateField('config.think_time', { ...script.config.think_time, std_ms: Number(e.target.value) })} />
-                      </label>
-                    )}
-                    {(script.config.think_time?.type === 'uniform' || script.config.think_time?.type === 'gaussian') && (
-                      <>
+          <div className={`runtime-settings config-panel ${openSections['runtime'] ? 'open' : ''}`} style={{ padding: 0 }}>
+            <button className="panel-header-toggle" onClick={() => toggleSection('runtime')} style={{ padding: '16px 20px', borderBottom: openSections['runtime'] ? '1px solid var(--border)' : 'none' }}>
+              <h3 className="panel-title">Runtime Settings</h3>
+              <span className="chevron">{openSections['runtime'] ? '▾' : '▸'}</span>
+            </button>
+            {openSections['runtime'] && (
+              <div className="runtime-settings-grid" style={{ padding: 20 }}>
+                {/* Think Time */}
+                <div className={`settings-section ${openSections['think'] ? 'open' : ''}`}>
+                  <button className="section-toggle" onClick={() => toggleSection('think')}>
+                    <span className="section-icon">{'\u23f1'}</span>
+                    <span className="section-label">Think Time</span>
+                    <span className="section-summary">
+                      {script.config.think_time?.ignore ? 'Disabled' : `${script.config.think_time?.type || 'fixed'} — ${script.config.think_time?.mean_ms || 0}ms`}
+                    </span>
+                    <span className="chevron">{openSections['think'] ? '▾' : '▸'}</span>
+                  </button>
+                  {openSections['think'] && (
+                    <div className="section-body">
+                      <div className="form-grid">
                         <label>
-                          <span>Min (ms)</span>
-                          <input type="number" value={script.config.think_time?.min_ms || 0}
-                            onChange={e => updateField('config.think_time', { ...script.config.think_time, min_ms: Number(e.target.value) })} />
-                        </label>
-                        <label>
-                          <span>Max (ms)</span>
-                          <input type="number" value={script.config.think_time?.max_ms || 0}
-                            onChange={e => updateField('config.think_time', { ...script.config.think_time, max_ms: Number(e.target.value) })} />
-                        </label>
-                      </>
-                    )}
-                    <label>
-                      <span>Multiplier</span>
-                      <input type="number" step="0.1" value={script.config.think_time?.multiplier || 1.0}
-                        onChange={e => updateField('config.think_time', { ...script.config.think_time, multiplier: Number(e.target.value) })} />
-                    </label>
-                    <label>
-                      <span>Limit (ms)</span>
-                      <input type="number" value={script.config.think_time?.limit_ms || 0} placeholder="0 = no limit"
-                        onChange={e => updateField('config.think_time', { ...script.config.think_time, limit_ms: Number(e.target.value) })} />
-                    </label>
-                    <label className="checkbox-label">
-                      <input type="checkbox" checked={script.config.think_time?.ignore || false}
-                        onChange={e => updateField('config.think_time', { ...script.config.think_time, ignore: e.target.checked })} />
-                      <span>Ignore all think times</span>
-                    </label>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Pacing */}
-            <div className={`settings-section ${openSections['pacing'] ? 'open' : ''}`}>
-              <button className="section-toggle" onClick={() => toggleSection('pacing')}>
-                <span className="section-icon">{'\ud83d\udd04'}</span>
-                <span className="section-label">Iteration Pacing</span>
-                <span className="section-summary">{script.config.pacing?.type || 'none'}</span>
-                <span className="chevron">{openSections['pacing'] ? '▾' : '▸'}</span>
-              </button>
-              {openSections['pacing'] && (
-                <div className="section-body">
-                  <div className="form-grid">
-                    <label className="full-width">
-                      <span>Pacing Mode</span>
-                      <select value={script.config.pacing?.type || 'none'}
-                        onChange={e => updateField('config.pacing', { ...script.config.pacing, type: e.target.value })}>
-                        <option value="none">No delay (as fast as possible)</option>
-                        <option value="fixed_delay">Fixed delay after iteration</option>
-                        <option value="random_delay">Random delay after iteration</option>
-                        <option value="fixed_interval">Fixed interval from iteration start</option>
-                        <option value="random_interval">Random interval from iteration start</option>
-                      </select>
-                    </label>
-                    {script.config.pacing?.type === 'fixed_delay' && (
-                      <label><span>Delay (ms)</span>
-                        <input type="number" value={script.config.pacing?.delay_ms || 0}
-                          onChange={e => updateField('config.pacing', { ...script.config.pacing, delay_ms: Number(e.target.value) })} />
-                      </label>
-                    )}
-                    {script.config.pacing?.type === 'random_delay' && (
-                      <>
-                        <label><span>Min Delay (ms)</span>
-                          <input type="number" value={script.config.pacing?.min_delay_ms || 0}
-                            onChange={e => updateField('config.pacing', { ...script.config.pacing, min_delay_ms: Number(e.target.value) })} />
-                        </label>
-                        <label><span>Max Delay (ms)</span>
-                          <input type="number" value={script.config.pacing?.max_delay_ms || 0}
-                            onChange={e => updateField('config.pacing', { ...script.config.pacing, max_delay_ms: Number(e.target.value) })} />
-                        </label>
-                      </>
-                    )}
-                    {script.config.pacing?.type === 'fixed_interval' && (
-                      <label><span>Interval (ms)</span>
-                        <input type="number" value={script.config.pacing?.interval_ms || 0}
-                          onChange={e => updateField('config.pacing', { ...script.config.pacing, interval_ms: Number(e.target.value) })} />
-                      </label>
-                    )}
-                    {script.config.pacing?.type === 'random_interval' && (
-                      <>
-                        <label><span>Min Interval (ms)</span>
-                          <input type="number" value={script.config.pacing?.min_interval_ms || 0}
-                            onChange={e => updateField('config.pacing', { ...script.config.pacing, min_interval_ms: Number(e.target.value) })} />
-                        </label>
-                        <label><span>Max Interval (ms)</span>
-                          <input type="number" value={script.config.pacing?.max_interval_ms || 0}
-                            onChange={e => updateField('config.pacing', { ...script.config.pacing, max_interval_ms: Number(e.target.value) })} />
-                        </label>
-                      </>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Run Logic */}
-            <div className={`settings-section ${openSections['runlogic'] ? 'open' : ''}`}>
-              <button className="section-toggle" onClick={() => toggleSection('runlogic')}>
-                <span className="section-icon">{'\ud83d\udd01'}</span>
-                <span className="section-label">Run Logic</span>
-                <span className="section-summary">
-                  {script.config.run_logic?.iterations ? `${script.config.run_logic.iterations} iterations` : 'Run until duration'}
-                </span>
-                <span className="chevron">{openSections['runlogic'] ? '▾' : '▸'}</span>
-              </button>
-              {openSections['runlogic'] && (
-                <div className="section-body">
-                  <div className="form-grid">
-                    <label>
-                      <span>Iterations</span>
-                      <input type="number" value={script.config.run_logic?.iterations || 0} placeholder="0 = run until duration"
-                        onChange={e => updateField('config.run_logic', { ...script.config.run_logic, iterations: Number(e.target.value) })} />
-                    </label>
-                    <label>
-                      <span>Auto-Transactions</span>
-                      <select value={script.config.run_logic?.auto_transactions || 'none'}
-                        onChange={e => updateField('config.run_logic', { ...script.config.run_logic, auto_transactions: e.target.value })}>
-                        <option value="none">None</option>
-                        <option value="per_action">Per Action</option>
-                        <option value="per_iteration">Per Iteration</option>
-                      </select>
-                    </label>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Error Handling */}
-            <div className={`settings-section ${openSections['errors'] ? 'open' : ''}`}>
-              <button className="section-toggle" onClick={() => toggleSection('errors')}>
-                <span className="section-icon">{'\u26a0\ufe0f'}</span>
-                <span className="section-label">Error Handling</span>
-                <span className="section-summary">
-                  {script.config.error_handling?.continue_on_error ? 'Continue on error' : 'Stop on error'}
-                </span>
-                <span className="chevron">{openSections['errors'] ? '▾' : '▸'}</span>
-              </button>
-              {openSections['errors'] && (
-                <div className="section-body">
-                  <div className="form-grid">
-                    <label className="checkbox-label">
-                      <input type="checkbox" checked={script.config.error_handling?.continue_on_error || false}
-                        onChange={e => updateField('config.error_handling', { ...script.config.error_handling, continue_on_error: e.target.checked })} />
-                      <span>Continue on error</span>
-                    </label>
-                    <label className="checkbox-label">
-                      <input type="checkbox" checked={script.config.error_handling?.snapshot_on_error || false}
-                        onChange={e => updateField('config.error_handling', { ...script.config.error_handling, snapshot_on_error: e.target.checked })} />
-                      <span>Capture snapshot on error</span>
-                    </label>
-                    <label>
-                      <span>Max Retries</span>
-                      <input type="number" value={script.config.error_handling?.max_retries || 0}
-                        onChange={e => updateField('config.error_handling', { ...script.config.error_handling, max_retries: Number(e.target.value) })} />
-                    </label>
-                    {(script.config.error_handling?.max_retries || 0) > 0 && (
-                      <>
-                        <label>
-                          <span>Retry Delay (ms)</span>
-                          <input type="number" value={script.config.error_handling?.retry_delay_ms || 1000}
-                            onChange={e => updateField('config.error_handling', { ...script.config.error_handling, retry_delay_ms: Number(e.target.value) })} />
-                        </label>
-                        <label>
-                          <span>Retry Backoff</span>
-                          <select value={script.config.error_handling?.retry_backoff || 'fixed'}
-                            onChange={e => updateField('config.error_handling', { ...script.config.error_handling, retry_backoff: e.target.value })}>
+                          <span>Distribution</span>
+                          <select value={script.config.think_time?.type || 'fixed'}
+                            onChange={e => updateField('config.think_time', { ...script.config.think_time, type: e.target.value })}>
                             <option value="fixed">Fixed</option>
-                            <option value="exponential">Exponential</option>
+                            <option value="gaussian">Gaussian (Normal)</option>
+                            <option value="uniform">Uniform (Random)</option>
                           </select>
                         </label>
-                      </>
-                    )}
-                  </div>
+                        <label>
+                          <span>Mean (ms)</span>
+                          <input type="number" value={script.config.think_time?.mean_ms || 0}
+                            onChange={e => updateField('config.think_time', { ...script.config.think_time, mean_ms: Number(e.target.value) })} />
+                        </label>
+                        {script.config.think_time?.type === 'gaussian' && (
+                          <label>
+                            <span>Std Dev (ms)</span>
+                            <input type="number" value={script.config.think_time?.std_ms || 0}
+                              onChange={e => updateField('config.think_time', { ...script.config.think_time, std_ms: Number(e.target.value) })} />
+                          </label>
+                        )}
+                        {(script.config.think_time?.type === 'uniform' || script.config.think_time?.type === 'gaussian') && (
+                          <>
+                            <label>
+                              <span>Min (ms)</span>
+                              <input type="number" value={script.config.think_time?.min_ms || 0}
+                                onChange={e => updateField('config.think_time', { ...script.config.think_time, min_ms: Number(e.target.value) })} />
+                            </label>
+                            <label>
+                              <span>Max (ms)</span>
+                              <input type="number" value={script.config.think_time?.max_ms || 0}
+                                onChange={e => updateField('config.think_time', { ...script.config.think_time, max_ms: Number(e.target.value) })} />
+                            </label>
+                          </>
+                        )}
+                        <label>
+                          <span>Multiplier</span>
+                          <input type="number" step="0.1" value={script.config.think_time?.multiplier || 1.0}
+                            onChange={e => updateField('config.think_time', { ...script.config.think_time, multiplier: Number(e.target.value) })} />
+                        </label>
+                        <label>
+                          <span>Limit (ms)</span>
+                          <input type="number" value={script.config.think_time?.limit_ms || 0} placeholder="0 = no limit"
+                            onChange={e => updateField('config.think_time', { ...script.config.think_time, limit_ms: Number(e.target.value) })} />
+                        </label>
+                        <label className="checkbox-label">
+                          <input type="checkbox" checked={script.config.think_time?.ignore || false}
+                            onChange={e => updateField('config.think_time', { ...script.config.think_time, ignore: e.target.checked })} />
+                          <span>Ignore all think times</span>
+                        </label>
+                      </div>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
 
-            {/* HTTP Protocol */}
-            <div className={`settings-section ${openSections['http'] ? 'open' : ''}`}>
-              <button className="section-toggle" onClick={() => toggleSection('http')}>
-                <span className="section-icon">{'\ud83c\udf10'}</span>
-                <span className="section-label">HTTP Protocol</span>
-                <span className="section-summary">
-                  {script.config.http?.proxy?.url ? 'Proxy configured' : script.config.http?.auth?.type ? `Auth: ${script.config.http.auth.type}` : 'Default'}
-                </span>
-                <span className="chevron">{openSections['http'] ? '▾' : '▸'}</span>
-              </button>
-              {openSections['http'] && (
-                <div className="section-body">
-                  <div className="settings-sub-group">
-                    <h5>Timeouts</h5>
-                    <div className="form-grid">
-                      <label><span>Connect (ms)</span>
-                        <input type="number" value={script.config.http?.connect_timeout_ms || 30000}
-                          onChange={e => updateField('config.http', { ...script.config.http, connect_timeout_ms: Number(e.target.value) })} /></label>
-                      <label><span>Request (ms)</span>
-                        <input type="number" value={script.config.http?.request_timeout_ms || 60000}
-                          onChange={e => updateField('config.http', { ...script.config.http, request_timeout_ms: Number(e.target.value) })} /></label>
-                      <label><span>TLS Handshake (ms)</span>
-                        <input type="number" value={script.config.http?.tls_timeout_ms || 10000}
-                          onChange={e => updateField('config.http', { ...script.config.http, tls_timeout_ms: Number(e.target.value) })} /></label>
-                      <label><span>Idle Connection (ms)</span>
-                        <input type="number" value={script.config.http?.idle_timeout_ms || 90000}
-                          onChange={e => updateField('config.http', { ...script.config.http, idle_timeout_ms: Number(e.target.value) })} /></label>
+                {/* Pacing */}
+                <div className={`settings-section ${openSections['pacing'] ? 'open' : ''}`}>
+                  <button className="section-toggle" onClick={() => toggleSection('pacing')}>
+                    <span className="section-icon">{'\ud83d\udd04'}</span>
+                    <span className="section-label">Iteration Pacing</span>
+                    <span className="section-summary">{script.config.pacing?.type || 'none'}</span>
+                    <span className="chevron">{openSections['pacing'] ? '▾' : '▸'}</span>
+                  </button>
+                  {openSections['pacing'] && (
+                    <div className="section-body">
+                      <div className="form-grid">
+                        <label className="full-width">
+                          <span>Pacing Mode</span>
+                          <select value={script.config.pacing?.type || 'none'}
+                            onChange={e => updateField('config.pacing', { ...script.config.pacing, type: e.target.value })}>
+                            <option value="none">No delay (as fast as possible)</option>
+                            <option value="fixed_delay">Fixed delay after iteration</option>
+                            <option value="random_delay">Random delay after iteration</option>
+                            <option value="fixed_interval">Fixed interval from iteration start</option>
+                            <option value="random_interval">Random interval from iteration start</option>
+                          </select>
+                        </label>
+                        {script.config.pacing?.type === 'fixed_delay' && (
+                          <label><span>Delay (ms)</span>
+                            <input type="number" value={script.config.pacing?.delay_ms || 0}
+                              onChange={e => updateField('config.pacing', { ...script.config.pacing, delay_ms: Number(e.target.value) })} />
+                          </label>
+                        )}
+                        {script.config.pacing?.type === 'random_delay' && (
+                          <>
+                            <label><span>Min Delay (ms)</span>
+                              <input type="number" value={script.config.pacing?.min_delay_ms || 0}
+                                onChange={e => updateField('config.pacing', { ...script.config.pacing, min_delay_ms: Number(e.target.value) })} />
+                            </label>
+                            <label><span>Max Delay (ms)</span>
+                              <input type="number" value={script.config.pacing?.max_delay_ms || 0}
+                                onChange={e => updateField('config.pacing', { ...script.config.pacing, max_delay_ms: Number(e.target.value) })} />
+                            </label>
+                          </>
+                        )}
+                        {script.config.pacing?.type === 'fixed_interval' && (
+                          <label><span>Interval (ms)</span>
+                            <input type="number" value={script.config.pacing?.interval_ms || 0}
+                              onChange={e => updateField('config.pacing', { ...script.config.pacing, interval_ms: Number(e.target.value) })} />
+                          </label>
+                        )}
+                        {script.config.pacing?.type === 'random_interval' && (
+                          <>
+                            <label><span>Min Interval (ms)</span>
+                              <input type="number" value={script.config.pacing?.min_interval_ms || 0}
+                                onChange={e => updateField('config.pacing', { ...script.config.pacing, min_interval_ms: Number(e.target.value) })} />
+                            </label>
+                            <label><span>Max Interval (ms)</span>
+                              <input type="number" value={script.config.pacing?.max_interval_ms || 0}
+                                onChange={e => updateField('config.pacing', { ...script.config.pacing, max_interval_ms: Number(e.target.value) })} />
+                            </label>
+                          </>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                  <div className="settings-sub-group">
-                    <h5>Connection</h5>
-                    <div className="form-grid">
-                      <label><span>HTTP Version</span>
-                        <select value={script.config.http?.version || 'auto'}
-                          onChange={e => updateField('config.http', { ...script.config.http, version: e.target.value })}>
-                          <option value="auto">Auto-negotiate</option>
-                          <option value="1.1">HTTP/1.1</option>
-                          <option value="2">HTTP/2</option>
-                        </select></label>
-                      <label><span>Max Conns/Host</span>
-                        <input type="number" value={script.config.http?.max_conns_per_host || 100}
-                          onChange={e => updateField('config.http', { ...script.config.http, max_conns_per_host: Number(e.target.value) })} /></label>
-                      <label><span>Max Redirects</span>
-                        <input type="number" value={script.config.http?.max_redirects ?? 10}
-                          onChange={e => updateField('config.http', { ...script.config.http, max_redirects: Number(e.target.value) })} /></label>
-                    </div>
-                  </div>
-                  <div className="settings-sub-group">
-                    <h5>TLS / SSL</h5>
-                    <div className="form-grid">
-                      <label><span>Min TLS Version</span>
-                        <select value={script.config.http?.tls?.min_version || '1.2'}
-                          onChange={e => updateField('config.http', { ...script.config.http, tls: { ...script.config.http?.tls, min_version: e.target.value } })}>
-                          <option value="1.0">TLS 1.0</option><option value="1.1">TLS 1.1</option>
-                          <option value="1.2">TLS 1.2</option><option value="1.3">TLS 1.3</option>
-                        </select></label>
-                      <label className="checkbox-label">
-                        <input type="checkbox" checked={script.config.http?.tls?.insecure_skip_verify || false}
-                          onChange={e => updateField('config.http', { ...script.config.http, tls: { ...script.config.http?.tls, insecure_skip_verify: e.target.checked } })} />
-                        <span>Skip certificate verification</span>
-                      </label>
-                    </div>
-                  </div>
-                  <div className="settings-sub-group">
-                    <h5>Proxy</h5>
-                    <div className="form-grid">
-                      <label className="full-width"><span>Proxy URL</span>
-                        <input value={script.config.http?.proxy?.url || ''} placeholder="http://proxy:8080"
-                          onChange={e => updateField('config.http', { ...script.config.http, proxy: { ...script.config.http?.proxy, url: e.target.value } })} /></label>
-                      {script.config.http?.proxy?.url && (
-                        <>
-                          <label><span>Proxy Username</span>
-                            <input value={script.config.http?.proxy?.username || ''}
-                              onChange={e => updateField('config.http', { ...script.config.http, proxy: { ...script.config.http?.proxy, username: e.target.value } })} /></label>
-                          <label><span>Proxy Password</span>
-                            <input type="password" value={script.config.http?.proxy?.password || ''}
-                              onChange={e => updateField('config.http', { ...script.config.http, proxy: { ...script.config.http?.proxy, password: e.target.value } })} /></label>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                  <div className="settings-sub-group">
-                    <h5>Authentication</h5>
-                    <div className="form-grid">
-                      <label><span>Auth Type</span>
-                        <select value={script.config.http?.auth?.type || ''}
-                          onChange={e => updateField('config.http', { ...script.config.http, auth: { ...script.config.http?.auth, type: e.target.value } })}>
-                          <option value="">None</option>
-                          <option value="basic">Basic</option>
-                          <option value="bearer">Bearer Token</option>
-                          <option value="ntlm">NTLM</option>
-                        </select></label>
-                      {(script.config.http?.auth?.type === 'basic' || script.config.http?.auth?.type === 'ntlm') && (
-                        <>
-                          <label><span>Username</span>
-                            <input value={script.config.http?.auth?.username || ''}
-                              onChange={e => updateField('config.http', { ...script.config.http, auth: { ...script.config.http?.auth, username: e.target.value } })} /></label>
-                          <label><span>Password</span>
-                            <input type="password" value={script.config.http?.auth?.password || ''}
-                              onChange={e => updateField('config.http', { ...script.config.http, auth: { ...script.config.http?.auth, password: e.target.value } })} /></label>
-                        </>
-                      )}
-                      {script.config.http?.auth?.type === 'bearer' && (
-                        <label className="full-width"><span>Token</span>
-                          <input value={script.config.http?.auth?.token || ''} placeholder="eyJhbGciOiJIUzI1NiIs..."
-                            onChange={e => updateField('config.http', { ...script.config.http, auth: { ...script.config.http?.auth, token: e.target.value } })} /></label>
-                      )}
-                    </div>
-                  </div>
-                  <div className="settings-sub-group">
-                    <h5>Browser Emulation</h5>
-                    <div className="form-grid">
-                      <label className="full-width"><span>User-Agent</span>
-                        <input value={script.config.http?.user_agent || ''} placeholder="Mozilla/5.0 ..."
-                          onChange={e => updateField('config.http', { ...script.config.http, user_agent: e.target.value })} /></label>
-                      <label><span>Accept-Encoding</span>
-                        <input value={script.config.http?.accept_encoding || ''} placeholder="gzip, deflate, br"
-                          onChange={e => updateField('config.http', { ...script.config.http, accept_encoding: e.target.value })} /></label>
-                      <label><span>Accept-Language</span>
-                        <input value={script.config.http?.accept_language || ''} placeholder="en-US,en;q=0.9"
-                          onChange={e => updateField('config.http', { ...script.config.http, accept_language: e.target.value })} /></label>
-                    </div>
-                  </div>
+                  )}
                 </div>
-              )}
-            </div>
 
-            {/* Logging */}
-            <div className={`settings-section ${openSections['log'] ? 'open' : ''}`}>
-              <button className="section-toggle" onClick={() => toggleSection('log')}>
-                <span className="section-icon">{'\ud83d\udccb'}</span>
-                <span className="section-label">Logging</span>
-                <span className="section-summary">{script.config.log?.level || 'standard'}</span>
-                <span className="chevron">{openSections['log'] ? '▾' : '▸'}</span>
-              </button>
-              {openSections['log'] && (
-                <div className="section-body">
-                  <div className="form-grid">
-                    <label>
-                      <span>Log Level</span>
-                      <select value={script.config.log?.level || 'standard'}
-                        onChange={e => updateField('config.log', { ...script.config.log, level: e.target.value })}>
-                        <option value="disabled">Disabled</option>
-                        <option value="standard">Standard</option>
-                        <option value="extended">Extended (verbose)</option>
-                      </select>
-                    </label>
-                    <label className="checkbox-label">
-                      <input type="checkbox" checked={script.config.log?.on_error_only || false}
-                        onChange={e => updateField('config.log', { ...script.config.log, on_error_only: e.target.checked })} />
-                      <span>Extended log on error only</span>
-                    </label>
-                  </div>
+                {/* Run Logic */}
+                <div className={`settings-section ${openSections['runlogic'] ? 'open' : ''}`}>
+                  <button className="section-toggle" onClick={() => toggleSection('runlogic')}>
+                    <span className="section-icon">{'\ud83d\udd01'}</span>
+                    <span className="section-label">Run Logic</span>
+                    <span className="section-summary">
+                      {script.config.run_logic?.iterations ? `${script.config.run_logic.iterations} iterations` : 'Run until duration'}
+                    </span>
+                    <span className="chevron">{openSections['runlogic'] ? '▾' : '▸'}</span>
+                  </button>
+                  {openSections['runlogic'] && (
+                    <div className="section-body">
+                      <div className="form-grid">
+                        <label>
+                          <span>Iterations</span>
+                          <input type="number" value={script.config.run_logic?.iterations || 0} placeholder="0 = run until duration"
+                            onChange={e => updateField('config.run_logic', { ...script.config.run_logic, iterations: Number(e.target.value) })} />
+                        </label>
+                        <label>
+                          <span>Auto-Transactions</span>
+                          <select value={script.config.run_logic?.auto_transactions || 'none'}
+                            onChange={e => updateField('config.run_logic', { ...script.config.run_logic, auto_transactions: e.target.value })}>
+                            <option value="none">None</option>
+                            <option value="per_action">Per Action</option>
+                            <option value="per_iteration">Per Iteration</option>
+                          </select>
+                        </label>
+                      </div>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-            </div>
+
+                {/* Error Handling */}
+                <div className={`settings-section ${openSections['errors'] ? 'open' : ''}`}>
+                  <button className="section-toggle" onClick={() => toggleSection('errors')}>
+                    <span className="section-icon">{'\u26a0\ufe0f'}</span>
+                    <span className="section-label">Error Handling</span>
+                    <span className="section-summary">
+                      {script.config.error_handling?.continue_on_error ? 'Continue on error' : 'Stop on error'}
+                    </span>
+                    <span className="chevron">{openSections['errors'] ? '▾' : '▸'}</span>
+                  </button>
+                  {openSections['errors'] && (
+                    <div className="section-body">
+                      <div className="form-grid">
+                        <label className="checkbox-label">
+                          <input type="checkbox" checked={script.config.error_handling?.continue_on_error || false}
+                            onChange={e => updateField('config.error_handling', { ...script.config.error_handling, continue_on_error: e.target.checked })} />
+                          <span>Continue on error</span>
+                        </label>
+                        <label className="checkbox-label">
+                          <input type="checkbox" checked={script.config.error_handling?.snapshot_on_error || false}
+                            onChange={e => updateField('config.error_handling', { ...script.config.error_handling, snapshot_on_error: e.target.checked })} />
+                          <span>Capture snapshot on error</span>
+                        </label>
+                        <label>
+                          <span>Max Retries</span>
+                          <input type="number" value={script.config.error_handling?.max_retries || 0}
+                            onChange={e => updateField('config.error_handling', { ...script.config.error_handling, max_retries: Number(e.target.value) })} />
+                        </label>
+                        {(script.config.error_handling?.max_retries || 0) > 0 && (
+                          <>
+                            <label>
+                              <span>Retry Delay (ms)</span>
+                              <input type="number" value={script.config.error_handling?.retry_delay_ms || 1000}
+                                onChange={e => updateField('config.error_handling', { ...script.config.error_handling, retry_delay_ms: Number(e.target.value) })} />
+                            </label>
+                            <label>
+                              <span>Retry Backoff</span>
+                              <select value={script.config.error_handling?.retry_backoff || 'fixed'}
+                                onChange={e => updateField('config.error_handling', { ...script.config.error_handling, retry_backoff: e.target.value })}>
+                                <option value="fixed">Fixed</option>
+                                <option value="exponential">Exponential</option>
+                              </select>
+                            </label>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* HTTP Protocol */}
+                <div className={`settings-section ${openSections['http'] ? 'open' : ''}`}>
+                  <button className="section-toggle" onClick={() => toggleSection('http')}>
+                    <span className="section-icon">{'\ud83c\udf10'}</span>
+                    <span className="section-label">HTTP Protocol</span>
+                    <span className="section-summary">
+                      {script.config.http?.proxy?.url ? 'Proxy configured' : script.config.http?.auth?.type ? `Auth: ${script.config.http.auth.type}` : 'Default'}
+                    </span>
+                    <span className="chevron">{openSections['http'] ? '▾' : '▸'}</span>
+                  </button>
+                  {openSections['http'] && (
+                    <div className="section-body">
+                      <div className="settings-sub-group">
+                        <h5>Timeouts</h5>
+                        <div className="form-grid">
+                          <label><span>Connect (ms)</span>
+                            <input type="number" value={script.config.http?.connect_timeout_ms || 30000}
+                              onChange={e => updateField('config.http', { ...script.config.http, connect_timeout_ms: Number(e.target.value) })} /></label>
+                          <label><span>Request (ms)</span>
+                            <input type="number" value={script.config.http?.request_timeout_ms || 60000}
+                              onChange={e => updateField('config.http', { ...script.config.http, request_timeout_ms: Number(e.target.value) })} /></label>
+                          <label><span>TLS Handshake (ms)</span>
+                            <input type="number" value={script.config.http?.tls_timeout_ms || 10000}
+                              onChange={e => updateField('config.http', { ...script.config.http, tls_timeout_ms: Number(e.target.value) })} /></label>
+                          <label><span>Idle Connection (ms)</span>
+                            <input type="number" value={script.config.http?.idle_timeout_ms || 90000}
+                              onChange={e => updateField('config.http', { ...script.config.http, idle_timeout_ms: Number(e.target.value) })} /></label>
+                        </div>
+                      </div>
+                      <div className="settings-sub-group">
+                        <h5>Connection</h5>
+                        <div className="form-grid">
+                          <label><span>HTTP Version</span>
+                            <select value={script.config.http?.version || 'auto'}
+                              onChange={e => updateField('config.http', { ...script.config.http, version: e.target.value })}>
+                              <option value="auto">Auto-negotiate</option>
+                              <option value="1.1">HTTP/1.1</option>
+                              <option value="2">HTTP/2</option>
+                            </select></label>
+                          <label><span>Max Conns/Host</span>
+                            <input type="number" value={script.config.http?.max_conns_per_host || 100}
+                              onChange={e => updateField('config.http', { ...script.config.http, max_conns_per_host: Number(e.target.value) })} /></label>
+                          <label><span>Max Redirects</span>
+                            <input type="number" value={script.config.http?.max_redirects ?? 10}
+                              onChange={e => updateField('config.http', { ...script.config.http, max_redirects: Number(e.target.value) })} /></label>
+                        </div>
+                      </div>
+                      <div className="settings-sub-group">
+                        <h5>TLS / SSL</h5>
+                        <div className="form-grid">
+                          <label><span>Min TLS Version</span>
+                            <select value={script.config.http?.tls?.min_version || '1.2'}
+                              onChange={e => updateField('config.http', { ...script.config.http, tls: { ...script.config.http?.tls, min_version: e.target.value } })}>
+                              <option value="1.0">TLS 1.0</option><option value="1.1">TLS 1.1</option>
+                              <option value="1.2">TLS 1.2</option><option value="1.3">TLS 1.3</option>
+                            </select></label>
+                          <label className="checkbox-label">
+                            <input type="checkbox" checked={script.config.http?.tls?.insecure_skip_verify || false}
+                              onChange={e => updateField('config.http', { ...script.config.http, tls: { ...script.config.http?.tls, insecure_skip_verify: e.target.checked } })} />
+                            <span>Skip certificate verification</span>
+                          </label>
+                        </div>
+                      </div>
+                      <div className="settings-sub-group">
+                        <h5>Proxy</h5>
+                        <div className="form-grid">
+                          <label className="full-width"><span>Proxy URL</span>
+                            <input value={script.config.http?.proxy?.url || ''} placeholder="http://proxy:8080"
+                              onChange={e => updateField('config.http', { ...script.config.http, proxy: { ...script.config.http?.proxy, url: e.target.value } })} /></label>
+                          {script.config.http?.proxy?.url && (
+                            <>
+                              <label><span>Proxy Username</span>
+                                <input value={script.config.http?.proxy?.username || ''}
+                                  onChange={e => updateField('config.http', { ...script.config.http, proxy: { ...script.config.http?.proxy, username: e.target.value } })} /></label>
+                              <label><span>Proxy Password</span>
+                                <input type="password" value={script.config.http?.proxy?.password || ''}
+                                  onChange={e => updateField('config.http', { ...script.config.http, proxy: { ...script.config.http?.proxy, password: e.target.value } })} /></label>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                      <div className="settings-sub-group">
+                        <h5>Authentication</h5>
+                        <div className="form-grid">
+                          <label><span>Auth Type</span>
+                            <select value={script.config.http?.auth?.type || ''}
+                              onChange={e => updateField('config.http', { ...script.config.http, auth: { ...script.config.http?.auth, type: e.target.value } })}>
+                              <option value="">None</option>
+                              <option value="basic">Basic</option>
+                              <option value="bearer">Bearer Token</option>
+                              <option value="ntlm">NTLM</option>
+                            </select></label>
+                          {(script.config.http?.auth?.type === 'basic' || script.config.http?.auth?.type === 'ntlm') && (
+                            <>
+                              <label><span>Username</span>
+                                <input value={script.config.http?.auth?.username || ''}
+                                  onChange={e => updateField('config.http', { ...script.config.http, auth: { ...script.config.http?.auth, username: e.target.value } })} /></label>
+                              <label><span>Password</span>
+                                <input type="password" value={script.config.http?.auth?.password || ''}
+                                  onChange={e => updateField('config.http', { ...script.config.http, auth: { ...script.config.http?.auth, password: e.target.value } })} /></label>
+                            </>
+                          )}
+                          {script.config.http?.auth?.type === 'bearer' && (
+                            <label className="full-width"><span>Token</span>
+                              <input value={script.config.http?.auth?.token || ''} placeholder="eyJhbGciOiJIUzI1NiIs..."
+                                onChange={e => updateField('config.http', { ...script.config.http, auth: { ...script.config.http?.auth, token: e.target.value } })} /></label>
+                          )}
+                        </div>
+                      </div>
+                      <div className="settings-sub-group">
+                        <h5>Browser Emulation</h5>
+                        <div className="form-grid">
+                          <label className="full-width"><span>User-Agent</span>
+                            <input value={script.config.http?.user_agent || ''} placeholder="Mozilla/5.0 ..."
+                              onChange={e => updateField('config.http', { ...script.config.http, user_agent: e.target.value })} /></label>
+                          <label><span>Accept-Encoding</span>
+                            <input value={script.config.http?.accept_encoding || ''} placeholder="gzip, deflate, br"
+                              onChange={e => updateField('config.http', { ...script.config.http, accept_encoding: e.target.value })} /></label>
+                          <label><span>Accept-Language</span>
+                            <input value={script.config.http?.accept_language || ''} placeholder="en-US,en;q=0.9"
+                              onChange={e => updateField('config.http', { ...script.config.http, accept_language: e.target.value })} /></label>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Logging */}
+                <div className={`settings-section ${openSections['log'] ? 'open' : ''}`}>
+                  <button className="section-toggle" onClick={() => toggleSection('log')}>
+                    <span className="section-icon">{'\ud83d\udccb'}</span>
+                    <span className="section-label">Logging</span>
+                    <span className="section-summary">{script.config.log?.level || 'standard'}</span>
+                    <span className="chevron">{openSections['log'] ? '▾' : '▸'}</span>
+                  </button>
+                  {openSections['log'] && (
+                    <div className="section-body">
+                      <div className="form-grid">
+                        <label>
+                          <span>Log Level</span>
+                          <select value={script.config.log?.level || 'standard'}
+                            onChange={e => updateField('config.log', { ...script.config.log, level: e.target.value })}>
+                            <option value="disabled">Disabled</option>
+                            <option value="standard">Standard</option>
+                            <option value="extended">Extended (verbose)</option>
+                          </select>
+                        </label>
+                        <label className="checkbox-label">
+                          <input type="checkbox" checked={script.config.log?.on_error_only || false}
+                            onChange={e => updateField('config.log', { ...script.config.log, on_error_only: e.target.checked })} />
+                          <span>Extended log on error only</span>
+                        </label>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Actions List + Detail */}
           <div className="actions-layout">
-            <div className="actions-sidebar">
-              <div className="actions-sidebar-header">
-                <h3 className="panel-title">Actions ({script.actions.length})</h3>
-                <button className="btn btn-sm btn-accent" onClick={addAction}>+ Add</button>
-              </div>
-              <div className="action-list">
-                {script.actions.map((a, i) => (
-                  <div key={i} className={`action-item ${activeAction === i ? 'active' : ''}`} onClick={() => setActiveAction(i)}>
-                    <span className="action-method" style={{ color: methodColor(a.type) }}>{a.type}</span>
-                    <span className="action-name-text">{a.name || 'Unnamed'}</span>
-                    <div className="action-item-actions">
-                      <button className="btn-icon" onClick={e => { e.stopPropagation(); moveAction(i, -1) }} disabled={i === 0}>↑</button>
-                      <button className="btn-icon" onClick={e => { e.stopPropagation(); moveAction(i, 1) }} disabled={i === script.actions.length - 1}>↓</button>
-                      <button className="btn-icon danger" onClick={e => { e.stopPropagation(); removeAction(i) }}>✕</button>
+            <div className="actions-content-grid">
+              <div className="actions-sidebar">
+                <div className="actions-sidebar-header">
+                  <h3 className="panel-title" style={{ fontSize: 11 }}>Action List</h3>
+                  <button className="btn btn-sm btn-accent" onClick={addAction}>+ Add</button>
+                </div>
+                <div className="action-list">
+                  {script.actions.map((a, i) => (
+                    <div key={i} className={`action-item ${activeAction === i ? 'active' : ''}`} onClick={() => setActiveAction(i)}>
+                      <span className="action-method" style={{ color: methodColor(a.type) }}>{a.type}</span>
+                      <span className="action-name-text">{a.name || 'Unnamed'}</span>
+                      <div className="action-item-actions">
+                        <button className="btn-icon" onClick={e => { e.stopPropagation(); moveAction(i, -1) }} disabled={i === 0}>↑</button>
+                        <button className="btn-icon" onClick={e => { e.stopPropagation(); moveAction(i, 1) }} disabled={i === script.actions.length - 1}>↓</button>
+                        <button className="btn-icon danger" onClick={e => { e.stopPropagation(); removeAction(i) }}>✕</button>
+                      </div>
                     </div>
+                  ))}
+                  {script.actions.length === 0 && (
+                    <div className="action-empty">No actions yet. Click "+ Add" to create one.</div>
+                  )}
+                </div>
+              </div>
+
+              {/* Action Detail */}
+              <div className="action-detail">
+                {activeAction !== null && script.actions[activeAction] ? (
+                  <ActionEditor
+                    action={script.actions[activeAction]}
+                    index={activeAction}
+                    onUpdate={updateAction}
+                    onAddExtractor={addExtractor}
+                    onUpdateExtractor={updateExtractor}
+                    onRemoveExtractor={removeExtractor}
+                    onAddAssertion={addAssertion}
+                    onUpdateAssertion={updateAssertion}
+                    onRemoveAssertion={removeAssertion}
+                    onAddHeader={addHeader}
+                    onUpdateHeader={updateHeader}
+                    onRemoveHeader={removeHeader}
+                    methodColor={methodColor}
+                    isBrowserScript={isBrowserScript}
+                  />
+                ) : (
+                  <div className="action-placeholder">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="1.5"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+                    <p>Select an action to edit its details</p>
                   </div>
-                ))}
-                {script.actions.length === 0 && (
-                  <div className="action-empty">No actions yet. Click "+ Add" to create one.</div>
                 )}
               </div>
             </div>
-
-            {/* Action Detail */}
-            <div className="action-detail">
-              {activeAction !== null && script.actions[activeAction] ? (
-                <ActionEditor
-                  action={script.actions[activeAction]}
-                  index={activeAction}
-                  onUpdate={updateAction}
-                  onAddExtractor={addExtractor}
-                  onUpdateExtractor={updateExtractor}
-                  onRemoveExtractor={removeExtractor}
-                  onAddAssertion={addAssertion}
-                  onUpdateAssertion={updateAssertion}
-                  onRemoveAssertion={removeAssertion}
-                  onAddHeader={addHeader}
-                  onUpdateHeader={updateHeader}
-                  onRemoveHeader={removeHeader}
-                  methodColor={methodColor}
-                  isBrowserScript={isBrowserScript}
-                />
-              ) : (
-                <div className="action-placeholder">
-                  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="1.5"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
-                  <p>Select an action to edit its details</p>
-                </div>
-              )}
-            </div>
           </div>
 
-          <div className="config-panel">
-            <div className="panel-title-row">
-              <h3 className="panel-title">Parameter Data</h3>
-              <button className="btn btn-sm btn-accent" onClick={addDataSource}>+ Add Source</button>
-            </div>
+          <div className={`config-panel ${openSections['parameters'] ? 'open' : ''}`} style={{ padding: 0 }}>
+            <button className="panel-header-toggle" onClick={() => toggleSection('parameters')} style={{ padding: '16px 20px', borderBottom: openSections['parameters'] ? '1px solid var(--border)' : 'none' }}>
+              <div className="panel-title-row" style={{ marginBottom: 0 }}>
+                <h3 className="panel-title">Parameter Data ({script.data_sources?.length || 0})</h3>
+              </div>
+              <span className="chevron">{openSections['parameters'] ? '▾' : '▸'}</span>
+            </button>
 
-            {(script.data_sources?.length || 0) === 0 ? (
-              <div className="parameter-empty-state">No parameters defined. Add a data source to parameterize fields across requests.</div>
-            ) : (
-              <div className="parameter-table-wrap">
-                <table className="parameter-table">
-                  <thead>
-                    <tr>
-                      <th>Name</th>
-                      <th>Type</th>
-                      <th>Strategy</th>
-                      <th>Header Row</th>
-                      <th>Rows</th>
-                      <th>Columns</th>
-                      <th>Delimiter</th>
-                      <th>Data File Path</th>
-                      <th style={{ textAlign: 'right' }}>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(script.data_sources || []).map((source, idx) => (
-                      <tr key={`${source.name || 'source'}-${idx}`}>
-                        <td>
-                          <input
-                            value={source.name || ''}
-                            onChange={e => updateDataSource(idx, 'name', e.target.value)}
-                            placeholder="users"
-                          />
-                        </td>
-                        <td>
-                          <select value={source.type || 'csv'} onChange={e => updateDataSource(idx, 'type', e.target.value)}>
-                            <option value="csv">csv</option>
-                            <option value="dat">dat</option>
-                          </select>
-                        </td>
-                        <td>
-                          <select value={source.strategy || 'sequential'} onChange={e => updateDataSource(idx, 'strategy', e.target.value)}>
-                            <option value="sequential">sequential</option>
-                            <option value="random">random</option>
-                            <option value="unique">unique</option>
-                          </select>
-                        </td>
-                        <td>
-                          <label className="checkbox-label compact">
-                            <input
-                              type="checkbox"
-                              checked={source.first_row_header !== false}
-                              onChange={e => updateDataSource(idx, 'first_row_header', e.target.checked)}
-                            />
-                            <span>{source.first_row_header !== false ? 'Yes' : 'No'}</span>
-                          </label>
-                        </td>
-                        <td className="cell-mono">{summarizeInlineData(source).rows || '—'}</td>
-                        <td>
-                          <input
-                            value={(source.columns || []).join(', ')}
-                            onChange={e => updateDataSource(
-                              idx,
-                              'columns',
-                              e.target.value.split(',').map(v => v.trim()).filter(Boolean),
-                            )}
-                            placeholder="username, password"
-                          />
-                        </td>
-                        <td>
-                          <input
-                            value={source.delimiter ?? (source.type === 'dat' ? '\t' : ',')}
-                            onChange={e => updateDataSource(idx, 'delimiter', e.target.value)}
-                            placeholder={source.type === 'dat' ? '\\t' : ','}
-                          />
-                        </td>
-                        <td>
-                          <input
-                            value={source.path || ''}
-                            onChange={e => updateDataSource(idx, 'path', e.target.value)}
-                            placeholder="/absolute/path/to/data.csv (optional when inline data is used)"
-                          />
-                        </td>
-                        <td style={{ textAlign: 'right' }}>
-                          <div className="parameter-actions">
-                            <button className="btn btn-sm btn-ghost" onClick={() => setOpenDataEditor(openDataEditor === idx ? null : idx)}>
-                              {openDataEditor === idx ? 'Hide Data' : 'Edit Data'}
-                            </button>
-                            <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={() => removeDataSource(idx)}>Remove</button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+            {openSections['parameters'] && (
+              <div className="panel-body" style={{ padding: 20 }}>
+                <div className="panel-title-row">
+                  <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Define data sources to parameterize fields across requests.</span>
+                  <button className="btn btn-sm btn-accent" onClick={addDataSource}>+ Add Source</button>
+                </div>
+
+                {(script.data_sources?.length || 0) === 0 ? (
+                  <div className="parameter-empty-state">No parameters defined. Add a data source to parameterize fields across requests.</div>
+                ) : (
+                  <div className="parameter-table-wrap">
+                    <table className="parameter-table">
+                      <thead>
+                        <tr>
+                          <th>Name</th>
+                          <th>Type</th>
+                          <th>Strategy</th>
+                          <th>Header Row</th>
+                          <th>Rows</th>
+                          <th>Columns</th>
+                          <th>Delimiter</th>
+                          <th>Data File Path</th>
+                          <th style={{ textAlign: 'right' }}>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(script.data_sources || []).map((source, idx) => (
+                          <tr key={`${source.name || 'source'}-${idx}`}>
+                            <td>
+                              <input
+                                value={source.name || ''}
+                                onChange={e => updateDataSource(idx, 'name', e.target.value)}
+                                placeholder="users"
+                              />
+                            </td>
+                            <td>
+                              <select value={source.type || 'csv'} onChange={e => updateDataSource(idx, 'type', e.target.value)}>
+                                <option value="csv">csv</option>
+                                <option value="dat">dat</option>
+                              </select>
+                            </td>
+                            <td>
+                              <select value={source.strategy || 'sequential'} onChange={e => updateDataSource(idx, 'strategy', e.target.value)}>
+                                <option value="sequential">sequential</option>
+                                <option value="random">random</option>
+                                <option value="unique">unique</option>
+                              </select>
+                            </td>
+                            <td>
+                              <label className="checkbox-label compact">
+                                <input
+                                  type="checkbox"
+                                  checked={source.first_row_header !== false}
+                                  onChange={e => updateDataSource(idx, 'first_row_header', e.target.checked)}
+                                />
+                                <span>{source.first_row_header !== false ? 'Yes' : 'No'}</span>
+                              </label>
+                            </td>
+                            <td className="cell-mono">{summarizeInlineData(source).rows || '—'}</td>
+                            <td>
+                              <input
+                                value={(source.columns || []).join(', ')}
+                                onChange={e => updateDataSource(
+                                  idx,
+                                  'columns',
+                                  e.target.value.split(',').map(v => v.trim()).filter(Boolean),
+                                )}
+                                placeholder="username, password"
+                              />
+                            </td>
+                            <td>
+                              <input
+                                value={source.delimiter ?? (source.type === 'dat' ? '\t' : ',')}
+                                onChange={e => updateDataSource(idx, 'delimiter', e.target.value)}
+                                placeholder={source.type === 'dat' ? '\\t' : ','}
+                              />
+                            </td>
+                            <td>
+                              <input
+                                value={source.path || ''}
+                                onChange={e => updateDataSource(idx, 'path', e.target.value)}
+                                placeholder="/absolute/path/to/data.csv (optional when inline data is used)"
+                              />
+                            </td>
+                            <td style={{ textAlign: 'right' }}>
+                              <div className="parameter-actions">
+                                <button className="btn btn-sm btn-ghost" onClick={() => setOpenDataEditor(openDataEditor === idx ? null : idx)}>
+                                  {openDataEditor === idx ? 'Hide Data' : 'Edit Data'}
+                                </button>
+                                <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={() => removeDataSource(idx)}>Remove</button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
                     {(script.data_sources || []).map((source, idx) => (
                       openDataEditor === idx ? (
                         <tr key={`${source.name || 'source'}-${idx}-editor`} className="parameter-editor-row">
@@ -2559,9 +2603,11 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
                     ))}
                   </tbody>
                 </table>
-              </div>
-            )}
-          </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
         </div>
       )}
     </div>

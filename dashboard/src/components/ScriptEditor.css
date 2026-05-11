@@ -1294,6 +1294,40 @@
   from { opacity: 0; transform: translateY(-6px); }
   to { opacity: 1; transform: translateY(0); }
 }
+.panel-header-toggle {
+  display: flex; align-items: center; justify-content: space-between; width: 100%;
+  padding: 16px 20px; border: none; background: transparent;
+  cursor: pointer; text-align: left; transition: background 0.15s;
+}
+.panel-header-toggle:hover { background: var(--bg-hover); }
+.panel-header-toggle .panel-title { margin-bottom: 0; pointer-events: none; }
+.panel-header-toggle .chevron { font-size: 16px; }
+
+.config-panel.open {
+  border-color: var(--accent-transparent);
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.05);
+}
+
+.panel-body {
+  padding: 0 20px 20px;
+  animation: sectionReveal 0.2s ease;
+}
+
+.replaying-dot {
+  display: inline-block;
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--accent);
+  margin-left: 8px;
+  box-shadow: 0 0 8px var(--accent);
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(1.1); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
 .settings-sub-group {
   padding: 12px 0; border-top: 1px solid rgba(99, 102, 241, 0.1);
 }
