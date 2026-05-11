@@ -1,19 +1,21 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useApi } from '../hooks/useApi'
-import { StoredScript } from '../types'
+import { Folder, Project, StoredScript } from '../types'
 import ScriptEditor from './ScriptEditor'
 import LoadRunnerImport from './LoadRunnerImport'
 import RecordingStudio from './RecordingStudio'
 import SampleScriptImport from './SampleScriptImport'
+import FolderTree from './FolderTree'
 
 type SubView = 'list' | 'create-options' | 'create' | 'edit' | 'import' | 'recorder' | 'sample'
 
 interface Props {
   initialMode?: SubView
   initialEditId?: string
+  activeProject?: Project | null
 }
 
-export default function ScriptsPage({ initialMode = 'list', initialEditId }: Props) {
+export default function ScriptsPage({ initialMode = 'list', initialEditId, activeProject }: Props) {
   const api = useApi()
   const [scripts, setScripts] = useState<StoredScript[]>([])
   const [subView, setSubView] = useState<SubView>(initialMode === 'create' ? 'create-options' : initialMode)
@@ -23,15 +25,25 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId }: Pro
   const [sortField, setSortField] = useState<string>('name')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [folders, setFolders] = useState<Folder[]>([])
+  const [selectedFolderId, setSelectedFolderId] = useState<string | null | undefined>(undefined)
 
   const refresh = useCallback(async () => {
     try {
-      const res = await api.listScripts()
-      setScripts(res.scripts || [])
+      const [scriptRes, folderRes] = await Promise.all([
+        api.listScripts(activeProject?.id),
+        activeProject?.id ? api.listFolders(activeProject.id, 'scripts') : Promise.resolve({ folders: [] }),
+      ])
+      setScripts(scriptRes.scripts || [])
+      setFolders(folderRes.folders || [])
     } catch { /* API not available */ }
-  }, [api])
+  }, [api, activeProject?.id])
 
   useEffect(() => { refresh() }, [refresh])
+  useEffect(() => {
+    setSelectedFolderId(undefined)
+    setSelectedIds(new Set())
+  }, [activeProject?.id])
 
   useEffect(() => {
     if (initialMode === 'edit' && initialEditId) {
@@ -59,6 +71,30 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId }: Pro
   const handleImported = () => { refresh(); setSubView('list') }
   const handleSampleEdit = (script: any) => { setDraftScript(script); setEditingId(null); setEditingScript(null); setSubView('create') }
 
+  const createFolder = async (parentId: string | null) => {
+    if (!activeProject?.id) return
+    const name = window.prompt('Folder name')
+    if (!name?.trim()) return
+    await api.createFolder(activeProject.id, { name: name.trim(), category: 'scripts', parent_id: parentId })
+    refresh()
+  }
+
+  const renameFolder = async (id: string, name: string) => {
+    await api.updateFolder(id, { name })
+    refresh()
+  }
+
+  const deleteFolder = async (id: string) => {
+    await api.deleteFolder(id)
+    if (selectedFolderId === id) setSelectedFolderId(undefined)
+    refresh()
+  }
+
+  const moveScript = async (id: string, folderId: string | null) => {
+    await api.moveScript(id, folderId)
+    refresh()
+  }
+
   const handleSort = (field: string) => {
     if (sortField === field) {
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
@@ -68,7 +104,13 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId }: Pro
     }
   }
 
-  const sortedScripts = [...scripts].sort((a: any, b: any) => {
+  const visibleScripts = scripts.filter((script) => {
+    if (selectedFolderId === undefined) return true
+    if (selectedFolderId === null) return !script.folder_id
+    return script.folder_id === selectedFolderId
+  })
+
+  const sortedScripts = [...visibleScripts].sort((a: any, b: any) => {
     let vA = a[sortField]
     let vB = b[sortField]
     if (sortField === 'created_at') {
@@ -86,10 +128,10 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId }: Pro
   }
 
   const toggleSelectAll = () => {
-    if (selectedIds.size === scripts.length) {
+    if (selectedIds.size === visibleScripts.length) {
       setSelectedIds(new Set())
     } else {
-      setSelectedIds(new Set(scripts.map((s) => s.id)))
+      setSelectedIds(new Set(visibleScripts.map((s) => s.id)))
     }
   }
 
@@ -112,7 +154,7 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId }: Pro
   if (subView === 'create') {
     return (
       <div className="page">
-        <ScriptEditor initialScript={draftScript} onSave={handleSaved} onClose={() => setSubView('list')} />
+        <ScriptEditor initialScript={draftScript} projectId={activeProject?.id} folderId={selectedFolderId || null} onSave={handleSaved} onClose={() => setSubView('list')} />
       </div>
     )
   }
@@ -158,7 +200,7 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId }: Pro
   if (subView === 'edit') {
     return (
       <div className="page">
-        <ScriptEditor scriptId={editingId} initialScript={editingScript} onSave={handleSaved} onClose={() => setSubView('list')} />
+        <ScriptEditor scriptId={editingId} initialScript={editingScript} projectId={activeProject?.id} folderId={selectedFolderId || null} onSave={handleSaved} onClose={() => setSubView('list')} />
       </div>
     )
   }
@@ -177,7 +219,7 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId }: Pro
         <button className="btn btn-secondary" onClick={() => setSubView('create-options')} style={{ alignSelf: 'flex-start' }}>
           Back to Create Script
         </button>
-        <RecordingStudio />
+        <RecordingStudio activeProject={activeProject} />
       </div>
     )
   }
@@ -198,7 +240,7 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId }: Pro
       <div className="page-header">
         <div>
           <h2>Scripts</h2>
-          <p className="page-subtitle">Manage your test scripts and upload new ones</p>
+          <p className="page-subtitle">Manage scripts for {activeProject?.name || 'the selected project'}</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           {selectedIds.size > 0 && (
@@ -210,20 +252,35 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId }: Pro
         </div>
       </div>
 
-      <div className="page-section">
-        <h3 className="section-title">Script Library ({scripts.length})</h3>
-        {scripts.length === 0 ? (
-          <div className="empty-card">
-            <div className="empty-icon">
-              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="16 18 22 12 16 6" />
-                <polyline points="8 6 2 12 8 18" />
-              </svg>
+      <div className="folder-layout">
+        <FolderTree
+          title="Scripts"
+          category="scripts"
+          folders={folders}
+          items={scripts}
+          selectedFolderId={selectedFolderId}
+          onSelectFolder={setSelectedFolderId}
+          onSelectItem={handleEdit}
+          onCreateFolder={createFolder}
+          onRenameFolder={renameFolder}
+          onDeleteFolder={deleteFolder}
+          onMoveItem={moveScript}
+        />
+
+        <div className="page-section">
+          <h3 className="section-title">Script Library ({visibleScripts.length})</h3>
+          {visibleScripts.length === 0 ? (
+            <div className="empty-card">
+              <div className="empty-icon">
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="16 18 22 12 16 6" />
+                  <polyline points="8 6 2 12 8 18" />
+                </svg>
+              </div>
+              <p>No scripts here yet.</p>
+              <p className="empty-hint">Click "Create Script" to choose Visual Editor, Script Recorder, sample-based import, or LoadRunner import.</p>
             </div>
-            <p>No scripts uploaded yet.</p>
-            <p className="empty-hint">Click "Create Script" to choose Visual Editor, Script Recorder, sample-based import, or LoadRunner import.</p>
-          </div>
-        ) : (
+          ) : (
           <div className="data-table">
             <table>
               <thead>
@@ -231,7 +288,7 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId }: Pro
                   <th style={{ width: 40 }}>
                     <input
                       type="checkbox"
-                      checked={scripts.length > 0 && selectedIds.size === scripts.length}
+                      checked={visibleScripts.length > 0 && selectedIds.size === visibleScripts.length}
                       onChange={toggleSelectAll}
                     />
                   </th>
@@ -269,7 +326,8 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId }: Pro
               </tbody>
             </table>
           </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   )

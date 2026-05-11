@@ -6,20 +6,37 @@ import (
 	"github.com/jasonczech/stormrunner/pkg/dsl"
 )
 
+const DefaultProjectID = "unassigned"
+
 // Store defines the interface for persisting Stormrunner data.
 type Store interface {
+	// Projects
+	SaveProject(project *Project) error
+	GetProject(id string) (*Project, error)
+	ListProjects() ([]*Project, error)
+	DeleteProject(id string) error
+
+	// Folders
+	SaveFolder(folder *Folder) error
+	GetFolder(id string) (*Folder, error)
+	ListFolders(projectID string, category string) ([]*Folder, error)
+	MoveFolder(id string, newParentID *string) error
+	DeleteFolder(id string) error
+
 	// Scripts
 	SaveScript(script *dsl.Script) error
 	GetScript(id string) (*dsl.Script, error)
-	ListScripts() ([]*dsl.Script, error)
+	ListScripts(projectID string, folderID *string) ([]*dsl.Script, error)
 	DeleteScript(id string) error
+	MoveScript(id string, folderID *string) error
 
 	// Tests
 	SaveTest(test *TestRecord) error
 	GetTest(id string) (*TestRecord, error)
-	ListTests() ([]*TestRecord, error)
+	ListTests(projectID string, folderID *string) ([]*TestRecord, error)
 	UpdateTestStatus(id string, status string, endTime *time.Time, errStr string) error
 	DeleteTest(id string) error
+	MoveTest(id string, folderID *string) error
 
 	// History
 	SaveHistory(testID string, timestamp time.Time, metrics any) error
@@ -32,6 +49,23 @@ type Store interface {
 	GetSetting(key string) (string, error)
 
 	Close() error
+}
+
+type Project struct {
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+type Folder struct {
+	ID        string    `json:"id"`
+	ProjectID string    `json:"project_id"`
+	ParentID  *string   `json:"parent_id,omitempty"`
+	Name      string    `json:"name"`
+	Category  string    `json:"category"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 type RunArchiveRecord struct {
@@ -51,6 +85,8 @@ type TestRecord struct {
 	ID               string     `json:"id"`
 	Name             string     `json:"name"`
 	Status           string     `json:"status"`
+	ProjectID        string     `json:"project_id,omitempty"`
+	FolderID         *string    `json:"folder_id,omitempty"`
 	ScenarioMode     string     `json:"scenario_mode,omitempty"`
 	ScriptShakeout   bool       `json:"script_shakeout,omitempty"`
 	ResourceBaseline bool       `json:"resource_baseline,omitempty"`

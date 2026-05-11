@@ -43,7 +43,21 @@ func (s *Server) handleEstimateTest(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListTests(w http.ResponseWriter, r *http.Request) {
-	tests := s.runner.ListTests()
+	projectID := r.URL.Query().Get("project_id")
+	var folderID *string
+	if r.URL.Query().Has("folder_id") {
+		value := r.URL.Query().Get("folder_id")
+		folderID = &value
+	}
+	if projectID == "" && folderID == nil {
+		tests := s.runner.ListTests()
+		writeJSON(w, http.StatusOK, map[string]any{
+			"tests": tests,
+			"count": len(tests),
+		})
+		return
+	}
+	tests := s.runner.ListTestsFiltered(projectID, folderID)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"tests": tests,
 		"count": len(tests),
@@ -139,13 +153,21 @@ func (s *Server) handleGetMetrics(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleCreateScript(w http.ResponseWriter, r *http.Request) {
 	var wrapper struct {
-		Script dsl.Script `json:"script"`
+		ProjectID string     `json:"project_id,omitempty"`
+		FolderID  *string    `json:"folder_id,omitempty"`
+		Script    dsl.Script `json:"script"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&wrapper); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
 	}
 	script := &wrapper.Script
+	if wrapper.ProjectID != "" {
+		script.ProjectID = wrapper.ProjectID
+	}
+	if wrapper.FolderID != nil {
+		script.FolderID = wrapper.FolderID
+	}
 
 	if script.Name == "" {
 		writeError(w, http.StatusBadRequest, "script name is required")
@@ -165,7 +187,21 @@ func (s *Server) handleCreateScript(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListScripts(w http.ResponseWriter, r *http.Request) {
-	scripts := s.runner.ListScripts()
+	projectID := r.URL.Query().Get("project_id")
+	var folderID *string
+	if r.URL.Query().Has("folder_id") {
+		value := r.URL.Query().Get("folder_id")
+		folderID = &value
+	}
+	if projectID == "" && folderID == nil {
+		scripts := s.runner.ListScripts()
+		writeJSON(w, http.StatusOK, map[string]any{
+			"scripts": scripts,
+			"count":   len(scripts),
+		})
+		return
+	}
+	scripts := s.runner.ListScriptsFiltered(projectID, folderID)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"scripts": scripts,
 		"count":   len(scripts),
@@ -198,6 +234,38 @@ func (s *Server) handleValidateScript(w http.ResponseWriter, r *http.Request) {
 		"valid":     valid,
 		"issues":    issues,
 	})
+}
+
+func (s *Server) handleMoveScript(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var req struct {
+		FolderID *string `json:"folder_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+	if !s.runner.MoveScript(id, req.FolderID) {
+		writeError(w, http.StatusNotFound, "script not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"id": id, "folder_id": req.FolderID})
+}
+
+func (s *Server) handleMoveTest(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var req struct {
+		FolderID *string `json:"folder_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+	if !s.runner.MoveTest(id, req.FolderID) {
+		writeError(w, http.StatusNotFound, "test not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"id": id, "folder_id": req.FolderID})
 }
 
 func (s *Server) handleScaleVUsers(w http.ResponseWriter, r *http.Request) {

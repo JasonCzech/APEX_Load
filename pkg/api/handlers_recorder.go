@@ -14,6 +14,7 @@ import (
 func (s *Server) handleStartRecording(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name                  string   `json:"name"`
+		ProjectID             string   `json:"project_id,omitempty"`
 		ExcludeStatic         bool     `json:"exclude_static"`
 		ExcludeHosts          []string `json:"exclude_hosts,omitempty"`
 		IncludeHosts          []string `json:"include_hosts,omitempty"`
@@ -39,7 +40,7 @@ func (s *Server) handleStartRecording(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	session, err := s.recorder.StartSession(id, req.Name, recorder.SessionFilters{
+	session, err := s.recorder.StartSessionForProject(id, req.Name, normalizeProjectID(req.ProjectID), recorder.SessionFilters{
 		ExcludeStatic:         req.ExcludeStatic,
 		ExcludeHosts:          req.ExcludeHosts,
 		IncludeHosts:          req.IncludeHosts,
@@ -98,7 +99,17 @@ func (s *Server) handleGetRecording(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListRecordings(w http.ResponseWriter, r *http.Request) {
+	projectID := r.URL.Query().Get("project_id")
 	sessions := s.recorder.ListSessions()
+	if projectID != "" {
+		filtered := sessions[:0]
+		for _, session := range sessions {
+			if session.ProjectID == projectID {
+				filtered = append(filtered, session)
+			}
+		}
+		sessions = filtered
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"sessions": sessions,
 		"count":    len(sessions),
@@ -151,6 +162,9 @@ func (s *Server) handleConvertRecording(w http.ResponseWriter, r *http.Request) 
 	json.NewDecoder(r.Body).Decode(&req)
 
 	result := recorder.ConvertSession(session, req.Name)
+	if result.Script != nil {
+		result.Script.ProjectID = normalizeProjectID(session.ProjectID)
+	}
 
 	stored := s.runner.StoreScript(result.Script)
 
@@ -175,6 +189,9 @@ func (s *Server) handlePreviewRecordingConversion(w http.ResponseWriter, r *http
 	json.NewDecoder(r.Body).Decode(&req)
 
 	result := recorder.ConvertSession(session, req.Name)
+	if result.Script != nil {
+		result.Script.ProjectID = normalizeProjectID(session.ProjectID)
+	}
 	writeJSON(w, http.StatusOK, result)
 }
 

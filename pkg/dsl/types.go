@@ -7,6 +7,8 @@ type Script struct {
 	Name          string          `json:"name"`
 	Version       string          `json:"version"`
 	Protocol      string          `json:"protocol"`
+	ProjectID     string          `json:"project_id,omitempty"`
+	FolderID      *string         `json:"folder_id,omitempty"`
 	GeneratedBy   string          `json:"generated_by,omitempty"`
 	GeneratedFrom string          `json:"generated_from,omitempty"`
 	Metadata      *ScriptMetadata `json:"metadata,omitempty"`

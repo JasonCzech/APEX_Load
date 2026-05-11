@@ -51,6 +51,7 @@ type RecordedRequest struct {
 type Session struct {
 	ID        string            `json:"id"`
 	Name      string            `json:"name"`
+	ProjectID string            `json:"project_id,omitempty"`
 	Status    string            `json:"status"`
 	StartedAt time.Time         `json:"started_at"`
 	StoppedAt *time.Time        `json:"stopped_at,omitempty"`
@@ -115,6 +116,10 @@ func New(proxyAddr string) *Recorder {
 }
 
 func (r *Recorder) StartSession(id, name string, filters SessionFilters, notify func(SessionEvent)) (*Session, error) {
+	return r.StartSessionForProject(id, name, "", filters, notify)
+}
+
+func (r *Recorder) StartSessionForProject(id, name, projectID string, filters SessionFilters, notify func(SessionEvent)) (*Session, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -125,6 +130,7 @@ func (r *Recorder) StartSession(id, name string, filters SessionFilters, notify 
 	s := &Session{
 		ID:        id,
 		Name:      name,
+		ProjectID: projectID,
 		Status:    "recording",
 		StartedAt: time.Now(),
 		Filters:   filters,

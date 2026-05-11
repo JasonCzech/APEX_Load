@@ -3,7 +3,9 @@ package storage
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jasonczech/stormrunner/pkg/dsl"
@@ -30,11 +32,30 @@ func NewSQLiteStore(path string) (*SQLiteStore, error) {
 
 func (s *SQLiteStore) init() error {
 	queries := []string{
+		`CREATE TABLE IF NOT EXISTS projects (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL
+		)`,
+		`CREATE TABLE IF NOT EXISTS folders (
+			id TEXT PRIMARY KEY,
+			project_id TEXT NOT NULL,
+			parent_id TEXT,
+			name TEXT NOT NULL,
+			category TEXT NOT NULL,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL,
+			FOREIGN KEY(project_id) REFERENCES projects(id),
+			FOREIGN KEY(parent_id) REFERENCES folders(id)
+		)`,
 		`CREATE TABLE IF NOT EXISTS scripts (
 			id TEXT PRIMARY KEY,
 			name TEXT,
 			protocol TEXT,
 			version TEXT,
+			project_id TEXT,
+			folder_id TEXT,
 			generated_by TEXT,
 			generated_from TEXT,
 			metadata_json TEXT,
@@ -50,6 +71,8 @@ func (s *SQLiteStore) init() error {
 			id TEXT PRIMARY KEY,
 			name TEXT,
 			status TEXT,
+			project_id TEXT,
+			folder_id TEXT,
 			scenario_mode TEXT,
 			shakeout_enabled INTEGER DEFAULT 0,
 			resource_baseline_enabled INTEGER DEFAULT 0,
@@ -128,10 +151,261 @@ func (s *SQLiteStore) init() error {
 		}
 	}
 
+	for _, migration := range []struct {
+		query string
+		name  string
+	}{
+		{`ALTER TABLE scripts ADD COLUMN project_id TEXT REFERENCES projects(id)`, "scripts.project_id"},
+		{`ALTER TABLE scripts ADD COLUMN folder_id TEXT REFERENCES folders(id)`, "scripts.folder_id"},
+		{`ALTER TABLE tests ADD COLUMN project_id TEXT REFERENCES projects(id)`, "tests.project_id"},
+		{`ALTER TABLE tests ADD COLUMN folder_id TEXT REFERENCES folders(id)`, "tests.folder_id"},
+	} {
+		if _, err := s.db.Exec(migration.query); err != nil && !isDuplicateColumnErr(err) {
+			return fmt.Errorf("failed to add %s column: %w", migration.name, err)
+		}
+	}
+
+	return s.ensureDefaultProject()
+}
+
+func isDuplicateColumnErr(err error) bool {
+	return strings.Contains(err.Error(), "duplicate column name")
+}
+
+func (s *SQLiteStore) ensureDefaultProject() error {
+	now := time.Now()
+	if _, err := s.db.Exec(`INSERT OR IGNORE INTO projects (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)`, DefaultProjectID, "Unassigned", now, now); err != nil {
+		return fmt.Errorf("failed to create default project: %w", err)
+	}
+	if _, err := s.db.Exec(`UPDATE scripts SET project_id = ? WHERE project_id IS NULL OR project_id = ''`, DefaultProjectID); err != nil {
+		return fmt.Errorf("failed to backfill script project ids: %w", err)
+	}
+	if _, err := s.db.Exec(`UPDATE tests SET project_id = ? WHERE project_id IS NULL OR project_id = ''`, DefaultProjectID); err != nil {
+		return fmt.Errorf("failed to backfill test project ids: %w", err)
+	}
 	return nil
 }
 
+func normalizeProjectID(projectID string) string {
+	if projectID == "" {
+		return DefaultProjectID
+	}
+	return projectID
+}
+
+func validateFolderCategory(category string) error {
+	switch category {
+	case "scripts", "scenarios", "results", "recordings":
+		return nil
+	default:
+		return fmt.Errorf("invalid folder category: %s", category)
+	}
+}
+
+func (s *SQLiteStore) SaveProject(project *Project) error {
+	if project.ID == "" {
+		return errors.New("project id is required")
+	}
+	if strings.TrimSpace(project.Name) == "" {
+		return errors.New("project name is required")
+	}
+	if project.CreatedAt.IsZero() {
+		project.CreatedAt = time.Now()
+	}
+	project.UpdatedAt = time.Now()
+	_, err := s.db.Exec(`INSERT INTO projects (id, name, created_at, updated_at)
+		VALUES (?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET name=excluded.name, updated_at=excluded.updated_at`,
+		project.ID, project.Name, project.CreatedAt, project.UpdatedAt)
+	return err
+}
+
+func (s *SQLiteStore) GetProject(id string) (*Project, error) {
+	var project Project
+	err := s.db.QueryRow(`SELECT id, name, created_at, updated_at FROM projects WHERE id = ?`, id).Scan(
+		&project.ID, &project.Name, &project.CreatedAt, &project.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &project, nil
+}
+
+func (s *SQLiteStore) ListProjects() ([]*Project, error) {
+	rows, err := s.db.Query(`SELECT id, name, created_at, updated_at FROM projects ORDER BY name ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var projects []*Project
+	for rows.Next() {
+		var project Project
+		if err := rows.Scan(&project.ID, &project.Name, &project.CreatedAt, &project.UpdatedAt); err != nil {
+			return nil, err
+		}
+		projects = append(projects, &project)
+	}
+	return projects, rows.Err()
+}
+
+func (s *SQLiteStore) DeleteProject(id string) error {
+	if id == DefaultProjectID {
+		return errors.New("default project cannot be deleted")
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	rows, err := tx.Query(`SELECT id FROM tests WHERE project_id = ?`, id)
+	if err != nil {
+		return err
+	}
+	var testIDs []string
+	for rows.Next() {
+		var testID string
+		if err := rows.Scan(&testID); err != nil {
+			rows.Close()
+			return err
+		}
+		testIDs = append(testIDs, testID)
+	}
+	rows.Close()
+	for _, testID := range testIDs {
+		if _, err := tx.Exec(`DELETE FROM test_history WHERE test_id = ?`, testID); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`DELETE FROM run_archives WHERE test_id = ?`, testID); err != nil {
+			return err
+		}
+	}
+	for _, q := range []string{
+		`DELETE FROM tests WHERE project_id = ?`,
+		`DELETE FROM scripts WHERE project_id = ?`,
+		`DELETE FROM folders WHERE project_id = ?`,
+		`DELETE FROM projects WHERE id = ?`,
+	} {
+		if _, err := tx.Exec(q, id); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func (s *SQLiteStore) SaveFolder(folder *Folder) error {
+	if folder.ID == "" {
+		return errors.New("folder id is required")
+	}
+	if strings.TrimSpace(folder.Name) == "" {
+		return errors.New("folder name is required")
+	}
+	if err := validateFolderCategory(folder.Category); err != nil {
+		return err
+	}
+	folder.ProjectID = normalizeProjectID(folder.ProjectID)
+	if folder.CreatedAt.IsZero() {
+		folder.CreatedAt = time.Now()
+	}
+	folder.UpdatedAt = time.Now()
+	_, err := s.db.Exec(`INSERT INTO folders (id, project_id, parent_id, name, category, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET project_id=excluded.project_id, parent_id=excluded.parent_id, name=excluded.name, category=excluded.category, updated_at=excluded.updated_at`,
+		folder.ID, folder.ProjectID, folder.ParentID, folder.Name, folder.Category, folder.CreatedAt, folder.UpdatedAt)
+	return err
+}
+
+func (s *SQLiteStore) GetFolder(id string) (*Folder, error) {
+	var folder Folder
+	err := s.db.QueryRow(`SELECT id, project_id, parent_id, name, category, created_at, updated_at FROM folders WHERE id = ?`, id).Scan(
+		&folder.ID, &folder.ProjectID, &folder.ParentID, &folder.Name, &folder.Category, &folder.CreatedAt, &folder.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &folder, nil
+}
+
+func (s *SQLiteStore) ListFolders(projectID string, category string) ([]*Folder, error) {
+	projectID = normalizeProjectID(projectID)
+	args := []any{projectID}
+	query := `SELECT id, project_id, parent_id, name, category, created_at, updated_at FROM folders WHERE project_id = ?`
+	if category != "" {
+		if err := validateFolderCategory(category); err != nil {
+			return nil, err
+		}
+		query += ` AND category = ?`
+		args = append(args, category)
+	}
+	query += ` ORDER BY name ASC`
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var folders []*Folder
+	for rows.Next() {
+		var folder Folder
+		if err := rows.Scan(&folder.ID, &folder.ProjectID, &folder.ParentID, &folder.Name, &folder.Category, &folder.CreatedAt, &folder.UpdatedAt); err != nil {
+			return nil, err
+		}
+		folders = append(folders, &folder)
+	}
+	return folders, rows.Err()
+}
+
+func (s *SQLiteStore) MoveFolder(id string, newParentID *string) error {
+	if newParentID != nil {
+		if *newParentID == id {
+			return errors.New("folder cannot be moved into itself")
+		}
+		isDescendant, err := s.folderHasAncestor(*newParentID, id)
+		if err != nil {
+			return err
+		}
+		if isDescendant {
+			return errors.New("folder cannot be moved into its own descendant")
+		}
+	}
+	_, err := s.db.Exec(`UPDATE folders SET parent_id = ?, updated_at = ? WHERE id = ?`, newParentID, time.Now(), id)
+	return err
+}
+
+func (s *SQLiteStore) folderHasAncestor(folderID string, ancestorID string) (bool, error) {
+	current := folderID
+	for current != "" {
+		var parent sql.NullString
+		if err := s.db.QueryRow(`SELECT parent_id FROM folders WHERE id = ?`, current).Scan(&parent); err != nil {
+			return false, err
+		}
+		if !parent.Valid {
+			return false, nil
+		}
+		if parent.String == ancestorID {
+			return true, nil
+		}
+		current = parent.String
+	}
+	return false, nil
+}
+
+func (s *SQLiteStore) DeleteFolder(id string) error {
+	var childCount, scriptCount, testCount int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM folders WHERE parent_id = ?`, id).Scan(&childCount); err != nil {
+		return err
+	}
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM scripts WHERE folder_id = ?`, id).Scan(&scriptCount); err != nil {
+		return err
+	}
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM tests WHERE folder_id = ?`, id).Scan(&testCount); err != nil {
+		return err
+	}
+	if childCount+scriptCount+testCount > 0 {
+		return errors.New("folder is not empty")
+	}
+	_, err := s.db.Exec(`DELETE FROM folders WHERE id = ?`, id)
+	return err
+}
+
 func (s *SQLiteStore) SaveScript(script *dsl.Script) error {
+	script.ProjectID = normalizeProjectID(script.ProjectID)
 	metadataJSON, _ := json.Marshal(script.Metadata)
 	configJSON, _ := json.Marshal(script.Config)
 	dataSourcesJSON, _ := json.Marshal(script.DataSources)
@@ -144,10 +418,11 @@ func (s *SQLiteStore) SaveScript(script *dsl.Script) error {
 	}
 	script.UpdatedAt = time.Now()
 
-	query := `INSERT INTO scripts (id, name, protocol, version, generated_by, generated_from, metadata_json, config, data_sources, init, actions, teardown, created_at, updated_at)
-			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	query := `INSERT INTO scripts (id, name, protocol, version, project_id, folder_id, generated_by, generated_from, metadata_json, config, data_sources, init, actions, teardown, created_at, updated_at)
+			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			  ON CONFLICT(id) DO UPDATE SET
 			  name=excluded.name, protocol=excluded.protocol, version=excluded.version, 
+			  project_id=excluded.project_id, folder_id=excluded.folder_id,
 			  generated_by=excluded.generated_by, generated_from=excluded.generated_from,
 			  metadata_json=excluded.metadata_json,
 			  config=excluded.config, data_sources=excluded.data_sources, 
@@ -155,7 +430,7 @@ func (s *SQLiteStore) SaveScript(script *dsl.Script) error {
 			  updated_at=excluded.updated_at`
 
 	_, err := s.db.Exec(query,
-		script.ID, script.Name, script.Protocol, script.Version,
+		script.ID, script.Name, script.Protocol, script.Version, script.ProjectID, script.FolderID,
 		script.GeneratedBy, script.GeneratedFrom,
 		string(metadataJSON), string(configJSON), string(dataSourcesJSON), string(initJSON), string(actionsJSON), string(teardownJSON),
 		script.CreatedAt, script.UpdatedAt)
@@ -166,10 +441,11 @@ func (s *SQLiteStore) GetScript(id string) (*dsl.Script, error) {
 	var script dsl.Script
 	var metadataJSON, configJSON, dataSourcesJSON, initJSON, actionsJSON, teardownJSON string
 
-	query := `SELECT id, name, protocol, version, generated_by, generated_from, COALESCE(metadata_json, ''), config, data_sources, init, actions, teardown, created_at, updated_at 
+	query := `SELECT id, name, protocol, version, COALESCE(project_id, ''), folder_id, generated_by, generated_from, COALESCE(metadata_json, ''), config, data_sources, init, actions, teardown, created_at, updated_at
 			  FROM scripts WHERE id = ?`
 	err := s.db.QueryRow(query, id).Scan(
 		&script.ID, &script.Name, &script.Protocol, &script.Version,
+		&script.ProjectID, &script.FolderID,
 		&script.GeneratedBy, &script.GeneratedFrom,
 		&metadataJSON, &configJSON, &dataSourcesJSON, &initJSON, &actionsJSON, &teardownJSON,
 		&script.CreatedAt, &script.UpdatedAt)
@@ -189,10 +465,27 @@ func (s *SQLiteStore) GetScript(id string) (*dsl.Script, error) {
 	return &script, nil
 }
 
-func (s *SQLiteStore) ListScripts() ([]*dsl.Script, error) {
-	query := `SELECT id, name, protocol, version, generated_by, generated_from, COALESCE(metadata_json, ''), config, data_sources, init, actions, teardown, created_at, updated_at 
-			  FROM scripts ORDER BY created_at DESC`
-	rows, err := s.db.Query(query)
+func (s *SQLiteStore) ListScripts(projectID string, folderID *string) ([]*dsl.Script, error) {
+	args := []any{}
+	query := `SELECT id, name, protocol, version, COALESCE(project_id, ''), folder_id, generated_by, generated_from, COALESCE(metadata_json, ''), config, data_sources, init, actions, teardown, created_at, updated_at FROM scripts`
+	var filters []string
+	if projectID != "" {
+		filters = append(filters, `project_id = ?`)
+		args = append(args, projectID)
+	}
+	if folderID != nil {
+		if *folderID == "" {
+			filters = append(filters, `folder_id IS NULL`)
+		} else {
+			filters = append(filters, `folder_id = ?`)
+			args = append(args, *folderID)
+		}
+	}
+	if len(filters) > 0 {
+		query += ` WHERE ` + strings.Join(filters, ` AND `)
+	}
+	query += ` ORDER BY created_at DESC`
+	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -204,6 +497,7 @@ func (s *SQLiteStore) ListScripts() ([]*dsl.Script, error) {
 		var metadataJSON, configJSON, dataSourcesJSON, initJSON, actionsJSON, teardownJSON string
 		err := rows.Scan(
 			&script.ID, &script.Name, &script.Protocol, &script.Version,
+			&script.ProjectID, &script.FolderID,
 			&script.GeneratedBy, &script.GeneratedFrom,
 			&metadataJSON, &configJSON, &dataSourcesJSON, &initJSON, &actionsJSON, &teardownJSON,
 			&script.CreatedAt, &script.UpdatedAt)
@@ -228,15 +522,21 @@ func (s *SQLiteStore) DeleteScript(id string) error {
 	return err
 }
 
+func (s *SQLiteStore) MoveScript(id string, folderID *string) error {
+	_, err := s.db.Exec(`UPDATE scripts SET folder_id = ?, updated_at = ? WHERE id = ?`, folderID, time.Now(), id)
+	return err
+}
+
 func (s *SQLiteStore) SaveTest(test *TestRecord) error {
+	test.ProjectID = normalizeProjectID(test.ProjectID)
 	groupsJSON, _ := json.Marshal(test.Groups)
 	runtimeSettingsJSON, _ := json.Marshal(test.RuntimeSettings)
 	goalConfigJSON, _ := json.Marshal(test.GoalConfig)
 
-	query := `INSERT INTO tests (id, name, status, scenario_mode, shakeout_enabled, resource_baseline_enabled, total_vusers, duration_ns, start_time, end_time, error, groups_json, runtime_settings_json, goal_config_json)
-			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	query := `INSERT INTO tests (id, name, status, project_id, folder_id, scenario_mode, shakeout_enabled, resource_baseline_enabled, total_vusers, duration_ns, start_time, end_time, error, groups_json, runtime_settings_json, goal_config_json)
+			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
-	_, err := s.db.Exec(query, test.ID, test.Name, test.Status, test.ScenarioMode, test.ScriptShakeout, test.ResourceBaseline, test.TotalVUsers, test.Duration, test.StartTime, test.EndTime, test.Error, string(groupsJSON), string(runtimeSettingsJSON), string(goalConfigJSON))
+	_, err := s.db.Exec(query, test.ID, test.Name, test.Status, test.ProjectID, test.FolderID, test.ScenarioMode, test.ScriptShakeout, test.ResourceBaseline, test.TotalVUsers, test.Duration, test.StartTime, test.EndTime, test.Error, string(groupsJSON), string(runtimeSettingsJSON), string(goalConfigJSON))
 	return err
 }
 
@@ -244,8 +544,8 @@ func (s *SQLiteStore) GetTest(id string) (*TestRecord, error) {
 	var test TestRecord
 	var groupsJSON, runtimeSettingsJSON, goalConfigJSON string
 
-	query := `SELECT id, name, status, COALESCE(scenario_mode, ''), COALESCE(shakeout_enabled, 0), COALESCE(resource_baseline_enabled, 0), total_vusers, duration_ns, start_time, end_time, error, groups_json, COALESCE(runtime_settings_json, ''), COALESCE(goal_config_json, '') FROM tests WHERE id = ?`
-	err := s.db.QueryRow(query, id).Scan(&test.ID, &test.Name, &test.Status, &test.ScenarioMode, &test.ScriptShakeout, &test.ResourceBaseline, &test.TotalVUsers, &test.Duration, &test.StartTime, &test.EndTime, &test.Error, &groupsJSON, &runtimeSettingsJSON, &goalConfigJSON)
+	query := `SELECT id, name, status, COALESCE(project_id, ''), folder_id, COALESCE(scenario_mode, ''), COALESCE(shakeout_enabled, 0), COALESCE(resource_baseline_enabled, 0), total_vusers, duration_ns, start_time, end_time, error, groups_json, COALESCE(runtime_settings_json, ''), COALESCE(goal_config_json, '') FROM tests WHERE id = ?`
+	err := s.db.QueryRow(query, id).Scan(&test.ID, &test.Name, &test.Status, &test.ProjectID, &test.FolderID, &test.ScenarioMode, &test.ScriptShakeout, &test.ResourceBaseline, &test.TotalVUsers, &test.Duration, &test.StartTime, &test.EndTime, &test.Error, &groupsJSON, &runtimeSettingsJSON, &goalConfigJSON)
 	if err != nil {
 		return nil, err
 	}
@@ -260,8 +560,27 @@ func (s *SQLiteStore) GetTest(id string) (*TestRecord, error) {
 	return &test, nil
 }
 
-func (s *SQLiteStore) ListTests() ([]*TestRecord, error) {
-	rows, err := s.db.Query(`SELECT id, name, status, COALESCE(scenario_mode, ''), COALESCE(shakeout_enabled, 0), COALESCE(resource_baseline_enabled, 0), total_vusers, duration_ns, start_time, end_time, error, groups_json, COALESCE(runtime_settings_json, ''), COALESCE(goal_config_json, '') FROM tests ORDER BY start_time DESC`)
+func (s *SQLiteStore) ListTests(projectID string, folderID *string) ([]*TestRecord, error) {
+	args := []any{}
+	query := `SELECT id, name, status, COALESCE(project_id, ''), folder_id, COALESCE(scenario_mode, ''), COALESCE(shakeout_enabled, 0), COALESCE(resource_baseline_enabled, 0), total_vusers, duration_ns, start_time, end_time, error, groups_json, COALESCE(runtime_settings_json, ''), COALESCE(goal_config_json, '') FROM tests`
+	var filters []string
+	if projectID != "" {
+		filters = append(filters, `project_id = ?`)
+		args = append(args, projectID)
+	}
+	if folderID != nil {
+		if *folderID == "" {
+			filters = append(filters, `folder_id IS NULL`)
+		} else {
+			filters = append(filters, `folder_id = ?`)
+			args = append(args, *folderID)
+		}
+	}
+	if len(filters) > 0 {
+		query += ` WHERE ` + strings.Join(filters, ` AND `)
+	}
+	query += ` ORDER BY start_time DESC`
+	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -271,7 +590,7 @@ func (s *SQLiteStore) ListTests() ([]*TestRecord, error) {
 	for rows.Next() {
 		var test TestRecord
 		var groupsJSON, runtimeSettingsJSON, goalConfigJSON string
-		if err := rows.Scan(&test.ID, &test.Name, &test.Status, &test.ScenarioMode, &test.ScriptShakeout, &test.ResourceBaseline, &test.TotalVUsers, &test.Duration, &test.StartTime, &test.EndTime, &test.Error, &groupsJSON, &runtimeSettingsJSON, &goalConfigJSON); err != nil {
+		if err := rows.Scan(&test.ID, &test.Name, &test.Status, &test.ProjectID, &test.FolderID, &test.ScenarioMode, &test.ScriptShakeout, &test.ResourceBaseline, &test.TotalVUsers, &test.Duration, &test.StartTime, &test.EndTime, &test.Error, &groupsJSON, &runtimeSettingsJSON, &goalConfigJSON); err != nil {
 			return nil, err
 		}
 		json.Unmarshal([]byte(groupsJSON), &test.Groups)
@@ -309,6 +628,11 @@ func (s *SQLiteStore) DeleteTest(id string) error {
 	}
 
 	return tx.Commit()
+}
+
+func (s *SQLiteStore) MoveTest(id string, folderID *string) error {
+	_, err := s.db.Exec(`UPDATE tests SET folder_id = ? WHERE id = ?`, folderID, id)
+	return err
 }
 
 func (s *SQLiteStore) SaveHistory(testID string, timestamp time.Time, metrics any) error {

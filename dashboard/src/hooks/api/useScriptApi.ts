@@ -2,11 +2,24 @@ import { useCallback, useMemo } from 'react'
 
 import { BASE, request } from '../apiClient'
 
+function buildScriptQuery(projectId?: string, folderId?: string | null) {
+  const query = new URLSearchParams()
+  if (projectId) query.set('project_id', projectId)
+  if (folderId !== undefined) query.set('folder_id', folderId || '')
+  const suffix = query.toString()
+  return suffix ? `?${suffix}` : ''
+}
+
 export function useScriptApi() {
-  const listScripts = useCallback(() => request<{ scripts: any[]; count: number }>('/scripts'), [])
+  const listScripts = useCallback(
+    (projectId?: string, folderId?: string | null) =>
+      request<{ scripts: any[]; count: number }>(`/scripts${buildScriptQuery(projectId, folderId)}`),
+    [],
+  )
 
   const createScript = useCallback(
-    (script: any) => request<any>('/scripts', { method: 'POST', body: JSON.stringify({ script }) }),
+    (script: any, projectId?: string, folderId?: string | null) =>
+      request<any>('/scripts', { method: 'POST', body: JSON.stringify({ script, project_id: projectId, folder_id: folderId }) }),
     [],
   )
 
@@ -19,6 +32,12 @@ export function useScriptApi() {
   )
 
   const deleteScript = useCallback((id: string) => request<any>(`/scripts/${id}`, { method: 'DELETE' }), [])
+
+  const moveScript = useCallback(
+    (id: string, folderId: string | null) =>
+      request<any>(`/scripts/${id}/move`, { method: 'PATCH', body: JSON.stringify({ folder_id: folderId }) }),
+    [],
+  )
 
   const validateScript = useCallback((id: string) => request<any>(`/scripts/${id}/validate`, { method: 'POST' }), [])
 
@@ -75,6 +94,7 @@ export function useScriptApi() {
       getScript,
       updateScript,
       deleteScript,
+      moveScript,
       validateScript,
       exportScript,
       importLoadRunner,
@@ -86,6 +106,7 @@ export function useScriptApi() {
       getScript,
       updateScript,
       deleteScript,
+      moveScript,
       validateScript,
       exportScript,
       importLoadRunner,

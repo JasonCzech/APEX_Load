@@ -20,6 +20,8 @@ interface GroupEntry {
 
 interface Props {
   scripts: StoredScript[]
+  projectId?: string
+  folderId?: string | null
   onClose: () => void
   onCreated: (test: any) => void
   initialScenario?: ScenarioDraft
@@ -125,7 +127,7 @@ function scenarioDraftReducer(state: ScenarioDraftState, action: ScenarioDraftAc
   }
 }
 
-export default function CreateTestModal({ scripts, onClose, onCreated, initialScenario }: Props) {
+export default function CreateTestModal({ scripts, projectId, folderId, onClose, onCreated, initialScenario }: Props) {
   const api = useApi()
   const baselineSeconds = 5 * 60
   const [scenarioDraft, dispatchScenarioDraft] = useReducer(
@@ -243,6 +245,8 @@ export default function CreateTestModal({ scripts, onClose, onCreated, initialSc
   })()
   const buildPayload = () => {
     const payload: any = { name: name || undefined, duration }
+    if (projectId) payload.project_id = projectId
+    if (folderId !== undefined) payload.folder_id = folderId
     payload.scenario_mode = scenarioMode
     payload.script_shakeout = scriptShakeout
     payload.resource_baseline = resourceBaseline

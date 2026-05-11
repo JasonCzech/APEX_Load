@@ -4,7 +4,7 @@ import { request } from '../apiClient'
 
 export function useRecorderApi() {
   const startRecording = useCallback(
-    (data: { name: string; exclude_static?: boolean; include_hosts?: string[]; exclude_hosts?: string[] }) =>
+    (data: { name: string; project_id?: string; exclude_static?: boolean; include_hosts?: string[]; exclude_hosts?: string[] }) =>
       request<any>('/recorder/start', { method: 'POST', body: JSON.stringify(data) }),
     [],
   )
@@ -17,7 +17,10 @@ export function useRecorderApi() {
 
   const getRecording = useCallback((id: string) => request<any>(`/recorder/${id}`), [])
 
-  const listRecordings = useCallback(() => request<any>('/recorder'), [])
+  const listRecordings = useCallback(
+    (projectId?: string) => request<any>(`/recorder${projectId ? `?project_id=${encodeURIComponent(projectId)}` : ''}`),
+    [],
+  )
 
   const deleteRecording = useCallback((id: string) => request<any>(`/recorder/${id}`, { method: 'DELETE' }), [])
 

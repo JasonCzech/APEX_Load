@@ -19,14 +19,16 @@ import (
 type scriptPersistence interface {
 	SaveScript(script *dsl.Script) error
 	DeleteScript(id string) error
-	ListScripts() ([]*dsl.Script, error)
+	ListScripts(projectID string, folderID *string) ([]*dsl.Script, error)
+	MoveScript(id string, folderID *string) error
 }
 
 type testPersistence interface {
 	SaveTest(test *storage.TestRecord) error
-	ListTests() ([]*storage.TestRecord, error)
+	ListTests(projectID string, folderID *string) ([]*storage.TestRecord, error)
 	UpdateTestStatus(id string, status string, endTime *time.Time, errStr string) error
 	DeleteTest(id string) error
+	MoveTest(id string, folderID *string) error
 }
 
 type historyPersistence interface {
@@ -63,6 +65,8 @@ type ManagedTest struct {
 	ID               string                    `json:"id"`
 	Name             string                    `json:"name"`
 	Status           string                    `json:"status"`
+	ProjectID        string                    `json:"project_id,omitempty"`
+	FolderID         *string                   `json:"folder_id,omitempty"`
 	Groups           []TestGroup               `json:"groups"`
 	CapacityAdvisory *CapacityAdvisory         `json:"capacity_advisory,omitempty"`
 	ScenarioMode     string                    `json:"scenario_mode,omitempty"`
@@ -185,6 +189,8 @@ type StoredScript struct {
 	Name      string      `json:"name"`
 	Protocol  string      `json:"protocol"`
 	Version   string      `json:"version"`
+	ProjectID string      `json:"project_id,omitempty"`
+	FolderID  *string     `json:"folder_id,omitempty"`
 	CreatedAt time.Time   `json:"created_at"`
 	Script    *dsl.Script `json:"script"`
 }
@@ -225,7 +231,7 @@ func (tr *TestRunner) loadStoredScripts() {
 	if tr.scriptStore == nil {
 		return
 	}
-	scripts, err := tr.scriptStore.ListScripts()
+	scripts, err := tr.scriptStore.ListScripts("", nil)
 	if err != nil {
 		return
 	}
@@ -235,6 +241,8 @@ func (tr *TestRunner) loadStoredScripts() {
 			Name:      script.Name,
 			Protocol:  script.Protocol,
 			Version:   script.Version,
+			ProjectID: script.ProjectID,
+			FolderID:  script.FolderID,
 			CreatedAt: script.CreatedAt,
 			Script:    script,
 		}
@@ -245,7 +253,7 @@ func (tr *TestRunner) loadStoredTests() {
 	if tr.testStore == nil {
 		return
 	}
-	tests, err := tr.testStore.ListTests()
+	tests, err := tr.testStore.ListTests("", nil)
 	if err != nil {
 		return
 	}
@@ -262,6 +270,8 @@ func managedTestFromRecord(record *storage.TestRecord) *ManagedTest {
 		ID:               record.ID,
 		Name:             record.Name,
 		Status:           record.Status,
+		ProjectID:        record.ProjectID,
+		FolderID:         record.FolderID,
 		Groups:           decodeStoredGroups(record.Groups),
 		ScenarioMode:     normalizeScenarioMode(record.ScenarioMode),
 		ScriptShakeout:   record.ScriptShakeout,
@@ -333,12 +343,15 @@ func (tr *TestRunner) StoreScript(script *dsl.Script) *StoredScript {
 	if script.ID == "" {
 		script.ID = uuid.New().String()
 	}
+	script.ProjectID = normalizeProjectID(script.ProjectID)
 
 	stored := &StoredScript{
 		ID:        script.ID,
 		Name:      script.Name,
 		Protocol:  script.Protocol,
 		Version:   script.Version,
+		ProjectID: script.ProjectID,
+		FolderID:  script.FolderID,
 		CreatedAt: time.Now(),
 		Script:    script,
 	}
@@ -366,6 +379,46 @@ func (tr *TestRunner) ListScripts() []*StoredScript {
 	return out
 }
 
+func (tr *TestRunner) ListScriptsFiltered(projectID string, folderID *string) []*StoredScript {
+	projectID = normalizeProjectID(projectID)
+	tr.mu.RLock()
+	defer tr.mu.RUnlock()
+	out := make([]*StoredScript, 0, len(tr.scripts))
+	for _, s := range tr.scripts {
+		if s.ProjectID != projectID {
+			continue
+		}
+		if folderID != nil {
+			if *folderID == "" {
+				if s.FolderID != nil && *s.FolderID != "" {
+					continue
+				}
+			} else if s.FolderID == nil || *s.FolderID != *folderID {
+				continue
+			}
+		}
+		out = append(out, s)
+	}
+	return out
+}
+
+func (tr *TestRunner) MoveScript(id string, folderID *string) bool {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	script, ok := tr.scripts[id]
+	if !ok {
+		return false
+	}
+	script.FolderID = folderID
+	if script.Script != nil {
+		script.Script.FolderID = folderID
+	}
+	if tr.scriptStore != nil {
+		_ = tr.scriptStore.MoveScript(id, folderID)
+	}
+	return true
+}
+
 func (tr *TestRunner) UpdateScript(id string, script *dsl.Script) (*StoredScript, bool) {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
@@ -376,6 +429,14 @@ func (tr *TestRunner) UpdateScript(id string, script *dsl.Script) (*StoredScript
 	existing.Name = script.Name
 	existing.Protocol = script.Protocol
 	existing.Version = script.Version
+	if script.ProjectID == "" {
+		script.ProjectID = existing.ProjectID
+	}
+	if script.FolderID == nil {
+		script.FolderID = existing.FolderID
+	}
+	existing.ProjectID = script.ProjectID
+	existing.FolderID = script.FolderID
 	existing.Script = script
 	tr.saveStoredScript(script)
 	return existing, true
@@ -396,6 +457,8 @@ func (tr *TestRunner) DeleteScript(id string) bool {
 type CreateTestRequest struct {
 	Name             string             `json:"name"`
 	Duration         string             `json:"duration"`
+	ProjectID        string             `json:"project_id,omitempty"`
+	FolderID         *string            `json:"folder_id,omitempty"`
 	ScenarioMode     string             `json:"scenario_mode,omitempty"`
 	ScriptShakeout   bool               `json:"script_shakeout,omitempty"`
 	ResourceBaseline bool               `json:"resource_baseline,omitempty"`
@@ -542,6 +605,8 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 		ID:               id,
 		Name:             testName,
 		Status:           status,
+		ProjectID:        normalizeProjectID(req.ProjectID),
+		FolderID:         req.FolderID,
 		Groups:           testGroups,
 		CapacityAdvisory: estimateCapacityAdvisory(tr.settings, testGroups, totalVUsers, dur, req.ResourceBaseline, req.RuntimeSettings),
 		ScenarioMode:     scenarioMode,
@@ -724,6 +789,46 @@ func (tr *TestRunner) ListTests() []*ManagedTest {
 	return out
 }
 
+func (tr *TestRunner) ListTestsFiltered(projectID string, folderID *string) []*ManagedTest {
+	projectID = normalizeProjectID(projectID)
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	out := make([]*ManagedTest, 0, len(tr.tests))
+	for _, t := range tr.tests {
+		if t.ProjectID != projectID {
+			continue
+		}
+		if folderID != nil {
+			if *folderID == "" {
+				if t.FolderID != nil && *t.FolderID != "" {
+					continue
+				}
+			} else if t.FolderID == nil || *t.FolderID != *folderID {
+				continue
+			}
+		}
+		if t.Status == "QUEUED" {
+			tr.refreshCapacityAdvisoryLocked(t)
+		}
+		out = append(out, t)
+	}
+	return out
+}
+
+func (tr *TestRunner) MoveTest(id string, folderID *string) bool {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	test, ok := tr.tests[id]
+	if !ok {
+		return false
+	}
+	test.FolderID = folderID
+	if tr.testStore != nil {
+		_ = tr.testStore.MoveTest(id, folderID)
+	}
+	return true
+}
+
 func (tr *TestRunner) GetRunArchive(id string) (*storage.RunArchiveRecord, bool) {
 	tr.mu.RLock()
 	record, ok := tr.archives[id]
@@ -879,6 +984,8 @@ func buildManagedTestRecord(test *ManagedTest) *storage.TestRecord {
 		ID:               test.ID,
 		Name:             test.Name,
 		Status:           test.Status,
+		ProjectID:        normalizeProjectID(test.ProjectID),
+		FolderID:         test.FolderID,
 		ScenarioMode:     test.ScenarioMode,
 		ScriptShakeout:   test.ScriptShakeout,
 		ResourceBaseline: test.ResourceBaseline,
@@ -889,6 +996,13 @@ func buildManagedTestRecord(test *ManagedTest) *storage.TestRecord {
 		GoalConfig:       test.GoalConfig,
 		RuntimeSettings:  test.RuntimeSettings,
 	}
+}
+
+func normalizeProjectID(projectID string) string {
+	if projectID == "" {
+		return storage.DefaultProjectID
+	}
+	return projectID
 }
 
 func (tr *TestRunner) saveManagedTestRecord(test *ManagedTest) {

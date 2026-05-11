@@ -36,17 +36,22 @@ func (s *metricsStoreSpy) SaveScript(script *dsl.Script) error {
 	return nil
 }
 func (s *metricsStoreSpy) GetScript(id string) (*dsl.Script, error) { return nil, nil }
-func (s *metricsStoreSpy) ListScripts() ([]*dsl.Script, error)      { return s.listedScripts, nil }
+func (s *metricsStoreSpy) ListScripts(projectID string, folderID *string) ([]*dsl.Script, error) {
+	return s.listedScripts, nil
+}
 func (s *metricsStoreSpy) DeleteScript(id string) error {
 	s.deletedScriptIDs = append(s.deletedScriptIDs, id)
 	return nil
 }
+func (s *metricsStoreSpy) MoveScript(id string, folderID *string) error { return nil }
 func (s *metricsStoreSpy) SaveTest(test *storage.TestRecord) error {
 	s.savedTests = append(s.savedTests, test)
 	return nil
 }
 func (s *metricsStoreSpy) GetTest(id string) (*storage.TestRecord, error) { return nil, nil }
-func (s *metricsStoreSpy) ListTests() ([]*storage.TestRecord, error)      { return s.listedTests, nil }
+func (s *metricsStoreSpy) ListTests(projectID string, folderID *string) ([]*storage.TestRecord, error) {
+	return s.listedTests, nil
+}
 func (s *metricsStoreSpy) UpdateTestStatus(id string, status string, endTime *time.Time, errStr string) error {
 	return nil
 }
@@ -54,6 +59,22 @@ func (s *metricsStoreSpy) DeleteTest(id string) error {
 	s.deletedTestIDs = append(s.deletedTestIDs, id)
 	return nil
 }
+func (s *metricsStoreSpy) MoveTest(id string, folderID *string) error { return nil }
+func (s *metricsStoreSpy) SaveProject(project *storage.Project) error { return nil }
+func (s *metricsStoreSpy) GetProject(id string) (*storage.Project, error) {
+	return nil, nil
+}
+func (s *metricsStoreSpy) ListProjects() ([]*storage.Project, error) { return nil, nil }
+func (s *metricsStoreSpy) DeleteProject(id string) error             { return nil }
+func (s *metricsStoreSpy) SaveFolder(folder *storage.Folder) error   { return nil }
+func (s *metricsStoreSpy) GetFolder(id string) (*storage.Folder, error) {
+	return nil, nil
+}
+func (s *metricsStoreSpy) ListFolders(projectID string, category string) ([]*storage.Folder, error) {
+	return nil, nil
+}
+func (s *metricsStoreSpy) MoveFolder(id string, newParentID *string) error { return nil }
+func (s *metricsStoreSpy) DeleteFolder(id string) error                    { return nil }
 func (s *metricsStoreSpy) SaveHistory(testID string, timestamp time.Time, metrics any) error {
 	s.savedHistoryTestID = testID
 	s.savedHistoryTimestamp = timestamp

@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import { Project } from '../types'
+import ProjectModal from './ProjectModal'
 import './Sidebar.css'
 
 export type NavPage = 'dashboard' | 'tests' | 'scripts' | 'recorder' | 'results' | 'monitoring' | 'settings'
@@ -7,6 +9,10 @@ interface Props {
   active: NavPage
   onNavigate: (page: NavPage) => void
   connected: boolean
+  projects?: Project[]
+  activeProject?: Project | null
+  onProjectChange?: (project: Project) => void
+  onCreateProject?: (name: string) => Promise<Project>
 }
 
 const NAV_ITEMS: { id: NavPage; label: string; icon: JSX.Element }[] = [
@@ -87,8 +93,16 @@ const NAV_ITEMS: { id: NavPage; label: string; icon: JSX.Element }[] = [
 ]
 
 
-export default function Sidebar({ active, onNavigate, connected }: Props) {
+export default function Sidebar({ active, onNavigate, connected, projects = [], activeProject, onProjectChange, onCreateProject }: Props) {
   const [collapsed, setCollapsed] = useState(false)
+  const [projectOpen, setProjectOpen] = useState(false)
+  const [showProjectModal, setShowProjectModal] = useState(false)
+
+  const handleNewProject = async (name: string) => {
+    if (!onCreateProject) return
+    await onCreateProject(name)
+    setProjectOpen(false)
+  }
 
   return (
     <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
@@ -97,6 +111,42 @@ export default function Sidebar({ active, onNavigate, connected }: Props) {
           <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" fill="var(--accent)" />
         </svg>
         {!collapsed && <span className="brand-name">Stormrunner</span>}
+      </div>
+
+      <div className="sidebar-project">
+        <button
+          className="project-selector"
+          onClick={() => setProjectOpen(!projectOpen)}
+          title={collapsed ? activeProject?.name || 'Project' : undefined}
+        >
+          <span className="project-icon">▣</span>
+          {!collapsed && (
+            <>
+              <span className="project-name">{activeProject?.name || 'Project'}</span>
+              <span className="project-chevron">⌄</span>
+            </>
+          )}
+        </button>
+        {projectOpen && !collapsed && (
+          <div className="project-menu">
+            <div className="project-menu-list">
+              {projects.map(project => (
+                <button
+                  key={project.id}
+                  className={`project-menu-item ${activeProject?.id === project.id ? 'active' : ''}`}
+                  onClick={() => {
+                    onProjectChange?.(project)
+                    setProjectOpen(false)
+                  }}
+                >
+                  {project.name}
+                </button>
+              ))}
+            </div>
+            <button className="project-menu-action" onClick={() => setShowProjectModal(true)}>+ New Project</button>
+            <button className="project-menu-action muted" onClick={() => { setProjectOpen(false); onNavigate('settings') }}>Manage Projects</button>
+          </div>
+        )}
       </div>
 
       <nav className="sidebar-nav">
@@ -134,6 +184,12 @@ export default function Sidebar({ active, onNavigate, connected }: Props) {
           </svg>
         </button>
       </div>
+      {showProjectModal && (
+        <ProjectModal
+          onClose={() => setShowProjectModal(false)}
+          onSubmit={handleNewProject}
+        />
+      )}
     </aside>
   )
 }

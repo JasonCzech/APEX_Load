@@ -9,6 +9,23 @@ export interface TestGroup {
   initialization?: 'at_runtime' | 'at_once'
 }
 
+export interface Project {
+  id: string
+  name: string
+  created_at: string
+  updated_at: string
+}
+
+export interface Folder {
+  id: string
+  project_id: string
+  parent_id?: string | null
+  name: string
+  category: 'scripts' | 'scenarios' | 'results' | 'recordings'
+  created_at: string
+  updated_at: string
+}
+
 export interface RuntimeSettingsOverride {
   iterations?: number
   log_level?: string
@@ -53,6 +70,8 @@ export interface TestSummary {
   id: string
   name: string
   status: TestStatus
+  project_id?: string
+  folder_id?: string | null
   groups: TestGroup[]
   capacity_advisory?: CapacityAdvisory
   script_shakeout?: boolean
@@ -289,6 +308,8 @@ export interface StoredScript {
   name: string
   protocol: string
   version: string
+  project_id?: string
+  folder_id?: string | null
   created_at: string
 }
 

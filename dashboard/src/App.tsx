@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react'
 import { useWebSocket } from './hooks/useWebSocket'
+import { ProjectProvider, useProject } from './hooks/useProject'
 import { WSMessage, MetricsHistoryPoint } from './types'
 import Sidebar, { NavPage } from './components/Sidebar'
 import TestHub from './components/TestHub'
@@ -18,7 +19,7 @@ type View =
   | { page: 'scripts'; mode?: 'list' | 'create' | 'edit' | 'import'; scriptId?: string }
   | { page: 'test'; testId: string }
 
-export default function App() {
+function AppShell() {
   const [view, setView] = useState<View>({ page: 'dashboard' })
   const [metricsHistory, setMetricsHistory] = useState<Record<string, MetricsHistoryPoint[]>>({})
   const [testStatuses, setTestStatuses] = useState<Record<string, string>>({})
@@ -68,6 +69,7 @@ export default function App() {
   }, [])
 
   const { connected } = useWebSocket({ onMessage: handleWSMessage })
+  const { projects, activeProject, setActiveProject, createAndSelectProject } = useProject()
 
   const navigateToTest = (id: string) => setView({ page: 'test', testId: id })
   const activePage = view.page === 'test' ? 'tests' : view.page
@@ -84,6 +86,10 @@ export default function App() {
         active={activePage}
         onNavigate={handleNavigate}
         connected={connected}
+        projects={projects}
+        activeProject={activeProject}
+        onProjectChange={setActiveProject}
+        onCreateProject={createAndSelectProject}
       />
       <main className="main-content">
         {view.page === 'dashboard' && (
@@ -98,6 +104,7 @@ export default function App() {
           <TestHub
             testStatuses={testStatuses}
             onSelectTest={navigateToTest}
+            activeProject={activeProject}
           />
         )}
         {view.page === 'test' && (
@@ -109,17 +116,26 @@ export default function App() {
             onSelectTest={navigateToTest}
           />
         )}
-        {view.page === 'scripts' && <ScriptsPage initialMode={scriptMode} initialEditId={scriptEditId} />}
-        {view.page === 'recorder' && <RecordingStudio />}
+        {view.page === 'scripts' && <ScriptsPage initialMode={scriptMode} initialEditId={scriptEditId} activeProject={activeProject} />}
+        {view.page === 'recorder' && <RecordingStudio activeProject={activeProject} />}
         {view.page === 'results' && (
           <ResultsPage
             testStatuses={testStatuses}
             onSelectTest={navigateToTest}
+            activeProject={activeProject}
           />
         )}
         {view.page === 'monitoring' && <MonitoringPage connected={connected} />}
         {view.page === 'settings' && <SettingsPage />}
       </main>
     </div>
+  )
+}
+
+export default function App() {
+  return (
+    <ProjectProvider>
+      <AppShell />
+    </ProjectProvider>
   )
 }

@@ -26,10 +26,10 @@ type Hub struct {
 }
 
 type Client struct {
-	hub      *Hub
-	conn     *websocket.Conn
-	send     chan []byte
-	testID   string // empty = all tests, set = specific test
+	hub    *Hub
+	conn   *websocket.Conn
+	send   chan []byte
+	testID string // empty = all tests, set = specific test
 }
 
 func NewHub() *Hub {

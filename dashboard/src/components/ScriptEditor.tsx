@@ -69,6 +69,8 @@ interface ScriptData {
 interface Props {
   scriptId?: string | null
   initialScript?: ScriptData | null
+  projectId?: string
+  folderId?: string | null
   onSave?: () => void
   onClose?: () => void
 }
@@ -101,7 +103,7 @@ function getImportSummary(metadata?: ImportMetadata | null) {
   }
 }
 
-export default function ScriptEditor({ scriptId, initialScript, onSave, onClose }: Props) {
+export default function ScriptEditor({ scriptId, initialScript, projectId, folderId, onSave, onClose }: Props) {
   const api = useApi()
   const [script, setScript] = useState<ScriptData>(initialScript || { ...EMPTY_SCRIPT })
   const [activeAction, setActiveAction] = useState<number | null>(null)
@@ -262,7 +264,7 @@ export default function ScriptEditor({ scriptId, initialScript, onSave, onClose 
       if (scriptId) {
         await api.updateScript(scriptId, script)
       } else {
-        await api.createScript(script)
+        await api.createScript(script, projectId, folderId)
       }
       setSuccess('Script saved successfully!')
       onSave?.()

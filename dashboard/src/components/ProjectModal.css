@@ -1,0 +1,80 @@
+.project-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(5, 7, 12, 0.62);
+  backdrop-filter: blur(8px);
+}
+
+.project-modal {
+  width: min(420px, 100%);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-card);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.4);
+}
+
+.project-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.project-modal-header h3 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.project-modal-close {
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 22px;
+}
+
+.project-modal-close:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.project-modal-field {
+  display: grid;
+  gap: 8px;
+  padding: 20px;
+}
+
+.project-modal-field span {
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.project-modal-field input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  padding: 10px 12px;
+  font-size: 14px;
+}
+
+.project-modal-field input:focus {
+  outline: 1px solid var(--accent);
+  border-color: var(--accent);
+}
+
+.project-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 0 20px 20px;
+}

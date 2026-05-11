@@ -22,6 +22,7 @@ type Server struct {
 	hub        *Hub
 	runner     *TestRunner
 	recorder   *recorder.Recorder
+	store      storage.Store
 	mux        *http.ServeMux
 }
 
@@ -51,6 +52,7 @@ func NewServer(cfg ServerConfig) *Server {
 		hub:      hub,
 		runner:   runner,
 		recorder: rec,
+		store:    cfg.Store,
 		mux:      http.NewServeMux(),
 	}
 
@@ -72,6 +74,16 @@ func (s *Server) routes(allowedOrigins []string) {
 	log := loggingMiddleware
 
 	// Test lifecycle and archive endpoints.
+	s.mux.Handle("POST /api/v1/projects", cors(log(http.HandlerFunc(s.handleCreateProject))))
+	s.mux.Handle("GET /api/v1/projects", cors(log(http.HandlerFunc(s.handleListProjects))))
+	s.mux.Handle("GET /api/v1/projects/{id}", cors(log(http.HandlerFunc(s.handleGetProject))))
+	s.mux.Handle("PUT /api/v1/projects/{id}", cors(log(http.HandlerFunc(s.handleUpdateProject))))
+	s.mux.Handle("DELETE /api/v1/projects/{id}", cors(log(http.HandlerFunc(s.handleDeleteProject))))
+	s.mux.Handle("POST /api/v1/projects/{pid}/folders", cors(log(http.HandlerFunc(s.handleCreateFolder))))
+	s.mux.Handle("GET /api/v1/projects/{pid}/folders", cors(log(http.HandlerFunc(s.handleListFolders))))
+	s.mux.Handle("PUT /api/v1/folders/{id}", cors(log(http.HandlerFunc(s.handleUpdateFolder))))
+	s.mux.Handle("DELETE /api/v1/folders/{id}", cors(log(http.HandlerFunc(s.handleDeleteFolder))))
+
 	s.mux.Handle("POST /api/v1/tests", cors(log(http.HandlerFunc(s.handleCreateTest))))
 	s.mux.Handle("POST /api/v1/tests/estimate", cors(log(http.HandlerFunc(s.handleEstimateTest))))
 	s.mux.Handle("GET /api/v1/tests", cors(log(http.HandlerFunc(s.handleListTests))))
@@ -82,6 +94,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("PATCH /api/v1/tests/{id}/vusers", cors(log(http.HandlerFunc(s.handleScaleVUsers))))
 	s.mux.Handle("PATCH /api/v1/tests/{id}/duration", cors(log(http.HandlerFunc(s.handleAdjustDuration))))
 	s.mux.Handle("DELETE /api/v1/tests/{id}", cors(log(http.HandlerFunc(s.handleDeleteTest))))
+	s.mux.Handle("PATCH /api/v1/tests/{id}/move", cors(log(http.HandlerFunc(s.handleMoveTest))))
 	s.mux.Handle("GET /api/v1/tests/{id}/metrics", cors(log(http.HandlerFunc(s.handleGetMetrics))))
 	s.mux.Handle("GET /api/v1/tests/{id}/archive", cors(log(http.HandlerFunc(s.handleDownloadRunArchive))))
 	s.mux.Handle("GET /api/v1/tests/{id}/archive/manifest", cors(log(http.HandlerFunc(s.handleGetRunArchiveManifest))))
@@ -97,6 +110,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("GET /api/v1/scripts/{id}", cors(log(http.HandlerFunc(s.handleGetScript))))
 	s.mux.Handle("PUT /api/v1/scripts/{id}", cors(log(http.HandlerFunc(s.handleUpdateScript))))
 	s.mux.Handle("DELETE /api/v1/scripts/{id}", cors(log(http.HandlerFunc(s.handleDeleteScript))))
+	s.mux.Handle("PATCH /api/v1/scripts/{id}/move", cors(log(http.HandlerFunc(s.handleMoveScript))))
 	s.mux.Handle("POST /api/v1/scripts/{id}/validate", cors(log(http.HandlerFunc(s.handleValidateScript))))
 	s.mux.Handle("POST /api/v1/scripts/{id}/export", cors(log(http.HandlerFunc(s.handleExportScript))))
 	s.mux.Handle("GET /api/v1/scripts/{id}/download", cors(log(http.HandlerFunc(s.handleDownloadScript))))

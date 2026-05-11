@@ -38,7 +38,11 @@ async function fetchBlob(path: string): Promise<Blob> {
 }
 
 export function useTestApi() {
-  const listTests = useCallback(() => request<{ tests: any[]; count: number }>('/tests'), [])
+  const listTests = useCallback(
+    (projectId?: string, folderId?: string | null) =>
+      request<{ tests: any[]; count: number }>(`/tests${buildQuery({ project_id: projectId, folder_id: folderId === undefined ? undefined : folderId || '' })}`),
+    [],
+  )
 
   const getTest = useCallback((id: string) => request<any>(`/tests/${id}`), [])
 
@@ -66,6 +70,12 @@ export function useTestApi() {
   const abortTest = useCallback((id: string) => request<any>(`/tests/${id}/abort`, { method: 'POST' }), [])
 
   const deleteTest = useCallback((id: string) => request<any>(`/tests/${id}`, { method: 'DELETE' }), [])
+
+  const moveTest = useCallback(
+    (id: string, folderId: string | null) =>
+      request<any>(`/tests/${id}/move`, { method: 'PATCH', body: JSON.stringify({ folder_id: folderId }) }),
+    [],
+  )
 
   const getMetrics = useCallback((id: string) => request<any>(`/tests/${id}/metrics`), [])
 
@@ -138,6 +148,7 @@ export function useTestApi() {
       stopTest,
       abortTest,
       deleteTest,
+      moveTest,
       getMetrics,
       getTestArchiveManifest,
       getTestArchiveTransactions,
@@ -158,6 +169,7 @@ export function useTestApi() {
       stopTest,
       abortTest,
       deleteTest,
+      moveTest,
       getMetrics,
       getTestArchiveManifest,
       getTestArchiveTransactions,

@@ -27,9 +27,9 @@ func TestHandleHealthCheckReturnsCapacityAvailabilitySnapshot(t *testing.T) {
 	}
 
 	var payload struct {
-		Status              string `json:"status"`
+		Status               string `json:"status"`
 		CapacityAvailability struct {
-			Source                       string   `json:"source"`
+			Source                        string   `json:"source"`
 			ConfiguredAvailableGenerators int      `json:"configured_available_generators"`
 			EffectiveAvailableGenerators  int      `json:"effective_available_generators"`
 			LiveAvailableGenerators       *int     `json:"live_available_generators"`

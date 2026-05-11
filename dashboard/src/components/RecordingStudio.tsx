@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { downloadBlob } from '../utils/fileUtils'
 import { useAsyncTask } from '../hooks/useAsyncTask'
 import { useApi } from '../hooks/useApi'
+import { Project } from '../types'
 import './RecordingStudio.css'
 
 interface RecordedRequest {
@@ -55,7 +56,7 @@ interface Correlation {
   sample_value: string
 }
 
-export default function RecordingStudio() {
+export default function RecordingStudio({ activeProject }: { activeProject?: Project | null }) {
   const api = useApi()
   const [sessions, setSessions] = useState<RecordingSession[]>([])
   const [activeSession, setActiveSession] = useState<RecordingSession | null>(null)
@@ -101,7 +102,7 @@ export default function RecordingStudio() {
   const refresh = useCallback(async () => {
     try {
       const [listRes, statusRes] = await Promise.all([
-        api.listRecordings(),
+        api.listRecordings(activeProject?.id),
         api.getRecorderStatus(),
       ])
       setSessions(listRes.sessions || [])
@@ -113,7 +114,7 @@ export default function RecordingStudio() {
         setActiveSession(null)
       }
     } catch { /* API not ready */ }
-  }, [api])
+  }, [api, activeProject?.id])
 
   useEffect(() => {
     refresh()
@@ -136,6 +137,7 @@ export default function RecordingStudio() {
     try {
       const data: any = {
         name: sessionName || 'Recording Session',
+        project_id: activeProject?.id,
         exclude_static: true,
       }
       if (includeHosts.trim()) {

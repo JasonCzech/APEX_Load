@@ -2,15 +2,17 @@ import { useState, useEffect, useCallback, useMemo, memo } from 'react'
 import { downloadBlob } from '../utils/fileUtils'
 import { ResponsiveContainer, LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip, Legend } from 'recharts'
 import { useApi } from '../hooks/useApi'
-import { IntervalSummaryRecord, RunArchiveReport, TestSummary } from '../types'
+import { Folder, IntervalSummaryRecord, Project, RunArchiveReport, TestSummary } from '../types'
+import FolderTree from './FolderTree'
 import StatusBadge from './StatusBadge'
 
 interface Props {
   testStatuses: Record<string, string>
   onSelectTest: (id: string) => void
+  activeProject?: Project | null
 }
 
-function ResultsPage({ testStatuses, onSelectTest }: Props) {
+function ResultsPage({ testStatuses, onSelectTest, activeProject }: Props) {
   const api = useApi()
   const [tests, setTests] = useState<TestSummary[]>([])
   const [sortField, setSortField] = useState<string>('start_time')
@@ -20,15 +22,21 @@ function ResultsPage({ testStatuses, onSelectTest }: Props) {
   const [comparisonSummaries, setComparisonSummaries] = useState<Record<string, IntervalSummaryRecord[]>>({})
   const [comparisonLoading, setComparisonLoading] = useState(false)
   const [comparisonError, setComparisonError] = useState('')
+  const [folders, setFolders] = useState<Folder[]>([])
+  const [selectedFolderId, setSelectedFolderId] = useState<string | null | undefined>(undefined)
 
   const refresh = useCallback(async () => {
     try {
-      const res = await api.listTests()
-      setTests(res.tests || [])
+      const [testRes, folderRes] = await Promise.all([
+        api.listTests(activeProject?.id),
+        activeProject?.id ? api.listFolders(activeProject.id, 'results') : Promise.resolve({ folders: [] }),
+      ])
+      setTests(testRes.tests || [])
+      setFolders(folderRes.folders || [])
     } catch {
       // API not available
     }
-  }, [api])
+  }, [api, activeProject?.id])
 
   useEffect(() => {
     refresh()
@@ -36,7 +44,21 @@ function ResultsPage({ testStatuses, onSelectTest }: Props) {
     return () => clearInterval(interval)
   }, [refresh])
 
+  useEffect(() => {
+    setSelectedFolderId(undefined)
+    setSelectedIds(new Set())
+  }, [activeProject?.id])
+
   const completedTests = tests.filter((t) => {
+    const s = testStatuses[t.id] || t.status
+    const statusMatches = s === 'COMPLETE' || s === 'FAILED' || s === 'ABORTED'
+    if (!statusMatches) return false
+    if (selectedFolderId === undefined) return true
+    if (selectedFolderId === null) return !t.folder_id
+    return t.folder_id === selectedFolderId
+  })
+
+  const allCompletedTests = tests.filter((t) => {
     const s = testStatuses[t.id] || t.status
     return s === 'COMPLETE' || s === 'FAILED' || s === 'ABORTED'
   })
@@ -171,6 +193,30 @@ function ResultsPage({ testStatuses, onSelectTest }: Props) {
     } catch {
       // ignore for now
     }
+  }
+
+  const createFolder = async (parentId: string | null) => {
+    if (!activeProject?.id) return
+    const name = window.prompt('Folder name')
+    if (!name?.trim()) return
+    await api.createFolder(activeProject.id, { name: name.trim(), category: 'results', parent_id: parentId })
+    refresh()
+  }
+
+  const renameFolder = async (id: string, name: string) => {
+    await api.updateFolder(id, { name })
+    refresh()
+  }
+
+  const deleteFolder = async (id: string) => {
+    await api.deleteFolder(id)
+    if (selectedFolderId === id) setSelectedFolderId(undefined)
+    refresh()
+  }
+
+  const moveResult = async (id: string, folderId: string | null) => {
+    await api.moveTest(id, folderId)
+    refresh()
   }
 
   const comparisonCards = useMemo(() => {
@@ -346,21 +392,37 @@ function ResultsPage({ testStatuses, onSelectTest }: Props) {
         </div>
       )}
 
-      <div className="page-section">
-        <h3 className="section-title">Completed Scenarios ({completedTests.length})</h3>
-        {completedTests.length === 0 ? (
-          <div className="empty-card">
-            <div className="empty-icon">
-              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="18" y1="20" x2="18" y2="10" />
-                <line x1="12" y1="20" x2="12" y2="4" />
-                <line x1="6" y1="20" x2="6" y2="14" />
-              </svg>
+      <div className="folder-layout">
+        <FolderTree
+          title="Results"
+          category="results"
+          folders={folders}
+          items={allCompletedTests}
+          selectedFolderId={selectedFolderId}
+          onSelectFolder={setSelectedFolderId}
+          onSelectItem={onSelectTest}
+          onCreateFolder={createFolder}
+          onRenameFolder={renameFolder}
+          onDeleteFolder={deleteFolder}
+          onMoveItem={moveResult}
+          renderItemExtra={(item) => <StatusBadge status={testStatuses[item.id] || item.status} />}
+        />
+
+        <div className="page-section">
+          <h3 className="section-title">Completed Scenarios ({completedTests.length})</h3>
+          {completedTests.length === 0 ? (
+            <div className="empty-card">
+              <div className="empty-icon">
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="20" x2="18" y2="10" />
+                  <line x1="12" y1="20" x2="12" y2="4" />
+                  <line x1="6" y1="20" x2="6" y2="14" />
+                </svg>
+              </div>
+              <p>No completed scenarios here.</p>
+              <p className="empty-hint">Run a scenario to see results and performance data here.</p>
             </div>
-            <p>No completed scenarios yet.</p>
-            <p className="empty-hint">Run a scenario to see results and performance data here.</p>
-          </div>
-        ) : (
+          ) : (
           <div className="data-table">
             <table>
               <thead>
@@ -417,7 +479,8 @@ function ResultsPage({ testStatuses, onSelectTest }: Props) {
               </tbody>
             </table>
           </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   )

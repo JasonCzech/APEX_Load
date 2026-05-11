@@ -1,13 +1,15 @@
 import { useState, useEffect, useCallback, useMemo, memo } from 'react'
 import { useApi } from '../hooks/useApi'
-import { ScenarioDraft, TestSummary, TestStatus, StoredScript } from '../types'
+import { Folder, Project, ScenarioDraft, TestSummary, TestStatus, StoredScript } from '../types'
 import CreateTestModal from './CreateTestModal'
+import FolderTree from './FolderTree'
 import StatusBadge from './StatusBadge'
 import './TestHub.css'
 
 interface Props {
   testStatuses: Record<string, string>
   onSelectTest: (id: string) => void
+  activeProject?: Project | null
 }
 
 interface Scenario {
@@ -80,10 +82,12 @@ function buildScenarioDraft(test: TestSummary): ScenarioDraft {
   }
 }
 
-function TestHub({ testStatuses, onSelectTest }: Props) {
+function TestHub({ testStatuses, onSelectTest, activeProject }: Props) {
   const api = useApi()
   const [tests, setTests] = useState<TestSummary[]>([])
   const [scripts, setScripts] = useState<StoredScript[]>([])
+  const [folders, setFolders] = useState<Folder[]>([])
+  const [selectedFolderId, setSelectedFolderId] = useState<string | null | undefined>(undefined)
   const [showCreate, setShowCreate] = useState(false)
   const [expandedScenario, setExpandedScenario] = useState<string | null>(null)
   const [editingScenario, setEditingScenario] = useState<ScenarioDraft | null>(null)
@@ -91,13 +95,15 @@ function TestHub({ testStatuses, onSelectTest }: Props) {
   const refresh = useCallback(async () => {
     try {
       const [testRes, scriptRes] = await Promise.all([
-        api.listTests(),
-        api.listScripts(),
+        api.listTests(activeProject?.id),
+        api.listScripts(activeProject?.id),
       ])
+      const folderRes = activeProject?.id ? await api.listFolders(activeProject.id, 'scenarios') : { folders: [] }
       setTests(testRes.tests || [])
       setScripts(scriptRes.scripts || [])
+      setFolders(folderRes.folders || [])
     } catch { /* API not available yet */ }
-  }, [api])
+  }, [api, activeProject?.id])
 
   useEffect(() => {
     refresh()
@@ -105,9 +111,19 @@ function TestHub({ testStatuses, onSelectTest }: Props) {
     return () => clearInterval(interval)
   }, [refresh])
 
+  useEffect(() => {
+    setSelectedFolderId(undefined)
+  }, [activeProject?.id])
+
   const scenarios = useMemo(() => {
     const map = new Map<string, TestSummary[]>()
-    for (const test of tests) {
+    const visibleTests = tests.filter((test) => {
+      if (selectedFolderId === undefined) return true
+      if (selectedFolderId === null) return !test.folder_id
+      return test.folder_id === selectedFolderId
+    })
+
+    for (const test of visibleTests) {
       const name = test.name
       if (!map.has(name)) map.set(name, [])
       map.get(name)!.push(test)
@@ -140,7 +156,40 @@ function TestHub({ testStatuses, onSelectTest }: Props) {
     })
 
     return result
-  }, [tests, testStatuses])
+  }, [tests, testStatuses, selectedFolderId])
+
+  const scenarioItems = useMemo(
+    () => scenarios.map((scenario) => ({
+      id: scenario.configRun.id,
+      name: scenario.name,
+      folder_id: scenario.configRun.folder_id,
+    })),
+    [scenarios],
+  )
+
+  const createFolder = async (parentId: string | null) => {
+    if (!activeProject?.id) return
+    const name = window.prompt('Folder name')
+    if (!name?.trim()) return
+    await api.createFolder(activeProject.id, { name: name.trim(), category: 'scenarios', parent_id: parentId })
+    refresh()
+  }
+
+  const renameFolder = async (id: string, name: string) => {
+    await api.updateFolder(id, { name })
+    refresh()
+  }
+
+  const deleteFolder = async (id: string) => {
+    await api.deleteFolder(id)
+    if (selectedFolderId === id) setSelectedFolderId(undefined)
+    refresh()
+  }
+
+  const moveScenario = async (id: string, folderId: string | null) => {
+    await api.moveTest(id, folderId)
+    refresh()
+  }
 
   const toggleExpand = (name: string) => {
     setExpandedScenario(prev => prev === name ? null : name)
@@ -168,12 +217,27 @@ function TestHub({ testStatuses, onSelectTest }: Props) {
         </button>
       </div>
 
-      {scenarios.length === 0 ? (
-        <div className="empty-state">
-          No scenarios yet. Create one to get started.
-        </div>
-      ) : (
-        <div className="scenario-list">
+      <div className="folder-layout">
+        <FolderTree
+          title="Scenarios"
+          category="scenarios"
+          folders={folders}
+          items={scenarioItems}
+          selectedFolderId={selectedFolderId}
+          onSelectFolder={setSelectedFolderId}
+          onSelectItem={onSelectTest}
+          onCreateFolder={createFolder}
+          onRenameFolder={renameFolder}
+          onDeleteFolder={deleteFolder}
+          onMoveItem={moveScenario}
+        />
+
+        {scenarios.length === 0 ? (
+          <div className="empty-state">
+            No scenarios here yet. Create one to get started.
+          </div>
+        ) : (
+          <div className="scenario-list">
           {scenarios.map(scenario => {
             const isExpanded = expandedScenario === scenario.name
             const latest = scenario.latestRun
@@ -279,12 +343,15 @@ function TestHub({ testStatuses, onSelectTest }: Props) {
               </div>
             )
           })}
-        </div>
-      )}
+          </div>
+        )}
+      </div>
 
       {showCreate && (
         <CreateTestModal
           scripts={scripts}
+          projectId={activeProject?.id}
+          folderId={selectedFolderId || null}
           initialScenario={editingScenario || undefined}
           onClose={() => {
             setShowCreate(false)
