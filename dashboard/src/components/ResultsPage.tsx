@@ -395,6 +395,7 @@ function ResultsPage({ testStatuses, onSelectTest, activeProject }: Props) {
       <div className="folder-layout">
         <FolderTree
           title="Results"
+          rootLabel={activeProject?.name || 'Root'}
           category="results"
           folders={folders}
           items={allCompletedTests}

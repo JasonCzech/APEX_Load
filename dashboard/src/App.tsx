@@ -8,7 +8,6 @@ import TestExecution from './components/TestExecution'
 import DashboardPage from './components/DashboardPage'
 import ScriptsPage from './components/ScriptsPage'
 import ResultsPage from './components/ResultsPage'
-import RecordingStudio from './components/RecordingStudio'
 import MonitoringPage from './components/MonitoringPage'
 import SettingsPage from './components/SettingsPage'
 import './App.css'
@@ -117,7 +116,6 @@ function AppShell() {
           />
         )}
         {view.page === 'scripts' && <ScriptsPage initialMode={scriptMode} initialEditId={scriptEditId} activeProject={activeProject} />}
-        {view.page === 'recorder' && <RecordingStudio activeProject={activeProject} />}
         {view.page === 'results' && (
           <ResultsPage
             testStatuses={testStatuses}

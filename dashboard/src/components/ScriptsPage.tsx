@@ -248,13 +248,14 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, activ
               Delete Selected ({selectedIds.size})
             </button>
           )}
-          <button className="btn btn-primary" onClick={() => setSubView('create-options')}>+ Create Script</button>
         </div>
       </div>
 
       <div className="folder-layout">
         <FolderTree
           title="Scripts"
+          rootLabel={activeProject?.name || 'Root'}
+          headerActions={<button className="btn btn-sm btn-primary" onClick={() => setSubView('create-options')}>+ Create Script</button>}
           category="scripts"
           folders={folders}
           items={scripts}

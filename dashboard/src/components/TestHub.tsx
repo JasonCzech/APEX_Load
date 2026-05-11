@@ -220,6 +220,7 @@ function TestHub({ testStatuses, onSelectTest, activeProject }: Props) {
       <div className="folder-layout">
         <FolderTree
           title="Scenarios"
+          rootLabel={activeProject?.name || 'Root'}
           category="scenarios"
           folders={folders}
           items={scenarioItems}

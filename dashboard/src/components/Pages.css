@@ -408,8 +408,9 @@
 
 /* Settings page */
 .settings-grid {
-  display: flex;
-  flex-direction: column;
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 20px;
 }
 
@@ -567,8 +568,9 @@
 
 .setting-row {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
   padding: 14px 18px;
   border-bottom: 1px solid var(--border);
 }
@@ -578,7 +580,7 @@
 }
 
 .settings-input {
-  width: 220px;
+  width: 100%;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--bg-secondary);
@@ -598,7 +600,7 @@
 }
 
 .settings-input-number {
-  width: 140px;
+  width: 100%;
 }
 
 .setting-info {
@@ -622,21 +624,14 @@
   font-weight: 500;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 640px) {
+  .settings-grid {
+    grid-template-columns: 1fr;
+  }
+
   .settings-actions {
     width: 100%;
     justify-content: flex-end;
-  }
-
-  .setting-row {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 10px;
-  }
-
-  .settings-input,
-  .settings-input-number {
-    width: 100%;
   }
 }
 

@@ -227,7 +227,7 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="page">
+    <div className="page settings-page">
       <div className="page-header">
         <div>
           <h2>Settings</h2>

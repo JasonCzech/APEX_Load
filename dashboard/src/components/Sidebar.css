@@ -10,6 +10,8 @@
   flex-shrink: 0;
   transition: width 0.2s ease;
   z-index: 100;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .sidebar.collapsed {
@@ -42,6 +44,7 @@
   letter-spacing: -0.03em;
   white-space: nowrap;
   overflow: hidden;
+  user-select: none;
 }
 
 .sidebar-project {
@@ -82,6 +85,7 @@
   text-align: left;
   font-size: 13px;
   font-weight: 600;
+  user-select: none;
 }
 
 .project-chevron {
@@ -169,6 +173,8 @@
   text-align: left;
   transition: background 0.12s, color 0.12s;
   cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .sidebar.collapsed .nav-item {
@@ -197,11 +203,13 @@
   flex-shrink: 0;
   width: 20px;
   height: 20px;
+  user-select: none;
 }
 
 .nav-label {
   white-space: nowrap;
   overflow: hidden;
+  user-select: none;
 }
 
 /* Footer */
@@ -295,4 +303,12 @@
   .collapse-btn {
     display: none;
   }
+}
+
+.nav-item:focus,
+.project-selector:focus,
+.collapse-btn:focus,
+.project-menu-item:focus,
+.project-menu-action:focus {
+  outline: none;
 }

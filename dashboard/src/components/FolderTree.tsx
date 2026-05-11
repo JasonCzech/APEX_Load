@@ -13,6 +13,8 @@ interface TreeItem {
 
 interface Props {
   title: string
+  rootLabel?: string
+  headerActions?: JSX.Element
   category: FolderCategory
   folders: Folder[]
   items: TreeItem[]
@@ -35,6 +37,8 @@ function folderLabel(category: FolderCategory): string {
 
 export default function FolderTree({
   title,
+  rootLabel = 'Root',
+  headerActions,
   category,
   folders,
   items,
@@ -120,21 +124,19 @@ export default function FolderTree({
           <h3>{title}</h3>
           <span>{folders.length} folders · {items.length} {folderLabel(category)}{items.length === 1 ? '' : 's'}</span>
         </div>
-        <button className="btn btn-sm btn-secondary" onClick={() => onCreateFolder(selectedFolderId || null)}>
-          + Folder
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {headerActions}
+          <button className="btn btn-sm btn-secondary" onClick={() => onCreateFolder(selectedFolderId || null)}>
+            + Folder
+          </button>
+        </div>
       </div>
 
       <div className="folder-tree-section">
         <button className={`folder-tree-row scope ${selectedFolderId === undefined ? 'active' : ''}`} onClick={() => onSelectFolder(undefined)}>
-          <span className="folder-tree-icon">◎</span>
-          <span>All {title}</span>
-          <span className="folder-tree-count">{items.length}</span>
-        </button>
-        <button className={`folder-tree-row scope ${selectedFolderId === null ? 'active' : ''}`} onClick={() => onSelectFolder(null)}>
           <span className="folder-tree-icon">⌂</span>
-          <span>Root</span>
-          <span className="folder-tree-count">{items.filter((item) => !item.folder_id).length}</span>
+          <span>{rootLabel}</span>
+          <span className="folder-tree-count">{items.length}</span>
         </button>
         {childrenByParent.get('root')?.map((folder) => renderFolder(folder))}
       </div>
@@ -157,7 +159,7 @@ export default function FolderTree({
                   onChange={(event) => onMoveItem(item.id, event.target.value || null)}
                   onClick={(event) => event.stopPropagation()}
                 >
-                  <option value="">Root</option>
+                  <option value="">{rootLabel}</option>
                   {folders.map((folder) => (
                     <option key={folder.id} value={folder.id}>{folder.name}</option>
                   ))}
