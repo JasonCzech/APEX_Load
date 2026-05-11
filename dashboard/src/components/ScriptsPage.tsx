@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { StoredScript } from '../types'
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
+import { StoredScript, TestSummary } from '../types'
 import { useApi } from '../hooks/useApi'
 import ScriptEditor from './ScriptEditor'
 import LoadRunnerImport from './LoadRunnerImport'
@@ -17,9 +17,19 @@ function formatDate(value?: string) {
   return value ? new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Never'
 }
 
+function formatDateTime(value?: string) {
+  return value ? new Date(value).toLocaleString() : '—'
+}
+
 function releaseList(script: StoredScript) {
   const releases = script.associated_releases || []
   if (releases.length === 0) return 'No releases yet'
+  return releases.map(release => release.name).join(', ')
+}
+
+function scenarioRunReleaseList(script: StoredScript) {
+  const releases = script.scenario_run_releases || []
+  if (releases.length === 0) return 'No scenario-run releases yet'
   return releases.map(release => release.name).join(', ')
 }
 
@@ -30,8 +40,11 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId }: Pro
   const [editingId, setEditingId] = useState<string | null>(initialEditId || null)
   const [editingScript, setEditingScript] = useState<any>(null)
   const [draftScript, setDraftScript] = useState<any>(null)
-  const [sortField, setSortField] = useState<'name' | 'created_at' | 'last_run_at'>('name')
+  const [sortField, setSortField] = useState<'name' | 'protocol' | 'version' | 'created_at' | 'scenario_count' | 'associated_releases' | 'scenario_run_releases' | 'last_run_at'>('name')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
+  const [expandedScriptId, setExpandedScriptId] = useState<string | null>(null)
+  const [scriptRuns, setScriptRuns] = useState<Record<string, TestSummary[]>>({})
+  const [loadingRunsFor, setLoadingRunsFor] = useState<string | null>(null)
 
   const refresh = useCallback(async () => {
     try {
@@ -62,8 +75,24 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId }: Pro
 
   const sortedScripts = useMemo(() => {
     return [...scripts].sort((a: any, b: any) => {
-      const aValue = sortField.includes('_at') ? new Date(a[sortField] || 0).getTime() : a[sortField]
-      const bValue = sortField.includes('_at') ? new Date(b[sortField] || 0).getTime() : b[sortField]
+      let aValue: any
+      let bValue: any
+      if (sortField === 'created_at' || sortField === 'last_run_at') {
+        aValue = new Date(a[sortField] || 0).getTime()
+        bValue = new Date(b[sortField] || 0).getTime()
+      } else if (sortField === 'scenario_count') {
+        aValue = a.scenario_count || 0
+        bValue = b.scenario_count || 0
+      } else if (sortField === 'associated_releases') {
+        aValue = (a.associated_releases || []).length
+        bValue = (b.associated_releases || []).length
+      } else if (sortField === 'scenario_run_releases') {
+        aValue = (a.scenario_run_releases || []).length
+        bValue = (b.scenario_run_releases || []).length
+      } else {
+        aValue = String(a[sortField] || '').toLowerCase()
+        bValue = String(b[sortField] || '').toLowerCase()
+      }
       if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1
       if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1
       return 0
@@ -73,6 +102,33 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId }: Pro
   const handleSort = (field: typeof sortField) => {
     if (sortField === field) setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc')
     else { setSortField(field); setSortDirection('asc') }
+  }
+
+  const toggleScriptRuns = async (script: StoredScript) => {
+    if (expandedScriptId === script.id) {
+      setExpandedScriptId(null)
+      return
+    }
+    setExpandedScriptId(script.id)
+    if (scriptRuns[script.id]) return
+    setLoadingRunsFor(script.id)
+    try {
+      const res = await api.listTests()
+      const linkedRuns = (res.tests || [])
+        .filter((test: TestSummary) =>
+          !!test.scenario_id && (test.groups || []).some(group => group.script_id === script.id),
+        )
+        .sort((a: TestSummary, b: TestSummary) => {
+          const aTime = new Date(a.start_time || a.created_at || 0).getTime()
+          const bTime = new Date(b.start_time || b.created_at || 0).getTime()
+          return bTime - aTime
+        })
+      setScriptRuns(prev => ({ ...prev, [script.id]: linkedRuns }))
+    } catch {
+      setScriptRuns(prev => ({ ...prev, [script.id]: [] }))
+    } finally {
+      setLoadingRunsFor(null)
+    }
   }
 
   const handleSaved = () => { refresh(); setSubView('list'); setEditingId(null); setEditingScript(null); setDraftScript(null) }
@@ -146,32 +202,77 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId }: Pro
             <thead>
               <tr>
                 <th onClick={() => handleSort('name')} className="sortable">Name</th>
-                <th>Protocol</th>
-                <th>Version</th>
+                <th onClick={() => handleSort('protocol')} className="sortable">Protocol</th>
+                <th onClick={() => handleSort('version')} className="sortable">Version</th>
                 <th onClick={() => handleSort('created_at')} className="sortable">Created</th>
-                <th>Linked Scenarios</th>
-                <th>Associated Releases</th>
+                <th onClick={() => handleSort('scenario_count')} className="sortable">Linked Scenarios</th>
+                <th onClick={() => handleSort('associated_releases')} className="sortable">Associated Releases</th>
+                <th onClick={() => handleSort('scenario_run_releases')} className="sortable">Scenario Run Releases</th>
                 <th onClick={() => handleSort('last_run_at')} className="sortable">Last Run</th>
                 <th style={{ textAlign: 'right' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {sortedScripts.map(script => (
-                <tr key={script.id}>
-                  <td className="cell-name">{script.name}</td>
-                  <td><span className="protocol-badge">{script.protocol}</span></td>
-                  <td>{script.version || '—'}</td>
-                  <td className="cell-muted">{formatDate(script.created_at)}</td>
-                  <td>{script.scenario_count || 0}</td>
-                  <td className="cell-muted">{releaseList(script)}</td>
-                  <td className="cell-muted">{formatDate(script.last_run_at)}</td>
-                  <td style={{ textAlign: 'right' }}>
-                    <button className="btn btn-sm btn-ghost" onClick={() => handleEdit(script.id)}>Edit</button>
-                    <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={() => handleDelete(script.id)}>Delete</button>
-                  </td>
-                </tr>
+                <Fragment key={script.id}>
+                  <tr key={script.id} className="clickable-row" onClick={() => toggleScriptRuns(script)}>
+                    <td className="cell-name">{script.name}</td>
+                    <td><span className="protocol-badge">{script.protocol}</span></td>
+                    <td>{script.version || '—'}</td>
+                    <td className="cell-muted">{formatDate(script.created_at)}</td>
+                    <td>{script.scenario_count || 0}</td>
+                    <td className="cell-muted">{releaseList(script)}</td>
+                    <td className="cell-muted">{scenarioRunReleaseList(script)}</td>
+                    <td className="cell-muted">{formatDate(script.last_run_at)}</td>
+                    <td style={{ textAlign: 'right' }}>
+                      <button className="btn btn-sm btn-ghost" onClick={(event) => { event.stopPropagation(); handleEdit(script.id) }}>Edit</button>
+                      <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={(event) => { event.stopPropagation(); handleDelete(script.id) }}>Delete</button>
+                    </td>
+                  </tr>
+                  {expandedScriptId === script.id && (
+                    <tr>
+                      <td colSpan={9} style={{ background: 'var(--bg-primary)' }}>
+                        <div style={{ padding: '10px 4px' }}>
+                          <div className="cell-muted" style={{ marginBottom: 8 }}>
+                            Linked Scenario Runs {loadingRunsFor === script.id ? '(loading...)' : `(${(scriptRuns[script.id] || []).length})`}
+                          </div>
+                          {(scriptRuns[script.id] || []).length === 0 ? (
+                            <div className="cell-muted">No linked scenario runs for this script yet.</div>
+                          ) : (
+                            <div className="data-table">
+                              <table>
+                                <thead>
+                                  <tr>
+                                    <th>Run Name</th>
+                                    <th>Status</th>
+                                    <th>Scenario ID</th>
+                                    <th>Release ID</th>
+                                    <th>Started</th>
+                                    <th>Duration</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {(scriptRuns[script.id] || []).map(run => (
+                                    <tr key={run.id}>
+                                      <td className="cell-name">{run.name}</td>
+                                      <td>{run.status}</td>
+                                      <td className="cell-mono">{run.scenario_id || '—'}</td>
+                                      <td className="cell-mono">{run.release_id || '—'}</td>
+                                      <td className="cell-muted">{formatDateTime(run.start_time || run.created_at)}</td>
+                                      <td className="cell-muted">{run.duration}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               ))}
-              {sortedScripts.length === 0 && <tr><td colSpan={8} className="cell-muted">No scripts yet.</td></tr>}
+              {sortedScripts.length === 0 && <tr><td colSpan={9} className="cell-muted">No scripts yet.</td></tr>}
             </tbody>
           </table>
         </div>

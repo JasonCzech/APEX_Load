@@ -152,7 +152,8 @@ type PacingConfig struct {
 type DataSource struct {
 	Name           string   `json:"name"`
 	Type           string   `json:"type"` // "csv", "dat"
-	Path           string   `json:"path"`
+	Path           string   `json:"path,omitempty"`
+	InlineData     string   `json:"inline_data,omitempty"` // optional inline CSV/DAT content
 	Strategy       string   `json:"strategy"`            // "sequential", "random", "unique"
 	Delimiter      string   `json:"delimiter,omitempty"` // default ","
 	FirstRowHeader bool     `json:"first_row_header,omitempty"`

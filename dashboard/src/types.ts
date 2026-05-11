@@ -337,6 +337,7 @@ export interface StoredScript {
   created_at: string
   scenario_count?: number
   associated_releases?: ReleaseRef[]
+  scenario_run_releases?: ReleaseRef[]
   last_run_at?: string
   script?: any
 }

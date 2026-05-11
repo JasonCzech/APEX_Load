@@ -19,6 +19,8 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
   const [tests, setTests] = useState<TestSummary[]>([])
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [error, setError] = useState('')
+  const [sortField, setSortField] = useState<'name' | 'status' | 'total_vusers' | 'groups' | 'started' | 'duration' | 'archive'>('started')
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
 
   const refresh = useCallback(async () => {
     if (!activeApplication?.id || !activeRelease?.id) {
@@ -45,6 +47,54 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
     const status = testStatuses[test.id] || test.status
     return status === 'COMPLETE' || status === 'FAILED' || status === 'ABORTED'
   }), [tests, testStatuses])
+
+  const sortedCompleted = useMemo(() => {
+    return [...completed].sort((a, b) => {
+      let aValue: any
+      let bValue: any
+      switch (sortField) {
+        case 'status':
+          aValue = (testStatuses[a.id] || a.status || '').toLowerCase()
+          bValue = (testStatuses[b.id] || b.status || '').toLowerCase()
+          break
+        case 'total_vusers':
+          aValue = a.total_vusers || 0
+          bValue = b.total_vusers || 0
+          break
+        case 'groups':
+          aValue = a.groups?.length || 1
+          bValue = b.groups?.length || 1
+          break
+        case 'started':
+          aValue = new Date(a.start_time || a.created_at || 0).getTime()
+          bValue = new Date(b.start_time || b.created_at || 0).getTime()
+          break
+        case 'duration':
+          aValue = a.duration || ''
+          bValue = b.duration || ''
+          break
+        case 'archive':
+          aValue = a.archive?.transaction_count || 0
+          bValue = b.archive?.transaction_count || 0
+          break
+        case 'name':
+        default:
+          aValue = (a.name || '').toLowerCase()
+          bValue = (b.name || '').toLowerCase()
+      }
+      if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1
+      if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1
+      return 0
+    })
+  }, [completed, sortField, sortDirection, testStatuses])
+
+  const handleSort = (field: typeof sortField) => {
+    if (sortField === field) setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc')
+    else {
+      setSortField(field)
+      setSortDirection(field === 'started' || field === 'archive' ? 'desc' : 'asc')
+    }
+  }
 
   const toggleSelect = (id: string, event: React.MouseEvent) => {
     event.stopPropagation()
@@ -86,18 +136,18 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
             <thead>
               <tr>
                 <th style={{ width: 40 }}></th>
-                <th>Scenario</th>
-                <th>Status</th>
-                <th>VUsers</th>
-                <th>Groups</th>
-                <th>Started</th>
-                <th>Duration</th>
-                <th>Archive</th>
+                <th onClick={() => handleSort('name')} className="sortable">Scenario</th>
+                <th onClick={() => handleSort('status')} className="sortable">Status</th>
+                <th onClick={() => handleSort('total_vusers')} className="sortable">VUsers</th>
+                <th onClick={() => handleSort('groups')} className="sortable">Groups</th>
+                <th onClick={() => handleSort('started')} className="sortable">Started</th>
+                <th onClick={() => handleSort('duration')} className="sortable">Duration</th>
+                <th onClick={() => handleSort('archive')} className="sortable">Archive</th>
                 <th style={{ textAlign: 'right' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {completed.map(test => (
+              {sortedCompleted.map(test => (
                 <tr key={test.id} className="clickable-row" onClick={() => onSelectTest(test.id)}>
                   <td><input type="checkbox" checked={selectedIds.has(test.id)} onClick={(event) => event.stopPropagation()} onChange={(event) => toggleSelect(test.id, event as any)} /></td>
                   <td className="cell-name">{test.name}</td>
@@ -110,7 +160,7 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
                   <td style={{ textAlign: 'right' }}><button className="btn btn-sm btn-secondary" onClick={(event) => { event.stopPropagation(); onSelectTest(test.id) }}>Open</button></td>
                 </tr>
               ))}
-              {completed.length === 0 && (
+              {sortedCompleted.length === 0 && (
                 <tr><td colSpan={9} className="cell-muted">No completed results for this release yet.</td></tr>
               )}
             </tbody>

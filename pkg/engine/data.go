@@ -3,6 +3,7 @@ package engine
 import (
 	"encoding/csv"
 	"fmt"
+	"io"
 	"math/rand"
 	"os"
 	"strings"
@@ -45,11 +46,11 @@ func NewDataProvider(sources []dsl.DataSource) (*DataProvider, error) {
 }
 
 func loadDataSource(src dsl.DataSource) (*dataSource, error) {
-	f, err := os.Open(src.Path)
+	readerSource, err := openDataSourceReader(src)
 	if err != nil {
-		return nil, fmt.Errorf("open file %s: %w", src.Path, err)
+		return nil, err
 	}
-	defer f.Close()
+	defer readerSource.Close()
 
 	delimiter := ','
 	if src.Delimiter != "" {
@@ -59,7 +60,7 @@ func loadDataSource(src dsl.DataSource) (*dataSource, error) {
 		delimiter = '\t'
 	}
 
-	reader := csv.NewReader(f)
+	reader := csv.NewReader(readerSource)
 	reader.Comma = delimiter
 	reader.LazyQuotes = true
 	reader.TrimLeadingSpace = true
@@ -111,6 +112,20 @@ func loadDataSource(src dsl.DataSource) (*dataSource, error) {
 	}
 
 	return ds, nil
+}
+
+func openDataSourceReader(src dsl.DataSource) (io.ReadCloser, error) {
+	if strings.TrimSpace(src.InlineData) != "" {
+		return io.NopCloser(strings.NewReader(src.InlineData)), nil
+	}
+	if strings.TrimSpace(src.Path) == "" {
+		return nil, fmt.Errorf("either path or inline_data is required")
+	}
+	f, err := os.Open(src.Path)
+	if err != nil {
+		return nil, fmt.Errorf("open file %s: %w", src.Path, err)
+	}
+	return f, nil
 }
 
 // GetRow returns a set of variable name → value pairs for the given VUser.

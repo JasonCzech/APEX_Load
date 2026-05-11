@@ -213,6 +213,7 @@ type StoredScript struct {
 	CreatedAt          time.Time    `json:"created_at"`
 	ScenarioCount      int          `json:"scenario_count,omitempty"`
 	AssociatedReleases []ReleaseRef `json:"associated_releases,omitempty"`
+	ScenarioRunReleases []ReleaseRef `json:"scenario_run_releases,omitempty"`
 	LastRunAt          *time.Time   `json:"last_run_at,omitempty"`
 	Script             *dsl.Script  `json:"script"`
 }
@@ -708,6 +709,7 @@ func (tr *TestRunner) enrichScriptSummaryLocked(script *StoredScript) *StoredScr
 	copy := *script
 	scenarioSet := map[string]bool{}
 	releaseSet := map[string]ReleaseRef{}
+	scenarioRunReleaseSet := map[string]ReleaseRef{}
 	var lastRun *time.Time
 	for _, scenario := range tr.scenarios {
 		for _, scenarioScript := range scenario.Scripts {
@@ -729,6 +731,9 @@ func (tr *TestRunner) enrichScriptSummaryLocked(script *StoredScript) *StoredScr
 		}
 		if test.ReleaseID != "" {
 			releaseSet[test.ReleaseID] = tr.releaseRefLocked(test.ReleaseID)
+			if test.ScenarioID != "" {
+				scenarioRunReleaseSet[test.ReleaseID] = tr.releaseRefLocked(test.ReleaseID)
+			}
 		}
 		if lastRun == nil || test.CreatedAt.After(*lastRun) {
 			t := test.CreatedAt
@@ -737,6 +742,7 @@ func (tr *TestRunner) enrichScriptSummaryLocked(script *StoredScript) *StoredScr
 	}
 	copy.ScenarioCount = len(scenarioSet)
 	copy.AssociatedReleases = releaseRefsFromSet(releaseSet)
+	copy.ScenarioRunReleases = releaseRefsFromSet(scenarioRunReleaseSet)
 	copy.LastRunAt = lastRun
 	return &copy
 }

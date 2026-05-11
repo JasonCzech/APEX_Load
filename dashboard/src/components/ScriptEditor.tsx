@@ -71,10 +71,31 @@ interface DataSourceConfig {
   name: string
   type: string
   path: string
+  inline_data?: string
   strategy: string
   delimiter?: string
   first_row_header?: boolean
   columns?: string[]
+}
+
+interface DataSourceHistory {
+  past: DataSourceConfig[]
+  future: DataSourceConfig[]
+}
+
+interface CandidateOccurrence {
+  actionIdx: number
+  field: 'target' | 'body' | 'header'
+  headerKey?: string
+}
+
+interface ParameterCandidate {
+  id: string
+  keyHint: string
+  value: string
+  varName: string
+  occurrences: CandidateOccurrence[]
+  selected: boolean
 }
 
 interface Props {
@@ -107,6 +128,7 @@ const EMPTY_DATA_SOURCE: DataSourceConfig = {
   delimiter: ',',
   first_row_header: true,
   columns: [],
+  inline_data: '',
 }
 
 const EMPTY_ACTION: Action = {
@@ -124,6 +146,201 @@ function getImportSummary(metadata?: ImportMetadata | null) {
   }
 }
 
+function inferDelimiter(source: DataSourceConfig): string {
+  if (source.delimiter && source.delimiter.length > 0) return source.delimiter
+  return source.type === 'dat' ? '\t' : ','
+}
+
+function summarizeInlineData(source: DataSourceConfig): { rows: number; columns: number } {
+  const raw = source.inline_data || ''
+  if (!raw.trim()) return { rows: 0, columns: 0 }
+  const lines = raw.split(/\r?\n/).filter(line => line.trim().length > 0)
+  if (lines.length === 0) return { rows: 0, columns: 0 }
+  const delimiter = inferDelimiter(source)
+  const width = lines.reduce((max, line) => Math.max(max, line.split(delimiter).length), 0)
+  const dataRows = source.first_row_header === false ? lines.length : Math.max(lines.length - 1, 0)
+  return { rows: dataRows, columns: width }
+}
+
+function parseInlineData(source: DataSourceConfig): { columns: string[]; rows: string[][] } {
+  const raw = source.inline_data || ''
+  const delimiter = inferDelimiter(source)
+  const lines = raw.split(/\r?\n/).filter(line => line.trim().length > 0)
+  if (lines.length === 0) {
+    const fallbackCols = source.columns && source.columns.length > 0 ? [...source.columns] : ['col_1']
+    return { columns: fallbackCols, rows: [] }
+  }
+
+  const split = (line: string) => line.split(delimiter).map(value => value.trim())
+  if (source.first_row_header !== false) {
+    const header = split(lines[0]).filter(Boolean)
+    const columns = header.length > 0 ? header : ['col_1']
+    const rows = lines.slice(1).map(line => {
+      const parts = split(line)
+      const normalized = [...parts]
+      while (normalized.length < columns.length) normalized.push('')
+      return normalized.slice(0, columns.length)
+    })
+    return { columns, rows }
+  }
+
+  const declared = source.columns && source.columns.length > 0 ? [...source.columns] : []
+  const inferredWidth = lines.reduce((max, line) => Math.max(max, split(line).length), 0)
+  const width = Math.max(declared.length, inferredWidth, 1)
+  const columns = declared.length > 0 ? declared : Array.from({ length: width }, (_, i) => `col_${i + 1}`)
+  const rows = lines.map(line => {
+    const parts = split(line)
+    const normalized = [...parts]
+    while (normalized.length < columns.length) normalized.push('')
+    return normalized.slice(0, columns.length)
+  })
+  return { columns, rows }
+}
+
+function stringifyInlineData(source: DataSourceConfig, columns: string[], rows: string[][]): string {
+  const delimiter = inferDelimiter(source)
+  const escaped = (value: string) => {
+    if (value.includes('"') || value.includes('\n') || value.includes(delimiter)) {
+      return `"${value.replace(/"/g, '""')}"`
+    }
+    return value
+  }
+  const normalizedRows = rows
+    .map(row => columns.map((_, idx) => escaped((row[idx] || '').trim())))
+    .map(row => row.join(delimiter))
+
+  if (source.first_row_header !== false) {
+    return [columns.map(escaped).join(delimiter), ...normalizedRows].join('\n')
+  }
+  return normalizedRows.join('\n')
+}
+
+function validateInlineData(source: DataSourceConfig): string[] {
+  const warnings: string[] = []
+  const raw = source.inline_data || ''
+  const delimiter = inferDelimiter(source)
+  const lines = raw.split(/\r?\n/).filter(line => line.trim().length > 0)
+  const split = (line: string) => line.split(delimiter)
+  const { columns } = parseInlineData(source)
+
+  if (source.first_row_header !== false) {
+    const emptyHeaders = columns.filter(name => !name.trim()).length
+    if (emptyHeaders > 0) {
+      warnings.push(`Header row has ${emptyHeaders} empty column name${emptyHeaders > 1 ? 's' : ''}.`)
+    }
+
+    const seen = new Set<string>()
+    const duplicates = new Set<string>()
+    columns.forEach(name => {
+      const key = name.trim().toLowerCase()
+      if (!key) return
+      if (seen.has(key)) duplicates.add(name.trim())
+      seen.add(key)
+    })
+    if (duplicates.size > 0) {
+      warnings.push(`Duplicate header name(s): ${Array.from(duplicates).join(', ')}.`)
+    }
+  }
+
+  const expectedWidth = columns.length
+  if (expectedWidth > 0 && lines.length > 0) {
+    const startIdx = source.first_row_header !== false ? 1 : 0
+    const badRows: number[] = []
+    for (let i = startIdx; i < lines.length; i++) {
+      if (split(lines[i]).length !== expectedWidth) badRows.push(i + 1)
+    }
+    if (badRows.length > 0) {
+      warnings.push(
+        `Row width mismatch on line${badRows.length > 1 ? 's' : ''} ${badRows.slice(0, 6).join(', ')}${badRows.length > 6 ? ', ...' : ''}. Expected ${expectedWidth} value${expectedWidth === 1 ? '' : 's'} per row.`,
+      )
+    }
+  }
+
+  return warnings
+}
+
+function normalizeHeaders(columns: string[]): string[] {
+  const seen = new Set<string>()
+  return columns.map((name, idx) => {
+    let base = (name || '').trim()
+    if (!base) base = `col_${idx + 1}`
+    let next = base
+    let suffix = 2
+    while (seen.has(next.toLowerCase())) {
+      next = `${base}_${suffix}`
+      suffix++
+    }
+    seen.add(next.toLowerCase())
+    return next
+  })
+}
+
+function fillEmptyHeaders(columns: string[]): string[] {
+  return columns.map((name, idx) => (name || '').trim() || `col_${idx + 1}`)
+}
+
+function dedupeHeaders(columns: string[]): string[] {
+  const seen = new Set<string>()
+  return columns.map((name, idx) => {
+    const base = (name || '').trim() || `col_${idx + 1}`
+    let next = base
+    let suffix = 2
+    while (seen.has(next.toLowerCase())) {
+      next = `${base}_${suffix}`
+      suffix++
+    }
+    seen.add(next.toLowerCase())
+    return next
+  })
+}
+
+function downloadTextFile(content: string, filename: string) {
+  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  URL.revokeObjectURL(url)
+}
+
+function cloneDataSource(source: DataSourceConfig): DataSourceConfig {
+  return JSON.parse(JSON.stringify(source))
+}
+
+function sanitizeVarName(input: string): string {
+  const normalized = (input || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+  return normalized || 'param'
+}
+
+function isLikelyParameterValue(value: string): boolean {
+  const v = value.trim()
+  if (!v || v.includes('{{')) return false
+  const lower = v.toLowerCase()
+  const commonStatic = new Set([
+    'application/json',
+    'text/plain',
+    'gzip',
+    'deflate',
+    'br',
+    'keep-alive',
+    'close',
+    'true',
+    'false',
+    'null',
+  ])
+  if (commonStatic.has(lower)) return false
+  if (/^\d{1,2}$/.test(v)) return false
+  if (v.length >= 3) return true
+  return false
+}
+
 export default function ScriptEditor({ scriptId, initialScript, projectId, folderId, onSave, onClose }: Props) {
   const api = useApi()
   const [script, setScript] = useState<ScriptData>(initialScript || { ...EMPTY_SCRIPT })
@@ -134,10 +351,88 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
   const [jsonMode, setJsonMode] = useState(false)
   const [jsonText, setJsonText] = useState('')
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({})
+  const [openDataEditor, setOpenDataEditor] = useState<number | null>(null)
+  const [dataEditorMode, setDataEditorMode] = useState<Record<number, 'grid' | 'raw'>>({})
+  const [dataSourceHistory, setDataSourceHistory] = useState<Record<number, DataSourceHistory>>({})
+  const [parameterCandidates, setParameterCandidates] = useState<ParameterCandidate[]>([])
   const importMetadata = script.metadata?.import
   const importSummary = getImportSummary(importMetadata)
 
   const toggleSection = (id: string) => setOpenSections(prev => ({ ...prev, [id]: !prev[id] }))
+
+  const buildAutoParameterCandidates = (current: ScriptData): ParameterCandidate[] => {
+    const buckets = new Map<string, { keyHint: string; value: string; occurrences: CandidateOccurrence[] }>()
+    const add = (value: string, keyHint: string, occurrence: CandidateOccurrence) => {
+      const normalizedValue = value.trim()
+      if (!isLikelyParameterValue(normalizedValue)) return
+      const bucketKey = `${keyHint}::${normalizedValue}`
+      const bucket = buckets.get(bucketKey)
+      if (bucket) {
+        bucket.occurrences.push(occurrence)
+      } else {
+        buckets.set(bucketKey, { keyHint, value: normalizedValue, occurrences: [occurrence] })
+      }
+    }
+
+    current.actions.forEach((action, actionIdx) => {
+      const target = action.target || ''
+      if (target) {
+        const queryPart = target.includes('?') ? target.split('?')[1] : ''
+        if (queryPart) {
+          queryPart.split('&').forEach(pair => {
+            const [rawKey, rawValue] = pair.split('=')
+            if (!rawValue) return
+            const key = decodeURIComponent(rawKey || 'query_value')
+            const value = decodeURIComponent(rawValue || '')
+            add(value, key, { actionIdx, field: 'target' })
+          })
+        }
+      }
+
+      Object.entries(action.headers || {}).forEach(([headerKey, headerValue]) => {
+        add(String(headerValue || ''), headerKey, { actionIdx, field: 'header', headerKey })
+      })
+
+      const body = action.body || ''
+      if (body) {
+        try {
+          const parsed = JSON.parse(body)
+          const walk = (node: any, path: string[]) => {
+            if (node === null || node === undefined) return
+            if (typeof node === 'string' || typeof node === 'number' || typeof node === 'boolean') {
+              const key = path[path.length - 1] || 'body_value'
+              add(String(node), key, { actionIdx, field: 'body' })
+              return
+            }
+            if (Array.isArray(node)) {
+              node.forEach((child, idx) => walk(child, [...path, `item_${idx + 1}`]))
+              return
+            }
+            if (typeof node === 'object') {
+              Object.entries(node).forEach(([k, v]) => walk(v, [...path, k]))
+            }
+          }
+          walk(parsed, [])
+        } catch {
+          const quoted = Array.from(body.matchAll(/"([^"]{3,})"/g))
+          quoted.forEach((match, idx) => {
+            add(match[1], `body_field_${idx + 1}`, { actionIdx, field: 'body' })
+          })
+        }
+      }
+    })
+
+    return Array.from(buckets.entries())
+      .map(([id, bucket]) => ({
+        id,
+        keyHint: bucket.keyHint,
+        value: bucket.value,
+        varName: sanitizeVarName(bucket.keyHint),
+        occurrences: bucket.occurrences,
+        selected: bucket.occurrences.length > 0,
+      }))
+      .sort((a, b) => b.occurrences.length - a.occurrences.length)
+  }
 
   useEffect(() => {
     if (scriptId && !initialScript) {
@@ -327,6 +622,8 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
       ...prev,
       data_sources: [...(prev.data_sources || []), nextSource],
     }))
+    setDataSourceHistory({})
+    setDataEditorMode({})
   }
 
   const removeDataSource = (idx: number) => {
@@ -334,15 +631,316 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
       ...prev,
       data_sources: (prev.data_sources || []).filter((_, i) => i !== idx),
     }))
+    setDataSourceHistory({})
+    setDataEditorMode({})
   }
 
-  const updateDataSource = (idx: number, field: keyof DataSourceConfig, value: any) => {
+  const mutateDataSource = (
+    idx: number,
+    mutator: (current: DataSourceConfig) => DataSourceConfig,
+    recordHistory = true,
+  ) => {
     setScript(prev => {
       const sources = [...(prev.data_sources || [])]
       const current = sources[idx] || { ...EMPTY_DATA_SOURCE }
-      sources[idx] = { ...current, [field]: value }
+      const next = mutator(cloneDataSource(current))
+      if (recordHistory) {
+        setDataSourceHistory(history => {
+          const entry = history[idx] || { past: [], future: [] }
+          const past = [...entry.past, cloneDataSource(current)].slice(-100)
+          return { ...history, [idx]: { past, future: [] } }
+        })
+      }
+      sources[idx] = cloneDataSource(next)
       return { ...prev, data_sources: sources }
     })
+  }
+
+  const updateDataSource = (idx: number, field: keyof DataSourceConfig, value: any, recordHistory = true) => {
+    mutateDataSource(idx, current => ({ ...current, [field]: value }), recordHistory)
+  }
+
+  const undoDataSource = (idx: number) => {
+    const entry = dataSourceHistory[idx]
+    if (!entry || entry.past.length === 0) return
+
+    mutateDataSource(
+      idx,
+      current => {
+        const previous = cloneDataSource(entry.past[entry.past.length - 1])
+        setDataSourceHistory(history => {
+          const active = history[idx] || { past: [], future: [] }
+          const past = active.past.slice(0, -1)
+          const future = [cloneDataSource(current), ...active.future].slice(0, 100)
+          return { ...history, [idx]: { past, future } }
+        })
+        return previous
+      },
+      false,
+    )
+  }
+
+  const redoDataSource = (idx: number) => {
+    const entry = dataSourceHistory[idx]
+    if (!entry || entry.future.length === 0) return
+
+    mutateDataSource(
+      idx,
+      current => {
+        const [nextState, ...remainingFuture] = entry.future
+        setDataSourceHistory(history => {
+          const active = history[idx] || { past: [], future: [] }
+          const past = [...active.past, cloneDataSource(current)].slice(-100)
+          return { ...history, [idx]: { past, future: remainingFuture } }
+        })
+        return cloneDataSource(nextState)
+      },
+      false,
+    )
+  }
+
+  const importDataSourceFile = async (idx: number, file: File | null) => {
+    if (!file) return
+    try {
+      const text = await file.text()
+      updateDataSource(idx, 'inline_data', text)
+      setSuccess(`Imported ${file.name}`)
+      setError('')
+    } catch {
+      setError('Failed to import parameter file')
+    }
+  }
+
+  const exportDataSourceFile = (source: DataSourceConfig, idx: number) => {
+    const content = source.inline_data || ''
+    if (!content.trim()) {
+      setError('No inline parameter data to export for this source')
+      return
+    }
+    const base = (source.name || `source_${idx + 1}`).replace(/[^a-zA-Z0-9_-]+/g, '_')
+    const ext = (source.type || 'csv').toLowerCase() === 'dat' ? 'dat' : 'csv'
+    downloadTextFile(content, `${base}.${ext}`)
+    setError('')
+    setSuccess(`Exported ${base}.${ext}`)
+  }
+
+  const updateDataCell = (sourceIdx: number, rowIdx: number, colIdx: number, value: string) => {
+    const source = (script.data_sources || [])[sourceIdx]
+    if (!source) return
+    const { columns, rows } = parseInlineData(source)
+    const nextRows = rows.map(row => [...row])
+    while (nextRows.length <= rowIdx) nextRows.push(Array(columns.length).fill(''))
+    while (nextRows[rowIdx].length < columns.length) nextRows[rowIdx].push('')
+    nextRows[rowIdx][colIdx] = value
+    updateDataSource(sourceIdx, 'inline_data', stringifyInlineData(source, columns, nextRows))
+  }
+
+  const updateDataColumnName = (sourceIdx: number, colIdx: number, value: string) => {
+    const source = (script.data_sources || [])[sourceIdx]
+    if (!source) return
+    const { columns, rows } = parseInlineData(source)
+    const nextColumns = [...columns]
+    nextColumns[colIdx] = value || `col_${colIdx + 1}`
+    mutateDataSource(sourceIdx, current => ({
+      ...current,
+      columns: current.first_row_header === false ? nextColumns : [],
+      inline_data: stringifyInlineData(current, nextColumns, rows),
+    }))
+  }
+
+  const addDataRow = (sourceIdx: number) => {
+    const source = (script.data_sources || [])[sourceIdx]
+    if (!source) return
+    const { columns, rows } = parseInlineData(source)
+    const nextRows = [...rows, Array(columns.length).fill('')]
+    updateDataSource(sourceIdx, 'inline_data', stringifyInlineData(source, columns, nextRows))
+  }
+
+  const removeDataRow = (sourceIdx: number, rowIdx: number) => {
+    const source = (script.data_sources || [])[sourceIdx]
+    if (!source) return
+    const { columns, rows } = parseInlineData(source)
+    const nextRows = rows.filter((_, idx) => idx !== rowIdx)
+    updateDataSource(sourceIdx, 'inline_data', stringifyInlineData(source, columns, nextRows))
+  }
+
+  const addDataColumn = (sourceIdx: number) => {
+    const source = (script.data_sources || [])[sourceIdx]
+    if (!source) return
+    const { columns, rows } = parseInlineData(source)
+    const nextColumns = [...columns, `col_${columns.length + 1}`]
+    const nextRows = rows.map(row => [...row, ''])
+    mutateDataSource(sourceIdx, current => ({
+      ...current,
+      columns: current.first_row_header === false ? nextColumns : [],
+      inline_data: stringifyInlineData(current, nextColumns, nextRows),
+    }))
+  }
+
+  const removeDataColumn = (sourceIdx: number, colIdx: number) => {
+    const source = (script.data_sources || [])[sourceIdx]
+    if (!source) return
+    const { columns, rows } = parseInlineData(source)
+    if (columns.length <= 1) return
+    const nextColumns = columns.filter((_, idx) => idx !== colIdx)
+    const nextRows = rows.map(row => row.filter((_, idx) => idx !== colIdx))
+    mutateDataSource(sourceIdx, current => ({
+      ...current,
+      columns: current.first_row_header === false ? nextColumns : [],
+      inline_data: stringifyInlineData(current, nextColumns, nextRows),
+    }))
+  }
+
+  const autoFixDataSource = (sourceIdx: number) => {
+    const source = (script.data_sources || [])[sourceIdx]
+    if (!source) return
+    const parsed = parseInlineData(source)
+    const fixedColumns = normalizeHeaders(parsed.columns)
+    const fixedRows = parsed.rows.map(row => {
+      const next = [...row]
+      while (next.length < fixedColumns.length) next.push('')
+      return next.slice(0, fixedColumns.length)
+    })
+    mutateDataSource(sourceIdx, current => ({
+      ...current,
+      columns: current.first_row_header === false ? fixedColumns : [],
+      inline_data: stringifyInlineData(current, fixedColumns, fixedRows),
+    }))
+    setSuccess(`Applied data auto-fix to ${source.name || `source_${sourceIdx + 1}`}`)
+    setError('')
+  }
+
+  const applyFillHeaders = (sourceIdx: number) => {
+    const source = (script.data_sources || [])[sourceIdx]
+    if (!source) return
+    const parsed = parseInlineData(source)
+    const fixedColumns = fillEmptyHeaders(parsed.columns)
+    mutateDataSource(sourceIdx, current => ({
+      ...current,
+      columns: current.first_row_header === false ? fixedColumns : [],
+      inline_data: stringifyInlineData(current, fixedColumns, parsed.rows),
+    }))
+    setSuccess(`Filled empty headers for ${source.name || `source_${sourceIdx + 1}`}`)
+    setError('')
+  }
+
+  const applyDedupeHeaders = (sourceIdx: number) => {
+    const source = (script.data_sources || [])[sourceIdx]
+    if (!source) return
+    const parsed = parseInlineData(source)
+    const fixedColumns = dedupeHeaders(parsed.columns)
+    mutateDataSource(sourceIdx, current => ({
+      ...current,
+      columns: current.first_row_header === false ? fixedColumns : [],
+      inline_data: stringifyInlineData(current, fixedColumns, parsed.rows),
+    }))
+    setSuccess(`Deduplicated headers for ${source.name || `source_${sourceIdx + 1}`}`)
+    setError('')
+  }
+
+  const applyNormalizeRows = (sourceIdx: number) => {
+    const source = (script.data_sources || [])[sourceIdx]
+    if (!source) return
+    const parsed = parseInlineData(source)
+    const fixedRows = parsed.rows.map(row => {
+      const next = [...row]
+      while (next.length < parsed.columns.length) next.push('')
+      return next.slice(0, parsed.columns.length)
+    })
+    updateDataSource(sourceIdx, 'inline_data', stringifyInlineData(source, parsed.columns, fixedRows))
+    setSuccess(`Normalized row widths for ${source.name || `source_${sourceIdx + 1}`}`)
+    setError('')
+  }
+
+  const scanForAutoParameters = () => {
+    const candidates = buildAutoParameterCandidates(script)
+    setParameterCandidates(candidates)
+    if (candidates.length === 0) {
+      setSuccess('No strong parameterization candidates were detected.')
+      setError('')
+      return
+    }
+    setSuccess(`Detected ${candidates.length} parameter candidates. Review and apply below.`)
+    setError('')
+  }
+
+  const updateCandidate = (id: string, patch: Partial<ParameterCandidate>) => {
+    setParameterCandidates(prev => prev.map(candidate => candidate.id === id ? { ...candidate, ...patch } : candidate))
+  }
+
+  const applyAutoParameterization = () => {
+    const selected = parameterCandidates
+      .filter(candidate => candidate.selected)
+      .map(candidate => ({ ...candidate, varName: sanitizeVarName(candidate.varName) }))
+      .filter(candidate => candidate.varName.length > 0)
+
+    if (selected.length === 0) {
+      setError('Select at least one candidate before applying auto-parameterization.')
+      return
+    }
+
+    const replacementMap = new Map<string, string>()
+    selected.forEach(candidate => {
+      replacementMap.set(candidate.id, `{{data.auto_params.${candidate.varName}}}`)
+    })
+
+    setScript(prev => {
+      const next = JSON.parse(JSON.stringify(prev)) as ScriptData
+      next.actions = next.actions.map((action, actionIdx) => {
+        const updated = { ...action, headers: { ...(action.headers || {}) } }
+        selected.forEach(candidate => {
+          candidate.occurrences
+            .filter(occ => occ.actionIdx === actionIdx)
+            .forEach(occ => {
+              const token = replacementMap.get(candidate.id) || candidate.value
+              if (occ.field === 'target' && updated.target) {
+                updated.target = updated.target.split(candidate.value).join(token)
+              } else if (occ.field === 'body' && typeof updated.body === 'string') {
+                updated.body = updated.body.split(candidate.value).join(token)
+              } else if (occ.field === 'header' && occ.headerKey && updated.headers && updated.headers[occ.headerKey]) {
+                updated.headers[occ.headerKey] = updated.headers[occ.headerKey].split(candidate.value).join(token)
+              }
+            })
+        })
+        return updated
+      })
+
+      const autoSourceIdx = (next.data_sources || []).findIndex(source => source.name === 'auto_params')
+      const existing = autoSourceIdx >= 0 ? next.data_sources?.[autoSourceIdx] : undefined
+      const existingParsed = existing ? parseInlineData(existing) : { columns: [] as string[], rows: [] as string[][] }
+      const mergedColumns = [...existingParsed.columns]
+      selected.forEach(candidate => {
+        if (!mergedColumns.includes(candidate.varName)) mergedColumns.push(candidate.varName)
+      })
+
+      const mergedRow: string[] = mergedColumns.map((column, idx) => {
+        const selectedMatch = selected.find(candidate => candidate.varName === column)
+        if (selectedMatch) return selectedMatch.value
+        return existingParsed.rows[0]?.[idx] || ''
+      })
+
+      const sourcePayload: DataSourceConfig = {
+        ...(existing || EMPTY_DATA_SOURCE),
+        name: 'auto_params',
+        type: (existing?.type || 'csv'),
+        strategy: existing?.strategy || 'sequential',
+        first_row_header: true,
+        columns: [],
+        inline_data: stringifyInlineData(
+          { ...(existing || EMPTY_DATA_SOURCE), type: existing?.type || 'csv', delimiter: existing?.delimiter || ',' },
+          mergedColumns,
+          [mergedRow],
+        ),
+      }
+
+      if (!next.data_sources) next.data_sources = []
+      if (autoSourceIdx >= 0) next.data_sources[autoSourceIdx] = sourcePayload
+      else next.data_sources.push(sourcePayload)
+      return next
+    })
+
+    setSuccess(`Applied auto-parameterization for ${selected.length} candidate${selected.length === 1 ? '' : 's'}.`)
+    setError('')
   }
 
   return (
@@ -394,96 +992,52 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
                 <input value={script.config.base_url} onChange={e => updateField('config.base_url', e.target.value)} placeholder="https://api.example.com" />
               </label>
             </div>
-          </div>
-
-          <div className="config-panel">
-            <div className="panel-title-row">
-              <h3 className="panel-title">Parameter Data</h3>
-              <button className="btn btn-sm btn-accent" onClick={addDataSource}>+ Add Source</button>
+            <div className="auto-parameter-toolbar">
+              <button className="btn btn-sm btn-ghost" onClick={scanForAutoParameters}>Auto Parameterization</button>
+              <span className="cell-muted">Scans targets, headers, and body fields for likely parameter candidates.</span>
             </div>
-
-            {(script.data_sources?.length || 0) === 0 ? (
-              <div className="parameter-empty-state">No parameters defined. Add a data source to parameterize fields across requests.</div>
-            ) : (
-              <div className="parameter-table-wrap">
-                <table className="parameter-table">
-                  <thead>
-                    <tr>
-                      <th>Name</th>
-                      <th>Type</th>
-                      <th>Strategy</th>
-                      <th>Header Row</th>
-                      <th>Columns</th>
-                      <th>Delimiter</th>
-                      <th>Data File Path</th>
-                      <th style={{ textAlign: 'right' }}>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(script.data_sources || []).map((source, idx) => (
-                      <tr key={`${source.name || 'source'}-${idx}`}>
-                        <td>
-                          <input
-                            value={source.name || ''}
-                            onChange={e => updateDataSource(idx, 'name', e.target.value)}
-                            placeholder="users"
-                          />
-                        </td>
-                        <td>
-                          <select value={source.type || 'csv'} onChange={e => updateDataSource(idx, 'type', e.target.value)}>
-                            <option value="csv">csv</option>
-                            <option value="dat">dat</option>
-                          </select>
-                        </td>
-                        <td>
-                          <select value={source.strategy || 'sequential'} onChange={e => updateDataSource(idx, 'strategy', e.target.value)}>
-                            <option value="sequential">sequential</option>
-                            <option value="random">random</option>
-                            <option value="unique">unique</option>
-                          </select>
-                        </td>
-                        <td>
-                          <label className="checkbox-label compact">
+            {parameterCandidates.length > 0 && (
+              <div className="auto-parameter-panel">
+                <div className="auto-parameter-header">
+                  <h4>Review Candidates</h4>
+                  <button className="btn btn-sm btn-accent" onClick={applyAutoParameterization}>Apply Selected</button>
+                </div>
+                <div className="auto-parameter-table-wrap">
+                  <table className="auto-parameter-table">
+                    <thead>
+                      <tr>
+                        <th>Use</th>
+                        <th>Field Hint</th>
+                        <th>Current Value</th>
+                        <th>Variable Name</th>
+                        <th>Hits</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {parameterCandidates.map(candidate => (
+                        <tr key={candidate.id}>
+                          <td>
                             <input
                               type="checkbox"
-                              checked={source.first_row_header !== false}
-                              onChange={e => updateDataSource(idx, 'first_row_header', e.target.checked)}
+                              checked={candidate.selected}
+                              onChange={e => updateCandidate(candidate.id, { selected: e.target.checked })}
                             />
-                            <span>{source.first_row_header !== false ? 'Yes' : 'No'}</span>
-                          </label>
-                        </td>
-                        <td>
-                          <input
-                            value={(source.columns || []).join(', ')}
-                            onChange={e => updateDataSource(
-                              idx,
-                              'columns',
-                              e.target.value.split(',').map(v => v.trim()).filter(Boolean),
-                            )}
-                            placeholder="username, password"
-                          />
-                        </td>
-                        <td>
-                          <input
-                            value={source.delimiter ?? (source.type === 'dat' ? '\t' : ',')}
-                            onChange={e => updateDataSource(idx, 'delimiter', e.target.value)}
-                            placeholder={source.type === 'dat' ? '\\t' : ','}
-                          />
-                        </td>
-                        <td>
-                          <input
-                            value={source.path || ''}
-                            onChange={e => updateDataSource(idx, 'path', e.target.value)}
-                            placeholder="/absolute/path/to/data.csv"
-                          />
-                        </td>
-                        <td style={{ textAlign: 'right' }}>
-                          <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={() => removeDataSource(idx)}>Remove</button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                          </td>
+                          <td className="cell-mono">{candidate.keyHint}</td>
+                          <td className="cell-mono">{candidate.value}</td>
+                          <td>
+                            <input
+                              value={candidate.varName}
+                              onChange={e => updateCandidate(candidate.id, { varName: sanitizeVarName(e.target.value) })}
+                              placeholder="parameter_name"
+                            />
+                          </td>
+                          <td>{candidate.occurrences.length}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
           </div>
@@ -952,6 +1506,223 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
                 </div>
               )}
             </div>
+          </div>
+
+          <div className="config-panel">
+            <div className="panel-title-row">
+              <h3 className="panel-title">Parameter Data</h3>
+              <button className="btn btn-sm btn-accent" onClick={addDataSource}>+ Add Source</button>
+            </div>
+
+            {(script.data_sources?.length || 0) === 0 ? (
+              <div className="parameter-empty-state">No parameters defined. Add a data source to parameterize fields across requests.</div>
+            ) : (
+              <div className="parameter-table-wrap">
+                <table className="parameter-table">
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Type</th>
+                      <th>Strategy</th>
+                      <th>Header Row</th>
+                      <th>Rows</th>
+                      <th>Columns</th>
+                      <th>Delimiter</th>
+                      <th>Data File Path</th>
+                      <th style={{ textAlign: 'right' }}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(script.data_sources || []).map((source, idx) => (
+                      <tr key={`${source.name || 'source'}-${idx}`}>
+                        <td>
+                          <input
+                            value={source.name || ''}
+                            onChange={e => updateDataSource(idx, 'name', e.target.value)}
+                            placeholder="users"
+                          />
+                        </td>
+                        <td>
+                          <select value={source.type || 'csv'} onChange={e => updateDataSource(idx, 'type', e.target.value)}>
+                            <option value="csv">csv</option>
+                            <option value="dat">dat</option>
+                          </select>
+                        </td>
+                        <td>
+                          <select value={source.strategy || 'sequential'} onChange={e => updateDataSource(idx, 'strategy', e.target.value)}>
+                            <option value="sequential">sequential</option>
+                            <option value="random">random</option>
+                            <option value="unique">unique</option>
+                          </select>
+                        </td>
+                        <td>
+                          <label className="checkbox-label compact">
+                            <input
+                              type="checkbox"
+                              checked={source.first_row_header !== false}
+                              onChange={e => updateDataSource(idx, 'first_row_header', e.target.checked)}
+                            />
+                            <span>{source.first_row_header !== false ? 'Yes' : 'No'}</span>
+                          </label>
+                        </td>
+                        <td className="cell-mono">{summarizeInlineData(source).rows || '—'}</td>
+                        <td>
+                          <input
+                            value={(source.columns || []).join(', ')}
+                            onChange={e => updateDataSource(
+                              idx,
+                              'columns',
+                              e.target.value.split(',').map(v => v.trim()).filter(Boolean),
+                            )}
+                            placeholder="username, password"
+                          />
+                        </td>
+                        <td>
+                          <input
+                            value={source.delimiter ?? (source.type === 'dat' ? '\t' : ',')}
+                            onChange={e => updateDataSource(idx, 'delimiter', e.target.value)}
+                            placeholder={source.type === 'dat' ? '\\t' : ','}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            value={source.path || ''}
+                            onChange={e => updateDataSource(idx, 'path', e.target.value)}
+                            placeholder="/absolute/path/to/data.csv (optional when inline data is used)"
+                          />
+                        </td>
+                        <td style={{ textAlign: 'right' }}>
+                          <div className="parameter-actions">
+                            <button className="btn btn-sm btn-ghost" onClick={() => setOpenDataEditor(openDataEditor === idx ? null : idx)}>
+                              {openDataEditor === idx ? 'Hide Data' : 'Edit Data'}
+                            </button>
+                            <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={() => removeDataSource(idx)}>Remove</button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {(script.data_sources || []).map((source, idx) => (
+                      openDataEditor === idx ? (
+                        <tr key={`${source.name || 'source'}-${idx}-editor`} className="parameter-editor-row">
+                          <td colSpan={9}>
+                            <div className="parameter-editor">
+                              <div className="parameter-editor-header">
+                                <strong>{source.name || `Source ${idx + 1}`}</strong>
+                                <div className="parameter-editor-meta">
+                                  <span className="cell-mono">
+                                    {summarizeInlineData(source).rows} rows · {summarizeInlineData(source).columns} columns
+                                  </span>
+                                  <div className="parameter-editor-controls">
+                                    <button className="btn btn-sm btn-ghost" disabled={!dataSourceHistory[idx]?.past?.length} onClick={() => undoDataSource(idx)}>Undo</button>
+                                    <button className="btn btn-sm btn-ghost" disabled={!dataSourceHistory[idx]?.future?.length} onClick={() => redoDataSource(idx)}>Redo</button>
+                                    <button
+                                      className="btn btn-sm btn-ghost"
+                                      onClick={() => setDataEditorMode(prev => ({ ...prev, [idx]: (prev[idx] || 'grid') === 'grid' ? 'raw' : 'grid' }))}
+                                    >
+                                      {(dataEditorMode[idx] || 'grid') === 'grid' ? 'Raw Mode' : 'Grid Mode'}
+                                    </button>
+                                    <label className="btn btn-sm btn-ghost file-btn">
+                                      Import
+                                      <input
+                                        type="file"
+                                        accept=".csv,.dat,.txt"
+                                        onChange={e => {
+                                          const file = e.target.files?.[0] || null
+                                          importDataSourceFile(idx, file)
+                                          e.currentTarget.value = ''
+                                        }}
+                                      />
+                                    </label>
+                                    <button className="btn btn-sm btn-ghost" onClick={() => exportDataSourceFile(source, idx)}>Export</button>
+                                  </div>
+                                </div>
+                              </div>
+                              {validateInlineData(source).length > 0 && (
+                                <div className="parameter-validation">
+                                  <div className="parameter-validation-header">
+                                    <strong>Data Warnings</strong>
+                                    <div className="parameter-validation-actions">
+                                      <button className="btn btn-sm btn-ghost" onClick={() => applyFillHeaders(idx)}>Fill Headers</button>
+                                      <button className="btn btn-sm btn-ghost" onClick={() => applyDedupeHeaders(idx)}>Deduplicate</button>
+                                      <button className="btn btn-sm btn-ghost" onClick={() => applyNormalizeRows(idx)}>Normalize Rows</button>
+                                      <button className="btn btn-sm btn-ghost" onClick={() => autoFixDataSource(idx)}>Auto-Fix All</button>
+                                    </div>
+                                  </div>
+                                  {validateInlineData(source).map((warning, warningIdx) => (
+                                    <div key={`${idx}-warn-${warningIdx}`} className="parameter-validation-item">{warning}</div>
+                                  ))}
+                                </div>
+                              )}
+                              {(dataEditorMode[idx] || 'grid') === 'grid' ? (
+                                <div className="parameter-grid-wrap">
+                                  <div className="parameter-grid-actions">
+                                    <button className="btn btn-sm btn-ghost" onClick={() => addDataRow(idx)}>+ Row</button>
+                                    <button className="btn btn-sm btn-ghost" onClick={() => addDataColumn(idx)}>+ Column</button>
+                                  </div>
+                                  <div className="parameter-grid-scroll">
+                                    <table className="parameter-grid">
+                                      <thead>
+                                        <tr>
+                                          <th>#</th>
+                                          {parseInlineData(source).columns.map((column, colIdx) => (
+                                            <th key={`${idx}-h-${colIdx}`}>
+                                              <div className="parameter-grid-head">
+                                                <input
+                                                  value={column}
+                                                  onChange={e => updateDataColumnName(idx, colIdx, e.target.value)}
+                                                  placeholder={`col_${colIdx + 1}`}
+                                                />
+                                                <button className="btn-icon danger" onClick={() => removeDataColumn(idx, colIdx)} title="Remove column">✕</button>
+                                              </div>
+                                            </th>
+                                          ))}
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {parseInlineData(source).rows.map((row, rowIdx) => (
+                                          <tr key={`${idx}-r-${rowIdx}`}>
+                                            <td className="parameter-grid-index">
+                                              {rowIdx + 1}
+                                              <button className="btn-icon danger" onClick={() => removeDataRow(idx, rowIdx)} title="Remove row">✕</button>
+                                            </td>
+                                            {parseInlineData(source).columns.map((_, colIdx) => (
+                                              <td key={`${idx}-c-${rowIdx}-${colIdx}`}>
+                                                <input
+                                                  value={row[colIdx] || ''}
+                                                  onChange={e => updateDataCell(idx, rowIdx, colIdx, e.target.value)}
+                                                />
+                                              </td>
+                                            ))}
+                                          </tr>
+                                        ))}
+                                        {parseInlineData(source).rows.length === 0 && (
+                                          <tr>
+                                            <td colSpan={parseInlineData(source).columns.length + 1} className="parameter-grid-empty">
+                                              No rows yet. Use + Row to add parameter records.
+                                            </td>
+                                          </tr>
+                                        )}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                </div>
+                              ) : (
+                                <textarea
+                                  value={source.inline_data || ''}
+                                  onChange={e => updateDataSource(idx, 'inline_data', e.target.value, true)}
+                                  placeholder={source.first_row_header !== false ? 'username,password\nalice,pass1\nbob,pass2' : 'alice,pass1\nbob,pass2'}
+                                  spellCheck={false}
+                                />
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ) : null
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
       )}

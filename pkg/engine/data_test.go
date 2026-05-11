@@ -242,3 +242,55 @@ func TestDataProvider_DefaultStrategy(t *testing.T) {
 		t.Errorf("default strategy should be sequential, got val=%q", row["data.val"])
 	}
 }
+
+func TestDataProvider_InlineData(t *testing.T) {
+	dp, err := NewDataProvider([]dsl.DataSource{
+		{
+			Name:           "users",
+			Type:           "csv",
+			InlineData:     "username,password\nalice,pass1\nbob,pass2\n",
+			FirstRowHeader: true,
+			Strategy:       "sequential",
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewDataProvider inline_data: %v", err)
+	}
+
+	row := dp.GetRow("users", 0)
+	if row["users.username"] != "alice" || row["users.password"] != "pass1" {
+		t.Fatalf("unexpected row: %#v", row)
+	}
+}
+
+func TestDataProvider_InlineDataPreferredOverPath(t *testing.T) {
+	dir := t.TempDir()
+	path := writeCSV(t, dir, "users.csv", "username,password\nfile,source\n")
+
+	dp, err := NewDataProvider([]dsl.DataSource{
+		{
+			Name:           "users",
+			Type:           "csv",
+			Path:           path,
+			InlineData:     "username,password\ninline,source\n",
+			FirstRowHeader: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewDataProvider inline preferred: %v", err)
+	}
+
+	row := dp.GetRow("users", 0)
+	if row["users.username"] != "inline" {
+		t.Fatalf("expected inline data to win, got %#v", row)
+	}
+}
+
+func TestDataProvider_MissingPathAndInlineData(t *testing.T) {
+	_, err := NewDataProvider([]dsl.DataSource{
+		{Name: "users", Type: "csv"},
+	})
+	if err == nil {
+		t.Fatal("expected error for missing path and inline_data")
+	}
+}
