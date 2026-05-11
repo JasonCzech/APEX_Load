@@ -25,7 +25,7 @@ interface Props {
   onRenameFolder: (id: string, name: string) => void
   onDeleteFolder: (id: string) => void
   onMoveItem?: (itemId: string, folderId: string | null) => void
-  renderItemExtra?: (item: TreeItem) => JSX.Element
+  renderItemExtra?: (item: TreeItem) => JSX.Element | null
 }
 
 function folderLabel(category: FolderCategory): string {
@@ -52,11 +52,6 @@ export default function FolderTree({
   renderItemExtra,
 }: Props) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
-  const scopedItems = useMemo(() => {
-    if (selectedFolderId === undefined) return items
-    if (selectedFolderId === null) return items.filter((item) => !item.folder_id)
-    return items.filter((item) => item.folder_id === selectedFolderId)
-  }, [items, selectedFolderId])
 
   const childrenByParent = useMemo(() => {
     const map = new Map<string, Folder[]>()
@@ -91,17 +86,53 @@ export default function FolderTree({
     onDeleteFolder(folder.id)
   }
 
+  const renderInlineItems = (folderId: string | null, depth: number) => {
+    const folderItems = items.filter((item) =>
+      folderId === null ? !item.folder_id : item.folder_id === folderId,
+    )
+    return folderItems.map((item) => {
+      const extra = renderItemExtra ? renderItemExtra(item) : null
+      return (
+        <div key={item.id} className="folder-tree-item" style={{ paddingLeft: 12 + (depth + 1) * 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <button className="folder-tree-item-main" onClick={() => onSelectItem?.(item.id)} style={{ flex: 1, minWidth: 0 }}>
+            <span className="folder-tree-icon">◻</span>
+            <span>{item.name}</span>
+          </button>
+          {extra && (
+            <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+              {extra}
+            </div>
+          )}
+          {onMoveItem && (
+            <select
+              className="folder-tree-move"
+              value={item.folder_id || ''}
+              onChange={(event) => onMoveItem(item.id, event.target.value || null)}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <option value="">{rootLabel}</option>
+              {folders.map((folder) => (
+                <option key={folder.id} value={folder.id}>{folder.name}</option>
+              ))}
+            </select>
+          )}
+        </div>
+      )
+    })
+  }
+
   const renderFolder = (folder: Folder, depth = 0): JSX.Element => {
     const childFolders = childrenByParent.get(folder.id) || []
     const childCount = childFolders.length
     const isExpanded = expanded.has(folder.id)
     const itemCount = items.filter((item) => item.folder_id === folder.id).length
+    const hasChildren = childCount > 0 || itemCount > 0
 
     return (
       <div key={folder.id}>
         <div className={`folder-tree-row folder ${selectedFolderId === folder.id ? 'active' : ''}`} style={{ paddingLeft: 12 + depth * 16 }}>
-          <button className="folder-tree-chevron" onClick={() => toggle(folder.id)} disabled={childCount === 0}>
-            {childCount > 0 ? (isExpanded ? '⌄' : '›') : ''}
+          <button className="folder-tree-chevron" onClick={() => toggle(folder.id)} disabled={!hasChildren}>
+            {hasChildren ? (isExpanded ? '⌄' : '›') : ''}
           </button>
           <button className="folder-tree-label" onClick={() => onSelectFolder(folder.id)}>
             <span className="folder-tree-icon">▰</span>
@@ -112,10 +143,17 @@ export default function FolderTree({
           <button className="folder-tree-action" title="Rename folder" onClick={() => renameFolder(folder)}>Rename</button>
           <button className="folder-tree-action danger" title="Delete folder" onClick={() => deleteFolder(folder)}>Delete</button>
         </div>
-        {isExpanded && childFolders.map((child) => renderFolder(child, depth + 1))}
+        {isExpanded && (
+          <>
+            {childFolders.map((child) => renderFolder(child, depth + 1))}
+            {renderInlineItems(folder.id, depth)}
+          </>
+        )}
       </div>
     )
   }
+
+  const rootItemCount = items.filter((item) => !item.folder_id).length
 
   return (
     <div className="folder-tree">
@@ -139,35 +177,10 @@ export default function FolderTree({
           <span className="folder-tree-count">{items.length}</span>
         </button>
         {childrenByParent.get('root')?.map((folder) => renderFolder(folder))}
-      </div>
-
-      <div className="folder-tree-items">
-        {scopedItems.length === 0 ? (
+        {rootItemCount === 0 && items.length === 0 && (
           <div className="folder-tree-empty">No {folderLabel(category)}s here yet.</div>
-        ) : (
-          scopedItems.map((item) => (
-            <div key={item.id} className="folder-tree-item">
-              <button className="folder-tree-item-main" onClick={() => onSelectItem?.(item.id)}>
-                <span className="folder-tree-icon">□</span>
-                <span>{item.name}</span>
-              </button>
-              {renderItemExtra?.(item)}
-              {onMoveItem && (
-                <select
-                  className="folder-tree-move"
-                  value={item.folder_id || ''}
-                  onChange={(event) => onMoveItem(item.id, event.target.value || null)}
-                  onClick={(event) => event.stopPropagation()}
-                >
-                  <option value="">{rootLabel}</option>
-                  {folders.map((folder) => (
-                    <option key={folder.id} value={folder.id}>{folder.name}</option>
-                  ))}
-                </select>
-              )}
-            </div>
-          ))
         )}
+        {renderInlineItems(null, 0)}
       </div>
     </div>
   )

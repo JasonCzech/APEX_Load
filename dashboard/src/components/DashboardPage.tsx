@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useApi } from '../hooks/useApi'
+import { useProject } from '../hooks/useProject'
 import { TestSummary, MetricsHistoryPoint } from '../types'
 import StatusBadge from './StatusBadge'
 import './DashboardPage.css'
@@ -21,6 +22,7 @@ interface HealthData {
 
 export default function DashboardPage({ testStatuses, metricsHistory, connected, onSelectTest }: Props) {
   const api = useApi()
+  const { activeProject } = useProject()
   const [tests, setTests] = useState<TestSummary[]>([])
   const [health, setHealth] = useState<HealthData | null>(null)
   const [loadTime] = useState(() => new Date())
@@ -29,7 +31,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connected,
     const load = async () => {
       try {
         const [testRes, healthRes] = await Promise.all([
-          api.listTests(),
+          api.listTests(activeProject?.id),
           api.getHealth().catch(() => null),
         ])
         setTests(testRes.tests || [])
@@ -39,7 +41,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connected,
     load()
     const interval = setInterval(load, 3000)
     return () => clearInterval(interval)
-  }, [api])
+  }, [api, activeProject?.id])
 
   const resolvedTests = useMemo(() =>
     tests.map(t => ({
@@ -97,18 +99,6 @@ export default function DashboardPage({ testStatuses, metricsHistory, connected,
           <div className="dhc-content">
             <span className="dhc-value">{statusLabel}</span>
             <span className="dhc-label">API Server</span>
-          </div>
-        </div>
-
-        <div className="dash-health-card">
-          <div className="dhc-icon">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
-            </svg>
-          </div>
-          <div className="dhc-content">
-            <span className="dhc-value">{health?.version || '—'}</span>
-            <span className="dhc-label">Version</span>
           </div>
         </div>
 

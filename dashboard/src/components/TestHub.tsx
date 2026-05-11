@@ -89,7 +89,6 @@ function TestHub({ testStatuses, onSelectTest, activeProject }: Props) {
   const [folders, setFolders] = useState<Folder[]>([])
   const [selectedFolderId, setSelectedFolderId] = useState<string | null | undefined>(undefined)
   const [showCreate, setShowCreate] = useState(false)
-  const [expandedScenario, setExpandedScenario] = useState<string | null>(null)
   const [editingScenario, setEditingScenario] = useState<ScenarioDraft | null>(null)
 
   const refresh = useCallback(async () => {
@@ -191,10 +190,6 @@ function TestHub({ testStatuses, onSelectTest, activeProject }: Props) {
     refresh()
   }
 
-  const toggleExpand = (name: string) => {
-    setExpandedScenario(prev => prev === name ? null : name)
-  }
-
   const openCreate = () => {
     setEditingScenario(null)
     setShowCreate(true)
@@ -205,148 +200,41 @@ function TestHub({ testStatuses, onSelectTest, activeProject }: Props) {
     setShowCreate(true)
   }
 
-  return (
-    <div className="test-hub">
-      <div className="hub-header">
-        <div>
-          <h2>Scenarios</h2>
-          <p className="hub-subtitle">{scenarios.length} scenario{scenarios.length !== 1 ? 's' : ''} · {tests.length} total run{tests.length !== 1 ? 's' : ''}</p>
-        </div>
-        <button className="btn btn-primary" onClick={openCreate}>
-          New Scenario
-        </button>
-      </div>
-
-      <div className="folder-layout">
-        <FolderTree
-          title="Scenarios"
-          rootLabel={activeProject?.name || 'Root'}
-          category="scenarios"
-          folders={folders}
-          items={scenarioItems}
-          selectedFolderId={selectedFolderId}
-          onSelectFolder={setSelectedFolderId}
-          onSelectItem={onSelectTest}
-          onCreateFolder={createFolder}
-          onRenameFolder={renameFolder}
-          onDeleteFolder={deleteFolder}
-          onMoveItem={moveScenario}
-        />
-
-        {scenarios.length === 0 ? (
-          <div className="empty-state">
-            No scenarios here yet. Create one to get started.
-          </div>
-        ) : (
-          <div className="scenario-list">
-          {scenarios.map(scenario => {
-            const isExpanded = expandedScenario === scenario.name
-            const latest = scenario.latestRun
-            const configRun = scenario.configRun
-            const latestStatus = resolveStatus(latest, testStatuses)
-            const latestShakeoutFailure = hasShakeoutFailure(latest)
-
-            return (
-              <div key={scenario.name} className={`scenario-item ${isExpanded ? 'expanded' : ''} ${scenario.hasActive ? 'has-active' : ''}`}>
-                {/* Scenario row */}
-                <div className="scenario-row" onClick={() => toggleExpand(scenario.name)}>
-                  <button className={`expand-toggle ${isExpanded ? 'open' : ''}`} aria-label="Toggle runs">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <polyline points="9 18 15 12 9 6" />
-                    </svg>
-                  </button>
-
-                  <div className="scenario-info">
-                    <span className="scenario-name">{scenario.name}</span>
-                    <span className="scenario-meta">
-                      {scenario.totalRuns} run{scenario.totalRuns !== 1 ? 's' : ''}
-                      {' · '}{latest.total_vusers} VUsers
-                      {' · '}{(latest.groups?.length || 1)} group{(latest.groups?.length || 1) > 1 ? 's' : ''}
-                    </span>
-                  </div>
-
-                  {scenario.hasActive && (
-                    <span className="scenario-live-badge">LIVE</span>
-                  )}
-
-                  {latestShakeoutFailure && (
-                    <span className="scenario-shakeout-badge">Shakeout failed</span>
-                  )}
-
-                  <div className="scenario-latest">
-                    <span className="scenario-latest-label">Latest</span>
-                    <StatusBadge status={latestStatus} />
-                  </div>
-
-                  <span className="scenario-date">{formatDate(latest.created_at)}</span>
-
-                  <button
-                    className="btn btn-sm btn-secondary scenario-open-btn"
-                    onClick={(e) => { e.stopPropagation(); onSelectTest(configRun.id) }}
-                  >
-                    Open
-                  </button>
-
-                  <button
-                    className="btn btn-sm btn-ghost scenario-edit-btn"
-                    onClick={(e) => { e.stopPropagation(); openEdit(latest) }}
-                  >
-                    Edit
-                  </button>
-                </div>
-
-                {/* Expanded runs */}
-                {isExpanded && (
-                  <div className="runs-panel">
-                    <div className="runs-header">
-                      <span className="runs-col">Status</span>
-                      <span className="runs-col">VUsers</span>
-                      <span className="runs-col">Duration</span>
-                      <span className="runs-col">Groups</span>
-                      <span className="runs-col">Created</span>
-                      <span className="runs-col"></span>
-                    </div>
-                    {scenario.runs.map(run => {
-                      const runStatus = resolveStatus(run, testStatuses)
-                      const isActive = runStatus === 'RUNNING' || runStatus === 'INITIALIZING'
-                      const shakeoutFailure = hasShakeoutFailure(run)
-                      return (
-                        <div
-                          key={run.id}
-                          className={`run-row ${isActive ? 'active' : ''}`}
-                          onClick={() => onSelectTest(run.id)}
-                        >
-                          <span className="runs-col">
-                            <StatusBadge status={runStatus} />
-                          </span>
-                          <span className="runs-col run-value">{run.total_vusers}</span>
-                          <span className="runs-col run-value">{run.duration}</span>
-                          <span className="runs-col run-value">{run.groups?.length || 1}</span>
-                          <span className="runs-col run-date">{formatDate(run.created_at)}</span>
-                          <span className="runs-col run-actions">
-                            {isActive && run.live_metrics && (
-                              <span className="run-live-stats">
-                                {run.live_metrics.tps?.toFixed(1)} TPS · {run.live_metrics.avg_response_ms?.toFixed(0)}ms
-                              </span>
-                            )}
-                            {shakeoutFailure && (
-                              <span className="run-alert-badge">Shakeout failed</span>
-                            )}
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="run-arrow">
-                              <polyline points="9 18 15 12 9 6" />
-                            </svg>
-                          </span>
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
-              </div>
-            )
-          })}
-          </div>
-        )}
-      </div>
+    <div className="page">
+      <FolderTree
+        title="Scenarios"
+        rootLabel={activeProject?.name || 'Root'}
+        headerActions={<button className="btn btn-sm btn-primary" onClick={openCreate}>+ New Scenario</button>}
+        category="scenarios"
+        folders={folders}
+        items={scenarioItems}
+        selectedFolderId={selectedFolderId}
+        onSelectFolder={setSelectedFolderId}
+        onSelectItem={onSelectTest}
+        onCreateFolder={createFolder}
+        onRenameFolder={renameFolder}
+        onDeleteFolder={deleteFolder}
+        onMoveItem={moveScenario}
+        renderItemExtra={(item) => {
+          const scenario = scenarios.find((s) => s.configRun.id === item.id)
+          if (!scenario) return null
+          const latestStatus = resolveStatus(scenario.latestRun, testStatuses)
+          return (
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginLeft: 'auto', flexShrink: 0 }}>
+              <span className="scenario-meta" style={{ fontSize: 12 }}>
+                {scenario.totalRuns} run{scenario.totalRuns !== 1 ? 's' : ''} · {scenario.latestRun.total_vusers} VUsers
+              </span>
+              <StatusBadge status={latestStatus} />
+              <button
+                className="btn btn-sm btn-ghost"
+                onClick={(e) => { e.stopPropagation(); openEdit(scenario.latestRun) }}
+              >
+                Edit
+              </button>
+            </div>
+          )
+        }}
+      />
 
       {showCreate && (
         <CreateTestModal

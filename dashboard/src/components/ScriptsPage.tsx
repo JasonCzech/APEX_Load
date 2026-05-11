@@ -104,53 +104,6 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, activ
     }
   }
 
-  const visibleScripts = scripts.filter((script) => {
-    if (selectedFolderId === undefined) return true
-    if (selectedFolderId === null) return !script.folder_id
-    return script.folder_id === selectedFolderId
-  })
-
-  const sortedScripts = [...visibleScripts].sort((a: any, b: any) => {
-    let vA = a[sortField]
-    let vB = b[sortField]
-    if (sortField === 'created_at') {
-      vA = new Date(vA).getTime()
-      vB = new Date(vB).getTime()
-    }
-    if (vA < vB) return sortDirection === 'asc' ? -1 : 1
-    if (vA > vB) return sortDirection === 'asc' ? 1 : -1
-    return 0
-  })
-
-  const SortIcon = ({ field }: { field: string }) => {
-    if (sortField !== field) return <span className="sort-icon">↕</span>
-    return <span className="sort-icon active">{sortDirection === 'asc' ? '↑' : '↓'}</span>
-  }
-
-  const toggleSelectAll = () => {
-    if (selectedIds.size === visibleScripts.length) {
-      setSelectedIds(new Set())
-    } else {
-      setSelectedIds(new Set(visibleScripts.map((s) => s.id)))
-    }
-  }
-
-  const toggleSelect = (id: string) => {
-    const next = new Set(selectedIds)
-    if (next.has(id)) next.delete(id)
-    else next.add(id)
-    setSelectedIds(next)
-  }
-
-  const handleDeleteSelected = async () => {
-    if (!confirm(`Delete ${selectedIds.size} selected scripts?`)) return
-    try {
-      await Promise.all(Array.from(selectedIds).map((id) => api.deleteScript(id)))
-      refresh()
-      setSelectedIds(new Set())
-    } catch { /* ignore */ }
-  }
-
   if (subView === 'create') {
     return (
       <div className="page">
@@ -237,99 +190,32 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, activ
 
   return (
     <div className="page">
-      <div className="page-header">
-        <div>
-          <h2>Scripts</h2>
-          <p className="page-subtitle">Manage scripts for {activeProject?.name || 'the selected project'}</p>
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          {selectedIds.size > 0 && (
-            <button className="btn btn-ghost" style={{ color: 'var(--danger)' }} onClick={handleDeleteSelected}>
-              Delete Selected ({selectedIds.size})
-            </button>
-          )}
-        </div>
-      </div>
 
-      <div className="folder-layout">
-        <FolderTree
-          title="Scripts"
-          rootLabel={activeProject?.name || 'Root'}
-          headerActions={<button className="btn btn-sm btn-primary" onClick={() => setSubView('create-options')}>+ Create Script</button>}
-          category="scripts"
-          folders={folders}
-          items={scripts}
-          selectedFolderId={selectedFolderId}
-          onSelectFolder={setSelectedFolderId}
-          onSelectItem={handleEdit}
-          onCreateFolder={createFolder}
-          onRenameFolder={renameFolder}
-          onDeleteFolder={deleteFolder}
-          onMoveItem={moveScript}
-        />
-
-        <div className="page-section">
-          <h3 className="section-title">Script Library ({visibleScripts.length})</h3>
-          {visibleScripts.length === 0 ? (
-            <div className="empty-card">
-              <div className="empty-icon">
-                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="16 18 22 12 16 6" />
-                  <polyline points="8 6 2 12 8 18" />
-                </svg>
-              </div>
-              <p>No scripts here yet.</p>
-              <p className="empty-hint">Click "Create Script" to choose Visual Editor, Script Recorder, sample-based import, or LoadRunner import.</p>
+      <FolderTree
+        title="Scripts"
+        rootLabel={activeProject?.name || 'Root'}
+        headerActions={<button className="btn btn-sm btn-primary" onClick={() => setSubView('create-options')}>+ Create Script</button>}
+        category="scripts"
+        folders={folders}
+        items={scripts}
+        selectedFolderId={selectedFolderId}
+        onSelectFolder={setSelectedFolderId}
+        onSelectItem={handleEdit}
+        onCreateFolder={createFolder}
+        onRenameFolder={renameFolder}
+        onDeleteFolder={deleteFolder}
+        onMoveItem={moveScript}
+        renderItemExtra={(item) => {
+          const s = scripts.find((x) => x.id === item.id)
+          return (
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginLeft: 'auto', flexShrink: 0 }}>
+              {s && <span className="protocol-badge">{s.protocol}</span>}
+              <button className="btn btn-sm btn-ghost" onClick={(e) => { e.stopPropagation(); handleEdit(item.id) }}>Edit</button>
+              <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={(e) => { e.stopPropagation(); handleDelete(item.id) }}>Delete</button>
             </div>
-          ) : (
-          <div className="data-table">
-            <table>
-              <thead>
-                <tr>
-                  <th style={{ width: 40 }}>
-                    <input
-                      type="checkbox"
-                      checked={visibleScripts.length > 0 && selectedIds.size === visibleScripts.length}
-                      onChange={toggleSelectAll}
-                    />
-                  </th>
-                  <th onClick={() => handleSort('name')} className="sortable">Name <SortIcon field="name" /></th>
-                  <th onClick={() => handleSort('protocol')} className="sortable">Protocol <SortIcon field="protocol" /></th>
-                  <th onClick={() => handleSort('version')} className="sortable">Version <SortIcon field="version" /></th>
-                  <th onClick={() => handleSort('created_at')} className="sortable">Date Added <SortIcon field="created_at" /></th>
-                  <th>ID</th>
-                  <th style={{ textAlign: 'right' }}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sortedScripts.map((s) => (
-                  <tr key={s.id} className={selectedIds.has(s.id) ? 'selected' : ''}>
-                    <td>
-                      <input
-                        type="checkbox"
-                        checked={selectedIds.has(s.id)}
-                        onChange={() => toggleSelect(s.id)}
-                      />
-                    </td>
-                    <td className="cell-name">{s.name}</td>
-                    <td><span className="protocol-badge">{s.protocol}</span></td>
-                    <td>{s.version || '—'}</td>
-                    <td className="cell-muted">{new Date(s.created_at).toLocaleDateString()}</td>
-                    <td className="cell-mono">{s.id.slice(0, 8)}</td>
-                    <td style={{ textAlign: 'right' }}>
-                      <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
-                        <button className="btn btn-sm btn-ghost" onClick={() => handleEdit(s.id)}>Edit</button>
-                        <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={() => handleDelete(s.id)}>Delete</button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          )}
-        </div>
-      </div>
+          )
+        }}
+      />
     </div>
   )
 }

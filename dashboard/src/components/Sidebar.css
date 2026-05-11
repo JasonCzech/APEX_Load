@@ -27,6 +27,7 @@
   cursor: pointer;
   border-bottom: 1px solid var(--border);
   min-height: 64px;
+  user-select: none;
 }
 
 .sidebar.collapsed .sidebar-brand {
