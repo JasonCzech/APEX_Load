@@ -1084,6 +1084,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
           {/* Runtime Settings Panels */}
           <div className="runtime-settings">
             <h3 className="settings-heading">Runtime Settings</h3>
+            <div className="runtime-settings-grid">
 
             {/* Think Time */}
             <div className={`settings-section ${openSections['think'] ? 'open' : ''}`}>
@@ -1453,6 +1454,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
                   </div>
                 </div>
               )}
+            </div>
             </div>
           </div>
 

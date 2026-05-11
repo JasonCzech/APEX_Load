@@ -11,6 +11,7 @@ type SubView = 'list' | 'create-options' | 'create' | 'edit' | 'import' | 'recor
 interface Props {
   initialMode?: SubView
   initialEditId?: string
+  onSelectScenario?: (id: string) => void
 }
 
 function formatDate(value?: string) {
@@ -33,7 +34,15 @@ function scenarioRunReleaseList(script: StoredScript) {
   return releases.map(release => release.name).join(', ')
 }
 
-export default function ScriptsPage({ initialMode = 'list', initialEditId }: Props) {
+function SortIndicator({ active, direction }: { active: boolean, direction: 'asc' | 'desc' }) {
+  return (
+    <span className={`sort-icon ${active ? 'active' : ''}`}>
+      {active ? (direction === 'asc' ? '↑' : '↓') : '↕'}
+    </span>
+  )
+}
+
+export default function ScriptsPage({ initialMode = 'list', initialEditId, onSelectScenario }: Props) {
   const api = useApi()
   const [scripts, setScripts] = useState<StoredScript[]>([])
   const [subView, setSubView] = useState<SubView>(initialMode === 'create' ? 'create-options' : initialMode)
@@ -45,6 +54,8 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId }: Pro
   const [expandedScriptId, setExpandedScriptId] = useState<string | null>(null)
   const [scriptRuns, setScriptRuns] = useState<Record<string, TestSummary[]>>({})
   const [loadingRunsFor, setLoadingRunsFor] = useState<string | null>(null)
+  const [innerSortField, setInnerSortField] = useState<'name' | 'status' | 'scenario_id' | 'release_id' | 'start_time' | 'duration'>('start_time')
+  const [innerSortDirection, setInnerSortDirection] = useState<'asc' | 'desc'>('desc')
 
   const refresh = useCallback(async () => {
     try {
@@ -131,6 +142,28 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId }: Pro
     }
   }
 
+  const handleInnerSort = (field: typeof innerSortField) => {
+    if (innerSortField === field) setInnerSortDirection(prev => prev === 'asc' ? 'desc' : 'asc')
+    else { setInnerSortField(field); setInnerSortDirection('asc') }
+  }
+
+  const getSortedInnerRuns = (runs: TestSummary[]) => {
+    return [...runs].sort((a: any, b: any) => {
+      let aValue: any
+      let bValue: any
+      if (innerSortField === 'start_time') {
+        aValue = new Date(a.start_time || a.created_at || 0).getTime()
+        bValue = new Date(b.start_time || b.created_at || 0).getTime()
+      } else {
+        aValue = String(a[innerSortField] || '').toLowerCase()
+        bValue = String(b[innerSortField] || '').toLowerCase()
+      }
+      if (aValue < bValue) return innerSortDirection === 'asc' ? -1 : 1
+      if (aValue > bValue) return innerSortDirection === 'asc' ? 1 : -1
+      return 0
+    })
+  }
+
   const handleSaved = () => { refresh(); setSubView('list'); setEditingId(null); setEditingScript(null); setDraftScript(null) }
   const handleImported = () => { refresh(); setSubView('list') }
   const handleSampleEdit = (script: any) => { setDraftScript(script); setEditingId(null); setEditingScript(null); setSubView('create') }
@@ -201,14 +234,14 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId }: Pro
           <table>
             <thead>
               <tr>
-                <th onClick={() => handleSort('name')} className="sortable">Name</th>
-                <th onClick={() => handleSort('protocol')} className="sortable">Protocol</th>
-                <th onClick={() => handleSort('version')} className="sortable">Version</th>
-                <th onClick={() => handleSort('created_at')} className="sortable">Created</th>
-                <th onClick={() => handleSort('scenario_count')} className="sortable">Linked Scenarios</th>
-                <th onClick={() => handleSort('associated_releases')} className="sortable">Associated Releases</th>
-                <th onClick={() => handleSort('scenario_run_releases')} className="sortable">Scenario Run Releases</th>
-                <th onClick={() => handleSort('last_run_at')} className="sortable">Last Run</th>
+                <th onClick={() => handleSort('name')} className="sortable">Name <SortIndicator active={sortField === 'name'} direction={sortDirection} /></th>
+                <th onClick={() => handleSort('protocol')} className="sortable">Protocol <SortIndicator active={sortField === 'protocol'} direction={sortDirection} /></th>
+                <th onClick={() => handleSort('version')} className="sortable">Version <SortIndicator active={sortField === 'version'} direction={sortDirection} /></th>
+                <th onClick={() => handleSort('created_at')} className="sortable">Created <SortIndicator active={sortField === 'created_at'} direction={sortDirection} /></th>
+                <th onClick={() => handleSort('scenario_count')} className="sortable">Linked Scenarios <SortIndicator active={sortField === 'scenario_count'} direction={sortDirection} /></th>
+                <th onClick={() => handleSort('associated_releases')} className="sortable">Associated Releases <SortIndicator active={sortField === 'associated_releases'} direction={sortDirection} /></th>
+                <th onClick={() => handleSort('scenario_run_releases')} className="sortable">Scenario Run Releases <SortIndicator active={sortField === 'scenario_run_releases'} direction={sortDirection} /></th>
+                <th onClick={() => handleSort('last_run_at')} className="sortable">Last Run <SortIndicator active={sortField === 'last_run_at'} direction={sortDirection} /></th>
                 <th style={{ textAlign: 'right' }}>Actions</th>
               </tr>
             </thead>
@@ -230,7 +263,7 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId }: Pro
                     </td>
                   </tr>
                   {expandedScriptId === script.id && (
-                    <tr>
+                    <tr className="no-hover">
                       <td colSpan={9} style={{ background: 'var(--bg-primary)' }}>
                         <div style={{ padding: '10px 4px' }}>
                           <div className="cell-muted" style={{ marginBottom: 8 }}>
@@ -243,17 +276,29 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId }: Pro
                               <table>
                                 <thead>
                                   <tr>
-                                    <th>Run Name</th>
-                                    <th>Status</th>
-                                    <th>Scenario ID</th>
-                                    <th>Release ID</th>
-                                    <th>Started</th>
-                                    <th>Duration</th>
+                                    <th onClick={() => handleInnerSort('name')} className="sortable">
+                                      Run Name <SortIndicator active={innerSortField === 'name'} direction={innerSortDirection} />
+                                    </th>
+                                    <th onClick={() => handleInnerSort('status')} className="sortable">
+                                      Status <SortIndicator active={innerSortField === 'status'} direction={innerSortDirection} />
+                                    </th>
+                                    <th onClick={() => handleInnerSort('scenario_id')} className="sortable">
+                                      Scenario ID <SortIndicator active={innerSortField === 'scenario_id'} direction={innerSortDirection} />
+                                    </th>
+                                    <th onClick={() => handleInnerSort('release_id')} className="sortable">
+                                      Release ID <SortIndicator active={innerSortField === 'release_id'} direction={innerSortDirection} />
+                                    </th>
+                                    <th onClick={() => handleInnerSort('start_time')} className="sortable">
+                                      Started <SortIndicator active={innerSortField === 'start_time'} direction={innerSortDirection} />
+                                    </th>
+                                    <th onClick={() => handleInnerSort('duration')} className="sortable">
+                                      Duration <SortIndicator active={innerSortField === 'duration'} direction={innerSortDirection} />
+                                    </th>
                                   </tr>
                                 </thead>
                                 <tbody>
-                                  {(scriptRuns[script.id] || []).map(run => (
-                                    <tr key={run.id}>
+                                  {getSortedInnerRuns(scriptRuns[script.id] || []).map(run => (
+                                    <tr key={run.id} className="clickable-row" onClick={(e) => { e.stopPropagation(); onSelectScenario?.(run.id) }}>
                                       <td className="cell-name">{run.name}</td>
                                       <td>{run.status}</td>
                                       <td className="cell-mono">{run.scenario_id || '—'}</td>

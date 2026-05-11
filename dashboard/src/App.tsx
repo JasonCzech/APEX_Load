@@ -128,7 +128,7 @@ function AppShell() {
             onSelectTest={navigateToTest}
           />
         )}
-        {view.page === 'scripts' && <ScriptsPage initialMode={scriptMode} initialEditId={scriptEditId} />}
+        {view.page === 'scripts' && <ScriptsPage initialMode={scriptMode} initialEditId={scriptEditId} onSelectScenario={navigateToTest} />}
         {view.page === 'results' && (
           <ResultsPage
             testStatuses={testStatuses}

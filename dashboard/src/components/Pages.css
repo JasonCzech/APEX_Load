@@ -289,7 +289,7 @@
   border-bottom: none;
 }
 
-.data-table tr:hover td {
+.data-table tr:not(.no-hover):hover td {
   background: var(--bg-hover);
 }
 
