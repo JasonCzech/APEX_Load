@@ -1,0 +1,328 @@
+package engine
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/jasonczech/stormrunner/pkg/dsl"
+	"github.com/jasonczech/stormrunner/pkg/protocol"
+)
+
+type ReplayOptions struct {
+	GroupName       string
+	Variables       map[string]string
+	IgnoreThinkTime bool
+	OnProgress      func(ReplayProgressEvent)
+}
+
+type ReplayProgressEvent struct {
+	Type      string
+	Timestamp time.Time
+	EventIndex int
+	Event     *ReplayActionEvent
+	Report    *ReplayReport
+}
+
+const (
+	ReplayProgressStarted  = "replay_started"
+	ReplayProgressEventRun = "replay_event"
+	ReplayProgressComplete = "replay_complete"
+)
+
+type ReplayReport struct {
+	Group          string                 `json:"group"`
+	Protocol       string                 `json:"protocol"`
+	StartedAt      time.Time              `json:"started_at"`
+	CompletedAt    time.Time              `json:"completed_at"`
+	Success        bool                   `json:"success"`
+	Error          string                 `json:"error,omitempty"`
+	Events         []ReplayActionEvent    `json:"events"`
+	FinalVariables map[string]string      `json:"final_variables,omitempty"`
+	Snapshots      []*protocol.ErrorSnapshot `json:"snapshots,omitempty"`
+}
+
+type ReplayActionEvent struct {
+	Phase        string                  `json:"phase"`
+	ActionName   string                  `json:"action_name"`
+	ActionType   string                  `json:"action_type"`
+	Method       string                  `json:"method,omitempty"`
+	Target       string                  `json:"target"`
+	Headers      map[string]string       `json:"headers,omitempty"`
+	Body         string                  `json:"body,omitempty"`
+	StartedAt    time.Time               `json:"started_at"`
+	CompletedAt  time.Time               `json:"completed_at"`
+	DurationMs   float64                 `json:"duration_ms"`
+	StatusCode   int                     `json:"status_code,omitempty"`
+	Success      bool                    `json:"success"`
+	ErrorMessage string                  `json:"error_message,omitempty"`
+	Extractions  map[string]string       `json:"extractions,omitempty"`
+	Snapshot     *protocol.ErrorSnapshot `json:"snapshot,omitempty"`
+}
+
+func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (*ReplayReport, error) {
+	if script == nil {
+		return nil, fmt.Errorf("script is required")
+	}
+
+	groupName := opts.GroupName
+	if groupName == "" {
+		groupName = "replay"
+	}
+
+	proto, err := protocol.Get(script.Protocol)
+	if err != nil {
+		return nil, fmt.Errorf("protocol init: %w", err)
+	}
+
+	if err := proto.Init(ctx, buildProtoConfig(script)); err != nil {
+		return nil, fmt.Errorf("protocol init: %w", err)
+	}
+	defer proto.Teardown(context.Background())
+
+	dataProvider, err := NewDataProvider(script.DataSources)
+	if err != nil {
+		return nil, fmt.Errorf("data source init: %w", err)
+	}
+
+	report := &ReplayReport{
+		Group:     groupName,
+		Protocol:  script.Protocol,
+		StartedAt: time.Now(),
+		Success:   true,
+		Events:    make([]ReplayActionEvent, 0, len(script.Init)+len(script.Actions)+len(script.Teardown)),
+	}
+	publishReplayProgress(opts.OnProgress, ReplayProgressEvent{
+		Type:      ReplayProgressStarted,
+		Timestamp: report.StartedAt,
+		EventIndex: -1,
+		Report:    cloneReplayReport(report),
+	})
+
+	vu := &VUser{
+		ID:           0,
+		Group:        groupName,
+		Proto:        proto,
+		Script:       script,
+		Metrics:      NewMetricsCollector(16),
+		Variables:    make(map[string]string),
+		DataProvider: dataProvider,
+		SnapshotStore: NewSnapshotStore(128),
+	}
+	vu.loadDataRow()
+	for key, value := range opts.Variables {
+		vu.Variables[key] = value
+	}
+
+	continueOnError := script.Config.ErrorHandling.ContinueOnError
+	globalThinkCfg := protocol.ThinkTimeConfig{
+		Type:       script.Config.ThinkTime.Type,
+		MeanMs:     script.Config.ThinkTime.MeanMs,
+		StdMs:      script.Config.ThinkTime.StdMs,
+		MinMs:      script.Config.ThinkTime.MinMs,
+		MaxMs:      script.Config.ThinkTime.MaxMs,
+		Multiplier: script.Config.ThinkTime.Multiplier,
+		LimitMs:    script.Config.ThinkTime.LimitMs,
+		Ignore:     script.Config.ThinkTime.Ignore,
+	}
+
+	shouldContinue := runReplayPhase(ctx, vu, script.Init, "init", false, opts.IgnoreThinkTime, globalThinkCfg, report, opts.OnProgress)
+	if shouldContinue {
+		shouldContinue = runReplayPhase(ctx, vu, script.Actions, "action", continueOnError, opts.IgnoreThinkTime, globalThinkCfg, report, opts.OnProgress)
+	}
+	runReplayPhase(context.Background(), vu, script.Teardown, "teardown", true, true, globalThinkCfg, report, opts.OnProgress)
+
+	report.CompletedAt = time.Now()
+	report.FinalVariables = cloneStringMap(vu.Variables)
+	report.Snapshots = vu.SnapshotStore.Snapshots()
+	if !shouldContinue && report.Error == "" && !report.Success {
+		report.Error = "replay stopped after action failure"
+	}
+	publishReplayProgress(opts.OnProgress, ReplayProgressEvent{
+		Type:      ReplayProgressComplete,
+		Timestamp: report.CompletedAt,
+		EventIndex: -1,
+		Report:    cloneReplayReport(report),
+	})
+
+	return report, nil
+}
+
+func runReplayPhase(
+	ctx context.Context,
+	vu *VUser,
+	actions []dsl.Action,
+	phase string,
+	continueOnError bool,
+	ignoreThinkTime bool,
+	globalThinkCfg protocol.ThinkTimeConfig,
+	report *ReplayReport,
+	onProgress func(ReplayProgressEvent),
+) bool {
+	for _, action := range actions {
+		event, shouldContinue := runReplayAction(ctx, vu, action, phase, ignoreThinkTime, globalThinkCfg, report)
+		report.Events = append(report.Events, event)
+		publishReplayProgress(onProgress, ReplayProgressEvent{
+			Type:       ReplayProgressEventRun,
+			Timestamp:  event.CompletedAt,
+			EventIndex: len(report.Events) - 1,
+			Event:      cloneReplayActionEvent(event),
+		})
+		if !shouldContinue {
+			report.Success = false
+			if report.Error == "" {
+				report.Error = event.ErrorMessage
+			}
+			if !continueOnError {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func runReplayAction(
+	ctx context.Context,
+	vu *VUser,
+	action dsl.Action,
+	phase string,
+	ignoreThinkTime bool,
+	globalThinkCfg protocol.ThinkTimeConfig,
+	report *ReplayReport,
+) (ReplayActionEvent, bool) {
+	resolved := vu.resolveAction(action)
+	start := time.Now()
+	result, err := vu.executeWithRetry(ctx, resolved, vu.Script.Config.ErrorHandling)
+	completedAt := time.Now()
+
+	event := ReplayActionEvent{
+		Phase:       phase,
+		ActionName:  action.Name,
+		ActionType:  action.Type,
+		Method:      resolved.Method,
+		Target:      resolved.Target,
+		Headers:     cloneStringMap(resolved.Headers),
+		Body:        string(resolved.Body),
+		StartedAt:   start,
+		CompletedAt: completedAt,
+		DurationMs:  float64(completedAt.Sub(start).Microseconds()) / 1000,
+	}
+
+	if err != nil {
+		event.Success = false
+		event.ErrorMessage = err.Error()
+		if event.ErrorMessage == "" {
+			event.ErrorMessage = fmt.Sprintf("%s %q failed", phase, action.Name)
+		}
+		return event, false
+	}
+
+	if result == nil {
+		event.Success = false
+		event.ErrorMessage = fmt.Sprintf("%s %q returned no result", phase, action.Name)
+		return event, false
+	}
+
+	vu.recordResult(result, vu.Script.Config.ErrorHandling)
+	event.StatusCode = result.StatusCode
+	event.Success = result.Success
+	event.ErrorMessage = result.ErrorMessage
+	event.Extractions = cloneStringMap(result.Extractions)
+	event.Snapshot = result.Snapshot
+	if result.Duration > 0 {
+		event.DurationMs = float64(result.Duration.Microseconds()) / 1000
+	}
+
+	if !result.Success {
+		if event.ErrorMessage == "" {
+			event.ErrorMessage = fmt.Sprintf("status %d", result.StatusCode)
+		}
+		return event, false
+	}
+
+	if !ignoreThinkTime && action.ThinkTimeAfter {
+		thinkCfg := globalThinkCfg
+		if action.ThinkTime.Type != "" {
+			thinkCfg = protocol.ThinkTimeConfig{
+				Type:       action.ThinkTime.Type,
+				MeanMs:     action.ThinkTime.MeanMs,
+				StdMs:      action.ThinkTime.StdMs,
+				MinMs:      action.ThinkTime.MinMs,
+				MaxMs:      action.ThinkTime.MaxMs,
+				Multiplier: action.ThinkTime.Multiplier,
+				LimitMs:    action.ThinkTime.LimitMs,
+				Ignore:     action.ThinkTime.Ignore,
+			}
+			if thinkCfg.Multiplier == 0 {
+				thinkCfg.Multiplier = globalThinkCfg.Multiplier
+			}
+			if thinkCfg.LimitMs == 0 {
+				thinkCfg.LimitMs = globalThinkCfg.LimitMs
+			}
+			if globalThinkCfg.Ignore {
+				thinkCfg.Ignore = true
+			}
+		}
+		applyThinkTime(thinkCfg)
+	}
+
+	return event, true
+}
+
+func cloneStringMap(input map[string]string) map[string]string {
+	if len(input) == 0 {
+		return nil
+	}
+	cloned := make(map[string]string, len(input))
+	for key, value := range input {
+		cloned[key] = value
+	}
+	return cloned
+}
+
+func cloneReplayActionEvent(event ReplayActionEvent) *ReplayActionEvent {
+	cloned := event
+	cloned.Headers = cloneStringMap(event.Headers)
+	cloned.Extractions = cloneStringMap(event.Extractions)
+	if event.Snapshot != nil {
+		snapshot := *event.Snapshot
+		snapshot.RequestHeaders = cloneStringMap(event.Snapshot.RequestHeaders)
+		snapshot.ResponseHeaders = cloneStringMap(event.Snapshot.ResponseHeaders)
+		cloned.Snapshot = &snapshot
+	}
+	return &cloned
+}
+
+func cloneReplayReport(report *ReplayReport) *ReplayReport {
+	if report == nil {
+		return nil
+	}
+	cloned := *report
+	cloned.FinalVariables = cloneStringMap(report.FinalVariables)
+	if len(report.Events) > 0 {
+		cloned.Events = make([]ReplayActionEvent, len(report.Events))
+		for i, event := range report.Events {
+			cloned.Events[i] = *cloneReplayActionEvent(event)
+		}
+	}
+	if len(report.Snapshots) > 0 {
+		cloned.Snapshots = make([]*protocol.ErrorSnapshot, len(report.Snapshots))
+		for i, snapshot := range report.Snapshots {
+			if snapshot == nil {
+				continue
+			}
+			copySnapshot := *snapshot
+			copySnapshot.RequestHeaders = cloneStringMap(snapshot.RequestHeaders)
+			copySnapshot.ResponseHeaders = cloneStringMap(snapshot.ResponseHeaders)
+			cloned.Snapshots[i] = &copySnapshot
+		}
+	}
+	return &cloned
+}
+
+func publishReplayProgress(callback func(ReplayProgressEvent), event ReplayProgressEvent) {
+	if callback == nil {
+		return
+	}
+	callback(event)
+}

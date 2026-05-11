@@ -492,6 +492,23 @@ func (tr *TestRunner) GetScript(id string) (*StoredScript, bool) {
 	return s, ok
 }
 
+func (tr *TestRunner) ReplayScript(id string, opts engine.ReplayOptions) (*engine.ReplayReport, error) {
+	tr.mu.RLock()
+	stored, ok := tr.scripts[id]
+	tr.mu.RUnlock()
+	if !ok {
+		return nil, fmt.Errorf("script not found")
+	}
+	return tr.ReplayScriptDefinition(stored.Script, opts)
+}
+
+func (tr *TestRunner) ReplayScriptDefinition(script *dsl.Script, opts engine.ReplayOptions) (*engine.ReplayReport, error) {
+	if script == nil {
+		return nil, fmt.Errorf("script is required")
+	}
+	return engine.ReplayScript(context.Background(), script, opts)
+}
+
 func (tr *TestRunner) ListScripts() []*StoredScript {
 	tr.mu.RLock()
 	defer tr.mu.RUnlock()

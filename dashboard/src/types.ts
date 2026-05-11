@@ -372,11 +372,16 @@ export interface StoredScenario {
 
 export interface WSMessage {
   type: string
-  test_id: string
+  test_id?: string
+  script_id?: string
+  replay_session_id?: string
   test_name?: string
   status?: string
-  timestamp: string
+  timestamp?: string
+  event_index?: number
   data?: LiveMetrics
+  event?: unknown
+  report?: unknown
 }
 
 export interface MetricsHistoryPoint {

@@ -27,7 +27,8 @@ function AppShell() {
   const scriptEditId = view.page === 'scripts' && 'scriptId' in view ? view.scriptId : undefined
 
   const handleWSMessage = useCallback((msg: WSMessage) => {
-    if (msg.type === 'metrics_update' && msg.data) {
+    if (msg.type === 'metrics_update' && msg.data && msg.test_id && msg.timestamp) {
+      const testId = msg.test_id
       const point: MetricsHistoryPoint = {
         time: new Date(msg.timestamp).toLocaleTimeString(),
         vusers: msg.data.active_vusers,
@@ -57,14 +58,15 @@ function AppShell() {
         point.diskWrite = Math.round(r.disk_write_kbps * 10) / 10
       }
       setMetricsHistory((prev) => {
-        const existing = prev[msg.test_id] || []
+        const existing = prev[testId] || []
         const updated = [...existing, point].slice(-300)
-        return { ...prev, [msg.test_id]: updated }
+        return { ...prev, [testId]: updated }
       })
     }
 
-    if (msg.status) {
-      setTestStatuses((prev) => ({ ...prev, [msg.test_id]: msg.status! }))
+    if (msg.status && msg.test_id) {
+      const testId = msg.test_id
+      setTestStatuses((prev) => ({ ...prev, [testId]: msg.status! }))
     }
   }, [])
 

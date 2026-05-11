@@ -41,6 +41,18 @@ export function useScriptApi() {
 
   const validateScript = useCallback((id: string) => request<any>(`/scripts/${id}/validate`, { method: 'POST' }), [])
 
+  const replayScript = useCallback(
+		(id: string, payload?: { group_name?: string; variables?: Record<string, string>; ignore_think_time?: boolean }) =>
+			request<any>(`/scripts/${id}/replay`, { method: 'POST', body: JSON.stringify(payload || {}) }),
+		[],
+	)
+
+  const replayDraftScript = useCallback(
+    (payload: { script: any; group_name?: string; variables?: Record<string, string>; ignore_think_time?: boolean }) =>
+      request<any>('/scripts/replay', { method: 'POST', body: JSON.stringify(payload) }),
+    [],
+  )
+
   const exportScript = useCallback(
     (id: string, outputDir?: string, filename?: string) =>
       request<any>(`/scripts/${id}/export`, {
@@ -123,6 +135,8 @@ export function useScriptApi() {
       deleteScript,
       moveScript,
       validateScript,
+  		replayScript,
+  		replayDraftScript,
       exportScript,
       importLoadRunner,
       importSample,
@@ -141,6 +155,8 @@ export function useScriptApi() {
       deleteScript,
       moveScript,
       validateScript,
+  		replayScript,
+  		replayDraftScript,
       exportScript,
       importLoadRunner,
       importSample,

@@ -1,5 +1,7 @@
-import { useState, useEffect } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useApi } from '../hooks/useApi'
+import { useWebSocket } from '../hooks/useWebSocket'
+import { WSMessage } from '../types'
 import './ScriptEditor.css'
 
 interface Action {
@@ -65,6 +67,69 @@ interface ScriptData {
   config: ScriptConfig
   actions: Action[]
   data_sources?: DataSourceConfig[]
+}
+
+interface ReplaySnapshot {
+  request_method?: string
+  request_url?: string
+  request_headers?: Record<string, string>
+  request_body?: string
+  response_status?: number
+  response_headers?: Record<string, string>
+  response_body?: string
+}
+
+interface ReplayActionEvent {
+  phase: string
+  action_name: string
+  action_type: string
+  method?: string
+  target: string
+  headers?: Record<string, string>
+  body?: string
+  started_at: string
+  completed_at: string
+  duration_ms: number
+  status_code?: number
+  success: boolean
+  error_message?: string
+  extractions?: Record<string, string>
+  snapshot?: ReplaySnapshot
+}
+
+interface ReplayReport {
+  group: string
+  protocol: string
+  started_at: string
+  completed_at: string
+  success: boolean
+  error?: string
+  events: ReplayActionEvent[]
+  final_variables?: Record<string, string>
+  snapshots?: ReplaySnapshot[]
+}
+
+interface ReplayOptionsState {
+  groupName: string
+  ignoreThinkTime: boolean
+  variablesText: string
+}
+
+interface ReplayActivityItem {
+  id: string
+  kind: 'start' | 'event' | 'complete' | 'error'
+  title: string
+  detail?: string
+  timestamp: string
+  success?: boolean
+  changedVariables?: string[]
+}
+
+interface ReplayWSMessage extends WSMessage {
+  replay_session_id?: string
+  event_index?: number
+  event?: ReplayActionEvent
+  report?: ReplayReport
 }
 
 interface DataSourceConfig {
@@ -319,6 +384,62 @@ function sanitizeVarName(input: string): string {
   return normalized || 'param'
 }
 
+function formatReplayTime(value?: string): string {
+  if (!value) return 'n/a'
+  return new Date(value).toLocaleString()
+}
+
+function formatReplayHeaders(headers?: Record<string, string>): string {
+  if (!headers || Object.keys(headers).length === 0) return 'None'
+  return Object.entries(headers).map(([key, value]) => `${key}: ${value}`).join('\n')
+}
+
+function createReplaySessionId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return `replay-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+}
+
+function upsertReplayActivity(items: ReplayActivityItem[], next: ReplayActivityItem): ReplayActivityItem[] {
+  const index = items.findIndex(item => item.id === next.id)
+  if (index === -1) return [...items, next]
+  const updated = [...items]
+  updated[index] = next
+  return updated
+}
+
+function mergeReplayVariables(
+  seed: Record<string, string> | undefined,
+  events: ReplayActionEvent[],
+): Record<string, string> {
+  const next: Record<string, string> = { ...(seed || {}) }
+  events.forEach(event => {
+    Object.entries(event.extractions || {}).forEach(([key, value]) => {
+      next[key] = value
+    })
+  })
+  return next
+}
+
+function buildReplayVariableDiffs(
+  seed: Record<string, string> | undefined,
+  events: ReplayActionEvent[],
+): Array<Record<string, { previous?: string; next: string }>> {
+  const current: Record<string, string> = { ...(seed || {}) }
+  return events.map(event => {
+    const diff: Record<string, { previous?: string; next: string }> = {}
+    Object.entries(event.extractions || {}).forEach(([key, value]) => {
+      const previous = current[key]
+      if (previous !== value) {
+        diff[key] = { previous, next: value }
+      }
+      current[key] = value
+    })
+    return diff
+  })
+}
+
 function isLikelyParameterValue(value: string): boolean {
   const v = value.trim()
   if (!v || v.includes('{{')) return false
@@ -355,6 +476,18 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
   const [dataEditorMode, setDataEditorMode] = useState<Record<number, 'grid' | 'raw'>>({})
   const [dataSourceHistory, setDataSourceHistory] = useState<Record<number, DataSourceHistory>>({})
   const [parameterCandidates, setParameterCandidates] = useState<ParameterCandidate[]>([])
+  const [replaying, setReplaying] = useState(false)
+  const [replayReport, setReplayReport] = useState<ReplayReport | null>(null)
+  const [expandedReplayEvent, setExpandedReplayEvent] = useState<number | null>(null)
+  const [activeReplaySessionId, setActiveReplaySessionId] = useState<string | null>(null)
+  const [replayActivity, setReplayActivity] = useState<ReplayActivityItem[]>([])
+  const [replaySeedVariables, setReplaySeedVariables] = useState<Record<string, string>>({})
+  const replayEventRefs = useRef<Record<number, HTMLDivElement | null>>({})
+  const [replayOptions, setReplayOptions] = useState<ReplayOptionsState>({
+    groupName: '',
+    ignoreThinkTime: true,
+    variablesText: '{\n  \n}',
+  })
   const importMetadata = script.metadata?.import
   const importSummary = getImportSummary(importMetadata)
 
@@ -441,6 +574,84 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
       }).catch(() => {})
     }
   }, [scriptId])
+
+  const handleReplaySocketMessage = useCallback((message: WSMessage) => {
+    const msg = message as ReplayWSMessage
+    if (!activeReplaySessionId || msg.replay_session_id !== activeReplaySessionId) return
+
+    if (msg.type === 'replay_started' && msg.report) {
+      const report = msg.report
+      setReplayReport(report)
+      setReplayActivity(prev => upsertReplayActivity(prev, {
+        id: 'start',
+        kind: 'start',
+        title: 'Replay started',
+        detail: report.group || 'replay',
+        timestamp: report.started_at,
+      }))
+      setExpandedReplayEvent(null)
+      return
+    }
+
+    if (msg.type === 'replay_event' && msg.event) {
+      const replayEvent = msg.event
+      setReplayReport(prev => {
+        if (!prev) return prev
+        const nextEvents = [...prev.events]
+        const index = typeof msg.event_index === 'number' && msg.event_index >= 0 ? msg.event_index : nextEvents.length
+        nextEvents[index] = replayEvent
+        return {
+          ...prev,
+          events: nextEvents,
+          success: prev.success && replayEvent.success,
+          error: prev.error || replayEvent.error_message,
+        }
+      })
+      const replayIndex = typeof msg.event_index === 'number' && msg.event_index >= 0 ? msg.event_index : 0
+      setReplayActivity(prev => upsertReplayActivity(prev, {
+        id: `event-${replayIndex}`,
+        kind: 'event',
+        title: `${replayEvent.action_name || 'Action'} ${replayEvent.success ? 'completed' : 'failed'}`,
+        detail: replayEvent.success
+          ? `${replayEvent.method || replayEvent.action_type} ${replayEvent.target}`
+          : replayEvent.error_message || `${replayEvent.method || replayEvent.action_type} ${replayEvent.target}`,
+        timestamp: replayEvent.completed_at || replayEvent.started_at,
+        success: replayEvent.success,
+        changedVariables: Object.keys(replayEvent.extractions || {}),
+      }))
+      if (typeof msg.event_index === 'number' && msg.event_index >= 0) {
+        setExpandedReplayEvent(msg.event_index)
+      }
+      return
+    }
+
+    if (msg.type === 'replay_complete' && msg.report) {
+      const report = msg.report
+      setReplayReport(report)
+      setReplayActivity(prev => upsertReplayActivity(prev, {
+        id: 'complete',
+        kind: 'complete',
+        title: report.success ? 'Replay completed successfully' : 'Replay completed with failures',
+        detail: report.error,
+        timestamp: report.completed_at,
+        success: report.success,
+      }))
+      setExpandedReplayEvent(report.events.length ? report.events.length - 1 : null)
+      setActiveReplaySessionId(null)
+    }
+  }, [activeReplaySessionId])
+
+  useWebSocket({ onMessage: handleReplaySocketMessage })
+
+  useEffect(() => {
+    if (expandedReplayEvent === null) return
+    const node = replayEventRefs.current[expandedReplayEvent]
+    if (!node) return
+    node.scrollIntoView({
+      block: 'nearest',
+      behavior: activeReplaySessionId ? 'smooth' : 'auto',
+    })
+  }, [activeReplaySessionId, expandedReplayEvent])
 
   const updateField = (path: string, value: any) => {
     setScript(prev => {
@@ -574,19 +785,108 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
     })
   }
 
+  const resolveCurrentScript = () => {
+    if (!jsonMode) return script
+    const parsed = JSON.parse(jsonText)
+    return parsed.script || parsed
+  }
+
   const handleSave = async () => {
     setError(''); setSuccess(''); setSaving(true)
     try {
+      const currentScript = resolveCurrentScript()
       if (scriptId) {
-        await api.updateScript(scriptId, script)
+        await api.updateScript(scriptId, currentScript)
       } else {
-        await api.createScript(script, projectId, folderId)
+        await api.createScript(currentScript, projectId, folderId)
       }
+      if (jsonMode) setScript(currentScript)
       setSuccess('Script saved successfully!')
       onSave?.()
     } catch (e: any) {
       setError(e.message || 'Failed to save script')
     } finally { setSaving(false) }
+  }
+
+  const handleReplay = async () => {
+    setError('')
+    setSuccess('')
+    setReplaying(true)
+    try {
+      const currentScript = resolveCurrentScript()
+      let variables: Record<string, string> | undefined
+      const trimmed = replayOptions.variablesText.trim()
+      if (trimmed && trimmed !== '{}' && trimmed !== '{\n  \n}') {
+        const parsed = JSON.parse(trimmed)
+        if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') {
+          throw new Error('Replay variables must be a JSON object')
+        }
+        variables = Object.fromEntries(Object.entries(parsed).map(([key, value]) => [key, String(value ?? '')]))
+      }
+
+      const replaySessionId = createReplaySessionId()
+      const replayGroup = replayOptions.groupName.trim() || `${currentScript.name || 'script'}-replay`
+      setActiveReplaySessionId(replaySessionId)
+      setReplaySeedVariables(variables || {})
+      setReplayActivity([{
+        id: 'queued',
+        kind: 'start',
+        title: 'Replay requested',
+        detail: replayGroup,
+        timestamp: new Date().toISOString(),
+      }])
+      setReplayReport({
+        group: replayGroup,
+        protocol: currentScript.protocol,
+        started_at: new Date().toISOString(),
+        completed_at: '',
+        success: true,
+        events: [],
+        final_variables: variables,
+      })
+      setExpandedReplayEvent(null)
+
+      const payload = {
+        group_name: replayGroup,
+        replay_session_id: replaySessionId,
+        ignore_think_time: replayOptions.ignoreThinkTime,
+        variables,
+        script: currentScript,
+      }
+
+      const res = scriptId
+        ? await api.replayScript(scriptId, payload)
+        : await api.replayDraftScript(payload)
+      if (jsonMode) setScript(currentScript)
+      setReplayReport(res.report)
+      setReplayActivity(prev => upsertReplayActivity(prev, {
+        id: 'complete',
+        kind: 'complete',
+        title: res.report?.success ? 'Replay completed successfully' : 'Replay completed with failures',
+        detail: res.report?.error,
+        timestamp: res.report?.completed_at || new Date().toISOString(),
+        success: res.report?.success,
+      }))
+      setExpandedReplayEvent(res.report?.events?.length ? res.report.events.length - 1 : null)
+      setActiveReplaySessionId(null)
+      setSuccess(res.report?.success ? 'Replay completed successfully.' : 'Replay completed with failures.')
+    } catch (e: any) {
+      const issues = Array.isArray(e?.payload?.issues) ? e.payload.issues.join(' | ') : ''
+      setError(issues || e.message || 'Replay failed')
+      setReplayReport(null)
+      setActiveReplaySessionId(null)
+      setReplaySeedVariables({})
+      setReplayActivity(prev => upsertReplayActivity(prev, {
+        id: 'error',
+        kind: 'error',
+        title: 'Replay failed before completion',
+        detail: issues || e.message || 'Replay failed',
+        timestamp: new Date().toISOString(),
+        success: false,
+      }))
+    } finally {
+      setReplaying(false)
+    }
   }
 
   const toggleJsonMode = () => {
@@ -611,6 +911,21 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
       default: return 'var(--text-secondary)'
     }
   }
+
+  const replayStatusLabel = replaying && replayReport && !replayReport.completed_at
+    ? 'Running'
+    : replayReport?.success
+      ? 'Success'
+      : 'Failed'
+  const replayLatestActivity = replayActivity[replayActivity.length - 1]
+  const replayVariableInspector = replayReport
+    ? (replayReport.completed_at && replayReport.final_variables
+        ? replayReport.final_variables
+        : mergeReplayVariables(replaySeedVariables, replayReport.events))
+    : null
+  const replayVariableDiffs = replayReport
+    ? buildReplayVariableDiffs(replaySeedVariables, replayReport.events)
+    : []
 
   const addDataSource = () => {
     const nextIndex = (script.data_sources?.length || 0) + 1
@@ -952,6 +1267,9 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
             <button className="btn btn-ghost" onClick={toggleJsonMode}>
               {jsonMode ? '◧ Form' : '{ } JSON'}
             </button>
+            <button className="btn btn-ghost" onClick={handleReplay} disabled={replaying || saving || !script.name || script.actions.length === 0}>
+              {replaying ? 'Replaying…' : 'Replay'}
+            </button>
             <button className="btn btn-primary" onClick={handleSave} disabled={saving || !script.name}>
               {saving ? 'Saving…' : 'Save Script'}
             </button>
@@ -1037,6 +1355,211 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
                       ))}
                     </tbody>
                   </table>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="config-panel replay-panel">
+            <div className="panel-title-row">
+              <div>
+                <h3 className="panel-title">Replay Output</h3>
+                <p className="replay-panel-subtitle">Run the current draft once and inspect resolved requests, extractions, failures, and final replay variables.</p>
+              </div>
+              <div className="replay-panel-actions">
+                <button className="btn btn-sm btn-accent" onClick={handleReplay} disabled={replaying || saving || !script.name || script.actions.length === 0}>
+                  {replaying ? 'Running…' : 'Run Replay'}
+                </button>
+              </div>
+            </div>
+            <div className="replay-options-grid">
+              <label>
+                <span>Replay Group</span>
+                <input
+                  value={replayOptions.groupName}
+                  onChange={e => setReplayOptions(prev => ({ ...prev, groupName: e.target.value }))}
+                  placeholder={`${script.name || 'script'}-replay`}
+                />
+              </label>
+              <label className="checkbox-label replay-checkbox">
+                <input
+                  type="checkbox"
+                  checked={replayOptions.ignoreThinkTime}
+                  onChange={e => setReplayOptions(prev => ({ ...prev, ignoreThinkTime: e.target.checked }))}
+                />
+                <span>Ignore think time for replay</span>
+              </label>
+              <label className="full-width replay-variables-field">
+                <span>Replay Variables JSON</span>
+                <textarea
+                  value={replayOptions.variablesText}
+                  onChange={e => setReplayOptions(prev => ({ ...prev, variablesText: e.target.value }))}
+                  spellCheck={false}
+                />
+              </label>
+            </div>
+            {!replayReport ? (
+              <div className="replay-empty-state">No replay has been run yet. Use Replay to execute the current draft once.</div>
+            ) : (
+              <div className="replay-report">
+                <div className={`replay-live-banner ${replaying ? 'running' : replayReport.success ? 'success' : 'error'}`}>
+                  <div className="replay-live-banner-main">
+                    <span className="replay-live-badge">{replaying ? 'Streaming live' : 'Replay finished'}</span>
+                    <strong>{replayLatestActivity?.title || 'Replay status available'}</strong>
+                    <span>{replayLatestActivity?.detail || 'Inspect the timeline below for request-by-request execution details.'}</span>
+                  </div>
+                  <div className="replay-live-banner-meta">
+                    <span>{replayReport.events.length} / {script.actions.length} actions reported</span>
+                    <span>{formatReplayTime(replayLatestActivity?.timestamp || replayReport.completed_at || replayReport.started_at)}</span>
+                  </div>
+                </div>
+                <div className="replay-summary-grid">
+                  <div className="replay-summary-card">
+                    <span>Status</span>
+                    <strong className={replayStatusLabel === 'Failed' ? 'text-danger' : replayStatusLabel === 'Running' ? '' : 'text-success'}>{replayStatusLabel}</strong>
+                  </div>
+                  <div className="replay-summary-card">
+                    <span>Group</span>
+                    <strong>{replayReport.group || 'replay'}</strong>
+                  </div>
+                  <div className="replay-summary-card">
+                    <span>Protocol</span>
+                    <strong>{replayReport.protocol}</strong>
+                  </div>
+                  <div className="replay-summary-card">
+                    <span>Events</span>
+                    <strong>{replayReport.events.length}</strong>
+                  </div>
+                  <div className="replay-summary-card">
+                    <span>Completed</span>
+                    <strong>{formatReplayTime(replayReport.completed_at)}</strong>
+                  </div>
+                </div>
+                {replayReport.error && <p className="replay-report-error">{replayReport.error}</p>}
+                {replayActivity.length > 0 && (
+                  <div className="replay-activity-card">
+                    <h4>Execution Timeline</h4>
+                    <div className="replay-activity-list">
+                      {replayActivity.map(item => (
+                        <div key={item.id} className={`replay-activity-item ${item.kind} ${item.success === false ? 'error' : item.success === true ? 'success' : ''}`}>
+                          <div className="replay-activity-marker" />
+                          <div className="replay-activity-content">
+                            <div className="replay-activity-header-row">
+                              <strong>{item.title}</strong>
+                              <span>{formatReplayTime(item.timestamp)}</span>
+                            </div>
+                            {item.detail && <div className="replay-activity-detail">{item.detail}</div>}
+                            {item.changedVariables && item.changedVariables.length > 0 && (
+                              <div className="replay-variable-chip-row">
+                                {item.changedVariables.map(name => (
+                                  <span key={`${item.id}-${name}`} className="replay-variable-chip">{name}</span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {replayVariableInspector && (
+                  <div className="replay-variables-card">
+                    <h4>{replaying ? 'Live Variables' : 'Variable Inspector'}</h4>
+                    {Object.keys(replayVariableInspector).length > 0 ? (
+                      <pre>{JSON.stringify(replayVariableInspector, null, 2)}</pre>
+                    ) : (
+                      <div className="replay-variables-empty">
+                        {replaying
+                          ? 'No replay variables have been captured yet.'
+                          : 'Replay completed without any extracted or seeded variables.'}
+                      </div>
+                    )}
+                  </div>
+                )}
+                <div className="replay-events-list">
+                  {replayReport.events.map((event, index) => {
+                    const isOpen = expandedReplayEvent === index
+                    const variableDiff = replayVariableDiffs[index] || {}
+                    const changedVariables = Object.entries(variableDiff)
+                    return (
+                      <div
+                        key={`${event.phase}-${event.action_name}-${index}`}
+                        className={`replay-event-card ${event.success ? 'success' : 'error'}`}
+                        ref={node => {
+                          replayEventRefs.current[index] = node
+                        }}
+                      >
+                        <button className="replay-event-header" onClick={() => setExpandedReplayEvent(isOpen ? null : index)}>
+                          <div className="replay-event-header-main">
+                            <span className="replay-event-phase">{event.phase}</span>
+                            <strong>{event.action_name || 'Unnamed action'}</strong>
+                            <span className="replay-event-target">{event.method || event.action_type} {event.target}</span>
+                          </div>
+                          <div className="replay-event-header-meta">
+                            {changedVariables.length > 0 && (
+                              <span className="replay-event-diff-count">{changedVariables.length} variable{changedVariables.length === 1 ? '' : 's'} changed</span>
+                            )}
+                            <span className={event.success ? 'text-success' : 'text-danger'}>{event.success ? `HTTP ${event.status_code || 'OK'}` : event.error_message || 'Failed'}</span>
+                            <span>{event.duration_ms.toFixed(1)} ms</span>
+                            <span>{isOpen ? '▾' : '▸'}</span>
+                          </div>
+                        </button>
+                        {isOpen && (
+                          <div className="replay-event-body">
+                            <div className="replay-event-detail-grid">
+                              <div>
+                                <span className="replay-detail-label">Started</span>
+                                <div>{formatReplayTime(event.started_at)}</div>
+                              </div>
+                              <div>
+                                <span className="replay-detail-label">Completed</span>
+                                <div>{formatReplayTime(event.completed_at)}</div>
+                              </div>
+                            </div>
+                            <div className="replay-code-block">
+                              <span className="replay-detail-label">Resolved Headers</span>
+                              <pre>{formatReplayHeaders(event.headers)}</pre>
+                            </div>
+                            {event.body && (
+                              <div className="replay-code-block">
+                                <span className="replay-detail-label">Resolved Body</span>
+                                <pre>{event.body}</pre>
+                              </div>
+                            )}
+                            {event.extractions && Object.keys(event.extractions).length > 0 && (
+                              <div className="replay-code-block">
+                                <span className="replay-detail-label">Extractions</span>
+                                <pre>{JSON.stringify(event.extractions, null, 2)}</pre>
+                              </div>
+                            )}
+                            {changedVariables.length > 0 && (
+                              <div className="replay-code-block">
+                                <span className="replay-detail-label">Variable Changes</span>
+                                <div className="replay-variable-diff-list">
+                                  {changedVariables.map(([name, diff]) => (
+                                    <div key={`${index}-${name}`} className="replay-variable-diff-item">
+                                      <div className="replay-variable-diff-name">{name}</div>
+                                      <div className="replay-variable-diff-values">
+                                        <span className="replay-variable-diff-before">{diff.previous ?? 'unset'}</span>
+                                        <span className="replay-variable-diff-arrow">{'->'}</span>
+                                        <span className="replay-variable-diff-after">{diff.next}</span>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                            {event.snapshot && (
+                              <div className="replay-code-block">
+                                <span className="replay-detail-label">Snapshot</span>
+                                <pre>{JSON.stringify(event.snapshot, null, 2)}</pre>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
             )}
