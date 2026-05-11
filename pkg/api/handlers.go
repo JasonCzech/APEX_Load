@@ -131,6 +131,24 @@ func (s *Server) handleAbortTest(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "aborted", "test_id": id})
 }
 
+func (s *Server) handlePauseTest(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := s.runner.PauseTest(id); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "paused", "test_id": id})
+}
+
+func (s *Server) handleResumeTest(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := s.runner.ResumeTest(id); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "resumed", "test_id": id})
+}
+
 func (s *Server) handleDeleteTest(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if !s.runner.DeleteTest(id) {

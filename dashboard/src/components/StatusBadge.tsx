@@ -8,6 +8,7 @@ const STATUS_STYLES: Record<string, string> = {
   COMPLETE: 'status-complete',
   FAILED: 'status-failed',
   ABORTED: 'status-aborted',
+  PAUSED: 'status-paused',
 }
 
 interface Props {

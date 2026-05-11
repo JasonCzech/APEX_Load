@@ -24,6 +24,11 @@ type VUser struct {
 	Variables     map[string]string
 	DataProvider  *DataProvider
 	SnapshotStore *SnapshotStore
+	PauseControl  PauseController
+}
+
+type PauseController interface {
+	WaitIfPaused(ctx context.Context) error
 }
 
 var templatePattern = regexp.MustCompile(`\{\{([^{}]+)\}\}`)
@@ -69,6 +74,11 @@ func (vu *VUser) Run(ctx context.Context) {
 
 	// --- Init phase ---
 	for _, action := range vu.Script.Init {
+		if vu.PauseControl != nil {
+			if err := vu.PauseControl.WaitIfPaused(ctx); err != nil {
+				return
+			}
+		}
 		if ctx.Err() != nil {
 			return
 		}
@@ -144,6 +154,11 @@ func (vu *VUser) Run(ctx context.Context) {
 		iterSuccess := true
 
 		for _, action := range vu.Script.Actions {
+			if vu.PauseControl != nil {
+				if err := vu.PauseControl.WaitIfPaused(ctx); err != nil {
+					goto teardown
+				}
+			}
 			if ctx.Err() != nil {
 				goto teardown
 			}

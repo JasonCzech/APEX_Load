@@ -585,6 +585,8 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
         isRunning={isRunning}
         onStop={() => api.stopTest(testId)}
         onAbort={() => api.abortTest(testId)}
+        onPause={() => api.pauseTest(testId)}
+        onResume={() => api.resumeTest(testId)}
         hasArchive={hasArchive}
         onDownloadArchive={handleDownloadArchive}
       />

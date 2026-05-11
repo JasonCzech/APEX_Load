@@ -275,6 +275,7 @@ export type TestStatus =
   | 'COMPLETE'
   | 'FAILED'
   | 'ABORTED'
+  | 'PAUSED'
 
 export interface LiveMetrics {
   timestamp: string

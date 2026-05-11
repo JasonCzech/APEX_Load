@@ -48,8 +48,10 @@ type MultiGroupEngine struct {
 	nextVUserID    int
 	paused         bool
 	pauseCh        chan struct{}
+	pauseStartTime time.Time
 	targetDuration time.Duration
-	deadlineCancel context.CancelFunc
+	stopVUsers     context.CancelFunc
+	baseCtx        context.Context
 }
 
 type GroupResult struct {
@@ -107,8 +109,16 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 	mge.mu.Lock()
 	mge.vuserCancels = make(map[int]context.CancelFunc)
 	mge.pauseCh = make(chan struct{})
+	close(mge.pauseCh) // Start unpaused
 	mge.targetDuration = mge.duration
+	
+	// Create a base context for VUsers that only cancels on hard stop/abort
+	baseCtx, baseCancel := context.WithCancel(ctx)
+	mge.baseCtx = baseCtx
+	mge.stopVUsers = baseCancel
 	mge.mu.Unlock()
+
+	defer baseCancel()
 
 	start := time.Now()
 	var wg sync.WaitGroup
@@ -122,14 +132,26 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 		}
 	}
 
-	totalCtx, totalCancel := context.WithTimeout(ctx, mge.preBaseline+mge.duration+maxRampDown+mge.postBaseline)
-	mge.cancel = totalCancel
-	mge.totalCtx = totalCtx
-	defer totalCancel()
+	// background goroutine to manage the test deadline
+	go func() {
+		for {
+			mge.mu.Lock()
+			if mge.baseCtx.Err() != nil {
+				mge.mu.Unlock()
+				return
+			}
+			paused := mge.paused
+			deadline := start.Add(mge.preBaseline + mge.targetDuration)
+			mge.mu.Unlock()
 
-	steadyStateCtx, steadyStateCancel := context.WithTimeout(totalCtx, mge.preBaseline+mge.duration)
-	mge.deadlineCancel = steadyStateCancel
-	defer steadyStateCancel()
+			if !paused && time.Now().After(deadline) {
+				baseCancel()
+				return
+			}
+
+			time.Sleep(100 * time.Millisecond)
+		}
+	}()
 
 	if err := waitForBaselineWindow(ctx, mge.preBaseline); err != nil {
 		return nil, err
@@ -153,7 +175,7 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 		}
 
 		for i := 0; i < group.VUsers; i++ {
-			if totalCtx.Err() != nil {
+			if mge.baseCtx.Err() != nil {
 				break
 			}
 
@@ -162,7 +184,7 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 			}
 
 			vuserID := vuserOffset + i
-			mge.spawnVUser(vuserID, group, protoConfig, steadyStateCtx, rampDownDelay, i, &wg)
+			mge.spawnVUser(vuserID, group, protoConfig, rampDownDelay, i, &wg)
 		}
 
 		vuserOffset += group.VUsers
@@ -202,8 +224,8 @@ func waitForBaselineWindow(ctx context.Context, duration time.Duration) error {
 	}
 }
 
-func (mge *MultiGroupEngine) spawnVUser(vuserID int, group GroupConfig, protoConfig map[string]any, steadyCtx context.Context, rampDownDelay time.Duration, rampIdx int, wg *sync.WaitGroup) {
-	vuCtx, vuCancel := context.WithCancel(mge.totalCtx)
+func (mge *MultiGroupEngine) spawnVUser(vuserID int, group GroupConfig, protoConfig map[string]any, rampDownDelay time.Duration, rampIdx int, wg *sync.WaitGroup) {
+	vuCtx, vuCancel := context.WithCancel(mge.baseCtx)
 
 	mge.mu.Lock()
 	mge.vuserCancels[vuserID] = vuCancel
@@ -211,7 +233,11 @@ func (mge *MultiGroupEngine) spawnVUser(vuserID int, group GroupConfig, protoCon
 
 	if rampDownDelay > 0 {
 		go func(idx int, cancelFunc context.CancelFunc) {
-			<-steadyCtx.Done()
+			// Wait for steady state to end (base context cancellation)
+			<-mge.baseCtx.Done()
+			
+			// Optional: if aborted, don't do ramp down
+			// But for now, we'll just follow the pattern
 			if rampDownDelay > 0 {
 				time.Sleep(time.Duration(idx) * rampDownDelay)
 			}
@@ -251,6 +277,7 @@ func (mge *MultiGroupEngine) spawnVUser(vuserID int, group GroupConfig, protoCon
 			Script:     group.Script,
 			Metrics:    mge.metrics,
 			ResultSink: group.ResultSink,
+			PauseControl: mge,
 		}
 		vu.Run(vuCtx)
 	}()
@@ -267,7 +294,7 @@ func (mge *MultiGroupEngine) ScaleVUsers(groupName string, targetVUsers int) err
 	mge.mu.Lock()
 	defer mge.mu.Unlock()
 
-	if mge.totalCtx == nil || mge.totalCtx.Err() != nil {
+	if mge.baseCtx == nil || mge.baseCtx.Err() != nil {
 		return fmt.Errorf("engine not running")
 	}
 
@@ -287,14 +314,13 @@ func (mge *MultiGroupEngine) ScaleVUsers(groupName string, targetVUsers int) err
 
 	if delta > 0 {
 		protoConfig := buildProtoConfig(group.Script)
-		steadyCtx := mge.totalCtx
 
 		for i := 0; i < delta; i++ {
 			vuserID := mge.nextVUserID
 			mge.nextVUserID++
 
 			mge.mu.Unlock()
-			mge.spawnVUser(vuserID, *group, protoConfig, steadyCtx, 0, 0, mge.wg)
+			mge.spawnVUser(vuserID, *group, protoConfig, 0, 0, mge.wg)
 			mge.mu.Lock()
 		}
 	} else if delta < 0 {
@@ -321,33 +347,12 @@ func (mge *MultiGroupEngine) AdjustDuration(newDuration time.Duration) error {
 	mge.mu.Lock()
 	defer mge.mu.Unlock()
 
-	if mge.totalCtx == nil || mge.totalCtx.Err() != nil {
+	if mge.baseCtx == nil || mge.baseCtx.Err() != nil {
 		return fmt.Errorf("engine not running")
 	}
 
 	mge.targetDuration = newDuration
-
-	// Cancel the old deadline context and create a new one
-	if mge.deadlineCancel != nil {
-		mge.deadlineCancel()
-	}
-
-	// The totalCtx timeout also needs to be updated — we cancel and recreate
-	if mge.cancel != nil {
-		mge.cancel()
-	}
-
-	maxRampDown := time.Duration(0)
-	for _, g := range mge.groups {
-		if g.RampDown > maxRampDown {
-			maxRampDown = g.RampDown
-		}
-	}
-
-	newTotalCtx, newTotalCancel := context.WithTimeout(context.Background(), newDuration+maxRampDown)
-	mge.totalCtx = newTotalCtx
-	mge.cancel = newTotalCancel
-
+	
 	slog.Info("test duration adjusted", "new_duration", newDuration)
 	return nil
 }
@@ -368,6 +373,64 @@ func (mge *MultiGroupEngine) GetGroupVUsers() map[string]int {
 		result[g.Name] = g.VUsers
 	}
 	return result
+}
+
+func (mge *MultiGroupEngine) Pause() error {
+	mge.mu.Lock()
+	defer mge.mu.Unlock()
+
+	if mge.paused {
+		return nil
+	}
+
+	mge.paused = true
+	mge.pauseStartTime = time.Now()
+	mge.pauseCh = make(chan struct{}) // New channel blocks waiters
+	
+	slog.Info("test execution paused")
+	return nil
+}
+
+func (mge *MultiGroupEngine) Resume() error {
+	mge.mu.Lock()
+	defer mge.mu.Unlock()
+
+	if !mge.paused {
+		return nil
+	}
+
+	pauseDuration := time.Since(mge.pauseStartTime)
+	mge.paused = false
+	close(mge.pauseCh) // Closing unblocks all waiters
+
+	// Adjust duration to account for time spent paused
+	newDuration := mge.targetDuration + pauseDuration
+	mge.mu.Unlock()
+	err := mge.AdjustDuration(newDuration)
+	mge.mu.Lock()
+
+	slog.Info("test execution resumed", "pause_duration", pauseDuration)
+	return err
+}
+
+func (mge *MultiGroupEngine) WaitIfPaused(ctx context.Context) error {
+	for {
+		mge.mu.Lock()
+		paused := mge.paused
+		pauseCh := mge.pauseCh
+		mge.mu.Unlock()
+
+		if !paused {
+			return nil
+		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-pauseCh:
+			// Unblocked! Check again in case it was re-paused immediately
+		}
+	}
 }
 
 func (mge *MultiGroupEngine) Stop() {

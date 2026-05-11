@@ -1636,6 +1636,66 @@ func (tr *TestRunner) AdjustDuration(id string, newDuration time.Duration) error
 	return nil
 }
 
+func (tr *TestRunner) PauseTest(id string) error {
+	tr.mu.RLock()
+	test, ok := tr.tests[id]
+	tr.mu.RUnlock()
+	if !ok {
+		return fmt.Errorf("test not found: %s", id)
+	}
+	if test.Status != "RUNNING" {
+		return fmt.Errorf("test is %s, must be RUNNING to pause", test.Status)
+	}
+	if test.multiEngine == nil {
+		return fmt.Errorf("engine not initialized")
+	}
+
+	if err := test.multiEngine.Pause(); err != nil {
+		return err
+	}
+
+	tr.mu.Lock()
+	test.Status = "PAUSED"
+	tr.mu.Unlock()
+
+	tr.hub.BroadcastJSON(map[string]any{
+		"type":    "test_paused",
+		"test_id": id,
+	})
+
+	return nil
+}
+
+func (tr *TestRunner) ResumeTest(id string) error {
+	tr.mu.RLock()
+	test, ok := tr.tests[id]
+	tr.mu.RUnlock()
+	if !ok {
+		return fmt.Errorf("test not found: %s", id)
+	}
+	if test.Status != "PAUSED" {
+		return fmt.Errorf("test is %s, must be PAUSED to resume", test.Status)
+	}
+	if test.multiEngine == nil {
+		return fmt.Errorf("engine not initialized")
+	}
+
+	if err := test.multiEngine.Resume(); err != nil {
+		return err
+	}
+
+	tr.mu.Lock()
+	test.Status = "RUNNING"
+	tr.mu.Unlock()
+
+	tr.hub.BroadcastJSON(map[string]any{
+		"type":    "test_resumed",
+		"test_id": id,
+	})
+
+	return nil
+}
+
 func (tr *TestRunner) runTest(test *ManagedTest) {
 	if test.ScriptShakeout {
 		if err := tr.runScriptShakeout(test); err != nil {

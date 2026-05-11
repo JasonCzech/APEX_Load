@@ -80,6 +80,10 @@ export function useTestApi() {
   const abortTest = useCallback((id: string) => request<any>(`/tests/${id}/abort`, { method: 'POST' }), [])
 
   const deleteTest = useCallback((id: string) => request<any>(`/tests/${id}`, { method: 'DELETE' }), [])
+  
+  const pauseTest = useCallback((id: string) => request<any>(`/tests/${id}/pause`, { method: 'POST' }), [])
+  
+  const resumeTest = useCallback((id: string) => request<any>(`/tests/${id}/resume`, { method: 'POST' }), [])
 
   const moveTest = useCallback(
     (id: string, folderId: string | null) =>
@@ -169,6 +173,8 @@ export function useTestApi() {
       downloadTestArchiveArtifact,
       scaleVUsers,
       adjustDuration,
+      pauseTest,
+      resumeTest,
     }),
     [
       listTests,
@@ -179,6 +185,8 @@ export function useTestApi() {
       stopTest,
       abortTest,
       deleteTest,
+      pauseTest,
+      resumeTest,
       moveTest,
       getMetrics,
       getTestArchiveManifest,

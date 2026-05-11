@@ -43,3 +43,8 @@
   background: rgba(245, 158, 11, 0.15);
   color: var(--warning);
 }
+
+.status-paused {
+  background: rgba(234, 179, 8, 0.15);
+  color: #eab308;
+}
