@@ -168,12 +168,14 @@ func (s *Server) handleConvertRecording(w http.ResponseWriter, r *http.Request) 
 	}
 
 	stored := s.runner.StoreScript(result.Script)
+	stats := newRecorderImportStats(len(result.Script.Actions), len(result.Correlations))
 
-	writeJSON(w, http.StatusCreated, map[string]any{
-		"script":       stored,
-		"correlations": result.Correlations,
-		"warnings":     result.Warnings,
-	})
+	writeJSON(w, http.StatusCreated, newScriptImportResponse(scriptImportResponseOptions{
+		Script:       stored,
+		Warnings:     result.Warnings,
+		Stats:        stats,
+		Correlations: result.Correlations,
+	}))
 }
 
 func (s *Server) handlePreviewRecordingConversion(w http.ResponseWriter, r *http.Request) {
@@ -193,7 +195,14 @@ func (s *Server) handlePreviewRecordingConversion(w http.ResponseWriter, r *http
 	if result.Script != nil {
 		result.Script.ProjectID = normalizeProjectID(session.ProjectID)
 	}
-	writeJSON(w, http.StatusOK, result)
+	stats := newRecorderImportStats(len(result.Script.Actions), len(result.Correlations))
+	writeJSON(w, http.StatusOK, newScriptImportResponse(scriptImportResponseOptions{
+		Result:       result,
+		Script:       result.Script,
+		Warnings:     result.Warnings,
+		Stats:        stats,
+		Correlations: result.Correlations,
+	}))
 }
 
 func (s *Server) handleExportRecording(w http.ResponseWriter, r *http.Request) {

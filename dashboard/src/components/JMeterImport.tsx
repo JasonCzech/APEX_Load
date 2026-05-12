@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { useApi } from '../hooks/useApi'
-import { ConvertStats, ImportResult, SupportMatrix, normalizeImportResult, summarizeImportExtractors, summarizeSupportMatrix } from './jmeterImportUtils'
+import { ImportResult, SupportMatrix, normalizeImportResult, summarizeImportExtractors, summarizeSupportMatrix } from './jmeterImportUtils'
+import { type ImportedScript, type JMeterSupportMatrixResponse } from '../types/scriptImports'
 import './LoadRunnerImport.css'
 
 interface Props {
-  onImported?: (script: any) => void
+  onImported?: (script: ImportedScript) => void
   onClose?: () => void
 }
 
@@ -35,7 +36,7 @@ export default function JMeterImport({ onImported, onClose }: Props) {
     let cancelled = false
 
     api.getJMeterSupportMatrix()
-      .then((response: { support_matrix?: SupportMatrix }) => {
+      .then((response: JMeterSupportMatrixResponse) => {
         if (!cancelled) {
           setSupportMatrix(response.support_matrix || null)
         }

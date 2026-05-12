@@ -182,6 +182,9 @@ func TestParse_WithExtractorsAndAssertions(t *testing.T) {
 		"script": {
 			"name": "extract-test",
 			"protocol": "http",
+			"config": {
+				"base_url": "https://api.example.com"
+			},
 			"actions": [{
 				"name": "get-token",
 				"type": "request",
@@ -302,8 +305,19 @@ func TestParse_JMSRequestReplyRequiresReplyDestination(t *testing.T) {
 	}
 }
 
+func TestParse_HTTPRequiresBaseURL(t *testing.T) {
+	input := `{"script":{"name":"http-no-base","protocol":"http","actions":[{"name":"request","type":"request","target":"/ping"}]}}`
+	_, err := Parse([]byte(input))
+	if err == nil {
+		t.Fatal("expected base_url validation error")
+	}
+	if err.Error() != "config.base_url is empty" {
+		t.Fatalf("error = %q, want config.base_url is empty", err.Error())
+	}
+}
+
 func TestParseFile(t *testing.T) {
-	content := `{"script": {"name": "file-test", "protocol": "http", "actions": [{"name": "a", "type": "request", "target": "/"}]}}`
+	content := `{"script": {"name": "file-test", "protocol": "http", "config": {"base_url": "https://example.com"}, "actions": [{"name": "a", "type": "request", "target": "/"}]}}`
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.json")
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
@@ -331,6 +345,9 @@ func TestParse_InitAndTeardown(t *testing.T) {
 		"script": {
 			"name": "lifecycle-test",
 			"protocol": "http",
+			"config": {
+				"base_url": "https://example.com"
+			},
 			"init": [
 				{"name": "setup", "type": "request", "target": "/setup"}
 			],

@@ -12,6 +12,8 @@ import {
   type LoadedSample,
   type SampleFormat,
 } from './sampleImportUtils'
+import { normalizeScriptImportResult } from './scriptImportUtils'
+import { type ImportedScript, type SampleCorrelation as Correlation, type SampleImportResult, type SampleImportStats as ConvertStats } from '../types/scriptImports'
 import './SampleScriptImport.css'
 
 type AuthType = 'none' | 'basic' | 'bearer'
@@ -41,27 +43,9 @@ type SampleImportOptionsAction =
   | { type: 'update'; field: keyof SampleImportOptions; value: SampleImportOptions[keyof SampleImportOptions] }
   | { type: 'reset' }
 
-interface ConvertStats {
-  format: string
-  total_requests: number
-  converted_actions: number
-  assertions: number
-  extractors: number
-  correlations_detected: number
-}
-
-interface Correlation {
-  name: string
-  source: string
-  expression: string
-  sample_value: string
-  found_in_step: number
-  used_in_steps: number[]
-}
-
 interface Props {
-  onImported?: (script: any) => void
-  onEdit?: (script: any) => void
+  onImported?: (script: ImportedScript) => void
+  onEdit?: (script: ImportedScript) => void
   onClose?: () => void
 }
 
@@ -171,12 +155,7 @@ export default function SampleScriptImport({ onImported, onEdit, onClose }: Prop
   const [secondaryMergedCount, setSecondaryMergedCount] = useState(0)
   const [dragTarget, setDragTarget] = useState<'primary' | 'secondary' | null>(null)
   const [messageError, setMessageError] = useState('')
-  const convertTask = useAsyncTask<{
-    script: any
-    warnings: string[]
-    stats: ConvertStats
-    correlations: Correlation[]
-  }>()
+  const convertTask = useAsyncTask<SampleImportResult>()
   const saveTask = useAsyncTask<boolean>()
   const [options, dispatchOptions] = useReducer(sampleImportOptionsReducer, initialOptions)
 
@@ -260,8 +239,8 @@ export default function SampleScriptImport({ onImported, onEdit, onClose }: Prop
     }
   }
 
-  const buildScriptWithOptions = (baseScript: any) => {
-    const script = JSON.parse(JSON.stringify(baseScript))
+  const buildScriptWithOptions = (baseScript?: ImportedScript) => {
+    const script = JSON.parse(JSON.stringify(baseScript || {})) as ImportedScript
     script.name = options.name.trim() || script.name
     script.config = script.config || {}
     script.config.base_url = options.base_url.trim() || script.config.base_url || ''
@@ -335,11 +314,13 @@ export default function SampleScriptImport({ onImported, onEdit, onClose }: Prop
             },
           })
 
+          const normalized = normalizeScriptImportResult<ConvertStats, Correlation>(res)
+
           return {
-            script: buildScriptWithOptions(res.script),
-            warnings: res.warnings || [],
-            stats: res.stats,
-            correlations: res.correlations || [],
+            ...normalized,
+            script: buildScriptWithOptions(normalized.script),
+            stats: normalized.stats,
+            correlations: normalized.correlations,
           }
         },
         { clearValue: true },

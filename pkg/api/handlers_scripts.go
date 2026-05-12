@@ -80,12 +80,12 @@ func (s *Server) handleImportLoadRunner(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
-		"result":   result,
-		"script":   result.Script,
-		"warnings": result.Warnings,
-		"stats":    result.Stats,
-	})
+	writeJSON(w, http.StatusOK, newScriptImportResponse(scriptImportResponseOptions{
+		Result:   result,
+		Script:   result.Script,
+		Warnings: result.Warnings,
+		Stats:    result.Stats,
+	}))
 }
 
 // handleImportJMeter handles POST /api/v1/scripts/import/jmeter.
@@ -183,17 +183,17 @@ func readJMeterImportRequest(w http.ResponseWriter, r *http.Request) (*jmeterImp
 }
 
 func writeJMeterImportResponse(w http.ResponseWriter, status int, result *jmeter.ConvertResult) {
-	writeJSON(w, status, map[string]any{
-		"result":               result,
-		"scripts":              result.Scripts,
-		"script":               result.Script,
-		"scenario_draft":       result.ScenarioDraft,
-		"warnings":             result.Warnings,
-		"unsupported_elements": result.UnsupportedElements,
-		"assumptions":          result.Assumptions,
-		"stats":                result.Stats,
-		"summary":              result.Summary,
-	})
+	writeJSON(w, status, newScriptImportResponse(scriptImportResponseOptions{
+		Result:              result,
+		Scripts:             result.Scripts,
+		Script:              result.Script,
+		ScenarioDraft:       result.ScenarioDraft,
+		Warnings:            result.Warnings,
+		UnsupportedElements: result.UnsupportedElements,
+		Assumptions:         result.Assumptions,
+		Stats:               result.Stats,
+		Summary:             result.Summary,
+	}))
 }
 
 func (s *Server) handleSaveJMeterImport(w http.ResponseWriter, r *http.Request) {
@@ -214,18 +214,6 @@ func (s *Server) handleSaveJMeterImport(w http.ResponseWriter, r *http.Request) 
 	scriptIDsByName := map[string]string{}
 	for i := range req.Scripts {
 		script := req.Scripts[i]
-		if script.Name == "" {
-			writeError(w, http.StatusBadRequest, "script name is required")
-			return
-		}
-		if script.Protocol == "" {
-			writeError(w, http.StatusBadRequest, "script protocol is required")
-			return
-		}
-		if len(script.Actions) == 0 {
-			writeError(w, http.StatusBadRequest, "script must have at least one action")
-			return
-		}
 		if issues := validateScript(&script); len(issues) > 0 {
 			writeError(w, http.StatusBadRequest, strings.Join(issues, "; "))
 			return
@@ -295,13 +283,13 @@ func (s *Server) handleImportSample(w http.ResponseWriter, r *http.Request) {
 		result.Warnings = append(result.Warnings, issues...)
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
-		"result":       result,
-		"script":       result.Script,
-		"warnings":     result.Warnings,
-		"stats":        result.Stats,
-		"correlations": result.Correlations,
-	})
+	writeJSON(w, http.StatusOK, newScriptImportResponse(scriptImportResponseOptions{
+		Result:       result,
+		Script:       result.Script,
+		Warnings:     result.Warnings,
+		Stats:        result.Stats,
+		Correlations: result.Correlations,
+	}))
 }
 
 // handleExportScript handles POST /api/v1/scripts/{id}/export
@@ -405,16 +393,8 @@ func (s *Server) handleUpdateScript(w http.ResponseWriter, r *http.Request) {
 	}
 	script := &wrapper.Script
 
-	if script.Name == "" {
-		writeError(w, http.StatusBadRequest, "script name is required")
-		return
-	}
-	if script.Protocol == "" {
-		writeError(w, http.StatusBadRequest, "script protocol is required")
-		return
-	}
-	if len(script.Actions) == 0 {
-		writeError(w, http.StatusBadRequest, "script must have at least one action")
+	if issues := validateScript(script); len(issues) > 0 {
+		writeError(w, http.StatusBadRequest, strings.Join(issues, "; "))
 		return
 	}
 

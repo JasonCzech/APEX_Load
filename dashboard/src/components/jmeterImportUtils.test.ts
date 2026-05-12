@@ -44,7 +44,28 @@ describe('jmeterImportUtils', () => {
       timers: 0,
       unsupported: 0,
     })
-    expect(result.summary).toEqual({})
+    expect(result.summary).toEqual({
+      thread_group_count: 0,
+      sampler_count: 0,
+    })
+    expect(result.correlations).toEqual([])
+  })
+
+  it('falls back to a single script entry and normalizes shared import fields', () => {
+    const result = normalizeImportResult({
+      script: { name: 'Converted_LR_Script' },
+      warnings: ['manual review'],
+      correlations: [{ name: 'corr_session' }],
+      unsupported_elements: null,
+      assumptions: null,
+    })
+
+    expect(result.script).toEqual({ name: 'Converted_LR_Script' })
+    expect(result.scripts).toEqual([{ name: 'Converted_LR_Script' }])
+    expect(result.warnings).toEqual(['manual review'])
+    expect(result.correlations).toEqual([{ name: 'corr_session' }])
+    expect(result.unsupported_elements).toEqual([])
+    expect(result.assumptions).toEqual([])
   })
 
   it('summarizes generated extractors for review rendering', () => {

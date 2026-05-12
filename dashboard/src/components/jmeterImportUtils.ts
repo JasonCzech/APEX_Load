@@ -1,21 +1,5 @@
-export interface ConvertStats {
-  thread_groups: number
-  samplers: number
-  converted_actions: number
-  headers: number
-  variables: number
-  csv_sources: number
-  assertions: number
-  timers: number
-  unsupported: number
-}
-
-export interface SupportMatrix {
-  supported: string[]
-  partial: string[]
-  unsupported: string[]
-  notes?: string[]
-}
+import { normalizeScriptImportResult } from './scriptImportUtils'
+import { type ImportedScript, type JMeterConvertStats as ConvertStats, type JMeterImportResult as ImportResult, type JMeterImportSummary, type SupportMatrix } from '../types/scriptImports'
 
 export interface SupportMatrixSection {
   key: 'supported' | 'partial' | 'unsupported'
@@ -23,17 +7,6 @@ export interface SupportMatrixSection {
   itemLabel: string
   items: string[]
   preview: string
-}
-
-export interface ImportResult {
-  scripts: any[]
-  script?: any
-  scenario_draft?: any
-  warnings: string[]
-  unsupported_elements: string[]
-  assumptions: string[]
-  stats: ConvertStats
-  summary: any
 }
 
 export interface ImportExtractorSummary {
@@ -46,12 +19,7 @@ export interface ImportExtractorSummary {
 
 export function normalizeImportResult(response: any): ImportResult {
   return {
-    scripts: Array.isArray(response?.scripts) ? response.scripts : [],
-    script: response?.script,
-    scenario_draft: response?.scenario_draft,
-    warnings: Array.isArray(response?.warnings) ? response.warnings : [],
-    unsupported_elements: Array.isArray(response?.unsupported_elements) ? response.unsupported_elements : [],
-    assumptions: Array.isArray(response?.assumptions) ? response.assumptions : [],
+    ...normalizeScriptImportResult<ConvertStats, unknown, ImportedScript, ImportResult['scenario_draft'], JMeterImportSummary>(response),
     stats: response?.stats || {
       thread_groups: 0,
       samplers: 0,
@@ -63,7 +31,10 @@ export function normalizeImportResult(response: any): ImportResult {
       timers: 0,
       unsupported: 0,
     },
-    summary: response?.summary || {},
+    summary: response?.summary || {
+      thread_group_count: 0,
+      sampler_count: 0,
+    },
   }
 }
 
@@ -107,7 +78,7 @@ export function summarizeImportExtractors(scripts: any[]): ImportExtractorSummar
   }
 
   const summaries: ImportExtractorSummary[] = []
-  for (const script of scripts) {
+  for (const script of scripts as ImportedScript[]) {
     const scriptName = typeof script?.name === 'string' && script.name ? script.name : 'Imported Script'
     const actions = Array.isArray(script?.actions) ? script.actions : []
     for (const action of actions) {

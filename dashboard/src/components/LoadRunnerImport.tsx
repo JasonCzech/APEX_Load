@@ -1,5 +1,7 @@
 import { useState, useRef } from 'react'
 import { useApi } from '../hooks/useApi'
+import { normalizeScriptImportResult } from './scriptImportUtils'
+import { type ImportedScript, type LoadRunnerConvertStats, type LoadRunnerImportResult } from '../types/scriptImports'
 import './LoadRunnerImport.css'
 
 interface ImportMetadata {
@@ -8,7 +10,7 @@ interface ImportMetadata {
   preserved?: Record<string, any>
 }
 
-function getImportMetadata(script: any): ImportMetadata | null {
+function getImportMetadata(script?: ImportedScript): ImportMetadata | null {
   return script?.metadata?.import || null
 }
 
@@ -22,14 +24,8 @@ function getMetadataSummary(metadata: ImportMetadata | null) {
   }
 }
 
-interface ConvertStats {
-  total_functions: number; converted_actions: number; extractors: number
-  think_times: number; transactions: number; skipped: number
-  unsupported_funcs?: string[]
-}
-
 interface Props {
-  onImported?: (script: any) => void
+  onImported?: (script: ImportedScript) => void
   onClose?: () => void
 }
 
@@ -40,9 +36,7 @@ export default function LoadRunnerImport({ onImported, onClose }: Props) {
   const [dragOver, setDragOver] = useState(false)
   const [importing, setImporting] = useState(false)
   const [error, setError] = useState('')
-  const [result, setResult] = useState<{
-    script: any; warnings: string[]; stats: ConvertStats
-  } | null>(null)
+  const [result, setResult] = useState<LoadRunnerImportResult | null>(null)
 
   const [options, setOptions] = useState({
     name: '', base_url: '', include_assertions: true,
@@ -72,7 +66,7 @@ export default function LoadRunnerImport({ onImported, onClose }: Props) {
         base_url: options.base_url || undefined,
         include_assertions: options.include_assertions,
       })
-      setResult(res)
+      setResult(normalizeScriptImportResult<LoadRunnerConvertStats>(res))
     } catch (e: any) {
       setError(e.message || 'Import failed')
     } finally { setImporting(false) }

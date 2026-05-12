@@ -328,6 +328,7 @@ func TestHandleReplayDraftScriptBroadcastsProgress(t *testing.T) {
 
 func TestValidateScript_AllowsBrowserScreenshotWithoutTarget(t *testing.T) {
 	issues := validateScript(&dsl.Script{
+		Name:     "Browser Screenshot",
 		Protocol: "browser",
 		Actions: []dsl.Action{{
 			Name: "Capture current page",
@@ -342,6 +343,7 @@ func TestValidateScript_AllowsBrowserScreenshotWithoutTarget(t *testing.T) {
 
 func TestValidateScript_JMSMockDoesNotRequireBaseURL(t *testing.T) {
 	issues := validateScript(&dsl.Script{
+		Name:     "Mock JMS",
 		Protocol: "jms-solace",
 		Config: dsl.ScriptConfig{
 			JMS: dsl.JMSConfig{
@@ -364,6 +366,7 @@ func TestValidateScript_JMSMockDoesNotRequireBaseURL(t *testing.T) {
 
 func TestValidateScript_JMSRealAdapterUnavailable(t *testing.T) {
 	issues := validateScript(&dsl.Script{
+		Name:     "Real JMS",
 		Protocol: "jms-solace",
 		Config: dsl.ScriptConfig{
 			JMS: dsl.JMSConfig{

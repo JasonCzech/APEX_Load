@@ -4,6 +4,8 @@ import { useAsyncTask } from '../hooks/useAsyncTask'
 import { useApi } from '../hooks/useApi'
 import { BASE } from '../hooks/apiClient'
 import { Project } from '../types'
+import { normalizeScriptImportResult } from './scriptImportUtils'
+import { type RecorderCorrelation as Correlation, type RecorderImportResult } from '../types/scriptImports'
 import './RecordingStudio.css'
 
 interface RecordedRequest {
@@ -47,16 +49,6 @@ interface RecordingSession {
   }
 }
 
-interface Correlation {
-  name: string
-  source: string
-  expression: string
-  extract_type: string
-  found_in_seq: number
-  used_in_seqs: number[]
-  sample_value: string
-}
-
 interface RecorderStatus {
   proxy_addr?: string
   ca_cert_path?: string
@@ -90,7 +82,7 @@ export default function RecordingStudio({ activeProject }: { activeProject?: Pro
     excluded: false,
   })
   const [showSetup, setShowSetup] = useState(true)
-  const convertTask = useAsyncTask<{ script: any; correlations: Correlation[]; warnings: string[] }>()
+  const convertTask = useAsyncTask<RecorderImportResult>()
 
   const proxyPort = (proxyAddr || ':8081').split(':').pop() || '8081'
 
@@ -245,7 +237,7 @@ export default function RecordingStudio({ activeProject }: { activeProject?: Pro
   const handlePreviewConversion = async (session: RecordingSession) => {
     try {
       const result = await convertTask.run(
-        () => api.previewRecordingConversion(session.id, session.name),
+        async () => normalizeScriptImportResult<Record<string, unknown>, Correlation>(await api.previewRecordingConversion(session.id, session.name)),
         { clearValue: true },
       )
       showFeedback(`Preview generated with ${result.script.actions?.length || 0} actions and ${result.correlations?.length || 0} correlations`)
@@ -273,7 +265,7 @@ export default function RecordingStudio({ activeProject }: { activeProject?: Pro
   const handleConvert = async (session: RecordingSession) => {
     try {
       const result = await convertTask.run(
-        () => api.convertRecording(session.id, session.name),
+        async () => normalizeScriptImportResult<Record<string, unknown>, Correlation>(await api.convertRecording(session.id, session.name)),
         { clearValue: true },
       )
       showFeedback(`Script "${result.script.name}" created with ${result.correlations?.length || 0} correlations detected`)

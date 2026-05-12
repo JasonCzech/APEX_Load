@@ -200,16 +200,8 @@ func (s *Server) handleCreateScript(w http.ResponseWriter, r *http.Request) {
 		script.FolderID = wrapper.FolderID
 	}
 
-	if script.Name == "" {
-		writeError(w, http.StatusBadRequest, "script name is required")
-		return
-	}
-	if script.Protocol == "" {
-		writeError(w, http.StatusBadRequest, "script protocol is required")
-		return
-	}
-	if len(script.Actions) == 0 {
-		writeError(w, http.StatusBadRequest, "script must have at least one action")
+	if issues := validateScript(script); len(issues) > 0 {
+		writeError(w, http.StatusBadRequest, strings.Join(issues, "; "))
 		return
 	}
 
@@ -417,89 +409,7 @@ func (s *Server) handleTestStream(w http.ResponseWriter, r *http.Request) {
 }
 
 func validateScript(script *dsl.Script) []string {
-	var issues []string
-	if script.Protocol == "jms-solace" {
-		return validateJMSScript(script)
-	}
-	if script.Protocol != "browser" && script.Config.BaseURL == "" {
-		issues = append(issues, "config.base_url is empty")
-	}
-	for i, a := range script.Actions {
-		if a.Name == "" {
-			issues = append(issues, fmt.Sprintf("actions[%d]: missing name", i))
-		}
-		if script.Protocol == "browser" {
-			switch a.Type {
-			case "browser_screenshot":
-				continue
-			case "browser_wait":
-				if a.WaitFor == nil && a.Selector == "" && a.Target == "" {
-					issues = append(issues, fmt.Sprintf("actions[%d] %q: browser_wait requires wait_for, selector, or target", i, a.Name))
-				}
-			default:
-				if a.Target == "" && a.Selector == "" {
-					issues = append(issues, fmt.Sprintf("actions[%d] %q: missing target or selector", i, a.Name))
-				}
-			}
-			continue
-		}
-		if a.Target == "" {
-			issues = append(issues, fmt.Sprintf("actions[%d] %q: missing target", i, a.Name))
-		}
-	}
-	return issues
-}
-
-func validateJMSScript(script *dsl.Script) []string {
-	var issues []string
-	jms := script.Config.JMS
-	if !jms.Mock {
-		if jms.BrokerURL == "" {
-			issues = append(issues, "config.jms.broker_url is required when mock mode is disabled")
-		}
-		if jms.MessageVPN == "" {
-			issues = append(issues, "config.jms.message_vpn is recommended when mock mode is disabled")
-		}
-		issues = append(issues, "real Solace JMS adapter is not available in this build; enable config.jms.mock for replay")
-	}
-	if jms.Destination == "" {
-		usesActionDestinations := true
-		for _, a := range script.Actions {
-			switch a.Type {
-			case "jms_publish", "jms_consume", "jms_request_reply":
-				if a.Target == "" {
-					usesActionDestinations = false
-				}
-			}
-		}
-		if !usesActionDestinations {
-			issues = append(issues, "config.jms.destination or per-action target is required")
-		}
-	}
-	for i, a := range script.Actions {
-		if a.Name == "" {
-			issues = append(issues, fmt.Sprintf("actions[%d]: missing name", i))
-		}
-		switch a.Type {
-		case "jms_publish", "jms_consume", "jms_request_reply", "jms_ack", "jms_commit", "jms_rollback":
-		default:
-			if a.Type == "" {
-				issues = append(issues, fmt.Sprintf("actions[%d]: missing type", i))
-			} else {
-				issues = append(issues, fmt.Sprintf("actions[%d] %q: unsupported JMS action type %q", i, a.Name, a.Type))
-			}
-		}
-		if (a.Type == "jms_publish" || a.Type == "jms_consume" || a.Type == "jms_request_reply") && a.Target == "" && jms.Destination == "" {
-			issues = append(issues, fmt.Sprintf("actions[%d] %q: missing destination", i, a.Name))
-		}
-		if a.Type == "jms_request_reply" && jms.ReplyTo == "" {
-			replyTo, _ := a.Params["reply_to"].(string)
-			if strings.TrimSpace(replyTo) == "" {
-				issues = append(issues, fmt.Sprintf("actions[%d] %q: missing reply_to destination", i, a.Name))
-			}
-		}
-	}
-	return issues
+	return dsl.ValidateScriptIssues(script)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

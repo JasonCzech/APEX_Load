@@ -1,13 +1,111 @@
 package api
 
 import (
+	"archive/zip"
 	"bytes"
 	"encoding/json"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+
+	"github.com/jasonczech/stormrunner/pkg/dsl"
 )
+
+const sampleLoadRunnerActionC = `
+#include "web_api.h"
+
+Action()
+{
+	web_url("Homepage",
+		"URL=https://example.com/app/home",
+		"Resource=0",
+		"RecContentType=text/html",
+		LAST);
+
+	return 0;
+}
+`
+
+func TestHandleCreateScriptRejectsMissingBaseURL(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	payload := map[string]any{
+		"script": map[string]any{
+			"name":     "No Base URL",
+			"protocol": "http",
+			"actions": []map[string]any{{
+				"name":   "Ping",
+				"type":   "request",
+				"target": "/ping",
+			}},
+		},
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("json.Marshal returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusBadRequest, resp.Body.String())
+	}
+	if !strings.Contains(resp.Body.String(), "config.base_url is empty") {
+		t.Fatalf("body = %q, want base_url validation error", resp.Body.String())
+	}
+}
+
+func TestHandleUpdateScriptRejectsInvalidScript(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	stored := server.runner.StoreScript(&dsl.Script{
+		Name:     "Valid Script",
+		Protocol: "http",
+		Config: dsl.ScriptConfig{
+			BaseURL: "https://api.example.com",
+		},
+		Actions: []dsl.Action{{
+			Name:   "Ping",
+			Type:   "request",
+			Target: "/ping",
+		}},
+	})
+
+	payload := map[string]any{
+		"script": map[string]any{
+			"name":     "Broken Script",
+			"protocol": "http",
+			"config": map[string]any{
+				"base_url": "https://api.example.com",
+			},
+			"actions": []map[string]any{{
+				"name":   "Ping",
+				"target": "/ping",
+			}},
+		},
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("json.Marshal returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/scripts/"+stored.ID, bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusBadRequest, resp.Body.String())
+	}
+	if !strings.Contains(resp.Body.String(), "missing type") {
+		t.Fatalf("body = %q, want missing type validation error", resp.Body.String())
+	}
+}
 
 func TestHandleImportSample(t *testing.T) {
 	server := NewServer(ServerConfig{})
@@ -57,6 +155,7 @@ func TestHandleImportSample(t *testing.T) {
 	}
 
 	var result struct {
+		Scripts []json.RawMessage `json:"scripts"`
 		Script struct {
 			Name    string `json:"name"`
 			Actions []struct {
@@ -64,6 +163,9 @@ func TestHandleImportSample(t *testing.T) {
 			} `json:"actions"`
 		} `json:"script"`
 		Warnings     []string `json:"warnings"`
+		Assumptions  []string `json:"assumptions"`
+		Unsupported  []string `json:"unsupported_elements"`
+		Summary      map[string]any `json:"summary"`
 		Correlations []struct {
 			Name string `json:"name"`
 		} `json:"correlations"`
@@ -79,6 +181,9 @@ func TestHandleImportSample(t *testing.T) {
 	if result.Script.Name != "Inventory Lookup" {
 		t.Fatalf("script name = %q, want Inventory Lookup", result.Script.Name)
 	}
+	if len(result.Scripts) != 1 {
+		t.Fatalf("scripts count = %d, want 1", len(result.Scripts))
+	}
 	if len(result.Script.Actions) != 2 {
 		t.Fatalf("action count = %d, want 2", len(result.Script.Actions))
 	}
@@ -90,6 +195,15 @@ func TestHandleImportSample(t *testing.T) {
 	}
 	if len(result.Correlations) == 0 {
 		t.Fatal("expected correlations in response")
+	}
+	if len(result.Assumptions) != 0 {
+		t.Fatalf("assumptions = %v, want none", result.Assumptions)
+	}
+	if len(result.Unsupported) != 0 {
+		t.Fatalf("unsupported_elements = %v, want none", result.Unsupported)
+	}
+	if len(result.Summary) != 0 {
+		t.Fatalf("summary = %#v, want empty", result.Summary)
 	}
 	if result.Script.Actions[1].Target != "/v1/session/{{var.corr_sessionid}}/items" {
 		t.Fatalf("second target = %q, want correlated target", result.Script.Actions[1].Target)
@@ -106,6 +220,81 @@ func TestHandleImportSampleBadRequest(t *testing.T) {
 
 	if resp.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusBadRequest, resp.Body.String())
+	}
+}
+
+func TestHandleImportLoadRunnerReturnsStandardizedEnvelope(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	var body bytes.Buffer
+	writer := zip.NewWriter(&body)
+	addFile := func(name string, content string) {
+		entry, err := writer.Create(name)
+		if err != nil {
+			t.Fatalf("Create(%q) returned error: %v", name, err)
+		}
+		if _, err := entry.Write([]byte(content)); err != nil {
+			t.Fatalf("Write(%q) returned error: %v", name, err)
+		}
+	}
+	addFile("Demo.usr", `[General]
+Type=Web
+RuntimeSettings=default.cfg
+
+[Actions]
+Action1=Action.c
+`)
+	addFile("Action.c", sampleLoadRunnerActionC)
+	addFile("default.cfg", `[HTTP]
+ConnectTimeout=45
+`)
+	if err := writer.Close(); err != nil {
+		t.Fatalf("zip.Close returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/loadrunner", bytes.NewReader(body.Bytes()))
+	req.Header.Set("Content-Type", "application/zip")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var result struct {
+		Scripts []json.RawMessage `json:"scripts"`
+		Script struct {
+			Protocol string `json:"protocol"`
+			Name     string `json:"name"`
+		} `json:"script"`
+		Warnings            []string       `json:"warnings"`
+		UnsupportedElements []string       `json:"unsupported_elements"`
+		Assumptions         []string       `json:"assumptions"`
+		Summary             map[string]any `json:"summary"`
+		Stats               struct {
+			ConvertedActions int `json:"converted_actions"`
+		} `json:"stats"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if len(result.Scripts) != 1 {
+		t.Fatalf("scripts count = %d, want 1", len(result.Scripts))
+	}
+	if result.Script.Protocol != "http" || result.Script.Name == "" {
+		t.Fatalf("script = %#v, want http script with name", result.Script)
+	}
+	if result.Stats.ConvertedActions == 0 {
+		t.Fatalf("converted_actions = %d, want > 0", result.Stats.ConvertedActions)
+	}
+	if len(result.UnsupportedElements) != 0 {
+		t.Fatalf("unsupported_elements = %v, want none", result.UnsupportedElements)
+	}
+	if len(result.Assumptions) != 0 {
+		t.Fatalf("assumptions = %v, want none", result.Assumptions)
+	}
+	if len(result.Summary) != 0 {
+		t.Fatalf("summary = %#v, want empty", result.Summary)
 	}
 }
 
@@ -162,6 +351,9 @@ func TestHandleImportJMeter(t *testing.T) {
 			} `json:"actions"`
 		} `json:"scripts"`
 		ScenarioDraft any `json:"scenario_draft"`
+		Correlations []any `json:"correlations"`
+		Assumptions []string `json:"assumptions"`
+		Unsupported []string `json:"unsupported_elements"`
 		Stats         struct {
 			ConvertedActions int `json:"converted_actions"`
 		} `json:"stats"`
@@ -177,6 +369,15 @@ func TestHandleImportJMeter(t *testing.T) {
 	}
 	if result.ScenarioDraft == nil {
 		t.Fatal("expected scenario draft in response")
+	}
+	if len(result.Correlations) != 0 {
+		t.Fatalf("correlations = %v, want none", result.Correlations)
+	}
+	if len(result.Assumptions) == 0 {
+		t.Fatal("expected assumptions in response")
+	}
+	if len(result.Unsupported) != 0 {
+		t.Fatalf("unsupported_elements = %v, want none", result.Unsupported)
 	}
 }
 
@@ -223,6 +424,8 @@ func TestHandleValidateJMeterImport(t *testing.T) {
 	var result struct {
 		Scripts       []StoredScript `json:"scripts"`
 		ScenarioDraft any            `json:"scenario_draft"`
+		Warnings      []string       `json:"warnings"`
+		Correlations  []any          `json:"correlations"`
 	}
 	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
 		t.Fatalf("json.Unmarshal returned error: %v", err)
@@ -232,6 +435,12 @@ func TestHandleValidateJMeterImport(t *testing.T) {
 	}
 	if result.ScenarioDraft == nil {
 		t.Fatal("expected scenario draft in validation response")
+	}
+	if len(result.Warnings) != 0 {
+		t.Fatalf("warnings = %v, want none", result.Warnings)
+	}
+	if len(result.Correlations) != 0 {
+		t.Fatalf("correlations = %v, want none", result.Correlations)
 	}
 	if got := server.runner.ListScripts(); len(got) != 0 {
 		t.Fatalf("validate should not persist scripts, got %d", len(got))

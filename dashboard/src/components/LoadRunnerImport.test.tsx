@@ -1,0 +1,140 @@
+// @vitest-environment jsdom
+
+import { act } from 'react'
+import { createRoot, Root } from 'react-dom/client'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+import LoadRunnerImport from './LoadRunnerImport'
+
+;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+
+const apiMock = {
+  importLoadRunner: vi.fn(),
+  createScript: vi.fn(),
+}
+
+vi.mock('../hooks/useApi', () => ({
+  useApi: () => apiMock,
+}))
+
+describe('LoadRunnerImport', () => {
+  let container: HTMLDivElement
+  let root: Root
+
+  beforeEach(() => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+
+    apiMock.importLoadRunner.mockResolvedValue({
+      script: {
+        name: 'Demo LoadRunner Script',
+        protocol: 'http',
+        actions: [{ name: 'Homepage' }],
+        metadata: {
+          import: {
+            source: 'loadrunner',
+            source_script_name: 'Demo.usr',
+            preserved: {
+              runtime_files: { 'default.cfg': {} },
+              project_settings: { General: { Type: 'Web' } },
+              unsupported_functions: ['web_reg_save_param'],
+            },
+          },
+        },
+      },
+      warnings: ['manual review recommended'],
+      stats: {
+        total_functions: 12,
+        converted_actions: 1,
+        extractors: 1,
+        think_times: 2,
+        transactions: 1,
+        skipped: 0,
+      },
+    })
+    apiMock.createScript.mockResolvedValue({ id: 'saved-script' })
+  })
+
+  afterEach(async () => {
+    await act(async () => {
+      root.unmount()
+    })
+    container.remove()
+    vi.clearAllMocks()
+  })
+
+  it('imports a zip and saves the converted script', async () => {
+    const onImported = vi.fn()
+
+    await act(async () => {
+      root.render(<LoadRunnerImport onImported={onImported} />)
+    })
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
+    expect(fileInput).not.toBeNull()
+    if (!fileInput) {
+      return
+    }
+
+    const file = new File(['zip-content'], 'demo.zip', { type: 'application/zip' })
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [file],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert LoadRunner Script'))
+    expect(convertButton).toBeDefined()
+    if (!convertButton) {
+      return
+    }
+
+    await act(async () => {
+      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushPromises()
+
+    expect(apiMock.importLoadRunner).toHaveBeenCalledWith(file, {
+      name: undefined,
+      base_url: undefined,
+      include_assertions: true,
+    })
+    expect(container.textContent).toContain('Conversion Complete')
+    expect(container.textContent).toContain('Demo LoadRunner Script')
+    expect(container.textContent).toContain('manual review recommended')
+    expect(container.textContent).toContain('Unsupported Functions')
+    expect(container.textContent).toContain('web_reg_save_param')
+
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save to Script Library'))
+    expect(saveButton).toBeDefined()
+    if (!saveButton) {
+      return
+    }
+
+    await act(async () => {
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushPromises()
+
+    expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Demo LoadRunner Script',
+      protocol: 'http',
+    }))
+    expect(onImported).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Demo LoadRunner Script',
+      protocol: 'http',
+    }))
+  })
+})
+
+async function flushPromises() {
+  await act(async () => {
+    await Promise.resolve()
+    await Promise.resolve()
+  })
+}

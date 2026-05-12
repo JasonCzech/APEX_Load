@@ -1,5 +1,6 @@
 import { useCallback, useMemo } from 'react'
 
+import { type RecorderImportResult } from '../../types/scriptImports'
 import { request } from '../apiClient'
 
 export function useRecorderApi() {
@@ -38,13 +39,13 @@ export function useRecorderApi() {
 
   const convertRecording = useCallback(
     (id: string, name?: string) =>
-      request<any>(`/recorder/${id}/convert`, { method: 'POST', body: JSON.stringify({ name }) }),
+      request<RecorderImportResult>(`/recorder/${id}/convert`, { method: 'POST', body: JSON.stringify({ name }) }),
     [],
   )
 
   const previewRecordingConversion = useCallback(
     (id: string, name?: string) =>
-      request<any>(`/recorder/${id}/convert/preview`, { method: 'POST', body: JSON.stringify({ name }) }),
+      request<RecorderImportResult>(`/recorder/${id}/convert/preview`, { method: 'POST', body: JSON.stringify({ name }) }),
     [],
   )
 

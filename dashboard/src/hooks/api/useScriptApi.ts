@@ -1,6 +1,7 @@
 import { useCallback, useMemo } from 'react'
 
 import { BrowserReplayStartRequest, BrowserReplayStartResponse, BrowserReplaySessionResponse } from '../../types'
+import { type ImportedScript, type JMeterImportResult, type JMeterSupportMatrixResponse, type LoadRunnerImportResult, type SampleImportResult, type SaveJMeterImportRequest, type SaveJMeterImportResponse } from '../../types/scriptImports'
 import { BASE, request } from '../apiClient'
 
 function buildScriptQuery(projectId?: string, folderId?: string | null) {
@@ -96,7 +97,7 @@ export function useScriptApi() {
   )
 
   const importLoadRunner = useCallback(
-    async (file: File, options?: { name?: string; base_url?: string; include_assertions?: boolean }) => {
+    async (file: File, options?: { name?: string; base_url?: string; include_assertions?: boolean }): Promise<LoadRunnerImportResult> => {
       const formData = new FormData()
       formData.append('file', file)
       if (options?.name) formData.append('name', options.name)
@@ -111,13 +112,13 @@ export function useScriptApi() {
         const body = await res.json().catch(() => ({ error: res.statusText }))
         throw new Error(body.error || res.statusText)
       }
-      return res.json()
+      return res.json() as Promise<LoadRunnerImportResult>
     },
     [],
   )
 
   const importJMeter = useCallback(
-    async (file: File, options?: { name?: string; base_url?: string; include_assertions?: boolean; scenario_draft?: boolean }) => {
+    async (file: File, options?: { name?: string; base_url?: string; include_assertions?: boolean; scenario_draft?: boolean }): Promise<JMeterImportResult> => {
       const formData = new FormData()
       formData.append('file', file)
       if (options?.name) formData.append('name', options.name)
@@ -133,13 +134,13 @@ export function useScriptApi() {
         const body = await res.json().catch(() => ({ error: res.statusText }))
         throw new Error(body.error || res.statusText)
       }
-      return res.json()
+      return res.json() as Promise<JMeterImportResult>
     },
     [],
   )
 
   const validateJMeterImport = useCallback(
-    async (file: File, options?: { name?: string; base_url?: string; include_assertions?: boolean; scenario_draft?: boolean }) => {
+    async (file: File, options?: { name?: string; base_url?: string; include_assertions?: boolean; scenario_draft?: boolean }): Promise<JMeterImportResult> => {
       const formData = new FormData()
       formData.append('file', file)
       if (options?.name) formData.append('name', options.name)
@@ -155,19 +156,19 @@ export function useScriptApi() {
         const body = await res.json().catch(() => ({ error: res.statusText }))
         throw new Error(body.error || res.statusText)
       }
-      return res.json()
+      return res.json() as Promise<JMeterImportResult>
     },
     [],
   )
 
   const getJMeterSupportMatrix = useCallback(
-    () => request<any>('/scripts/import/jmeter/support-matrix'),
+    () => request<JMeterSupportMatrixResponse>('/scripts/import/jmeter/support-matrix'),
     [],
   )
 
   const saveJMeterImport = useCallback(
-    (payload: { scripts: any[]; scenario_draft?: any }) =>
-      request<any>('/scripts/import/jmeter/save', { method: 'POST', body: JSON.stringify(payload) }),
+    (payload: SaveJMeterImportRequest) =>
+      request<SaveJMeterImportResponse>('/scripts/import/jmeter/save', { method: 'POST', body: JSON.stringify(payload) }),
     [],
   )
 
@@ -183,7 +184,7 @@ export function useScriptApi() {
         infer_extractors?: boolean
         sanitize_sensitive?: boolean
       }
-    }) => request<any>('/scripts/import/sample', { method: 'POST', body: JSON.stringify(data) }),
+    }) => request<SampleImportResult>('/scripts/import/sample', { method: 'POST', body: JSON.stringify(data) }),
     [],
   )
 
