@@ -19,12 +19,12 @@ type replayAPIProtocol struct {
 	execute func(action *protocol.Action) (*protocol.Result, error)
 }
 
-func (p *replayAPIProtocol) Name() string { return "replay-api" }
+func (p *replayAPIProtocol) Name() string                                   { return "replay-api" }
 func (p *replayAPIProtocol) Init(_ context.Context, _ map[string]any) error { return nil }
 func (p *replayAPIProtocol) Execute(_ context.Context, action *protocol.Action) (*protocol.Result, error) {
 	return p.execute(action)
 }
-func (p *replayAPIProtocol) Teardown(_ context.Context) error { return nil }
+func (p *replayAPIProtocol) Teardown(_ context.Context) error    { return nil }
 func (p *replayAPIProtocol) HealthCheck(_ context.Context) error { return nil }
 
 func registerReplayAPIProtocol(t *testing.T, execute func(action *protocol.Action) (*protocol.Result, error)) string {
@@ -76,13 +76,13 @@ func TestHandleReplayScriptReturnsStructuredReport(t *testing.T) {
 
 	var payload struct {
 		ScriptID string `json:"script_id"`
-		Report struct {
-			Success bool `json:"success"`
-			Group string `json:"group"`
-			Events []struct {
+		Report   struct {
+			Success bool   `json:"success"`
+			Group   string `json:"group"`
+			Events  []struct {
 				ActionName string `json:"action_name"`
-				Target string `json:"target"`
-				StatusCode int `json:"status_code"`
+				Target     string `json:"target"`
+				StatusCode int    `json:"status_code"`
 			} `json:"events"`
 			FinalVariables map[string]string `json:"final_variables"`
 		} `json:"report"`
@@ -201,18 +201,18 @@ func TestHandleReplayDraftScriptRunsUnsavedDefinition(t *testing.T) {
 
 	server := NewServer(ServerConfig{})
 	body, _ := json.Marshal(map[string]any{
-		"group_name": "draft-run",
+		"group_name":        "draft-run",
 		"ignore_think_time": true,
 		"script": map[string]any{
-			"name": "Unsaved Draft",
-			"version": "1.0.0",
+			"name":     "Unsaved Draft",
+			"version":  "1.0.0",
 			"protocol": protocolName,
 			"config": map[string]any{
 				"base_url": "https://example.com",
 			},
 			"actions": []map[string]any{{
-				"name": "draft-step",
-				"type": "GET",
+				"name":   "draft-step",
+				"type":   "GET",
 				"target": "/unsaved",
 			}},
 		},
@@ -229,11 +229,11 @@ func TestHandleReplayDraftScriptRunsUnsavedDefinition(t *testing.T) {
 
 	var payload struct {
 		ScriptID string `json:"script_id"`
-		Report struct {
-			Group string `json:"group"`
+		Report   struct {
+			Group  string `json:"group"`
 			Events []struct {
 				ActionName string `json:"action_name"`
-				Target string `json:"target"`
+				Target     string `json:"target"`
 			} `json:"events"`
 		} `json:"report"`
 	}
@@ -260,15 +260,15 @@ func TestHandleReplayDraftScriptBroadcastsProgress(t *testing.T) {
 	body, _ := json.Marshal(map[string]any{
 		"replay_session_id": "session-123",
 		"script": map[string]any{
-			"name": "Unsaved Draft",
-			"version": "1.0.0",
+			"name":     "Unsaved Draft",
+			"version":  "1.0.0",
 			"protocol": protocolName,
 			"config": map[string]any{
 				"base_url": "https://example.com",
 			},
 			"actions": []map[string]any{{
-				"name": "draft-step",
-				"type": "GET",
+				"name":   "draft-step",
+				"type":   "GET",
 				"target": "/unsaved",
 			}},
 		},
@@ -337,5 +337,49 @@ func TestValidateScript_AllowsBrowserScreenshotWithoutTarget(t *testing.T) {
 
 	if len(issues) != 0 {
 		t.Fatalf("issues = %v, want none", issues)
+	}
+}
+
+func TestValidateScript_JMSMockDoesNotRequireBaseURL(t *testing.T) {
+	issues := validateScript(&dsl.Script{
+		Protocol: "jms-solace",
+		Config: dsl.ScriptConfig{
+			JMS: dsl.JMSConfig{
+				Destination: "orders.in",
+				ReplyTo:     "orders.reply",
+				Mock:        true,
+			},
+		},
+		Actions: []dsl.Action{{
+			Name: "Publish",
+			Type: "jms_publish",
+			Body: `{"orderId":"A-100"}`,
+		}},
+	})
+
+	if len(issues) != 0 {
+		t.Fatalf("issues = %v, want none", issues)
+	}
+}
+
+func TestValidateScript_JMSRealAdapterUnavailable(t *testing.T) {
+	issues := validateScript(&dsl.Script{
+		Protocol: "jms-solace",
+		Config: dsl.ScriptConfig{
+			JMS: dsl.JMSConfig{
+				BrokerURL:   "tcps://broker.example.com:55443",
+				MessageVPN:  "perf",
+				Destination: "orders.in",
+				Mock:        false,
+			},
+		},
+		Actions: []dsl.Action{{
+			Name: "Publish",
+			Type: "jms_publish",
+		}},
+	})
+
+	if len(issues) != 1 || !strings.Contains(issues[0], "real Solace JMS adapter is not available") {
+		t.Fatalf("issues = %v, want unavailable adapter issue", issues)
 	}
 }

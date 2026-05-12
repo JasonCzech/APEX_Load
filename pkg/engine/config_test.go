@@ -287,3 +287,54 @@ func TestBuildProtoConfig_Browser(t *testing.T) {
 		t.Errorf("browser_viewport_height = %v, want 900", cfg["browser_viewport_height"])
 	}
 }
+
+func TestBuildProtoConfig_JMS(t *testing.T) {
+	script := &dsl.Script{
+		Config: dsl.ScriptConfig{
+			JMS: dsl.JMSConfig{
+				Provider:        "solace",
+				BrokerURL:       "tcp://broker:55555",
+				MessageVPN:      "perf-vpn",
+				Username:        "app",
+				Password:        "secret",
+				ClientID:        "stormrunner-vu",
+				Destination:     "orders.in",
+				DestinationType: "queue",
+				ReplyTo:         "orders.reply",
+				Acknowledgement: "client",
+				DeliveryMode:    "persistent",
+				TimeoutMs:       3500,
+				Properties:      map[string]string{"vpn": "perf"},
+				Mock:            true,
+			},
+		},
+	}
+
+	cfg := buildProtoConfig(script)
+
+	if cfg["jms_provider"] != "solace" {
+		t.Errorf("jms_provider = %v, want solace", cfg["jms_provider"])
+	}
+	if cfg["broker_url"] != "tcp://broker:55555" {
+		t.Errorf("broker_url = %v, want tcp://broker:55555", cfg["broker_url"])
+	}
+	if cfg["jms_message_vpn"] != "perf-vpn" {
+		t.Errorf("jms_message_vpn = %v, want perf-vpn", cfg["jms_message_vpn"])
+	}
+	if cfg["jms_destination"] != "orders.in" {
+		t.Errorf("jms_destination = %v, want orders.in", cfg["jms_destination"])
+	}
+	if cfg["jms_reply_to"] != "orders.reply" {
+		t.Errorf("jms_reply_to = %v, want orders.reply", cfg["jms_reply_to"])
+	}
+	if cfg["jms_timeout_ms"] != float64(3500) {
+		t.Errorf("jms_timeout_ms = %v, want 3500", cfg["jms_timeout_ms"])
+	}
+	properties, ok := cfg["jms_properties"].(map[string]string)
+	if !ok || properties["vpn"] != "perf" {
+		t.Errorf("jms_properties = %v, want vpn=perf", cfg["jms_properties"])
+	}
+	if cfg["jms_mock"] != true {
+		t.Errorf("jms_mock = %v, want true", cfg["jms_mock"])
+	}
+}

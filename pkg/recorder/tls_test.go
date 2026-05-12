@@ -11,13 +11,20 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
 
+func newTLSRecorder(t *testing.T) *Recorder {
+	t.Helper()
+	dir := t.TempDir()
+	return NewWithCAFiles(":0", filepath.Join(dir, "ca-cert.pem"), filepath.Join(dir, "ca-key.pem"))
+}
+
 func TestInitCA(t *testing.T) {
-	r := New(":0")
+	r := newTLSRecorder(t)
 	if err := r.initCA(); err != nil {
 		t.Fatalf("initCA failed: %v", err)
 	}
@@ -49,7 +56,7 @@ func TestInitCA(t *testing.T) {
 }
 
 func TestInitCAIdempotent(t *testing.T) {
-	r := New(":0")
+	r := newTLSRecorder(t)
 	if err := r.initCA(); err != nil {
 		t.Fatalf("first initCA failed: %v", err)
 	}
@@ -64,7 +71,7 @@ func TestInitCAIdempotent(t *testing.T) {
 }
 
 func TestGetCACertPEM(t *testing.T) {
-	r := New(":0")
+	r := newTLSRecorder(t)
 	if r.GetCACertPEM() != nil {
 		t.Fatal("expected nil before init")
 	}
@@ -80,7 +87,7 @@ func TestGetCACertPEM(t *testing.T) {
 }
 
 func TestGenerateLeafCert(t *testing.T) {
-	r := New(":0")
+	r := newTLSRecorder(t)
 
 	cert, err := r.generateLeafCert("example.com")
 	if err != nil {
@@ -114,7 +121,7 @@ func TestGenerateLeafCert(t *testing.T) {
 }
 
 func TestGenerateLeafCertCaching(t *testing.T) {
-	r := New(":0")
+	r := newTLSRecorder(t)
 
 	cert1, err := r.generateLeafCert("cached.example.com")
 	if err != nil {
@@ -139,7 +146,7 @@ func TestGenerateLeafCertCaching(t *testing.T) {
 }
 
 func TestGenerateLeafCertIPAddress(t *testing.T) {
-	r := New(":0")
+	r := newTLSRecorder(t)
 
 	cert, err := r.generateLeafCert("192.168.1.1")
 	if err != nil {
@@ -162,7 +169,7 @@ func TestGenerateLeafCertIPAddress(t *testing.T) {
 }
 
 func TestHandleCACert(t *testing.T) {
-	r := New(":0")
+	r := newTLSRecorder(t)
 
 	// Default format: DER (.crt)
 	rr := httptest.NewRecorder()
@@ -212,7 +219,7 @@ func TestHTTPSInterception(t *testing.T) {
 	defer backend.Close()
 
 	// Create the recorder with a session.
-	rec := New(":0")
+	rec := newTLSRecorder(t)
 	var captured []SessionEvent
 	rec.StartSession("https-test", "HTTPS Test", SessionFilters{ExcludeStatic: true}, func(evt SessionEvent) {
 		captured = append(captured, evt)
@@ -321,6 +328,27 @@ func TestHTTPSInterception(t *testing.T) {
 	}
 	if recorded.StatusCode != 200 {
 		t.Fatalf("expected status 200, got %d", recorded.StatusCode)
+	}
+}
+
+func TestInitCAPersistsAcrossRecorderInstances(t *testing.T) {
+	dir := t.TempDir()
+	certPath := filepath.Join(dir, "ca-cert.pem")
+	keyPath := filepath.Join(dir, "ca-key.pem")
+
+	first := NewWithCAFiles(":0", certPath, keyPath)
+	if err := first.initCA(); err != nil {
+		t.Fatalf("first initCA failed: %v", err)
+	}
+	firstPEM := string(first.GetCACertPEM())
+
+	second := NewWithCAFiles(":0", certPath, keyPath)
+	if err := second.initCA(); err != nil {
+		t.Fatalf("second initCA failed: %v", err)
+	}
+
+	if got := string(second.GetCACertPEM()); got != firstPEM {
+		t.Fatal("expected recorder CA to persist across recorder instances")
 	}
 }
 

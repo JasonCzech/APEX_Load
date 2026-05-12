@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 )
 
 type scriptWrapper struct {
@@ -49,7 +50,8 @@ func validate(s *Script) error {
 		if a.Type == "" {
 			return fmt.Errorf("action[%d] %q: type is required", i, a.Name)
 		}
-		if s.Protocol == "browser" {
+		switch {
+		case s.Protocol == "browser":
 			switch a.Type {
 			case "browser_screenshot":
 				continue
@@ -63,9 +65,36 @@ func validate(s *Script) error {
 				}
 			}
 			continue
+		case strings.HasPrefix(s.Protocol, "jms-"):
+			if err := validateJMSAction(s, a, i); err != nil {
+				return err
+			}
+			continue
 		}
 		if a.Target == "" {
 			return fmt.Errorf("action[%d] %q: target is required", i, a.Name)
+		}
+	}
+	return nil
+}
+
+func validateJMSAction(s *Script, a Action, index int) error {
+	switch a.Type {
+	case "jms_publish", "jms_consume", "jms_request_reply", "jms_ack", "jms_commit", "jms_rollback":
+	default:
+		return fmt.Errorf("action[%d] %q: unsupported JMS action type %q", index, a.Name, a.Type)
+	}
+
+	if a.Type == "jms_ack" || a.Type == "jms_commit" || a.Type == "jms_rollback" {
+		return nil
+	}
+
+	if a.Target == "" && s.Config.JMS.Destination == "" {
+		return fmt.Errorf("action[%d] %q: target or config.jms.destination is required", index, a.Name)
+	}
+	if a.Type == "jms_request_reply" && s.Config.JMS.ReplyTo == "" {
+		if replyTo, _ := a.Params["reply_to"].(string); strings.TrimSpace(replyTo) == "" {
+			return fmt.Errorf("action[%d] %q: config.jms.reply_to or params.reply_to is required", index, a.Name)
 		}
 	}
 	return nil

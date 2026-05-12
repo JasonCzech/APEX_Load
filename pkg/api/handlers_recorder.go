@@ -53,8 +53,9 @@ func (s *Server) handleStartRecording(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusCreated, map[string]any{
-		"session":    session,
-		"proxy_addr": s.recorder.ProxyAddr(),
+		"session":      session,
+		"proxy_addr":   s.recorder.ProxyAddr(),
+		"ca_cert_path": s.recorder.CACertPath(),
 	})
 }
 
@@ -275,7 +276,8 @@ func (s *Server) handleRecorderStatus(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"proxy_addr": s.recorder.ProxyAddr(),
-		"active":     activeInfo,
+		"proxy_addr":   s.recorder.ProxyAddr(),
+		"ca_cert_path": s.recorder.CACertPath(),
+		"active":       activeInfo,
 	})
 }

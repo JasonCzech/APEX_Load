@@ -14,6 +14,13 @@ function resolveApiOrigin(): string {
   if (typeof window !== 'undefined' && window.location.protocol === 'file:') {
     return DEFAULT_LOCAL_API_ORIGIN
   }
+  if (
+    typeof window !== 'undefined' &&
+    ((import.meta as any)?.env?.DEV || window.location.port === '3000') &&
+    (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+  ) {
+    return DEFAULT_LOCAL_API_ORIGIN
+  }
   if (typeof window !== 'undefined' && window.location.origin) {
     return trimTrailingSlash(window.location.origin)
   }

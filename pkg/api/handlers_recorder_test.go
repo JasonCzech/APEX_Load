@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
 
 	"github.com/jasonczech/stormrunner/pkg/recorder"
@@ -125,5 +126,34 @@ func TestHandleExportRecordingHAR(t *testing.T) {
 	}
 	if len(payload.Log.Entries) != 1 {
 		t.Fatalf("entry count = %d, want 1", len(payload.Log.Entries))
+	}
+}
+
+func TestHandleRecorderStatusIncludesPersistentCAPath(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	statusReq := httptest.NewRequest(http.MethodGet, "/api/v1/recorder/status", nil)
+	statusResp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(statusResp, statusReq)
+
+	if statusResp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", statusResp.Code, http.StatusOK, statusResp.Body.String())
+	}
+
+	var payload struct {
+		ProxyAddr  string `json:"proxy_addr"`
+		CACertPath string `json:"ca_cert_path"`
+	}
+	if err := json.Unmarshal(statusResp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if payload.ProxyAddr == "" {
+		t.Fatal("expected proxy address in recorder status")
+	}
+	if payload.CACertPath == "" {
+		t.Fatal("expected persistent CA certificate path in recorder status")
+	}
+	if got, want := payload.CACertPath, filepath.Join("artifacts", "recorder", "ca-cert.pem"); got != want {
+		t.Fatalf("ca_cert_path = %q, want %q", got, want)
 	}
 }

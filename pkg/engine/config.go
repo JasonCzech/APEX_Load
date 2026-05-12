@@ -80,6 +80,50 @@ func buildProtoConfig(script *dsl.Script) map[string]any {
 		cfg["browser_viewport_height"] = float64(browserCfg.Viewport.Height)
 	}
 
+	jmsCfg := script.Config.JMS
+	if jmsCfg.Provider != "" {
+		cfg["jms_provider"] = jmsCfg.Provider
+	}
+	if jmsCfg.BrokerURL != "" {
+		cfg["broker_url"] = jmsCfg.BrokerURL
+	}
+	if jmsCfg.MessageVPN != "" {
+		cfg["jms_message_vpn"] = jmsCfg.MessageVPN
+	}
+	if jmsCfg.Username != "" {
+		cfg["jms_username"] = jmsCfg.Username
+	}
+	if jmsCfg.Password != "" {
+		cfg["jms_password"] = jmsCfg.Password
+	}
+	if jmsCfg.ClientID != "" {
+		cfg["jms_client_id"] = jmsCfg.ClientID
+	}
+	if jmsCfg.Destination != "" {
+		cfg["jms_destination"] = jmsCfg.Destination
+	}
+	if jmsCfg.DestinationType != "" {
+		cfg["jms_destination_type"] = jmsCfg.DestinationType
+	}
+	if jmsCfg.ReplyTo != "" {
+		cfg["jms_reply_to"] = jmsCfg.ReplyTo
+	}
+	if jmsCfg.Acknowledgement != "" {
+		cfg["jms_acknowledgement"] = jmsCfg.Acknowledgement
+	}
+	if jmsCfg.DeliveryMode != "" {
+		cfg["jms_delivery_mode"] = jmsCfg.DeliveryMode
+	}
+	if jmsCfg.TimeoutMs > 0 {
+		cfg["jms_timeout_ms"] = float64(jmsCfg.TimeoutMs)
+	}
+	if len(jmsCfg.Properties) > 0 {
+		cfg["jms_properties"] = jmsCfg.Properties
+	}
+	if jmsCfg.Mock {
+		cfg["jms_mock"] = true
+	}
+
 	// TLS
 	tls := httpCfg.TLS
 	if tls.MinVersion != "" {

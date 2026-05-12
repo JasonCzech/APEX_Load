@@ -465,13 +465,22 @@ Emits JSON messages for all test events:
 ```
 
 **Common config keys:**
-- `protocol`: "http", "jms-solace", "jms-ibm-mq"
+- `protocol`: "http", "browser", "jms-solace"
 - `base_url`: Base URL for relative paths (HTTP)
 - `timeout_seconds`: Request timeout
 - `follow_redirects`: Auto-follow HTTP redirects
 - `ssl_verify`: Validate SSL certificates
 - `headers`: Default headers for all actions
 - `connection_pool_size`: Connection reuse pool size (default: 10)
+
+**JMS Solace config keys:**
+- `config.jms.broker_url`: Solace broker URL, for example `tcps://broker.example.com:55443`
+- `config.jms.message_vpn`: Solace message VPN
+- `config.jms.destination`: Default queue/topic destination
+- `config.jms.destination_type`: `queue` or `topic`
+- `config.jms.reply_to`: Default reply destination for request/reply
+- `config.jms.timeout_ms`: Default consume/request timeout
+- `config.jms.mock`: Use the local in-memory broker for replay. Real Solace broker execution requires the Solace adapter build.
 
 ### Data Sources Section
 

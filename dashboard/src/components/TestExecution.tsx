@@ -1,5 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { ApiError, useApi } from '../hooks/useApi'
+import { useWebSocket } from '../hooks/useWebSocket'
+import { WSMessage } from '../types'
 import {
   CapacityAdvisory,
   TestSummary,
@@ -71,6 +73,7 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
   const [scriptDetails, setScriptDetails] = useState<Record<string, ScenarioScriptDetail>>({})
   const [expandedScenarioScript, setExpandedScenarioScript] = useState<string | null>(null)
   const [scriptDetailsLoading, setScriptDetailsLoading] = useState(false)
+  const [localMetricsHistory, setLocalMetricsHistory] = useState<MetricsHistoryPoint[]>([])
   const [scriptDetailsError, setScriptDetailsError] = useState('')
   const [showScenarioEditor, setShowScenarioEditor] = useState(false)
   const [archiveReport, setArchiveReport] = useState<RunArchiveReport | null>(null)
@@ -87,8 +90,17 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
   const [startCapacityConflict, setStartCapacityConflict] = useState<CapacityAdvisory | null>(null)
   const [startFeedback, setStartFeedback] = useState('')
 
+  const scriptIdsKey = useMemo(() => {
+    if (!test?.groups?.length) return ''
+    const ids = [...new Set(test.groups.map((group) => group.script_id).filter(Boolean))].sort()
+    return ids.join('|')
+  }, [test?.groups])
+
   useEffect(() => {
     const load = async () => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
+        return
+      }
       try {
         const data = await api.getTest(testId)
         setTest(data)
@@ -100,20 +112,73 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
         setError(e.message)
       }
     }
+
     load()
     const interval = setInterval(load, 2000)
-    return () => clearInterval(interval)
+
+    const handleVisibilityChange = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        load()
+      }
+    }
+
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleVisibilityChange)
+    }
+
+    return () => {
+      clearInterval(interval)
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', handleVisibilityChange)
+      }
+    }
   }, [api, testId])
 
+  // Set up dedicated WebSocket for this test's metrics stream (1-second refresh rate)
+  const handleTestWSMessage = useCallback((msg: WSMessage) => {
+    if (msg.type === 'metrics_update' && msg.data && msg.timestamp) {
+      const point: MetricsHistoryPoint = {
+        time: new Date(msg.timestamp).toLocaleTimeString(),
+        vusers: msg.data.active_vusers,
+        tps: Math.round(msg.data.tps * 10) / 10,
+        avgMs: Math.round(msg.data.avg_response_ms * 10) / 10,
+        errorPct: Math.round(msg.data.error_pct * 100) / 100,
+        p50: Math.round(msg.data.p50_ms * 10) / 10,
+        p90: Math.round(msg.data.p90_ms * 10) / 10,
+        p99: Math.round(msg.data.p99_ms * 10) / 10,
+      }
+      if (msg.data.groups) {
+        for (const [name, gm] of Object.entries(msg.data.groups)) {
+          point[`${name}_tps`] = Math.round(gm.tps * 10) / 10
+          point[`${name}_avgMs`] = Math.round(gm.avg_response_ms * 10) / 10
+          point[`${name}_vusers`] = gm.vusers
+        }
+      }
+      if (msg.data.resources) {
+        const r = msg.data.resources
+        point.cpuProcess = Math.round(r.cpu_process_pct * 10) / 10
+        point.cpuFree = Math.round(r.cpu_free_pct * 10) / 10
+        point.memProcess = Math.round(r.mem_process_mb * 10) / 10
+        point.memFree = Math.round(r.mem_free_mb * 10) / 10
+        point.netSent = Math.round(r.net_sent_kbps * 10) / 10
+        point.netRecv = Math.round(r.net_recv_kbps * 10) / 10
+        point.diskRead = Math.round(r.disk_read_kbps * 10) / 10
+        point.diskWrite = Math.round(r.disk_write_kbps * 10) / 10
+      }
+      setLocalMetricsHistory((prev) => [...prev, point].slice(-300))
+    }
+  }, [])
+
+  useWebSocket({ testId, onMessage: handleTestWSMessage })
+
   useEffect(() => {
-    if (!test?.groups?.length) {
+    if (!scriptIdsKey) {
       setScriptDetails({})
       setScriptDetailsError('')
       return
     }
 
-    const uniqueScriptIds = [...new Set(test.groups.map((group) => group.script_id).filter(Boolean))]
-    if (uniqueScriptIds.length === 0) return
+    const scriptIds = scriptIdsKey.split('|').filter(Boolean)
 
     let cancelled = false
 
@@ -121,7 +186,7 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
       setScriptDetailsLoading(true)
       setScriptDetailsError('')
       try {
-        const results = await Promise.all(uniqueScriptIds.map(async (scriptId) => {
+        const results = await Promise.all(scriptIds.map(async (scriptId) => {
           const detail = await api.getScript(scriptId)
           return [scriptId, detail as ScenarioScriptDetail] as const
         }))
@@ -140,7 +205,7 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
     return () => {
       cancelled = true
     }
-  }, [api, test])
+  }, [api, scriptIdsKey])
 
   useEffect(() => {
     if (!test?.archive || !isTerminalStatus(test.status)) {
@@ -302,13 +367,19 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
   const chartData = useMemo(() => {
     let combined: MetricsHistoryPoint[] = []
 
-    if (history.length > 0) {
-      // If we have local WS history, it's usually the most fresh
-      // But we might want to prepend backend history if WS history is short
-      if (mappedBackendHistory.length > 0 && history.length < 10) {
-         combined = [...mappedBackendHistory, ...history]
+    if (localMetricsHistory.length > 0) {
+      // Prioritize local WebSocket metrics (real-time, 1-second updates)
+      if (mappedBackendHistory.length > 0 && localMetricsHistory.length < 10) {
+        combined = [...mappedBackendHistory, ...localMetricsHistory]
       } else {
-         combined = [...history]
+        combined = [...localMetricsHistory]
+      }
+    } else if (history.length > 0) {
+      // Fallback to prop history if no local WebSocket connection
+      if (mappedBackendHistory.length > 0 && history.length < 10) {
+        combined = [...mappedBackendHistory, ...history]
+      } else {
+        combined = [...history]
       }
     } else {
       combined = mappedBackendHistory
@@ -344,7 +415,7 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
     }
 
     return deduped
-  }, [history, test?.history, test?.status])
+  }, [localMetricsHistory, history, test?.history, test?.status])
 
   const filteredData = useMemo(() => {
     if (timeRange === 'custom' && zoomRange) {

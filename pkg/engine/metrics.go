@@ -9,13 +9,13 @@ import (
 )
 
 type MetricsCollector struct {
-	ch          chan *protocol.Result
-	snapshots   []MetricsSnapshot
-	snapshotsMu sync.RWMutex
-	current     *liveCounters
-	resCollector *ResourceCollector
+	ch                chan *protocol.Result
+	snapshots         []MetricsSnapshot
+	snapshotsMu       sync.RWMutex
+	current           *liveCounters
+	resCollector      *ResourceCollector
 	emitIdleSnapshots bool
-	done        chan struct{}
+	done              chan struct{}
 }
 
 type liveCounters struct {
@@ -65,17 +65,17 @@ type GroupMetrics struct {
 }
 
 type ActionMetrics struct {
-	Name         string
-	Count        int64
-	Errors       int64
-	AvgDuration  time.Duration
-	MinDuration  time.Duration
-	MaxDuration  time.Duration
-	P50          time.Duration
-	P90          time.Duration
-	P99          time.Duration
-	BytesSent    int64
-	BytesRecv    int64
+	Name        string
+	Count       int64
+	Errors      int64
+	AvgDuration time.Duration
+	MinDuration time.Duration
+	MaxDuration time.Duration
+	P50         time.Duration
+	P90         time.Duration
+	P99         time.Duration
+	BytesSent   int64
+	BytesRecv   int64
 }
 
 func NewMetricsCollector(bufferSize int) *MetricsCollector {
@@ -83,10 +83,10 @@ func NewMetricsCollector(bufferSize int) *MetricsCollector {
 		bufferSize = 10000
 	}
 	return &MetricsCollector{
-		ch:      make(chan *protocol.Result, bufferSize),
-		current: &liveCounters{},
+		ch:           make(chan *protocol.Result, bufferSize),
+		current:      &liveCounters{},
 		resCollector: NewResourceCollector(),
-		done:    make(chan struct{}),
+		done:         make(chan struct{}),
 	}
 }
 

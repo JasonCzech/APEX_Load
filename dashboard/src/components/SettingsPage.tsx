@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type DragEvent } from 'react'
 import { useApi } from '../hooks/useApi'
 import { DashboardSystemSettings, HealthResponse } from '../types'
 
@@ -26,6 +26,21 @@ const DEFAULT_SETTINGS: DashboardSystemSettings = {
     },
   },
 }
+
+const SETTINGS_SECTIONS = [
+  { id: 'general', title: 'General' },
+  { id: 'thresholds', title: 'Performance Thresholds' },
+  { id: 'capacity', title: 'Capacity Planning' },
+  { id: 'integrations', title: 'Integrations' },
+] as const
+
+const GENERATOR_PRESETS = [
+  { id: 'local', label: 'Local', cpu_cores: 2, memory_mb: 4096, network_mbps: 250, max_vusers: 1000 },
+  { id: 'standard', label: 'Standard Pod', cpu_cores: 4, memory_mb: 8192, network_mbps: 1000, max_vusers: 10000 },
+  { id: 'large', label: 'Large Pod', cpu_cores: 8, memory_mb: 16384, network_mbps: 2500, max_vusers: 20000 },
+] as const
+
+type SettingsSectionId = typeof SETTINGS_SECTIONS[number]['id']
 
 function parseOptionalNumber(value: string): number | undefined {
   const trimmed = value.trim()
@@ -77,10 +92,16 @@ function validateSettings(settings: DashboardSystemSettings): string[] {
 export default function SettingsPage() {
   const api = useApi()
   const [settings, setSettings] = useState<DashboardSystemSettings>(DEFAULT_SETTINGS)
+  const [savedSettings, setSavedSettings] = useState<DashboardSystemSettings>(DEFAULT_SETTINGS)
   const [health, setHealth] = useState<HealthResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [saveMessage, setSaveMessage] = useState('')
   const [requestError, setRequestError] = useState('')
+  const [customizingSections, setCustomizingSections] = useState(false)
+  const [draggedSectionId, setDraggedSectionId] = useState<SettingsSectionId | null>(null)
+  const [sectionOrder, setSectionOrder] = useState<SettingsSectionId[]>(() => readSettingsSectionArray('stormrunner.settings.sectionOrder'))
+  const [hiddenSectionIds, setHiddenSectionIds] = useState<SettingsSectionId[]>(() => readSettingsSectionArray('stormrunner.settings.hiddenSections'))
+  const [collapsedSectionIds, setCollapsedSectionIds] = useState<SettingsSectionId[]>(() => readSettingsSectionArray('stormrunner.settings.collapsedSections'))
 
   useEffect(() => {
     let cancelled = false
@@ -89,7 +110,10 @@ export default function SettingsPage() {
       setRequestError('')
       try {
         const response = await api.getSystemSettings()
-        if (!cancelled) setSettings(response)
+        if (!cancelled) {
+          setSettings(response)
+          setSavedSettings(response)
+        }
       } catch (error: any) {
         if (!cancelled) {
           setRequestError(error.message || 'Unable to load system settings')
@@ -108,6 +132,9 @@ export default function SettingsPage() {
   useEffect(() => {
     let cancelled = false
     const loadHealth = async () => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
+        return
+      }
       try {
         const response = await api.getHealth()
         if (!cancelled) setHealth(response)
@@ -115,22 +142,57 @@ export default function SettingsPage() {
         if (!cancelled) setHealth(null)
       }
     }
+
     loadHealth()
     const interval = setInterval(loadHealth, 5000)
+
+    const handleVisibilityChange = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        loadHealth()
+      }
+    }
+
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleVisibilityChange)
+    }
+
     return () => {
       cancelled = true
       clearInterval(interval)
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', handleVisibilityChange)
+      }
     }
   }, [api])
 
   const validationErrors = useMemo(() => validateSettings(settings), [settings])
-  const canSave = validationErrors.length === 0 && !loading
+  const hasUnsavedChanges = useMemo(() => JSON.stringify(settings) !== JSON.stringify(savedSettings), [settings, savedSettings])
+  const canSave = validationErrors.length === 0 && !loading && hasUnsavedChanges
   const availabilitySnapshot = health?.capacity_availability
   const availabilitySourceLabel = availabilitySnapshot?.source === 'configured_plus_live'
     ? availabilitySnapshot.live_available_generators !== undefined
       ? 'Live snapshot + configured ceiling'
       : 'Configured ceiling only'
     : 'Configured inventory only'
+
+  useEffect(() => {
+    setSectionOrder(prev => mergeSettingsOrder(prev))
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.localStorage.setItem('stormrunner.settings.sectionOrder', JSON.stringify(sectionOrder))
+  }, [sectionOrder])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.localStorage.setItem('stormrunner.settings.hiddenSections', JSON.stringify(hiddenSectionIds))
+  }, [hiddenSectionIds])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.localStorage.setItem('stormrunner.settings.collapsedSections', JSON.stringify(collapsedSectionIds))
+  }, [collapsedSectionIds])
 
   const updateGeneral = (key: keyof DashboardSystemSettings['general'], value: string) => {
     setSettings((prev) => ({
@@ -206,6 +268,7 @@ export default function SettingsPage() {
     try {
       const response = await api.updateSystemSettings(settings)
       setSettings(response)
+      setSavedSettings(response)
       setSaveMessage('Settings saved.')
       setRequestError('')
     } catch (error: any) {
@@ -215,9 +278,11 @@ export default function SettingsPage() {
   }
 
   const resetSettings = async () => {
+    if (!window.confirm('Reset all system settings to defaults?')) return
     try {
       const response = await api.updateSystemSettings(DEFAULT_SETTINGS)
       setSettings(response)
+      setSavedSettings(response)
       setSaveMessage('Settings reset to defaults.')
       setRequestError('')
     } catch (error: any) {
@@ -225,6 +290,94 @@ export default function SettingsPage() {
       setSaveMessage('')
     }
   }
+
+  const discardChanges = () => {
+    setSettings(savedSettings)
+    setSaveMessage('')
+    setRequestError('')
+  }
+
+  const applyGeneratorPreset = (preset: typeof GENERATOR_PRESETS[number]) => {
+    setSettings(prev => ({
+      ...prev,
+      capacity_planning: {
+        ...prev.capacity_planning,
+        generator: {
+          cpu_cores: preset.cpu_cores,
+          memory_mb: preset.memory_mb,
+          network_mbps: preset.network_mbps,
+          max_vusers: preset.max_vusers,
+        },
+      },
+    }))
+    setSaveMessage('')
+    setRequestError('')
+  }
+
+  const visibleSections = SETTINGS_SECTIONS.filter(section => !hiddenSectionIds.includes(section.id))
+  const hiddenSections = SETTINGS_SECTIONS.filter(section => hiddenSectionIds.includes(section.id))
+  const orderedSectionIds = mergeSettingsOrder(sectionOrder)
+  const getSectionOrder = (id: SettingsSectionId) => orderedSectionIds.indexOf(id)
+  const sectionClass = (id: SettingsSectionId) =>
+    `settings-card ${customizingSections ? 'editable' : ''} ${collapsedSectionIds.includes(id) ? 'collapsed' : ''} ${draggedSectionId === id ? 'dragging' : ''}`
+  const scrollToSection = (id: SettingsSectionId) => {
+    document.getElementById(`settings-section-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
+  const toggleHiddenSection = (id: SettingsSectionId) => {
+    setHiddenSectionIds(prev => prev.includes(id) ? prev.filter(sectionId => sectionId !== id) : [...prev, id])
+  }
+
+  const toggleCollapsedSection = (id: SettingsSectionId) => {
+    setCollapsedSectionIds(prev => prev.includes(id) ? prev.filter(sectionId => sectionId !== id) : [...prev, id])
+  }
+
+  const resetSectionLayout = () => {
+    setSectionOrder(SETTINGS_SECTIONS.map(section => section.id))
+    setHiddenSectionIds([])
+    setCollapsedSectionIds([])
+  }
+
+  const handleSectionDragStart = (event: DragEvent<HTMLDivElement>, id: SettingsSectionId) => {
+    if (!customizingSections) return
+    setDraggedSectionId(id)
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', id)
+  }
+
+  const handleSectionDragOver = (event: DragEvent<HTMLDivElement>, id: SettingsSectionId) => {
+    if (!customizingSections || !draggedSectionId || draggedSectionId === id) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'move'
+  }
+
+  const handleSectionDrop = (event: DragEvent<HTMLDivElement>, id: SettingsSectionId) => {
+    if (!customizingSections) return
+    event.preventDefault()
+    const sourceId = (event.dataTransfer.getData('text/plain') || draggedSectionId) as SettingsSectionId | null
+    if (!sourceId) return
+    setSectionOrder(prev => moveSettingsSection(mergeSettingsOrder(prev), sourceId, id))
+    setDraggedSectionId(null)
+  }
+
+  const renderSettingsHeader = (id: SettingsSectionId, title: string) => (
+    <h3 className="settings-card-title">
+      <span className="settings-title-main">
+        {customizingSections && <span className="settings-drag-handle" title="Drag to reorder">::</span>}
+        {title}
+      </span>
+      <span className="settings-card-controls">
+        <button className="btn-icon settings-collapse-btn" type="button" onClick={() => toggleCollapsedSection(id)}>
+          {collapsedSectionIds.includes(id) ? 'Show' : 'Hide Body'}
+        </button>
+        {customizingSections && (
+          <button className="btn-icon settings-collapse-btn" type="button" onClick={() => toggleHiddenSection(id)}>
+            Hide
+          </button>
+        )}
+      </span>
+    </h3>
+  )
 
   return (
     <div className="page settings-page">
@@ -234,13 +387,53 @@ export default function SettingsPage() {
           <p className="page-subtitle">Configuration, thresholds, and integrations</p>
         </div>
         <div className="settings-actions">
+          {customizingSections && (
+            <button className="btn btn-secondary" onClick={resetSectionLayout}>
+              Reset Layout
+            </button>
+          )}
+          <button className={`btn ${customizingSections ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setCustomizingSections(value => !value)}>
+            {customizingSections ? 'Done' : 'Customize Layout'}
+          </button>
+          {hasUnsavedChanges && (
+            <button className="btn btn-secondary" onClick={discardChanges}>
+              Discard Changes
+            </button>
+          )}
           <button className="btn btn-secondary" onClick={resetSettings}>
-            Reset
+            Reset All Settings
           </button>
           <button className="btn btn-primary" disabled={!canSave} onClick={saveSettings}>
-            Save
+            {hasUnsavedChanges ? 'Save Changes' : 'Saved'}
           </button>
         </div>
+      </div>
+
+      <div className="settings-overview">
+        <div>
+          <span>Save State</span>
+          <strong>{hasUnsavedChanges ? 'Unsaved changes' : 'Up to date'}</strong>
+        </div>
+        <div>
+          <span>Concurrency</span>
+          <strong>{settings.general.max_concurrent_tests} tests</strong>
+        </div>
+        <div>
+          <span>Generator Profile</span>
+          <strong>{settings.capacity_planning.generator.cpu_cores} CPU / {settings.capacity_planning.generator.memory_mb} MB</strong>
+        </div>
+        <div>
+          <span>Capacity Source</span>
+          <strong>{availabilitySourceLabel}</strong>
+        </div>
+      </div>
+
+      <div className="settings-quick-nav">
+        {visibleSections.map(section => (
+          <button key={section.id} type="button" className="btn btn-secondary" onClick={() => scrollToSection(section.id)}>
+            {section.title}
+          </button>
+        ))}
       </div>
 
       {loading && <p className="settings-notice">Loading settings...</p>}
@@ -254,9 +447,29 @@ export default function SettingsPage() {
         </div>
       )}
 
+      {customizingSections && hiddenSections.length > 0 && (
+        <div className="hidden-chart-list">
+          {hiddenSections.map(section => (
+            <button key={section.id} className="hidden-chart-pill" type="button" onClick={() => toggleHiddenSection(section.id)}>
+              Show {section.title}
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="settings-grid">
-        <div className="settings-card">
-          <h3>General</h3>
+        <div
+          id="settings-section-general"
+          className={sectionClass('general')}
+          hidden={!visibleSections.some(section => section.id === 'general')}
+          draggable={customizingSections}
+          onDragStart={event => handleSectionDragStart(event, 'general')}
+          onDragOver={event => handleSectionDragOver(event, 'general')}
+          onDrop={event => handleSectionDrop(event, 'general')}
+          onDragEnd={() => setDraggedSectionId(null)}
+          style={{ order: getSectionOrder('general') }}
+        >
+          {renderSettingsHeader('general', 'General')}
           <div className="settings-group">
             <div className="setting-row">
               <div className="setting-info">
@@ -301,8 +514,18 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        <div className="settings-card">
-          <h3>Performance Thresholds</h3>
+        <div
+          id="settings-section-thresholds"
+          className={sectionClass('thresholds')}
+          hidden={!visibleSections.some(section => section.id === 'thresholds')}
+          draggable={customizingSections}
+          onDragStart={event => handleSectionDragStart(event, 'thresholds')}
+          onDragOver={event => handleSectionDragOver(event, 'thresholds')}
+          onDrop={event => handleSectionDrop(event, 'thresholds')}
+          onDragEnd={() => setDraggedSectionId(null)}
+          style={{ order: getSectionOrder('thresholds') }}
+        >
+          {renderSettingsHeader('thresholds', 'Performance Thresholds')}
           <div className="settings-group">
             <div className="setting-row">
               <div className="setting-info">
@@ -338,8 +561,18 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        <div className="settings-card">
-          <h3>Capacity Planning</h3>
+        <div
+          id="settings-section-capacity"
+          className={sectionClass('capacity')}
+          hidden={!visibleSections.some(section => section.id === 'capacity')}
+          draggable={customizingSections}
+          onDragStart={event => handleSectionDragStart(event, 'capacity')}
+          onDragOver={event => handleSectionDragOver(event, 'capacity')}
+          onDrop={event => handleSectionDrop(event, 'capacity')}
+          onDragEnd={() => setDraggedSectionId(null)}
+          style={{ order: getSectionOrder('capacity') }}
+        >
+          {renderSettingsHeader('capacity', 'Capacity Planning')}
           <div className="settings-group">
             <div className="settings-status-block">
               <div className="settings-status-header">
@@ -376,6 +609,19 @@ export default function SettingsPage() {
                   ))}
                 </div>
               )}
+            </div>
+            <div className="settings-subsection">
+              <div>
+                <span className="setting-label">Generator Presets</span>
+                <span className="setting-desc">Apply common sizing defaults, then tune individual fields below.</span>
+              </div>
+              <div className="settings-preset-row">
+                {GENERATOR_PRESETS.map(preset => (
+                  <button key={preset.id} type="button" className="btn btn-secondary" onClick={() => applyGeneratorPreset(preset)}>
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
             </div>
             <div className="setting-row">
               <div className="setting-info">
@@ -479,8 +725,18 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        <div className="settings-card">
-          <h3>Integrations</h3>
+        <div
+          id="settings-section-integrations"
+          className={sectionClass('integrations')}
+          hidden={!visibleSections.some(section => section.id === 'integrations')}
+          draggable={customizingSections}
+          onDragStart={event => handleSectionDragStart(event, 'integrations')}
+          onDragOver={event => handleSectionDragOver(event, 'integrations')}
+          onDrop={event => handleSectionDrop(event, 'integrations')}
+          onDragEnd={() => setDraggedSectionId(null)}
+          style={{ order: getSectionOrder('integrations') }}
+        >
+          {renderSettingsHeader('integrations', 'Integrations')}
           <div className="settings-group">
             <div className="setting-row">
               <div className="setting-info">
@@ -508,4 +764,33 @@ export default function SettingsPage() {
       </div>
     </div>
   )
+}
+
+function readSettingsSectionArray(key: string): SettingsSectionId[] {
+  if (typeof window === 'undefined') return []
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(key) || '[]')
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter((value): value is SettingsSectionId =>
+      SETTINGS_SECTIONS.some(section => section.id === value),
+    )
+  } catch {
+    return []
+  }
+}
+
+function mergeSettingsOrder(order: SettingsSectionId[]) {
+  const ids = SETTINGS_SECTIONS.map(section => section.id)
+  const retained = order.filter(id => ids.includes(id))
+  const added = ids.filter(id => !retained.includes(id))
+  return [...retained, ...added]
+}
+
+function moveSettingsSection(ids: SettingsSectionId[], draggedId: SettingsSectionId, targetId: SettingsSectionId) {
+  if (draggedId === targetId) return ids
+  const next = ids.filter(id => id !== draggedId)
+  const targetIndex = next.indexOf(targetId)
+  if (targetIndex === -1) return ids
+  next.splice(targetIndex, 0, draggedId)
+  return next
 }

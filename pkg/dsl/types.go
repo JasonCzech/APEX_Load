@@ -37,9 +37,28 @@ type ScriptConfig struct {
 	Pacing        PacingConfig        `json:"pacing,omitempty"`
 	HTTP          HTTPConfig          `json:"http,omitempty"`
 	Browser       BrowserConfig       `json:"browser,omitempty"`
+	JMS           JMSConfig           `json:"jms,omitempty"`
 	ErrorHandling ErrorHandlingConfig `json:"error_handling,omitempty"`
 	RunLogic      RunLogicConfig      `json:"run_logic,omitempty"`
 	Log           LogConfig           `json:"log,omitempty"`
+}
+
+// JMSConfig holds broker, destination, and reliability settings for JMS scripts.
+type JMSConfig struct {
+	Provider        string            `json:"provider,omitempty"`         // "solace"
+	BrokerURL       string            `json:"broker_url,omitempty"`       // e.g. tcp://broker:55555
+	MessageVPN      string            `json:"message_vpn,omitempty"`      // Solace message VPN
+	Username        string            `json:"username,omitempty"`         // broker username
+	Password        string            `json:"password,omitempty"`         // broker password
+	ClientID        string            `json:"client_id,omitempty"`        // durable client identifier
+	Destination     string            `json:"destination,omitempty"`      // default queue/topic
+	DestinationType string            `json:"destination_type,omitempty"` // "queue" or "topic"
+	ReplyTo         string            `json:"reply_to,omitempty"`         // default reply destination
+	Acknowledgement string            `json:"acknowledgement,omitempty"`  // "auto", "client", "transacted"
+	DeliveryMode    string            `json:"delivery_mode,omitempty"`    // "persistent", "non_persistent"
+	TimeoutMs       int               `json:"timeout_ms,omitempty"`       // default consume/request timeout
+	Properties      map[string]string `json:"properties,omitempty"`       // provider-specific connection properties
+	Mock            bool              `json:"mock,omitempty"`             // use in-memory broker for local shakeout
 }
 
 type BrowserConfig struct {

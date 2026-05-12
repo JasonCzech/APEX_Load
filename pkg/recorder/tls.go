@@ -8,12 +8,15 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"math/big"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -29,6 +32,12 @@ func (r *Recorder) initCA() error {
 }
 
 func (r *Recorder) generateCA() error {
+	if err := r.loadPersistentCA(); err == nil {
+		return nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		return fmt.Errorf("generating CA key: %w", err)
@@ -67,9 +76,116 @@ func (r *Recorder) generateCA() error {
 	r.caCert = caCert
 	r.caKey = key
 	r.caCertPEM = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
+	if err := r.savePersistentCA(certDER, key); err != nil {
+		return err
+	}
 
 	slog.Info("generated recording proxy CA certificate")
 	return nil
+}
+
+func (r *Recorder) loadPersistentCA() error {
+	if strings.TrimSpace(r.caCertPath) == "" || strings.TrimSpace(r.caKeyPath) == "" {
+		return os.ErrNotExist
+	}
+
+	certPEM, err := os.ReadFile(r.caCertPath)
+	if err != nil {
+		return err
+	}
+	keyPEM, err := os.ReadFile(r.caKeyPath)
+	if err != nil {
+		return err
+	}
+
+	certBlock, _ := pem.Decode(certPEM)
+	if certBlock == nil || certBlock.Type != "CERTIFICATE" {
+		return fmt.Errorf("parse persisted CA certificate %q: invalid PEM", r.caCertPath)
+	}
+	cert, err := x509.ParseCertificate(certBlock.Bytes)
+	if err != nil {
+		return fmt.Errorf("parse persisted CA certificate %q: %w", r.caCertPath, err)
+	}
+	if !cert.IsCA {
+		return fmt.Errorf("persisted CA certificate %q is not a certificate authority", r.caCertPath)
+	}
+
+	keyBlock, _ := pem.Decode(keyPEM)
+	if keyBlock == nil {
+		return fmt.Errorf("parse persisted CA key %q: invalid PEM", r.caKeyPath)
+	}
+
+	var key *rsa.PrivateKey
+	switch keyBlock.Type {
+	case "RSA PRIVATE KEY":
+		key, err = x509.ParsePKCS1PrivateKey(keyBlock.Bytes)
+	case "PRIVATE KEY":
+		var parsed any
+		parsed, err = x509.ParsePKCS8PrivateKey(keyBlock.Bytes)
+		if err == nil {
+			var ok bool
+			key, ok = parsed.(*rsa.PrivateKey)
+			if !ok {
+				return fmt.Errorf("persisted CA key %q is not an RSA private key", r.caKeyPath)
+			}
+		}
+	default:
+		return fmt.Errorf("parse persisted CA key %q: unsupported PEM type %q", r.caKeyPath, keyBlock.Type)
+	}
+	if err != nil {
+		return fmt.Errorf("parse persisted CA key %q: %w", r.caKeyPath, err)
+	}
+
+	r.caCert = cert
+	r.caKey = key
+	r.caCertPEM = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: cert.Raw})
+	slog.Info("loaded recording proxy CA certificate", "path", r.caCertPath)
+	return nil
+}
+
+func (r *Recorder) savePersistentCA(certDER []byte, key *rsa.PrivateKey) error {
+	if strings.TrimSpace(r.caCertPath) == "" || strings.TrimSpace(r.caKeyPath) == "" {
+		return nil
+	}
+
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})
+
+	for _, path := range []string{r.caCertPath, r.caKeyPath} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return fmt.Errorf("create recorder CA directory: %w", err)
+		}
+	}
+	if err := writeFileAtomic(r.caKeyPath, keyPEM, 0o600); err != nil {
+		return fmt.Errorf("persist recorder CA key: %w", err)
+	}
+	if err := writeFileAtomic(r.caCertPath, certPEM, 0o644); err != nil {
+		return fmt.Errorf("persist recorder CA certificate: %w", err)
+	}
+	return nil
+}
+
+func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
+	dir := filepath.Dir(path)
+	file, err := os.CreateTemp(dir, filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return err
+	}
+	tmpPath := file.Name()
+	defer os.Remove(tmpPath)
+
+	if err := file.Chmod(perm); err != nil {
+		file.Close()
+		return err
+	}
+	if _, err := file.Write(data); err != nil {
+		file.Close()
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpPath, path)
 }
 
 // GetCACertPEM returns the PEM-encoded CA certificate for client installation.

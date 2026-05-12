@@ -545,6 +545,31 @@ func TestPublishLiveMetricsUpdatesStatePersistsHistoryAndBroadcasts(t *testing.T
 	}
 }
 
+func TestBuildLiveMetricsForBroadcastOverridesTimestamp(t *testing.T) {
+	snapshotTime := time.Date(2026, time.May, 10, 10, 15, 0, 0, time.UTC)
+	broadcastTime := snapshotTime.Add(4 * time.Second)
+
+	live := buildLiveMetricsForBroadcast(engine.MetricsSnapshot{
+		Timestamp:    snapshotTime,
+		ActiveVUsers: 7,
+		TPS:          3.5,
+		AvgDuration:  125 * time.Millisecond,
+	}, map[string]int{"buyers": 7}, broadcastTime)
+
+	if live.Timestamp != broadcastTime {
+		t.Fatalf("expected broadcast timestamp %s, got %s", broadcastTime, live.Timestamp)
+	}
+	if live.ActiveVUsers != 7 {
+		t.Fatalf("active vusers = %d, want 7", live.ActiveVUsers)
+	}
+	if live.TPS != 3.5 {
+		t.Fatalf("TPS = %v, want 3.5", live.TPS)
+	}
+	if live.AvgResponseMs != 125 {
+		t.Fatalf("avg response ms = %v, want 125", live.AvgResponseMs)
+	}
+}
+
 func TestApplyGoalControllerUpdateScalesGroupsAndUpdatesStatus(t *testing.T) {
 	timestamp := time.Date(2026, time.May, 10, 11, 0, 0, 0, time.UTC)
 	testRun := &ManagedTest{

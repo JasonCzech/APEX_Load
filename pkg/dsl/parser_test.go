@@ -249,6 +249,59 @@ func TestParse_BrowserActionsAllowSelectorWaitAndScreenshot(t *testing.T) {
 	}
 }
 
+func TestParse_JMSConfigAndActions(t *testing.T) {
+	input := `{
+		"script": {
+			"name": "jms-flow",
+			"protocol": "jms-solace",
+			"config": {
+				"jms": {
+					"provider": "solace",
+					"broker_url": "tcp://broker:55555",
+					"destination": "orders.in",
+					"reply_to": "orders.reply",
+					"timeout_ms": 2500,
+					"mock": true
+				}
+			},
+			"actions": [
+				{"name": "publish", "type": "jms_publish", "body": "{\"orderId\":\"A-100\"}"},
+				{"name": "request", "type": "jms_request_reply", "body": "{\"ping\":true}"}
+			]
+		}
+	}`
+
+	script, err := Parse([]byte(input))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if script.Config.JMS.BrokerURL != "tcp://broker:55555" {
+		t.Fatalf("broker_url = %q, want tcp://broker:55555", script.Config.JMS.BrokerURL)
+	}
+	if script.Config.JMS.TimeoutMs != 2500 {
+		t.Fatalf("timeout_ms = %d, want 2500", script.Config.JMS.TimeoutMs)
+	}
+	if !script.Config.JMS.Mock {
+		t.Fatal("mock = false, want true")
+	}
+}
+
+func TestParse_JMSRequiresDestination(t *testing.T) {
+	input := `{"script":{"name":"jms","protocol":"jms-solace","actions":[{"name":"consume","type":"jms_consume"}]}}`
+	_, err := Parse([]byte(input))
+	if err == nil {
+		t.Fatal("expected destination validation error")
+	}
+}
+
+func TestParse_JMSRequestReplyRequiresReplyDestination(t *testing.T) {
+	input := `{"script":{"name":"jms","protocol":"jms-solace","config":{"jms":{"destination":"orders.in"}},"actions":[{"name":"request","type":"jms_request_reply","body":"{}"}]}}`
+	_, err := Parse([]byte(input))
+	if err == nil {
+		t.Fatal("expected reply_to validation error")
+	}
+}
+
 func TestParseFile(t *testing.T) {
 	content := `{"script": {"name": "file-test", "protocol": "http", "actions": [{"name": "a", "type": "request", "target": "/"}]}}`
 	dir := t.TempDir()

@@ -42,6 +42,76 @@ function SortIndicator({ active, direction }: { active: boolean, direction: 'asc
   )
 }
 
+function createApiDraft() {
+  return {
+    name: '',
+    version: '1.0.0',
+    protocol: 'http',
+    config: {
+      base_url: '',
+      think_time: { type: 'fixed', mean_ms: 1000 },
+      pacing: { type: 'none' },
+      run_logic: { iterations: 0, auto_transactions: 'none' },
+      error_handling: { continue_on_error: false },
+      log: { level: 'standard' },
+    },
+    actions: [],
+  }
+}
+
+function createWebDraft() {
+  return {
+    name: '',
+    version: '1.0.0',
+    protocol: 'browser',
+    config: {
+      base_url: '',
+      think_time: { type: 'fixed', mean_ms: 1000 },
+      pacing: { type: 'none' },
+      run_logic: { iterations: 0, auto_transactions: 'none' },
+      error_handling: { continue_on_error: false },
+      log: { level: 'standard' },
+      browser: {
+        engine: 'chromium',
+        headless: true,
+        capture_screenshots: 'per_action',
+        viewport: { width: 1440, height: 900 },
+      },
+    },
+    actions: [],
+  }
+}
+
+function createJmsDraft() {
+  return {
+    name: '',
+    version: '1.0.0',
+    protocol: 'jms-solace',
+    config: {
+      base_url: '',
+      think_time: { type: 'fixed', mean_ms: 1000 },
+      pacing: { type: 'none' },
+      run_logic: { iterations: 0, auto_transactions: 'none' },
+      error_handling: { continue_on_error: false },
+      log: { level: 'standard' },
+      jms: {
+        provider: 'solace',
+        broker_url: '',
+        message_vpn: '',
+        client_id: '',
+        destination: '',
+        destination_type: 'queue',
+        reply_to: '',
+        acknowledgement: 'auto',
+        delivery_mode: 'persistent',
+        timeout_ms: 5000,
+        mock: true,
+      },
+    },
+    actions: [],
+  }
+}
+
 export default function ScriptsPage({ initialMode = 'list', initialEditId, onSelectScenario }: Props) {
   const api = useApi()
   const [scripts, setScripts] = useState<StoredScript[]>([])
@@ -167,6 +237,9 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
   const handleSaved = () => { refresh(); setSubView('list'); setEditingId(null); setEditingScript(null); setDraftScript(null) }
   const handleImported = () => { refresh(); setSubView('list') }
   const handleSampleEdit = (script: any) => { setDraftScript(script); setEditingId(null); setEditingScript(null); setSubView('create') }
+  const startApiScript = () => { setDraftScript(createApiDraft()); setEditingId(null); setEditingScript(null); setSubView('create') }
+  const startWebScript = () => { setDraftScript(createWebDraft()); setEditingId(null); setEditingScript(null); setSubView('create') }
+  const startJmsScript = () => { setDraftScript(createJmsDraft()); setEditingId(null); setEditingScript(null); setSubView('create') }
 
   if (subView === 'create') {
     return <div className="page"><ScriptEditor initialScript={draftScript} onSave={handleSaved} onClose={() => setSubView('list')} /></div>
@@ -208,11 +281,76 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
           </div>
           <button className="btn btn-secondary" onClick={() => setSubView('list')}>Back to Library</button>
         </div>
-        <div className="script-create-grid">
-          <button className="script-create-option" onClick={() => setSubView('create')}><h3>Visual Editor</h3><p>Build a script from scratch.</p></button>
-          <button className="script-create-option" onClick={() => setSubView('recorder')}><h3>Script Recorder</h3><p>Record browser traffic into a reusable script.</p></button>
-          <button className="script-create-option" onClick={() => setSubView('import')}><h3>Import LoadRunner</h3><p>Convert a LoadRunner ZIP.</p></button>
-          <button className="script-create-option" onClick={() => setSubView('sample')}><h3>Build From Sample</h3><p>Generate from sample traffic.</p></button>
+        <div className="script-create-lanes">
+          <section className="script-create-lane api">
+            <div className="script-create-lane-header">
+              <span className="script-create-kicker">API level</span>
+              <h3>HTTP/API Scripts</h3>
+              <p>Exercise service endpoints directly with HTTP methods, headers, payloads, extractors, assertions, and parameter data.</p>
+            </div>
+            <div className="script-create-grid">
+              <button className="script-create-option primary" onClick={startApiScript}>
+                <span className="script-create-type-badge">API</span>
+                <h3>API Visual Editor</h3>
+                <p>Build a protocol-level script from requests and reusable action definitions.</p>
+              </button>
+              <button className="script-create-option" onClick={() => setSubView('sample')}>
+                <span className="script-create-type-badge">API</span>
+                <h3>Build From Sample</h3>
+                <p>Generate an API script from sample traffic or payload examples.</p>
+              </button>
+            </div>
+          </section>
+
+          <section className="script-create-lane web">
+            <div className="script-create-lane-header">
+              <span className="script-create-kicker">Web / HTML</span>
+              <h3>Browser Scripts</h3>
+              <p>Drive a rendered page with browser navigation, clicks, form fills, waits, screenshots, DOM capture, and browser replay.</p>
+            </div>
+            <div className="script-create-grid">
+              <button className="script-create-option primary" onClick={startWebScript}>
+                <span className="script-create-type-badge web">WEB</span>
+                <h3>Web/HTML Visual Editor</h3>
+                <p>Build a browser-level script that interacts with the page like a user.</p>
+              </button>
+              <button className="script-create-option" onClick={() => setSubView('recorder')}>
+                <span className="script-create-type-badge web">WEB</span>
+                <h3>Browser Recorder</h3>
+                <p>Capture a browser session and convert selected traffic into reusable Web/HTML script assets.</p>
+              </button>
+            </div>
+          </section>
+
+          <section className="script-create-lane jms">
+            <div className="script-create-lane-header">
+              <span className="script-create-kicker">Messaging</span>
+              <h3>JMS Scripts</h3>
+              <p>Model Solace queue/topic workloads with reusable publish, consume, and request/reply actions.</p>
+            </div>
+            <div className="script-create-grid">
+              <button className="script-create-option primary" onClick={startJmsScript}>
+                <span className="script-create-type-badge jms">JMS</span>
+                <h3>JMS Solace Script</h3>
+                <p>Create a reusable JMS script draft for Solace publish/consume flows.</p>
+              </button>
+            </div>
+          </section>
+
+          <section className="script-create-lane import">
+            <div className="script-create-lane-header">
+              <span className="script-create-kicker">Migration</span>
+              <h3>LoadRunner Imports</h3>
+              <p>Bring existing LoadRunner assets forward while preserving source metadata and conversion notes for review.</p>
+            </div>
+            <div className="script-create-grid">
+              <button className="script-create-option primary" onClick={() => setSubView('import')}>
+                <span className="script-create-type-badge import">LR</span>
+                <h3>Import LoadRunner</h3>
+                <p>Convert a LoadRunner ZIP into a Stormrunner script and keep unsupported functions visible for cleanup.</p>
+              </button>
+            </div>
+          </section>
         </div>
       </div>
     )

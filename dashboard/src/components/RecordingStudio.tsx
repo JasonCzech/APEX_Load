@@ -57,11 +57,24 @@ interface Correlation {
   sample_value: string
 }
 
+interface RecorderStatus {
+  proxy_addr?: string
+  ca_cert_path?: string
+  active?: {
+    id: string
+    name: string
+    status: string
+    request_count: number
+    started_at: string
+  } | null
+}
+
 export default function RecordingStudio({ activeProject }: { activeProject?: Project | null }) {
   const api = useApi()
   const [sessions, setSessions] = useState<RecordingSession[]>([])
   const [activeSession, setActiveSession] = useState<RecordingSession | null>(null)
   const [proxyAddr, setProxyAddr] = useState('')
+  const [caCertPath, setCaCertPath] = useState('')
   const [sessionName, setSessionName] = useState('')
   const [includeHosts, setIncludeHosts] = useState('')
   const [excludeHosts, setExcludeHosts] = useState('')
@@ -80,6 +93,19 @@ export default function RecordingStudio({ activeProject }: { activeProject?: Pro
   const convertTask = useAsyncTask<{ script: any; correlations: Correlation[]; warnings: string[] }>()
 
   const proxyPort = (proxyAddr || ':8081').split(':').pop() || '8081'
+
+  const handleCopyCAPath = async () => {
+    if (!caCertPath) return
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error('Clipboard access is not available in this browser')
+      }
+      await navigator.clipboard.writeText(caCertPath)
+      showFeedback('CA certificate path copied')
+    } catch (e: any) {
+      showFeedback(e.message || 'Failed to copy CA certificate path', 'error')
+    }
+  }
 
   const handleDownloadCA = async (format: 'crt' | 'pem' = 'crt') => {
     try {
@@ -106,10 +132,12 @@ export default function RecordingStudio({ activeProject }: { activeProject?: Pro
         api.listRecordings(activeProject?.id),
         api.getRecorderStatus(),
       ])
+      const recorderStatus = statusRes as RecorderStatus
       setSessions(listRes.sessions || [])
-      setProxyAddr(statusRes.proxy_addr || '')
-      if (statusRes.active) {
-        const full = await api.getRecording(statusRes.active.id)
+      setProxyAddr(recorderStatus.proxy_addr || '')
+      setCaCertPath(recorderStatus.ca_cert_path || '')
+      if (recorderStatus.active) {
+        const full = await api.getRecording(recorderStatus.active.id)
         setActiveSession(full)
       } else {
         setActiveSession(null)
@@ -309,6 +337,19 @@ export default function RecordingStudio({ activeProject }: { activeProject?: Pro
                 <div className="rec-step-title">Download &amp; Install CA Certificate</div>
                 <div className="rec-step-desc">
                   Install the Stormrunner CA certificate so the proxy can intercept HTTPS traffic.
+                </div>
+                <div className="rec-step-note">
+                  The recorder now reuses the same CA across controller restarts. Trust it once, then only re-download if you delete the CA files or change the recorder CA directory.
+                  {caCertPath && (
+                    <div className="rec-step-note-path">
+                      <span>Current certificate path:</span>
+                      <code>{caCertPath}</code>
+                      <button type="button" className="rec-inline-action" onClick={handleCopyCAPath}>Copy path</button>
+                    </div>
+                  )}
+                  <div className="rec-step-note-troubleshoot">
+                    If the browser still says the connection is not secure, remove older Stormrunner CA entries, trust this CA for SSL/TLS, and restart the browser. Firefox may require explicit import or system-root trust to be enabled.
+                  </div>
                 </div>
                 <div className="rec-download-row">
                   <button className="rec-download-btn" onClick={() => handleDownloadCA('crt')}>

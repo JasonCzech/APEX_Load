@@ -9,6 +9,7 @@ interface Action {
   name: string; type: string; method?: string; target: string
   selector?: string; value?: string
   headers?: Record<string, string>; body?: string
+  params?: Record<string, any>; metadata?: Record<string, any>
   wait_for?: WaitCondition; capture?: BrowserCaptureOptions
   extractors?: Extractor[]; assertions?: Assertion[]
   think_time_after?: boolean
@@ -55,6 +56,23 @@ interface BrowserConfig {
   viewport?: { width?: number; height?: number }
 }
 
+interface JMSConfig {
+  provider?: string
+  broker_url?: string
+  message_vpn?: string
+  username?: string
+  password?: string
+  client_id?: string
+  destination?: string
+  destination_type?: string
+  reply_to?: string
+  acknowledgement?: string
+  delivery_mode?: string
+  timeout_ms?: number
+  properties?: Record<string, string>
+  mock?: boolean
+}
+
 interface ImportMetadata {
   source?: string
   source_script_name?: string
@@ -74,6 +92,7 @@ interface ScriptConfig {
   log?: LogConfig
   http?: HTTPConfig
   browser?: BrowserConfig
+  jms?: JMSConfig
 }
 
 interface ScriptData {
@@ -259,6 +278,12 @@ const EMPTY_ACTION: Action = {
 const EMPTY_BROWSER_ACTION: Action = {
   name: '', type: 'browser_navigate', target: '', selector: '', value: '',
   capture: { screenshot: false, full_page: false, html: false },
+  think_time_after: true,
+}
+
+const EMPTY_JMS_ACTION: Action = {
+  name: '', type: 'jms_publish', target: '', headers: {}, body: '',
+  params: {}, metadata: {}, extractors: [], assertions: [{ type: 'message_received' }],
   think_time_after: true,
 }
 
@@ -589,6 +614,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
     variablesText: '{\n  \n}',
   })
   const isBrowserScript = script.protocol === 'browser'
+  const isJmsScript = script.protocol === 'jms-solace'
   const importMetadata = script.metadata?.import
   const importSummary = getImportSummary(importMetadata)
 
@@ -886,14 +912,47 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
       const next = JSON.parse(JSON.stringify(prev))
       const keys = path.split('.')
       let obj: any = next
-      for (let i = 0; i < keys.length - 1; i++) obj = obj[keys[i]]
+      for (let i = 0; i < keys.length - 1; i++) {
+        if (!obj[keys[i]] || typeof obj[keys[i]] !== 'object') obj[keys[i]] = {}
+        obj = obj[keys[i]]
+      }
       obj[keys[keys.length - 1]] = value
       return next
     })
   }
 
+  const updateProtocol = (protocol: string) => {
+    let shouldSelectFirstAction = false
+    setScript(prev => {
+      const next = JSON.parse(JSON.stringify(prev)) as ScriptData
+      next.protocol = protocol
+      next.config = next.config || { base_url: '' }
+      if (protocol === 'jms-solace') {
+        next.config.jms = {
+          provider: 'solace',
+          destination_type: 'queue',
+          acknowledgement: 'auto',
+          delivery_mode: 'persistent',
+          timeout_ms: 5000,
+                          mock: true,
+                          ...(next.config.jms || {}),
+        }
+        if (next.actions.length === 0) {
+          next.actions = [{ ...JSON.parse(JSON.stringify(EMPTY_JMS_ACTION)), name: 'Publish_Message' }]
+          shouldSelectFirstAction = true
+        }
+      }
+      if (protocol === 'browser' && next.actions.length === 0) {
+        next.actions = [{ ...JSON.parse(JSON.stringify(EMPTY_BROWSER_ACTION)), name: 'Navigate' }]
+        shouldSelectFirstAction = true
+      }
+      return next
+    })
+    if (shouldSelectFirstAction) setActiveAction(0)
+  }
+
   const addAction = () => {
-    const template = script.protocol === 'browser' ? EMPTY_BROWSER_ACTION : EMPTY_ACTION
+    const template = isBrowserScript ? EMPTY_BROWSER_ACTION : isJmsScript ? EMPTY_JMS_ACTION : EMPTY_ACTION
     const a = JSON.parse(JSON.stringify({
       ...template,
       name: `Action_${script.actions.length + 1}`,
@@ -933,7 +992,9 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
     setScript(prev => {
       const actions = [...prev.actions]
       const ext = [...(actions[actionIdx].extractors || [])]
-      ext.push({ name: '', source: 'body', type: 'jsonpath', expression: '' })
+      ext.push(prev.protocol === 'jms-solace'
+        ? { name: '', source: 'body', type: 'jsonpath', expression: '' }
+        : { name: '', source: 'body', type: 'jsonpath', expression: '' })
       actions[actionIdx] = { ...actions[actionIdx], extractors: ext }
       return { ...prev, actions }
     })
@@ -962,7 +1023,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
     setScript(prev => {
       const actions = [...prev.actions]
       const assertions = [...(actions[actionIdx].assertions || [])]
-      assertions.push({ type: 'status_code', expected: 200 })
+      assertions.push(prev.protocol === 'jms-solace' ? { type: 'message_received' } : { type: 'status_code', expected: 200 })
       actions[actionIdx] = { ...actions[actionIdx], assertions }
       return { ...prev, actions }
     })
@@ -1015,6 +1076,38 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
       const headers = { ...(actions[actionIdx].headers || {}) }
       delete headers[key]
       actions[actionIdx] = { ...actions[actionIdx], headers }
+      return { ...prev, actions }
+    })
+  }
+
+  const addMetadata = (actionIdx: number) => {
+    const key = prompt('Property name:')
+    if (!key) return
+    setScript(prev => {
+      const actions = [...prev.actions]
+      const metadata = { ...(actions[actionIdx].metadata || {}), [key]: '' }
+      actions[actionIdx] = { ...actions[actionIdx], metadata }
+      return { ...prev, actions }
+    })
+  }
+
+  const updateMetadata = (actionIdx: number, oldKey: string, newKey: string, value: string) => {
+    setScript(prev => {
+      const actions = [...prev.actions]
+      const metadata = { ...(actions[actionIdx].metadata || {}) }
+      if (oldKey !== newKey) delete metadata[oldKey]
+      metadata[newKey] = value
+      actions[actionIdx] = { ...actions[actionIdx], metadata }
+      return { ...prev, actions }
+    })
+  }
+
+  const removeMetadata = (actionIdx: number, key: string) => {
+    setScript(prev => {
+      const actions = [...prev.actions]
+      const metadata = { ...(actions[actionIdx].metadata || {}) }
+      delete metadata[key]
+      actions[actionIdx] = { ...actions[actionIdx], metadata }
       return { ...prev, actions }
     })
   }
@@ -1208,6 +1301,12 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
       case 'PUT': return 'var(--warning)'
       case 'DELETE': return 'var(--danger)'
       case 'PATCH': return 'var(--chart-6)'
+      case 'jms_publish': return 'var(--info)'
+      case 'jms_consume': return 'var(--success)'
+      case 'jms_request_reply': return 'var(--chart-6)'
+      case 'jms_ack':
+      case 'jms_commit':
+      case 'jms_rollback': return 'var(--warning)'
       default: return 'var(--text-secondary)'
     }
   }
@@ -1607,21 +1706,45 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
                   </label>
                   <label>
                     <span>Protocol</span>
-                    <select value={script.protocol} onChange={e => updateField('protocol', e.target.value)}>
-                      <option value="http">HTTP</option>
-                      <option value="https">HTTPS</option>
-                      <option value="browser">Browser</option>
+                    <select value={script.protocol} onChange={e => updateProtocol(e.target.value)}>
+                      <option value="http">HTTP API</option>
+                      <option value="https">HTTPS API</option>
+                      <option value="browser">Web/HTML Browser</option>
+                      <option value="jms-solace">JMS Solace</option>
                     </select>
                   </label>
                   <label>
                     <span>Version</span>
                     <input value={script.version} onChange={e => updateField('version', e.target.value)} placeholder="1.0.0" />
                   </label>
-                  <label>
-                    <span>Base URL</span>
-                    <input value={script.config.base_url} onChange={e => updateField('config.base_url', e.target.value)} placeholder="https://api.example.com" />
-                  </label>
+                  {!isJmsScript && (
+                    <label>
+                      <span>Base URL</span>
+                      <input value={script.config.base_url} onChange={e => updateField('config.base_url', e.target.value)} placeholder="https://api.example.com" />
+                    </label>
+                  )}
+                  {isJmsScript && (
+                    <>
+                      <label>
+                        <span>Broker URL</span>
+                        <input value={script.config.jms?.broker_url || ''} onChange={e => updateField('config.jms.broker_url', e.target.value)} placeholder="tcps://broker.example.com:55443" />
+                      </label>
+                      <label>
+                        <span>Message VPN</span>
+                        <input value={script.config.jms?.message_vpn || ''} onChange={e => updateField('config.jms.message_vpn', e.target.value)} placeholder="default" />
+                      </label>
+                      <label>
+                        <span>Default Destination</span>
+                        <input value={script.config.jms?.destination || ''} onChange={e => updateField('config.jms.destination', e.target.value)} placeholder="orders.in" />
+                      </label>
+                    </>
+                  )}
                 </div>
+                {isJmsScript && (
+                  <div className="parameter-empty-state" style={{ marginTop: 12 }}>
+                    JMS Solace scripts use publish, consume, and request/reply actions with message body, headers, properties, correlation IDs, and reply destinations in the action editor below.
+                  </div>
+                )}
                 {isBrowserScript && (
                   <div className="parameter-empty-state" style={{ marginTop: 12 }}>
                     Browser scripts can use navigate, click, fill, wait, and screenshot actions with selector, wait, and capture settings in the action editor below.
@@ -2231,8 +2354,83 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
                   )}
                 </div>
 
+                {isJmsScript && (
+                  <div className={`settings-section ${openSections['jms'] ? 'open' : ''}`}>
+                    <button className="section-toggle" onClick={() => toggleSection('jms')}>
+                      <span className="section-icon">JMS</span>
+                      <span className="section-label">Solace JMS</span>
+                      <span className="section-summary">
+                        {script.config.jms?.mock ? 'Mock broker' : script.config.jms?.broker_url ? 'Broker configured' : 'Not configured'}
+                      </span>
+                      <span className="chevron">{openSections['jms'] ? '▾' : '▸'}</span>
+                    </button>
+                    {openSections['jms'] && (
+                      <div className="section-body">
+                        <div className="settings-sub-group">
+                          <h5>Connection</h5>
+                          <div className="form-grid">
+                            <label className="full-width"><span>Broker URL</span>
+                              <input value={script.config.jms?.broker_url || ''} placeholder="tcps://broker.example.com:55443"
+                                onChange={e => updateField('config.jms', { ...script.config.jms, provider: 'solace', broker_url: e.target.value })} /></label>
+                            <label><span>Client ID</span>
+                              <input value={script.config.jms?.client_id || ''} placeholder="stormrunner-{{fn.uuid()}}"
+                                onChange={e => updateField('config.jms', { ...script.config.jms, provider: 'solace', client_id: e.target.value })} /></label>
+                            <label><span>Message VPN</span>
+                              <input value={script.config.jms?.message_vpn || ''} placeholder="default"
+                                onChange={e => updateField('config.jms', { ...script.config.jms, provider: 'solace', message_vpn: e.target.value })} /></label>
+                            <label><span>Username</span>
+                              <input value={script.config.jms?.username || ''}
+                                onChange={e => updateField('config.jms', { ...script.config.jms, provider: 'solace', username: e.target.value })} /></label>
+                            <label><span>Password</span>
+                              <input type="password" value={script.config.jms?.password || ''}
+                                onChange={e => updateField('config.jms', { ...script.config.jms, provider: 'solace', password: e.target.value })} /></label>
+                            <label className="checkbox-label">
+                              <input type="checkbox" checked={script.config.jms?.mock ?? true}
+                                onChange={e => updateField('config.jms', { ...script.config.jms, provider: 'solace', mock: e.target.checked })} />
+                              <span>Use local mock broker for replay</span>
+                            </label>
+                          </div>
+                        </div>
+                        <div className="settings-sub-group">
+                          <h5>Defaults</h5>
+                          <div className="form-grid">
+                            <label><span>Destination</span>
+                              <input value={script.config.jms?.destination || ''} placeholder="orders.in"
+                                onChange={e => updateField('config.jms', { ...script.config.jms, provider: 'solace', destination: e.target.value })} /></label>
+                            <label><span>Destination Type</span>
+                              <select value={script.config.jms?.destination_type || 'queue'}
+                                onChange={e => updateField('config.jms', { ...script.config.jms, provider: 'solace', destination_type: e.target.value })}>
+                                <option value="queue">Queue</option>
+                                <option value="topic">Topic</option>
+                              </select></label>
+                            <label><span>Reply To</span>
+                              <input value={script.config.jms?.reply_to || ''} placeholder="orders.reply"
+                                onChange={e => updateField('config.jms', { ...script.config.jms, provider: 'solace', reply_to: e.target.value })} /></label>
+                            <label><span>Timeout (ms)</span>
+                              <input type="number" value={script.config.jms?.timeout_ms || 5000}
+                                onChange={e => updateField('config.jms', { ...script.config.jms, provider: 'solace', timeout_ms: Number(e.target.value) })} /></label>
+                            <label><span>Acknowledgement</span>
+                              <select value={script.config.jms?.acknowledgement || 'auto'}
+                                onChange={e => updateField('config.jms', { ...script.config.jms, provider: 'solace', acknowledgement: e.target.value })}>
+                                <option value="auto">Auto</option>
+                                <option value="client">Client</option>
+                                <option value="transacted">Transacted</option>
+                              </select></label>
+                            <label><span>Delivery Mode</span>
+                              <select value={script.config.jms?.delivery_mode || 'persistent'}
+                                onChange={e => updateField('config.jms', { ...script.config.jms, provider: 'solace', delivery_mode: e.target.value })}>
+                                <option value="persistent">Persistent</option>
+                                <option value="non_persistent">Non-persistent</option>
+                              </select></label>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* HTTP Protocol */}
-                <div className={`settings-section ${openSections['http'] ? 'open' : ''}`}>
+                {!isJmsScript && <div className={`settings-section ${openSections['http'] ? 'open' : ''}`}>
                   <button className="section-toggle" onClick={() => toggleSection('http')}>
                     <span className="section-icon">{'\ud83c\udf10'}</span>
                     <span className="section-label">HTTP Protocol</span>
@@ -2356,7 +2554,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
                       </div>
                     </div>
                   )}
-                </div>
+                </div>}
 
                 {/* Logging */}
                 <div className={`settings-section ${openSections['log'] ? 'open' : ''}`}>
@@ -2433,8 +2631,12 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
                     onAddHeader={addHeader}
                     onUpdateHeader={updateHeader}
                     onRemoveHeader={removeHeader}
+                    onAddMetadata={addMetadata}
+                    onUpdateMetadata={updateMetadata}
+                    onRemoveMetadata={removeMetadata}
                     methodColor={methodColor}
                     isBrowserScript={isBrowserScript}
+                    isJmsScript={isJmsScript}
                   />
                 ) : (
                   <div className="action-placeholder">
@@ -2680,7 +2882,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
 }
 
 /* Sub-component for editing a single action's details */
-function ActionEditor({ action, index, onUpdate, onAddExtractor, onUpdateExtractor, onRemoveExtractor, onAddAssertion, onUpdateAssertion, onRemoveAssertion, onAddHeader, onUpdateHeader, onRemoveHeader, methodColor, isBrowserScript }: {
+function ActionEditor({ action, index, onUpdate, onAddExtractor, onUpdateExtractor, onRemoveExtractor, onAddAssertion, onUpdateAssertion, onRemoveAssertion, onAddHeader, onUpdateHeader, onRemoveHeader, onAddMetadata, onUpdateMetadata, onRemoveMetadata, methodColor, isBrowserScript, isJmsScript }: {
   action: Action; index: number
   onUpdate: (i: number, f: string, v: any) => void
   onAddExtractor: (i: number) => void
@@ -2692,15 +2894,23 @@ function ActionEditor({ action, index, onUpdate, onAddExtractor, onUpdateExtract
   onAddHeader: (i: number) => void
   onUpdateHeader: (ai: number, ok: string, nk: string, v: string) => void
   onRemoveHeader: (ai: number, k: string) => void
+  onAddMetadata: (i: number) => void
+  onUpdateMetadata: (ai: number, ok: string, nk: string, v: string) => void
+  onRemoveMetadata: (ai: number, k: string) => void
   methodColor: (m: string) => string
   isBrowserScript: boolean
+  isJmsScript: boolean
 }) {
   const browserActionTypes = ['browser_navigate', 'browser_click', 'browser_fill', 'browser_wait', 'browser_screenshot']
+  const jmsActionTypes = ['jms_publish', 'jms_consume', 'jms_request_reply', 'jms_ack', 'jms_commit', 'jms_rollback']
   const waitFor = action.wait_for || {}
   const capture = action.capture || {}
+  const params = action.params || {}
   const showSelector = isBrowserScript && ['browser_click', 'browser_fill', 'browser_wait', 'browser_screenshot'].includes(action.type)
   const showValue = isBrowserScript && action.type === 'browser_fill'
-  const targetLabel = isBrowserScript
+  const targetLabel = isJmsScript
+    ? 'Destination'
+    : isBrowserScript
     ? action.type === 'browser_navigate'
       ? 'URL or Path'
       : action.type === 'browser_wait'
@@ -2709,7 +2919,9 @@ function ActionEditor({ action, index, onUpdate, onAddExtractor, onUpdateExtract
           ? 'Target Selector'
           : 'Target Selector'
     : 'Target (path)'
-  const targetPlaceholder = isBrowserScript
+  const targetPlaceholder = isJmsScript
+    ? 'orders.in or {{data.destinations.queue}}'
+    : isBrowserScript
     ? action.type === 'browser_navigate'
       ? 'https://example.com or /login'
       : action.type === 'browser_wait'
@@ -2726,9 +2938,9 @@ function ActionEditor({ action, index, onUpdate, onAddExtractor, onUpdateExtract
 
       <div className="form-grid">
         <label><span>Name</span><input value={action.name} onChange={e => onUpdate(index, 'name', e.target.value)} /></label>
-        <label><span>{isBrowserScript ? 'Action Type' : 'Method'}</span>
+        <label><span>{isBrowserScript || isJmsScript ? 'Action Type' : 'Method'}</span>
           <select value={action.type} onChange={e => onUpdate(index, 'type', e.target.value)}>
-            {(isBrowserScript ? browserActionTypes : ['GET','POST','PUT','PATCH','DELETE','HEAD','OPTIONS']).map(m => <option key={m}>{m}</option>)}
+            {(isBrowserScript ? browserActionTypes : isJmsScript ? jmsActionTypes : ['GET','POST','PUT','PATCH','DELETE','HEAD','OPTIONS']).map(m => <option key={m}>{m}</option>)}
           </select>
         </label>
         <label className="full-width"><span>{targetLabel}</span><input value={action.target} onChange={e => onUpdate(index, 'target', e.target.value)} placeholder={targetPlaceholder} /></label>
@@ -2813,8 +3025,76 @@ function ActionEditor({ action, index, onUpdate, onAddExtractor, onUpdateExtract
         </>
       )}
 
+      {isJmsScript && (
+        <>
+          <div className="sub-section">
+            <div className="sub-header"><h4>Message</h4></div>
+            <div className="form-grid">
+              {(action.type === 'jms_publish' || action.type === 'jms_request_reply') && (
+                <label className="full-width">
+                  <span>Body</span>
+                  <textarea className="body-textarea" value={action.body || ''} onChange={e => onUpdate(index, 'body', e.target.value)} placeholder='{"orderId": "{{data.orders.id}}"}' rows={5} />
+                </label>
+              )}
+              <label>
+                <span>Correlation ID</span>
+                <input
+                  value={params.correlation_id || ''}
+                  onChange={e => onUpdate(index, 'params', { ...params, correlation_id: e.target.value })}
+                  placeholder="{{var.jms_message_id}} or {{fn.uuid()}}"
+                />
+              </label>
+              {(action.type === 'jms_request_reply' || action.type === 'jms_publish' || action.type === 'jms_consume') && (
+                <label>
+                  <span>Timeout (ms)</span>
+                  <input
+                    type="number"
+                    min="0"
+                    value={params.timeout_ms ?? ''}
+                    onChange={e => onUpdate(index, 'params', { ...params, timeout_ms: Number(e.target.value) || undefined })}
+                    placeholder="Use script default"
+                  />
+                </label>
+              )}
+              {action.type === 'jms_request_reply' && (
+                <label className="full-width">
+                  <span>Reply To Override</span>
+                  <input
+                    value={params.reply_to || ''}
+                    onChange={e => onUpdate(index, 'params', { ...params, reply_to: e.target.value })}
+                    placeholder="orders.reply"
+                  />
+                </label>
+              )}
+            </div>
+          </div>
+
+          <div className="sub-section">
+            <div className="sub-header"><h4>Message Headers</h4><button className="btn btn-sm btn-ghost" onClick={() => onAddHeader(index)}>+ Add</button></div>
+            {Object.entries(action.headers || {}).map(([k, v]) => (
+              <div key={k} className="kv-row">
+                <input className="kv-key" value={k} onChange={e => onUpdateHeader(index, k, e.target.value, v)} placeholder="Header" />
+                <input className="kv-val" value={v} onChange={e => onUpdateHeader(index, k, k, e.target.value)} placeholder="Value" />
+                <button className="btn-icon danger" onClick={() => onRemoveHeader(index, k)}>✕</button>
+              </div>
+            ))}
+          </div>
+
+          <div className="sub-section">
+            <div className="sub-header"><h4>Message Properties</h4><button className="btn btn-sm btn-ghost" onClick={() => onAddMetadata(index)}>+ Add</button></div>
+            {Object.entries(action.metadata || {}).map(([k, v]) => (
+              <div key={k} className="kv-row">
+                <input className="kv-key" value={k} onChange={e => onUpdateMetadata(index, k, e.target.value, String(v || ''))} placeholder="Property" />
+                <input className="kv-val" value={String(v || '')} onChange={e => onUpdateMetadata(index, k, k, e.target.value)} placeholder="Value" />
+                <button className="btn-icon danger" onClick={() => onRemoveMetadata(index, k)}>✕</button>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
       {/* Headers */}
-      {!isBrowserScript && <div className="sub-section">
+      {!isBrowserScript && !isJmsScript && <div className="sub-section">
         <div className="sub-header"><h4>Headers</h4><button className="btn btn-sm btn-ghost" onClick={() => onAddHeader(index)}>+ Add</button></div>
         {Object.entries(action.headers || {}).map(([k, v]) => (
           <div key={k} className="kv-row">
@@ -2826,7 +3106,7 @@ function ActionEditor({ action, index, onUpdate, onAddExtractor, onUpdateExtract
       </div>}
 
       {/* Body */}
-      {!isBrowserScript && ['POST','PUT','PATCH'].includes(action.type) && (
+      {!isBrowserScript && !isJmsScript && ['POST','PUT','PATCH'].includes(action.type) && (
         <div className="sub-section">
           <h4>Body</h4>
           <textarea className="body-textarea" value={action.body || ''} onChange={e => onUpdate(index, 'body', e.target.value)} placeholder='{"key": "value"}' rows={4} />
@@ -2840,10 +3120,11 @@ function ActionEditor({ action, index, onUpdate, onAddExtractor, onUpdateExtract
           <div key={ei} className="extractor-row">
             <input value={ext.name} onChange={e => onUpdateExtractor(index, ei, 'name', e.target.value)} placeholder="Variable name" />
             <select value={ext.source} onChange={e => onUpdateExtractor(index, ei, 'source', e.target.value)}>
-              <option value="body">Body</option><option value="header">Header</option><option value="cookie">Cookie</option>
+              <option value="body">Body</option><option value="header">Header</option>
+              {isJmsScript ? <><option value="property">Property</option><option value="message_id">Message ID</option><option value="correlation_id">Correlation ID</option></> : <option value="cookie">Cookie</option>}
             </select>
             <select value={ext.type} onChange={e => onUpdateExtractor(index, ei, 'type', e.target.value)}>
-              <option value="jsonpath">JSONPath</option><option value="regex">Regex</option><option value="boundary">Boundary</option><option value="xpath">XPath</option>
+              <option value="jsonpath">JSONPath</option><option value="regex">Regex</option>{!isJmsScript && <><option value="boundary">Boundary</option><option value="xpath">XPath</option></>}
             </select>
             <input value={ext.expression} onChange={e => onUpdateExtractor(index, ei, 'expression', e.target.value)} placeholder="$.data.id" className="ext-expr" />
             <button className="btn-icon danger" onClick={() => onRemoveExtractor(index, ei)}>✕</button>
@@ -2857,12 +3138,24 @@ function ActionEditor({ action, index, onUpdate, onAddExtractor, onUpdateExtract
         {(action.assertions || []).map((a, ai) => (
           <div key={ai} className="assertion-row">
             <select value={a.type} onChange={e => onUpdateAssertion(index, ai, 'type', e.target.value)}>
-              <option value="status_code">Status Code</option><option value="response_time_ms">Response Time (ms)</option>
-              <option value="body_contains">Body Contains</option><option value="header_contains">Header Contains</option>
+              {isJmsScript ? (
+                <>
+                  <option value="message_received">Message Received</option><option value="body_contains">Body Contains</option>
+                  <option value="property_equals">Property Equals</option><option value="header_equals">Header Equals</option>
+                  <option value="correlation_match">Correlation Match</option><option value="response_time_ms">Response Time (ms)</option>
+                </>
+              ) : (
+                <>
+                  <option value="status_code">Status Code</option><option value="response_time_ms">Response Time (ms)</option>
+                  <option value="body_contains">Body Contains</option><option value="header_contains">Header Contains</option>
+                </>
+              )}
             </select>
             {a.type === 'status_code' && <input type="number" value={a.expected ?? 200} onChange={e => onUpdateAssertion(index, ai, 'expected', Number(e.target.value))} />}
             {a.type === 'response_time_ms' && <input type="number" value={a.max ?? 5000} onChange={e => onUpdateAssertion(index, ai, 'max', Number(e.target.value))} placeholder="Max ms" />}
-            {(a.type === 'body_contains' || a.type === 'header_contains') && <input value={a.value ?? ''} onChange={e => onUpdateAssertion(index, ai, 'value', e.target.value)} placeholder="Expected text" />}
+            {(a.type === 'body_contains' || a.type === 'header_contains' || a.type === 'correlation_match') && <input value={a.value ?? ''} onChange={e => onUpdateAssertion(index, ai, 'value', e.target.value)} placeholder="Expected text" />}
+            {(a.type === 'property_equals' || a.type === 'header_equals') && <input value={a.value ?? ''} onChange={e => onUpdateAssertion(index, ai, 'value', e.target.value)} placeholder="Name" />}
+            {(a.type === 'property_equals' || a.type === 'header_equals') && <input value={a.expected ?? ''} onChange={e => onUpdateAssertion(index, ai, 'expected', e.target.value)} placeholder="Expected value" />}
             <button className="btn-icon danger" onClick={() => onRemoveAssertion(index, ai)}>✕</button>
           </div>
         ))}

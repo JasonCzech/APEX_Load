@@ -1,8 +1,8 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, type DragEvent } from 'react'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useApi } from '../hooks/useApi'
 import { useApplication } from '../hooks/useApplication'
-import { TestSummary, MetricsHistoryPoint } from '../types'
+import { TestSummary, MetricsHistoryPoint, RunArchiveReport } from '../types'
 import StatusBadge from './StatusBadge'
 import './DashboardPage.css'
 
@@ -18,17 +18,104 @@ interface HealthData {
   version: string
   ws_clients: number
   test_count: number
+  capacity_availability?: {
+    effective_available_generators?: number
+    configured_available_generators?: number
+    source?: string
+    warnings?: string[]
+  }
+}
+
+type CardMetricKey = 'tps' | 'avg_response_ms' | 'error_pct' | 'active_vusers'
+
+interface GraphCardSettings {
+  metric: CardMetricKey
+  showGraph: boolean
+}
+
+const defaultGraphCardSettings: GraphCardSettings = {
+  metric: 'tps',
+  showGraph: true,
+}
+
+const graphMetricOptions: { key: CardMetricKey; label: string; color: string; digits: number }[] = [
+  { key: 'tps', label: 'TPS', color: 'var(--accent)', digits: 1 },
+  { key: 'avg_response_ms', label: 'Avg ms', color: 'var(--chart-2)', digits: 0 },
+  { key: 'error_pct', label: 'Error %', color: 'var(--danger)', digits: 2 },
+  { key: 'active_vusers', label: 'Active VUsers', color: 'var(--chart-3)', digits: 0 },
+]
+
+function formatNumber(value: number, digits = 0) {
+  return Number.isFinite(value) ? value.toFixed(digits) : digits > 0 ? '0.0' : '0'
+}
+
+function formatDateTime(value?: string) {
+  return value ? new Date(value).toLocaleString() : 'Never'
+}
+
+function completionTime(test: TestSummary) {
+  return new Date(test.ended_at || test.start_time || test.created_at || 0).getTime()
+}
+
+function getHistoryMetric(point: MetricsHistoryPoint, metric: CardMetricKey) {
+  switch (metric) {
+    case 'avg_response_ms':
+      return Number(point.avgMs || 0)
+    case 'error_pct':
+      return Number(point.errorPct || 0)
+    case 'active_vusers':
+      return Number(point.vusers || 0)
+    case 'tps':
+    default:
+      return Number(point.tps || 0)
+  }
+}
+
+function moveId(ids: string[], draggedId: string, targetId: string) {
+  if (draggedId === targetId) return ids
+  const next = ids.filter(id => id !== draggedId)
+  const targetIndex = next.indexOf(targetId)
+  if (targetIndex === -1) return ids
+  next.splice(targetIndex, 0, draggedId)
+  return next
+}
+
+function loadJson<T>(key: string, fallback: T): T {
+  if (typeof window === 'undefined') return fallback
+  try {
+    const stored = window.localStorage.getItem(key)
+    if (!stored) return fallback
+    const parsed = JSON.parse(stored)
+    if (Array.isArray(fallback)) {
+      return (Array.isArray(parsed) ? parsed : fallback) as T
+    }
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return { ...(fallback as Record<string, unknown>), ...parsed } as T
+    }
+    return fallback
+  } catch {
+    return fallback
+  }
 }
 
 export default function DashboardPage({ testStatuses, metricsHistory, connected, onSelectTest }: Props) {
   const api = useApi()
-  const { activeApplication } = useApplication()
+  const { activeApplication, activeRelease } = useApplication()
   const [tests, setTests] = useState<TestSummary[]>([])
   const [health, setHealth] = useState<HealthData | null>(null)
-  const [loadTime] = useState(() => new Date())
+  const [archiveReports, setArchiveReports] = useState<Record<string, RunArchiveReport | null>>({})
+  const [customizingCards, setCustomizingCards] = useState(false)
+  const [draggedCardId, setDraggedCardId] = useState<string | null>(null)
+  const [activeCardOrder, setActiveCardOrder] = useState<string[]>(() => loadJson<string[]>('stormrunner.dashboard.activeCardOrder', []))
+  const [activeCardSettings, setActiveCardSettings] = useState<Record<string, GraphCardSettings>>(() =>
+    loadJson<Record<string, GraphCardSettings>>('stormrunner.dashboard.activeCardSettings', {}),
+  )
 
   useEffect(() => {
     const load = async () => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
+        return
+      }
       try {
         const [testRes, healthRes] = await Promise.all([
           api.listTests(activeApplication?.id ? { application_id: activeApplication.id } : undefined),
@@ -38,9 +125,26 @@ export default function DashboardPage({ testStatuses, metricsHistory, connected,
         if (healthRes) setHealth(healthRes)
       } catch { /* ignore */ }
     }
+
     load()
     const interval = setInterval(load, 3000)
-    return () => clearInterval(interval)
+
+    const handleVisibilityChange = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        load()
+      }
+    }
+
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleVisibilityChange)
+    }
+
+    return () => {
+      clearInterval(interval)
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', handleVisibilityChange)
+      }
+    }
   }, [api, activeApplication?.id])
 
   const resolvedTests = useMemo(() =>
@@ -56,41 +160,221 @@ export default function DashboardPage({ testStatuses, metricsHistory, connected,
     [resolvedTests],
   )
 
+  useEffect(() => {
+    const activeIds = activeTests.map(test => test.id)
+    setActiveCardOrder(prev => {
+      const retained = prev.filter(id => activeIds.includes(id))
+      const added = activeIds.filter(id => !retained.includes(id))
+      return [...retained, ...added]
+    })
+  }, [activeTests])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.localStorage.setItem('stormrunner.dashboard.activeCardOrder', JSON.stringify(activeCardOrder))
+  }, [activeCardOrder])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.localStorage.setItem('stormrunner.dashboard.activeCardSettings', JSON.stringify(activeCardSettings))
+  }, [activeCardSettings])
+
+  const orderedActiveTests = useMemo(() => {
+    const byId = new Map(activeTests.map(test => [test.id, test]))
+    return activeCardOrder
+      .map(id => byId.get(id))
+      .filter((test): test is TestSummary => Boolean(test))
+  }, [activeTests, activeCardOrder])
+
   const recentTests = useMemo(() =>
     resolvedTests
       .filter(t => t.status === 'COMPLETE' || t.status === 'FAILED' || t.status === 'ABORTED')
+      .sort((a, b) => completionTime(b) - completionTime(a))
       .slice(0, 10),
     [resolvedTests],
+  )
+
+  const releaseTests = useMemo(() => {
+    if (!activeRelease?.id) return resolvedTests
+    return resolvedTests.filter(t => t.release_id === activeRelease.id)
+  }, [resolvedTests, activeRelease?.id])
+
+  const releaseCompleted = useMemo(() =>
+    releaseTests
+      .filter(t => t.status === 'COMPLETE' || t.status === 'FAILED' || t.status === 'ABORTED')
+      .sort((a, b) => completionTime(b) - completionTime(a)),
+    [releaseTests],
+  )
+
+  const latestReleaseRun = releaseCompleted[0]
+  const activeLiveMetrics = activeTests.map(test => test.live_metrics).filter(Boolean)
+
+  const archivedReleaseRuns = useMemo(() =>
+    releaseCompleted
+      .filter(test => Boolean(test.archive))
+      .slice(0, 6),
+    [releaseCompleted],
+  )
+
+  useEffect(() => {
+    const missingReports = archivedReleaseRuns.filter(test => !(test.id in archiveReports))
+    if (missingReports.length === 0) return
+
+    let cancelled = false
+
+    Promise.all(
+      missingReports.map(async test => {
+        try {
+          const report = await api.getTestArchiveReport(test.id)
+          return [test.id, report as RunArchiveReport] as const
+        } catch {
+          return [test.id, null] as const
+        }
+      }),
+    ).then(entries => {
+      if (cancelled) return
+      setArchiveReports(prev => {
+        const next = { ...prev }
+        entries.forEach(([id, report]) => {
+          next[id] = report
+        })
+        return next
+      })
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [api, archivedReleaseRuns, archiveReports])
+
+  const performanceTrend = useMemo(() =>
+    archivedReleaseRuns
+      .map(test => {
+        const report = archiveReports[test.id]
+        if (!report) return null
+        return { test, report }
+      })
+      .filter((entry): entry is { test: TestSummary; report: RunArchiveReport } => Boolean(entry)),
+    [archivedReleaseRuns, archiveReports],
   )
 
   const stats = useMemo(() => {
     const completed = resolvedTests.filter(t => t.status === 'COMPLETE').length
     const failed = resolvedTests.filter(t => t.status === 'FAILED').length
     const aborted = resolvedTests.filter(t => t.status === 'ABORTED').length
-    return { total: resolvedTests.length, completed, failed, aborted, active: activeTests.length }
+    const activeVUsers = activeTests.reduce((sum, test) => sum + (test.live_metrics?.active_vusers ?? test.total_vusers ?? 0), 0)
+    const activeTps = activeTests.reduce((sum, test) => sum + (test.live_metrics?.tps || 0), 0)
+    const avgLatency = activeLiveMetrics.length
+      ? activeLiveMetrics.reduce((sum, metrics) => sum + (metrics?.avg_response_ms || 0), 0) / activeLiveMetrics.length
+      : 0
+    const avgError = activeLiveMetrics.length
+      ? activeLiveMetrics.reduce((sum, metrics) => sum + (metrics?.error_pct || 0), 0) / activeLiveMetrics.length
+      : 0
+    return { total: resolvedTests.length, completed, failed, aborted, active: activeTests.length, activeVUsers, activeTps, avgLatency, avgError }
   }, [resolvedTests, activeTests])
 
-  const uptimeStr = useMemo(() => {
-    const diff = Date.now() - loadTime.getTime()
-    const mins = Math.floor(diff / 60000)
-    if (mins < 60) return `${mins}m`
-    const hrs = Math.floor(mins / 60)
-    return `${hrs}h ${mins % 60}m`
-  }, [loadTime])
+  const releaseStats = useMemo(() => {
+    const completed = releaseCompleted.filter(t => t.status === 'COMPLETE').length
+    const failed = releaseCompleted.filter(t => t.status === 'FAILED').length
+    const aborted = releaseCompleted.filter(t => t.status === 'ABORTED').length
+    const archived = releaseCompleted.filter(t => t.archive).length
+    const totalTx = releaseCompleted.reduce((sum, test) => sum + (test.archive?.transaction_count || 0), 0)
+    return { total: releaseTests.length, completed, failed, aborted, archived, totalTx }
+  }, [releaseTests, releaseCompleted])
+
+  const attentionItems = useMemo(() => {
+    const items: { tone: 'danger' | 'warning' | 'info'; title: string; detail: string; testId?: string }[] = []
+    activeTests.forEach(test => {
+      const errorPct = test.live_metrics?.error_pct || 0
+      if (errorPct >= 1) {
+        items.push({ tone: 'danger', title: `${test.name} errors`, detail: `${formatNumber(errorPct, 2)}% current error rate`, testId: test.id })
+      }
+      const avgMs = test.live_metrics?.avg_response_ms || 0
+      if (avgMs >= 1000) {
+        items.push({ tone: 'warning', title: `${test.name} latency`, detail: `${formatNumber(avgMs)} ms average response`, testId: test.id })
+      }
+    })
+    releaseCompleted.slice(0, 8).forEach(test => {
+      if (test.status === 'FAILED') {
+        items.push({ tone: 'danger', title: `${test.name} failed`, detail: formatDateTime(test.ended_at || test.created_at), testId: test.id })
+      } else if (test.status === 'ABORTED') {
+        items.push({ tone: 'warning', title: `${test.name} aborted`, detail: formatDateTime(test.ended_at || test.created_at), testId: test.id })
+      } else if (!test.archive) {
+        items.push({ tone: 'info', title: `${test.name} archive pending`, detail: 'Result archive is not available yet', testId: test.id })
+      }
+    })
+    if (health?.capacity_availability?.warnings?.length) {
+      items.push({ tone: 'warning', title: 'Capacity warning', detail: health.capacity_availability.warnings[0] })
+    }
+    return items.slice(0, 6)
+  }, [activeTests, releaseCompleted, health])
 
   const statusColor = connected && health?.status === 'healthy' ? 'healthy' : connected ? 'degraded' : 'offline'
   const statusLabel = statusColor === 'healthy' ? 'Healthy' : statusColor === 'degraded' ? 'Degraded' : 'Offline'
+
+  const updateCardSettings = (testId: string, patch: Partial<GraphCardSettings>) => {
+    setActiveCardSettings(prev => ({
+      ...prev,
+      [testId]: {
+        ...defaultGraphCardSettings,
+        ...prev[testId],
+        ...patch,
+      },
+    }))
+  }
+
+  const handleCardDragStart = (event: DragEvent<HTMLDivElement>, testId: string) => {
+    if (!customizingCards) return
+    setDraggedCardId(testId)
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', testId)
+  }
+
+  const handleCardDragOver = (event: DragEvent<HTMLDivElement>, targetId: string) => {
+    if (!customizingCards || !draggedCardId || draggedCardId === targetId) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'move'
+  }
+
+  const handleCardDrop = (event: DragEvent<HTMLDivElement>, targetId: string) => {
+    if (!customizingCards) return
+    event.preventDefault()
+    const sourceId = event.dataTransfer.getData('text/plain') || draggedCardId
+    if (!sourceId) return
+    setActiveCardOrder(prev => moveId(prev, sourceId, targetId))
+    setDraggedCardId(null)
+  }
+
+  const resetCardLayout = () => {
+    setActiveCardOrder(activeTests.map(test => test.id))
+    setActiveCardSettings({})
+  }
 
   return (
     <div className="page dash">
       <div className="page-header">
         <div>
           <h2>Dashboard</h2>
-          <p className="page-subtitle">System overview and active test monitoring</p>
+          <p className="page-subtitle">
+            {activeApplication?.name || 'Application'} / {activeRelease?.name || 'All releases'} performance overview
+          </p>
+        </div>
+        <div className="dash-customize-actions">
+          {customizingCards && (
+            <button className="btn btn-secondary btn-sm" onClick={resetCardLayout} type="button">
+              Reset Cards
+            </button>
+          )}
+          <button
+            className={`btn btn-sm ${customizingCards ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => setCustomizingCards(value => !value)}
+            type="button"
+          >
+            {customizingCards ? 'Done' : 'Customize Cards'}
+          </button>
         </div>
       </div>
 
-      {/* System Health Row */}
       <div className="dash-health-row">
         <div className={`dash-health-card status-${statusColor}`}>
           <div className="dhc-icon">
@@ -112,8 +396,8 @@ export default function DashboardPage({ testStatuses, metricsHistory, connected,
             </svg>
           </div>
           <div className="dhc-content">
-            <span className="dhc-value">{health?.ws_clients ?? 0}</span>
-            <span className="dhc-label">WebSocket Clients</span>
+            <span className="dhc-value">{stats.active}</span>
+            <span className="dhc-label">Active Runs</span>
           </div>
         </div>
 
@@ -124,8 +408,8 @@ export default function DashboardPage({ testStatuses, metricsHistory, connected,
             </svg>
           </div>
           <div className="dhc-content">
-            <span className="dhc-value">{stats.total}</span>
-            <span className="dhc-label">Total Tests</span>
+            <span className="dhc-value">{stats.activeVUsers}</span>
+            <span className="dhc-label">Active VUsers</span>
           </div>
         </div>
 
@@ -137,11 +421,92 @@ export default function DashboardPage({ testStatuses, metricsHistory, connected,
             </svg>
           </div>
           <div className="dhc-content">
-            <span className="dhc-value">{uptimeStr}</span>
-            <span className="dhc-label">Session Uptime</span>
+            <span className="dhc-value">{health?.capacity_availability?.effective_available_generators ?? '—'}</span>
+            <span className="dhc-label">Generators Available</span>
           </div>
         </div>
       </div>
+
+      <section className="dash-section dash-release-snapshot">
+        <div className="dash-section-heading-row">
+          <h3 className="dash-section-title">Release Snapshot</h3>
+          <span className="dash-context-chip">{activeRelease?.name || 'All releases'}</span>
+        </div>
+        <div className="release-metric-grid">
+          <div className="release-metric">
+            <span className="release-metric-value">{latestReleaseRun ? latestReleaseRun.name : 'No runs'}</span>
+            <span className="release-metric-label">Latest Result</span>
+          </div>
+          <div className="release-metric">
+            <span className={`release-metric-value ${releaseStats.failed > 0 ? 'text-danger' : 'text-success'}`}>
+              {releaseStats.failed}
+            </span>
+            <span className="release-metric-label">Failed Runs</span>
+          </div>
+          <div className="release-metric">
+            <span className="release-metric-value">{releaseStats.archived}/{releaseStats.completed + releaseStats.failed + releaseStats.aborted}</span>
+            <span className="release-metric-label">Archives Ready</span>
+          </div>
+          <div className="release-metric">
+            <span className="release-metric-value">{releaseStats.totalTx.toLocaleString()}</span>
+            <span className="release-metric-label">Archived Transactions</span>
+          </div>
+          <div className="release-metric">
+            <span className="release-metric-value">{formatNumber(stats.activeTps, 1)}</span>
+            <span className="release-metric-label">Current TPS</span>
+          </div>
+          <div className="release-metric">
+            <span className={`release-metric-value ${stats.avgError > 0 ? 'text-danger' : ''}`}>{formatNumber(stats.avgError, 2)}%</span>
+            <span className="release-metric-label">Current Error Rate</span>
+          </div>
+        </div>
+      </section>
+
+      <section className="dash-section dash-performance-trend">
+        <div className="dash-section-heading-row">
+          <h3 className="dash-section-title">Performance Trend</h3>
+          <span className="dash-context-chip">Last {archivedReleaseRuns.length || 0} archived runs</span>
+        </div>
+        {performanceTrend.length === 0 ? (
+          <div className="dash-empty small">
+            <span>No archived performance reports yet</span>
+          </div>
+        ) : (
+          <div className="trend-table-wrap">
+            <table className="trend-table">
+              <thead>
+                <tr>
+                  <th>Run</th>
+                  <th>Completed</th>
+                  <th className="num">Peak TPS</th>
+                  <th className="num">Avg ms</th>
+                  <th className="num">Errors</th>
+                  <th className="num">Peak VUsers</th>
+                  <th className="num">Transactions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {performanceTrend.map(({ test, report }) => (
+                  <tr key={test.id} onClick={() => onSelectTest(test.id)}>
+                    <td>
+                      <span className="trend-run-name">{test.name}</span>
+                      <span className="trend-run-meta">{test.script_name || `${test.total_vusers} VUsers`}</span>
+                    </td>
+                    <td>{formatDateTime(test.ended_at || test.start_time || test.created_at)}</td>
+                    <td className="num strong">{formatNumber(report.overview.peak_tps, 1)}</td>
+                    <td className="num">{formatNumber(report.overview.avg_response_ms)}</td>
+                    <td className={`num ${report.overview.error_pct > 0 ? 'text-danger strong' : ''}`}>
+                      {formatNumber(report.overview.error_pct, 2)}%
+                    </td>
+                    <td className="num">{report.overview.peak_active_vusers.toLocaleString()}</td>
+                    <td className="num">{report.overview.transactions.toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
 
       {/* Active Tests */}
       <section className="dash-section">
@@ -160,16 +525,57 @@ export default function DashboardPage({ testStatuses, metricsHistory, connected,
             <span className="dash-empty-hint">Start a scenario from the Scenarios page</span>
           </div>
         ) : (
-          <div className="dash-active-grid">
-            {activeTests.map(test => {
+          <div className={`dash-active-grid ${customizingCards ? 'is-customizing' : ''}`}>
+            {orderedActiveTests.map(test => {
               const history = metricsHistory[test.id] || []
               const latest = test.live_metrics
+              const cardSettings = { ...defaultGraphCardSettings, ...activeCardSettings[test.id] }
+              const metricOption = graphMetricOptions.find(option => option.key === cardSettings.metric) || graphMetricOptions[0]
+              const chartData = history.slice(-60).map(point => ({
+                ...point,
+                selectedMetric: getHistoryMetric(point, cardSettings.metric),
+              }))
               return (
-                <div key={test.id} className="dash-active-card" onClick={() => onSelectTest(test.id)}>
+                <div
+                  key={test.id}
+                  className={`dash-active-card ${customizingCards ? 'editable' : ''} ${draggedCardId === test.id ? 'dragging' : ''}`}
+                  draggable={customizingCards}
+                  onDragStart={event => handleCardDragStart(event, test.id)}
+                  onDragOver={event => handleCardDragOver(event, test.id)}
+                  onDrop={event => handleCardDrop(event, test.id)}
+                  onDragEnd={() => setDraggedCardId(null)}
+                  onClick={() => !customizingCards && onSelectTest(test.id)}
+                >
                   <div className="dac-header">
-                    <span className="dac-name">{test.name}</span>
+                    <div className="dac-title-wrap">
+                      {customizingCards && <span className="dac-drag-handle" title="Drag to reorder">::</span>}
+                      <span className="dac-name">{test.name}</span>
+                    </div>
                     <StatusBadge status={test.status} />
                   </div>
+                  {customizingCards && (
+                    <div className="dac-editor" onClick={event => event.stopPropagation()}>
+                      <label>
+                        Graph
+                        <select
+                          value={cardSettings.metric}
+                          onChange={event => updateCardSettings(test.id, { metric: event.target.value as CardMetricKey })}
+                        >
+                          {graphMetricOptions.map(option => (
+                            <option key={option.key} value={option.key}>{option.label}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="dac-checkbox">
+                        <input
+                          type="checkbox"
+                          checked={cardSettings.showGraph}
+                          onChange={event => updateCardSettings(test.id, { showGraph: event.target.checked })}
+                        />
+                        Show graph
+                      </label>
+                    </div>
+                  )}
                   <div className="dac-metrics">
                     <div className="dac-metric">
                       <span className="dac-metric-value">{latest?.active_vusers ?? test.total_vusers}</span>
@@ -190,26 +596,27 @@ export default function DashboardPage({ testStatuses, metricsHistory, connected,
                       <span className="dac-metric-label">Errors</span>
                     </div>
                   </div>
-                  {history.length > 1 && (
+                  {cardSettings.showGraph && chartData.length > 1 && (
                     <div className="dac-sparkline">
                       <ResponsiveContainer width="100%" height={60}>
-                        <AreaChart data={history.slice(-60)}>
+                        <AreaChart data={chartData}>
                           <defs>
                             <linearGradient id={`spark-${test.id}`} x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="0%" stopColor="var(--accent)" stopOpacity={0.3} />
-                              <stop offset="100%" stopColor="var(--accent)" stopOpacity={0} />
+                              <stop offset="0%" stopColor={metricOption.color} stopOpacity={0.3} />
+                              <stop offset="100%" stopColor={metricOption.color} stopOpacity={0} />
                             </linearGradient>
                           </defs>
                           <Area
                             type="monotone"
-                            dataKey="tps"
-                            stroke="var(--accent)"
+                            dataKey="selectedMetric"
+                            stroke={metricOption.color}
                             fill={`url(#spark-${test.id})`}
                             strokeWidth={1.5}
                             isAnimationActive={false}
                           />
                         </AreaChart>
                       </ResponsiveContainer>
+                      <span className="dac-chart-label">{metricOption.label}</span>
                     </div>
                   )}
                   <div className="dac-footer">
@@ -240,11 +647,34 @@ export default function DashboardPage({ testStatuses, metricsHistory, connected,
                   <div className="feed-content">
                     <span className="feed-name">{test.name}</span>
                     <span className="feed-meta">
-                      {test.total_vusers} VUsers · {test.duration}
-                      {test.ended_at && ` · ${new Date(test.ended_at).toLocaleTimeString()}`}
+                      {test.total_vusers} VUsers · {test.duration} · {test.archive ? `${test.archive.transaction_count.toLocaleString()} tx` : 'archive pending'}
+                    </span>
+                    <span className="feed-meta">
+                      {formatDateTime(test.ended_at || test.start_time || test.created_at)}
                     </span>
                   </div>
                   <StatusBadge status={test.status} />
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <section className="dash-section dash-attention">
+          <h3 className="dash-section-title">Attention Needed</h3>
+          {attentionItems.length === 0 ? (
+            <div className="dash-empty small">
+              <span>No current issues detected</span>
+            </div>
+          ) : (
+            <div className="attention-list">
+              {attentionItems.map((item, index) => (
+                <div key={`${item.title}-${index}`} className={`attention-item ${item.tone}`} onClick={() => item.testId && onSelectTest(item.testId)}>
+                  <span className={`attention-marker ${item.tone}`} />
+                  <div className="attention-content">
+                    <span className="attention-title">{item.title}</span>
+                    <span className="attention-detail">{item.detail}</span>
+                  </div>
                 </div>
               ))}
             </div>

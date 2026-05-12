@@ -1,5 +1,5 @@
 // Package protocol defines the interface for load testing protocols and
-// provides implementations for HTTP, JMS (Solace), and JMS (IBM MQ).
+// provides implementations for HTTP and JMS (Solace).
 //
 // All protocol implementations must satisfy the Protocol interface.
 // New protocols can be added by:

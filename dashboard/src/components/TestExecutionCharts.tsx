@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useState, type DragEvent } from 'react'
 import {
   Area,
   AreaChart,
@@ -66,6 +67,27 @@ const chartConfigs: ChartConfig[] = [
   { id: 'network_latency', title: 'Route Latency (ms)', type: 'line-network' },
 ]
 
+function readStoredArray(key: string) {
+  if (typeof window === 'undefined') return []
+  try {
+    const stored = window.localStorage.getItem(key)
+    if (!stored) return []
+    const parsed = JSON.parse(stored)
+    return Array.isArray(parsed) ? parsed.filter(value => typeof value === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+function moveChartId(ids: string[], draggedId: string, targetId: string) {
+  if (draggedId === targetId) return ids
+  const next = ids.filter(id => id !== draggedId)
+  const targetIndex = next.indexOf(targetId)
+  if (targetIndex === -1) return ids
+  next.splice(targetIndex, 0, draggedId)
+  return next
+}
+
 export default function TestExecutionCharts({
   filteredData,
   expandedChart,
@@ -80,26 +102,151 @@ export default function TestExecutionCharts({
   groupNames,
   groupColors,
 }: Props) {
+  const [customizingCharts, setCustomizingCharts] = useState(false)
+  const [draggedChartId, setDraggedChartId] = useState<string | null>(null)
+  const [chartOrder, setChartOrder] = useState<string[]>(() => readStoredArray('stormrunner.execution.chartOrder'))
+  const [hiddenChartIds, setHiddenChartIds] = useState<string[]>(() => readStoredArray('stormrunner.execution.hiddenCharts'))
+
+  useEffect(() => {
+    const knownIds = chartConfigs.map(chart => chart.id)
+    setChartOrder(prev => {
+      const retained = prev.filter(id => knownIds.includes(id))
+      const added = knownIds.filter(id => !retained.includes(id))
+      return [...retained, ...added]
+    })
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.localStorage.setItem('stormrunner.execution.chartOrder', JSON.stringify(chartOrder))
+  }, [chartOrder])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.localStorage.setItem('stormrunner.execution.hiddenCharts', JSON.stringify(hiddenChartIds))
+  }, [hiddenChartIds])
+
+  const orderedCharts = useMemo(() => {
+    const byId = new Map(chartConfigs.map(chart => [chart.id, chart]))
+    const ordered = chartOrder
+      .map(id => byId.get(id))
+      .filter((chart): chart is ChartConfig => Boolean(chart))
+    return ordered.length ? ordered : chartConfigs
+  }, [chartOrder])
+
   if (filteredData.length <= 1) {
     return null
   }
 
   const latest = filteredData[filteredData.length - 1] || {}
-  const sortedCharts = [...chartConfigs].sort((a, b) => {
-    if (a.id === expandedChart) return -1
-    if (b.id === expandedChart) return 1
-    return 0
-  })
+  const visibleCharts = orderedCharts.filter(chart => !hiddenChartIds.includes(chart.id))
+  const hiddenCharts = orderedCharts.filter(chart => hiddenChartIds.includes(chart.id))
+
+  const handleChartDragStart = (event: DragEvent<HTMLDivElement>, chartId: string) => {
+    if (!customizingCharts) return
+    setDraggedChartId(chartId)
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', chartId)
+  }
+
+  const handleChartDragOver = (event: DragEvent<HTMLDivElement>, targetId: string) => {
+    if (!customizingCharts || !draggedChartId || draggedChartId === targetId) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'move'
+  }
+
+  const handleChartDrop = (event: DragEvent<HTMLDivElement>, targetId: string) => {
+    if (!customizingCharts) return
+    event.preventDefault()
+    const sourceId = event.dataTransfer.getData('text/plain') || draggedChartId
+    if (!sourceId) return
+    setChartOrder(prev => moveChartId(prev, sourceId, targetId))
+    setDraggedChartId(null)
+  }
+
+  const toggleChartVisibility = (chartId: string) => {
+    setHiddenChartIds(prev =>
+      prev.includes(chartId)
+        ? prev.filter(id => id !== chartId)
+        : [...prev, chartId],
+    )
+  }
+
+  const resetCharts = () => {
+    setChartOrder(chartConfigs.map(chart => chart.id))
+    setHiddenChartIds([])
+  }
 
   return (
-    <div className="charts-grid">
-      {sortedCharts.map((chart) => (
-        <div key={chart.id} className={`chart-card ${expandedChart === chart.id ? 'expanded' : ''}`}>
-          <div className="chart-card-header">
-            <h3 className="chart-title">{chart.title}</h3>
-            <button className="btn-icon btn-expand" onClick={() => onExpandedChartChange(expandedChart === chart.id ? null : chart.id)}>
-              {expandedChart === chart.id ? '↙' : '↗'}
+    <>
+      <div className="charts-customize-bar">
+        <div>
+          <h3>Graphs</h3>
+          <span>{visibleCharts.length} visible / {hiddenCharts.length} hidden</span>
+        </div>
+        <div className="charts-customize-actions">
+          {customizingCharts && (
+            <button className="btn btn-secondary btn-sm" type="button" onClick={resetCharts}>
+              Reset Graphs
             </button>
+          )}
+          <button
+            className={`btn btn-sm ${customizingCharts ? 'btn-primary' : 'btn-secondary'}`}
+            type="button"
+            onClick={() => setCustomizingCharts(value => !value)}
+          >
+            {customizingCharts ? 'Done' : 'Customize Graphs'}
+          </button>
+        </div>
+      </div>
+
+      {customizingCharts && hiddenCharts.length > 0 && (
+        <div className="hidden-chart-list">
+          {hiddenCharts.map(chart => (
+            <button key={chart.id} className="hidden-chart-pill" type="button" onClick={() => toggleChartVisibility(chart.id)}>
+              Show {chart.title}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {visibleCharts.length === 0 ? (
+        <div className="charts-empty">
+          <span>All graphs are hidden</span>
+          <button className="btn btn-secondary btn-sm" type="button" onClick={resetCharts}>Reset Graphs</button>
+        </div>
+      ) : (
+        <div className={`charts-grid ${customizingCharts ? 'is-customizing' : ''}`}>
+          {visibleCharts.map((chart) => (
+            <div
+              key={chart.id}
+              className={`chart-card ${expandedChart === chart.id ? 'expanded' : ''} ${customizingCharts ? 'editable' : ''} ${draggedChartId === chart.id ? 'dragging' : ''}`}
+              draggable={customizingCharts}
+              onDragStart={event => handleChartDragStart(event, chart.id)}
+              onDragOver={event => handleChartDragOver(event, chart.id)}
+              onDrop={event => handleChartDrop(event, chart.id)}
+              onDragEnd={() => setDraggedChartId(null)}
+            >
+              <div className="chart-card-header">
+                <div className="chart-title-wrap">
+                  {customizingCharts && <span className="chart-drag-handle" title="Drag to reorder">::</span>}
+                  <h3 className="chart-title">{chart.title}</h3>
+                </div>
+                <div className="chart-card-actions">
+                  {customizingCharts && (
+                    <button className="btn-icon btn-hide-chart" type="button" onClick={() => toggleChartVisibility(chart.id)} title="Hide graph">
+                      Hide
+                    </button>
+                  )}
+                  <button
+                    className="btn-icon btn-expand"
+                    type="button"
+                    disabled={customizingCharts}
+                    onClick={() => onExpandedChartChange(expandedChart === chart.id ? null : chart.id)}
+                  >
+                    {expandedChart === chart.id ? '↙' : '↗'}
+                  </button>
+                </div>
           </div>
           <ResponsiveContainer width="100%" height={expandedChart === chart.id ? 400 : 200}>
             {chart.type === 'area' ? (
@@ -347,8 +494,10 @@ export default function TestExecutionCharts({
               </>
             )}
           </div>
+            </div>
+          ))}
         </div>
-      ))}
-    </div>
+      )}
+    </>
   )
 }

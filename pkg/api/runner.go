@@ -1856,6 +1856,12 @@ func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[s
 	return live
 }
 
+func buildLiveMetricsForBroadcast(snap engine.MetricsSnapshot, groupVUsers map[string]int, now time.Time) *LiveMetrics {
+	live := buildLiveMetricsFromSnapshot(snap, groupVUsers)
+	live.Timestamp = now
+	return live
+}
+
 func buildThresholdAlerts(test *ManagedTest, live *LiveMetrics, thresholds ThresholdSettings) []map[string]any {
 	alerts := make([]map[string]any, 0, 2)
 	if thresholds.MaxP99LatencyMs != nil && live.P99Ms > *thresholds.MaxP99LatencyMs {
@@ -2065,7 +2071,7 @@ func (tr *TestRunner) broadcastMetrics(test *ManagedTest, mge *engine.MultiGroup
 				continue
 			}
 
-			live := buildLiveMetricsFromSnapshot(snap, groupVUsers)
+			live := buildLiveMetricsForBroadcast(snap, groupVUsers, time.Now())
 
 			if test.ScenarioMode == "goal_oriented" && test.GoalConfig != nil {
 				currentTotalVUsers := totalGroupVUsers(groupVUsers)

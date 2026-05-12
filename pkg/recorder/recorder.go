@@ -9,6 +9,8 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -16,6 +18,12 @@ import (
 )
 
 const defaultBodyCaptureLimitBytes = 512 * 1024
+
+const (
+	defaultRecorderCADir  = "artifacts/recorder"
+	defaultRecorderCACert = "ca-cert.pem"
+	defaultRecorderCAKey  = "ca-key.pem"
+)
 
 type RecordedRequest struct {
 	Seq                   int                 `json:"seq"`
@@ -95,6 +103,8 @@ type Recorder struct {
 	active   *Session
 	proxy    *http.Server
 	addr     string
+	caCertPath string
+	caKeyPath  string
 
 	// TLS interception fields
 	caOnce    sync.Once
@@ -106,13 +116,32 @@ type Recorder struct {
 }
 
 func New(proxyAddr string) *Recorder {
+	certPath, keyPath := defaultCAFiles()
+	return NewWithCAFiles(proxyAddr, certPath, keyPath)
+}
+
+func NewWithCAFiles(proxyAddr, caCertPath, caKeyPath string) *Recorder {
 	if proxyAddr == "" {
 		proxyAddr = ":8081"
 	}
 	return &Recorder{
 		sessions: make(map[string]*Session),
 		addr:     proxyAddr,
+		caCertPath: caCertPath,
+		caKeyPath:  caKeyPath,
 	}
+}
+
+func defaultCAFiles() (string, string) {
+	baseDir := os.Getenv("STORMRUNNER_RECORDER_CA_DIR")
+	if strings.TrimSpace(baseDir) == "" {
+		baseDir = defaultRecorderCADir
+	}
+	return filepath.Join(baseDir, defaultRecorderCACert), filepath.Join(baseDir, defaultRecorderCAKey)
+}
+
+func (r *Recorder) CACertPath() string {
+	return r.caCertPath
 }
 
 func (r *Recorder) StartSession(id, name string, filters SessionFilters, notify func(SessionEvent)) (*Session, error) {

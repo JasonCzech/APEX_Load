@@ -13,6 +13,7 @@ import (
 	"github.com/jasonczech/stormrunner/pkg/engine"
 	_ "github.com/jasonczech/stormrunner/pkg/protocol/browser"
 	_ "github.com/jasonczech/stormrunner/pkg/protocol/http"
+	_ "github.com/jasonczech/stormrunner/pkg/protocol/jms"
 )
 
 func main() {
