@@ -17,7 +17,7 @@ This should sit alongside the existing LoadRunner import path and position Storm
 - `GET /api/v1/scripts/import/jmeter/support-matrix` is implemented and used by the dashboard.
 - The Scripts page now exposes an `Import JMeter` entry with both `Validate Only` and `Convert JMeter Plan` actions.
 - Generated scripts now include JMeter import provenance metadata: original file name, import timestamp, warning count, and unsupported count.
-- Sampler-level regex, JSONPath, JMESPath, CSS/JQuery, XPath, and basic XPath2 post-processors are mapped to Stormrunner action extractors when they fit the DSL directly, including header-scoped regex extraction for HTTP responses.
+- Sampler-level regex, JSONPath, JMESPath, CSS/JQuery, XPath, and XPath2 post-processors are mapped to Stormrunner action extractors when they fit the DSL directly, including header-scoped regex extraction for HTTP responses, XPath fragment output, and XPath2 custom namespace bindings.
 - Sampler-level boundary extractors are mapped to Stormrunner action extractors for supported HTTP response scopes, including response body and response headers.
 - The import review now surfaces captured variables from generated action extractors instead of leaving them buried in raw JSON preview.
 - The support matrix now exposes inline category details on the import screen instead of only showing summary-card previews.
@@ -26,7 +26,7 @@ This should sit alongside the existing LoadRunner import path and position Storm
 - `examples/jmeter-http-extractors.jmx` is available as a manual validation fixture for extractor-focused review coverage.
 
 ### Remaining Phase 1 Gaps
-- Add extractor families and modes that still need new runtime support or lossy mapping decisions, such as XPath2 custom namespaces or fragment output, and non-HTTP JMeter variants.
+- Add extractor families and modes that still need new runtime support or lossy mapping decisions, such as non-HTTP JMeter variants.
 
 ## Goals
 - Reduce onboarding friction for existing performance teams.

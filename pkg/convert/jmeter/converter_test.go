@@ -119,6 +119,19 @@ const sampleExtractorJMX = `<?xml version="1.0" encoding="UTF-8"?>
 						<stringProp name="XPathExtractor2.xpathQuery">//title/text()</stringProp>
 					</XPath2Extractor>
 					<hashTree/>
+					<XPath2Extractor testname="Namespaced Page Title XPath2" enabled="true">
+						<stringProp name="XPathExtractor2.refname">page_title_xpath2_ns</stringProp>
+						<stringProp name="XPathExtractor2.xpathQuery">/age:ag/hd:head/title</stringProp>
+						<stringProp name="XPathExtractor2.namespaces">age=http://www.w3.org/wgs84_pos#
+hd=http://www.w3.org/wgs85_pos#</stringProp>
+					</XPath2Extractor>
+					<hashTree/>
+						<XPath2Extractor testname="Main Section Fragment XPath2" enabled="true">
+							<stringProp name="XPathExtractor2.refname">main_section_fragment</stringProp>
+							<stringProp name="XPathExtractor2.xpathQuery">//section[@id='main']</stringProp>
+							<stringProp name="XPathExtractor2.fragment">true</stringProp>
+						</XPath2Extractor>
+						<hashTree/>
 					<BoundaryExtractor testname="Session Id Boundary" enabled="true">
 						<stringProp name="BoundaryExtractor.refname">session_id</stringProp>
 						<stringProp name="BoundaryExtractor.lboundary">sessionId=</stringProp>
@@ -225,8 +238,8 @@ func TestConvertJMXSamplerExtractors(t *testing.T) {
 		t.Fatalf("scripts = %d, want 1", len(result.Scripts))
 	}
 	action := result.Scripts[0].Actions[0]
-	if len(action.Extractors) != 9 {
-		t.Fatalf("extractors = %d, want 9", len(action.Extractors))
+	if len(action.Extractors) != 11 {
+		t.Fatalf("extractors = %d, want 11", len(action.Extractors))
 	}
 	if action.Extractors[0].Name != "session_token" || action.Extractors[0].Type != "regex" {
 		t.Fatalf("unexpected regex extractor: %#v", action.Extractors[0])
@@ -249,19 +262,71 @@ func TestConvertJMXSamplerExtractors(t *testing.T) {
 	if action.Extractors[6].Name != "page_title_xpath2" || action.Extractors[6].Source != "body" || action.Extractors[6].Type != "xpath" || action.Extractors[6].Expression != "//title/text()" {
 		t.Fatalf("unexpected XPath2 extractor: %#v", action.Extractors[6])
 	}
-	if action.Extractors[7].Name != "session_id" || action.Extractors[7].Source != "body" || action.Extractors[7].Type != "boundary" || action.Extractors[7].Expression != "sessionId=|||&" {
-		t.Fatalf("unexpected boundary extractor: %#v", action.Extractors[7])
+	expectedNamespacedXPath2 := encodeXPathExpression("/age:ag/hd:head/title", false, map[string]string{
+		"age": "http://www.w3.org/wgs84_pos#",
+		"hd":  "http://www.w3.org/wgs85_pos#",
+	})
+	if action.Extractors[7].Name != "page_title_xpath2_ns" || action.Extractors[7].Source != "body" || action.Extractors[7].Type != "xpath" || action.Extractors[7].Expression != expectedNamespacedXPath2 {
+		t.Fatalf("unexpected namespaced XPath2 extractor: %#v", action.Extractors[7])
 	}
-	if action.Extractors[8].Name != "trace_id" || action.Extractors[8].Source != "header" || action.Extractors[8].Type != "boundary" || action.Extractors[8].Expression != "Set-Cookie: trace_id=|||;" {
-		t.Fatalf("unexpected header boundary extractor: %#v", action.Extractors[8])
+	if action.Extractors[8].Name != "main_section_fragment" || action.Extractors[8].Source != "body" || action.Extractors[8].Type != "xpath" || action.Extractors[8].Expression != xpathFragmentExpressionPrefix+"//section[@id='main']" {
+		t.Fatalf("unexpected XPath2 fragment extractor: %#v", action.Extractors[8])
+	}
+	if action.Extractors[9].Name != "session_id" || action.Extractors[9].Source != "body" || action.Extractors[9].Type != "boundary" || action.Extractors[9].Expression != "sessionId=|||&" {
+		t.Fatalf("unexpected boundary extractor: %#v", action.Extractors[9])
+	}
+	if action.Extractors[10].Name != "trace_id" || action.Extractors[10].Source != "header" || action.Extractors[10].Type != "boundary" || action.Extractors[10].Expression != "Set-Cookie: trace_id=|||;" {
+		t.Fatalf("unexpected header boundary extractor: %#v", action.Extractors[10])
 	}
 }
 
-func TestConvertJMXXPath2UnsupportedModesWarn(t *testing.T) {
-	const sampleXPath2UnsupportedJMX = `<?xml version="1.0" encoding="UTF-8"?>
+func TestConvertJMXXPathExtractorFragment(t *testing.T) {
+	const sampleXPathFragmentJMX = `<?xml version="1.0" encoding="UTF-8"?>
 <jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
   <hashTree>
-    <TestPlan testname="XPath2 Unsupported Plan" enabled="true"/>
+    <TestPlan testname="XPath Fragment Plan" enabled="true"/>
+    <hashTree>
+      <ThreadGroup testname="Auth Users" enabled="true">
+        <stringProp name="ThreadGroup.num_threads">1</stringProp>
+      </ThreadGroup>
+      <hashTree>
+        <HTTPSamplerProxy testname="Create Session" enabled="true">
+          <stringProp name="HTTPSampler.domain">api.example.com</stringProp>
+          <stringProp name="HTTPSampler.protocol">https</stringProp>
+          <stringProp name="HTTPSampler.path">/session</stringProp>
+          <stringProp name="HTTPSampler.method">POST</stringProp>
+        </HTTPSamplerProxy>
+        <hashTree>
+          <XPathExtractor testname="Page Fragment XPath" enabled="true">
+            <stringProp name="XPathExtractor.refname">page_fragment</stringProp>
+            <stringProp name="XPathExtractor.xpathQuery">//page</stringProp>
+            <stringProp name="XPathExtractor.fragment">true</stringProp>
+          </XPathExtractor>
+          <hashTree/>
+        </hashTree>
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>`
+
+	result, err := ConvertJMX([]byte(sampleXPathFragmentJMX), ConvertOptions{FileName: "extractors.jmx"})
+	if err != nil {
+		t.Fatalf("ConvertJMX returned error: %v", err)
+	}
+	action := result.Scripts[0].Actions[0]
+	if len(action.Extractors) != 1 {
+		t.Fatalf("extractors = %d, want 1", len(action.Extractors))
+	}
+	if action.Extractors[0].Name != "page_fragment" || action.Extractors[0].Expression != xpathFragmentExpressionPrefix+"//page" {
+		t.Fatalf("unexpected XPath fragment extractor: %#v", action.Extractors[0])
+	}
+}
+
+func TestConvertJMXXPath2NamespacesSupported(t *testing.T) {
+	const sampleXPath2NamespacedJMX = `<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
+  <hashTree>
+    <TestPlan testname="XPath2 Namespaced Plan" enabled="true"/>
     <hashTree>
       <ThreadGroup testname="Auth Users" enabled="true">
         <stringProp name="ThreadGroup.num_threads">1</stringProp>
@@ -276,8 +341,9 @@ func TestConvertJMXXPath2UnsupportedModesWarn(t *testing.T) {
         <hashTree>
           <XPath2Extractor testname="Namespaced XPath2" enabled="true">
             <stringProp name="XPathExtractor2.refname">page_title_xpath2</stringProp>
-            <stringProp name="XPathExtractor2.xpathQuery">/age:ag/head/title</stringProp>
-            <stringProp name="XPathExtractor2.namespaces">age=http://www.w3.org/wgs84_pos#</stringProp>
+						<stringProp name="XPathExtractor2.xpathQuery">/age:ag/hd:head/title</stringProp>
+						<stringProp name="XPathExtractor2.namespaces">age=http://www.w3.org/wgs84_pos#
+hd=http://www.w3.org/wgs85_pos#</stringProp>
           </XPath2Extractor>
           <hashTree/>
         </hashTree>
@@ -286,7 +352,59 @@ func TestConvertJMXXPath2UnsupportedModesWarn(t *testing.T) {
   </hashTree>
 </jmeterTestPlan>`
 
-	result, err := ConvertJMX([]byte(sampleXPath2UnsupportedJMX), ConvertOptions{FileName: "extractors.jmx"})
+	result, err := ConvertJMX([]byte(sampleXPath2NamespacedJMX), ConvertOptions{FileName: "extractors.jmx"})
+	if err != nil {
+		t.Fatalf("ConvertJMX returned error: %v", err)
+	}
+	action := result.Scripts[0].Actions[0]
+	if len(action.Extractors) != 1 {
+		t.Fatalf("extractors = %d, want 1", len(action.Extractors))
+	}
+	expected := encodeXPathExpression("/age:ag/hd:head/title", false, map[string]string{
+		"age": "http://www.w3.org/wgs84_pos#",
+		"hd":  "http://www.w3.org/wgs85_pos#",
+	})
+	if action.Extractors[0].Expression != expected {
+		t.Fatalf("unexpected namespaced XPath2 encoding: %#v", action.Extractors[0])
+	}
+	if len(result.Warnings) != 0 {
+		t.Fatalf("warnings = %#v, want none", result.Warnings)
+	}
+	if action.Extractors[0].Name != "page_title_xpath2" || action.Extractors[0].Type != "xpath" {
+		t.Fatalf("unexpected namespaced XPath2 extractor: %#v", action.Extractors[0])
+	}
+}
+
+func TestConvertJMXXPath2InvalidNamespacesWarn(t *testing.T) {
+	const sampleXPath2InvalidNamespacesJMX = `<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
+  <hashTree>
+    <TestPlan testname="XPath2 Invalid Namespaces Plan" enabled="true"/>
+    <hashTree>
+      <ThreadGroup testname="Auth Users" enabled="true">
+        <stringProp name="ThreadGroup.num_threads">1</stringProp>
+      </ThreadGroup>
+      <hashTree>
+        <HTTPSamplerProxy testname="Create Session" enabled="true">
+          <stringProp name="HTTPSampler.domain">api.example.com</stringProp>
+          <stringProp name="HTTPSampler.protocol">https</stringProp>
+          <stringProp name="HTTPSampler.path">/session</stringProp>
+          <stringProp name="HTTPSampler.method">POST</stringProp>
+        </HTTPSamplerProxy>
+        <hashTree>
+          <XPath2Extractor testname="Broken Namespaces XPath2" enabled="true">
+            <stringProp name="XPathExtractor2.refname">page_title_xpath2</stringProp>
+            <stringProp name="XPathExtractor2.xpathQuery">/age:ag/head/title</stringProp>
+            <stringProp name="XPathExtractor2.namespaces">age</stringProp>
+          </XPath2Extractor>
+          <hashTree/>
+        </hashTree>
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>`
+
+	result, err := ConvertJMX([]byte(sampleXPath2InvalidNamespacesJMX), ConvertOptions{FileName: "extractors.jmx"})
 	if err != nil {
 		t.Fatalf("ConvertJMX returned error: %v", err)
 	}
@@ -294,10 +412,10 @@ func TestConvertJMXXPath2UnsupportedModesWarn(t *testing.T) {
 	if len(action.Extractors) != 0 {
 		t.Fatalf("extractors = %d, want 0", len(action.Extractors))
 	}
-	if len(result.Warnings) == 0 {
-		t.Fatal("expected warning for unsupported XPath2 mode")
+	if len(result.Warnings) != 1 {
+		t.Fatalf("warnings = %#v, want 1 warning", result.Warnings)
 	}
-	if !strings.Contains(result.Warnings[0], "XPath2 extractor \"page_title_xpath2\" was skipped") {
-		t.Fatalf("unexpected warning: %#v", result.Warnings)
+	if !strings.Contains(result.Warnings[0], "namespace bindings were invalid") {
+		t.Fatalf("unexpected warning detail: %#v", result.Warnings)
 	}
 }

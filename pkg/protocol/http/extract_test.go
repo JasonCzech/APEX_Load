@@ -1,6 +1,8 @@
 package http
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"net/http"
 	"testing"
 
@@ -165,6 +167,61 @@ func TestExtractXPath_HTMLFallback(t *testing.T) {
 	}
 }
 
+func TestExtractXPath_XMLFragment(t *testing.T) {
+	val, err := extractFromBody(protocol.Extractor{Type: "xpath", Expression: xpathFragmentExpressionPrefix + "/response/page"}, []byte(`<response><page>two</page></response>`))
+	if err != nil {
+		t.Fatalf("extract XPath XML fragment: %v", err)
+	}
+	if val != "<page>two</page>" {
+		t.Errorf("got %q, want %q", val, "<page>two</page>")
+	}
+}
+
+func TestExtractXPath_HTMLFragment(t *testing.T) {
+	val, err := extractFromBody(protocol.Extractor{Type: "xpath", Expression: xpathFragmentExpressionPrefix + "//a[@class='login']"}, []byte(`<html><body><a class="login" href="/signin">Sign in`))
+	if err != nil {
+		t.Fatalf("extract XPath HTML fragment: %v", err)
+	}
+	if val != `<a class="login" href="/signin">Sign in</a>` {
+		t.Errorf("got %q, want %q", val, `<a class="login" href="/signin">Sign in</a>`)
+	}
+}
+
+func TestExtractXPath_XMLNamespaces(t *testing.T) {
+	expression := mustEncodeXPathExpressionForTest(t, xpathExpressionConfig{
+		Expression: "/age:ag/hd:head/title",
+		Namespaces: map[string]string{
+			"age": "http://www.w3.org/wgs84_pos#",
+			"hd":  "http://www.w3.org/wgs85_pos#",
+		},
+	})
+	val, err := extractFromBody(protocol.Extractor{Type: "xpath", Expression: expression}, []byte(`<age:ag xmlns:age="http://www.w3.org/wgs84_pos#"><hd:head xmlns:hd="http://www.w3.org/wgs85_pos#"><title>test</title></hd:head></age:ag>`))
+	if err != nil {
+		t.Fatalf("extract XPath XML namespaces: %v", err)
+	}
+	if val != "test" {
+		t.Errorf("got %q, want %q", val, "test")
+	}
+}
+
+func TestExtractXPath_XMLNamespacedFragment(t *testing.T) {
+	expression := mustEncodeXPathExpressionForTest(t, xpathExpressionConfig{
+		Expression: "/age:ag/hd:head",
+		Fragment:   true,
+		Namespaces: map[string]string{
+			"age": "http://www.w3.org/wgs84_pos#",
+			"hd":  "http://www.w3.org/wgs85_pos#",
+		},
+	})
+	val, err := extractFromBody(protocol.Extractor{Type: "xpath", Expression: expression}, []byte(`<age:ag xmlns:age="http://www.w3.org/wgs84_pos#"><hd:head xmlns:hd="http://www.w3.org/wgs85_pos#"><title>test</title></hd:head></age:ag>`))
+	if err != nil {
+		t.Fatalf("extract XPath XML namespaced fragment: %v", err)
+	}
+	if val != `<hd:head xmlns:hd="http://www.w3.org/wgs85_pos#"><title>test</title></hd:head>` {
+		t.Errorf("got %q, want %q", val, `<hd:head xmlns:hd="http://www.w3.org/wgs85_pos#"><title>test</title></hd:head>`)
+	}
+}
+
 func TestExtractXPath_NoMatch(t *testing.T) {
 	_, err := extractFromBody(protocol.Extractor{Type: "xpath", Expression: "/response/missing/text()"}, []byte(`<response><value>ok</value></response>`))
 	if err == nil {
@@ -177,6 +234,15 @@ func TestExtractXPath_InvalidExpression(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected invalid XPath expression error")
 	}
+}
+
+func mustEncodeXPathExpressionForTest(t *testing.T, config xpathExpressionConfig) string {
+	t.Helper()
+	payload, err := json.Marshal(config)
+	if err != nil {
+		t.Fatalf("marshal XPath config: %v", err)
+	}
+	return xpathExpressionConfigPrefix + base64.RawStdEncoding.EncodeToString(payload)
 }
 
 func TestExtractRegex(t *testing.T) {

@@ -1,6 +1,7 @@
 package http
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -10,10 +11,21 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/antchfx/htmlquery"
+	"github.com/antchfx/xpath"
 	"github.com/antchfx/xmlquery"
 	"github.com/jasonczech/stormrunner/pkg/protocol"
 	"github.com/jmespath/go-jmespath"
 )
+
+const xpathFragmentExpressionPrefix = "__stormrunner_xpath_fragment__:"
+
+const xpathExpressionConfigPrefix = "__stormrunner_xpath_config__:"
+
+type xpathExpressionConfig struct {
+	Expression string            `json:"expression"`
+	Fragment   bool              `json:"fragment,omitempty"`
+	Namespaces map[string]string `json:"namespaces,omitempty"`
+}
 
 func extract(ext protocol.Extractor, headers http.Header, body []byte) (string, error) {
 	switch ext.Source {
@@ -109,20 +121,32 @@ func extractCSS(expr string, body []byte) (string, error) {
 }
 
 func extractXPath(expr string, body []byte) (string, error) {
-	expr = strings.TrimSpace(expr)
+	expr, fragment, namespaces, err := decodeXPathExpression(expr)
+	if err != nil {
+		return "", fmt.Errorf("invalid encoded XPath expression: %w", err)
+	}
 	if expr == "" {
 		return "", fmt.Errorf("xpath expression is required")
 	}
 
 	if doc, err := xmlquery.Parse(strings.NewReader(string(body))); err == nil {
-		node, err := xmlquery.Query(doc, expr)
+		selector, err := compileXPathSelector(expr, namespaces)
 		if err != nil {
 			return "", fmt.Errorf("invalid XPath expression: %w", err)
 		}
+		node := xmlquery.QuerySelector(doc, selector)
 		if node == nil {
 			return "", fmt.Errorf("no match for XPath %q", expr)
 		}
+		if fragment {
+			return node.OutputXMLWithOptions(xmlquery.WithOutputSelf(), xmlquery.WithoutPreserveSpace()), nil
+		}
 		return node.InnerText(), nil
+	}
+
+	selector, err := compileXPathSelector(expr, namespaces)
+	if err != nil {
+		return "", fmt.Errorf("invalid XPath expression: %w", err)
 	}
 
 	doc, err := htmlquery.Parse(strings.NewReader(string(body)))
@@ -130,15 +154,42 @@ func extractXPath(expr string, body []byte) (string, error) {
 		return "", fmt.Errorf("invalid HTML/XML body: %w", err)
 	}
 
-	node, err := htmlquery.Query(doc, expr)
-	if err != nil {
-		return "", fmt.Errorf("invalid XPath expression: %w", err)
-	}
+	node := htmlquery.QuerySelector(doc, selector)
 	if node == nil {
 		return "", fmt.Errorf("no match for XPath %q", expr)
 	}
+	if fragment {
+		return htmlquery.OutputHTML(node, true), nil
+	}
 
 	return htmlquery.InnerText(node), nil
+	}
+
+func decodeXPathExpression(expr string) (string, bool, map[string]string, error) {
+	expr = strings.TrimSpace(expr)
+	if strings.HasPrefix(expr, xpathFragmentExpressionPrefix) {
+		return strings.TrimSpace(strings.TrimPrefix(expr, xpathFragmentExpressionPrefix)), true, nil, nil
+	}
+	if strings.HasPrefix(expr, xpathExpressionConfigPrefix) {
+		encoded := strings.TrimSpace(strings.TrimPrefix(expr, xpathExpressionConfigPrefix))
+		payload, err := base64.RawStdEncoding.DecodeString(encoded)
+		if err != nil {
+			return "", false, nil, err
+		}
+		var config xpathExpressionConfig
+		if err := json.Unmarshal(payload, &config); err != nil {
+			return "", false, nil, err
+		}
+		return strings.TrimSpace(config.Expression), config.Fragment, config.Namespaces, nil
+	}
+	return expr, false, nil, nil
+}
+
+func compileXPathSelector(expr string, namespaces map[string]string) (*xpath.Expr, error) {
+	if len(namespaces) == 0 {
+		return xpath.Compile(expr)
+	}
+	return xpath.CompileWithNS(expr, namespaces)
 }
 
 func splitCSSExpression(expr string) (selector string, attribute string) {

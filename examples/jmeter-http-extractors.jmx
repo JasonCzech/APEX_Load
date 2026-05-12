@@ -51,6 +51,19 @@
             <stringProp name="XPathExtractor2.xpathQuery">//title/text()</stringProp>
           </XPath2Extractor>
           <hashTree/>
+          <XPath2Extractor testname="Namespaced Page Title XPath2" enabled="true">
+            <stringProp name="XPathExtractor2.refname">page_title_xpath2_ns</stringProp>
+            <stringProp name="XPathExtractor2.xpathQuery">/age:ag/hd:head/title</stringProp>
+            <stringProp name="XPathExtractor2.namespaces">age=http://www.w3.org/wgs84_pos#
+hd=http://www.w3.org/wgs85_pos#</stringProp>
+          </XPath2Extractor>
+          <hashTree/>
+          <XPath2Extractor testname="Main Section Fragment XPath2" enabled="true">
+            <stringProp name="XPathExtractor2.refname">main_section_fragment</stringProp>
+            <stringProp name="XPathExtractor2.xpathQuery">//section[@id='main']</stringProp>
+            <stringProp name="XPathExtractor2.fragment">true</stringProp>
+          </XPath2Extractor>
+          <hashTree/>
           <BoundaryExtractor testname="Session Id Boundary" enabled="true">
             <stringProp name="BoundaryExtractor.refname">session_id</stringProp>
             <stringProp name="BoundaryExtractor.lboundary">sessionId=</stringProp>

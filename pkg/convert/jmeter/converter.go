@@ -2,6 +2,8 @@ package jmeter
 
 import (
 	"bytes"
+	"encoding/base64"
+	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"net/url"
@@ -127,7 +129,7 @@ func GetSupportMatrix() SupportMatrix {
 			"Variable substitution across URLs, headers, and bodies",
 			"Scenario drafts derived from thread groups",
 			"Timer behavior approximated as fixed think time when necessary",
-			"XPath2 Extractor in basic mode without custom namespaces or fragment output",
+			"XPath2 Extractor mapped into Stormrunner XPath when queries fit the shared runtime, including fragment output and custom namespace bindings",
 		},
 		Unsupported: []string{
 			"JSR223 / BeanShell / Groovy scripting",
@@ -531,25 +533,39 @@ func parseHTMLExtractor(node *xmlNode) dsl.Extractor {
 	}
 }
 
+const xpathFragmentExpressionPrefix = "__stormrunner_xpath_fragment__:"
+
+const xpathExpressionConfigPrefix = "__stormrunner_xpath_config__:"
+
+type xpathExpressionConfig struct {
+	Expression string            `json:"expression"`
+	Fragment   bool              `json:"fragment,omitempty"`
+	Namespaces map[string]string `json:"namespaces,omitempty"`
+}
+
 func parseXPathExtractor(node *xmlNode) dsl.Extractor {
+	expression := strings.TrimSpace(prop(node, "XPathExtractor.xpathQuery"))
+	fragment := strings.EqualFold(strings.TrimSpace(prop(node, "XPathExtractor.fragment")), "true")
+
 	return dsl.Extractor{
 		Name:       strings.TrimSpace(prop(node, "XPathExtractor.refname")),
 		Source:     "body",
 		Type:       "xpath",
-		Expression: strings.TrimSpace(prop(node, "XPathExtractor.xpathQuery")),
+		Expression: encodeXPathExpression(expression, fragment, nil),
 	}
 }
 
 func parseXPath2Extractor(node *xmlNode) (dsl.Extractor, string) {
 	name := strings.TrimSpace(prop(node, "XPathExtractor2.refname"))
 	expression := strings.TrimSpace(prop(node, "XPathExtractor2.xpathQuery"))
-	namespaces := strings.TrimSpace(prop(node, "XPathExtractor2.namespaces"))
+	namespaceConfig := strings.TrimSpace(prop(node, "XPathExtractor2.namespaces"))
 	fragment := strings.EqualFold(strings.TrimSpace(prop(node, "XPathExtractor2.fragment")), "true")
 
-	if namespaces != "" || fragment {
-		warning := fmt.Sprintf("XPath2 extractor %q was skipped because custom namespaces and fragment output are not supported yet", name)
+	namespaces, err := parseXPathNamespaces(namespaceConfig)
+	if err != nil {
+		warning := fmt.Sprintf("XPath2 extractor %q was skipped because its namespace bindings were invalid: %v", name, err)
 		if name == "" {
-			warning = "XPath2 extractor was skipped because custom namespaces and fragment output are not supported yet"
+			warning = fmt.Sprintf("XPath2 extractor was skipped because its namespace bindings were invalid: %v", err)
 		}
 		return dsl.Extractor{}, warning
 	}
@@ -558,8 +574,55 @@ func parseXPath2Extractor(node *xmlNode) (dsl.Extractor, string) {
 		Name:       name,
 		Source:     "body",
 		Type:       "xpath",
-		Expression: expression,
+		Expression: encodeXPathExpression(expression, fragment, namespaces),
 	}, ""
+}
+
+func encodeXPathExpression(expression string, fragment bool, namespaces map[string]string) string {
+	expression = strings.TrimSpace(expression)
+	if expression == "" {
+		return expression
+	}
+	if len(namespaces) == 0 {
+		if !fragment {
+			return expression
+		}
+		return xpathFragmentExpressionPrefix + expression
+	}
+	payload, err := json.Marshal(xpathExpressionConfig{
+		Expression: expression,
+		Fragment:   fragment,
+		Namespaces: namespaces,
+	})
+	if err != nil {
+		return expression
+	}
+	return xpathExpressionConfigPrefix + base64.RawStdEncoding.EncodeToString(payload)
+}
+
+func parseXPathNamespaces(raw string) (map[string]string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+
+	namespaces := map[string]string{}
+	for _, field := range strings.Fields(raw) {
+		parts := strings.SplitN(field, "=", 2)
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("expected prefix=uri pair, got %q", field)
+		}
+		prefix := strings.TrimSpace(parts[0])
+		uri := strings.TrimSpace(parts[1])
+		if prefix == "" || uri == "" {
+			return nil, fmt.Errorf("expected prefix=uri pair, got %q", field)
+		}
+		namespaces[prefix] = uri
+	}
+	if len(namespaces) == 0 {
+		return nil, nil
+	}
+	return namespaces, nil
 }
 
 func parseXML(data []byte) (*xmlNode, error) {
