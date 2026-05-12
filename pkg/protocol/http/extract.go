@@ -8,8 +8,11 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/jmespath/go-jmespath"
+	"github.com/PuerkitoBio/goquery"
+	"github.com/antchfx/htmlquery"
+	"github.com/antchfx/xmlquery"
 	"github.com/jasonczech/stormrunner/pkg/protocol"
+	"github.com/jmespath/go-jmespath"
 )
 
 func extract(ext protocol.Extractor, headers http.Header, body []byte) (string, error) {
@@ -65,6 +68,10 @@ func extractFromBody(ext protocol.Extractor, body []byte) (string, error) {
 		return extractJSONPath(ext.Expression, body)
 	case "jmespath":
 		return extractJMESPath(ext.Expression, body)
+	case "css":
+		return extractCSS(ext.Expression, body)
+	case "xpath":
+		return extractXPath(ext.Expression, body)
 	case "regex":
 		return extractRegex(ext.Expression, body)
 	case "boundary":
@@ -72,6 +79,75 @@ func extractFromBody(ext protocol.Extractor, body []byte) (string, error) {
 	default:
 		return "", fmt.Errorf("unsupported extraction type: %s", ext.Type)
 	}
+}
+
+func extractCSS(expr string, body []byte) (string, error) {
+	selector, attribute := splitCSSExpression(expr)
+	if selector == "" {
+		return "", fmt.Errorf("css selector is required")
+	}
+
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(string(body)))
+	if err != nil {
+		return "", fmt.Errorf("invalid HTML body: %w", err)
+	}
+
+	match := doc.Find(selector).First()
+	if match.Length() == 0 {
+		return "", fmt.Errorf("no match for CSS selector %q", selector)
+	}
+
+	if attribute != "" {
+		value, ok := match.Attr(attribute)
+		if !ok {
+			return "", fmt.Errorf("attribute %q not found for CSS selector %q", attribute, selector)
+		}
+		return value, nil
+	}
+
+	return strings.TrimSpace(match.Text()), nil
+}
+
+func extractXPath(expr string, body []byte) (string, error) {
+	expr = strings.TrimSpace(expr)
+	if expr == "" {
+		return "", fmt.Errorf("xpath expression is required")
+	}
+
+	if doc, err := xmlquery.Parse(strings.NewReader(string(body))); err == nil {
+		node, err := xmlquery.Query(doc, expr)
+		if err != nil {
+			return "", fmt.Errorf("invalid XPath expression: %w", err)
+		}
+		if node == nil {
+			return "", fmt.Errorf("no match for XPath %q", expr)
+		}
+		return node.InnerText(), nil
+	}
+
+	doc, err := htmlquery.Parse(strings.NewReader(string(body)))
+	if err != nil {
+		return "", fmt.Errorf("invalid HTML/XML body: %w", err)
+	}
+
+	node, err := htmlquery.Query(doc, expr)
+	if err != nil {
+		return "", fmt.Errorf("invalid XPath expression: %w", err)
+	}
+	if node == nil {
+		return "", fmt.Errorf("no match for XPath %q", expr)
+	}
+
+	return htmlquery.InnerText(node), nil
+}
+
+func splitCSSExpression(expr string) (selector string, attribute string) {
+	parts := strings.SplitN(expr, "|||", 2)
+	selector = strings.TrimSpace(parts[0])
+	if len(parts) == 2 {
+		attribute = strings.TrimSpace(parts[1])
+	}
+	return selector, attribute
 }
 
 func extractJSONPath(expr string, body []byte) (string, error) {

@@ -118,6 +118,8 @@ func GetSupportMatrix() SupportMatrix {
 			"Regex Extractor",
 			"JSON Extractor",
 			"JMESPath Extractor",
+			"CSS/JQuery Extractor",
+			"XPath Extractor",
 			"Boundary Extractor",
 		},
 		Partial: []string{
@@ -388,6 +390,14 @@ func parseSamplerExtractors(node *treeNode) []dsl.Extractor {
 			if ext := parseJMESPathExtractor(child.Element); ext.Name != "" && ext.Expression != "" {
 				out = append(out, ext)
 			}
+		case "HtmlExtractor":
+			if ext := parseHTMLExtractor(child.Element); ext.Name != "" && ext.Expression != "" {
+				out = append(out, ext)
+			}
+		case "XPathExtractor":
+			if ext := parseXPathExtractor(child.Element); ext.Name != "" && ext.Expression != "" {
+				out = append(out, ext)
+			}
 		case "BoundaryExtractor":
 			if ext := parseBoundaryExtractor(child.Element); ext.Name != "" && ext.Expression != "" {
 				out = append(out, ext)
@@ -482,6 +492,35 @@ func parseJMESPathExtractor(node *xmlNode) dsl.Extractor {
 		Source:     "body",
 		Type:       "jmespath",
 		Expression: strings.TrimSpace(prop(node, "JMESExtractor.jmesPathExpr")),
+	}
+}
+
+func parseHTMLExtractor(node *xmlNode) dsl.Extractor {
+	selector := strings.TrimSpace(prop(node, "HtmlExtractor.expr"))
+	attribute := strings.TrimSpace(prop(node, "HtmlExtractor.attribute"))
+	if selector == "" {
+		return dsl.Extractor{}
+	}
+
+	expression := selector
+	if attribute != "" {
+		expression += "|||" + attribute
+	}
+
+	return dsl.Extractor{
+		Name:       strings.TrimSpace(prop(node, "HtmlExtractor.refname")),
+		Source:     "body",
+		Type:       "css",
+		Expression: expression,
+	}
+}
+
+func parseXPathExtractor(node *xmlNode) dsl.Extractor {
+	return dsl.Extractor{
+		Name:       strings.TrimSpace(prop(node, "XPathExtractor.refname")),
+		Source:     "body",
+		Type:       "xpath",
+		Expression: strings.TrimSpace(prop(node, "XPathExtractor.xpathQuery")),
 	}
 }
 

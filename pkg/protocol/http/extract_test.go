@@ -97,6 +97,88 @@ func TestExtractJMESPath_InvalidExpression(t *testing.T) {
 	}
 }
 
+func TestExtractCSS_Text(t *testing.T) {
+	body := []byte(`<html><body><p class="primary">Alpha</p><p>Beta</p></body></html>`)
+
+	val, err := extractCSS("p.primary", body)
+	if err != nil {
+		t.Fatalf("extractCSS: %v", err)
+	}
+	if val != "Alpha" {
+		t.Errorf("got %q, want %q", val, "Alpha")
+	}
+}
+
+func TestExtractCSS_Attribute(t *testing.T) {
+	body := []byte(`<html><body><a class="login" href="/auth">Login</a></body></html>`)
+
+	val, err := extractCSS("a.login|||href", body)
+	if err != nil {
+		t.Fatalf("extractCSS: %v", err)
+	}
+	if val != "/auth" {
+		t.Errorf("got %q, want %q", val, "/auth")
+	}
+}
+
+func TestExtractCSS_NoMatch(t *testing.T) {
+	_, err := extractCSS("p.missing", []byte(`<html><body><p>Alpha</p></body></html>`))
+	if err == nil {
+		t.Fatal("expected error for missing CSS selector match")
+	}
+}
+
+func TestExtractCSS_MissingAttribute(t *testing.T) {
+	_, err := extractCSS("a.login|||href", []byte(`<html><body><a class="login">Login</a></body></html>`))
+	if err == nil {
+		t.Fatal("expected error for missing CSS attribute")
+	}
+}
+
+func TestExtractXPath_XMLText(t *testing.T) {
+	val, err := extractFromBody(protocol.Extractor{Type: "xpath", Expression: "/response/user/name/text()"}, []byte(`<response><user><name>Ada</name></user></response>`))
+	if err != nil {
+		t.Fatalf("extract XPath XML text: %v", err)
+	}
+	if val != "Ada" {
+		t.Errorf("got %q, want %q", val, "Ada")
+	}
+}
+
+func TestExtractXPath_XMLAttribute(t *testing.T) {
+	val, err := extractFromBody(protocol.Extractor{Type: "xpath", Expression: "/response/link/@href"}, []byte(`<response><link href="/signin">Sign in</link></response>`))
+	if err != nil {
+		t.Fatalf("extract XPath XML attribute: %v", err)
+	}
+	if val != "/signin" {
+		t.Errorf("got %q, want %q", val, "/signin")
+	}
+}
+
+func TestExtractXPath_HTMLFallback(t *testing.T) {
+	val, err := extractFromBody(protocol.Extractor{Type: "xpath", Expression: "//a[@class='login']/@href"}, []byte(`<html><body><a class="login" href="/signin">Sign in`))
+	if err != nil {
+		t.Fatalf("extract XPath HTML fallback: %v", err)
+	}
+	if val != "/signin" {
+		t.Errorf("got %q, want %q", val, "/signin")
+	}
+}
+
+func TestExtractXPath_NoMatch(t *testing.T) {
+	_, err := extractFromBody(protocol.Extractor{Type: "xpath", Expression: "/response/missing/text()"}, []byte(`<response><value>ok</value></response>`))
+	if err == nil {
+		t.Fatal("expected XPath no-match error")
+	}
+}
+
+func TestExtractXPath_InvalidExpression(t *testing.T) {
+	_, err := extractFromBody(protocol.Extractor{Type: "xpath", Expression: "//a["}, []byte(`<html><body><a href="/signin">Sign in</a></body></html>`))
+	if err == nil {
+		t.Fatal("expected invalid XPath expression error")
+	}
+}
+
 func TestExtractRegex(t *testing.T) {
 	body := []byte(`token=abc123&expires=3600`)
 
@@ -238,7 +320,7 @@ func TestExtract_UnsupportedHeaderType(t *testing.T) {
 }
 
 func TestExtract_UnsupportedBodyType(t *testing.T) {
-	_, err := extractFromBody(protocol.Extractor{Type: "xpath"}, []byte(`<xml/>`))
+	_, err := extractFromBody(protocol.Extractor{Type: "graphql"}, []byte(`<xml/>`))
 	if err == nil {
 		t.Fatal("expected error for unsupported extraction type")
 	}

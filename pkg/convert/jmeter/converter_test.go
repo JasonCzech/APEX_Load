@@ -102,6 +102,17 @@ const sampleExtractorJMX = `<?xml version="1.0" encoding="UTF-8"?>
 						<stringProp name="JMESExtractor.jmesPathExpr">roles[0].name</stringProp>
 					</JMESPathExtractor>
 					<hashTree/>
+					<HtmlExtractor testname="Login Link CSS" enabled="true">
+						<stringProp name="HtmlExtractor.refname">login_link</stringProp>
+						<stringProp name="HtmlExtractor.expr">a.login</stringProp>
+						<stringProp name="HtmlExtractor.attribute">href</stringProp>
+					</HtmlExtractor>
+					<hashTree/>
+					<XPathExtractor testname="Page Title XPath" enabled="true">
+						<stringProp name="XPathExtractor.refname">page_title</stringProp>
+						<stringProp name="XPathExtractor.xpathQuery">//title/text()</stringProp>
+					</XPathExtractor>
+					<hashTree/>
 					<BoundaryExtractor testname="Session Id Boundary" enabled="true">
 						<stringProp name="BoundaryExtractor.refname">session_id</stringProp>
 						<stringProp name="BoundaryExtractor.lboundary">sessionId=</stringProp>
@@ -208,8 +219,8 @@ func TestConvertJMXSamplerExtractors(t *testing.T) {
 		t.Fatalf("scripts = %d, want 1", len(result.Scripts))
 	}
 	action := result.Scripts[0].Actions[0]
-	if len(action.Extractors) != 6 {
-		t.Fatalf("extractors = %d, want 6", len(action.Extractors))
+	if len(action.Extractors) != 8 {
+		t.Fatalf("extractors = %d, want 8", len(action.Extractors))
 	}
 	if action.Extractors[0].Name != "session_token" || action.Extractors[0].Type != "regex" {
 		t.Fatalf("unexpected regex extractor: %#v", action.Extractors[0])
@@ -223,10 +234,16 @@ func TestConvertJMXSamplerExtractors(t *testing.T) {
 	if action.Extractors[3].Name != "primary_role" || action.Extractors[3].Source != "body" || action.Extractors[3].Type != "jmespath" || action.Extractors[3].Expression != "roles[0].name" {
 		t.Fatalf("unexpected JMESPath extractor: %#v", action.Extractors[3])
 	}
-	if action.Extractors[4].Name != "session_id" || action.Extractors[4].Source != "body" || action.Extractors[4].Type != "boundary" || action.Extractors[4].Expression != "sessionId=|||&" {
-		t.Fatalf("unexpected boundary extractor: %#v", action.Extractors[4])
+	if action.Extractors[4].Name != "login_link" || action.Extractors[4].Source != "body" || action.Extractors[4].Type != "css" || action.Extractors[4].Expression != "a.login|||href" {
+		t.Fatalf("unexpected CSS extractor: %#v", action.Extractors[4])
 	}
-	if action.Extractors[5].Name != "trace_id" || action.Extractors[5].Source != "header" || action.Extractors[5].Type != "boundary" || action.Extractors[5].Expression != "Set-Cookie: trace_id=|||;" {
-		t.Fatalf("unexpected header boundary extractor: %#v", action.Extractors[5])
+	if action.Extractors[5].Name != "page_title" || action.Extractors[5].Source != "body" || action.Extractors[5].Type != "xpath" || action.Extractors[5].Expression != "//title/text()" {
+		t.Fatalf("unexpected XPath extractor: %#v", action.Extractors[5])
+	}
+	if action.Extractors[6].Name != "session_id" || action.Extractors[6].Source != "body" || action.Extractors[6].Type != "boundary" || action.Extractors[6].Expression != "sessionId=|||&" {
+		t.Fatalf("unexpected boundary extractor: %#v", action.Extractors[6])
+	}
+	if action.Extractors[7].Name != "trace_id" || action.Extractors[7].Source != "header" || action.Extractors[7].Type != "boundary" || action.Extractors[7].Expression != "Set-Cookie: trace_id=|||;" {
+		t.Fatalf("unexpected header boundary extractor: %#v", action.Extractors[7])
 	}
 }

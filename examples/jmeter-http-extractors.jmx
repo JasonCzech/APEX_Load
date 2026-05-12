@@ -35,6 +35,17 @@
             <stringProp name="JMESExtractor.jmesPathExpr">roles[0].name</stringProp>
           </JMESPathExtractor>
           <hashTree/>
+          <HtmlExtractor testname="Login Link CSS" enabled="true">
+            <stringProp name="HtmlExtractor.refname">login_link</stringProp>
+            <stringProp name="HtmlExtractor.expr">a.login</stringProp>
+            <stringProp name="HtmlExtractor.attribute">href</stringProp>
+          </HtmlExtractor>
+          <hashTree/>
+          <XPathExtractor testname="Page Title XPath" enabled="true">
+            <stringProp name="XPathExtractor.refname">page_title</stringProp>
+            <stringProp name="XPathExtractor.xpathQuery">//title/text()</stringProp>
+          </XPathExtractor>
+          <hashTree/>
           <BoundaryExtractor testname="Session Id Boundary" enabled="true">
             <stringProp name="BoundaryExtractor.refname">session_id</stringProp>
             <stringProp name="BoundaryExtractor.lboundary">sessionId=</stringProp>
