@@ -127,6 +127,7 @@ func GetSupportMatrix() SupportMatrix {
 			"Variable substitution across URLs, headers, and bodies",
 			"Scenario drafts derived from thread groups",
 			"Timer behavior approximated as fixed think time when necessary",
+			"XPath2 Extractor in basic mode without custom namespaces or fragment output",
 		},
 		Unsupported: []string{
 			"JSR223 / BeanShell / Groovy scripting",
@@ -346,6 +347,7 @@ func convertHTTPSampler(node *treeNode, ctx *convertContext, opts ConvertOptions
 		Headers:    map[string]string{},
 		Assertions: append([]dsl.Assertion(nil), ctx.assertions...),
 	}
+	var warnings []string
 	for k, v := range ctx.headers {
 		action.Headers[k] = convertVariables(v)
 	}
@@ -356,8 +358,11 @@ func convertHTTPSampler(node *treeNode, ctx *convertContext, opts ConvertOptions
 	if len(params) > 0 {
 		action.Params = params
 	}
-	if extractors := parseSamplerExtractors(node); len(extractors) > 0 {
+	if extractors, extractorWarnings := parseSamplerExtractors(node); len(extractors) > 0 {
 		action.Extractors = extractors
+		warnings = append(warnings, extractorWarnings...)
+	} else if len(extractorWarnings) > 0 {
+		warnings = append(warnings, extractorWarnings...)
 	}
 	if opts.IncludeAssertions && !hasStatusAssertion(action.Assertions) {
 		action.Assertions = append(action.Assertions, dsl.Assertion{Type: "status_code", Expected: 200})
@@ -369,15 +374,15 @@ func convertHTTPSampler(node *treeNode, ctx *convertContext, opts ConvertOptions
 	if len(action.Headers) == 0 {
 		action.Headers = nil
 	}
-	var warnings []string
 	if domain == "" && !strings.HasPrefix(rawPath, "http://") && !strings.HasPrefix(rawPath, "https://") {
 		warnings = append(warnings, fmt.Sprintf("%s: no domain/default host was found; target kept as %q", name, rawPath))
 	}
 	return action, warnings
 }
 
-func parseSamplerExtractors(node *treeNode) []dsl.Extractor {
+func parseSamplerExtractors(node *treeNode) ([]dsl.Extractor, []string) {
 	var out []dsl.Extractor
+	var warnings []string
 	for _, child := range node.Children {
 		switch child.Element.Name {
 		case "RegexExtractor":
@@ -398,6 +403,14 @@ func parseSamplerExtractors(node *treeNode) []dsl.Extractor {
 			if ext := parseXPathExtractor(child.Element); ext.Name != "" && ext.Expression != "" {
 				out = append(out, ext)
 			}
+		case "XPath2Extractor":
+			ext, warning := parseXPath2Extractor(child.Element)
+			if warning != "" {
+				warnings = append(warnings, warning)
+			}
+			if ext.Name != "" && ext.Expression != "" {
+				out = append(out, ext)
+			}
 		case "BoundaryExtractor":
 			if ext := parseBoundaryExtractor(child.Element); ext.Name != "" && ext.Expression != "" {
 				out = append(out, ext)
@@ -405,9 +418,12 @@ func parseSamplerExtractors(node *treeNode) []dsl.Extractor {
 		}
 	}
 	if len(out) == 0 {
-		return nil
+		out = nil
 	}
-	return out
+	if len(warnings) == 0 {
+		warnings = nil
+	}
+	return out, warnings
 }
 
 func parseBoundaryExtractor(node *xmlNode) dsl.Extractor {
@@ -522,6 +538,28 @@ func parseXPathExtractor(node *xmlNode) dsl.Extractor {
 		Type:       "xpath",
 		Expression: strings.TrimSpace(prop(node, "XPathExtractor.xpathQuery")),
 	}
+}
+
+func parseXPath2Extractor(node *xmlNode) (dsl.Extractor, string) {
+	name := strings.TrimSpace(prop(node, "XPathExtractor2.refname"))
+	expression := strings.TrimSpace(prop(node, "XPathExtractor2.xpathQuery"))
+	namespaces := strings.TrimSpace(prop(node, "XPathExtractor2.namespaces"))
+	fragment := strings.EqualFold(strings.TrimSpace(prop(node, "XPathExtractor2.fragment")), "true")
+
+	if namespaces != "" || fragment {
+		warning := fmt.Sprintf("XPath2 extractor %q was skipped because custom namespaces and fragment output are not supported yet", name)
+		if name == "" {
+			warning = "XPath2 extractor was skipped because custom namespaces and fragment output are not supported yet"
+		}
+		return dsl.Extractor{}, warning
+	}
+
+	return dsl.Extractor{
+		Name:       name,
+		Source:     "body",
+		Type:       "xpath",
+		Expression: expression,
+	}, ""
 }
 
 func parseXML(data []byte) (*xmlNode, error) {

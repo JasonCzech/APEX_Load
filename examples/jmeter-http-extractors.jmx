@@ -46,6 +46,11 @@
             <stringProp name="XPathExtractor.xpathQuery">//title/text()</stringProp>
           </XPathExtractor>
           <hashTree/>
+          <XPath2Extractor testname="Page Title XPath2" enabled="true">
+            <stringProp name="XPathExtractor2.refname">page_title_xpath2</stringProp>
+            <stringProp name="XPathExtractor2.xpathQuery">//title/text()</stringProp>
+          </XPath2Extractor>
+          <hashTree/>
           <BoundaryExtractor testname="Session Id Boundary" enabled="true">
             <stringProp name="BoundaryExtractor.refname">session_id</stringProp>
             <stringProp name="BoundaryExtractor.lboundary">sessionId=</stringProp>
