@@ -7,6 +7,7 @@ require (
 	github.com/chromedp/chromedp v0.10.1
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
+	github.com/jmespath/go-jmespath v0.4.0
 	github.com/shirou/gopsutil/v3 v3.24.5
 	github.com/xitongsys/parquet-go v1.6.2
 	github.com/xitongsys/parquet-go-source v0.0.0-20241021075129-b732d2ac9c9b

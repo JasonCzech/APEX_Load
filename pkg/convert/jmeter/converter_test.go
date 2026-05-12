@@ -86,15 +86,33 @@ const sampleExtractorJMX = `<?xml version="1.0" encoding="UTF-8"?>
             <stringProp name="RegexExtractor.regex">"token":"([^"]+)"</stringProp>
           </RegexExtractor>
           <hashTree/>
+					<RegexExtractor testname="Request Id Header Regex" enabled="true">
+						<stringProp name="RegexExtractor.useHeaders">true</stringProp>
+						<stringProp name="RegexExtractor.refname">request_id</stringProp>
+						<stringProp name="RegexExtractor.regex">X-Request-Id: ([^\r\n]+)</stringProp>
+					</RegexExtractor>
+					<hashTree/>
           <JSONPostProcessor testname="Access Token JSON" enabled="true">
             <stringProp name="JSONPostProcessor.referenceNames">access_token</stringProp>
             <stringProp name="JSONPostProcessor.jsonPathExprs">$.access_token</stringProp>
           </JSONPostProcessor>
           <hashTree/>
+					<JMESPathExtractor testname="Primary Role JMESPath" enabled="true">
+						<stringProp name="JMESExtractor.referenceName">primary_role</stringProp>
+						<stringProp name="JMESExtractor.jmesPathExpr">roles[0].name</stringProp>
+					</JMESPathExtractor>
+					<hashTree/>
 					<BoundaryExtractor testname="Session Id Boundary" enabled="true">
 						<stringProp name="BoundaryExtractor.refname">session_id</stringProp>
 						<stringProp name="BoundaryExtractor.lboundary">sessionId=</stringProp>
 						<stringProp name="BoundaryExtractor.rboundary">&amp;</stringProp>
+					</BoundaryExtractor>
+					<hashTree/>
+					<BoundaryExtractor testname="Trace Id Header Boundary" enabled="true">
+						<stringProp name="BoundaryExtractor.useHeaders">true</stringProp>
+						<stringProp name="BoundaryExtractor.refname">trace_id</stringProp>
+						<stringProp name="BoundaryExtractor.lboundary">Set-Cookie: trace_id=</stringProp>
+						<stringProp name="BoundaryExtractor.rboundary">;</stringProp>
 					</BoundaryExtractor>
 					<hashTree/>
         </hashTree>
@@ -190,16 +208,25 @@ func TestConvertJMXSamplerExtractors(t *testing.T) {
 		t.Fatalf("scripts = %d, want 1", len(result.Scripts))
 	}
 	action := result.Scripts[0].Actions[0]
-	if len(action.Extractors) != 3 {
-		t.Fatalf("extractors = %d, want 3", len(action.Extractors))
+	if len(action.Extractors) != 6 {
+		t.Fatalf("extractors = %d, want 6", len(action.Extractors))
 	}
 	if action.Extractors[0].Name != "session_token" || action.Extractors[0].Type != "regex" {
 		t.Fatalf("unexpected regex extractor: %#v", action.Extractors[0])
 	}
-	if action.Extractors[1].Name != "access_token" || action.Extractors[1].Type != "jsonpath" || action.Extractors[1].Expression != "$.access_token" {
-		t.Fatalf("unexpected JSON extractor: %#v", action.Extractors[1])
+	if action.Extractors[1].Name != "request_id" || action.Extractors[1].Source != "header" || action.Extractors[1].Type != "regex" || action.Extractors[1].Expression != `X-Request-Id: ([^\r\n]+)` {
+		t.Fatalf("unexpected header regex extractor: %#v", action.Extractors[1])
 	}
-	if action.Extractors[2].Name != "session_id" || action.Extractors[2].Type != "boundary" || action.Extractors[2].Expression != "sessionId=|||&" {
-		t.Fatalf("unexpected boundary extractor: %#v", action.Extractors[2])
+	if action.Extractors[2].Name != "access_token" || action.Extractors[2].Type != "jsonpath" || action.Extractors[2].Expression != "$.access_token" {
+		t.Fatalf("unexpected JSON extractor: %#v", action.Extractors[2])
+	}
+	if action.Extractors[3].Name != "primary_role" || action.Extractors[3].Source != "body" || action.Extractors[3].Type != "jmespath" || action.Extractors[3].Expression != "roles[0].name" {
+		t.Fatalf("unexpected JMESPath extractor: %#v", action.Extractors[3])
+	}
+	if action.Extractors[4].Name != "session_id" || action.Extractors[4].Source != "body" || action.Extractors[4].Type != "boundary" || action.Extractors[4].Expression != "sessionId=|||&" {
+		t.Fatalf("unexpected boundary extractor: %#v", action.Extractors[4])
+	}
+	if action.Extractors[5].Name != "trace_id" || action.Extractors[5].Source != "header" || action.Extractors[5].Type != "boundary" || action.Extractors[5].Expression != "Set-Cookie: trace_id=|||;" {
+		t.Fatalf("unexpected header boundary extractor: %#v", action.Extractors[5])
 	}
 }

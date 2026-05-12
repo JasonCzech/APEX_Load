@@ -19,15 +19,33 @@
             <stringProp name="RegexExtractor.regex">"token":"([^"]+)"</stringProp>
           </RegexExtractor>
           <hashTree/>
+          <RegexExtractor testname="Request Id Header Regex" enabled="true">
+            <stringProp name="RegexExtractor.useHeaders">true</stringProp>
+            <stringProp name="RegexExtractor.refname">request_id</stringProp>
+            <stringProp name="RegexExtractor.regex">X-Request-Id: ([^\r\n]+)</stringProp>
+          </RegexExtractor>
+          <hashTree/>
           <JSONPostProcessor testname="Access Token JSON" enabled="true">
             <stringProp name="JSONPostProcessor.referenceNames">access_token</stringProp>
             <stringProp name="JSONPostProcessor.jsonPathExprs">$.access_token</stringProp>
           </JSONPostProcessor>
           <hashTree/>
+          <JMESPathExtractor testname="Primary Role JMESPath" enabled="true">
+            <stringProp name="JMESExtractor.referenceName">primary_role</stringProp>
+            <stringProp name="JMESExtractor.jmesPathExpr">roles[0].name</stringProp>
+          </JMESPathExtractor>
+          <hashTree/>
           <BoundaryExtractor testname="Session Id Boundary" enabled="true">
             <stringProp name="BoundaryExtractor.refname">session_id</stringProp>
             <stringProp name="BoundaryExtractor.lboundary">sessionId=</stringProp>
             <stringProp name="BoundaryExtractor.rboundary">&amp;</stringProp>
+          </BoundaryExtractor>
+          <hashTree/>
+          <BoundaryExtractor testname="Trace Id Header Boundary" enabled="true">
+            <stringProp name="BoundaryExtractor.useHeaders">true</stringProp>
+            <stringProp name="BoundaryExtractor.refname">trace_id</stringProp>
+            <stringProp name="BoundaryExtractor.lboundary">Set-Cookie: trace_id=</stringProp>
+            <stringProp name="BoundaryExtractor.rboundary">;</stringProp>
           </BoundaryExtractor>
           <hashTree/>
         </hashTree>

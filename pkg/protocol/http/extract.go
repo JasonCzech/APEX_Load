@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"sort"
 	"strings"
 
+	"github.com/jmespath/go-jmespath"
 	"github.com/jasonczech/stormrunner/pkg/protocol"
 )
 
@@ -15,20 +17,54 @@ func extract(ext protocol.Extractor, headers http.Header, body []byte) (string, 
 	case "body":
 		return extractFromBody(ext, body)
 	case "header":
+		return extractFromHeaders(ext, headers)
+	default:
+		return "", fmt.Errorf("unsupported extraction source: %s", ext.Source)
+	}
+}
+
+func extractFromHeaders(ext protocol.Extractor, headers http.Header) (string, error) {
+	switch ext.Type {
+	case "", "header":
 		v := headers.Get(ext.Expression)
 		if v == "" {
 			return "", fmt.Errorf("header %q not found", ext.Expression)
 		}
 		return v, nil
+	case "regex":
+		return extractRegex(ext.Expression, []byte(flattenHeaders(headers)))
+	case "boundary":
+		return extractBoundary(ext.Expression, []byte(flattenHeaders(headers)))
 	default:
-		return "", fmt.Errorf("unsupported extraction source: %s", ext.Source)
+		return "", fmt.Errorf("unsupported header extraction type: %s", ext.Type)
 	}
+}
+
+func flattenHeaders(headers http.Header) string {
+	keys := make([]string, 0, len(headers))
+	for key := range headers {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	var builder strings.Builder
+	for _, key := range keys {
+		for _, value := range headers.Values(key) {
+			builder.WriteString(key)
+			builder.WriteString(": ")
+			builder.WriteString(value)
+			builder.WriteString("\n")
+		}
+	}
+	return builder.String()
 }
 
 func extractFromBody(ext protocol.Extractor, body []byte) (string, error) {
 	switch ext.Type {
 	case "jsonpath":
 		return extractJSONPath(ext.Expression, body)
+	case "jmespath":
+		return extractJMESPath(ext.Expression, body)
 	case "regex":
 		return extractRegex(ext.Expression, body)
 	case "boundary":
@@ -78,6 +114,34 @@ func extractJSONPath(expr string, body []byte) (string, error) {
 	}
 
 	return fmt.Sprintf("%v", current), nil
+}
+
+func extractJMESPath(expr string, body []byte) (string, error) {
+	var current any
+	if err := json.Unmarshal(body, &current); err != nil {
+		return "", fmt.Errorf("invalid JSON body: %w", err)
+	}
+
+	result, err := jmespath.Search(expr, current)
+	if err != nil {
+		return "", fmt.Errorf("invalid JMESPath expression: %w", err)
+	}
+	if result == nil {
+		return "", fmt.Errorf("no match for JMESPath %q", expr)
+	}
+
+	switch value := result.(type) {
+	case string:
+		return value, nil
+	case []any, map[string]any:
+		encoded, err := json.Marshal(value)
+		if err != nil {
+			return "", fmt.Errorf("marshal JMESPath result: %w", err)
+		}
+		return string(encoded), nil
+	default:
+		return fmt.Sprintf("%v", value), nil
+	}
 }
 
 func extractRegex(expr string, body []byte) (string, error) {

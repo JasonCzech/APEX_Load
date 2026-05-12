@@ -117,6 +117,7 @@ func GetSupportMatrix() SupportMatrix {
 			"Response Assertions",
 			"Regex Extractor",
 			"JSON Extractor",
+			"JMESPath Extractor",
 			"Boundary Extractor",
 		},
 		Partial: []string{
@@ -383,6 +384,10 @@ func parseSamplerExtractors(node *treeNode) []dsl.Extractor {
 			}
 		case "JSONPostProcessor":
 			out = append(out, parseJSONExtractors(child.Element)...)
+		case "JMESPathExtractor":
+			if ext := parseJMESPathExtractor(child.Element); ext.Name != "" && ext.Expression != "" {
+				out = append(out, ext)
+			}
 		case "BoundaryExtractor":
 			if ext := parseBoundaryExtractor(child.Element); ext.Name != "" && ext.Expression != "" {
 				out = append(out, ext)
@@ -396,30 +401,47 @@ func parseSamplerExtractors(node *treeNode) []dsl.Extractor {
 }
 
 func parseBoundaryExtractor(node *xmlNode) dsl.Extractor {
-	if strings.EqualFold(strings.TrimSpace(prop(node, "BoundaryExtractor.useHeaders")), "true") {
+	source := parseExtractorSource(prop(node, "BoundaryExtractor.useHeaders"))
+	if source == "" {
 		return dsl.Extractor{}
 	}
 
-	left := strings.TrimSpace(prop(node, "BoundaryExtractor.lboundary"))
-	right := strings.TrimSpace(prop(node, "BoundaryExtractor.rboundary"))
-	if left == "" && right == "" {
+	left := prop(node, "BoundaryExtractor.lboundary")
+	right := prop(node, "BoundaryExtractor.rboundary")
+	if strings.TrimSpace(left) == "" && strings.TrimSpace(right) == "" {
 		return dsl.Extractor{}
 	}
 
 	return dsl.Extractor{
 		Name:       strings.TrimSpace(prop(node, "BoundaryExtractor.refname")),
-		Source:     "body",
+		Source:     source,
 		Type:       "boundary",
 		Expression: left + "|||" + right,
 	}
 }
 
 func parseRegexExtractor(node *xmlNode) dsl.Extractor {
+	source := parseExtractorSource(prop(node, "RegexExtractor.useHeaders"))
+	if source == "" {
+		return dsl.Extractor{}
+	}
+
 	return dsl.Extractor{
 		Name:       strings.TrimSpace(prop(node, "RegexExtractor.refname")),
-		Source:     "body",
+		Source:     source,
 		Type:       "regex",
 		Expression: strings.TrimSpace(prop(node, "RegexExtractor.regex")),
+	}
+}
+
+func parseExtractorSource(scope string) string {
+	switch strings.ToLower(strings.TrimSpace(scope)) {
+	case "", "false":
+		return "body"
+	case "true":
+		return "header"
+	default:
+		return ""
 	}
 }
 
@@ -452,6 +474,15 @@ func parseJSONExtractors(node *xmlNode) []dsl.Extractor {
 		return nil
 	}
 	return out
+}
+
+func parseJMESPathExtractor(node *xmlNode) dsl.Extractor {
+	return dsl.Extractor{
+		Name:       strings.TrimSpace(prop(node, "JMESExtractor.referenceName")),
+		Source:     "body",
+		Type:       "jmespath",
+		Expression: strings.TrimSpace(prop(node, "JMESExtractor.jmesPathExpr")),
+	}
 }
 
 func parseXML(data []byte) (*xmlNode, error) {

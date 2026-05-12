@@ -59,6 +59,44 @@ func TestExtractJSONPath_InvalidJSON(t *testing.T) {
 	}
 }
 
+func TestExtractJMESPath(t *testing.T) {
+	body := []byte(`{"people":[{"name":"James"},{"name":"Jacob"}],"meta":{"count":2}}`)
+
+	val, err := extractJMESPath("people[1].name", body)
+	if err != nil {
+		t.Fatalf("extractJMESPath: %v", err)
+	}
+	if val != "Jacob" {
+		t.Errorf("got %q, want %q", val, "Jacob")
+	}
+}
+
+func TestExtractJMESPath_ArrayResult(t *testing.T) {
+	body := []byte(`{"people":[{"name":"James"},{"name":"Jacob"}]}`)
+
+	val, err := extractJMESPath("people[*].name", body)
+	if err != nil {
+		t.Fatalf("extractJMESPath: %v", err)
+	}
+	if val != `["James","Jacob"]` {
+		t.Errorf("got %q, want %q", val, `["James","Jacob"]`)
+	}
+}
+
+func TestExtractJMESPath_NoMatch(t *testing.T) {
+	_, err := extractJMESPath("missing.value", []byte(`{"name":"test"}`))
+	if err == nil {
+		t.Fatal("expected error for missing JMESPath match")
+	}
+}
+
+func TestExtractJMESPath_InvalidExpression(t *testing.T) {
+	_, err := extractJMESPath("[", []byte(`{"name":"test"}`))
+	if err == nil {
+		t.Fatal("expected error for invalid JMESPath expression")
+	}
+}
+
 func TestExtractRegex(t *testing.T) {
 	body := []byte(`token=abc123&expires=3600`)
 
@@ -136,6 +174,44 @@ func TestExtract_FromHeader(t *testing.T) {
 	}
 }
 
+func TestExtract_FromHeaderRegex(t *testing.T) {
+	headers := http.Header{}
+	headers.Set("Set-Cookie", "session_id=abc123; Path=/; HttpOnly")
+
+	val, err := extract(protocol.Extractor{
+		Name:       "session_id",
+		Source:     "header",
+		Type:       "regex",
+		Expression: `Set-Cookie: session_id=([^;]+)`,
+	}, headers, nil)
+
+	if err != nil {
+		t.Fatalf("extract header regex: %v", err)
+	}
+	if val != "abc123" {
+		t.Errorf("got %q, want %q", val, "abc123")
+	}
+}
+
+func TestExtract_FromHeaderBoundary(t *testing.T) {
+	headers := http.Header{}
+	headers.Set("Set-Cookie", "session_id=abc123; Path=/; HttpOnly")
+
+	val, err := extract(protocol.Extractor{
+		Name:       "session_id",
+		Source:     "header",
+		Type:       "boundary",
+		Expression: "Set-Cookie: session_id=|||;",
+	}, headers, nil)
+
+	if err != nil {
+		t.Fatalf("extract header boundary: %v", err)
+	}
+	if val != "abc123" {
+		t.Errorf("got %q, want %q", val, "abc123")
+	}
+}
+
 func TestExtract_HeaderNotFound(t *testing.T) {
 	_, err := extract(protocol.Extractor{
 		Source:     "header",
@@ -151,6 +227,13 @@ func TestExtract_UnsupportedSource(t *testing.T) {
 	_, err := extract(protocol.Extractor{Source: "cookies"}, http.Header{}, nil)
 	if err == nil {
 		t.Fatal("expected error for unsupported source")
+	}
+}
+
+func TestExtract_UnsupportedHeaderType(t *testing.T) {
+	_, err := extract(protocol.Extractor{Source: "header", Type: "jsonpath", Expression: "$.token"}, http.Header{"X-Test": {"value"}}, nil)
+	if err == nil {
+		t.Fatal("expected error for unsupported header extraction type")
 	}
 }
 
