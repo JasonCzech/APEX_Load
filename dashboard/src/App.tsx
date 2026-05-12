@@ -95,7 +95,6 @@ function AppShell() {
         onApplicationChange={setActiveApplication}
         onReleaseChange={setActiveRelease}
         onCreateApplication={createAndSelectApplication}
-        onCreateRelease={createAndSelectRelease}
       />
       <main className="main-content">
         {view.page === 'dashboard' && (

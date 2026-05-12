@@ -85,6 +85,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("GET /api/v1/applications/{id}/releases", cors(log(http.HandlerFunc(s.handleListReleases))))
 	s.mux.Handle("GET /api/v1/releases/{id}", cors(log(http.HandlerFunc(s.handleGetRelease))))
 	s.mux.Handle("PUT /api/v1/releases/{id}", cors(log(http.HandlerFunc(s.handleUpdateRelease))))
+	s.mux.Handle("POST /api/v1/releases/{id}/archive", cors(log(http.HandlerFunc(s.handleArchiveRelease))))
 	s.mux.Handle("DELETE /api/v1/releases/{id}", cors(log(http.HandlerFunc(s.handleDeleteRelease))))
 
 	s.mux.Handle("POST /api/v1/projects", cors(log(http.HandlerFunc(s.handleCreateProject))))

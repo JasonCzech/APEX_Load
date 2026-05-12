@@ -46,6 +46,7 @@ func (s *SQLiteStore) init() error {
 			name TEXT NOT NULL,
 			created_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL,
+			archived_at DATETIME,
 			FOREIGN KEY(application_id) REFERENCES applications(id)
 		)`,
 		`CREATE TABLE IF NOT EXISTS scenarios (
@@ -206,6 +207,7 @@ func (s *SQLiteStore) init() error {
 		{`ALTER TABLE tests ADD COLUMN application_id TEXT REFERENCES applications(id)`, "tests.application_id"},
 		{`ALTER TABLE tests ADD COLUMN release_id TEXT REFERENCES releases(id)`, "tests.release_id"},
 		{`ALTER TABLE tests ADD COLUMN scenario_id TEXT REFERENCES scenarios(id)`, "tests.scenario_id"},
+		{`ALTER TABLE releases ADD COLUMN archived_at DATETIME`, "releases.archived_at"},
 	} {
 		if _, err := s.db.Exec(migration.query); err != nil && !isDuplicateColumnErr(err) {
 			return fmt.Errorf("failed to add %s column: %w", migration.name, err)
@@ -464,29 +466,36 @@ func (s *SQLiteStore) SaveRelease(release *Release) error {
 		release.CreatedAt = time.Now()
 	}
 	release.UpdatedAt = time.Now()
-	_, err := s.db.Exec(`INSERT INTO releases (id, application_id, name, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?)
-		ON CONFLICT(id) DO UPDATE SET application_id=excluded.application_id, name=excluded.name, updated_at=excluded.updated_at`,
-		release.ID, release.ApplicationID, release.Name, release.CreatedAt, release.UpdatedAt)
+	_, err := s.db.Exec(`INSERT INTO releases (id, application_id, name, created_at, updated_at, archived_at)
+		VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET application_id=excluded.application_id, name=excluded.name, updated_at=excluded.updated_at, archived_at=excluded.archived_at`,
+		release.ID, release.ApplicationID, release.Name, release.CreatedAt, release.UpdatedAt, release.ArchivedAt)
 	return err
 }
 
 func (s *SQLiteStore) GetRelease(id string) (*Release, error) {
 	var release Release
-	err := s.db.QueryRow(`SELECT id, application_id, name, created_at, updated_at FROM releases WHERE id = ?`, id).Scan(
-		&release.ID, &release.ApplicationID, &release.Name, &release.CreatedAt, &release.UpdatedAt)
+	err := s.db.QueryRow(`SELECT id, application_id, name, created_at, updated_at, archived_at FROM releases WHERE id = ?`, id).Scan(
+		&release.ID, &release.ApplicationID, &release.Name, &release.CreatedAt, &release.UpdatedAt, &release.ArchivedAt)
 	if err != nil {
 		return nil, err
 	}
 	return &release, nil
 }
 
-func (s *SQLiteStore) ListReleases(applicationID string) ([]*Release, error) {
+func (s *SQLiteStore) ListReleases(applicationID string, includeArchived bool) ([]*Release, error) {
 	args := []any{}
-	query := `SELECT id, application_id, name, created_at, updated_at FROM releases`
+	query := `SELECT id, application_id, name, created_at, updated_at, archived_at FROM releases`
+	filters := []string{}
 	if applicationID != "" {
-		query += ` WHERE application_id = ?`
+		filters = append(filters, `application_id = ?`)
 		args = append(args, applicationID)
+	}
+	if !includeArchived {
+		filters = append(filters, `archived_at IS NULL`)
+	}
+	if len(filters) > 0 {
+		query += ` WHERE ` + strings.Join(filters, ` AND `)
 	}
 	query += ` ORDER BY created_at DESC, name ASC`
 	rows, err := s.db.Query(query, args...)
@@ -497,12 +506,28 @@ func (s *SQLiteStore) ListReleases(applicationID string) ([]*Release, error) {
 	var releases []*Release
 	for rows.Next() {
 		var release Release
-		if err := rows.Scan(&release.ID, &release.ApplicationID, &release.Name, &release.CreatedAt, &release.UpdatedAt); err != nil {
+		if err := rows.Scan(&release.ID, &release.ApplicationID, &release.Name, &release.CreatedAt, &release.UpdatedAt, &release.ArchivedAt); err != nil {
 			return nil, err
 		}
 		releases = append(releases, &release)
 	}
 	return releases, rows.Err()
+}
+
+func (s *SQLiteStore) ArchiveRelease(id string) error {
+	if id == LegacyReleaseID {
+		return errors.New("legacy release cannot be archived")
+	}
+	var count int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM tests WHERE release_id = ?`, id).Scan(&count); err != nil {
+		return err
+	}
+	if count > 0 {
+		return errors.New("release has associated results; archive or delete those results first")
+	}
+	now := time.Now()
+	_, err := s.db.Exec(`UPDATE releases SET archived_at = ?, updated_at = ? WHERE id = ?`, now, now, id)
+	return err
 }
 
 func (s *SQLiteStore) DeleteRelease(id string) error {
@@ -514,7 +539,7 @@ func (s *SQLiteStore) DeleteRelease(id string) error {
 		return err
 	}
 	if count > 0 {
-		return errors.New("release has test results")
+		return errors.New("release has associated results; archive or delete those results first")
 	}
 	_, err := s.db.Exec(`DELETE FROM releases WHERE id = ?`, id)
 	return err

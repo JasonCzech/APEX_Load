@@ -57,3 +57,34 @@ func TestApplicationReleaseAndScenarioHandlers(t *testing.T) {
 		t.Fatalf("create scenario status = %d body=%s", scenarioResp.Code, scenarioResp.Body.String())
 	}
 }
+
+func TestArchiveReleaseRequiresNoAssociatedResults(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	app := &storage.Application{ID: "app-1", Name: "Payments"}
+	if err := store.SaveApplication(app); err != nil {
+		t.Fatalf("SaveApplication returned error: %v", err)
+	}
+	release := &storage.Release{ID: "rel-1", ApplicationID: app.ID, Name: "2026.05"}
+	if err := store.SaveRelease(release); err != nil {
+		t.Fatalf("SaveRelease returned error: %v", err)
+	}
+	if err := store.SaveTest(&storage.TestRecord{ID: "test-1", Name: "run", Status: "COMPLETE", ApplicationID: app.ID, ReleaseID: release.ID}); err != nil {
+		t.Fatalf("SaveTest returned error: %v", err)
+	}
+
+	server := NewServer(ServerConfig{Store: store})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/releases/"+release.ID+"/archive", nil)
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("archive release status = %d body=%s", resp.Code, resp.Body.String())
+	}
+	if !bytes.Contains(resp.Body.Bytes(), []byte("associated results")) {
+		t.Fatalf("archive release body = %s, want associated results warning", resp.Body.String())
+	}
+}

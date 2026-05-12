@@ -1204,6 +1204,91 @@
   flex-wrap: wrap;
 }
 
+.settings-manager-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.settings-manager-summary strong {
+  font-size: 24px;
+  color: var(--text-primary);
+  line-height: 1;
+}
+
+.settings-app-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.settings-app-card {
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  border-radius: 10px;
+  padding: 12px;
+  text-align: left;
+  color: var(--text-primary);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.settings-app-card.active,
+.settings-release-row.active {
+  border-color: var(--accent);
+  background: rgba(99, 102, 241, 0.1);
+}
+
+.settings-app-card span,
+.settings-release-main span {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.settings-app-card small,
+.settings-release-main small {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.settings-release-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.settings-release-row {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-secondary);
+  padding: 12px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.settings-release-main {
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  text-align: left;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.settings-inline-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .settings-status-block {
   display: flex;
   flex-direction: column;
@@ -1401,6 +1486,11 @@
   .settings-actions {
     width: 100%;
     justify-content: flex-end;
+  }
+
+  .settings-release-row {
+    flex-direction: column;
+    align-items: stretch;
   }
 }
 

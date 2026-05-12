@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState, type DragEvent } from 'react'
+import { useApplicationApi } from '../hooks/api/useApplicationApi'
+import { useApplication } from '../hooks/useApplication'
 import { useApi } from '../hooks/useApi'
 import { DashboardSystemSettings, HealthResponse } from '../types'
 
@@ -31,6 +33,7 @@ const SETTINGS_SECTIONS = [
   { id: 'general', title: 'General' },
   { id: 'thresholds', title: 'Performance Thresholds' },
   { id: 'capacity', title: 'Capacity Planning' },
+  { id: 'applications', title: 'Applications & Releases' },
   { id: 'integrations', title: 'Integrations' },
 ] as const
 
@@ -91,6 +94,18 @@ function validateSettings(settings: DashboardSystemSettings): string[] {
 
 export default function SettingsPage() {
   const api = useApi()
+  const applicationApi = useApplicationApi()
+  const {
+    applications,
+    releases,
+    activeApplication,
+    activeRelease,
+    setActiveApplication,
+    setActiveRelease,
+    refreshApplications,
+    refreshReleases,
+    createAndSelectApplication,
+  } = useApplication()
   const [settings, setSettings] = useState<DashboardSystemSettings>(DEFAULT_SETTINGS)
   const [savedSettings, setSavedSettings] = useState<DashboardSystemSettings>(DEFAULT_SETTINGS)
   const [health, setHealth] = useState<HealthResponse | null>(null)
@@ -102,6 +117,9 @@ export default function SettingsPage() {
   const [sectionOrder, setSectionOrder] = useState<SettingsSectionId[]>(() => readSettingsSectionArray('stormrunner.settings.sectionOrder'))
   const [hiddenSectionIds, setHiddenSectionIds] = useState<SettingsSectionId[]>(() => readSettingsSectionArray('stormrunner.settings.hiddenSections'))
   const [collapsedSectionIds, setCollapsedSectionIds] = useState<SettingsSectionId[]>(() => readSettingsSectionArray('stormrunner.settings.collapsedSections'))
+  const [managedReleases, setManagedReleases] = useState(releases)
+  const [newApplicationName, setNewApplicationName] = useState('')
+  const [applicationActionError, setApplicationActionError] = useState('')
 
   useEffect(() => {
     let cancelled = false
@@ -178,6 +196,36 @@ export default function SettingsPage() {
   useEffect(() => {
     setSectionOrder(prev => mergeSettingsOrder(prev))
   }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const targetSection = window.localStorage.getItem('stormrunner.settings.focusSection') as SettingsSectionId | null
+    if (!targetSection) return
+    window.localStorage.removeItem('stormrunner.settings.focusSection')
+    window.setTimeout(() => {
+      document.getElementById(`settings-section-${targetSection}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 150)
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    const loadManagedReleases = async () => {
+      if (!activeApplication?.id) {
+        setManagedReleases([])
+        return
+      }
+      try {
+        const response = await applicationApi.listReleases(activeApplication.id, true)
+        if (!cancelled) setManagedReleases(response.releases || [])
+      } catch {
+        if (!cancelled) setManagedReleases(releases)
+      }
+    }
+    loadManagedReleases()
+    return () => {
+      cancelled = true
+    }
+  }, [activeApplication?.id, applicationApi, releases])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -338,6 +386,95 @@ export default function SettingsPage() {
     setCollapsedSectionIds([])
   }
 
+  const createApplication = async () => {
+    const name = newApplicationName.trim()
+    if (!name) return
+    try {
+      await createAndSelectApplication(name)
+      setNewApplicationName('')
+      setApplicationActionError('')
+    } catch (error: any) {
+      setApplicationActionError(error.message || 'Unable to create application')
+    }
+  }
+
+  const renameApplication = async () => {
+    if (!activeApplication) return
+    const name = window.prompt('Application name', activeApplication.name)
+    if (!name?.trim()) return
+    try {
+      const updated = await applicationApi.updateApplication(activeApplication.id, { name: name.trim() })
+      await refreshApplications()
+      setActiveApplication(updated)
+      setApplicationActionError('')
+    } catch (error: any) {
+      setApplicationActionError(error.message || 'Unable to rename application')
+    }
+  }
+
+  const deleteApplication = async () => {
+    if (!activeApplication) return
+    if (!window.confirm(`Delete application "${activeApplication.name}" and its releases?`)) return
+    try {
+      await applicationApi.deleteApplication(activeApplication.id)
+      await refreshApplications()
+      setApplicationActionError('')
+    } catch (error: any) {
+      setApplicationActionError(error.message || 'Unable to delete application')
+    }
+  }
+
+  const renameRelease = async (releaseId: string, currentName: string) => {
+    const name = window.prompt('Release name', currentName)
+    if (!name?.trim()) return
+    try {
+      const updated = await applicationApi.updateRelease(releaseId, { name: name.trim() })
+      await refreshReleases(activeApplication?.id)
+      const response = await applicationApi.listReleases(activeApplication?.id || '', true)
+      setManagedReleases(response.releases || [])
+      if (!updated.archived_at) setActiveRelease(updated)
+      setApplicationActionError('')
+    } catch (error: any) {
+      setApplicationActionError(error.message || 'Unable to rename release')
+    }
+  }
+
+  const archiveRelease = async (releaseId: string, releaseName: string) => {
+    const results = await api.listTests({ application_id: activeApplication?.id, release_id: releaseId })
+    if ((results.tests || []).length > 0) {
+      setApplicationActionError(`Release "${releaseName}" still has associated results. Archive or delete those results before archiving the release.`)
+      return
+    }
+    if (!window.confirm(`Archive release "${releaseName}"? If this release still had associated results, you would need to archive or delete those results first.`)) return
+    try {
+      await applicationApi.archiveRelease(releaseId)
+      await refreshReleases(activeApplication?.id)
+      const response = await applicationApi.listReleases(activeApplication?.id || '', true)
+      setManagedReleases(response.releases || [])
+      setApplicationActionError('')
+    } catch (error: any) {
+      setApplicationActionError(error.message || 'Unable to archive release')
+    }
+  }
+
+  const deleteRelease = async (releaseId: string, releaseName: string) => {
+    const results = await api.listTests({ application_id: activeApplication?.id, release_id: releaseId })
+    if ((results.tests || []).length > 0) {
+      setApplicationActionError(`Release "${releaseName}" still has associated results. Archive or delete those results before deleting the release.`)
+      return
+    }
+    if (!window.confirm(`Delete release "${releaseName}"? If this release still had associated results, you would need to archive or delete those results first.`)) return
+    try {
+      await applicationApi.deleteRelease(releaseId)
+      await refreshReleases(activeApplication?.id)
+      const response = await applicationApi.listReleases(activeApplication?.id || '', true)
+      setManagedReleases(response.releases || [])
+      setApplicationActionError('')
+    } catch (error: any) {
+      setApplicationActionError(error.message || 'Unable to delete release')
+    }
+  }
+
   const handleSectionDragStart = (event: DragEvent<HTMLDivElement>, id: SettingsSectionId) => {
     if (!customizingSections) return
     setDraggedSectionId(id)
@@ -439,6 +576,7 @@ export default function SettingsPage() {
       {loading && <p className="settings-notice">Loading settings...</p>}
       {!loading && saveMessage && <p className="settings-notice">{saveMessage}</p>}
       {requestError && <p className="settings-error-inline">{requestError}</p>}
+      {applicationActionError && <p className="settings-error-inline">{applicationActionError}</p>}
       {validationErrors.length > 0 && (
         <div className="settings-errors" role="alert">
           {validationErrors.map((error) => (
@@ -721,6 +859,119 @@ export default function SettingsPage() {
                 value={settings.capacity_planning.availability.configured_available_generators}
                 onChange={(e) => updateAvailability('configured_available_generators', e.target.value)}
               />
+            </div>
+          </div>
+        </div>
+
+        <div
+          id="settings-section-applications"
+          className={sectionClass('applications')}
+          hidden={!visibleSections.some(section => section.id === 'applications')}
+          draggable={customizingSections}
+          onDragStart={event => handleSectionDragStart(event, 'applications')}
+          onDragOver={event => handleSectionDragOver(event, 'applications')}
+          onDrop={event => handleSectionDrop(event, 'applications')}
+          onDragEnd={() => setDraggedSectionId(null)}
+          style={{ order: getSectionOrder('applications') }}
+        >
+          {renderSettingsHeader('applications', 'Applications & Releases')}
+          <div className="settings-group">
+            <div className="settings-subsection">
+              <div className="settings-manager-summary">
+                <div>
+                  <span className="setting-label">Applications</span>
+                  <span className="setting-desc">Select one to manage its releases and rename or remove it.</span>
+                </div>
+                <strong>{applications.length}</strong>
+              </div>
+              <div className="settings-app-grid">
+                {applications.map(application => (
+                  <button
+                    key={application.id}
+                    type="button"
+                    className={`settings-app-card ${activeApplication?.id === application.id ? 'active' : ''}`}
+                    onClick={() => setActiveApplication(application)}
+                  >
+                  <span>{application.name}</span>
+                  <small>{application.id === activeApplication?.id ? 'Current application' : 'Switch context'}</small>
+                </button>
+              ))}
+              </div>
+              <div className="inline-create-row">
+                <input
+                  className="settings-input"
+                  value={newApplicationName}
+                  onChange={event => setNewApplicationName(event.target.value)}
+                  placeholder="Create application, e.g. ACC"
+                />
+                <button className="btn btn-secondary" type="button" onClick={createApplication} disabled={!newApplicationName.trim()}>
+                  Add Application
+                </button>
+              </div>
+            </div>
+
+            <div className="setting-row">
+              <div className="setting-info">
+                <span className="setting-label">Current Application</span>
+                <span className="setting-desc">Rename or delete the selected application.</span>
+              </div>
+              <div className="settings-inline-actions">
+                <span className="setting-value">{activeApplication?.name || 'No application selected'}</span>
+                <button className="btn btn-secondary" type="button" onClick={renameApplication} disabled={!activeApplication}>
+                  Rename
+                </button>
+                <button className="btn btn-ghost" style={{ color: 'var(--danger)' }} type="button" onClick={deleteApplication} disabled={!activeApplication}>
+                  Delete
+                </button>
+              </div>
+            </div>
+
+            <div className="settings-subsection">
+              <div className="settings-manager-summary">
+                <div>
+                  <span className="setting-label">Releases</span>
+                  <span className="setting-desc">These belong to {activeApplication?.name || 'the selected application'}. Create new releases from the New Test page.</span>
+                </div>
+                <strong>{managedReleases.length}</strong>
+              </div>
+              {managedReleases.length > 0 ? (
+                <div className="settings-release-list">
+                  {managedReleases.map(release => (
+                    <div key={release.id} className={`settings-release-row ${!release.archived_at && activeRelease?.id === release.id ? 'active' : ''}`}>
+                      <button
+                        type="button"
+                        className="settings-release-main"
+                        onClick={() => !release.archived_at && setActiveRelease(release)}
+                        disabled={Boolean(release.archived_at)}
+                      >
+                        <span>{release.name}</span>
+                        <small>
+                          {release.archived_at
+                            ? `Archived ${new Date(release.archived_at).toLocaleDateString()}`
+                            : activeRelease?.id === release.id
+                              ? 'Current release'
+                              : 'Set active release'}
+                        </small>
+                      </button>
+                      <div className="settings-inline-actions">
+                        <button className="btn btn-secondary" type="button" onClick={() => renameRelease(release.id, release.name)}>
+                          Rename
+                        </button>
+                        {!release.archived_at && (
+                          <button className="btn btn-secondary" type="button" onClick={() => archiveRelease(release.id, release.name)}>
+                            Archive
+                          </button>
+                        )}
+                        <button className="btn btn-ghost" style={{ color: 'var(--danger)' }} type="button" onClick={() => deleteRelease(release.id, release.name)}>
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="new-test-inline-note">No releases yet for this application.</p>
+              )}
             </div>
           </div>
         </div>

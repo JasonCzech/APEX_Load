@@ -16,7 +16,6 @@ interface Props {
   onApplicationChange?: (application: Application) => void
   onReleaseChange?: (release: Release) => void
   onCreateApplication?: (name: string) => Promise<Application>
-  onCreateRelease?: (name: string) => Promise<Release | null>
 }
 
 const NAV_ITEMS: { id: NavPage; label: string; icon: JSX.Element }[] = [
@@ -108,7 +107,6 @@ export default function Sidebar({
   onApplicationChange,
   onReleaseChange,
   onCreateApplication,
-  onCreateRelease,
 }: Props) {
   const [collapsed, setCollapsed] = useState(false)
   const [projectOpen, setProjectOpen] = useState(false)
@@ -117,13 +115,6 @@ export default function Sidebar({
   const handleNewProject = async (name: string) => {
     if (!onCreateApplication) return
     await onCreateApplication(name)
-    setProjectOpen(false)
-  }
-
-  const handleNewRelease = async () => {
-    const name = window.prompt('Release name')
-    if (!name?.trim() || !onCreateRelease) return
-    await onCreateRelease(name.trim())
     setProjectOpen(false)
   }
 
@@ -183,8 +174,18 @@ export default function Sidebar({
               </div>
             )}
             <button className="project-menu-action" onClick={() => setShowProjectModal(true)}>+ New Application</button>
-            <button className="project-menu-action" onClick={handleNewRelease}>+ New Release</button>
-            <button className="project-menu-action muted" onClick={() => { setProjectOpen(false); onNavigate('settings') }}>Manage Applications</button>
+            <button
+              className="project-menu-action muted"
+              onClick={() => {
+                if (typeof window !== 'undefined') {
+                  window.localStorage.setItem('stormrunner.settings.focusSection', 'applications')
+                }
+                setProjectOpen(false)
+                onNavigate('settings')
+              }}
+            >
+              Manage Applications
+            </button>
           </div>
         )}
       </div>

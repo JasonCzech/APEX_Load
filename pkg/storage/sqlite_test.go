@@ -229,4 +229,11 @@ func TestSQLiteStoreApplicationsReleasesScenariosAndContext(t *testing.T) {
 	if len(filtered) != 1 || filtered[0].ReleaseID != release.ID || filtered[0].ScenarioID != scenario.ID {
 		t.Fatalf("unexpected filtered tests: %#v", filtered)
 	}
+
+	if err := store.DeleteRelease(release.ID); err == nil {
+		t.Fatal("expected DeleteRelease to fail while results exist")
+	}
+	if err := store.ArchiveRelease(release.ID); err == nil {
+		t.Fatal("expected ArchiveRelease to fail while results exist")
+	}
 }

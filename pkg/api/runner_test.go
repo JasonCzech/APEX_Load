@@ -73,9 +73,10 @@ func (s *metricsStoreSpy) SaveRelease(release *storage.Release) error        { r
 func (s *metricsStoreSpy) GetRelease(id string) (*storage.Release, error) {
 	return &storage.Release{ID: id, ApplicationID: storage.LegacyApplicationID, Name: id}, nil
 }
-func (s *metricsStoreSpy) ListReleases(applicationID string) ([]*storage.Release, error) {
+func (s *metricsStoreSpy) ListReleases(applicationID string, includeArchived bool) ([]*storage.Release, error) {
 	return nil, nil
 }
+func (s *metricsStoreSpy) ArchiveRelease(id string) error { return nil }
 func (s *metricsStoreSpy) DeleteRelease(id string) error { return nil }
 func (s *metricsStoreSpy) SaveScenario(scenario *storage.Scenario, scripts []storage.ScenarioScript) error {
 	return nil

@@ -19,7 +19,8 @@ type Store interface {
 	DeleteApplication(id string) error
 	SaveRelease(release *Release) error
 	GetRelease(id string) (*Release, error)
-	ListReleases(applicationID string) ([]*Release, error)
+	ListReleases(applicationID string, includeArchived bool) ([]*Release, error)
+	ArchiveRelease(id string) error
 	DeleteRelease(id string) error
 
 	// Reusable scenarios
@@ -83,6 +84,7 @@ type Release struct {
 	Name          string    `json:"name"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
+	ArchivedAt    *time.Time `json:"archived_at,omitempty"`
 }
 
 type Scenario struct {

@@ -19,7 +19,8 @@ export function useApplicationApi() {
   const deleteApplication = useCallback((id: string) => request<any>(`/applications/${id}`, { method: 'DELETE' }), [])
 
   const listReleases = useCallback(
-    (applicationId: string) => request<{ releases: Release[]; count: number }>(`/applications/${applicationId}/releases`),
+    (applicationId: string, includeArchived = false) =>
+      request<{ releases: Release[]; count: number }>(`/applications/${applicationId}/releases${includeArchived ? '?include_archived=true' : ''}`),
     [],
   )
 
@@ -34,6 +35,8 @@ export function useApplicationApi() {
     [],
   )
 
+  const archiveRelease = useCallback((id: string) => request<Release>(`/releases/${id}/archive`, { method: 'POST' }), [])
+
   const deleteRelease = useCallback((id: string) => request<any>(`/releases/${id}`, { method: 'DELETE' }), [])
 
   return useMemo(
@@ -45,8 +48,9 @@ export function useApplicationApi() {
       listReleases,
       createRelease,
       updateRelease,
+      archiveRelease,
       deleteRelease,
     }),
-    [listApplications, createApplication, updateApplication, deleteApplication, listReleases, createRelease, updateRelease, deleteRelease],
+    [listApplications, createApplication, updateApplication, deleteApplication, listReleases, createRelease, updateRelease, archiveRelease, deleteRelease],
   )
 }

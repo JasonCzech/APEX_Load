@@ -129,7 +129,8 @@ func (s *Server) handleListReleases(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"releases": []*storage.Release{}, "count": 0})
 		return
 	}
-	releases, err := s.store.ListReleases(r.PathValue("id"))
+	includeArchived := strings.EqualFold(r.URL.Query().Get("include_archived"), "true")
+	releases, err := s.store.ListReleases(r.PathValue("id"), includeArchived)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -188,4 +189,22 @@ func (s *Server) handleDeleteRelease(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})
+}
+
+func (s *Server) handleArchiveRelease(w http.ResponseWriter, r *http.Request) {
+	if s.store == nil {
+		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
+		return
+	}
+	id := r.PathValue("id")
+	if err := s.store.ArchiveRelease(id); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	release, err := s.store.GetRelease(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "release not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, release)
 }
