@@ -116,6 +116,34 @@ export function useScriptApi() {
     [],
   )
 
+  const importJMeter = useCallback(
+    async (file: File, options?: { name?: string; base_url?: string; include_assertions?: boolean; scenario_draft?: boolean }) => {
+      const formData = new FormData()
+      formData.append('file', file)
+      if (options?.name) formData.append('name', options.name)
+      if (options?.base_url) formData.append('base_url', options.base_url)
+      if (options?.include_assertions) formData.append('include_assertions', 'true')
+      if (options?.scenario_draft) formData.append('scenario_draft', 'true')
+
+      const res = await fetch(`${BASE}/scripts/import/jmeter`, {
+        method: 'POST',
+        body: formData,
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: res.statusText }))
+        throw new Error(body.error || res.statusText)
+      }
+      return res.json()
+    },
+    [],
+  )
+
+  const saveJMeterImport = useCallback(
+    (payload: { scripts: any[]; scenario_draft?: any }) =>
+      request<any>('/scripts/import/jmeter/save', { method: 'POST', body: JSON.stringify(payload) }),
+    [],
+  )
+
   const importSample = useCallback(
     (data: {
       name?: string
@@ -216,6 +244,8 @@ export function useScriptApi() {
       resumeBrowserReplaySession,
       exportScript,
       importLoadRunner,
+      importJMeter,
+      saveJMeterImport,
       importSample,
       listScenarios,
       createScenario,
@@ -252,6 +282,8 @@ export function useScriptApi() {
       resumeBrowserReplaySession,
       exportScript,
       importLoadRunner,
+      importJMeter,
+      saveJMeterImport,
       importSample,
       listScenarios,
       createScenario,

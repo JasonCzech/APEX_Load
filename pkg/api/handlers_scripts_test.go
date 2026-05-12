@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -105,5 +106,134 @@ func TestHandleImportSampleBadRequest(t *testing.T) {
 
 	if resp.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusBadRequest, resp.Body.String())
+	}
+}
+
+func TestHandleImportJMeter(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("file", "checkout.jmx")
+	if err != nil {
+		t.Fatalf("CreateFormFile returned error: %v", err)
+	}
+	part.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2">
+  <hashTree>
+    <TestPlan testname="Plan"><stringProp name="TestPlan.comments"/></TestPlan>
+    <hashTree>
+      <ThreadGroup testname="Users">
+        <stringProp name="ThreadGroup.num_threads">5</stringProp>
+        <stringProp name="ThreadGroup.ramp_time">10</stringProp>
+      </ThreadGroup>
+      <hashTree>
+        <ConfigTestElement testname="Defaults" guiclass="HttpDefaultsGui">
+          <stringProp name="HTTPSampler.domain">api.example.com</stringProp>
+          <stringProp name="HTTPSampler.protocol">https</stringProp>
+        </ConfigTestElement>
+        <hashTree/>
+        <HTTPSamplerProxy testname="Home">
+          <stringProp name="HTTPSampler.path">/home</stringProp>
+          <stringProp name="HTTPSampler.method">GET</stringProp>
+        </HTTPSamplerProxy>
+        <hashTree/>
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>`))
+	writer.WriteField("include_assertions", "true")
+	writer.WriteField("scenario_draft", "true")
+	writer.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/jmeter", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var result struct {
+		Scripts []struct {
+			Name    string `json:"name"`
+			Actions []struct {
+				Target string `json:"target"`
+			} `json:"actions"`
+		} `json:"scripts"`
+		ScenarioDraft any `json:"scenario_draft"`
+		Stats         struct {
+			ConvertedActions int `json:"converted_actions"`
+		} `json:"stats"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if len(result.Scripts) != 1 || result.Scripts[0].Actions[0].Target != "/home" {
+		t.Fatalf("unexpected converted scripts: %#v", result.Scripts)
+	}
+	if result.Stats.ConvertedActions != 1 {
+		t.Fatalf("converted actions = %d, want 1", result.Stats.ConvertedActions)
+	}
+	if result.ScenarioDraft == nil {
+		t.Fatal("expected scenario draft in response")
+	}
+}
+
+func TestHandleSaveJMeterImportPersistsScriptsAndScenario(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	payload := map[string]any{
+		"scripts": []map[string]any{{
+			"name":     "Imported_JMeter",
+			"version":  "1.0.0",
+			"protocol": "http",
+			"config":   map[string]any{"base_url": "https://api.example.com"},
+			"actions": []map[string]any{{
+				"name":   "Home",
+				"type":   "GET",
+				"method": "GET",
+				"target": "/home",
+			}},
+		}},
+		"scenario_draft": map[string]any{
+			"name":          "Imported JMeter Scenario",
+			"duration":      "2m",
+			"scenario_mode": "vuser_driven",
+			"groups": []map[string]any{{
+				"name":           "Users",
+				"script_name":    "Imported_JMeter",
+				"vusers":         5,
+				"ramp_up":        "10s",
+				"initialization": "at_runtime",
+			}},
+		},
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("json.Marshal returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/jmeter/save", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusCreated, resp.Body.String())
+	}
+	var result struct {
+		Count    int             `json:"count"`
+		Scripts  []StoredScript  `json:"scripts"`
+		Scenario *StoredScenario `json:"scenario"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if result.Count != 1 || len(result.Scripts) != 1 || result.Scripts[0].ID == "" {
+		t.Fatalf("unexpected scripts response: %#v", result)
+	}
+	if result.Scenario == nil || result.Scenario.ScriptCount != 1 {
+		t.Fatalf("expected saved scenario, got %#v", result.Scenario)
 	}
 }

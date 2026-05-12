@@ -3,10 +3,11 @@ import { StoredScript, TestSummary } from '../types'
 import { useApi } from '../hooks/useApi'
 import ScriptEditor from './ScriptEditor'
 import LoadRunnerImport from './LoadRunnerImport'
+import JMeterImport from './JMeterImport'
 import RecordingStudio from './RecordingStudio'
 import SampleScriptImport from './SampleScriptImport'
 
-type SubView = 'list' | 'create-options' | 'create' | 'edit' | 'import' | 'recorder' | 'sample'
+type SubView = 'list' | 'create-options' | 'create' | 'edit' | 'import' | 'jmeter-import' | 'recorder' | 'sample'
 
 interface Props {
   initialMode?: SubView
@@ -253,6 +254,10 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
     return <div className="page"><LoadRunnerImport onImported={handleImported} onClose={() => setSubView('list')} /></div>
   }
 
+  if (subView === 'jmeter-import') {
+    return <div className="page"><JMeterImport onImported={handleImported} onClose={() => setSubView('list')} /></div>
+  }
+
   if (subView === 'recorder') {
     return (
       <div className="page">
@@ -340,14 +345,19 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
           <section className="script-create-lane import">
             <div className="script-create-lane-header">
               <span className="script-create-kicker">Migration</span>
-              <h3>LoadRunner Imports</h3>
-              <p>Bring existing LoadRunner assets forward while preserving source metadata and conversion notes for review.</p>
+              <h3>Migration Imports</h3>
+              <p>Bring existing LoadRunner and JMeter assets forward while preserving source metadata and conversion notes for review.</p>
             </div>
             <div className="script-create-grid">
               <button className="script-create-option primary" onClick={() => setSubView('import')}>
                 <span className="script-create-type-badge import">LR</span>
                 <h3>Import LoadRunner</h3>
                 <p>Convert a LoadRunner ZIP into a Stormrunner script and keep unsupported functions visible for cleanup.</p>
+              </button>
+              <button className="script-create-option" onClick={() => setSubView('jmeter-import')}>
+                <span className="script-create-type-badge import">JMX</span>
+                <h3>Import JMeter</h3>
+                <p>Convert a JMeter .jmx plan into HTTP scripts with warnings, unsupported elements, and scenario draft context.</p>
               </button>
             </div>
           </section>

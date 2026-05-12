@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/jasonczech/stormrunner/pkg/convert/jmeter"
 	"github.com/jasonczech/stormrunner/pkg/convert/loadrunner"
 	"github.com/jasonczech/stormrunner/pkg/convert/sample"
 	"github.com/jasonczech/stormrunner/pkg/dsl"
@@ -79,6 +80,151 @@ func (s *Server) handleImportLoadRunner(w http.ResponseWriter, r *http.Request) 
 		"script":   result.Script,
 		"warnings": result.Warnings,
 		"stats":    result.Stats,
+	})
+}
+
+// handleImportJMeter handles POST /api/v1/scripts/import/jmeter.
+// Accepts a multipart form upload or raw body containing a JMeter .jmx test plan.
+func (s *Server) handleImportJMeter(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 50<<20)
+
+	contentType := r.Header.Get("Content-Type")
+	var data []byte
+	fileName := r.URL.Query().Get("filename")
+
+	if strings.HasPrefix(contentType, "application/xml") || strings.HasPrefix(contentType, "text/xml") || strings.HasPrefix(contentType, "application/octet-stream") {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "failed to read request body: "+err.Error())
+			return
+		}
+		data = body
+	} else {
+		if err := r.ParseMultipartForm(50 << 20); err != nil {
+			writeError(w, http.StatusBadRequest, "failed to parse multipart form (max 50MB): "+err.Error())
+			return
+		}
+		file, header, err := r.FormFile("file")
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "missing 'file' field in multipart form: "+err.Error())
+			return
+		}
+		defer file.Close()
+		if header != nil {
+			fileName = header.Filename
+		}
+		body, err := io.ReadAll(file)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "failed to read uploaded file: "+err.Error())
+			return
+		}
+		data = body
+	}
+
+	if len(data) == 0 {
+		writeError(w, http.StatusBadRequest, "empty file uploaded")
+		return
+	}
+
+	result, err := jmeter.ConvertJMX(data, jmeter.ConvertOptions{
+		ScriptName:        r.FormValue("name"),
+		BaseURL:           r.FormValue("base_url"),
+		IncludeAssertions: r.FormValue("include_assertions") == "true",
+		ScenarioDraft:     r.FormValue("scenario_draft") == "true",
+		FileName:          fileName,
+	})
+	if err != nil {
+		writeError(w, http.StatusUnprocessableEntity, "conversion failed: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"result":               result,
+		"scripts":              result.Scripts,
+		"script":               result.Script,
+		"scenario_draft":       result.ScenarioDraft,
+		"warnings":             result.Warnings,
+		"unsupported_elements": result.UnsupportedElements,
+		"assumptions":          result.Assumptions,
+		"stats":                result.Stats,
+		"summary":              result.Summary,
+	})
+}
+
+func (s *Server) handleSaveJMeterImport(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Scripts       []dsl.Script          `json:"scripts"`
+		ScenarioDraft *jmeter.ScenarioDraft `json:"scenario_draft,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+	if len(req.Scripts) == 0 {
+		writeError(w, http.StatusBadRequest, "at least one script is required")
+		return
+	}
+
+	storedScripts := make([]*StoredScript, 0, len(req.Scripts))
+	scriptIDsByName := map[string]string{}
+	for i := range req.Scripts {
+		script := req.Scripts[i]
+		if script.Name == "" {
+			writeError(w, http.StatusBadRequest, "script name is required")
+			return
+		}
+		if script.Protocol == "" {
+			writeError(w, http.StatusBadRequest, "script protocol is required")
+			return
+		}
+		if len(script.Actions) == 0 {
+			writeError(w, http.StatusBadRequest, "script must have at least one action")
+			return
+		}
+		if issues := validateScript(&script); len(issues) > 0 {
+			writeError(w, http.StatusBadRequest, strings.Join(issues, "; "))
+			return
+		}
+		stored := s.runner.StoreScript(&script)
+		storedScripts = append(storedScripts, stored)
+		scriptIDsByName[script.Name] = stored.ID
+	}
+
+	var storedScenario *StoredScenario
+	if req.ScenarioDraft != nil && len(req.ScenarioDraft.Groups) > 0 {
+		groups := make([]CreateGroupEntry, 0, len(req.ScenarioDraft.Groups))
+		for _, group := range req.ScenarioDraft.Groups {
+			scriptID := scriptIDsByName[group.ScriptName]
+			if scriptID == "" {
+				continue
+			}
+			groups = append(groups, CreateGroupEntry{
+				Name:         group.Name,
+				ScriptID:     scriptID,
+				VUsers:       group.VUsers,
+				RampUp:       group.RampUp,
+				InitStrategy: firstNonEmpty(group.Initialization, "at_runtime"),
+			})
+		}
+		if len(groups) > 0 {
+			scenario, err := s.runner.StoreScenario(CreateScenarioRequest{
+				Name:         firstNonEmpty(req.ScenarioDraft.Name, "Imported JMeter Scenario"),
+				Duration:     firstNonEmpty(req.ScenarioDraft.Duration, "5m"),
+				ScenarioMode: firstNonEmpty(req.ScenarioDraft.ScenarioMode, "vuser_driven"),
+				Groups:       groups,
+			})
+			if err != nil {
+				writeError(w, http.StatusBadRequest, "failed to save scenario draft: "+err.Error())
+				return
+			}
+			storedScenario = scenario
+		}
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"scripts":  storedScripts,
+		"scenario": storedScenario,
+		"count":    len(storedScripts),
 	})
 }
 
