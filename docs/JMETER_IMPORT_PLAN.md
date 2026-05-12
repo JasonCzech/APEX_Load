@@ -10,6 +10,20 @@ The first release should focus on HTTP-oriented JMeter plans and produce:
 
 This should sit alongside the existing LoadRunner import path and position Stormrunner as a realistic migration target for teams with existing JMeter assets.
 
+## Current Status
+- `POST /api/v1/scripts/import/jmeter` is implemented for preview conversion.
+- `POST /api/v1/scripts/import/jmeter/validate` is implemented for dry-run validation.
+- `POST /api/v1/scripts/import/jmeter/save` persists reviewed scripts and optional scenario drafts.
+- `GET /api/v1/scripts/import/jmeter/support-matrix` is implemented and used by the dashboard.
+- The Scripts page now exposes an `Import JMeter` entry with both `Validate Only` and `Convert JMeter Plan` actions.
+- Generated scripts now include JMeter import provenance metadata: original file name, import timestamp, warning count, and unsupported count.
+- `examples/jmeter-http-smoke.jmx` is available as a manual validation fixture for the end-to-end import flow.
+
+### Remaining Phase 1 Gaps
+- Add richer extractor coverage beyond the current straightforward mappings.
+- Expand review details so support-matrix categories can be inspected inline instead of only via summary cards.
+- Add broader automated frontend coverage around the import screen itself beyond utility-level regression tests.
+
 ## Goals
 - Reduce onboarding friction for existing performance teams.
 - Convert a practical subset of JMeter plans into usable Stormrunner artifacts.
@@ -206,6 +220,7 @@ Add a new import lane/card:
 Build:
 - upload form
 - import-mode selector
+- validate-only dry-run action
 - parsed summary panel
 - warning/unsupported list
 - generated script preview list

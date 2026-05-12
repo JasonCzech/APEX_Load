@@ -1,6 +1,9 @@
 package jmeter
 
-import "testing"
+import (
+  "testing"
+  "time"
+)
 
 const sampleJMX = `<?xml version="1.0" encoding="UTF-8"?>
 <jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
@@ -109,6 +112,29 @@ func TestConvertJMXHTTPPlan(t *testing.T) {
 	if result.Summary.FileName != "checkout.jmx" || result.Stats.ConvertedActions != 1 || result.Stats.CSVSources != 1 {
 		t.Fatalf("unexpected summary/stats: %#v %#v", result.Summary, result.Stats)
 	}
+  if script.GeneratedBy != "jmeter-import" || script.GeneratedFrom != "jmeter" {
+    t.Fatalf("unexpected generator provenance: %q %q", script.GeneratedBy, script.GeneratedFrom)
+  }
+  if script.Metadata == nil || script.Metadata.Import == nil {
+    t.Fatalf("expected import metadata, got %#v", script.Metadata)
+  }
+  preserved := script.Metadata.Import.Preserved
+  if preserved["original_file_name"] != "checkout.jmx" {
+    t.Fatalf("original_file_name = %#v, want checkout.jmx", preserved["original_file_name"])
+  }
+  if preserved["warning_count"] != 0 {
+    t.Fatalf("warning_count = %#v, want 0", preserved["warning_count"])
+  }
+  if preserved["unsupported_count"] != 0 {
+    t.Fatalf("unsupported_count = %#v, want 0", preserved["unsupported_count"])
+  }
+  importedAt, ok := preserved["imported_at"].(string)
+  if !ok || importedAt == "" {
+    t.Fatalf("imported_at = %#v, want non-empty string", preserved["imported_at"])
+  }
+  if _, err := time.Parse(time.RFC3339, importedAt); err != nil {
+    t.Fatalf("imported_at parse error: %v", err)
+  }
 }
 
 func TestConvertJMXRejectsInvalidXML(t *testing.T) {

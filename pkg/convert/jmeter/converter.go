@@ -158,6 +158,7 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 		Assumptions: []string{"JMeter controller structure was flattened into script action order where safe."},
 		Summary:     ImportSummary{FileName: opts.FileName},
 	}
+	importedAt := time.Now().UTC().Format(time.RFC3339)
 	unsupported := map[string]struct{}{}
 	variableNames := map[string]struct{}{}
 	csvNames := map[string]struct{}{}
@@ -184,7 +185,7 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 			Name:          scriptName,
 			Version:       "1.0.0",
 			Protocol:      "http",
-			GeneratedBy:   "stormrunner-jmeter-converter",
+			GeneratedBy:   "jmeter-import",
 			GeneratedFrom: "jmeter",
 			Config: dsl.ScriptConfig{
 				HTTP:     dsl.HTTPConfig{DefaultHeaders: map[string]string{}},
@@ -195,7 +196,9 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 				Source:           "jmeter",
 				SourceScriptName: threadName,
 				Preserved: map[string]any{
-					"file_name": opts.FileName,
+					"file_name":          opts.FileName,
+					"original_file_name": opts.FileName,
+					"imported_at":        importedAt,
 				},
 			}},
 		}
@@ -236,6 +239,19 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 	result.Summary.SamplerCount = result.Stats.Samplers
 	result.Summary.VariablesDiscovered = sortedKeys(variableNames)
 	result.Summary.CSVSourcesDiscovered = sortedKeys(csvNames)
+	for _, script := range result.Scripts {
+		if script.Metadata == nil {
+			script.Metadata = &dsl.ScriptMetadata{}
+		}
+		if script.Metadata.Import == nil {
+			script.Metadata.Import = &dsl.ImportMetadata{}
+		}
+		if script.Metadata.Import.Preserved == nil {
+			script.Metadata.Import.Preserved = map[string]any{}
+		}
+		script.Metadata.Import.Preserved["warning_count"] = len(result.Warnings)
+		script.Metadata.Import.Preserved["unsupported_count"] = len(result.UnsupportedElements)
+	}
 	if len(result.Scripts) > 0 {
 		result.Script = result.Scripts[0]
 	}

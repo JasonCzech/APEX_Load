@@ -1,51 +1,27 @@
 import { useEffect, useRef, useState } from 'react'
 import { useApi } from '../hooks/useApi'
+import { ConvertStats, ImportResult, SupportMatrix, normalizeImportResult } from './jmeterImportUtils'
 import './LoadRunnerImport.css'
-
-interface ConvertStats {
-  thread_groups: number
-  samplers: number
-  converted_actions: number
-  headers: number
-  variables: number
-  csv_sources: number
-  assertions: number
-  timers: number
-  unsupported: number
-}
 
 interface Props {
   onImported?: (script: any) => void
   onClose?: () => void
 }
 
-interface SupportMatrix {
-  supported: string[]
-  partial: string[]
-  unsupported: string[]
-  notes?: string[]
-}
+type ReviewMode = 'validation' | 'conversion'
 
 export default function JMeterImport({ onImported, onClose }: Props) {
   const api = useApi()
   const fileRef = useRef<HTMLInputElement>(null)
   const [file, setFile] = useState<File | null>(null)
   const [dragOver, setDragOver] = useState(false)
-  const [importing, setImporting] = useState(false)
+  const [workingMode, setWorkingMode] = useState<'convert' | 'validate' | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  const [saveMessage, setSaveMessage] = useState('')
+  const [notice, setNotice] = useState('')
   const [supportMatrix, setSupportMatrix] = useState<SupportMatrix | null>(null)
-  const [result, setResult] = useState<{
-    scripts: any[]
-    script?: any
-    scenario_draft?: any
-    warnings: string[]
-    unsupported_elements: string[]
-    assumptions: string[]
-    stats: ConvertStats
-    summary: any
-  } | null>(null)
+  const [reviewMode, setReviewMode] = useState<ReviewMode | null>(null)
+  const [result, setResult] = useState<ImportResult | null>(null)
   const [options, setOptions] = useState({
     name: '',
     base_url: '',
@@ -81,7 +57,8 @@ export default function JMeterImport({ onImported, onClose }: Props) {
     }
     setFile(nextFile)
     setError('')
-    setSaveMessage('')
+    setNotice('')
+    setReviewMode(null)
     setResult(null)
   }
 
@@ -93,9 +70,9 @@ export default function JMeterImport({ onImported, onClose }: Props) {
 
   const handleImport = async () => {
     if (!file) return
-    setImporting(true)
+    setWorkingMode('convert')
     setError('')
-    setSaveMessage('')
+    setNotice('')
     setResult(null)
     try {
       const response = await api.importJMeter(file, {
@@ -104,11 +81,36 @@ export default function JMeterImport({ onImported, onClose }: Props) {
         include_assertions: options.include_assertions,
         scenario_draft: options.scenario_draft,
       })
-      setResult(response)
+      setResult(normalizeImportResult(response))
+      setReviewMode('conversion')
+      setNotice('Conversion complete. Review the generated scripts, warnings, and assumptions before saving.')
     } catch (error: any) {
       setError(error.message || 'JMeter import failed')
     } finally {
-      setImporting(false)
+      setWorkingMode(null)
+    }
+  }
+
+  const handleValidate = async () => {
+    if (!file) return
+    setWorkingMode('validate')
+    setError('')
+    setNotice('')
+    setResult(null)
+    try {
+      const response = await api.validateJMeterImport(file, {
+        name: options.name || undefined,
+        base_url: options.base_url || undefined,
+        include_assertions: options.include_assertions,
+        scenario_draft: options.scenario_draft,
+      })
+      setResult(normalizeImportResult(response))
+      setReviewMode('validation')
+      setNotice('Validation complete. Review the generated scripts and warnings before saving.')
+    } catch (error: any) {
+      setError(error.message || 'JMeter validation failed')
+    } finally {
+      setWorkingMode(null)
     }
   }
 
@@ -116,14 +118,14 @@ export default function JMeterImport({ onImported, onClose }: Props) {
     if (!result?.scripts?.length) return
     setSaving(true)
     setError('')
-    setSaveMessage('')
+    setNotice('')
     try {
       const response = await api.saveJMeterImport({
         scripts: result.scripts,
         scenario_draft: result.scenario_draft,
       })
       const scenarioText = response.scenario ? ' and scenario draft' : ''
-      setSaveMessage(`Saved ${response.count || result.scripts.length} script${result.scripts.length === 1 ? '' : 's'}${scenarioText} to the library.`)
+      setNotice(`Saved ${response.count || result.scripts.length} script${result.scripts.length === 1 ? '' : 's'}${scenarioText} to the library.`)
       onImported?.(result.scripts[0])
     } catch (error: any) {
       setError(error.message || 'Failed to save converted scripts')
@@ -159,7 +161,7 @@ export default function JMeterImport({ onImported, onClose }: Props) {
               <span className="lr-filename">{file.name}</span>
               <span className="lr-filesize">{(file.size / 1024).toFixed(1)} KB</span>
             </div>
-            <button className="btn btn-sm btn-ghost" onClick={event => { event.stopPropagation(); setFile(null); setResult(null) }}>Change</button>
+            <button className="btn btn-sm btn-ghost" onClick={event => { event.stopPropagation(); setFile(null); setResult(null); setNotice(''); setReviewMode(null) }}>Change</button>
           </div>
         ) : (
           <div className="lr-drop-content">
@@ -222,19 +224,31 @@ export default function JMeterImport({ onImported, onClose }: Props) {
         </div>
       )}
 
-      <button className="btn btn-primary btn-lg" onClick={handleImport} disabled={!file || importing}>
-        {importing ? <><span className="spinner" /> Converting...</> : 'Convert JMeter Plan'}
-      </button>
+      <div className="replay-panel-actions">
+        <button className="btn btn-secondary btn-lg" onClick={handleValidate} disabled={!file || workingMode !== null}>
+          {workingMode === 'validate' ? <><span className="spinner" /> Validating...</> : 'Validate Only'}
+        </button>
+        <button className="btn btn-primary btn-lg" onClick={handleImport} disabled={!file || workingMode !== null}>
+          {workingMode === 'convert' ? <><span className="spinner" /> Converting...</> : 'Convert JMeter Plan'}
+        </button>
+      </div>
 
       {error && <div className="lr-error">{error}</div>}
-      {saveMessage && <div className="settings-notice">{saveMessage}</div>}
+      {notice && <div className="settings-notice">{notice}</div>}
 
       {result && (
         <div className="lr-result">
           <div className="lr-result-header">
-            <h3>Conversion Review</h3>
+            <div>
+              <h3>{reviewMode === 'validation' ? 'Validation Review' : 'Conversion Review'}</h3>
+              <p className="lr-subtitle">
+                {reviewMode === 'validation'
+                  ? 'This preview came from the dry-run validator. You can still save the reviewed assets if the output looks correct.'
+                  : 'This preview came from the converter and is ready for final review before saving.'}
+              </p>
+            </div>
             <button className="btn btn-primary" onClick={handleSaveConverted} disabled={saving}>
-              {saving ? 'Saving...' : `Save ${result.scripts?.length || 0} Script${(result.scripts?.length || 0) === 1 ? '' : 's'}`}
+              {saving ? 'Saving...' : `${reviewMode === 'validation' ? 'Save Reviewed' : 'Save'} ${result.scripts?.length || 0} Script${(result.scripts?.length || 0) === 1 ? '' : 's'}`}
             </button>
           </div>
 
