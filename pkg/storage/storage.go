@@ -28,6 +28,18 @@ type Store interface {
 	GetScenario(id string) (*Scenario, []ScenarioScript, error)
 	ListScenarios() ([]*Scenario, error)
 	DeleteScenario(id string) error
+	SaveScenarioDataPoolBindings(scenarioID string, bindings []ScenarioDataPoolBinding) error
+	ListScenarioDataPoolBindings(scenarioID string) ([]ScenarioDataPoolBinding, error)
+	DeleteScenarioDataPoolBinding(id string) error
+
+	// Shared data pools
+	SaveDataPool(pool *SharedDataPool) error
+	GetDataPool(id string) (*SharedDataPool, error)
+	ListDataPools(includeArchived bool) ([]*SharedDataPool, error)
+	DeleteDataPool(id string) error
+	SaveDataPoolRow(row *SharedDataPoolRow) error
+	ListDataPoolRows(poolID string) ([]*SharedDataPoolRow, error)
+	DeleteDataPoolRow(id string) error
 
 	// Projects
 	SaveProject(project *Project) error
@@ -79,11 +91,11 @@ type Application struct {
 }
 
 type Release struct {
-	ID            string    `json:"id"`
-	ApplicationID string    `json:"application_id"`
-	Name          string    `json:"name"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	ID            string     `json:"id"`
+	ApplicationID string     `json:"application_id"`
+	Name          string     `json:"name"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
 	ArchivedAt    *time.Time `json:"archived_at,omitempty"`
 }
 
@@ -109,6 +121,38 @@ type ScenarioScript struct {
 	RampUp         string `json:"ramp_up,omitempty"`
 	RampDown       string `json:"ramp_down,omitempty"`
 	Initialization string `json:"initialization,omitempty"`
+}
+
+type SharedDataPool struct {
+	ID          string            `json:"id"`
+	Name        string            `json:"name"`
+	Description string            `json:"description,omitempty"`
+	Schema      map[string]string `json:"schema,omitempty"`
+	CreatedAt   time.Time         `json:"created_at"`
+	UpdatedAt   time.Time         `json:"updated_at"`
+	ArchivedAt  *time.Time        `json:"archived_at,omitempty"`
+}
+
+type SharedDataPoolRow struct {
+	ID        string            `json:"id"`
+	PoolID    string            `json:"pool_id"`
+	Data      map[string]string `json:"data"`
+	Status    string            `json:"status,omitempty"`
+	Version   int               `json:"version"`
+	CreatedAt time.Time         `json:"created_at"`
+	UpdatedAt time.Time         `json:"updated_at"`
+}
+
+type ScenarioDataPoolBinding struct {
+	ID                string    `json:"id"`
+	ScenarioID        string    `json:"scenario_id,omitempty"`
+	PoolID            string    `json:"pool_id"`
+	PoolName          string    `json:"pool_name,omitempty"`
+	Alias             string    `json:"alias"`
+	AccessMode        string    `json:"access_mode"`
+	SelectionStrategy string    `json:"selection_strategy"`
+	CreatedAt         time.Time `json:"created_at,omitempty"`
+	UpdatedAt         time.Time `json:"updated_at,omitempty"`
 }
 
 type Project struct {

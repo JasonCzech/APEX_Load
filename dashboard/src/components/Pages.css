@@ -1289,6 +1289,39 @@
   flex-wrap: wrap;
 }
 
+.script-parameter-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.script-parameter-table {
+  width: 100%;
+  min-width: 720px;
+  border-collapse: collapse;
+  background: var(--bg-secondary);
+}
+
+.script-parameter-table th,
+.script-parameter-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+  font-size: 13px;
+}
+
+.script-parameter-table th {
+  color: var(--text-muted);
+  font-weight: 700;
+  background: var(--bg-tertiary);
+}
+
+.script-parameter-table tr:last-child td {
+  border-bottom: none;
+}
+
 .settings-status-block {
   display: flex;
   flex-direction: column;

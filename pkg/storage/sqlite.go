@@ -74,6 +74,38 @@ func (s *SQLiteStore) init() error {
 			FOREIGN KEY(scenario_id) REFERENCES scenarios(id),
 			FOREIGN KEY(script_id) REFERENCES scripts(id)
 		)`,
+		`CREATE TABLE IF NOT EXISTS shared_data_pools (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL,
+			description TEXT,
+			schema_json TEXT,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL,
+			archived_at DATETIME
+		)`,
+		`CREATE TABLE IF NOT EXISTS shared_data_pool_rows (
+			id TEXT PRIMARY KEY,
+			pool_id TEXT NOT NULL,
+			data_json TEXT NOT NULL,
+			status TEXT,
+			version INTEGER DEFAULT 1,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL,
+			FOREIGN KEY(pool_id) REFERENCES shared_data_pools(id)
+		)`,
+		`CREATE TABLE IF NOT EXISTS scenario_data_pool_bindings (
+			id TEXT PRIMARY KEY,
+			scenario_id TEXT NOT NULL,
+			pool_id TEXT NOT NULL,
+			alias TEXT NOT NULL,
+			access_mode TEXT NOT NULL,
+			selection_strategy TEXT NOT NULL,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL,
+			UNIQUE(scenario_id, alias),
+			FOREIGN KEY(scenario_id) REFERENCES scenarios(id),
+			FOREIGN KEY(pool_id) REFERENCES shared_data_pools(id)
+		)`,
 		`CREATE TABLE IF NOT EXISTS projects (
 			id TEXT PRIMARY KEY,
 			name TEXT NOT NULL,
@@ -670,10 +702,224 @@ func (s *SQLiteStore) DeleteScenario(id string) error {
 	if _, err := tx.Exec(`DELETE FROM scenario_scripts WHERE scenario_id = ?`, id); err != nil {
 		return err
 	}
+	if _, err := tx.Exec(`DELETE FROM scenario_data_pool_bindings WHERE scenario_id = ?`, id); err != nil {
+		return err
+	}
 	if _, err := tx.Exec(`DELETE FROM scenarios WHERE id = ?`, id); err != nil {
 		return err
 	}
 	return tx.Commit()
+}
+
+func (s *SQLiteStore) SaveDataPool(pool *SharedDataPool) error {
+	if pool.ID == "" {
+		return errors.New("data pool id is required")
+	}
+	if strings.TrimSpace(pool.Name) == "" {
+		return errors.New("data pool name is required")
+	}
+	if pool.CreatedAt.IsZero() {
+		pool.CreatedAt = time.Now()
+	}
+	pool.UpdatedAt = time.Now()
+	schemaJSON, err := json.Marshal(pool.Schema)
+	if err != nil {
+		return fmt.Errorf("marshal data pool schema: %w", err)
+	}
+	_, err = s.db.Exec(`INSERT INTO shared_data_pools (id, name, description, schema_json, created_at, updated_at, archived_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET name=excluded.name, description=excluded.description, schema_json=excluded.schema_json, updated_at=excluded.updated_at, archived_at=excluded.archived_at`,
+		pool.ID, pool.Name, pool.Description, string(schemaJSON), pool.CreatedAt, pool.UpdatedAt, pool.ArchivedAt)
+	return err
+}
+
+func (s *SQLiteStore) GetDataPool(id string) (*SharedDataPool, error) {
+	var pool SharedDataPool
+	var schemaJSON string
+	err := s.db.QueryRow(`SELECT id, name, COALESCE(description, ''), COALESCE(schema_json, ''), created_at, updated_at, archived_at FROM shared_data_pools WHERE id = ?`, id).Scan(
+		&pool.ID, &pool.Name, &pool.Description, &schemaJSON, &pool.CreatedAt, &pool.UpdatedAt, &pool.ArchivedAt)
+	if err != nil {
+		return nil, err
+	}
+	if schemaJSON != "" && schemaJSON != "null" {
+		_ = json.Unmarshal([]byte(schemaJSON), &pool.Schema)
+	}
+	return &pool, nil
+}
+
+func (s *SQLiteStore) ListDataPools(includeArchived bool) ([]*SharedDataPool, error) {
+	query := `SELECT id, name, COALESCE(description, ''), COALESCE(schema_json, ''), created_at, updated_at, archived_at FROM shared_data_pools`
+	if !includeArchived {
+		query += ` WHERE archived_at IS NULL`
+	}
+	query += ` ORDER BY updated_at DESC`
+	rows, err := s.db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var pools []*SharedDataPool
+	for rows.Next() {
+		var pool SharedDataPool
+		var schemaJSON string
+		if err := rows.Scan(&pool.ID, &pool.Name, &pool.Description, &schemaJSON, &pool.CreatedAt, &pool.UpdatedAt, &pool.ArchivedAt); err != nil {
+			return nil, err
+		}
+		if schemaJSON != "" && schemaJSON != "null" {
+			_ = json.Unmarshal([]byte(schemaJSON), &pool.Schema)
+		}
+		pools = append(pools, &pool)
+	}
+	return pools, rows.Err()
+}
+
+func (s *SQLiteStore) DeleteDataPool(id string) error {
+	var bindingCount int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM scenario_data_pool_bindings WHERE pool_id = ?`, id).Scan(&bindingCount); err != nil {
+		return err
+	}
+	if bindingCount > 0 {
+		return errors.New("data pool is bound to one or more scenarios")
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`DELETE FROM shared_data_pool_rows WHERE pool_id = ?`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM shared_data_pools WHERE id = ?`, id); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (s *SQLiteStore) SaveDataPoolRow(row *SharedDataPoolRow) error {
+	if row.ID == "" {
+		return errors.New("data pool row id is required")
+	}
+	if row.PoolID == "" {
+		return errors.New("data pool id is required")
+	}
+	if row.Data == nil {
+		row.Data = map[string]string{}
+	}
+	if row.Status == "" {
+		row.Status = "active"
+	}
+	if row.Version <= 0 {
+		row.Version = 1
+	}
+	if row.CreatedAt.IsZero() {
+		row.CreatedAt = time.Now()
+	}
+	row.UpdatedAt = time.Now()
+	dataJSON, err := json.Marshal(row.Data)
+	if err != nil {
+		return fmt.Errorf("marshal data pool row: %w", err)
+	}
+	_, err = s.db.Exec(`INSERT INTO shared_data_pool_rows (id, pool_id, data_json, status, version, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET data_json=excluded.data_json, status=excluded.status, version=shared_data_pool_rows.version + 1, updated_at=excluded.updated_at`,
+		row.ID, row.PoolID, string(dataJSON), row.Status, row.Version, row.CreatedAt, row.UpdatedAt)
+	return err
+}
+
+func (s *SQLiteStore) ListDataPoolRows(poolID string) ([]*SharedDataPoolRow, error) {
+	rows, err := s.db.Query(`SELECT id, pool_id, data_json, COALESCE(status, ''), COALESCE(version, 1), created_at, updated_at FROM shared_data_pool_rows WHERE pool_id = ? ORDER BY created_at ASC`, poolID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*SharedDataPoolRow
+	for rows.Next() {
+		var row SharedDataPoolRow
+		var dataJSON string
+		if err := rows.Scan(&row.ID, &row.PoolID, &dataJSON, &row.Status, &row.Version, &row.CreatedAt, &row.UpdatedAt); err != nil {
+			return nil, err
+		}
+		if dataJSON != "" && dataJSON != "null" {
+			_ = json.Unmarshal([]byte(dataJSON), &row.Data)
+		}
+		if row.Data == nil {
+			row.Data = map[string]string{}
+		}
+		out = append(out, &row)
+	}
+	return out, rows.Err()
+}
+
+func (s *SQLiteStore) DeleteDataPoolRow(id string) error {
+	_, err := s.db.Exec(`DELETE FROM shared_data_pool_rows WHERE id = ?`, id)
+	return err
+}
+
+func (s *SQLiteStore) SaveScenarioDataPoolBindings(scenarioID string, bindings []ScenarioDataPoolBinding) error {
+	if scenarioID == "" {
+		return errors.New("scenario id is required")
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`DELETE FROM scenario_data_pool_bindings WHERE scenario_id = ?`, scenarioID); err != nil {
+		return err
+	}
+	now := time.Now()
+	for _, binding := range bindings {
+		if binding.ID == "" {
+			return errors.New("scenario data pool binding id is required")
+		}
+		if binding.PoolID == "" {
+			return errors.New("data pool id is required")
+		}
+		if strings.TrimSpace(binding.Alias) == "" {
+			return errors.New("data pool binding alias is required")
+		}
+		if binding.AccessMode == "" {
+			binding.AccessMode = "read_only"
+		}
+		if binding.SelectionStrategy == "" {
+			binding.SelectionStrategy = "sequential"
+		}
+		if binding.CreatedAt.IsZero() {
+			binding.CreatedAt = now
+		}
+		binding.UpdatedAt = now
+		if _, err := tx.Exec(`INSERT INTO scenario_data_pool_bindings (id, scenario_id, pool_id, alias, access_mode, selection_strategy, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, binding.ID, scenarioID, binding.PoolID, binding.Alias, binding.AccessMode, binding.SelectionStrategy, binding.CreatedAt, binding.UpdatedAt); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func (s *SQLiteStore) ListScenarioDataPoolBindings(scenarioID string) ([]ScenarioDataPoolBinding, error) {
+	rows, err := s.db.Query(`SELECT b.id, b.scenario_id, b.pool_id, COALESCE(p.name, ''), b.alias, b.access_mode, b.selection_strategy, b.created_at, b.updated_at
+		FROM scenario_data_pool_bindings b
+		LEFT JOIN shared_data_pools p ON p.id = b.pool_id
+		WHERE b.scenario_id = ?
+		ORDER BY b.alias ASC`, scenarioID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ScenarioDataPoolBinding
+	for rows.Next() {
+		var binding ScenarioDataPoolBinding
+		if err := rows.Scan(&binding.ID, &binding.ScenarioID, &binding.PoolID, &binding.PoolName, &binding.Alias, &binding.AccessMode, &binding.SelectionStrategy, &binding.CreatedAt, &binding.UpdatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, binding)
+	}
+	return out, rows.Err()
+}
+
+func (s *SQLiteStore) DeleteScenarioDataPoolBinding(id string) error {
+	_, err := s.db.Exec(`DELETE FROM scenario_data_pool_bindings WHERE id = ?`, id)
+	return err
 }
 
 func (s *SQLiteStore) SaveProject(project *Project) error {

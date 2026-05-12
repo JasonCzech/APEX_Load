@@ -1,5 +1,5 @@
 import { Fragment, memo, useCallback, useEffect, useMemo, useState } from 'react'
-import { StoredScenario, StoredScript, TestSummary } from '../types'
+import { SharedDataPool, StoredScenario, StoredScript, TestSummary } from '../types'
 import { useApi } from '../hooks/useApi'
 import './TestHub.css'
 
@@ -34,11 +34,12 @@ function TestHub({ onSelectTest }: Props) {
   const api = useApi()
   const [scenarios, setScenarios] = useState<StoredScenario[]>([])
   const [scripts, setScripts] = useState<StoredScript[]>([])
+  const [dataPools, setDataPools] = useState<SharedDataPool[]>([])
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState<any>({ name: '', duration: '1m', script_id: '', vusers: 10 })
   const [error, setError] = useState('')
-  const [sortField, setSortField] = useState<'name' | 'scripts' | 'created_at' | 'associated_releases' | 'last_run_at' | 'result_count'>('last_run_at')
+  const [sortField, setSortField] = useState<'name' | 'scripts' | 'data_pools' | 'created_at' | 'associated_releases' | 'last_run_at' | 'result_count'>('last_run_at')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
   const [expandedScenarioId, setExpandedScenarioId] = useState<string | null>(null)
   const [scenarioRuns, setScenarioRuns] = useState<Record<string, TestSummary[]>>({})
@@ -48,11 +49,12 @@ function TestHub({ onSelectTest }: Props) {
 
   const refresh = useCallback(async () => {
     try {
-      const [scenarioRes, scriptRes] = await Promise.all([api.listScenarios(), api.listScripts()])
+      const [scenarioRes, scriptRes, dataPoolRes] = await Promise.all([api.listScenarios(), api.listScripts(), api.listDataPools()])
       const nextScenarios = scenarioRes.scenarios || []
       const nextScripts = scriptRes.scripts || []
       setScenarios(nextScenarios)
       setScripts(nextScripts)
+      setDataPools(dataPoolRes.data_pools || [])
       setForm((prev: any) => ({ ...prev, script_id: prev.script_id || nextScripts[0]?.id || '' }))
     } catch (err: any) {
       setError(err.message || 'Unable to load scenarios')
@@ -69,6 +71,10 @@ function TestHub({ onSelectTest }: Props) {
         case 'scripts':
           aValue = (a.scripts || []).length
           bValue = (b.scripts || []).length
+          break
+        case 'data_pools':
+          aValue = (a.data_pools || []).length
+          bValue = (b.data_pools || []).length
           break
         case 'created_at':
         case 'last_run_at':
@@ -149,18 +155,23 @@ function TestHub({ onSelectTest }: Props) {
 
   const openCreate = () => {
     setEditingId(null)
-    setForm({ name: '', duration: '1m', script_id: scripts[0]?.id || '', vusers: 10 })
+    setForm({ name: '', duration: '1m', script_id: scripts[0]?.id || '', vusers: 10, data_pool_id: '', data_pool_alias: '' })
     setShowForm(true)
   }
 
   const openEdit = (scenario: StoredScenario) => {
     const first = scenario.scripts[0]
+    const firstPool = scenario.data_pools?.[0]
     setEditingId(scenario.id)
     setForm({
       name: scenario.name,
       duration: scenario.duration,
       script_id: first?.script_id || scripts[0]?.id || '',
       vusers: first?.vusers || 10,
+      data_pool_id: firstPool?.pool_id || '',
+      data_pool_alias: firstPool?.alias || '',
+      data_pool_access_mode: firstPool?.access_mode || 'read_only',
+      data_pool_selection_strategy: firstPool?.selection_strategy || 'sequential',
     })
     setShowForm(true)
   }
@@ -170,6 +181,12 @@ function TestHub({ onSelectTest }: Props) {
       setError('Scenario name and script are required.')
       return
     }
+    const dataPoolsPayload = form.data_pool_id ? [{
+      pool_id: form.data_pool_id,
+      alias: (form.data_pool_alias || dataPools.find(pool => pool.id === form.data_pool_id)?.name || 'data').trim().toLowerCase().replace(/\s+/g, '_'),
+      access_mode: form.data_pool_access_mode || 'read_only',
+      selection_strategy: form.data_pool_selection_strategy || 'sequential',
+    }] : []
     const payload = {
       name: form.name.trim(),
       duration: form.duration || '1m',
@@ -179,6 +196,7 @@ function TestHub({ onSelectTest }: Props) {
         vusers: Number(form.vusers) || 10,
         initialization: 'at_runtime',
       }],
+      data_pools: dataPoolsPayload,
     }
     try {
       if (editingId) await api.updateScenario(editingId, payload)
@@ -223,6 +241,37 @@ function TestHub({ onSelectTest }: Props) {
               {scripts.map(script => <option key={script.id} value={script.id}>{script.name}</option>)}
             </select>
             <input className="settings-input" type="number" min={1} value={form.vusers} onChange={event => setForm({ ...form, vusers: Number(event.target.value) })} />
+            <select className="settings-input" value={form.data_pool_id || ''} onChange={event => setForm({ ...form, data_pool_id: event.target.value })}>
+              <option value="">No shared data pool</option>
+              {dataPools.map(pool => <option key={pool.id} value={pool.id}>{pool.name}</option>)}
+            </select>
+            <input
+              className="settings-input"
+              value={form.data_pool_alias || ''}
+              onChange={event => setForm({ ...form, data_pool_alias: event.target.value })}
+              placeholder="Pool alias, e.g. customers"
+              disabled={!form.data_pool_id}
+            />
+            <select
+              className="settings-input"
+              value={form.data_pool_access_mode || 'read_only'}
+              onChange={event => setForm({ ...form, data_pool_access_mode: event.target.value })}
+              disabled={!form.data_pool_id}
+            >
+              <option value="read_only">Read only</option>
+              <option value="read_write">Read/write</option>
+              <option value="consume">Consume rows</option>
+            </select>
+            <select
+              className="settings-input"
+              value={form.data_pool_selection_strategy || 'sequential'}
+              onChange={event => setForm({ ...form, data_pool_selection_strategy: event.target.value })}
+              disabled={!form.data_pool_id}
+            >
+              <option value="sequential">Sequential rows</option>
+              <option value="random">Random rows</option>
+              <option value="unique">Unique rows</option>
+            </select>
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
             <button className="btn btn-secondary" onClick={() => setShowForm(false)}>Cancel</button>
@@ -239,6 +288,7 @@ function TestHub({ onSelectTest }: Props) {
               <tr>
                 <th onClick={() => handleSort('name')} className="sortable">Name <SortIndicator active={sortField === 'name'} direction={sortDirection} /></th>
                 <th onClick={() => handleSort('scripts')} className="sortable">Scripts <SortIndicator active={sortField === 'scripts'} direction={sortDirection} /></th>
+                <th onClick={() => handleSort('data_pools')} className="sortable">Data Pools <SortIndicator active={sortField === 'data_pools'} direction={sortDirection} /></th>
                 <th onClick={() => handleSort('created_at')} className="sortable">Created <SortIndicator active={sortField === 'created_at'} direction={sortDirection} /></th>
                 <th onClick={() => handleSort('associated_releases')} className="sortable">Associated Releases <SortIndicator active={sortField === 'associated_releases'} direction={sortDirection} /></th>
                 <th onClick={() => handleSort('last_run_at')} className="sortable">Last Run <SortIndicator active={sortField === 'last_run_at'} direction={sortDirection} /></th>
@@ -252,6 +302,7 @@ function TestHub({ onSelectTest }: Props) {
                   <tr className="clickable-row" onClick={() => toggleScenarioRuns(scenario)}>
                     <td className="cell-name">{scenario.name}</td>
                     <td>{scenario.scripts.map(script => script.script_name || script.name || script.script_id).join(', ')}</td>
+                    <td className="cell-muted">{(scenario.data_pools || []).map(pool => `${pool.alias} (${pool.pool_name || pool.pool_id})`).join(', ') || 'None'}</td>
                     <td className="cell-muted">{formatDate(scenario.created_at)}</td>
                     <td className="cell-muted">{releaseList(scenario)}</td>
                     <td className="cell-muted">{formatDate(scenario.last_run_at)}</td>
@@ -268,7 +319,7 @@ function TestHub({ onSelectTest }: Props) {
                   </tr>
                   {expandedScenarioId === scenario.id && (
                     <tr className="no-hover">
-                      <td colSpan={7} style={{ background: 'var(--bg-primary)' }}>
+                      <td colSpan={8} style={{ background: 'var(--bg-primary)' }}>
                         <div style={{ padding: '10px 4px' }}>
                           <div className="cell-muted" style={{ marginBottom: 8 }}>
                             Linked Scenario Runs {loadingRunsFor === scenario.id ? '(loading...)' : `(${(scenarioRuns[scenario.id] || []).length})`}
@@ -322,7 +373,7 @@ function TestHub({ onSelectTest }: Props) {
                 </Fragment>
               ))}
               {sorted.length === 0 && (
-                <tr><td colSpan={7} className="cell-muted">No scenarios yet. Create a scenario from an existing script.</td></tr>
+                <tr><td colSpan={8} className="cell-muted">No scenarios yet. Create a scenario from an existing script.</td></tr>
               )}
             </tbody>
           </table>

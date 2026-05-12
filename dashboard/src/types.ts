@@ -268,6 +268,38 @@ export interface ScenarioDraft {
   }
 }
 
+export interface SharedDataPool {
+  id: string
+  name: string
+  description?: string
+  schema?: Record<string, string>
+  created_at: string
+  updated_at: string
+  archived_at?: string
+}
+
+export interface SharedDataPoolRow {
+  id: string
+  pool_id: string
+  data: Record<string, string>
+  status?: string
+  version: number
+  created_at: string
+  updated_at: string
+}
+
+export interface ScenarioDataPoolBinding {
+  id?: string
+  scenario_id?: string
+  pool_id: string
+  pool_name?: string
+  alias: string
+  access_mode: 'read_only' | 'read_write' | 'consume'
+  selection_strategy: 'sequential' | 'random' | 'unique'
+  created_at?: string
+  updated_at?: string
+}
+
 export type TestStatus =
   | 'QUEUED'
   | 'INITIALIZING'
@@ -379,6 +411,7 @@ export interface StoredScenario {
     ramp_down?: string
     initialization?: 'at_runtime' | 'at_once'
   }>
+  data_pools?: ScenarioDataPoolBinding[]
   created_at: string
   updated_at: string
   script_count: number

@@ -1,7 +1,9 @@
 package api
 
 import (
+	"bytes"
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -9,6 +11,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -40,6 +43,12 @@ type scenarioPersistence interface {
 	GetScenario(id string) (*storage.Scenario, []storage.ScenarioScript, error)
 	ListScenarios() ([]*storage.Scenario, error)
 	DeleteScenario(id string) error
+	SaveScenarioDataPoolBindings(scenarioID string, bindings []storage.ScenarioDataPoolBinding) error
+	ListScenarioDataPoolBindings(scenarioID string) ([]storage.ScenarioDataPoolBinding, error)
+}
+
+type dataPoolPersistence interface {
+	ListDataPoolRows(poolID string) ([]*storage.SharedDataPoolRow, error)
 }
 
 type releasePersistence interface {
@@ -73,6 +82,7 @@ type TestRunner struct {
 	scriptStore   scriptPersistence
 	testStore     testPersistence
 	scenarioStore scenarioPersistence
+	dataPoolStore dataPoolPersistence
 	releaseStore  releasePersistence
 	historyStore  historyPersistence
 	archiveStore  archivePersistence
@@ -153,13 +163,13 @@ type NetworkLatency struct {
 }
 
 type LatencyTarget struct {
-	Name        string        `json:"name"`
-	Endpoint    string        `json:"endpoint"`
-	LatencyMs   float64       `json:"latency_ms"`
-	IP          string        `json:"ip,omitempty"`
-	Hops        int           `json:"hops,omitempty"`
-	LastSuccess bool          `json:"last_success"`
-	Timestamp   time.Time     `json:"timestamp"`
+	Name        string    `json:"name"`
+	Endpoint    string    `json:"endpoint"`
+	LatencyMs   float64   `json:"latency_ms"`
+	IP          string    `json:"ip,omitempty"`
+	Hops        int       `json:"hops,omitempty"`
+	LastSuccess bool      `json:"last_success"`
+	Timestamp   time.Time `json:"timestamp"`
 }
 
 type GoalStatus struct {
@@ -236,21 +246,22 @@ type StoredScript struct {
 }
 
 type StoredScenario struct {
-	ID                 string                   `json:"id"`
-	Name               string                   `json:"name"`
-	Duration           string                   `json:"duration"`
-	ScenarioMode       string                   `json:"scenario_mode,omitempty"`
-	ScriptShakeout     bool                     `json:"script_shakeout,omitempty"`
-	ResourceBaseline   bool                     `json:"resource_baseline,omitempty"`
-	GoalConfig         *GoalConfig              `json:"goal_config,omitempty"`
-	RuntimeSettings    *RuntimeSettingsOverride `json:"runtime_settings,omitempty"`
-	Scripts            []ScenarioScriptRef      `json:"scripts"`
-	CreatedAt          time.Time                `json:"created_at"`
-	UpdatedAt          time.Time                `json:"updated_at"`
-	ScriptCount        int                      `json:"script_count"`
-	ResultCount        int                      `json:"result_count,omitempty"`
-	AssociatedReleases []ReleaseRef             `json:"associated_releases,omitempty"`
-	LastRunAt          *time.Time               `json:"last_run_at,omitempty"`
+	ID                 string                            `json:"id"`
+	Name               string                            `json:"name"`
+	Duration           string                            `json:"duration"`
+	ScenarioMode       string                            `json:"scenario_mode,omitempty"`
+	ScriptShakeout     bool                              `json:"script_shakeout,omitempty"`
+	ResourceBaseline   bool                              `json:"resource_baseline,omitempty"`
+	GoalConfig         *GoalConfig                       `json:"goal_config,omitempty"`
+	RuntimeSettings    *RuntimeSettingsOverride          `json:"runtime_settings,omitempty"`
+	Scripts            []ScenarioScriptRef               `json:"scripts"`
+	DataPools          []storage.ScenarioDataPoolBinding `json:"data_pools,omitempty"`
+	CreatedAt          time.Time                         `json:"created_at"`
+	UpdatedAt          time.Time                         `json:"updated_at"`
+	ScriptCount        int                               `json:"script_count"`
+	ResultCount        int                               `json:"result_count,omitempty"`
+	AssociatedReleases []ReleaseRef                      `json:"associated_releases,omitempty"`
+	LastRunAt          *time.Time                        `json:"last_run_at,omitempty"`
 }
 
 type ScenarioScriptRef struct {
@@ -294,6 +305,7 @@ func NewTestRunner(maxTests int, hub *Hub, store storage.Store) *TestRunner {
 		scriptStore:   store,
 		testStore:     store,
 		scenarioStore: store,
+		dataPoolStore: store,
 		releaseStore:  store,
 		historyStore:  store,
 		archiveStore:  store,
@@ -370,6 +382,12 @@ func (tr *TestRunner) buildStoredScenario(scenario *storage.Scenario, scripts []
 		}
 		refs = append(refs, ref)
 	}
+	dataPools := []storage.ScenarioDataPoolBinding{}
+	if tr.scenarioStore != nil {
+		if bindings, err := tr.scenarioStore.ListScenarioDataPoolBindings(scenario.ID); err == nil {
+			dataPools = bindings
+		}
+	}
 	return &StoredScenario{
 		ID:               scenario.ID,
 		Name:             scenario.Name,
@@ -380,6 +398,7 @@ func (tr *TestRunner) buildStoredScenario(scenario *storage.Scenario, scripts []
 		GoalConfig:       decodeStoredGoalConfig(scenario.GoalConfig),
 		RuntimeSettings:  decodeStoredRuntimeSettings(scenario.RuntimeSettings),
 		Scripts:          refs,
+		DataPools:        dataPools,
 		CreatedAt:        scenario.CreatedAt,
 		UpdatedAt:        scenario.UpdatedAt,
 		ScriptCount:      len(refs),
@@ -678,14 +697,71 @@ func (tr *TestRunner) storeScenarioLocked(id string, req CreateScenarioRequest) 
 			Initialization: group.InitStrategy,
 		})
 	}
+	dataPools, err := normalizeScenarioDataPoolBindings(id, req.DataPools)
+	if err != nil {
+		return nil, err
+	}
 	if tr.scenarioStore != nil {
 		if err := tr.scenarioStore.SaveScenario(scenario, scripts); err != nil {
 			return nil, err
 		}
+		if err := tr.scenarioStore.SaveScenarioDataPoolBindings(id, dataPools); err != nil {
+			return nil, err
+		}
 	}
 	stored := tr.buildStoredScenario(scenario, scripts)
+	stored.DataPools = dataPools
 	tr.scenarios[id] = stored
 	return stored, nil
+}
+
+func normalizeScenarioDataPoolBindings(scenarioID string, bindings []storage.ScenarioDataPoolBinding) ([]storage.ScenarioDataPoolBinding, error) {
+	out := make([]storage.ScenarioDataPoolBinding, 0, len(bindings))
+	seenAliases := map[string]struct{}{}
+	now := time.Now()
+	for _, binding := range bindings {
+		binding.ScenarioID = scenarioID
+		binding.PoolID = strings.TrimSpace(binding.PoolID)
+		binding.Alias = strings.TrimSpace(binding.Alias)
+		binding.AccessMode = strings.TrimSpace(binding.AccessMode)
+		binding.SelectionStrategy = strings.TrimSpace(binding.SelectionStrategy)
+		if binding.PoolID == "" {
+			return nil, fmt.Errorf("data pool id is required")
+		}
+		if binding.Alias == "" {
+			return nil, fmt.Errorf("data pool binding alias is required")
+		}
+		aliasKey := strings.ToLower(binding.Alias)
+		if _, ok := seenAliases[aliasKey]; ok {
+			return nil, fmt.Errorf("duplicate data pool binding alias %q", binding.Alias)
+		}
+		seenAliases[aliasKey] = struct{}{}
+		if binding.ID == "" {
+			binding.ID = uuid.New().String()
+		}
+		if binding.AccessMode == "" {
+			binding.AccessMode = "read_only"
+		}
+		switch binding.AccessMode {
+		case "read_only", "read_write", "consume":
+		default:
+			return nil, fmt.Errorf("unsupported data pool access mode %q", binding.AccessMode)
+		}
+		if binding.SelectionStrategy == "" {
+			binding.SelectionStrategy = "sequential"
+		}
+		switch binding.SelectionStrategy {
+		case "sequential", "random", "unique":
+		default:
+			return nil, fmt.Errorf("unsupported data pool selection strategy %q", binding.SelectionStrategy)
+		}
+		if binding.CreatedAt.IsZero() {
+			binding.CreatedAt = now
+		}
+		binding.UpdatedAt = now
+		out = append(out, binding)
+	}
+	return out, nil
 }
 
 func (tr *TestRunner) GetScenario(id string) (*StoredScenario, bool) {
@@ -832,18 +908,19 @@ func releaseRefsFromSet(set map[string]ReleaseRef) []ReleaseRef {
 }
 
 type CreateTestRequest struct {
-	Name             string             `json:"name"`
-	Duration         string             `json:"duration"`
-	ApplicationID    string             `json:"application_id,omitempty"`
-	ReleaseID        string             `json:"release_id,omitempty"`
-	ScenarioID       string             `json:"scenario_id,omitempty"`
-	ProjectID        string             `json:"project_id,omitempty"`
-	FolderID         *string            `json:"folder_id,omitempty"`
-	ScenarioMode     string             `json:"scenario_mode,omitempty"`
-	ScriptShakeout   bool               `json:"script_shakeout,omitempty"`
-	ResourceBaseline bool               `json:"resource_baseline,omitempty"`
-	GoalConfig       *GoalConfig        `json:"goal_config,omitempty"`
-	Groups           []CreateGroupEntry `json:"groups,omitempty"`
+	Name             string                            `json:"name"`
+	Duration         string                            `json:"duration"`
+	ApplicationID    string                            `json:"application_id,omitempty"`
+	ReleaseID        string                            `json:"release_id,omitempty"`
+	ScenarioID       string                            `json:"scenario_id,omitempty"`
+	ProjectID        string                            `json:"project_id,omitempty"`
+	FolderID         *string                           `json:"folder_id,omitempty"`
+	ScenarioMode     string                            `json:"scenario_mode,omitempty"`
+	ScriptShakeout   bool                              `json:"script_shakeout,omitempty"`
+	ResourceBaseline bool                              `json:"resource_baseline,omitempty"`
+	GoalConfig       *GoalConfig                       `json:"goal_config,omitempty"`
+	Groups           []CreateGroupEntry                `json:"groups,omitempty"`
+	DataPools        []storage.ScenarioDataPoolBinding `json:"data_pools,omitempty"`
 	// Single-script shorthand (backwards compatible)
 	ScriptID string `json:"script_id,omitempty"`
 	VUsers   int    `json:"vusers,omitempty"`
@@ -853,14 +930,15 @@ type CreateTestRequest struct {
 }
 
 type CreateScenarioRequest struct {
-	Name             string                   `json:"name"`
-	Duration         string                   `json:"duration"`
-	ScenarioMode     string                   `json:"scenario_mode,omitempty"`
-	ScriptShakeout   bool                     `json:"script_shakeout,omitempty"`
-	ResourceBaseline bool                     `json:"resource_baseline,omitempty"`
-	GoalConfig       *GoalConfig              `json:"goal_config,omitempty"`
-	RuntimeSettings  *RuntimeSettingsOverride `json:"runtime_settings,omitempty"`
-	Groups           []CreateGroupEntry       `json:"groups"`
+	Name             string                            `json:"name"`
+	Duration         string                            `json:"duration"`
+	ScenarioMode     string                            `json:"scenario_mode,omitempty"`
+	ScriptShakeout   bool                              `json:"script_shakeout,omitempty"`
+	ResourceBaseline bool                              `json:"resource_baseline,omitempty"`
+	GoalConfig       *GoalConfig                       `json:"goal_config,omitempty"`
+	RuntimeSettings  *RuntimeSettingsOverride          `json:"runtime_settings,omitempty"`
+	Groups           []CreateGroupEntry                `json:"groups"`
+	DataPools        []storage.ScenarioDataPoolBinding `json:"data_pools,omitempty"`
 }
 
 type GoalConfig struct {
@@ -993,7 +1071,12 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 		return nil, err
 	}
 
-	testGroups, engineGroups, totalVUsers, err := tr.compileManagedTestGroupsLocked(groups, req.RuntimeSettings)
+	sharedDataSources, err := tr.buildSharedDataSourcesLocked(req.DataPools)
+	if err != nil {
+		return nil, err
+	}
+
+	testGroups, engineGroups, totalVUsers, err := tr.compileManagedTestGroupsWithDataSourcesLocked(groups, req.RuntimeSettings, sharedDataSources)
 	if err != nil {
 		return nil, err
 	}
@@ -1061,6 +1144,9 @@ func createTestRequestFromScenario(req CreateTestRequest, scenario *StoredScenar
 	if req.RuntimeSettings == nil {
 		req.RuntimeSettings = cloneRuntimeSettings(scenario.RuntimeSettings)
 	}
+	if len(req.DataPools) == 0 {
+		req.DataPools = append([]storage.ScenarioDataPoolBinding(nil), scenario.DataPools...)
+	}
 	if len(req.Groups) == 0 && req.ScriptID == "" {
 		req.Groups = make([]CreateGroupEntry, 0, len(scenario.Scripts))
 		for _, script := range scenario.Scripts {
@@ -1120,12 +1206,16 @@ func normalizeCreateTestGroups(req CreateTestRequest) ([]CreateGroupEntry, error
 }
 
 func (tr *TestRunner) compileManagedTestGroupsLocked(groups []CreateGroupEntry, runtimeSettings *RuntimeSettingsOverride) ([]TestGroup, []engine.GroupConfig, int, error) {
+	return tr.compileManagedTestGroupsWithDataSourcesLocked(groups, runtimeSettings, nil)
+}
+
+func (tr *TestRunner) compileManagedTestGroupsWithDataSourcesLocked(groups []CreateGroupEntry, runtimeSettings *RuntimeSettingsOverride, sharedDataSources []dsl.DataSource) ([]TestGroup, []engine.GroupConfig, int, error) {
 	testGroups := make([]TestGroup, 0, len(groups))
 	engineGroups := make([]engine.GroupConfig, 0, len(groups))
 	totalVUsers := 0
 
 	for i, group := range groups {
-		testGroup, engineGroup, err := tr.compileManagedTestGroupLocked(i, len(groups), group, runtimeSettings)
+		testGroup, engineGroup, err := tr.compileManagedTestGroupLocked(i, len(groups), group, runtimeSettings, sharedDataSources)
 		if err != nil {
 			return nil, nil, 0, err
 		}
@@ -1137,7 +1227,7 @@ func (tr *TestRunner) compileManagedTestGroupsLocked(groups []CreateGroupEntry, 
 	return testGroups, engineGroups, totalVUsers, nil
 }
 
-func (tr *TestRunner) compileManagedTestGroupLocked(index int, totalGroups int, group CreateGroupEntry, runtimeSettings *RuntimeSettingsOverride) (TestGroup, engine.GroupConfig, error) {
+func (tr *TestRunner) compileManagedTestGroupLocked(index int, totalGroups int, group CreateGroupEntry, runtimeSettings *RuntimeSettingsOverride, sharedDataSources []dsl.DataSource) (TestGroup, engine.GroupConfig, error) {
 	script, ok := tr.scripts[group.ScriptID]
 	if !ok {
 		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: script not found: %s", index, group.ScriptID)
@@ -1184,6 +1274,9 @@ func (tr *TestRunner) compileManagedTestGroupLocked(index int, totalGroups int, 
 	}
 
 	scriptCopy := *script.Script
+	if len(sharedDataSources) > 0 {
+		scriptCopy.DataSources = append(cloneDataSources(scriptCopy.DataSources), sharedDataSources...)
+	}
 	if runtimeSettings != nil {
 		applyRuntimeOverrides(&scriptCopy, runtimeSettings)
 	}
@@ -1198,6 +1291,95 @@ func (tr *TestRunner) compileManagedTestGroupLocked(index int, totalGroups int, 
 	}
 
 	return testGroup, engineGroup, nil
+}
+
+func (tr *TestRunner) buildSharedDataSourcesLocked(bindings []storage.ScenarioDataPoolBinding) ([]dsl.DataSource, error) {
+	if len(bindings) == 0 {
+		return nil, nil
+	}
+	if tr.dataPoolStore == nil {
+		return nil, fmt.Errorf("data pool storage is not configured")
+	}
+	sources := make([]dsl.DataSource, 0, len(bindings))
+	for _, binding := range bindings {
+		alias := strings.TrimSpace(binding.Alias)
+		if alias == "" {
+			return nil, fmt.Errorf("data pool binding alias is required")
+		}
+		rows, err := tr.dataPoolStore.ListDataPoolRows(binding.PoolID)
+		if err != nil {
+			return nil, fmt.Errorf("load data pool %q: %w", alias, err)
+		}
+		if len(rows) == 0 {
+			return nil, fmt.Errorf("data pool %q has no rows", alias)
+		}
+		inlineData, columns, err := inlineCSVFromDataPoolRows(rows)
+		if err != nil {
+			return nil, fmt.Errorf("prepare data pool %q: %w", alias, err)
+		}
+		strategy := binding.SelectionStrategy
+		if strategy == "" {
+			strategy = "sequential"
+		}
+		sources = append(sources, dsl.DataSource{
+			Name:           alias,
+			Type:           "csv",
+			InlineData:     inlineData,
+			Strategy:       strategy,
+			FirstRowHeader: true,
+			Columns:        columns,
+		})
+	}
+	return sources, nil
+}
+
+func inlineCSVFromDataPoolRows(rows []*storage.SharedDataPoolRow) (string, []string, error) {
+	columnSet := map[string]struct{}{}
+	for _, row := range rows {
+		for key := range row.Data {
+			key = strings.TrimSpace(key)
+			if key != "" {
+				columnSet[key] = struct{}{}
+			}
+		}
+	}
+	if len(columnSet) == 0 {
+		return "", nil, fmt.Errorf("data pool rows must include at least one column")
+	}
+	columns := make([]string, 0, len(columnSet))
+	for key := range columnSet {
+		columns = append(columns, key)
+	}
+	sort.Strings(columns)
+
+	var buf bytes.Buffer
+	writer := csv.NewWriter(&buf)
+	if err := writer.Write(columns); err != nil {
+		return "", nil, err
+	}
+	for _, row := range rows {
+		values := make([]string, len(columns))
+		for i, column := range columns {
+			values[i] = row.Data[column]
+		}
+		if err := writer.Write(values); err != nil {
+			return "", nil, err
+		}
+	}
+	writer.Flush()
+	if err := writer.Error(); err != nil {
+		return "", nil, err
+	}
+	return buf.String(), columns, nil
+}
+
+func cloneDataSources(sources []dsl.DataSource) []dsl.DataSource {
+	if len(sources) == 0 {
+		return nil
+	}
+	out := make([]dsl.DataSource, len(sources))
+	copy(out, sources)
+	return out
 }
 
 func parseOptionalGroupDuration(value string, index int, fieldName string) (time.Duration, error) {
@@ -2523,7 +2705,7 @@ func (tr *TestRunner) measureNetworkLatency(test *ManagedTest, live *LiveMetrics
 	live.Latency = latency
 	tr.mu.Unlock()
 
-	// Broadcast the latency update specifically if needed, 
+	// Broadcast the latency update specifically if needed,
 	// though it will be part of the next metrics broadcast too.
 	tr.hub.BroadcastJSON(map[string]any{
 		"type":    "latency_update",
@@ -2540,11 +2722,11 @@ func (tr *TestRunner) measureEndpointLatency(host, endpoint string) LatencyTarge
 	}
 
 	start := time.Now()
-	
+
 	// We'll use a simple TCP dial to measure base R/T latency to the host.
 	// This is more reliable than ICMP ping which is often blocked.
 	dialer := &net.Dialer{Timeout: 5 * time.Second}
-	
+
 	// Default to port 80 or 443 if not specified
 	dialHost := host
 	if !strings.Contains(host, ":") {
@@ -2564,7 +2746,7 @@ func (tr *TestRunner) measureEndpointLatency(host, endpoint string) LatencyTarge
 
 	target.LatencyMs = float64(time.Since(start).Microseconds()) / 1000.0
 	target.LastSuccess = true
-	
+
 	if addr, ok := conn.RemoteAddr().(*net.TCPAddr); ok {
 		target.IP = addr.IP.String()
 	}

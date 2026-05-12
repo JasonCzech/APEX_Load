@@ -159,6 +159,44 @@ export function useScriptApi() {
     [],
   )
 
+  const listDataPools = useCallback(
+    (includeArchived = false) => request<any>(`/data-pools${includeArchived ? '?include_archived=true' : ''}`),
+    [],
+  )
+
+  const createDataPool = useCallback(
+    (data: any) => request<any>('/data-pools', { method: 'POST', body: JSON.stringify(data) }),
+    [],
+  )
+
+  const getDataPool = useCallback((id: string) => request<any>(`/data-pools/${id}`), [])
+
+  const updateDataPool = useCallback(
+    (id: string, data: any) => request<any>(`/data-pools/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    [],
+  )
+
+  const deleteDataPool = useCallback((id: string) => request<any>(`/data-pools/${id}`, { method: 'DELETE' }), [])
+
+  const createDataPoolRow = useCallback(
+    (poolId: string, data: any) => request<any>(`/data-pools/${poolId}/rows`, { method: 'POST', body: JSON.stringify(data) }),
+    [],
+  )
+
+  const updateDataPoolRow = useCallback(
+    (poolId: string, rowId: string, data: any) => request<any>(`/data-pools/${poolId}/rows/${rowId}`, { method: 'PUT', body: JSON.stringify(data) }),
+    [],
+  )
+
+  const deleteDataPoolRow = useCallback((poolId: string, rowId: string) => request<any>(`/data-pools/${poolId}/rows/${rowId}`, { method: 'DELETE' }), [])
+
+  const listScenarioDataPools = useCallback((scenarioId: string) => request<any>(`/scenarios/${scenarioId}/data-pools`), [])
+
+  const updateScenarioDataPools = useCallback(
+    (scenarioId: string, dataPools: any[]) => request<any>(`/scenarios/${scenarioId}/data-pools`, { method: 'PUT', body: JSON.stringify({ data_pools: dataPools }) }),
+    [],
+  )
+
   return useMemo(
     () => ({
       listScripts,
@@ -185,6 +223,16 @@ export function useScriptApi() {
       updateScenario,
       deleteScenario,
       listScenarioResults,
+      listDataPools,
+      createDataPool,
+      getDataPool,
+      updateDataPool,
+      deleteDataPool,
+      createDataPoolRow,
+      updateDataPoolRow,
+      deleteDataPoolRow,
+      listScenarioDataPools,
+      updateScenarioDataPools,
     }),
     [
       listScripts,
@@ -211,6 +259,16 @@ export function useScriptApi() {
       updateScenario,
       deleteScenario,
       listScenarioResults,
+      listDataPools,
+      createDataPool,
+      getDataPool,
+      updateDataPool,
+      deleteDataPool,
+      createDataPoolRow,
+      updateDataPoolRow,
+      deleteDataPoolRow,
+      listScenarioDataPools,
+      updateScenarioDataPools,
     ],
   )
 }

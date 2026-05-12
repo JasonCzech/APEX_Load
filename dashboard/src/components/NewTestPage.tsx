@@ -187,6 +187,10 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
                     <span>Results</span>
                     <strong>{scenario.result_count ?? 0}</strong>
                   </div>
+                  <div>
+                    <span>Shared Data Pools</span>
+                    <strong>{scenario.data_pools?.length || 0}</strong>
+                  </div>
                 </div>
               )}
               {scenario && (
@@ -243,6 +247,19 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
               <div className="new-test-empty">Select a scenario to preview scripts, VUsers, and ramp behavior.</div>
             )}
             {scenario && (
+              <>
+              {(scenario.data_pools || []).length > 0 && (
+                <div className="new-test-associated-row">
+                  <span className="setting-label">Shared Data Pools</span>
+                  <div className="new-test-tag-list">
+                    {(scenario.data_pools || []).map(pool => (
+                      <span key={`${pool.pool_id}-${pool.alias}`} className="new-test-tag">
+                        {pool.alias}: {pool.pool_name || pool.pool_id} / {pool.selection_strategy}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div className="new-test-detail-grid review">
                 <div>
                   <span>Duration</span>
@@ -273,6 +290,7 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
                   <strong>{scenario.resource_baseline ? '5m before and after' : 'Disabled'}</strong>
                 </div>
               </div>
+              </>
             )}
           </section>
         </div>

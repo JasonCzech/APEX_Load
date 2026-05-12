@@ -77,7 +77,7 @@ func (s *metricsStoreSpy) ListReleases(applicationID string, includeArchived boo
 	return nil, nil
 }
 func (s *metricsStoreSpy) ArchiveRelease(id string) error { return nil }
-func (s *metricsStoreSpy) DeleteRelease(id string) error { return nil }
+func (s *metricsStoreSpy) DeleteRelease(id string) error  { return nil }
 func (s *metricsStoreSpy) SaveScenario(scenario *storage.Scenario, scripts []storage.ScenarioScript) error {
 	return nil
 }
@@ -86,7 +86,31 @@ func (s *metricsStoreSpy) GetScenario(id string) (*storage.Scenario, []storage.S
 }
 func (s *metricsStoreSpy) ListScenarios() ([]*storage.Scenario, error) { return nil, nil }
 func (s *metricsStoreSpy) DeleteScenario(id string) error              { return nil }
-func (s *metricsStoreSpy) SaveProject(project *storage.Project) error  { return nil }
+func (s *metricsStoreSpy) SaveScenarioDataPoolBindings(scenarioID string, bindings []storage.ScenarioDataPoolBinding) error {
+	return nil
+}
+func (s *metricsStoreSpy) ListScenarioDataPoolBindings(scenarioID string) ([]storage.ScenarioDataPoolBinding, error) {
+	return nil, nil
+}
+func (s *metricsStoreSpy) DeleteScenarioDataPoolBinding(id string) error { return nil }
+func (s *metricsStoreSpy) SaveDataPool(pool *storage.SharedDataPool) error {
+	return nil
+}
+func (s *metricsStoreSpy) GetDataPool(id string) (*storage.SharedDataPool, error) {
+	return nil, nil
+}
+func (s *metricsStoreSpy) ListDataPools(includeArchived bool) ([]*storage.SharedDataPool, error) {
+	return nil, nil
+}
+func (s *metricsStoreSpy) DeleteDataPool(id string) error { return nil }
+func (s *metricsStoreSpy) SaveDataPoolRow(row *storage.SharedDataPoolRow) error {
+	return nil
+}
+func (s *metricsStoreSpy) ListDataPoolRows(poolID string) ([]*storage.SharedDataPoolRow, error) {
+	return nil, nil
+}
+func (s *metricsStoreSpy) DeleteDataPoolRow(id string) error          { return nil }
+func (s *metricsStoreSpy) SaveProject(project *storage.Project) error { return nil }
 func (s *metricsStoreSpy) GetProject(id string) (*storage.Project, error) {
 	return nil, nil
 }
@@ -494,6 +518,35 @@ func TestBuildThresholdAlerts(t *testing.T) {
 	}
 	if shouldStopForErrorThreshold(&LiveMetrics{ErrorPct: 1.0}, ThresholdSettings{MaxErrorRatePct: &errorThreshold}) {
 		t.Fatal("did not expect stop below error threshold")
+	}
+}
+
+func TestInlineCSVFromDataPoolRows(t *testing.T) {
+	csvText, columns, err := inlineCSVFromDataPoolRows([]*storage.SharedDataPoolRow{{
+		ID:     "row-1",
+		PoolID: "pool-1",
+		Data:   map[string]string{"zip": "10001", "customer_id": "C-100"},
+	}, {
+		ID:     "row-2",
+		PoolID: "pool-1",
+		Data:   map[string]string{"zip": "10002", "customer_id": "C-101"},
+	}})
+	if err != nil {
+		t.Fatalf("inlineCSVFromDataPoolRows returned error: %v", err)
+	}
+	if strings.Join(columns, ",") != "customer_id,zip" {
+		t.Fatalf("unexpected columns: %#v", columns)
+	}
+	want := "customer_id,zip\nC-100,10001\nC-101,10002\n"
+	if csvText != want {
+		t.Fatalf("unexpected csv:\n%s", csvText)
+	}
+}
+
+func TestInlineCSVFromDataPoolRowsRequiresColumns(t *testing.T) {
+	_, _, err := inlineCSVFromDataPoolRows([]*storage.SharedDataPoolRow{{ID: "row-1", PoolID: "pool-1"}})
+	if err == nil {
+		t.Fatal("expected empty data pool rows to fail")
 	}
 }
 

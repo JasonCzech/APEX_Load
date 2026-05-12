@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type DragEvent } from 'react'
 import { useApplicationApi } from '../hooks/api/useApplicationApi'
 import { useApplication } from '../hooks/useApplication'
 import { useApi } from '../hooks/useApi'
-import { DashboardSystemSettings, HealthResponse } from '../types'
+import { DashboardSystemSettings, HealthResponse, SharedDataPool, SharedDataPoolRow } from '../types'
 
 const DEFAULT_SETTINGS: DashboardSystemSettings = {
   general: {
@@ -34,6 +34,7 @@ const SETTINGS_SECTIONS = [
   { id: 'thresholds', title: 'Performance Thresholds' },
   { id: 'capacity', title: 'Capacity Planning' },
   { id: 'applications', title: 'Applications & Releases' },
+  { id: 'data-pools', title: 'Shared Data Pools' },
   { id: 'integrations', title: 'Integrations' },
 ] as const
 
@@ -120,6 +121,14 @@ export default function SettingsPage() {
   const [managedReleases, setManagedReleases] = useState(releases)
   const [newApplicationName, setNewApplicationName] = useState('')
   const [applicationActionError, setApplicationActionError] = useState('')
+  const [dataPools, setDataPools] = useState<SharedDataPool[]>([])
+  const [selectedDataPoolId, setSelectedDataPoolId] = useState('')
+  const [dataPoolRows, setDataPoolRows] = useState<SharedDataPoolRow[]>([])
+  const [dataPoolName, setDataPoolName] = useState('')
+  const [dataPoolDescription, setDataPoolDescription] = useState('')
+  const [dataPoolRowJson, setDataPoolRowJson] = useState('{\n  "customer_id": "C-10001"\n}')
+  const [editingDataPoolRowId, setEditingDataPoolRowId] = useState<string | null>(null)
+  const [dataPoolActionError, setDataPoolActionError] = useState('')
 
   useEffect(() => {
     let cancelled = false
@@ -241,6 +250,50 @@ export default function SettingsPage() {
     if (typeof window === 'undefined') return
     window.localStorage.setItem('stormrunner.settings.collapsedSections', JSON.stringify(collapsedSectionIds))
   }, [collapsedSectionIds])
+
+  const loadDataPools = async (preferredId?: string) => {
+    try {
+      const response = await api.listDataPools()
+      const pools: SharedDataPool[] = response.data_pools || []
+      setDataPools(pools)
+      const nextSelected = preferredId || selectedDataPoolId || pools[0]?.id || ''
+      setSelectedDataPoolId(nextSelected)
+      if (nextSelected) {
+        const details = await api.getDataPool(nextSelected)
+        setDataPoolRows(details.rows || [])
+      } else {
+        setDataPoolRows([])
+      }
+      setDataPoolActionError('')
+    } catch (error: any) {
+      setDataPoolActionError(error.message || 'Unable to load shared data pools')
+    }
+  }
+
+  useEffect(() => {
+    loadDataPools()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    const loadRows = async () => {
+      if (!selectedDataPoolId) {
+        setDataPoolRows([])
+        return
+      }
+      try {
+        const response = await api.getDataPool(selectedDataPoolId)
+        if (!cancelled) setDataPoolRows(response.rows || [])
+      } catch (error: any) {
+        if (!cancelled) setDataPoolActionError(error.message || 'Unable to load data pool rows')
+      }
+    }
+    loadRows()
+    return () => {
+      cancelled = true
+    }
+  }, [api, selectedDataPoolId])
 
   const updateGeneral = (key: keyof DashboardSystemSettings['general'], value: string) => {
     setSettings((prev) => ({
@@ -475,6 +528,77 @@ export default function SettingsPage() {
     }
   }
 
+  const createDataPool = async () => {
+    const name = dataPoolName.trim()
+    if (!name) return
+    try {
+      const pool = await api.createDataPool({ name, description: dataPoolDescription.trim() })
+      setDataPoolName('')
+      setDataPoolDescription('')
+      await loadDataPools(pool.id)
+      setDataPoolActionError('')
+    } catch (error: any) {
+      setDataPoolActionError(error.message || 'Unable to create data pool')
+    }
+  }
+
+  const deleteDataPool = async (pool: SharedDataPool) => {
+    if (!window.confirm(`Delete data pool "${pool.name}"? Data pools bound to scenarios must be unbound first.`)) return
+    try {
+      await api.deleteDataPool(pool.id)
+      await loadDataPools('')
+      setDataPoolActionError('')
+    } catch (error: any) {
+      setDataPoolActionError(error.message || 'Unable to delete data pool')
+    }
+  }
+
+  const saveDataPoolRow = async () => {
+    if (!selectedDataPoolId) return
+    let parsed: Record<string, string>
+    try {
+      parsed = JSON.parse(dataPoolRowJson)
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new Error('Row data must be a JSON object.')
+      }
+    } catch (error: any) {
+      setDataPoolActionError(error.message || 'Invalid row JSON')
+      return
+    }
+    try {
+      if (editingDataPoolRowId) {
+        await api.updateDataPoolRow(selectedDataPoolId, editingDataPoolRowId, { data: parsed })
+      } else {
+        await api.createDataPoolRow(selectedDataPoolId, { data: parsed })
+      }
+      setEditingDataPoolRowId(null)
+      setDataPoolRowJson('{\n  "customer_id": "C-10001"\n}')
+      const response = await api.getDataPool(selectedDataPoolId)
+      setDataPoolRows(response.rows || [])
+      setDataPoolActionError('')
+    } catch (error: any) {
+      setDataPoolActionError(error.message || 'Unable to save data row')
+    }
+  }
+
+  const editDataPoolRow = (row: SharedDataPoolRow) => {
+    setEditingDataPoolRowId(row.id)
+    setDataPoolRowJson(JSON.stringify(row.data || {}, null, 2))
+  }
+
+  const deleteDataPoolRow = async (row: SharedDataPoolRow) => {
+    if (!selectedDataPoolId) return
+    if (!window.confirm('Delete this data row?')) return
+    try {
+      await api.deleteDataPoolRow(selectedDataPoolId, row.id)
+      const response = await api.getDataPool(selectedDataPoolId)
+      setDataPoolRows(response.rows || [])
+      setDataPoolActionError('')
+    } catch (error: any) {
+      setDataPoolActionError(error.message || 'Unable to delete data row')
+    }
+  }
+
   const handleSectionDragStart = (event: DragEvent<HTMLDivElement>, id: SettingsSectionId) => {
     if (!customizingSections) return
     setDraggedSectionId(id)
@@ -577,6 +701,7 @@ export default function SettingsPage() {
       {!loading && saveMessage && <p className="settings-notice">{saveMessage}</p>}
       {requestError && <p className="settings-error-inline">{requestError}</p>}
       {applicationActionError && <p className="settings-error-inline">{applicationActionError}</p>}
+      {dataPoolActionError && <p className="settings-error-inline">{dataPoolActionError}</p>}
       {validationErrors.length > 0 && (
         <div className="settings-errors" role="alert">
           {validationErrors.map((error) => (
@@ -973,6 +1098,143 @@ export default function SettingsPage() {
                 <p className="new-test-inline-note">No releases yet for this application.</p>
               )}
             </div>
+          </div>
+        </div>
+
+        <div
+          id="settings-section-data-pools"
+          className={sectionClass('data-pools')}
+          hidden={!visibleSections.some(section => section.id === 'data-pools')}
+          draggable={customizingSections}
+          onDragStart={event => handleSectionDragStart(event, 'data-pools')}
+          onDragOver={event => handleSectionDragOver(event, 'data-pools')}
+          onDrop={event => handleSectionDrop(event, 'data-pools')}
+          onDragEnd={() => setDraggedSectionId(null)}
+          style={{ order: getSectionOrder('data-pools') }}
+        >
+          {renderSettingsHeader('data-pools', 'Shared Data Pools')}
+          <div className="settings-group">
+            <div className="settings-subsection">
+              <div className="settings-manager-summary">
+                <div>
+                  <span className="setting-label">Reusable Data</span>
+                  <span className="setting-desc">Create CRUD data pools that scenarios can bind by alias and share across scripts.</span>
+                </div>
+                <strong>{dataPools.length}</strong>
+              </div>
+              <div className="inline-create-row">
+                <input
+                  className="settings-input"
+                  value={dataPoolName}
+                  onChange={event => setDataPoolName(event.target.value)}
+                  placeholder="Pool name, e.g. Customer Accounts"
+                />
+                <input
+                  className="settings-input"
+                  value={dataPoolDescription}
+                  onChange={event => setDataPoolDescription(event.target.value)}
+                  placeholder="Optional description"
+                />
+                <button className="btn btn-secondary" type="button" onClick={createDataPool} disabled={!dataPoolName.trim()}>
+                  Add Pool
+                </button>
+              </div>
+            </div>
+
+            <div className="settings-subsection">
+              <div className="settings-manager-summary">
+                <div>
+                  <span className="setting-label">Data Pools</span>
+                  <span className="setting-desc">Select a pool to inspect and edit its rows.</span>
+                </div>
+                <strong>{selectedDataPoolId ? `${dataPoolRows.length} rows` : 'No pool selected'}</strong>
+              </div>
+              {dataPools.length > 0 ? (
+                <div className="settings-release-list">
+                  {dataPools.map(pool => (
+                    <div key={pool.id} className={`settings-release-row ${selectedDataPoolId === pool.id ? 'active' : ''}`}>
+                      <button type="button" className="settings-release-main" onClick={() => setSelectedDataPoolId(pool.id)}>
+                        <span>{pool.name}</span>
+                        <small>{pool.description || `Updated ${new Date(pool.updated_at).toLocaleDateString()}`}</small>
+                      </button>
+                      <div className="settings-inline-actions">
+                        <button className="btn btn-ghost" style={{ color: 'var(--danger)' }} type="button" onClick={() => deleteDataPool(pool)}>
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="new-test-inline-note">No shared data pools have been created yet.</p>
+              )}
+            </div>
+
+            {selectedDataPoolId && (
+              <div className="settings-subsection">
+                <div className="settings-manager-summary">
+                  <div>
+                    <span className="setting-label">{editingDataPoolRowId ? 'Edit Row' : 'Add Row'}</span>
+                    <span className="setting-desc">Use JSON object keys as parameter names, for example customer_id, account_id, or zip.</span>
+                  </div>
+                  <strong>{editingDataPoolRowId ? 'Editing' : 'New'}</strong>
+                </div>
+                <textarea
+                  className="settings-input cell-mono"
+                  style={{ minHeight: 120, resize: 'vertical' }}
+                  value={dataPoolRowJson}
+                  onChange={event => setDataPoolRowJson(event.target.value)}
+                />
+                <div className="settings-inline-actions">
+                  <button className="btn btn-primary" type="button" onClick={saveDataPoolRow}>
+                    {editingDataPoolRowId ? 'Update Row' : 'Add Row'}
+                  </button>
+                  {editingDataPoolRowId && (
+                    <button className="btn btn-secondary" type="button" onClick={() => { setEditingDataPoolRowId(null); setDataPoolRowJson('{\n  "customer_id": "C-10001"\n}') }}>
+                      Cancel Edit
+                    </button>
+                  )}
+                </div>
+
+                {dataPoolRows.length > 0 ? (
+                  <div className="script-parameter-table-wrap" style={{ marginTop: 16 }}>
+                    <table className="script-parameter-table">
+                      <thead>
+                        <tr>
+                          <th>Data</th>
+                          <th>Status</th>
+                          <th>Version</th>
+                          <th>Updated</th>
+                          <th>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {dataPoolRows.map(row => (
+                          <tr key={row.id}>
+                            <td className="cell-mono">{JSON.stringify(row.data)}</td>
+                            <td>{row.status || 'active'}</td>
+                            <td>{row.version}</td>
+                            <td>{new Date(row.updated_at).toLocaleString()}</td>
+                            <td>
+                              <div className="settings-inline-actions">
+                                <button className="btn btn-sm btn-secondary" type="button" onClick={() => editDataPoolRow(row)}>
+                                  Edit
+                                </button>
+                                <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} type="button" onClick={() => deleteDataPoolRow(row)}>
+                                  Delete
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="new-test-inline-note">No rows in this data pool yet.</p>
+                )}
+              </div>
+            )}
           </div>
         </div>
 

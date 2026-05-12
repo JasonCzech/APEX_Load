@@ -237,3 +237,87 @@ func TestSQLiteStoreApplicationsReleasesScenariosAndContext(t *testing.T) {
 		t.Fatal("expected ArchiveRelease to fail while results exist")
 	}
 }
+
+func TestSQLiteStoreSharedDataPoolsAndScenarioBindings(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	script := &dsl.Script{
+		ID:       "script-data-pool",
+		Name:     "Checkout",
+		Protocol: "http",
+		Version:  "1.0",
+		Config:   dsl.ScriptConfig{BaseURL: "https://example.com"},
+		Actions:  []dsl.Action{{Name: "Checkout", Type: "request", Method: "GET", Target: "/checkout"}},
+	}
+	if err := store.SaveScript(script); err != nil {
+		t.Fatalf("SaveScript returned error: %v", err)
+	}
+	scenario := &Scenario{ID: "scenario-data-pool", Name: "Checkout Flow", Duration: "5m", CreatedAt: time.Now()}
+	if err := store.SaveScenario(scenario, []ScenarioScript{{Order: 0, ScriptID: script.ID, VUsers: 10}}); err != nil {
+		t.Fatalf("SaveScenario returned error: %v", err)
+	}
+
+	pool := &SharedDataPool{
+		ID:          "pool-1",
+		Name:        "Customers",
+		Description: "Reusable customer identities",
+		Schema:      map[string]string{"customer_id": "string", "zip": "string"},
+		CreatedAt:   time.Now(),
+	}
+	if err := store.SaveDataPool(pool); err != nil {
+		t.Fatalf("SaveDataPool returned error: %v", err)
+	}
+	if err := store.SaveDataPoolRow(&SharedDataPoolRow{
+		ID:     "row-1",
+		PoolID: pool.ID,
+		Data:   map[string]string{"customer_id": "C-100", "zip": "10001"},
+	}); err != nil {
+		t.Fatalf("SaveDataPoolRow returned error: %v", err)
+	}
+	if err := store.SaveDataPoolRow(&SharedDataPoolRow{
+		ID:     "row-1",
+		PoolID: pool.ID,
+		Data:   map[string]string{"customer_id": "C-101", "zip": "10002"},
+	}); err != nil {
+		t.Fatalf("SaveDataPoolRow update returned error: %v", err)
+	}
+
+	rows, err := store.ListDataPoolRows(pool.ID)
+	if err != nil {
+		t.Fatalf("ListDataPoolRows returned error: %v", err)
+	}
+	if len(rows) != 1 || rows[0].Data["customer_id"] != "C-101" || rows[0].Version != 2 {
+		t.Fatalf("unexpected rows after update: %#v", rows)
+	}
+
+	bindings := []ScenarioDataPoolBinding{{
+		ID:                "binding-1",
+		PoolID:            pool.ID,
+		Alias:             "customers",
+		AccessMode:        "read_write",
+		SelectionStrategy: "unique",
+	}}
+	if err := store.SaveScenarioDataPoolBindings(scenario.ID, bindings); err != nil {
+		t.Fatalf("SaveScenarioDataPoolBindings returned error: %v", err)
+	}
+	roundTrip, err := store.ListScenarioDataPoolBindings(scenario.ID)
+	if err != nil {
+		t.Fatalf("ListScenarioDataPoolBindings returned error: %v", err)
+	}
+	if len(roundTrip) != 1 || roundTrip[0].PoolName != pool.Name || roundTrip[0].Alias != "customers" || roundTrip[0].SelectionStrategy != "unique" {
+		t.Fatalf("unexpected scenario data pool bindings: %#v", roundTrip)
+	}
+	if err := store.DeleteDataPool(pool.ID); err == nil {
+		t.Fatal("expected DeleteDataPool to fail while scenario binding exists")
+	}
+	if err := store.DeleteScenarioDataPoolBinding("binding-1"); err != nil {
+		t.Fatalf("DeleteScenarioDataPoolBinding returned error: %v", err)
+	}
+	if err := store.DeleteDataPool(pool.ID); err != nil {
+		t.Fatalf("DeleteDataPool returned error after unbinding: %v", err)
+	}
+}
