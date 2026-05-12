@@ -17,12 +17,16 @@ This should sit alongside the existing LoadRunner import path and position Storm
 - `GET /api/v1/scripts/import/jmeter/support-matrix` is implemented and used by the dashboard.
 - The Scripts page now exposes an `Import JMeter` entry with both `Validate Only` and `Convert JMeter Plan` actions.
 - Generated scripts now include JMeter import provenance metadata: original file name, import timestamp, warning count, and unsupported count.
+- Sampler-level regex and JSON post-processors are mapped to Stormrunner action extractors when they fit the DSL directly.
+- Sampler-level boundary extractors are mapped to Stormrunner action extractors when they target the response body.
+- The import review now surfaces captured variables from generated action extractors instead of leaving them buried in raw JSON preview.
+- The support matrix now exposes inline category details on the import screen instead of only showing summary-card previews.
+- The dashboard now has component-level Vitest coverage for the JMeter import screen, including inline coverage details and validation review rendering.
 - `examples/jmeter-http-smoke.jmx` is available as a manual validation fixture for the end-to-end import flow.
+- `examples/jmeter-http-extractors.jmx` is available as a manual validation fixture for extractor-focused review coverage.
 
 ### Remaining Phase 1 Gaps
 - Add richer extractor coverage beyond the current straightforward mappings.
-- Expand review details so support-matrix categories can be inspected inline instead of only via summary cards.
-- Add broader automated frontend coverage around the import screen itself beyond utility-level regression tests.
 
 ## Goals
 - Reduce onboarding friction for existing performance teams.

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useApi } from '../hooks/useApi'
-import { ConvertStats, ImportResult, SupportMatrix, normalizeImportResult } from './jmeterImportUtils'
+import { ConvertStats, ImportResult, SupportMatrix, normalizeImportResult, summarizeImportExtractors, summarizeSupportMatrix } from './jmeterImportUtils'
 import './LoadRunnerImport.css'
 
 interface Props {
@@ -28,6 +28,8 @@ export default function JMeterImport({ onImported, onClose }: Props) {
     include_assertions: true,
     scenario_draft: true,
   })
+  const supportMatrixSections = summarizeSupportMatrix(supportMatrix)
+  const extractorSummary = summarizeImportExtractors(result?.scripts || [])
 
   useEffect(() => {
     let cancelled = false
@@ -199,21 +201,22 @@ export default function JMeterImport({ onImported, onClose }: Props) {
             <span>HTTP-focused migration</span>
           </div>
           <div className="lr-preserved-grid">
-            <div className="lr-preserved-card">
-              <span className="lr-preserved-label">Supported</span>
-              <strong>{supportMatrix.supported.length} constructs</strong>
-              <small>{supportMatrix.supported.slice(0, 3).join(' • ')}</small>
-            </div>
-            <div className="lr-preserved-card">
-              <span className="lr-preserved-label">Partial</span>
-              <strong>{supportMatrix.partial.length} behaviors</strong>
-              <small>{supportMatrix.partial.slice(0, 2).join(' • ')}</small>
-            </div>
-            <div className="lr-preserved-card">
-              <span className="lr-preserved-label">Unsupported</span>
-              <strong>{supportMatrix.unsupported.length} constructs</strong>
-              <small>{supportMatrix.unsupported.slice(0, 2).join(' • ')}</small>
-            </div>
+            {supportMatrixSections.map(section => (
+              <div className="lr-preserved-card" key={section.key}>
+                <span className="lr-preserved-label">{section.title}</span>
+                <strong>{section.items.length} {section.itemLabel}</strong>
+                <small>{section.preview}</small>
+              </div>
+            ))}
+          </div>
+          <div className="lr-warnings">
+            <h4>Coverage Details</h4>
+            {supportMatrixSections.map(section => (
+              <details key={section.key}>
+                <summary>{section.title} ({section.items.length})</summary>
+                <ul>{section.items.map((item, index) => <li key={`${section.key}-${index}`}>{item}</li>)}</ul>
+              </details>
+            ))}
           </div>
           {supportMatrix.notes && supportMatrix.notes.length > 0 && (
             <div className="lr-warnings">
@@ -282,6 +285,19 @@ export default function JMeterImport({ onImported, onClose }: Props) {
             </div>
           )}
 
+          {extractorSummary.length > 0 && (
+            <div className="lr-warnings">
+              <h4>Captured Variables ({extractorSummary.length})</h4>
+              <ul>
+                {extractorSummary.map((extractor, index) => (
+                  <li key={`${extractor.scriptName}-${extractor.actionName}-${extractor.extractorName}-${index}`}>
+                    <strong>{extractor.extractorName}</strong> via {extractor.extractorType} from {extractor.actionName} in {extractor.scriptName}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           <div className="lr-preserved">
             <div className="lr-preserved-header">
               <h4>Generated Assets</h4>
@@ -292,7 +308,7 @@ export default function JMeterImport({ onImported, onClose }: Props) {
                 <div className="lr-preserved-card" key={script.name}>
                   <span className="lr-preserved-label">Script</span>
                   <strong>{script.name}</strong>
-                  <small>{script.actions?.length || 0} actions / {script.data_sources?.length || 0} data sources</small>
+                  <small>{script.actions?.length || 0} actions / {script.data_sources?.length || 0} data sources / {script.actions?.reduce((count: number, action: any) => count + (action?.extractors?.length || 0), 0) || 0} extractors</small>
                 </div>
               ))}
               {result.scenario_draft && (

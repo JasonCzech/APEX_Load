@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
+  <hashTree>
+    <TestPlan testname="Extractor Plan" enabled="true"/>
+    <hashTree>
+      <ThreadGroup testname="Auth Users" enabled="true">
+        <stringProp name="ThreadGroup.num_threads">5</stringProp>
+      </ThreadGroup>
+      <hashTree>
+        <HTTPSamplerProxy testname="Create Session" enabled="true">
+          <stringProp name="HTTPSampler.domain">api.example.com</stringProp>
+          <stringProp name="HTTPSampler.protocol">https</stringProp>
+          <stringProp name="HTTPSampler.path">/session</stringProp>
+          <stringProp name="HTTPSampler.method">POST</stringProp>
+        </HTTPSamplerProxy>
+        <hashTree>
+          <RegexExtractor testname="Session Token Regex" enabled="true">
+            <stringProp name="RegexExtractor.refname">session_token</stringProp>
+            <stringProp name="RegexExtractor.regex">"token":"([^"]+)"</stringProp>
+          </RegexExtractor>
+          <hashTree/>
+          <JSONPostProcessor testname="Access Token JSON" enabled="true">
+            <stringProp name="JSONPostProcessor.referenceNames">access_token</stringProp>
+            <stringProp name="JSONPostProcessor.jsonPathExprs">$.access_token</stringProp>
+          </JSONPostProcessor>
+          <hashTree/>
+          <BoundaryExtractor testname="Session Id Boundary" enabled="true">
+            <stringProp name="BoundaryExtractor.refname">session_id</stringProp>
+            <stringProp name="BoundaryExtractor.lboundary">sessionId=</stringProp>
+            <stringProp name="BoundaryExtractor.rboundary">&amp;</stringProp>
+          </BoundaryExtractor>
+          <hashTree/>
+        </hashTree>
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>

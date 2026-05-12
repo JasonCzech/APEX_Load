@@ -115,6 +115,9 @@ func GetSupportMatrix() SupportMatrix {
 			"Constant Timer",
 			"Uniform Random Timer",
 			"Response Assertions",
+			"Regex Extractor",
+			"JSON Extractor",
+			"Boundary Extractor",
 		},
 		Partial: []string{
 			"Simple controllers flattened into action order where safe",
@@ -297,7 +300,7 @@ func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, op
 			ctx.assertions = append(ctx.assertions, assertions...)
 			result.Stats.Assertions += len(assertions)
 		case "HTTPSamplerProxy":
-			action, warnings := convertHTTPSampler(child.Element, ctx, opts)
+			action, warnings := convertHTTPSampler(child, ctx, opts)
 			result.Warnings = append(result.Warnings, warnings...)
 			result.Stats.Samplers++
 			if action != nil {
@@ -319,13 +322,14 @@ func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, op
 	}
 }
 
-func convertHTTPSampler(node *xmlNode, ctx *convertContext, opts ConvertOptions) (*dsl.Action, []string) {
-	name := sanitizeName(attrOr(node, "testname", "HTTP Request"))
-	method := firstNonEmpty(prop(node, "HTTPSampler.method"), "GET")
-	rawPath := convertVariables(firstNonEmpty(prop(node, "HTTPSampler.path"), ctx.defaultPath, "/"))
-	protocol := firstNonEmpty(prop(node, "HTTPSampler.protocol"), ctx.defaultProtocol)
-	domain := convertVariables(firstNonEmpty(prop(node, "HTTPSampler.domain"), ctx.defaultDomain))
-	port := firstNonEmpty(prop(node, "HTTPSampler.port"), ctx.defaultPort)
+func convertHTTPSampler(node *treeNode, ctx *convertContext, opts ConvertOptions) (*dsl.Action, []string) {
+	element := node.Element
+	name := sanitizeName(attrOr(element, "testname", "HTTP Request"))
+	method := firstNonEmpty(prop(element, "HTTPSampler.method"), "GET")
+	rawPath := convertVariables(firstNonEmpty(prop(element, "HTTPSampler.path"), ctx.defaultPath, "/"))
+	protocol := firstNonEmpty(prop(element, "HTTPSampler.protocol"), ctx.defaultProtocol)
+	domain := convertVariables(firstNonEmpty(prop(element, "HTTPSampler.domain"), ctx.defaultDomain))
+	port := firstNonEmpty(prop(element, "HTTPSampler.port"), ctx.defaultPort)
 	target := rawPath
 	if domain != "" {
 		absolute := buildURL(protocol, domain, port, rawPath)
@@ -342,12 +346,15 @@ func convertHTTPSampler(node *xmlNode, ctx *convertContext, opts ConvertOptions)
 	for k, v := range ctx.headers {
 		action.Headers[k] = convertVariables(v)
 	}
-	body, params := parseSamplerArguments(node)
+	body, params := parseSamplerArguments(element)
 	if body != "" {
 		action.Body = convertVariables(body)
 	}
 	if len(params) > 0 {
 		action.Params = params
+	}
+	if extractors := parseSamplerExtractors(node); len(extractors) > 0 {
+		action.Extractors = extractors
 	}
 	if opts.IncludeAssertions && !hasStatusAssertion(action.Assertions) {
 		action.Assertions = append(action.Assertions, dsl.Assertion{Type: "status_code", Expected: 200})
@@ -364,6 +371,87 @@ func convertHTTPSampler(node *xmlNode, ctx *convertContext, opts ConvertOptions)
 		warnings = append(warnings, fmt.Sprintf("%s: no domain/default host was found; target kept as %q", name, rawPath))
 	}
 	return action, warnings
+}
+
+func parseSamplerExtractors(node *treeNode) []dsl.Extractor {
+	var out []dsl.Extractor
+	for _, child := range node.Children {
+		switch child.Element.Name {
+		case "RegexExtractor":
+			if ext := parseRegexExtractor(child.Element); ext.Name != "" && ext.Expression != "" {
+				out = append(out, ext)
+			}
+		case "JSONPostProcessor":
+			out = append(out, parseJSONExtractors(child.Element)...)
+		case "BoundaryExtractor":
+			if ext := parseBoundaryExtractor(child.Element); ext.Name != "" && ext.Expression != "" {
+				out = append(out, ext)
+			}
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func parseBoundaryExtractor(node *xmlNode) dsl.Extractor {
+	if strings.EqualFold(strings.TrimSpace(prop(node, "BoundaryExtractor.useHeaders")), "true") {
+		return dsl.Extractor{}
+	}
+
+	left := strings.TrimSpace(prop(node, "BoundaryExtractor.lboundary"))
+	right := strings.TrimSpace(prop(node, "BoundaryExtractor.rboundary"))
+	if left == "" && right == "" {
+		return dsl.Extractor{}
+	}
+
+	return dsl.Extractor{
+		Name:       strings.TrimSpace(prop(node, "BoundaryExtractor.refname")),
+		Source:     "body",
+		Type:       "boundary",
+		Expression: left + "|||" + right,
+	}
+}
+
+func parseRegexExtractor(node *xmlNode) dsl.Extractor {
+	return dsl.Extractor{
+		Name:       strings.TrimSpace(prop(node, "RegexExtractor.refname")),
+		Source:     "body",
+		Type:       "regex",
+		Expression: strings.TrimSpace(prop(node, "RegexExtractor.regex")),
+	}
+}
+
+func parseJSONExtractors(node *xmlNode) []dsl.Extractor {
+	names := splitDelimitedValues(firstNonEmpty(
+		prop(node, "JSONPostProcessor.referenceNames"),
+		prop(node, "JSONPostProcessor.reference_names"),
+	))
+	expressions := splitDelimitedValues(firstNonEmpty(
+		prop(node, "JSONPostProcessor.jsonPathExprs"),
+		prop(node, "JSONPostProcessor.json_path_exprs"),
+	))
+	count := min(len(names), len(expressions))
+	if count == 0 {
+		return nil
+	}
+	out := make([]dsl.Extractor, 0, count)
+	for i := 0; i < count; i++ {
+		if names[i] == "" || expressions[i] == "" {
+			continue
+		}
+		out = append(out, dsl.Extractor{
+			Name:       names[i],
+			Source:     "body",
+			Type:       "jsonpath",
+			Expression: expressions[i],
+		})
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func parseXML(data []byte) (*xmlNode, error) {
@@ -724,6 +812,26 @@ func splitCSVNames(value string) []string {
 		if part != "" {
 			out = append(out, part)
 		}
+	}
+	return out
+}
+
+func splitDelimitedValues(value string) []string {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	parts := strings.FieldsFunc(value, func(r rune) bool {
+		return r == ';' || r == ','
+	})
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	if len(out) == 0 {
+		return nil
 	}
 	return out
 }
