@@ -1,24 +1,33 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useApi } from '../hooks/useApi'
 import { useWebSocket } from '../hooks/useWebSocket'
-import { BrowserReplayEvent, BrowserReplaySession, WSMessage } from '../types'
-import { type ScriptDefinition } from '../types/scripts'
+import {
+  BrowserReplayConsoleEntry,
+  BrowserReplayDomSummary,
+  BrowserReplayEvent,
+  BrowserReplayNetworkEntry,
+  BrowserReplayReport,
+  BrowserReplaySession,
+  BrowserReplaySnapshot,
+  WSMessage,
+} from '../types'
+import {
+  type BrowserCaptureOptions as SharedBrowserCaptureOptions,
+  type ScriptActionDefinition,
+  type ScriptAssertionDefinition,
+  type ScriptDataSource,
+  type ScriptDefinition,
+  type ScriptExtractorDefinition,
+  type ScriptWaitCondition,
+} from '../types/scripts'
 import BrowserReplayDebugger from './BrowserReplayDebugger'
 import './ScriptEditor.css'
 
-interface Action {
-  name: string; type: string; method?: string; target: string
-  selector?: string; value?: string
-  headers?: Record<string, string>; body?: string
-  params?: Record<string, any>; metadata?: Record<string, any>
-  wait_for?: WaitCondition; capture?: BrowserCaptureOptions
-  extractors?: Extractor[]; assertions?: Assertion[]
-  think_time_after?: boolean
-}
-interface Extractor { name: string; source: string; type: string; expression: string }
-interface Assertion { type: string; expected?: any; value?: string; max?: number }
-interface WaitCondition { type?: string; value?: string; timeout_ms?: number }
-interface BrowserCaptureOptions { screenshot?: boolean; full_page?: boolean; html?: boolean }
+type Action = ScriptActionDefinition
+type Extractor = ScriptExtractorDefinition
+type Assertion = ScriptAssertionDefinition
+type WaitCondition = ScriptWaitCondition
+type BrowserCaptureOptions = SharedBrowserCaptureOptions
 
 interface ThinkTimeConfig {
   type: string; mean_ms: number; std_ms?: number; min_ms?: number; max_ms?: number
@@ -77,7 +86,7 @@ interface JMSConfig {
 interface ImportMetadata {
   source?: string
   source_script_name?: string
-  preserved?: Record<string, any>
+  preserved?: Record<string, unknown>
 }
 
 interface ScriptMetadata {
@@ -104,83 +113,12 @@ interface ScriptData {
   data_sources?: DataSourceConfig[]
 }
 
-interface ReplaySnapshot {
-  request_method?: string
-  request_url?: string
-  request_headers?: Record<string, string>
-  request_body?: string
-  response_status?: number
-  response_headers?: Record<string, string>
-  response_body?: string
-  page_url?: string
-  page_title?: string
-  html?: string
-  screenshot_base64?: string
-  console_entries?: ConsoleEntry[]
-  network_entries?: NetworkEntry[]
-  dom_summary?: DOMSummary
-}
-
-interface ConsoleEntry {
-  level?: string
-  text?: string
-  source?: string
-  timestamp?: string
-}
-
-interface NetworkEntry {
-  url?: string
-  method?: string
-  status_code?: number
-  resource_type?: string
-  duration_ms?: number
-  bytes_received?: number
-}
-
-interface DOMSummary {
-  title?: string
-  ready_state?: string
-  visible_text?: string[]
-}
-
-interface ReplayActionEvent {
-  phase: string
-  action_name: string
-  action_type: string
-  method?: string
-  target: string
-  selector?: string
-  value?: string
-  headers?: Record<string, string>
-  body?: string
-  started_at: string
-  completed_at: string
-  duration_ms: number
-  status_code?: number
-  success: boolean
-  error_message?: string
-  extractions?: Record<string, string>
-  page_url?: string
-  page_title?: string
-  html?: string
-  screenshot_base64?: string
-  console_entries?: ConsoleEntry[]
-  network_entries?: NetworkEntry[]
-  dom_summary?: DOMSummary
-  snapshot?: ReplaySnapshot
-}
-
-interface ReplayReport {
-  group: string
-  protocol: string
-  started_at: string
-  completed_at: string
-  success: boolean
-  error?: string
-  events: ReplayActionEvent[]
-  final_variables?: Record<string, string>
-  snapshots?: ReplaySnapshot[]
-}
+type ReplaySnapshot = BrowserReplaySnapshot
+type ConsoleEntry = BrowserReplayConsoleEntry
+type NetworkEntry = BrowserReplayNetworkEntry
+type DOMSummary = BrowserReplayDomSummary
+type ReplayActionEvent = BrowserReplayEvent
+type ReplayReport = BrowserReplayReport
 
 interface ReplayOptionsState {
   groupName: string
@@ -207,16 +145,7 @@ interface ReplayWSMessage extends WSMessage {
   session?: BrowserReplaySession
 }
 
-interface DataSourceConfig {
-  name: string
-  type: string
-  path: string
-  inline_data?: string
-  strategy: string
-  delimiter?: string
-  first_row_header?: boolean
-  columns?: string[]
-}
+type DataSourceConfig = ScriptDataSource
 
 interface DataSourceHistory {
   past: DataSourceConfig[]
@@ -518,6 +447,23 @@ function createReplaySessionId(): string {
   return `replay-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
 }
 
+function getErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message) return error.message
+  if (typeof error === 'object' && error !== null && 'message' in error) {
+    const message = (error as { message?: unknown }).message
+    if (typeof message === 'string' && message.length > 0) return message
+  }
+  return fallback
+}
+
+function getErrorIssues(error: unknown): string[] {
+  if (typeof error !== 'object' || error === null || !('payload' in error)) return []
+  const payload = (error as { payload?: unknown }).payload
+  if (typeof payload !== 'object' || payload === null || !('issues' in payload)) return []
+  const issues = (payload as { issues?: unknown }).issues
+  return Array.isArray(issues) ? issues.filter((issue): issue is string => typeof issue === 'string') : []
+}
+
 function upsertReplayActivity(items: ReplayActivityItem[], next: ReplayActivityItem): ReplayActivityItem[] {
   const index = items.findIndex(item => item.id === next.id)
   if (index === -1) return [...items, next]
@@ -658,7 +604,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
       if (body) {
         try {
           const parsed = JSON.parse(body)
-          const walk = (node: any, path: string[]) => {
+          const walk = (node: unknown, path: string[]) => {
             if (node === null || node === undefined) return
             if (typeof node === 'string' || typeof node === 'number' || typeof node === 'boolean') {
               const key = path[path.length - 1] || 'body_value'
@@ -908,14 +854,16 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
     })
   }, [activeReplaySessionId, expandedReplayEvent])
 
-  const updateField = (path: string, value: any) => {
+  const updateField = (path: string, value: unknown) => {
     setScript(prev => {
-      const next = JSON.parse(JSON.stringify(prev))
+      const next = JSON.parse(JSON.stringify(prev)) as ScriptData
       const keys = path.split('.')
-      let obj: any = next
+      let obj: Record<string, unknown> = next as unknown as Record<string, unknown>
       for (let i = 0; i < keys.length - 1; i++) {
-        if (!obj[keys[i]] || typeof obj[keys[i]] !== 'object') obj[keys[i]] = {}
-        obj = obj[keys[i]]
+        const key = keys[i]
+        const current = obj[key]
+        if (!current || typeof current !== 'object' || Array.isArray(current)) obj[key] = {}
+        obj = obj[key] as Record<string, unknown>
       }
       obj[keys[keys.length - 1]] = value
       return next
@@ -981,7 +929,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
     setActiveAction(newIdx)
   }
 
-  const updateAction = (idx: number, field: string, value: any) => {
+  const updateAction = (idx: number, field: keyof Action, value: unknown) => {
     setScript(prev => {
       const actions = [...prev.actions]
       actions[idx] = { ...actions[idx], [field]: value }
@@ -1030,7 +978,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
     })
   }
 
-  const updateAssertion = (actionIdx: number, aIdx: number, field: string, value: any) => {
+  const updateAssertion = (actionIdx: number, aIdx: number, field: keyof Assertion, value: unknown) => {
     setScript(prev => {
       const actions = [...prev.actions]
       const assertions = [...(actions[actionIdx].assertions || [])]
@@ -1113,10 +1061,10 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
     })
   }
 
-  const resolveCurrentScript = () => {
+  const resolveCurrentScript = (): ScriptData => {
     if (!jsonMode) return script
-    const parsed = JSON.parse(jsonText)
-    return parsed.script || parsed
+    const parsed = JSON.parse(jsonText) as ScriptData | { script?: ScriptData }
+    return 'script' in parsed && parsed.script ? parsed.script : parsed
   }
 
   const handleSave = async () => {
@@ -1131,8 +1079,8 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
       if (jsonMode) setScript(currentScript)
       setSuccess('Script saved successfully!')
       onSave?.()
-    } catch (e: any) {
-      setError(e.message || 'Failed to save script')
+    } catch (e: unknown) {
+      setError(getErrorMessage(e, 'Failed to save script'))
     } finally { setSaving(false) }
   }
 
@@ -1235,9 +1183,10 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
       setExpandedReplayEvent(res.report?.events?.length ? res.report.events.length - 1 : null)
       setActiveReplaySessionId(null)
       setSuccess(res.report?.success ? 'Replay completed successfully.' : 'Replay completed with failures.')
-    } catch (e: any) {
-      const issues = Array.isArray(e?.payload?.issues) ? e.payload.issues.join(' | ') : ''
-      setError(issues || e.message || 'Replay failed')
+    } catch (e: unknown) {
+      const issues = getErrorIssues(e).join(' | ')
+      const message = getErrorMessage(e, 'Replay failed')
+      setError(issues || message)
       setReplayReport(null)
       setActiveReplaySessionId(null)
       setBrowserReplaySession(null)
@@ -1246,7 +1195,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
         id: 'error',
         kind: 'error',
         title: 'Replay failed before completion',
-        detail: issues || e.message || 'Replay failed',
+        detail: issues || message,
         timestamp: new Date().toISOString(),
         success: false,
       }))
@@ -1263,8 +1212,8 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
       await api.stopBrowserReplaySession(activeReplaySessionId)
       setError('')
       setSuccess('Stopping browser replay…')
-    } catch (e: any) {
-      setError(e.message || 'Failed to stop browser replay')
+    } catch (e: unknown) {
+      setError(getErrorMessage(e, 'Failed to stop browser replay'))
     }
   }
 
@@ -1278,8 +1227,8 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
       if (res?.session) setBrowserReplaySession(res.session)
       setError('')
       setSuccess(isPaused ? 'Resuming browser replay…' : 'Pausing browser replay…')
-    } catch (e: any) {
-      setError(e.message || 'Failed to update browser replay state')
+    } catch (e: unknown) {
+      setError(getErrorMessage(e, 'Failed to update browser replay state'))
     }
   }
 
@@ -1372,7 +1321,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
     })
   }
 
-  const updateDataSource = (idx: number, field: keyof DataSourceConfig, value: any, recordHistory = true) => {
+  const updateDataSource = (idx: number, field: keyof DataSourceConfig, value: unknown, recordHistory = true) => {
     mutateDataSource(idx, current => ({ ...current, [field]: value }), recordHistory)
   }
 
@@ -1909,7 +1858,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
                       <BrowserReplayDebugger
                         sessionId={activeReplaySessionId}
                         session={browserReplaySession}
-                        report={replayReport as unknown as any}
+                        report={replayReport}
                         running={replaying}
                         selectedEventIndex={expandedReplayEvent}
                         onSelectEvent={setExpandedReplayEvent}
@@ -2885,12 +2834,12 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
 /* Sub-component for editing a single action's details */
 function ActionEditor({ action, index, onUpdate, onAddExtractor, onUpdateExtractor, onRemoveExtractor, onAddAssertion, onUpdateAssertion, onRemoveAssertion, onAddHeader, onUpdateHeader, onRemoveHeader, onAddMetadata, onUpdateMetadata, onRemoveMetadata, methodColor, isBrowserScript, isJmsScript }: {
   action: Action; index: number
-  onUpdate: (i: number, f: string, v: any) => void
+  onUpdate: (i: number, f: keyof Action, v: unknown) => void
   onAddExtractor: (i: number) => void
   onUpdateExtractor: (ai: number, ei: number, f: string, v: string) => void
   onRemoveExtractor: (ai: number, ei: number) => void
   onAddAssertion: (i: number) => void
-  onUpdateAssertion: (ai: number, ai2: number, f: string, v: any) => void
+  onUpdateAssertion: (ai: number, ai2: number, f: keyof Assertion, v: unknown) => void
   onRemoveAssertion: (ai: number, ai2: number) => void
   onAddHeader: (i: number) => void
   onUpdateHeader: (ai: number, ok: string, nk: string, v: string) => void

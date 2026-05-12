@@ -1,6 +1,19 @@
 import { useCallback, useMemo } from 'react'
 
-import { BrowserReplayStartRequest, BrowserReplayStartResponse, BrowserReplaySessionResponse, StoredScript } from '../../types'
+import {
+  BrowserReplayStartRequest,
+  BrowserReplayStartResponse,
+  BrowserReplaySessionResponse,
+  GoalConfig,
+  RuntimeSettingsOverride,
+  ScenarioDataPoolBinding,
+  ScenarioMode,
+  SharedDataPool,
+  SharedDataPoolRow,
+  StoredScenario,
+  StoredScript,
+  TestSummary,
+} from '../../types'
 import { type ScriptDefinition, type ScriptExportResponse, type ScriptReplayResponse, type ScriptValidationResponse } from '../../types/scripts'
 import { type ImportedScript, type JMeterImportResult, type JMeterSupportMatrixResponse, type LoadRunnerImportResult, type SampleImportResult, type SaveJMeterImportRequest, type SaveJMeterImportResponse } from '../../types/scriptImports'
 import { BASE, request } from '../apiClient'
@@ -17,6 +30,64 @@ type DeleteScriptResponse = {
 type MoveScriptResponse = {
   id: string
   folder_id?: string | null
+}
+
+type ScenarioListResponse = {
+  scenarios: StoredScenario[]
+  count: number
+}
+
+type ScenarioDeleteResponse = {
+  deleted: string
+}
+
+type ScenarioResultsResponse = {
+  tests: TestSummary[]
+  count: number
+}
+
+type ScenarioGroupPayload = {
+  name?: string
+  script_id: string
+  vusers: number
+  ramp_up?: string
+  ramp_down?: string
+  initialization?: 'at_runtime' | 'at_once'
+}
+
+type ScenarioUpsertRequest = {
+  name: string
+  duration: string
+  scenario_mode?: ScenarioMode
+  script_shakeout?: boolean
+  resource_baseline?: boolean
+  goal_config?: GoalConfig
+  runtime_settings?: RuntimeSettingsOverride
+  groups: ScenarioGroupPayload[]
+  data_pools?: ScenarioDataPoolBinding[]
+}
+
+type DataPoolListResponse = {
+  data_pools: SharedDataPool[]
+  count: number
+}
+
+type DataPoolDetailsResponse = {
+  data_pool: SharedDataPool
+  rows: SharedDataPoolRow[]
+}
+
+type DataPoolDeleteResponse = {
+  deleted: string
+}
+
+type DataPoolUpsertRequest = Pick<SharedDataPool, 'name'> & Partial<Pick<SharedDataPool, 'description' | 'schema' | 'archived_at'>>
+
+type DataPoolRowUpsertRequest = Pick<SharedDataPoolRow, 'data'> & Partial<Pick<SharedDataPoolRow, 'status' | 'version'>>
+
+type ScenarioDataPoolResponse = {
+  data_pools: ScenarioDataPoolBinding[]
+  count: number
 }
 
 function buildScriptQuery(projectId?: string, folderId?: string | null) {
@@ -203,21 +274,21 @@ export function useScriptApi() {
     [],
   )
 
-  const listScenarios = useCallback(() => request<any>('/scenarios'), [])
+  const listScenarios = useCallback(() => request<ScenarioListResponse>('/scenarios'), [])
 
   const createScenario = useCallback(
-    (data: any) => request<any>('/scenarios', { method: 'POST', body: JSON.stringify(data) }),
+    (data: ScenarioUpsertRequest) => request<StoredScenario>('/scenarios', { method: 'POST', body: JSON.stringify(data) }),
     [],
   )
 
-  const getScenario = useCallback((id: string) => request<any>(`/scenarios/${id}`), [])
+  const getScenario = useCallback((id: string) => request<StoredScenario>(`/scenarios/${id}`), [])
 
   const updateScenario = useCallback(
-    (id: string, data: any) => request<any>(`/scenarios/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    (id: string, data: ScenarioUpsertRequest) => request<StoredScenario>(`/scenarios/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
     [],
   )
 
-  const deleteScenario = useCallback((id: string) => request<any>(`/scenarios/${id}`, { method: 'DELETE' }), [])
+  const deleteScenario = useCallback((id: string) => request<ScenarioDeleteResponse>(`/scenarios/${id}`, { method: 'DELETE' }), [])
 
   const listScenarioResults = useCallback(
     (id: string, params?: { application_id?: string; release_id?: string }) => {
@@ -225,46 +296,46 @@ export function useScriptApi() {
       if (params?.application_id) query.set('application_id', params.application_id)
       if (params?.release_id) query.set('release_id', params.release_id)
       const suffix = query.toString()
-      return request<any>(`/scenarios/${id}/results${suffix ? `?${suffix}` : ''}`)
+      return request<ScenarioResultsResponse>(`/scenarios/${id}/results${suffix ? `?${suffix}` : ''}`)
     },
     [],
   )
 
   const listDataPools = useCallback(
-    (includeArchived = false) => request<any>(`/data-pools${includeArchived ? '?include_archived=true' : ''}`),
+    (includeArchived = false) => request<DataPoolListResponse>(`/data-pools${includeArchived ? '?include_archived=true' : ''}`),
     [],
   )
 
   const createDataPool = useCallback(
-    (data: any) => request<any>('/data-pools', { method: 'POST', body: JSON.stringify(data) }),
+    (data: DataPoolUpsertRequest) => request<SharedDataPool>('/data-pools', { method: 'POST', body: JSON.stringify(data) }),
     [],
   )
 
-  const getDataPool = useCallback((id: string) => request<any>(`/data-pools/${id}`), [])
+  const getDataPool = useCallback((id: string) => request<DataPoolDetailsResponse>(`/data-pools/${id}`), [])
 
   const updateDataPool = useCallback(
-    (id: string, data: any) => request<any>(`/data-pools/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    (id: string, data: DataPoolUpsertRequest) => request<SharedDataPool>(`/data-pools/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
     [],
   )
 
-  const deleteDataPool = useCallback((id: string) => request<any>(`/data-pools/${id}`, { method: 'DELETE' }), [])
+  const deleteDataPool = useCallback((id: string) => request<DataPoolDeleteResponse>(`/data-pools/${id}`, { method: 'DELETE' }), [])
 
   const createDataPoolRow = useCallback(
-    (poolId: string, data: any) => request<any>(`/data-pools/${poolId}/rows`, { method: 'POST', body: JSON.stringify(data) }),
+    (poolId: string, data: DataPoolRowUpsertRequest) => request<SharedDataPoolRow>(`/data-pools/${poolId}/rows`, { method: 'POST', body: JSON.stringify(data) }),
     [],
   )
 
   const updateDataPoolRow = useCallback(
-    (poolId: string, rowId: string, data: any) => request<any>(`/data-pools/${poolId}/rows/${rowId}`, { method: 'PUT', body: JSON.stringify(data) }),
+    (poolId: string, rowId: string, data: DataPoolRowUpsertRequest) => request<SharedDataPoolRow>(`/data-pools/${poolId}/rows/${rowId}`, { method: 'PUT', body: JSON.stringify(data) }),
     [],
   )
 
-  const deleteDataPoolRow = useCallback((poolId: string, rowId: string) => request<any>(`/data-pools/${poolId}/rows/${rowId}`, { method: 'DELETE' }), [])
+  const deleteDataPoolRow = useCallback((poolId: string, rowId: string) => request<DataPoolDeleteResponse>(`/data-pools/${poolId}/rows/${rowId}`, { method: 'DELETE' }), [])
 
-  const listScenarioDataPools = useCallback((scenarioId: string) => request<any>(`/scenarios/${scenarioId}/data-pools`), [])
+  const listScenarioDataPools = useCallback((scenarioId: string) => request<ScenarioDataPoolResponse>(`/scenarios/${scenarioId}/data-pools`), [])
 
   const updateScenarioDataPools = useCallback(
-    (scenarioId: string, dataPools: any[]) => request<any>(`/scenarios/${scenarioId}/data-pools`, { method: 'PUT', body: JSON.stringify({ data_pools: dataPools }) }),
+    (scenarioId: string, dataPools: ScenarioDataPoolBinding[]) => request<ScenarioDataPoolResponse>(`/scenarios/${scenarioId}/data-pools`, { method: 'PUT', body: JSON.stringify({ data_pools: dataPools }) }),
     [],
   )
 
