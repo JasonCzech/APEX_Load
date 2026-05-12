@@ -158,6 +158,8 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("POST /api/v1/scripts/import/loadrunner", cors(log(http.HandlerFunc(s.handleImportLoadRunner))))
 	s.mux.Handle("POST /api/v1/scripts/import/jmeter", cors(log(http.HandlerFunc(s.handleImportJMeter))))
 	s.mux.Handle("POST /api/v1/scripts/import/jmeter/save", cors(log(http.HandlerFunc(s.handleSaveJMeterImport))))
+	s.mux.Handle("POST /api/v1/scripts/import/jmeter/validate", cors(log(http.HandlerFunc(s.handleValidateJMeterImport))))
+	s.mux.Handle("GET /api/v1/scripts/import/jmeter/support-matrix", cors(log(http.HandlerFunc(s.handleJMeterSupportMatrix))))
 	s.mux.Handle("POST /api/v1/scripts/import/sample", cors(log(http.HandlerFunc(s.handleImportSample))))
 	s.mux.Handle("GET /api/v1/browser-replay/sessions/{session_id}", cors(log(http.HandlerFunc(s.handleGetBrowserReplaySession))))
 	s.mux.Handle("POST /api/v1/browser-replay/sessions/{session_id}/pause", cors(log(http.HandlerFunc(s.handlePauseBrowserReplaySession))))

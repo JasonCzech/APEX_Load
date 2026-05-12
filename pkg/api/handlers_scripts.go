@@ -14,6 +14,11 @@ import (
 	"github.com/jasonczech/stormrunner/pkg/dsl"
 )
 
+type jmeterImportRequest struct {
+	Data []byte
+	Opts jmeter.ConvertOptions
+}
+
 // handleImportLoadRunner handles POST /api/v1/scripts/import/loadrunner
 // Accepts a multipart form upload of a ZIP file containing a LoadRunner script folder.
 func (s *Server) handleImportLoadRunner(w http.ResponseWriter, r *http.Request) {
@@ -86,6 +91,45 @@ func (s *Server) handleImportLoadRunner(w http.ResponseWriter, r *http.Request) 
 // handleImportJMeter handles POST /api/v1/scripts/import/jmeter.
 // Accepts a multipart form upload or raw body containing a JMeter .jmx test plan.
 func (s *Server) handleImportJMeter(w http.ResponseWriter, r *http.Request) {
+	importReq, ok := readJMeterImportRequest(w, r)
+	if !ok {
+		return
+	}
+
+	result, err := jmeter.ConvertJMX(importReq.Data, importReq.Opts)
+	if err != nil {
+		writeError(w, http.StatusUnprocessableEntity, "conversion failed: "+err.Error())
+		return
+	}
+
+	writeJMeterImportResponse(w, http.StatusOK, result)
+}
+
+// handleValidateJMeterImport handles POST /api/v1/scripts/import/jmeter/validate.
+// It parses and converts the JMX plan without persisting any generated assets.
+func (s *Server) handleValidateJMeterImport(w http.ResponseWriter, r *http.Request) {
+	importReq, ok := readJMeterImportRequest(w, r)
+	if !ok {
+		return
+	}
+
+	importReq.Opts.ScenarioDraft = r.FormValue("scenario_draft") == "true"
+	result, err := jmeter.ConvertJMX(importReq.Data, importReq.Opts)
+	if err != nil {
+		writeError(w, http.StatusUnprocessableEntity, "validation failed: "+err.Error())
+		return
+	}
+
+	writeJMeterImportResponse(w, http.StatusOK, result)
+}
+
+func (s *Server) handleJMeterSupportMatrix(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"support_matrix": jmeter.GetSupportMatrix(),
+	})
+}
+
+func readJMeterImportRequest(w http.ResponseWriter, r *http.Request) (*jmeterImportRequest, bool) {
 	r.Body = http.MaxBytesReader(w, r.Body, 50<<20)
 
 	contentType := r.Header.Get("Content-Type")
@@ -96,18 +140,18 @@ func (s *Server) handleImportJMeter(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, "failed to read request body: "+err.Error())
-			return
+			return nil, false
 		}
 		data = body
 	} else {
 		if err := r.ParseMultipartForm(50 << 20); err != nil {
 			writeError(w, http.StatusBadRequest, "failed to parse multipart form (max 50MB): "+err.Error())
-			return
+			return nil, false
 		}
 		file, header, err := r.FormFile("file")
 		if err != nil {
 			writeError(w, http.StatusBadRequest, "missing 'file' field in multipart form: "+err.Error())
-			return
+			return nil, false
 		}
 		defer file.Close()
 		if header != nil {
@@ -116,29 +160,30 @@ func (s *Server) handleImportJMeter(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(file)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, "failed to read uploaded file: "+err.Error())
-			return
+			return nil, false
 		}
 		data = body
 	}
 
 	if len(data) == 0 {
 		writeError(w, http.StatusBadRequest, "empty file uploaded")
-		return
+		return nil, false
 	}
 
-	result, err := jmeter.ConvertJMX(data, jmeter.ConvertOptions{
-		ScriptName:        r.FormValue("name"),
-		BaseURL:           r.FormValue("base_url"),
-		IncludeAssertions: r.FormValue("include_assertions") == "true",
-		ScenarioDraft:     r.FormValue("scenario_draft") == "true",
-		FileName:          fileName,
-	})
-	if err != nil {
-		writeError(w, http.StatusUnprocessableEntity, "conversion failed: "+err.Error())
-		return
-	}
+	return &jmeterImportRequest{
+		Data: data,
+		Opts: jmeter.ConvertOptions{
+			ScriptName:        r.FormValue("name"),
+			BaseURL:           r.FormValue("base_url"),
+			IncludeAssertions: r.FormValue("include_assertions") == "true",
+			ScenarioDraft:     r.FormValue("scenario_draft") == "true",
+			FileName:          fileName,
+		},
+	}, true
+}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+func writeJMeterImportResponse(w http.ResponseWriter, status int, result *jmeter.ConvertResult) {
+	writeJSON(w, status, map[string]any{
 		"result":               result,
 		"scripts":              result.Scripts,
 		"script":               result.Script,

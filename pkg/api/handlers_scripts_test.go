@@ -180,6 +180,92 @@ func TestHandleImportJMeter(t *testing.T) {
 	}
 }
 
+func TestHandleValidateJMeterImport(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("file", "validate.jmx")
+	if err != nil {
+		t.Fatalf("CreateFormFile returned error: %v", err)
+	}
+	part.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2">
+  <hashTree>
+    <TestPlan testname="Plan" />
+    <hashTree>
+      <ThreadGroup testname="Users">
+        <stringProp name="ThreadGroup.num_threads">2</stringProp>
+      </ThreadGroup>
+      <hashTree>
+        <HTTPSamplerProxy testname="Ping">
+          <stringProp name="HTTPSampler.domain">api.example.com</stringProp>
+          <stringProp name="HTTPSampler.protocol">https</stringProp>
+          <stringProp name="HTTPSampler.path">/ping</stringProp>
+          <stringProp name="HTTPSampler.method">GET</stringProp>
+        </HTTPSamplerProxy>
+        <hashTree/>
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>`))
+	writer.WriteField("scenario_draft", "true")
+	writer.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/jmeter/validate", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var result struct {
+		Scripts       []StoredScript `json:"scripts"`
+		ScenarioDraft any            `json:"scenario_draft"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if len(result.Scripts) != 1 {
+		t.Fatalf("scripts = %d, want 1", len(result.Scripts))
+	}
+	if result.ScenarioDraft == nil {
+		t.Fatal("expected scenario draft in validation response")
+	}
+	if got := server.runner.ListScripts(); len(got) != 0 {
+		t.Fatalf("validate should not persist scripts, got %d", len(got))
+	}
+}
+
+func TestHandleJMeterSupportMatrix(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/scripts/import/jmeter/support-matrix", nil)
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var result struct {
+		SupportMatrix struct {
+			Supported   []string `json:"supported"`
+			Partial     []string `json:"partial"`
+			Unsupported []string `json:"unsupported"`
+		} `json:"support_matrix"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if len(result.SupportMatrix.Supported) == 0 {
+		t.Fatal("expected supported entries in support matrix")
+	}
+	if len(result.SupportMatrix.Unsupported) == 0 {
+		t.Fatal("expected unsupported entries in support matrix")
+	}
+}
+
 func TestHandleSaveJMeterImportPersistsScriptsAndScenario(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	payload := map[string]any{

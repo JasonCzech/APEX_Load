@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useApi } from '../hooks/useApi'
 import './LoadRunnerImport.css'
 
@@ -19,6 +19,13 @@ interface Props {
   onClose?: () => void
 }
 
+interface SupportMatrix {
+  supported: string[]
+  partial: string[]
+  unsupported: string[]
+  notes?: string[]
+}
+
 export default function JMeterImport({ onImported, onClose }: Props) {
   const api = useApi()
   const fileRef = useRef<HTMLInputElement>(null)
@@ -28,6 +35,7 @@ export default function JMeterImport({ onImported, onClose }: Props) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [saveMessage, setSaveMessage] = useState('')
+  const [supportMatrix, setSupportMatrix] = useState<SupportMatrix | null>(null)
   const [result, setResult] = useState<{
     scripts: any[]
     script?: any
@@ -44,6 +52,26 @@ export default function JMeterImport({ onImported, onClose }: Props) {
     include_assertions: true,
     scenario_draft: true,
   })
+
+  useEffect(() => {
+    let cancelled = false
+
+    api.getJMeterSupportMatrix()
+      .then((response: { support_matrix?: SupportMatrix }) => {
+        if (!cancelled) {
+          setSupportMatrix(response.support_matrix || null)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSupportMatrix(null)
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [api])
 
   const acceptFile = (nextFile?: File) => {
     if (!nextFile) return
@@ -161,6 +189,38 @@ export default function JMeterImport({ onImported, onClose }: Props) {
           </label>
         </div>
       </div>
+
+      {supportMatrix && (
+        <div className="lr-preserved">
+          <div className="lr-preserved-header">
+            <h4>Phase 1 Coverage</h4>
+            <span>HTTP-focused migration</span>
+          </div>
+          <div className="lr-preserved-grid">
+            <div className="lr-preserved-card">
+              <span className="lr-preserved-label">Supported</span>
+              <strong>{supportMatrix.supported.length} constructs</strong>
+              <small>{supportMatrix.supported.slice(0, 3).join(' • ')}</small>
+            </div>
+            <div className="lr-preserved-card">
+              <span className="lr-preserved-label">Partial</span>
+              <strong>{supportMatrix.partial.length} behaviors</strong>
+              <small>{supportMatrix.partial.slice(0, 2).join(' • ')}</small>
+            </div>
+            <div className="lr-preserved-card">
+              <span className="lr-preserved-label">Unsupported</span>
+              <strong>{supportMatrix.unsupported.length} constructs</strong>
+              <small>{supportMatrix.unsupported.slice(0, 2).join(' • ')}</small>
+            </div>
+          </div>
+          {supportMatrix.notes && supportMatrix.notes.length > 0 && (
+            <div className="lr-warnings">
+              <h4>Importer Notes</h4>
+              <ul>{supportMatrix.notes.map((note, index) => <li key={index}>{note}</li>)}</ul>
+            </div>
+          )}
+        </div>
+      )}
 
       <button className="btn btn-primary btn-lg" onClick={handleImport} disabled={!file || importing}>
         {importing ? <><span className="spinner" /> Converting...</> : 'Convert JMeter Plan'}

@@ -70,6 +70,13 @@ type ScenarioDraftGroup struct {
 	Initialization string `json:"initialization"`
 }
 
+type SupportMatrix struct {
+	Supported   []string `json:"supported"`
+	Partial     []string `json:"partial"`
+	Unsupported []string `json:"unsupported"`
+	Notes       []string `json:"notes,omitempty"`
+}
+
 type xmlNode struct {
 	Name     string
 	Attrs    map[string]string
@@ -92,6 +99,43 @@ type convertContext struct {
 	csvSources      []dsl.DataSource
 	timerMs         int
 	assertions      []dsl.Assertion
+}
+
+func GetSupportMatrix() SupportMatrix {
+	return SupportMatrix{
+		Supported: []string{
+			"Test Plan",
+			"Thread Group",
+			"HTTP Request Defaults",
+			"HTTP Header Manager",
+			"HTTP Cookie Manager",
+			"User Defined Variables",
+			"CSV Data Set Config",
+			"HTTP Request samplers",
+			"Constant Timer",
+			"Uniform Random Timer",
+			"Response Assertions",
+		},
+		Partial: []string{
+			"Simple controllers flattened into action order where safe",
+			"Variable substitution across URLs, headers, and bodies",
+			"Scenario drafts derived from thread groups",
+			"Timer behavior approximated as fixed think time when necessary",
+		},
+		Unsupported: []string{
+			"JSR223 / BeanShell / Groovy scripting",
+			"JMeter plugin samplers, listeners, and controllers",
+			"JMS samplers",
+			"JDBC / FTP / SOAP / custom protocol plugins",
+			"Complex conditional controller logic",
+			"Full JMeter listener/reporting model",
+			"Distributed engine/controller orchestration settings",
+		},
+		Notes: []string{
+			"Phase 1 targets HTTP-oriented JMX plans and produces native Stormrunner assets.",
+			"Unsupported constructs are reported in the import review instead of being silently ignored.",
+		},
+	}
 }
 
 func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {

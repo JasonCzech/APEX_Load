@@ -138,6 +138,33 @@ export function useScriptApi() {
     [],
   )
 
+  const validateJMeterImport = useCallback(
+    async (file: File, options?: { name?: string; base_url?: string; include_assertions?: boolean; scenario_draft?: boolean }) => {
+      const formData = new FormData()
+      formData.append('file', file)
+      if (options?.name) formData.append('name', options.name)
+      if (options?.base_url) formData.append('base_url', options.base_url)
+      if (options?.include_assertions) formData.append('include_assertions', 'true')
+      if (options?.scenario_draft) formData.append('scenario_draft', 'true')
+
+      const res = await fetch(`${BASE}/scripts/import/jmeter/validate`, {
+        method: 'POST',
+        body: formData,
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: res.statusText }))
+        throw new Error(body.error || res.statusText)
+      }
+      return res.json()
+    },
+    [],
+  )
+
+  const getJMeterSupportMatrix = useCallback(
+    () => request<any>('/scripts/import/jmeter/support-matrix'),
+    [],
+  )
+
   const saveJMeterImport = useCallback(
     (payload: { scripts: any[]; scenario_draft?: any }) =>
       request<any>('/scripts/import/jmeter/save', { method: 'POST', body: JSON.stringify(payload) }),
@@ -245,6 +272,8 @@ export function useScriptApi() {
       exportScript,
       importLoadRunner,
       importJMeter,
+      validateJMeterImport,
+      getJMeterSupportMatrix,
       saveJMeterImport,
       importSample,
       listScenarios,
@@ -283,6 +312,8 @@ export function useScriptApi() {
       exportScript,
       importLoadRunner,
       importJMeter,
+      validateJMeterImport,
+      getJMeterSupportMatrix,
       saveJMeterImport,
       importSample,
       listScenarios,
