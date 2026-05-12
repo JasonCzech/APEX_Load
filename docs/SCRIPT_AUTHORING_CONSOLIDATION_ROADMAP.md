@@ -1,0 +1,234 @@
+# Script Authoring Consolidation Roadmap
+
+## Objective
+Consolidate Stormrunner's script-building system around shared contracts and lifecycle behavior without collapsing distinct user entry points into one monolithic UI.
+
+The goal is to keep the current acquisition paths that matter:
+
+- Direct editing
+- Import
+- Recording
+- Replay/debugging
+
+While consolidating the parts that are currently drifting:
+
+- Validation
+- Convert/import response shapes
+- Review and save workflow
+- Stale duplicate files and migration artifacts
+
+Test and scenario assembly should be improved in parallel, but treated as a separate implementation slice from script authoring.
+
+## Principles
+
+### 1. Consolidate Contracts, Not Inputs
+Multiple ways to create scripts are valid. The target is shared orchestration and behavior after acquisition, not one single input screen.
+
+### 2. Validation Must Have One Owner
+The same script should produce the same validation result whether it is parsed from disk, saved through the API, replayed, or imported from another format.
+
+### 3. Importers Should Differ Only At Acquisition Time
+LoadRunner, JMeter, sample import, and recorder conversion should keep their source-specific input logic, but converge on one review, edit, and save contract.
+
+### 4. Script Authoring And Test Assembly Are Adjacent, Not The Same
+Script creation defines executable behavior. Test and scenario assembly define how those scripts are run. They can share components, but they should remain separate concerns.
+
+## Current Problem Areas
+
+### Validation Drift
+Validation logic is currently split between parser-level and API-level code paths, which creates redundant logic and the risk of inconsistent results.
+
+### Import Contract Fragmentation
+Different script-building sources return different response envelopes and use different preview and save semantics.
+
+### Frontend Workflow Duplication
+The script hub currently owns separate orchestration paths for multiple builders instead of delegating into a shared review and save model.
+
+### Duplicate And Stale Files
+The dashboard contains duplicate page files and the repository still includes patch and temp artifacts that appear to reflect prior ad hoc refactors.
+
+## Implementation Phases
+
+### Phase 0: Lock Boundaries
+Document the supported surfaces and classify them into three lanes:
+
+- Script authoring
+- Script replay/debugging
+- Test and scenario assembly
+
+This phase should also confirm that the live app shell imports only the current dashboard pages and that duplicate page copies are cleanup candidates rather than active variants.
+
+#### Exit Criteria
+- The live route owners are confirmed.
+- Duplicate page files are classified as active or dead.
+- Browser replay is explicitly classified as either a specialized debug surface or a future participant in the shared authoring lifecycle.
+
+### Phase 1: Unify Validation
+Move shared validation out of API handlers and parser-local functions into one DSL-owned validator API.
+
+All of the following paths should use the same validation rules:
+
+- Parser
+- Create script
+- Update script
+- Validate script
+- Replay draft script
+- Replay stored script
+- Browser replay
+- Import save paths
+
+JMS-specific validation should be exposed through the same validation surface so protocol-specific rules remain consistent with general validation.
+
+#### Exit Criteria
+- One validation API exists under the DSL package.
+- Parser and handlers call the same validator.
+- Browser and JMS special cases are covered.
+- Validation tests prove parity across all entry points.
+
+### Phase 2: Standardize Import Contracts
+Define a shared backend import result envelope for all script-building sources.
+
+The shared outer contract should support:
+
+- One or more scripts
+- Warnings
+- Stats
+- Optional correlations
+- Optional assumptions
+- Optional unsupported elements
+- Optional scenario draft
+
+Each source can still include source-specific details, but the frontend should no longer need custom normalization for unrelated payload shapes.
+
+This phase should also normalize lifecycle semantics so all import and conversion flows behave like:
+
+1. Acquire input
+2. Validate or convert
+3. Review the result
+4. Optionally edit
+5. Save
+
+#### Exit Criteria
+- LoadRunner, JMeter, sample import, and recorder conversion emit the same envelope shape.
+- Preview and save semantics are consistent across builders.
+- Temporary compatibility adapters are minimized and explicitly tracked.
+
+### Phase 3: Consolidate Frontend Orchestration
+Turn the script hub into a shared authoring shell instead of a bespoke controller for every builder.
+
+The specialized components should keep source-specific acquisition logic, but downstream review and save behavior should converge on shared UI patterns:
+
+- Review summary
+- Warning display
+- Stats display
+- Correlation display where applicable
+- Edit handoff
+- Save behavior
+
+The default canonical edit surface should be the main script editor unless a source-specific editor is demonstrably necessary.
+
+#### Exit Criteria
+- The script hub delegates into a shared authoring workflow.
+- Importers no longer own unrelated review and save behavior.
+- Users can complete the same lifecycle from every authoring path.
+
+### Phase 4: Consolidate Scenario Assembly Separately
+Extract reusable scenario assembly state and sections from the existing test creation flow.
+
+This work should stay separate from script authoring and focus on improving reuse across:
+
+- New test creation
+- Test execution scenario editing
+
+The current goal is to make scenario editing a thin wrapper over a stable shared assembly surface.
+
+#### Exit Criteria
+- Scenario assembly state is reusable.
+- Shared sections are isolated and stable.
+- Test creation and scenario editing use the same underlying assembly model.
+
+### Phase 5: Cleanup And Remove Adapters
+After parity checks, remove stale dashboard duplicates and confirmed obsolete patch artifacts.
+
+Then remove temporary normalization and migration code introduced during earlier phases.
+
+#### Exit Criteria
+- No references remain to duplicate dashboard page files.
+- Patch and temp artifacts are either removed or documented as intentionally retained.
+- Temporary adapters introduced during migration are deleted.
+
+## Recommended Execution Order
+The recommended order is:
+
+1. Validation first
+2. Import contract second
+3. Frontend orchestration third
+4. Cleanup last
+
+That order minimizes churn and avoids rebuilding the UI around unstable backend behavior.
+
+## File-Level Targets
+
+### Live Dashboard Entry Points
+- [dashboard/src/App.tsx](dashboard/src/App.tsx)
+- [dashboard/src/components/ScriptsPage.tsx](dashboard/src/components/ScriptsPage.tsx)
+- [dashboard/src/components/ScriptEditor.tsx](dashboard/src/components/ScriptEditor.tsx)
+- [dashboard/src/components/JMeterImport.tsx](dashboard/src/components/JMeterImport.tsx)
+- [dashboard/src/components/LoadRunnerImport.tsx](dashboard/src/components/LoadRunnerImport.tsx)
+- [dashboard/src/components/SampleScriptImport.tsx](dashboard/src/components/SampleScriptImport.tsx)
+- [dashboard/src/components/RecordingStudio.tsx](dashboard/src/components/RecordingStudio.tsx)
+- [dashboard/src/components/BrowserReplayDebugger.tsx](dashboard/src/components/BrowserReplayDebugger.tsx)
+
+### Scenario Assembly Surfaces
+- [dashboard/src/components/CreateTestModal.tsx](dashboard/src/components/CreateTestModal.tsx)
+- [dashboard/src/components/TestExecutionScenarioEditor.tsx](dashboard/src/components/TestExecutionScenarioEditor.tsx)
+- [dashboard/src/components/CreateTestGroupsEditor.tsx](dashboard/src/components/CreateTestGroupsEditor.tsx)
+- [dashboard/src/components/CreateTestGoalSettings.tsx](dashboard/src/components/CreateTestGoalSettings.tsx)
+- [dashboard/src/components/CreateTestRuntimeOverrides.tsx](dashboard/src/components/CreateTestRuntimeOverrides.tsx)
+
+### Backend Validation And Contracts
+- [pkg/dsl/parser.go](pkg/dsl/parser.go)
+- [pkg/dsl/types.go](pkg/dsl/types.go)
+- [pkg/api/handlers.go](pkg/api/handlers.go)
+- [pkg/api/handlers_scripts.go](pkg/api/handlers_scripts.go)
+- [pkg/api/handlers_recorder.go](pkg/api/handlers_recorder.go)
+- [pkg/api/handlers_replay.go](pkg/api/handlers_replay.go)
+- [pkg/api/handlers_browser_replay.go](pkg/api/handlers_browser_replay.go)
+- [pkg/convert/loadrunner/converter.go](pkg/convert/loadrunner/converter.go)
+- [pkg/convert/jmeter/converter.go](pkg/convert/jmeter/converter.go)
+- [pkg/convert/sample/converter.go](pkg/convert/sample/converter.go)
+- [pkg/recorder/converter.go](pkg/recorder/converter.go)
+
+### Cleanup Candidates
+- [dashboard/src/components/ScriptsPage (1).tsx](dashboard/src/components/ScriptsPage%20(1).tsx)
+- [dashboard/src/components/TestHub (1).tsx](dashboard/src/components/TestHub%20(1).tsx)
+- [dashboard/src/components/ResultsPage (1).tsx](dashboard/src/components/ResultsPage%20(1).tsx)
+- [patch_create_test_modal.sh](patch_create_test_modal.sh)
+- [patch_recording_studio.sh](patch_recording_studio.sh)
+- [patch_test_execution.sh](patch_test_execution.sh)
+
+## Verification Checklist
+
+1. Confirm that only live dashboard pages are referenced before deleting duplicate page files.
+2. Build a validation matrix and verify that parser, create, update, replay, browser replay, and import save all return the same validation outcome for the same scripts.
+3. Snapshot current import payloads before standardization, then verify that every builder emits the shared envelope afterward.
+4. Verify that each authoring path supports the same lifecycle after consolidation: acquire input, review warnings and stats, edit if needed, save, and reopen the saved script.
+5. Verify that scenario editing still works both from new test creation and execution-time editing after scenario assembly extraction.
+6. Run final parity checks before cleanup so no route, create-script option, import flow, or saved workflow still references deleted files or temporary adapters.
+
+## Decisions
+
+- Keep multiple entry points into script creation.
+- Make the main script editor the canonical edit destination by default.
+- Treat the richer JMeter result model as a likely baseline for the shared import envelope.
+- Keep script authoring and test/scenario assembly in separate implementation tracks.
+- Do not force browser replay into the shared model unless its lifecycle aligns cleanly.
+
+## Risks
+
+- Adapter sprawl during migration if temporary normalization code is allowed to linger.
+- Frontend churn if the UI is refactored before the backend validation and import contracts stabilize.
+- Cleanup regressions if duplicate files are deleted before route and parity verification is complete.
+
+## Best First Slice
+If the team wants one early win before full consolidation, the best first slice is validator unification. It reduces defects immediately and clarifies the contract that every later phase depends on.
