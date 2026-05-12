@@ -14,6 +14,7 @@ import {
 } from './sampleImportUtils'
 import { normalizeScriptImportResult } from './scriptImportUtils'
 import { type ImportedScript, type SampleCorrelation as Correlation, type SampleImportResult, type SampleImportStats as ConvertStats } from '../types/scriptImports'
+import { type ScriptDefinition } from '../types/scripts'
 import './SampleScriptImport.css'
 
 type AuthType = 'none' | 'basic' | 'bearer'
@@ -45,7 +46,7 @@ type SampleImportOptionsAction =
 
 interface Props {
   onImported?: (script: ImportedScript) => void
-  onEdit?: (script: ImportedScript) => void
+  onEdit?: (script: ScriptDefinition) => void
   onClose?: () => void
 }
 
@@ -240,7 +241,7 @@ export default function SampleScriptImport({ onImported, onEdit, onClose }: Prop
   }
 
   const buildScriptWithOptions = (baseScript?: ImportedScript) => {
-    const script = JSON.parse(JSON.stringify(baseScript || {})) as ImportedScript
+    const script = JSON.parse(JSON.stringify(baseScript || {})) as ScriptDefinition
     script.name = options.name.trim() || script.name
     script.config = script.config || {}
     script.config.base_url = options.base_url.trim() || script.config.base_url || ''

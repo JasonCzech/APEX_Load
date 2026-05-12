@@ -1,3 +1,5 @@
+import { type ScriptDefinition } from './types/scripts'
+
 export interface TestGroup {
   name: string
   script_id: string
@@ -388,7 +390,7 @@ export interface StoredScript {
   associated_releases?: ReleaseRef[]
   scenario_run_releases?: ReleaseRef[]
   last_run_at?: string
-  script?: any
+  script?: ScriptDefinition
 }
 
 export interface StoredScenario {
@@ -543,7 +545,7 @@ export interface BrowserReplayStartRequest {
     slow_mo_ms?: number
   }
   ignore_think_time?: boolean
-  script?: any
+  script?: ScriptDefinition
 }
 
 export interface BrowserReplayStartResponse {

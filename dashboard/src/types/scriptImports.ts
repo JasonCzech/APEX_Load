@@ -1,3 +1,5 @@
+import { type ScriptDefinition } from './scripts'
+
 export interface ImportedExtractor {
   name?: string
   type?: string
@@ -11,15 +13,8 @@ export interface ImportedAction {
   [key: string]: unknown
 }
 
-export interface ImportedScript {
-  id?: string
-  name?: string
-  protocol?: string
-  version?: string
+export interface ImportedScript extends Partial<ScriptDefinition> {
   actions?: ImportedAction[]
-  data_sources?: unknown[]
-  metadata?: Record<string, unknown>
-  config?: Record<string, unknown>
   [key: string]: unknown
 }
 

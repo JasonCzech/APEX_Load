@@ -1,0 +1,290 @@
+export interface ScriptWaitCondition {
+  type?: string
+  value?: string
+  timeout_ms?: number
+}
+
+export interface BrowserCaptureOptions {
+  screenshot?: boolean
+  full_page?: boolean
+  html?: boolean
+}
+
+export interface ScriptExtractorDefinition {
+  name: string
+  source: string
+  type: string
+  expression: string
+}
+
+export interface ScriptAssertionDefinition {
+  type: string
+  expected?: unknown
+  value?: string
+  max?: number
+}
+
+export interface ScriptActionDefinition {
+  name: string
+  type: string
+  method?: string
+  target: string
+  selector?: string
+  value?: string
+  headers?: Record<string, string>
+  body?: string
+  params?: Record<string, unknown>
+  metadata?: Record<string, unknown>
+  wait_for?: ScriptWaitCondition
+  capture?: BrowserCaptureOptions
+  extractors?: ScriptExtractorDefinition[]
+  assertions?: ScriptAssertionDefinition[]
+  think_time_after?: boolean
+}
+
+export interface ThinkTimeConfig {
+  type: string
+  mean_ms: number
+  std_ms?: number
+  min_ms?: number
+  max_ms?: number
+  multiplier?: number
+  limit_ms?: number
+  ignore?: boolean
+}
+
+export interface PacingConfig {
+  type: string
+  delay_ms?: number
+  min_delay_ms?: number
+  max_delay_ms?: number
+  interval_ms?: number
+  min_interval_ms?: number
+  max_interval_ms?: number
+  tps?: number
+}
+
+export interface RunLogicConfig {
+  iterations?: number
+  auto_transactions?: string
+}
+
+export interface ErrorHandlingConfig {
+  continue_on_error?: boolean
+  max_retries?: number
+  retry_delay_ms?: number
+  retry_backoff?: string
+  snapshot_on_error?: boolean
+}
+
+export interface LogConfig {
+  level?: string
+  on_error_only?: boolean
+}
+
+export interface HTTPConfig {
+  connect_timeout_ms?: number
+  request_timeout_ms?: number
+  tls_timeout_ms?: number
+  idle_timeout_ms?: number
+  version?: string
+  max_conns_per_host?: number
+  keep_alive?: boolean
+  user_agent?: string
+  accept_encoding?: string
+  accept_language?: string
+  max_redirects?: number
+  default_headers?: Record<string, string>
+  tls?: {
+    min_version?: string
+    insecure_skip_verify?: boolean
+    client_cert_file?: string
+    client_key_file?: string
+    ca_cert_file?: string
+  }
+  proxy?: {
+    url?: string
+    username?: string
+    password?: string
+  }
+  auth?: {
+    type?: string
+    username?: string
+    password?: string
+    token?: string
+  }
+}
+
+export interface BrowserConfig {
+  engine?: string
+  headless?: boolean
+  slow_mo_ms?: number
+  user_agent?: string
+  capture_screenshots?: string
+  viewport?: {
+    width?: number
+    height?: number
+  }
+}
+
+export interface JMSConfig {
+  provider?: string
+  broker_url?: string
+  message_vpn?: string
+  username?: string
+  password?: string
+  client_id?: string
+  destination?: string
+  destination_type?: string
+  reply_to?: string
+  acknowledgement?: string
+  delivery_mode?: string
+  timeout_ms?: number
+  properties?: Record<string, string>
+  mock?: boolean
+}
+
+export interface ScriptImportMetadata {
+  source?: string
+  source_script_name?: string
+  preserved?: Record<string, unknown>
+}
+
+export interface ScriptMetadata {
+  import?: ScriptImportMetadata
+}
+
+export interface ScriptConfig {
+  base_url: string
+  think_time?: ThinkTimeConfig
+  pacing?: PacingConfig
+  run_logic?: RunLogicConfig
+  error_handling?: ErrorHandlingConfig
+  log?: LogConfig
+  http?: HTTPConfig
+  browser?: BrowserConfig
+  jms?: JMSConfig
+}
+
+export interface ScriptDataSource {
+  name: string
+  type: string
+  path: string
+  inline_data?: string
+  strategy: string
+  delimiter?: string
+  first_row_header?: boolean
+  columns?: string[]
+}
+
+export interface ScriptDefinition {
+  id?: string
+  name: string
+  version: string
+  protocol: string
+  project_id?: string
+  folder_id?: string | null
+  metadata?: ScriptMetadata
+  config: ScriptConfig
+  actions: ScriptActionDefinition[]
+  data_sources?: ScriptDataSource[]
+  created_at?: string
+  updated_at?: string
+}
+
+export interface ScriptReplayConsoleEntry {
+  level?: string
+  text?: string
+  source?: string
+  timestamp?: string
+}
+
+export interface ScriptReplayNetworkEntry {
+  url?: string
+  method?: string
+  status_code?: number
+  resource_type?: string
+  duration_ms?: number
+  bytes_received?: number
+}
+
+export interface ScriptReplayDOMSummary {
+  title?: string
+  ready_state?: string
+  visible_text?: string[]
+}
+
+export interface ScriptReplaySnapshot {
+  request_method?: string
+  request_url?: string
+  request_headers?: Record<string, string>
+  request_body?: string
+  response_status?: number
+  response_headers?: Record<string, string>
+  response_body?: string
+  page_url?: string
+  page_title?: string
+  html?: string
+  screenshot_base64?: string
+  console_entries?: ScriptReplayConsoleEntry[]
+  network_entries?: ScriptReplayNetworkEntry[]
+  dom_summary?: ScriptReplayDOMSummary
+}
+
+export interface ScriptReplayActionEvent {
+  phase: string
+  action_name: string
+  action_type: string
+  method?: string
+  target: string
+  selector?: string
+  value?: string
+  headers?: Record<string, string>
+  body?: string
+  started_at: string
+  completed_at: string
+  duration_ms: number
+  status_code?: number
+  success: boolean
+  error_message?: string
+  extractions?: Record<string, string>
+  page_url?: string
+  page_title?: string
+  html?: string
+  screenshot_base64?: string
+  console_entries?: ScriptReplayConsoleEntry[]
+  network_entries?: ScriptReplayNetworkEntry[]
+  dom_summary?: ScriptReplayDOMSummary
+  snapshot?: ScriptReplaySnapshot
+}
+
+export interface ScriptReplayReport {
+  group: string
+  protocol: string
+  started_at: string
+  completed_at: string
+  success: boolean
+  error?: string
+  events: ScriptReplayActionEvent[]
+  final_variables?: Record<string, string>
+  snapshots?: ScriptReplaySnapshot[]
+}
+
+export interface ScriptReplayResponse {
+  script_id: string
+  replay_session_id: string
+  report: ScriptReplayReport
+}
+
+export interface ScriptValidationResponse {
+  script_id: string
+  valid: boolean
+  issues: string[]
+}
+
+export interface ScriptExportResponse {
+  exported: boolean
+  path: string
+  filename: string
+  size: number
+}

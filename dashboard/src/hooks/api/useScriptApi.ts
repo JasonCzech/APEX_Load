@@ -1,8 +1,23 @@
 import { useCallback, useMemo } from 'react'
 
-import { BrowserReplayStartRequest, BrowserReplayStartResponse, BrowserReplaySessionResponse } from '../../types'
+import { BrowserReplayStartRequest, BrowserReplayStartResponse, BrowserReplaySessionResponse, StoredScript } from '../../types'
+import { type ScriptDefinition, type ScriptExportResponse, type ScriptReplayResponse, type ScriptValidationResponse } from '../../types/scripts'
 import { type ImportedScript, type JMeterImportResult, type JMeterSupportMatrixResponse, type LoadRunnerImportResult, type SampleImportResult, type SaveJMeterImportRequest, type SaveJMeterImportResponse } from '../../types/scriptImports'
 import { BASE, request } from '../apiClient'
+
+type ScriptListResponse = {
+  scripts: StoredScript[]
+  count: number
+}
+
+type DeleteScriptResponse = {
+  deleted: string
+}
+
+type MoveScriptResponse = {
+  id: string
+  folder_id?: string | null
+}
 
 function buildScriptQuery(projectId?: string, folderId?: string | null) {
   const query = new URLSearchParams()
@@ -15,43 +30,43 @@ function buildScriptQuery(projectId?: string, folderId?: string | null) {
 export function useScriptApi() {
   const listScripts = useCallback(
     (projectId?: string, folderId?: string | null) =>
-      request<{ scripts: any[]; count: number }>(`/scripts${buildScriptQuery(projectId, folderId)}`),
+      request<ScriptListResponse>(`/scripts${buildScriptQuery(projectId, folderId)}`),
     [],
   )
 
   const createScript = useCallback(
-    (script: any, projectId?: string, folderId?: string | null) =>
-      request<any>('/scripts', { method: 'POST', body: JSON.stringify({ script, project_id: projectId, folder_id: folderId }) }),
+    (script: ScriptDefinition | ImportedScript, projectId?: string, folderId?: string | null) =>
+      request<StoredScript>('/scripts', { method: 'POST', body: JSON.stringify({ script, project_id: projectId, folder_id: folderId }) }),
     [],
   )
 
-  const getScript = useCallback((id: string) => request<any>(`/scripts/${id}`), [])
+  const getScript = useCallback((id: string) => request<StoredScript>(`/scripts/${id}`), [])
 
   const updateScript = useCallback(
-    (id: string, script: any) =>
-      request<any>(`/scripts/${id}`, { method: 'PUT', body: JSON.stringify({ script }) }),
+    (id: string, script: ScriptDefinition | ImportedScript) =>
+      request<StoredScript>(`/scripts/${id}`, { method: 'PUT', body: JSON.stringify({ script }) }),
     [],
   )
 
-  const deleteScript = useCallback((id: string) => request<any>(`/scripts/${id}`, { method: 'DELETE' }), [])
+  const deleteScript = useCallback((id: string) => request<DeleteScriptResponse>(`/scripts/${id}`, { method: 'DELETE' }), [])
 
   const moveScript = useCallback(
     (id: string, folderId: string | null) =>
-      request<any>(`/scripts/${id}/move`, { method: 'PATCH', body: JSON.stringify({ folder_id: folderId }) }),
+      request<MoveScriptResponse>(`/scripts/${id}/move`, { method: 'PATCH', body: JSON.stringify({ folder_id: folderId }) }),
     [],
   )
 
-  const validateScript = useCallback((id: string) => request<any>(`/scripts/${id}/validate`, { method: 'POST' }), [])
+  const validateScript = useCallback((id: string) => request<ScriptValidationResponse>(`/scripts/${id}/validate`, { method: 'POST' }), [])
 
   const replayScript = useCallback(
-		(id: string, payload?: { group_name?: string; variables?: Record<string, string>; ignore_think_time?: boolean }) =>
-			request<any>(`/scripts/${id}/replay`, { method: 'POST', body: JSON.stringify(payload || {}) }),
+		(id: string, payload?: { group_name?: string; replay_session_id?: string; variables?: Record<string, string>; ignore_think_time?: boolean; script?: ScriptDefinition }) =>
+			request<ScriptReplayResponse>(`/scripts/${id}/replay`, { method: 'POST', body: JSON.stringify(payload || {}) }),
 		[],
 	)
 
   const replayDraftScript = useCallback(
-    (payload: { script: any; group_name?: string; variables?: Record<string, string>; ignore_think_time?: boolean }) =>
-      request<any>('/scripts/replay', { method: 'POST', body: JSON.stringify(payload) }),
+    (payload: { script: ScriptDefinition; group_name?: string; replay_session_id?: string; variables?: Record<string, string>; ignore_think_time?: boolean }) =>
+      request<ScriptReplayResponse>('/scripts/replay', { method: 'POST', body: JSON.stringify(payload) }),
     [],
   )
 
@@ -62,7 +77,7 @@ export function useScriptApi() {
 	)
 
   const startDraftBrowserReplaySession = useCallback(
-    (payload: BrowserReplayStartRequest & { script: any }) =>
+    (payload: BrowserReplayStartRequest & { script: ScriptDefinition }) =>
       request<BrowserReplayStartResponse>('/scripts/browser-replay/sessions', { method: 'POST', body: JSON.stringify(payload) }),
     [],
   )
@@ -89,7 +104,7 @@ export function useScriptApi() {
 
   const exportScript = useCallback(
     (id: string, outputDir?: string, filename?: string) =>
-      request<any>(`/scripts/${id}/export`, {
+      request<ScriptExportResponse>(`/scripts/${id}/export`, {
         method: 'POST',
         body: JSON.stringify({ output_dir: outputDir, filename }),
       }),

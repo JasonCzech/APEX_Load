@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { StoredScript, TestSummary } from '../types'
 import { useApi } from '../hooks/useApi'
+import { type ScriptDefinition } from '../types/scripts'
 import ScriptEditor from './ScriptEditor'
 import LoadRunnerImport from './LoadRunnerImport'
 import JMeterImport from './JMeterImport'
@@ -118,8 +119,8 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
   const [scripts, setScripts] = useState<StoredScript[]>([])
   const [subView, setSubView] = useState<SubView>(initialMode === 'create' ? 'create-options' : initialMode)
   const [editingId, setEditingId] = useState<string | null>(initialEditId || null)
-  const [editingScript, setEditingScript] = useState<any>(null)
-  const [draftScript, setDraftScript] = useState<any>(null)
+  const [editingScript, setEditingScript] = useState<ScriptDefinition | null>(null)
+  const [draftScript, setDraftScript] = useState<ScriptDefinition | null>(null)
   const [sortField, setSortField] = useState<'name' | 'protocol' | 'version' | 'created_at' | 'scenario_count' | 'associated_releases' | 'scenario_run_releases' | 'last_run_at'>('name')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
   const [expandedScriptId, setExpandedScriptId] = useState<string | null>(null)
@@ -237,7 +238,7 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
 
   const handleSaved = () => { refresh(); setSubView('list'); setEditingId(null); setEditingScript(null); setDraftScript(null) }
   const handleImported = () => { refresh(); setSubView('list') }
-  const handleSampleEdit = (script: any) => { setDraftScript(script); setEditingId(null); setEditingScript(null); setSubView('create') }
+  const handleSampleEdit = (script: ScriptDefinition) => { setDraftScript(script); setEditingId(null); setEditingScript(null); setSubView('create') }
   const startApiScript = () => { setDraftScript(createApiDraft()); setEditingId(null); setEditingScript(null); setSubView('create') }
   const startWebScript = () => { setDraftScript(createWebDraft()); setEditingId(null); setEditingScript(null); setSubView('create') }
   const startJmsScript = () => { setDraftScript(createJmsDraft()); setEditingId(null); setEditingScript(null); setSubView('create') }

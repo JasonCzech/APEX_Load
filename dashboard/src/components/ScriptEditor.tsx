@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useApi } from '../hooks/useApi'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { BrowserReplayEvent, BrowserReplaySession, WSMessage } from '../types'
+import { type ScriptDefinition } from '../types/scripts'
 import BrowserReplayDebugger from './BrowserReplayDebugger'
 import './ScriptEditor.css'
 
@@ -696,7 +697,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
 
   useEffect(() => {
     if (scriptId && !initialScript) {
-      api.getScript(scriptId).then((res: any) => {
+      api.getScript(scriptId).then((res) => {
         if (res.script) setScript(res.script)
       }).catch(() => {})
     }
