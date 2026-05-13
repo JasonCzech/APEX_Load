@@ -8,7 +8,7 @@ interface TreeItem {
   id: string
   name: string
   folder_id?: string | null
-  [key: string]: any
+  [key: string]: unknown
 }
 
 interface Props {

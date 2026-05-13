@@ -187,6 +187,9 @@ That order minimizes churn and avoids rebuilding the UI around unstable backend 
 - Remove remaining dashboard duplicate files and temporary artifacts only after route and parity checks are complete.
 - Replace residual broad `history` and chart typing in dashboard execution/results views with explicit shared models.
 
+### Current Cleanup Note
+- Remaining `any` matches in the dashboard are now concentrated in duplicate page copies slated for Phase 5 cleanup, plus non-code strings/comments in live files.
+
 ## File-Level Targets
 
 ### Live Dashboard Entry Points
