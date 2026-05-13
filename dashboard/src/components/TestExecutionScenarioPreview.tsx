@@ -107,6 +107,10 @@ function formatSnapshotOnError(scriptDetail: ScenarioScriptDetail | undefined, t
   return scriptDetail?.script?.config?.error_handling?.snapshot_on_error ? 'Enabled' : 'Disabled'
 }
 
+function formatGoalNumber(value: number, suffix = ''): string {
+  return `${Number.isInteger(value) ? value.toString() : value.toFixed(1)}${suffix}`
+}
+
 export default function TestExecutionScenarioPreview({
   test,
   startCapacityConflict,
@@ -362,6 +366,54 @@ export default function TestExecutionScenarioPreview({
               <span className="scenario-setting-label">Resource Baseline</span>
               <span className="scenario-setting-value">{test.resource_baseline ? '5m before and after' : 'Disabled'}</span>
             </div>
+            {test.scenario_mode === 'goal_oriented' && test.goal_config?.target_average_tps !== undefined && (
+              <div className="scenario-setting-card">
+                <span className="scenario-setting-label">Target Avg TPS</span>
+                <span className="scenario-setting-value">{formatGoalNumber(test.goal_config.target_average_tps)}</span>
+              </div>
+            )}
+            {test.scenario_mode === 'goal_oriented' && test.goal_config?.p95_latency_ms !== undefined && (
+              <div className="scenario-setting-card">
+                <span className="scenario-setting-label">P95 Latency Ceiling</span>
+                <span className="scenario-setting-value">{formatGoalNumber(test.goal_config.p95_latency_ms, ' ms')}</span>
+              </div>
+            )}
+            {test.scenario_mode === 'goal_oriented' && test.goal_config?.max_error_pct !== undefined && (
+              <div className="scenario-setting-card">
+                <span className="scenario-setting-label">Max Error %</span>
+                <span className="scenario-setting-value">{formatGoalNumber(test.goal_config.max_error_pct, '%')}</span>
+              </div>
+            )}
+            {test.scenario_mode === 'goal_oriented' && test.goal_config?.max_error_count !== undefined && (
+              <div className="scenario-setting-card">
+                <span className="scenario-setting-label">Max Error Count</span>
+                <span className="scenario-setting-value">{formatGoalNumber(test.goal_config.max_error_count)}</span>
+              </div>
+            )}
+            {test.scenario_mode === 'goal_oriented' && (test.goal_config?.min_vusers !== undefined || test.goal_config?.max_vusers !== undefined) && (
+              <div className="scenario-setting-card">
+                <span className="scenario-setting-label">VUser Guardrails</span>
+                <span className="scenario-setting-value">{test.goal_config?.min_vusers ?? 0} - {test.goal_config?.max_vusers ?? 'unbounded'}</span>
+              </div>
+            )}
+            {test.scenario_mode === 'goal_oriented' && (test.goal_config?.sla_breach_window || test.goal_config?.stop_on_sla_breach) && (
+              <div className="scenario-setting-card">
+                <span className="scenario-setting-label">SLA Breach Window</span>
+                <span className="scenario-setting-value">{test.goal_config?.sla_breach_window || '30s'}</span>
+              </div>
+            )}
+            {test.scenario_mode === 'goal_oriented' && (
+              <div className="scenario-setting-card">
+                <span className="scenario-setting-label">Stop On SLA Breach</span>
+                <span className="scenario-setting-value">{test.goal_config?.stop_on_sla_breach ? 'Enabled' : 'Disabled'}</span>
+              </div>
+            )}
+            {test.scenario_mode === 'goal_oriented' && (
+              <div className="scenario-setting-card">
+                <span className="scenario-setting-label">Stop On Max Errors</span>
+                <span className="scenario-setting-value">{test.goal_config?.stop_on_max_errors ? 'Enabled' : 'Disabled'}</span>
+              </div>
+            )}
           </div>
 
           <div className="scenario-script-section">

@@ -56,9 +56,21 @@ describe('TestExecutionScenarioPreview', () => {
             id: 'test-1',
             name: 'Queued Scenario',
             status: 'QUEUED',
+            scenario_mode: 'goal_oriented',
             total_vusers: 10,
             duration: '5m',
             start_delay: '30s',
+            goal_config: {
+              target_average_tps: 300,
+              p95_latency_ms: 800,
+              max_error_pct: 2.5,
+              max_error_count: 25,
+              min_vusers: 5,
+              max_vusers: 25,
+              stop_on_sla_breach: true,
+              stop_on_max_errors: true,
+              sla_breach_window: '45s',
+            },
             created_at: '2026-05-12T20:00:00Z',
             groups: [{
               name: 'Checkout',
@@ -123,6 +135,19 @@ describe('TestExecutionScenarioPreview', () => {
     expect(editButton).toBeDefined()
     expect(container.textContent).toContain('Start Delay')
     expect(container.textContent).toContain('30s')
+    expect(container.textContent).toContain('Target Avg TPS')
+    expect(container.textContent).toContain('P95 Latency Ceiling')
+    expect(container.textContent).toContain('800 ms')
+    expect(container.textContent).toContain('Max Error %')
+    expect(container.textContent).toContain('2.5%')
+    expect(container.textContent).toContain('Max Error Count')
+    expect(container.textContent).toContain('25')
+    expect(container.textContent).toContain('VUser Guardrails')
+    expect(container.textContent).toContain('5 - 25')
+    expect(container.textContent).toContain('SLA Breach Window')
+    expect(container.textContent).toContain('45s')
+    expect(container.textContent).toContain('Stop On SLA Breach')
+    expect(container.textContent).toContain('Stop On Max Errors')
 
     const nestingWarning = consoleErrorSpy.mock.calls.some(([message]) =>
       typeof message === 'string' && message.includes('validateDOMNesting'),
