@@ -260,7 +260,7 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
   }
 
   if (subView === 'import') {
-    return <div className="page"><LoadRunnerImport onImported={handleImported} onClose={() => setSubView('list')} /></div>
+    return <div className="page"><LoadRunnerImport onImported={handleImported} onEdit={handleDraftEdit} onClose={() => setSubView('list')} /></div>
   }
 
   if (subView === 'jmeter-import') {

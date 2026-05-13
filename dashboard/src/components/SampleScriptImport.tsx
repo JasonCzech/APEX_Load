@@ -16,6 +16,7 @@ import { normalizeScriptImportResult } from './scriptImportUtils'
 import { type ImportedScript, type SampleCorrelation as Correlation, type SampleImportResult, type SampleImportStats as ConvertStats } from '../types/scriptImports'
 import { type ScriptDefinition } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
+import ScriptImportReview from './ScriptImportReview'
 import './SampleScriptImport.css'
 
 type AuthType = 'none' | 'basic' | 'bearer'
@@ -549,52 +550,38 @@ export default function SampleScriptImport({ onImported, onEdit, onClose }: Prop
 
       {result && (
         <div className="sample-import-result">
-          <div className="sample-import-result-header">
-            <div>
-              <h3>3. Review Generated Script</h3>
-              <p>{result.stats.converted_actions} action(s) derived from {result.stats.total_requests} request sample(s).</p>
-            </div>
-            <div className="sample-import-result-actions">
-              <button className="btn btn-secondary" onClick={() => onEdit?.(result.script)}>Open In Visual Editor</button>
-              <button className="btn btn-primary" onClick={handleSave} disabled={saving}>{saving ? 'Saving…' : 'Save To Script Library'}</button>
-            </div>
-          </div>
+          <ScriptImportReview
+            title="3. Review Generated Script"
+            subtitle={`${result.stats.converted_actions} action(s) derived from ${result.stats.total_requests} request sample(s).`}
+            script={result.script}
+            warnings={result.warnings}
+            saving={saving}
+            onSave={handleSave}
+            onEdit={onEdit ? () => onEdit(result.script) : undefined}
+          >
 
-          <div className="sample-import-stats-grid">
-            <div className="sample-stat"><span className="sample-stat-value">{result.stats.converted_actions}</span><span className="sample-stat-label">Actions</span></div>
-            <div className="sample-stat"><span className="sample-stat-value">{result.stats.assertions}</span><span className="sample-stat-label">Assertions</span></div>
-            <div className="sample-stat"><span className="sample-stat-value">{result.stats.extractors}</span><span className="sample-stat-label">Extractors</span></div>
-            <div className="sample-stat"><span className="sample-stat-value">{result.stats.correlations_detected}</span><span className="sample-stat-label">Correlations</span></div>
-          </div>
-
-          {result.warnings.length > 0 && (
-            <div className="sample-import-warnings">
-              <h4>Warnings</h4>
-              <ul>
-                {result.warnings.map((warning, index) => <li key={index}>{warning}</li>)}
-              </ul>
+            <div className="sample-import-stats-grid">
+              <div className="sample-stat"><span className="sample-stat-value">{result.stats.converted_actions}</span><span className="sample-stat-label">Actions</span></div>
+              <div className="sample-stat"><span className="sample-stat-value">{result.stats.assertions}</span><span className="sample-stat-label">Assertions</span></div>
+              <div className="sample-stat"><span className="sample-stat-value">{result.stats.extractors}</span><span className="sample-stat-label">Extractors</span></div>
+              <div className="sample-stat"><span className="sample-stat-value">{result.stats.correlations_detected}</span><span className="sample-stat-label">Correlations</span></div>
             </div>
-          )}
 
-          {result.correlations.length > 0 && (
-            <div className="sample-import-correlations">
-              <h4>Correlation Suggestions</h4>
-              <div className="sample-import-correlation-list">
-                {result.correlations.map((correlation) => (
-                  <div key={correlation.name} className="sample-correlation-card">
-                    <strong>{correlation.name}</strong>
-                    <span>{correlation.source} via {correlation.expression}</span>
-                    <span>Step {correlation.found_in_step}{' -> '}{correlation.used_in_steps.join(', ')}</span>
-                  </div>
-                ))}
+            {result.correlations.length > 0 && (
+              <div className="sample-import-correlations">
+                <h4>Correlation Suggestions</h4>
+                <div className="sample-import-correlation-list">
+                  {result.correlations.map((correlation) => (
+                    <div key={correlation.name} className="sample-correlation-card">
+                      <strong>{correlation.name}</strong>
+                      <span>{correlation.source} via {correlation.expression}</span>
+                      <span>Step {correlation.found_in_step}{' -> '}{correlation.used_in_steps.join(', ')}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
-
-          <div className="sample-import-preview">
-            <h4>Generated Script Preview</h4>
-            <pre>{JSON.stringify({ script: result.script }, null, 2)}</pre>
-          </div>
+            )}
+          </ScriptImportReview>
         </div>
       )}
     </div>

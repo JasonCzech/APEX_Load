@@ -8,6 +8,7 @@ import { getErrorMessage } from '../utils/errorUtils'
 import { normalizeScriptImportResult } from './scriptImportUtils'
 import { type RecorderCorrelation as Correlation, type ScriptImportResult } from '../types/scriptImports'
 import { type ScriptDefinition } from '../types/scripts'
+import ScriptImportReview from './ScriptImportReview'
 import './RecordingStudio.css'
 
 interface RecordedRequest {
@@ -676,61 +677,53 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: P
       {/* Convert Result */}
       {convertResult && (
         <div className="rec-convert-result">
-          <div className="rec-result-header">
-            <div>
-              <h3 className="rec-section-title">Conversion Result</h3>
-              <p className="page-subtitle">Review the generated script, warnings, and correlations before saving.</p>
-            </div>
-            <div className="rec-session-actions">
-              {onEdit && <button className="btn btn-secondary" onClick={() => onEdit(convertResult.script)}>Open In Visual Editor</button>}
-              <button className="btn btn-primary" onClick={handleSaveConverted} disabled={saving}>{saving ? 'Saving...' : 'Save To Script Library'}</button>
-            </div>
-          </div>
-          <div className="rec-result-summary">
-            <div className="rec-result-item">
-              <span className="rec-result-label">Script</span>
-              <span className="rec-result-value">{convertResult.script.name}</span>
-            </div>
-            <div className="rec-result-item">
-              <span className="rec-result-label">Protocol</span>
-              <span className="rec-result-value">{convertResult.script.protocol}</span>
-            </div>
-            <div className="rec-result-item">
-              <span className="rec-result-label">Actions</span>
-              <span className="rec-result-value">{convertResult.script.actions?.length || 0}</span>
-            </div>
-          </div>
-
-          {convertResult.correlations && convertResult.correlations.length > 0 && (
-            <div className="rec-correlations">
-              <h4 className="rec-subsection-title">Auto-Detected Correlations ({convertResult.correlations.length})</h4>
-              <div className="rec-corr-list">
-                {convertResult.correlations.map((c, i) => (
-                  <div key={i} className="rec-corr-item">
-                    <div className="rec-corr-header">
-                      <code className="rec-corr-name">{`{{var.${c.name}}}`}</code>
-                      <span className="rec-corr-type">{c.extract_type} / {c.source}</span>
-                    </div>
-                    <div className="rec-corr-detail">
-                      <span>Extracted from request #{c.found_in_seq}</span>
-                      <span>Used in #{c.used_in_seqs.join(', #')}</span>
-                    </div>
-                    <div className="rec-corr-sample">
-                      Sample: <code>{c.sample_value}</code>
-                    </div>
-                  </div>
-                ))}
+          <ScriptImportReview
+            title="Conversion Result"
+            subtitle="Review the generated script, warnings, and correlations before saving."
+            script={convertResult.script}
+            warnings={convertResult.warnings}
+            saving={saving}
+            onSave={handleSaveConverted}
+            onEdit={onEdit ? () => onEdit(convertResult.script) : undefined}
+          >
+            <div className="rec-result-summary">
+              <div className="rec-result-item">
+                <span className="rec-result-label">Script</span>
+                <span className="rec-result-value">{convertResult.script.name}</span>
+              </div>
+              <div className="rec-result-item">
+                <span className="rec-result-label">Protocol</span>
+                <span className="rec-result-value">{convertResult.script.protocol}</span>
+              </div>
+              <div className="rec-result-item">
+                <span className="rec-result-label">Actions</span>
+                <span className="rec-result-value">{convertResult.script.actions?.length || 0}</span>
               </div>
             </div>
-          )}
 
-          {convertResult.warnings && convertResult.warnings.length > 0 && (
-            <div className="rec-warnings">
-              {convertResult.warnings.map((w, i) => (
-                <div key={i} className="rec-warning-item">{w}</div>
-              ))}
-            </div>
-          )}
+            {convertResult.correlations && convertResult.correlations.length > 0 && (
+              <div className="rec-correlations">
+                <h4 className="rec-subsection-title">Auto-Detected Correlations ({convertResult.correlations.length})</h4>
+                <div className="rec-corr-list">
+                  {convertResult.correlations.map((c, i) => (
+                    <div key={i} className="rec-corr-item">
+                      <div className="rec-corr-header">
+                        <code className="rec-corr-name">{`{{var.${c.name}}}`}</code>
+                        <span className="rec-corr-type">{c.extract_type} / {c.source}</span>
+                      </div>
+                      <div className="rec-corr-detail">
+                        <span>Extracted from request #{c.found_in_seq}</span>
+                        <span>Used in #{c.used_in_seqs.join(', #')}</span>
+                      </div>
+                      <div className="rec-corr-sample">
+                        Sample: <code>{c.sample_value}</code>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </ScriptImportReview>
         </div>
       )}
     </div>

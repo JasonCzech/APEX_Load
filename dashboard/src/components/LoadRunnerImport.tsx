@@ -2,7 +2,9 @@ import { useState, useRef } from 'react'
 import { useApi } from '../hooks/useApi'
 import { normalizeScriptImportResult } from './scriptImportUtils'
 import { type ImportedScript, type LoadRunnerConvertStats, type LoadRunnerImportResult } from '../types/scriptImports'
+import { type ScriptDefinition } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
+import ScriptImportReview from './ScriptImportReview'
 import './LoadRunnerImport.css'
 
 interface ImportMetadata {
@@ -31,10 +33,11 @@ function getMetadataSummary(metadata: ImportMetadata | null) {
 
 interface Props {
   onImported?: (script: ImportedScript) => void
+  onEdit?: (script: ScriptDefinition) => void
   onClose?: () => void
 }
 
-export default function LoadRunnerImport({ onImported, onClose }: Props) {
+export default function LoadRunnerImport({ onImported, onEdit, onClose }: Props) {
   const api = useApi()
   const fileRef = useRef<HTMLInputElement>(null)
   const [file, setFile] = useState<File | null>(null)
@@ -151,71 +154,64 @@ export default function LoadRunnerImport({ onImported, onClose }: Props) {
       {/* Results */}
       {result && (
         <div className="lr-result">
-          <div className="lr-result-header">
-            <h3>Conversion Complete</h3>
-            <button className="btn btn-primary" onClick={handleSaveConverted}>Save to Script Library</button>
-          </div>
+          <ScriptImportReview
+            title="Conversion Complete"
+            subtitle="Review the generated script, preserved metadata, and warnings before saving."
+            script={result.script}
+            warnings={result.warnings}
+            warningsTitle={`Conversion Warnings (${result.warnings.length})`}
+            saveLabel="Save to Script Library"
+            onSave={handleSaveConverted}
+            onEdit={onEdit ? () => onEdit(result.script as ScriptDefinition) : undefined}
+          >
 
-          {/* Stats */}
-          <div className="lr-stats-grid">
-            <div className="lr-stat"><span className="lr-stat-val">{result.stats.converted_actions}</span><span className="lr-stat-label">Actions</span></div>
-            <div className="lr-stat"><span className="lr-stat-val">{result.stats.extractors}</span><span className="lr-stat-label">Extractors</span></div>
-            <div className="lr-stat"><span className="lr-stat-val">{result.stats.transactions}</span><span className="lr-stat-label">Transactions</span></div>
-            <div className="lr-stat"><span className="lr-stat-val">{result.stats.think_times}</span><span className="lr-stat-label">Think Times</span></div>
-            <div className="lr-stat"><span className="lr-stat-val">{result.stats.total_functions}</span><span className="lr-stat-label">Total LR Functions</span></div>
-            <div className="lr-stat"><span className="lr-stat-val">{result.stats.skipped}</span><span className="lr-stat-label">Skipped</span></div>
-          </div>
-
-          {/* Warnings */}
-          {result.warnings.length > 0 && (
-            <div className="lr-warnings">
-              <h4>⚠ Conversion Warnings ({result.warnings.length})</h4>
-              <ul>{result.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>
+            {/* Stats */}
+            <div className="lr-stats-grid">
+              <div className="lr-stat"><span className="lr-stat-val">{result.stats.converted_actions}</span><span className="lr-stat-label">Actions</span></div>
+              <div className="lr-stat"><span className="lr-stat-val">{result.stats.extractors}</span><span className="lr-stat-label">Extractors</span></div>
+              <div className="lr-stat"><span className="lr-stat-val">{result.stats.transactions}</span><span className="lr-stat-label">Transactions</span></div>
+              <div className="lr-stat"><span className="lr-stat-val">{result.stats.think_times}</span><span className="lr-stat-label">Think Times</span></div>
+              <div className="lr-stat"><span className="lr-stat-val">{result.stats.total_functions}</span><span className="lr-stat-label">Total LR Functions</span></div>
+              <div className="lr-stat"><span className="lr-stat-val">{result.stats.skipped}</span><span className="lr-stat-label">Skipped</span></div>
             </div>
-          )}
 
-          {importMetadata && (
-            <div className="lr-preserved">
-              <div className="lr-preserved-header">
-                <h4>Preserved LoadRunner Settings</h4>
-                <span>These values will be saved with the Stormrunner script.</span>
+            {importMetadata && (
+              <div className="lr-preserved">
+                <div className="lr-preserved-header">
+                  <h4>Preserved LoadRunner Settings</h4>
+                  <span>These values will be saved with the Stormrunner script.</span>
+                </div>
+
+                <div className="lr-preserved-grid">
+                  <div className="lr-preserved-card">
+                    <span className="lr-preserved-label">Source</span>
+                    <strong>{importMetadata.source || 'loadrunner'}</strong>
+                    <small>{importMetadata.source_script_name || result.script.name}</small>
+                  </div>
+                  <div className="lr-preserved-card">
+                    <span className="lr-preserved-label">Project Sections</span>
+                    <strong>{metadataSummary.projectSections.length}</strong>
+                    <small>{metadataSummary.projectSections.join(', ') || 'None captured'}</small>
+                  </div>
+                  <div className="lr-preserved-card">
+                    <span className="lr-preserved-label">Runtime Files</span>
+                    <strong>{metadataSummary.runtimeFiles.length}</strong>
+                    <small>{metadataSummary.runtimeFiles.join(', ') || 'None found'}</small>
+                  </div>
+                  <div className="lr-preserved-card">
+                    <span className="lr-preserved-label">Unsupported Functions</span>
+                    <strong>{metadataSummary.unsupportedFunctions.length}</strong>
+                    <small>{metadataSummary.unsupportedFunctions.slice(0, 4).join(', ') || 'None'}</small>
+                  </div>
+                </div>
+
+                <details className="lr-preserved-details">
+                  <summary>View preserved metadata JSON</summary>
+                  <pre>{JSON.stringify(importMetadata, null, 2)}</pre>
+                </details>
               </div>
-
-              <div className="lr-preserved-grid">
-                <div className="lr-preserved-card">
-                  <span className="lr-preserved-label">Source</span>
-                  <strong>{importMetadata.source || 'loadrunner'}</strong>
-                  <small>{importMetadata.source_script_name || result.script.name}</small>
-                </div>
-                <div className="lr-preserved-card">
-                  <span className="lr-preserved-label">Project Sections</span>
-                  <strong>{metadataSummary.projectSections.length}</strong>
-                  <small>{metadataSummary.projectSections.join(', ') || 'None captured'}</small>
-                </div>
-                <div className="lr-preserved-card">
-                  <span className="lr-preserved-label">Runtime Files</span>
-                  <strong>{metadataSummary.runtimeFiles.length}</strong>
-                  <small>{metadataSummary.runtimeFiles.join(', ') || 'None found'}</small>
-                </div>
-                <div className="lr-preserved-card">
-                  <span className="lr-preserved-label">Unsupported Functions</span>
-                  <strong>{metadataSummary.unsupportedFunctions.length}</strong>
-                  <small>{metadataSummary.unsupportedFunctions.slice(0, 4).join(', ') || 'None'}</small>
-                </div>
-              </div>
-
-              <details className="lr-preserved-details">
-                <summary>View preserved metadata JSON</summary>
-                <pre>{JSON.stringify(importMetadata, null, 2)}</pre>
-              </details>
-            </div>
-          )}
-
-          {/* Preview */}
-          <div className="lr-preview">
-            <h4>Generated Script Preview</h4>
-            <pre>{JSON.stringify({ script: result.script }, null, 2)}</pre>
-          </div>
+            )}
+          </ScriptImportReview>
         </div>
       )}
     </div>
