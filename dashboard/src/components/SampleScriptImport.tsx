@@ -15,6 +15,7 @@ import {
 import { normalizeScriptImportResult } from './scriptImportUtils'
 import { type ImportedScript, type SampleCorrelation as Correlation, type SampleImportResult, type SampleImportStats as ConvertStats } from '../types/scriptImports'
 import { type ScriptDefinition } from '../types/scripts'
+import { getErrorMessage } from '../utils/errorUtils'
 import './SampleScriptImport.css'
 
 type AuthType = 'none' | 'basic' | 'bearer'
@@ -210,8 +211,8 @@ export default function SampleScriptImport({ onImported, onEdit, onClose }: Prop
       setMessageError('')
       convertTask.reset()
       saveTask.clearError()
-    } catch (error: any) {
-      setMessageError(error?.message || `Failed to read ${files[0]?.name || 'sample file'}`)
+    } catch (error: unknown) {
+      setMessageError(getErrorMessage(error, `Failed to read ${files[0]?.name || 'sample file'}`))
     }
   }
 
@@ -326,10 +327,8 @@ export default function SampleScriptImport({ onImported, onEdit, onClose }: Prop
         },
         { clearValue: true },
       )
-    } catch (e: any) {
-      if (!e?.message) {
-        setMessageError('Sample conversion failed')
-      }
+    } catch (error: unknown) {
+      setMessageError(getErrorMessage(error, 'Sample conversion failed'))
     }
   }
 
@@ -342,10 +341,8 @@ export default function SampleScriptImport({ onImported, onEdit, onClose }: Prop
         return true
       })
       onImported?.(result.script)
-    } catch (e: any) {
-      if (!e?.message) {
-        setMessageError('Failed to save generated script')
-      }
+    } catch (error: unknown) {
+      setMessageError(getErrorMessage(error, 'Failed to save generated script'))
     }
   }
 

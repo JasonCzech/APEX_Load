@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { useApi } from '../hooks/useApi'
 import { ImportResult, SupportMatrix, normalizeImportResult, summarizeImportExtractors, summarizeSupportMatrix } from './jmeterImportUtils'
-import { type ImportedScript, type JMeterSupportMatrixResponse } from '../types/scriptImports'
+import { type ImportedAction, type ImportedScript, type JMeterSupportMatrixResponse } from '../types/scriptImports'
+import { getErrorMessage } from '../utils/errorUtils'
 import './LoadRunnerImport.css'
 
 interface Props {
@@ -87,8 +88,8 @@ export default function JMeterImport({ onImported, onClose }: Props) {
       setResult(normalizeImportResult(response))
       setReviewMode('conversion')
       setNotice('Conversion complete. Review the generated scripts, warnings, and assumptions before saving.')
-    } catch (error: any) {
-      setError(error.message || 'JMeter import failed')
+    } catch (error: unknown) {
+      setError(getErrorMessage(error, 'JMeter import failed'))
     } finally {
       setWorkingMode(null)
     }
@@ -110,8 +111,8 @@ export default function JMeterImport({ onImported, onClose }: Props) {
       setResult(normalizeImportResult(response))
       setReviewMode('validation')
       setNotice('Validation complete. Review the generated scripts and warnings before saving.')
-    } catch (error: any) {
-      setError(error.message || 'JMeter validation failed')
+    } catch (error: unknown) {
+      setError(getErrorMessage(error, 'JMeter validation failed'))
     } finally {
       setWorkingMode(null)
     }
@@ -130,8 +131,8 @@ export default function JMeterImport({ onImported, onClose }: Props) {
       const scenarioText = response.scenario ? ' and scenario draft' : ''
       setNotice(`Saved ${response.count || result.scripts.length} script${result.scripts.length === 1 ? '' : 's'}${scenarioText} to the library.`)
       onImported?.(result.scripts[0])
-    } catch (error: any) {
-      setError(error.message || 'Failed to save converted scripts')
+    } catch (error: unknown) {
+      setError(getErrorMessage(error, 'Failed to save converted scripts'))
     } finally {
       setSaving(false)
     }
@@ -309,7 +310,7 @@ export default function JMeterImport({ onImported, onClose }: Props) {
                 <div className="lr-preserved-card" key={script.name}>
                   <span className="lr-preserved-label">Script</span>
                   <strong>{script.name}</strong>
-                  <small>{script.actions?.length || 0} actions / {script.data_sources?.length || 0} data sources / {script.actions?.reduce((count: number, action: any) => count + (action?.extractors?.length || 0), 0) || 0} extractors</small>
+                  <small>{script.actions?.length || 0} actions / {script.data_sources?.length || 0} data sources / {script.actions?.reduce((count: number, action: ImportedAction) => count + (action.extractors?.length || 0), 0) || 0} extractors</small>
                 </div>
               ))}
               {result.scenario_draft && (

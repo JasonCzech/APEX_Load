@@ -2,24 +2,29 @@ import { useState, useRef } from 'react'
 import { useApi } from '../hooks/useApi'
 import { normalizeScriptImportResult } from './scriptImportUtils'
 import { type ImportedScript, type LoadRunnerConvertStats, type LoadRunnerImportResult } from '../types/scriptImports'
+import { getErrorMessage } from '../utils/errorUtils'
 import './LoadRunnerImport.css'
 
 interface ImportMetadata {
   source?: string
   source_script_name?: string
-  preserved?: Record<string, any>
+  preserved?: Record<string, unknown>
 }
 
 function getImportMetadata(script?: ImportedScript): ImportMetadata | null {
   return script?.metadata?.import || null
 }
 
+function getObjectKeys(value: unknown): string[] {
+  return typeof value === 'object' && value !== null ? Object.keys(value as Record<string, unknown>) : []
+}
+
 function getMetadataSummary(metadata: ImportMetadata | null) {
   const preserved = metadata?.preserved || {}
 
   return {
-    runtimeFiles: Object.keys(preserved.runtime_files || {}),
-    projectSections: Object.keys(preserved.project_settings || {}),
+    runtimeFiles: getObjectKeys(preserved.runtime_files),
+    projectSections: getObjectKeys(preserved.project_settings),
     unsupportedFunctions: Array.isArray(preserved.unsupported_functions) ? preserved.unsupported_functions : [],
   }
 }
@@ -67,8 +72,8 @@ export default function LoadRunnerImport({ onImported, onClose }: Props) {
         include_assertions: options.include_assertions,
       })
       setResult(normalizeScriptImportResult<LoadRunnerConvertStats>(res))
-    } catch (e: any) {
-      setError(e.message || 'Import failed')
+    } catch (error: unknown) {
+      setError(getErrorMessage(error, 'Import failed'))
     } finally { setImporting(false) }
   }
 
@@ -77,8 +82,8 @@ export default function LoadRunnerImport({ onImported, onClose }: Props) {
     try {
       await api.createScript(result.script)
       onImported?.(result.script)
-    } catch (e: any) {
-      setError(e.message || 'Failed to save script')
+    } catch (error: unknown) {
+      setError(getErrorMessage(error, 'Failed to save script'))
     }
   }
 
