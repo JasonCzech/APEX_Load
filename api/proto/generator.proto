@@ -146,8 +146,11 @@ message HeartbeatPing {
 }
 
 message HeartbeatPong {
+  string generator_id = 3;
   int64 timestamp_unix_ms = 1;
   repeated string active_test_ids = 2;
+  GeneratorStats stats = 4;
+  int32 available_capacity = 5;
 }
 
 message ScriptPayload {

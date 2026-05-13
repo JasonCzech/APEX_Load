@@ -11,6 +11,14 @@ go run ./cmd/controller
 # Start with custom port
 STORMRUNNER_ADDR=:9000 go run ./cmd/controller
 
+# Start controller in distributed mode
+STORMRUNNER_GENERATORS=127.0.0.1:9090,127.0.0.1:9091 \
+STORMRUNNER_GENERATOR_TIMEOUT=10s \
+go run ./cmd/controller
+
+# Start generator
+go run ./cmd/generator
+
 # Run test locally (no controller needed)
 go run ./cmd/stormctl run --script test.json --vusers 50 --duration 2m
 ```

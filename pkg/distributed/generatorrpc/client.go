@@ -112,8 +112,11 @@ type Heartbeat struct {
 }
 
 type HeartbeatResponse struct {
+	GeneratorID     string
 	TimestampUnixMs int64
 	ActiveTestIDs   []string
+	Stats           GeneratorStats
+	AvailableCapacity int32
 }
 
 type GeneratorStats struct {
@@ -278,10 +281,22 @@ func (s *HeartbeatStream) Receive() (HeartbeatResponse, error) {
 	if err != nil {
 		return HeartbeatResponse{}, err
 	}
+	stats := GeneratorStats{}
+	if pong.GetStats() != nil {
+		stats = GeneratorStats{
+			ActiveVUsers:   pong.GetStats().GetActiveVusers(),
+			CPUPercent:     pong.GetStats().GetCpuPercent(),
+			MemoryBytes:    pong.GetStats().GetMemoryBytes(),
+			GoroutineCount: pong.GetStats().GetGoroutineCount(),
+		}
+	}
 
 	return HeartbeatResponse{
-		TimestampUnixMs: pong.GetTimestampUnixMs(),
-		ActiveTestIDs:   pong.GetActiveTestIds(),
+		GeneratorID:       pong.GetGeneratorId(),
+		TimestampUnixMs:   pong.GetTimestampUnixMs(),
+		ActiveTestIDs:     pong.GetActiveTestIds(),
+		Stats:             stats,
+		AvailableCapacity: pong.GetAvailableCapacity(),
 	}, nil
 }
 

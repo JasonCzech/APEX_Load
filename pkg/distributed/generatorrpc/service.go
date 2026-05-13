@@ -446,8 +446,11 @@ func (s *Service) Heartbeat(stream pb.GeneratorControl_HeartbeatServer) error {
 		}
 
 		if err := stream.Send(&pb.HeartbeatPong{
+			GeneratorId:     s.generatorID,
 			TimestampUnixMs: maxInt64(time.Now().UnixMilli(), ping.GetTimestampUnixMs()),
 			ActiveTestIds:   s.activeTestIDs(),
+			Stats:           toProtoStats(GeneratorStats{ActiveVUsers: s.activeVUsersLocked(), GoroutineCount: int32(runtime.NumGoroutine())}),
+			AvailableCapacity: s.availableCapacityLocked(),
 		}); err != nil {
 			return err
 		}

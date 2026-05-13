@@ -1000,6 +1000,320 @@ func TestDistributedExecutionBackendDistributesGroupsAcrossMultipleGenerators(t 
 	}
 }
 
+func TestDistributedExecutionBackendPrefersHigherCapacityGenerator(t *testing.T) {
+	const bufSize = 1024 * 1024
+
+	listenerA := bufconn.Listen(bufSize)
+	serverA := grpc.NewServer()
+	pb.RegisterGeneratorControlServer(serverA, generatorrpc.NewService("generator-a", 10))
+	go func() {
+		_ = serverA.Serve(listenerA)
+	}()
+	t.Cleanup(func() {
+		serverA.Stop()
+		_ = listenerA.Close()
+	})
+
+	listenerB := bufconn.Listen(bufSize)
+	serverB := grpc.NewServer()
+	pb.RegisterGeneratorControlServer(serverB, generatorrpc.NewService("generator-b", 10))
+	go func() {
+		_ = serverB.Serve(listenerB)
+	}()
+	t.Cleanup(func() {
+		serverB.Stop()
+		_ = listenerB.Close()
+	})
+
+	dialTarget := func(ctx context.Context, target string) (*generatorrpc.Client, error) {
+		switch target {
+		case "bufnet-a":
+			return generatorrpc.Dial(
+				ctx,
+				target,
+				grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+					return listenerA.Dial()
+				}),
+				grpc.WithTransportCredentials(insecure.NewCredentials()),
+				grpc.WithBlock(),
+			)
+		case "bufnet-b":
+			return generatorrpc.Dial(
+				ctx,
+				target,
+				grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+					return listenerB.Dial()
+				}),
+				grpc.WithTransportCredentials(insecure.NewCredentials()),
+				grpc.WithBlock(),
+			)
+		default:
+			return nil, context.DeadlineExceeded
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	preloadClientA, err := dialTarget(ctx, "bufnet-a")
+	if err != nil {
+		t.Fatalf("Dial preload generator A: %v", err)
+	}
+	defer preloadClientA.Close()
+	if _, err := preloadClientA.DistributeScript(ctx, generatorrpc.Script{ID: "preload-script", Content: []byte(`{"name":"preload"}`), ContentHash: "hash-preload"}); err != nil {
+		t.Fatalf("Distribute preload script: %v", err)
+	}
+	if _, err := preloadClientA.AssignWork(ctx, generatorrpc.Assignment{TestID: "existing-load", GroupName: "Busy", ScriptID: "preload-script", VUserCount: 8}); err != nil {
+		t.Fatalf("Assign preload work: %v", err)
+	}
+
+	hub := NewHub()
+	runner := NewTestRunner(1, hub, nil)
+	backend := newDistributedExecutionBackend(
+		[]string{"bufnet-a", "bufnet-b"},
+		5*time.Second,
+		func(ctx context.Context, target string) (generatorClient, error) {
+			return dialTarget(ctx, target)
+		},
+	)
+	runner.setExecutionBackend(backend)
+
+	probeA := backend.probeGeneratorLoad(ctx, "bufnet-a", preloadClientA)
+	if probeA.AvailableCapacity != 2 {
+		t.Fatalf("probe generator A available capacity = %d, want 2", probeA.AvailableCapacity)
+	}
+	probeClientB, err := dialTarget(ctx, "bufnet-b")
+	if err != nil {
+		t.Fatalf("Dial probe generator B: %v", err)
+	}
+	probeB := backend.probeGeneratorLoad(ctx, "bufnet-b", probeClientB)
+	_ = probeClientB.Close()
+	if probeB.AvailableCapacity != 10 {
+		t.Fatalf("probe generator B available capacity = %d, want 10", probeB.AvailableCapacity)
+	}
+
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-1",
+		Name:     "Checkout",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Config: dsl.ScriptConfig{BaseURL: "https://example.com", RunLogic: dsl.RunLogicConfig{Iterations: 1}},
+		Actions: []dsl.Action{{Name: "Home", Type: "GET", Target: "/"}},
+	})
+
+	testRun, err := runner.CreateTest(CreateTestRequest{
+		Name:     "Capacity aware placement",
+		Duration: "30s",
+		Groups: []CreateGroupEntry{{
+			Name:     "Group A",
+			ScriptID: "script-1",
+			VUsers:   4,
+			RampUp:   "0s",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("CreateTest returned error: %v", err)
+	}
+
+	if err := runner.StartTest(testRun.ID); err != nil {
+		t.Fatalf("StartTest returned error: %v", err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		started, ok := runner.GetTest(testRun.ID)
+		if !ok {
+			t.Fatalf("expected managed test %q to exist", testRun.ID)
+		}
+		if started.Status == "RUNNING" && started.LiveMetrics != nil {
+			if started.remoteGroupTargets["Group A"] != "bufnet-b" {
+				t.Fatalf("remote group target = %q, want bufnet-b", started.remoteGroupTargets["Group A"])
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected distributed backend to mark capacity-aware test running, got status %q", started.Status)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	clientA, err := dialTarget(ctx, "bufnet-a")
+	if err != nil {
+		t.Fatalf("Dial generator A: %v", err)
+	}
+	defer clientA.Close()
+	clientB, err := dialTarget(ctx, "bufnet-b")
+	if err != nil {
+		t.Fatalf("Dial generator B: %v", err)
+	}
+	defer clientB.Close()
+
+	stopA, err := clientA.StopTest(ctx, testRun.ID, true)
+	if err != nil {
+		t.Fatalf("StopTest generator A: %v", err)
+	}
+	if stopA.Acknowledged {
+		t.Fatalf("expected generator A to not own new test assignment")
+	}
+	stopB, err := clientB.StopTest(ctx, testRun.ID, true)
+	if err != nil {
+		t.Fatalf("StopTest generator B: %v", err)
+	}
+	if !stopB.Acknowledged {
+		t.Fatalf("expected generator B to own new test assignment")
+	}
+	if stopB.PendingVUsers != 4 {
+		t.Fatalf("generator B pending vusers = %d, want 4", stopB.PendingVUsers)
+	}
+	stopExisting, err := preloadClientA.StopTest(ctx, "existing-load", true)
+	if err != nil {
+		t.Fatalf("StopTest existing load on generator A: %v", err)
+	}
+	if stopExisting.PendingVUsers != 8 {
+		t.Fatalf("existing load pending vusers = %d, want 8", stopExisting.PendingVUsers)
+	}
+}
+
+func TestDistributedExecutionBackendFailsWhenAssignedGeneratorStreamDrops(t *testing.T) {
+	const bufSize = 1024 * 1024
+
+	listenerA := bufconn.Listen(bufSize)
+	serverA := grpc.NewServer()
+	pb.RegisterGeneratorControlServer(serverA, generatorrpc.NewService("generator-a", 10))
+	go func() {
+		_ = serverA.Serve(listenerA)
+	}()
+	t.Cleanup(func() {
+		serverA.Stop()
+		_ = listenerA.Close()
+	})
+
+	listenerB := bufconn.Listen(bufSize)
+	serverB := grpc.NewServer()
+	pb.RegisterGeneratorControlServer(serverB, generatorrpc.NewService("generator-b", 10))
+	go func() {
+		_ = serverB.Serve(listenerB)
+	}()
+	t.Cleanup(func() {
+		serverB.Stop()
+		_ = listenerB.Close()
+	})
+
+	dialTarget := func(ctx context.Context, target string) (*generatorrpc.Client, error) {
+		switch target {
+		case "bufnet-a":
+			return generatorrpc.Dial(
+				ctx,
+				target,
+				grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+					return listenerA.Dial()
+				}),
+				grpc.WithTransportCredentials(insecure.NewCredentials()),
+				grpc.WithBlock(),
+			)
+		case "bufnet-b":
+			return generatorrpc.Dial(
+				ctx,
+				target,
+				grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+					return listenerB.Dial()
+				}),
+				grpc.WithTransportCredentials(insecure.NewCredentials()),
+				grpc.WithBlock(),
+			)
+		default:
+			return nil, context.DeadlineExceeded
+		}
+	}
+
+	hub := NewHub()
+	runner := NewTestRunner(1, hub, nil)
+	runner.setExecutionBackend(newDistributedExecutionBackend(
+		[]string{"bufnet-a", "bufnet-b"},
+		5*time.Second,
+		func(ctx context.Context, target string) (generatorClient, error) {
+			return dialTarget(ctx, target)
+		},
+	))
+
+	runner.StoreScript(&dsl.Script{
+		ID:       "buyers-script",
+		Name:     "Buyers",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Config:   dsl.ScriptConfig{BaseURL: "https://example.com", RunLogic: dsl.RunLogicConfig{Iterations: 1}},
+		Actions:  []dsl.Action{{Name: "Buyers Home", Type: "GET", Target: "/buyers"}},
+	})
+	runner.StoreScript(&dsl.Script{
+		ID:       "admins-script",
+		Name:     "Admins",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Config:   dsl.ScriptConfig{BaseURL: "https://example.com", RunLogic: dsl.RunLogicConfig{Iterations: 1}},
+		Actions:  []dsl.Action{{Name: "Admins Home", Type: "GET", Target: "/admins"}},
+	})
+
+	testRun, err := runner.CreateTest(CreateTestRequest{
+		Name:     "Distributed generator loss",
+		Duration: "30s",
+		Groups: []CreateGroupEntry{{
+			Name:     "buyers",
+			ScriptID: "buyers-script",
+			VUsers:   1,
+			RampUp:   "0s",
+		}, {
+			Name:     "admins",
+			ScriptID: "admins-script",
+			VUsers:   1,
+			RampUp:   "0s",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("CreateTest returned error: %v", err)
+	}
+
+	if err := runner.StartTest(testRun.ID); err != nil {
+		t.Fatalf("StartTest returned error: %v", err)
+	}
+
+	startedDeadline := time.Now().Add(2 * time.Second)
+	for {
+		started, ok := runner.GetTest(testRun.ID)
+		if !ok {
+			t.Fatalf("expected managed test %q to exist", testRun.ID)
+		}
+		if started.Status == "RUNNING" && started.LiveMetrics != nil {
+			if started.remoteGroupTargets["buyers"] != "bufnet-a" || started.remoteGroupTargets["admins"] != "bufnet-b" {
+				t.Fatalf("remote group targets = %#v, want buyers on bufnet-a and admins on bufnet-b", started.remoteGroupTargets)
+			}
+			break
+		}
+		if time.Now().After(startedDeadline) {
+			t.Fatalf("expected distributed test to start before generator loss, got status %q", started.Status)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	serverB.Stop()
+
+	failedDeadline := time.Now().Add(3 * time.Second)
+	for {
+		updated, ok := runner.GetTest(testRun.ID)
+		if !ok {
+			t.Fatalf("expected managed test %q to exist after generator loss", testRun.ID)
+		}
+		if updated.Status == "FAILED" {
+			if !strings.Contains(updated.Error, "bufnet-b") {
+				t.Fatalf("expected failure to mention lost generator target, got %q", updated.Error)
+			}
+			break
+		}
+		if time.Now().After(failedDeadline) {
+			t.Fatalf("expected distributed test to fail after generator loss, got status=%q error=%q", updated.Status, updated.Error)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
 func TestDistributedExecutionBackendScalesRunningRemoteEngine(t *testing.T) {
 	const bufSize = 1024 * 1024
 
@@ -2104,7 +2418,7 @@ func TestDistributedExecutionBackendScalesGroupOnOwningGenerator(t *testing.T) {
 		if !ok {
 			t.Fatalf("expected managed test %q to exist", testRun.ID)
 		}
-		if started.Status == "RUNNING" && started.LiveMetrics != nil && started.LiveMetrics.ActiveVUsers == 8 {
+		if started.Status == "RUNNING" && started.remoteGroupTargets["Group A"] != "" && started.remoteGroupTargets["Group B"] != "" && started.remoteGroupTargets["Group A"] != started.remoteGroupTargets["Group B"] {
 			break
 		}
 		if time.Now().After(deadline) {

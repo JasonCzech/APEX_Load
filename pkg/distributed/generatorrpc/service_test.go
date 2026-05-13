@@ -228,11 +228,20 @@ func TestClientRoundTripDistributeAssignAndHeartbeat(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Heartbeat Receive: %v", err)
 	}
+	if pong.GeneratorID != "generator-1" {
+		t.Fatalf("heartbeat generator id = %q, want generator-1", pong.GeneratorID)
+	}
 	if pong.TimestampUnixMs < 1234 {
 		t.Fatalf("heartbeat pong timestamp = %d, want >= 1234", pong.TimestampUnixMs)
 	}
 	if !reflect.DeepEqual(pong.ActiveTestIDs, []string{"test-1"}) {
 		t.Fatalf("active test ids = %v, want [test-1]", pong.ActiveTestIDs)
+	}
+	if pong.Stats.ActiveVUsers != 12 {
+		t.Fatalf("heartbeat active vusers = %d, want 12", pong.Stats.ActiveVUsers)
+	}
+	if pong.AvailableCapacity != 38 {
+		t.Fatalf("heartbeat available capacity = %d, want 38", pong.AvailableCapacity)
 	}
 	stopAck, err := client.StopTest(ctx, "test-1", true)
 	if err != nil {
@@ -263,6 +272,12 @@ func TestClientRoundTripDistributeAssignAndHeartbeat(t *testing.T) {
 	}
 	if len(pong.ActiveTestIDs) != 0 {
 		t.Fatalf("active test ids after stop = %v, want empty", pong.ActiveTestIDs)
+	}
+	if pong.Stats.ActiveVUsers != 0 {
+		t.Fatalf("heartbeat active vusers after stop = %d, want 0", pong.Stats.ActiveVUsers)
+	}
+	if pong.AvailableCapacity != 50 {
+		t.Fatalf("heartbeat available capacity after stop = %d, want 50", pong.AvailableCapacity)
 	}
 	if err := metrics.CloseSend(); err != nil {
 		t.Fatalf("Metrics CloseSend: %v", err)

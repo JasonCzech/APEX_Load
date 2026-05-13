@@ -1132,11 +1132,14 @@ func (x *HeartbeatPing) GetStats() *GeneratorStats {
 }
 
 type HeartbeatPong struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	TimestampUnixMs int64                  `protobuf:"varint,1,opt,name=timestamp_unix_ms,json=timestampUnixMs,proto3" json:"timestamp_unix_ms,omitempty"`
-	ActiveTestIds   []string               `protobuf:"bytes,2,rep,name=active_test_ids,json=activeTestIds,proto3" json:"active_test_ids,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	GeneratorId       string                 `protobuf:"bytes,3,opt,name=generator_id,json=generatorId,proto3" json:"generator_id,omitempty"`
+	TimestampUnixMs   int64                  `protobuf:"varint,1,opt,name=timestamp_unix_ms,json=timestampUnixMs,proto3" json:"timestamp_unix_ms,omitempty"`
+	ActiveTestIds     []string               `protobuf:"bytes,2,rep,name=active_test_ids,json=activeTestIds,proto3" json:"active_test_ids,omitempty"`
+	Stats             *GeneratorStats        `protobuf:"bytes,4,opt,name=stats,proto3" json:"stats,omitempty"`
+	AvailableCapacity int32                  `protobuf:"varint,5,opt,name=available_capacity,json=availableCapacity,proto3" json:"available_capacity,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *HeartbeatPong) Reset() {
@@ -1169,6 +1172,13 @@ func (*HeartbeatPong) Descriptor() ([]byte, []int) {
 	return file_api_proto_generator_proto_rawDescGZIP(), []int{16}
 }
 
+func (x *HeartbeatPong) GetGeneratorId() string {
+	if x != nil {
+		return x.GeneratorId
+	}
+	return ""
+}
+
 func (x *HeartbeatPong) GetTimestampUnixMs() int64 {
 	if x != nil {
 		return x.TimestampUnixMs
@@ -1181,6 +1191,20 @@ func (x *HeartbeatPong) GetActiveTestIds() []string {
 		return x.ActiveTestIds
 	}
 	return nil
+}
+
+func (x *HeartbeatPong) GetStats() *GeneratorStats {
+	if x != nil {
+		return x.Stats
+	}
+	return nil
+}
+
+func (x *HeartbeatPong) GetAvailableCapacity() int32 {
+	if x != nil {
+		return x.AvailableCapacity
+	}
+	return 0
 }
 
 type ScriptPayload struct {
@@ -1495,10 +1519,13 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\rHeartbeatPing\x12!\n" +
 	"\fgenerator_id\x18\x01 \x01(\tR\vgeneratorId\x12*\n" +
 	"\x11timestamp_unix_ms\x18\x02 \x01(\x03R\x0ftimestampUnixMs\x124\n" +
-	"\x05stats\x18\x03 \x01(\v2\x1e.stormrunner.v1.GeneratorStatsR\x05stats\"c\n" +
-	"\rHeartbeatPong\x12*\n" +
+	"\x05stats\x18\x03 \x01(\v2\x1e.stormrunner.v1.GeneratorStatsR\x05stats\"\xeb\x01\n" +
+	"\rHeartbeatPong\x12!\n" +
+	"\fgenerator_id\x18\x03 \x01(\tR\vgeneratorId\x12*\n" +
 	"\x11timestamp_unix_ms\x18\x01 \x01(\x03R\x0ftimestampUnixMs\x12&\n" +
-	"\x0factive_test_ids\x18\x02 \x03(\tR\ractiveTestIds\"i\n" +
+	"\x0factive_test_ids\x18\x02 \x03(\tR\ractiveTestIds\x124\n" +
+	"\x05stats\x18\x04 \x01(\v2\x1e.stormrunner.v1.GeneratorStatsR\x05stats\x12-\n" +
+	"\x12available_capacity\x18\x05 \x01(\x05R\x11availableCapacity\"i\n" +
 	"\rScriptPayload\x12\x1b\n" +
 	"\tscript_id\x18\x01 \x01(\tR\bscriptId\x12\x18\n" +
 	"\acontent\x18\x02 \x01(\fR\acontent\x12!\n" +
@@ -1570,27 +1597,28 @@ var file_api_proto_generator_proto_depIdxs = []int32{
 	7,  // 6: stormrunner.v1.ControlSignal.stop:type_name -> stormrunner.v1.StopRequest
 	14, // 7: stormrunner.v1.ControlSignal.pause:type_name -> stormrunner.v1.PauseRequest
 	12, // 8: stormrunner.v1.HeartbeatPing.stats:type_name -> stormrunner.v1.GeneratorStats
-	0,  // 9: stormrunner.v1.GeneratorControl.AssignWork:input_type -> stormrunner.v1.WorkAssignment
-	3,  // 10: stormrunner.v1.GeneratorControl.AdjustVUsers:input_type -> stormrunner.v1.VUserAdjustment
-	5,  // 11: stormrunner.v1.GeneratorControl.AdjustDuration:input_type -> stormrunner.v1.DurationAdjustment
-	7,  // 12: stormrunner.v1.GeneratorControl.StopTest:input_type -> stormrunner.v1.StopRequest
-	13, // 13: stormrunner.v1.GeneratorControl.StreamMetrics:input_type -> stormrunner.v1.ControlSignal
-	15, // 14: stormrunner.v1.GeneratorControl.Heartbeat:input_type -> stormrunner.v1.HeartbeatPing
-	17, // 15: stormrunner.v1.GeneratorControl.DistributeScript:input_type -> stormrunner.v1.ScriptPayload
-	19, // 16: stormrunner.v1.GeneratorControl.GetArchiveArtifact:input_type -> stormrunner.v1.ArchiveArtifactRequest
-	2,  // 17: stormrunner.v1.GeneratorControl.AssignWork:output_type -> stormrunner.v1.AssignmentAck
-	4,  // 18: stormrunner.v1.GeneratorControl.AdjustVUsers:output_type -> stormrunner.v1.AdjustmentAck
-	6,  // 19: stormrunner.v1.GeneratorControl.AdjustDuration:output_type -> stormrunner.v1.DurationAck
-	8,  // 20: stormrunner.v1.GeneratorControl.StopTest:output_type -> stormrunner.v1.StopAck
-	9,  // 21: stormrunner.v1.GeneratorControl.StreamMetrics:output_type -> stormrunner.v1.MetricsBatch
-	16, // 22: stormrunner.v1.GeneratorControl.Heartbeat:output_type -> stormrunner.v1.HeartbeatPong
-	18, // 23: stormrunner.v1.GeneratorControl.DistributeScript:output_type -> stormrunner.v1.ScriptAck
-	20, // 24: stormrunner.v1.GeneratorControl.GetArchiveArtifact:output_type -> stormrunner.v1.ArchiveArtifact
-	17, // [17:25] is the sub-list for method output_type
-	9,  // [9:17] is the sub-list for method input_type
-	9,  // [9:9] is the sub-list for extension type_name
-	9,  // [9:9] is the sub-list for extension extendee
-	0,  // [0:9] is the sub-list for field type_name
+	12, // 9: stormrunner.v1.HeartbeatPong.stats:type_name -> stormrunner.v1.GeneratorStats
+	0,  // 10: stormrunner.v1.GeneratorControl.AssignWork:input_type -> stormrunner.v1.WorkAssignment
+	3,  // 11: stormrunner.v1.GeneratorControl.AdjustVUsers:input_type -> stormrunner.v1.VUserAdjustment
+	5,  // 12: stormrunner.v1.GeneratorControl.AdjustDuration:input_type -> stormrunner.v1.DurationAdjustment
+	7,  // 13: stormrunner.v1.GeneratorControl.StopTest:input_type -> stormrunner.v1.StopRequest
+	13, // 14: stormrunner.v1.GeneratorControl.StreamMetrics:input_type -> stormrunner.v1.ControlSignal
+	15, // 15: stormrunner.v1.GeneratorControl.Heartbeat:input_type -> stormrunner.v1.HeartbeatPing
+	17, // 16: stormrunner.v1.GeneratorControl.DistributeScript:input_type -> stormrunner.v1.ScriptPayload
+	19, // 17: stormrunner.v1.GeneratorControl.GetArchiveArtifact:input_type -> stormrunner.v1.ArchiveArtifactRequest
+	2,  // 18: stormrunner.v1.GeneratorControl.AssignWork:output_type -> stormrunner.v1.AssignmentAck
+	4,  // 19: stormrunner.v1.GeneratorControl.AdjustVUsers:output_type -> stormrunner.v1.AdjustmentAck
+	6,  // 20: stormrunner.v1.GeneratorControl.AdjustDuration:output_type -> stormrunner.v1.DurationAck
+	8,  // 21: stormrunner.v1.GeneratorControl.StopTest:output_type -> stormrunner.v1.StopAck
+	9,  // 22: stormrunner.v1.GeneratorControl.StreamMetrics:output_type -> stormrunner.v1.MetricsBatch
+	16, // 23: stormrunner.v1.GeneratorControl.Heartbeat:output_type -> stormrunner.v1.HeartbeatPong
+	18, // 24: stormrunner.v1.GeneratorControl.DistributeScript:output_type -> stormrunner.v1.ScriptAck
+	20, // 25: stormrunner.v1.GeneratorControl.GetArchiveArtifact:output_type -> stormrunner.v1.ArchiveArtifact
+	18, // [18:26] is the sub-list for method output_type
+	10, // [10:18] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_api_proto_generator_proto_init() }

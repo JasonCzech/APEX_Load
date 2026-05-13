@@ -135,7 +135,14 @@ type Protocol interface {
 - `handlers.go`: RESTful endpoints (scripts, tests, projects, health)
 - `handlers_start_test.go`: Test queueing and execution
 - `websocket.go`: Real-time metrics streaming (JSON with `type` field)
-- `runner.go`: Test orchestration loop
+- `runner.go`: Test orchestration loop and in-memory distributed execution state
+- `distributed_execution_backend.go`: Controller-side remote generator orchestration, metrics aggregation, archive staging
+
+**Distributed Execution Notes:**
+- The controller stays on the same HTTP/WebSocket contract in both local and distributed modes.
+- Distributed mode is enabled by passing `GeneratorTargets` into `api.NewServer`, which `cmd/controller` currently sources from `STORMRUNNER_GENERATORS`.
+- Group fan-out, remote control routing, and remote archive staging all live behind the `testExecutionBackend` seam so handlers do not branch on local vs distributed execution.
+- Synthetic distributed transport tests and real remote execution tests both live in `pkg/api/execution_backend_test.go`.
 
 **WebSocket Message Types:**
 ```
@@ -216,6 +223,28 @@ dashboard/
 - **Recharts**: Time-series charting for metrics visualization
 
 ## API Endpoints Reference
+
+## Distributed Runtime Commands
+
+```bash
+# Controller in local mode
+go run ./cmd/controller
+
+# Controller in distributed mode
+STORMRUNNER_GENERATORS=127.0.0.1:9090,127.0.0.1:9091 \
+STORMRUNNER_GENERATOR_TIMEOUT=10s \
+go run ./cmd/controller
+
+# Generator
+go run ./cmd/generator
+```
+
+Current distributed test coverage is centered on:
+
+- remote start/stop/pause/resume/duration control
+- multi-generator group fan-out
+- real remote execution and scale routing
+- remote archive fetch and controller-local archive merge
 
 ### Tests
 

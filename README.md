@@ -12,6 +12,15 @@ Stormrunner provides **three primary surfaces**:
 
 The project is organized to support both direct local runs and controller-managed distributed execution across multiple pods.
 
+## Distributed Execution Today
+
+The current controller can run in either local or distributed mode without changing the HTTP or dashboard surface.
+
+- Local mode: no generator targets configured; the controller executes tests in-process.
+- Distributed mode: set `STORMRUNNER_GENERATORS=host1:9090,host2:9090,...`; the controller distributes groups across configured generators, aggregates their metrics into one live test view, and stages merged run archives back into the controller archive directory.
+- Runtime controls: distributed runs support stop, pause, resume, duration adjustment, and per-group VUser scaling through the same `/api/v1/tests/...` endpoints used for local runs.
+- Archive behavior: generators produce manifest, JSONL, and parquet artifacts locally; the controller downloads and merges those artifacts so the existing archive/report endpoints continue to work unchanged.
+
 ## Key Design Principles
 
 - **Goroutine-based VUsers**: 1 VUser = 1 goroutine (~2–4 KB stack) for extreme concurrency
@@ -60,6 +69,20 @@ go run ./cmd/controller
 
 By default the controller listens on `:8080`.
 
+To enable distributed execution, point the controller at one or more generators:
+
+```bash
+STORMRUNNER_GENERATORS=127.0.0.1:9090,127.0.0.1:9091 \
+STORMRUNNER_GENERATOR_TIMEOUT=10s \
+go run ./cmd/controller
+```
+
+Start one generator per target address:
+
+```bash
+go run ./cmd/generator
+```
+
 ### 2. Open the dashboard
 
 Navigate to `http://127.0.0.1:8080`.
@@ -107,6 +130,9 @@ Controller runtime configuration:
 
 - `STORMRUNNER_ADDR`: HTTP bind address (default `:8080`)
 - `STORMRUNNER_DB`: SQLite DB path (default `stormrunner.db`)
+- `STORMRUNNER_GENERATORS`: comma-separated generator gRPC targets; when set, the controller uses the distributed backend
+- `STORMRUNNER_GENERATOR_TIMEOUT`: timeout for controller-to-generator RPCs (default `10s`)
+- `STORMRUNNER_ARCHIVE_DIR`: archive root for local runs and staged remote archives (default `artifacts/archives`)
 
 ## Build and Test
 
@@ -353,7 +379,9 @@ make test-cover
 - ✅ HTTP protocol family complete (HTTP, SOAP, Java-over-HTTP MVP)
 - ✅ DSL parser and templating
 - ✅ Real-time metrics and WebSocket streaming
-- 🟡 Distributed generator (Kubernetes integration phase)
+- ✅ Distributed execution backend with multi-generator group fan-out, live controls, merged metrics, and staged archives
+- ✅ Capacity-aware generator placement for distributed test startup
+- ✅ Generator-loss detection and controlled failure handling during distributed execution
 - 🟡 JMS protocols (Solace, IBM MQ)
 - 🟡 Agentic script generation (LLM-powered)
 

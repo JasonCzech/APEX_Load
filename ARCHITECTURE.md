@@ -128,6 +128,28 @@
    └─ Historical trend analysis
 ```
 
+## Distributed Controller Path (Current State)
+
+When `STORMRUNNER_GENERATORS` is configured, the controller keeps the same REST and WebSocket contract but swaps test execution to the distributed backend.
+
+```
+1. Controller starts with one or more generator gRPC targets.
+2. Test start selects distributed execution backend instead of local engine execution.
+3. Test groups are assigned across configured generators.
+4. Each generator either runs assigned groups through a real `engine.MultiGroupEngine` or uses the synthetic transport path in tests.
+5. Generators stream `MetricsBatch` snapshots back to the controller over long-lived gRPC streams.
+6. Controller aggregates per-generator batches into one `LiveMetrics` view for the dashboard and REST API.
+7. Stop / pause / resume / duration adjustments still flow through the existing `/api/v1/tests/...` endpoints.
+8. On completion, generators expose archive artifacts over gRPC and the controller merges them into one controller-local archive bundle.
+```
+
+Current distributed implementation details:
+
+- Group fan-out is implemented at the controller backend layer, not by changing the public test model.
+- Metrics aggregation happens before publishing `metrics_update`, so the dashboard still sees one test-level stream.
+- Group-level scale requests are routed to the owning generator.
+- Archive/report handlers remain local-filesystem based; the distributed backend stages remote data into the controller archive root under `remote/<test-id>`.
+
 ## Engine Execution Flow
 
 ```
@@ -331,14 +353,18 @@ Adding a new protocol (e.g., WebSocket, gRPC):
 │  │  - Pod 1 (Stormrunner controller)      │  │
 │  │  - Pod 2 (Stormrunner controller)      │  │
 │  │  Services: HTTP :8080                  │  │
+│  │  Runtime: local mode or distributed    │  │
+│  │  mode via STORMRUNNER_GENERATORS       │  │
 │  └─────────────────────────────────────────┘  │
-│                  ↓ gRPC                       │
+│                  ↓ gRPC assign/control/metrics│
 │  ┌─────────────────────────────────────────┐  │
 │  │  Generator StatefulSet (1-50 replicas)  │  │
 │  │  - Pod generator-0 (10k VUsers)        │  │
 │  │  - Pod generator-1 (10k VUsers)        │  │
 │  │  - Pod generator-N (up to 50)          │  │
 │  │  Auto-scaling via HPA                  │  │
+│  │  Exposes assign, control, metrics,     │  │
+│  │  heartbeat, and archive artifact RPCs  │  │
 │  └─────────────────────────────────────────┘  │
 │                                                │
 │  ┌─────────────────────────────────────────┐  │

@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -30,9 +29,18 @@ type generatorClient interface {
 	AdjustVUsers(ctx context.Context, adjustment generatorrpc.VUserAdjustment) (generatorrpc.AdjustmentResult, error)
 	AdjustDuration(ctx context.Context, adjustment generatorrpc.DurationAdjustment) (generatorrpc.DurationResult, error)
 	OpenMetricsStream(ctx context.Context) (*generatorrpc.MetricsStream, error)
+	OpenHeartbeat(ctx context.Context) (*generatorrpc.HeartbeatStream, error)
 	StopTest(ctx context.Context, testID string, graceful bool) (generatorrpc.StopResult, error)
 	GetArchiveArtifact(ctx context.Context, request generatorrpc.ArchiveArtifactRequest) ([]byte, error)
 	Close() error
+}
+
+type generatorLoadSnapshot struct {
+	Target            string
+	GeneratorID       string
+	AvailableCapacity int32
+	Stats             generatorrpc.GeneratorStats
+	HeartbeatOK       bool
 }
 
 type distributedExecutionBackend struct {
@@ -74,10 +82,10 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 	ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
 	defer cancel()
 
-	groupTargets := planDistributedGroupTargets(test.Groups, b.targets)
 	clientsByTarget := make(map[string]generatorClient)
 	streamsByTarget := make(map[string]*generatorrpc.MetricsStream)
 	distributedScripts := make(map[string]map[string]struct{})
+	loadByTarget := make(map[string]generatorLoadSnapshot)
 	cleanup := func() {
 		for _, stream := range streamsByTarget {
 			_ = stream.CloseSend()
@@ -86,6 +94,20 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 			_ = client.Close()
 		}
 	}
+	for _, target := range b.targets {
+		client, err := b.dial(ctx, target)
+		if err != nil {
+			slog.Warn("distributed generator unavailable during placement", "target", target, "error", err)
+			continue
+		}
+		clientsByTarget[target] = client
+		loadByTarget[target] = b.probeGeneratorLoad(ctx, target, client)
+	}
+	if len(clientsByTarget) == 0 {
+		tr.failTestBeforeRun(test, "no reachable generator targets configured")
+		return
+	}
+	groupTargets := planDistributedGroupTargets(test.Groups, loadByTarget, b.targets)
 	for _, group := range test.Groups {
 		if group.script == nil {
 			cleanup()
@@ -96,14 +118,9 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		target := groupTargets[group.Name]
 		client := clientsByTarget[target]
 		if client == nil {
-			var err error
-			client, err = b.dial(ctx, target)
-			if err != nil {
-				cleanup()
-				tr.failTestBeforeRun(test, fmt.Sprintf("connect generator %q: %v", target, err))
-				return
-			}
-			clientsByTarget[target] = client
+			cleanup()
+			tr.failTestBeforeRun(test, fmt.Sprintf("selected generator %q is not connected", target))
+			return
 		}
 		if distributedScripts[target] == nil {
 			distributedScripts[target] = make(map[string]struct{})
@@ -147,6 +164,10 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 			tr.failTestBeforeRun(test, fmt.Sprintf("generator rejected group %q: %s", group.Name, assignment.ErrorMessage))
 			return
 		}
+		snapshot := loadByTarget[target]
+		snapshot.AvailableCapacity = assignment.AvailableCapacity
+		snapshot.Stats.ActiveVUsers += int32(group.VUsers)
+		loadByTarget[target] = snapshot
 	}
 
 	for _, target := range orderedAssignedTargets(groupTargets, b.targets) {
@@ -320,7 +341,7 @@ func (b *distributedExecutionBackend) startDistributedTestRun(tr *TestRunner, te
 	tr.mu.Unlock()
 
 	tr.broadcastEvent("test_started", test)
-	for _, target := range orderedTargets {
+	for _, target := range orderedMetricsTargets(streamsByTarget, b.targets) {
 		go b.consumeMetrics(ctx, tr, test, target, streamsByTarget[target])
 	}
 }
@@ -411,10 +432,11 @@ func (b *distributedExecutionBackend) consumeMetrics(ctx context.Context, tr *Te
 	for {
 		batch, err := stream.Receive()
 		if err != nil {
-			if ctx.Err() != nil || err == io.EOF {
+			if ctx.Err() != nil {
 				return
 			}
 			slog.Warn("distributed metrics stream stopped", "test_id", test.ID, "error", err)
+			b.failDistributedTestOnStreamError(tr, test, target, err)
 			return
 		}
 		if batch.TestID != test.ID {
@@ -431,6 +453,28 @@ func (b *distributedExecutionBackend) consumeMetrics(ctx context.Context, tr *Te
 			return
 		}
 	}
+}
+
+func (b *distributedExecutionBackend) failDistributedTestOnStreamError(tr *TestRunner, test *ManagedTest, target string, err error) {
+	finalError := fmt.Sprintf("remote target %s metrics stream stopped: %v", target, err)
+
+	tr.mu.Lock()
+	if test.remoteFinalizing || test.Status == "COMPLETE" || test.Status == "FAILED" {
+		tr.mu.Unlock()
+		return
+	}
+	if test.remoteTargetStates == nil {
+		test.remoteTargetStates = make(map[string]string)
+	}
+	if state := test.remoteTargetStates[target]; state == "COMPLETE" || state == "FAILED" {
+		tr.mu.Unlock()
+		return
+	}
+	test.remoteTargetStates[target] = "FAILED"
+	test.remoteFinalizing = true
+	tr.mu.Unlock()
+
+	b.completeDistributedTestRun(tr, test, "FAILED", finalError)
 }
 
 func (b *distributedExecutionBackend) applyRemoteMetricsBatch(tr *TestRunner, test *ManagedTest, target string, batch generatorrpc.MetricsBatch) (*LiveMetrics, string, string) {
@@ -571,7 +615,7 @@ func (b *distributedExecutionBackend) fetchRemoteArchiveBundles(test *ManagedTes
 		manifestContent, err := client.GetArchiveArtifact(ctx, generatorrpc.ArchiveArtifactRequest{TestID: test.ID, Name: "manifest.json"})
 		if err != nil {
 			code := grpcStatus.Code(err)
-			if code == grpcCodes.NotFound || code == grpcCodes.Unimplemented {
+			if code == grpcCodes.NotFound || code == grpcCodes.Unimplemented || (!requireAll && (code == grpcCodes.Canceled || code == grpcCodes.Unavailable)) {
 				missingTargets = append(missingTargets, target)
 				continue
 			}
@@ -716,15 +760,99 @@ func (b *distributedExecutionBackend) stopRemainingRemoteTargets(test *ManagedTe
 	return stopErr
 }
 
-func planDistributedGroupTargets(groups []TestGroup, targets []string) map[string]string {
+func (b *distributedExecutionBackend) probeGeneratorLoad(ctx context.Context, target string, client generatorClient) generatorLoadSnapshot {
+	snapshot := generatorLoadSnapshot{
+		Target:            target,
+		GeneratorID:       target,
+		AvailableCapacity: int32(^uint32(0) >> 1),
+	}
+	heartbeat, err := client.OpenHeartbeat(ctx)
+	if err != nil {
+		slog.Warn("open generator heartbeat failed during placement", "target", target, "error", err)
+		return snapshot
+	}
+	defer heartbeat.CloseSend()
+	if err := heartbeat.Send(generatorrpc.Heartbeat{GeneratorID: "controller", TimestampUnixMs: time.Now().UnixMilli()}); err != nil {
+		slog.Warn("send generator heartbeat probe failed during placement", "target", target, "error", err)
+		return snapshot
+	}
+	response, err := heartbeat.Receive()
+	if err != nil {
+		slog.Warn("receive generator heartbeat probe failed during placement", "target", target, "error", err)
+		return snapshot
+	}
+	snapshot.GeneratorID = response.GeneratorID
+	if snapshot.GeneratorID == "" {
+		snapshot.GeneratorID = target
+	}
+	snapshot.AvailableCapacity = response.AvailableCapacity
+	snapshot.Stats = response.Stats
+	snapshot.HeartbeatOK = true
+	return snapshot
+}
+
+func planDistributedGroupTargets(groups []TestGroup, loadByTarget map[string]generatorLoadSnapshot, preferred []string) map[string]string {
 	assignments := make(map[string]string, len(groups))
-	if len(targets) == 0 {
+	if len(loadByTarget) == 0 {
 		return assignments
 	}
-	for index, group := range groups {
-		assignments[group.Name] = targets[index%len(targets)]
+	projected := make(map[string]generatorLoadSnapshot, len(loadByTarget))
+	for key, value := range loadByTarget {
+		projected[key] = value
+	}
+	for _, group := range groups {
+		target := chooseGeneratorTargetForGroup(group, projected, preferred)
+		assignments[group.Name] = target
+		snapshot := projected[target]
+		snapshot.AvailableCapacity -= int32(group.VUsers)
+		snapshot.Stats.ActiveVUsers += int32(group.VUsers)
+		projected[target] = snapshot
 	}
 	return assignments
+}
+
+func chooseGeneratorTargetForGroup(group TestGroup, loadByTarget map[string]generatorLoadSnapshot, preferred []string) string {
+	ordered := orderedLoadTargets(loadByTarget, preferred)
+	if len(ordered) == 0 {
+		return ""
+	}
+	for _, target := range ordered {
+		if loadByTarget[target].AvailableCapacity >= int32(group.VUsers) {
+			return target
+		}
+	}
+	return ordered[0]
+}
+
+func orderedLoadTargets(loadByTarget map[string]generatorLoadSnapshot, preferred []string) []string {
+	ordered := make([]string, 0, len(loadByTarget))
+	for target := range loadByTarget {
+		ordered = append(ordered, target)
+	}
+	preferenceIndex := make(map[string]int, len(preferred))
+	for index, target := range preferred {
+		preferenceIndex[target] = index
+	}
+	sort.SliceStable(ordered, func(left int, right int) bool {
+		leftSnapshot := loadByTarget[ordered[left]]
+		rightSnapshot := loadByTarget[ordered[right]]
+		if leftSnapshot.AvailableCapacity != rightSnapshot.AvailableCapacity {
+			return leftSnapshot.AvailableCapacity > rightSnapshot.AvailableCapacity
+		}
+		if leftSnapshot.Stats.ActiveVUsers != rightSnapshot.Stats.ActiveVUsers {
+			return leftSnapshot.Stats.ActiveVUsers < rightSnapshot.Stats.ActiveVUsers
+		}
+		leftIndex, leftOK := preferenceIndex[ordered[left]]
+		rightIndex, rightOK := preferenceIndex[ordered[right]]
+		if leftOK && rightOK && leftIndex != rightIndex {
+			return leftIndex < rightIndex
+		}
+		if leftOK != rightOK {
+			return leftOK
+		}
+		return ordered[left] < ordered[right]
+	})
+	return ordered
 }
 
 func orderedAssignedTargets(groupTargets map[string]string, preferred []string) []string {
