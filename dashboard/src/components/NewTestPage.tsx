@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Application, Release, StoredScenario } from '../types'
 import { useApi } from '../hooks/useApi'
+import { getErrorMessage } from '../utils/errorUtils'
 
 interface Props {
   activeApplication: Application | null
@@ -34,8 +35,8 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
       const next = res.scenarios || []
       setScenarios(next)
       if (!scenarioId && next[0]) setScenarioId(next[0].id)
-    } catch (err: any) {
-      setError(err.message || 'Unable to load scenarios')
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Unable to load scenarios'))
     }
   }, [api, scenarioId])
 
@@ -90,8 +91,8 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
         await api.startTest(test.id)
       }
       onSelectTest(test.id)
-    } catch (err: any) {
-      setError(err.message || 'Unable to create test')
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Unable to create test'))
     } finally {
       setCreating(false)
     }

@@ -1,11 +1,63 @@
 import { Fragment, memo, useCallback, useEffect, useMemo, useState } from 'react'
-import { SharedDataPool, StoredScenario, StoredScript, TestSummary } from '../types'
+import { ScenarioDataPoolBinding, SharedDataPool, StoredScenario, StoredScript, TestSummary } from '../types'
 import { useApi } from '../hooks/useApi'
+import { getErrorMessage } from '../utils/errorUtils'
 import './TestHub.css'
 
 interface Props {
   testStatuses: Record<string, string>
   onSelectTest: (id: string) => void
+}
+
+interface ScenarioFormState {
+  name: string
+  duration: string
+  script_id: string
+  vusers: number
+  data_pool_id?: string
+  data_pool_alias?: string
+  data_pool_access_mode?: ScenarioDataPoolBinding['access_mode']
+  data_pool_selection_strategy?: ScenarioDataPoolBinding['selection_strategy']
+}
+
+function emptyScenarioForm(scriptId = ''): ScenarioFormState {
+  return {
+    name: '',
+    duration: '1m',
+    script_id: scriptId,
+    vusers: 10,
+    data_pool_id: '',
+    data_pool_alias: '',
+    data_pool_access_mode: 'read_only',
+    data_pool_selection_strategy: 'sequential',
+  }
+}
+
+function getScenarioSortValue(scenario: StoredScenario, field: 'name' | 'scripts' | 'data_pools' | 'created_at' | 'associated_releases' | 'last_run_at' | 'result_count'): string | number {
+  switch (field) {
+    case 'scripts':
+      return (scenario.scripts || []).length
+    case 'data_pools':
+      return (scenario.data_pools || []).length
+    case 'created_at':
+      return new Date(scenario.created_at || 0).getTime()
+    case 'last_run_at':
+      return new Date(scenario.last_run_at || 0).getTime()
+    case 'associated_releases':
+      return (scenario.associated_releases || []).length
+    case 'result_count':
+      return scenario.result_count || 0
+    case 'name':
+    default:
+      return (scenario.name || '').toLowerCase()
+  }
+}
+
+function getRunSortValue(run: TestSummary, field: 'name' | 'status' | 'release_id' | 'start_time' | 'duration'): string | number {
+  if (field === 'start_time') {
+    return new Date(run.start_time || run.created_at || 0).getTime()
+  }
+  return String(run[field] || '').toLowerCase()
 }
 
 function formatDate(value?: string) {
@@ -37,7 +89,7 @@ function TestHub({ onSelectTest }: Props) {
   const [dataPools, setDataPools] = useState<SharedDataPool[]>([])
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [form, setForm] = useState<any>({ name: '', duration: '1m', script_id: '', vusers: 10 })
+  const [form, setForm] = useState<ScenarioFormState>(emptyScenarioForm())
   const [error, setError] = useState('')
   const [sortField, setSortField] = useState<'name' | 'scripts' | 'data_pools' | 'created_at' | 'associated_releases' | 'last_run_at' | 'result_count'>('last_run_at')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
@@ -55,9 +107,9 @@ function TestHub({ onSelectTest }: Props) {
       setScenarios(nextScenarios)
       setScripts(nextScripts)
       setDataPools(dataPoolRes.data_pools || [])
-      setForm((prev: any) => ({ ...prev, script_id: prev.script_id || nextScripts[0]?.id || '' }))
-    } catch (err: any) {
-      setError(err.message || 'Unable to load scenarios')
+      setForm(prev => ({ ...prev, script_id: prev.script_id || nextScripts[0]?.id || '' }))
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Unable to load scenarios'))
     }
   }, [api])
 
@@ -65,35 +117,8 @@ function TestHub({ onSelectTest }: Props) {
 
   const sorted = useMemo(() => {
     return [...scenarios].sort((a, b) => {
-      let aValue: any
-      let bValue: any
-      switch (sortField) {
-        case 'scripts':
-          aValue = (a.scripts || []).length
-          bValue = (b.scripts || []).length
-          break
-        case 'data_pools':
-          aValue = (a.data_pools || []).length
-          bValue = (b.data_pools || []).length
-          break
-        case 'created_at':
-        case 'last_run_at':
-          aValue = new Date((a as any)[sortField] || 0).getTime()
-          bValue = new Date((b as any)[sortField] || 0).getTime()
-          break
-        case 'associated_releases':
-          aValue = (a.associated_releases || []).length
-          bValue = (b.associated_releases || []).length
-          break
-        case 'result_count':
-          aValue = a.result_count || 0
-          bValue = b.result_count || 0
-          break
-        case 'name':
-        default:
-          aValue = (a.name || '').toLowerCase()
-          bValue = (b.name || '').toLowerCase()
-      }
+      const aValue = getScenarioSortValue(a, sortField)
+      const bValue = getScenarioSortValue(b, sortField)
       if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1
       if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1
       return 0
@@ -114,16 +139,9 @@ function TestHub({ onSelectTest }: Props) {
   }
 
   const getSortedInnerRuns = (runs: TestSummary[]) => {
-    return [...runs].sort((a: any, b: any) => {
-      let aValue: any
-      let bValue: any
-      if (innerSortField === 'start_time') {
-        aValue = new Date(a.start_time || a.created_at || 0).getTime()
-        bValue = new Date(b.start_time || b.created_at || 0).getTime()
-      } else {
-        aValue = String(a[innerSortField] || '').toLowerCase()
-        bValue = String(b[innerSortField] || '').toLowerCase()
-      }
+    return [...runs].sort((a, b) => {
+      const aValue = getRunSortValue(a, innerSortField)
+      const bValue = getRunSortValue(b, innerSortField)
       if (aValue < bValue) return innerSortDirection === 'asc' ? -1 : 1
       if (aValue > bValue) return innerSortDirection === 'asc' ? 1 : -1
       return 0
@@ -155,7 +173,7 @@ function TestHub({ onSelectTest }: Props) {
 
   const openCreate = () => {
     setEditingId(null)
-    setForm({ name: '', duration: '1m', script_id: scripts[0]?.id || '', vusers: 10, data_pool_id: '', data_pool_alias: '' })
+    setForm(emptyScenarioForm(scripts[0]?.id || ''))
     setShowForm(true)
   }
 
@@ -204,8 +222,8 @@ function TestHub({ onSelectTest }: Props) {
       setShowForm(false)
       setEditingId(null)
       refresh()
-    } catch (err: any) {
-      setError(err.message || 'Unable to save scenario')
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Unable to save scenario'))
     }
   }
 
@@ -214,8 +232,8 @@ function TestHub({ onSelectTest }: Props) {
     try {
       await api.deleteScenario(id)
       refresh()
-    } catch (err: any) {
-      setError(err.message || 'Unable to delete scenario')
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Unable to delete scenario'))
     }
   }
 

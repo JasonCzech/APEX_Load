@@ -3,6 +3,7 @@ import { useApplicationApi } from '../hooks/api/useApplicationApi'
 import { useApplication } from '../hooks/useApplication'
 import { useApi } from '../hooks/useApi'
 import { DashboardSystemSettings, HealthResponse, SharedDataPool, SharedDataPoolRow } from '../types'
+import { getErrorMessage } from '../utils/errorUtils'
 
 const DEFAULT_SETTINGS: DashboardSystemSettings = {
   general: {
@@ -141,9 +142,9 @@ export default function SettingsPage() {
           setSettings(response)
           setSavedSettings(response)
         }
-      } catch (error: any) {
+      } catch (error: unknown) {
         if (!cancelled) {
-          setRequestError(error.message || 'Unable to load system settings')
+          setRequestError(getErrorMessage(error, 'Unable to load system settings'))
           setSettings(DEFAULT_SETTINGS)
         }
       } finally {
@@ -265,8 +266,8 @@ export default function SettingsPage() {
         setDataPoolRows([])
       }
       setDataPoolActionError('')
-    } catch (error: any) {
-      setDataPoolActionError(error.message || 'Unable to load shared data pools')
+    } catch (error: unknown) {
+      setDataPoolActionError(getErrorMessage(error, 'Unable to load shared data pools'))
     }
   }
 
@@ -285,8 +286,8 @@ export default function SettingsPage() {
       try {
         const response = await api.getDataPool(selectedDataPoolId)
         if (!cancelled) setDataPoolRows(response.rows || [])
-      } catch (error: any) {
-        if (!cancelled) setDataPoolActionError(error.message || 'Unable to load data pool rows')
+      } catch (error: unknown) {
+        if (!cancelled) setDataPoolActionError(getErrorMessage(error, 'Unable to load data pool rows'))
       }
     }
     loadRows()
@@ -372,8 +373,8 @@ export default function SettingsPage() {
       setSavedSettings(response)
       setSaveMessage('Settings saved.')
       setRequestError('')
-    } catch (error: any) {
-      setRequestError(error.message || 'Unable to save settings')
+    } catch (error: unknown) {
+      setRequestError(getErrorMessage(error, 'Unable to save settings'))
       setSaveMessage('')
     }
   }
@@ -386,8 +387,8 @@ export default function SettingsPage() {
       setSavedSettings(response)
       setSaveMessage('Settings reset to defaults.')
       setRequestError('')
-    } catch (error: any) {
-      setRequestError(error.message || 'Unable to reset settings')
+    } catch (error: unknown) {
+      setRequestError(getErrorMessage(error, 'Unable to reset settings'))
       setSaveMessage('')
     }
   }
@@ -446,8 +447,8 @@ export default function SettingsPage() {
       await createAndSelectApplication(name)
       setNewApplicationName('')
       setApplicationActionError('')
-    } catch (error: any) {
-      setApplicationActionError(error.message || 'Unable to create application')
+    } catch (error: unknown) {
+      setApplicationActionError(getErrorMessage(error, 'Unable to create application'))
     }
   }
 
@@ -460,8 +461,8 @@ export default function SettingsPage() {
       await refreshApplications()
       setActiveApplication(updated)
       setApplicationActionError('')
-    } catch (error: any) {
-      setApplicationActionError(error.message || 'Unable to rename application')
+    } catch (error: unknown) {
+      setApplicationActionError(getErrorMessage(error, 'Unable to rename application'))
     }
   }
 
@@ -472,8 +473,8 @@ export default function SettingsPage() {
       await applicationApi.deleteApplication(activeApplication.id)
       await refreshApplications()
       setApplicationActionError('')
-    } catch (error: any) {
-      setApplicationActionError(error.message || 'Unable to delete application')
+    } catch (error: unknown) {
+      setApplicationActionError(getErrorMessage(error, 'Unable to delete application'))
     }
   }
 
@@ -487,8 +488,8 @@ export default function SettingsPage() {
       setManagedReleases(response.releases || [])
       if (!updated.archived_at) setActiveRelease(updated)
       setApplicationActionError('')
-    } catch (error: any) {
-      setApplicationActionError(error.message || 'Unable to rename release')
+    } catch (error: unknown) {
+      setApplicationActionError(getErrorMessage(error, 'Unable to rename release'))
     }
   }
 
@@ -505,8 +506,8 @@ export default function SettingsPage() {
       const response = await applicationApi.listReleases(activeApplication?.id || '', true)
       setManagedReleases(response.releases || [])
       setApplicationActionError('')
-    } catch (error: any) {
-      setApplicationActionError(error.message || 'Unable to archive release')
+    } catch (error: unknown) {
+      setApplicationActionError(getErrorMessage(error, 'Unable to archive release'))
     }
   }
 
@@ -523,8 +524,8 @@ export default function SettingsPage() {
       const response = await applicationApi.listReleases(activeApplication?.id || '', true)
       setManagedReleases(response.releases || [])
       setApplicationActionError('')
-    } catch (error: any) {
-      setApplicationActionError(error.message || 'Unable to delete release')
+    } catch (error: unknown) {
+      setApplicationActionError(getErrorMessage(error, 'Unable to delete release'))
     }
   }
 
@@ -537,8 +538,8 @@ export default function SettingsPage() {
       setDataPoolDescription('')
       await loadDataPools(pool.id)
       setDataPoolActionError('')
-    } catch (error: any) {
-      setDataPoolActionError(error.message || 'Unable to create data pool')
+    } catch (error: unknown) {
+      setDataPoolActionError(getErrorMessage(error, 'Unable to create data pool'))
     }
   }
 
@@ -548,8 +549,8 @@ export default function SettingsPage() {
       await api.deleteDataPool(pool.id)
       await loadDataPools('')
       setDataPoolActionError('')
-    } catch (error: any) {
-      setDataPoolActionError(error.message || 'Unable to delete data pool')
+    } catch (error: unknown) {
+      setDataPoolActionError(getErrorMessage(error, 'Unable to delete data pool'))
     }
   }
 
@@ -561,8 +562,8 @@ export default function SettingsPage() {
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
         throw new Error('Row data must be a JSON object.')
       }
-    } catch (error: any) {
-      setDataPoolActionError(error.message || 'Invalid row JSON')
+    } catch (error: unknown) {
+      setDataPoolActionError(getErrorMessage(error, 'Invalid row JSON'))
       return
     }
     try {
@@ -576,8 +577,8 @@ export default function SettingsPage() {
       const response = await api.getDataPool(selectedDataPoolId)
       setDataPoolRows(response.rows || [])
       setDataPoolActionError('')
-    } catch (error: any) {
-      setDataPoolActionError(error.message || 'Unable to save data row')
+    } catch (error: unknown) {
+      setDataPoolActionError(getErrorMessage(error, 'Unable to save data row'))
     }
   }
 
@@ -594,8 +595,8 @@ export default function SettingsPage() {
       const response = await api.getDataPool(selectedDataPoolId)
       setDataPoolRows(response.rows || [])
       setDataPoolActionError('')
-    } catch (error: any) {
-      setDataPoolActionError(error.message || 'Unable to delete data row')
+    } catch (error: unknown) {
+      setDataPoolActionError(getErrorMessage(error, 'Unable to delete data row'))
     }
   }
 
