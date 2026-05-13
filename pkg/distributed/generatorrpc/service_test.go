@@ -19,6 +19,7 @@ func TestServiceAssignWorkRejectsMissingCachedScript(t *testing.T) {
 
 	ack, err := service.AssignWork(context.Background(), &pb.WorkAssignment{
 		TestId:     "test-1",
+		GroupName:  "Group A",
 		ScriptId:   "script-1",
 		VuserCount: 5,
 	})
@@ -257,6 +258,96 @@ func TestClientRoundTripDistributeAssignAndHeartbeat(t *testing.T) {
 	}
 	if len(pong.ActiveTestIDs) != 0 {
 		t.Fatalf("active test ids after stop = %v, want empty", pong.ActiveTestIDs)
+	}
+	if err := metrics.CloseSend(); err != nil {
+		t.Fatalf("Metrics CloseSend: %v", err)
+	}
+	if err := heartbeat.CloseSend(); err != nil {
+		t.Fatalf("Heartbeat CloseSend: %v", err)
+	}
+}
+
+func TestServiceFailTestBroadcastsFailedLifecycle(t *testing.T) {
+	const bufSize = 1024 * 1024
+
+	listener := bufconn.Listen(bufSize)
+	server := grpc.NewServer()
+	service := NewService("generator-1", 50)
+	pb.RegisterGeneratorControlServer(server, service)
+
+	go func() {
+		_ = server.Serve(listener)
+	}()
+	t.Cleanup(func() {
+		server.Stop()
+		_ = listener.Close()
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	conn, err := grpc.DialContext(
+		ctx,
+		"bufnet",
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+			return listener.Dial()
+		}),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithBlock(),
+	)
+	if err != nil {
+		t.Fatalf("DialContext: %v", err)
+	}
+
+	client := NewClient(conn)
+	t.Cleanup(func() {
+		_ = client.Close()
+	})
+
+	if _, err := client.DistributeScript(ctx, Script{ID: "script-1", Content: []byte(`{"name":"demo"}`), ContentHash: "hash-1"}); err != nil {
+		t.Fatalf("DistributeScript: %v", err)
+	}
+	if _, err := client.AssignWork(ctx, Assignment{TestID: "test-1", GroupName: "Group A", ScriptID: "script-1", VUserCount: 10}); err != nil {
+		t.Fatalf("AssignWork: %v", err)
+	}
+
+	metrics, err := client.OpenMetricsStream(ctx)
+	if err != nil {
+		t.Fatalf("OpenMetricsStream: %v", err)
+	}
+	if _, err := metrics.Receive(); err != nil {
+		t.Fatalf("Receive initial metrics batch: %v", err)
+	}
+
+	service.FailTest("test-1", "generator execution failed")
+
+	batch, err := metrics.Receive()
+	if err != nil {
+		t.Fatalf("Receive failed metrics batch: %v", err)
+	}
+	if batch.LifecycleState != "FAILED" {
+		t.Fatalf("failed lifecycle state = %q, want FAILED", batch.LifecycleState)
+	}
+	if batch.LifecycleError != "generator execution failed" {
+		t.Fatalf("failed lifecycle error = %q, want generator execution failed", batch.LifecycleError)
+	}
+	if batch.Stats.ActiveVUsers != 0 {
+		t.Fatalf("failed active vusers = %d, want 0", batch.Stats.ActiveVUsers)
+	}
+
+	heartbeat, err := client.OpenHeartbeat(ctx)
+	if err != nil {
+		t.Fatalf("OpenHeartbeat: %v", err)
+	}
+	if err := heartbeat.Send(Heartbeat{GeneratorID: "generator-1", TimestampUnixMs: 1236}); err != nil {
+		t.Fatalf("Heartbeat Send after failure: %v", err)
+	}
+	pong, err := heartbeat.Receive()
+	if err != nil {
+		t.Fatalf("Heartbeat Receive after failure: %v", err)
+	}
+	if len(pong.ActiveTestIDs) != 0 {
+		t.Fatalf("active test ids after failure = %v, want empty", pong.ActiveTestIDs)
 	}
 	if err := metrics.CloseSend(); err != nil {
 		t.Fatalf("Metrics CloseSend: %v", err)

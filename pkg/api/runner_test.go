@@ -711,7 +711,7 @@ func TestApplyGoalControllerUpdateScalesGroupsAndUpdatesStatus(t *testing.T) {
 func TestRequestStopIfRunningTransitionsAndBroadcasts(t *testing.T) {
 	hub := NewHub()
 	runner := NewTestRunner(2, hub, nil)
-	testRun := &ManagedTest{ID: "test-1", Name: "Checkout", Status: "RUNNING"}
+	testRun := &ManagedTest{ID: "test-1", Name: "Checkout", Status: "RUNNING", cancel: func() {}}
 	runner.tests[testRun.ID] = testRun
 
 	runner.requestStopIfRunning(testRun, "threshold stop failed")
@@ -902,6 +902,7 @@ func TestProcessMetricsSnapshotBroadcastsAlertAndStopRequest(t *testing.T) {
 	runner.settings.Thresholds.MaxErrorRatePct = &maxErrorPct
 
 	testRun := &ManagedTest{ID: "test-1", Name: "Checkout", Status: "RUNNING"}
+	testRun.cancel = func() {}
 	runner.tests[testRun.ID] = testRun
 
 	runner.processMetricsSnapshot(testRun, engine.MetricsSnapshot{

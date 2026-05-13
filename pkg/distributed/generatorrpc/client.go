@@ -14,15 +14,15 @@ type DataFile struct {
 }
 
 type Assignment struct {
-	TestID        string
-	GroupName     string
+	TestID                string
+	GroupName             string
 	TargetDurationSeconds int64
-	ScriptID      string
-	ScriptContent []byte
-	VUserCount    int32
-	RampUpSeconds int32
-	Environment   map[string]string
-	DataFiles     []DataFile
+	ScriptID              string
+	ScriptContent         []byte
+	VUserCount            int32
+	RampUpSeconds         int32
+	Environment           map[string]string
+	DataFiles             []DataFile
 }
 
 type AssignmentResult struct {
@@ -66,6 +66,7 @@ type MetricsBatch struct {
 	Transactions    []TransactionMetric
 	Groups          []GroupMetric
 	LifecycleState  string
+	LifecycleError  string
 }
 
 type GroupMetric struct {
@@ -331,8 +332,9 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 		Transactions:    transactions,
 		Groups:          groups,
 		LifecycleState:  batch.GetLifecycleState(),
+		LifecycleError:  batch.GetLifecycleError(),
 	}, nil
-	}
+}
 
 func toProtoAssignment(assignment Assignment) *pb.WorkAssignment {
 	dataFiles := make([]*pb.DataFile, 0, len(assignment.DataFiles))
@@ -346,15 +348,15 @@ func toProtoAssignment(assignment Assignment) *pb.WorkAssignment {
 	}
 
 	return &pb.WorkAssignment{
-		TestId:        assignment.TestID,
-		GroupName:     assignment.GroupName,
+		TestId:                assignment.TestID,
+		GroupName:             assignment.GroupName,
 		TargetDurationSeconds: assignment.TargetDurationSeconds,
-		ScriptId:      assignment.ScriptID,
-		ScriptContent: assignment.ScriptContent,
-		VuserCount:    assignment.VUserCount,
-		RampUpSeconds: assignment.RampUpSeconds,
-		Environment:   environment,
-		DataFiles:     dataFiles,
+		ScriptId:              assignment.ScriptID,
+		ScriptContent:         assignment.ScriptContent,
+		VuserCount:            assignment.VUserCount,
+		RampUpSeconds:         assignment.RampUpSeconds,
+		Environment:           environment,
+		DataFiles:             dataFiles,
 	}
 }
 

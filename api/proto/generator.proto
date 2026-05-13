@@ -93,6 +93,7 @@ message MetricsBatch {
   GeneratorStats stats = 5;
   repeated GroupMetric groups = 6;
   string lifecycle_state = 7;
+  string lifecycle_error = 8;
 }
 
 message GroupMetric {

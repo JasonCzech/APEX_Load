@@ -578,6 +578,7 @@ type MetricsBatch struct {
 	Stats           *GeneratorStats        `protobuf:"bytes,5,opt,name=stats,proto3" json:"stats,omitempty"`
 	Groups          []*GroupMetric         `protobuf:"bytes,6,rep,name=groups,proto3" json:"groups,omitempty"`
 	LifecycleState  string                 `protobuf:"bytes,7,opt,name=lifecycle_state,json=lifecycleState,proto3" json:"lifecycle_state,omitempty"`
+	LifecycleError  string                 `protobuf:"bytes,8,opt,name=lifecycle_error,json=lifecycleError,proto3" json:"lifecycle_error,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -657,6 +658,13 @@ func (x *MetricsBatch) GetGroups() []*GroupMetric {
 func (x *MetricsBatch) GetLifecycleState() string {
 	if x != nil {
 		return x.LifecycleState
+	}
+	return ""
+}
+
+func (x *MetricsBatch) GetLifecycleError() string {
+	if x != nil {
+		return x.LifecycleError
 	}
 	return ""
 }
@@ -1335,7 +1343,7 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\bgraceful\x18\x02 \x01(\bR\bgraceful\"T\n" +
 	"\aStopAck\x12\"\n" +
 	"\facknowledged\x18\x01 \x01(\bR\facknowledged\x12%\n" +
-	"\x0epending_vusers\x18\x02 \x01(\x05R\rpendingVusers\"\xd1\x02\n" +
+	"\x0epending_vusers\x18\x02 \x01(\x05R\rpendingVusers\"\xfa\x02\n" +
 	"\fMetricsBatch\x12\x17\n" +
 	"\atest_id\x18\x01 \x01(\tR\x06testId\x12!\n" +
 	"\fgenerator_id\x18\x02 \x01(\tR\vgeneratorId\x12*\n" +
@@ -1343,7 +1351,8 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\ftransactions\x18\x04 \x03(\v2!.stormrunner.v1.TransactionMetricR\ftransactions\x124\n" +
 	"\x05stats\x18\x05 \x01(\v2\x1e.stormrunner.v1.GeneratorStatsR\x05stats\x123\n" +
 	"\x06groups\x18\x06 \x03(\v2\x1b.stormrunner.v1.GroupMetricR\x06groups\x12'\n" +
-	"\x0flifecycle_state\x18\a \x01(\tR\x0elifecycleState\"F\n" +
+	"\x0flifecycle_state\x18\a \x01(\tR\x0elifecycleState\x12'\n" +
+	"\x0flifecycle_error\x18\b \x01(\tR\x0elifecycleError\"F\n" +
 	"\vGroupMetric\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12#\n" +
 	"\ractive_vusers\x18\x02 \x01(\x05R\factiveVusers\"\x81\x03\n" +

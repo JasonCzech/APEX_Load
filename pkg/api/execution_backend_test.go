@@ -416,6 +416,105 @@ func TestDistributedExecutionBackendCompletesAfterDurationExpiry(t *testing.T) {
 	}
 }
 
+func TestDistributedExecutionBackendPropagatesRemoteFailure(t *testing.T) {
+	const bufSize = 1024 * 1024
+
+	listener := bufconn.Listen(bufSize)
+	server := grpc.NewServer()
+	service := generatorrpc.NewService("generator-1", 50)
+	pb.RegisterGeneratorControlServer(server, service)
+
+	go func() {
+		_ = server.Serve(listener)
+	}()
+	t.Cleanup(func() {
+		server.Stop()
+		_ = listener.Close()
+	})
+
+	hub := NewHub()
+	runner := NewTestRunner(1, hub, nil)
+	runner.setExecutionBackend(newDistributedExecutionBackend(
+		[]string{"bufnet"},
+		5*time.Second,
+		func(ctx context.Context, target string) (generatorClient, error) {
+			return generatorrpc.Dial(
+				ctx,
+				target,
+				grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+					return listener.Dial()
+				}),
+				grpc.WithTransportCredentials(insecure.NewCredentials()),
+				grpc.WithBlock(),
+			)
+		},
+	))
+
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-1",
+		Name:     "Checkout",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Config: dsl.ScriptConfig{
+			BaseURL: "https://example.com",
+			RunLogic: dsl.RunLogicConfig{
+				Iterations: 1,
+			},
+		},
+		Actions: []dsl.Action{{Name: "Home", Type: "GET", Target: "/"}},
+	})
+
+	testRun, err := runner.CreateTest(CreateTestRequest{
+		Name:     "Distributed remote failure",
+		Duration: "30s",
+		Groups: []CreateGroupEntry{{
+			Name:     "Group A",
+			ScriptID: "script-1",
+			VUsers:   5,
+			RampUp:   "1s",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("CreateTest returned error: %v", err)
+	}
+
+	if err := runner.StartTest(testRun.ID); err != nil {
+		t.Fatalf("StartTest returned error: %v", err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		started, ok := runner.GetTest(testRun.ID)
+		if !ok {
+			t.Fatalf("expected managed test %q to exist", testRun.ID)
+		}
+		if started.Status == "RUNNING" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected distributed backend to mark test running, got status %q", started.Status)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	service.FailTest(testRun.ID, "generator execution failed")
+
+	deadline = time.Now().Add(2 * time.Second)
+	for {
+		failed, ok := runner.GetTest(testRun.ID)
+		if !ok {
+			t.Fatalf("expected managed test %q to exist after failure", testRun.ID)
+		}
+		if failed.Status == "FAILED" && failed.EndedAt != nil && failed.Error == "generator execution failed" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected distributed test to fail from remote lifecycle, got status=%q ended=%v error=%q", failed.Status, failed.EndedAt, failed.Error)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
 func TestNewServerConfiguresDistributedExecutionBackend(t *testing.T) {
 	server := NewServer(ServerConfig{
 		Addr:             ":0",

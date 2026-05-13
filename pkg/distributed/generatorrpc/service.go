@@ -17,11 +17,11 @@ type cachedScript struct {
 }
 
 type assignedTest struct {
-	testID     string
-	vuserCount int32
-	paused     bool
+	testID          string
+	vuserCount      int32
+	paused          bool
 	durationSeconds int64
-	groups     map[string]int32
+	groups          map[string]int32
 }
 
 type Service struct {
@@ -204,7 +204,7 @@ func (s *Service) StopTest(_ context.Context, request *pb.StopRequest) (*pb.Stop
 		delete(s.assignments, request.GetTestId())
 		s.stopCompletionTimerLocked(request.GetTestId())
 	}
-	batch := s.metricsBatchForState(request.GetTestId(), 0, false, assignment.groups, "COMPLETE")
+	batch := s.metricsBatchForState(request.GetTestId(), 0, false, assignment.groups, "COMPLETE", "")
 
 	go s.broadcastMetrics(batch)
 	return &pb.StopAck{
@@ -327,6 +327,20 @@ func (s *Service) setPaused(testID string, paused bool) error {
 	return nil
 }
 
+func (s *Service) FailTest(testID string, message string) {
+	s.mu.Lock()
+	assignment, ok := s.assignments[testID]
+	if ok {
+		delete(s.assignments, testID)
+	}
+	s.stopCompletionTimerLocked(testID)
+	s.mu.Unlock()
+	if !ok {
+		return
+	}
+	s.broadcastMetrics(s.metricsBatchForState(testID, 0, false, assignment.groups, "FAILED", message))
+}
+
 func (s *Service) registerSubscriber() (int, chan *pb.MetricsBatch, []*pb.MetricsBatch) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -377,16 +391,16 @@ func (s *Service) broadcastMetrics(batch *pb.MetricsBatch) {
 func (s *Service) metricsBatchLocked(testID string) *pb.MetricsBatch {
 	assignment, ok := s.assignments[testID]
 	if !ok {
-		return s.metricsBatchForState(testID, 0, false, nil, "COMPLETE")
+		return s.metricsBatchForState(testID, 0, false, nil, "COMPLETE", "")
 	}
 	lifecycleState := "RUNNING"
 	if assignment.paused {
 		lifecycleState = "PAUSED"
 	}
-	return s.metricsBatchForState(testID, assignment.vuserCount, assignment.paused, assignment.groups, lifecycleState)
+	return s.metricsBatchForState(testID, assignment.vuserCount, assignment.paused, assignment.groups, lifecycleState, "")
 }
 
-func (s *Service) metricsBatchForState(testID string, vuserCount int32, paused bool, groupAssignments map[string]int32, lifecycleState string) *pb.MetricsBatch {
+func (s *Service) metricsBatchForState(testID string, vuserCount int32, paused bool, groupAssignments map[string]int32, lifecycleState string, lifecycleError string) *pb.MetricsBatch {
 	activeVUsers := vuserCount
 	if paused {
 		activeVUsers = 0
@@ -409,8 +423,9 @@ func (s *Service) metricsBatchForState(testID string, vuserCount int32, paused b
 		Stats: &pb.GeneratorStats{
 			ActiveVusers: activeVUsers,
 		},
-		Groups: groups,
+		Groups:         groups,
 		LifecycleState: lifecycleState,
+		LifecycleError: lifecycleError,
 	}
 }
 
@@ -444,7 +459,7 @@ func (s *Service) completeAssignment(testID string) {
 	if !ok {
 		return
 	}
-	s.broadcastMetrics(s.metricsBatchForState(testID, 0, false, assignment.groups, "COMPLETE"))
+	s.broadcastMetrics(s.metricsBatchForState(testID, 0, false, assignment.groups, "COMPLETE", ""))
 }
 
 func maxInt64(left, right int64) int64 {

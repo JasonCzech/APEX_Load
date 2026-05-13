@@ -98,12 +98,12 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		}
 
 		assignment, err := client.AssignWork(ctx, generatorrpc.Assignment{
-			TestID:        test.ID,
-			GroupName:     group.Name,
+			TestID:                test.ID,
+			GroupName:             group.Name,
 			TargetDurationSeconds: int64(test.Duration / time.Second),
-			ScriptID:      group.ScriptID,
-			VUserCount:    int32(group.VUsers),
-			RampUpSeconds: int32(group.rampUpDur / time.Second),
+			ScriptID:              group.ScriptID,
+			VUserCount:            int32(group.VUsers),
+			RampUpSeconds:         int32(group.rampUpDur / time.Second),
 		})
 		if err != nil {
 			tr.failTestBeforeRun(test, fmt.Sprintf("assign work for group %q: %v", group.Name, err))
@@ -292,19 +292,27 @@ func (b *distributedExecutionBackend) consumeMetrics(ctx context.Context, tr *Te
 		}
 		live := buildLiveMetricsFromDistributedBatch(test, batch)
 		tr.publishLiveMetrics(test, live, nil)
-		if batch.LifecycleState == "COMPLETE" {
-			b.completeDistributedTestRun(tr, test)
+		switch batch.LifecycleState {
+		case "COMPLETE":
+			b.completeDistributedTestRun(tr, test, "COMPLETE", "")
+			return
+		case "FAILED":
+			failure := batch.LifecycleError
+			if failure == "" {
+				failure = "remote generator reported failure"
+			}
+			b.completeDistributedTestRun(tr, test, "FAILED", failure)
 			return
 		}
 	}
 }
 
-func (b *distributedExecutionBackend) completeDistributedTestRun(tr *TestRunner, test *ManagedTest) {
+func (b *distributedExecutionBackend) completeDistributedTestRun(tr *TestRunner, test *ManagedTest, finalStatus string, finalError string) {
 	b.closeRemoteResources(test)
 	if test.cancel != nil {
 		test.cancel()
 	}
-	tr.completeTestRun(test, "COMPLETE", time.Now(), "", nil)
+	tr.completeTestRun(test, finalStatus, time.Now(), finalError, nil)
 }
 
 func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.MetricsBatch) *LiveMetrics {
