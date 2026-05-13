@@ -183,14 +183,37 @@ export function useScriptApi() {
   )
 
   const importLoadRunner = useCallback(
-    async (file: File, options?: { name?: string; base_url?: string; include_assertions?: boolean }): Promise<LoadRunnerImportResult> => {
+    async (file: File, options?: { name?: string; base_url?: string; include_assertions?: boolean; preserve_transactions?: boolean }): Promise<LoadRunnerImportResult> => {
       const formData = new FormData()
       formData.append('file', file)
       if (options?.name) formData.append('name', options.name)
       if (options?.base_url) formData.append('base_url', options.base_url)
       if (options?.include_assertions) formData.append('include_assertions', 'true')
+      if (options?.preserve_transactions !== undefined) formData.append('preserve_transactions', String(options.preserve_transactions))
 
       const res = await fetch(`${BASE}/scripts/import/loadrunner`, {
+        method: 'POST',
+        body: formData,
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: res.statusText }))
+        throw new Error(body.error || res.statusText)
+      }
+      return res.json() as Promise<LoadRunnerImportResult>
+    },
+    [],
+  )
+
+  const validateLoadRunnerImport = useCallback(
+    async (file: File, options?: { name?: string; base_url?: string; include_assertions?: boolean; preserve_transactions?: boolean }): Promise<LoadRunnerImportResult> => {
+      const formData = new FormData()
+      formData.append('file', file)
+      if (options?.name) formData.append('name', options.name)
+      if (options?.base_url) formData.append('base_url', options.base_url)
+      if (options?.include_assertions) formData.append('include_assertions', 'true')
+      if (options?.preserve_transactions !== undefined) formData.append('preserve_transactions', String(options.preserve_transactions))
+
+      const res = await fetch(`${BASE}/scripts/import/loadrunner/validate`, {
         method: 'POST',
         body: formData,
       })
@@ -358,6 +381,7 @@ export function useScriptApi() {
       resumeBrowserReplaySession,
       exportScript,
       importLoadRunner,
+      validateLoadRunnerImport,
       importJMeter,
       validateJMeterImport,
       getJMeterSupportMatrix,
@@ -398,6 +422,7 @@ export function useScriptApi() {
       resumeBrowserReplaySession,
       exportScript,
       importLoadRunner,
+      validateLoadRunnerImport,
       importJMeter,
       validateJMeterImport,
       getJMeterSupportMatrix,

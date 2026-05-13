@@ -218,7 +218,7 @@ func convertAction(fn ParsedFunction, baseURL, transaction string, opts ConvertO
 
 	// Determine name
 	name := sanitizeName(fn.StepName)
-	if transaction != "" {
+	if opts.PreserveTransactions && transaction != "" {
 		name = sanitizeName(transaction) + "_" + name
 	}
 	action.Name = name

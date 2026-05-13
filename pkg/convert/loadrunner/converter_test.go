@@ -180,6 +180,29 @@ func TestConvert(t *testing.T) {
 		result.Stats.TotalFunctions, result.Stats.ConvertedActions, result.Stats.Extractors, result.Stats.ThinkTimes)
 }
 
+func TestConvertPreserveTransactionsOption(t *testing.T) {
+	parsed, err := ParseActionFile("Action.c", sampleActionC)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	withTransactions, err := Convert([]*ParsedAction{parsed}, ConvertOptions{PreserveTransactions: true})
+	if err != nil {
+		t.Fatalf("convert with transactions error: %v", err)
+	}
+	withoutTransactions, err := Convert([]*ParsedAction{parsed}, ConvertOptions{PreserveTransactions: false})
+	if err != nil {
+		t.Fatalf("convert without transactions error: %v", err)
+	}
+
+	if got := withTransactions.Script.Actions[0].Name; got != "Login_Homepage" {
+		t.Fatalf("preserved action name = %q, want Login_Homepage", got)
+	}
+	if got := withoutTransactions.Script.Actions[0].Name; got != "Homepage" {
+		t.Fatalf("non-preserved action name = %q, want Homepage", got)
+	}
+}
+
 func TestSanitizeName(t *testing.T) {
 	tests := map[string]string{
 		"Login Page":      "Login_Page",

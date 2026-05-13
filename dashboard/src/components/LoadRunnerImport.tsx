@@ -37,17 +37,21 @@ interface Props {
   onClose?: () => void
 }
 
+type ReviewMode = 'validation' | 'conversion'
+
 export default function LoadRunnerImport({ onImported, onEdit, onClose }: Props) {
   const api = useApi()
   const fileRef = useRef<HTMLInputElement>(null)
   const [file, setFile] = useState<File | null>(null)
   const [dragOver, setDragOver] = useState(false)
-  const [importing, setImporting] = useState(false)
+  const [workingMode, setWorkingMode] = useState<'convert' | 'validate' | null>(null)
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
   const [result, setResult] = useState<LoadRunnerImportResult | null>(null)
+  const [reviewMode, setReviewMode] = useState<ReviewMode | null>(null)
 
   const [options, setOptions] = useState({
-    name: '', base_url: '', include_assertions: true,
+    name: '', base_url: '', include_assertions: true, preserve_transactions: true,
   })
   const importMetadata = getImportMetadata(result?.script)
   const metadataSummary = getMetadataSummary(importMetadata)
@@ -56,28 +60,34 @@ export default function LoadRunnerImport({ onImported, onEdit, onClose }: Props)
     e.preventDefault(); setDragOver(false)
     const f = e.dataTransfer.files[0]
     if (f && (f.name.endsWith('.zip') || f.type === 'application/zip')) {
-      setFile(f); setError(''); setResult(null)
+      setFile(f); setError(''); setNotice(''); setResult(null); setReviewMode(null)
     } else { setError('Please upload a ZIP file containing a LoadRunner script folder.') }
   }
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]
-    if (f) { setFile(f); setError(''); setResult(null) }
+    if (f) { setFile(f); setError(''); setNotice(''); setResult(null); setReviewMode(null) }
   }
 
-  const handleImport = async () => {
+  const runReview = async (mode: 'convert' | 'validate') => {
     if (!file) return
-    setImporting(true); setError(''); setResult(null)
+    setWorkingMode(mode); setError(''); setNotice(''); setResult(null)
     try {
-      const res = await api.importLoadRunner(file, {
+      const request = mode === 'validate' ? api.validateLoadRunnerImport : api.importLoadRunner
+      const res = await request(file, {
         name: options.name || undefined,
         base_url: options.base_url || undefined,
         include_assertions: options.include_assertions,
+        preserve_transactions: options.preserve_transactions,
       })
       setResult(normalizeScriptImportResult<LoadRunnerConvertStats>(res))
+      setReviewMode(mode === 'validate' ? 'validation' : 'conversion')
+      setNotice(mode === 'validate'
+        ? 'Validation complete. Review the generated script, warnings, and preserved settings before saving.'
+        : 'Conversion complete. Review the generated script, warnings, and preserved settings before saving.')
     } catch (error: unknown) {
-      setError(getErrorMessage(error, 'Import failed'))
-    } finally { setImporting(false) }
+      setError(getErrorMessage(error, mode === 'validate' ? 'Validation failed' : 'Import failed'))
+    } finally { setWorkingMode(null) }
   }
 
   const handleSaveConverted = async () => {
@@ -139,28 +149,37 @@ export default function LoadRunnerImport({ onImported, onEdit, onClose }: Props)
             <input type="checkbox" checked={options.include_assertions} onChange={e => setOptions(o => ({ ...o, include_assertions: e.target.checked }))} />
             <span>Add default status_code assertions</span>
           </label>
+          <label className="lr-checkbox">
+            <input type="checkbox" checked={options.preserve_transactions} onChange={e => setOptions(o => ({ ...o, preserve_transactions: e.target.checked }))} />
+            <span>Preserve transaction names in generated actions</span>
+          </label>
         </div>
       </div>
 
-      {/* Import button */}
-      <button className="btn btn-primary btn-lg" onClick={handleImport} disabled={!file || importing}>
-        {importing ? (
-          <><span className="spinner" /> Converting…</>
-        ) : 'Convert LoadRunner Script'}
-      </button>
+      <div className="replay-panel-actions">
+        <button className="btn btn-secondary btn-lg" onClick={() => runReview('validate')} disabled={!file || workingMode !== null}>
+          {workingMode === 'validate' ? <><span className="spinner" /> Validating...</> : 'Validate Only'}
+        </button>
+        <button className="btn btn-primary btn-lg" onClick={() => runReview('convert')} disabled={!file || workingMode !== null}>
+          {workingMode === 'convert' ? <><span className="spinner" /> Converting...</> : 'Convert LoadRunner Script'}
+        </button>
+      </div>
 
       {error && <div className="lr-error">{error}</div>}
+      {notice && <div className="settings-notice">{notice}</div>}
 
       {/* Results */}
       {result && (
         <div className="lr-result">
           <ScriptImportReview
-            title="Conversion Complete"
-            subtitle="Review the generated script, preserved metadata, and warnings before saving."
+            title={reviewMode === 'validation' ? 'Validation Review' : 'Conversion Complete'}
+            subtitle={reviewMode === 'validation'
+              ? 'This preview came from the dry-run validator. You can still save the reviewed script if the output looks correct.'
+              : 'Review the generated script, preserved metadata, and warnings before saving.'}
             script={result.script}
             warnings={result.warnings}
             warningsTitle={`Conversion Warnings (${result.warnings.length})`}
-            saveLabel="Save to Script Library"
+            saveLabel={reviewMode === 'validation' ? 'Save Reviewed Script' : 'Save to Script Library'}
             onSave={handleSaveConverted}
             onEdit={onEdit ? () => onEdit(result.script as ScriptDefinition) : undefined}
           >

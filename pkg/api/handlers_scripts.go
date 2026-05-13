@@ -19,73 +19,44 @@ type jmeterImportRequest struct {
 	Opts jmeter.ConvertOptions
 }
 
+type loadRunnerImportRequest struct {
+	Data []byte
+	Opts loadrunner.ConvertOptions
+}
+
 // handleImportLoadRunner handles POST /api/v1/scripts/import/loadrunner
 // Accepts a multipart form upload of a ZIP file containing a LoadRunner script folder.
 func (s *Server) handleImportLoadRunner(w http.ResponseWriter, r *http.Request) {
-	// Limit upload to 50MB
-	r.Body = http.MaxBytesReader(w, r.Body, 50<<20)
-
-	// Check content type — support both multipart form and raw zip body
-	contentType := r.Header.Get("Content-Type")
-
-	var zipData []byte
-
-	if contentType == "application/zip" || contentType == "application/x-zip-compressed" || contentType == "application/octet-stream" {
-		// Raw ZIP body
-		data, err := io.ReadAll(r.Body)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "failed to read request body: "+err.Error())
-			return
-		}
-		zipData = data
-	} else {
-		// Multipart form upload
-		if err := r.ParseMultipartForm(50 << 20); err != nil {
-			writeError(w, http.StatusBadRequest, "failed to parse multipart form (max 50MB): "+err.Error())
-			return
-		}
-
-		file, _, err := r.FormFile("file")
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "missing 'file' field in multipart form: "+err.Error())
-			return
-		}
-		defer file.Close()
-
-		data, err := io.ReadAll(file)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "failed to read uploaded file: "+err.Error())
-			return
-		}
-		zipData = data
-	}
-
-	if len(zipData) == 0 {
-		writeError(w, http.StatusBadRequest, "empty file uploaded")
+	importReq, ok := readLoadRunnerImportRequest(w, r)
+	if !ok {
 		return
 	}
 
-	// Parse conversion options from query params or form values
-	opts := loadrunner.ConvertOptions{
-		ScriptName:           r.FormValue("name"),
-		BaseURL:              r.FormValue("base_url"),
-		IncludeAssertions:    r.FormValue("include_assertions") == "true",
-		PreserveTransactions: r.FormValue("preserve_transactions") == "true",
-	}
-
 	// Run the conversion
-	result, err := loadrunner.ConvertZip(zipData, opts)
+	result, err := loadrunner.ConvertZip(importReq.Data, importReq.Opts)
 	if err != nil {
 		writeError(w, http.StatusUnprocessableEntity, "conversion failed: "+err.Error())
 		return
 	}
 
-	writeJSON(w, http.StatusOK, newScriptImportResponse(scriptImportResponseOptions{
-		Result:   result,
-		Script:   result.Script,
-		Warnings: result.Warnings,
-		Stats:    result.Stats,
-	}))
+	writeLoadRunnerImportResponse(w, http.StatusOK, result)
+}
+
+// handleValidateLoadRunnerImport handles POST /api/v1/scripts/import/loadrunner/validate.
+// It parses and converts the ZIP payload without persisting any generated assets.
+func (s *Server) handleValidateLoadRunnerImport(w http.ResponseWriter, r *http.Request) {
+	importReq, ok := readLoadRunnerImportRequest(w, r)
+	if !ok {
+		return
+	}
+
+	result, err := loadrunner.ConvertZip(importReq.Data, importReq.Opts)
+	if err != nil {
+		writeError(w, http.StatusUnprocessableEntity, "validation failed: "+err.Error())
+		return
+	}
+
+	writeLoadRunnerImportResponse(w, http.StatusOK, result)
 }
 
 // handleImportJMeter handles POST /api/v1/scripts/import/jmeter.
@@ -180,6 +151,80 @@ func readJMeterImportRequest(w http.ResponseWriter, r *http.Request) (*jmeterImp
 			FileName:          fileName,
 		},
 	}, true
+}
+
+func readLoadRunnerImportRequest(w http.ResponseWriter, r *http.Request) (*loadRunnerImportRequest, bool) {
+	r.Body = http.MaxBytesReader(w, r.Body, 50<<20)
+
+	contentType := r.Header.Get("Content-Type")
+	var data []byte
+
+	if strings.HasPrefix(contentType, "application/zip") ||
+		strings.HasPrefix(contentType, "application/x-zip-compressed") ||
+		strings.HasPrefix(contentType, "application/octet-stream") {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "failed to read request body: "+err.Error())
+			return nil, false
+		}
+		data = body
+	} else {
+		if err := r.ParseMultipartForm(50 << 20); err != nil {
+			writeError(w, http.StatusBadRequest, "failed to parse multipart form (max 50MB): "+err.Error())
+			return nil, false
+		}
+		file, _, err := r.FormFile("file")
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "missing 'file' field in multipart form: "+err.Error())
+			return nil, false
+		}
+		defer file.Close()
+		body, err := io.ReadAll(file)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "failed to read uploaded file: "+err.Error())
+			return nil, false
+		}
+		data = body
+	}
+
+	if len(data) == 0 {
+		writeError(w, http.StatusBadRequest, "empty file uploaded")
+		return nil, false
+	}
+
+	return &loadRunnerImportRequest{
+		Data: data,
+		Opts: loadrunner.ConvertOptions{
+			ScriptName:           r.FormValue("name"),
+			BaseURL:              r.FormValue("base_url"),
+			IncludeAssertions:    r.FormValue("include_assertions") == "true",
+			PreserveTransactions: parseBoolDefault(r.FormValue("preserve_transactions"), true),
+		},
+	}, true
+}
+
+func parseBoolDefault(value string, defaultValue bool) bool {
+	if value == "" {
+		return defaultValue
+	}
+
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	default:
+		return defaultValue
+	}
+}
+
+func writeLoadRunnerImportResponse(w http.ResponseWriter, status int, result *loadrunner.ConvertResult) {
+	writeJSON(w, status, newScriptImportResponse(scriptImportResponseOptions{
+		Result:   result,
+		Script:   result.Script,
+		Warnings: result.Warnings,
+		Stats:    result.Stats,
+	}))
 }
 
 func writeJMeterImportResponse(w http.ResponseWriter, status int, result *jmeter.ConvertResult) {

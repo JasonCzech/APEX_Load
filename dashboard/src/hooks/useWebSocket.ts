@@ -4,10 +4,11 @@ import { wsUrl } from './apiClient'
 
 interface UseWebSocketOptions {
   testId?: string
+  enabled?: boolean
   onMessage?: (msg: WSMessage) => void
 }
 
-export function useWebSocket({ testId, onMessage }: UseWebSocketOptions = {}) {
+export function useWebSocket({ testId, enabled = true, onMessage }: UseWebSocketOptions = {}) {
   const [connected, setConnected] = useState(false)
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimer = useRef<number | null>(null)
@@ -19,7 +20,7 @@ export function useWebSocket({ testId, onMessage }: UseWebSocketOptions = {}) {
   onMessageRef.current = onMessage
 
   const connect = useCallback(() => {
-    if (!shouldReconnectRef.current || !isPageVisibleRef.current) return
+    if (!enabled || !shouldReconnectRef.current || !isPageVisibleRef.current) return
 
     const path = testId ? `/api/v1/tests/${testId}/stream` : '/api/v1/ws'
     const url = wsUrl(path)
@@ -58,11 +59,15 @@ export function useWebSocket({ testId, onMessage }: UseWebSocketOptions = {}) {
     ws.onerror = () => {
       ws.close()
     }
-  }, [testId])
+  }, [enabled, testId])
 
   useEffect(() => {
     shouldReconnectRef.current = true
-    connect()
+    if (enabled) {
+      connect()
+    } else {
+      setConnected(false)
+    }
 
     return () => {
       shouldReconnectRef.current = false
@@ -77,7 +82,7 @@ export function useWebSocket({ testId, onMessage }: UseWebSocketOptions = {}) {
         ws.close()
       }
     }
-  }, [connect])
+  }, [connect, enabled])
 
   useEffect(() => {
     if (typeof document === 'undefined') return
@@ -100,7 +105,7 @@ export function useWebSocket({ testId, onMessage }: UseWebSocketOptions = {}) {
         return
       }
 
-      if (shouldReconnectRef.current && !wsRef.current) {
+      if (enabled && shouldReconnectRef.current && !wsRef.current) {
         connect()
       }
     }
@@ -109,7 +114,7 @@ export function useWebSocket({ testId, onMessage }: UseWebSocketOptions = {}) {
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
-  }, [connect])
+  }, [connect, enabled])
 
   return { connected }
 }

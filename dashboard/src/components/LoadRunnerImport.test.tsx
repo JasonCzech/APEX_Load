@@ -10,6 +10,7 @@ import LoadRunnerImport from './LoadRunnerImport'
 
 const apiMock = {
   importLoadRunner: vi.fn(),
+  validateLoadRunnerImport: vi.fn(),
   createScript: vi.fn(),
 }
 
@@ -44,6 +45,22 @@ describe('LoadRunnerImport', () => {
         },
       },
       warnings: ['manual review recommended'],
+      stats: {
+        total_functions: 12,
+        converted_actions: 1,
+        extractors: 1,
+        think_times: 2,
+        transactions: 1,
+        skipped: 0,
+      },
+    })
+    apiMock.validateLoadRunnerImport.mockResolvedValue({
+      script: {
+        name: 'Demo LoadRunner Script',
+        protocol: 'http',
+        actions: [{ name: 'Homepage' }],
+      },
+      warnings: ['validation review'],
       stats: {
         total_functions: 12,
         converted_actions: 1,
@@ -102,6 +119,7 @@ describe('LoadRunnerImport', () => {
       name: undefined,
       base_url: undefined,
       include_assertions: true,
+      preserve_transactions: true,
     })
     expect(container.textContent).toContain('Conversion Complete')
     expect(container.textContent).toContain('Demo LoadRunner Script')
@@ -129,6 +147,55 @@ describe('LoadRunnerImport', () => {
       name: 'Demo LoadRunner Script',
       protocol: 'http',
     }))
+  })
+
+
+  it('runs validate-only review with preserve transaction option', async () => {
+    await act(async () => {
+      root.render(<LoadRunnerImport />)
+    })
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
+    expect(fileInput).not.toBeNull()
+    if (!fileInput) {
+      return
+    }
+
+    const file = new File(['zip-content'], 'demo.zip', { type: 'application/zip' })
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [file],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const checkboxes = Array.from(container.querySelectorAll('input[type="checkbox"]')) as HTMLInputElement[]
+    expect(checkboxes).toHaveLength(2)
+    await act(async () => {
+      checkboxes[1].dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const validateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Validate Only'))
+    expect(validateButton).toBeDefined()
+    if (!validateButton) {
+      return
+    }
+
+    await act(async () => {
+      validateButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushPromises()
+
+    expect(apiMock.validateLoadRunnerImport).toHaveBeenCalledWith(file, {
+      name: undefined,
+      base_url: undefined,
+      include_assertions: true,
+      preserve_transactions: false,
+    })
+    expect(container.textContent).toContain('Validation Review')
+    expect(container.textContent).toContain('validation review')
   })
 })
 

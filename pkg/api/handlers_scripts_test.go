@@ -298,6 +298,84 @@ ConnectTimeout=45
 	}
 }
 
+func TestHandleValidateLoadRunnerImport(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+
+	part, err := writer.CreateFormFile("file", "demo.zip")
+	if err != nil {
+		t.Fatalf("CreateFormFile returned error: %v", err)
+	}
+
+	zipWriter := zip.NewWriter(part)
+	addFile := func(name string, content string) {
+		entry, err := zipWriter.Create(name)
+		if err != nil {
+			t.Fatalf("Create(%q) returned error: %v", name, err)
+		}
+		if _, err := entry.Write([]byte(content)); err != nil {
+			t.Fatalf("Write(%q) returned error: %v", name, err)
+		}
+	}
+	addFile("Demo.usr", `[General]
+Type=Web
+RuntimeSettings=default.cfg
+
+[Actions]
+Action1=Action.c
+`)
+	addFile("Action.c", sampleLoadRunnerActionC)
+	addFile("default.cfg", `[HTTP]
+ConnectTimeout=45
+`)
+	if err := zipWriter.Close(); err != nil {
+		t.Fatalf("zip.Close returned error: %v", err)
+	}
+
+	writer.WriteField("preserve_transactions", "false")
+	if err := writer.Close(); err != nil {
+		t.Fatalf("multipart.Close returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/loadrunner/validate", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var result struct {
+		Scripts []json.RawMessage `json:"scripts"`
+		Script  struct {
+			Actions []struct {
+				Name string `json:"name"`
+			} `json:"actions"`
+		} `json:"script"`
+		Stats struct {
+			ConvertedActions int `json:"converted_actions"`
+		} `json:"stats"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if len(result.Scripts) != 1 {
+		t.Fatalf("scripts count = %d, want 1", len(result.Scripts))
+	}
+	if len(result.Script.Actions) == 0 {
+		t.Fatal("expected at least one converted action")
+	}
+	if got := result.Script.Actions[0].Name; got != "Homepage" {
+		t.Fatalf("first action name = %q, want Homepage when preserve_transactions=false", got)
+	}
+	if result.Stats.ConvertedActions == 0 {
+		t.Fatal("expected converted actions in validation response")
+	}
+}
+
 func TestHandleImportJMeter(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	var body bytes.Buffer

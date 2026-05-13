@@ -15,8 +15,8 @@ vi.mock('../hooks/useWebSocket', () => ({
   useWebSocket: (...args: unknown[]) => useWebSocketMock(...args),
 }))
 
-function MetricsStreamHarness() {
-  const { localMetricsHistory } = useExecutionMetricsStream('test-1')
+function MetricsStreamHarness({ status = 'RUNNING' }: { status?: 'RUNNING' | 'COMPLETE' }) {
+  const { localMetricsHistory } = useExecutionMetricsStream('test-1', status)
   const latest = localMetricsHistory.at(-1)
 
   return (
@@ -95,6 +95,17 @@ describe('useExecutionMetricsStream', () => {
     expect(readTestId('tps')).toBe('12.3')
     expect(readTestId('group-tps')).toBe('7.9')
     expect(readTestId('cpu')).toBe('44.4')
+  })
+
+  it('disables the test websocket stream for completed runs', async () => {
+    await act(async () => {
+      root.render(<MetricsStreamHarness status="COMPLETE" />)
+    })
+
+    expect(useWebSocketMock).toHaveBeenCalledWith(expect.objectContaining({
+      testId: 'test-1',
+      enabled: false,
+    }))
   })
 
   it('caps streamed execution history at 300 points', async () => {

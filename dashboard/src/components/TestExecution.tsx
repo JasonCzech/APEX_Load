@@ -54,7 +54,7 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
     scriptDetailsLoading,
     scriptDetailsError,
   } = useExecutionScenarioPreviewModel(test)
-  const { localMetricsHistory } = useExecutionMetricsStream(testId)
+  const { localMetricsHistory } = useExecutionMetricsStream(testId, test?.status)
   const {
     filteredData,
     summary,

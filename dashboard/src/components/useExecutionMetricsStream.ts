@@ -1,11 +1,15 @@
 import { useCallback, useState } from 'react'
 
 import { useWebSocket } from '../hooks/useWebSocket'
-import { MetricsHistoryPoint, WSMessage } from '../types'
+import { MetricsHistoryPoint, TestStatus, WSMessage } from '../types'
 
 export const EXECUTION_STREAM_HISTORY_LIMIT = 300
 
-export function useExecutionMetricsStream(testId: string) {
+function shouldStreamExecutionMetrics(status?: TestStatus): boolean {
+  return status === 'RUNNING' || status === 'INITIALIZING' || status === 'PAUSED' || status === 'STOPPING'
+}
+
+export function useExecutionMetricsStream(testId: string, status?: TestStatus) {
   const [localMetricsHistory, setLocalMetricsHistory] = useState<MetricsHistoryPoint[]>([])
 
   const handleTestWSMessage = useCallback((msg: WSMessage) => {
@@ -47,7 +51,11 @@ export function useExecutionMetricsStream(testId: string) {
     setLocalMetricsHistory((prev) => [...prev, point].slice(-EXECUTION_STREAM_HISTORY_LIMIT))
   }, [])
 
-  useWebSocket({ testId, onMessage: handleTestWSMessage })
+  useWebSocket({
+    testId,
+    enabled: shouldStreamExecutionMetrics(status),
+    onMessage: handleTestWSMessage,
+  })
 
   return { localMetricsHistory }
 }
