@@ -1,4 +1,5 @@
 import { GoalStatus, GroupLiveMetrics, TestSummary } from '../types'
+import { formatTimeCompact } from '../utils/timeUtils'
 
 interface LiveMetricsSummary {
   tps?: number
@@ -19,6 +20,11 @@ interface Props {
 function formatGoalThreshold(value: number | undefined, suffix = ''): string {
   if (value === undefined) return 'disabled'
   return `${Number.isInteger(value) ? value.toString() : value.toFixed(1)}${suffix}`
+}
+
+function formatGoalReason(value?: string): string {
+  if (!value) return 'none'
+  return value.replace(/_/g, ' ')
 }
 
 export default function TestExecutionStatusPanels({
@@ -81,6 +87,14 @@ export default function TestExecutionStatusPanels({
             <div className="goal-status-metric">
               <span className="goal-status-label">Max Error %</span>
               <span className="goal-status-value">{formatGoalThreshold(test.goal_config?.max_error_pct, '%')}</span>
+            </div>
+            <div className="goal-status-metric">
+              <span className="goal-status-label">Breach Duration</span>
+              <span className="goal-status-value">{goalStatus?.breach_active ? formatTimeCompact(goalStatus?.breach_duration_sec ?? 0) : 'inactive'}</span>
+            </div>
+            <div className="goal-status-metric">
+              <span className="goal-status-label">Stop Reason</span>
+              <span className="goal-status-value">{formatGoalReason(goalStatus?.stop_reason)}</span>
             </div>
           </div>
 

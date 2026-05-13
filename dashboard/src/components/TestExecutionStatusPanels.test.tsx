@@ -39,8 +39,10 @@ describe('TestExecutionStatusPanels', () => {
             target_average_tps: 150,
             suggested_total_vusers: 36,
             max_error_count: 25,
-            breach_active: false,
-            stop_triggered: false,
+            breach_active: true,
+            breach_duration_sec: 45,
+            stop_triggered: true,
+            stop_reason: 'sla_breach',
           }}
           test={{
             id: 'test-1',
@@ -77,5 +79,9 @@ describe('TestExecutionStatusPanels', () => {
     expect(container.textContent).toContain('2.5%')
     expect(container.textContent).toContain('Max Error Count')
     expect(container.textContent).toContain('25')
+    expect(container.textContent).toContain('Breach Duration')
+    expect(container.textContent).toContain('45s')
+    expect(container.textContent).toContain('Stop Reason')
+    expect(container.textContent).toContain('sla breach')
   })
 })
