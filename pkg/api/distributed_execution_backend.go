@@ -17,6 +17,7 @@ type generatorClient interface {
 	DistributeScript(ctx context.Context, script generatorrpc.Script) (generatorrpc.ScriptResult, error)
 	AssignWork(ctx context.Context, assignment generatorrpc.Assignment) (generatorrpc.AssignmentResult, error)
 	AdjustVUsers(ctx context.Context, adjustment generatorrpc.VUserAdjustment) (generatorrpc.AdjustmentResult, error)
+	OpenMetricsStream(ctx context.Context) (*generatorrpc.MetricsStream, error)
 	StopTest(ctx context.Context, testID string, graceful bool) (generatorrpc.StopResult, error)
 	Close() error
 }
@@ -173,11 +174,38 @@ func (b *distributedExecutionBackend) AdjustDuration(tr *TestRunner, test *Manag
 }
 
 func (b *distributedExecutionBackend) PauseTest(tr *TestRunner, test *ManagedTest) error {
-	return fmt.Errorf("distributed execution does not support pause yet")
+	return b.sendPauseControl(test, true)
 }
 
 func (b *distributedExecutionBackend) ResumeTest(tr *TestRunner, test *ManagedTest) error {
-	return fmt.Errorf("distributed execution does not support resume yet")
+	return b.sendPauseControl(test, false)
+}
+
+func (b *distributedExecutionBackend) sendPauseControl(test *ManagedTest, paused bool) error {
+	if test.remoteTarget == "" {
+		return fmt.Errorf("distributed generator target is not recorded")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
+	defer cancel()
+
+	client, err := b.dial(ctx, test.remoteTarget)
+	if err != nil {
+		return fmt.Errorf("connect generator: %w", err)
+	}
+	defer client.Close()
+
+	stream, err := client.OpenMetricsStream(ctx)
+	if err != nil {
+		return fmt.Errorf("open remote control stream: %w", err)
+	}
+	if err := stream.SendPause(generatorrpc.PauseControl{TestID: test.ID, Pause: paused}); err != nil {
+		return fmt.Errorf("send remote pause control: %w", err)
+	}
+	if err := stream.CloseSend(); err != nil {
+		return fmt.Errorf("close remote control stream: %w", err)
+	}
+	return nil
 }
 
 func marshalDistributedScript(script any) ([]byte, string, error) {

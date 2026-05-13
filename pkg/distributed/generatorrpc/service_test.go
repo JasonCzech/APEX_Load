@@ -114,6 +114,56 @@ func TestClientRoundTripDistributeAssignAndHeartbeat(t *testing.T) {
 		t.Fatalf("current vusers = %d, want 12", adjustmentAck.CurrentVUsers)
 	}
 
+	metrics, err := client.OpenMetricsStream(ctx)
+	if err != nil {
+		t.Fatalf("OpenMetricsStream: %v", err)
+	}
+	if err := metrics.SendPause(PauseControl{TestID: "test-1", Pause: true}); err != nil {
+		t.Fatalf("SendPause(true): %v", err)
+	}
+	if err := metrics.CloseSend(); err != nil {
+		t.Fatalf("Metrics CloseSend after pause: %v", err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		service.mu.RLock()
+		paused := service.assignments["test-1"].paused
+		service.mu.RUnlock()
+		if paused {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("expected pause control to mark assignment paused")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	metrics, err = client.OpenMetricsStream(ctx)
+	if err != nil {
+		t.Fatalf("OpenMetricsStream second time: %v", err)
+	}
+	if err := metrics.SendPause(PauseControl{TestID: "test-1", Pause: false}); err != nil {
+		t.Fatalf("SendPause(false): %v", err)
+	}
+	if err := metrics.CloseSend(); err != nil {
+		t.Fatalf("Metrics CloseSend after resume: %v", err)
+	}
+
+	deadline = time.Now().Add(2 * time.Second)
+	for {
+		service.mu.RLock()
+		paused := service.assignments["test-1"].paused
+		service.mu.RUnlock()
+		if !paused {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("expected resume control to clear paused assignment state")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
 	heartbeat, err := client.OpenHeartbeat(ctx)
 	if err != nil {
 		t.Fatalf("OpenHeartbeat: %v", err)

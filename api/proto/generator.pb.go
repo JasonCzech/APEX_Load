@@ -1186,7 +1186,7 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"AssignWork\x12\x1e.stormrunner.v1.WorkAssignment\x1a\x1d.stormrunner.v1.AssignmentAck\x12N\n" +
 	"\fAdjustVUsers\x12\x1f.stormrunner.v1.VUserAdjustment\x1a\x1d.stormrunner.v1.AdjustmentAck\x12@\n" +
 	"\bStopTest\x12\x1b.stormrunner.v1.StopRequest\x1a\x17.stormrunner.v1.StopAck\x12P\n" +
-	"\rStreamMetrics\x12\x1c.stormrunner.v1.MetricsBatch\x1a\x1d.stormrunner.v1.ControlSignal(\x010\x01\x12M\n" +
+	"\rStreamMetrics\x12\x1d.stormrunner.v1.ControlSignal\x1a\x1c.stormrunner.v1.MetricsBatch(\x010\x01\x12M\n" +
 	"\tHeartbeat\x12\x1d.stormrunner.v1.HeartbeatPing\x1a\x1d.stormrunner.v1.HeartbeatPong(\x010\x01\x12L\n" +
 	"\x10DistributeScript\x12\x1d.stormrunner.v1.ScriptPayload\x1a\x19.stormrunner.v1.ScriptAckB-Z+github.com/jasonczech/stormrunner/api/protob\x06proto3"
 
@@ -1234,13 +1234,13 @@ var file_api_proto_generator_proto_depIdxs = []int32{
 	0,  // 8: stormrunner.v1.GeneratorControl.AssignWork:input_type -> stormrunner.v1.WorkAssignment
 	3,  // 9: stormrunner.v1.GeneratorControl.AdjustVUsers:input_type -> stormrunner.v1.VUserAdjustment
 	5,  // 10: stormrunner.v1.GeneratorControl.StopTest:input_type -> stormrunner.v1.StopRequest
-	7,  // 11: stormrunner.v1.GeneratorControl.StreamMetrics:input_type -> stormrunner.v1.MetricsBatch
+	10, // 11: stormrunner.v1.GeneratorControl.StreamMetrics:input_type -> stormrunner.v1.ControlSignal
 	12, // 12: stormrunner.v1.GeneratorControl.Heartbeat:input_type -> stormrunner.v1.HeartbeatPing
 	14, // 13: stormrunner.v1.GeneratorControl.DistributeScript:input_type -> stormrunner.v1.ScriptPayload
 	2,  // 14: stormrunner.v1.GeneratorControl.AssignWork:output_type -> stormrunner.v1.AssignmentAck
 	4,  // 15: stormrunner.v1.GeneratorControl.AdjustVUsers:output_type -> stormrunner.v1.AdjustmentAck
 	6,  // 16: stormrunner.v1.GeneratorControl.StopTest:output_type -> stormrunner.v1.StopAck
-	10, // 17: stormrunner.v1.GeneratorControl.StreamMetrics:output_type -> stormrunner.v1.ControlSignal
+	7,  // 17: stormrunner.v1.GeneratorControl.StreamMetrics:output_type -> stormrunner.v1.MetricsBatch
 	13, // 18: stormrunner.v1.GeneratorControl.Heartbeat:output_type -> stormrunner.v1.HeartbeatPong
 	15, // 19: stormrunner.v1.GeneratorControl.DistributeScript:output_type -> stormrunner.v1.ScriptAck
 	14, // [14:20] is the sub-list for method output_type

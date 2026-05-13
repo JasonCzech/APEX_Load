@@ -19,6 +19,7 @@ type cachedScript struct {
 type assignedTest struct {
 	testID     string
 	vuserCount int32
+	paused     bool
 }
 
 type Service struct {
@@ -151,8 +152,25 @@ func (s *Service) StopTest(_ context.Context, request *pb.StopRequest) (*pb.Stop
 	}, nil
 }
 
-func (s *Service) StreamMetrics(pb.GeneratorControl_StreamMetricsServer) error {
-	return status.Error(codes.Unimplemented, "stream_metrics is not implemented yet")
+func (s *Service) StreamMetrics(stream pb.GeneratorControl_StreamMetricsServer) error {
+	for {
+		signal, err := stream.Recv()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+
+		pause := signal.GetPause()
+		if pause == nil {
+			return status.Error(codes.Unimplemented, "only pause control is implemented")
+		}
+
+		if err := s.setPaused(pause.GetTestId(), pause.GetPause()); err != nil {
+			return err
+		}
+	}
 }
 
 func (s *Service) Heartbeat(stream pb.GeneratorControl_HeartbeatServer) error {
@@ -199,6 +217,23 @@ func (s *Service) availableCapacityLocked() int32 {
 		return 0
 	}
 	return available
+}
+
+func (s *Service) setPaused(testID string, paused bool) error {
+	if testID == "" {
+		return status.Error(codes.InvalidArgument, "test_id is required")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	assignment, ok := s.assignments[testID]
+	if !ok {
+		return status.Error(codes.NotFound, "test assignment not found")
+	}
+	assignment.paused = paused
+	s.assignments[testID] = assignment
+	return nil
 }
 
 func maxInt64(left, right int64) int64 {

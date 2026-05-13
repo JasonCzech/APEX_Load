@@ -40,6 +40,11 @@ type AdjustmentResult struct {
 	CurrentVUsers int32
 }
 
+type PauseControl struct {
+	TestID string
+	Pause  bool
+}
+
 type StopResult struct {
 	Acknowledged bool
 	PendingVUsers int32
@@ -81,6 +86,10 @@ type Client struct {
 
 type HeartbeatStream struct {
 	stream pb.GeneratorControl_HeartbeatClient
+}
+
+type MetricsStream struct {
+	stream pb.GeneratorControl_StreamMetricsClient
 }
 
 func Dial(ctx context.Context, target string, opts ...grpc.DialOption) (*Client, error) {
@@ -154,6 +163,15 @@ func (c *Client) AdjustVUsers(ctx context.Context, adjustment VUserAdjustment) (
 	}, nil
 }
 
+func (c *Client) OpenMetricsStream(ctx context.Context) (*MetricsStream, error) {
+	stream, err := c.rpc.StreamMetrics(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return &MetricsStream{stream: stream}, nil
+}
+
 func (c *Client) StopTest(ctx context.Context, testID string, graceful bool) (StopResult, error) {
 	ack, err := c.rpc.StopTest(ctx, &pb.StopRequest{TestId: testID, Graceful: graceful})
 	if err != nil {
@@ -196,6 +214,21 @@ func (s *HeartbeatStream) Receive() (HeartbeatResponse, error) {
 }
 
 func (s *HeartbeatStream) CloseSend() error {
+	return s.stream.CloseSend()
+}
+
+func (s *MetricsStream) SendPause(control PauseControl) error {
+	return s.stream.Send(&pb.ControlSignal{
+		Signal: &pb.ControlSignal_Pause{
+			Pause: &pb.PauseRequest{
+				TestId: control.TestID,
+				Pause:  control.Pause,
+			},
+		},
+	})
+}
+
+func (s *MetricsStream) CloseSend() error {
 	return s.stream.CloseSend()
 }
 

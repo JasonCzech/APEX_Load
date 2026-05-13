@@ -16,9 +16,9 @@ service GeneratorControl {
   // StopTest requests graceful shutdown of a test on this generator.
   rpc StopTest(StopRequest) returns (StopAck);
 
-  // StreamMetrics is a bidirectional stream: generator sends metric batches,
-  // controller sends control signals (pause, adjust, stop).
-  rpc StreamMetrics(stream MetricsBatch) returns (stream ControlSignal);
+  // StreamMetrics is a bidirectional stream: controller sends control signals
+  // and the generator streams metrics batches back.
+  rpc StreamMetrics(stream ControlSignal) returns (stream MetricsBatch);
 
   // Heartbeat is a bidirectional keepalive stream.
   rpc Heartbeat(stream HeartbeatPing) returns (stream HeartbeatPong);

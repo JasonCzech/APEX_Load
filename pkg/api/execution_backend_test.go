@@ -416,16 +416,108 @@ func TestDistributedExecutionBackendReportsUnsupportedLifecycleControls(t *testi
 	if err := runner.AdjustDuration(testRun.ID, 45*time.Second); err == nil || !strings.Contains(err.Error(), "does not support duration changes yet") {
 		t.Fatalf("AdjustDuration error = %v, want distributed unsupported duration error", err)
 	}
-	if err := runner.PauseTest(testRun.ID); err == nil || !strings.Contains(err.Error(), "does not support pause yet") {
-		t.Fatalf("PauseTest error = %v, want distributed unsupported pause error", err)
+}
+
+func TestDistributedExecutionBackendPausesAndResumesTest(t *testing.T) {
+	const bufSize = 1024 * 1024
+
+	listener := bufconn.Listen(bufSize)
+	server := grpc.NewServer()
+	pb.RegisterGeneratorControlServer(server, generatorrpc.NewService("generator-1", 50))
+
+	go func() {
+		_ = server.Serve(listener)
+	}()
+	t.Cleanup(func() {
+		server.Stop()
+		_ = listener.Close()
+	})
+
+	hub := NewHub()
+	runner := NewTestRunner(1, hub, nil)
+	runner.setExecutionBackend(newDistributedExecutionBackend(
+		[]string{"bufnet"},
+		5*time.Second,
+		func(ctx context.Context, target string) (generatorClient, error) {
+			return generatorrpc.Dial(
+				ctx,
+				target,
+				grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+					return listener.Dial()
+				}),
+				grpc.WithTransportCredentials(insecure.NewCredentials()),
+				grpc.WithBlock(),
+			)
+		},
+	))
+
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-1",
+		Name:     "Checkout",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Config: dsl.ScriptConfig{
+			BaseURL: "https://example.com",
+			RunLogic: dsl.RunLogicConfig{
+				Iterations: 1,
+			},
+		},
+		Actions: []dsl.Action{{Name: "Home", Type: "GET", Target: "/"}},
+	})
+
+	testRun, err := runner.CreateTest(CreateTestRequest{
+		Name:     "Distributed pause resume",
+		Duration: "30s",
+		Groups: []CreateGroupEntry{{
+			Name:     "Group A",
+			ScriptID: "script-1",
+			VUsers:   5,
+			RampUp:   "5s",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("CreateTest returned error: %v", err)
 	}
 
-	runner.mu.Lock()
-	runner.tests[testRun.ID].Status = "PAUSED"
-	runner.mu.Unlock()
+	if err := runner.StartTest(testRun.ID); err != nil {
+		t.Fatalf("StartTest returned error: %v", err)
+	}
 
-	if err := runner.ResumeTest(testRun.ID); err == nil || !strings.Contains(err.Error(), "does not support resume yet") {
-		t.Fatalf("ResumeTest error = %v, want distributed unsupported resume error", err)
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		started, ok := runner.GetTest(testRun.ID)
+		if !ok {
+			t.Fatalf("expected managed test %q to exist", testRun.ID)
+		}
+		if started.Status == "RUNNING" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected distributed backend to mark test running, got status %q", started.Status)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	if err := runner.PauseTest(testRun.ID); err != nil {
+		t.Fatalf("PauseTest returned error: %v", err)
+	}
+	paused, ok := runner.GetTest(testRun.ID)
+	if !ok {
+		t.Fatalf("expected managed test %q to exist after pause", testRun.ID)
+	}
+	if paused.Status != "PAUSED" {
+		t.Fatalf("status after pause = %q, want PAUSED", paused.Status)
+	}
+
+	if err := runner.ResumeTest(testRun.ID); err != nil {
+		t.Fatalf("ResumeTest returned error: %v", err)
+	}
+	resumed, ok := runner.GetTest(testRun.ID)
+	if !ok {
+		t.Fatalf("expected managed test %q to exist after resume", testRun.ID)
+	}
+	if resumed.Status != "RUNNING" {
+		t.Fatalf("status after resume = %q, want RUNNING", resumed.Status)
 	}
 }
 

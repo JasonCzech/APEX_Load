@@ -40,9 +40,9 @@ type GeneratorControlClient interface {
 	AdjustVUsers(ctx context.Context, in *VUserAdjustment, opts ...grpc.CallOption) (*AdjustmentAck, error)
 	// StopTest requests graceful shutdown of a test on this generator.
 	StopTest(ctx context.Context, in *StopRequest, opts ...grpc.CallOption) (*StopAck, error)
-	// StreamMetrics is a bidirectional stream: generator sends metric batches,
-	// controller sends control signals (pause, adjust, stop).
-	StreamMetrics(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[MetricsBatch, ControlSignal], error)
+	// StreamMetrics is a bidirectional stream: controller sends control signals
+	// and the generator streams metrics batches back.
+	StreamMetrics(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[ControlSignal, MetricsBatch], error)
 	// Heartbeat is a bidirectional keepalive stream.
 	Heartbeat(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[HeartbeatPing, HeartbeatPong], error)
 	// DistributeScript sends a compiled script to a generator for caching.
@@ -87,18 +87,18 @@ func (c *generatorControlClient) StopTest(ctx context.Context, in *StopRequest, 
 	return out, nil
 }
 
-func (c *generatorControlClient) StreamMetrics(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[MetricsBatch, ControlSignal], error) {
+func (c *generatorControlClient) StreamMetrics(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[ControlSignal, MetricsBatch], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	stream, err := c.cc.NewStream(ctx, &GeneratorControl_ServiceDesc.Streams[0], GeneratorControl_StreamMetrics_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
-	x := &grpc.GenericClientStream[MetricsBatch, ControlSignal]{ClientStream: stream}
+	x := &grpc.GenericClientStream[ControlSignal, MetricsBatch]{ClientStream: stream}
 	return x, nil
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type GeneratorControl_StreamMetricsClient = grpc.BidiStreamingClient[MetricsBatch, ControlSignal]
+type GeneratorControl_StreamMetricsClient = grpc.BidiStreamingClient[ControlSignal, MetricsBatch]
 
 func (c *generatorControlClient) Heartbeat(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[HeartbeatPing, HeartbeatPong], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
@@ -136,9 +136,9 @@ type GeneratorControlServer interface {
 	AdjustVUsers(context.Context, *VUserAdjustment) (*AdjustmentAck, error)
 	// StopTest requests graceful shutdown of a test on this generator.
 	StopTest(context.Context, *StopRequest) (*StopAck, error)
-	// StreamMetrics is a bidirectional stream: generator sends metric batches,
-	// controller sends control signals (pause, adjust, stop).
-	StreamMetrics(grpc.BidiStreamingServer[MetricsBatch, ControlSignal]) error
+	// StreamMetrics is a bidirectional stream: controller sends control signals
+	// and the generator streams metrics batches back.
+	StreamMetrics(grpc.BidiStreamingServer[ControlSignal, MetricsBatch]) error
 	// Heartbeat is a bidirectional keepalive stream.
 	Heartbeat(grpc.BidiStreamingServer[HeartbeatPing, HeartbeatPong]) error
 	// DistributeScript sends a compiled script to a generator for caching.
@@ -162,7 +162,7 @@ func (UnimplementedGeneratorControlServer) AdjustVUsers(context.Context, *VUserA
 func (UnimplementedGeneratorControlServer) StopTest(context.Context, *StopRequest) (*StopAck, error) {
 	return nil, status.Error(codes.Unimplemented, "method StopTest not implemented")
 }
-func (UnimplementedGeneratorControlServer) StreamMetrics(grpc.BidiStreamingServer[MetricsBatch, ControlSignal]) error {
+func (UnimplementedGeneratorControlServer) StreamMetrics(grpc.BidiStreamingServer[ControlSignal, MetricsBatch]) error {
 	return status.Error(codes.Unimplemented, "method StreamMetrics not implemented")
 }
 func (UnimplementedGeneratorControlServer) Heartbeat(grpc.BidiStreamingServer[HeartbeatPing, HeartbeatPong]) error {
@@ -247,11 +247,11 @@ func _GeneratorControl_StopTest_Handler(srv interface{}, ctx context.Context, de
 }
 
 func _GeneratorControl_StreamMetrics_Handler(srv interface{}, stream grpc.ServerStream) error {
-	return srv.(GeneratorControlServer).StreamMetrics(&grpc.GenericServerStream[MetricsBatch, ControlSignal]{ServerStream: stream})
+	return srv.(GeneratorControlServer).StreamMetrics(&grpc.GenericServerStream[ControlSignal, MetricsBatch]{ServerStream: stream})
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type GeneratorControl_StreamMetricsServer = grpc.BidiStreamingServer[MetricsBatch, ControlSignal]
+type GeneratorControl_StreamMetricsServer = grpc.BidiStreamingServer[ControlSignal, MetricsBatch]
 
 func _GeneratorControl_Heartbeat_Handler(srv interface{}, stream grpc.ServerStream) error {
 	return srv.(GeneratorControlServer).Heartbeat(&grpc.GenericServerStream[HeartbeatPing, HeartbeatPong]{ServerStream: stream})
