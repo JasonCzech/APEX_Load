@@ -656,6 +656,379 @@ func TestDistributedExecutionBackendRunsRemoteEngine(t *testing.T) {
 	}
 }
 
+func TestDistributedExecutionBackendRunsRemoteMultiGroupEngine(t *testing.T) {
+	const bufSize = 1024 * 1024
+
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/buyers", "/admins":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("ok"))
+		default:
+			t.Fatalf("unexpected request path %q", r.URL.Path)
+		}
+	}))
+	defer target.Close()
+
+	listener := bufconn.Listen(bufSize)
+	server := grpc.NewServer()
+	pb.RegisterGeneratorControlServer(server, generatorrpc.NewService("generator-1", 50, generatorrpc.WithExecution()))
+
+	go func() {
+		_ = server.Serve(listener)
+	}()
+	t.Cleanup(func() {
+		server.Stop()
+		_ = listener.Close()
+	})
+
+	hub := NewHub()
+	runner := NewTestRunner(1, hub, nil)
+	runner.setExecutionBackend(newDistributedExecutionBackend(
+		[]string{"bufnet"},
+		5*time.Second,
+		func(ctx context.Context, target string) (generatorClient, error) {
+			return generatorrpc.Dial(
+				ctx,
+				target,
+				grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+					return listener.Dial()
+				}),
+				grpc.WithTransportCredentials(insecure.NewCredentials()),
+				grpc.WithBlock(),
+			)
+		},
+	))
+
+	runner.StoreScript(&dsl.Script{
+		ID:       "buyers-script",
+		Name:     "Buyers",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Config: dsl.ScriptConfig{
+			BaseURL: target.URL,
+			RunLogic: dsl.RunLogicConfig{
+				Iterations: 0,
+			},
+		},
+		Actions: []dsl.Action{{Name: "Buyers Home", Type: "GET", Target: "/buyers"}},
+	})
+	runner.StoreScript(&dsl.Script{
+		ID:       "admins-script",
+		Name:     "Admins",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Config: dsl.ScriptConfig{
+			BaseURL: target.URL,
+			RunLogic: dsl.RunLogicConfig{
+				Iterations: 0,
+			},
+		},
+		Actions: []dsl.Action{{Name: "Admins Home", Type: "GET", Target: "/admins"}},
+	})
+
+	testRun, err := runner.CreateTest(CreateTestRequest{
+		Name:     "Distributed actual multi-group execution",
+		Duration: "2s",
+		Groups: []CreateGroupEntry{{
+			Name:     "buyers",
+			ScriptID: "buyers-script",
+			VUsers:   1,
+			RampUp:   "0s",
+		}, {
+			Name:     "admins",
+			ScriptID: "admins-script",
+			VUsers:   1,
+			RampUp:   "0s",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("CreateTest returned error: %v", err)
+	}
+
+	if err := runner.StartTest(testRun.ID); err != nil {
+		t.Fatalf("StartTest returned error: %v", err)
+	}
+
+	deadline := time.Now().Add(6 * time.Second)
+	for {
+		updated, ok := runner.GetTest(testRun.ID)
+		if !ok {
+			t.Fatalf("expected managed test %q to exist", testRun.ID)
+		}
+		if updated.LiveMetrics != nil && updated.LiveMetrics.TotalTx > 0 && updated.LiveMetrics.Transactions["Buyers Home"] != nil && updated.LiveMetrics.Transactions["Admins Home"] != nil {
+			if updated.LiveMetrics.GroupMetrics["buyers"] == nil || updated.LiveMetrics.GroupMetrics["admins"] == nil {
+				t.Fatalf("expected group live metrics for both remote groups, got %#v", updated.LiveMetrics.GroupMetrics)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected remote multi-group execution to publish live metrics, got %#v", updated.LiveMetrics)
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+
+	deadline = time.Now().Add(6 * time.Second)
+	for {
+		completed, ok := runner.GetTest(testRun.ID)
+		if !ok {
+			t.Fatalf("expected managed test %q to exist after execution", testRun.ID)
+		}
+		if completed.Status == "COMPLETE" && completed.EndedAt != nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected remote multi-group execution to complete, got status=%q ended=%v", completed.Status, completed.EndedAt)
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+}
+
+func TestDistributedExecutionBackendScalesRunningRemoteEngine(t *testing.T) {
+	const bufSize = 1024 * 1024
+
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/" {
+			t.Fatalf("unexpected request path %q", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer target.Close()
+
+	listener := bufconn.Listen(bufSize)
+	server := grpc.NewServer()
+	pb.RegisterGeneratorControlServer(server, generatorrpc.NewService("generator-1", 50, generatorrpc.WithExecution()))
+
+	go func() {
+		_ = server.Serve(listener)
+	}()
+	t.Cleanup(func() {
+		server.Stop()
+		_ = listener.Close()
+	})
+
+	hub := NewHub()
+	runner := NewTestRunner(1, hub, nil)
+	runner.setExecutionBackend(newDistributedExecutionBackend(
+		[]string{"bufnet"},
+		5*time.Second,
+		func(ctx context.Context, target string) (generatorClient, error) {
+			return generatorrpc.Dial(
+				ctx,
+				target,
+				grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+					return listener.Dial()
+				}),
+				grpc.WithTransportCredentials(insecure.NewCredentials()),
+				grpc.WithBlock(),
+			)
+		},
+	))
+
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-1",
+		Name:     "Checkout",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Config: dsl.ScriptConfig{
+			BaseURL: target.URL,
+			RunLogic: dsl.RunLogicConfig{
+				Iterations: 0,
+			},
+		},
+		Actions: []dsl.Action{{Name: "Home", Type: "GET", Target: "/"}},
+	})
+
+	testRun, err := runner.CreateTest(CreateTestRequest{
+		Name:     "Distributed actual scaling",
+		Duration: "3s",
+		Groups: []CreateGroupEntry{{
+			Name:     "Group A",
+			ScriptID: "script-1",
+			VUsers:   1,
+			RampUp:   "0s",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("CreateTest returned error: %v", err)
+	}
+
+	if err := runner.StartTest(testRun.ID); err != nil {
+		t.Fatalf("StartTest returned error: %v", err)
+	}
+
+	deadline := time.Now().Add(6 * time.Second)
+	for {
+		started, ok := runner.GetTest(testRun.ID)
+		if !ok {
+			t.Fatalf("expected managed test %q to exist", testRun.ID)
+		}
+		if started.Status == "RUNNING" && started.LiveMetrics != nil && started.LiveMetrics.TotalTx > 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected remote engine to start before scaling, got %#v", started.LiveMetrics)
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+
+	if err := runner.ScaleVUsers(testRun.ID, "Group A", 2); err != nil {
+		t.Fatalf("ScaleVUsers returned error: %v", err)
+	}
+
+	deadline = time.Now().Add(6 * time.Second)
+	for {
+		scaled, ok := runner.GetTest(testRun.ID)
+		if !ok {
+			t.Fatalf("expected managed test %q to exist after scale", testRun.ID)
+		}
+		if scaled.LiveMetrics != nil && scaled.LiveMetrics.ActiveVUsers == 2 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected live metrics to reflect scaled remote vusers, got %#v", scaled.LiveMetrics)
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+
+	scaled, ok := runner.GetTest(testRun.ID)
+	if !ok {
+		t.Fatalf("expected managed test %q to exist after scale", testRun.ID)
+	}
+	if scaled.Groups[0].VUsers != 2 || scaled.TotalVUsers != 2 {
+		t.Fatalf("expected scaled test config to settle at 2 vusers, got groups=%#v total=%d", scaled.Groups, scaled.TotalVUsers)
+	}
+}
+
+func TestDistributedExecutionBackendPausesRealRemoteEngine(t *testing.T) {
+	const bufSize = 1024 * 1024
+
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/" {
+			t.Fatalf("unexpected request path %q", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer target.Close()
+
+	listener := bufconn.Listen(bufSize)
+	server := grpc.NewServer()
+	pb.RegisterGeneratorControlServer(server, generatorrpc.NewService("generator-1", 50, generatorrpc.WithExecution()))
+
+	go func() {
+		_ = server.Serve(listener)
+	}()
+	t.Cleanup(func() {
+		server.Stop()
+		_ = listener.Close()
+	})
+
+	hub := NewHub()
+	runner := NewTestRunner(1, hub, nil)
+	runner.setExecutionBackend(newDistributedExecutionBackend(
+		[]string{"bufnet"},
+		5*time.Second,
+		func(ctx context.Context, target string) (generatorClient, error) {
+			return generatorrpc.Dial(
+				ctx,
+				target,
+				grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+					return listener.Dial()
+				}),
+				grpc.WithTransportCredentials(insecure.NewCredentials()),
+				grpc.WithBlock(),
+			)
+		},
+	))
+
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-1",
+		Name:     "Checkout",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Config: dsl.ScriptConfig{
+			BaseURL: target.URL,
+			RunLogic: dsl.RunLogicConfig{
+				Iterations: 0,
+			},
+		},
+		Actions: []dsl.Action{{Name: "Home", Type: "GET", Target: "/"}},
+	})
+
+	testRun, err := runner.CreateTest(CreateTestRequest{
+		Name:     "Distributed actual pause",
+		Duration: "3s",
+		Groups: []CreateGroupEntry{{
+			Name:     "Group A",
+			ScriptID: "script-1",
+			VUsers:   1,
+			RampUp:   "0s",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("CreateTest returned error: %v", err)
+	}
+
+	if err := runner.StartTest(testRun.ID); err != nil {
+		t.Fatalf("StartTest returned error: %v", err)
+	}
+
+	deadline := time.Now().Add(6 * time.Second)
+	for {
+		started, ok := runner.GetTest(testRun.ID)
+		if !ok {
+			t.Fatalf("expected managed test %q to exist", testRun.ID)
+		}
+		if started.Status == "RUNNING" && started.LiveMetrics != nil && started.LiveMetrics.TotalTx > 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected remote engine to start before pause, got %#v", started.LiveMetrics)
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+
+	if err := runner.PauseTest(testRun.ID); err != nil {
+		t.Fatalf("PauseTest returned error: %v", err)
+	}
+
+	deadline = time.Now().Add(6 * time.Second)
+	for {
+		paused, ok := runner.GetTest(testRun.ID)
+		if !ok {
+			t.Fatalf("expected managed test %q to exist after pause", testRun.ID)
+		}
+		if paused.Status == "PAUSED" && paused.LiveMetrics != nil && paused.LiveMetrics.ActiveVUsers == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected live metrics to reflect paused remote engine, got status=%q metrics=%#v", paused.Status, paused.LiveMetrics)
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+
+	if err := runner.ResumeTest(testRun.ID); err != nil {
+		t.Fatalf("ResumeTest returned error: %v", err)
+	}
+
+	deadline = time.Now().Add(6 * time.Second)
+	for {
+		resumed, ok := runner.GetTest(testRun.ID)
+		if !ok {
+			t.Fatalf("expected managed test %q to exist after resume", testRun.ID)
+		}
+		if resumed.Status == "RUNNING" && resumed.LiveMetrics != nil && resumed.LiveMetrics.ActiveVUsers == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected live metrics to reflect resumed remote engine, got status=%q metrics=%#v", resumed.Status, resumed.LiveMetrics)
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+}
+
 func TestDistributedExecutionBackendPropagatesRemoteFailure(t *testing.T) {
 	const bufSize = 1024 * 1024
 
