@@ -1,4 +1,4 @@
-import { useMemo, useCallback, useReducer } from 'react'
+import { useCallback } from 'react'
 import { useApi } from '../hooks/useApi'
 import {
   TestSummary,
@@ -11,25 +11,16 @@ import { useExecutionLiveControls } from './useExecutionLiveControls'
 import { useExecutionMetricsStream } from './useExecutionMetricsStream'
 import { useExecutionTestPolling } from './useExecutionTestPolling'
 import { useExecutionViewState } from './useExecutionViewState'
-import {
-  executionChartZoomReducer,
-  getExecutionChartRefArea,
-  initialExecutionChartZoomState,
-} from './testExecutionChartZoomModel'
 import TestExecutionCharts from './TestExecutionCharts'
 import TestExecutionHeader from './TestExecutionHeader'
 import TestExecutionHeroMetrics from './TestExecutionHeroMetrics'
 import TestExecutionLiveControls from './TestExecutionLiveControls'
-import {
-  buildExecutionChartData,
-  filterExecutionChartData,
-  mapExecutionHistory,
-  summarizeExecutionChartData,
-} from './testExecutionMetricsModel'
+import TestExecutionScenarioOverview from './TestExecutionScenarioOverview'
 import TestExecutionScenarioPreview from './TestExecutionScenarioPreview'
 import TestExecutionStatusPanels from './TestExecutionStatusPanels'
 import TestExecutionSummary from './TestExecutionSummary'
 import { buildExecutionStatusModel, describeGoalController } from './testExecutionStatusModel'
+import { useExecutionChartModel } from './useExecutionChartModel'
 import { useExecutionScenarioPreviewModel } from './useExecutionScenarioPreviewModel'
 import './TestExecution.css'
 
@@ -49,7 +40,6 @@ interface Props {
 export default function TestExecution({ testId, history, onBack, onEditScript, onSelectTest }: Props) {
   const api = useApi()
   const { test, setTest, error } = useExecutionTestPolling(testId)
-  const [chartZoomState, dispatchChartZoom] = useReducer(executionChartZoomReducer, initialExecutionChartZoomState)
   const {
     expandedChart,
     onExpandedChartChange,
@@ -64,6 +54,22 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
     scriptDetailsError,
   } = useExecutionScenarioPreviewModel(test)
   const { localMetricsHistory } = useExecutionMetricsStream(testId)
+  const {
+    filteredData,
+    summary,
+    timeRange,
+    refAreaLeft,
+    refAreaEnd,
+    showRefArea,
+    onTimeRangeChange,
+    onChartMouseDown,
+    onChartMouseMove,
+    onZoom,
+  } = useExecutionChartModel({
+    test,
+    history,
+    localMetricsHistory,
+  })
   const {
     controlFeedback,
     showControlFeedback,
@@ -115,31 +121,6 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
   } = useExecutionArchiveModel(test)
 
   const isRunning = test?.status === 'RUNNING' || test?.status === 'INITIALIZING'
-  
-  // Memoize the mapped backend history to avoid re-mapping it on every WebSocket update
-  const mappedBackendHistory = useMemo(() => {
-    return mapExecutionHistory(test?.history)
-  }, [test?.history])
-
-  // Combine WebSocket history with backend history for a continuous timeline
-  const chartData = useMemo(() => {
-    return buildExecutionChartData({
-      mappedBackendHistory,
-      localMetricsHistory,
-      fallbackHistory: history,
-      status: test?.status,
-    })
-  }, [history, localMetricsHistory, mappedBackendHistory, test?.status])
-
-  const filteredData = useMemo(() => {
-    return filterExecutionChartData(chartData, chartZoomState.timeRange, chartZoomState.zoomRange)
-  }, [chartData, chartZoomState.timeRange, chartZoomState.zoomRange])
-
-  const summary = useMemo(() => {
-    return summarizeExecutionChartData(filteredData)
-  }, [filteredData])
-
-  const { showRefArea, refAreaEnd } = getExecutionChartRefArea(chartZoomState)
 
   if (error) {
     return (
@@ -170,8 +151,8 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
       <TestExecutionHeader
         test={test}
         isMultiGroup={isMultiGroup}
-        timeRange={chartZoomState.timeRange}
-        onTimeRangeChange={(value) => dispatchChartZoom({ type: 'setTimeRange', value })}
+        timeRange={timeRange}
+        onTimeRangeChange={onTimeRangeChange}
         onBack={onBack}
         onStart={onStart}
         onSelectTest={onSelectTest}
@@ -202,26 +183,12 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
         />
       )}
 
-      {/* Group config summary */}
-      {isMultiGroup && (
-        <div className="group-config-bar">
-          {test.groups.map((g, i) => (
-            <div key={g.name} className="group-chip" style={{ borderLeftColor: GROUP_COLORS[i % GROUP_COLORS.length] }}>
-              <span className="group-chip-name">{g.name}</span>
-              <span className="group-chip-detail">{g.script_name} · {g.vusers} VUsers</span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {shakeoutFailed && (
-        <div className="scenario-alert-banner" role="alert">
-          <div>
-            <h3 className="scenario-alert-title">Script shakeout failed</h3>
-            <p className="scenario-alert-message">{test.error}</p>
-          </div>
-        </div>
-      )}
+      <TestExecutionScenarioOverview
+        test={test}
+        isMultiGroup={isMultiGroup}
+        shakeoutFailed={shakeoutFailed}
+        groupColors={GROUP_COLORS}
+      />
 
       <TestExecutionScenarioPreview
         test={test}
@@ -292,11 +259,11 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
         filteredData={filteredData}
         expandedChart={expandedChart}
         onExpandedChartChange={onExpandedChartChange}
-        onChartMouseDown={(activeLabel) => dispatchChartZoom({ type: 'beginSelection', activeLabel })}
-        onChartMouseMove={(activeLabel) => dispatchChartZoom({ type: 'updateSelection', activeLabel })}
-        onZoom={() => dispatchChartZoom({ type: 'applySelection' })}
+        onChartMouseDown={onChartMouseDown}
+        onChartMouseMove={onChartMouseMove}
+        onZoom={onZoom}
         showRefArea={showRefArea}
-        refAreaLeft={chartZoomState.refAreaLeft}
+        refAreaLeft={refAreaLeft}
         refAreaEnd={refAreaEnd}
         isMultiGroup={isMultiGroup}
         groupNames={groupNames}
