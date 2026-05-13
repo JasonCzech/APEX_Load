@@ -16,6 +16,11 @@ interface Props {
   groupColors: string[]
 }
 
+function formatGoalThreshold(value: number | undefined, suffix = ''): string {
+  if (value === undefined) return 'disabled'
+  return `${Number.isInteger(value) ? value.toString() : value.toFixed(1)}${suffix}`
+}
+
 export default function TestExecutionStatusPanels({
   isGoalOriented,
   goalDescription,
@@ -68,6 +73,14 @@ export default function TestExecutionStatusPanels({
             <div className="goal-status-metric">
               <span className="goal-status-label">Max Error Count</span>
               <span className="goal-status-value">{goalStatus?.max_error_count ?? test.goal_config?.max_error_count ?? 'disabled'}</span>
+            </div>
+            <div className="goal-status-metric">
+              <span className="goal-status-label">P95 Latency Ceiling</span>
+              <span className="goal-status-value">{formatGoalThreshold(test.goal_config?.p95_latency_ms, ' ms')}</span>
+            </div>
+            <div className="goal-status-metric">
+              <span className="goal-status-label">Max Error %</span>
+              <span className="goal-status-value">{formatGoalThreshold(test.goal_config?.max_error_pct, '%')}</span>
             </div>
           </div>
 
