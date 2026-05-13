@@ -843,6 +843,15 @@ func TestDistributedExecutionBackendScalesMultiGroupTest(t *testing.T) {
 	if scaled.LiveMetrics == nil || scaled.LiveMetrics.ActiveVUsers != 10 {
 		t.Fatalf("live metrics active vusers = %#v, want 10", scaled.LiveMetrics)
 	}
+	if scaled.LiveMetrics.GroupMetrics == nil {
+		t.Fatalf("group live metrics = %#v, want populated group metrics", scaled.LiveMetrics)
+	}
+	if scaled.LiveMetrics.GroupMetrics["Group A"] == nil || scaled.LiveMetrics.GroupMetrics["Group A"].VUsers != 7 {
+		t.Fatalf("group A live metrics = %#v, want vusers 7", scaled.LiveMetrics.GroupMetrics["Group A"])
+	}
+	if scaled.LiveMetrics.GroupMetrics["Group B"] == nil || scaled.LiveMetrics.GroupMetrics["Group B"].VUsers != 3 {
+		t.Fatalf("group B live metrics = %#v, want vusers 3", scaled.LiveMetrics.GroupMetrics["Group B"])
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

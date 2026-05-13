@@ -90,6 +90,12 @@ message MetricsBatch {
   int64 timestamp_unix_ms = 3;
   repeated TransactionMetric transactions = 4;
   GeneratorStats stats = 5;
+  repeated GroupMetric groups = 6;
+}
+
+message GroupMetric {
+  string name = 1;
+  int32 active_vusers = 2;
 }
 
 message TransactionMetric {

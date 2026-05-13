@@ -356,18 +356,32 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 		live.P99Ms = percentileValue(allDurations, 0.99)
 	}
 
-	if len(test.Groups) == 1 {
+	if len(batch.Groups) > 0 {
+		for _, group := range batch.Groups {
+			live.GroupMetrics[group.Name] = &GroupLiveMetrics{
+				Name:          group.Name,
+				VUsers:        int(group.ActiveVUsers),
+				Transactions:  0,
+				Errors:        0,
+				TPS:           0,
+				AvgResponseMs: 0,
+				P50Ms:         0,
+				P90Ms:         0,
+				P99Ms:         0,
+			}
+		}
+	} else if len(test.Groups) == 1 {
 		groupName := test.Groups[0].Name
 		live.GroupMetrics[groupName] = &GroupLiveMetrics{
-			Name:         groupName,
-			VUsers:       int(batch.Stats.ActiveVUsers),
-			Transactions: live.TotalTx,
-			Errors:       live.TotalErrors,
-			TPS:          live.TPS,
+			Name:          groupName,
+			VUsers:        int(batch.Stats.ActiveVUsers),
+			Transactions:  live.TotalTx,
+			Errors:        live.TotalErrors,
+			TPS:           live.TPS,
 			AvgResponseMs: live.AvgResponseMs,
-			P50Ms:        live.P50Ms,
-			P90Ms:        live.P90Ms,
-			P99Ms:        live.P99Ms,
+			P50Ms:         live.P50Ms,
+			P90Ms:         live.P90Ms,
+			P99Ms:         live.P99Ms,
 		}
 	}
 

@@ -63,6 +63,12 @@ type MetricsBatch struct {
 	TimestampUnixMs int64
 	Stats           GeneratorStats
 	Transactions    []TransactionMetric
+	Groups          []GroupMetric
+}
+
+type GroupMetric struct {
+	Name         string
+	ActiveVUsers int32
 }
 
 type TransactionMetric struct {
@@ -297,6 +303,14 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 		})
 	}
 
+	groups := make([]GroupMetric, 0, len(batch.GetGroups()))
+	for _, group := range batch.GetGroups() {
+		groups = append(groups, GroupMetric{
+			Name:         group.GetName(),
+			ActiveVUsers: group.GetActiveVusers(),
+		})
+	}
+
 	stats := GeneratorStats{}
 	if batch.GetStats() != nil {
 		stats = GeneratorStats{
@@ -313,6 +327,7 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 		TimestampUnixMs: batch.GetTimestampUnixMs(),
 		Stats:           stats,
 		Transactions:    transactions,
+		Groups:          groups,
 	}, nil
 	}
 

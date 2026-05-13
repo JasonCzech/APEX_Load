@@ -194,7 +194,7 @@ func (s *Service) StopTest(_ context.Context, request *pb.StopRequest) (*pb.Stop
 	if ok {
 		delete(s.assignments, request.GetTestId())
 	}
-	batch := s.metricsBatchForState(request.GetTestId(), 0, false)
+	batch := s.metricsBatchForState(request.GetTestId(), 0, false, nil)
 
 	go s.broadcastMetrics(batch)
 	return &pb.StopAck{
@@ -367,15 +367,26 @@ func (s *Service) broadcastMetrics(batch *pb.MetricsBatch) {
 func (s *Service) metricsBatchLocked(testID string) *pb.MetricsBatch {
 	assignment, ok := s.assignments[testID]
 	if !ok {
-		return s.metricsBatchForState(testID, 0, false)
+		return s.metricsBatchForState(testID, 0, false, nil)
 	}
-	return s.metricsBatchForState(testID, assignment.vuserCount, assignment.paused)
+	return s.metricsBatchForState(testID, assignment.vuserCount, assignment.paused, assignment.groups)
 }
 
-func (s *Service) metricsBatchForState(testID string, vuserCount int32, paused bool) *pb.MetricsBatch {
+func (s *Service) metricsBatchForState(testID string, vuserCount int32, paused bool, groupAssignments map[string]int32) *pb.MetricsBatch {
 	activeVUsers := vuserCount
 	if paused {
 		activeVUsers = 0
+	}
+	groups := make([]*pb.GroupMetric, 0)
+	if len(groupAssignments) > 0 {
+		groups = make([]*pb.GroupMetric, 0, len(groupAssignments))
+		for name, groupVUsers := range groupAssignments {
+			activeGroupVUsers := groupVUsers
+			if paused {
+				activeGroupVUsers = 0
+			}
+			groups = append(groups, &pb.GroupMetric{Name: name, ActiveVusers: activeGroupVUsers})
+		}
 	}
 	return &pb.MetricsBatch{
 		TestId:          testID,
@@ -384,6 +395,7 @@ func (s *Service) metricsBatchForState(testID string, vuserCount int32, paused b
 		Stats: &pb.GeneratorStats{
 			ActiveVusers: activeVUsers,
 		},
+		Groups: groups,
 	}
 }
 
