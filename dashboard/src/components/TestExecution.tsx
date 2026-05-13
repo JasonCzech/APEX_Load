@@ -1,11 +1,8 @@
-import { useState, useEffect, useMemo, useCallback, useReducer } from 'react'
-import { ApiError, useApi } from '../hooks/useApi'
+import { useMemo, useCallback, useReducer } from 'react'
+import { useApi } from '../hooks/useApi'
 import {
-  CapacityAdvisory,
   TestSummary,
   MetricsHistoryPoint,
-  TxMetrics,
-  GoalStatus,
 } from '../types'
 import TestExecutionArchive from './TestExecutionArchive'
 import { useExecutionActionBridge } from './useExecutionActionBridge'
@@ -32,10 +29,8 @@ import {
 import TestExecutionScenarioPreview from './TestExecutionScenarioPreview'
 import TestExecutionStatusPanels from './TestExecutionStatusPanels'
 import TestExecutionSummary from './TestExecutionSummary'
-import { buildQueuedScenarioPreview } from './testExecutionScenarioModel'
+import { buildExecutionStatusModel, describeGoalController } from './testExecutionStatusModel'
 import { useExecutionScenarioPreviewModel } from './useExecutionScenarioPreviewModel'
-import { formatTimeLong } from '../utils/timeUtils'
-import { getErrorMessage } from '../utils/errorUtils'
 import './TestExecution.css'
 
 const GROUP_COLORS = [
@@ -51,21 +46,6 @@ interface Props {
   onSelectTest: (testId: string) => void
 }
 
-function formatGoalScaleReason(reason?: string): string {
-  if (!reason) return 'Tracking target'
-  return reason.replace(/_/g, ' ')
-}
-
-function describeGoalController(status?: GoalStatus): string {
-  if (!status) return 'Waiting for live metrics'
-  if (status.stop_triggered) return `Stopping: ${status.stop_reason || 'SLA breached'}`
-  if (status.breach_active) return `SLA breach active for ${status.breach_duration_sec || 0}s`
-  if (status.last_scale_direction) {
-    return `Last scale ${status.last_scale_direction} due to ${formatGoalScaleReason(status.last_scale_reason)}`
-  }
-  return 'Tracking target'
-}
-
 export default function TestExecution({ testId, history, onBack, onEditScript, onSelectTest }: Props) {
   const api = useApi()
   const { test, setTest, error } = useExecutionTestPolling(testId)
@@ -77,7 +57,12 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
     onExpandedScenarioScriptChange,
   } = useExecutionViewState()
 
-  const { queuedScenarioRows, scriptDetailsLoading, scriptDetailsError } = useExecutionScenarioPreviewModel(test)
+  const {
+    queuedScenarioPreview,
+    queuedScenarioRows,
+    scriptDetailsLoading,
+    scriptDetailsError,
+  } = useExecutionScenarioPreviewModel(test)
   const { localMetricsHistory } = useExecutionMetricsStream(testId)
   const {
     controlFeedback,
@@ -156,19 +141,6 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
 
   const { showRefArea, refAreaEnd } = getExecutionChartRefArea(chartZoomState)
 
-  const queuedScenarioPreview = useMemo(() => {
-    return buildQueuedScenarioPreview(test)
-  }, [test])
-
-  const metrics = test?.live_metrics
-  const goalStatus = metrics?.goal_status
-  const transactions = metrics?.transactions ? Object.values(metrics.transactions) : []
-  const groupMetrics = metrics?.groups ? Object.values(metrics.groups) : []
-  const isMultiGroup = (test?.groups?.length || 0) > 1
-  const groupNames = test?.groups?.map((g) => g.name) || []
-  const isGoalOriented = test?.scenario_mode === 'goal_oriented'
-  const shakeoutFailed = test?.status === 'FAILED' && Boolean(test.script_shakeout) && test.error?.toLowerCase().includes('shakeout')
-
   if (error) {
     return (
       <div className="execution">
@@ -181,6 +153,17 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
   if (!test) {
     return <div className="execution"><p className="loading">Loading...</p></div>
   }
+
+  const {
+    metrics,
+    goalStatus,
+    transactions,
+    groupMetrics,
+    isMultiGroup,
+    groupNames,
+    isGoalOriented,
+    shakeoutFailed,
+  } = buildExecutionStatusModel(test)
 
   return (
     <div className="execution">

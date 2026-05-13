@@ -23,6 +23,8 @@ function PreviewHarness({ test }: { test: unknown }) {
     <div>
       <span data-testid="loading">{model.scriptDetailsLoading ? 'loading' : 'idle'}</span>
       <span data-testid="error">{model.scriptDetailsError || 'none'}</span>
+      <span data-testid="preview-points">{model.queuedScenarioPreview.points.length}</span>
+      <span data-testid="preview-total">{model.queuedScenarioPreview.totalSeconds}</span>
       <span data-testid="rows">{model.queuedScenarioRows.length}</span>
       <span data-testid="actions">{model.queuedScenarioRows[0]?.actionCount ?? 0}</span>
     </div>
@@ -93,6 +95,8 @@ describe('useExecutionScenarioPreviewModel', () => {
     expect(apiMock.getScript).toHaveBeenCalledTimes(1)
     expect(readTestId('loading')).toBe('idle')
     expect(readTestId('error')).toBe('none')
+    expect(readTestId('preview-points')).toBe('31')
+    expect(readTestId('preview-total')).toBe('300')
     expect(readTestId('rows')).toBe('2')
     expect(readTestId('actions')).toBe('2')
   })

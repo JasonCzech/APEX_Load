@@ -3,9 +3,10 @@ import { useEffect, useMemo, useState } from 'react'
 import { useApi } from '../hooks/useApi'
 import { TestSummary } from '../types'
 import { getErrorMessage } from '../utils/errorUtils'
-import { buildQueuedScenarioRows, QueuedScenarioRow, ScenarioScriptDetail } from './testExecutionScenarioModel'
+import { buildQueuedScenarioPreview, buildQueuedScenarioRows, QueuedScenarioPreview, QueuedScenarioRow, ScenarioScriptDetail } from './testExecutionScenarioModel'
 
 interface ExecutionScenarioPreviewModel {
+  queuedScenarioPreview: QueuedScenarioPreview
   queuedScenarioRows: QueuedScenarioRow[]
   scriptDetailsLoading: boolean
   scriptDetailsError: string
@@ -62,8 +63,10 @@ export function useExecutionScenarioPreviewModel(test: TestSummary | null): Exec
   }, [api, scriptIdsKey])
 
   const queuedScenarioRows = useMemo(() => buildQueuedScenarioRows(test, scriptDetails), [scriptDetails, test])
+  const queuedScenarioPreview = useMemo(() => buildQueuedScenarioPreview(test), [test])
 
   return {
+    queuedScenarioPreview,
     queuedScenarioRows,
     scriptDetailsLoading,
     scriptDetailsError,
