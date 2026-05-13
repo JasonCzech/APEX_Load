@@ -36,6 +36,37 @@ function scenarioRunReleaseList(script: StoredScript) {
   return releases.map(release => release.name).join(', ')
 }
 
+type SortValue = string | number
+
+function getScriptSortValue(
+  script: StoredScript,
+  field: 'name' | 'protocol' | 'version' | 'created_at' | 'scenario_count' | 'associated_releases' | 'scenario_run_releases' | 'last_run_at',
+): SortValue {
+  if (field === 'created_at' || field === 'last_run_at') {
+    return new Date(script[field] || 0).getTime()
+  }
+  if (field === 'scenario_count') {
+    return script.scenario_count || 0
+  }
+  if (field === 'associated_releases') {
+    return (script.associated_releases || []).length
+  }
+  if (field === 'scenario_run_releases') {
+    return (script.scenario_run_releases || []).length
+  }
+  return String(script[field] || '').toLowerCase()
+}
+
+function getRunSortValue(
+  run: TestSummary,
+  field: 'name' | 'status' | 'scenario_id' | 'release_id' | 'start_time' | 'duration',
+): SortValue {
+  if (field === 'start_time') {
+    return new Date(run.start_time || run.created_at || 0).getTime()
+  }
+  return String(run[field] || '').toLowerCase()
+}
+
 function SortIndicator({ active, direction }: { active: boolean, direction: 'asc' | 'desc' }) {
   return (
     <span className={`sort-icon ${active ? 'active' : ''}`}>
@@ -157,25 +188,9 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
   }
 
   const sortedScripts = useMemo(() => {
-    return [...scripts].sort((a: any, b: any) => {
-      let aValue: any
-      let bValue: any
-      if (sortField === 'created_at' || sortField === 'last_run_at') {
-        aValue = new Date(a[sortField] || 0).getTime()
-        bValue = new Date(b[sortField] || 0).getTime()
-      } else if (sortField === 'scenario_count') {
-        aValue = a.scenario_count || 0
-        bValue = b.scenario_count || 0
-      } else if (sortField === 'associated_releases') {
-        aValue = (a.associated_releases || []).length
-        bValue = (b.associated_releases || []).length
-      } else if (sortField === 'scenario_run_releases') {
-        aValue = (a.scenario_run_releases || []).length
-        bValue = (b.scenario_run_releases || []).length
-      } else {
-        aValue = String(a[sortField] || '').toLowerCase()
-        bValue = String(b[sortField] || '').toLowerCase()
-      }
+    return [...scripts].sort((a, b) => {
+      const aValue = getScriptSortValue(a, sortField)
+      const bValue = getScriptSortValue(b, sortField)
       if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1
       if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1
       return 0
@@ -220,16 +235,9 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
   }
 
   const getSortedInnerRuns = (runs: TestSummary[]) => {
-    return [...runs].sort((a: any, b: any) => {
-      let aValue: any
-      let bValue: any
-      if (innerSortField === 'start_time') {
-        aValue = new Date(a.start_time || a.created_at || 0).getTime()
-        bValue = new Date(b.start_time || b.created_at || 0).getTime()
-      } else {
-        aValue = String(a[innerSortField] || '').toLowerCase()
-        bValue = String(b[innerSortField] || '').toLowerCase()
-      }
+    return [...runs].sort((a, b) => {
+      const aValue = getRunSortValue(a, innerSortField)
+      const bValue = getRunSortValue(b, innerSortField)
       if (aValue < bValue) return innerSortDirection === 'asc' ? -1 : 1
       if (aValue > bValue) return innerSortDirection === 'asc' ? 1 : -1
       return 0

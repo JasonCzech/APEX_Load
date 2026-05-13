@@ -178,6 +178,7 @@ That order minimizes churn and avoids rebuilding the UI around unstable backend 
 
 ### In Progress
 - Phase 3 frontend orchestration is partially consolidated through shared import normalization, shared error handling, and typed recorder/import flows, but the script hub still owns route-level orchestration.
+- The live script library now uses typed sort helpers for both reusable scripts and linked scenario runs instead of local `any` sort casting.
 - Phase 4 scenario assembly cleanup has started from the reusable test-creation surface. `CreateTestModal` now uses typed payload, chart, and callback contracts instead of local `any` seams.
 - The execution surface now shares typed history, archive summary, live-control, and chart contracts instead of relying on local `any` casts in the main `TestExecution` path.
 
