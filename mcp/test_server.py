@@ -1,7 +1,20 @@
+import importlib.util
+from pathlib import Path
 import unittest
 from unittest.mock import AsyncMock, patch
 
-import server
+
+def _load_server_module():
+    server_path = Path(__file__).with_name("server.py")
+    spec = importlib.util.spec_from_file_location("stormrunner_mcp_server", server_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("unable to load mcp server module for testing")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+server = _load_server_module()
 
 
 class ContinueTestAliasTests(unittest.IsolatedAsyncioTestCase):
