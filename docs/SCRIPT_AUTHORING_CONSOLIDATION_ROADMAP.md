@@ -174,6 +174,7 @@ That order minimizes churn and avoids rebuilding the UI around unstable backend 
 - Phase 2 backend import envelopes are standardized across LoadRunner, JMeter, sample import, and recorder conversion.
 - The shared frontend import model and review/save contracts are in place for the active import and recorder paths.
 - Shared script, scenario, and dashboard API hook typing has been tightened across the current live authoring surfaces.
+- Shared sample import normalization now uses `unknown`-safe payload guards instead of local `any` casting.
 
 ### In Progress
 - Phase 3 frontend orchestration is partially consolidated through shared import normalization, shared error handling, and typed recorder/import flows, but the script hub still owns route-level orchestration.

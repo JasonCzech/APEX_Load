@@ -13,6 +13,10 @@ export interface MergeResult {
   mergedCount: number
 }
 
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
 export function sampleAcceptForFormat(format: SampleFormat) {
   switch (format) {
     case 'har':
@@ -103,25 +107,28 @@ export function describeMergedFiles(format: SampleFormat, target: 'primary' | 's
   return fileNames.length === 1 ? fileNames[0] : `${fileNames.length} files loaded`
 }
 
-function normalizeRestRequests(payload: any): any[] {
+function normalizeRestRequests(payload: unknown): unknown[] {
   if (Array.isArray(payload)) {
     return payload
   }
-  if (payload?.requests && Array.isArray(payload.requests)) {
+  if (isObjectRecord(payload) && Array.isArray(payload.requests)) {
     return payload.requests
   }
   return [payload]
 }
 
-function normalizeHarEntries(payload: any): any[] {
-  if (payload?.log?.entries && Array.isArray(payload.log.entries)) {
-    return payload.log.entries
-  }
-  if (Array.isArray(payload?.entries)) {
-    return payload.entries
-  }
-  if (payload?.request) {
-    return [payload]
+function normalizeHarEntries(payload: unknown): unknown[] {
+  if (isObjectRecord(payload)) {
+    const log = payload.log
+    if (isObjectRecord(log) && Array.isArray(log.entries)) {
+      return log.entries
+    }
+    if (Array.isArray(payload.entries)) {
+      return payload.entries
+    }
+    if ('request' in payload) {
+      return [payload]
+    }
   }
   return []
 }
