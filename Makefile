@@ -28,7 +28,7 @@ lint:
 	golangci-lint run ./...
 
 proto:
-	protoc --go_out=. --go-grpc_out=. api/proto/generator.proto
+	protoc --go_out=. --go_opt=paths=source_relative --go-grpc_out=. --go-grpc_opt=paths=source_relative api/proto/generator.proto
 
 clean:
 	rm -rf bin/ coverage.out coverage.html

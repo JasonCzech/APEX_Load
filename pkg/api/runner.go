@@ -87,6 +87,7 @@ type TestRunner struct {
 	historyStore  historyPersistence
 	archiveStore  archivePersistence
 	settingsStore settingsPersistence
+	execution    testExecutionBackend
 }
 
 type ManagedTest struct {
@@ -125,6 +126,8 @@ type ManagedTest struct {
 	cancel      context.CancelFunc
 	groupSpecs  []engine.GroupConfig
 	goalControl *goalControllerState
+	executionBackend testExecutionBackend
+	remoteTarget     string
 }
 
 type TestGroup struct {
@@ -316,6 +319,7 @@ func NewTestRunner(maxTests int, hub *Hub, store storage.Store) *TestRunner {
 		historyStore:  store,
 		archiveStore:  store,
 		settingsStore: store,
+		execution:     localExecutionBackend{},
 	}
 	tr.loadSystemSettings(maxTests)
 	tr.loadStoredScripts()
@@ -323,6 +327,15 @@ func NewTestRunner(maxTests int, hub *Hub, store storage.Store) *TestRunner {
 	tr.loadStoredTests()
 
 	return tr
+}
+
+func (tr *TestRunner) setExecutionBackend(backend testExecutionBackend) {
+	if backend == nil {
+		backend = localExecutionBackend{}
+	}
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	tr.execution = backend
 }
 
 func (tr *TestRunner) loadStoredScripts() {
@@ -1637,6 +1650,10 @@ func (tr *TestRunner) prepareTestStartLocked(id string, opts StartTestOptions) (
 	}
 
 	test.Status = "INITIALIZING"
+	test.executionBackend = tr.execution
+	if test.executionBackend == nil {
+		test.executionBackend = localExecutionBackend{}
+	}
 	return test, nil
 }
 
@@ -1787,6 +1804,19 @@ func (tr *TestRunner) StopTest(id string) error {
 	if !ok {
 		return fmt.Errorf("test not found: %s", id)
 	}
+	if test.multiEngine == nil {
+		backend := test.executionBackend
+		if backend == nil {
+			backend = tr.execution
+		}
+		if stoppable, ok := backend.(stoppableExecutionBackend); ok {
+			if err := stoppable.StopTest(tr, test); err != nil {
+				return err
+			}
+		} else if test.cancel == nil {
+			return fmt.Errorf("test backend does not support stop")
+		}
+	}
 	if test.cancel != nil {
 		test.cancel()
 	}
@@ -1932,92 +1962,14 @@ func (tr *TestRunner) ResumeTest(id string) error {
 }
 
 func (tr *TestRunner) runTest(test *ManagedTest) {
-	if test.ScriptShakeout {
-		if err := tr.runScriptShakeout(test); err != nil {
-			tr.failTestBeforeRun(test, err.Error())
-			return
-		}
+	backend := test.executionBackend
+	if backend == nil {
+		backend = tr.execution
 	}
-	artifacts, err := newRunArtifacts(test, tr.saveRunArchiveRecord)
-	if err != nil {
-		tr.failTestBeforeRun(test, fmt.Sprintf("initialize archive writer: %v", err))
-		return
+	if backend == nil {
+		backend = localExecutionBackend{}
 	}
-	mge, err := tr.buildRunEngine(test, artifacts.resultSink())
-	if err != nil {
-		tr.failTestBeforeRun(test, err.Error())
-		return
-	}
-
-	ctx, metricsDone, metricsStopped := tr.startManagedTestRun(test, mge, artifacts)
-
-	result, err := mge.Run(ctx)
-
-	close(metricsDone)
-	<-metricsStopped
-
-	endTime := time.Now()
-	finalStatus := "COMPLETE"
-	finalError := ""
-	if err != nil {
-		finalStatus = "FAILED"
-		finalError = err.Error()
-	}
-
-	archiveRecord, finalStatus, finalError := artifacts.finalize(finalStatus, endTime, finalError)
-	tr.completeTestRun(test, finalStatus, endTime, finalError, archiveRecord)
-
-	slog.Info("test finished",
-		"id", test.ID,
-		"status", test.Status,
-		"groups", len(test.Groups),
-		"transactions", result.TotalTransactions,
-		"errors", result.TotalErrors,
-		"duration", result.Duration,
-	)
-}
-
-func newRunArtifacts(test *ManagedTest, saveRecord func(record *storage.RunArchiveRecord) error) (*runArtifacts, error) {
-	recorder, err := newRunArchiveWriter(test)
-	if err != nil {
-		return nil, err
-	}
-	return &runArtifacts{recorder: recorder, saveRecord: saveRecord}, nil
-}
-
-func (a *runArtifacts) resultSink() engine.ResultSink {
-	if a == nil {
-		return nil
-	}
-	return a.recorder
-}
-
-func (a *runArtifacts) recordLiveMetrics(test *ManagedTest, live *LiveMetrics) {
-	if a == nil || a.recorder == nil {
-		return
-	}
-	if err := a.recorder.RecordIntervalSummary(live); err != nil {
-		slog.Warn("failed to record interval summary", "test_id", test.ID, "error", err)
-	}
-	if err := a.recorder.RecordResourceSample(live.Timestamp, live.ActiveVUsers, live.Resources); err != nil {
-		slog.Warn("failed to record resource sample", "test_id", test.ID, "error", err)
-	}
-}
-
-func (a *runArtifacts) finalize(finalStatus string, endTime time.Time, finalError string) (*storage.RunArchiveRecord, string, string) {
-	if a == nil || a.recorder == nil {
-		return nil, finalStatus, finalError
-	}
-	archiveRecord, archiveErr := a.recorder.Finalize(finalStatus, endTime, finalError)
-	if archiveErr != nil {
-		return archiveRecord, "FAILED", appendRunError(finalError, "archive finalize failed", archiveErr)
-	}
-	if a.saveRecord != nil {
-		if err := a.saveRecord(archiveRecord); err != nil {
-			return archiveRecord, "FAILED", appendRunError(finalError, "archive metadata save failed", err)
-		}
-	}
-	return archiveRecord, finalStatus, finalError
+	backend.Run(tr, test)
 }
 
 func (tr *TestRunner) buildRunEngine(test *ManagedTest, resultSink engine.ResultSink) (*engine.MultiGroupEngine, error) {

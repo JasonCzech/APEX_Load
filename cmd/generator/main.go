@@ -3,15 +3,19 @@ package main
 import (
 	"context"
 	"log/slog"
+	"net"
 	"os"
 	"os/signal"
 	"syscall"
 
+	pb "github.com/jasonczech/stormrunner/api/proto"
+	"github.com/jasonczech/stormrunner/pkg/distributed/generatorrpc"
 	"github.com/jasonczech/stormrunner/pkg/config"
 	_ "github.com/jasonczech/stormrunner/pkg/protocol/browser"
 	_ "github.com/jasonczech/stormrunner/pkg/protocol/http"
 	_ "github.com/jasonczech/stormrunner/pkg/protocol/java_http"
 	_ "github.com/jasonczech/stormrunner/pkg/protocol/soap"
+	"google.golang.org/grpc"
 )
 
 func main() {
@@ -23,11 +27,34 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	slog.Info("stormrunner generator starting", "addr", cfg.ListenAddr, "max_vusers", cfg.MaxVUsers)
+	generatorID, err := os.Hostname()
+	if err != nil || generatorID == "" {
+		generatorID = "stormrunner-generator"
+	}
 
-	// Phase 1: generator runs as part of stormctl direct execution.
-	// Phase 2 will add gRPC server for controller-managed distributed mode.
+	listener, err := net.Listen("tcp", cfg.ListenAddr)
+	if err != nil {
+		slog.Error("failed to listen", "addr", cfg.ListenAddr, "err", err)
+		os.Exit(1)
+	}
+	defer listener.Close()
 
-	<-ctx.Done()
-	slog.Info("generator shutting down")
+	grpcServer := grpc.NewServer()
+	pb.RegisterGeneratorControlServer(grpcServer, generatorrpc.NewService(generatorID, cfg.MaxVUsers))
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- grpcServer.Serve(listener)
+	}()
+
+	slog.Info("stormrunner generator starting", "addr", cfg.ListenAddr, "generator_id", generatorID, "max_vusers", cfg.MaxVUsers)
+
+	select {
+	case <-ctx.Done():
+		slog.Info("generator shutting down")
+		grpcServer.GracefulStop()
+	case err := <-errCh:
+		slog.Error("generator server error", "err", err)
+		os.Exit(1)
+	}
 }

@@ -1,0 +1,204 @@
+package generatorrpc
+
+import (
+	"context"
+
+	pb "github.com/jasonczech/stormrunner/api/proto"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+)
+
+type DataFile struct {
+	Name    string
+	Content []byte
+}
+
+type Assignment struct {
+	TestID        string
+	ScriptID      string
+	ScriptContent []byte
+	VUserCount    int32
+	RampUpSeconds int32
+	Environment   map[string]string
+	DataFiles     []DataFile
+}
+
+type AssignmentResult struct {
+	Accepted          bool
+	ErrorMessage      string
+	AvailableCapacity int32
+}
+
+type StopResult struct {
+	Acknowledged bool
+	PendingVUsers int32
+}
+
+type Script struct {
+	ID          string
+	Content     []byte
+	ContentHash string
+}
+
+type ScriptResult struct {
+	Cached      bool
+	ContentHash string
+}
+
+type Heartbeat struct {
+	GeneratorID     string
+	TimestampUnixMs int64
+	Stats           GeneratorStats
+}
+
+type HeartbeatResponse struct {
+	TimestampUnixMs int64
+	ActiveTestIDs   []string
+}
+
+type GeneratorStats struct {
+	ActiveVUsers   int32
+	CPUPercent     float64
+	MemoryBytes    int64
+	GoroutineCount int32
+}
+
+type Client struct {
+	conn *grpc.ClientConn
+	rpc  pb.GeneratorControlClient
+}
+
+type HeartbeatStream struct {
+	stream pb.GeneratorControl_HeartbeatClient
+}
+
+func Dial(ctx context.Context, target string, opts ...grpc.DialOption) (*Client, error) {
+	dialOptions := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
+	dialOptions = append(dialOptions, opts...)
+
+	conn, err := grpc.DialContext(ctx, target, dialOptions...)
+	if err != nil {
+		return nil, err
+	}
+
+	return NewClient(conn), nil
+}
+
+func NewClient(conn *grpc.ClientConn) *Client {
+	return &Client{
+		conn: conn,
+		rpc:  pb.NewGeneratorControlClient(conn),
+	}
+}
+
+func (c *Client) Close() error {
+	if c == nil || c.conn == nil {
+		return nil
+	}
+	return c.conn.Close()
+}
+
+func (c *Client) DistributeScript(ctx context.Context, script Script) (ScriptResult, error) {
+	ack, err := c.rpc.DistributeScript(ctx, &pb.ScriptPayload{
+		ScriptId:    script.ID,
+		Content:     script.Content,
+		ContentHash: script.ContentHash,
+	})
+	if err != nil {
+		return ScriptResult{}, err
+	}
+
+	return ScriptResult{
+		Cached:      ack.GetCached(),
+		ContentHash: ack.GetContentHash(),
+	}, nil
+}
+
+func (c *Client) AssignWork(ctx context.Context, assignment Assignment) (AssignmentResult, error) {
+	ack, err := c.rpc.AssignWork(ctx, toProtoAssignment(assignment))
+	if err != nil {
+		return AssignmentResult{}, err
+	}
+
+	return AssignmentResult{
+		Accepted:          ack.GetAccepted(),
+		ErrorMessage:      ack.GetErrorMessage(),
+		AvailableCapacity: ack.GetAvailableCapacity(),
+	}, nil
+}
+
+func (c *Client) StopTest(ctx context.Context, testID string, graceful bool) (StopResult, error) {
+	ack, err := c.rpc.StopTest(ctx, &pb.StopRequest{TestId: testID, Graceful: graceful})
+	if err != nil {
+		return StopResult{}, err
+	}
+
+	return StopResult{
+		Acknowledged: ack.GetAcknowledged(),
+		PendingVUsers: ack.GetPendingVusers(),
+	}, nil
+}
+
+func (c *Client) OpenHeartbeat(ctx context.Context) (*HeartbeatStream, error) {
+	stream, err := c.rpc.Heartbeat(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return &HeartbeatStream{stream: stream}, nil
+}
+
+func (s *HeartbeatStream) Send(heartbeat Heartbeat) error {
+	return s.stream.Send(&pb.HeartbeatPing{
+		GeneratorId:     heartbeat.GeneratorID,
+		TimestampUnixMs: heartbeat.TimestampUnixMs,
+		Stats:           toProtoStats(heartbeat.Stats),
+	})
+}
+
+func (s *HeartbeatStream) Receive() (HeartbeatResponse, error) {
+	pong, err := s.stream.Recv()
+	if err != nil {
+		return HeartbeatResponse{}, err
+	}
+
+	return HeartbeatResponse{
+		TimestampUnixMs: pong.GetTimestampUnixMs(),
+		ActiveTestIDs:   pong.GetActiveTestIds(),
+	}, nil
+}
+
+func (s *HeartbeatStream) CloseSend() error {
+	return s.stream.CloseSend()
+}
+
+func toProtoAssignment(assignment Assignment) *pb.WorkAssignment {
+	dataFiles := make([]*pb.DataFile, 0, len(assignment.DataFiles))
+	for _, dataFile := range assignment.DataFiles {
+		dataFiles = append(dataFiles, &pb.DataFile{Name: dataFile.Name, Content: dataFile.Content})
+	}
+
+	environment := assignment.Environment
+	if environment == nil {
+		environment = map[string]string{}
+	}
+
+	return &pb.WorkAssignment{
+		TestId:        assignment.TestID,
+		ScriptId:      assignment.ScriptID,
+		ScriptContent: assignment.ScriptContent,
+		VuserCount:    assignment.VUserCount,
+		RampUpSeconds: assignment.RampUpSeconds,
+		Environment:   environment,
+		DataFiles:     dataFiles,
+	}
+}
+
+func toProtoStats(stats GeneratorStats) *pb.GeneratorStats {
+	return &pb.GeneratorStats{
+		ActiveVusers:   stats.ActiveVUsers,
+		CpuPercent:     stats.CPUPercent,
+		MemoryBytes:    stats.MemoryBytes,
+		GoroutineCount: stats.GoroutineCount,
+	}
+}
