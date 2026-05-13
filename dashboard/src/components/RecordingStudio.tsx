@@ -4,6 +4,7 @@ import { useAsyncTask } from '../hooks/useAsyncTask'
 import { useApi } from '../hooks/useApi'
 import { BASE } from '../hooks/apiClient'
 import { Project } from '../types'
+import { getErrorMessage } from '../utils/errorUtils'
 import { normalizeScriptImportResult } from './scriptImportUtils'
 import { type RecorderCorrelation as Correlation, type RecorderImportResult } from '../types/scriptImports'
 import './RecordingStudio.css'
@@ -49,16 +50,12 @@ interface RecordingSession {
   }
 }
 
-interface RecorderStatus {
-  proxy_addr?: string
-  ca_cert_path?: string
-  active?: {
-    id: string
-    name: string
-    status: string
-    request_count: number
-    started_at: string
-  } | null
+interface StartRecordingRequest {
+  name: string
+  project_id?: string
+  exclude_static: boolean
+  include_hosts?: string[]
+  exclude_hosts?: string[]
 }
 
 export default function RecordingStudio({ activeProject }: { activeProject?: Project | null }) {
@@ -94,8 +91,8 @@ export default function RecordingStudio({ activeProject }: { activeProject?: Pro
       }
       await navigator.clipboard.writeText(caCertPath)
       showFeedback('CA certificate path copied')
-    } catch (e: any) {
-      showFeedback(e.message || 'Failed to copy CA certificate path', 'error')
+    } catch (error: unknown) {
+      showFeedback(getErrorMessage(error, 'Failed to copy CA certificate path'), 'error')
     }
   }
 
@@ -107,8 +104,8 @@ export default function RecordingStudio({ activeProject }: { activeProject?: Pro
       const blob = await res.blob()
       const filename = format === 'pem' ? 'stormrunner-ca.pem' : 'stormrunner-ca.crt'
       downloadBlob(blob, filename)
-    } catch (e: any) {
-      showFeedback(e.message || 'Failed to download CA certificate', 'error')
+    } catch (error: unknown) {
+      showFeedback(getErrorMessage(error, 'Failed to download CA certificate'), 'error')
     }
   }
 
@@ -124,12 +121,11 @@ export default function RecordingStudio({ activeProject }: { activeProject?: Pro
         api.listRecordings(activeProject?.id),
         api.getRecorderStatus(),
       ])
-      const recorderStatus = statusRes as RecorderStatus
       setSessions(listRes.sessions || [])
-      setProxyAddr(recorderStatus.proxy_addr || '')
-      setCaCertPath(recorderStatus.ca_cert_path || '')
-      if (recorderStatus.active) {
-        const full = await api.getRecording(recorderStatus.active.id)
+      setProxyAddr(statusRes.proxy_addr || '')
+      setCaCertPath(statusRes.ca_cert_path || '')
+      if (statusRes.active) {
+        const full = await api.getRecording(statusRes.active.id)
         setActiveSession(full)
       } else {
         setActiveSession(null)
@@ -156,22 +152,22 @@ export default function RecordingStudio({ activeProject }: { activeProject?: Pro
 
   const handleStart = async () => {
     try {
-      const data: any = {
+      const data: StartRecordingRequest = {
         name: sessionName || 'Recording Session',
         project_id: activeProject?.id,
         exclude_static: true,
       }
       if (includeHosts.trim()) {
-        data.include_hosts = includeHosts.split(',').map((h: string) => h.trim()).filter(Boolean)
+        data.include_hosts = includeHosts.split(',').map(host => host.trim()).filter(Boolean)
       }
       if (excludeHosts.trim()) {
-        data.exclude_hosts = excludeHosts.split(',').map((h: string) => h.trim()).filter(Boolean)
+        data.exclude_hosts = excludeHosts.split(',').map(host => host.trim()).filter(Boolean)
       }
       const res = await api.startRecording(data)
       setActiveSession(res.session)
       showFeedback('Recording started — configure your browser proxy and navigate the target site')
-    } catch (e: any) {
-      showFeedback(e.message, 'error')
+    } catch (error: unknown) {
+      showFeedback(getErrorMessage(error, 'Failed to start recording'), 'error')
     }
   }
 
@@ -182,8 +178,8 @@ export default function RecordingStudio({ activeProject }: { activeProject?: Pro
       showFeedback(`Recording stopped — ${activeSession.requests?.length || 0} requests captured`)
       setActiveSession(null)
       refresh()
-    } catch (e: any) {
-      showFeedback(e.message, 'error')
+    } catch (error: unknown) {
+      showFeedback(getErrorMessage(error, 'Failed to stop recording'), 'error')
     }
   }
 
@@ -195,8 +191,8 @@ export default function RecordingStudio({ activeProject }: { activeProject?: Pro
         : await api.pauseRecording(activeSession.id)
       setActiveSession(next)
       showFeedback(next.status === 'paused' ? 'Recording paused' : 'Recording resumed')
-    } catch (e: any) {
-      showFeedback(e.message, 'error')
+    } catch (error: unknown) {
+      showFeedback(getErrorMessage(error, 'Failed to update recording state'), 'error')
     }
   }
 
@@ -218,8 +214,8 @@ export default function RecordingStudio({ activeProject }: { activeProject?: Pro
     try {
       const updated = await api.updateRecordedRequest(session.id, req.seq, { excluded: !req.excluded })
       replaceRequest(session.id, updated)
-    } catch (e: any) {
-      showFeedback(e.message, 'error')
+    } catch (error: unknown) {
+      showFeedback(getErrorMessage(error, 'Failed to update recorded request'), 'error')
     }
   }
 
@@ -229,8 +225,8 @@ export default function RecordingStudio({ activeProject }: { activeProject?: Pro
       const updated = await api.updateRecordedRequest(selectedSession.id, selectedRequest.seq, requestDraft)
       replaceRequest(selectedSession.id, updated)
       showFeedback(`Request #${updated.seq} updated`)
-    } catch (e: any) {
-      showFeedback(e.message, 'error')
+    } catch (error: unknown) {
+      showFeedback(getErrorMessage(error, 'Failed to save request details'), 'error')
     }
   }
 
@@ -241,8 +237,8 @@ export default function RecordingStudio({ activeProject }: { activeProject?: Pro
         { clearValue: true },
       )
       showFeedback(`Preview generated with ${result.script.actions?.length || 0} actions and ${result.correlations?.length || 0} correlations`)
-    } catch (e: any) {
-      showFeedback(e.message, 'error')
+    } catch (error: unknown) {
+      showFeedback(getErrorMessage(error, 'Failed to preview recording conversion'), 'error')
     }
   }
 
@@ -257,8 +253,8 @@ export default function RecordingStudio({ activeProject }: { activeProject?: Pro
       const safeName = (session.name || 'recording').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
       downloadBlob(blob, `${safeName || 'recording'}.har`)
       showFeedback(`Exported "${session.name}" as HAR`)
-    } catch (e: any) {
-      showFeedback(e.message, 'error')
+    } catch (error: unknown) {
+      showFeedback(getErrorMessage(error, 'Failed to export HAR'), 'error')
     }
   }
 
@@ -269,8 +265,8 @@ export default function RecordingStudio({ activeProject }: { activeProject?: Pro
         { clearValue: true },
       )
       showFeedback(`Script "${result.script.name}" created with ${result.correlations?.length || 0} correlations detected`)
-    } catch (e: any) {
-      showFeedback(e.message, 'error')
+    } catch (error: unknown) {
+      showFeedback(getErrorMessage(error, 'Failed to convert recording'), 'error')
     }
   }
 
@@ -279,8 +275,8 @@ export default function RecordingStudio({ activeProject }: { activeProject?: Pro
       await api.deleteRecording(id)
       if (selectedSession?.id === id) setSelectedSession(null)
       refresh()
-    } catch (e: any) {
-      showFeedback(e.message, 'error')
+    } catch (error: unknown) {
+      showFeedback(getErrorMessage(error, 'Failed to delete recording'), 'error')
     }
   }
 

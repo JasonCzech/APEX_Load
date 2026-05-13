@@ -1,5 +1,5 @@
 import { normalizeScriptImportResult } from './scriptImportUtils'
-import { type ImportedScript, type JMeterConvertStats as ConvertStats, type JMeterImportResult as ImportResult, type JMeterImportSummary, type SupportMatrix } from '../types/scriptImports'
+import { type ImportedAction, type ImportedExtractor, type ImportedScript, type JMeterConvertStats as ConvertStats, type JMeterImportResult as ImportResult, type JMeterImportSummary, type SupportMatrix } from '../types/scriptImports'
 
 export interface SupportMatrixSection {
   key: 'supported' | 'partial' | 'unsupported'
@@ -17,10 +17,16 @@ export interface ImportExtractorSummary {
   expression: string
 }
 
-export function normalizeImportResult(response: any): ImportResult {
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+export function normalizeImportResult(response: unknown): ImportResult {
+  const payload = isObjectRecord(response) ? response : {}
+
   return {
     ...normalizeScriptImportResult<ConvertStats, unknown, ImportedScript, ImportResult['scenario_draft'], JMeterImportSummary>(response),
-    stats: response?.stats || {
+    stats: payload.stats || {
       thread_groups: 0,
       samplers: 0,
       converted_actions: 0,
@@ -31,7 +37,7 @@ export function normalizeImportResult(response: any): ImportResult {
       timers: 0,
       unsupported: 0,
     },
-    summary: response?.summary || {
+    summary: payload.summary || {
       thread_group_count: 0,
       sampler_count: 0,
     },
@@ -72,18 +78,18 @@ export function summarizeSupportMatrix(matrix?: SupportMatrix | null): SupportMa
   ]
 }
 
-export function summarizeImportExtractors(scripts: any[]): ImportExtractorSummary[] {
+export function summarizeImportExtractors(scripts: ImportedScript[]): ImportExtractorSummary[] {
   if (!Array.isArray(scripts) || scripts.length === 0) {
     return []
   }
 
   const summaries: ImportExtractorSummary[] = []
-  for (const script of scripts as ImportedScript[]) {
+  for (const script of scripts) {
     const scriptName = typeof script?.name === 'string' && script.name ? script.name : 'Imported Script'
-    const actions = Array.isArray(script?.actions) ? script.actions : []
+    const actions: ImportedAction[] = Array.isArray(script?.actions) ? script.actions : []
     for (const action of actions) {
       const actionName = typeof action?.name === 'string' && action.name ? action.name : 'Unnamed Action'
-      const extractors = Array.isArray(action?.extractors) ? action.extractors : []
+      const extractors: ImportedExtractor[] = Array.isArray(action?.extractors) ? action.extractors : []
       for (const extractor of extractors) {
         if (!extractor?.name || !extractor?.type) {
           continue
