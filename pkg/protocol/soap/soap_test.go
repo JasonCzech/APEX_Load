@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jasonczech/stormrunner/pkg/protocol"
 )
@@ -154,5 +155,69 @@ func TestSOAPExecuteWrapsGeneratedBodyInEnvelope(t *testing.T) {
 	}
 	if !strings.Contains(seenBody, `<soapenv:Body><Login><username>alice</username></Login></soapenv:Body>`) {
 		t.Fatalf("body = %q, want wrapped login body", seenBody)
+	}
+}
+
+func TestSOAPExecuteAddsWSSecurityHeader(t *testing.T) {
+	var seenBody string
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		payload, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("ReadAll returned error: %v", err)
+		}
+		seenBody = string(payload)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`<Envelope><Body><ok/></Body></Envelope>`))
+	}))
+	defer ts.Close()
+
+	fixedNow := time.Date(2026, time.May, 12, 15, 4, 5, 0, time.UTC)
+	s := &SOAP{
+		now: func() time.Time { return fixedNow },
+		nonceGenerator: func() ([]byte, error) { return []byte("abc123"), nil },
+	}
+	if err := s.Init(context.Background(), map[string]any{
+		"base_url":                              ts.URL,
+		"soap_version":                          "1.1",
+		"soap_ws_security_username":             "svc-user",
+		"soap_ws_security_password":             "svc-pass",
+		"soap_ws_security_password_type":        "text",
+		"soap_ws_security_nonce":                true,
+		"soap_ws_security_created":              true,
+		"soap_ws_security_timestamp_ttl_seconds": float64(60),
+	}); err != nil {
+		t.Fatalf("Init returned error: %v", err)
+	}
+
+	_, err := s.Execute(context.Background(), &protocol.Action{
+		Name:   "login",
+		Target: "/AuthService",
+		Body:   []byte(`<username>alice</username>`),
+		SOAP: &protocol.SOAPActionConfig{
+			Operation: "Login",
+			BodyMode:  "generated",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if !strings.Contains(seenBody, `<soapenv:Header><wsse:Security`) {
+		t.Fatalf("body = %q, want ws-security header", seenBody)
+	}
+	if !strings.Contains(seenBody, `<wsse:Username>svc-user</wsse:Username>`) {
+		t.Fatalf("body = %q, want username token username", seenBody)
+	}
+	if !strings.Contains(seenBody, `PasswordText`) || !strings.Contains(seenBody, `>svc-pass</wsse:Password>`) {
+		t.Fatalf("body = %q, want password text entry", seenBody)
+	}
+	if !strings.Contains(seenBody, `<wsse:Nonce>YWJjMTIz</wsse:Nonce>`) {
+		t.Fatalf("body = %q, want base64 nonce", seenBody)
+	}
+	if !strings.Contains(seenBody, `<wsu:Created>2026-05-12T15:04:05Z</wsu:Created>`) {
+		t.Fatalf("body = %q, want created timestamp", seenBody)
+	}
+	if !strings.Contains(seenBody, `<wsu:Expires>2026-05-12T15:05:05Z</wsu:Expires>`) {
+		t.Fatalf("body = %q, want expires timestamp", seenBody)
 	}
 }

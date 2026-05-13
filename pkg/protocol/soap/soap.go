@@ -1,9 +1,13 @@
 package soap
 
 import (
+	"crypto/rand"
+	"crypto/sha1"
 	"context"
+	"encoding/base64"
 	"fmt"
 	stdhttp "net/http"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -24,11 +28,32 @@ type SOAP struct {
 	failOnFault    bool
 	defaultCharset string
 	namespaces     map[string]string
+	security       soapSecurityConfig
+	now            func() time.Time
+	nonceGenerator func() ([]byte, error)
 }
+
+type soapSecurityConfig struct {
+	username       string
+	password       string
+	passwordType   string
+	includeNonce   bool
+	includeCreated bool
+	timestamp      bool
+	timestampTTL   time.Duration
+}
+
+var envelopePrefixPattern = regexp.MustCompile(`<([A-Za-z_][A-Za-z0-9_.-]*):Envelope\b`)
 
 func (s *SOAP) Name() string { return "soap" }
 
 func (s *SOAP) Init(ctx context.Context, config map[string]any) error {
+	if s.now == nil {
+		s.now = time.Now
+	}
+	if s.nonceGenerator == nil {
+		s.nonceGenerator = defaultNonceGenerator
+	}
 	s.version = "1.1"
 	if version, ok := config["soap_version"].(string); ok && strings.TrimSpace(version) != "" {
 		s.version = strings.TrimSpace(version)
@@ -36,6 +61,7 @@ func (s *SOAP) Init(ctx context.Context, config map[string]any) error {
 	s.failOnFault, _ = config["soap_fault_fail_on_fault"].(bool)
 	s.defaultCharset = "utf-8"
 	s.namespaces = readNamespaces(config)
+	s.security = readSecurityConfig(config)
 	s.http = &httpproto.HTTP{}
 	return s.http.Init(ctx, config)
 }
@@ -52,6 +78,7 @@ func (s *SOAP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	prepared.Method = stdhttp.MethodPost
 	prepared.Headers = cloneHeaders(action.Headers)
 	prepared.Body = shapeSOAPBody(action, s.version, s.namespaces)
+	prepared.Body = s.applySecurity(prepared.Body)
 	applySOAPDefaults(&prepared, s.version, s.defaultCharset)
 
 	result, err := s.http.Execute(ctx, &prepared)
@@ -89,6 +116,33 @@ func cloneHeaders(headers map[string]string) map[string]string {
 		cloned[key] = value
 	}
 	return cloned
+}
+
+func readSecurityConfig(config map[string]any) soapSecurityConfig {
+	security := soapSecurityConfig{}
+	if username, ok := config["soap_ws_security_username"].(string); ok {
+		security.username = username
+	}
+	if password, ok := config["soap_ws_security_password"].(string); ok {
+		security.password = password
+	}
+	if passwordType, ok := config["soap_ws_security_password_type"].(string); ok {
+		security.passwordType = strings.TrimSpace(passwordType)
+	}
+	if security.passwordType == "" && (security.username != "" || security.password != "") {
+		security.passwordType = "text"
+	}
+	security.includeNonce, _ = config["soap_ws_security_nonce"].(bool)
+	security.includeCreated, _ = config["soap_ws_security_created"].(bool)
+	if ttl, ok := config["soap_ws_security_timestamp_ttl_seconds"].(float64); ok {
+		security.timestamp = true
+		security.timestampTTL = time.Duration(ttl) * time.Second
+	}
+	if security.passwordType == "digest" {
+		security.includeNonce = true
+		security.includeCreated = true
+	}
+	return security
 }
 
 func readNamespaces(config map[string]any) map[string]string {
@@ -148,9 +202,48 @@ func shapeSOAPBody(action *protocol.Action, version string, namespaces map[strin
 	return []byte(envelope)
 }
 
+func (s *SOAP) applySecurity(body []byte) []byte {
+	if !s.security.enabled() {
+		return body
+	}
+	bodyStr := strings.TrimSpace(string(body))
+	if bodyStr == "" || !looksLikeSOAPEnvelope(bodyStr) {
+		return body
+	}
+	prefix := detectEnvelopePrefix(bodyStr)
+	if prefix == "" {
+		prefix = "soapenv"
+	}
+	securityXML, err := buildSecurityHeaderXML(s.security, s.now().UTC(), s.nonceGenerator)
+	if err != nil || securityXML == "" {
+		return body
+	}
+
+	headerOpen := fmt.Sprintf("<%s:Header>", prefix)
+	headerClose := fmt.Sprintf("</%s:Header>", prefix)
+	bodyOpen := fmt.Sprintf("<%s:Body>", prefix)
+
+	if strings.Contains(bodyStr, headerOpen) && strings.Contains(bodyStr, headerClose) {
+		return []byte(strings.Replace(bodyStr, headerClose, securityXML+headerClose, 1))
+	}
+	if strings.Contains(bodyStr, bodyOpen) {
+		replacement := headerOpen + securityXML + headerClose + bodyOpen
+		return []byte(strings.Replace(bodyStr, bodyOpen, replacement, 1))
+	}
+	return body
+}
+
 func looksLikeSOAPEnvelope(body string) bool {
 	trimmed := strings.TrimSpace(body)
 	return strings.Contains(trimmed, ":Envelope") || strings.Contains(trimmed, "<Envelope")
+}
+
+func detectEnvelopePrefix(body string) string {
+	matches := envelopePrefixPattern.FindStringSubmatch(body)
+	if len(matches) == 2 {
+		return matches[1]
+	}
+	return ""
 }
 
 func mergeSOAPNamespaces(version string, namespaces map[string]string) (string, map[string]string) {
@@ -184,6 +277,84 @@ func wrapSOAPOperation(body, operation string) string {
 		return body
 	}
 	return fmt.Sprintf("<%s>%s</%s>", operation, body, operation)
+}
+
+func buildSecurityHeaderXML(security soapSecurityConfig, now time.Time, nonceGenerator func() ([]byte, error)) (string, error) {
+	parts := make([]string, 0, 2)
+	created := now.UTC().Format(time.RFC3339)
+
+	if security.timestamp {
+		expires := now.UTC().Add(security.timestampTTL).Format(time.RFC3339)
+		parts = append(parts,
+			`<wsu:Timestamp>`+
+				`<wsu:Created>`+xmlEscape(created)+`</wsu:Created>`+
+				`<wsu:Expires>`+xmlEscape(expires)+`</wsu:Expires>`+
+			`</wsu:Timestamp>`,
+		)
+	}
+
+	if security.username != "" || security.password != "" {
+		nonceBytes := []byte(nil)
+		nonceText := ""
+		if security.includeNonce {
+			var err error
+			nonceBytes, err = nonceGenerator()
+			if err != nil {
+				return "", err
+			}
+			nonceText = base64.StdEncoding.EncodeToString(nonceBytes)
+		}
+
+		passwordValue, passwordURI := security.passwordValue(now, created, nonceBytes)
+		usernameToken := `<wsse:UsernameToken>` +
+			`<wsse:Username>` + xmlEscape(security.username) + `</wsse:Username>` +
+			`<wsse:Password Type="` + passwordURI + `">` + xmlEscape(passwordValue) + `</wsse:Password>`
+		if security.includeNonce {
+			usernameToken += `<wsse:Nonce>` + nonceText + `</wsse:Nonce>`
+		}
+		if security.includeCreated {
+			usernameToken += `<wsu:Created>` + xmlEscape(created) + `</wsu:Created>`
+		}
+		usernameToken += `</wsse:UsernameToken>`
+		parts = append(parts, usernameToken)
+	}
+
+	if len(parts) == 0 {
+		return "", nil
+	}
+
+	return `<wsse:Security xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd" xmlns:wsu="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd">` + strings.Join(parts, "") + `</wsse:Security>`, nil
+}
+
+func (security soapSecurityConfig) enabled() bool {
+	return security.timestamp || security.username != "" || security.password != ""
+}
+
+func (security soapSecurityConfig) passwordValue(now time.Time, created string, nonce []byte) (string, string) {
+	if security.passwordType == "digest" {
+		hash := sha1.Sum(append(append(nonce, []byte(created)...), []byte(security.password)...))
+		return base64.StdEncoding.EncodeToString(hash[:]), "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordDigest"
+	}
+	return security.password, "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordText"
+}
+
+func defaultNonceGenerator() ([]byte, error) {
+	nonce := make([]byte, 16)
+	if _, err := rand.Read(nonce); err != nil {
+		return nil, err
+	}
+	return nonce, nil
+}
+
+func xmlEscape(value string) string {
+	replacer := strings.NewReplacer(
+		"&", "&amp;",
+		"<", "&lt;",
+		">", "&gt;",
+		`"`, "&quot;",
+		"'", "&apos;",
+	)
+	return replacer.Replace(value)
 }
 
 func applySOAPDefaults(action *protocol.Action, version, charset string) {
