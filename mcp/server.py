@@ -58,6 +58,11 @@ async def resume_test(test_id: str) -> str:
         return response.text
 
 @mcp.tool()
+async def continue_test(test_id: str) -> str:
+    """Continue a paused performance test (alias for resume)."""
+    return await resume_test(test_id)
+
+@mcp.tool()
 async def list_scripts() -> str:
     """List all available test scripts in the library."""
     async with httpx.AsyncClient() as client:

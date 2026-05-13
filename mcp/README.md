@@ -8,7 +8,7 @@ Provides the following tools to an AI agent:
 - `list_tests`: List all scenarios and their status.
 - `get_test_details`: Retrieve live metrics and detailed status for a test.
 - `start_test` / `stop_test`: Lifecycle controls for tests.
-- `pause_test` / `resume_test`: Robust execution controls.
+- `pause_test` / `resume_test` / `continue_test`: Robust execution controls.
 - `list_scripts`: Browse the script library.
 - `get_system_health`: Monitor controller health.
 
