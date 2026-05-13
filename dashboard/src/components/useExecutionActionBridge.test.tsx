@@ -13,6 +13,8 @@ import { useExecutionActionBridge } from './useExecutionActionBridge'
 
 const apiMock = {
   startTest: vi.fn(),
+  stopTest: vi.fn(),
+  abortTest: vi.fn(),
   pauseTest: vi.fn(),
   resumeTest: vi.fn(),
 }
@@ -37,6 +39,8 @@ function ActionBridgeHarness({ initialTest }: { initialTest: TestSummary }) {
       <span data-testid="conflict">{model.startCapacityConflict ? String(model.startCapacityConflict.available_generators) : 'none'}</span>
       <button data-testid="start" onClick={() => void model.onStart()}>start</button>
       <button data-testid="confirm-start" onClick={() => void model.onConfirmStartAnyway()}>confirm</button>
+      <button data-testid="stop" onClick={() => void model.onStop()}>stop</button>
+      <button data-testid="abort" onClick={() => void model.onAbort()}>abort</button>
       <button data-testid="pause" onClick={() => void model.onPause()}>pause</button>
       <button data-testid="resume" onClick={() => void model.onResume()}>resume</button>
     </div>
@@ -104,6 +108,29 @@ describe('useExecutionActionBridge', () => {
     expect(apiMock.resumeTest).toHaveBeenCalledWith('test-1')
     expect(readTestId('status')).toBe('RUNNING')
     expect(readTestId('control-feedback')).toBe('Test resumed')
+  })
+
+  it('routes stop and abort through the shared execution action bridge', async () => {
+    apiMock.stopTest.mockResolvedValue(undefined)
+    apiMock.abortTest.mockResolvedValue(undefined)
+
+    await act(async () => {
+      root.render(<ActionBridgeHarness initialTest={buildRunningTest()} />)
+    })
+
+    await click('stop')
+
+    expect(apiMock.stopTest).toHaveBeenCalledWith('test-1')
+    expect(readTestId('status')).toBe('STOPPING')
+
+    await act(async () => {
+      root.render(<ActionBridgeHarness initialTest={buildRunningTest()} />)
+    })
+
+    await click('abort')
+
+    expect(apiMock.abortTest).toHaveBeenCalledWith('test-1')
+    expect(readTestId('status')).toBe('ABORTED')
   })
 
   async function click(testId: string) {

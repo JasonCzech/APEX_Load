@@ -19,6 +19,7 @@ import TestExecutionScenarioOverview from './TestExecutionScenarioOverview'
 import TestExecutionScenarioPreview from './TestExecutionScenarioPreview'
 import TestExecutionStatusPanels from './TestExecutionStatusPanels'
 import TestExecutionSummary from './TestExecutionSummary'
+import { buildExecutionPhaseModel } from './testExecutionPhaseModel'
 import { buildExecutionStatusModel, describeGoalController } from './testExecutionStatusModel'
 import { useExecutionChartModel } from './useExecutionChartModel'
 import { useExecutionScenarioPreviewModel } from './useExecutionScenarioPreviewModel'
@@ -78,6 +79,8 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
     onDismissStartConflict,
     onStart,
     onConfirmStartAnyway,
+    onStop,
+    onAbort,
     onPause,
     onResume,
   } = useExecutionActionBridge(testId, test, setTest)
@@ -120,8 +123,6 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
     onDownloadArchiveArtifact,
   } = useExecutionArchiveModel(test)
 
-  const isRunning = test?.status === 'RUNNING' || test?.status === 'INITIALIZING'
-
   if (error) {
     return (
       <div className="execution">
@@ -134,6 +135,15 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
   if (!test) {
     return <div className="execution"><p className="loading">Loading...</p></div>
   }
+
+  const {
+    isRunning,
+    isPaused,
+    isStopping,
+    showLiveControls,
+    showArchiveSection,
+    showArchiveDownload,
+  } = buildExecutionPhaseModel(test, hasArchive)
 
   const {
     metrics,
@@ -157,16 +167,18 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
         onStart={onStart}
         onSelectTest={onSelectTest}
         isRunning={isRunning}
-        onStop={() => api.stopTest(testId)}
-        onAbort={() => api.abortTest(testId)}
+        isPaused={isPaused}
+        isStopping={isStopping}
+        onStop={onStop}
+        onAbort={onAbort}
         onPause={onPause}
         onResume={onResume}
-        hasArchive={hasArchive}
+        showArchiveDownload={showArchiveDownload}
         onDownloadArchive={onDownloadArchive}
       />
 
       {/* Live Controls Panel */}
-      {(isRunning || test.status === 'PAUSED') && (
+      {showLiveControls && (
         <TestExecutionLiveControls
           showControls={showControls}
           onToggleControls={onToggleControls}
@@ -213,7 +225,7 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
         metrics={metrics}
       />
 
-      {!isRunning && (
+      {showArchiveSection && (
         <TestExecutionArchive
           hasArchive={hasArchive}
           test={test}

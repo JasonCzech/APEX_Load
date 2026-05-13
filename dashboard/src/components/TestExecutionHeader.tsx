@@ -13,11 +13,13 @@ interface Props {
   onStart: () => void
   onSelectTest: (testId: string) => void
   isRunning: boolean
+  isPaused: boolean
+  isStopping: boolean
   onStop: () => void
   onAbort: () => void
   onPause: () => void
   onResume: () => void
-  hasArchive: boolean
+  showArchiveDownload: boolean
   onDownloadArchive: () => void
 }
 
@@ -30,11 +32,13 @@ export default function TestExecutionHeader({
   onStart,
   onSelectTest,
   isRunning,
+  isPaused,
+  isStopping,
   onStop,
   onAbort,
   onPause,
   onResume,
-  hasArchive,
+  showArchiveDownload,
   onDownloadArchive,
 }: Props) {
   return (
@@ -78,7 +82,7 @@ export default function TestExecutionHeader({
             </button>
           </>
         )}
-        {test.status === 'PAUSED' && (
+        {isPaused && (
           <>
             <button className="btn btn-success" onClick={onResume}>
               Resume
@@ -91,10 +95,13 @@ export default function TestExecutionHeader({
             </button>
           </>
         )}
-        {!isRunning && hasArchive && (
+        {showArchiveDownload && (
           <button className="btn btn-secondary" onClick={onDownloadArchive}>
             Download Archive
           </button>
+        )}
+        {isStopping && (
+          <span className="meta-item">Stopping…</span>
         )}
       </div>
     </div>

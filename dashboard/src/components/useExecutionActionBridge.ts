@@ -12,6 +12,8 @@ interface ExecutionActionBridgeModel {
   onDismissStartConflict: () => void
   onStart: () => Promise<void>
   onConfirmStartAnyway: () => Promise<void>
+  onStop: () => Promise<void>
+  onAbort: () => Promise<void>
   onPause: () => Promise<void>
   onResume: () => Promise<void>
 }
@@ -81,6 +83,24 @@ export function useExecutionActionBridge(
     }
   }, [api, setTest, showControlFeedback, testId])
 
+  const onStop = useCallback(async () => {
+    try {
+      await api.stopTest(testId)
+      setTest((prev) => (prev ? { ...prev, status: 'STOPPING' } : null))
+    } catch (error: unknown) {
+      showControlFeedback(`Error stopping: ${getErrorMessage(error, 'Unable to stop test')}`)
+    }
+  }, [api, setTest, showControlFeedback, testId])
+
+  const onAbort = useCallback(async () => {
+    try {
+      await api.abortTest(testId)
+      setTest((prev) => (prev ? { ...prev, status: 'ABORTED' } : null))
+    } catch (error: unknown) {
+      showControlFeedback(`Error aborting: ${getErrorMessage(error, 'Unable to abort test')}`)
+    }
+  }, [api, setTest, showControlFeedback, testId])
+
   const onResume = useCallback(async () => {
     try {
       await api.resumeTest(testId)
@@ -99,6 +119,8 @@ export function useExecutionActionBridge(
     onDismissStartConflict: () => setStartCapacityConflict(null),
     onStart: () => runStart(false),
     onConfirmStartAnyway: () => runStart(true),
+    onStop,
+    onAbort,
     onPause,
     onResume,
   }
