@@ -3,6 +3,7 @@ import { ScenarioDataPoolBinding, SharedDataPool, StoredScenario, StoredScript, 
 import { useApi } from '../hooks/useApi'
 import { getErrorMessage } from '../utils/errorUtils'
 import './TestHub.css'
+import { buildScenarioUpsertPayload } from './scenarioPayloadUtils'
 
 interface Props {
   testStatuses: Record<string, string>
@@ -205,17 +206,29 @@ function TestHub({ onSelectTest }: Props) {
       access_mode: form.data_pool_access_mode || 'read_only',
       selection_strategy: form.data_pool_selection_strategy || 'sequential',
     }] : []
-    const payload = {
-      name: form.name.trim(),
+    const payload = buildScenarioUpsertPayload({
+      name: form.name,
       duration: form.duration || '1m',
-      scenario_mode: 'vuser_driven',
+      scenarioMode: 'vuser_driven',
+      scriptShakeout: false,
+      resourceBaseline: false,
       groups: [{
-        script_id: form.script_id,
+        name: '',
+        scriptId: form.script_id,
         vusers: Number(form.vusers) || 10,
+        rampUp: '',
+        rampDown: '',
         initialization: 'at_runtime',
       }],
-      data_pools: dataPoolsPayload,
-    }
+      goalConfig: {},
+      runtimeSettings: {
+        iterations: undefined,
+        log_level: '',
+        auto_transactions: '',
+        snapshot_on_error: false,
+      },
+      dataPools: dataPoolsPayload,
+    })
     try {
       if (editingId) await api.updateScenario(editingId, payload)
       else await api.createScenario(payload)

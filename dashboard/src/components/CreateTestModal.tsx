@@ -9,6 +9,7 @@ import CreateTestGroupsEditor from './CreateTestGroupsEditor'
 import CreateTestRuntimeOverrides from './CreateTestRuntimeOverrides'
 import { getErrorMessage } from '../utils/errorUtils'
 import { buildDefaultScenarioGroup, buildInitialScenarioDraft, ScenarioDraftState, ScenarioRuntimeSettings } from './scenarioDraftUtils'
+import { buildCreateTestPayload } from './scenarioPayloadUtils'
 
 interface Props {
   scripts: StoredScript[]
@@ -23,40 +24,6 @@ type LoadProfilePoint = {
   time: number
   total: number
 } & Record<`group${number}`, number>
-
-type CreateTestPayloadGroup = {
-  name?: string
-  script_id: string
-  vusers: number
-  ramp_up?: string
-  ramp_down?: string
-  initialization: ScenarioDraftGroup['initialization']
-}
-
-type CreateTestPayload = {
-  name?: string
-  duration: string
-  project_id?: string
-  folder_id?: string | null
-  scenario_mode: ScenarioMode
-  script_shakeout: boolean
-  resource_baseline: boolean
-  script_id?: string
-  vusers?: number
-  ramp_up?: string
-  ramp_down?: string
-  initialization?: ScenarioDraftGroup['initialization']
-  groups?: CreateTestPayloadGroup[]
-  goal_config?: GoalConfig
-  runtime_settings?: {
-    iterations?: number
-    log_level?: string
-    auto_transactions?: string
-    error_handling?: {
-      snapshot_on_error: true
-    }
-  }
-}
 
 type GoalConfigAction = {
   field: keyof GoalConfig
@@ -238,51 +205,18 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
 
     return points
   })()
-  const buildPayload = (): CreateTestPayload => {
-    const payload: CreateTestPayload = { name: name || undefined, duration, scenario_mode: scenarioMode, script_shakeout: scriptShakeout, resource_baseline: resourceBaseline }
-    if (projectId) payload.project_id = projectId
-    if (folderId !== undefined) payload.folder_id = folderId
-
-    if (groups.length === 1 && !groups[0].name) {
-      payload.script_id = groups[0].scriptId
-      payload.vusers = groups[0].vusers
-      payload.ramp_up = groups[0].rampUp || undefined
-      payload.ramp_down = groups[0].rampDown || undefined
-      payload.initialization = groups[0].initialization
-    } else {
-      payload.groups = groups.map((g) => ({
-        name: g.name || undefined,
-        script_id: g.scriptId,
-        vusers: g.vusers,
-        ramp_up: g.rampUp || undefined,
-        ramp_down: g.rampDown || undefined,
-        initialization: g.initialization,
-      }))
-    }
-
-    if (scenarioMode === 'goal_oriented') {
-      payload.goal_config = {
-        target_average_tps: goalConfig.target_average_tps || undefined,
-        p95_latency_ms: goalConfig.p95_latency_ms || undefined,
-        max_error_pct: goalConfig.max_error_pct || undefined,
-        min_vusers: goalConfig.min_vusers || undefined,
-        max_vusers: goalConfig.max_vusers || undefined,
-        stop_on_sla_breach: goalConfig.stop_on_sla_breach || undefined,
-        sla_breach_window: goalConfig.sla_breach_window || undefined,
-      }
-    }
-
-    if (runtimeSettings.iterations || runtimeSettings.log_level || runtimeSettings.auto_transactions || runtimeSettings.snapshot_on_error) {
-      payload.runtime_settings = {
-        iterations: runtimeSettings.iterations ? Number(runtimeSettings.iterations) : undefined,
-        log_level: runtimeSettings.log_level || undefined,
-        auto_transactions: runtimeSettings.auto_transactions || undefined,
-        error_handling: runtimeSettings.snapshot_on_error ? { snapshot_on_error: true } : undefined,
-      }
-    }
-
-    return payload
-  }
+  const buildPayload = () => buildCreateTestPayload({
+    name,
+    duration,
+    scenarioMode,
+    scriptShakeout,
+    resourceBaseline,
+    groups,
+    goalConfig,
+    runtimeSettings,
+    projectId,
+    folderId,
+  })
 
   useEffect(() => {
     const canEstimate = Boolean(duration.trim()) && groups.every((group) => group.scriptId)
