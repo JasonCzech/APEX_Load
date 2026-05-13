@@ -416,6 +416,150 @@ func TestDistributedExecutionBackendCompletesAfterDurationExpiry(t *testing.T) {
 	}
 }
 
+func TestDistributedExecutionBackendPublishesRemoteTransactionMetrics(t *testing.T) {
+	const bufSize = 1024 * 1024
+
+	listener := bufconn.Listen(bufSize)
+	server := grpc.NewServer()
+	service := generatorrpc.NewService("generator-1", 50)
+	pb.RegisterGeneratorControlServer(server, service)
+
+	go func() {
+		_ = server.Serve(listener)
+	}()
+	t.Cleanup(func() {
+		server.Stop()
+		_ = listener.Close()
+	})
+
+	hub := NewHub()
+	runner := NewTestRunner(1, hub, nil)
+	runner.setExecutionBackend(newDistributedExecutionBackend(
+		[]string{"bufnet"},
+		5*time.Second,
+		func(ctx context.Context, target string) (generatorClient, error) {
+			return generatorrpc.Dial(
+				ctx,
+				target,
+				grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+					return listener.Dial()
+				}),
+				grpc.WithTransportCredentials(insecure.NewCredentials()),
+				grpc.WithBlock(),
+			)
+		},
+	))
+
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-1",
+		Name:     "Checkout",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Config: dsl.ScriptConfig{
+			BaseURL: "https://example.com",
+			RunLogic: dsl.RunLogicConfig{
+				Iterations: 1,
+			},
+		},
+		Actions: []dsl.Action{{Name: "Home", Type: "GET", Target: "/"}},
+	})
+
+	testRun, err := runner.CreateTest(CreateTestRequest{
+		Name:     "Distributed transaction metrics",
+		Duration: "30s",
+		Groups: []CreateGroupEntry{{
+			Name:     "Group A",
+			ScriptID: "script-1",
+			VUsers:   5,
+			RampUp:   "1s",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("CreateTest returned error: %v", err)
+	}
+
+	if err := runner.StartTest(testRun.ID); err != nil {
+		t.Fatalf("StartTest returned error: %v", err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		started, ok := runner.GetTest(testRun.ID)
+		if !ok {
+			t.Fatalf("expected managed test %q to exist", testRun.ID)
+		}
+		if started.Status == "RUNNING" && started.LiveMetrics != nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected distributed backend to mark test running with live metrics, got status %q metrics=%#v", started.Status, started.LiveMetrics)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	err = service.PublishMetrics(testRun.ID, generatorrpc.GeneratorStats{CPUPercent: 33.3, MemoryBytes: 128 * 1024 * 1024, GoroutineCount: 21}, []generatorrpc.TransactionMetric{{
+		Name:          "Home",
+		DurationMs:    100,
+		StatusCode:    200,
+		Success:       true,
+		BytesSent:     100,
+		BytesReceived: 200,
+	}, {
+		Name:          "Home",
+		DurationMs:    300,
+		StatusCode:    500,
+		Success:       false,
+		ErrorMessage:  "remote failure",
+		BytesSent:     120,
+		BytesReceived: 80,
+	}, {
+		Name:          "Search",
+		DurationMs:    200,
+		StatusCode:    200,
+		Success:       true,
+		BytesSent:     90,
+		BytesReceived: 180,
+	}})
+	if err != nil {
+		t.Fatalf("PublishMetrics returned error: %v", err)
+	}
+
+	deadline = time.Now().Add(2 * time.Second)
+	for {
+		updated, ok := runner.GetTest(testRun.ID)
+		if !ok {
+			t.Fatalf("expected managed test %q to exist after metrics update", testRun.ID)
+		}
+		if updated.LiveMetrics != nil && updated.LiveMetrics.TotalTx == 3 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected distributed metrics snapshot to reach runner, got %#v", updated.LiveMetrics)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	updated, ok := runner.GetTest(testRun.ID)
+	if !ok {
+		t.Fatalf("expected managed test %q to exist after metrics update", testRun.ID)
+	}
+	if updated.LiveMetrics.TotalErrors != 1 {
+		t.Fatalf("total errors = %d, want 1", updated.LiveMetrics.TotalErrors)
+	}
+	if updated.LiveMetrics.AvgResponseMs != 200 {
+		t.Fatalf("avg response ms = %v, want 200", updated.LiveMetrics.AvgResponseMs)
+	}
+	if updated.LiveMetrics.P50Ms != 200 || updated.LiveMetrics.P95Ms != 200 {
+		t.Fatalf("unexpected distributed percentiles: p50=%v p95=%v", updated.LiveMetrics.P50Ms, updated.LiveMetrics.P95Ms)
+	}
+	if updated.LiveMetrics.Resources == nil || updated.LiveMetrics.Resources.CPUProcessPct != 33.3 {
+		t.Fatalf("expected cpu process pct 33.3, got %#v", updated.LiveMetrics.Resources)
+	}
+	if updated.LiveMetrics.Transactions["Home"] == nil || updated.LiveMetrics.Transactions["Home"].Count != 2 || updated.LiveMetrics.Transactions["Home"].Errors != 1 {
+		t.Fatalf("unexpected Home transaction metrics: %#v", updated.LiveMetrics.Transactions["Home"])
+	}
+}
+
 func TestDistributedExecutionBackendPropagatesRemoteFailure(t *testing.T) {
 	const bufSize = 1024 * 1024
 

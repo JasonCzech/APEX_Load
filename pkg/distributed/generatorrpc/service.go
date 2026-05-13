@@ -22,6 +22,8 @@ type assignedTest struct {
 	paused          bool
 	durationSeconds int64
 	groups          map[string]int32
+	stats           GeneratorStats
+	transactions    []TransactionMetric
 }
 
 type Service struct {
@@ -341,6 +343,27 @@ func (s *Service) FailTest(testID string, message string) {
 	s.broadcastMetrics(s.metricsBatchForState(testID, 0, false, assignment.groups, "FAILED", message))
 }
 
+func (s *Service) PublishMetrics(testID string, stats GeneratorStats, transactions []TransactionMetric) error {
+	if testID == "" {
+		return status.Error(codes.InvalidArgument, "test_id is required")
+	}
+
+	s.mu.Lock()
+	assignment, ok := s.assignments[testID]
+	if !ok {
+		s.mu.Unlock()
+		return status.Error(codes.NotFound, "test assignment not found")
+	}
+	assignment.stats = stats
+	assignment.transactions = append([]TransactionMetric(nil), transactions...)
+	s.assignments[testID] = assignment
+	batch := s.metricsBatchLocked(testID)
+	s.mu.Unlock()
+
+	go s.broadcastMetrics(batch)
+	return nil
+}
+
 func (s *Service) registerSubscriber() (int, chan *pb.MetricsBatch, []*pb.MetricsBatch) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -397,14 +420,21 @@ func (s *Service) metricsBatchLocked(testID string) *pb.MetricsBatch {
 	if assignment.paused {
 		lifecycleState = "PAUSED"
 	}
-	return s.metricsBatchForState(testID, assignment.vuserCount, assignment.paused, assignment.groups, lifecycleState, "")
+	stats := assignment.stats
+	stats.ActiveVUsers = assignment.vuserCount
+	return s.metricsBatchForMetrics(testID, stats, assignment.transactions, assignment.paused, assignment.groups, lifecycleState, "")
 }
 
 func (s *Service) metricsBatchForState(testID string, vuserCount int32, paused bool, groupAssignments map[string]int32, lifecycleState string, lifecycleError string) *pb.MetricsBatch {
-	activeVUsers := vuserCount
+	return s.metricsBatchForMetrics(testID, GeneratorStats{ActiveVUsers: vuserCount}, nil, paused, groupAssignments, lifecycleState, lifecycleError)
+}
+
+func (s *Service) metricsBatchForMetrics(testID string, stats GeneratorStats, transactions []TransactionMetric, paused bool, groupAssignments map[string]int32, lifecycleState string, lifecycleError string) *pb.MetricsBatch {
+	activeVUsers := stats.ActiveVUsers
 	if paused {
 		activeVUsers = 0
 	}
+	stats.ActiveVUsers = activeVUsers
 	groups := make([]*pb.GroupMetric, 0)
 	if len(groupAssignments) > 0 {
 		groups = make([]*pb.GroupMetric, 0, len(groupAssignments))
@@ -416,13 +446,24 @@ func (s *Service) metricsBatchForState(testID string, vuserCount int32, paused b
 			groups = append(groups, &pb.GroupMetric{Name: name, ActiveVusers: activeGroupVUsers})
 		}
 	}
+	protoTransactions := make([]*pb.TransactionMetric, 0, len(transactions))
+	for _, tx := range transactions {
+		protoTransactions = append(protoTransactions, &pb.TransactionMetric{
+			Name:          tx.Name,
+			DurationMs:    tx.DurationMs,
+			StatusCode:    tx.StatusCode,
+			Success:       tx.Success,
+			ErrorMessage:  tx.ErrorMessage,
+			BytesSent:     tx.BytesSent,
+			BytesReceived: tx.BytesReceived,
+		})
+	}
 	return &pb.MetricsBatch{
 		TestId:          testID,
 		GeneratorId:     s.generatorID,
 		TimestampUnixMs: time.Now().UnixMilli(),
-		Stats: &pb.GeneratorStats{
-			ActiveVusers: activeVUsers,
-		},
+		Transactions:    protoTransactions,
+		Stats:           toProtoStats(stats),
 		Groups:         groups,
 		LifecycleState: lifecycleState,
 		LifecycleError: lifecycleError,

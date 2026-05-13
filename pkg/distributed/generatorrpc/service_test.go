@@ -356,3 +356,100 @@ func TestServiceFailTestBroadcastsFailedLifecycle(t *testing.T) {
 		t.Fatalf("Heartbeat CloseSend: %v", err)
 	}
 }
+
+func TestServicePublishMetricsBroadcastsTransactions(t *testing.T) {
+	const bufSize = 1024 * 1024
+
+	listener := bufconn.Listen(bufSize)
+	server := grpc.NewServer()
+	service := NewService("generator-1", 50)
+	pb.RegisterGeneratorControlServer(server, service)
+
+	go func() {
+		_ = server.Serve(listener)
+	}()
+	t.Cleanup(func() {
+		server.Stop()
+		_ = listener.Close()
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	conn, err := grpc.DialContext(
+		ctx,
+		"bufnet",
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+			return listener.Dial()
+		}),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithBlock(),
+	)
+	if err != nil {
+		t.Fatalf("DialContext: %v", err)
+	}
+
+	client := NewClient(conn)
+	t.Cleanup(func() {
+		_ = client.Close()
+	})
+
+	if _, err := client.DistributeScript(ctx, Script{ID: "script-1", Content: []byte(`{"name":"demo"}`), ContentHash: "hash-1"}); err != nil {
+		t.Fatalf("DistributeScript: %v", err)
+	}
+	if _, err := client.AssignWork(ctx, Assignment{TestID: "test-1", GroupName: "Group A", ScriptID: "script-1", VUserCount: 10}); err != nil {
+		t.Fatalf("AssignWork: %v", err)
+	}
+
+	metrics, err := client.OpenMetricsStream(ctx)
+	if err != nil {
+		t.Fatalf("OpenMetricsStream: %v", err)
+	}
+	if _, err := metrics.Receive(); err != nil {
+		t.Fatalf("Receive initial metrics batch: %v", err)
+	}
+
+	err = service.PublishMetrics("test-1", GeneratorStats{CPUPercent: 42.5, MemoryBytes: 64 * 1024 * 1024, GoroutineCount: 19}, []TransactionMetric{{
+		Name:          "Home",
+		DurationMs:    120,
+		StatusCode:    200,
+		Success:       true,
+		BytesSent:     128,
+		BytesReceived: 1024,
+	}, {
+		Name:          "Checkout",
+		DurationMs:    340,
+		StatusCode:    500,
+		Success:       false,
+		ErrorMessage:  "remote failure",
+		BytesSent:     256,
+		BytesReceived: 512,
+	}})
+	if err != nil {
+		t.Fatalf("PublishMetrics: %v", err)
+	}
+
+	batch, err := metrics.Receive()
+	if err != nil {
+		t.Fatalf("Receive metrics snapshot batch: %v", err)
+	}
+	if batch.Stats.ActiveVUsers != 10 {
+		t.Fatalf("snapshot active vusers = %d, want 10", batch.Stats.ActiveVUsers)
+	}
+	if batch.Stats.CPUPercent != 42.5 {
+		t.Fatalf("snapshot cpu percent = %v, want 42.5", batch.Stats.CPUPercent)
+	}
+	if batch.Stats.MemoryBytes != 64*1024*1024 {
+		t.Fatalf("snapshot memory bytes = %d, want %d", batch.Stats.MemoryBytes, 64*1024*1024)
+	}
+	if len(batch.Transactions) != 2 {
+		t.Fatalf("snapshot transaction count = %d, want 2", len(batch.Transactions))
+	}
+	if batch.Transactions[1].ErrorMessage != "remote failure" {
+		t.Fatalf("snapshot transaction error = %q, want remote failure", batch.Transactions[1].ErrorMessage)
+	}
+
+	if err := metrics.CloseSend(); err != nil {
+		t.Fatalf("Metrics CloseSend: %v", err)
+	}
+}
