@@ -143,13 +143,21 @@ func TestDistributedExecutionBackendAssignsWorkToGenerator(t *testing.T) {
 		if !ok {
 			t.Fatalf("expected managed test %q to exist", testRun.ID)
 		}
-		if started.Status == "RUNNING" && started.StartedAt != nil {
+		if started.Status == "RUNNING" && started.StartedAt != nil && started.LiveMetrics != nil {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("expected distributed backend to mark test running, got status %q", started.Status)
+			t.Fatalf("expected distributed backend to mark test running with live metrics, got status %q metrics=%#v", started.Status, started.LiveMetrics)
 		}
 		time.Sleep(20 * time.Millisecond)
+	}
+
+	started, ok := runner.GetTest(testRun.ID)
+	if !ok {
+		t.Fatalf("expected managed test %q to exist", testRun.ID)
+	}
+	if started.LiveMetrics.ActiveVUsers != 5 {
+		t.Fatalf("active vusers = %d, want 5", started.LiveMetrics.ActiveVUsers)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -489,18 +497,42 @@ func TestDistributedExecutionBackendPausesAndResumesTest(t *testing.T) {
 		if !ok {
 			t.Fatalf("expected managed test %q to exist", testRun.ID)
 		}
-		if started.Status == "RUNNING" {
+		if started.Status == "RUNNING" && started.LiveMetrics != nil {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("expected distributed backend to mark test running, got status %q", started.Status)
+			t.Fatalf("expected distributed backend to mark test running with live metrics, got status %q metrics=%#v", started.Status, started.LiveMetrics)
 		}
 		time.Sleep(20 * time.Millisecond)
+	}
+
+	started, ok := runner.GetTest(testRun.ID)
+	if !ok {
+		t.Fatalf("expected managed test %q to exist", testRun.ID)
+	}
+	if started.LiveMetrics.ActiveVUsers != 5 {
+		t.Fatalf("active vusers before pause = %d, want 5", started.LiveMetrics.ActiveVUsers)
 	}
 
 	if err := runner.PauseTest(testRun.ID); err != nil {
 		t.Fatalf("PauseTest returned error: %v", err)
 	}
+
+	deadline = time.Now().Add(2 * time.Second)
+	for {
+		paused, ok := runner.GetTest(testRun.ID)
+		if !ok {
+			t.Fatalf("expected managed test %q to exist after pause", testRun.ID)
+		}
+		if paused.Status == "PAUSED" && paused.LiveMetrics != nil && paused.LiveMetrics.ActiveVUsers == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected paused status and zero live vusers, got status=%q metrics=%#v", paused.Status, paused.LiveMetrics)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
 	paused, ok := runner.GetTest(testRun.ID)
 	if !ok {
 		t.Fatalf("expected managed test %q to exist after pause", testRun.ID)
@@ -508,16 +540,38 @@ func TestDistributedExecutionBackendPausesAndResumesTest(t *testing.T) {
 	if paused.Status != "PAUSED" {
 		t.Fatalf("status after pause = %q, want PAUSED", paused.Status)
 	}
+	if paused.LiveMetrics == nil || paused.LiveMetrics.ActiveVUsers != 0 {
+		t.Fatalf("paused live metrics = %#v, want active vusers 0", paused.LiveMetrics)
+	}
 
 	if err := runner.ResumeTest(testRun.ID); err != nil {
 		t.Fatalf("ResumeTest returned error: %v", err)
 	}
+
+	deadline = time.Now().Add(2 * time.Second)
+	for {
+		resumed, ok := runner.GetTest(testRun.ID)
+		if !ok {
+			t.Fatalf("expected managed test %q to exist after resume", testRun.ID)
+		}
+		if resumed.Status == "RUNNING" && resumed.LiveMetrics != nil && resumed.LiveMetrics.ActiveVUsers == 5 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected resumed status and restored live vusers, got status=%q metrics=%#v", resumed.Status, resumed.LiveMetrics)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
 	resumed, ok := runner.GetTest(testRun.ID)
 	if !ok {
 		t.Fatalf("expected managed test %q to exist after resume", testRun.ID)
 	}
 	if resumed.Status != "RUNNING" {
 		t.Fatalf("status after resume = %q, want RUNNING", resumed.Status)
+	}
+	if resumed.LiveMetrics == nil || resumed.LiveMetrics.ActiveVUsers != 5 {
+		t.Fatalf("resumed live metrics = %#v, want active vusers 5", resumed.LiveMetrics)
 	}
 }
 
@@ -605,6 +659,21 @@ func TestDistributedExecutionBackendScalesSingleGroupTest(t *testing.T) {
 		t.Fatalf("ScaleVUsers returned error: %v", err)
 	}
 
+	deadline = time.Now().Add(2 * time.Second)
+	for {
+		scaled, ok := runner.GetTest(testRun.ID)
+		if !ok {
+			t.Fatalf("expected managed test %q to exist after scale", testRun.ID)
+		}
+		if scaled.LiveMetrics != nil && scaled.LiveMetrics.ActiveVUsers == 7 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected live metrics to reflect scaled vusers, got %#v", scaled.LiveMetrics)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
 	scaled, ok := runner.GetTest(testRun.ID)
 	if !ok {
 		t.Fatalf("expected managed test %q to exist after scale", testRun.ID)
@@ -614,6 +683,9 @@ func TestDistributedExecutionBackendScalesSingleGroupTest(t *testing.T) {
 	}
 	if scaled.Groups[0].VUsers != 7 {
 		t.Fatalf("group vusers = %d, want 7", scaled.Groups[0].VUsers)
+	}
+	if scaled.LiveMetrics == nil || scaled.LiveMetrics.ActiveVUsers != 7 {
+		t.Fatalf("live metrics active vusers = %#v, want 7", scaled.LiveMetrics)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

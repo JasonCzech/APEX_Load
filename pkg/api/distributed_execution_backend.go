@@ -6,9 +6,13 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log/slog"
+	"sort"
 	"time"
 
 	"github.com/jasonczech/stormrunner/pkg/distributed/generatorrpc"
+	"github.com/jasonczech/stormrunner/pkg/engine"
 )
 
 type generatorDial func(ctx context.Context, target string) (generatorClient, error)
@@ -66,7 +70,6 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		tr.failTestBeforeRun(test, fmt.Sprintf("connect generator: %v", err))
 		return
 	}
-	defer client.Close()
 
 	distributedScripts := map[string]struct{}{}
 	for _, group := range test.Groups {
@@ -109,23 +112,24 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		}
 	}
 
-	tr.startDistributedTestRun(test, b)
+	stream, err := client.OpenMetricsStream(context.Background())
+	if err != nil {
+		_ = client.Close()
+		tr.failTestBeforeRun(test, fmt.Sprintf("open generator metrics stream: %v", err))
+		return
+	}
+
+	b.startDistributedTestRun(tr, test, client, stream)
 }
 
 func (b *distributedExecutionBackend) StopTest(tr *TestRunner, test *ManagedTest) error {
-	if test.remoteTarget == "" {
-		return fmt.Errorf("distributed generator target is not recorded")
+	client, err := b.clientForTest(test)
+	if err != nil {
+		return err
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
 	defer cancel()
-
-	client, err := b.dial(ctx, test.remoteTarget)
-	if err != nil {
-		return fmt.Errorf("connect generator: %w", err)
-	}
-	defer client.Close()
-
 	stop, err := client.StopTest(ctx, test.ID, true)
 	if err != nil {
 		return fmt.Errorf("stop remote test: %w", err)
@@ -133,6 +137,7 @@ func (b *distributedExecutionBackend) StopTest(tr *TestRunner, test *ManagedTest
 	if !stop.Acknowledged {
 		return fmt.Errorf("generator did not acknowledge stop for %s", test.ID)
 	}
+	b.closeRemoteResources(test)
 	return nil
 }
 
@@ -143,19 +148,13 @@ func (b *distributedExecutionBackend) ScaleVUsers(tr *TestRunner, test *ManagedT
 	if test.Groups[0].Name != groupName {
 		return fmt.Errorf("test group not found: %s", groupName)
 	}
-	if test.remoteTarget == "" {
-		return fmt.Errorf("distributed generator target is not recorded")
+	client, err := b.clientForTest(test)
+	if err != nil {
+		return err
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
 	defer cancel()
-
-	client, err := b.dial(ctx, test.remoteTarget)
-	if err != nil {
-		return fmt.Errorf("connect generator: %w", err)
-	}
-	defer client.Close()
-
 	adjustment, err := client.AdjustVUsers(ctx, generatorrpc.VUserAdjustment{
 		TestID:       test.ID,
 		TargetVUsers: int32(targetVUsers),
@@ -174,36 +173,21 @@ func (b *distributedExecutionBackend) AdjustDuration(tr *TestRunner, test *Manag
 }
 
 func (b *distributedExecutionBackend) PauseTest(tr *TestRunner, test *ManagedTest) error {
-	return b.sendPauseControl(test, true)
+	if test.remoteMetricsStream == nil {
+		return fmt.Errorf("distributed metrics stream is not initialized")
+	}
+	if err := test.remoteMetricsStream.SendPause(generatorrpc.PauseControl{TestID: test.ID, Pause: true}); err != nil {
+		return fmt.Errorf("send remote pause control: %w", err)
+	}
+	return nil
 }
 
 func (b *distributedExecutionBackend) ResumeTest(tr *TestRunner, test *ManagedTest) error {
-	return b.sendPauseControl(test, false)
-}
-
-func (b *distributedExecutionBackend) sendPauseControl(test *ManagedTest, paused bool) error {
-	if test.remoteTarget == "" {
-		return fmt.Errorf("distributed generator target is not recorded")
+	if test.remoteMetricsStream == nil {
+		return fmt.Errorf("distributed metrics stream is not initialized")
 	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
-	defer cancel()
-
-	client, err := b.dial(ctx, test.remoteTarget)
-	if err != nil {
-		return fmt.Errorf("connect generator: %w", err)
-	}
-	defer client.Close()
-
-	stream, err := client.OpenMetricsStream(ctx)
-	if err != nil {
-		return fmt.Errorf("open remote control stream: %w", err)
-	}
-	if err := stream.SendPause(generatorrpc.PauseControl{TestID: test.ID, Pause: paused}); err != nil {
+	if err := test.remoteMetricsStream.SendPause(generatorrpc.PauseControl{TestID: test.ID, Pause: false}); err != nil {
 		return fmt.Errorf("send remote pause control: %w", err)
-	}
-	if err := stream.CloseSend(); err != nil {
-		return fmt.Errorf("close remote control stream: %w", err)
 	}
 	return nil
 }
@@ -217,23 +201,164 @@ func marshalDistributedScript(script any) ([]byte, string, error) {
 	return content, hex.EncodeToString(hash[:]), nil
 }
 
-func (tr *TestRunner) startDistributedTestRun(test *ManagedTest, backend testExecutionBackend) {
+func (b *distributedExecutionBackend) startDistributedTestRun(tr *TestRunner, test *ManagedTest, client generatorClient, stream *generatorrpc.MetricsStream) {
 	ctx, cancel := context.WithCancel(context.Background())
 	now := time.Now()
 
 	tr.mu.Lock()
 	test.cancel = cancel
 	test.multiEngine = nil
-	test.executionBackend = backend
+	test.executionBackend = b
+	test.remoteClient = client
+	test.remoteMetricsStream = stream
 	test.remoteTarget = ""
-	if distributed, ok := backend.(*distributedExecutionBackend); ok && len(distributed.targets) > 0 {
-		test.remoteTarget = distributed.targets[0]
+	if len(b.targets) > 0 {
+		test.remoteTarget = b.targets[0]
 	}
 	test.StartedAt = &now
 	test.EndedAt = nil
 	test.Status = "RUNNING"
 	tr.mu.Unlock()
 
-	_ = ctx
 	tr.broadcastEvent("test_started", test)
+	go b.consumeMetrics(ctx, tr, test, stream)
+}
+
+func (b *distributedExecutionBackend) clientForTest(test *ManagedTest) (generatorClient, error) {
+	if test.remoteClient != nil {
+		return test.remoteClient, nil
+	}
+	if test.remoteTarget == "" {
+		return nil, fmt.Errorf("distributed generator target is not recorded")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
+	defer cancel()
+	client, err := b.dial(ctx, test.remoteTarget)
+	if err != nil {
+		return nil, fmt.Errorf("connect generator: %w", err)
+	}
+	return client, nil
+}
+
+func (b *distributedExecutionBackend) closeRemoteResources(test *ManagedTest) {
+	if test.remoteMetricsStream != nil {
+		_ = test.remoteMetricsStream.CloseSend()
+		test.remoteMetricsStream = nil
+	}
+	if test.remoteClient != nil {
+		_ = test.remoteClient.Close()
+		test.remoteClient = nil
+	}
+}
+
+func (b *distributedExecutionBackend) consumeMetrics(ctx context.Context, tr *TestRunner, test *ManagedTest, stream *generatorrpc.MetricsStream) {
+	for {
+		batch, err := stream.Receive()
+		if err != nil {
+			if ctx.Err() != nil || err == io.EOF {
+				return
+			}
+			slog.Warn("distributed metrics stream stopped", "test_id", test.ID, "error", err)
+			return
+		}
+		if batch.TestID != test.ID {
+			continue
+		}
+		tr.publishLiveMetrics(test, buildLiveMetricsFromDistributedBatch(test, batch), nil)
+	}
+}
+
+func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.MetricsBatch) *LiveMetrics {
+	timestamp := time.UnixMilli(batch.TimestampUnixMs)
+	if batch.TimestampUnixMs == 0 {
+		timestamp = time.Now()
+	}
+
+	live := &LiveMetrics{
+		Timestamp:     timestamp,
+		ActiveVUsers:  int64(batch.Stats.ActiveVUsers),
+		Transactions:  make(map[string]*TxMetrics),
+		GroupMetrics:  make(map[string]*GroupLiveMetrics),
+		Resources: &engine.SystemResources{
+			CPUProcessPct: batch.Stats.CPUPercent,
+			MemProcessMb:  float64(batch.Stats.MemoryBytes) / (1024 * 1024),
+		},
+	}
+
+	durationsByName := make(map[string][]float64)
+	for _, tx := range batch.Transactions {
+		live.TotalTx++
+		if !tx.Success {
+			live.TotalErrors++
+		}
+		live.AvgResponseMs += tx.DurationMs
+		durationsByName[tx.Name] = append(durationsByName[tx.Name], tx.DurationMs)
+		metrics := live.Transactions[tx.Name]
+		if metrics == nil {
+			metrics = &TxMetrics{Name: tx.Name}
+			live.Transactions[tx.Name] = metrics
+		}
+		metrics.Count++
+		if !tx.Success {
+			metrics.Errors++
+		}
+		metrics.AvgMs += tx.DurationMs
+	}
+
+	if live.TotalTx > 0 {
+		live.ErrorPct = float64(live.TotalErrors) / float64(live.TotalTx) * 100
+		live.AvgResponseMs /= float64(live.TotalTx)
+	}
+
+	names := make([]string, 0, len(durationsByName))
+	allDurations := make([]float64, 0, len(batch.Transactions))
+	for name, durations := range durationsByName {
+		names = append(names, name)
+		sort.Float64s(durations)
+		allDurations = append(allDurations, durations...)
+		metrics := live.Transactions[name]
+		metrics.AvgMs /= float64(metrics.Count)
+		metrics.P50Ms = percentileValue(durations, 0.50)
+		metrics.P90Ms = percentileValue(durations, 0.90)
+		metrics.P99Ms = percentileValue(durations, 0.99)
+	}
+	sort.Strings(names)
+	if len(allDurations) > 0 {
+		sort.Float64s(allDurations)
+		live.P50Ms = percentileValue(allDurations, 0.50)
+		live.P90Ms = percentileValue(allDurations, 0.90)
+		live.P95Ms = percentileValue(allDurations, 0.95)
+		live.P99Ms = percentileValue(allDurations, 0.99)
+	}
+
+	if len(test.Groups) == 1 {
+		groupName := test.Groups[0].Name
+		live.GroupMetrics[groupName] = &GroupLiveMetrics{
+			Name:         groupName,
+			VUsers:       int(batch.Stats.ActiveVUsers),
+			Transactions: live.TotalTx,
+			Errors:       live.TotalErrors,
+			TPS:          live.TPS,
+			AvgResponseMs: live.AvgResponseMs,
+			P50Ms:        live.P50Ms,
+			P90Ms:        live.P90Ms,
+			P99Ms:        live.P99Ms,
+		}
+	}
+
+	return live
+}
+
+func percentileValue(sorted []float64, percentile float64) float64 {
+	if len(sorted) == 0 {
+		return 0
+	}
+	if percentile <= 0 {
+		return sorted[0]
+	}
+	if percentile >= 1 {
+		return sorted[len(sorted)-1]
+	}
+	index := int(float64(len(sorted)-1) * percentile)
+	return sorted[index]
 }

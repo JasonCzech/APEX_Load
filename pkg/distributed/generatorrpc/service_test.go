@@ -100,6 +100,21 @@ func TestClientRoundTripDistributeAssignAndHeartbeat(t *testing.T) {
 		t.Fatalf("available capacity = %d, want 40", assignmentAck.AvailableCapacity)
 	}
 
+	metrics, err := client.OpenMetricsStream(ctx)
+	if err != nil {
+		t.Fatalf("OpenMetricsStream: %v", err)
+	}
+	batch, err := metrics.Receive()
+	if err != nil {
+		t.Fatalf("Receive initial metrics batch: %v", err)
+	}
+	if batch.TestID != "test-1" {
+		t.Fatalf("metrics test id = %q, want test-1", batch.TestID)
+	}
+	if batch.Stats.ActiveVUsers != 10 {
+		t.Fatalf("initial active vusers = %d, want 10", batch.Stats.ActiveVUsers)
+	}
+
 	adjustmentAck, err := client.AdjustVUsers(ctx, VUserAdjustment{
 		TestID:       "test-1",
 		TargetVUsers: 12,
@@ -113,16 +128,23 @@ func TestClientRoundTripDistributeAssignAndHeartbeat(t *testing.T) {
 	if adjustmentAck.CurrentVUsers != 12 {
 		t.Fatalf("current vusers = %d, want 12", adjustmentAck.CurrentVUsers)
 	}
-
-	metrics, err := client.OpenMetricsStream(ctx)
+	batch, err = metrics.Receive()
 	if err != nil {
-		t.Fatalf("OpenMetricsStream: %v", err)
+		t.Fatalf("Receive adjusted metrics batch: %v", err)
 	}
+	if batch.Stats.ActiveVUsers != 12 {
+		t.Fatalf("adjusted active vusers = %d, want 12", batch.Stats.ActiveVUsers)
+	}
+
 	if err := metrics.SendPause(PauseControl{TestID: "test-1", Pause: true}); err != nil {
 		t.Fatalf("SendPause(true): %v", err)
 	}
-	if err := metrics.CloseSend(); err != nil {
-		t.Fatalf("Metrics CloseSend after pause: %v", err)
+	batch, err = metrics.Receive()
+	if err != nil {
+		t.Fatalf("Receive paused metrics batch: %v", err)
+	}
+	if batch.Stats.ActiveVUsers != 0 {
+		t.Fatalf("paused active vusers = %d, want 0", batch.Stats.ActiveVUsers)
 	}
 
 	deadline := time.Now().Add(2 * time.Second)
@@ -139,15 +161,15 @@ func TestClientRoundTripDistributeAssignAndHeartbeat(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	metrics, err = client.OpenMetricsStream(ctx)
-	if err != nil {
-		t.Fatalf("OpenMetricsStream second time: %v", err)
-	}
 	if err := metrics.SendPause(PauseControl{TestID: "test-1", Pause: false}); err != nil {
 		t.Fatalf("SendPause(false): %v", err)
 	}
-	if err := metrics.CloseSend(); err != nil {
-		t.Fatalf("Metrics CloseSend after resume: %v", err)
+	batch, err = metrics.Receive()
+	if err != nil {
+		t.Fatalf("Receive resumed metrics batch: %v", err)
+	}
+	if batch.Stats.ActiveVUsers != 12 {
+		t.Fatalf("resumed active vusers = %d, want 12", batch.Stats.ActiveVUsers)
 	}
 
 	deadline = time.Now().Add(2 * time.Second)
@@ -191,6 +213,13 @@ func TestClientRoundTripDistributeAssignAndHeartbeat(t *testing.T) {
 	if stopAck.PendingVUsers != 12 {
 		t.Fatalf("pending vusers = %d, want 12", stopAck.PendingVUsers)
 	}
+	batch, err = metrics.Receive()
+	if err != nil {
+		t.Fatalf("Receive stopped metrics batch: %v", err)
+	}
+	if batch.Stats.ActiveVUsers != 0 {
+		t.Fatalf("stopped active vusers = %d, want 0", batch.Stats.ActiveVUsers)
+	}
 	if err := heartbeat.Send(Heartbeat{GeneratorID: "generator-1", TimestampUnixMs: 1235}); err != nil {
 		t.Fatalf("Heartbeat Send after stop: %v", err)
 	}
@@ -200,6 +229,9 @@ func TestClientRoundTripDistributeAssignAndHeartbeat(t *testing.T) {
 	}
 	if len(pong.ActiveTestIDs) != 0 {
 		t.Fatalf("active test ids after stop = %v, want empty", pong.ActiveTestIDs)
+	}
+	if err := metrics.CloseSend(); err != nil {
+		t.Fatalf("Metrics CloseSend: %v", err)
 	}
 	if err := heartbeat.CloseSend(); err != nil {
 		t.Fatalf("Heartbeat CloseSend: %v", err)

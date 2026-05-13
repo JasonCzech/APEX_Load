@@ -30,6 +30,8 @@ type Service struct {
 	maxVUsers   int32
 	scripts     map[string]cachedScript
 	assignments map[string]assignedTest
+	subscribers map[int]chan *pb.MetricsBatch
+	nextSubID   int
 }
 
 func NewService(generatorID string, maxVUsers int) *Service {
@@ -45,6 +47,7 @@ func NewService(generatorID string, maxVUsers int) *Service {
 		maxVUsers:   int32(maxVUsers),
 		scripts:     make(map[string]cachedScript),
 		assignments: make(map[string]assignedTest),
+		subscribers: make(map[int]chan *pb.MetricsBatch),
 	}
 }
 
@@ -96,7 +99,9 @@ func (s *Service) AssignWork(_ context.Context, assignment *pb.WorkAssignment) (
 	current.testID = assignment.GetTestId()
 	current.vuserCount += assignment.GetVuserCount()
 	s.assignments[assignment.GetTestId()] = current
+	batch := s.metricsBatchLocked(current.testID)
 
+	go s.broadcastMetrics(batch)
 	return &pb.AssignmentAck{
 		Accepted:          true,
 		AvailableCapacity: s.availableCapacityLocked(),
@@ -126,7 +131,9 @@ func (s *Service) AdjustVUsers(_ context.Context, request *pb.VUserAdjustment) (
 
 	assignment.vuserCount = request.GetTargetVusers()
 	s.assignments[request.GetTestId()] = assignment
+	batch := s.metricsBatchLocked(request.GetTestId())
 
+	go s.broadcastMetrics(batch)
 	return &pb.AdjustmentAck{
 		Accepted:      true,
 		CurrentVusers: assignment.vuserCount,
@@ -145,7 +152,9 @@ func (s *Service) StopTest(_ context.Context, request *pb.StopRequest) (*pb.Stop
 	if ok {
 		delete(s.assignments, request.GetTestId())
 	}
+	batch := s.metricsBatchForState(request.GetTestId(), 0, false)
 
+	go s.broadcastMetrics(batch)
 	return &pb.StopAck{
 		Acknowledged: ok,
 		PendingVusers: assignment.vuserCount,
@@ -153,22 +162,50 @@ func (s *Service) StopTest(_ context.Context, request *pb.StopRequest) (*pb.Stop
 }
 
 func (s *Service) StreamMetrics(stream pb.GeneratorControl_StreamMetricsServer) error {
+	subscriberID, updates, initial := s.registerSubscriber()
+	defer s.unregisterSubscriber(subscriberID)
+
+	recvErr := make(chan error, 1)
+	go func() {
+		for {
+			signal, err := stream.Recv()
+			if err == io.EOF {
+				return
+			}
+			if err != nil {
+				recvErr <- err
+				return
+			}
+
+			pause := signal.GetPause()
+			if pause == nil {
+				recvErr <- status.Error(codes.Unimplemented, "only pause control is implemented")
+				return
+			}
+
+			if err := s.setPaused(pause.GetTestId(), pause.GetPause()); err != nil {
+				recvErr <- err
+				return
+			}
+		}
+	}()
+
+	for _, batch := range initial {
+		if err := stream.Send(batch); err != nil {
+			return err
+		}
+	}
+
 	for {
-		signal, err := stream.Recv()
-		if err == io.EOF {
+		select {
+		case <-stream.Context().Done():
 			return nil
-		}
-		if err != nil {
+		case err := <-recvErr:
 			return err
-		}
-
-		pause := signal.GetPause()
-		if pause == nil {
-			return status.Error(codes.Unimplemented, "only pause control is implemented")
-		}
-
-		if err := s.setPaused(pause.GetTestId(), pause.GetPause()); err != nil {
-			return err
+		case batch := <-updates:
+			if err := stream.Send(batch); err != nil {
+				return err
+			}
 		}
 	}
 }
@@ -233,7 +270,79 @@ func (s *Service) setPaused(testID string, paused bool) error {
 	}
 	assignment.paused = paused
 	s.assignments[testID] = assignment
+	batch := s.metricsBatchLocked(testID)
+	go s.broadcastMetrics(batch)
 	return nil
+}
+
+func (s *Service) registerSubscriber() (int, chan *pb.MetricsBatch, []*pb.MetricsBatch) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	id := s.nextSubID
+	s.nextSubID++
+	ch := make(chan *pb.MetricsBatch, 16)
+	s.subscribers[id] = ch
+
+	initial := make([]*pb.MetricsBatch, 0, len(s.assignments))
+	for testID := range s.assignments {
+		initial = append(initial, s.metricsBatchLocked(testID))
+	}
+
+	return id, ch, initial
+}
+
+func (s *Service) unregisterSubscriber(id int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, ok := s.subscribers[id]; !ok {
+		return
+	}
+	delete(s.subscribers, id)
+}
+
+func (s *Service) broadcastMetrics(batch *pb.MetricsBatch) {
+	if batch == nil {
+		return
+	}
+
+	s.mu.RLock()
+	subscribers := make([]chan *pb.MetricsBatch, 0, len(s.subscribers))
+	for _, subscriber := range s.subscribers {
+		subscribers = append(subscribers, subscriber)
+	}
+	s.mu.RUnlock()
+
+	for _, subscriber := range subscribers {
+		select {
+		case subscriber <- batch:
+		default:
+		}
+	}
+}
+
+func (s *Service) metricsBatchLocked(testID string) *pb.MetricsBatch {
+	assignment, ok := s.assignments[testID]
+	if !ok {
+		return s.metricsBatchForState(testID, 0, false)
+	}
+	return s.metricsBatchForState(testID, assignment.vuserCount, assignment.paused)
+}
+
+func (s *Service) metricsBatchForState(testID string, vuserCount int32, paused bool) *pb.MetricsBatch {
+	activeVUsers := vuserCount
+	if paused {
+		activeVUsers = 0
+	}
+	return &pb.MetricsBatch{
+		TestId:          testID,
+		GeneratorId:     s.generatorID,
+		TimestampUnixMs: time.Now().UnixMilli(),
+		Stats: &pb.GeneratorStats{
+			ActiveVusers: activeVUsers,
+		},
+	}
 }
 
 func maxInt64(left, right int64) int64 {

@@ -45,6 +45,24 @@ type PauseControl struct {
 	Pause  bool
 }
 
+type MetricsBatch struct {
+	TestID          string
+	GeneratorID     string
+	TimestampUnixMs int64
+	Stats           GeneratorStats
+	Transactions    []TransactionMetric
+}
+
+type TransactionMetric struct {
+	Name          string
+	DurationMs    float64
+	StatusCode    int32
+	Success       bool
+	ErrorMessage  string
+	BytesSent     int64
+	BytesReceived int64
+}
+
 type StopResult struct {
 	Acknowledged bool
 	PendingVUsers int32
@@ -231,6 +249,44 @@ func (s *MetricsStream) SendPause(control PauseControl) error {
 func (s *MetricsStream) CloseSend() error {
 	return s.stream.CloseSend()
 }
+
+func (s *MetricsStream) Receive() (MetricsBatch, error) {
+	batch, err := s.stream.Recv()
+	if err != nil {
+		return MetricsBatch{}, err
+	}
+
+	transactions := make([]TransactionMetric, 0, len(batch.GetTransactions()))
+	for _, tx := range batch.GetTransactions() {
+		transactions = append(transactions, TransactionMetric{
+			Name:          tx.GetName(),
+			DurationMs:    tx.GetDurationMs(),
+			StatusCode:    tx.GetStatusCode(),
+			Success:       tx.GetSuccess(),
+			ErrorMessage:  tx.GetErrorMessage(),
+			BytesSent:     tx.GetBytesSent(),
+			BytesReceived: tx.GetBytesReceived(),
+		})
+	}
+
+	stats := GeneratorStats{}
+	if batch.GetStats() != nil {
+		stats = GeneratorStats{
+			ActiveVUsers:   batch.GetStats().GetActiveVusers(),
+			CPUPercent:     batch.GetStats().GetCpuPercent(),
+			MemoryBytes:    batch.GetStats().GetMemoryBytes(),
+			GoroutineCount: batch.GetStats().GetGoroutineCount(),
+		}
+	}
+
+	return MetricsBatch{
+		TestID:          batch.GetTestId(),
+		GeneratorID:     batch.GetGeneratorId(),
+		TimestampUnixMs: batch.GetTimestampUnixMs(),
+		Stats:           stats,
+		Transactions:    transactions,
+	}, nil
+	}
 
 func toProtoAssignment(assignment Assignment) *pb.WorkAssignment {
 	dataFiles := make([]*pb.DataFile, 0, len(assignment.DataFiles))

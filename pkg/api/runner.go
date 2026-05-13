@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jasonczech/stormrunner/pkg/distributed/generatorrpc"
 	"github.com/jasonczech/stormrunner/pkg/dsl"
 	"github.com/jasonczech/stormrunner/pkg/engine"
 	"github.com/jasonczech/stormrunner/pkg/storage"
@@ -128,6 +129,8 @@ type ManagedTest struct {
 	goalControl *goalControllerState
 	executionBackend testExecutionBackend
 	remoteTarget     string
+	remoteClient     generatorClient
+	remoteMetricsStream *generatorrpc.MetricsStream
 }
 
 type TestGroup struct {
