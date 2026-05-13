@@ -372,6 +372,10 @@ export default function SampleScriptImport({ onImported, onEdit, onClose }: Prop
           </select>
         </div>
 
+        <div className="settings-notice">
+          SOAP-shaped raw HTTP, curl, REST JSON, and HAR request samples can now be promoted into SOAP scripts when the imported sample set is consistently SOAP-oriented. Mixed sample sets still stay on the HTTP protocol surface.
+        </div>
+
         <div className="sample-import-grid two-col">
           <label
             className={`sample-import-field sample-import-span-2 ${dragTarget === 'primary' ? 'sample-import-drop-active' : ''}`}

@@ -78,6 +78,9 @@ describe('SampleScriptImport', () => {
       root.render(<SampleScriptImport onImported={onImported} />)
     })
 
+    expect(container.textContent).toContain('SOAP-shaped raw HTTP, curl, REST JSON, and HAR request samples can now be promoted into SOAP scripts')
+    expect(container.textContent).toContain('Mixed sample sets still stay on the HTTP protocol surface')
+
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Sample'))
     expect(convertButton).toBeDefined()
     if (!convertButton) {
