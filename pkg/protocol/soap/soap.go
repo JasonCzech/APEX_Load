@@ -2,7 +2,9 @@ package soap
 
 import (
 	"context"
+	"fmt"
 	stdhttp "net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -21,6 +23,7 @@ type SOAP struct {
 	version        string
 	failOnFault    bool
 	defaultCharset string
+	namespaces     map[string]string
 }
 
 func (s *SOAP) Name() string { return "soap" }
@@ -32,6 +35,7 @@ func (s *SOAP) Init(ctx context.Context, config map[string]any) error {
 	}
 	s.failOnFault, _ = config["soap_fault_fail_on_fault"].(bool)
 	s.defaultCharset = "utf-8"
+	s.namespaces = readNamespaces(config)
 	s.http = &httpproto.HTTP{}
 	return s.http.Init(ctx, config)
 }
@@ -47,6 +51,7 @@ func (s *SOAP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	prepared := *action
 	prepared.Method = stdhttp.MethodPost
 	prepared.Headers = cloneHeaders(action.Headers)
+	prepared.Body = shapeSOAPBody(action, s.version, s.namespaces)
 	applySOAPDefaults(&prepared, s.version, s.defaultCharset)
 
 	result, err := s.http.Execute(ctx, &prepared)
@@ -84,6 +89,101 @@ func cloneHeaders(headers map[string]string) map[string]string {
 		cloned[key] = value
 	}
 	return cloned
+}
+
+func readNamespaces(config map[string]any) map[string]string {
+	raw, ok := config["soap_namespaces"]
+	if !ok {
+		return nil
+	}
+	namespaces, ok := raw.(map[string]string)
+	if !ok || len(namespaces) == 0 {
+		return nil
+	}
+	cloned := make(map[string]string, len(namespaces))
+	for key, value := range namespaces {
+		if strings.TrimSpace(key) == "" || strings.TrimSpace(value) == "" {
+			continue
+		}
+		cloned[key] = value
+	}
+	if len(cloned) == 0 {
+		return nil
+	}
+	return cloned
+}
+
+func shapeSOAPBody(action *protocol.Action, version string, namespaces map[string]string) []byte {
+	if action == nil || action.SOAP == nil {
+		return action.Body
+	}
+	if strings.TrimSpace(action.SOAP.BodyMode) != "generated" {
+		return action.Body
+	}
+
+	body := strings.TrimSpace(string(action.Body))
+	if body == "" || looksLikeSOAPEnvelope(body) {
+		return action.Body
+	}
+
+	envelopePrefix, allNamespaces := mergeSOAPNamespaces(version, namespaces)
+	body = wrapSOAPOperation(body, action.SOAP.Operation)
+
+	var attrs []string
+	keys := make([]string, 0, len(allNamespaces))
+	for key := range allNamespaces {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		attrs = append(attrs, fmt.Sprintf(`xmlns:%s="%s"`, key, allNamespaces[key]))
+	}
+
+	envelope := fmt.Sprintf(
+		`<%[1]s:Envelope %[2]s><%[1]s:Body>%[3]s</%[1]s:Body></%[1]s:Envelope>`,
+		envelopePrefix,
+		strings.Join(attrs, " "),
+		body,
+	)
+	return []byte(envelope)
+}
+
+func looksLikeSOAPEnvelope(body string) bool {
+	trimmed := strings.TrimSpace(body)
+	return strings.Contains(trimmed, ":Envelope") || strings.Contains(trimmed, "<Envelope")
+}
+
+func mergeSOAPNamespaces(version string, namespaces map[string]string) (string, map[string]string) {
+	allNamespaces := make(map[string]string, len(namespaces)+1)
+	for key, value := range namespaces {
+		allNamespaces[key] = value
+	}
+	envelopeURI := soapEnvelopeURI(version)
+	for key, value := range allNamespaces {
+		if value == envelopeURI {
+			return key, allNamespaces
+		}
+	}
+	allNamespaces["soapenv"] = envelopeURI
+	return "soapenv", allNamespaces
+}
+
+func soapEnvelopeURI(version string) string {
+	if version == "1.2" {
+		return "http://www.w3.org/2003/05/soap-envelope"
+	}
+	return "http://schemas.xmlsoap.org/soap/envelope/"
+}
+
+func wrapSOAPOperation(body, operation string) string {
+	operation = strings.TrimSpace(operation)
+	if operation == "" {
+		return body
+	}
+	if strings.Contains(body, "<"+operation) || strings.Contains(body, ":"+operation) {
+		return body
+	}
+	return fmt.Sprintf("<%s>%s</%s>", operation, body, operation)
 }
 
 func applySOAPDefaults(action *protocol.Action, version, charset string) {

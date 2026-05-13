@@ -2,6 +2,7 @@ package soap
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -104,5 +105,54 @@ func TestSOAPExecuteAddsSOAP12Defaults(t *testing.T) {
 	}
 	if seenSOAPAction != "" {
 		t.Fatalf("SOAPAction = %q, want empty for SOAP 1.2", seenSOAPAction)
+	}
+}
+
+func TestSOAPExecuteWrapsGeneratedBodyInEnvelope(t *testing.T) {
+	var seenBody string
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		payload, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("ReadAll returned error: %v", err)
+		}
+		seenBody = string(payload)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`<Envelope><Body><ok/></Body></Envelope>`))
+	}))
+	defer ts.Close()
+
+	s := &SOAP{}
+	if err := s.Init(context.Background(), map[string]any{
+		"base_url":         ts.URL,
+		"soap_version":     "1.1",
+		"soap_namespaces":  map[string]string{"auth": "urn:auth"},
+	}); err != nil {
+		t.Fatalf("Init returned error: %v", err)
+	}
+
+	_, err := s.Execute(context.Background(), &protocol.Action{
+		Name:   "login",
+		Target: "/AuthService",
+		Body:   []byte(`<username>alice</username>`),
+		SOAP: &protocol.SOAPActionConfig{
+			Operation: "Login",
+			BodyMode:  "generated",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if !strings.Contains(seenBody, `<soapenv:Envelope`) {
+		t.Fatalf("body = %q, want soap envelope", seenBody)
+	}
+	if !strings.Contains(seenBody, `xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"`) {
+		t.Fatalf("body = %q, want soapenv namespace", seenBody)
+	}
+	if !strings.Contains(seenBody, `xmlns:auth="urn:auth"`) {
+		t.Fatalf("body = %q, want auth namespace", seenBody)
+	}
+	if !strings.Contains(seenBody, `<soapenv:Body><Login><username>alice</username></Login></soapenv:Body>`) {
+		t.Fatalf("body = %q, want wrapped login body", seenBody)
 	}
 }
