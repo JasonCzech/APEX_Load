@@ -234,6 +234,9 @@ func TestHTTP_Execute_GET(t *testing.T) {
 	if result.BytesReceived == 0 {
 		t.Error("BytesReceived should be non-zero")
 	}
+	if result.ResponseBody != `{"status":"ok"}` {
+		t.Errorf("ResponseBody = %q, want JSON body", result.ResponseBody)
+	}
 }
 
 func TestHTTP_Execute_POST(t *testing.T) {

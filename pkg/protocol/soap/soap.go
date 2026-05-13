@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"html"
 	stdhttp "net/http"
 	"regexp"
 	"sort"
@@ -86,8 +87,15 @@ func (s *SOAP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		return result, err
 	}
 
-	if s.failOnFault && result.StatusCode >= 500 && result.ErrorMessage == "" {
-		result.ErrorMessage = "soap fault response"
+	if s.failOnFault {
+		if fault, ok := detectSOAPFault(result.ResponseBody); ok {
+			result.Success = false
+			if result.ErrorMessage == "" {
+				result.ErrorMessage = fault
+			}
+		} else if result.StatusCode >= 500 && result.ErrorMessage == "" {
+			result.ErrorMessage = "soap fault response"
+		}
 	}
 
 	return result, nil
@@ -355,6 +363,64 @@ func xmlEscape(value string) string {
 		"'", "&apos;",
 	)
 	return replacer.Replace(value)
+}
+
+func detectSOAPFault(body string) (string, bool) {
+	if !looksLikeSOAPEnvelope(body) {
+		return "", false
+	}
+	reason := firstSOAPTagText(body, "faultstring")
+	if reason == "" {
+		reason = firstSOAPTagText(body, "Text")
+	}
+	code := firstSOAPTagText(body, "faultcode")
+	if code == "" {
+		code = firstSOAPTagText(body, "Value")
+	}
+	if reason == "" && code == "" {
+		return "", false
+	}
+	message := "soap fault"
+	if code != "" && reason != "" {
+		message = fmt.Sprintf("soap fault: %s: %s", code, reason)
+	} else if reason != "" {
+		message = fmt.Sprintf("soap fault: %s", reason)
+	} else {
+		message = fmt.Sprintf("soap fault: %s", code)
+	}
+	return message, true
+}
+
+func firstSOAPTagText(body, tag string) string {
+	pattern := fmt.Sprintf(`(?is)<(?:[A-Za-z_][A-Za-z0-9_.-]*:)?%s\b[^>]*>(.*?)</(?:[A-Za-z_][A-Za-z0-9_.-]*:)?%s>`, regexp.QuoteMeta(tag), regexp.QuoteMeta(tag))
+	re := regexp.MustCompile(pattern)
+	matches := re.FindStringSubmatch(body)
+	if len(matches) != 2 {
+		return ""
+	}
+	text := strings.TrimSpace(stripXMLTags(matches[1]))
+	if text == "" {
+		return ""
+	}
+	return html.UnescapeString(text)
+}
+
+func stripXMLTags(value string) string {
+	var builder strings.Builder
+	inTag := false
+	for _, r := range value {
+		switch r {
+		case '<':
+			inTag = true
+		case '>':
+			inTag = false
+		default:
+			if !inTag {
+				builder.WriteRune(r)
+			}
+		}
+	}
+	return builder.String()
 }
 
 func applySOAPDefaults(action *protocol.Action, version, charset string) {

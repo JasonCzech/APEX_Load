@@ -147,6 +147,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	result.Success = resp.StatusCode >= 200 && resp.StatusCode < 400
 
 	respBody := buf.Bytes()
+	result.ResponseBody = string(respBody)
 	for _, ext := range action.Extractors {
 		val, err := extract(ext, resp.Header, respBody)
 		if err == nil {

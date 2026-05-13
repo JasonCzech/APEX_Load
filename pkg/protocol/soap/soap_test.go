@@ -221,3 +221,72 @@ func TestSOAPExecuteAddsWSSecurityHeader(t *testing.T) {
 		t.Fatalf("body = %q, want expires timestamp", seenBody)
 	}
 }
+
+func TestSOAPExecuteFlagsSOAP11FaultEnvelope(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"><soapenv:Body><soapenv:Fault><faultcode>soapenv:Client</faultcode><faultstring>Invalid login</faultstring></soapenv:Fault></soapenv:Body></soapenv:Envelope>`))
+	}))
+	defer ts.Close()
+
+	s := &SOAP{}
+	if err := s.Init(context.Background(), map[string]any{
+		"base_url":                 ts.URL,
+		"soap_version":             "1.1",
+		"soap_fault_fail_on_fault": true,
+	}); err != nil {
+		t.Fatalf("Init returned error: %v", err)
+	}
+
+	result, err := s.Execute(context.Background(), &protocol.Action{
+		Name:   "login",
+		Target: "/AuthService",
+		Body:   []byte(`<Envelope><Body><Login/></Body></Envelope>`),
+		SOAP:   &protocol.SOAPActionConfig{Action: "urn:auth#Login"},
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if result.Success {
+		t.Fatalf("result.Success = true, want false for SOAP Fault")
+	}
+	if result.ErrorMessage != "soap fault: soapenv:Client: Invalid login" {
+		t.Fatalf("ErrorMessage = %q, want SOAP fault details", result.ErrorMessage)
+	}
+	if !strings.Contains(result.ResponseBody, `<faultstring>Invalid login</faultstring>`) {
+		t.Fatalf("ResponseBody = %q, want original fault payload", result.ResponseBody)
+	}
+}
+
+func TestSOAPExecuteFlagsSOAP12FaultEnvelope(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`<env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope"><env:Body><env:Fault><env:Code><env:Value>env:Sender</env:Value></env:Code><env:Reason><env:Text xml:lang="en">Request validation failed</env:Text></env:Reason></env:Fault></env:Body></env:Envelope>`))
+	}))
+	defer ts.Close()
+
+	s := &SOAP{}
+	if err := s.Init(context.Background(), map[string]any{
+		"base_url":                 ts.URL,
+		"soap_version":             "1.2",
+		"soap_fault_fail_on_fault": true,
+	}); err != nil {
+		t.Fatalf("Init returned error: %v", err)
+	}
+
+	result, err := s.Execute(context.Background(), &protocol.Action{
+		Name:   "lookup",
+		Target: "/AuthService",
+		Body:   []byte(`<Envelope><Body><Lookup/></Body></Envelope>`),
+		SOAP:   &protocol.SOAPActionConfig{Action: "urn:auth#Lookup"},
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if result.Success {
+		t.Fatalf("result.Success = true, want false for SOAP Fault")
+	}
+	if result.ErrorMessage != "soap fault: env:Sender: Request validation failed" {
+		t.Fatalf("ErrorMessage = %q, want SOAP 1.2 fault details", result.ErrorMessage)
+	}
+}

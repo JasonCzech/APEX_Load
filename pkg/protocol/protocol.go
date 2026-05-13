@@ -163,6 +163,7 @@ type Result struct {
 	StatusCode       int
 	Success          bool
 	ErrorMessage     string
+	ResponseBody     string
 	Extractions      map[string]string
 	PageURL          string
 	PageTitle        string
