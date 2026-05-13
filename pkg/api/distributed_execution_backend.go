@@ -13,6 +13,8 @@ import (
 
 	"github.com/jasonczech/stormrunner/pkg/distributed/generatorrpc"
 	"github.com/jasonczech/stormrunner/pkg/engine"
+	grpcCodes "google.golang.org/grpc/codes"
+	grpcStatus "google.golang.org/grpc/status"
 )
 
 type generatorDial func(ctx context.Context, target string) (generatorClient, error)
@@ -135,12 +137,17 @@ func (b *distributedExecutionBackend) StopTest(tr *TestRunner, test *ManagedTest
 	defer cancel()
 	stop, err := client.StopTest(ctx, test.ID, true)
 	if err != nil {
+		code := grpcStatus.Code(err)
+		if code == grpcCodes.Canceled || code == grpcCodes.Unavailable {
+			if test.Status == "COMPLETE" || test.Status == "FAILED" {
+				return nil
+			}
+		}
 		return fmt.Errorf("stop remote test: %w", err)
 	}
 	if !stop.Acknowledged {
 		return fmt.Errorf("generator did not acknowledge stop for %s", test.ID)
 	}
-	b.closeRemoteResources(test)
 	return nil
 }
 

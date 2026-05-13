@@ -40,7 +40,7 @@ func main() {
 	defer listener.Close()
 
 	grpcServer := grpc.NewServer()
-	pb.RegisterGeneratorControlServer(grpcServer, generatorrpc.NewService(generatorID, cfg.MaxVUsers))
+	pb.RegisterGeneratorControlServer(grpcServer, generatorrpc.NewService(generatorID, cfg.MaxVUsers, generatorrpc.WithExecution()))
 
 	errCh := make(chan error, 1)
 	go func() {

@@ -3,6 +3,8 @@ package api
 import (
 	"context"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"testing"
 	"time"
@@ -10,6 +12,7 @@ import (
 	pb "github.com/jasonczech/stormrunner/api/proto"
 	"github.com/jasonczech/stormrunner/pkg/distributed/generatorrpc"
 	"github.com/jasonczech/stormrunner/pkg/dsl"
+	_ "github.com/jasonczech/stormrunner/pkg/protocol/http"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
@@ -497,7 +500,7 @@ func TestDistributedExecutionBackendPublishesRemoteTransactionMetrics(t *testing
 		time.Sleep(20 * time.Millisecond)
 	}
 
-	err = service.PublishMetrics(testRun.ID, generatorrpc.GeneratorStats{CPUPercent: 33.3, MemoryBytes: 128 * 1024 * 1024, GoroutineCount: 21}, []generatorrpc.TransactionMetric{{
+	err = service.PublishMetrics(testRun.ID, "Group A", generatorrpc.GeneratorStats{ActiveVUsers: 5, CPUPercent: 33.3, MemoryBytes: 128 * 1024 * 1024, GoroutineCount: 21}, []generatorrpc.TransactionMetric{{
 		Name:          "Home",
 		DurationMs:    100,
 		StatusCode:    200,
@@ -557,6 +560,99 @@ func TestDistributedExecutionBackendPublishesRemoteTransactionMetrics(t *testing
 	}
 	if updated.LiveMetrics.Transactions["Home"] == nil || updated.LiveMetrics.Transactions["Home"].Count != 2 || updated.LiveMetrics.Transactions["Home"].Errors != 1 {
 		t.Fatalf("unexpected Home transaction metrics: %#v", updated.LiveMetrics.Transactions["Home"])
+	}
+}
+
+func TestDistributedExecutionBackendRunsRemoteEngine(t *testing.T) {
+	const bufSize = 1024 * 1024
+
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/" {
+			t.Fatalf("unexpected request path %q", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer target.Close()
+
+	listener := bufconn.Listen(bufSize)
+	server := grpc.NewServer()
+	pb.RegisterGeneratorControlServer(server, generatorrpc.NewService("generator-1", 50, generatorrpc.WithExecution()))
+
+	go func() {
+		_ = server.Serve(listener)
+	}()
+	t.Cleanup(func() {
+		server.Stop()
+		_ = listener.Close()
+	})
+
+	hub := NewHub()
+	runner := NewTestRunner(1, hub, nil)
+	runner.setExecutionBackend(newDistributedExecutionBackend(
+		[]string{"bufnet"},
+		5*time.Second,
+		func(ctx context.Context, target string) (generatorClient, error) {
+			return generatorrpc.Dial(
+				ctx,
+				target,
+				grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+					return listener.Dial()
+				}),
+				grpc.WithTransportCredentials(insecure.NewCredentials()),
+				grpc.WithBlock(),
+			)
+		},
+	))
+
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-1",
+		Name:     "Checkout",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Config: dsl.ScriptConfig{
+			BaseURL: target.URL,
+			RunLogic: dsl.RunLogicConfig{
+				Iterations: 0,
+			},
+		},
+		Actions: []dsl.Action{{Name: "Home", Type: "GET", Target: "/"}},
+	})
+
+	testRun, err := runner.CreateTest(CreateTestRequest{
+		Name:     "Distributed actual execution",
+		Duration: "2s",
+		Groups: []CreateGroupEntry{{
+			Name:     "Group A",
+			ScriptID: "script-1",
+			VUsers:   1,
+			RampUp:   "0s",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("CreateTest returned error: %v", err)
+	}
+
+	if err := runner.StartTest(testRun.ID); err != nil {
+		t.Fatalf("StartTest returned error: %v", err)
+	}
+
+	deadline := time.Now().Add(6 * time.Second)
+	for {
+		updated, ok := runner.GetTest(testRun.ID)
+		if !ok {
+			t.Fatalf("expected managed test %q to exist", testRun.ID)
+		}
+		if updated.LiveMetrics != nil && updated.LiveMetrics.TotalTx > 0 && updated.LiveMetrics.Transactions["Home"] != nil {
+			if updated.LiveMetrics.TotalErrors != 0 {
+				t.Fatalf("total errors = %d, want 0", updated.LiveMetrics.TotalErrors)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected remote engine execution to publish live metrics, got %#v", updated.LiveMetrics)
+		}
+		time.Sleep(25 * time.Millisecond)
 	}
 }
 

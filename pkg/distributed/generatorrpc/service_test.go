@@ -2,13 +2,18 @@ package generatorrpc
 
 import (
 	"context"
+	"encoding/json"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	pb "github.com/jasonczech/stormrunner/api/proto"
+	"github.com/jasonczech/stormrunner/pkg/dsl"
+	_ "github.com/jasonczech/stormrunner/pkg/protocol/http"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
@@ -409,7 +414,7 @@ func TestServicePublishMetricsBroadcastsTransactions(t *testing.T) {
 		t.Fatalf("Receive initial metrics batch: %v", err)
 	}
 
-	err = service.PublishMetrics("test-1", GeneratorStats{CPUPercent: 42.5, MemoryBytes: 64 * 1024 * 1024, GoroutineCount: 19}, []TransactionMetric{{
+	err = service.PublishMetrics("test-1", "Group A", GeneratorStats{ActiveVUsers: 10, CPUPercent: 42.5, MemoryBytes: 64 * 1024 * 1024, GoroutineCount: 19}, []TransactionMetric{{
 		Name:          "Home",
 		DurationMs:    120,
 		StatusCode:    200,
@@ -449,6 +454,101 @@ func TestServicePublishMetricsBroadcastsTransactions(t *testing.T) {
 		t.Fatalf("snapshot transaction error = %q, want remote failure", batch.Transactions[1].ErrorMessage)
 	}
 
+	if err := metrics.CloseSend(); err != nil {
+		t.Fatalf("Metrics CloseSend: %v", err)
+	}
+}
+
+func TestServiceWithExecutionRunsAssignedScript(t *testing.T) {
+	const bufSize = 1024 * 1024
+
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/" {
+			t.Fatalf("unexpected request path %q", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer target.Close()
+
+	listener := bufconn.Listen(bufSize)
+	server := grpc.NewServer()
+	service := NewService("generator-1", 50, WithExecution())
+	pb.RegisterGeneratorControlServer(server, service)
+
+	go func() {
+		_ = server.Serve(listener)
+	}()
+	t.Cleanup(func() {
+		server.Stop()
+		_ = listener.Close()
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+
+	conn, err := grpc.DialContext(
+		ctx,
+		"bufnet",
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+			return listener.Dial()
+		}),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithBlock(),
+	)
+	if err != nil {
+		t.Fatalf("DialContext: %v", err)
+	}
+
+	client := NewClient(conn)
+	t.Cleanup(func() {
+		_ = client.Close()
+	})
+
+	scriptBytes, err := json.Marshal(&dsl.Script{
+		ID:       "script-1",
+		Name:     "Checkout",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Config: dsl.ScriptConfig{
+			BaseURL: target.URL,
+			RunLogic: dsl.RunLogicConfig{
+				Iterations: 0,
+			},
+		},
+		Actions: []dsl.Action{{Name: "Home", Type: "GET", Target: "/"}},
+	})
+	if err != nil {
+		t.Fatalf("Marshal script: %v", err)
+	}
+
+	if _, err := client.DistributeScript(ctx, Script{ID: "script-1", Content: scriptBytes, ContentHash: "hash-1"}); err != nil {
+		t.Fatalf("DistributeScript: %v", err)
+	}
+	if _, err := client.AssignWork(ctx, Assignment{TestID: "test-1", GroupName: "Group A", TargetDurationSeconds: 2, ScriptID: "script-1", VUserCount: 1}); err != nil {
+		t.Fatalf("AssignWork: %v", err)
+	}
+
+	metrics, err := client.OpenMetricsStream(ctx)
+	if err != nil {
+		t.Fatalf("OpenMetricsStream: %v", err)
+	}
+	deadline := time.Now().Add(6 * time.Second)
+	for {
+		batch, err := metrics.Receive()
+		if err != nil {
+			t.Fatalf("Receive metrics batch: %v", err)
+		}
+		if len(batch.Transactions) > 0 {
+			if batch.Transactions[0].Name != "Home" {
+				t.Fatalf("transaction name = %q, want Home", batch.Transactions[0].Name)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("expected assigned execution to emit transaction metrics")
+		}
+	}
 	if err := metrics.CloseSend(); err != nil {
 		t.Fatalf("Metrics CloseSend: %v", err)
 	}
