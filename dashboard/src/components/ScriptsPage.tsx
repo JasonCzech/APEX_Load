@@ -75,7 +75,12 @@ function SortIndicator({ active, direction }: { active: boolean, direction: 'asc
   )
 }
 
-function createApiDraft() {
+function normalizeSubView(mode?: SubView): SubView {
+  if (!mode) return 'list'
+  return mode === 'create' ? 'create-options' : mode
+}
+
+function createApiDraft(): ScriptDefinition {
   return {
     name: '',
     version: '1.0.0',
@@ -92,7 +97,7 @@ function createApiDraft() {
   }
 }
 
-function createWebDraft() {
+function createWebDraft(): ScriptDefinition {
   return {
     name: '',
     version: '1.0.0',
@@ -115,7 +120,7 @@ function createWebDraft() {
   }
 }
 
-function createJmsDraft() {
+function createJmsDraft(): ScriptDefinition {
   return {
     name: '',
     version: '1.0.0',
@@ -148,7 +153,7 @@ function createJmsDraft() {
 export default function ScriptsPage({ initialMode = 'list', initialEditId, onSelectScenario }: Props) {
   const api = useApi()
   const [scripts, setScripts] = useState<StoredScript[]>([])
-  const [subView, setSubView] = useState<SubView>(initialMode === 'create' ? 'create-options' : initialMode)
+  const [subView, setSubView] = useState<SubView>(normalizeSubView(initialMode))
   const [editingId, setEditingId] = useState<string | null>(initialEditId || null)
   const [editingScript, setEditingScript] = useState<ScriptDefinition | null>(null)
   const [draftScript, setDraftScript] = useState<ScriptDefinition | null>(null)
@@ -167,20 +172,51 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
     } catch { /* API not available */ }
   }, [api])
 
-  useEffect(() => { refresh() }, [refresh])
-  useEffect(() => {
-    if (initialMode === 'edit' && initialEditId) handleEdit(initialEditId)
-    else if (initialMode && initialMode !== subView) setSubView(initialMode === 'create' ? 'create-options' : initialMode)
-  }, [initialEditId, initialMode])
+  const resetAuthoringState = useCallback(() => {
+    setEditingId(null)
+    setEditingScript(null)
+    setDraftScript(null)
+  }, [])
 
-  const handleEdit = async (id: string) => {
+  const openLibrary = useCallback(() => {
+    resetAuthoringState()
+    setSubView('list')
+  }, [resetAuthoringState])
+
+  const openCreateOptions = useCallback(() => {
+    resetAuthoringState()
+    setSubView('create-options')
+  }, [resetAuthoringState])
+
+  const openDraftEditor = useCallback((script: ScriptDefinition) => {
+    setDraftScript(script)
+    setEditingId(null)
+    setEditingScript(null)
+    setSubView('create')
+  }, [])
+
+  const startDraft = useCallback((factory: () => ScriptDefinition) => {
+    openDraftEditor(factory())
+  }, [openDraftEditor])
+
+  const handleEdit = useCallback(async (id: string) => {
     try {
       const res = await api.getScript(id)
       setEditingId(id)
       setEditingScript(res.script)
+      setDraftScript(null)
       setSubView('edit')
     } catch { /* ignore */ }
-  }
+  }, [api])
+
+  useEffect(() => { refresh() }, [refresh])
+  useEffect(() => {
+    if (initialMode === 'edit' && initialEditId) {
+      void handleEdit(initialEditId)
+      return
+    }
+    setSubView(normalizeSubView(initialMode))
+  }, [handleEdit, initialEditId, initialMode])
 
   const handleDelete = async (id: string) => {
     if (!confirm('Delete this script?')) return
@@ -244,45 +280,56 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
     })
   }
 
-  const handleSaved = () => { refresh(); setSubView('list'); setEditingId(null); setEditingScript(null); setDraftScript(null) }
-  const handleImported = () => { refresh(); setSubView('list') }
-  const handleDraftEdit = (script: ScriptDefinition) => { setDraftScript(script); setEditingId(null); setEditingScript(null); setSubView('create') }
-  const startApiScript = () => { setDraftScript(createApiDraft()); setEditingId(null); setEditingScript(null); setSubView('create') }
-  const startWebScript = () => { setDraftScript(createWebDraft()); setEditingId(null); setEditingScript(null); setSubView('create') }
-  const startJmsScript = () => { setDraftScript(createJmsDraft()); setEditingId(null); setEditingScript(null); setSubView('create') }
+  const handleSaved = useCallback(() => {
+    void refresh()
+    openLibrary()
+  }, [openLibrary, refresh])
 
-  if (subView === 'create') {
-    return <div className="page"><ScriptEditor initialScript={draftScript} onSave={handleSaved} onClose={() => setSubView('list')} /></div>
+  const handleImported = useCallback(() => {
+    void refresh()
+    openLibrary()
+  }, [openLibrary, refresh])
+
+  const handleDraftEdit = useCallback((script: ScriptDefinition) => {
+    openDraftEditor(script)
+  }, [openDraftEditor])
+
+  const startApiScript = useCallback(() => { startDraft(createApiDraft) }, [startDraft])
+  const startWebScript = useCallback(() => { startDraft(createWebDraft) }, [startDraft])
+  const startJmsScript = useCallback(() => { startDraft(createJmsDraft) }, [startDraft])
+
+  const renderSubview = () => {
+    switch (subView) {
+      case 'create':
+        return <div className="page"><ScriptEditor initialScript={draftScript} onSave={handleSaved} onClose={openLibrary} /></div>
+      case 'edit':
+        return <div className="page"><ScriptEditor scriptId={editingId} initialScript={editingScript} onSave={handleSaved} onClose={openLibrary} /></div>
+      case 'import':
+        return <div className="page"><LoadRunnerImport onImported={handleImported} onEdit={handleDraftEdit} onClose={openLibrary} /></div>
+      case 'jmeter-import':
+        return <div className="page"><JMeterImport onImported={handleImported} onClose={openLibrary} /></div>
+      case 'recorder':
+        return (
+          <div className="page">
+            <button className="btn btn-secondary" onClick={openCreateOptions} style={{ alignSelf: 'flex-start' }}>Back to Create Script</button>
+            <RecordingStudio onImported={handleImported} onEdit={handleDraftEdit} />
+          </div>
+        )
+      case 'sample':
+        return (
+          <div className="page">
+            <button className="btn btn-secondary" onClick={openCreateOptions} style={{ alignSelf: 'flex-start' }}>Back to Create Script</button>
+            <SampleScriptImport onImported={handleImported} onEdit={handleDraftEdit} onClose={openCreateOptions} />
+          </div>
+        )
+      default:
+        return null
+    }
   }
 
-  if (subView === 'edit') {
-    return <div className="page"><ScriptEditor scriptId={editingId} initialScript={editingScript} onSave={handleSaved} onClose={() => setSubView('list')} /></div>
-  }
-
-  if (subView === 'import') {
-    return <div className="page"><LoadRunnerImport onImported={handleImported} onEdit={handleDraftEdit} onClose={() => setSubView('list')} /></div>
-  }
-
-  if (subView === 'jmeter-import') {
-    return <div className="page"><JMeterImport onImported={handleImported} onClose={() => setSubView('list')} /></div>
-  }
-
-  if (subView === 'recorder') {
-    return (
-      <div className="page">
-        <button className="btn btn-secondary" onClick={() => setSubView('create-options')} style={{ alignSelf: 'flex-start' }}>Back to Create Script</button>
-        <RecordingStudio onImported={handleImported} onEdit={handleDraftEdit} />
-      </div>
-    )
-  }
-
-  if (subView === 'sample') {
-    return (
-      <div className="page">
-        <button className="btn btn-secondary" onClick={() => setSubView('create-options')} style={{ alignSelf: 'flex-start' }}>Back to Create Script</button>
-        <SampleScriptImport onImported={handleImported} onEdit={handleDraftEdit} onClose={() => setSubView('create-options')} />
-      </div>
-    )
+  const subviewContent = renderSubview()
+  if (subviewContent) {
+    return subviewContent
   }
 
   if (subView === 'create-options') {
@@ -293,7 +340,7 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
             <h2>Create Script</h2>
             <p className="page-subtitle">Choose how you want to create a reusable script.</p>
           </div>
-          <button className="btn btn-secondary" onClick={() => setSubView('list')}>Back to Library</button>
+          <button className="btn btn-secondary" onClick={openLibrary}>Back to Library</button>
         </div>
         <div className="script-create-lanes">
           <section className="script-create-lane api">
@@ -382,7 +429,7 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
           <h2>Scripts</h2>
           <p className="page-subtitle">Reusable scripts. Release associations are inferred from actual test usage.</p>
         </div>
-        <button className="btn btn-primary" onClick={() => setSubView('create-options')}>+ Create Script</button>
+        <button className="btn btn-primary" onClick={openCreateOptions}>+ Create Script</button>
       </div>
 
       <div className="page-section">
