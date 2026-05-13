@@ -134,6 +134,22 @@ func (b *distributedExecutionBackend) StopTest(tr *TestRunner, test *ManagedTest
 	return nil
 }
 
+func (b *distributedExecutionBackend) ScaleVUsers(tr *TestRunner, test *ManagedTest, groupName string, targetVUsers int) error {
+	return fmt.Errorf("distributed execution does not support scaling vusers yet")
+}
+
+func (b *distributedExecutionBackend) AdjustDuration(tr *TestRunner, test *ManagedTest, newDuration time.Duration) error {
+	return fmt.Errorf("distributed execution does not support duration changes yet")
+}
+
+func (b *distributedExecutionBackend) PauseTest(tr *TestRunner, test *ManagedTest) error {
+	return fmt.Errorf("distributed execution does not support pause yet")
+}
+
+func (b *distributedExecutionBackend) ResumeTest(tr *TestRunner, test *ManagedTest) error {
+	return fmt.Errorf("distributed execution does not support resume yet")
+}
+
 func marshalDistributedScript(script any) ([]byte, string, error) {
 	content, err := json.Marshal(script)
 	if err != nil {

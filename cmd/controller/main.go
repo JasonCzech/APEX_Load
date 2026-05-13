@@ -5,7 +5,9 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
+	"time"
 
 	"github.com/jasonczech/stormrunner/pkg/api"
 	_ "github.com/jasonczech/stormrunner/pkg/protocol/browser"
@@ -38,10 +40,18 @@ func main() {
 	}
 	defer store.Close()
 
+	generatorTargets := parseGeneratorTargets(os.Getenv("STORMRUNNER_GENERATORS"))
+	generatorTimeout := parseGeneratorTimeout(os.Getenv("STORMRUNNER_GENERATOR_TIMEOUT"))
+	if len(generatorTargets) > 0 {
+		slog.Info("distributed execution enabled", "generators", generatorTargets, "timeout", generatorTimeout)
+	}
+
 	server := api.NewServer(api.ServerConfig{
-		Addr:          addr,
-		MaxConcurrent: 10,
-		Store:         store,
+		Addr:             addr,
+		MaxConcurrent:    10,
+		Store:            store,
+		GeneratorTargets: generatorTargets,
+		GeneratorTimeout: generatorTimeout,
 	})
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -58,4 +68,32 @@ func main() {
 	<-ctx.Done()
 	slog.Info("shutting down")
 	server.Shutdown(context.Background())
+}
+
+func parseGeneratorTargets(raw string) []string {
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	targets := make([]string, 0, len(parts))
+	for _, part := range parts {
+		target := strings.TrimSpace(part)
+		if target == "" {
+			continue
+		}
+		targets = append(targets, target)
+	}
+	return targets
+}
+
+func parseGeneratorTimeout(raw string) time.Duration {
+	if raw == "" {
+		return 10 * time.Second
+	}
+	duration, err := time.ParseDuration(raw)
+	if err != nil || duration <= 0 {
+		slog.Warn("invalid STORMRUNNER_GENERATOR_TIMEOUT, falling back to default", "value", raw)
+		return 10 * time.Second
+	}
+	return duration
 }

@@ -34,6 +34,8 @@ type ServerConfig struct {
 	MaxConcurrent  int
 	AllowedOrigins []string
 	Store          storage.Store
+	GeneratorTargets []string
+	GeneratorTimeout time.Duration
 }
 
 // NewServer wires the HTTP server, test runner, websocket hub, recorder, and routes.
@@ -47,6 +49,9 @@ func NewServer(cfg ServerConfig) *Server {
 
 	hub := NewHub()
 	runner := NewTestRunner(cfg.MaxConcurrent, hub, cfg.Store)
+	if len(cfg.GeneratorTargets) > 0 {
+		runner.setExecutionBackend(newDistributedExecutionBackend(cfg.GeneratorTargets, cfg.GeneratorTimeout, nil))
+	}
 	rec := recorder.New(cfg.ProxyAddr)
 
 	s := &Server{

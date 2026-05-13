@@ -1840,7 +1840,21 @@ func (tr *TestRunner) ScaleVUsers(id string, groupName string, targetVUsers int)
 		return fmt.Errorf("test is %s, must be RUNNING to scale", test.Status)
 	}
 	if test.multiEngine == nil {
-		return fmt.Errorf("engine not initialized")
+		backend := test.executionBackend
+		if backend == nil {
+			backend = tr.execution
+		}
+		scalable, ok := backend.(scalableExecutionBackend)
+		if !ok {
+			return fmt.Errorf("test backend does not support scaling vusers")
+		}
+		if targetVUsers < 0 {
+			return fmt.Errorf("target vusers must be non-negative")
+		}
+		if err := scalable.ScaleVUsers(tr, test, groupName, targetVUsers); err != nil {
+			return err
+		}
+		return nil
 	}
 	if targetVUsers < 0 {
 		return fmt.Errorf("target vusers must be non-negative")
@@ -1885,7 +1899,18 @@ func (tr *TestRunner) AdjustDuration(id string, newDuration time.Duration) error
 		return fmt.Errorf("test is %s, must be RUNNING to adjust duration", test.Status)
 	}
 	if test.multiEngine == nil {
-		return fmt.Errorf("engine not initialized")
+		backend := test.executionBackend
+		if backend == nil {
+			backend = tr.execution
+		}
+		adjustable, ok := backend.(durationAdjustableExecutionBackend)
+		if !ok {
+			return fmt.Errorf("test backend does not support duration changes")
+		}
+		if err := adjustable.AdjustDuration(tr, test, newDuration); err != nil {
+			return err
+		}
+		return nil
 	}
 
 	if err := test.multiEngine.AdjustDuration(newDuration); err != nil {
@@ -1918,7 +1943,18 @@ func (tr *TestRunner) PauseTest(id string) error {
 		return fmt.Errorf("test is %s, must be RUNNING to pause", test.Status)
 	}
 	if test.multiEngine == nil {
-		return fmt.Errorf("engine not initialized")
+		backend := test.executionBackend
+		if backend == nil {
+			backend = tr.execution
+		}
+		pausable, ok := backend.(pausableExecutionBackend)
+		if !ok {
+			return fmt.Errorf("test backend does not support pause")
+		}
+		if err := pausable.PauseTest(tr, test); err != nil {
+			return err
+		}
+		return nil
 	}
 
 	if err := test.multiEngine.Pause(); err != nil {
@@ -1945,7 +1981,18 @@ func (tr *TestRunner) ResumeTest(id string) error {
 		return fmt.Errorf("test is %s, must be PAUSED to resume", test.Status)
 	}
 	if test.multiEngine == nil {
-		return fmt.Errorf("engine not initialized")
+		backend := test.executionBackend
+		if backend == nil {
+			backend = tr.execution
+		}
+		pausable, ok := backend.(pausableExecutionBackend)
+		if !ok {
+			return fmt.Errorf("test backend does not support resume")
+		}
+		if err := pausable.ResumeTest(tr, test); err != nil {
+			return err
+		}
+		return nil
 	}
 
 	if err := test.multiEngine.Resume(); err != nil {

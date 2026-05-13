@@ -17,6 +17,19 @@ type stoppableExecutionBackend interface {
 	StopTest(tr *TestRunner, test *ManagedTest) error
 }
 
+type scalableExecutionBackend interface {
+	ScaleVUsers(tr *TestRunner, test *ManagedTest, groupName string, targetVUsers int) error
+}
+
+type durationAdjustableExecutionBackend interface {
+	AdjustDuration(tr *TestRunner, test *ManagedTest, newDuration time.Duration) error
+}
+
+type pausableExecutionBackend interface {
+	PauseTest(tr *TestRunner, test *ManagedTest) error
+	ResumeTest(tr *TestRunner, test *ManagedTest) error
+}
+
 type localExecutionBackend struct{}
 
 func (localExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
