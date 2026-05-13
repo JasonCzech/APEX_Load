@@ -4,7 +4,6 @@ import (
 	"context"
 	"net"
 	"reflect"
-	"strings"
 	"testing"
 	"time"
 
@@ -724,7 +723,7 @@ func TestDistributedExecutionBackendScalesSingleGroupTest(t *testing.T) {
 	}
 }
 
-func TestDistributedExecutionBackendRejectsMultiGroupScale(t *testing.T) {
+func TestDistributedExecutionBackendScalesMultiGroupTest(t *testing.T) {
 	const bufSize = 1024 * 1024
 
 	listener := bufconn.Listen(bufSize)
@@ -800,16 +799,72 @@ func TestDistributedExecutionBackendRejectsMultiGroupScale(t *testing.T) {
 		if !ok {
 			t.Fatalf("expected managed test %q to exist", testRun.ID)
 		}
-		if started.Status == "RUNNING" {
+		if started.Status == "RUNNING" && started.LiveMetrics != nil {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("expected distributed backend to mark test running, got status %q", started.Status)
+			t.Fatalf("expected distributed backend to mark test running with live metrics, got status %q metrics=%#v", started.Status, started.LiveMetrics)
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
 
-	if err := runner.ScaleVUsers(testRun.ID, "Group A", 7); err == nil || !strings.Contains(err.Error(), "does not support per-group scaling for multi-group tests yet") {
-		t.Fatalf("ScaleVUsers error = %v, want distributed unsupported scaling error", err)
+	if err := runner.ScaleVUsers(testRun.ID, "Group A", 7); err != nil {
+		t.Fatalf("ScaleVUsers returned error: %v", err)
+	}
+
+	deadline = time.Now().Add(2 * time.Second)
+	for {
+		scaled, ok := runner.GetTest(testRun.ID)
+		if !ok {
+			t.Fatalf("expected managed test %q to exist after scale", testRun.ID)
+		}
+		if scaled.LiveMetrics != nil && scaled.LiveMetrics.ActiveVUsers == 10 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected live metrics to reflect multi-group scaled vusers, got %#v", scaled.LiveMetrics)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	scaled, ok := runner.GetTest(testRun.ID)
+	if !ok {
+		t.Fatalf("expected managed test %q to exist after scale", testRun.ID)
+	}
+	if scaled.TotalVUsers != 10 {
+		t.Fatalf("total vusers = %d, want 10", scaled.TotalVUsers)
+	}
+	if scaled.Groups[0].VUsers != 7 {
+		t.Fatalf("group A vusers = %d, want 7", scaled.Groups[0].VUsers)
+	}
+	if scaled.Groups[1].VUsers != 3 {
+		t.Fatalf("group B vusers = %d, want 3", scaled.Groups[1].VUsers)
+	}
+	if scaled.LiveMetrics == nil || scaled.LiveMetrics.ActiveVUsers != 10 {
+		t.Fatalf("live metrics active vusers = %#v, want 10", scaled.LiveMetrics)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	client, err := generatorrpc.Dial(
+		ctx,
+		"bufnet",
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+			return listener.Dial()
+		}),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithBlock(),
+	)
+	if err != nil {
+		t.Fatalf("Dial generator client: %v", err)
+	}
+	defer client.Close()
+
+	stopAck, err := client.StopTest(ctx, testRun.ID, true)
+	if err != nil {
+		t.Fatalf("StopTest: %v", err)
+	}
+	if stopAck.PendingVUsers != 10 {
+		t.Fatalf("pending vusers = %d, want 10", stopAck.PendingVUsers)
 	}
 }

@@ -21,6 +21,7 @@ type assignedTest struct {
 	vuserCount int32
 	paused     bool
 	durationSeconds int64
+	groups     map[string]int32
 }
 
 type Service struct {
@@ -68,6 +69,9 @@ func (s *Service) AssignWork(_ context.Context, assignment *pb.WorkAssignment) (
 	if assignment.GetTestId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "test_id is required")
 	}
+	if assignment.GetGroupName() == "" {
+		return nil, status.Error(codes.InvalidArgument, "group_name is required")
+	}
 	if assignment.GetScriptId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "script_id is required")
 	}
@@ -98,6 +102,10 @@ func (s *Service) AssignWork(_ context.Context, assignment *pb.WorkAssignment) (
 
 	current := s.assignments[assignment.GetTestId()]
 	current.testID = assignment.GetTestId()
+	if current.groups == nil {
+		current.groups = make(map[string]int32)
+	}
+	current.groups[assignment.GetGroupName()] += assignment.GetVuserCount()
 	current.vuserCount += assignment.GetVuserCount()
 	s.assignments[assignment.GetTestId()] = current
 	batch := s.metricsBatchLocked(current.testID)
@@ -113,6 +121,9 @@ func (s *Service) AdjustVUsers(_ context.Context, request *pb.VUserAdjustment) (
 	if request.GetTestId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "test_id is required")
 	}
+	if request.GetGroupName() == "" {
+		return nil, status.Error(codes.InvalidArgument, "group_name is required")
+	}
 	if request.GetTargetVusers() < 0 {
 		return nil, status.Error(codes.InvalidArgument, "target_vusers must be non-negative")
 	}
@@ -124,13 +135,19 @@ func (s *Service) AdjustVUsers(_ context.Context, request *pb.VUserAdjustment) (
 	if !ok {
 		return nil, status.Error(codes.NotFound, "test assignment not found")
 	}
+	currentGroupVUsers, ok := assignment.groups[request.GetGroupName()]
+	if !ok {
+		return nil, status.Error(codes.NotFound, "group assignment not found")
+	}
 
-	projected := s.activeVUsersLocked() - assignment.vuserCount + request.GetTargetVusers()
+	updatedTotal := assignment.vuserCount - currentGroupVUsers + request.GetTargetVusers()
+	projected := s.activeVUsersLocked() - assignment.vuserCount + updatedTotal
 	if projected > s.maxVUsers {
 		return nil, status.Error(codes.ResourceExhausted, "insufficient generator capacity")
 	}
 
-	assignment.vuserCount = request.GetTargetVusers()
+	assignment.groups[request.GetGroupName()] = request.GetTargetVusers()
+	assignment.vuserCount = updatedTotal
 	s.assignments[request.GetTestId()] = assignment
 	batch := s.metricsBatchLocked(request.GetTestId())
 

@@ -99,6 +99,7 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 
 		assignment, err := client.AssignWork(ctx, generatorrpc.Assignment{
 			TestID:        test.ID,
+			GroupName:     group.Name,
 			ScriptID:      group.ScriptID,
 			VUserCount:    int32(group.VUsers),
 			RampUpSeconds: int32(group.rampUpDur / time.Second),
@@ -143,10 +144,14 @@ func (b *distributedExecutionBackend) StopTest(tr *TestRunner, test *ManagedTest
 }
 
 func (b *distributedExecutionBackend) ScaleVUsers(tr *TestRunner, test *ManagedTest, groupName string, targetVUsers int) error {
-	if len(test.Groups) != 1 {
-		return fmt.Errorf("distributed execution does not support per-group scaling for multi-group tests yet")
+	groupExists := false
+	for _, group := range test.Groups {
+		if group.Name == groupName {
+			groupExists = true
+			break
+		}
 	}
-	if test.Groups[0].Name != groupName {
+	if !groupExists {
 		return fmt.Errorf("test group not found: %s", groupName)
 	}
 	client, err := b.clientForTest(test)
@@ -158,6 +163,7 @@ func (b *distributedExecutionBackend) ScaleVUsers(tr *TestRunner, test *ManagedT
 	defer cancel()
 	adjustment, err := client.AdjustVUsers(ctx, generatorrpc.VUserAdjustment{
 		TestID:       test.ID,
+		GroupName:    groupName,
 		TargetVUsers: int32(targetVUsers),
 	})
 	if err != nil {

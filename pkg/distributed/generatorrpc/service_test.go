@@ -84,6 +84,7 @@ func TestClientRoundTripDistributeAssignAndHeartbeat(t *testing.T) {
 
 	assignmentAck, err := client.AssignWork(ctx, Assignment{
 		TestID:     "test-1",
+		GroupName:  "Group A",
 		ScriptID:   "script-1",
 		VUserCount: 10,
 		Environment: map[string]string{
@@ -117,6 +118,7 @@ func TestClientRoundTripDistributeAssignAndHeartbeat(t *testing.T) {
 
 	adjustmentAck, err := client.AdjustVUsers(ctx, VUserAdjustment{
 		TestID:       "test-1",
+		GroupName:    "Group A",
 		TargetVUsers: 12,
 	})
 	if err != nil {

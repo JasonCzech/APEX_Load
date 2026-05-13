@@ -15,6 +15,7 @@ type DataFile struct {
 
 type Assignment struct {
 	TestID        string
+	GroupName     string
 	ScriptID      string
 	ScriptContent []byte
 	VUserCount    int32
@@ -31,6 +32,7 @@ type AssignmentResult struct {
 
 type VUserAdjustment struct {
 	TestID       string
+	GroupName    string
 	TargetVUsers int32
 	RampSeconds  int32
 }
@@ -178,6 +180,7 @@ func (c *Client) AssignWork(ctx context.Context, assignment Assignment) (Assignm
 func (c *Client) AdjustVUsers(ctx context.Context, adjustment VUserAdjustment) (AdjustmentResult, error) {
 	ack, err := c.rpc.AdjustVUsers(ctx, &pb.VUserAdjustment{
 		TestId:       adjustment.TestID,
+		GroupName:    adjustment.GroupName,
 		TargetVusers: adjustment.TargetVUsers,
 		RampSeconds:  adjustment.RampSeconds,
 	})
@@ -326,6 +329,7 @@ func toProtoAssignment(assignment Assignment) *pb.WorkAssignment {
 
 	return &pb.WorkAssignment{
 		TestId:        assignment.TestID,
+		GroupName:     assignment.GroupName,
 		ScriptId:      assignment.ScriptID,
 		ScriptContent: assignment.ScriptContent,
 		VuserCount:    assignment.VUserCount,

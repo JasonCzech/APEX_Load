@@ -32,6 +32,7 @@ service GeneratorControl {
 
 message WorkAssignment {
   string test_id = 1;
+  string group_name = 8;
   string script_id = 2;
   bytes script_content = 3;
   int32 vuser_count = 4;
@@ -53,6 +54,7 @@ message AssignmentAck {
 
 message VUserAdjustment {
   string test_id = 1;
+  string group_name = 4;
   int32 target_vusers = 2;
   int32 ramp_seconds = 3;
 }

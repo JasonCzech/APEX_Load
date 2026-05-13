@@ -24,6 +24,7 @@ const (
 type WorkAssignment struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	TestId        string                 `protobuf:"bytes,1,opt,name=test_id,json=testId,proto3" json:"test_id,omitempty"`
+	GroupName     string                 `protobuf:"bytes,8,opt,name=group_name,json=groupName,proto3" json:"group_name,omitempty"`
 	ScriptId      string                 `protobuf:"bytes,2,opt,name=script_id,json=scriptId,proto3" json:"script_id,omitempty"`
 	ScriptContent []byte                 `protobuf:"bytes,3,opt,name=script_content,json=scriptContent,proto3" json:"script_content,omitempty"`
 	VuserCount    int32                  `protobuf:"varint,4,opt,name=vuser_count,json=vuserCount,proto3" json:"vuser_count,omitempty"`
@@ -67,6 +68,13 @@ func (*WorkAssignment) Descriptor() ([]byte, []int) {
 func (x *WorkAssignment) GetTestId() string {
 	if x != nil {
 		return x.TestId
+	}
+	return ""
+}
+
+func (x *WorkAssignment) GetGroupName() string {
+	if x != nil {
+		return x.GroupName
 	}
 	return ""
 }
@@ -228,6 +236,7 @@ func (x *AssignmentAck) GetAvailableCapacity() int32 {
 type VUserAdjustment struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	TestId        string                 `protobuf:"bytes,1,opt,name=test_id,json=testId,proto3" json:"test_id,omitempty"`
+	GroupName     string                 `protobuf:"bytes,4,opt,name=group_name,json=groupName,proto3" json:"group_name,omitempty"`
 	TargetVusers  int32                  `protobuf:"varint,2,opt,name=target_vusers,json=targetVusers,proto3" json:"target_vusers,omitempty"`
 	RampSeconds   int32                  `protobuf:"varint,3,opt,name=ramp_seconds,json=rampSeconds,proto3" json:"ramp_seconds,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -267,6 +276,13 @@ func (*VUserAdjustment) Descriptor() ([]byte, []int) {
 func (x *VUserAdjustment) GetTestId() string {
 	if x != nil {
 		return x.TestId
+	}
+	return ""
+}
+
+func (x *VUserAdjustment) GetGroupName() string {
+	if x != nil {
+		return x.GroupName
 	}
 	return ""
 }
@@ -1199,9 +1215,11 @@ var File_api_proto_generator_proto protoreflect.FileDescriptor
 
 const file_api_proto_generator_proto_rawDesc = "" +
 	"\n" +
-	"\x19api/proto/generator.proto\x12\x0estormrunner.v1\"\x82\x03\n" +
+	"\x19api/proto/generator.proto\x12\x0estormrunner.v1\"\xa1\x03\n" +
 	"\x0eWorkAssignment\x12\x17\n" +
-	"\atest_id\x18\x01 \x01(\tR\x06testId\x12\x1b\n" +
+	"\atest_id\x18\x01 \x01(\tR\x06testId\x12\x1d\n" +
+	"\n" +
+	"group_name\x18\b \x01(\tR\tgroupName\x12\x1b\n" +
 	"\tscript_id\x18\x02 \x01(\tR\bscriptId\x12%\n" +
 	"\x0escript_content\x18\x03 \x01(\fR\rscriptContent\x12\x1f\n" +
 	"\vvuser_count\x18\x04 \x01(\x05R\n" +
@@ -1219,9 +1237,11 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\rAssignmentAck\x12\x1a\n" +
 	"\baccepted\x18\x01 \x01(\bR\baccepted\x12#\n" +
 	"\rerror_message\x18\x02 \x01(\tR\ferrorMessage\x12-\n" +
-	"\x12available_capacity\x18\x03 \x01(\x05R\x11availableCapacity\"r\n" +
+	"\x12available_capacity\x18\x03 \x01(\x05R\x11availableCapacity\"\x91\x01\n" +
 	"\x0fVUserAdjustment\x12\x17\n" +
-	"\atest_id\x18\x01 \x01(\tR\x06testId\x12#\n" +
+	"\atest_id\x18\x01 \x01(\tR\x06testId\x12\x1d\n" +
+	"\n" +
+	"group_name\x18\x04 \x01(\tR\tgroupName\x12#\n" +
 	"\rtarget_vusers\x18\x02 \x01(\x05R\ftargetVusers\x12!\n" +
 	"\framp_seconds\x18\x03 \x01(\x05R\vrampSeconds\"R\n" +
 	"\rAdjustmentAck\x12\x1a\n" +
