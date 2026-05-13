@@ -70,6 +70,13 @@ type Action struct {
 	Extractors []Extractor            `json:"extractors,omitempty"`
 	Assertions []Assertion            `json:"assertions,omitempty"`
 	ThinkTime  ThinkTimeConfig        `json:"think_time,omitempty"`
+	SOAP       *SOAPActionConfig      `json:"soap,omitempty"`
+}
+
+type SOAPActionConfig struct {
+	Action    string `json:"action,omitempty"`
+	Operation string `json:"operation,omitempty"`
+	BodyMode  string `json:"body_mode,omitempty"`
 }
 
 type WaitCondition struct {

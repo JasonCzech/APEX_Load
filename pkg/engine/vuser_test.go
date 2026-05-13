@@ -132,6 +132,11 @@ func TestVUser_ResolveAction(t *testing.T) {
 		Metadata: map[string]any{
 			"note": "{{var.base}}",
 		},
+		SOAP: &dsl.SOAPActionConfig{
+			Action:    "urn:user#{{data.users.username}}",
+			Operation: "Lookup{{data.users.username}}",
+			BodyMode:  "raw_xml",
+		},
 		Assertions: []dsl.Assertion{
 			{Type: "status_code", Expected: 200},
 		},
@@ -176,6 +181,18 @@ func TestVUser_ResolveAction(t *testing.T) {
 	}
 	if resolved.Metadata["note"] != "https://api.test.com" {
 		t.Errorf("Metadata[note] = %v, want https://api.test.com", resolved.Metadata["note"])
+	}
+	if resolved.SOAP == nil {
+		t.Fatal("SOAP = nil, want interpolated SOAP action config")
+	}
+	if resolved.SOAP.Action != "urn:user#alice" {
+		t.Errorf("SOAP.Action = %q, want urn:user#alice", resolved.SOAP.Action)
+	}
+	if resolved.SOAP.Operation != "Lookupalice" {
+		t.Errorf("SOAP.Operation = %q, want Lookupalice", resolved.SOAP.Operation)
+	}
+	if resolved.SOAP.BodyMode != "raw_xml" {
+		t.Errorf("SOAP.BodyMode = %q, want raw_xml", resolved.SOAP.BodyMode)
 	}
 	if len(resolved.Assertions) != 1 {
 		t.Fatalf("Assertions count = %d", len(resolved.Assertions))

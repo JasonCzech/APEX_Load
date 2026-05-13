@@ -158,6 +158,18 @@ Dashboard work should be layered onto existing editor surfaces rather than treat
 ### Ordering Constraint
 No dashboard editor work should block runtime support. Editor work starts after the corresponding DSL and execution surfaces are stable enough to keep UI churn low.
 
+## Recommended Starting Stance
+
+To keep this plan executable, Phase 0 should use the following working defaults unless a concrete target requirement disproves them:
+
+- Start with SOAP before Java-over-HTTP.
+- Treat SOAP 1.1 as required for the first runtime slice and SOAP 1.2 as a follow-on compatibility addition.
+- Limit the first WS-Security milestone to UsernameToken and Timestamp.
+- Do not start Java runtime work until one named codec target and one representative sample payload are captured.
+- Prefer an embedded helper boundary for Java only if the chosen codec can be implemented safely inside the generator process; otherwise use a generator-local sidecar.
+
+This ordering keeps the first implementation aligned with the current HTTP-centered runtime and avoids starting a Java bridge without a real interoperability target.
+
 ## 4. Implementation Roadmap
 
 | Phase | Milestone | Deliverables | Exit Criteria |
@@ -168,6 +180,22 @@ No dashboard editor work should block runtime support. Editor work starts after 
 | **Phase 3** | **Java HTTP Runtime MVP** | `pkg/protocol/java_http`, chosen codec support, local helper model, decode/extract path support, tests and benchmarks | One codec runs end-to-end with measured overhead and failure handling |
 | **Phase 4** | **Protocol-Specific UX** | SOAP visual helpers, Java decoded inspector, recorder/import polish | UI reflects stable DSL/runtime behavior without hidden protocol metadata |
 | **Phase 5** | **Advanced Security And Scale** | Optional SOAP signing/encryption, runtime hardening, scale tuning | Non-functional targets met under benchmark load |
+
+## Recommended First Slice
+
+The first implementation slice should be a SOAP runtime MVP that proves the architecture without pulling UI work forward.
+
+### Deliverables
+- Add explicit SOAP DSL fields to the schema and parser.
+- Create `pkg/protocol/soap` as an HTTP-backed protocol package.
+- Support SOAP 1.1 envelope execution, `SOAPAction`, namespace-aware request shaping, and fault parsing.
+- Reuse the existing XPath extraction path for SOAP correlation and assertions.
+- Add table-driven unit tests plus a small benchmark comparing plain HTTP and SOAP-shaped requests.
+
+### Exit Criteria
+- One SOAP script can execute end-to-end through the generator without MCP runtime involvement.
+- SOAP Faults are surfaced as observable assertion/reporting inputs.
+- The benchmark establishes a baseline overhead budget for further SOAP work.
 
 ## 5. Testing And Benchmark Requirements
 
@@ -200,15 +228,15 @@ Every phase must include tests and measurable performance gates.
 | Dashboard starts before runtime stabilizes | Rework and churn | Gate editor work behind stable runtime and DSL milestones |
 | Sidecar/helper failures break load execution | Runtime instability | Define timeouts, fallback semantics, health checks, and error surfaces before rollout |
 
-## 7. Open Decisions Before Implementation Starts
+## 7. Phase 0 Decisions To Lock
 
-The following items must be resolved in Phase 0:
+The following items should be locked before implementation expands beyond the first SOAP slice:
 
-1. Which Java wire format is the first supported target?
-2. Is SOAP 1.2 required in the first release, or is SOAP 1.1 sufficient?
-3. Are UsernameToken and Timestamp enough for the first WS-Security milestone?
-4. Which helper packaging model is preferred for Java execution: embedded library or local sidecar?
-5. What overhead budget is acceptable before the feature is considered too expensive for production load?
+1. Name the first Java wire format target and capture sample payloads.
+2. Confirm whether any near-term SOAP requirement forces SOAP 1.2 into the first release.
+3. Confirm that UsernameToken and Timestamp are sufficient for the first WS-Security milestone.
+4. Decide the acceptable overhead budget for SOAP shaping before the feature is considered too expensive for production load.
+5. Choose the Java helper packaging model only after the codec target is known.
 
 ## Summary
 This plan keeps protocol execution aligned with Stormrunner's current architecture:

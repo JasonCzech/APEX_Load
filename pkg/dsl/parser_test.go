@@ -177,6 +177,81 @@ func TestParse_FullConfig(t *testing.T) {
 	}
 }
 
+func TestParse_SOAPConfigAndActionFields(t *testing.T) {
+	input := `{
+		"script": {
+			"name": "soap-login",
+			"protocol": "soap",
+			"config": {
+				"base_url": "https://soap.example.com",
+				"soap": {
+					"version": "1.1",
+					"namespaces": {
+						"soapenv": "http://schemas.xmlsoap.org/soap/envelope/",
+						"auth": "urn:auth"
+					},
+					"ws_security": {
+						"username_token": {
+							"username": "svc-user",
+							"password": "svc-pass",
+							"password_type": "text",
+							"nonce": true,
+							"created": true
+						},
+						"timestamp": {
+							"ttl_seconds": 60
+						}
+					},
+					"fault_handling": {
+						"fail_on_fault": true
+					}
+				}
+			},
+			"actions": [
+				{
+					"name": "login",
+					"type": "request",
+					"method": "POST",
+					"target": "/AuthService",
+					"body": "<soapenv:Envelope></soapenv:Envelope>",
+					"soap": {
+						"action": "urn:auth#Login",
+						"operation": "Login",
+						"body_mode": "raw_xml"
+					}
+				}
+			]
+		}
+	}`
+
+	script, err := Parse([]byte(input))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if got := script.Config.SOAP.Version; got != "1.1" {
+		t.Fatalf("soap version = %q, want 1.1", got)
+	}
+	if got := script.Config.SOAP.Namespaces["auth"]; got != "urn:auth" {
+		t.Fatalf("soap namespace auth = %q, want urn:auth", got)
+	}
+	if script.Config.SOAP.WSSecurity == nil || script.Config.SOAP.WSSecurity.UsernameToken == nil {
+		t.Fatalf("ws_security username_token = %#v, want configured token", script.Config.SOAP.WSSecurity)
+	}
+	if !script.Config.SOAP.FaultHandling.FailOnFault {
+		t.Fatal("fault_handling.fail_on_fault = false, want true")
+	}
+	if script.Actions[0].SOAP == nil {
+		t.Fatal("action soap = nil, want populated config")
+	}
+	if got := script.Actions[0].SOAP.Action; got != "urn:auth#Login" {
+		t.Fatalf("soap action = %q, want urn:auth#Login", got)
+	}
+	if got := script.Actions[0].SOAP.BodyMode; got != "raw_xml" {
+		t.Fatalf("soap body_mode = %q, want raw_xml", got)
+	}
+}
+
 func TestParse_WithExtractorsAndAssertions(t *testing.T) {
 	input := `{
 		"script": {

@@ -8,6 +8,7 @@ func buildProtoConfig(script *dsl.Script) map[string]any {
 	}
 
 	httpCfg := script.Config.HTTP
+	soapCfg := script.Config.SOAP
 
 	// Timeouts
 	if httpCfg.ConnectTimeoutMs > 0 {
@@ -55,6 +56,37 @@ func buildProtoConfig(script *dsl.Script) map[string]any {
 	}
 	if len(httpCfg.DefaultHeaders) > 0 {
 		cfg["default_headers"] = httpCfg.DefaultHeaders
+	}
+	if soapCfg.Version != "" {
+		cfg["soap_version"] = soapCfg.Version
+	}
+	if len(soapCfg.Namespaces) > 0 {
+		cfg["soap_namespaces"] = soapCfg.Namespaces
+	}
+	if ws := soapCfg.WSSecurity; ws != nil {
+		if token := ws.UsernameToken; token != nil {
+			if token.Username != "" {
+				cfg["soap_ws_security_username"] = token.Username
+			}
+			if token.Password != "" {
+				cfg["soap_ws_security_password"] = token.Password
+			}
+			if token.PasswordType != "" {
+				cfg["soap_ws_security_password_type"] = token.PasswordType
+			}
+			if token.Nonce {
+				cfg["soap_ws_security_nonce"] = true
+			}
+			if token.Created {
+				cfg["soap_ws_security_created"] = true
+			}
+		}
+		if timestamp := ws.Timestamp; timestamp != nil {
+			cfg["soap_ws_security_timestamp_ttl_seconds"] = float64(timestamp.TTLSeconds)
+		}
+	}
+	if soapCfg.FaultHandling.FailOnFault {
+		cfg["soap_fault_fail_on_fault"] = true
 	}
 
 	browserCfg := script.Config.Browser

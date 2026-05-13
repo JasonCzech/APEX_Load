@@ -230,6 +230,56 @@ func TestBuildProtoConfig_BrowserEmulation(t *testing.T) {
 	}
 }
 
+func TestBuildProtoConfig_SOAP(t *testing.T) {
+	script := &dsl.Script{
+		Config: dsl.ScriptConfig{
+			SOAP: dsl.SOAPConfig{
+				Version:    "1.1",
+				Namespaces: map[string]string{"soapenv": "http://schemas.xmlsoap.org/soap/envelope/", "auth": "urn:auth"},
+				WSSecurity: &dsl.SOAPWSSecurityConfig{
+					UsernameToken: &dsl.SOAPUsernameTokenConfig{
+						Username:     "svc-user",
+						Password:     "svc-pass",
+						PasswordType: "text",
+						Nonce:        true,
+						Created:      true,
+					},
+					Timestamp: &dsl.SOAPTimestampConfig{TTLSeconds: 45},
+				},
+				FaultHandling: dsl.SOAPFaultHandlingConfig{FailOnFault: true},
+			},
+		},
+	}
+
+	cfg := buildProtoConfig(script)
+
+	if cfg["soap_version"] != "1.1" {
+		t.Errorf("soap_version = %v, want 1.1", cfg["soap_version"])
+	}
+	namespaces, ok := cfg["soap_namespaces"].(map[string]string)
+	if !ok || namespaces["auth"] != "urn:auth" {
+		t.Errorf("soap_namespaces = %v, want auth namespace", cfg["soap_namespaces"])
+	}
+	if cfg["soap_ws_security_username"] != "svc-user" {
+		t.Errorf("soap_ws_security_username = %v, want svc-user", cfg["soap_ws_security_username"])
+	}
+	if cfg["soap_ws_security_password_type"] != "text" {
+		t.Errorf("soap_ws_security_password_type = %v, want text", cfg["soap_ws_security_password_type"])
+	}
+	if cfg["soap_ws_security_nonce"] != true {
+		t.Errorf("soap_ws_security_nonce = %v, want true", cfg["soap_ws_security_nonce"])
+	}
+	if cfg["soap_ws_security_created"] != true {
+		t.Errorf("soap_ws_security_created = %v, want true", cfg["soap_ws_security_created"])
+	}
+	if cfg["soap_ws_security_timestamp_ttl_seconds"] != float64(45) {
+		t.Errorf("soap_ws_security_timestamp_ttl_seconds = %v, want 45", cfg["soap_ws_security_timestamp_ttl_seconds"])
+	}
+	if cfg["soap_fault_fail_on_fault"] != true {
+		t.Errorf("soap_fault_fail_on_fault = %v, want true", cfg["soap_fault_fail_on_fault"])
+	}
+}
+
 func TestBuildProtoConfig_EmptyConfig(t *testing.T) {
 	script := &dsl.Script{}
 	cfg := buildProtoConfig(script)

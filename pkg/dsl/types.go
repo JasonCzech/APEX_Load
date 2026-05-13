@@ -36,11 +36,40 @@ type ScriptConfig struct {
 	ThinkTime     ThinkTimeConfig     `json:"think_time,omitempty"`
 	Pacing        PacingConfig        `json:"pacing,omitempty"`
 	HTTP          HTTPConfig          `json:"http,omitempty"`
+	SOAP          SOAPConfig          `json:"soap,omitempty"`
 	Browser       BrowserConfig       `json:"browser,omitempty"`
 	JMS           JMSConfig           `json:"jms,omitempty"`
 	ErrorHandling ErrorHandlingConfig `json:"error_handling,omitempty"`
 	RunLogic      RunLogicConfig      `json:"run_logic,omitempty"`
 	Log           LogConfig           `json:"log,omitempty"`
+}
+
+type SOAPConfig struct {
+	Version       string                 `json:"version,omitempty"`
+	Namespaces    map[string]string      `json:"namespaces,omitempty"`
+	WSSecurity    *SOAPWSSecurityConfig  `json:"ws_security,omitempty"`
+	FaultHandling SOAPFaultHandlingConfig `json:"fault_handling,omitempty"`
+}
+
+type SOAPWSSecurityConfig struct {
+	UsernameToken *SOAPUsernameTokenConfig `json:"username_token,omitempty"`
+	Timestamp     *SOAPTimestampConfig     `json:"timestamp,omitempty"`
+}
+
+type SOAPUsernameTokenConfig struct {
+	Username     string `json:"username,omitempty"`
+	Password     string `json:"password,omitempty"`
+	PasswordType string `json:"password_type,omitempty"`
+	Nonce        bool   `json:"nonce,omitempty"`
+	Created      bool   `json:"created,omitempty"`
+}
+
+type SOAPTimestampConfig struct {
+	TTLSeconds int `json:"ttl_seconds,omitempty"`
+}
+
+type SOAPFaultHandlingConfig struct {
+	FailOnFault bool `json:"fail_on_fault,omitempty"`
 }
 
 // JMSConfig holds broker, destination, and reliability settings for JMS scripts.
@@ -227,6 +256,13 @@ type Action struct {
 	Auth         *AuthConfig `json:"auth,omitempty"`          // override global auth
 	TimeoutMs    int         `json:"timeout_ms,omitempty"`    // override global request timeout
 	MaxRedirects *int        `json:"max_redirects,omitempty"` // override global redirect policy
+	SOAP         *SOAPActionConfig `json:"soap,omitempty"`
+}
+
+type SOAPActionConfig struct {
+	Action    string `json:"action,omitempty"`
+	Operation string `json:"operation,omitempty"`
+	BodyMode  string `json:"body_mode,omitempty"`
 }
 
 type Extractor struct {

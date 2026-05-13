@@ -363,6 +363,18 @@ func (vu *VUser) resolveAction(action dsl.Action) *protocol.Action {
 		Metadata:   vu.interpolateAnyMap(action.Metadata),
 		Extractors: toProtocolExtractors(action.Extractors),
 		Assertions: toProtocolAssertions(action.Assertions),
+		SOAP:       toProtocolSOAPAction(action.SOAP, vu),
+	}
+}
+
+func toProtocolSOAPAction(action *dsl.SOAPActionConfig, vu *VUser) *protocol.SOAPActionConfig {
+	if action == nil {
+		return nil
+	}
+	return &protocol.SOAPActionConfig{
+		Action:    vu.interpolate(action.Action),
+		Operation: vu.interpolate(action.Operation),
+		BodyMode:  vu.interpolate(action.BodyMode),
 	}
 }
 
