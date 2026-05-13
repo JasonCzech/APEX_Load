@@ -661,6 +661,113 @@
   line-height: 1.4;
 }
 
+.telemetry-diagnostic-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.telemetry-diagnostic-item {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.telemetry-diagnostic-item.warning {
+  border-color: color-mix(in srgb, var(--warning) 50%, var(--border));
+}
+
+.telemetry-diagnostic-item.danger {
+  border-color: color-mix(in srgb, var(--danger) 55%, var(--border));
+}
+
+.telemetry-diagnostic-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.telemetry-diagnostic-badge {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(125, 211, 252, 0.12);
+  color: var(--text-secondary);
+}
+
+.telemetry-diagnostic-badge.warning {
+  background: rgba(245, 158, 11, 0.18);
+  color: var(--warning);
+}
+
+.telemetry-diagnostic-badge.danger {
+  background: rgba(239, 68, 68, 0.16);
+  color: var(--danger);
+}
+
+.telemetry-diagnostic-time {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.telemetry-diagnostic-summary {
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.telemetry-diagnostic-conditions {
+  color: var(--text-muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.telemetry-diagnostic-samples {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.telemetry-diagnostic-sample {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  gap: 8px;
+  align-items: baseline;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-primary);
+}
+
+.telemetry-diagnostic-sample-issue {
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.telemetry-diagnostic-sample-name {
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.telemetry-diagnostic-sample-stats {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .timeline-body {
   gap: 16px;
 }

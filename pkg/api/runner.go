@@ -138,6 +138,7 @@ type ManagedTest struct {
 	remoteMetricsBatchesByTarget map[string]generatorrpc.MetricsBatch
 	remoteTargetStates           map[string]string
 	remoteFinalizing             bool
+	telemetryDiagnostic          telemetryDiagnosticState
 }
 
 type TestGroup struct {
@@ -169,8 +170,25 @@ type LiveMetrics struct {
 	Transactions  map[string]*TxMetrics        `json:"transactions,omitempty"`
 	GroupMetrics  map[string]*GroupLiveMetrics `json:"groups,omitempty"`
 	GoalStatus    *GoalStatus                  `json:"goal_status,omitempty"`
+	Telemetry     *TelemetryHealth             `json:"telemetry,omitempty"`
 	Resources     *engine.SystemResources      `json:"resources,omitempty"`
 	Latency       *NetworkLatency              `json:"latency,omitempty"`
+}
+
+type TelemetryHealth struct {
+	DroppedResults           int64 `json:"dropped_results,omitempty"`
+	HistoryPoints            int   `json:"history_points,omitempty"`
+	WebsocketClients         int   `json:"websocket_clients,omitempty"`
+	WebsocketDroppedMessages int64 `json:"websocket_dropped_messages,omitempty"`
+	WebsocketDroppedEvents   int64 `json:"websocket_dropped_events,omitempty"`
+	GeneratorPublishedAt     time.Time `json:"generator_published_at,omitempty"`
+	ControllerReceivedAt     time.Time `json:"controller_received_at,omitempty"`
+	CollectedAt              time.Time `json:"collected_at,omitempty"`
+	PublishedAt              time.Time `json:"published_at,omitempty"`
+	GeneratorProcessingLagMs float64   `json:"generator_processing_lag_ms,omitempty"`
+	TransportLagMs           float64   `json:"transport_lag_ms,omitempty"`
+	ControllerFanoutLagMs    float64   `json:"controller_fanout_lag_ms,omitempty"`
+	SampleAgeMs              float64   `json:"sample_age_ms,omitempty"`
 }
 
 type NetworkLatency struct {
@@ -208,11 +226,37 @@ type GoalStatus struct {
 	StopReason           string     `json:"stop_reason,omitempty"`
 }
 
+type TelemetryDiagnostic struct {
+	Severity   string           `json:"severity"`
+	Summary    string           `json:"summary"`
+	Conditions []string         `json:"conditions,omitempty"`
+	Samples    []DiagnosticSample `json:"samples,omitempty"`
+	Telemetry  *TelemetryHealth `json:"telemetry,omitempty"`
+}
+
+type DiagnosticSample struct {
+	Issue            string   `json:"issue"`
+	Transaction      string   `json:"transaction"`
+	DependencyType   string   `json:"dependency_type,omitempty"`
+	DependencyTarget string   `json:"dependency_target,omitempty"`
+	CorrelationIDs   []string `json:"correlation_ids,omitempty"`
+	Count            int64    `json:"count,omitempty"`
+	Errors           int64    `json:"errors,omitempty"`
+	ErrorPct         float64  `json:"error_pct,omitempty"`
+	AvgMs            float64  `json:"avg_ms,omitempty"`
+	P99Ms            float64  `json:"p99_ms,omitempty"`
+}
+
 type goalControllerState struct {
 	breachStartedAt    *time.Time
 	lastScaleAt        *time.Time
 	lastScaleDirection string
 	lastScaleReason    string
+}
+
+type telemetryDiagnosticState struct {
+	LastSignature   string
+	LastPublishedAt time.Time
 }
 
 type goalControllerUpdate struct {
@@ -226,13 +270,17 @@ type goalControllerUpdate struct {
 }
 
 type TxMetrics struct {
-	Name   string  `json:"name"`
-	Count  int64   `json:"count"`
-	Errors int64   `json:"errors"`
-	AvgMs  float64 `json:"avg_ms"`
-	P50Ms  float64 `json:"p50_ms"`
-	P90Ms  float64 `json:"p90_ms"`
-	P99Ms  float64 `json:"p99_ms"`
+	Name             string   `json:"name"`
+	DependencyType   string   `json:"dependency_type,omitempty"`
+	DependencyTarget string   `json:"dependency_target,omitempty"`
+	CorrelationIDs   []string `json:"correlation_ids,omitempty"`
+	CorrelationCount int64    `json:"correlation_count,omitempty"`
+	Count            int64    `json:"count"`
+	Errors           int64    `json:"errors"`
+	AvgMs            float64  `json:"avg_ms"`
+	P50Ms            float64  `json:"p50_ms"`
+	P90Ms            float64  `json:"p90_ms"`
+	P99Ms            float64  `json:"p99_ms"`
 }
 
 type GroupLiveMetrics struct {
@@ -299,6 +347,10 @@ type ScenarioScriptRef struct {
 const (
 	generatorAssignmentModeAuto          = "auto"
 	generatorAssignmentModeSpecificHosts = "specific_hosts"
+	maxManagedTestHistory                = 3600
+	telemetryDiagnosticSampleInterval    = 5 * time.Second
+	maxTelemetryDiagnosticSamples        = 3
+	slowTransactionDiagnosticThresholdMs = 1000.0
 )
 
 type GeneratorAssignmentSettings struct {
@@ -520,11 +572,21 @@ func (tr *TestRunner) loadStoredTestHistory(test *ManagedTest) {
 		return
 	}
 	for _, entry := range history {
-		if metrics, ok := entry.(map[string]any); ok {
+		switch metrics := entry.(type) {
+		case storage.IntervalSummaryRecord:
+			test.History = append(test.History, intervalSummaryRecordToLiveMetrics(metrics))
+		case *storage.IntervalSummaryRecord:
+			if metrics != nil {
+				test.History = append(test.History, intervalSummaryRecordToLiveMetrics(*metrics))
+			}
+		case map[string]any:
 			// This is a bit lossy due to any -> map conversion,
 			// but works for basic history display.
 			test.History = append(test.History, mapToLiveMetrics(metrics))
 		}
+	}
+	if len(test.History) > maxManagedTestHistory {
+		test.History = append([]*LiveMetrics(nil), test.History[len(test.History)-maxManagedTestHistory:]...)
 	}
 	if len(test.History) > 0 {
 		test.LiveMetrics = test.History[len(test.History)-1]
@@ -555,6 +617,39 @@ func mapToLiveMetrics(m map[string]any) *LiveMetrics {
 		return &LiveMetrics{}
 	}
 	return &lm
+}
+
+func intervalSummaryRecordToLiveMetrics(record storage.IntervalSummaryRecord) *LiveMetrics {
+	live := &LiveMetrics{
+		Timestamp:     record.Timestamp,
+		ActiveVUsers:  record.ActiveVUsers,
+		TPS:           record.TPS,
+		AvgResponseMs: record.AvgResponseMs,
+		ErrorPct:      record.ErrorPct,
+		TotalTx:       record.TotalTx,
+		TotalErrors:   record.TotalErrors,
+		P50Ms:         record.P50Ms,
+		P90Ms:         record.P90Ms,
+		P95Ms:         record.P95Ms,
+		P99Ms:         record.P99Ms,
+	}
+	if record.DroppedResults > 0 || record.WebsocketClients > 0 || record.WebsocketDroppedMessages > 0 || record.WebsocketDroppedEvents > 0 || !record.CollectedAt.IsZero() || !record.GeneratorPublishedAt.IsZero() || !record.ControllerReceivedAt.IsZero() || !record.PublishedAt.IsZero() || record.SampleAgeMs > 0 || record.GeneratorProcessingLagMs > 0 || record.TransportLagMs > 0 || record.ControllerFanoutLagMs > 0 {
+		live.Telemetry = &TelemetryHealth{
+			DroppedResults:           record.DroppedResults,
+			WebsocketClients:         record.WebsocketClients,
+			WebsocketDroppedMessages: record.WebsocketDroppedMessages,
+			WebsocketDroppedEvents:   record.WebsocketDroppedEvents,
+			GeneratorPublishedAt:     record.GeneratorPublishedAt,
+			ControllerReceivedAt:     record.ControllerReceivedAt,
+			CollectedAt:              record.CollectedAt,
+			PublishedAt:              record.PublishedAt,
+			GeneratorProcessingLagMs: record.GeneratorProcessingLagMs,
+			TransportLagMs:           record.TransportLagMs,
+			ControllerFanoutLagMs:    record.ControllerFanoutLagMs,
+			SampleAgeMs:              record.SampleAgeMs,
+		}
+	}
+	return live
 }
 
 func (tr *TestRunner) StoreScript(script *dsl.Script) *StoredScript {
@@ -2274,6 +2369,12 @@ func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[s
 		GroupMetrics:  make(map[string]*GroupLiveMetrics),
 		Resources:     snap.Resources,
 	}
+	if snap.Telemetry != nil {
+		live.Telemetry = &TelemetryHealth{
+			DroppedResults: snap.Telemetry.DroppedResults,
+			CollectedAt:    snap.Timestamp,
+		}
+	}
 
 	if live.TotalTx > 0 {
 		live.ErrorPct = float64(live.TotalErrors) / float64(live.TotalTx) * 100
@@ -2281,13 +2382,17 @@ func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[s
 
 	for name, am := range snap.ByAction {
 		live.Transactions[name] = &TxMetrics{
-			Name:   name,
-			Count:  am.Count,
-			Errors: am.Errors,
-			AvgMs:  float64(am.AvgDuration.Microseconds()) / 1000.0,
-			P50Ms:  float64(am.P50.Microseconds()) / 1000.0,
-			P90Ms:  float64(am.P90.Microseconds()) / 1000.0,
-			P99Ms:  float64(am.P99.Microseconds()) / 1000.0,
+			Name:             name,
+			DependencyType:   am.DependencyType,
+			DependencyTarget: am.DependencyTarget,
+			CorrelationIDs:   append([]string(nil), am.CorrelationIDs...),
+			CorrelationCount: am.CorrelationCount,
+			Count:            am.Count,
+			Errors:           am.Errors,
+			AvgMs:            float64(am.AvgDuration.Microseconds()) / 1000.0,
+			P50Ms:            float64(am.P50.Microseconds()) / 1000.0,
+			P90Ms:            float64(am.P90.Microseconds()) / 1000.0,
+			P99Ms:            float64(am.P99.Microseconds()) / 1000.0,
 		}
 	}
 
@@ -2311,7 +2416,247 @@ func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[s
 func buildLiveMetricsForBroadcast(snap engine.MetricsSnapshot, groupVUsers map[string]int, now time.Time) *LiveMetrics {
 	live := buildLiveMetricsFromSnapshot(snap, groupVUsers)
 	live.Timestamp = now
+	if live.Telemetry == nil {
+		live.Telemetry = &TelemetryHealth{}
+	}
+	if live.Telemetry.CollectedAt.IsZero() {
+		live.Telemetry.CollectedAt = snap.Timestamp
+	}
+	live.Telemetry.PublishedAt = now
+	if !live.Telemetry.CollectedAt.IsZero() {
+		live.Telemetry.SampleAgeMs = float64(now.Sub(live.Telemetry.CollectedAt).Microseconds()) / 1000.0
+	}
 	return live
+}
+
+func buildTelemetryDiagnostic(test *ManagedTest, live *LiveMetrics) (*TelemetryDiagnostic, string) {
+	if live == nil {
+		return nil, "healthy"
+	}
+
+	conditions := make([]string, 0, 5)
+	summaries := make([]string, 0, 5)
+	signatureParts := make([]string, 0, 8)
+	severity := "healthy"
+
+	if live.Telemetry != nil {
+		if live.Telemetry.DroppedResults > 0 {
+			conditions = append(conditions, "collector_drops")
+			summaries = append(summaries, fmt.Sprintf("collector dropped %d metric samples", live.Telemetry.DroppedResults))
+			signatureParts = append(signatureParts, "collector_drops")
+			severity = maxDiagnosticSeverity(severity, "danger")
+		}
+		if live.Telemetry.WebsocketDroppedMessages > 0 || live.Telemetry.WebsocketDroppedEvents > 0 {
+			conditions = append(conditions, "websocket_drops")
+			summaries = append(summaries, fmt.Sprintf("websocket dropped %d client messages and %d broadcast events", live.Telemetry.WebsocketDroppedMessages, live.Telemetry.WebsocketDroppedEvents))
+			signatureParts = append(signatureParts, "websocket_drops")
+			severity = maxDiagnosticSeverity(severity, "danger")
+		}
+		if live.Telemetry.SampleAgeMs > 2000 {
+			conditions = append(conditions, "stale_sample")
+			summaries = append(summaries, fmt.Sprintf("sample age %.0f ms exceeds the 2000 ms SLA budget", live.Telemetry.SampleAgeMs))
+			signatureParts = append(signatureParts, "stale_sample")
+			severity = maxDiagnosticSeverity(severity, "warning")
+		}
+	}
+
+	samples, sampleConditions, sampleSummaries, sampleSeverity, sampleSignature := sampleTransactionDiagnostics(test, live)
+	if len(sampleConditions) > 0 {
+		conditions = append(conditions, sampleConditions...)
+		summaries = append(summaries, sampleSummaries...)
+		signatureParts = append(signatureParts, sampleSignature...)
+		severity = maxDiagnosticSeverity(severity, sampleSeverity)
+	}
+
+	if len(conditions) == 0 {
+		return &TelemetryDiagnostic{
+			Severity:  "healthy",
+			Summary:   "live telemetry healthy",
+			Samples:   nil,
+			Telemetry: live.Telemetry,
+		}, "healthy"
+	}
+
+	signature := strings.Join(signatureParts, "|")
+	return &TelemetryDiagnostic{
+		Severity:   severity,
+		Summary:    strings.Join(summaries, "; "),
+		Conditions: conditions,
+		Samples:    samples,
+		Telemetry:  live.Telemetry,
+	}, signature
+}
+
+func sampleTransactionDiagnostics(test *ManagedTest, live *LiveMetrics) ([]DiagnosticSample, []string, []string, string, []string) {
+	if live == nil || len(live.Transactions) == 0 {
+		return nil, nil, nil, "healthy", nil
+	}
+
+	latencyThreshold := slowTransactionDiagnosticThresholdMs
+	if test != nil && test.GoalConfig != nil && test.GoalConfig.P95LatencyMs != nil && *test.GoalConfig.P95LatencyMs > 0 {
+		latencyThreshold = *test.GoalConfig.P95LatencyMs
+	}
+
+	type candidate struct {
+		sample DiagnosticSample
+		rank   int
+		key    string
+	}
+
+	candidates := make([]candidate, 0, len(live.Transactions))
+	hasErrors := false
+	hasSlow := false
+	for name, tx := range live.Transactions {
+		if tx == nil {
+			continue
+		}
+		errorPct := 0.0
+		if tx.Count > 0 {
+			errorPct = float64(tx.Errors) / float64(tx.Count) * 100
+		}
+		issue := ""
+		rank := 0
+		if tx.Errors > 0 {
+			issue = "error"
+			rank = 2
+			hasErrors = true
+		}
+		if tx.P99Ms >= latencyThreshold || tx.AvgMs >= latencyThreshold {
+			if issue == "" {
+				issue = "slow"
+				rank = 1
+			}
+			hasSlow = true
+		}
+		if issue == "" {
+			continue
+		}
+		candidates = append(candidates, candidate{
+			sample: DiagnosticSample{
+				Issue:            issue,
+				Transaction:      name,
+				DependencyType:   tx.DependencyType,
+				DependencyTarget: tx.DependencyTarget,
+				CorrelationIDs:   append([]string(nil), tx.CorrelationIDs...),
+				Count:            tx.Count,
+				Errors:           tx.Errors,
+				ErrorPct:         errorPct,
+				AvgMs:            tx.AvgMs,
+				P99Ms:            tx.P99Ms,
+			},
+			rank: rank,
+			key:  name,
+		})
+	}
+
+	if len(candidates) == 0 {
+		return nil, nil, nil, "healthy", nil
+	}
+
+	sort.Slice(candidates, func(i, j int) bool {
+		left := candidates[i]
+		right := candidates[j]
+		if left.rank != right.rank {
+			return left.rank > right.rank
+		}
+		if left.sample.Errors != right.sample.Errors {
+			return left.sample.Errors > right.sample.Errors
+		}
+		if left.sample.P99Ms != right.sample.P99Ms {
+			return left.sample.P99Ms > right.sample.P99Ms
+		}
+		if left.sample.AvgMs != right.sample.AvgMs {
+			return left.sample.AvgMs > right.sample.AvgMs
+		}
+		return strings.Compare(left.key, right.key) < 0
+	})
+
+	limit := maxTelemetryDiagnosticSamples
+	if len(candidates) < limit {
+		limit = len(candidates)
+	}
+	samples := make([]DiagnosticSample, 0, limit)
+	signatureParts := make([]string, 0, limit+2)
+	for _, candidate := range candidates[:limit] {
+		samples = append(samples, candidate.sample)
+		signatureParts = append(signatureParts, fmt.Sprintf("%s:%s:%d:%.0f", candidate.sample.Issue, candidate.sample.Transaction, candidate.sample.Errors, candidate.sample.P99Ms))
+	}
+
+	conditions := make([]string, 0, 2)
+	summaries := make([]string, 0, 2)
+	severity := "healthy"
+	if hasErrors {
+		conditions = append(conditions, "error_transactions")
+		summaries = append(summaries, fmt.Sprintf("sampled %d transaction error hotspots", countSamplesByIssue(samples, "error")))
+		signatureParts = append(signatureParts, "condition:error_transactions")
+		severity = maxDiagnosticSeverity(severity, "danger")
+	}
+	if hasSlow {
+		conditions = append(conditions, "slow_transactions")
+		summaries = append(summaries, fmt.Sprintf("sampled %d slow transaction hotspots at or above %.0f ms", countSlowSamples(samples, latencyThreshold), latencyThreshold))
+		signatureParts = append(signatureParts, fmt.Sprintf("condition:slow_transactions:%.0f", latencyThreshold))
+		severity = maxDiagnosticSeverity(severity, "warning")
+	}
+
+	return samples, conditions, summaries, severity, signatureParts
+}
+
+func countSamplesByIssue(samples []DiagnosticSample, issue string) int {
+	count := 0
+	for _, sample := range samples {
+		if sample.Issue == issue {
+			count++
+		}
+	}
+	return count
+}
+
+func countSlowSamples(samples []DiagnosticSample, latencyThreshold float64) int {
+	count := 0
+	for _, sample := range samples {
+		if sample.Issue == "slow" || sample.P99Ms >= latencyThreshold || sample.AvgMs >= latencyThreshold {
+			count++
+		}
+	}
+	return count
+}
+
+func maxDiagnosticSeverity(current string, next string) string {
+	if diagnosticSeverityRank(next) > diagnosticSeverityRank(current) {
+		return next
+	}
+	return current
+}
+
+func diagnosticSeverityRank(severity string) int {
+	switch severity {
+	case "danger":
+		return 2
+	case "warning":
+		return 1
+	default:
+		return 0
+	}
+}
+
+func shouldPublishTelemetryDiagnostic(state *telemetryDiagnosticState, signature string, now time.Time) bool {
+	if state == nil {
+		return signature != "healthy"
+	}
+	if signature == "healthy" {
+		if state.LastSignature == "" || state.LastSignature == "healthy" {
+			return false
+		}
+		state.LastSignature = "healthy"
+		state.LastPublishedAt = now
+		return true
+	}
+	if signature != state.LastSignature || state.LastPublishedAt.IsZero() || now.Sub(state.LastPublishedAt) >= telemetryDiagnosticSampleInterval {
+		state.LastSignature = signature
+		state.LastPublishedAt = now
+		return true
+	}
+	return false
 }
 
 func buildThresholdAlerts(test *ManagedTest, live *LiveMetrics, thresholds ThresholdSettings) []map[string]any {
@@ -2351,9 +2696,43 @@ func shouldStopForGoalStatus(live *LiveMetrics) bool {
 }
 
 func (tr *TestRunner) publishLiveMetrics(test *ManagedTest, live *LiveMetrics, artifacts *runArtifacts) {
+	now := time.Now()
+	hubStats := HubStats{}
+	if tr.hub != nil {
+		hubStats = tr.hub.Stats()
+	}
+	if live.Telemetry == nil {
+		live.Telemetry = &TelemetryHealth{}
+	}
+	if live.Telemetry.ControllerReceivedAt.IsZero() {
+		live.Telemetry.ControllerReceivedAt = now
+	}
+	if live.Telemetry.CollectedAt.IsZero() {
+		live.Telemetry.CollectedAt = live.Timestamp
+	}
+	live.Telemetry.PublishedAt = now
+	if !live.Telemetry.ControllerReceivedAt.IsZero() {
+		live.Telemetry.ControllerFanoutLagMs = float64(now.Sub(live.Telemetry.ControllerReceivedAt).Microseconds()) / 1000.0
+	}
+	if !live.Telemetry.CollectedAt.IsZero() {
+		live.Telemetry.SampleAgeMs = float64(now.Sub(live.Telemetry.CollectedAt).Microseconds()) / 1000.0
+	}
+	live.Telemetry.WebsocketClients = hubStats.ConnectedClients
+	live.Telemetry.WebsocketDroppedMessages = hubStats.DroppedClientMessages
+	live.Telemetry.WebsocketDroppedEvents = hubStats.DroppedBroadcasts
+	diagnostic, diagnosticSignature := buildTelemetryDiagnostic(test, live)
+	publishDiagnostic := false
+
 	tr.mu.Lock()
 	test.LiveMetrics = live
 	test.History = append(test.History, live)
+	if len(test.History) > maxManagedTestHistory {
+		test.History = append([]*LiveMetrics(nil), test.History[len(test.History)-maxManagedTestHistory:]...)
+	}
+	live.Telemetry.HistoryPoints = len(test.History)
+	if diagnostic != nil {
+		publishDiagnostic = shouldPublishTelemetryDiagnostic(&test.telemetryDiagnostic, diagnosticSignature, now)
+	}
 	tr.mu.Unlock()
 
 	tr.saveLiveMetricsHistory(test.ID, live.Timestamp, live)
@@ -2366,6 +2745,15 @@ func (tr *TestRunner) publishLiveMetrics(test *ManagedTest, live *LiveMetrics, a
 		"timestamp": live.Timestamp,
 		"data":      live,
 	})
+	if publishDiagnostic {
+		tr.hub.BroadcastJSON(map[string]any{
+			"type":      "telemetry_diagnostic",
+			"test_id":   test.ID,
+			"test_name": test.Name,
+			"timestamp": now,
+			"data":      diagnostic,
+		})
+	}
 }
 
 func applyGoalControllerUpdate(test *ManagedTest, live *LiveMetrics, groupVUsers map[string]int, update goalControllerUpdate, scaleVUsers func(groupName string, target int) error) {

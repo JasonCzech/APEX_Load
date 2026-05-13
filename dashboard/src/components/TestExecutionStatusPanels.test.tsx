@@ -84,4 +84,68 @@ describe('TestExecutionStatusPanels', () => {
     expect(container.textContent).toContain('Stop Reason')
     expect(container.textContent).toContain('sla breach')
   })
+
+  it('renders telemetry freshness and websocket health details when available', async () => {
+    await act(async () => {
+      root.render(
+        <TestExecutionStatusPanels
+          isGoalOriented={false}
+          goalDescription=""
+          test={{
+            id: 'test-1',
+            name: 'Telemetry Run',
+            status: 'RUNNING',
+            total_vusers: 12,
+            duration: '5m',
+            created_at: '2026-05-12T20:00:00Z',
+            groups: [],
+          } as never}
+          metrics={{
+            tps: 40,
+            active_vusers: 12,
+            telemetry: {
+              sample_age_ms: 1250,
+              generator_processing_lag_ms: 600,
+              transport_lag_ms: 300,
+              controller_fanout_lag_ms: 350,
+              collected_at: '2026-05-12T20:05:00Z',
+              generator_published_at: '2026-05-12T20:05:00.600Z',
+              controller_received_at: '2026-05-12T20:05:00.900Z',
+              published_at: '2026-05-12T20:05:00.900Z',
+              client_received_at: '2026-05-12T20:05:01.250Z',
+              delivery_lag_ms: 350,
+              end_to_end_age_ms: 1250,
+              history_points: 75,
+              websocket_clients: 3,
+              websocket_dropped_messages: 2,
+              websocket_dropped_events: 1,
+            },
+          }}
+          isMultiGroup={false}
+          groupMetrics={[]}
+          groupColors={[]}
+        />,
+      )
+    })
+
+    expect(container.textContent).toContain('Telemetry Health')
+    expect(container.textContent).toContain('Sample Age')
+    expect(container.textContent).toContain('1250 ms')
+    expect(container.textContent).toContain('Generator Lag')
+    expect(container.textContent).toContain('600 ms')
+    expect(container.textContent).toContain('Transport Lag')
+    expect(container.textContent).toContain('300 ms')
+    expect(container.textContent).toContain('Fan-out Lag')
+    expect(container.textContent).toContain('Delivery Lag')
+    expect(container.textContent).toContain('350 ms')
+    expect(container.textContent).toContain('End-to-End Age')
+    expect(container.textContent).toContain('Generator Publish')
+    expect(container.textContent).toContain('Controller Receive')
+    expect(container.textContent).toContain('History Window')
+    expect(container.textContent).toContain('75')
+    expect(container.textContent).toContain('WS Clients')
+    expect(container.textContent).toContain('3')
+    expect(container.textContent).toContain('WS Drops')
+    expect(container.textContent).toContain('Degraded')
+  })
 })

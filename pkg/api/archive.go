@@ -44,6 +44,9 @@ type TransactionEvent struct {
 	TestName      string                  `json:"test_name"`
 	Group         string                  `json:"group,omitempty"`
 	ActionName    string                  `json:"action_name,omitempty"`
+	CorrelationID string                  `json:"correlation_id,omitempty"`
+	DependencyType string                 `json:"dependency_type,omitempty"`
+	DependencyTarget string               `json:"dependency_target,omitempty"`
 	DurationMs    float64                 `json:"duration_ms"`
 	DNSMs         float64                 `json:"dns_ms,omitempty"`
 	ConnectMs     float64                 `json:"connect_ms,omitempty"`
@@ -95,9 +98,12 @@ type archivePage struct {
 }
 
 type transactionEventFilter struct {
-	Action  string
-	Group   string
-	Success *bool
+	Action           string
+	Group            string
+	CorrelationID    string
+	DependencyType   string
+	DependencyTarget string
+	Success          *bool
 }
 
 type RunArchiveReport struct {
@@ -225,6 +231,9 @@ func (w *runArchiveWriter) RecordResult(result *protocol.Result) error {
 		TestName:      w.manifest.TestName,
 		Group:         result.Group,
 		ActionName:    result.ActionName,
+		CorrelationID: result.CorrelationID,
+		DependencyType: result.DependencyType,
+		DependencyTarget: result.DependencyTarget,
 		DurationMs:    durationMillis(result.Duration),
 		DNSMs:         durationMillis(result.DNSTime),
 		ConnectMs:     durationMillis(result.ConnectTime),
@@ -384,6 +393,15 @@ func loadArchiveTransactions(record *storage.RunArchiveRecord, filter transactio
 			return false
 		}
 		if filter.Group != "" && !strings.EqualFold(item.Group, filter.Group) {
+			return false
+		}
+		if filter.CorrelationID != "" && !strings.EqualFold(item.CorrelationID, filter.CorrelationID) {
+			return false
+		}
+		if filter.DependencyType != "" && !strings.EqualFold(item.DependencyType, filter.DependencyType) {
+			return false
+		}
+		if filter.DependencyTarget != "" && !strings.EqualFold(item.DependencyTarget, filter.DependencyTarget) {
 			return false
 		}
 		if filter.Success != nil && item.Success != *filter.Success {

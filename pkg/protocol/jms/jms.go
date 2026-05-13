@@ -142,11 +142,13 @@ func (j *JMS) Init(_ context.Context, cfg map[string]any) error {
 func (j *JMS) Execute(ctx context.Context, action *protocol.Action) (*protocol.Result, error) {
 	start := time.Now()
 	result := &protocol.Result{
-		ActionName:  action.Name,
-		StartTime:   start,
-		StatusCode:  200,
-		Success:     true,
-		Extractions: make(map[string]string),
+		ActionName:       action.Name,
+		StartTime:        start,
+		StatusCode:       200,
+		Success:          true,
+		Extractions:      make(map[string]string),
+		DependencyType:   classifyJMSDependencyType(j.cfg.DestinationType, action),
+		DependencyTarget: j.destination(action),
 	}
 
 	var err error
@@ -381,10 +383,19 @@ func (j *JMS) destination(action *protocol.Action) string {
 }
 
 func addMessageExtractions(result *protocol.Result, msg message) {
+	result.CorrelationID = msg.CorrelationID
 	result.Extractions["jms_message_id"] = msg.ID
 	result.Extractions["jms_correlation_id"] = msg.CorrelationID
 	result.Extractions["jms_destination"] = msg.Destination
 	result.Extractions["jms_body"] = string(msg.Body)
+}
+
+func classifyJMSDependencyType(defaultDestinationType string, action *protocol.Action) string {
+	destinationType := strings.TrimSpace(paramString(action.Params, "destination_type", defaultDestinationType))
+	if destinationType == "" {
+		destinationType = "queue"
+	}
+	return "jms_" + strings.ToLower(destinationType)
 }
 
 func runExtractors(extractors []protocol.Extractor, result *protocol.Result, msg message) error {

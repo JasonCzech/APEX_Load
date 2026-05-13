@@ -239,6 +239,44 @@ func TestHTTP_Execute_GET(t *testing.T) {
 	}
 }
 
+func TestHTTP_ExecuteCapturesDependencyAndCorrelationMetadata(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Request-Id", "resp-corr-2")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	h := initHTTP(t, map[string]any{"base_url": ts.URL})
+
+	result, err := h.Execute(context.Background(), &protocol.Action{
+		Name:   "test-correlation",
+		Method: "GET",
+		Target: "/metadata",
+		Headers: map[string]string{
+			"X-Correlation-Id": "req-corr-1",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if result.DependencyType != "http" {
+		t.Fatalf("DependencyType = %q, want http", result.DependencyType)
+	}
+	if result.DependencyTarget == "" {
+		t.Fatal("expected dependency target to be set")
+	}
+	if result.CorrelationID != "req-corr-1" {
+		t.Fatalf("CorrelationID = %q, want req-corr-1", result.CorrelationID)
+	}
+	result, err = h.Execute(context.Background(), &protocol.Action{Name: "test-response-correlation", Method: "GET", Target: "/metadata"})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if result.CorrelationID != "resp-corr-2" {
+		t.Fatalf("CorrelationID = %q, want resp-corr-2", result.CorrelationID)
+	}
+}
+
 func TestHTTP_Execute_POST(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {

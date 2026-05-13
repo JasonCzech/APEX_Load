@@ -1,9 +1,15 @@
 import { useState, useEffect, useCallback, useMemo, type DragEvent, type ReactNode } from 'react'
 import { type WebSocketConnectionState } from '../hooks/useWebSocket'
 import { useApi } from '../hooks/useApi'
-import { HealthResponse, TestSummary } from '../types'
+import { HealthResponse, TelemetryDiagnosticEntry, TestSummary } from '../types'
+import { formatTelemetryDiagnosticTime, telemetryDiagnosticSeverityClass } from './monitoringTelemetryDiagnostics'
 
-export default function MonitoringPage({ connectionState }: { connectionState: WebSocketConnectionState }) {
+interface Props {
+  connectionState: WebSocketConnectionState
+  telemetryDiagnostics?: TelemetryDiagnosticEntry[]
+}
+
+export default function MonitoringPage({ connectionState, telemetryDiagnostics = [] }: Props) {
   const api = useApi()
   const [health, setHealth] = useState<HealthResponse | null>(null)
   const [tests, setTests] = useState<TestSummary[]>([])
@@ -123,6 +129,56 @@ export default function MonitoringPage({ connectionState }: { connectionState: W
             <span className="monitor-label">Endpoint</span>
             <span className="monitor-value cell-mono">/api/v1/ws</span>
           </div>
+        </div>
+      ),
+    },
+    {
+      id: 'telemetry-diagnostics',
+      title: 'Telemetry Diagnostics',
+      icon: (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
+          <line x1="12" y1="9" x2="12" y2="13" />
+          <line x1="12" y1="17" x2="12.01" y2="17" />
+        </svg>
+      ),
+      content: (
+        <div className="monitor-body">
+          {telemetryDiagnostics.length === 0 ? (
+            <p className="monitor-hint">No sampled telemetry diagnostics received. Compact metrics updates remain on the hot path until degradation occurs.</p>
+          ) : (
+            <div className="telemetry-diagnostic-list">
+              {telemetryDiagnostics.map((entry) => (
+                <div key={`${entry.test_id}-${entry.timestamp}-${entry.diagnostic.summary}`} className={`telemetry-diagnostic-item ${telemetryDiagnosticSeverityClass(entry.diagnostic.severity)}`}>
+                  <div className="telemetry-diagnostic-header">
+                    <span className={`telemetry-diagnostic-badge ${telemetryDiagnosticSeverityClass(entry.diagnostic.severity)}`}>
+                      {entry.diagnostic.severity}
+                    </span>
+                    <span className="telemetry-diagnostic-time">{formatTelemetryDiagnosticTime(entry.timestamp)}</span>
+                  </div>
+                  <div className="telemetry-diagnostic-summary">{entry.test_name || entry.test_id}: {entry.diagnostic.summary}</div>
+                  {entry.diagnostic.conditions?.length ? (
+                    <div className="telemetry-diagnostic-conditions">{entry.diagnostic.conditions.join(' · ')}</div>
+                  ) : null}
+                  {entry.diagnostic.samples?.length ? (
+                    <div className="telemetry-diagnostic-samples">
+                      {entry.diagnostic.samples.map((sample) => (
+                        <div key={`${entry.test_id}-${entry.timestamp}-${sample.issue}-${sample.transaction}`} className="telemetry-diagnostic-sample">
+                          <span className="telemetry-diagnostic-sample-issue">{sample.issue}</span>
+                          <span className="telemetry-diagnostic-sample-name">{sample.transaction}</span>
+                          <span className="telemetry-diagnostic-sample-stats">
+                            {sample.errors ? `${sample.errors}/${sample.count ?? 0} errors` : `p99 ${Math.round(sample.p99_ms ?? 0)} ms`}
+                            {sample.avg_ms ? ` · avg ${Math.round(sample.avg_ms)} ms` : ''}
+                            {sample.dependency_target ? ` · ${sample.dependency_target}` : ''}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       ),
     },
@@ -247,7 +303,7 @@ export default function MonitoringPage({ connectionState }: { connectionState: W
         </div>
       ),
     },
-  ], [connectionState, health, timeline, websocketLabel, websocketValueClass])
+  ], [connectionState, health, telemetryDiagnostics, timeline, websocketLabel, websocketValueClass])
 
   useEffect(() => {
     setCardOrder(prev => mergeOrder(prev, cards.map(card => card.id)))

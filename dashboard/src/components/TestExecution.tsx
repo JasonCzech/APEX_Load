@@ -54,7 +54,7 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
     scriptDetailsLoading,
     scriptDetailsError,
   } = useExecutionScenarioPreviewModel(test)
-  const { localMetricsHistory } = useExecutionMetricsStream(testId, test?.status)
+  const { localMetricsHistory, latestMetrics } = useExecutionMetricsStream(testId, test?.status)
   const {
     filteredData,
     summary,
@@ -155,6 +155,17 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
     isGoalOriented,
     shakeoutFailed,
   } = buildExecutionStatusModel(test)
+
+  const statusMetrics = latestMetrics
+    ? {
+        ...metrics,
+        ...latestMetrics,
+        telemetry: {
+          ...metrics?.telemetry,
+          ...latestMetrics.telemetry,
+        },
+      }
+    : metrics
 
   return (
     <div className="execution">
@@ -260,7 +271,7 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
         goalDescription={describeGoalController(goalStatus)}
         goalStatus={goalStatus}
         test={test}
-        metrics={metrics}
+        metrics={statusMetrics}
         isMultiGroup={isMultiGroup}
         groupMetrics={groupMetrics}
         groupColors={GROUP_COLORS}

@@ -154,6 +154,9 @@ type Result struct {
 	Group            string        // Group/transaction name for metrics
 	StartTime        time.Time     // When the action started
 	Duration         time.Duration // Time to execute action
+	CorrelationID    string        // Correlation or request id when the protocol exposes one
+	DependencyType   string        // Classified dependency type (http, jms_queue, etc.)
+	DependencyTarget string        // Classified downstream target (host, queue, topic, etc.)
 	DNSTime          time.Duration // DNS lookup time (if applicable)
 	ConnectTime      time.Duration // Connection establishment time (if applicable)
 	TLSTime          time.Duration

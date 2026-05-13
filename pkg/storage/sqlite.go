@@ -18,6 +18,39 @@ type SQLiteStore struct {
 	db *sql.DB
 }
 
+const (
+	intervalSummarySchemaVersionV1 = "stormrunner.interval-summary.v1"
+	intervalSummarySchemaVersion   = "stormrunner.interval-summary.v2"
+	archiveRecordSchemaVersion   = "stormrunner.archive.v1"
+)
+
+type IntervalSummaryRecord struct {
+	SchemaVersion           string    `json:"schema_version,omitempty"`
+	Timestamp                time.Time `json:"timestamp"`
+	ActiveVUsers             int64     `json:"active_vusers"`
+	TPS                      float64   `json:"tps"`
+	AvgResponseMs            float64   `json:"avg_response_ms"`
+	ErrorPct                 float64   `json:"error_pct"`
+	TotalTx                  int64     `json:"total_transactions"`
+	TotalErrors              int64     `json:"total_errors"`
+	P50Ms                    float64   `json:"p50_ms"`
+	P90Ms                    float64   `json:"p90_ms"`
+	P95Ms                    float64   `json:"p95_ms"`
+	P99Ms                    float64   `json:"p99_ms"`
+	DroppedResults           int64     `json:"dropped_results,omitempty"`
+	WebsocketClients         int       `json:"websocket_clients,omitempty"`
+	WebsocketDroppedMessages int64     `json:"websocket_dropped_messages,omitempty"`
+	WebsocketDroppedEvents   int64     `json:"websocket_dropped_events,omitempty"`
+	GeneratorPublishedAt     time.Time `json:"generator_published_at,omitempty"`
+	ControllerReceivedAt     time.Time `json:"controller_received_at,omitempty"`
+	CollectedAt              time.Time `json:"collected_at,omitempty"`
+	PublishedAt              time.Time `json:"published_at,omitempty"`
+	GeneratorProcessingLagMs float64   `json:"generator_processing_lag_ms,omitempty"`
+	TransportLagMs           float64   `json:"transport_lag_ms,omitempty"`
+	ControllerFanoutLagMs    float64   `json:"controller_fanout_lag_ms,omitempty"`
+	SampleAgeMs              float64   `json:"sample_age_ms,omitempty"`
+}
+
 func NewSQLiteStore(path string) (*SQLiteStore, error) {
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
@@ -169,6 +202,34 @@ func (s *SQLiteStore) init() error {
 			metrics_json TEXT,
 			FOREIGN KEY(test_id) REFERENCES tests(id)
 		)`,
+		`CREATE TABLE IF NOT EXISTS test_interval_summaries (
+			test_id TEXT,
+			schema_version TEXT,
+			timestamp DATETIME,
+			active_vusers INTEGER,
+			tps REAL,
+			avg_response_ms REAL,
+			error_pct REAL,
+			total_transactions INTEGER,
+			total_errors INTEGER,
+			p50_ms REAL,
+			p90_ms REAL,
+			p95_ms REAL,
+			p99_ms REAL,
+			dropped_results INTEGER,
+			websocket_clients INTEGER,
+			websocket_dropped_messages INTEGER,
+			websocket_dropped_events INTEGER,
+			generator_published_at DATETIME,
+			controller_received_at DATETIME,
+			collected_at DATETIME,
+			published_at DATETIME,
+			generator_processing_lag_ms REAL,
+			transport_lag_ms REAL,
+			controller_fanout_lag_ms REAL,
+			sample_age_ms REAL,
+			FOREIGN KEY(test_id) REFERENCES tests(id)
+		)`,
 		`CREATE TABLE IF NOT EXISTS run_archives (
 			test_id TEXT PRIMARY KEY,
 			schema_version TEXT,
@@ -250,10 +311,24 @@ func (s *SQLiteStore) init() error {
 		{`ALTER TABLE tests ADD COLUMN release_id TEXT REFERENCES releases(id)`, "tests.release_id"},
 		{`ALTER TABLE tests ADD COLUMN scenario_id TEXT REFERENCES scenarios(id)`, "tests.scenario_id"},
 		{`ALTER TABLE releases ADD COLUMN archived_at DATETIME`, "releases.archived_at"},
+		{`ALTER TABLE test_interval_summaries ADD COLUMN schema_version TEXT`, "test_interval_summaries.schema_version"},
+		{`ALTER TABLE run_archives ADD COLUMN schema_version TEXT`, "run_archives.schema_version"},
+		{`ALTER TABLE test_interval_summaries ADD COLUMN generator_published_at DATETIME`, "test_interval_summaries.generator_published_at"},
+		{`ALTER TABLE test_interval_summaries ADD COLUMN controller_received_at DATETIME`, "test_interval_summaries.controller_received_at"},
+		{`ALTER TABLE test_interval_summaries ADD COLUMN generator_processing_lag_ms REAL`, "test_interval_summaries.generator_processing_lag_ms"},
+		{`ALTER TABLE test_interval_summaries ADD COLUMN transport_lag_ms REAL`, "test_interval_summaries.transport_lag_ms"},
+		{`ALTER TABLE test_interval_summaries ADD COLUMN controller_fanout_lag_ms REAL`, "test_interval_summaries.controller_fanout_lag_ms"},
 	} {
 		if _, err := s.db.Exec(migration.query); err != nil && !isDuplicateColumnErr(err) {
 			return fmt.Errorf("failed to add %s column: %w", migration.name, err)
 		}
+	}
+
+	if _, err := s.db.Exec(`UPDATE test_interval_summaries SET schema_version = ? WHERE schema_version IS NULL OR TRIM(schema_version) = ''`, intervalSummarySchemaVersionV1); err != nil {
+		return fmt.Errorf("failed to backfill test_interval_summaries.schema_version: %w", err)
+	}
+	if _, err := s.db.Exec(`UPDATE run_archives SET schema_version = ? WHERE schema_version IS NULL OR TRIM(schema_version) = ''`, archiveRecordSchemaVersion); err != nil {
+		return fmt.Errorf("failed to backfill run_archives.schema_version: %w", err)
 	}
 
 	if err := s.ensureDefaultProject(); err != nil {
@@ -1011,6 +1086,9 @@ func (s *SQLiteStore) DeleteProject(id string) error {
 		if _, err := tx.Exec(`DELETE FROM test_history WHERE test_id = ?`, testID); err != nil {
 			return err
 		}
+		if _, err := tx.Exec(`DELETE FROM test_interval_summaries WHERE test_id = ?`, testID); err != nil {
+			return err
+		}
 		if _, err := tx.Exec(`DELETE FROM run_archives WHERE test_id = ?`, testID); err != nil {
 			return err
 		}
@@ -1421,6 +1499,9 @@ func (s *SQLiteStore) DeleteTest(id string) error {
 	if _, err := tx.Exec(`DELETE FROM test_history WHERE test_id = ?`, id); err != nil {
 		return err
 	}
+	if _, err := tx.Exec(`DELETE FROM test_interval_summaries WHERE test_id = ?`, id); err != nil {
+		return err
+	}
 	if _, err := tx.Exec(`DELETE FROM run_archives WHERE test_id = ?`, id); err != nil {
 		return err
 	}
@@ -1437,12 +1518,74 @@ func (s *SQLiteStore) MoveTest(id string, folderID *string) error {
 }
 
 func (s *SQLiteStore) SaveHistory(testID string, timestamp time.Time, metrics any) error {
+	record, err := intervalSummaryRecordFromMetrics(timestamp, metrics)
+	if err == nil {
+		var collectedAt any
+		if !record.CollectedAt.IsZero() {
+			collectedAt = record.CollectedAt
+		}
+		var publishedAt any
+		if !record.PublishedAt.IsZero() {
+			publishedAt = record.PublishedAt
+		}
+		var generatorPublishedAt any
+		if !record.GeneratorPublishedAt.IsZero() {
+			generatorPublishedAt = record.GeneratorPublishedAt
+		}
+		var controllerReceivedAt any
+		if !record.ControllerReceivedAt.IsZero() {
+			controllerReceivedAt = record.ControllerReceivedAt
+		}
+		_, err = s.db.Exec(`INSERT INTO test_interval_summaries (
+			test_id, schema_version, timestamp, active_vusers, tps, avg_response_ms, error_pct,
+			total_transactions, total_errors, p50_ms, p90_ms, p95_ms, p99_ms,
+			dropped_results, websocket_clients, websocket_dropped_messages, websocket_dropped_events,
+			generator_published_at, controller_received_at, collected_at, published_at,
+			generator_processing_lag_ms, transport_lag_ms, controller_fanout_lag_ms, sample_age_ms
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			testID,
+			record.SchemaVersion,
+			record.Timestamp,
+			record.ActiveVUsers,
+			record.TPS,
+			record.AvgResponseMs,
+			record.ErrorPct,
+			record.TotalTx,
+			record.TotalErrors,
+			record.P50Ms,
+			record.P90Ms,
+			record.P95Ms,
+			record.P99Ms,
+			record.DroppedResults,
+			record.WebsocketClients,
+			record.WebsocketDroppedMessages,
+			record.WebsocketDroppedEvents,
+			generatorPublishedAt,
+			controllerReceivedAt,
+			collectedAt,
+			publishedAt,
+			record.GeneratorProcessingLagMs,
+			record.TransportLagMs,
+			record.ControllerFanoutLagMs,
+			record.SampleAgeMs,
+		)
+		return err
+	}
+
 	metricsJSON, _ := json.Marshal(metrics)
-	_, err := s.db.Exec(`INSERT INTO test_history (test_id, timestamp, metrics_json) VALUES (?, ?, ?)`, testID, timestamp, string(metricsJSON))
+	_, err = s.db.Exec(`INSERT INTO test_history (test_id, timestamp, metrics_json) VALUES (?, ?, ?)`, testID, timestamp, string(metricsJSON))
 	return err
 }
 
 func (s *SQLiteStore) GetHistory(testID string) ([]any, error) {
+	typedHistory, err := s.getTypedHistory(testID)
+	if err != nil {
+		return nil, err
+	}
+	if len(typedHistory) > 0 {
+		return typedHistory, nil
+	}
+
 	rows, err := s.db.Query(`SELECT metrics_json FROM test_history WHERE test_id = ? ORDER BY timestamp ASC`, testID)
 	if err != nil {
 		return nil, err
@@ -1462,7 +1605,201 @@ func (s *SQLiteStore) GetHistory(testID string) ([]any, error) {
 	return history, nil
 }
 
+func (s *SQLiteStore) getTypedHistory(testID string) ([]any, error) {
+	rows, err := s.db.Query(`SELECT
+		schema_version,
+		timestamp,
+		active_vusers,
+		tps,
+		avg_response_ms,
+		error_pct,
+		total_transactions,
+		total_errors,
+		p50_ms,
+		p90_ms,
+		p95_ms,
+		p99_ms,
+		dropped_results,
+		websocket_clients,
+		websocket_dropped_messages,
+		websocket_dropped_events,
+		generator_published_at,
+		controller_received_at,
+		collected_at,
+		published_at,
+		generator_processing_lag_ms,
+		transport_lag_ms,
+		controller_fanout_lag_ms,
+		sample_age_ms
+	FROM test_interval_summaries WHERE test_id = ? ORDER BY timestamp ASC`, testID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	history := make([]any, 0)
+	for rows.Next() {
+		var record IntervalSummaryRecord
+		var droppedResults sql.NullInt64
+		var websocketClients sql.NullInt64
+		var websocketDroppedMessages sql.NullInt64
+		var websocketDroppedEvents sql.NullInt64
+		var generatorPublishedAt sql.NullTime
+		var controllerReceivedAt sql.NullTime
+		var collectedAt sql.NullTime
+		var publishedAt sql.NullTime
+		var generatorProcessingLagMs sql.NullFloat64
+		var transportLagMs sql.NullFloat64
+		var controllerFanoutLagMs sql.NullFloat64
+		var sampleAgeMs sql.NullFloat64
+		var schemaVersion sql.NullString
+		if err := rows.Scan(
+			&schemaVersion,
+			&record.Timestamp,
+			&record.ActiveVUsers,
+			&record.TPS,
+			&record.AvgResponseMs,
+			&record.ErrorPct,
+			&record.TotalTx,
+			&record.TotalErrors,
+			&record.P50Ms,
+			&record.P90Ms,
+			&record.P95Ms,
+			&record.P99Ms,
+			&droppedResults,
+			&websocketClients,
+			&websocketDroppedMessages,
+			&websocketDroppedEvents,
+			&generatorPublishedAt,
+			&controllerReceivedAt,
+			&collectedAt,
+			&publishedAt,
+			&generatorProcessingLagMs,
+			&transportLagMs,
+			&controllerFanoutLagMs,
+			&sampleAgeMs,
+		); err != nil {
+			return nil, err
+		}
+		record.SchemaVersion = normalizeTelemetrySchemaVersion(schemaVersion.String, intervalSummarySchemaVersionV1)
+		if droppedResults.Valid {
+			record.DroppedResults = droppedResults.Int64
+		}
+		if websocketClients.Valid {
+			record.WebsocketClients = int(websocketClients.Int64)
+		}
+		if websocketDroppedMessages.Valid {
+			record.WebsocketDroppedMessages = websocketDroppedMessages.Int64
+		}
+		if websocketDroppedEvents.Valid {
+			record.WebsocketDroppedEvents = websocketDroppedEvents.Int64
+		}
+		if generatorPublishedAt.Valid {
+			record.GeneratorPublishedAt = generatorPublishedAt.Time
+		}
+		if controllerReceivedAt.Valid {
+			record.ControllerReceivedAt = controllerReceivedAt.Time
+		}
+		if collectedAt.Valid {
+			record.CollectedAt = collectedAt.Time
+		}
+		if publishedAt.Valid {
+			record.PublishedAt = publishedAt.Time
+		}
+		if generatorProcessingLagMs.Valid {
+			record.GeneratorProcessingLagMs = generatorProcessingLagMs.Float64
+		}
+		if transportLagMs.Valid {
+			record.TransportLagMs = transportLagMs.Float64
+		}
+		if controllerFanoutLagMs.Valid {
+			record.ControllerFanoutLagMs = controllerFanoutLagMs.Float64
+		}
+		if sampleAgeMs.Valid {
+			record.SampleAgeMs = sampleAgeMs.Float64
+		}
+		history = append(history, record)
+	}
+	return history, rows.Err()
+}
+
+func intervalSummaryRecordFromMetrics(timestamp time.Time, metrics any) (IntervalSummaryRecord, error) {
+	type telemetryEnvelope struct {
+		DroppedResults           int64     `json:"dropped_results,omitempty"`
+		WebsocketClients         int       `json:"websocket_clients,omitempty"`
+		WebsocketDroppedMessages int64     `json:"websocket_dropped_messages,omitempty"`
+		WebsocketDroppedEvents   int64     `json:"websocket_dropped_events,omitempty"`
+			GeneratorPublishedAt     time.Time `json:"generator_published_at,omitempty"`
+			ControllerReceivedAt     time.Time `json:"controller_received_at,omitempty"`
+		CollectedAt              time.Time `json:"collected_at,omitempty"`
+		PublishedAt              time.Time `json:"published_at,omitempty"`
+			GeneratorProcessingLagMs float64   `json:"generator_processing_lag_ms,omitempty"`
+			TransportLagMs           float64   `json:"transport_lag_ms,omitempty"`
+			ControllerFanoutLagMs    float64   `json:"controller_fanout_lag_ms,omitempty"`
+		SampleAgeMs              float64   `json:"sample_age_ms,omitempty"`
+	}
+	type summaryEnvelope struct {
+		Timestamp     time.Time          `json:"timestamp"`
+		ActiveVUsers  int64              `json:"active_vusers"`
+		TPS           float64            `json:"tps"`
+		AvgResponseMs float64            `json:"avg_response_ms"`
+		ErrorPct      float64            `json:"error_pct"`
+		TotalTx       int64              `json:"total_transactions"`
+		TotalErrors   int64              `json:"total_errors"`
+		P50Ms         float64            `json:"p50_ms"`
+		P90Ms         float64            `json:"p90_ms"`
+		P95Ms         float64            `json:"p95_ms"`
+		P99Ms         float64            `json:"p99_ms"`
+		Telemetry     *telemetryEnvelope `json:"telemetry,omitempty"`
+	}
+
+	payload, err := json.Marshal(metrics)
+	if err != nil {
+		return IntervalSummaryRecord{}, err
+	}
+	var summary summaryEnvelope
+	if err := json.Unmarshal(payload, &summary); err != nil {
+		return IntervalSummaryRecord{}, err
+	}
+	record := IntervalSummaryRecord{
+		SchemaVersion: intervalSummarySchemaVersion,
+		Timestamp:     summary.Timestamp,
+		ActiveVUsers:  summary.ActiveVUsers,
+		TPS:           summary.TPS,
+		AvgResponseMs: summary.AvgResponseMs,
+		ErrorPct:      summary.ErrorPct,
+		TotalTx:       summary.TotalTx,
+		TotalErrors:   summary.TotalErrors,
+		P50Ms:         summary.P50Ms,
+		P90Ms:         summary.P90Ms,
+		P95Ms:         summary.P95Ms,
+		P99Ms:         summary.P99Ms,
+	}
+	if record.Timestamp.IsZero() {
+		record.Timestamp = timestamp
+	}
+	if summary.Telemetry != nil {
+		record.DroppedResults = summary.Telemetry.DroppedResults
+		record.WebsocketClients = summary.Telemetry.WebsocketClients
+		record.WebsocketDroppedMessages = summary.Telemetry.WebsocketDroppedMessages
+		record.WebsocketDroppedEvents = summary.Telemetry.WebsocketDroppedEvents
+		record.GeneratorPublishedAt = summary.Telemetry.GeneratorPublishedAt
+		record.ControllerReceivedAt = summary.Telemetry.ControllerReceivedAt
+		record.CollectedAt = summary.Telemetry.CollectedAt
+		record.PublishedAt = summary.Telemetry.PublishedAt
+		record.GeneratorProcessingLagMs = summary.Telemetry.GeneratorProcessingLagMs
+		record.TransportLagMs = summary.Telemetry.TransportLagMs
+		record.ControllerFanoutLagMs = summary.Telemetry.ControllerFanoutLagMs
+		record.SampleAgeMs = summary.Telemetry.SampleAgeMs
+	}
+	return record, nil
+}
+
 func (s *SQLiteStore) SaveRunArchive(record *RunArchiveRecord) error {
+	if record == nil {
+		return errors.New("run archive record is nil")
+	}
+	record.SchemaVersion = normalizeTelemetrySchemaVersion(record.SchemaVersion, archiveRecordSchemaVersion)
 	_, err := s.db.Exec(`INSERT INTO run_archives (test_id, schema_version, archive_path, manifest_path, transaction_count, resource_sample_count, interval_summary_count, created_at, completed_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(test_id) DO UPDATE SET
@@ -1503,7 +1840,15 @@ func (s *SQLiteStore) GetRunArchive(testID string) (*RunArchiveRecord, error) {
 	if err != nil {
 		return nil, err
 	}
+	record.SchemaVersion = normalizeTelemetrySchemaVersion(record.SchemaVersion, archiveRecordSchemaVersion)
 	return &record, nil
+}
+
+func normalizeTelemetrySchemaVersion(version string, fallback string) string {
+	if strings.TrimSpace(version) == "" {
+		return fallback
+	}
+	return version
 }
 
 func (s *SQLiteStore) SaveSetting(key string, value string) error {

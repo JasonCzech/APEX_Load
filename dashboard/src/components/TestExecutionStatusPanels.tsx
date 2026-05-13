@@ -1,9 +1,10 @@
-import { GoalStatus, GroupLiveMetrics, TestSummary } from '../types'
+import { GoalStatus, GroupLiveMetrics, TelemetryHealth, TestSummary } from '../types'
 import { formatTimeCompact } from '../utils/timeUtils'
 
 interface LiveMetricsSummary {
   tps?: number
   active_vusers?: number
+  telemetry?: TelemetryHealth
 }
 
 interface Props {
@@ -27,6 +28,43 @@ function formatGoalReason(value?: string): string {
   return value.replace(/_/g, ' ')
 }
 
+function formatSampleAge(value?: number): string {
+  if (value === undefined) return 'unknown'
+  if (value < 2000) return `${Math.round(value)} ms`
+  return `${(value / 1000).toFixed(2)} s`
+}
+
+function formatTelemetryTime(value?: string): string {
+  if (!value) return 'unknown'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'unknown'
+  return date.toLocaleTimeString()
+}
+
+function telemetryBadgeClass(metrics?: LiveMetricsSummary): 'healthy' | 'warning' | 'danger' {
+  const telemetry = metrics?.telemetry
+  if (!telemetry) return 'healthy'
+  if ((telemetry.websocket_dropped_messages ?? 0) > 0 || (telemetry.websocket_dropped_events ?? 0) > 0) {
+    return 'danger'
+  }
+  if ((telemetry.end_to_end_age_ms ?? telemetry.sample_age_ms ?? 0) > 2000) {
+    return 'warning'
+  }
+  return 'healthy'
+}
+
+function telemetryBadgeLabel(metrics?: LiveMetricsSummary): string {
+  const telemetry = metrics?.telemetry
+  if (!telemetry) return 'Unknown'
+  if ((telemetry.websocket_dropped_messages ?? 0) > 0 || (telemetry.websocket_dropped_events ?? 0) > 0) {
+    return 'Degraded'
+  }
+  if ((telemetry.end_to_end_age_ms ?? telemetry.sample_age_ms ?? 0) > 2000) {
+    return 'Stale'
+  }
+  return 'Healthy'
+}
+
 export default function TestExecutionStatusPanels({
   isGoalOriented,
   goalDescription,
@@ -39,6 +77,79 @@ export default function TestExecutionStatusPanels({
 }: Props) {
   return (
     <>
+      {metrics?.telemetry && (
+        <div className="goal-status-card telemetry-status-card">
+          <div className="goal-status-header">
+            <div>
+              <h3 className="goal-status-title">Telemetry Health</h3>
+              <p className="goal-status-subtitle">Freshness and delivery pressure for the live metrics pipeline.</p>
+            </div>
+            <div className={`goal-status-badge ${telemetryBadgeClass(metrics)}`}>
+              {telemetryBadgeLabel(metrics)}
+            </div>
+          </div>
+
+          <div className="goal-status-grid">
+            <div className="goal-status-metric">
+              <span className="goal-status-label">Sample Age</span>
+              <span className="goal-status-value">{formatSampleAge(metrics.telemetry.sample_age_ms)}</span>
+            </div>
+            <div className="goal-status-metric">
+              <span className="goal-status-label">Generator Lag</span>
+              <span className="goal-status-value">{formatSampleAge(metrics.telemetry.generator_processing_lag_ms)}</span>
+            </div>
+            <div className="goal-status-metric">
+              <span className="goal-status-label">Transport Lag</span>
+              <span className="goal-status-value">{formatSampleAge(metrics.telemetry.transport_lag_ms)}</span>
+            </div>
+            <div className="goal-status-metric">
+              <span className="goal-status-label">Fan-out Lag</span>
+              <span className="goal-status-value">{formatSampleAge(metrics.telemetry.controller_fanout_lag_ms)}</span>
+            </div>
+            <div className="goal-status-metric">
+              <span className="goal-status-label">Delivery Lag</span>
+              <span className="goal-status-value">{formatSampleAge(metrics.telemetry.delivery_lag_ms)}</span>
+            </div>
+            <div className="goal-status-metric">
+              <span className="goal-status-label">End-to-End Age</span>
+              <span className="goal-status-value">{formatSampleAge(metrics.telemetry.end_to_end_age_ms)}</span>
+            </div>
+            <div className="goal-status-metric">
+              <span className="goal-status-label">Collected At</span>
+              <span className="goal-status-value">{formatTelemetryTime(metrics.telemetry.collected_at)}</span>
+            </div>
+            <div className="goal-status-metric">
+              <span className="goal-status-label">Generator Publish</span>
+              <span className="goal-status-value">{formatTelemetryTime(metrics.telemetry.generator_published_at)}</span>
+            </div>
+            <div className="goal-status-metric">
+              <span className="goal-status-label">Controller Receive</span>
+              <span className="goal-status-value">{formatTelemetryTime(metrics.telemetry.controller_received_at)}</span>
+            </div>
+            <div className="goal-status-metric">
+              <span className="goal-status-label">Published At</span>
+              <span className="goal-status-value">{formatTelemetryTime(metrics.telemetry.published_at)}</span>
+            </div>
+            <div className="goal-status-metric">
+              <span className="goal-status-label">Received At</span>
+              <span className="goal-status-value">{formatTelemetryTime(metrics.telemetry.client_received_at)}</span>
+            </div>
+            <div className="goal-status-metric">
+              <span className="goal-status-label">History Window</span>
+              <span className="goal-status-value">{metrics.telemetry.history_points ?? 0}</span>
+            </div>
+            <div className="goal-status-metric">
+              <span className="goal-status-label">WS Clients</span>
+              <span className="goal-status-value">{metrics.telemetry.websocket_clients ?? 0}</span>
+            </div>
+            <div className="goal-status-metric">
+              <span className="goal-status-label">WS Drops</span>
+              <span className="goal-status-value">{(metrics.telemetry.websocket_dropped_messages ?? 0) + (metrics.telemetry.websocket_dropped_events ?? 0)}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {isGoalOriented && (
         <div className="goal-status-card">
           <div className="goal-status-header">

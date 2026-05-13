@@ -172,4 +172,13 @@ func TestJMSRequestReplyEchoesResponse(t *testing.T) {
 	if result.Extractions["jms_correlation_id"] != result.Extractions["jms_request_message_id"] {
 		t.Fatalf("correlation_id = %q, want request message id %q", result.Extractions["jms_correlation_id"], result.Extractions["jms_request_message_id"])
 	}
+	if result.CorrelationID == "" {
+		t.Fatal("expected first-class correlation id on result")
+	}
+	if result.DependencyType != "jms_queue" {
+		t.Fatalf("DependencyType = %q, want jms_queue", result.DependencyType)
+	}
+	if result.DependencyTarget != "orders.request" {
+		t.Fatalf("DependencyTarget = %q, want orders.request", result.DependencyTarget)
+	}
 }

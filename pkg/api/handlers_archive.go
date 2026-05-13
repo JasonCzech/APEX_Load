@@ -204,8 +204,11 @@ func parseArchivePage(w http.ResponseWriter, r *http.Request) (archivePage, bool
 
 func parseTransactionEventFilter(w http.ResponseWriter, r *http.Request) (transactionEventFilter, bool) {
 	filter := transactionEventFilter{
-		Action: r.URL.Query().Get("action"),
-		Group:  r.URL.Query().Get("group"),
+		Action:           r.URL.Query().Get("action"),
+		Group:            r.URL.Query().Get("group"),
+		CorrelationID:    r.URL.Query().Get("correlation_id"),
+		DependencyType:   r.URL.Query().Get("dependency_type"),
+		DependencyTarget: r.URL.Query().Get("dependency_target"),
 	}
 	if raw := r.URL.Query().Get("success"); raw != "" {
 		parsed, err := strconv.ParseBool(raw)

@@ -97,6 +97,14 @@ message MetricsBatch {
   repeated GroupMetric groups = 6;
   string lifecycle_state = 7;
   string lifecycle_error = 8;
+  MetricsBatchTelemetry telemetry = 9;
+}
+
+message MetricsBatchTelemetry {
+  int64 dropped_results = 1;
+  int64 collected_at_unix_ms = 2;
+  int64 published_at_unix_ms = 3;
+  double sample_age_ms = 4;
 }
 
 message GroupMetric {
@@ -117,6 +125,9 @@ message TransactionMetric {
   int32 status_code = 10;
   bool success = 11;
   string error_message = 12;
+  string correlation_id = 13;
+  string dependency_type = 14;
+  string dependency_target = 15;
 }
 
 message GeneratorStats {

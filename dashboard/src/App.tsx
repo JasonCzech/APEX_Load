@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react'
 import { useDashboardTheme } from './hooks/useDashboardTheme'
 import { useWebSocket } from './hooks/useWebSocket'
 import { ApplicationProvider, useApplication } from './hooks/useApplication'
-import { WSMessage, MetricsHistoryPoint } from './types'
+import { MetricsHistoryPoint, TelemetryDiagnostic, TelemetryDiagnosticEntry, WSMessage } from './types'
 import Sidebar, { NavPage } from './components/Sidebar'
 import TestHub from './components/TestHub'
 import TestExecution from './components/TestExecution'
@@ -12,6 +12,7 @@ import ResultsPage from './components/ResultsPage'
 import NewTestPage from './components/NewTestPage'
 import MonitoringPage from './components/MonitoringPage'
 import SettingsPage from './components/SettingsPage'
+import { appendTelemetryDiagnostic } from './components/monitoringTelemetryDiagnostics'
 import './App.css'
 import './components/Pages.css'
 
@@ -24,6 +25,7 @@ function AppShell() {
   const [view, setView] = useState<View>({ page: 'dashboard' })
   const [metricsHistory, setMetricsHistory] = useState<Record<string, MetricsHistoryPoint[]>>({})
   const [testStatuses, setTestStatuses] = useState<Record<string, string>>({})
+  const [telemetryDiagnostics, setTelemetryDiagnostics] = useState<TelemetryDiagnosticEntry[]>([])
   const { theme, setTheme } = useDashboardTheme()
   const scriptMode = view.page === 'scripts' && 'mode' in view ? view.mode : undefined
   const scriptEditId = view.page === 'scripts' && 'scriptId' in view ? view.scriptId : undefined
@@ -64,6 +66,20 @@ function AppShell() {
         const updated = [...existing, point].slice(-300)
         return { ...prev, [testId]: updated }
       })
+    }
+
+    if (msg.type === 'telemetry_diagnostic' && msg.data && msg.test_id && msg.timestamp) {
+      const diagnostic = msg.data as unknown as TelemetryDiagnostic
+      if (diagnostic.summary && diagnostic.severity) {
+        const testId = msg.test_id
+        const timestamp = msg.timestamp
+        setTelemetryDiagnostics((prev) => appendTelemetryDiagnostic(prev, {
+          test_id: testId,
+          test_name: msg.test_name,
+          timestamp,
+          diagnostic,
+        }))
+      }
     }
 
     if (msg.status && msg.test_id) {
@@ -140,7 +156,7 @@ function AppShell() {
             activeRelease={activeRelease}
           />
         )}
-        {view.page === 'monitoring' && <MonitoringPage connectionState={connectionState} />}
+        {view.page === 'monitoring' && <MonitoringPage connectionState={connectionState} telemetryDiagnostics={telemetryDiagnostics} />}
         {view.page === 'settings' && <SettingsPage theme={theme} onThemeChange={setTheme} />}
       </main>
     </div>

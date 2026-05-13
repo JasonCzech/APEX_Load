@@ -67,6 +67,15 @@ type MetricsBatch struct {
 	Groups          []GroupMetric
 	LifecycleState  string
 	LifecycleError  string
+	Telemetry       *MetricsTelemetry
+}
+
+type MetricsTelemetry struct {
+	DroppedResults    int64
+	CollectedAtUnixMs int64
+	PublishedAtUnixMs int64
+	ControllerReceivedAtUnixMs int64
+	SampleAgeMs       float64
 }
 
 type GroupMetric struct {
@@ -82,6 +91,9 @@ type TransactionMetric struct {
 	ErrorMessage  string
 	BytesSent     int64
 	BytesReceived int64
+	CorrelationID string
+	DependencyType string
+	DependencyTarget string
 }
 
 type StopResult struct {
@@ -335,6 +347,9 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 			ErrorMessage:  tx.GetErrorMessage(),
 			BytesSent:     tx.GetBytesSent(),
 			BytesReceived: tx.GetBytesReceived(),
+			CorrelationID: tx.GetCorrelationId(),
+			DependencyType: tx.GetDependencyType(),
+			DependencyTarget: tx.GetDependencyTarget(),
 		})
 	}
 
@@ -355,6 +370,15 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 			GoroutineCount: batch.GetStats().GetGoroutineCount(),
 		}
 	}
+	var telemetry *MetricsTelemetry
+	if batch.GetTelemetry() != nil {
+		telemetry = &MetricsTelemetry{
+			DroppedResults:    batch.GetTelemetry().GetDroppedResults(),
+			CollectedAtUnixMs: batch.GetTelemetry().GetCollectedAtUnixMs(),
+			PublishedAtUnixMs: batch.GetTelemetry().GetPublishedAtUnixMs(),
+			SampleAgeMs:       batch.GetTelemetry().GetSampleAgeMs(),
+		}
+	}
 
 	return MetricsBatch{
 		TestID:          batch.GetTestId(),
@@ -365,6 +389,7 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 		Groups:          groups,
 		LifecycleState:  batch.GetLifecycleState(),
 		LifecycleError:  batch.GetLifecycleError(),
+		Telemetry:       telemetry,
 	}, nil
 }
 

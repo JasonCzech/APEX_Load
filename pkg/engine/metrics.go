@@ -22,6 +22,7 @@ type liveCounters struct {
 	totalTransactions atomic.Int64
 	totalErrors       atomic.Int64
 	activeVUsers      atomic.Int64
+	droppedResults    atomic.Int64
 }
 
 type MetricsSnapshot struct {
@@ -38,7 +39,12 @@ type MetricsSnapshot struct {
 	P99          time.Duration
 	ByAction     map[string]*ActionMetrics
 	ByGroup      map[string]*GroupMetrics
+	Telemetry    *TelemetryMetrics `json:"telemetry,omitempty"`
 	Resources    *SystemResources `json:"resources,omitempty"`
+}
+
+type TelemetryMetrics struct {
+	DroppedResults int64 `json:"dropped_results,omitempty"`
 }
 
 type SystemResources struct {
@@ -65,17 +71,21 @@ type GroupMetrics struct {
 }
 
 type ActionMetrics struct {
-	Name        string
-	Count       int64
-	Errors      int64
-	AvgDuration time.Duration
-	MinDuration time.Duration
-	MaxDuration time.Duration
-	P50         time.Duration
-	P90         time.Duration
-	P99         time.Duration
-	BytesSent   int64
-	BytesRecv   int64
+	Name             string
+	DependencyType   string
+	DependencyTarget string
+	CorrelationIDs   []string
+	CorrelationCount int64
+	Count            int64
+	Errors           int64
+	AvgDuration      time.Duration
+	MinDuration      time.Duration
+	MaxDuration      time.Duration
+	P50              time.Duration
+	P90              time.Duration
+	P99              time.Duration
+	BytesSent        int64
+	BytesRecv        int64
 }
 
 func NewMetricsCollector(bufferSize int) *MetricsCollector {
@@ -98,7 +108,8 @@ func (mc *MetricsCollector) Record(r *protocol.Result) {
 	select {
 	case mc.ch <- r:
 	default:
-		// channel full — drop oldest metric rather than blocking the hot path
+		mc.current.droppedResults.Add(1)
+		// channel full — drop metric rather than blocking the hot path
 	}
 }
 
@@ -152,6 +163,7 @@ func (mc *MetricsCollector) RecordTransaction(name string, duration time.Duratio
 	select {
 	case mc.ch <- r:
 	default:
+		mc.current.droppedResults.Add(1)
 	}
 }
 
@@ -202,6 +214,9 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 		ActiveVUsers: mc.current.activeVUsers.Load(),
 		ByAction:     make(map[string]*ActionMetrics),
 		ByGroup:      make(map[string]*GroupMetrics),
+		Telemetry: &TelemetryMetrics{
+			DroppedResults: mc.current.droppedResults.Load(),
+		},
 	}
 
 	var totalDuration time.Duration
@@ -230,6 +245,7 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 		if !r.Success {
 			am.Errors++
 		}
+		mergeActionMetadata(am, r)
 		am.BytesSent += r.BytesSent
 		am.BytesRecv += r.BytesReceived
 		if r.Duration < am.MinDuration {
@@ -279,4 +295,39 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 	}
 
 	return snap
+}
+
+const maxCorrelationSamplesPerAction = 3
+
+func mergeActionMetadata(metrics *ActionMetrics, result *protocol.Result) {
+	if metrics == nil || result == nil {
+		return
+	}
+	mergeStableActionMetadata(&metrics.DependencyType, result.DependencyType)
+	mergeStableActionMetadata(&metrics.DependencyTarget, result.DependencyTarget)
+	if result.CorrelationID == "" {
+		return
+	}
+	metrics.CorrelationCount++
+	for _, existing := range metrics.CorrelationIDs {
+		if existing == result.CorrelationID {
+			return
+		}
+	}
+	if len(metrics.CorrelationIDs) < maxCorrelationSamplesPerAction {
+		metrics.CorrelationIDs = append(metrics.CorrelationIDs, result.CorrelationID)
+	}
+}
+
+func mergeStableActionMetadata(current *string, next string) {
+	if current == nil || next == "" {
+		return
+	}
+	if *current == "" {
+		*current = next
+		return
+	}
+	if *current != next {
+		*current = "multiple"
+	}
 }

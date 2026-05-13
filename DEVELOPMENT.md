@@ -34,10 +34,12 @@ The **VUser execution engine** — the heart of load generation.
 - `Engine`: Main orchestrator; manages goroutine lifecycle, pacing, metrics collection
 - `VUser`: Individual goroutine representing a single user
 - `MetricsCollector`: Aggregates latency, throughput, errors; produces t-digest percentiles
+- `MetricsCollector`: Aggregates latency, throughput, errors; now also exposes dropped-result telemetry so hot-path loss is visible
 - `Pacing`: Ramp-up scheduling (linear, stepped, immediate)
 
 **Hot Path Behavior:**
 - Metrics use **buffered channels** (capacity 10,000) for zero-lock collection
+- Buffered metrics that overflow are dropped instead of blocking VUsers; drop counts must be monitored in live telemetry
 - VUser goroutines run idle wait loops on short-lived contexts
 - Sync.Pool reuses request/response buffers to reduce GC pressure
 
@@ -147,12 +149,20 @@ type Protocol interface {
 **WebSocket Message Types:**
 ```
 metrics_update    — periodic metrics snapshot
+telemetry_diagnostic — sampled telemetry degradation/recovery events
 test_created      — test queued/initialized
 test_started      — test moved to running state
 test_complete     — test finished successfully
 test_failed       — test encountered error
 test_stopping     — graceful stop initiated
 ```
+
+Live execution telemetry now preserves generator collection and publish timestamps for distributed runs, stamps controller receipt and publish times, and lets the dashboard show generator lag, transport lag, controller fan-out lag, client delivery lag, and end-to-end freshness separately from websocket drop pressure.
+When that telemetry becomes stale or starts dropping samples/messages, the controller now emits sampled `telemetry_diagnostic` events so Monitoring can show degradation details without inflating the main live metrics envelope.
+Interval history is now persisted as typed summary rows in SQLite, and distributed generator batches now carry generator-side telemetry fields so dropped-result and freshness signals survive remote aggregation instead of being reconstructed only at the controller edge.
+HTTP and JMS results now also stamp first-class correlation IDs plus dependency type/target metadata, which the engine rolls into bounded live transaction summaries and the archive layer preserves in JSONL, Parquet, and archive query filters.
+Those sampled `telemetry_diagnostic` events now also include bounded slow/error transaction hotspot samples derived from live transaction rollups, so the Monitoring page can show protocol-aware problem transactions without expanding the main `metrics_update` envelope.
+Typed interval-summary rows now carry an explicit schema version in SQLite, and store initialization backfills legacy typed summary plus archive rows so telemetry-family migrations can evolve without depending on implicit column shape alone. The latest interval-summary schema version also persists distributed lag-stage timestamps so stored execution history matches the live telemetry model.
 
 ### `pkg/engine/metrics`
 

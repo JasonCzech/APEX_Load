@@ -92,7 +92,7 @@ func TestArchiveQueryEndpoints(t *testing.T) {
 	})
 
 	t.Run("transactions", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/archive/transactions?limit=5&offset=0&action=step-1&success=true", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/archive/transactions?limit=5&offset=0&action=step-1&success=true&correlation_id=corr-archive-1&dependency_type=http&dependency_target=archive.example.test", nil)
 		resp := httptest.NewRecorder()
 		server.mux.ServeHTTP(resp, req)
 
@@ -114,6 +114,12 @@ func TestArchiveQueryEndpoints(t *testing.T) {
 		}
 		if !payload.Transactions[0].Success {
 			t.Fatal("expected filtered transaction to be successful")
+		}
+		if payload.Transactions[0].CorrelationID != "corr-archive-1" {
+			t.Fatalf("transaction correlation_id = %q, want corr-archive-1", payload.Transactions[0].CorrelationID)
+		}
+		if payload.Transactions[0].DependencyType != "http" || payload.Transactions[0].DependencyTarget != "archive.example.test" {
+			t.Fatalf("unexpected transaction dependency metadata: %#v", payload.Transactions[0])
 		}
 	})
 

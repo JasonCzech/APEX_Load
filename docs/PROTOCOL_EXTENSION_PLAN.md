@@ -261,4 +261,6 @@ This plan keeps protocol execution aligned with Stormrunner's current architectu
 - Java-over-HTTP is constrained to a runtime-safe, measurable, codec-specific implementation.
 - Dashboard and authoring improvements follow stable runtime and DSL contracts.
 
+Future browser-side client metrics work is tracked separately in `docs/BROWSER_CLIENT_METRICS_PLAN.md`. That plan deliberately scopes the work to web-application browser telemetry rather than full desktop-protocol parity, so the architecture and positioning stay aligned with the current generator model.
+
 That sequencing reduces risk, preserves the current generator model, and makes the roadmap executable instead of aspirational.

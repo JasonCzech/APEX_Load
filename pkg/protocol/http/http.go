@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptrace"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -73,9 +74,10 @@ func (h *HTTP) Init(ctx context.Context, config map[string]any) error {
 
 func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.Result, error) {
 	result := &protocol.Result{
-		ActionName:  action.Name,
-		StartTime:   time.Now(),
-		Extractions: make(map[string]string),
+		ActionName:     action.Name,
+		StartTime:      time.Now(),
+		Extractions:    make(map[string]string),
+		DependencyType: "http",
 	}
 
 	targetURL := h.resolveURL(action.Target)
@@ -95,6 +97,8 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		result.ErrorMessage = err.Error()
 		return result, nil
 	}
+	result.DependencyTarget = classifyHTTPDependencyTarget(targetURL)
+	result.CorrelationID = correlationIDFromHeaders(action.Headers)
 
 	// Apply default headers first
 	for k, v := range h.defaultHeaders {
@@ -145,6 +149,9 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	result.StatusCode = resp.StatusCode
 	result.BytesReceived = n
 	result.Success = resp.StatusCode >= 200 && resp.StatusCode < 400
+	if result.CorrelationID == "" {
+		result.CorrelationID = correlationIDFromHTTPHeader(resp.Header)
+	}
 
 	respBody := buf.Bytes()
 	result.ResponseBody = string(respBody)
@@ -208,4 +215,32 @@ func parseTLSVersion(v string) (uint16, error) {
 	default:
 		return 0, fmt.Errorf("unknown TLS version: %s", v)
 	}
+}
+
+func classifyHTTPDependencyTarget(targetURL string) string {
+	parsed, err := url.Parse(targetURL)
+	if err != nil {
+		return ""
+	}
+	return parsed.Host
+}
+
+func correlationIDFromHeaders(headers map[string]string) string {
+	if len(headers) == 0 {
+		return ""
+	}
+	canonical := make(http.Header, len(headers))
+	for key, value := range headers {
+		canonical.Set(key, value)
+	}
+	return correlationIDFromHTTPHeader(canonical)
+}
+
+func correlationIDFromHTTPHeader(headers http.Header) string {
+	for _, key := range []string{"X-Correlation-Id", "X-Request-Id", "Traceparent", "X-Amzn-Trace-Id", "Correlation-Id", "Request-Id"} {
+		if value := strings.TrimSpace(headers.Get(key)); value != "" {
+			return value
+		}
+	}
+	return ""
 }

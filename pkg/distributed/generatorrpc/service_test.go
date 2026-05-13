@@ -444,7 +444,7 @@ func TestServicePublishMetricsBroadcastsTransactions(t *testing.T) {
 		ErrorMessage:  "remote failure",
 		BytesSent:     256,
 		BytesReceived: 512,
-	}})
+	}}, MetricsTelemetry{DroppedResults: 3, CollectedAtUnixMs: 1000, PublishedAtUnixMs: 1300, SampleAgeMs: 300})
 	if err != nil {
 		t.Fatalf("PublishMetrics: %v", err)
 	}
@@ -467,6 +467,12 @@ func TestServicePublishMetricsBroadcastsTransactions(t *testing.T) {
 	}
 	if batch.Transactions[1].ErrorMessage != "remote failure" {
 		t.Fatalf("snapshot transaction error = %q, want remote failure", batch.Transactions[1].ErrorMessage)
+	}
+	if batch.Telemetry == nil {
+		t.Fatal("expected telemetry on metrics batch")
+	}
+	if batch.Telemetry.DroppedResults != 3 || batch.Telemetry.CollectedAtUnixMs != 1000 || batch.Telemetry.PublishedAtUnixMs != 1300 || batch.Telemetry.SampleAgeMs != 300 {
+		t.Fatalf("unexpected metrics telemetry: %#v", batch.Telemetry)
 	}
 
 	if err := metrics.CloseSend(); err != nil {

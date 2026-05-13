@@ -359,8 +359,54 @@ export interface LiveMetrics {
   transactions?: Record<string, TxMetrics>
   groups?: Record<string, GroupLiveMetrics>
   goal_status?: GoalStatus
+  telemetry?: TelemetryHealth
   resources?: SystemResources
   latency?: NetworkLatency
+}
+
+export interface TelemetryHealth {
+  dropped_results?: number
+  history_points?: number
+  websocket_clients?: number
+  websocket_dropped_messages?: number
+  websocket_dropped_events?: number
+  generator_published_at?: string
+  controller_received_at?: string
+  collected_at?: string
+  published_at?: string
+  client_received_at?: string
+  generator_processing_lag_ms?: number
+  transport_lag_ms?: number
+  controller_fanout_lag_ms?: number
+  delivery_lag_ms?: number
+  end_to_end_age_ms?: number
+  sample_age_ms?: number
+}
+
+export interface TelemetryDiagnostic {
+  severity: 'healthy' | 'warning' | 'danger'
+  summary: string
+  conditions?: string[]
+  samples?: {
+    issue: 'slow' | 'error'
+    transaction: string
+    dependency_type?: string
+    dependency_target?: string
+    correlation_ids?: string[]
+    count?: number
+    errors?: number
+    error_pct?: number
+    avg_ms?: number
+    p99_ms?: number
+  }[]
+  telemetry?: TelemetryHealth
+}
+
+export interface TelemetryDiagnosticEntry {
+  test_id: string
+  test_name?: string
+  timestamp: string
+  diagnostic: TelemetryDiagnostic
 }
 
 export interface NetworkLatency {

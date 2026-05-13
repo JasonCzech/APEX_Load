@@ -33,6 +33,7 @@ type assignedTest struct {
 	groups            map[string]int32
 	activeGroups      map[string]int32
 	groupStats        map[string]GeneratorStats
+	groupTelemetry    map[string]MetricsTelemetry
 	groupTransactions map[string][]TransactionMetric
 }
 
@@ -64,6 +65,9 @@ func (b *transactionBuffer) RecordResult(result *protocol.Result) error {
 		ErrorMessage:  result.ErrorMessage,
 		BytesSent:     result.BytesSent,
 		BytesReceived: result.BytesReceived,
+		CorrelationID: result.CorrelationID,
+		DependencyType: result.DependencyType,
+		DependencyTarget: result.DependencyTarget,
 	})
 	if len(b.transactions) > 1024 {
 		b.transactions = append([]TransactionMetric(nil), b.transactions[len(b.transactions)-1024:]...)
@@ -191,6 +195,9 @@ func (s *Service) AssignWork(_ context.Context, assignment *pb.WorkAssignment) (
 	}
 	if current.groupStats == nil {
 		current.groupStats = make(map[string]GeneratorStats)
+	}
+	if current.groupTelemetry == nil {
+		current.groupTelemetry = make(map[string]MetricsTelemetry)
 	}
 	if current.groupTransactions == nil {
 		current.groupTransactions = make(map[string][]TransactionMetric)
@@ -537,7 +544,7 @@ func (s *Service) FailTest(testID string, message string) {
 	s.broadcastMetrics(s.metricsBatchForState(testID, 0, false, assignment.groups, "FAILED", message))
 }
 
-func (s *Service) PublishMetrics(testID string, groupName string, stats GeneratorStats, transactions []TransactionMetric) error {
+func (s *Service) PublishMetrics(testID string, groupName string, stats GeneratorStats, transactions []TransactionMetric, telemetry MetricsTelemetry) error {
 	if testID == "" {
 		return status.Error(codes.InvalidArgument, "test_id is required")
 	}
@@ -557,11 +564,15 @@ func (s *Service) PublishMetrics(testID string, groupName string, stats Generato
 	if assignment.groupStats == nil {
 		assignment.groupStats = make(map[string]GeneratorStats)
 	}
+	if assignment.groupTelemetry == nil {
+		assignment.groupTelemetry = make(map[string]MetricsTelemetry)
+	}
 	if assignment.groupTransactions == nil {
 		assignment.groupTransactions = make(map[string][]TransactionMetric)
 	}
 	assignment.activeGroups[groupName] = stats.ActiveVUsers
 	assignment.groupStats[groupName] = stats
+	assignment.groupTelemetry[groupName] = telemetry
 	assignment.groupTransactions[groupName] = append([]TransactionMetric(nil), transactions...)
 	s.assignments[testID] = assignment
 	batch := s.metricsBatchLocked(testID)
@@ -674,6 +685,7 @@ func (s *Service) metricsBatchLocked(testID string) *pb.MetricsBatch {
 		stats.MemoryBytes += groupStats.MemoryBytes
 		stats.GoroutineCount += groupStats.GoroutineCount
 	}
+	telemetry := mergeMetricsTelemetry(assignment.groupTelemetry)
 	transactions := make([]TransactionMetric, 0)
 	for _, groupTransactions := range assignment.groupTransactions {
 		transactions = append(transactions, groupTransactions...)
@@ -684,14 +696,14 @@ func (s *Service) metricsBatchLocked(testID string) *pb.MetricsBatch {
 	if stats.ActiveVUsers == 0 && len(groupAssignments) == 0 {
 		stats.ActiveVUsers = assignment.vuserCount
 	}
-	return s.metricsBatchForMetrics(testID, stats, transactions, assignment.paused, groupAssignments, lifecycleState, "")
+	return s.metricsBatchForMetrics(testID, stats, transactions, assignment.paused, groupAssignments, lifecycleState, "", telemetry)
 }
 
 func (s *Service) metricsBatchForState(testID string, vuserCount int32, paused bool, groupAssignments map[string]int32, lifecycleState string, lifecycleError string) *pb.MetricsBatch {
-	return s.metricsBatchForMetrics(testID, GeneratorStats{ActiveVUsers: vuserCount}, nil, paused, groupAssignments, lifecycleState, lifecycleError)
+	return s.metricsBatchForMetrics(testID, GeneratorStats{ActiveVUsers: vuserCount}, nil, paused, groupAssignments, lifecycleState, lifecycleError, nil)
 }
 
-func (s *Service) metricsBatchForMetrics(testID string, stats GeneratorStats, transactions []TransactionMetric, paused bool, groupAssignments map[string]int32, lifecycleState string, lifecycleError string) *pb.MetricsBatch {
+func (s *Service) metricsBatchForMetrics(testID string, stats GeneratorStats, transactions []TransactionMetric, paused bool, groupAssignments map[string]int32, lifecycleState string, lifecycleError string, telemetry *MetricsTelemetry) *pb.MetricsBatch {
 	activeVUsers := stats.ActiveVUsers
 	if paused {
 		activeVUsers = 0
@@ -718,7 +730,19 @@ func (s *Service) metricsBatchForMetrics(testID string, stats GeneratorStats, tr
 			ErrorMessage:  tx.ErrorMessage,
 			BytesSent:     tx.BytesSent,
 			BytesReceived: tx.BytesReceived,
+			CorrelationId: tx.CorrelationID,
+			DependencyType: tx.DependencyType,
+			DependencyTarget: tx.DependencyTarget,
 		})
+	}
+	var protoTelemetry *pb.MetricsBatchTelemetry
+	if telemetry != nil {
+		protoTelemetry = &pb.MetricsBatchTelemetry{
+			DroppedResults:    telemetry.DroppedResults,
+			CollectedAtUnixMs: telemetry.CollectedAtUnixMs,
+			PublishedAtUnixMs: telemetry.PublishedAtUnixMs,
+			SampleAgeMs:       telemetry.SampleAgeMs,
+		}
 	}
 	return &pb.MetricsBatch{
 		TestId:          testID,
@@ -729,7 +753,32 @@ func (s *Service) metricsBatchForMetrics(testID string, stats GeneratorStats, tr
 		Groups:          groups,
 		LifecycleState:  lifecycleState,
 		LifecycleError:  lifecycleError,
+		Telemetry:       protoTelemetry,
 	}
+}
+
+func mergeMetricsTelemetry(values map[string]MetricsTelemetry) *MetricsTelemetry {
+	if len(values) == 0 {
+		return nil
+	}
+	combined := &MetricsTelemetry{}
+	hasCollectedAt := false
+	hasPublishedAt := false
+	for _, value := range values {
+		combined.DroppedResults += value.DroppedResults
+		if value.CollectedAtUnixMs > 0 && (!hasCollectedAt || value.CollectedAtUnixMs < combined.CollectedAtUnixMs) {
+			combined.CollectedAtUnixMs = value.CollectedAtUnixMs
+			hasCollectedAt = true
+		}
+		if value.PublishedAtUnixMs > 0 && (!hasPublishedAt || value.PublishedAtUnixMs > combined.PublishedAtUnixMs) {
+			combined.PublishedAtUnixMs = value.PublishedAtUnixMs
+			hasPublishedAt = true
+		}
+		if value.SampleAgeMs > combined.SampleAgeMs {
+			combined.SampleAgeMs = value.SampleAgeMs
+		}
+	}
+	return combined
 }
 
 func (s *Service) scheduleCompletionLocked(testID string, duration time.Duration) {
@@ -860,14 +909,22 @@ func (s *Service) publishExecutionSnapshot(testID string, groupName string, exec
 		return
 	}
 	stats := GeneratorStats{GoroutineCount: int32(runtime.NumGoroutine())}
+	telemetry := MetricsTelemetry{}
 	if ok {
 		stats.ActiveVUsers = int32(snapshot.ActiveVUsers)
 		if snapshot.Resources != nil {
 			stats.CPUPercent = snapshot.Resources.CPUProcessPct
 			stats.MemoryBytes = int64(snapshot.Resources.MemProcessMb * 1024 * 1024)
 		}
+		telemetry.CollectedAtUnixMs = snapshot.Timestamp.UnixMilli()
+		now := time.Now()
+		telemetry.PublishedAtUnixMs = now.UnixMilli()
+		telemetry.SampleAgeMs = float64(now.Sub(snapshot.Timestamp).Microseconds()) / 1000.0
+		if snapshot.Telemetry != nil {
+			telemetry.DroppedResults = snapshot.Telemetry.DroppedResults
+		}
 	}
-	_ = s.PublishMetrics(testID, groupName, stats, transactions)
+	_ = s.PublishMetrics(testID, groupName, stats, transactions, telemetry)
 }
 
 func (s *Service) finishExecution(testID string, groupName string, err error) {
@@ -888,6 +945,9 @@ func (s *Service) finishExecution(testID string, groupName string, err error) {
 	}
 	if assignment.groupStats != nil {
 		delete(assignment.groupStats, groupName)
+	}
+	if assignment.groupTelemetry != nil {
+		delete(assignment.groupTelemetry, groupName)
 	}
 	if assignment.groupTransactions != nil {
 		delete(assignment.groupTransactions, groupName)

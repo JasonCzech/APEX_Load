@@ -476,6 +476,10 @@ func (b *distributedExecutionBackend) consumeMetrics(ctx context.Context, tr *Te
 		if batch.TestID != test.ID {
 			continue
 		}
+		if batch.Telemetry == nil {
+			batch.Telemetry = &generatorrpc.MetricsTelemetry{}
+		}
+		batch.Telemetry.ControllerReceivedAtUnixMs = time.Now().UnixMilli()
 		live, finalStatus, finalError := b.applyRemoteMetricsBatch(tr, test, target, batch)
 		tr.publishLiveMetrics(test, live, nil)
 		switch finalStatus {
@@ -969,6 +973,9 @@ func cloneMetricsStreamMap(values map[string]*generatorrpc.MetricsStream) map[st
 func aggregateDistributedMetricsBatches(testID string, batches map[string]generatorrpc.MetricsBatch) generatorrpc.MetricsBatch {
 	combined := generatorrpc.MetricsBatch{TestID: testID, GeneratorID: "distributed"}
 	targets := make([]string, 0, len(batches))
+	hasCollectedAt := false
+	hasPublishedAt := false
+	hasControllerReceivedAt := false
 	for target := range batches {
 		targets = append(targets, target)
 	}
@@ -984,6 +991,27 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 		combined.Stats.GoroutineCount += batch.Stats.GoroutineCount
 		combined.Transactions = append(combined.Transactions, batch.Transactions...)
 		combined.Groups = append(combined.Groups, batch.Groups...)
+		if batch.Telemetry != nil {
+			if combined.Telemetry == nil {
+				combined.Telemetry = &generatorrpc.MetricsTelemetry{}
+			}
+			combined.Telemetry.DroppedResults += batch.Telemetry.DroppedResults
+			if batch.Telemetry.CollectedAtUnixMs > 0 && (!hasCollectedAt || batch.Telemetry.CollectedAtUnixMs < combined.Telemetry.CollectedAtUnixMs) {
+				combined.Telemetry.CollectedAtUnixMs = batch.Telemetry.CollectedAtUnixMs
+				hasCollectedAt = true
+			}
+			if batch.Telemetry.PublishedAtUnixMs > 0 && (!hasPublishedAt || batch.Telemetry.PublishedAtUnixMs > combined.Telemetry.PublishedAtUnixMs) {
+				combined.Telemetry.PublishedAtUnixMs = batch.Telemetry.PublishedAtUnixMs
+				hasPublishedAt = true
+			}
+			if batch.Telemetry.ControllerReceivedAtUnixMs > 0 && (!hasControllerReceivedAt || batch.Telemetry.ControllerReceivedAtUnixMs > combined.Telemetry.ControllerReceivedAtUnixMs) {
+				combined.Telemetry.ControllerReceivedAtUnixMs = batch.Telemetry.ControllerReceivedAtUnixMs
+				hasControllerReceivedAt = true
+			}
+			if batch.Telemetry.SampleAgeMs > combined.Telemetry.SampleAgeMs {
+				combined.Telemetry.SampleAgeMs = batch.Telemetry.SampleAgeMs
+			}
+		}
 	}
 	sort.Slice(combined.Groups, func(left int, right int) bool {
 		return combined.Groups[left].Name < combined.Groups[right].Name
@@ -1002,10 +1030,33 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 		ActiveVUsers: int64(batch.Stats.ActiveVUsers),
 		Transactions: make(map[string]*TxMetrics),
 		GroupMetrics: make(map[string]*GroupLiveMetrics),
+		Telemetry: &TelemetryHealth{},
 		Resources: &engine.SystemResources{
 			CPUProcessPct: batch.Stats.CPUPercent,
 			MemProcessMb:  float64(batch.Stats.MemoryBytes) / (1024 * 1024),
 		},
+	}
+	if batch.Telemetry != nil {
+		live.Telemetry.DroppedResults = batch.Telemetry.DroppedResults
+		if batch.Telemetry.CollectedAtUnixMs > 0 {
+			live.Telemetry.CollectedAt = time.UnixMilli(batch.Telemetry.CollectedAtUnixMs)
+		}
+		if batch.Telemetry.PublishedAtUnixMs > 0 {
+			live.Telemetry.GeneratorPublishedAt = time.UnixMilli(batch.Telemetry.PublishedAtUnixMs)
+		}
+		if batch.Telemetry.ControllerReceivedAtUnixMs > 0 {
+			live.Telemetry.ControllerReceivedAt = time.UnixMilli(batch.Telemetry.ControllerReceivedAtUnixMs)
+		}
+		if !live.Telemetry.CollectedAt.IsZero() && !live.Telemetry.GeneratorPublishedAt.IsZero() {
+			live.Telemetry.GeneratorProcessingLagMs = float64(live.Telemetry.GeneratorPublishedAt.Sub(live.Telemetry.CollectedAt).Microseconds()) / 1000.0
+		}
+		if !live.Telemetry.GeneratorPublishedAt.IsZero() && !live.Telemetry.ControllerReceivedAt.IsZero() {
+			live.Telemetry.TransportLagMs = float64(live.Telemetry.ControllerReceivedAt.Sub(live.Telemetry.GeneratorPublishedAt).Microseconds()) / 1000.0
+		}
+		live.Telemetry.SampleAgeMs = batch.Telemetry.SampleAgeMs
+	}
+	if live.Telemetry.CollectedAt.IsZero() {
+		live.Telemetry.CollectedAt = timestamp
 	}
 
 	durationsByName := make(map[string][]float64)
@@ -1025,6 +1076,7 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 		if !tx.Success {
 			metrics.Errors++
 		}
+		mergeTransactionMetricMetadata(metrics, tx.DependencyType, tx.DependencyTarget, tx.CorrelationID)
 		metrics.AvgMs += tx.DurationMs
 	}
 
@@ -1053,7 +1105,6 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 		live.P95Ms = percentileValue(allDurations, 0.95)
 		live.P99Ms = percentileValue(allDurations, 0.99)
 	}
-
 	if len(batch.Groups) > 0 {
 		for _, group := range batch.Groups {
 			live.GroupMetrics[group.Name] = &GroupLiveMetrics{
@@ -1084,6 +1135,39 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 	}
 
 	return live
+}
+
+func mergeTransactionMetricMetadata(metrics *TxMetrics, dependencyType string, dependencyTarget string, correlationID string) {
+	if metrics == nil {
+		return
+	}
+	mergeStableTxMetadata(&metrics.DependencyType, dependencyType)
+	mergeStableTxMetadata(&metrics.DependencyTarget, dependencyTarget)
+	if correlationID == "" {
+		return
+	}
+	metrics.CorrelationCount++
+	for _, existing := range metrics.CorrelationIDs {
+		if existing == correlationID {
+			return
+		}
+	}
+	if len(metrics.CorrelationIDs) < 3 {
+		metrics.CorrelationIDs = append(metrics.CorrelationIDs, correlationID)
+	}
+}
+
+func mergeStableTxMetadata(current *string, next string) {
+	if current == nil || next == "" {
+		return
+	}
+	if *current == "" {
+		*current = next
+		return
+	}
+	if *current != next {
+		*current = "multiple"
+	}
 }
 
 func percentileValue(sorted []float64, percentile float64) float64 {

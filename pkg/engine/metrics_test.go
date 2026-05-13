@@ -39,6 +39,20 @@ func TestMetricsCollector_RecordAndCount(t *testing.T) {
 	}
 }
 
+func TestMetricsCollector_RecordTracksDroppedResults(t *testing.T) {
+	mc := NewMetricsCollector(1)
+	mc.Record(&protocol.Result{Success: true, ActionName: "a"})
+	mc.Record(&protocol.Result{Success: true, ActionName: "b"})
+
+	snap := mc.computeSnapshot(nil, time.Second)
+	if snap.Telemetry == nil {
+		t.Fatal("expected telemetry snapshot")
+	}
+	if got := snap.Telemetry.DroppedResults; got != 1 {
+		t.Fatalf("DroppedResults = %d, want 1", got)
+	}
+}
+
 func TestMetricsCollector_SetActiveVUsers(t *testing.T) {
 	mc := NewMetricsCollector(100)
 	mc.SetActiveVUsers(42)
@@ -197,6 +211,36 @@ func TestMetricsCollector_RecordTransaction(t *testing.T) {
 	_, ok = snap.ByAction["tx:iteration_1"]
 	if !ok {
 		t.Error("expected synthetic transaction in ByAction")
+	}
+}
+
+func TestMetricsCollector_ByActionCapturesDependencyAndCorrelationMetadata(t *testing.T) {
+	mc := NewMetricsCollector(100)
+	mc.Start(50 * time.Millisecond)
+	defer mc.Stop()
+
+	mc.Record(&protocol.Result{ActionName: "login", Success: true, Duration: 10 * time.Millisecond, DependencyType: "http", DependencyTarget: "api.example.test", CorrelationID: "corr-1"})
+	mc.Record(&protocol.Result{ActionName: "login", Success: true, Duration: 20 * time.Millisecond, DependencyType: "http", DependencyTarget: "api.example.test", CorrelationID: "corr-2"})
+	mc.Record(&protocol.Result{ActionName: "login", Success: true, Duration: 25 * time.Millisecond, DependencyType: "http", DependencyTarget: "api.example.test", CorrelationID: "corr-2"})
+
+	time.Sleep(150 * time.Millisecond)
+
+	snap, ok := mc.LatestSnapshot()
+	if !ok {
+		t.Fatal("expected snapshot")
+	}
+	login := snap.ByAction["login"]
+	if login == nil {
+		t.Fatal("missing action metadata for login")
+	}
+	if login.DependencyType != "http" || login.DependencyTarget != "api.example.test" {
+		t.Fatalf("unexpected dependency metadata: %#v", login)
+	}
+	if login.CorrelationCount != 3 {
+		t.Fatalf("CorrelationCount = %d, want 3", login.CorrelationCount)
+	}
+	if len(login.CorrelationIDs) != 2 {
+		t.Fatalf("CorrelationIDs = %#v, want 2 unique ids", login.CorrelationIDs)
 	}
 }
 

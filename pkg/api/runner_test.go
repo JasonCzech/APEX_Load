@@ -155,13 +155,16 @@ func (p *archiveStubProtocol) Name() string                                   { 
 func (p *archiveStubProtocol) Init(_ context.Context, _ map[string]any) error { return nil }
 func (p *archiveStubProtocol) Execute(_ context.Context, action *protocol.Action) (*protocol.Result, error) {
 	return &protocol.Result{
-		ActionName:    action.Name,
-		StartTime:     time.Now(),
-		Duration:      5 * time.Millisecond,
-		BytesSent:     128,
-		BytesReceived: 512,
-		StatusCode:    200,
-		Success:       true,
+		ActionName:       action.Name,
+		StartTime:        time.Now(),
+		Duration:         5 * time.Millisecond,
+		BytesSent:        128,
+		BytesReceived:    512,
+		StatusCode:       200,
+		Success:          true,
+		CorrelationID:    "corr-archive-1",
+		DependencyType:   "http",
+		DependencyTarget: "archive.example.test",
 	}, nil
 }
 func (p *archiveStubProtocol) Teardown(_ context.Context) error    { return nil }
@@ -614,8 +617,297 @@ func TestPublishLiveMetricsUpdatesStatePersistsHistoryAndBroadcasts(t *testing.T
 		if payload.Data == nil || payload.Data.ActiveVUsers != 12 || payload.Data.TotalTx != 44 {
 			t.Fatalf("unexpected broadcast metrics payload: %#v", payload.Data)
 		}
+		if payload.Data.Telemetry == nil {
+			t.Fatal("expected telemetry payload to be populated")
+		}
+		if payload.Data.Telemetry.HistoryPoints != 1 {
+			t.Fatalf("expected history points = 1, got %#v", payload.Data.Telemetry)
+		}
+		if payload.Data.Telemetry.PublishedAt.IsZero() {
+			t.Fatal("expected published timestamp in telemetry payload")
+		}
 	default:
 		t.Fatal("expected metrics_update broadcast")
+	}
+}
+
+func TestPublishLiveMetricsTrimsInMemoryHistory(t *testing.T) {
+	hub := NewHub()
+	runner := NewTestRunner(2, hub, nil)
+	testRun := &ManagedTest{ID: "test-1", Name: "Checkout"}
+	testRun.History = make([]*LiveMetrics, 0, maxManagedTestHistory)
+	for i := 0; i < maxManagedTestHistory; i++ {
+		testRun.History = append(testRun.History, &LiveMetrics{Timestamp: time.Unix(int64(i), 0)})
+	}
+
+	newest := &LiveMetrics{Timestamp: time.Unix(999999, 0)}
+	runner.publishLiveMetrics(testRun, newest, nil)
+
+	if got := len(testRun.History); got != maxManagedTestHistory {
+		t.Fatalf("history length = %d, want %d", got, maxManagedTestHistory)
+	}
+	if testRun.History[len(testRun.History)-1] != newest {
+		t.Fatal("expected newest metrics to remain at tail of trimmed history")
+	}
+	if oldest := testRun.History[0].Timestamp; !oldest.Equal(time.Unix(1, 0)) {
+		t.Fatalf("expected oldest retained timestamp %s, got %s", time.Unix(1, 0), oldest)
+	}
+	if newest.Telemetry == nil || newest.Telemetry.HistoryPoints != maxManagedTestHistory {
+		t.Fatalf("expected telemetry history points = %d, got %#v", maxManagedTestHistory, newest.Telemetry)
+	}
+	select {
+	case <-hub.broadcast:
+	default:
+		t.Fatal("expected metrics_update broadcast")
+	}
+}
+
+func TestPublishLiveMetricsBroadcastsTelemetryDiagnosticOnDegradation(t *testing.T) {
+	hub := NewHub()
+	runner := NewTestRunner(2, hub, nil)
+	testRun := &ManagedTest{ID: "test-1", Name: "Checkout"}
+	live := &LiveMetrics{
+		Timestamp:    time.Now(),
+		ActiveVUsers: 4,
+		TotalTx:      10,
+		Telemetry: &TelemetryHealth{
+			DroppedResults: 3,
+		},
+	}
+
+	runner.publishLiveMetrics(testRun, live, nil)
+
+	var metricsPayload struct {
+		Type string `json:"type"`
+	}
+	select {
+	case msg := <-hub.broadcast:
+		if err := json.Unmarshal(msg, &metricsPayload); err != nil {
+			t.Fatalf("failed to decode metrics payload: %v", err)
+		}
+		if metricsPayload.Type != "metrics_update" {
+			t.Fatalf("expected metrics_update first, got %#v", metricsPayload)
+		}
+	default:
+		t.Fatal("expected metrics_update broadcast")
+	}
+
+	var diagnosticPayload struct {
+		Type string               `json:"type"`
+		Data *TelemetryDiagnostic `json:"data"`
+	}
+	select {
+	case msg := <-hub.broadcast:
+		if err := json.Unmarshal(msg, &diagnosticPayload); err != nil {
+			t.Fatalf("failed to decode diagnostic payload: %v", err)
+		}
+		if diagnosticPayload.Type != "telemetry_diagnostic" {
+			t.Fatalf("expected telemetry_diagnostic second, got %#v", diagnosticPayload)
+		}
+		if diagnosticPayload.Data == nil || diagnosticPayload.Data.Severity != "danger" {
+			t.Fatalf("expected danger severity, got %#v", diagnosticPayload.Data)
+		}
+		if !strings.Contains(diagnosticPayload.Data.Summary, "collector dropped 3 metric samples") {
+			t.Fatalf("unexpected diagnostic summary: %#v", diagnosticPayload.Data)
+		}
+		if len(diagnosticPayload.Data.Conditions) != 1 || diagnosticPayload.Data.Conditions[0] != "collector_drops" {
+			t.Fatalf("unexpected diagnostic conditions: %#v", diagnosticPayload.Data)
+		}
+	default:
+		t.Fatal("expected telemetry_diagnostic broadcast payload")
+	}
+}
+
+func TestPublishLiveMetricsBroadcastsSampledTransactionDiagnostics(t *testing.T) {
+	hub := NewHub()
+	runner := NewTestRunner(2, hub, nil)
+	testRun := &ManagedTest{ID: "test-1", Name: "Checkout"}
+	live := &LiveMetrics{
+		Timestamp: time.Now(),
+		TotalTx:   18,
+		Transactions: map[string]*TxMetrics{
+			"Checkout": {
+				Name:             "Checkout",
+				DependencyType:   "http",
+				DependencyTarget: "payments.example.test",
+				CorrelationIDs:   []string{"corr-checkout-1"},
+				CorrelationCount: 3,
+				Count:            10,
+				Errors:           3,
+				AvgMs:            420,
+				P99Ms:            880,
+			},
+			"Search": {
+				Name:             "Search",
+				DependencyType:   "http",
+				DependencyTarget: "catalog.example.test",
+				CorrelationIDs:   []string{"corr-search-1"},
+				CorrelationCount: 1,
+				Count:            8,
+				AvgMs:            1225,
+				P99Ms:            2400,
+			},
+		},
+		Telemetry: &TelemetryHealth{},
+	}
+
+	runner.publishLiveMetrics(testRun, live, nil)
+
+	var metricsPayload struct {
+		Type string `json:"type"`
+	}
+	select {
+	case msg := <-hub.broadcast:
+		if err := json.Unmarshal(msg, &metricsPayload); err != nil {
+			t.Fatalf("failed to decode metrics payload: %v", err)
+		}
+		if metricsPayload.Type != "metrics_update" {
+			t.Fatalf("expected metrics_update first, got %#v", metricsPayload)
+		}
+	default:
+		t.Fatal("expected metrics_update broadcast")
+	}
+
+	var diagnosticPayload struct {
+		Type string               `json:"type"`
+		Data *TelemetryDiagnostic `json:"data"`
+	}
+	select {
+	case msg := <-hub.broadcast:
+		if err := json.Unmarshal(msg, &diagnosticPayload); err != nil {
+			t.Fatalf("failed to decode diagnostic payload: %v", err)
+		}
+		if diagnosticPayload.Type != "telemetry_diagnostic" {
+			t.Fatalf("expected telemetry_diagnostic second, got %#v", diagnosticPayload)
+		}
+		if diagnosticPayload.Data == nil || diagnosticPayload.Data.Severity != "danger" {
+			t.Fatalf("expected danger severity, got %#v", diagnosticPayload.Data)
+		}
+		if !strings.Contains(diagnosticPayload.Data.Summary, "transaction error hotspots") || !strings.Contains(diagnosticPayload.Data.Summary, "slow transaction hotspots") {
+			t.Fatalf("unexpected diagnostic summary: %#v", diagnosticPayload.Data)
+		}
+		if len(diagnosticPayload.Data.Samples) != 2 {
+			t.Fatalf("expected 2 diagnostic samples, got %#v", diagnosticPayload.Data)
+		}
+		if diagnosticPayload.Data.Samples[0].Transaction != "Checkout" || diagnosticPayload.Data.Samples[0].Issue != "error" {
+			t.Fatalf("unexpected first diagnostic sample: %#v", diagnosticPayload.Data.Samples[0])
+		}
+		if diagnosticPayload.Data.Samples[1].Transaction != "Search" || diagnosticPayload.Data.Samples[1].DependencyTarget != "catalog.example.test" {
+			t.Fatalf("unexpected second diagnostic sample: %#v", diagnosticPayload.Data.Samples[1])
+		}
+	default:
+		t.Fatal("expected telemetry_diagnostic broadcast payload")
+	}
+}
+
+func TestPublishLiveMetricsSamplesTelemetryDiagnosticUntilStateChanges(t *testing.T) {
+	hub := NewHub()
+	runner := NewTestRunner(2, hub, nil)
+	testRun := &ManagedTest{ID: "test-1", Name: "Checkout"}
+
+	runner.publishLiveMetrics(testRun, &LiveMetrics{
+		Timestamp: time.Now().Add(-3 * time.Second),
+		Telemetry: &TelemetryHealth{DroppedResults: 1},
+	}, nil)
+	runner.publishLiveMetrics(testRun, &LiveMetrics{
+		Timestamp: time.Now().Add(-3 * time.Second),
+		Telemetry: &TelemetryHealth{DroppedResults: 2},
+	}, nil)
+	runner.publishLiveMetrics(testRun, &LiveMetrics{
+		Timestamp: time.Now(),
+		Telemetry: &TelemetryHealth{},
+	}, nil)
+
+	messageTypes := make([]string, 0, 5)
+	var recovery struct {
+		Type string               `json:"type"`
+		Data *TelemetryDiagnostic `json:"data"`
+	}
+	for i := 0; i < 5; i++ {
+		select {
+		case msg := <-hub.broadcast:
+			if err := json.Unmarshal(msg, &recovery); err != nil {
+				t.Fatalf("failed to decode diagnostic payload: %v", err)
+			}
+			messageTypes = append(messageTypes, recovery.Type)
+		default:
+			t.Fatalf("expected 5 broadcast messages, got %d", len(messageTypes))
+		}
+	}
+	if len(messageTypes) != 5 {
+		t.Fatalf("expected 5 broadcast messages, got %#v", messageTypes)
+	}
+	joined := strings.Join(messageTypes, ",")
+	if joined != "metrics_update,telemetry_diagnostic,metrics_update,metrics_update,telemetry_diagnostic" {
+		t.Fatalf("unexpected broadcast sequence: %s", joined)
+	}
+	if recovery.Type != "telemetry_diagnostic" || recovery.Data == nil || recovery.Data.Severity != "healthy" {
+		t.Fatalf("expected final recovery diagnostic, got %#v", recovery)
+	}
+}
+
+func TestLoadStoredTestHistoryTrimsHistoryWindow(t *testing.T) {
+	store := &metricsStoreSpy{historyByTestID: map[string][]any{"test-1": make([]any, 0, maxManagedTestHistory+5)}}
+	for i := 0; i < maxManagedTestHistory+5; i++ {
+		store.historyByTestID["test-1"] = append(store.historyByTestID["test-1"], map[string]any{
+			"timestamp": time.Unix(int64(i), 0),
+		})
+	}
+	runner := NewTestRunner(2, NewHub(), store)
+	testRun := &ManagedTest{ID: "test-1"}
+
+	runner.loadStoredTestHistory(testRun)
+
+	if got := len(testRun.History); got != maxManagedTestHistory {
+		t.Fatalf("history length = %d, want %d", got, maxManagedTestHistory)
+	}
+	if first := testRun.History[0].Timestamp; !first.Equal(time.Unix(5, 0)) {
+		t.Fatalf("expected trimmed first timestamp %s, got %s", time.Unix(5, 0), first)
+	}
+	if last := testRun.History[len(testRun.History)-1].Timestamp; !last.Equal(time.Unix(int64(maxManagedTestHistory+4), 0)) {
+		t.Fatalf("unexpected last timestamp %s", last)
+	}
+}
+
+func TestLoadStoredTestHistoryBuildsLiveMetricsFromTypedIntervalSummaries(t *testing.T) {
+	store := &metricsStoreSpy{historyByTestID: map[string][]any{
+		"test-1": {
+			storage.IntervalSummaryRecord{
+				Timestamp:                time.Date(2026, time.May, 13, 17, 15, 0, 0, time.UTC),
+				ActiveVUsers:             9,
+				TPS:                      22.5,
+				AvgResponseMs:            180.5,
+				ErrorPct:                 2.5,
+				TotalTx:                  90,
+				TotalErrors:              2,
+				P50Ms:                    140,
+				P90Ms:                    260,
+				P95Ms:                    310,
+				P99Ms:                    400,
+				DroppedResults:           5,
+				WebsocketDroppedMessages: 2,
+				CollectedAt:              time.Date(2026, time.May, 13, 17, 14, 59, 0, time.UTC),
+				PublishedAt:              time.Date(2026, time.May, 13, 17, 15, 0, 0, time.UTC),
+				SampleAgeMs:              1000,
+			},
+		},
+	}}
+	runner := NewTestRunner(2, NewHub(), store)
+	testRun := &ManagedTest{ID: "test-1"}
+
+	runner.loadStoredTestHistory(testRun)
+
+	if len(testRun.History) != 1 {
+		t.Fatalf("history length = %d, want 1", len(testRun.History))
+	}
+	if testRun.LiveMetrics == nil {
+		t.Fatal("expected live metrics to be set from typed history")
+	}
+	if testRun.LiveMetrics.ActiveVUsers != 9 || testRun.LiveMetrics.TotalTx != 90 || testRun.LiveMetrics.P95Ms != 310 {
+		t.Fatalf("unexpected live metrics from typed history: %#v", testRun.LiveMetrics)
+	}
+	if testRun.LiveMetrics.Telemetry == nil || testRun.LiveMetrics.Telemetry.DroppedResults != 5 || testRun.LiveMetrics.Telemetry.WebsocketDroppedMessages != 2 {
+		t.Fatalf("expected telemetry to round-trip from typed history, got %#v", testRun.LiveMetrics.Telemetry)
 	}
 }
 
@@ -641,6 +933,18 @@ func TestBuildLiveMetricsForBroadcastOverridesTimestamp(t *testing.T) {
 	}
 	if live.AvgResponseMs != 125 {
 		t.Fatalf("avg response ms = %v, want 125", live.AvgResponseMs)
+	}
+	if live.Telemetry == nil {
+		t.Fatal("expected telemetry to be initialized")
+	}
+	if !live.Telemetry.CollectedAt.Equal(snapshotTime) {
+		t.Fatalf("expected collected at %s, got %s", snapshotTime, live.Telemetry.CollectedAt)
+	}
+	if !live.Telemetry.PublishedAt.Equal(broadcastTime) {
+		t.Fatalf("expected published at %s, got %s", broadcastTime, live.Telemetry.PublishedAt)
+	}
+	if live.Telemetry.SampleAgeMs != 4000 {
+		t.Fatalf("expected sample age ms 4000, got %v", live.Telemetry.SampleAgeMs)
 	}
 }
 
@@ -921,8 +1225,8 @@ func TestProcessMetricsSnapshotBroadcastsAlertAndStopRequest(t *testing.T) {
 		t.Fatalf("expected live metrics with 10%% error rate, got %#v", testRun.LiveMetrics)
 	}
 
-	messageTypes := make([]string, 0, 3)
-	for i := 0; i < 3; i++ {
+	messageTypes := make([]string, 0, 4)
+	for i := 0; i < 4; i++ {
 		select {
 		case msg := <-hub.broadcast:
 			var payload struct {
@@ -933,11 +1237,11 @@ func TestProcessMetricsSnapshotBroadcastsAlertAndStopRequest(t *testing.T) {
 			}
 			messageTypes = append(messageTypes, payload.Type)
 		default:
-			t.Fatalf("expected 3 broadcast messages, got %d", len(messageTypes))
+			t.Fatalf("expected 4 broadcast messages, got %d", len(messageTypes))
 		}
 	}
 
-	if messageTypes[0] != "metrics_update" || messageTypes[1] != "threshold_alert" || messageTypes[2] != "test_stopping" {
+	if messageTypes[0] != "metrics_update" || messageTypes[1] != "telemetry_diagnostic" || messageTypes[2] != "threshold_alert" || messageTypes[3] != "test_stopping" {
 		t.Fatalf("unexpected broadcast order: %#v", messageTypes)
 	}
 }

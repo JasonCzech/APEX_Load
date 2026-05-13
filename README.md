@@ -382,6 +382,8 @@ make test-cover
 - ✅ Distributed execution backend with multi-generator group fan-out, live controls, merged metrics, and staged archives
 - ✅ Capacity-aware generator placement for distributed test startup
 - ✅ Generator-loss detection and controlled failure handling during distributed execution
+- ✅ Runtime telemetry SLA hardening baseline now includes visible drop counters, bounded live history, end-to-end freshness, sampled telemetry diagnostics for transaction hotspots, schema-versioned typed telemetry retention, distributed telemetry propagation, first-class correlation/dependency metadata, and distributed lag-stage breakdowns from generator capture through controller fan-out
+- 🟡 Browser client metrics future plan for web-app synthetic UX telemetry
 - 🟡 JMS protocols (Solace, IBM MQ)
 - 🟡 Agentic script generation (LLM-powered)
 
@@ -397,6 +399,8 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for coding conventions, testing policy, and
 - **Protocol interface**: `pkg/protocol/protocol.go` — All protocols implement this
 - **DSL types**: `pkg/dsl/types.go` — Script structures
 - **API handlers**: `pkg/api/handlers.go` — Endpoint implementations
+- **Runtime telemetry SLA plan**: `docs/RUNTIME_TELEMETRY_SLA_PLAN.md` — Telemetry capture, streaming, and storage hardening roadmap
+- **Future browser client metrics plan**: `docs/BROWSER_CLIENT_METRICS_PLAN.md` — Browser-side client metrics roadmap and tradeoffs
 
 ## License
 

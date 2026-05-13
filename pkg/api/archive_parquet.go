@@ -20,6 +20,9 @@ type parquetTransactionEvent struct {
 	TestName         string  `parquet:"name=test_name, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
 	Group            string  `parquet:"name=group_name, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
 	ActionName       string  `parquet:"name=action_name, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	CorrelationID    string  `parquet:"name=correlation_id, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	DependencyType   string  `parquet:"name=dependency_type, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	DependencyTarget string  `parquet:"name=dependency_target, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
 	DurationMs       float64 `parquet:"name=duration_ms, type=DOUBLE"`
 	DNSMs            float64 `parquet:"name=dns_ms, type=DOUBLE"`
 	ConnectMs        float64 `parquet:"name=connect_ms, type=DOUBLE"`
@@ -153,6 +156,9 @@ func toParquetTransactions(items []TransactionEvent) []parquetTransactionEvent {
 			TestName:         item.TestName,
 			Group:            item.Group,
 			ActionName:       item.ActionName,
+			CorrelationID:    item.CorrelationID,
+			DependencyType:   item.DependencyType,
+			DependencyTarget: item.DependencyTarget,
 			DurationMs:       item.DurationMs,
 			DNSMs:            item.DNSMs,
 			ConnectMs:        item.ConnectMs,

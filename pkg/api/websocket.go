@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -23,6 +24,14 @@ type Hub struct {
 	register   chan *Client
 	unregister chan *Client
 	done       chan struct{}
+	droppedBroadcasts atomic.Int64
+	droppedClientMsgs atomic.Int64
+}
+
+type HubStats struct {
+	ConnectedClients      int   `json:"connected_clients"`
+	DroppedBroadcasts     int64 `json:"dropped_broadcasts,omitempty"`
+	DroppedClientMessages int64 `json:"dropped_client_messages,omitempty"`
 }
 
 type Client struct {
@@ -83,6 +92,7 @@ func (h *Hub) Run() {
 				select {
 				case client.send <- msg:
 				default:
+					h.droppedClientMsgs.Add(1)
 					// slow client — drop message
 				}
 			}
@@ -99,6 +109,7 @@ func (h *Hub) Broadcast(msg []byte) {
 	select {
 	case h.broadcast <- msg:
 	default:
+		h.droppedBroadcasts.Add(1)
 	}
 }
 
@@ -115,6 +126,17 @@ func (h *Hub) ClientCount() int {
 	h.clientsMu.RLock()
 	defer h.clientsMu.RUnlock()
 	return len(h.clients)
+}
+
+func (h *Hub) Stats() HubStats {
+	if h == nil {
+		return HubStats{}
+	}
+	return HubStats{
+		ConnectedClients:      h.ClientCount(),
+		DroppedBroadcasts:     h.droppedBroadcasts.Load(),
+		DroppedClientMessages: h.droppedClientMsgs.Load(),
+	}
 }
 
 func (h *Hub) serveWS(w http.ResponseWriter, r *http.Request, testID string) {

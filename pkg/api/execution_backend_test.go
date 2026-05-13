@@ -505,28 +505,37 @@ func TestDistributedExecutionBackendPublishesRemoteTransactionMetrics(t *testing
 	}
 
 	err = service.PublishMetrics(testRun.ID, "Group A", generatorrpc.GeneratorStats{ActiveVUsers: 5, CPUPercent: 33.3, MemoryBytes: 128 * 1024 * 1024, GoroutineCount: 21}, []generatorrpc.TransactionMetric{{
-		Name:          "Home",
-		DurationMs:    100,
-		StatusCode:    200,
-		Success:       true,
-		BytesSent:     100,
-		BytesReceived: 200,
+		Name:             "Home",
+		DurationMs:       100,
+		StatusCode:       200,
+		Success:          true,
+		BytesSent:        100,
+		BytesReceived:    200,
+		CorrelationID:    "corr-home-1",
+		DependencyType:   "http",
+		DependencyTarget: "api.example.test",
 	}, {
-		Name:          "Home",
-		DurationMs:    300,
-		StatusCode:    500,
-		Success:       false,
-		ErrorMessage:  "remote failure",
-		BytesSent:     120,
-		BytesReceived: 80,
+		Name:             "Home",
+		DurationMs:       300,
+		StatusCode:       500,
+		Success:          false,
+		ErrorMessage:     "remote failure",
+		BytesSent:        120,
+		BytesReceived:    80,
+		CorrelationID:    "corr-home-2",
+		DependencyType:   "http",
+		DependencyTarget: "api.example.test",
 	}, {
-		Name:          "Search",
-		DurationMs:    200,
-		StatusCode:    200,
-		Success:       true,
-		BytesSent:     90,
-		BytesReceived: 180,
-	}})
+		Name:             "Search",
+		DurationMs:       200,
+		StatusCode:       200,
+		Success:          true,
+		BytesSent:        90,
+		BytesReceived:    180,
+		CorrelationID:    "corr-search-1",
+		DependencyType:   "http",
+		DependencyTarget: "search.example.test",
+	}}, generatorrpc.MetricsTelemetry{DroppedResults: 4, CollectedAtUnixMs: 900, PublishedAtUnixMs: 1500, SampleAgeMs: 600})
 	if err != nil {
 		t.Fatalf("PublishMetrics returned error: %v", err)
 	}
@@ -559,11 +568,81 @@ func TestDistributedExecutionBackendPublishesRemoteTransactionMetrics(t *testing
 	if updated.LiveMetrics.P50Ms != 200 || updated.LiveMetrics.P95Ms != 200 {
 		t.Fatalf("unexpected distributed percentiles: p50=%v p95=%v", updated.LiveMetrics.P50Ms, updated.LiveMetrics.P95Ms)
 	}
+	if updated.LiveMetrics.Telemetry == nil {
+		t.Fatal("expected distributed telemetry to be populated")
+	}
+	if updated.LiveMetrics.Telemetry.DroppedResults != 4 {
+		t.Fatalf("dropped results = %d, want 4", updated.LiveMetrics.Telemetry.DroppedResults)
+	}
+	if !updated.LiveMetrics.Telemetry.CollectedAt.Equal(time.UnixMilli(900)) {
+		t.Fatalf("collected_at = %s, want %s", updated.LiveMetrics.Telemetry.CollectedAt, time.UnixMilli(900))
+	}
+	if !updated.LiveMetrics.Telemetry.GeneratorPublishedAt.Equal(time.UnixMilli(1500)) {
+		t.Fatalf("generator_published_at = %s, want %s", updated.LiveMetrics.Telemetry.GeneratorPublishedAt, time.UnixMilli(1500))
+	}
+	if updated.LiveMetrics.Telemetry.ControllerReceivedAt.IsZero() {
+		t.Fatal("expected controller_received_at to be populated")
+	}
+	if updated.LiveMetrics.Telemetry.PublishedAt.Before(updated.LiveMetrics.Telemetry.CollectedAt) {
+		t.Fatalf("published_at = %s, want >= collected_at %s", updated.LiveMetrics.Telemetry.PublishedAt, updated.LiveMetrics.Telemetry.CollectedAt)
+	}
+	if updated.LiveMetrics.Telemetry.GeneratorProcessingLagMs != 600 {
+		t.Fatalf("generator_processing_lag_ms = %v, want 600", updated.LiveMetrics.Telemetry.GeneratorProcessingLagMs)
+	}
+	if updated.LiveMetrics.Telemetry.TransportLagMs < 0 {
+		t.Fatalf("transport_lag_ms = %v, want non-negative", updated.LiveMetrics.Telemetry.TransportLagMs)
+	}
+	if updated.LiveMetrics.Telemetry.ControllerFanoutLagMs < 0 {
+		t.Fatalf("controller_fanout_lag_ms = %v, want non-negative", updated.LiveMetrics.Telemetry.ControllerFanoutLagMs)
+	}
+	if updated.LiveMetrics.Telemetry.SampleAgeMs < 0 {
+		t.Fatalf("sample_age_ms = %v, want non-negative", updated.LiveMetrics.Telemetry.SampleAgeMs)
+	}
 	if updated.LiveMetrics.Resources == nil || updated.LiveMetrics.Resources.CPUProcessPct != 33.3 {
 		t.Fatalf("expected cpu process pct 33.3, got %#v", updated.LiveMetrics.Resources)
 	}
 	if updated.LiveMetrics.Transactions["Home"] == nil || updated.LiveMetrics.Transactions["Home"].Count != 2 || updated.LiveMetrics.Transactions["Home"].Errors != 1 {
 		t.Fatalf("unexpected Home transaction metrics: %#v", updated.LiveMetrics.Transactions["Home"])
+	}
+	if updated.LiveMetrics.Transactions["Home"].DependencyType != "http" || updated.LiveMetrics.Transactions["Home"].DependencyTarget != "api.example.test" {
+		t.Fatalf("unexpected Home dependency metadata: %#v", updated.LiveMetrics.Transactions["Home"])
+	}
+	if updated.LiveMetrics.Transactions["Home"].CorrelationCount != 2 {
+		t.Fatalf("unexpected Home correlation count: %#v", updated.LiveMetrics.Transactions["Home"])
+	}
+}
+
+func TestBuildLiveMetricsFromDistributedBatchUsesBatchTelemetry(t *testing.T) {
+	live := buildLiveMetricsFromDistributedBatch(&ManagedTest{}, generatorrpc.MetricsBatch{
+		TimestampUnixMs: 2_000,
+		Stats: generatorrpc.GeneratorStats{
+			ActiveVUsers: 3,
+		},
+		Telemetry: &generatorrpc.MetricsTelemetry{
+			DroppedResults:    7,
+			CollectedAtUnixMs: 900,
+			PublishedAtUnixMs: 1_500,
+			SampleAgeMs:       600,
+		},
+	})
+
+	if live.Telemetry == nil {
+		t.Fatal("expected telemetry on distributed live metrics")
+	}
+	if live.Telemetry.DroppedResults != 7 {
+		t.Fatalf("dropped results = %d, want 7", live.Telemetry.DroppedResults)
+	}
+	if !live.Telemetry.CollectedAt.Equal(time.UnixMilli(900)) {
+		t.Fatalf("collected_at = %s, want %s", live.Telemetry.CollectedAt, time.UnixMilli(900))
+	}
+	if !live.Telemetry.GeneratorPublishedAt.Equal(time.UnixMilli(1500)) {
+		t.Fatalf("generator_published_at = %s, want %s", live.Telemetry.GeneratorPublishedAt, time.UnixMilli(1500))
+	}
+	if live.Telemetry.GeneratorProcessingLagMs != 600 {
+		t.Fatalf("generator_processing_lag_ms = %v, want 600", live.Telemetry.GeneratorProcessingLagMs)
+	}
+	if live.Telemetry.SampleAgeMs != 600 {
+		t.Fatalf("sample_age_ms = %v, want 600", live.Telemetry.SampleAgeMs)
 	}
 }
 

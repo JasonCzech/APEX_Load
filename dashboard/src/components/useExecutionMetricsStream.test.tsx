@@ -16,7 +16,7 @@ vi.mock('../hooks/useWebSocket', () => ({
 }))
 
 function MetricsStreamHarness({ status = 'RUNNING' }: { status?: 'RUNNING' | 'COMPLETE' }) {
-  const { localMetricsHistory } = useExecutionMetricsStream('test-1', status)
+  const { localMetricsHistory, latestMetrics } = useExecutionMetricsStream('test-1', status)
   const latest = localMetricsHistory[localMetricsHistory.length - 1]
 
   return (
@@ -25,6 +25,11 @@ function MetricsStreamHarness({ status = 'RUNNING' }: { status?: 'RUNNING' | 'CO
       <span data-testid="tps">{String(latest?.tps ?? -1)}</span>
       <span data-testid="group-tps">{String(latest?.Checkout_tps ?? -1)}</span>
       <span data-testid="cpu">{String(latest?.cpuProcess ?? -1)}</span>
+      <span data-testid="delivery-lag">{String(latestMetrics?.telemetry?.delivery_lag_ms ?? -1)}</span>
+      <span data-testid="end-to-end-age">{String(latestMetrics?.telemetry?.end_to_end_age_ms ?? -1)}</span>
+      <span data-testid="transport-lag">{String(latestMetrics?.telemetry?.transport_lag_ms ?? -1)}</span>
+      <span data-testid="fanout-lag">{String(latestMetrics?.telemetry?.controller_fanout_lag_ms ?? -1)}</span>
+      <span data-testid="received-at">{String(latestMetrics?.telemetry?.client_received_at ?? '')}</span>
     </div>
   )
 }
@@ -35,6 +40,8 @@ describe('useExecutionMetricsStream', () => {
   let onMessage: ((msg: WSMessage) => void) | undefined
 
   beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-05-12T20:05:01.250Z'))
     useWebSocketMock.mockImplementation(({ onMessage: handler }: { onMessage?: (msg: WSMessage) => void }) => {
       onMessage = handler
       return { connected: true }
@@ -50,6 +57,7 @@ describe('useExecutionMetricsStream', () => {
     })
     container.remove()
     onMessage = undefined
+    vi.useRealTimers()
     vi.clearAllMocks()
   })
 
@@ -91,6 +99,16 @@ describe('useExecutionMetricsStream', () => {
           disk_read_kbps: 10.17,
           disk_write_kbps: 20.16,
         },
+        telemetry: {
+          collected_at: '2026-05-12T20:05:00.000Z',
+          generator_published_at: '2026-05-12T20:05:00.600Z',
+          controller_received_at: '2026-05-12T20:05:00.900Z',
+          published_at: '2026-05-12T20:05:00.900Z',
+          generator_processing_lag_ms: 600,
+          transport_lag_ms: 300,
+          controller_fanout_lag_ms: 350,
+          sample_age_ms: 900,
+        },
       },
     } as unknown as WSMessage)
 
@@ -98,6 +116,11 @@ describe('useExecutionMetricsStream', () => {
     expect(readTestId('tps')).toBe('12.3')
     expect(readTestId('group-tps')).toBe('7.9')
     expect(readTestId('cpu')).toBe('44.4')
+    expect(readTestId('delivery-lag')).toBe('350')
+    expect(readTestId('end-to-end-age')).toBe('1250')
+    expect(readTestId('transport-lag')).toBe('300')
+    expect(readTestId('fanout-lag')).toBe('350')
+    expect(readTestId('received-at')).toBe('2026-05-12T20:05:01.250Z')
   })
 
   it('disables the test websocket stream for completed runs', async () => {
