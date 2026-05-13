@@ -186,6 +186,7 @@ That order minimizes churn and avoids rebuilding the UI around unstable backend 
 - The execution surface now shares typed history, archive summary, live-control, and chart contracts instead of relying on local `any` casts in the main `TestExecution` path.
 - Focused dashboard regression tests now cover the two browser-found scenario-surface defects: duplicate associated-release keys in `NewTestPage` and the queued preview summary/edit interaction in `TestExecutionScenarioPreview`.
 - Scenario payload normalization is now shared between `CreateTestModal` and `TestHub`, so group shaping, goal-config/runtime normalization, and single-group flattening are owned in one helper instead of being rebuilt in each save path.
+- The queued-run execution editor now makes its behavior explicit: revising a queued run opens a revised-copy flow in `TestExecutionScenarioEditor`/`CreateTestModal` instead of implying an in-place scenario edit that the current test API does not support.
 
 ### Remaining High-Value Work
 - Finish the scenario assembly path by tightening `TestExecution`, `CreateTestModal` adjacencies, and shared execution/result models.

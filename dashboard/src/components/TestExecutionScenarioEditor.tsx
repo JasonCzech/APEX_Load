@@ -46,6 +46,7 @@ export default function TestExecutionScenarioEditor({ open, test, onClose, onSel
 
   return (
     <CreateTestModal
+      mode="revise-queued-run"
       scripts={availableScripts}
       initialScenario={initialScenario}
       onClose={onClose}

@@ -18,6 +18,7 @@ interface Props {
   onClose: () => void
   onCreated: (test: TestSummary) => void
   initialScenario?: ScenarioDraft
+  mode?: 'create-queued-run' | 'revise-queued-run'
 }
 
 type LoadProfilePoint = {
@@ -89,7 +90,7 @@ function scenarioDraftReducer(state: ScenarioDraftState, action: ScenarioDraftAc
   }
 }
 
-export default function CreateTestModal({ scripts, projectId, folderId, onClose, onCreated, initialScenario }: Props) {
+export default function CreateTestModal({ scripts, projectId, folderId, onClose, onCreated, initialScenario, mode = 'create-queued-run' }: Props) {
   const api = useApi()
   const baselineSeconds = 5 * 60
   const [scenarioDraft, dispatchScenarioDraft] = useReducer(
@@ -118,6 +119,11 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
   const [loading, setLoading] = useState(false)
 
   const { name, duration, scenarioMode, scriptShakeout, resourceBaseline, groups } = scenarioDraft
+  const isReviseMode = mode === 'revise-queued-run'
+  const modalTitle = isReviseMode ? 'Create Revised Queued Run' : 'Create Queued Run'
+  const submitLabel = isReviseMode ? 'Create Revised Copy' : 'Create Queued Run'
+  const loadingLabel = isReviseMode ? 'Creating revised copy...' : 'Creating queued run...'
+  const errorMessage = isReviseMode ? 'Failed to create revised queued run' : 'Failed to create queued run'
 
   const updateScenarioField = <K extends ScenarioDraftField>(field: K, value: ScenarioDraftState[K]) => {
     dispatchScenarioDraft({ type: 'setField', field, value })
@@ -270,7 +276,7 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
       const test = await api.createTest(payload)
       onCreated(test)
     } catch (error: unknown) {
-      setError(getErrorMessage(error, 'Failed to create scenario'))
+      setError(getErrorMessage(error, errorMessage))
     } finally {
       setLoading(false)
     }
@@ -280,10 +286,13 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h3>{initialScenario ? 'Edit Scenario' : 'Create Scenario'}</h3>
+          <h3>{modalTitle}</h3>
           <span className="total-vusers">{totalVUsers} total VUsers</span>
         </div>
         <form onSubmit={handleSubmit} className="modal-form">
+          {isReviseMode && (
+            <p className="page-subtitle">Saving here creates a new queued run. The current queued run remains unchanged.</p>
+          )}
           <div className="form-row">
             <div className="form-column flex-2">
               <div className="scenario-mode-switcher">
@@ -386,7 +395,7 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
               className="btn btn-primary"
               disabled={loading || groups.every((g) => !g.scriptId)}
             >
-              {loading ? (initialScenario ? 'Saving...' : 'Creating...') : `${initialScenario ? 'Save Scenario' : 'Create Scenario'} (${groups.length} group${groups.length > 1 ? 's' : ''})`}
+              {loading ? loadingLabel : `${submitLabel} (${groups.length} group${groups.length > 1 ? 's' : ''})`}
             </button>
           </div>
         </form>

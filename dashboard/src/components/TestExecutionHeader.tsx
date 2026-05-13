@@ -63,7 +63,7 @@ export default function TestExecutionHeader({
         {test.status === 'QUEUED' && (
           <>
             <button className="btn btn-secondary" onClick={onOpenScenarioEditor}>
-              Edit Scenario
+              Revise Queued Run
             </button>
             <button className="btn btn-success" onClick={onStart}>
               Start
