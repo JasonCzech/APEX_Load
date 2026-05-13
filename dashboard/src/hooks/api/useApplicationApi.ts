@@ -3,6 +3,10 @@ import { useCallback, useMemo } from 'react'
 import { Application, Release } from '../../types'
 import { request } from '../apiClient'
 
+type DeleteEntityResponse = {
+  deleted: string
+}
+
 export function useApplicationApi() {
   const listApplications = useCallback(() => request<{ applications: Application[]; count: number }>('/applications'), [])
 
@@ -16,7 +20,7 @@ export function useApplicationApi() {
     [],
   )
 
-  const deleteApplication = useCallback((id: string) => request<any>(`/applications/${id}`, { method: 'DELETE' }), [])
+  const deleteApplication = useCallback((id: string) => request<DeleteEntityResponse>(`/applications/${id}`, { method: 'DELETE' }), [])
 
   const listReleases = useCallback(
     (applicationId: string, includeArchived = false) =>
@@ -37,7 +41,7 @@ export function useApplicationApi() {
 
   const archiveRelease = useCallback((id: string) => request<Release>(`/releases/${id}/archive`, { method: 'POST' }), [])
 
-  const deleteRelease = useCallback((id: string) => request<any>(`/releases/${id}`, { method: 'DELETE' }), [])
+  const deleteRelease = useCallback((id: string) => request<DeleteEntityResponse>(`/releases/${id}`, { method: 'DELETE' }), [])
 
   return useMemo(
     () => ({

@@ -1,5 +1,19 @@
 import { useCallback, useMemo } from 'react'
 
+import {
+  ArchivePage,
+  DraftCapacityEstimate,
+  GoalConfig,
+  IntervalSummaryRecord,
+  LiveMetrics,
+  RunArchiveManifest,
+  RunArchiveReport,
+  RuntimeSettingsOverride,
+  ScenarioDataPoolBinding,
+  ScenarioMode,
+  TestSummary,
+  TransactionEvent,
+} from '../../types'
 import { BASE, request } from '../apiClient'
 
 type ArchiveTransactionsParams = {
@@ -14,6 +28,84 @@ type ArchiveListParams = {
   limit?: number
   offset?: number
 }
+
+type TestListResponse = {
+  tests: TestSummary[]
+  count: number
+}
+
+type StartTestOptions = {
+  override_capacity_shortfall?: boolean
+}
+
+type TestCreateGroupEntry = {
+  name?: string
+  script_id?: string
+  vusers?: number
+  ramp_up?: string
+  ramp_down?: string
+  initialization?: 'at_runtime' | 'at_once'
+}
+
+type TestCreateRequest = {
+  name?: string
+  duration: string
+  application_id?: string
+  release_id?: string
+  scenario_id?: string
+  project_id?: string
+  folder_id?: string | null
+  scenario_mode?: ScenarioMode
+  script_shakeout?: boolean
+  resource_baseline?: boolean
+  goal_config?: GoalConfig
+  groups?: TestCreateGroupEntry[]
+  data_pools?: ScenarioDataPoolBinding[]
+  script_id?: string
+  vusers?: number
+  ramp_up?: string
+  ramp_down?: string
+  runtime_settings?: RuntimeSettingsOverride
+}
+
+type TestActionResponse = {
+  status: string
+  test_id: string
+}
+
+type DeleteTestResponse = {
+  deleted: string
+}
+
+type MoveTestResponse = {
+  id: string
+  folder_id?: string | null
+}
+
+type TestMetricsResponse = {
+  test_id: string
+  status: string
+  message?: string
+  metrics?: LiveMetrics
+  history?: unknown[]
+}
+
+type ScaleVUsersResponse = {
+  test_id: string
+  group: string
+  target_vusers: number
+  status: string
+}
+
+type AdjustDurationResponse = {
+  test_id: string
+  new_duration: string
+  status: string
+}
+
+type ArchiveTransactionsResponse = ArchivePage<TransactionEvent>
+type ArchiveResourcesResponse = ArchivePage<unknown>
+type ArchiveSummariesResponse = ArchivePage<IntervalSummaryRecord>
 
 function buildQuery(params?: Record<string, string | number | boolean | undefined>) {
   const query = new URLSearchParams()
@@ -49,51 +141,51 @@ export function useTestApi() {
             project_id: params?.project_id,
             folder_id: params?.folder_id === undefined ? undefined : params.folder_id || '',
           }
-      return request<{ tests: any[]; count: number }>(`/tests${buildQuery(queryParams)}`)
+      return request<TestListResponse>(`/tests${buildQuery(queryParams)}`)
     },
     [],
   )
 
-  const getTest = useCallback((id: string) => request<any>(`/tests/${id}`), [])
+  const getTest = useCallback((id: string) => request<TestSummary>(`/tests/${id}`), [])
 
   const createTest = useCallback(
-    (data: any) => request<any>('/tests', { method: 'POST', body: JSON.stringify(data) }),
+    (data: TestCreateRequest) => request<TestSummary>('/tests', { method: 'POST', body: JSON.stringify(data) }),
     [],
   )
 
   const estimateTest = useCallback(
-    (data: any) => request<any>('/tests/estimate', { method: 'POST', body: JSON.stringify(data) }),
+    (data: TestCreateRequest) => request<DraftCapacityEstimate>('/tests/estimate', { method: 'POST', body: JSON.stringify(data) }),
     [],
   )
 
   const startTest = useCallback(
-    (id: string, options?: { override_capacity_shortfall?: boolean }) =>
-      request<any>(`/tests/${id}/start`, {
+    (id: string, options?: StartTestOptions) =>
+      request<TestActionResponse>(`/tests/${id}/start`, {
         method: 'POST',
         body: options ? JSON.stringify(options) : undefined,
       }),
     [],
   )
 
-  const stopTest = useCallback((id: string) => request<any>(`/tests/${id}/stop`, { method: 'POST' }), [])
+  const stopTest = useCallback((id: string) => request<TestActionResponse>(`/tests/${id}/stop`, { method: 'POST' }), [])
 
-  const abortTest = useCallback((id: string) => request<any>(`/tests/${id}/abort`, { method: 'POST' }), [])
+  const abortTest = useCallback((id: string) => request<TestActionResponse>(`/tests/${id}/abort`, { method: 'POST' }), [])
 
-  const deleteTest = useCallback((id: string) => request<any>(`/tests/${id}`, { method: 'DELETE' }), [])
+  const deleteTest = useCallback((id: string) => request<DeleteTestResponse>(`/tests/${id}`, { method: 'DELETE' }), [])
   
-  const pauseTest = useCallback((id: string) => request<any>(`/tests/${id}/pause`, { method: 'POST' }), [])
+  const pauseTest = useCallback((id: string) => request<TestActionResponse>(`/tests/${id}/pause`, { method: 'POST' }), [])
   
-  const resumeTest = useCallback((id: string) => request<any>(`/tests/${id}/resume`, { method: 'POST' }), [])
+  const resumeTest = useCallback((id: string) => request<TestActionResponse>(`/tests/${id}/resume`, { method: 'POST' }), [])
 
   const moveTest = useCallback(
     (id: string, folderId: string | null) =>
-      request<any>(`/tests/${id}/move`, { method: 'PATCH', body: JSON.stringify({ folder_id: folderId }) }),
+      request<MoveTestResponse>(`/tests/${id}/move`, { method: 'PATCH', body: JSON.stringify({ folder_id: folderId }) }),
     [],
   )
 
-  const getMetrics = useCallback((id: string) => request<any>(`/tests/${id}/metrics`), [])
+  const getMetrics = useCallback((id: string) => request<TestMetricsResponse>(`/tests/${id}/metrics`), [])
 
-  const getTestArchiveManifest = useCallback((id: string) => request<any>(`/tests/${id}/archive/manifest`), [])
+  const getTestArchiveManifest = useCallback((id: string) => request<RunArchiveManifest>(`/tests/${id}/archive/manifest`), [])
 
   const getTestArchiveTransactions = useCallback(
     (id: string, params?: ArchiveTransactionsParams) => {
@@ -104,7 +196,7 @@ export function useTestApi() {
         group: params?.group,
         success: params?.success,
       })
-      return request<any>(`/tests/${id}/archive/transactions${suffix}`)
+      return request<ArchiveTransactionsResponse>(`/tests/${id}/archive/transactions${suffix}`)
     },
     [],
   )
@@ -112,7 +204,7 @@ export function useTestApi() {
   const getTestArchiveResources = useCallback(
     (id: string, params?: ArchiveListParams) => {
       const suffix = buildQuery({ limit: params?.limit, offset: params?.offset })
-      return request<any>(`/tests/${id}/archive/resources${suffix}`)
+      return request<ArchiveResourcesResponse>(`/tests/${id}/archive/resources${suffix}`)
     },
     [],
   )
@@ -120,12 +212,12 @@ export function useTestApi() {
   const getTestArchiveSummaries = useCallback(
     (id: string, params?: ArchiveListParams) => {
       const suffix = buildQuery({ limit: params?.limit, offset: params?.offset })
-      return request<any>(`/tests/${id}/archive/summaries${suffix}`)
+      return request<ArchiveSummariesResponse>(`/tests/${id}/archive/summaries${suffix}`)
     },
     [],
   )
 
-  const getTestArchiveReport = useCallback((id: string) => request<any>(`/tests/${id}/archive/report`), [])
+  const getTestArchiveReport = useCallback((id: string) => request<RunArchiveReport>(`/tests/${id}/archive/report`), [])
 
   const downloadTestArchive = useCallback((id: string) => fetchBlob(`/tests/${id}/archive`), [])
 
@@ -136,7 +228,7 @@ export function useTestApi() {
 
   const scaleVUsers = useCallback(
     (testId: string, group: string, targetVUsers: number) =>
-      request<any>(`/tests/${testId}/vusers`, {
+      request<ScaleVUsersResponse>(`/tests/${testId}/vusers`, {
         method: 'PATCH',
         body: JSON.stringify({ group, target_vusers: targetVUsers }),
       }),
@@ -145,7 +237,7 @@ export function useTestApi() {
 
   const adjustDuration = useCallback(
     (testId: string, duration: string) =>
-      request<any>(`/tests/${testId}/duration`, {
+      request<AdjustDurationResponse>(`/tests/${testId}/duration`, {
         method: 'PATCH',
         body: JSON.stringify({ duration }),
       }),

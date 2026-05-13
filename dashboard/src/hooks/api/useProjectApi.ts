@@ -3,6 +3,10 @@ import { useCallback, useMemo } from 'react'
 import { Project, Folder } from '../../types'
 import { request } from '../apiClient'
 
+type DeleteEntityResponse = {
+  deleted: string
+}
+
 function query(params: Record<string, string | undefined>) {
   const q = new URLSearchParams()
   Object.entries(params).forEach(([key, value]) => {
@@ -25,7 +29,7 @@ export function useProjectApi() {
     [],
   )
 
-  const deleteProject = useCallback((id: string) => request<any>(`/projects/${id}`, { method: 'DELETE' }), [])
+  const deleteProject = useCallback((id: string) => request<DeleteEntityResponse>(`/projects/${id}`, { method: 'DELETE' }), [])
 
   const listFolders = useCallback(
     (projectId: string, category?: string) =>
@@ -45,7 +49,7 @@ export function useProjectApi() {
     [],
   )
 
-  const deleteFolder = useCallback((id: string) => request<any>(`/folders/${id}`, { method: 'DELETE' }), [])
+  const deleteFolder = useCallback((id: string) => request<DeleteEntityResponse>(`/folders/${id}`, { method: 'DELETE' }), [])
 
   return useMemo(
     () => ({
