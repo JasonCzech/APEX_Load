@@ -8,11 +8,14 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"sort"
 	"time"
 
 	"github.com/jasonczech/stormrunner/pkg/distributed/generatorrpc"
 	"github.com/jasonczech/stormrunner/pkg/engine"
+	"github.com/jasonczech/stormrunner/pkg/storage"
 	grpcCodes "google.golang.org/grpc/codes"
 	grpcStatus "google.golang.org/grpc/status"
 )
@@ -26,6 +29,7 @@ type generatorClient interface {
 	AdjustDuration(ctx context.Context, adjustment generatorrpc.DurationAdjustment) (generatorrpc.DurationResult, error)
 	OpenMetricsStream(ctx context.Context) (*generatorrpc.MetricsStream, error)
 	StopTest(ctx context.Context, testID string, graceful bool) (generatorrpc.StopResult, error)
+	GetArchiveArtifact(ctx context.Context, request generatorrpc.ArchiveArtifactRequest) ([]byte, error)
 	Close() error
 }
 
@@ -315,11 +319,78 @@ func (b *distributedExecutionBackend) consumeMetrics(ctx context.Context, tr *Te
 }
 
 func (b *distributedExecutionBackend) completeDistributedTestRun(tr *TestRunner, test *ManagedTest, finalStatus string, finalError string) {
+	archiveRecord, archiveErr := b.stageRemoteArchive(test)
+	if archiveErr != nil {
+		finalStatus = "FAILED"
+		finalError = appendRunError(finalError, "remote archive stage failed", archiveErr)
+	}
 	b.closeRemoteResources(test)
 	if test.cancel != nil {
 		test.cancel()
 	}
-	tr.completeTestRun(test, finalStatus, time.Now(), finalError, nil)
+	if archiveRecord != nil {
+		if err := tr.saveRunArchiveRecord(archiveRecord); err != nil {
+			finalStatus = "FAILED"
+			finalError = appendRunError(finalError, "archive metadata save failed", err)
+			archiveRecord = nil
+		}
+	}
+	tr.completeTestRun(test, finalStatus, time.Now(), finalError, archiveRecord)
+}
+
+func (b *distributedExecutionBackend) stageRemoteArchive(test *ManagedTest) (*storage.RunArchiveRecord, error) {
+	client := test.remoteClient
+	if client == nil {
+		return nil, nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
+	defer cancel()
+
+	manifestContent, err := client.GetArchiveArtifact(ctx, generatorrpc.ArchiveArtifactRequest{TestID: test.ID, Name: "manifest.json"})
+	if err != nil {
+		code := grpcStatus.Code(err)
+		if code == grpcCodes.NotFound || code == grpcCodes.Unimplemented {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var manifest RunArchiveManifest
+	if err := json.Unmarshal(manifestContent, &manifest); err != nil {
+		return nil, err
+	}
+	archiveDir := filepath.Join(resolveArchiveRoot(), "remote", test.ID)
+	if err := os.RemoveAll(archiveDir); err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(archiveDir, 0o755); err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(filepath.Join(archiveDir, "manifest.json"), manifestContent, 0o644); err != nil {
+		return nil, err
+	}
+	for name := range archiveManifestArtifactNames(&manifest) {
+		if name == "manifest.json" {
+			continue
+		}
+		content, err := client.GetArchiveArtifact(ctx, generatorrpc.ArchiveArtifactRequest{TestID: test.ID, Name: name})
+		if err != nil {
+			return nil, err
+		}
+		if err := os.WriteFile(filepath.Join(archiveDir, name), content, 0o644); err != nil {
+			return nil, err
+		}
+	}
+	return &storage.RunArchiveRecord{
+		TestID:               manifest.TestID,
+		SchemaVersion:        manifest.SchemaVersion,
+		ArchivePath:          archiveDir,
+		ManifestPath:         filepath.Join(archiveDir, "manifest.json"),
+		TransactionCount:     manifest.TransactionCount,
+		ResourceSampleCount:  manifest.ResourceSampleCount,
+		IntervalSummaryCount: manifest.IntervalSummaryCount,
+		CreatedAt:            manifest.CreatedAt,
+		CompletedAt:          manifest.CompletedAt,
+	}, nil
 }
 
 func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.MetricsBatch) *LiveMetrics {
@@ -329,10 +400,10 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 	}
 
 	live := &LiveMetrics{
-		Timestamp:     timestamp,
-		ActiveVUsers:  int64(batch.Stats.ActiveVUsers),
-		Transactions:  make(map[string]*TxMetrics),
-		GroupMetrics:  make(map[string]*GroupLiveMetrics),
+		Timestamp:    timestamp,
+		ActiveVUsers: int64(batch.Stats.ActiveVUsers),
+		Transactions: make(map[string]*TxMetrics),
+		GroupMetrics: make(map[string]*GroupLiveMetrics),
 		Resources: &engine.SystemResources{
 			CPUProcessPct: batch.Stats.CPUPercent,
 			MemProcessMb:  float64(batch.Stats.MemoryBytes) / (1024 * 1024),

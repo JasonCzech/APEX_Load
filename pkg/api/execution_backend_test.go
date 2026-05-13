@@ -5,6 +5,8 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 	"time"
@@ -1026,6 +1028,112 @@ func TestDistributedExecutionBackendPausesRealRemoteEngine(t *testing.T) {
 			t.Fatalf("expected live metrics to reflect resumed remote engine, got status=%q metrics=%#v", resumed.Status, resumed.LiveMetrics)
 		}
 		time.Sleep(25 * time.Millisecond)
+	}
+}
+
+func TestDistributedExecutionBackendStagesRemoteArchiveOnCompletion(t *testing.T) {
+	const bufSize = 1024 * 1024
+
+	t.Setenv("STORMRUNNER_ARCHIVE_DIR", t.TempDir())
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/" {
+			t.Fatalf("unexpected request path %q", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer target.Close()
+
+	listener := bufconn.Listen(bufSize)
+	server := grpc.NewServer()
+	pb.RegisterGeneratorControlServer(server, generatorrpc.NewService("generator-1", 50, generatorrpc.WithExecution()))
+
+	go func() {
+		_ = server.Serve(listener)
+	}()
+	t.Cleanup(func() {
+		server.Stop()
+		_ = listener.Close()
+	})
+
+	hub := NewHub()
+	runner := NewTestRunner(1, hub, nil)
+	runner.setExecutionBackend(newDistributedExecutionBackend(
+		[]string{"bufnet"},
+		5*time.Second,
+		func(ctx context.Context, target string) (generatorClient, error) {
+			return generatorrpc.Dial(
+				ctx,
+				target,
+				grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+					return listener.Dial()
+				}),
+				grpc.WithTransportCredentials(insecure.NewCredentials()),
+				grpc.WithBlock(),
+			)
+		},
+	))
+
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-1",
+		Name:     "Checkout",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Config:   dsl.ScriptConfig{BaseURL: target.URL, RunLogic: dsl.RunLogicConfig{Iterations: 0}},
+		Actions:  []dsl.Action{{Name: "Home", Type: "GET", Target: "/"}},
+	})
+
+	testRun, err := runner.CreateTest(CreateTestRequest{
+		Name:     "Distributed archive completion",
+		Duration: "2s",
+		Groups: []CreateGroupEntry{{
+			Name:     "Group A",
+			ScriptID: "script-1",
+			VUsers:   1,
+			RampUp:   "0s",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("CreateTest returned error: %v", err)
+	}
+
+	if err := runner.StartTest(testRun.ID); err != nil {
+		t.Fatalf("StartTest returned error: %v", err)
+	}
+
+	deadline := time.Now().Add(8 * time.Second)
+	for {
+		completed, ok := runner.GetTest(testRun.ID)
+		if !ok {
+			t.Fatalf("expected managed test %q to exist", testRun.ID)
+		}
+		if completed.Status == "COMPLETE" && completed.EndedAt != nil && completed.Archive != nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected distributed run to complete with archive metadata, got status=%q archive=%#v", completed.Status, completed.Archive)
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+
+	completed, ok := runner.GetTest(testRun.ID)
+	if !ok {
+		t.Fatalf("expected managed test %q to exist after completion", testRun.ID)
+	}
+	if completed.Archive.TransactionCount == 0 || completed.Archive.IntervalSummaryCount == 0 {
+		t.Fatalf("expected archive counts to be populated, got %#v", completed.Archive)
+	}
+	manifest, err := runner.GetRunArchiveManifest(testRun.ID)
+	if err != nil {
+		t.Fatalf("GetRunArchiveManifest returned error: %v", err)
+	}
+	if manifest.TransactionCount != completed.Archive.TransactionCount {
+		t.Fatalf("expected manifest transaction count %d, got %d", completed.Archive.TransactionCount, manifest.TransactionCount)
+	}
+	for _, name := range []string{"manifest.json", "transactions.jsonl", "resources.jsonl", "interval_summaries.jsonl", "transactions.parquet", "resources.parquet", "interval_summaries.parquet"} {
+		if _, err := os.Stat(filepath.Join(completed.Archive.ArchivePath, name)); err != nil {
+			t.Fatalf("expected staged remote archive file %s to exist: %v", name, err)
+		}
 	}
 }
 

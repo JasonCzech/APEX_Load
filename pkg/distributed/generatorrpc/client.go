@@ -85,8 +85,13 @@ type TransactionMetric struct {
 }
 
 type StopResult struct {
-	Acknowledged bool
+	Acknowledged  bool
 	PendingVUsers int32
+}
+
+type ArchiveArtifactRequest struct {
+	TestID string
+	Name   string
 }
 
 type Script struct {
@@ -234,9 +239,21 @@ func (c *Client) StopTest(ctx context.Context, testID string, graceful bool) (St
 	}
 
 	return StopResult{
-		Acknowledged: ack.GetAcknowledged(),
+		Acknowledged:  ack.GetAcknowledged(),
 		PendingVUsers: ack.GetPendingVusers(),
 	}, nil
+}
+
+func (c *Client) GetArchiveArtifact(ctx context.Context, request ArchiveArtifactRequest) ([]byte, error) {
+	artifact, err := c.rpc.GetArchiveArtifact(
+		ctx,
+		&pb.ArchiveArtifactRequest{TestId: request.TestID, Name: request.Name},
+		grpc.MaxCallRecvMsgSize(64<<20),
+	)
+	if err != nil {
+		return nil, err
+	}
+	return artifact.GetContent(), nil
 }
 
 func (c *Client) OpenHeartbeat(ctx context.Context) (*HeartbeatStream, error) {

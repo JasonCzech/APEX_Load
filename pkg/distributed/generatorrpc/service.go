@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"os"
+	"path/filepath"
 	"runtime"
+	"sort"
 	"sync"
 	"time"
 
@@ -12,6 +15,7 @@ import (
 	"github.com/jasonczech/stormrunner/pkg/dsl"
 	"github.com/jasonczech/stormrunner/pkg/engine"
 	"github.com/jasonczech/stormrunner/pkg/protocol"
+	"github.com/jasonczech/stormrunner/pkg/storage"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -22,13 +26,13 @@ type cachedScript struct {
 }
 
 type assignedTest struct {
-	testID          string
-	vuserCount      int32
-	paused          bool
-	durationSeconds int64
-	groups          map[string]int32
-	activeGroups     map[string]int32
-	groupStats       map[string]GeneratorStats
+	testID            string
+	vuserCount        int32
+	paused            bool
+	durationSeconds   int64
+	groups            map[string]int32
+	activeGroups      map[string]int32
+	groupStats        map[string]GeneratorStats
 	groupTransactions map[string][]TransactionMetric
 }
 
@@ -81,17 +85,19 @@ func (b *transactionBuffer) Drain() []TransactionMetric {
 type Service struct {
 	pb.UnimplementedGeneratorControlServer
 
-	mu          sync.RWMutex
-	generatorID string
-	maxVUsers   int32
-	scripts     map[string]cachedScript
-	assignments map[string]assignedTest
-	executions  map[string]map[string]*groupExecution
+	mu               sync.RWMutex
+	generatorID      string
+	maxVUsers        int32
+	scripts          map[string]cachedScript
+	assignments      map[string]assignedTest
+	executions       map[string]map[string]*groupExecution
+	archiveWriters   map[string]*archiveRecorder
+	archiveRecords   map[string]*storage.RunArchiveRecord
 	executionEnabled bool
 	publishInterval  time.Duration
 	completionTimers map[string]*time.Timer
-	subscribers map[int]chan *pb.MetricsBatch
-	nextSubID   int
+	subscribers      map[int]chan *pb.MetricsBatch
+	nextSubID        int
 }
 
 func WithExecution() ServiceOption {
@@ -109,14 +115,16 @@ func NewService(generatorID string, maxVUsers int, opts ...ServiceOption) *Servi
 	}
 
 	service := &Service{
-		generatorID: generatorID,
-		maxVUsers:   int32(maxVUsers),
-		scripts:     make(map[string]cachedScript),
-		assignments: make(map[string]assignedTest),
-		executions:  make(map[string]map[string]*groupExecution),
-		publishInterval: time.Second,
+		generatorID:      generatorID,
+		maxVUsers:        int32(maxVUsers),
+		scripts:          make(map[string]cachedScript),
+		assignments:      make(map[string]assignedTest),
+		executions:       make(map[string]map[string]*groupExecution),
+		archiveWriters:   make(map[string]*archiveRecorder),
+		archiveRecords:   make(map[string]*storage.RunArchiveRecord),
+		publishInterval:  time.Second,
 		completionTimers: make(map[string]*time.Timer),
-		subscribers: make(map[int]chan *pb.MetricsBatch),
+		subscribers:      make(map[int]chan *pb.MetricsBatch),
 	}
 	for _, opt := range opts {
 		if opt != nil {
@@ -336,10 +344,16 @@ func (s *Service) StopTest(_ context.Context, request *pb.StopRequest) (*pb.Stop
 	for _, exec := range execs {
 		exec.cancel()
 	}
+	if writer := s.takeArchiveWriter(request.GetTestId()); writer != nil {
+		record, err := writer.Finalize("COMPLETE", time.Now(), "")
+		if err == nil && record != nil {
+			s.storeArchiveRecord(record)
+		}
+	}
 
 	go s.broadcastMetrics(batch)
 	return &pb.StopAck{
-		Acknowledged: ok,
+		Acknowledged:  ok,
 		PendingVusers: assignment.vuserCount,
 	}, nil
 }
@@ -391,6 +405,34 @@ func (s *Service) StreamMetrics(stream pb.GeneratorControl_StreamMetricsServer) 
 			}
 		}
 	}
+}
+
+func (s *Service) GetArchiveArtifact(_ context.Context, request *pb.ArchiveArtifactRequest) (*pb.ArchiveArtifact, error) {
+	if request.GetTestId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "test_id is required")
+	}
+	if request.GetName() == "" {
+		return nil, status.Error(codes.InvalidArgument, "name is required")
+	}
+	s.mu.RLock()
+	record := s.archiveRecords[request.GetTestId()]
+	s.mu.RUnlock()
+	if record == nil {
+		return nil, status.Error(codes.NotFound, "archive not found")
+	}
+	manifestPath := record.ManifestPath
+	fullPath := manifestPath
+	if request.GetName() != "manifest.json" {
+		fullPath = filepath.Join(record.ArchivePath, request.GetName())
+	}
+	content, err := os.ReadFile(fullPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, status.Error(codes.NotFound, "archive artifact not found")
+		}
+		return nil, status.Errorf(codes.Internal, "read archive artifact: %v", err)
+	}
+	return &pb.ArchiveArtifact{Name: request.GetName(), Content: content}, nil
 }
 
 func (s *Service) Heartbeat(stream pb.GeneratorControl_HeartbeatServer) error {
@@ -520,7 +562,44 @@ func (s *Service) PublishMetrics(testID string, groupName string, stats Generato
 	assignment.groupTransactions[groupName] = append([]TransactionMetric(nil), transactions...)
 	s.assignments[testID] = assignment
 	batch := s.metricsBatchLocked(testID)
+	writer := s.archiveWriters[testID]
 	s.mu.Unlock()
+
+	if writer != nil {
+		if batch.GetStats() != nil {
+			_ = writer.RecordResourceSample(time.UnixMilli(batch.TimestampUnixMs), int64(batch.GetStats().GetActiveVusers()), &engine.SystemResources{
+				CPUProcessPct: batch.GetStats().GetCpuPercent(),
+				MemProcessMb:  float64(batch.GetStats().GetMemoryBytes()) / (1024 * 1024),
+			})
+		}
+		totalErrors := int64(0)
+		totalDuration := 0.0
+		durations := make([]float64, 0, len(batch.Transactions))
+		for _, tx := range batch.Transactions {
+			totalDuration += tx.DurationMs
+			durations = append(durations, tx.DurationMs)
+			if !tx.Success {
+				totalErrors++
+			}
+		}
+		avgResponse := 0.0
+		if len(batch.Transactions) > 0 {
+			avgResponse = totalDuration / float64(len(batch.Transactions))
+		}
+		_ = writer.RecordIntervalSummary(archiveIntervalSummary{
+			Timestamp:     time.UnixMilli(batch.TimestampUnixMs),
+			ActiveVUsers:  int64(batch.GetStats().GetActiveVusers()),
+			TPS:           float64(len(batch.Transactions)),
+			AvgResponseMs: avgResponse,
+			ErrorPct:      errorPct(totalErrors, int64(len(batch.Transactions))),
+			TotalTx:       int64(len(batch.Transactions)),
+			TotalErrors:   totalErrors,
+			P50Ms:         percentileValue(durations, 0.50),
+			P90Ms:         percentileValue(durations, 0.90),
+			P95Ms:         percentileValue(durations, 0.95),
+			P99Ms:         percentileValue(durations, 0.99),
+		})
+	}
 
 	go s.broadcastMetrics(batch)
 	return nil
@@ -644,9 +723,9 @@ func (s *Service) metricsBatchForMetrics(testID string, stats GeneratorStats, tr
 		TimestampUnixMs: time.Now().UnixMilli(),
 		Transactions:    protoTransactions,
 		Stats:           toProtoStats(stats),
-		Groups:         groups,
-		LifecycleState: lifecycleState,
-		LifecycleError: lifecycleError,
+		Groups:          groups,
+		LifecycleState:  lifecycleState,
+		LifecycleError:  lifecycleError,
 	}
 }
 
@@ -714,6 +793,15 @@ func (s *Service) startExecutionLocked(assignment *pb.WorkAssignment) error {
 		duration = time.Second
 	}
 	results := &transactionBuffer{}
+	writer := s.archiveWriters[assignment.GetTestId()]
+	if writer == nil {
+		archiveWriter, archiveErr := newArchiveRecorder(assignment.GetTestId(), script.Name)
+		if archiveErr != nil {
+			return status.Errorf(codes.Internal, "initialize archive recorder: %v", archiveErr)
+		}
+		writer = archiveWriter
+		s.archiveWriters[assignment.GetTestId()] = writer
+	}
 	mge, err := engine.NewMultiGroup(engine.MultiGroupConfig{
 		Groups: []engine.GroupConfig{{
 			Name:         assignment.GetGroupName(),
@@ -721,7 +809,7 @@ func (s *Service) startExecutionLocked(assignment *pb.WorkAssignment) error {
 			VUsers:       int(assignment.GetVuserCount()),
 			RampUp:       time.Duration(assignment.GetRampUpSeconds()) * time.Second,
 			InitStrategy: "at_runtime",
-			ResultSink:   results,
+			ResultSink:   combineSinks(results, writer),
 		}},
 		Duration: duration,
 	})
@@ -806,7 +894,13 @@ func (s *Service) finishExecution(testID string, groupName string, err error) {
 		delete(s.assignments, testID)
 		s.stopCompletionTimerLocked(testID)
 		s.mu.Unlock()
-		s.broadcastMetrics(s.metricsBatchForState(testID, 0, false, assignment.groups, "FAILED", err.Error()))
+		finalError := err.Error()
+		if writer := s.takeArchiveWriter(testID); writer != nil {
+			if record, finalizeErr := writer.Finalize("FAILED", time.Now(), finalError); finalizeErr == nil && record != nil {
+				s.storeArchiveRecord(record)
+			}
+		}
+		s.broadcastMetrics(s.metricsBatchForState(testID, 0, false, assignment.groups, "FAILED", finalError))
 		return
 	}
 	if hasRemainingExecutions {
@@ -817,7 +911,81 @@ func (s *Service) finishExecution(testID string, groupName string, err error) {
 	delete(s.assignments, testID)
 	s.stopCompletionTimerLocked(testID)
 	s.mu.Unlock()
+	if writer := s.takeArchiveWriter(testID); writer != nil {
+		if record, err := writer.Finalize("COMPLETE", time.Now(), ""); err == nil && record != nil {
+			s.storeArchiveRecord(record)
+		}
+	}
 	s.broadcastMetrics(s.metricsBatchForState(testID, 0, false, assignment.groups, "COMPLETE", ""))
+}
+
+func (s *Service) takeArchiveWriter(testID string) *archiveRecorder {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	writer := s.archiveWriters[testID]
+	delete(s.archiveWriters, testID)
+	return writer
+}
+
+func (s *Service) storeArchiveRecord(record *storage.RunArchiveRecord) {
+	if record == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.archiveRecords[record.TestID] = record
+}
+
+type combinedSink struct {
+	sinks []engine.ResultSink
+}
+
+func combineSinks(sinks ...engine.ResultSink) engine.ResultSink {
+	filtered := make([]engine.ResultSink, 0, len(sinks))
+	for _, sink := range sinks {
+		if sink != nil {
+			filtered = append(filtered, sink)
+		}
+	}
+	if len(filtered) == 1 {
+		return filtered[0]
+	}
+	return &combinedSink{sinks: filtered}
+}
+
+func (s *combinedSink) RecordResult(result *protocol.Result) error {
+	for _, sink := range s.sinks {
+		if sink == nil {
+			continue
+		}
+		if err := sink.RecordResult(result); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func percentileValue(values []float64, percentile float64) float64 {
+	if len(values) == 0 {
+		return 0
+	}
+	sorted := append([]float64(nil), values...)
+	sort.Float64s(sorted)
+	if percentile <= 0 {
+		return sorted[0]
+	}
+	if percentile >= 1 {
+		return sorted[len(sorted)-1]
+	}
+	index := int(float64(len(sorted)-1) * percentile)
+	return sorted[index]
+}
+
+func errorPct(errors int64, total int64) float64 {
+	if total == 0 {
+		return 0
+	}
+	return float64(errors) / float64(total) * 100
 }
 
 func maxInt64(left, right int64) int64 {

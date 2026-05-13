@@ -19,13 +19,14 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	GeneratorControl_AssignWork_FullMethodName       = "/stormrunner.v1.GeneratorControl/AssignWork"
-	GeneratorControl_AdjustVUsers_FullMethodName     = "/stormrunner.v1.GeneratorControl/AdjustVUsers"
-	GeneratorControl_AdjustDuration_FullMethodName   = "/stormrunner.v1.GeneratorControl/AdjustDuration"
-	GeneratorControl_StopTest_FullMethodName         = "/stormrunner.v1.GeneratorControl/StopTest"
-	GeneratorControl_StreamMetrics_FullMethodName    = "/stormrunner.v1.GeneratorControl/StreamMetrics"
-	GeneratorControl_Heartbeat_FullMethodName        = "/stormrunner.v1.GeneratorControl/Heartbeat"
-	GeneratorControl_DistributeScript_FullMethodName = "/stormrunner.v1.GeneratorControl/DistributeScript"
+	GeneratorControl_AssignWork_FullMethodName         = "/stormrunner.v1.GeneratorControl/AssignWork"
+	GeneratorControl_AdjustVUsers_FullMethodName       = "/stormrunner.v1.GeneratorControl/AdjustVUsers"
+	GeneratorControl_AdjustDuration_FullMethodName     = "/stormrunner.v1.GeneratorControl/AdjustDuration"
+	GeneratorControl_StopTest_FullMethodName           = "/stormrunner.v1.GeneratorControl/StopTest"
+	GeneratorControl_StreamMetrics_FullMethodName      = "/stormrunner.v1.GeneratorControl/StreamMetrics"
+	GeneratorControl_Heartbeat_FullMethodName          = "/stormrunner.v1.GeneratorControl/Heartbeat"
+	GeneratorControl_DistributeScript_FullMethodName   = "/stormrunner.v1.GeneratorControl/DistributeScript"
+	GeneratorControl_GetArchiveArtifact_FullMethodName = "/stormrunner.v1.GeneratorControl/GetArchiveArtifact"
 )
 
 // GeneratorControlClient is the client API for GeneratorControl service.
@@ -50,6 +51,8 @@ type GeneratorControlClient interface {
 	Heartbeat(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[HeartbeatPing, HeartbeatPong], error)
 	// DistributeScript sends a compiled script to a generator for caching.
 	DistributeScript(ctx context.Context, in *ScriptPayload, opts ...grpc.CallOption) (*ScriptAck, error)
+	// GetArchiveArtifact returns a generated archive artifact for a completed test.
+	GetArchiveArtifact(ctx context.Context, in *ArchiveArtifactRequest, opts ...grpc.CallOption) (*ArchiveArtifact, error)
 }
 
 type generatorControlClient struct {
@@ -136,6 +139,16 @@ func (c *generatorControlClient) DistributeScript(ctx context.Context, in *Scrip
 	return out, nil
 }
 
+func (c *generatorControlClient) GetArchiveArtifact(ctx context.Context, in *ArchiveArtifactRequest, opts ...grpc.CallOption) (*ArchiveArtifact, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ArchiveArtifact)
+	err := c.cc.Invoke(ctx, GeneratorControl_GetArchiveArtifact_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // GeneratorControlServer is the server API for GeneratorControl service.
 // All implementations must embed UnimplementedGeneratorControlServer
 // for forward compatibility.
@@ -158,6 +171,8 @@ type GeneratorControlServer interface {
 	Heartbeat(grpc.BidiStreamingServer[HeartbeatPing, HeartbeatPong]) error
 	// DistributeScript sends a compiled script to a generator for caching.
 	DistributeScript(context.Context, *ScriptPayload) (*ScriptAck, error)
+	// GetArchiveArtifact returns a generated archive artifact for a completed test.
+	GetArchiveArtifact(context.Context, *ArchiveArtifactRequest) (*ArchiveArtifact, error)
 	mustEmbedUnimplementedGeneratorControlServer()
 }
 
@@ -188,6 +203,9 @@ func (UnimplementedGeneratorControlServer) Heartbeat(grpc.BidiStreamingServer[He
 }
 func (UnimplementedGeneratorControlServer) DistributeScript(context.Context, *ScriptPayload) (*ScriptAck, error) {
 	return nil, status.Error(codes.Unimplemented, "method DistributeScript not implemented")
+}
+func (UnimplementedGeneratorControlServer) GetArchiveArtifact(context.Context, *ArchiveArtifactRequest) (*ArchiveArtifact, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetArchiveArtifact not implemented")
 }
 func (UnimplementedGeneratorControlServer) mustEmbedUnimplementedGeneratorControlServer() {}
 func (UnimplementedGeneratorControlServer) testEmbeddedByValue()                          {}
@@ -314,6 +332,24 @@ func _GeneratorControl_DistributeScript_Handler(srv interface{}, ctx context.Con
 	return interceptor(ctx, in, info, handler)
 }
 
+func _GeneratorControl_GetArchiveArtifact_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ArchiveArtifactRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GeneratorControlServer).GetArchiveArtifact(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GeneratorControl_GetArchiveArtifact_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GeneratorControlServer).GetArchiveArtifact(ctx, req.(*ArchiveArtifactRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // GeneratorControl_ServiceDesc is the grpc.ServiceDesc for GeneratorControl service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -340,6 +376,10 @@ var GeneratorControl_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DistributeScript",
 			Handler:    _GeneratorControl_DistributeScript_Handler,
+		},
+		{
+			MethodName: "GetArchiveArtifact",
+			Handler:    _GeneratorControl_GetArchiveArtifact_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

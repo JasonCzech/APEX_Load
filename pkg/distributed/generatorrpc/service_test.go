@@ -553,3 +553,103 @@ func TestServiceWithExecutionRunsAssignedScript(t *testing.T) {
 		t.Fatalf("Metrics CloseSend: %v", err)
 	}
 }
+
+func TestServiceWithExecutionExposesArchiveArtifacts(t *testing.T) {
+	const bufSize = 1024 * 1024
+
+	t.Setenv("STORMRUNNER_ARCHIVE_DIR", t.TempDir())
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer target.Close()
+
+	listener := bufconn.Listen(bufSize)
+	server := grpc.NewServer()
+	service := NewService("generator-1", 50, WithExecution())
+	pb.RegisterGeneratorControlServer(server, service)
+
+	go func() {
+		_ = server.Serve(listener)
+	}()
+	t.Cleanup(func() {
+		server.Stop()
+		_ = listener.Close()
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+
+	conn, err := grpc.DialContext(
+		ctx,
+		"bufnet",
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+			return listener.Dial()
+		}),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithBlock(),
+	)
+	if err != nil {
+		t.Fatalf("DialContext: %v", err)
+	}
+
+	client := NewClient(conn)
+	t.Cleanup(func() {
+		_ = client.Close()
+	})
+
+	scriptBytes, err := json.Marshal(&dsl.Script{
+		ID:       "script-1",
+		Name:     "Checkout",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Config:   dsl.ScriptConfig{BaseURL: target.URL, RunLogic: dsl.RunLogicConfig{Iterations: 0}},
+		Actions:  []dsl.Action{{Name: "Home", Type: "GET", Target: "/"}},
+	})
+	if err != nil {
+		t.Fatalf("Marshal script: %v", err)
+	}
+
+	if _, err := client.DistributeScript(ctx, Script{ID: "script-1", Content: scriptBytes, ContentHash: "hash-1"}); err != nil {
+		t.Fatalf("DistributeScript: %v", err)
+	}
+	if _, err := client.AssignWork(ctx, Assignment{TestID: "test-archive", GroupName: "Group A", TargetDurationSeconds: 2, ScriptID: "script-1", VUserCount: 1}); err != nil {
+		t.Fatalf("AssignWork: %v", err)
+	}
+
+	metrics, err := client.OpenMetricsStream(ctx)
+	if err != nil {
+		t.Fatalf("OpenMetricsStream: %v", err)
+	}
+	deadline := time.Now().Add(6 * time.Second)
+	for {
+		batch, err := metrics.Receive()
+		if err != nil {
+			t.Fatalf("Receive metrics batch: %v", err)
+		}
+		if batch.LifecycleState == "COMPLETE" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("expected assigned execution to complete")
+		}
+	}
+
+	manifestContent, err := client.GetArchiveArtifact(ctx, ArchiveArtifactRequest{TestID: "test-archive", Name: "manifest.json"})
+	if err != nil {
+		t.Fatalf("GetArchiveArtifact manifest: %v", err)
+	}
+	if len(manifestContent) == 0 {
+		t.Fatal("expected manifest content to be populated")
+	}
+	txContent, err := client.GetArchiveArtifact(ctx, ArchiveArtifactRequest{TestID: "test-archive", Name: "transactions.jsonl"})
+	if err != nil {
+		t.Fatalf("GetArchiveArtifact transactions: %v", err)
+	}
+	if len(txContent) == 0 {
+		t.Fatal("expected transaction archive content to be populated")
+	}
+	if err := metrics.CloseSend(); err != nil {
+		t.Fatalf("Metrics CloseSend: %v", err)
+	}
+}

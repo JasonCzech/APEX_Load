@@ -1295,6 +1295,110 @@ func (x *ScriptAck) GetContentHash() string {
 	return ""
 }
 
+type ArchiveArtifactRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TestId        string                 `protobuf:"bytes,1,opt,name=test_id,json=testId,proto3" json:"test_id,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ArchiveArtifactRequest) Reset() {
+	*x = ArchiveArtifactRequest{}
+	mi := &file_api_proto_generator_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ArchiveArtifactRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ArchiveArtifactRequest) ProtoMessage() {}
+
+func (x *ArchiveArtifactRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_generator_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ArchiveArtifactRequest.ProtoReflect.Descriptor instead.
+func (*ArchiveArtifactRequest) Descriptor() ([]byte, []int) {
+	return file_api_proto_generator_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *ArchiveArtifactRequest) GetTestId() string {
+	if x != nil {
+		return x.TestId
+	}
+	return ""
+}
+
+func (x *ArchiveArtifactRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+type ArchiveArtifact struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Content       []byte                 `protobuf:"bytes,2,opt,name=content,proto3" json:"content,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ArchiveArtifact) Reset() {
+	*x = ArchiveArtifact{}
+	mi := &file_api_proto_generator_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ArchiveArtifact) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ArchiveArtifact) ProtoMessage() {}
+
+func (x *ArchiveArtifact) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_generator_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ArchiveArtifact.ProtoReflect.Descriptor instead.
+func (*ArchiveArtifact) Descriptor() ([]byte, []int) {
+	return file_api_proto_generator_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *ArchiveArtifact) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ArchiveArtifact) GetContent() []byte {
+	if x != nil {
+		return x.Content
+	}
+	return nil
+}
+
 var File_api_proto_generator_proto protoreflect.FileDescriptor
 
 const file_api_proto_generator_proto_rawDesc = "" +
@@ -1401,7 +1505,13 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\fcontent_hash\x18\x03 \x01(\tR\vcontentHash\"F\n" +
 	"\tScriptAck\x12\x16\n" +
 	"\x06cached\x18\x01 \x01(\bR\x06cached\x12!\n" +
-	"\fcontent_hash\x18\x02 \x01(\tR\vcontentHash2\xb3\x04\n" +
+	"\fcontent_hash\x18\x02 \x01(\tR\vcontentHash\"E\n" +
+	"\x16ArchiveArtifactRequest\x12\x17\n" +
+	"\atest_id\x18\x01 \x01(\tR\x06testId\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\"?\n" +
+	"\x0fArchiveArtifact\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
+	"\acontent\x18\x02 \x01(\fR\acontent2\x92\x05\n" +
 	"\x10GeneratorControl\x12K\n" +
 	"\n" +
 	"AssignWork\x12\x1e.stormrunner.v1.WorkAssignment\x1a\x1d.stormrunner.v1.AssignmentAck\x12N\n" +
@@ -1410,7 +1520,8 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\bStopTest\x12\x1b.stormrunner.v1.StopRequest\x1a\x17.stormrunner.v1.StopAck\x12P\n" +
 	"\rStreamMetrics\x12\x1d.stormrunner.v1.ControlSignal\x1a\x1c.stormrunner.v1.MetricsBatch(\x010\x01\x12M\n" +
 	"\tHeartbeat\x12\x1d.stormrunner.v1.HeartbeatPing\x1a\x1d.stormrunner.v1.HeartbeatPong(\x010\x01\x12L\n" +
-	"\x10DistributeScript\x12\x1d.stormrunner.v1.ScriptPayload\x1a\x19.stormrunner.v1.ScriptAckB-Z+github.com/jasonczech/stormrunner/api/protob\x06proto3"
+	"\x10DistributeScript\x12\x1d.stormrunner.v1.ScriptPayload\x1a\x19.stormrunner.v1.ScriptAck\x12]\n" +
+	"\x12GetArchiveArtifact\x12&.stormrunner.v1.ArchiveArtifactRequest\x1a\x1f.stormrunner.v1.ArchiveArtifactB-Z+github.com/jasonczech/stormrunner/api/protob\x06proto3"
 
 var (
 	file_api_proto_generator_proto_rawDescOnce sync.Once
@@ -1424,31 +1535,33 @@ func file_api_proto_generator_proto_rawDescGZIP() []byte {
 	return file_api_proto_generator_proto_rawDescData
 }
 
-var file_api_proto_generator_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
+var file_api_proto_generator_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
 var file_api_proto_generator_proto_goTypes = []any{
-	(*WorkAssignment)(nil),     // 0: stormrunner.v1.WorkAssignment
-	(*DataFile)(nil),           // 1: stormrunner.v1.DataFile
-	(*AssignmentAck)(nil),      // 2: stormrunner.v1.AssignmentAck
-	(*VUserAdjustment)(nil),    // 3: stormrunner.v1.VUserAdjustment
-	(*AdjustmentAck)(nil),      // 4: stormrunner.v1.AdjustmentAck
-	(*DurationAdjustment)(nil), // 5: stormrunner.v1.DurationAdjustment
-	(*DurationAck)(nil),        // 6: stormrunner.v1.DurationAck
-	(*StopRequest)(nil),        // 7: stormrunner.v1.StopRequest
-	(*StopAck)(nil),            // 8: stormrunner.v1.StopAck
-	(*MetricsBatch)(nil),       // 9: stormrunner.v1.MetricsBatch
-	(*GroupMetric)(nil),        // 10: stormrunner.v1.GroupMetric
-	(*TransactionMetric)(nil),  // 11: stormrunner.v1.TransactionMetric
-	(*GeneratorStats)(nil),     // 12: stormrunner.v1.GeneratorStats
-	(*ControlSignal)(nil),      // 13: stormrunner.v1.ControlSignal
-	(*PauseRequest)(nil),       // 14: stormrunner.v1.PauseRequest
-	(*HeartbeatPing)(nil),      // 15: stormrunner.v1.HeartbeatPing
-	(*HeartbeatPong)(nil),      // 16: stormrunner.v1.HeartbeatPong
-	(*ScriptPayload)(nil),      // 17: stormrunner.v1.ScriptPayload
-	(*ScriptAck)(nil),          // 18: stormrunner.v1.ScriptAck
-	nil,                        // 19: stormrunner.v1.WorkAssignment.EnvironmentEntry
+	(*WorkAssignment)(nil),         // 0: stormrunner.v1.WorkAssignment
+	(*DataFile)(nil),               // 1: stormrunner.v1.DataFile
+	(*AssignmentAck)(nil),          // 2: stormrunner.v1.AssignmentAck
+	(*VUserAdjustment)(nil),        // 3: stormrunner.v1.VUserAdjustment
+	(*AdjustmentAck)(nil),          // 4: stormrunner.v1.AdjustmentAck
+	(*DurationAdjustment)(nil),     // 5: stormrunner.v1.DurationAdjustment
+	(*DurationAck)(nil),            // 6: stormrunner.v1.DurationAck
+	(*StopRequest)(nil),            // 7: stormrunner.v1.StopRequest
+	(*StopAck)(nil),                // 8: stormrunner.v1.StopAck
+	(*MetricsBatch)(nil),           // 9: stormrunner.v1.MetricsBatch
+	(*GroupMetric)(nil),            // 10: stormrunner.v1.GroupMetric
+	(*TransactionMetric)(nil),      // 11: stormrunner.v1.TransactionMetric
+	(*GeneratorStats)(nil),         // 12: stormrunner.v1.GeneratorStats
+	(*ControlSignal)(nil),          // 13: stormrunner.v1.ControlSignal
+	(*PauseRequest)(nil),           // 14: stormrunner.v1.PauseRequest
+	(*HeartbeatPing)(nil),          // 15: stormrunner.v1.HeartbeatPing
+	(*HeartbeatPong)(nil),          // 16: stormrunner.v1.HeartbeatPong
+	(*ScriptPayload)(nil),          // 17: stormrunner.v1.ScriptPayload
+	(*ScriptAck)(nil),              // 18: stormrunner.v1.ScriptAck
+	(*ArchiveArtifactRequest)(nil), // 19: stormrunner.v1.ArchiveArtifactRequest
+	(*ArchiveArtifact)(nil),        // 20: stormrunner.v1.ArchiveArtifact
+	nil,                            // 21: stormrunner.v1.WorkAssignment.EnvironmentEntry
 }
 var file_api_proto_generator_proto_depIdxs = []int32{
-	19, // 0: stormrunner.v1.WorkAssignment.environment:type_name -> stormrunner.v1.WorkAssignment.EnvironmentEntry
+	21, // 0: stormrunner.v1.WorkAssignment.environment:type_name -> stormrunner.v1.WorkAssignment.EnvironmentEntry
 	1,  // 1: stormrunner.v1.WorkAssignment.data_files:type_name -> stormrunner.v1.DataFile
 	11, // 2: stormrunner.v1.MetricsBatch.transactions:type_name -> stormrunner.v1.TransactionMetric
 	12, // 3: stormrunner.v1.MetricsBatch.stats:type_name -> stormrunner.v1.GeneratorStats
@@ -1464,15 +1577,17 @@ var file_api_proto_generator_proto_depIdxs = []int32{
 	13, // 13: stormrunner.v1.GeneratorControl.StreamMetrics:input_type -> stormrunner.v1.ControlSignal
 	15, // 14: stormrunner.v1.GeneratorControl.Heartbeat:input_type -> stormrunner.v1.HeartbeatPing
 	17, // 15: stormrunner.v1.GeneratorControl.DistributeScript:input_type -> stormrunner.v1.ScriptPayload
-	2,  // 16: stormrunner.v1.GeneratorControl.AssignWork:output_type -> stormrunner.v1.AssignmentAck
-	4,  // 17: stormrunner.v1.GeneratorControl.AdjustVUsers:output_type -> stormrunner.v1.AdjustmentAck
-	6,  // 18: stormrunner.v1.GeneratorControl.AdjustDuration:output_type -> stormrunner.v1.DurationAck
-	8,  // 19: stormrunner.v1.GeneratorControl.StopTest:output_type -> stormrunner.v1.StopAck
-	9,  // 20: stormrunner.v1.GeneratorControl.StreamMetrics:output_type -> stormrunner.v1.MetricsBatch
-	16, // 21: stormrunner.v1.GeneratorControl.Heartbeat:output_type -> stormrunner.v1.HeartbeatPong
-	18, // 22: stormrunner.v1.GeneratorControl.DistributeScript:output_type -> stormrunner.v1.ScriptAck
-	16, // [16:23] is the sub-list for method output_type
-	9,  // [9:16] is the sub-list for method input_type
+	19, // 16: stormrunner.v1.GeneratorControl.GetArchiveArtifact:input_type -> stormrunner.v1.ArchiveArtifactRequest
+	2,  // 17: stormrunner.v1.GeneratorControl.AssignWork:output_type -> stormrunner.v1.AssignmentAck
+	4,  // 18: stormrunner.v1.GeneratorControl.AdjustVUsers:output_type -> stormrunner.v1.AdjustmentAck
+	6,  // 19: stormrunner.v1.GeneratorControl.AdjustDuration:output_type -> stormrunner.v1.DurationAck
+	8,  // 20: stormrunner.v1.GeneratorControl.StopTest:output_type -> stormrunner.v1.StopAck
+	9,  // 21: stormrunner.v1.GeneratorControl.StreamMetrics:output_type -> stormrunner.v1.MetricsBatch
+	16, // 22: stormrunner.v1.GeneratorControl.Heartbeat:output_type -> stormrunner.v1.HeartbeatPong
+	18, // 23: stormrunner.v1.GeneratorControl.DistributeScript:output_type -> stormrunner.v1.ScriptAck
+	20, // 24: stormrunner.v1.GeneratorControl.GetArchiveArtifact:output_type -> stormrunner.v1.ArchiveArtifact
+	17, // [17:25] is the sub-list for method output_type
+	9,  // [9:17] is the sub-list for method input_type
 	9,  // [9:9] is the sub-list for extension type_name
 	9,  // [9:9] is the sub-list for extension extendee
 	0,  // [0:9] is the sub-list for field type_name
@@ -1494,7 +1609,7 @@ func file_api_proto_generator_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_proto_generator_proto_rawDesc), len(file_api_proto_generator_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   20,
+			NumMessages:   22,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

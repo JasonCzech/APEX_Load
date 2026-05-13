@@ -28,6 +28,9 @@ service GeneratorControl {
 
   // DistributeScript sends a compiled script to a generator for caching.
   rpc DistributeScript(ScriptPayload) returns (ScriptAck);
+
+  // GetArchiveArtifact returns a generated archive artifact for a completed test.
+  rpc GetArchiveArtifact(ArchiveArtifactRequest) returns (ArchiveArtifact);
 }
 
 message WorkAssignment {
@@ -156,4 +159,14 @@ message ScriptPayload {
 message ScriptAck {
   bool cached = 1;
   string content_hash = 2;
+}
+
+message ArchiveArtifactRequest {
+  string test_id = 1;
+  string name = 2;
+}
+
+message ArchiveArtifact {
+  string name = 1;
+  bytes content = 2;
 }
