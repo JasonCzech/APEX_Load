@@ -59,3 +59,7 @@ vendor/
 *.db-wal
 *.log
 artifacts/
+
+# Python
+__pycache__/
+*.pyc
