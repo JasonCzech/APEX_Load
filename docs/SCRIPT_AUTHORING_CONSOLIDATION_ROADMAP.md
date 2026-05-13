@@ -175,6 +175,7 @@ That order minimizes churn and avoids rebuilding the UI around unstable backend 
 - The shared frontend import model and review/save contracts are in place for the active import and recorder paths.
 - Shared script, scenario, and dashboard API hook typing has been tightened across the current live authoring surfaces.
 - Shared sample import normalization now uses `unknown`-safe payload guards instead of local `any` casting.
+- Phase 5 cleanup has started in the repo: duplicate dashboard page copies and obsolete patch/temp artifacts were removed after confirming that the live app shell imports only the current page surfaces.
 
 ### In Progress
 - Phase 3 frontend orchestration is partially consolidated through shared import normalization, shared error handling, and typed recorder/import flows, but the script hub still owns route-level orchestration.
@@ -184,11 +185,12 @@ That order minimizes churn and avoids rebuilding the UI around unstable backend 
 
 ### Remaining High-Value Work
 - Finish the scenario assembly path by tightening `TestExecution`, `CreateTestModal` adjacencies, and shared execution/result models.
-- Remove remaining dashboard duplicate files and temporary artifacts only after route and parity checks are complete.
-- Replace residual broad `history` and chart typing in dashboard execution/results views with explicit shared models.
+- Complete the shared authoring-shell consolidation so the script hub stops owning route-level review/save orchestration.
+- Run the end-to-end parity pass, then remove any temporary normalization or migration adapters that remain after validation.
 
 ### Current Cleanup Note
-- Remaining `any` matches in the dashboard are now concentrated in duplicate page copies slated for Phase 5 cleanup, plus non-code strings/comments in live files.
+- The duplicate page copies and obsolete patch/temp artifacts have been removed.
+- Remaining cleanup work is now focused on parity verification and adapter removal rather than dead-file deletion.
 
 ## File-Level Targets
 
@@ -222,17 +224,14 @@ That order minimizes churn and avoids rebuilding the UI around unstable backend 
 - [pkg/convert/sample/converter.go](pkg/convert/sample/converter.go)
 - [pkg/recorder/converter.go](pkg/recorder/converter.go)
 
-### Cleanup Candidates
-- [dashboard/src/components/ScriptsPage (1).tsx](dashboard/src/components/ScriptsPage%20(1).tsx)
-- [dashboard/src/components/TestHub (1).tsx](dashboard/src/components/TestHub%20(1).tsx)
-- [dashboard/src/components/ResultsPage (1).tsx](dashboard/src/components/ResultsPage%20(1).tsx)
-- [patch_create_test_modal.sh](patch_create_test_modal.sh)
-- [patch_recording_studio.sh](patch_recording_studio.sh)
-- [patch_test_execution.sh](patch_test_execution.sh)
+### Cleanup Status
+- Route-owner verification confirmed that the live shell imports only the current dashboard pages.
+- Duplicate dashboard page copies and obsolete patch/temp artifacts were removed from the repository.
+- The remaining cleanup target is temporary adapter code that may still exist behind the now-stable shared contracts.
 
 ## Verification Checklist
 
-1. Confirm that only live dashboard pages are referenced before deleting duplicate page files.
+1. Completed: confirm that only live dashboard pages are referenced before deleting duplicate page files.
 2. Build a validation matrix and verify that parser, create, update, replay, browser replay, and import save all return the same validation outcome for the same scripts.
 3. Snapshot current import payloads before standardization, then verify that every builder emits the shared envelope afterward.
 4. Verify that each authoring path supports the same lifecycle after consolidation: acquire input, review warnings and stats, edit if needed, save, and reopen the saved script.
@@ -251,7 +250,7 @@ That order minimizes churn and avoids rebuilding the UI around unstable backend 
 
 - Adapter sprawl during migration if temporary normalization code is allowed to linger.
 - Frontend churn if the UI is refactored before the backend validation and import contracts stabilize.
-- Cleanup regressions if duplicate files are deleted before route and parity verification is complete.
+- Cleanup regressions if temporary adapters are deleted before route and parity verification is complete.
 
 ## Best First Slice
 If the team wants one early win before full consolidation, the best first slice is validator unification. It reduces defects immediately and clarifies the contract that every later phase depends on.
