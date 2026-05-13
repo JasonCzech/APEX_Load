@@ -2,12 +2,14 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -783,6 +785,218 @@ func TestDistributedExecutionBackendRunsRemoteMultiGroupEngine(t *testing.T) {
 			t.Fatalf("expected remote multi-group execution to complete, got status=%q ended=%v", completed.Status, completed.EndedAt)
 		}
 		time.Sleep(25 * time.Millisecond)
+	}
+}
+
+func TestDistributedExecutionBackendDistributesGroupsAcrossMultipleGenerators(t *testing.T) {
+	const bufSize = 1024 * 1024
+
+	t.Setenv("STORMRUNNER_ARCHIVE_DIR", t.TempDir())
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/buyers", "/admins":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("ok"))
+		default:
+			t.Fatalf("unexpected request path %q", r.URL.Path)
+		}
+	}))
+	defer target.Close()
+
+	listenerA := bufconn.Listen(bufSize)
+	serverA := grpc.NewServer()
+	serviceA := generatorrpc.NewService("generator-a", 50, generatorrpc.WithExecution())
+	pb.RegisterGeneratorControlServer(serverA, serviceA)
+	go func() {
+		_ = serverA.Serve(listenerA)
+	}()
+	t.Cleanup(func() {
+		serverA.Stop()
+		_ = listenerA.Close()
+	})
+
+	listenerB := bufconn.Listen(bufSize)
+	serverB := grpc.NewServer()
+	serviceB := generatorrpc.NewService("generator-b", 50, generatorrpc.WithExecution())
+	pb.RegisterGeneratorControlServer(serverB, serviceB)
+	go func() {
+		_ = serverB.Serve(listenerB)
+	}()
+	t.Cleanup(func() {
+		serverB.Stop()
+		_ = listenerB.Close()
+	})
+
+	hub := NewHub()
+	runner := NewTestRunner(1, hub, nil)
+	runner.setExecutionBackend(newDistributedExecutionBackend(
+		[]string{"bufnet-a", "bufnet-b"},
+		5*time.Second,
+		func(ctx context.Context, target string) (generatorClient, error) {
+			switch target {
+			case "bufnet-a":
+				return generatorrpc.Dial(
+					ctx,
+					target,
+					grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+						return listenerA.Dial()
+					}),
+					grpc.WithTransportCredentials(insecure.NewCredentials()),
+					grpc.WithBlock(),
+				)
+			case "bufnet-b":
+				return generatorrpc.Dial(
+					ctx,
+					target,
+					grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+						return listenerB.Dial()
+					}),
+					grpc.WithTransportCredentials(insecure.NewCredentials()),
+					grpc.WithBlock(),
+				)
+			default:
+				return nil, context.DeadlineExceeded
+			}
+		},
+	))
+
+	runner.StoreScript(&dsl.Script{
+		ID:       "buyers-script",
+		Name:     "Buyers",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Config:   dsl.ScriptConfig{BaseURL: target.URL, RunLogic: dsl.RunLogicConfig{Iterations: 0}},
+		Actions:  []dsl.Action{{Name: "Buyers Home", Type: "GET", Target: "/buyers"}},
+	})
+	runner.StoreScript(&dsl.Script{
+		ID:       "admins-script",
+		Name:     "Admins",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Config:   dsl.ScriptConfig{BaseURL: target.URL, RunLogic: dsl.RunLogicConfig{Iterations: 0}},
+		Actions:  []dsl.Action{{Name: "Admins Home", Type: "GET", Target: "/admins"}},
+	})
+
+	testRun, err := runner.CreateTest(CreateTestRequest{
+		Name:     "Distributed multi-generator execution",
+		Duration: "2s",
+		Groups: []CreateGroupEntry{{
+			Name:     "buyers",
+			ScriptID: "buyers-script",
+			VUsers:   1,
+			RampUp:   "0s",
+		}, {
+			Name:     "admins",
+			ScriptID: "admins-script",
+			VUsers:   1,
+			RampUp:   "0s",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("CreateTest returned error: %v", err)
+	}
+
+	if err := runner.StartTest(testRun.ID); err != nil {
+		t.Fatalf("StartTest returned error: %v", err)
+	}
+
+	deadline := time.Now().Add(8 * time.Second)
+	for {
+		updated, ok := runner.GetTest(testRun.ID)
+		if !ok {
+			t.Fatalf("expected managed test %q to exist", testRun.ID)
+		}
+		if updated.Status == "COMPLETE" && updated.Archive != nil && updated.LiveMetrics != nil && updated.LiveMetrics.GroupMetrics["buyers"] != nil && updated.LiveMetrics.GroupMetrics["admins"] != nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected distributed multi-generator run to complete with merged archive, got status=%q archive=%#v metrics=%#v", updated.Status, updated.Archive, updated.LiveMetrics)
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+
+	completed, ok := runner.GetTest(testRun.ID)
+	if !ok {
+		t.Fatalf("expected managed test %q after completion", testRun.ID)
+	}
+	if completed.LiveMetrics.GroupMetrics["buyers"] == nil || completed.LiveMetrics.GroupMetrics["admins"] == nil {
+		t.Fatalf("expected merged group metrics, got %#v", completed.LiveMetrics.GroupMetrics)
+	}
+	manifest, err := runner.GetRunArchiveManifest(testRun.ID)
+	if err != nil {
+		t.Fatalf("GetRunArchiveManifest returned error: %v", err)
+	}
+	if manifest.TransactionCount == 0 || manifest.ResourceSampleCount == 0 || manifest.IntervalSummaryCount == 0 {
+		t.Fatalf("expected merged archive counts to be populated, got %#v", manifest)
+	}
+	for _, name := range []string{"manifest.json", "transactions.jsonl", "resources.jsonl", "interval_summaries.jsonl", "transactions.parquet", "resources.parquet", "interval_summaries.parquet"} {
+		if _, err := os.Stat(filepath.Join(completed.Archive.ArchivePath, name)); err != nil {
+			t.Fatalf("expected merged remote archive file %s to exist: %v", name, err)
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	clientA, err := generatorrpc.Dial(
+		ctx,
+		"bufnet-a",
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+			return listenerA.Dial()
+		}),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithBlock(),
+	)
+	if err != nil {
+		t.Fatalf("Dial generator A: %v", err)
+	}
+	defer clientA.Close()
+	clientB, err := generatorrpc.Dial(
+		ctx,
+		"bufnet-b",
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+			return listenerB.Dial()
+		}),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithBlock(),
+	)
+	if err != nil {
+		t.Fatalf("Dial generator B: %v", err)
+	}
+	defer clientB.Close()
+
+	manifestAContent, err := clientA.GetArchiveArtifact(ctx, generatorrpc.ArchiveArtifactRequest{TestID: testRun.ID, Name: "manifest.json"})
+	if err != nil {
+		t.Fatalf("GetArchiveArtifact A manifest: %v", err)
+	}
+	manifestBContent, err := clientB.GetArchiveArtifact(ctx, generatorrpc.ArchiveArtifactRequest{TestID: testRun.ID, Name: "manifest.json"})
+	if err != nil {
+		t.Fatalf("GetArchiveArtifact B manifest: %v", err)
+	}
+	var manifestA RunArchiveManifest
+	if err := json.Unmarshal(manifestAContent, &manifestA); err != nil {
+		t.Fatalf("Unmarshal generator A manifest: %v", err)
+	}
+	var manifestB RunArchiveManifest
+	if err := json.Unmarshal(manifestBContent, &manifestB); err != nil {
+		t.Fatalf("Unmarshal generator B manifest: %v", err)
+	}
+	if manifest.TransactionCount != manifestA.TransactionCount+manifestB.TransactionCount {
+		t.Fatalf("merged transaction count = %d, want %d", manifest.TransactionCount, manifestA.TransactionCount+manifestB.TransactionCount)
+	}
+
+	transactionsA, err := clientA.GetArchiveArtifact(ctx, generatorrpc.ArchiveArtifactRequest{TestID: testRun.ID, Name: "transactions.jsonl"})
+	if err != nil {
+		t.Fatalf("GetArchiveArtifact A transactions: %v", err)
+	}
+	transactionsB, err := clientB.GetArchiveArtifact(ctx, generatorrpc.ArchiveArtifactRequest{TestID: testRun.ID, Name: "transactions.jsonl"})
+	if err != nil {
+		t.Fatalf("GetArchiveArtifact B transactions: %v", err)
+	}
+	if !strings.Contains(string(transactionsA), "Buyers Home") || strings.Contains(string(transactionsA), "Admins Home") {
+		t.Fatalf("expected generator A archive to only contain buyers traffic, got %q", string(transactionsA))
+	}
+	if !strings.Contains(string(transactionsB), "Admins Home") || strings.Contains(string(transactionsB), "Buyers Home") {
+		t.Fatalf("expected generator B archive to only contain admins traffic, got %q", string(transactionsB))
 	}
 }
 
@@ -1791,5 +2005,174 @@ func TestDistributedExecutionBackendScalesMultiGroupTest(t *testing.T) {
 	}
 	if stopAck.PendingVUsers != 10 {
 		t.Fatalf("pending vusers = %d, want 10", stopAck.PendingVUsers)
+	}
+}
+
+func TestDistributedExecutionBackendScalesGroupOnOwningGenerator(t *testing.T) {
+	const bufSize = 1024 * 1024
+
+	listenerA := bufconn.Listen(bufSize)
+	serverA := grpc.NewServer()
+	pb.RegisterGeneratorControlServer(serverA, generatorrpc.NewService("generator-a", 50))
+	go func() {
+		_ = serverA.Serve(listenerA)
+	}()
+	t.Cleanup(func() {
+		serverA.Stop()
+		_ = listenerA.Close()
+	})
+
+	listenerB := bufconn.Listen(bufSize)
+	serverB := grpc.NewServer()
+	pb.RegisterGeneratorControlServer(serverB, generatorrpc.NewService("generator-b", 50))
+	go func() {
+		_ = serverB.Serve(listenerB)
+	}()
+	t.Cleanup(func() {
+		serverB.Stop()
+		_ = listenerB.Close()
+	})
+
+	hub := NewHub()
+	runner := NewTestRunner(1, hub, nil)
+	runner.setExecutionBackend(newDistributedExecutionBackend(
+		[]string{"bufnet-a", "bufnet-b"},
+		5*time.Second,
+		func(ctx context.Context, target string) (generatorClient, error) {
+			switch target {
+			case "bufnet-a":
+				return generatorrpc.Dial(
+					ctx,
+					target,
+					grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+						return listenerA.Dial()
+					}),
+					grpc.WithTransportCredentials(insecure.NewCredentials()),
+					grpc.WithBlock(),
+				)
+			case "bufnet-b":
+				return generatorrpc.Dial(
+					ctx,
+					target,
+					grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+						return listenerB.Dial()
+					}),
+					grpc.WithTransportCredentials(insecure.NewCredentials()),
+					grpc.WithBlock(),
+				)
+			default:
+				return nil, context.DeadlineExceeded
+			}
+		},
+	))
+
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-1",
+		Name:     "Checkout",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Config:   dsl.ScriptConfig{BaseURL: "https://example.com", RunLogic: dsl.RunLogicConfig{Iterations: 1}},
+		Actions:  []dsl.Action{{Name: "Home", Type: "GET", Target: "/"}},
+	})
+
+	testRun, err := runner.CreateTest(CreateTestRequest{
+		Name:     "Distributed scale fan-out",
+		Duration: "30s",
+		Groups: []CreateGroupEntry{{
+			Name:     "Group A",
+			ScriptID: "script-1",
+			VUsers:   5,
+			RampUp:   "5s",
+		}, {
+			Name:     "Group B",
+			ScriptID: "script-1",
+			VUsers:   3,
+			RampUp:   "5s",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("CreateTest returned error: %v", err)
+	}
+
+	if err := runner.StartTest(testRun.ID); err != nil {
+		t.Fatalf("StartTest returned error: %v", err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		started, ok := runner.GetTest(testRun.ID)
+		if !ok {
+			t.Fatalf("expected managed test %q to exist", testRun.ID)
+		}
+		if started.Status == "RUNNING" && started.LiveMetrics != nil && started.LiveMetrics.ActiveVUsers == 8 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected distributed backend to mark fan-out test running, got status=%q metrics=%#v", started.Status, started.LiveMetrics)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	if err := runner.ScaleVUsers(testRun.ID, "Group B", 7); err != nil {
+		t.Fatalf("ScaleVUsers returned error: %v", err)
+	}
+
+	deadline = time.Now().Add(2 * time.Second)
+	for {
+		scaled, ok := runner.GetTest(testRun.ID)
+		if !ok {
+			t.Fatalf("expected managed test %q to exist after scale", testRun.ID)
+		}
+		if scaled.LiveMetrics != nil && scaled.LiveMetrics.ActiveVUsers == 12 && scaled.LiveMetrics.GroupMetrics["Group A"] != nil && scaled.LiveMetrics.GroupMetrics["Group B"] != nil && scaled.LiveMetrics.GroupMetrics["Group B"].VUsers == 7 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected fan-out live metrics to reflect scaled vusers, got %#v", scaled.LiveMetrics)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	clientA, err := generatorrpc.Dial(
+		ctx,
+		"bufnet-a",
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+			return listenerA.Dial()
+		}),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithBlock(),
+	)
+	if err != nil {
+		t.Fatalf("Dial generator A: %v", err)
+	}
+	defer clientA.Close()
+	clientB, err := generatorrpc.Dial(
+		ctx,
+		"bufnet-b",
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+			return listenerB.Dial()
+		}),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithBlock(),
+	)
+	if err != nil {
+		t.Fatalf("Dial generator B: %v", err)
+	}
+	defer clientB.Close()
+
+	stopA, err := clientA.StopTest(ctx, testRun.ID, true)
+	if err != nil {
+		t.Fatalf("StopTest generator A: %v", err)
+	}
+	stopB, err := clientB.StopTest(ctx, testRun.ID, true)
+	if err != nil {
+		t.Fatalf("StopTest generator B: %v", err)
+	}
+	if stopA.PendingVUsers != 5 {
+		t.Fatalf("generator A pending vusers = %d, want 5", stopA.PendingVUsers)
+	}
+	if stopB.PendingVUsers != 7 {
+		t.Fatalf("generator B pending vusers = %d, want 7", stopB.PendingVUsers)
 	}
 }

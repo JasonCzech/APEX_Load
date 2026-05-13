@@ -88,7 +88,7 @@ type TestRunner struct {
 	historyStore  historyPersistence
 	archiveStore  archivePersistence
 	settingsStore settingsPersistence
-	execution    testExecutionBackend
+	execution     testExecutionBackend
 }
 
 type ManagedTest struct {
@@ -123,14 +123,20 @@ type ManagedTest struct {
 	ScriptID   string `json:"script_id,omitempty"`
 	ScriptName string `json:"script_name,omitempty"`
 
-	multiEngine *engine.MultiGroupEngine
-	cancel      context.CancelFunc
-	groupSpecs  []engine.GroupConfig
-	goalControl *goalControllerState
-	executionBackend testExecutionBackend
-	remoteTarget     string
-	remoteClient     generatorClient
-	remoteMetricsStream *generatorrpc.MetricsStream
+	multiEngine                  *engine.MultiGroupEngine
+	cancel                       context.CancelFunc
+	groupSpecs                   []engine.GroupConfig
+	goalControl                  *goalControllerState
+	executionBackend             testExecutionBackend
+	remoteTarget                 string
+	remoteClient                 generatorClient
+	remoteMetricsStream          *generatorrpc.MetricsStream
+	remoteGroupTargets           map[string]string
+	remoteClientsByTarget        map[string]generatorClient
+	remoteMetricsStreamsByTarget map[string]*generatorrpc.MetricsStream
+	remoteMetricsBatchesByTarget map[string]generatorrpc.MetricsBatch
+	remoteTargetStates           map[string]string
+	remoteFinalizing             bool
 }
 
 type TestGroup struct {

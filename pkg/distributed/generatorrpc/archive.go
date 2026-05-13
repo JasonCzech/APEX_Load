@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -156,8 +157,11 @@ type parquetIntervalSummary struct {
 	P99Ms            float64 `parquet:"name=p99_ms, type=DOUBLE"`
 }
 
-func newArchiveRecorder(testID string, testName string) (*archiveRecorder, error) {
+func newArchiveRecorder(generatorID string, testID string, testName string) (*archiveRecorder, error) {
 	rootDir := resolveArchiveRoot()
+	if generatorID != "" {
+		rootDir = filepath.Join(rootDir, sanitizeArchiveNamespace(generatorID))
+	}
 	archiveDir := filepath.Join(rootDir, testID)
 	if err := os.MkdirAll(archiveDir, 0o755); err != nil {
 		return nil, fmt.Errorf("create archive dir: %w", err)
@@ -349,6 +353,15 @@ func resolveArchiveRoot() string {
 		return dir
 	}
 	return filepath.Join("artifacts", "archives")
+}
+
+func sanitizeArchiveNamespace(value string) string {
+	replacer := strings.NewReplacer("/", "_", "\\", "_", ":", "_")
+	cleaned := replacer.Replace(value)
+	if cleaned == "" {
+		return "default"
+	}
+	return cleaned
 }
 
 func durationMillis(duration time.Duration) float64 {

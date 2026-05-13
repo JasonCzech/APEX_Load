@@ -795,7 +795,7 @@ func (s *Service) startExecutionLocked(assignment *pb.WorkAssignment) error {
 	results := &transactionBuffer{}
 	writer := s.archiveWriters[assignment.GetTestId()]
 	if writer == nil {
-		archiveWriter, archiveErr := newArchiveRecorder(assignment.GetTestId(), script.Name)
+		archiveWriter, archiveErr := newArchiveRecorder(s.generatorID, assignment.GetTestId(), script.Name)
 		if archiveErr != nil {
 			return status.Errorf(codes.Internal, "initialize archive recorder: %v", archiveErr)
 		}

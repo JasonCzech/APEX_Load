@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -11,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/jasonczech/stormrunner/pkg/distributed/generatorrpc"
@@ -72,35 +74,59 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 	ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
 	defer cancel()
 
-	client, err := b.dial(ctx, b.targets[0])
-	if err != nil {
-		tr.failTestBeforeRun(test, fmt.Sprintf("connect generator: %v", err))
-		return
+	groupTargets := planDistributedGroupTargets(test.Groups, b.targets)
+	clientsByTarget := make(map[string]generatorClient)
+	streamsByTarget := make(map[string]*generatorrpc.MetricsStream)
+	distributedScripts := make(map[string]map[string]struct{})
+	cleanup := func() {
+		for _, stream := range streamsByTarget {
+			_ = stream.CloseSend()
+		}
+		for _, client := range clientsByTarget {
+			_ = client.Close()
+		}
 	}
-
-	distributedScripts := map[string]struct{}{}
 	for _, group := range test.Groups {
 		if group.script == nil {
+			cleanup()
 			tr.failTestBeforeRun(test, fmt.Sprintf("group %q has no compiled script", group.Name))
 			return
 		}
 
+		target := groupTargets[group.Name]
+		client := clientsByTarget[target]
+		if client == nil {
+			var err error
+			client, err = b.dial(ctx, target)
+			if err != nil {
+				cleanup()
+				tr.failTestBeforeRun(test, fmt.Sprintf("connect generator %q: %v", target, err))
+				return
+			}
+			clientsByTarget[target] = client
+		}
+		if distributedScripts[target] == nil {
+			distributedScripts[target] = make(map[string]struct{})
+		}
+
 		scriptContent, contentHash, err := marshalDistributedScript(group.script)
 		if err != nil {
+			cleanup()
 			tr.failTestBeforeRun(test, fmt.Sprintf("serialize script %q: %v", group.ScriptName, err))
 			return
 		}
 
-		if _, ok := distributedScripts[group.ScriptID]; !ok {
+		if _, ok := distributedScripts[target][group.ScriptID]; !ok {
 			if _, err := client.DistributeScript(ctx, generatorrpc.Script{
 				ID:          group.ScriptID,
 				Content:     scriptContent,
 				ContentHash: contentHash,
 			}); err != nil {
+				cleanup()
 				tr.failTestBeforeRun(test, fmt.Sprintf("distribute script %q: %v", group.ScriptName, err))
 				return
 			}
-			distributedScripts[group.ScriptID] = struct{}{}
+			distributedScripts[target][group.ScriptID] = struct{}{}
 		}
 
 		assignment, err := client.AssignWork(ctx, generatorrpc.Assignment{
@@ -112,45 +138,59 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 			RampUpSeconds:         int32(group.rampUpDur / time.Second),
 		})
 		if err != nil {
+			cleanup()
 			tr.failTestBeforeRun(test, fmt.Sprintf("assign work for group %q: %v", group.Name, err))
 			return
 		}
 		if !assignment.Accepted {
+			cleanup()
 			tr.failTestBeforeRun(test, fmt.Sprintf("generator rejected group %q: %s", group.Name, assignment.ErrorMessage))
 			return
 		}
 	}
 
-	stream, err := client.OpenMetricsStream(context.Background())
-	if err != nil {
-		_ = client.Close()
-		tr.failTestBeforeRun(test, fmt.Sprintf("open generator metrics stream: %v", err))
-		return
+	for _, target := range orderedAssignedTargets(groupTargets, b.targets) {
+		if _, ok := streamsByTarget[target]; ok {
+			continue
+		}
+		stream, err := clientsByTarget[target].OpenMetricsStream(context.Background())
+		if err != nil {
+			cleanup()
+			tr.failTestBeforeRun(test, fmt.Sprintf("open generator metrics stream for %q: %v", target, err))
+			return
+		}
+		streamsByTarget[target] = stream
 	}
 
-	b.startDistributedTestRun(tr, test, client, stream)
+	b.startDistributedTestRun(tr, test, groupTargets, clientsByTarget, streamsByTarget)
 }
 
 func (b *distributedExecutionBackend) StopTest(tr *TestRunner, test *ManagedTest) error {
-	client, err := b.clientForTest(test)
+	clients, err := b.clientsForTest(test)
 	if err != nil {
 		return err
 	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
-	defer cancel()
-	stop, err := client.StopTest(ctx, test.ID, true)
-	if err != nil {
-		code := grpcStatus.Code(err)
-		if code == grpcCodes.Canceled || code == grpcCodes.Unavailable {
-			if test.Status == "COMPLETE" || test.Status == "FAILED" {
-				return nil
+	var stopErr error
+	for _, target := range orderedGeneratorTargets(clients, b.targets) {
+		ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
+		stop, err := clients[target].StopTest(ctx, test.ID, true)
+		cancel()
+		if err != nil {
+			code := grpcStatus.Code(err)
+			if code == grpcCodes.Canceled || code == grpcCodes.Unavailable || code == grpcCodes.NotFound {
+				if test.Status == "COMPLETE" || test.Status == "FAILED" {
+					continue
+				}
 			}
+			stopErr = fmt.Errorf("stop remote test on %s: %w", target, err)
+			continue
 		}
-		return fmt.Errorf("stop remote test: %w", err)
+		if !stop.Acknowledged {
+			stopErr = fmt.Errorf("generator %s did not acknowledge stop for %s", target, test.ID)
+		}
 	}
-	if !stop.Acknowledged {
-		return fmt.Errorf("generator did not acknowledge stop for %s", test.ID)
+	if stopErr != nil {
+		return stopErr
 	}
 	return nil
 }
@@ -166,7 +206,7 @@ func (b *distributedExecutionBackend) ScaleVUsers(tr *TestRunner, test *ManagedT
 	if !groupExists {
 		return fmt.Errorf("test group not found: %s", groupName)
 	}
-	client, err := b.clientForTest(test)
+	client, err := b.clientForGroup(test, groupName)
 	if err != nil {
 		return err
 	}
@@ -188,43 +228,49 @@ func (b *distributedExecutionBackend) ScaleVUsers(tr *TestRunner, test *ManagedT
 }
 
 func (b *distributedExecutionBackend) AdjustDuration(tr *TestRunner, test *ManagedTest, newDuration time.Duration) error {
-	client, err := b.clientForTest(test)
+	clients, err := b.clientsForTest(test)
 	if err != nil {
 		return err
 	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
-	defer cancel()
-
-	result, err := client.AdjustDuration(ctx, generatorrpc.DurationAdjustment{
-		TestID:                test.ID,
-		TargetDurationSeconds: int64(newDuration / time.Second),
-	})
-	if err != nil {
-		return fmt.Errorf("adjust remote duration: %w", err)
-	}
-	if !result.Accepted {
-		return fmt.Errorf("generator did not accept duration adjustment for %s", test.ID)
+	for _, target := range orderedGeneratorTargets(clients, b.targets) {
+		ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
+		result, err := clients[target].AdjustDuration(ctx, generatorrpc.DurationAdjustment{
+			TestID:                test.ID,
+			TargetDurationSeconds: int64(newDuration / time.Second),
+		})
+		cancel()
+		if err != nil {
+			return fmt.Errorf("adjust remote duration on %s: %w", target, err)
+		}
+		if !result.Accepted {
+			return fmt.Errorf("generator %s did not accept duration adjustment for %s", target, test.ID)
+		}
 	}
 	return nil
 }
 
 func (b *distributedExecutionBackend) PauseTest(tr *TestRunner, test *ManagedTest) error {
-	if test.remoteMetricsStream == nil {
+	streams := b.metricsStreamsForTest(test)
+	if len(streams) == 0 {
 		return fmt.Errorf("distributed metrics stream is not initialized")
 	}
-	if err := test.remoteMetricsStream.SendPause(generatorrpc.PauseControl{TestID: test.ID, Pause: true}); err != nil {
-		return fmt.Errorf("send remote pause control: %w", err)
+	for _, target := range orderedMetricsTargets(streams, b.targets) {
+		if err := streams[target].SendPause(generatorrpc.PauseControl{TestID: test.ID, Pause: true}); err != nil {
+			return fmt.Errorf("send remote pause control to %s: %w", target, err)
+		}
 	}
 	return nil
 }
 
 func (b *distributedExecutionBackend) ResumeTest(tr *TestRunner, test *ManagedTest) error {
-	if test.remoteMetricsStream == nil {
+	streams := b.metricsStreamsForTest(test)
+	if len(streams) == 0 {
 		return fmt.Errorf("distributed metrics stream is not initialized")
 	}
-	if err := test.remoteMetricsStream.SendPause(generatorrpc.PauseControl{TestID: test.ID, Pause: false}); err != nil {
-		return fmt.Errorf("send remote pause control: %w", err)
+	for _, target := range orderedMetricsTargets(streams, b.targets) {
+		if err := streams[target].SendPause(generatorrpc.PauseControl{TestID: test.ID, Pause: false}); err != nil {
+			return fmt.Errorf("send remote pause control to %s: %w", target, err)
+		}
 	}
 	return nil
 }
@@ -238,19 +284,35 @@ func marshalDistributedScript(script any) ([]byte, string, error) {
 	return content, hex.EncodeToString(hash[:]), nil
 }
 
-func (b *distributedExecutionBackend) startDistributedTestRun(tr *TestRunner, test *ManagedTest, client generatorClient, stream *generatorrpc.MetricsStream) {
+func (b *distributedExecutionBackend) startDistributedTestRun(tr *TestRunner, test *ManagedTest, groupTargets map[string]string, clientsByTarget map[string]generatorClient, streamsByTarget map[string]*generatorrpc.MetricsStream) {
 	ctx, cancel := context.WithCancel(context.Background())
 	now := time.Now()
+	orderedTargets := orderedGeneratorTargets(clientsByTarget, b.targets)
+	firstTarget := ""
+	if len(orderedTargets) > 0 {
+		firstTarget = orderedTargets[0]
+	}
 
 	tr.mu.Lock()
 	test.cancel = cancel
 	test.multiEngine = nil
 	test.executionBackend = b
-	test.remoteClient = client
-	test.remoteMetricsStream = stream
-	test.remoteTarget = ""
-	if len(b.targets) > 0 {
-		test.remoteTarget = b.targets[0]
+	test.remoteTarget = firstTarget
+	test.remoteClient = clientsByTarget[firstTarget]
+	test.remoteMetricsStream = streamsByTarget[firstTarget]
+	test.remoteGroupTargets = cloneStringMap(groupTargets)
+	test.remoteClientsByTarget = cloneClientMap(clientsByTarget)
+	test.remoteMetricsStreamsByTarget = cloneMetricsStreamMap(streamsByTarget)
+	test.remoteMetricsBatchesByTarget = make(map[string]generatorrpc.MetricsBatch)
+	test.remoteTargetStates = make(map[string]string)
+	test.remoteFinalizing = false
+	if test.remoteClient == nil && len(clientsByTarget) == 1 {
+		for target, client := range clientsByTarget {
+			test.remoteTarget = target
+			test.remoteClient = client
+			test.remoteMetricsStream = streamsByTarget[target]
+			break
+		}
 	}
 	test.StartedAt = &now
 	test.EndedAt = nil
@@ -258,10 +320,17 @@ func (b *distributedExecutionBackend) startDistributedTestRun(tr *TestRunner, te
 	tr.mu.Unlock()
 
 	tr.broadcastEvent("test_started", test)
-	go b.consumeMetrics(ctx, tr, test, stream)
+	for _, target := range orderedTargets {
+		go b.consumeMetrics(ctx, tr, test, target, streamsByTarget[target])
+	}
 }
 
 func (b *distributedExecutionBackend) clientForTest(test *ManagedTest) (generatorClient, error) {
+	if len(test.remoteClientsByTarget) == 1 {
+		for _, client := range test.remoteClientsByTarget {
+			return client, nil
+		}
+	}
 	if test.remoteClient != nil {
 		return test.remoteClient, nil
 	}
@@ -277,18 +346,68 @@ func (b *distributedExecutionBackend) clientForTest(test *ManagedTest) (generato
 	return client, nil
 }
 
-func (b *distributedExecutionBackend) closeRemoteResources(test *ManagedTest) {
-	if test.remoteMetricsStream != nil {
-		_ = test.remoteMetricsStream.CloseSend()
-		test.remoteMetricsStream = nil
+func (b *distributedExecutionBackend) clientsForTest(test *ManagedTest) (map[string]generatorClient, error) {
+	if len(test.remoteClientsByTarget) > 0 {
+		return cloneClientMap(test.remoteClientsByTarget), nil
 	}
-	if test.remoteClient != nil {
-		_ = test.remoteClient.Close()
-		test.remoteClient = nil
+	client, err := b.clientForTest(test)
+	if err != nil {
+		return nil, err
 	}
+	return map[string]generatorClient{test.remoteTarget: client}, nil
 }
 
-func (b *distributedExecutionBackend) consumeMetrics(ctx context.Context, tr *TestRunner, test *ManagedTest, stream *generatorrpc.MetricsStream) {
+func (b *distributedExecutionBackend) metricsStreamsForTest(test *ManagedTest) map[string]*generatorrpc.MetricsStream {
+	if len(test.remoteMetricsStreamsByTarget) > 0 {
+		return cloneMetricsStreamMap(test.remoteMetricsStreamsByTarget)
+	}
+	if test.remoteMetricsStream == nil || test.remoteTarget == "" {
+		return nil
+	}
+	return map[string]*generatorrpc.MetricsStream{test.remoteTarget: test.remoteMetricsStream}
+}
+
+func (b *distributedExecutionBackend) clientForGroup(test *ManagedTest, groupName string) (generatorClient, error) {
+	if target, ok := test.remoteGroupTargets[groupName]; ok {
+		if client := test.remoteClientsByTarget[target]; client != nil {
+			return client, nil
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
+		defer cancel()
+		client, err := b.dial(ctx, target)
+		if err != nil {
+			return nil, fmt.Errorf("connect generator: %w", err)
+		}
+		return client, nil
+	}
+	return b.clientForTest(test)
+}
+
+func (b *distributedExecutionBackend) closeRemoteResources(test *ManagedTest) {
+	if len(test.remoteMetricsStreamsByTarget) > 0 {
+		for _, stream := range test.remoteMetricsStreamsByTarget {
+			_ = stream.CloseSend()
+		}
+	} else if test.remoteMetricsStream != nil {
+		_ = test.remoteMetricsStream.CloseSend()
+	}
+	test.remoteMetricsStream = nil
+	test.remoteMetricsStreamsByTarget = nil
+	if len(test.remoteClientsByTarget) > 0 {
+		for _, client := range test.remoteClientsByTarget {
+			_ = client.Close()
+		}
+	} else if test.remoteClient != nil {
+		_ = test.remoteClient.Close()
+	}
+	test.remoteClient = nil
+	test.remoteClientsByTarget = nil
+	test.remoteGroupTargets = nil
+	test.remoteMetricsBatchesByTarget = nil
+	test.remoteTargetStates = nil
+}
+
+func (b *distributedExecutionBackend) consumeMetrics(ctx context.Context, tr *TestRunner, test *ManagedTest, target string, stream *generatorrpc.MetricsStream) {
 	for {
 		batch, err := stream.Receive()
 		if err != nil {
@@ -301,25 +420,75 @@ func (b *distributedExecutionBackend) consumeMetrics(ctx context.Context, tr *Te
 		if batch.TestID != test.ID {
 			continue
 		}
-		live := buildLiveMetricsFromDistributedBatch(test, batch)
+		live, finalStatus, finalError := b.applyRemoteMetricsBatch(tr, test, target, batch)
 		tr.publishLiveMetrics(test, live, nil)
-		switch batch.LifecycleState {
+		switch finalStatus {
 		case "COMPLETE":
 			b.completeDistributedTestRun(tr, test, "COMPLETE", "")
 			return
 		case "FAILED":
-			failure := batch.LifecycleError
-			if failure == "" {
-				failure = "remote generator reported failure"
-			}
-			b.completeDistributedTestRun(tr, test, "FAILED", failure)
+			b.completeDistributedTestRun(tr, test, "FAILED", finalError)
 			return
 		}
 	}
 }
 
+func (b *distributedExecutionBackend) applyRemoteMetricsBatch(tr *TestRunner, test *ManagedTest, target string, batch generatorrpc.MetricsBatch) (*LiveMetrics, string, string) {
+	tr.mu.Lock()
+	if test.remoteMetricsBatchesByTarget == nil {
+		test.remoteMetricsBatchesByTarget = make(map[string]generatorrpc.MetricsBatch)
+	}
+	test.remoteMetricsBatchesByTarget[target] = batch
+	batches := make(map[string]generatorrpc.MetricsBatch, len(test.remoteMetricsBatchesByTarget))
+	for key, value := range test.remoteMetricsBatchesByTarget {
+		batches[key] = value
+	}
+	if test.remoteTargetStates == nil {
+		test.remoteTargetStates = make(map[string]string)
+	}
+	finalStatus := ""
+	finalError := ""
+	if !test.remoteFinalizing {
+		switch batch.LifecycleState {
+		case "FAILED":
+			test.remoteTargetStates[target] = "FAILED"
+			finalStatus = "FAILED"
+			finalError = batch.LifecycleError
+			if finalError == "" {
+				finalError = "remote generator reported failure"
+			}
+			test.remoteFinalizing = true
+		case "COMPLETE":
+			test.remoteTargetStates[target] = "COMPLETE"
+			allComplete := true
+			for remoteTarget := range test.remoteClientsByTarget {
+				if test.remoteTargetStates[remoteTarget] != "COMPLETE" {
+					allComplete = false
+					break
+				}
+			}
+			if len(test.remoteClientsByTarget) == 0 {
+				allComplete = test.remoteTargetStates[target] == "COMPLETE"
+			}
+			if allComplete {
+				finalStatus = "COMPLETE"
+				test.remoteFinalizing = true
+			}
+		}
+	}
+	tr.mu.Unlock()
+
+	aggregated := aggregateDistributedMetricsBatches(test.ID, batches)
+	return buildLiveMetricsFromDistributedBatch(test, aggregated), finalStatus, finalError
+}
+
 func (b *distributedExecutionBackend) completeDistributedTestRun(tr *TestRunner, test *ManagedTest, finalStatus string, finalError string) {
-	archiveRecord, archiveErr := b.stageRemoteArchive(test)
+	if finalStatus == "FAILED" {
+		if err := b.stopRemainingRemoteTargets(test); err != nil {
+			finalError = appendRunError(finalError, "stop remote targets", err)
+		}
+	}
+	archiveRecord, archiveErr := b.stageRemoteArchive(test, finalStatus == "COMPLETE")
 	if archiveErr != nil {
 		finalStatus = "FAILED"
 		finalError = appendRunError(finalError, "remote archive stage failed", archiveErr)
@@ -338,26 +507,15 @@ func (b *distributedExecutionBackend) completeDistributedTestRun(tr *TestRunner,
 	tr.completeTestRun(test, finalStatus, time.Now(), finalError, archiveRecord)
 }
 
-func (b *distributedExecutionBackend) stageRemoteArchive(test *ManagedTest) (*storage.RunArchiveRecord, error) {
-	client := test.remoteClient
-	if client == nil {
+func (b *distributedExecutionBackend) stageRemoteArchive(test *ManagedTest, requireAll bool) (*storage.RunArchiveRecord, error) {
+	bundles, err := b.fetchRemoteArchiveBundles(test, requireAll)
+	if err != nil {
+		return nil, err
+	}
+	if len(bundles) == 0 {
 		return nil, nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
-	defer cancel()
-
-	manifestContent, err := client.GetArchiveArtifact(ctx, generatorrpc.ArchiveArtifactRequest{TestID: test.ID, Name: "manifest.json"})
-	if err != nil {
-		code := grpcStatus.Code(err)
-		if code == grpcCodes.NotFound || code == grpcCodes.Unimplemented {
-			return nil, nil
-		}
-		return nil, err
-	}
-	var manifest RunArchiveManifest
-	if err := json.Unmarshal(manifestContent, &manifest); err != nil {
-		return nil, err
-	}
+	manifest := mergeRemoteArchiveManifest(test, bundles)
 	archiveDir := filepath.Join(resolveArchiveRoot(), "remote", test.ID)
 	if err := os.RemoveAll(archiveDir); err != nil {
 		return nil, err
@@ -365,20 +523,18 @@ func (b *distributedExecutionBackend) stageRemoteArchive(test *ManagedTest) (*st
 	if err := os.MkdirAll(archiveDir, 0o755); err != nil {
 		return nil, err
 	}
-	if err := os.WriteFile(filepath.Join(archiveDir, "manifest.json"), manifestContent, 0o644); err != nil {
+	if err := writeMergedRemoteArchiveFiles(archiveDir, &manifest, bundles); err != nil {
 		return nil, err
 	}
-	for name := range archiveManifestArtifactNames(&manifest) {
-		if name == "manifest.json" {
-			continue
-		}
-		content, err := client.GetArchiveArtifact(ctx, generatorrpc.ArchiveArtifactRequest{TestID: test.ID, Name: name})
-		if err != nil {
-			return nil, err
-		}
-		if err := os.WriteFile(filepath.Join(archiveDir, name), content, 0o644); err != nil {
-			return nil, err
-		}
+	if err := writeArchiveParquetFiles(archiveDir, &manifest); err != nil {
+		return nil, err
+	}
+	manifestContent, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(filepath.Join(archiveDir, "manifest.json"), manifestContent, 0o644); err != nil {
+		return nil, err
 	}
 	return &storage.RunArchiveRecord{
 		TestID:               manifest.TestID,
@@ -391,6 +547,286 @@ func (b *distributedExecutionBackend) stageRemoteArchive(test *ManagedTest) (*st
 		CreatedAt:            manifest.CreatedAt,
 		CompletedAt:          manifest.CompletedAt,
 	}, nil
+}
+
+type remoteArchiveBundle struct {
+	target       string
+	manifest     RunArchiveManifest
+	transactions []byte
+	resources    []byte
+	summaries    []byte
+}
+
+func (b *distributedExecutionBackend) fetchRemoteArchiveBundles(test *ManagedTest, requireAll bool) ([]remoteArchiveBundle, error) {
+	clients, err := b.clientsForTest(test)
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
+	defer cancel()
+	bundles := make([]remoteArchiveBundle, 0, len(clients))
+	missingTargets := make([]string, 0)
+	for _, target := range orderedGeneratorTargets(clients, b.targets) {
+		client := clients[target]
+		manifestContent, err := client.GetArchiveArtifact(ctx, generatorrpc.ArchiveArtifactRequest{TestID: test.ID, Name: "manifest.json"})
+		if err != nil {
+			code := grpcStatus.Code(err)
+			if code == grpcCodes.NotFound || code == grpcCodes.Unimplemented {
+				missingTargets = append(missingTargets, target)
+				continue
+			}
+			return nil, fmt.Errorf("fetch archive manifest from %s: %w", target, err)
+		}
+		var manifest RunArchiveManifest
+		if err := json.Unmarshal(manifestContent, &manifest); err != nil {
+			return nil, fmt.Errorf("decode archive manifest from %s: %w", target, err)
+		}
+		transactions, err := client.GetArchiveArtifact(ctx, generatorrpc.ArchiveArtifactRequest{TestID: test.ID, Name: manifest.TransactionsFile})
+		if err != nil {
+			return nil, fmt.Errorf("fetch transaction archive from %s: %w", target, err)
+		}
+		resources, err := client.GetArchiveArtifact(ctx, generatorrpc.ArchiveArtifactRequest{TestID: test.ID, Name: manifest.ResourceSamplesFile})
+		if err != nil {
+			return nil, fmt.Errorf("fetch resource archive from %s: %w", target, err)
+		}
+		summaries, err := client.GetArchiveArtifact(ctx, generatorrpc.ArchiveArtifactRequest{TestID: test.ID, Name: manifest.IntervalSummariesFile})
+		if err != nil {
+			return nil, fmt.Errorf("fetch interval summaries archive from %s: %w", target, err)
+		}
+		bundles = append(bundles, remoteArchiveBundle{
+			target:       target,
+			manifest:     manifest,
+			transactions: transactions,
+			resources:    resources,
+			summaries:    summaries,
+		})
+	}
+	if len(bundles) == 0 {
+		return nil, nil
+	}
+	if requireAll && len(missingTargets) > 0 {
+		return nil, fmt.Errorf("archive not available from targets: %s", strings.Join(missingTargets, ", "))
+	}
+	return bundles, nil
+}
+
+func mergeRemoteArchiveManifest(test *ManagedTest, bundles []remoteArchiveBundle) RunArchiveManifest {
+	manifest := RunArchiveManifest{
+		SchemaVersion:                archiveSchemaVersion,
+		TestID:                       test.ID,
+		TestName:                     test.Name,
+		CreatedAt:                    test.CreatedAt,
+		TransactionsFile:             "transactions.jsonl",
+		TransactionsParquetFile:      "transactions.parquet",
+		ResourceSamplesFile:          "resources.jsonl",
+		ResourceSamplesParquetFile:   "resources.parquet",
+		IntervalSummariesFile:        "interval_summaries.jsonl",
+		IntervalSummariesParquetFile: "interval_summaries.parquet",
+	}
+	errors := make([]string, 0)
+	for index, bundle := range bundles {
+		if index == 0 || bundle.manifest.CreatedAt.Before(manifest.CreatedAt) {
+			manifest.CreatedAt = bundle.manifest.CreatedAt
+		}
+		if bundle.manifest.CompletedAt.After(manifest.CompletedAt) {
+			manifest.CompletedAt = bundle.manifest.CompletedAt
+		}
+		manifest.TransactionCount += bundle.manifest.TransactionCount
+		manifest.ResourceSampleCount += bundle.manifest.ResourceSampleCount
+		manifest.IntervalSummaryCount += bundle.manifest.IntervalSummaryCount
+		if bundle.manifest.Status == "FAILED" {
+			manifest.Status = "FAILED"
+		}
+		if bundle.manifest.Error != "" {
+			errors = append(errors, bundle.manifest.Error)
+		}
+	}
+	if manifest.Status == "" {
+		manifest.Status = "COMPLETE"
+	}
+	manifest.Error = strings.Join(errors, "; ")
+	return manifest
+}
+
+func writeMergedRemoteArchiveFiles(rootDir string, manifest *RunArchiveManifest, bundles []remoteArchiveBundle) error {
+	transactionsFile, err := os.Create(filepath.Join(rootDir, manifest.TransactionsFile))
+	if err != nil {
+		return err
+	}
+	defer transactionsFile.Close()
+	resourcesFile, err := os.Create(filepath.Join(rootDir, manifest.ResourceSamplesFile))
+	if err != nil {
+		return err
+	}
+	defer resourcesFile.Close()
+	summariesFile, err := os.Create(filepath.Join(rootDir, manifest.IntervalSummariesFile))
+	if err != nil {
+		return err
+	}
+	defer summariesFile.Close()
+	for _, bundle := range bundles {
+		if err := appendArchiveContent(transactionsFile, bundle.transactions); err != nil {
+			return err
+		}
+		if err := appendArchiveContent(resourcesFile, bundle.resources); err != nil {
+			return err
+		}
+		if err := appendArchiveContent(summariesFile, bundle.summaries); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func appendArchiveContent(file *os.File, content []byte) error {
+	trimmed := bytes.TrimSpace(content)
+	if len(trimmed) == 0 {
+		return nil
+	}
+	if _, err := file.Write(trimmed); err != nil {
+		return err
+	}
+	if _, err := file.Write([]byte("\n")); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (b *distributedExecutionBackend) stopRemainingRemoteTargets(test *ManagedTest) error {
+	clients, err := b.clientsForTest(test)
+	if err != nil {
+		return err
+	}
+	var stopErr error
+	for _, target := range orderedGeneratorTargets(clients, b.targets) {
+		if state := test.remoteTargetStates[target]; state == "COMPLETE" || state == "FAILED" {
+			continue
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
+		_, err := clients[target].StopTest(ctx, test.ID, true)
+		cancel()
+		if err != nil {
+			code := grpcStatus.Code(err)
+			if code == grpcCodes.Canceled || code == grpcCodes.Unavailable || code == grpcCodes.NotFound {
+				continue
+			}
+			stopErr = fmt.Errorf("stop remote target %s: %w", target, err)
+		}
+	}
+	return stopErr
+}
+
+func planDistributedGroupTargets(groups []TestGroup, targets []string) map[string]string {
+	assignments := make(map[string]string, len(groups))
+	if len(targets) == 0 {
+		return assignments
+	}
+	for index, group := range groups {
+		assignments[group.Name] = targets[index%len(targets)]
+	}
+	return assignments
+}
+
+func orderedAssignedTargets(groupTargets map[string]string, preferred []string) []string {
+	set := make(map[string]struct{})
+	for _, target := range groupTargets {
+		set[target] = struct{}{}
+	}
+	return orderedTargetList(set, preferred)
+}
+
+func orderedGeneratorTargets(clients map[string]generatorClient, preferred []string) []string {
+	set := make(map[string]struct{}, len(clients))
+	for target := range clients {
+		set[target] = struct{}{}
+	}
+	return orderedTargetList(set, preferred)
+}
+
+func orderedMetricsTargets(streams map[string]*generatorrpc.MetricsStream, preferred []string) []string {
+	set := make(map[string]struct{}, len(streams))
+	for target := range streams {
+		set[target] = struct{}{}
+	}
+	return orderedTargetList(set, preferred)
+}
+
+func orderedTargetList(targetSet map[string]struct{}, preferred []string) []string {
+	ordered := make([]string, 0, len(targetSet))
+	seen := make(map[string]struct{}, len(targetSet))
+	for _, target := range preferred {
+		if _, ok := targetSet[target]; ok {
+			ordered = append(ordered, target)
+			seen[target] = struct{}{}
+		}
+	}
+	extras := make([]string, 0)
+	for target := range targetSet {
+		if _, ok := seen[target]; ok {
+			continue
+		}
+		extras = append(extras, target)
+	}
+	sort.Strings(extras)
+	return append(ordered, extras...)
+}
+
+func cloneStringMap(values map[string]string) map[string]string {
+	if len(values) == 0 {
+		return nil
+	}
+	cloned := make(map[string]string, len(values))
+	for key, value := range values {
+		cloned[key] = value
+	}
+	return cloned
+}
+
+func cloneClientMap(values map[string]generatorClient) map[string]generatorClient {
+	if len(values) == 0 {
+		return nil
+	}
+	cloned := make(map[string]generatorClient, len(values))
+	for key, value := range values {
+		cloned[key] = value
+	}
+	return cloned
+}
+
+func cloneMetricsStreamMap(values map[string]*generatorrpc.MetricsStream) map[string]*generatorrpc.MetricsStream {
+	if len(values) == 0 {
+		return nil
+	}
+	cloned := make(map[string]*generatorrpc.MetricsStream, len(values))
+	for key, value := range values {
+		cloned[key] = value
+	}
+	return cloned
+}
+
+func aggregateDistributedMetricsBatches(testID string, batches map[string]generatorrpc.MetricsBatch) generatorrpc.MetricsBatch {
+	combined := generatorrpc.MetricsBatch{TestID: testID, GeneratorID: "distributed"}
+	targets := make([]string, 0, len(batches))
+	for target := range batches {
+		targets = append(targets, target)
+	}
+	sort.Strings(targets)
+	for _, target := range targets {
+		batch := batches[target]
+		if batch.TimestampUnixMs > combined.TimestampUnixMs {
+			combined.TimestampUnixMs = batch.TimestampUnixMs
+		}
+		combined.Stats.ActiveVUsers += batch.Stats.ActiveVUsers
+		combined.Stats.CPUPercent += batch.Stats.CPUPercent
+		combined.Stats.MemoryBytes += batch.Stats.MemoryBytes
+		combined.Stats.GoroutineCount += batch.Stats.GoroutineCount
+		combined.Transactions = append(combined.Transactions, batch.Transactions...)
+		combined.Groups = append(combined.Groups, batch.Groups...)
+	}
+	sort.Slice(combined.Groups, func(left int, right int) bool {
+		return combined.Groups[left].Name < combined.Groups[right].Name
+	})
+	return combined
 }
 
 func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.MetricsBatch) *LiveMetrics {
