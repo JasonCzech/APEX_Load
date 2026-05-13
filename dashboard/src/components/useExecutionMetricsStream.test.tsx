@@ -1,0 +1,134 @@
+// @vitest-environment jsdom
+
+import { act } from 'react'
+import { createRoot, Root } from 'react-dom/client'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { WSMessage } from '../types'
+import { useExecutionMetricsStream } from './useExecutionMetricsStream'
+
+;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+
+const useWebSocketMock = vi.fn()
+
+vi.mock('../hooks/useWebSocket', () => ({
+  useWebSocket: (...args: unknown[]) => useWebSocketMock(...args),
+}))
+
+function MetricsStreamHarness() {
+  const { localMetricsHistory } = useExecutionMetricsStream('test-1')
+  const latest = localMetricsHistory.at(-1)
+
+  return (
+    <div>
+      <span data-testid="count">{String(localMetricsHistory.length)}</span>
+      <span data-testid="tps">{String(latest?.tps ?? -1)}</span>
+      <span data-testid="group-tps">{String(latest?.Checkout_tps ?? -1)}</span>
+      <span data-testid="cpu">{String(latest?.cpuProcess ?? -1)}</span>
+    </div>
+  )
+}
+
+describe('useExecutionMetricsStream', () => {
+  let container: HTMLDivElement
+  let root: Root
+  let onMessage: ((msg: WSMessage) => void) | undefined
+
+  beforeEach(() => {
+    useWebSocketMock.mockImplementation(({ onMessage: handler }: { onMessage?: (msg: WSMessage) => void }) => {
+      onMessage = handler
+      return { connected: true }
+    })
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+  })
+
+  afterEach(async () => {
+    await act(async () => {
+      root.unmount()
+    })
+    container.remove()
+    onMessage = undefined
+    vi.clearAllMocks()
+  })
+
+  it('maps metrics update websocket messages into execution history points', async () => {
+    await act(async () => {
+      root.render(<MetricsStreamHarness />)
+    })
+
+    expect(useWebSocketMock).toHaveBeenCalled()
+
+    await emit({
+      type: 'metrics_update',
+      timestamp: '2026-05-12T20:05:00Z',
+      data: {
+        active_vusers: 15,
+        tps: 12.34,
+        avg_response_ms: 221.19,
+        error_pct: 1.234,
+        p50_ms: 150.44,
+        p90_ms: 320.22,
+        p99_ms: 501.66,
+        groups: {
+          Checkout: {
+            tps: 7.89,
+            avg_response_ms: 180.11,
+            vusers: 9,
+          },
+        },
+        resources: {
+          cpu_process_pct: 44.43,
+          cpu_free_pct: 55.51,
+          mem_process_mb: 300.49,
+          mem_free_mb: 1200.67,
+          net_sent_kbps: 40.21,
+          net_recv_kbps: 50.19,
+          disk_read_kbps: 10.17,
+          disk_write_kbps: 20.16,
+        },
+      },
+    } as WSMessage)
+
+    expect(readTestId('count')).toBe('1')
+    expect(readTestId('tps')).toBe('12.3')
+    expect(readTestId('group-tps')).toBe('7.9')
+    expect(readTestId('cpu')).toBe('44.4')
+  })
+
+  it('caps streamed execution history at 300 points', async () => {
+    await act(async () => {
+      root.render(<MetricsStreamHarness />)
+    })
+
+    for (let index = 0; index < 301; index += 1) {
+      await emit({
+        type: 'metrics_update',
+        timestamp: '2026-05-12T20:05:00Z',
+        data: {
+          active_vusers: index,
+          tps: index,
+          avg_response_ms: index,
+          error_pct: 0,
+          p50_ms: index,
+          p90_ms: index,
+          p99_ms: index,
+        },
+      } as WSMessage)
+    }
+
+    expect(readTestId('count')).toBe('300')
+    expect(readTestId('tps')).toBe('300')
+  })
+
+  async function emit(message: WSMessage) {
+    await act(async () => {
+      onMessage?.(message)
+    })
+  }
+
+  function readTestId(testId: string) {
+    return container.querySelector(`[data-testid="${testId}"]`)?.textContent
+  }
+})

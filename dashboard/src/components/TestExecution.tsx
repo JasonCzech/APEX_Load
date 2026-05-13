@@ -1,27 +1,40 @@
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useReducer } from 'react'
 import { ApiError, useApi } from '../hooks/useApi'
-import { useWebSocket } from '../hooks/useWebSocket'
-import { WSMessage } from '../types'
 import {
   CapacityAdvisory,
   TestSummary,
   MetricsHistoryPoint,
   TxMetrics,
   GoalStatus,
-  RunArchiveReport,
-  TransactionEvent,
 } from '../types'
 import TestExecutionArchive from './TestExecutionArchive'
+import { useExecutionActionBridge } from './useExecutionActionBridge'
+import { useExecutionArchiveModel } from './useExecutionArchiveModel'
+import { useExecutionLiveControls } from './useExecutionLiveControls'
+import { useExecutionMetricsStream } from './useExecutionMetricsStream'
+import { useExecutionTestPolling } from './useExecutionTestPolling'
+import { useExecutionViewState } from './useExecutionViewState'
+import {
+  executionChartZoomReducer,
+  getExecutionChartRefArea,
+  initialExecutionChartZoomState,
+} from './testExecutionChartZoomModel'
 import TestExecutionCharts from './TestExecutionCharts'
 import TestExecutionHeader from './TestExecutionHeader'
 import TestExecutionHeroMetrics from './TestExecutionHeroMetrics'
 import TestExecutionLiveControls from './TestExecutionLiveControls'
-import TestExecutionScenarioEditor from './TestExecutionScenarioEditor'
-import TestExecutionScenarioPreview, { ScenarioScriptDetail } from './TestExecutionScenarioPreview'
+import {
+  buildExecutionChartData,
+  filterExecutionChartData,
+  mapExecutionHistory,
+  summarizeExecutionChartData,
+} from './testExecutionMetricsModel'
+import TestExecutionScenarioPreview from './TestExecutionScenarioPreview'
 import TestExecutionStatusPanels from './TestExecutionStatusPanels'
 import TestExecutionSummary from './TestExecutionSummary'
-import { parseDurationToSeconds, formatTimeLong } from '../utils/timeUtils'
-import { downloadBlob } from '../utils/fileUtils'
+import { buildQueuedScenarioPreview } from './testExecutionScenarioModel'
+import { useExecutionScenarioPreviewModel } from './useExecutionScenarioPreviewModel'
+import { formatTimeLong } from '../utils/timeUtils'
 import { getErrorMessage } from '../utils/errorUtils'
 import './TestExecution.css'
 
@@ -29,7 +42,6 @@ const GROUP_COLORS = [
   'var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)',
   'var(--chart-4)', 'var(--chart-5)', 'var(--chart-6)',
 ]
-const RESOURCE_BASELINE_SECONDS = 5 * 60
 
 interface Props {
   testId: string
@@ -54,580 +66,99 @@ function describeGoalController(status?: GoalStatus): string {
   return 'Tracking target'
 }
 
-function isTerminalStatus(status?: string): boolean {
-  return status === 'COMPLETE' || status === 'FAILED' || status === 'ABORTED'
-}
-
 export default function TestExecution({ testId, history, onBack, onEditScript, onSelectTest }: Props) {
   const api = useApi()
-  const [test, setTest] = useState<TestSummary | null>(null)
-  const [error, setError] = useState('')
-  const [expandedChart, setExpandedChart] = useState<string | null>(null)
-  const [timeRange, setTimeRange] = useState<'3m' | '10m' | 'all' | 'custom'>('all')
-  const [zoomRange, setZoomRange] = useState<{ left: string | number; right: string | number } | null>(null)
-  const [refAreaLeft, setRefAreaLeft] = useState<string | number>('')
-  const [refAreaRight, setRefAreaRight] = useState<string | number>('')
-  const [showControls, setShowControls] = useState(false)
-  const [vuserTargets, setVuserTargets] = useState<Record<string, number>>({})
-  const [durationInput, setDurationInput] = useState('')
-  const [controlFeedback, setControlFeedback] = useState('')
-  const [scriptDetails, setScriptDetails] = useState<Record<string, ScenarioScriptDetail>>({})
-  const [expandedScenarioScript, setExpandedScenarioScript] = useState<string | null>(null)
-  const [scriptDetailsLoading, setScriptDetailsLoading] = useState(false)
-  const [localMetricsHistory, setLocalMetricsHistory] = useState<MetricsHistoryPoint[]>([])
-  const [scriptDetailsError, setScriptDetailsError] = useState('')
-  const [showScenarioEditor, setShowScenarioEditor] = useState(false)
-  const [archiveReport, setArchiveReport] = useState<RunArchiveReport | null>(null)
-  const [archiveTransactions, setArchiveTransactions] = useState<TransactionEvent[]>([])
-  const [archiveTransactionsTotal, setArchiveTransactionsTotal] = useState(0)
-  const [archiveLoading, setArchiveLoading] = useState(false)
-  const [archiveTransactionsLoading, setArchiveTransactionsLoading] = useState(false)
-  const [archiveError, setArchiveError] = useState('')
-  const [selectedArchiveAction, setSelectedArchiveAction] = useState('')
-  const [selectedArchiveGroup, setSelectedArchiveGroup] = useState('')
-  const [archiveErrorsOnly, setArchiveErrorsOnly] = useState(false)
-  const [archiveTransactionsOffset, setArchiveTransactionsOffset] = useState(0)
-  const [expandedArchiveEvent, setExpandedArchiveEvent] = useState<string | null>(null)
-  const [startCapacityConflict, setStartCapacityConflict] = useState<CapacityAdvisory | null>(null)
-  const [startFeedback, setStartFeedback] = useState('')
+  const { test, setTest, error } = useExecutionTestPolling(testId)
+  const [chartZoomState, dispatchChartZoom] = useReducer(executionChartZoomReducer, initialExecutionChartZoomState)
+  const {
+    expandedChart,
+    onExpandedChartChange,
+    expandedScenarioScript,
+    onExpandedScenarioScriptChange,
+  } = useExecutionViewState()
 
-  const scriptIdsKey = useMemo(() => {
-    if (!test?.groups?.length) return ''
-    const ids = [...new Set(test.groups.map((group) => group.script_id).filter(Boolean))].sort()
-    return ids.join('|')
-  }, [test?.groups])
-
-  useEffect(() => {
-    const load = async () => {
-      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
-        return
-      }
-      try {
-        const data = await api.getTest(testId)
-        setTest(data)
-        if (data.status !== 'QUEUED') {
-          setStartCapacityConflict(null)
-          setStartFeedback('')
-        }
-      } catch (error: unknown) {
-        setError(getErrorMessage(error, 'Unable to load test execution details'))
-      }
-    }
-
-    load()
-    const interval = setInterval(load, 2000)
-
-    const handleVisibilityChange = () => {
-      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-        load()
-      }
-    }
-
-    if (typeof document !== 'undefined') {
-      document.addEventListener('visibilitychange', handleVisibilityChange)
-    }
-
-    return () => {
-      clearInterval(interval)
-      if (typeof document !== 'undefined') {
-        document.removeEventListener('visibilitychange', handleVisibilityChange)
-      }
-    }
-  }, [api, testId])
-
-  // Set up dedicated WebSocket for this test's metrics stream (1-second refresh rate)
-  const handleTestWSMessage = useCallback((msg: WSMessage) => {
-    if (msg.type === 'metrics_update' && msg.data && msg.timestamp) {
-      const point: MetricsHistoryPoint = {
-        time: new Date(msg.timestamp).toLocaleTimeString(),
-        vusers: msg.data.active_vusers,
-        tps: Math.round(msg.data.tps * 10) / 10,
-        avgMs: Math.round(msg.data.avg_response_ms * 10) / 10,
-        errorPct: Math.round(msg.data.error_pct * 100) / 100,
-        p50: Math.round(msg.data.p50_ms * 10) / 10,
-        p90: Math.round(msg.data.p90_ms * 10) / 10,
-        p99: Math.round(msg.data.p99_ms * 10) / 10,
-      }
-      if (msg.data.groups) {
-        for (const [name, gm] of Object.entries(msg.data.groups)) {
-          point[`${name}_tps`] = Math.round(gm.tps * 10) / 10
-          point[`${name}_avgMs`] = Math.round(gm.avg_response_ms * 10) / 10
-          point[`${name}_vusers`] = gm.vusers
-        }
-      }
-      if (msg.data.resources) {
-        const r = msg.data.resources
-        point.cpuProcess = Math.round(r.cpu_process_pct * 10) / 10
-        point.cpuFree = Math.round(r.cpu_free_pct * 10) / 10
-        point.memProcess = Math.round(r.mem_process_mb * 10) / 10
-        point.memFree = Math.round(r.mem_free_mb * 10) / 10
-        point.netSent = Math.round(r.net_sent_kbps * 10) / 10
-        point.netRecv = Math.round(r.net_recv_kbps * 10) / 10
-        point.diskRead = Math.round(r.disk_read_kbps * 10) / 10
-        point.diskWrite = Math.round(r.disk_write_kbps * 10) / 10
-      }
-      setLocalMetricsHistory((prev) => [...prev, point].slice(-300))
-    }
-  }, [])
-
-  useWebSocket({ testId, onMessage: handleTestWSMessage })
-
-  useEffect(() => {
-    if (!scriptIdsKey) {
-      setScriptDetails({})
-      setScriptDetailsError('')
-      return
-    }
-
-    const scriptIds = scriptIdsKey.split('|').filter(Boolean)
-
-    let cancelled = false
-
-    const loadScriptDetails = async () => {
-      setScriptDetailsLoading(true)
-      setScriptDetailsError('')
-      try {
-        const results = await Promise.all(scriptIds.map(async (scriptId) => {
-          const detail = await api.getScript(scriptId)
-          return [scriptId, detail as ScenarioScriptDetail] as const
-        }))
-        if (cancelled) return
-        setScriptDetails(Object.fromEntries(results))
-      } catch (error: unknown) {
-        if (cancelled) return
-        setScriptDetailsError(getErrorMessage(error, 'Unable to load script details'))
-      } finally {
-        if (!cancelled) setScriptDetailsLoading(false)
-      }
-    }
-
-    loadScriptDetails()
-
-    return () => {
-      cancelled = true
-    }
-  }, [api, scriptIdsKey])
-
-  useEffect(() => {
-    if (!test?.archive || !isTerminalStatus(test.status)) {
-      setArchiveReport(null)
-      setArchiveTransactions([])
-      setArchiveTransactionsTotal(0)
-      setArchiveError('')
-      setSelectedArchiveAction('')
-      setSelectedArchiveGroup('')
-      setArchiveErrorsOnly(false)
-      setArchiveTransactionsOffset(0)
-      setExpandedArchiveEvent(null)
-      return
-    }
-
-    let cancelled = false
-    const loadArchiveReport = async () => {
-      setArchiveLoading(true)
-      setArchiveError('')
-      try {
-        const report = await api.getTestArchiveReport(test.id)
-        if (cancelled) return
-        setArchiveReport(report)
-        const actionNames = Object.keys(report.by_action || {})
-        setSelectedArchiveAction((current) => current || actionNames[0] || '')
-        setArchiveTransactionsOffset(0)
-      } catch (error: unknown) {
-        if (cancelled) return
-        setArchiveReport(null)
-        setArchiveError(getErrorMessage(error, 'Unable to load archive report'))
-      } finally {
-        if (!cancelled) setArchiveLoading(false)
-      }
-    }
-
-    loadArchiveReport()
-
-    return () => {
-      cancelled = true
-    }
-  }, [api, test])
-
-  useEffect(() => {
-    if (!test?.archive || !isTerminalStatus(test.status) || !selectedArchiveAction) {
-      setArchiveTransactions([])
-      setArchiveTransactionsTotal(0)
-      return
-    }
-
-    let cancelled = false
-    const loadArchiveTransactions = async () => {
-      setArchiveTransactionsLoading(true)
-      try {
-        const response = await api.getTestArchiveTransactions(test.id, {
-          action: selectedArchiveAction,
-          group: selectedArchiveGroup || undefined,
-          success: archiveErrorsOnly ? false : undefined,
-          limit: 25,
-          offset: archiveTransactionsOffset,
-        })
-        if (!cancelled) {
-          setArchiveTransactions(response.transactions || [])
-          setArchiveTransactionsTotal(response.total || 0)
-          setExpandedArchiveEvent(null)
-        }
-      } catch (error: unknown) {
-        if (!cancelled) {
-          setArchiveTransactions([])
-          setArchiveTransactionsTotal(0)
-          setArchiveError(getErrorMessage(error, 'Unable to load archive transactions'))
-        }
-      } finally {
-        if (!cancelled) setArchiveTransactionsLoading(false)
-      }
-    }
-
-    loadArchiveTransactions()
-
-    return () => {
-      cancelled = true
-    }
-    }, [api, archiveErrorsOnly, archiveTransactionsOffset, selectedArchiveAction, selectedArchiveGroup, test])
+  const { queuedScenarioRows, scriptDetailsLoading, scriptDetailsError } = useExecutionScenarioPreviewModel(test)
+  const { localMetricsHistory } = useExecutionMetricsStream(testId)
+  const {
+    controlFeedback,
+    showControlFeedback,
+    startCapacityConflict,
+    startFeedback,
+    onDismissStartConflict,
+    onStart,
+    onConfirmStartAnyway,
+    onPause,
+    onResume,
+  } = useExecutionActionBridge(testId, test, setTest)
+  const {
+    showControls,
+    onToggleControls,
+    vuserTargets,
+    onVuserTargetChange,
+    durationInput,
+    onDurationInputChange,
+    onScaleVUsers,
+    onAdjustDuration,
+    liveControlPreview,
+  } = useExecutionLiveControls(testId, test, showControlFeedback)
+  const {
+    hasArchive,
+    archiveError,
+    archiveLoading,
+    archiveReport,
+    archiveActionEntries,
+    selectedArchiveAction,
+    onSelectedArchiveActionChange,
+    archiveGroups,
+    selectedArchiveGroup,
+    onSelectedArchiveGroupChange,
+    archiveErrorsOnly,
+    onArchiveErrorsOnlyChange,
+    archiveTransactionsLoading,
+    archiveTransactionsTotal,
+    archivePageStart,
+    archivePageEnd,
+    archiveTransactionsOffset,
+    archivePageSize,
+    onPreviousPage,
+    onNextPage,
+    archiveTransactions,
+    expandedArchiveEvent,
+    onExpandedArchiveEventChange,
+    onDownloadArchive,
+    onDownloadArchiveArtifact,
+  } = useExecutionArchiveModel(test)
 
   const isRunning = test?.status === 'RUNNING' || test?.status === 'INITIALIZING'
-  const hasArchive = Boolean(test?.archive)
-
-  // Initialize vuser targets when test loads
-  useEffect(() => {
-    if (test?.groups && Object.keys(vuserTargets).length === 0) {
-      const targets: Record<string, number> = {}
-      test.groups.forEach((group) => { targets[group.name] = group.vusers })
-      setVuserTargets(targets)
-      setDurationInput(test.duration || '')
-    }
-  }, [test?.groups])
-
-  const handleScaleVUsers = useCallback(async (groupName: string) => {
-    const target = vuserTargets[groupName]
-    if (target === undefined || target < 0) return
-    try {
-      await api.scaleVUsers(testId, groupName, target)
-      setControlFeedback(`Scaled ${groupName} to ${target} VUsers`)
-      setTimeout(() => setControlFeedback(''), 3000)
-    } catch (error: unknown) {
-      setControlFeedback(`Error: ${getErrorMessage(error, 'Unable to scale VUsers')}`)
-    }
-  }, [api, testId, vuserTargets])
-
-  const handleAdjustDuration = useCallback(async () => {
-    if (!durationInput) return
-    try {
-      await api.adjustDuration(testId, durationInput)
-      setControlFeedback(`Duration adjusted to ${durationInput}`)
-      setTimeout(() => setControlFeedback(''), 3000)
-    } catch (error: unknown) {
-      setControlFeedback(`Error: ${getErrorMessage(error, 'Unable to adjust duration')}`)
-    }
-  }, [api, testId, durationInput])
   
   // Memoize the mapped backend history to avoid re-mapping it on every WebSocket update
   const mappedBackendHistory = useMemo(() => {
-    if (!test?.history) return []
-    return test.history.map((metric) => {
-      const p: MetricsHistoryPoint = {
-        time: new Date(metric.timestamp).toLocaleTimeString(),
-        vusers: metric.active_vusers,
-        tps: metric.tps,
-        avgMs: metric.avg_response_ms,
-        errorPct: metric.error_pct || 0,
-        p50: metric.p50_ms,
-        p90: metric.p90_ms,
-        p99: metric.p99_ms,
-        cpuProcess: metric.resources?.cpu_process_pct,
-        cpuFree: metric.resources?.cpu_free_pct,
-        memProcess: metric.resources?.mem_process_mb,
-        memFree: metric.resources?.mem_free_mb,
-        netSent: metric.resources?.net_sent_kbps,
-        netRecv: metric.resources?.net_recv_kbps,
-        diskRead: metric.resources?.disk_read_kbps,
-        diskWrite: metric.resources?.disk_write_kbps,
-      }
-      if (metric.groups) {
-        Object.entries(metric.groups).forEach(([name, groupMetric]) => {
-          p[`${name}_tps`] = groupMetric.tps
-          p[`${name}_avgMs`] = groupMetric.avg_response_ms
-          p[`${name}_vusers`] = groupMetric.vusers
-        })
-      }
-      if (metric.latency?.targets) {
-        metric.latency.targets.forEach((target) => {
-          p[`latency_${target.name}`] = target.latency_ms
-        })
-      }
-      return p
-    })
+    return mapExecutionHistory(test?.history)
   }, [test?.history])
 
   // Combine WebSocket history with backend history for a continuous timeline
   const chartData = useMemo(() => {
-    let combined: MetricsHistoryPoint[] = []
-
-    if (localMetricsHistory.length > 0) {
-      // Prioritize local WebSocket metrics (real-time, 1-second updates)
-      if (mappedBackendHistory.length > 0 && localMetricsHistory.length < 10) {
-        combined = [...mappedBackendHistory, ...localMetricsHistory]
-      } else {
-        combined = [...localMetricsHistory]
-      }
-    } else if (history.length > 0) {
-      // Fallback to prop history if no local WebSocket connection
-      if (mappedBackendHistory.length > 0 && history.length < 10) {
-        combined = [...mappedBackendHistory, ...history]
-      } else {
-        combined = [...history]
-      }
-    } else {
-      combined = mappedBackendHistory
-    }
-
-    // Deduplicate by time string efficiently (O(N))
-    const seen = new Set()
-    const deduped: MetricsHistoryPoint[] = []
-    for (let i = combined.length - 1; i >= 0; i--) {
-      if (!seen.has(combined[i].time)) {
-        seen.add(combined[i].time)
-        deduped.unshift(combined[i])
-      }
-    }
-
-    // PAUSE GRAPH LOGIC: Stop refreshing once TPS hits 0 when paused
-    if (test?.status === 'PAUSED' && deduped.length > 0) {
-      const lastPoint = deduped[deduped.length - 1]
-      // If we are already at effectively zero TPS, look for the wind-down point
-      if (lastPoint.tps < 0.1) {
-        let lastNonZeroIdx = -1
-        for (let i = deduped.length - 1; i >= 0; i--) {
-          if (deduped[i].tps > 0.1) {
-            lastNonZeroIdx = i
-            break
-          }
-        }
-        // Freeze at lastNonZeroIdx + small buffer to show it hitting zero
-        if (lastNonZeroIdx !== -1) {
-          return deduped.slice(0, lastNonZeroIdx + 6)
-        }
-      }
-    }
-
-    return deduped
-  }, [localMetricsHistory, history, test?.history, test?.status])
+    return buildExecutionChartData({
+      mappedBackendHistory,
+      localMetricsHistory,
+      fallbackHistory: history,
+      status: test?.status,
+    })
+  }, [history, localMetricsHistory, mappedBackendHistory, test?.status])
 
   const filteredData = useMemo(() => {
-    if (timeRange === 'custom' && zoomRange) {
-      const left = chartData.findIndex((d: MetricsHistoryPoint) => d.time === zoomRange.left)
-      const right = chartData.findIndex((d: MetricsHistoryPoint) => d.time === zoomRange.right)
-      if (left !== -1 && right !== -1) {
-        return chartData.slice(Math.min(left, right), Math.max(left, right) + 1)
-      }
-    }
-    if (timeRange === 'all') return chartData
-    const seconds = timeRange === '3m' ? 180 : 600
-    return chartData.slice(-seconds)
-  }, [chartData, timeRange, zoomRange])
+    return filterExecutionChartData(chartData, chartZoomState.timeRange, chartZoomState.zoomRange)
+  }, [chartData, chartZoomState.timeRange, chartZoomState.zoomRange])
 
   const summary = useMemo(() => {
-    if (filteredData.length === 0) return null
-    const sum = filteredData.reduce((acc: { tps: number; avgMs: number; errorPct: number; vusers: number }, d: MetricsHistoryPoint) => ({
-      tps: acc.tps + d.tps,
-      avgMs: acc.avgMs + d.avgMs,
-      errorPct: acc.errorPct + d.errorPct,
-      vusers: Math.max(acc.vusers, d.vusers)
-    }), { tps: 0, avgMs: 0, errorPct: 0, vusers: 0 })
-    
-    return {
-      avgTps: sum.tps / filteredData.length,
-      avgLatency: sum.avgMs / filteredData.length,
-      avgError: sum.errorPct / filteredData.length,
-      maxVusers: sum.vusers
-    }
+    return summarizeExecutionChartData(filteredData)
   }, [filteredData])
 
-  const handleZoom = () => {
-    if (refAreaLeft === refAreaRight || refAreaRight === '') {
-      setRefAreaLeft('')
-      setRefAreaRight('')
-      return
-    }
-
-    setTimeRange('custom')
-    setZoomRange({ left: refAreaLeft as number, right: refAreaRight as number })
-    setRefAreaLeft('')
-    setRefAreaRight('')
-  }
-
-  const handleChartMouseDown = (activeLabel?: string | number) => {
-    if (activeLabel === undefined) return
-    setRefAreaLeft(activeLabel)
-    setRefAreaRight(activeLabel)
-  }
-
-  const handleChartMouseMove = (activeLabel?: string | number) => {
-    if (activeLabel === undefined || refAreaLeft === '') return
-    setRefAreaRight(activeLabel)
-  }
-
-  const showRefArea = refAreaLeft !== ''
-  const refAreaEnd = refAreaRight === '' ? refAreaLeft : refAreaRight
-
-  const liveControlPreview = useMemo(() => {
-    if (!test?.groups?.length) {
-      return {
-        points: [],
-        currentTotal: 0,
-        projectedTotal: 0,
-        remainingSeconds: 0,
-        projectedDurationSeconds: 0,
-        hasPendingChanges: false,
-      }
-    }
-
-    const groupMetricsMap = test.live_metrics?.groups ?? {}
-    const startedAt = test.started_at || test.start_time
-    const elapsedSeconds = startedAt
-      ? Math.max(0, Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000))
-      : 0
-    const projectedDurationSeconds = parseDurationToSeconds(durationInput || test.duration)
-    const remainingSeconds = Math.max(projectedDurationSeconds - elapsedSeconds, 0)
-    const transitionSeconds = remainingSeconds > 0 ? Math.min(Math.max(Math.round(remainingSeconds * 0.06), 1), 30) : 1
-
-    const currentPoint: Record<string, number> = { second: 0, total: 0 }
-    const projectedPoint: Record<string, number> = { second: transitionSeconds, total: 0 }
-    const steadyPoint: Record<string, number> = { second: Math.max(transitionSeconds, remainingSeconds), total: 0 }
-    const endPoint: Record<string, number> = { second: Math.max(transitionSeconds + 1, remainingSeconds + 1), total: 0 }
-
-    let hasPendingChanges = durationInput !== '' && durationInput !== test.duration
-
-    test.groups.forEach((group, index) => {
-      const dataKey = `group${index}`
-      const liveGroup = groupMetricsMap[group.name]
-      const currentValue = liveGroup?.vusers ?? group.vusers
-      const projectedValue = vuserTargets[group.name] ?? group.vusers
-
-      currentPoint[dataKey] = currentValue
-      projectedPoint[dataKey] = projectedValue
-      steadyPoint[dataKey] = projectedValue
-      endPoint[dataKey] = 0
-
-      currentPoint.total += currentValue
-      projectedPoint.total += projectedValue
-      steadyPoint.total += projectedValue
-
-      if (projectedValue !== group.vusers) {
-        hasPendingChanges = true
-      }
-    })
-
-    return {
-      points: [currentPoint, projectedPoint, steadyPoint, endPoint],
-      currentTotal: currentPoint.total,
-      projectedTotal: projectedPoint.total,
-      remainingSeconds,
-      projectedDurationSeconds,
-      hasPendingChanges,
-    }
-  }, [durationInput, test, vuserTargets])
+  const { showRefArea, refAreaEnd } = getExecutionChartRefArea(chartZoomState)
 
   const queuedScenarioPreview = useMemo(() => {
-    if (!test?.groups?.length) {
-      return {
-        points: [],
-        totalVUsers: 0,
-        totalSeconds: 0,
-        steadySeconds: 0,
-        preBaselineSeconds: 0,
-        postBaselineSeconds: 0,
-      }
-    }
-
-    const steadySeconds = parseDurationToSeconds(test.duration)
-    const preBaselineSeconds = test.resource_baseline ? RESOURCE_BASELINE_SECONDS : 0
-    const postBaselineSeconds = test.resource_baseline ? RESOURCE_BASELINE_SECONDS : 0
-    let maxRampDown = 0
-    test.groups.forEach((group) => {
-      const rampDown = parseDurationToSeconds(group.ramp_down)
-      if (rampDown > maxRampDown) maxRampDown = rampDown
-    })
-
-	    const totalSeconds = preBaselineSeconds + steadySeconds + maxRampDown + postBaselineSeconds
-    if (totalSeconds <= 0) {
-      return {
-        points: [],
-        totalVUsers: test.total_vusers,
-        totalSeconds: 0,
-        steadySeconds,
-        preBaselineSeconds,
-        postBaselineSeconds,
-      }
-    }
-
-    const step = Math.max(1, Math.floor(totalSeconds / 30))
-    const points: Array<Record<string, number>> = []
-
-    for (let second = 0; second <= totalSeconds; second += step) {
-      const point: Record<string, number> = { second, total: 0 }
-      test.groups.forEach((group, index) => {
-        const rampUp = parseDurationToSeconds(group.ramp_up)
-        const rampDown = parseDurationToSeconds(group.ramp_down)
-        let value = 0
-
-        const loadSecond = Math.max(0, second - preBaselineSeconds)
-
-        if (second < preBaselineSeconds) {
-          value = 0
-        } else if (loadSecond < rampUp) {
-          value = rampUp > 0 ? (loadSecond / rampUp) * group.vusers : group.vusers
-        } else if (loadSecond < steadySeconds) {
-          value = group.vusers
-        } else if (loadSecond < steadySeconds + rampDown) {
-          value = rampDown > 0 ? (1 - (loadSecond - steadySeconds) / rampDown) * group.vusers : 0
-        }
-
-        const roundedValue = Math.round(Math.max(0, value))
-        point[`group${index}`] = roundedValue
-        point.total += roundedValue
-      })
-      points.push(point)
-    }
-
-    const lastPoint = points[points.length - 1]
-    if (!lastPoint || lastPoint.second < totalSeconds) {
-      const finalPoint: Record<string, number> = { second: totalSeconds, total: 0 }
-      test.groups.forEach((_, index) => {
-        finalPoint[`group${index}`] = 0
-      })
-      points.push(finalPoint)
-    }
-
-    return {
-      points,
-      totalVUsers: test.total_vusers,
-      totalSeconds,
-      steadySeconds,
-        preBaselineSeconds,
-        postBaselineSeconds,
-    }
+    return buildQueuedScenarioPreview(test)
   }, [test])
-
-  const queuedScenarioRows = useMemo(() => {
-    if (!test?.groups?.length) return []
-    return test.groups.map((group) => {
-      const detail = scriptDetails[group.script_id]
-      return {
-        group,
-        detail,
-        actionCount: detail?.script?.actions?.length || 0,
-        initCount: detail?.script?.init?.length || 0,
-        teardownCount: detail?.script?.teardown?.length || 0,
-        dataSourceCount: detail?.script?.data_sources?.length || 0,
-      }
-    })
-  }, [scriptDetails, test])
 
   const metrics = test?.live_metrics
   const goalStatus = metrics?.goal_status
@@ -637,70 +168,6 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
   const groupNames = test?.groups?.map((g) => g.name) || []
   const isGoalOriented = test?.scenario_mode === 'goal_oriented'
   const shakeoutFailed = test?.status === 'FAILED' && Boolean(test.script_shakeout) && test.error?.toLowerCase().includes('shakeout')
-  const archiveActionEntries = archiveReport ? Object.entries(archiveReport.by_action || {}).sort((a, b) => b[1].transactions - a[1].transactions) : []
-  const archiveGroups = test?.groups?.map((group) => group.name) || []
-  const archivePageSize = 25
-  const archivePageStart = archiveTransactionsTotal === 0 ? 0 : archiveTransactionsOffset + 1
-  const archivePageEnd = Math.min(archiveTransactionsOffset + archiveTransactions.length, archiveTransactionsTotal)
-
-  const handleDownloadArchive = useCallback(async () => {
-    if (!test) return
-    try {
-      const blob = await api.downloadTestArchive(test.id)
-      downloadBlob(blob, `${test.name.replace(/\s+/g, '-').toLowerCase()}-${test.id}.zip`)
-    } catch (error: unknown) {
-      setArchiveError(getErrorMessage(error, 'Unable to download archive bundle'))
-    }
-  }, [api, test])
-
-  const handleDownloadArchiveArtifact = useCallback(async (artifactName: string) => {
-    if (!test) return
-    try {
-      const blob = await api.downloadTestArchiveArtifact(test.id, artifactName)
-      downloadBlob(blob, `${test.name.replace(/\s+/g, '-').toLowerCase()}-${test.id}-${artifactName}`)
-    } catch (error: unknown) {
-      setArchiveError(getErrorMessage(error, `Unable to download ${artifactName}`))
-    }
-  }, [api, test])
-
-  const handleStart = useCallback(async (override = false) => {
-    setStartFeedback('')
-    try {
-      await api.startTest(testId, override ? { override_capacity_shortfall: true } : undefined)
-      setStartCapacityConflict(null)
-    } catch (error: unknown) {
-      if (error instanceof ApiError && error.code === 'capacity_shortfall') {
-        const capacityAdvisory = typeof error.payload === 'object' && error.payload !== null && 'capacity_advisory' in error.payload
-          ? (error.payload as { capacity_advisory?: CapacityAdvisory }).capacity_advisory
-          : undefined
-        setStartCapacityConflict(capacityAdvisory || test?.capacity_advisory || null)
-        setStartFeedback(getErrorMessage(error, 'Capacity advisory requires an explicit override before starting.'))
-        return
-      }
-      setStartFeedback(getErrorMessage(error, 'Unable to start test'))
-    }
-  }, [api, test?.capacity_advisory, testId])
-  const handlePause = useCallback(async () => {
-    try {
-      await api.pauseTest(testId)
-      setControlFeedback('Test paused')
-      setTest(prev => prev ? { ...prev, status: 'PAUSED' } : null)
-      setTimeout(() => setControlFeedback(''), 3000)
-    } catch (error: unknown) {
-      setControlFeedback(`Error pausing: ${getErrorMessage(error, 'Unable to pause test')}`)
-    }
-  }, [api, testId])
-
-  const handleResume = useCallback(async () => {
-    try {
-      await api.resumeTest(testId)
-      setControlFeedback('Test resumed')
-      setTest(prev => prev ? { ...prev, status: 'RUNNING' } : null)
-      setTimeout(() => setControlFeedback(''), 3000)
-    } catch (error: unknown) {
-      setControlFeedback(`Error resuming: ${getErrorMessage(error, 'Unable to resume test')}`)
-    }
-  }, [api, testId])
 
   if (error) {
     return (
@@ -720,32 +187,32 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
       <TestExecutionHeader
         test={test}
         isMultiGroup={isMultiGroup}
-        timeRange={timeRange}
-        onTimeRangeChange={setTimeRange}
+        timeRange={chartZoomState.timeRange}
+        onTimeRangeChange={(value) => dispatchChartZoom({ type: 'setTimeRange', value })}
         onBack={onBack}
-        onOpenScenarioEditor={() => setShowScenarioEditor(true)}
-        onStart={() => handleStart()}
+        onStart={onStart}
+        onSelectTest={onSelectTest}
         isRunning={isRunning}
         onStop={() => api.stopTest(testId)}
         onAbort={() => api.abortTest(testId)}
-        onPause={handlePause}
-        onResume={handleResume}
+        onPause={onPause}
+        onResume={onResume}
         hasArchive={hasArchive}
-        onDownloadArchive={handleDownloadArchive}
+        onDownloadArchive={onDownloadArchive}
       />
 
       {/* Live Controls Panel */}
       {(isRunning || test.status === 'PAUSED') && (
         <TestExecutionLiveControls
           showControls={showControls}
-          onToggleControls={() => setShowControls(!showControls)}
+          onToggleControls={onToggleControls}
           test={test}
           vuserTargets={vuserTargets}
-          onVuserTargetChange={(groupName, value) => setVuserTargets((prev) => ({ ...prev, [groupName]: value }))}
-          onScaleVUsers={handleScaleVUsers}
+          onVuserTargetChange={onVuserTargetChange}
+          onScaleVUsers={onScaleVUsers}
           durationInput={durationInput}
-          onDurationInputChange={setDurationInput}
-          onAdjustDuration={handleAdjustDuration}
+          onDurationInputChange={onDurationInputChange}
+          onAdjustDuration={onAdjustDuration}
           liveControlPreview={liveControlPreview}
           controlFeedback={controlFeedback}
           groupColors={GROUP_COLORS}
@@ -777,26 +244,19 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
         test={test}
         startCapacityConflict={startCapacityConflict}
         startFeedback={startFeedback}
-        onDismissStartConflict={() => setStartCapacityConflict(null)}
-        onConfirmStartAnyway={() => handleStart(true)}
+        onDismissStartConflict={onDismissStartConflict}
+        onConfirmStartAnyway={onConfirmStartAnyway}
         queuedScenarioPreview={queuedScenarioPreview}
         queuedScenarioRows={queuedScenarioRows}
         scriptDetailsLoading={scriptDetailsLoading}
         scriptDetailsError={scriptDetailsError}
         expandedScenarioScript={expandedScenarioScript}
-        onExpandedScenarioScriptChange={setExpandedScenarioScript}
+        onExpandedScenarioScriptChange={onExpandedScenarioScriptChange}
         onEditScript={onEditScript}
         groupColors={GROUP_COLORS}
       />
 
       {/* Hero metrics */}
-      <TestExecutionScenarioEditor
-        open={showScenarioEditor}
-        test={test}
-        onClose={() => setShowScenarioEditor(false)}
-        onSelectTest={onSelectTest}
-      />
-
       <TestExecutionHeroMetrics
         archiveReport={archiveReport}
         summary={summary}
@@ -810,35 +270,26 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
           archiveError={archiveError}
           archiveLoading={archiveLoading}
           archiveReport={archiveReport}
-          onDownloadArchiveArtifact={handleDownloadArchiveArtifact}
+          onDownloadArchiveArtifact={onDownloadArchiveArtifact}
           archiveActionEntries={archiveActionEntries}
           selectedArchiveAction={selectedArchiveAction}
-          onSelectedArchiveActionChange={(value) => {
-            setSelectedArchiveAction(value)
-            setArchiveTransactionsOffset(0)
-          }}
+          onSelectedArchiveActionChange={onSelectedArchiveActionChange}
           archiveGroups={archiveGroups}
           selectedArchiveGroup={selectedArchiveGroup}
-          onSelectedArchiveGroupChange={(value) => {
-            setSelectedArchiveGroup(value)
-            setArchiveTransactionsOffset(0)
-          }}
+          onSelectedArchiveGroupChange={onSelectedArchiveGroupChange}
           archiveErrorsOnly={archiveErrorsOnly}
-          onArchiveErrorsOnlyChange={(value) => {
-            setArchiveErrorsOnly(value)
-            setArchiveTransactionsOffset(0)
-          }}
+          onArchiveErrorsOnlyChange={onArchiveErrorsOnlyChange}
           archiveTransactionsLoading={archiveTransactionsLoading}
           archiveTransactionsTotal={archiveTransactionsTotal}
           archivePageStart={archivePageStart}
           archivePageEnd={archivePageEnd}
           archiveTransactionsOffset={archiveTransactionsOffset}
           archivePageSize={archivePageSize}
-          onPreviousPage={() => setArchiveTransactionsOffset((current) => Math.max(0, current - archivePageSize))}
-          onNextPage={() => setArchiveTransactionsOffset((current) => current + archivePageSize)}
+          onPreviousPage={onPreviousPage}
+          onNextPage={onNextPage}
           archiveTransactions={archiveTransactions}
           expandedArchiveEvent={expandedArchiveEvent}
-          onExpandedArchiveEventChange={setExpandedArchiveEvent}
+          onExpandedArchiveEventChange={onExpandedArchiveEventChange}
         />
       )}
 
@@ -857,12 +308,12 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
       <TestExecutionCharts
         filteredData={filteredData}
         expandedChart={expandedChart}
-        onExpandedChartChange={setExpandedChart}
-        onChartMouseDown={handleChartMouseDown}
-        onChartMouseMove={handleChartMouseMove}
-        onZoom={handleZoom}
+        onExpandedChartChange={onExpandedChartChange}
+        onChartMouseDown={(activeLabel) => dispatchChartZoom({ type: 'beginSelection', activeLabel })}
+        onChartMouseMove={(activeLabel) => dispatchChartZoom({ type: 'updateSelection', activeLabel })}
+        onZoom={() => dispatchChartZoom({ type: 'applySelection' })}
         showRefArea={showRefArea}
-        refAreaLeft={refAreaLeft}
+        refAreaLeft={chartZoomState.refAreaLeft}
         refAreaEnd={refAreaEnd}
         isMultiGroup={isMultiGroup}
         groupNames={groupNames}

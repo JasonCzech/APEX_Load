@@ -4,70 +4,8 @@ import {
 } from 'recharts'
 
 import { CapacityAdvisory, TestSummary } from '../types'
+import { QueuedScenarioPreview, QueuedScenarioRow, ScenarioScriptDetail } from './testExecutionScenarioModel'
 import { formatTimeCompact } from '../utils/timeUtils'
-
-export interface ScenarioScriptDetail {
-  id: string
-  name: string
-  protocol: string
-  version?: string
-  script?: {
-    config?: {
-      base_url?: string
-      think_time?: {
-        type?: string
-        mean_ms?: number
-        ignore?: boolean
-      }
-      pacing?: {
-        type?: string
-        delay_ms?: number
-        interval_ms?: number
-        tps?: number
-      }
-      run_logic?: {
-        iterations?: number
-        auto_transactions?: string
-      }
-      log?: {
-        level?: string
-      }
-      error_handling?: {
-        continue_on_error?: boolean
-        snapshot_on_error?: boolean
-        max_retries?: number
-      }
-      http?: {
-        version?: string
-        max_conns_per_host?: number
-      }
-    }
-    data_sources?: Array<{ name?: string; type?: string; strategy?: string }>
-    init?: unknown[]
-    actions?: unknown[]
-    teardown?: unknown[]
-  }
-}
-
-type ScenarioGroup = NonNullable<TestSummary['groups']>[number]
-
-interface QueuedScenarioPreview {
-  points: Array<Record<string, number>>
-  totalVUsers: number
-  totalSeconds: number
-  steadySeconds: number
-  preBaselineSeconds: number
-  postBaselineSeconds: number
-}
-
-interface QueuedScenarioRow {
-  group: ScenarioGroup
-  detail?: ScenarioScriptDetail
-  actionCount: number
-  initCount: number
-  teardownCount: number
-  dataSourceCount: number
-}
 
 interface Props {
   test: TestSummary

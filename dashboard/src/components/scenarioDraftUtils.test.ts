@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildDefaultScenarioGroup, buildInitialScenarioDraft, buildScenarioDraftFromTest } from './scenarioDraftUtils'
+import { buildDefaultScenarioGroup, buildInitialScenarioDraft, buildScenarioDraftFromTest, scenarioDraftReducer } from './scenarioDraftUtils'
 
 describe('scenarioDraftUtils', () => {
 	it('builds a default scenario group from the first available script', () => {
@@ -74,5 +74,27 @@ describe('scenarioDraftUtils', () => {
 	    rampDown: '15s',
 	    initialization: 'at_once',
 	  }])
+	})
+
+	it('updates nested goal and runtime settings through one reducer state', () => {
+		const initialDraft = buildInitialScenarioDraft(undefined, [
+			{ id: 'script-1', name: 'Checkout', protocol: 'http' },
+		] as never[])
+
+		const withGoal = scenarioDraftReducer(initialDraft, {
+			type: 'setGoalConfigField',
+			field: 'target_average_tps',
+			value: 300,
+		})
+		const withRuntime = scenarioDraftReducer(withGoal, {
+			type: 'setRuntimeSettingField',
+			field: 'snapshot_on_error',
+			value: true,
+		})
+
+		expect(withRuntime.goalConfig.target_average_tps).toBe(300)
+		expect(withRuntime.runtimeSettings.snapshot_on_error).toBe(true)
+		expect(withRuntime.groups[0].scriptId).toBe('script-1')
+		expect(withRuntime.duration).toBe('1m')
 	})
 })

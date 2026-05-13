@@ -1,17 +1,17 @@
+import TestExecutionQueuedRunActions from './TestExecutionQueuedRunActions'
+import { ExecutionChartTimeRange } from './testExecutionChartZoomModel'
 import StatusBadge from './StatusBadge'
 
 import { TestSummary } from '../types'
 
-type TimeRange = '3m' | '10m' | 'all' | 'custom'
-
 interface Props {
   test: TestSummary
   isMultiGroup: boolean
-  timeRange: TimeRange
-  onTimeRangeChange: (value: TimeRange) => void
+  timeRange: ExecutionChartTimeRange
+  onTimeRangeChange: (value: ExecutionChartTimeRange) => void
   onBack: () => void
-  onOpenScenarioEditor: () => void
   onStart: () => void
+  onSelectTest: (testId: string) => void
   isRunning: boolean
   onStop: () => void
   onAbort: () => void
@@ -27,8 +27,8 @@ export default function TestExecutionHeader({
   timeRange,
   onTimeRangeChange,
   onBack,
-  onOpenScenarioEditor,
   onStart,
+  onSelectTest,
   isRunning,
   onStop,
   onAbort,
@@ -60,16 +60,11 @@ export default function TestExecutionHeader({
             <button className="btn-chip active zoom-reset" onClick={() => onTimeRangeChange('all')}>Reset Zoom</button>
           )}
         </div>
-        {test.status === 'QUEUED' && (
-          <>
-            <button className="btn btn-secondary" onClick={onOpenScenarioEditor}>
-              Revise Queued Run
-            </button>
-            <button className="btn btn-success" onClick={onStart}>
-              Start
-            </button>
-          </>
-        )}
+        <TestExecutionQueuedRunActions
+          test={test}
+          onStart={onStart}
+          onSelectTest={onSelectTest}
+        />
         {isRunning && (
           <>
             <button className="btn btn-secondary" onClick={onPause}>

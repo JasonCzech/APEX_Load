@@ -1,16 +1,8 @@
 import { Area, AreaChart, CartesianGrid, Legend, Line, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 
 import { TestGroup, TestSummary } from '../types'
+import { LiveControlPreview } from './testExecutionLiveControlModel'
 import { formatTimeLong } from '../utils/timeUtils'
-
-interface LiveControlPreview {
-  points: Array<Record<string, number>>
-  currentTotal: number
-  projectedTotal: number
-  remainingSeconds: number
-  projectedDurationSeconds: number
-  hasPendingChanges: boolean
-}
 
 interface Props {
   showControls: boolean

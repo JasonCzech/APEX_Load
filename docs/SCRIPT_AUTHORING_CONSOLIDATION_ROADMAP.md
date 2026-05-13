@@ -183,13 +183,26 @@ That order minimizes churn and avoids rebuilding the UI around unstable backend 
 - The active non-JMeter builders now share a common review/save panel structure for title, warnings, edit handoff, save action, and script preview while keeping source-specific stats and metadata sections local.
 - The live script library now uses typed sort helpers for both reusable scripts and linked scenario runs instead of local `any` sort casting.
 - Phase 4 scenario assembly cleanup has started from the reusable test-creation surface. `CreateTestModal` now uses typed payload, chart, and callback contracts instead of local `any` seams, and the scenario draft/group mapping shared with `TestExecutionScenarioEditor` now lives in one helper instead of being rebuilt in each caller.
+- `CreateTestModal` now uses one shared `ScenarioDraftState` reducer for core fields, goal config, runtime overrides, and group mutations, so scenario assembly no longer splits form ownership across three local reducers.
 - The execution surface now shares typed history, archive summary, live-control, and chart contracts instead of relying on local `any` casts in the main `TestExecution` path.
 - Focused dashboard regression tests now cover the two browser-found scenario-surface defects: duplicate associated-release keys in `NewTestPage` and the queued preview summary/edit interaction in `TestExecutionScenarioPreview`.
 - Scenario payload normalization is now shared between `CreateTestModal` and `TestHub`, so group shaping, goal-config/runtime normalization, and single-group flattening are owned in one helper instead of being rebuilt in each save path.
 - The queued-run execution editor now makes its behavior explicit: revising a queued run opens a revised-copy flow in `TestExecutionScenarioEditor`/`CreateTestModal` instead of implying an in-place scenario edit that the current test API does not support.
+- The queued execution preview model now lives in a shared helper instead of being derived inline inside `TestExecution`, so the queued load-shape timeline and script-row summaries are covered as execution-side data contracts rather than page-local calculations.
+- The queued execution header actions now own their revise-modal bridge in a dedicated component instead of keeping queued-run modal state inside `TestExecution`, which narrows the page to execution data and control orchestration rather than queued-only UI state.
+- The live execution controls now consume a shared preview model helper instead of deriving projected VUser and duration state inline inside `TestExecution`, so both queued and running execution previews are converging on testable execution-side contracts.
+- The execution metrics history path now uses shared helper functions for backend-history mapping, websocket/backend reconciliation, paused-chart freeze behavior, zoom filtering, and summary rollups instead of keeping those calculations inline in `TestExecution`.
+- The execution chart zoom state now uses a shared reducer model for time-range changes and drag-to-zoom ref-area behavior instead of keeping those state transitions inline inside `TestExecution`.
+- The queued execution preview now loads script details through a dedicated preview-model hook instead of keeping that fetch lifecycle and row assembly inline in `TestExecution`.
+- The archive report, drill-down fetches, pagination, and archive download actions now flow through a dedicated execution-archive hook instead of keeping that state and fetch lifecycle inline in `TestExecution`.
+- The execution test detail page now loads and refreshes test data through a dedicated polling hook instead of keeping the visibility-aware fetch loop inline in `TestExecution`.
+- The live execution controls now load their form state, preview inputs, and scale/duration action bridge through a dedicated live-controls hook instead of keeping those mutations inline in `TestExecution`.
+- The execution detail page now consumes a dedicated metrics-stream hook for websocket message mapping and rolling local history instead of keeping that append logic inline in `TestExecution`.
+- The remaining execution action bridge now flows through a dedicated hook for queued-start advisories, optimistic pause/resume updates, and the shared control-feedback channel instead of keeping those mutations inline in `TestExecution`.
+- The remaining execution page UI toggles now flow through one small view-state hook for expanded charts and queued script panels instead of keeping the last standalone UI state fields inline in `TestExecution`.
 
 ### Remaining High-Value Work
-- Finish the scenario assembly path by tightening `TestExecution`, `CreateTestModal` adjacencies, and shared execution/result models.
+- Finish the scenario assembly path by tightening `TestExecution` adjacencies and shared execution/result models now that `CreateTestModal` is aligned on one shared draft state owner.
 - Complete the shared authoring-shell consolidation so the script hub stops owning the remaining route-level create/import state transitions.
 - Run the end-to-end parity pass, then remove any temporary normalization or migration adapters that remain after validation.
 

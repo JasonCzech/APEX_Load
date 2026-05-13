@@ -1,6 +1,6 @@
 import { useEffect, useReducer, useState } from 'react'
 import { useApi } from '../hooks/useApi'
-import { DraftCapacityEstimate, GoalConfig, ScenarioDraft, ScenarioDraftGroup, ScenarioMode, StoredScript, TestSummary } from '../types'
+import { DraftCapacityEstimate, ScenarioDraft, ScenarioDraftGroup, StoredScript, TestSummary } from '../types'
 import './CreateTestModal.css'
 import { parseDurationToSeconds } from '../utils/timeUtils'
 import CreateTestCapacityPreview from './CreateTestCapacityPreview'
@@ -8,7 +8,7 @@ import CreateTestGoalSettings from './CreateTestGoalSettings'
 import CreateTestGroupsEditor from './CreateTestGroupsEditor'
 import CreateTestRuntimeOverrides from './CreateTestRuntimeOverrides'
 import { getErrorMessage } from '../utils/errorUtils'
-import { buildDefaultScenarioGroup, buildInitialScenarioDraft, ScenarioDraftState, ScenarioRuntimeSettings } from './scenarioDraftUtils'
+import { buildDefaultScenarioGroup, buildInitialScenarioDraft, scenarioDraftReducer, ScenarioDraftField, ScenarioDraftState } from './scenarioDraftUtils'
 import { buildCreateTestPayload } from './scenarioPayloadUtils'
 
 interface Props {
@@ -26,70 +26,6 @@ type LoadProfilePoint = {
   total: number
 } & Record<`group${number}`, number>
 
-type GoalConfigAction = {
-  field: keyof GoalConfig
-  value: GoalConfig[keyof GoalConfig]
-}
-
-type RuntimeSettingsAction = {
-  field: keyof RuntimeSettingsState
-  value: RuntimeSettingsState[keyof RuntimeSettingsState]
-}
-
-type ScenarioDraftField = keyof Omit<ScenarioDraftState, 'groups' | 'goalConfig' | 'runtimeSettings'>
-
-type ScenarioDraftAction =
-  | { type: 'setField'; field: ScenarioDraftField; value: ScenarioDraftState[ScenarioDraftField] }
-  | { type: 'updateGroup'; index: number; patch: Partial<ScenarioDraftGroup> }
-  | { type: 'addGroup'; group: ScenarioDraftGroup }
-  | { type: 'removeGroup'; index: number }
-
-function goalConfigReducer(state: GoalConfig, action: GoalConfigAction): GoalConfig {
-  return {
-    ...state,
-    [action.field]: action.value,
-  }
-}
-
-function runtimeSettingsReducer(state: RuntimeSettingsState, action: RuntimeSettingsAction): RuntimeSettingsState {
-  return {
-    ...state,
-    [action.field]: action.value,
-  }
-}
-
-function scenarioDraftReducer(state: ScenarioDraftState, action: ScenarioDraftAction): ScenarioDraftState {
-  switch (action.type) {
-    case 'setField':
-      return {
-        ...state,
-        [action.field]: action.value,
-      }
-    case 'updateGroup':
-      return {
-        ...state,
-        groups: state.groups.map((group, index) => (
-          index === action.index ? { ...group, ...action.patch } : group
-        )),
-      }
-    case 'addGroup':
-      return {
-        ...state,
-        groups: [...state.groups, action.group],
-      }
-    case 'removeGroup':
-      if (state.groups.length <= 1) {
-        return state
-      }
-      return {
-        ...state,
-        groups: state.groups.filter((_, index) => index !== action.index),
-      }
-    default:
-      return state
-  }
-}
-
 export default function CreateTestModal({ scripts, projectId, folderId, onClose, onCreated, initialScenario, mode = 'create-queued-run' }: Props) {
   const api = useApi()
   const baselineSeconds = 5 * 60
@@ -97,28 +33,13 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
     scenarioDraftReducer,
     buildInitialScenarioDraft(initialScenario, scripts),
   )
-  const [goalConfig, dispatchGoalConfig] = useReducer(goalConfigReducer, {
-    target_average_tps: initialScenario?.goalConfig?.target_average_tps,
-    p95_latency_ms: initialScenario?.goalConfig?.p95_latency_ms,
-    max_error_pct: initialScenario?.goalConfig?.max_error_pct,
-    min_vusers: initialScenario?.goalConfig?.min_vusers,
-    max_vusers: initialScenario?.goalConfig?.max_vusers,
-    stop_on_sla_breach: initialScenario?.goalConfig?.stop_on_sla_breach || false,
-    sla_breach_window: initialScenario?.goalConfig?.sla_breach_window || '30s',
-  })
-  const [runtimeSettings, dispatchRuntimeSettings] = useReducer(runtimeSettingsReducer, {
-    iterations: initialScenario?.runtimeSettings.iterations,
-    log_level: initialScenario?.runtimeSettings.log_level || '',
-    auto_transactions: initialScenario?.runtimeSettings.auto_transactions || '',
-    snapshot_on_error: initialScenario?.runtimeSettings.snapshot_on_error || false,
-  })
   const [draftEstimate, setDraftEstimate] = useState<DraftCapacityEstimate | null>(null)
   const [estimateLoading, setEstimateLoading] = useState(false)
   const [estimateError, setEstimateError] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
-  const { name, duration, scenarioMode, scriptShakeout, resourceBaseline, groups } = scenarioDraft
+  const { name, duration, scenarioMode, scriptShakeout, resourceBaseline, groups, goalConfig, runtimeSettings } = scenarioDraft
   const isReviseMode = mode === 'revise-queued-run'
   const modalTitle = isReviseMode ? 'Create Revised Queued Run' : 'Create Queued Run'
   const submitLabel = isReviseMode ? 'Create Revised Copy' : 'Create Queued Run'
@@ -137,12 +58,12 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
     dispatchScenarioDraft({ type: 'addGroup', group: buildDefaultScenarioGroup(scripts) })
   }
 
-  const updateGoalConfig = <K extends keyof GoalConfig>(field: K, value: GoalConfig[K]) => {
-    dispatchGoalConfig({ field, value })
+  const updateGoalConfig = <K extends keyof ScenarioDraftState['goalConfig']>(field: K, value: ScenarioDraftState['goalConfig'][K]) => {
+    dispatchScenarioDraft({ type: 'setGoalConfigField', field, value })
   }
 
-  const updateRuntimeSetting = <K extends keyof RuntimeSettingsState>(field: K, value: RuntimeSettingsState[K]) => {
-    dispatchRuntimeSettings({ field, value })
+  const updateRuntimeSetting = <K extends keyof ScenarioDraftState['runtimeSettings']>(field: K, value: ScenarioDraftState['runtimeSettings'][K]) => {
+    dispatchScenarioDraft({ type: 'setRuntimeSettingField', field, value })
   }
 
   const removeGroup = (idx: number) => {

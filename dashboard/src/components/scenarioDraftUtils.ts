@@ -2,6 +2,17 @@ import { ScenarioDraft, ScenarioDraftGroup, StoredScript, TestSummary } from '..
 
 export type ScenarioRuntimeSettings = ScenarioDraft['runtimeSettings']
 export type ScenarioDraftState = ScenarioDraft
+export type ScenarioDraftField = keyof Omit<ScenarioDraftState, 'groups' | 'goalConfig' | 'runtimeSettings'>
+export type ScenarioGoalConfigField = keyof ScenarioDraftState['goalConfig']
+export type ScenarioRuntimeSettingField = keyof ScenarioRuntimeSettings
+
+export type ScenarioDraftAction =
+  | { type: 'setField'; field: ScenarioDraftField; value: ScenarioDraftState[ScenarioDraftField] }
+  | { type: 'setGoalConfigField'; field: ScenarioGoalConfigField; value: ScenarioDraftState['goalConfig'][ScenarioGoalConfigField] }
+  | { type: 'setRuntimeSettingField'; field: ScenarioRuntimeSettingField; value: ScenarioRuntimeSettings[ScenarioRuntimeSettingField] }
+  | { type: 'updateGroup'; index: number; patch: Partial<ScenarioDraftGroup> }
+  | { type: 'addGroup'; group: ScenarioDraftGroup }
+  | { type: 'removeGroup'; index: number }
 
 export function buildDefaultScenarioGroup(scripts: StoredScript[]): ScenarioDraftGroup {
   return {
@@ -81,5 +92,54 @@ export function buildScenarioDraftFromTest(test: TestSummary): ScenarioDraft {
       snapshot_on_error: Boolean(test.runtime_settings?.error_handling?.snapshot_on_error),
     },
     groups,
+  }
+}
+
+export function scenarioDraftReducer(state: ScenarioDraftState, action: ScenarioDraftAction): ScenarioDraftState {
+  switch (action.type) {
+    case 'setField':
+      return {
+        ...state,
+        [action.field]: action.value,
+      }
+    case 'setGoalConfigField':
+      return {
+        ...state,
+        goalConfig: {
+          ...state.goalConfig,
+          [action.field]: action.value,
+        },
+      }
+    case 'setRuntimeSettingField':
+      return {
+        ...state,
+        runtimeSettings: {
+          ...state.runtimeSettings,
+          [action.field]: action.value,
+        },
+      }
+    case 'updateGroup':
+      return {
+        ...state,
+        groups: state.groups.map((group, index) => (
+          index === action.index ? { ...group, ...action.patch } : group
+        )),
+      }
+    case 'addGroup':
+      return {
+        ...state,
+        groups: [...state.groups, action.group],
+      }
+    case 'removeGroup':
+      if (state.groups.length <= 1) {
+        return state
+      }
+
+      return {
+        ...state,
+        groups: state.groups.filter((_, index) => index !== action.index),
+      }
+    default:
+      return state
   }
 }
