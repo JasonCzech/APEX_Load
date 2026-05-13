@@ -13,6 +13,9 @@ service GeneratorControl {
   // AdjustVUsers changes the VUser count for a running test on this generator.
   rpc AdjustVUsers(VUserAdjustment) returns (AdjustmentAck);
 
+  // AdjustDuration changes the duration for a running test on this generator.
+  rpc AdjustDuration(DurationAdjustment) returns (DurationAck);
+
   // StopTest requests graceful shutdown of a test on this generator.
   rpc StopTest(StopRequest) returns (StopAck);
 
@@ -57,6 +60,16 @@ message VUserAdjustment {
 message AdjustmentAck {
   bool accepted = 1;
   int32 current_vusers = 2;
+}
+
+message DurationAdjustment {
+  string test_id = 1;
+  int64 target_duration_seconds = 2;
+}
+
+message DurationAck {
+  bool accepted = 1;
+  int64 current_duration_seconds = 2;
 }
 
 message StopRequest {

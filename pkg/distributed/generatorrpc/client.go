@@ -40,6 +40,16 @@ type AdjustmentResult struct {
 	CurrentVUsers int32
 }
 
+type DurationAdjustment struct {
+	TestID                string
+	TargetDurationSeconds int64
+}
+
+type DurationResult struct {
+	Accepted               bool
+	CurrentDurationSeconds int64
+}
+
 type PauseControl struct {
 	TestID string
 	Pause  bool
@@ -178,6 +188,21 @@ func (c *Client) AdjustVUsers(ctx context.Context, adjustment VUserAdjustment) (
 	return AdjustmentResult{
 		Accepted:      ack.GetAccepted(),
 		CurrentVUsers: ack.GetCurrentVusers(),
+	}, nil
+}
+
+func (c *Client) AdjustDuration(ctx context.Context, adjustment DurationAdjustment) (DurationResult, error) {
+	ack, err := c.rpc.AdjustDuration(ctx, &pb.DurationAdjustment{
+		TestId:                adjustment.TestID,
+		TargetDurationSeconds: adjustment.TargetDurationSeconds,
+	})
+	if err != nil {
+		return DurationResult{}, err
+	}
+
+	return DurationResult{
+		Accepted:               ack.GetAccepted(),
+		CurrentDurationSeconds: ack.GetCurrentDurationSeconds(),
 	}, nil
 }
 

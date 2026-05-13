@@ -341,7 +341,7 @@ func TestNewServerConfiguresDistributedExecutionBackend(t *testing.T) {
 	}
 }
 
-func TestDistributedExecutionBackendReportsUnsupportedLifecycleControls(t *testing.T) {
+func TestDistributedExecutionBackendAdjustsDuration(t *testing.T) {
 	const bufSize = 1024 * 1024
 
 	listener := bufconn.Listen(bufSize)
@@ -421,8 +421,19 @@ func TestDistributedExecutionBackendReportsUnsupportedLifecycleControls(t *testi
 		time.Sleep(20 * time.Millisecond)
 	}
 
-	if err := runner.AdjustDuration(testRun.ID, 45*time.Second); err == nil || !strings.Contains(err.Error(), "does not support duration changes yet") {
-		t.Fatalf("AdjustDuration error = %v, want distributed unsupported duration error", err)
+	if err := runner.AdjustDuration(testRun.ID, 45*time.Second); err != nil {
+		t.Fatalf("AdjustDuration returned error: %v", err)
+	}
+
+	adjusted, ok := runner.GetTest(testRun.ID)
+	if !ok {
+		t.Fatalf("expected managed test %q to exist after duration change", testRun.ID)
+	}
+	if adjusted.Duration != 45*time.Second {
+		t.Fatalf("duration = %v, want 45s", adjusted.Duration)
+	}
+	if adjusted.DurationStr != "45s" {
+		t.Fatalf("duration string = %q, want 45s", adjusted.DurationStr)
 	}
 }
 

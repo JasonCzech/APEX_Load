@@ -21,6 +21,7 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	GeneratorControl_AssignWork_FullMethodName       = "/stormrunner.v1.GeneratorControl/AssignWork"
 	GeneratorControl_AdjustVUsers_FullMethodName     = "/stormrunner.v1.GeneratorControl/AdjustVUsers"
+	GeneratorControl_AdjustDuration_FullMethodName   = "/stormrunner.v1.GeneratorControl/AdjustDuration"
 	GeneratorControl_StopTest_FullMethodName         = "/stormrunner.v1.GeneratorControl/StopTest"
 	GeneratorControl_StreamMetrics_FullMethodName    = "/stormrunner.v1.GeneratorControl/StreamMetrics"
 	GeneratorControl_Heartbeat_FullMethodName        = "/stormrunner.v1.GeneratorControl/Heartbeat"
@@ -38,6 +39,8 @@ type GeneratorControlClient interface {
 	AssignWork(ctx context.Context, in *WorkAssignment, opts ...grpc.CallOption) (*AssignmentAck, error)
 	// AdjustVUsers changes the VUser count for a running test on this generator.
 	AdjustVUsers(ctx context.Context, in *VUserAdjustment, opts ...grpc.CallOption) (*AdjustmentAck, error)
+	// AdjustDuration changes the duration for a running test on this generator.
+	AdjustDuration(ctx context.Context, in *DurationAdjustment, opts ...grpc.CallOption) (*DurationAck, error)
 	// StopTest requests graceful shutdown of a test on this generator.
 	StopTest(ctx context.Context, in *StopRequest, opts ...grpc.CallOption) (*StopAck, error)
 	// StreamMetrics is a bidirectional stream: controller sends control signals
@@ -71,6 +74,16 @@ func (c *generatorControlClient) AdjustVUsers(ctx context.Context, in *VUserAdju
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(AdjustmentAck)
 	err := c.cc.Invoke(ctx, GeneratorControl_AdjustVUsers_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *generatorControlClient) AdjustDuration(ctx context.Context, in *DurationAdjustment, opts ...grpc.CallOption) (*DurationAck, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DurationAck)
+	err := c.cc.Invoke(ctx, GeneratorControl_AdjustDuration_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -134,6 +147,8 @@ type GeneratorControlServer interface {
 	AssignWork(context.Context, *WorkAssignment) (*AssignmentAck, error)
 	// AdjustVUsers changes the VUser count for a running test on this generator.
 	AdjustVUsers(context.Context, *VUserAdjustment) (*AdjustmentAck, error)
+	// AdjustDuration changes the duration for a running test on this generator.
+	AdjustDuration(context.Context, *DurationAdjustment) (*DurationAck, error)
 	// StopTest requests graceful shutdown of a test on this generator.
 	StopTest(context.Context, *StopRequest) (*StopAck, error)
 	// StreamMetrics is a bidirectional stream: controller sends control signals
@@ -158,6 +173,9 @@ func (UnimplementedGeneratorControlServer) AssignWork(context.Context, *WorkAssi
 }
 func (UnimplementedGeneratorControlServer) AdjustVUsers(context.Context, *VUserAdjustment) (*AdjustmentAck, error) {
 	return nil, status.Error(codes.Unimplemented, "method AdjustVUsers not implemented")
+}
+func (UnimplementedGeneratorControlServer) AdjustDuration(context.Context, *DurationAdjustment) (*DurationAck, error) {
+	return nil, status.Error(codes.Unimplemented, "method AdjustDuration not implemented")
 }
 func (UnimplementedGeneratorControlServer) StopTest(context.Context, *StopRequest) (*StopAck, error) {
 	return nil, status.Error(codes.Unimplemented, "method StopTest not implemented")
@@ -228,6 +246,24 @@ func _GeneratorControl_AdjustVUsers_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _GeneratorControl_AdjustDuration_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DurationAdjustment)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GeneratorControlServer).AdjustDuration(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GeneratorControl_AdjustDuration_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GeneratorControlServer).AdjustDuration(ctx, req.(*DurationAdjustment))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _GeneratorControl_StopTest_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(StopRequest)
 	if err := dec(in); err != nil {
@@ -292,6 +328,10 @@ var GeneratorControl_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "AdjustVUsers",
 			Handler:    _GeneratorControl_AdjustVUsers_Handler,
+		},
+		{
+			MethodName: "AdjustDuration",
+			Handler:    _GeneratorControl_AdjustDuration_Handler,
 		},
 		{
 			MethodName: "StopTest",

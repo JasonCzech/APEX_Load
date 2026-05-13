@@ -21,6 +21,7 @@ type generatorClient interface {
 	DistributeScript(ctx context.Context, script generatorrpc.Script) (generatorrpc.ScriptResult, error)
 	AssignWork(ctx context.Context, assignment generatorrpc.Assignment) (generatorrpc.AssignmentResult, error)
 	AdjustVUsers(ctx context.Context, adjustment generatorrpc.VUserAdjustment) (generatorrpc.AdjustmentResult, error)
+	AdjustDuration(ctx context.Context, adjustment generatorrpc.DurationAdjustment) (generatorrpc.DurationResult, error)
 	OpenMetricsStream(ctx context.Context) (*generatorrpc.MetricsStream, error)
 	StopTest(ctx context.Context, testID string, graceful bool) (generatorrpc.StopResult, error)
 	Close() error
@@ -169,7 +170,25 @@ func (b *distributedExecutionBackend) ScaleVUsers(tr *TestRunner, test *ManagedT
 }
 
 func (b *distributedExecutionBackend) AdjustDuration(tr *TestRunner, test *ManagedTest, newDuration time.Duration) error {
-	return fmt.Errorf("distributed execution does not support duration changes yet")
+	client, err := b.clientForTest(test)
+	if err != nil {
+		return err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
+	defer cancel()
+
+	result, err := client.AdjustDuration(ctx, generatorrpc.DurationAdjustment{
+		TestID:                test.ID,
+		TargetDurationSeconds: int64(newDuration / time.Second),
+	})
+	if err != nil {
+		return fmt.Errorf("adjust remote duration: %w", err)
+	}
+	if !result.Accepted {
+		return fmt.Errorf("generator did not accept duration adjustment for %s", test.ID)
+	}
+	return nil
 }
 
 func (b *distributedExecutionBackend) PauseTest(tr *TestRunner, test *ManagedTest) error {

@@ -128,6 +128,20 @@ func TestClientRoundTripDistributeAssignAndHeartbeat(t *testing.T) {
 	if adjustmentAck.CurrentVUsers != 12 {
 		t.Fatalf("current vusers = %d, want 12", adjustmentAck.CurrentVUsers)
 	}
+
+	durationAck, err := client.AdjustDuration(ctx, DurationAdjustment{
+		TestID:                "test-1",
+		TargetDurationSeconds: 90,
+	})
+	if err != nil {
+		t.Fatalf("AdjustDuration: %v", err)
+	}
+	if !durationAck.Accepted {
+		t.Fatal("expected duration adjustment to be accepted")
+	}
+	if durationAck.CurrentDurationSeconds != 90 {
+		t.Fatalf("current duration seconds = %d, want 90", durationAck.CurrentDurationSeconds)
+	}
 	batch, err = metrics.Receive()
 	if err != nil {
 		t.Fatalf("Receive adjusted metrics batch: %v", err)

@@ -20,6 +20,7 @@ type assignedTest struct {
 	testID     string
 	vuserCount int32
 	paused     bool
+	durationSeconds int64
 }
 
 type Service struct {
@@ -137,6 +138,30 @@ func (s *Service) AdjustVUsers(_ context.Context, request *pb.VUserAdjustment) (
 	return &pb.AdjustmentAck{
 		Accepted:      true,
 		CurrentVusers: assignment.vuserCount,
+	}, nil
+}
+
+func (s *Service) AdjustDuration(_ context.Context, request *pb.DurationAdjustment) (*pb.DurationAck, error) {
+	if request.GetTestId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "test_id is required")
+	}
+	if request.GetTargetDurationSeconds() <= 0 {
+		return nil, status.Error(codes.InvalidArgument, "target_duration_seconds must be positive")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	assignment, ok := s.assignments[request.GetTestId()]
+	if !ok {
+		return nil, status.Error(codes.NotFound, "test assignment not found")
+	}
+	assignment.durationSeconds = request.GetTargetDurationSeconds()
+	s.assignments[request.GetTestId()] = assignment
+
+	return &pb.DurationAck{
+		Accepted:               true,
+		CurrentDurationSeconds: assignment.durationSeconds,
 	}, nil
 }
 
