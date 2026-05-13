@@ -2,12 +2,32 @@ import { useCallback, useMemo } from 'react'
 
 const DEFAULT_LOCAL_API_ORIGIN = 'http://127.0.0.1:8080'
 
+type ApiEnvironment = {
+  VITE_API_ORIGIN?: string
+  DEV?: boolean
+}
+
+type ApiErrorPayload = {
+  error?: string
+  code?: string
+  [key: string]: unknown
+}
+
 function trimTrailingSlash(value: string): string {
   return value.replace(/\/+$/, '')
 }
 
+function getApiEnvironment(): ApiEnvironment {
+  return (import.meta as ImportMeta & { env?: ApiEnvironment }).env ?? {}
+}
+
+function isApiErrorPayload(value: unknown): value is ApiErrorPayload {
+  return typeof value === 'object' && value !== null
+}
+
 function resolveApiOrigin(): string {
-  const envOrigin = ((import.meta as any)?.env?.VITE_API_ORIGIN as string | undefined)
+  const env = getApiEnvironment()
+  const envOrigin = env.VITE_API_ORIGIN
   if (envOrigin && envOrigin.trim()) {
     return trimTrailingSlash(envOrigin.trim())
   }
@@ -16,7 +36,7 @@ function resolveApiOrigin(): string {
   }
   if (
     typeof window !== 'undefined' &&
-    ((import.meta as any)?.env?.DEV || window.location.port === '3000') &&
+    (env.DEV || window.location.port === '3000') &&
     (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
   ) {
     return DEFAULT_LOCAL_API_ORIGIN
@@ -36,7 +56,7 @@ export function wsUrl(path: string): string {
   return `${wsOrigin}${normalizedPath}`
 }
 
-async function parseJsonResponse(res: Response): Promise<any> {
+async function parseJsonResponse(res: Response): Promise<unknown> {
   const contentType = (res.headers.get('content-type') || '').toLowerCase()
   if (contentType.includes('application/json')) {
     return res.json()
@@ -53,13 +73,13 @@ async function parseJsonResponse(res: Response): Promise<any> {
 export class ApiError extends Error {
   status: number
   code?: string
-  payload?: any
+  payload?: unknown
 
-  constructor(message: string, status: number, payload?: any) {
+  constructor(message: string, status: number, payload?: unknown) {
     super(message)
     this.name = 'ApiError'
     this.status = status
-    this.code = payload?.code
+    this.code = isApiErrorPayload(payload) && typeof payload.code === 'string' ? payload.code : undefined
     this.payload = payload
   }
 }
@@ -70,8 +90,11 @@ export async function request<T>(path: string, options?: RequestInit): Promise<T
     ...options,
   })
   if (!res.ok) {
-    const body = await parseJsonResponse(res).catch(() => ({ error: res.statusText }))
-    throw new ApiError(body.error || res.statusText, res.status, body)
+    const body = await parseJsonResponse(res).catch((): ApiErrorPayload => ({ error: res.statusText }))
+    const message = isApiErrorPayload(body) && typeof body.error === 'string' && body.error
+      ? body.error
+      : res.statusText
+    throw new ApiError(message, res.status, body)
   }
-  return parseJsonResponse(res)
+  return await parseJsonResponse(res) as T
 }
