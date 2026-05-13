@@ -83,6 +83,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 
 	// Process functions — correlations/extractors come BEFORE the request they apply to
 	var pendingExtractors []dsl.Extractor
+	var pendingAssertions []dsl.Assertion
 	var pendingHeaders map[string]string
 	var currentTransaction string
 	var thinkTimes []float64
@@ -99,9 +100,13 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			}
 
 		case "web_reg_find":
-			// web_reg_find is a check/assertion — we note it but can't perfectly map
-			result.Warnings = append(result.Warnings,
-				fmt.Sprintf("line %d: web_reg_find '%s' — manual review recommended for assertion logic", fn.LineNumber, fn.StepName))
+			assertion, warning := convertFindAssertion(fn)
+			if assertion != nil {
+				pendingAssertions = append(pendingAssertions, *assertion)
+			}
+			if warning != "" {
+				result.Warnings = append(result.Warnings, warning)
+			}
 
 		case "web_add_header", "web_add_auto_header":
 			if pendingHeaders == nil {
@@ -128,6 +133,11 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 		case "web_url", "web_submit_data", "web_submit_form", "web_custom_request":
 			action, warnings := convertAction(fn, baseURL, currentTransaction, opts)
 			if action != nil {
+				if len(pendingAssertions) > 0 {
+					action.Assertions = append(action.Assertions, pendingAssertions...)
+					pendingAssertions = nil
+				}
+
 				// Attach pending extractors
 				if len(pendingExtractors) > 0 {
 					action.Extractors = append(action.Extractors, pendingExtractors...)
@@ -299,6 +309,45 @@ func convertExtractor(fn ParsedFunction) *dsl.Extractor {
 	}
 
 	return ext
+}
+
+func convertFindAssertion(fn ParsedFunction) (*dsl.Assertion, string) {
+	text := firstNonEmptyArg(fn, "Text")
+	if text == "" {
+		return nil, fmt.Sprintf("line %d: web_reg_find '%s' — manual review recommended because no Text argument was found", fn.LineNumber, fn.StepName)
+	}
+
+	assertionType := "body_contains"
+	failMode := strings.ToLower(firstNonEmptyArg(fn, "Fail"))
+	if failMode == "found" {
+		assertionType = "body_not_contains"
+	}
+
+	warnings := make([]string, 0, 2)
+	if saveCount := firstNonEmptyArg(fn, "SaveCount"); saveCount != "" {
+		warnings = append(warnings,
+			fmt.Sprintf("line %d: web_reg_find '%s' SaveCount=%s was not preserved; mapped to %s only", fn.LineNumber, fn.StepName, saveCount, assertionType))
+	}
+
+	return &dsl.Assertion{
+		Type:  assertionType,
+		Value: convertParamReferences(text),
+	}, strings.Join(warnings, "; ")
+}
+
+func firstNonEmptyArg(fn ParsedFunction, key string) string {
+	if value := fn.Args[key]; value != "" {
+		return value
+	}
+
+	prefix := key + "="
+	for _, raw := range fn.RawArgs {
+		if strings.HasPrefix(raw, prefix) {
+			return strings.TrimPrefix(raw, prefix)
+		}
+	}
+
+	return ""
 }
 
 // detectBaseURL finds the common base URL from all web_ function calls.

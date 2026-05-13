@@ -61,6 +61,33 @@ Action()
 }
 `
 
+const sampleRegFindActionC = `
+#include "web_api.h"
+
+Action()
+{
+	web_reg_find("Text=Welcome back",
+		"SaveCount=welcomeCount",
+		LAST);
+
+	web_url("Homepage",
+		"URL=https://example.com/app/home",
+		"Resource=0",
+		LAST);
+
+	web_reg_find("Text=Internal Server Error",
+		"Fail=Found",
+		LAST);
+
+	web_url("Dashboard",
+		"URL=https://example.com/app/dashboard",
+		"Resource=0",
+		LAST);
+
+	return 0;
+}
+`
+
 func TestParseActionFile(t *testing.T) {
 	parsed, err := ParseActionFile("Action.c", sampleActionC)
 	if err != nil {
@@ -200,6 +227,42 @@ func TestConvertPreserveTransactionsOption(t *testing.T) {
 	}
 	if got := withoutTransactions.Script.Actions[0].Name; got != "Homepage" {
 		t.Fatalf("non-preserved action name = %q, want Homepage", got)
+	}
+}
+
+func TestConvertWebRegFindToAssertions(t *testing.T) {
+	parsed, err := ParseActionFile("Action.c", sampleRegFindActionC)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	result, err := Convert([]*ParsedAction{parsed}, ConvertOptions{IncludeAssertions: true})
+	if err != nil {
+		t.Fatalf("convert error: %v", err)
+	}
+
+	if len(result.Script.Actions) != 2 {
+		t.Fatalf("action count = %d, want 2", len(result.Script.Actions))
+	}
+
+	firstAssertions := result.Script.Actions[0].Assertions
+	if len(firstAssertions) != 2 {
+		t.Fatalf("first action assertions = %#v, want body_contains + status_code", firstAssertions)
+	}
+	if firstAssertions[0].Type != "body_contains" || firstAssertions[0].Value != "Welcome back" {
+		t.Fatalf("first mapped assertion = %#v, want body_contains on Welcome back", firstAssertions[0])
+	}
+
+	secondAssertions := result.Script.Actions[1].Assertions
+	if len(secondAssertions) != 2 {
+		t.Fatalf("second action assertions = %#v, want body_not_contains + status_code", secondAssertions)
+	}
+	if secondAssertions[0].Type != "body_not_contains" || secondAssertions[0].Value != "Internal Server Error" {
+		t.Fatalf("second mapped assertion = %#v, want body_not_contains on Internal Server Error", secondAssertions[0])
+	}
+
+	if len(result.Warnings) != 1 || !strings.Contains(result.Warnings[0], "SaveCount=welcomeCount") {
+		t.Fatalf("warnings = %#v, want SaveCount warning", result.Warnings)
 	}
 }
 

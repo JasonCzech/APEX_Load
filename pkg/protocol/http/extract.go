@@ -11,8 +11,8 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/antchfx/htmlquery"
-	"github.com/antchfx/xpath"
 	"github.com/antchfx/xmlquery"
+	"github.com/antchfx/xpath"
 	"github.com/jasonczech/stormrunner/pkg/protocol"
 	"github.com/jmespath/go-jmespath"
 )
@@ -163,7 +163,7 @@ func extractXPath(expr string, body []byte) (string, error) {
 	}
 
 	return htmlquery.InnerText(node), nil
-	}
+}
 
 func decodeXPathExpression(expr string) (string, bool, map[string]string, error) {
 	expr = strings.TrimSpace(expr)
