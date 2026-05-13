@@ -83,7 +83,8 @@ type Protocol interface {
 
 **Script Sections:**
 - **config**: Global settings (timeouts, SSL, connection pooling)
-- **data_sources**: CSV, JSON files for data-driven testing
+- **data_sources**: CSV and DAT files for row-based data-driven testing
+- **parameters**: named generated values and file/list-backed bindings for VuGen-style parameterization
 - **init**: Setup actions (login, session init)
 - **actions**: Main test flow (define named transactions)
 - **teardown**: Cleanup (logout, resource release)
@@ -91,8 +92,9 @@ type Protocol interface {
 **Template Variables:**
 - `{{env.VARIABLE}}` — environment variables
 - `{{data.source_name.column}}` — data source columns
+- `{{param.name}}` — named script parameters
 - `{{var.name}}` — runtime variables
-- `{{fn.uuid()}}`, `{{fn.random(1,100)}}` — functions
+- `{{fn.uuid()}}`, `{{fn.random(1,100)}}`, `{{fn.timestamp.iso8601}}`, `{{fn.random_string(10)}}` — functions
 
 **Example Script:**
 ```json

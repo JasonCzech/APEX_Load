@@ -154,12 +154,42 @@ cp stormrunner.db stormrunner.db.backup
 ```
 {{env.VARIABLE_NAME}}          # Environment variable
 {{data.source_name.column}}    # Data source column
+{{param.parameter_name}}       # Named script parameter
 {{var.variable_name}}          # Extracted variable
+{{fn.uuid()}}                  # UUID
 {{fn.uuid}}                    # UUID
 {{fn.random(1,100)}}           # Random number 1-100
 {{fn.timestamp.unix}}          # Unix timestamp
+{{fn.timestamp.unix_ms}}       # Unix timestamp in milliseconds
+{{fn.timestamp.iso8601}}       # ISO8601 timestamp
 {{fn.random_string(10)}}       # Random string (10 chars)
 ```
+
+## Parameters
+
+```json
+"parameters": [
+  {
+    "name": "order_id",
+    "type": "random_number",
+    "update": "each_occurrence",
+    "min": 1000,
+    "max": 9999
+  },
+  {
+    "name": "run_date",
+    "type": "date_time",
+    "update": "each_iteration",
+    "format": "2006-01-02",
+    "timezone": "UTC"
+  }
+]
+```
+
+- `type`: `file`, `list`, `random_number`, `date_time`, `timestamp`, `counter`, `uuid`, `random_string`
+- `update`: `once`, `each_iteration`, `each_occurrence`
+- `selection`: `sequential`, `random`, `unique` for `file` and `list`
+- `on_exhaustion`: `wrap`, `empty`, `error` for `file` and `list`
 
 ---
 

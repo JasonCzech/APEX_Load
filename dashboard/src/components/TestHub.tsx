@@ -286,7 +286,7 @@ function TestHub({ onSelectTest }: Props) {
             <select
               className="settings-input"
               value={form.data_pool_access_mode || 'read_only'}
-              onChange={event => setForm({ ...form, data_pool_access_mode: event.target.value })}
+              onChange={event => setForm({ ...form, data_pool_access_mode: event.target.value as 'read_only' | 'read_write' | 'consume' })}
               disabled={!form.data_pool_id}
             >
               <option value="read_only">Read only</option>
@@ -296,7 +296,7 @@ function TestHub({ onSelectTest }: Props) {
             <select
               className="settings-input"
               value={form.data_pool_selection_strategy || 'sequential'}
-              onChange={event => setForm({ ...form, data_pool_selection_strategy: event.target.value })}
+              onChange={event => setForm({ ...form, data_pool_selection_strategy: event.target.value as 'sequential' | 'random' | 'unique' })}
               disabled={!form.data_pool_id}
             >
               <option value="sequential">Sequential rows</option>

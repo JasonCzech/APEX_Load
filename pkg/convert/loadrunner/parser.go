@@ -170,6 +170,8 @@ func parseFunctionBlock(block string, lineNum int) (ParsedFunction, error) {
 		parseWebSubmitData(&fn, inner)
 	case "web_custom_request":
 		parseWebCustomRequest(&fn, inner)
+	case "web_service_call":
+		parseWebServiceCall(&fn, inner)
 	case "web_reg_save_param":
 		parseWebRegSaveParam(&fn, inner)
 	case "web_reg_find":
@@ -239,6 +241,30 @@ func parseWebCustomRequest(fn *ParsedFunction, inner string) {
 	}
 
 	extractNamedArgs(fn, inner)
+}
+
+func parseWebServiceCall(fn *ParsedFunction, inner string) {
+	if len(fn.RawArgs) > 0 {
+		fn.StepName = fn.RawArgs[0]
+	}
+	fn.Method = "POST"
+
+	if m := reURLArg.FindStringSubmatch(inner); len(m) > 1 {
+		fn.URL = m[1]
+	} else if m := reActionArg.FindStringSubmatch(inner); len(m) > 1 {
+		fn.URL = m[1]
+	}
+	if m := reBodyArg.FindStringSubmatch(inner); len(m) > 1 {
+		fn.Body = m[1]
+	}
+	if m := reRecContentType.FindStringSubmatch(inner); len(m) > 1 {
+		fn.Headers["Content-Type"] = m[1]
+	}
+
+	extractNamedArgs(fn, inner)
+	if soapAction, ok := fn.Args["SOAPAction"]; ok && soapAction != "" {
+		fn.Headers["SOAPAction"] = soapAction
+	}
 }
 
 func parseWebRegSaveParam(fn *ParsedFunction, inner string) {
@@ -382,6 +408,9 @@ func ParseUSRFile(content string) (*ProjectConfig, error) {
 		value := strings.TrimSpace(parts[1])
 		if cfg.RuntimeFile == "" && strings.HasSuffix(strings.ToLower(value), ".cfg") {
 			cfg.RuntimeFile = value
+		}
+		if strings.HasSuffix(strings.ToLower(value), ".prm") {
+			cfg.ParamFiles = append(cfg.ParamFiles, value)
 		}
 
 		switch section {

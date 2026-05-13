@@ -22,6 +22,29 @@
   --radius: 8px;
 }
 
+:root[data-theme='light'] {
+  --bg-primary: #f4f7fb;
+  --bg-secondary: #ffffff;
+  --bg-card: #ffffff;
+  --bg-hover: #eef3fb;
+  --border: #d7e1ee;
+  --text-primary: #172033;
+  --text-secondary: #44516a;
+  --text-muted: #6a7690;
+  --accent: #2458d3;
+  --accent-hover: #1d4ab0;
+  --success: #1f9d55;
+  --warning: #c98500;
+  --danger: #d23c3c;
+  --info: #2563eb;
+  --chart-1: #2458d3;
+  --chart-2: #1f9d55;
+  --chart-3: #c98500;
+  --chart-4: #d23c3c;
+  --chart-5: #2563eb;
+  --chart-6: #7c3aed;
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -34,6 +57,7 @@ body {
   color: var(--text-primary);
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 h1, h2, h3, h4 {

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type DragEvent } from 'react'
+import { type DashboardTheme } from '../hooks/useDashboardTheme'
 import { useApplicationApi } from '../hooks/api/useApplicationApi'
 import { useApplication } from '../hooks/useApplication'
 import { useApi } from '../hooks/useApi'
@@ -94,7 +95,12 @@ function validateSettings(settings: DashboardSystemSettings): string[] {
   return errors
 }
 
-export default function SettingsPage() {
+interface SettingsPageProps {
+  theme: DashboardTheme
+  onThemeChange: (theme: DashboardTheme) => void
+}
+
+export default function SettingsPage({ theme, onThemeChange }: SettingsPageProps) {
   const api = useApi()
   const applicationApi = useApplicationApi()
   const {
@@ -774,6 +780,20 @@ export default function SettingsPage() {
                 value={settings.general.metrics_interval_seconds}
                 onChange={(e) => updateGeneral('metrics_interval_seconds', e.target.value)}
               />
+            </div>
+            <div className="setting-row">
+              <div className="setting-info">
+                <span className="setting-label">Dashboard Theme</span>
+                <span className="setting-desc">Stored locally in this browser and applied immediately</span>
+              </div>
+              <select
+                className="settings-input"
+                value={theme}
+                onChange={(e) => onThemeChange(e.target.value as DashboardTheme)}
+              >
+                <option value="dark">Dark</option>
+                <option value="light">Light</option>
+              </select>
             </div>
           </div>
         </div>

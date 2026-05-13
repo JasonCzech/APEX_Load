@@ -31,6 +31,7 @@ type loadRunnerImportSummary struct {
 	MappedRuntimeFile        string   `json:"mapped_runtime_file,omitempty"`
 	ProjectSections          []string `json:"project_sections,omitempty"`
 	RuntimeFiles             []string `json:"runtime_files,omitempty"`
+	ParameterFiles           []string `json:"parameter_files,omitempty"`
 	UnsupportedFunctionCount int      `json:"unsupported_function_count"`
 }
 
@@ -260,8 +261,26 @@ func buildLoadRunnerImportSummary(result *loadrunner.ConvertResult, unsupportedE
 	summary.MappedRuntimeFile = stringValue(preserved["mapped_runtime_file"])
 	summary.ProjectSections = sortedRecordKeys(preserved["project_settings"])
 	summary.RuntimeFiles = sortedRecordKeys(preserved["runtime_files"])
+	summary.ParameterFiles = stringSliceValue(preserved["parameter_files"])
 
 	return summary
+}
+
+func stringSliceValue(value any) []string {
+	switch typed := value.(type) {
+	case []string:
+		return uniqueSortedStrings(typed)
+	case []any:
+		result := make([]string, 0, len(typed))
+		for _, item := range typed {
+			if s, ok := item.(string); ok {
+				result = append(result, s)
+			}
+		}
+		return uniqueSortedStrings(result)
+	default:
+		return nil
+	}
 }
 
 func uniqueSortedStrings(values []string) []string {

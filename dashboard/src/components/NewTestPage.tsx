@@ -84,6 +84,8 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
     try {
       const test = await api.createTest({
         name: runName.trim() || scenario.name,
+        duration: scenario.duration,
+        application_id: activeApplication.id,
         release_id: releaseId,
         scenario_id: scenario.id,
       })

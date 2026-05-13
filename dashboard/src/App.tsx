@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react'
+import { useDashboardTheme } from './hooks/useDashboardTheme'
 import { useWebSocket } from './hooks/useWebSocket'
 import { ApplicationProvider, useApplication } from './hooks/useApplication'
 import { WSMessage, MetricsHistoryPoint } from './types'
@@ -23,6 +24,7 @@ function AppShell() {
   const [view, setView] = useState<View>({ page: 'dashboard' })
   const [metricsHistory, setMetricsHistory] = useState<Record<string, MetricsHistoryPoint[]>>({})
   const [testStatuses, setTestStatuses] = useState<Record<string, string>>({})
+  const { theme, setTheme } = useDashboardTheme()
   const scriptMode = view.page === 'scripts' && 'mode' in view ? view.mode : undefined
   const scriptEditId = view.page === 'scripts' && 'scriptId' in view ? view.scriptId : undefined
 
@@ -70,7 +72,7 @@ function AppShell() {
     }
   }, [])
 
-  const { connected } = useWebSocket({ onMessage: handleWSMessage })
+  const { connected, connectionState } = useWebSocket({ onMessage: handleWSMessage })
   const { applications, releases, activeApplication, activeRelease, setActiveApplication, setActiveRelease, createAndSelectApplication, createAndSelectRelease } = useApplication()
 
   const navigateToTest = (id: string) => setView({ page: 'test', testId: id })
@@ -87,7 +89,7 @@ function AppShell() {
       <Sidebar
         active={activePage}
         onNavigate={handleNavigate}
-        connected={connected}
+        connectionState={connectionState}
         applications={applications}
         releases={releases}
         activeApplication={activeApplication}
@@ -101,7 +103,7 @@ function AppShell() {
           <DashboardPage
             testStatuses={testStatuses}
             metricsHistory={metricsHistory}
-            connected={connected}
+            connectionState={connectionState}
             onSelectTest={navigateToTest}
           />
         )}
@@ -138,8 +140,8 @@ function AppShell() {
             activeRelease={activeRelease}
           />
         )}
-        {view.page === 'monitoring' && <MonitoringPage connected={connected} />}
-        {view.page === 'settings' && <SettingsPage />}
+        {view.page === 'monitoring' && <MonitoringPage connectionState={connectionState} />}
+        {view.page === 'settings' && <SettingsPage theme={theme} onThemeChange={setTheme} />}
       </main>
     </div>
   )

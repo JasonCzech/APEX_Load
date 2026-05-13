@@ -1,9 +1,9 @@
 package soap
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha1"
-	"context"
 	"encoding/base64"
 	"fmt"
 	"html"
@@ -297,7 +297,7 @@ func buildSecurityHeaderXML(security soapSecurityConfig, now time.Time, nonceGen
 			`<wsu:Timestamp>`+
 				`<wsu:Created>`+xmlEscape(created)+`</wsu:Created>`+
 				`<wsu:Expires>`+xmlEscape(expires)+`</wsu:Expires>`+
-			`</wsu:Timestamp>`,
+				`</wsu:Timestamp>`,
 		)
 	}
 

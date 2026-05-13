@@ -129,19 +129,20 @@ func GetSupportMatrix() SupportMatrix {
 			"Variable substitution across URLs, headers, and bodies",
 			"Scenario drafts derived from thread groups",
 			"Timer behavior approximated as fixed think time when necessary",
+			"SOAP-shaped HTTP Request samplers are promoted to the SOAP protocol when an imported thread group is entirely SOAP-oriented",
 			"XPath2 Extractor mapped into Stormrunner XPath when queries fit the shared runtime, including fragment output and custom namespace bindings",
 		},
 		Unsupported: []string{
 			"JSR223 / BeanShell / Groovy scripting",
 			"JMeter plugin samplers, listeners, and controllers",
 			"JMS samplers",
-			"JDBC / FTP / SOAP / custom protocol plugins",
+			"JDBC / FTP / dedicated SOAP plugin samplers / custom protocol plugins",
 			"Complex conditional controller logic",
 			"Full JMeter listener/reporting model",
 			"Distributed engine/controller orchestration settings",
 		},
 		Notes: []string{
-			"Phase 1 targets HTTP-oriented JMX plans and produces native Stormrunner assets.",
+			"Phase 1 targets HTTP-oriented JMX plans and can promote SOAP-shaped HTTP samplers into native Stormrunner SOAP scripts.",
 			"Unsupported constructs are reported in the import review instead of being silently ignored.",
 		},
 	}
@@ -237,6 +238,7 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 			result.Warnings = append(result.Warnings, fmt.Sprintf("%s: no HTTP samplers were converted", threadName))
 			continue
 		}
+		applySOAPProtocolHints(script, &result.Warnings, threadName)
 		result.Scripts = append(result.Scripts, script)
 	}
 
@@ -379,7 +381,123 @@ func convertHTTPSampler(node *treeNode, ctx *convertContext, opts ConvertOptions
 	if domain == "" && !strings.HasPrefix(rawPath, "http://") && !strings.HasPrefix(rawPath, "https://") {
 		warnings = append(warnings, fmt.Sprintf("%s: no domain/default host was found; target kept as %q", name, rawPath))
 	}
+	applySOAPSamplerHints(action)
 	return action, warnings
+}
+
+func applySOAPProtocolHints(script *dsl.Script, warnings *[]string, threadName string) {
+	if script == nil || len(script.Actions) == 0 {
+		return
+	}
+	soapCount := 0
+	soapVersion := ""
+	for _, action := range script.Actions {
+		if action.SOAP == nil {
+			continue
+		}
+		soapCount++
+		if version := detectSOAPVersionFromAction(action); version == "1.2" {
+			soapVersion = "1.2"
+		} else if soapVersion == "" {
+			soapVersion = "1.1"
+		}
+	}
+	if soapCount == 0 {
+		return
+	}
+	if soapCount != len(script.Actions) {
+		*warnings = append(*warnings, fmt.Sprintf("%s: detected %d SOAP-style samplers and %d non-SOAP samplers; keeping HTTP protocol because the imported thread group is mixed", threadName, soapCount, len(script.Actions)-soapCount))
+		return
+	}
+	if soapVersion == "" {
+		soapVersion = "1.1"
+	}
+	script.Protocol = "soap"
+	script.Config.SOAP = dsl.SOAPConfig{
+		Version: soapVersion,
+		FaultHandling: dsl.SOAPFaultHandlingConfig{
+			FailOnFault: true,
+		},
+	}
+}
+
+func applySOAPSamplerHints(action *dsl.Action) {
+	if action == nil || !isSOAPAction(action) {
+		return
+	}
+	if action.Method == "" || strings.EqualFold(action.Method, "GET") {
+		action.Method = "POST"
+		action.Type = "POST"
+	}
+	soapAction := strings.TrimSpace(firstHeaderValue(action.Headers, "SOAPAction"))
+	operation := action.Name
+	if soapAction != "" {
+		operation = strings.Trim(soapAction, `"`)
+	}
+	bodyMode := "generated"
+	if strings.TrimSpace(action.Body) != "" {
+		bodyMode = "raw_xml"
+	}
+	action.SOAP = &dsl.SOAPActionConfig{
+		Action:    strings.Trim(soapAction, `"`),
+		Operation: operation,
+		BodyMode:  bodyMode,
+	}
+	if action.Headers == nil {
+		action.Headers = map[string]string{}
+	}
+	if firstHeaderValue(action.Headers, "Content-Type") == "" {
+		if detectSOAPVersionFromAction(*action) == "1.2" {
+			action.Headers["Content-Type"] = "application/soap+xml"
+		} else {
+			action.Headers["Content-Type"] = "text/xml"
+		}
+	}
+}
+
+func isSOAPAction(action *dsl.Action) bool {
+	if action == nil {
+		return false
+	}
+	if strings.TrimSpace(firstHeaderValue(action.Headers, "SOAPAction")) != "" {
+		return true
+	}
+	contentType := strings.ToLower(strings.TrimSpace(firstHeaderValue(action.Headers, "Content-Type")))
+	if strings.Contains(contentType, "application/soap+xml") {
+		return true
+	}
+	body := strings.ToLower(strings.TrimSpace(action.Body))
+	if strings.Contains(body, ":envelope") || strings.Contains(body, "<envelope") {
+		return true
+	}
+	if strings.Contains(contentType, "text/xml") && body != "" {
+		return strings.Contains(body, "soap") || strings.Contains(body, "<envelope")
+	}
+	return false
+}
+
+func detectSOAPVersionFromAction(action dsl.Action) string {
+	contentType := strings.ToLower(strings.TrimSpace(firstHeaderValue(action.Headers, "Content-Type")))
+	if strings.Contains(contentType, "application/soap+xml") {
+		return "1.2"
+	}
+	body := strings.ToLower(strings.TrimSpace(action.Body))
+	if strings.Contains(body, "http://www.w3.org/2003/05/soap-envelope") {
+		return "1.2"
+	}
+	if isSOAPAction(&action) {
+		return "1.1"
+	}
+	return ""
+}
+
+func firstHeaderValue(headers map[string]string, key string) string {
+	for headerKey, value := range headers {
+		if strings.EqualFold(headerKey, key) {
+			return value
+		}
+	}
+	return ""
 }
 
 func parseSamplerExtractors(node *treeNode) ([]dsl.Extractor, []string) {

@@ -18,6 +18,7 @@ import {
   type ScriptDataSource,
   type ScriptDefinition,
   type ScriptExtractorDefinition,
+  type ScriptParameterDefinition,
   type ScriptWaitCondition,
 } from '../types/scripts'
 import BrowserReplayDebugger from './BrowserReplayDebugger'
@@ -55,6 +56,30 @@ interface HTTPConfig {
   tls?: { min_version?: string; insecure_skip_verify?: boolean; client_cert_file?: string; client_key_file?: string; ca_cert_file?: string }
   proxy?: { url?: string; username?: string; password?: string }
   auth?: { type?: string; username?: string; password?: string; token?: string }
+}
+
+interface SOAPUsernameTokenConfig {
+  username?: string
+  password?: string
+  password_type?: string
+  nonce?: boolean
+  created?: boolean
+}
+
+interface SOAPTimestampConfig {
+  ttl_seconds?: number
+}
+
+interface SOAPConfig {
+  version?: string
+  namespaces?: Record<string, string>
+  ws_security?: {
+    username_token?: SOAPUsernameTokenConfig
+    timestamp?: SOAPTimestampConfig
+  }
+  fault_handling?: {
+    fail_on_fault?: boolean
+  }
 }
 
 interface BrowserConfig {
@@ -101,6 +126,7 @@ interface ScriptConfig {
   error_handling?: ErrorHandlingConfig
   log?: LogConfig
   http?: HTTPConfig
+  soap?: SOAPConfig
   browser?: BrowserConfig
   jms?: JMSConfig
 }
@@ -111,6 +137,7 @@ interface ScriptData {
   config: ScriptConfig
   actions: Action[]
   data_sources?: DataSourceConfig[]
+  parameters?: ParameterConfig[]
 }
 
 type ReplaySnapshot = BrowserReplaySnapshot
@@ -146,6 +173,7 @@ interface ReplayWSMessage extends WSMessage {
 }
 
 type DataSourceConfig = ScriptDataSource
+type ParameterConfig = ScriptParameterDefinition
 
 interface DataSourceHistory {
   past: DataSourceConfig[]
@@ -200,6 +228,19 @@ const EMPTY_DATA_SOURCE: DataSourceConfig = {
   inline_data: '',
 }
 
+const EMPTY_PARAMETER: ParameterConfig = {
+  name: '',
+  type: 'list',
+  update: 'each_iteration',
+  selection: 'sequential',
+  on_exhaustion: 'wrap',
+  values: [],
+  step: 1,
+  length: 12,
+  format: 'iso8601',
+  pad_char: '0',
+}
+
 const EMPTY_ACTION: Action = {
   name: '', type: 'GET', target: '', headers: {}, body: '',
   extractors: [], assertions: [], think_time_after: true
@@ -215,6 +256,12 @@ const EMPTY_JMS_ACTION: Action = {
   name: '', type: 'jms_publish', target: '', headers: {}, body: '',
   params: {}, metadata: {}, extractors: [], assertions: [{ type: 'message_received' }],
   think_time_after: true,
+}
+
+const EMPTY_SOAP_ACTION: Action = {
+  name: '', type: 'POST', method: 'POST', target: '', headers: {}, body: '',
+  extractors: [], assertions: [{ type: 'status_code', expected: 200 }], think_time_after: true,
+  soap: { action: '', operation: '', body_mode: 'raw_xml' },
 }
 
 function getImportSummary(metadata?: ImportMetadata | null) {
@@ -562,6 +609,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
   })
   const isBrowserScript = script.protocol === 'browser'
   const isJmsScript = script.protocol === 'jms-solace'
+  const isSoapScript = script.protocol === 'soap'
   const importMetadata = script.metadata?.import
   const importSummary = getImportSummary(importMetadata)
 
@@ -876,6 +924,22 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
       const next = JSON.parse(JSON.stringify(prev)) as ScriptData
       next.protocol = protocol
       next.config = next.config || { base_url: '' }
+      if (protocol === 'soap') {
+        next.config.soap = {
+          version: next.config.soap?.version || '1.1',
+          namespaces: Object.keys(next.config.soap?.namespaces || {}).length > 0
+            ? next.config.soap?.namespaces
+            : { soapenv: 'http://schemas.xmlsoap.org/soap/envelope/' },
+          ws_security: next.config.soap?.ws_security,
+          fault_handling: {
+            fail_on_fault: next.config.soap?.fault_handling?.fail_on_fault ?? true,
+          },
+        }
+        if (next.actions.length === 0) {
+          next.actions = [{ ...JSON.parse(JSON.stringify(EMPTY_SOAP_ACTION)), name: 'SOAP_Request' }]
+          shouldSelectFirstAction = true
+        }
+      }
       if (protocol === 'jms-solace') {
         next.config.jms = {
           provider: 'solace',
@@ -901,7 +965,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
   }
 
   const addAction = () => {
-    const template = isBrowserScript ? EMPTY_BROWSER_ACTION : isJmsScript ? EMPTY_JMS_ACTION : EMPTY_ACTION
+    const template = isBrowserScript ? EMPTY_BROWSER_ACTION : isJmsScript ? EMPTY_JMS_ACTION : isSoapScript ? EMPTY_SOAP_ACTION : EMPTY_ACTION
     const a = JSON.parse(JSON.stringify({
       ...template,
       name: `Action_${script.actions.length + 1}`,
@@ -1061,10 +1125,63 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
     })
   }
 
+  const addSoapNamespace = () => {
+    const key = prompt('Namespace prefix:')
+    if (!key) return
+    setScript(prev => ({
+      ...prev,
+      config: {
+        ...prev.config,
+        soap: {
+          ...(prev.config.soap || {}),
+          namespaces: { ...(prev.config.soap?.namespaces || {}), [key]: '' },
+        },
+      },
+    }))
+  }
+
+  const updateSoapNamespace = (oldKey: string, newKey: string, value: string) => {
+    setScript(prev => {
+      const namespaces = { ...(prev.config.soap?.namespaces || {}) }
+      if (oldKey !== newKey) delete namespaces[oldKey]
+      namespaces[newKey] = value
+      return {
+        ...prev,
+        config: {
+          ...prev.config,
+          soap: {
+            ...(prev.config.soap || {}),
+            namespaces,
+          },
+        },
+      }
+    })
+  }
+
+  const removeSoapNamespace = (key: string) => {
+    setScript(prev => {
+      const namespaces = { ...(prev.config.soap?.namespaces || {}) }
+      delete namespaces[key]
+      return {
+        ...prev,
+        config: {
+          ...prev.config,
+          soap: {
+            ...(prev.config.soap || {}),
+            namespaces,
+          },
+        },
+      }
+    })
+  }
+
   const resolveCurrentScript = (): ScriptData => {
     if (!jsonMode) return script
     const parsed = JSON.parse(jsonText) as ScriptData | { script?: ScriptData }
-    return 'script' in parsed && parsed.script ? parsed.script : parsed
+    if ('script' in parsed && parsed.script) {
+      return parsed.script
+    }
+    return parsed as ScriptData
   }
 
   const handleSave = async () => {
@@ -1124,6 +1241,13 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
       })
       setExpandedReplayEvent(null)
 
+      const captureScreenshots: 'off' | 'on_error' | 'per_action' =
+        currentScript.config.browser?.capture_screenshots === 'off' ||
+        currentScript.config.browser?.capture_screenshots === 'on_error' ||
+        currentScript.config.browser?.capture_screenshots === 'per_action'
+          ? currentScript.config.browser.capture_screenshots
+          : 'per_action'
+
       const payload = {
         group_name: replayGroup,
         replay_session_id: replaySessionId,
@@ -1134,7 +1258,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
         browser: currentScript.protocol === 'browser' ? {
           headless: currentScript.config.browser?.headless ?? true,
           slow_mo_ms: currentScript.config.browser?.slow_mo_ms,
-          capture_screenshots: currentScript.config.browser?.capture_screenshots || 'per_action',
+          capture_screenshots: captureScreenshots,
           viewport: currentScript.config.browser?.viewport?.width || currentScript.config.browser?.viewport?.height
             ? {
                 width: currentScript.config.browser?.viewport?.width || 1440,
@@ -1289,6 +1413,52 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
     }))
     setDataSourceHistory({})
     setDataEditorMode({})
+  }
+
+  const addParameter = () => {
+    const nextIndex = (script.parameters?.length || 0) + 1
+    setScript(prev => ({
+      ...prev,
+      parameters: [...(prev.parameters || []), { ...EMPTY_PARAMETER, name: `param_${nextIndex}` }],
+    }))
+  }
+
+  const updateParameter = (idx: number, field: keyof ParameterConfig, value: unknown) => {
+    setScript(prev => {
+      const parameters = [...(prev.parameters || [])]
+      const current = parameters[idx] || { ...EMPTY_PARAMETER }
+      parameters[idx] = { ...current, [field]: value }
+      return { ...prev, parameters }
+    })
+  }
+
+  const updateParameterType = (idx: number, nextType: string) => {
+    setScript(prev => {
+      const parameters = [...(prev.parameters || [])]
+      const current = parameters[idx] || { ...EMPTY_PARAMETER }
+      parameters[idx] = {
+        ...current,
+        type: nextType,
+        update: current.update || 'each_iteration',
+        selection: current.selection || 'sequential',
+        on_exhaustion: current.on_exhaustion || 'wrap',
+        step: nextType === 'counter' ? (current.step || 1) : current.step,
+        length: nextType === 'random_string' ? (current.length || 12) : current.length,
+        format: nextType === 'timestamp'
+          ? (current.format || 'iso8601')
+          : nextType === 'date_time'
+            ? (current.format || '2006-01-02 15:04:05')
+            : current.format,
+      }
+      return { ...prev, parameters }
+    })
+  }
+
+  const removeParameter = (idx: number) => {
+    setScript(prev => ({
+      ...prev,
+      parameters: (prev.parameters || []).filter((_, i) => i !== idx),
+    }))
   }
 
   const removeDataSource = (idx: number) => {
@@ -1659,6 +1829,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
                     <select value={script.protocol} onChange={e => updateProtocol(e.target.value)}>
                       <option value="http">HTTP API</option>
                       <option value="https">HTTPS API</option>
+                      <option value="soap">Web Services (SOAP)</option>
                       <option value="browser">Web/HTML Browser</option>
                       <option value="jms-solace">JMS Solace</option>
                     </select>
@@ -1698,6 +1869,11 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
                 {isBrowserScript && (
                   <div className="parameter-empty-state" style={{ marginTop: 12 }}>
                     Browser scripts can use navigate, click, fill, wait, and screenshot actions with selector, wait, and capture settings in the action editor below.
+                  </div>
+                )}
+                {isSoapScript && (
+                  <div className="parameter-empty-state" style={{ marginTop: 12 }}>
+                    SOAP scripts reuse the HTTP transport model and add SOAP envelope, namespace, WS-Security, SOAPAction, and fault-handling settings below.
                   </div>
                 )}
                 <div className="auto-parameter-toolbar">
@@ -2506,6 +2682,89 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
                   )}
                 </div>}
 
+                {isSoapScript && <div className={`settings-section ${openSections['soap'] ? 'open' : ''}`}>
+                  <button className="section-toggle" onClick={() => toggleSection('soap')}>
+                    <span className="section-icon">SOAP</span>
+                    <span className="section-label">SOAP Settings</span>
+                    <span className="section-summary">
+                      {script.config.soap?.ws_security?.username_token?.username
+                        ? 'WS-Security configured'
+                        : script.config.soap?.version || '1.1'}
+                    </span>
+                    <span className="chevron">{openSections['soap'] ? '▾' : '▸'}</span>
+                  </button>
+                  {openSections['soap'] && (
+                    <div className="section-body">
+                      <div className="settings-sub-group">
+                        <h5>Envelope</h5>
+                        <div className="form-grid">
+                          <label>
+                            <span>SOAP Version</span>
+                            <select value={script.config.soap?.version || '1.1'} onChange={e => updateField('config.soap.version', e.target.value)}>
+                              <option value="1.1">SOAP 1.1</option>
+                              <option value="1.2">SOAP 1.2</option>
+                            </select>
+                          </label>
+                          <label className="checkbox-label">
+                            <input type="checkbox" checked={script.config.soap?.fault_handling?.fail_on_fault ?? true} onChange={e => updateField('config.soap.fault_handling.fail_on_fault', e.target.checked)} />
+                            <span>Fail on SOAP Fault</span>
+                          </label>
+                        </div>
+                      </div>
+
+                      <div className="settings-sub-group">
+                        <div className="sub-header"><h4>Namespaces</h4><button className="btn btn-sm btn-ghost" onClick={addSoapNamespace}>+ Add</button></div>
+                        {Object.entries(script.config.soap?.namespaces || {}).map(([key, value]) => (
+                          <div key={key} className="kv-row">
+                            <input className="kv-key" value={key} onChange={e => updateSoapNamespace(key, e.target.value, value)} placeholder="Prefix" />
+                            <input className="kv-val" value={value} onChange={e => updateSoapNamespace(key, key, e.target.value)} placeholder="Namespace URI" />
+                            <button className="btn-icon danger" onClick={() => removeSoapNamespace(key)}>✕</button>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="settings-sub-group">
+                        <h5>WS-Security UsernameToken</h5>
+                        <div className="form-grid">
+                          <label>
+                            <span>Username</span>
+                            <input value={script.config.soap?.ws_security?.username_token?.username || ''} onChange={e => updateField('config.soap.ws_security.username_token.username', e.target.value)} placeholder="service-user" />
+                          </label>
+                          <label>
+                            <span>Password</span>
+                            <input type="password" value={script.config.soap?.ws_security?.username_token?.password || ''} onChange={e => updateField('config.soap.ws_security.username_token.password', e.target.value)} placeholder="secret" />
+                          </label>
+                          <label>
+                            <span>Password Type</span>
+                            <select value={script.config.soap?.ws_security?.username_token?.password_type || 'text'} onChange={e => updateField('config.soap.ws_security.username_token.password_type', e.target.value)}>
+                              <option value="text">text</option>
+                              <option value="digest">digest</option>
+                            </select>
+                          </label>
+                          <label className="checkbox-label">
+                            <input type="checkbox" checked={script.config.soap?.ws_security?.username_token?.nonce || false} onChange={e => updateField('config.soap.ws_security.username_token.nonce', e.target.checked)} />
+                            <span>Include nonce</span>
+                          </label>
+                          <label className="checkbox-label">
+                            <input type="checkbox" checked={script.config.soap?.ws_security?.username_token?.created || false} onChange={e => updateField('config.soap.ws_security.username_token.created', e.target.checked)} />
+                            <span>Include created timestamp</span>
+                          </label>
+                        </div>
+                      </div>
+
+                      <div className="settings-sub-group">
+                        <h5>WS-Security Timestamp</h5>
+                        <div className="form-grid">
+                          <label>
+                            <span>TTL (seconds)</span>
+                            <input type="number" min="0" value={script.config.soap?.ws_security?.timestamp?.ttl_seconds ?? 0} onChange={e => updateField('config.soap.ws_security.timestamp.ttl_seconds', Math.max(0, Number(e.target.value) || 0))} />
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>}
+
                 {/* Logging */}
                 <div className={`settings-section ${openSections['log'] ? 'open' : ''}`}>
                   <button className="section-toggle" onClick={() => toggleSection('log')}>
@@ -2587,6 +2846,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
                     methodColor={methodColor}
                     isBrowserScript={isBrowserScript}
                     isJmsScript={isJmsScript}
+                    isSoapScript={isSoapScript}
                   />
                 ) : (
                   <div className="action-placeholder">
@@ -2608,13 +2868,163 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
 
             {openSections['parameters'] && (
               <div className="panel-body" style={{ padding: 20 }}>
+                <div className="panel-title-row" style={{ marginBottom: 12 }}>
+                  <div>
+                    <strong style={{ display: 'block', marginBottom: 4 }}>Named Parameters</strong>
+                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Define named parameters with VuGen-style update cadence and generated values.</span>
+                  </div>
+                  <button className="btn btn-sm btn-accent" onClick={addParameter}>+ Add Parameter</button>
+                </div>
+
+                {(script.parameters?.length || 0) === 0 ? (
+                  <div className="parameter-empty-state" style={{ marginBottom: 20 }}>No named parameters defined. Add one for random, date/time, counter, file, or list-driven values.</div>
+                ) : (
+                  <div className="parameter-table-wrap" style={{ marginBottom: 20 }}>
+                    <table className="parameter-table">
+                      <thead>
+                        <tr>
+                          <th>Name</th>
+                          <th>Type</th>
+                          <th>Update</th>
+                          <th>Source / Selection</th>
+                          <th>Settings</th>
+                          <th>Template</th>
+                          <th style={{ textAlign: 'right' }}>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(script.parameters || []).map((parameter, idx) => (
+                          <tr key={`${parameter.name || 'parameter'}-${idx}`}>
+                            <td>
+                              <input
+                                value={parameter.name || ''}
+                                onChange={e => updateParameter(idx, 'name', e.target.value)}
+                                placeholder="session_id"
+                              />
+                            </td>
+                            <td>
+                              <select value={parameter.type || 'list'} onChange={e => updateParameterType(idx, e.target.value)}>
+                                <option value="list">list</option>
+                                <option value="file">file</option>
+                                <option value="random_number">random_number</option>
+                                <option value="date_time">date_time</option>
+                                <option value="timestamp">timestamp</option>
+                                <option value="counter">counter</option>
+                                <option value="random_string">random_string</option>
+                                <option value="uuid">uuid</option>
+                              </select>
+                            </td>
+                            <td>
+                              <select value={parameter.update || 'each_iteration'} onChange={e => updateParameter(idx, 'update', e.target.value)}>
+                                <option value="once">once</option>
+                                <option value="each_iteration">each_iteration</option>
+                                <option value="each_occurrence">each_occurrence</option>
+                              </select>
+                            </td>
+                            <td>
+                              <div style={{ display: 'grid', gap: 8 }}>
+                                {(parameter.type === 'file' || parameter.type === 'list') && (
+                                  <>
+                                    <select value={parameter.selection || 'sequential'} onChange={e => updateParameter(idx, 'selection', e.target.value)}>
+                                      <option value="sequential">sequential</option>
+                                      <option value="random">random</option>
+                                      <option value="unique">unique</option>
+                                    </select>
+                                    <select value={parameter.on_exhaustion || 'wrap'} onChange={e => updateParameter(idx, 'on_exhaustion', e.target.value)}>
+                                      <option value="wrap">wrap</option>
+                                      <option value="empty">empty</option>
+                                      <option value="error">error</option>
+                                    </select>
+                                    <input
+                                      value={parameter.data_source || ''}
+                                      onChange={e => updateParameter(idx, 'data_source', e.target.value)}
+                                      placeholder="data source name"
+                                    />
+                                    <input
+                                      value={parameter.column || ''}
+                                      onChange={e => updateParameter(idx, 'column', e.target.value)}
+                                      placeholder="column name"
+                                    />
+                                    {parameter.type === 'list' && (
+                                      <input
+                                        value={(parameter.values || []).join(', ')}
+                                        onChange={e => updateParameter(idx, 'values', e.target.value.split(',').map(v => v.trim()).filter(Boolean))}
+                                        placeholder="inline values (optional)"
+                                      />
+                                    )}
+                                  </>
+                                )}
+                                {parameter.type === 'random_number' && (
+                                  <div style={{ display: 'grid', gap: 8 }}>
+                                    <input type="number" value={parameter.min ?? 0} onChange={e => updateParameter(idx, 'min', Number(e.target.value))} placeholder="min" />
+                                    <input type="number" value={parameter.max ?? 100} onChange={e => updateParameter(idx, 'max', Number(e.target.value))} placeholder="max" />
+                                  </div>
+                                )}
+                                {parameter.type === 'counter' && (
+                                  <div style={{ display: 'grid', gap: 8 }}>
+                                    <input type="number" value={parameter.start ?? 0} onChange={e => updateParameter(idx, 'start', Number(e.target.value))} placeholder="start" />
+                                    <input type="number" value={parameter.end ?? 0} onChange={e => updateParameter(idx, 'end', Number(e.target.value))} placeholder="end (optional)" />
+                                    <input type="number" value={parameter.step ?? 1} onChange={e => updateParameter(idx, 'step', Number(e.target.value))} placeholder="step" />
+                                  </div>
+                                )}
+                                {parameter.type === 'random_string' && (
+                                  <div style={{ display: 'grid', gap: 8 }}>
+                                    <input type="number" value={parameter.length ?? 12} onChange={e => updateParameter(idx, 'length', Number(e.target.value))} placeholder="length" />
+                                    <input value={parameter.charset || ''} onChange={e => updateParameter(idx, 'charset', e.target.value)} placeholder="charset override" />
+                                  </div>
+                                )}
+                                {parameter.type === 'uuid' && <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Generated UUID per update cadence.</span>}
+                              </div>
+                            </td>
+                            <td>
+                              <div style={{ display: 'grid', gap: 8 }}>
+                                {(parameter.type === 'date_time' || parameter.type === 'timestamp') && (
+                                  <>
+                                    {parameter.type === 'timestamp' ? (
+                                      <select value={parameter.format || 'iso8601'} onChange={e => updateParameter(idx, 'format', e.target.value)}>
+                                        <option value="unix">unix</option>
+                                        <option value="unix_ms">unix_ms</option>
+                                        <option value="iso8601">iso8601</option>
+                                        <option value="rfc3339">rfc3339</option>
+                                        <option value="rfc3339_nano">rfc3339_nano</option>
+                                      </select>
+                                    ) : (
+                                      <input value={parameter.format || ''} onChange={e => updateParameter(idx, 'format', e.target.value)} placeholder="Go time layout" />
+                                    )}
+                                    <input value={parameter.timezone || ''} onChange={e => updateParameter(idx, 'timezone', e.target.value)} placeholder="timezone (UTC, America/New_York)" />
+                                    <input type="number" value={parameter.offset_seconds ?? 0} onChange={e => updateParameter(idx, 'offset_seconds', Number(e.target.value))} placeholder="offset seconds" />
+                                  </>
+                                )}
+                                {(parameter.type === 'counter' || parameter.type === 'random_number') && (
+                                  <>
+                                    <input type="number" value={parameter.pad_width ?? 0} onChange={e => updateParameter(idx, 'pad_width', Number(e.target.value))} placeholder="pad width" />
+                                    <input value={parameter.pad_char || ''} onChange={e => updateParameter(idx, 'pad_char', e.target.value)} placeholder="pad char" />
+                                  </>
+                                )}
+                                <input type="number" value={parameter.seed ?? 0} onChange={e => updateParameter(idx, 'seed', Number(e.target.value) || undefined)} placeholder="seed (optional)" />
+                              </div>
+                            </td>
+                            <td className="cell-mono">{parameter.name ? `{{param.${parameter.name}}}` : '—'}</td>
+                            <td style={{ textAlign: 'right' }}>
+                              <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={() => removeParameter(idx)}>Remove</button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
                 <div className="panel-title-row">
-                  <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Define data sources to parameterize fields across requests.</span>
+                  <div>
+                    <strong style={{ display: 'block', marginBottom: 4 }}>Parameter Data Sources</strong>
+                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Define reusable data sources for file-backed parameter values and row-based request data.</span>
+                  </div>
                   <button className="btn btn-sm btn-accent" onClick={addDataSource}>+ Add Source</button>
                 </div>
 
                 {(script.data_sources?.length || 0) === 0 ? (
-                  <div className="parameter-empty-state">No parameters defined. Add a data source to parameterize fields across requests.</div>
+                  <div className="parameter-empty-state">No data sources defined. Add a source for CSV or DAT-backed parameter values.</div>
                 ) : (
                   <div className="parameter-table-wrap">
                     <table className="parameter-table">
@@ -2832,7 +3242,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
 }
 
 /* Sub-component for editing a single action's details */
-function ActionEditor({ action, index, onUpdate, onAddExtractor, onUpdateExtractor, onRemoveExtractor, onAddAssertion, onUpdateAssertion, onRemoveAssertion, onAddHeader, onUpdateHeader, onRemoveHeader, onAddMetadata, onUpdateMetadata, onRemoveMetadata, methodColor, isBrowserScript, isJmsScript }: {
+function ActionEditor({ action, index, onUpdate, onAddExtractor, onUpdateExtractor, onRemoveExtractor, onAddAssertion, onUpdateAssertion, onRemoveAssertion, onAddHeader, onUpdateHeader, onRemoveHeader, onAddMetadata, onUpdateMetadata, onRemoveMetadata, methodColor, isBrowserScript, isJmsScript, isSoapScript }: {
   action: Action; index: number
   onUpdate: (i: number, f: keyof Action, v: unknown) => void
   onAddExtractor: (i: number) => void
@@ -2850,6 +3260,7 @@ function ActionEditor({ action, index, onUpdate, onAddExtractor, onUpdateExtract
   methodColor: (m: string) => string
   isBrowserScript: boolean
   isJmsScript: boolean
+  isSoapScript: boolean
 }) {
   const browserActionTypes = ['browser_navigate', 'browser_click', 'browser_fill', 'browser_wait', 'browser_screenshot']
   const jmsActionTypes = ['jms_publish', 'jms_consume', 'jms_request_reply', 'jms_ack', 'jms_commit', 'jms_rollback']
@@ -2989,7 +3400,7 @@ function ActionEditor({ action, index, onUpdate, onAddExtractor, onUpdateExtract
               <label>
                 <span>Correlation ID</span>
                 <input
-                  value={params.correlation_id || ''}
+                  value={typeof params.correlation_id === 'string' ? params.correlation_id : ''}
                   onChange={e => onUpdate(index, 'params', { ...params, correlation_id: e.target.value })}
                   placeholder="{{var.jms_message_id}} or {{fn.uuid()}}"
                 />
@@ -3000,7 +3411,7 @@ function ActionEditor({ action, index, onUpdate, onAddExtractor, onUpdateExtract
                   <input
                     type="number"
                     min="0"
-                    value={params.timeout_ms ?? ''}
+                    value={typeof params.timeout_ms === 'number' ? params.timeout_ms : ''}
                     onChange={e => onUpdate(index, 'params', { ...params, timeout_ms: Number(e.target.value) || undefined })}
                     placeholder="Use script default"
                   />
@@ -3010,7 +3421,7 @@ function ActionEditor({ action, index, onUpdate, onAddExtractor, onUpdateExtract
                 <label className="full-width">
                   <span>Reply To Override</span>
                   <input
-                    value={params.reply_to || ''}
+                    value={typeof params.reply_to === 'string' ? params.reply_to : ''}
                     onChange={e => onUpdate(index, 'params', { ...params, reply_to: e.target.value })}
                     placeholder="orders.reply"
                   />
@@ -3041,6 +3452,29 @@ function ActionEditor({ action, index, onUpdate, onAddExtractor, onUpdateExtract
             ))}
           </div>
         </>
+      )}
+
+      {isSoapScript && (
+        <div className="sub-section">
+          <div className="sub-header"><h4>SOAP Action</h4></div>
+          <div className="form-grid">
+            <label>
+              <span>SOAPAction</span>
+              <input value={action.soap?.action || ''} onChange={e => onUpdate(index, 'soap', { ...(action.soap || {}), action: e.target.value })} placeholder="urn:CreateOrder" />
+            </label>
+            <label>
+              <span>Operation</span>
+              <input value={action.soap?.operation || ''} onChange={e => onUpdate(index, 'soap', { ...(action.soap || {}), operation: e.target.value })} placeholder="CreateOrder" />
+            </label>
+            <label>
+              <span>Body Mode</span>
+              <select value={action.soap?.body_mode || 'raw_xml'} onChange={e => onUpdate(index, 'soap', { ...(action.soap || {}), body_mode: e.target.value })}>
+                <option value="raw_xml">raw_xml</option>
+                <option value="generated">generated</option>
+              </select>
+            </label>
+          </div>
+        </div>
       )}
 
       {/* Headers */}
@@ -3101,11 +3535,11 @@ function ActionEditor({ action, index, onUpdate, onAddExtractor, onUpdateExtract
                 </>
               )}
             </select>
-            {a.type === 'status_code' && <input type="number" value={a.expected ?? 200} onChange={e => onUpdateAssertion(index, ai, 'expected', Number(e.target.value))} />}
+            {a.type === 'status_code' && <input type="number" value={typeof a.expected === 'number' ? a.expected : 200} onChange={e => onUpdateAssertion(index, ai, 'expected', Number(e.target.value))} />}
             {a.type === 'response_time_ms' && <input type="number" value={a.max ?? 5000} onChange={e => onUpdateAssertion(index, ai, 'max', Number(e.target.value))} placeholder="Max ms" />}
             {(a.type === 'body_contains' || a.type === 'header_contains' || a.type === 'correlation_match') && <input value={a.value ?? ''} onChange={e => onUpdateAssertion(index, ai, 'value', e.target.value)} placeholder="Expected text" />}
             {(a.type === 'property_equals' || a.type === 'header_equals') && <input value={a.value ?? ''} onChange={e => onUpdateAssertion(index, ai, 'value', e.target.value)} placeholder="Name" />}
-            {(a.type === 'property_equals' || a.type === 'header_equals') && <input value={a.expected ?? ''} onChange={e => onUpdateAssertion(index, ai, 'expected', e.target.value)} placeholder="Expected value" />}
+            {(a.type === 'property_equals' || a.type === 'header_equals') && <input value={typeof a.expected === 'string' || typeof a.expected === 'number' ? String(a.expected) : ''} onChange={e => onUpdateAssertion(index, ai, 'expected', e.target.value)} placeholder="Expected value" />}
             <button className="btn-icon danger" onClick={() => onRemoveAssertion(index, ai)}>✕</button>
           </div>
         ))}

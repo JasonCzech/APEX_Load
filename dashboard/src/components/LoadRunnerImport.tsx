@@ -17,6 +17,10 @@ function getImportMetadata(script?: ImportedScript): ImportMetadata | null {
   return script?.metadata?.import || null
 }
 
+function toScriptDefinition(script: ImportedScript): ScriptDefinition {
+  return script as unknown as ScriptDefinition
+}
+
 function getObjectKeys(value: unknown): string[] {
   return typeof value === 'object' && value !== null ? Object.keys(value as Record<string, unknown>) : []
 }
@@ -26,6 +30,7 @@ function getMetadataSummary(metadata: ImportMetadata | null) {
 
   return {
     runtimeFiles: getObjectKeys(preserved.runtime_files),
+    parameterFiles: Array.isArray(preserved.parameter_files) ? preserved.parameter_files as string[] : [],
     projectSections: getObjectKeys(preserved.project_settings),
     unsupportedFunctions: Array.isArray(preserved.unsupported_functions) ? preserved.unsupported_functions : [],
   }
@@ -57,7 +62,8 @@ export default function LoadRunnerImport({ onImported, onEdit, onClose }: Props)
   const [options, setOptions] = useState({
     name: '', base_url: '', include_assertions: true, preserve_transactions: true,
   })
-  const importMetadata = getImportMetadata(result?.script)
+  const importedScript = result?.script ?? result?.scripts?.[0] ?? null
+  const importMetadata = getImportMetadata(importedScript || undefined)
   const metadataSummary = getMetadataSummary(importMetadata)
   const reviewSummary: LoadRunnerImportSummary | null = result?.summary || null
   const projectSections = getSummaryList(reviewSummary?.project_sections).length > 0
@@ -66,6 +72,9 @@ export default function LoadRunnerImport({ onImported, onEdit, onClose }: Props)
   const runtimeFiles = getSummaryList(reviewSummary?.runtime_files).length > 0
     ? getSummaryList(reviewSummary?.runtime_files)
     : metadataSummary.runtimeFiles
+  const parameterFiles = getSummaryList(reviewSummary?.parameter_files).length > 0
+    ? getSummaryList(reviewSummary?.parameter_files)
+    : metadataSummary.parameterFiles
   const unsupportedFunctions = result?.unsupported_elements.length
     ? result.unsupported_elements
     : metadataSummary.unsupportedFunctions
@@ -94,7 +103,7 @@ export default function LoadRunnerImport({ onImported, onEdit, onClose }: Props)
         include_assertions: options.include_assertions,
         preserve_transactions: options.preserve_transactions,
       })
-      setResult(normalizeScriptImportResult<LoadRunnerConvertStats>(res))
+      setResult(normalizeScriptImportResult<LoadRunnerConvertStats, unknown, ImportedScript, unknown, LoadRunnerImportSummary>(res))
       setReviewMode(mode === 'validate' ? 'validation' : 'conversion')
       setNotice(mode === 'validate'
         ? 'Validation complete. Review the generated script, warnings, and preserved settings before saving.'
@@ -105,10 +114,10 @@ export default function LoadRunnerImport({ onImported, onEdit, onClose }: Props)
   }
 
   const handleSaveConverted = async () => {
-    if (!result?.script) return
+    if (!importedScript) return
     try {
-      await api.createScript(result.script)
-      onImported?.(result.script)
+      await api.createScript(importedScript)
+      onImported?.(importedScript)
     } catch (error: unknown) {
       setError(getErrorMessage(error, 'Failed to save script'))
     }
@@ -170,6 +179,10 @@ export default function LoadRunnerImport({ onImported, onEdit, onClose }: Props)
         </div>
       </div>
 
+      <div className="settings-notice">
+        SOAP-aware detection is enabled for LoadRunner request assets that already resolve to SOAP-style calls or envelopes. Java-over-HTTP import remains unavailable until the dedicated runtime and transport format are implemented.
+      </div>
+
       <div className="replay-panel-actions">
         <button className="btn btn-secondary btn-lg" onClick={() => runReview('validate')} disabled={!file || workingMode !== null}>
           {workingMode === 'validate' ? <><span className="spinner" /> Validating...</> : 'Validate Only'}
@@ -183,19 +196,19 @@ export default function LoadRunnerImport({ onImported, onEdit, onClose }: Props)
       {notice && <div className="settings-notice">{notice}</div>}
 
       {/* Results */}
-      {result && (
+      {result && importedScript && (
         <div className="lr-result">
           <ScriptImportReview
             title={reviewMode === 'validation' ? 'Validation Review' : 'Conversion Complete'}
             subtitle={reviewMode === 'validation'
               ? 'This preview came from the dry-run validator. You can still save the reviewed script if the output looks correct.'
               : 'Review the generated script, preserved metadata, and warnings before saving.'}
-            script={result.script}
+            script={importedScript}
             warnings={result.warnings}
             warningsTitle={`Conversion Warnings (${result.warnings.length})`}
             saveLabel={reviewMode === 'validation' ? 'Save Reviewed Script' : 'Save to Script Library'}
             onSave={handleSaveConverted}
-            onEdit={onEdit ? () => onEdit(result.script as ScriptDefinition) : undefined}
+            onEdit={onEdit ? () => onEdit(toScriptDefinition(importedScript)) : undefined}
           >
 
             {/* Stats */}
@@ -225,13 +238,18 @@ export default function LoadRunnerImport({ onImported, onEdit, onClose }: Props)
                 <div className="lr-preserved-grid">
                   <div className="lr-preserved-card">
                     <span className="lr-preserved-label">Project File</span>
-                    <strong>{reviewSummary?.project_file || importMetadata.source_script_name || result.script.name}</strong>
+                    <strong>{reviewSummary?.project_file || importMetadata.source_script_name || importedScript.name}</strong>
                     <small>{importMetadata.source || 'loadrunner'}</small>
                   </div>
                   <div className="lr-preserved-card">
                     <span className="lr-preserved-label">Mapped Runtime</span>
                     <strong>{reviewSummary?.mapped_runtime_file || 'None mapped'}</strong>
                     <small>{runtimeFiles.join(', ') || 'No runtime files found'}</small>
+                  </div>
+                  <div className="lr-preserved-card">
+                    <span className="lr-preserved-label">Parameter Files</span>
+                    <strong>{parameterFiles.length}</strong>
+                    <small>{parameterFiles.join(', ') || 'No parameter files found'}</small>
                   </div>
                   <div className="lr-preserved-card">
                     <span className="lr-preserved-label">Project Sections</span>
@@ -246,7 +264,7 @@ export default function LoadRunnerImport({ onImported, onEdit, onClose }: Props)
                   <div className="lr-preserved-card">
                     <span className="lr-preserved-label">Source</span>
                     <strong>{importMetadata.source || 'loadrunner'}</strong>
-                    <small>{result.script.name}</small>
+                    <small>{importedScript.name}</small>
                   </div>
                 </div>
 

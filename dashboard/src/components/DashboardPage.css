@@ -38,6 +38,10 @@
   border-left: 3px solid var(--chart-3);
 }
 
+.dash-health-card.status-checking {
+  border-left: 3px solid var(--chart-3);
+}
+
 .dash-health-card.status-offline {
   border-left: 3px solid var(--danger);
 }
@@ -63,6 +67,11 @@
 .health-dot.degraded {
   background: var(--chart-3);
   box-shadow: 0 0 8px rgba(245, 158, 11, 0.5);
+}
+
+.health-dot.checking {
+  background: var(--chart-3);
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.35);
 }
 
 .health-dot.offline {

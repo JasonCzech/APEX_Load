@@ -1,21 +1,13 @@
-import { type ScriptDefinition } from './scripts'
+import { type ScriptActionDefinition, type ScriptDefinition, type ScriptExtractorDefinition } from './scripts'
 
-export interface ImportedExtractor {
-  name?: string
-  type?: string
-  expression?: string
-  [key: string]: unknown
-}
+export type ImportedExtractor = Partial<ScriptExtractorDefinition>
 
-export interface ImportedAction {
-  name?: string
+export type ImportedAction = Omit<Partial<ScriptActionDefinition>, 'extractors'> & {
   extractors?: ImportedExtractor[]
-  [key: string]: unknown
 }
 
-export interface ImportedScript extends Partial<ScriptDefinition> {
+export type ImportedScript = Omit<Partial<ScriptDefinition>, 'actions'> & {
   actions?: ImportedAction[]
-  [key: string]: unknown
 }
 
 export interface SupportMatrix {
@@ -58,6 +50,7 @@ export interface LoadRunnerImportSummary {
   mapped_runtime_file?: string
   project_sections?: string[]
   runtime_files?: string[]
+  parameter_files?: string[]
   unsupported_function_count: number
 }
 

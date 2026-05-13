@@ -158,15 +158,15 @@ func TestHandleImportSample(t *testing.T) {
 
 	var result struct {
 		Scripts []json.RawMessage `json:"scripts"`
-		Script struct {
+		Script  struct {
 			Name    string `json:"name"`
 			Actions []struct {
 				Target string `json:"target"`
 			} `json:"actions"`
 		} `json:"script"`
-		Warnings     []string `json:"warnings"`
-		Assumptions  []string `json:"assumptions"`
-		Unsupported  []string `json:"unsupported_elements"`
+		Warnings     []string       `json:"warnings"`
+		Assumptions  []string       `json:"assumptions"`
+		Unsupported  []string       `json:"unsupported_elements"`
 		Summary      map[string]any `json:"summary"`
 		Correlations []struct {
 			Name string `json:"name"`
@@ -242,6 +242,9 @@ func TestHandleImportLoadRunnerReturnsStandardizedEnvelope(t *testing.T) {
 Type=Web
 RuntimeSettings=default.cfg
 
+[Parameters]
+Parameter1=LoginUsers.prm
+
 [Actions]
 Action1=Action.c
 `)
@@ -249,6 +252,14 @@ Action1=Action.c
 	addFile("default.cfg", `[HTTP]
 ConnectTimeout=45
 `)
+	addFile("LoginUsers.prm", `[LoginUser]
+Type=File
+Table=Users.dat
+ColumnName=username
+SelectNextRow=Sequential
+UpdateValueOn=Each Iteration
+`)
+	addFile("Users.dat", "username\nalice\nbob\n")
 	if err := writer.Close(); err != nil {
 		t.Fatalf("zip.Close returned error: %v", err)
 	}
@@ -265,7 +276,7 @@ ConnectTimeout=45
 
 	var result struct {
 		Scripts []json.RawMessage `json:"scripts"`
-		Script struct {
+		Script  struct {
 			Protocol string `json:"protocol"`
 			Name     string `json:"name"`
 		} `json:"script"`
@@ -300,6 +311,10 @@ ConnectTimeout=45
 	}
 	if got := result.Summary["mapped_runtime_file"]; got != "default.cfg" {
 		t.Fatalf("summary.mapped_runtime_file = %#v, want default.cfg", got)
+	}
+	parameterFiles, ok := result.Summary["parameter_files"].([]any)
+	if !ok || len(parameterFiles) == 0 {
+		t.Fatalf("summary.parameter_files = %#v, want non-empty slice", result.Summary["parameter_files"])
 	}
 	projectSections, ok := result.Summary["project_sections"].([]any)
 	if !ok || len(projectSections) == 0 {
@@ -440,10 +455,10 @@ func TestHandleImportJMeter(t *testing.T) {
 				Target string `json:"target"`
 			} `json:"actions"`
 		} `json:"scripts"`
-		ScenarioDraft any `json:"scenario_draft"`
-		Correlations []any `json:"correlations"`
-		Assumptions []string `json:"assumptions"`
-		Unsupported []string `json:"unsupported_elements"`
+		ScenarioDraft any      `json:"scenario_draft"`
+		Correlations  []any    `json:"correlations"`
+		Assumptions   []string `json:"assumptions"`
+		Unsupported   []string `json:"unsupported_elements"`
 		Stats         struct {
 			ConvertedActions int `json:"converted_actions"`
 		} `json:"stats"`

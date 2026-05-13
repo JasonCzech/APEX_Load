@@ -239,6 +239,10 @@
   color: var(--success);
 }
 
+.sidebar-status.connecting {
+  color: var(--chart-3);
+}
+
 .sidebar-status.disconnected {
   color: var(--danger);
 }

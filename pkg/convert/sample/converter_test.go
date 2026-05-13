@@ -107,6 +107,38 @@ func TestConvertCurl(t *testing.T) {
 	}
 }
 
+func TestConvertCurlSOAP(t *testing.T) {
+	result, err := Convert(ImportRequest{
+		Format: "curl",
+		Content: `curl -X POST https://example.com/services/quotes -H 'Content-Type: text/xml; charset=utf-8' -H 'SOAPAction: urn:GetQuote' -d '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"><soapenv:Body><GetQuote xmlns="urn:quotes"><Symbol>STORM</Symbol></GetQuote></soapenv:Body></soapenv:Envelope>'`,
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if result.Script.Protocol != "soap" {
+		t.Fatalf("protocol = %q, want soap", result.Script.Protocol)
+	}
+	if result.Script.Config.SOAP.Version != "1.1" {
+		t.Fatalf("soap version = %q, want 1.1", result.Script.Config.SOAP.Version)
+	}
+	if len(result.Script.Actions) != 1 {
+		t.Fatalf("action count = %d, want 1", len(result.Script.Actions))
+	}
+	action := result.Script.Actions[0]
+	if action.SOAP == nil {
+		t.Fatal("expected SOAP action metadata")
+	}
+	if action.SOAP.Action != "urn:GetQuote" {
+		t.Fatalf("soap action = %q, want urn:GetQuote", action.SOAP.Action)
+	}
+	if action.SOAP.BodyMode != "raw_xml" {
+		t.Fatalf("body mode = %q, want raw_xml", action.SOAP.BodyMode)
+	}
+	if action.Target != "/services/quotes" {
+		t.Fatalf("target = %q, want /services/quotes", action.Target)
+	}
+}
+
 func TestConvertBatchRawHTTP(t *testing.T) {
 	result, err := Convert(ImportRequest{
 		Format: "raw_http",

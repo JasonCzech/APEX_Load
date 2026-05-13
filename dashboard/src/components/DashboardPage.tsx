@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, type DragEvent } from 'react'
+import { type WebSocketConnectionState } from '../hooks/useWebSocket'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useApi } from '../hooks/useApi'
 import { useApplication } from '../hooks/useApplication'
@@ -9,7 +10,7 @@ import './DashboardPage.css'
 interface Props {
   testStatuses: Record<string, string>
   metricsHistory: Record<string, MetricsHistoryPoint[]>
-  connected: boolean
+  connectionState: WebSocketConnectionState
   onSelectTest: (id: string) => void
 }
 
@@ -98,7 +99,7 @@ function loadJson<T>(key: string, fallback: T): T {
   }
 }
 
-export default function DashboardPage({ testStatuses, metricsHistory, connected, onSelectTest }: Props) {
+export default function DashboardPage({ testStatuses, metricsHistory, connectionState, onSelectTest }: Props) {
   const api = useApi()
   const { activeApplication, activeRelease } = useApplication()
   const [tests, setTests] = useState<TestSummary[]>([])
@@ -309,8 +310,18 @@ export default function DashboardPage({ testStatuses, metricsHistory, connected,
     return items.slice(0, 6)
   }, [activeTests, releaseCompleted, health])
 
-  const statusColor = connected && health?.status === 'healthy' ? 'healthy' : connected ? 'degraded' : 'offline'
-  const statusLabel = statusColor === 'healthy' ? 'Healthy' : statusColor === 'degraded' ? 'Degraded' : 'Offline'
+  const statusColor = connectionState === 'connected'
+    ? health?.status === 'healthy' ? 'healthy' : 'degraded'
+    : connectionState === 'connecting'
+      ? 'checking'
+      : 'offline'
+  const statusLabel = statusColor === 'healthy'
+    ? 'Healthy'
+    : statusColor === 'degraded'
+      ? 'Degraded'
+      : statusColor === 'checking'
+        ? 'Connecting'
+        : 'Offline'
 
   const updateCardSettings = (testId: string, patch: Partial<GraphCardSettings>) => {
     setActiveCardSettings(prev => ({

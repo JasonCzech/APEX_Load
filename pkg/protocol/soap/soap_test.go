@@ -38,10 +38,10 @@ func TestSOAPExecuteAddsSOAP11Defaults(t *testing.T) {
 
 	s := &SOAP{}
 	if err := s.Init(context.Background(), map[string]any{
-		"base_url":                    ts.URL,
-		"soap_version":                "1.1",
-		"soap_fault_fail_on_fault":    true,
-		"request_timeout_ms":          float64(1000),
+		"base_url":                 ts.URL,
+		"soap_version":             "1.1",
+		"soap_fault_fail_on_fault": true,
+		"request_timeout_ms":       float64(1000),
 	}); err != nil {
 		t.Fatalf("Init returned error: %v", err)
 	}
@@ -125,9 +125,9 @@ func TestSOAPExecuteWrapsGeneratedBodyInEnvelope(t *testing.T) {
 
 	s := &SOAP{}
 	if err := s.Init(context.Background(), map[string]any{
-		"base_url":         ts.URL,
-		"soap_version":     "1.1",
-		"soap_namespaces":  map[string]string{"auth": "urn:auth"},
+		"base_url":        ts.URL,
+		"soap_version":    "1.1",
+		"soap_namespaces": map[string]string{"auth": "urn:auth"},
 	}); err != nil {
 		t.Fatalf("Init returned error: %v", err)
 	}
@@ -174,17 +174,17 @@ func TestSOAPExecuteAddsWSSecurityHeader(t *testing.T) {
 
 	fixedNow := time.Date(2026, time.May, 12, 15, 4, 5, 0, time.UTC)
 	s := &SOAP{
-		now: func() time.Time { return fixedNow },
+		now:            func() time.Time { return fixedNow },
 		nonceGenerator: func() ([]byte, error) { return []byte("abc123"), nil },
 	}
 	if err := s.Init(context.Background(), map[string]any{
-		"base_url":                              ts.URL,
-		"soap_version":                          "1.1",
-		"soap_ws_security_username":             "svc-user",
-		"soap_ws_security_password":             "svc-pass",
-		"soap_ws_security_password_type":        "text",
-		"soap_ws_security_nonce":                true,
-		"soap_ws_security_created":              true,
+		"base_url":                               ts.URL,
+		"soap_version":                           "1.1",
+		"soap_ws_security_username":              "svc-user",
+		"soap_ws_security_password":              "svc-pass",
+		"soap_ws_security_password_type":         "text",
+		"soap_ws_security_nonce":                 true,
+		"soap_ws_security_created":               true,
 		"soap_ws_security_timestamp_ttl_seconds": float64(60),
 	}); err != nil {
 		t.Fatalf("Init returned error: %v", err)

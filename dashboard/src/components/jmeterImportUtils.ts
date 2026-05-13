@@ -23,10 +23,12 @@ function isObjectRecord(value: unknown): value is Record<string, unknown> {
 
 export function normalizeImportResult(response: unknown): ImportResult {
   const payload = isObjectRecord(response) ? response : {}
+  const statsPayload = isObjectRecord(payload.stats) ? payload.stats : {}
+  const summaryPayload = isObjectRecord(payload.summary) ? payload.summary : {}
 
   return {
     ...normalizeScriptImportResult<ConvertStats, unknown, ImportedScript, ImportResult['scenario_draft'], JMeterImportSummary>(response),
-    stats: payload.stats || {
+    stats: {
       thread_groups: 0,
       samplers: 0,
       converted_actions: 0,
@@ -36,10 +38,12 @@ export function normalizeImportResult(response: unknown): ImportResult {
       assertions: 0,
       timers: 0,
       unsupported: 0,
+      ...statsPayload,
     },
-    summary: payload.summary || {
+    summary: {
       thread_group_count: 0,
       sampler_count: 0,
+      ...summaryPayload,
     },
   }
 }

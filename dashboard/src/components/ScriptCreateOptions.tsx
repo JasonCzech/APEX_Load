@@ -1,6 +1,8 @@
 interface Props {
   onBack: () => void
   onStartApiScript: () => void
+  onStartSoapScript: () => void
+  onStartJavaHttpScript: () => void
   onOpenSampleImport: () => void
   onStartWebScript: () => void
   onOpenRecorder: () => void
@@ -12,6 +14,8 @@ interface Props {
 export default function ScriptCreateOptions({
   onBack,
   onStartApiScript,
+  onStartSoapScript,
+  onStartJavaHttpScript,
   onOpenSampleImport,
   onStartWebScript,
   onOpenRecorder,
@@ -40,6 +44,16 @@ export default function ScriptCreateOptions({
               <span className="script-create-type-badge">API</span>
               <h3>API Visual Editor</h3>
               <p>Build a protocol-level script from requests and reusable action definitions.</p>
+            </button>
+            <button className="script-create-option" onClick={onStartSoapScript}>
+              <span className="script-create-type-badge">SOAP</span>
+              <h3>Web Services (SOAP)</h3>
+              <p>Create a SOAP draft with WS-Security, namespaces, fault handling, and SOAPAction support.</p>
+            </button>
+            <button className="script-create-option" onClick={onStartJavaHttpScript}>
+              <span className="script-create-type-badge">JAVA</span>
+              <h3>Java over HTTP</h3>
+              <p>Start from the HTTP authoring path for Java-backed services while the dedicated runtime remains staged.</p>
             </button>
             <button className="script-create-option" onClick={onOpenSampleImport}>
               <span className="script-create-type-badge">API</span>
@@ -95,6 +109,16 @@ export default function ScriptCreateOptions({
               <span className="script-create-type-badge import">LR</span>
               <h3>Import LoadRunner</h3>
               <p>Convert a LoadRunner ZIP into a Stormrunner script and keep unsupported functions visible for cleanup.</p>
+            </button>
+            <button className="script-create-option" type="button" disabled title="Use Import LoadRunner today for SOAP-style LoadRunner request assets.">
+              <span className="script-create-type-badge import">SOAP</span>
+              <h3>Import SOAP Assets</h3>
+              <p>Dedicated SOAP import remains staged. For now, use Import LoadRunner for SOAP-style request assets and review the converted draft.</p>
+            </button>
+            <button className="script-create-option" type="button" disabled title="Java-over-HTTP import needs a runtime and wire-format decision first.">
+              <span className="script-create-type-badge import">JAVA</span>
+              <h3>Import Java over HTTP</h3>
+              <p>Reserved for a future converter once the Java transport/runtime format is locked.</p>
             </button>
             <button className="script-create-option" onClick={onOpenJMeterImport}>
               <span className="script-create-type-badge import">JMX</span>

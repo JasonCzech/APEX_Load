@@ -28,12 +28,12 @@ vi.mock('../hooks/useApi', async () => {
 })
 
 function ActionBridgeHarness({ initialTest }: { initialTest: TestSummary }) {
-  const [test, setTest] = useState(initialTest)
+  const [test, setTest] = useState<TestSummary | null>(initialTest)
   const model = useExecutionActionBridge('test-1', test, setTest)
 
   return (
     <div>
-      <span data-testid="status">{test.status}</span>
+      <span data-testid="status">{test?.status || 'UNKNOWN'}</span>
       <span data-testid="control-feedback">{model.controlFeedback || 'none'}</span>
       <span data-testid="start-feedback">{model.startFeedback || 'none'}</span>
       <span data-testid="conflict">{model.startCapacityConflict ? String(model.startCapacityConflict.available_generators) : 'none'}</span>

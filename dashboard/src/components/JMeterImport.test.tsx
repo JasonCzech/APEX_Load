@@ -88,6 +88,9 @@ describe('JMeterImport', () => {
     await flushPromises()
 
     expect(container.textContent).toContain('Coverage Details')
+    expect(container.textContent).toContain('JMeter import is still centered on HTTP plans')
+    expect(container.textContent).toContain('SOAP-shaped HTTP Request samplers can now be promoted into SOAP scripts')
+    expect(container.textContent).toContain('Dedicated SOAP plugins and Java-over-HTTP style transports remain unsupported')
 
     const coverageDetails = container.querySelector('details') as HTMLDetailsElement | null
     expect(coverageDetails).not.toBeNull()

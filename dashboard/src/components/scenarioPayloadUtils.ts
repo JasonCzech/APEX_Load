@@ -138,15 +138,9 @@ export function buildScenarioUpsertPayload({
     name: name.trim(),
     duration,
     scenario_mode: scenarioMode,
+    script_shakeout: scriptShakeout,
+    resource_baseline: resourceBaseline,
     groups: buildScenarioGroupPayloads(groups),
-  }
-
-  if (scriptShakeout) {
-    payload.script_shakeout = true
-  }
-
-  if (resourceBaseline) {
-    payload.resource_baseline = true
   }
 
   const goalConfigPayload = buildGoalConfigPayload(scenarioMode, goalConfig)

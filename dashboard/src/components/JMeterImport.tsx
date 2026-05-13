@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useApi } from '../hooks/useApi'
-import { ImportResult, SupportMatrix, normalizeImportResult, summarizeImportExtractors, summarizeSupportMatrix } from './jmeterImportUtils'
-import { type ImportedAction, type ImportedScript, type JMeterSupportMatrixResponse } from '../types/scriptImports'
+import { normalizeImportResult, summarizeImportExtractors, summarizeSupportMatrix } from './jmeterImportUtils'
+import { type ImportedAction, type ImportedScript, type JMeterImportResult as ImportResult, type JMeterSupportMatrixResponse, type SupportMatrix } from '../types/scriptImports'
 import { type ScriptDefinition } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import ScriptImportReview from './ScriptImportReview'
@@ -14,6 +14,10 @@ interface Props {
 }
 
 type ReviewMode = 'validation' | 'conversion'
+
+function toScriptDefinition(script: ImportedScript): ScriptDefinition {
+  return script as unknown as ScriptDefinition
+}
 
 function getPrimaryScript(result: ImportResult | null): ImportedScript | null {
   return result?.script || result?.scripts?.[0] || null
@@ -204,11 +208,15 @@ export default function JMeterImport({ onImported, onEdit, onClose }: Props) {
         </div>
       </div>
 
+      <div className="settings-notice">
+        JMeter import is still centered on HTTP plans, but SOAP-shaped HTTP Request samplers can now be promoted into SOAP scripts. Dedicated SOAP plugins and Java-over-HTTP style transports remain unsupported until deeper converter and runtime work lands.
+      </div>
+
       {supportMatrix && (
         <div className="lr-preserved">
           <div className="lr-preserved-header">
             <h4>Phase 1 Coverage</h4>
-            <span>HTTP-focused migration</span>
+            <span>HTTP-first migration with partial SOAP promotion</span>
           </div>
           <div className="lr-preserved-grid">
             {supportMatrixSections.map(section => (
@@ -231,7 +239,7 @@ export default function JMeterImport({ onImported, onEdit, onClose }: Props) {
           {supportMatrix.notes && supportMatrix.notes.length > 0 && (
             <div className="lr-warnings">
               <h4>Importer Notes</h4>
-              <ul>{supportMatrix.notes.map((note, index) => <li key={index}>{note}</li>)}</ul>
+              <ul>{supportMatrix.notes.map((note: string, index: number) => <li key={index}>{note}</li>)}</ul>
             </div>
           )}
         </div>
@@ -263,7 +271,7 @@ export default function JMeterImport({ onImported, onEdit, onClose }: Props) {
             saving={saving}
             saveLabel={`${reviewMode === 'validation' ? 'Save Reviewed' : 'Save'} ${result.scripts?.length || 0} Script${(result.scripts?.length || 0) === 1 ? '' : 's'}`}
             onSave={handleSaveConverted}
-            onEdit={onEdit && primaryScript ? () => onEdit(primaryScript as ScriptDefinition) : undefined}
+            onEdit={onEdit && primaryScript ? () => onEdit(toScriptDefinition(primaryScript)) : undefined}
             editLabel={result.scripts.length > 1 ? 'Open First Script In Visual Editor' : 'Open In Visual Editor'}
             previewTitle="Import Preview"
           >
@@ -279,14 +287,14 @@ export default function JMeterImport({ onImported, onEdit, onClose }: Props) {
             {result.unsupported_elements.length > 0 && (
               <div className="lr-warnings">
                 <h4>Unsupported Elements ({result.unsupported_elements.length})</h4>
-                <ul>{result.unsupported_elements.map((item, index) => <li key={index}>{item}</li>)}</ul>
+                <ul>{result.unsupported_elements.map((item: string, index: number) => <li key={index}>{item}</li>)}</ul>
               </div>
             )}
 
             {result.assumptions.length > 0 && (
               <div className="lr-warnings">
                 <h4>Assumptions</h4>
-                <ul>{result.assumptions.map((item, index) => <li key={index}>{item}</li>)}</ul>
+                <ul>{result.assumptions.map((item: string, index: number) => <li key={index}>{item}</li>)}</ul>
               </div>
             )}
 
@@ -309,7 +317,7 @@ export default function JMeterImport({ onImported, onEdit, onClose }: Props) {
                 <span>{result.summary?.file_name || file?.name}</span>
               </div>
               <div className="lr-preserved-grid">
-                {(result.scripts || []).map(script => (
+                {(result.scripts || []).map((script: ImportedScript) => (
                   <div className="lr-preserved-card" key={script.name}>
                     <span className="lr-preserved-label">Script</span>
                     <strong>{script.name}</strong>

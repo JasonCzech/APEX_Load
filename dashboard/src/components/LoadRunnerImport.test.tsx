@@ -104,6 +104,9 @@ describe('LoadRunnerImport', () => {
       root.render(<LoadRunnerImport onImported={onImported} />)
     })
 
+    expect(container.textContent).toContain('SOAP-aware detection is enabled for LoadRunner request assets')
+    expect(container.textContent).toContain('Java-over-HTTP import remains unavailable')
+
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
     expect(fileInput).not.toBeNull()
     if (!fileInput) {

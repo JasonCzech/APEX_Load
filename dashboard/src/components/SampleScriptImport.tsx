@@ -268,7 +268,7 @@ export default function SampleScriptImport({ onImported, onEdit, onClose }: Prop
     }
 
     const parsedHeaders = parseDefaultHeaders(options.default_headers)
-    if (parsedHeaders) {
+    if (parsedHeaders && parsedHeaders !== true) {
       script.config.http.default_headers = parsedHeaders
     }
 
@@ -334,14 +334,15 @@ export default function SampleScriptImport({ onImported, onEdit, onClose }: Prop
   }
 
   const handleSave = async () => {
-    if (!result?.script) return
+    const reviewedScript = result?.script ?? result?.scripts?.[0]
+    if (!reviewedScript) return
     setMessageError('')
     try {
       await saveTask.run(async () => {
-        await api.createScript(result.script)
+        await api.createScript(reviewedScript)
         return true
       })
-      onImported?.(result.script)
+      onImported?.(reviewedScript)
     } catch (error: unknown) {
       setMessageError(getErrorMessage(error, 'Failed to save generated script'))
     }
@@ -548,16 +549,16 @@ export default function SampleScriptImport({ onImported, onEdit, onClose }: Prop
 
       {error && <div className="sample-import-error">{error}</div>}
 
-      {result && (
+      {result && (result.script || result.scripts?.[0]) && (
         <div className="sample-import-result">
           <ScriptImportReview
             title="3. Review Generated Script"
             subtitle={`${result.stats.converted_actions} action(s) derived from ${result.stats.total_requests} request sample(s).`}
-            script={result.script}
+            script={(result.script || result.scripts?.[0])!}
             warnings={result.warnings}
             saving={saving}
             onSave={handleSave}
-            onEdit={onEdit ? () => onEdit(result.script) : undefined}
+            onEdit={onEdit ? () => onEdit((result.script || result.scripts?.[0]) as ScriptDefinition) : undefined}
           >
 
             <div className="sample-import-stats-grid">

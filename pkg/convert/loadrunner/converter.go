@@ -14,29 +14,29 @@ import (
 
 // ConvertResult holds the output of a LoadRunner to Stormrunner DSL conversion.
 type ConvertResult struct {
-	Script   *dsl.Script `json:"script"`
-	Warnings []string    `json:"warnings,omitempty"`
+	Script   *dsl.Script  `json:"script"`
+	Warnings []string     `json:"warnings,omitempty"`
 	Stats    ConvertStats `json:"stats"`
 }
 
 // ConvertStats provides conversion statistics for reporting.
 type ConvertStats struct {
-	TotalFunctions   int `json:"total_functions"`
-	ConvertedActions int `json:"converted_actions"`
-	Extractors       int `json:"extractors"`
-	ThinkTimes       int `json:"think_times"`
-	Transactions     int `json:"transactions"`
-	Skipped          int `json:"skipped"`
+	TotalFunctions   int      `json:"total_functions"`
+	ConvertedActions int      `json:"converted_actions"`
+	Extractors       int      `json:"extractors"`
+	ThinkTimes       int      `json:"think_times"`
+	Transactions     int      `json:"transactions"`
+	Skipped          int      `json:"skipped"`
 	UnsupportedFuncs []string `json:"unsupported_funcs,omitempty"`
 }
 
 // ConvertOptions controls the conversion behavior.
 type ConvertOptions struct {
-	ScriptName        string  // Override the generated script name
-	BaseURL           string  // Override base URL (otherwise auto-detected from first URL)
-	DefaultThinkTimeMs float64 // Default think time if none in script (0 = no default)
-	IncludeAssertions  bool    // Add default status_code assertions
-	PreserveTransactions bool  // Wrap actions in transaction markers (as comments in name)
+	ScriptName           string  // Override the generated script name
+	BaseURL              string  // Override base URL (otherwise auto-detected from first URL)
+	DefaultThinkTimeMs   float64 // Default think time if none in script (0 = no default)
+	IncludeAssertions    bool    // Add default status_code assertions
+	PreserveTransactions bool    // Wrap actions in transaction markers (as comments in name)
 
 	// HTTP runtime settings (mapped from VuGen runtime config)
 	HTTPConfig *dsl.HTTPConfig // Pre-built HTTP config to embed in script
@@ -51,7 +51,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			Protocol:      "http",
 			GeneratedBy:   "stormrunner-loadrunner-converter",
 			GeneratedFrom: "loadrunner",
-			Config: dsl.ScriptConfig{},
+			Config:        dsl.ScriptConfig{},
 			Actions:       make([]dsl.Action, 0),
 		},
 	}
@@ -65,6 +65,15 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 
 	if len(allFunctions) == 0 {
 		return nil, fmt.Errorf("no LoadRunner functions found in action files")
+	}
+
+	protocolName, soapConfig, protocolWarning := detectImportProtocol(allFunctions)
+	result.Script.Protocol = protocolName
+	if soapConfig != nil {
+		result.Script.Config.SOAP = *soapConfig
+	}
+	if protocolWarning != "" {
+		result.Warnings = append(result.Warnings, protocolWarning)
 	}
 
 	// Auto-detect base URL from first web_ call
@@ -130,7 +139,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 				result.Stats.ThinkTimes++
 			}
 
-		case "web_url", "web_submit_data", "web_submit_form", "web_custom_request":
+		case "web_url", "web_submit_data", "web_submit_form", "web_custom_request", "web_service_call":
 			action, warnings := convertAction(fn, baseURL, currentTransaction, opts)
 			if action != nil {
 				if len(pendingAssertions) > 0 {
@@ -156,6 +165,8 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 					}
 					pendingHeaders = nil
 				}
+
+				applySOAPImportHints(action, fn)
 
 				// Default assertions
 				if opts.IncludeAssertions {
@@ -207,7 +218,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 	}
 
 	if len(result.Script.Actions) == 0 {
-		return nil, fmt.Errorf("no HTTP actions could be converted from the LoadRunner script")
+		return nil, fmt.Errorf("no request actions could be converted from the LoadRunner script")
 	}
 
 	// Apply HTTP runtime config if provided
@@ -216,6 +227,146 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 	}
 
 	return result, nil
+}
+
+func detectImportProtocol(functions []ParsedFunction) (string, *dsl.SOAPConfig, string) {
+	requestCount := 0
+	soapCount := 0
+	soapVersion := ""
+
+	for _, fn := range functions {
+		if !isRequestFunction(fn.Name) {
+			continue
+		}
+		requestCount++
+		if !isSOAPFunction(fn) {
+			continue
+		}
+		soapCount++
+		if version := detectSOAPVersion(fn); version == "1.2" {
+			soapVersion = "1.2"
+		} else if soapVersion == "" {
+			soapVersion = "1.1"
+		}
+	}
+
+	if requestCount == 0 || soapCount == 0 {
+		return "http", nil, ""
+	}
+	if soapCount != requestCount {
+		return "http", nil, fmt.Sprintf("detected %d SOAP-style requests and %d non-SOAP requests; keeping HTTP protocol because the imported script is mixed", soapCount, requestCount-soapCount)
+	}
+	if soapVersion == "" {
+		soapVersion = "1.1"
+	}
+	return "soap", &dsl.SOAPConfig{
+		Version: soapVersion,
+		FaultHandling: dsl.SOAPFaultHandlingConfig{
+			FailOnFault: true,
+		},
+	}, ""
+}
+
+func isRequestFunction(name string) bool {
+	switch name {
+	case "web_url", "web_submit_data", "web_submit_form", "web_custom_request", "web_service_call":
+		return true
+	default:
+		return false
+	}
+}
+
+func isSOAPFunction(fn ParsedFunction) bool {
+	if fn.Name == "web_service_call" {
+		return true
+	}
+	if strings.TrimSpace(firstNonEmptyArg(fn, "SOAPAction")) != "" {
+		return true
+	}
+	for key := range fn.Headers {
+		if strings.EqualFold(key, "SOAPAction") {
+			return true
+		}
+	}
+	contentType := strings.ToLower(strings.TrimSpace(firstHeaderValue(fn.Headers, "Content-Type")))
+	if strings.Contains(contentType, "application/soap+xml") {
+		return true
+	}
+	body := strings.ToLower(strings.TrimSpace(fn.Body))
+	if strings.Contains(body, ":envelope") || strings.Contains(body, "<envelope") {
+		return true
+	}
+	if strings.Contains(contentType, "text/xml") && body != "" {
+		return strings.Contains(body, "soap") || strings.Contains(body, "<envelope")
+	}
+	return false
+}
+
+func detectSOAPVersion(fn ParsedFunction) string {
+	contentType := strings.ToLower(strings.TrimSpace(firstHeaderValue(fn.Headers, "Content-Type")))
+	if strings.Contains(contentType, "application/soap+xml") {
+		return "1.2"
+	}
+	body := strings.ToLower(strings.TrimSpace(fn.Body))
+	if strings.Contains(body, "http://www.w3.org/2003/05/soap-envelope") {
+		return "1.2"
+	}
+	if isSOAPFunction(fn) {
+		return "1.1"
+	}
+	return ""
+}
+
+func firstHeaderValue(headers map[string]string, key string) string {
+	for headerKey, value := range headers {
+		if strings.EqualFold(headerKey, key) {
+			return value
+		}
+	}
+	return ""
+}
+
+func applySOAPImportHints(action *dsl.Action, fn ParsedFunction) {
+	if action == nil || !isSOAPFunction(fn) {
+		return
+	}
+	if action.Method == "" || strings.EqualFold(action.Method, "GET") {
+		action.Method = "POST"
+		action.Type = "POST"
+	}
+	soapAction := strings.TrimSpace(firstNonEmptyArg(fn, "SOAPAction"))
+	if soapAction == "" {
+		soapAction = strings.TrimSpace(firstHeaderValue(action.Headers, "SOAPAction"))
+	}
+	operation := strings.TrimSpace(firstNonEmptyArg(fn, "SOAPMethod"))
+	if operation == "" {
+		operation = strings.TrimSpace(firstNonEmptyArg(fn, "Operation"))
+	}
+	if operation == "" && soapAction != "" {
+		operation = strings.Trim(soapAction, `"`)
+	}
+	if operation == "" {
+		operation = action.Name
+	}
+	bodyMode := "generated"
+	if strings.TrimSpace(action.Body) != "" {
+		bodyMode = "raw_xml"
+	}
+	action.SOAP = &dsl.SOAPActionConfig{
+		Action:    strings.Trim(soapAction, `"`),
+		Operation: operation,
+		BodyMode:  bodyMode,
+	}
+	if action.Headers == nil {
+		action.Headers = make(map[string]string)
+	}
+	if contentType := firstHeaderValue(action.Headers, "Content-Type"); contentType == "" {
+		if detectSOAPVersion(fn) == "1.2" {
+			action.Headers["Content-Type"] = "application/soap+xml"
+		} else {
+			action.Headers["Content-Type"] = "text/xml"
+		}
+	}
 }
 
 // convertAction converts a single web_ function to a DSL Action.

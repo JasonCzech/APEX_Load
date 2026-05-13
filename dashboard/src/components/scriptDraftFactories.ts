@@ -1,6 +1,6 @@
 import { type ScriptDefinition } from '../types/scripts'
 
-export function createApiDraft(): ScriptDefinition {
+function createBaseDraft(): ScriptDefinition {
   return {
     name: '',
     version: '1.0.0',
@@ -15,6 +15,51 @@ export function createApiDraft(): ScriptDefinition {
     },
     actions: [],
   }
+}
+
+export function createApiDraft(): ScriptDefinition {
+  return createBaseDraft()
+}
+
+export function createSoapDraft(): ScriptDefinition {
+  return {
+    ...createBaseDraft(),
+    protocol: 'soap',
+    config: {
+      ...createBaseDraft().config,
+      soap: {
+        version: '1.1',
+        namespaces: {
+          soapenv: 'http://schemas.xmlsoap.org/soap/envelope/',
+        },
+        fault_handling: {
+          fail_on_fault: true,
+        },
+      },
+    },
+    actions: [
+      {
+        name: 'SOAP_Request',
+        type: 'POST',
+        method: 'POST',
+        target: '',
+        headers: {},
+        body: '',
+        extractors: [],
+        assertions: [{ type: 'status_code', expected: 200 }],
+        think_time_after: true,
+        soap: {
+          action: '',
+          operation: '',
+          body_mode: 'raw_xml',
+        },
+      },
+    ],
+  }
+}
+
+export function createJavaHttpDraft(): ScriptDefinition {
+  return createBaseDraft()
 }
 
 export function createWebDraft(): ScriptDefinition {

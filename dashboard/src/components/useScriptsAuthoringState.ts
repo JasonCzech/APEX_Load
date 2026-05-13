@@ -80,7 +80,7 @@ export function useScriptsAuthoringState({
       setAuthoringState({
         subView: 'edit',
         editingId: id,
-        editingScript: res.script,
+        editingScript: res.script ?? null,
         draftScript: null,
       })
     } catch {

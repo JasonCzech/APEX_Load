@@ -5,7 +5,7 @@ import { type ScriptDefinition } from '../types/scripts'
 import ScriptCreateOptions from './ScriptCreateOptions'
 import ScriptsAuthoringSurface from './ScriptsAuthoringSurface'
 import ScriptsLibraryTable from './ScriptsLibraryTable'
-import { createApiDraft, createJmsDraft, createWebDraft } from './scriptDraftFactories'
+import { createApiDraft, createJavaHttpDraft, createJmsDraft, createSoapDraft, createWebDraft } from './scriptDraftFactories'
 import { useScriptsLibraryModel } from './useScriptsLibraryModel'
 import { type ScriptsAuthoringSubView, useScriptsAuthoringState } from './useScriptsAuthoringState'
 
@@ -76,6 +76,8 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
   }, [openLibrary, refresh])
 
   const startApiScript = useCallback(() => { startDraft(createApiDraft) }, [startDraft])
+  const startSoapScript = useCallback(() => { startDraft(createSoapDraft) }, [startDraft])
+  const startJavaHttpScript = useCallback(() => { startDraft(createJavaHttpDraft) }, [startDraft])
   const startWebScript = useCallback(() => { startDraft(createWebDraft) }, [startDraft])
   const startJmsScript = useCallback(() => { startDraft(createJmsDraft) }, [startDraft])
 
@@ -106,6 +108,8 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
       <ScriptCreateOptions
         onBack={openLibrary}
         onStartApiScript={startApiScript}
+        onStartSoapScript={startSoapScript}
+        onStartJavaHttpScript={startJavaHttpScript}
         onOpenSampleImport={() => setSubview('sample')}
         onStartWebScript={startWebScript}
         onOpenRecorder={() => setSubview('recorder')}

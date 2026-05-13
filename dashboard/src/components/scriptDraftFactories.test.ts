@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { createApiDraft, createJmsDraft, createWebDraft } from './scriptDraftFactories'
+import { createApiDraft, createJavaHttpDraft, createJmsDraft, createSoapDraft, createWebDraft } from './scriptDraftFactories'
 
 describe('scriptDraftFactories', () => {
   it('creates the default API script draft', () => {
@@ -43,6 +43,40 @@ describe('scriptDraftFactories', () => {
           timeout_ms: 5000,
           mock: true,
         }),
+      }),
+    }))
+  })
+
+  it('creates the default SOAP script draft', () => {
+    expect(createSoapDraft()).toEqual(expect.objectContaining({
+      protocol: 'soap',
+      config: expect.objectContaining({
+        soap: expect.objectContaining({
+          version: '1.1',
+          namespaces: expect.objectContaining({
+            soapenv: 'http://schemas.xmlsoap.org/soap/envelope/',
+          }),
+          fault_handling: expect.objectContaining({
+            fail_on_fault: true,
+          }),
+        }),
+      }),
+      actions: [expect.objectContaining({
+        type: 'POST',
+        method: 'POST',
+        soap: expect.objectContaining({
+          body_mode: 'raw_xml',
+        }),
+      })],
+    }))
+  })
+
+  it('creates the Java-over-HTTP draft on top of the HTTP protocol surface', () => {
+    expect(createJavaHttpDraft()).toEqual(expect.objectContaining({
+      protocol: 'http',
+      actions: [],
+      config: expect.objectContaining({
+        base_url: '',
       }),
     }))
   })

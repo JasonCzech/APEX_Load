@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useMemo, type DragEvent, type ReactNode } from 'react'
+import { type WebSocketConnectionState } from '../hooks/useWebSocket'
 import { useApi } from '../hooks/useApi'
 import { HealthResponse, TestSummary } from '../types'
 
-export default function MonitoringPage({ connected }: { connected: boolean }) {
+export default function MonitoringPage({ connectionState }: { connectionState: WebSocketConnectionState }) {
   const api = useApi()
   const [health, setHealth] = useState<HealthResponse | null>(null)
   const [tests, setTests] = useState<TestSummary[]>([])
@@ -10,6 +11,8 @@ export default function MonitoringPage({ connected }: { connected: boolean }) {
   const [draggedCardId, setDraggedCardId] = useState<string | null>(null)
   const [cardOrder, setCardOrder] = useState<string[]>(() => readStringArray('stormrunner.monitoring.cardOrder'))
   const [hiddenCardIds, setHiddenCardIds] = useState<string[]>(() => readStringArray('stormrunner.monitoring.hiddenCards'))
+  const websocketValueClass = connectionState === 'connected' ? 'text-success' : connectionState === 'disconnected' ? 'text-danger' : ''
+  const websocketLabel = connectionState === 'connected' ? 'Connected' : connectionState === 'connecting' ? 'Connecting' : 'Disconnected'
 
   const refresh = useCallback(async () => {
     if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
@@ -112,8 +115,8 @@ export default function MonitoringPage({ connected }: { connected: boolean }) {
         <div className="monitor-body">
           <div className="monitor-row">
             <span className="monitor-label">Connection</span>
-            <span className={`monitor-value ${connected ? 'text-success' : 'text-danger'}`}>
-              {connected ? 'Connected' : 'Disconnected'}
+            <span className={`monitor-value ${websocketValueClass}`}>
+              {websocketLabel}
             </span>
           </div>
           <div className="monitor-row">
@@ -244,7 +247,7 @@ export default function MonitoringPage({ connected }: { connected: boolean }) {
         </div>
       ),
     },
-  ], [connected, health, timeline])
+  ], [connectionState, health, timeline, websocketLabel, websocketValueClass])
 
   useEffect(() => {
     setCardOrder(prev => mergeOrder(prev, cards.map(card => card.id)))

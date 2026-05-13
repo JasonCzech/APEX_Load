@@ -3,6 +3,7 @@ package dsl
 import (
 	"fmt"
 	"strings"
+	"time"
 )
 
 // ValidateScriptIssues returns all validation issues for a script definition.
@@ -62,6 +63,8 @@ func ValidateScriptIssues(script *Script) []string {
 	if script.Protocol == "soap" {
 		issues = append(issues, validateSOAPScriptIssues(script)...)
 	}
+
+	issues = append(issues, validateParameterIssues(script)...)
 
 	return issues
 }
@@ -135,6 +138,96 @@ func validateJMSScriptIssues(script *Script) []string {
 	}
 
 	return issues
+}
+
+func validateParameterIssues(script *Script) []string {
+	if len(script.Parameters) == 0 {
+		return nil
+	}
+
+	var issues []string
+	seen := make(map[string]struct{}, len(script.Parameters))
+	for i, param := range script.Parameters {
+		label := fmt.Sprintf("parameters[%d]", i)
+		name := strings.TrimSpace(param.Name)
+		if name == "" {
+			issues = append(issues, fmt.Sprintf("%s: name is required", label))
+		} else {
+			if _, ok := seen[name]; ok {
+				issues = append(issues, fmt.Sprintf("%s %q: duplicate name", label, name))
+			}
+			seen[name] = struct{}{}
+		}
+
+		paramType := strings.TrimSpace(param.Type)
+		if paramType == "" {
+			issues = append(issues, fmt.Sprintf("%s %q: type is required", label, name))
+			continue
+		}
+		if !isAllowedValue(paramType, "file", "list", "random_number", "date_time", "timestamp", "counter", "uuid", "random_string") {
+			issues = append(issues, fmt.Sprintf("%s %q: unsupported type %q", label, name, paramType))
+		}
+
+		if param.Update != "" && !isAllowedValue(param.Update, "once", "each_iteration", "each_occurrence") {
+			issues = append(issues, fmt.Sprintf("%s %q: update must be once, each_iteration, or each_occurrence", label, name))
+		}
+		if param.Selection != "" && !isAllowedValue(param.Selection, "sequential", "random", "unique") {
+			issues = append(issues, fmt.Sprintf("%s %q: selection must be sequential, random, or unique", label, name))
+		}
+		if param.OnExhaustion != "" && !isAllowedValue(param.OnExhaustion, "wrap", "empty", "error") {
+			issues = append(issues, fmt.Sprintf("%s %q: on_exhaustion must be wrap, empty, or error", label, name))
+		}
+
+		switch paramType {
+		case "file":
+			if strings.TrimSpace(param.DataSource) == "" {
+				issues = append(issues, fmt.Sprintf("%s %q: data_source is required for file parameters", label, name))
+			}
+			if strings.TrimSpace(param.Column) == "" {
+				issues = append(issues, fmt.Sprintf("%s %q: column is required for file parameters", label, name))
+			}
+		case "list":
+			if len(param.Values) == 0 && strings.TrimSpace(param.DataSource) == "" {
+				issues = append(issues, fmt.Sprintf("%s %q: values or data_source is required for list parameters", label, name))
+			}
+			if strings.TrimSpace(param.DataSource) != "" && strings.TrimSpace(param.Column) == "" {
+				issues = append(issues, fmt.Sprintf("%s %q: column is required when data_source is set", label, name))
+			}
+		case "random_number":
+			if param.Min > param.Max {
+				issues = append(issues, fmt.Sprintf("%s %q: min must be less than or equal to max", label, name))
+			}
+		case "date_time":
+			if strings.TrimSpace(param.Timezone) != "" {
+				if _, err := time.LoadLocation(param.Timezone); err != nil {
+					issues = append(issues, fmt.Sprintf("%s %q: invalid timezone %q", label, name, param.Timezone))
+				}
+			}
+		case "timestamp":
+			if param.Format != "" && !isAllowedValue(param.Format, "unix", "unix_ms", "iso8601", "rfc3339", "rfc3339_nano") {
+				issues = append(issues, fmt.Sprintf("%s %q: format must be unix, unix_ms, iso8601, rfc3339, or rfc3339_nano", label, name))
+			}
+		case "counter":
+			if param.Step == 0 {
+				issues = append(issues, fmt.Sprintf("%s %q: step must be non-zero for counter parameters", label, name))
+			}
+		case "random_string":
+			if param.Length <= 0 {
+				issues = append(issues, fmt.Sprintf("%s %q: length must be greater than zero for random_string parameters", label, name))
+			}
+		}
+	}
+
+	return issues
+}
+
+func isAllowedValue(value string, allowed ...string) bool {
+	for _, candidate := range allowed {
+		if value == candidate {
+			return true
+		}
+	}
+	return false
 }
 
 func validateSOAPScriptIssues(script *Script) []string {

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { type WebSocketConnectionState } from '../hooks/useWebSocket'
 import { Application, Release } from '../types'
 import ProjectModal from './ProjectModal'
 import './Sidebar.css'
@@ -8,7 +9,7 @@ export type NavPage = 'dashboard' | 'tests' | 'new-test' | 'scripts' | 'results'
 interface Props {
   active: NavPage
   onNavigate: (page: NavPage) => void
-  connected: boolean
+  connectionState: WebSocketConnectionState
   applications?: Application[]
   releases?: Release[]
   activeApplication?: Application | null
@@ -99,7 +100,7 @@ const NAV_ITEMS: { id: NavPage; label: string; icon: JSX.Element }[] = [
 export default function Sidebar({
   active,
   onNavigate,
-  connected,
+  connectionState,
   applications = [],
   releases = [],
   activeApplication,
@@ -111,6 +112,8 @@ export default function Sidebar({
   const [collapsed, setCollapsed] = useState(false)
   const [projectOpen, setProjectOpen] = useState(false)
   const [showProjectModal, setShowProjectModal] = useState(false)
+  const connectionClass = connectionState === 'connected' ? 'connected' : connectionState === 'connecting' ? 'connecting' : 'disconnected'
+  const connectionLabel = connectionState === 'connected' ? 'Live' : connectionState === 'connecting' ? 'Connecting' : 'Disconnected'
 
   const handleNewProject = async (name: string) => {
     if (!onCreateApplication) return
@@ -206,9 +209,9 @@ export default function Sidebar({
 
       <div className="sidebar-footer">
         {!collapsed && (
-          <div className={`sidebar-status ${connected ? 'connected' : 'disconnected'}`}>
+          <div className={`sidebar-status ${connectionClass}`}>
             <span className="status-dot" />
-            <span className="status-text">{connected ? 'Live' : 'Disconnected'}</span>
+            <span className="status-text">{connectionLabel}</span>
           </div>
         )}
         <button

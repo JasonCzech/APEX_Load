@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { WSMessage } from '../types'
 import { wsUrl } from './apiClient'
 
+export type WebSocketConnectionState = 'connecting' | 'connected' | 'disconnected'
+
 interface UseWebSocketOptions {
   testId?: string
   enabled?: boolean
@@ -9,7 +11,7 @@ interface UseWebSocketOptions {
 }
 
 export function useWebSocket({ testId, enabled = true, onMessage }: UseWebSocketOptions = {}) {
-  const [connected, setConnected] = useState(false)
+  const [connectionState, setConnectionState] = useState<WebSocketConnectionState>(enabled ? 'connecting' : 'disconnected')
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimer = useRef<number | null>(null)
   const shouldReconnectRef = useRef(true)
@@ -25,11 +27,12 @@ export function useWebSocket({ testId, enabled = true, onMessage }: UseWebSocket
     const path = testId ? `/api/v1/tests/${testId}/stream` : '/api/v1/ws'
     const url = wsUrl(path)
 
+    setConnectionState('connecting')
     const ws = new WebSocket(url)
     wsRef.current = ws
 
     ws.onopen = () => {
-      setConnected(true)
+      setConnectionState('connected')
       if (reconnectTimer.current) {
         clearTimeout(reconnectTimer.current)
         reconnectTimer.current = null
@@ -46,7 +49,7 @@ export function useWebSocket({ testId, enabled = true, onMessage }: UseWebSocket
     }
 
     ws.onclose = () => {
-      setConnected(false)
+      setConnectionState('disconnected')
       if (wsRef.current === ws) {
         wsRef.current = null
       }
@@ -64,9 +67,10 @@ export function useWebSocket({ testId, enabled = true, onMessage }: UseWebSocket
   useEffect(() => {
     shouldReconnectRef.current = true
     if (enabled) {
+      setConnectionState('connecting')
       connect()
     } else {
-      setConnected(false)
+      setConnectionState('disconnected')
     }
 
     return () => {
@@ -101,7 +105,7 @@ export function useWebSocket({ testId, enabled = true, onMessage }: UseWebSocket
           ws.onclose = null
           ws.close()
         }
-        setConnected(false)
+        setConnectionState('disconnected')
         return
       }
 
@@ -116,5 +120,5 @@ export function useWebSocket({ testId, enabled = true, onMessage }: UseWebSocket
     }
   }, [connect, enabled])
 
-  return { connected }
+  return { connected: connectionState === 'connected', connectionState }
 }

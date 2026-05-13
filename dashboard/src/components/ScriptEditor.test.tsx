@@ -51,6 +51,15 @@ describe('ScriptEditor', () => {
         assertions: [{ type: 'status_code', expected: 200 }],
       },
     ],
+    parameters: [
+      {
+        name: 'session_id',
+        type: 'counter',
+        update: 'each_iteration',
+        start: 100,
+        step: 1,
+      },
+    ],
     data_sources: [],
   }
 
@@ -77,11 +86,90 @@ describe('ScriptEditor', () => {
     expect(apiMock.getScript).not.toHaveBeenCalled()
     expect(container.textContent).toContain('Action List')
     expect(container.textContent).toContain('Login')
+    expect(container.textContent).toContain('session_id')
+    expect(container.textContent).toContain('Named Parameters')
 
     const nameInput = Array.from(container.querySelectorAll('input')).find(input => input.placeholder === 'My_Test_Script')
     expect(nameInput?.getAttribute('value')).toBe('Checkout Flow')
 
     const baseUrlInput = Array.from(container.querySelectorAll('input')).find(input => input.placeholder === 'https://api.example.com')
     expect(baseUrlInput?.getAttribute('value')).toBe('https://api.example.com')
+  })
+
+  it('renders SOAP protocol settings and action fields for SOAP drafts', async () => {
+    const soapScript: ScriptDefinition = {
+      ...initialScript,
+      protocol: 'soap',
+      config: {
+        ...initialScript.config,
+        soap: {
+          version: '1.2',
+          namespaces: {
+            soapenv: 'http://www.w3.org/2003/05/soap-envelope',
+          },
+          ws_security: {
+            username_token: {
+              username: 'svc-user',
+              password: 'svc-pass',
+              password_type: 'text',
+            },
+            timestamp: {
+              ttl_seconds: 60,
+            },
+          },
+          fault_handling: {
+            fail_on_fault: true,
+          },
+        },
+      },
+      actions: [
+        {
+          name: 'CreateOrder',
+          type: 'POST',
+          method: 'POST',
+          target: '/soap/orders',
+          headers: {},
+          body: '<soapenv:Envelope />',
+          extractors: [],
+          assertions: [{ type: 'status_code', expected: 200 }],
+          soap: {
+            action: 'urn:CreateOrder',
+            operation: 'CreateOrder',
+            body_mode: 'raw_xml',
+          },
+        },
+      ],
+    }
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={soapScript} />)
+    })
+
+    expect(container.textContent).toContain('SOAP scripts reuse the HTTP transport model')
+    expect(container.textContent).toContain('CreateOrder')
+
+    const runtimeToggle = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Runtime Settings'))
+    expect(runtimeToggle).toBeDefined()
+    if (!runtimeToggle) {
+      return
+    }
+
+    await act(async () => {
+      runtimeToggle.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const soapToggle = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('SOAP Settings'))
+    expect(soapToggle).toBeDefined()
+    if (!soapToggle) {
+      return
+    }
+
+    await act(async () => {
+      soapToggle.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.textContent).toContain('WS-Security UsernameToken')
+    expect(container.textContent).toContain('Fail on SOAP Fault')
+    expect(container.textContent).toContain('SOAPAction')
   })
 })

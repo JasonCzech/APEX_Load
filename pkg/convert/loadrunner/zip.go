@@ -72,6 +72,7 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 	if opts.HTTPConfig == nil && runtimeContent != "" {
 		opts.HTTPConfig = ParseRuntimeCfg(runtimeContent).ToHTTPConfig()
 	}
+	parameterFileNames := findParameterFiles(files, projectConfig)
 
 	// Determine which .c files to parse
 	actionFileNames := []string{"Action.c"}
@@ -132,8 +133,28 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 	if err != nil {
 		return nil, err
 	}
+	parameterSections := make(map[string]map[string]map[string]string)
+	for _, parameterFileName := range parameterFileNames {
+		content, ok := findFile(files, parameterFileName)
+		if !ok {
+			continue
+		}
+		parsed := ParseParameterFile(parameterFileName, content, files)
+		if len(parsed.Parameters) > 0 {
+			result.Script.Parameters = append(result.Script.Parameters, parsed.Parameters...)
+		}
+		if len(parsed.DataSources) > 0 {
+			result.Script.DataSources = append(result.Script.DataSources, parsed.DataSources...)
+		}
+		if len(parsed.Warnings) > 0 {
+			result.Warnings = append(result.Warnings, parsed.Warnings...)
+		}
+		if len(parsed.Sections) > 0 {
+			parameterSections[filepath.Base(parameterFileName)] = parsed.Sections
+		}
+	}
 
-	attachLoadRunnerMetadata(result.Script, result, projectFileName, projectSections, projectConfig, files, runtimeFileName)
+	attachLoadRunnerMetadata(result.Script, result, projectFileName, projectSections, projectConfig, files, runtimeFileName, parameterSections, parameterFileNames)
 	return result, nil
 }
 
@@ -181,6 +202,29 @@ func findRuntimeConfig(files map[string]string, projectConfig *ProjectConfig) (s
 	return name, files[name]
 }
 
+func findParameterFiles(files map[string]string, projectConfig *ProjectConfig) []string {
+	if projectConfig != nil && len(projectConfig.ParamFiles) > 0 {
+		resolved := make([]string, 0, len(projectConfig.ParamFiles))
+		for _, name := range projectConfig.ParamFiles {
+			if _, ok := findFile(files, name); ok {
+				resolved = append(resolved, name)
+			}
+		}
+		if len(resolved) > 0 {
+			return uniqueStrings(resolved)
+		}
+	}
+
+	parameterFiles := make([]string, 0)
+	for name := range files {
+		if strings.HasSuffix(strings.ToLower(name), ".prm") {
+			parameterFiles = append(parameterFiles, name)
+		}
+	}
+	sort.Strings(parameterFiles)
+	return uniqueStrings(parameterFiles)
+}
+
 func collectRuntimeSections(files map[string]string) map[string]map[string]map[string]string {
 	sections := make(map[string]map[string]map[string]string)
 	fileNames := make([]string, 0)
@@ -212,7 +256,7 @@ func uniqueStrings(values []string) []string {
 	return result
 }
 
-func attachLoadRunnerMetadata(script *dsl.Script, result *ConvertResult, projectFileName string, projectSections map[string]map[string]string, projectConfig *ProjectConfig, files map[string]string, runtimeFileName string) {
+func attachLoadRunnerMetadata(script *dsl.Script, result *ConvertResult, projectFileName string, projectSections map[string]map[string]string, projectConfig *ProjectConfig, files map[string]string, runtimeFileName string, parameterSections map[string]map[string]map[string]string, parameterFileNames []string) {
 	if script == nil {
 		return
 	}
@@ -233,6 +277,16 @@ func attachLoadRunnerMetadata(script *dsl.Script, result *ConvertResult, project
 	}
 	if runtimeFileName != "" {
 		preserved["mapped_runtime_file"] = filepath.Base(runtimeFileName)
+	}
+	if len(parameterFileNames) > 0 {
+		files := make([]string, 0, len(parameterFileNames))
+		for _, name := range parameterFileNames {
+			files = append(files, filepath.Base(name))
+		}
+		preserved["parameter_files"] = uniqueStrings(files)
+	}
+	if len(parameterSections) > 0 {
+		preserved["parameter_file_sections"] = parameterSections
 	}
 	if result != nil && len(result.Stats.UnsupportedFuncs) > 0 {
 		preserved["unsupported_functions"] = uniqueStrings(result.Stats.UnsupportedFuncs)

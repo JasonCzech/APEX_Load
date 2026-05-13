@@ -181,3 +181,35 @@ func (dp *DataProvider) SourceNames() []string {
 func (dp *DataProvider) HasSources() bool {
 	return len(dp.sources) > 0
 }
+
+// GetColumnValues returns all values for a given source column in row order.
+func (dp *DataProvider) GetColumnValues(sourceName, column string) ([]string, bool) {
+	if dp == nil {
+		return nil, false
+	}
+	ds, ok := dp.sources[sourceName]
+	if !ok {
+		return nil, false
+	}
+	column = strings.TrimSpace(column)
+	columnIndex := -1
+	for i, candidate := range ds.columns {
+		if strings.TrimSpace(candidate) == column {
+			columnIndex = i
+			break
+		}
+	}
+	if columnIndex < 0 {
+		return nil, false
+	}
+
+	values := make([]string, 0, len(ds.rows))
+	for _, row := range ds.rows {
+		if columnIndex >= len(row) {
+			values = append(values, "")
+			continue
+		}
+		values = append(values, strings.TrimSpace(row[columnIndex]))
+	}
+	return values, true
+}

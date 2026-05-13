@@ -14,6 +14,7 @@ type Script struct {
 	Metadata      *ScriptMetadata `json:"metadata,omitempty"`
 	Config        ScriptConfig    `json:"config"`
 	DataSources   []DataSource    `json:"data_sources,omitempty"`
+	Parameters    []Parameter     `json:"parameters,omitempty"`
 	Init          []Action        `json:"init,omitempty"`
 	Actions       []Action        `json:"actions"`
 	Teardown      []Action        `json:"teardown,omitempty"`
@@ -45,9 +46,9 @@ type ScriptConfig struct {
 }
 
 type SOAPConfig struct {
-	Version       string                 `json:"version,omitempty"`
-	Namespaces    map[string]string      `json:"namespaces,omitempty"`
-	WSSecurity    *SOAPWSSecurityConfig  `json:"ws_security,omitempty"`
+	Version       string                  `json:"version,omitempty"`
+	Namespaces    map[string]string       `json:"namespaces,omitempty"`
+	WSSecurity    *SOAPWSSecurityConfig   `json:"ws_security,omitempty"`
 	FaultHandling SOAPFaultHandlingConfig `json:"fault_handling,omitempty"`
 }
 
@@ -235,6 +236,30 @@ type DataSource struct {
 	Columns        []string `json:"columns,omitempty"` // explicit column names if no header
 }
 
+type Parameter struct {
+	Name          string   `json:"name"`
+	Type          string   `json:"type"` // "file", "list", "random_number", "date_time", "timestamp", "counter", "uuid", "random_string"
+	Update        string   `json:"update,omitempty"`
+	Selection     string   `json:"selection,omitempty"`
+	OnExhaustion  string   `json:"on_exhaustion,omitempty"`
+	DataSource    string   `json:"data_source,omitempty"`
+	Column        string   `json:"column,omitempty"`
+	Format        string   `json:"format,omitempty"`
+	Timezone      string   `json:"timezone,omitempty"`
+	OffsetSeconds int      `json:"offset_seconds,omitempty"`
+	Min           int      `json:"min,omitempty"`
+	Max           int      `json:"max,omitempty"`
+	Start         int      `json:"start,omitempty"`
+	End           int      `json:"end,omitempty"`
+	Step          int      `json:"step,omitempty"`
+	Length        int      `json:"length,omitempty"`
+	Charset       string   `json:"charset,omitempty"`
+	PadWidth      int      `json:"pad_width,omitempty"`
+	PadChar       string   `json:"pad_char,omitempty"`
+	Values        []string `json:"values,omitempty"`
+	Seed          *int64   `json:"seed,omitempty"`
+}
+
 type Action struct {
 	Name           string                 `json:"name"`
 	Type           string                 `json:"type"`
@@ -253,9 +278,9 @@ type Action struct {
 	ThinkTime      ThinkTimeConfig        `json:"think_time,omitempty"`
 	ThinkTimeAfter bool                   `json:"think_time_after,omitempty"`
 	// Per-action overrides
-	Auth         *AuthConfig `json:"auth,omitempty"`          // override global auth
-	TimeoutMs    int         `json:"timeout_ms,omitempty"`    // override global request timeout
-	MaxRedirects *int        `json:"max_redirects,omitempty"` // override global redirect policy
+	Auth         *AuthConfig       `json:"auth,omitempty"`          // override global auth
+	TimeoutMs    int               `json:"timeout_ms,omitempty"`    // override global request timeout
+	MaxRedirects *int              `json:"max_redirects,omitempty"` // override global redirect policy
 	SOAP         *SOAPActionConfig `json:"soap,omitempty"`
 }
 

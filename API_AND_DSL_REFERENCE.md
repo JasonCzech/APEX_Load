@@ -491,15 +491,8 @@ Emits JSON messages for all test events:
       "name": "users",
       "type": "csv",
       "path": "users.csv",
-      "headers": true,
-      "cycling": "sequential"
-    },
-    {
-      "name": "products",
-      "type": "json",
-      "path": "products.json",
-      "selector": "$.items",
-      "cycling": "random"
+      "strategy": "sequential",
+      "first_row_header": true
     }
   ]
 }
@@ -507,16 +500,65 @@ Emits JSON messages for all test events:
 
 **Data source options:**
 - `name`: Reference name for templating
-- `type`: "csv", "json"
-- `path`: File path (relative to script directory)
-- `headers`: CSV has header row (true/false)
-- `selector`: JSONPath for selecting array items
-- `cycling`: "sequential", "random", "once"
+- `type`: `csv` or `dat`
+- `path`: File path when inline data is not used
+- `inline_data`: Optional inline CSV or DAT content
+- `strategy`: `sequential`, `random`, or `unique`
+- `delimiter`: Optional column delimiter
+- `first_row_header`: Whether the first row contains column names
+- `columns`: Explicit column names when the file has no header row
+
+### Parameters Section
+
+```json
+{
+  "parameters": [
+    {
+      "name": "order_id",
+      "type": "random_number",
+      "update": "each_occurrence",
+      "min": 1000,
+      "max": 9999,
+      "pad_width": 6
+    },
+    {
+      "name": "run_date",
+      "type": "date_time",
+      "update": "each_iteration",
+      "format": "2006-01-02",
+      "timezone": "UTC"
+    },
+    {
+      "name": "username",
+      "type": "file",
+      "update": "each_iteration",
+      "selection": "sequential",
+      "on_exhaustion": "wrap",
+      "data_source": "users",
+      "column": "email"
+    }
+  ]
+}
+```
+
+**Parameter options:**
+- `name`: Parameter name used in templates
+- `type`: `file`, `list`, `random_number`, `date_time`, `timestamp`, `counter`, `uuid`, or `random_string`
+- `update`: `once`, `each_iteration`, or `each_occurrence`
+- `selection`: For `file` and `list`, `sequential`, `random`, or `unique`
+- `on_exhaustion`: For `file` and `list`, `wrap`, `empty`, or `error`
+- `data_source`, `column`: Bind a parameter to one data source column
+- `values`: Inline list values for `list`
+- `min`, `max`: Bounds for `random_number`
+- `start`, `end`, `step`: Counter configuration
+- `format`, `timezone`, `offset_seconds`: Date/time and timestamp configuration
+- `length`, `charset`: Random string configuration
+- `pad_width`, `pad_char`: Left-padding for numeric outputs
 
 **Usage in templates:**
 ```json
 {
-  "body": "{\"user_id\": \"{{data.users.id}}\", \"product\": \"{{data.products.name}}\"}"
+	"body": "{\"user\": \"{{param.username}}\", \"order\": \"{{param.order_id}}\", \"at\": \"{{param.run_date}}\"}"
 }
 ```
 
@@ -653,8 +695,11 @@ Emits JSON messages for all test events:
 {{var.csrf_token}}
 ```
 
+Imported LoadRunner `{ParamName}` references are also resolved through `{{var.ParamName}}` compatibility lookup when the script declares a matching parameter.
+
 **Functions:**
 ```
+{{fn.uuid()}}                  — Generate UUID
 {{fn.uuid}}                    — Generate UUID
 {{fn.uuid.v4}}                 — Generate UUID v4
 {{fn.random(1,100)}}           — Random integer 1-100

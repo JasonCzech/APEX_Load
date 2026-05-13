@@ -98,6 +98,8 @@ describe('TestHub', () => {
       name: 'Checkout Scenario',
       duration: '5m',
       scenario_mode: 'vuser_driven',
+      script_shakeout: false,
+      resource_baseline: false,
       groups: [
         {
           script_id: 'script-1',

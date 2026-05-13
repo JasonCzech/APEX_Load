@@ -88,6 +88,24 @@ Action()
 }
 `
 
+const sampleSOAPActionC = `
+#include "web_api.h"
+
+Action()
+{
+	web_add_header("SOAPAction", "urn:GetQuote");
+
+	web_custom_request("GetQuote",
+		"URL=https://example.com/services/quotes",
+		"Method=POST",
+		"Body=<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"><soapenv:Body><GetQuote xmlns=\"urn:quotes\"><Symbol>STORM</Symbol></GetQuote></soapenv:Body></soapenv:Envelope>",
+		"RecContentType=text/xml; charset=utf-8",
+		LAST);
+
+	return 0;
+}
+`
+
 func TestParseActionFile(t *testing.T) {
 	parsed, err := ParseActionFile("Action.c", sampleActionC)
 	if err != nil {
@@ -266,6 +284,50 @@ func TestConvertWebRegFindToAssertions(t *testing.T) {
 	}
 }
 
+func TestConvertSOAPCustomRequest(t *testing.T) {
+	parsed, err := ParseActionFile("Action.c", sampleSOAPActionC)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	result, err := Convert([]*ParsedAction{parsed}, ConvertOptions{IncludeAssertions: true})
+	if err != nil {
+		t.Fatalf("convert error: %v", err)
+	}
+
+	if result.Script.Protocol != "soap" {
+		t.Fatalf("protocol = %q, want soap", result.Script.Protocol)
+	}
+	if result.Script.Config.SOAP.Version != "1.1" {
+		t.Fatalf("soap version = %q, want 1.1", result.Script.Config.SOAP.Version)
+	}
+	if !result.Script.Config.SOAP.FaultHandling.FailOnFault {
+		t.Fatal("expected fail_on_fault to be enabled for imported SOAP scripts")
+	}
+	if len(result.Script.Actions) != 1 {
+		t.Fatalf("action count = %d, want 1", len(result.Script.Actions))
+	}
+	action := result.Script.Actions[0]
+	if action.SOAP == nil {
+		t.Fatal("expected SOAP action metadata to be populated")
+	}
+	if action.SOAP.Action != "urn:GetQuote" {
+		t.Fatalf("soap action = %q, want urn:GetQuote", action.SOAP.Action)
+	}
+	if action.SOAP.BodyMode != "raw_xml" {
+		t.Fatalf("body mode = %q, want raw_xml", action.SOAP.BodyMode)
+	}
+	if action.Method != "POST" || action.Type != "POST" {
+		t.Fatalf("method/type = %s/%s, want POST/POST", action.Method, action.Type)
+	}
+	if got := action.Headers["SOAPAction"]; got != "urn:GetQuote" {
+		t.Fatalf("SOAPAction header = %q, want urn:GetQuote", got)
+	}
+	if got := action.Headers["Content-Type"]; !strings.Contains(got, "text/xml") {
+		t.Fatalf("content type = %q, want text/xml SOAP content type", got)
+	}
+}
+
 func TestSanitizeName(t *testing.T) {
 	tests := map[string]string{
 		"Login Page":      "Login_Page",
@@ -297,6 +359,9 @@ func TestParseUSRFile(t *testing.T) {
 Type=Web
 RuntimeSettings=default.cfg
 
+[Parameters]
+Parameter1=LoginUsers.prm
+
 [Actions]
 Action0=vuser_init.c
 Action1=Action.c
@@ -314,6 +379,9 @@ Action2=vuser_end.c
 	}
 	if cfg.RuntimeFile != "default.cfg" {
 		t.Fatalf("runtime file = %q, want default.cfg", cfg.RuntimeFile)
+	}
+	if len(cfg.ParamFiles) != 1 || cfg.ParamFiles[0] != "LoginUsers.prm" {
+		t.Fatalf("param files = %v, want [LoginUsers.prm]", cfg.ParamFiles)
 	}
 }
 
@@ -347,6 +415,20 @@ KeepAlive=0
 UserAgent=VuGen Browser
 AcceptLanguage=en-US
 `)
+	addFile("LoginUsers.prm", `[LoginUser]
+Type=File
+Table=Users.dat
+ColumnName=username
+SelectNextRow=Sequential
+UpdateValueOn=Each Iteration
+
+[OrderId]
+Type=RandomNumber
+MinimumValue=1000
+MaximumValue=1005
+UpdateValueOn=Each Occurrence
+`)
+	addFile("Users.dat", "username\nalice\nbob\n")
 	if err := zw.Close(); err != nil {
 		t.Fatalf("zip.Close returned error: %v", err)
 	}
@@ -361,12 +443,21 @@ AcceptLanguage=en-US
 	if result.Script.Metadata == nil || result.Script.Metadata.Import == nil {
 		t.Fatal("expected script import metadata to be populated")
 	}
+	if len(result.Script.Parameters) != 2 {
+		t.Fatalf("parameter count = %d, want 2", len(result.Script.Parameters))
+	}
+	if result.Script.Parameters[0].Name != "LoginUser" || result.Script.Parameters[0].Type != "file" {
+		t.Fatalf("first parameter = %#v, want file-backed LoginUser", result.Script.Parameters[0])
+	}
+	if len(result.Script.DataSources) != 1 || result.Script.DataSources[0].Name != "users" {
+		t.Fatalf("data sources = %#v, want one mapped users data source", result.Script.DataSources)
+	}
 	payload, err := json.Marshal(result.Script.Metadata.Import)
 	if err != nil {
 		t.Fatalf("json.Marshal returned error: %v", err)
 	}
 	text := string(payload)
-	for _, want := range []string{"\"source\":\"loadrunner\"", "\"project_settings\"", "\"runtime_files\"", "default.cfg", "\"ConnectTimeout\":\"45\""} {
+	for _, want := range []string{"\"source\":\"loadrunner\"", "\"project_settings\"", "\"runtime_files\"", "\"parameter_files\"", "LoginUsers.prm", "default.cfg", "\"ConnectTimeout\":\"45\""} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("expected metadata JSON to contain %q, got %s", want, text)
 		}

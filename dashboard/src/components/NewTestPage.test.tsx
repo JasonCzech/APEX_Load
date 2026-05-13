@@ -75,8 +75,8 @@ describe('NewTestPage', () => {
       root.render(
         <NewTestPage
           activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
-          activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1' }}
-          releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1' }]}
+          activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+          releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
           onSelectTest={vi.fn()}
           onCreateRelease={vi.fn().mockResolvedValue(null)}
         />,

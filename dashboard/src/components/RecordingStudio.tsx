@@ -247,7 +247,8 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: P
         async () => normalizeScriptImportResult<Record<string, unknown>, Correlation, ScriptDefinition>(await api.previewRecordingConversion(session.id, session.name)),
         { clearValue: true },
       )
-      showFeedback(`Preview generated with ${result.script.actions?.length || 0} actions and ${result.correlations?.length || 0} correlations`)
+      const previewScript = result.script ?? result.scripts?.[0]
+      showFeedback(`Preview generated with ${previewScript?.actions?.length || 0} actions and ${result.correlations?.length || 0} correlations`)
     } catch (error: unknown) {
       showFeedback(getErrorMessage(error, 'Failed to preview recording conversion'), 'error')
     }
@@ -270,14 +271,14 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: P
   }
 
   const handleSaveConverted = async () => {
-    if (!convertTask.value?.script) return
+    if (!convertScript) return
     try {
       await saveTask.run(async () => {
-        await api.createScript(convertTask.value!.script)
+        await api.createScript(convertScript)
         return true
       })
-      showFeedback(`Script "${convertTask.value.script.name}" created with ${convertTask.value.correlations?.length || 0} correlations detected`)
-      onImported?.(convertTask.value.script)
+      showFeedback(`Script "${convertScript.name}" created with ${convertTask.value?.correlations?.length || 0} correlations detected`)
+      onImported?.(convertScript)
     } catch (error: unknown) {
       showFeedback(getErrorMessage(error, 'Failed to save generated script'), 'error')
     }
@@ -295,6 +296,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: P
 
   const stoppedSessions = sessions.filter(s => s.status === 'stopped')
   const convertResult = convertTask.value
+  const convertScript = convertResult?.script ?? convertResult?.scripts?.[0]
   const converting = convertTask.pending
   const saving = saveTask.pending
 
@@ -675,29 +677,29 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: P
       )}
 
       {/* Convert Result */}
-      {convertResult && (
+      {convertResult && convertScript && (
         <div className="rec-convert-result">
           <ScriptImportReview
             title="Conversion Result"
             subtitle="Review the generated script, warnings, and correlations before saving."
-            script={convertResult.script}
+            script={convertScript}
             warnings={convertResult.warnings}
             saving={saving}
             onSave={handleSaveConverted}
-            onEdit={onEdit ? () => onEdit(convertResult.script) : undefined}
+            onEdit={onEdit ? () => onEdit(convertScript) : undefined}
           >
             <div className="rec-result-summary">
               <div className="rec-result-item">
                 <span className="rec-result-label">Script</span>
-                <span className="rec-result-value">{convertResult.script.name}</span>
+                <span className="rec-result-value">{convertScript.name}</span>
               </div>
               <div className="rec-result-item">
                 <span className="rec-result-label">Protocol</span>
-                <span className="rec-result-value">{convertResult.script.protocol}</span>
+                <span className="rec-result-value">{convertScript.protocol}</span>
               </div>
               <div className="rec-result-item">
                 <span className="rec-result-label">Actions</span>
-                <span className="rec-result-value">{convertResult.script.actions?.length || 0}</span>
+                <span className="rec-result-value">{convertScript.actions?.length || 0}</span>
               </div>
             </div>
 

@@ -17,7 +17,7 @@ vi.mock('../hooks/useWebSocket', () => ({
 
 function MetricsStreamHarness({ status = 'RUNNING' }: { status?: 'RUNNING' | 'COMPLETE' }) {
   const { localMetricsHistory } = useExecutionMetricsStream('test-1', status)
-  const latest = localMetricsHistory.at(-1)
+  const latest = localMetricsHistory[localMetricsHistory.length - 1]
 
   return (
     <div>
@@ -68,8 +68,11 @@ describe('useExecutionMetricsStream', () => {
         tps: 12.34,
         avg_response_ms: 221.19,
         error_pct: 1.234,
+        total_transactions: 120,
+        total_errors: 2,
         p50_ms: 150.44,
         p90_ms: 320.22,
+        p95_ms: 410.31,
         p99_ms: 501.66,
         groups: {
           Checkout: {
@@ -89,7 +92,7 @@ describe('useExecutionMetricsStream', () => {
           disk_write_kbps: 20.16,
         },
       },
-    } as WSMessage)
+    } as unknown as WSMessage)
 
     expect(readTestId('count')).toBe('1')
     expect(readTestId('tps')).toBe('12.3')

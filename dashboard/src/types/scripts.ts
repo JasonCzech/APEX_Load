@@ -40,6 +40,11 @@ export interface ScriptActionDefinition {
   extractors?: ScriptExtractorDefinition[]
   assertions?: ScriptAssertionDefinition[]
   think_time_after?: boolean
+  soap?: {
+    action?: string
+    operation?: string
+    body_mode?: string
+  }
 }
 
 export interface ThinkTimeConfig {
@@ -144,6 +149,26 @@ export interface JMSConfig {
   mock?: boolean
 }
 
+export interface SOAPConfig {
+  version?: string
+  namespaces?: Record<string, string>
+  ws_security?: {
+    username_token?: {
+      username?: string
+      password?: string
+      password_type?: string
+      nonce?: boolean
+      created?: boolean
+    }
+    timestamp?: {
+      ttl_seconds?: number
+    }
+  }
+  fault_handling?: {
+    fail_on_fault?: boolean
+  }
+}
+
 export interface ScriptImportMetadata {
   source?: string
   source_script_name?: string
@@ -162,6 +187,7 @@ export interface ScriptConfig {
   error_handling?: ErrorHandlingConfig
   log?: LogConfig
   http?: HTTPConfig
+  soap?: SOAPConfig
   browser?: BrowserConfig
   jms?: JMSConfig
 }
@@ -177,6 +203,30 @@ export interface ScriptDataSource {
   columns?: string[]
 }
 
+export interface ScriptParameterDefinition {
+  name: string
+  type: string
+  update?: string
+  selection?: string
+  on_exhaustion?: string
+  data_source?: string
+  column?: string
+  format?: string
+  timezone?: string
+  offset_seconds?: number
+  min?: number
+  max?: number
+  start?: number
+  end?: number
+  step?: number
+  length?: number
+  charset?: string
+  pad_width?: number
+  pad_char?: string
+  values?: string[]
+  seed?: number
+}
+
 export interface ScriptDefinition {
   id?: string
   name: string
@@ -188,6 +238,7 @@ export interface ScriptDefinition {
   config: ScriptConfig
   actions: ScriptActionDefinition[]
   data_sources?: ScriptDataSource[]
+  parameters?: ScriptParameterDefinition[]
   created_at?: string
   updated_at?: string
 }

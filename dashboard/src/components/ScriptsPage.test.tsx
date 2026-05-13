@@ -212,6 +212,72 @@ describe('ScriptsPage', () => {
     expect(container.textContent).toContain('editor:JMeter Draft')
   })
 
+  it('shows SOAP and Java-over-HTTP create options and routes them into the draft editor', async () => {
+    await act(async () => {
+      root.render(<ScriptsPage />)
+    })
+
+    await flushPromises()
+
+    const createButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('+ Create Script'))
+    expect(createButton).toBeDefined()
+    if (!createButton) {
+      return
+    }
+
+    await act(async () => {
+      createButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.textContent).toContain('Web Services (SOAP)')
+    expect(container.textContent).toContain('Java over HTTP')
+
+    const soapButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Web Services (SOAP)'))
+    expect(soapButton).toBeDefined()
+    if (!soapButton) {
+      return
+    }
+
+    await act(async () => {
+      soapButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.querySelector('[data-testid="script-editor"]')).not.toBeNull()
+    expect(container.textContent).toContain('editor:blank')
+
+    const closeButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('mock-close'))
+    expect(closeButton).toBeDefined()
+    if (!closeButton) {
+      return
+    }
+
+    await act(async () => {
+      closeButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const createButtonAgain = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('+ Create Script'))
+    expect(createButtonAgain).toBeDefined()
+    if (!createButtonAgain) {
+      return
+    }
+
+    await act(async () => {
+      createButtonAgain.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const javaButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Java over HTTP'))
+    expect(javaButton).toBeDefined()
+    if (!javaButton) {
+      return
+    }
+
+    await act(async () => {
+      javaButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.querySelector('[data-testid="script-editor"]')).not.toBeNull()
+  })
+
   it('loads the requested script when opened in edit mode from the parent route', async () => {
     apiMock.getScript.mockResolvedValueOnce({
       script: {

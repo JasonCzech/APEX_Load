@@ -254,11 +254,12 @@ Scripts are JSON with these sections:
 ```
 
 **Features:**
-- **Template variables**: `{{env.VAR}}`, `{{data.source.column}}`, `{{var.name}}`, `{{fn.uuid()}}`
+- **Template variables**: `{{env.VAR}}`, `{{data.source.column}}`, `{{param.name}}`, `{{var.name}}`, `{{fn.uuid()}}`
+- **Named parameters**: random number, date/time, timestamp, counter, file/list, UUID, and random string generators with `once`, `each_iteration`, and `each_occurrence` update modes
 - **Extractors**: Pull values from responses for use in subsequent requests
 - **Assertions**: Validate response status, headers, body content
 - **Think time**: Configurable delays between actions (fixed, random, gaussian)
-- **Data sources**: CSV or JSON for data-driven testing
+- **Data sources**: CSV or DAT for row-based data-driven testing
 
 See [API_AND_DSL_REFERENCE.md](API_AND_DSL_REFERENCE.md) for complete DSL syntax.
 

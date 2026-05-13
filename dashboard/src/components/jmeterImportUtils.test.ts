@@ -27,7 +27,11 @@ describe('jmeterImportUtils', () => {
     expect(result.warnings).toEqual([])
     expect(result.unsupported_elements).toEqual([])
     expect(result.assumptions).toEqual(['flattened'])
-    expect(result.summary).toEqual({ file_name: 'smoke.jmx' })
+    expect(result.summary).toEqual({
+      file_name: 'smoke.jmx',
+      thread_group_count: 0,
+      sampler_count: 0,
+    })
   })
 
   it('provides default stats and summary when omitted', () => {

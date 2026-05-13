@@ -50,17 +50,17 @@ func TestHandlePreviewRecordingConversionDoesNotStoreScript(t *testing.T) {
 
 	var result struct {
 		Scripts []json.RawMessage `json:"scripts"`
-		Script struct {
+		Script  struct {
 			Name    string `json:"name"`
 			Actions []struct {
 				Name   string `json:"name"`
 				Target string `json:"target"`
 			} `json:"actions"`
 		} `json:"script"`
-		Warnings []string `json:"warnings"`
+		Warnings     []string          `json:"warnings"`
 		Correlations []json.RawMessage `json:"correlations"`
-		Stats struct {
-			ConvertedActions int `json:"converted_actions"`
+		Stats        struct {
+			ConvertedActions     int `json:"converted_actions"`
 			CorrelationsDetected int `json:"correlations_detected"`
 		} `json:"stats"`
 	}
@@ -122,13 +122,13 @@ func TestHandleConvertRecordingReturnsStandardizedEnvelope(t *testing.T) {
 
 	var result struct {
 		Scripts []json.RawMessage `json:"scripts"`
-		Script struct {
-			ID string `json:"id"`
+		Script  struct {
+			ID   string `json:"id"`
 			Name string `json:"name"`
 		} `json:"script"`
 		Warnings []string `json:"warnings"`
-		Stats struct {
-			ConvertedActions int `json:"converted_actions"`
+		Stats    struct {
+			ConvertedActions     int `json:"converted_actions"`
 			CorrelationsDetected int `json:"correlations_detected"`
 		} `json:"stats"`
 	}

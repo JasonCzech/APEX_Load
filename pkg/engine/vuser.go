@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/jasonczech/stormrunner/pkg/dsl"
 	"github.com/jasonczech/stormrunner/pkg/protocol"
 )
@@ -23,6 +22,7 @@ type VUser struct {
 	ResultSink    ResultSink
 	Variables     map[string]string
 	DataProvider  *DataProvider
+	Parameters    *ParameterRuntime
 	SnapshotStore *SnapshotStore
 	PauseControl  PauseController
 }
@@ -68,6 +68,10 @@ func (vu *VUser) Run(ctx context.Context) {
 	logger := vu.makeLogger(logCfg)
 
 	vu.Variables = make(map[string]string)
+	vu.Parameters = NewParameterRuntime(vu.Script.Parameters, vu.DataProvider, vu.ID)
+	if vu.Parameters != nil {
+		vu.Parameters.Prime()
+	}
 
 	// Load initial data source row
 	vu.loadDataRow()
@@ -143,6 +147,9 @@ func (vu *VUser) Run(ctx context.Context) {
 		// Reload data row at the start of each iteration
 		if iteration > 0 {
 			vu.loadDataRow()
+			if vu.Parameters != nil {
+				vu.Parameters.RefreshIteration()
+			}
 		}
 
 		// Track iteration-level transaction
@@ -443,7 +450,16 @@ func (vu *VUser) resolveTemplateValue(expr string) (string, bool) {
 	case strings.HasPrefix(expr, "var."):
 		key := strings.TrimSpace(strings.TrimPrefix(expr, "var."))
 		value, ok := vu.Variables[key]
+		if !ok && vu.Parameters != nil {
+			return vu.Parameters.ResolveNamed(key)
+		}
 		return value, ok
+	case strings.HasPrefix(expr, "param."):
+		if vu.Parameters == nil {
+			return "", false
+		}
+		key := strings.TrimSpace(strings.TrimPrefix(expr, "param."))
+		return vu.Parameters.ResolveNamed(key)
 	case strings.HasPrefix(expr, "data."):
 		// Data variables are stored as "source.column", so map data.source.column -> source.column.
 		key := strings.TrimSpace(strings.TrimPrefix(expr, "data."))
@@ -453,8 +469,8 @@ func (vu *VUser) resolveTemplateValue(expr string) (string, bool) {
 		key := strings.TrimSpace(strings.TrimPrefix(expr, "env."))
 		value, ok := os.LookupEnv(key)
 		return value, ok
-	case expr == "fn.uuid()":
-		return uuid.NewString(), true
+	case strings.HasPrefix(expr, "fn."):
+		return resolveBuiltinFunction(expr, time.Now)
 	default:
 		return "", false
 	}

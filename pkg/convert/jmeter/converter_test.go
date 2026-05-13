@@ -151,6 +151,48 @@ hd=http://www.w3.org/wgs85_pos#</stringProp>
   </hashTree>
 </jmeterTestPlan>`
 
+const sampleSOAPJMX = `<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
+	<hashTree>
+		<TestPlan testname="SOAP Plan" enabled="true"/>
+		<hashTree>
+			<ThreadGroup testname="SOAP Users" enabled="true">
+				<stringProp name="ThreadGroup.num_threads">3</stringProp>
+			</ThreadGroup>
+			<hashTree>
+				<HeaderManager testname="SOAP Headers" enabled="true">
+					<collectionProp name="HeaderManager.headers">
+						<elementProp name="" elementType="Header">
+							<stringProp name="Header.name">Content-Type</stringProp>
+							<stringProp name="Header.value">text/xml; charset=utf-8</stringProp>
+						</elementProp>
+						<elementProp name="" elementType="Header">
+							<stringProp name="Header.name">SOAPAction</stringProp>
+							<stringProp name="Header.value">urn:GetQuote</stringProp>
+						</elementProp>
+					</collectionProp>
+				</HeaderManager>
+				<hashTree/>
+				<HTTPSamplerProxy testname="Get Quote" enabled="true">
+					<stringProp name="HTTPSampler.domain">example.com</stringProp>
+					<stringProp name="HTTPSampler.protocol">https</stringProp>
+					<stringProp name="HTTPSampler.path">/services/quotes</stringProp>
+					<stringProp name="HTTPSampler.method">POST</stringProp>
+					<boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+					<elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+						<collectionProp name="Arguments.arguments">
+							<elementProp name="" elementType="HTTPArgument">
+								<stringProp name="Argument.value">&lt;soapenv:Envelope xmlns:soapenv=&quot;http://schemas.xmlsoap.org/soap/envelope/&quot;&gt;&lt;soapenv:Body&gt;&lt;GetQuote xmlns=&quot;urn:quotes&quot;&gt;&lt;Symbol&gt;STORM&lt;/Symbol&gt;&lt;/GetQuote&gt;&lt;/soapenv:Body&gt;&lt;/soapenv:Envelope&gt;</stringProp>
+							</elementProp>
+						</collectionProp>
+					</elementProp>
+				</HTTPSamplerProxy>
+				<hashTree/>
+			</hashTree>
+		</hashTree>
+	</hashTree>
+</jmeterTestPlan>`
+
 func TestConvertJMXHTTPPlan(t *testing.T) {
 	result, err := ConvertJMX([]byte(sampleJMX), ConvertOptions{
 		FileName:          "checkout.jmx",
@@ -277,6 +319,48 @@ func TestConvertJMXSamplerExtractors(t *testing.T) {
 	}
 	if action.Extractors[10].Name != "trace_id" || action.Extractors[10].Source != "header" || action.Extractors[10].Type != "boundary" || action.Extractors[10].Expression != "Set-Cookie: trace_id=|||;" {
 		t.Fatalf("unexpected header boundary extractor: %#v", action.Extractors[10])
+	}
+}
+
+func TestConvertJMXSOAPHTTPPlan(t *testing.T) {
+	result, err := ConvertJMX([]byte(sampleSOAPJMX), ConvertOptions{FileName: "soap.jmx", IncludeAssertions: true})
+	if err != nil {
+		t.Fatalf("ConvertJMX returned error: %v", err)
+	}
+	if len(result.Scripts) != 1 {
+		t.Fatalf("scripts = %d, want 1", len(result.Scripts))
+	}
+	script := result.Scripts[0]
+	if script.Protocol != "soap" {
+		t.Fatalf("protocol = %q, want soap", script.Protocol)
+	}
+	if script.Config.SOAP.Version != "1.1" {
+		t.Fatalf("soap version = %q, want 1.1", script.Config.SOAP.Version)
+	}
+	if !script.Config.SOAP.FaultHandling.FailOnFault {
+		t.Fatal("expected fail_on_fault to be enabled")
+	}
+	if len(script.Actions) != 1 {
+		t.Fatalf("actions = %d, want 1", len(script.Actions))
+	}
+	action := script.Actions[0]
+	if action.SOAP == nil {
+		t.Fatal("expected SOAP action metadata to be present")
+	}
+	if action.SOAP.Action != "urn:GetQuote" {
+		t.Fatalf("soap action = %q, want urn:GetQuote", action.SOAP.Action)
+	}
+	if action.SOAP.BodyMode != "raw_xml" {
+		t.Fatalf("body mode = %q, want raw_xml", action.SOAP.BodyMode)
+	}
+	if action.Headers["SOAPAction"] != "urn:GetQuote" {
+		t.Fatalf("SOAPAction header = %q, want urn:GetQuote", action.Headers["SOAPAction"])
+	}
+	if !strings.Contains(action.Headers["Content-Type"], "text/xml") {
+		t.Fatalf("content type = %q, want text/xml", action.Headers["Content-Type"])
+	}
+	if action.Target != "/services/quotes" {
+		t.Fatalf("target = %q, want /services/quotes", action.Target)
 	}
 }
 
