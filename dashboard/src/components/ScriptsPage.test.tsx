@@ -20,9 +20,10 @@ vi.mock('../hooks/useApi', () => ({
 }))
 
 vi.mock('./ScriptEditor', () => ({
-  default: ({ initialScript, onSave, onClose }: { initialScript?: { name?: string }, onSave?: () => void, onClose?: () => void }) => (
+  default: ({ initialScript, scriptId, onSave, onClose }: { initialScript?: { name?: string }, scriptId?: string | null, onSave?: () => void, onClose?: () => void }) => (
     <div data-testid="script-editor">
       <span>editor:{initialScript?.name || 'blank'}</span>
+      <span>script-id:{scriptId || 'none'}</span>
       <button onClick={onSave}>mock-save</button>
       <button onClick={onClose}>mock-close</button>
     </div>
@@ -155,6 +156,30 @@ describe('ScriptsPage', () => {
     expect(apiMock.listScripts).toHaveBeenCalledTimes(2)
     expect(container.textContent).toContain('Scripts')
     expect(container.textContent).toContain('Existing Script')
+  })
+
+  it('loads the requested script when opened in edit mode from the parent route', async () => {
+    apiMock.getScript.mockResolvedValueOnce({
+      script: {
+        id: 'script-42',
+        name: 'Loaded Script',
+        version: '2.0.0',
+        protocol: 'http',
+        config: { base_url: 'https://loaded.example.com' },
+        actions: [],
+      },
+    })
+
+    await act(async () => {
+      root.render(<ScriptsPage initialMode="edit" initialEditId="script-42" />)
+    })
+
+    await flushPromises()
+
+    expect(apiMock.getScript).toHaveBeenCalledWith('script-42')
+    expect(container.querySelector('[data-testid="script-editor"]')).not.toBeNull()
+    expect(container.textContent).toContain('editor:Loaded Script')
+    expect(container.textContent).toContain('script-id:script-42')
   })
 })
 

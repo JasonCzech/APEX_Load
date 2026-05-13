@@ -10,6 +10,13 @@ import SampleScriptImport from './SampleScriptImport'
 
 type SubView = 'list' | 'create-options' | 'create' | 'edit' | 'import' | 'jmeter-import' | 'recorder' | 'sample'
 
+interface AuthoringState {
+  subView: SubView
+  editingId: string | null
+  editingScript: ScriptDefinition | null
+  draftScript: ScriptDefinition | null
+}
+
 interface Props {
   initialMode?: SubView
   initialEditId?: string
@@ -78,6 +85,15 @@ function SortIndicator({ active, direction }: { active: boolean, direction: 'asc
 function normalizeSubView(mode?: SubView): SubView {
   if (!mode) return 'list'
   return mode === 'create' ? 'create-options' : mode
+}
+
+function createAuthoringState(mode?: SubView, editId?: string): AuthoringState {
+  return {
+    subView: normalizeSubView(mode),
+    editingId: editId || null,
+    editingScript: null,
+    draftScript: null,
+  }
 }
 
 function createApiDraft(): ScriptDefinition {
@@ -153,10 +169,7 @@ function createJmsDraft(): ScriptDefinition {
 export default function ScriptsPage({ initialMode = 'list', initialEditId, onSelectScenario }: Props) {
   const api = useApi()
   const [scripts, setScripts] = useState<StoredScript[]>([])
-  const [subView, setSubView] = useState<SubView>(normalizeSubView(initialMode))
-  const [editingId, setEditingId] = useState<string | null>(initialEditId || null)
-  const [editingScript, setEditingScript] = useState<ScriptDefinition | null>(null)
-  const [draftScript, setDraftScript] = useState<ScriptDefinition | null>(null)
+  const [authoringState, setAuthoringState] = useState<AuthoringState>(() => createAuthoringState(initialMode, initialEditId))
   const [sortField, setSortField] = useState<'name' | 'protocol' | 'version' | 'created_at' | 'scenario_count' | 'associated_releases' | 'scenario_run_releases' | 'last_run_at'>('name')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
   const [expandedScriptId, setExpandedScriptId] = useState<string | null>(null)
@@ -172,27 +185,25 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
     } catch { /* API not available */ }
   }, [api])
 
-  const resetAuthoringState = useCallback(() => {
-    setEditingId(null)
-    setEditingScript(null)
-    setDraftScript(null)
+  const setSubview = useCallback((subView: SubView) => {
+    setAuthoringState({ subView, editingId: null, editingScript: null, draftScript: null })
   }, [])
 
   const openLibrary = useCallback(() => {
-    resetAuthoringState()
-    setSubView('list')
-  }, [resetAuthoringState])
+    setSubview('list')
+  }, [setSubview])
 
   const openCreateOptions = useCallback(() => {
-    resetAuthoringState()
-    setSubView('create-options')
-  }, [resetAuthoringState])
+    setSubview('create-options')
+  }, [setSubview])
 
   const openDraftEditor = useCallback((script: ScriptDefinition) => {
-    setDraftScript(script)
-    setEditingId(null)
-    setEditingScript(null)
-    setSubView('create')
+    setAuthoringState({
+      subView: 'create',
+      editingId: null,
+      editingScript: null,
+      draftScript: script,
+    })
   }, [])
 
   const startDraft = useCallback((factory: () => ScriptDefinition) => {
@@ -202,10 +213,12 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
   const handleEdit = useCallback(async (id: string) => {
     try {
       const res = await api.getScript(id)
-      setEditingId(id)
-      setEditingScript(res.script)
-      setDraftScript(null)
-      setSubView('edit')
+      setAuthoringState({
+        subView: 'edit',
+        editingId: id,
+        editingScript: res.script,
+        draftScript: null,
+      })
     } catch { /* ignore */ }
   }, [api])
 
@@ -215,7 +228,7 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
       void handleEdit(initialEditId)
       return
     }
-    setSubView(normalizeSubView(initialMode))
+    setAuthoringState(createAuthoringState(initialMode, initialEditId))
   }, [handleEdit, initialEditId, initialMode])
 
   const handleDelete = async (id: string) => {
@@ -299,11 +312,11 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
   const startJmsScript = useCallback(() => { startDraft(createJmsDraft) }, [startDraft])
 
   const renderSubview = () => {
-    switch (subView) {
+    switch (authoringState.subView) {
       case 'create':
-        return <div className="page"><ScriptEditor initialScript={draftScript} onSave={handleSaved} onClose={openLibrary} /></div>
+        return <div className="page"><ScriptEditor initialScript={authoringState.draftScript} onSave={handleSaved} onClose={openLibrary} /></div>
       case 'edit':
-        return <div className="page"><ScriptEditor scriptId={editingId} initialScript={editingScript} onSave={handleSaved} onClose={openLibrary} /></div>
+        return <div className="page"><ScriptEditor scriptId={authoringState.editingId} initialScript={authoringState.editingScript} onSave={handleSaved} onClose={openLibrary} /></div>
       case 'import':
         return <div className="page"><LoadRunnerImport onImported={handleImported} onEdit={handleDraftEdit} onClose={openLibrary} /></div>
       case 'jmeter-import':
@@ -332,7 +345,7 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
     return subviewContent
   }
 
-  if (subView === 'create-options') {
+  if (authoringState.subView === 'create-options') {
     return (
       <div className="page">
         <div className="page-header">
@@ -355,7 +368,7 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
                 <h3>API Visual Editor</h3>
                 <p>Build a protocol-level script from requests and reusable action definitions.</p>
               </button>
-              <button className="script-create-option" onClick={() => setSubView('sample')}>
+              <button className="script-create-option" onClick={() => setSubview('sample')}>
                 <span className="script-create-type-badge">API</span>
                 <h3>Build From Sample</h3>
                 <p>Generate an API script from sample traffic or payload examples.</p>
@@ -375,7 +388,7 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
                 <h3>Web/HTML Visual Editor</h3>
                 <p>Build a browser-level script that interacts with the page like a user.</p>
               </button>
-              <button className="script-create-option" onClick={() => setSubView('recorder')}>
+              <button className="script-create-option" onClick={() => setSubview('recorder')}>
                 <span className="script-create-type-badge web">WEB</span>
                 <h3>Browser Recorder</h3>
                 <p>Capture a browser session and convert selected traffic into reusable Web/HTML script assets.</p>
@@ -405,12 +418,12 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
               <p>Bring existing LoadRunner and JMeter assets forward while preserving source metadata and conversion notes for review.</p>
             </div>
             <div className="script-create-grid">
-              <button className="script-create-option primary" onClick={() => setSubView('import')}>
+              <button className="script-create-option primary" onClick={() => setSubview('import')}>
                 <span className="script-create-type-badge import">LR</span>
                 <h3>Import LoadRunner</h3>
                 <p>Convert a LoadRunner ZIP into a Stormrunner script and keep unsupported functions visible for cleanup.</p>
               </button>
-              <button className="script-create-option" onClick={() => setSubView('jmeter-import')}>
+              <button className="script-create-option" onClick={() => setSubview('jmeter-import')}>
                 <span className="script-create-type-badge import">JMX</span>
                 <h3>Import JMeter</h3>
                 <p>Convert a JMeter .jmx plan into HTTP scripts with warnings, unsupported elements, and scenario draft context.</p>

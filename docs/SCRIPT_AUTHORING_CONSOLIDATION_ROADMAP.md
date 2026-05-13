@@ -178,7 +178,7 @@ That order minimizes churn and avoids rebuilding the UI around unstable backend 
 - Phase 5 cleanup has started in the repo: duplicate dashboard page copies and obsolete patch/temp artifacts were removed after confirming that the live app shell imports only the current page surfaces.
 
 ### In Progress
-- Phase 3 frontend orchestration is partially consolidated through shared import normalization, shared error handling, typed recorder/import flows, and centralized ScriptsPage transition helpers, but the script hub still owns the remaining high-level route selection.
+- Phase 3 frontend orchestration is partially consolidated through shared import normalization, shared error handling, typed recorder/import flows, and a single ScriptsPage authoring-state model for the active transitions, but the script hub still owns the remaining high-level route selection.
 - The recorder path now uses the same preview-first review/edit/save lifecycle as the other active non-JMeter builders, with recorder output able to hand off into the canonical script editor before save.
 - The active non-JMeter builders now share a common review/save panel structure for title, warnings, edit handoff, save action, and script preview while keeping source-specific stats and metadata sections local.
 - The live script library now uses typed sort helpers for both reusable scripts and linked scenario runs instead of local `any` sort casting.
