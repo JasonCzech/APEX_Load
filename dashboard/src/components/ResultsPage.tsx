@@ -4,6 +4,7 @@ import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, X
 import { downloadBlob } from '../utils/fileUtils'
 import { Application, IntervalSummaryRecord, Release, RunArchiveReport, TestSummary } from '../types'
 import { useApi } from '../hooks/useApi'
+import { getErrorMessage } from '../utils/errorUtils'
 import StatusBadge from './StatusBadge'
 
 interface Props {
@@ -63,8 +64,8 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
       const res = await api.listTests({ application_id: activeApplication.id, release_id: activeRelease.id })
       setTests(res.tests || [])
       setError('')
-    } catch (err: any) {
-      setError(err.message || 'Unable to load results')
+    } catch (error: unknown) {
+      setError(getErrorMessage(error, 'Unable to load results'))
     }
   }, [api, activeApplication?.id, activeRelease?.id])
 
@@ -201,11 +202,11 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
           setComparisonReports(Object.fromEntries(reports))
           setComparisonSummaries(Object.fromEntries(summaries))
         }
-      } catch (err: any) {
+      } catch (error: unknown) {
         if (!cancelled) {
           setComparisonReports({})
           setComparisonSummaries({})
-          setComparisonError(err.message || 'Unable to load comparison reports')
+          setComparisonError(getErrorMessage(error, 'Unable to load comparison reports'))
         }
       } finally {
         if (!cancelled) setComparisonLoading(false)
