@@ -26,6 +26,45 @@ type LoadProfilePoint = {
   total: number
 } & Record<`group${number}`, number>
 
+function isValidDurationInput(value?: string): boolean {
+  return !value || parseDurationToSeconds(value) > 0
+}
+
+function validateGoalConfig(goalConfig: ScenarioDraftState['goalConfig']): string | null {
+  if (goalConfig.p95_latency_ms !== undefined && goalConfig.p95_latency_ms <= 0) {
+    return 'Goal-oriented scenarios require P95 latency ceiling to be greater than 0 ms'
+  }
+  if (goalConfig.max_error_pct !== undefined && (goalConfig.max_error_pct < 0 || goalConfig.max_error_pct > 100)) {
+    return 'Goal-oriented scenarios require max error % to be between 0 and 100'
+  }
+  if (goalConfig.min_vusers !== undefined && goalConfig.min_vusers < 1) {
+    return 'Goal-oriented scenarios require min VUsers to be greater than 0'
+  }
+  if (goalConfig.max_vusers !== undefined && goalConfig.max_vusers < 1) {
+    return 'Goal-oriented scenarios require max VUsers to be greater than 0'
+  }
+  if (
+    goalConfig.min_vusers !== undefined &&
+    goalConfig.max_vusers !== undefined &&
+    goalConfig.min_vusers > goalConfig.max_vusers
+  ) {
+    return 'Goal-oriented scenarios require min VUsers to be less than or equal to max VUsers'
+  }
+  if (goalConfig.max_error_count !== undefined && goalConfig.max_error_count < 1) {
+    return 'Goal-oriented scenarios require max error count to be greater than 0'
+  }
+  if (goalConfig.sla_breach_window && !isValidDurationInput(goalConfig.sla_breach_window)) {
+    return 'Goal-oriented scenarios require a valid SLA breach window duration'
+  }
+  if (goalConfig.stop_on_sla_breach && goalConfig.p95_latency_ms === undefined && goalConfig.max_error_pct === undefined) {
+    return 'Goal-oriented scenarios require a P95 latency ceiling or max error % when stop on sustained SLA breach is enabled'
+  }
+  if (goalConfig.stop_on_max_errors && goalConfig.max_error_count === undefined) {
+    return 'Goal-oriented scenarios require max error count when stop on max errors is enabled'
+  }
+  return null
+}
+
 export default function CreateTestModal({ scripts, projectId, folderId, onClose, onCreated, initialScenario, mode = 'create-queued-run' }: Props) {
   const api = useApi()
   const baselineSeconds = 5 * 60
@@ -195,6 +234,10 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
       if (scenarioMode === 'goal_oriented') {
         if (!hasGoalModeConfig) {
           throw new Error('Goal-oriented scenarios require at least one goal or guardrail setting')
+        }
+        const goalConfigError = validateGoalConfig(goalConfig)
+        if (goalConfigError) {
+          throw new Error(goalConfigError)
         }
       }
 

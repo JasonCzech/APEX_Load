@@ -1076,6 +1076,69 @@ func TestValidateScenarioRequestRequiresMaxErrorCountWhenEnabled(t *testing.T) {
 	}
 }
 
+func TestValidateScenarioRequestRequiresSLAThresholdWhenStopOnBreachEnabled(t *testing.T) {
+	_, err := validateScenarioRequest(CreateTestRequest{
+		Duration:     "5m",
+		ScenarioMode: "goal_oriented",
+		GoalConfig: &GoalConfig{
+			StopOnSLABreach: true,
+		},
+	})
+
+	if err == nil {
+		t.Fatal("expected stop_on_sla_breach without SLA thresholds to fail validation")
+	}
+}
+
+func TestValidateScenarioRequestRejectsInvalidGoalGuardrails(t *testing.T) {
+	floatPtr := func(value float64) *float64 { return &value }
+	intPtr := func(value int) *int { return &value }
+
+	tests := []struct {
+		name string
+		goal GoalConfig
+	}{
+		{
+			name: "non-positive p95 latency",
+			goal: GoalConfig{P95LatencyMs: floatPtr(0)},
+		},
+		{
+			name: "negative max error pct",
+			goal: GoalConfig{MaxErrorPct: floatPtr(-1)},
+		},
+		{
+			name: "max error pct above 100",
+			goal: GoalConfig{MaxErrorPct: floatPtr(101)},
+		},
+		{
+			name: "non-positive min vusers",
+			goal: GoalConfig{MinVUsers: intPtr(0)},
+		},
+		{
+			name: "non-positive max vusers",
+			goal: GoalConfig{MaxVUsers: intPtr(0)},
+		},
+		{
+			name: "invalid sla breach window",
+			goal: GoalConfig{SLABreachWindow: "later"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := validateScenarioRequest(CreateTestRequest{
+				Duration:     "5m",
+				ScenarioMode: "goal_oriented",
+				GoalConfig:   &tt.goal,
+			})
+
+			if err == nil {
+				t.Fatalf("expected %s to fail validation", tt.name)
+			}
+		})
+	}
+}
+
 func TestValidateScenarioRequestRejectsInvalidStartDelay(t *testing.T) {
 	_, err := validateScenarioRequest(CreateTestRequest{
 		Duration:   "5m",

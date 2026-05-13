@@ -1199,16 +1199,31 @@ func validateScenarioRequest(req CreateTestRequest) (string, error) {
 	if req.GoalConfig == nil || !hasGoalConfig(req.GoalConfig) {
 		return "", fmt.Errorf("goal-oriented scenarios require at least one goal or guardrail setting")
 	}
+	if req.GoalConfig.P95LatencyMs != nil && *req.GoalConfig.P95LatencyMs <= 0 {
+		return "", fmt.Errorf("goal-oriented scenarios require p95_latency_ms to be greater than 0")
+	}
+	if req.GoalConfig.MaxErrorPct != nil && (*req.GoalConfig.MaxErrorPct < 0 || *req.GoalConfig.MaxErrorPct > 100) {
+		return "", fmt.Errorf("goal-oriented scenarios require max_error_pct to be between 0 and 100")
+	}
+	if req.GoalConfig.MinVUsers != nil && *req.GoalConfig.MinVUsers < 1 {
+		return "", fmt.Errorf("goal-oriented scenarios require min_vusers to be greater than 0")
+	}
+	if req.GoalConfig.MaxVUsers != nil && *req.GoalConfig.MaxVUsers < 1 {
+		return "", fmt.Errorf("goal-oriented scenarios require max_vusers to be greater than 0")
+	}
 	if req.GoalConfig.MinVUsers != nil && req.GoalConfig.MaxVUsers != nil && *req.GoalConfig.MinVUsers > *req.GoalConfig.MaxVUsers {
 		return "", fmt.Errorf("goal-oriented scenarios require min_vusers to be less than or equal to max_vusers")
 	}
 	if req.GoalConfig.MaxErrorCount != nil && *req.GoalConfig.MaxErrorCount < 1 {
 		return "", fmt.Errorf("goal-oriented scenarios require max_error_count to be greater than 0")
 	}
-	if req.GoalConfig.StopOnSLABreach && req.GoalConfig.SLABreachWindow != "" {
+	if req.GoalConfig.SLABreachWindow != "" {
 		if _, err := time.ParseDuration(req.GoalConfig.SLABreachWindow); err != nil {
 			return "", fmt.Errorf("invalid sla_breach_window: %w", err)
 		}
+	}
+	if req.GoalConfig.StopOnSLABreach && req.GoalConfig.P95LatencyMs == nil && req.GoalConfig.MaxErrorPct == nil {
+		return "", fmt.Errorf("goal-oriented scenarios require p95_latency_ms or max_error_pct when stop_on_sla_breach is enabled")
 	}
 	if req.GoalConfig.StopOnMaxErrors && req.GoalConfig.MaxErrorCount == nil {
 		return "", fmt.Errorf("goal-oriented scenarios require max_error_count when stop_on_max_errors is enabled")
