@@ -14,6 +14,7 @@ describe('scenarioDraftUtils', () => {
 	    vusers: 10,
 	    rampUp: '',
 	    rampDown: '',
+	    iterations: undefined,
 	    initialization: 'at_runtime',
 	  })
 	})
@@ -80,8 +81,31 @@ describe('scenarioDraftUtils', () => {
 	    vusers: 30,
 	    rampUp: '30s',
 	    rampDown: '15s',
+	    iterations: undefined,
 	    initialization: 'at_once',
 	  }])
+	})
+
+	it('preserves group iterations when mapping a test summary into a reusable scenario draft', () => {
+	  const draft = buildScenarioDraftFromTest({
+	    id: 'test-1',
+	    name: 'Checkout Run',
+	    status: 'QUEUED',
+	    total_vusers: 30,
+	    duration: '5m',
+	    created_at: '2026-05-12T20:00:00Z',
+	    groups: [{
+	      name: 'Checkout',
+	      script_id: 'script-1',
+	      script_name: 'Checkout Script',
+	      protocol: 'http',
+	      vusers: 30,
+	      iterations: 3,
+	      initialization: 'at_once',
+	    }],
+	  } as never)
+
+	  expect(draft.groups[0].iterations).toBe(3)
 	})
 
 	it('updates nested goal and runtime settings through one reducer state', () => {

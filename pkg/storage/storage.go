@@ -121,6 +121,7 @@ type ScenarioScript struct {
 	VUsers         int    `json:"vusers"`
 	RampUp         string `json:"ramp_up,omitempty"`
 	RampDown       string `json:"ramp_down,omitempty"`
+	Iterations     *int   `json:"iterations,omitempty"`
 	Initialization string `json:"initialization,omitempty"`
 }
 

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act } from 'react'
+import { act, useState } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -49,8 +49,10 @@ describe('TestExecutionScenarioPreview', () => {
     const onExpandedScenarioScriptChange = vi.fn()
     const onEditScript = vi.fn()
 
-    await act(async () => {
-      root.render(
+    function PreviewHarness() {
+      const [expandedScenarioScript, setExpandedScenarioScript] = useState<string | null>(null)
+
+      return (
         <TestExecutionScenarioPreview
           test={{
             id: 'test-1',
@@ -80,6 +82,7 @@ describe('TestExecutionScenarioPreview', () => {
               vusers: 10,
               ramp_up: '30s',
               ramp_down: '15s',
+              iterations: 3,
               initialization: 'at_runtime',
             }],
           } as never}
@@ -105,6 +108,7 @@ describe('TestExecutionScenarioPreview', () => {
               vusers: 10,
               ramp_up: '30s',
               ramp_down: '15s',
+              iterations: 3,
               initialization: 'at_runtime',
             },
             detail: {
@@ -120,12 +124,19 @@ describe('TestExecutionScenarioPreview', () => {
           }]}
           scriptDetailsLoading={false}
           scriptDetailsError=""
-          expandedScenarioScript={null}
-          onExpandedScenarioScriptChange={onExpandedScenarioScriptChange}
+          expandedScenarioScript={expandedScenarioScript}
+          onExpandedScenarioScriptChange={(value) => {
+            onExpandedScenarioScriptChange(value)
+            setExpandedScenarioScript(value)
+          }}
           onEditScript={onEditScript}
           groupColors={['#0a84ff']}
-        />,
+        />
       )
+    }
+
+    await act(async () => {
+      root.render(<PreviewHarness />)
     })
 
     const summaryRow = container.querySelector('.scenario-script-summary')
@@ -164,6 +175,7 @@ describe('TestExecutionScenarioPreview', () => {
     })
 
     expect(onExpandedScenarioScriptChange).toHaveBeenCalledWith('Checkout')
+    expect(container.textContent).toContain('3 (group override)')
 
     await act(async () => {
       editButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))

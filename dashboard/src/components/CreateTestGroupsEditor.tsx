@@ -88,6 +88,16 @@ export default function CreateTestGroupsEditor({
                 placeholder="e.g. 30s"
               />
             </label>
+            <label className="narrow">
+              <span>Iterations</span>
+              <input
+                type="number"
+                value={group.iterations ?? ''}
+                onChange={(event) => onUpdateGroup(idx, { iterations: event.target.value ? Number(event.target.value) : undefined })}
+                min={1}
+                placeholder="script"
+              />
+            </label>
             <label className="medium">
               <span>Initialization</span>
               <select

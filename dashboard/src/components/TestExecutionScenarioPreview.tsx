@@ -81,7 +81,8 @@ function formatPacingLabel(scriptDetail?: ScenarioScriptDetail): string {
   return pacing.type.replace(/_/g, ' ')
 }
 
-function formatEffectiveIterations(scriptDetail: ScenarioScriptDetail | undefined, test: TestSummary): string {
+function formatEffectiveIterations(group: TestSummary['groups'][number], scriptDetail: ScenarioScriptDetail | undefined, test: TestSummary): string {
+  if (group.iterations !== undefined) return `${group.iterations} (group override)`
   const override = test.runtime_settings?.iterations
   if (override !== undefined) return `${override} (scenario override)`
   const iterations = scriptDetail?.script?.config?.run_logic?.iterations
@@ -487,7 +488,7 @@ export default function TestExecutionScenarioPreview({
                           </div>
                           <div className="scenario-script-detail-card">
                             <span className="scenario-script-detail-label">Iterations</span>
-                            <span className="scenario-script-detail-value">{formatEffectiveIterations(detail, test)}</span>
+                            <span className="scenario-script-detail-value">{formatEffectiveIterations(group, detail, test)}</span>
                           </div>
                           <div className="scenario-script-detail-card">
                             <span className="scenario-script-detail-label">Auto Transactions</span>

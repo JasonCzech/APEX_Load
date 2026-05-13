@@ -7,6 +7,7 @@ export type ScenarioGroupPayload = {
   vusers: number
   ramp_up?: string
   ramp_down?: string
+  iterations?: number
   initialization: ScenarioDraftGroup['initialization']
 }
 
@@ -89,6 +90,10 @@ export function buildScenarioGroupPayloads(groups: ScenarioDraftGroup[]): Scenar
 
     if (group.rampDown) {
       payload.ramp_down = group.rampDown
+    }
+
+    if (group.iterations !== undefined) {
+      payload.iterations = Number(group.iterations)
     }
 
     return payload
@@ -217,7 +222,7 @@ export function buildCreateTestPayload({
   }
 
   const normalizedGroups = buildScenarioGroupPayloads(groups)
-  if (normalizedGroups.length === 1 && !normalizedGroups[0].name) {
+  if (normalizedGroups.length === 1 && !normalizedGroups[0].name && normalizedGroups[0].iterations === undefined) {
     payload.script_id = normalizedGroups[0].script_id
     payload.vusers = normalizedGroups[0].vusers
     payload.ramp_up = normalizedGroups[0].ramp_up

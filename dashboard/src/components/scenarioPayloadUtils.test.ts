@@ -62,6 +62,7 @@ describe('scenarioPayloadUtils', () => {
         vusers: 40,
         rampUp: '2m',
         rampDown: '',
+        iterations: 3,
         initialization: 'at_once',
       }],
       goalConfig: {
@@ -96,6 +97,7 @@ describe('scenarioPayloadUtils', () => {
         script_id: 'script-1',
         vusers: 40,
         ramp_up: '2m',
+        iterations: 3,
         initialization: 'at_once',
       }],
       goal_config: {
@@ -117,5 +119,41 @@ describe('scenarioPayloadUtils', () => {
         selection_strategy: 'sequential',
       }],
     })
+  })
+
+  it('keeps a single unnamed group in the groups array when it has an iterations override', () => {
+    const payload = buildCreateTestPayload({
+      name: '',
+      duration: '5m',
+      startDelay: '',
+      scenarioMode: 'vuser_driven',
+      scriptShakeout: false,
+      resourceBaseline: false,
+      groups: [{
+        name: '',
+        scriptId: 'script-1',
+        vusers: 25,
+        rampUp: '30s',
+        rampDown: '',
+        iterations: 4,
+        initialization: 'at_runtime',
+      }],
+      goalConfig: {},
+      runtimeSettings: {
+        iterations: undefined,
+        log_level: '',
+        auto_transactions: '',
+        snapshot_on_error: false,
+      },
+    })
+
+    expect(payload.groups).toEqual([{
+      script_id: 'script-1',
+      vusers: 25,
+      ramp_up: '30s',
+      iterations: 4,
+      initialization: 'at_runtime',
+    }])
+    expect(payload.script_id).toBeUndefined()
   })
 })

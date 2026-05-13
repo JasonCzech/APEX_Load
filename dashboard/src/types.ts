@@ -8,6 +8,7 @@ export interface TestGroup {
   vusers: number
   ramp_up?: string
   ramp_down?: string
+  iterations?: number
   initialization?: 'at_runtime' | 'at_once'
 }
 
@@ -256,6 +257,7 @@ export interface ScenarioDraftGroup {
   vusers: number
   rampUp: string
   rampDown: string
+  iterations?: number
   initialization: 'at_runtime' | 'at_once'
 }
 

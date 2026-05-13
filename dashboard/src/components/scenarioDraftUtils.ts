@@ -21,6 +21,7 @@ export function buildDefaultScenarioGroup(scripts: StoredScript[]): ScenarioDraf
     vusers: 10,
     rampUp: '',
     rampDown: '',
+    iterations: undefined,
     initialization: 'at_runtime',
   }
 }
@@ -62,6 +63,7 @@ export function buildScenarioDraftFromTest(test: TestSummary): ScenarioDraft {
       vusers: group.vusers,
       rampUp: group.ramp_up || '',
       rampDown: group.ramp_down || '',
+      iterations: group.iterations,
       initialization: group.initialization || 'at_runtime',
     }))
     : [{
@@ -70,6 +72,7 @@ export function buildScenarioDraftFromTest(test: TestSummary): ScenarioDraft {
       vusers: test.total_vusers || 10,
       rampUp: '',
       rampDown: '',
+      iterations: undefined,
       initialization: 'at_runtime' as const,
     }]
 

@@ -239,6 +239,7 @@ func TestCreateTestPreservesRuntimeSettingsAndGroups(t *testing.T) {
 			VUsers:       25,
 			RampUp:       "15s",
 			RampDown:     "10s",
+			Iterations:   &iterations,
 			InitStrategy: "at_once",
 		}},
 		RuntimeSettings: &RuntimeSettingsOverride{
@@ -304,6 +305,9 @@ func TestCreateTestPreservesRuntimeSettingsAndGroups(t *testing.T) {
 	}
 	if test.Groups[0].RampDown != "10s" {
 		t.Fatalf("expected ramp down 10s, got %q", test.Groups[0].RampDown)
+	}
+	if test.Groups[0].Iterations == nil || *test.Groups[0].Iterations != iterations {
+		t.Fatalf("expected group iterations %d, got %#v", iterations, test.Groups[0].Iterations)
 	}
 	if test.Groups[0].Initialization != "at_once" {
 		t.Fatalf("expected initialization at_once, got %q", test.Groups[0].Initialization)
@@ -1147,6 +1151,29 @@ func TestValidateScenarioRequestRejectsInvalidStartDelay(t *testing.T) {
 
 	if err == nil {
 		t.Fatal("expected invalid start_delay to fail validation")
+	}
+}
+
+func TestCompileManagedTestGroupsRejectsInvalidGroupIterations(t *testing.T) {
+	hub := NewHub()
+	runner := NewTestRunner(2, hub, nil)
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-1",
+		Name:     "Checkout",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Config:   dsl.ScriptConfig{},
+	})
+	zero := 0
+
+	_, _, _, err := runner.compileManagedTestGroupsLocked([]CreateGroupEntry{{
+		ScriptID:   "script-1",
+		VUsers:     10,
+		Iterations: &zero,
+	}}, nil)
+
+	if err == nil {
+		t.Fatal("expected invalid group iterations to fail compilation")
 	}
 }
 

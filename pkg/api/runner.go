@@ -135,6 +135,7 @@ type TestGroup struct {
 	VUsers         int    `json:"vusers"`
 	RampUp         string `json:"ramp_up,omitempty"`
 	RampDown       string `json:"ramp_down,omitempty"`
+	Iterations     *int   `json:"iterations,omitempty"`
 	Initialization string `json:"initialization,omitempty"`
 	rampUpDur      time.Duration
 	script         *dsl.Script
@@ -277,6 +278,7 @@ type ScenarioScriptRef struct {
 	VUsers         int    `json:"vusers"`
 	RampUp         string `json:"ramp_up,omitempty"`
 	RampDown       string `json:"ramp_down,omitempty"`
+	Iterations     *int   `json:"iterations,omitempty"`
 	Initialization string `json:"initialization,omitempty"`
 }
 
@@ -375,6 +377,7 @@ func (tr *TestRunner) buildStoredScenario(scenario *storage.Scenario, scripts []
 			VUsers:         script.VUsers,
 			RampUp:         script.RampUp,
 			RampDown:       script.RampDown,
+			Iterations:     script.Iterations,
 			Initialization: script.Initialization,
 		}
 		if stored, ok := tr.scripts[script.ScriptID]; ok {
@@ -701,6 +704,7 @@ func (tr *TestRunner) storeScenarioLocked(id string, req CreateScenarioRequest) 
 			VUsers:         group.VUsers,
 			RampUp:         group.RampUp,
 			RampDown:       group.RampDown,
+			Iterations:     group.Iterations,
 			Initialization: group.InitStrategy,
 		})
 	}
@@ -979,6 +983,7 @@ type CreateGroupEntry struct {
 	VUsers       int    `json:"vusers"`
 	RampUp       string `json:"ramp_up,omitempty"`
 	RampDown     string `json:"ramp_down,omitempty"`
+	Iterations   *int   `json:"iterations,omitempty"`
 	InitStrategy string `json:"initialization,omitempty"` // "at_runtime", "at_once"
 }
 
@@ -1171,6 +1176,7 @@ func createTestRequestFromScenario(req CreateTestRequest, scenario *StoredScenar
 				VUsers:       script.VUsers,
 				RampUp:       script.RampUp,
 				RampDown:     script.RampDown,
+				Iterations:   script.Iterations,
 				InitStrategy: script.Initialization,
 			})
 		}
@@ -1277,6 +1283,9 @@ func (tr *TestRunner) compileManagedTestGroupLocked(index int, totalGroups int, 
 	if vusers <= 0 {
 		vusers = 10
 	}
+	if group.Iterations != nil && *group.Iterations < 1 {
+		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: iterations must be greater than 0", index)
+	}
 
 	rampUp, err := parseOptionalGroupDuration(group.RampUp, index, "ramp_up")
 	if err != nil {
@@ -1308,6 +1317,7 @@ func (tr *TestRunner) compileManagedTestGroupLocked(index int, totalGroups int, 
 		VUsers:         vusers,
 		RampUp:         group.RampUp,
 		RampDown:       group.RampDown,
+		Iterations:     group.Iterations,
 		Initialization: initStrategy,
 		rampUpDur:      rampUp,
 		script:         script.Script,
@@ -1317,8 +1327,16 @@ func (tr *TestRunner) compileManagedTestGroupLocked(index int, totalGroups int, 
 	if len(sharedDataSources) > 0 {
 		scriptCopy.DataSources = append(cloneDataSources(scriptCopy.DataSources), sharedDataSources...)
 	}
-	if runtimeSettings != nil {
-		applyRuntimeOverrides(&scriptCopy, runtimeSettings)
+	effectiveRuntimeSettings := cloneRuntimeSettings(runtimeSettings)
+	if group.Iterations != nil {
+		if effectiveRuntimeSettings == nil {
+			effectiveRuntimeSettings = &RuntimeSettingsOverride{}
+		}
+		iterations := *group.Iterations
+		effectiveRuntimeSettings.Iterations = &iterations
+	}
+	if effectiveRuntimeSettings != nil {
+		applyRuntimeOverrides(&scriptCopy, effectiveRuntimeSettings)
 	}
 
 	engineGroup := engine.GroupConfig{
