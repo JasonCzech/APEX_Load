@@ -179,18 +179,19 @@ That order minimizes churn and avoids rebuilding the UI around unstable backend 
 
 ### In Progress
 - Phase 3 frontend orchestration is partially consolidated through shared import normalization, shared error handling, and typed recorder/import flows, but the script hub still owns route-level orchestration.
+- The recorder path now uses the same preview-first review/edit/save lifecycle as the other active non-JMeter builders, with recorder output able to hand off into the canonical script editor before save.
 - The live script library now uses typed sort helpers for both reusable scripts and linked scenario runs instead of local `any` sort casting.
 - Phase 4 scenario assembly cleanup has started from the reusable test-creation surface. `CreateTestModal` now uses typed payload, chart, and callback contracts instead of local `any` seams.
 - The execution surface now shares typed history, archive summary, live-control, and chart contracts instead of relying on local `any` casts in the main `TestExecution` path.
 
 ### Remaining High-Value Work
 - Finish the scenario assembly path by tightening `TestExecution`, `CreateTestModal` adjacencies, and shared execution/result models.
-- Complete the shared authoring-shell consolidation so the script hub stops owning route-level review/save orchestration.
+- Complete the shared authoring-shell consolidation so the script hub stops owning the remaining route-level create/import state transitions.
 - Run the end-to-end parity pass, then remove any temporary normalization or migration adapters that remain after validation.
 
 ### Current Cleanup Note
 - The duplicate page copies and obsolete patch/temp artifacts have been removed.
-- Remaining cleanup work is now focused on parity verification and adapter removal rather than dead-file deletion.
+- Remaining cleanup work is now focused on parity verification, route-level orchestration cleanup, and adapter removal rather than dead-file deletion.
 
 ## File-Level Targets
 

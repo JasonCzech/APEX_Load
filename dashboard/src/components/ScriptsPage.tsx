@@ -246,7 +246,7 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
 
   const handleSaved = () => { refresh(); setSubView('list'); setEditingId(null); setEditingScript(null); setDraftScript(null) }
   const handleImported = () => { refresh(); setSubView('list') }
-  const handleSampleEdit = (script: ScriptDefinition) => { setDraftScript(script); setEditingId(null); setEditingScript(null); setSubView('create') }
+  const handleDraftEdit = (script: ScriptDefinition) => { setDraftScript(script); setEditingId(null); setEditingScript(null); setSubView('create') }
   const startApiScript = () => { setDraftScript(createApiDraft()); setEditingId(null); setEditingScript(null); setSubView('create') }
   const startWebScript = () => { setDraftScript(createWebDraft()); setEditingId(null); setEditingScript(null); setSubView('create') }
   const startJmsScript = () => { setDraftScript(createJmsDraft()); setEditingId(null); setEditingScript(null); setSubView('create') }
@@ -271,7 +271,7 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
     return (
       <div className="page">
         <button className="btn btn-secondary" onClick={() => setSubView('create-options')} style={{ alignSelf: 'flex-start' }}>Back to Create Script</button>
-        <RecordingStudio />
+        <RecordingStudio onImported={handleImported} onEdit={handleDraftEdit} />
       </div>
     )
   }
@@ -280,7 +280,7 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
     return (
       <div className="page">
         <button className="btn btn-secondary" onClick={() => setSubView('create-options')} style={{ alignSelf: 'flex-start' }}>Back to Create Script</button>
-        <SampleScriptImport onImported={handleImported} onEdit={handleSampleEdit} onClose={() => setSubView('create-options')} />
+        <SampleScriptImport onImported={handleImported} onEdit={handleDraftEdit} onClose={() => setSubView('create-options')} />
       </div>
     )
   }

@@ -14,6 +14,7 @@ const apiMock = {
   getRecording: vi.fn(),
   previewRecordingConversion: vi.fn(),
   convertRecording: vi.fn(),
+  createScript: vi.fn(),
   startRecording: vi.fn(),
   stopRecording: vi.fn(),
   pauseRecording: vi.fn(),
@@ -108,6 +109,7 @@ describe('RecordingStudio', () => {
       ],
       warnings: ['review dynamic headers'],
     })
+    apiMock.createScript.mockResolvedValue({ id: 'script-1' })
   })
 
   afterEach(async () => {
@@ -118,9 +120,12 @@ describe('RecordingStudio', () => {
     vi.clearAllMocks()
   })
 
-  it('renders preview and convert results for a stopped recording session', async () => {
+  it('reviews a recording conversion and saves it through the shared script flow', async () => {
+    const onImported = vi.fn()
+    const onEdit = vi.fn()
+
     await act(async () => {
-      root.render(<RecordingStudio />)
+      root.render(<RecordingStudio onImported={onImported} onEdit={onEdit} />)
     })
 
     await flushPromises()
@@ -128,14 +133,14 @@ describe('RecordingStudio', () => {
     expect(container.textContent).toContain('Recorded Sessions')
     expect(container.textContent).toContain('Checkout Capture')
 
-    const previewButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Preview')
-    expect(previewButton).toBeDefined()
-    if (!previewButton) {
+    const reviewButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Review Script')
+    expect(reviewButton).toBeDefined()
+    if (!reviewButton) {
       return
     }
 
     await act(async () => {
-      previewButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      reviewButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
     await flushPromises()
@@ -145,23 +150,46 @@ describe('RecordingStudio', () => {
     expect(container.textContent).toContain('Checkout Preview')
     expect(container.textContent).toContain('review dynamic headers')
     expect(container.textContent).toContain('{{var.session_id}}')
+    expect(container.textContent).toContain('Save To Script Library')
+    expect(container.textContent).toContain('Open In Visual Editor')
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Convert to Script')
-    expect(convertButton).toBeDefined()
-    if (!convertButton) {
+    const editButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Open In Visual Editor')
+    expect(editButton).toBeDefined()
+    if (!editButton) {
       return
     }
 
     await act(async () => {
-      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      editButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Checkout Preview',
+      protocol: 'http',
+    }))
+
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Save To Script Library')
+    expect(saveButton).toBeDefined()
+    if (!saveButton) {
+      return
+    }
+
+    await act(async () => {
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
     await flushPromises()
 
-    expect(apiMock.convertRecording).toHaveBeenCalledWith('rec-1', 'Checkout Capture')
-    expect(container.textContent).toContain('Script "Checkout Converted" created with 1 correlations detected')
-    expect(container.textContent).toContain('Checkout Converted')
-    expect(container.textContent).toContain('script-1')
+    expect(apiMock.convertRecording).not.toHaveBeenCalled()
+    expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Checkout Preview',
+      protocol: 'http',
+    }))
+    expect(container.textContent).toContain('Script "Checkout Preview" created with 1 correlations detected')
+    expect(onImported).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Checkout Preview',
+      protocol: 'http',
+    }))
   })
 })
 

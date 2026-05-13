@@ -6,7 +6,8 @@ import { BASE } from '../hooks/apiClient'
 import { Project } from '../types'
 import { getErrorMessage } from '../utils/errorUtils'
 import { normalizeScriptImportResult } from './scriptImportUtils'
-import { type RecorderCorrelation as Correlation, type RecorderImportResult } from '../types/scriptImports'
+import { type RecorderCorrelation as Correlation, type ScriptImportResult } from '../types/scriptImports'
+import { type ScriptDefinition } from '../types/scripts'
 import './RecordingStudio.css'
 
 interface RecordedRequest {
@@ -58,7 +59,15 @@ interface StartRecordingRequest {
   exclude_hosts?: string[]
 }
 
-export default function RecordingStudio({ activeProject }: { activeProject?: Project | null }) {
+type RecorderPreviewResult = ScriptImportResult<Record<string, unknown>, Correlation, ScriptDefinition>
+
+interface Props {
+  activeProject?: Project | null
+  onImported?: (script: ScriptDefinition) => void
+  onEdit?: (script: ScriptDefinition) => void
+}
+
+export default function RecordingStudio({ activeProject, onImported, onEdit }: Props) {
   const api = useApi()
   const [sessions, setSessions] = useState<RecordingSession[]>([])
   const [activeSession, setActiveSession] = useState<RecordingSession | null>(null)
@@ -79,7 +88,8 @@ export default function RecordingStudio({ activeProject }: { activeProject?: Pro
     excluded: false,
   })
   const [showSetup, setShowSetup] = useState(true)
-  const convertTask = useAsyncTask<RecorderImportResult>()
+  const convertTask = useAsyncTask<RecorderPreviewResult>()
+  const saveTask = useAsyncTask<boolean>()
 
   const proxyPort = (proxyAddr || ':8081').split(':').pop() || '8081'
 
@@ -233,7 +243,7 @@ export default function RecordingStudio({ activeProject }: { activeProject?: Pro
   const handlePreviewConversion = async (session: RecordingSession) => {
     try {
       const result = await convertTask.run(
-        async () => normalizeScriptImportResult<Record<string, unknown>, Correlation>(await api.previewRecordingConversion(session.id, session.name)),
+        async () => normalizeScriptImportResult<Record<string, unknown>, Correlation, ScriptDefinition>(await api.previewRecordingConversion(session.id, session.name)),
         { clearValue: true },
       )
       showFeedback(`Preview generated with ${result.script.actions?.length || 0} actions and ${result.correlations?.length || 0} correlations`)
@@ -258,15 +268,17 @@ export default function RecordingStudio({ activeProject }: { activeProject?: Pro
     }
   }
 
-  const handleConvert = async (session: RecordingSession) => {
+  const handleSaveConverted = async () => {
+    if (!convertTask.value?.script) return
     try {
-      const result = await convertTask.run(
-        async () => normalizeScriptImportResult<Record<string, unknown>, Correlation>(await api.convertRecording(session.id, session.name)),
-        { clearValue: true },
-      )
-      showFeedback(`Script "${result.script.name}" created with ${result.correlations?.length || 0} correlations detected`)
+      await saveTask.run(async () => {
+        await api.createScript(convertTask.value!.script)
+        return true
+      })
+      showFeedback(`Script "${convertTask.value.script.name}" created with ${convertTask.value.correlations?.length || 0} correlations detected`)
+      onImported?.(convertTask.value.script)
     } catch (error: unknown) {
-      showFeedback(getErrorMessage(error, 'Failed to convert recording'), 'error')
+      showFeedback(getErrorMessage(error, 'Failed to save generated script'), 'error')
     }
   }
 
@@ -283,6 +295,7 @@ export default function RecordingStudio({ activeProject }: { activeProject?: Pro
   const stoppedSessions = sessions.filter(s => s.status === 'stopped')
   const convertResult = convertTask.value
   const converting = convertTask.pending
+  const saving = saveTask.pending
 
   return (
     <div className="page recording-studio">
@@ -517,17 +530,10 @@ export default function RecordingStudio({ activeProject }: { activeProject?: Pro
                 <div className="rec-session-actions">
                   <button
                     className="btn btn-sm btn-primary"
-                    onClick={(e) => { e.stopPropagation(); handleConvert(session) }}
-                    disabled={converting}
-                  >
-                    {converting ? 'Converting...' : 'Convert to Script'}
-                  </button>
-                  <button
-                    className="btn btn-sm btn-secondary"
                     onClick={(e) => { e.stopPropagation(); handlePreviewConversion(session) }}
                     disabled={converting}
                   >
-                    Preview
+                    {converting ? 'Generating...' : 'Review Script'}
                   </button>
                   <button
                     className="btn btn-sm btn-secondary"
@@ -670,7 +676,16 @@ export default function RecordingStudio({ activeProject }: { activeProject?: Pro
       {/* Convert Result */}
       {convertResult && (
         <div className="rec-convert-result">
-          <h3 className="rec-section-title">Conversion Result</h3>
+          <div className="rec-result-header">
+            <div>
+              <h3 className="rec-section-title">Conversion Result</h3>
+              <p className="page-subtitle">Review the generated script, warnings, and correlations before saving.</p>
+            </div>
+            <div className="rec-session-actions">
+              {onEdit && <button className="btn btn-secondary" onClick={() => onEdit(convertResult.script)}>Open In Visual Editor</button>}
+              <button className="btn btn-primary" onClick={handleSaveConverted} disabled={saving}>{saving ? 'Saving...' : 'Save To Script Library'}</button>
+            </div>
+          </div>
           <div className="rec-result-summary">
             <div className="rec-result-item">
               <span className="rec-result-label">Script</span>
@@ -681,8 +696,8 @@ export default function RecordingStudio({ activeProject }: { activeProject?: Pro
               <span className="rec-result-value">{convertResult.script.protocol}</span>
             </div>
             <div className="rec-result-item">
-              <span className="rec-result-label">Script ID</span>
-              <code className="rec-result-value">{convertResult.script.id}</code>
+              <span className="rec-result-label">Actions</span>
+              <span className="rec-result-value">{convertResult.script.actions?.length || 0}</span>
             </div>
           </div>
 
