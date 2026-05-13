@@ -432,12 +432,20 @@ export default function TestExecutionScenarioPreview({
             <div className="scenario-script-rows">
               {queuedScenarioRows.map(({ group, detail, actionCount, initCount, teardownCount, dataSourceCount }, index) => {
                 const isExpanded = expandedScenarioScript === group.name
+                const toggleExpanded = () => onExpandedScenarioScriptChange(isExpanded ? null : group.name)
                 return (
                   <div key={`${group.name}-${group.script_id}`} className={`scenario-script-row ${isExpanded ? 'expanded' : ''}`}>
-                    <button
-                      type="button"
+                    <div
                       className="scenario-script-summary"
-                      onClick={() => onExpandedScenarioScriptChange(isExpanded ? null : group.name)}
+                      role="button"
+                      tabIndex={0}
+                      onClick={toggleExpanded}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault()
+                          toggleExpanded()
+                        }
+                      }}
                     >
                       <span className="scenario-script-color" style={{ background: groupColors[index % groupColors.length] }}></span>
                       <span className="scenario-script-cell scenario-script-name-cell">
@@ -462,7 +470,7 @@ export default function TestExecutionScenarioPreview({
                         </button>
                         <span className="scenario-script-toggle">{isExpanded ? 'Hide' : 'Inspect'}</span>
                       </span>
-                    </button>
+                    </div>
 
                     {isExpanded && (
                       <div className="scenario-script-detail-panel">

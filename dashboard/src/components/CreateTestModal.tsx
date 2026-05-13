@@ -1,6 +1,6 @@
 import { useEffect, useReducer, useState } from 'react'
 import { useApi } from '../hooks/useApi'
-import { DraftCapacityEstimate, GoalConfig, ScenarioDraft, ScenarioMode, StoredScript, TestSummary } from '../types'
+import { DraftCapacityEstimate, GoalConfig, ScenarioDraft, ScenarioDraftGroup, ScenarioMode, StoredScript, TestSummary } from '../types'
 import './CreateTestModal.css'
 import { parseDurationToSeconds } from '../utils/timeUtils'
 import CreateTestCapacityPreview from './CreateTestCapacityPreview'
@@ -8,16 +8,7 @@ import CreateTestGoalSettings from './CreateTestGoalSettings'
 import CreateTestGroupsEditor from './CreateTestGroupsEditor'
 import CreateTestRuntimeOverrides from './CreateTestRuntimeOverrides'
 import { getErrorMessage } from '../utils/errorUtils'
-
-
-interface GroupEntry {
-  name: string
-  scriptId: string
-  vusers: number
-  rampUp: string
-  rampDown: string
-  initialization: 'at_runtime' | 'at_once'
-}
+import { buildDefaultScenarioGroup, buildInitialScenarioDraft, ScenarioDraftState, ScenarioRuntimeSettings } from './scenarioDraftUtils'
 
 interface Props {
   scripts: StoredScript[]
@@ -39,7 +30,7 @@ type CreateTestPayloadGroup = {
   vusers: number
   ramp_up?: string
   ramp_down?: string
-  initialization: GroupEntry['initialization']
+  initialization: ScenarioDraftGroup['initialization']
 }
 
 type CreateTestPayload = {
@@ -54,7 +45,7 @@ type CreateTestPayload = {
   vusers?: number
   ramp_up?: string
   ramp_down?: string
-  initialization?: GroupEntry['initialization']
+  initialization?: ScenarioDraftGroup['initialization']
   groups?: CreateTestPayloadGroup[]
   goal_config?: GoalConfig
   runtime_settings?: {
@@ -67,22 +58,6 @@ type CreateTestPayload = {
   }
 }
 
-interface RuntimeSettingsState {
-  iterations?: number
-  log_level: string
-  auto_transactions: string
-  snapshot_on_error: boolean
-}
-
-interface ScenarioDraftState {
-  name: string
-  duration: string
-  scenarioMode: ScenarioMode
-  scriptShakeout: boolean
-  resourceBaseline: boolean
-  groups: GroupEntry[]
-}
-
 type GoalConfigAction = {
   field: keyof GoalConfig
   value: GoalConfig[keyof GoalConfig]
@@ -93,33 +68,13 @@ type RuntimeSettingsAction = {
   value: RuntimeSettingsState[keyof RuntimeSettingsState]
 }
 
-type ScenarioDraftField = keyof Omit<ScenarioDraftState, 'groups'>
+type ScenarioDraftField = keyof Omit<ScenarioDraftState, 'groups' | 'goalConfig' | 'runtimeSettings'>
 
 type ScenarioDraftAction =
   | { type: 'setField'; field: ScenarioDraftField; value: ScenarioDraftState[ScenarioDraftField] }
-  | { type: 'updateGroup'; index: number; patch: Partial<GroupEntry> }
-  | { type: 'addGroup'; group: GroupEntry }
+  | { type: 'updateGroup'; index: number; patch: Partial<ScenarioDraftGroup> }
+  | { type: 'addGroup'; group: ScenarioDraftGroup }
   | { type: 'removeGroup'; index: number }
-
-const buildDefaultGroup = (scripts: StoredScript[]): GroupEntry => ({
-  name: '',
-  scriptId: scripts[0]?.id || '',
-  vusers: 10,
-  rampUp: '',
-  rampDown: '',
-  initialization: 'at_runtime',
-})
-
-function buildInitialScenarioDraft(initialScenario: ScenarioDraft | undefined, scripts: StoredScript[]): ScenarioDraftState {
-  return {
-    name: initialScenario?.name || '',
-    duration: initialScenario?.duration || '1m',
-    scenarioMode: initialScenario?.scenarioMode || 'vuser_driven',
-    scriptShakeout: Boolean(initialScenario?.scriptShakeout),
-    resourceBaseline: Boolean(initialScenario?.resourceBaseline),
-    groups: initialScenario?.groups.length ? initialScenario.groups : [buildDefaultGroup(scripts)],
-  }
-}
 
 function goalConfigReducer(state: GoalConfig, action: GoalConfigAction): GoalConfig {
   return {
@@ -201,12 +156,12 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
     dispatchScenarioDraft({ type: 'setField', field, value })
   }
 
-  const updateGroup = (idx: number, patch: Partial<GroupEntry>) => {
+  const updateGroup = (idx: number, patch: Partial<ScenarioDraftGroup>) => {
     dispatchScenarioDraft({ type: 'updateGroup', index: idx, patch })
   }
 
   const addGroup = () => {
-    dispatchScenarioDraft({ type: 'addGroup', group: buildDefaultGroup(scripts) })
+    dispatchScenarioDraft({ type: 'addGroup', group: buildDefaultScenarioGroup(scripts) })
   }
 
   const updateGoalConfig = <K extends keyof GoalConfig>(field: K, value: GoalConfig[K]) => {

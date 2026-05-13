@@ -1,9 +1,6 @@
-interface RuntimeSettingsState {
-  iterations?: number
-  log_level: string
-  auto_transactions: string
-  snapshot_on_error: boolean
-}
+import { ScenarioDraft } from '../types'
+
+type RuntimeSettingsState = ScenarioDraft['runtimeSettings']
 
 interface Props {
   runtimeSettings: RuntimeSettingsState

@@ -50,7 +50,7 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
     const values = new Set((scenario?.scripts || []).map(script => script.protocol || 'http'))
     return Array.from(values)
   }, [scenario])
-  const associatedReleaseNames = useMemo(() => (scenario?.associated_releases || []).map(item => item.name), [scenario])
+  const associatedReleases = useMemo(() => scenario?.associated_releases || [], [scenario])
   const readiness = useMemo(() => {
     const checks = [
       { label: activeApplication ? `Application: ${activeApplication.name}` : 'Select an application', ready: !!activeApplication },
@@ -197,9 +197,9 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
               {scenario && (
                 <div className="new-test-associated-row">
                   <span className="setting-label">Associated Releases</span>
-                  {associatedReleaseNames.length > 0 ? (
+                  {associatedReleases.length > 0 ? (
                     <div className="new-test-tag-list">
-                      {associatedReleaseNames.map(name => <span key={name} className="new-test-tag">{name}</span>)}
+                      {associatedReleases.map((item) => <span key={item.id} className="new-test-tag">{item.name}</span>)}
                     </div>
                   ) : (
                     <p className="new-test-inline-note">This scenario has not been run against a release yet.</p>

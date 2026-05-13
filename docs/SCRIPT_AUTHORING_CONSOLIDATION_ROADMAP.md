@@ -182,7 +182,7 @@ That order minimizes churn and avoids rebuilding the UI around unstable backend 
 - The recorder path now uses the same preview-first review/edit/save lifecycle as the other active non-JMeter builders, with recorder output able to hand off into the canonical script editor before save.
 - The active non-JMeter builders now share a common review/save panel structure for title, warnings, edit handoff, save action, and script preview while keeping source-specific stats and metadata sections local.
 - The live script library now uses typed sort helpers for both reusable scripts and linked scenario runs instead of local `any` sort casting.
-- Phase 4 scenario assembly cleanup has started from the reusable test-creation surface. `CreateTestModal` now uses typed payload, chart, and callback contracts instead of local `any` seams.
+- Phase 4 scenario assembly cleanup has started from the reusable test-creation surface. `CreateTestModal` now uses typed payload, chart, and callback contracts instead of local `any` seams, and the scenario draft/group mapping shared with `TestExecutionScenarioEditor` now lives in one helper instead of being rebuilt in each caller.
 - The execution surface now shares typed history, archive summary, live-control, and chart contracts instead of relying on local `any` casts in the main `TestExecution` path.
 
 ### Remaining High-Value Work

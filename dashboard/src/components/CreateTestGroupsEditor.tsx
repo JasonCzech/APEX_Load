@@ -1,20 +1,11 @@
-import { StoredScript, ScenarioMode } from '../types'
-
-interface GroupEntry {
-  name: string
-  scriptId: string
-  vusers: number
-  rampUp: string
-  rampDown: string
-  initialization: 'at_runtime' | 'at_once'
-}
+import { StoredScript, ScenarioDraftGroup, ScenarioMode } from '../types'
 
 interface Props {
   scenarioMode: ScenarioMode
-  groups: GroupEntry[]
+  groups: ScenarioDraftGroup[]
   scripts: StoredScript[]
   onAddGroup: () => void
-  onUpdateGroup: (index: number, patch: Partial<GroupEntry>) => void
+  onUpdateGroup: (index: number, patch: Partial<ScenarioDraftGroup>) => void
   onRemoveGroup: (index: number) => void
 }
 
@@ -101,7 +92,7 @@ export default function CreateTestGroupsEditor({
               <span>Initialization</span>
               <select
                 value={group.initialization}
-                onChange={(event) => onUpdateGroup(idx, { initialization: event.target.value as GroupEntry['initialization'] })}
+                onChange={(event) => onUpdateGroup(idx, { initialization: event.target.value as ScenarioDraftGroup['initialization'] })}
               >
                 <option value="at_runtime">At Runtime</option>
                 <option value="at_once">At Once</option>
