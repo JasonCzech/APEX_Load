@@ -100,6 +100,20 @@ func TestClientRoundTripDistributeAssignAndHeartbeat(t *testing.T) {
 		t.Fatalf("available capacity = %d, want 40", assignmentAck.AvailableCapacity)
 	}
 
+	adjustmentAck, err := client.AdjustVUsers(ctx, VUserAdjustment{
+		TestID:       "test-1",
+		TargetVUsers: 12,
+	})
+	if err != nil {
+		t.Fatalf("AdjustVUsers: %v", err)
+	}
+	if !adjustmentAck.Accepted {
+		t.Fatal("expected vuser adjustment to be accepted")
+	}
+	if adjustmentAck.CurrentVUsers != 12 {
+		t.Fatalf("current vusers = %d, want 12", adjustmentAck.CurrentVUsers)
+	}
+
 	heartbeat, err := client.OpenHeartbeat(ctx)
 	if err != nil {
 		t.Fatalf("OpenHeartbeat: %v", err)
@@ -124,8 +138,8 @@ func TestClientRoundTripDistributeAssignAndHeartbeat(t *testing.T) {
 	if !stopAck.Acknowledged {
 		t.Fatal("expected stop acknowledgement")
 	}
-	if stopAck.PendingVUsers != 10 {
-		t.Fatalf("pending vusers = %d, want 10", stopAck.PendingVUsers)
+	if stopAck.PendingVUsers != 12 {
+		t.Fatalf("pending vusers = %d, want 12", stopAck.PendingVUsers)
 	}
 	if err := heartbeat.Send(Heartbeat{GeneratorID: "generator-1", TimestampUnixMs: 1235}); err != nil {
 		t.Fatalf("Heartbeat Send after stop: %v", err)

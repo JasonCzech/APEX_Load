@@ -102,8 +102,34 @@ func (s *Service) AssignWork(_ context.Context, assignment *pb.WorkAssignment) (
 	}, nil
 }
 
-func (s *Service) AdjustVUsers(context.Context, *pb.VUserAdjustment) (*pb.AdjustmentAck, error) {
-	return nil, status.Error(codes.Unimplemented, "adjust_vusers is not implemented yet")
+func (s *Service) AdjustVUsers(_ context.Context, request *pb.VUserAdjustment) (*pb.AdjustmentAck, error) {
+	if request.GetTestId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "test_id is required")
+	}
+	if request.GetTargetVusers() < 0 {
+		return nil, status.Error(codes.InvalidArgument, "target_vusers must be non-negative")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	assignment, ok := s.assignments[request.GetTestId()]
+	if !ok {
+		return nil, status.Error(codes.NotFound, "test assignment not found")
+	}
+
+	projected := s.activeVUsersLocked() - assignment.vuserCount + request.GetTargetVusers()
+	if projected > s.maxVUsers {
+		return nil, status.Error(codes.ResourceExhausted, "insufficient generator capacity")
+	}
+
+	assignment.vuserCount = request.GetTargetVusers()
+	s.assignments[request.GetTestId()] = assignment
+
+	return &pb.AdjustmentAck{
+		Accepted:      true,
+		CurrentVusers: assignment.vuserCount,
+	}, nil
 }
 
 func (s *Service) StopTest(_ context.Context, request *pb.StopRequest) (*pb.StopAck, error) {

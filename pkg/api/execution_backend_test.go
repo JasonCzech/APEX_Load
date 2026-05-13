@@ -413,9 +413,6 @@ func TestDistributedExecutionBackendReportsUnsupportedLifecycleControls(t *testi
 		time.Sleep(20 * time.Millisecond)
 	}
 
-	if err := runner.ScaleVUsers(testRun.ID, "Group A", 7); err == nil || !strings.Contains(err.Error(), "does not support scaling vusers yet") {
-		t.Fatalf("ScaleVUsers error = %v, want distributed unsupported scaling error", err)
-	}
 	if err := runner.AdjustDuration(testRun.ID, 45*time.Second); err == nil || !strings.Contains(err.Error(), "does not support duration changes yet") {
 		t.Fatalf("AdjustDuration error = %v, want distributed unsupported duration error", err)
 	}
@@ -429,5 +426,215 @@ func TestDistributedExecutionBackendReportsUnsupportedLifecycleControls(t *testi
 
 	if err := runner.ResumeTest(testRun.ID); err == nil || !strings.Contains(err.Error(), "does not support resume yet") {
 		t.Fatalf("ResumeTest error = %v, want distributed unsupported resume error", err)
+	}
+}
+
+func TestDistributedExecutionBackendScalesSingleGroupTest(t *testing.T) {
+	const bufSize = 1024 * 1024
+
+	listener := bufconn.Listen(bufSize)
+	server := grpc.NewServer()
+	pb.RegisterGeneratorControlServer(server, generatorrpc.NewService("generator-1", 50))
+
+	go func() {
+		_ = server.Serve(listener)
+	}()
+	t.Cleanup(func() {
+		server.Stop()
+		_ = listener.Close()
+	})
+
+	hub := NewHub()
+	runner := NewTestRunner(1, hub, nil)
+	runner.setExecutionBackend(newDistributedExecutionBackend(
+		[]string{"bufnet"},
+		5*time.Second,
+		func(ctx context.Context, target string) (generatorClient, error) {
+			return generatorrpc.Dial(
+				ctx,
+				target,
+				grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+					return listener.Dial()
+				}),
+				grpc.WithTransportCredentials(insecure.NewCredentials()),
+				grpc.WithBlock(),
+			)
+		},
+	))
+
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-1",
+		Name:     "Checkout",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Config: dsl.ScriptConfig{
+			BaseURL: "https://example.com",
+			RunLogic: dsl.RunLogicConfig{
+				Iterations: 1,
+			},
+		},
+		Actions: []dsl.Action{{Name: "Home", Type: "GET", Target: "/"}},
+	})
+
+	testRun, err := runner.CreateTest(CreateTestRequest{
+		Name:     "Distributed scale",
+		Duration: "30s",
+		Groups: []CreateGroupEntry{{
+			Name:     "Group A",
+			ScriptID: "script-1",
+			VUsers:   5,
+			RampUp:   "5s",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("CreateTest returned error: %v", err)
+	}
+
+	if err := runner.StartTest(testRun.ID); err != nil {
+		t.Fatalf("StartTest returned error: %v", err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		started, ok := runner.GetTest(testRun.ID)
+		if !ok {
+			t.Fatalf("expected managed test %q to exist", testRun.ID)
+		}
+		if started.Status == "RUNNING" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected distributed backend to mark test running, got status %q", started.Status)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	if err := runner.ScaleVUsers(testRun.ID, "Group A", 7); err != nil {
+		t.Fatalf("ScaleVUsers returned error: %v", err)
+	}
+
+	scaled, ok := runner.GetTest(testRun.ID)
+	if !ok {
+		t.Fatalf("expected managed test %q to exist after scale", testRun.ID)
+	}
+	if scaled.TotalVUsers != 7 {
+		t.Fatalf("total vusers = %d, want 7", scaled.TotalVUsers)
+	}
+	if scaled.Groups[0].VUsers != 7 {
+		t.Fatalf("group vusers = %d, want 7", scaled.Groups[0].VUsers)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	client, err := generatorrpc.Dial(
+		ctx,
+		"bufnet",
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+			return listener.Dial()
+		}),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithBlock(),
+	)
+	if err != nil {
+		t.Fatalf("Dial generator client: %v", err)
+	}
+	defer client.Close()
+
+	stopAck, err := client.StopTest(ctx, testRun.ID, true)
+	if err != nil {
+		t.Fatalf("StopTest: %v", err)
+	}
+	if stopAck.PendingVUsers != 7 {
+		t.Fatalf("pending vusers = %d, want 7", stopAck.PendingVUsers)
+	}
+}
+
+func TestDistributedExecutionBackendRejectsMultiGroupScale(t *testing.T) {
+	const bufSize = 1024 * 1024
+
+	listener := bufconn.Listen(bufSize)
+	server := grpc.NewServer()
+	pb.RegisterGeneratorControlServer(server, generatorrpc.NewService("generator-1", 50))
+
+	go func() {
+		_ = server.Serve(listener)
+	}()
+	t.Cleanup(func() {
+		server.Stop()
+		_ = listener.Close()
+	})
+
+	hub := NewHub()
+	runner := NewTestRunner(1, hub, nil)
+	runner.setExecutionBackend(newDistributedExecutionBackend(
+		[]string{"bufnet"},
+		5*time.Second,
+		func(ctx context.Context, target string) (generatorClient, error) {
+			return generatorrpc.Dial(
+				ctx,
+				target,
+				grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+					return listener.Dial()
+				}),
+				grpc.WithTransportCredentials(insecure.NewCredentials()),
+				grpc.WithBlock(),
+			)
+		},
+	))
+
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-1",
+		Name:     "Checkout",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Config: dsl.ScriptConfig{
+			BaseURL: "https://example.com",
+			RunLogic: dsl.RunLogicConfig{
+				Iterations: 1,
+			},
+		},
+		Actions: []dsl.Action{{Name: "Home", Type: "GET", Target: "/"}},
+	})
+
+	testRun, err := runner.CreateTest(CreateTestRequest{
+		Name:     "Distributed scale multi-group",
+		Duration: "30s",
+		Groups: []CreateGroupEntry{{
+			Name:     "Group A",
+			ScriptID: "script-1",
+			VUsers:   5,
+			RampUp:   "5s",
+		}, {
+			Name:     "Group B",
+			ScriptID: "script-1",
+			VUsers:   3,
+			RampUp:   "5s",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("CreateTest returned error: %v", err)
+	}
+
+	if err := runner.StartTest(testRun.ID); err != nil {
+		t.Fatalf("StartTest returned error: %v", err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		started, ok := runner.GetTest(testRun.ID)
+		if !ok {
+			t.Fatalf("expected managed test %q to exist", testRun.ID)
+		}
+		if started.Status == "RUNNING" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected distributed backend to mark test running, got status %q", started.Status)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	if err := runner.ScaleVUsers(testRun.ID, "Group A", 7); err == nil || !strings.Contains(err.Error(), "does not support per-group scaling for multi-group tests yet") {
+		t.Fatalf("ScaleVUsers error = %v, want distributed unsupported scaling error", err)
 	}
 }

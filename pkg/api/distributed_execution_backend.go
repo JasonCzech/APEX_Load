@@ -16,6 +16,7 @@ type generatorDial func(ctx context.Context, target string) (generatorClient, er
 type generatorClient interface {
 	DistributeScript(ctx context.Context, script generatorrpc.Script) (generatorrpc.ScriptResult, error)
 	AssignWork(ctx context.Context, assignment generatorrpc.Assignment) (generatorrpc.AssignmentResult, error)
+	AdjustVUsers(ctx context.Context, adjustment generatorrpc.VUserAdjustment) (generatorrpc.AdjustmentResult, error)
 	StopTest(ctx context.Context, testID string, graceful bool) (generatorrpc.StopResult, error)
 	Close() error
 }
@@ -135,7 +136,36 @@ func (b *distributedExecutionBackend) StopTest(tr *TestRunner, test *ManagedTest
 }
 
 func (b *distributedExecutionBackend) ScaleVUsers(tr *TestRunner, test *ManagedTest, groupName string, targetVUsers int) error {
-	return fmt.Errorf("distributed execution does not support scaling vusers yet")
+	if len(test.Groups) != 1 {
+		return fmt.Errorf("distributed execution does not support per-group scaling for multi-group tests yet")
+	}
+	if test.Groups[0].Name != groupName {
+		return fmt.Errorf("test group not found: %s", groupName)
+	}
+	if test.remoteTarget == "" {
+		return fmt.Errorf("distributed generator target is not recorded")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
+	defer cancel()
+
+	client, err := b.dial(ctx, test.remoteTarget)
+	if err != nil {
+		return fmt.Errorf("connect generator: %w", err)
+	}
+	defer client.Close()
+
+	adjustment, err := client.AdjustVUsers(ctx, generatorrpc.VUserAdjustment{
+		TestID:       test.ID,
+		TargetVUsers: int32(targetVUsers),
+	})
+	if err != nil {
+		return fmt.Errorf("adjust remote vusers: %w", err)
+	}
+	if !adjustment.Accepted {
+		return fmt.Errorf("generator did not accept vuser adjustment for %s", test.ID)
+	}
+	return nil
 }
 
 func (b *distributedExecutionBackend) AdjustDuration(tr *TestRunner, test *ManagedTest, newDuration time.Duration) error {

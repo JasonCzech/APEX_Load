@@ -29,6 +29,17 @@ type AssignmentResult struct {
 	AvailableCapacity int32
 }
 
+type VUserAdjustment struct {
+	TestID       string
+	TargetVUsers int32
+	RampSeconds  int32
+}
+
+type AdjustmentResult struct {
+	Accepted      bool
+	CurrentVUsers int32
+}
+
 type StopResult struct {
 	Acknowledged bool
 	PendingVUsers int32
@@ -124,6 +135,22 @@ func (c *Client) AssignWork(ctx context.Context, assignment Assignment) (Assignm
 		Accepted:          ack.GetAccepted(),
 		ErrorMessage:      ack.GetErrorMessage(),
 		AvailableCapacity: ack.GetAvailableCapacity(),
+	}, nil
+}
+
+func (c *Client) AdjustVUsers(ctx context.Context, adjustment VUserAdjustment) (AdjustmentResult, error) {
+	ack, err := c.rpc.AdjustVUsers(ctx, &pb.VUserAdjustment{
+		TestId:       adjustment.TestID,
+		TargetVusers: adjustment.TargetVUsers,
+		RampSeconds:  adjustment.RampSeconds,
+	})
+	if err != nil {
+		return AdjustmentResult{}, err
+	}
+
+	return AdjustmentResult{
+		Accepted:      ack.GetAccepted(),
+		CurrentVUsers: ack.GetCurrentVusers(),
 	}, nil
 }
 

@@ -1839,6 +1839,9 @@ func (tr *TestRunner) ScaleVUsers(id string, groupName string, targetVUsers int)
 	if test.Status != "RUNNING" {
 		return fmt.Errorf("test is %s, must be RUNNING to scale", test.Status)
 	}
+	if targetVUsers < 0 {
+		return fmt.Errorf("target vusers must be non-negative")
+	}
 	if test.multiEngine == nil {
 		backend := test.executionBackend
 		if backend == nil {
@@ -1848,20 +1851,13 @@ func (tr *TestRunner) ScaleVUsers(id string, groupName string, targetVUsers int)
 		if !ok {
 			return fmt.Errorf("test backend does not support scaling vusers")
 		}
-		if targetVUsers < 0 {
-			return fmt.Errorf("target vusers must be non-negative")
-		}
 		if err := scalable.ScaleVUsers(tr, test, groupName, targetVUsers); err != nil {
 			return err
 		}
-		return nil
-	}
-	if targetVUsers < 0 {
-		return fmt.Errorf("target vusers must be non-negative")
-	}
-
-	if err := test.multiEngine.ScaleVUsers(groupName, targetVUsers); err != nil {
-		return err
+	} else {
+		if err := test.multiEngine.ScaleVUsers(groupName, targetVUsers); err != nil {
+			return err
+		}
 	}
 
 	// Update the test's group metadata
@@ -1910,11 +1906,10 @@ func (tr *TestRunner) AdjustDuration(id string, newDuration time.Duration) error
 		if err := adjustable.AdjustDuration(tr, test, newDuration); err != nil {
 			return err
 		}
-		return nil
-	}
-
-	if err := test.multiEngine.AdjustDuration(newDuration); err != nil {
-		return err
+	} else {
+		if err := test.multiEngine.AdjustDuration(newDuration); err != nil {
+			return err
+		}
 	}
 
 	tr.mu.Lock()
@@ -1954,11 +1949,10 @@ func (tr *TestRunner) PauseTest(id string) error {
 		if err := pausable.PauseTest(tr, test); err != nil {
 			return err
 		}
-		return nil
-	}
-
-	if err := test.multiEngine.Pause(); err != nil {
-		return err
+	} else {
+		if err := test.multiEngine.Pause(); err != nil {
+			return err
+		}
 	}
 
 	tr.mu.Lock()
@@ -1992,11 +1986,10 @@ func (tr *TestRunner) ResumeTest(id string) error {
 		if err := pausable.ResumeTest(tr, test); err != nil {
 			return err
 		}
-		return nil
-	}
-
-	if err := test.multiEngine.Resume(); err != nil {
-		return err
+	} else {
+		if err := test.multiEngine.Resume(); err != nil {
+			return err
+		}
 	}
 
 	tr.mu.Lock()
