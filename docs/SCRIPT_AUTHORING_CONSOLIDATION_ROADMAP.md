@@ -184,6 +184,7 @@ That order minimizes churn and avoids rebuilding the UI around unstable backend 
 - The live script library now uses typed sort helpers for both reusable scripts and linked scenario runs instead of local `any` sort casting.
 - Phase 4 scenario assembly cleanup has started from the reusable test-creation surface. `CreateTestModal` now uses typed payload, chart, and callback contracts instead of local `any` seams, and the scenario draft/group mapping shared with `TestExecutionScenarioEditor` now lives in one helper instead of being rebuilt in each caller.
 - The execution surface now shares typed history, archive summary, live-control, and chart contracts instead of relying on local `any` casts in the main `TestExecution` path.
+- Focused dashboard regression tests now cover the two browser-found scenario-surface defects: duplicate associated-release keys in `NewTestPage` and the queued preview summary/edit interaction in `TestExecutionScenarioPreview`.
 
 ### Remaining High-Value Work
 - Finish the scenario assembly path by tightening `TestExecution`, `CreateTestModal` adjacencies, and shared execution/result models.
