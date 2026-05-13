@@ -1,9 +1,9 @@
 import { Fragment, memo, useCallback, useEffect, useMemo, useState } from 'react'
-import { ScenarioDataPoolBinding, SharedDataPool, StoredScenario, StoredScript, TestSummary } from '../types'
+import { DraftCapacityEstimate, ScenarioDataPoolBinding, SharedDataPool, StoredScenario, StoredScript, TestSummary } from '../types'
 import { useApi } from '../hooks/useApi'
 import { getErrorMessage } from '../utils/errorUtils'
 import './TestHub.css'
-import { buildScenarioUpsertPayload } from './scenarioPayloadUtils'
+import { buildCreateTestPayload, buildScenarioUpsertPayload } from './scenarioPayloadUtils'
 
 interface Props {
   testStatuses: Record<string, string>
@@ -15,6 +15,8 @@ interface ScenarioFormState {
   duration: string
   script_id: string
   vusers: number
+  assignment_mode: 'auto' | 'specific_hosts'
+  assignment_targets: string[]
   data_pool_id?: string
   data_pool_alias?: string
   data_pool_access_mode?: ScenarioDataPoolBinding['access_mode']
@@ -27,6 +29,8 @@ function emptyScenarioForm(scriptId = ''): ScenarioFormState {
     duration: '1m',
     script_id: scriptId,
     vusers: 10,
+    assignment_mode: 'auto',
+    assignment_targets: [],
     data_pool_id: '',
     data_pool_alias: '',
     data_pool_access_mode: 'read_only',
@@ -75,6 +79,21 @@ function releaseList(scenario: StoredScenario) {
   return releases.map(release => release.name).join(', ')
 }
 
+function scenarioAssignmentSummary(scenario: StoredScenario) {
+  if (scenario.assignment?.mode === 'specific_hosts') {
+    const targets = scenario.assignment.selected_targets || []
+    if (targets.length === 0) return { badge: 'Specific Hosts', detail: 'No hosts selected' }
+    return {
+      badge: 'Specific Hosts',
+      detail: targets.join(', '),
+    }
+  }
+  return {
+    badge: 'Auto Assignment',
+    detail: 'Uses controller recommendations',
+  }
+}
+
 function SortIndicator({ active, direction }: { active: boolean, direction: 'asc' | 'desc' }) {
   return (
     <span className={`sort-icon ${active ? 'active' : ''}`}>
@@ -99,6 +118,9 @@ function TestHub({ onSelectTest }: Props) {
   const [loadingRunsFor, setLoadingRunsFor] = useState<string | null>(null)
   const [innerSortField, setInnerSortField] = useState<'name' | 'status' | 'release_id' | 'start_time' | 'duration'>('start_time')
   const [innerSortDirection, setInnerSortDirection] = useState<'asc' | 'desc'>('desc')
+  const [draftEstimate, setDraftEstimate] = useState<DraftCapacityEstimate | null>(null)
+  const [estimateLoading, setEstimateLoading] = useState(false)
+  const [estimateError, setEstimateError] = useState('')
 
   const refresh = useCallback(async () => {
     try {
@@ -115,6 +137,65 @@ function TestHub({ onSelectTest }: Props) {
   }, [api])
 
   useEffect(() => { refresh() }, [refresh])
+
+  useEffect(() => {
+    if (!showForm || !form.script_id) {
+      setDraftEstimate(null)
+      setEstimateLoading(false)
+      setEstimateError('')
+      return
+    }
+
+    let cancelled = false
+    setEstimateLoading(true)
+    setEstimateError('')
+
+    const estimateAssignment = form.assignment_mode === 'specific_hosts' && form.assignment_targets.length === 0
+      ? { mode: 'auto' as const, selected_targets: [] }
+      : form.assignment_mode === 'specific_hosts'
+        ? { mode: 'specific_hosts' as const, selected_targets: form.assignment_targets }
+        : { mode: 'auto' as const, selected_targets: [] }
+
+    api.estimateTest(buildCreateTestPayload({
+      name: form.name,
+      duration: form.duration || '1m',
+      startDelay: '',
+      scenarioMode: 'vuser_driven',
+      scriptShakeout: false,
+      resourceBaseline: false,
+      assignment: estimateAssignment,
+      groups: [{
+        name: '',
+        scriptId: form.script_id,
+        vusers: Number(form.vusers) || 10,
+        rampUp: '',
+        rampDown: '',
+        initialization: 'at_runtime',
+      }],
+      goalConfig: {},
+      runtimeSettings: {
+        iterations: undefined,
+        log_level: '',
+        auto_transactions: '',
+        snapshot_on_error: false,
+      },
+    }))
+      .then((estimate) => {
+        if (cancelled) return
+        setDraftEstimate(estimate)
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return
+        setDraftEstimate(null)
+        setEstimateError(getErrorMessage(err, 'Unable to estimate assignment guidance'))
+      })
+      .finally(() => {
+        if (cancelled) return
+        setEstimateLoading(false)
+      })
+
+    return () => { cancelled = true }
+  }, [api, form, showForm])
 
   const sorted = useMemo(() => {
     return [...scenarios].sort((a, b) => {
@@ -187,6 +268,8 @@ function TestHub({ onSelectTest }: Props) {
       duration: scenario.duration,
       script_id: first?.script_id || scripts[0]?.id || '',
       vusers: first?.vusers || 10,
+      assignment_mode: scenario.assignment?.mode === 'specific_hosts' ? 'specific_hosts' : 'auto',
+      assignment_targets: scenario.assignment?.selected_targets ? [...scenario.assignment.selected_targets] : [],
       data_pool_id: firstPool?.pool_id || '',
       data_pool_alias: firstPool?.alias || '',
       data_pool_access_mode: firstPool?.access_mode || 'read_only',
@@ -213,6 +296,9 @@ function TestHub({ onSelectTest }: Props) {
       scenarioMode: 'vuser_driven',
       scriptShakeout: false,
       resourceBaseline: false,
+      assignment: form.assignment_mode === 'specific_hosts'
+        ? { mode: 'specific_hosts', selected_targets: form.assignment_targets }
+        : { mode: 'auto', selected_targets: [] },
       groups: [{
         name: '',
         scriptId: form.script_id,
@@ -249,6 +335,17 @@ function TestHub({ onSelectTest }: Props) {
     } catch (err: unknown) {
       setError(getErrorMessage(err, 'Unable to delete scenario'))
     }
+  }
+
+  const assignmentRecommendation = draftEstimate?.assignment_recommendation
+  const availableTargets = assignmentRecommendation?.available_targets || []
+  const recommendedTargets = assignmentRecommendation?.recommended_targets || []
+
+  const toggleAssignmentTarget = (target: string, checked: boolean) => {
+    const current = new Set(form.assignment_targets)
+    if (checked) current.add(target)
+    else current.delete(target)
+    setForm({ ...form, assignment_mode: 'specific_hosts', assignment_targets: Array.from(current) })
   }
 
   return (
@@ -305,6 +402,100 @@ function TestHub({ onSelectTest }: Props) {
               <option value="unique">Unique rows</option>
             </select>
           </div>
+          <div className="scenario-assignment-panel">
+            <div className="scenario-assignment-header">
+              <div>
+                <h4>Controller / Generator Assignment</h4>
+                <p>Use scenario size to decide whether the controller should auto-place the run or restrict it to specific generator hostnames.</p>
+              </div>
+              {estimateLoading && <span className="scenario-assignment-status">Estimating...</span>}
+            </div>
+
+            <div className="scenario-assignment-switcher">
+              <button
+                type="button"
+                className={`mode-chip ${form.assignment_mode === 'auto' ? 'active' : ''}`}
+                onClick={() => setForm({ ...form, assignment_mode: 'auto', assignment_targets: [] })}
+              >
+                Auto Assignment
+              </button>
+              <button
+                type="button"
+                className={`mode-chip ${form.assignment_mode === 'specific_hosts' ? 'active' : ''}`}
+                onClick={() => setForm({ ...form, assignment_mode: 'specific_hosts' })}
+              >
+                Specific Hostnames
+              </button>
+            </div>
+
+            {draftEstimate?.footprint && (
+              <div className="scenario-assignment-footprint">
+                <div className="scenario-assignment-metric">
+                  <span>Footprint</span>
+                  <strong>{draftEstimate.footprint.total_vusers} VUsers</strong>
+                  <small>{draftEstimate.footprint.duration}</small>
+                </div>
+                <div className="scenario-assignment-metric">
+                  <span>Complexity</span>
+                  <strong>{draftEstimate.footprint.complexity_score.toFixed(2)}</strong>
+                  <small>derived from current script mix</small>
+                </div>
+                <div className="scenario-assignment-metric">
+                  <span>Estimated Load</span>
+                  <strong>{draftEstimate.footprint.estimated_cpu_cores.toFixed(2)} CPU</strong>
+                  <small>{Math.round(draftEstimate.footprint.estimated_memory_mb)} MB / {Math.round(draftEstimate.footprint.estimated_network_mbps)} Mbps</small>
+                </div>
+              </div>
+            )}
+
+            {assignmentRecommendation?.summary && (
+              <p className="scenario-assignment-copy">{assignmentRecommendation.summary}</p>
+            )}
+
+            {form.assignment_mode === 'specific_hosts' ? (
+              availableTargets.length > 0 ? (
+                <>
+                  {form.assignment_targets.length === 0 && (
+                    <p className="scenario-assignment-copy secondary">Select at least one hostname to store an explicit scenario default.</p>
+                  )}
+                  <div className="scenario-assignment-targets">
+                    {availableTargets.map((target) => {
+                      const checked = form.assignment_targets.includes(target)
+                      const recommended = recommendedTargets.includes(target)
+                      return (
+                        <label key={target} className={`scenario-assignment-target ${checked ? 'selected' : ''}`}>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(event) => toggleAssignmentTarget(target, event.target.checked)}
+                          />
+                          <div>
+                            <strong>{target}</strong>
+                            <span>{recommended ? 'Recommended for this scenario footprint' : 'Configured on the controller'}</span>
+                          </div>
+                        </label>
+                      )
+                    })}
+                  </div>
+                </>
+              ) : (
+                <p className="scenario-assignment-copy secondary">No distributed generator hostnames are currently configured on this controller.</p>
+              )
+            ) : recommendedTargets.length > 0 ? (
+              <div className="scenario-assignment-chip-row">
+                {recommendedTargets.map((target) => <span key={target} className="scenario-assignment-chip">{target}</span>)}
+              </div>
+            ) : (
+              <p className="scenario-assignment-copy secondary">Auto-assignment will use the controller&apos;s configured generator inventory when distributed execution is enabled.</p>
+            )}
+
+            {estimateError && <div className="settings-error-inline">{estimateError}</div>}
+            {assignmentRecommendation?.warnings && assignmentRecommendation.warnings.length > 0 && (
+              <div className="scenario-assignment-warnings">
+                {assignmentRecommendation.warnings.map((warning) => <p key={warning}>{warning}</p>)}
+              </div>
+            )}
+          </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
             <button className="btn btn-secondary" onClick={() => setShowForm(false)}>Cancel</button>
             <button className="btn btn-primary" onClick={saveScenario}>Save Scenario</button>
@@ -332,7 +523,15 @@ function TestHub({ onSelectTest }: Props) {
               {sorted.map(scenario => (
                 <Fragment key={scenario.id}>
                   <tr className="clickable-row" onClick={() => toggleScenarioRuns(scenario)}>
-                    <td className="cell-name">{scenario.name}</td>
+                    <td className="cell-name">
+                      <div>{scenario.name}</div>
+                      <div className="scenario-table-assignment">
+                        <span className={`scenario-table-assignment-badge ${scenario.assignment?.mode === 'specific_hosts' ? 'manual' : 'auto'}`}>
+                          {scenarioAssignmentSummary(scenario).badge}
+                        </span>
+                        <span className="scenario-table-assignment-detail">{scenarioAssignmentSummary(scenario).detail}</span>
+                      </div>
+                    </td>
                     <td>{scenario.scripts.map(script => script.script_name || script.name || script.script_id).join(', ')}</td>
                     <td className="cell-muted">{(scenario.data_pools || []).map(pool => `${pool.alias} (${pool.pool_name || pool.pool_id})`).join(', ') || 'None'}</td>
                     <td className="cell-muted">{formatDate(scenario.created_at)}</td>

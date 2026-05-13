@@ -265,6 +265,143 @@
   pointer-events: none;
 }
 
+.assignment-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.assignment-settings-header h4 {
+  margin: 0 0 6px;
+  font-size: 14px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.assignment-settings-header p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.assignment-mode-switcher {
+  align-self: flex-start;
+}
+
+.assignment-footprint-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.assignment-footprint-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+}
+
+.assignment-footprint-card span,
+.assignment-footprint-card small {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.assignment-footprint-card strong {
+  font-size: 18px;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.assignment-copy {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.assignment-copy.secondary {
+  color: var(--text-muted);
+}
+
+.assignment-target-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.assignment-target {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-primary);
+}
+
+.assignment-target.selected {
+  border-color: rgba(0, 163, 255, 0.45);
+  box-shadow: 0 0 0 1px rgba(0, 163, 255, 0.18) inset;
+}
+
+.assignment-target input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+}
+
+.assignment-target strong {
+  display: block;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.assignment-target span {
+  display: block;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.assignment-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.assignment-chip {
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(0, 163, 255, 0.12);
+  border: 1px solid rgba(0, 163, 255, 0.22);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.assignment-warnings {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.assignment-warnings p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .groups-section {
   display: flex;
   flex-direction: column;

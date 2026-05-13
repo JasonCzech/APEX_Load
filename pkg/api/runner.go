@@ -102,6 +102,7 @@ type ManagedTest struct {
 	FolderID         *string                   `json:"folder_id,omitempty"`
 	Groups           []TestGroup               `json:"groups"`
 	CapacityAdvisory *CapacityAdvisory         `json:"capacity_advisory,omitempty"`
+	Assignment       *GeneratorAssignmentSettings `json:"assignment,omitempty"`
 	ScenarioMode     string                    `json:"scenario_mode,omitempty"`
 	ScriptShakeout   bool                      `json:"script_shakeout,omitempty"`
 	ResourceBaseline bool                      `json:"resource_baseline,omitempty"`
@@ -269,6 +270,7 @@ type StoredScenario struct {
 	ScenarioMode       string                            `json:"scenario_mode,omitempty"`
 	ScriptShakeout     bool                              `json:"script_shakeout,omitempty"`
 	ResourceBaseline   bool                              `json:"resource_baseline,omitempty"`
+	Assignment         *GeneratorAssignmentSettings      `json:"assignment,omitempty"`
 	GoalConfig         *GoalConfig                       `json:"goal_config,omitempty"`
 	RuntimeSettings    *RuntimeSettingsOverride          `json:"runtime_settings,omitempty"`
 	Scripts            []ScenarioScriptRef               `json:"scripts"`
@@ -292,6 +294,33 @@ type ScenarioScriptRef struct {
 	RampDown       string `json:"ramp_down,omitempty"`
 	Iterations     *int   `json:"iterations,omitempty"`
 	Initialization string `json:"initialization,omitempty"`
+}
+
+const (
+	generatorAssignmentModeAuto          = "auto"
+	generatorAssignmentModeSpecificHosts = "specific_hosts"
+)
+
+type GeneratorAssignmentSettings struct {
+	Mode            string   `json:"mode,omitempty"`
+	SelectedTargets []string `json:"selected_targets,omitempty"`
+}
+
+type ScenarioFootprint struct {
+	TotalVUsers      int     `json:"total_vusers"`
+	Duration         string  `json:"duration"`
+	ComplexityScore  float64 `json:"complexity_score"`
+	EstimatedCPU     float64 `json:"estimated_cpu_cores"`
+	EstimatedMemory  float64 `json:"estimated_memory_mb"`
+	EstimatedNetwork float64 `json:"estimated_network_mbps"`
+}
+
+type AssignmentRecommendation struct {
+	Mode               string   `json:"mode"`
+	AvailableTargets   []string `json:"available_targets,omitempty"`
+	RecommendedTargets []string `json:"recommended_targets,omitempty"`
+	Summary            string   `json:"summary,omitempty"`
+	Warnings           []string `json:"warnings,omitempty"`
 }
 
 type ReleaseRef struct {
@@ -425,6 +454,7 @@ func (tr *TestRunner) buildStoredScenario(scenario *storage.Scenario, scripts []
 		ScenarioMode:     normalizeScenarioMode(scenario.ScenarioMode),
 		ScriptShakeout:   scenario.ScriptShakeout,
 		ResourceBaseline: scenario.ResourceBaseline,
+		Assignment:       decodeStoredGeneratorAssignment(scenario.Assignment),
 		GoalConfig:       decodeStoredGoalConfig(scenario.GoalConfig),
 		RuntimeSettings:  decodeStoredRuntimeSettings(scenario.RuntimeSettings),
 		Scripts:          refs,
@@ -462,6 +492,7 @@ func managedTestFromRecord(record *storage.TestRecord) *ManagedTest {
 		ProjectID:        record.ProjectID,
 		FolderID:         record.FolderID,
 		Groups:           decodeStoredGroups(record.Groups),
+		Assignment:       decodeStoredGeneratorAssignment(record.Assignment),
 		ScenarioMode:     normalizeScenarioMode(record.ScenarioMode),
 		ScriptShakeout:   record.ScriptShakeout,
 		ResourceBaseline: record.ResourceBaseline,
@@ -686,6 +717,7 @@ func (tr *TestRunner) storeScenarioLocked(id string, req CreateScenarioRequest) 
 	}
 	if _, err := validateScenarioRequest(CreateTestRequest{
 		ScenarioMode: req.ScenarioMode,
+		Assignment:   req.Assignment,
 		GoalConfig:   req.GoalConfig,
 	}); err != nil {
 		return nil, err
@@ -711,6 +743,7 @@ func (tr *TestRunner) storeScenarioLocked(id string, req CreateScenarioRequest) 
 		ScenarioMode:     normalizeScenarioMode(req.ScenarioMode),
 		ScriptShakeout:   req.ScriptShakeout,
 		ResourceBaseline: req.ResourceBaseline,
+		Assignment:       cloneGeneratorAssignmentSettings(req.Assignment),
 		GoalConfig:       req.GoalConfig,
 		RuntimeSettings:  req.RuntimeSettings,
 		CreatedAt:        createdAt,
@@ -952,6 +985,7 @@ type CreateTestRequest struct {
 	ScenarioMode     string                            `json:"scenario_mode,omitempty"`
 	ScriptShakeout   bool                              `json:"script_shakeout,omitempty"`
 	ResourceBaseline bool                              `json:"resource_baseline,omitempty"`
+	Assignment       *GeneratorAssignmentSettings      `json:"assignment,omitempty"`
 	GoalConfig       *GoalConfig                       `json:"goal_config,omitempty"`
 	Groups           []CreateGroupEntry                `json:"groups,omitempty"`
 	DataPools        []storage.ScenarioDataPoolBinding `json:"data_pools,omitempty"`
@@ -970,6 +1004,7 @@ type CreateScenarioRequest struct {
 	ScenarioMode     string                            `json:"scenario_mode,omitempty"`
 	ScriptShakeout   bool                              `json:"script_shakeout,omitempty"`
 	ResourceBaseline bool                              `json:"resource_baseline,omitempty"`
+	Assignment       *GeneratorAssignmentSettings      `json:"assignment,omitempty"`
 	GoalConfig       *GoalConfig                       `json:"goal_config,omitempty"`
 	RuntimeSettings  *RuntimeSettingsOverride          `json:"runtime_settings,omitempty"`
 	Groups           []CreateGroupEntry                `json:"groups"`
@@ -1025,7 +1060,156 @@ type DraftCapacityEstimate struct {
 	Duration         string            `json:"duration"`
 	ResourceBaseline bool              `json:"resource_baseline,omitempty"`
 	Groups           []TestGroup       `json:"groups"`
+	Assignment       *GeneratorAssignmentSettings `json:"assignment,omitempty"`
+	Footprint        *ScenarioFootprint `json:"footprint,omitempty"`
+	Recommendation   *AssignmentRecommendation `json:"assignment_recommendation,omitempty"`
 	CapacityAdvisory *CapacityAdvisory `json:"capacity_advisory,omitempty"`
+}
+
+func normalizeGeneratorAssignmentSettings(in *GeneratorAssignmentSettings) (*GeneratorAssignmentSettings, error) {
+	if in == nil {
+		return nil, nil
+	}
+	out := &GeneratorAssignmentSettings{Mode: strings.TrimSpace(in.Mode)}
+	if out.Mode == "" {
+		out.Mode = generatorAssignmentModeAuto
+	}
+	switch out.Mode {
+	case generatorAssignmentModeAuto:
+		out.SelectedTargets = nil
+		return out, nil
+	case generatorAssignmentModeSpecificHosts:
+		seen := make(map[string]struct{})
+		for _, raw := range in.SelectedTargets {
+			target := strings.TrimSpace(raw)
+			if target == "" {
+				continue
+			}
+			if _, exists := seen[target]; exists {
+				continue
+			}
+			seen[target] = struct{}{}
+			out.SelectedTargets = append(out.SelectedTargets, target)
+		}
+		if len(out.SelectedTargets) == 0 {
+			return nil, fmt.Errorf("assignment.selected_targets must include at least one hostname when mode is specific_hosts")
+		}
+		return out, nil
+	default:
+		return nil, fmt.Errorf("assignment.mode must be auto or specific_hosts")
+	}
+}
+
+func cloneGeneratorAssignmentSettings(in *GeneratorAssignmentSettings) *GeneratorAssignmentSettings {
+	if in == nil {
+		return nil
+	}
+	out := *in
+	out.SelectedTargets = append([]string(nil), in.SelectedTargets...)
+	return &out
+}
+
+func buildScenarioFootprint(test *ManagedTest) *ScenarioFootprint {
+	if test == nil || test.CapacityAdvisory == nil {
+		return nil
+	}
+	return &ScenarioFootprint{
+		TotalVUsers:      test.TotalVUsers,
+		Duration:         test.DurationStr,
+		ComplexityScore:  test.CapacityAdvisory.ComplexityScore,
+		EstimatedCPU:     test.CapacityAdvisory.EstimatedTotal.CPUCores,
+		EstimatedMemory:  test.CapacityAdvisory.EstimatedTotal.MemoryMB,
+		EstimatedNetwork: test.CapacityAdvisory.EstimatedTotal.NetworkMbps,
+	}
+}
+
+func pluralSuffix(value int) string {
+	if value == 1 {
+		return ""
+	}
+	return "s"
+}
+
+func (tr *TestRunner) assignmentTargets() []string {
+	provider, ok := tr.execution.(interface{ configuredTargets() []string })
+	if !ok {
+		return nil
+	}
+	return provider.configuredTargets()
+}
+
+func adjustCapacityAdvisoryForAssignment(advisory *CapacityAdvisory, assignment *GeneratorAssignmentSettings, availableTargets int) *CapacityAdvisory {
+	if advisory == nil {
+		return nil
+	}
+	assignment, err := normalizeGeneratorAssignmentSettings(assignment)
+	if err != nil {
+		cloned := cloneCapacityAdvisory(advisory)
+		cloned.RequiresOverride = true
+		cloned.Warnings = append(cloned.Warnings, err.Error())
+		return cloned
+	}
+	if assignment == nil || assignment.Mode != generatorAssignmentModeSpecificHosts {
+		return advisory
+	}
+	selected := len(assignment.SelectedTargets)
+	if selected == 0 {
+		return advisory
+	}
+	cloned := cloneCapacityAdvisory(advisory)
+	if availableTargets > 0 && selected > availableTargets {
+		selected = availableTargets
+	}
+	cloned.AvailableGenerators = selected
+	cloned.ConfiguredAvailableGenerators = selected
+	cloned.LiveAvailableGenerators = nil
+	cloned.ShortfallGenerators = 0
+	if cloned.RecommendedGenerators > selected {
+		cloned.ShortfallGenerators = cloned.RecommendedGenerators - selected
+		cloned.RequiresOverride = true
+		cloned.Warnings = append(cloned.Warnings, fmt.Sprintf("Selected hosts provide %d generator slot%s, but the scenario footprint recommends %d.", selected, pluralSuffix(selected), cloned.RecommendedGenerators))
+		return cloned
+	}
+	cloned.RequiresOverride = false
+	return cloned
+}
+
+func (tr *TestRunner) estimateCapacityAdvisoryForAssignment(groups []TestGroup, totalVUsers int, duration time.Duration, resourceBaseline bool, runtimeSettings *RuntimeSettingsOverride, assignment *GeneratorAssignmentSettings) *CapacityAdvisory {
+	advisory := estimateCapacityAdvisory(tr.settings, groups, totalVUsers, duration, resourceBaseline, runtimeSettings)
+	return adjustCapacityAdvisoryForAssignment(advisory, assignment, len(tr.assignmentTargets()))
+}
+
+func (tr *TestRunner) buildAssignmentRecommendation(test *ManagedTest) *AssignmentRecommendation {
+	if test == nil || test.CapacityAdvisory == nil {
+		return nil
+	}
+	availableTargets := tr.assignmentTargets()
+	assignment := cloneGeneratorAssignmentSettings(test.Assignment)
+	if assignment == nil {
+		assignment = &GeneratorAssignmentSettings{Mode: generatorAssignmentModeAuto}
+	}
+	recommendedCount := test.CapacityAdvisory.RecommendedGenerators
+	if recommendedCount < 1 {
+		recommendedCount = 1
+	}
+	recommendedTargets := append([]string(nil), availableTargets...)
+	if len(recommendedTargets) > recommendedCount {
+		recommendedTargets = recommendedTargets[:recommendedCount]
+	}
+	recommendation := &AssignmentRecommendation{
+		Mode:               assignment.Mode,
+		AvailableTargets:   availableTargets,
+		RecommendedTargets: recommendedTargets,
+	}
+	if assignment.Mode == generatorAssignmentModeSpecificHosts {
+		recommendation.Summary = fmt.Sprintf("Manual host selection uses %d configured host%s for this scenario footprint.", len(assignment.SelectedTargets), pluralSuffix(len(assignment.SelectedTargets)))
+		if test.CapacityAdvisory.RequiresOverride {
+			recommendation.Warnings = append(recommendation.Warnings, test.CapacityAdvisory.Warnings...)
+		}
+		return recommendation
+	}
+	recommendation.Summary = fmt.Sprintf("Auto-assignment recommends %d host%s for the current scenario footprint.", test.CapacityAdvisory.RecommendedGenerators, pluralSuffix(test.CapacityAdvisory.RecommendedGenerators))
+	return recommendation
 }
 
 func (e *CapacityShortfallError) Error() string {
@@ -1053,6 +1237,9 @@ func (tr *TestRunner) EstimateDraftCapacity(req CreateTestRequest) (*DraftCapaci
 		Duration:         preview.DurationStr,
 		ResourceBaseline: preview.ResourceBaseline,
 		Groups:           preview.Groups,
+		Assignment:       cloneGeneratorAssignmentSettings(preview.Assignment),
+		Footprint:        buildScenarioFootprint(preview),
+		Recommendation:   tr.buildAssignmentRecommendation(preview),
 		CapacityAdvisory: cloneCapacityAdvisory(preview.CapacityAdvisory),
 	}, nil
 }
@@ -1145,7 +1332,8 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 		ProjectID:        projectID,
 		FolderID:         req.FolderID,
 		Groups:           testGroups,
-		CapacityAdvisory: estimateCapacityAdvisory(tr.settings, testGroups, totalVUsers, dur, req.ResourceBaseline, req.RuntimeSettings),
+		Assignment:       cloneGeneratorAssignmentSettings(req.Assignment),
+		CapacityAdvisory: tr.estimateCapacityAdvisoryForAssignment(testGroups, totalVUsers, dur, req.ResourceBaseline, req.RuntimeSettings, req.Assignment),
 		ScenarioMode:     scenarioMode,
 		ScriptShakeout:   req.ScriptShakeout,
 		ResourceBaseline: req.ResourceBaseline,
@@ -1186,6 +1374,9 @@ func createTestRequestFromScenario(req CreateTestRequest, scenario *StoredScenar
 	if req.RuntimeSettings == nil {
 		req.RuntimeSettings = cloneRuntimeSettings(scenario.RuntimeSettings)
 	}
+	if req.Assignment == nil {
+		req.Assignment = cloneGeneratorAssignmentSettings(scenario.Assignment)
+	}
 	if len(req.DataPools) == 0 {
 		req.DataPools = append([]storage.ScenarioDataPoolBinding(nil), scenario.DataPools...)
 	}
@@ -1215,6 +1406,9 @@ func firstNonEmpty(value string, fallback string) string {
 
 func validateScenarioRequest(req CreateTestRequest) (string, error) {
 	scenarioMode := normalizeScenarioMode(req.ScenarioMode)
+	if _, err := normalizeGeneratorAssignmentSettings(req.Assignment); err != nil {
+		return "", err
+	}
 	if req.StartDelay != "" {
 		if _, err := time.ParseDuration(req.StartDelay); err != nil {
 			return "", fmt.Errorf("invalid start_delay: %w", err)
@@ -1736,6 +1930,7 @@ func buildManagedTestRecord(test *ManagedTest) *storage.TestRecord {
 		ScriptShakeout:   test.ScriptShakeout,
 		ResourceBaseline: test.ResourceBaseline,
 		StartDelay:       test.StartDelay,
+		Assignment:       test.Assignment,
 		TotalVUsers:      test.TotalVUsers,
 		Duration:         int64(test.Duration),
 		StartTime:        test.CreatedAt,
@@ -2761,6 +2956,25 @@ func decodeStoredGoalConfig(value any) *GoalConfig {
 		return nil
 	}
 	return cloneGoalConfig(&config)
+}
+
+func decodeStoredGeneratorAssignment(value any) *GeneratorAssignmentSettings {
+	if value == nil {
+		return nil
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil
+	}
+	var assignment GeneratorAssignmentSettings
+	if err := json.Unmarshal(data, &assignment); err != nil {
+		return nil
+	}
+	normalized, err := normalizeGeneratorAssignmentSettings(&assignment)
+	if err != nil {
+		return nil
+	}
+	return normalized
 }
 
 func (tr *TestRunner) measureNetworkLatency(test *ManagedTest, live *LiveMetrics) {

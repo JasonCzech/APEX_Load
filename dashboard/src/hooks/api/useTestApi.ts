@@ -58,6 +58,10 @@ type TestCreateRequest = {
   scenario_mode?: ScenarioMode
   script_shakeout?: boolean
   resource_baseline?: boolean
+  assignment?: {
+    mode?: 'auto' | 'specific_hosts'
+    selected_targets?: string[]
+  }
   goal_config?: GoalConfig
   groups?: TestCreateGroupEntry[]
   data_pools?: ScenarioDataPoolBinding[]

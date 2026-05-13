@@ -28,6 +28,7 @@ describe('scenarioDraftUtils', () => {
 	  expect(draft.groups[0].scriptId).toBe('script-1')
 	  expect(draft.duration).toBe('1m')
 	  expect(draft.startDelay).toBe('')
+	  expect(draft.assignment).toEqual({ mode: 'auto', selected_targets: [] })
 	  expect(draft.goalConfig.sla_breach_window).toBe('30s')
 	  expect(draft.goalConfig.stop_on_max_errors).toBe(false)
 	  expect(draft.runtimeSettings.snapshot_on_error).toBe(false)
@@ -45,6 +46,10 @@ describe('scenarioDraftUtils', () => {
 	    scenario_mode: 'goal_oriented',
 	    script_shakeout: true,
 	    resource_baseline: true,
+	    assignment: {
+	      mode: 'specific_hosts',
+	      selected_targets: ['gen-a'],
+	    },
 	    goal_config: {
 	      target_average_tps: 300,
 	      max_error_count: 12,
@@ -71,6 +76,7 @@ describe('scenarioDraftUtils', () => {
 
 	  expect(draft.scenarioMode).toBe('goal_oriented')
 	  expect(draft.startDelay).toBe('45s')
+	  expect(draft.assignment).toEqual({ mode: 'specific_hosts', selected_targets: ['gen-a'] })
 	  expect(draft.goalConfig.target_average_tps).toBe(300)
 	  expect(draft.goalConfig.max_error_count).toBe(12)
 	  expect(draft.goalConfig.stop_on_max_errors).toBe(true)

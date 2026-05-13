@@ -67,6 +67,35 @@ func newDistributedExecutionBackend(targets []string, timeout time.Duration, dia
 	}
 }
 
+func (b *distributedExecutionBackend) configuredTargets() []string {
+	return append([]string(nil), b.targets...)
+}
+
+func (b *distributedExecutionBackend) allowedTargetsForTest(test *ManagedTest) ([]string, error) {
+	assignment, err := normalizeGeneratorAssignmentSettings(test.Assignment)
+	if err != nil {
+		return nil, err
+	}
+	if assignment == nil || assignment.Mode != generatorAssignmentModeSpecificHosts {
+		return b.configuredTargets(), nil
+	}
+	configured := make(map[string]struct{}, len(b.targets))
+	for _, target := range b.targets {
+		configured[target] = struct{}{}
+	}
+	allowed := make([]string, 0, len(assignment.SelectedTargets))
+	for _, target := range assignment.SelectedTargets {
+		if _, ok := configured[target]; !ok {
+			return nil, fmt.Errorf("assignment target %q is not configured on this controller", target)
+		}
+		allowed = append(allowed, target)
+	}
+	if len(allowed) == 0 {
+		return nil, fmt.Errorf("no explicit assignment targets are configured for this controller")
+	}
+	return allowed, nil
+}
+
 func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 	if test.ScriptShakeout {
 		if err := tr.runScriptShakeout(test); err != nil {
@@ -76,6 +105,11 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 	}
 	if len(b.targets) == 0 {
 		tr.failTestBeforeRun(test, "no generator targets configured")
+		return
+	}
+	allowedTargets, err := b.allowedTargetsForTest(test)
+	if err != nil {
+		tr.failTestBeforeRun(test, err.Error())
 		return
 	}
 
@@ -94,7 +128,7 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 			_ = client.Close()
 		}
 	}
-	for _, target := range b.targets {
+	for _, target := range allowedTargets {
 		client, err := b.dial(ctx, target)
 		if err != nil {
 			slog.Warn("distributed generator unavailable during placement", "target", target, "error", err)
@@ -107,7 +141,7 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		tr.failTestBeforeRun(test, "no reachable generator targets configured")
 		return
 	}
-	groupTargets := planDistributedGroupTargets(test.Groups, loadByTarget, b.targets)
+	groupTargets := planDistributedGroupTargets(test.Groups, loadByTarget, allowedTargets)
 	for _, group := range test.Groups {
 		if group.script == nil {
 			cleanup()
@@ -170,7 +204,7 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		loadByTarget[target] = snapshot
 	}
 
-	for _, target := range orderedAssignedTargets(groupTargets, b.targets) {
+	for _, target := range orderedAssignedTargets(groupTargets, allowedTargets) {
 		if _, ok := streamsByTarget[target]; ok {
 			continue
 		}

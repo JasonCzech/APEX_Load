@@ -159,6 +159,56 @@ func TestEstimateDraftCapacityReturnsAdvisoryWithoutPersistingTest(t *testing.T)
 	}
 }
 
+func TestEstimateDraftCapacityIncludesAssignmentRecommendation(t *testing.T) {
+	hub := NewHub()
+	runner := NewTestRunner(2, hub, nil)
+	runner.setExecutionBackend(newDistributedExecutionBackend([]string{"gen-a", "gen-b", "gen-c"}, 5*time.Second, nil))
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-assignment-estimate",
+		Name:     "Assignment Estimate Script",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Actions:  []dsl.Action{{Name: "Home", Type: "GET", Target: "/"}},
+	})
+
+	settings := runner.GetSystemSettings()
+	settings.CapacityPlanning.Availability.ConfiguredAvailableGenerators = 3
+	if _, err := runner.UpdateSystemSettings(settings); err != nil {
+		t.Fatalf("UpdateSystemSettings returned error: %v", err)
+	}
+
+	estimate, err := runner.EstimateDraftCapacity(CreateTestRequest{
+		Duration: "10m",
+		ScriptID: "script-assignment-estimate",
+		VUsers:   9000,
+		Assignment: &GeneratorAssignmentSettings{
+			Mode:            generatorAssignmentModeSpecificHosts,
+			SelectedTargets: []string{"gen-a"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("EstimateDraftCapacity returned error: %v", err)
+	}
+	if estimate.Footprint == nil {
+		t.Fatal("expected scenario footprint summary")
+	}
+	if estimate.Recommendation == nil {
+		t.Fatal("expected assignment recommendation")
+	}
+	if estimate.Recommendation.Mode != generatorAssignmentModeSpecificHosts {
+		t.Fatalf("recommendation mode = %q, want %q", estimate.Recommendation.Mode, generatorAssignmentModeSpecificHosts)
+	}
+	if len(estimate.Recommendation.AvailableTargets) != 3 {
+		t.Fatalf("available targets = %v, want 3 configured targets", estimate.Recommendation.AvailableTargets)
+	}
+	if estimate.CapacityAdvisory == nil || estimate.CapacityAdvisory.AvailableGenerators != 1 {
+		t.Fatalf("available generators = %#v, want 1 explicit host", estimate.CapacityAdvisory)
+	}
+	if !estimate.CapacityAdvisory.RequiresOverride {
+		t.Fatal("expected explicit single-host estimate to require override")
+	}
+}
+
 func TestEstimateCapacityAdvisoryUsesLiveAvailabilitySnapshot(t *testing.T) {
 	t.Setenv("STORMRUNNER_LIVE_AVAILABLE_GENERATORS", "3")
 	settings := defaultSystemSettings(4)

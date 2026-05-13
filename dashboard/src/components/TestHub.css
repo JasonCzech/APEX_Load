@@ -310,6 +310,197 @@
   font-size: 12px;
 }
 
+.scenario-assignment-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 16px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.scenario-assignment-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.scenario-assignment-header h4 {
+  margin: 0 0 6px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.scenario-assignment-header p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.scenario-assignment-status {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.scenario-assignment-switcher {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-primary);
+  align-self: flex-start;
+}
+
+.scenario-assignment-footprint {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.scenario-assignment-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-primary);
+}
+
+.scenario-assignment-metric span,
+.scenario-assignment-metric small {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.scenario-assignment-metric strong {
+  font-size: 18px;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.scenario-assignment-copy {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.scenario-assignment-copy.secondary {
+  color: var(--text-muted);
+}
+
+.scenario-assignment-targets {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.scenario-assignment-target {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-primary);
+}
+
+.scenario-assignment-target.selected {
+  border-color: rgba(0, 163, 255, 0.45);
+  box-shadow: 0 0 0 1px rgba(0, 163, 255, 0.18) inset;
+}
+
+.scenario-assignment-target input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+}
+
+.scenario-assignment-target strong {
+  display: block;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.scenario-assignment-target span {
+  display: block;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.scenario-assignment-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.scenario-assignment-chip {
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(0, 163, 255, 0.12);
+  border: 1px solid rgba(0, 163, 255, 0.22);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.scenario-assignment-warnings {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.scenario-assignment-warnings p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.scenario-table-assignment {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.scenario-table-assignment-badge {
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.scenario-table-assignment-badge.auto {
+  color: var(--accent);
+  background: rgba(0, 163, 255, 0.12);
+  border: 1px solid rgba(0, 163, 255, 0.22);
+}
+
+.scenario-table-assignment-badge.manual {
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.24);
+}
+
+.scenario-table-assignment-detail {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .empty-state {
   color: var(--text-muted);
   font-size: 14px;

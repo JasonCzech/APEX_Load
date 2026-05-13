@@ -41,6 +41,7 @@ describe('scenarioPayloadUtils', () => {
       scenario_mode: 'vuser_driven',
       script_shakeout: false,
       resource_baseline: false,
+      assignment: { mode: 'auto' },
       script_id: 'script-1',
       vusers: 25,
       ramp_up: '30s',
@@ -93,6 +94,7 @@ describe('scenarioPayloadUtils', () => {
       scenario_mode: 'goal_oriented',
       script_shakeout: true,
       resource_baseline: true,
+      assignment: { mode: 'auto' },
       groups: [{
         name: 'Checkout',
         script_id: 'script-1',
@@ -155,7 +157,40 @@ describe('scenarioPayloadUtils', () => {
       iterations: 4,
       initialization: 'at_runtime',
     }])
+    expect(payload.assignment).toEqual({ mode: 'auto' })
     expect(payload.script_id).toBeUndefined()
+  })
+
+  it('serializes explicit hostname assignment into scenario and test payloads', () => {
+    const payload = buildCreateTestPayload({
+      name: 'Explicit Host Run',
+      duration: '5m',
+      startDelay: '',
+      scenarioMode: 'vuser_driven',
+      scriptShakeout: false,
+      resourceBaseline: false,
+      assignment: { mode: 'specific_hosts', selected_targets: ['gen-a', 'gen-b'] },
+      groups: [{
+        name: 'Checkout',
+        scriptId: 'script-1',
+        vusers: 25,
+        rampUp: '',
+        rampDown: '',
+        initialization: 'at_runtime',
+      }],
+      goalConfig: {},
+      runtimeSettings: {
+        iterations: undefined,
+        log_level: '',
+        auto_transactions: '',
+        snapshot_on_error: false,
+      },
+    })
+
+    expect(payload.assignment).toEqual({
+      mode: 'specific_hosts',
+      selected_targets: ['gen-a', 'gen-b'],
+    })
   })
 
   it('round-trips a queued single-group run into a revised create-test payload without losing runtime or goal settings', () => {
@@ -209,6 +244,7 @@ describe('scenarioPayloadUtils', () => {
       scenario_mode: 'goal_oriented',
       script_shakeout: true,
       resource_baseline: true,
+      assignment: { mode: 'auto' },
       script_id: 'script-1',
       vusers: 25,
       initialization: 'at_runtime',

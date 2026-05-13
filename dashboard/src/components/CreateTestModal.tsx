@@ -78,7 +78,7 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
-  const { name, duration, startDelay, scenarioMode, scriptShakeout, resourceBaseline, groups, goalConfig, runtimeSettings } = scenarioDraft
+  const { name, duration, startDelay, scenarioMode, scriptShakeout, resourceBaseline, assignment, groups, goalConfig, runtimeSettings } = scenarioDraft
   const isReviseMode = mode === 'revise-queued-run'
   const modalTitle = isReviseMode ? 'Create Revised Queued Run' : 'Create Queued Run'
   const submitLabel = isReviseMode ? 'Create Revised Copy' : 'Create Queued Run'
@@ -105,11 +105,32 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
     dispatchScenarioDraft({ type: 'setRuntimeSettingField', field, value })
   }
 
+  const setAssignmentMode = (mode: 'auto' | 'specific_hosts') => {
+    updateScenarioField('assignment', {
+      mode,
+      selected_targets: mode === 'specific_hosts' ? (assignment.selected_targets || []) : [],
+    })
+  }
+
+  const toggleAssignmentTarget = (target: string, checked: boolean) => {
+    const current = new Set(assignment.selected_targets || [])
+    if (checked) current.add(target)
+    else current.delete(target)
+    updateScenarioField('assignment', {
+      mode: 'specific_hosts',
+      selected_targets: Array.from(current),
+    })
+  }
+
   const removeGroup = (idx: number) => {
     dispatchScenarioDraft({ type: 'removeGroup', index: idx })
   }
 
   const totalVUsers = groups.reduce((sum, g) => sum + g.vusers, 0)
+  const assignmentRecommendation = draftEstimate?.assignment_recommendation
+  const availableTargets = assignmentRecommendation?.available_targets || []
+  const recommendedTargets = assignmentRecommendation?.recommended_targets || []
+  const footprint = draftEstimate?.footprint
   const hasGoalModeConfig = Boolean(
     goalConfig.target_average_tps ||
     goalConfig.p95_latency_ms ||
@@ -184,6 +205,24 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
     groups,
     goalConfig,
     runtimeSettings,
+    assignment,
+    projectId,
+    folderId,
+  })
+
+  const buildEstimatePayload = () => buildCreateTestPayload({
+    name,
+    duration,
+    startDelay,
+    scenarioMode,
+    scriptShakeout,
+    resourceBaseline,
+    groups,
+    goalConfig,
+    runtimeSettings,
+    assignment: assignment.mode === 'specific_hosts' && (assignment.selected_targets || []).length === 0
+      ? { mode: 'auto', selected_targets: [] }
+      : assignment,
     projectId,
     folderId,
   })
@@ -202,7 +241,7 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
     setEstimateError('')
     const timer = window.setTimeout(async () => {
       try {
-        const estimate = await api.estimateTest(buildPayload())
+        const estimate = await api.estimateTest(buildEstimatePayload())
         if (!cancelled) {
           setDraftEstimate(estimate)
         }
@@ -222,7 +261,7 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
       cancelled = true
       window.clearTimeout(timer)
     }
-  }, [api, duration, goalConfig, groups, name, resourceBaseline, runtimeSettings, scenarioMode, scriptShakeout, startDelay])
+  }, [api, assignment, duration, goalConfig, groups, name, resourceBaseline, runtimeSettings, scenarioMode, scriptShakeout, startDelay])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -339,6 +378,103 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
               estimateError={estimateError}
             />
           </div>
+
+            <section className="assignment-settings">
+              <div className="assignment-settings-header">
+                <div>
+                  <h4>Controller / Generator Assignment</h4>
+                  <p>Overall size is derived from the scenario footprint, current generator capacity profile, and the configured distributed targets.</p>
+                </div>
+              </div>
+
+              <div className="scenario-mode-switcher assignment-mode-switcher">
+                <button
+                  type="button"
+                  className={`mode-chip ${assignment.mode !== 'specific_hosts' ? 'active' : ''}`}
+                  onClick={() => setAssignmentMode('auto')}
+                >
+                  Auto Assignment
+                </button>
+                <button
+                  type="button"
+                  className={`mode-chip ${assignment.mode === 'specific_hosts' ? 'active' : ''}`}
+                  onClick={() => setAssignmentMode('specific_hosts')}
+                >
+                  Specific Hostnames
+                </button>
+              </div>
+
+              {footprint && (
+                <div className="assignment-footprint-grid">
+                  <div className="assignment-footprint-card">
+                    <span>Footprint</span>
+                    <strong>{footprint.total_vusers} VUsers</strong>
+                    <small>{footprint.duration} steady state</small>
+                  </div>
+                  <div className="assignment-footprint-card">
+                    <span>Complexity</span>
+                    <strong>{footprint.complexity_score.toFixed(2)}</strong>
+                    <small>script design score</small>
+                  </div>
+                  <div className="assignment-footprint-card">
+                    <span>Estimated Load</span>
+                    <strong>{footprint.estimated_cpu_cores.toFixed(2)} CPU</strong>
+                    <small>{Math.round(footprint.estimated_memory_mb)} MB / {Math.round(footprint.estimated_network_mbps)} Mbps</small>
+                  </div>
+                </div>
+              )}
+
+              {assignmentRecommendation?.summary && (
+                <p className="assignment-copy">{assignmentRecommendation.summary}</p>
+              )}
+
+              {assignment.mode === 'specific_hosts' ? (
+                availableTargets.length > 0 ? (
+                  <>
+                    {(assignment.selected_targets || []).length === 0 && (
+                      <p className="assignment-copy secondary">Select at least one hostname to lock this run to explicit generator targets.</p>
+                    )}
+                    <div className="assignment-target-list">
+                      {availableTargets.map((target) => {
+                        const checked = (assignment.selected_targets || []).includes(target)
+                        const recommended = recommendedTargets.includes(target)
+                        return (
+                          <label key={target} className={`assignment-target ${checked ? 'selected' : ''}`}>
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={(event) => toggleAssignmentTarget(target, event.target.checked)}
+                            />
+                            <div>
+                              <strong>{target}</strong>
+                              <span>{recommended ? 'Recommended for current footprint' : 'Available configured host'}</span>
+                            </div>
+                          </label>
+                        )
+                      })}
+                    </div>
+                  </>
+                ) : (
+                  <p className="assignment-copy secondary">No distributed generator hostnames are currently configured on this controller.</p>
+                )
+              ) : recommendedTargets.length > 0 ? (
+                <div className="assignment-chip-row">
+                  {recommendedTargets.map((target) => (
+                    <span key={target} className="assignment-chip">{target}</span>
+                  ))}
+                </div>
+              ) : (
+                <p className="assignment-copy secondary">Auto-assignment will use the controller&apos;s configured generator inventory when distributed execution is enabled.</p>
+              )}
+
+              {assignmentRecommendation?.warnings && assignmentRecommendation.warnings.length > 0 && (
+                <div className="assignment-warnings">
+                  {assignmentRecommendation.warnings.map((warning) => (
+                    <p key={warning}>{warning}</p>
+                  ))}
+                </div>
+              )}
+            </section>
 
           {scenarioMode === 'goal_oriented' && (
             <CreateTestGoalSettings

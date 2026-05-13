@@ -12,6 +12,28 @@ export interface TestGroup {
   initialization?: 'at_runtime' | 'at_once'
 }
 
+export interface GeneratorAssignmentSettings {
+  mode?: 'auto' | 'specific_hosts'
+  selected_targets?: string[]
+}
+
+export interface ScenarioFootprint {
+  total_vusers: number
+  duration: string
+  complexity_score: number
+  estimated_cpu_cores: number
+  estimated_memory_mb: number
+  estimated_network_mbps: number
+}
+
+export interface AssignmentRecommendation {
+  mode: 'auto' | 'specific_hosts'
+  available_targets?: string[]
+  recommended_targets?: string[]
+  summary?: string
+  warnings?: string[]
+}
+
 export interface Project {
   id: string
   name: string
@@ -106,6 +128,7 @@ export interface TestSummary {
   folder_id?: string | null
   groups: TestGroup[]
   capacity_advisory?: CapacityAdvisory
+  assignment?: GeneratorAssignmentSettings
   script_shakeout?: boolean
   resource_baseline?: boolean
   total_vusers: number
@@ -268,6 +291,7 @@ export interface ScenarioDraft {
   scenarioMode: ScenarioMode
   scriptShakeout: boolean
   resourceBaseline: boolean
+  assignment: GeneratorAssignmentSettings
   goalConfig: GoalConfig
   groups: ScenarioDraftGroup[]
   runtimeSettings: {
@@ -409,6 +433,7 @@ export interface StoredScenario {
   scenario_mode?: ScenarioMode
   script_shakeout?: boolean
   resource_baseline?: boolean
+  assignment?: GeneratorAssignmentSettings
   goal_config?: GoalConfig
   runtime_settings?: RuntimeSettingsOverride
   scripts: Array<{
@@ -671,6 +696,9 @@ export interface DraftCapacityEstimate {
   duration: string
   resource_baseline?: boolean
   groups: TestGroup[]
+  assignment?: GeneratorAssignmentSettings
+  footprint?: ScenarioFootprint
+  assignment_recommendation?: AssignmentRecommendation
   capacity_advisory?: CapacityAdvisory
 }
 

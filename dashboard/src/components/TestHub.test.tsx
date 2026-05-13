@@ -12,6 +12,7 @@ const apiMock = {
   listScenarios: vi.fn(),
   listScripts: vi.fn(),
   listDataPools: vi.fn(),
+  estimateTest: vi.fn(),
   createScenario: vi.fn(),
   updateScenario: vi.fn(),
   deleteScenario: vi.fn(),
@@ -37,6 +38,24 @@ describe('TestHub', () => {
       count: 1,
     })
     apiMock.listDataPools.mockResolvedValue({ data_pools: [], count: 0 })
+    apiMock.estimateTest.mockResolvedValue({
+      duration: '1m',
+      groups: [],
+      assignment: { mode: 'auto' },
+      footprint: {
+        total_vusers: 10,
+        duration: '1m',
+        complexity_score: 1.25,
+        estimated_cpu_cores: 0.01,
+        estimated_memory_mb: 8,
+        estimated_network_mbps: 1,
+      },
+      assignment_recommendation: {
+        mode: 'auto',
+        recommended_targets: ['gen-a'],
+        summary: 'Auto-assignment recommends 1 host for the current scenario footprint.',
+      },
+    })
     apiMock.createScenario.mockResolvedValue({ id: 'scenario-1' })
     apiMock.updateScenario.mockResolvedValue({ id: 'scenario-1' })
     apiMock.deleteScenario.mockResolvedValue({ deleted: 'scenario-1' })
@@ -100,6 +119,7 @@ describe('TestHub', () => {
       scenario_mode: 'vuser_driven',
       script_shakeout: false,
       resource_baseline: false,
+      assignment: { mode: 'auto' },
       groups: [
         {
           script_id: 'script-1',
@@ -109,6 +129,38 @@ describe('TestHub', () => {
       ],
       data_pools: [],
     })
+  })
+
+  it('shows saved assignment defaults in the scenario library', async () => {
+    const onSelectTest = vi.fn()
+    apiMock.listScenarios.mockResolvedValue({
+      scenarios: [{
+        id: 'scenario-1',
+        name: 'Pinned Checkout',
+        duration: '5m',
+        assignment: {
+          mode: 'specific_hosts',
+          selected_targets: ['gen-a', 'gen-b'],
+        },
+        scripts: [{ script_id: 'script-1', script_name: 'Checkout Flow', vusers: 25 }],
+        data_pools: [],
+        associated_releases: [],
+        result_count: 0,
+        created_at: '2026-05-12T00:00:00Z',
+        last_run_at: '2026-05-13T00:00:00Z',
+      }],
+      count: 1,
+    })
+
+    await act(async () => {
+      root.render(<TestHub testStatuses={{}} onSelectTest={onSelectTest} />)
+    })
+
+    await flushPromises()
+
+    expect(container.textContent).toContain('Pinned Checkout')
+    expect(container.textContent).toContain('Specific Hosts')
+    expect(container.textContent).toContain('gen-a, gen-b')
   })
 })
 

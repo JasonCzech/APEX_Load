@@ -34,6 +34,10 @@ export function buildInitialScenarioDraft(initialScenario: ScenarioDraft | undef
     scenarioMode: initialScenario?.scenarioMode || 'vuser_driven',
     scriptShakeout: Boolean(initialScenario?.scriptShakeout),
     resourceBaseline: Boolean(initialScenario?.resourceBaseline),
+    assignment: {
+      mode: initialScenario?.assignment?.mode || 'auto',
+      selected_targets: initialScenario?.assignment?.selected_targets ? [...initialScenario.assignment.selected_targets] : [],
+    },
     goalConfig: {
       target_average_tps: initialScenario?.goalConfig?.target_average_tps,
       p95_latency_ms: initialScenario?.goalConfig?.p95_latency_ms,
@@ -83,6 +87,10 @@ export function buildScenarioDraftFromTest(test: TestSummary): ScenarioDraft {
     scenarioMode: test.scenario_mode || 'vuser_driven',
     scriptShakeout: Boolean(test.script_shakeout),
     resourceBaseline: Boolean(test.resource_baseline),
+    assignment: {
+      mode: test.assignment?.mode || 'auto',
+      selected_targets: test.assignment?.selected_targets ? [...test.assignment.selected_targets] : [],
+    },
     goalConfig: {
       target_average_tps: test.goal_config?.target_average_tps,
       p95_latency_ms: test.goal_config?.p95_latency_ms,

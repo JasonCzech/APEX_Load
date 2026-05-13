@@ -107,6 +107,7 @@ type Scenario struct {
 	ScenarioMode     string    `json:"scenario_mode,omitempty"`
 	ScriptShakeout   bool      `json:"script_shakeout,omitempty"`
 	ResourceBaseline bool      `json:"resource_baseline,omitempty"`
+	Assignment       any       `json:"assignment,omitempty"`
 	GoalConfig       any       `json:"goal_config,omitempty"`
 	RuntimeSettings  any       `json:"runtime_settings,omitempty"`
 	CreatedAt        time.Time `json:"created_at"`
@@ -200,6 +201,7 @@ type TestRecord struct {
 	ScriptShakeout   bool       `json:"script_shakeout,omitempty"`
 	ResourceBaseline bool       `json:"resource_baseline,omitempty"`
 	StartDelay       string     `json:"start_delay,omitempty"`
+	Assignment       any        `json:"assignment,omitempty"`       // JSON blob
 	TotalVUsers      int        `json:"total_vusers"`
 	Duration         int64      `json:"duration_ns"`
 	StartTime        time.Time  `json:"start_time"`

@@ -56,6 +56,7 @@ func (s *SQLiteStore) init() error {
 			scenario_mode TEXT,
 			shakeout_enabled INTEGER DEFAULT 0,
 			resource_baseline_enabled INTEGER DEFAULT 0,
+			assignment_json TEXT,
 			goal_config_json TEXT,
 			runtime_settings_json TEXT,
 			created_at DATETIME NOT NULL,
@@ -153,6 +154,7 @@ func (s *SQLiteStore) init() error {
 			scenario_mode TEXT,
 			shakeout_enabled INTEGER DEFAULT 0,
 			resource_baseline_enabled INTEGER DEFAULT 0,
+			assignment_json TEXT,
 			total_vusers INTEGER,
 			duration_ns INTEGER,
 			start_time DATETIME,
@@ -220,6 +222,14 @@ func (s *SQLiteStore) init() error {
 		if err.Error() != "SQL logic error: duplicate column name: resource_baseline_enabled (1)" {
 			return fmt.Errorf("failed to add resource_baseline_enabled column: %w", err)
 		}
+	}
+
+	if _, err := s.db.Exec(`ALTER TABLE scenarios ADD COLUMN assignment_json TEXT`); err != nil && !isDuplicateColumnErr(err) {
+		return fmt.Errorf("failed to add scenarios.assignment_json column: %w", err)
+	}
+
+	if _, err := s.db.Exec(`ALTER TABLE tests ADD COLUMN assignment_json TEXT`); err != nil && !isDuplicateColumnErr(err) {
+		return fmt.Errorf("failed to add tests.assignment_json column: %w", err)
 	}
 
 	if _, err := s.db.Exec(`ALTER TABLE scripts ADD COLUMN metadata_json TEXT`); err != nil {
@@ -591,6 +601,7 @@ func (s *SQLiteStore) SaveScenario(scenario *Scenario, scripts []ScenarioScript)
 		scenario.CreatedAt = time.Now()
 	}
 	scenario.UpdatedAt = time.Now()
+	assignmentJSON, _ := json.Marshal(scenario.Assignment)
 	goalJSON, _ := json.Marshal(scenario.GoalConfig)
 	runtimeJSON, _ := json.Marshal(scenario.RuntimeSettings)
 	tx, err := s.db.Begin()
@@ -598,12 +609,12 @@ func (s *SQLiteStore) SaveScenario(scenario *Scenario, scripts []ScenarioScript)
 		return err
 	}
 	defer tx.Rollback()
-	if _, err := tx.Exec(`INSERT INTO scenarios (id, name, duration, scenario_mode, shakeout_enabled, resource_baseline_enabled, goal_config_json, runtime_settings_json, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	if _, err := tx.Exec(`INSERT INTO scenarios (id, name, duration, scenario_mode, shakeout_enabled, resource_baseline_enabled, assignment_json, goal_config_json, runtime_settings_json, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET name=excluded.name, duration=excluded.duration, scenario_mode=excluded.scenario_mode,
 		shakeout_enabled=excluded.shakeout_enabled, resource_baseline_enabled=excluded.resource_baseline_enabled,
-		goal_config_json=excluded.goal_config_json, runtime_settings_json=excluded.runtime_settings_json, updated_at=excluded.updated_at`,
-		scenario.ID, scenario.Name, scenario.Duration, scenario.ScenarioMode, scenario.ScriptShakeout, scenario.ResourceBaseline, string(goalJSON), string(runtimeJSON), scenario.CreatedAt, scenario.UpdatedAt); err != nil {
+		assignment_json=excluded.assignment_json, goal_config_json=excluded.goal_config_json, runtime_settings_json=excluded.runtime_settings_json, updated_at=excluded.updated_at`,
+		scenario.ID, scenario.Name, scenario.Duration, scenario.ScenarioMode, scenario.ScriptShakeout, scenario.ResourceBaseline, string(assignmentJSON), string(goalJSON), string(runtimeJSON), scenario.CreatedAt, scenario.UpdatedAt); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(`DELETE FROM scenario_scripts WHERE scenario_id = ?`, scenario.ID); err != nil {
@@ -626,11 +637,14 @@ func (s *SQLiteStore) SaveScenario(scenario *Scenario, scripts []ScenarioScript)
 
 func (s *SQLiteStore) GetScenario(id string) (*Scenario, []ScenarioScript, error) {
 	var scenario Scenario
-	var goalJSON, runtimeJSON string
-	err := s.db.QueryRow(`SELECT id, name, duration, COALESCE(scenario_mode, ''), COALESCE(shakeout_enabled, 0), COALESCE(resource_baseline_enabled, 0), COALESCE(goal_config_json, ''), COALESCE(runtime_settings_json, ''), created_at, updated_at FROM scenarios WHERE id = ?`, id).Scan(
-		&scenario.ID, &scenario.Name, &scenario.Duration, &scenario.ScenarioMode, &scenario.ScriptShakeout, &scenario.ResourceBaseline, &goalJSON, &runtimeJSON, &scenario.CreatedAt, &scenario.UpdatedAt)
+	var assignmentJSON, goalJSON, runtimeJSON string
+	err := s.db.QueryRow(`SELECT id, name, duration, COALESCE(scenario_mode, ''), COALESCE(shakeout_enabled, 0), COALESCE(resource_baseline_enabled, 0), COALESCE(assignment_json, ''), COALESCE(goal_config_json, ''), COALESCE(runtime_settings_json, ''), created_at, updated_at FROM scenarios WHERE id = ?`, id).Scan(
+		&scenario.ID, &scenario.Name, &scenario.Duration, &scenario.ScenarioMode, &scenario.ScriptShakeout, &scenario.ResourceBaseline, &assignmentJSON, &goalJSON, &runtimeJSON, &scenario.CreatedAt, &scenario.UpdatedAt)
 	if err != nil {
 		return nil, nil, err
+	}
+	if assignmentJSON != "" && assignmentJSON != "null" {
+		json.Unmarshal([]byte(assignmentJSON), &scenario.Assignment)
 	}
 	if goalJSON != "" && goalJSON != "null" {
 		json.Unmarshal([]byte(goalJSON), &scenario.GoalConfig)
@@ -646,7 +660,7 @@ func (s *SQLiteStore) GetScenario(id string) (*Scenario, []ScenarioScript, error
 }
 
 func (s *SQLiteStore) ListScenarios() ([]*Scenario, error) {
-	rows, err := s.db.Query(`SELECT id, name, duration, COALESCE(scenario_mode, ''), COALESCE(shakeout_enabled, 0), COALESCE(resource_baseline_enabled, 0), COALESCE(goal_config_json, ''), COALESCE(runtime_settings_json, ''), created_at, updated_at FROM scenarios ORDER BY updated_at DESC`)
+	rows, err := s.db.Query(`SELECT id, name, duration, COALESCE(scenario_mode, ''), COALESCE(shakeout_enabled, 0), COALESCE(resource_baseline_enabled, 0), COALESCE(assignment_json, ''), COALESCE(goal_config_json, ''), COALESCE(runtime_settings_json, ''), created_at, updated_at FROM scenarios ORDER BY updated_at DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -654,9 +668,12 @@ func (s *SQLiteStore) ListScenarios() ([]*Scenario, error) {
 	var scenarios []*Scenario
 	for rows.Next() {
 		var scenario Scenario
-		var goalJSON, runtimeJSON string
-		if err := rows.Scan(&scenario.ID, &scenario.Name, &scenario.Duration, &scenario.ScenarioMode, &scenario.ScriptShakeout, &scenario.ResourceBaseline, &goalJSON, &runtimeJSON, &scenario.CreatedAt, &scenario.UpdatedAt); err != nil {
+		var assignmentJSON, goalJSON, runtimeJSON string
+		if err := rows.Scan(&scenario.ID, &scenario.Name, &scenario.Duration, &scenario.ScenarioMode, &scenario.ScriptShakeout, &scenario.ResourceBaseline, &assignmentJSON, &goalJSON, &runtimeJSON, &scenario.CreatedAt, &scenario.UpdatedAt); err != nil {
 			return nil, err
+		}
+		if assignmentJSON != "" && assignmentJSON != "null" {
+			json.Unmarshal([]byte(assignmentJSON), &scenario.Assignment)
 		}
 		if goalJSON != "" && goalJSON != "null" {
 			json.Unmarshal([]byte(goalJSON), &scenario.GoalConfig)
@@ -1252,35 +1269,39 @@ func (s *SQLiteStore) SaveTest(test *TestRecord) error {
 	test.ReleaseID = normalizeReleaseID(test.ReleaseID)
 	test.ProjectID = normalizeProjectID(test.ProjectID)
 	groupsJSON, _ := json.Marshal(test.Groups)
+	assignmentJSON, _ := json.Marshal(test.Assignment)
 	runtimeSettingsJSON, _ := json.Marshal(test.RuntimeSettings)
 	goalConfigJSON, _ := json.Marshal(test.GoalConfig)
 
-	query := `INSERT INTO tests (id, name, status, application_id, release_id, scenario_id, project_id, folder_id, scenario_mode, shakeout_enabled, resource_baseline_enabled, total_vusers, duration_ns, start_time, end_time, error, groups_json, runtime_settings_json, goal_config_json)
-			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	query := `INSERT INTO tests (id, name, status, application_id, release_id, scenario_id, project_id, folder_id, scenario_mode, shakeout_enabled, resource_baseline_enabled, assignment_json, total_vusers, duration_ns, start_time, end_time, error, groups_json, runtime_settings_json, goal_config_json)
+			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			  ON CONFLICT(id) DO UPDATE SET
 			  name=excluded.name, status=excluded.status, application_id=excluded.application_id, release_id=excluded.release_id, scenario_id=excluded.scenario_id,
 			  project_id=excluded.project_id, folder_id=excluded.folder_id,
 			  scenario_mode=excluded.scenario_mode, shakeout_enabled=excluded.shakeout_enabled,
-			  resource_baseline_enabled=excluded.resource_baseline_enabled, total_vusers=excluded.total_vusers,
+			  resource_baseline_enabled=excluded.resource_baseline_enabled, assignment_json=excluded.assignment_json, total_vusers=excluded.total_vusers,
 			  duration_ns=excluded.duration_ns, start_time=excluded.start_time, end_time=excluded.end_time,
 			  error=excluded.error, groups_json=excluded.groups_json,
 			  runtime_settings_json=excluded.runtime_settings_json, goal_config_json=excluded.goal_config_json`
 
-	_, err := s.db.Exec(query, test.ID, test.Name, test.Status, test.ApplicationID, test.ReleaseID, test.ScenarioID, test.ProjectID, test.FolderID, test.ScenarioMode, test.ScriptShakeout, test.ResourceBaseline, test.TotalVUsers, test.Duration, test.StartTime, test.EndTime, test.Error, string(groupsJSON), string(runtimeSettingsJSON), string(goalConfigJSON))
+	_, err := s.db.Exec(query, test.ID, test.Name, test.Status, test.ApplicationID, test.ReleaseID, test.ScenarioID, test.ProjectID, test.FolderID, test.ScenarioMode, test.ScriptShakeout, test.ResourceBaseline, string(assignmentJSON), test.TotalVUsers, test.Duration, test.StartTime, test.EndTime, test.Error, string(groupsJSON), string(runtimeSettingsJSON), string(goalConfigJSON))
 	return err
 }
 
 func (s *SQLiteStore) GetTest(id string) (*TestRecord, error) {
 	var test TestRecord
-	var groupsJSON, runtimeSettingsJSON, goalConfigJSON string
+	var groupsJSON, assignmentJSON, runtimeSettingsJSON, goalConfigJSON string
 
-	query := `SELECT id, name, status, COALESCE(application_id, ''), COALESCE(release_id, ''), COALESCE(scenario_id, ''), COALESCE(project_id, ''), folder_id, COALESCE(scenario_mode, ''), COALESCE(shakeout_enabled, 0), COALESCE(resource_baseline_enabled, 0), total_vusers, duration_ns, start_time, end_time, error, groups_json, COALESCE(runtime_settings_json, ''), COALESCE(goal_config_json, '') FROM tests WHERE id = ?`
-	err := s.db.QueryRow(query, id).Scan(&test.ID, &test.Name, &test.Status, &test.ApplicationID, &test.ReleaseID, &test.ScenarioID, &test.ProjectID, &test.FolderID, &test.ScenarioMode, &test.ScriptShakeout, &test.ResourceBaseline, &test.TotalVUsers, &test.Duration, &test.StartTime, &test.EndTime, &test.Error, &groupsJSON, &runtimeSettingsJSON, &goalConfigJSON)
+	query := `SELECT id, name, status, COALESCE(application_id, ''), COALESCE(release_id, ''), COALESCE(scenario_id, ''), COALESCE(project_id, ''), folder_id, COALESCE(scenario_mode, ''), COALESCE(shakeout_enabled, 0), COALESCE(resource_baseline_enabled, 0), COALESCE(assignment_json, ''), total_vusers, duration_ns, start_time, end_time, error, groups_json, COALESCE(runtime_settings_json, ''), COALESCE(goal_config_json, '') FROM tests WHERE id = ?`
+	err := s.db.QueryRow(query, id).Scan(&test.ID, &test.Name, &test.Status, &test.ApplicationID, &test.ReleaseID, &test.ScenarioID, &test.ProjectID, &test.FolderID, &test.ScenarioMode, &test.ScriptShakeout, &test.ResourceBaseline, &assignmentJSON, &test.TotalVUsers, &test.Duration, &test.StartTime, &test.EndTime, &test.Error, &groupsJSON, &runtimeSettingsJSON, &goalConfigJSON)
 	if err != nil {
 		return nil, err
 	}
 
 	json.Unmarshal([]byte(groupsJSON), &test.Groups)
+	if assignmentJSON != "" && assignmentJSON != "null" {
+		json.Unmarshal([]byte(assignmentJSON), &test.Assignment)
+	}
 	if runtimeSettingsJSON != "" && runtimeSettingsJSON != "null" {
 		json.Unmarshal([]byte(runtimeSettingsJSON), &test.RuntimeSettings)
 	}
@@ -1292,7 +1313,7 @@ func (s *SQLiteStore) GetTest(id string) (*TestRecord, error) {
 
 func (s *SQLiteStore) ListTests(projectID string, folderID *string) ([]*TestRecord, error) {
 	args := []any{}
-	query := `SELECT id, name, status, COALESCE(application_id, ''), COALESCE(release_id, ''), COALESCE(scenario_id, ''), COALESCE(project_id, ''), folder_id, COALESCE(scenario_mode, ''), COALESCE(shakeout_enabled, 0), COALESCE(resource_baseline_enabled, 0), total_vusers, duration_ns, start_time, end_time, error, groups_json, COALESCE(runtime_settings_json, ''), COALESCE(goal_config_json, '') FROM tests`
+	query := `SELECT id, name, status, COALESCE(application_id, ''), COALESCE(release_id, ''), COALESCE(scenario_id, ''), COALESCE(project_id, ''), folder_id, COALESCE(scenario_mode, ''), COALESCE(shakeout_enabled, 0), COALESCE(resource_baseline_enabled, 0), COALESCE(assignment_json, ''), total_vusers, duration_ns, start_time, end_time, error, groups_json, COALESCE(runtime_settings_json, ''), COALESCE(goal_config_json, '') FROM tests`
 	var filters []string
 	if projectID != "" {
 		filters = append(filters, `project_id = ?`)
@@ -1319,11 +1340,14 @@ func (s *SQLiteStore) ListTests(projectID string, folderID *string) ([]*TestReco
 	var tests []*TestRecord
 	for rows.Next() {
 		var test TestRecord
-		var groupsJSON, runtimeSettingsJSON, goalConfigJSON string
-		if err := rows.Scan(&test.ID, &test.Name, &test.Status, &test.ApplicationID, &test.ReleaseID, &test.ScenarioID, &test.ProjectID, &test.FolderID, &test.ScenarioMode, &test.ScriptShakeout, &test.ResourceBaseline, &test.TotalVUsers, &test.Duration, &test.StartTime, &test.EndTime, &test.Error, &groupsJSON, &runtimeSettingsJSON, &goalConfigJSON); err != nil {
+		var groupsJSON, assignmentJSON, runtimeSettingsJSON, goalConfigJSON string
+		if err := rows.Scan(&test.ID, &test.Name, &test.Status, &test.ApplicationID, &test.ReleaseID, &test.ScenarioID, &test.ProjectID, &test.FolderID, &test.ScenarioMode, &test.ScriptShakeout, &test.ResourceBaseline, &assignmentJSON, &test.TotalVUsers, &test.Duration, &test.StartTime, &test.EndTime, &test.Error, &groupsJSON, &runtimeSettingsJSON, &goalConfigJSON); err != nil {
 			return nil, err
 		}
 		json.Unmarshal([]byte(groupsJSON), &test.Groups)
+		if assignmentJSON != "" && assignmentJSON != "null" {
+			json.Unmarshal([]byte(assignmentJSON), &test.Assignment)
+		}
 		if runtimeSettingsJSON != "" && runtimeSettingsJSON != "null" {
 			json.Unmarshal([]byte(runtimeSettingsJSON), &test.RuntimeSettings)
 		}
@@ -1337,7 +1361,7 @@ func (s *SQLiteStore) ListTests(projectID string, folderID *string) ([]*TestReco
 
 func (s *SQLiteStore) ListTestsByContext(applicationID string, releaseID string, scenarioID string) ([]*TestRecord, error) {
 	args := []any{}
-	query := `SELECT id, name, status, COALESCE(application_id, ''), COALESCE(release_id, ''), COALESCE(scenario_id, ''), COALESCE(project_id, ''), folder_id, COALESCE(scenario_mode, ''), COALESCE(shakeout_enabled, 0), COALESCE(resource_baseline_enabled, 0), total_vusers, duration_ns, start_time, end_time, error, groups_json, COALESCE(runtime_settings_json, ''), COALESCE(goal_config_json, '') FROM tests`
+	query := `SELECT id, name, status, COALESCE(application_id, ''), COALESCE(release_id, ''), COALESCE(scenario_id, ''), COALESCE(project_id, ''), folder_id, COALESCE(scenario_mode, ''), COALESCE(shakeout_enabled, 0), COALESCE(resource_baseline_enabled, 0), COALESCE(assignment_json, ''), total_vusers, duration_ns, start_time, end_time, error, groups_json, COALESCE(runtime_settings_json, ''), COALESCE(goal_config_json, '') FROM tests`
 	var filters []string
 	if applicationID != "" {
 		filters = append(filters, `application_id = ?`)
@@ -1363,11 +1387,14 @@ func (s *SQLiteStore) ListTestsByContext(applicationID string, releaseID string,
 	var tests []*TestRecord
 	for rows.Next() {
 		var test TestRecord
-		var groupsJSON, runtimeSettingsJSON, goalConfigJSON string
-		if err := rows.Scan(&test.ID, &test.Name, &test.Status, &test.ApplicationID, &test.ReleaseID, &test.ScenarioID, &test.ProjectID, &test.FolderID, &test.ScenarioMode, &test.ScriptShakeout, &test.ResourceBaseline, &test.TotalVUsers, &test.Duration, &test.StartTime, &test.EndTime, &test.Error, &groupsJSON, &runtimeSettingsJSON, &goalConfigJSON); err != nil {
+		var groupsJSON, assignmentJSON, runtimeSettingsJSON, goalConfigJSON string
+		if err := rows.Scan(&test.ID, &test.Name, &test.Status, &test.ApplicationID, &test.ReleaseID, &test.ScenarioID, &test.ProjectID, &test.FolderID, &test.ScenarioMode, &test.ScriptShakeout, &test.ResourceBaseline, &assignmentJSON, &test.TotalVUsers, &test.Duration, &test.StartTime, &test.EndTime, &test.Error, &groupsJSON, &runtimeSettingsJSON, &goalConfigJSON); err != nil {
 			return nil, err
 		}
 		json.Unmarshal([]byte(groupsJSON), &test.Groups)
+		if assignmentJSON != "" && assignmentJSON != "null" {
+			json.Unmarshal([]byte(assignmentJSON), &test.Assignment)
+		}
 		if runtimeSettingsJSON != "" && runtimeSettingsJSON != "null" {
 			json.Unmarshal([]byte(runtimeSettingsJSON), &test.RuntimeSettings)
 		}

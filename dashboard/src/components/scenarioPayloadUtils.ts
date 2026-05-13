@@ -1,4 +1,4 @@
-import { GoalConfig, ScenarioDataPoolBinding, ScenarioDraftGroup, ScenarioMode } from '../types'
+import { GeneratorAssignmentSettings, GoalConfig, ScenarioDataPoolBinding, ScenarioDraftGroup, ScenarioMode } from '../types'
 import { ScenarioRuntimeSettings } from './scenarioDraftUtils'
 
 export type ScenarioGroupPayload = {
@@ -18,6 +18,7 @@ export type ScenarioUpsertPayload = {
   scenario_mode: ScenarioMode
   script_shakeout: boolean
   resource_baseline: boolean
+  assignment?: GeneratorAssignmentSettings
   groups: ScenarioGroupPayload[]
   goal_config?: GoalConfig
   runtime_settings?: {
@@ -40,6 +41,7 @@ export type CreateTestPayload = {
   scenario_mode: ScenarioMode
   script_shakeout: boolean
   resource_baseline: boolean
+  assignment?: GeneratorAssignmentSettings
   script_id?: string
   vusers?: number
   ramp_up?: string
@@ -56,6 +58,7 @@ type ScenarioPayloadInput = {
   scenarioMode: ScenarioMode
   scriptShakeout: boolean
   resourceBaseline: boolean
+  assignment?: GeneratorAssignmentSettings
   groups: ScenarioDraftGroup[]
   goalConfig: GoalConfig
   runtimeSettings: ScenarioRuntimeSettings
@@ -140,17 +143,23 @@ export function buildScenarioUpsertPayload({
   scenarioMode,
   scriptShakeout,
   resourceBaseline,
+  assignment,
   groups,
   goalConfig,
   runtimeSettings,
   dataPools,
 }: ScenarioUpsertPayloadInput): ScenarioUpsertPayload {
+  const resolvedAssignment = assignment?.mode === 'specific_hosts'
+    ? { mode: 'specific_hosts' as const, selected_targets: assignment.selected_targets || [] }
+    : { mode: 'auto' as const }
+
   const payload: ScenarioUpsertPayload = {
     name: name.trim(),
     duration,
     scenario_mode: scenarioMode,
     script_shakeout: scriptShakeout,
     resource_baseline: resourceBaseline,
+    assignment: resolvedAssignment,
     groups: buildScenarioGroupPayloads(groups),
   }
 
@@ -182,17 +191,23 @@ export function buildCreateTestPayload({
   scenarioMode,
   scriptShakeout,
   resourceBaseline,
+  assignment,
   groups,
   goalConfig,
   runtimeSettings,
   projectId,
   folderId,
 }: CreateTestPayloadInput): CreateTestPayload {
+  const resolvedAssignment = assignment?.mode === 'specific_hosts'
+    ? { mode: 'specific_hosts' as const, selected_targets: assignment.selected_targets || [] }
+    : { mode: 'auto' as const }
+
   const payload: CreateTestPayload = {
     duration,
     scenario_mode: scenarioMode,
     script_shakeout: scriptShakeout,
     resource_baseline: resourceBaseline,
+    assignment: resolvedAssignment,
   }
 
   if (startDelay) {

@@ -1173,6 +1173,146 @@ func TestDistributedExecutionBackendPrefersHigherCapacityGenerator(t *testing.T)
 	}
 }
 
+func TestDistributedExecutionBackendHonorsExplicitHostSelection(t *testing.T) {
+	const bufSize = 1024 * 1024
+
+	listenerA := bufconn.Listen(bufSize)
+	serverA := grpc.NewServer()
+	pb.RegisterGeneratorControlServer(serverA, generatorrpc.NewService("generator-a", 10))
+	go func() {
+		_ = serverA.Serve(listenerA)
+	}()
+	t.Cleanup(func() {
+		serverA.Stop()
+		_ = listenerA.Close()
+	})
+
+	listenerB := bufconn.Listen(bufSize)
+	serverB := grpc.NewServer()
+	pb.RegisterGeneratorControlServer(serverB, generatorrpc.NewService("generator-b", 10))
+	go func() {
+		_ = serverB.Serve(listenerB)
+	}()
+	t.Cleanup(func() {
+		serverB.Stop()
+		_ = listenerB.Close()
+	})
+
+	dialTarget := func(ctx context.Context, target string) (*generatorrpc.Client, error) {
+		switch target {
+		case "bufnet-a":
+			return generatorrpc.Dial(
+				ctx,
+				target,
+				grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+					return listenerA.Dial()
+				}),
+				grpc.WithTransportCredentials(insecure.NewCredentials()),
+				grpc.WithBlock(),
+			)
+		case "bufnet-b":
+			return generatorrpc.Dial(
+				ctx,
+				target,
+				grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+					return listenerB.Dial()
+				}),
+				grpc.WithTransportCredentials(insecure.NewCredentials()),
+				grpc.WithBlock(),
+			)
+		default:
+			return nil, context.DeadlineExceeded
+		}
+	}
+
+	hub := NewHub()
+	runner := NewTestRunner(1, hub, nil)
+	runner.setExecutionBackend(newDistributedExecutionBackend(
+		[]string{"bufnet-a", "bufnet-b"},
+		5*time.Second,
+		func(ctx context.Context, target string) (generatorClient, error) {
+			return dialTarget(ctx, target)
+		},
+	))
+
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-explicit-host",
+		Name:     "Explicit Host",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Config:   dsl.ScriptConfig{BaseURL: "https://example.com", RunLogic: dsl.RunLogicConfig{Iterations: 1}},
+		Actions:  []dsl.Action{{Name: "Home", Type: "GET", Target: "/"}},
+	})
+
+	testRun, err := runner.CreateTest(CreateTestRequest{
+		Name:     "Explicit host assignment",
+		Duration: "30s",
+		Assignment: &GeneratorAssignmentSettings{
+			Mode:            generatorAssignmentModeSpecificHosts,
+			SelectedTargets: []string{"bufnet-a"},
+		},
+		Groups: []CreateGroupEntry{{
+			Name:     "Group A",
+			ScriptID: "script-explicit-host",
+			VUsers:   4,
+			RampUp:   "0s",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("CreateTest returned error: %v", err)
+	}
+
+	if err := runner.StartTest(testRun.ID); err != nil {
+		t.Fatalf("StartTest returned error: %v", err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		started, ok := runner.GetTest(testRun.ID)
+		if !ok {
+			t.Fatalf("expected managed test %q to exist", testRun.ID)
+		}
+		if started.Status == "RUNNING" && started.LiveMetrics != nil {
+			if started.remoteGroupTargets["Group A"] != "bufnet-a" {
+				t.Fatalf("remote group target = %q, want bufnet-a", started.remoteGroupTargets["Group A"])
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected distributed backend to start explicit host test, got status %q", started.Status)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	clientA, err := dialTarget(ctx, "bufnet-a")
+	if err != nil {
+		t.Fatalf("Dial generator A: %v", err)
+	}
+	defer clientA.Close()
+	clientB, err := dialTarget(ctx, "bufnet-b")
+	if err != nil {
+		t.Fatalf("Dial generator B: %v", err)
+	}
+	defer clientB.Close()
+
+	stopA, err := clientA.StopTest(ctx, testRun.ID, true)
+	if err != nil {
+		t.Fatalf("StopTest generator A: %v", err)
+	}
+	if !stopA.Acknowledged {
+		t.Fatalf("expected generator A to own explicit-host test")
+	}
+	stopB, err := clientB.StopTest(ctx, testRun.ID, true)
+	if err != nil {
+		t.Fatalf("StopTest generator B: %v", err)
+	}
+	if stopB.Acknowledged {
+		t.Fatalf("expected generator B to not own explicit-host test")
+	}
+}
+
 func TestDistributedExecutionBackendFailsWhenAssignedGeneratorStreamDrops(t *testing.T) {
 	const bufSize = 1024 * 1024
 
