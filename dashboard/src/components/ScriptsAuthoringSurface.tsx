@@ -1,0 +1,58 @@
+import { type ScriptDefinition } from '../types/scripts'
+import ScriptEditor from './ScriptEditor'
+import LoadRunnerImport from './LoadRunnerImport'
+import JMeterImport from './JMeterImport'
+import RecordingStudio from './RecordingStudio'
+import SampleScriptImport from './SampleScriptImport'
+import { type ScriptsAuthoringSubView } from './useScriptsAuthoringState'
+
+interface Props {
+  subView: ScriptsAuthoringSubView
+  draftScript: ScriptDefinition | null
+  editingId: string | null
+  editingScript: ScriptDefinition | null
+  onSaved: () => void
+  onOpenLibrary: () => void
+  onOpenCreateOptions: () => void
+  onImported: () => void
+  onEditDraft: (script: ScriptDefinition) => void
+}
+
+export default function ScriptsAuthoringSurface({
+  subView,
+  draftScript,
+  editingId,
+  editingScript,
+  onSaved,
+  onOpenLibrary,
+  onOpenCreateOptions,
+  onImported,
+  onEditDraft,
+}: Props) {
+  switch (subView) {
+    case 'create':
+      return <div className="page"><ScriptEditor initialScript={draftScript} onSave={onSaved} onClose={onOpenLibrary} /></div>
+    case 'edit':
+      return <div className="page"><ScriptEditor scriptId={editingId} initialScript={editingScript} onSave={onSaved} onClose={onOpenLibrary} /></div>
+    case 'import':
+      return <div className="page"><LoadRunnerImport onImported={onImported} onEdit={onEditDraft} onClose={onOpenLibrary} /></div>
+    case 'jmeter-import':
+      return <div className="page"><JMeterImport onImported={onImported} onEdit={onEditDraft} onClose={onOpenLibrary} /></div>
+    case 'recorder':
+      return (
+        <div className="page">
+          <button className="btn btn-secondary" onClick={onOpenCreateOptions} style={{ alignSelf: 'flex-start' }}>Back to Create Script</button>
+          <RecordingStudio onImported={onImported} onEdit={onEditDraft} />
+        </div>
+      )
+    case 'sample':
+      return (
+        <div className="page">
+          <button className="btn btn-secondary" onClick={onOpenCreateOptions} style={{ alignSelf: 'flex-start' }}>Back to Create Script</button>
+          <SampleScriptImport onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />
+        </div>
+      )
+    default:
+      return null
+  }
+}

@@ -2,17 +2,24 @@ import { useEffect, useRef, useState } from 'react'
 import { useApi } from '../hooks/useApi'
 import { ImportResult, SupportMatrix, normalizeImportResult, summarizeImportExtractors, summarizeSupportMatrix } from './jmeterImportUtils'
 import { type ImportedAction, type ImportedScript, type JMeterSupportMatrixResponse } from '../types/scriptImports'
+import { type ScriptDefinition } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
+import ScriptImportReview from './ScriptImportReview'
 import './LoadRunnerImport.css'
 
 interface Props {
   onImported?: (script: ImportedScript) => void
+  onEdit?: (script: ScriptDefinition) => void
   onClose?: () => void
 }
 
 type ReviewMode = 'validation' | 'conversion'
 
-export default function JMeterImport({ onImported, onClose }: Props) {
+function getPrimaryScript(result: ImportResult | null): ImportedScript | null {
+  return result?.script || result?.scripts?.[0] || null
+}
+
+export default function JMeterImport({ onImported, onEdit, onClose }: Props) {
   const api = useApi()
   const fileRef = useRef<HTMLInputElement>(null)
   const [file, setFile] = useState<File | null>(null)
@@ -32,6 +39,7 @@ export default function JMeterImport({ onImported, onClose }: Props) {
   })
   const supportMatrixSections = summarizeSupportMatrix(supportMatrix)
   const extractorSummary = summarizeImportExtractors(result?.scripts || [])
+  const primaryScript = getPrimaryScript(result)
 
   useEffect(() => {
     let cancelled = false
@@ -243,90 +251,81 @@ export default function JMeterImport({ onImported, onClose }: Props) {
 
       {result && (
         <div className="lr-result">
-          <div className="lr-result-header">
-            <div>
-              <h3>{reviewMode === 'validation' ? 'Validation Review' : 'Conversion Review'}</h3>
-              <p className="lr-subtitle">
-                {reviewMode === 'validation'
-                  ? 'This preview came from the dry-run validator. You can still save the reviewed assets if the output looks correct.'
-                  : 'This preview came from the converter and is ready for final review before saving.'}
-              </p>
+          <ScriptImportReview
+            title={reviewMode === 'validation' ? 'Validation Review' : 'Conversion Review'}
+            subtitle={reviewMode === 'validation'
+              ? 'This preview came from the dry-run validator. You can still save the reviewed assets if the output looks correct.'
+              : 'This preview came from the converter and is ready for final review before saving.'}
+            script={primaryScript || { name: result.summary?.file_name || file?.name || 'Imported JMeter Plan' }}
+            previewData={{ scripts: result.scripts, scenario_draft: result.scenario_draft, summary: result.summary }}
+            warnings={result.warnings}
+            warningsTitle={`Conversion Warnings (${result.warnings.length})`}
+            saving={saving}
+            saveLabel={`${reviewMode === 'validation' ? 'Save Reviewed' : 'Save'} ${result.scripts?.length || 0} Script${(result.scripts?.length || 0) === 1 ? '' : 's'}`}
+            onSave={handleSaveConverted}
+            onEdit={onEdit && primaryScript ? () => onEdit(primaryScript as ScriptDefinition) : undefined}
+            editLabel={result.scripts.length > 1 ? 'Open First Script In Visual Editor' : 'Open In Visual Editor'}
+            previewTitle="Import Preview"
+          >
+            <div className="lr-stats-grid">
+              <div className="lr-stat"><span className="lr-stat-val">{result.stats.converted_actions}</span><span className="lr-stat-label">Actions</span></div>
+              <div className="lr-stat"><span className="lr-stat-val">{result.stats.thread_groups}</span><span className="lr-stat-label">Thread Groups</span></div>
+              <div className="lr-stat"><span className="lr-stat-val">{result.stats.csv_sources}</span><span className="lr-stat-label">CSV Sources</span></div>
+              <div className="lr-stat"><span className="lr-stat-val">{result.stats.variables}</span><span className="lr-stat-label">Variables</span></div>
+              <div className="lr-stat"><span className="lr-stat-val">{result.stats.assertions}</span><span className="lr-stat-label">Assertions</span></div>
+              <div className="lr-stat"><span className="lr-stat-val">{result.stats.unsupported}</span><span className="lr-stat-label">Unsupported</span></div>
             </div>
-            <button className="btn btn-primary" onClick={handleSaveConverted} disabled={saving}>
-              {saving ? 'Saving...' : `${reviewMode === 'validation' ? 'Save Reviewed' : 'Save'} ${result.scripts?.length || 0} Script${(result.scripts?.length || 0) === 1 ? '' : 's'}`}
-            </button>
-          </div>
 
-          <div className="lr-stats-grid">
-            <div className="lr-stat"><span className="lr-stat-val">{result.stats.converted_actions}</span><span className="lr-stat-label">Actions</span></div>
-            <div className="lr-stat"><span className="lr-stat-val">{result.stats.thread_groups}</span><span className="lr-stat-label">Thread Groups</span></div>
-            <div className="lr-stat"><span className="lr-stat-val">{result.stats.csv_sources}</span><span className="lr-stat-label">CSV Sources</span></div>
-            <div className="lr-stat"><span className="lr-stat-val">{result.stats.variables}</span><span className="lr-stat-label">Variables</span></div>
-            <div className="lr-stat"><span className="lr-stat-val">{result.stats.assertions}</span><span className="lr-stat-label">Assertions</span></div>
-            <div className="lr-stat"><span className="lr-stat-val">{result.stats.unsupported}</span><span className="lr-stat-label">Unsupported</span></div>
-          </div>
+            {result.unsupported_elements.length > 0 && (
+              <div className="lr-warnings">
+                <h4>Unsupported Elements ({result.unsupported_elements.length})</h4>
+                <ul>{result.unsupported_elements.map((item, index) => <li key={index}>{item}</li>)}</ul>
+              </div>
+            )}
 
-          {result.warnings.length > 0 && (
-            <div className="lr-warnings">
-              <h4>Conversion Warnings ({result.warnings.length})</h4>
-              <ul>{result.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul>
-            </div>
-          )}
+            {result.assumptions.length > 0 && (
+              <div className="lr-warnings">
+                <h4>Assumptions</h4>
+                <ul>{result.assumptions.map((item, index) => <li key={index}>{item}</li>)}</ul>
+              </div>
+            )}
 
-          {result.unsupported_elements.length > 0 && (
-            <div className="lr-warnings">
-              <h4>Unsupported Elements ({result.unsupported_elements.length})</h4>
-              <ul>{result.unsupported_elements.map((item, index) => <li key={index}>{item}</li>)}</ul>
-            </div>
-          )}
+            {extractorSummary.length > 0 && (
+              <div className="lr-warnings">
+                <h4>Captured Variables ({extractorSummary.length})</h4>
+                <ul>
+                  {extractorSummary.map((extractor, index) => (
+                    <li key={`${extractor.scriptName}-${extractor.actionName}-${extractor.extractorName}-${index}`}>
+                      <strong>{extractor.extractorName}</strong> via {extractor.extractorType} from {extractor.actionName} in {extractor.scriptName}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
-          {result.assumptions.length > 0 && (
-            <div className="lr-warnings">
-              <h4>Assumptions</h4>
-              <ul>{result.assumptions.map((item, index) => <li key={index}>{item}</li>)}</ul>
-            </div>
-          )}
-
-          {extractorSummary.length > 0 && (
-            <div className="lr-warnings">
-              <h4>Captured Variables ({extractorSummary.length})</h4>
-              <ul>
-                {extractorSummary.map((extractor, index) => (
-                  <li key={`${extractor.scriptName}-${extractor.actionName}-${extractor.extractorName}-${index}`}>
-                    <strong>{extractor.extractorName}</strong> via {extractor.extractorType} from {extractor.actionName} in {extractor.scriptName}
-                  </li>
+            <div className="lr-preserved">
+              <div className="lr-preserved-header">
+                <h4>Generated Assets</h4>
+                <span>{result.summary?.file_name || file?.name}</span>
+              </div>
+              <div className="lr-preserved-grid">
+                {(result.scripts || []).map(script => (
+                  <div className="lr-preserved-card" key={script.name}>
+                    <span className="lr-preserved-label">Script</span>
+                    <strong>{script.name}</strong>
+                    <small>{script.actions?.length || 0} actions / {script.data_sources?.length || 0} data sources / {script.actions?.reduce((count: number, action: ImportedAction) => count + (action.extractors?.length || 0), 0) || 0} extractors</small>
+                  </div>
                 ))}
-              </ul>
+                {result.scenario_draft && (
+                  <div className="lr-preserved-card">
+                    <span className="lr-preserved-label">Scenario Draft</span>
+                    <strong>{result.scenario_draft.groups?.length || 0} groups</strong>
+                    <small>{result.scenario_draft.duration || 'Duration not set'}</small>
+                  </div>
+                )}
+              </div>
             </div>
-          )}
-
-          <div className="lr-preserved">
-            <div className="lr-preserved-header">
-              <h4>Generated Assets</h4>
-              <span>{result.summary?.file_name || file?.name}</span>
-            </div>
-            <div className="lr-preserved-grid">
-              {(result.scripts || []).map(script => (
-                <div className="lr-preserved-card" key={script.name}>
-                  <span className="lr-preserved-label">Script</span>
-                  <strong>{script.name}</strong>
-                  <small>{script.actions?.length || 0} actions / {script.data_sources?.length || 0} data sources / {script.actions?.reduce((count: number, action: ImportedAction) => count + (action.extractors?.length || 0), 0) || 0} extractors</small>
-                </div>
-              ))}
-              {result.scenario_draft && (
-                <div className="lr-preserved-card">
-                  <span className="lr-preserved-label">Scenario Draft</span>
-                  <strong>{result.scenario_draft.groups?.length || 0} groups</strong>
-                  <small>{result.scenario_draft.duration || 'Duration not set'}</small>
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="lr-preview">
-            <h4>Import Preview</h4>
-            <pre>{JSON.stringify({ scripts: result.scripts, scenario_draft: result.scenario_draft, summary: result.summary }, null, 2)}</pre>
-          </div>
+          </ScriptImportReview>
         </div>
       )}
     </div>

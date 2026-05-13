@@ -133,6 +133,60 @@ describe('JMeterImport', () => {
     expect(container.textContent).toContain('session_token')
     expect(container.textContent).toContain('access_token')
     expect(container.textContent).toContain('1 actions / 0 data sources / 2 extractors')
+    expect(container.textContent).toContain('Validation Review')
+    expect(container.textContent).toContain('Save Reviewed 1 Script')
+  })
+
+  it('routes the reviewed script through the shared edit handoff', async () => {
+    const onEdit = vi.fn()
+
+    await act(async () => {
+      root.render(<JMeterImport onEdit={onEdit} />)
+    })
+
+    await flushPromises()
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
+    expect(fileInput).not.toBeNull()
+    if (!fileInput) {
+      return
+    }
+
+    const file = new File(['<jmeterTestPlan />'], 'extractors.jmx', { type: 'application/xml' })
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [file],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const validateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Validate Only'))
+    expect(validateButton).toBeDefined()
+    if (!validateButton) {
+      return
+    }
+
+    await act(async () => {
+      validateButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushPromises()
+
+    const editButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Open In Visual Editor'))
+    expect(editButton).toBeDefined()
+    if (!editButton) {
+      return
+    }
+
+    await act(async () => {
+      editButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Auth_Users',
+      actions: expect.any(Array),
+    }))
   })
 })
 

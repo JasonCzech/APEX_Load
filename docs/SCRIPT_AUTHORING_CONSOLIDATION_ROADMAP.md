@@ -200,6 +200,13 @@ That order minimizes churn and avoids rebuilding the UI around unstable backend 
 - The execution detail page now consumes a dedicated metrics-stream hook for websocket message mapping and rolling local history instead of keeping that append logic inline in `TestExecution`.
 - The remaining execution action bridge now flows through a dedicated hook for queued-start advisories, optimistic pause/resume updates, and the shared control-feedback channel instead of keeping those mutations inline in `TestExecution`.
 - The remaining execution page UI toggles now flow through one small view-state hook for expanded charts and queued script panels instead of keeping the last standalone UI state fields inline in `TestExecution`.
+- The JMeter import review now uses the shared import-review shell and edit handoff instead of keeping a bespoke review header/save shell that diverged from the LoadRunner, sample, and recorder flows.
+- The scripts library now routes create/import/edit authoring transitions through a dedicated authoring-state hook instead of keeping those route-level draft/edit/subview transitions inline in `ScriptsPage`.
+- The scripts library create-options surface now renders through its own authoring-shell component instead of keeping the import/editor launcher lanes inline in `ScriptsPage`.
+- The scripts library now renders editor/import/recorder/sample authoring subviews through a dedicated authoring-surface component instead of keeping that switch and wrapper markup inline in `ScriptsPage`.
+- The scripts library now drives table sorting, linked-run expansion, cached run loading, and inner-run sorting through a dedicated library-model hook instead of keeping that state and fetch logic inline in `ScriptsPage`.
+- The scripts library table and linked-run drill-down markup now render through a dedicated table component instead of keeping the entire sortable library table inline in `ScriptsPage`.
+- The scripts library now sources protocol-specific starter drafts from a dedicated factory module instead of keeping HTTP, browser, and JMS default draft definitions inline in `ScriptsPage`.
 
 ### Remaining High-Value Work
 - Finish the scenario assembly path by tightening `TestExecution` adjacencies and shared execution/result models now that `CreateTestModal` is aligned on one shared draft state owner.

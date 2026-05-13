@@ -35,7 +35,18 @@ vi.mock('./LoadRunnerImport', () => ({
 }))
 
 vi.mock('./JMeterImport', () => ({
-  default: () => <div data-testid="jmeter-import">jmeter-import</div>,
+  default: ({ onEdit }: { onEdit?: (script: { name: string, version: string, protocol: string, config: { base_url: string }, actions: unknown[] }) => void }) => (
+    <div data-testid="jmeter-import">
+      <button onClick={() => onEdit?.({
+        name: 'JMeter Draft',
+        version: '1.0.0',
+        protocol: 'http',
+        config: { base_url: 'https://jmeter.example.com' },
+        actions: [],
+      })}
+      >mock-jmeter-edit</button>
+    </div>
+  ),
 }))
 
 vi.mock('./RecordingStudio', () => ({
@@ -156,6 +167,49 @@ describe('ScriptsPage', () => {
     expect(apiMock.listScripts).toHaveBeenCalledTimes(2)
     expect(container.textContent).toContain('Scripts')
     expect(container.textContent).toContain('Existing Script')
+  })
+
+  it('routes jmeter import edit handoff through the draft editor', async () => {
+    await act(async () => {
+      root.render(<ScriptsPage />)
+    })
+
+    await flushPromises()
+
+    const createButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('+ Create Script'))
+    expect(createButton).toBeDefined()
+    if (!createButton) {
+      return
+    }
+
+    await act(async () => {
+      createButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const jmeterButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Import JMeter'))
+    expect(jmeterButton).toBeDefined()
+    if (!jmeterButton) {
+      return
+    }
+
+    await act(async () => {
+      jmeterButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.querySelector('[data-testid="jmeter-import"]')).not.toBeNull()
+
+    const jmeterEditButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('mock-jmeter-edit'))
+    expect(jmeterEditButton).toBeDefined()
+    if (!jmeterEditButton) {
+      return
+    }
+
+    await act(async () => {
+      jmeterEditButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.querySelector('[data-testid="script-editor"]')).not.toBeNull()
+    expect(container.textContent).toContain('editor:JMeter Draft')
   })
 
   it('loads the requested script when opened in edit mode from the parent route', async () => {

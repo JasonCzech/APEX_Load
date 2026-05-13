@@ -6,6 +6,7 @@ interface Props<TScript extends ImportedScript = ImportedScript> {
   title: string
   subtitle?: ReactNode
   script: TScript
+  previewData?: unknown
   warnings?: string[]
   warningsTitle?: string
   saving?: boolean
@@ -21,6 +22,7 @@ export default function ScriptImportReview<TScript extends ImportedScript = Impo
   title,
   subtitle,
   script,
+  previewData,
   warnings = [],
   warningsTitle = 'Warnings',
   saving = false,
@@ -57,7 +59,7 @@ export default function ScriptImportReview<TScript extends ImportedScript = Impo
 
       <div className="script-import-review-preview">
         <h4>{previewTitle}</h4>
-        <pre>{JSON.stringify({ script }, null, 2)}</pre>
+        <pre>{JSON.stringify(previewData ?? { script }, null, 2)}</pre>
       </div>
     </div>
   )
