@@ -103,6 +103,7 @@ type ManagedTest struct {
 	ScenarioMode     string                    `json:"scenario_mode,omitempty"`
 	ScriptShakeout   bool                      `json:"script_shakeout,omitempty"`
 	ResourceBaseline bool                      `json:"resource_baseline,omitempty"`
+	StartDelay       string                    `json:"start_delay,omitempty"`
 	GoalConfig       *GoalConfig               `json:"goal_config,omitempty"`
 	RuntimeSettings  *RuntimeSettingsOverride  `json:"runtime_settings,omitempty"`
 	TotalVUsers      int                       `json:"total_vusers"`
@@ -177,6 +178,7 @@ type GoalStatus struct {
 	CurrentTPS           float64    `json:"current_tps"`
 	CurrentTotalVUsers   int        `json:"current_total_vusers"`
 	TargetAverageTPS     *float64   `json:"target_average_tps,omitempty"`
+	MaxErrorCount        *int       `json:"max_error_count,omitempty"`
 	MinVUsers            *int       `json:"min_vusers,omitempty"`
 	MaxVUsers            *int       `json:"max_vusers,omitempty"`
 	SuggestedTotalVUsers int        `json:"suggested_total_vusers,omitempty"`
@@ -185,6 +187,7 @@ type GoalStatus struct {
 	LastScaleAt          *time.Time `json:"last_scale_at,omitempty"`
 	LatencyBreached      bool       `json:"latency_breached,omitempty"`
 	ErrorBreached        bool       `json:"error_breached,omitempty"`
+	ErrorCountBreached   bool       `json:"error_count_breached,omitempty"`
 	BreachActive         bool       `json:"breach_active,omitempty"`
 	BreachDurationSec    int        `json:"breach_duration_sec,omitempty"`
 	StopTriggered        bool       `json:"stop_triggered,omitempty"`
@@ -249,6 +252,7 @@ type StoredScenario struct {
 	ID                 string                            `json:"id"`
 	Name               string                            `json:"name"`
 	Duration           string                            `json:"duration"`
+	StartDelay         string                            `json:"start_delay,omitempty"`
 	ScenarioMode       string                            `json:"scenario_mode,omitempty"`
 	ScriptShakeout     bool                              `json:"script_shakeout,omitempty"`
 	ResourceBaseline   bool                              `json:"resource_baseline,omitempty"`
@@ -392,6 +396,7 @@ func (tr *TestRunner) buildStoredScenario(scenario *storage.Scenario, scripts []
 		ID:               scenario.ID,
 		Name:             scenario.Name,
 		Duration:         scenario.Duration,
+		StartDelay:       scenario.StartDelay,
 		ScenarioMode:     normalizeScenarioMode(scenario.ScenarioMode),
 		ScriptShakeout:   scenario.ScriptShakeout,
 		ResourceBaseline: scenario.ResourceBaseline,
@@ -435,6 +440,7 @@ func managedTestFromRecord(record *storage.TestRecord) *ManagedTest {
 		ScenarioMode:     normalizeScenarioMode(record.ScenarioMode),
 		ScriptShakeout:   record.ScriptShakeout,
 		ResourceBaseline: record.ResourceBaseline,
+		StartDelay:       record.StartDelay,
 		GoalConfig:       decodeStoredGoalConfig(record.GoalConfig),
 		RuntimeSettings:  decodeStoredRuntimeSettings(record.RuntimeSettings),
 		TotalVUsers:      record.TotalVUsers,
@@ -676,6 +682,7 @@ func (tr *TestRunner) storeScenarioLocked(id string, req CreateScenarioRequest) 
 		ID:               id,
 		Name:             req.Name,
 		Duration:         req.Duration,
+		StartDelay:       req.StartDelay,
 		ScenarioMode:     normalizeScenarioMode(req.ScenarioMode),
 		ScriptShakeout:   req.ScriptShakeout,
 		ResourceBaseline: req.ResourceBaseline,
@@ -910,6 +917,7 @@ func releaseRefsFromSet(set map[string]ReleaseRef) []ReleaseRef {
 type CreateTestRequest struct {
 	Name             string                            `json:"name"`
 	Duration         string                            `json:"duration"`
+	StartDelay       string                            `json:"start_delay,omitempty"`
 	ApplicationID    string                            `json:"application_id,omitempty"`
 	ReleaseID        string                            `json:"release_id,omitempty"`
 	ScenarioID       string                            `json:"scenario_id,omitempty"`
@@ -932,6 +940,7 @@ type CreateTestRequest struct {
 type CreateScenarioRequest struct {
 	Name             string                            `json:"name"`
 	Duration         string                            `json:"duration"`
+	StartDelay       string                            `json:"start_delay,omitempty"`
 	ScenarioMode     string                            `json:"scenario_mode,omitempty"`
 	ScriptShakeout   bool                              `json:"script_shakeout,omitempty"`
 	ResourceBaseline bool                              `json:"resource_baseline,omitempty"`
@@ -945,9 +954,11 @@ type GoalConfig struct {
 	TargetAverageTPS *float64 `json:"target_average_tps,omitempty"`
 	P95LatencyMs     *float64 `json:"p95_latency_ms,omitempty"`
 	MaxErrorPct      *float64 `json:"max_error_pct,omitempty"`
+	MaxErrorCount    *int     `json:"max_error_count,omitempty"`
 	MinVUsers        *int     `json:"min_vusers,omitempty"`
 	MaxVUsers        *int     `json:"max_vusers,omitempty"`
 	StopOnSLABreach  bool     `json:"stop_on_sla_breach,omitempty"`
+	StopOnMaxErrors  bool     `json:"stop_on_max_errors,omitempty"`
 	SLABreachWindow  string   `json:"sla_breach_window,omitempty"`
 }
 
@@ -1111,6 +1122,7 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 		ScenarioMode:     scenarioMode,
 		ScriptShakeout:   req.ScriptShakeout,
 		ResourceBaseline: req.ResourceBaseline,
+		StartDelay:       req.StartDelay,
 		GoalConfig:       cloneGoalConfig(req.GoalConfig),
 		RuntimeSettings:  cloneRuntimeSettings(req.RuntimeSettings),
 		TotalVUsers:      totalVUsers,
@@ -1137,6 +1149,9 @@ func createTestRequestFromScenario(req CreateTestRequest, scenario *StoredScenar
 	}
 	if !req.ResourceBaseline {
 		req.ResourceBaseline = scenario.ResourceBaseline
+	}
+	if req.StartDelay == "" {
+		req.StartDelay = scenario.StartDelay
 	}
 	if req.GoalConfig == nil {
 		req.GoalConfig = cloneGoalConfig(scenario.GoalConfig)
@@ -1172,6 +1187,11 @@ func firstNonEmpty(value string, fallback string) string {
 
 func validateScenarioRequest(req CreateTestRequest) (string, error) {
 	scenarioMode := normalizeScenarioMode(req.ScenarioMode)
+	if req.StartDelay != "" {
+		if _, err := time.ParseDuration(req.StartDelay); err != nil {
+			return "", fmt.Errorf("invalid start_delay: %w", err)
+		}
+	}
 	if scenarioMode != "goal_oriented" {
 		return scenarioMode, nil
 	}
@@ -1182,12 +1202,17 @@ func validateScenarioRequest(req CreateTestRequest) (string, error) {
 	if req.GoalConfig.MinVUsers != nil && req.GoalConfig.MaxVUsers != nil && *req.GoalConfig.MinVUsers > *req.GoalConfig.MaxVUsers {
 		return "", fmt.Errorf("goal-oriented scenarios require min_vusers to be less than or equal to max_vusers")
 	}
+	if req.GoalConfig.MaxErrorCount != nil && *req.GoalConfig.MaxErrorCount < 1 {
+		return "", fmt.Errorf("goal-oriented scenarios require max_error_count to be greater than 0")
+	}
 	if req.GoalConfig.StopOnSLABreach && req.GoalConfig.SLABreachWindow != "" {
 		if _, err := time.ParseDuration(req.GoalConfig.SLABreachWindow); err != nil {
 			return "", fmt.Errorf("invalid sla_breach_window: %w", err)
 		}
 	}
-
+	if req.GoalConfig.StopOnMaxErrors && req.GoalConfig.MaxErrorCount == nil {
+		return "", fmt.Errorf("goal-oriented scenarios require max_error_count when stop_on_max_errors is enabled")
+	}
 	return scenarioMode, nil
 }
 
@@ -1651,6 +1676,7 @@ func buildManagedTestRecord(test *ManagedTest) *storage.TestRecord {
 		ScenarioMode:     test.ScenarioMode,
 		ScriptShakeout:   test.ScriptShakeout,
 		ResourceBaseline: test.ResourceBaseline,
+		StartDelay:       test.StartDelay,
 		TotalVUsers:      test.TotalVUsers,
 		Duration:         int64(test.Duration),
 		StartTime:        test.CreatedAt,
@@ -1963,6 +1989,7 @@ func (a *runArtifacts) finalize(finalStatus string, endTime time.Time, finalErro
 
 func (tr *TestRunner) buildRunEngine(test *ManagedTest, resultSink engine.ResultSink) (*engine.MultiGroupEngine, error) {
 	preBaseline, postBaseline := resourceBaselineWindows(test.ResourceBaseline)
+	preBaseline += startDelayWindow(test.StartDelay)
 	return engine.NewMultiGroup(engine.MultiGroupConfig{
 		Groups:       cloneGroupSpecsWithResultSink(test.groupSpecs, resultSink),
 		Duration:     test.Duration,
@@ -1986,6 +2013,17 @@ func resourceBaselineWindows(enabled bool) (time.Duration, time.Duration) {
 	}
 	const baselineWindow = 5 * time.Minute
 	return baselineWindow, baselineWindow
+}
+
+func startDelayWindow(raw string) time.Duration {
+	if raw == "" {
+		return 0
+	}
+	duration, err := time.ParseDuration(raw)
+	if err != nil || duration <= 0 {
+		return 0
+	}
+	return duration
 }
 
 func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[string]int) *LiveMetrics {
@@ -2377,6 +2415,10 @@ func cloneGoalConfig(config *GoalConfig) *GoalConfig {
 		value := *config.MaxErrorPct
 		clone.MaxErrorPct = &value
 	}
+	if config.MaxErrorCount != nil {
+		value := *config.MaxErrorCount
+		clone.MaxErrorCount = &value
+	}
 	if config.MinVUsers != nil {
 		value := *config.MinVUsers
 		clone.MinVUsers = &value
@@ -2402,9 +2444,11 @@ func hasGoalConfig(config *GoalConfig) bool {
 	return config.TargetAverageTPS != nil ||
 		config.P95LatencyMs != nil ||
 		config.MaxErrorPct != nil ||
+		config.MaxErrorCount != nil ||
 		config.MinVUsers != nil ||
 		config.MaxVUsers != nil ||
 		config.StopOnSLABreach ||
+		config.StopOnMaxErrors ||
 		config.SLABreachWindow != ""
 }
 
@@ -2414,6 +2458,7 @@ func evaluateGoalController(now time.Time, currentTotalVUsers int, live *LiveMet
 		CurrentTPS:           live.TPS,
 		CurrentTotalVUsers:   currentTotalVUsers,
 		TargetAverageTPS:     config.TargetAverageTPS,
+		MaxErrorCount:        config.MaxErrorCount,
 		MinVUsers:            config.MinVUsers,
 		MaxVUsers:            config.MaxVUsers,
 		SuggestedTotalVUsers: currentTotalVUsers,
@@ -2426,8 +2471,10 @@ func evaluateGoalController(now time.Time, currentTotalVUsers int, live *LiveMet
 
 	latencyBreached := config.P95LatencyMs != nil && live.P95Ms > *config.P95LatencyMs
 	errorBreached := config.MaxErrorPct != nil && live.ErrorPct > *config.MaxErrorPct
+	errorCountBreached := config.MaxErrorCount != nil && live.TotalErrors > int64(*config.MaxErrorCount)
 	status.LatencyBreached = latencyBreached
 	status.ErrorBreached = errorBreached
+	status.ErrorCountBreached = errorCountBreached
 	status.BreachActive = latencyBreached || errorBreached
 
 	if status.BreachActive {
@@ -2440,6 +2487,29 @@ func evaluateGoalController(now time.Time, currentTotalVUsers int, live *LiveMet
 		}
 	} else if state != nil {
 		state.breachStartedAt = nil
+	}
+
+	if config.StopOnMaxErrors && errorCountBreached {
+		status.StopTriggered = true
+		status.StopReason = goalStopReason(latencyBreached, errorBreached, errorCountBreached)
+		return goalControllerUpdate{
+			Status:     status,
+			ShouldStop: true,
+			StopReason: status.StopReason,
+		}
+	}
+
+	if config.StopOnSLABreach && status.BreachActive {
+		window := goalBreachWindow(config)
+		if time.Duration(status.BreachDurationSec)*time.Second >= window {
+			status.StopTriggered = true
+			status.StopReason = goalStopReason(latencyBreached, errorBreached, errorCountBreached)
+			return goalControllerUpdate{
+				Status:     status,
+				ShouldStop: true,
+				StopReason: status.StopReason,
+			}
+		}
 	}
 
 	if config.TargetAverageTPS != nil && shouldEvaluateScale(now, state) {
@@ -2472,19 +2542,6 @@ func evaluateGoalController(now time.Time, currentTotalVUsers int, live *LiveMet
 				TargetTotal:    desiredTotal,
 				ScaleDirection: scaleDirection,
 				ScaleReason:    scaleReason,
-			}
-		}
-	}
-
-	if config.StopOnSLABreach && status.BreachActive {
-		window := goalBreachWindow(config)
-		if time.Duration(status.BreachDurationSec)*time.Second >= window {
-			status.StopTriggered = true
-			status.StopReason = goalStopReason(latencyBreached, errorBreached)
-			return goalControllerUpdate{
-				Status:     status,
-				ShouldStop: true,
-				StopReason: status.StopReason,
 			}
 		}
 	}
@@ -2541,8 +2598,10 @@ func goalBreachWindow(config *GoalConfig) time.Duration {
 	return window
 }
 
-func goalStopReason(latencyBreached bool, errorBreached bool) string {
+func goalStopReason(latencyBreached bool, errorBreached bool, errorCountBreached bool) string {
 	switch {
+	case errorCountBreached:
+		return "max error count reached"
 	case latencyBreached && errorBreached:
 		return "latency and error SLA breached"
 	case latencyBreached:

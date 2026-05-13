@@ -9,6 +9,7 @@ describe('scenarioPayloadUtils', () => {
     const payload = buildCreateTestPayload({
       name: '',
       duration: '5m',
+      startDelay: '20s',
       scenarioMode: 'vuser_driven',
       scriptShakeout: false,
       resourceBaseline: false,
@@ -33,6 +34,7 @@ describe('scenarioPayloadUtils', () => {
 
     expect(payload).toEqual({
       duration: '5m',
+      start_delay: '20s',
       project_id: 'project-1',
       folder_id: 'folder-1',
       scenario_mode: 'vuser_driven',
@@ -50,6 +52,7 @@ describe('scenarioPayloadUtils', () => {
     const payload = buildScenarioUpsertPayload({
       name: ' Goal Scenario ',
       duration: '10m',
+      startDelay: '45s',
       scenarioMode: 'goal_oriented',
       scriptShakeout: true,
       resourceBaseline: true,
@@ -63,6 +66,8 @@ describe('scenarioPayloadUtils', () => {
       }],
       goalConfig: {
         target_average_tps: 300,
+        max_error_count: 25,
+        stop_on_max_errors: true,
         sla_breach_window: '45s',
       },
       runtimeSettings: {
@@ -82,6 +87,7 @@ describe('scenarioPayloadUtils', () => {
     expect(payload).toEqual({
       name: 'Goal Scenario',
       duration: '10m',
+      start_delay: '45s',
       scenario_mode: 'goal_oriented',
       script_shakeout: true,
       resource_baseline: true,
@@ -94,6 +100,8 @@ describe('scenarioPayloadUtils', () => {
       }],
       goal_config: {
         target_average_tps: 300,
+          max_error_count: 25,
+          stop_on_max_errors: true,
         sla_breach_window: '45s',
       },
       runtime_settings: {

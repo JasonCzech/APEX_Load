@@ -103,6 +103,7 @@ type Scenario struct {
 	ID               string    `json:"id"`
 	Name             string    `json:"name"`
 	Duration         string    `json:"duration"`
+	StartDelay       string    `json:"start_delay,omitempty"`
 	ScenarioMode     string    `json:"scenario_mode,omitempty"`
 	ScriptShakeout   bool      `json:"script_shakeout,omitempty"`
 	ResourceBaseline bool      `json:"resource_baseline,omitempty"`
@@ -197,6 +198,7 @@ type TestRecord struct {
 	ScenarioMode     string     `json:"scenario_mode,omitempty"`
 	ScriptShakeout   bool       `json:"script_shakeout,omitempty"`
 	ResourceBaseline bool       `json:"resource_baseline,omitempty"`
+	StartDelay       string     `json:"start_delay,omitempty"`
 	TotalVUsers      int        `json:"total_vusers"`
 	Duration         int64      `json:"duration_ns"`
 	StartTime        time.Time  `json:"start_time"`

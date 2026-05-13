@@ -48,6 +48,17 @@ export default function CreateTestGoalSettings({ goalConfig, onGoalConfigChange 
           />
         </label>
         <label>
+          <span>Max Error Count</span>
+          <input
+            type="number"
+            min={1}
+            step="1"
+            value={goalConfig.max_error_count || ''}
+            onChange={(event) => onGoalConfigChange('max_error_count', event.target.value ? Number(event.target.value) : undefined)}
+            placeholder="e.g. 25"
+          />
+        </label>
+        <label>
           <span>Min VUsers</span>
           <input
             type="number"
@@ -85,6 +96,14 @@ export default function CreateTestGoalSettings({ goalConfig, onGoalConfigChange 
             onChange={(event) => onGoalConfigChange('stop_on_sla_breach', event.target.checked)}
           />
           <span>Stop on sustained SLA breach</span>
+        </label>
+        <label className="checkbox-label goal-checkbox-label">
+          <input
+            type="checkbox"
+            checked={goalConfig.stop_on_max_errors || false}
+            onChange={(event) => onGoalConfigChange('stop_on_max_errors', event.target.checked)}
+          />
+          <span>Stop when total errors exceed max error count</span>
         </label>
       </div>
     </div>

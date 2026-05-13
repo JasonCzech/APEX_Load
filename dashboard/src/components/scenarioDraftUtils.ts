@@ -29,6 +29,7 @@ export function buildInitialScenarioDraft(initialScenario: ScenarioDraft | undef
   return {
     name: initialScenario?.name || '',
     duration: initialScenario?.duration || '1m',
+    startDelay: initialScenario?.startDelay || '',
     scenarioMode: initialScenario?.scenarioMode || 'vuser_driven',
     scriptShakeout: Boolean(initialScenario?.scriptShakeout),
     resourceBaseline: Boolean(initialScenario?.resourceBaseline),
@@ -36,9 +37,11 @@ export function buildInitialScenarioDraft(initialScenario: ScenarioDraft | undef
       target_average_tps: initialScenario?.goalConfig?.target_average_tps,
       p95_latency_ms: initialScenario?.goalConfig?.p95_latency_ms,
       max_error_pct: initialScenario?.goalConfig?.max_error_pct,
+      max_error_count: initialScenario?.goalConfig?.max_error_count,
       min_vusers: initialScenario?.goalConfig?.min_vusers,
       max_vusers: initialScenario?.goalConfig?.max_vusers,
       stop_on_sla_breach: initialScenario?.goalConfig?.stop_on_sla_breach || false,
+      stop_on_max_errors: initialScenario?.goalConfig?.stop_on_max_errors || false,
       sla_breach_window: initialScenario?.goalConfig?.sla_breach_window || '30s',
     },
     runtimeSettings: {
@@ -73,6 +76,7 @@ export function buildScenarioDraftFromTest(test: TestSummary): ScenarioDraft {
   return {
     name: test.name,
     duration: test.duration,
+    startDelay: test.start_delay || '',
     scenarioMode: test.scenario_mode || 'vuser_driven',
     scriptShakeout: Boolean(test.script_shakeout),
     resourceBaseline: Boolean(test.resource_baseline),
@@ -80,9 +84,11 @@ export function buildScenarioDraftFromTest(test: TestSummary): ScenarioDraft {
       target_average_tps: test.goal_config?.target_average_tps,
       p95_latency_ms: test.goal_config?.p95_latency_ms,
       max_error_pct: test.goal_config?.max_error_pct,
+      max_error_count: test.goal_config?.max_error_count,
       min_vusers: test.goal_config?.min_vusers,
       max_vusers: test.goal_config?.max_vusers,
       stop_on_sla_breach: test.goal_config?.stop_on_sla_breach,
+      stop_on_max_errors: test.goal_config?.stop_on_max_errors,
       sla_breach_window: test.goal_config?.sla_breach_window || '',
     },
     runtimeSettings: {

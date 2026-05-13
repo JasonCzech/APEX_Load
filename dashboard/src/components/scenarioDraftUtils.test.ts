@@ -26,7 +26,9 @@ describe('scenarioDraftUtils', () => {
 	  expect(draft.groups).toHaveLength(1)
 	  expect(draft.groups[0].scriptId).toBe('script-1')
 	  expect(draft.duration).toBe('1m')
+	  expect(draft.startDelay).toBe('')
 	  expect(draft.goalConfig.sla_breach_window).toBe('30s')
+	  expect(draft.goalConfig.stop_on_max_errors).toBe(false)
 	  expect(draft.runtimeSettings.snapshot_on_error).toBe(false)
 	})
 
@@ -37,12 +39,15 @@ describe('scenarioDraftUtils', () => {
 	    status: 'RUNNING',
 	    total_vusers: 30,
 	    duration: '5m',
+	    start_delay: '45s',
 	    created_at: '2026-05-12T20:00:00Z',
 	    scenario_mode: 'goal_oriented',
 	    script_shakeout: true,
 	    resource_baseline: true,
 	    goal_config: {
 	      target_average_tps: 300,
+	      max_error_count: 12,
+	      stop_on_max_errors: true,
 	      sla_breach_window: '45s',
 	    },
 	    runtime_settings: {
@@ -64,7 +69,10 @@ describe('scenarioDraftUtils', () => {
 	  } as never)
 
 	  expect(draft.scenarioMode).toBe('goal_oriented')
+	  expect(draft.startDelay).toBe('45s')
 	  expect(draft.goalConfig.target_average_tps).toBe(300)
+	  expect(draft.goalConfig.max_error_count).toBe(12)
+	  expect(draft.goalConfig.stop_on_max_errors).toBe(true)
 	  expect(draft.runtimeSettings.snapshot_on_error).toBe(true)
 	  expect(draft.groups).toEqual([{
 	    name: 'Checkout',
@@ -83,8 +91,8 @@ describe('scenarioDraftUtils', () => {
 
 		const withGoal = scenarioDraftReducer(initialDraft, {
 			type: 'setGoalConfigField',
-			field: 'target_average_tps',
-			value: 300,
+			field: 'max_error_count',
+			value: 20,
 		})
 		const withRuntime = scenarioDraftReducer(withGoal, {
 			type: 'setRuntimeSettingField',
@@ -92,7 +100,7 @@ describe('scenarioDraftUtils', () => {
 			value: true,
 		})
 
-		expect(withRuntime.goalConfig.target_average_tps).toBe(300)
+		expect(withRuntime.goalConfig.max_error_count).toBe(20)
 		expect(withRuntime.runtimeSettings.snapshot_on_error).toBe(true)
 		expect(withRuntime.groups[0].scriptId).toBe('script-1')
 		expect(withRuntime.duration).toBe('1m')

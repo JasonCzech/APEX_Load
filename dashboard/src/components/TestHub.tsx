@@ -209,6 +209,7 @@ function TestHub({ onSelectTest }: Props) {
     const payload = buildScenarioUpsertPayload({
       name: form.name,
       duration: form.duration || '1m',
+      startDelay: '',
       scenarioMode: 'vuser_driven',
       scriptShakeout: false,
       resourceBaseline: false,

@@ -13,6 +13,7 @@ export type ScenarioGroupPayload = {
 export type ScenarioUpsertPayload = {
   name: string
   duration: string
+  start_delay?: string
   scenario_mode: ScenarioMode
   script_shakeout: boolean
   resource_baseline: boolean
@@ -32,6 +33,7 @@ export type ScenarioUpsertPayload = {
 export type CreateTestPayload = {
   name?: string
   duration: string
+  start_delay?: string
   project_id?: string
   folder_id?: string | null
   scenario_mode: ScenarioMode
@@ -49,6 +51,7 @@ export type CreateTestPayload = {
 
 type ScenarioPayloadInput = {
   duration: string
+  startDelay: string
   scenarioMode: ScenarioMode
   scriptShakeout: boolean
   resourceBaseline: boolean
@@ -101,9 +104,11 @@ export function buildGoalConfigPayload(scenarioMode: ScenarioMode, goalConfig: G
     ...(goalConfig.target_average_tps ? { target_average_tps: goalConfig.target_average_tps } : {}),
     ...(goalConfig.p95_latency_ms ? { p95_latency_ms: goalConfig.p95_latency_ms } : {}),
     ...(goalConfig.max_error_pct ? { max_error_pct: goalConfig.max_error_pct } : {}),
+    ...(goalConfig.max_error_count ? { max_error_count: goalConfig.max_error_count } : {}),
     ...(goalConfig.min_vusers ? { min_vusers: goalConfig.min_vusers } : {}),
     ...(goalConfig.max_vusers ? { max_vusers: goalConfig.max_vusers } : {}),
     ...(goalConfig.stop_on_sla_breach ? { stop_on_sla_breach: true } : {}),
+    ...(goalConfig.stop_on_max_errors ? { stop_on_max_errors: true } : {}),
     ...(goalConfig.sla_breach_window ? { sla_breach_window: goalConfig.sla_breach_window } : {}),
   }
 
@@ -126,6 +131,7 @@ export function buildRuntimeSettingsPayload(runtimeSettings: ScenarioRuntimeSett
 export function buildScenarioUpsertPayload({
   name,
   duration,
+  startDelay,
   scenarioMode,
   scriptShakeout,
   resourceBaseline,
@@ -141,6 +147,10 @@ export function buildScenarioUpsertPayload({
     script_shakeout: scriptShakeout,
     resource_baseline: resourceBaseline,
     groups: buildScenarioGroupPayloads(groups),
+  }
+
+  if (startDelay) {
+    payload.start_delay = startDelay
   }
 
   const goalConfigPayload = buildGoalConfigPayload(scenarioMode, goalConfig)
@@ -163,6 +173,7 @@ export function buildScenarioUpsertPayload({
 export function buildCreateTestPayload({
   name,
   duration,
+  startDelay,
   scenarioMode,
   scriptShakeout,
   resourceBaseline,
@@ -177,6 +188,10 @@ export function buildCreateTestPayload({
     scenario_mode: scenarioMode,
     script_shakeout: scriptShakeout,
     resource_baseline: resourceBaseline,
+  }
+
+  if (startDelay) {
+    payload.start_delay = startDelay
   }
 
   if (name) {

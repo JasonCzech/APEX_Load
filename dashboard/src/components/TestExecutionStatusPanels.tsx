@@ -65,6 +65,10 @@ export default function TestExecutionStatusPanels({
               <span className="goal-status-label">SLA Window</span>
               <span className="goal-status-value">{test.goal_config?.sla_breach_window || '30s'}</span>
             </div>
+            <div className="goal-status-metric">
+              <span className="goal-status-label">Max Error Count</span>
+              <span className="goal-status-value">{goalStatus?.max_error_count ?? test.goal_config?.max_error_count ?? 'disabled'}</span>
+            </div>
           </div>
 
           <div className="goal-status-flags">
@@ -74,8 +78,14 @@ export default function TestExecutionStatusPanels({
             <span className={`goal-flag ${goalStatus?.error_breached ? 'alert' : ''}`}>
               Error rate {goalStatus?.error_breached ? 'breached' : 'healthy'}
             </span>
+            <span className={`goal-flag ${goalStatus?.error_count_breached ? 'alert' : ''}`}>
+              Error count {goalStatus?.error_count_breached ? 'breached' : 'healthy'}
+            </span>
             <span className="goal-flag neutral">
               Stop on breach {test.goal_config?.stop_on_sla_breach ? 'enabled' : 'disabled'}
+            </span>
+            <span className="goal-flag neutral">
+              Stop on max errors {test.goal_config?.stop_on_max_errors ? 'enabled' : 'disabled'}
             </span>
           </div>
         </div>

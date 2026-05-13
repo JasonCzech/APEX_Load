@@ -39,7 +39,7 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
-  const { name, duration, scenarioMode, scriptShakeout, resourceBaseline, groups, goalConfig, runtimeSettings } = scenarioDraft
+  const { name, duration, startDelay, scenarioMode, scriptShakeout, resourceBaseline, groups, goalConfig, runtimeSettings } = scenarioDraft
   const isReviseMode = mode === 'revise-queued-run'
   const modalTitle = isReviseMode ? 'Create Revised Queued Run' : 'Create Queued Run'
   const submitLabel = isReviseMode ? 'Create Revised Copy' : 'Create Queued Run'
@@ -75,9 +75,11 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
     goalConfig.target_average_tps ||
     goalConfig.p95_latency_ms ||
     goalConfig.max_error_pct ||
+    goalConfig.max_error_count ||
     goalConfig.min_vusers ||
     goalConfig.max_vusers ||
-    goalConfig.stop_on_sla_breach,
+    goalConfig.stop_on_sla_breach ||
+    goalConfig.stop_on_max_errors,
   )
 
   // Calculate chart data
@@ -89,7 +91,8 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
       if (rd > maxRampDown) maxRampDown = rd
     })
 
-    const preBaseline = resourceBaseline ? baselineSeconds : 0
+    const startDelaySeconds = parseDurationToSeconds(startDelay)
+    const preBaseline = (resourceBaseline ? baselineSeconds : 0) + startDelaySeconds
     const postBaseline = resourceBaseline ? baselineSeconds : 0
     const totalSec = preBaseline + durSec + maxRampDown + postBaseline
     if (totalSec === 0) return []
@@ -135,6 +138,7 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
   const buildPayload = () => buildCreateTestPayload({
     name,
     duration,
+    startDelay,
     scenarioMode,
     scriptShakeout,
     resourceBaseline,
@@ -179,7 +183,7 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
       cancelled = true
       window.clearTimeout(timer)
     }
-  }, [api, duration, goalConfig, groups, name, resourceBaseline, runtimeSettings, scenarioMode, scriptShakeout])
+  }, [api, duration, goalConfig, groups, name, resourceBaseline, runtimeSettings, scenarioMode, scriptShakeout, startDelay])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -249,6 +253,15 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
                   onChange={(e) => updateScenarioField('duration', e.target.value)}
                   placeholder="e.g. 5m, 1h"
                   required
+                />
+              </label>
+              <label>
+                <span>Global Start Delay</span>
+                <input
+                  type="text"
+                  value={startDelay}
+                  onChange={(e) => updateScenarioField('startDelay', e.target.value)}
+                  placeholder="Optional, e.g. 30s"
                 />
               </label>
               <label className="setting-checkbox-row">

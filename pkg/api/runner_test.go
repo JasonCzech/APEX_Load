@@ -221,6 +221,7 @@ func TestCreateTestPreservesRuntimeSettingsAndGroups(t *testing.T) {
 	test, err := runner.CreateTest(CreateTestRequest{
 		Name:             "Checkout Replay",
 		Duration:         "90s",
+		StartDelay:       "30s",
 		ScenarioMode:     "goal_oriented",
 		ScriptShakeout:   true,
 		ResourceBaseline: true,
@@ -310,6 +311,9 @@ func TestCreateTestPreservesRuntimeSettingsAndGroups(t *testing.T) {
 	if test.DurationStr != "90s" {
 		t.Fatalf("expected duration string 90s, got %q", test.DurationStr)
 	}
+	if test.StartDelay != "30s" {
+		t.Fatalf("expected start delay 30s, got %q", test.StartDelay)
+	}
 }
 
 func TestRunArtifactsFinalizePersistsArchiveRecord(t *testing.T) {
@@ -387,6 +391,18 @@ func TestResourceBaselineWindows(t *testing.T) {
 	pre, post = resourceBaselineWindows(true)
 	if pre != 5*time.Minute || post != 5*time.Minute {
 		t.Fatalf("expected enabled baseline windows to be 5m, got pre=%s post=%s", pre, post)
+	}
+}
+
+func TestStartDelayWindow(t *testing.T) {
+	if got := startDelayWindow(""); got != 0 {
+		t.Fatalf("expected empty start delay to be zero, got %v", got)
+	}
+	if got := startDelayWindow("45s"); got != 45*time.Second {
+		t.Fatalf("expected 45s start delay, got %v", got)
+	}
+	if got := startDelayWindow("bad-value"); got != 0 {
+		t.Fatalf("expected invalid start delay to normalize to 0, got %v", got)
 	}
 }
 
@@ -991,6 +1007,86 @@ func TestEvaluateGoalControllerStopsOnSustainedSLABreach(t *testing.T) {
 	}
 }
 
+func TestEvaluateGoalControllerStopsOnMaxErrorCount(t *testing.T) {
+	maxErrorCount := 10
+	now := time.Date(2026, time.May, 9, 12, 1, 0, 0, time.UTC)
+
+	update := evaluateGoalController(now, 40, &LiveMetrics{
+		TPS:         210,
+		P95Ms:       300,
+		ErrorPct:    0.5,
+		TotalErrors: 11,
+	}, &GoalConfig{
+		MaxErrorCount:   &maxErrorCount,
+		StopOnMaxErrors: true,
+	}, &goalControllerState{})
+
+	if !update.ShouldStop {
+		t.Fatal("expected max error count breach to trigger stop")
+	}
+	if update.StopReason != "max error count reached" {
+		t.Fatalf("expected max error count stop reason, got %q", update.StopReason)
+	}
+	if update.Status == nil || !update.Status.ErrorCountBreached {
+		t.Fatalf("expected goal status to mark error-count breach, got %#v", update.Status)
+	}
+	if update.ShouldScale {
+		t.Fatal("did not expect scaling when hard stop threshold is reached")
+	}
+}
+
+func TestEvaluateGoalControllerStopTakesPrecedenceOverScaling(t *testing.T) {
+	targetTPS := 300.0
+	p95LatencyMs := 900.0
+	maxErrorPct := 2.0
+	now := time.Date(2026, time.May, 9, 12, 2, 0, 0, time.UTC)
+	breachStarted := now.Add(-31 * time.Second)
+
+	update := evaluateGoalController(now, 40, &LiveMetrics{
+		TPS:      150,
+		P95Ms:    1200,
+		ErrorPct: 3.2,
+	}, &GoalConfig{
+		TargetAverageTPS: &targetTPS,
+		P95LatencyMs:     &p95LatencyMs,
+		MaxErrorPct:      &maxErrorPct,
+		StopOnSLABreach:  true,
+		SLABreachWindow:  "30s",
+	}, &goalControllerState{breachStartedAt: &breachStarted})
+
+	if !update.ShouldStop {
+		t.Fatal("expected sustained SLA stop to take precedence over scaling")
+	}
+	if update.ShouldScale {
+		t.Fatal("did not expect scaling to take precedence over stop")
+	}
+}
+
+func TestValidateScenarioRequestRequiresMaxErrorCountWhenEnabled(t *testing.T) {
+	_, err := validateScenarioRequest(CreateTestRequest{
+		Duration:     "5m",
+		ScenarioMode: "goal_oriented",
+		GoalConfig: &GoalConfig{
+			StopOnMaxErrors: true,
+		},
+	})
+
+	if err == nil {
+		t.Fatal("expected stop_on_max_errors without max_error_count to fail validation")
+	}
+}
+
+func TestValidateScenarioRequestRejectsInvalidStartDelay(t *testing.T) {
+	_, err := validateScenarioRequest(CreateTestRequest{
+		Duration:   "5m",
+		StartDelay: "later",
+	})
+
+	if err == nil {
+		t.Fatal("expected invalid start_delay to fail validation")
+	}
+}
+
 func TestDistributeTargetVUsersPreservesTotal(t *testing.T) {
 	targets := distributeTargetVUsers([]TestGroup{
 		{Name: "buyers", VUsers: 20},
@@ -1296,6 +1392,60 @@ func TestRunTestCreatesArchiveBundle(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(completed.Archive.ArchivePath, name)); err != nil {
 			t.Fatalf("expected archive file %s to exist: %v", name, err)
 		}
+	}
+}
+
+func TestRunTestIncludesConfiguredStartDelay(t *testing.T) {
+	archiveDir := t.TempDir()
+	t.Setenv("STORMRUNNER_ARCHIVE_DIR", archiveDir)
+
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	protocolName := "start-delay-" + strings.ReplaceAll(strings.ToLower(t.Name()), "/", "-")
+	protocol.Register(protocolName, func() protocol.Protocol {
+		return &archiveStubProtocol{}
+	})
+
+	hub := NewHub()
+	runner := NewTestRunner(1, hub, store)
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-start-delay",
+		Name:     "Start Delay Script",
+		Protocol: protocolName,
+		Version:  "1.0.0",
+		Config:   dsl.ScriptConfig{},
+		Actions:  []dsl.Action{{Name: "step-1", Type: "request", Target: "/"}},
+	})
+
+	test, err := runner.CreateTest(CreateTestRequest{
+		Name:       "Delayed Run",
+		Duration:   "1100ms",
+		StartDelay: "900ms",
+		ScriptID:   "script-start-delay",
+		VUsers:     1,
+	})
+	if err != nil {
+		t.Fatalf("CreateTest returned error: %v", err)
+	}
+
+	startedAt := time.Now()
+	if err := runner.StartTest(test.ID); err != nil {
+		t.Fatalf("StartTest returned error: %v", err)
+	}
+
+	completed := waitForTestStatus(t, runner, test.ID, "COMPLETE")
+	if completed.Archive == nil {
+		t.Fatal("expected completed test to include archive metadata")
+	}
+	if completed.EndedAt == nil {
+		t.Fatal("expected completed test to have ended_at populated")
+	}
+	if completed.EndedAt.Sub(startedAt) < 1800*time.Millisecond {
+		t.Fatalf("expected run duration to include start delay, got %v", completed.EndedAt.Sub(startedAt))
 	}
 }
 

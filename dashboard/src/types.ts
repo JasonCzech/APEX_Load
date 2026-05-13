@@ -65,9 +65,11 @@ export interface GoalConfig {
   target_average_tps?: number
   p95_latency_ms?: number
   max_error_pct?: number
+  max_error_count?: number
   min_vusers?: number
   max_vusers?: number
   stop_on_sla_breach?: boolean
+  stop_on_max_errors?: boolean
   sla_breach_window?: string
 }
 
@@ -76,6 +78,7 @@ export interface GoalStatus {
   current_tps: number
   current_total_vusers: number
   target_average_tps?: number
+  max_error_count?: number
   min_vusers?: number
   max_vusers?: number
   suggested_total_vusers?: number
@@ -84,6 +87,7 @@ export interface GoalStatus {
   last_scale_at?: string
   latency_breached?: boolean
   error_breached?: boolean
+  error_count_breached?: boolean
   breach_active?: boolean
   breach_duration_sec?: number
   stop_triggered?: boolean
@@ -105,6 +109,7 @@ export interface TestSummary {
   resource_baseline?: boolean
   total_vusers: number
   duration: string
+  start_delay?: string
   created_at: string
   started_at?: string
   ended_at?: string
@@ -257,6 +262,7 @@ export interface ScenarioDraftGroup {
 export interface ScenarioDraft {
   name: string
   duration: string
+  startDelay: string
   scenarioMode: ScenarioMode
   scriptShakeout: boolean
   resourceBaseline: boolean
@@ -397,6 +403,7 @@ export interface StoredScenario {
   id: string
   name: string
   duration: string
+  start_delay?: string
   scenario_mode?: ScenarioMode
   script_shakeout?: boolean
   resource_baseline?: boolean
