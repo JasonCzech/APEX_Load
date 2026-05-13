@@ -100,6 +100,7 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		assignment, err := client.AssignWork(ctx, generatorrpc.Assignment{
 			TestID:        test.ID,
 			GroupName:     group.Name,
+			TargetDurationSeconds: int64(test.Duration / time.Second),
 			ScriptID:      group.ScriptID,
 			VUserCount:    int32(group.VUsers),
 			RampUpSeconds: int32(group.rampUpDur / time.Second),
@@ -289,8 +290,21 @@ func (b *distributedExecutionBackend) consumeMetrics(ctx context.Context, tr *Te
 		if batch.TestID != test.ID {
 			continue
 		}
-		tr.publishLiveMetrics(test, buildLiveMetricsFromDistributedBatch(test, batch), nil)
+		live := buildLiveMetricsFromDistributedBatch(test, batch)
+		tr.publishLiveMetrics(test, live, nil)
+		if batch.LifecycleState == "COMPLETE" {
+			b.completeDistributedTestRun(tr, test)
+			return
+		}
 	}
+}
+
+func (b *distributedExecutionBackend) completeDistributedTestRun(tr *TestRunner, test *ManagedTest) {
+	b.closeRemoteResources(test)
+	if test.cancel != nil {
+		test.cancel()
+	}
+	tr.completeTestRun(test, "COMPLETE", time.Now(), "", nil)
 }
 
 func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.MetricsBatch) *LiveMetrics {

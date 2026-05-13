@@ -16,6 +16,7 @@ type DataFile struct {
 type Assignment struct {
 	TestID        string
 	GroupName     string
+	TargetDurationSeconds int64
 	ScriptID      string
 	ScriptContent []byte
 	VUserCount    int32
@@ -64,6 +65,7 @@ type MetricsBatch struct {
 	Stats           GeneratorStats
 	Transactions    []TransactionMetric
 	Groups          []GroupMetric
+	LifecycleState  string
 }
 
 type GroupMetric struct {
@@ -328,6 +330,7 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 		Stats:           stats,
 		Transactions:    transactions,
 		Groups:          groups,
+		LifecycleState:  batch.GetLifecycleState(),
 	}, nil
 	}
 
@@ -345,6 +348,7 @@ func toProtoAssignment(assignment Assignment) *pb.WorkAssignment {
 	return &pb.WorkAssignment{
 		TestId:        assignment.TestID,
 		GroupName:     assignment.GroupName,
+		TargetDurationSeconds: assignment.TargetDurationSeconds,
 		ScriptId:      assignment.ScriptID,
 		ScriptContent: assignment.ScriptContent,
 		VuserCount:    assignment.VUserCount,

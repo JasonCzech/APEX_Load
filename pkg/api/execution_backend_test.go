@@ -277,12 +277,27 @@ func TestDistributedExecutionBackendStopTestClearsRemoteAssignment(t *testing.T)
 	if err := runner.StopTest(testRun.ID); err != nil {
 		t.Fatalf("StopTest returned error: %v", err)
 	}
+	deadline = time.Now().Add(2 * time.Second)
+	for {
+		stopped, ok := runner.GetTest(testRun.ID)
+		if !ok {
+			t.Fatalf("expected managed test %q to exist after stop", testRun.ID)
+		}
+		if stopped.Status == "COMPLETE" && stopped.EndedAt != nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected distributed stop to complete test, got status=%q ended=%v", stopped.Status, stopped.EndedAt)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
 	stopped, ok := runner.GetTest(testRun.ID)
 	if !ok {
 		t.Fatalf("expected managed test %q to exist after stop", testRun.ID)
 	}
-	if stopped.Status != "STOPPING" {
-		t.Fatalf("status = %q, want STOPPING", stopped.Status)
+	if stopped.Status != "COMPLETE" {
+		t.Fatalf("status = %q, want COMPLETE", stopped.Status)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -317,6 +332,87 @@ func TestDistributedExecutionBackendStopTestClearsRemoteAssignment(t *testing.T)
 	}
 	if err := heartbeat.CloseSend(); err != nil {
 		t.Fatalf("Heartbeat CloseSend: %v", err)
+	}
+}
+
+func TestDistributedExecutionBackendCompletesAfterDurationExpiry(t *testing.T) {
+	const bufSize = 1024 * 1024
+
+	listener := bufconn.Listen(bufSize)
+	server := grpc.NewServer()
+	pb.RegisterGeneratorControlServer(server, generatorrpc.NewService("generator-1", 50))
+
+	go func() {
+		_ = server.Serve(listener)
+	}()
+	t.Cleanup(func() {
+		server.Stop()
+		_ = listener.Close()
+	})
+
+	hub := NewHub()
+	runner := NewTestRunner(1, hub, nil)
+	runner.setExecutionBackend(newDistributedExecutionBackend(
+		[]string{"bufnet"},
+		5*time.Second,
+		func(ctx context.Context, target string) (generatorClient, error) {
+			return generatorrpc.Dial(
+				ctx,
+				target,
+				grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+					return listener.Dial()
+				}),
+				grpc.WithTransportCredentials(insecure.NewCredentials()),
+				grpc.WithBlock(),
+			)
+		},
+	))
+
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-1",
+		Name:     "Checkout",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Config: dsl.ScriptConfig{
+			BaseURL: "https://example.com",
+			RunLogic: dsl.RunLogicConfig{
+				Iterations: 1,
+			},
+		},
+		Actions: []dsl.Action{{Name: "Home", Type: "GET", Target: "/"}},
+	})
+
+	testRun, err := runner.CreateTest(CreateTestRequest{
+		Name:     "Distributed timed completion",
+		Duration: "1s",
+		Groups: []CreateGroupEntry{{
+			Name:     "Group A",
+			ScriptID: "script-1",
+			VUsers:   5,
+			RampUp:   "1s",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("CreateTest returned error: %v", err)
+	}
+
+	if err := runner.StartTest(testRun.ID); err != nil {
+		t.Fatalf("StartTest returned error: %v", err)
+	}
+
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		completed, ok := runner.GetTest(testRun.ID)
+		if !ok {
+			t.Fatalf("expected managed test %q to exist", testRun.ID)
+		}
+		if completed.Status == "COMPLETE" && completed.EndedAt != nil && completed.LiveMetrics != nil && completed.LiveMetrics.ActiveVUsers == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected distributed test to auto-complete, got status=%q ended=%v metrics=%#v", completed.Status, completed.EndedAt, completed.LiveMetrics)
+		}
+		time.Sleep(25 * time.Millisecond)
 	}
 }
 

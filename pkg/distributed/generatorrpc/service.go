@@ -32,6 +32,7 @@ type Service struct {
 	maxVUsers   int32
 	scripts     map[string]cachedScript
 	assignments map[string]assignedTest
+	completionTimers map[string]*time.Timer
 	subscribers map[int]chan *pb.MetricsBatch
 	nextSubID   int
 }
@@ -49,6 +50,7 @@ func NewService(generatorID string, maxVUsers int) *Service {
 		maxVUsers:   int32(maxVUsers),
 		scripts:     make(map[string]cachedScript),
 		assignments: make(map[string]assignedTest),
+		completionTimers: make(map[string]*time.Timer),
 		subscribers: make(map[int]chan *pb.MetricsBatch),
 	}
 }
@@ -100,14 +102,20 @@ func (s *Service) AssignWork(_ context.Context, assignment *pb.WorkAssignment) (
 		}, nil
 	}
 
-	current := s.assignments[assignment.GetTestId()]
+	current, existed := s.assignments[assignment.GetTestId()]
 	current.testID = assignment.GetTestId()
 	if current.groups == nil {
 		current.groups = make(map[string]int32)
 	}
+	if current.durationSeconds == 0 && assignment.GetTargetDurationSeconds() > 0 {
+		current.durationSeconds = assignment.GetTargetDurationSeconds()
+	}
 	current.groups[assignment.GetGroupName()] += assignment.GetVuserCount()
 	current.vuserCount += assignment.GetVuserCount()
 	s.assignments[assignment.GetTestId()] = current
+	if !existed && current.durationSeconds > 0 {
+		s.scheduleCompletionLocked(current.testID, time.Duration(current.durationSeconds)*time.Second)
+	}
 	batch := s.metricsBatchLocked(current.testID)
 
 	go s.broadcastMetrics(batch)
@@ -175,6 +183,7 @@ func (s *Service) AdjustDuration(_ context.Context, request *pb.DurationAdjustme
 	}
 	assignment.durationSeconds = request.GetTargetDurationSeconds()
 	s.assignments[request.GetTestId()] = assignment
+	s.scheduleCompletionLocked(assignment.testID, time.Duration(assignment.durationSeconds)*time.Second)
 
 	return &pb.DurationAck{
 		Accepted:               true,
@@ -193,8 +202,9 @@ func (s *Service) StopTest(_ context.Context, request *pb.StopRequest) (*pb.Stop
 	assignment, ok := s.assignments[request.GetTestId()]
 	if ok {
 		delete(s.assignments, request.GetTestId())
+		s.stopCompletionTimerLocked(request.GetTestId())
 	}
-	batch := s.metricsBatchForState(request.GetTestId(), 0, false, nil)
+	batch := s.metricsBatchForState(request.GetTestId(), 0, false, assignment.groups, "COMPLETE")
 
 	go s.broadcastMetrics(batch)
 	return &pb.StopAck{
@@ -367,12 +377,16 @@ func (s *Service) broadcastMetrics(batch *pb.MetricsBatch) {
 func (s *Service) metricsBatchLocked(testID string) *pb.MetricsBatch {
 	assignment, ok := s.assignments[testID]
 	if !ok {
-		return s.metricsBatchForState(testID, 0, false, nil)
+		return s.metricsBatchForState(testID, 0, false, nil, "COMPLETE")
 	}
-	return s.metricsBatchForState(testID, assignment.vuserCount, assignment.paused, assignment.groups)
+	lifecycleState := "RUNNING"
+	if assignment.paused {
+		lifecycleState = "PAUSED"
+	}
+	return s.metricsBatchForState(testID, assignment.vuserCount, assignment.paused, assignment.groups, lifecycleState)
 }
 
-func (s *Service) metricsBatchForState(testID string, vuserCount int32, paused bool, groupAssignments map[string]int32) *pb.MetricsBatch {
+func (s *Service) metricsBatchForState(testID string, vuserCount int32, paused bool, groupAssignments map[string]int32, lifecycleState string) *pb.MetricsBatch {
 	activeVUsers := vuserCount
 	if paused {
 		activeVUsers = 0
@@ -396,7 +410,41 @@ func (s *Service) metricsBatchForState(testID string, vuserCount int32, paused b
 			ActiveVusers: activeVUsers,
 		},
 		Groups: groups,
+		LifecycleState: lifecycleState,
 	}
+}
+
+func (s *Service) scheduleCompletionLocked(testID string, duration time.Duration) {
+	if duration <= 0 {
+		return
+	}
+	s.stopCompletionTimerLocked(testID)
+	s.completionTimers[testID] = time.AfterFunc(duration, func() {
+		s.completeAssignment(testID)
+	})
+}
+
+func (s *Service) stopCompletionTimerLocked(testID string) {
+	timer, ok := s.completionTimers[testID]
+	if !ok {
+		return
+	}
+	delete(s.completionTimers, testID)
+	timer.Stop()
+}
+
+func (s *Service) completeAssignment(testID string) {
+	s.mu.Lock()
+	assignment, ok := s.assignments[testID]
+	if ok {
+		delete(s.assignments, testID)
+	}
+	s.stopCompletionTimerLocked(testID)
+	s.mu.Unlock()
+	if !ok {
+		return
+	}
+	s.broadcastMetrics(s.metricsBatchForState(testID, 0, false, assignment.groups, "COMPLETE"))
 }
 
 func maxInt64(left, right int64) int64 {

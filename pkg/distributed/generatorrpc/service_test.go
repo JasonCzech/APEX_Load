@@ -112,6 +112,9 @@ func TestClientRoundTripDistributeAssignAndHeartbeat(t *testing.T) {
 	if batch.TestID != "test-1" {
 		t.Fatalf("metrics test id = %q, want test-1", batch.TestID)
 	}
+	if batch.LifecycleState != "RUNNING" {
+		t.Fatalf("initial lifecycle state = %q, want RUNNING", batch.LifecycleState)
+	}
 	if batch.Stats.ActiveVUsers != 10 {
 		t.Fatalf("initial active vusers = %d, want 10", batch.Stats.ActiveVUsers)
 	}
@@ -159,6 +162,9 @@ func TestClientRoundTripDistributeAssignAndHeartbeat(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Receive paused metrics batch: %v", err)
 	}
+	if batch.LifecycleState != "PAUSED" {
+		t.Fatalf("paused lifecycle state = %q, want PAUSED", batch.LifecycleState)
+	}
 	if batch.Stats.ActiveVUsers != 0 {
 		t.Fatalf("paused active vusers = %d, want 0", batch.Stats.ActiveVUsers)
 	}
@@ -183,6 +189,9 @@ func TestClientRoundTripDistributeAssignAndHeartbeat(t *testing.T) {
 	batch, err = metrics.Receive()
 	if err != nil {
 		t.Fatalf("Receive resumed metrics batch: %v", err)
+	}
+	if batch.LifecycleState != "RUNNING" {
+		t.Fatalf("resumed lifecycle state = %q, want RUNNING", batch.LifecycleState)
 	}
 	if batch.Stats.ActiveVUsers != 12 {
 		t.Fatalf("resumed active vusers = %d, want 12", batch.Stats.ActiveVUsers)
@@ -232,6 +241,9 @@ func TestClientRoundTripDistributeAssignAndHeartbeat(t *testing.T) {
 	batch, err = metrics.Receive()
 	if err != nil {
 		t.Fatalf("Receive stopped metrics batch: %v", err)
+	}
+	if batch.LifecycleState != "COMPLETE" {
+		t.Fatalf("stopped lifecycle state = %q, want COMPLETE", batch.LifecycleState)
 	}
 	if batch.Stats.ActiveVUsers != 0 {
 		t.Fatalf("stopped active vusers = %d, want 0", batch.Stats.ActiveVUsers)

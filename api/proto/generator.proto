@@ -33,6 +33,7 @@ service GeneratorControl {
 message WorkAssignment {
   string test_id = 1;
   string group_name = 8;
+  int64 target_duration_seconds = 9;
   string script_id = 2;
   bytes script_content = 3;
   int32 vuser_count = 4;
@@ -91,6 +92,7 @@ message MetricsBatch {
   repeated TransactionMetric transactions = 4;
   GeneratorStats stats = 5;
   repeated GroupMetric groups = 6;
+  string lifecycle_state = 7;
 }
 
 message GroupMetric {

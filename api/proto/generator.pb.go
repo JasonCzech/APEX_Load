@@ -22,17 +22,18 @@ const (
 )
 
 type WorkAssignment struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	TestId        string                 `protobuf:"bytes,1,opt,name=test_id,json=testId,proto3" json:"test_id,omitempty"`
-	GroupName     string                 `protobuf:"bytes,8,opt,name=group_name,json=groupName,proto3" json:"group_name,omitempty"`
-	ScriptId      string                 `protobuf:"bytes,2,opt,name=script_id,json=scriptId,proto3" json:"script_id,omitempty"`
-	ScriptContent []byte                 `protobuf:"bytes,3,opt,name=script_content,json=scriptContent,proto3" json:"script_content,omitempty"`
-	VuserCount    int32                  `protobuf:"varint,4,opt,name=vuser_count,json=vuserCount,proto3" json:"vuser_count,omitempty"`
-	RampUpSeconds int32                  `protobuf:"varint,5,opt,name=ramp_up_seconds,json=rampUpSeconds,proto3" json:"ramp_up_seconds,omitempty"`
-	Environment   map[string]string      `protobuf:"bytes,6,rep,name=environment,proto3" json:"environment,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	DataFiles     []*DataFile            `protobuf:"bytes,7,rep,name=data_files,json=dataFiles,proto3" json:"data_files,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                 protoimpl.MessageState `protogen:"open.v1"`
+	TestId                string                 `protobuf:"bytes,1,opt,name=test_id,json=testId,proto3" json:"test_id,omitempty"`
+	GroupName             string                 `protobuf:"bytes,8,opt,name=group_name,json=groupName,proto3" json:"group_name,omitempty"`
+	TargetDurationSeconds int64                  `protobuf:"varint,9,opt,name=target_duration_seconds,json=targetDurationSeconds,proto3" json:"target_duration_seconds,omitempty"`
+	ScriptId              string                 `protobuf:"bytes,2,opt,name=script_id,json=scriptId,proto3" json:"script_id,omitempty"`
+	ScriptContent         []byte                 `protobuf:"bytes,3,opt,name=script_content,json=scriptContent,proto3" json:"script_content,omitempty"`
+	VuserCount            int32                  `protobuf:"varint,4,opt,name=vuser_count,json=vuserCount,proto3" json:"vuser_count,omitempty"`
+	RampUpSeconds         int32                  `protobuf:"varint,5,opt,name=ramp_up_seconds,json=rampUpSeconds,proto3" json:"ramp_up_seconds,omitempty"`
+	Environment           map[string]string      `protobuf:"bytes,6,rep,name=environment,proto3" json:"environment,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	DataFiles             []*DataFile            `protobuf:"bytes,7,rep,name=data_files,json=dataFiles,proto3" json:"data_files,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *WorkAssignment) Reset() {
@@ -77,6 +78,13 @@ func (x *WorkAssignment) GetGroupName() string {
 		return x.GroupName
 	}
 	return ""
+}
+
+func (x *WorkAssignment) GetTargetDurationSeconds() int64 {
+	if x != nil {
+		return x.TargetDurationSeconds
+	}
+	return 0
 }
 
 func (x *WorkAssignment) GetScriptId() string {
@@ -569,6 +577,7 @@ type MetricsBatch struct {
 	Transactions    []*TransactionMetric   `protobuf:"bytes,4,rep,name=transactions,proto3" json:"transactions,omitempty"`
 	Stats           *GeneratorStats        `protobuf:"bytes,5,opt,name=stats,proto3" json:"stats,omitempty"`
 	Groups          []*GroupMetric         `protobuf:"bytes,6,rep,name=groups,proto3" json:"groups,omitempty"`
+	LifecycleState  string                 `protobuf:"bytes,7,opt,name=lifecycle_state,json=lifecycleState,proto3" json:"lifecycle_state,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -643,6 +652,13 @@ func (x *MetricsBatch) GetGroups() []*GroupMetric {
 		return x.Groups
 	}
 	return nil
+}
+
+func (x *MetricsBatch) GetLifecycleState() string {
+	if x != nil {
+		return x.LifecycleState
+	}
+	return ""
 }
 
 type GroupMetric struct {
@@ -1275,11 +1291,12 @@ var File_api_proto_generator_proto protoreflect.FileDescriptor
 
 const file_api_proto_generator_proto_rawDesc = "" +
 	"\n" +
-	"\x19api/proto/generator.proto\x12\x0estormrunner.v1\"\xa1\x03\n" +
+	"\x19api/proto/generator.proto\x12\x0estormrunner.v1\"\xd9\x03\n" +
 	"\x0eWorkAssignment\x12\x17\n" +
 	"\atest_id\x18\x01 \x01(\tR\x06testId\x12\x1d\n" +
 	"\n" +
-	"group_name\x18\b \x01(\tR\tgroupName\x12\x1b\n" +
+	"group_name\x18\b \x01(\tR\tgroupName\x126\n" +
+	"\x17target_duration_seconds\x18\t \x01(\x03R\x15targetDurationSeconds\x12\x1b\n" +
 	"\tscript_id\x18\x02 \x01(\tR\bscriptId\x12%\n" +
 	"\x0escript_content\x18\x03 \x01(\fR\rscriptContent\x12\x1f\n" +
 	"\vvuser_count\x18\x04 \x01(\x05R\n" +
@@ -1318,14 +1335,15 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\bgraceful\x18\x02 \x01(\bR\bgraceful\"T\n" +
 	"\aStopAck\x12\"\n" +
 	"\facknowledged\x18\x01 \x01(\bR\facknowledged\x12%\n" +
-	"\x0epending_vusers\x18\x02 \x01(\x05R\rpendingVusers\"\xa8\x02\n" +
+	"\x0epending_vusers\x18\x02 \x01(\x05R\rpendingVusers\"\xd1\x02\n" +
 	"\fMetricsBatch\x12\x17\n" +
 	"\atest_id\x18\x01 \x01(\tR\x06testId\x12!\n" +
 	"\fgenerator_id\x18\x02 \x01(\tR\vgeneratorId\x12*\n" +
 	"\x11timestamp_unix_ms\x18\x03 \x01(\x03R\x0ftimestampUnixMs\x12E\n" +
 	"\ftransactions\x18\x04 \x03(\v2!.stormrunner.v1.TransactionMetricR\ftransactions\x124\n" +
 	"\x05stats\x18\x05 \x01(\v2\x1e.stormrunner.v1.GeneratorStatsR\x05stats\x123\n" +
-	"\x06groups\x18\x06 \x03(\v2\x1b.stormrunner.v1.GroupMetricR\x06groups\"F\n" +
+	"\x06groups\x18\x06 \x03(\v2\x1b.stormrunner.v1.GroupMetricR\x06groups\x12'\n" +
+	"\x0flifecycle_state\x18\a \x01(\tR\x0elifecycleState\"F\n" +
 	"\vGroupMetric\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12#\n" +
 	"\ractive_vusers\x18\x02 \x01(\x05R\factiveVusers\"\x81\x03\n" +

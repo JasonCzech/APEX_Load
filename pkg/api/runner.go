@@ -1823,6 +1823,9 @@ func (tr *TestRunner) StopTest(id string) error {
 	if test.cancel != nil {
 		test.cancel()
 	}
+	if test.Status == "COMPLETE" || test.Status == "FAILED" {
+		return nil
+	}
 	test.Status = "STOPPING"
 	tr.broadcastEvent("test_stopping", test)
 	return nil
