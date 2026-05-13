@@ -17,6 +17,18 @@ Stormrunner already has pieces this plan can build on:
 
 The plan below starts from that baseline and avoids re-implementing existing XPath capabilities.
 
+## Current Implementation Status
+The SOAP runtime is no longer just planned work. The following Phase 1 items are now implemented in the Go runtime:
+
+- Explicit SOAP DSL fields for script-level config and action-level SOAP metadata.
+- Registered `pkg/protocol/soap` execution on top of the existing HTTP transport.
+- SOAP 1.1 and SOAP 1.2 request defaults, `SOAPAction` handling, and generated-envelope shaping with namespace support.
+- WS-Security UsernameToken and Timestamp header generation, including nonce and created support.
+- SOAP Fault detection that maps fault envelopes into Stormrunner result semantics and preserves the raw response body for reporting.
+- Unit coverage for DSL parsing, validation, engine config propagation, envelope shaping, WS-Security headers, and SOAP 1.1/1.2 fault handling.
+
+The main SOAP items still open from Phase 1 are the planned benchmark baseline and any follow-on hardening beyond the current fault parsing and header-generation support.
+
 ## Design Principles
 
 ### 1. Keep Runtime Ownership in the Generator
@@ -175,7 +187,7 @@ This ordering keeps the first implementation aligned with the current HTTP-cente
 | Phase | Milestone | Deliverables | Exit Criteria |
 | :--- | :--- | :--- | :--- |
 | **Phase 0** | **Protocol Definition** | Choose first Java wire format, define SOAP and Java DSL schema, define benchmark plan, define failure semantics | DSL fields reviewed, wire format selected, benchmarks agreed |
-| **Phase 1** | **SOAP Runtime MVP** | `pkg/protocol/soap`, HTTP-backed execution, SOAP defaults, fault parsing, UsernameToken/Timestamp support, tests | SOAP scripts execute end-to-end, faults are observable, no MCP dependency in runtime |
+| **Phase 1** | **SOAP Runtime MVP** | `pkg/protocol/soap`, HTTP-backed execution, SOAP defaults, fault parsing, UsernameToken/Timestamp support, tests | Mostly implemented. Remaining gap is benchmark/baseline work plus any targeted hardening found during integration. |
 | **Phase 2** | **SOAP Authoring** | WSDL-to-DSL generator, namespace-aware templates, editor support for XML and XPath helpers | WSDL import produces executable starter scripts, editor can round-trip SOAP fields |
 | **Phase 3** | **Java HTTP Runtime MVP** | `pkg/protocol/java_http`, chosen codec support, local helper model, decode/extract path support, tests and benchmarks | One codec runs end-to-end with measured overhead and failure handling |
 | **Phase 4** | **Protocol-Specific UX** | SOAP visual helpers, Java decoded inspector, recorder/import polish | UI reflects stable DSL/runtime behavior without hidden protocol metadata |
@@ -191,6 +203,8 @@ The first implementation slice should be a SOAP runtime MVP that proves the arch
 - Support SOAP 1.1 envelope execution, `SOAPAction`, namespace-aware request shaping, and fault parsing.
 - Reuse the existing XPath extraction path for SOAP correlation and assertions.
 - Add table-driven unit tests plus a small benchmark comparing plain HTTP and SOAP-shaped requests.
+
+Status note: the DSL, runtime, fault parsing, and focused unit coverage are now in place. The benchmark item remains open and should be treated as the next completion gate for Phase 1.
 
 ### Exit Criteria
 - One SOAP script can execute end-to-end through the generator without MCP runtime involvement.
