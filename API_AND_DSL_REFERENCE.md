@@ -17,7 +17,13 @@ Content-Type: application/json
 {
   "name": "Homepage Load Test",
   "project_id": "proj-123",
-  "script_id": "script-456",
+**Response:**
+```json
+{
+  "status": "started",
+  "test_id": "test-789"
+}
+```
   "vusers": 100,
   "duration_seconds": 300,
   "ramp_up_seconds": 30,
@@ -25,7 +31,15 @@ Content-Type: application/json
 }
 ```
 
+Allows VUsers to complete the current action and cleanup while transitioning the run into `STOPPING`.
+
 **Response:**
+```json
+{
+  "status": "stopping",
+  "test_id": "test-789"
+}
+```
 ```json
 {
   "id": "test-789",
@@ -33,7 +47,93 @@ Content-Type: application/json
   "script_id": "script-456",
   "status": "queued",
   "vusers": 100,
-  "duration_seconds": 300,
+Terminates the run through the same immediate-stop control path exposed by the current controller.
+
+**Response:**
+```json
+{
+  "status": "aborted",
+  "test_id": "test-789"
+}
+```
+
+#### Pause a running test
+
+```
+POST /api/v1/tests/test-789/pause
+```
+
+Pauses execution between actions without tearing down the active run.
+
+**Response:**
+```json
+{
+  "status": "paused",
+  "test_id": "test-789"
+}
+```
+
+#### Resume a paused test
+
+```
+POST /api/v1/tests/test-789/resume
+```
+
+Resumes a run that is currently in the `PAUSED` state.
+
+**Response:**
+```json
+{
+  "status": "resumed",
+  "test_id": "test-789"
+}
+```
+
+#### Scale VUsers at runtime
+
+```
+PATCH /api/v1/tests/test-789/vusers
+```
+
+**Request:**
+```json
+{
+  "group": "buyers",
+  "target_vusers": 120
+}
+```
+
+**Response:**
+```json
+{
+  "test_id": "test-789",
+  "group": "buyers",
+  "target_vusers": 120,
+  "status": "scaled"
+}
+```
+
+#### Adjust duration at runtime
+
+```
+PATCH /api/v1/tests/test-789/duration
+```
+
+**Request:**
+```json
+{
+  "duration": "10m"
+}
+```
+
+**Response:**
+```json
+{
+  "test_id": "test-789",
+  "new_duration": "10m",
+  "status": "adjusted"
+}
+```
   "ramp_up_seconds": 30,
   "created_at": "2026-05-11T10:30:00Z"
 }
@@ -41,31 +141,38 @@ Content-Type: application/json
 
 #### List all tests
 
-```
-GET /api/v1/tests?project_id=proj-123&status=all
-```
-
 **Response:**
 ```json
-[
-  {
-    "id": "test-789",
-    "name": "Homepage Load Test",
-    "script_id": "script-456",
-    "status": "running",
-    "vusers": 100,
-    "duration_seconds": 300,
-    "started_at": "2026-05-11T10:31:00Z",
-    "current_vusers": 85
+{
+  "test_id": "test-789",
+  "status": "RUNNING",
+  "metrics": {
+    "timestamp": "2026-05-11T10:31:45Z",
+    "total_requests": 4250,
+    "total_errors": 12,
+    "tps": 94.4,
+    "avg_response_ms": 156.3,
+    "p95_ms": 482.5,
+    "p99_ms": 892.1
   },
-  {
-    "id": "test-788",
-    "name": "Checkout Flow Test",
-    "status": "completed",
-    "completed_at": "2026-05-11T09:45:00Z"
+  "history": [
+    {
+      "timestamp": "2026-05-11T10:31:40Z",
+      "tps": 92.1,
+      "avg_response_ms": 149.7
+    }
+  ]
+}
+```
   }
 ]
 ```
+- `test_started`: Run start transition
+- `test_stopping`: Graceful stop requested
+- `test_paused`: Run paused between actions
+- `test_resumed`: Run resumed from pause
+- `vusers_changed`: Runtime group VUser scaling applied
+- `duration_changed`: Runtime duration change applied
 
 #### Get test details and status
 

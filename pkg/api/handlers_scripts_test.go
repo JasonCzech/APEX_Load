@@ -7,6 +7,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -403,6 +404,35 @@ ConnectTimeout=45
 	}
 }
 
+func TestHandleValidateLoadRunnerImportMatchesImportEnvelope(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	archive := buildLoadRunnerImportArchive(t, true)
+
+	importReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/loadrunner", bytes.NewReader(archive))
+	importReq.Header.Set("Content-Type", "application/zip")
+	importResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(importResp, importReq)
+	if importResp.Code != http.StatusOK {
+		t.Fatalf("import status = %d, want %d body=%s", importResp.Code, http.StatusOK, importResp.Body.String())
+	}
+
+	validateReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/loadrunner/validate", bytes.NewReader(archive))
+	validateReq.Header.Set("Content-Type", "application/zip")
+	validateResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(validateResp, validateReq)
+	if validateResp.Code != http.StatusOK {
+		t.Fatalf("validate status = %d, want %d body=%s", validateResp.Code, http.StatusOK, validateResp.Body.String())
+	}
+
+	importEnvelope := decodeImportEnvelope(t, importResp.Body.Bytes())
+	validateEnvelope := decodeImportEnvelope(t, validateResp.Body.Bytes())
+	assertSharedImportEnvelopeKeys(t, importEnvelope)
+	assertSharedImportEnvelopeKeys(t, validateEnvelope)
+	if !reflect.DeepEqual(importEnvelope, validateEnvelope) {
+		t.Fatalf("expected identical loadrunner import envelopes\nimport=%s\nvalidate=%s", importResp.Body.String(), validateResp.Body.String())
+	}
+}
+
 func TestHandleImportJMeter(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	var body bytes.Buffer
@@ -552,6 +582,35 @@ func TestHandleValidateJMeterImport(t *testing.T) {
 	}
 }
 
+func TestHandleValidateJMeterImportMatchesImportEnvelope(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	body, contentType := buildJMeterImportMultipartBody(t, true)
+
+	importReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/jmeter", bytes.NewReader(body))
+	importReq.Header.Set("Content-Type", contentType)
+	importResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(importResp, importReq)
+	if importResp.Code != http.StatusOK {
+		t.Fatalf("import status = %d, want %d body=%s", importResp.Code, http.StatusOK, importResp.Body.String())
+	}
+
+	validateReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/jmeter/validate", bytes.NewReader(body))
+	validateReq.Header.Set("Content-Type", contentType)
+	validateResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(validateResp, validateReq)
+	if validateResp.Code != http.StatusOK {
+		t.Fatalf("validate status = %d, want %d body=%s", validateResp.Code, http.StatusOK, validateResp.Body.String())
+	}
+
+	importEnvelope := decodeImportEnvelope(t, importResp.Body.Bytes())
+	validateEnvelope := decodeImportEnvelope(t, validateResp.Body.Bytes())
+	assertSharedImportEnvelopeKeys(t, importEnvelope)
+	assertSharedImportEnvelopeKeys(t, validateEnvelope)
+	if !reflect.DeepEqual(importEnvelope, validateEnvelope) {
+		t.Fatalf("expected identical jmeter import envelopes\nimport=%s\nvalidate=%s", importResp.Body.String(), validateResp.Body.String())
+	}
+}
+
 func TestHandleJMeterSupportMatrix(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/scripts/import/jmeter/support-matrix", nil)
@@ -635,5 +694,126 @@ func TestHandleSaveJMeterImportPersistsScriptsAndScenario(t *testing.T) {
 	}
 	if result.Scenario == nil || result.Scenario.ScriptCount != 1 {
 		t.Fatalf("expected saved scenario, got %#v", result.Scenario)
+	}
+}
+
+func buildLoadRunnerImportArchive(t *testing.T, includeParameterFiles bool) []byte {
+	t.Helper()
+
+	var body bytes.Buffer
+	writer := zip.NewWriter(&body)
+	addFile := func(name string, content string) {
+		entry, err := writer.Create(name)
+		if err != nil {
+			t.Fatalf("Create(%q) returned error: %v", name, err)
+		}
+		if _, err := entry.Write([]byte(content)); err != nil {
+			t.Fatalf("Write(%q) returned error: %v", name, err)
+		}
+	}
+	userFile := `[General]
+Type=Web
+RuntimeSettings=default.cfg
+
+[Actions]
+Action1=Action.c
+`
+	if includeParameterFiles {
+		userFile = `[General]
+Type=Web
+RuntimeSettings=default.cfg
+
+[Parameters]
+Parameter1=LoginUsers.prm
+
+[Actions]
+Action1=Action.c
+`
+	}
+	addFile("Demo.usr", userFile)
+	addFile("Action.c", sampleLoadRunnerActionC)
+	addFile("default.cfg", `[HTTP]
+ConnectTimeout=45
+`)
+	if includeParameterFiles {
+		addFile("LoginUsers.prm", `[LoginUser]
+Type=File
+Table=Users.dat
+ColumnName=username
+SelectNextRow=Sequential
+UpdateValueOn=Each Iteration
+`)
+		addFile("Users.dat", "username\nalice\nbob\n")
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("zip.Close returned error: %v", err)
+	}
+	return body.Bytes()
+}
+
+func buildJMeterImportMultipartBody(t *testing.T, scenarioDraft bool) ([]byte, string) {
+	t.Helper()
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("file", "checkout.jmx")
+	if err != nil {
+		t.Fatalf("CreateFormFile returned error: %v", err)
+	}
+	if _, err := part.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2">
+  <hashTree>
+    <TestPlan testname="Plan"><stringProp name="TestPlan.comments"/></TestPlan>
+    <hashTree>
+      <ThreadGroup testname="Users">
+        <stringProp name="ThreadGroup.num_threads">5</stringProp>
+        <stringProp name="ThreadGroup.ramp_time">10</stringProp>
+      </ThreadGroup>
+      <hashTree>
+        <ConfigTestElement testname="Defaults" guiclass="HttpDefaultsGui">
+          <stringProp name="HTTPSampler.domain">api.example.com</stringProp>
+          <stringProp name="HTTPSampler.protocol">https</stringProp>
+        </ConfigTestElement>
+        <hashTree/>
+        <HTTPSamplerProxy testname="Home">
+          <stringProp name="HTTPSampler.path">/home</stringProp>
+          <stringProp name="HTTPSampler.method">GET</stringProp>
+        </HTTPSamplerProxy>
+        <hashTree/>
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>`)); err != nil {
+		t.Fatalf("Write returned error: %v", err)
+	}
+	if err := writer.WriteField("include_assertions", "true"); err != nil {
+		t.Fatalf("WriteField(include_assertions) returned error: %v", err)
+	}
+	if scenarioDraft {
+		if err := writer.WriteField("scenario_draft", "true"); err != nil {
+			t.Fatalf("WriteField(scenario_draft) returned error: %v", err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("multipart.Close returned error: %v", err)
+	}
+	return body.Bytes(), writer.FormDataContentType()
+}
+
+func decodeImportEnvelope(t *testing.T, body []byte) map[string]any {
+	t.Helper()
+	var envelope map[string]any
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	return envelope
+}
+
+func assertSharedImportEnvelopeKeys(t *testing.T, envelope map[string]any) {
+	t.Helper()
+	for _, key := range []string{"scripts", "script", "warnings", "stats", "correlations", "assumptions", "unsupported_elements", "scenario_draft", "summary", "result"} {
+		if _, ok := envelope[key]; !ok {
+			t.Fatalf("envelope missing key %q: %#v", key, envelope)
+		}
 	}
 }

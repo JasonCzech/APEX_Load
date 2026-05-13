@@ -211,12 +211,16 @@ func (s *Server) routes(allowedOrigins []string) {
 	} else {
 		fileServer := http.FileServer(http.FS(staticSub))
 		s.mux.Handle("GET /", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Try serving the file; if it doesn't exist, serve index.html (SPA)
+			// Serve real files directly. Only extensionless client routes fall back to the SPA shell.
 			path := strings.TrimPrefix(r.URL.Path, "/")
 			if path == "" {
 				path = "index.html"
 			}
 			if _, err := fs.Stat(staticSub, path); err != nil {
+				if path != "index.html" && strings.Contains(path, ".") {
+					http.NotFound(w, r)
+					return
+				}
 				r.URL.Path = "/"
 			}
 			fileServer.ServeHTTP(w, r)

@@ -5,7 +5,6 @@ import { useApi } from '../hooks/useApi'
 import { BASE } from '../hooks/apiClient'
 import { Project } from '../types'
 import { getErrorMessage } from '../utils/errorUtils'
-import { normalizeScriptImportResult } from './scriptImportUtils'
 import { type RecorderCorrelation as Correlation, type ScriptImportResult } from '../types/scriptImports'
 import { type ScriptDefinition } from '../types/scripts'
 import ScriptImportReview from './ScriptImportReview'
@@ -244,7 +243,14 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: P
   const handlePreviewConversion = async (session: RecordingSession) => {
     try {
       const result = await convertTask.run(
-        async () => normalizeScriptImportResult<Record<string, unknown>, Correlation, ScriptDefinition>(await api.previewRecordingConversion(session.id, session.name)),
+        async () => {
+          const response = await api.previewRecordingConversion(session.id, session.name)
+          return {
+            ...response,
+            script: response.script as ScriptDefinition | undefined,
+            scripts: response.scripts as ScriptDefinition[],
+          }
+        },
         { clearValue: true },
       )
       const previewScript = result.script ?? result.scripts?.[0]

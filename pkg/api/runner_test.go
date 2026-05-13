@@ -1601,6 +1601,83 @@ func TestDeleteTestRemovesArchiveBundle(t *testing.T) {
 	}
 }
 
+func TestDeleteTestRejectsPausedRuns(t *testing.T) {
+	archiveDir := t.TempDir()
+	t.Setenv("STORMRUNNER_ARCHIVE_DIR", archiveDir)
+
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	protocolName := "archive-delete-paused-" + strings.ReplaceAll(strings.ToLower(t.Name()), "/", "-")
+	protocol.Register(protocolName, func() protocol.Protocol {
+		return &archiveStubProtocol{}
+	})
+
+	hub := NewHub()
+	runner := NewTestRunner(1, hub, store)
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-delete-paused",
+		Name:     "Delete Paused Script",
+		Protocol: protocolName,
+		Version:  "1.0.0",
+		Config:   dsl.ScriptConfig{},
+		Actions:  []dsl.Action{{Name: "step-1", Type: "request", Target: "/"}},
+	})
+
+	test, err := runner.CreateTest(CreateTestRequest{
+		Name:     "Delete Paused Run",
+		Duration: "10s",
+		ScriptID: "script-delete-paused",
+		VUsers:   1,
+	})
+	if err != nil {
+		t.Fatalf("CreateTest returned error: %v", err)
+	}
+	if err := runner.StartTest(test.ID); err != nil {
+		t.Fatalf("StartTest returned error: %v", err)
+	}
+
+	waitForStatusAny(t, runner, test.ID, 5*time.Second, "RUNNING", "COMPLETE")
+	if err := runner.PauseTest(test.ID); err != nil {
+		t.Fatalf("PauseTest returned error: %v", err)
+	}
+	waitForTestStatus(t, runner, test.ID, "PAUSED")
+
+	if runner.DeleteTest(test.ID) {
+		t.Fatal("expected DeleteTest to reject paused run")
+	}
+	if stillPresent, ok := runner.GetTest(test.ID); !ok {
+		t.Fatal("expected paused test to remain in runner after delete rejection")
+	} else if stillPresent.Status != "PAUSED" {
+		t.Fatalf("expected paused test to remain paused, got %q", stillPresent.Status)
+	}
+
+	if err := runner.ResumeTest(test.ID); err != nil {
+		t.Fatalf("ResumeTest returned error: %v", err)
+	}
+	if err := runner.StopTest(test.ID); err != nil {
+		t.Fatalf("StopTest returned error: %v", err)
+	}
+	waitForStatusAny(t, runner, test.ID, 5*time.Second, "FAILED", "COMPLETE")
+	if !runner.DeleteTest(test.ID) {
+		t.Fatal("expected DeleteTest to succeed once run is no longer active")
+	}
+	if _, ok := runner.GetTest(test.ID); ok {
+		t.Fatal("expected test to be removed after terminal delete")
+	}
+	if _, ok := runner.GetRunArchive(test.ID); ok {
+		t.Fatal("expected archive metadata to be removed after terminal delete")
+	}
+	if len(hub.broadcast) == 0 {
+		// The lifecycle path should have emitted pause/resume/stop events; if this ever changes,
+		// the test should fail here rather than silently ignoring a missing active run path.
+		t.Fatal("expected lifecycle broadcasts during pause-delete-resume flow")
+	}
+}
+
 func waitForTestStatus(t *testing.T, runner *TestRunner, testID string, want string) *ManagedTest {
 	t.Helper()
 	deadline := time.Now().Add(12 * time.Second)

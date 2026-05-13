@@ -1581,7 +1581,7 @@ func (tr *TestRunner) DeleteTest(id string) bool {
 	if !ok {
 		return false
 	}
-	if test.Status == "RUNNING" || test.Status == "INITIALIZING" || test.Status == "STOPPING" {
+	if test.Status == "RUNNING" || test.Status == "INITIALIZING" || test.Status == "PAUSED" || test.Status == "STOPPING" {
 		return false // Can't delete active tests
 	}
 	archivePath := ""

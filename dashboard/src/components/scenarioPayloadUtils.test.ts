@@ -3,6 +3,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { buildCreateTestPayload, buildScenarioUpsertPayload } from './scenarioPayloadUtils'
+import { buildScenarioDraftFromTest } from './scenarioDraftUtils'
 
 describe('scenarioPayloadUtils', () => {
   it('flattens a single unnamed group when building a test payload', () => {
@@ -155,5 +156,74 @@ describe('scenarioPayloadUtils', () => {
       initialization: 'at_runtime',
     }])
     expect(payload.script_id).toBeUndefined()
+  })
+
+  it('round-trips a queued single-group run into a revised create-test payload without losing runtime or goal settings', () => {
+    const draft = buildScenarioDraftFromTest({
+      id: 'test-1',
+      name: 'Queued Checkout Run',
+      status: 'QUEUED',
+      total_vusers: 25,
+      duration: '5m',
+      start_delay: '20s',
+      created_at: '2026-05-12T20:00:00Z',
+      scenario_mode: 'goal_oriented',
+      script_shakeout: true,
+      resource_baseline: true,
+      goal_config: {
+        target_average_tps: 300,
+        max_error_count: 12,
+        stop_on_max_errors: true,
+        sla_breach_window: '45s',
+      },
+      runtime_settings: {
+        iterations: 5,
+        log_level: 'standard',
+        auto_transactions: 'per_action',
+        error_handling: { snapshot_on_error: true },
+      },
+      groups: [],
+      script_id: 'script-1',
+    } as never)
+
+    const payload = buildCreateTestPayload({
+      name: draft.name,
+      duration: draft.duration,
+      startDelay: draft.startDelay,
+      scenarioMode: draft.scenarioMode,
+      scriptShakeout: draft.scriptShakeout,
+      resourceBaseline: draft.resourceBaseline,
+      groups: draft.groups,
+      goalConfig: draft.goalConfig,
+      runtimeSettings: draft.runtimeSettings,
+      projectId: 'project-1',
+      folderId: 'folder-1',
+    })
+
+    expect(payload).toEqual({
+      name: 'Queued Checkout Run',
+      duration: '5m',
+      start_delay: '20s',
+      project_id: 'project-1',
+      folder_id: 'folder-1',
+      scenario_mode: 'goal_oriented',
+      script_shakeout: true,
+      resource_baseline: true,
+      script_id: 'script-1',
+      vusers: 25,
+      initialization: 'at_runtime',
+      goal_config: {
+        target_average_tps: 300,
+        max_error_count: 12,
+        stop_on_max_errors: true,
+        sla_breach_window: '45s',
+      },
+      runtime_settings: {
+        iterations: 5,
+        log_level: 'standard',
+        auto_transactions: 'per_action',
+        error_handling: { snapshot_on_error: true },
+      },
+    })
   })
 })

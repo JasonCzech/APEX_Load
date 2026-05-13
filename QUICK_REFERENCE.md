@@ -81,6 +81,11 @@ cp stormrunner.db stormrunner.db.backup
 | POST | `/api/v1/tests/{id}/start` | Start test |
 | POST | `/api/v1/tests/{id}/stop` | Stop gracefully |
 | POST | `/api/v1/tests/{id}/abort` | Stop immediately |
+| POST | `/api/v1/tests/{id}/pause` | Pause between actions |
+| POST | `/api/v1/tests/{id}/resume` | Resume a paused test |
+| PATCH | `/api/v1/tests/{id}/vusers` | Scale a group at runtime |
+| PATCH | `/api/v1/tests/{id}/duration` | Adjust duration at runtime |
+| DELETE | `/api/v1/tests/{id}` | Delete a non-active test |
 | GET | `/api/v1/tests/{id}/metrics` | Get current metrics |
 
 ### Scripts

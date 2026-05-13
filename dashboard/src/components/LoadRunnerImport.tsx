@@ -1,7 +1,6 @@
 import { useState, useRef } from 'react'
 import { useApi } from '../hooks/useApi'
-import { normalizeScriptImportResult } from './scriptImportUtils'
-import { type ImportedScript, type LoadRunnerConvertStats, type LoadRunnerImportResult, type LoadRunnerImportSummary } from '../types/scriptImports'
+import { type ImportedScript, type LoadRunnerImportResult, type LoadRunnerImportSummary } from '../types/scriptImports'
 import { type ScriptDefinition } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import ScriptImportReview from './ScriptImportReview'
@@ -103,7 +102,7 @@ export default function LoadRunnerImport({ onImported, onEdit, onClose }: Props)
         include_assertions: options.include_assertions,
         preserve_transactions: options.preserve_transactions,
       })
-      setResult(normalizeScriptImportResult<LoadRunnerConvertStats, unknown, ImportedScript, unknown, LoadRunnerImportSummary>(res))
+      setResult(res)
       setReviewMode(mode === 'validate' ? 'validation' : 'conversion')
       setNotice(mode === 'validate'
         ? 'Validation complete. Review the generated script, warnings, and preserved settings before saving.'

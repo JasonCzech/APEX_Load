@@ -1,11 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import { StoredScript, TestSummary } from '../types'
 import { useApi } from '../hooks/useApi'
-import { type ScriptDefinition } from '../types/scripts'
 import ScriptCreateOptions from './ScriptCreateOptions'
 import ScriptsAuthoringSurface from './ScriptsAuthoringSurface'
 import ScriptsLibraryTable from './ScriptsLibraryTable'
-import { createApiDraft, createJavaHttpDraft, createJmsDraft, createSoapDraft, createWebDraft } from './scriptDraftFactories'
 import { useScriptsLibraryModel } from './useScriptsLibraryModel'
 import { type ScriptsAuthoringSubView, useScriptsAuthoringState } from './useScriptsAuthoringState'
 
@@ -28,12 +26,11 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
 
   const {
     authoringState,
-    setSubview,
     openLibrary,
     openCreateOptions,
     handleEdit,
     handleDraftEdit,
-    startDraft,
+    createOptionActions,
   } = useScriptsAuthoringState({
     api,
     initialMode,
@@ -75,12 +72,6 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
     openLibrary()
   }, [openLibrary, refresh])
 
-  const startApiScript = useCallback(() => { startDraft(createApiDraft) }, [startDraft])
-  const startSoapScript = useCallback(() => { startDraft(createSoapDraft) }, [startDraft])
-  const startJavaHttpScript = useCallback(() => { startDraft(createJavaHttpDraft) }, [startDraft])
-  const startWebScript = useCallback(() => { startDraft(createWebDraft) }, [startDraft])
-  const startJmsScript = useCallback(() => { startDraft(createJmsDraft) }, [startDraft])
-
   const hasAuthoringSubview = authoringState.subView !== 'list' && authoringState.subView !== 'create-options'
 
   const subviewContent = hasAuthoringSubview
@@ -107,16 +98,16 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
     return (
       <ScriptCreateOptions
         onBack={openLibrary}
-        onStartApiScript={startApiScript}
-        onStartSoapScript={startSoapScript}
-        onStartJavaHttpScript={startJavaHttpScript}
-        onOpenJavaHttpImport={() => setSubview('java-http-import')}
-        onOpenSampleImport={() => setSubview('sample')}
-        onStartWebScript={startWebScript}
-        onOpenRecorder={() => setSubview('recorder')}
-        onStartJmsScript={startJmsScript}
-        onOpenLoadRunnerImport={() => setSubview('import')}
-        onOpenJMeterImport={() => setSubview('jmeter-import')}
+        onStartApiScript={createOptionActions.startApiScript}
+        onStartSoapScript={createOptionActions.startSoapScript}
+        onStartJavaHttpScript={createOptionActions.startJavaHttpScript}
+        onOpenJavaHttpImport={createOptionActions.openJavaHttpImport}
+        onOpenSampleImport={createOptionActions.openSampleImport}
+        onStartWebScript={createOptionActions.startWebScript}
+        onOpenRecorder={createOptionActions.openRecorder}
+        onStartJmsScript={createOptionActions.startJmsScript}
+        onOpenLoadRunnerImport={createOptionActions.openLoadRunnerImport}
+        onOpenJMeterImport={createOptionActions.openJMeterImport}
       />
     )
   }

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 
 import { type ScriptDefinition } from '../types/scripts'
 import { useApi } from '../hooks/useApi'
+import { createApiDraft, createJavaHttpDraft, createJmsDraft, createSoapDraft, createWebDraft } from './scriptDraftFactories'
 
 export type ScriptsAuthoringSubView = 'list' | 'create-options' | 'create' | 'edit' | 'import' | 'jmeter-import' | 'recorder' | 'sample' | 'java-http-import'
 
@@ -18,6 +19,19 @@ interface UseScriptsAuthoringStateOptions {
   initialEditId?: string
 }
 
+interface ScriptsCreateOptionActions {
+  startApiScript: () => void
+  startSoapScript: () => void
+  startJavaHttpScript: () => void
+  startWebScript: () => void
+  startJmsScript: () => void
+  openLoadRunnerImport: () => void
+  openJMeterImport: () => void
+  openRecorder: () => void
+  openSampleImport: () => void
+  openJavaHttpImport: () => void
+}
+
 interface ScriptsAuthoringStateModel {
   authoringState: AuthoringState
   setSubview: (subView: ScriptsAuthoringSubView) => void
@@ -26,6 +40,7 @@ interface ScriptsAuthoringStateModel {
   handleEdit: (id: string) => Promise<void>
   handleDraftEdit: (script: ScriptDefinition) => void
   startDraft: (factory: () => ScriptDefinition) => void
+  createOptionActions: ScriptsCreateOptionActions
 }
 
 function normalizeSubView(mode?: ScriptsAuthoringSubView): ScriptsAuthoringSubView {
@@ -61,6 +76,26 @@ export function useScriptsAuthoringState({
     setSubview('create-options')
   }, [setSubview])
 
+  const openLoadRunnerImport = useCallback(() => {
+    setSubview('import')
+  }, [setSubview])
+
+  const openJMeterImport = useCallback(() => {
+    setSubview('jmeter-import')
+  }, [setSubview])
+
+  const openRecorder = useCallback(() => {
+    setSubview('recorder')
+  }, [setSubview])
+
+  const openSampleImport = useCallback(() => {
+    setSubview('sample')
+  }, [setSubview])
+
+  const openJavaHttpImport = useCallback(() => {
+    setSubview('java-http-import')
+  }, [setSubview])
+
   const openDraftEditor = useCallback((script: ScriptDefinition) => {
     setAuthoringState({
       subView: 'create',
@@ -73,6 +108,26 @@ export function useScriptsAuthoringState({
   const startDraft = useCallback((factory: () => ScriptDefinition) => {
     openDraftEditor(factory())
   }, [openDraftEditor])
+
+  const startApiScript = useCallback(() => {
+    startDraft(createApiDraft)
+  }, [startDraft])
+
+  const startSoapScript = useCallback(() => {
+    startDraft(createSoapDraft)
+  }, [startDraft])
+
+  const startJavaHttpScript = useCallback(() => {
+    startDraft(createJavaHttpDraft)
+  }, [startDraft])
+
+  const startWebScript = useCallback(() => {
+    startDraft(createWebDraft)
+  }, [startDraft])
+
+  const startJmsScript = useCallback(() => {
+    startDraft(createJmsDraft)
+  }, [startDraft])
 
   const handleEdit = useCallback(async (id: string) => {
     try {
@@ -105,5 +160,17 @@ export function useScriptsAuthoringState({
     handleEdit,
     handleDraftEdit: openDraftEditor,
     startDraft,
+    createOptionActions: {
+      startApiScript,
+      startSoapScript,
+      startJavaHttpScript,
+      startWebScript,
+      startJmsScript,
+      openLoadRunnerImport,
+      openJMeterImport,
+      openRecorder,
+      openSampleImport,
+      openJavaHttpImport,
+    },
   }
 }

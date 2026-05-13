@@ -12,8 +12,7 @@ import {
   type LoadedSample,
   type SampleFormat,
 } from './sampleImportUtils'
-import { normalizeScriptImportResult } from './scriptImportUtils'
-import { type ImportedScript, type SampleCorrelation as Correlation, type SampleImportResult, type SampleImportStats as ConvertStats } from '../types/scriptImports'
+import { type ImportedScript, type SampleImportResult } from '../types/scriptImports'
 import { type ScriptDefinition } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import { createJavaHttpDraft } from './scriptDraftFactories'
@@ -401,17 +400,14 @@ export default function SampleScriptImport({ onImported, onEdit, onClose, preset
             },
           })
 
-          const normalized = normalizeScriptImportResult<ConvertStats, Correlation>(res)
-          const builtScript = buildScriptWithOptions(normalized.script)
+          const builtScript = buildScriptWithOptions(res.script)
           const finalScript = isJavaHttpPreset ? promoteScriptToJavaHTTP(builtScript) : builtScript
-          const warnings = isJavaHttpPreset ? appendJavaHTTPWarnings(finalScript, normalized.warnings) : normalized.warnings
+          const warnings = isJavaHttpPreset ? appendJavaHTTPWarnings(finalScript, res.warnings) : res.warnings
 
           return {
-            ...normalized,
+            ...res,
             script: finalScript,
             warnings,
-            stats: normalized.stats,
-            correlations: normalized.correlations,
           }
         },
         { clearValue: true },

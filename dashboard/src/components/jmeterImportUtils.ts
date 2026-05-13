@@ -1,4 +1,3 @@
-import { normalizeScriptImportResult } from './scriptImportUtils'
 import { type ImportedAction, type ImportedExtractor, type ImportedScript, type JMeterConvertStats as ConvertStats, type JMeterImportResult as ImportResult, type JMeterImportSummary, type SupportMatrix } from '../types/scriptImports'
 
 export interface SupportMatrixSection {
@@ -21,13 +20,31 @@ function isObjectRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }
 
+function normalizeSharedImportFields(response: unknown): Pick<ImportResult, 'scripts' | 'script' | 'scenario_draft' | 'warnings' | 'unsupported_elements' | 'assumptions' | 'correlations'> {
+  const payload = isObjectRecord(response) ? response : {}
+  const script = payload.script as ImportedScript | undefined
+  const scripts = Array.isArray(payload.scripts)
+    ? payload.scripts as ImportedScript[]
+    : (script ? [script] : [])
+
+  return {
+    scripts,
+    script,
+    scenario_draft: payload.scenario_draft as ImportResult['scenario_draft'] | undefined,
+    warnings: Array.isArray(payload.warnings) ? payload.warnings as string[] : [],
+    unsupported_elements: Array.isArray(payload.unsupported_elements) ? payload.unsupported_elements as string[] : [],
+    assumptions: Array.isArray(payload.assumptions) ? payload.assumptions as string[] : [],
+    correlations: Array.isArray(payload.correlations) ? payload.correlations : [],
+  }
+}
+
 export function normalizeImportResult(response: unknown): ImportResult {
   const payload = isObjectRecord(response) ? response : {}
   const statsPayload = isObjectRecord(payload.stats) ? payload.stats : {}
   const summaryPayload = isObjectRecord(payload.summary) ? payload.summary : {}
 
   return {
-    ...normalizeScriptImportResult<ConvertStats, unknown, ImportedScript, ImportResult['scenario_draft'], JMeterImportSummary>(response),
+    ...normalizeSharedImportFields(response),
     stats: {
       thread_groups: 0,
       samplers: 0,

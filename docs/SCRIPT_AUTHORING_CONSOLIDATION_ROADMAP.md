@@ -174,13 +174,14 @@ That order minimizes churn and avoids rebuilding the UI around unstable backend 
 - Phase 2 backend import envelopes are standardized across LoadRunner, JMeter, sample import, and recorder conversion.
 - The shared frontend import model and review/save contracts are in place for the active import and recorder paths.
 - Shared script, scenario, and dashboard API hook typing has been tightened across the current live authoring surfaces.
-- Shared sample import normalization now uses `unknown`-safe payload guards instead of local `any` casting.
+- The temporary generic frontend import-result normalizer has been removed; the active LoadRunner, sample, and recorder paths now consume their typed backend envelopes directly, while JMeter keeps only its source-specific default filling.
 - Phase 5 cleanup has started in the repo: duplicate dashboard page copies and obsolete patch/temp artifacts were removed after confirming that the live app shell imports only the current page surfaces.
 
 ### In Progress
-- Phase 3 frontend orchestration is partially consolidated through shared import normalization, shared error handling, typed recorder/import flows, and a single ScriptsPage authoring-state model for the active transitions, but the script hub still owns the remaining high-level route selection.
+- Phase 3 frontend orchestration is partially consolidated through shared error handling, typed recorder/import flows, and a single ScriptsPage authoring-state model for the active transitions, but the script hub still owns the remaining high-level route selection.
 - The recorder path now uses the same preview-first review/edit/save lifecycle as the other active non-JMeter builders, with recorder output able to hand off into the canonical script editor before save.
 - The active non-JMeter builders now share a common review/save panel structure for title, warnings, edit handoff, save action, and script preview while keeping source-specific stats and metadata sections local.
+- The scripts library authoring-state hook now has focused regression coverage for create-mode normalization, draft entry, edit loading, and failed edit fetch behavior, so the remaining route-level consolidation work is bounded by explicit state-transition tests instead of page-only behavior.
 - The live script library now uses typed sort helpers for both reusable scripts and linked scenario runs instead of local `any` sort casting.
 - Phase 4 scenario assembly cleanup has started from the reusable test-creation surface. `CreateTestModal` now uses typed payload, chart, and callback contracts instead of local `any` seams, and the scenario draft/group mapping shared with `TestExecutionScenarioEditor` now lives in one helper instead of being rebuilt in each caller.
 - `CreateTestModal` now uses one shared `ScenarioDraftState` reducer for core fields, goal config, runtime overrides, and group mutations, so scenario assembly no longer splits form ownership across three local reducers.

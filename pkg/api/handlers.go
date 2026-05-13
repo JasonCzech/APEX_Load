@@ -153,7 +153,7 @@ func (s *Server) handleResumeTest(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleDeleteTest(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if !s.runner.DeleteTest(id) {
-		writeError(w, http.StatusNotFound, "test not found or currently running")
+		writeError(w, http.StatusNotFound, "test not found or currently active")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})
