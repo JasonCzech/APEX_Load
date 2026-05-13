@@ -24,6 +24,8 @@ Action()
 		"RecContentType=text/html",
 		LAST);
 
+	web_set_max_html_param_len("4096");
+
 	return 0;
 }
 `
@@ -287,14 +289,24 @@ ConnectTimeout=45
 	if result.Stats.ConvertedActions == 0 {
 		t.Fatalf("converted_actions = %d, want > 0", result.Stats.ConvertedActions)
 	}
-	if len(result.UnsupportedElements) != 0 {
-		t.Fatalf("unsupported_elements = %v, want none", result.UnsupportedElements)
+	if len(result.UnsupportedElements) != 1 || result.UnsupportedElements[0] != "web_set_max_html_param_len" {
+		t.Fatalf("unsupported_elements = %v, want [web_set_max_html_param_len]", result.UnsupportedElements)
 	}
 	if len(result.Assumptions) != 0 {
 		t.Fatalf("assumptions = %v, want none", result.Assumptions)
 	}
-	if len(result.Summary) != 0 {
-		t.Fatalf("summary = %#v, want empty", result.Summary)
+	if got := result.Summary["project_file"]; got != "Demo.usr" {
+		t.Fatalf("summary.project_file = %#v, want Demo.usr", got)
+	}
+	if got := result.Summary["mapped_runtime_file"]; got != "default.cfg" {
+		t.Fatalf("summary.mapped_runtime_file = %#v, want default.cfg", got)
+	}
+	projectSections, ok := result.Summary["project_sections"].([]any)
+	if !ok || len(projectSections) == 0 {
+		t.Fatalf("summary.project_sections = %#v, want non-empty slice", result.Summary["project_sections"])
+	}
+	if got := result.Summary["unsupported_function_count"]; got != float64(1) {
+		t.Fatalf("summary.unsupported_function_count = %#v, want 1", got)
 	}
 }
 

@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
+	"sort"
 	"strings"
 
 	"github.com/jasonczech/stormrunner/pkg/convert/jmeter"
@@ -22,6 +24,14 @@ type jmeterImportRequest struct {
 type loadRunnerImportRequest struct {
 	Data []byte
 	Opts loadrunner.ConvertOptions
+}
+
+type loadRunnerImportSummary struct {
+	ProjectFile              string   `json:"project_file,omitempty"`
+	MappedRuntimeFile        string   `json:"mapped_runtime_file,omitempty"`
+	ProjectSections          []string `json:"project_sections,omitempty"`
+	RuntimeFiles             []string `json:"runtime_files,omitempty"`
+	UnsupportedFunctionCount int      `json:"unsupported_function_count"`
 }
 
 // handleImportLoadRunner handles POST /api/v1/scripts/import/loadrunner
@@ -219,12 +229,75 @@ func parseBoolDefault(value string, defaultValue bool) bool {
 }
 
 func writeLoadRunnerImportResponse(w http.ResponseWriter, status int, result *loadrunner.ConvertResult) {
+	unsupportedElements := uniqueSortedStrings(result.Stats.UnsupportedFuncs)
+	summary := buildLoadRunnerImportSummary(result, unsupportedElements)
+
 	writeJSON(w, status, newScriptImportResponse(scriptImportResponseOptions{
-		Result:   result,
-		Script:   result.Script,
-		Warnings: result.Warnings,
-		Stats:    result.Stats,
+		Result:              result,
+		Script:              result.Script,
+		Warnings:            result.Warnings,
+		Stats:               result.Stats,
+		UnsupportedElements: unsupportedElements,
+		Summary:             summary,
 	}))
+}
+
+func buildLoadRunnerImportSummary(result *loadrunner.ConvertResult, unsupportedElements []string) loadRunnerImportSummary {
+	summary := loadRunnerImportSummary{
+		UnsupportedFunctionCount: len(unsupportedElements),
+	}
+
+	if result == nil || result.Script == nil || result.Script.Metadata == nil || result.Script.Metadata.Import == nil {
+		return summary
+	}
+
+	preserved := result.Script.Metadata.Import.Preserved
+	if preserved == nil {
+		return summary
+	}
+
+	summary.ProjectFile = stringValue(preserved["project_file"])
+	summary.MappedRuntimeFile = stringValue(preserved["mapped_runtime_file"])
+	summary.ProjectSections = sortedRecordKeys(preserved["project_settings"])
+	summary.RuntimeFiles = sortedRecordKeys(preserved["runtime_files"])
+
+	return summary
+}
+
+func uniqueSortedStrings(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	sort.Strings(result)
+	return result
+}
+
+func sortedRecordKeys(value any) []string {
+	v := reflect.ValueOf(value)
+	if !v.IsValid() || v.Kind() != reflect.Map || v.Type().Key().Kind() != reflect.String {
+		return nil
+	}
+
+	keys := make([]string, 0, v.Len())
+	for _, key := range v.MapKeys() {
+		keys = append(keys, key.String())
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func stringValue(value any) string {
+	text, _ := value.(string)
+	return text
 }
 
 func writeJMeterImportResponse(w http.ResponseWriter, status int, result *jmeter.ConvertResult) {

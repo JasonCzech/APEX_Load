@@ -53,6 +53,14 @@ export interface LoadRunnerConvertStats {
   unsupported_funcs?: string[]
 }
 
+export interface LoadRunnerImportSummary {
+  project_file?: string
+  mapped_runtime_file?: string
+  project_sections?: string[]
+  runtime_files?: string[]
+  unsupported_function_count: number
+}
+
 export interface JMeterConvertStats {
   thread_groups: number
   samplers: number
@@ -117,7 +125,7 @@ export interface RecorderCorrelation {
   sample_value: string
 }
 
-export type LoadRunnerImportResult = ScriptImportResult<LoadRunnerConvertStats>
+export type LoadRunnerImportResult = ScriptImportResult<LoadRunnerConvertStats, unknown, ImportedScript, unknown, LoadRunnerImportSummary>
 export type JMeterImportResult = ScriptImportResult<JMeterConvertStats, unknown, ImportedScript, JMeterScenarioDraft, JMeterImportSummary>
 export type SampleImportResult = ScriptImportResult<SampleImportStats, SampleCorrelation>
 export type RecorderImportResult = ScriptImportResult<Record<string, unknown>, RecorderCorrelation>

@@ -39,12 +39,20 @@ describe('LoadRunnerImport', () => {
             preserved: {
               runtime_files: { 'default.cfg': {} },
               project_settings: { General: { Type: 'Web' } },
-              unsupported_functions: ['web_reg_save_param'],
+              unsupported_functions: ['web_set_max_html_param_len'],
             },
           },
         },
       },
       warnings: ['manual review recommended'],
+      unsupported_elements: ['web_set_max_html_param_len'],
+      summary: {
+        project_file: 'Demo.usr',
+        mapped_runtime_file: 'default.cfg',
+        project_sections: ['Actions', 'General'],
+        runtime_files: ['default.cfg'],
+        unsupported_function_count: 1,
+      },
       stats: {
         total_functions: 12,
         converted_actions: 1,
@@ -61,6 +69,14 @@ describe('LoadRunnerImport', () => {
         actions: [{ name: 'Homepage' }],
       },
       warnings: ['validation review'],
+      unsupported_elements: ['web_set_max_html_param_len'],
+      summary: {
+        project_file: 'Demo.usr',
+        mapped_runtime_file: 'default.cfg',
+        project_sections: ['Actions', 'General'],
+        runtime_files: ['default.cfg'],
+        unsupported_function_count: 1,
+      },
       stats: {
         total_functions: 12,
         converted_actions: 1,
@@ -124,8 +140,10 @@ describe('LoadRunnerImport', () => {
     expect(container.textContent).toContain('Conversion Complete')
     expect(container.textContent).toContain('Demo LoadRunner Script')
     expect(container.textContent).toContain('manual review recommended')
-    expect(container.textContent).toContain('Unsupported Functions')
-    expect(container.textContent).toContain('web_reg_save_param')
+    expect(container.textContent).toContain('Unsupported LoadRunner Functions (1)')
+    expect(container.textContent).toContain('web_set_max_html_param_len')
+    expect(container.textContent).toContain('Demo.usr')
+    expect(container.textContent).toContain('default.cfg')
 
     const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save to Script Library'))
     expect(saveButton).toBeDefined()
@@ -196,6 +214,7 @@ describe('LoadRunnerImport', () => {
     })
     expect(container.textContent).toContain('Validation Review')
     expect(container.textContent).toContain('validation review')
+    expect(container.textContent).toContain('Unsupported LoadRunner Functions (1)')
   })
 })
 

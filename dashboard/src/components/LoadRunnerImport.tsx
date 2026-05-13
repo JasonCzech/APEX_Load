@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react'
 import { useApi } from '../hooks/useApi'
 import { normalizeScriptImportResult } from './scriptImportUtils'
-import { type ImportedScript, type LoadRunnerConvertStats, type LoadRunnerImportResult } from '../types/scriptImports'
+import { type ImportedScript, type LoadRunnerConvertStats, type LoadRunnerImportResult, type LoadRunnerImportSummary } from '../types/scriptImports'
 import { type ScriptDefinition } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import ScriptImportReview from './ScriptImportReview'
@@ -31,6 +31,10 @@ function getMetadataSummary(metadata: ImportMetadata | null) {
   }
 }
 
+function getSummaryList(values?: string[]) {
+  return Array.isArray(values) ? values : []
+}
+
 interface Props {
   onImported?: (script: ImportedScript) => void
   onEdit?: (script: ScriptDefinition) => void
@@ -55,6 +59,16 @@ export default function LoadRunnerImport({ onImported, onEdit, onClose }: Props)
   })
   const importMetadata = getImportMetadata(result?.script)
   const metadataSummary = getMetadataSummary(importMetadata)
+  const reviewSummary: LoadRunnerImportSummary | null = result?.summary || null
+  const projectSections = getSummaryList(reviewSummary?.project_sections).length > 0
+    ? getSummaryList(reviewSummary?.project_sections)
+    : metadataSummary.projectSections
+  const runtimeFiles = getSummaryList(reviewSummary?.runtime_files).length > 0
+    ? getSummaryList(reviewSummary?.runtime_files)
+    : metadataSummary.runtimeFiles
+  const unsupportedFunctions = result?.unsupported_elements.length
+    ? result.unsupported_elements
+    : metadataSummary.unsupportedFunctions
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault(); setDragOver(false)
@@ -194,6 +208,13 @@ export default function LoadRunnerImport({ onImported, onEdit, onClose }: Props)
               <div className="lr-stat"><span className="lr-stat-val">{result.stats.skipped}</span><span className="lr-stat-label">Skipped</span></div>
             </div>
 
+            {unsupportedFunctions.length > 0 && (
+              <div className="lr-warnings">
+                <h4>Unsupported LoadRunner Functions ({unsupportedFunctions.length})</h4>
+                <ul>{unsupportedFunctions.map((fnName, index) => <li key={`${fnName}-${index}`}>{fnName}</li>)}</ul>
+              </div>
+            )}
+
             {importMetadata && (
               <div className="lr-preserved">
                 <div className="lr-preserved-header">
@@ -203,24 +224,29 @@ export default function LoadRunnerImport({ onImported, onEdit, onClose }: Props)
 
                 <div className="lr-preserved-grid">
                   <div className="lr-preserved-card">
-                    <span className="lr-preserved-label">Source</span>
-                    <strong>{importMetadata.source || 'loadrunner'}</strong>
-                    <small>{importMetadata.source_script_name || result.script.name}</small>
+                    <span className="lr-preserved-label">Project File</span>
+                    <strong>{reviewSummary?.project_file || importMetadata.source_script_name || result.script.name}</strong>
+                    <small>{importMetadata.source || 'loadrunner'}</small>
+                  </div>
+                  <div className="lr-preserved-card">
+                    <span className="lr-preserved-label">Mapped Runtime</span>
+                    <strong>{reviewSummary?.mapped_runtime_file || 'None mapped'}</strong>
+                    <small>{runtimeFiles.join(', ') || 'No runtime files found'}</small>
                   </div>
                   <div className="lr-preserved-card">
                     <span className="lr-preserved-label">Project Sections</span>
-                    <strong>{metadataSummary.projectSections.length}</strong>
-                    <small>{metadataSummary.projectSections.join(', ') || 'None captured'}</small>
-                  </div>
-                  <div className="lr-preserved-card">
-                    <span className="lr-preserved-label">Runtime Files</span>
-                    <strong>{metadataSummary.runtimeFiles.length}</strong>
-                    <small>{metadataSummary.runtimeFiles.join(', ') || 'None found'}</small>
+                    <strong>{projectSections.length}</strong>
+                    <small>{projectSections.join(', ') || 'None captured'}</small>
                   </div>
                   <div className="lr-preserved-card">
                     <span className="lr-preserved-label">Unsupported Functions</span>
-                    <strong>{metadataSummary.unsupportedFunctions.length}</strong>
-                    <small>{metadataSummary.unsupportedFunctions.slice(0, 4).join(', ') || 'None'}</small>
+                    <strong>{reviewSummary?.unsupported_function_count ?? unsupportedFunctions.length}</strong>
+                    <small>{unsupportedFunctions.slice(0, 4).join(', ') || 'None'}</small>
+                  </div>
+                  <div className="lr-preserved-card">
+                    <span className="lr-preserved-label">Source</span>
+                    <strong>{importMetadata.source || 'loadrunner'}</strong>
+                    <small>{result.script.name}</small>
                   </div>
                 </div>
 
