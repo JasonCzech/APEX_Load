@@ -16,11 +16,13 @@ import { normalizeScriptImportResult } from './scriptImportUtils'
 import { type ImportedScript, type SampleCorrelation as Correlation, type SampleImportResult, type SampleImportStats as ConvertStats } from '../types/scriptImports'
 import { type ScriptDefinition } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
+import { createJavaHttpDraft } from './scriptDraftFactories'
 import ScriptImportReview from './ScriptImportReview'
 import './SampleScriptImport.css'
 
 type AuthType = 'none' | 'basic' | 'bearer'
 type PacingType = 'none' | 'fixed_delay'
+type SampleImportPreset = 'default' | 'java-http'
 
 type SampleImportOptions = {
   name: string
@@ -50,6 +52,7 @@ interface Props {
   onImported?: (script: ImportedScript) => void
   onEdit?: (script: ScriptDefinition) => void
   onClose?: () => void
+  preset?: SampleImportPreset
 }
 
 const formatHelp: Record<SampleFormat, string> = {
@@ -109,6 +112,82 @@ const sampleTemplates: Record<SampleFormat, { primary: string; secondary?: strin
   },
 }
 
+const javaHttpTemplates: Partial<Record<SampleFormat, { primary: string; secondary?: string }>> = {
+  raw_http: {
+    primary: 'POST /java/session HTTP/1.1\nHost: api.example.com\nContent-Type: application/x-java-serialized-object\nAccept: application/x-java-serialized-object\n\nrO0ABXQABGRlbW8=',
+    secondary: 'HTTP/1.1 200 OK\nContent-Type: application/x-java-serialized-object\n\nrO0ABXQACnNlc3Npb24=',
+  },
+  curl: {
+    primary: `curl -X POST https://api.example.com/java/session \\
+  -H 'Content-Type: application/x-java-serialized-object' \\
+  -H 'Accept: application/x-java-serialized-object' \\
+  --data 'rO0ABXQABGRlbW8='`,
+  },
+}
+
+const defaultFormatByPreset: Record<SampleImportPreset, SampleFormat> = {
+  default: 'rest_json',
+  'java-http': 'raw_http',
+}
+
+const availableFormatsByPreset: Record<SampleImportPreset, SampleFormat[]> = {
+  default: ['rest_json', 'raw_http', 'curl', 'har'],
+  'java-http': ['raw_http', 'curl'],
+}
+
+const javaHttpDefaults = createJavaHttpDraft().config.java_http || {}
+
+function getSampleTemplate(preset: SampleImportPreset, format: SampleFormat) {
+  if (preset === 'java-http' && javaHttpTemplates[format]) {
+    return javaHttpTemplates[format]!
+  }
+  return sampleTemplates[format]
+}
+
+function getFormatHelp(preset: SampleImportPreset, format: SampleFormat): string {
+  if (preset === 'java-http') {
+    if (format === 'raw_http') {
+      return 'Paste a raw HTTP request whose body is already a base64-encoded serialized Java payload. Optional sample responses should also preserve the opaque base64 body.'
+    }
+    if (format === 'curl') {
+      return 'Paste a curl command whose --data body is already a base64-encoded serialized Java payload.'
+    }
+  }
+  return formatHelp[format]
+}
+
+function looksLikeBase64(value: string): boolean {
+  const trimmed = value.trim()
+  if (!trimmed) return true
+  return trimmed.length % 4 === 0 && /^[A-Za-z0-9+/=\r\n]+$/.test(trimmed)
+}
+
+function promoteScriptToJavaHTTP(script: ScriptDefinition): ScriptDefinition {
+  return {
+    ...script,
+    protocol: 'java_http',
+    config: {
+      ...script.config,
+      java_http: {
+        ...javaHttpDefaults,
+        ...(script.config?.java_http || {}),
+      },
+    },
+  }
+}
+
+function appendJavaHTTPWarnings(script: ScriptDefinition, warnings: string[]): string[] {
+  const nextWarnings = [...warnings]
+  const hasNonBase64Body = script.actions.some(action => typeof action.body === 'string' && action.body.trim() !== '' && !looksLikeBase64(action.body))
+  const warning = hasNonBase64Body
+    ? 'One or more imported request bodies are not base64-encoded. Java-over-HTTP replay expects opaque base64-encoded serialized bytes, so review those actions before saving.'
+    : 'Java-over-HTTP imports assume request and response payloads are already base64-encoded serialized Java bytes. Review the generated draft before saving.'
+  if (!nextWarnings.includes(warning)) {
+    nextWarnings.push(warning)
+  }
+  return nextWarnings
+}
+
 const initialOptions: SampleImportOptions = {
   name: '',
   base_url: '',
@@ -143,13 +222,15 @@ function sampleImportOptionsReducer(state: SampleImportOptions, action: SampleIm
   }
 }
 
-export default function SampleScriptImport({ onImported, onEdit, onClose }: Props) {
+export default function SampleScriptImport({ onImported, onEdit, onClose, preset = 'default' }: Props) {
   const api = useApi()
   const primaryFileRef = useRef<HTMLInputElement>(null)
   const secondaryFileRef = useRef<HTMLInputElement>(null)
-  const [format, setFormat] = useState<SampleFormat>('rest_json')
-  const [primaryContent, setPrimaryContent] = useState(sampleTemplates.rest_json.primary)
-  const [secondaryContent, setSecondaryContent] = useState(sampleTemplates.rest_json.secondary || '')
+  const defaultFormat = defaultFormatByPreset[preset]
+  const defaultTemplate = getSampleTemplate(preset, defaultFormat)
+  const [format, setFormat] = useState<SampleFormat>(defaultFormat)
+  const [primaryContent, setPrimaryContent] = useState(defaultTemplate.primary)
+  const [secondaryContent, setSecondaryContent] = useState(defaultTemplate.secondary || '')
   const [primaryFileName, setPrimaryFileName] = useState('')
   const [secondaryFileName, setSecondaryFileName] = useState('')
   const [primaryFileNames, setPrimaryFileNames] = useState<string[]>([])
@@ -170,11 +251,14 @@ export default function SampleScriptImport({ onImported, onEdit, onClose }: Prop
   const error = messageError || convertTask.error || saveTask.error
   const converting = convertTask.pending
   const saving = saveTask.pending
+  const availableFormats = availableFormatsByPreset[preset]
+  const isJavaHttpPreset = preset === 'java-http'
 
   const handleFormatChange = (nextFormat: SampleFormat) => {
+    const template = getSampleTemplate(preset, nextFormat)
     setFormat(nextFormat)
-    setPrimaryContent(sampleTemplates[nextFormat].primary)
-    setSecondaryContent(sampleTemplates[nextFormat].secondary || '')
+    setPrimaryContent(template.primary)
+    setSecondaryContent(template.secondary || '')
     setPrimaryFileName('')
     setSecondaryFileName('')
     setPrimaryFileNames([])
@@ -318,10 +402,14 @@ export default function SampleScriptImport({ onImported, onEdit, onClose }: Prop
           })
 
           const normalized = normalizeScriptImportResult<ConvertStats, Correlation>(res)
+          const builtScript = buildScriptWithOptions(normalized.script)
+          const finalScript = isJavaHttpPreset ? promoteScriptToJavaHTTP(builtScript) : builtScript
+          const warnings = isJavaHttpPreset ? appendJavaHTTPWarnings(finalScript, normalized.warnings) : normalized.warnings
 
           return {
             ...normalized,
-            script: buildScriptWithOptions(normalized.script),
+            script: finalScript,
+            warnings,
             stats: normalized.stats,
             correlations: normalized.correlations,
           }
@@ -352,8 +440,12 @@ export default function SampleScriptImport({ onImported, onEdit, onClose }: Prop
     <div className="sample-import">
       <div className="sample-import-header">
         <div>
-          <h2>Build Script From Sample</h2>
-          <p className="sample-import-subtitle">Create a Stormrunner script from raw HTTP, curl, REST JSON, or HAR data, then layer in runtime details before saving.</p>
+          <h2>{isJavaHttpPreset ? 'Import Java over HTTP Samples' : 'Build Script From Sample'}</h2>
+          <p className="sample-import-subtitle">
+            {isJavaHttpPreset
+              ? 'Create a Java-over-HTTP draft from raw HTTP or cURL samples that already preserve base64-encoded serialized Java payloads.'
+              : 'Create a Stormrunner script from raw HTTP, curl, REST JSON, or HAR data, then layer in runtime details before saving.'}
+          </p>
         </div>
         {onClose && <button className="btn btn-ghost" onClick={onClose}>✕</button>}
       </div>
@@ -362,18 +454,21 @@ export default function SampleScriptImport({ onImported, onEdit, onClose }: Prop
         <div className="sample-import-section-header">
           <div>
             <h3>1. Input Format</h3>
-            <p>{formatHelp[format]}</p>
+            <p>{getFormatHelp(preset, format)}</p>
           </div>
           <select value={format} onChange={e => handleFormatChange(e.target.value as SampleFormat)}>
-            <option value="rest_json">REST JSON</option>
-            <option value="raw_http">Raw HTTP</option>
-            <option value="curl">cURL</option>
-            <option value="har">HAR / HAR Entry</option>
+            {availableFormats.map((option) => (
+              <option key={option} value={option}>
+                {option === 'rest_json' ? 'REST JSON' : option === 'raw_http' ? 'Raw HTTP' : option === 'curl' ? 'cURL' : 'HAR / HAR Entry'}
+              </option>
+            ))}
           </select>
         </div>
 
         <div className="settings-notice">
-          SOAP-shaped raw HTTP, curl, REST JSON, and HAR request samples can now be promoted into SOAP scripts when the imported sample set is consistently SOAP-oriented. Mixed sample sets still stay on the HTTP protocol surface.
+          {isJavaHttpPreset
+            ? 'Java-over-HTTP imports are intentionally bounded to raw HTTP and cURL samples whose opaque request bodies are already base64-encoded serialized Java bytes. The generated draft is promoted to the `java_http` protocol for review in the editor.'
+            : 'SOAP-shaped raw HTTP, curl, REST JSON, and HAR request samples can now be promoted into SOAP scripts when the imported sample set is consistently SOAP-oriented. Mixed sample sets still stay on the HTTP protocol surface.'}
         </div>
 
         <div className="sample-import-grid two-col">

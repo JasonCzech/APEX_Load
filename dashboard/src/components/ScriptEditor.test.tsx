@@ -172,4 +172,78 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('Fail on SOAP Fault')
     expect(container.textContent).toContain('SOAPAction')
   })
+
+  it('renders Java-over-HTTP settings for java_http drafts', async () => {
+    const javaScript: ScriptDefinition = {
+      ...initialScript,
+      protocol: 'java_http',
+      config: {
+        ...initialScript.config,
+        java_http: {
+          codec: 'java_serialized_object_base64',
+          helper_mode: 'embedded',
+          content_type: 'application/x-java-serialized-object',
+          accept: 'application/x-java-serialized-object',
+          body_encoding: 'base64',
+          object_schema: 'com.example.AuthRequest',
+          request_mapping: {
+            username: 'principal.name',
+          },
+          response_mapping: {
+            'session.token': 'session_token',
+          },
+          extractor_type: 'opaque',
+          preserve_binary_result: true,
+        },
+      },
+      actions: [
+        {
+          name: 'JavaCall',
+          type: 'POST',
+          method: 'POST',
+          target: '/java/auth',
+          headers: {},
+          body: 'rO0ABXQABGRlbW8=',
+          extractors: [],
+          assertions: [{ type: 'status_code', expected: 200 }],
+        },
+      ],
+    }
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={javaScript} />)
+    })
+
+    expect(container.textContent).toContain('java_serialized_object_base64')
+    expect(container.textContent).toContain('Java-over-HTTP scripts reuse the HTTP transport client')
+
+    const runtimeToggle = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Runtime Settings'))
+    expect(runtimeToggle).toBeDefined()
+    if (!runtimeToggle) {
+      return
+    }
+
+    await act(async () => {
+      runtimeToggle.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const javaToggle = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Java HTTP Settings'))
+    expect(javaToggle).toBeDefined()
+    if (!javaToggle) {
+      return
+    }
+
+    await act(async () => {
+      javaToggle.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.textContent).toContain('Wire Format')
+    expect(container.textContent).toContain('Request Mapping')
+    expect(container.textContent).toContain('Response Mapping')
+    const principalInput = Array.from(container.querySelectorAll('input')).find(input => input.value === 'principal.name')
+    const tokenInput = Array.from(container.querySelectorAll('input')).find(input => input.value === 'session_token')
+    expect(principalInput).toBeDefined()
+    expect(tokenInput).toBeDefined()
+    expect(container.textContent).toContain('Preserve binary responses as base64 text')
+  })
 })

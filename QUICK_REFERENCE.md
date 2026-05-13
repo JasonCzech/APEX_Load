@@ -93,6 +93,9 @@ cp stormrunner.db stormrunner.db.backup
 | PUT | `/api/v1/scripts/{id}` | Update script |
 | DELETE | `/api/v1/scripts/{id}` | Delete script |
 | POST | `/api/v1/scripts/{id}/validate` | Validate script |
+| POST | `/api/v1/scripts/import/sample` | Build a script from raw HTTP, cURL, REST JSON, or HAR samples |
+| POST | `/api/v1/scripts/import/loadrunner` | Convert a LoadRunner archive |
+| POST | `/api/v1/scripts/import/jmeter/validate` | Validate a JMeter import draft |
 
 ### WebSocket
 
@@ -146,6 +149,12 @@ cp stormrunner.db stormrunner.db.backup
   "teardown": []
 }
 ```
+
+**Supported protocol surfaces:** `http`, `soap`, `java_http`, `browser`, `jms-solace`
+
+**Java-over-HTTP MVP:**
+- Reuses the HTTP transport with the `java_serialized_object_base64` codec.
+- Sample imports for Java-over-HTTP are intentionally limited to raw HTTP and cURL bodies that already contain base64-encoded serialized Java bytes.
 
 ---
 

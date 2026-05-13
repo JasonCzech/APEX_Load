@@ -58,6 +58,19 @@ interface HTTPConfig {
   auth?: { type?: string; username?: string; password?: string; token?: string }
 }
 
+interface JavaHTTPConfig {
+  codec?: string
+  helper_mode?: string
+  content_type?: string
+  accept?: string
+  body_encoding?: string
+  object_schema?: string
+  request_mapping?: Record<string, string>
+  response_mapping?: Record<string, string>
+  extractor_type?: string
+  preserve_binary_result?: boolean
+}
+
 interface SOAPUsernameTokenConfig {
   username?: string
   password?: string
@@ -126,6 +139,7 @@ interface ScriptConfig {
   error_handling?: ErrorHandlingConfig
   log?: LogConfig
   http?: HTTPConfig
+  java_http?: JavaHTTPConfig
   soap?: SOAPConfig
   browser?: BrowserConfig
   jms?: JMSConfig
@@ -609,6 +623,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
   })
   const isBrowserScript = script.protocol === 'browser'
   const isJmsScript = script.protocol === 'jms-solace'
+  const isJavaHttpScript = script.protocol === 'java_http'
   const isSoapScript = script.protocol === 'soap'
   const importMetadata = script.metadata?.import
   const importSummary = getImportSummary(importMetadata)
@@ -940,6 +955,24 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
           shouldSelectFirstAction = true
         }
       }
+      if (protocol === 'java_http') {
+        next.config.java_http = {
+          codec: next.config.java_http?.codec || 'java_serialized_object_base64',
+          helper_mode: next.config.java_http?.helper_mode || 'embedded',
+          content_type: next.config.java_http?.content_type || 'application/x-java-serialized-object',
+          accept: next.config.java_http?.accept || 'application/x-java-serialized-object',
+          body_encoding: next.config.java_http?.body_encoding || 'base64',
+          object_schema: next.config.java_http?.object_schema,
+          request_mapping: next.config.java_http?.request_mapping,
+          response_mapping: next.config.java_http?.response_mapping,
+          extractor_type: next.config.java_http?.extractor_type || 'opaque',
+          preserve_binary_result: next.config.java_http?.preserve_binary_result ?? true,
+        }
+        if (next.actions.length === 0) {
+          next.actions = [{ ...JSON.parse(JSON.stringify(EMPTY_ACTION)), name: 'Java_HTTP_Request', type: 'POST', method: 'POST' }]
+          shouldSelectFirstAction = true
+        }
+      }
       if (protocol === 'jms-solace') {
         next.config.jms = {
           provider: 'solace',
@@ -1169,6 +1202,62 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
           soap: {
             ...(prev.config.soap || {}),
             namespaces,
+          },
+        },
+      }
+    })
+  }
+
+  const addJavaHTTPMapping = (field: 'request_mapping' | 'response_mapping') => {
+    const key = prompt(field === 'request_mapping' ? 'Request mapping key:' : 'Response mapping key:')
+    if (!key) return
+    setScript(prev => {
+      const mapping = {
+        ...((prev.config.java_http?.[field] as Record<string, string> | undefined) || {}),
+        [key]: '',
+      }
+      return {
+        ...prev,
+        config: {
+          ...prev.config,
+          java_http: {
+            ...(prev.config.java_http || {}),
+            [field]: mapping,
+          },
+        },
+      }
+    })
+  }
+
+  const updateJavaHTTPMapping = (field: 'request_mapping' | 'response_mapping', oldKey: string, newKey: string, value: string) => {
+    setScript(prev => {
+      const mapping = { ...((prev.config.java_http?.[field] as Record<string, string> | undefined) || {}) }
+      if (oldKey !== newKey) delete mapping[oldKey]
+      mapping[newKey] = value
+      return {
+        ...prev,
+        config: {
+          ...prev.config,
+          java_http: {
+            ...(prev.config.java_http || {}),
+            [field]: mapping,
+          },
+        },
+      }
+    })
+  }
+
+  const removeJavaHTTPMapping = (field: 'request_mapping' | 'response_mapping', key: string) => {
+    setScript(prev => {
+      const mapping = { ...((prev.config.java_http?.[field] as Record<string, string> | undefined) || {}) }
+      delete mapping[key]
+      return {
+        ...prev,
+        config: {
+          ...prev.config,
+          java_http: {
+            ...(prev.config.java_http || {}),
+            [field]: mapping,
           },
         },
       }
@@ -1829,6 +1918,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
                     <select value={script.protocol} onChange={e => updateProtocol(e.target.value)}>
                       <option value="http">HTTP API</option>
                       <option value="https">HTTPS API</option>
+                      <option value="java_http">Java over HTTP</option>
                       <option value="soap">Web Services (SOAP)</option>
                       <option value="browser">Web/HTML Browser</option>
                       <option value="jms-solace">JMS Solace</option>
@@ -1874,6 +1964,11 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
                 {isSoapScript && (
                   <div className="parameter-empty-state" style={{ marginTop: 12 }}>
                     SOAP scripts reuse the HTTP transport model and add SOAP envelope, namespace, WS-Security, SOAPAction, and fault-handling settings below.
+                  </div>
+                )}
+                {isJavaHttpScript && (
+                  <div className="parameter-empty-state" style={{ marginTop: 12 }}>
+                    Java-over-HTTP scripts reuse the HTTP transport client and currently support the `java_serialized_object_base64` codec, where request bodies are base64-encoded serialized bytes.
                   </div>
                 )}
                 <div className="auto-parameter-toolbar">
@@ -2760,6 +2855,93 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
                             <input type="number" min="0" value={script.config.soap?.ws_security?.timestamp?.ttl_seconds ?? 0} onChange={e => updateField('config.soap.ws_security.timestamp.ttl_seconds', Math.max(0, Number(e.target.value) || 0))} />
                           </label>
                         </div>
+                      </div>
+                    </div>
+                  )}
+                </div>}
+
+                {isJavaHttpScript && <div className={`settings-section ${openSections['java_http'] ? 'open' : ''}`}>
+                  <button className="section-toggle" onClick={() => toggleSection('java_http')}>
+                    <span className="section-icon">JAVA</span>
+                    <span className="section-label">Java HTTP Settings</span>
+                    <span className="section-summary">{script.config.java_http?.codec || 'java_serialized_object_base64'}</span>
+                    <span className="chevron">{openSections['java_http'] ? '▾' : '▸'}</span>
+                  </button>
+                  {openSections['java_http'] && (
+                    <div className="section-body">
+                      <div className="settings-sub-group">
+                        <h5>Codec</h5>
+                        <div className="form-grid">
+                          <label>
+                            <span>Wire Format</span>
+                            <select value={script.config.java_http?.codec || 'java_serialized_object_base64'} onChange={e => updateField('config.java_http.codec', e.target.value)}>
+                              <option value="java_serialized_object_base64">java_serialized_object_base64</option>
+                            </select>
+                          </label>
+                          <label>
+                            <span>Helper Mode</span>
+                            <select value={script.config.java_http?.helper_mode || 'embedded'} onChange={e => updateField('config.java_http.helper_mode', e.target.value)}>
+                              <option value="embedded">embedded</option>
+                            </select>
+                          </label>
+                          <label>
+                            <span>Body Encoding</span>
+                            <select value={script.config.java_http?.body_encoding || 'base64'} onChange={e => updateField('config.java_http.body_encoding', e.target.value)}>
+                              <option value="base64">base64</option>
+                            </select>
+                          </label>
+                        </div>
+                      </div>
+
+                      <div className="settings-sub-group">
+                        <h5>Transport Defaults</h5>
+                        <div className="form-grid">
+                          <label>
+                            <span>Content-Type</span>
+                            <input value={script.config.java_http?.content_type || ''} onChange={e => updateField('config.java_http.content_type', e.target.value)} placeholder="application/x-java-serialized-object" />
+                          </label>
+                          <label>
+                            <span>Accept</span>
+                            <input value={script.config.java_http?.accept || ''} onChange={e => updateField('config.java_http.accept', e.target.value)} placeholder="application/x-java-serialized-object" />
+                          </label>
+                          <label>
+                            <span>Object Schema</span>
+                            <input value={script.config.java_http?.object_schema || ''} onChange={e => updateField('config.java_http.object_schema', e.target.value)} placeholder="com.example.AuthRequest" />
+                          </label>
+                          <label>
+                            <span>Extractor Type</span>
+                            <input value={script.config.java_http?.extractor_type || ''} onChange={e => updateField('config.java_http.extractor_type', e.target.value)} placeholder="opaque" />
+                          </label>
+                          <label className="checkbox-label">
+                            <input type="checkbox" checked={script.config.java_http?.preserve_binary_result ?? true} onChange={e => updateField('config.java_http.preserve_binary_result', e.target.checked)} />
+                            <span>Preserve binary responses as base64 text</span>
+                          </label>
+                        </div>
+                      </div>
+
+                      <div className="settings-sub-group">
+                        <div className="sub-header"><h4>Request Mapping</h4><button className="btn btn-sm btn-ghost" onClick={() => addJavaHTTPMapping('request_mapping')}>+ Add</button></div>
+                        <div className="cell-muted" style={{ marginBottom: 8 }}>Mappings are stored with the draft for future helper-aware serializers. The current embedded codec still sends opaque base64 payloads.</div>
+                        {Object.entries(script.config.java_http?.request_mapping || {}).length === 0 && <div className="cell-muted">No request mapping entries defined.</div>}
+                        {Object.entries(script.config.java_http?.request_mapping || {}).map(([key, value]) => (
+                          <div key={`request-${key}`} className="pair-row">
+                            <input value={key} onChange={e => updateJavaHTTPMapping('request_mapping', key, e.target.value, value)} placeholder="logical field" />
+                            <input value={value} onChange={e => updateJavaHTTPMapping('request_mapping', key, key, e.target.value)} placeholder="serialized property path" />
+                            <button className="btn btn-sm btn-ghost" onClick={() => removeJavaHTTPMapping('request_mapping', key)}>✕</button>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="settings-sub-group">
+                        <div className="sub-header"><h4>Response Mapping</h4><button className="btn btn-sm btn-ghost" onClick={() => addJavaHTTPMapping('response_mapping')}>+ Add</button></div>
+                        {Object.entries(script.config.java_http?.response_mapping || {}).length === 0 && <div className="cell-muted">No response mapping entries defined.</div>}
+                        {Object.entries(script.config.java_http?.response_mapping || {}).map(([key, value]) => (
+                          <div key={`response-${key}`} className="pair-row">
+                            <input value={key} onChange={e => updateJavaHTTPMapping('response_mapping', key, e.target.value, value)} placeholder="serialized property path" />
+                            <input value={value} onChange={e => updateJavaHTTPMapping('response_mapping', key, key, e.target.value)} placeholder="replay variable or logical field" />
+                            <button className="btn btn-sm btn-ghost" onClick={() => removeJavaHTTPMapping('response_mapping', key)}>✕</button>
+                          </div>
+                        ))}
                       </div>
                     </div>
                   )}

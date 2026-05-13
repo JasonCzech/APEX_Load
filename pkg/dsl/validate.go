@@ -63,6 +63,9 @@ func ValidateScriptIssues(script *Script) []string {
 	if script.Protocol == "soap" {
 		issues = append(issues, validateSOAPScriptIssues(script)...)
 	}
+	if script.Protocol == "java_http" {
+		issues = append(issues, validateJavaHTTPScriptIssues(script)...)
+	}
 
 	issues = append(issues, validateParameterIssues(script)...)
 
@@ -218,6 +221,23 @@ func validateParameterIssues(script *Script) []string {
 		}
 	}
 
+	return issues
+}
+
+func validateJavaHTTPScriptIssues(script *Script) []string {
+	var issues []string
+	javaCfg := script.Config.JavaHTTP
+	if strings.TrimSpace(javaCfg.Codec) == "" {
+		issues = append(issues, "config.java_http.codec is required")
+	} else if javaCfg.Codec != "java_serialized_object_base64" {
+		issues = append(issues, fmt.Sprintf("config.java_http.codec %q is not supported", javaCfg.Codec))
+	}
+	if javaCfg.HelperMode != "" && !isAllowedValue(javaCfg.HelperMode, "embedded") {
+		issues = append(issues, "config.java_http.helper_mode must be embedded")
+	}
+	if javaCfg.BodyEncoding != "" && !isAllowedValue(javaCfg.BodyEncoding, "base64") {
+		issues = append(issues, "config.java_http.body_encoding must be base64")
+	}
 	return issues
 }
 

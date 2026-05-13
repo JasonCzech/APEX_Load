@@ -73,10 +73,17 @@ describe('scriptDraftFactories', () => {
 
   it('creates the Java-over-HTTP draft on top of the HTTP protocol surface', () => {
     expect(createJavaHttpDraft()).toEqual(expect.objectContaining({
-      protocol: 'http',
-      actions: [],
+      protocol: 'java_http',
+      actions: [expect.objectContaining({
+        method: 'POST',
+      })],
       config: expect.objectContaining({
         base_url: '',
+        java_http: expect.objectContaining({
+          codec: 'java_serialized_object_base64',
+          helper_mode: 'embedded',
+          body_encoding: 'base64',
+        }),
       }),
     }))
   })

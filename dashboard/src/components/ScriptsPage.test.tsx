@@ -54,8 +54,9 @@ vi.mock('./RecordingStudio', () => ({
 }))
 
 vi.mock('./SampleScriptImport', () => ({
-  default: ({ onEdit }: { onEdit?: (script: { name: string, version: string, protocol: string, config: { base_url: string }, actions: unknown[] }) => void }) => (
+  default: ({ onEdit, preset }: { onEdit?: (script: { name: string, version: string, protocol: string, config: { base_url: string }, actions: unknown[] }) => void, preset?: string }) => (
     <div data-testid="sample-import">
+      <span>sample-import:{preset || 'default'}</span>
       <button onClick={() => onEdit?.({
         name: 'Sample Draft',
         version: '1.0.0',
@@ -64,6 +65,21 @@ vi.mock('./SampleScriptImport', () => ({
         actions: [],
       })}
       >mock-sample-edit</button>
+    </div>
+  ),
+}))
+
+vi.mock('./JavaHttpImport', () => ({
+  default: ({ onEdit }: { onEdit?: (script: { name: string, version: string, protocol: string, config: { base_url: string }, actions: unknown[] }) => void }) => (
+    <div data-testid="java-http-import">
+      <button onClick={() => onEdit?.({
+        name: 'Java Import Draft',
+        version: '1.0.0',
+        protocol: 'java_http',
+        config: { base_url: 'https://java.example.com' },
+        actions: [],
+      })}
+      >mock-java-import-edit</button>
     </div>
   ),
 }))
@@ -276,6 +292,36 @@ describe('ScriptsPage', () => {
     })
 
     expect(container.querySelector('[data-testid="script-editor"]')).not.toBeNull()
+  })
+
+  it('routes the Java-over-HTTP import option into the dedicated Java import surface', async () => {
+    await act(async () => {
+      root.render(<ScriptsPage />)
+    })
+
+    await flushPromises()
+
+    const createButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('+ Create Script'))
+    expect(createButton).toBeDefined()
+    if (!createButton) {
+      return
+    }
+
+    await act(async () => {
+      createButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const javaImportButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Import Java over HTTP'))
+    expect(javaImportButton).toBeDefined()
+    if (!javaImportButton) {
+      return
+    }
+
+    await act(async () => {
+      javaImportButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.querySelector('[data-testid="java-http-import"]')).not.toBeNull()
   })
 
   it('loads the requested script when opened in edit mode from the parent route', async () => {

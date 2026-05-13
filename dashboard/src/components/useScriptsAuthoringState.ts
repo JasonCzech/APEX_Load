@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { type ScriptDefinition } from '../types/scripts'
 import { useApi } from '../hooks/useApi'
 
-export type ScriptsAuthoringSubView = 'list' | 'create-options' | 'create' | 'edit' | 'import' | 'jmeter-import' | 'recorder' | 'sample'
+export type ScriptsAuthoringSubView = 'list' | 'create-options' | 'create' | 'edit' | 'import' | 'jmeter-import' | 'recorder' | 'sample' | 'java-http-import'
 
 interface AuthoringState {
   subView: ScriptsAuthoringSubView

@@ -132,6 +132,19 @@ export interface BrowserConfig {
   }
 }
 
+export interface JavaHTTPConfig {
+  codec?: string
+  helper_mode?: string
+  content_type?: string
+  accept?: string
+  body_encoding?: string
+  object_schema?: string
+  request_mapping?: Record<string, string>
+  response_mapping?: Record<string, string>
+  extractor_type?: string
+  preserve_binary_result?: boolean
+}
+
 export interface JMSConfig {
   provider?: string
   broker_url?: string
@@ -187,6 +200,7 @@ export interface ScriptConfig {
   error_handling?: ErrorHandlingConfig
   log?: LogConfig
   http?: HTTPConfig
+  java_http?: JavaHTTPConfig
   soap?: SOAPConfig
   browser?: BrowserConfig
   jms?: JMSConfig

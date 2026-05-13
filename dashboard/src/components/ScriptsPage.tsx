@@ -110,6 +110,7 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
         onStartApiScript={startApiScript}
         onStartSoapScript={startSoapScript}
         onStartJavaHttpScript={startJavaHttpScript}
+        onOpenJavaHttpImport={() => setSubview('java-http-import')}
         onOpenSampleImport={() => setSubview('sample')}
         onStartWebScript={startWebScript}
         onOpenRecorder={() => setSubview('recorder')}

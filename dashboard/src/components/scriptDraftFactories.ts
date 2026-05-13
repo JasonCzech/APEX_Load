@@ -59,7 +59,35 @@ export function createSoapDraft(): ScriptDefinition {
 }
 
 export function createJavaHttpDraft(): ScriptDefinition {
-  return createBaseDraft()
+  return {
+    ...createBaseDraft(),
+    protocol: 'java_http',
+    config: {
+      ...createBaseDraft().config,
+      java_http: {
+        codec: 'java_serialized_object_base64',
+        helper_mode: 'embedded',
+        content_type: 'application/x-java-serialized-object',
+        accept: 'application/x-java-serialized-object',
+        body_encoding: 'base64',
+        extractor_type: 'opaque',
+        preserve_binary_result: true,
+      },
+    },
+    actions: [
+      {
+        name: 'Java_HTTP_Request',
+        type: 'POST',
+        method: 'POST',
+        target: '',
+        headers: {},
+        body: '',
+        extractors: [],
+        assertions: [{ type: 'status_code', expected: 200 }],
+        think_time_after: true,
+      },
+    ],
+  }
 }
 
 export function createWebDraft(): ScriptDefinition {

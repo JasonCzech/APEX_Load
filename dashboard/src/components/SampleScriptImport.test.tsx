@@ -130,6 +130,61 @@ describe('SampleScriptImport', () => {
       protocol: 'http',
     }))
   })
+
+  it('promotes Java-over-HTTP sample imports into java_http drafts with bounded warnings', async () => {
+    const onImported = vi.fn()
+
+    await act(async () => {
+      root.render(<SampleScriptImport preset="java-http" onImported={onImported} />)
+    })
+
+    expect(container.textContent).toContain('Import Java over HTTP Samples')
+    expect(container.textContent).toContain('base64-encoded serialized Java payloads')
+    expect(container.textContent).not.toContain('REST JSON')
+    expect(container.textContent).not.toContain('HAR / HAR Entry')
+
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Sample'))
+    expect(convertButton).toBeDefined()
+    if (!convertButton) {
+      return
+    }
+
+    await act(async () => {
+      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushPromises()
+
+    expect(apiMock.importSample).toHaveBeenCalledWith(expect.objectContaining({
+      format: 'raw_http',
+    }))
+    expect(container.textContent).toContain('Java-over-HTTP imports assume request and response payloads are already base64-encoded serialized Java bytes')
+
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save To Script Library'))
+    expect(saveButton).toBeDefined()
+    if (!saveButton) {
+      return
+    }
+
+    await act(async () => {
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushPromises()
+
+    expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({
+      protocol: 'java_http',
+      config: expect.objectContaining({
+        java_http: expect.objectContaining({
+          codec: 'java_serialized_object_base64',
+          body_encoding: 'base64',
+        }),
+      }),
+    }))
+    expect(onImported).toHaveBeenCalledWith(expect.objectContaining({
+      protocol: 'java_http',
+    }))
+  })
 })
 
 async function flushPromises() {

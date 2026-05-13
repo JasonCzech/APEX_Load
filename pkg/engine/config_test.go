@@ -280,6 +280,47 @@ func TestBuildProtoConfig_SOAP(t *testing.T) {
 	}
 }
 
+func TestBuildProtoConfig_JavaHTTP(t *testing.T) {
+	script := &dsl.Script{
+		Config: dsl.ScriptConfig{
+			JavaHTTP: dsl.JavaHTTPConfig{
+				Codec:                "java_serialized_object_base64",
+				HelperMode:           "embedded",
+				ContentType:          "application/x-java-serialized-object",
+				Accept:               "application/x-java-serialized-object",
+				BodyEncoding:         "base64",
+				ObjectSchema:         "com.example.AuthRequest",
+				RequestMapping:       map[string]string{"username": "principal"},
+				ResponseMapping:      map[string]string{"token": "sessionToken"},
+				ExtractorType:        "opaque",
+				PreserveBinaryResult: true,
+			},
+		},
+	}
+
+	cfg := buildProtoConfig(script)
+
+	if cfg["java_http_codec"] != "java_serialized_object_base64" {
+		t.Errorf("java_http_codec = %v, want java_serialized_object_base64", cfg["java_http_codec"])
+	}
+	if cfg["java_http_helper_mode"] != "embedded" {
+		t.Errorf("java_http_helper_mode = %v, want embedded", cfg["java_http_helper_mode"])
+	}
+	if cfg["java_http_content_type"] != "application/x-java-serialized-object" {
+		t.Errorf("java_http_content_type = %v", cfg["java_http_content_type"])
+	}
+	if cfg["java_http_body_encoding"] != "base64" {
+		t.Errorf("java_http_body_encoding = %v, want base64", cfg["java_http_body_encoding"])
+	}
+	if cfg["java_http_preserve_binary_result"] != true {
+		t.Errorf("java_http_preserve_binary_result = %v, want true", cfg["java_http_preserve_binary_result"])
+	}
+	requestMapping, ok := cfg["java_http_request_mapping"].(map[string]string)
+	if !ok || requestMapping["username"] != "principal" {
+		t.Errorf("java_http_request_mapping = %v, want username->principal", cfg["java_http_request_mapping"])
+	}
+}
+
 func TestBuildProtoConfig_EmptyConfig(t *testing.T) {
 	script := &dsl.Script{}
 	cfg := buildProtoConfig(script)

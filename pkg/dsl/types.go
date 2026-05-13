@@ -37,12 +37,26 @@ type ScriptConfig struct {
 	ThinkTime     ThinkTimeConfig     `json:"think_time,omitempty"`
 	Pacing        PacingConfig        `json:"pacing,omitempty"`
 	HTTP          HTTPConfig          `json:"http,omitempty"`
+	JavaHTTP      JavaHTTPConfig      `json:"java_http,omitempty"`
 	SOAP          SOAPConfig          `json:"soap,omitempty"`
 	Browser       BrowserConfig       `json:"browser,omitempty"`
 	JMS           JMSConfig           `json:"jms,omitempty"`
 	ErrorHandling ErrorHandlingConfig `json:"error_handling,omitempty"`
 	RunLogic      RunLogicConfig      `json:"run_logic,omitempty"`
 	Log           LogConfig           `json:"log,omitempty"`
+}
+
+type JavaHTTPConfig struct {
+	Codec                string            `json:"codec,omitempty"`
+	HelperMode           string            `json:"helper_mode,omitempty"`
+	ContentType          string            `json:"content_type,omitempty"`
+	Accept               string            `json:"accept,omitempty"`
+	BodyEncoding         string            `json:"body_encoding,omitempty"`
+	ObjectSchema         string            `json:"object_schema,omitempty"`
+	RequestMapping       map[string]string `json:"request_mapping,omitempty"`
+	ResponseMapping      map[string]string `json:"response_mapping,omitempty"`
+	ExtractorType        string            `json:"extractor_type,omitempty"`
+	PreserveBinaryResult bool              `json:"preserve_binary_result,omitempty"`
 }
 
 type SOAPConfig struct {

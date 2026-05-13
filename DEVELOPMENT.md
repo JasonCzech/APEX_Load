@@ -69,6 +69,8 @@ type Protocol interface {
 
 **Bundled Protocols:**
 - **HTTP**: Supports HTTP/1.1 and HTTP/2; handles redirects, cookies, extractors, assertions
+- **SOAP**: Reuses the HTTP transport with SOAP-specific defaults, namespaces, and fault-handling semantics
+- **Java over HTTP**: Reuses the HTTP transport with the bounded `java_serialized_object_base64` codec for opaque serialized payloads
 - **JMS (Solace)**: Message queue protocol
 - **JMS (IBM MQ)**: Message queue protocol (Phase 5)
 
@@ -76,6 +78,7 @@ type Protocol interface {
 1. Create `pkg/protocol/myproto/` package
 2. Implement the `Protocol` interface
 3. Register in `pkg/protocol/registry.go`: `RegisterProtocol(new(myProto.MyProtocol))`
+4. Import it from the controller and generator binaries if it must be executable from both surfaces
 
 ### `pkg/dsl`
 
@@ -194,7 +197,7 @@ dashboard/
 **ScriptsPage.tsx**
 - Script library and editor interface
 - Displays scripts in FolderTree with inline protocol badge and Edit/Delete buttons
-- Actions: Create new, upload, import from LoadRunner, edit inline, delete
+- Actions: Create new drafts, open sample imports, import from LoadRunner/JMeter, edit inline, delete
 
 **TestHub.tsx**
 - Scenario (test configuration) management and execution
@@ -238,6 +241,7 @@ DELETE /api/v1/scripts/{id}                   — Delete script
 POST   /api/v1/scripts/{id}/validate          — Dry-run validation
 POST   /api/v1/scripts/{id}/export            — Export as JSON file
 GET    /api/v1/scripts/{id}/download          — Download as JSON
+POST   /api/v1/scripts/import/sample          — Convert raw HTTP, cURL, REST JSON, or HAR samples into a draft
 POST   /api/v1/scripts/import/loadrunner      — Convert LoadRunner .zip to DSL
 ```
 

@@ -2,6 +2,7 @@ import { type ScriptDefinition } from '../types/scripts'
 import ScriptEditor from './ScriptEditor'
 import LoadRunnerImport from './LoadRunnerImport'
 import JMeterImport from './JMeterImport'
+import JavaHttpImport from './JavaHttpImport'
 import RecordingStudio from './RecordingStudio'
 import SampleScriptImport from './SampleScriptImport'
 import { type ScriptsAuthoringSubView } from './useScriptsAuthoringState'
@@ -50,6 +51,13 @@ export default function ScriptsAuthoringSurface({
         <div className="page">
           <button className="btn btn-secondary" onClick={onOpenCreateOptions} style={{ alignSelf: 'flex-start' }}>Back to Create Script</button>
           <SampleScriptImport onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />
+        </div>
+      )
+    case 'java-http-import':
+      return (
+        <div className="page">
+          <button className="btn btn-secondary" onClick={onOpenCreateOptions} style={{ alignSelf: 'flex-start' }}>Back to Create Script</button>
+          <JavaHttpImport onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />
         </div>
       )
     default:

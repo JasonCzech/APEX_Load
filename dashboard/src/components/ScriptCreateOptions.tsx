@@ -3,6 +3,7 @@ interface Props {
   onStartApiScript: () => void
   onStartSoapScript: () => void
   onStartJavaHttpScript: () => void
+  onOpenJavaHttpImport: () => void
   onOpenSampleImport: () => void
   onStartWebScript: () => void
   onOpenRecorder: () => void
@@ -16,6 +17,7 @@ export default function ScriptCreateOptions({
   onStartApiScript,
   onStartSoapScript,
   onStartJavaHttpScript,
+  onOpenJavaHttpImport,
   onOpenSampleImport,
   onStartWebScript,
   onOpenRecorder,
@@ -53,7 +55,7 @@ export default function ScriptCreateOptions({
             <button className="script-create-option" onClick={onStartJavaHttpScript}>
               <span className="script-create-type-badge">JAVA</span>
               <h3>Java over HTTP</h3>
-              <p>Start from the HTTP authoring path for Java-backed services while the dedicated runtime remains staged.</p>
+              <p>Create a first-class Java-over-HTTP draft with the `java_serialized_object_base64` codec on the existing HTTP transport.</p>
             </button>
             <button className="script-create-option" onClick={onOpenSampleImport}>
               <span className="script-create-type-badge">API</span>
@@ -115,10 +117,14 @@ export default function ScriptCreateOptions({
               <h3>Import SOAP Assets</h3>
               <p>Dedicated SOAP import remains staged. For now, use Import LoadRunner for SOAP-style request assets and review the converted draft.</p>
             </button>
-            <button className="script-create-option" type="button" disabled title="Java-over-HTTP import needs a runtime and wire-format decision first.">
+            <button
+              className="script-create-option"
+              onClick={onOpenJavaHttpImport}
+              title="Import raw HTTP or cURL samples that already preserve base64-encoded serialized Java payloads."
+            >
               <span className="script-create-type-badge import">JAVA</span>
               <h3>Import Java over HTTP</h3>
-              <p>Reserved for a future converter once the Java transport/runtime format is locked.</p>
+              <p>Build a Java-over-HTTP draft from raw HTTP or cURL samples that already carry opaque base64-encoded serialized payloads.</p>
             </button>
             <button className="script-create-option" onClick={onOpenJMeterImport}>
               <span className="script-create-type-badge import">JMX</span>

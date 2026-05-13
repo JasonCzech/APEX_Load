@@ -266,6 +266,31 @@ Content-Type: multipart/form-data
 }
 ```
 
+#### Build a script from sample traffic
+
+```
+POST /api/v1/scripts/import/sample
+Content-Type: application/json
+
+{
+  "name": "Sample Import",
+  "format": "raw_http",
+  "content": "POST /java/session HTTP/1.1\nHost: api.example.com\nContent-Type: application/x-java-serialized-object\n\nrO0ABXQABGRlbW8=",
+  "response_content": "HTTP/1.1 200 OK\nContent-Type: application/x-java-serialized-object\n\nrO0ABXQACnNlc3Npb24=",
+  "options": {
+    "base_url": "https://api.example.com",
+    "include_assertions": true,
+    "infer_extractors": true,
+    "sanitize_sensitive": true
+  }
+}
+```
+
+**Notes:**
+- `format` may be `raw_http`, `curl`, `rest_json`, or `har`.
+- SOAP-oriented samples can be promoted onto the `soap` protocol surface when the import set is consistently SOAP-shaped.
+- Java-over-HTTP imports are intentionally narrower: use raw HTTP or cURL samples whose opaque request bodies are already base64-encoded serialized Java bytes. The dashboard then promotes the reviewed draft to `protocol: "java_http"`.
+
 ### Projects and Folders
 
 #### List projects
@@ -465,13 +490,23 @@ Emits JSON messages for all test events:
 ```
 
 **Common config keys:**
-- `protocol`: "http", "browser", "jms-solace"
+- `protocol`: `http`, `soap`, `java_http`, `browser`, `jms-solace`
 - `base_url`: Base URL for relative paths (HTTP)
 - `timeout_seconds`: Request timeout
 - `follow_redirects`: Auto-follow HTTP redirects
 - `ssl_verify`: Validate SSL certificates
 - `headers`: Default headers for all actions
 - `connection_pool_size`: Connection reuse pool size (default: 10)
+
+**Java-over-HTTP config keys:**
+- `config.java_http.codec`: Currently `java_serialized_object_base64`
+- `config.java_http.helper_mode`: Currently `embedded`
+- `config.java_http.content_type`: Defaults to `application/x-java-serialized-object`
+- `config.java_http.accept`: Defaults to `application/x-java-serialized-object`
+- `config.java_http.body_encoding`: Currently `base64`
+- `config.java_http.object_schema`: Optional application-level schema or class hint
+- `config.java_http.extractor_type`: Defaults to `opaque`
+- `config.java_http.preserve_binary_result`: When `true`, response bodies stay base64-encoded in replay output
 
 **JMS Solace config keys:**
 - `config.jms.broker_url`: Solace broker URL, for example `tcps://broker.example.com:55443`
@@ -601,6 +636,9 @@ Emits JSON messages for all test events:
 ```
 
 ### Actions Section
+
+**Java-over-HTTP action note:**
+- Use normal HTTP-style request actions with `protocol: "java_http"`, but keep request bodies as opaque base64-encoded serialized bytes when using the current MVP codec.
 
 ```json
 {

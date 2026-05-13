@@ -8,6 +8,7 @@ func buildProtoConfig(script *dsl.Script) map[string]any {
 	}
 
 	httpCfg := script.Config.HTTP
+	javaHTTPCfg := script.Config.JavaHTTP
 	soapCfg := script.Config.SOAP
 
 	// Timeouts
@@ -56,6 +57,36 @@ func buildProtoConfig(script *dsl.Script) map[string]any {
 	}
 	if len(httpCfg.DefaultHeaders) > 0 {
 		cfg["default_headers"] = httpCfg.DefaultHeaders
+	}
+	if javaHTTPCfg.Codec != "" {
+		cfg["java_http_codec"] = javaHTTPCfg.Codec
+	}
+	if javaHTTPCfg.HelperMode != "" {
+		cfg["java_http_helper_mode"] = javaHTTPCfg.HelperMode
+	}
+	if javaHTTPCfg.ContentType != "" {
+		cfg["java_http_content_type"] = javaHTTPCfg.ContentType
+	}
+	if javaHTTPCfg.Accept != "" {
+		cfg["java_http_accept"] = javaHTTPCfg.Accept
+	}
+	if javaHTTPCfg.BodyEncoding != "" {
+		cfg["java_http_body_encoding"] = javaHTTPCfg.BodyEncoding
+	}
+	if javaHTTPCfg.ObjectSchema != "" {
+		cfg["java_http_object_schema"] = javaHTTPCfg.ObjectSchema
+	}
+	if len(javaHTTPCfg.RequestMapping) > 0 {
+		cfg["java_http_request_mapping"] = javaHTTPCfg.RequestMapping
+	}
+	if len(javaHTTPCfg.ResponseMapping) > 0 {
+		cfg["java_http_response_mapping"] = javaHTTPCfg.ResponseMapping
+	}
+	if javaHTTPCfg.ExtractorType != "" {
+		cfg["java_http_extractor_type"] = javaHTTPCfg.ExtractorType
+	}
+	if javaHTTPCfg.PreserveBinaryResult {
+		cfg["java_http_preserve_binary_result"] = true
 	}
 	if soapCfg.Version != "" {
 		cfg["soap_version"] = soapCfg.Version

@@ -16,7 +16,7 @@ The project is organized to support both direct local runs and controller-manage
 
 - **Goroutine-based VUsers**: 1 VUser = 1 goroutine (~2–4 KB stack) for extreme concurrency
 - **Zero-lock metrics**: Buffered channels (cap 10,000) in hot path; metrics aggregated downstream
-- **Protocol plugins**: HTTP/1.1, HTTP/2, JMS (Solace, IBM MQ) — compiled-in, not runtime-loadable
+- **Protocol plugins**: HTTP/1.1, HTTP/2, SOAP, Java-over-HTTP (bounded codec MVP), JMS (Solace, IBM MQ) — compiled-in, not runtime-loadable
 - **JSON DSL**: Human-readable test scripts with template variables and data sources
 - **Vendor-neutral telemetry**: OpenTelemetry native; exportable to Prometheus, Dynatrace, ELK
 - **Streaming percentiles**: T-digest for accurate p95/p99 computation without storing all samples
@@ -29,7 +29,7 @@ The project is organized to support both direct local runs and controller-manage
 | `cmd/stormctl` | CLI for direct script execution (no controller needed) |
 | `cmd/generator` | Distributed load generator (Kubernetes StatefulSet pod) |
 | `pkg/engine` | VUser goroutine engine, pacing, metrics, lifecycle |
-| `pkg/protocol` | Protocol interface; HTTP, JMS implementations |
+| `pkg/protocol` | Protocol interface; HTTP, SOAP, Java-over-HTTP, JMS implementations |
 | `pkg/dsl` | Script parser and runtime structures |
 | `pkg/api` | REST handlers, WebSocket hub, test runner |
 | `dashboard` | React 18 + TypeScript + Recharts SPA (compiles to `pkg/api/static/`) |
@@ -204,6 +204,9 @@ GET    /api/v1/scripts/{id}             — Get script
 PUT    /api/v1/scripts/{id}             — Update script
 DELETE /api/v1/scripts/{id}             — Delete script
 POST   /api/v1/scripts/{id}/validate    — Validate script
+POST   /api/v1/scripts/import/sample    — Build a script from raw HTTP, cURL, REST JSON, or HAR samples
+POST   /api/v1/scripts/import/loadrunner — Convert a LoadRunner archive to DSL
+POST   /api/v1/scripts/import/jmeter/validate — Validate a JMeter import draft
 ```
 
 **System:**
@@ -256,10 +259,15 @@ Scripts are JSON with these sections:
 **Features:**
 - **Template variables**: `{{env.VAR}}`, `{{data.source.column}}`, `{{param.name}}`, `{{var.name}}`, `{{fn.uuid()}}`
 - **Named parameters**: random number, date/time, timestamp, counter, file/list, UUID, and random string generators with `once`, `each_iteration`, and `each_occurrence` update modes
+- **Protocol surfaces**: `http`, `soap`, `java_http`, `browser`, and `jms-solace` authoring paths in the dashboard
 - **Extractors**: Pull values from responses for use in subsequent requests
 - **Assertions**: Validate response status, headers, body content
 - **Think time**: Configurable delays between actions (fixed, random, gaussian)
 - **Data sources**: CSV or DAT for row-based data-driven testing
+
+**Java-over-HTTP MVP:**
+- `protocol: "java_http"` reuses the HTTP transport with a bounded `java_serialized_object_base64` codec.
+- Dashboard imports for Java-over-HTTP currently accept raw HTTP and cURL samples whose opaque request bodies are already base64-encoded serialized Java bytes.
 
 See [API_AND_DSL_REFERENCE.md](API_AND_DSL_REFERENCE.md) for complete DSL syntax.
 
@@ -273,7 +281,7 @@ cmd/
 
 pkg/
   engine/            # Core VUser engine, pacing, metrics
-  protocol/          # Protocol interface + HTTP/JMS implementations
+  protocol/          # Protocol interface + HTTP/SOAP/Java-over-HTTP/JMS implementations
   dsl/              # Script parser and types
   api/              # REST handlers, WebSocket, test runner
   controller/       # Test orchestration logic
@@ -342,7 +350,7 @@ make test-cover
 
 - ✅ Controller + dashboard fully functional
 - ✅ Local engine (stormctl) working
-- ✅ HTTP protocol (1.1, 2.0) complete
+- ✅ HTTP protocol family complete (HTTP, SOAP, Java-over-HTTP MVP)
 - ✅ DSL parser and templating
 - ✅ Real-time metrics and WebSocket streaming
 - 🟡 Distributed generator (Kubernetes integration phase)
