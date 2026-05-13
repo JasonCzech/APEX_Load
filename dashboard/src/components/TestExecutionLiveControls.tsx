@@ -1,6 +1,6 @@
 import { Area, AreaChart, CartesianGrid, Legend, Line, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 
-import { TestSummary } from '../types'
+import { TestGroup, TestSummary } from '../types'
 import { formatTimeLong } from '../utils/timeUtils'
 
 interface LiveControlPreview {
@@ -54,7 +54,7 @@ export default function TestExecutionLiveControls({
           <div className="live-controls-layout">
             <div className="control-group control-group-form">
               <h4 className="control-title">VUser Scaling</h4>
-              {(test.groups || []).map((group: any) => (
+              {(test.groups || []).map((group: TestGroup) => (
                 <div key={group.name} className="vuser-control-row">
                   <span className="control-label">{group.name}</span>
                   <span className="control-current">Current: {group.vusers}</span>

@@ -43,9 +43,9 @@ export interface ScenarioScriptDetail {
       }
     }
     data_sources?: Array<{ name?: string; type?: string; strategy?: string }>
-    init?: any[]
-    actions?: any[]
-    teardown?: any[]
+    init?: unknown[]
+    actions?: unknown[]
+    teardown?: unknown[]
   }
 }
 

@@ -22,6 +22,7 @@ import TestExecutionStatusPanels from './TestExecutionStatusPanels'
 import TestExecutionSummary from './TestExecutionSummary'
 import { parseDurationToSeconds, formatTimeLong } from '../utils/timeUtils'
 import { downloadBlob } from '../utils/fileUtils'
+import { getErrorMessage } from '../utils/errorUtils'
 import './TestExecution.css'
 
 const GROUP_COLORS = [
@@ -108,8 +109,8 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
           setStartCapacityConflict(null)
           setStartFeedback('')
         }
-      } catch (e: any) {
-        setError(e.message)
+      } catch (error: unknown) {
+        setError(getErrorMessage(error, 'Unable to load test execution details'))
       }
     }
 
@@ -192,9 +193,9 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
         }))
         if (cancelled) return
         setScriptDetails(Object.fromEntries(results))
-      } catch (e: any) {
+      } catch (error: unknown) {
         if (cancelled) return
-        setScriptDetailsError(e.message || 'Unable to load script details')
+        setScriptDetailsError(getErrorMessage(error, 'Unable to load script details'))
       } finally {
         if (!cancelled) setScriptDetailsLoading(false)
       }
@@ -232,10 +233,10 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
         const actionNames = Object.keys(report.by_action || {})
         setSelectedArchiveAction((current) => current || actionNames[0] || '')
         setArchiveTransactionsOffset(0)
-      } catch (e: any) {
+      } catch (error: unknown) {
         if (cancelled) return
         setArchiveReport(null)
-        setArchiveError(e.message || 'Unable to load archive report')
+        setArchiveError(getErrorMessage(error, 'Unable to load archive report'))
       } finally {
         if (!cancelled) setArchiveLoading(false)
       }
@@ -271,11 +272,11 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
           setArchiveTransactionsTotal(response.total || 0)
           setExpandedArchiveEvent(null)
         }
-      } catch (e: any) {
+      } catch (error: unknown) {
         if (!cancelled) {
           setArchiveTransactions([])
           setArchiveTransactionsTotal(0)
-          setArchiveError(e.message || 'Unable to load archive transactions')
+          setArchiveError(getErrorMessage(error, 'Unable to load archive transactions'))
         }
       } finally {
         if (!cancelled) setArchiveTransactionsLoading(false)
@@ -296,7 +297,7 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
   useEffect(() => {
     if (test?.groups && Object.keys(vuserTargets).length === 0) {
       const targets: Record<string, number> = {}
-      test.groups.forEach((g: any) => { targets[g.name] = g.vusers })
+      test.groups.forEach((group) => { targets[group.name] = group.vusers })
       setVuserTargets(targets)
       setDurationInput(test.duration || '')
     }
@@ -309,8 +310,8 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
       await api.scaleVUsers(testId, groupName, target)
       setControlFeedback(`Scaled ${groupName} to ${target} VUsers`)
       setTimeout(() => setControlFeedback(''), 3000)
-    } catch (e: any) {
-      setControlFeedback(`Error: ${e.message}`)
+    } catch (error: unknown) {
+      setControlFeedback(`Error: ${getErrorMessage(error, 'Unable to scale VUsers')}`)
     }
   }, [api, testId, vuserTargets])
 
@@ -320,43 +321,43 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
       await api.adjustDuration(testId, durationInput)
       setControlFeedback(`Duration adjusted to ${durationInput}`)
       setTimeout(() => setControlFeedback(''), 3000)
-    } catch (e: any) {
-      setControlFeedback(`Error: ${e.message}`)
+    } catch (error: unknown) {
+      setControlFeedback(`Error: ${getErrorMessage(error, 'Unable to adjust duration')}`)
     }
   }, [api, testId, durationInput])
   
   // Memoize the mapped backend history to avoid re-mapping it on every WebSocket update
   const mappedBackendHistory = useMemo(() => {
     if (!test?.history) return []
-    return (test.history as any[]).map((m: any) => {
+    return test.history.map((metric) => {
       const p: MetricsHistoryPoint = {
-        time: new Date(m.timestamp).toLocaleTimeString(),
-        vusers: m.active_vusers,
-        tps: m.tps,
-        avgMs: m.avg_response_ms,
-        errorPct: m.error_pct || 0,
-        p50: m.p50_ms,
-        p90: m.p90_ms,
-        p99: m.p99_ms,
-        cpuProcess: m.resources?.cpu_process_pct,
-        cpuFree: m.resources?.cpu_free_pct,
-        memProcess: m.resources?.mem_process_mb,
-        memFree: m.resources?.mem_free_mb,
-        netSent: m.resources?.net_sent_kbps,
-        netRecv: m.resources?.net_recv_kbps,
-        diskRead: m.resources?.disk_read_kbps,
-        diskWrite: m.resources?.disk_write_kbps,
+        time: new Date(metric.timestamp).toLocaleTimeString(),
+        vusers: metric.active_vusers,
+        tps: metric.tps,
+        avgMs: metric.avg_response_ms,
+        errorPct: metric.error_pct || 0,
+        p50: metric.p50_ms,
+        p90: metric.p90_ms,
+        p99: metric.p99_ms,
+        cpuProcess: metric.resources?.cpu_process_pct,
+        cpuFree: metric.resources?.cpu_free_pct,
+        memProcess: metric.resources?.mem_process_mb,
+        memFree: metric.resources?.mem_free_mb,
+        netSent: metric.resources?.net_sent_kbps,
+        netRecv: metric.resources?.net_recv_kbps,
+        diskRead: metric.resources?.disk_read_kbps,
+        diskWrite: metric.resources?.disk_write_kbps,
       }
-      if (m.groups) {
-        Object.entries(m.groups).forEach(([name, gm]: [string, any]) => {
-          p[`${name}_tps`] = gm.tps
-          p[`${name}_avgMs`] = gm.avg_response_ms
-          p[`${name}_vusers`] = gm.vusers
+      if (metric.groups) {
+        Object.entries(metric.groups).forEach(([name, groupMetric]) => {
+          p[`${name}_tps`] = groupMetric.tps
+          p[`${name}_avgMs`] = groupMetric.avg_response_ms
+          p[`${name}_vusers`] = groupMetric.vusers
         })
       }
-      if (m.latency?.targets) {
-        m.latency.targets.forEach((t: any) => {
-          p[`latency_${t.name}`] = t.latency_ms
+      if (metric.latency?.targets) {
+        metric.latency.targets.forEach((target) => {
+          p[`latency_${target.name}`] = target.latency_ms
         })
       }
       return p
@@ -647,8 +648,8 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
     try {
       const blob = await api.downloadTestArchive(test.id)
       downloadBlob(blob, `${test.name.replace(/\s+/g, '-').toLowerCase()}-${test.id}.zip`)
-    } catch (e: any) {
-      setArchiveError(e.message || 'Unable to download archive bundle')
+    } catch (error: unknown) {
+      setArchiveError(getErrorMessage(error, 'Unable to download archive bundle'))
     }
   }, [api, test])
 
@@ -657,8 +658,8 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
     try {
       const blob = await api.downloadTestArchiveArtifact(test.id, artifactName)
       downloadBlob(blob, `${test.name.replace(/\s+/g, '-').toLowerCase()}-${test.id}-${artifactName}`)
-    } catch (e: any) {
-      setArchiveError(e.message || `Unable to download ${artifactName}`)
+    } catch (error: unknown) {
+      setArchiveError(getErrorMessage(error, `Unable to download ${artifactName}`))
     }
   }, [api, test])
 
@@ -667,13 +668,16 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
     try {
       await api.startTest(testId, override ? { override_capacity_shortfall: true } : undefined)
       setStartCapacityConflict(null)
-    } catch (e: any) {
-      if (e instanceof ApiError && e.code === 'capacity_shortfall') {
-        setStartCapacityConflict(e.payload?.capacity_advisory || test?.capacity_advisory || null)
-        setStartFeedback(e.message || 'Capacity advisory requires an explicit override before starting.')
+    } catch (error: unknown) {
+      if (error instanceof ApiError && error.code === 'capacity_shortfall') {
+        const capacityAdvisory = typeof error.payload === 'object' && error.payload !== null && 'capacity_advisory' in error.payload
+          ? (error.payload as { capacity_advisory?: CapacityAdvisory }).capacity_advisory
+          : undefined
+        setStartCapacityConflict(capacityAdvisory || test?.capacity_advisory || null)
+        setStartFeedback(getErrorMessage(error, 'Capacity advisory requires an explicit override before starting.'))
         return
       }
-      setStartFeedback(e.message || 'Unable to start test')
+      setStartFeedback(getErrorMessage(error, 'Unable to start test'))
     }
   }, [api, test?.capacity_advisory, testId])
   const handlePause = useCallback(async () => {
@@ -682,8 +686,8 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
       setControlFeedback('Test paused')
       setTest(prev => prev ? { ...prev, status: 'PAUSED' } : null)
       setTimeout(() => setControlFeedback(''), 3000)
-    } catch (e: any) {
-      setControlFeedback(`Error pausing: ${e.message}`)
+    } catch (error: unknown) {
+      setControlFeedback(`Error pausing: ${getErrorMessage(error, 'Unable to pause test')}`)
     }
   }, [api, testId])
 
@@ -693,8 +697,8 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
       setControlFeedback('Test resumed')
       setTest(prev => prev ? { ...prev, status: 'RUNNING' } : null)
       setTimeout(() => setControlFeedback(''), 3000)
-    } catch (e: any) {
-      setControlFeedback(`Error resuming: ${e.message}`)
+    } catch (error: unknown) {
+      setControlFeedback(`Error resuming: ${getErrorMessage(error, 'Unable to resume test')}`)
     }
   }, [api, testId])
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type DragEvent } from 'react'
+import { useEffect, useMemo, useState, type ComponentProps, type DragEvent } from 'react'
 import {
   Area,
   AreaChart,
@@ -13,6 +13,10 @@ import {
   YAxis,
 } from 'recharts'
 
+import { MetricsHistoryPoint } from '../types'
+
+type ChartDomain = ComponentProps<typeof YAxis>['domain']
+
 interface ChartConfig {
   id: string
   title: string
@@ -21,11 +25,11 @@ interface ChartConfig {
   color?: string
   totalKey?: string
   keys?: Array<{ k: string; n: string; c: string }>
-  domain?: [number, string] | [number, number]
+  domain?: ChartDomain
 }
 
 interface Props {
-  filteredData: any[]
+  filteredData: MetricsHistoryPoint[]
   expandedChart: string | null
   onExpandedChartChange: (value: string | null) => void
   onChartMouseDown: (activeLabel?: string | number) => void
@@ -259,7 +263,7 @@ export default function TestExecutionCharts({
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 <XAxis dataKey="time" stroke="var(--text-muted)" fontSize={11} />
-                <YAxis stroke="var(--text-muted)" fontSize={11} domain={chart.domain as any} />
+                <YAxis stroke="var(--text-muted)" fontSize={11} domain={chart.domain} />
                 <Tooltip
                   contentStyle={{ background: 'rgba(33, 36, 47, 0.2)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.2)' }}
                   labelStyle={{ color: 'var(--text-primary)', fontWeight: 700, marginBottom: 4 }}
@@ -332,7 +336,7 @@ export default function TestExecutionCharts({
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 <XAxis dataKey="time" stroke="var(--text-muted)" fontSize={11} />
-                <YAxis stroke="var(--text-muted)" fontSize={11} domain={chart.domain as any} />
+                <YAxis stroke="var(--text-muted)" fontSize={11} domain={chart.domain} />
                 <Tooltip
                   contentStyle={{ background: 'rgba(33, 36, 47, 0.2)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.2)' }}
                   labelStyle={{ color: 'var(--text-primary)', fontWeight: 700, marginBottom: 4 }}

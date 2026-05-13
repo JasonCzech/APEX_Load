@@ -167,6 +167,24 @@ The recommended order is:
 
 That order minimizes churn and avoids rebuilding the UI around unstable backend behavior.
 
+## Implementation Status
+
+### Completed
+- Phase 1 validation unification is in place through the shared DSL validator.
+- Phase 2 backend import envelopes are standardized across LoadRunner, JMeter, sample import, and recorder conversion.
+- The shared frontend import model and review/save contracts are in place for the active import and recorder paths.
+- Shared script, scenario, and dashboard API hook typing has been tightened across the current live authoring surfaces.
+
+### In Progress
+- Phase 3 frontend orchestration is partially consolidated through shared import normalization, shared error handling, and typed recorder/import flows, but the script hub still owns route-level orchestration.
+- Phase 4 scenario assembly cleanup has started from the reusable test-creation surface. `CreateTestModal` now uses typed payload, chart, and callback contracts instead of local `any` seams.
+- The execution surface now shares typed history, archive summary, live-control, and chart contracts instead of relying on local `any` casts in the main `TestExecution` path.
+
+### Remaining High-Value Work
+- Finish the scenario assembly path by tightening `TestExecution`, `CreateTestModal` adjacencies, and shared execution/result models.
+- Remove remaining dashboard duplicate files and temporary artifacts only after route and parity checks are complete.
+- Replace residual broad `history` and chart typing in dashboard execution/results views with explicit shared models.
+
 ## File-Level Targets
 
 ### Live Dashboard Entry Points

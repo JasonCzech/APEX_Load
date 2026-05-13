@@ -1,12 +1,13 @@
 import { useEffect, useReducer, useState } from 'react'
 import { useApi } from '../hooks/useApi'
-import { DraftCapacityEstimate, GoalConfig, ScenarioDraft, ScenarioMode, StoredScript } from '../types'
+import { DraftCapacityEstimate, GoalConfig, ScenarioDraft, ScenarioMode, StoredScript, TestSummary } from '../types'
 import './CreateTestModal.css'
 import { parseDurationToSeconds } from '../utils/timeUtils'
 import CreateTestCapacityPreview from './CreateTestCapacityPreview'
 import CreateTestGoalSettings from './CreateTestGoalSettings'
 import CreateTestGroupsEditor from './CreateTestGroupsEditor'
 import CreateTestRuntimeOverrides from './CreateTestRuntimeOverrides'
+import { getErrorMessage } from '../utils/errorUtils'
 
 
 interface GroupEntry {
@@ -23,8 +24,47 @@ interface Props {
   projectId?: string
   folderId?: string | null
   onClose: () => void
-  onCreated: (test: any) => void
+  onCreated: (test: TestSummary) => void
   initialScenario?: ScenarioDraft
+}
+
+type LoadProfilePoint = {
+  time: number
+  total: number
+} & Record<`group${number}`, number>
+
+type CreateTestPayloadGroup = {
+  name?: string
+  script_id: string
+  vusers: number
+  ramp_up?: string
+  ramp_down?: string
+  initialization: GroupEntry['initialization']
+}
+
+type CreateTestPayload = {
+  name?: string
+  duration: string
+  project_id?: string
+  folder_id?: string | null
+  scenario_mode: ScenarioMode
+  script_shakeout: boolean
+  resource_baseline: boolean
+  script_id?: string
+  vusers?: number
+  ramp_up?: string
+  ramp_down?: string
+  initialization?: GroupEntry['initialization']
+  groups?: CreateTestPayloadGroup[]
+  goal_config?: GoalConfig
+  runtime_settings?: {
+    iterations?: number
+    log_level?: string
+    auto_transactions?: string
+    error_handling?: {
+      snapshot_on_error: true
+    }
+  }
 }
 
 interface RuntimeSettingsState {
@@ -205,11 +245,11 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
     const totalSec = preBaseline + durSec + maxRampDown + postBaseline
     if (totalSec === 0) return []
 
-    const points: any[] = []
+    const points: LoadProfilePoint[] = []
     const step = Math.max(1, Math.floor(totalSec / 30)) // More points for clarity
 
     for (let t = 0; t <= totalSec; t += step) {
-      const point: any = { time: t, total: 0 }
+      const point: LoadProfilePoint = { time: t, total: 0 }
       groups.forEach((g, idx) => {
         const gVUsers = g.vusers
         const gRampUp = parseDurationToSeconds(g.rampUp)
@@ -236,20 +276,17 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
     
     // Ensure last point
     if (points[points.length - 1].time < totalSec) {
-        const last: any = { time: totalSec, total: 0 }
+        const last: LoadProfilePoint = { time: totalSec, total: 0 }
         groups.forEach((_, idx) => last[`group${idx}`] = 0)
         points.push(last)
     }
 
     return points
   })()
-  const buildPayload = () => {
-    const payload: any = { name: name || undefined, duration }
+  const buildPayload = (): CreateTestPayload => {
+    const payload: CreateTestPayload = { name: name || undefined, duration, scenario_mode: scenarioMode, script_shakeout: scriptShakeout, resource_baseline: resourceBaseline }
     if (projectId) payload.project_id = projectId
     if (folderId !== undefined) payload.folder_id = folderId
-    payload.scenario_mode = scenarioMode
-    payload.script_shakeout = scriptShakeout
-    payload.resource_baseline = resourceBaseline
 
     if (groups.length === 1 && !groups[0].name) {
       payload.script_id = groups[0].scriptId
@@ -310,10 +347,10 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
         if (!cancelled) {
           setDraftEstimate(estimate)
         }
-      } catch (err: any) {
+      } catch (error: unknown) {
         if (!cancelled) {
           setDraftEstimate(null)
-          setEstimateError(err.message || 'Unable to estimate load generator requirements')
+          setEstimateError(getErrorMessage(error, 'Unable to estimate load generator requirements'))
         }
       } finally {
         if (!cancelled) {
@@ -343,8 +380,8 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
 
       const test = await api.createTest(payload)
       onCreated(test)
-    } catch (err: any) {
-      setError(err.message)
+    } catch (error: unknown) {
+      setError(getErrorMessage(error, 'Failed to create scenario'))
     } finally {
       setLoading(false)
     }

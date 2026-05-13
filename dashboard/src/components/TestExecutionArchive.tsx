@@ -1,6 +1,6 @@
 import { Fragment } from 'react'
 
-import { RunArchiveReport, TestSummary, TransactionEvent } from '../types'
+import { RunArchiveActionStats, RunArchiveReport, TestSummary, TransactionEvent } from '../types'
 
 interface Props {
   hasArchive: boolean
@@ -9,7 +9,7 @@ interface Props {
   archiveLoading: boolean
   archiveReport: RunArchiveReport | null
   onDownloadArchiveArtifact: (artifactName: string) => void
-  archiveActionEntries: Array<[string, any]>
+  archiveActionEntries: Array<[string, RunArchiveActionStats]>
   selectedArchiveAction: string
   onSelectedArchiveActionChange: (value: string) => void
   archiveGroups: string[]

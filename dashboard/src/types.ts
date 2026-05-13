@@ -110,7 +110,7 @@ export interface TestSummary {
   ended_at?: string
   live_metrics?: LiveMetrics
   error?: string
-  history?: any[]
+  history?: LiveMetrics[]
   start_time?: string
   runtime_settings?: RuntimeSettingsOverride
   scenario_mode?: ScenarioMode
