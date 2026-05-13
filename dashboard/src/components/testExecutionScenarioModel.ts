@@ -53,6 +53,7 @@ export interface QueuedScenarioPreview {
   totalVUsers: number
   totalSeconds: number
   steadySeconds: number
+  startDelaySeconds: number
   preBaselineSeconds: number
   postBaselineSeconds: number
 }
@@ -73,13 +74,15 @@ export function buildQueuedScenarioPreview(test: TestSummary | null | undefined)
       totalVUsers: 0,
       totalSeconds: 0,
       steadySeconds: 0,
+      startDelaySeconds: 0,
       preBaselineSeconds: 0,
       postBaselineSeconds: 0,
     }
   }
 
   const steadySeconds = parseDurationToSeconds(test.duration)
-  const preBaselineSeconds = test.resource_baseline ? RESOURCE_BASELINE_SECONDS : 0
+  const startDelaySeconds = parseDurationToSeconds(test.start_delay)
+  const preBaselineSeconds = startDelaySeconds + (test.resource_baseline ? RESOURCE_BASELINE_SECONDS : 0)
   const postBaselineSeconds = test.resource_baseline ? RESOURCE_BASELINE_SECONDS : 0
   let maxRampDown = 0
   test.groups.forEach((group) => {
@@ -94,6 +97,7 @@ export function buildQueuedScenarioPreview(test: TestSummary | null | undefined)
       totalVUsers: test.total_vusers,
       totalSeconds: 0,
       steadySeconds,
+      startDelaySeconds,
       preBaselineSeconds,
       postBaselineSeconds,
     }
@@ -142,6 +146,7 @@ export function buildQueuedScenarioPreview(test: TestSummary | null | undefined)
     totalVUsers: test.total_vusers,
     totalSeconds,
     steadySeconds,
+    startDelaySeconds,
     preBaselineSeconds,
     postBaselineSeconds,
   }

@@ -25,6 +25,7 @@ function PreviewHarness({ test }: { test: unknown }) {
       <span data-testid="error">{model.scriptDetailsError || 'none'}</span>
       <span data-testid="preview-points">{model.queuedScenarioPreview.points.length}</span>
       <span data-testid="preview-total">{model.queuedScenarioPreview.totalSeconds}</span>
+      <span data-testid="preview-delay">{model.queuedScenarioPreview.startDelaySeconds}</span>
       <span data-testid="rows">{model.queuedScenarioRows.length}</span>
       <span data-testid="actions">{model.queuedScenarioRows[0]?.actionCount ?? 0}</span>
     </div>
@@ -68,6 +69,7 @@ describe('useExecutionScenarioPreviewModel', () => {
             status: 'QUEUED',
             total_vusers: 20,
             duration: '5m',
+            start_delay: '45s',
             created_at: '2026-05-12T20:00:00Z',
             groups: [
               {
@@ -95,8 +97,9 @@ describe('useExecutionScenarioPreviewModel', () => {
     expect(apiMock.getScript).toHaveBeenCalledTimes(1)
     expect(readTestId('loading')).toBe('idle')
     expect(readTestId('error')).toBe('none')
-    expect(readTestId('preview-points')).toBe('31')
-    expect(readTestId('preview-total')).toBe('300')
+    expect(readTestId('preview-points')).toBe('33')
+    expect(readTestId('preview-total')).toBe('345')
+    expect(readTestId('preview-delay')).toBe('45')
     expect(readTestId('rows')).toBe('2')
     expect(readTestId('actions')).toBe('2')
   })

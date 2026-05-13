@@ -175,6 +175,10 @@ export default function TestExecutionScenarioPreview({
                 <span className="scenario-preview-stat-label">Baseline</span>
                 <span className="scenario-preview-stat-value">{test.resource_baseline ? '5m pre/post' : 'Disabled'}</span>
               </div>
+              <div className="scenario-preview-stat">
+                <span className="scenario-preview-stat-label">Start Delay</span>
+                <span className="scenario-preview-stat-value">{test.start_delay || 'Disabled'}</span>
+              </div>
             </div>
           </div>
 
@@ -321,7 +325,7 @@ export default function TestExecutionScenarioPreview({
               </AreaChart>
             </ResponsiveContainer>
             <div className="scenario-preview-caption">
-              Ramp-up and ramp-down are derived from each group’s saved configuration. The blue span marks steady-state load, and the amber spans mark the optional zero-load resource baseline windows.
+              Ramp-up and ramp-down are derived from each group's saved configuration. The blue span marks steady-state load, and the amber spans mark the zero-load start delay and optional resource baseline windows.
             </div>
           </div>
 
@@ -329,6 +333,10 @@ export default function TestExecutionScenarioPreview({
             <div className="scenario-setting-card">
               <span className="scenario-setting-label">Duration</span>
               <span className="scenario-setting-value">{test.duration}</span>
+            </div>
+            <div className="scenario-setting-card">
+              <span className="scenario-setting-label">Start Delay</span>
+              <span className="scenario-setting-value">{test.start_delay || 'Disabled'}</span>
             </div>
             <div className="scenario-setting-card">
               <span className="scenario-setting-label">Iterations</span>

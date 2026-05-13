@@ -58,6 +58,7 @@ describe('TestExecutionScenarioPreview', () => {
             status: 'QUEUED',
             total_vusers: 10,
             duration: '5m',
+            start_delay: '30s',
             created_at: '2026-05-12T20:00:00Z',
             groups: [{
               name: 'Checkout',
@@ -79,6 +80,7 @@ describe('TestExecutionScenarioPreview', () => {
             totalVUsers: 10,
             totalSeconds: 300,
             steadySeconds: 300,
+            startDelaySeconds: 30,
             preBaselineSeconds: 0,
             postBaselineSeconds: 0,
           }}
@@ -119,6 +121,8 @@ describe('TestExecutionScenarioPreview', () => {
 
     expect(summaryRow?.getAttribute('role')).toBe('button')
     expect(editButton).toBeDefined()
+    expect(container.textContent).toContain('Start Delay')
+    expect(container.textContent).toContain('30s')
 
     const nestingWarning = consoleErrorSpy.mock.calls.some(([message]) =>
       typeof message === 'string' && message.includes('validateDOMNesting'),
