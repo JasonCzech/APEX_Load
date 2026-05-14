@@ -225,6 +225,7 @@ interface ActionEditorSelectionState {
 }
 
 interface ActionEditorParameterDraft {
+  actionIndex: number
   start: number
   end: number
   selectedText: string
@@ -641,11 +642,12 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     config: true,
     actions: true,
-    parameters: true,
     runtime: false,
     import: true,
     replay: true,
   })
+  const [isParameterDialogOpen, setIsParameterDialogOpen] = useState(false)
+  const [pendingParameterDraft, setPendingParameterDraft] = useState<ActionEditorParameterDraft | null>(null)
   const [openDataEditor, setOpenDataEditor] = useState<number | null>(null)
   const [dataEditorMode, setDataEditorMode] = useState<Record<number, 'grid' | 'raw'>>({})
   const [dataSourceHistory, setDataSourceHistory] = useState<Record<number, DataSourceHistory>>({})
@@ -672,6 +674,22 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
   const importSummary = getImportSummary(importMetadata)
 
   const toggleSection = (id: string) => setOpenSections(prev => ({ ...prev, [id]: !prev[id] }))
+
+  const closeParameterDialog = () => {
+    setIsParameterDialogOpen(false)
+    setPendingParameterDraft(null)
+  }
+
+  useEffect(() => {
+    if (!isParameterDialogOpen) return
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeParameterDialog()
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [isParameterDialogOpen])
 
   const buildAutoParameterCandidates = (current: ScriptData): ParameterCandidate[] => {
     const buckets = new Map<string, { keyHint: string; value: string; occurrences: CandidateOccurrence[] }>()
@@ -1637,10 +1655,34 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
       return { ...prev, parameters }
     })
 
-    setOpenSections(prev => ({ ...prev, parameters: true }))
+    setIsParameterDialogOpen(true)
     setError('')
     setSuccess(existingName ? `Updated parameter ${resolvedName}.` : `Created parameter ${resolvedName}.`)
     return resolvedName
+  }
+
+  const beginParameterEditFromActionEditor = (draft: ActionEditorParameterDraft) => {
+    setPendingParameterDraft(draft)
+    setIsParameterDialogOpen(true)
+    setError('')
+  }
+
+  const applyPendingParameterDraft = () => {
+    if (!pendingParameterDraft) return
+
+    const name = upsertParameterFromActionEditor({
+      selectedText: pendingParameterDraft.seedValue,
+      requestedName: pendingParameterDraft.requestedName,
+      existingName: pendingParameterDraft.existingName,
+    })
+    const action = script.actions[pendingParameterDraft.actionIndex]
+    if (action) {
+      const body = action.body || ''
+      const replacement = `{{param.${name}}}`
+      const nextBody = `${body.slice(0, pendingParameterDraft.start)}${replacement}${body.slice(pendingParameterDraft.end)}`
+      updateAction(pendingParameterDraft.actionIndex, 'body', nextBody)
+    }
+    setPendingParameterDraft(null)
   }
 
   const removeDataSource = (idx: number) => {
@@ -3081,7 +3123,10 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
               <div className="actions-sidebar">
                 <div className="actions-sidebar-header">
                   <h3 className="panel-title" style={{ fontSize: 11 }}>Action List</h3>
-                  <button className="btn btn-sm btn-accent" onClick={addAction}>+ Add</button>
+                  <div className="actions-sidebar-controls">
+                    <button className="btn btn-sm btn-ghost" onClick={() => setIsParameterDialogOpen(true)}>Parameter Data</button>
+                    <button className="btn btn-sm btn-accent" onClick={addAction}>+ Add</button>
+                  </div>
                 </div>
                 <div className="action-list">
                   {script.actions.map((a, i) => (
@@ -3121,7 +3166,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
                     onAddMetadata={addMetadata}
                     onUpdateMetadata={updateMetadata}
                     onRemoveMetadata={removeMetadata}
-                    onUpsertParameter={upsertParameterFromActionEditor}
+                    onBeginParameterEdit={beginParameterEditFromActionEditor}
                     methodColor={methodColor}
                     isBrowserScript={isBrowserScript}
                     isJmsScript={isJmsScript}
@@ -3137,16 +3182,59 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
             </div>
           </div>
 
-          <div className={`config-panel ${openSections['parameters'] ? 'open' : ''}`} style={{ padding: 0 }}>
-            <button className="panel-header-toggle" onClick={() => toggleSection('parameters')} style={{ padding: '16px 20px', borderBottom: openSections['parameters'] ? '1px solid var(--border)' : 'none' }}>
-              <div className="panel-title-row" style={{ marginBottom: 0 }}>
-                <h3 className="panel-title">Parameter Data ({script.data_sources?.length || 0})</h3>
-              </div>
-              <span className="chevron">{openSections['parameters'] ? '▾' : '▸'}</span>
-            </button>
-
-            {openSections['parameters'] && (
-              <div className="panel-body" style={{ padding: 20 }}>
+          {isParameterDialogOpen && (
+            <div className="editor-dialog-backdrop" onClick={closeParameterDialog}>
+              <div
+                className="editor-dialog parameter-data-dialog"
+                role="dialog"
+                aria-modal="true"
+                aria-label="Parameter Data"
+                onClick={event => event.stopPropagation()}
+              >
+                <div className="editor-dialog-header">
+                  <div>
+                    <h3 className="panel-title">Parameter Data ({script.data_sources?.length || 0})</h3>
+                    <p className="editor-dialog-subtitle">Manage named parameters and reusable data sources without leaving the action workspace.</p>
+                  </div>
+                  <button className="btn btn-sm btn-ghost" onClick={closeParameterDialog}>Close</button>
+                </div>
+                <div className="editor-dialog-body">
+                {pendingParameterDraft && (
+                  <div className="parameter-draft-panel">
+                    <div className="panel-title-row" style={{ marginBottom: 8 }}>
+                      <div>
+                        <strong style={{ display: 'block', marginBottom: 4 }}>Parameterize Selection</strong>
+                        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>This selection came from the Action List editor. Review it here with the rest of the parameter configuration.</span>
+                      </div>
+                    </div>
+                    <div className="parameter-draft-grid">
+                      <label>
+                        <span>Name</span>
+                        <input
+                          value={pendingParameterDraft.requestedName}
+                          onChange={event => setPendingParameterDraft(prev => (prev ? { ...prev, requestedName: sanitizeVarName(event.target.value) } : prev))}
+                          placeholder="param_name"
+                        />
+                      </label>
+                      <label>
+                        <span>Value</span>
+                        <input
+                          value={pendingParameterDraft.seedValue}
+                          onChange={event => setPendingParameterDraft(prev => (prev ? { ...prev, seedValue: event.target.value } : prev))}
+                          placeholder="Selected value"
+                        />
+                      </label>
+                    </div>
+                    <div className="parameter-draft-actions">
+                      <button type="button" className="btn btn-sm btn-primary" onClick={applyPendingParameterDraft} disabled={!pendingParameterDraft.requestedName.trim()}>
+                        Save To Parameter Data
+                      </button>
+                      <button type="button" className="btn btn-sm btn-ghost" onClick={() => setPendingParameterDraft(null)}>
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
                 <div className="panel-title-row" style={{ marginBottom: 12 }}>
                   <div>
                     <strong style={{ display: 'block', marginBottom: 4 }}>Named Parameters</strong>
@@ -3512,8 +3600,9 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
                     </div>
                   )}
                 </div>
-              )}
+              </div>
             </div>
+          )}
         </div>
       )}
     </div>
@@ -3521,7 +3610,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
 }
 
 /* Sub-component for editing a single action's details */
-function ActionEditor({ action, index, parameters, onUpdate, onAddExtractor, onUpdateExtractor, onRemoveExtractor, onAddAssertion, onUpdateAssertion, onRemoveAssertion, onAddHeader, onUpdateHeader, onRemoveHeader, onAddMetadata, onUpdateMetadata, onRemoveMetadata, onUpsertParameter, methodColor, isBrowserScript, isJmsScript, isSoapScript }: {
+function ActionEditor({ action, index, parameters, onUpdate, onAddExtractor, onUpdateExtractor, onRemoveExtractor, onAddAssertion, onUpdateAssertion, onRemoveAssertion, onAddHeader, onUpdateHeader, onRemoveHeader, onAddMetadata, onUpdateMetadata, onRemoveMetadata, onBeginParameterEdit, methodColor, isBrowserScript, isJmsScript, isSoapScript }: {
   action: Action; index: number
   parameters: ParameterConfig[]
   onUpdate: (i: number, f: keyof Action, v: unknown) => void
@@ -3537,7 +3626,7 @@ function ActionEditor({ action, index, parameters, onUpdate, onAddExtractor, onU
   onAddMetadata: (i: number) => void
   onUpdateMetadata: (ai: number, ok: string, nk: string, v: string) => void
   onRemoveMetadata: (ai: number, k: string) => void
-  onUpsertParameter: (request: ActionEditorParameterRequest) => string
+  onBeginParameterEdit: (draft: ActionEditorParameterDraft) => void
   methodColor: (m: string) => string
   isBrowserScript: boolean
   isJmsScript: boolean
@@ -3551,7 +3640,6 @@ function ActionEditor({ action, index, parameters, onUpdate, onAddExtractor, onU
   const showSelector = isBrowserScript && ['browser_click', 'browser_fill', 'browser_wait', 'browser_screenshot'].includes(action.type)
   const showValue = isBrowserScript && action.type === 'browser_fill'
   const [selectionState, setSelectionState] = useState<ActionEditorSelectionState | null>(null)
-  const [parameterDraft, setParameterDraft] = useState<ActionEditorParameterDraft | null>(null)
 
   useEffect(() => {
     if (!selectionState) return
@@ -3559,8 +3647,6 @@ function ActionEditor({ action, index, parameters, onUpdate, onAddExtractor, onU
     window.addEventListener('click', closeMenu)
     return () => window.removeEventListener('click', closeMenu)
   }, [selectionState])
-
-  const closeParameterEditor = () => setParameterDraft(null)
 
   const detectSelectedParameter = useCallback((selectedText: string): ParameterConfig | null => {
     const match = selectedText.trim().match(/^{{\s*param\.([a-zA-Z0-9_]+)\s*}}$/)
@@ -3581,7 +3667,6 @@ function ActionEditor({ action, index, parameters, onUpdate, onAddExtractor, onU
 
     event.preventDefault()
     const existingParameter = detectSelectedParameter(selectedText)
-    setParameterDraft(null)
     setSelectionState({
       start,
       end,
@@ -3603,7 +3688,8 @@ function ActionEditor({ action, index, parameters, onUpdate, onAddExtractor, onU
     const seedValue = existingParameter?.values?.[0] || selectionState.selectedText
 
     setSelectionState(null)
-    setParameterDraft({
+    onBeginParameterEdit({
+      actionIndex: index,
       start: selectionState.start,
       end: selectionState.end,
       selectedText: selectionState.selectedText,
@@ -3611,21 +3697,7 @@ function ActionEditor({ action, index, parameters, onUpdate, onAddExtractor, onU
       requestedName,
       seedValue,
     })
-  }, [detectSelectedParameter, parameters, selectionState])
-
-  const applyParameterDraft = useCallback(() => {
-    if (!parameterDraft) return
-    const name = onUpsertParameter({
-      selectedText: parameterDraft.seedValue,
-      requestedName: parameterDraft.requestedName,
-      existingName: parameterDraft.existingName,
-    })
-    const replacement = `{{param.${name}}}`
-    const body = action.body || ''
-    const nextBody = `${body.slice(0, parameterDraft.start)}${replacement}${body.slice(parameterDraft.end)}`
-    onUpdate(index, 'body', nextBody)
-    closeParameterEditor()
-  }, [action.body, index, onUpdate, onUpsertParameter, parameterDraft])
+  }, [detectSelectedParameter, index, onBeginParameterEdit, parameters, selectionState])
 
   const targetLabel = isJmsScript
     ? 'Destination'
@@ -3939,36 +4011,6 @@ function ActionEditor({ action, index, parameters, onUpdate, onAddExtractor, onU
               Edit parameter
             </button>
           )}
-        </div>
-      )}
-
-      {parameterDraft && (
-        <div className="action-parameter-editor" onClick={event => event.stopPropagation()}>
-          <div className="action-parameter-editor-title">Parameterize Selection</div>
-          <label>
-            <span>Name</span>
-            <input
-              value={parameterDraft.requestedName}
-              onChange={event => setParameterDraft(prev => (prev ? { ...prev, requestedName: sanitizeVarName(event.target.value) } : prev))}
-              placeholder="param_name"
-            />
-          </label>
-          <label>
-            <span>Value</span>
-            <input
-              value={parameterDraft.seedValue}
-              onChange={event => setParameterDraft(prev => (prev ? { ...prev, seedValue: event.target.value } : prev))}
-              placeholder="Selected value"
-            />
-          </label>
-          <div className="action-parameter-editor-actions">
-            <button type="button" className="btn btn-sm btn-primary" onClick={applyParameterDraft} disabled={!parameterDraft.requestedName.trim()}>
-              Save
-            </button>
-            <button type="button" className="btn btn-sm btn-ghost" onClick={closeParameterEditor}>
-              Cancel
-            </button>
-          </div>
         </div>
       )}
     </div>

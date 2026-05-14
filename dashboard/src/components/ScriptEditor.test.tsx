@@ -86,8 +86,8 @@ describe('ScriptEditor', () => {
     expect(apiMock.getScript).not.toHaveBeenCalled()
     expect(container.textContent).toContain('Action List')
     expect(container.textContent).toContain('Login')
-    expect(container.textContent).toContain('session_id')
-    expect(container.textContent).toContain('Named Parameters')
+    expect(container.textContent).toContain('Parameter Data')
+    expect(container.textContent).not.toContain('Named Parameters')
 
     const nameInput = Array.from(container.querySelectorAll('input')).find(input => input.placeholder === 'My_Test_Script')
     expect(nameInput?.getAttribute('value')).toBe('Checkout Flow')
@@ -95,6 +95,30 @@ describe('ScriptEditor', () => {
     const baseUrlInput = Array.from(container.querySelectorAll('input')).find(input => input.placeholder === 'https://api.example.com')
     expect(baseUrlInput?.getAttribute('value')).toBe('https://api.example.com')
     expect(container.textContent).not.toContain('Protocol')
+  })
+
+  it('opens parameter data in a dialog from the action list header', async () => {
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={initialScript} />)
+    })
+
+    expect(container.querySelector('.editor-dialog')).toBeNull()
+
+    const parameterButton = Array.from(container.querySelectorAll('button')).find(button =>
+      button.textContent?.includes('Parameter Data'),
+    )
+    expect(parameterButton).toBeDefined()
+    if (!parameterButton) {
+      return
+    }
+
+    await act(async () => {
+      parameterButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.querySelector('.parameter-data-dialog')).not.toBeNull()
+    expect(container.textContent).toContain('Named Parameters')
+    expect(container.textContent).toContain('session_id')
   })
 
   it('keeps the protocol selector when editing an existing script', async () => {
@@ -175,11 +199,13 @@ describe('ScriptEditor', () => {
       parameterizeButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    const editorInputs = Array.from(container.querySelectorAll('.action-parameter-editor input')) as HTMLInputElement[]
+    expect(container.querySelector('.parameter-data-dialog')).not.toBeNull()
+
+    const editorInputs = Array.from(container.querySelectorAll('.parameter-draft-panel input')) as HTMLInputElement[]
     expect(editorInputs.length).toBeGreaterThanOrEqual(2)
 
-    const saveButton = Array.from(container.querySelectorAll('.action-parameter-editor button')).find(button =>
-      button.textContent?.includes('Save'),
+    const saveButton = Array.from(container.querySelectorAll('.parameter-draft-panel button')).find(button =>
+      button.textContent?.includes('Save To Parameter Data'),
     )
     expect(saveButton).toBeDefined()
     if (!saveButton) {
