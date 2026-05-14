@@ -82,12 +82,23 @@ describe('MonitoringPage', () => {
     })
 
     expect(container.textContent).toContain('Telemetry Diagnostics')
-    expect(container.textContent).toContain('Checkout: collector dropped 4 metric samples')
-    expect(container.textContent).toContain('collector_drops')
     expect(container.textContent).toContain('danger')
+    expect(container.textContent).toContain('1 danger')
+    expect(container.textContent).toContain('Checkout: collector dropped 4 metric samples')
+    expect(container.textContent).toContain('View details')
+
+    const telemetryButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('View details'))
+    expect(telemetryButton).not.toBeUndefined()
+
+    await act(async () => {
+      telemetryButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.textContent).toContain('collector_drops')
     expect(container.textContent).toContain('error')
     expect(container.textContent).toContain('4/10 errors')
     expect(container.textContent).toContain('payments.example.test')
+    expect(container.textContent).toContain('Close')
   })
 
   it('renders live generator inventory when the controller reports it', async () => {
@@ -122,12 +133,26 @@ describe('MonitoringPage', () => {
     })
 
     expect(container.textContent).toContain('stormrunner-controller-0')
+    expect(container.textContent).toContain('Generators')
+    expect(container.textContent).toContain('1/1 online')
+    expect(container.textContent).toContain('all connected')
+    expect(container.textContent).toContain('400 active VUsers across 1 generator')
+    expect(container.textContent).toContain('9,600')
+
+    const generatorButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('View details'))
+    expect(generatorButton).not.toBeUndefined()
+
+    await act(async () => {
+      generatorButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.textContent).toContain('Generator Inventory')
     expect(container.textContent).toContain('stormrunner-generator-0')
     expect(container.textContent).toContain('connected')
-    expect(container.textContent).toContain('9,600')
     expect(container.textContent).toContain('96 MB')
     expect(container.textContent).toContain('22.5%')
     expect(container.textContent).toContain('2 cores')
     expect(container.textContent).toContain('2 GB')
+    expect(container.textContent).toContain('Close')
   })
 })

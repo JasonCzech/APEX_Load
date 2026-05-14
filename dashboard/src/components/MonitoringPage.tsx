@@ -14,12 +14,32 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const [health, setHealth] = useState<HealthResponse | null>(null)
   const [inventory, setInventory] = useState<SystemInventoryResponse | null>(null)
   const [tests, setTests] = useState<TestSummary[]>([])
+  const [isTelemetryModalOpen, setIsTelemetryModalOpen] = useState(false)
+  const [isGeneratorsModalOpen, setIsGeneratorsModalOpen] = useState(false)
   const [customizing, setCustomizing] = useState(false)
   const [draggedCardId, setDraggedCardId] = useState<string | null>(null)
   const [cardOrder, setCardOrder] = useState<string[]>(() => readStringArray('stormrunner.monitoring.cardOrder'))
   const [hiddenCardIds, setHiddenCardIds] = useState<string[]>(() => readStringArray('stormrunner.monitoring.hiddenCards'))
   const websocketValueClass = connectionState === 'connected' ? 'text-success' : connectionState === 'disconnected' ? 'text-danger' : ''
   const websocketLabel = connectionState === 'connected' ? 'Connected' : connectionState === 'connecting' ? 'Connecting' : 'Disconnected'
+  const telemetryWarningCount = telemetryDiagnostics.filter(entry => entry.diagnostic.severity === 'warning').length
+  const telemetryDangerCount = telemetryDiagnostics.filter(entry => entry.diagnostic.severity === 'danger').length
+  const telemetryLatestEntry = telemetryDiagnostics[0] ?? null
+  const telemetryHeaderSeverity = telemetryDangerCount > 0 ? 'danger' : telemetryWarningCount > 0 ? 'warning' : 'healthy'
+  const telemetryHeaderLabel = telemetryDangerCount > 0
+    ? `${telemetryDangerCount} danger`
+    : telemetryWarningCount > 0
+      ? `${telemetryWarningCount} warning`
+      : 'healthy'
+  const generators = inventory?.generators ?? []
+  const generatorConnectedCount = generators.filter(generator => generator.status === 'connected').length
+  const generatorIssueCount = generators.length - generatorConnectedCount
+  const generatorAvailableCapacity = generators.reduce((sum, generator) => sum + generator.available_capacity, 0)
+  const generatorActiveVUsers = generators.reduce((sum, generator) => sum + generator.active_vusers, 0)
+  const generatorHeaderSeverity = generatorIssueCount > 0 ? 'warning' : generators.length > 0 ? 'healthy' : 'unknown'
+  const generatorHeaderLabel = generators.length > 0
+    ? `${generatorConnectedCount}/${generators.length} online`
+    : 'no inventory'
 
   const refresh = useCallback(async () => {
     if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
@@ -150,6 +170,11 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
     {
       id: 'telemetry-diagnostics',
       title: 'Telemetry Diagnostics',
+      headerBadge: (
+        <span className={`monitor-header-badge ${telemetryHeaderSeverity}`}>
+          {telemetryHeaderLabel}
+        </span>
+      ),
       icon: (
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
@@ -162,37 +187,34 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
           {telemetryDiagnostics.length === 0 ? (
             <p className="monitor-hint">No sampled telemetry diagnostics received. Compact metrics updates remain on the hot path until degradation occurs.</p>
           ) : (
-            <div className="telemetry-diagnostic-list">
-              {telemetryDiagnostics.map((entry) => (
-                <div key={`${entry.test_id}-${entry.timestamp}-${entry.diagnostic.summary}`} className={`telemetry-diagnostic-item ${telemetryDiagnosticSeverityClass(entry.diagnostic.severity)}`}>
-                  <div className="telemetry-diagnostic-header">
-                    <span className={`telemetry-diagnostic-badge ${telemetryDiagnosticSeverityClass(entry.diagnostic.severity)}`}>
-                      {entry.diagnostic.severity}
-                    </span>
-                    <span className="telemetry-diagnostic-time">{formatTelemetryDiagnosticTime(entry.timestamp)}</span>
-                  </div>
-                  <div className="telemetry-diagnostic-summary">{entry.test_name || entry.test_id}: {entry.diagnostic.summary}</div>
-                  {entry.diagnostic.conditions?.length ? (
-                    <div className="telemetry-diagnostic-conditions">{entry.diagnostic.conditions.join(' · ')}</div>
-                  ) : null}
-                  {entry.diagnostic.samples?.length ? (
-                    <div className="telemetry-diagnostic-samples">
-                      {entry.diagnostic.samples.map((sample) => (
-                        <div key={`${entry.test_id}-${entry.timestamp}-${sample.issue}-${sample.transaction}`} className="telemetry-diagnostic-sample">
-                          <span className="telemetry-diagnostic-sample-issue">{sample.issue}</span>
-                          <span className="telemetry-diagnostic-sample-name">{sample.transaction}</span>
-                          <span className="telemetry-diagnostic-sample-stats">
-                            {sample.errors ? `${sample.errors}/${sample.count ?? 0} errors` : `p99 ${Math.round(sample.p99_ms ?? 0)} ms`}
-                            {sample.avg_ms ? ` · avg ${Math.round(sample.avg_ms)} ms` : ''}
-                            {sample.dependency_target ? ` · ${sample.dependency_target}` : ''}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  ) : null}
+            <button type="button" className="telemetry-summary-card" onClick={() => setIsTelemetryModalOpen(true)}>
+              <div className="telemetry-summary-metrics">
+                <div className="telemetry-summary-metric">
+                  <span className={`telemetry-summary-value ${telemetryDangerCount > 0 ? 'text-danger' : ''}`}>{telemetryDangerCount}</span>
+                  <span className="telemetry-summary-label">Danger</span>
                 </div>
-              ))}
-            </div>
+                <div className="telemetry-summary-metric">
+                  <span className={`telemetry-summary-value ${telemetryWarningCount > 0 ? 'telemetry-text-warning' : ''}`}>{telemetryWarningCount}</span>
+                  <span className="telemetry-summary-label">Warning</span>
+                </div>
+                <div className="telemetry-summary-metric">
+                  <span className="telemetry-summary-value">{telemetryDiagnostics.length}</span>
+                  <span className="telemetry-summary-label">Total</span>
+                </div>
+              </div>
+              <div className="telemetry-summary-details">
+                <div className="telemetry-summary-headline">
+                  <span className={`telemetry-diagnostic-badge ${telemetryLatestEntry ? telemetryDiagnosticSeverityClass(telemetryLatestEntry.diagnostic.severity) : 'healthy'}`}>
+                    {telemetryLatestEntry?.diagnostic.severity || 'healthy'}
+                  </span>
+                  <span className="telemetry-diagnostic-time">{telemetryLatestEntry ? formatTelemetryDiagnosticTime(telemetryLatestEntry.timestamp) : 'No issues'}</span>
+                </div>
+                <div className="telemetry-diagnostic-summary">
+                  {telemetryLatestEntry ? `${telemetryLatestEntry.test_name || telemetryLatestEntry.test_id}: ${telemetryLatestEntry.diagnostic.summary}` : 'No issues detected.'}
+                </div>
+                <div className="telemetry-summary-cta">View details</div>
+              </div>
+            </button>
           )}
         </div>
       ),
@@ -231,6 +253,11 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
     {
       id: 'generators',
       title: 'Generators',
+      headerBadge: (
+        <span className={`monitor-header-badge ${generatorHeaderSeverity}`}>
+          {generatorHeaderLabel}
+        </span>
+      ),
       icon: (
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <rect x="4" y="4" width="16" height="16" rx="2" ry="2" />
@@ -247,49 +274,35 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       ),
       content: (
         <div className="monitor-body">
-          {inventory?.generators?.length ? (
-            <div className="monitor-inventory-list">
-              {inventory.generators.map(generator => (
-                <div key={generator.target} className={`monitor-inventory-item ${generator.status !== 'connected' ? 'is-warning' : ''}`}>
-                  <div className="monitor-row">
-                    <span className="monitor-value">{generator.generator_id || generator.target}</span>
-                    <span className={`monitor-value ${generator.status === 'connected' ? 'text-success' : 'text-danger'}`}>{generator.status}</span>
-                  </div>
-                  <div className="monitor-row">
-                    <span className="monitor-label">Target</span>
-                    <span className="monitor-value cell-mono">{generator.target}</span>
-                  </div>
-                  <div className="monitor-row">
-                    <span className="monitor-label">Available Capacity</span>
-                    <span className="monitor-value">{generator.available_capacity.toLocaleString()}</span>
-                  </div>
-                  <div className="monitor-row">
-                    <span className="monitor-label">Active VUsers</span>
-                    <span className="monitor-value">{generator.active_vusers.toLocaleString()}</span>
-                  </div>
-                  <div className="monitor-row">
-                    <span className="monitor-label">CPU Usage</span>
-                    <span className="monitor-value">{generator.cpu_percent.toFixed(1)}%</span>
-                  </div>
-                  <div className="monitor-row">
-                    <span className="monitor-label">CPU Capacity</span>
-                    <span className="monitor-value">{formatCPUCores(generator.cpu_limit_cores)}</span>
-                  </div>
-                  <div className="monitor-row">
-                    <span className="monitor-label">Memory Usage</span>
-                    <span className="monitor-value">{formatMemoryBytes(generator.memory_bytes)}</span>
-                  </div>
-                  <div className="monitor-row">
-                    <span className="monitor-label">Memory Capacity</span>
-                    <span className="monitor-value">{formatMemoryBytes(generator.memory_limit_bytes)}</span>
-                  </div>
-                  <div className="monitor-row">
-                    <span className="monitor-label">Goroutines</span>
-                    <span className="monitor-value">{generator.goroutine_count.toLocaleString()}</span>
-                  </div>
+          {generators.length ? (
+            <button type="button" className="telemetry-summary-card" onClick={() => setIsGeneratorsModalOpen(true)}>
+              <div className="telemetry-summary-metrics">
+                <div className="telemetry-summary-metric">
+                  <span className={`telemetry-summary-value ${generatorConnectedCount > 0 ? 'text-success' : ''}`}>{generatorConnectedCount}</span>
+                  <span className="telemetry-summary-label">Online</span>
                 </div>
-              ))}
-            </div>
+                <div className="telemetry-summary-metric">
+                  <span className={`telemetry-summary-value ${generatorIssueCount > 0 ? 'telemetry-text-warning' : ''}`}>{generatorIssueCount}</span>
+                  <span className="telemetry-summary-label">Issues</span>
+                </div>
+                <div className="telemetry-summary-metric">
+                  <span className="telemetry-summary-value">{generatorAvailableCapacity.toLocaleString()}</span>
+                  <span className="telemetry-summary-label">Capacity</span>
+                </div>
+              </div>
+              <div className="telemetry-summary-details">
+                <div className="telemetry-summary-headline">
+                  <span className={`telemetry-diagnostic-badge ${generatorIssueCount > 0 ? 'warning' : 'healthy'}`}>
+                    {generatorIssueCount > 0 ? `${generatorIssueCount} issue${generatorIssueCount === 1 ? '' : 's'}` : 'all connected'}
+                  </span>
+                  <span className="telemetry-diagnostic-time">{generators.length} generator{generators.length === 1 ? '' : 's'}</span>
+                </div>
+                <div className="telemetry-diagnostic-summary">
+                  {generatorActiveVUsers.toLocaleString()} active VUsers across {generators.length} generator{generators.length === 1 ? '' : 's'}.
+                </div>
+                <div className="telemetry-summary-cta">View details</div>
+              </div>
+            </button>
           ) : (
             <p className="monitor-hint">
               {inventory?.execution_mode === 'distributed'
@@ -364,7 +377,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
         </div>
       ),
     },
-  ], [connectionState, health, inventory, telemetryDiagnostics, timeline, websocketLabel, websocketValueClass])
+  ], [connectionState, generatorActiveVUsers, generatorAvailableCapacity, generatorConnectedCount, generatorHeaderLabel, generatorHeaderSeverity, generatorIssueCount, generators.length, health, inventory, telemetryDangerCount, telemetryHeaderLabel, telemetryHeaderSeverity, telemetryLatestEntry, telemetryDiagnostics, telemetryWarningCount, timeline, websocketLabel, websocketValueClass])
 
   useEffect(() => {
     setCardOrder(prev => mergeOrder(prev, cards.map(card => card.id)))
@@ -463,6 +476,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
               {customizing && <span className="monitor-drag-handle" title="Drag to reorder">::</span>}
               {card.icon}
               <span>{card.title}</span>
+              {card.headerBadge}
               {customizing && (
                 <button className="btn-icon monitor-hide-btn" type="button" onClick={() => toggleCard(card.id)}>Hide</button>
               )}
@@ -471,6 +485,151 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
           </div>
         ))}
       </div>
+
+      {isTelemetryModalOpen && telemetryDiagnostics.length > 0 && (
+        <div className="modal-overlay" onClick={() => setIsTelemetryModalOpen(false)}>
+          <div className="modal modal-wide telemetry-modal" role="dialog" aria-modal="true" aria-labelledby="telemetry-diagnostics-title" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header telemetry-modal-header">
+              <div>
+                <h3 id="telemetry-diagnostics-title">Telemetry Diagnostics</h3>
+                <p className="page-subtitle">Recent sampled telemetry issues by severity, condition, and affected dependency.</p>
+              </div>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setIsTelemetryModalOpen(false)}>Close</button>
+            </div>
+            <div className="telemetry-modal-summary">
+              <div className="telemetry-summary-metric">
+                <span className={`telemetry-summary-value ${telemetryDangerCount > 0 ? 'text-danger' : ''}`}>{telemetryDangerCount}</span>
+                <span className="telemetry-summary-label">Danger</span>
+              </div>
+              <div className="telemetry-summary-metric">
+                <span className={`telemetry-summary-value ${telemetryWarningCount > 0 ? 'telemetry-text-warning' : ''}`}>{telemetryWarningCount}</span>
+                <span className="telemetry-summary-label">Warning</span>
+              </div>
+              <div className="telemetry-summary-metric">
+                <span className="telemetry-summary-value">{telemetryDiagnostics.length}</span>
+                <span className="telemetry-summary-label">Total Samples</span>
+              </div>
+            </div>
+            <div className="monitor-body telemetry-modal-body">
+              <TelemetryDiagnosticList telemetryDiagnostics={telemetryDiagnostics} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isGeneratorsModalOpen && generators.length > 0 && (
+        <div className="modal-overlay" onClick={() => setIsGeneratorsModalOpen(false)}>
+          <div className="modal modal-wide telemetry-modal" role="dialog" aria-modal="true" aria-labelledby="generator-inventory-title" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header telemetry-modal-header">
+              <div>
+                <h3 id="generator-inventory-title">Generator Inventory</h3>
+                <p className="page-subtitle">Live generator health, capacity, resource usage, and runtime workload.</p>
+              </div>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setIsGeneratorsModalOpen(false)}>Close</button>
+            </div>
+            <div className="telemetry-modal-summary">
+              <div className="telemetry-summary-metric">
+                <span className={`telemetry-summary-value ${generatorConnectedCount > 0 ? 'text-success' : ''}`}>{generatorConnectedCount}</span>
+                <span className="telemetry-summary-label">Online</span>
+              </div>
+              <div className="telemetry-summary-metric">
+                <span className={`telemetry-summary-value ${generatorIssueCount > 0 ? 'telemetry-text-warning' : ''}`}>{generatorIssueCount}</span>
+                <span className="telemetry-summary-label">Issues</span>
+              </div>
+              <div className="telemetry-summary-metric">
+                <span className="telemetry-summary-value">{generatorActiveVUsers.toLocaleString()}</span>
+                <span className="telemetry-summary-label">Active VUsers</span>
+              </div>
+            </div>
+            <div className="monitor-body telemetry-modal-body">
+              <GeneratorInventoryList generators={generators} />
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function GeneratorInventoryList({ generators }: { generators: SystemInventoryResponse['generators'] }) {
+  return (
+    <div className="monitor-inventory-list">
+      {generators.map(generator => (
+        <div key={generator.target} className={`monitor-inventory-item ${generator.status !== 'connected' ? 'is-warning' : ''}`}>
+          <div className="monitor-row">
+            <span className="monitor-value">{generator.generator_id || generator.target}</span>
+            <span className={`monitor-value ${generator.status === 'connected' ? 'text-success' : 'text-danger'}`}>{generator.status}</span>
+          </div>
+          <div className="monitor-row">
+            <span className="monitor-label">Target</span>
+            <span className="monitor-value cell-mono">{generator.target}</span>
+          </div>
+          <div className="monitor-row">
+            <span className="monitor-label">Available Capacity</span>
+            <span className="monitor-value">{generator.available_capacity.toLocaleString()}</span>
+          </div>
+          <div className="monitor-row">
+            <span className="monitor-label">Active VUsers</span>
+            <span className="monitor-value">{generator.active_vusers.toLocaleString()}</span>
+          </div>
+          <div className="monitor-row">
+            <span className="monitor-label">CPU Usage</span>
+            <span className="monitor-value">{generator.cpu_percent.toFixed(1)}%</span>
+          </div>
+          <div className="monitor-row">
+            <span className="monitor-label">CPU Capacity</span>
+            <span className="monitor-value">{formatCPUCores(generator.cpu_limit_cores)}</span>
+          </div>
+          <div className="monitor-row">
+            <span className="monitor-label">Memory Usage</span>
+            <span className="monitor-value">{formatMemoryBytes(generator.memory_bytes)}</span>
+          </div>
+          <div className="monitor-row">
+            <span className="monitor-label">Memory Capacity</span>
+            <span className="monitor-value">{formatMemoryBytes(generator.memory_limit_bytes)}</span>
+          </div>
+          <div className="monitor-row">
+            <span className="monitor-label">Goroutines</span>
+            <span className="monitor-value">{generator.goroutine_count.toLocaleString()}</span>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function TelemetryDiagnosticList({ telemetryDiagnostics }: { telemetryDiagnostics: TelemetryDiagnosticEntry[] }) {
+  return (
+    <div className="telemetry-diagnostic-list">
+      {telemetryDiagnostics.map((entry) => (
+        <div key={`${entry.test_id}-${entry.timestamp}-${entry.diagnostic.summary}`} className={`telemetry-diagnostic-item ${telemetryDiagnosticSeverityClass(entry.diagnostic.severity)}`}>
+          <div className="telemetry-diagnostic-header">
+            <span className={`telemetry-diagnostic-badge ${telemetryDiagnosticSeverityClass(entry.diagnostic.severity)}`}>
+              {entry.diagnostic.severity}
+            </span>
+            <span className="telemetry-diagnostic-time">{formatTelemetryDiagnosticTime(entry.timestamp)}</span>
+          </div>
+          <div className="telemetry-diagnostic-summary">{entry.test_name || entry.test_id}: {entry.diagnostic.summary}</div>
+          {entry.diagnostic.conditions?.length ? (
+            <div className="telemetry-diagnostic-conditions">{entry.diagnostic.conditions.join(' · ')}</div>
+          ) : null}
+          {entry.diagnostic.samples?.length ? (
+            <div className="telemetry-diagnostic-samples">
+              {entry.diagnostic.samples.map((sample) => (
+                <div key={`${entry.test_id}-${entry.timestamp}-${sample.issue}-${sample.transaction}`} className="telemetry-diagnostic-sample">
+                  <span className="telemetry-diagnostic-sample-issue">{sample.issue}</span>
+                  <span className="telemetry-diagnostic-sample-name">{sample.transaction}</span>
+                  <span className="telemetry-diagnostic-sample-stats">
+                    {sample.errors ? `${sample.errors}/${sample.count ?? 0} errors` : `p99 ${Math.round(sample.p99_ms ?? 0)} ms`}
+                    {sample.avg_ms ? ` · avg ${Math.round(sample.avg_ms)} ms` : ''}
+                    {sample.dependency_target ? ` · ${sample.dependency_target}` : ''}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ))}
     </div>
   )
 }
@@ -479,6 +638,7 @@ interface MonitorCard {
   id: string
   title: string
   icon: ReactNode
+  headerBadge?: ReactNode
   content: ReactNode
 }
 

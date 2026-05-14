@@ -3,7 +3,8 @@ import { type WebSocketConnectionState } from '../hooks/useWebSocket'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useApi } from '../hooks/useApi'
 import { useApplication } from '../hooks/useApplication'
-import { TestSummary, MetricsHistoryPoint, RunArchiveReport } from '../types'
+import { TestSummary, MetricsHistoryPoint, RunArchiveReport, SystemInventoryResponse } from '../types'
+import { type NavPage } from './Sidebar'
 import StatusBadge from './StatusBadge'
 import './DashboardPage.css'
 
@@ -12,6 +13,7 @@ interface Props {
   metricsHistory: Record<string, MetricsHistoryPoint[]>
   connectionState: WebSocketConnectionState
   onSelectTest: (id: string) => void
+  onNavigate: (page: NavPage) => void
 }
 
 interface HealthData {
@@ -99,11 +101,12 @@ function loadJson<T>(key: string, fallback: T): T {
   }
 }
 
-export default function DashboardPage({ testStatuses, metricsHistory, connectionState, onSelectTest }: Props) {
+export default function DashboardPage({ testStatuses, metricsHistory, connectionState, onSelectTest, onNavigate }: Props) {
   const api = useApi()
   const { activeApplication, activeRelease } = useApplication()
   const [tests, setTests] = useState<TestSummary[]>([])
   const [health, setHealth] = useState<HealthData | null>(null)
+  const [inventory, setInventory] = useState<SystemInventoryResponse | null>(null)
   const [archiveReports, setArchiveReports] = useState<Record<string, RunArchiveReport | null>>({})
   const [customizingCards, setCustomizingCards] = useState(false)
   const [draggedCardId, setDraggedCardId] = useState<string | null>(null)
@@ -118,12 +121,14 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
         return
       }
       try {
-        const [testRes, healthRes] = await Promise.all([
+        const [testRes, healthRes, inventoryRes] = await Promise.all([
           api.listTests(activeApplication?.id ? { application_id: activeApplication.id } : undefined),
           api.getHealth().catch(() => null),
+          api.getSystemInventory().catch(() => null),
         ])
         setTests(testRes.tests || [])
         if (healthRes) setHealth(healthRes)
+        setInventory(inventoryRes)
       } catch { /* ignore */ }
     }
 
@@ -322,6 +327,9 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
       : statusColor === 'checking'
         ? 'Connecting'
         : 'Offline'
+  const liveAvailableGenerators = inventory
+    ? inventory.generators.filter(generator => generator.status === 'connected').length
+    : null
 
   const updateCardSettings = (testId: string, patch: Partial<GraphCardSettings>) => {
     setActiveCardSettings(prev => ({
@@ -361,6 +369,24 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
     setActiveCardSettings({})
   }
 
+  const navigateToMonitoring = () => onNavigate('monitoring')
+  const navigateToTests = () => onNavigate('tests')
+  const navigateToResults = () => onNavigate('results')
+  const navigateToLatestResult = () => {
+    if (latestReleaseRun) {
+      onSelectTest(latestReleaseRun.id)
+      return
+    }
+    onNavigate('results')
+  }
+  const navigateToPrimaryActiveRun = () => {
+    if (activeTests[0]) {
+      onSelectTest(activeTests[0].id)
+      return
+    }
+    onNavigate('tests')
+  }
+
   return (
     <div className="page dash">
       <div className="page-header">
@@ -387,7 +413,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
       </div>
 
       <div className="dash-health-row">
-        <div className={`dash-health-card status-${statusColor}`}>
+        <button type="button" className={`dash-health-card dash-card-button status-${statusColor}`} onClick={navigateToMonitoring}>
           <div className="dhc-icon">
             <span className={`health-dot ${statusColor}`} />
           </div>
@@ -395,9 +421,9 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
             <span className="dhc-value">{statusLabel}</span>
             <span className="dhc-label">API Server</span>
           </div>
-        </div>
+        </button>
 
-        <div className="dash-health-card">
+        <button type="button" className="dash-health-card dash-card-button" onClick={navigateToTests}>
           <div className="dhc-icon">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--chart-2)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
@@ -410,9 +436,9 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
             <span className="dhc-value">{stats.active}</span>
             <span className="dhc-label">Active Runs</span>
           </div>
-        </div>
+        </button>
 
-        <div className="dash-health-card">
+        <button type="button" className="dash-health-card dash-card-button" onClick={navigateToTests}>
           <div className="dhc-icon">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--chart-3)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
@@ -422,9 +448,9 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
             <span className="dhc-value">{stats.activeVUsers}</span>
             <span className="dhc-label">Active VUsers</span>
           </div>
-        </div>
+        </button>
 
-        <div className="dash-health-card">
+        <button type="button" className="dash-health-card dash-card-button" onClick={navigateToMonitoring}>
           <div className="dhc-icon">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--chart-5)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="12" cy="12" r="10" />
@@ -432,10 +458,10 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
             </svg>
           </div>
           <div className="dhc-content">
-            <span className="dhc-value">{health?.capacity_availability?.effective_available_generators ?? '—'}</span>
+            <span className="dhc-value">{liveAvailableGenerators ?? health?.capacity_availability?.effective_available_generators ?? '—'}</span>
             <span className="dhc-label">Generators Available</span>
           </div>
-        </div>
+        </button>
       </div>
 
       <section className="dash-section dash-release-snapshot">
@@ -444,32 +470,32 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
           <span className="dash-context-chip">{activeRelease?.name || 'All releases'}</span>
         </div>
         <div className="release-metric-grid">
-          <div className="release-metric">
+          <button type="button" className="release-metric dash-card-button" onClick={navigateToLatestResult}>
             <span className="release-metric-value">{latestReleaseRun ? latestReleaseRun.name : 'No runs'}</span>
             <span className="release-metric-label">Latest Result</span>
-          </div>
-          <div className="release-metric">
+          </button>
+          <button type="button" className="release-metric dash-card-button" onClick={navigateToResults}>
             <span className={`release-metric-value ${releaseStats.failed > 0 ? 'text-danger' : 'text-success'}`}>
               {releaseStats.failed}
             </span>
             <span className="release-metric-label">Failed Runs</span>
-          </div>
-          <div className="release-metric">
+          </button>
+          <button type="button" className="release-metric dash-card-button" onClick={navigateToResults}>
             <span className="release-metric-value">{releaseStats.archived}/{releaseStats.completed + releaseStats.failed + releaseStats.aborted}</span>
             <span className="release-metric-label">Archives Ready</span>
-          </div>
-          <div className="release-metric">
+          </button>
+          <button type="button" className="release-metric dash-card-button" onClick={navigateToResults}>
             <span className="release-metric-value">{releaseStats.totalTx.toLocaleString()}</span>
             <span className="release-metric-label">Archived Transactions</span>
-          </div>
-          <div className="release-metric">
+          </button>
+          <button type="button" className="release-metric dash-card-button" onClick={navigateToPrimaryActiveRun}>
             <span className="release-metric-value">{formatNumber(stats.activeTps, 1)}</span>
             <span className="release-metric-label">Current TPS</span>
-          </div>
-          <div className="release-metric">
+          </button>
+          <button type="button" className="release-metric dash-card-button" onClick={navigateToPrimaryActiveRun}>
             <span className={`release-metric-value ${stats.avgError > 0 ? 'text-danger' : ''}`}>{formatNumber(stats.avgError, 2)}%</span>
             <span className="release-metric-label">Current Error Rate</span>
-          </div>
+          </button>
         </div>
       </section>
 
@@ -696,34 +722,34 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
         <section className="dash-section dash-summary">
           <h3 className="dash-section-title">Test Summary</h3>
           <div className="dash-summary-cards">
-            <div className="summary-stat">
+            <button type="button" className="summary-stat dash-card-button" onClick={navigateToResults}>
               <span className="summary-stat-value text-success">{stats.completed}</span>
               <span className="summary-stat-label">Completed</span>
               <div className="summary-bar">
                 <div className="summary-bar-fill success" style={{ width: stats.total ? `${(stats.completed / stats.total) * 100}%` : '0%' }} />
               </div>
-            </div>
-            <div className="summary-stat">
+            </button>
+            <button type="button" className="summary-stat dash-card-button" onClick={navigateToResults}>
               <span className="summary-stat-value text-danger">{stats.failed}</span>
               <span className="summary-stat-label">Failed</span>
               <div className="summary-bar">
                 <div className="summary-bar-fill danger" style={{ width: stats.total ? `${(stats.failed / stats.total) * 100}%` : '0%' }} />
               </div>
-            </div>
-            <div className="summary-stat">
+            </button>
+            <button type="button" className="summary-stat dash-card-button" onClick={navigateToResults}>
               <span className="summary-stat-value" style={{ color: 'var(--chart-3)' }}>{stats.aborted}</span>
               <span className="summary-stat-label">Aborted</span>
               <div className="summary-bar">
                 <div className="summary-bar-fill warning" style={{ width: stats.total ? `${(stats.aborted / stats.total) * 100}%` : '0%' }} />
               </div>
-            </div>
-            <div className="summary-stat">
+            </button>
+            <button type="button" className="summary-stat dash-card-button" onClick={navigateToTests}>
               <span className="summary-stat-value" style={{ color: 'var(--accent)' }}>{stats.active}</span>
               <span className="summary-stat-label">Active Now</span>
               <div className="summary-bar">
                 <div className="summary-bar-fill active" style={{ width: stats.total ? `${(stats.active / stats.total) * 100}%` : '0%' }} />
               </div>
-            </div>
+            </button>
           </div>
 
           {/* Aggregate sparkline if we have any active test history */}
@@ -732,7 +758,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
             if (allHistory.length < 2) return null
             const aggregated = allHistory.slice(-60)
             return (
-              <div className="dash-aggregate-chart">
+              <button type="button" className="dash-aggregate-chart dash-card-button" onClick={navigateToTests}>
                 <span className="aggregate-label">Aggregate TPS (active tests)</span>
                 <ResponsiveContainer width="100%" height={80}>
                   <AreaChart data={aggregated}>
@@ -746,7 +772,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                     <Area type="monotone" dataKey="tps" stroke="var(--chart-2)" fill="var(--chart-2)" fillOpacity={0.15} strokeWidth={1.5} isAnimationActive={false} />
                   </AreaChart>
                 </ResponsiveContainer>
-              </div>
+              </button>
             )
           })()}
         </section>

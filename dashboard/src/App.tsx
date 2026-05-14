@@ -122,6 +122,7 @@ function AppShell() {
             metricsHistory={metricsHistory}
             connectionState={connectionState}
             onSelectTest={navigateToTest}
+            onNavigate={handleNavigate}
           />
         )}
         {view.page === 'tests' && (

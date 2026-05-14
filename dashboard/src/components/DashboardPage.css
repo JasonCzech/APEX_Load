@@ -8,6 +8,21 @@
   gap: 8px;
 }
 
+.dash-card-button {
+  appearance: none;
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+}
+
+.dash-card-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 /* Health Row */
 .dash-health-row {
   display: grid;
@@ -682,6 +697,14 @@
   margin-top: 8px;
   padding-top: 12px;
   border-top: 1px solid var(--border);
+}
+
+.dash-aggregate-chart.dash-card-button {
+  border: none;
+  background: transparent;
+  padding-left: 0;
+  padding-right: 0;
+  cursor: pointer;
 }
 
 .aggregate-label {
