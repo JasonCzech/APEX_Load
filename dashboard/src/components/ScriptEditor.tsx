@@ -15,13 +15,45 @@ import {
   type BrowserCaptureOptions as SharedBrowserCaptureOptions,
   type ScriptActionDefinition,
   type ScriptAssertionDefinition,
-  type ScriptDataSource,
   type ScriptDefinition,
+  type ScriptDataSource,
   type ScriptExtractorDefinition,
   type ScriptParameterDefinition,
   type ScriptWaitCondition,
 } from '../types/scripts'
 import BrowserReplayDebugger from './BrowserReplayDebugger'
+import {
+  EMPTY_ACTION,
+  EMPTY_BROWSER_ACTION,
+  EMPTY_DATA_SOURCE,
+  EMPTY_JMS_ACTION,
+  EMPTY_PARAMETER,
+  EMPTY_SCRIPT,
+  EMPTY_SOAP_ACTION,
+  buildReplayVariableDiffs,
+  cloneDataSource,
+  createReplaySessionId,
+  dedupeHeaders,
+  downloadTextFile,
+  ensureUniqueParameterName,
+  fillEmptyHeaders,
+  formatConsoleEntries,
+  formatNetworkEntries,
+  formatReplayHeaders,
+  formatReplayTime,
+  getErrorIssues,
+  getErrorMessage,
+  getImportSummary,
+  hasBrowserReplayArtifacts,
+  isLikelyParameterValue,
+  mergeReplayVariables,
+  normalizeHeaders,
+  parseInlineData,
+  sanitizeVarName,
+  stringifyInlineData,
+  summarizeInlineData,
+  validateInlineData,
+} from './scriptEditorUtils'
 import './ScriptEditor.css'
 
 type Action = ScriptActionDefinition
@@ -243,331 +275,6 @@ interface Props {
   onClose?: () => void
 }
 
-const EMPTY_SCRIPT: ScriptData = {
-  name: '', version: '1.0.0', protocol: 'http',
-  config: {
-    base_url: '',
-    think_time: { type: 'fixed', mean_ms: 1000 },
-    pacing: { type: 'none' },
-    run_logic: { iterations: 0, auto_transactions: 'none' },
-    error_handling: { continue_on_error: false },
-    log: { level: 'standard' },
-  },
-  actions: []
-}
-
-const EMPTY_DATA_SOURCE: DataSourceConfig = {
-  name: '',
-  type: 'csv',
-  path: '',
-  strategy: 'sequential',
-  delimiter: ',',
-  first_row_header: true,
-  columns: [],
-  inline_data: '',
-}
-
-const EMPTY_PARAMETER: ParameterConfig = {
-  name: '',
-  type: 'list',
-  update: 'each_iteration',
-  selection: 'sequential',
-  on_exhaustion: 'wrap',
-  values: [],
-  step: 1,
-  length: 12,
-  format: 'iso8601',
-  pad_char: '0',
-}
-
-const EMPTY_ACTION: Action = {
-  name: '', type: 'GET', target: '', headers: {}, body: '',
-  extractors: [], assertions: [], think_time_after: true
-}
-
-const EMPTY_BROWSER_ACTION: Action = {
-  name: '', type: 'browser_navigate', target: '', selector: '', value: '',
-  capture: { screenshot: false, full_page: false, html: false },
-  think_time_after: true,
-}
-
-const EMPTY_JMS_ACTION: Action = {
-  name: '', type: 'jms_publish', target: '', headers: {}, body: '',
-  params: {}, metadata: {}, extractors: [], assertions: [{ type: 'message_received' }],
-  think_time_after: true,
-}
-
-const EMPTY_SOAP_ACTION: Action = {
-  name: '', type: 'POST', method: 'POST', target: '', headers: {}, body: '',
-  extractors: [], assertions: [{ type: 'status_code', expected: 200 }], think_time_after: true,
-  soap: { action: '', operation: '', body_mode: 'raw_xml' },
-}
-
-function getImportSummary(metadata?: ImportMetadata | null) {
-  const preserved = metadata?.preserved || {}
-
-  return {
-    runtimeFiles: Object.keys(preserved.runtime_files || {}),
-    projectSections: Object.keys(preserved.project_settings || {}),
-    unsupportedFunctions: Array.isArray(preserved.unsupported_functions) ? preserved.unsupported_functions : [],
-  }
-}
-
-function inferDelimiter(source: DataSourceConfig): string {
-  if (source.delimiter && source.delimiter.length > 0) return source.delimiter
-  return source.type === 'dat' ? '\t' : ','
-}
-
-function summarizeInlineData(source: DataSourceConfig): { rows: number; columns: number } {
-  const raw = source.inline_data || ''
-  if (!raw.trim()) return { rows: 0, columns: 0 }
-  const lines = raw.split(/\r?\n/).filter(line => line.trim().length > 0)
-  if (lines.length === 0) return { rows: 0, columns: 0 }
-  const delimiter = inferDelimiter(source)
-  const width = lines.reduce((max, line) => Math.max(max, line.split(delimiter).length), 0)
-  const dataRows = source.first_row_header === false ? lines.length : Math.max(lines.length - 1, 0)
-  return { rows: dataRows, columns: width }
-}
-
-function parseInlineData(source: DataSourceConfig): { columns: string[]; rows: string[][] } {
-  const raw = source.inline_data || ''
-  const delimiter = inferDelimiter(source)
-  const lines = raw.split(/\r?\n/).filter(line => line.trim().length > 0)
-  if (lines.length === 0) {
-    const fallbackCols = source.columns && source.columns.length > 0 ? [...source.columns] : ['col_1']
-    return { columns: fallbackCols, rows: [] }
-  }
-
-  const split = (line: string) => line.split(delimiter).map(value => value.trim())
-  if (source.first_row_header !== false) {
-    const header = split(lines[0]).filter(Boolean)
-    const columns = header.length > 0 ? header : ['col_1']
-    const rows = lines.slice(1).map(line => {
-      const parts = split(line)
-      const normalized = [...parts]
-      while (normalized.length < columns.length) normalized.push('')
-      return normalized.slice(0, columns.length)
-    })
-    return { columns, rows }
-  }
-
-  const declared = source.columns && source.columns.length > 0 ? [...source.columns] : []
-  const inferredWidth = lines.reduce((max, line) => Math.max(max, split(line).length), 0)
-  const width = Math.max(declared.length, inferredWidth, 1)
-  const columns = declared.length > 0 ? declared : Array.from({ length: width }, (_, i) => `col_${i + 1}`)
-  const rows = lines.map(line => {
-    const parts = split(line)
-    const normalized = [...parts]
-    while (normalized.length < columns.length) normalized.push('')
-    return normalized.slice(0, columns.length)
-  })
-  return { columns, rows }
-}
-
-function stringifyInlineData(source: DataSourceConfig, columns: string[], rows: string[][]): string {
-  const delimiter = inferDelimiter(source)
-  const escaped = (value: string) => {
-    if (value.includes('"') || value.includes('\n') || value.includes(delimiter)) {
-      return `"${value.replace(/"/g, '""')}"`
-    }
-    return value
-  }
-  const normalizedRows = rows
-    .map(row => columns.map((_, idx) => escaped((row[idx] || '').trim())))
-    .map(row => row.join(delimiter))
-
-  if (source.first_row_header !== false) {
-    return [columns.map(escaped).join(delimiter), ...normalizedRows].join('\n')
-  }
-  return normalizedRows.join('\n')
-}
-
-function validateInlineData(source: DataSourceConfig): string[] {
-  const warnings: string[] = []
-  const raw = source.inline_data || ''
-  const delimiter = inferDelimiter(source)
-  const lines = raw.split(/\r?\n/).filter(line => line.trim().length > 0)
-  const split = (line: string) => line.split(delimiter)
-  const { columns } = parseInlineData(source)
-
-  if (source.first_row_header !== false) {
-    const emptyHeaders = columns.filter(name => !name.trim()).length
-    if (emptyHeaders > 0) {
-      warnings.push(`Header row has ${emptyHeaders} empty column name${emptyHeaders > 1 ? 's' : ''}.`)
-    }
-
-    const seen = new Set<string>()
-    const duplicates = new Set<string>()
-    columns.forEach(name => {
-      const key = name.trim().toLowerCase()
-      if (!key) return
-      if (seen.has(key)) duplicates.add(name.trim())
-      seen.add(key)
-    })
-    if (duplicates.size > 0) {
-      warnings.push(`Duplicate header name(s): ${Array.from(duplicates).join(', ')}.`)
-    }
-  }
-
-  const expectedWidth = columns.length
-  if (expectedWidth > 0 && lines.length > 0) {
-    const startIdx = source.first_row_header !== false ? 1 : 0
-    const badRows: number[] = []
-    for (let i = startIdx; i < lines.length; i++) {
-      if (split(lines[i]).length !== expectedWidth) badRows.push(i + 1)
-    }
-    if (badRows.length > 0) {
-      warnings.push(
-        `Row width mismatch on line${badRows.length > 1 ? 's' : ''} ${badRows.slice(0, 6).join(', ')}${badRows.length > 6 ? ', ...' : ''}. Expected ${expectedWidth} value${expectedWidth === 1 ? '' : 's'} per row.`,
-      )
-    }
-  }
-
-  return warnings
-}
-
-function normalizeHeaders(columns: string[]): string[] {
-  const seen = new Set<string>()
-  return columns.map((name, idx) => {
-    let base = (name || '').trim()
-    if (!base) base = `col_${idx + 1}`
-    let next = base
-    let suffix = 2
-    while (seen.has(next.toLowerCase())) {
-      next = `${base}_${suffix}`
-      suffix++
-    }
-    seen.add(next.toLowerCase())
-    return next
-  })
-}
-
-function fillEmptyHeaders(columns: string[]): string[] {
-  return columns.map((name, idx) => (name || '').trim() || `col_${idx + 1}`)
-}
-
-function dedupeHeaders(columns: string[]): string[] {
-  const seen = new Set<string>()
-  return columns.map((name, idx) => {
-    const base = (name || '').trim() || `col_${idx + 1}`
-    let next = base
-    let suffix = 2
-    while (seen.has(next.toLowerCase())) {
-      next = `${base}_${suffix}`
-      suffix++
-    }
-    seen.add(next.toLowerCase())
-    return next
-  })
-}
-
-function downloadTextFile(content: string, filename: string) {
-  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = filename
-  document.body.appendChild(anchor)
-  anchor.click()
-  anchor.remove()
-  URL.revokeObjectURL(url)
-}
-
-function cloneDataSource(source: DataSourceConfig): DataSourceConfig {
-  return JSON.parse(JSON.stringify(source))
-}
-
-function sanitizeVarName(input: string): string {
-  const normalized = (input || '')
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9_]+/g, '_')
-    .replace(/^_+|_+$/g, '')
-  return normalized || 'param'
-}
-
-function ensureUniqueParameterName(requested: string, parameters: ParameterConfig[], existingName?: string): string {
-  const base = sanitizeVarName(requested)
-  const normalizedExisting = existingName ? sanitizeVarName(existingName) : ''
-  const seen = new Set(
-    parameters
-      .map(parameter => sanitizeVarName(parameter.name || ''))
-      .filter(name => name.length > 0 && name !== normalizedExisting),
-  )
-  if (!seen.has(base)) return base
-  let suffix = 2
-  let next = `${base}_${suffix}`
-  while (seen.has(next)) {
-    suffix += 1
-    next = `${base}_${suffix}`
-  }
-  return next
-}
-
-function formatReplayTime(value?: string): string {
-  if (!value) return 'n/a'
-  return new Date(value).toLocaleString()
-}
-
-function formatReplayHeaders(headers?: Record<string, string>): string {
-  if (!headers || Object.keys(headers).length === 0) return 'None'
-  return Object.entries(headers).map(([key, value]) => `${key}: ${value}`).join('\n')
-}
-
-function formatConsoleEntries(entries?: ConsoleEntry[]): string {
-  if (!entries || entries.length === 0) return 'None'
-  return entries
-    .map(entry => `[${entry.level || 'log'}] ${entry.text || ''}${entry.source ? ` (${entry.source})` : ''}`)
-    .join('\n')
-}
-
-function formatNetworkEntries(entries?: NetworkEntry[]): string {
-  if (!entries || entries.length === 0) return 'None'
-  return entries
-    .map(entry => {
-      const status = entry.status_code ? ` ${entry.status_code}` : ''
-      const duration = typeof entry.duration_ms === 'number' ? ` ${entry.duration_ms.toFixed(1)} ms` : ''
-      return `${entry.method || 'GET'}${status} ${entry.url || ''}${duration}`
-    })
-    .join('\n')
-}
-
-function hasBrowserReplayArtifacts(event: ReplayActionEvent): boolean {
-  return !!(
-    event.page_url ||
-    event.page_title ||
-    event.dom_summary ||
-    event.console_entries?.length ||
-    event.network_entries?.length ||
-    event.html ||
-    event.screenshot_base64
-  )
-}
-
-function createReplaySessionId(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID()
-  }
-  return `replay-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
-}
-
-function getErrorMessage(error: unknown, fallback: string): string {
-  if (error instanceof Error && error.message) return error.message
-  if (typeof error === 'object' && error !== null && 'message' in error) {
-    const message = (error as { message?: unknown }).message
-    if (typeof message === 'string' && message.length > 0) return message
-  }
-  return fallback
-}
-
-function getErrorIssues(error: unknown): string[] {
-  if (typeof error !== 'object' || error === null || !('payload' in error)) return []
-  const payload = (error as { payload?: unknown }).payload
-  if (typeof payload !== 'object' || payload === null || !('issues' in payload)) return []
-  const issues = (payload as { issues?: unknown }).issues
-  return Array.isArray(issues) ? issues.filter((issue): issue is string => typeof issue === 'string') : []
-}
-
 function upsertReplayActivity(items: ReplayActivityItem[], next: ReplayActivityItem): ReplayActivityItem[] {
   const index = items.findIndex(item => item.id === next.id)
   if (index === -1) return [...items, next]
@@ -576,109 +283,65 @@ function upsertReplayActivity(items: ReplayActivityItem[], next: ReplayActivityI
   return updated
 }
 
-function mergeReplayVariables(
-  seed: Record<string, string> | undefined,
-  events: ReplayActionEvent[],
-): Record<string, string> {
-  const next: Record<string, string> = { ...(seed || {}) }
-  events.forEach(event => {
-    Object.entries(event.extractions || {}).forEach(([key, value]) => {
-      next[key] = value
-    })
-  })
-  return next
-}
-
-function buildReplayVariableDiffs(
-  seed: Record<string, string> | undefined,
-  events: ReplayActionEvent[],
-): Array<Record<string, { previous?: string; next: string }>> {
-  const current: Record<string, string> = { ...(seed || {}) }
-  return events.map(event => {
-    const diff: Record<string, { previous?: string; next: string }> = {}
-    Object.entries(event.extractions || {}).forEach(([key, value]) => {
-      const previous = current[key]
-      if (previous !== value) {
-        diff[key] = { previous, next: value }
-      }
-      current[key] = value
-    })
-    return diff
-  })
-}
-
-function isLikelyParameterValue(value: string): boolean {
-  const v = value.trim()
-  if (!v || v.includes('{{')) return false
-  const lower = v.toLowerCase()
-  const commonStatic = new Set([
-    'application/json',
-    'text/plain',
-    'gzip',
-    'deflate',
-    'br',
-    'keep-alive',
-    'close',
-    'true',
-    'false',
-    'null',
-  ])
-  if (commonStatic.has(lower)) return false
-  if (/^\d{1,2}$/.test(v)) return false
-  if (v.length >= 3) return true
-  return false
-}
 
 export default function ScriptEditor({ scriptId, initialScript, projectId, folderId, onSave, onClose }: Props) {
   const api = useApi()
   const showProtocolSelector = Boolean(scriptId)
-  const [script, setScript] = useState<ScriptData>(initialScript || { ...EMPTY_SCRIPT })
-  const [activeAction, setActiveAction] = useState<number | null>(null)
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
-  const [jsonMode, setJsonMode] = useState(false)
-  const [jsonText, setJsonText] = useState('')
-  const [openSections, setOpenSections] = useState<Record<string, boolean>>({
-    config: true,
-    actions: true,
-    runtime: false,
-    import: true,
-    replay: true,
-  })
-  const [isParameterDialogOpen, setIsParameterDialogOpen] = useState(false)
-  const [pendingParameterDraft, setPendingParameterDraft] = useState<ActionEditorParameterDraft | null>(null)
-  const [openDataEditor, setOpenDataEditor] = useState<number | null>(null)
-  const [dataEditorMode, setDataEditorMode] = useState<Record<number, 'grid' | 'raw'>>({})
-  const [dataSourceHistory, setDataSourceHistory] = useState<Record<number, DataSourceHistory>>({})
-  const [parameterCandidates, setParameterCandidates] = useState<ParameterCandidate[]>([])
-  const [replaying, setReplaying] = useState(false)
-  const [replayReport, setReplayReport] = useState<ReplayReport | null>(null)
-  const [expandedReplayEvent, setExpandedReplayEvent] = useState<number | null>(null)
-  const [activeReplaySessionId, setActiveReplaySessionId] = useState<string | null>(null)
-  const [browserReplaySession, setBrowserReplaySession] = useState<BrowserReplaySession | null>(null)
-  const [replayActivity, setReplayActivity] = useState<ReplayActivityItem[]>([])
-  const [replaySeedVariables, setReplaySeedVariables] = useState<Record<string, string>>({})
-  const replayEventRefs = useRef<Record<number, HTMLDivElement | null>>({})
-  const [replayOptions, setReplayOptions] = useState<ReplayOptionsState>({
-    groupName: '',
-    ignoreThinkTime: true,
-    startPaused: false,
-    variablesText: '{\n  \n}',
-  })
+  const {
+    activeAction,
+    activeReplaySessionId,
+    browserReplaySession,
+    dataEditorMode,
+    dataSourceHistory,
+    error,
+    expandedReplayEvent,
+    hydrateEditorState,
+    isParameterDialogOpen,
+    jsonMode,
+    jsonText,
+    openDataEditor,
+    openSections,
+    parameterCandidates,
+    pendingParameterDraft,
+    replayActivity,
+    replayEventRefs,
+    replayOptions,
+    replayReport,
+    replaySeedVariables,
+    replaying,
+    saving,
+    script,
+    setActiveAction,
+    setActiveReplaySessionId,
+    setBrowserReplaySession,
+    setDataEditorMode,
+    setDataSourceHistory,
+    setError,
+    setExpandedReplayEvent,
+    setIsParameterDialogOpen,
+    setJsonMode,
+    setJsonText,
+    setOpenDataEditor,
+    setParameterCandidates,
+    setPendingParameterDraft,
+    setReplayActivity,
+    setReplayOptions,
+    setReplayReport,
+    setReplaySeedVariables,
+    setReplaying,
+    setSaving,
+    setScript,
+    setSuccess,
+    success,
+    toggleSection,
+    closeParameterDialog,
+  } = useScriptEditorState(initialScript)
   const isBrowserScript = script.protocol === 'browser'
   const isJmsScript = script.protocol === 'jms-solace'
   const isJavaHttpScript = script.protocol === 'java_http'
   const isSoapScript = script.protocol === 'soap'
   const importMetadata = script.metadata?.import
   const importSummary = getImportSummary(importMetadata)
-
-  const toggleSection = (id: string) => setOpenSections(prev => ({ ...prev, [id]: !prev[id] }))
-
-  const closeParameterDialog = () => {
-    setIsParameterDialogOpen(false)
-    setPendingParameterDraft(null)
-  }
 
   useEffect(() => {
     if (!isParameterDialogOpen) return
@@ -766,12 +429,33 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
   }
 
   useEffect(() => {
-    if (scriptId && !initialScript) {
-      api.getScript(scriptId).then((res) => {
-        if (res.script) setScript(res.script)
-      }).catch(() => {})
+    if (!initialScript) return
+    hydrateEditorState(initialScript)
+  }, [hydrateEditorState, initialScript])
+
+  useEffect(() => {
+    if (!scriptId || initialScript) return
+
+    let isCancelled = false
+
+    api.getScript(scriptId)
+      .then((res) => {
+        if (isCancelled) return
+        if (!res.script) {
+          setError('Failed to load script')
+          return
+        }
+        hydrateEditorState(res.script)
+      })
+      .catch((loadError: unknown) => {
+        if (isCancelled) return
+        setError(getErrorMessage(loadError, 'Failed to load script'))
+      })
+
+    return () => {
+      isCancelled = true
     }
-  }, [scriptId])
+  }, [api, hydrateEditorState, initialScript, scriptId])
 
   const handleReplaySocketMessage = useCallback((message: WSMessage) => {
     const msg = message as ReplayWSMessage
@@ -1683,6 +1367,26 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
       updateAction(pendingParameterDraft.actionIndex, 'body', nextBody)
     }
     setPendingParameterDraft(null)
+  }
+
+  const updatePendingParameterDraftName = (value: string) => {
+    setPendingParameterDraft(prev => (prev ? { ...prev, requestedName: sanitizeVarName(value) } : prev))
+  }
+
+  const updatePendingParameterDraftValue = (value: string) => {
+    setPendingParameterDraft(prev => (prev ? { ...prev, seedValue: value } : prev))
+  }
+
+  const clearPendingParameterDraft = () => {
+    setPendingParameterDraft(null)
+  }
+
+  const toggleOpenDataEditor = (idx: number) => {
+    setOpenDataEditor(prev => (prev === idx ? null : idx))
+  }
+
+  const toggleDataEditorModeAt = (idx: number) => {
+    setDataEditorMode(prev => ({ ...prev, [idx]: (prev[idx] || 'grid') === 'grid' ? 'raw' : 'grid' }))
   }
 
   const removeDataSource = (idx: number) => {
@@ -3183,429 +2887,770 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
           </div>
 
           {isParameterDialogOpen && (
-            <div className="editor-dialog-backdrop" onClick={closeParameterDialog}>
-              <div
-                className="editor-dialog parameter-data-dialog"
-                role="dialog"
-                aria-modal="true"
-                aria-label="Parameter Data"
-                onClick={event => event.stopPropagation()}
-              >
-                <div className="editor-dialog-header">
-                  <div>
-                    <h3 className="panel-title">Parameter Data ({script.data_sources?.length || 0})</h3>
-                    <p className="editor-dialog-subtitle">Manage named parameters and reusable data sources without leaving the action workspace.</p>
-                  </div>
-                  <button className="btn btn-sm btn-ghost" onClick={closeParameterDialog}>Close</button>
-                </div>
-                <div className="editor-dialog-body">
-                {pendingParameterDraft && (
-                  <div className="parameter-draft-panel">
-                    <div className="panel-title-row" style={{ marginBottom: 8 }}>
-                      <div>
-                        <strong style={{ display: 'block', marginBottom: 4 }}>Parameterize Selection</strong>
-                        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>This selection came from the Action List editor. Review it here with the rest of the parameter configuration.</span>
-                      </div>
-                    </div>
-                    <div className="parameter-draft-grid">
-                      <label>
-                        <span>Name</span>
-                        <input
-                          value={pendingParameterDraft.requestedName}
-                          onChange={event => setPendingParameterDraft(prev => (prev ? { ...prev, requestedName: sanitizeVarName(event.target.value) } : prev))}
-                          placeholder="param_name"
-                        />
-                      </label>
-                      <label>
-                        <span>Value</span>
-                        <input
-                          value={pendingParameterDraft.seedValue}
-                          onChange={event => setPendingParameterDraft(prev => (prev ? { ...prev, seedValue: event.target.value } : prev))}
-                          placeholder="Selected value"
-                        />
-                      </label>
-                    </div>
-                    <div className="parameter-draft-actions">
-                      <button type="button" className="btn btn-sm btn-primary" onClick={applyPendingParameterDraft} disabled={!pendingParameterDraft.requestedName.trim()}>
-                        Save To Parameter Data
-                      </button>
-                      <button type="button" className="btn btn-sm btn-ghost" onClick={() => setPendingParameterDraft(null)}>
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                )}
-                <div className="panel-title-row" style={{ marginBottom: 12 }}>
-                  <div>
-                    <strong style={{ display: 'block', marginBottom: 4 }}>Named Parameters</strong>
-                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Define named parameters with VuGen-style update cadence and generated values.</span>
-                  </div>
-                  <button className="btn btn-sm btn-accent" onClick={addParameter}>+ Add Parameter</button>
-                </div>
-
-                {(script.parameters?.length || 0) === 0 ? (
-                  <div className="parameter-empty-state" style={{ marginBottom: 20 }}>No named parameters defined. Add one for random, date/time, counter, file, or list-driven values.</div>
-                ) : (
-                  <div className="parameter-table-wrap" style={{ marginBottom: 20 }}>
-                    <table className="parameter-table">
-                      <thead>
-                        <tr>
-                          <th>Name</th>
-                          <th>Type</th>
-                          <th>Update</th>
-                          <th>Source / Selection</th>
-                          <th>Settings</th>
-                          <th>Template</th>
-                          <th style={{ textAlign: 'right' }}>Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {(script.parameters || []).map((parameter, idx) => (
-                          <tr key={`${parameter.name || 'parameter'}-${idx}`}>
-                            <td>
-                              <input
-                                value={parameter.name || ''}
-                                onChange={e => updateParameter(idx, 'name', e.target.value)}
-                                placeholder="session_id"
-                              />
-                            </td>
-                            <td>
-                              <select value={parameter.type || 'list'} onChange={e => updateParameterType(idx, e.target.value)}>
-                                <option value="list">list</option>
-                                <option value="file">file</option>
-                                <option value="random_number">random_number</option>
-                                <option value="date_time">date_time</option>
-                                <option value="timestamp">timestamp</option>
-                                <option value="counter">counter</option>
-                                <option value="random_string">random_string</option>
-                                <option value="uuid">uuid</option>
-                              </select>
-                            </td>
-                            <td>
-                              <select value={parameter.update || 'each_iteration'} onChange={e => updateParameter(idx, 'update', e.target.value)}>
-                                <option value="once">once</option>
-                                <option value="each_iteration">each_iteration</option>
-                                <option value="each_occurrence">each_occurrence</option>
-                              </select>
-                            </td>
-                            <td>
-                              <div style={{ display: 'grid', gap: 8 }}>
-                                {(parameter.type === 'file' || parameter.type === 'list') && (
-                                  <>
-                                    <select value={parameter.selection || 'sequential'} onChange={e => updateParameter(idx, 'selection', e.target.value)}>
-                                      <option value="sequential">sequential</option>
-                                      <option value="random">random</option>
-                                      <option value="unique">unique</option>
-                                    </select>
-                                    <select value={parameter.on_exhaustion || 'wrap'} onChange={e => updateParameter(idx, 'on_exhaustion', e.target.value)}>
-                                      <option value="wrap">wrap</option>
-                                      <option value="empty">empty</option>
-                                      <option value="error">error</option>
-                                    </select>
-                                    <input
-                                      value={parameter.data_source || ''}
-                                      onChange={e => updateParameter(idx, 'data_source', e.target.value)}
-                                      placeholder="data source name"
-                                    />
-                                    <input
-                                      value={parameter.column || ''}
-                                      onChange={e => updateParameter(idx, 'column', e.target.value)}
-                                      placeholder="column name"
-                                    />
-                                    {parameter.type === 'list' && (
-                                      <input
-                                        value={(parameter.values || []).join(', ')}
-                                        onChange={e => updateParameter(idx, 'values', e.target.value.split(',').map(v => v.trim()).filter(Boolean))}
-                                        placeholder="inline values (optional)"
-                                      />
-                                    )}
-                                  </>
-                                )}
-                                {parameter.type === 'random_number' && (
-                                  <div style={{ display: 'grid', gap: 8 }}>
-                                    <input type="number" value={parameter.min ?? 0} onChange={e => updateParameter(idx, 'min', Number(e.target.value))} placeholder="min" />
-                                    <input type="number" value={parameter.max ?? 100} onChange={e => updateParameter(idx, 'max', Number(e.target.value))} placeholder="max" />
-                                  </div>
-                                )}
-                                {parameter.type === 'counter' && (
-                                  <div style={{ display: 'grid', gap: 8 }}>
-                                    <input type="number" value={parameter.start ?? 0} onChange={e => updateParameter(idx, 'start', Number(e.target.value))} placeholder="start" />
-                                    <input type="number" value={parameter.end ?? 0} onChange={e => updateParameter(idx, 'end', Number(e.target.value))} placeholder="end (optional)" />
-                                    <input type="number" value={parameter.step ?? 1} onChange={e => updateParameter(idx, 'step', Number(e.target.value))} placeholder="step" />
-                                  </div>
-                                )}
-                                {parameter.type === 'random_string' && (
-                                  <div style={{ display: 'grid', gap: 8 }}>
-                                    <input type="number" value={parameter.length ?? 12} onChange={e => updateParameter(idx, 'length', Number(e.target.value))} placeholder="length" />
-                                    <input value={parameter.charset || ''} onChange={e => updateParameter(idx, 'charset', e.target.value)} placeholder="charset override" />
-                                  </div>
-                                )}
-                                {parameter.type === 'uuid' && <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Generated UUID per update cadence.</span>}
-                              </div>
-                            </td>
-                            <td>
-                              <div style={{ display: 'grid', gap: 8 }}>
-                                {(parameter.type === 'date_time' || parameter.type === 'timestamp') && (
-                                  <>
-                                    {parameter.type === 'timestamp' ? (
-                                      <select value={parameter.format || 'iso8601'} onChange={e => updateParameter(idx, 'format', e.target.value)}>
-                                        <option value="unix">unix</option>
-                                        <option value="unix_ms">unix_ms</option>
-                                        <option value="iso8601">iso8601</option>
-                                        <option value="rfc3339">rfc3339</option>
-                                        <option value="rfc3339_nano">rfc3339_nano</option>
-                                      </select>
-                                    ) : (
-                                      <input value={parameter.format || ''} onChange={e => updateParameter(idx, 'format', e.target.value)} placeholder="Go time layout" />
-                                    )}
-                                    <input value={parameter.timezone || ''} onChange={e => updateParameter(idx, 'timezone', e.target.value)} placeholder="timezone (UTC, America/New_York)" />
-                                    <input type="number" value={parameter.offset_seconds ?? 0} onChange={e => updateParameter(idx, 'offset_seconds', Number(e.target.value))} placeholder="offset seconds" />
-                                  </>
-                                )}
-                                {(parameter.type === 'counter' || parameter.type === 'random_number') && (
-                                  <>
-                                    <input type="number" value={parameter.pad_width ?? 0} onChange={e => updateParameter(idx, 'pad_width', Number(e.target.value))} placeholder="pad width" />
-                                    <input value={parameter.pad_char || ''} onChange={e => updateParameter(idx, 'pad_char', e.target.value)} placeholder="pad char" />
-                                  </>
-                                )}
-                                <input type="number" value={parameter.seed ?? 0} onChange={e => updateParameter(idx, 'seed', Number(e.target.value) || undefined)} placeholder="seed (optional)" />
-                              </div>
-                            </td>
-                            <td className="cell-mono">{parameter.name ? `{{param.${parameter.name}}}` : '—'}</td>
-                            <td style={{ textAlign: 'right' }}>
-                              <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={() => removeParameter(idx)}>Remove</button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-
-                <div className="panel-title-row">
-                  <div>
-                    <strong style={{ display: 'block', marginBottom: 4 }}>Parameter Data Sources</strong>
-                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Define reusable data sources for file-backed parameter values and row-based request data.</span>
-                  </div>
-                  <button className="btn btn-sm btn-accent" onClick={addDataSource}>+ Add Source</button>
-                </div>
-
-                {(script.data_sources?.length || 0) === 0 ? (
-                  <div className="parameter-empty-state">No data sources defined. Add a source for CSV or DAT-backed parameter values.</div>
-                ) : (
-                  <div className="parameter-table-wrap">
-                    <table className="parameter-table">
-                      <thead>
-                        <tr>
-                          <th>Name</th>
-                          <th>Type</th>
-                          <th>Strategy</th>
-                          <th>Header Row</th>
-                          <th>Rows</th>
-                          <th>Columns</th>
-                          <th>Delimiter</th>
-                          <th>Data File Path</th>
-                          <th style={{ textAlign: 'right' }}>Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {(script.data_sources || []).map((source, idx) => (
-                          <tr key={`${source.name || 'source'}-${idx}`}>
-                            <td>
-                              <input
-                                value={source.name || ''}
-                                onChange={e => updateDataSource(idx, 'name', e.target.value)}
-                                placeholder="users"
-                              />
-                            </td>
-                            <td>
-                              <select value={source.type || 'csv'} onChange={e => updateDataSource(idx, 'type', e.target.value)}>
-                                <option value="csv">csv</option>
-                                <option value="dat">dat</option>
-                              </select>
-                            </td>
-                            <td>
-                              <select value={source.strategy || 'sequential'} onChange={e => updateDataSource(idx, 'strategy', e.target.value)}>
-                                <option value="sequential">sequential</option>
-                                <option value="random">random</option>
-                                <option value="unique">unique</option>
-                              </select>
-                            </td>
-                            <td>
-                              <label className="checkbox-label compact">
-                                <input
-                                  type="checkbox"
-                                  checked={source.first_row_header !== false}
-                                  onChange={e => updateDataSource(idx, 'first_row_header', e.target.checked)}
-                                />
-                                <span>{source.first_row_header !== false ? 'Yes' : 'No'}</span>
-                              </label>
-                            </td>
-                            <td className="cell-mono">{summarizeInlineData(source).rows || '—'}</td>
-                            <td>
-                              <input
-                                value={(source.columns || []).join(', ')}
-                                onChange={e => updateDataSource(
-                                  idx,
-                                  'columns',
-                                  e.target.value.split(',').map(v => v.trim()).filter(Boolean),
-                                )}
-                                placeholder="username, password"
-                              />
-                            </td>
-                            <td>
-                              <input
-                                value={source.delimiter ?? (source.type === 'dat' ? '\t' : ',')}
-                                onChange={e => updateDataSource(idx, 'delimiter', e.target.value)}
-                                placeholder={source.type === 'dat' ? '\\t' : ','}
-                              />
-                            </td>
-                            <td>
-                              <input
-                                value={source.path || ''}
-                                onChange={e => updateDataSource(idx, 'path', e.target.value)}
-                                placeholder="/absolute/path/to/data.csv (optional when inline data is used)"
-                              />
-                            </td>
-                            <td style={{ textAlign: 'right' }}>
-                              <div className="parameter-actions">
-                                <button className="btn btn-sm btn-ghost" onClick={() => setOpenDataEditor(openDataEditor === idx ? null : idx)}>
-                                  {openDataEditor === idx ? 'Hide Data' : 'Edit Data'}
-                                </button>
-                                <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={() => removeDataSource(idx)}>Remove</button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                    {(script.data_sources || []).map((source, idx) => (
-                      openDataEditor === idx ? (
-                        <tr key={`${source.name || 'source'}-${idx}-editor`} className="parameter-editor-row">
-                          <td colSpan={9}>
-                            <div className="parameter-editor">
-                              <div className="parameter-editor-header">
-                                <strong>{source.name || `Source ${idx + 1}`}</strong>
-                                <div className="parameter-editor-meta">
-                                  <span className="cell-mono">
-                                    {summarizeInlineData(source).rows} rows · {summarizeInlineData(source).columns} columns
-                                  </span>
-                                  <div className="parameter-editor-controls">
-                                    <button className="btn btn-sm btn-ghost" disabled={!dataSourceHistory[idx]?.past?.length} onClick={() => undoDataSource(idx)}>Undo</button>
-                                    <button className="btn btn-sm btn-ghost" disabled={!dataSourceHistory[idx]?.future?.length} onClick={() => redoDataSource(idx)}>Redo</button>
-                                    <button
-                                      className="btn btn-sm btn-ghost"
-                                      onClick={() => setDataEditorMode(prev => ({ ...prev, [idx]: (prev[idx] || 'grid') === 'grid' ? 'raw' : 'grid' }))}
-                                    >
-                                      {(dataEditorMode[idx] || 'grid') === 'grid' ? 'Raw Mode' : 'Grid Mode'}
-                                    </button>
-                                    <label className="btn btn-sm btn-ghost file-btn">
-                                      Import
-                                      <input
-                                        type="file"
-                                        accept=".csv,.dat,.txt"
-                                        onChange={e => {
-                                          const file = e.target.files?.[0] || null
-                                          importDataSourceFile(idx, file)
-                                          e.currentTarget.value = ''
-                                        }}
-                                      />
-                                    </label>
-                                    <button className="btn btn-sm btn-ghost" onClick={() => exportDataSourceFile(source, idx)}>Export</button>
-                                  </div>
-                                </div>
-                              </div>
-                              {validateInlineData(source).length > 0 && (
-                                <div className="parameter-validation">
-                                  <div className="parameter-validation-header">
-                                    <strong>Data Warnings</strong>
-                                    <div className="parameter-validation-actions">
-                                      <button className="btn btn-sm btn-ghost" onClick={() => applyFillHeaders(idx)}>Fill Headers</button>
-                                      <button className="btn btn-sm btn-ghost" onClick={() => applyDedupeHeaders(idx)}>Deduplicate</button>
-                                      <button className="btn btn-sm btn-ghost" onClick={() => applyNormalizeRows(idx)}>Normalize Rows</button>
-                                      <button className="btn btn-sm btn-ghost" onClick={() => autoFixDataSource(idx)}>Auto-Fix All</button>
-                                    </div>
-                                  </div>
-                                  {validateInlineData(source).map((warning, warningIdx) => (
-                                    <div key={`${idx}-warn-${warningIdx}`} className="parameter-validation-item">{warning}</div>
-                                  ))}
-                                </div>
-                              )}
-                              {(dataEditorMode[idx] || 'grid') === 'grid' ? (
-                                <div className="parameter-grid-wrap">
-                                  <div className="parameter-grid-actions">
-                                    <button className="btn btn-sm btn-ghost" onClick={() => addDataRow(idx)}>+ Row</button>
-                                    <button className="btn btn-sm btn-ghost" onClick={() => addDataColumn(idx)}>+ Column</button>
-                                  </div>
-                                  <div className="parameter-grid-scroll">
-                                    <table className="parameter-grid">
-                                      <thead>
-                                        <tr>
-                                          <th>#</th>
-                                          {parseInlineData(source).columns.map((column, colIdx) => (
-                                            <th key={`${idx}-h-${colIdx}`}>
-                                              <div className="parameter-grid-head">
-                                                <input
-                                                  value={column}
-                                                  onChange={e => updateDataColumnName(idx, colIdx, e.target.value)}
-                                                  placeholder={`col_${colIdx + 1}`}
-                                                />
-                                                <button className="btn-icon danger" onClick={() => removeDataColumn(idx, colIdx)} title="Remove column">✕</button>
-                                              </div>
-                                            </th>
-                                          ))}
-                                        </tr>
-                                      </thead>
-                                      <tbody>
-                                        {parseInlineData(source).rows.map((row, rowIdx) => (
-                                          <tr key={`${idx}-r-${rowIdx}`}>
-                                            <td className="parameter-grid-index">
-                                              {rowIdx + 1}
-                                              <button className="btn-icon danger" onClick={() => removeDataRow(idx, rowIdx)} title="Remove row">✕</button>
-                                            </td>
-                                            {parseInlineData(source).columns.map((_, colIdx) => (
-                                              <td key={`${idx}-c-${rowIdx}-${colIdx}`}>
-                                                <input
-                                                  value={row[colIdx] || ''}
-                                                  onChange={e => updateDataCell(idx, rowIdx, colIdx, e.target.value)}
-                                                />
-                                              </td>
-                                            ))}
-                                          </tr>
-                                        ))}
-                                        {parseInlineData(source).rows.length === 0 && (
-                                          <tr>
-                                            <td colSpan={parseInlineData(source).columns.length + 1} className="parameter-grid-empty">
-                                              No rows yet. Use + Row to add parameter records.
-                                            </td>
-                                          </tr>
-                                        )}
-                                      </tbody>
-                                    </table>
-                                  </div>
-                                </div>
-                              ) : (
-                                <textarea
-                                  value={source.inline_data || ''}
-                                  onChange={e => updateDataSource(idx, 'inline_data', e.target.value, true)}
-                                  placeholder={source.first_row_header !== false ? 'username,password\nalice,pass1\nbob,pass2' : 'alice,pass1\nbob,pass2'}
-                                  spellCheck={false}
-                                />
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      ) : null
-                    ))}
-                  </tbody>
-                </table>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
+            <ParameterDataDialog
+              dataEditorMode={dataEditorMode}
+              dataSourceHistory={dataSourceHistory}
+              onAddDataColumn={addDataColumn}
+              onAddDataRow={addDataRow}
+              onAddDataSource={addDataSource}
+              onAddParameter={addParameter}
+              onApplyDedupeHeaders={applyDedupeHeaders}
+              onApplyFillHeaders={applyFillHeaders}
+              onApplyNormalizeRows={applyNormalizeRows}
+              onApplyPendingParameterDraft={applyPendingParameterDraft}
+              onAutoFixDataSource={autoFixDataSource}
+              onClearPendingParameterDraft={clearPendingParameterDraft}
+              onClose={closeParameterDialog}
+              onExportDataSourceFile={exportDataSourceFile}
+              onImportDataSourceFile={importDataSourceFile}
+              onRedoDataSource={redoDataSource}
+              onRemoveDataColumn={removeDataColumn}
+              onRemoveDataRow={removeDataRow}
+              onRemoveDataSource={removeDataSource}
+              onRemoveParameter={removeParameter}
+              onToggleDataEditorMode={toggleDataEditorModeAt}
+              onToggleOpenDataEditor={toggleOpenDataEditor}
+              onUndoDataSource={undoDataSource}
+              onUpdateDataCell={updateDataCell}
+              onUpdateDataColumnName={updateDataColumnName}
+              onUpdateDataSource={updateDataSource}
+              onUpdateParameter={updateParameter}
+              onUpdateParameterDraftName={updatePendingParameterDraftName}
+              onUpdateParameterDraftValue={updatePendingParameterDraftValue}
+              onUpdateParameterType={updateParameterType}
+              openDataEditor={openDataEditor}
+              pendingParameterDraft={pendingParameterDraft}
+              script={script}
+            />
           )}
         </div>
       )}
     </div>
+  )
+}
+
+interface ParameterDataDialogProps {
+  dataEditorMode: Record<number, 'grid' | 'raw'>
+  dataSourceHistory: Record<number, DataSourceHistory>
+  onAddDataColumn: (idx: number) => void
+  onAddDataRow: (idx: number) => void
+  onAddDataSource: () => void
+  onAddParameter: () => void
+  onApplyDedupeHeaders: (idx: number) => void
+  onApplyFillHeaders: (idx: number) => void
+  onApplyNormalizeRows: (idx: number) => void
+  onApplyPendingParameterDraft: () => void
+  onAutoFixDataSource: (idx: number) => void
+  onClearPendingParameterDraft: () => void
+  onClose: () => void
+  onExportDataSourceFile: (source: DataSourceConfig, idx: number) => void
+  onImportDataSourceFile: (idx: number, file: File | null) => void
+  onRedoDataSource: (idx: number) => void
+  onRemoveDataColumn: (idx: number, colIdx: number) => void
+  onRemoveDataRow: (idx: number, rowIdx: number) => void
+  onRemoveDataSource: (idx: number) => void
+  onRemoveParameter: (idx: number) => void
+  onToggleDataEditorMode: (idx: number) => void
+  onToggleOpenDataEditor: (idx: number) => void
+  onUndoDataSource: (idx: number) => void
+  onUpdateDataCell: (idx: number, rowIdx: number, colIdx: number, value: string) => void
+  onUpdateDataColumnName: (idx: number, colIdx: number, value: string) => void
+  onUpdateDataSource: (idx: number, field: keyof DataSourceConfig, value: unknown, trackHistory?: boolean) => void
+  onUpdateParameter: (idx: number, field: keyof ParameterConfig, value: unknown) => void
+  onUpdateParameterDraftName: (value: string) => void
+  onUpdateParameterDraftValue: (value: string) => void
+  onUpdateParameterType: (idx: number, nextType: string) => void
+  openDataEditor: number | null
+  pendingParameterDraft: ActionEditorParameterDraft | null
+  script: ScriptData
+}
+
+function ParameterDataDialog({
+  dataEditorMode,
+  dataSourceHistory,
+  onAddDataColumn,
+  onAddDataRow,
+  onAddDataSource,
+  onAddParameter,
+  onApplyDedupeHeaders,
+  onApplyFillHeaders,
+  onApplyNormalizeRows,
+  onApplyPendingParameterDraft,
+  onAutoFixDataSource,
+  onClearPendingParameterDraft,
+  onClose,
+  onExportDataSourceFile,
+  onImportDataSourceFile,
+  onRedoDataSource,
+  onRemoveDataColumn,
+  onRemoveDataRow,
+  onRemoveDataSource,
+  onRemoveParameter,
+  onToggleDataEditorMode,
+  onToggleOpenDataEditor,
+  onUndoDataSource,
+  onUpdateDataCell,
+  onUpdateDataColumnName,
+  onUpdateDataSource,
+  onUpdateParameter,
+  onUpdateParameterDraftName,
+  onUpdateParameterDraftValue,
+  onUpdateParameterType,
+  openDataEditor,
+  pendingParameterDraft,
+  script,
+}: ParameterDataDialogProps) {
+  return (
+    <div className="editor-dialog-backdrop" onClick={onClose}>
+      <div
+        className="editor-dialog parameter-data-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Parameter Data"
+        onClick={event => event.stopPropagation()}
+      >
+        <div className="editor-dialog-header">
+          <div>
+            <h3 className="panel-title">Parameter Data ({script.data_sources?.length || 0})</h3>
+            <p className="editor-dialog-subtitle">Manage named parameters and reusable data sources without leaving the action workspace.</p>
+          </div>
+          <button className="btn btn-sm btn-ghost" onClick={onClose}>Close</button>
+        </div>
+        <div className="editor-dialog-body">
+          {pendingParameterDraft && (
+            <ParameterDraftPanel
+              draft={pendingParameterDraft}
+              onApplyPendingParameterDraft={onApplyPendingParameterDraft}
+              onClearPendingParameterDraft={onClearPendingParameterDraft}
+              onUpdateParameterDraftName={onUpdateParameterDraftName}
+              onUpdateParameterDraftValue={onUpdateParameterDraftValue}
+            />
+          )}
+          <ParameterDefinitionsSection
+            onAddParameter={onAddParameter}
+            onRemoveParameter={onRemoveParameter}
+            onUpdateParameter={onUpdateParameter}
+            onUpdateParameterType={onUpdateParameterType}
+            script={script}
+          />
+
+          <ParameterDataSourcesSection
+            dataEditorMode={dataEditorMode}
+            dataSourceHistory={dataSourceHistory}
+            onAddDataColumn={onAddDataColumn}
+            onAddDataRow={onAddDataRow}
+            onAddDataSource={onAddDataSource}
+            onApplyDedupeHeaders={onApplyDedupeHeaders}
+            onApplyFillHeaders={onApplyFillHeaders}
+            onApplyNormalizeRows={onApplyNormalizeRows}
+            onAutoFixDataSource={onAutoFixDataSource}
+            onExportDataSourceFile={onExportDataSourceFile}
+            onImportDataSourceFile={onImportDataSourceFile}
+            onRedoDataSource={onRedoDataSource}
+            onRemoveDataColumn={onRemoveDataColumn}
+            onRemoveDataRow={onRemoveDataRow}
+            onRemoveDataSource={onRemoveDataSource}
+            onToggleDataEditorMode={onToggleDataEditorMode}
+            onToggleOpenDataEditor={onToggleOpenDataEditor}
+            onUndoDataSource={onUndoDataSource}
+            onUpdateDataCell={onUpdateDataCell}
+            onUpdateDataColumnName={onUpdateDataColumnName}
+            onUpdateDataSource={onUpdateDataSource}
+            openDataEditor={openDataEditor}
+            script={script}
+          />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+interface ParameterDraftPanelProps {
+  draft: ActionEditorParameterDraft
+  onApplyPendingParameterDraft: () => void
+  onClearPendingParameterDraft: () => void
+  onUpdateParameterDraftName: (value: string) => void
+  onUpdateParameterDraftValue: (value: string) => void
+}
+
+function ParameterDraftPanel({
+  draft,
+  onApplyPendingParameterDraft,
+  onClearPendingParameterDraft,
+  onUpdateParameterDraftName,
+  onUpdateParameterDraftValue,
+}: ParameterDraftPanelProps) {
+  return (
+    <div className="parameter-draft-panel">
+      <div className="panel-title-row" style={{ marginBottom: 8 }}>
+        <div>
+          <strong style={{ display: 'block', marginBottom: 4 }}>Parameterize Selection</strong>
+          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>This selection came from the Action List editor. Review it here with the rest of the parameter configuration.</span>
+        </div>
+      </div>
+      <div className="parameter-draft-grid">
+        <label>
+          <span>Name</span>
+          <input
+            value={draft.requestedName}
+            onChange={event => onUpdateParameterDraftName(event.target.value)}
+            placeholder="param_name"
+          />
+        </label>
+        <label>
+          <span>Value</span>
+          <input
+            value={draft.seedValue}
+            onChange={event => onUpdateParameterDraftValue(event.target.value)}
+            placeholder="Selected value"
+          />
+        </label>
+      </div>
+      <div className="parameter-draft-actions">
+        <button type="button" className="btn btn-sm btn-primary" onClick={onApplyPendingParameterDraft} disabled={!draft.requestedName.trim()}>
+          Save To Parameter Data
+        </button>
+        <button type="button" className="btn btn-sm btn-ghost" onClick={onClearPendingParameterDraft}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
+}
+
+interface ParameterDefinitionsSectionProps {
+  onAddParameter: () => void
+  onRemoveParameter: (idx: number) => void
+  onUpdateParameter: (idx: number, field: keyof ParameterConfig, value: unknown) => void
+  onUpdateParameterType: (idx: number, nextType: string) => void
+  script: ScriptData
+}
+
+function ParameterDefinitionsSection({
+  onAddParameter,
+  onRemoveParameter,
+  onUpdateParameter,
+  onUpdateParameterType,
+  script,
+}: ParameterDefinitionsSectionProps) {
+  return (
+    <>
+      <div className="panel-title-row" style={{ marginBottom: 12 }}>
+        <div>
+          <strong style={{ display: 'block', marginBottom: 4 }}>Named Parameters</strong>
+          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Define named parameters with VuGen-style update cadence and generated values.</span>
+        </div>
+        <button className="btn btn-sm btn-accent" onClick={onAddParameter}>+ Add Parameter</button>
+      </div>
+
+      {(script.parameters?.length || 0) === 0 ? (
+        <div className="parameter-empty-state" style={{ marginBottom: 20 }}>No named parameters defined. Add one for random, date/time, counter, file, or list-driven values.</div>
+      ) : (
+        <div className="parameter-table-wrap" style={{ marginBottom: 20 }}>
+          <table className="parameter-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Type</th>
+                <th>Update</th>
+                <th>Source / Selection</th>
+                <th>Settings</th>
+                <th>Template</th>
+                <th style={{ textAlign: 'right' }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(script.parameters || []).map((parameter, idx) => (
+                <tr key={`${parameter.name || 'parameter'}-${idx}`}>
+                  <td>
+                    <input
+                      value={parameter.name || ''}
+                      onChange={e => onUpdateParameter(idx, 'name', e.target.value)}
+                      placeholder="session_id"
+                    />
+                  </td>
+                  <td>
+                    <select value={parameter.type || 'list'} onChange={e => onUpdateParameterType(idx, e.target.value)}>
+                      <option value="list">list</option>
+                      <option value="file">file</option>
+                      <option value="random_number">random_number</option>
+                      <option value="date_time">date_time</option>
+                      <option value="timestamp">timestamp</option>
+                      <option value="counter">counter</option>
+                      <option value="random_string">random_string</option>
+                      <option value="uuid">uuid</option>
+                    </select>
+                  </td>
+                  <td>
+                    <select value={parameter.update || 'each_iteration'} onChange={e => onUpdateParameter(idx, 'update', e.target.value)}>
+                      <option value="once">once</option>
+                      <option value="each_iteration">each_iteration</option>
+                      <option value="each_occurrence">each_occurrence</option>
+                    </select>
+                  </td>
+                  <td>
+                    <div style={{ display: 'grid', gap: 8 }}>
+                      {(parameter.type === 'file' || parameter.type === 'list') && (
+                        <>
+                          <select value={parameter.selection || 'sequential'} onChange={e => onUpdateParameter(idx, 'selection', e.target.value)}>
+                            <option value="sequential">sequential</option>
+                            <option value="random">random</option>
+                            <option value="unique">unique</option>
+                          </select>
+                          <select value={parameter.on_exhaustion || 'wrap'} onChange={e => onUpdateParameter(idx, 'on_exhaustion', e.target.value)}>
+                            <option value="wrap">wrap</option>
+                            <option value="empty">empty</option>
+                            <option value="error">error</option>
+                          </select>
+                          <input
+                            value={parameter.data_source || ''}
+                            onChange={e => onUpdateParameter(idx, 'data_source', e.target.value)}
+                            placeholder="data source name"
+                          />
+                          <input
+                            value={parameter.column || ''}
+                            onChange={e => onUpdateParameter(idx, 'column', e.target.value)}
+                            placeholder="column name"
+                          />
+                          {parameter.type === 'list' && (
+                            <input
+                              value={(parameter.values || []).join(', ')}
+                              onChange={e => onUpdateParameter(idx, 'values', e.target.value.split(',').map(v => v.trim()).filter(Boolean))}
+                              placeholder="inline values (optional)"
+                            />
+                          )}
+                        </>
+                      )}
+                      {parameter.type === 'random_number' && (
+                        <div style={{ display: 'grid', gap: 8 }}>
+                          <input type="number" value={parameter.min ?? 0} onChange={e => onUpdateParameter(idx, 'min', Number(e.target.value))} placeholder="min" />
+                          <input type="number" value={parameter.max ?? 100} onChange={e => onUpdateParameter(idx, 'max', Number(e.target.value))} placeholder="max" />
+                        </div>
+                      )}
+                      {parameter.type === 'counter' && (
+                        <div style={{ display: 'grid', gap: 8 }}>
+                          <input type="number" value={parameter.start ?? 0} onChange={e => onUpdateParameter(idx, 'start', Number(e.target.value))} placeholder="start" />
+                          <input type="number" value={parameter.end ?? 0} onChange={e => onUpdateParameter(idx, 'end', Number(e.target.value))} placeholder="end (optional)" />
+                          <input type="number" value={parameter.step ?? 1} onChange={e => onUpdateParameter(idx, 'step', Number(e.target.value))} placeholder="step" />
+                        </div>
+                      )}
+                      {parameter.type === 'random_string' && (
+                        <div style={{ display: 'grid', gap: 8 }}>
+                          <input type="number" value={parameter.length ?? 12} onChange={e => onUpdateParameter(idx, 'length', Number(e.target.value))} placeholder="length" />
+                          <input value={parameter.charset || ''} onChange={e => onUpdateParameter(idx, 'charset', e.target.value)} placeholder="charset override" />
+                        </div>
+                      )}
+                      {parameter.type === 'uuid' && <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Generated UUID per update cadence.</span>}
+                    </div>
+                  </td>
+                  <td>
+                    <div style={{ display: 'grid', gap: 8 }}>
+                      {(parameter.type === 'date_time' || parameter.type === 'timestamp') && (
+                        <>
+                          {parameter.type === 'timestamp' ? (
+                            <select value={parameter.format || 'iso8601'} onChange={e => onUpdateParameter(idx, 'format', e.target.value)}>
+                              <option value="unix">unix</option>
+                              <option value="unix_ms">unix_ms</option>
+                              <option value="iso8601">iso8601</option>
+                              <option value="rfc3339">rfc3339</option>
+                              <option value="rfc3339_nano">rfc3339_nano</option>
+                            </select>
+                          ) : (
+                            <input value={parameter.format || ''} onChange={e => onUpdateParameter(idx, 'format', e.target.value)} placeholder="Go time layout" />
+                          )}
+                          <input value={parameter.timezone || ''} onChange={e => onUpdateParameter(idx, 'timezone', e.target.value)} placeholder="timezone (UTC, America/New_York)" />
+                          <input type="number" value={parameter.offset_seconds ?? 0} onChange={e => onUpdateParameter(idx, 'offset_seconds', Number(e.target.value))} placeholder="offset seconds" />
+                        </>
+                      )}
+                      {(parameter.type === 'counter' || parameter.type === 'random_number') && (
+                        <>
+                          <input type="number" value={parameter.pad_width ?? 0} onChange={e => onUpdateParameter(idx, 'pad_width', Number(e.target.value))} placeholder="pad width" />
+                          <input value={parameter.pad_char || ''} onChange={e => onUpdateParameter(idx, 'pad_char', e.target.value)} placeholder="pad char" />
+                        </>
+                      )}
+                      <input type="number" value={parameter.seed ?? 0} onChange={e => onUpdateParameter(idx, 'seed', Number(e.target.value) || undefined)} placeholder="seed (optional)" />
+                    </div>
+                  </td>
+                  <td className="cell-mono">{parameter.name ? `{{param.${parameter.name}}}` : '—'}</td>
+                  <td style={{ textAlign: 'right' }}>
+                    <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={() => onRemoveParameter(idx)}>Remove</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </>
+  )
+}
+
+interface ParameterDataSourcesSectionProps {
+  dataEditorMode: Record<number, 'grid' | 'raw'>
+  dataSourceHistory: Record<number, DataSourceHistory>
+  onAddDataColumn: (idx: number) => void
+  onAddDataRow: (idx: number) => void
+  onAddDataSource: () => void
+  onApplyDedupeHeaders: (idx: number) => void
+  onApplyFillHeaders: (idx: number) => void
+  onApplyNormalizeRows: (idx: number) => void
+  onAutoFixDataSource: (idx: number) => void
+  onExportDataSourceFile: (source: DataSourceConfig, idx: number) => void
+  onImportDataSourceFile: (idx: number, file: File | null) => void
+  onRedoDataSource: (idx: number) => void
+  onRemoveDataColumn: (idx: number, colIdx: number) => void
+  onRemoveDataRow: (idx: number, rowIdx: number) => void
+  onRemoveDataSource: (idx: number) => void
+  onToggleDataEditorMode: (idx: number) => void
+  onToggleOpenDataEditor: (idx: number) => void
+  onUndoDataSource: (idx: number) => void
+  onUpdateDataCell: (idx: number, rowIdx: number, colIdx: number, value: string) => void
+  onUpdateDataColumnName: (idx: number, colIdx: number, value: string) => void
+  onUpdateDataSource: (idx: number, field: keyof DataSourceConfig, value: unknown, trackHistory?: boolean) => void
+  openDataEditor: number | null
+  script: ScriptData
+}
+
+function ParameterDataSourcesSection({
+  dataEditorMode,
+  dataSourceHistory,
+  onAddDataColumn,
+  onAddDataRow,
+  onAddDataSource,
+  onApplyDedupeHeaders,
+  onApplyFillHeaders,
+  onApplyNormalizeRows,
+  onAutoFixDataSource,
+  onExportDataSourceFile,
+  onImportDataSourceFile,
+  onRedoDataSource,
+  onRemoveDataColumn,
+  onRemoveDataRow,
+  onRemoveDataSource,
+  onToggleDataEditorMode,
+  onToggleOpenDataEditor,
+  onUndoDataSource,
+  onUpdateDataCell,
+  onUpdateDataColumnName,
+  onUpdateDataSource,
+  openDataEditor,
+  script,
+}: ParameterDataSourcesSectionProps) {
+  return (
+    <>
+      <div className="panel-title-row">
+        <div>
+          <strong style={{ display: 'block', marginBottom: 4 }}>Parameter Data Sources</strong>
+          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Define reusable data sources for file-backed parameter values and row-based request data.</span>
+        </div>
+        <button className="btn btn-sm btn-accent" onClick={onAddDataSource}>+ Add Source</button>
+      </div>
+
+      {(script.data_sources?.length || 0) === 0 ? (
+        <div className="parameter-empty-state">No data sources defined. Add a source for CSV or DAT-backed parameter values.</div>
+      ) : (
+        <div className="parameter-table-wrap">
+          <table className="parameter-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Type</th>
+                <th>Strategy</th>
+                <th>Header Row</th>
+                <th>Rows</th>
+                <th>Columns</th>
+                <th>Delimiter</th>
+                <th>Data File Path</th>
+                <th style={{ textAlign: 'right' }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(script.data_sources || []).map((source, idx) => {
+                const summary = summarizeInlineData(source)
+                const parsed = parseInlineData(source)
+                const warnings = validateInlineData(source)
+                const isEditorOpen = openDataEditor === idx
+                const history = dataSourceHistory[idx]
+
+                return (
+                  <ParameterDataSourceRows
+                    dataEditorMode={dataEditorMode[idx] || 'grid'}
+                    history={history}
+                    index={idx}
+                    isEditorOpen={isEditorOpen}
+                    key={`${source.name || 'source'}-${idx}`}
+                    onAddDataColumn={onAddDataColumn}
+                    onAddDataRow={onAddDataRow}
+                    onApplyDedupeHeaders={onApplyDedupeHeaders}
+                    onApplyFillHeaders={onApplyFillHeaders}
+                    onApplyNormalizeRows={onApplyNormalizeRows}
+                    onAutoFixDataSource={onAutoFixDataSource}
+                    onExportDataSourceFile={onExportDataSourceFile}
+                    onImportDataSourceFile={onImportDataSourceFile}
+                    onRedoDataSource={onRedoDataSource}
+                    onRemoveDataColumn={onRemoveDataColumn}
+                    onRemoveDataRow={onRemoveDataRow}
+                    onRemoveDataSource={onRemoveDataSource}
+                    onToggleDataEditorMode={onToggleDataEditorMode}
+                    onToggleOpenDataEditor={onToggleOpenDataEditor}
+                    onUndoDataSource={onUndoDataSource}
+                    onUpdateDataCell={onUpdateDataCell}
+                    onUpdateDataColumnName={onUpdateDataColumnName}
+                    onUpdateDataSource={onUpdateDataSource}
+                    parsed={parsed}
+                    source={source}
+                    summary={summary}
+                    warnings={warnings}
+                  />
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </>
+  )
+}
+
+interface ParameterDataSourceRowsProps {
+  dataEditorMode: 'grid' | 'raw'
+  history?: DataSourceHistory
+  index: number
+  isEditorOpen: boolean
+  onAddDataColumn: (idx: number) => void
+  onAddDataRow: (idx: number) => void
+  onApplyDedupeHeaders: (idx: number) => void
+  onApplyFillHeaders: (idx: number) => void
+  onApplyNormalizeRows: (idx: number) => void
+  onAutoFixDataSource: (idx: number) => void
+  onExportDataSourceFile: (source: DataSourceConfig, idx: number) => void
+  onImportDataSourceFile: (idx: number, file: File | null) => void
+  onRedoDataSource: (idx: number) => void
+  onRemoveDataColumn: (idx: number, colIdx: number) => void
+  onRemoveDataRow: (idx: number, rowIdx: number) => void
+  onRemoveDataSource: (idx: number) => void
+  onToggleDataEditorMode: (idx: number) => void
+  onToggleOpenDataEditor: (idx: number) => void
+  onUndoDataSource: (idx: number) => void
+  onUpdateDataCell: (idx: number, rowIdx: number, colIdx: number, value: string) => void
+  onUpdateDataColumnName: (idx: number, colIdx: number, value: string) => void
+  onUpdateDataSource: (idx: number, field: keyof DataSourceConfig, value: unknown, trackHistory?: boolean) => void
+  parsed: { columns: string[]; rows: string[][] }
+  source: DataSourceConfig
+  summary: { rows: number; columns: number }
+  warnings: string[]
+}
+
+function ParameterDataSourceRows({
+  dataEditorMode,
+  history,
+  index,
+  isEditorOpen,
+  onAddDataColumn,
+  onAddDataRow,
+  onApplyDedupeHeaders,
+  onApplyFillHeaders,
+  onApplyNormalizeRows,
+  onAutoFixDataSource,
+  onExportDataSourceFile,
+  onImportDataSourceFile,
+  onRedoDataSource,
+  onRemoveDataColumn,
+  onRemoveDataRow,
+  onRemoveDataSource,
+  onToggleDataEditorMode,
+  onToggleOpenDataEditor,
+  onUndoDataSource,
+  onUpdateDataCell,
+  onUpdateDataColumnName,
+  onUpdateDataSource,
+  parsed,
+  source,
+  summary,
+  warnings,
+}: ParameterDataSourceRowsProps) {
+  return (
+    <>
+      <tr>
+        <td>
+          <input
+            value={source.name || ''}
+            onChange={e => onUpdateDataSource(index, 'name', e.target.value)}
+            placeholder="users"
+          />
+        </td>
+        <td>
+          <select value={source.type || 'csv'} onChange={e => onUpdateDataSource(index, 'type', e.target.value)}>
+            <option value="csv">csv</option>
+            <option value="dat">dat</option>
+          </select>
+        </td>
+        <td>
+          <select value={source.strategy || 'sequential'} onChange={e => onUpdateDataSource(index, 'strategy', e.target.value)}>
+            <option value="sequential">sequential</option>
+            <option value="random">random</option>
+            <option value="unique">unique</option>
+          </select>
+        </td>
+        <td>
+          <label className="checkbox-label compact">
+            <input
+              type="checkbox"
+              checked={source.first_row_header !== false}
+              onChange={e => onUpdateDataSource(index, 'first_row_header', e.target.checked)}
+            />
+            <span>{source.first_row_header !== false ? 'Yes' : 'No'}</span>
+          </label>
+        </td>
+        <td className="cell-mono">{summary.rows || '—'}</td>
+        <td>
+          <input
+            value={(source.columns || []).join(', ')}
+            onChange={e => onUpdateDataSource(
+              index,
+              'columns',
+              e.target.value.split(',').map(v => v.trim()).filter(Boolean),
+            )}
+            placeholder="username, password"
+          />
+        </td>
+        <td>
+          <input
+            value={source.delimiter ?? (source.type === 'dat' ? '\t' : ',')}
+            onChange={e => onUpdateDataSource(index, 'delimiter', e.target.value)}
+            placeholder={source.type === 'dat' ? '\\t' : ','}
+          />
+        </td>
+        <td>
+          <input
+            value={source.path || ''}
+            onChange={e => onUpdateDataSource(index, 'path', e.target.value)}
+            placeholder="/absolute/path/to/data.csv (optional when inline data is used)"
+          />
+        </td>
+        <td style={{ textAlign: 'right' }}>
+          <div className="parameter-actions">
+            <button className="btn btn-sm btn-ghost" onClick={() => onToggleOpenDataEditor(index)}>
+              {isEditorOpen ? 'Hide Data' : 'Edit Data'}
+            </button>
+            <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={() => onRemoveDataSource(index)}>Remove</button>
+          </div>
+        </td>
+      </tr>
+      {isEditorOpen && (
+        <tr className="parameter-editor-row">
+          <td colSpan={9}>
+            <div className="parameter-editor">
+              <div className="parameter-editor-header">
+                <strong>{source.name || `Source ${index + 1}`}</strong>
+                <div className="parameter-editor-meta">
+                  <span className="cell-mono">
+                    {summary.rows} rows · {summary.columns} columns
+                  </span>
+                  <div className="parameter-editor-controls">
+                    <button className="btn btn-sm btn-ghost" disabled={!history?.past?.length} onClick={() => onUndoDataSource(index)}>Undo</button>
+                    <button className="btn btn-sm btn-ghost" disabled={!history?.future?.length} onClick={() => onRedoDataSource(index)}>Redo</button>
+                    <button className="btn btn-sm btn-ghost" onClick={() => onToggleDataEditorMode(index)}>
+                      {dataEditorMode === 'grid' ? 'Raw Mode' : 'Grid Mode'}
+                    </button>
+                    <label className="btn btn-sm btn-ghost file-btn">
+                      Import
+                      <input
+                        type="file"
+                        accept=".csv,.dat,.txt"
+                        onChange={e => {
+                          const file = e.target.files?.[0] || null
+                          onImportDataSourceFile(index, file)
+                          e.currentTarget.value = ''
+                        }}
+                      />
+                    </label>
+                    <button className="btn btn-sm btn-ghost" onClick={() => onExportDataSourceFile(source, index)}>Export</button>
+                  </div>
+                </div>
+              </div>
+              {warnings.length > 0 && (
+                <div className="parameter-validation">
+                  <div className="parameter-validation-header">
+                    <strong>Data Warnings</strong>
+                    <div className="parameter-validation-actions">
+                      <button className="btn btn-sm btn-ghost" onClick={() => onApplyFillHeaders(index)}>Fill Headers</button>
+                      <button className="btn btn-sm btn-ghost" onClick={() => onApplyDedupeHeaders(index)}>Deduplicate</button>
+                      <button className="btn btn-sm btn-ghost" onClick={() => onApplyNormalizeRows(index)}>Normalize Rows</button>
+                      <button className="btn btn-sm btn-ghost" onClick={() => onAutoFixDataSource(index)}>Auto-Fix All</button>
+                    </div>
+                  </div>
+                  {warnings.map((warning, warningIdx) => (
+                    <div key={`${index}-warn-${warningIdx}`} className="parameter-validation-item">{warning}</div>
+                  ))}
+                </div>
+              )}
+              {dataEditorMode === 'grid' ? (
+                <div className="parameter-grid-wrap">
+                  <div className="parameter-grid-actions">
+                    <button className="btn btn-sm btn-ghost" onClick={() => onAddDataRow(index)}>+ Row</button>
+                    <button className="btn btn-sm btn-ghost" onClick={() => onAddDataColumn(index)}>+ Column</button>
+                  </div>
+                  <div className="parameter-grid-scroll">
+                    <table className="parameter-grid">
+                      <thead>
+                        <tr>
+                          <th>#</th>
+                          {parsed.columns.map((column, colIdx) => (
+                            <th key={`${index}-h-${colIdx}`}>
+                              <div className="parameter-grid-head">
+                                <input
+                                  value={column}
+                                  onChange={e => onUpdateDataColumnName(index, colIdx, e.target.value)}
+                                  placeholder={`col_${colIdx + 1}`}
+                                />
+                                <button className="btn-icon danger" onClick={() => onRemoveDataColumn(index, colIdx)} title="Remove column">✕</button>
+                              </div>
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {parsed.rows.map((row, rowIdx) => (
+                          <tr key={`${index}-r-${rowIdx}`}>
+                            <td className="parameter-grid-index">
+                              {rowIdx + 1}
+                              <button className="btn-icon danger" onClick={() => onRemoveDataRow(index, rowIdx)} title="Remove row">✕</button>
+                            </td>
+                            {parsed.columns.map((_, colIdx) => (
+                              <td key={`${index}-c-${rowIdx}-${colIdx}`}>
+                                <input
+                                  value={row[colIdx] || ''}
+                                  onChange={e => onUpdateDataCell(index, rowIdx, colIdx, e.target.value)}
+                                />
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                        {parsed.rows.length === 0 && (
+                          <tr>
+                            <td colSpan={parsed.columns.length + 1} className="parameter-grid-empty">
+                              No rows yet. Use + Row to add parameter records.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : (
+                <textarea
+                  value={source.inline_data || ''}
+                  onChange={e => onUpdateDataSource(index, 'inline_data', e.target.value, true)}
+                  placeholder={source.first_row_header !== false ? 'username,password\nalice,pass1\nbob,pass2' : 'alice,pass1\nbob,pass2'}
+                  spellCheck={false}
+                />
+              )}
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
   )
 }
 
@@ -3632,13 +3677,302 @@ function ActionEditor({ action, index, parameters, onUpdate, onAddExtractor, onU
   isJmsScript: boolean
   isSoapScript: boolean
 }) {
-  const browserActionTypes = ['browser_navigate', 'browser_click', 'browser_fill', 'browser_wait', 'browser_screenshot']
-  const jmsActionTypes = ['jms_publish', 'jms_consume', 'jms_request_reply', 'jms_ack', 'jms_commit', 'jms_rollback']
-  const waitFor = action.wait_for || {}
-  const capture = action.capture || {}
-  const params = action.params || {}
+  const { selectionState, openSelectionMenu, openParameterEditor } = useActionParameterMenu({
+    index,
+    onBeginParameterEdit,
+    parameters,
+  })
+
+  return (
+    <div className="action-editor-panel">
+      <ActionEditorHeader action={action} methodColor={methodColor} />
+
+      <ActionCoreFields
+        action={action}
+        index={index}
+        isBrowserScript={isBrowserScript}
+        isJmsScript={isJmsScript}
+        onUpdate={onUpdate}
+      />
+
+      {isBrowserScript && (
+        <BrowserActionFields action={action} index={index} onUpdate={onUpdate} />
+      )}
+
+      {isJmsScript ? (
+        <JmsActionFields
+          action={action}
+          index={index}
+          onAddHeader={onAddHeader}
+          onAddMetadata={onAddMetadata}
+          onAddAssertion={onAddAssertion}
+          onAddExtractor={onAddExtractor}
+          onRemoveAssertion={onRemoveAssertion}
+          onRemoveExtractor={onRemoveExtractor}
+          onRemoveHeader={onRemoveHeader}
+          onRemoveMetadata={onRemoveMetadata}
+          onUpdate={onUpdate}
+          onUpdateAssertion={onUpdateAssertion}
+          onUpdateExtractor={onUpdateExtractor}
+          onUpdateHeader={onUpdateHeader}
+          onUpdateMetadata={onUpdateMetadata}
+          onSelectionMenu={openSelectionMenu}
+        />
+      ) : (
+        <HttpActionFields
+          action={action}
+          index={index}
+          isBrowserScript={isBrowserScript}
+          isSoapScript={isSoapScript}
+          onAddAssertion={onAddAssertion}
+          onAddExtractor={onAddExtractor}
+          onAddHeader={onAddHeader}
+          onRemoveAssertion={onRemoveAssertion}
+          onRemoveExtractor={onRemoveExtractor}
+          onRemoveHeader={onRemoveHeader}
+          onUpdate={onUpdate}
+          onUpdateAssertion={onUpdateAssertion}
+          onUpdateExtractor={onUpdateExtractor}
+          onUpdateHeader={onUpdateHeader}
+          onSelectionMenu={openSelectionMenu}
+        />
+      )}
+
+      <ActionThinkTimeToggle action={action} index={index} onUpdate={onUpdate} />
+
+      <ActionParameterMenu selectionState={selectionState} onOpenParameterEditor={openParameterEditor} />
+    </div>
+  )
+}
+
+const BROWSER_ACTION_TYPES = ['browser_navigate', 'browser_click', 'browser_fill', 'browser_wait', 'browser_screenshot']
+const JMS_ACTION_TYPES = ['jms_publish', 'jms_consume', 'jms_request_reply', 'jms_ack', 'jms_commit', 'jms_rollback']
+const HTTP_ACTION_TYPES = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']
+
+interface ActionEditorHeaderProps {
+  action: Action
+  methodColor: (method: string) => string
+}
+
+function ActionEditorHeader({ action, methodColor }: ActionEditorHeaderProps) {
+  return (
+    <div className="action-editor-top">
+      <span className="action-badge" style={{ background: methodColor(action.type), color: '#fff' }}>{action.type}</span>
+      <h3>{action.name || 'Unnamed Action'}</h3>
+    </div>
+  )
+}
+
+interface ActionCoreFieldsProps {
+  action: Action
+  index: number
+  isBrowserScript: boolean
+  isJmsScript: boolean
+  onUpdate: (i: number, f: keyof Action, v: unknown) => void
+}
+
+function ActionCoreFields({ action, index, isBrowserScript, isJmsScript, onUpdate }: ActionCoreFieldsProps) {
   const showSelector = isBrowserScript && ['browser_click', 'browser_fill', 'browser_wait', 'browser_screenshot'].includes(action.type)
   const showValue = isBrowserScript && action.type === 'browser_fill'
+  const targetLabel = isJmsScript
+    ? 'Destination'
+    : isBrowserScript
+    ? action.type === 'browser_navigate'
+      ? 'URL or Path'
+      : action.type === 'browser_wait'
+        ? 'Wait Target or Duration'
+        : 'Target Selector'
+    : 'Target (path)'
+  const targetPlaceholder = isJmsScript
+    ? 'orders.in or {{data.destinations.queue}}'
+    : isBrowserScript
+    ? action.type === 'browser_navigate'
+      ? 'https://example.com or /login'
+      : action.type === 'browser_wait'
+        ? '#ready, text, or 750ms'
+        : '#submit'
+    : '/api/resource'
+  const actionTypes = isBrowserScript ? BROWSER_ACTION_TYPES : isJmsScript ? JMS_ACTION_TYPES : HTTP_ACTION_TYPES
+
+  return (
+    <div className="form-grid">
+      <label><span>Name</span><input value={action.name} onChange={e => onUpdate(index, 'name', e.target.value)} /></label>
+      <label><span>{isBrowserScript || isJmsScript ? 'Action Type' : 'Method'}</span>
+        <select value={action.type} onChange={e => onUpdate(index, 'type', e.target.value)}>
+          {actionTypes.map(type => <option key={type}>{type}</option>)}
+        </select>
+      </label>
+      <label className="full-width"><span>{targetLabel}</span><input value={action.target} onChange={e => onUpdate(index, 'target', e.target.value)} placeholder={targetPlaceholder} /></label>
+      {showSelector && (
+        <label className="full-width"><span>Selector Override</span><input value={action.selector || ''} onChange={e => onUpdate(index, 'selector', e.target.value)} placeholder="#submit, input[name=email], [data-testid=save]" /></label>
+      )}
+      {showValue && (
+        <label className="full-width"><span>Value</span><input value={action.value || ''} onChange={e => onUpdate(index, 'value', e.target.value)} placeholder="{{data.users.email}}" /></label>
+      )}
+    </div>
+  )
+}
+
+interface ActionThinkTimeToggleProps {
+  action: Action
+  index: number
+  onUpdate: (i: number, f: keyof Action, v: unknown) => void
+}
+
+function ActionThinkTimeToggle({ action, index, onUpdate }: ActionThinkTimeToggleProps) {
+  return (
+    <div className="sub-section">
+      <label className="checkbox-label">
+        <input type="checkbox" checked={action.think_time_after ?? false} onChange={e => onUpdate(index, 'think_time_after', e.target.checked)} />
+        <span>Apply think time after this action</span>
+      </label>
+    </div>
+  )
+}
+
+interface ActionParameterMenuProps {
+  selectionState: ActionEditorSelectionState | null
+  onOpenParameterEditor: (nextExistingName?: string | null) => void
+}
+
+function ActionParameterMenu({ selectionState, onOpenParameterEditor }: ActionParameterMenuProps) {
+  if (!selectionState) return null
+
+  return (
+    <div
+      className="action-parameter-menu"
+      style={{ left: selectionState.x, top: selectionState.y }}
+      onClick={event => event.stopPropagation()}
+    >
+      <button type="button" className="btn btn-sm" onClick={() => onOpenParameterEditor(selectionState.existingName)}>
+        Parameterize selection
+      </button>
+      {selectionState.existingName && (
+        <button type="button" className="btn btn-sm btn-ghost" onClick={() => onOpenParameterEditor(selectionState.existingName)}>
+          Edit parameter
+        </button>
+      )}
+    </div>
+  )
+}
+
+function useScriptEditorState(initialScript?: ScriptData | null) {
+  const [script, setScript] = useState<ScriptData>(initialScript || { ...EMPTY_SCRIPT })
+  const [activeAction, setActiveAction] = useState<number | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
+  const [jsonMode, setJsonMode] = useState(false)
+  const [jsonText, setJsonText] = useState('')
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({
+    config: true,
+    actions: true,
+    runtime: false,
+    import: true,
+    replay: true,
+  })
+  const [isParameterDialogOpen, setIsParameterDialogOpen] = useState(false)
+  const [pendingParameterDraft, setPendingParameterDraft] = useState<ActionEditorParameterDraft | null>(null)
+  const [openDataEditor, setOpenDataEditor] = useState<number | null>(null)
+  const [dataEditorMode, setDataEditorMode] = useState<Record<number, 'grid' | 'raw'>>({})
+  const [dataSourceHistory, setDataSourceHistory] = useState<Record<number, DataSourceHistory>>({})
+  const [parameterCandidates, setParameterCandidates] = useState<ParameterCandidate[]>([])
+  const [replaying, setReplaying] = useState(false)
+  const [replayReport, setReplayReport] = useState<ReplayReport | null>(null)
+  const [expandedReplayEvent, setExpandedReplayEvent] = useState<number | null>(null)
+  const [activeReplaySessionId, setActiveReplaySessionId] = useState<string | null>(null)
+  const [browserReplaySession, setBrowserReplaySession] = useState<BrowserReplaySession | null>(null)
+  const [replayActivity, setReplayActivity] = useState<ReplayActivityItem[]>([])
+  const [replaySeedVariables, setReplaySeedVariables] = useState<Record<string, string>>({})
+  const replayEventRefs = useRef<Record<number, HTMLDivElement | null>>({})
+  const [replayOptions, setReplayOptions] = useState<ReplayOptionsState>({
+    groupName: '',
+    ignoreThinkTime: true,
+    startPaused: false,
+    variablesText: '{\n  \n}',
+  })
+
+  const toggleSection = (id: string) => setOpenSections(prev => ({ ...prev, [id]: !prev[id] }))
+
+  const hydrateEditorState = useCallback((nextScript: ScriptData) => {
+    setScript(nextScript)
+    setJsonText(JSON.stringify({ script: nextScript }, null, 2))
+    setActiveAction(null)
+    setIsParameterDialogOpen(false)
+    setPendingParameterDraft(null)
+    setOpenDataEditor(null)
+    setDataEditorMode({})
+    setDataSourceHistory({})
+    setParameterCandidates([])
+    setError('')
+    setSuccess('')
+  }, [])
+
+  const closeParameterDialog = () => {
+    setIsParameterDialogOpen(false)
+    setPendingParameterDraft(null)
+  }
+
+  return {
+    activeAction,
+    activeReplaySessionId,
+    browserReplaySession,
+    closeParameterDialog,
+    dataEditorMode,
+    dataSourceHistory,
+    error,
+    expandedReplayEvent,
+    hydrateEditorState,
+    isParameterDialogOpen,
+    jsonMode,
+    jsonText,
+    openDataEditor,
+    openSections,
+    parameterCandidates,
+    pendingParameterDraft,
+    replayActivity,
+    replayEventRefs,
+    replayOptions,
+    replayReport,
+    replaySeedVariables,
+    replaying,
+    saving,
+    script,
+    setActiveAction,
+    setActiveReplaySessionId,
+    setBrowserReplaySession,
+    setDataEditorMode,
+    setDataSourceHistory,
+    setError,
+    setExpandedReplayEvent,
+    setIsParameterDialogOpen,
+    setJsonMode,
+    setJsonText,
+    setOpenDataEditor,
+    setParameterCandidates,
+    setPendingParameterDraft,
+    setReplayActivity,
+    setReplayOptions,
+    setReplayReport,
+    setReplaySeedVariables,
+    setReplaying,
+    setSaving,
+    setScript,
+    setSuccess,
+    success,
+    toggleSection,
+  }
+}
+
+function useActionParameterMenu({
+  index,
+  onBeginParameterEdit,
+  parameters,
+}: {
+  index: number
+  onBeginParameterEdit: (draft: ActionEditorParameterDraft) => void
+  parameters: ParameterConfig[]
+}) {
   const [selectionState, setSelectionState] = useState<ActionEditorSelectionState | null>(null)
 
   useEffect(() => {
@@ -3699,320 +4033,457 @@ function ActionEditor({ action, index, parameters, onUpdate, onAddExtractor, onU
     })
   }, [detectSelectedParameter, index, onBeginParameterEdit, parameters, selectionState])
 
-  const targetLabel = isJmsScript
-    ? 'Destination'
-    : isBrowserScript
-    ? action.type === 'browser_navigate'
-      ? 'URL or Path'
-      : action.type === 'browser_wait'
-        ? 'Wait Target or Duration'
-        : action.type === 'browser_screenshot'
-          ? 'Target Selector'
-          : 'Target Selector'
-    : 'Target (path)'
-  const targetPlaceholder = isJmsScript
-    ? 'orders.in or {{data.destinations.queue}}'
-    : isBrowserScript
-    ? action.type === 'browser_navigate'
-      ? 'https://example.com or /login'
-      : action.type === 'browser_wait'
-        ? '#ready, text, or 750ms'
-        : '#submit'
-    : '/api/resource'
+  return { openParameterEditor, openSelectionMenu, selectionState }
+}
+
+interface ActionBodyTextareaProps {
+  onChange: (value: string) => void
+  onContextMenu: (event: MouseEvent<HTMLTextAreaElement>) => void
+  placeholder: string
+  rows: number
+  value: string
+}
+
+function ActionBodyTextarea({ onChange, onContextMenu, placeholder, rows, value }: ActionBodyTextareaProps) {
+  return (
+    <textarea
+      className="body-textarea"
+      value={value}
+      onChange={event => onChange(event.target.value)}
+      onContextMenu={onContextMenu}
+      placeholder={placeholder}
+      rows={rows}
+    />
+  )
+}
+
+interface BrowserActionFieldsProps {
+  action: Action
+  index: number
+  onUpdate: (i: number, f: keyof Action, v: unknown) => void
+}
+
+function BrowserActionFields({ action, index, onUpdate }: BrowserActionFieldsProps) {
+  const waitFor = action.wait_for || {}
+  const capture = action.capture || {}
 
   return (
-    <div className="action-editor-panel">
-      <div className="action-editor-top">
-        <span className="action-badge" style={{ background: methodColor(action.type), color: '#fff' }}>{action.type}</span>
-        <h3>{action.name || 'Unnamed Action'}</h3>
-      </div>
-
-      <div className="form-grid">
-        <label><span>Name</span><input value={action.name} onChange={e => onUpdate(index, 'name', e.target.value)} /></label>
-        <label><span>{isBrowserScript || isJmsScript ? 'Action Type' : 'Method'}</span>
-          <select value={action.type} onChange={e => onUpdate(index, 'type', e.target.value)}>
-            {(isBrowserScript ? browserActionTypes : isJmsScript ? jmsActionTypes : ['GET','POST','PUT','PATCH','DELETE','HEAD','OPTIONS']).map(m => <option key={m}>{m}</option>)}
-          </select>
-        </label>
-        <label className="full-width"><span>{targetLabel}</span><input value={action.target} onChange={e => onUpdate(index, 'target', e.target.value)} placeholder={targetPlaceholder} /></label>
-        {showSelector && (
-          <label className="full-width"><span>Selector Override</span><input value={action.selector || ''} onChange={e => onUpdate(index, 'selector', e.target.value)} placeholder="#submit, input[name=email], [data-testid=save]" /></label>
-        )}
-        {showValue && (
-          <label className="full-width"><span>Value</span><input value={action.value || ''} onChange={e => onUpdate(index, 'value', e.target.value)} placeholder="{{data.users.email}}" /></label>
-        )}
-      </div>
-
-      {isBrowserScript && (
-        <>
-          {action.type === 'browser_wait' && (
-            <div className="sub-section browser-action-section">
-              <div className="sub-header"><h4>Wait Condition</h4></div>
-              <div className="browser-action-grid">
-                <label>
-                  <span>Type</span>
-                  <select
-                    value={waitFor.type || 'selector'}
-                    onChange={e => onUpdate(index, 'wait_for', { ...waitFor, type: e.target.value })}
-                  >
-                    <option value="selector">Selector visible</option>
-                    <option value="hidden">Selector hidden</option>
-                    <option value="text">Text appears</option>
-                    <option value="url_contains">URL contains</option>
-                    <option value="duration">Duration</option>
-                  </select>
-                </label>
-                <label>
-                  <span>Value</span>
-                  <input
-                    value={waitFor.value || ''}
-                    onChange={e => onUpdate(index, 'wait_for', { ...waitFor, value: e.target.value })}
-                    placeholder={waitFor.type === 'duration' ? '1000ms' : '#ready or expected text'}
-                  />
-                </label>
-                <label>
-                  <span>Timeout (ms)</span>
-                  <input
-                    type="number"
-                    min="0"
-                    value={waitFor.timeout_ms ?? 10000}
-                    onChange={e => onUpdate(index, 'wait_for', { ...waitFor, timeout_ms: Math.max(0, Number(e.target.value) || 0) })}
-                  />
-                </label>
-              </div>
-            </div>
-          )}
-
-          <div className="sub-section browser-action-section">
-            <div className="sub-header"><h4>Capture</h4></div>
-            <div className="browser-capture-row">
-              <label className="checkbox-label">
-                <input
-                  type="checkbox"
-                  checked={!!capture.screenshot || action.type === 'browser_screenshot'}
-                  disabled={action.type === 'browser_screenshot'}
-                  onChange={e => onUpdate(index, 'capture', { ...capture, screenshot: e.target.checked })}
-                />
-                <span>Screenshot</span>
-              </label>
-              <label className="checkbox-label">
-                <input
-                  type="checkbox"
-                  checked={!!capture.full_page}
-                  onChange={e => onUpdate(index, 'capture', { ...capture, full_page: e.target.checked })}
-                />
-                <span>Full page</span>
-              </label>
-              <label className="checkbox-label">
-                <input
-                  type="checkbox"
-                  checked={!!capture.html}
-                  onChange={e => onUpdate(index, 'capture', { ...capture, html: e.target.checked })}
-                />
-                <span>HTML</span>
-              </label>
-            </div>
-          </div>
-        </>
-      )}
-
-      {isJmsScript && (
-        <>
-          <div className="sub-section">
-            <div className="sub-header"><h4>Message</h4></div>
-            <div className="form-grid">
-              {(action.type === 'jms_publish' || action.type === 'jms_request_reply') && (
-                <label className="full-width">
-                  <span>Body</span>
-                  <textarea
-                    className="body-textarea"
-                    value={action.body || ''}
-                    onChange={e => onUpdate(index, 'body', e.target.value)}
-                    onContextMenu={openSelectionMenu}
-                    placeholder='{"orderId": "{{data.orders.id}}"}'
-                    rows={5}
-                  />
-                </label>
-              )}
-              <label>
-                <span>Correlation ID</span>
-                <input
-                  value={typeof params.correlation_id === 'string' ? params.correlation_id : ''}
-                  onChange={e => onUpdate(index, 'params', { ...params, correlation_id: e.target.value })}
-                  placeholder="{{var.jms_message_id}} or {{fn.uuid()}}"
-                />
-              </label>
-              {(action.type === 'jms_request_reply' || action.type === 'jms_publish' || action.type === 'jms_consume') && (
-                <label>
-                  <span>Timeout (ms)</span>
-                  <input
-                    type="number"
-                    min="0"
-                    value={typeof params.timeout_ms === 'number' ? params.timeout_ms : ''}
-                    onChange={e => onUpdate(index, 'params', { ...params, timeout_ms: Number(e.target.value) || undefined })}
-                    placeholder="Use script default"
-                  />
-                </label>
-              )}
-              {action.type === 'jms_request_reply' && (
-                <label className="full-width">
-                  <span>Reply To Override</span>
-                  <input
-                    value={typeof params.reply_to === 'string' ? params.reply_to : ''}
-                    onChange={e => onUpdate(index, 'params', { ...params, reply_to: e.target.value })}
-                    placeholder="orders.reply"
-                  />
-                </label>
-              )}
-            </div>
-          </div>
-
-          <div className="sub-section">
-            <div className="sub-header"><h4>Message Headers</h4><button className="btn btn-sm btn-ghost" onClick={() => onAddHeader(index)}>+ Add</button></div>
-            {Object.entries(action.headers || {}).map(([k, v]) => (
-              <div key={k} className="kv-row">
-                <input className="kv-key" value={k} onChange={e => onUpdateHeader(index, k, e.target.value, v)} placeholder="Header" />
-                <input className="kv-val" value={v} onChange={e => onUpdateHeader(index, k, k, e.target.value)} placeholder="Value" />
-                <button className="btn-icon danger" onClick={() => onRemoveHeader(index, k)}>✕</button>
-              </div>
-            ))}
-          </div>
-
-          <div className="sub-section">
-            <div className="sub-header"><h4>Message Properties</h4><button className="btn btn-sm btn-ghost" onClick={() => onAddMetadata(index)}>+ Add</button></div>
-            {Object.entries(action.metadata || {}).map(([k, v]) => (
-              <div key={k} className="kv-row">
-                <input className="kv-key" value={k} onChange={e => onUpdateMetadata(index, k, e.target.value, String(v || ''))} placeholder="Property" />
-                <input className="kv-val" value={String(v || '')} onChange={e => onUpdateMetadata(index, k, k, e.target.value)} placeholder="Value" />
-                <button className="btn-icon danger" onClick={() => onRemoveMetadata(index, k)}>✕</button>
-              </div>
-            ))}
-          </div>
-        </>
-      )}
-
-      {isSoapScript && (
-        <div className="sub-section">
-          <div className="sub-header"><h4>SOAP Action</h4></div>
-          <div className="form-grid">
+    <>
+      {action.type === 'browser_wait' && (
+        <div className="sub-section browser-action-section">
+          <div className="sub-header"><h4>Wait Condition</h4></div>
+          <div className="browser-action-grid">
             <label>
-              <span>SOAPAction</span>
-              <input value={action.soap?.action || ''} onChange={e => onUpdate(index, 'soap', { ...(action.soap || {}), action: e.target.value })} placeholder="urn:CreateOrder" />
-            </label>
-            <label>
-              <span>Operation</span>
-              <input value={action.soap?.operation || ''} onChange={e => onUpdate(index, 'soap', { ...(action.soap || {}), operation: e.target.value })} placeholder="CreateOrder" />
-            </label>
-            <label>
-              <span>Body Mode</span>
-              <select value={action.soap?.body_mode || 'raw_xml'} onChange={e => onUpdate(index, 'soap', { ...(action.soap || {}), body_mode: e.target.value })}>
-                <option value="raw_xml">raw_xml</option>
-                <option value="generated">generated</option>
+              <span>Type</span>
+              <select
+                value={waitFor.type || 'selector'}
+                onChange={e => onUpdate(index, 'wait_for', { ...waitFor, type: e.target.value })}
+              >
+                <option value="selector">Selector visible</option>
+                <option value="hidden">Selector hidden</option>
+                <option value="text">Text appears</option>
+                <option value="url_contains">URL contains</option>
+                <option value="duration">Duration</option>
               </select>
+            </label>
+            <label>
+              <span>Value</span>
+              <input
+                value={waitFor.value || ''}
+                onChange={e => onUpdate(index, 'wait_for', { ...waitFor, value: e.target.value })}
+                placeholder={waitFor.type === 'duration' ? '1000ms' : '#ready or expected text'}
+              />
+            </label>
+            <label>
+              <span>Timeout (ms)</span>
+              <input
+                type="number"
+                min="0"
+                value={waitFor.timeout_ms ?? 10000}
+                onChange={e => onUpdate(index, 'wait_for', { ...waitFor, timeout_ms: Math.max(0, Number(e.target.value) || 0) })}
+              />
             </label>
           </div>
         </div>
       )}
 
-      {/* Headers */}
-      {!isBrowserScript && !isJmsScript && <div className="sub-section">
-        <div className="sub-header"><h4>Headers</h4><button className="btn btn-sm btn-ghost" onClick={() => onAddHeader(index)}>+ Add</button></div>
-        {Object.entries(action.headers || {}).map(([k, v]) => (
-          <div key={k} className="kv-row">
-            <input className="kv-key" value={k} onChange={e => onUpdateHeader(index, k, e.target.value, v)} placeholder="Key" />
-            <input className="kv-val" value={v} onChange={e => onUpdateHeader(index, k, k, e.target.value)} placeholder="Value" />
-            <button className="btn-icon danger" onClick={() => onRemoveHeader(index, k)}>✕</button>
+      <div className="sub-section browser-action-section">
+        <div className="sub-header"><h4>Capture</h4></div>
+        <div className="browser-capture-row">
+          <label className="checkbox-label">
+            <input
+              type="checkbox"
+              checked={!!capture.screenshot || action.type === 'browser_screenshot'}
+              disabled={action.type === 'browser_screenshot'}
+              onChange={e => onUpdate(index, 'capture', { ...capture, screenshot: e.target.checked })}
+            />
+            <span>Screenshot</span>
+          </label>
+          <label className="checkbox-label">
+            <input
+              type="checkbox"
+              checked={!!capture.full_page}
+              onChange={e => onUpdate(index, 'capture', { ...capture, full_page: e.target.checked })}
+            />
+            <span>Full page</span>
+          </label>
+          <label className="checkbox-label">
+            <input
+              type="checkbox"
+              checked={!!capture.html}
+              onChange={e => onUpdate(index, 'capture', { ...capture, html: e.target.checked })}
+            />
+            <span>HTML</span>
+          </label>
+        </div>
+      </div>
+    </>
+  )
+}
+
+interface JmsActionFieldsProps {
+  action: Action
+  index: number
+  onAddAssertion: (i: number) => void
+  onAddExtractor: (i: number) => void
+  onAddHeader: (i: number) => void
+  onAddMetadata: (i: number) => void
+  onRemoveAssertion: (ai: number, ai2: number) => void
+  onRemoveExtractor: (ai: number, ei: number) => void
+  onRemoveHeader: (ai: number, k: string) => void
+  onRemoveMetadata: (ai: number, k: string) => void
+  onSelectionMenu: (event: MouseEvent<HTMLTextAreaElement>) => void
+  onUpdate: (i: number, f: keyof Action, v: unknown) => void
+  onUpdateAssertion: (ai: number, ai2: number, f: keyof Assertion, v: unknown) => void
+  onUpdateExtractor: (ai: number, ei: number, f: string, v: string) => void
+  onUpdateHeader: (ai: number, ok: string, nk: string, v: string) => void
+  onUpdateMetadata: (ai: number, ok: string, nk: string, v: string) => void
+}
+
+function JmsActionFields({
+  action,
+  index,
+  onAddAssertion,
+  onAddExtractor,
+  onAddHeader,
+  onAddMetadata,
+  onRemoveAssertion,
+  onRemoveExtractor,
+  onRemoveHeader,
+  onRemoveMetadata,
+  onSelectionMenu,
+  onUpdate,
+  onUpdateAssertion,
+  onUpdateExtractor,
+  onUpdateHeader,
+  onUpdateMetadata,
+}: JmsActionFieldsProps) {
+  const params = action.params || {}
+
+  return (
+    <>
+      <div className="sub-section">
+        <div className="sub-header"><h4>Message</h4></div>
+        <div className="form-grid">
+          {(action.type === 'jms_publish' || action.type === 'jms_request_reply') && (
+            <label className="full-width">
+              <span>Body</span>
+              <ActionBodyTextarea
+                onChange={value => onUpdate(index, 'body', value)}
+                onContextMenu={onSelectionMenu}
+                placeholder='{"orderId": "{{data.orders.id}}"}'
+                rows={5}
+                value={action.body || ''}
+              />
+            </label>
+          )}
+          <label>
+            <span>Correlation ID</span>
+            <input
+              value={typeof params.correlation_id === 'string' ? params.correlation_id : ''}
+              onChange={e => onUpdate(index, 'params', { ...params, correlation_id: e.target.value })}
+              placeholder="{{var.jms_message_id}} or {{fn.uuid()}}"
+            />
+          </label>
+          {(action.type === 'jms_request_reply' || action.type === 'jms_publish' || action.type === 'jms_consume') && (
+            <label>
+              <span>Timeout (ms)</span>
+              <input
+                type="number"
+                min="0"
+                value={typeof params.timeout_ms === 'number' ? params.timeout_ms : ''}
+                onChange={e => onUpdate(index, 'params', { ...params, timeout_ms: Number(e.target.value) || undefined })}
+                placeholder="Use script default"
+              />
+            </label>
+          )}
+          {action.type === 'jms_request_reply' && (
+            <label className="full-width">
+              <span>Reply To Override</span>
+              <input
+                value={typeof params.reply_to === 'string' ? params.reply_to : ''}
+                onChange={e => onUpdate(index, 'params', { ...params, reply_to: e.target.value })}
+                placeholder="orders.reply"
+              />
+            </label>
+          )}
+        </div>
+      </div>
+
+      <div className="sub-section">
+        <div className="sub-header"><h4>Message Headers</h4><button className="btn btn-sm btn-ghost" onClick={() => onAddHeader(index)}>+ Add</button></div>
+        {Object.entries(action.headers || {}).map(([key, value]) => (
+          <div key={key} className="kv-row">
+            <input className="kv-key" value={key} onChange={e => onUpdateHeader(index, key, e.target.value, value)} placeholder="Header" />
+            <input className="kv-val" value={value} onChange={e => onUpdateHeader(index, key, key, e.target.value)} placeholder="Value" />
+            <button className="btn-icon danger" onClick={() => onRemoveHeader(index, key)}>✕</button>
           </div>
         ))}
-      </div>}
+      </div>
 
-      {/* Body */}
-      {!isBrowserScript && !isJmsScript && ['POST','PUT','PATCH'].includes(action.type) && (
+      <div className="sub-section">
+        <div className="sub-header"><h4>Message Properties</h4><button className="btn btn-sm btn-ghost" onClick={() => onAddMetadata(index)}>+ Add</button></div>
+        {Object.entries(action.metadata || {}).map(([key, value]) => (
+          <div key={key} className="kv-row">
+            <input className="kv-key" value={key} onChange={e => onUpdateMetadata(index, key, e.target.value, String(value || ''))} placeholder="Property" />
+            <input className="kv-val" value={String(value || '')} onChange={e => onUpdateMetadata(index, key, key, e.target.value)} placeholder="Value" />
+            <button className="btn-icon danger" onClick={() => onRemoveMetadata(index, key)}>✕</button>
+          </div>
+        ))}
+      </div>
+
+      <ProtocolExtractorsSection
+        action={action}
+        index={index}
+        isJmsScript={true}
+        onAddExtractor={onAddExtractor}
+        onRemoveExtractor={onRemoveExtractor}
+        onUpdateExtractor={onUpdateExtractor}
+      />
+
+      <ProtocolAssertionsSection
+        action={action}
+        index={index}
+        isJmsScript={true}
+        onAddAssertion={onAddAssertion}
+        onRemoveAssertion={onRemoveAssertion}
+        onUpdateAssertion={onUpdateAssertion}
+      />
+    </>
+  )
+}
+
+interface HttpActionFieldsProps {
+  action: Action
+  index: number
+  isBrowserScript: boolean
+  isSoapScript: boolean
+  onAddAssertion: (i: number) => void
+  onAddExtractor: (i: number) => void
+  onAddHeader: (i: number) => void
+  onRemoveAssertion: (ai: number, ai2: number) => void
+  onRemoveExtractor: (ai: number, ei: number) => void
+  onRemoveHeader: (ai: number, k: string) => void
+  onSelectionMenu: (event: MouseEvent<HTMLTextAreaElement>) => void
+  onUpdate: (i: number, f: keyof Action, v: unknown) => void
+  onUpdateAssertion: (ai: number, ai2: number, f: keyof Assertion, v: unknown) => void
+  onUpdateExtractor: (ai: number, ei: number, f: string, v: string) => void
+  onUpdateHeader: (ai: number, ok: string, nk: string, v: string) => void
+}
+
+function HttpActionFields({
+  action,
+  index,
+  isBrowserScript,
+  isSoapScript,
+  onAddAssertion,
+  onAddExtractor,
+  onAddHeader,
+  onRemoveAssertion,
+  onRemoveExtractor,
+  onRemoveHeader,
+  onSelectionMenu,
+  onUpdate,
+  onUpdateAssertion,
+  onUpdateExtractor,
+  onUpdateHeader,
+}: HttpActionFieldsProps) {
+  return (
+    <>
+      {isSoapScript && (
+        <SoapActionFields action={action} index={index} onUpdate={onUpdate} />
+      )}
+
+      {!isBrowserScript && (
+        <ProtocolHeadersSection
+          action={action}
+          index={index}
+          onAddHeader={onAddHeader}
+          onRemoveHeader={onRemoveHeader}
+          onUpdateHeader={onUpdateHeader}
+        />
+      )}
+
+      {!isBrowserScript && ['POST', 'PUT', 'PATCH'].includes(action.type) && (
         <div className="sub-section">
           <h4>Body</h4>
-          <textarea
-            className="body-textarea"
-            value={action.body || ''}
-            onChange={e => onUpdate(index, 'body', e.target.value)}
-            onContextMenu={openSelectionMenu}
+          <ActionBodyTextarea
+            onChange={value => onUpdate(index, 'body', value)}
+            onContextMenu={onSelectionMenu}
             placeholder='{"key": "value"}'
             rows={4}
+            value={action.body || ''}
           />
         </div>
       )}
 
-      {/* Extractors */}
-      {!isBrowserScript && <div className="sub-section">
-        <div className="sub-header"><h4>Extractors</h4><button className="btn btn-sm btn-ghost" onClick={() => onAddExtractor(index)}>+ Add</button></div>
-        {(action.extractors || []).map((ext, ei) => (
-          <div key={ei} className="extractor-row">
-            <input value={ext.name} onChange={e => onUpdateExtractor(index, ei, 'name', e.target.value)} placeholder="Variable name" />
-            <select value={ext.source} onChange={e => onUpdateExtractor(index, ei, 'source', e.target.value)}>
-              <option value="body">Body</option><option value="header">Header</option>
-              {isJmsScript ? <><option value="property">Property</option><option value="message_id">Message ID</option><option value="correlation_id">Correlation ID</option></> : <option value="cookie">Cookie</option>}
-            </select>
-            <select value={ext.type} onChange={e => onUpdateExtractor(index, ei, 'type', e.target.value)}>
-              <option value="jsonpath">JSONPath</option><option value="regex">Regex</option>{!isJmsScript && <><option value="boundary">Boundary</option><option value="xpath">XPath</option></>}
-            </select>
-            <input value={ext.expression} onChange={e => onUpdateExtractor(index, ei, 'expression', e.target.value)} placeholder="$.data.id" className="ext-expr" />
-            <button className="btn-icon danger" onClick={() => onRemoveExtractor(index, ei)}>✕</button>
-          </div>
-        ))}
-      </div>}
+      {!isBrowserScript && (
+        <ProtocolExtractorsSection
+          action={action}
+          index={index}
+          isJmsScript={false}
+          onAddExtractor={onAddExtractor}
+          onRemoveExtractor={onRemoveExtractor}
+          onUpdateExtractor={onUpdateExtractor}
+        />
+      )}
 
-      {/* Assertions */}
-      {!isBrowserScript && <div className="sub-section">
-        <div className="sub-header"><h4>Assertions</h4><button className="btn btn-sm btn-ghost" onClick={() => onAddAssertion(index)}>+ Add</button></div>
-        {(action.assertions || []).map((a, ai) => (
-          <div key={ai} className="assertion-row">
-            <select value={a.type} onChange={e => onUpdateAssertion(index, ai, 'type', e.target.value)}>
-              {isJmsScript ? (
-                <>
-                  <option value="message_received">Message Received</option><option value="body_contains">Body Contains</option>
-                  <option value="property_equals">Property Equals</option><option value="header_equals">Header Equals</option>
-                  <option value="correlation_match">Correlation Match</option><option value="response_time_ms">Response Time (ms)</option>
-                </>
-              ) : (
-                <>
-                  <option value="status_code">Status Code</option><option value="response_time_ms">Response Time (ms)</option>
-                  <option value="body_contains">Body Contains</option><option value="header_contains">Header Contains</option>
-                </>
-              )}
-            </select>
-            {a.type === 'status_code' && <input type="number" value={typeof a.expected === 'number' ? a.expected : 200} onChange={e => onUpdateAssertion(index, ai, 'expected', Number(e.target.value))} />}
-            {a.type === 'response_time_ms' && <input type="number" value={a.max ?? 5000} onChange={e => onUpdateAssertion(index, ai, 'max', Number(e.target.value))} placeholder="Max ms" />}
-            {(a.type === 'body_contains' || a.type === 'header_contains' || a.type === 'correlation_match') && <input value={a.value ?? ''} onChange={e => onUpdateAssertion(index, ai, 'value', e.target.value)} placeholder="Expected text" />}
-            {(a.type === 'property_equals' || a.type === 'header_equals') && <input value={a.value ?? ''} onChange={e => onUpdateAssertion(index, ai, 'value', e.target.value)} placeholder="Name" />}
-            {(a.type === 'property_equals' || a.type === 'header_equals') && <input value={typeof a.expected === 'string' || typeof a.expected === 'number' ? String(a.expected) : ''} onChange={e => onUpdateAssertion(index, ai, 'expected', e.target.value)} placeholder="Expected value" />}
-            <button className="btn-icon danger" onClick={() => onRemoveAssertion(index, ai)}>✕</button>
-          </div>
-        ))}
-      </div>}
+      {!isBrowserScript && (
+        <ProtocolAssertionsSection
+          action={action}
+          index={index}
+          isJmsScript={false}
+          onAddAssertion={onAddAssertion}
+          onRemoveAssertion={onRemoveAssertion}
+          onUpdateAssertion={onUpdateAssertion}
+        />
+      )}
+    </>
+  )
+}
 
-      {/* Think Time */}
-      <div className="sub-section">
-        <label className="checkbox-label">
-          <input type="checkbox" checked={action.think_time_after ?? false} onChange={e => onUpdate(index, 'think_time_after', e.target.checked)} />
-          <span>Apply think time after this action</span>
+interface SoapActionFieldsProps {
+  action: Action
+  index: number
+  onUpdate: (i: number, f: keyof Action, v: unknown) => void
+}
+
+function SoapActionFields({ action, index, onUpdate }: SoapActionFieldsProps) {
+  return (
+    <div className="sub-section">
+      <div className="sub-header"><h4>SOAP Action</h4></div>
+      <div className="form-grid">
+        <label>
+          <span>SOAPAction</span>
+          <input value={action.soap?.action || ''} onChange={e => onUpdate(index, 'soap', { ...(action.soap || {}), action: e.target.value })} placeholder="urn:CreateOrder" />
+        </label>
+        <label>
+          <span>Operation</span>
+          <input value={action.soap?.operation || ''} onChange={e => onUpdate(index, 'soap', { ...(action.soap || {}), operation: e.target.value })} placeholder="CreateOrder" />
+        </label>
+        <label>
+          <span>Body Mode</span>
+          <select value={action.soap?.body_mode || 'raw_xml'} onChange={e => onUpdate(index, 'soap', { ...(action.soap || {}), body_mode: e.target.value })}>
+            <option value="raw_xml">raw_xml</option>
+            <option value="generated">generated</option>
+          </select>
         </label>
       </div>
+    </div>
+  )
+}
 
-      {selectionState && (
-        <div
-          className="action-parameter-menu"
-          style={{ left: selectionState.x, top: selectionState.y }}
-          onClick={event => event.stopPropagation()}
-        >
-          <button type="button" className="btn btn-sm" onClick={() => openParameterEditor(selectionState.existingName)}>
-            Parameterize selection
-          </button>
-          {selectionState.existingName && (
-            <button type="button" className="btn btn-sm btn-ghost" onClick={() => openParameterEditor(selectionState.existingName)}>
-              Edit parameter
-            </button>
-          )}
+interface ProtocolHeadersSectionProps {
+  action: Action
+  index: number
+  onAddHeader: (i: number) => void
+  onRemoveHeader: (ai: number, k: string) => void
+  onUpdateHeader: (ai: number, ok: string, nk: string, v: string) => void
+}
+
+function ProtocolHeadersSection({ action, index, onAddHeader, onRemoveHeader, onUpdateHeader }: ProtocolHeadersSectionProps) {
+  return (
+    <div className="sub-section">
+      <div className="sub-header"><h4>Headers</h4><button className="btn btn-sm btn-ghost" onClick={() => onAddHeader(index)}>+ Add</button></div>
+      {Object.entries(action.headers || {}).map(([key, value]) => (
+        <div key={key} className="kv-row">
+          <input className="kv-key" value={key} onChange={e => onUpdateHeader(index, key, e.target.value, value)} placeholder="Key" />
+          <input className="kv-val" value={value} onChange={e => onUpdateHeader(index, key, key, e.target.value)} placeholder="Value" />
+          <button className="btn-icon danger" onClick={() => onRemoveHeader(index, key)}>✕</button>
         </div>
-      )}
+      ))}
+    </div>
+  )
+}
+
+interface ProtocolExtractorsSectionProps {
+  action: Action
+  index: number
+  isJmsScript: boolean
+  onAddExtractor: (i: number) => void
+  onRemoveExtractor: (ai: number, ei: number) => void
+  onUpdateExtractor: (ai: number, ei: number, f: string, v: string) => void
+}
+
+function ProtocolExtractorsSection({ action, index, isJmsScript, onAddExtractor, onRemoveExtractor, onUpdateExtractor }: ProtocolExtractorsSectionProps) {
+  return (
+    <div className="sub-section">
+      <div className="sub-header"><h4>Extractors</h4><button className="btn btn-sm btn-ghost" onClick={() => onAddExtractor(index)}>+ Add</button></div>
+      {(action.extractors || []).map((extractor, extractorIndex) => (
+        <div key={extractorIndex} className="extractor-row">
+          <input value={extractor.name} onChange={e => onUpdateExtractor(index, extractorIndex, 'name', e.target.value)} placeholder="Variable name" />
+          <select value={extractor.source} onChange={e => onUpdateExtractor(index, extractorIndex, 'source', e.target.value)}>
+            <option value="body">Body</option><option value="header">Header</option>
+            {isJmsScript ? <><option value="property">Property</option><option value="message_id">Message ID</option><option value="correlation_id">Correlation ID</option></> : <option value="cookie">Cookie</option>}
+          </select>
+          <select value={extractor.type} onChange={e => onUpdateExtractor(index, extractorIndex, 'type', e.target.value)}>
+            <option value="jsonpath">JSONPath</option><option value="regex">Regex</option>{!isJmsScript && <><option value="boundary">Boundary</option><option value="xpath">XPath</option></>}
+          </select>
+          <input value={extractor.expression} onChange={e => onUpdateExtractor(index, extractorIndex, 'expression', e.target.value)} placeholder="$.data.id" className="ext-expr" />
+          <button className="btn-icon danger" onClick={() => onRemoveExtractor(index, extractorIndex)}>✕</button>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+interface ProtocolAssertionsSectionProps {
+  action: Action
+  index: number
+  isJmsScript: boolean
+  onAddAssertion: (i: number) => void
+  onRemoveAssertion: (ai: number, ai2: number) => void
+  onUpdateAssertion: (ai: number, ai2: number, f: keyof Assertion, v: unknown) => void
+}
+
+function ProtocolAssertionsSection({ action, index, isJmsScript, onAddAssertion, onRemoveAssertion, onUpdateAssertion }: ProtocolAssertionsSectionProps) {
+  return (
+    <div className="sub-section">
+      <div className="sub-header"><h4>Assertions</h4><button className="btn btn-sm btn-ghost" onClick={() => onAddAssertion(index)}>+ Add</button></div>
+      {(action.assertions || []).map((assertion, assertionIndex) => (
+        <div key={assertionIndex} className="assertion-row">
+          <select value={assertion.type} onChange={e => onUpdateAssertion(index, assertionIndex, 'type', e.target.value)}>
+            {isJmsScript ? (
+              <>
+                <option value="message_received">Message Received</option><option value="body_contains">Body Contains</option>
+                <option value="property_equals">Property Equals</option><option value="header_equals">Header Equals</option>
+                <option value="correlation_match">Correlation Match</option><option value="response_time_ms">Response Time (ms)</option>
+              </>
+            ) : (
+              <>
+                <option value="status_code">Status Code</option><option value="response_time_ms">Response Time (ms)</option>
+                <option value="body_contains">Body Contains</option><option value="header_contains">Header Contains</option>
+              </>
+            )}
+          </select>
+          {assertion.type === 'status_code' && <input type="number" value={typeof assertion.expected === 'number' ? assertion.expected : 200} onChange={e => onUpdateAssertion(index, assertionIndex, 'expected', Number(e.target.value))} />}
+          {assertion.type === 'response_time_ms' && <input type="number" value={assertion.max ?? 5000} onChange={e => onUpdateAssertion(index, assertionIndex, 'max', Number(e.target.value))} placeholder="Max ms" />}
+          {(assertion.type === 'body_contains' || assertion.type === 'header_contains' || assertion.type === 'correlation_match') && <input value={assertion.value ?? ''} onChange={e => onUpdateAssertion(index, assertionIndex, 'value', e.target.value)} placeholder="Expected text" />}
+          {(assertion.type === 'property_equals' || assertion.type === 'header_equals') && <input value={assertion.value ?? ''} onChange={e => onUpdateAssertion(index, assertionIndex, 'value', e.target.value)} placeholder="Name" />}
+          {(assertion.type === 'property_equals' || assertion.type === 'header_equals') && <input value={typeof assertion.expected === 'string' || typeof assertion.expected === 'number' ? String(assertion.expected) : ''} onChange={e => onUpdateAssertion(index, assertionIndex, 'expected', e.target.value)} placeholder="Expected value" />}
+          <button className="btn-icon danger" onClick={() => onRemoveAssertion(index, assertionIndex)}>✕</button>
+        </div>
+      ))}
     </div>
   )
 }

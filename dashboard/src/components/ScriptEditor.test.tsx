@@ -121,6 +121,60 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('session_id')
   })
 
+  it('rehydrates editor state when a different initial script is provided', async () => {
+    const nextScript: ScriptDefinition = {
+      ...initialScript,
+      name: 'Search Flow',
+      config: {
+        ...initialScript.config,
+        base_url: 'https://search.example.com',
+      },
+      actions: [
+        {
+          ...initialScript.actions[0],
+          name: 'Search',
+          target: '/search',
+        },
+      ],
+      parameters: [],
+    }
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={initialScript} />)
+    })
+
+    const firstAction = container.querySelector('.action-item') as HTMLDivElement | null
+    expect(firstAction).not.toBeNull()
+    if (!firstAction) {
+      return
+    }
+
+    await act(async () => {
+      firstAction.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      root.render(<ScriptEditor initialScript={nextScript} />)
+    })
+
+    const nameInput = Array.from(container.querySelectorAll('input')).find(input => input.placeholder === 'My_Test_Script')
+    const baseUrlInput = Array.from(container.querySelectorAll('input')).find(input => input.placeholder === 'https://api.example.com')
+
+    expect(nameInput?.getAttribute('value')).toBe('Search Flow')
+    expect(baseUrlInput?.getAttribute('value')).toBe('https://search.example.com')
+    expect(container.textContent).toContain('Search')
+    expect(container.textContent).not.toContain('session_id')
+    expect(container.textContent).toContain('Select an action to edit its details')
+  })
+
+  it('surfaces script load failures when fetching by id', async () => {
+    apiMock.getScript.mockRejectedValueOnce(new Error('Network unavailable'))
+
+    await act(async () => {
+      root.render(<ScriptEditor scriptId="script-1" />)
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('Network unavailable')
+  })
+
   it('keeps the protocol selector when editing an existing script', async () => {
     await act(async () => {
       root.render(<ScriptEditor scriptId="script-1" initialScript={initialScript} />)
