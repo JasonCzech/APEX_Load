@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, type DragEvent, type ReactNode } from 'react'
 import { type WebSocketConnectionState } from '../hooks/useWebSocket'
 import { useApi } from '../hooks/useApi'
-import { HealthResponse, TelemetryDiagnosticEntry, TestSummary } from '../types'
+import { HealthResponse, SystemInventoryResponse, TelemetryDiagnosticEntry, TestSummary } from '../types'
 import { formatTelemetryDiagnosticTime, telemetryDiagnosticSeverityClass } from './monitoringTelemetryDiagnostics'
 
 interface Props {
@@ -12,6 +12,7 @@ interface Props {
 export default function MonitoringPage({ connectionState, telemetryDiagnostics = [] }: Props) {
   const api = useApi()
   const [health, setHealth] = useState<HealthResponse | null>(null)
+  const [inventory, setInventory] = useState<SystemInventoryResponse | null>(null)
   const [tests, setTests] = useState<TestSummary[]>([])
   const [customizing, setCustomizing] = useState(false)
   const [draggedCardId, setDraggedCardId] = useState<string | null>(null)
@@ -25,12 +26,14 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       return
     }
     try {
-      const [healthRes, testsRes] = await Promise.all([
+      const [healthRes, testsRes, inventoryRes] = await Promise.all([
         api.getHealth(),
         api.listTests().catch(() => ({ tests: [] })),
+        api.getSystemInventory().catch(() => null),
       ])
       setHealth(healthRes)
       setTests(testsRes.tests || [])
+      setInventory(inventoryRes)
     } catch {
       // API not available
     }
@@ -102,6 +105,18 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
           <div className="monitor-row">
             <span className="monitor-label">WS Clients</span>
             <span className="monitor-value">{health?.ws_clients ?? '-'}</span>
+          </div>
+          <div className="monitor-row">
+            <span className="monitor-label">Execution</span>
+            <span className="monitor-value">{inventory?.controller.execution_mode || '-'}</span>
+          </div>
+          <div className="monitor-row">
+            <span className="monitor-label">Instance</span>
+            <span className="monitor-value">{inventory?.controller.id || '-'}</span>
+          </div>
+          <div className="monitor-row">
+            <span className="monitor-label">Address</span>
+            <span className="monitor-value cell-mono">{inventory?.controller.address || '-'}</span>
           </div>
         </div>
       ),
@@ -232,10 +247,48 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       ),
       content: (
         <div className="monitor-body">
-          <div className="monitor-stat">
-            <span className="monitor-value text-muted">Phase 2</span>
-          </div>
-          <p className="monitor-hint">Distributed generator pods will appear here when live generator inventory is available.</p>
+          {inventory?.generators?.length ? (
+            <div className="monitor-inventory-list">
+              {inventory.generators.map(generator => (
+                <div key={generator.target} className={`monitor-inventory-item ${generator.status !== 'connected' ? 'is-warning' : ''}`}>
+                  <div className="monitor-row">
+                    <span className="monitor-value">{generator.generator_id || generator.target}</span>
+                    <span className={`monitor-value ${generator.status === 'connected' ? 'text-success' : 'text-danger'}`}>{generator.status}</span>
+                  </div>
+                  <div className="monitor-row">
+                    <span className="monitor-label">Target</span>
+                    <span className="monitor-value cell-mono">{generator.target}</span>
+                  </div>
+                  <div className="monitor-row">
+                    <span className="monitor-label">Available Capacity</span>
+                    <span className="monitor-value">{generator.available_capacity.toLocaleString()}</span>
+                  </div>
+                  <div className="monitor-row">
+                    <span className="monitor-label">Active VUsers</span>
+                    <span className="monitor-value">{generator.active_vusers.toLocaleString()}</span>
+                  </div>
+                  <div className="monitor-row">
+                    <span className="monitor-label">CPU</span>
+                    <span className="monitor-value">{generator.cpu_percent.toFixed(1)}%</span>
+                  </div>
+                  <div className="monitor-row">
+                    <span className="monitor-label">Memory</span>
+                    <span className="monitor-value">{formatMemoryBytes(generator.memory_bytes)}</span>
+                  </div>
+                  <div className="monitor-row">
+                    <span className="monitor-label">Goroutines</span>
+                    <span className="monitor-value">{generator.goroutine_count.toLocaleString()}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="monitor-hint">
+              {inventory?.execution_mode === 'distributed'
+                ? 'No generator inventory was returned by the controller.'
+                : 'Local mode is active. Configure distributed generator targets to list generator pods here.'}
+            </p>
+          )}
         </div>
       ),
     },
@@ -303,7 +356,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
         </div>
       ),
     },
-  ], [connectionState, health, telemetryDiagnostics, timeline, websocketLabel, websocketValueClass])
+  ], [connectionState, health, inventory, telemetryDiagnostics, timeline, websocketLabel, websocketValueClass])
 
   useEffect(() => {
     setCardOrder(prev => mergeOrder(prev, cards.map(card => card.id)))
@@ -561,6 +614,18 @@ function formatDurationShort(ms: number) {
   const hours = Math.floor(minutes / 60)
   const remaining = minutes % 60
   return remaining ? `${hours}h ${remaining}m` : `${hours}h`
+}
+
+function formatMemoryBytes(value: number) {
+  if (!value) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let size = value
+  let unitIndex = 0
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024
+    unitIndex += 1
+  }
+  return `${Number(size.toFixed(size >= 10 || unitIndex === 0 ? 0 : 1))} ${units[unitIndex]}`
 }
 
 function readStringArray(key: string): string[] {

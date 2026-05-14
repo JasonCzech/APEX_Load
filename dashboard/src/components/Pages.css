@@ -661,6 +661,26 @@
   line-height: 1.4;
 }
 
+.monitor-inventory-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.monitor-inventory-item {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.monitor-inventory-item.is-warning {
+  border-color: color-mix(in srgb, var(--warning) 35%, var(--border));
+}
+
 .telemetry-diagnostic-list {
   display: flex;
   flex-direction: column;

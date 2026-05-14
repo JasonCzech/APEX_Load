@@ -8,6 +8,7 @@ import MonitoringPage from './MonitoringPage'
 
 const apiMock = {
   getHealth: vi.fn(),
+  getSystemInventory: vi.fn(),
   listTests: vi.fn(),
 }
 
@@ -23,6 +24,17 @@ describe('MonitoringPage', () => {
 
   beforeEach(() => {
     apiMock.getHealth.mockResolvedValue({ status: 'ok', version: 'dev', ws_clients: 2, test_count: 1 })
+    apiMock.getSystemInventory.mockResolvedValue({
+      execution_mode: 'distributed',
+      controller: {
+        id: 'controller-1',
+        status: 'healthy',
+        address: ':8080',
+        version: 'dev',
+        execution_mode: 'distributed',
+      },
+      generators: [],
+    })
     apiMock.listTests.mockResolvedValue({ tests: [] })
     container = document.createElement('div')
     document.body.appendChild(container)
@@ -76,5 +88,40 @@ describe('MonitoringPage', () => {
     expect(container.textContent).toContain('error')
     expect(container.textContent).toContain('4/10 errors')
     expect(container.textContent).toContain('payments.example.test')
+  })
+
+  it('renders live generator inventory when the controller reports it', async () => {
+    apiMock.getSystemInventory.mockResolvedValue({
+      execution_mode: 'distributed',
+      controller: {
+        id: 'stormrunner-controller-0',
+        status: 'healthy',
+        address: ':8080',
+        version: 'dev',
+        execution_mode: 'distributed',
+      },
+      generators: [
+        {
+          target: 'stormrunner-generator-0.stormrunner-generator:9090',
+          generator_id: 'stormrunner-generator-0',
+          status: 'connected',
+          available_capacity: 9600,
+          active_vusers: 400,
+          cpu_percent: 22.5,
+          memory_bytes: 96 * 1024 * 1024,
+          goroutine_count: 812,
+        },
+      ],
+    })
+
+    await act(async () => {
+      root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} />)
+    })
+
+    expect(container.textContent).toContain('stormrunner-controller-0')
+    expect(container.textContent).toContain('stormrunner-generator-0')
+    expect(container.textContent).toContain('connected')
+    expect(container.textContent).toContain('9,600')
+    expect(container.textContent).toContain('96 MB')
   })
 })

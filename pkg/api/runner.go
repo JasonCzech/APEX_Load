@@ -428,6 +428,12 @@ func (tr *TestRunner) setExecutionBackend(backend testExecutionBackend) {
 	tr.execution = backend
 }
 
+func (tr *TestRunner) getExecutionBackend() testExecutionBackend {
+	tr.mu.RLock()
+	defer tr.mu.RUnlock()
+	return tr.execution
+}
+
 func (tr *TestRunner) loadStoredScripts() {
 	if tr.scriptStore == nil {
 		return

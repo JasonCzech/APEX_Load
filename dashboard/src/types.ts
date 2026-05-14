@@ -673,6 +673,31 @@ export interface HealthResponse {
   }
 }
 
+export interface SystemInventoryController {
+  id: string
+  status: string
+  address: string
+  version: string
+  execution_mode: 'local' | 'distributed'
+}
+
+export interface SystemInventoryGenerator {
+  target: string
+  generator_id: string
+  status: 'connected' | 'unreachable'
+  available_capacity: number
+  active_vusers: number
+  cpu_percent: number
+  memory_bytes: number
+  goroutine_count: number
+}
+
+export interface SystemInventoryResponse {
+  execution_mode: 'local' | 'distributed'
+  controller: SystemInventoryController
+  generators: SystemInventoryGenerator[]
+}
+
 export interface DashboardThresholdSettings {
   max_error_rate_pct?: number
   max_p99_latency_ms?: number

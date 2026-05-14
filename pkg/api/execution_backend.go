@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"time"
@@ -23,6 +24,10 @@ type scalableExecutionBackend interface {
 
 type durationAdjustableExecutionBackend interface {
 	AdjustDuration(tr *TestRunner, test *ManagedTest, newDuration time.Duration) error
+}
+
+type inventoryExecutionBackend interface {
+	SystemInventory(ctx context.Context) []GeneratorInventoryEntry
 }
 
 type pausableExecutionBackend interface {

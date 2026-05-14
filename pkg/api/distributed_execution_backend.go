@@ -71,6 +71,44 @@ func (b *distributedExecutionBackend) configuredTargets() []string {
 	return append([]string(nil), b.targets...)
 }
 
+func (b *distributedExecutionBackend) SystemInventory(ctx context.Context) []GeneratorInventoryEntry {
+	entries := make([]GeneratorInventoryEntry, 0, len(b.targets))
+	for _, target := range b.targets {
+		entry := GeneratorInventoryEntry{
+			Target:      target,
+			GeneratorID: target,
+			Status:      "unreachable",
+		}
+
+		probeCtx, cancel := context.WithTimeout(ctx, b.timeout)
+		client, err := b.dial(probeCtx, target)
+		if err != nil {
+			cancel()
+			entries = append(entries, entry)
+			continue
+		}
+
+		snapshot := b.probeGeneratorLoad(probeCtx, target, client)
+		_ = client.Close()
+		cancel()
+
+		if snapshot.GeneratorID != "" {
+			entry.GeneratorID = snapshot.GeneratorID
+		}
+		if snapshot.HeartbeatOK {
+			entry.Status = "connected"
+			entry.AvailableCapacity = snapshot.AvailableCapacity
+			entry.ActiveVUsers = snapshot.Stats.ActiveVUsers
+			entry.CPUPercent = snapshot.Stats.CPUPercent
+			entry.MemoryBytes = snapshot.Stats.MemoryBytes
+			entry.GoroutineCount = snapshot.Stats.GoroutineCount
+		}
+
+		entries = append(entries, entry)
+	}
+	return entries
+}
+
 func (b *distributedExecutionBackend) allowedTargetsForTest(test *ManagedTest) ([]string, error) {
 	assignment, err := normalizeGeneratorAssignmentSettings(test.Assignment)
 	if err != nil {
