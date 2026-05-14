@@ -1,0 +1,11 @@
+.git
+.gitignore
+.DS_Store
+artifacts/
+bin/
+output/
+dashboard/node_modules/
+dashboard/dist/
+coverage.out
+coverage.html
+stormrunner.db

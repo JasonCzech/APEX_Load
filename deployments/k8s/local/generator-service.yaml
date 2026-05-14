@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: stormrunner-generator
+  labels:
+    app.kubernetes.io/name: stormrunner-generator
+    app.kubernetes.io/component: generator
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: stormrunner-generator
+  ports:
+    - name: grpc
+      port: 9090
+      targetPort: grpc

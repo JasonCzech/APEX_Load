@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: stormrunner-local
+  labels:
+    app.kubernetes.io/name: stormrunner
+    app.kubernetes.io/environment: local
