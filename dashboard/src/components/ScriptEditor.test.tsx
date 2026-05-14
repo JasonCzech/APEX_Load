@@ -121,6 +121,135 @@ describe('ScriptEditor', () => {
     expect(detail?.parentElement).toBe(contentGrid)
   })
 
+  it('parameterizes selected body text from the action editor context menu', async () => {
+    const scriptWithEditableBody: ScriptDefinition = {
+      ...initialScript,
+      actions: [
+        {
+          ...initialScript.actions[0],
+          type: 'POST',
+          body: '{"username":"demo"}',
+        },
+      ],
+      parameters: [],
+    }
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={scriptWithEditableBody} />)
+    })
+
+    const actionItem = container.querySelector('.action-item') as HTMLDivElement | null
+    expect(actionItem).not.toBeNull()
+    if (!actionItem) {
+      return
+    }
+
+    await act(async () => {
+      actionItem.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const textarea = container.querySelector('textarea.body-textarea') as HTMLTextAreaElement | null
+    expect(textarea).not.toBeNull()
+    if (!textarea) {
+      return
+    }
+
+    const start = textarea.value.indexOf('demo')
+    const end = start + 'demo'.length
+    textarea.focus()
+    textarea.setSelectionRange(start, end)
+
+    await act(async () => {
+      textarea.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 120, clientY: 80 }))
+    })
+
+    const parameterizeButton = Array.from(container.querySelectorAll('.action-parameter-menu button')).find(button =>
+      button.textContent?.includes('Parameterize selection'),
+    )
+    expect(parameterizeButton).toBeDefined()
+    if (!parameterizeButton) {
+      return
+    }
+
+    await act(async () => {
+      parameterizeButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const editorInputs = Array.from(container.querySelectorAll('.action-parameter-editor input')) as HTMLInputElement[]
+    expect(editorInputs.length).toBeGreaterThanOrEqual(2)
+
+    const saveButton = Array.from(container.querySelectorAll('.action-parameter-editor button')).find(button =>
+      button.textContent?.includes('Save'),
+    )
+    expect(saveButton).toBeDefined()
+    if (!saveButton) {
+      return
+    }
+
+    await act(async () => {
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(textarea.value).toContain('{{param.demo}}')
+    expect(container.textContent).toContain('demo')
+  })
+
+  it('shows edit parameter action when selecting an existing parameter token', async () => {
+    const scriptWithToken: ScriptDefinition = {
+      ...initialScript,
+      actions: [
+        {
+          ...initialScript.actions[0],
+          type: 'POST',
+          body: '{"username":"{{param.username}}"}',
+        },
+      ],
+      parameters: [
+        {
+          name: 'username',
+          type: 'list',
+          update: 'each_iteration',
+          values: ['demo-user'],
+        },
+      ],
+    }
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={scriptWithToken} />)
+    })
+
+    const actionItem = container.querySelector('.action-item') as HTMLDivElement | null
+    expect(actionItem).not.toBeNull()
+    if (!actionItem) {
+      return
+    }
+
+    await act(async () => {
+      actionItem.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const textarea = container.querySelector('textarea.body-textarea') as HTMLTextAreaElement | null
+    expect(textarea).not.toBeNull()
+    if (!textarea) {
+      return
+    }
+
+    const token = '{{param.username}}'
+    const start = textarea.value.indexOf(token)
+    const end = start + token.length
+    textarea.focus()
+    textarea.setSelectionRange(start, end)
+
+    await act(async () => {
+      textarea.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 100, clientY: 80 }))
+    })
+
+    const editButton = Array.from(container.querySelectorAll('.action-parameter-menu button')).find(button =>
+      button.textContent?.includes('Edit parameter'),
+    )
+    expect(editButton).toBeDefined()
+  })
+
   it('renders SOAP protocol settings and action fields for SOAP drafts', async () => {
     const soapScript: ScriptDefinition = {
       ...initialScript,

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react'
 import { useApi } from '../hooks/useApi'
 import { useWebSocket } from '../hooks/useWebSocket'
 import {
@@ -207,6 +207,30 @@ interface ParameterCandidate {
   varName: string
   occurrences: CandidateOccurrence[]
   selected: boolean
+}
+
+interface ActionEditorParameterRequest {
+  selectedText: string
+  requestedName: string
+  existingName?: string | null
+}
+
+interface ActionEditorSelectionState {
+  start: number
+  end: number
+  selectedText: string
+  x: number
+  y: number
+  existingName: string | null
+}
+
+interface ActionEditorParameterDraft {
+  start: number
+  end: number
+  selectedText: string
+  existingName: string | null
+  requestedName: string
+  seedValue: string
 }
 
 interface Props {
@@ -459,6 +483,24 @@ function sanitizeVarName(input: string): string {
     .replace(/[^a-z0-9_]+/g, '_')
     .replace(/^_+|_+$/g, '')
   return normalized || 'param'
+}
+
+function ensureUniqueParameterName(requested: string, parameters: ParameterConfig[], existingName?: string): string {
+  const base = sanitizeVarName(requested)
+  const normalizedExisting = existingName ? sanitizeVarName(existingName) : ''
+  const seen = new Set(
+    parameters
+      .map(parameter => sanitizeVarName(parameter.name || ''))
+      .filter(name => name.length > 0 && name !== normalizedExisting),
+  )
+  if (!seen.has(base)) return base
+  let suffix = 2
+  let next = `${base}_${suffix}`
+  while (seen.has(next)) {
+    suffix += 1
+    next = `${base}_${suffix}`
+  }
+  return next
 }
 
 function formatReplayTime(value?: string): string {
@@ -1549,6 +1591,56 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
       ...prev,
       parameters: (prev.parameters || []).filter((_, i) => i !== idx),
     }))
+  }
+
+  const upsertParameterFromActionEditor = ({ selectedText, requestedName, existingName }: ActionEditorParameterRequest): string => {
+    const normalizedExistingName = existingName ? sanitizeVarName(existingName) : ''
+    const resolvedName = ensureUniqueParameterName(
+      requestedName || selectedText,
+      script.parameters || [],
+      normalizedExistingName || undefined,
+    )
+    const seedValue = (selectedText || '').trim()
+
+    setScript(prev => {
+      const parameters = [...(prev.parameters || [])]
+      const existingIdx = normalizedExistingName
+        ? parameters.findIndex(parameter => sanitizeVarName(parameter.name || '') === normalizedExistingName)
+        : -1
+      const byResolvedNameIdx = parameters.findIndex(parameter => sanitizeVarName(parameter.name || '') === resolvedName)
+      const targetIdx = existingIdx >= 0 ? existingIdx : byResolvedNameIdx
+
+      if (targetIdx >= 0) {
+        const current = { ...(parameters[targetIdx] || EMPTY_PARAMETER) }
+        const nextParameter: ParameterConfig = {
+          ...current,
+          name: resolvedName,
+          type: current.type || 'list',
+          update: current.update || 'each_iteration',
+        }
+        if (nextParameter.type === 'list') {
+          const values = [...(nextParameter.values || [])]
+          if (seedValue && !values.includes(seedValue)) values.unshift(seedValue)
+          nextParameter.values = values
+        }
+        parameters[targetIdx] = nextParameter
+      } else {
+        parameters.push({
+          ...EMPTY_PARAMETER,
+          name: resolvedName,
+          type: 'list',
+          update: 'each_iteration',
+          values: seedValue ? [seedValue] : [],
+        })
+      }
+
+      return { ...prev, parameters }
+    })
+
+    setOpenSections(prev => ({ ...prev, parameters: true }))
+    setError('')
+    setSuccess(existingName ? `Updated parameter ${resolvedName}.` : `Created parameter ${resolvedName}.`)
+    return resolvedName
   }
 
   const removeDataSource = (idx: number) => {
@@ -3015,6 +3107,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
                   <ActionEditor
                     action={script.actions[activeAction]}
                     index={activeAction}
+                    parameters={script.parameters || []}
                     onUpdate={updateAction}
                     onAddExtractor={addExtractor}
                     onUpdateExtractor={updateExtractor}
@@ -3028,6 +3121,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
                     onAddMetadata={addMetadata}
                     onUpdateMetadata={updateMetadata}
                     onRemoveMetadata={removeMetadata}
+                    onUpsertParameter={upsertParameterFromActionEditor}
                     methodColor={methodColor}
                     isBrowserScript={isBrowserScript}
                     isJmsScript={isJmsScript}
@@ -3427,8 +3521,9 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
 }
 
 /* Sub-component for editing a single action's details */
-function ActionEditor({ action, index, onUpdate, onAddExtractor, onUpdateExtractor, onRemoveExtractor, onAddAssertion, onUpdateAssertion, onRemoveAssertion, onAddHeader, onUpdateHeader, onRemoveHeader, onAddMetadata, onUpdateMetadata, onRemoveMetadata, methodColor, isBrowserScript, isJmsScript, isSoapScript }: {
+function ActionEditor({ action, index, parameters, onUpdate, onAddExtractor, onUpdateExtractor, onRemoveExtractor, onAddAssertion, onUpdateAssertion, onRemoveAssertion, onAddHeader, onUpdateHeader, onRemoveHeader, onAddMetadata, onUpdateMetadata, onRemoveMetadata, onUpsertParameter, methodColor, isBrowserScript, isJmsScript, isSoapScript }: {
   action: Action; index: number
+  parameters: ParameterConfig[]
   onUpdate: (i: number, f: keyof Action, v: unknown) => void
   onAddExtractor: (i: number) => void
   onUpdateExtractor: (ai: number, ei: number, f: string, v: string) => void
@@ -3442,6 +3537,7 @@ function ActionEditor({ action, index, onUpdate, onAddExtractor, onUpdateExtract
   onAddMetadata: (i: number) => void
   onUpdateMetadata: (ai: number, ok: string, nk: string, v: string) => void
   onRemoveMetadata: (ai: number, k: string) => void
+  onUpsertParameter: (request: ActionEditorParameterRequest) => string
   methodColor: (m: string) => string
   isBrowserScript: boolean
   isJmsScript: boolean
@@ -3454,6 +3550,83 @@ function ActionEditor({ action, index, onUpdate, onAddExtractor, onUpdateExtract
   const params = action.params || {}
   const showSelector = isBrowserScript && ['browser_click', 'browser_fill', 'browser_wait', 'browser_screenshot'].includes(action.type)
   const showValue = isBrowserScript && action.type === 'browser_fill'
+  const [selectionState, setSelectionState] = useState<ActionEditorSelectionState | null>(null)
+  const [parameterDraft, setParameterDraft] = useState<ActionEditorParameterDraft | null>(null)
+
+  useEffect(() => {
+    if (!selectionState) return
+    const closeMenu = () => setSelectionState(null)
+    window.addEventListener('click', closeMenu)
+    return () => window.removeEventListener('click', closeMenu)
+  }, [selectionState])
+
+  const closeParameterEditor = () => setParameterDraft(null)
+
+  const detectSelectedParameter = useCallback((selectedText: string): ParameterConfig | null => {
+    const match = selectedText.trim().match(/^{{\s*param\.([a-zA-Z0-9_]+)\s*}}$/)
+    if (!match) return null
+    const normalizedName = sanitizeVarName(match[1])
+    return parameters.find(parameter => sanitizeVarName(parameter.name || '') === normalizedName) || null
+  }, [parameters])
+
+  const openSelectionMenu = useCallback((event: MouseEvent<HTMLTextAreaElement>) => {
+    const textarea = event.currentTarget
+    const start = textarea.selectionStart ?? 0
+    const end = textarea.selectionEnd ?? 0
+    const selectedText = (textarea.value || '').slice(start, end)
+    if (!selectedText.trim()) {
+      setSelectionState(null)
+      return
+    }
+
+    event.preventDefault()
+    const existingParameter = detectSelectedParameter(selectedText)
+    setParameterDraft(null)
+    setSelectionState({
+      start,
+      end,
+      selectedText,
+      x: event.clientX,
+      y: event.clientY,
+      existingName: existingParameter?.name || null,
+    })
+  }, [detectSelectedParameter])
+
+  const openParameterEditor = useCallback((nextExistingName?: string | null) => {
+    if (!selectionState) return
+    const existingParameter = nextExistingName
+      ? parameters.find(parameter => sanitizeVarName(parameter.name || '') === sanitizeVarName(nextExistingName))
+      : detectSelectedParameter(selectionState.selectedText)
+
+    const requestedName = existingParameter?.name
+      || sanitizeVarName(selectionState.selectedText.replace(/^{{\s*param\.|\s*}}$/g, ''))
+    const seedValue = existingParameter?.values?.[0] || selectionState.selectedText
+
+    setSelectionState(null)
+    setParameterDraft({
+      start: selectionState.start,
+      end: selectionState.end,
+      selectedText: selectionState.selectedText,
+      existingName: existingParameter?.name || null,
+      requestedName,
+      seedValue,
+    })
+  }, [detectSelectedParameter, parameters, selectionState])
+
+  const applyParameterDraft = useCallback(() => {
+    if (!parameterDraft) return
+    const name = onUpsertParameter({
+      selectedText: parameterDraft.seedValue,
+      requestedName: parameterDraft.requestedName,
+      existingName: parameterDraft.existingName,
+    })
+    const replacement = `{{param.${name}}}`
+    const body = action.body || ''
+    const nextBody = `${body.slice(0, parameterDraft.start)}${replacement}${body.slice(parameterDraft.end)}`
+    onUpdate(index, 'body', nextBody)
+    closeParameterEditor()
+  }, [action.body, index, onUpdate, onUpsertParameter, parameterDraft])
+
   const targetLabel = isJmsScript
     ? 'Destination'
     : isBrowserScript
@@ -3579,7 +3752,14 @@ function ActionEditor({ action, index, onUpdate, onAddExtractor, onUpdateExtract
               {(action.type === 'jms_publish' || action.type === 'jms_request_reply') && (
                 <label className="full-width">
                   <span>Body</span>
-                  <textarea className="body-textarea" value={action.body || ''} onChange={e => onUpdate(index, 'body', e.target.value)} placeholder='{"orderId": "{{data.orders.id}}"}' rows={5} />
+                  <textarea
+                    className="body-textarea"
+                    value={action.body || ''}
+                    onChange={e => onUpdate(index, 'body', e.target.value)}
+                    onContextMenu={openSelectionMenu}
+                    placeholder='{"orderId": "{{data.orders.id}}"}'
+                    rows={5}
+                  />
                 </label>
               )}
               <label>
@@ -3678,7 +3858,14 @@ function ActionEditor({ action, index, onUpdate, onAddExtractor, onUpdateExtract
       {!isBrowserScript && !isJmsScript && ['POST','PUT','PATCH'].includes(action.type) && (
         <div className="sub-section">
           <h4>Body</h4>
-          <textarea className="body-textarea" value={action.body || ''} onChange={e => onUpdate(index, 'body', e.target.value)} placeholder='{"key": "value"}' rows={4} />
+          <textarea
+            className="body-textarea"
+            value={action.body || ''}
+            onChange={e => onUpdate(index, 'body', e.target.value)}
+            onContextMenu={openSelectionMenu}
+            placeholder='{"key": "value"}'
+            rows={4}
+          />
         </div>
       )}
 
@@ -3737,6 +3924,53 @@ function ActionEditor({ action, index, onUpdate, onAddExtractor, onUpdateExtract
           <span>Apply think time after this action</span>
         </label>
       </div>
+
+      {selectionState && (
+        <div
+          className="action-parameter-menu"
+          style={{ left: selectionState.x, top: selectionState.y }}
+          onClick={event => event.stopPropagation()}
+        >
+          <button type="button" className="btn btn-sm" onClick={() => openParameterEditor(selectionState.existingName)}>
+            Parameterize selection
+          </button>
+          {selectionState.existingName && (
+            <button type="button" className="btn btn-sm btn-ghost" onClick={() => openParameterEditor(selectionState.existingName)}>
+              Edit parameter
+            </button>
+          )}
+        </div>
+      )}
+
+      {parameterDraft && (
+        <div className="action-parameter-editor" onClick={event => event.stopPropagation()}>
+          <div className="action-parameter-editor-title">Parameterize Selection</div>
+          <label>
+            <span>Name</span>
+            <input
+              value={parameterDraft.requestedName}
+              onChange={event => setParameterDraft(prev => (prev ? { ...prev, requestedName: sanitizeVarName(event.target.value) } : prev))}
+              placeholder="param_name"
+            />
+          </label>
+          <label>
+            <span>Value</span>
+            <input
+              value={parameterDraft.seedValue}
+              onChange={event => setParameterDraft(prev => (prev ? { ...prev, seedValue: event.target.value } : prev))}
+              placeholder="Selected value"
+            />
+          </label>
+          <div className="action-parameter-editor-actions">
+            <button type="button" className="btn btn-sm btn-primary" onClick={applyParameterDraft} disabled={!parameterDraft.requestedName.trim()}>
+              Save
+            </button>
+            <button type="button" className="btn btn-sm btn-ghost" onClick={closeParameterEditor}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
