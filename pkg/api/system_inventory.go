@@ -7,8 +7,8 @@ import (
 )
 
 type SystemInventoryResponse struct {
-	ExecutionMode string                   `json:"execution_mode"`
-	Controller    ControllerInventoryEntry `json:"controller"`
+	ExecutionMode string                    `json:"execution_mode"`
+	Controller    ControllerInventoryEntry  `json:"controller"`
 	Generators    []GeneratorInventoryEntry `json:"generators"`
 }
 
@@ -29,6 +29,9 @@ type GeneratorInventoryEntry struct {
 	CPUPercent        float64 `json:"cpu_percent"`
 	MemoryBytes       int64   `json:"memory_bytes"`
 	GoroutineCount    int32   `json:"goroutine_count"`
+	CPULimitCores     float64 `json:"cpu_limit_cores"`
+	MemoryLimitBytes  int64   `json:"memory_limit_bytes"`
+	MaxVUsers         int32   `json:"max_vusers"`
 }
 
 func (s *Server) handleGetSystemInventory(w http.ResponseWriter, r *http.Request) {

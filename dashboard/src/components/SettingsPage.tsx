@@ -3,7 +3,7 @@ import { type DashboardTheme } from '../hooks/useDashboardTheme'
 import { useApplicationApi } from '../hooks/api/useApplicationApi'
 import { useApplication } from '../hooks/useApplication'
 import { useApi } from '../hooks/useApi'
-import { DashboardSystemSettings, HealthResponse, SharedDataPool, SharedDataPoolRow } from '../types'
+import { DashboardSystemSettings, HealthResponse, SharedDataPool, SharedDataPoolRow, SystemInventoryResponse } from '../types'
 import { getErrorMessage } from '../utils/errorUtils'
 
 const DEFAULT_SETTINGS: DashboardSystemSettings = {
@@ -95,6 +95,70 @@ function validateSettings(settings: DashboardSystemSettings): string[] {
   return errors
 }
 
+function deriveLiveGeneratorPreset(inventory: SystemInventoryResponse) {
+  if (inventory.execution_mode !== 'distributed') {
+    throw new Error('Live generator capacity is only available when the controller is running in distributed mode.')
+  }
+
+  const connectedGenerators = inventory.generators.filter(generator => generator.status === 'connected')
+  if (connectedGenerators.length === 0) {
+    throw new Error('No connected load generator pods are reporting live capacity right now.')
+  }
+
+  const totalCapacities = connectedGenerators
+    .map(generator => generator.max_vusers || (generator.available_capacity + generator.active_vusers))
+    .filter(capacity => capacity > 0)
+  const cpuLimits = connectedGenerators
+    .map(generator => generator.cpu_limit_cores)
+    .filter(limit => limit > 0)
+  const memoryLimits = connectedGenerators
+    .map(generator => generator.memory_limit_bytes)
+    .filter(limit => limit > 0)
+
+  if (totalCapacities.length === 0) {
+    throw new Error('Connected generator pods did not report a usable VUser capacity snapshot.')
+  }
+
+  return {
+    configuredAvailableGenerators: connectedGenerators.length,
+    maxVUsers: Math.max(1, Math.floor(Math.min(...totalCapacities))),
+    cpuCores: cpuLimits.length > 0 ? Math.min(...cpuLimits) : undefined,
+    memoryMB: memoryLimits.length > 0 ? Math.max(1, Math.floor(Math.min(...memoryLimits) / (1024 * 1024))) : undefined,
+    generatorCount: connectedGenerators.length,
+  }
+}
+
+function usesDefaultGeneratorCapacity(settings: DashboardSystemSettings) {
+  const generator = settings.capacity_planning.generator
+  const availability = settings.capacity_planning.availability
+  return (
+    generator.cpu_cores === DEFAULT_SETTINGS.capacity_planning.generator.cpu_cores &&
+    generator.memory_mb === DEFAULT_SETTINGS.capacity_planning.generator.memory_mb &&
+    generator.network_mbps === DEFAULT_SETTINGS.capacity_planning.generator.network_mbps &&
+    generator.max_vusers === DEFAULT_SETTINGS.capacity_planning.generator.max_vusers &&
+    availability.configured_available_generators === DEFAULT_SETTINGS.capacity_planning.availability.configured_available_generators
+  )
+}
+
+function applyLiveGeneratorPresetToSettings(settings: DashboardSystemSettings, preset: ReturnType<typeof deriveLiveGeneratorPreset>): DashboardSystemSettings {
+  return {
+    ...settings,
+    capacity_planning: {
+      ...settings.capacity_planning,
+      generator: {
+        ...settings.capacity_planning.generator,
+        cpu_cores: preset.cpuCores ?? settings.capacity_planning.generator.cpu_cores,
+        memory_mb: preset.memoryMB ?? settings.capacity_planning.generator.memory_mb,
+        max_vusers: preset.maxVUsers,
+      },
+      availability: {
+        ...settings.capacity_planning.availability,
+        configured_available_generators: preset.configuredAvailableGenerators,
+      },
+    },
+  }
+}
+
 interface SettingsPageProps {
   theme: DashboardTheme
   onThemeChange: (theme: DashboardTheme) => void
@@ -144,9 +208,18 @@ export default function SettingsPage({ theme, onThemeChange }: SettingsPageProps
       setRequestError('')
       try {
         const response = await api.getSystemSettings()
+        let resolvedSettings = response
+        if (usesDefaultGeneratorCapacity(response)) {
+          try {
+            const inventory = await api.getSystemInventory()
+            resolvedSettings = applyLiveGeneratorPresetToSettings(response, deriveLiveGeneratorPreset(inventory))
+          } catch {
+            resolvedSettings = response
+          }
+        }
         if (!cancelled) {
-          setSettings(response)
-          setSavedSettings(response)
+          setSettings(resolvedSettings)
+          setSavedSettings(resolvedSettings)
         }
       } catch (error: unknown) {
         if (!cancelled) {
@@ -420,6 +493,19 @@ export default function SettingsPage({ theme, onThemeChange }: SettingsPageProps
     }))
     setSaveMessage('')
     setRequestError('')
+  }
+
+  const applyLiveGeneratorPreset = async () => {
+    try {
+      const inventory = await api.getSystemInventory()
+      const preset = deriveLiveGeneratorPreset(inventory)
+      setSettings(prev => applyLiveGeneratorPresetToSettings(prev, preset))
+      setSaveMessage(`Estimated from ${preset.generatorCount} connected load generator pod${preset.generatorCount === 1 ? '' : 's'}: CPU set to ${(preset.cpuCores ?? settings.capacity_planning.generator.cpu_cores).toLocaleString()}, memory set to ${(preset.memoryMB ?? settings.capacity_planning.generator.memory_mb).toLocaleString()} MB, max VUsers set to ${preset.maxVUsers.toLocaleString()}, and configured available generators set to ${preset.configuredAvailableGenerators}. Network remains manual until live pod bandwidth limits are reported.`)
+      setRequestError('')
+    } catch (error: unknown) {
+      setRequestError(getErrorMessage(error, 'Unable to estimate generator capacity from live pods'))
+      setSaveMessage('')
+    }
   }
 
   const visibleSections = SETTINGS_SECTIONS.filter(section => !hiddenSectionIds.includes(section.id))
@@ -905,7 +991,11 @@ export default function SettingsPage({ theme, onThemeChange }: SettingsPageProps
                     {preset.label}
                   </button>
                 ))}
+                <button type="button" className="btn btn-secondary" onClick={applyLiveGeneratorPreset}>
+                  Live Pod Capacity
+                </button>
               </div>
+              <p className="setting-desc">Live Pod Capacity uses connected generators' reported pod CPU, pod memory, VUser capacity, and count from the controller inventory. Network remains manual for now.</p>
             </div>
             <div className="setting-row">
               <div className="setting-info">

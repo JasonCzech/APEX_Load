@@ -41,6 +41,9 @@ type generatorLoadSnapshot struct {
 	AvailableCapacity int32
 	Stats             generatorrpc.GeneratorStats
 	HeartbeatOK       bool
+	CPULimitCores     float64
+	MemoryLimitBytes  int64
+	MaxVUsers         int32
 }
 
 type distributedExecutionBackend struct {
@@ -102,6 +105,9 @@ func (b *distributedExecutionBackend) SystemInventory(ctx context.Context) []Gen
 			entry.CPUPercent = snapshot.Stats.CPUPercent
 			entry.MemoryBytes = snapshot.Stats.MemoryBytes
 			entry.GoroutineCount = snapshot.Stats.GoroutineCount
+			entry.CPULimitCores = snapshot.CPULimitCores
+			entry.MemoryLimitBytes = snapshot.MemoryLimitBytes
+			entry.MaxVUsers = snapshot.MaxVUsers
 		}
 
 		entries = append(entries, entry)
@@ -863,6 +869,9 @@ func (b *distributedExecutionBackend) probeGeneratorLoad(ctx context.Context, ta
 	}
 	snapshot.AvailableCapacity = response.AvailableCapacity
 	snapshot.Stats = response.Stats
+	snapshot.CPULimitCores = response.CPULimitCores
+	snapshot.MemoryLimitBytes = response.MemoryLimitBytes
+	snapshot.MaxVUsers = response.MaxVUsers
 	snapshot.HeartbeatOK = true
 	return snapshot
 }
@@ -1068,7 +1077,7 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 		ActiveVUsers: int64(batch.Stats.ActiveVUsers),
 		Transactions: make(map[string]*TxMetrics),
 		GroupMetrics: make(map[string]*GroupLiveMetrics),
-		Telemetry: &TelemetryHealth{},
+		Telemetry:    &TelemetryHealth{},
 		Resources: &engine.SystemResources{
 			CPUProcessPct: batch.Stats.CPUPercent,
 			MemProcessMb:  float64(batch.Stats.MemoryBytes) / (1024 * 1024),

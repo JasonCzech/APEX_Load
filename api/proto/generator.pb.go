@@ -1238,6 +1238,9 @@ type HeartbeatPong struct {
 	ActiveTestIds     []string               `protobuf:"bytes,2,rep,name=active_test_ids,json=activeTestIds,proto3" json:"active_test_ids,omitempty"`
 	Stats             *GeneratorStats        `protobuf:"bytes,4,opt,name=stats,proto3" json:"stats,omitempty"`
 	AvailableCapacity int32                  `protobuf:"varint,5,opt,name=available_capacity,json=availableCapacity,proto3" json:"available_capacity,omitempty"`
+	CpuLimitCores     float64                `protobuf:"fixed64,6,opt,name=cpu_limit_cores,json=cpuLimitCores,proto3" json:"cpu_limit_cores,omitempty"`
+	MemoryLimitBytes  int64                  `protobuf:"varint,7,opt,name=memory_limit_bytes,json=memoryLimitBytes,proto3" json:"memory_limit_bytes,omitempty"`
+	MaxVusers         int32                  `protobuf:"varint,8,opt,name=max_vusers,json=maxVusers,proto3" json:"max_vusers,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -1303,6 +1306,27 @@ func (x *HeartbeatPong) GetStats() *GeneratorStats {
 func (x *HeartbeatPong) GetAvailableCapacity() int32 {
 	if x != nil {
 		return x.AvailableCapacity
+	}
+	return 0
+}
+
+func (x *HeartbeatPong) GetCpuLimitCores() float64 {
+	if x != nil {
+		return x.CpuLimitCores
+	}
+	return 0
+}
+
+func (x *HeartbeatPong) GetMemoryLimitBytes() int64 {
+	if x != nil {
+		return x.MemoryLimitBytes
+	}
+	return 0
+}
+
+func (x *HeartbeatPong) GetMaxVusers() int32 {
+	if x != nil {
+		return x.MaxVusers
 	}
 	return 0
 }
@@ -1628,13 +1652,17 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\rHeartbeatPing\x12!\n" +
 	"\fgenerator_id\x18\x01 \x01(\tR\vgeneratorId\x12*\n" +
 	"\x11timestamp_unix_ms\x18\x02 \x01(\x03R\x0ftimestampUnixMs\x124\n" +
-	"\x05stats\x18\x03 \x01(\v2\x1e.stormrunner.v1.GeneratorStatsR\x05stats\"\xeb\x01\n" +
+	"\x05stats\x18\x03 \x01(\v2\x1e.stormrunner.v1.GeneratorStatsR\x05stats\"\xe0\x02\n" +
 	"\rHeartbeatPong\x12!\n" +
 	"\fgenerator_id\x18\x03 \x01(\tR\vgeneratorId\x12*\n" +
 	"\x11timestamp_unix_ms\x18\x01 \x01(\x03R\x0ftimestampUnixMs\x12&\n" +
 	"\x0factive_test_ids\x18\x02 \x03(\tR\ractiveTestIds\x124\n" +
 	"\x05stats\x18\x04 \x01(\v2\x1e.stormrunner.v1.GeneratorStatsR\x05stats\x12-\n" +
-	"\x12available_capacity\x18\x05 \x01(\x05R\x11availableCapacity\"i\n" +
+	"\x12available_capacity\x18\x05 \x01(\x05R\x11availableCapacity\x12&\n" +
+	"\x0fcpu_limit_cores\x18\x06 \x01(\x01R\rcpuLimitCores\x12,\n" +
+	"\x12memory_limit_bytes\x18\a \x01(\x03R\x10memoryLimitBytes\x12\x1d\n" +
+	"\n" +
+	"max_vusers\x18\b \x01(\x05R\tmaxVusers\"i\n" +
 	"\rScriptPayload\x12\x1b\n" +
 	"\tscript_id\x18\x01 \x01(\tR\bscriptId\x12\x18\n" +
 	"\acontent\x18\x02 \x01(\fR\acontent\x12!\n" +

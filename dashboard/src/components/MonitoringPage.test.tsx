@@ -110,6 +110,9 @@ describe('MonitoringPage', () => {
           cpu_percent: 22.5,
           memory_bytes: 96 * 1024 * 1024,
           goroutine_count: 812,
+          cpu_limit_cores: 2,
+          memory_limit_bytes: 2 * 1024 * 1024 * 1024,
+          max_vusers: 10000,
         },
       ],
     })
@@ -123,5 +126,8 @@ describe('MonitoringPage', () => {
     expect(container.textContent).toContain('connected')
     expect(container.textContent).toContain('9,600')
     expect(container.textContent).toContain('96 MB')
+    expect(container.textContent).toContain('22.5%')
+    expect(container.textContent).toContain('2 cores')
+    expect(container.textContent).toContain('2 GB')
   })
 })

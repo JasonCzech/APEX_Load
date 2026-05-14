@@ -162,6 +162,9 @@ message HeartbeatPong {
   repeated string active_test_ids = 2;
   GeneratorStats stats = 4;
   int32 available_capacity = 5;
+  double cpu_limit_cores = 6;
+  int64 memory_limit_bytes = 7;
+  int32 max_vusers = 8;
 }
 
 message ScriptPayload {

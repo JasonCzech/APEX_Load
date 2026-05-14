@@ -690,6 +690,9 @@ export interface SystemInventoryGenerator {
   cpu_percent: number
   memory_bytes: number
   goroutine_count: number
+  cpu_limit_cores: number
+  memory_limit_bytes: number
+  max_vusers: number
 }
 
 export interface SystemInventoryResponse {

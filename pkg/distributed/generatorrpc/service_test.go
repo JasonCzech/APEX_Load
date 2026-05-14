@@ -48,6 +48,7 @@ func TestClientRoundTripDistributeAssignAndHeartbeat(t *testing.T) {
 	pb.RegisterGeneratorControlServer(server, service)
 
 	go func() {
+		service.podResources = podResourceCapacity{CPULimitCores: 2, MemoryLimitBytes: 2 * 1024 * 1024 * 1024, MaxVUsers: 50}
 		_ = server.Serve(listener)
 	}()
 	t.Cleanup(func() {
@@ -242,6 +243,15 @@ func TestClientRoundTripDistributeAssignAndHeartbeat(t *testing.T) {
 	}
 	if pong.AvailableCapacity != 38 {
 		t.Fatalf("heartbeat available capacity = %d, want 38", pong.AvailableCapacity)
+	}
+	if pong.CPULimitCores != 2 {
+		t.Fatalf("heartbeat cpu limit cores = %v, want 2", pong.CPULimitCores)
+	}
+	if pong.MemoryLimitBytes != 2*1024*1024*1024 {
+		t.Fatalf("heartbeat memory limit bytes = %d, want 2147483648", pong.MemoryLimitBytes)
+	}
+	if pong.MaxVUsers != 50 {
+		t.Fatalf("heartbeat max vusers = %d, want 50", pong.MaxVUsers)
 	}
 	stopAck, err := client.StopTest(ctx, "test-1", true)
 	if err != nil {

@@ -71,11 +71,11 @@ type MetricsBatch struct {
 }
 
 type MetricsTelemetry struct {
-	DroppedResults    int64
-	CollectedAtUnixMs int64
-	PublishedAtUnixMs int64
+	DroppedResults             int64
+	CollectedAtUnixMs          int64
+	PublishedAtUnixMs          int64
 	ControllerReceivedAtUnixMs int64
-	SampleAgeMs       float64
+	SampleAgeMs                float64
 }
 
 type GroupMetric struct {
@@ -84,15 +84,15 @@ type GroupMetric struct {
 }
 
 type TransactionMetric struct {
-	Name          string
-	DurationMs    float64
-	StatusCode    int32
-	Success       bool
-	ErrorMessage  string
-	BytesSent     int64
-	BytesReceived int64
-	CorrelationID string
-	DependencyType string
+	Name             string
+	DurationMs       float64
+	StatusCode       int32
+	Success          bool
+	ErrorMessage     string
+	BytesSent        int64
+	BytesReceived    int64
+	CorrelationID    string
+	DependencyType   string
 	DependencyTarget string
 }
 
@@ -124,11 +124,14 @@ type Heartbeat struct {
 }
 
 type HeartbeatResponse struct {
-	GeneratorID     string
-	TimestampUnixMs int64
-	ActiveTestIDs   []string
-	Stats           GeneratorStats
+	GeneratorID       string
+	TimestampUnixMs   int64
+	ActiveTestIDs     []string
+	Stats             GeneratorStats
 	AvailableCapacity int32
+	CPULimitCores     float64
+	MemoryLimitBytes  int64
+	MaxVUsers         int32
 }
 
 type GeneratorStats struct {
@@ -309,6 +312,9 @@ func (s *HeartbeatStream) Receive() (HeartbeatResponse, error) {
 		ActiveTestIDs:     pong.GetActiveTestIds(),
 		Stats:             stats,
 		AvailableCapacity: pong.GetAvailableCapacity(),
+		CPULimitCores:     pong.GetCpuLimitCores(),
+		MemoryLimitBytes:  pong.GetMemoryLimitBytes(),
+		MaxVUsers:         pong.GetMaxVusers(),
 	}, nil
 }
 
@@ -340,15 +346,15 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 	transactions := make([]TransactionMetric, 0, len(batch.GetTransactions()))
 	for _, tx := range batch.GetTransactions() {
 		transactions = append(transactions, TransactionMetric{
-			Name:          tx.GetName(),
-			DurationMs:    tx.GetDurationMs(),
-			StatusCode:    tx.GetStatusCode(),
-			Success:       tx.GetSuccess(),
-			ErrorMessage:  tx.GetErrorMessage(),
-			BytesSent:     tx.GetBytesSent(),
-			BytesReceived: tx.GetBytesReceived(),
-			CorrelationID: tx.GetCorrelationId(),
-			DependencyType: tx.GetDependencyType(),
+			Name:             tx.GetName(),
+			DurationMs:       tx.GetDurationMs(),
+			StatusCode:       tx.GetStatusCode(),
+			Success:          tx.GetSuccess(),
+			ErrorMessage:     tx.GetErrorMessage(),
+			BytesSent:        tx.GetBytesSent(),
+			BytesReceived:    tx.GetBytesReceived(),
+			CorrelationID:    tx.GetCorrelationId(),
+			DependencyType:   tx.GetDependencyType(),
 			DependencyTarget: tx.GetDependencyTarget(),
 		})
 	}

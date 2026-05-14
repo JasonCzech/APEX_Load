@@ -268,12 +268,20 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
                     <span className="monitor-value">{generator.active_vusers.toLocaleString()}</span>
                   </div>
                   <div className="monitor-row">
-                    <span className="monitor-label">CPU</span>
+                    <span className="monitor-label">CPU Usage</span>
                     <span className="monitor-value">{generator.cpu_percent.toFixed(1)}%</span>
                   </div>
                   <div className="monitor-row">
-                    <span className="monitor-label">Memory</span>
+                    <span className="monitor-label">CPU Capacity</span>
+                    <span className="monitor-value">{formatCPUCores(generator.cpu_limit_cores)}</span>
+                  </div>
+                  <div className="monitor-row">
+                    <span className="monitor-label">Memory Usage</span>
                     <span className="monitor-value">{formatMemoryBytes(generator.memory_bytes)}</span>
+                  </div>
+                  <div className="monitor-row">
+                    <span className="monitor-label">Memory Capacity</span>
+                    <span className="monitor-value">{formatMemoryBytes(generator.memory_limit_bytes)}</span>
                   </div>
                   <div className="monitor-row">
                     <span className="monitor-label">Goroutines</span>
@@ -614,6 +622,12 @@ function formatDurationShort(ms: number) {
   const hours = Math.floor(minutes / 60)
   const remaining = minutes % 60
   return remaining ? `${hours}h ${remaining}m` : `${hours}h`
+}
+
+function formatCPUCores(value: number) {
+  if (!value) return '0 cores'
+  const rounded = Number(value.toFixed(value >= 10 ? 0 : 1))
+  return `${rounded} ${rounded === 1 ? 'core' : 'cores'}`
 }
 
 function formatMemoryBytes(value: number) {

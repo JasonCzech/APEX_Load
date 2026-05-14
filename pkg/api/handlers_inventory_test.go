@@ -29,6 +29,9 @@ func TestHandleGetSystemInventoryReturnsControllerAndGenerators(t *testing.T) {
 		CPUPercent:        22.5,
 		MemoryBytes:       96 * 1024 * 1024,
 		GoroutineCount:    812,
+		CPULimitCores:     2,
+		MemoryLimitBytes:  2 * 1024 * 1024 * 1024,
+		MaxVUsers:         10000,
 	}}})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/system/inventory", nil)
@@ -60,5 +63,14 @@ func TestHandleGetSystemInventoryReturnsControllerAndGenerators(t *testing.T) {
 	}
 	if payload.Generators[0].AvailableCapacity != 9600 {
 		t.Fatalf("available_capacity = %d, want 9600", payload.Generators[0].AvailableCapacity)
+	}
+	if payload.Generators[0].CPULimitCores != 2 {
+		t.Fatalf("cpu_limit_cores = %v, want 2", payload.Generators[0].CPULimitCores)
+	}
+	if payload.Generators[0].MemoryLimitBytes != 2*1024*1024*1024 {
+		t.Fatalf("memory_limit_bytes = %d, want 2147483648", payload.Generators[0].MemoryLimitBytes)
+	}
+	if payload.Generators[0].MaxVUsers != 10000 {
+		t.Fatalf("max_vusers = %d, want 10000", payload.Generators[0].MaxVUsers)
 	}
 }

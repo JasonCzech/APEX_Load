@@ -58,15 +58,15 @@ func (b *transactionBuffer) RecordResult(result *protocol.Result) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.transactions = append(b.transactions, TransactionMetric{
-		Name:          result.ActionName,
-		DurationMs:    float64(result.Duration) / float64(time.Millisecond),
-		StatusCode:    int32(result.StatusCode),
-		Success:       result.Success,
-		ErrorMessage:  result.ErrorMessage,
-		BytesSent:     result.BytesSent,
-		BytesReceived: result.BytesReceived,
-		CorrelationID: result.CorrelationID,
-		DependencyType: result.DependencyType,
+		Name:             result.ActionName,
+		DurationMs:       float64(result.Duration) / float64(time.Millisecond),
+		StatusCode:       int32(result.StatusCode),
+		Success:          result.Success,
+		ErrorMessage:     result.ErrorMessage,
+		BytesSent:        result.BytesSent,
+		BytesReceived:    result.BytesReceived,
+		CorrelationID:    result.CorrelationID,
+		DependencyType:   result.DependencyType,
 		DependencyTarget: result.DependencyTarget,
 	})
 	if len(b.transactions) > 1024 {
@@ -92,6 +92,7 @@ type Service struct {
 	mu               sync.RWMutex
 	generatorID      string
 	maxVUsers        int32
+	podResources     podResourceCapacity
 	scripts          map[string]cachedScript
 	assignments      map[string]assignedTest
 	executions       map[string]map[string]*groupExecution
@@ -121,6 +122,7 @@ func NewService(generatorID string, maxVUsers int, opts ...ServiceOption) *Servi
 	service := &Service{
 		generatorID:      generatorID,
 		maxVUsers:        int32(maxVUsers),
+		podResources:     detectPodResourceCapacity(int32(maxVUsers)),
 		scripts:          make(map[string]cachedScript),
 		assignments:      make(map[string]assignedTest),
 		executions:       make(map[string]map[string]*groupExecution),
@@ -453,11 +455,14 @@ func (s *Service) Heartbeat(stream pb.GeneratorControl_HeartbeatServer) error {
 		}
 
 		if err := stream.Send(&pb.HeartbeatPong{
-			GeneratorId:     s.generatorID,
-			TimestampUnixMs: maxInt64(time.Now().UnixMilli(), ping.GetTimestampUnixMs()),
-			ActiveTestIds:   s.activeTestIDs(),
-			Stats:           toProtoStats(GeneratorStats{ActiveVUsers: s.activeVUsersLocked(), GoroutineCount: int32(runtime.NumGoroutine())}),
+			GeneratorId:       s.generatorID,
+			TimestampUnixMs:   maxInt64(time.Now().UnixMilli(), ping.GetTimestampUnixMs()),
+			ActiveTestIds:     s.activeTestIDs(),
+			Stats:             toProtoStats(GeneratorStats{ActiveVUsers: s.activeVUsersLocked(), GoroutineCount: int32(runtime.NumGoroutine())}),
 			AvailableCapacity: s.availableCapacityLocked(),
+			CpuLimitCores:     s.podResources.CPULimitCores,
+			MemoryLimitBytes:  s.podResources.MemoryLimitBytes,
+			MaxVusers:         s.podResources.MaxVUsers,
 		}); err != nil {
 			return err
 		}
@@ -723,15 +728,15 @@ func (s *Service) metricsBatchForMetrics(testID string, stats GeneratorStats, tr
 	protoTransactions := make([]*pb.TransactionMetric, 0, len(transactions))
 	for _, tx := range transactions {
 		protoTransactions = append(protoTransactions, &pb.TransactionMetric{
-			Name:          tx.Name,
-			DurationMs:    tx.DurationMs,
-			StatusCode:    tx.StatusCode,
-			Success:       tx.Success,
-			ErrorMessage:  tx.ErrorMessage,
-			BytesSent:     tx.BytesSent,
-			BytesReceived: tx.BytesReceived,
-			CorrelationId: tx.CorrelationID,
-			DependencyType: tx.DependencyType,
+			Name:             tx.Name,
+			DurationMs:       tx.DurationMs,
+			StatusCode:       tx.StatusCode,
+			Success:          tx.Success,
+			ErrorMessage:     tx.ErrorMessage,
+			BytesSent:        tx.BytesSent,
+			BytesReceived:    tx.BytesReceived,
+			CorrelationId:    tx.CorrelationID,
+			DependencyType:   tx.DependencyType,
 			DependencyTarget: tx.DependencyTarget,
 		})
 	}
