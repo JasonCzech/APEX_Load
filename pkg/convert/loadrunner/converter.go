@@ -1,7 +1,6 @@
 package loadrunner
 
 import (
-	"bufio"
 	"fmt"
 	"math"
 	"net/url"
@@ -39,7 +38,8 @@ type ConvertOptions struct {
 	PreserveTransactions bool    // Wrap actions in transaction markers (as comments in name)
 
 	// HTTP runtime settings (mapped from VuGen runtime config)
-	HTTPConfig *dsl.HTTPConfig // Pre-built HTTP config to embed in script
+	HTTPConfig      *dsl.HTTPConfig  // Pre-built HTTP config to embed in script
+	RuntimeSettings *dsl.ScriptConfig // Broader runtime settings mapped from default.cfg
 }
 
 // Convert transforms parsed LoadRunner action files into a Stormrunner DSL Script.
@@ -225,8 +225,92 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 	if opts.HTTPConfig != nil {
 		result.Script.Config.HTTP = *opts.HTTPConfig
 	}
+	if opts.RuntimeSettings != nil {
+		mergeScriptConfig(&result.Script.Config, opts.RuntimeSettings)
+	}
 
 	return result, nil
+}
+
+func mergeScriptConfig(dst *dsl.ScriptConfig, src *dsl.ScriptConfig) {
+	if dst == nil || src == nil {
+		return
+	}
+	if src.ThinkTime.Type != "" || src.ThinkTime.MeanMs != 0 || src.ThinkTime.StdMs != 0 || src.ThinkTime.MinMs != 0 || src.ThinkTime.MaxMs != 0 || src.ThinkTime.Multiplier != 0 || src.ThinkTime.LimitMs != 0 || src.ThinkTime.Ignore {
+		if src.ThinkTime.Type != "" {
+			dst.ThinkTime.Type = src.ThinkTime.Type
+		}
+		if src.ThinkTime.MeanMs != 0 {
+			dst.ThinkTime.MeanMs = src.ThinkTime.MeanMs
+		}
+		if src.ThinkTime.StdMs != 0 {
+			dst.ThinkTime.StdMs = src.ThinkTime.StdMs
+		}
+		if src.ThinkTime.MinMs != 0 {
+			dst.ThinkTime.MinMs = src.ThinkTime.MinMs
+		}
+		if src.ThinkTime.MaxMs != 0 {
+			dst.ThinkTime.MaxMs = src.ThinkTime.MaxMs
+		}
+		if src.ThinkTime.Multiplier != 0 {
+			dst.ThinkTime.Multiplier = src.ThinkTime.Multiplier
+		}
+		if src.ThinkTime.LimitMs != 0 {
+			dst.ThinkTime.LimitMs = src.ThinkTime.LimitMs
+		}
+		if src.ThinkTime.Ignore {
+			dst.ThinkTime.Ignore = true
+		}
+	}
+	if !isEmptyPacingConfig(src.Pacing) {
+		dst.Pacing = src.Pacing
+	}
+	if !isEmptyRunLogicConfig(src.RunLogic) {
+		dst.RunLogic = src.RunLogic
+	}
+	if !isEmptyLogConfig(src.Log) {
+		dst.Log = src.Log
+	}
+	if !isEmptyHTTPConfig(src.HTTP) {
+		dst.HTTP = src.HTTP
+	}
+	if !isEmptyBrowserConfig(src.Browser) {
+		dst.Browser = src.Browser
+	}
+	if !isEmptyErrorHandlingConfig(src.ErrorHandling) {
+		dst.ErrorHandling = src.ErrorHandling
+	}
+	if !isEmptyWebRuntimeConfig(src.WebRuntime) {
+		dst.WebRuntime = src.WebRuntime
+	}
+}
+
+func isEmptyPacingConfig(cfg dsl.PacingConfig) bool {
+	return cfg.Type == "" && cfg.DelayMs == 0 && cfg.MinDelayMs == 0 && cfg.MaxDelayMs == 0 && cfg.IntervalMs == 0 && cfg.MinIntervalMs == 0 && cfg.MaxIntervalMs == 0 && cfg.TPS == 0
+}
+
+func isEmptyRunLogicConfig(cfg dsl.RunLogicConfig) bool {
+	return cfg.Iterations == 0 && cfg.AutoTransactions == "" && cfg.BlockScheduling == "" && len(cfg.ActionSequence) == 0
+}
+
+func isEmptyLogConfig(cfg dsl.LogConfig) bool {
+	return cfg.Level == "" && !cfg.OnErrorOnly && len(cfg.ExtendedOptions) == 0
+}
+
+func isEmptyHTTPConfig(cfg dsl.HTTPConfig) bool {
+	return cfg.ConnectTimeoutMs == 0 && cfg.RequestTimeoutMs == 0 && cfg.TLSTimeoutMs == 0 && cfg.IdleTimeoutMs == 0 && cfg.Version == "" && cfg.MaxConnsPerHost == 0 && cfg.MaxIdleConns == 0 && cfg.KeepAlive == nil && cfg.ProxyMode == "" && cfg.UserAgent == "" && cfg.AcceptEncoding == "" && cfg.AcceptLanguage == "" && cfg.MaxRedirects == nil && len(cfg.DefaultHeaders) == 0 && cfg.Proxy.URL == "" && cfg.Proxy.Username == "" && cfg.Proxy.Password == "" && len(cfg.Proxy.NoProxy) == 0 && cfg.Auth.Type == "" && cfg.Auth.Username == "" && cfg.Auth.Password == "" && cfg.Auth.Token == "" && cfg.Auth.Domain == "" && cfg.TLS.MinVersion == "" && cfg.TLS.MaxVersion == "" && !cfg.TLS.InsecureSkipVerify && cfg.TLS.ClientCertFile == "" && cfg.TLS.ClientKeyFile == "" && cfg.TLS.CACertFile == ""
+}
+
+func isEmptyBrowserConfig(cfg dsl.BrowserConfig) bool {
+	return cfg.Engine == "" && cfg.Headless == nil && cfg.SlowMoMs == 0 && cfg.UserAgent == "" && cfg.CaptureScreenshots == "" && cfg.CacheEnabled == nil && cfg.CacheContentURLs == nil && cfg.CheckNewerVersions == nil && cfg.NewUserPerIter == nil && cfg.DownloadResources == "" && cfg.Viewport.Width == 0 && cfg.Viewport.Height == 0
+}
+
+func isEmptyErrorHandlingConfig(cfg dsl.ErrorHandlingConfig) bool {
+	return !cfg.ContinueOnError && cfg.MaxRetries == 0 && cfg.RetryDelayMs == 0 && cfg.RetryBackoff == "" && !cfg.SnapshotOnError
+}
+
+func isEmptyWebRuntimeConfig(cfg dsl.WebRuntimeConfig) bool {
+	return len(cfg.AdditionalAttributes) == 0 && cfg.DownloadFilters.Mode == "" && len(cfg.DownloadFilters.Hosts) == 0 && len(cfg.ContentChecks) == 0 && cfg.NetworkSimulation.Mode == "" && cfg.NetworkSimulation.Preset == "" && cfg.NetworkSimulation.BandwidthKbps == 0 && cfg.NetworkSimulation.LatencyMs == 0 && cfg.Streaming.Mode == "" && cfg.Streaming.BufferSizeSeconds == 0 && cfg.Streaming.FixedBitrateKbps == 0 && cfg.Streaming.BandwidthEstimation == "" && !cfg.DataFormatting.AutoDetect && len(cfg.DataFormatting.Chain) == 0
 }
 
 func detectImportProtocol(functions []ParsedFunction) (string, *dsl.SOAPConfig, string) {
@@ -630,6 +714,8 @@ type RuntimeConfig struct {
 	StepTimeoutSec    int
 	HTTPVersion       string // "1.0" or "1.1"
 	KeepAlive         bool
+	MaxConnsPerHost   int
+	ProxyMode         string
 	ProxyURL          string
 	ProxyUser         string
 	ProxyPass         string
@@ -640,6 +726,44 @@ type RuntimeConfig struct {
 	AuthUser          string
 	AuthPass          string
 	MaxRedirects      int
+	Iterations        int
+	AutoTransactions  string
+	BlockScheduling   string
+	ActionSequence    []string
+	PacingType        string
+	DelayMs           int
+	MinDelayMs        int
+	MaxDelayMs        int
+	IntervalMs        int
+	MinIntervalMs     int
+	MaxIntervalMs     int
+	ThinkTimeIgnore   bool
+	ThinkTimeMultiplier float64
+	ThinkTimeLimitMs  float64
+	LogLevel          string
+	OnErrorOnly       bool
+	LogExtendedOptions []string
+	ContinueOnError   bool
+	SnapshotOnError   bool
+	CacheEnabled      bool
+	CacheContentURLs  bool
+	CheckNewerVersions bool
+	NewUserPerIteration bool
+	DownloadResources string
+	AdditionalAttributes map[string]string
+	DownloadFilterMode string
+	DownloadFilterHosts []string
+	ContentChecks []dsl.ContentCheckConfig
+	NetworkSimulationMode string
+	NetworkSimulationPreset string
+	NetworkBandwidthKbps int
+	NetworkLatencyMs int
+	StreamingMode string
+	StreamingBufferSizeSeconds int
+	StreamingFixedBitrateKbps int
+	StreamingBandwidthEstimation string
+	DataFormattingAutoDetect bool
+	DataFormattingChain []dsl.DFETransform
 }
 
 // ParseRuntimeCfg parses a VuGen default.cfg / runtime settings .cfg file.
@@ -648,79 +772,217 @@ func ParseRuntimeCfg(content string) *RuntimeConfig {
 		KeepAlive:    true,
 		HTTPVersion:  "1.1",
 		MaxRedirects: 10,
+		AdditionalAttributes: make(map[string]string),
 	}
 
-	scanner := bufio.NewScanner(strings.NewReader(content))
-	section := ""
+	sections := ParseConfigSections(content)
+	httpSection := findSection(sections, "HTTP", "Internet Protocol", "Preferences", "Internet Protocol Preferences")
+	rc.ConnectTimeoutSec = parseInt(httpSection["ConnectTimeout"])
+	rc.ReceiveTimeoutSec = parseInt(httpSection["ReceiveTimeout"])
+	rc.StepTimeoutSec = parseInt(httpSection["StepDownloadTimeout"])
+	if version := strings.TrimSpace(httpSection["HTTPVersion"]); version != "" {
+		rc.HTTPVersion = version
+	}
+	if keepAlive, ok := parseBoolExplicit(httpSection["KeepAlive"]); ok {
+		rc.KeepAlive = keepAlive
+	}
+	if redirects := parseInt(httpSection["MaxRedirections"]); redirects > 0 {
+		rc.MaxRedirects = redirects
+	}
+	rc.MaxConnsPerHost = firstNonZeroInt(httpSection["MaxConnectionsPerHost"], httpSection["MaxConnections"], httpSection["MaxConnectionsPerHostHTTP"])
 
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, ";") {
+	proxySection := findSection(sections, "Proxy")
+	rc.ProxyMode = normalizeEnum(strings.TrimSpace(firstNonBlank(proxySection["Mode"], proxySection["ProxyMode"], proxySection["Type"])))
+	rc.ProxyURL = strings.TrimSpace(firstNonBlank(proxySection["ProxyServer"], proxySection["ProxyURL"], proxySection["Server"]))
+	rc.ProxyUser = strings.TrimSpace(firstNonBlank(proxySection["ProxyUserName"], proxySection["UserName"]))
+	rc.ProxyPass = strings.TrimSpace(firstNonBlank(proxySection["ProxyPassword"], proxySection["Password"]))
+
+	browserSection := findSection(sections, "Browser Emulation", "Browser")
+	rc.UserAgent = strings.TrimSpace(browserSection["UserAgent"])
+	rc.AcceptLanguage = strings.TrimSpace(browserSection["AcceptLanguage"])
+	rc.UseGzip = strings.Contains(strings.ToLower(browserSection["AcceptEncoding"]), "gzip")
+	rc.CacheEnabled = parseBool(browserSection["CacheEnabled"])
+	rc.CacheContentURLs = parseBool(firstNonBlank(browserSection["CacheContentURLs"], browserSection["CacheURLsRequiringContent"]))
+	rc.CheckNewerVersions = parseBool(firstNonBlank(browserSection["CheckNewerVersions"], browserSection["CheckForNewerPages"]))
+	rc.NewUserPerIteration = parseBool(firstNonBlank(browserSection["NewUserPerIteration"], browserSection["SimulateNewUser"]))
+	rc.DownloadResources = normalizeEnum(strings.TrimSpace(firstNonBlank(browserSection["DownloadResources"], browserSection["DownloadNonHtmlResources"])))
+
+	sslSection := findSection(sections, "SSL", "Security")
+	rc.SSLVersion = strings.TrimSpace(firstNonBlank(sslSection["SSLVersion"], sslSection["TLSVersion"]))
+
+	authSection := findSection(sections, "Authentication")
+	rc.AuthUser = strings.TrimSpace(firstNonBlank(authSection["UserName"], authSection["Username"]))
+	rc.AuthPass = strings.TrimSpace(authSection["Password"])
+
+	runLogicSection := findSection(sections, "Run Logic", "RunLogic")
+	rc.Iterations = parseInt(firstNonBlank(runLogicSection["Iterations"], runLogicSection["NumberOfIterations"]))
+	rc.AutoTransactions = normalizeEnum(runLogicSection["AutoTransactions"])
+	rc.BlockScheduling = normalizeEnum(runLogicSection["BlockScheduling"])
+	rc.ActionSequence = splitList(firstNonBlank(runLogicSection["ActionSequence"], runLogicSection["Sequence"]))
+
+	pacingSection := findSection(sections, "Pacing")
+	rc.PacingType = mapPacingType(firstNonBlank(pacingSection["Mode"], pacingSection["PacingMode"]))
+	rc.DelayMs = firstNonZeroInt(pacingSection["DelayMs"], pacingSection["Delay"])
+	rc.MinDelayMs = firstNonZeroInt(pacingSection["MinDelayMs"], pacingSection["MinDelay"])
+	rc.MaxDelayMs = firstNonZeroInt(pacingSection["MaxDelayMs"], pacingSection["MaxDelay"])
+	rc.IntervalMs = firstNonZeroInt(pacingSection["IntervalMs"], pacingSection["Interval"])
+	rc.MinIntervalMs = firstNonZeroInt(pacingSection["MinIntervalMs"], pacingSection["MinInterval"])
+	rc.MaxIntervalMs = firstNonZeroInt(pacingSection["MaxIntervalMs"], pacingSection["MaxInterval"])
+
+	thinkTimeSection := findSection(sections, "Think Time", "ThinkTime")
+	rc.ThinkTimeIgnore = parseBool(firstNonBlank(thinkTimeSection["Ignore"], thinkTimeSection["IgnoreThinkTime"]))
+	rc.ThinkTimeMultiplier = parseFloat(firstNonBlank(thinkTimeSection["Multiplier"], thinkTimeSection["MultiplyRecordedThinkTimeBy"]))
+	rc.ThinkTimeLimitMs = parseFloat(firstNonBlank(thinkTimeSection["LimitMs"], thinkTimeSection["LimitThinkTimeMs"]))
+
+	logSection := findSection(sections, "Log", "Logging")
+	rc.LogLevel = mapLogLevel(firstNonBlank(logSection["Level"], logSection["LogLevel"]))
+	rc.OnErrorOnly = parseBool(firstNonBlank(logSection["OnErrorOnly"], logSection["LogOnErrorOnly"]))
+	rc.LogExtendedOptions = splitList(firstNonBlank(logSection["ExtendedOptions"], logSection["ExtendedLogOptions"]))
+	if parseBool(logSection["ParameterSubstitution"]) {
+		rc.LogExtendedOptions = appendIfMissing(rc.LogExtendedOptions, "parameter_substitution")
+	}
+	if parseBool(logSection["DataReturned"]) {
+		rc.LogExtendedOptions = appendIfMissing(rc.LogExtendedOptions, "data_returned")
+	}
+	if parseBool(logSection["AdvancedTrace"]) {
+		rc.LogExtendedOptions = appendIfMissing(rc.LogExtendedOptions, "advanced_trace")
+	}
+
+	miscSection := findSection(sections, "Misc", "Miscellaneous")
+	rc.ContinueOnError = parseBool(firstNonBlank(miscSection["ContinueOnError"], miscSection["ErrorContinue"] ))
+	rc.SnapshotOnError = parseBool(firstNonBlank(miscSection["SnapshotOnError"], miscSection["GenerateSnapshotOnError"]))
+
+	attrsSection := findSection(sections, "Additional Attributes", "Attributes")
+	for key, value := range attrsSection {
+		trimmedKey := strings.TrimSpace(key)
+		if trimmedKey == "" {
 			continue
 		}
+		rc.AdditionalAttributes[trimmedKey] = strings.TrimSpace(value)
+	}
 
-		if m := reSectionHeader.FindStringSubmatch(line); len(m) > 1 {
-			section = m[1]
-			continue
-		}
+	filtersSection := findSection(sections, "Download Filters", "DownloadFilters")
+	rc.DownloadFilterMode = normalizeEnum(firstNonBlank(filtersSection["Mode"], filtersSection["FilterMode"]))
+	rc.DownloadFilterHosts = splitList(firstNonBlank(filtersSection["Hosts"], filtersSection["IncludeHosts"], filtersSection["ExcludeHosts"]))
 
-		parts := strings.SplitN(line, "=", 2)
-		if len(parts) != 2 {
-			continue
-		}
-		key := strings.TrimSpace(parts[0])
-		value := strings.TrimSpace(parts[1])
+	contentCheckSection := findSection(sections, "Content Check", "ContentCheck")
+	if text := strings.TrimSpace(firstNonBlank(contentCheckSection["Text"], contentCheckSection["SearchText"])); text != "" {
+		failIfFound := !hasExplicitFalse(contentCheckSection["FailIfFound"])
+		rc.ContentChecks = append(rc.ContentChecks, dsl.ContentCheckConfig{
+			Text:        text,
+			Scope:       normalizeEnum(firstNonBlank(contentCheckSection["Scope"], "any_response")),
+			FailIfFound: &failIfFound,
+		})
+	}
 
-		switch section {
-		case "HTTP", "Internet Protocol":
-			switch key {
-			case "ConnectTimeout":
-				rc.ConnectTimeoutSec, _ = strconv.Atoi(value)
-			case "ReceiveTimeout":
-				rc.ReceiveTimeoutSec, _ = strconv.Atoi(value)
-			case "StepDownloadTimeout":
-				rc.StepTimeoutSec, _ = strconv.Atoi(value)
-			case "HTTPVersion":
-				rc.HTTPVersion = value
-			case "KeepAlive":
-				rc.KeepAlive = value != "0"
-			case "MaxRedirections":
-				rc.MaxRedirects, _ = strconv.Atoi(value)
-			}
-		case "Proxy":
-			switch key {
-			case "ProxyServer":
-				rc.ProxyURL = value
-			case "ProxyUserName":
-				rc.ProxyUser = value
-			case "ProxyPassword":
-				rc.ProxyPass = value
-			}
-		case "Browser Emulation", "Browser":
-			switch key {
-			case "UserAgent":
-				rc.UserAgent = value
-			case "AcceptLanguage":
-				rc.AcceptLanguage = value
-			case "AcceptEncoding":
-				rc.UseGzip = strings.Contains(value, "gzip")
-			}
-		case "SSL", "Security":
-			switch key {
-			case "SSLVersion":
-				rc.SSLVersion = value
-			}
-		case "Authentication":
-			switch key {
-			case "UserName":
-				rc.AuthUser = value
-			case "Password":
-				rc.AuthPass = value
-			}
-		}
+	networkSection := findSection(sections, "Network Speed Simulation", "NetworkSimulation")
+	rc.NetworkSimulationMode = normalizeEnum(firstNonBlank(networkSection["Mode"], networkSection["SimulationMode"]))
+	rc.NetworkSimulationPreset = normalizeEnum(networkSection["Preset"])
+	rc.NetworkBandwidthKbps = firstNonZeroInt(networkSection["BandwidthKbps"], networkSection["Bandwidth"])
+	rc.NetworkLatencyMs = parseInt(networkSection["LatencyMs"])
+
+	streamingSection := findSection(sections, "Streaming")
+	rc.StreamingMode = normalizeEnum(streamingSection["Mode"])
+	rc.StreamingBufferSizeSeconds = firstNonZeroInt(streamingSection["BufferSizeSeconds"], streamingSection["BufferSize"])
+	rc.StreamingFixedBitrateKbps = firstNonZeroInt(streamingSection["FixedBitrateKbps"], streamingSection["FixedBitrate"])
+	rc.StreamingBandwidthEstimation = normalizeEnum(streamingSection["BandwidthEstimation"])
+
+	dataFormattingSection := findSection(sections, "Data Formatting", "DataFormatting")
+	rc.DataFormattingAutoDetect = parseBool(firstNonBlank(dataFormattingSection["AutoDetect"], dataFormattingSection["DFEAutoDetect"]))
+	for _, item := range splitList(firstNonBlank(dataFormattingSection["Chain"], dataFormattingSection["DFEChain"])) {
+		rc.DataFormattingChain = append(rc.DataFormattingChain, dsl.DFETransform{Type: item})
 	}
 
 	return rc
+}
+
+func (rc *RuntimeConfig) ToScriptConfig() *dsl.ScriptConfig {
+	if rc == nil {
+		return nil
+	}
+	config := &dsl.ScriptConfig{}
+	if httpCfg := rc.ToHTTPConfig(); httpCfg != nil {
+		config.HTTP = *httpCfg
+	}
+	if rc.Iterations > 0 || rc.AutoTransactions != "" || rc.BlockScheduling != "" || len(rc.ActionSequence) > 0 {
+		config.RunLogic = dsl.RunLogicConfig{
+			Iterations:       rc.Iterations,
+			AutoTransactions: rc.AutoTransactions,
+			BlockScheduling:  rc.BlockScheduling,
+			ActionSequence:   append([]string(nil), rc.ActionSequence...),
+		}
+	}
+	if rc.PacingType != "" {
+		config.Pacing = dsl.PacingConfig{
+			Type:          rc.PacingType,
+			DelayMs:       rc.DelayMs,
+			MinDelayMs:    rc.MinDelayMs,
+			MaxDelayMs:    rc.MaxDelayMs,
+			IntervalMs:    rc.IntervalMs,
+			MinIntervalMs: rc.MinIntervalMs,
+			MaxIntervalMs: rc.MaxIntervalMs,
+		}
+	}
+	if rc.ThinkTimeIgnore || rc.ThinkTimeMultiplier != 0 || rc.ThinkTimeLimitMs != 0 {
+		config.ThinkTime = dsl.ThinkTimeConfig{
+			Ignore:     rc.ThinkTimeIgnore,
+			Multiplier: rc.ThinkTimeMultiplier,
+			LimitMs:    rc.ThinkTimeLimitMs,
+		}
+	}
+	if rc.LogLevel != "" || rc.OnErrorOnly || len(rc.LogExtendedOptions) > 0 {
+		config.Log = dsl.LogConfig{
+			Level:           rc.LogLevel,
+			OnErrorOnly:     rc.OnErrorOnly,
+			ExtendedOptions: append([]string(nil), rc.LogExtendedOptions...),
+		}
+	}
+	if rc.ContinueOnError || rc.SnapshotOnError {
+		config.ErrorHandling = dsl.ErrorHandlingConfig{
+			ContinueOnError: rc.ContinueOnError,
+			SnapshotOnError: rc.SnapshotOnError,
+		}
+	}
+	if rc.CacheEnabled || rc.CacheContentURLs || rc.CheckNewerVersions || rc.NewUserPerIteration || rc.DownloadResources != "" {
+		cacheEnabled := rc.CacheEnabled
+		cacheContentURLs := rc.CacheContentURLs
+		checkNewerVersions := rc.CheckNewerVersions
+		newUserPerIter := rc.NewUserPerIteration
+		config.Browser = dsl.BrowserConfig{
+			CacheEnabled:       &cacheEnabled,
+			CacheContentURLs:   &cacheContentURLs,
+			CheckNewerVersions: &checkNewerVersions,
+			NewUserPerIter:     &newUserPerIter,
+			DownloadResources:  rc.DownloadResources,
+		}
+	}
+	if len(rc.AdditionalAttributes) > 0 || rc.DownloadFilterMode != "" || len(rc.DownloadFilterHosts) > 0 || len(rc.ContentChecks) > 0 || rc.NetworkSimulationMode != "" || rc.NetworkSimulationPreset != "" || rc.NetworkBandwidthKbps != 0 || rc.NetworkLatencyMs != 0 || rc.StreamingMode != "" || rc.StreamingBufferSizeSeconds != 0 || rc.StreamingFixedBitrateKbps != 0 || rc.StreamingBandwidthEstimation != "" || rc.DataFormattingAutoDetect || len(rc.DataFormattingChain) > 0 {
+		config.WebRuntime = dsl.WebRuntimeConfig{
+			AdditionalAttributes: cloneStringMap(rc.AdditionalAttributes),
+			DownloadFilters: dsl.DownloadFiltersConfig{
+				Mode:  rc.DownloadFilterMode,
+				Hosts: append([]string(nil), rc.DownloadFilterHosts...),
+			},
+			ContentChecks: append([]dsl.ContentCheckConfig(nil), rc.ContentChecks...),
+			NetworkSimulation: dsl.NetworkSimulationConfig{
+				Mode:          rc.NetworkSimulationMode,
+				Preset:        rc.NetworkSimulationPreset,
+				BandwidthKbps: rc.NetworkBandwidthKbps,
+				LatencyMs:     rc.NetworkLatencyMs,
+			},
+			Streaming: dsl.StreamingConfig{
+				Mode:                rc.StreamingMode,
+				BufferSizeSeconds:   rc.StreamingBufferSizeSeconds,
+				FixedBitrateKbps:    rc.StreamingFixedBitrateKbps,
+				BandwidthEstimation: rc.StreamingBandwidthEstimation,
+			},
+			DataFormatting: dsl.DataFormattingConfig{
+				AutoDetect: rc.DataFormattingAutoDetect,
+				Chain:      append([]dsl.DFETransform(nil), rc.DataFormattingChain...),
+			},
+		}
+	}
+	return config
 }
 
 // ToHTTPConfig converts parsed VuGen runtime settings into a Stormrunner HTTPConfig.
@@ -738,6 +1000,9 @@ func (rc *RuntimeConfig) ToHTTPConfig() *dsl.HTTPConfig {
 	}
 
 	cfg.Version = rc.HTTPVersion
+	if rc.MaxConnsPerHost > 0 {
+		cfg.MaxConnsPerHost = rc.MaxConnsPerHost
+	}
 
 	ka := rc.KeepAlive
 	cfg.KeepAlive = &ka
@@ -748,11 +1013,18 @@ func (rc *RuntimeConfig) ToHTTPConfig() *dsl.HTTPConfig {
 	}
 
 	if rc.ProxyURL != "" {
+		if rc.ProxyMode == "" {
+			cfg.ProxyMode = "custom"
+		} else {
+			cfg.ProxyMode = rc.ProxyMode
+		}
 		cfg.Proxy = dsl.ProxyConfig{
 			URL:      rc.ProxyURL,
 			Username: rc.ProxyUser,
 			Password: rc.ProxyPass,
 		}
+	} else if rc.ProxyMode != "" {
+		cfg.ProxyMode = rc.ProxyMode
 	}
 
 	if rc.UserAgent != "" {
@@ -780,6 +1052,139 @@ func (rc *RuntimeConfig) ToHTTPConfig() *dsl.HTTPConfig {
 	}
 
 	return cfg
+}
+
+func findSection(sections map[string]map[string]string, aliases ...string) map[string]string {
+	for _, alias := range aliases {
+		for name, values := range sections {
+			if strings.EqualFold(name, alias) {
+				return values
+			}
+		}
+	}
+	return map[string]string{}
+}
+
+func parseInt(value string) int {
+	parsed, _ := strconv.Atoi(strings.TrimSpace(value))
+	return parsed
+}
+
+func parseFloat(value string) float64 {
+	parsed, _ := strconv.ParseFloat(strings.TrimSpace(value), 64)
+	return parsed
+}
+
+func firstNonZeroInt(values ...string) int {
+	for _, value := range values {
+		if parsed := parseInt(value); parsed != 0 {
+			return parsed
+		}
+	}
+	return 0
+}
+
+func parseBool(value string) bool {
+	parsed, ok := parseBoolExplicit(value)
+	return ok && parsed
+}
+
+func parseBoolExplicit(value string) (bool, bool) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "1", "true", "yes", "on", "enabled":
+		return true, true
+	case "0", "false", "no", "off", "disabled":
+		return false, true
+	default:
+		return false, false
+	}
+}
+
+func hasExplicitFalse(value string) bool {
+	parsed, ok := parseBoolExplicit(value)
+	return ok && !parsed
+}
+
+func splitList(value string) []string {
+	parts := strings.FieldsFunc(value, func(r rune) bool {
+		return r == ',' || r == ';' || r == '\n' || r == '\r'
+	})
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		trimmed := normalizeEnum(part)
+		if trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	return result
+}
+
+func normalizeEnum(value string) string {
+	trimmed := strings.TrimSpace(strings.ToLower(value))
+	trimmed = strings.ReplaceAll(trimmed, " ", "_")
+	trimmed = strings.ReplaceAll(trimmed, "-", "_")
+	return trimmed
+}
+
+func appendIfMissing(values []string, value string) []string {
+	for _, existing := range values {
+		if existing == value {
+			return values
+		}
+	}
+	return append(values, value)
+}
+
+func firstNonBlank(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func mapPacingType(value string) string {
+	switch normalizeEnum(value) {
+	case "", "none", "immediate", "start_new_iteration_immediately":
+		return "none"
+	case "fixed_delay", "after_previous_iteration_ends", "delay":
+		return "fixed_delay"
+	case "random_delay", "after_previous_iteration_ends_random":
+		return "random_delay"
+	case "fixed_interval", "interval", "start_new_iteration_at_fixed_intervals":
+		return "fixed_interval"
+	case "random_interval", "start_new_iteration_at_random_intervals":
+		return "random_interval"
+	case "tps":
+		return "tps"
+	default:
+		return normalizeEnum(value)
+	}
+}
+
+func mapLogLevel(value string) string {
+	switch normalizeEnum(value) {
+	case "", "standard":
+		return strings.TrimSpace(strings.ToLower(firstNonBlank(value, "")))
+	case "disable", "disabled":
+		return "disabled"
+	case "extended", "verbose":
+		return "extended"
+	default:
+		return normalizeEnum(value)
+	}
+}
+
+func cloneStringMap(values map[string]string) map[string]string {
+	if len(values) == 0 {
+		return nil
+	}
+	clone := make(map[string]string, len(values))
+	for key, value := range values {
+		clone[key] = value
+	}
+	return clone
 }
 
 // mapSSLVersion converts VuGen SSL version identifiers to standard version strings.

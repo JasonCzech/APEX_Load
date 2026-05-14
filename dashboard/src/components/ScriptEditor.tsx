@@ -71,20 +71,20 @@ interface PacingConfig {
   interval_ms?: number; min_interval_ms?: number; max_interval_ms?: number; tps?: number
 }
 interface RunLogicConfig {
-  iterations?: number; auto_transactions?: string
+  iterations?: number; auto_transactions?: string; block_scheduling?: string; action_sequence?: string[]
 }
 interface ErrorHandlingConfig {
   continue_on_error?: boolean; max_retries?: number; retry_delay_ms?: number
   retry_backoff?: string; snapshot_on_error?: boolean
 }
 interface LogConfig {
-  level?: string; on_error_only?: boolean
+  level?: string; on_error_only?: boolean; extended_options?: string[]
 }
 interface HTTPConfig {
   connect_timeout_ms?: number; request_timeout_ms?: number; tls_timeout_ms?: number; idle_timeout_ms?: number
   version?: string; max_conns_per_host?: number; keep_alive?: boolean
   user_agent?: string; accept_encoding?: string; accept_language?: string
-  max_redirects?: number
+  max_redirects?: number; proxy_mode?: string
   tls?: { min_version?: string; insecure_skip_verify?: boolean; client_cert_file?: string; client_key_file?: string; ca_cert_file?: string }
   proxy?: { url?: string; username?: string; password?: string }
   auth?: { type?: string; username?: string; password?: string; token?: string }
@@ -133,7 +133,56 @@ interface BrowserConfig {
   slow_mo_ms?: number
   user_agent?: string
   capture_screenshots?: string
+  cache_enabled?: boolean
+  cache_content_urls?: boolean
+  check_newer_versions?: boolean
+  new_user_per_iteration?: boolean
+  download_resources?: string
   viewport?: { width?: number; height?: number }
+}
+
+interface DownloadFiltersConfig {
+  mode?: string
+  hosts?: string[]
+}
+
+interface ContentCheckConfig {
+  text?: string
+  scope?: string
+  fail_if_found?: boolean
+}
+
+interface NetworkSimulationConfig {
+  mode?: string
+  preset?: string
+  bandwidth_kbps?: number
+  latency_ms?: number
+}
+
+interface StreamingConfig {
+  mode?: string
+  buffer_size_seconds?: number
+  fixed_bitrate_kbps?: number
+  bandwidth_estimation?: string
+}
+
+interface DFETransform {
+  type?: string
+  options?: Record<string, string>
+}
+
+interface DataFormattingConfig {
+  auto_detect?: boolean
+  chain?: DFETransform[]
+}
+
+interface WebRuntimeConfig {
+  additional_attributes?: Record<string, string>
+  download_filters?: DownloadFiltersConfig
+  content_checks?: ContentCheckConfig[]
+  network_simulation?: NetworkSimulationConfig
+  streaming?: StreamingConfig
+  data_formatting?: DataFormattingConfig
 }
 
 interface JMSConfig {
@@ -171,6 +220,7 @@ interface ScriptConfig {
   error_handling?: ErrorHandlingConfig
   log?: LogConfig
   http?: HTTPConfig
+  web_runtime?: WebRuntimeConfig
   java_http?: JavaHTTPConfig
   soap?: SOAPConfig
   browser?: BrowserConfig
@@ -239,6 +289,72 @@ interface ParameterCandidate {
   varName: string
   occurrences: CandidateOccurrence[]
   selected: boolean
+}
+
+function formatKeyValueLines(values?: Record<string, string>) {
+  return Object.entries(values || {}).map(([key, value]) => `${key}=${value}`).join('\n')
+}
+
+function parseKeyValueLines(value: string) {
+  return value
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean)
+    .reduce<Record<string, string>>((acc, line) => {
+      const separator = line.indexOf('=')
+      if (separator === -1) {
+        acc[line] = ''
+        return acc
+      }
+      const key = line.slice(0, separator).trim()
+      const itemValue = line.slice(separator + 1).trim()
+      if (key) acc[key] = itemValue
+      return acc
+    }, {})
+}
+
+function formatLineList(values?: string[]) {
+  return (values || []).join('\n')
+}
+
+function parseLineList(value: string) {
+  return value
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean)
+}
+
+function formatContentChecks(value?: ContentCheckConfig[]) {
+  return (value || [])
+    .map(check => `${check.text || ''}|${check.scope || 'any_response'}|${check.fail_if_found === false ? 'false' : 'true'}`)
+    .join('\n')
+}
+
+function parseContentChecks(value: string): ContentCheckConfig[] {
+  return value
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean)
+    .map(line => {
+      const [text, scope, failIfFound] = line.split('|').map(part => part.trim())
+      return {
+        text,
+        scope: scope || 'any_response',
+        fail_if_found: failIfFound ? failIfFound !== 'false' : true,
+      }
+    })
+}
+
+function formatDFEChain(value?: DFETransform[]) {
+  return (value || []).map(transform => transform.type || '').filter(Boolean).join('\n')
+}
+
+function parseDFEChain(value: string): DFETransform[] {
+  return value
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean)
+    .map(type => ({ type }))
 }
 
 interface ActionEditorParameterRequest {
@@ -337,6 +453,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
     closeParameterDialog,
   } = useScriptEditorState(initialScript)
   const isBrowserScript = script.protocol === 'browser'
+  const isHttpScript = script.protocol === 'http'
   const isJmsScript = script.protocol === 'jms-solace'
   const isJavaHttpScript = script.protocol === 'java_http'
   const isSoapScript = script.protocol === 'soap'
@@ -2361,6 +2478,23 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
                             <option value="per_iteration">Per Iteration</option>
                           </select>
                         </label>
+                        <label>
+                          <span>Block Scheduling</span>
+                          <select value={script.config.run_logic?.block_scheduling || 'sequential'}
+                            onChange={e => updateField('config.run_logic', { ...script.config.run_logic, block_scheduling: e.target.value })}>
+                            <option value="sequential">Sequential</option>
+                            <option value="random">Random</option>
+                            <option value="percentage">Percentage-based</option>
+                          </select>
+                        </label>
+                        <label className="full-width">
+                          <span>Action Sequence</span>
+                          <input value={(script.config.run_logic?.action_sequence || []).join(', ')} placeholder="init, action, teardown"
+                            onChange={e => updateField('config.run_logic', {
+                              ...script.config.run_logic,
+                              action_sequence: e.target.value.split(',').map(value => value.trim()).filter(Boolean),
+                            })} />
+                        </label>
                       </div>
                     </div>
                   )}
@@ -2557,10 +2691,19 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
                       <div className="settings-sub-group">
                         <h5>Proxy</h5>
                         <div className="form-grid">
+                          <label>
+                            <span>Proxy Mode</span>
+                            <select value={script.config.http?.proxy_mode || 'none'}
+                              onChange={e => updateField('config.http', { ...script.config.http, proxy_mode: e.target.value })}>
+                              <option value="none">No Proxy</option>
+                              <option value="system">Use system proxy</option>
+                              <option value="custom">Custom proxy</option>
+                            </select>
+                          </label>
                           <label className="full-width"><span>Proxy URL</span>
                             <input value={script.config.http?.proxy?.url || ''} placeholder="http://proxy:8080"
                               onChange={e => updateField('config.http', { ...script.config.http, proxy: { ...script.config.http?.proxy, url: e.target.value } })} /></label>
-                          {script.config.http?.proxy?.url && (
+                          {(script.config.http?.proxy_mode || 'none') === 'custom' && script.config.http?.proxy?.url && (
                             <>
                               <label><span>Proxy Username</span>
                                 <input value={script.config.http?.proxy?.username || ''}
@@ -2612,6 +2755,35 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
                           <label><span>Accept-Language</span>
                             <input value={script.config.http?.accept_language || ''} placeholder="en-US,en;q=0.9"
                               onChange={e => updateField('config.http', { ...script.config.http, accept_language: e.target.value })} /></label>
+                          <label>
+                            <span>Download Resources</span>
+                            <select value={script.config.browser?.download_resources || 'recorded'}
+                              onChange={e => updateField('config.browser', { ...script.config.browser, download_resources: e.target.value })}>
+                              <option value="none">HTML only</option>
+                              <option value="recorded">Recorded resources</option>
+                              <option value="all">All non-HTML resources</option>
+                            </select>
+                          </label>
+                          <label className="checkbox-label">
+                            <input type="checkbox" checked={script.config.browser?.cache_enabled || false}
+                              onChange={e => updateField('config.browser', { ...script.config.browser, cache_enabled: e.target.checked })} />
+                            <span>Simulate browser cache</span>
+                          </label>
+                          <label className="checkbox-label">
+                            <input type="checkbox" checked={script.config.browser?.cache_content_urls || false}
+                              onChange={e => updateField('config.browser', { ...script.config.browser, cache_content_urls: e.target.checked })} />
+                            <span>Cache URLs requiring content</span>
+                          </label>
+                          <label className="checkbox-label">
+                            <input type="checkbox" checked={script.config.browser?.check_newer_versions || false}
+                              onChange={e => updateField('config.browser', { ...script.config.browser, check_newer_versions: e.target.checked })} />
+                            <span>Check for newer cached pages</span>
+                          </label>
+                          <label className="checkbox-label">
+                            <input type="checkbox" checked={script.config.browser?.new_user_per_iteration || false}
+                              onChange={e => updateField('config.browser', { ...script.config.browser, new_user_per_iteration: e.target.checked })} />
+                            <span>Simulate a new user each iteration</span>
+                          </label>
                         </div>
                       </div>
                     </div>
@@ -2788,6 +2960,219 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
                   )}
                 </div>}
 
+                {isHttpScript && <div className={`settings-section ${openSections['web_runtime'] ? 'open' : ''}`}>
+                  <button className="section-toggle" onClick={() => toggleSection('web_runtime')}>
+                    <span className="section-icon">RTS</span>
+                    <span className="section-label">Web HTTP/HTML Compatibility</span>
+                    <span className="section-summary">
+                      {script.config.web_runtime?.content_checks?.length
+                        ? `${script.config.web_runtime.content_checks.length} content checks`
+                        : script.config.web_runtime?.network_simulation?.mode || 'Compatibility settings'}
+                    </span>
+                    <span className="chevron">{openSections['web_runtime'] ? '▾' : '▸'}</span>
+                  </button>
+                  {openSections['web_runtime'] && (
+                    <div className="section-body">
+                      <div className="cell-muted" style={{ marginBottom: 12 }}>
+                        These settings are captured in the draft now so Web HTTP/HTML scripts can mirror VuGen RTS coverage even where full Stormrunner execution support is still rolling out.
+                      </div>
+                      <div className="settings-sub-group">
+                        <h5>Additional Attributes</h5>
+                        <label className="full-width">
+                          <span>Name=Value pairs</span>
+                          <textarea rows={4} placeholder={'env=perf\nregion=east'} value={formatKeyValueLines(script.config.web_runtime?.additional_attributes)}
+                            onChange={e => updateField('config.web_runtime', {
+                              ...script.config.web_runtime,
+                              additional_attributes: parseKeyValueLines(e.target.value),
+                            })} />
+                        </label>
+                      </div>
+                      <div className="settings-sub-group">
+                        <h5>Download Filters</h5>
+                        <div className="form-grid">
+                          <label>
+                            <span>Mode</span>
+                            <select value={script.config.web_runtime?.download_filters?.mode || 'none'}
+                              onChange={e => updateField('config.web_runtime', {
+                                ...script.config.web_runtime,
+                                download_filters: {
+                                  ...script.config.web_runtime?.download_filters,
+                                  mode: e.target.value,
+                                },
+                              })}>
+                              <option value="none">No filters</option>
+                              <option value="allow_list">Allow list</option>
+                              <option value="block_list">Block list</option>
+                            </select>
+                          </label>
+                          <label className="full-width">
+                            <span>Hosts</span>
+                            <textarea rows={4} placeholder={'cdn.example.test\nmetrics.example.test'} value={formatLineList(script.config.web_runtime?.download_filters?.hosts)}
+                              onChange={e => updateField('config.web_runtime', {
+                                ...script.config.web_runtime,
+                                download_filters: {
+                                  ...script.config.web_runtime?.download_filters,
+                                  hosts: parseLineList(e.target.value),
+                                },
+                              })} />
+                          </label>
+                        </div>
+                      </div>
+                      <div className="settings-sub-group">
+                        <h5>Content Check</h5>
+                        <label className="full-width">
+                          <span>One per line: text|scope|fail_if_found</span>
+                          <textarea rows={4} placeholder={'Access Denied|any_response|true'} value={formatContentChecks(script.config.web_runtime?.content_checks)}
+                            onChange={e => updateField('config.web_runtime', {
+                              ...script.config.web_runtime,
+                              content_checks: parseContentChecks(e.target.value),
+                            })} />
+                        </label>
+                      </div>
+                      <div className="settings-sub-group">
+                        <h5>Network Speed Simulation</h5>
+                        <div className="form-grid">
+                          <label>
+                            <span>Mode</span>
+                            <select value={script.config.web_runtime?.network_simulation?.mode || 'max'}
+                              onChange={e => updateField('config.web_runtime', {
+                                ...script.config.web_runtime,
+                                network_simulation: {
+                                  ...script.config.web_runtime?.network_simulation,
+                                  mode: e.target.value,
+                                },
+                              })}>
+                              <option value="max">Maximum bandwidth</option>
+                              <option value="preset">Preset bandwidth</option>
+                              <option value="custom">Custom bandwidth</option>
+                            </select>
+                          </label>
+                          <label>
+                            <span>Preset</span>
+                            <select value={script.config.web_runtime?.network_simulation?.preset || 'dsl'}
+                              onChange={e => updateField('config.web_runtime', {
+                                ...script.config.web_runtime,
+                                network_simulation: {
+                                  ...script.config.web_runtime?.network_simulation,
+                                  preset: e.target.value,
+                                },
+                              })}>
+                              <option value="56k">56k</option>
+                              <option value="dsl">DSL</option>
+                              <option value="t1">T1</option>
+                              <option value="10mbps">10 Mbps</option>
+                            </select>
+                          </label>
+                          <label>
+                            <span>Bandwidth (Kbps)</span>
+                            <input type="number" value={script.config.web_runtime?.network_simulation?.bandwidth_kbps || 0}
+                              onChange={e => updateField('config.web_runtime', {
+                                ...script.config.web_runtime,
+                                network_simulation: {
+                                  ...script.config.web_runtime?.network_simulation,
+                                  bandwidth_kbps: Number(e.target.value),
+                                },
+                              })} />
+                          </label>
+                          <label>
+                            <span>Latency (ms)</span>
+                            <input type="number" value={script.config.web_runtime?.network_simulation?.latency_ms || 0}
+                              onChange={e => updateField('config.web_runtime', {
+                                ...script.config.web_runtime,
+                                network_simulation: {
+                                  ...script.config.web_runtime?.network_simulation,
+                                  latency_ms: Number(e.target.value),
+                                },
+                              })} />
+                          </label>
+                        </div>
+                      </div>
+                      <div className="settings-sub-group">
+                        <h5>Streaming</h5>
+                        <div className="form-grid">
+                          <label>
+                            <span>Mode</span>
+                            <select value={script.config.web_runtime?.streaming?.mode || 'adaptive'}
+                              onChange={e => updateField('config.web_runtime', {
+                                ...script.config.web_runtime,
+                                streaming: {
+                                  ...script.config.web_runtime?.streaming,
+                                  mode: e.target.value,
+                                },
+                              })}>
+                              <option value="adaptive">Adaptive bitrate</option>
+                              <option value="fixed">Fixed bitrate</option>
+                            </select>
+                          </label>
+                          <label>
+                            <span>Buffer Size (seconds)</span>
+                            <input type="number" value={script.config.web_runtime?.streaming?.buffer_size_seconds || 0}
+                              onChange={e => updateField('config.web_runtime', {
+                                ...script.config.web_runtime,
+                                streaming: {
+                                  ...script.config.web_runtime?.streaming,
+                                  buffer_size_seconds: Number(e.target.value),
+                                },
+                              })} />
+                          </label>
+                          <label>
+                            <span>Fixed Bitrate (Kbps)</span>
+                            <input type="number" value={script.config.web_runtime?.streaming?.fixed_bitrate_kbps || 0}
+                              onChange={e => updateField('config.web_runtime', {
+                                ...script.config.web_runtime,
+                                streaming: {
+                                  ...script.config.web_runtime?.streaming,
+                                  fixed_bitrate_kbps: Number(e.target.value),
+                                },
+                              })} />
+                          </label>
+                          <label>
+                            <span>Bandwidth Estimation</span>
+                            <select value={script.config.web_runtime?.streaming?.bandwidth_estimation || 'rolling'}
+                              onChange={e => updateField('config.web_runtime', {
+                                ...script.config.web_runtime,
+                                streaming: {
+                                  ...script.config.web_runtime?.streaming,
+                                  bandwidth_estimation: e.target.value,
+                                },
+                              })}>
+                              <option value="rolling">Rolling</option>
+                              <option value="instant">Instant</option>
+                            </select>
+                          </label>
+                        </div>
+                      </div>
+                      <div className="settings-sub-group">
+                        <h5>Data Formatting</h5>
+                        <div className="form-grid">
+                          <label className="checkbox-label">
+                            <input type="checkbox" checked={script.config.web_runtime?.data_formatting?.auto_detect || false}
+                              onChange={e => updateField('config.web_runtime', {
+                                ...script.config.web_runtime,
+                                data_formatting: {
+                                  ...script.config.web_runtime?.data_formatting,
+                                  auto_detect: e.target.checked,
+                                },
+                              })} />
+                            <span>Auto-detect data format extensions</span>
+                          </label>
+                          <label className="full-width">
+                            <span>DFE Chain</span>
+                            <textarea rows={4} placeholder={'base64\njson_to_xml'} value={formatDFEChain(script.config.web_runtime?.data_formatting?.chain)}
+                              onChange={e => updateField('config.web_runtime', {
+                                ...script.config.web_runtime,
+                                data_formatting: {
+                                  ...script.config.web_runtime?.data_formatting,
+                                  chain: parseDFEChain(e.target.value),
+                                },
+                              })} />
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>}
+
                 {/* Logging */}
                 <div className={`settings-section ${openSections['log'] ? 'open' : ''}`}>
                   <button className="section-toggle" onClick={() => toggleSection('log')}>
@@ -2812,6 +3197,36 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
                           <input type="checkbox" checked={script.config.log?.on_error_only || false}
                             onChange={e => updateField('config.log', { ...script.config.log, on_error_only: e.target.checked })} />
                           <span>Extended log on error only</span>
+                        </label>
+                        <label className="checkbox-label">
+                          <input type="checkbox" checked={script.config.log?.extended_options?.includes('parameter_substitution') || false}
+                            onChange={e => updateField('config.log', {
+                              ...script.config.log,
+                              extended_options: e.target.checked
+                                ? [...new Set([...(script.config.log?.extended_options || []), 'parameter_substitution'])]
+                                : (script.config.log?.extended_options || []).filter(option => option !== 'parameter_substitution'),
+                            })} />
+                          <span>Parameter substitution</span>
+                        </label>
+                        <label className="checkbox-label">
+                          <input type="checkbox" checked={script.config.log?.extended_options?.includes('data_returned') || false}
+                            onChange={e => updateField('config.log', {
+                              ...script.config.log,
+                              extended_options: e.target.checked
+                                ? [...new Set([...(script.config.log?.extended_options || []), 'data_returned'])]
+                                : (script.config.log?.extended_options || []).filter(option => option !== 'data_returned'),
+                            })} />
+                          <span>Data returned by server</span>
+                        </label>
+                        <label className="checkbox-label">
+                          <input type="checkbox" checked={script.config.log?.extended_options?.includes('advanced_trace') || false}
+                            onChange={e => updateField('config.log', {
+                              ...script.config.log,
+                              extended_options: e.target.checked
+                                ? [...new Set([...(script.config.log?.extended_options || []), 'advanced_trace'])]
+                                : (script.config.log?.extended_options || []).filter(option => option !== 'advanced_trace'),
+                            })} />
+                          <span>Advanced trace</span>
                         </label>
                       </div>
                     </div>

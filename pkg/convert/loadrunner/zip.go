@@ -69,8 +69,14 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 	}
 
 	runtimeFileName, runtimeContent := findRuntimeConfig(files, projectConfig)
-	if opts.HTTPConfig == nil && runtimeContent != "" {
-		opts.HTTPConfig = ParseRuntimeCfg(runtimeContent).ToHTTPConfig()
+	if runtimeContent != "" {
+		runtimeCfg := ParseRuntimeCfg(runtimeContent)
+		if opts.HTTPConfig == nil {
+			opts.HTTPConfig = runtimeCfg.ToHTTPConfig()
+		}
+		if opts.RuntimeSettings == nil {
+			opts.RuntimeSettings = runtimeCfg.ToScriptConfig()
+		}
 	}
 	parameterFileNames := findParameterFiles(files, projectConfig)
 

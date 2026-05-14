@@ -7,6 +7,12 @@ import (
 	"github.com/jasonczech/stormrunner/pkg/protocol"
 )
 
+type contentCheck struct {
+	Text        string
+	Scope       string
+	FailIfFound bool
+}
+
 func evaluate(a protocol.Assertion, result *protocol.Result, body []byte) error {
 	switch a.Type {
 	case "status_code":
@@ -50,4 +56,77 @@ func toInt(v any) (int, bool) {
 	default:
 		return 0, false
 	}
+}
+
+func parseContentChecks(config map[string]any) []contentCheck {
+	rawChecks, ok := config["web_content_checks"]
+	if !ok {
+		return nil
+	}
+	items, ok := rawChecks.([]map[string]any)
+	if ok {
+		return parseContentCheckMaps(items)
+	}
+	rawItems, ok := rawChecks.([]any)
+	if !ok {
+		return nil
+	}
+	items = make([]map[string]any, 0, len(rawItems))
+	for _, rawItem := range rawItems {
+		item, ok := rawItem.(map[string]any)
+		if !ok {
+			continue
+		}
+		items = append(items, item)
+	}
+	return parseContentCheckMaps(items)
+}
+
+func parseContentCheckMaps(items []map[string]any) []contentCheck {
+	checks := make([]contentCheck, 0, len(items))
+	for _, item := range items {
+		text, _ := item["text"].(string)
+		text = strings.TrimSpace(text)
+		if text == "" {
+			continue
+		}
+		scope, _ := item["scope"].(string)
+		scope = normalizeContentCheckScope(scope)
+		failIfFound := true
+		if value, ok := item["fail_if_found"].(bool); ok {
+			failIfFound = value
+		}
+		checks = append(checks, contentCheck{
+			Text:        text,
+			Scope:       scope,
+			FailIfFound: failIfFound,
+		})
+	}
+	return checks
+}
+
+func normalizeContentCheckScope(scope string) string {
+	switch strings.TrimSpace(scope) {
+	case "main_document", "resource":
+		return strings.TrimSpace(scope)
+	default:
+		return "any_response"
+	}
+}
+
+func evaluateContentChecks(checks []contentCheck, result *protocol.Result, body []byte) error {
+	bodyText := string(body)
+	for _, check := range checks {
+		if check.Scope == "resource" {
+			continue
+		}
+		contains := strings.Contains(bodyText, check.Text)
+		if check.FailIfFound && contains {
+			return fmt.Errorf("content check (%s) matched forbidden text %q", check.Scope, check.Text)
+		}
+		if !check.FailIfFound && !contains {
+			return fmt.Errorf("content check (%s) did not find required text %q", check.Scope, check.Text)
+		}
+	}
+	return nil
 }

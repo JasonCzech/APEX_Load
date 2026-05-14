@@ -37,6 +37,7 @@ type ScriptConfig struct {
 	ThinkTime     ThinkTimeConfig     `json:"think_time,omitempty"`
 	Pacing        PacingConfig        `json:"pacing,omitempty"`
 	HTTP          HTTPConfig          `json:"http,omitempty"`
+	WebRuntime    WebRuntimeConfig    `json:"web_runtime,omitempty"`
 	JavaHTTP      JavaHTTPConfig      `json:"java_http,omitempty"`
 	SOAP          SOAPConfig          `json:"soap,omitempty"`
 	Browser       BrowserConfig       `json:"browser,omitempty"`
@@ -111,7 +112,56 @@ type BrowserConfig struct {
 	SlowMoMs           int             `json:"slow_mo_ms,omitempty"`
 	UserAgent          string          `json:"user_agent,omitempty"`
 	CaptureScreenshots string          `json:"capture_screenshots,omitempty"`
+	CacheEnabled       *bool           `json:"cache_enabled,omitempty"`
+	CacheContentURLs   *bool           `json:"cache_content_urls,omitempty"`
+	CheckNewerVersions *bool           `json:"check_newer_versions,omitempty"`
+	NewUserPerIter     *bool           `json:"new_user_per_iteration,omitempty"`
+	DownloadResources  string          `json:"download_resources,omitempty"`
 	Viewport           BrowserViewport `json:"viewport,omitempty"`
+}
+
+type WebRuntimeConfig struct {
+	AdditionalAttributes map[string]string        `json:"additional_attributes,omitempty"`
+	DownloadFilters      DownloadFiltersConfig    `json:"download_filters,omitempty"`
+	ContentChecks        []ContentCheckConfig     `json:"content_checks,omitempty"`
+	NetworkSimulation    NetworkSimulationConfig  `json:"network_simulation,omitempty"`
+	Streaming            StreamingConfig          `json:"streaming,omitempty"`
+	DataFormatting       DataFormattingConfig     `json:"data_formatting,omitempty"`
+}
+
+type DownloadFiltersConfig struct {
+	Mode  string   `json:"mode,omitempty"`
+	Hosts []string `json:"hosts,omitempty"`
+}
+
+type ContentCheckConfig struct {
+	Text        string `json:"text,omitempty"`
+	Scope       string `json:"scope,omitempty"`
+	FailIfFound *bool  `json:"fail_if_found,omitempty"`
+}
+
+type NetworkSimulationConfig struct {
+	Mode          string `json:"mode,omitempty"`
+	Preset        string `json:"preset,omitempty"`
+	BandwidthKbps int    `json:"bandwidth_kbps,omitempty"`
+	LatencyMs     int    `json:"latency_ms,omitempty"`
+}
+
+type StreamingConfig struct {
+	Mode                string `json:"mode,omitempty"`
+	BufferSizeSeconds   int    `json:"buffer_size_seconds,omitempty"`
+	FixedBitrateKbps    int    `json:"fixed_bitrate_kbps,omitempty"`
+	BandwidthEstimation string `json:"bandwidth_estimation,omitempty"`
+}
+
+type DataFormattingConfig struct {
+	AutoDetect bool           `json:"auto_detect,omitempty"`
+	Chain      []DFETransform `json:"chain,omitempty"`
+}
+
+type DFETransform struct {
+	Type    string            `json:"type,omitempty"`
+	Options map[string]string `json:"options,omitempty"`
 }
 
 type BrowserViewport struct {
@@ -133,14 +183,17 @@ type BrowserCaptureOptions struct {
 
 // RunLogicConfig controls iteration behavior and automatic transaction wrapping.
 type RunLogicConfig struct {
-	Iterations       int    `json:"iterations,omitempty"`        // 0 = run until duration (default)
-	AutoTransactions string `json:"auto_transactions,omitempty"` // "none" (default), "per_action", "per_iteration"
+	Iterations       int      `json:"iterations,omitempty"`        // 0 = run until duration (default)
+	AutoTransactions string   `json:"auto_transactions,omitempty"` // "none" (default), "per_action", "per_iteration"
+	BlockScheduling  string   `json:"block_scheduling,omitempty"`  // "sequential", "random", "percentage"
+	ActionSequence   []string `json:"action_sequence,omitempty"`   // e.g. ["init", "action", "teardown"]
 }
 
 // LogConfig controls per-VUser logging verbosity.
 type LogConfig struct {
-	Level       string `json:"level,omitempty"`         // "disabled", "standard" (default), "extended"
-	OnErrorOnly bool   `json:"on_error_only,omitempty"` // if true, use extended logging only when errors occur
+	Level           string   `json:"level,omitempty"`            // "disabled", "standard" (default), "extended"
+	OnErrorOnly     bool     `json:"on_error_only,omitempty"`    // if true, use extended logging only when errors occur
+	ExtendedOptions []string `json:"extended_options,omitempty"` // "parameter_substitution", "data_returned", "advanced_trace"
 }
 
 // HTTPConfig holds all HTTP protocol runtime settings, modeled after
@@ -162,6 +215,7 @@ type HTTPConfig struct {
 	TLS TLSConfig `json:"tls,omitempty"`
 
 	// Proxy
+	ProxyMode string      `json:"proxy_mode,omitempty"` // "none", "system", "custom"
 	Proxy ProxyConfig `json:"proxy,omitempty"`
 
 	// Authentication

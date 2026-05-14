@@ -33,9 +33,19 @@ describe('ScriptEditor', () => {
       base_url: 'https://api.example.com',
       think_time: { type: 'fixed', mean_ms: 1000 },
       pacing: { type: 'none' },
-      run_logic: { iterations: 1, auto_transactions: 'none' },
+      run_logic: { iterations: 1, auto_transactions: 'none', block_scheduling: 'sequential', action_sequence: ['init', 'action', 'teardown'] },
       error_handling: { continue_on_error: false },
-      log: { level: 'standard' },
+      log: { level: 'standard', extended_options: ['parameter_substitution'] },
+      http: { proxy_mode: 'custom', proxy: { url: 'http://proxy.example.test:8080' } },
+      browser: { cache_enabled: true, download_resources: 'recorded' },
+      web_runtime: {
+        additional_attributes: { env: 'perf' },
+        download_filters: { mode: 'block_list', hosts: ['metrics.example.test'] },
+        content_checks: [{ text: 'Access Denied', scope: 'any_response', fail_if_found: true }],
+        network_simulation: { mode: 'preset', preset: 'dsl', latency_ms: 50 },
+        streaming: { mode: 'adaptive', buffer_size_seconds: 30, bandwidth_estimation: 'rolling' },
+        data_formatting: { auto_detect: true, chain: [{ type: 'base64' }] },
+      },
     },
     actions: [
       {
@@ -183,6 +193,70 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('Protocol')
     const protocolSelect = container.querySelector('select')
     expect(protocolSelect?.value).toBe('http')
+  })
+
+  it('renders the new Web HTTP/HTML runtime sections from the draft model', async () => {
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={initialScript} />)
+    })
+
+    const runtimeToggle = Array.from(container.querySelectorAll('button')).find(button =>
+      button.textContent?.includes('Runtime Settings'),
+    )
+    expect(runtimeToggle).toBeDefined()
+    if (!runtimeToggle) {
+      return
+    }
+
+    await act(async () => {
+      runtimeToggle.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.textContent).toContain('Web HTTP/HTML Compatibility')
+
+    const runLogicToggle = Array.from(container.querySelectorAll('button')).find(button =>
+      button.textContent?.includes('Run Logic'),
+    )
+    const loggingToggle = Array.from(container.querySelectorAll('button')).find(button =>
+      button.textContent?.includes('Logging'),
+    )
+    expect(runLogicToggle).toBeDefined()
+    expect(loggingToggle).toBeDefined()
+    if (!runLogicToggle || !loggingToggle) {
+      return
+    }
+
+    await act(async () => {
+      runLogicToggle.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      loggingToggle.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.textContent).toContain('Block Scheduling')
+    expect(container.textContent).toContain('Parameter substitution')
+
+    const compatibilityToggle = Array.from(container.querySelectorAll('button')).find(button =>
+      button.textContent?.includes('Web HTTP/HTML Compatibility'),
+    )
+    expect(compatibilityToggle).toBeDefined()
+    if (!compatibilityToggle) {
+      return
+    }
+
+    await act(async () => {
+      compatibilityToggle.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const attributesArea = Array.from(container.querySelectorAll('textarea')).find(area =>
+      area.getAttribute('placeholder') === 'env=perf\nregion=east',
+    ) as HTMLTextAreaElement | undefined
+    const checksArea = Array.from(container.querySelectorAll('textarea')).find(area =>
+      area.getAttribute('placeholder') === 'Access Denied|any_response|true',
+    ) as HTMLTextAreaElement | undefined
+
+    expect(attributesArea?.value).toContain('env=perf')
+    expect(checksArea?.value).toContain('Access Denied|any_response|true')
+    expect(container.textContent).toContain('Network Speed Simulation')
+    expect(container.textContent).toContain('Data Formatting')
   })
 
   it('renders the action workspace with adjacent list and detail regions', async () => {

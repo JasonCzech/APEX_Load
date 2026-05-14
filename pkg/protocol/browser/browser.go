@@ -25,6 +25,13 @@ type Browser struct {
 	baseURL            string
 	currentURL         string
 	headless           bool
+	cacheEnabled       bool
+	checkNewerVersions bool
+	networkMode        string
+	networkPreset      string
+	networkBandwidthKB int
+	networkLatencyMS   int
+	downloadResources  string
 	slowMo             time.Duration
 	userAgent          string
 	captureScreenshots string
@@ -60,6 +67,13 @@ func (b *Browser) Name() string { return "browser" }
 func (b *Browser) Init(ctx context.Context, config map[string]any) error {
 	b.close()
 	b.headless = true
+	b.cacheEnabled = true
+	b.checkNewerVersions = false
+	b.networkMode = ""
+	b.networkPreset = ""
+	b.networkBandwidthKB = 0
+	b.networkLatencyMS = 0
+	b.downloadResources = "all"
 	b.viewportW = 1440
 	b.viewportH = 900
 	b.pendingNetwork = make(map[network.RequestID]networkRequest)
@@ -70,6 +84,27 @@ func (b *Browser) Init(ctx context.Context, config map[string]any) error {
 	}
 	if headless, ok := config["browser_headless"].(bool); ok {
 		b.headless = headless
+	}
+	if cacheEnabled, ok := config["browser_cache_enabled"].(bool); ok {
+		b.cacheEnabled = cacheEnabled
+	}
+	if checkNewerVersions, ok := config["browser_check_newer_versions"].(bool); ok {
+		b.checkNewerVersions = checkNewerVersions
+	}
+	if networkMode, ok := config["web_network_simulation_mode"].(string); ok {
+		b.networkMode = strings.TrimSpace(networkMode)
+	}
+	if networkPreset, ok := config["web_network_simulation_preset"].(string); ok {
+		b.networkPreset = strings.TrimSpace(networkPreset)
+	}
+	if networkBandwidthKB := configInt(config, "web_network_simulation_bandwidth_kbps"); networkBandwidthKB > 0 {
+		b.networkBandwidthKB = networkBandwidthKB
+	}
+	if networkLatencyMS := configInt(config, "web_network_simulation_latency_ms"); networkLatencyMS > 0 {
+		b.networkLatencyMS = networkLatencyMS
+	}
+	if downloadResources, ok := config["browser_download_resources"].(string); ok && strings.TrimSpace(downloadResources) != "" {
+		b.downloadResources = strings.TrimSpace(downloadResources)
 	}
 	if slowMoMs := configInt(config, "browser_slow_mo_ms"); slowMoMs > 0 {
 		b.slowMo = time.Duration(slowMoMs) * time.Millisecond
@@ -101,16 +136,93 @@ func (b *Browser) Init(ctx context.Context, config map[string]any) error {
 	b.browserCtx, b.browserStop = chromedp.NewContext(b.allocCtx)
 	chromedp.ListenTarget(b.browserCtx, b.handleBrowserEvent)
 
-	if err := chromedp.Run(b.browserCtx,
+	startupActions := []chromedp.Action{
 		network.Enable(),
+		network.SetCacheDisabled(!b.cacheEnabled),
 		runtime.Enable(),
 		chromedp.EmulateViewport(int64(b.viewportW), int64(b.viewportH)),
-	); err != nil {
+	}
+	if b.downloadResources == "none" {
+		startupActions = append(startupActions, network.SetBlockedURLS(blockedStaticAssetPatterns()))
+	}
+	if b.checkNewerVersions {
+		startupActions = append(startupActions, network.SetExtraHTTPHeaders(network.Headers(map[string]any{
+			"Cache-Control": "no-cache",
+			"Pragma":        "no-cache",
+		})))
+	}
+	if throttleAction := b.networkThrottleAction(); throttleAction != nil {
+		startupActions = append(startupActions, throttleAction)
+	}
+	if err := chromedp.Run(b.browserCtx, startupActions...); err != nil {
 		b.close()
 		return err
 	}
 
 	return nil
+}
+
+func blockedStaticAssetPatterns() []string {
+	return []string{
+		"*.png",
+		"*.jpg",
+		"*.jpeg",
+		"*.gif",
+		"*.webp",
+		"*.svg",
+		"*.ico",
+		"*.css",
+		"*.js",
+		"*.woff",
+		"*.woff2",
+		"*.ttf",
+		"*.eot",
+		"*.mp3",
+		"*.mp4",
+		"*.webm",
+		"*.avi",
+		"*.mov",
+	}
+}
+
+func (b *Browser) networkThrottleAction() chromedp.Action {
+	latencyMS, bandwidthKB, connectionType := resolveNetworkProfile(b.networkMode, b.networkPreset, b.networkLatencyMS, b.networkBandwidthKB)
+	if latencyMS <= 0 && bandwidthKB <= 0 {
+		return nil
+	}
+
+	downloadThroughput := -1.0
+	uploadThroughput := -1.0
+	if bandwidthKB > 0 {
+		bytesPerSecond := float64(bandwidthKB*1024) / 8
+		downloadThroughput = bytesPerSecond
+		uploadThroughput = bytesPerSecond
+	}
+
+	action := network.EmulateNetworkConditions(false, float64(latencyMS), downloadThroughput, uploadThroughput)
+	if connectionType != "" {
+		action = action.WithConnectionType(connectionType)
+	}
+	return action
+}
+
+func resolveNetworkProfile(mode, preset string, latencyMS, bandwidthKB int) (int, int, network.ConnectionType) {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "preset":
+		switch strings.ToLower(strings.TrimSpace(preset)) {
+		case "56k":
+			return 120, 56, network.ConnectionTypeCellular2g
+		case "dsl":
+			return 50, 1536, network.ConnectionTypeCellular3g
+		case "t1":
+			return 20, 1544, network.ConnectionTypeEthernet
+		case "10mbps":
+			return 5, 10240, network.ConnectionTypeWifi
+		}
+	case "custom":
+		return latencyMS, bandwidthKB, ""
+	}
+	return 0, 0, ""
 }
 
 func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protocol.Result, error) {

@@ -68,6 +68,7 @@ func ValidateScriptIssues(script *Script) []string {
 	}
 
 	issues = append(issues, validateParameterIssues(script)...)
+	issues = append(issues, validateWebRuntimeIssues(script)...)
 
 	return issues
 }
@@ -218,6 +219,100 @@ func validateParameterIssues(script *Script) []string {
 			if param.Length <= 0 {
 				issues = append(issues, fmt.Sprintf("%s %q: length must be greater than zero for random_string parameters", label, name))
 			}
+		}
+	}
+
+	return issues
+}
+
+func validateWebRuntimeIssues(script *Script) []string {
+	var issues []string
+
+	runLogic := script.Config.RunLogic
+	if runLogic.BlockScheduling != "" && !isAllowedValue(runLogic.BlockScheduling, "sequential", "random", "percentage") {
+		issues = append(issues, "config.run_logic.block_scheduling must be sequential, random, or percentage")
+	}
+	for index, step := range runLogic.ActionSequence {
+		if !isAllowedValue(step, "init", "action", "teardown", "vuser_init", "vuser_end") {
+			issues = append(issues, fmt.Sprintf("config.run_logic.action_sequence[%d] must be init, action, teardown, vuser_init, or vuser_end", index))
+		}
+	}
+
+	for key := range script.Config.WebRuntime.AdditionalAttributes {
+		if strings.TrimSpace(key) == "" {
+			issues = append(issues, "config.web_runtime.additional_attributes keys must be non-empty")
+			break
+		}
+	}
+
+	logCfg := script.Config.Log
+	for index, option := range logCfg.ExtendedOptions {
+		if !isAllowedValue(option, "parameter_substitution", "data_returned", "advanced_trace") {
+			issues = append(issues, fmt.Sprintf("config.log.extended_options[%d] must be parameter_substitution, data_returned, or advanced_trace", index))
+		}
+	}
+
+	httpCfg := script.Config.HTTP
+	if httpCfg.ProxyMode != "" && !isAllowedValue(httpCfg.ProxyMode, "none", "system", "custom") {
+		issues = append(issues, "config.http.proxy_mode must be none, system, or custom")
+	}
+	if httpCfg.ProxyMode == "custom" && strings.TrimSpace(httpCfg.Proxy.URL) == "" {
+		issues = append(issues, "config.http.proxy.url is required when config.http.proxy_mode is custom")
+	}
+
+	browserCfg := script.Config.Browser
+	if browserCfg.DownloadResources != "" && !isAllowedValue(browserCfg.DownloadResources, "none", "recorded", "all") {
+		issues = append(issues, "config.browser.download_resources must be none, recorded, or all")
+	}
+
+	filters := script.Config.WebRuntime.DownloadFilters
+	if filters.Mode != "" && !isAllowedValue(filters.Mode, "none", "allow_list", "block_list") {
+		issues = append(issues, "config.web_runtime.download_filters.mode must be none, allow_list, or block_list")
+	}
+	if (filters.Mode == "allow_list" || filters.Mode == "block_list") && len(filters.Hosts) == 0 {
+		issues = append(issues, "config.web_runtime.download_filters.hosts is required when download filter mode is allow_list or block_list")
+	}
+
+	for index, check := range script.Config.WebRuntime.ContentChecks {
+		if strings.TrimSpace(check.Text) == "" {
+			issues = append(issues, fmt.Sprintf("config.web_runtime.content_checks[%d].text is required", index))
+		}
+		if check.Scope != "" && !isAllowedValue(check.Scope, "any_response", "main_document", "resource") {
+			issues = append(issues, fmt.Sprintf("config.web_runtime.content_checks[%d].scope must be any_response, main_document, or resource", index))
+		}
+	}
+
+	network := script.Config.WebRuntime.NetworkSimulation
+	if network.Mode != "" && !isAllowedValue(network.Mode, "max", "preset", "custom") {
+		issues = append(issues, "config.web_runtime.network_simulation.mode must be max, preset, or custom")
+	}
+	if network.Mode == "preset" && !isAllowedValue(network.Preset, "56k", "dsl", "t1", "10mbps") {
+		issues = append(issues, "config.web_runtime.network_simulation.preset must be 56k, dsl, t1, or 10mbps when mode is preset")
+	}
+	if network.Mode == "custom" && network.BandwidthKbps <= 0 {
+		issues = append(issues, "config.web_runtime.network_simulation.bandwidth_kbps must be greater than zero when mode is custom")
+	}
+	if network.LatencyMs < 0 {
+		issues = append(issues, "config.web_runtime.network_simulation.latency_ms must be zero or greater")
+	}
+
+	streaming := script.Config.WebRuntime.Streaming
+	if streaming.Mode != "" && !isAllowedValue(streaming.Mode, "adaptive", "fixed") {
+		issues = append(issues, "config.web_runtime.streaming.mode must be adaptive or fixed")
+	}
+	if streaming.BufferSizeSeconds < 0 {
+		issues = append(issues, "config.web_runtime.streaming.buffer_size_seconds must be zero or greater")
+	}
+	if streaming.Mode == "fixed" && streaming.FixedBitrateKbps <= 0 {
+		issues = append(issues, "config.web_runtime.streaming.fixed_bitrate_kbps must be greater than zero when mode is fixed")
+	}
+	if streaming.BandwidthEstimation != "" && !isAllowedValue(streaming.BandwidthEstimation, "rolling", "instant") {
+		issues = append(issues, "config.web_runtime.streaming.bandwidth_estimation must be rolling or instant")
+	}
+
+	for index, transform := range script.Config.WebRuntime.DataFormatting.Chain {
+		if strings.TrimSpace(transform.Type) == "" {
+			issues = append(issues, fmt.Sprintf("config.web_runtime.data_formatting.chain[%d].type is required", index))
 		}
 	}
 

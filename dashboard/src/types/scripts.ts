@@ -72,6 +72,8 @@ export interface PacingConfig {
 export interface RunLogicConfig {
   iterations?: number
   auto_transactions?: string
+  block_scheduling?: string
+  action_sequence?: string[]
 }
 
 export interface ErrorHandlingConfig {
@@ -85,6 +87,7 @@ export interface ErrorHandlingConfig {
 export interface LogConfig {
   level?: string
   on_error_only?: boolean
+  extended_options?: string[]
 }
 
 export interface HTTPConfig {
@@ -99,6 +102,7 @@ export interface HTTPConfig {
   accept_encoding?: string
   accept_language?: string
   max_redirects?: number
+  proxy_mode?: string
   default_headers?: Record<string, string>
   tls?: {
     min_version?: string
@@ -126,10 +130,59 @@ export interface BrowserConfig {
   slow_mo_ms?: number
   user_agent?: string
   capture_screenshots?: string
+  cache_enabled?: boolean
+  cache_content_urls?: boolean
+  check_newer_versions?: boolean
+  new_user_per_iteration?: boolean
+  download_resources?: string
   viewport?: {
     width?: number
     height?: number
   }
+}
+
+export interface DownloadFiltersConfig {
+  mode?: string
+  hosts?: string[]
+}
+
+export interface ContentCheckConfig {
+  text?: string
+  scope?: string
+  fail_if_found?: boolean
+}
+
+export interface NetworkSimulationConfig {
+  mode?: string
+  preset?: string
+  bandwidth_kbps?: number
+  latency_ms?: number
+}
+
+export interface StreamingConfig {
+  mode?: string
+  buffer_size_seconds?: number
+  fixed_bitrate_kbps?: number
+  bandwidth_estimation?: string
+}
+
+export interface DFETransform {
+  type?: string
+  options?: Record<string, string>
+}
+
+export interface DataFormattingConfig {
+  auto_detect?: boolean
+  chain?: DFETransform[]
+}
+
+export interface WebRuntimeConfig {
+  additional_attributes?: Record<string, string>
+  download_filters?: DownloadFiltersConfig
+  content_checks?: ContentCheckConfig[]
+  network_simulation?: NetworkSimulationConfig
+  streaming?: StreamingConfig
+  data_formatting?: DataFormattingConfig
 }
 
 export interface JavaHTTPConfig {
@@ -200,6 +253,7 @@ export interface ScriptConfig {
   error_handling?: ErrorHandlingConfig
   log?: LogConfig
   http?: HTTPConfig
+  web_runtime?: WebRuntimeConfig
   java_http?: JavaHTTPConfig
   soap?: SOAPConfig
   browser?: BrowserConfig

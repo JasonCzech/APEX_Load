@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/jasonczech/stormrunner/pkg/dsl"
 )
 
 const sampleActionC = `
@@ -446,8 +448,15 @@ UpdateValueOn=Each Occurrence
 	if len(result.Script.Parameters) != 2 {
 		t.Fatalf("parameter count = %d, want 2", len(result.Script.Parameters))
 	}
-	if result.Script.Parameters[0].Name != "LoginUser" || result.Script.Parameters[0].Type != "file" {
-		t.Fatalf("first parameter = %#v, want file-backed LoginUser", result.Script.Parameters[0])
+	var loginUser *dsl.Parameter
+	for index := range result.Script.Parameters {
+		if result.Script.Parameters[index].Name == "LoginUser" {
+			loginUser = &result.Script.Parameters[index]
+			break
+		}
+	}
+	if loginUser == nil || loginUser.Type != "file" {
+		t.Fatalf("parameters = %#v, want file-backed LoginUser", result.Script.Parameters)
 	}
 	if len(result.Script.DataSources) != 1 || result.Script.DataSources[0].Name != "users" {
 		t.Fatalf("data sources = %#v, want one mapped users data source", result.Script.DataSources)
@@ -461,5 +470,222 @@ UpdateValueOn=Each Occurrence
 		if !strings.Contains(text, want) {
 			t.Fatalf("expected metadata JSON to contain %q, got %s", want, text)
 		}
+	}
+}
+
+func TestParseRuntimeCfgToScriptConfigMapsExtendedRuntimeSettings(t *testing.T) {
+	runtimeCfg := ParseRuntimeCfg(`[HTTP]
+ConnectTimeout=45
+ReceiveTimeout=20
+KeepAlive=0
+MaxRedirections=4
+MaxConnectionsPerHost=12
+
+[Proxy]
+Mode=custom
+ProxyServer=http://proxy.example.test:8080
+ProxyUserName=perf-user
+ProxyPassword=secret
+
+[Browser Emulation]
+UserAgent=VuGen Browser
+AcceptLanguage=en-US
+AcceptEncoding=gzip, deflate
+CacheEnabled=1
+CacheContentURLs=1
+CheckNewerVersions=1
+NewUserPerIteration=1
+DownloadResources=all
+
+[Run Logic]
+Iterations=7
+AutoTransactions=per_iteration
+BlockScheduling=random
+ActionSequence=init,action,teardown
+
+[Pacing]
+Mode=random_delay
+MinDelayMs=1500
+MaxDelayMs=3500
+
+[Think Time]
+Ignore=1
+Multiplier=0.5
+LimitMs=10000
+
+[Logging]
+Level=extended
+OnErrorOnly=1
+ExtendedOptions=parameter_substitution,data_returned
+AdvancedTrace=1
+
+[Misc]
+ContinueOnError=1
+SnapshotOnError=1
+
+[Additional Attributes]
+env=perf
+region=east
+
+[Download Filters]
+Mode=block_list
+Hosts=metrics.example.test,cdn.example.test
+
+[Content Check]
+Text=Access Denied
+Scope=any_response
+FailIfFound=1
+
+[Network Speed Simulation]
+Mode=preset
+Preset=dsl
+LatencyMs=75
+
+[Streaming]
+Mode=fixed
+BufferSizeSeconds=30
+FixedBitrateKbps=1800
+BandwidthEstimation=instant
+
+[Data Formatting]
+AutoDetect=1
+Chain=base64,json_to_xml
+`)
+
+	config := runtimeCfg.ToScriptConfig()
+	if config == nil {
+		t.Fatal("expected script config to be created")
+	}
+	if config.HTTP.ConnectTimeoutMs != 45000 || config.HTTP.RequestTimeoutMs != 20000 {
+		t.Fatalf("http config = %#v, want converted timeout values", config.HTTP)
+	}
+	if config.HTTP.MaxConnsPerHost != 12 {
+		t.Fatalf("max conns per host = %d, want 12", config.HTTP.MaxConnsPerHost)
+	}
+	if config.HTTP.ProxyMode != "custom" || config.HTTP.Proxy.URL != "http://proxy.example.test:8080" {
+		t.Fatalf("proxy config = %#v, want custom proxy", config.HTTP)
+	}
+	if !config.ThinkTime.Ignore || config.ThinkTime.Multiplier != 0.5 || config.ThinkTime.LimitMs != 10000 {
+		t.Fatalf("think time = %#v, want ignore+multiplier+limit", config.ThinkTime)
+	}
+	if config.Pacing.Type != "random_delay" || config.Pacing.MinDelayMs != 1500 || config.Pacing.MaxDelayMs != 3500 {
+		t.Fatalf("pacing = %#v, want random_delay 1500-3500", config.Pacing)
+	}
+	if config.RunLogic.Iterations != 7 || config.RunLogic.AutoTransactions != "per_iteration" || config.RunLogic.BlockScheduling != "random" {
+		t.Fatalf("run logic = %#v, want populated run logic", config.RunLogic)
+	}
+	if got := strings.Join(config.RunLogic.ActionSequence, ","); got != "init,action,teardown" {
+		t.Fatalf("action sequence = %q, want init,action,teardown", got)
+	}
+	if config.Log.Level != "extended" || !config.Log.OnErrorOnly || len(config.Log.ExtendedOptions) != 3 {
+		t.Fatalf("log config = %#v, want extended log settings", config.Log)
+	}
+	if !config.ErrorHandling.ContinueOnError || !config.ErrorHandling.SnapshotOnError {
+		t.Fatalf("error handling = %#v, want continue+snapshot", config.ErrorHandling)
+	}
+	if config.Browser.DownloadResources != "all" || config.Browser.CacheEnabled == nil || !*config.Browser.CacheEnabled || config.Browser.NewUserPerIter == nil || !*config.Browser.NewUserPerIter {
+		t.Fatalf("browser config = %#v, want cache and new user settings", config.Browser)
+	}
+	if config.WebRuntime.AdditionalAttributes["env"] != "perf" || config.WebRuntime.DownloadFilters.Mode != "block_list" {
+		t.Fatalf("web runtime = %#v, want additional attributes and download filters", config.WebRuntime)
+	}
+	if len(config.WebRuntime.ContentChecks) != 1 || config.WebRuntime.ContentChecks[0].Text != "Access Denied" {
+		t.Fatalf("content checks = %#v, want Access Denied", config.WebRuntime.ContentChecks)
+	}
+	if config.WebRuntime.NetworkSimulation.Mode != "preset" || config.WebRuntime.NetworkSimulation.Preset != "dsl" || config.WebRuntime.NetworkSimulation.LatencyMs != 75 {
+		t.Fatalf("network simulation = %#v, want preset dsl latency 75", config.WebRuntime.NetworkSimulation)
+	}
+	if config.WebRuntime.Streaming.Mode != "fixed" || config.WebRuntime.Streaming.FixedBitrateKbps != 1800 || config.WebRuntime.Streaming.BandwidthEstimation != "instant" {
+		t.Fatalf("streaming = %#v, want fixed bitrate streaming", config.WebRuntime.Streaming)
+	}
+	if !config.WebRuntime.DataFormatting.AutoDetect || len(config.WebRuntime.DataFormatting.Chain) != 2 || config.WebRuntime.DataFormatting.Chain[0].Type != "base64" {
+		t.Fatalf("data formatting = %#v, want autodetect + DFE chain", config.WebRuntime.DataFormatting)
+	}
+}
+
+func TestConvertZipMapsExtendedRuntimeSettings(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	addFile := func(name string, content string) {
+		writer, err := zw.Create(name)
+		if err != nil {
+			t.Fatalf("Create(%q) returned error: %v", name, err)
+		}
+		if _, err := writer.Write([]byte(content)); err != nil {
+			t.Fatalf("Write(%q) returned error: %v", name, err)
+		}
+	}
+
+	addFile("Demo.usr", `[General]
+Type=Web
+RuntimeSettings=default.cfg
+
+[Actions]
+Action1=Action.c
+`)
+	addFile("Action.c", sampleActionC)
+	addFile("default.cfg", `[HTTP]
+ConnectTimeout=45
+ReceiveTimeout=20
+KeepAlive=0
+MaxConnectionsPerHost=12
+
+[Run Logic]
+Iterations=5
+AutoTransactions=per_action
+
+[Pacing]
+Mode=fixed_interval
+IntervalMs=60000
+
+[Logging]
+Level=extended
+OnErrorOnly=1
+
+[Misc]
+ContinueOnError=1
+
+[Browser Emulation]
+CacheEnabled=1
+NewUserPerIteration=1
+DownloadResources=all
+
+[Download Filters]
+Mode=block_list
+Hosts=metrics.example.test
+
+[Content Check]
+Text=Access Denied
+Scope=any_response
+FailIfFound=1
+`)
+	if err := zw.Close(); err != nil {
+		t.Fatalf("zip.Close returned error: %v", err)
+	}
+
+	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip returned error: %v", err)
+	}
+	if result.Script.Config.HTTP.MaxConnsPerHost != 12 {
+		t.Fatalf("max conns per host = %d, want 12", result.Script.Config.HTTP.MaxConnsPerHost)
+	}
+	if result.Script.Config.RunLogic.Iterations != 5 || result.Script.Config.RunLogic.AutoTransactions != "per_action" {
+		t.Fatalf("run logic = %#v, want imported values", result.Script.Config.RunLogic)
+	}
+	if result.Script.Config.Pacing.Type != "fixed_interval" || result.Script.Config.Pacing.IntervalMs != 60000 {
+		t.Fatalf("pacing = %#v, want fixed interval 60000", result.Script.Config.Pacing)
+	}
+	if result.Script.Config.Log.Level != "extended" || !result.Script.Config.Log.OnErrorOnly {
+		t.Fatalf("log config = %#v, want extended on error only", result.Script.Config.Log)
+	}
+	if !result.Script.Config.ErrorHandling.ContinueOnError {
+		t.Fatalf("error handling = %#v, want continue on error", result.Script.Config.ErrorHandling)
+	}
+	if result.Script.Config.Browser.NewUserPerIter == nil || !*result.Script.Config.Browser.NewUserPerIter {
+		t.Fatalf("browser config = %#v, want new user per iteration", result.Script.Config.Browser)
+	}
+	if result.Script.Config.WebRuntime.DownloadFilters.Mode != "block_list" || len(result.Script.Config.WebRuntime.ContentChecks) != 1 {
+		t.Fatalf("web runtime = %#v, want download filter and content check", result.Script.Config.WebRuntime)
 	}
 }

@@ -58,6 +58,21 @@ func buildProtoConfig(script *dsl.Script) map[string]any {
 	if len(httpCfg.DefaultHeaders) > 0 {
 		cfg["default_headers"] = httpCfg.DefaultHeaders
 	}
+	if len(script.Config.WebRuntime.ContentChecks) > 0 {
+		cfg["web_content_checks"] = flattenContentChecks(script.Config.WebRuntime.ContentChecks)
+	}
+	if networkCfg := script.Config.WebRuntime.NetworkSimulation; networkCfg.Mode != "" {
+		cfg["web_network_simulation_mode"] = networkCfg.Mode
+		if networkCfg.Preset != "" {
+			cfg["web_network_simulation_preset"] = networkCfg.Preset
+		}
+		if networkCfg.BandwidthKbps > 0 {
+			cfg["web_network_simulation_bandwidth_kbps"] = float64(networkCfg.BandwidthKbps)
+		}
+		if networkCfg.LatencyMs > 0 {
+			cfg["web_network_simulation_latency_ms"] = float64(networkCfg.LatencyMs)
+		}
+	}
 	if javaHTTPCfg.Codec != "" {
 		cfg["java_http_codec"] = javaHTTPCfg.Codec
 	}
@@ -126,6 +141,15 @@ func buildProtoConfig(script *dsl.Script) map[string]any {
 	}
 	if browserCfg.Headless != nil {
 		cfg["browser_headless"] = *browserCfg.Headless
+	}
+	if browserCfg.CacheEnabled != nil {
+		cfg["browser_cache_enabled"] = *browserCfg.CacheEnabled
+	}
+	if browserCfg.CheckNewerVersions != nil {
+		cfg["browser_check_newer_versions"] = *browserCfg.CheckNewerVersions
+	}
+	if browserCfg.DownloadResources != "" {
+		cfg["browser_download_resources"] = browserCfg.DownloadResources
 	}
 	if browserCfg.SlowMoMs > 0 {
 		cfg["browser_slow_mo_ms"] = float64(browserCfg.SlowMoMs)
@@ -209,6 +233,9 @@ func buildProtoConfig(script *dsl.Script) map[string]any {
 	}
 
 	// Proxy
+	if httpCfg.ProxyMode != "" {
+		cfg["proxy_mode"] = httpCfg.ProxyMode
+	}
 	proxy := httpCfg.Proxy
 	if proxy.URL != "" {
 		cfg["proxy_url"] = proxy.URL
@@ -242,4 +269,19 @@ func buildProtoConfig(script *dsl.Script) map[string]any {
 	}
 
 	return cfg
+}
+
+func flattenContentChecks(checks []dsl.ContentCheckConfig) []map[string]any {
+	flattened := make([]map[string]any, 0, len(checks))
+	for _, check := range checks {
+		item := map[string]any{
+			"text":  check.Text,
+			"scope": check.Scope,
+		}
+		if check.FailIfFound != nil {
+			item["fail_if_found"] = *check.FailIfFound
+		}
+		flattened = append(flattened, item)
+	}
+	return flattened
 }

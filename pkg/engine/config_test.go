@@ -91,6 +91,7 @@ func TestBuildProtoConfig_Proxy(t *testing.T) {
 	script := &dsl.Script{
 		Config: dsl.ScriptConfig{
 			HTTP: dsl.HTTPConfig{
+				ProxyMode: "custom",
 				Proxy: dsl.ProxyConfig{
 					URL:      "http://proxy:8080",
 					Username: "user",
@@ -102,6 +103,10 @@ func TestBuildProtoConfig_Proxy(t *testing.T) {
 	}
 
 	cfg := buildProtoConfig(script)
+
+	if cfg["proxy_mode"] != "custom" {
+		t.Errorf("proxy_mode = %v", cfg["proxy_mode"])
+	}
 
 	if cfg["proxy_url"] != "http://proxy:8080" {
 		t.Errorf("proxy_url = %v", cfg["proxy_url"])
@@ -230,6 +235,36 @@ func TestBuildProtoConfig_BrowserEmulation(t *testing.T) {
 	}
 }
 
+func TestBuildProtoConfig_WebContentChecks(t *testing.T) {
+	requiredText := false
+	script := &dsl.Script{
+		Config: dsl.ScriptConfig{
+			WebRuntime: dsl.WebRuntimeConfig{
+				ContentChecks: []dsl.ContentCheckConfig{{
+					Text:        "Access Denied",
+					Scope:       "any_response",
+					FailIfFound: &requiredText,
+				}},
+			},
+		},
+	}
+
+	cfg := buildProtoConfig(script)
+	checks, ok := cfg["web_content_checks"].([]map[string]any)
+	if !ok || len(checks) != 1 {
+		t.Fatalf("web_content_checks = %v, want one flattened content check", cfg["web_content_checks"])
+	}
+	if checks[0]["text"] != "Access Denied" {
+		t.Fatalf("content check text = %v, want Access Denied", checks[0]["text"])
+	}
+	if checks[0]["scope"] != "any_response" {
+		t.Fatalf("content check scope = %v, want any_response", checks[0]["scope"])
+	}
+	if checks[0]["fail_if_found"] != false {
+		t.Fatalf("content check fail_if_found = %v, want false", checks[0]["fail_if_found"])
+	}
+}
+
 func TestBuildProtoConfig_SOAP(t *testing.T) {
 	script := &dsl.Script{
 		Config: dsl.ScriptConfig{
@@ -341,17 +376,30 @@ func TestBuildProtoConfig_EmptyConfig(t *testing.T) {
 
 func TestBuildProtoConfig_Browser(t *testing.T) {
 	headless := false
+	cacheEnabled := false
+	checkNewerVersions := true
+	latencyMs := 75
 	script := &dsl.Script{
 		Config: dsl.ScriptConfig{
 			Browser: dsl.BrowserConfig{
 				Engine:             "chromium",
 				Headless:           &headless,
+				CacheEnabled:       &cacheEnabled,
+				CheckNewerVersions: &checkNewerVersions,
+				DownloadResources:  "none",
 				SlowMoMs:           125,
 				UserAgent:          "StormrunnerBrowser/0.1",
 				CaptureScreenshots: "per_action",
 				Viewport: dsl.BrowserViewport{
 					Width:  1440,
 					Height: 900,
+				},
+			},
+			WebRuntime: dsl.WebRuntimeConfig{
+				NetworkSimulation: dsl.NetworkSimulationConfig{
+					Mode:          "custom",
+					BandwidthKbps: 2048,
+					LatencyMs:     latencyMs,
 				},
 			},
 		},
@@ -365,6 +413,15 @@ func TestBuildProtoConfig_Browser(t *testing.T) {
 	if cfg["browser_headless"] != false {
 		t.Errorf("browser_headless = %v, want false", cfg["browser_headless"])
 	}
+	if cfg["browser_cache_enabled"] != false {
+		t.Errorf("browser_cache_enabled = %v, want false", cfg["browser_cache_enabled"])
+	}
+	if cfg["browser_check_newer_versions"] != true {
+		t.Errorf("browser_check_newer_versions = %v, want true", cfg["browser_check_newer_versions"])
+	}
+	if cfg["browser_download_resources"] != "none" {
+		t.Errorf("browser_download_resources = %v, want none", cfg["browser_download_resources"])
+	}
 	if cfg["browser_slow_mo_ms"] != float64(125) {
 		t.Errorf("browser_slow_mo_ms = %v, want 125", cfg["browser_slow_mo_ms"])
 	}
@@ -376,6 +433,15 @@ func TestBuildProtoConfig_Browser(t *testing.T) {
 	}
 	if cfg["browser_viewport_height"] != float64(900) {
 		t.Errorf("browser_viewport_height = %v, want 900", cfg["browser_viewport_height"])
+	}
+	if cfg["web_network_simulation_mode"] != "custom" {
+		t.Errorf("web_network_simulation_mode = %v, want custom", cfg["web_network_simulation_mode"])
+	}
+	if cfg["web_network_simulation_bandwidth_kbps"] != float64(2048) {
+		t.Errorf("web_network_simulation_bandwidth_kbps = %v, want 2048", cfg["web_network_simulation_bandwidth_kbps"])
+	}
+	if cfg["web_network_simulation_latency_ms"] != float64(latencyMs) {
+		t.Errorf("web_network_simulation_latency_ms = %v, want %d", cfg["web_network_simulation_latency_ms"], latencyMs)
 	}
 }
 

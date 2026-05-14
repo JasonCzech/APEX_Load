@@ -1,12 +1,39 @@
 package engine
 
 import (
+	"context"
 	"regexp"
 	"testing"
+	"time"
 
 	"github.com/jasonczech/stormrunner/pkg/dsl"
 	"github.com/jasonczech/stormrunner/pkg/protocol"
 )
+
+type iterationResetProtocol struct {
+	initCalls     int
+	teardownCalls int
+	executeCalls  int
+}
+
+func (p *iterationResetProtocol) Name() string { return "browser" }
+func (p *iterationResetProtocol) Init(_ context.Context, _ map[string]any) error {
+	p.initCalls++
+	return nil
+}
+func (p *iterationResetProtocol) Execute(_ context.Context, action *protocol.Action) (*protocol.Result, error) {
+	p.executeCalls++
+	return &protocol.Result{
+		ActionName: action.Name,
+		Success:    true,
+		Duration:   time.Millisecond,
+	}, nil
+}
+func (p *iterationResetProtocol) Teardown(_ context.Context) error {
+	p.teardownCalls++
+	return nil
+}
+func (p *iterationResetProtocol) HealthCheck(_ context.Context) error { return nil }
 
 func TestVUser_Interpolate(t *testing.T) {
 	vu := &VUser{
@@ -321,5 +348,39 @@ func TestVUser_HandleSnapshot(t *testing.T) {
 
 	if len(store.Snapshots()) != 1 {
 		t.Errorf("success should not add snapshot, got %d", len(store.Snapshots()))
+	}
+}
+
+func TestVUser_Run_ResetsBrowserProtocolPerIteration(t *testing.T) {
+	newUserPerIteration := true
+	protoStub := &iterationResetProtocol{}
+	if err := protoStub.Init(context.Background(), nil); err != nil {
+		t.Fatalf("Init returned error: %v", err)
+	}
+
+	vu := &VUser{
+		ID:    1,
+		Proto: protoStub,
+		Script: &dsl.Script{
+			Protocol: "browser",
+			Config: dsl.ScriptConfig{
+				RunLogic: dsl.RunLogicConfig{Iterations: 2},
+				Browser:  dsl.BrowserConfig{NewUserPerIter: &newUserPerIteration},
+			},
+			Actions: []dsl.Action{{Name: "Navigate", Type: "browser_navigate", Target: "/"}},
+		},
+		Metrics: NewMetricsCollector(16),
+	}
+
+	vu.Run(context.Background())
+
+	if protoStub.executeCalls != 2 {
+		t.Fatalf("executeCalls = %d, want 2", protoStub.executeCalls)
+	}
+	if protoStub.initCalls != 2 {
+		t.Fatalf("initCalls = %d, want 2 after per-iteration reset", protoStub.initCalls)
+	}
+	if protoStub.teardownCalls != 1 {
+		t.Fatalf("teardownCalls = %d, want 1 between iterations", protoStub.teardownCalls)
 	}
 }

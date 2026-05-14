@@ -150,6 +150,12 @@ func (vu *VUser) Run(ctx context.Context) {
 			if vu.Parameters != nil {
 				vu.Parameters.RefreshIteration()
 			}
+			if vu.Script.Protocol == "browser" && cfg.Browser.NewUserPerIter != nil && *cfg.Browser.NewUserPerIter {
+				if err := vu.resetProtocolForIteration(ctx); err != nil {
+					logger.Error("iteration protocol reset failed", "iteration", iteration+1, "err", err)
+					goto teardown
+				}
+			}
 		}
 
 		// Track iteration-level transaction
@@ -271,6 +277,16 @@ func (vu *VUser) recordResult(result *protocol.Result, errCfg dsl.ErrorHandlingC
 	if vu.ResultSink != nil {
 		_ = vu.ResultSink.RecordResult(result)
 	}
+}
+
+func (vu *VUser) resetProtocolForIteration(ctx context.Context) error {
+	if vu == nil || vu.Proto == nil || vu.Script == nil {
+		return nil
+	}
+	if err := vu.Proto.Teardown(context.Background()); err != nil {
+		return err
+	}
+	return vu.Proto.Init(ctx, buildProtoConfig(vu.Script))
 }
 
 // executeWithRetry wraps a single action execution with retry logic.

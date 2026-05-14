@@ -139,8 +139,26 @@ func applyHTTPVersion(transport *http.Transport, config map[string]any) {
 }
 
 func applyProxy(transport *http.Transport, config map[string]any) error {
+	proxyMode, _ := config["proxy_mode"].(string)
+	switch strings.TrimSpace(proxyMode) {
+	case "none":
+		transport.Proxy = nil
+		return nil
+	case "system":
+		transport.Proxy = http.ProxyFromEnvironment
+		return nil
+	case "custom", "":
+		// Custom proxy stays URL-driven; empty mode preserves legacy behavior.
+	default:
+		transport.Proxy = nil
+		return nil
+	}
+
 	proxyURL, ok := config["proxy_url"].(string)
 	if !ok || proxyURL == "" {
+		if proxyMode == "custom" {
+			return fmt.Errorf("proxy_mode custom requires proxy_url")
+		}
 		return nil
 	}
 

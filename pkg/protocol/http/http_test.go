@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -198,6 +199,67 @@ func TestHTTP_Init_HTTPVersion1(t *testing.T) {
 
 	if h.transport.ForceAttemptHTTP2 {
 		t.Error("ForceAttemptHTTP2 should be false for version 1.1")
+	}
+}
+
+func TestHTTP_Init_CustomProxyMode(t *testing.T) {
+	h := initHTTP(t, map[string]any{
+		"proxy_mode":     "custom",
+		"proxy_url":      "http://proxy.internal:8080",
+		"proxy_username": "perf-user",
+		"proxy_password": "secret",
+	})
+
+	if h.transport.Proxy == nil {
+		t.Fatal("Proxy should be configured for custom mode")
+	}
+	req := httptest.NewRequest(http.MethodGet, "https://service.example.com", nil)
+	proxyURL, err := h.transport.Proxy(req)
+	if err != nil {
+		t.Fatalf("Proxy() returned error: %v", err)
+	}
+	if proxyURL == nil || proxyURL.String() != "http://perf-user:secret@proxy.internal:8080" {
+		t.Fatalf("proxy URL = %v, want authenticated custom proxy", proxyURL)
+	}
+}
+
+func TestHTTP_Init_SystemProxyMode(t *testing.T) {
+	t.Setenv("HTTPS_PROXY", "http://system-proxy.internal:8443")
+	h := initHTTP(t, map[string]any{
+		"proxy_mode": "system",
+	})
+
+	if h.transport.Proxy == nil {
+		t.Fatal("Proxy should be configured for system mode")
+	}
+	req := httptest.NewRequest(http.MethodGet, "https://service.example.com", nil)
+	proxyURL, err := h.transport.Proxy(req)
+	if err != nil {
+		t.Fatalf("Proxy() returned error: %v", err)
+	}
+	if proxyURL == nil || proxyURL.String() != "http://system-proxy.internal:8443" {
+		t.Fatalf("proxy URL = %v, want system proxy from environment", proxyURL)
+	}
+}
+
+func TestHTTP_Init_NoProxyModeIgnoresCustomProxyURL(t *testing.T) {
+	h := initHTTP(t, map[string]any{
+		"proxy_mode": "none",
+		"proxy_url":  "http://proxy.internal:8080",
+	})
+
+	if h.transport.Proxy != nil {
+		t.Fatal("Proxy should be disabled for none mode")
+	}
+}
+
+func TestHTTP_Init_CustomProxyModeRequiresURL(t *testing.T) {
+	h := &HTTP{}
+	err := h.Init(context.Background(), map[string]any{
+		"proxy_mode": "custom",
+	})
+	if err == nil {
+		t.Fatal("expected error when proxy_mode is custom without proxy_url")
 	}
 }
 
@@ -467,6 +529,90 @@ func TestHTTP_Execute_FailedAssertion(t *testing.T) {
 
 	if result.Success {
 		t.Error("assertion should fail for status 200 vs expected 201")
+	}
+}
+
+func TestHTTP_Execute_WithRequiredGlobalContentCheck(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		w.Write([]byte("order completed successfully"))
+	}))
+	defer ts.Close()
+
+	h := initHTTP(t, map[string]any{
+		"base_url": ts.URL,
+		"web_content_checks": []map[string]any{{
+			"text":          "completed",
+			"scope":         "any_response",
+			"fail_if_found": false,
+		}},
+	})
+
+	result, _ := h.Execute(context.Background(), &protocol.Action{
+		Name:   "global-content-check-pass",
+		Method: "GET",
+		Target: "/",
+	})
+
+	if !result.Success {
+		t.Fatalf("required content check should pass, error: %s", result.ErrorMessage)
+	}
+}
+
+func TestHTTP_Execute_FailsOnForbiddenGlobalContentCheck(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		w.Write([]byte("Access Denied by upstream gateway"))
+	}))
+	defer ts.Close()
+
+	h := initHTTP(t, map[string]any{
+		"base_url": ts.URL,
+		"web_content_checks": []map[string]any{{
+			"text":          "Access Denied",
+			"scope":         "main_document",
+			"fail_if_found": true,
+		}},
+	})
+
+	result, _ := h.Execute(context.Background(), &protocol.Action{
+		Name:   "global-content-check-fail",
+		Method: "GET",
+		Target: "/",
+	})
+
+	if result.Success {
+		t.Fatal("forbidden global content check should fail")
+	}
+	if !strings.Contains(result.ErrorMessage, "forbidden text") {
+		t.Fatalf("error = %q, want forbidden text content-check failure", result.ErrorMessage)
+	}
+}
+
+func TestHTTP_Execute_SkipsResourceScopedGlobalContentCheck(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		w.Write([]byte("Access Denied by upstream gateway"))
+	}))
+	defer ts.Close()
+
+	h := initHTTP(t, map[string]any{
+		"base_url": ts.URL,
+		"web_content_checks": []map[string]any{{
+			"text":          "Access Denied",
+			"scope":         "resource",
+			"fail_if_found": true,
+		}},
+	})
+
+	result, _ := h.Execute(context.Background(), &protocol.Action{
+		Name:   "global-content-check-resource-skip",
+		Method: "GET",
+		Target: "/",
+	})
+
+	if !result.Success {
+		t.Fatalf("resource-scoped content checks should be skipped, error: %s", result.ErrorMessage)
 	}
 }
 

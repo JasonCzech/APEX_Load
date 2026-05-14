@@ -27,6 +27,7 @@ type HTTP struct {
 	transport      *http.Transport
 	baseURL        string
 	bufPool        sync.Pool
+	contentChecks  []contentCheck
 	defaultHeaders map[string]string
 	authType       string
 	authHeader     string // pre-computed Authorization header value
@@ -63,6 +64,7 @@ func (h *HTTP) Init(ctx context.Context, config map[string]any) error {
 	applyRedirectPolicy(h.client, h.maxRedirects)
 
 	h.defaultHeaders = buildDefaultHeaders(config)
+	h.contentChecks = parseContentChecks(config)
 	h.authType, h.authHeader = buildAuthHeader(config)
 
 	h.bufPool = sync.Pool{
@@ -167,6 +169,12 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 			result.Success = false
 			result.ErrorMessage = err.Error()
 			break
+		}
+	}
+	if result.Success {
+		if err := evaluateContentChecks(h.contentChecks, result, respBody); err != nil {
+			result.Success = false
+			result.ErrorMessage = err.Error()
 		}
 	}
 
