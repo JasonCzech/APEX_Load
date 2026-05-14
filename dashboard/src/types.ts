@@ -640,6 +640,7 @@ export interface BrowserReplaySessionResponse {
 
 export interface MetricsHistoryPoint {
   time: string
+  timestampMs?: number
   vusers: number
   tps: number
   avgMs: number

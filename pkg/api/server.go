@@ -29,11 +29,11 @@ type Server struct {
 
 // ServerConfig configures API server startup behavior and integrations.
 type ServerConfig struct {
-	Addr           string
-	ProxyAddr      string
-	MaxConcurrent  int
-	AllowedOrigins []string
-	Store          storage.Store
+	Addr             string
+	ProxyAddr        string
+	MaxConcurrent    int
+	AllowedOrigins   []string
+	Store            storage.Store
 	GeneratorTargets []string
 	GeneratorTimeout time.Duration
 }

@@ -1,0 +1,5 @@
+POST /api/v1/tests/REPLACE_WITH_CREATED_TEST_ID/start HTTP/1.1
+Host: 127.0.0.1:18080
+Content-Type: application/json
+
+{}

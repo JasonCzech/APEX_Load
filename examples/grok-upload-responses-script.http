@@ -1,0 +1,67 @@
+POST /api/v1/scripts HTTP/1.1
+Host: 127.0.0.1:18080
+Content-Type: application/json
+
+{
+  "script": {
+    "name": "Grok_Responses_Poll",
+    "version": "1.0.0",
+    "protocol": "http",
+    "config": {
+      "base_url": "https://api.x.ai",
+      "pacing": {
+        "type": "fixed_interval",
+        "interval_ms": 5000
+      },
+      "http": {
+        "connect_timeout_ms": 30000,
+        "request_timeout_ms": 120000,
+        "user_agent": "Stormrunner-Grok-Responses-Example/1.0"
+      }
+    },
+    "parameters": [
+      {
+        "name": "request_suffix",
+        "type": "random_string",
+        "update": "each_iteration",
+        "length": 8
+      }
+    ],
+    "actions": [
+      {
+        "name": "POST_Grok_Responses",
+        "type": "http",
+        "method": "POST",
+        "target": "/v1/responses",
+        "headers": {
+          "Authorization": "Bearer {{env.XAI_API_KEY}}",
+          "Content-Type": "application/json",
+          "Accept": "application/json"
+        },
+        "body": "{\"model\":\"{{env.XAI_MODEL}}\",\"input\":\"Reply with the single word pong. Request suffix: {{param.request_suffix}}\",\"max_output_tokens\":32}",
+        "extractors": [
+          {
+            "name": "grok_response_id",
+            "source": "body",
+            "type": "jsonpath",
+            "expression": "$.id"
+          }
+        ],
+        "assertions": [
+          {
+            "type": "status_code",
+            "expected": 200
+          },
+          {
+            "type": "response_time_ms",
+            "max": 45000
+          },
+          {
+            "type": "body_contains",
+            "value": "\"output\""
+          }
+        ]
+      }
+    ]
+  }
+}

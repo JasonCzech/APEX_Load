@@ -1,0 +1,68 @@
+POST /api/v1/scripts HTTP/1.1
+Host: 127.0.0.1:18080
+Content-Type: application/json
+
+{
+  "script": {
+    "name": "Grok_Chat_Completions_Poll_CSV",
+    "version": "1.0.0",
+    "protocol": "http",
+    "config": {
+      "base_url": "https://api.x.ai",
+      "pacing": {
+        "type": "fixed_interval",
+        "interval_ms": 5000
+      },
+      "http": {
+        "connect_timeout_ms": 30000,
+        "request_timeout_ms": 120000,
+        "user_agent": "Stormrunner-Grok-CSV-Example/1.0"
+      }
+    },
+    "data_sources": [
+      {
+        "name": "prompts",
+        "type": "csv",
+        "path": "examples/grok-prompts.csv",
+        "strategy": "sequential",
+        "first_row_header": true
+      }
+    ],
+    "actions": [
+      {
+        "name": "POST_Grok_Chat_Completions_From_CSV",
+        "type": "http",
+        "method": "POST",
+        "target": "/v1/chat/completions",
+        "headers": {
+          "Authorization": "Bearer {{env.XAI_API_KEY}}",
+          "Content-Type": "application/json",
+          "Accept": "application/json"
+        },
+        "body": "{\"model\":\"{{env.XAI_MODEL}}\",\"messages\":[{\"role\":\"system\",\"content\":\"{{data.prompts.system_prompt}}\"},{\"role\":\"user\",\"content\":\"{{data.prompts.user_prompt}}\"}],\"max_tokens\":{{data.prompts.max_tokens}},\"temperature\":{{data.prompts.temperature}}}",
+        "extractors": [
+          {
+            "name": "grok_response_id",
+            "source": "body",
+            "type": "jsonpath",
+            "expression": "$.id"
+          }
+        ],
+        "assertions": [
+          {
+            "type": "status_code",
+            "expected": 200
+          },
+          {
+            "type": "response_time_ms",
+            "max": 45000
+          },
+          {
+            "type": "body_contains",
+            "value": "\"choices\""
+          }
+        ]
+      }
+    ]
+  }
+}

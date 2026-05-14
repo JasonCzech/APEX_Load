@@ -92,33 +92,33 @@ type TestRunner struct {
 }
 
 type ManagedTest struct {
-	ID               string                    `json:"id"`
-	Name             string                    `json:"name"`
-	Status           string                    `json:"status"`
-	ApplicationID    string                    `json:"application_id,omitempty"`
-	ReleaseID        string                    `json:"release_id,omitempty"`
-	ScenarioID       string                    `json:"scenario_id,omitempty"`
-	ProjectID        string                    `json:"project_id,omitempty"`
-	FolderID         *string                   `json:"folder_id,omitempty"`
-	Groups           []TestGroup               `json:"groups"`
-	CapacityAdvisory *CapacityAdvisory         `json:"capacity_advisory,omitempty"`
+	ID               string                       `json:"id"`
+	Name             string                       `json:"name"`
+	Status           string                       `json:"status"`
+	ApplicationID    string                       `json:"application_id,omitempty"`
+	ReleaseID        string                       `json:"release_id,omitempty"`
+	ScenarioID       string                       `json:"scenario_id,omitempty"`
+	ProjectID        string                       `json:"project_id,omitempty"`
+	FolderID         *string                      `json:"folder_id,omitempty"`
+	Groups           []TestGroup                  `json:"groups"`
+	CapacityAdvisory *CapacityAdvisory            `json:"capacity_advisory,omitempty"`
 	Assignment       *GeneratorAssignmentSettings `json:"assignment,omitempty"`
-	ScenarioMode     string                    `json:"scenario_mode,omitempty"`
-	ScriptShakeout   bool                      `json:"script_shakeout,omitempty"`
-	ResourceBaseline bool                      `json:"resource_baseline,omitempty"`
-	StartDelay       string                    `json:"start_delay,omitempty"`
-	GoalConfig       *GoalConfig               `json:"goal_config,omitempty"`
-	RuntimeSettings  *RuntimeSettingsOverride  `json:"runtime_settings,omitempty"`
-	TotalVUsers      int                       `json:"total_vusers"`
-	Duration         time.Duration             `json:"duration_ns"`
-	DurationStr      string                    `json:"duration"`
-	CreatedAt        time.Time                 `json:"created_at"`
-	StartedAt        *time.Time                `json:"started_at,omitempty"`
-	EndedAt          *time.Time                `json:"ended_at,omitempty"`
-	LiveMetrics      *LiveMetrics              `json:"live_metrics,omitempty"`
-	History          []*LiveMetrics            `json:"history,omitempty"`
-	Archive          *storage.RunArchiveRecord `json:"archive,omitempty"`
-	Error            string                    `json:"error,omitempty"`
+	ScenarioMode     string                       `json:"scenario_mode,omitempty"`
+	ScriptShakeout   bool                         `json:"script_shakeout,omitempty"`
+	ResourceBaseline bool                         `json:"resource_baseline,omitempty"`
+	StartDelay       string                       `json:"start_delay,omitempty"`
+	GoalConfig       *GoalConfig                  `json:"goal_config,omitempty"`
+	RuntimeSettings  *RuntimeSettingsOverride     `json:"runtime_settings,omitempty"`
+	TotalVUsers      int                          `json:"total_vusers"`
+	Duration         time.Duration                `json:"duration_ns"`
+	DurationStr      string                       `json:"duration"`
+	CreatedAt        time.Time                    `json:"created_at"`
+	StartedAt        *time.Time                   `json:"started_at,omitempty"`
+	EndedAt          *time.Time                   `json:"ended_at,omitempty"`
+	LiveMetrics      *LiveMetrics                 `json:"live_metrics,omitempty"`
+	History          []*LiveMetrics               `json:"history,omitempty"`
+	Archive          *storage.RunArchiveRecord    `json:"archive,omitempty"`
+	Error            string                       `json:"error,omitempty"`
 
 	// deprecated single-script fields kept for backwards compat in JSON
 	ScriptID   string `json:"script_id,omitempty"`
@@ -176,11 +176,11 @@ type LiveMetrics struct {
 }
 
 type TelemetryHealth struct {
-	DroppedResults           int64 `json:"dropped_results,omitempty"`
-	HistoryPoints            int   `json:"history_points,omitempty"`
-	WebsocketClients         int   `json:"websocket_clients,omitempty"`
-	WebsocketDroppedMessages int64 `json:"websocket_dropped_messages,omitempty"`
-	WebsocketDroppedEvents   int64 `json:"websocket_dropped_events,omitempty"`
+	DroppedResults           int64     `json:"dropped_results,omitempty"`
+	HistoryPoints            int       `json:"history_points,omitempty"`
+	WebsocketClients         int       `json:"websocket_clients,omitempty"`
+	WebsocketDroppedMessages int64     `json:"websocket_dropped_messages,omitempty"`
+	WebsocketDroppedEvents   int64     `json:"websocket_dropped_events,omitempty"`
 	GeneratorPublishedAt     time.Time `json:"generator_published_at,omitempty"`
 	ControllerReceivedAt     time.Time `json:"controller_received_at,omitempty"`
 	CollectedAt              time.Time `json:"collected_at,omitempty"`
@@ -227,11 +227,11 @@ type GoalStatus struct {
 }
 
 type TelemetryDiagnostic struct {
-	Severity   string           `json:"severity"`
-	Summary    string           `json:"summary"`
-	Conditions []string         `json:"conditions,omitempty"`
+	Severity   string             `json:"severity"`
+	Summary    string             `json:"summary"`
+	Conditions []string           `json:"conditions,omitempty"`
 	Samples    []DiagnosticSample `json:"samples,omitempty"`
-	Telemetry  *TelemetryHealth `json:"telemetry,omitempty"`
+	Telemetry  *TelemetryHealth   `json:"telemetry,omitempty"`
 }
 
 type DiagnosticSample struct {
@@ -1156,15 +1156,15 @@ type CapacityShortfallError struct {
 }
 
 type DraftCapacityEstimate struct {
-	ScenarioMode     string            `json:"scenario_mode,omitempty"`
-	TotalVUsers      int               `json:"total_vusers"`
-	Duration         string            `json:"duration"`
-	ResourceBaseline bool              `json:"resource_baseline,omitempty"`
-	Groups           []TestGroup       `json:"groups"`
+	ScenarioMode     string                       `json:"scenario_mode,omitempty"`
+	TotalVUsers      int                          `json:"total_vusers"`
+	Duration         string                       `json:"duration"`
+	ResourceBaseline bool                         `json:"resource_baseline,omitempty"`
+	Groups           []TestGroup                  `json:"groups"`
 	Assignment       *GeneratorAssignmentSettings `json:"assignment,omitempty"`
-	Footprint        *ScenarioFootprint `json:"footprint,omitempty"`
-	Recommendation   *AssignmentRecommendation `json:"assignment_recommendation,omitempty"`
-	CapacityAdvisory *CapacityAdvisory `json:"capacity_advisory,omitempty"`
+	Footprint        *ScenarioFootprint           `json:"footprint,omitempty"`
+	Recommendation   *AssignmentRecommendation    `json:"assignment_recommendation,omitempty"`
+	CapacityAdvisory *CapacityAdvisory            `json:"capacity_advisory,omitempty"`
 }
 
 func normalizeGeneratorAssignmentSettings(in *GeneratorAssignmentSettings) (*GeneratorAssignmentSettings, error) {

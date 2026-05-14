@@ -72,6 +72,44 @@ If that command tells you the cluster is in `kind` mode, stop there and recreate
 make k8s-local-apply
 ```
 
+## Optional: Configure AI provider credentials for OpenAI or Grok scripts
+
+The controller pod can now read provider credentials and default model names from optional Kubernetes resources.
+If you do not create them, the pod still starts normally, but any script using `{{env.OPENAI_API_KEY}}`, `{{env.OPENAI_MODEL}}`, `{{env.XAI_API_KEY}}`, or `{{env.XAI_MODEL}}` will fail at runtime.
+
+See [AI_PROVIDER_SETUP.md](../AI_PROVIDER_SETUP.md) for the same commands in a shorter reference.
+
+For Grok/xAI scripts:
+
+```bash
+kubectl -n stormrunner-local create secret generic stormrunner-xai-secrets \
+	--from-literal=XAI_API_KEY=REPLACE_WITH_XAI_API_KEY \
+	--dry-run=client -o yaml | kubectl apply -f -
+
+kubectl -n stormrunner-local create configmap stormrunner-xai-settings \
+	--from-literal=XAI_MODEL=grok-4.3 \
+	--dry-run=client -o yaml | kubectl apply -f -
+```
+
+For OpenAI scripts:
+
+```bash
+kubectl -n stormrunner-local create secret generic stormrunner-openai-secrets \
+	--from-literal=OPENAI_API_KEY=REPLACE_WITH_OPENAI_API_KEY \
+	--dry-run=client -o yaml | kubectl apply -f -
+
+kubectl -n stormrunner-local create configmap stormrunner-openai-settings \
+	--from-literal=OPENAI_MODEL=REPLACE_WITH_OPENAI_MODEL \
+	--dry-run=client -o yaml | kubectl apply -f -
+```
+
+After creating or updating either resource, restart the controller so it picks up the new values:
+
+```bash
+kubectl -n stormrunner-local rollout restart deployment/stormrunner-controller
+kubectl -n stormrunner-local rollout status deployment/stormrunner-controller
+```
+
 ## 3. Wait for the pods to become ready
 
 ```bash

@@ -1,0 +1,85 @@
+{
+  "script": {
+    "name": "CNN_Top_Banner_Clickthrough",
+    "version": "1.0.0",
+    "protocol": "browser",
+    "config": {
+      "base_url": "https://www.cnn.com",
+      "browser": {
+        "headless": true,
+        "capture_screenshots": "per_action",
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        }
+      }
+    },
+    "actions": [
+      {
+        "name": "Open_CNN_Homepage",
+        "type": "browser_navigate",
+        "target": "/",
+        "wait_for": {
+          "type": "selector",
+          "value": "a[href='https://www.cnn.com/us'], a[href='/us']",
+          "timeout_ms": 10000
+        }
+      },
+      {
+        "name": "Click_US_Banner_Link",
+        "type": "browser_click",
+        "selector": "a[href='https://www.cnn.com/us'], a[href='/us']"
+      },
+      {
+        "name": "Wait_For_US_Section",
+        "type": "browser_wait",
+        "wait_for": {
+          "type": "url_contains",
+          "value": "cnn.com/us",
+          "timeout_ms": 10000
+        }
+      },
+      {
+        "name": "Capture_US_Section",
+        "type": "browser_screenshot",
+        "capture": {
+          "screenshot": true,
+          "html": true
+        }
+      },
+      {
+        "name": "Return_To_CNN_Homepage",
+        "type": "browser_navigate",
+        "target": "/",
+        "wait_for": {
+          "type": "selector",
+          "value": "a[href='https://www.cnn.com/world'], a[href='/world']",
+          "timeout_ms": 10000
+        }
+      },
+      {
+        "name": "Click_World_Banner_Link",
+        "type": "browser_click",
+        "selector": "a[href='https://www.cnn.com/world'], a[href='/world']"
+      },
+      {
+        "name": "Wait_For_World_Section",
+        "type": "browser_wait",
+        "wait_for": {
+          "type": "url_contains",
+          "value": "cnn.com/world",
+          "timeout_ms": 10000
+        }
+      },
+      {
+        "name": "Capture_World_Section",
+        "type": "browser_screenshot",
+        "capture": {
+          "screenshot": true,
+          "html": true,
+          "full_page": true
+        }
+      }
+    ]
+  }
+}

@@ -89,6 +89,45 @@ describe('useExecutionChartModel', () => {
     expect(Number(readTestId('avg-tps'))).toBe(6)
   })
 
+  it('keeps backend history visible after local websocket history grows', async () => {
+    await act(async () => {
+      root.render(
+        <ChartHarness
+          test={{
+            status: 'RUNNING',
+            history: [
+              {
+                timestamp: '2026-05-12T20:00:00Z',
+                active_vusers: 10,
+                tps: 5,
+                avg_response_ms: 100,
+                error_pct: 1,
+                p50_ms: 90,
+                p90_ms: 120,
+                p95_ms: 140,
+                p99_ms: 180,
+              },
+            ],
+          }}
+          history={[]}
+          localMetricsHistory={Array.from({ length: 12 }, (_, index) => ({
+            time: `8:00:${String(index + 1).padStart(2, '0')} PM`,
+            timestampMs: Date.UTC(2026, 4, 12, 20, 0, index + 1),
+            vusers: 12,
+            tps: 7,
+            avgMs: 120,
+            errorPct: 2,
+            p50: 100,
+            p90: 140,
+            p99: 190,
+          }))}
+        />,
+      )
+    })
+
+    expect(readTestId('filtered-count')).toBe('13')
+  })
+
   it('tracks drag selection and applies custom zoom', async () => {
     await act(async () => {
       root.render(
@@ -116,6 +155,38 @@ describe('useExecutionChartModel', () => {
     expect(readTestId('time-range')).toBe('custom')
     expect(readTestId('filtered-count')).toBe('2')
     expect(readTestId('show-ref-area')).toBe('no')
+  })
+
+  it('filters by elapsed time instead of raw point count for 10m view', async () => {
+    const history = Array.from({ length: 240 }, (_, index) => ({
+      time: `10:${String(Math.floor(index / 12)).padStart(2, '0')}:${String((index % 12) * 5).padStart(2, '0')}`,
+      timestampMs: Date.UTC(2026, 4, 14, 10, 0, index * 5),
+      vusers: 2,
+      tps: index,
+      avgMs: 100,
+      errorPct: 0,
+      p50: 90,
+      p90: 120,
+      p99: 150,
+    }))
+
+    await act(async () => {
+      root.render(
+        <ChartHarness
+          test={{ status: 'RUNNING', history: [] }}
+          history={history}
+          localMetricsHistory={[]}
+        />,
+      )
+    })
+
+    expect(readTestId('filtered-count')).toBe('240')
+
+    await act(async () => {
+      container.querySelector('[data-testid="set-3m"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(readTestId('filtered-count')).toBe('37')
   })
 
   async function click(testId: string) {

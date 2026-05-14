@@ -10,6 +10,7 @@ export interface ExecutionChartSummary {
 export function mapExecutionMetricToHistoryPoint(metric: LiveMetrics): MetricsHistoryPoint {
   const point: MetricsHistoryPoint = {
     time: new Date(metric.timestamp).toLocaleTimeString(),
+    timestampMs: Date.parse(metric.timestamp),
     vusers: metric.active_vusers,
     tps: metric.tps,
     avgMs: metric.avg_response_ms,
@@ -68,17 +69,13 @@ export function buildExecutionChartData({
   let combined: MetricsHistoryPoint[] = []
 
   if (localMetricsHistory.length > 0) {
-    if (mappedBackendHistory.length > 0 && localMetricsHistory.length < 10) {
-      combined = [...mappedBackendHistory, ...localMetricsHistory]
-    } else {
-      combined = [...localMetricsHistory]
-    }
+    combined = mappedBackendHistory.length > 0
+      ? [...mappedBackendHistory, ...localMetricsHistory]
+      : [...localMetricsHistory]
   } else if (fallbackHistory.length > 0) {
-    if (mappedBackendHistory.length > 0 && fallbackHistory.length < 10) {
-      combined = [...mappedBackendHistory, ...fallbackHistory]
-    } else {
-      combined = [...fallbackHistory]
-    }
+    combined = mappedBackendHistory.length > 0
+      ? [...mappedBackendHistory, ...fallbackHistory]
+      : [...fallbackHistory]
   } else {
     combined = mappedBackendHistory
   }
@@ -86,8 +83,11 @@ export function buildExecutionChartData({
   const seen = new Set<string>()
   const deduped: MetricsHistoryPoint[] = []
   for (let index = combined.length - 1; index >= 0; index -= 1) {
-    if (!seen.has(combined[index].time)) {
-      seen.add(combined[index].time)
+    const identity = typeof combined[index].timestampMs === 'number'
+      ? `ts:${combined[index].timestampMs}`
+      : `time:${combined[index].time}`
+    if (!seen.has(identity)) {
+      seen.add(identity)
       deduped.unshift(combined[index])
     }
   }
@@ -129,8 +129,20 @@ export function filterExecutionChartData(
     return chartData
   }
 
-  const seconds = timeRange === '3m' ? 180 : 600
-  return chartData.slice(-seconds)
+  const windowMs = timeRange === '3m' ? 180_000 : 600_000
+  const newestTimestamp = [...chartData].reverse().find(point => typeof point.timestampMs === 'number')?.timestampMs
+  if (newestTimestamp === undefined) {
+    const approximatePoints = timeRange === '3m' ? 180 : 600
+    return chartData.slice(-approximatePoints)
+  }
+
+  const cutoff = newestTimestamp - windowMs
+  return chartData.filter(point => {
+    if (typeof point.timestampMs !== 'number') {
+      return true
+    }
+    return point.timestampMs >= cutoff
+  })
 }
 
 export function summarizeExecutionChartData(filteredData: MetricsHistoryPoint[]): ExecutionChartSummary | null {

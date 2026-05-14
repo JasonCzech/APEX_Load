@@ -54,6 +54,7 @@ export function useExecutionMetricsStream(testId: string, status?: TestStatus) {
 
     const point: MetricsHistoryPoint = {
       time: new Date(msg.timestamp).toLocaleTimeString(),
+      timestampMs: Date.parse(msg.timestamp),
       vusers: msg.data.active_vusers,
       tps: Math.round(msg.data.tps * 10) / 10,
       avgMs: Math.round(msg.data.avg_response_ms * 10) / 10,

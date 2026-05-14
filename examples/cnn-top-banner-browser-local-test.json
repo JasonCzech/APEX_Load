@@ -1,0 +1,22 @@
+{
+  "name": "CNN Top Banner Browser Local Controller",
+  "duration": "30s",
+  "script_shakeout": true,
+  "resource_baseline": false,
+  "assignment": {
+    "mode": "auto"
+  },
+  "groups": [
+    {
+      "name": "cnn-browser",
+      "script_id": "REPLACE_WITH_UPLOADED_SCRIPT_ID",
+      "vusers": 1,
+      "ramp_up": "0s",
+      "initialization": "at_runtime"
+    }
+  ],
+  "runtime_settings": {
+    "log_level": "standard",
+    "auto_transactions": "per_action"
+  }
+}
