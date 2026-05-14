@@ -588,6 +588,7 @@ function isLikelyParameterValue(value: string): boolean {
 
 export default function ScriptEditor({ scriptId, initialScript, projectId, folderId, onSave, onClose }: Props) {
   const api = useApi()
+  const showProtocolSelector = Boolean(scriptId)
   const [script, setScript] = useState<ScriptData>(initialScript || { ...EMPTY_SCRIPT })
   const [activeAction, setActiveAction] = useState<number | null>(null)
   const [saving, setSaving] = useState(false)
@@ -1913,17 +1914,19 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
                     <span>Name</span>
                     <input value={script.name} onChange={e => updateField('name', e.target.value)} placeholder="My_Test_Script" />
                   </label>
-                  <label>
-                    <span>Protocol</span>
-                    <select value={script.protocol} onChange={e => updateProtocol(e.target.value)}>
-                      <option value="http">HTTP API</option>
-                      <option value="https">HTTPS API</option>
-                      <option value="java_http">Java over HTTP</option>
-                      <option value="soap">Web Services (SOAP)</option>
-                      <option value="browser">Web/HTML Browser</option>
-                      <option value="jms-solace">JMS Solace</option>
-                    </select>
-                  </label>
+                  {showProtocolSelector && (
+                    <label>
+                      <span>Protocol</span>
+                      <select value={script.protocol} onChange={e => updateProtocol(e.target.value)}>
+                        <option value="http">HTTP API</option>
+                        <option value="https">HTTPS API</option>
+                        <option value="java_http">Java over HTTP</option>
+                        <option value="soap">Web Services (SOAP)</option>
+                        <option value="browser">Web/HTML Browser</option>
+                        <option value="jms-solace">JMS Solace</option>
+                      </select>
+                    </label>
+                  )}
                   <label>
                     <span>Version</span>
                     <input value={script.version} onChange={e => updateField('version', e.target.value)} placeholder="1.0.0" />

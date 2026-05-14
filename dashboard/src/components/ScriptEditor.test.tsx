@@ -94,6 +94,31 @@ describe('ScriptEditor', () => {
 
     const baseUrlInput = Array.from(container.querySelectorAll('input')).find(input => input.placeholder === 'https://api.example.com')
     expect(baseUrlInput?.getAttribute('value')).toBe('https://api.example.com')
+    expect(container.textContent).not.toContain('Protocol')
+  })
+
+  it('keeps the protocol selector when editing an existing script', async () => {
+    await act(async () => {
+      root.render(<ScriptEditor scriptId="script-1" initialScript={initialScript} />)
+    })
+
+    expect(container.textContent).toContain('Protocol')
+    const protocolSelect = container.querySelector('select')
+    expect(protocolSelect?.value).toBe('http')
+  })
+
+  it('renders the action workspace with adjacent list and detail regions', async () => {
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={initialScript} />)
+    })
+
+    const contentGrid = container.querySelector('.actions-content-grid')
+    const sidebar = container.querySelector('.actions-sidebar')
+    const detail = container.querySelector('.action-detail')
+
+    expect(contentGrid).not.toBeNull()
+    expect(sidebar?.parentElement).toBe(contentGrid)
+    expect(detail?.parentElement).toBe(contentGrid)
   })
 
   it('renders SOAP protocol settings and action fields for SOAP drafts', async () => {
