@@ -129,10 +129,11 @@ go test ./...
 ## Development Phases
 1. **Foundation (Wk 1–8)**: Single-pod HTTP, basic controller, CLI — CURRENT
 2. Distribution & Telemetry (Wk 9–16): Multi-pod, OTel, persistence
-3. Dashboard MVP (Wk 17–22): React real-time monitoring
-4. Agentic Scripting (Wk 23–28): LLM script generation
+3. Dashboard MVP (Wk 17–22): React real-time monitoring, cloud-hosted controller UI, and WebSocket live views in AKS
+4. Agentic Scripting (Wk 23–28): LLM script generation service deployment, cloud API integration, and managed artifact persistence
 5. JMS & Advanced (Wk 29–36): JMS protocols, multi-test concurrency
 6. Scale & Harden (Wk 37–44): 50k VUsers, HA, production readiness
+7. Cloud Operations & GA (Wk 45–52): production cloud rollout, SLO/cost guardrails, and multi-region resilience hardening
 
 ## Tech Stack
 Go 1.22+ | PostgreSQL 16 | Redis 7 | React 18 + TS | OpenTelemetry | gRPC | AKS | Helm | Terraform
