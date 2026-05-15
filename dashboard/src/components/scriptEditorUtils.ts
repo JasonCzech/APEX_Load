@@ -346,6 +346,14 @@ export function getErrorIssues(error: unknown): string[] {
   return Array.isArray(issues) ? issues.filter((issue): issue is string => typeof issue === 'string') : []
 }
 
+export function getErrorWarnings(error: unknown): string[] {
+  if (typeof error !== 'object' || error === null || !('payload' in error)) return []
+  const payload = (error as { payload?: unknown }).payload
+  if (typeof payload !== 'object' || payload === null || !('warnings' in payload)) return []
+  const warnings = (payload as { warnings?: unknown }).warnings
+  return Array.isArray(warnings) ? warnings.filter((warning): warning is string => typeof warning === 'string') : []
+}
+
 export function mergeReplayVariables(
   seed: Record<string, string> | undefined,
   events: ReplayActionEvent[],

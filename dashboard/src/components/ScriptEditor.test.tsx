@@ -471,6 +471,117 @@ describe('ScriptEditor', () => {
     }))
   })
 
+  it('renders replay start warnings returned by the browser replay API', async () => {
+    apiMock.startDraftBrowserReplaySession.mockResolvedValueOnce({
+      replay_session_id: 'browser-replay-1',
+      warnings: ['WebKit controller host is missing the Playwright browser cache warmup.'],
+      session: {
+        id: 'browser-replay-1',
+        group: 'Checkout Flow-browser-replay',
+        protocol: 'browser',
+        status: 'running',
+        started_at: '2026-05-14T20:00:00Z',
+        updated_at: '2026-05-14T20:00:00Z',
+        events: [],
+      },
+    })
+
+    const browserScript: ScriptDefinition = {
+      ...initialScript,
+      protocol: 'browser',
+      config: {
+        ...initialScript.config,
+        browser: {
+          engine: 'webkit',
+          headless: true,
+        },
+      },
+      actions: [
+        {
+          name: 'Open Home',
+          type: 'browser_navigate',
+          target: '/',
+          selector: '',
+          value: '',
+          capture: { screenshot: false, full_page: false, html: false },
+          think_time_after: true,
+        },
+      ],
+    }
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={browserScript} />)
+    })
+
+    const replayButton = Array.from(container.querySelectorAll('button')).find(button =>
+      button.textContent?.trim() === 'Run Browser Replay',
+    )
+    expect(replayButton).toBeDefined()
+    if (!replayButton) {
+      return
+    }
+
+    await act(async () => {
+      replayButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('Browser replay started with warnings.')
+    expect(container.textContent).toContain('WebKit controller host is missing the Playwright browser cache warmup.')
+  })
+
+  it('renders replay validation warnings returned on failed browser replay start', async () => {
+    apiMock.startDraftBrowserReplaySession.mockRejectedValueOnce(Object.assign(new Error('Replay validation failed'), {
+      payload: {
+        issues: ['browser engine webkit requires a reachable Playwright runtime'],
+        warnings: ['Install Playwright WebKit assets on the controller host before retrying.'],
+      },
+    }))
+
+    const browserScript: ScriptDefinition = {
+      ...initialScript,
+      protocol: 'browser',
+      config: {
+        ...initialScript.config,
+        browser: {
+          engine: 'webkit',
+          headless: true,
+        },
+      },
+      actions: [
+        {
+          name: 'Open Home',
+          type: 'browser_navigate',
+          target: '/',
+          selector: '',
+          value: '',
+          capture: { screenshot: false, full_page: false, html: false },
+          think_time_after: true,
+        },
+      ],
+    }
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={browserScript} />)
+    })
+
+    const replayButton = Array.from(container.querySelectorAll('button')).find(button =>
+      button.textContent?.trim() === 'Run Browser Replay',
+    )
+    expect(replayButton).toBeDefined()
+    if (!replayButton) {
+      return
+    }
+
+    await act(async () => {
+      replayButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('browser engine webkit requires a reachable Playwright runtime')
+    expect(container.textContent).toContain('Install Playwright WebKit assets on the controller host before retrying.')
+  })
+
   it('round-trips DFE chain options in the compatibility editor', async () => {
     const scriptWithDFEOptions: ScriptDefinition = {
       ...initialScript,

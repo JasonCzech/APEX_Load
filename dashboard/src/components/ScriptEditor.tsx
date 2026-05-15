@@ -52,6 +52,7 @@ import {
   formatReplayTime,
   getErrorIssues,
   getErrorMessage,
+  getErrorWarnings,
   getImportSummary,
   hasBrowserReplayArtifacts,
   isLikelyParameterValue,
@@ -103,6 +104,11 @@ function lookupBrowserDeviceProfile(name?: string) {
 
 function formatBrowserDeviceProfileLabel(profile: BrowserDeviceProfileOption) {
   return profile.engine === 'webkit' ? `${profile.name} (WebKit)` : profile.name
+}
+
+function normalizeWarnings(messages?: string[]) {
+  if (!Array.isArray(messages)) return []
+  return Array.from(new Set(messages.map(message => message.trim()).filter(Boolean)))
 }
 
 function hasStructuredReplaySnapshot(snapshot?: ReplaySnapshot | null) {
@@ -378,8 +384,10 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
     setSaving,
     setScript,
     setSuccess,
+    setWarnings,
     success,
     toggleSection,
+    warnings,
     closeParameterDialog,
     closeReplayScreenshot,
   } = useScriptEditorState(initialScript)
@@ -1102,7 +1110,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
   }
 
   const handleSave = async () => {
-    setError(''); setSuccess(''); setSaving(true)
+    setError(''); setSuccess(''); setWarnings([]); setSaving(true)
     try {
       const currentScript = resolveCurrentScript()
       if (scriptId) {
@@ -1121,6 +1129,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
   const handleReplay = async () => {
     setError('')
     setSuccess('')
+    setWarnings([])
     setReplaying(true)
     let browserSessionStarted = false
     try {
@@ -1197,6 +1206,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
         const res = scriptId
           ? await api.startBrowserReplaySession(scriptId, payload)
           : await api.startDraftBrowserReplaySession(payload)
+        const replayWarnings = normalizeWarnings(res.warnings)
         if (jsonMode) setScript(currentScript)
         if (res.session) {
           setBrowserReplaySession(res.session)
@@ -1211,7 +1221,8 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
           }
         }
         setActiveReplaySessionId(res.replay_session_id || res.session?.id || replaySessionId)
-        setSuccess('Browser replay started.')
+        setWarnings(replayWarnings)
+        setSuccess(replayWarnings.length > 0 ? 'Browser replay started with warnings.' : 'Browser replay started.')
         browserSessionStarted = true
         return
       }
@@ -1235,7 +1246,9 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
       setSuccess(res.report?.success ? 'Replay completed successfully.' : 'Replay completed with failures.')
     } catch (e: unknown) {
       const issues = getErrorIssues(e).join(' | ')
+      const replayWarnings = normalizeWarnings(getErrorWarnings(e))
       const message = getErrorMessage(e, 'Replay failed')
+      setWarnings(replayWarnings)
       setError(issues || message)
       setReplayReport(null)
       setActiveReplaySessionId(null)
@@ -1824,6 +1837,13 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
           </div>
         </div>
         {error && <div className="editor-toast error">{error}</div>}
+        {warnings.length > 0 && (
+          <div className="editor-toast warning">
+            {warnings.map((warning, index) => (
+              <div key={`${warning}-${index}`}>{warning}</div>
+            ))}
+          </div>
+        )}
         {success && <div className="editor-toast success">{success}</div>}
       </div>
 
@@ -4534,6 +4554,7 @@ function useScriptEditorState(initialScript?: ScriptData | null) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [warnings, setWarnings] = useState<string[]>([])
   const [jsonMode, setJsonMode] = useState(false)
   const [jsonText, setJsonText] = useState('')
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
@@ -4581,6 +4602,7 @@ function useScriptEditorState(initialScript?: ScriptData | null) {
     setParameterCandidates([])
     setError('')
     setSuccess('')
+    setWarnings([])
     setExpandedReplayBrowserArtifacts({})
     setReplayScreenshotSelection(null)
   }, [])
@@ -4646,8 +4668,10 @@ function useScriptEditorState(initialScript?: ScriptData | null) {
     setSaving,
     setScript,
     setSuccess,
+    setWarnings,
     success,
     toggleSection,
+    warnings,
     closeReplayScreenshot,
   }
 }
