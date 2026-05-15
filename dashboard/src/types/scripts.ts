@@ -403,6 +403,7 @@ export interface ScriptValidationResponse {
   script_id: string
   valid: boolean
   issues: string[]
+  warnings?: string[]
 }
 
 export interface ScriptExportResponse {

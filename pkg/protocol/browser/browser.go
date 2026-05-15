@@ -19,6 +19,7 @@ import (
 	"github.com/chromedp/cdproto/performance"
 	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
+	playwright "github.com/playwright-community/playwright-go"
 	"github.com/jasonczech/stormrunner/pkg/protocol"
 )
 
@@ -63,6 +64,10 @@ type Browser struct {
 	browserCtx  context.Context
 	allocCancel context.CancelFunc
 	browserStop context.CancelFunc
+	pw          *playwright.Playwright
+	pwBrowser   playwright.Browser
+	pwContext   playwright.BrowserContext
+	pwPage      playwright.Page
 
 	mu             sync.Mutex
 	consoleEntries []protocol.ConsoleEntry
@@ -134,12 +139,6 @@ func (b *Browser) Init(ctx context.Context, config map[string]any) error {
 			b.engine = profile.BrowserFamily
 		}
 		b.applyDeviceProfile(profile)
-	}
-	if b.engine == "webkit" {
-		return fmt.Errorf("browser engine webkit is not implemented in this build")
-	}
-	if b.engine != "chromium" {
-		return fmt.Errorf("unsupported browser engine: %s", b.engine)
 	}
 	if headless, ok := config["browser_headless"].(bool); ok {
 		b.headless = headless
@@ -215,6 +214,12 @@ func (b *Browser) Init(ctx context.Context, config map[string]any) error {
 	}
 	if b.downloadResources == "recorded" && !b.recordedResourcesAvailable {
 		return fmt.Errorf("browser download_resources=recorded requires recorded resource metadata")
+	}
+	if b.engine != "chromium" && b.engine != "webkit" {
+		return fmt.Errorf("unsupported browser engine: %s", b.engine)
+	}
+	if b.engine == "webkit" {
+		return b.initPlaywright(ctx)
 	}
 
 	allocatorOpts := append(chromedp.DefaultExecAllocatorOptions[:],
@@ -573,7 +578,7 @@ func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protoc
 		StartTime:   time.Now(),
 		Extractions: map[string]string{},
 	}
-	if b.browserCtx == nil {
+	if !b.initialized() {
 		result.ErrorMessage = "browser protocol is not initialized"
 		return result, nil
 	}
@@ -590,10 +595,7 @@ func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protoc
 			result.Duration = time.Since(result.StartTime)
 			return result, nil
 		}
-		actionErr = chromedp.Run(actionCtx,
-			chromedp.Navigate(b.resolveURL(action.Target)),
-			chromedp.WaitReady("body", chromedp.ByQuery),
-		)
+		actionErr = b.navigate(actionCtx, b.resolveURL(action.Target))
 	case "browser_wait":
 		actionErr = b.runWait(actionCtx, action)
 	case "browser_click":
@@ -606,10 +608,7 @@ func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protoc
 		if b.touchMode {
 			actionErr = b.dispatchTap(actionCtx, selector)
 		} else {
-			actionErr = chromedp.Run(actionCtx,
-				chromedp.WaitVisible(selector, chromedp.ByQuery),
-				chromedp.Click(selector, chromedp.ByQuery),
-			)
+			actionErr = b.click(actionCtx, selector)
 		}
 	case "browser_tap":
 		selector := b.actionSelector(action)
@@ -656,10 +655,7 @@ func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protoc
 			result.Duration = time.Since(result.StartTime)
 			return result, nil
 		}
-		actionErr = chromedp.Run(actionCtx,
-			chromedp.WaitVisible(selector, chromedp.ByQuery),
-			chromedp.SetValue(selector, action.Value, chromedp.ByQuery),
-		)
+		actionErr = b.fill(actionCtx, selector, action.Value)
 	case "browser_screenshot":
 		// Capture is handled with the rest of the page state below.
 	default:
@@ -741,12 +737,12 @@ func (b *Browser) runWait(ctx context.Context, action *protocol.Action) error {
 			if waitValue == "" {
 				return fmt.Errorf("browser_wait requires selector, target, or wait_for value")
 			}
-			return chromedp.Run(waitCtx, chromedp.WaitVisible(waitValue, chromedp.ByQuery))
+			return b.waitVisible(waitCtx, waitValue)
 		case "hidden":
 			if waitValue == "" {
 				return fmt.Errorf("browser_wait hidden requires selector or wait_for value")
 			}
-			return chromedp.Run(waitCtx, chromedp.WaitNotPresent(waitValue, chromedp.ByQuery))
+			return b.waitHidden(waitCtx, waitValue)
 		case "text":
 			if waitValue == "" {
 				return fmt.Errorf("browser_wait text requires wait_for value")
@@ -775,7 +771,7 @@ func (b *Browser) runWait(ctx context.Context, action *protocol.Action) error {
 	if selector != "" {
 		waitCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		defer cancel()
-		return chromedp.Run(waitCtx, chromedp.WaitVisible(selector, chromedp.ByQuery))
+		return b.waitVisible(waitCtx, selector)
 	}
 	if action.Target == "" {
 		return fmt.Errorf("browser_wait requires wait_for, selector, or target")
@@ -856,7 +852,7 @@ func (b *Browser) dispatchSwipe(ctx context.Context, selector, direction string,
 }
 
 func (b *Browser) runTouchScript(ctx context.Context, selector, operation, label string) error {
-	if err := chromedp.Run(ctx, chromedp.WaitVisible(selector, chromedp.ByQuery)); err != nil {
+	if err := b.waitVisible(ctx, selector); err != nil {
 		return err
 	}
 
@@ -937,7 +933,7 @@ func (b *Browser) runTouchScript(ctx context.Context, selector, operation, label
 		%s
 		return '';
 	})()`, selector, operation)
-	if err := chromedp.Run(ctx, chromedp.Evaluate(expression, &evalErr)); err != nil {
+	if err := b.evaluatePageExpression(ctx, expression, &evalErr); err != nil {
 		return err
 	}
 	if evalErr != "" {
@@ -1099,7 +1095,7 @@ func (b *Browser) capturePageMetrics(ctx context.Context, metrics *protocol.Clie
 			long_task_count: observerMetrics.longTaskCount || longTasks.length,
 		};
 	})()`
-	if err := chromedp.Run(ctx, chromedp.Evaluate(expression, &snapshot)); err != nil {
+	if err := b.evaluatePageExpression(ctx, expression, &snapshot); err != nil {
 		return err
 	}
 	metrics.FCPMs = snapshot.FCPMs
@@ -1160,6 +1156,9 @@ const browserMetricsBootstrapScript = `(() => {
 })();`
 
 func (b *Browser) captureRuntimeMetrics(ctx context.Context, metrics *protocol.ClientMetrics) error {
+	if b.engine != "chromium" {
+		return nil
+	}
 	var perfMetrics []*performance.Metric
 	if err := chromedp.Run(ctx, chromedp.ActionFunc(func(ctx context.Context) error {
 		var err error
@@ -1190,6 +1189,9 @@ func (b *Browser) captureRuntimeMetrics(ctx context.Context, metrics *protocol.C
 }
 
 func (b *Browser) readDOMSummary(ctx context.Context) (string, string, *protocol.DOMSummary, error) {
+	if b.engine == "webkit" {
+		return b.readPlaywrightDOMSummary(ctx)
+	}
 	var pageURL string
 	var title string
 	var state domState
@@ -1223,12 +1225,18 @@ func configInt(config map[string]any, key string) int {
 }
 
 func (b *Browser) captureHTML(ctx context.Context) (string, error) {
+	if b.engine == "webkit" {
+		return b.capturePlaywrightHTML(ctx)
+	}
 	var html string
 	err := chromedp.Run(ctx, chromedp.OuterHTML("html", &html, chromedp.ByQuery))
 	return html, err
 }
 
 func (b *Browser) captureScreenshot(ctx context.Context, action *protocol.Action) (string, error) {
+	if b.engine == "webkit" {
+		return b.capturePlaywrightScreenshot(ctx, action)
+	}
 	var buf []byte
 	selector := b.screenshotSelector(action)
 	if selector != "" {
@@ -1267,7 +1275,7 @@ func (b *Browser) waitForJS(ctx context.Context, expression string) error {
 	defer ticker.Stop()
 	for {
 		var ready bool
-		if err := chromedp.Run(ctx, chromedp.Evaluate(expression, &ready)); err == nil && ready {
+		if err := b.evaluatePageExpression(ctx, expression, &ready); err == nil && ready {
 			return nil
 		}
 		select {
@@ -1300,6 +1308,9 @@ func (b *Browser) sleep(ctx context.Context, delay time.Duration) error {
 }
 
 func (b *Browser) executionContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	if b.engine == "webkit" {
+		return context.WithCancel(ctx)
+	}
 	actionCtx, cancel := context.WithCancel(b.browserCtx)
 	go func() {
 		select {
@@ -1432,6 +1443,7 @@ func (b *Browser) handleInterceptedRequest(event *fetch.EventRequestPaused) {
 }
 
 func (b *Browser) close() {
+	b.closePlaywright()
 	if b.browserStop != nil {
 		b.browserStop()
 		b.browserStop = nil

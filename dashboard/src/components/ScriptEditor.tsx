@@ -95,6 +95,8 @@ const BROWSER_DEVICE_PROFILES: readonly BrowserDeviceProfileOption[] = [
   { name: 'pixel_8', engine: 'chromium' },
 ]
 
+const WEBKIT_INSTALL_ADVISORY = 'WebKit execution requires Playwright WebKit assets installed on the controller host. Run go run github.com/playwright-community/playwright-go/cmd/playwright@v0.5700.1 install webkit before running browser tests or replay sessions.'
+
 function lookupBrowserDeviceProfile(name?: string) {
   return BROWSER_DEVICE_PROFILES.find(profile => profile.name === name)
 }
@@ -393,7 +395,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
   const browserEngineAdvisory = selectedBrowserProfile && selectedBrowserProfile.engine !== selectedBrowserEngine
     ? `${selectedBrowserProfile.name} requires ${selectedBrowserProfile.engine}. Choose a matching engine or switch to a compatible preset.`
     : selectedBrowserEngine === 'webkit'
-      ? 'WebKit validates in scripts and replay payloads, but execution is not implemented in this build yet.'
+      ? WEBKIT_INSTALL_ADVISORY
       : ''
 
   useEffect(() => {

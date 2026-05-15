@@ -417,7 +417,7 @@ describe('ScriptEditor', () => {
       && Array.from(select.options).some(option => option.value === 'webkit'),
     ) as HTMLSelectElement | undefined
     expect(engineSelect?.value).toBe('webkit')
-    expect(container.textContent).toContain('WebKit validates in scripts and replay payloads, but execution is not implemented in this build yet.')
+    expect(container.textContent).toContain('WebKit execution requires Playwright WebKit assets installed on the controller host. Run go run github.com/playwright-community/playwright-go/cmd/playwright@v0.5700.1 install webkit before running browser tests or replay sessions.')
 
     const actionItem = container.querySelector('.action-item') as HTMLDivElement | null
     expect(actionItem).not.toBeNull()

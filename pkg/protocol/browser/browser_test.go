@@ -47,29 +47,31 @@ func TestBrowserConfigIntAcceptsEngineNumericTypes(t *testing.T) {
 	}
 }
 
-func TestBrowserInitRejectsUnimplementedWebKitEngine(t *testing.T) {
+func TestBrowserInitSupportsWebKitEngineOrReturnsInstallGuidance(t *testing.T) {
 	b := &Browser{}
 	err := b.Init(context.Background(), map[string]any{
 		"browser_engine": "webkit",
 	})
 	if err == nil {
-		t.Fatal("Init error = nil, want unimplemented engine")
+		defer b.Teardown(context.Background())
+		return
 	}
-	if !strings.Contains(err.Error(), "not implemented in this build") {
-		t.Fatalf("Init error = %v, want explicit not implemented error", err)
+	if !isWebKitRuntimeUnavailable(err) {
+		t.Fatalf("Init error = %v, want WebKit install guidance or successful startup", err)
 	}
 }
 
-func TestBrowserInitRejectsUnimplementedWebKitDeviceProfile(t *testing.T) {
+func TestBrowserInitSupportsWebKitDeviceProfilesOrReturnsInstallGuidance(t *testing.T) {
 	b := &Browser{}
 	err := b.Init(context.Background(), map[string]any{
 		"browser_device_profile": "iphone_15_pro",
 	})
 	if err == nil {
-		t.Fatal("Init error = nil, want unimplemented engine")
+		defer b.Teardown(context.Background())
+		return
 	}
-	if !strings.Contains(err.Error(), "not implemented in this build") {
-		t.Fatalf("Init error = %v, want explicit not implemented error", err)
+	if !isWebKitRuntimeUnavailable(err) {
+		t.Fatalf("Init error = %v, want WebKit install guidance or successful startup", err)
 	}
 }
 
@@ -297,6 +299,114 @@ func TestBrowserProtocolExecuteBrowserActions(t *testing.T) {
 	if screenshot.DOMSummary == nil || screenshot.DOMSummary.Title != "Browser Test" {
 		t.Fatalf("DOMSummary = %#v, want title Browser Test", screenshot.DOMSummary)
 	}
+}
+
+func TestBrowserProtocolExecuteWebKitActions(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`<!doctype html>
+<html>
+  <head>
+    <title>WebKit Browser Test</title>
+    <script>
+      function submitForm() {
+        const value = document.querySelector('#name').value;
+        document.querySelector('#status').textContent = 'Saved ' + value;
+      }
+    </script>
+  </head>
+  <body>
+    <input id="name" />
+    <button id="submit" onclick="submitForm()">Save</button>
+    <div id="status">Idle</div>
+  </body>
+</html>`))
+	}))
+	defer server.Close()
+
+	b := &Browser{}
+	if err := b.Init(context.Background(), map[string]any{
+		"base_url":               server.URL,
+		"browser_engine":         "webkit",
+		"browser_headless":       true,
+		"browser_client_metrics": true,
+		"browser_device_profile": "iphone_15_pro",
+	}); err != nil {
+		if isWebKitRuntimeUnavailable(err) {
+			t.Skipf("webkit runtime unavailable: %v", err)
+		}
+		t.Fatalf("Init returned error: %v", err)
+	}
+	defer b.Teardown(context.Background())
+
+	navigate, err := b.Execute(context.Background(), &protocol.Action{
+		Name:   "Open homepage",
+		Type:   "browser_navigate",
+		Target: "/",
+	})
+	if err != nil {
+		t.Fatalf("navigate returned error: %v", err)
+	}
+	if !navigate.Success {
+		t.Fatalf("navigate failed: %s", navigate.ErrorMessage)
+	}
+	if navigate.PageTitle != "WebKit Browser Test" {
+		t.Fatalf("PageTitle = %q, want WebKit Browser Test", navigate.PageTitle)
+	}
+
+	fill, err := b.Execute(context.Background(), &protocol.Action{
+		Name:     "Fill name",
+		Type:     "browser_fill",
+		Selector: "#name",
+		Value:    "stormrunner",
+	})
+	if err != nil {
+		t.Fatalf("fill returned error: %v", err)
+	}
+	if !fill.Success {
+		t.Fatalf("fill failed: %s", fill.ErrorMessage)
+	}
+
+	tap, err := b.Execute(context.Background(), &protocol.Action{
+		Name:     "Tap save",
+		Type:     "browser_tap",
+		Selector: "#submit",
+	})
+	if err != nil {
+		t.Fatalf("tap returned error: %v", err)
+	}
+	if !tap.Success {
+		t.Fatalf("tap failed: %s", tap.ErrorMessage)
+	}
+
+	wait, err := b.Execute(context.Background(), &protocol.Action{
+		Name: "Wait for saved state",
+		Type: "browser_wait",
+		WaitFor: &protocol.WaitCondition{
+			Type:      "text",
+			Value:     "Saved stormrunner",
+			TimeoutMs: 3000,
+		},
+	})
+	if err != nil {
+		t.Fatalf("wait returned error: %v", err)
+	}
+	if !wait.Success {
+		t.Fatalf("wait failed: %s", wait.ErrorMessage)
+	}
+	if wait.ClientMetrics == nil {
+		t.Fatal("ClientMetrics = nil, want WebKit page metrics")
+	}
+	if wait.ClientMetrics.TotalResourceCount == 0 {
+		t.Fatal("TotalResourceCount = 0, want recorded resource metrics")
+	}
+}
+
+func isWebKitRuntimeUnavailable(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "webkit runtime unavailable") && strings.Contains(message, strings.ToLower(WebKitInstallCommand()))
 }
 
 func TestBrowserProtocolTouchActions(t *testing.T) {

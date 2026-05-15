@@ -386,3 +386,35 @@ func TestValidateScript_JMSRealAdapterUnavailable(t *testing.T) {
 		t.Fatalf("issues = %v, want unavailable adapter issue", issues)
 	}
 }
+
+func TestStartBrowserReplayRequestIncludesWebKitWarningsOnValidationFailure(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	body, err := json.Marshal(map[string]any{
+		"script": dsl.Script{
+			Name:     "Invalid WebKit Browser Draft",
+			Version:  "1.0.0",
+			Protocol: "browser",
+			Config: dsl.ScriptConfig{
+				Browser: dsl.BrowserConfig{Engine: "webkit"},
+			},
+			Actions: []dsl.Action{{Name: "Capture current page"}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/browser-replay/sessions", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusBadRequest, resp.Body.String())
+	}
+
+	warnings := extractValidationWarnings(t, resp.Body.Bytes())
+	if len(warnings) != 1 || !strings.Contains(strings.ToLower(warnings[0]), "playwright") {
+		t.Fatalf("warnings = %#v, want Playwright WebKit install guidance", warnings)
+	}
+}

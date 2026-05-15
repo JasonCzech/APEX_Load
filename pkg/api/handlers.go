@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/stormrunner/pkg/dsl"
+	browserprotocol "github.com/jasonczech/stormrunner/pkg/protocol/browser"
 )
 
 func (s *Server) handleCreateTest(w http.ResponseWriter, r *http.Request) {
@@ -250,12 +251,14 @@ func (s *Server) handleValidateScript(w http.ResponseWriter, r *http.Request) {
 	}
 
 	issues := validateScript(script.Script)
+	warnings := validationWarnings(script.Script)
 	valid := len(issues) == 0
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"script_id": id,
 		"valid":     valid,
 		"issues":    issues,
+		"warnings":  warnings,
 	})
 }
 
@@ -410,6 +413,25 @@ func (s *Server) handleTestStream(w http.ResponseWriter, r *http.Request) {
 
 func validateScript(script *dsl.Script) []string {
 	return dsl.ValidateScriptIssues(script)
+}
+
+func validationWarnings(script *dsl.Script) []string {
+	if script == nil || script.Protocol != "browser" {
+		return nil
+	}
+
+	engine := strings.TrimSpace(script.Config.Browser.Engine)
+	if deviceProfile := strings.TrimSpace(script.Config.Browser.DeviceProfile); deviceProfile != "" {
+		if profile, ok := browserprotocol.LookupDevice(deviceProfile); ok && profile.BrowserFamily != "" && engine == "" {
+			engine = profile.BrowserFamily
+		}
+	}
+
+	if engine != "webkit" {
+		return nil
+	}
+
+	return []string{browserprotocol.WebKitInstallWarning()}
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

@@ -679,10 +679,12 @@ export interface BrowserReplayStartResponse {
   script_id: string
   replay_session_id: string
   session: BrowserReplaySession
+  warnings?: string[]
 }
 
 export interface BrowserReplaySessionResponse {
   session: BrowserReplaySession
+  warnings?: string[]
 }
 
 export interface MetricsHistoryPoint {

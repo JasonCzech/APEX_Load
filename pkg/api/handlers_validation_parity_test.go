@@ -102,6 +102,32 @@ func TestScriptValidationParityAcrossCurrentEndpoints(t *testing.T) {
 	}
 }
 
+func TestValidateScriptIncludesWebKitWarnings(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	stored := server.runner.StoreScript(&dsl.Script{
+		Name:     "Valid WebKit Script",
+		Version:  "1.0.0",
+		Protocol: "browser",
+		Config: dsl.ScriptConfig{
+			Browser: dsl.BrowserConfig{Engine: "webkit"},
+		},
+		Actions: []dsl.Action{{Name: "Capture current page", Type: "browser_screenshot"}},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/"+stored.ID+"/validate", bytes.NewReader(nil))
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	warnings := extractValidationWarnings(t, resp.Body.Bytes())
+	if len(warnings) != 1 || !strings.Contains(strings.ToLower(warnings[0]), "playwright") {
+		t.Fatalf("warnings = %#v, want Playwright WebKit install guidance", warnings)
+	}
+}
+
 func extractValidationIssues(t *testing.T, body []byte) []string {
 	t.Helper()
 
@@ -135,4 +161,30 @@ func extractValidationIssues(t *testing.T, body []byte) []string {
 		t.Fatalf("error payload = %#v, want string", rawError)
 	}
 	return strings.Split(text, "; ")
+}
+
+func extractValidationWarnings(t *testing.T, body []byte) []string {
+	t.Helper()
+
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	rawWarnings, ok := payload["warnings"]
+	if !ok {
+		return nil
+	}
+	items, ok := rawWarnings.([]any)
+	if !ok {
+		t.Fatalf("warnings payload = %#v, want []any", rawWarnings)
+	}
+	warnings := make([]string, 0, len(items))
+	for _, item := range items {
+		text, ok := item.(string)
+		if !ok {
+			t.Fatalf("warning item = %#v, want string", item)
+		}
+		warnings = append(warnings, text)
+	}
+	return warnings
 }

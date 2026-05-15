@@ -68,11 +68,13 @@ func (s *Server) handleStartBrowserReplayScript(w http.ResponseWriter, r *http.R
 func (s *Server) handleStartBrowserReplayRequest(w http.ResponseWriter, id string, script *dsl.Script, req BrowserReplayStartRequest) {
 	script = applyBrowserReplayOverrides(script, req)
 	issues := validateScript(script)
+	warnings := validationWarnings(script)
 	if len(issues) > 0 {
 		writeJSON(w, http.StatusBadRequest, map[string]any{
 			"script_id": id,
 			"valid":     false,
 			"issues":    issues,
+			"warnings":  warnings,
 		})
 		return
 	}
@@ -86,6 +88,7 @@ func (s *Server) handleStartBrowserReplayRequest(w http.ResponseWriter, id strin
 		"script_id":         id,
 		"replay_session_id": session.ID,
 		"session":           session,
+		"warnings":          warnings,
 	})
 }
 
