@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"regexp"
@@ -204,15 +205,13 @@ func (vu *VUser) Run(ctx context.Context) {
 			if !result.Success {
 				iterSuccess = false
 				if logCfg.OnErrorOnly || logCfg.Level == "extended" {
-					logger.Error("action failed", "action", action.Name, "status", result.StatusCode,
-						"duration_ms", result.Duration.Milliseconds(), "error", result.ErrorMessage)
+					logger.Error("action failed", actionLogAttrs(action.Name, resolved, result, logCfg, true)...)
 				}
 				if !continueOnError {
 					goto teardown
 				}
 			} else if logCfg.Level == "extended" {
-				logger.Info("action ok", "action", action.Name, "status", result.StatusCode,
-					"duration_ms", result.Duration.Milliseconds(), "bytes", result.BytesReceived)
+				logger.Info("action ok", actionLogAttrs(action.Name, resolved, result, logCfg, false)...)
 			}
 
 			// Apply think time
@@ -362,12 +361,52 @@ func (vu *VUser) makeLogger(cfg dsl.LogConfig) *slog.Logger {
 	switch cfg.Level {
 	case "disabled":
 		// Use a no-op handler by setting level extremely high
-		return slog.New(slog.NewTextHandler(nil, &slog.HandlerOptions{
+		return slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{
 			Level: slog.Level(100),
 		}))
 	default:
 		return slog.With(attrs...)
 	}
+}
+
+func actionLogAttrs(actionName string, resolved *protocol.Action, result *protocol.Result, cfg dsl.LogConfig, includeError bool) []any {
+	attrs := []any{
+		"action", actionName,
+		"status", result.StatusCode,
+		"duration_ms", result.Duration.Milliseconds(),
+	}
+	if !includeError {
+		attrs = append(attrs, "bytes", result.BytesReceived)
+	} else {
+		attrs = append(attrs, "error", result.ErrorMessage)
+	}
+
+	options := make(map[string]struct{}, len(cfg.ExtendedOptions))
+	for _, option := range cfg.ExtendedOptions {
+		options[strings.TrimSpace(option)] = struct{}{}
+	}
+
+	if _, ok := options["parameter_substitution"]; ok {
+		attrs = append(attrs,
+			"target", resolved.Target,
+			"request_body", string(resolved.Body),
+		)
+	}
+	if _, ok := options["data_returned"]; ok {
+		attrs = append(attrs, "response_body", result.ResponseBody)
+	}
+	if _, ok := options["advanced_trace"]; ok {
+		attrs = append(attrs,
+			"dependency_target", result.DependencyTarget,
+			"correlation_id", result.CorrelationID,
+			"dns_ms", result.DNSTime.Milliseconds(),
+			"connect_ms", result.ConnectTime.Milliseconds(),
+			"tls_ms", result.TLSTime.Milliseconds(),
+			"ttfb_ms", result.TTFB.Milliseconds(),
+		)
+	}
+
+	return attrs
 }
 
 func (vu *VUser) resolveAction(action dsl.Action) *protocol.Action {

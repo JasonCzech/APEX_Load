@@ -87,11 +87,15 @@ describe('CreateTestModal', () => {
     const continueOnErrorCheckbox = Array.from(container.querySelectorAll('input')).find(
       input => input.getAttribute('type') === 'checkbox' && input.parentElement?.textContent?.includes('Continue on error'),
     ) as HTMLInputElement | undefined
+    const snapshotOnErrorCheckbox = Array.from(container.querySelectorAll('input')).find(
+      input => input.getAttribute('type') === 'checkbox' && input.parentElement?.textContent?.includes('Snapshot on error'),
+    ) as HTMLInputElement | undefined
 
     expect(pacingSelect).toBeDefined()
     expect(thinkTimeInput).toBeDefined()
     expect(continueOnErrorCheckbox).toBeDefined()
-    if (!pacingSelect || !thinkTimeInput || !continueOnErrorCheckbox) {
+    expect(snapshotOnErrorCheckbox).toBeDefined()
+    if (!pacingSelect || !thinkTimeInput || !continueOnErrorCheckbox || !snapshotOnErrorCheckbox) {
       return
     }
 
@@ -113,6 +117,7 @@ describe('CreateTestModal', () => {
       setInputValue(delayInput, '1200')
       setInputValue(thinkTimeInput, '900')
       continueOnErrorCheckbox.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      snapshotOnErrorCheckbox.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
     const submitButton = Array.from(container.querySelectorAll('button')).find(
@@ -135,7 +140,7 @@ describe('CreateTestModal', () => {
       runtime_settings: {
         pacing: { type: 'fixed_delay', delay_ms: 1200 },
         think_time: { type: 'fixed', mean_ms: 900, ignore: false },
-        error_handling: { continue_on_error: true, snapshot_on_error: undefined },
+        error_handling: { continue_on_error: true, snapshot_on_error: true },
       },
     }))
     expect(onCreated).toHaveBeenCalledWith({ id: 'test-1' })

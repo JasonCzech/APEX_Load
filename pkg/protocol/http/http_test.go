@@ -1,6 +1,8 @@
 package http
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/tls"
 	"encoding/base64"
@@ -396,6 +398,7 @@ func TestHTTP_Execute_DefaultMethod(t *testing.T) {
 
 func TestHTTP_Execute_ServerError(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
 		w.WriteHeader(500)
 		w.Write([]byte("internal error"))
 	}))
@@ -414,6 +417,24 @@ func TestHTTP_Execute_ServerError(t *testing.T) {
 	}
 	if result.StatusCode != 500 {
 		t.Errorf("StatusCode = %d, want 500", result.StatusCode)
+	}
+	if result.Snapshot == nil {
+		t.Fatal("Snapshot = nil, want populated snapshot on HTTP failure")
+	}
+	if result.Snapshot.RequestMethod != http.MethodGet {
+		t.Fatalf("Snapshot.RequestMethod = %q, want GET", result.Snapshot.RequestMethod)
+	}
+	if result.Snapshot.RequestURL != ts.URL+"/fail" {
+		t.Fatalf("Snapshot.RequestURL = %q, want %q", result.Snapshot.RequestURL, ts.URL+"/fail")
+	}
+	if result.Snapshot.ResponseStatus != 500 {
+		t.Fatalf("Snapshot.ResponseStatus = %d, want 500", result.Snapshot.ResponseStatus)
+	}
+	if result.Snapshot.ResponseBody != "internal error" {
+		t.Fatalf("Snapshot.ResponseBody = %q, want internal error", result.Snapshot.ResponseBody)
+	}
+	if result.Snapshot.ResponseHeaders["Content-Type"] != "text/plain" {
+		t.Fatalf("Snapshot.ResponseHeaders[Content-Type] = %q, want text/plain", result.Snapshot.ResponseHeaders["Content-Type"])
 	}
 }
 
@@ -526,6 +547,93 @@ func TestHTTP_Execute_AppliesDataFormattingChainBeforeExtractionAndAssertions(t 
 	}
 }
 
+func TestHTTP_Execute_AutoDetectsBase64ResponseBeforeExtractionAndAssertions(t *testing.T) {
+	encodedJSON := base64.StdEncoding.EncodeToString([]byte(`{"access_token":"abc123","expires_in":3600}`))
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(encodedJSON))
+	}))
+	defer ts.Close()
+
+	h := initHTTP(t, map[string]any{
+		"base_url": ts.URL,
+		"web_data_formatting_auto_detect": true,
+	})
+
+	result, _ := h.Execute(context.Background(), &protocol.Action{
+		Name:   "formatted-response-auto-detect",
+		Method: "GET",
+		Target: "/formatted",
+		Extractors: []protocol.Extractor{
+			{Name: "token", Source: "body", Type: "jsonpath", Expression: "$.access_token"},
+		},
+		Assertions: []protocol.Assertion{
+			{Type: "body_contains", Value: `"access_token":"abc123"`},
+		},
+	})
+
+	if !result.Success {
+		t.Fatalf("auto-detected formatted response should pass, error: %s", result.ErrorMessage)
+	}
+	if result.Extractions["token"] != "abc123" {
+		t.Fatalf("extracted token = %q, want abc123", result.Extractions["token"])
+	}
+	if result.ResponseBody != `{"access_token":"abc123","expires_in":3600}` {
+		t.Fatalf("response body = %q, want decoded json", result.ResponseBody)
+	}
+}
+
+func TestHTTP_Execute_AppliesGzipDataFormattingBeforeExtractionAndAssertions(t *testing.T) {
+	var compressed bytes.Buffer
+	writer := gzip.NewWriter(&compressed)
+	if _, err := writer.Write([]byte(`{"access_token":"abc123","expires_in":3600}`)); err != nil {
+		t.Fatalf("gzip write: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("gzip close: %v", err)
+	}
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(compressed.Bytes())
+	}))
+	defer ts.Close()
+
+	h := initHTTP(t, map[string]any{
+		"base_url": ts.URL,
+		"web_data_formatting_chain": []map[string]any{{
+			"type": "gzip",
+			"options": map[string]any{
+				"mode": "decode",
+			},
+		}},
+	})
+
+	result, _ := h.Execute(context.Background(), &protocol.Action{
+		Name:   "formatted-response-gzip",
+		Method: "GET",
+		Target: "/formatted",
+		Extractors: []protocol.Extractor{{
+			Name:       "token",
+			Source:     "body",
+			Type:       "jsonpath",
+			Expression: "$.access_token",
+		}},
+		Assertions: []protocol.Assertion{{
+			Type:  "body_contains",
+			Value: `"access_token":"abc123"`,
+		}},
+	})
+
+	if !result.Success {
+		t.Fatalf("gzip formatted response should pass, error: %s", result.ErrorMessage)
+	}
+	if result.Extractions["token"] != "abc123" {
+		t.Fatalf("extracted token = %q, want abc123", result.Extractions["token"])
+	}
+	if result.ResponseBody != `{"access_token":"abc123","expires_in":3600}` {
+		t.Fatalf("response body = %q, want decoded json", result.ResponseBody)
+	}
+}
+
 func TestHTTP_Execute_WithAssertion(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)
@@ -569,6 +677,15 @@ func TestHTTP_Execute_FailedAssertion(t *testing.T) {
 
 	if result.Success {
 		t.Error("assertion should fail for status 200 vs expected 201")
+	}
+	if result.Snapshot == nil {
+		t.Fatal("Snapshot = nil, want populated snapshot on assertion failure")
+	}
+	if result.Snapshot.ResponseStatus != 200 {
+		t.Fatalf("Snapshot.ResponseStatus = %d, want 200", result.Snapshot.ResponseStatus)
+	}
+	if result.Snapshot.ResponseBody != "ok" {
+		t.Fatalf("Snapshot.ResponseBody = %q, want ok", result.Snapshot.ResponseBody)
 	}
 }
 

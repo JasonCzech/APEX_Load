@@ -2,13 +2,16 @@ package http
 
 import (
 	"bytes"
+	"compress/gzip"
 	"encoding/base64"
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
+	"io"
 	"net/url"
 	"sort"
 	"strings"
+	"unicode/utf8"
 )
 
 type dataFormattingTransform struct {
@@ -94,10 +97,20 @@ func applyDataFormattingChain(body []byte, autoDetect bool, chain []dataFormatti
 			return nil, fmt.Errorf("data formatting transform %q failed: %w", transform.Type, err)
 		}
 	}
-	if autoDetect && len(chain) == 0 {
-		return formatted, nil
+	if autoDetect {
+		formatted = applyAutoDetectedDataFormatting(formatted, len(chain) == 0)
 	}
 	return formatted, nil
+}
+
+func applyAutoDetectedDataFormatting(body []byte, allowBase64 bool) []byte {
+	formatted := append([]byte(nil), body...)
+	if allowBase64 {
+		if decoded, ok := detectBase64Payload(formatted); ok {
+			formatted = decoded
+		}
+	}
+	return formatted
 }
 
 func applyDataFormattingTransform(body []byte, transform dataFormattingTransform) ([]byte, error) {
@@ -108,6 +121,24 @@ func applyDataFormattingTransform(body []byte, transform dataFormattingTransform
 			return nil, err
 		}
 		return decoded, nil
+	case "gzip":
+		mode := strings.ToLower(strings.TrimSpace(transform.Options["mode"]))
+		switch mode {
+		case "", "decode":
+			decoded, err := decodeGzipBody(body)
+			if err != nil {
+				return nil, err
+			}
+			return decoded, nil
+		case "encode":
+			encoded, err := encodeGzipBody(body)
+			if err != nil {
+				return nil, err
+			}
+			return encoded, nil
+		default:
+			return nil, fmt.Errorf("unsupported gzip mode %q", mode)
+		}
 	case "json_to_xml":
 		converted, err := jsonToXML(body)
 		if err != nil {
@@ -141,6 +172,59 @@ func decodeBase64Body(body []byte) ([]byte, error) {
 		return decoded, nil
 	}
 	return nil, err
+}
+
+func decodeGzipBody(body []byte) ([]byte, error) {
+	reader, err := gzip.NewReader(bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	defer reader.Close()
+	decoded, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, err
+	}
+	return decoded, nil
+}
+
+func encodeGzipBody(body []byte) ([]byte, error) {
+	var buf bytes.Buffer
+	writer := gzip.NewWriter(&buf)
+	if _, err := writer.Write(body); err != nil {
+		writer.Close()
+		return nil, err
+	}
+	if err := writer.Close(); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func detectBase64Payload(body []byte) ([]byte, bool) {
+	trimmed := strings.TrimSpace(string(body))
+	if trimmed == "" {
+		return nil, false
+	}
+	decoded, err := decodeBase64Body([]byte(trimmed))
+	if err != nil || !isLikelyAutoDecodedPayload(decoded) {
+		return nil, false
+	}
+	return decoded, true
+}
+
+func isLikelyAutoDecodedPayload(body []byte) bool {
+	trimmed := bytes.TrimSpace(body)
+	if len(trimmed) == 0 || !utf8.Valid(trimmed) {
+		return false
+	}
+	if json.Valid(trimmed) {
+		return true
+	}
+	if trimmed[0] == '<' {
+		return true
+	}
+	text := string(trimmed)
+	return strings.Contains(text, "=") || strings.Contains(text, "&")
 }
 
 func jsonToXML(body []byte) ([]byte, error) {

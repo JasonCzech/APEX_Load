@@ -11,6 +11,8 @@ import ScriptEditor from './ScriptEditor'
 
 const apiMock = {
   getScript: vi.fn(),
+  createScript: vi.fn(),
+  updateScript: vi.fn(),
 }
 
 vi.mock('../hooks/useApi', () => ({
@@ -78,6 +80,8 @@ describe('ScriptEditor', () => {
     document.body.appendChild(container)
     root = createRoot(container)
     apiMock.getScript.mockResolvedValue({ script: initialScript })
+    apiMock.createScript.mockResolvedValue({ id: 'script-1' })
+    apiMock.updateScript.mockResolvedValue({ id: 'script-1' })
   })
 
   afterEach(async () => {
@@ -252,11 +256,104 @@ describe('ScriptEditor', () => {
     const checksArea = Array.from(container.querySelectorAll('textarea')).find(area =>
       area.getAttribute('placeholder') === 'Access Denied|any_response|true',
     ) as HTMLTextAreaElement | undefined
+    const dfeArea = Array.from(container.querySelectorAll('textarea')).find(area =>
+      area.getAttribute('placeholder') === 'base64\ngzip mode=decode\njson_to_xml',
+    ) as HTMLTextAreaElement | undefined
 
     expect(attributesArea?.value).toContain('env=perf')
     expect(checksArea?.value).toContain('Access Denied|any_response|true')
+    expect(dfeArea?.value).toContain('base64')
     expect(container.textContent).toContain('Network Speed Simulation')
     expect(container.textContent).toContain('Data Formatting')
+  })
+
+  it('round-trips DFE chain options in the compatibility editor', async () => {
+    const scriptWithDFEOptions: ScriptDefinition = {
+      ...initialScript,
+      config: {
+        ...initialScript.config,
+        web_runtime: {
+          ...initialScript.config.web_runtime,
+          data_formatting: {
+            auto_detect: true,
+            chain: [{ type: 'gzip', options: { mode: 'decode' } }, { type: 'html_unescape' }],
+          },
+        },
+      },
+    }
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={scriptWithDFEOptions} />)
+    })
+
+    const runtimeToggle = Array.from(container.querySelectorAll('button')).find(button =>
+      button.textContent?.includes('Runtime Settings'),
+    )
+    expect(runtimeToggle).toBeDefined()
+    if (!runtimeToggle) {
+      return
+    }
+
+    await act(async () => {
+      runtimeToggle.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const compatibilityToggle = Array.from(container.querySelectorAll('button')).find(button =>
+      button.textContent?.includes('Web HTTP/HTML Compatibility'),
+    )
+    expect(compatibilityToggle).toBeDefined()
+    if (!compatibilityToggle) {
+      return
+    }
+
+    await act(async () => {
+      compatibilityToggle.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const dfeArea = Array.from(container.querySelectorAll('textarea')).find(area =>
+      area.getAttribute('placeholder') === 'base64\ngzip mode=decode\njson_to_xml',
+    ) as HTMLTextAreaElement | undefined
+
+    expect(dfeArea).toBeDefined()
+    if (!dfeArea) {
+      return
+    }
+
+    expect(dfeArea.value).toContain('gzip mode=decode')
+    expect(dfeArea.value).toContain('html_unescape')
+
+    await act(async () => {
+      const valueSetter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+      valueSetter?.call(dfeArea, 'gzip mode=decode\nhtml_unescape')
+      dfeArea.dispatchEvent(new Event('input', { bubbles: true }))
+      dfeArea.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    expect(dfeArea.value).toBe('gzip mode=decode\nhtml_unescape')
+
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button =>
+      button.textContent?.includes('Save Script'),
+    )
+    expect(saveButton).toBeDefined()
+    if (!saveButton) {
+      return
+    }
+
+    await act(async () => {
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({
+      config: expect.objectContaining({
+        web_runtime: expect.objectContaining({
+          data_formatting: {
+            auto_detect: true,
+            chain: [{ type: 'gzip', options: { mode: 'decode' } }, { type: 'html_unescape' }],
+          },
+        }),
+      }),
+    }), undefined, undefined)
   })
 
   it('renders the action workspace with adjacent list and detail regions', async () => {

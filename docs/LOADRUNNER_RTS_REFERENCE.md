@@ -20,9 +20,9 @@ This document maps the Web HTTP/HTML runtime settings surfaced in Stormrunner to
 | Run Logic | Action sequence | `config.run_logic.action_sequence` | Executed | Preserved and enforced by the engine action ordering. |
 | Pacing | Delay mode and bounds | `config.pacing.*` | Executed | Fixed, random delay, and related pacing fields execute in the engine. |
 | Think Time | Ignore, multiplier, limit | `config.think_time.*` | Executed | Applied in the engine after action execution. |
-| Logging | Log level, error-only, extended options | `config.log.*` | Partial | Preserved and round-tripped; runtime fidelity is narrower than VuGen extended tracing. |
+| Logging | Log level, error-only, extended options | `config.log.*` | Partial | Extended logging now emits configured request/response and trace metadata for `parameter_substitution`, `data_returned`, and `advanced_trace`, but fidelity is still narrower than VuGen extended tracing. |
 | Misc | Continue on error | `config.error_handling.continue_on_error` | Executed | Supported through runtime error handling paths. |
-| Misc | Snapshot on error | `config.error_handling.snapshot_on_error` | Partial | Supported where protocol runtimes can capture snapshots. |
+| Misc | Snapshot on error | `config.error_handling.snapshot_on_error` | Partial | HTTP captures request/response snapshots on failures and browser captures page-state snapshots; broader protocol parity is still incomplete. |
 | Browser Emulation | Cache enabled | `config.browser.cache_enabled` | Executed | Browser runtime toggles Chrome cache usage. |
 | Browser Emulation | Cache URLs requiring content | `config.browser.cache_content_urls` | Executed | Browser runtime forces content request revalidation when disabled. |
 | Browser Emulation | Check for newer versions | `config.browser.check_newer_versions` | Executed | Browser runtime injects revalidation headers. |
@@ -41,8 +41,8 @@ This document maps the Web HTTP/HTML runtime settings surfaced in Stormrunner to
 | Streaming | Buffer size | `config.web_runtime.streaming.buffer_size_seconds` | Compatibility-only | Preserved for parity only. |
 | Streaming | Fixed bitrate | `config.web_runtime.streaming.fixed_bitrate_kbps` | Compatibility-only | Preserved for parity only. |
 | Streaming | Bandwidth estimation | `config.web_runtime.streaming.bandwidth_estimation` | Compatibility-only | Preserved for parity only. |
-| Data Formatting | Auto-detect DFEs | `config.web_runtime.data_formatting.auto_detect` | Partial | Preserved and passed into HTTP runtime handling. |
-| Data Formatting | DFE transform chain | `config.web_runtime.data_formatting.chain[]` | Partial | HTTP runtime executes `base64`, `json_to_xml`, `url_decode`, and `html_unescape`; broader parity is still incomplete. |
+| Data Formatting | Auto-detect DFEs | `config.web_runtime.data_formatting.auto_detect` | Partial | HTTP runtime auto-detects obvious base64-encoded text payloads before extraction and assertions; broader DFE parity is still incomplete. |
+| Data Formatting | DFE transform chain | `config.web_runtime.data_formatting.chain[]` | Partial | HTTP runtime executes `base64`, `gzip`, `json_to_xml`, `url_decode`, and `html_unescape`; broader parity is still incomplete. |
 | Replay engine mode | WinInet / process-vs-thread runtime concepts | N/A | Non-applicable | Stormrunner uses Go HTTP/browser runtimes and goroutine VUsers instead of WinInet or Windows process/thread replay modes. |
 
 ## Current gaps
@@ -51,3 +51,4 @@ This document maps the Web HTTP/HTML runtime settings surfaced in Stormrunner to
 - Streaming/media playback semantics are intentionally compatibility-only for now.
 - Browser/runtime-wide DFE parity is not complete beyond the current HTTP response transform chain.
 - Logging fidelity is narrower than full VuGen extended trace behavior.
+- Snapshot-on-error parity is still incomplete outside the HTTP and browser runtimes.

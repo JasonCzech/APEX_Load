@@ -1,8 +1,11 @@
 package engine
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,6 +17,10 @@ type iterationResetProtocol struct {
 	initCalls     int
 	teardownCalls int
 	executeCalls  int
+}
+
+type loggingProtocol struct {
+	result *protocol.Result
 }
 
 func (p *iterationResetProtocol) Name() string { return "browser" }
@@ -34,6 +41,16 @@ func (p *iterationResetProtocol) Teardown(_ context.Context) error {
 	return nil
 }
 func (p *iterationResetProtocol) HealthCheck(_ context.Context) error { return nil }
+
+func (p *loggingProtocol) Name() string { return "http" }
+func (p *loggingProtocol) Init(_ context.Context, _ map[string]any) error { return nil }
+func (p *loggingProtocol) Execute(_ context.Context, action *protocol.Action) (*protocol.Result, error) {
+	result := *p.result
+	result.ActionName = action.Name
+	return &result, nil
+}
+func (p *loggingProtocol) Teardown(_ context.Context) error { return nil }
+func (p *loggingProtocol) HealthCheck(_ context.Context) error { return nil }
 
 func TestVUser_Interpolate(t *testing.T) {
 	vu := &VUser{
@@ -348,6 +365,72 @@ func TestVUser_HandleSnapshot(t *testing.T) {
 
 	if len(store.Snapshots()) != 1 {
 		t.Errorf("success should not add snapshot, got %d", len(store.Snapshots()))
+	}
+}
+
+func TestVUser_Run_LogsExtendedOptions(t *testing.T) {
+	t.Setenv("STORMRUNNER_LOG_HOST", "api.example.test")
+	t.Setenv("STORMRUNNER_LOG_TOKEN", "abc123")
+
+	protoStub := &loggingProtocol{result: &protocol.Result{
+		Success:          true,
+		StatusCode:       200,
+		Duration:         25 * time.Millisecond,
+		BytesReceived:    128,
+		ResponseBody:     `{"status":"ok"}`,
+		DependencyTarget: "api.example.test",
+		CorrelationID:    "corr-123",
+		DNSTime:          2 * time.Millisecond,
+		ConnectTime:      3 * time.Millisecond,
+		TLSTime:          4 * time.Millisecond,
+		TTFB:             5 * time.Millisecond,
+	}}
+
+	var logBuf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	defer slog.SetDefault(prev)
+
+	vu := &VUser{
+		ID:    1,
+		Group: "Checkout",
+		Proto: protoStub,
+		Script: &dsl.Script{
+			Protocol: "http",
+			Config: dsl.ScriptConfig{
+				RunLogic: dsl.RunLogicConfig{Iterations: 1},
+				Log: dsl.LogConfig{
+					Level:           "extended",
+					ExtendedOptions: []string{"parameter_substitution", "data_returned", "advanced_trace"},
+				},
+			},
+			Actions: []dsl.Action{{
+				Name:   "Checkout",
+				Type:   "request",
+				Method: "POST",
+				Target: "https://{{env.STORMRUNNER_LOG_HOST}}/checkout",
+				Body:   "token={{env.STORMRUNNER_LOG_TOKEN}}",
+			}},
+		},
+		Metrics: NewMetricsCollector(16),
+	}
+
+	vu.Run(context.Background())
+
+	logOutput := logBuf.String()
+	for _, expected := range []string{
+		"msg=\"action ok\"",
+		"target=https://api.example.test/checkout",
+		"request_body=\"token=abc123\"",
+		"response_body=\"{\\\"status\\\":\\\"ok\\\"}\"",
+		"dependency_target=api.example.test",
+		"correlation_id=corr-123",
+		"dns_ms=2",
+		"ttfb_ms=5",
+	} {
+		if !strings.Contains(logOutput, expected) {
+			t.Fatalf("log output missing %q: %s", expected, logOutput)
+		}
 	}
 }
 

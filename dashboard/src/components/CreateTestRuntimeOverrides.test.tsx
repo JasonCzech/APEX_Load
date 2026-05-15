@@ -70,6 +70,9 @@ describe('CreateTestRuntimeOverrides', () => {
     const continueOnErrorCheckbox = Array.from(container.querySelectorAll('input')).find(
       input => input.getAttribute('type') === 'checkbox' && input.parentElement?.textContent?.includes('Continue on error'),
     ) as HTMLInputElement | undefined
+    const snapshotOnErrorCheckbox = Array.from(container.querySelectorAll('input')).find(
+      input => input.getAttribute('type') === 'checkbox' && input.parentElement?.textContent?.includes('Snapshot on error'),
+    ) as HTMLInputElement | undefined
     const ignoreThinkTimeCheckbox = Array.from(container.querySelectorAll('input')).find(
       input => input.getAttribute('type') === 'checkbox' && input.parentElement?.textContent?.includes('Ignore think time'),
     ) as HTMLInputElement | undefined
@@ -77,6 +80,7 @@ describe('CreateTestRuntimeOverrides', () => {
     expect(pacingSelect).toBeDefined()
     expect(thinkTimeInput).toBeDefined()
     expect(continueOnErrorCheckbox).toBeDefined()
+    expect(snapshotOnErrorCheckbox).toBeDefined()
     expect(ignoreThinkTimeCheckbox).toBeDefined()
 
     await act(async () => {
@@ -130,5 +134,13 @@ describe('CreateTestRuntimeOverrides', () => {
     })
 
     expect(onChangeSpy).toHaveBeenCalledWith('continue_on_error', true)
+
+    await act(async () => {
+      if (snapshotOnErrorCheckbox) {
+        snapshotOnErrorCheckbox.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      }
+    })
+
+    expect(onChangeSpy).toHaveBeenCalledWith('snapshot_on_error', true)
   })
 })

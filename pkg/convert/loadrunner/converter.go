@@ -916,8 +916,12 @@ func ParseRuntimeCfg(content string) *RuntimeConfig {
 
 	dataFormattingSection := findSection(sections, "Data Formatting", "DataFormatting")
 	rc.DataFormattingAutoDetect = parseBool(firstNonBlank(dataFormattingSection["AutoDetect"], dataFormattingSection["DFEAutoDetect"]))
-	for _, item := range splitList(firstNonBlank(dataFormattingSection["Chain"], dataFormattingSection["DFEChain"])) {
-		rc.DataFormattingChain = append(rc.DataFormattingChain, dsl.DFETransform{Type: item})
+	for _, item := range splitDelimitedItems(firstNonBlank(dataFormattingSection["Chain"], dataFormattingSection["DFEChain"])) {
+		transform := parseDFETransform(item)
+		if transform.Type == "" {
+			continue
+		}
+		rc.DataFormattingChain = append(rc.DataFormattingChain, transform)
 	}
 
 	return rc
@@ -1144,6 +1148,46 @@ func splitList(value string) []string {
 		}
 	}
 	return result
+}
+
+func splitDelimitedItems(value string) []string {
+	parts := strings.FieldsFunc(value, func(r rune) bool {
+		return r == ',' || r == ';' || r == '\n' || r == '\r'
+	})
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	return result
+}
+
+func parseDFETransform(value string) dsl.DFETransform {
+	tokens := strings.Fields(strings.TrimSpace(value))
+	if len(tokens) == 0 {
+		return dsl.DFETransform{}
+	}
+
+	transform := dsl.DFETransform{Type: normalizeEnum(tokens[0])}
+	options := make(map[string]string)
+	for _, token := range tokens[1:] {
+		key, optionValue, found := strings.Cut(token, "=")
+		if !found {
+			continue
+		}
+		key = normalizeEnum(key)
+		optionValue = strings.TrimSpace(optionValue)
+		if key == "" || optionValue == "" {
+			continue
+		}
+		options[key] = optionValue
+	}
+	if len(options) > 0 {
+		transform.Options = options
+	}
+	return transform
 }
 
 func normalizeEnum(value string) string {

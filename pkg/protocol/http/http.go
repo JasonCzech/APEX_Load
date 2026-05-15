@@ -101,6 +101,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	if err != nil {
 		result.Duration = time.Since(result.StartTime)
 		result.ErrorMessage = err.Error()
+		result.Snapshot = buildHTTPSnapshot(method, targetURL, nil, action.Body, 0, nil, nil)
 		return result, nil
 	}
 	result.DependencyTarget = classifyHTTPDependencyTarget(targetURL)
@@ -141,6 +142,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	if err != nil {
 		result.Duration = time.Since(result.StartTime)
 		result.ErrorMessage = err.Error()
+		result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, action.Body, 0, nil, nil)
 		return result, nil
 	}
 
@@ -158,12 +160,14 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	if result.CorrelationID == "" {
 		result.CorrelationID = correlationIDFromHTTPHeader(resp.Header)
 	}
+	responseHeaders := cloneHTTPHeaders(resp.Header)
 
 	respBody := buf.Bytes()
 	formattedBody, err := applyDataFormattingChain(respBody, h.dataFormattingAutoDetect, h.dataFormattingChain)
 	if err != nil {
 		result.Duration = time.Since(result.StartTime)
 		result.ErrorMessage = err.Error()
+		result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, action.Body, resp.StatusCode, responseHeaders, respBody)
 		return result, nil
 	}
 	respBody = formattedBody
@@ -187,6 +191,9 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 			result.Success = false
 			result.ErrorMessage = err.Error()
 		}
+	}
+	if !result.Success {
+		result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, action.Body, resp.StatusCode, responseHeaders, respBody)
 	}
 
 	return result, nil
@@ -262,4 +269,44 @@ func correlationIDFromHTTPHeader(headers http.Header) string {
 		}
 	}
 	return ""
+}
+
+func buildHTTPSnapshot(method string, targetURL string, requestHeaders http.Header, requestBody []byte, responseStatus int, responseHeaders map[string]string, responseBody []byte) *protocol.ErrorSnapshot {
+	return &protocol.ErrorSnapshot{
+		RequestMethod:   method,
+		RequestURL:      targetURL,
+		RequestHeaders:  cloneHTTPHeaders(requestHeaders),
+		RequestBody:     string(requestBody),
+		ResponseStatus:  responseStatus,
+		ResponseHeaders: cloneStringMap(responseHeaders),
+		ResponseBody:    string(responseBody),
+	}
+}
+
+func cloneHTTPHeaders(headers http.Header) map[string]string {
+	if len(headers) == 0 {
+		return nil
+	}
+	cloned := make(map[string]string, len(headers))
+	for key, values := range headers {
+		if len(values) == 0 {
+			continue
+		}
+		cloned[key] = strings.Join(values, ", ")
+	}
+	if len(cloned) == 0 {
+		return nil
+	}
+	return cloned
+}
+
+func cloneStringMap(values map[string]string) map[string]string {
+	if len(values) == 0 {
+		return nil
+	}
+	cloned := make(map[string]string, len(values))
+	for key, value := range values {
+		cloned[key] = value
+	}
+	return cloned
 }

@@ -549,7 +549,7 @@ BandwidthEstimation=instant
 
 [Data Formatting]
 AutoDetect=1
-Chain=base64,json_to_xml
+Chain=base64,gzip mode=decode,html_unescape
 `)
 
 	config := runtimeCfg.ToScriptConfig()
@@ -598,8 +598,14 @@ Chain=base64,json_to_xml
 	if config.WebRuntime.Streaming.Mode != "fixed" || config.WebRuntime.Streaming.FixedBitrateKbps != 1800 || config.WebRuntime.Streaming.BandwidthEstimation != "instant" {
 		t.Fatalf("streaming = %#v, want fixed bitrate streaming", config.WebRuntime.Streaming)
 	}
-	if !config.WebRuntime.DataFormatting.AutoDetect || len(config.WebRuntime.DataFormatting.Chain) != 2 || config.WebRuntime.DataFormatting.Chain[0].Type != "base64" {
+	if !config.WebRuntime.DataFormatting.AutoDetect || len(config.WebRuntime.DataFormatting.Chain) != 3 || config.WebRuntime.DataFormatting.Chain[0].Type != "base64" {
 		t.Fatalf("data formatting = %#v, want autodetect + DFE chain", config.WebRuntime.DataFormatting)
+	}
+	if config.WebRuntime.DataFormatting.Chain[1].Type != "gzip" || config.WebRuntime.DataFormatting.Chain[1].Options["mode"] != "decode" {
+		t.Fatalf("gzip data formatting = %#v, want mode=decode", config.WebRuntime.DataFormatting.Chain[1])
+	}
+	if config.WebRuntime.DataFormatting.Chain[2].Type != "html_unescape" {
+		t.Fatalf("trailing data formatting = %#v, want html_unescape", config.WebRuntime.DataFormatting.Chain[2])
 	}
 }
 

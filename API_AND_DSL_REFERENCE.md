@@ -664,7 +664,7 @@ Emits JSON messages for all test events:
 | Download filters | `config.web_runtime.download_filters.*` | Executed in browser runtime |
 | Global content checks | `config.web_runtime.content_checks[]` | Executed in HTTP runtime |
 | Network speed simulation | `config.web_runtime.network_simulation.*` | Executed in browser runtime |
-| Data formatting | `config.web_runtime.data_formatting.*` | Partial: HTTP runtime executes configured DFE chains; browser/runtime-wide DFE parity is still incomplete |
+| Data formatting | `config.web_runtime.data_formatting.*` | Partial: HTTP runtime executes configured DFE chains and auto-detects obvious base64-encoded text payloads; browser/runtime-wide DFE parity is still incomplete |
 | Streaming | `config.web_runtime.streaming.*` | Compatibility-only: preserved and importable, but media playback semantics are not executed yet |
 | Additional attributes | `config.web_runtime.additional_attributes` | Compatibility-only metadata |
 

@@ -407,7 +407,7 @@ func TestBuildProtoConfig_Browser(t *testing.T) {
 				},
 				DataFormatting: dsl.DataFormattingConfig{
 					AutoDetect: true,
-					Chain: []dsl.DFETransform{{Type: "base64"}, {Type: "json_to_xml"}},
+					Chain: []dsl.DFETransform{{Type: "base64"}, {Type: "gzip", Options: map[string]string{"mode": "decode"}}},
 				},
 				NetworkSimulation: dsl.NetworkSimulationConfig{
 					Mode:          "custom",
@@ -471,8 +471,12 @@ func TestBuildProtoConfig_Browser(t *testing.T) {
 		t.Errorf("web_data_formatting_auto_detect = %v, want true", cfg["web_data_formatting_auto_detect"])
 	}
 	chain, ok := cfg["web_data_formatting_chain"].([]map[string]any)
-	if !ok || len(chain) != 2 || chain[0]["type"] != "base64" || chain[1]["type"] != "json_to_xml" {
-		t.Errorf("web_data_formatting_chain = %v, want base64 -> json_to_xml", cfg["web_data_formatting_chain"])
+	if !ok || len(chain) != 2 || chain[0]["type"] != "base64" || chain[1]["type"] != "gzip" {
+		t.Errorf("web_data_formatting_chain = %v, want base64 -> gzip", cfg["web_data_formatting_chain"])
+	}
+	options, ok := chain[1]["options"].(map[string]string)
+	if !ok || options["mode"] != "decode" {
+		t.Errorf("web_data_formatting_chain gzip options = %v, want mode=decode", chain[1]["options"])
 	}
 	if cfg["web_network_simulation_bandwidth_kbps"] != float64(2048) {
 		t.Errorf("web_network_simulation_bandwidth_kbps = %v, want 2048", cfg["web_network_simulation_bandwidth_kbps"])

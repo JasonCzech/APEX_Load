@@ -175,7 +175,18 @@ function parseContentChecks(value: string): ContentCheckConfig[] {
 }
 
 function formatDFEChain(value?: DFETransform[]) {
-  return (value || []).map(transform => transform.type || '').filter(Boolean).join('\n')
+  return (value || [])
+    .map((transform) => {
+      const type = transform.type?.trim()
+      if (!type) return ''
+      const options = Object.entries(transform.options || {})
+        .filter(([key, optionValue]) => key.trim() && optionValue)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, optionValue]) => `${key}=${optionValue}`)
+      return [type, ...options].join(' ')
+    })
+    .filter(Boolean)
+    .join('\n')
 }
 
 function parseDFEChain(value: string): DFETransform[] {
@@ -183,7 +194,24 @@ function parseDFEChain(value: string): DFETransform[] {
     .split(/\r?\n/)
     .map(line => line.trim())
     .filter(Boolean)
-    .map(type => ({ type }))
+    .map((line) => {
+      const [type, ...optionTokens] = line.split(/\s+/)
+      const options = optionTokens.reduce<Record<string, string>>((acc, token) => {
+        const separator = token.indexOf('=')
+        if (separator <= 0 || separator === token.length - 1) {
+          return acc
+        }
+        const key = token.slice(0, separator).trim()
+        const optionValue = token.slice(separator + 1).trim()
+        if (!key || !optionValue) {
+          return acc
+        }
+        acc[key] = optionValue
+        return acc
+      }, {})
+
+      return Object.keys(options).length > 0 ? { type, options } : { type }
+    })
 }
 
 interface ActionEditorParameterRequest {
@@ -2990,7 +3018,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
                           </label>
                           <label className="full-width">
                             <span>DFE Chain</span>
-                            <textarea rows={4} placeholder={'base64\njson_to_xml'} value={formatDFEChain(script.config.web_runtime?.data_formatting?.chain)}
+                            <textarea rows={4} placeholder={'base64\ngzip mode=decode\njson_to_xml'} value={formatDFEChain(script.config.web_runtime?.data_formatting?.chain)}
                               onChange={e => updateField('config.web_runtime', {
                                 ...script.config.web_runtime,
                                 data_formatting: {
