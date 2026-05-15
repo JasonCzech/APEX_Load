@@ -1,1 +1,1 @@
-{"version":"2.1.9","results":[[":dashboard/src/components/ScriptEditor.test.tsx",{"duration":59.589333000000124,"failed":true}]]}
+{"version":"2.1.9","results":[[":dashboard/src/components/ScriptEditor.test.tsx",{"duration":184.39250000000004,"failed":false}],[":dashboard/src/components/BrowserReplayDebugger.test.tsx",{"duration":43.37524999999994,"failed":false}]]}
