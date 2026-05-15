@@ -55,40 +55,33 @@ Each protocol must populate enough telemetry for the dashboard to answer the sam
 
 ### 1. HTTP Protocol
 
-**Current state:** Most mature. Has DNS, TCP, TLS, TTFB timing phases, server-processing and transfer decomposition, redirect hop timing, request/response payload-size classification, content checks, data formatting, proxy, auth, correlation IDs, and dependency classification. Missing the analytical layer.
+**Current state:** Most mature. Has DNS, TCP, TLS, TTFB timing phases, server-processing and transfer decomposition, redirect hop timing, request/response payload-size classification, content checks, data formatting, proxy, auth, correlation IDs, dependency classification, run-level server telemetry thresholds, and previous-run baseline comparison. Missing the remaining analytical layer.
 
 **L2 gaps:**
 
 **L3 gaps:**
 - No **response time decomposition** dashboard (stacked bar: DNS + TCP + TLS + server + transfer)
 - No **dependency health** aggregation (P95 by downstream host)
-- No **SLA threshold** evaluation per transaction
-- No **baseline comparison** (current run vs. previous run for same script)
+- No **per-transaction / per-dependency** SLA scoring beyond run-level goal-controller thresholds
+- No **per-transaction / per-dependency** baseline breakdown against prior runs
 
 **Work items:**
 
 | Item | Layer | Location | Effort |
 |:---|:---|:---|:---|
-| Compute `ServerProcessingTime` = TTFB − ConnectTime − TLSTime | L2 | `http/http.go` Execute() | 0.5 days |
-| Compute `TransferTime` = Duration − TTFB | L2 | `http/http.go` Execute() | 0.5 days |
-| Track redirect count and cumulative redirect time | L2 | `http/http.go` via CheckRedirect hook | 1 day |
-| Flag connection reuse (new vs. pooled) via `httptrace.GotConn` | L2 | `http/http.go` trace setup | 0.5 days |
-| Add `ServerTelemetry` struct to `protocol.Result` | L2 | `protocol.go` | 0.5 days |
 | Response time decomposition chart in dashboard | L3 | `dashboard/` | 2 days |
 | Per-dependency P95/P99 aggregation | L3 | `engine/metrics.go` | 2 days |
-| SLA threshold config + live breach detection | L3 | `dsl/types.go`, `engine/` | 3 days |
-| Baseline comparison (run-over-run) | L3 | `api/`, `dashboard/` | 3 days |
+| Per-transaction / per-dependency SLA evaluation beyond run goals | L3 | `engine/`, `api/`, `dashboard/` | 2 days |
+| Baseline comparison at action / dependency granularity | L3 | `api/`, `dashboard/` | 2 days |
 
 ---
 
 ### 2. SOAP Protocol
 
-**Current state:** HTTP-backed execution, SOAP fault parsing, WS-Security, envelope shaping, and generated-body namespace conflict detection. Inherits all HTTP timing. Missing SOAP-specific analytical depth.
+**Current state:** HTTP-backed execution with inherited HTTP timing, SOAP fault parsing, WS-Security, operation tagging, envelope shaping, generated-body namespace conflict detection, raw envelope-overhead tracking, and fault-code categorization. Missing SOAP-specific analytical depth.
 
 **L2 gaps:**
-- No **per-operation** metric grouping (all SOAP calls aggregate together unless manually named)
-- No **envelope overhead** measurement (XML size vs. payload size)
-- No **fault classification** beyond pass/fail (fault code categorization)
+- No **first-class per-operation aggregation** (operation tags exist, but rollups still follow action naming unless tests are authored that way)
 
 **L3 gaps:**
 - No **WSDL-aware operation profiling** (timing by operation name, not just action name)
@@ -99,11 +92,10 @@ Each protocol must populate enough telemetry for the dashboard to answer the sam
 
 | Item | Layer | Location | Effort |
 |:---|:---|:---|:---|
-| Auto-tag `DependencyTarget` with SOAP operation name | L2 | `soap/soap.go` | 0.5 days |
-| Measure envelope overhead (raw body size vs. inner payload) | L2 | `soap/soap.go` | 0.5 days |
-| Classify fault codes into categories (client/server/version/mustunderstand) | L2 | `soap/soap.go` | 1 day |
+| Promote `soap_operation` from raw tag to first-class aggregation key | L2 | `engine/metrics.go`, `api/` | 1 day |
 | SOAP operation profiling dashboard card | L3 | `dashboard/` | 1.5 days |
 | Fault trend chart (fault code distribution over time) | L3 | `dashboard/` | 1 day |
+| XML payload-size trend from archived envelope telemetry | L3 | `dashboard/` | 1 day |
 
 ---
 
@@ -121,8 +113,7 @@ Each protocol must populate enough telemetry for the dashboard to answer the sam
 
 | Item | Layer | Location | Effort |
 |:---|:---|:---|:---|
-| Measure serialization time separately from request time | L2 | `java_http/java_http.go` | 1 day |
-| Track serialized payload size vs. raw object size | L2 | `java_http/java_http.go` | 0.5 days |
+| Expose helper-reported object footprint vs. serialized wire size | L2 | `java_http/java_http.go` + helper contract | 1 day |
 | Codec overhead chart (serialization % of total time) | L3 | `dashboard/` | 1 day |
 
 ---
@@ -194,18 +185,18 @@ Each protocol must populate enough telemetry for the dashboard to answer the sam
 
 ### 6. JMS Protocol
 
-**Current state:** Solace and IBM MQ providers, pub/sub/request-reply, message properties, correlation IDs, dependency classification, and raw per-action message-throughput and message-latency retention for request/reply flows. Most complete L1 after HTTP.
+**Current state:** Solace and IBM MQ providers, pub/sub/request-reply, message properties, correlation IDs, dependency classification, and raw per-action message-throughput, size-class, message-latency, and consumer-lag retention for request/reply flows. Most complete L1 after HTTP.
 
 **L2 gaps:**
 - No **broker-side latency** isolation (time in broker vs. time in network)
 - No **queue depth** sampling (requires broker management API, provider-specific)
 - No **consumer acknowledgement** latency
-- No **message size** distribution
+- No **message size distribution** beyond raw payload sizes and size classes
 
 **L3 gaps:**
 - No **broker health** correlation (latency spike vs. queue depth)
 - No **dead-letter** monitoring
-- No **consumer lag** detection (time between publish and consume)
+- No **consumer lag trend / alerting** across a run
 - No **topic fan-out** analysis (message delivered to N subscribers)
 
 **Work items:**
@@ -213,12 +204,11 @@ Each protocol must populate enough telemetry for the dashboard to answer the sam
 | Item | Layer | Location | Effort |
 |:---|:---|:---|:---|
 | `JMSTelemetry` struct on `protocol.Result` | L2 | `protocol.go` | 0.5 days |
-| Message throughput counter (pub/sub rates) | L2 | `jms/jms.go` | 1 day |
 | Acknowledgement latency timing | L2 | `jms/jms.go` | 0.5 days |
-| Message size tracking + distribution | L2 | `jms/jms.go` | 0.5 days |
-| Consumer lag measurement (publish timestamp vs. receive timestamp) | L2 | `jms/jms.go` | 1 day |
+| Message size distribution / histogram views from payload telemetry | L2 | `engine/metrics.go`, `dashboard/` | 1 day |
 | Broker health inference from latency patterns | L3 | `engine/metrics.go` | 2 days |
 | JMS-specific dashboard cards | L3 | `dashboard/` | 2 days |
+| Consumer lag trend / alerting | L3 | `engine/metrics.go`, `dashboard/` | 1 day |
 | Dead-letter queue alerting (provider-specific) | L3 | `jms/jms.go`, `api/` | 1.5 days |
 
 ---
@@ -244,8 +234,10 @@ type ServerTelemetry struct {
     RedirectMs       float64 `json:"redirect_ms,omitempty"`
 
     // Payload analysis
-    RequestPayloadKB  float64 `json:"request_payload_kb,omitempty"`
-    ResponsePayloadKB float64 `json:"response_payload_kb,omitempty"`
+    RequestPayloadKB   float64 `json:"request_payload_kb,omitempty"`
+    RequestSizeClass   string  `json:"request_size_class,omitempty"`
+    ResponsePayloadKB  float64 `json:"response_payload_kb,omitempty"`
+    ResponseSizeClass  string  `json:"response_size_class,omitempty"`
     EnvelopeOverheadKB float64 `json:"envelope_overhead_kb,omitempty"` // SOAP XML overhead
 
     // Protocol-specific status
@@ -253,12 +245,15 @@ type ServerTelemetry struct {
     GRPCStatusName   string `json:"grpc_status_name,omitempty"`
     SOAPFaultCode    string `json:"soap_fault_code,omitempty"`
     SOAPFaultCategory string `json:"soap_fault_category,omitempty"` // client/server/version
+    SOAPNamespaceConflict string `json:"soap_namespace_conflict,omitempty"`
 
     // Messaging (WebSocket, JMS)
-    MessagesSent     int     `json:"messages_sent,omitempty"`
-    MessagesReceived int     `json:"messages_received,omitempty"`
-    MessageLatencyMs float64 `json:"message_latency_ms,omitempty"`
-    ConsumerLagMs    float64 `json:"consumer_lag_ms,omitempty"`
+    MessagesSent        int     `json:"messages_sent,omitempty"`
+    MessagesReceived    int     `json:"messages_received,omitempty"`
+    MessagesSentPerSec  float64 `json:"messages_sent_per_sec,omitempty"`
+    MessagesReceivedPerSec float64 `json:"messages_received_per_sec,omitempty"`
+    MessageLatencyMs    float64 `json:"message_latency_ms,omitempty"`
+    ConsumerLagMs       float64 `json:"consumer_lag_ms,omitempty"`
     BackpressureDetected bool `json:"backpressure_detected,omitempty"`
     QueueDepth       int     `json:"queue_depth,omitempty"`
 
