@@ -1076,6 +1076,7 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 		Timestamp:    timestamp,
 		ActiveVUsers: int64(batch.Stats.ActiveVUsers),
 		Transactions: make(map[string]*TxMetrics),
+		SOAPOperations: make(map[string]*TxMetrics),
 		GroupMetrics: make(map[string]*GroupLiveMetrics),
 		Telemetry:    &TelemetryHealth{},
 		Resources: &engine.SystemResources{
@@ -1107,6 +1108,7 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 	}
 
 	durationsByName := make(map[string][]float64)
+	durationsBySOAPOperation := make(map[string][]float64)
 	for _, tx := range batch.Transactions {
 		live.TotalTx++
 		if !tx.Success {
@@ -1119,13 +1121,17 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 			metrics = &TxMetrics{Name: tx.Name}
 			live.Transactions[tx.Name] = metrics
 		}
-		metrics.Count++
-		if !tx.Success {
-			metrics.Errors++
+		mergeDistributedTransactionMetrics(metrics, tx)
+
+		if operation := strings.TrimSpace(tx.SOAPOperation); operation != "" {
+			soapMetrics := live.SOAPOperations[operation]
+			if soapMetrics == nil {
+				soapMetrics = &TxMetrics{Name: operation}
+				live.SOAPOperations[operation] = soapMetrics
+			}
+			durationsBySOAPOperation[operation] = append(durationsBySOAPOperation[operation], tx.DurationMs)
+			mergeDistributedTransactionMetrics(soapMetrics, tx)
 		}
-		mergeTransactionMetricMetadata(metrics, tx.DependencyType, tx.DependencyTarget, tx.CorrelationID)
-		mergeDistributedServerTelemetry(metrics, tx.ServerTelemetry)
-		metrics.AvgMs += tx.DurationMs
 	}
 
 	if live.TotalTx > 0 {
@@ -1140,6 +1146,15 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 		sort.Float64s(durations)
 		allDurations = append(allDurations, durations...)
 		metrics := live.Transactions[name]
+		metrics.AvgMs /= float64(metrics.Count)
+		finalizeAPIServerTelemetrySummary(metrics.ServerTelemetry)
+		metrics.P50Ms = percentileValue(durations, 0.50)
+		metrics.P90Ms = percentileValue(durations, 0.90)
+		metrics.P99Ms = percentileValue(durations, 0.99)
+	}
+	for operation, durations := range durationsBySOAPOperation {
+		sort.Float64s(durations)
+		metrics := live.SOAPOperations[operation]
 		metrics.AvgMs /= float64(metrics.Count)
 		finalizeAPIServerTelemetrySummary(metrics.ServerTelemetry)
 		metrics.P50Ms = percentileValue(durations, 0.50)
@@ -1184,6 +1199,19 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 	}
 
 	return live
+}
+
+func mergeDistributedTransactionMetrics(metrics *TxMetrics, tx generatorrpc.TransactionMetric) {
+	if metrics == nil {
+		return
+	}
+	metrics.Count++
+	if !tx.Success {
+		metrics.Errors++
+	}
+	mergeTransactionMetricMetadata(metrics, tx.DependencyType, tx.DependencyTarget, tx.CorrelationID)
+	mergeDistributedServerTelemetry(metrics, tx.ServerTelemetry)
+	metrics.AvgMs += tx.DurationMs
 }
 
 func mergeTransactionMetricMetadata(metrics *TxMetrics, dependencyType string, dependencyTarget string, correlationID string) {

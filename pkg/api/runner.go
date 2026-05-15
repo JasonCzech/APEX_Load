@@ -169,6 +169,7 @@ type LiveMetrics struct {
 	P95Ms           float64                              `json:"p95_ms"`
 	P99Ms           float64                              `json:"p99_ms"`
 	Transactions    map[string]*TxMetrics                `json:"transactions,omitempty"`
+	SOAPOperations  map[string]*TxMetrics                `json:"soap_operations,omitempty"`
 	GroupMetrics    map[string]*GroupLiveMetrics         `json:"groups,omitempty"`
 	Browser         *BrowserLiveMetrics                  `json:"browser,omitempty"`
 	BrowserByDevice map[string]*BrowserDeviceLiveMetrics `json:"browser_by_device,omitempty"`
@@ -2596,6 +2597,7 @@ func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[s
 		P95Ms:         float64(snap.P95.Microseconds()) / 1000.0,
 		P99Ms:         float64(snap.P99.Microseconds()) / 1000.0,
 		Transactions:  make(map[string]*TxMetrics),
+		SOAPOperations: make(map[string]*TxMetrics),
 		GroupMetrics:  make(map[string]*GroupLiveMetrics),
 		Resources:     snap.Resources,
 	}
@@ -2643,6 +2645,23 @@ func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[s
 
 	for name, am := range snap.ByAction {
 		live.Transactions[name] = &TxMetrics{
+			Name:             name,
+			DependencyType:   am.DependencyType,
+			DependencyTarget: am.DependencyTarget,
+			ServerTelemetry:  cloneEngineServerTelemetrySummary(am.ServerTelemetry),
+			CorrelationIDs:   append([]string(nil), am.CorrelationIDs...),
+			CorrelationCount: am.CorrelationCount,
+			Count:            am.Count,
+			Errors:           am.Errors,
+			AvgMs:            float64(am.AvgDuration.Microseconds()) / 1000.0,
+			P50Ms:            float64(am.P50.Microseconds()) / 1000.0,
+			P90Ms:            float64(am.P90.Microseconds()) / 1000.0,
+			P99Ms:            float64(am.P99.Microseconds()) / 1000.0,
+		}
+	}
+
+	for name, am := range snap.BySOAPOperation {
+		live.SOAPOperations[name] = &TxMetrics{
 			Name:             name,
 			DependencyType:   am.DependencyType,
 			DependencyTarget: am.DependencyTarget,

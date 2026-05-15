@@ -675,6 +675,42 @@ func TestBuildLiveMetricsFromDistributedBatchUsesBatchTelemetry(t *testing.T) {
 	}
 }
 
+func TestBuildLiveMetricsFromDistributedBatchAggregatesSOAPOperations(t *testing.T) {
+	live := buildLiveMetricsFromDistributedBatch(&ManagedTest{}, generatorrpc.MetricsBatch{
+		Transactions: []generatorrpc.TransactionMetric{
+			{
+				Name:             "SOAPRequest",
+				DurationMs:       120,
+				Success:          true,
+				DependencyType:   "soap",
+				DependencyTarget: "checkout.example.test#CreateOrder",
+				SOAPOperation:    "CreateOrder",
+				ServerTelemetry:  &generatorrpc.ServerTelemetry{ServerProcessingMs: 40, TransferMs: 20},
+			},
+			{
+				Name:             "SOAPRequest",
+				DurationMs:       180,
+				Success:          false,
+				DependencyType:   "soap",
+				DependencyTarget: "checkout.example.test#CreateOrder",
+				SOAPOperation:    "CreateOrder",
+				ServerTelemetry:  &generatorrpc.ServerTelemetry{ServerProcessingMs: 60, TransferMs: 10},
+			},
+		},
+	})
+
+	if live.SOAPOperations == nil || live.SOAPOperations["CreateOrder"] == nil {
+		t.Fatalf("expected live SOAP operations, got %#v", live.SOAPOperations)
+	}
+	operation := live.SOAPOperations["CreateOrder"]
+	if operation.Count != 2 || operation.Errors != 1 {
+		t.Fatalf("unexpected operation metrics %#v", operation)
+	}
+	if operation.ServerTelemetry == nil || operation.ServerTelemetry.AvgServerProcessingMs != 50 {
+		t.Fatalf("unexpected SOAP operation server telemetry %#v", operation.ServerTelemetry)
+	}
+}
+
 func TestDistributedExecutionBackendRunsRemoteEngine(t *testing.T) {
 	const bufSize = 1024 * 1024
 

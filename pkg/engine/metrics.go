@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -38,6 +39,7 @@ type MetricsSnapshot struct {
 	P95          time.Duration
 	P99          time.Duration
 	ByAction     map[string]*ActionMetrics
+	BySOAPOperation map[string]*ActionMetrics `json:"by_soap_operation,omitempty"`
 	ByGroup      map[string]*GroupMetrics
 	Browser      *BrowserMetricsSummary               `json:"browser,omitempty"`
 	BrowserByDevice map[string]*BrowserDeviceMetrics `json:"browser_by_device,omitempty"`
@@ -252,6 +254,7 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 		Window:       window,
 		ActiveVUsers: mc.current.activeVUsers.Load(),
 		ByAction:     make(map[string]*ActionMetrics),
+		BySOAPOperation: make(map[string]*ActionMetrics),
 		ByGroup:      make(map[string]*GroupMetrics),
 		BrowserByDevice: make(map[string]*BrowserDeviceMetrics),
 		Telemetry: &TelemetryMetrics{
@@ -281,24 +284,19 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 			}
 			snap.ByAction[r.ActionName] = am
 		}
-		am.Count++
-		if !r.Success {
-			am.Errors++
-		}
-		mergeActionMetadata(am, r)
-		if r.ServerTelemetry != nil {
-			if am.ServerTelemetry == nil {
-				am.ServerTelemetry = &ServerTelemetrySummary{}
+		mergeActionResult(am, r)
+
+		if operation := soapOperationFromResult(r); operation != "" {
+			om, ok := snap.BySOAPOperation[operation]
+			if !ok {
+				om = &ActionMetrics{
+					Name:        operation,
+					MinDuration: r.Duration,
+					MaxDuration: r.Duration,
+				}
+				snap.BySOAPOperation[operation] = om
 			}
-			mergeServerTelemetrySummary(am.ServerTelemetry, r.ServerTelemetry)
-		}
-		am.BytesSent += r.BytesSent
-		am.BytesRecv += r.BytesReceived
-		if r.Duration < am.MinDuration {
-			am.MinDuration = r.Duration
-		}
-		if r.Duration > am.MaxDuration {
-			am.MaxDuration = r.Duration
+			mergeActionResult(om, r)
 		}
 
 		if r.Group != "" {
@@ -361,6 +359,9 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 	for _, am := range snap.ByAction {
 		finalizeServerTelemetrySummary(am.ServerTelemetry)
 	}
+	for _, am := range snap.BySOAPOperation {
+		finalizeServerTelemetrySummary(am.ServerTelemetry)
+	}
 	finalizeBrowserMetricsSummary(snap.Browser)
 	for _, metrics := range snap.BrowserByDevice {
 		finalizeBrowserDeviceMetrics(metrics)
@@ -370,6 +371,38 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 	}
 
 	return snap
+}
+
+func soapOperationFromResult(result *protocol.Result) string {
+	if result == nil || len(result.Extractions) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(result.Extractions["soap_operation"])
+}
+
+func mergeActionResult(metrics *ActionMetrics, result *protocol.Result) {
+	if metrics == nil || result == nil {
+		return
+	}
+	metrics.Count++
+	if !result.Success {
+		metrics.Errors++
+	}
+	mergeActionMetadata(metrics, result)
+	if result.ServerTelemetry != nil {
+		if metrics.ServerTelemetry == nil {
+			metrics.ServerTelemetry = &ServerTelemetrySummary{}
+		}
+		mergeServerTelemetrySummary(metrics.ServerTelemetry, result.ServerTelemetry)
+	}
+	metrics.BytesSent += result.BytesSent
+	metrics.BytesRecv += result.BytesReceived
+	if result.Duration < metrics.MinDuration {
+		metrics.MinDuration = result.Duration
+	}
+	if result.Duration > metrics.MaxDuration {
+		metrics.MaxDuration = result.Duration
+	}
 }
 
 const maxCorrelationSamplesPerAction = 3

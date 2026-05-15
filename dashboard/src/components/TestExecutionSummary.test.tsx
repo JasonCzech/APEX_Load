@@ -81,4 +81,47 @@ describe('TestExecutionSummary', () => {
 		expect(container.textContent).toContain('Payload 1.25 KB / 4.00 KB')
 		expect(container.textContent).toContain('Reuse 75% (+25% vs prev)')
 	})
+
+	it('renders live SOAP operation hotspots when available', async () => {
+		const operation: TxMetrics = {
+			name: 'CreateOrder',
+			dependency_type: 'soap',
+			dependency_target: 'checkout.example.test#CreateOrder',
+			count: 6,
+			errors: 1,
+			avg_ms: 140,
+			p50_ms: 120,
+			p90_ms: 180,
+			p99_ms: 240,
+			server_telemetry: {
+				samples: 6,
+				avg_server_processing_ms: 52,
+				avg_transfer_ms: 18,
+			},
+		}
+
+		await act(async () => {
+			root.render(
+				<TestExecutionSummary
+					transactions={[]}
+					metrics={{
+						p50_ms: 150,
+						p90_ms: 210,
+						p95_ms: 230,
+						p99_ms: 260,
+						soap_operations: {
+							CreateOrder: operation,
+						},
+					}}
+				/>,
+			)
+		})
+
+		expect(container.textContent).toContain('Live SOAP Operations')
+		expect(container.textContent).toContain('CreateOrder')
+		expect(container.textContent).toContain('140.0')
+		expect(container.textContent).toContain('52.0 ms')
+		expect(container.textContent).toContain('18.0 ms')
+		expect(container.textContent).toContain('checkout.example.test#CreateOrder')
+	})
 })

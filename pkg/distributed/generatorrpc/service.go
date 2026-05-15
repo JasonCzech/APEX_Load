@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -68,6 +69,7 @@ func (b *transactionBuffer) RecordResult(result *protocol.Result) error {
 		CorrelationID:    result.CorrelationID,
 		DependencyType:   result.DependencyType,
 		DependencyTarget: result.DependencyTarget,
+		SOAPOperation:    strings.TrimSpace(result.Extractions["soap_operation"]),
 		ServerTelemetry:  cloneServerTelemetry(result.ServerTelemetry),
 	})
 	if len(b.transactions) > 1024 {
@@ -749,6 +751,7 @@ func (s *Service) metricsBatchForMetrics(testID string, stats GeneratorStats, tr
 			CorrelationId:    tx.CorrelationID,
 			DependencyType:   tx.DependencyType,
 			DependencyTarget: tx.DependencyTarget,
+			SoapOperation:    tx.SOAPOperation,
 			ServerTelemetry:  protoServerTelemetry,
 		})
 	}

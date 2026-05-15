@@ -5,6 +5,7 @@ interface MetricsSummary {
   p90_ms?: number
   p95_ms?: number
   p99_ms?: number
+  soap_operations?: Record<string, TxMetrics>
 }
 
 interface Props {
@@ -18,6 +19,9 @@ export default function TestExecutionSummary({ transactions, metrics, baseline }
   const topServerTelemetry = transactions
     .filter((tx) => tx.server_telemetry)
     .sort((left, right) => (right.server_telemetry?.avg_server_processing_ms || 0) - (left.server_telemetry?.avg_server_processing_ms || 0))
+    .slice(0, 4)
+  const topSOAPOperations = Object.values(metrics?.soap_operations ?? {})
+    .sort((left, right) => ((right.server_telemetry?.avg_server_processing_ms ?? right.avg_ms ?? 0) - (left.server_telemetry?.avg_server_processing_ms ?? left.avg_ms ?? 0)))
     .slice(0, 4)
 
   return (
@@ -69,6 +73,39 @@ export default function TestExecutionSummary({ transactions, metrics, baseline }
               )
             })}
           </div>
+        </div>
+      )}
+
+      {topSOAPOperations.length > 0 && (
+        <div className="tx-section">
+          <h3 className="chart-title">Live SOAP Operations</h3>
+          <p className="server-telemetry-subtitle">Operation-level hotspots grouped by extracted SOAP operation tags from live results.</p>
+          <table className="tx-table">
+            <thead>
+              <tr>
+                <th>Operation</th>
+                <th>Count</th>
+                <th>Errors</th>
+                <th>Avg (ms)</th>
+                <th>Server (ms)</th>
+                <th>Transfer (ms)</th>
+                <th>Target</th>
+              </tr>
+            </thead>
+            <tbody>
+              {topSOAPOperations.map((operation) => (
+                <tr key={operation.name}>
+                  <td className="tx-name">{operation.name}</td>
+                  <td>{operation.count}</td>
+                  <td className={operation.errors > 0 ? 'error-cell' : ''}>{operation.errors}</td>
+                  <td>{operation.avg_ms?.toFixed(1)}</td>
+                  <td>{formatTelemetryValue(operation.server_telemetry?.avg_server_processing_ms, ' ms')}</td>
+                  <td>{formatTelemetryValue(operation.server_telemetry?.avg_transfer_ms, ' ms')}</td>
+                  <td>{operation.dependency_target || operation.dependency_type || 'soap'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 

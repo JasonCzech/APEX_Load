@@ -137,6 +137,7 @@ message TransactionMetric {
   string dependency_type = 14;
   string dependency_target = 15;
   ServerTelemetry server_telemetry = 16;
+  string soap_operation = 17;
 }
 
 message GeneratorStats {

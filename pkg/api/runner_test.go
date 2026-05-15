@@ -490,6 +490,23 @@ func TestBuildLiveMetricsFromSnapshot(t *testing.T) {
 				P99:         500 * time.Millisecond,
 			},
 		},
+		BySOAPOperation: map[string]*engine.ActionMetrics{
+			"CreateOrder": {
+				DependencyType:   "soap",
+				DependencyTarget: "checkout.example.test#CreateOrder",
+				Count:            8,
+				Errors:           1,
+				AvgDuration:      190 * time.Millisecond,
+				P50:              170 * time.Millisecond,
+				P90:              230 * time.Millisecond,
+				P99:              310 * time.Millisecond,
+				ServerTelemetry: &engine.ServerTelemetrySummary{
+					Samples:               8,
+					AvgServerProcessingMs: 55,
+					AvgTransferMs:         15,
+				},
+			},
+		},
 		ByGroup: map[string]*engine.GroupMetrics{
 			"buyers": {
 				Transactions: 25,
@@ -556,6 +573,12 @@ func TestBuildLiveMetricsFromSnapshot(t *testing.T) {
 	}
 	if live.BrowserByDevice["iphone_se"].DevicePlatform != "ios" {
 		t.Fatalf("expected device platform to be mapped, got %#v", live.BrowserByDevice["iphone_se"])
+	}
+	if live.SOAPOperations == nil || live.SOAPOperations["CreateOrder"] == nil {
+		t.Fatalf("expected SOAP operations to be mapped, got %#v", live.SOAPOperations)
+	}
+	if live.SOAPOperations["CreateOrder"].DependencyTarget != "checkout.example.test#CreateOrder" {
+		t.Fatalf("expected SOAP operation dependency target to be mapped, got %#v", live.SOAPOperations["CreateOrder"])
 	}
 
 	login, ok := live.Transactions["login"]

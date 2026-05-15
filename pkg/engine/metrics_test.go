@@ -396,6 +396,47 @@ func TestMetricsCollector_ByActionAggregatesServerTelemetry(t *testing.T) {
 	}
 }
 
+func TestMetricsCollector_BySOAPOperationAggregatesLiveMetrics(t *testing.T) {
+	mc := NewMetricsCollector(100)
+	snap := mc.computeSnapshot([]*protocol.Result{
+		{
+			ActionName: "SOAPRequest",
+			Success:    true,
+			Duration:   10 * time.Millisecond,
+			Extractions: map[string]string{
+				"soap_operation": "CreateOrder",
+			},
+			ServerTelemetry: &protocol.ServerTelemetry{ServerProcessingMs: 30, TransferMs: 10},
+		},
+		{
+			ActionName: "SOAPRequest",
+			Success:    false,
+			Duration:   20 * time.Millisecond,
+			Extractions: map[string]string{
+				"soap_operation": "CreateOrder",
+			},
+			ServerTelemetry: &protocol.ServerTelemetry{ServerProcessingMs: 50, TransferMs: 20},
+		},
+	}, time.Second)
+
+	operation := snap.BySOAPOperation["CreateOrder"]
+	if operation == nil {
+		t.Fatal("missing live SOAP operation metrics for CreateOrder")
+	}
+	if operation.Count != 2 || operation.Errors != 1 {
+		t.Fatalf("operation metrics = %#v, want count=2 errors=1", operation)
+	}
+	if operation.ServerTelemetry == nil || operation.ServerTelemetry.AvgServerProcessingMs != 40 {
+		t.Fatalf("operation server telemetry = %#v, want avg server processing 40", operation.ServerTelemetry)
+	}
+	if operation.ServerTelemetry.AvgTransferMs != 15 {
+		t.Fatalf("AvgTransferMs = %v, want 15", operation.ServerTelemetry.AvgTransferMs)
+	}
+	if snap.ByAction["SOAPRequest"] == nil {
+		t.Fatal("expected original action aggregation to remain available")
+	}
+}
+
 func TestMetricsCollector_PercentilesViaTDigest(t *testing.T) {
 	mc := NewMetricsCollector(100)
 	mc.Start(50 * time.Millisecond)

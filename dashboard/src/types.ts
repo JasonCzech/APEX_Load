@@ -458,6 +458,7 @@ export interface LiveMetrics {
   p95_ms: number
   p99_ms: number
   transactions?: Record<string, TxMetrics>
+  soap_operations?: Record<string, TxMetrics>
   groups?: Record<string, GroupLiveMetrics>
   browser?: BrowserLiveMetrics
   browser_by_device?: Record<string, BrowserDeviceLiveMetrics>

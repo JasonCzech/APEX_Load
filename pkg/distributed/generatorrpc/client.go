@@ -102,6 +102,7 @@ type TransactionMetric struct {
 	CorrelationID    string
 	DependencyType   string
 	DependencyTarget string
+	SOAPOperation    string
 	ServerTelemetry  *ServerTelemetry
 }
 
@@ -375,6 +376,7 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 			CorrelationID:    tx.GetCorrelationId(),
 			DependencyType:   tx.GetDependencyType(),
 			DependencyTarget: tx.GetDependencyTarget(),
+			SOAPOperation:    tx.GetSoapOperation(),
 			ServerTelemetry:  serverTelemetry,
 		})
 	}

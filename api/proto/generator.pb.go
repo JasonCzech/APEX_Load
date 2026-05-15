@@ -891,6 +891,7 @@ type TransactionMetric struct {
 	DependencyType   string                 `protobuf:"bytes,14,opt,name=dependency_type,json=dependencyType,proto3" json:"dependency_type,omitempty"`
 	DependencyTarget string                 `protobuf:"bytes,15,opt,name=dependency_target,json=dependencyTarget,proto3" json:"dependency_target,omitempty"`
 	ServerTelemetry  *ServerTelemetry       `protobuf:"bytes,16,opt,name=server_telemetry,json=serverTelemetry,proto3" json:"server_telemetry,omitempty"`
+	SoapOperation    string                 `protobuf:"bytes,17,opt,name=soap_operation,json=soapOperation,proto3" json:"soap_operation,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -1035,6 +1036,13 @@ func (x *TransactionMetric) GetServerTelemetry() *ServerTelemetry {
 		return x.ServerTelemetry
 	}
 	return nil
+}
+
+func (x *TransactionMetric) GetSoapOperation() string {
+	if x != nil {
+		return x.SoapOperation
+	}
+	return ""
 }
 
 type GeneratorStats struct {
@@ -1704,7 +1712,7 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"transferMs\x12,\n" +
 	"\x12request_payload_kb\x18\x03 \x01(\x01R\x10requestPayloadKb\x12.\n" +
 	"\x13response_payload_kb\x18\x04 \x01(\x01R\x11responsePayloadKb\x12+\n" +
-	"\x11connection_reused\x18\x05 \x01(\bR\x10connectionReused\"\xca\x04\n" +
+	"\x11connection_reused\x18\x05 \x01(\bR\x10connectionReused\"\xf1\x04\n" +
 	"\x11TransactionMetric\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12+\n" +
 	"\x12start_time_unix_ms\x18\x02 \x01(\x03R\x0fstartTimeUnixMs\x12\x1f\n" +
@@ -1726,7 +1734,8 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x0ecorrelation_id\x18\r \x01(\tR\rcorrelationId\x12'\n" +
 	"\x0fdependency_type\x18\x0e \x01(\tR\x0edependencyType\x12+\n" +
 	"\x11dependency_target\x18\x0f \x01(\tR\x10dependencyTarget\x12J\n" +
-	"\x10server_telemetry\x18\x10 \x01(\v2\x1f.stormrunner.v1.ServerTelemetryR\x0fserverTelemetry\"\xa2\x01\n" +
+	"\x10server_telemetry\x18\x10 \x01(\v2\x1f.stormrunner.v1.ServerTelemetryR\x0fserverTelemetry\x12%\n" +
+	"\x0esoap_operation\x18\x11 \x01(\tR\rsoapOperation\"\xa2\x01\n" +
 	"\x0eGeneratorStats\x12#\n" +
 	"\ractive_vusers\x18\x01 \x01(\x05R\factiveVusers\x12\x1f\n" +
 	"\vcpu_percent\x18\x02 \x01(\x01R\n" +
