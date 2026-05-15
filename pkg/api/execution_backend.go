@@ -70,7 +70,7 @@ func (localExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		finalError = err.Error()
 	}
 
-	archiveRecord, finalStatus, finalError := artifacts.finalize(finalStatus, endTime, finalError)
+	archiveRecord, finalStatus, finalError := artifacts.finalize(test, finalStatus, endTime, finalError)
 	tr.completeTestRun(test, finalStatus, endTime, finalError, archiveRecord)
 
 	slog.Info("test finished",
@@ -110,11 +110,39 @@ func (a *runArtifacts) recordLiveMetrics(test *ManagedTest, live *LiveMetrics) {
 	}
 }
 
-func (a *runArtifacts) finalize(finalStatus string, endTime time.Time, finalError string) (*storage.RunArchiveRecord, string, string) {
+func (a *runArtifacts) finalize(test *ManagedTest, finalStatus string, endTime time.Time, finalError string) (*storage.RunArchiveRecord, string, string) {
 	if a == nil || a.recorder == nil {
 		return nil, finalStatus, finalError
 	}
-	archiveRecord, archiveErr := a.recorder.Finalize(finalStatus, endTime, finalError)
+
+	// Determine SLA Status
+	slaBreached := false
+	var slaDetails []string
+	if test != nil && test.LiveMetrics != nil && test.LiveMetrics.GoalStatus != nil {
+		gs := test.LiveMetrics.GoalStatus
+		if gs.LatencyBreached {
+			slaBreached = true
+			slaDetails = append(slaDetails, "Latency breached")
+		}
+		if gs.ErrorBreached {
+			slaBreached = true
+			slaDetails = append(slaDetails, "Error rate breached")
+		}
+		if gs.ServerProcessingBreached {
+			slaBreached = true
+			slaDetails = append(slaDetails, "Server processing breached")
+		}
+		if gs.TransferBreached {
+			slaBreached = true
+			slaDetails = append(slaDetails, "Transfer time breached")
+		}
+		if gs.ErrorCountBreached {
+			slaBreached = true
+			slaDetails = append(slaDetails, "Total error count breached")
+		}
+	}
+
+	archiveRecord, archiveErr := a.recorder.Finalize(finalStatus, endTime, finalError, slaBreached, slaDetails)
 	if archiveErr != nil {
 		return archiveRecord, "FAILED", appendRunError(finalError, "archive finalize failed", archiveErr)
 	}

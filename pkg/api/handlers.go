@@ -443,3 +443,78 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
 }
+
+type SLABreachReport struct {
+	TestID      string   `json:"test_id"`
+	Status      string   `json:"status"`
+	SLABreached bool     `json:"sla_breached"`
+	Details     []string `json:"details,omitempty"`
+}
+
+func (s *Server) handleGetTestSLAStatus(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	// First check memory
+	test, ok := s.runner.GetTest(id)
+	if ok {
+		s.writeSLAReport(w, id, test.Status, test.GoalConfig, test.LiveMetrics)
+		return
+	}
+
+	// Then check archive
+	_, ok = s.runner.GetRunArchive(id)
+	if !ok {
+		writeError(w, http.StatusNotFound, "test not found")
+		return
+	}
+
+	// Determine SLA status from the archive record if available
+	manifest, err := s.runner.GetRunArchiveManifest(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to load archive manifest for SLA: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, SLABreachReport{
+		TestID:      id,
+		Status:      "COMPLETE",
+		SLABreached: manifest.SLABreached,
+		Details:     manifest.SLADetails,
+	})
+}
+
+func (s *Server) writeSLAReport(w http.ResponseWriter, id, status string, cfg *GoalConfig, live *LiveMetrics) {
+	if live == nil || live.GoalStatus == nil {
+		writeJSON(w, http.StatusOK, SLABreachReport{
+			TestID:      id,
+			Status:      status,
+			SLABreached: false,
+		})
+		return
+	}
+
+	breach := live.GoalStatus.BreachActive
+	var details []string
+	if live.GoalStatus.LatencyBreached {
+		details = append(details, "P95 latency breached threshold")
+	}
+	if live.GoalStatus.ErrorBreached {
+		details = append(details, "Error percentage breached threshold")
+	}
+	if live.GoalStatus.ErrorCountBreached {
+		details = append(details, "Total error count breached threshold")
+	}
+	if live.GoalStatus.ServerProcessingBreached {
+		details = append(details, "Server processing time breached threshold")
+	}
+	if live.GoalStatus.TransferBreached {
+		details = append(details, "Transfer time breached threshold")
+	}
+
+	writeJSON(w, http.StatusOK, SLABreachReport{
+		TestID:      id,
+		Status:      status,
+		SLABreached: breach,
+		Details:     details,
+	})
+}

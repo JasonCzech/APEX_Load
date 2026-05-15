@@ -1,0 +1,40 @@
+trigger:
+  branches:
+    include:
+    - main
+
+variables:
+  stormrunnerUrl: $(STORMRUNNER_URL) 
+  testScript: 'tests/performance/primary-flow.json'
+  vusers: 50
+  duration: '5m'
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+steps:
+- task: GoTool@0
+  inputs:
+    version: '1.22'
+  displayName: 'Install Go'
+
+- script: |
+    go build -o bin/stormctl ./cmd/stormctl
+  displayName: 'Build stormctl'
+
+- script: |
+    ./bin/stormctl run \
+      --api "$(stormrunnerUrl)" \
+      --script "$(testScript)" \
+      --vusers $(vusers) \
+      --duration $(duration) \
+      --format json > results.json
+  displayName: 'Run Stormrunner Load Test'
+
+- task: PublishPipelineArtifact@1
+  condition: always()
+  inputs:
+    targetPath: '$(System.DefaultWorkingDirectory)/results.json'
+    artifact: 'PerformanceResults'
+    publishLocation: 'pipeline'
+  displayName: 'Publish Results'

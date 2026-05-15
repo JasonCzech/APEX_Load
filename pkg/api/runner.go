@@ -461,7 +461,7 @@ type archiveRecorder interface {
 	engine.ResultSink
 	RecordResourceSample(timestamp time.Time, activeVUsers int64, resources *engine.SystemResources) error
 	RecordIntervalSummary(live *LiveMetrics) error
-	Finalize(status string, completedAt time.Time, errStr string) (*storage.RunArchiveRecord, error)
+	Finalize(status string, completedAt time.Time, errStr string, slaBreached bool, slaDetails []string) (*storage.RunArchiveRecord, error)
 }
 
 type runArtifacts struct {

@@ -195,7 +195,7 @@ func (s *archiveRecorderStub) RecordIntervalSummary(live *LiveMetrics) error {
 	s.recordedLive = live
 	return nil
 }
-func (s *archiveRecorderStub) Finalize(status string, completedAt time.Time, errStr string) (*storage.RunArchiveRecord, error) {
+func (s *archiveRecorderStub) Finalize(status string, completedAt time.Time, errStr string, slaBreached bool, slaDetails []string) (*storage.RunArchiveRecord, error) {
 	return s.finalizeRecord, s.finalizeErr
 }
 
@@ -390,7 +390,7 @@ func TestRunArtifactsFinalizePersistsArchiveRecord(t *testing.T) {
 		},
 	}
 
-	archiveRecord, finalStatus, finalError := artifacts.finalize("COMPLETE", time.Now(), "")
+	archiveRecord, finalStatus, finalError := artifacts.finalize(nil, "COMPLETE", time.Now(), "")
 
 	if archiveRecord != record {
 		t.Fatalf("expected archive record %p, got %p", record, archiveRecord)

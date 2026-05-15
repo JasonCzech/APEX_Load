@@ -107,6 +107,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("POST /api/v1/tests/estimate", cors(log(http.HandlerFunc(s.handleEstimateTest))))
 	s.mux.Handle("GET /api/v1/tests", cors(log(http.HandlerFunc(s.handleListTests))))
 	s.mux.Handle("GET /api/v1/tests/{id}", cors(log(http.HandlerFunc(s.handleGetTest))))
+	s.mux.Handle("GET /api/v1/tests/{id}/sla-status", cors(log(http.HandlerFunc(s.handleGetTestSLAStatus))))
 	s.mux.Handle("POST /api/v1/tests/{id}/start", cors(log(http.HandlerFunc(s.handleStartTest))))
 	s.mux.Handle("POST /api/v1/tests/{id}/stop", cors(log(http.HandlerFunc(s.handleStopTest))))
 	s.mux.Handle("POST /api/v1/tests/{id}/abort", cors(log(http.HandlerFunc(s.handleAbortTest))))
