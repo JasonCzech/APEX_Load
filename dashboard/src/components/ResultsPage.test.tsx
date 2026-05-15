@@ -213,6 +213,7 @@ describe('ResultsPage', () => {
     expect(exportButton).toBeDefined()
 
     expect(container.textContent).toContain('Run Comparison')
+    expect(container.textContent).toContain('Browser Device Comparison')
     expect(container.textContent).toContain('Avg LCP')
     expect(container.textContent).toContain('240.0 ms')
     expect(container.textContent).toContain('280.0 ms')
@@ -236,6 +237,7 @@ describe('ResultsPage', () => {
       await Promise.resolve()
     })
 
+    expect(container.textContent).toContain('Browser Platform Comparison')
     expect(container.textContent).toContain('Platform Rollup')
     expect(container.textContent).toContain('iOS')
     expect(container.textContent).toContain('WebKit · 4 samples')
@@ -247,6 +249,7 @@ describe('ResultsPage', () => {
       await Promise.resolve()
     })
 
+    expect(container.textContent).toContain('Browser Engine Comparison')
     expect(container.textContent).toContain('Engine Rollup')
     expect(container.textContent).toContain('Chromium')
     expect(container.textContent).toContain('190.0 ms')
@@ -276,6 +279,7 @@ describe('ResultsPage', () => {
       await Promise.resolve()
     })
 
+    expect(container.textContent).toContain('Browser Overview Comparison')
     expect(container.textContent).not.toContain('Platform Rollup')
     expect(container.textContent).not.toContain('Devices')
     expect(container.textContent).not.toContain('iPhone 14 Pro')
@@ -285,6 +289,7 @@ describe('ResultsPage', () => {
       await Promise.resolve()
     })
 
+    expect(container.textContent).toContain('Browser Device Comparison')
     expect(container.textContent).toContain('Devices')
     expect(container.textContent).toContain('iPhone 14 Pro')
   })

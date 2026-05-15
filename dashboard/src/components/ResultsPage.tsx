@@ -164,6 +164,10 @@ function csvEscape(value: string | number | undefined): string {
   return `"${stringValue.replace(/"/g, '""')}"`
 }
 
+function comparisonRunColor(index: number): string {
+  return index === 0 ? 'var(--accent)' : 'var(--accent-2, #d97706)'
+}
+
 function resolveStatus(test: TestSummary, testStatuses: Record<string, string>) {
   return testStatuses[test.id] || test.status
 }
@@ -524,6 +528,66 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
     }))
   }, [comparisonCards, comparisonSummaries])
 
+  const browserBreakdownChartData = useMemo(() => {
+    if (comparisonCards.length !== 2 || !comparisonCards.every(item => item.report)) {
+      return [] as Array<Record<string, number | string | undefined>>
+    }
+
+    const segmentMap = new Map<string, Record<string, number | string | undefined>>()
+
+    for (const { test, report } of comparisonCards) {
+      if (!report) continue
+
+      if (comparisonBreakdown === 'overall') {
+        segmentMap.set('Overall', {
+          segment: 'Overall',
+          [test.id]: report.overview.browser?.avg_lcp_ms,
+          [`${test.id}_inp`]: report.overview.browser?.avg_inp_ms,
+        })
+        continue
+      }
+
+      if (comparisonBreakdown === 'platform') {
+        for (const metrics of getBrowserPlatformEntries(report)) {
+          const segment = formatDevicePlatform(metrics.device_platform)
+          const current = segmentMap.get(segment) ?? { segment }
+          current[test.id] = metrics.avg_lcp_ms
+          current[`${test.id}_inp`] = metrics.avg_inp_ms
+          segmentMap.set(segment, current)
+        }
+        continue
+      }
+
+      if (comparisonBreakdown === 'engine') {
+        for (const metrics of getBrowserEngineEntries(report)) {
+          const segment = formatBrowserEngine(metrics.browser_engine)
+          const current = segmentMap.get(segment) ?? { segment }
+          current[test.id] = metrics.avg_lcp_ms
+          current[`${test.id}_inp`] = metrics.avg_inp_ms
+          segmentMap.set(segment, current)
+        }
+        continue
+      }
+
+      for (const [profile, metrics] of getBrowserDeviceEntries(report)) {
+        const segment = profile
+        const current = segmentMap.get(segment) ?? { segment }
+        current[test.id] = metrics.avg_lcp_ms
+        current[`${test.id}_inp`] = metrics.avg_inp_ms
+        segmentMap.set(segment, current)
+      }
+    }
+
+    return Array.from(segmentMap.values()).sort((left, right) => String(left.segment).localeCompare(String(right.segment)))
+  }, [comparisonBreakdown, comparisonCards])
+
+  const browserBreakdownChartTitle = useMemo(() => {
+    if (comparisonBreakdown === 'overall') return 'Browser Overview Comparison'
+    if (comparisonBreakdown === 'platform') return 'Browser Platform Comparison'
+    if (comparisonBreakdown === 'engine') return 'Browser Engine Comparison'
+    return 'Browser Device Comparison'
+  }, [comparisonBreakdown])
+
   const handleSort = (field: SortField) => {
     if (sortField === field) {
       setSortDirection(prev => (prev === 'asc' ? 'desc' : 'asc'))
@@ -850,6 +914,33 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
                 </div>
 
                 <div className="results-compare-table-wrap">
+                  {browserBreakdownChartData.length > 0 && comparisonCards.length === 2 && (
+                    <div className="results-compare-chart-card">
+                      <h4 className="results-compare-chart-title">{browserBreakdownChartTitle}</h4>
+                      <ResponsiveContainer width="100%" height={280}>
+                        <LineChart data={browserBreakdownChartData}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                          <XAxis dataKey="segment" stroke="var(--text-muted)" fontSize={11} />
+                          <YAxis stroke="var(--text-muted)" fontSize={11} />
+                          <Tooltip />
+                          <Legend />
+                          {comparisonCards.map(({ test }, index) => (
+                            <Line
+                              key={test.id}
+                              type="monotone"
+                              dataKey={test.id}
+                              name={`${test.name} LCP`}
+                              stroke={comparisonRunColor(index)}
+                              strokeWidth={2}
+                              dot={{ r: 3 }}
+                              connectNulls
+                            />
+                          ))}
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
+
                   {comparisonChartData.length > 0 && (
                     <div className="results-compare-chart-card">
                       <h4 className="results-compare-chart-title">Archived Summary Curves</h4>

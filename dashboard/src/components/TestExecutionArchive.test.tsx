@@ -303,4 +303,126 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('X-Debug-11')
     expect(container.textContent).toContain('X-Trace-11')
   })
+
+  it('renders mixed engine and platform browser rollups from the archive report', async () => {
+    const mixedReport: RunArchiveReport = {
+      ...archiveReport,
+      overview: {
+        ...archiveReport.overview,
+        browser: {
+          samples: 3,
+          avg_fcp_ms: 122,
+          avg_lcp_ms: 230,
+          avg_cls_score: 0.025,
+          avg_inp_ms: 52,
+          avg_long_task_count: 1,
+          avg_blocking_resources: 2,
+        },
+      },
+      browser_by_engine: {
+        chromium: {
+          browser_engine: 'chromium',
+          samples: 1,
+          avg_fcp_ms: 105,
+          avg_lcp_ms: 180,
+          avg_cls_score: 0.014,
+          avg_inp_ms: 41,
+        },
+        webkit: {
+          browser_engine: 'webkit',
+          samples: 2,
+          avg_fcp_ms: 130,
+          avg_lcp_ms: 255,
+          avg_cls_score: 0.031,
+          avg_inp_ms: 56,
+        },
+      },
+      browser_by_platform: {
+        android: {
+          device_platform: 'android',
+          browser_engine: 'chromium',
+          samples: 1,
+          avg_fcp_ms: 105,
+          avg_lcp_ms: 180,
+          avg_cls_score: 0.014,
+          avg_inp_ms: 41,
+        },
+        ios: {
+          device_platform: 'ios',
+          browser_engine: 'webkit',
+          samples: 2,
+          avg_fcp_ms: 130,
+          avg_lcp_ms: 255,
+          avg_cls_score: 0.031,
+          avg_inp_ms: 56,
+        },
+      },
+      browser_by_device: {
+        iphone_se: archiveReport.browser_by_device!.iphone_se,
+        pixel_8: {
+          device_profile: 'pixel_8',
+          device_platform: 'android',
+          device_tier: 'high',
+          browser_engine: 'chromium',
+          samples: 1,
+          avg_fcp_ms: 105,
+          avg_lcp_ms: 180,
+          avg_cls_score: 0.014,
+          avg_inp_ms: 41,
+        },
+      },
+    }
+
+    await act(async () => {
+      root.render(
+        <TestExecutionArchive
+          hasArchive={true}
+          test={test}
+          archiveError=""
+          archiveLoading={false}
+          archiveReport={mixedReport}
+          onDownloadArchiveArtifact={vi.fn()}
+          archiveActionEntries={[]}
+          selectedArchiveAction=""
+          onSelectedArchiveActionChange={vi.fn()}
+          archiveGroups={[]}
+          selectedArchiveGroup=""
+          onSelectedArchiveGroupChange={vi.fn()}
+          archiveErrorsOnly={false}
+          onArchiveErrorsOnlyChange={vi.fn()}
+          archiveTransactionsLoading={false}
+          archiveTransactionsTotal={0}
+          archivePageStart={0}
+          archivePageEnd={0}
+          archiveTransactionsOffset={0}
+          archivePageSize={50}
+          onPreviousPage={vi.fn()}
+          onNextPage={vi.fn()}
+          archiveTransactions={[]}
+          expandedArchiveEvent={null}
+          onExpandedArchiveEventChange={vi.fn()}
+        />,
+      )
+    })
+
+    expect(container.textContent).toContain('Engine Rollup')
+    expect(container.textContent).toContain('Platform Rollup')
+    expect(container.textContent).toContain('Devices')
+
+    const browserNames = Array.from(container.querySelectorAll('.archive-browser-section .browser-device-name')).map(node => node.textContent)
+    expect(browserNames).toEqual(['Chromium', 'WebKit', 'Android', 'iOS', 'iphone_se', 'pixel_8'])
+
+    const browserTiers = Array.from(container.querySelectorAll('.archive-browser-section .browser-device-tier')).map(node => node.textContent)
+    expect(browserTiers).toEqual([
+      '1 samples',
+      '2 samples',
+      'Chromium · 1 samples',
+      'WebKit · 2 samples',
+      'iOS · WebKit · low tier',
+      'Android · Chromium · high tier',
+    ])
+
+    expect(container.textContent).toContain('180.0 ms')
+    expect(container.textContent).toContain('255.0 ms')
+  })
 })
