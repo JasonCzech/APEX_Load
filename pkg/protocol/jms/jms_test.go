@@ -78,6 +78,9 @@ func TestJMSPublishConsumeWithExtractionAndAssertion(t *testing.T) {
 	if consumed.ServerTelemetry.ResponsePayloadKB <= 0 {
 		t.Fatalf("ResponsePayloadKB = %v, want > 0", consumed.ServerTelemetry.ResponsePayloadKB)
 	}
+	if consumed.ServerTelemetry.ResponseSizeClass != "small" {
+		t.Fatalf("ResponseSizeClass = %q, want small", consumed.ServerTelemetry.ResponseSizeClass)
+	}
 	if consumed.ServerTelemetry.MessagesReceived != 1 {
 		t.Fatalf("MessagesReceived = %d, want 1", consumed.ServerTelemetry.MessagesReceived)
 	}
@@ -207,6 +210,12 @@ func TestJMSRequestReplyEchoesResponse(t *testing.T) {
 	}
 	if result.ServerTelemetry.MessageLatencyMs < 0 {
 		t.Fatalf("MessageLatencyMs = %v, want non-negative", result.ServerTelemetry.MessageLatencyMs)
+	}
+	if result.ServerTelemetry.RequestSizeClass != "small" {
+		t.Fatalf("RequestSizeClass = %q, want small", result.ServerTelemetry.RequestSizeClass)
+	}
+	if result.ServerTelemetry.ResponseSizeClass != "small" {
+		t.Fatalf("ResponseSizeClass = %q, want small", result.ServerTelemetry.ResponseSizeClass)
 	}
 	if result.ServerTelemetry.ConsumerLagMs < 0 {
 		t.Fatalf("ConsumerLagMs = %v, want non-negative", result.ServerTelemetry.ConsumerLagMs)

@@ -145,6 +145,7 @@ type ServerTelemetry struct {
 	SerializationMs    float64 `json:"serialization_ms,omitempty"`
 	DeserializationMs  float64 `json:"deserialization_ms,omitempty"`
 	RequestPayloadKB   float64 `json:"request_payload_kb,omitempty"`
+	RequestSizeClass   string  `json:"request_size_class,omitempty"`
 	ResponsePayloadKB  float64 `json:"response_payload_kb,omitempty"`
 	ResponseSizeClass  string  `json:"response_size_class,omitempty"`
 	EnvelopeOverheadKB float64 `json:"envelope_overhead_kb,omitempty"`
@@ -242,4 +243,17 @@ type ErrorSnapshot struct {
 	ConsoleEntries   []ConsoleEntry    `json:"console_entries,omitempty"`
 	NetworkEntries   []NetworkEntry    `json:"network_entries,omitempty"`
 	DOMSummary       *DOMSummary       `json:"dom_summary,omitempty"`
+}
+
+func ClassifyPayloadSize(value int64) string {
+	switch {
+	case value <= 0:
+		return ""
+	case value < 16*1024:
+		return "small"
+	case value < 128*1024:
+		return "medium"
+	default:
+		return "large"
+	}
 }

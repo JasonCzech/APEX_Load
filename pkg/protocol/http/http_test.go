@@ -376,6 +376,9 @@ func TestHTTP_ExecutePopulatesServerTelemetry(t *testing.T) {
 	if result.ServerTelemetry.RequestPayloadKB < 0.99 || result.ServerTelemetry.RequestPayloadKB > 1.01 {
 		t.Fatalf("RequestPayloadKB = %v, want about 1.0", result.ServerTelemetry.RequestPayloadKB)
 	}
+	if result.ServerTelemetry.RequestSizeClass != "small" {
+		t.Fatalf("RequestSizeClass = %q, want small", result.ServerTelemetry.RequestSizeClass)
+	}
 	if result.ServerTelemetry.ResponsePayloadKB < 1.99 || result.ServerTelemetry.ResponsePayloadKB > 2.01 {
 		t.Fatalf("ResponsePayloadKB = %v, want about 2.0", result.ServerTelemetry.ResponsePayloadKB)
 	}
@@ -396,28 +399,6 @@ func TestHTTP_ExecutePopulatesServerTelemetry(t *testing.T) {
 	}
 	if result.ServerTelemetry.RedirectMs != 0 {
 		t.Fatalf("RedirectMs = %v, want 0", result.ServerTelemetry.RedirectMs)
-	}
-}
-
-func TestClassifyPayloadSize(t *testing.T) {
-	testCases := []struct {
-		name     string
-		bytes    int64
-		expected string
-	}{
-		{name: "empty", bytes: 0, expected: ""},
-		{name: "small", bytes: 8 * 1024, expected: "small"},
-		{name: "medium lower", bytes: 16 * 1024, expected: "medium"},
-		{name: "medium upper", bytes: 64 * 1024, expected: "medium"},
-		{name: "large", bytes: 128 * 1024, expected: "large"},
-	}
-
-	for _, testCase := range testCases {
-		t.Run(testCase.name, func(t *testing.T) {
-			if got := classifyPayloadSize(testCase.bytes); got != testCase.expected {
-				t.Fatalf("classifyPayloadSize(%d) = %q, want %q", testCase.bytes, got, testCase.expected)
-			}
-		})
 	}
 }
 

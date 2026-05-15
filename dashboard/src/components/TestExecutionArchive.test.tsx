@@ -482,6 +482,7 @@ describe('TestExecutionArchive', () => {
         serialization_ms: 3,
         deserialization_ms: 2,
         request_payload_kb: 1.25,
+        request_size_class: 'small',
         response_payload_kb: 4,
         response_size_class: 'small',
         envelope_overhead_kb: 0.75,
@@ -535,6 +536,7 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('Serialization: 3.0 ms')
     expect(container.textContent).toContain('Deserialization: 2.0 ms')
     expect(container.textContent).toContain('Request payload: 1.25 KB')
+    expect(container.textContent).toContain('Request size class: small')
     expect(container.textContent).toContain('Response payload: 4.00 KB')
     expect(container.textContent).toContain('Response size class: small')
     expect(container.textContent).toContain('Envelope overhead: 0.75 KB')

@@ -343,10 +343,11 @@ func finalizeHTTPServerTelemetry(result *protocol.Result, requestBytes int64, re
 	}
 	if requestBytes > 0 {
 		telemetry.RequestPayloadKB = bytesToKilobytes(requestBytes)
+		telemetry.RequestSizeClass = protocol.ClassifyPayloadSize(requestBytes)
 	}
 	if responseBytes > 0 {
 		telemetry.ResponsePayloadKB = bytesToKilobytes(responseBytes)
-		telemetry.ResponseSizeClass = classifyPayloadSize(responseBytes)
+		telemetry.ResponseSizeClass = protocol.ClassifyPayloadSize(responseBytes)
 	}
 	if result.TTFB > 0 {
 		telemetry.ServerProcessingMs = durationToNonNegativeMilliseconds(result.TTFB - result.DNSTime - result.ConnectTime - result.TLSTime)
@@ -369,17 +370,4 @@ func bytesToKilobytes(value int64) float64 {
 		return 0
 	}
 	return float64(value) / 1024.0
-}
-
-func classifyPayloadSize(value int64) string {
-	switch {
-	case value <= 0:
-		return ""
-	case value < 16*1024:
-		return "small"
-	case value < 128*1024:
-		return "medium"
-	default:
-		return "large"
-	}
 }

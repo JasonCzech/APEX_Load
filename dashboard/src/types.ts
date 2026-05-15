@@ -289,6 +289,7 @@ export interface ServerTelemetry {
   serialization_ms?: number
   deserialization_ms?: number
   request_payload_kb?: number
+  request_size_class?: string
   response_payload_kb?: number
   response_size_class?: string
   envelope_overhead_kb?: number

@@ -18,7 +18,7 @@ The Mobile UX Strategy defines three layers. The equivalent for each protocol fa
 ## Implemented So Far
 
 - Shared `ServerTelemetry` on `protocol.Result`, propagated through engine rollups, controller/generator RPC, archive retention, and dashboard contracts.
-- HTTP timing decomposition for server processing, transfer, payload sizes, response-size classification, connection reuse, and redirect-hop timing.
+- HTTP timing decomposition for server processing, transfer, request/response payload sizes, request/response size classification, connection reuse, and redirect-hop timing.
 - SOAP operation tagging, fault categorization, raw envelope-overhead tracking, and fault-code retention on archived events.
 - Java HTTP dependency tagging plus helper/codec metadata propagation and raw codec timing retention.
 - JMS payload sizing, request/reply timing, message counts, message latency, and consumer-lag retention on archived events.
@@ -55,7 +55,7 @@ Each protocol must populate enough telemetry for the dashboard to answer the sam
 
 ### 1. HTTP Protocol
 
-**Current state:** Most mature. Has DNS, TCP, TLS, TTFB timing phases, server-processing and transfer decomposition, redirect hop timing, payload-size classification, content checks, data formatting, proxy, auth, correlation IDs, and dependency classification. Missing the analytical layer.
+**Current state:** Most mature. Has DNS, TCP, TLS, TTFB timing phases, server-processing and transfer decomposition, redirect hop timing, request/response payload-size classification, content checks, data formatting, proxy, auth, correlation IDs, and dependency classification. Missing the analytical layer.
 
 **L2 gaps:**
 
@@ -110,11 +110,10 @@ Each protocol must populate enough telemetry for the dashboard to answer the sam
 
 ### 3. Java over HTTP Protocol
 
-**Current state:** Codec-based serialization on top of HTTP transport. The current implementation now retains raw request-side and response-side codec helper timing in the shared `ServerTelemetry` path, but still lacks richer true object-codec analysis.
+**Current state:** Codec-based serialization on top of HTTP transport. The current implementation now retains HTTP-layer request/response payload sizes and size classes plus raw request-side and response-side codec helper timing in the shared `ServerTelemetry` path, but still lacks richer true object-codec analysis.
 
 **L2 gaps:**
-- No **payload size** tracking (serialized object size)
-- No **codec performance** measurement
+- No **true object-vs-wire payload delta** (serialized object size vs. original object footprint)
 
 **L3 gaps:**
 - Same as HTTP L3 gaps, plus codec-specific overhead analysis

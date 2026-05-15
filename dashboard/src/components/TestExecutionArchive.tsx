@@ -545,6 +545,7 @@ export default function TestExecutionArchive({
                                         Serialization: {formatBrowserMetric(event.server_telemetry.serialization_ms, ' ms')}{'\n'}
                                         Deserialization: {formatBrowserMetric(event.server_telemetry.deserialization_ms, ' ms')}{'\n'}
                                         Request payload: {formatBrowserMetric(event.server_telemetry.request_payload_kb, ' KB', 2)}{'\n'}
+                                        Request size class: {event.server_telemetry.request_size_class || 'n/a'}{'\n'}
                                         Response payload: {formatBrowserMetric(event.server_telemetry.response_payload_kb, ' KB', 2)}{'\n'}
                                         Response size class: {event.server_telemetry.response_size_class || 'n/a'}{'\n'}
                                         Envelope overhead: {formatBrowserMetric(event.server_telemetry.envelope_overhead_kb, ' KB', 2)}{'\n'}

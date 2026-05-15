@@ -418,13 +418,17 @@ func finalizeJMSServerTelemetry(result *protocol.Result, request message, hasReq
 	}
 	if hasRequest {
 		telemetry.RequestPayloadKB = bytesToKilobytes(int64(len(request.Body)))
+		telemetry.RequestSizeClass = protocol.ClassifyPayloadSize(int64(len(request.Body)))
 	} else if result.BytesSent > 0 {
 		telemetry.RequestPayloadKB = bytesToKilobytes(result.BytesSent)
+		telemetry.RequestSizeClass = protocol.ClassifyPayloadSize(result.BytesSent)
 	}
 	if hasResponse {
 		telemetry.ResponsePayloadKB = bytesToKilobytes(int64(len(response.Body)))
+		telemetry.ResponseSizeClass = protocol.ClassifyPayloadSize(int64(len(response.Body)))
 	} else if result.BytesReceived > 0 {
 		telemetry.ResponsePayloadKB = bytesToKilobytes(result.BytesReceived)
+		telemetry.ResponseSizeClass = protocol.ClassifyPayloadSize(result.BytesReceived)
 	}
 	if hasRequest && hasResponse && !request.CreatedAt.IsZero() && !response.CreatedAt.IsZero() && !response.CreatedAt.Before(request.CreatedAt) {
 		serverProcessing := response.CreatedAt.Sub(request.CreatedAt)
