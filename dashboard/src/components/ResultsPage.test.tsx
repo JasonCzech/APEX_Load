@@ -81,6 +81,32 @@ describe('ResultsPage', () => {
         },
       },
       by_action: {},
+      browser_by_engine: id === 'run-a'
+        ? {
+            webkit: {
+              samples: 5,
+              browser_engine: 'webkit',
+              avg_lcp_ms: 255,
+              avg_cls_score: 0.03,
+              avg_inp_ms: 69,
+            },
+            chromium: {
+              samples: 1,
+              browser_engine: 'chromium',
+              avg_lcp_ms: 190,
+              avg_cls_score: 0.015,
+              avg_inp_ms: 41,
+            },
+          }
+        : {
+            webkit: {
+              samples: 2,
+              browser_engine: 'webkit',
+              avg_lcp_ms: 280,
+              avg_cls_score: 0.018,
+              avg_inp_ms: 64,
+            },
+          },
       browser_by_platform: {
         [id === 'run-a' ? 'ios' : 'ipados']: {
           samples: id === 'run-a' ? 4 : 2,
@@ -175,11 +201,13 @@ describe('ResultsPage', () => {
     })
 
     const platformToggle = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Platform') as HTMLButtonElement | undefined
+    const engineToggle = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Engine') as HTMLButtonElement | undefined
     const overallToggle = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Overall') as HTMLButtonElement | undefined
     const deviceToggle = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Device') as HTMLButtonElement | undefined
     const exportButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Export CSV') as HTMLButtonElement | undefined
 
     expect(platformToggle).toBeDefined()
+    expect(engineToggle).toBeDefined()
     expect(overallToggle).toBeDefined()
     expect(deviceToggle).toBeDefined()
     expect(exportButton).toBeDefined()
@@ -199,7 +227,7 @@ describe('ResultsPage', () => {
     expect(container.textContent).toContain('iPad Air')
     expect(container.textContent).toContain('iPadOS · WebKit · tablet tier')
 
-    if (!platformToggle || !overallToggle || !deviceToggle) {
+    if (!platformToggle || !engineToggle || !overallToggle || !deviceToggle) {
       return
     }
 
@@ -214,6 +242,18 @@ describe('ResultsPage', () => {
     expect(container.textContent).toContain('250.0 ms')
     expect(container.textContent).not.toContain('iPhone 14 Pro')
 
+    await act(async () => {
+      engineToggle.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('Engine Rollup')
+    expect(container.textContent).toContain('Chromium')
+    expect(container.textContent).toContain('190.0 ms')
+    expect(container.textContent).toContain('WebKit')
+    expect(container.textContent).toContain('255.0 ms')
+    expect(container.textContent).not.toContain('iPhone 14 Pro')
+
     if (!exportButton) {
       return
     }
@@ -225,11 +265,11 @@ describe('ResultsPage', () => {
 
     expect(downloadBlob).toHaveBeenCalledTimes(1)
     const [blob, filename] = vi.mocked(downloadBlob).mock.calls[0]
-    expect(filename).toBe('browser-comparison-platform.csv')
+    expect(filename).toBe('browser-comparison-engine.csv')
     const csv = await blob.text()
     expect(csv).toContain('breakdown,segment_key,device_platform,browser_engine')
-    expect(csv).toContain('platform,ios,ios,webkit')
-    expect(csv).toContain('platform,ipados,ipados,webkit')
+    expect(csv).toContain('engine,webkit,,webkit')
+    expect(csv).toContain('engine,chromium,,chromium')
 
     await act(async () => {
       overallToggle.dispatchEvent(new MouseEvent('click', { bubbles: true }))

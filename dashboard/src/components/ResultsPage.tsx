@@ -2,7 +2,7 @@ import { memo, useCallback, useEffect, useMemo, useState } from 'react'
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 
 import { downloadBlob } from '../utils/fileUtils'
-import { Application, BrowserDeviceLiveMetrics, BrowserPlatformLiveMetrics, IntervalSummaryRecord, Release, RunArchiveReport, TestSummary } from '../types'
+import { Application, BrowserDeviceLiveMetrics, BrowserEngineLiveMetrics, BrowserPlatformLiveMetrics, IntervalSummaryRecord, Release, RunArchiveReport, TestSummary } from '../types'
 import { useApi } from '../hooks/useApi'
 import { getErrorMessage } from '../utils/errorUtils'
 import StatusBadge from './StatusBadge'
@@ -17,7 +17,7 @@ interface Props {
 type SortField = 'name' | 'status' | 'total_vusers' | 'groups' | 'started' | 'duration' | 'archive'
 type StatusFilter = 'all' | 'complete' | 'failed' | 'aborted'
 type ArchiveFilter = 'all' | 'ready' | 'pending'
-type ComparisonBreakdown = 'overall' | 'platform' | 'device'
+type ComparisonBreakdown = 'overall' | 'platform' | 'engine' | 'device'
 
 function formatDate(value?: string) {
   return value ? new Date(value).toLocaleString() : 'Never'
@@ -109,6 +109,52 @@ function getBrowserPlatformEntries(report?: RunArchiveReport): BrowserPlatformLi
       avg_inp_ms: entry.samples > 0 ? entry.inpTotal / entry.samples : undefined,
     }))
     .sort((left, right) => formatDevicePlatform(left.device_platform).localeCompare(formatDevicePlatform(right.device_platform)))
+}
+
+function getBrowserEngineEntries(report?: RunArchiveReport): BrowserEngineLiveMetrics[] {
+  const archivedEntries = Object.values(report?.browser_by_engine ?? {})
+  if (archivedEntries.length > 0) {
+    return archivedEntries.sort((left, right) => formatBrowserEngine(left.browser_engine).localeCompare(formatBrowserEngine(right.browser_engine)))
+  }
+
+  const entries = Object.values(report?.browser_by_device ?? {})
+  if (entries.length === 0) return []
+
+  const grouped = new Map<string, {
+    browserEngine: string
+    samples: number
+    lcpTotal: number
+    clsTotal: number
+    inpTotal: number
+  }>()
+
+  for (const metrics of entries) {
+    if (!metrics) continue
+    const browserEngine = metrics.browser_engine || 'browser'
+    const current = grouped.get(browserEngine) ?? {
+      browserEngine,
+      samples: 0,
+      lcpTotal: 0,
+      clsTotal: 0,
+      inpTotal: 0,
+    }
+    const samples = metrics.samples || 0
+    current.samples += samples
+    current.lcpTotal += (metrics.avg_lcp_ms ?? 0) * samples
+    current.clsTotal += (metrics.avg_cls_score ?? 0) * samples
+    current.inpTotal += (metrics.avg_inp_ms ?? 0) * samples
+    grouped.set(browserEngine, current)
+  }
+
+  return Array.from(grouped.values())
+    .map(entry => ({
+      browser_engine: entry.browserEngine,
+      samples: entry.samples,
+      avg_lcp_ms: entry.samples > 0 ? entry.lcpTotal / entry.samples : undefined,
+      avg_cls_score: entry.samples > 0 ? entry.clsTotal / entry.samples : undefined,
+      avg_inp_ms: entry.samples > 0 ? entry.inpTotal / entry.samples : undefined,
+    }))
+    .sort((left, right) => formatBrowserEngine(left.browser_engine).localeCompare(formatBrowserEngine(right.browser_engine)))
 }
 
 function csvEscape(value: string | number | undefined): string {
@@ -318,7 +364,7 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
   }, [comparableTests, comparisonReports])
 
   const comparisonHasBrowserBreakdowns = useMemo(
-    () => comparisonCards.some(({ report }) => getBrowserDeviceEntries(report).length > 0),
+    () => comparisonCards.some(({ report }) => getBrowserDeviceEntries(report).length > 0 || getBrowserPlatformEntries(report).length > 0 || getBrowserEngineEntries(report).length > 0),
     [comparisonCards],
   )
 
@@ -360,6 +406,29 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
             breakdown: 'platform',
             segment_key: metrics.device_platform || 'unknown',
             device_platform: metrics.device_platform,
+            browser_engine: metrics.browser_engine,
+            device_tier: '',
+            samples: metrics.samples,
+            avg_lcp_ms: metrics.avg_lcp_ms,
+            avg_cls_score: metrics.avg_cls_score,
+            avg_inp_ms: metrics.avg_inp_ms,
+            transactions: report.overview.transactions,
+            error_pct: report.overview.error_pct,
+            peak_tps: report.overview.peak_tps,
+            peak_active_vusers: report.overview.peak_active_vusers,
+          })
+        }
+        continue
+      }
+
+      if (comparisonBreakdown === 'engine') {
+        for (const metrics of getBrowserEngineEntries(report)) {
+          rows.push({
+            run_id: test.id,
+            run_name: test.name,
+            breakdown: 'engine',
+            segment_key: metrics.browser_engine || 'browser',
+            device_platform: '',
             browser_engine: metrics.browser_engine,
             device_tier: '',
             samples: metrics.samples,
@@ -633,7 +702,7 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
               {comparisonCards.length === 2 && comparisonCards.every(item => item.report) && comparisonHasBrowserBreakdowns && (
                 <div className="results-compare-controls">
                   <div className="results-breakdown-toggle" role="tablist" aria-label="Comparison breakdown mode">
-                    {(['overall', 'platform', 'device'] as ComparisonBreakdown[]).map(mode => (
+                    {(['overall', 'platform', 'engine', 'device'] as ComparisonBreakdown[]).map(mode => (
                       <button
                         key={mode}
                         type="button"
@@ -642,7 +711,7 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
                         className={`results-breakdown-button${comparisonBreakdown === mode ? ' active' : ''}`}
                         onClick={() => setComparisonBreakdown(mode)}
                       >
-                        {mode === 'overall' ? 'Overall' : mode === 'platform' ? 'Platform' : 'Device'}
+                        {mode === 'overall' ? 'Overall' : mode === 'platform' ? 'Platform' : mode === 'engine' ? 'Engine' : 'Device'}
                       </button>
                     ))}
                   </div>
@@ -664,6 +733,7 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
                       {(() => {
                         const deviceEntries = getBrowserDeviceEntries(report)
                         const platformEntries = getBrowserPlatformEntries(report)
+                        const engineEntries = getBrowserEngineEntries(report)
 
                         return (
                           <>
@@ -721,6 +791,26 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
                                 <div className="browser-device-header">
                                   <span className="browser-device-name">{formatDevicePlatform(metrics.device_platform)}</span>
                                   <span className="browser-device-tier">{formatBrowserEngine(metrics.browser_engine)} · {metrics.samples} samples</span>
+                                </div>
+                                <div className="browser-device-stats">
+                                  <span>LCP {formatBrowserMetric(metrics.avg_lcp_ms, ' ms')}</span>
+                                  <span>CLS {formatBrowserScore(metrics.avg_cls_score)}</span>
+                                  <span>INP {formatBrowserMetric(metrics.avg_inp_ms, ' ms')}</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                      {comparisonBreakdown === 'engine' && engineEntries.length > 0 && (
+                        <>
+                          <span className="results-compare-label">Engine Rollup</span>
+                          <div className="browser-device-grid archive-browser-device-grid">
+                            {engineEntries.map(metrics => (
+                              <div key={metrics.browser_engine || 'browser'} className="browser-device-card">
+                                <div className="browser-device-header">
+                                  <span className="browser-device-name">{formatBrowserEngine(metrics.browser_engine)}</span>
+                                  <span className="browser-device-tier">{metrics.samples} samples</span>
                                 </div>
                                 <div className="browser-device-stats">
                                   <span>LCP {formatBrowserMetric(metrics.avg_lcp_ms, ' ms')}</span>

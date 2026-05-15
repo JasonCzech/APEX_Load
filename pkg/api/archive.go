@@ -113,9 +113,22 @@ type RunArchiveReport struct {
 	Manifest      *RunArchiveManifest              `json:"manifest"`
 	Overview      RunArchiveOverview               `json:"overview"`
 	ByAction      map[string]RunArchiveActionStats `json:"by_action"`
+	BrowserByEngine map[string]*BrowserEngineLiveMetrics `json:"browser_by_engine,omitempty"`
 	BrowserByPlatform map[string]*BrowserPlatformLiveMetrics `json:"browser_by_platform,omitempty"`
 	BrowserByDevice map[string]*BrowserDeviceLiveMetrics `json:"browser_by_device,omitempty"`
 	ResourcePeaks RunArchiveResourcePeaks          `json:"resource_peaks"`
+}
+
+type BrowserEngineLiveMetrics struct {
+	BrowserEngine        string  `json:"browser_engine,omitempty"`
+	Samples              int64   `json:"samples"`
+	AvgFCPMs             float64 `json:"avg_fcp_ms,omitempty"`
+	AvgLCPMs             float64 `json:"avg_lcp_ms,omitempty"`
+	AvgCLSScore          float64 `json:"avg_cls_score,omitempty"`
+	AvgINPMs             float64 `json:"avg_inp_ms,omitempty"`
+	AvgBlockingResources float64 `json:"avg_blocking_resources,omitempty"`
+	AvgLongTaskCount     float64 `json:"avg_long_task_count,omitempty"`
+	AvgJSHeapUsedMB      float64 `json:"avg_js_heap_used_mb,omitempty"`
 }
 
 type BrowserPlatformLiveMetrics struct {
@@ -472,6 +485,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	report := &RunArchiveReport{
 		Manifest: manifest,
 		ByAction: make(map[string]RunArchiveActionStats),
+		BrowserByEngine: make(map[string]*BrowserEngineLiveMetrics),
 		BrowserByPlatform: make(map[string]*BrowserPlatformLiveMetrics),
 		BrowserByDevice: make(map[string]*BrowserDeviceLiveMetrics),
 	}
@@ -508,6 +522,14 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 				report.Overview.Browser = &BrowserLiveMetrics{}
 			}
 			mergeReportBrowserMetrics(report.Overview.Browser, tx.ClientMetrics)
+			if engine := tx.ClientMetrics.BrowserEngine; engine != "" {
+				engineMetrics, ok := report.BrowserByEngine[engine]
+				if !ok {
+					engineMetrics = &BrowserEngineLiveMetrics{BrowserEngine: engine}
+					report.BrowserByEngine[engine] = engineMetrics
+				}
+				mergeReportBrowserEngineMetrics(engineMetrics, tx.ClientMetrics)
+			}
 			if platform := tx.ClientMetrics.DevicePlatform; platform != "" {
 				platformMetrics, ok := report.BrowserByPlatform[platform]
 				if !ok {
@@ -539,6 +561,12 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 		report.Overview.ErrorPct = float64(report.Overview.Errors) / float64(report.Overview.Transactions) * 100
 	}
 	finalizeReportBrowserMetrics(report.Overview.Browser)
+	for _, metrics := range report.BrowserByEngine {
+		finalizeReportBrowserEngineMetrics(metrics)
+	}
+	if len(report.BrowserByEngine) == 0 {
+		report.BrowserByEngine = nil
+	}
 	for _, metrics := range report.BrowserByPlatform {
 		finalizeReportBrowserPlatformMetrics(metrics)
 	}
@@ -688,6 +716,34 @@ func mergeReportBrowserPlatformMetrics(summary *BrowserPlatformLiveMetrics, metr
 	summary.AvgBlockingResources += float64(metrics.BlockingResourceCount)
 	summary.AvgLongTaskCount += float64(metrics.LongTaskCount)
 	summary.AvgJSHeapUsedMB += metrics.JSHeapUsedMB
+}
+
+func mergeReportBrowserEngineMetrics(summary *BrowserEngineLiveMetrics, metrics *protocol.ClientMetrics) {
+	if summary == nil || metrics == nil {
+		return
+	}
+	summary.Samples++
+	summary.AvgFCPMs += metrics.FCPMs
+	summary.AvgLCPMs += metrics.LCPMs
+	summary.AvgCLSScore += metrics.CLSScore
+	summary.AvgINPMs += metrics.INPMs
+	summary.AvgBlockingResources += float64(metrics.BlockingResourceCount)
+	summary.AvgLongTaskCount += float64(metrics.LongTaskCount)
+	summary.AvgJSHeapUsedMB += metrics.JSHeapUsedMB
+}
+
+func finalizeReportBrowserEngineMetrics(summary *BrowserEngineLiveMetrics) {
+	if summary == nil || summary.Samples == 0 {
+		return
+	}
+	divisor := float64(summary.Samples)
+	summary.AvgFCPMs /= divisor
+	summary.AvgLCPMs /= divisor
+	summary.AvgCLSScore /= divisor
+	summary.AvgINPMs /= divisor
+	summary.AvgBlockingResources /= divisor
+	summary.AvgLongTaskCount /= divisor
+	summary.AvgJSHeapUsedMB /= divisor
 }
 
 func finalizeReportBrowserPlatformMetrics(summary *BrowserPlatformLiveMetrics) {

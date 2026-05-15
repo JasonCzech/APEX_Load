@@ -73,6 +73,27 @@ func TestBuildRunArchiveReportAggregatesBrowserMetrics(t *testing.T) {
 				JSHeapUsedMB:          20,
 			},
 		},
+		{
+			Timestamp:  manifest.CreatedAt.Add(10 * time.Second),
+			TestID:     manifest.TestID,
+			TestName:   manifest.TestName,
+			ActionName: "browser_navigate",
+			DurationMs: 140,
+			Success:    true,
+			ClientMetrics: &protocol.ClientMetrics{
+				DeviceProfile:         "pixel_8",
+				DevicePlatform:        "android",
+				DeviceTier:            "high",
+				BrowserEngine:         "chromium",
+				FCPMs:                 100,
+				LCPMs:                 180,
+				CLSScore:              0.02,
+				INPMs:                 45,
+				BlockingResourceCount: 1,
+				LongTaskCount:         1,
+				JSHeapUsedMB:          16,
+			},
+		},
 	}
 	var txPayload []byte
 	for _, transaction := range transactions {
@@ -97,7 +118,7 @@ func TestBuildRunArchiveReportAggregatesBrowserMetrics(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildRunArchiveReport: %v", err)
 	}
-	if report.Overview.Browser == nil || report.Overview.Browser.Samples != 2 {
+	if report.Overview.Browser == nil || report.Overview.Browser.Samples != 3 {
 		t.Fatalf("expected browser overview summary, got %#v", report.Overview.Browser)
 	}
 	if report.BrowserByDevice == nil || report.BrowserByDevice["iphone_se"] == nil {
@@ -123,5 +144,17 @@ func TestBuildRunArchiveReportAggregatesBrowserMetrics(t *testing.T) {
 	}
 	if report.BrowserByPlatform["ios"].AvgLCPMs != 270 {
 		t.Fatalf("platform AvgLCPMs = %v, want 270", report.BrowserByPlatform["ios"].AvgLCPMs)
+	}
+	if report.BrowserByEngine == nil || report.BrowserByEngine["webkit"] == nil {
+		t.Fatalf("expected browser-by-engine summary, got %#v", report.BrowserByEngine)
+	}
+	if report.BrowserByEngine["webkit"].Samples != 2 {
+		t.Fatalf("webkit samples = %d, want 2", report.BrowserByEngine["webkit"].Samples)
+	}
+	if report.BrowserByEngine["webkit"].AvgLCPMs != 270 {
+		t.Fatalf("webkit AvgLCPMs = %v, want 270", report.BrowserByEngine["webkit"].AvgLCPMs)
+	}
+	if report.BrowserByEngine["chromium"] == nil || report.BrowserByEngine["chromium"].AvgLCPMs != 180 {
+		t.Fatalf("chromium summary = %#v, want AvgLCPMs 180", report.BrowserByEngine["chromium"])
 	}
 }

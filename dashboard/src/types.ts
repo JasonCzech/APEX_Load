@@ -314,9 +314,14 @@ export interface RunArchiveReport {
   manifest: RunArchiveManifest
   overview: RunArchiveOverview
   by_action: Record<string, RunArchiveActionStats>
+  browser_by_engine?: Record<string, BrowserEngineLiveMetrics>
   browser_by_platform?: Record<string, BrowserPlatformLiveMetrics>
   browser_by_device?: Record<string, BrowserDeviceLiveMetrics>
   resource_peaks: RunArchiveResourcePeaks
+}
+
+export interface BrowserEngineLiveMetrics extends BrowserLiveMetrics {
+  browser_engine?: string
 }
 
 export interface BrowserPlatformLiveMetrics extends BrowserLiveMetrics {
