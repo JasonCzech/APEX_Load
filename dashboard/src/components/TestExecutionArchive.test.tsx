@@ -79,6 +79,8 @@ describe('TestExecutionArchive', () => {
     },
     by_action: {},
     by_soap_operation: {},
+    by_soap_fault_code: {},
+    by_soap_fault_category: {},
     browser_by_engine: {
       webkit: {
         browser_engine: 'webkit',
@@ -594,6 +596,14 @@ describe('TestExecutionArchive', () => {
           max_response_ms: 170,
         },
       },
+      by_soap_fault_code: {
+        'env:Sender': 2,
+        'env:Receiver': 1,
+      },
+      by_soap_fault_category: {
+        client: 2,
+        server: 1,
+      },
     }
 
     await act(async () => {
@@ -632,9 +642,14 @@ describe('TestExecutionArchive', () => {
     })
 
     expect(container.textContent).toContain('SOAP Operation Summary')
+    expect(container.textContent).toContain('SOAP Fault Summary')
     expect(container.textContent).toContain('CreateOrder')
     expect(container.textContent).toContain('CancelOrder')
     expect(container.textContent).toContain('All SOAP operations')
+    expect(container.textContent).toContain('env:Sender')
+    expect(container.textContent).toContain('env:Receiver')
+    expect(container.textContent).toContain('client')
+    expect(container.textContent).toContain('server')
     expect(container.textContent).toContain('95.0')
     expect(container.textContent).toContain('170.0')
   })

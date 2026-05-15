@@ -70,6 +70,10 @@ function buildArchiveStatsEntries(stats?: Record<string, RunArchiveActionStats>)
   return Object.entries(stats || {}).sort((left, right) => right[1].transactions - left[1].transactions)
 }
 
+function buildArchiveCountEntries(counts?: Record<string, number>) {
+  return Object.entries(counts || {}).sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+}
+
 function renderBrowserSummary(
   summary: BrowserLiveMetrics,
   devices?: Record<string, BrowserDeviceLiveMetrics>,
@@ -247,6 +251,8 @@ export default function TestExecutionArchive({
   const [expandedSnapshotSections, setExpandedSnapshotSections] = useState<Record<string, boolean>>({})
   const [browserBreakdown, setBrowserBreakdown] = useState<BrowserBreakdown>('device')
   const soapOperationEntries = archiveSOAPOperationEntries.length > 0 ? archiveSOAPOperationEntries : buildArchiveStatsEntries(archiveReport?.by_soap_operation)
+  const soapFaultCodeEntries = buildArchiveCountEntries(archiveReport?.by_soap_fault_code)
+  const soapFaultCategoryEntries = buildArchiveCountEntries(archiveReport?.by_soap_fault_category)
 
   const handleCopySection = async (key: string, value: string) => {
     if (!navigator.clipboard?.writeText) return
@@ -414,6 +420,61 @@ export default function TestExecutionArchive({
                       ))}
                     </tbody>
                   </table>
+                </>
+              )}
+
+              {(soapFaultCodeEntries.length > 0 || soapFaultCategoryEntries.length > 0) && (
+                <>
+                  <div className="archive-section-header archive-subsection-header">
+                    <div>
+                      <h3 className="chart-title">SOAP Fault Summary</h3>
+                      <p className="archive-section-copy">Archived SOAP fault distribution grouped by reported code and category.</p>
+                    </div>
+                  </div>
+                  <div className="archive-overview-grid">
+                    {soapFaultCodeEntries.length > 0 && (
+                      <div>
+                        <span className="results-compare-label">Fault Codes</span>
+                        <table className="tx-table">
+                          <thead>
+                            <tr>
+                              <th>Code</th>
+                              <th>Count</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {soapFaultCodeEntries.slice(0, 8).map(([name, count]) => (
+                              <tr key={name}>
+                                <td className="tx-name">{name}</td>
+                                <td>{count}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                    {soapFaultCategoryEntries.length > 0 && (
+                      <div>
+                        <span className="results-compare-label">Fault Categories</span>
+                        <table className="tx-table">
+                          <thead>
+                            <tr>
+                              <th>Category</th>
+                              <th>Count</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {soapFaultCategoryEntries.slice(0, 8).map(([name, count]) => (
+                              <tr key={name}>
+                                <td className="tx-name">{name}</td>
+                                <td>{count}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
                 </>
               )}
             </div>

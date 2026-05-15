@@ -365,6 +365,8 @@ export interface RunArchiveReport {
   overview: RunArchiveOverview
   by_action: Record<string, RunArchiveActionStats>
   by_soap_operation?: Record<string, RunArchiveActionStats>
+  by_soap_fault_code?: Record<string, number>
+  by_soap_fault_category?: Record<string, number>
   browser_by_engine?: Record<string, BrowserEngineLiveMetrics>
   browser_by_platform?: Record<string, BrowserPlatformLiveMetrics>
   browser_by_device?: Record<string, BrowserDeviceLiveMetrics>

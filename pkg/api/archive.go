@@ -116,6 +116,8 @@ type RunArchiveReport struct {
 	Overview      RunArchiveOverview               `json:"overview"`
 	ByAction      map[string]RunArchiveActionStats `json:"by_action"`
 	BySOAPOperation map[string]RunArchiveActionStats `json:"by_soap_operation,omitempty"`
+	BySOAPFaultCode map[string]int64               `json:"by_soap_fault_code,omitempty"`
+	BySOAPFaultCategory map[string]int64           `json:"by_soap_fault_category,omitempty"`
 	BrowserByEngine map[string]*BrowserEngineLiveMetrics `json:"browser_by_engine,omitempty"`
 	BrowserByPlatform map[string]*BrowserPlatformLiveMetrics `json:"browser_by_platform,omitempty"`
 	BrowserByDevice map[string]*BrowserDeviceLiveMetrics `json:"browser_by_device,omitempty"`
@@ -493,6 +495,8 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 		Manifest: manifest,
 		ByAction: make(map[string]RunArchiveActionStats),
 		BySOAPOperation: make(map[string]RunArchiveActionStats),
+		BySOAPFaultCode: make(map[string]int64),
+		BySOAPFaultCategory: make(map[string]int64),
 		BrowserByEngine: make(map[string]*BrowserEngineLiveMetrics),
 		BrowserByPlatform: make(map[string]*BrowserPlatformLiveMetrics),
 		BrowserByDevice: make(map[string]*BrowserDeviceLiveMetrics),
@@ -517,6 +521,8 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 		if operation := archiveSOAPOperation(tx); operation != "" {
 			report.BySOAPOperation[operation] = mergeRunArchiveActionStats(report.BySOAPOperation[operation], tx)
 		}
+		incrementArchiveCount(report.BySOAPFaultCode, archiveSOAPFaultCode(tx))
+		incrementArchiveCount(report.BySOAPFaultCategory, archiveSOAPFaultCategory(tx))
 		if tx.ClientMetrics != nil {
 			if report.Overview.Browser == nil {
 				report.Overview.Browser = &BrowserLiveMetrics{}
@@ -588,6 +594,12 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	if len(report.BySOAPOperation) == 0 {
 		report.BySOAPOperation = nil
 	}
+	if len(report.BySOAPFaultCode) == 0 {
+		report.BySOAPFaultCode = nil
+	}
+	if len(report.BySOAPFaultCategory) == 0 {
+		report.BySOAPFaultCategory = nil
+	}
 
 	report.Overview.ResourceSamples = int64(len(resources))
 	for _, sample := range resources {
@@ -632,6 +644,27 @@ func archiveSOAPOperation(tx TransactionEvent) string {
 		return ""
 	}
 	return strings.TrimSpace(tx.Extractions["soap_operation"])
+}
+
+func archiveSOAPFaultCode(tx TransactionEvent) string {
+	if tx.ServerTelemetry == nil {
+		return ""
+	}
+	return strings.TrimSpace(tx.ServerTelemetry.SOAPFaultCode)
+}
+
+func archiveSOAPFaultCategory(tx TransactionEvent) string {
+	if tx.ServerTelemetry == nil {
+		return ""
+	}
+	return strings.TrimSpace(tx.ServerTelemetry.SOAPFaultCategory)
+}
+
+func incrementArchiveCount(values map[string]int64, key string) {
+	if values == nil || key == "" {
+		return
+	}
+	values[key]++
 }
 
 func mergeRunArchiveActionStats(stats RunArchiveActionStats, tx TransactionEvent) RunArchiveActionStats {

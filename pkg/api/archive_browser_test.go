@@ -158,3 +158,99 @@ func TestBuildRunArchiveReportAggregatesBrowserMetrics(t *testing.T) {
 		t.Fatalf("chromium summary = %#v, want AvgLCPMs 180", report.BrowserByEngine["chromium"])
 	}
 }
+
+func TestBuildRunArchiveReportAggregatesSOAPFaults(t *testing.T) {
+	tempDir := t.TempDir()
+	manifest := RunArchiveManifest{
+		SchemaVersion:         archiveSchemaVersion,
+		TestID:                "test-1",
+		TestName:              "SOAP Fault Metrics",
+		CreatedAt:             time.Date(2026, time.May, 15, 12, 0, 0, 0, time.UTC),
+		TransactionsFile:      "transactions.jsonl",
+		ResourceSamplesFile:   "resources.jsonl",
+		IntervalSummariesFile: "interval_summaries.jsonl",
+	}
+	manifestPath := filepath.Join(tempDir, "manifest.json")
+	manifestBytes, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatalf("marshal manifest: %v", err)
+	}
+	if err := os.WriteFile(manifestPath, manifestBytes, 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+	transactions := []TransactionEvent{
+		{
+			Timestamp:  manifest.CreatedAt,
+			TestID:     manifest.TestID,
+			TestName:   manifest.TestName,
+			ActionName: "SOAPRequest",
+			DurationMs: 180,
+			Success:    false,
+			ServerTelemetry: &protocol.ServerTelemetry{
+				SOAPFaultCode:     "env:Sender",
+				SOAPFaultCategory: "client",
+			},
+		},
+		{
+			Timestamp:  manifest.CreatedAt.Add(5 * time.Second),
+			TestID:     manifest.TestID,
+			TestName:   manifest.TestName,
+			ActionName: "SOAPRequest",
+			DurationMs: 220,
+			Success:    false,
+			ServerTelemetry: &protocol.ServerTelemetry{
+				SOAPFaultCode:     "env:Sender",
+				SOAPFaultCategory: "client",
+			},
+		},
+		{
+			Timestamp:  manifest.CreatedAt.Add(10 * time.Second),
+			TestID:     manifest.TestID,
+			TestName:   manifest.TestName,
+			ActionName: "SOAPRequest",
+			DurationMs: 260,
+			Success:    false,
+			ServerTelemetry: &protocol.ServerTelemetry{
+				SOAPFaultCode:     "env:Receiver",
+				SOAPFaultCategory: "server",
+			},
+		},
+		{
+			Timestamp:  manifest.CreatedAt.Add(15 * time.Second),
+			TestID:     manifest.TestID,
+			TestName:   manifest.TestName,
+			ActionName: "SOAPRequest",
+			DurationMs: 140,
+			Success:    true,
+		},
+	}
+	var txPayload []byte
+	for _, transaction := range transactions {
+		txBytes, err := json.Marshal(transaction)
+		if err != nil {
+			t.Fatalf("marshal transaction: %v", err)
+		}
+		txPayload = append(txPayload, txBytes...)
+		txPayload = append(txPayload, '\n')
+	}
+	if err := os.WriteFile(filepath.Join(tempDir, manifest.TransactionsFile), txPayload, 0o644); err != nil {
+		t.Fatalf("write transactions: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tempDir, manifest.ResourceSamplesFile), nil, 0o644); err != nil {
+		t.Fatalf("write resources: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tempDir, manifest.IntervalSummariesFile), nil, 0o644); err != nil {
+		t.Fatalf("write summaries: %v", err)
+	}
+
+	report, err := buildRunArchiveReport(&storage.RunArchiveRecord{ArchivePath: tempDir, ManifestPath: manifestPath})
+	if err != nil {
+		t.Fatalf("buildRunArchiveReport: %v", err)
+	}
+	if report.BySOAPFaultCode["env:Sender"] != 2 || report.BySOAPFaultCode["env:Receiver"] != 1 {
+		t.Fatalf("unexpected SOAP fault code counts %#v", report.BySOAPFaultCode)
+	}
+	if report.BySOAPFaultCategory["client"] != 2 || report.BySOAPFaultCategory["server"] != 1 {
+		t.Fatalf("unexpected SOAP fault category counts %#v", report.BySOAPFaultCategory)
+	}
+}
