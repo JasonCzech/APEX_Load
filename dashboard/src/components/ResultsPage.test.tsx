@@ -87,6 +87,20 @@ describe('ResultsPage', () => {
           avg_cls_score: id === 'run-a' ? 0.023 : 0.018,
           avg_inp_ms: id === 'run-a' ? 56 : 64,
         },
+        ...(id === 'run-a'
+          ? {
+              'iPhone SE': {
+                samples: 1,
+                device_profile: 'iPhone SE',
+                device_platform: 'ios',
+                device_tier: 'low',
+                browser_engine: 'webkit',
+                avg_lcp_ms: 260,
+                avg_cls_score: 0.031,
+                avg_inp_ms: 72,
+              },
+            }
+          : {}),
       },
       resource_peaks: {
         cpu_process_pct: 10,
@@ -146,13 +160,18 @@ describe('ResultsPage', () => {
     })
 
     expect(container.textContent).toContain('Run Comparison')
+    expect(container.textContent).toContain('Platform Rollup')
     expect(container.textContent).toContain('Avg LCP')
     expect(container.textContent).toContain('240.0 ms')
     expect(container.textContent).toContain('280.0 ms')
     expect(container.textContent).toContain('Avg INP')
     expect(container.textContent).toContain('56.0 ms')
     expect(container.textContent).toContain('64.0 ms')
+    expect(container.textContent).toContain('iOS')
+    expect(container.textContent).toContain('WebKit · 3 samples')
+    expect(container.textContent).toContain('246.7 ms')
     expect(container.textContent).toContain('iPhone 14 Pro')
+    expect(container.textContent).toContain('iPhone SE')
     expect(container.textContent).toContain('iOS · WebKit · mobile tier')
     expect(container.textContent).toContain('iPad Air')
     expect(container.textContent).toContain('iPadOS · WebKit · tablet tier')

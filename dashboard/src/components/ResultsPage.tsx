@@ -56,6 +56,64 @@ function getBrowserDeviceEntries(report?: RunArchiveReport): Array<[string, Brow
   return Object.entries(report?.browser_by_device ?? {}).sort(([left], [right]) => left.localeCompare(right))
 }
 
+interface BrowserPlatformMetrics {
+  platform: string
+  engine?: string
+  samples: number
+  avg_lcp_ms?: number
+  avg_cls_score?: number
+  avg_inp_ms?: number
+}
+
+function getBrowserPlatformEntries(report?: RunArchiveReport): BrowserPlatformMetrics[] {
+  const entries = Object.values(report?.browser_by_device ?? {})
+  if (entries.length === 0) return []
+
+  const grouped = new Map<string, {
+    platform: string
+    engine?: string
+    samples: number
+    lcpTotal: number
+    clsTotal: number
+    inpTotal: number
+  }>()
+
+  for (const metrics of entries) {
+    if (!metrics) continue
+    const platform = metrics.device_platform || 'unknown'
+    const current = grouped.get(platform) ?? {
+      platform,
+      engine: metrics.browser_engine,
+      samples: 0,
+      lcpTotal: 0,
+      clsTotal: 0,
+      inpTotal: 0,
+    }
+    const samples = metrics.samples || 0
+    current.samples += samples
+    current.lcpTotal += (metrics.avg_lcp_ms ?? 0) * samples
+    current.clsTotal += (metrics.avg_cls_score ?? 0) * samples
+    current.inpTotal += (metrics.avg_inp_ms ?? 0) * samples
+    if (current.engine && metrics.browser_engine && current.engine !== metrics.browser_engine) {
+      current.engine = 'multiple'
+    } else if (!current.engine) {
+      current.engine = metrics.browser_engine
+    }
+    grouped.set(platform, current)
+  }
+
+  return Array.from(grouped.values())
+    .map(entry => ({
+      platform: entry.platform,
+      engine: entry.engine,
+      samples: entry.samples,
+      avg_lcp_ms: entry.samples > 0 ? entry.lcpTotal / entry.samples : undefined,
+      avg_cls_score: entry.samples > 0 ? entry.clsTotal / entry.samples : undefined,
+      avg_inp_ms: entry.samples > 0 ? entry.inpTotal / entry.samples : undefined,
+    }))
+    .sort((left, right) => formatDevicePlatform(left.platform).localeCompare(formatDevicePlatform(right.platform)))
+}
+
 function resolveStatus(test: TestSummary, testStatuses: Record<string, string>) {
   return testStatuses[test.id] || test.status
 }
@@ -474,6 +532,7 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
                     <div key={test.id} className="results-compare-panel">
                       {(() => {
                         const deviceEntries = getBrowserDeviceEntries(report)
+                        const platformEntries = getBrowserPlatformEntries(report)
 
                         return (
                           <>
@@ -522,22 +581,45 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
                           </>
                         )}
                       </div>
+                      {platformEntries.length > 0 && (
+                        <>
+                          <span className="results-compare-label">Platform Rollup</span>
+                          <div className="browser-device-grid archive-browser-device-grid">
+                            {platformEntries.map(metrics => (
+                              <div key={metrics.platform} className="browser-device-card">
+                                <div className="browser-device-header">
+                                  <span className="browser-device-name">{formatDevicePlatform(metrics.platform)}</span>
+                                  <span className="browser-device-tier">{formatBrowserEngine(metrics.engine)} · {metrics.samples} samples</span>
+                                </div>
+                                <div className="browser-device-stats">
+                                  <span>LCP {formatBrowserMetric(metrics.avg_lcp_ms, ' ms')}</span>
+                                  <span>CLS {formatBrowserScore(metrics.avg_cls_score)}</span>
+                                  <span>INP {formatBrowserMetric(metrics.avg_inp_ms, ' ms')}</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      )}
                       {deviceEntries.length > 0 && (
-                        <div className="browser-device-grid archive-browser-device-grid">
-                          {deviceEntries.map(([profile, metrics]) => (
-                            <div key={profile} className="browser-device-card">
-                              <div className="browser-device-header">
-                                <span className="browser-device-name">{profile}</span>
-                                <span className="browser-device-tier">{formatDevicePlatform(metrics.device_platform)} · {formatBrowserEngine(metrics.browser_engine)} · {metrics.device_tier || 'unknown'} tier</span>
+                        <>
+                          <span className="results-compare-label">Devices</span>
+                          <div className="browser-device-grid archive-browser-device-grid">
+                            {deviceEntries.map(([profile, metrics]) => (
+                              <div key={profile} className="browser-device-card">
+                                <div className="browser-device-header">
+                                  <span className="browser-device-name">{profile}</span>
+                                  <span className="browser-device-tier">{formatDevicePlatform(metrics.device_platform)} · {formatBrowserEngine(metrics.browser_engine)} · {metrics.device_tier || 'unknown'} tier</span>
+                                </div>
+                                <div className="browser-device-stats">
+                                  <span>LCP {formatBrowserMetric(metrics.avg_lcp_ms, ' ms')}</span>
+                                  <span>CLS {formatBrowserScore(metrics.avg_cls_score)}</span>
+                                  <span>INP {formatBrowserMetric(metrics.avg_inp_ms, ' ms')}</span>
+                                </div>
                               </div>
-                              <div className="browser-device-stats">
-                                <span>LCP {formatBrowserMetric(metrics.avg_lcp_ms, ' ms')}</span>
-                                <span>CLS {formatBrowserScore(metrics.avg_cls_score)}</span>
-                                <span>INP {formatBrowserMetric(metrics.avg_inp_ms, ' ms')}</span>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
+                            ))}
+                          </div>
+                        </>
                       )}
                           </>
                         )
