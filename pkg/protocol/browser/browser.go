@@ -113,12 +113,27 @@ func (b *Browser) Init(ctx context.Context, config map[string]any) error {
 	b.touchMode = false
 	b.deviceProfile = ""
 	b.deviceTier = ""
+	engineConfigured := false
 
 	if baseURL, ok := config["base_url"].(string); ok {
 		b.baseURL = baseURL
 	}
 	if engine, ok := config["browser_engine"].(string); ok && strings.TrimSpace(engine) != "" {
 		b.engine = strings.TrimSpace(engine)
+		engineConfigured = true
+	}
+	if deviceProfile, ok := config["browser_device_profile"].(string); ok && strings.TrimSpace(deviceProfile) != "" {
+		profile, found := LookupDevice(strings.TrimSpace(deviceProfile))
+		if !found {
+			return fmt.Errorf("unknown browser device profile: %s", deviceProfile)
+		}
+		if profile.BrowserFamily != "" {
+			if engineConfigured && b.engine != profile.BrowserFamily {
+				return fmt.Errorf("browser engine %s is incompatible with device profile %s (requires %s)", b.engine, profile.Name, profile.BrowserFamily)
+			}
+			b.engine = profile.BrowserFamily
+		}
+		b.applyDeviceProfile(profile)
 	}
 	if b.engine == "webkit" {
 		return fmt.Errorf("browser engine webkit is not implemented in this build")
@@ -170,13 +185,6 @@ func (b *Browser) Init(ctx context.Context, config map[string]any) error {
 	}
 	if userAgent, ok := config["browser_user_agent"].(string); ok {
 		b.userAgent = userAgent
-	}
-	if deviceProfile, ok := config["browser_device_profile"].(string); ok && strings.TrimSpace(deviceProfile) != "" {
-		profile, found := LookupDevice(strings.TrimSpace(deviceProfile))
-		if !found {
-			return fmt.Errorf("unknown browser device profile: %s", deviceProfile)
-		}
-		b.applyDeviceProfile(profile)
 	}
 	if touchMode, ok := config["browser_touch_mode"].(bool); ok {
 		b.touchMode = touchMode

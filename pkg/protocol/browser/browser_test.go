@@ -60,6 +60,33 @@ func TestBrowserInitRejectsUnimplementedWebKitEngine(t *testing.T) {
 	}
 }
 
+func TestBrowserInitRejectsUnimplementedWebKitDeviceProfile(t *testing.T) {
+	b := &Browser{}
+	err := b.Init(context.Background(), map[string]any{
+		"browser_device_profile": "iphone_15_pro",
+	})
+	if err == nil {
+		t.Fatal("Init error = nil, want unimplemented engine")
+	}
+	if !strings.Contains(err.Error(), "not implemented in this build") {
+		t.Fatalf("Init error = %v, want explicit not implemented error", err)
+	}
+}
+
+func TestBrowserInitRejectsMismatchedEngineAndDeviceProfile(t *testing.T) {
+	b := &Browser{}
+	err := b.Init(context.Background(), map[string]any{
+		"browser_engine":         "chromium",
+		"browser_device_profile": "iphone_15_pro",
+	})
+	if err == nil {
+		t.Fatal("Init error = nil, want incompatible engine/profile error")
+	}
+	if !strings.Contains(err.Error(), "incompatible with device profile") {
+		t.Fatalf("Init error = %v, want incompatible device profile error", err)
+	}
+}
+
 func TestBrowserInitRejectsUnsupportedEngine(t *testing.T) {
 	b := &Browser{}
 	err := b.Init(context.Background(), map[string]any{
@@ -313,10 +340,10 @@ func TestBrowserProtocolTouchActions(t *testing.T) {
 
 	b := &Browser{}
 	if err := b.Init(context.Background(), map[string]any{
-		"base_url":              server.URL,
-		"browser_headless":      true,
-		"browser_device_profile": "iphone_se",
-		"browser_touch_mode":    true,
+		"base_url":               server.URL,
+		"browser_headless":       true,
+		"browser_device_profile": "pixel_8",
+		"browser_touch_mode":     true,
 	}); err != nil {
 		lower := strings.ToLower(err.Error())
 		if strings.Contains(lower, "executable") || strings.Contains(lower, "chrome") {
@@ -432,7 +459,7 @@ func TestBrowserProtocolAdvancedTouchActions(t *testing.T) {
 	if err := b.Init(context.Background(), map[string]any{
 		"base_url":               server.URL,
 		"browser_headless":       true,
-		"browser_device_profile": "iphone_se",
+		"browser_device_profile": "pixel_8",
 		"browser_touch_mode":     true,
 	}); err != nil {
 		lower := strings.ToLower(err.Error())
@@ -533,7 +560,7 @@ func TestBrowserProtocolClientMetrics(t *testing.T) {
 		"base_url":               server.URL,
 		"browser_headless":       true,
 		"browser_client_metrics": true,
-		"browser_device_profile": "iphone_se",
+		"browser_device_profile": "pixel_8",
 	}); err != nil {
 		lower := strings.ToLower(err.Error())
 		if strings.Contains(lower, "executable") || strings.Contains(lower, "chrome") {
@@ -557,11 +584,11 @@ func TestBrowserProtocolClientMetrics(t *testing.T) {
 	if result.ClientMetrics == nil {
 		t.Fatal("ClientMetrics = nil, want populated metrics")
 	}
-	if result.ClientMetrics.DeviceProfile != "iphone_se" {
-		t.Fatalf("DeviceProfile = %q, want iphone_se", result.ClientMetrics.DeviceProfile)
+	if result.ClientMetrics.DeviceProfile != "pixel_8" {
+		t.Fatalf("DeviceProfile = %q, want pixel_8", result.ClientMetrics.DeviceProfile)
 	}
-	if result.ClientMetrics.DeviceTier != "low" {
-		t.Fatalf("DeviceTier = %q, want low", result.ClientMetrics.DeviceTier)
+	if result.ClientMetrics.DeviceTier != "high" {
+		t.Fatalf("DeviceTier = %q, want high", result.ClientMetrics.DeviceTier)
 	}
 	if result.ClientMetrics.ActionDurationMs <= 0 {
 		t.Fatalf("ActionDurationMs = %v, want > 0", result.ClientMetrics.ActionDurationMs)
@@ -751,13 +778,13 @@ func TestBrowserFetchRequestPatterns(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			patterns := tt.b.fetchRequestPatterns()
-			if len(patterns) != len(tt.want) {
-				t.Fatalf("len(patterns) = %d, want %d", len(patterns), len(tt.want))
+	for i := range tests {
+		t.Run(tests[i].name, func(t *testing.T) {
+			patterns := tests[i].b.fetchRequestPatterns()
+			if len(patterns) != len(tests[i].want) {
+				t.Fatalf("len(patterns) = %d, want %d", len(patterns), len(tests[i].want))
 			}
-			for idx, expected := range tt.want {
+			for idx, expected := range tests[i].want {
 				if patterns[idx].ResourceType != expected {
 					t.Fatalf("patterns[%d] = %v, want %v", idx, patterns[idx].ResourceType, expected)
 				}
