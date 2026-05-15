@@ -290,6 +290,7 @@ export interface ServerTelemetry {
   deserialization_ms?: number
   request_payload_kb?: number
   response_payload_kb?: number
+  response_size_class?: string
   envelope_overhead_kb?: number
   soap_fault_code?: string
   soap_fault_category?: string

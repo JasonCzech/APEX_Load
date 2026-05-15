@@ -146,6 +146,7 @@ type ServerTelemetry struct {
 	DeserializationMs  float64 `json:"deserialization_ms,omitempty"`
 	RequestPayloadKB   float64 `json:"request_payload_kb,omitempty"`
 	ResponsePayloadKB  float64 `json:"response_payload_kb,omitempty"`
+	ResponseSizeClass  string  `json:"response_size_class,omitempty"`
 	EnvelopeOverheadKB float64 `json:"envelope_overhead_kb,omitempty"`
 	SOAPFaultCode      string  `json:"soap_fault_code,omitempty"`
 	SOAPFaultCategory  string  `json:"soap_fault_category,omitempty"`

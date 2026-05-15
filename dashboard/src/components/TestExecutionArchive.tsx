@@ -546,6 +546,7 @@ export default function TestExecutionArchive({
                                         Deserialization: {formatBrowserMetric(event.server_telemetry.deserialization_ms, ' ms')}{'\n'}
                                         Request payload: {formatBrowserMetric(event.server_telemetry.request_payload_kb, ' KB', 2)}{'\n'}
                                         Response payload: {formatBrowserMetric(event.server_telemetry.response_payload_kb, ' KB', 2)}{'\n'}
+                                        Response size class: {event.server_telemetry.response_size_class || 'n/a'}{'\n'}
                                         Envelope overhead: {formatBrowserMetric(event.server_telemetry.envelope_overhead_kb, ' KB', 2)}{'\n'}
                                         SOAP fault: {event.server_telemetry.soap_fault_code || 'n/a'} / {event.server_telemetry.soap_fault_category || 'n/a'}{'\n'}
                                         Redirects: {event.server_telemetry.redirect_count ?? 0} hops / {formatBrowserMetric(event.server_telemetry.redirect_ms, ' ms')}{'\n'}
