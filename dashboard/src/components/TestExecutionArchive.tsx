@@ -28,8 +28,11 @@ interface Props {
   archiveReport: RunArchiveReport | null
   onDownloadArchiveArtifact: (artifactName: string) => void
   archiveActionEntries: Array<[string, RunArchiveActionStats]>
+  archiveSOAPOperationEntries: Array<[string, RunArchiveActionStats]>
   selectedArchiveAction: string
   onSelectedArchiveActionChange: (value: string) => void
+  selectedArchiveSOAPOperation: string
+  onSelectedArchiveSOAPOperationChange: (value: string) => void
   archiveGroups: string[]
   selectedArchiveGroup: string
   onSelectedArchiveGroupChange: (value: string) => void
@@ -218,8 +221,11 @@ export default function TestExecutionArchive({
   archiveReport,
   onDownloadArchiveArtifact,
   archiveActionEntries,
+  archiveSOAPOperationEntries,
   selectedArchiveAction,
   onSelectedArchiveActionChange,
+  selectedArchiveSOAPOperation,
+  onSelectedArchiveSOAPOperationChange,
   archiveGroups,
   selectedArchiveGroup,
   onSelectedArchiveGroupChange,
@@ -240,7 +246,7 @@ export default function TestExecutionArchive({
   const [copiedSection, setCopiedSection] = useState<string | null>(null)
   const [expandedSnapshotSections, setExpandedSnapshotSections] = useState<Record<string, boolean>>({})
   const [browserBreakdown, setBrowserBreakdown] = useState<BrowserBreakdown>('device')
-  const soapOperationEntries = buildArchiveStatsEntries(archiveReport?.by_soap_operation)
+  const soapOperationEntries = archiveSOAPOperationEntries.length > 0 ? archiveSOAPOperationEntries : buildArchiveStatsEntries(archiveReport?.by_soap_operation)
 
   const handleCopySection = async (key: string, value: string) => {
     if (!navigator.clipboard?.writeText) return
@@ -428,6 +434,18 @@ export default function TestExecutionArchive({
                       <option key={name} value={name}>{name}</option>
                     ))}
                   </select>
+                  {soapOperationEntries.length > 0 && (
+                    <select
+                      className="archive-action-select archive-filter-select"
+                      value={selectedArchiveSOAPOperation}
+                      onChange={(event) => onSelectedArchiveSOAPOperationChange(event.target.value)}
+                    >
+                      <option value="">All SOAP operations</option>
+                      {soapOperationEntries.map(([name]) => (
+                        <option key={name} value={name}>{name}</option>
+                      ))}
+                    </select>
+                  )}
                   <select
                     className="archive-action-select archive-filter-select"
                     value={selectedArchiveGroup}

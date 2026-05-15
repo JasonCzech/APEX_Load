@@ -31,6 +31,7 @@ function ArchiveHarness({ test }: { test: TestSummary | null }) {
     <div>
       <span data-testid="loading">{model.archiveLoading ? 'loading' : 'idle'}</span>
       <span data-testid="action">{model.selectedArchiveAction || 'none'}</span>
+      <span data-testid="soap-operation">{model.selectedArchiveSOAPOperation || 'all'}</span>
       <span data-testid="group">{model.selectedArchiveGroup || 'all'}</span>
       <span data-testid="offset">{String(model.archiveTransactionsOffset)}</span>
       <span data-testid="rows">{String(model.archiveTransactions.length)}</span>
@@ -105,6 +106,16 @@ describe('useExecutionArchiveModel', () => {
           max_response_ms: 110,
         },
       },
+      by_soap_operation: {
+        CreateOrder: {
+          transactions: 2,
+          errors: 0,
+          error_pct: 0,
+          avg_response_ms: 100,
+          min_response_ms: 80,
+          max_response_ms: 120,
+        },
+      },
       resource_peaks: {
         cpu_process_pct: 10,
         mem_process_mb: 200,
@@ -141,6 +152,7 @@ describe('useExecutionArchiveModel', () => {
     expect(apiMock.getTestArchiveReport).toHaveBeenCalledWith('test-1')
     expect(apiMock.getTestArchiveTransactions).toHaveBeenCalledWith('test-1', {
       action: 'Login',
+      soap_operation: undefined,
       group: undefined,
       success: undefined,
       limit: 25,
@@ -189,6 +201,16 @@ describe('useExecutionArchiveModel', () => {
           max_response_ms: 220,
         },
       },
+      by_soap_operation: {
+        CreateOrder: {
+          transactions: 60,
+          errors: 0,
+          error_pct: 0,
+          avg_response_ms: 120,
+          min_response_ms: 80,
+          max_response_ms: 220,
+        },
+      },
       resource_peaks: {
         cpu_process_pct: 10,
         mem_process_mb: 200,
@@ -229,6 +251,7 @@ describe('useExecutionArchiveModel', () => {
 
     expect(apiMock.getTestArchiveTransactions).toHaveBeenLastCalledWith('test-1', {
       action: 'Login',
+      soap_operation: undefined,
       group: undefined,
       success: undefined,
       limit: 25,
@@ -243,6 +266,7 @@ describe('useExecutionArchiveModel', () => {
 
     expect(apiMock.getTestArchiveTransactions).toHaveBeenLastCalledWith('test-1', {
       action: 'Login',
+      soap_operation: undefined,
       group: 'Checkout',
       success: undefined,
       limit: 25,

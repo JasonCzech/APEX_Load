@@ -165,6 +165,7 @@ func (p *archiveStubProtocol) Execute(_ context.Context, action *protocol.Action
 		CorrelationID:    "corr-archive-1",
 		DependencyType:   "http",
 		DependencyTarget: "archive.example.test",
+		Extractions:      map[string]string{"soap_operation": "CreateOrder"},
 	}, nil
 }
 func (p *archiveStubProtocol) Teardown(_ context.Context) error    { return nil }

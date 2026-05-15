@@ -103,6 +103,9 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
     archiveActionEntries,
     selectedArchiveAction,
     onSelectedArchiveActionChange,
+    archiveSOAPOperationEntries,
+    selectedArchiveSOAPOperation,
+    onSelectedArchiveSOAPOperationChange,
     archiveGroups,
     selectedArchiveGroup,
     onSelectedArchiveGroupChange,
@@ -249,6 +252,9 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
           archiveActionEntries={archiveActionEntries}
           selectedArchiveAction={selectedArchiveAction}
           onSelectedArchiveActionChange={onSelectedArchiveActionChange}
+          archiveSOAPOperationEntries={archiveSOAPOperationEntries}
+          selectedArchiveSOAPOperation={selectedArchiveSOAPOperation}
+          onSelectedArchiveSOAPOperationChange={onSelectedArchiveSOAPOperationChange}
           archiveGroups={archiveGroups}
           selectedArchiveGroup={selectedArchiveGroup}
           onSelectedArchiveGroupChange={onSelectedArchiveGroupChange}

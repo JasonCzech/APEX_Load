@@ -100,9 +100,10 @@ func (s *Server) handleGetRunArchiveTransactions(w http.ResponseWriter, r *http.
 		"limit":        page.Limit,
 		"offset":       page.Offset,
 		"filters": map[string]any{
-			"action":  filter.Action,
-			"group":   filter.Group,
-			"success": filter.Success,
+			"action":         filter.Action,
+			"soap_operation": filter.SOAPOperation,
+			"group":          filter.Group,
+			"success":        filter.Success,
 		},
 	})
 }
@@ -205,6 +206,7 @@ func parseArchivePage(w http.ResponseWriter, r *http.Request) (archivePage, bool
 func parseTransactionEventFilter(w http.ResponseWriter, r *http.Request) (transactionEventFilter, bool) {
 	filter := transactionEventFilter{
 		Action:           r.URL.Query().Get("action"),
+		SOAPOperation:    r.URL.Query().Get("soap_operation"),
 		Group:            r.URL.Query().Get("group"),
 		CorrelationID:    r.URL.Query().Get("correlation_id"),
 		DependencyType:   r.URL.Query().Get("dependency_type"),

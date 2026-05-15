@@ -103,6 +103,7 @@ type archivePage struct {
 
 type transactionEventFilter struct {
 	Action           string
+	SOAPOperation    string
 	Group            string
 	CorrelationID    string
 	DependencyType   string
@@ -428,6 +429,9 @@ func loadArchiveTransactions(record *storage.RunArchiveRecord, filter transactio
 	path := filepath.Join(record.ArchivePath, manifest.TransactionsFile)
 	return readJSONLPage(path, page, func(item *TransactionEvent) bool {
 		if filter.Action != "" && !strings.EqualFold(item.ActionName, filter.Action) {
+			return false
+		}
+		if filter.SOAPOperation != "" && !strings.EqualFold(strings.TrimSpace(item.Extractions["soap_operation"]), filter.SOAPOperation) {
 			return false
 		}
 		if filter.Group != "" && !strings.EqualFold(item.Group, filter.Group) {

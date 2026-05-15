@@ -20,6 +20,7 @@ type ArchiveTransactionsParams = {
   limit?: number
   offset?: number
   action?: string
+  soap_operation?: string
   group?: string
   success?: boolean
 }
@@ -197,6 +198,7 @@ export function useTestApi() {
         limit: params?.limit,
         offset: params?.offset,
         action: params?.action,
+        soap_operation: params?.soap_operation,
         group: params?.group,
         success: params?.success,
       })

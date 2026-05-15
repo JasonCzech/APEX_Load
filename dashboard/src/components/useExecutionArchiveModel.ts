@@ -20,6 +20,9 @@ interface ExecutionArchiveModel {
   archiveActionEntries: Array<[string, RunArchiveActionStats]>
   selectedArchiveAction: string
   onSelectedArchiveActionChange: (value: string) => void
+  archiveSOAPOperationEntries: Array<[string, RunArchiveActionStats]>
+  selectedArchiveSOAPOperation: string
+  onSelectedArchiveSOAPOperationChange: (value: string) => void
   archiveGroups: string[]
   selectedArchiveGroup: string
   onSelectedArchiveGroupChange: (value: string) => void
@@ -57,6 +60,7 @@ export function useExecutionArchiveModel(test: TestSummary | null): ExecutionArc
   const [archiveTransactionsLoading, setArchiveTransactionsLoading] = useState(false)
   const [archiveError, setArchiveError] = useState('')
   const [selectedArchiveAction, setSelectedArchiveAction] = useState('')
+  const [selectedArchiveSOAPOperation, setSelectedArchiveSOAPOperation] = useState('')
   const [selectedArchiveGroup, setSelectedArchiveGroup] = useState('')
   const [archiveErrorsOnly, setArchiveErrorsOnly] = useState(false)
   const [archiveTransactionsOffset, setArchiveTransactionsOffset] = useState(0)
@@ -73,6 +77,7 @@ export function useExecutionArchiveModel(test: TestSummary | null): ExecutionArc
       setArchiveTransactionsLoading(false)
       setArchiveError('')
       setSelectedArchiveAction('')
+      setSelectedArchiveSOAPOperation('')
       setSelectedArchiveGroup('')
       setArchiveErrorsOnly(false)
       setArchiveTransactionsOffset(0)
@@ -89,8 +94,10 @@ export function useExecutionArchiveModel(test: TestSummary | null): ExecutionArc
         const report = await api.getTestArchiveReport(test.id)
         if (cancelled) return
         const actionNames = Object.keys(report.by_action || {})
+        const operationNames = Object.keys(report.by_soap_operation || {})
         setArchiveReport(report)
         setSelectedArchiveAction((current) => (current && actionNames.includes(current) ? current : actionNames[0] || ''))
+        setSelectedArchiveSOAPOperation((current) => (current && operationNames.includes(current) ? current : ''))
         setArchiveTransactionsOffset(0)
       } catch (error: unknown) {
         if (cancelled) return
@@ -125,6 +132,7 @@ export function useExecutionArchiveModel(test: TestSummary | null): ExecutionArc
       try {
         const response = await api.getTestArchiveTransactions(test.id, {
           action: selectedArchiveAction,
+          soap_operation: selectedArchiveSOAPOperation || undefined,
           group: selectedArchiveGroup || undefined,
           success: archiveErrorsOnly ? false : undefined,
           limit: ARCHIVE_PAGE_SIZE,
@@ -151,11 +159,16 @@ export function useExecutionArchiveModel(test: TestSummary | null): ExecutionArc
     return () => {
       cancelled = true
     }
-  }, [api, archiveErrorsOnly, archiveTransactionsOffset, selectedArchiveAction, selectedArchiveGroup, test])
+  }, [api, archiveErrorsOnly, archiveTransactionsOffset, selectedArchiveAction, selectedArchiveGroup, selectedArchiveSOAPOperation, test])
 
   const archiveActionEntries = useMemo(() => {
     if (!archiveReport) return []
     return Object.entries(archiveReport.by_action || {}).sort((a, b) => b[1].transactions - a[1].transactions)
+  }, [archiveReport])
+
+  const archiveSOAPOperationEntries = useMemo(() => {
+    if (!archiveReport) return []
+    return Object.entries(archiveReport.by_soap_operation || {}).sort((a, b) => b[1].transactions - a[1].transactions)
   }, [archiveReport])
 
   const archiveGroups = useMemo(() => test?.groups?.map((group) => group.name) || [], [test?.groups])
@@ -165,6 +178,11 @@ export function useExecutionArchiveModel(test: TestSummary | null): ExecutionArc
 
   const onSelectedArchiveActionChange = useCallback((value: string) => {
     setSelectedArchiveAction(value)
+    setArchiveTransactionsOffset(0)
+  }, [])
+
+  const onSelectedArchiveSOAPOperationChange = useCallback((value: string) => {
+    setSelectedArchiveSOAPOperation(value)
     setArchiveTransactionsOffset(0)
   }, [])
 
@@ -214,6 +232,9 @@ export function useExecutionArchiveModel(test: TestSummary | null): ExecutionArc
     archiveActionEntries,
     selectedArchiveAction,
     onSelectedArchiveActionChange,
+    archiveSOAPOperationEntries,
+    selectedArchiveSOAPOperation,
+    onSelectedArchiveSOAPOperationChange,
     archiveGroups,
     selectedArchiveGroup,
     onSelectedArchiveGroupChange,

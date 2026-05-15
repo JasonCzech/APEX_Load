@@ -192,8 +192,11 @@ describe('TestExecutionArchive', () => {
           archiveReport={archiveReport}
           onDownloadArchiveArtifact={vi.fn()}
           archiveActionEntries={[]}
+          archiveSOAPOperationEntries={[]}
           selectedArchiveAction=""
           onSelectedArchiveActionChange={vi.fn()}
+          selectedArchiveSOAPOperation=""
+          onSelectedArchiveSOAPOperationChange={vi.fn()}
           archiveGroups={[]}
           selectedArchiveGroup=""
           onSelectedArchiveGroupChange={vi.fn()}
@@ -421,8 +424,11 @@ describe('TestExecutionArchive', () => {
           archiveReport={mixedReport}
           onDownloadArchiveArtifact={vi.fn()}
           archiveActionEntries={[]}
+          archiveSOAPOperationEntries={[]}
           selectedArchiveAction=""
           onSelectedArchiveActionChange={vi.fn()}
+          selectedArchiveSOAPOperation=""
+          onSelectedArchiveSOAPOperationChange={vi.fn()}
           archiveGroups={[]}
           selectedArchiveGroup=""
           onSelectedArchiveGroupChange={vi.fn()}
@@ -512,8 +518,11 @@ describe('TestExecutionArchive', () => {
           archiveReport={archiveReport}
           onDownloadArchiveArtifact={vi.fn()}
           archiveActionEntries={[]}
+          archiveSOAPOperationEntries={[]}
           selectedArchiveAction=""
           onSelectedArchiveActionChange={vi.fn()}
+          selectedArchiveSOAPOperation=""
+          onSelectedArchiveSOAPOperationChange={vi.fn()}
           archiveGroups={[]}
           selectedArchiveGroup=""
           onSelectedArchiveGroupChange={vi.fn()}
@@ -597,8 +606,11 @@ describe('TestExecutionArchive', () => {
           archiveReport={operationReport}
           onDownloadArchiveArtifact={vi.fn()}
           archiveActionEntries={Object.entries(operationReport.by_action)}
+          archiveSOAPOperationEntries={Object.entries(operationReport.by_soap_operation || {})}
           selectedArchiveAction="SOAPRequest"
           onSelectedArchiveActionChange={vi.fn()}
+          selectedArchiveSOAPOperation="CreateOrder"
+          onSelectedArchiveSOAPOperationChange={vi.fn()}
           archiveGroups={[]}
           selectedArchiveGroup=""
           onSelectedArchiveGroupChange={vi.fn()}
@@ -622,6 +634,7 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('SOAP Operation Summary')
     expect(container.textContent).toContain('CreateOrder')
     expect(container.textContent).toContain('CancelOrder')
+    expect(container.textContent).toContain('All SOAP operations')
     expect(container.textContent).toContain('95.0')
     expect(container.textContent).toContain('170.0')
   })
