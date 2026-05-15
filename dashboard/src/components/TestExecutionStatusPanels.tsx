@@ -1,5 +1,6 @@
 import { BrowserDeviceLiveMetrics, BrowserLiveMetrics, GoalStatus, GroupLiveMetrics, TelemetryHealth, TestSummary } from '../types'
 import { formatTimeCompact } from '../utils/timeUtils'
+import { formatBrowserEngineLabel, formatDevicePlatformLabel } from './BrowserBreakdownChart'
 
 interface LiveMetricsSummary {
   tps?: number
@@ -51,20 +52,6 @@ function formatBrowserMetric(value: number | undefined, suffix = '', digits = 1)
 function formatBrowserScore(value: number | undefined): string {
   if (value === undefined) return 'n/a'
   return value.toFixed(3)
-}
-
-function formatBrowserEngine(value?: string): string {
-  if (value === 'webkit') return 'WebKit'
-  if (value === 'chromium') return 'Chromium'
-  return value || 'browser'
-}
-
-function formatDevicePlatform(value?: string): string {
-  if (value === 'ios') return 'iOS'
-  if (value === 'ipados') return 'iPadOS'
-  if (value === 'android') return 'Android'
-  if (value === 'desktop') return 'Desktop'
-  return value || 'unknown'
 }
 
 function telemetryBadgeClass(metrics?: LiveMetricsSummary): 'healthy' | 'warning' | 'danger' {
@@ -227,7 +214,7 @@ export default function TestExecutionStatusPanels({
                 <div key={profile} className="browser-device-card">
                   <div className="browser-device-header">
                     <span className="browser-device-name">{profile}</span>
-                    <span className="browser-device-tier">{formatDevicePlatform(deviceMetrics.device_platform)} · {formatBrowserEngine(deviceMetrics.browser_engine)} · {deviceMetrics.device_tier || 'unknown'} tier</span>
+                    <span className="browser-device-tier">{formatDevicePlatformLabel(deviceMetrics.device_platform)} · {formatBrowserEngineLabel(deviceMetrics.browser_engine)} · {deviceMetrics.device_tier || 'unknown'} tier</span>
                   </div>
                   <div className="browser-device-stats">
                     <span>FCP {formatBrowserMetric(deviceMetrics.avg_fcp_ms, ' ms')}</span>

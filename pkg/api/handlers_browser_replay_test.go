@@ -151,6 +151,78 @@ func TestBrowserReplayManagerRetainsStreamedEvents(t *testing.T) {
 	}
 }
 
+func TestBrowserReplayManagerStopCancelsPausedSession(t *testing.T) {
+	protocolName := registerReplayAPIProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+		time.Sleep(150 * time.Millisecond)
+		return &protocol.Result{
+			ActionName: action.Name,
+			Success:    true,
+		}, nil
+	})
+
+	manager := NewBrowserReplayManager(NewHub())
+	session := manager.Start("", &dsl.Script{
+		Name:     "Browser Session",
+		Protocol: protocolName,
+		Version:  "1.0.0",
+		Actions: []dsl.Action{
+			{Name: "first", Type: "browser_wait_for_timeout", Value: "25"},
+			{Name: "second", Type: "browser_wait_for_timeout", Value: "25"},
+		},
+	}, BrowserReplayStartRequest{ReplaySessionID: "session-paused-stop"})
+	if session.ID != "session-paused-stop" {
+		t.Fatalf("session.ID = %q, want session-paused-stop", session.ID)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		current, ok := manager.Get("session-paused-stop")
+		if !ok {
+			t.Fatal("session not found")
+		}
+		if current.CurrentEventIndex >= 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	paused, ok, changed := manager.Pause("session-paused-stop")
+	if !ok {
+		t.Fatal("session not found while pausing")
+	}
+	if !changed {
+		t.Fatalf("expected pause to change state, got %#v", paused)
+	}
+	if paused.Status != BrowserReplayPaused {
+		t.Fatalf("paused status = %q, want paused", paused.Status)
+	}
+
+	stopped, ok := manager.Stop("session-paused-stop")
+	if !ok {
+		t.Fatal("session not found while stopping")
+	}
+	if stopped.Status != BrowserReplayStopped {
+		t.Fatalf("stopped status = %q, want stopped", stopped.Status)
+	}
+
+	for time.Now().Before(deadline) {
+		current, ok := manager.Get("session-paused-stop")
+		if !ok {
+			t.Fatal("session not found after stop")
+		}
+		if current.Status == BrowserReplayStopped && current.CompletedAt != nil {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	current, ok := manager.Get("session-paused-stop")
+	if !ok {
+		t.Fatal("session not found after stop deadline")
+	}
+	t.Fatalf("session = %#v, want stopped session with completion timestamp", current)
+}
+
 func TestApplyBrowserReplayOverrides(t *testing.T) {
 	headless := false
 	touchMode := true

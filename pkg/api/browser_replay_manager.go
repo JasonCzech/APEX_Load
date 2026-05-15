@@ -222,7 +222,7 @@ func (m *BrowserReplayManager) Stop(sessionID string) (*BrowserReplaySession, bo
 	}
 
 	session.mu.Lock()
-	if session.Status == BrowserReplayRunning && session.cancel != nil {
+	if (session.Status == BrowserReplayRunning || session.Status == BrowserReplayPaused) && session.cancel != nil {
 		session.Status = BrowserReplayStopped
 		session.cancel()
 	}
