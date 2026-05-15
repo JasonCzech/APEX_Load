@@ -192,7 +192,7 @@ func TestBuildRunArchiveReportAggregatesSOAPFaults(t *testing.T) {
 			},
 		},
 		{
-			Timestamp:  manifest.CreatedAt.Add(5 * time.Second),
+			Timestamp:  manifest.CreatedAt.Add(20 * time.Second),
 			TestID:     manifest.TestID,
 			TestName:   manifest.TestName,
 			ActionName: "SOAPRequest",
@@ -204,7 +204,7 @@ func TestBuildRunArchiveReportAggregatesSOAPFaults(t *testing.T) {
 			},
 		},
 		{
-			Timestamp:  manifest.CreatedAt.Add(10 * time.Second),
+			Timestamp:  manifest.CreatedAt.Add(65 * time.Second),
 			TestID:     manifest.TestID,
 			TestName:   manifest.TestName,
 			ActionName: "SOAPRequest",
@@ -252,5 +252,20 @@ func TestBuildRunArchiveReportAggregatesSOAPFaults(t *testing.T) {
 	}
 	if report.BySOAPFaultCategory["client"] != 2 || report.BySOAPFaultCategory["server"] != 1 {
 		t.Fatalf("unexpected SOAP fault category counts %#v", report.BySOAPFaultCategory)
+	}
+	if len(report.SOAPFaultTimeline) != 2 {
+		t.Fatalf("unexpected SOAP fault timeline bucket count %d", len(report.SOAPFaultTimeline))
+	}
+	if report.SOAPFaultTimeline[0].Timestamp != manifest.CreatedAt.Truncate(time.Minute) {
+		t.Fatalf("unexpected first SOAP fault timeline bucket time %s", report.SOAPFaultTimeline[0].Timestamp)
+	}
+	if report.SOAPFaultTimeline[0].Total != 2 || report.SOAPFaultTimeline[0].ByCode["env:Sender"] != 2 || report.SOAPFaultTimeline[0].ByCategory["client"] != 2 {
+		t.Fatalf("unexpected first SOAP fault timeline bucket %#v", report.SOAPFaultTimeline[0])
+	}
+	if report.SOAPFaultTimeline[1].Timestamp != manifest.CreatedAt.Add(time.Minute).Truncate(time.Minute) {
+		t.Fatalf("unexpected second SOAP fault timeline bucket time %s", report.SOAPFaultTimeline[1].Timestamp)
+	}
+	if report.SOAPFaultTimeline[1].Total != 1 || report.SOAPFaultTimeline[1].ByCode["env:Receiver"] != 1 || report.SOAPFaultTimeline[1].ByCategory["server"] != 1 {
+		t.Fatalf("unexpected second SOAP fault timeline bucket %#v", report.SOAPFaultTimeline[1])
 	}
 }

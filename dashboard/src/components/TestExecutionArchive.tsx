@@ -1,6 +1,6 @@
 import { Fragment, useState } from 'react'
 
-import { BrowserDeviceLiveMetrics, BrowserEngineLiveMetrics, BrowserLiveMetrics, BrowserPlatformLiveMetrics, RunArchiveActionStats, RunArchiveReport, TestSummary, TransactionEvent } from '../types'
+import { BrowserDeviceLiveMetrics, BrowserEngineLiveMetrics, BrowserLiveMetrics, BrowserPlatformLiveMetrics, RunArchiveActionStats, RunArchiveReport, RunArchiveSOAPFaultTimelineBucket, TestSummary, TransactionEvent } from '../types'
 import BrowserBreakdownChart, {
   BrowserBreakdown,
   buildBrowserBreakdownData,
@@ -72,6 +72,23 @@ function buildArchiveStatsEntries(stats?: Record<string, RunArchiveActionStats>)
 
 function buildArchiveCountEntries(counts?: Record<string, number>) {
   return Object.entries(counts || {}).sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+}
+
+function formatArchiveBucketTimestamp(value?: string): string {
+  if (!value) return 'n/a'
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return 'n/a'
+  return `${parsed.toISOString().slice(0, 16).replace('T', ' ')}Z`
+}
+
+function formatArchiveCountSummary(counts?: Record<string, number>) {
+  const entries = buildArchiveCountEntries(counts)
+  if (entries.length === 0) return 'n/a'
+  return entries.map(([name, count]) => `${name} (${count})`).join(', ')
+}
+
+function buildArchiveFaultTimelineEntries(buckets?: RunArchiveSOAPFaultTimelineBucket[]) {
+  return [...(buckets || [])].sort((left, right) => left.timestamp.localeCompare(right.timestamp))
 }
 
 function renderBrowserSummary(
@@ -253,6 +270,7 @@ export default function TestExecutionArchive({
   const soapOperationEntries = archiveSOAPOperationEntries.length > 0 ? archiveSOAPOperationEntries : buildArchiveStatsEntries(archiveReport?.by_soap_operation)
   const soapFaultCodeEntries = buildArchiveCountEntries(archiveReport?.by_soap_fault_code)
   const soapFaultCategoryEntries = buildArchiveCountEntries(archiveReport?.by_soap_fault_category)
+  const soapFaultTimelineEntries = buildArchiveFaultTimelineEntries(archiveReport?.soap_fault_timeline)
 
   const handleCopySection = async (key: string, value: string) => {
     if (!navigator.clipboard?.writeText) return
@@ -475,6 +493,37 @@ export default function TestExecutionArchive({
                       </div>
                     )}
                   </div>
+                </>
+              )}
+
+              {soapFaultTimelineEntries.length > 0 && (
+                <>
+                  <div className="archive-section-header archive-subsection-header">
+                    <div>
+                      <h3 className="chart-title">SOAP Fault Trend</h3>
+                      <p className="archive-section-copy">Minute buckets of archived SOAP faults, including the fault-code and category mix seen in each bucket.</p>
+                    </div>
+                  </div>
+                  <table className="tx-table">
+                    <thead>
+                      <tr>
+                        <th>Bucket</th>
+                        <th>Total Faults</th>
+                        <th>Codes</th>
+                        <th>Categories</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {soapFaultTimelineEntries.map((bucket) => (
+                        <tr key={bucket.timestamp}>
+                          <td className="tx-name">{formatArchiveBucketTimestamp(bucket.timestamp)}</td>
+                          <td>{bucket.total}</td>
+                          <td>{formatArchiveCountSummary(bucket.by_code)}</td>
+                          <td>{formatArchiveCountSummary(bucket.by_category)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </>
               )}
             </div>

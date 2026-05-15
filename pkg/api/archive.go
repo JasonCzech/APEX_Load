@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -118,10 +119,18 @@ type RunArchiveReport struct {
 	BySOAPOperation map[string]RunArchiveActionStats `json:"by_soap_operation,omitempty"`
 	BySOAPFaultCode map[string]int64               `json:"by_soap_fault_code,omitempty"`
 	BySOAPFaultCategory map[string]int64           `json:"by_soap_fault_category,omitempty"`
+	SOAPFaultTimeline []RunArchiveSOAPFaultTimelineBucket `json:"soap_fault_timeline,omitempty"`
 	BrowserByEngine map[string]*BrowserEngineLiveMetrics `json:"browser_by_engine,omitempty"`
 	BrowserByPlatform map[string]*BrowserPlatformLiveMetrics `json:"browser_by_platform,omitempty"`
 	BrowserByDevice map[string]*BrowserDeviceLiveMetrics `json:"browser_by_device,omitempty"`
 	ResourcePeaks RunArchiveResourcePeaks          `json:"resource_peaks"`
+}
+
+type RunArchiveSOAPFaultTimelineBucket struct {
+	Timestamp  time.Time         `json:"timestamp"`
+	Total      int64             `json:"total"`
+	ByCode     map[string]int64  `json:"by_code,omitempty"`
+	ByCategory map[string]int64  `json:"by_category,omitempty"`
 }
 
 type BrowserEngineLiveMetrics struct {
@@ -501,6 +510,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 		BrowserByPlatform: make(map[string]*BrowserPlatformLiveMetrics),
 		BrowserByDevice: make(map[string]*BrowserDeviceLiveMetrics),
 	}
+	faultTimelineBuckets := make(map[time.Time]*RunArchiveSOAPFaultTimelineBucket)
 
 	var totalDuration float64
 	for index, tx := range transactions {
@@ -518,6 +528,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 
 		stats := report.ByAction[tx.ActionName]
 		report.ByAction[tx.ActionName] = mergeRunArchiveActionStats(stats, tx)
+		mergeArchiveSOAPFaultTimelineBucket(faultTimelineBuckets, tx)
 		if operation := archiveSOAPOperation(tx); operation != "" {
 			report.BySOAPOperation[operation] = mergeRunArchiveActionStats(report.BySOAPOperation[operation], tx)
 		}
@@ -600,6 +611,18 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	if len(report.BySOAPFaultCategory) == 0 {
 		report.BySOAPFaultCategory = nil
 	}
+	if len(faultTimelineBuckets) > 0 {
+		report.SOAPFaultTimeline = make([]RunArchiveSOAPFaultTimelineBucket, 0, len(faultTimelineBuckets))
+		for _, bucket := range faultTimelineBuckets {
+			if bucket == nil {
+				continue
+			}
+			report.SOAPFaultTimeline = append(report.SOAPFaultTimeline, *bucket)
+		}
+		sort.Slice(report.SOAPFaultTimeline, func(left, right int) bool {
+			return report.SOAPFaultTimeline[left].Timestamp.Before(report.SOAPFaultTimeline[right].Timestamp)
+		})
+	}
 
 	report.Overview.ResourceSamples = int64(len(resources))
 	for _, sample := range resources {
@@ -665,6 +688,46 @@ func incrementArchiveCount(values map[string]int64, key string) {
 		return
 	}
 	values[key]++
+}
+
+func mergeArchiveSOAPFaultTimelineBucket(values map[time.Time]*RunArchiveSOAPFaultTimelineBucket, tx TransactionEvent) {
+	if len(values) == 0 && values == nil {
+		return
+	}
+	bucketTime := archiveSOAPFaultBucketTimestamp(tx.Timestamp)
+	if bucketTime.IsZero() {
+		return
+	}
+	faultCode := archiveSOAPFaultCode(tx)
+	faultCategory := archiveSOAPFaultCategory(tx)
+	if faultCode == "" && faultCategory == "" {
+		return
+	}
+	bucket, ok := values[bucketTime]
+	if !ok {
+		bucket = &RunArchiveSOAPFaultTimelineBucket{
+			Timestamp:  bucketTime,
+			ByCode:     make(map[string]int64),
+			ByCategory: make(map[string]int64),
+		}
+		values[bucketTime] = bucket
+	}
+	bucket.Total++
+	incrementArchiveCount(bucket.ByCode, faultCode)
+	incrementArchiveCount(bucket.ByCategory, faultCategory)
+	if len(bucket.ByCode) == 0 {
+		bucket.ByCode = nil
+	}
+	if len(bucket.ByCategory) == 0 {
+		bucket.ByCategory = nil
+	}
+}
+
+func archiveSOAPFaultBucketTimestamp(value time.Time) time.Time {
+	if value.IsZero() {
+		return time.Time{}
+	}
+	return value.Truncate(time.Minute)
 }
 
 func mergeRunArchiveActionStats(stats RunArchiveActionStats, tx TransactionEvent) RunArchiveActionStats {

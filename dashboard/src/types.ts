@@ -360,6 +360,13 @@ export interface RunArchiveOverview {
   browser?: BrowserLiveMetrics
 }
 
+export interface RunArchiveSOAPFaultTimelineBucket {
+  timestamp: string
+  total: number
+  by_code?: Record<string, number>
+  by_category?: Record<string, number>
+}
+
 export interface RunArchiveReport {
   manifest: RunArchiveManifest
   overview: RunArchiveOverview
@@ -367,6 +374,7 @@ export interface RunArchiveReport {
   by_soap_operation?: Record<string, RunArchiveActionStats>
   by_soap_fault_code?: Record<string, number>
   by_soap_fault_category?: Record<string, number>
+  soap_fault_timeline?: RunArchiveSOAPFaultTimelineBucket[]
   browser_by_engine?: Record<string, BrowserEngineLiveMetrics>
   browser_by_platform?: Record<string, BrowserPlatformLiveMetrics>
   browser_by_device?: Record<string, BrowserDeviceLiveMetrics>

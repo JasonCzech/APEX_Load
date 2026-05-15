@@ -78,11 +78,10 @@ Each protocol must populate enough telemetry for the dashboard to answer the sam
 
 ### 2. SOAP Protocol
 
-**Current state:** HTTP-backed execution with inherited HTTP timing, SOAP fault parsing, WS-Security, operation tagging, live first-class per-operation aggregation, archive-side operation grouping, archive transaction drill-down filtering by extracted operation, archive-side fault distribution summaries by code and category, envelope shaping, generated-body namespace conflict detection, raw envelope-overhead tracking, and fault-code categorization. Missing SOAP-specific analytical depth.
+**Current state:** HTTP-backed execution with inherited HTTP timing, SOAP fault parsing, WS-Security, operation tagging, live first-class per-operation aggregation, archive-side operation grouping, archive transaction drill-down filtering by extracted operation, archive-side fault distribution summaries by code and category, archive-side minute fault timelines, envelope shaping, generated-body namespace conflict detection, raw envelope-overhead tracking, and fault-code categorization. Missing SOAP-specific analytical depth.
 
 **L3 gaps:**
 - No **WSDL-aware operation profiling** (timing by operation name, not just action name)
-- No **fault trend** analysis (fault code frequency over time)
 - No **XML payload size** trend (detecting bloat)
 
 **Work items:**
@@ -90,7 +89,6 @@ Each protocol must populate enough telemetry for the dashboard to answer the sam
 | Item | Layer | Location | Effort |
 |:---|:---|:---|:---|
 | SOAP operation profiling dashboard card | L3 | `dashboard/` | 1.5 days |
-| Fault trend chart (fault code distribution over time) | L3 | `dashboard/` | 1 day |
 | XML payload-size trend from archived envelope telemetry | L3 | `dashboard/` | 1 day |
 
 ---

@@ -81,6 +81,7 @@ describe('TestExecutionArchive', () => {
     by_soap_operation: {},
     by_soap_fault_code: {},
     by_soap_fault_category: {},
+    soap_fault_timeline: [],
     browser_by_engine: {
       webkit: {
         browser_engine: 'webkit',
@@ -604,6 +605,28 @@ describe('TestExecutionArchive', () => {
         client: 2,
         server: 1,
       },
+      soap_fault_timeline: [
+        {
+          timestamp: '2026-05-14T20:00:00Z',
+          total: 2,
+          by_code: {
+            'env:Sender': 2,
+          },
+          by_category: {
+            client: 2,
+          },
+        },
+        {
+          timestamp: '2026-05-14T20:01:00Z',
+          total: 1,
+          by_code: {
+            'env:Receiver': 1,
+          },
+          by_category: {
+            server: 1,
+          },
+        },
+      ],
     }
 
     await act(async () => {
@@ -643,6 +666,7 @@ describe('TestExecutionArchive', () => {
 
     expect(container.textContent).toContain('SOAP Operation Summary')
     expect(container.textContent).toContain('SOAP Fault Summary')
+    expect(container.textContent).toContain('SOAP Fault Trend')
     expect(container.textContent).toContain('CreateOrder')
     expect(container.textContent).toContain('CancelOrder')
     expect(container.textContent).toContain('All SOAP operations')
@@ -650,6 +674,10 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('env:Receiver')
     expect(container.textContent).toContain('client')
     expect(container.textContent).toContain('server')
+    expect(container.textContent).toContain('2026-05-14 20:00Z')
+    expect(container.textContent).toContain('2026-05-14 20:01Z')
+    expect(container.textContent).toContain('env:Sender (2)')
+    expect(container.textContent).toContain('env:Receiver (1)')
     expect(container.textContent).toContain('95.0')
     expect(container.textContent).toContain('170.0')
   })
