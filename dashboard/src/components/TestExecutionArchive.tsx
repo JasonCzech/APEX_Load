@@ -1,4 +1,5 @@
 import { Fragment, useState } from 'react'
+import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 
 import { BrowserDeviceLiveMetrics, BrowserEngineLiveMetrics, BrowserLiveMetrics, BrowserPlatformLiveMetrics, RunArchiveActionStats, RunArchiveReport, TestSummary, TransactionEvent } from '../types'
 import SnapshotBodyPreview from './SnapshotBodyPreview'
@@ -38,6 +39,8 @@ interface Props {
   onExpandedArchiveEventChange: (value: string | null) => void
 }
 
+type BrowserBreakdown = 'overall' | 'platform' | 'engine' | 'device'
+
 function formatArchiveTimestamp(value?: string): string {
   if (!value) return 'n/a'
   return new Date(value).toLocaleString()
@@ -67,15 +70,70 @@ function formatDevicePlatform(value?: string): string {
   return value || 'unknown'
 }
 
+function getBrowserBreakdownChartData(
+  breakdown: BrowserBreakdown,
+  summary: BrowserLiveMetrics,
+  devices?: Record<string, BrowserDeviceLiveMetrics>,
+  platforms?: Record<string, BrowserPlatformLiveMetrics>,
+  engines?: Record<string, BrowserEngineLiveMetrics>,
+): Array<{ segment: string; lcp?: number; inp?: number }> {
+  if (breakdown === 'overall') {
+    return [{
+      segment: 'Overall',
+      lcp: summary.avg_lcp_ms,
+      inp: summary.avg_inp_ms,
+    }]
+  }
+
+  if (breakdown === 'platform') {
+    return Object.values(platforms ?? {})
+      .map(metrics => ({
+        segment: formatDevicePlatform(metrics.device_platform),
+        lcp: metrics.avg_lcp_ms,
+        inp: metrics.avg_inp_ms,
+      }))
+      .sort((left, right) => left.segment.localeCompare(right.segment))
+  }
+
+  if (breakdown === 'engine') {
+    return Object.values(engines ?? {})
+      .map(metrics => ({
+        segment: formatBrowserEngine(metrics.browser_engine),
+        lcp: metrics.avg_lcp_ms,
+        inp: metrics.avg_inp_ms,
+      }))
+      .sort((left, right) => left.segment.localeCompare(right.segment))
+  }
+
+  return Object.entries(devices ?? {})
+    .map(([profile, metrics]) => ({
+      segment: profile,
+      lcp: metrics.avg_lcp_ms,
+      inp: metrics.avg_inp_ms,
+    }))
+    .sort((left, right) => left.segment.localeCompare(right.segment))
+}
+
+function getBrowserBreakdownTitle(breakdown: BrowserBreakdown): string {
+  if (breakdown === 'overall') return 'Browser Overview Breakdown'
+  if (breakdown === 'platform') return 'Browser Platform Breakdown'
+  if (breakdown === 'engine') return 'Browser Engine Breakdown'
+  return 'Browser Device Breakdown'
+}
+
 function renderBrowserSummary(
   summary: BrowserLiveMetrics,
   devices?: Record<string, BrowserDeviceLiveMetrics>,
   platforms?: Record<string, BrowserPlatformLiveMetrics>,
   engines?: Record<string, BrowserEngineLiveMetrics>,
+  breakdown: BrowserBreakdown = 'device',
+  onBreakdownChange?: (value: BrowserBreakdown) => void,
 ) {
   const engineEntries = Object.values(engines ?? {}).sort((left, right) => formatBrowserEngine(left.browser_engine).localeCompare(formatBrowserEngine(right.browser_engine)))
   const platformEntries = Object.values(platforms ?? {}).sort((left, right) => formatDevicePlatform(left.device_platform).localeCompare(formatDevicePlatform(right.device_platform)))
   const deviceEntries = Object.entries(devices ?? {})
+  const breakdownChartData = getBrowserBreakdownChartData(breakdown, summary, devices, platforms, engines)
+  const chartTitle = getBrowserBreakdownTitle(breakdown)
 
   return (
     <div className="archive-browser-section">
@@ -113,6 +171,39 @@ function renderBrowserSummary(
           <span className="scenario-script-detail-value">{formatBrowserMetric(summary.avg_blocking_resources, '', 1)}</span>
         </div>
       </div>
+
+      {onBreakdownChange && breakdownChartData.length > 0 && (
+        <>
+          <div className="results-breakdown-toggle" role="tablist" aria-label="Archive browser breakdown mode">
+            {(['overall', 'platform', 'engine', 'device'] as BrowserBreakdown[]).map(mode => (
+              <button
+                key={mode}
+                type="button"
+                role="tab"
+                aria-selected={breakdown === mode}
+                className={`results-breakdown-button${breakdown === mode ? ' active' : ''}`}
+                onClick={() => onBreakdownChange(mode)}
+              >
+                {mode === 'overall' ? 'Overall' : mode === 'platform' ? 'Platform' : mode === 'engine' ? 'Engine' : 'Device'}
+              </button>
+            ))}
+          </div>
+          <div className="results-compare-chart-card">
+            <h4 className="results-compare-chart-title">{chartTitle}</h4>
+            <ResponsiveContainer width="100%" height={260}>
+              <LineChart data={breakdownChartData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                <XAxis dataKey="segment" stroke="var(--text-muted)" fontSize={11} />
+                <YAxis stroke="var(--text-muted)" fontSize={11} />
+                <Tooltip />
+                <Legend />
+                <Line type="monotone" dataKey="lcp" name="LCP" stroke="var(--accent)" strokeWidth={2} dot={{ r: 3 }} connectNulls />
+                <Line type="monotone" dataKey="inp" name="INP" stroke="var(--accent-2, #d97706)" strokeWidth={2} dot={{ r: 3 }} connectNulls />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </>
+      )}
 
       {engineEntries.length > 0 && (
         <>
@@ -212,6 +303,7 @@ export default function TestExecutionArchive({
 }: Props) {
   const [copiedSection, setCopiedSection] = useState<string | null>(null)
   const [expandedSnapshotSections, setExpandedSnapshotSections] = useState<Record<string, boolean>>({})
+  const [browserBreakdown, setBrowserBreakdown] = useState<BrowserBreakdown>('device')
 
   const handleCopySection = async (key: string, value: string) => {
     if (!navigator.clipboard?.writeText) return
@@ -283,6 +375,8 @@ export default function TestExecutionArchive({
             archiveReport.browser_by_device,
             archiveReport.browser_by_platform,
             archiveReport.browser_by_engine,
+            browserBreakdown,
+            setBrowserBreakdown,
           )}
 
           <div className="archive-artifact-row">

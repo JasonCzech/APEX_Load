@@ -10,6 +10,11 @@ import { formatSOAPFaultSummary } from './soapFaultUtils'
 import TestExecutionArchive from './TestExecutionArchive'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+;(globalThis as typeof globalThis & { ResizeObserver?: typeof ResizeObserver }).ResizeObserver = class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+} as typeof ResizeObserver
 
 describe('TestExecutionArchive', () => {
   let container: HTMLDivElement
@@ -213,6 +218,7 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('Code: env:Sender')
     expect(container.textContent).toContain('Reason: Request validation failed')
     expect(container.textContent).toContain('Browser Metrics')
+    expect(container.textContent).toContain('Browser Device Breakdown')
     expect(container.textContent).toContain('Avg FCP')
     expect(container.textContent).toContain('Engine Rollup')
     expect(container.textContent).toContain('Platform Rollup')
@@ -231,6 +237,36 @@ describe('TestExecutionArchive', () => {
     expect(detailValueTexts).not.toContain('iphone_se · WebKit · low tier')
     expect(container.textContent).toContain('INP: 56.0 ms')
     expect(container.textContent).toContain('Response')
+    const overallBreakdownButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Overall')
+    const platformBreakdownButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Platform')
+    const engineBreakdownButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Engine')
+    expect(overallBreakdownButton).toBeDefined()
+    expect(platformBreakdownButton).toBeDefined()
+    expect(engineBreakdownButton).toBeDefined()
+    if (!overallBreakdownButton || !platformBreakdownButton || !engineBreakdownButton) {
+      return
+    }
+
+    await act(async () => {
+      overallBreakdownButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('Browser Overview Breakdown')
+
+    await act(async () => {
+      engineBreakdownButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('Browser Engine Breakdown')
+
+    await act(async () => {
+      platformBreakdownButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('Browser Platform Breakdown')
     const copyFaultButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Copy fault'))
     const copyRequestButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Copy request'))
     const copyResponseButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Copy response'))
@@ -408,6 +444,7 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('Engine Rollup')
     expect(container.textContent).toContain('Platform Rollup')
     expect(container.textContent).toContain('Devices')
+    expect(container.textContent).toContain('Browser Device Breakdown')
 
     const browserNames = Array.from(container.querySelectorAll('.archive-browser-section .browser-device-name')).map(node => node.textContent)
     expect(browserNames).toEqual(['Chromium', 'WebKit', 'Android', 'iOS', 'iphone_se', 'pixel_8'])
