@@ -269,3 +269,105 @@ func TestBuildRunArchiveReportAggregatesSOAPFaults(t *testing.T) {
 		t.Fatalf("unexpected second SOAP fault timeline bucket %#v", report.SOAPFaultTimeline[1])
 	}
 }
+
+func TestBuildRunArchiveReportAggregatesSOAPPayloadTimeline(t *testing.T) {
+	tempDir := t.TempDir()
+	manifest := RunArchiveManifest{
+		SchemaVersion:         archiveSchemaVersion,
+		TestID:                "test-1",
+		TestName:              "SOAP Payload Metrics",
+		CreatedAt:             time.Date(2026, time.May, 15, 12, 0, 0, 0, time.UTC),
+		TransactionsFile:      "transactions.jsonl",
+		ResourceSamplesFile:   "resources.jsonl",
+		IntervalSummariesFile: "interval_summaries.jsonl",
+	}
+	manifestPath := filepath.Join(tempDir, "manifest.json")
+	manifestBytes, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatalf("marshal manifest: %v", err)
+	}
+	if err := os.WriteFile(manifestPath, manifestBytes, 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+	transactions := []TransactionEvent{
+		{
+			Timestamp:  manifest.CreatedAt,
+			TestID:     manifest.TestID,
+			TestName:   manifest.TestName,
+			ActionName: "SOAPRequest",
+			DurationMs: 180,
+			Success:    true,
+			ServerTelemetry: &protocol.ServerTelemetry{
+				RequestPayloadKB:   1.2,
+				ResponsePayloadKB:  4.0,
+				EnvelopeOverheadKB: 0.7,
+			},
+		},
+		{
+			Timestamp:  manifest.CreatedAt.Add(20 * time.Second),
+			TestID:     manifest.TestID,
+			TestName:   manifest.TestName,
+			ActionName: "SOAPRequest",
+			DurationMs: 220,
+			Success:    true,
+			ServerTelemetry: &protocol.ServerTelemetry{
+				RequestPayloadKB:   1.8,
+				ResponsePayloadKB:  6.0,
+				EnvelopeOverheadKB: 0.9,
+			},
+		},
+		{
+			Timestamp:  manifest.CreatedAt.Add(65 * time.Second),
+			TestID:     manifest.TestID,
+			TestName:   manifest.TestName,
+			ActionName: "SOAPRequest",
+			DurationMs: 260,
+			Success:    false,
+			ServerTelemetry: &protocol.ServerTelemetry{
+				RequestPayloadKB:   2.0,
+				ResponsePayloadKB:  8.0,
+				EnvelopeOverheadKB: 1.5,
+			},
+		},
+	}
+	var txPayload []byte
+	for _, transaction := range transactions {
+		txBytes, err := json.Marshal(transaction)
+		if err != nil {
+			t.Fatalf("marshal transaction: %v", err)
+		}
+		txPayload = append(txPayload, txBytes...)
+		txPayload = append(txPayload, '\n')
+	}
+	if err := os.WriteFile(filepath.Join(tempDir, manifest.TransactionsFile), txPayload, 0o644); err != nil {
+		t.Fatalf("write transactions: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tempDir, manifest.ResourceSamplesFile), nil, 0o644); err != nil {
+		t.Fatalf("write resources: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tempDir, manifest.IntervalSummariesFile), nil, 0o644); err != nil {
+		t.Fatalf("write summaries: %v", err)
+	}
+
+	report, err := buildRunArchiveReport(&storage.RunArchiveRecord{ArchivePath: tempDir, ManifestPath: manifestPath})
+	if err != nil {
+		t.Fatalf("buildRunArchiveReport: %v", err)
+	}
+	if len(report.SOAPPayloadTimeline) != 2 {
+		t.Fatalf("unexpected SOAP payload timeline bucket count %d", len(report.SOAPPayloadTimeline))
+	}
+	firstBucket := report.SOAPPayloadTimeline[0]
+	if firstBucket.Timestamp != manifest.CreatedAt.Truncate(time.Minute) {
+		t.Fatalf("unexpected first SOAP payload timeline bucket time %s", firstBucket.Timestamp)
+	}
+	if firstBucket.Samples != 2 || firstBucket.AvgRequestPayloadKB != 1.5 || firstBucket.AvgResponsePayloadKB != 5.0 || firstBucket.AvgEnvelopeOverheadKB != 0.8 || firstBucket.MaxEnvelopeOverheadKB != 0.9 {
+		t.Fatalf("unexpected first SOAP payload timeline bucket %#v", firstBucket)
+	}
+	secondBucket := report.SOAPPayloadTimeline[1]
+	if secondBucket.Timestamp != manifest.CreatedAt.Add(time.Minute).Truncate(time.Minute) {
+		t.Fatalf("unexpected second SOAP payload timeline bucket time %s", secondBucket.Timestamp)
+	}
+	if secondBucket.Samples != 1 || secondBucket.AvgRequestPayloadKB != 2.0 || secondBucket.AvgResponsePayloadKB != 8.0 || secondBucket.AvgEnvelopeOverheadKB != 1.5 || secondBucket.MaxEnvelopeOverheadKB != 1.5 {
+		t.Fatalf("unexpected second SOAP payload timeline bucket %#v", secondBucket)
+	}
+}

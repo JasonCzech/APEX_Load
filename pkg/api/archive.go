@@ -120,6 +120,7 @@ type RunArchiveReport struct {
 	BySOAPFaultCode map[string]int64               `json:"by_soap_fault_code,omitempty"`
 	BySOAPFaultCategory map[string]int64           `json:"by_soap_fault_category,omitempty"`
 	SOAPFaultTimeline []RunArchiveSOAPFaultTimelineBucket `json:"soap_fault_timeline,omitempty"`
+	SOAPPayloadTimeline []RunArchiveSOAPPayloadTimelineBucket `json:"soap_payload_timeline,omitempty"`
 	BrowserByEngine map[string]*BrowserEngineLiveMetrics `json:"browser_by_engine,omitempty"`
 	BrowserByPlatform map[string]*BrowserPlatformLiveMetrics `json:"browser_by_platform,omitempty"`
 	BrowserByDevice map[string]*BrowserDeviceLiveMetrics `json:"browser_by_device,omitempty"`
@@ -131,6 +132,15 @@ type RunArchiveSOAPFaultTimelineBucket struct {
 	Total      int64             `json:"total"`
 	ByCode     map[string]int64  `json:"by_code,omitempty"`
 	ByCategory map[string]int64  `json:"by_category,omitempty"`
+}
+
+type RunArchiveSOAPPayloadTimelineBucket struct {
+	Timestamp              time.Time `json:"timestamp"`
+	Samples                int64     `json:"samples"`
+	AvgRequestPayloadKB    float64   `json:"avg_request_payload_kb,omitempty"`
+	AvgResponsePayloadKB   float64   `json:"avg_response_payload_kb,omitempty"`
+	AvgEnvelopeOverheadKB  float64   `json:"avg_envelope_overhead_kb,omitempty"`
+	MaxEnvelopeOverheadKB  float64   `json:"max_envelope_overhead_kb,omitempty"`
 }
 
 type BrowserEngineLiveMetrics struct {
@@ -511,6 +521,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 		BrowserByDevice: make(map[string]*BrowserDeviceLiveMetrics),
 	}
 	faultTimelineBuckets := make(map[time.Time]*RunArchiveSOAPFaultTimelineBucket)
+	payloadTimelineBuckets := make(map[time.Time]*RunArchiveSOAPPayloadTimelineBucket)
 
 	var totalDuration float64
 	for index, tx := range transactions {
@@ -529,6 +540,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 		stats := report.ByAction[tx.ActionName]
 		report.ByAction[tx.ActionName] = mergeRunArchiveActionStats(stats, tx)
 		mergeArchiveSOAPFaultTimelineBucket(faultTimelineBuckets, tx)
+		mergeArchiveSOAPPayloadTimelineBucket(payloadTimelineBuckets, tx)
 		if operation := archiveSOAPOperation(tx); operation != "" {
 			report.BySOAPOperation[operation] = mergeRunArchiveActionStats(report.BySOAPOperation[operation], tx)
 		}
@@ -621,6 +633,18 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 		}
 		sort.Slice(report.SOAPFaultTimeline, func(left, right int) bool {
 			return report.SOAPFaultTimeline[left].Timestamp.Before(report.SOAPFaultTimeline[right].Timestamp)
+		})
+	}
+	if len(payloadTimelineBuckets) > 0 {
+		report.SOAPPayloadTimeline = make([]RunArchiveSOAPPayloadTimelineBucket, 0, len(payloadTimelineBuckets))
+		for _, bucket := range payloadTimelineBuckets {
+			if bucket == nil {
+				continue
+			}
+			report.SOAPPayloadTimeline = append(report.SOAPPayloadTimeline, finalizeArchiveSOAPPayloadTimelineBucket(*bucket))
+		}
+		sort.Slice(report.SOAPPayloadTimeline, func(left, right int) bool {
+			return report.SOAPPayloadTimeline[left].Timestamp.Before(report.SOAPPayloadTimeline[right].Timestamp)
 		})
 	}
 
@@ -728,6 +752,57 @@ func archiveSOAPFaultBucketTimestamp(value time.Time) time.Time {
 		return time.Time{}
 	}
 	return value.Truncate(time.Minute)
+}
+
+func mergeArchiveSOAPPayloadTimelineBucket(values map[time.Time]*RunArchiveSOAPPayloadTimelineBucket, tx TransactionEvent) {
+	if values == nil {
+		return
+	}
+	bucketTime := archiveSOAPPayloadBucketTimestamp(tx.Timestamp)
+	if bucketTime.IsZero() {
+		return
+	}
+	requestPayloadKB, responsePayloadKB, envelopeOverheadKB := archiveSOAPPayloadTelemetry(tx)
+	if requestPayloadKB == 0 && responsePayloadKB == 0 && envelopeOverheadKB == 0 {
+		return
+	}
+	bucket, ok := values[bucketTime]
+	if !ok {
+		bucket = &RunArchiveSOAPPayloadTimelineBucket{Timestamp: bucketTime}
+		values[bucketTime] = bucket
+	}
+	bucket.Samples++
+	bucket.AvgRequestPayloadKB += requestPayloadKB
+	bucket.AvgResponsePayloadKB += responsePayloadKB
+	bucket.AvgEnvelopeOverheadKB += envelopeOverheadKB
+	if envelopeOverheadKB > bucket.MaxEnvelopeOverheadKB {
+		bucket.MaxEnvelopeOverheadKB = envelopeOverheadKB
+	}
+}
+
+func archiveSOAPPayloadBucketTimestamp(value time.Time) time.Time {
+	if value.IsZero() {
+		return time.Time{}
+	}
+	return value.Truncate(time.Minute)
+}
+
+func archiveSOAPPayloadTelemetry(tx TransactionEvent) (float64, float64, float64) {
+	if tx.ServerTelemetry == nil {
+		return 0, 0, 0
+	}
+	return tx.ServerTelemetry.RequestPayloadKB, tx.ServerTelemetry.ResponsePayloadKB, tx.ServerTelemetry.EnvelopeOverheadKB
+}
+
+func finalizeArchiveSOAPPayloadTimelineBucket(bucket RunArchiveSOAPPayloadTimelineBucket) RunArchiveSOAPPayloadTimelineBucket {
+	if bucket.Samples == 0 {
+		return bucket
+	}
+	divisor := float64(bucket.Samples)
+	bucket.AvgRequestPayloadKB /= divisor
+	bucket.AvgResponsePayloadKB /= divisor
+	bucket.AvgEnvelopeOverheadKB /= divisor
+	return bucket
 }
 
 func mergeRunArchiveActionStats(stats RunArchiveActionStats, tx TransactionEvent) RunArchiveActionStats {

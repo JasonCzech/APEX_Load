@@ -367,6 +367,15 @@ export interface RunArchiveSOAPFaultTimelineBucket {
   by_category?: Record<string, number>
 }
 
+export interface RunArchiveSOAPPayloadTimelineBucket {
+  timestamp: string
+  samples: number
+  avg_request_payload_kb?: number
+  avg_response_payload_kb?: number
+  avg_envelope_overhead_kb?: number
+  max_envelope_overhead_kb?: number
+}
+
 export interface RunArchiveReport {
   manifest: RunArchiveManifest
   overview: RunArchiveOverview
@@ -375,6 +384,7 @@ export interface RunArchiveReport {
   by_soap_fault_code?: Record<string, number>
   by_soap_fault_category?: Record<string, number>
   soap_fault_timeline?: RunArchiveSOAPFaultTimelineBucket[]
+  soap_payload_timeline?: RunArchiveSOAPPayloadTimelineBucket[]
   browser_by_engine?: Record<string, BrowserEngineLiveMetrics>
   browser_by_platform?: Record<string, BrowserPlatformLiveMetrics>
   browser_by_device?: Record<string, BrowserDeviceLiveMetrics>

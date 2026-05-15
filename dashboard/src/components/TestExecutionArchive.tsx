@@ -1,6 +1,6 @@
 import { Fragment, useState } from 'react'
 
-import { BrowserDeviceLiveMetrics, BrowserEngineLiveMetrics, BrowserLiveMetrics, BrowserPlatformLiveMetrics, RunArchiveActionStats, RunArchiveReport, RunArchiveSOAPFaultTimelineBucket, TestSummary, TransactionEvent } from '../types'
+import { BrowserDeviceLiveMetrics, BrowserEngineLiveMetrics, BrowserLiveMetrics, BrowserPlatformLiveMetrics, RunArchiveActionStats, RunArchiveReport, RunArchiveSOAPFaultTimelineBucket, RunArchiveSOAPPayloadTimelineBucket, TestSummary, TransactionEvent } from '../types'
 import BrowserBreakdownChart, {
   BrowserBreakdown,
   buildBrowserBreakdownData,
@@ -88,6 +88,10 @@ function formatArchiveCountSummary(counts?: Record<string, number>) {
 }
 
 function buildArchiveFaultTimelineEntries(buckets?: RunArchiveSOAPFaultTimelineBucket[]) {
+  return [...(buckets || [])].sort((left, right) => left.timestamp.localeCompare(right.timestamp))
+}
+
+function buildArchivePayloadTimelineEntries(buckets?: RunArchiveSOAPPayloadTimelineBucket[]) {
   return [...(buckets || [])].sort((left, right) => left.timestamp.localeCompare(right.timestamp))
 }
 
@@ -271,6 +275,7 @@ export default function TestExecutionArchive({
   const soapFaultCodeEntries = buildArchiveCountEntries(archiveReport?.by_soap_fault_code)
   const soapFaultCategoryEntries = buildArchiveCountEntries(archiveReport?.by_soap_fault_category)
   const soapFaultTimelineEntries = buildArchiveFaultTimelineEntries(archiveReport?.soap_fault_timeline)
+  const soapPayloadTimelineEntries = buildArchivePayloadTimelineEntries(archiveReport?.soap_payload_timeline)
 
   const handleCopySection = async (key: string, value: string) => {
     if (!navigator.clipboard?.writeText) return
@@ -520,6 +525,41 @@ export default function TestExecutionArchive({
                           <td>{bucket.total}</td>
                           <td>{formatArchiveCountSummary(bucket.by_code)}</td>
                           <td>{formatArchiveCountSummary(bucket.by_category)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </>
+              )}
+
+              {soapPayloadTimelineEntries.length > 0 && (
+                <>
+                  <div className="archive-section-header archive-subsection-header">
+                    <div>
+                      <h3 className="chart-title">SOAP Payload Trend</h3>
+                      <p className="archive-section-copy">Minute buckets of archived SOAP payload sizes, highlighting average wire sizes and XML envelope overhead to spot bloat.</p>
+                    </div>
+                  </div>
+                  <table className="tx-table">
+                    <thead>
+                      <tr>
+                        <th>Bucket</th>
+                        <th>Samples</th>
+                        <th>Avg Request</th>
+                        <th>Avg Response</th>
+                        <th>Avg XML Overhead</th>
+                        <th>Max XML Overhead</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {soapPayloadTimelineEntries.map((bucket) => (
+                        <tr key={bucket.timestamp}>
+                          <td className="tx-name">{formatArchiveBucketTimestamp(bucket.timestamp)}</td>
+                          <td>{bucket.samples}</td>
+                          <td>{formatBrowserMetric(bucket.avg_request_payload_kb, ' KB', 2)}</td>
+                          <td>{formatBrowserMetric(bucket.avg_response_payload_kb, ' KB', 2)}</td>
+                          <td>{formatBrowserMetric(bucket.avg_envelope_overhead_kb, ' KB', 2)}</td>
+                          <td>{formatBrowserMetric(bucket.max_envelope_overhead_kb, ' KB', 2)}</td>
                         </tr>
                       ))}
                     </tbody>

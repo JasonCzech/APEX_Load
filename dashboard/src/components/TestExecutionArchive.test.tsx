@@ -82,6 +82,7 @@ describe('TestExecutionArchive', () => {
     by_soap_fault_code: {},
     by_soap_fault_category: {},
     soap_fault_timeline: [],
+    soap_payload_timeline: [],
     browser_by_engine: {
       webkit: {
         browser_engine: 'webkit',
@@ -627,6 +628,24 @@ describe('TestExecutionArchive', () => {
           },
         },
       ],
+      soap_payload_timeline: [
+        {
+          timestamp: '2026-05-14T20:00:00Z',
+          samples: 2,
+          avg_request_payload_kb: 1.5,
+          avg_response_payload_kb: 5,
+          avg_envelope_overhead_kb: 0.8,
+          max_envelope_overhead_kb: 0.9,
+        },
+        {
+          timestamp: '2026-05-14T20:01:00Z',
+          samples: 1,
+          avg_request_payload_kb: 2,
+          avg_response_payload_kb: 8,
+          avg_envelope_overhead_kb: 1.5,
+          max_envelope_overhead_kb: 1.5,
+        },
+      ],
     }
 
     await act(async () => {
@@ -667,6 +686,7 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('SOAP Operation Summary')
     expect(container.textContent).toContain('SOAP Fault Summary')
     expect(container.textContent).toContain('SOAP Fault Trend')
+    expect(container.textContent).toContain('SOAP Payload Trend')
     expect(container.textContent).toContain('CreateOrder')
     expect(container.textContent).toContain('CancelOrder')
     expect(container.textContent).toContain('All SOAP operations')
@@ -678,6 +698,10 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('2026-05-14 20:01Z')
     expect(container.textContent).toContain('env:Sender (2)')
     expect(container.textContent).toContain('env:Receiver (1)')
+    expect(container.textContent).toContain('1.50 KB')
+    expect(container.textContent).toContain('5.00 KB')
+    expect(container.textContent).toContain('0.80 KB')
+    expect(container.textContent).toContain('1.50 KB')
     expect(container.textContent).toContain('95.0')
     expect(container.textContent).toContain('170.0')
   })
