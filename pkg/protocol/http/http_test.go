@@ -388,6 +388,54 @@ func TestHTTP_ExecutePopulatesServerTelemetry(t *testing.T) {
 	if !result.ServerTelemetry.ConnectionReused {
 		t.Fatalf("ConnectionReused = %v, want true on warmed connection", result.ServerTelemetry.ConnectionReused)
 	}
+	if result.ServerTelemetry.RedirectCount != 0 {
+		t.Fatalf("RedirectCount = %d, want 0", result.ServerTelemetry.RedirectCount)
+	}
+	if result.ServerTelemetry.RedirectMs != 0 {
+		t.Fatalf("RedirectMs = %v, want 0", result.ServerTelemetry.RedirectMs)
+	}
+}
+
+func TestHTTP_ExecuteCapturesRedirectTelemetry(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/redirect":
+			time.Sleep(10 * time.Millisecond)
+			http.Redirect(w, r, "/final", http.StatusFound)
+		case "/final":
+			time.Sleep(5 * time.Millisecond)
+			_, _ = w.Write([]byte("ok"))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer ts.Close()
+
+	h := initHTTP(t, map[string]any{"base_url": ts.URL})
+
+	result, err := h.Execute(context.Background(), &protocol.Action{
+		Name:   "redirect-telemetry",
+		Method: "GET",
+		Target: "/redirect",
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("Success = false, error: %s", result.ErrorMessage)
+	}
+	if result.ServerTelemetry == nil {
+		t.Fatal("ServerTelemetry = nil, want redirect telemetry")
+	}
+	if result.ServerTelemetry.RedirectCount != 1 {
+		t.Fatalf("RedirectCount = %d, want 1", result.ServerTelemetry.RedirectCount)
+	}
+	if result.ServerTelemetry.RedirectMs <= 0 {
+		t.Fatalf("RedirectMs = %v, want > 0", result.ServerTelemetry.RedirectMs)
+	}
+	if result.StatusCode != http.StatusOK {
+		t.Fatalf("StatusCode = %d, want 200", result.StatusCode)
+	}
 }
 
 func TestHTTP_Execute_POST(t *testing.T) {

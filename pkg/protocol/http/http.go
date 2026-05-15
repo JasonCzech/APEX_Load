@@ -89,6 +89,9 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	targetURL := h.resolveURL(action.Target)
 	requestBytes := int64(len(action.Body))
 	connectionReused := false
+	redirectCount := 0
+	redirectDuration := time.Duration(0)
+	redirectLegStart := result.StartTime
 
 	var body io.Reader
 	if len(action.Body) > 0 {
@@ -136,15 +139,28 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		GotFirstResponseByte: func() { result.TTFB = time.Since(result.StartTime) },
 	}
 	req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
+	baseCheckRedirect := h.client.CheckRedirect
+	client := *h.client
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		redirectCount = len(via)
+		if !redirectLegStart.IsZero() {
+			redirectDuration += time.Since(redirectLegStart)
+		}
+		redirectLegStart = time.Now()
+		if baseCheckRedirect != nil {
+			return baseCheckRedirect(req, via)
+		}
+		return nil
+	}
 
 	if requestBytes > 0 {
 		result.BytesSent = requestBytes
 	}
 
-	resp, err := h.client.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		result.Duration = time.Since(result.StartTime)
-		result.ServerTelemetry = finalizeHTTPServerTelemetry(result, requestBytes, 0, connectionReused)
+		result.ServerTelemetry = finalizeHTTPServerTelemetry(result, requestBytes, 0, connectionReused, redirectCount, redirectDuration)
 		result.ErrorMessage = err.Error()
 		result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, action.Body, 0, nil, nil)
 		return result, nil
@@ -160,7 +176,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	result.Duration = time.Since(result.StartTime)
 	result.StatusCode = resp.StatusCode
 	result.BytesReceived = n
-	result.ServerTelemetry = finalizeHTTPServerTelemetry(result, requestBytes, n, connectionReused)
+	result.ServerTelemetry = finalizeHTTPServerTelemetry(result, requestBytes, n, connectionReused, redirectCount, redirectDuration)
 	result.Success = resp.StatusCode >= 200 && resp.StatusCode < 400
 	if result.CorrelationID == "" {
 		result.CorrelationID = correlationIDFromHTTPHeader(resp.Header)
@@ -316,12 +332,14 @@ func cloneStringMap(values map[string]string) map[string]string {
 	return cloned
 }
 
-func finalizeHTTPServerTelemetry(result *protocol.Result, requestBytes int64, responseBytes int64, connectionReused bool) *protocol.ServerTelemetry {
+func finalizeHTTPServerTelemetry(result *protocol.Result, requestBytes int64, responseBytes int64, connectionReused bool, redirectCount int, redirectDuration time.Duration) *protocol.ServerTelemetry {
 	if result == nil {
 		return nil
 	}
 	telemetry := &protocol.ServerTelemetry{
 		ConnectionReused: connectionReused,
+		RedirectCount:    redirectCount,
+		RedirectMs:       durationToNonNegativeMilliseconds(redirectDuration),
 	}
 	if requestBytes > 0 {
 		telemetry.RequestPayloadKB = bytesToKilobytes(requestBytes)

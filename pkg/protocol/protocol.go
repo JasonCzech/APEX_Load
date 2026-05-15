@@ -147,6 +147,8 @@ type ServerTelemetry struct {
 	EnvelopeOverheadKB float64 `json:"envelope_overhead_kb,omitempty"`
 	SOAPFaultCode      string  `json:"soap_fault_code,omitempty"`
 	SOAPFaultCategory  string  `json:"soap_fault_category,omitempty"`
+	RedirectCount      int     `json:"redirect_count,omitempty"`
+	RedirectMs         float64 `json:"redirect_ms,omitempty"`
 	MessagesSent       int     `json:"messages_sent,omitempty"`
 	MessagesReceived   int     `json:"messages_received,omitempty"`
 	ConsumerLagMs      float64 `json:"consumer_lag_ms,omitempty"`

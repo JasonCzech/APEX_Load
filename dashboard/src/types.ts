@@ -291,6 +291,8 @@ export interface ServerTelemetry {
   envelope_overhead_kb?: number
   soap_fault_code?: string
   soap_fault_category?: string
+  redirect_count?: number
+  redirect_ms?: number
   messages_sent?: number
   messages_received?: number
   consumer_lag_ms?: number
