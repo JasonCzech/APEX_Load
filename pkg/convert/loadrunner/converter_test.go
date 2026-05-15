@@ -594,7 +594,7 @@ Chain=base64,gzip mode=decode,html_unescape
 	if config.Browser.DownloadResources != "all" || config.Browser.CacheEnabled == nil || !*config.Browser.CacheEnabled || config.Browser.NewUserPerIter == nil || !*config.Browser.NewUserPerIter {
 		t.Fatalf("browser config = %#v, want cache and new user settings", config.Browser)
 	}
-	if config.Browser.Engine != "chromium" || config.Browser.DeviceProfile != "iphone_se" || config.Browser.TouchMode == nil || !*config.Browser.TouchMode || config.Browser.Orientation != "portrait" || config.Browser.ClientMetrics == nil || !*config.Browser.ClientMetrics || config.Browser.SlowMoMs != 125 || config.Browser.Viewport.Width != 390 || config.Browser.Viewport.Height != 844 {
+	if config.Browser.Engine != "webkit" || config.Browser.DeviceProfile != "iphone_se" || config.Browser.TouchMode == nil || !*config.Browser.TouchMode || config.Browser.Orientation != "portrait" || config.Browser.ClientMetrics == nil || !*config.Browser.ClientMetrics || config.Browser.SlowMoMs != 125 || config.Browser.Viewport.Width != 390 || config.Browser.Viewport.Height != 844 {
 		t.Fatalf("browser mobile config = %#v, want mobile emulation settings", config.Browser)
 	}
 	if config.WebRuntime.AdditionalAttributes["env"] != "perf" || config.WebRuntime.DownloadFilters.Mode != "block_list" {
@@ -809,8 +809,11 @@ ViewportHeight=1366
 	if err != nil {
 		t.Fatalf("ConvertZip returned error: %v", err)
 	}
-	if result.Script.Config.Browser.DeviceProfile != "ipad_pro" {
-		t.Fatalf("device profile = %q, want ipad_pro", result.Script.Config.Browser.DeviceProfile)
+	if result.Script.Config.Browser.DeviceProfile != "ipad_air" {
+		t.Fatalf("device profile = %q, want ipad_air", result.Script.Config.Browser.DeviceProfile)
+	}
+	if result.Script.Config.Browser.Engine != "webkit" {
+		t.Fatalf("engine = %q, want webkit", result.Script.Config.Browser.Engine)
 	}
 	if result.Script.Config.Browser.TouchMode == nil || !*result.Script.Config.Browser.TouchMode {
 		t.Fatalf("touch mode = %#v, want true", result.Script.Config.Browser.TouchMode)

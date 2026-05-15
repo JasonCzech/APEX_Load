@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/jasonczech/stormrunner/pkg/dsl"
+	browserprotocol "github.com/jasonczech/stormrunner/pkg/protocol/browser"
 )
 
 // ConvertResult holds the output of a LoadRunner to Stormrunner DSL conversion.
@@ -997,10 +998,15 @@ func (rc *RuntimeConfig) ToScriptConfig() *dsl.ScriptConfig {
 		newUserPerIter := rc.NewUserPerIteration
 		touchMode := rc.BrowserTouchMode
 		clientMetrics := rc.BrowserClientMetrics
+		resolvedProfile, profileEngine := resolveImportedBrowserProfile(rc.BrowserDeviceProfile)
+		resolvedEngine := rc.BrowserEngine
+		if profileEngine != "" {
+			resolvedEngine = profileEngine
+		}
 		config.Browser = dsl.BrowserConfig{
-			Engine:             rc.BrowserEngine,
+			Engine:             resolvedEngine,
 			SlowMoMs:           rc.BrowserSlowMoMs,
-			DeviceProfile:      rc.BrowserDeviceProfile,
+			DeviceProfile:      resolvedProfile,
 			TouchMode:          &touchMode,
 			Orientation:        rc.BrowserOrientation,
 			ClientMetrics:      &clientMetrics,
@@ -1042,6 +1048,25 @@ func (rc *RuntimeConfig) ToScriptConfig() *dsl.ScriptConfig {
 		}
 	}
 	return config
+}
+
+var loadRunnerBrowserDeviceAliases = map[string]string{
+	"ipad_pro": "ipad_air",
+}
+
+func resolveImportedBrowserProfile(profile string) (string, string) {
+	normalized := normalizeEnum(profile)
+	if normalized == "" {
+		return "", ""
+	}
+	if alias, ok := loadRunnerBrowserDeviceAliases[normalized]; ok {
+		normalized = alias
+	}
+	device, ok := browserprotocol.LookupDevice(normalized)
+	if !ok {
+		return normalized, ""
+	}
+	return normalized, device.BrowserFamily
 }
 
 // ToHTTPConfig converts parsed VuGen runtime settings into a Stormrunner HTTPConfig.
