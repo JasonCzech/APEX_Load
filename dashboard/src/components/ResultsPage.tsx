@@ -111,6 +111,13 @@ function getBrowserPlatformEntries(report?: RunArchiveReport): BrowserPlatformLi
     .sort((left, right) => formatDevicePlatform(left.device_platform).localeCompare(formatDevicePlatform(right.device_platform)))
 }
 
+function csvEscape(value: string | number | undefined): string {
+  if (value === undefined) return ''
+  const stringValue = String(value)
+  if (!/[",\n]/.test(stringValue)) return stringValue
+  return `"${stringValue.replace(/"/g, '""')}"`
+}
+
 function resolveStatus(test: TestSummary, testStatuses: Record<string, string>) {
   return testStatuses[test.id] || test.status
 }
@@ -314,6 +321,106 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
     () => comparisonCards.some(({ report }) => getBrowserDeviceEntries(report).length > 0),
     [comparisonCards],
   )
+
+  const exportComparison = useCallback(() => {
+    if (comparisonCards.length !== 2 || !comparisonCards.every(item => item.report)) {
+      return
+    }
+
+    const rows: Array<Record<string, string | number | undefined>> = []
+    for (const { test, report } of comparisonCards) {
+      if (!report) continue
+
+      if (comparisonBreakdown === 'overall') {
+        rows.push({
+          run_id: test.id,
+          run_name: test.name,
+          breakdown: 'overall',
+          segment_key: 'overall',
+          device_platform: '',
+          browser_engine: '',
+          device_tier: '',
+          samples: report.overview.browser?.samples,
+          avg_lcp_ms: report.overview.browser?.avg_lcp_ms,
+          avg_cls_score: report.overview.browser?.avg_cls_score,
+          avg_inp_ms: report.overview.browser?.avg_inp_ms,
+          transactions: report.overview.transactions,
+          error_pct: report.overview.error_pct,
+          peak_tps: report.overview.peak_tps,
+          peak_active_vusers: report.overview.peak_active_vusers,
+        })
+        continue
+      }
+
+      if (comparisonBreakdown === 'platform') {
+        for (const metrics of getBrowserPlatformEntries(report)) {
+          rows.push({
+            run_id: test.id,
+            run_name: test.name,
+            breakdown: 'platform',
+            segment_key: metrics.device_platform || 'unknown',
+            device_platform: metrics.device_platform,
+            browser_engine: metrics.browser_engine,
+            device_tier: '',
+            samples: metrics.samples,
+            avg_lcp_ms: metrics.avg_lcp_ms,
+            avg_cls_score: metrics.avg_cls_score,
+            avg_inp_ms: metrics.avg_inp_ms,
+            transactions: report.overview.transactions,
+            error_pct: report.overview.error_pct,
+            peak_tps: report.overview.peak_tps,
+            peak_active_vusers: report.overview.peak_active_vusers,
+          })
+        }
+        continue
+      }
+
+      for (const [profile, metrics] of getBrowserDeviceEntries(report)) {
+        rows.push({
+          run_id: test.id,
+          run_name: test.name,
+          breakdown: 'device',
+          segment_key: profile,
+          device_platform: metrics.device_platform,
+          browser_engine: metrics.browser_engine,
+          device_tier: metrics.device_tier,
+          samples: metrics.samples,
+          avg_lcp_ms: metrics.avg_lcp_ms,
+          avg_cls_score: metrics.avg_cls_score,
+          avg_inp_ms: metrics.avg_inp_ms,
+          transactions: report.overview.transactions,
+          error_pct: report.overview.error_pct,
+          peak_tps: report.overview.peak_tps,
+          peak_active_vusers: report.overview.peak_active_vusers,
+        })
+      }
+    }
+
+    const headers = [
+      'run_id',
+      'run_name',
+      'breakdown',
+      'segment_key',
+      'device_platform',
+      'browser_engine',
+      'device_tier',
+      'samples',
+      'avg_lcp_ms',
+      'avg_cls_score',
+      'avg_inp_ms',
+      'transactions',
+      'error_pct',
+      'peak_tps',
+      'peak_active_vusers',
+    ]
+    const csv = [
+      headers.join(','),
+      ...rows.map(row => headers.map(header => csvEscape(row[header])).join(',')),
+    ].join('\n')
+
+    const filename = `browser-comparison-${comparisonBreakdown}.csv`
+    downloadBlob(new Blob([csv], { type: 'text/csv;charset=utf-8' }), filename)
+  }, [comparisonBreakdown, comparisonCards])
 
   const comparisonActionRows = useMemo(() => {
     if (comparisonCards.length !== 2 || !comparisonCards[0].report || !comparisonCards[1].report) return []
@@ -524,19 +631,24 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
                 <p className="page-subtitle">Side-by-side view of two archived runs from this release.</p>
               </div>
               {comparisonCards.length === 2 && comparisonCards.every(item => item.report) && comparisonHasBrowserBreakdowns && (
-                <div className="results-breakdown-toggle" role="tablist" aria-label="Comparison breakdown mode">
-                  {(['overall', 'platform', 'device'] as ComparisonBreakdown[]).map(mode => (
-                    <button
-                      key={mode}
-                      type="button"
-                      role="tab"
-                      aria-selected={comparisonBreakdown === mode}
-                      className={`results-breakdown-button${comparisonBreakdown === mode ? ' active' : ''}`}
-                      onClick={() => setComparisonBreakdown(mode)}
-                    >
-                      {mode === 'overall' ? 'Overall' : mode === 'platform' ? 'Platform' : 'Device'}
-                    </button>
-                  ))}
+                <div className="results-compare-controls">
+                  <div className="results-breakdown-toggle" role="tablist" aria-label="Comparison breakdown mode">
+                    {(['overall', 'platform', 'device'] as ComparisonBreakdown[]).map(mode => (
+                      <button
+                        key={mode}
+                        type="button"
+                        role="tab"
+                        aria-selected={comparisonBreakdown === mode}
+                        className={`results-breakdown-button${comparisonBreakdown === mode ? ' active' : ''}`}
+                        onClick={() => setComparisonBreakdown(mode)}
+                      >
+                        {mode === 'overall' ? 'Overall' : mode === 'platform' ? 'Platform' : 'Device'}
+                      </button>
+                    ))}
+                  </div>
+                  <button type="button" className="btn btn-secondary" onClick={exportComparison}>
+                    Export CSV
+                  </button>
                 </div>
               )}
             </div>

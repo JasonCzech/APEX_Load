@@ -5,6 +5,7 @@ import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import ResultsPage from './ResultsPage'
+import { downloadBlob } from '../utils/fileUtils'
 
 const apiMock = {
   listTests: vi.fn(),
@@ -16,6 +17,10 @@ const apiMock = {
 
 vi.mock('../hooks/useApi', () => ({
   useApi: () => apiMock,
+}))
+
+vi.mock('../utils/fileUtils', () => ({
+  downloadBlob: vi.fn(),
 }))
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -172,10 +177,12 @@ describe('ResultsPage', () => {
     const platformToggle = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Platform') as HTMLButtonElement | undefined
     const overallToggle = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Overall') as HTMLButtonElement | undefined
     const deviceToggle = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Device') as HTMLButtonElement | undefined
+    const exportButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Export CSV') as HTMLButtonElement | undefined
 
     expect(platformToggle).toBeDefined()
     expect(overallToggle).toBeDefined()
     expect(deviceToggle).toBeDefined()
+    expect(exportButton).toBeDefined()
 
     expect(container.textContent).toContain('Run Comparison')
     expect(container.textContent).toContain('Avg LCP')
@@ -206,6 +213,23 @@ describe('ResultsPage', () => {
     expect(container.textContent).toContain('WebKit · 4 samples')
     expect(container.textContent).toContain('250.0 ms')
     expect(container.textContent).not.toContain('iPhone 14 Pro')
+
+    if (!exportButton) {
+      return
+    }
+
+    await act(async () => {
+      exportButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(downloadBlob).toHaveBeenCalledTimes(1)
+    const [blob, filename] = vi.mocked(downloadBlob).mock.calls[0]
+    expect(filename).toBe('browser-comparison-platform.csv')
+    const csv = await blob.text()
+    expect(csv).toContain('breakdown,segment_key,device_platform,browser_engine')
+    expect(csv).toContain('platform,ios,ios,webkit')
+    expect(csv).toContain('platform,ipados,ipados,webkit')
 
     await act(async () => {
       overallToggle.dispatchEvent(new MouseEvent('click', { bubbles: true }))
