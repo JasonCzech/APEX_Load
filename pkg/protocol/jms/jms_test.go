@@ -78,6 +78,12 @@ func TestJMSPublishConsumeWithExtractionAndAssertion(t *testing.T) {
 	if consumed.ServerTelemetry.ResponsePayloadKB <= 0 {
 		t.Fatalf("ResponsePayloadKB = %v, want > 0", consumed.ServerTelemetry.ResponsePayloadKB)
 	}
+	if consumed.ServerTelemetry.MessagesReceived != 1 {
+		t.Fatalf("MessagesReceived = %d, want 1", consumed.ServerTelemetry.MessagesReceived)
+	}
+	if consumed.ServerTelemetry.ConsumerLagMs < 0 {
+		t.Fatalf("ConsumerLagMs = %v, want non-negative", consumed.ServerTelemetry.ConsumerLagMs)
+	}
 }
 
 func TestJMSConsumeTimeoutFailsResult(t *testing.T) {
@@ -195,5 +201,11 @@ func TestJMSRequestReplyEchoesResponse(t *testing.T) {
 	}
 	if result.ServerTelemetry.TransferMs < 0 {
 		t.Fatalf("TransferMs = %v, want non-negative", result.ServerTelemetry.TransferMs)
+	}
+	if result.ServerTelemetry.MessagesSent != 1 || result.ServerTelemetry.MessagesReceived != 1 {
+		t.Fatalf("message counts = %#v, want one sent and one received", result.ServerTelemetry)
+	}
+	if result.ServerTelemetry.ConsumerLagMs < 0 {
+		t.Fatalf("ConsumerLagMs = %v, want non-negative", result.ServerTelemetry.ConsumerLagMs)
 	}
 }

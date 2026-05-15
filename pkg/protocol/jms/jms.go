@@ -407,6 +407,16 @@ func finalizeJMSServerTelemetry(result *protocol.Result, request message, hasReq
 		TransferMs: durationToNonNegativeMilliseconds(result.Duration),
 	}
 	if hasRequest {
+		telemetry.MessagesSent = 1
+	}
+	if hasResponse {
+		telemetry.MessagesReceived = 1
+		observedAt := result.StartTime.Add(result.Duration)
+		if !response.CreatedAt.IsZero() && !observedAt.Before(response.CreatedAt) {
+			telemetry.ConsumerLagMs = durationToNonNegativeMilliseconds(observedAt.Sub(response.CreatedAt))
+		}
+	}
+	if hasRequest {
 		telemetry.RequestPayloadKB = bytesToKilobytes(int64(len(request.Body)))
 	} else if result.BytesSent > 0 {
 		telemetry.RequestPayloadKB = bytesToKilobytes(result.BytesSent)

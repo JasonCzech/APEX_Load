@@ -86,33 +86,66 @@ func (s *SOAP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	prepared.Body = s.applySecurity(prepared.Body)
 	applySOAPDefaults(&prepared, s.version, s.defaultCharset)
 	targetURL := resolveSOAPURL(s.baseURL, prepared.Target)
+	envelopeOverheadKB := soapEnvelopeOverheadKB(action, prepared.Body)
 
 	result, err := s.http.Execute(ctx, &prepared)
 	if err != nil || result == nil {
 		return result, err
 	}
 	result.DependencyType = "soap"
+	if envelopeOverheadKB > 0 {
+		if result.ServerTelemetry == nil {
+			result.ServerTelemetry = &protocol.ServerTelemetry{}
+		}
+		result.ServerTelemetry.EnvelopeOverheadKB = envelopeOverheadKB
+	}
 	if operation := resolveSOAPOperation(action, prepared.Body); operation != "" {
 		result.DependencyTarget = appendSOAPOperationTarget(result.DependencyTarget, operation)
 		result.Extractions["soap_operation"] = operation
 	}
 
-	if s.failOnFault {
-		if fault, ok := detectSOAPFault(result.ResponseBody); ok {
+	if faultCode, faultCategory, fault, ok := detectSOAPFault(result.ResponseBody); ok {
+		if result.ServerTelemetry == nil {
+			result.ServerTelemetry = &protocol.ServerTelemetry{}
+		}
+		result.ServerTelemetry.SOAPFaultCode = faultCode
+		result.ServerTelemetry.SOAPFaultCategory = faultCategory
+		result.Extractions["soap_fault_code"] = faultCode
+		result.Extractions["soap_fault_category"] = faultCategory
+		if s.failOnFault {
 			result.Success = false
-			result.Extractions["soap_fault_category"] = classifySOAPFaultCategory(fault)
 			if result.ErrorMessage == "" {
 				result.ErrorMessage = fault
 			}
 			if result.Snapshot == nil {
 				result.Snapshot = buildSOAPSnapshot(&prepared, targetURL, result)
 			}
-		} else if result.StatusCode >= 500 && result.ErrorMessage == "" {
-			result.ErrorMessage = "soap fault response"
 		}
+	} else if s.failOnFault && result.StatusCode >= 500 && result.ErrorMessage == "" {
+			result.ErrorMessage = "soap fault response"
 	}
 
 	return result, nil
+}
+
+func soapEnvelopeOverheadKB(action *protocol.Action, preparedBody []byte) float64 {
+	preparedText := strings.TrimSpace(string(preparedBody))
+	if preparedText != "" && looksLikeSOAPEnvelope(preparedText) {
+		innerBody := strings.TrimSpace(firstSOAPTagInnerXML(preparedText, "Body"))
+		overheadBytes := len(preparedText) - len(innerBody)
+		if overheadBytes > 0 {
+			return float64(overheadBytes) / 1024.0
+		}
+	}
+	if action == nil {
+		return 0
+	}
+	payloadBytes := len(action.Body)
+	overheadBytes := len(preparedBody) - payloadBytes
+	if overheadBytes <= 0 {
+		return 0
+	}
+	return float64(overheadBytes) / 1024.0
 }
 
 func (s *SOAP) Teardown(ctx context.Context) error {
@@ -481,9 +514,9 @@ func xmlEscape(value string) string {
 	return replacer.Replace(value)
 }
 
-func detectSOAPFault(body string) (string, bool) {
+func detectSOAPFault(body string) (string, string, string, bool) {
 	if !looksLikeSOAPEnvelope(body) {
-		return "", false
+		return "", "", "", false
 	}
 	reason := firstSOAPTagText(body, "faultstring")
 	if reason == "" {
@@ -494,7 +527,7 @@ func detectSOAPFault(body string) (string, bool) {
 		code = firstSOAPTagText(body, "Value")
 	}
 	if reason == "" && code == "" {
-		return "", false
+		return "", "", "", false
 	}
 	message := "soap fault"
 	if code != "" && reason != "" {
@@ -504,21 +537,29 @@ func detectSOAPFault(body string) (string, bool) {
 	} else {
 		message = fmt.Sprintf("soap fault: %s", code)
 	}
-	return message, true
+	return code, classifySOAPFaultCategory(code), message, true
 }
 
 func firstSOAPTagText(body, tag string) string {
+	inner := firstSOAPTagInnerXML(body, tag)
+	if inner == "" {
+		return ""
+	}
+	text := strings.TrimSpace(stripXMLTags(inner))
+	if text == "" {
+		return ""
+	}
+	return html.UnescapeString(text)
+}
+
+func firstSOAPTagInnerXML(body, tag string) string {
 	pattern := fmt.Sprintf(`(?is)<(?:[A-Za-z_][A-Za-z0-9_.-]*:)?%s\b[^>]*>(.*?)</(?:[A-Za-z_][A-Za-z0-9_.-]*:)?%s>`, regexp.QuoteMeta(tag), regexp.QuoteMeta(tag))
 	re := regexp.MustCompile(pattern)
 	matches := re.FindStringSubmatch(body)
 	if len(matches) != 2 {
 		return ""
 	}
-	text := strings.TrimSpace(stripXMLTags(matches[1]))
-	if text == "" {
-		return ""
-	}
-	return html.UnescapeString(text)
+	return matches[1]
 }
 
 func stripXMLTags(value string) string {

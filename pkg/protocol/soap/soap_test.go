@@ -76,6 +76,9 @@ func TestSOAPExecuteAddsSOAP11Defaults(t *testing.T) {
 	if result.Extractions["soap_operation"] != "Login" {
 		t.Fatalf("soap_operation = %q, want Login", result.Extractions["soap_operation"])
 	}
+	if result.ServerTelemetry == nil || result.ServerTelemetry.EnvelopeOverheadKB <= 0 {
+		t.Fatalf("EnvelopeOverheadKB = %#v, want > 0", result.ServerTelemetry)
+	}
 }
 
 func TestSOAPExecuteAddsSOAP12Defaults(t *testing.T) {
@@ -265,6 +268,18 @@ func TestSOAPExecuteFlagsSOAP11FaultEnvelope(t *testing.T) {
 	if result.Extractions["soap_fault_category"] != "client" {
 		t.Fatalf("soap_fault_category = %q, want client", result.Extractions["soap_fault_category"])
 	}
+	if result.Extractions["soap_fault_code"] != "soapenv:Client" {
+		t.Fatalf("soap_fault_code = %q, want soapenv:Client", result.Extractions["soap_fault_code"])
+	}
+	if result.ServerTelemetry == nil {
+		t.Fatal("ServerTelemetry = nil, want SOAP fault telemetry")
+	}
+	if result.ServerTelemetry.SOAPFaultCode != "soapenv:Client" {
+		t.Fatalf("SOAPFaultCode = %q, want soapenv:Client", result.ServerTelemetry.SOAPFaultCode)
+	}
+	if result.ServerTelemetry.SOAPFaultCategory != "client" {
+		t.Fatalf("SOAPFaultCategory = %q, want client", result.ServerTelemetry.SOAPFaultCategory)
+	}
 	if !strings.Contains(result.ResponseBody, `<faultstring>Invalid login</faultstring>`) {
 		t.Fatalf("ResponseBody = %q, want original fault payload", result.ResponseBody)
 	}
@@ -321,5 +336,8 @@ func TestSOAPExecuteFlagsSOAP12FaultEnvelope(t *testing.T) {
 	}
 	if result.ErrorMessage != "soap fault: env:Sender: Request validation failed" {
 		t.Fatalf("ErrorMessage = %q, want SOAP 1.2 fault details", result.ErrorMessage)
+	}
+	if result.ServerTelemetry == nil || result.ServerTelemetry.SOAPFaultCode != "env:Sender" {
+		t.Fatalf("ServerTelemetry = %#v, want SOAP 1.2 fault code", result.ServerTelemetry)
 	}
 }

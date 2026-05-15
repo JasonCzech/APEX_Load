@@ -288,6 +288,12 @@ export interface ServerTelemetry {
   transfer_ms?: number
   request_payload_kb?: number
   response_payload_kb?: number
+  envelope_overhead_kb?: number
+  soap_fault_code?: string
+  soap_fault_category?: string
+  messages_sent?: number
+  messages_received?: number
+  consumer_lag_ms?: number
   connection_reused?: boolean
 }
 

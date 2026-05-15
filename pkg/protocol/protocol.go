@@ -144,6 +144,12 @@ type ServerTelemetry struct {
 	TransferMs         float64 `json:"transfer_ms,omitempty"`
 	RequestPayloadKB   float64 `json:"request_payload_kb,omitempty"`
 	ResponsePayloadKB  float64 `json:"response_payload_kb,omitempty"`
+	EnvelopeOverheadKB float64 `json:"envelope_overhead_kb,omitempty"`
+	SOAPFaultCode      string  `json:"soap_fault_code,omitempty"`
+	SOAPFaultCategory  string  `json:"soap_fault_category,omitempty"`
+	MessagesSent       int     `json:"messages_sent,omitempty"`
+	MessagesReceived   int     `json:"messages_received,omitempty"`
+	ConsumerLagMs      float64 `json:"consumer_lag_ms,omitempty"`
 	ConnectionReused   bool    `json:"connection_reused"`
 }
 
