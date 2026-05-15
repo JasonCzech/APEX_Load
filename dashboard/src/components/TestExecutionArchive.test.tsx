@@ -494,6 +494,8 @@ describe('TestExecutionArchive', () => {
         message_latency_ms: 18,
         messages_sent: 1,
         messages_received: 1,
+        messages_sent_per_sec: 6.4,
+        messages_received_per_sec: 5.8,
         consumer_lag_ms: 22,
         connection_reused: false,
       },
@@ -546,6 +548,7 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('Redirects: 2 hops / 31.0 ms')
     expect(container.textContent).toContain('Message latency: 18.0 ms')
     expect(container.textContent).toContain('Messages: 1 sent / 1 received')
+    expect(container.textContent).toContain('Message throughput: 6.4 sent/s / 5.8 received/s')
     expect(container.textContent).toContain('Consumer lag: 22.0 ms')
     expect(container.textContent).toContain('Connection: new')
   })

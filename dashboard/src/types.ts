@@ -301,6 +301,8 @@ export interface ServerTelemetry {
   message_latency_ms?: number
   messages_sent?: number
   messages_received?: number
+  messages_sent_per_sec?: number
+  messages_received_per_sec?: number
   consumer_lag_ms?: number
   connection_reused?: boolean
 }

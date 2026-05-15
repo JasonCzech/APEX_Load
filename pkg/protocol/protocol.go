@@ -157,6 +157,8 @@ type ServerTelemetry struct {
 	MessageLatencyMs   float64 `json:"message_latency_ms,omitempty"`
 	MessagesSent       int     `json:"messages_sent,omitempty"`
 	MessagesReceived   int     `json:"messages_received,omitempty"`
+	MessagesSentPerSec float64 `json:"messages_sent_per_sec,omitempty"`
+	MessagesReceivedPerSec float64 `json:"messages_received_per_sec,omitempty"`
 	ConsumerLagMs      float64 `json:"consumer_lag_ms,omitempty"`
 	ConnectionReused   bool    `json:"connection_reused"`
 }

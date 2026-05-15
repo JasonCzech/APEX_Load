@@ -554,6 +554,7 @@ export default function TestExecutionArchive({
                                         Redirects: {event.server_telemetry.redirect_count ?? 0} hops / {formatBrowserMetric(event.server_telemetry.redirect_ms, ' ms')}{'\n'}
                                         Message latency: {formatBrowserMetric(event.server_telemetry.message_latency_ms, ' ms')}{'\n'}
                                         Messages: {event.server_telemetry.messages_sent ?? 0} sent / {event.server_telemetry.messages_received ?? 0} received{'\n'}
+                                        Message throughput: {formatBrowserMetric(event.server_telemetry.messages_sent_per_sec, ' sent/s')} / {formatBrowserMetric(event.server_telemetry.messages_received_per_sec, ' received/s')}{'\n'}
                                         Consumer lag: {formatBrowserMetric(event.server_telemetry.consumer_lag_ms, ' ms')}{'\n'}
                                         Connection: {event.server_telemetry.connection_reused === undefined ? 'n/a' : event.server_telemetry.connection_reused ? 'reused' : 'new'}
                                       </pre>

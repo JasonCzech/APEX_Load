@@ -436,6 +436,8 @@ func finalizeJMSServerTelemetry(result *protocol.Result, request message, hasReq
 		telemetry.MessageLatencyMs = durationToNonNegativeMilliseconds(serverProcessing)
 		telemetry.TransferMs = durationToNonNegativeMilliseconds(result.Duration - serverProcessing)
 	}
+	telemetry.MessagesSentPerSec = messagesPerSecond(telemetry.MessagesSent, result.Duration)
+	telemetry.MessagesReceivedPerSec = messagesPerSecond(telemetry.MessagesReceived, result.Duration)
 	return telemetry
 }
 
@@ -451,6 +453,13 @@ func bytesToKilobytes(bytes int64) float64 {
 		return 0
 	}
 	return float64(bytes) / 1024.0
+}
+
+func messagesPerSecond(count int, duration time.Duration) float64 {
+	if count <= 0 || duration <= 0 {
+		return 0
+	}
+	return float64(count) / duration.Seconds()
 }
 
 func classifyJMSDependencyType(defaultDestinationType string, action *protocol.Action) string {
