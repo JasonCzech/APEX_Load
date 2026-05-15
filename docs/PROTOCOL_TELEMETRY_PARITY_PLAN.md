@@ -21,7 +21,7 @@ The Mobile UX Strategy defines three layers. The equivalent for each protocol fa
 - HTTP timing decomposition for server processing, transfer, payload sizes, connection reuse, and redirect-hop timing.
 - SOAP operation tagging, fault categorization, raw envelope-overhead tracking, and fault-code retention on archived events.
 - Java HTTP dependency tagging plus helper/codec metadata propagation and raw codec timing retention.
-- JMS payload sizing, request/reply timing, message counts, and consumer-lag retention on archived events.
+- JMS payload sizing, request/reply timing, message counts, message latency, and consumer-lag retention on archived events.
 - Goal-oriented SLA parity for server processing and transfer thresholds, including stop-on-breach behavior.
 - Previous-run comparison baselines on `GetTest`, used by the live execution summary and dedicated server telemetry panel.
 
@@ -197,7 +197,7 @@ Each protocol must populate enough telemetry for the dashboard to answer the sam
 
 ### 6. JMS Protocol
 
-**Current state:** Solace and IBM MQ providers, pub/sub/request-reply, message properties, correlation IDs, dependency classification. Most complete L1 after HTTP.
+**Current state:** Solace and IBM MQ providers, pub/sub/request-reply, message properties, correlation IDs, dependency classification, and raw message-latency retention for request/reply flows. Most complete L1 after HTTP.
 
 **L2 gaps:**
 - No **broker-side latency** isolation (time in broker vs. time in network)

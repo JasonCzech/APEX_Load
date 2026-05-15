@@ -429,6 +429,7 @@ func finalizeJMSServerTelemetry(result *protocol.Result, request message, hasReq
 	if hasRequest && hasResponse && !request.CreatedAt.IsZero() && !response.CreatedAt.IsZero() && !response.CreatedAt.Before(request.CreatedAt) {
 		serverProcessing := response.CreatedAt.Sub(request.CreatedAt)
 		telemetry.ServerProcessingMs = durationToNonNegativeMilliseconds(serverProcessing)
+		telemetry.MessageLatencyMs = durationToNonNegativeMilliseconds(serverProcessing)
 		telemetry.TransferMs = durationToNonNegativeMilliseconds(result.Duration - serverProcessing)
 	}
 	return telemetry

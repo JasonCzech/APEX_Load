@@ -488,6 +488,7 @@ describe('TestExecutionArchive', () => {
         soap_fault_category: 'client',
         redirect_count: 2,
         redirect_ms: 31,
+        message_latency_ms: 18,
         messages_sent: 1,
         messages_received: 1,
         consumer_lag_ms: 22,
@@ -537,6 +538,7 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('Envelope overhead: 0.75 KB')
     expect(container.textContent).toContain('SOAP fault: soapenv:Client / client')
     expect(container.textContent).toContain('Redirects: 2 hops / 31.0 ms')
+    expect(container.textContent).toContain('Message latency: 18.0 ms')
     expect(container.textContent).toContain('Messages: 1 sent / 1 received')
     expect(container.textContent).toContain('Consumer lag: 22.0 ms')
     expect(container.textContent).toContain('Connection: new')

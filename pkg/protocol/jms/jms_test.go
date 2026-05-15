@@ -205,6 +205,9 @@ func TestJMSRequestReplyEchoesResponse(t *testing.T) {
 	if result.ServerTelemetry.MessagesSent != 1 || result.ServerTelemetry.MessagesReceived != 1 {
 		t.Fatalf("message counts = %#v, want one sent and one received", result.ServerTelemetry)
 	}
+	if result.ServerTelemetry.MessageLatencyMs < 0 {
+		t.Fatalf("MessageLatencyMs = %v, want non-negative", result.ServerTelemetry.MessageLatencyMs)
+	}
 	if result.ServerTelemetry.ConsumerLagMs < 0 {
 		t.Fatalf("ConsumerLagMs = %v, want non-negative", result.ServerTelemetry.ConsumerLagMs)
 	}

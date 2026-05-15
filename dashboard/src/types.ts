@@ -295,6 +295,7 @@ export interface ServerTelemetry {
   soap_fault_category?: string
   redirect_count?: number
   redirect_ms?: number
+  message_latency_ms?: number
   messages_sent?: number
   messages_received?: number
   consumer_lag_ms?: number

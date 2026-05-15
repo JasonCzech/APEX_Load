@@ -151,6 +151,7 @@ type ServerTelemetry struct {
 	SOAPFaultCategory  string  `json:"soap_fault_category,omitempty"`
 	RedirectCount      int     `json:"redirect_count,omitempty"`
 	RedirectMs         float64 `json:"redirect_ms,omitempty"`
+	MessageLatencyMs   float64 `json:"message_latency_ms,omitempty"`
 	MessagesSent       int     `json:"messages_sent,omitempty"`
 	MessagesReceived   int     `json:"messages_received,omitempty"`
 	ConsumerLagMs      float64 `json:"consumer_lag_ms,omitempty"`
