@@ -4,109 +4,134 @@
 Execute the gap analysis (`docs/PLATFORM_GAP_ANALYSIS.md`) through a structured, phased approach to elevate Stormrunner from a powerful execution engine to a first-class enterprise performance testing platform.
 
 ## Execution Strategy
-The 12 gaps are organized into three sequential delivery phases. Each phase targets a specific persona and unlocks a new tier of enterprise value.
+The 19 gaps are organized into five sequential delivery waves. Each wave targets a specific enterprise challenge and unlocks a new tier of platform maturity.
 
-- **Phase 1: CI/CD & Operations (Weeks 1-4)** — Targets DevOps engineers. Makes Stormrunner a fully automated, headless pipeline gate.
-- **Phase 2: Intelligence & Diagnostics (Weeks 5-8)** — Targets Performance Engineers. Reduces the time spent authoring scripts and debugging failed runs.
-- **Phase 3: Enterprise Scale & Integrations (Weeks 9-14)** — Targets Enterprise Architects. Connects Stormrunner to the broader observability and security ecosystem.
+- **Wave 1: Enterprise Foundation (Weeks 1-4)** — Targets DevOps engineers. Makes Stormrunner a fully automated, headless, and secure pipeline gate.
+- **Wave 2: Cloud-Native Engine & Compliance (Weeks 5-7)** — Targets backend accuracy and regulatory compliance.
+- **Wave 3: Shared Platform Readiness (Weeks 8-12)** — Targets Enterprise Architects. Turns Stormrunner into a governable shared service with controls and provenance.
+- **Wave 4: Script Quality and Analysis Depth (Weeks 13-16)** — Targets Performance Engineers. Reduces the time spent authoring scripts and debugging failed runs.
+- **Wave 5: Ecosystem and Advanced Modeling (Weeks 17-21)** — Targets global deployment and edge-case modeling.
 
 ---
 
-## Phase 1: CI/CD & Operations (Weeks 1-4)
-**Goal:** Enable automated, scheduled, and reportable pipeline execution.
+## Wave 1: Enterprise Foundation (Weeks 1-4)
+**Goal:** Enable automated, reportable, and secure pipeline execution.
 
 ### 1.1 CI/CD Integration (P0)
 **Effort:** 5-8 days
 - **CLI Enhancements:** Update `cmd/stormctl` to parse SLA thresholds from the scenario. Implement non-zero exit codes when SLAs are breached or the test fails. Add `--format json` for machine-readable stdout.
 - **API Endpoints:** Create `GET /api/v1/tests/{id}/sla-status` to return a summarized boolean evaluation of all SLAs.
-- **Pipeline Templates:**
-  - Create `.github/actions/stormrunner-test/action.yml` (GitHub Actions).
-  - Create `azure-pipelines-task.yml` (Azure DevOps).
-  - Both templates will poll the API and fail the pipeline step on SLA breach.
+- **Pipeline Templates:** Create reusable GitHub Actions (`action.yml`) and Azure DevOps tasks (`azure-pipelines-task.yml`).
 
 ### 1.2 Report Generation (P0)
 **Effort:** 7-10 days
 - **Backend Generator:** Implement `pkg/api/report_generator.go`. It will read the Parquet/JSONL archives and construct a standalone HTML document using a Go template.
-- **Data Model:** Define `ReportData` struct containing the executive summary, SLA results, transaction latency distribution, and error summaries.
 - **API Endpoint:** `GET /api/v1/tests/{id}/report` returning `text/html`.
 - **Dashboard UI:** Add a "Download Report" button to the `TestExecutionArchive` and `ResultsPage` components.
 
-### 1.3 Alerting & Notifications (P1)
-**Effort:** 3-4 days
-- **Data Model:** Add `NotificationRules` to `ManagedTest` and project settings.
-- **Webhook Engine:** Create `pkg/api/notifications.go` that triggers asynchronously on test state changes (started, completed, failed, sla_breached).
-- **Integrations:** Implement formatters for generic JSON Webhooks, Slack Block Kit, and MS Teams Adaptive Cards.
-- **Dashboard UI:** Add a "Notifications" tab in the `CreateTestModal` and Project Settings.
+### 1.3 Secrets, PKI, and Secure Credential Handling (P0)
+**Effort:** 5-8 days
+- **Secret Abstraction:** Add `SecretReference` to the DSL (e.g., `{{secret.db_password}}`).
+- **Runtime Injection:** Resolve secrets only at the generator level during execution; never log or serialize them.
+- **External Vault Integration:** Support Azure Key Vault integration for fetching secret payloads.
 
-### 1.4 Scheduled Tests (P1)
+### 1.4 Ephemeral Environment Target Resolution (P1)
 **Effort:** 3-5 days
-- **Data Model:** Create `Schedule` struct (cron string, active flag, next run time).
-- **Scheduler Loop:** Add a ticker in `cmd/controller/main.go` that evaluates active schedules every minute.
-- **Execution Bridge:** When a schedule triggers, construct a `ManagedTest` and hand it to the `TestRunner`.
-- **Dashboard UI:** Add a "Schedules" tab to the main sidebar. Create a `SchedulesPage` to list, create, and toggle recurring tests.
+- **Dynamic Targeting:** Support runtime variables passed via `stormctl` (e.g., `-env target_namespace=pr-123`).
+- **Base URL Overrides:** Enable overriding the base URL of a scenario at runtime without modifying the JSON DSL.
 
 ---
 
-## Phase 2: Intelligence & Diagnostics (Weeks 5-8)
+## Wave 2: Cloud-Native Engine & Compliance (Weeks 5-7)
+**Goal:** Ensure the core engine handles microservice queuing correctly and respects data privacy.
+
+### 2.1 Open vs. Closed Workload Modeling (P0)
+**Effort:** 6-10 days
+- **Arrival-Rate Engine:** Implement an open workload scheduler in `pkg/engine/pacing.go` that spawns ephemeral goroutines to achieve exact target throughput.
+- **Coordinated Omission Tracking:** Compare expected arrival rate vs. actual departure rate and flag divergence in the telemetry stream.
+
+### 2.2 PII / PHI Redaction & Compliance (P0)
+**Effort:** 4-6 days
+- **Scrubbing Pipeline:** Add a regex/entropy-based redaction step in `pkg/engine/metrics.go` for all HTTP headers and body payloads before they are serialized to Parquet or sent over WebSockets.
+- **Compliance Config:** Allow users to define custom redaction rules per project.
+
+---
+
+## Wave 3: Shared Platform Readiness (Weeks 8-12)
+**Goal:** Make Stormrunner a governable, multi-tenant service.
+
+### 3.1 User Management & RBAC (P1)
+**Effort:** 8-12 days
+- **Auth Middleware:** Implement OIDC/SAML integration in `pkg/api/middleware.go`.
+- **Role Model:** Define System Admin, Project Admin, Editor, and Viewer roles.
+- **Dashboard UI:** Add Login screen and User Management panels.
+
+### 3.2 Multi-Tenant Governance & Capacity Controls (P1)
+**Effort:** 6-9 days
+- **Quotas:** Implement concurrent execution limits and VUser caps per project/team.
+- **Queueing System:** If a team exceeds capacity, place the test in a pending queue rather than failing immediately.
+
+### 3.3 Alerting & Notifications (P1)
+**Effort:** 3-4 days
+- **Webhook Engine:** Create `pkg/api/notifications.go` that triggers asynchronously on test state changes.
+- **Integrations:** Implement formatters for Slack Block Kit and MS Teams Adaptive Cards.
+
+### 3.4 Scheduled Tests (P1)
+**Effort:** 3-5 days
+- **Scheduler Loop:** Add a cron evaluator in `cmd/controller/main.go`.
+- **Dashboard UI:** Add a Schedules tab to manage recurring tests.
+
+### 3.5 Run Provenance & Reproducibility (P1)
+**Effort:** 4-6 days
+- **Immutable Manifests:** Generate a canonical JSON manifest of all inputs, environment variables, and generator states at the start of a test.
+- **Pinning:** Allow explicit pinning of a specific test run as the baseline for future comparisons.
+
+---
+
+## Wave 4: Script Quality and Analysis Depth (Weeks 13-16)
 **Goal:** Make script authoring smarter and result analysis faster.
 
-### 2.1 Correlation Intelligence (P1)
+### 4.1 Correlation Intelligence (P1)
 **Effort:** 5-7 days
-- **Analysis Engine:** Create `pkg/engine/correlation.go`. Compare recorded HAR responses against subsequent HAR requests. Identify strings (e.g., tokens) that were received and then re-transmitted.
-- **Extractor Suggestions:** Generate DSL `Extractor` blocks for identified values.
-- **Dashboard UI:** Add a "Correlation Assistant" panel in the `ScriptEditor`. Highlight potential dynamic values and offer a 1-click "Add Extractor" button.
-- **Agentic Hook:** Pass identified correlations to the MCP server for LLM refinement.
+- **Analysis Engine:** Detect dynamic values flowing from responses into subsequent requests during HAR import.
+- **Dashboard UI:** Add "Correlation Assistant" in the ScriptEditor.
 
-### 2.2 Error Analysis & Pattern Detection (P1)
+### 4.2 Error Analysis & Pattern Detection (P1)
 **Effort:** 4-6 days
-- **Error Clustering:** Implement string similarity clustering (e.g., Levenshtein distance or tokenization) in `pkg/engine/metrics.go` to group similar error messages, masking out dynamic IDs.
-- **Snapshot Retention:** Update the engine to automatically capture a full `ErrorSnapshot` for the *first* occurrence of each unique error cluster.
-- **Dashboard UI:** Overhaul the Errors tab in `TestExecution`. Show clustered error patterns, a timeline of when the pattern occurred, and a button to view the representative snapshot.
+- **Error Clustering:** Group similar error messages to reduce noise.
+- **Snapshot Retention:** Save full request/response context for the *first* occurrence of each error pattern.
 
-### 2.3 Think Time & Pacing Intelligence (P2)
+### 4.3 Test Data Management (P2)
+**Effort:** 5-7 days
+- **Generators:** Add Faker-style functions (`{{fake.email}}`, `{{fake.uuid}}`).
+- **Unique Allocation:** Ensure "pop" semantics for data pools so rows are used exactly once.
+
+### 4.4 Think Time & Pacing Intelligence (P2)
 **Effort:** 2-3 days
-- **HAR Analyzer:** Update `pkg/convert/har/converter.go` to calculate the delta between the end of one request and the start of the next. Emit `think_time` blocks based on this delta.
-- **Execution Modes:** Add a `PacingMode` to the DSL (recorded, multiplied, random).
-- **Dashboard UI:** Add a Pacing & Think Time settings panel in the `ScriptEditor`.
-
-### 2.4 Iteration & Rendezvous Control (P2)
-**Effort:** 3-4 days
-- **Iteration Limits:** Update `engine.Config` to support `MaxIterations` as an alternative/addition to `Duration`.
-- **Rendezvous Primitive:** Create a `sync.Cond` based rendezvous manager in `pkg/engine/vuser.go`. VUsers block at a `rendezvous` action until N users arrive or a timeout occurs.
-- **DSL Update:** Add `rendezvous` action type to `pkg/dsl/types.go`.
+- **HAR Analyzer:** Automatically calculate wait times between recorded actions and insert think_time blocks.
 
 ---
 
-## Phase 3: Enterprise Scale & Integrations (Weeks 9-14)
-**Goal:** Connect to the enterprise observability ecosystem and support massive distributed scale.
+## Wave 5: Ecosystem and Advanced Modeling (Weeks 17-21)
+**Goal:** Connect to the observability ecosystem and support edge-case loads.
 
-### 3.1 Test Data Management (P2)
-**Effort:** 5-7 days
-- **Data Generators:** Add Faker-style functions to the DSL evaluation engine (`{{fake.name}}`, `{{fake.uuid}}`, `{{fake.credit_card}}`).
-- **Unique Allocation Strategy:** Enhance the data pool manager to support "pop" semantics (consume row so no other VUser gets it).
-- **Data Pool API:** Add endpoints to clear and append data to existing pools via API (useful for CI/CD data seeding).
-
-### 3.2 APM / Observability Correlation (P2)
+### 5.1 APM / Observability Correlation (P2)
 **Effort:** 5-8 days
-- **Trace Injection:** Update `pkg/protocol/http/http.go` to generate W3C `traceparent` headers for every action.
-- **Result Tagging:** Include the generated `trace_id` in `protocol.Result`.
-- **Prometheus Exporter:** Implement a `/metrics` endpoint in the controller that exposes the live test telemetry in Prometheus text format.
-- **Dynatrace/Datadog Hooks:** Use the Webhook Engine (from Phase 1.3) to push start/stop annotation events to APM event APIs.
+- **Trace Injection:** Generate W3C `traceparent` headers for test requests.
+- **Prometheus Exporter:** Expose controller telemetry in Prometheus format.
 
-### 3.3 Multi-Region / Geographic Distribution (P3)
-**Effort:** 8-12 days
-- **Generator Tags:** Update `GeneratorInventoryEntry` to include a `Region` string (passed via env var to the generator binary).
-- **Load Distribution Logic:** Update `distributed_execution_backend.go` to accept a region-weighted assignment (e.g., 60% US-East, 40% EU-West) and distribute groups accordingly.
-- **Metrics Tagging:** Ensure `metrics_update` and archives tag results with the source region.
-- **Dashboard UI:** Add region selection sliders to the `CreateTestModal`. Add region-breakdown charts to `TestExecution`.
+### 5.2 Iteration & Rendezvous Control (P2)
+**Effort:** 3-4 days
+- **Rendezvous Primitive:** Synchronize VUsers at a specific action to simulate spike loads.
+- **Iteration Limits:** Support fixed-iteration testing instead of fixed-duration.
 
-### 3.4 User Management & RBAC (P3)
+### 5.3 Network Emulation & Traffic Shaping (P2)
+**Effort:** 5-8 days
+- **Traffic Profiles:** Apply bandwidth, jitter, and packet loss constraints via a custom Go dialer.
+
+### 5.4 Multi-Region Distribution (P3)
 **Effort:** 8-12 days
-- **Auth Middleware:** Implement generic authentication middleware in `pkg/api/middleware.go`.
-- **OIDC Integration:** Add support for OpenID Connect to integrate with Entra ID (Azure AD), Okta, etc.
-- **Role Model:** Define System Admin, Project Admin, Editor, and Viewer roles.
-- **Database Schema:** Add Users, Roles, and API Keys tables to the SQLite schema.
-- **Dashboard UI:** Add a Login screen and an Admin/User Management panel.
+- **Generator Tags:** Deploy generators with region tags and distribute load dynamically based on region weighting.
 
 ---
 
