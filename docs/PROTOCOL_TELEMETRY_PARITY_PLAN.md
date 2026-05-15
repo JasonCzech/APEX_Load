@@ -20,7 +20,7 @@ The Mobile UX Strategy defines three layers. The equivalent for each protocol fa
 - Shared `ServerTelemetry` on `protocol.Result`, propagated through engine rollups, controller/generator RPC, archive retention, and dashboard contracts.
 - HTTP timing decomposition for server processing, transfer, payload sizes, connection reuse, and redirect-hop timing.
 - SOAP operation tagging, fault categorization, raw envelope-overhead tracking, and fault-code retention on archived events.
-- Java HTTP dependency tagging plus helper/codec metadata propagation.
+- Java HTTP dependency tagging plus helper/codec metadata propagation and raw codec timing retention.
 - JMS payload sizing, request/reply timing, message counts, and consumer-lag retention on archived events.
 - Goal-oriented SLA parity for server processing and transfer thresholds, including stop-on-breach behavior.
 - Previous-run comparison baselines on `GetTest`, used by the live execution summary and dedicated server telemetry panel.
@@ -111,10 +111,9 @@ Each protocol must populate enough telemetry for the dashboard to answer the sam
 
 ### 3. Java over HTTP Protocol
 
-**Current state:** Codec-based serialization on top of HTTP transport. Minimal.
+**Current state:** Codec-based serialization on top of HTTP transport. The current implementation now retains raw request-side and response-side codec helper timing in the shared `ServerTelemetry` path, but still lacks richer true object-codec analysis.
 
 **L2 gaps:**
-- No **serialization/deserialization** time isolation
 - No **payload size** tracking (serialized object size)
 - No **codec performance** measurement
 

@@ -142,6 +142,8 @@ type ClientMetrics struct {
 type ServerTelemetry struct {
 	ServerProcessingMs float64 `json:"server_processing_ms,omitempty"`
 	TransferMs         float64 `json:"transfer_ms,omitempty"`
+	SerializationMs    float64 `json:"serialization_ms,omitempty"`
+	DeserializationMs  float64 `json:"deserialization_ms,omitempty"`
 	RequestPayloadKB   float64 `json:"request_payload_kb,omitempty"`
 	ResponsePayloadKB  float64 `json:"response_payload_kb,omitempty"`
 	EnvelopeOverheadKB float64 `json:"envelope_overhead_kb,omitempty"`

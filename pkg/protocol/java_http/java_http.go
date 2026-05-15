@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jasonczech/stormrunner/pkg/protocol"
 	httpproto "github.com/jasonczech/stormrunner/pkg/protocol/http"
@@ -80,8 +81,11 @@ func (j *JavaHTTP) Execute(ctx context.Context, action *protocol.Action) (*proto
 	if firstHeaderValue(prepared.Headers, "Accept") == "" {
 		prepared.Headers["Accept"] = j.accept
 	}
+	serializationDuration := time.Duration(0)
 	if len(action.Body) > 0 {
+		startedAt := time.Now()
 		decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(action.Body)))
+		serializationDuration = time.Since(startedAt)
 		if err != nil {
 			return &protocol.Result{
 				ActionName:   action.Name,
@@ -91,11 +95,19 @@ func (j *JavaHTTP) Execute(ctx context.Context, action *protocol.Action) (*proto
 		prepared.Body = decoded
 	}
 	result, err := j.http.Execute(ctx, &prepared)
+	deserializationDuration := time.Duration(0)
 	if result != nil && j.preserveBinaryResult {
+		startedAt := time.Now()
 		result.ResponseBody = base64.StdEncoding.EncodeToString([]byte(result.ResponseBody))
+		deserializationDuration = time.Since(startedAt)
 	}
 	if result != nil {
 		result.DependencyType = "java_http"
+		if result.ServerTelemetry == nil {
+			result.ServerTelemetry = &protocol.ServerTelemetry{}
+		}
+		result.ServerTelemetry.SerializationMs = durationToMilliseconds(serializationDuration)
+		result.ServerTelemetry.DeserializationMs = durationToMilliseconds(deserializationDuration)
 		if result.Extractions == nil {
 			result.Extractions = make(map[string]string)
 		}
@@ -137,4 +149,11 @@ func firstHeaderValue(headers map[string]string, key string) string {
 		}
 	}
 	return ""
+}
+
+func durationToMilliseconds(duration time.Duration) float64 {
+	if duration <= 0 {
+		return 0
+	}
+	return float64(duration) / float64(time.Millisecond)
 }

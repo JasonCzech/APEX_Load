@@ -81,6 +81,15 @@ func TestJavaHTTPExecuteDecodesRequestAndEncodesResponse(t *testing.T) {
 	if result.DependencyType != "java_http" {
 		t.Fatalf("dependency type = %q, want java_http", result.DependencyType)
 	}
+	if result.ServerTelemetry == nil {
+		t.Fatal("ServerTelemetry = nil, want Java HTTP telemetry")
+	}
+	if result.ServerTelemetry.SerializationMs <= 0 {
+		t.Fatalf("SerializationMs = %v, want > 0", result.ServerTelemetry.SerializationMs)
+	}
+	if result.ServerTelemetry.DeserializationMs <= 0 {
+		t.Fatalf("DeserializationMs = %v, want > 0", result.ServerTelemetry.DeserializationMs)
+	}
 	if result.Extractions["java_http_codec"] != supportedCodec {
 		t.Fatalf("java_http_codec = %q, want %q", result.Extractions["java_http_codec"], supportedCodec)
 	}

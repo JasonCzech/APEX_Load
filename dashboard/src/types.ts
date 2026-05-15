@@ -286,6 +286,8 @@ export interface ClientMetrics {
 export interface ServerTelemetry {
   server_processing_ms?: number
   transfer_ms?: number
+  serialization_ms?: number
+  deserialization_ms?: number
   request_payload_kb?: number
   response_payload_kb?: number
   envelope_overhead_kb?: number

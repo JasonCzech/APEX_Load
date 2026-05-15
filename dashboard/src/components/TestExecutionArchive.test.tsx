@@ -479,6 +479,8 @@ describe('TestExecutionArchive', () => {
       server_telemetry: {
         server_processing_ms: 48,
         transfer_ms: 14,
+        serialization_ms: 3,
+        deserialization_ms: 2,
         request_payload_kb: 1.25,
         response_payload_kb: 4,
         envelope_overhead_kb: 0.75,
@@ -528,6 +530,8 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('Server Telemetry')
     expect(container.textContent).toContain('Server processing: 48.0 ms')
     expect(container.textContent).toContain('Transfer: 14.0 ms')
+    expect(container.textContent).toContain('Serialization: 3.0 ms')
+    expect(container.textContent).toContain('Deserialization: 2.0 ms')
     expect(container.textContent).toContain('Request payload: 1.25 KB')
     expect(container.textContent).toContain('Response payload: 4.00 KB')
     expect(container.textContent).toContain('Envelope overhead: 0.75 KB')

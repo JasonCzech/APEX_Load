@@ -542,6 +542,8 @@ export default function TestExecutionArchive({
                                       <pre className="archive-event-detail-pre">
                                         Server processing: {formatBrowserMetric(event.server_telemetry.server_processing_ms, ' ms')}{'\n'}
                                         Transfer: {formatBrowserMetric(event.server_telemetry.transfer_ms, ' ms')}{'\n'}
+                                        Serialization: {formatBrowserMetric(event.server_telemetry.serialization_ms, ' ms')}{'\n'}
+                                        Deserialization: {formatBrowserMetric(event.server_telemetry.deserialization_ms, ' ms')}{'\n'}
                                         Request payload: {formatBrowserMetric(event.server_telemetry.request_payload_kb, ' KB', 2)}{'\n'}
                                         Response payload: {formatBrowserMetric(event.server_telemetry.response_payload_kb, ' KB', 2)}{'\n'}
                                         Envelope overhead: {formatBrowserMetric(event.server_telemetry.envelope_overhead_kb, ' KB', 2)}{'\n'}
