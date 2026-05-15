@@ -218,8 +218,9 @@ func TestValidateScriptIssues_BrowserValidation(t *testing.T) {
 		Protocol: "browser",
 		Config: ScriptConfig{
 			Browser: BrowserConfig{
-				Engine:      "gecko",
-				Orientation: "diagonal",
+				Engine:        "gecko",
+				DeviceProfile: "unknown_phone",
+				Orientation:   "diagonal",
 				Viewport: BrowserViewport{
 					Width:  -1,
 					Height: -2,
@@ -260,6 +261,7 @@ func TestValidateScriptIssues_BrowserValidation(t *testing.T) {
 	issues := ValidateScriptIssues(script)
 
 	assertIssue(t, issues, "config.browser.engine must be chromium or webkit")
+	assertIssue(t, issues, `config.browser.device_profile "unknown_phone" is not recognized`)
 	assertIssue(t, issues, "config.browser.orientation must be portrait or landscape")
 	assertIssue(t, issues, "config.browser.viewport.width must be zero or greater")
 	assertIssue(t, issues, "config.browser.viewport.height must be zero or greater")
@@ -330,6 +332,28 @@ func TestValidateScriptIssues_BrowserValidationAllowsSupportedFields(t *testing.
 	if len(issues) != 0 {
 		t.Fatalf("issues = %v, want none", issues)
 	}
+}
+
+func TestValidateScriptIssues_BrowserValidationRejectsMismatchedDeviceProfileEngine(t *testing.T) {
+	script := &Script{
+		Name:     "browser-mismatch",
+		Protocol: "browser",
+		Config: ScriptConfig{
+			Browser: BrowserConfig{
+				Engine:        "chromium",
+				DeviceProfile: "iphone_se",
+			},
+		},
+		Actions: []Action{{
+			Name:   "open",
+			Type:   "browser_navigate",
+			Target: "/",
+		}},
+	}
+
+	issues := ValidateScriptIssues(script)
+
+	assertIssue(t, issues, `config.browser.engine "chromium" is incompatible with device_profile "iphone_se" (requires webkit)`)
 }
 
 func assertIssue(t *testing.T, issues []string, want string) {

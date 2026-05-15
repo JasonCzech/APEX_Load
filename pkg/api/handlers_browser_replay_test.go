@@ -227,7 +227,7 @@ func TestHandleStartBrowserReplayDraftScriptAcceptsMobileBrowserOverrides(t *tes
 			"protocol": "browser",
 			"config": map[string]any{
 				"browser": map[string]any{
-					"engine": "chromium",
+					"engine": "webkit",
 				},
 			},
 			"actions": []map[string]any{{
@@ -236,7 +236,7 @@ func TestHandleStartBrowserReplayDraftScriptAcceptsMobileBrowserOverrides(t *tes
 			}},
 		},
 		"browser": map[string]any{
-			"engine":              "chromium",
+			"engine":              "webkit",
 			"device_profile":      "iphone_15_pro",
 			"touch_mode":          true,
 			"orientation":         "portrait",

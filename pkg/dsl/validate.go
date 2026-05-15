@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	browserprotocol "github.com/jasonczech/stormrunner/pkg/protocol/browser"
 )
 
 // ValidateScriptIssues returns all validation issues for a script definition.
@@ -70,8 +72,18 @@ func validateBrowserConfigIssues(script *Script) []string {
 
 	browser := script.Config.Browser
 	var issues []string
-	if browser.Engine != "" && !isAllowedValue(browser.Engine, "chromium", "webkit") {
+	trimmedEngine := strings.TrimSpace(browser.Engine)
+	trimmedDeviceProfile := strings.TrimSpace(browser.DeviceProfile)
+	if trimmedEngine != "" && !isAllowedValue(trimmedEngine, "chromium", "webkit") {
 		issues = append(issues, "config.browser.engine must be chromium or webkit")
+	}
+	if trimmedDeviceProfile != "" {
+		profile, ok := browserprotocol.LookupDevice(trimmedDeviceProfile)
+		if !ok {
+			issues = append(issues, fmt.Sprintf("config.browser.device_profile %q is not recognized", trimmedDeviceProfile))
+		} else if trimmedEngine != "" && profile.BrowserFamily != "" && trimmedEngine != profile.BrowserFamily {
+			issues = append(issues, fmt.Sprintf("config.browser.engine %q is incompatible with device_profile %q (requires %s)", trimmedEngine, trimmedDeviceProfile, profile.BrowserFamily))
+		}
 	}
 	if browser.Orientation != "" && !isAllowedValue(browser.Orientation, "portrait", "landscape") {
 		issues = append(issues, "config.browser.orientation must be portrait or landscape")
