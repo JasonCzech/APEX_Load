@@ -340,6 +340,62 @@ func TestMetricsCollector_ByActionCapturesDependencyAndCorrelationMetadata(t *te
 	}
 }
 
+func TestMetricsCollector_ByActionAggregatesServerTelemetry(t *testing.T) {
+	mc := NewMetricsCollector(100)
+	snap := mc.computeSnapshot([]*protocol.Result{
+		{
+			ActionName: "login",
+			Success:    true,
+			Duration:   10 * time.Millisecond,
+			ServerTelemetry: &protocol.ServerTelemetry{
+				ServerProcessingMs: 60,
+				TransferMs:         20,
+				RequestPayloadKB:   1.5,
+				ResponsePayloadKB:  3.0,
+				ConnectionReused:   false,
+			},
+		},
+		{
+			ActionName: "login",
+			Success:    true,
+			Duration:   15 * time.Millisecond,
+			ServerTelemetry: &protocol.ServerTelemetry{
+				ServerProcessingMs: 40,
+				TransferMs:         10,
+				RequestPayloadKB:   2.5,
+				ResponsePayloadKB:  5.0,
+				ConnectionReused:   true,
+			},
+		},
+	}, time.Second)
+
+	login := snap.ByAction["login"]
+	if login == nil || login.ServerTelemetry == nil {
+		t.Fatalf("login server telemetry = %#v, want populated summary", login)
+	}
+	if login.ServerTelemetry.Samples != 2 {
+		t.Fatalf("Samples = %d, want 2", login.ServerTelemetry.Samples)
+	}
+	if login.ServerTelemetry.AvgServerProcessingMs != 50 {
+		t.Fatalf("AvgServerProcessingMs = %v, want 50", login.ServerTelemetry.AvgServerProcessingMs)
+	}
+	if login.ServerTelemetry.AvgTransferMs != 15 {
+		t.Fatalf("AvgTransferMs = %v, want 15", login.ServerTelemetry.AvgTransferMs)
+	}
+	if login.ServerTelemetry.AvgRequestPayloadKB != 2 {
+		t.Fatalf("AvgRequestPayloadKB = %v, want 2", login.ServerTelemetry.AvgRequestPayloadKB)
+	}
+	if login.ServerTelemetry.AvgResponsePayloadKB != 4 {
+		t.Fatalf("AvgResponsePayloadKB = %v, want 4", login.ServerTelemetry.AvgResponsePayloadKB)
+	}
+	if login.ServerTelemetry.ConnectionReusedCount != 1 {
+		t.Fatalf("ConnectionReusedCount = %d, want 1", login.ServerTelemetry.ConnectionReusedCount)
+	}
+	if login.ServerTelemetry.ConnectionReusedPct != 50 {
+		t.Fatalf("ConnectionReusedPct = %v, want 50", login.ServerTelemetry.ConnectionReusedPct)
+	}
+}
+
 func TestMetricsCollector_PercentilesViaTDigest(t *testing.T) {
 	mc := NewMetricsCollector(100)
 	mc.Start(50 * time.Millisecond)

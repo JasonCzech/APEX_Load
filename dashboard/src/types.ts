@@ -200,6 +200,9 @@ export interface TransactionEvent {
   test_name: string
   group?: string
   action_name?: string
+  correlation_id?: string
+  dependency_type?: string
+  dependency_target?: string
   duration_ms: number
   dns_ms?: number
   connect_ms?: number
@@ -212,6 +215,7 @@ export interface TransactionEvent {
   error_message?: string
   extractions?: Record<string, string>
   client_metrics?: ClientMetrics
+  server_telemetry?: ServerTelemetry
   snapshot?: {
     request_method: string
     request_url: string
@@ -265,6 +269,24 @@ export interface ClientMetrics {
   layout_duration_ms?: number
   task_duration_ms?: number
   long_task_count?: number
+}
+
+export interface ServerTelemetry {
+  server_processing_ms?: number
+  transfer_ms?: number
+  request_payload_kb?: number
+  response_payload_kb?: number
+  connection_reused?: boolean
+}
+
+export interface ServerTelemetrySummary {
+  samples: number
+  avg_server_processing_ms?: number
+  avg_transfer_ms?: number
+  avg_request_payload_kb?: number
+  avg_response_payload_kb?: number
+  connection_reused_count?: number
+  connection_reused_pct?: number
 }
 
 export interface ArchivePage<T> {
@@ -506,6 +528,11 @@ export interface SystemResources {
 
 export interface TxMetrics {
   name: string
+  dependency_type?: string
+  dependency_target?: string
+  server_telemetry?: ServerTelemetrySummary
+  correlation_ids?: string[]
+  correlation_count?: number
   count: number
   errors: number
   avg_ms: number

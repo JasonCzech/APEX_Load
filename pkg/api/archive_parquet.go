@@ -34,6 +34,7 @@ type parquetTransactionEvent struct {
 	Success          bool    `parquet:"name=success, type=BOOLEAN"`
 	ErrorMessage     string  `parquet:"name=error_message, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
 	ExtractionsJSON  string  `parquet:"name=extractions_json, type=BYTE_ARRAY, convertedtype=UTF8"`
+	ServerTelemetryJSON string `parquet:"name=server_telemetry_json, type=BYTE_ARRAY, convertedtype=UTF8"`
 	SnapshotJSON     string  `parquet:"name=snapshot_json, type=BYTE_ARRAY, convertedtype=UTF8"`
 }
 
@@ -170,6 +171,7 @@ func toParquetTransactions(items []TransactionEvent) []parquetTransactionEvent {
 			Success:          item.Success,
 			ErrorMessage:     item.ErrorMessage,
 			ExtractionsJSON:  mustJSON(item.Extractions),
+			ServerTelemetryJSON: mustJSON(item.ServerTelemetry),
 			SnapshotJSON:     mustJSON(item.Snapshot),
 		})
 	}

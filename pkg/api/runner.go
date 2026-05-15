@@ -203,6 +203,16 @@ type BrowserDeviceLiveMetrics struct {
 	AvgJSHeapUsedMB      float64 `json:"avg_js_heap_used_mb,omitempty"`
 }
 
+type ServerTelemetrySummary struct {
+	Samples               int64   `json:"samples"`
+	AvgServerProcessingMs float64 `json:"avg_server_processing_ms,omitempty"`
+	AvgTransferMs         float64 `json:"avg_transfer_ms,omitempty"`
+	AvgRequestPayloadKB   float64 `json:"avg_request_payload_kb,omitempty"`
+	AvgResponsePayloadKB  float64 `json:"avg_response_payload_kb,omitempty"`
+	ConnectionReusedCount int64   `json:"connection_reused_count,omitempty"`
+	ConnectionReusedPct   float64 `json:"connection_reused_pct,omitempty"`
+}
+
 type TelemetryHealth struct {
 	DroppedResults           int64     `json:"dropped_results,omitempty"`
 	HistoryPoints            int       `json:"history_points,omitempty"`
@@ -301,6 +311,7 @@ type TxMetrics struct {
 	Name             string   `json:"name"`
 	DependencyType   string   `json:"dependency_type,omitempty"`
 	DependencyTarget string   `json:"dependency_target,omitempty"`
+	ServerTelemetry  *ServerTelemetrySummary `json:"server_telemetry,omitempty"`
 	CorrelationIDs   []string `json:"correlation_ids,omitempty"`
 	CorrelationCount int64    `json:"correlation_count,omitempty"`
 	Count            int64    `json:"count"`
@@ -2498,6 +2509,7 @@ func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[s
 			Name:             name,
 			DependencyType:   am.DependencyType,
 			DependencyTarget: am.DependencyTarget,
+			ServerTelemetry:  cloneEngineServerTelemetrySummary(am.ServerTelemetry),
 			CorrelationIDs:   append([]string(nil), am.CorrelationIDs...),
 			CorrelationCount: am.CorrelationCount,
 			Count:            am.Count,

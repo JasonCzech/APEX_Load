@@ -71,6 +71,16 @@ type BrowserDeviceMetrics struct {
 	AvgJSHeapUsedMB      float64 `json:"avg_js_heap_used_mb,omitempty"`
 }
 
+type ServerTelemetrySummary struct {
+	Samples               int64   `json:"samples"`
+	AvgServerProcessingMs float64 `json:"avg_server_processing_ms,omitempty"`
+	AvgTransferMs         float64 `json:"avg_transfer_ms,omitempty"`
+	AvgRequestPayloadKB   float64 `json:"avg_request_payload_kb,omitempty"`
+	AvgResponsePayloadKB  float64 `json:"avg_response_payload_kb,omitempty"`
+	ConnectionReusedCount int64   `json:"connection_reused_count,omitempty"`
+	ConnectionReusedPct   float64 `json:"connection_reused_pct,omitempty"`
+}
+
 type TelemetryMetrics struct {
 	DroppedResults int64 `json:"dropped_results,omitempty"`
 }
@@ -102,6 +112,7 @@ type ActionMetrics struct {
 	Name             string
 	DependencyType   string
 	DependencyTarget string
+	ServerTelemetry  *ServerTelemetrySummary `json:"server_telemetry,omitempty"`
 	CorrelationIDs   []string
 	CorrelationCount int64
 	Count            int64
@@ -275,6 +286,12 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 			am.Errors++
 		}
 		mergeActionMetadata(am, r)
+		if r.ServerTelemetry != nil {
+			if am.ServerTelemetry == nil {
+				am.ServerTelemetry = &ServerTelemetrySummary{}
+			}
+			mergeServerTelemetrySummary(am.ServerTelemetry, r.ServerTelemetry)
+		}
 		am.BytesSent += r.BytesSent
 		am.BytesRecv += r.BytesReceived
 		if r.Duration < am.MinDuration {
@@ -341,6 +358,9 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 			gm.P99 = time.Duration(gd.Quantile(0.99))
 		}
 	}
+	for _, am := range snap.ByAction {
+		finalizeServerTelemetrySummary(am.ServerTelemetry)
+	}
 	finalizeBrowserMetricsSummary(snap.Browser)
 	for _, metrics := range snap.BrowserByDevice {
 		finalizeBrowserDeviceMetrics(metrics)
@@ -399,6 +419,32 @@ func mergeBrowserMetricsSummary(summary *BrowserMetricsSummary, metrics *protoco
 	summary.AvgBlockingResources += float64(metrics.BlockingResourceCount)
 	summary.AvgLongTaskCount += float64(metrics.LongTaskCount)
 	summary.AvgJSHeapUsedMB += metrics.JSHeapUsedMB
+}
+
+func mergeServerTelemetrySummary(summary *ServerTelemetrySummary, telemetry *protocol.ServerTelemetry) {
+	if summary == nil || telemetry == nil {
+		return
+	}
+	summary.Samples++
+	summary.AvgServerProcessingMs += telemetry.ServerProcessingMs
+	summary.AvgTransferMs += telemetry.TransferMs
+	summary.AvgRequestPayloadKB += telemetry.RequestPayloadKB
+	summary.AvgResponsePayloadKB += telemetry.ResponsePayloadKB
+	if telemetry.ConnectionReused {
+		summary.ConnectionReusedCount++
+	}
+}
+
+func finalizeServerTelemetrySummary(summary *ServerTelemetrySummary) {
+	if summary == nil || summary.Samples == 0 {
+		return
+	}
+	divisor := float64(summary.Samples)
+	summary.AvgServerProcessingMs /= divisor
+	summary.AvgTransferMs /= divisor
+	summary.AvgRequestPayloadKB /= divisor
+	summary.AvgResponsePayloadKB /= divisor
+	summary.ConnectionReusedPct = float64(summary.ConnectionReusedCount) / divisor * 100
 }
 
 func finalizeBrowserMetricsSummary(summary *BrowserMetricsSummary) {

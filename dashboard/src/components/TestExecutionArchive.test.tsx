@@ -464,4 +464,64 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('180.0 ms')
     expect(container.textContent).toContain('255.0 ms')
   })
+
+  it('shows server telemetry for archived events without requiring a snapshot', async () => {
+    const transactions: TransactionEvent[] = [{
+      timestamp: '2026-05-14T20:00:40Z',
+      test_id: 'test-1',
+      test_name: 'SOAP Fault Test',
+      group: 'Checkout',
+      action_name: 'POST /checkout',
+      duration_ms: 180,
+      status_code: 200,
+      success: true,
+      bytes_received: 4096,
+      server_telemetry: {
+        server_processing_ms: 48,
+        transfer_ms: 14,
+        request_payload_kb: 1.25,
+        response_payload_kb: 4,
+        connection_reused: false,
+      },
+    }]
+
+    await act(async () => {
+      root.render(
+        <TestExecutionArchive
+          hasArchive={true}
+          test={test}
+          archiveError=""
+          archiveLoading={false}
+          archiveReport={archiveReport}
+          onDownloadArchiveArtifact={vi.fn()}
+          archiveActionEntries={[]}
+          selectedArchiveAction=""
+          onSelectedArchiveActionChange={vi.fn()}
+          archiveGroups={[]}
+          selectedArchiveGroup=""
+          onSelectedArchiveGroupChange={vi.fn()}
+          archiveErrorsOnly={false}
+          onArchiveErrorsOnlyChange={vi.fn()}
+          archiveTransactionsLoading={false}
+          archiveTransactionsTotal={1}
+          archivePageStart={1}
+          archivePageEnd={1}
+          archiveTransactionsOffset={0}
+          archivePageSize={50}
+          onPreviousPage={vi.fn()}
+          onNextPage={vi.fn()}
+          archiveTransactions={transactions}
+          expandedArchiveEvent="2026-05-14T20:00:40Z-0"
+          onExpandedArchiveEventChange={vi.fn()}
+        />,
+      )
+    })
+
+    expect(container.textContent).toContain('Server Telemetry')
+    expect(container.textContent).toContain('Server processing: 48.0 ms')
+    expect(container.textContent).toContain('Transfer: 14.0 ms')
+    expect(container.textContent).toContain('Request payload: 1.25 KB')
+    expect(container.textContent).toContain('Response payload: 4.00 KB')
+    expect(container.textContent).toContain('Connection: new')
+  })
 })

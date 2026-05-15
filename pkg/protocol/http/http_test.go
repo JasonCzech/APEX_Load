@@ -342,6 +342,54 @@ func TestHTTP_ExecuteCapturesDependencyAndCorrelationMetadata(t *testing.T) {
 	}
 }
 
+func TestHTTP_ExecutePopulatesServerTelemetry(t *testing.T) {
+	responseBody := strings.Repeat("x", 2048)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(10 * time.Millisecond)
+		_, _ = w.Write([]byte(responseBody))
+	}))
+	defer ts.Close()
+
+	h := initHTTP(t, map[string]any{"base_url": ts.URL})
+
+	_, err := h.Execute(context.Background(), &protocol.Action{
+		Name:   "warm-connection",
+		Method: "GET",
+		Target: "/telemetry",
+	})
+	if err != nil {
+		t.Fatalf("warm Execute returned error: %v", err)
+	}
+
+	result, err := h.Execute(context.Background(), &protocol.Action{
+		Name:   "server-telemetry",
+		Method: "POST",
+		Target: "/telemetry",
+		Body:   []byte(strings.Repeat("a", 1024)),
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if result.ServerTelemetry == nil {
+		t.Fatal("ServerTelemetry = nil, want populated telemetry")
+	}
+	if result.ServerTelemetry.RequestPayloadKB < 0.99 || result.ServerTelemetry.RequestPayloadKB > 1.01 {
+		t.Fatalf("RequestPayloadKB = %v, want about 1.0", result.ServerTelemetry.RequestPayloadKB)
+	}
+	if result.ServerTelemetry.ResponsePayloadKB < 1.99 || result.ServerTelemetry.ResponsePayloadKB > 2.01 {
+		t.Fatalf("ResponsePayloadKB = %v, want about 2.0", result.ServerTelemetry.ResponsePayloadKB)
+	}
+	if result.ServerTelemetry.ServerProcessingMs < 0 {
+		t.Fatalf("ServerProcessingMs = %v, want non-negative", result.ServerTelemetry.ServerProcessingMs)
+	}
+	if result.ServerTelemetry.TransferMs < 0 {
+		t.Fatalf("TransferMs = %v, want non-negative", result.ServerTelemetry.TransferMs)
+	}
+	if !result.ServerTelemetry.ConnectionReused {
+		t.Fatalf("ConnectionReused = %v, want true on warmed connection", result.ServerTelemetry.ConnectionReused)
+	}
+}
+
 func TestHTTP_Execute_POST(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {

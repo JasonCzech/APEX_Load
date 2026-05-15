@@ -59,6 +59,7 @@ type TransactionEvent struct {
 	ErrorMessage  string                  `json:"error_message,omitempty"`
 	Extractions   map[string]string       `json:"extractions,omitempty"`
 	ClientMetrics *protocol.ClientMetrics `json:"client_metrics,omitempty"`
+	ServerTelemetry *protocol.ServerTelemetry `json:"server_telemetry,omitempty"`
 	Snapshot      *protocol.ErrorSnapshot `json:"snapshot,omitempty"`
 }
 
@@ -278,6 +279,7 @@ func (w *runArchiveWriter) RecordResult(result *protocol.Result) error {
 		ErrorMessage:  result.ErrorMessage,
 		Extractions:   result.Extractions,
 		ClientMetrics: result.ClientMetrics,
+		ServerTelemetry: result.ServerTelemetry,
 		Snapshot:      result.Snapshot,
 	}
 	if err := w.txEncoder.Encode(event); err != nil {

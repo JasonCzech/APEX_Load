@@ -68,6 +68,7 @@ func (b *transactionBuffer) RecordResult(result *protocol.Result) error {
 		CorrelationID:    result.CorrelationID,
 		DependencyType:   result.DependencyType,
 		DependencyTarget: result.DependencyTarget,
+		ServerTelemetry:  cloneServerTelemetry(result.ServerTelemetry),
 	})
 	if len(b.transactions) > 1024 {
 		b.transactions = append([]TransactionMetric(nil), b.transactions[len(b.transactions)-1024:]...)
@@ -727,6 +728,16 @@ func (s *Service) metricsBatchForMetrics(testID string, stats GeneratorStats, tr
 	}
 	protoTransactions := make([]*pb.TransactionMetric, 0, len(transactions))
 	for _, tx := range transactions {
+		var protoServerTelemetry *pb.ServerTelemetry
+		if tx.ServerTelemetry != nil {
+			protoServerTelemetry = &pb.ServerTelemetry{
+				ServerProcessingMs: tx.ServerTelemetry.ServerProcessingMs,
+				TransferMs:         tx.ServerTelemetry.TransferMs,
+				RequestPayloadKb:   tx.ServerTelemetry.RequestPayloadKB,
+				ResponsePayloadKb:  tx.ServerTelemetry.ResponsePayloadKB,
+				ConnectionReused:   tx.ServerTelemetry.ConnectionReused,
+			}
+		}
 		protoTransactions = append(protoTransactions, &pb.TransactionMetric{
 			Name:             tx.Name,
 			DurationMs:       tx.DurationMs,
@@ -738,6 +749,7 @@ func (s *Service) metricsBatchForMetrics(testID string, stats GeneratorStats, tr
 			CorrelationId:    tx.CorrelationID,
 			DependencyType:   tx.DependencyType,
 			DependencyTarget: tx.DependencyTarget,
+			ServerTelemetry:  protoServerTelemetry,
 		})
 	}
 	var protoTelemetry *pb.MetricsBatchTelemetry
@@ -784,6 +796,19 @@ func mergeMetricsTelemetry(values map[string]MetricsTelemetry) *MetricsTelemetry
 		}
 	}
 	return combined
+}
+
+func cloneServerTelemetry(input *protocol.ServerTelemetry) *ServerTelemetry {
+	if input == nil {
+		return nil
+	}
+	return &ServerTelemetry{
+		ServerProcessingMs: input.ServerProcessingMs,
+		TransferMs:         input.TransferMs,
+		RequestPayloadKB:   input.RequestPayloadKB,
+		ResponsePayloadKB:  input.ResponsePayloadKB,
+		ConnectionReused:   input.ConnectionReused,
+	}
 }
 
 func (s *Service) scheduleCompletionLocked(testID string, duration time.Duration) {

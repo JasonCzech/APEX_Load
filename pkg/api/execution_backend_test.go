@@ -514,6 +514,13 @@ func TestDistributedExecutionBackendPublishesRemoteTransactionMetrics(t *testing
 		CorrelationID:    "corr-home-1",
 		DependencyType:   "http",
 		DependencyTarget: "api.example.test",
+		ServerTelemetry: &generatorrpc.ServerTelemetry{
+			ServerProcessingMs: 40,
+			TransferMs:         20,
+			RequestPayloadKB:   1.5,
+			ResponsePayloadKB:  3,
+			ConnectionReused:   false,
+		},
 	}, {
 		Name:             "Home",
 		DurationMs:       300,
@@ -525,6 +532,13 @@ func TestDistributedExecutionBackendPublishesRemoteTransactionMetrics(t *testing
 		CorrelationID:    "corr-home-2",
 		DependencyType:   "http",
 		DependencyTarget: "api.example.test",
+		ServerTelemetry: &generatorrpc.ServerTelemetry{
+			ServerProcessingMs: 60,
+			TransferMs:         40,
+			RequestPayloadKB:   2.5,
+			ResponsePayloadKB:  5,
+			ConnectionReused:   true,
+		},
 	}, {
 		Name:             "Search",
 		DurationMs:       200,
@@ -609,6 +623,21 @@ func TestDistributedExecutionBackendPublishesRemoteTransactionMetrics(t *testing
 	}
 	if updated.LiveMetrics.Transactions["Home"].CorrelationCount != 2 {
 		t.Fatalf("unexpected Home correlation count: %#v", updated.LiveMetrics.Transactions["Home"])
+	}
+	if updated.LiveMetrics.Transactions["Home"].ServerTelemetry == nil {
+		t.Fatalf("expected Home server telemetry summary, got %#v", updated.LiveMetrics.Transactions["Home"])
+	}
+	if updated.LiveMetrics.Transactions["Home"].ServerTelemetry.AvgServerProcessingMs != 50 {
+		t.Fatalf("Home avg_server_processing_ms = %v, want 50", updated.LiveMetrics.Transactions["Home"].ServerTelemetry.AvgServerProcessingMs)
+	}
+	if updated.LiveMetrics.Transactions["Home"].ServerTelemetry.AvgTransferMs != 30 {
+		t.Fatalf("Home avg_transfer_ms = %v, want 30", updated.LiveMetrics.Transactions["Home"].ServerTelemetry.AvgTransferMs)
+	}
+	if updated.LiveMetrics.Transactions["Home"].ServerTelemetry.ConnectionReusedCount != 1 {
+		t.Fatalf("Home connection_reused_count = %d, want 1", updated.LiveMetrics.Transactions["Home"].ServerTelemetry.ConnectionReusedCount)
+	}
+	if updated.LiveMetrics.Transactions["Home"].ServerTelemetry.ConnectionReusedPct != 50 {
+		t.Fatalf("Home connection_reused_pct = %v, want 50", updated.LiveMetrics.Transactions["Home"].ServerTelemetry.ConnectionReusedPct)
 	}
 }
 

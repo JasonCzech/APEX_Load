@@ -139,6 +139,14 @@ type ClientMetrics struct {
 	LongTaskCount       int     `json:"long_task_count,omitempty"`
 }
 
+type ServerTelemetry struct {
+	ServerProcessingMs float64 `json:"server_processing_ms,omitempty"`
+	TransferMs         float64 `json:"transfer_ms,omitempty"`
+	RequestPayloadKB   float64 `json:"request_payload_kb,omitempty"`
+	ResponsePayloadKB  float64 `json:"response_payload_kb,omitempty"`
+	ConnectionReused   bool    `json:"connection_reused"`
+}
+
 // Extractor extracts a value from the response for use in later templates or variables.
 //
 // Example: Extract session token from JSON response for use in subsequent requests.
@@ -202,6 +210,7 @@ type Result struct {
 	NetworkEntries   []NetworkEntry
 	DOMSummary       *DOMSummary
 	ClientMetrics    *ClientMetrics
+	ServerTelemetry  *ServerTelemetry
 	Snapshot         *ErrorSnapshot // populated when snapshot_on_error is enabled
 }
 

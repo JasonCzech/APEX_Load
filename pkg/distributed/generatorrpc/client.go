@@ -83,6 +83,14 @@ type GroupMetric struct {
 	ActiveVUsers int32
 }
 
+type ServerTelemetry struct {
+	ServerProcessingMs float64
+	TransferMs         float64
+	RequestPayloadKB   float64
+	ResponsePayloadKB  float64
+	ConnectionReused   bool
+}
+
 type TransactionMetric struct {
 	Name             string
 	DurationMs       float64
@@ -94,6 +102,7 @@ type TransactionMetric struct {
 	CorrelationID    string
 	DependencyType   string
 	DependencyTarget string
+	ServerTelemetry  *ServerTelemetry
 }
 
 type StopResult struct {
@@ -345,6 +354,16 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 
 	transactions := make([]TransactionMetric, 0, len(batch.GetTransactions()))
 	for _, tx := range batch.GetTransactions() {
+		var serverTelemetry *ServerTelemetry
+		if tx.GetServerTelemetry() != nil {
+			serverTelemetry = &ServerTelemetry{
+				ServerProcessingMs: tx.GetServerTelemetry().GetServerProcessingMs(),
+				TransferMs:         tx.GetServerTelemetry().GetTransferMs(),
+				RequestPayloadKB:   tx.GetServerTelemetry().GetRequestPayloadKb(),
+				ResponsePayloadKB:  tx.GetServerTelemetry().GetResponsePayloadKb(),
+				ConnectionReused:   tx.GetServerTelemetry().GetConnectionReused(),
+			}
+		}
 		transactions = append(transactions, TransactionMetric{
 			Name:             tx.GetName(),
 			DurationMs:       tx.GetDurationMs(),
@@ -356,6 +375,7 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 			CorrelationID:    tx.GetCorrelationId(),
 			DependencyType:   tx.GetDependencyType(),
 			DependencyTarget: tx.GetDependencyTarget(),
+			ServerTelemetry:  serverTelemetry,
 		})
 	}
 

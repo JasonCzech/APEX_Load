@@ -1124,6 +1124,7 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 			metrics.Errors++
 		}
 		mergeTransactionMetricMetadata(metrics, tx.DependencyType, tx.DependencyTarget, tx.CorrelationID)
+		mergeDistributedServerTelemetry(metrics, tx.ServerTelemetry)
 		metrics.AvgMs += tx.DurationMs
 	}
 
@@ -1140,6 +1141,7 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 		allDurations = append(allDurations, durations...)
 		metrics := live.Transactions[name]
 		metrics.AvgMs /= float64(metrics.Count)
+		finalizeAPIServerTelemetrySummary(metrics.ServerTelemetry)
 		metrics.P50Ms = percentileValue(durations, 0.50)
 		metrics.P90Ms = percentileValue(durations, 0.90)
 		metrics.P99Ms = percentileValue(durations, 0.99)
@@ -1215,6 +1217,50 @@ func mergeStableTxMetadata(current *string, next string) {
 	if *current != next {
 		*current = "multiple"
 	}
+}
+
+func cloneEngineServerTelemetrySummary(summary *engine.ServerTelemetrySummary) *ServerTelemetrySummary {
+	if summary == nil {
+		return nil
+	}
+	return &ServerTelemetrySummary{
+		Samples:               summary.Samples,
+		AvgServerProcessingMs: summary.AvgServerProcessingMs,
+		AvgTransferMs:         summary.AvgTransferMs,
+		AvgRequestPayloadKB:   summary.AvgRequestPayloadKB,
+		AvgResponsePayloadKB:  summary.AvgResponsePayloadKB,
+		ConnectionReusedCount: summary.ConnectionReusedCount,
+		ConnectionReusedPct:   summary.ConnectionReusedPct,
+	}
+}
+
+func mergeDistributedServerTelemetry(metrics *TxMetrics, telemetry *generatorrpc.ServerTelemetry) {
+	if metrics == nil || telemetry == nil {
+		return
+	}
+	if metrics.ServerTelemetry == nil {
+		metrics.ServerTelemetry = &ServerTelemetrySummary{}
+	}
+	metrics.ServerTelemetry.Samples++
+	metrics.ServerTelemetry.AvgServerProcessingMs += telemetry.ServerProcessingMs
+	metrics.ServerTelemetry.AvgTransferMs += telemetry.TransferMs
+	metrics.ServerTelemetry.AvgRequestPayloadKB += telemetry.RequestPayloadKB
+	metrics.ServerTelemetry.AvgResponsePayloadKB += telemetry.ResponsePayloadKB
+	if telemetry.ConnectionReused {
+		metrics.ServerTelemetry.ConnectionReusedCount++
+	}
+}
+
+func finalizeAPIServerTelemetrySummary(summary *ServerTelemetrySummary) {
+	if summary == nil || summary.Samples == 0 {
+		return
+	}
+	divisor := float64(summary.Samples)
+	summary.AvgServerProcessingMs /= divisor
+	summary.AvgTransferMs /= divisor
+	summary.AvgRequestPayloadKB /= divisor
+	summary.AvgResponsePayloadKB /= divisor
+	summary.ConnectionReusedPct = float64(summary.ConnectionReusedCount) / divisor * 100
 }
 
 func percentileValue(sorted []float64, percentile float64) float64 {

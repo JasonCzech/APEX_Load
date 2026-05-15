@@ -112,6 +112,14 @@ message GroupMetric {
   int32 active_vusers = 2;
 }
 
+message ServerTelemetry {
+  double server_processing_ms = 1;
+  double transfer_ms = 2;
+  double request_payload_kb = 3;
+  double response_payload_kb = 4;
+  bool connection_reused = 5;
+}
+
 message TransactionMetric {
   string name = 1;
   int64 start_time_unix_ms = 2;
@@ -128,6 +136,7 @@ message TransactionMetric {
   string correlation_id = 13;
   string dependency_type = 14;
   string dependency_target = 15;
+  ServerTelemetry server_telemetry = 16;
 }
 
 message GeneratorStats {

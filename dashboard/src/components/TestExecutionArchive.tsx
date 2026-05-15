@@ -448,6 +448,7 @@ export default function TestExecutionArchive({
                     {archiveTransactions.map((event, index) => {
                       const rowKey = `${event.timestamp}-${index}`
                       const hasSnapshot = Boolean(event.snapshot)
+                      const hasInspectDetails = hasSnapshot || Boolean(event.client_metrics) || Boolean(event.server_telemetry)
                       const isExpanded = expandedArchiveEvent === rowKey
                       const soapFault = extractSOAPFaultSummaryFromBody(event.snapshot?.response_body)
                       const snapshotSections = [
@@ -469,7 +470,7 @@ export default function TestExecutionArchive({
                             <td>{event.bytes_received || 0}</td>
                             <td className={!event.success ? 'error-cell' : ''}>{event.error_message || 'None'}</td>
                             <td>
-                              {hasSnapshot ? (
+                              {hasInspectDetails ? (
                                 <button
                                   className="btn btn-sm btn-secondary archive-detail-toggle"
                                   onClick={() => onExpandedArchiveEventChange(isExpanded ? null : rowKey)}
@@ -481,11 +482,11 @@ export default function TestExecutionArchive({
                               )}
                             </td>
                           </tr>
-                          {isExpanded && hasSnapshot && (
+                          {isExpanded && hasInspectDetails && (
                             <tr className="archive-event-detail-row">
                               <td colSpan={7}>
                                 <div className="archive-event-detail-grid">
-                                  {snapshotSections.length > 0 && (
+                                  {hasSnapshot && snapshotSections.length > 0 && (
                                     <div className="archive-event-detail-grid-header">
                                       <span className="scenario-script-detail-label">Captured Snapshot</span>
                                       <button
@@ -533,60 +534,78 @@ export default function TestExecutionArchive({
                                       </pre>
                                     </div>
                                   )}
-                                  <div className="archive-event-detail-card">
-                                    <div className="archive-event-detail-header">
-                                      <span className="scenario-script-detail-label">Request</span>
-                                      <button
-                                        type="button"
-                                        className="btn btn-sm btn-ghost"
-                                        onClick={() => void handleCopySection(`${rowKey}:request`, formatSnapshotRequestSection(event.snapshot))}
-                                      >
-                                        {copiedSection === `${rowKey}:request` ? 'Copied' : 'Copy request'}
-                                      </button>
+                                  {event.server_telemetry && (
+                                    <div className="archive-event-detail-card">
+                                      <div className="archive-event-detail-header">
+                                        <span className="scenario-script-detail-label">Server Telemetry</span>
+                                      </div>
+                                      <pre className="archive-event-detail-pre">
+                                        Server processing: {formatBrowserMetric(event.server_telemetry.server_processing_ms, ' ms')}{'\n'}
+                                        Transfer: {formatBrowserMetric(event.server_telemetry.transfer_ms, ' ms')}{'\n'}
+                                        Request payload: {formatBrowserMetric(event.server_telemetry.request_payload_kb, ' KB', 2)}{'\n'}
+                                        Response payload: {formatBrowserMetric(event.server_telemetry.response_payload_kb, ' KB', 2)}{'\n'}
+                                        Connection: {event.server_telemetry.connection_reused === undefined ? 'n/a' : event.server_telemetry.connection_reused ? 'reused' : 'new'}
+                                      </pre>
                                     </div>
-                                    <span className="scenario-script-detail-value">{event.snapshot?.request_method || 'n/a'} {event.snapshot?.request_url || ''}</span>
-                                    <SnapshotTextPreview
-                                      text={formatCapturedHeaders(event.snapshot?.request_headers)}
-                                      preClassName="archive-event-detail-pre"
-                                      expanded={expandedSnapshotSections[snapshotSectionKey('request-headers')]}
-                                      onExpandedChange={(expanded) => toggleSnapshotSection(snapshotSectionKey('request-headers'), expanded)}
-                                    />
-                                    <SnapshotBodyPreview
-                                      body={event.snapshot?.request_body}
-                                      headers={event.snapshot?.request_headers}
-                                      emptyMessage="No request body captured"
-                                      preClassName="archive-event-detail-pre"
-                                      expanded={expandedSnapshotSections[snapshotSectionKey('request-body')]}
-                                      onExpandedChange={(expanded) => toggleSnapshotSection(snapshotSectionKey('request-body'), expanded)}
-                                    />
-                                  </div>
-                                  <div className="archive-event-detail-card">
-                                    <div className="archive-event-detail-header">
-                                      <span className="scenario-script-detail-label">Response</span>
-                                      <button
-                                        type="button"
-                                        className="btn btn-sm btn-ghost"
-                                        onClick={() => void handleCopySection(`${rowKey}:response`, formatSnapshotResponseSection(event.snapshot, event.status_code))}
-                                      >
-                                        {copiedSection === `${rowKey}:response` ? 'Copied' : 'Copy response'}
-                                      </button>
-                                    </div>
-                                    <span className="scenario-script-detail-value">{event.snapshot?.response_status || event.status_code || 'n/a'}</span>
-                                    <SnapshotTextPreview
-                                      text={formatCapturedHeaders(event.snapshot?.response_headers)}
-                                      preClassName="archive-event-detail-pre"
-                                      expanded={expandedSnapshotSections[snapshotSectionKey('response-headers')]}
-                                      onExpandedChange={(expanded) => toggleSnapshotSection(snapshotSectionKey('response-headers'), expanded)}
-                                    />
-                                    <SnapshotBodyPreview
-                                      body={event.snapshot?.response_body}
-                                      headers={event.snapshot?.response_headers}
-                                      emptyMessage="No response body captured"
-                                      preClassName="archive-event-detail-pre"
-                                      expanded={expandedSnapshotSections[snapshotSectionKey('response-body')]}
-                                      onExpandedChange={(expanded) => toggleSnapshotSection(snapshotSectionKey('response-body'), expanded)}
-                                    />
-                                  </div>
+                                  )}
+                                  {hasSnapshot && (
+                                    <>
+                                      <div className="archive-event-detail-card">
+                                        <div className="archive-event-detail-header">
+                                          <span className="scenario-script-detail-label">Request</span>
+                                          <button
+                                            type="button"
+                                            className="btn btn-sm btn-ghost"
+                                            onClick={() => void handleCopySection(`${rowKey}:request`, formatSnapshotRequestSection(event.snapshot))}
+                                          >
+                                            {copiedSection === `${rowKey}:request` ? 'Copied' : 'Copy request'}
+                                          </button>
+                                        </div>
+                                        <span className="scenario-script-detail-value">{event.snapshot?.request_method || 'n/a'} {event.snapshot?.request_url || ''}</span>
+                                        <SnapshotTextPreview
+                                          text={formatCapturedHeaders(event.snapshot?.request_headers)}
+                                          preClassName="archive-event-detail-pre"
+                                          expanded={expandedSnapshotSections[snapshotSectionKey('request-headers')]}
+                                          onExpandedChange={(expanded) => toggleSnapshotSection(snapshotSectionKey('request-headers'), expanded)}
+                                        />
+                                        <SnapshotBodyPreview
+                                          body={event.snapshot?.request_body}
+                                          headers={event.snapshot?.request_headers}
+                                          emptyMessage="No request body captured"
+                                          preClassName="archive-event-detail-pre"
+                                          expanded={expandedSnapshotSections[snapshotSectionKey('request-body')]}
+                                          onExpandedChange={(expanded) => toggleSnapshotSection(snapshotSectionKey('request-body'), expanded)}
+                                        />
+                                      </div>
+                                      <div className="archive-event-detail-card">
+                                        <div className="archive-event-detail-header">
+                                          <span className="scenario-script-detail-label">Response</span>
+                                          <button
+                                            type="button"
+                                            className="btn btn-sm btn-ghost"
+                                            onClick={() => void handleCopySection(`${rowKey}:response`, formatSnapshotResponseSection(event.snapshot, event.status_code))}
+                                          >
+                                            {copiedSection === `${rowKey}:response` ? 'Copied' : 'Copy response'}
+                                          </button>
+                                        </div>
+                                        <span className="scenario-script-detail-value">{event.snapshot?.response_status || event.status_code || 'n/a'}</span>
+                                        <SnapshotTextPreview
+                                          text={formatCapturedHeaders(event.snapshot?.response_headers)}
+                                          preClassName="archive-event-detail-pre"
+                                          expanded={expandedSnapshotSections[snapshotSectionKey('response-headers')]}
+                                          onExpandedChange={(expanded) => toggleSnapshotSection(snapshotSectionKey('response-headers'), expanded)}
+                                        />
+                                        <SnapshotBodyPreview
+                                          body={event.snapshot?.response_body}
+                                          headers={event.snapshot?.response_headers}
+                                          emptyMessage="No response body captured"
+                                          preClassName="archive-event-detail-pre"
+                                          expanded={expandedSnapshotSections[snapshotSectionKey('response-body')]}
+                                          onExpandedChange={(expanded) => toggleSnapshotSection(snapshotSectionKey('response-body'), expanded)}
+                                        />
+                                      </div>
+                                    </>
+                                  )}
                                 </div>
                               </td>
                             </tr>

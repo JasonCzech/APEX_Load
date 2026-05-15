@@ -87,6 +87,8 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	}
 
 	targetURL := h.resolveURL(action.Target)
+	requestBytes := int64(len(action.Body))
+	connectionReused := false
 
 	var body io.Reader
 	if len(action.Body) > 0 {
@@ -130,17 +132,19 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		ConnectDone:          func(_, _ string, _ error) { result.ConnectTime = time.Since(connStart) },
 		TLSHandshakeStart:    func() { tlsStart = time.Now() },
 		TLSHandshakeDone:     func(_ tls.ConnectionState, _ error) { result.TLSTime = time.Since(tlsStart) },
+		GotConn:              func(info httptrace.GotConnInfo) { connectionReused = info.Reused },
 		GotFirstResponseByte: func() { result.TTFB = time.Since(result.StartTime) },
 	}
 	req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
 
-	if len(action.Body) > 0 {
-		result.BytesSent = int64(len(action.Body))
+	if requestBytes > 0 {
+		result.BytesSent = requestBytes
 	}
 
 	resp, err := h.client.Do(req)
 	if err != nil {
 		result.Duration = time.Since(result.StartTime)
+		result.ServerTelemetry = finalizeHTTPServerTelemetry(result, requestBytes, 0, connectionReused)
 		result.ErrorMessage = err.Error()
 		result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, action.Body, 0, nil, nil)
 		return result, nil
@@ -156,6 +160,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	result.Duration = time.Since(result.StartTime)
 	result.StatusCode = resp.StatusCode
 	result.BytesReceived = n
+	result.ServerTelemetry = finalizeHTTPServerTelemetry(result, requestBytes, n, connectionReused)
 	result.Success = resp.StatusCode >= 200 && resp.StatusCode < 400
 	if result.CorrelationID == "" {
 		result.CorrelationID = correlationIDFromHTTPHeader(resp.Header)
@@ -309,4 +314,40 @@ func cloneStringMap(values map[string]string) map[string]string {
 		cloned[key] = value
 	}
 	return cloned
+}
+
+func finalizeHTTPServerTelemetry(result *protocol.Result, requestBytes int64, responseBytes int64, connectionReused bool) *protocol.ServerTelemetry {
+	if result == nil {
+		return nil
+	}
+	telemetry := &protocol.ServerTelemetry{
+		ConnectionReused: connectionReused,
+	}
+	if requestBytes > 0 {
+		telemetry.RequestPayloadKB = bytesToKilobytes(requestBytes)
+	}
+	if responseBytes > 0 {
+		telemetry.ResponsePayloadKB = bytesToKilobytes(responseBytes)
+	}
+	if result.TTFB > 0 {
+		telemetry.ServerProcessingMs = durationToNonNegativeMilliseconds(result.TTFB - result.DNSTime - result.ConnectTime - result.TLSTime)
+	}
+	if result.Duration > result.TTFB {
+		telemetry.TransferMs = durationToNonNegativeMilliseconds(result.Duration - result.TTFB)
+	}
+	return telemetry
+}
+
+func durationToNonNegativeMilliseconds(value time.Duration) float64 {
+	if value <= 0 {
+		return 0
+	}
+	return float64(value) / float64(time.Millisecond)
+}
+
+func bytesToKilobytes(value int64) float64 {
+	if value <= 0 {
+		return 0
+	}
+	return float64(value) / 1024.0
 }

@@ -797,6 +797,82 @@ func (x *GroupMetric) GetActiveVusers() int32 {
 	return 0
 }
 
+type ServerTelemetry struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	ServerProcessingMs float64                `protobuf:"fixed64,1,opt,name=server_processing_ms,json=serverProcessingMs,proto3" json:"server_processing_ms,omitempty"`
+	TransferMs         float64                `protobuf:"fixed64,2,opt,name=transfer_ms,json=transferMs,proto3" json:"transfer_ms,omitempty"`
+	RequestPayloadKb   float64                `protobuf:"fixed64,3,opt,name=request_payload_kb,json=requestPayloadKb,proto3" json:"request_payload_kb,omitempty"`
+	ResponsePayloadKb  float64                `protobuf:"fixed64,4,opt,name=response_payload_kb,json=responsePayloadKb,proto3" json:"response_payload_kb,omitempty"`
+	ConnectionReused   bool                   `protobuf:"varint,5,opt,name=connection_reused,json=connectionReused,proto3" json:"connection_reused,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *ServerTelemetry) Reset() {
+	*x = ServerTelemetry{}
+	mi := &file_api_proto_generator_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ServerTelemetry) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ServerTelemetry) ProtoMessage() {}
+
+func (x *ServerTelemetry) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_generator_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ServerTelemetry.ProtoReflect.Descriptor instead.
+func (*ServerTelemetry) Descriptor() ([]byte, []int) {
+	return file_api_proto_generator_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *ServerTelemetry) GetServerProcessingMs() float64 {
+	if x != nil {
+		return x.ServerProcessingMs
+	}
+	return 0
+}
+
+func (x *ServerTelemetry) GetTransferMs() float64 {
+	if x != nil {
+		return x.TransferMs
+	}
+	return 0
+}
+
+func (x *ServerTelemetry) GetRequestPayloadKb() float64 {
+	if x != nil {
+		return x.RequestPayloadKb
+	}
+	return 0
+}
+
+func (x *ServerTelemetry) GetResponsePayloadKb() float64 {
+	if x != nil {
+		return x.ResponsePayloadKb
+	}
+	return 0
+}
+
+func (x *ServerTelemetry) GetConnectionReused() bool {
+	if x != nil {
+		return x.ConnectionReused
+	}
+	return false
+}
+
 type TransactionMetric struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	Name             string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
@@ -814,13 +890,14 @@ type TransactionMetric struct {
 	CorrelationId    string                 `protobuf:"bytes,13,opt,name=correlation_id,json=correlationId,proto3" json:"correlation_id,omitempty"`
 	DependencyType   string                 `protobuf:"bytes,14,opt,name=dependency_type,json=dependencyType,proto3" json:"dependency_type,omitempty"`
 	DependencyTarget string                 `protobuf:"bytes,15,opt,name=dependency_target,json=dependencyTarget,proto3" json:"dependency_target,omitempty"`
+	ServerTelemetry  *ServerTelemetry       `protobuf:"bytes,16,opt,name=server_telemetry,json=serverTelemetry,proto3" json:"server_telemetry,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
 
 func (x *TransactionMetric) Reset() {
 	*x = TransactionMetric{}
-	mi := &file_api_proto_generator_proto_msgTypes[12]
+	mi := &file_api_proto_generator_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -832,7 +909,7 @@ func (x *TransactionMetric) String() string {
 func (*TransactionMetric) ProtoMessage() {}
 
 func (x *TransactionMetric) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_generator_proto_msgTypes[12]
+	mi := &file_api_proto_generator_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -845,7 +922,7 @@ func (x *TransactionMetric) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TransactionMetric.ProtoReflect.Descriptor instead.
 func (*TransactionMetric) Descriptor() ([]byte, []int) {
-	return file_api_proto_generator_proto_rawDescGZIP(), []int{12}
+	return file_api_proto_generator_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *TransactionMetric) GetName() string {
@@ -953,6 +1030,13 @@ func (x *TransactionMetric) GetDependencyTarget() string {
 	return ""
 }
 
+func (x *TransactionMetric) GetServerTelemetry() *ServerTelemetry {
+	if x != nil {
+		return x.ServerTelemetry
+	}
+	return nil
+}
+
 type GeneratorStats struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	ActiveVusers   int32                  `protobuf:"varint,1,opt,name=active_vusers,json=activeVusers,proto3" json:"active_vusers,omitempty"`
@@ -965,7 +1049,7 @@ type GeneratorStats struct {
 
 func (x *GeneratorStats) Reset() {
 	*x = GeneratorStats{}
-	mi := &file_api_proto_generator_proto_msgTypes[13]
+	mi := &file_api_proto_generator_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -977,7 +1061,7 @@ func (x *GeneratorStats) String() string {
 func (*GeneratorStats) ProtoMessage() {}
 
 func (x *GeneratorStats) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_generator_proto_msgTypes[13]
+	mi := &file_api_proto_generator_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -990,7 +1074,7 @@ func (x *GeneratorStats) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GeneratorStats.ProtoReflect.Descriptor instead.
 func (*GeneratorStats) Descriptor() ([]byte, []int) {
-	return file_api_proto_generator_proto_rawDescGZIP(), []int{13}
+	return file_api_proto_generator_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *GeneratorStats) GetActiveVusers() int32 {
@@ -1035,7 +1119,7 @@ type ControlSignal struct {
 
 func (x *ControlSignal) Reset() {
 	*x = ControlSignal{}
-	mi := &file_api_proto_generator_proto_msgTypes[14]
+	mi := &file_api_proto_generator_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1047,7 +1131,7 @@ func (x *ControlSignal) String() string {
 func (*ControlSignal) ProtoMessage() {}
 
 func (x *ControlSignal) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_generator_proto_msgTypes[14]
+	mi := &file_api_proto_generator_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1060,7 +1144,7 @@ func (x *ControlSignal) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ControlSignal.ProtoReflect.Descriptor instead.
 func (*ControlSignal) Descriptor() ([]byte, []int) {
-	return file_api_proto_generator_proto_rawDescGZIP(), []int{14}
+	return file_api_proto_generator_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *ControlSignal) GetSignal() isControlSignal_Signal {
@@ -1129,7 +1213,7 @@ type PauseRequest struct {
 
 func (x *PauseRequest) Reset() {
 	*x = PauseRequest{}
-	mi := &file_api_proto_generator_proto_msgTypes[15]
+	mi := &file_api_proto_generator_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1141,7 +1225,7 @@ func (x *PauseRequest) String() string {
 func (*PauseRequest) ProtoMessage() {}
 
 func (x *PauseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_generator_proto_msgTypes[15]
+	mi := &file_api_proto_generator_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1154,7 +1238,7 @@ func (x *PauseRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PauseRequest.ProtoReflect.Descriptor instead.
 func (*PauseRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_generator_proto_rawDescGZIP(), []int{15}
+	return file_api_proto_generator_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *PauseRequest) GetTestId() string {
@@ -1182,7 +1266,7 @@ type HeartbeatPing struct {
 
 func (x *HeartbeatPing) Reset() {
 	*x = HeartbeatPing{}
-	mi := &file_api_proto_generator_proto_msgTypes[16]
+	mi := &file_api_proto_generator_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1194,7 +1278,7 @@ func (x *HeartbeatPing) String() string {
 func (*HeartbeatPing) ProtoMessage() {}
 
 func (x *HeartbeatPing) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_generator_proto_msgTypes[16]
+	mi := &file_api_proto_generator_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1207,7 +1291,7 @@ func (x *HeartbeatPing) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HeartbeatPing.ProtoReflect.Descriptor instead.
 func (*HeartbeatPing) Descriptor() ([]byte, []int) {
-	return file_api_proto_generator_proto_rawDescGZIP(), []int{16}
+	return file_api_proto_generator_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *HeartbeatPing) GetGeneratorId() string {
@@ -1247,7 +1331,7 @@ type HeartbeatPong struct {
 
 func (x *HeartbeatPong) Reset() {
 	*x = HeartbeatPong{}
-	mi := &file_api_proto_generator_proto_msgTypes[17]
+	mi := &file_api_proto_generator_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1259,7 +1343,7 @@ func (x *HeartbeatPong) String() string {
 func (*HeartbeatPong) ProtoMessage() {}
 
 func (x *HeartbeatPong) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_generator_proto_msgTypes[17]
+	mi := &file_api_proto_generator_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1272,7 +1356,7 @@ func (x *HeartbeatPong) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HeartbeatPong.ProtoReflect.Descriptor instead.
 func (*HeartbeatPong) Descriptor() ([]byte, []int) {
-	return file_api_proto_generator_proto_rawDescGZIP(), []int{17}
+	return file_api_proto_generator_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *HeartbeatPong) GetGeneratorId() string {
@@ -1342,7 +1426,7 @@ type ScriptPayload struct {
 
 func (x *ScriptPayload) Reset() {
 	*x = ScriptPayload{}
-	mi := &file_api_proto_generator_proto_msgTypes[18]
+	mi := &file_api_proto_generator_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1354,7 +1438,7 @@ func (x *ScriptPayload) String() string {
 func (*ScriptPayload) ProtoMessage() {}
 
 func (x *ScriptPayload) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_generator_proto_msgTypes[18]
+	mi := &file_api_proto_generator_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1367,7 +1451,7 @@ func (x *ScriptPayload) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ScriptPayload.ProtoReflect.Descriptor instead.
 func (*ScriptPayload) Descriptor() ([]byte, []int) {
-	return file_api_proto_generator_proto_rawDescGZIP(), []int{18}
+	return file_api_proto_generator_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *ScriptPayload) GetScriptId() string {
@@ -1401,7 +1485,7 @@ type ScriptAck struct {
 
 func (x *ScriptAck) Reset() {
 	*x = ScriptAck{}
-	mi := &file_api_proto_generator_proto_msgTypes[19]
+	mi := &file_api_proto_generator_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1413,7 +1497,7 @@ func (x *ScriptAck) String() string {
 func (*ScriptAck) ProtoMessage() {}
 
 func (x *ScriptAck) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_generator_proto_msgTypes[19]
+	mi := &file_api_proto_generator_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1426,7 +1510,7 @@ func (x *ScriptAck) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ScriptAck.ProtoReflect.Descriptor instead.
 func (*ScriptAck) Descriptor() ([]byte, []int) {
-	return file_api_proto_generator_proto_rawDescGZIP(), []int{19}
+	return file_api_proto_generator_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *ScriptAck) GetCached() bool {
@@ -1453,7 +1537,7 @@ type ArchiveArtifactRequest struct {
 
 func (x *ArchiveArtifactRequest) Reset() {
 	*x = ArchiveArtifactRequest{}
-	mi := &file_api_proto_generator_proto_msgTypes[20]
+	mi := &file_api_proto_generator_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1465,7 +1549,7 @@ func (x *ArchiveArtifactRequest) String() string {
 func (*ArchiveArtifactRequest) ProtoMessage() {}
 
 func (x *ArchiveArtifactRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_generator_proto_msgTypes[20]
+	mi := &file_api_proto_generator_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1478,7 +1562,7 @@ func (x *ArchiveArtifactRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ArchiveArtifactRequest.ProtoReflect.Descriptor instead.
 func (*ArchiveArtifactRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_generator_proto_rawDescGZIP(), []int{20}
+	return file_api_proto_generator_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *ArchiveArtifactRequest) GetTestId() string {
@@ -1505,7 +1589,7 @@ type ArchiveArtifact struct {
 
 func (x *ArchiveArtifact) Reset() {
 	*x = ArchiveArtifact{}
-	mi := &file_api_proto_generator_proto_msgTypes[21]
+	mi := &file_api_proto_generator_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1517,7 +1601,7 @@ func (x *ArchiveArtifact) String() string {
 func (*ArchiveArtifact) ProtoMessage() {}
 
 func (x *ArchiveArtifact) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_generator_proto_msgTypes[21]
+	mi := &file_api_proto_generator_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1530,7 +1614,7 @@ func (x *ArchiveArtifact) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ArchiveArtifact.ProtoReflect.Descriptor instead.
 func (*ArchiveArtifact) Descriptor() ([]byte, []int) {
-	return file_api_proto_generator_proto_rawDescGZIP(), []int{21}
+	return file_api_proto_generator_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *ArchiveArtifact) GetName() string {
@@ -1613,7 +1697,14 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\rsample_age_ms\x18\x04 \x01(\x01R\vsampleAgeMs\"F\n" +
 	"\vGroupMetric\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12#\n" +
-	"\ractive_vusers\x18\x02 \x01(\x05R\factiveVusers\"\xfe\x03\n" +
+	"\ractive_vusers\x18\x02 \x01(\x05R\factiveVusers\"\xef\x01\n" +
+	"\x0fServerTelemetry\x120\n" +
+	"\x14server_processing_ms\x18\x01 \x01(\x01R\x12serverProcessingMs\x12\x1f\n" +
+	"\vtransfer_ms\x18\x02 \x01(\x01R\n" +
+	"transferMs\x12,\n" +
+	"\x12request_payload_kb\x18\x03 \x01(\x01R\x10requestPayloadKb\x12.\n" +
+	"\x13response_payload_kb\x18\x04 \x01(\x01R\x11responsePayloadKb\x12+\n" +
+	"\x11connection_reused\x18\x05 \x01(\bR\x10connectionReused\"\xca\x04\n" +
 	"\x11TransactionMetric\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12+\n" +
 	"\x12start_time_unix_ms\x18\x02 \x01(\x03R\x0fstartTimeUnixMs\x12\x1f\n" +
@@ -1634,7 +1725,8 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\rerror_message\x18\f \x01(\tR\ferrorMessage\x12%\n" +
 	"\x0ecorrelation_id\x18\r \x01(\tR\rcorrelationId\x12'\n" +
 	"\x0fdependency_type\x18\x0e \x01(\tR\x0edependencyType\x12+\n" +
-	"\x11dependency_target\x18\x0f \x01(\tR\x10dependencyTarget\"\xa2\x01\n" +
+	"\x11dependency_target\x18\x0f \x01(\tR\x10dependencyTarget\x12J\n" +
+	"\x10server_telemetry\x18\x10 \x01(\v2\x1f.stormrunner.v1.ServerTelemetryR\x0fserverTelemetry\"\xa2\x01\n" +
 	"\x0eGeneratorStats\x12#\n" +
 	"\ractive_vusers\x18\x01 \x01(\x05R\factiveVusers\x12\x1f\n" +
 	"\vcpu_percent\x18\x02 \x01(\x01R\n" +
@@ -1699,7 +1791,7 @@ func file_api_proto_generator_proto_rawDescGZIP() []byte {
 	return file_api_proto_generator_proto_rawDescData
 }
 
-var file_api_proto_generator_proto_msgTypes = make([]protoimpl.MessageInfo, 23)
+var file_api_proto_generator_proto_msgTypes = make([]protoimpl.MessageInfo, 24)
 var file_api_proto_generator_proto_goTypes = []any{
 	(*WorkAssignment)(nil),         // 0: stormrunner.v1.WorkAssignment
 	(*DataFile)(nil),               // 1: stormrunner.v1.DataFile
@@ -1713,51 +1805,53 @@ var file_api_proto_generator_proto_goTypes = []any{
 	(*MetricsBatch)(nil),           // 9: stormrunner.v1.MetricsBatch
 	(*MetricsBatchTelemetry)(nil),  // 10: stormrunner.v1.MetricsBatchTelemetry
 	(*GroupMetric)(nil),            // 11: stormrunner.v1.GroupMetric
-	(*TransactionMetric)(nil),      // 12: stormrunner.v1.TransactionMetric
-	(*GeneratorStats)(nil),         // 13: stormrunner.v1.GeneratorStats
-	(*ControlSignal)(nil),          // 14: stormrunner.v1.ControlSignal
-	(*PauseRequest)(nil),           // 15: stormrunner.v1.PauseRequest
-	(*HeartbeatPing)(nil),          // 16: stormrunner.v1.HeartbeatPing
-	(*HeartbeatPong)(nil),          // 17: stormrunner.v1.HeartbeatPong
-	(*ScriptPayload)(nil),          // 18: stormrunner.v1.ScriptPayload
-	(*ScriptAck)(nil),              // 19: stormrunner.v1.ScriptAck
-	(*ArchiveArtifactRequest)(nil), // 20: stormrunner.v1.ArchiveArtifactRequest
-	(*ArchiveArtifact)(nil),        // 21: stormrunner.v1.ArchiveArtifact
-	nil,                            // 22: stormrunner.v1.WorkAssignment.EnvironmentEntry
+	(*ServerTelemetry)(nil),        // 12: stormrunner.v1.ServerTelemetry
+	(*TransactionMetric)(nil),      // 13: stormrunner.v1.TransactionMetric
+	(*GeneratorStats)(nil),         // 14: stormrunner.v1.GeneratorStats
+	(*ControlSignal)(nil),          // 15: stormrunner.v1.ControlSignal
+	(*PauseRequest)(nil),           // 16: stormrunner.v1.PauseRequest
+	(*HeartbeatPing)(nil),          // 17: stormrunner.v1.HeartbeatPing
+	(*HeartbeatPong)(nil),          // 18: stormrunner.v1.HeartbeatPong
+	(*ScriptPayload)(nil),          // 19: stormrunner.v1.ScriptPayload
+	(*ScriptAck)(nil),              // 20: stormrunner.v1.ScriptAck
+	(*ArchiveArtifactRequest)(nil), // 21: stormrunner.v1.ArchiveArtifactRequest
+	(*ArchiveArtifact)(nil),        // 22: stormrunner.v1.ArchiveArtifact
+	nil,                            // 23: stormrunner.v1.WorkAssignment.EnvironmentEntry
 }
 var file_api_proto_generator_proto_depIdxs = []int32{
-	22, // 0: stormrunner.v1.WorkAssignment.environment:type_name -> stormrunner.v1.WorkAssignment.EnvironmentEntry
+	23, // 0: stormrunner.v1.WorkAssignment.environment:type_name -> stormrunner.v1.WorkAssignment.EnvironmentEntry
 	1,  // 1: stormrunner.v1.WorkAssignment.data_files:type_name -> stormrunner.v1.DataFile
-	12, // 2: stormrunner.v1.MetricsBatch.transactions:type_name -> stormrunner.v1.TransactionMetric
-	13, // 3: stormrunner.v1.MetricsBatch.stats:type_name -> stormrunner.v1.GeneratorStats
+	13, // 2: stormrunner.v1.MetricsBatch.transactions:type_name -> stormrunner.v1.TransactionMetric
+	14, // 3: stormrunner.v1.MetricsBatch.stats:type_name -> stormrunner.v1.GeneratorStats
 	11, // 4: stormrunner.v1.MetricsBatch.groups:type_name -> stormrunner.v1.GroupMetric
 	10, // 5: stormrunner.v1.MetricsBatch.telemetry:type_name -> stormrunner.v1.MetricsBatchTelemetry
-	3,  // 6: stormrunner.v1.ControlSignal.adjust:type_name -> stormrunner.v1.VUserAdjustment
-	7,  // 7: stormrunner.v1.ControlSignal.stop:type_name -> stormrunner.v1.StopRequest
-	15, // 8: stormrunner.v1.ControlSignal.pause:type_name -> stormrunner.v1.PauseRequest
-	13, // 9: stormrunner.v1.HeartbeatPing.stats:type_name -> stormrunner.v1.GeneratorStats
-	13, // 10: stormrunner.v1.HeartbeatPong.stats:type_name -> stormrunner.v1.GeneratorStats
-	0,  // 11: stormrunner.v1.GeneratorControl.AssignWork:input_type -> stormrunner.v1.WorkAssignment
-	3,  // 12: stormrunner.v1.GeneratorControl.AdjustVUsers:input_type -> stormrunner.v1.VUserAdjustment
-	5,  // 13: stormrunner.v1.GeneratorControl.AdjustDuration:input_type -> stormrunner.v1.DurationAdjustment
-	7,  // 14: stormrunner.v1.GeneratorControl.StopTest:input_type -> stormrunner.v1.StopRequest
-	14, // 15: stormrunner.v1.GeneratorControl.StreamMetrics:input_type -> stormrunner.v1.ControlSignal
-	16, // 16: stormrunner.v1.GeneratorControl.Heartbeat:input_type -> stormrunner.v1.HeartbeatPing
-	18, // 17: stormrunner.v1.GeneratorControl.DistributeScript:input_type -> stormrunner.v1.ScriptPayload
-	20, // 18: stormrunner.v1.GeneratorControl.GetArchiveArtifact:input_type -> stormrunner.v1.ArchiveArtifactRequest
-	2,  // 19: stormrunner.v1.GeneratorControl.AssignWork:output_type -> stormrunner.v1.AssignmentAck
-	4,  // 20: stormrunner.v1.GeneratorControl.AdjustVUsers:output_type -> stormrunner.v1.AdjustmentAck
-	6,  // 21: stormrunner.v1.GeneratorControl.AdjustDuration:output_type -> stormrunner.v1.DurationAck
-	8,  // 22: stormrunner.v1.GeneratorControl.StopTest:output_type -> stormrunner.v1.StopAck
-	9,  // 23: stormrunner.v1.GeneratorControl.StreamMetrics:output_type -> stormrunner.v1.MetricsBatch
-	17, // 24: stormrunner.v1.GeneratorControl.Heartbeat:output_type -> stormrunner.v1.HeartbeatPong
-	19, // 25: stormrunner.v1.GeneratorControl.DistributeScript:output_type -> stormrunner.v1.ScriptAck
-	21, // 26: stormrunner.v1.GeneratorControl.GetArchiveArtifact:output_type -> stormrunner.v1.ArchiveArtifact
-	19, // [19:27] is the sub-list for method output_type
-	11, // [11:19] is the sub-list for method input_type
-	11, // [11:11] is the sub-list for extension type_name
-	11, // [11:11] is the sub-list for extension extendee
-	0,  // [0:11] is the sub-list for field type_name
+	12, // 6: stormrunner.v1.TransactionMetric.server_telemetry:type_name -> stormrunner.v1.ServerTelemetry
+	3,  // 7: stormrunner.v1.ControlSignal.adjust:type_name -> stormrunner.v1.VUserAdjustment
+	7,  // 8: stormrunner.v1.ControlSignal.stop:type_name -> stormrunner.v1.StopRequest
+	16, // 9: stormrunner.v1.ControlSignal.pause:type_name -> stormrunner.v1.PauseRequest
+	14, // 10: stormrunner.v1.HeartbeatPing.stats:type_name -> stormrunner.v1.GeneratorStats
+	14, // 11: stormrunner.v1.HeartbeatPong.stats:type_name -> stormrunner.v1.GeneratorStats
+	0,  // 12: stormrunner.v1.GeneratorControl.AssignWork:input_type -> stormrunner.v1.WorkAssignment
+	3,  // 13: stormrunner.v1.GeneratorControl.AdjustVUsers:input_type -> stormrunner.v1.VUserAdjustment
+	5,  // 14: stormrunner.v1.GeneratorControl.AdjustDuration:input_type -> stormrunner.v1.DurationAdjustment
+	7,  // 15: stormrunner.v1.GeneratorControl.StopTest:input_type -> stormrunner.v1.StopRequest
+	15, // 16: stormrunner.v1.GeneratorControl.StreamMetrics:input_type -> stormrunner.v1.ControlSignal
+	17, // 17: stormrunner.v1.GeneratorControl.Heartbeat:input_type -> stormrunner.v1.HeartbeatPing
+	19, // 18: stormrunner.v1.GeneratorControl.DistributeScript:input_type -> stormrunner.v1.ScriptPayload
+	21, // 19: stormrunner.v1.GeneratorControl.GetArchiveArtifact:input_type -> stormrunner.v1.ArchiveArtifactRequest
+	2,  // 20: stormrunner.v1.GeneratorControl.AssignWork:output_type -> stormrunner.v1.AssignmentAck
+	4,  // 21: stormrunner.v1.GeneratorControl.AdjustVUsers:output_type -> stormrunner.v1.AdjustmentAck
+	6,  // 22: stormrunner.v1.GeneratorControl.AdjustDuration:output_type -> stormrunner.v1.DurationAck
+	8,  // 23: stormrunner.v1.GeneratorControl.StopTest:output_type -> stormrunner.v1.StopAck
+	9,  // 24: stormrunner.v1.GeneratorControl.StreamMetrics:output_type -> stormrunner.v1.MetricsBatch
+	18, // 25: stormrunner.v1.GeneratorControl.Heartbeat:output_type -> stormrunner.v1.HeartbeatPong
+	20, // 26: stormrunner.v1.GeneratorControl.DistributeScript:output_type -> stormrunner.v1.ScriptAck
+	22, // 27: stormrunner.v1.GeneratorControl.GetArchiveArtifact:output_type -> stormrunner.v1.ArchiveArtifact
+	20, // [20:28] is the sub-list for method output_type
+	12, // [12:20] is the sub-list for method input_type
+	12, // [12:12] is the sub-list for extension type_name
+	12, // [12:12] is the sub-list for extension extendee
+	0,  // [0:12] is the sub-list for field type_name
 }
 
 func init() { file_api_proto_generator_proto_init() }
@@ -1765,7 +1859,7 @@ func file_api_proto_generator_proto_init() {
 	if File_api_proto_generator_proto != nil {
 		return
 	}
-	file_api_proto_generator_proto_msgTypes[14].OneofWrappers = []any{
+	file_api_proto_generator_proto_msgTypes[15].OneofWrappers = []any{
 		(*ControlSignal_Adjust)(nil),
 		(*ControlSignal_Stop)(nil),
 		(*ControlSignal_Pause)(nil),
@@ -1776,7 +1870,7 @@ func file_api_proto_generator_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_proto_generator_proto_rawDesc), len(file_api_proto_generator_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   23,
+			NumMessages:   24,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
