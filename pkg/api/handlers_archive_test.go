@@ -194,5 +194,34 @@ func TestArchiveQueryEndpoints(t *testing.T) {
 		if payload.BySOAPOperation["CreateOrder"].Transactions == 0 {
 			t.Fatalf("expected SOAP operation breakdown, got %#v", payload.BySOAPOperation)
 		}
+		if len(payload.SummaryTimeline) == 0 {
+			t.Fatal("expected report to include summary timeline")
+		}
+	})
+
+	t.Run("html report", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/report", nil)
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusOK {
+			t.Fatalf("html report status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+		}
+		if got := resp.Header().Get("Content-Type"); !strings.Contains(got, "text/html") {
+			t.Fatalf("html report content type = %q, want text/html", got)
+		}
+		body := resp.Body.String()
+		if !strings.Contains(body, "<!DOCTYPE html>") {
+			t.Fatalf("expected HTML document, got %q", body)
+		}
+		if !strings.Contains(body, testRun.Name) {
+			t.Fatalf("expected report to contain test name %q", testRun.Name)
+		}
+		if !strings.Contains(body, "Action Summary") {
+			t.Fatalf("expected report to contain action summary, got %q", body)
+		}
+		if !strings.Contains(body, "Summary Timeline") {
+			t.Fatalf("expected report to contain summary timeline, got %q", body)
+		}
 	})
 }

@@ -226,6 +226,9 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('Code: env:Sender')
     expect(container.textContent).toContain('Reason: Request validation failed')
     expect(container.textContent).toContain('Browser Metrics')
+    const reportLink = container.querySelector('a[href="/api/v1/tests/test-1/report"]') as HTMLAnchorElement | null
+    expect(reportLink).toBeTruthy()
+    expect(reportLink?.textContent).toContain('Download Report')
     expect(container.textContent).toContain('Browser Device Breakdown (LCP / INP / CLS)')
     expect(container.textContent).toContain('Avg FCP')
     expect(container.textContent).toContain('Engine Rollup')

@@ -95,6 +95,10 @@ function buildArchivePayloadTimelineEntries(buckets?: RunArchiveSOAPPayloadTimel
   return [...(buckets || [])].sort((left, right) => left.timestamp.localeCompare(right.timestamp))
 }
 
+function buildReportHref(testId: string) {
+  return `/api/v1/tests/${encodeURIComponent(testId)}/report`
+}
+
 function renderBrowserSummary(
   summary: BrowserLiveMetrics,
   devices?: Record<string, BrowserDeviceLiveMetrics>,
@@ -352,6 +356,17 @@ export default function TestExecutionArchive({
           )}
 
           <div className="archive-artifact-row">
+            <div className="archive-artifact-group">
+              <span className="archive-artifact-label">Report</span>
+              <a
+                className="btn btn-secondary btn-sm"
+                href={buildReportHref(test.id)}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Download Report
+              </a>
+            </div>
             <div className="archive-artifact-group">
               <span className="archive-artifact-label">JSONL</span>
               <button className="btn btn-secondary btn-sm" onClick={() => onDownloadArchiveArtifact(archiveReport.manifest.transactions_file || 'transactions.jsonl')}>

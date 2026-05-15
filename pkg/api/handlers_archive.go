@@ -167,6 +167,26 @@ func (s *Server) handleGetRunArchiveReport(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, report)
 }
 
+func (s *Server) handleGetTestHTMLReport(w http.ResponseWriter, r *http.Request) {
+	record, ok := s.requireRunArchive(w, r)
+	if !ok {
+		return
+	}
+	report, err := buildRunArchiveReport(record)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to build archive report: "+err.Error())
+		return
+	}
+	html, err := renderRunArchiveHTMLReport(report)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to render archive report: "+err.Error())
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(html)
+}
+
 func (s *Server) requireRunArchive(w http.ResponseWriter, r *http.Request) (*storage.RunArchiveRecord, bool) {
 	id := r.PathValue("id")
 	if _, ok := s.runner.GetTest(id); !ok {

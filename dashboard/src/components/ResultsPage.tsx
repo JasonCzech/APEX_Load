@@ -169,6 +169,10 @@ function isCompletedStatus(status?: string) {
   return status === 'COMPLETE' || status === 'FAILED' || status === 'ABORTED'
 }
 
+function buildTestReportHref(testId: string) {
+  return `/api/v1/tests/${encodeURIComponent(testId)}/report`
+}
+
 function SortIcon({ active, direction }: { active: boolean; direction: 'asc' | 'desc' }) {
   if (!active) return <span className="sort-icon">↕</span>
   return <span className="sort-icon active">{direction === 'asc' ? '↑' : '↓'}</span>
@@ -1015,9 +1019,14 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
                     <td className="cell-muted">{test.archive ? `${test.archive.transaction_count} tx` : 'Pending'}</td>
                     <td style={{ textAlign: 'right' }}>
                       {test.archive && (
-                        <button className="btn btn-sm btn-secondary" onClick={event => downloadArchive(test, event)}>
-                          Archive
-                        </button>
+                        <>
+                          <button className="btn btn-sm btn-secondary" onClick={event => downloadArchive(test, event)}>
+                            Archive
+                          </button>
+                          <a className="btn btn-sm btn-ghost" href={buildTestReportHref(test.id)} target="_blank" rel="noreferrer" onClick={event => event.stopPropagation()}>
+                            Report
+                          </a>
+                        </>
                       )}
                       <button className="btn btn-sm btn-ghost" onClick={event => { event.stopPropagation(); onSelectTest(test.id) }}>
                         Open

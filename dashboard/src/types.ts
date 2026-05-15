@@ -389,9 +389,20 @@ export interface RunArchiveSOAPPayloadTimelineBucket {
   max_envelope_overhead_kb?: number
 }
 
+export interface RunArchiveSummaryPoint {
+  timestamp: string
+  active_vusers: number
+  tps: number
+  error_pct: number
+  p95_ms: number
+  total_transactions: number
+  total_errors: number
+}
+
 export interface RunArchiveReport {
   manifest: RunArchiveManifest
   overview: RunArchiveOverview
+  summary_timeline?: RunArchiveSummaryPoint[]
   by_action: Record<string, RunArchiveActionStats>
   by_soap_operation?: Record<string, RunArchiveActionStats>
   by_soap_fault_code?: Record<string, number>

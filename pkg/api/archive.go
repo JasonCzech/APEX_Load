@@ -117,6 +117,7 @@ type transactionEventFilter struct {
 type RunArchiveReport struct {
 	Manifest            *RunArchiveManifest                    `json:"manifest"`
 	Overview            RunArchiveOverview                     `json:"overview"`
+	SummaryTimeline     []RunArchiveSummaryPoint               `json:"summary_timeline,omitempty"`
 	ByAction            map[string]RunArchiveActionStats       `json:"by_action"`
 	BySOAPOperation     map[string]RunArchiveActionStats       `json:"by_soap_operation,omitempty"`
 	BySOAPFaultCode     map[string]int64                       `json:"by_soap_fault_code,omitempty"`
@@ -127,6 +128,16 @@ type RunArchiveReport struct {
 	BrowserByPlatform   map[string]*BrowserPlatformLiveMetrics `json:"browser_by_platform,omitempty"`
 	BrowserByDevice     map[string]*BrowserDeviceLiveMetrics   `json:"browser_by_device,omitempty"`
 	ResourcePeaks       RunArchiveResourcePeaks                `json:"resource_peaks"`
+}
+
+type RunArchiveSummaryPoint struct {
+	Timestamp    time.Time `json:"timestamp"`
+	ActiveVUsers int64     `json:"active_vusers"`
+	TPS          float64   `json:"tps"`
+	ErrorPct     float64   `json:"error_pct"`
+	P95Ms        float64   `json:"p95_ms"`
+	TotalTx      int64     `json:"total_transactions"`
+	TotalErrors  int64     `json:"total_errors"`
 }
 
 type RunArchiveSOAPFaultTimelineBucket struct {
@@ -678,6 +689,9 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	}
 
 	report.Overview.IntervalSummaries = int64(len(summaries))
+	if len(summaries) > 0 {
+		report.SummaryTimeline = make([]RunArchiveSummaryPoint, 0, len(summaries))
+	}
 	for _, summary := range summaries {
 		if summary.TPS > report.Overview.PeakTPS {
 			report.Overview.PeakTPS = summary.TPS
@@ -685,6 +699,15 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 		if summary.ActiveVUsers > report.Overview.PeakActiveVUsers {
 			report.Overview.PeakActiveVUsers = summary.ActiveVUsers
 		}
+		report.SummaryTimeline = append(report.SummaryTimeline, RunArchiveSummaryPoint{
+			Timestamp:    summary.Timestamp,
+			ActiveVUsers: summary.ActiveVUsers,
+			TPS:          summary.TPS,
+			ErrorPct:     summary.ErrorPct,
+			P95Ms:        summary.P95Ms,
+			TotalTx:      summary.TotalTx,
+			TotalErrors:  summary.TotalErrors,
+		})
 	}
 
 	return report, nil

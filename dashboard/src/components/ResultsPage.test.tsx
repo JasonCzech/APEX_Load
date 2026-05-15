@@ -185,6 +185,10 @@ describe('ResultsPage', () => {
       await Promise.resolve()
     })
 
+    const reportLink = container.querySelector('a[href="/api/v1/tests/run-a/report"]') as HTMLAnchorElement | null
+    expect(reportLink).toBeTruthy()
+    expect(reportLink?.textContent).toBe('Report')
+
     const rowCheckboxes = Array.from(container.querySelectorAll('tbody input[type="checkbox"]')) as HTMLInputElement[]
     expect(rowCheckboxes).toHaveLength(2)
 
