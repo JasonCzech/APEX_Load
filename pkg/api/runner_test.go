@@ -221,6 +221,7 @@ func TestCreateTestPreservesRuntimeSettingsAndGroups(t *testing.T) {
 	p95LatencyMs := 850.0
 	minVUsers := 15
 	maxVUsers := 120
+	pacingDelay := 1500
 	test, err := runner.CreateTest(CreateTestRequest{
 		Name:             "Checkout Replay",
 		Duration:         "90s",
@@ -247,9 +248,12 @@ func TestCreateTestPreservesRuntimeSettingsAndGroups(t *testing.T) {
 		}},
 		RuntimeSettings: &RuntimeSettingsOverride{
 			Iterations:       &iterations,
+			Pacing:           &dsl.PacingConfig{Type: "fixed_delay", DelayMs: pacingDelay},
+			ThinkTime:        &dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 750},
 			LogLevel:         "extended",
 			AutoTransactions: "per_iteration",
 			ErrorHandling: &dsl.ErrorHandlingConfig{
+				ContinueOnError: true,
 				SnapshotOnError: true,
 			},
 		},
@@ -267,11 +271,17 @@ func TestCreateTestPreservesRuntimeSettingsAndGroups(t *testing.T) {
 	if test.RuntimeSettings.LogLevel != "extended" {
 		t.Fatalf("expected log level extended, got %q", test.RuntimeSettings.LogLevel)
 	}
+	if test.RuntimeSettings.Pacing == nil || test.RuntimeSettings.Pacing.Type != "fixed_delay" || test.RuntimeSettings.Pacing.DelayMs != pacingDelay {
+		t.Fatalf("expected pacing fixed_delay 1500ms, got %#v", test.RuntimeSettings.Pacing)
+	}
+	if test.RuntimeSettings.ThinkTime == nil || test.RuntimeSettings.ThinkTime.Type != "fixed" || test.RuntimeSettings.ThinkTime.MeanMs != 750 {
+		t.Fatalf("expected think time fixed 750ms, got %#v", test.RuntimeSettings.ThinkTime)
+	}
 	if test.RuntimeSettings.AutoTransactions != "per_iteration" {
 		t.Fatalf("expected auto transactions per_iteration, got %q", test.RuntimeSettings.AutoTransactions)
 	}
-	if test.RuntimeSettings.ErrorHandling == nil || !test.RuntimeSettings.ErrorHandling.SnapshotOnError {
-		t.Fatal("expected snapshot_on_error override to be preserved")
+	if test.RuntimeSettings.ErrorHandling == nil || !test.RuntimeSettings.ErrorHandling.SnapshotOnError || !test.RuntimeSettings.ErrorHandling.ContinueOnError {
+		t.Fatal("expected continue_on_error and snapshot_on_error overrides to be preserved")
 	}
 	if test.ScenarioMode != "goal_oriented" {
 		t.Fatalf("expected scenario mode goal_oriented, got %q", test.ScenarioMode)
@@ -320,6 +330,47 @@ func TestCreateTestPreservesRuntimeSettingsAndGroups(t *testing.T) {
 	}
 	if test.StartDelay != "30s" {
 		t.Fatalf("expected start delay 30s, got %q", test.StartDelay)
+	}
+}
+
+func TestApplyRuntimeOverridesAppliesExtendedOverrideFields(t *testing.T) {
+	iterations := 4
+	script := &dsl.Script{
+		Config: dsl.ScriptConfig{
+			RunLogic: dsl.RunLogicConfig{Iterations: 1, AutoTransactions: "none"},
+			Pacing: dsl.PacingConfig{Type: "none"},
+			ThinkTime: dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 1000},
+			ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: false, SnapshotOnError: false},
+			Log: dsl.LogConfig{Level: "standard"},
+		},
+	}
+
+	applyRuntimeOverrides(script, &RuntimeSettingsOverride{
+		Iterations:       &iterations,
+		Pacing:           &dsl.PacingConfig{Type: "fixed_interval", IntervalMs: 2500},
+		ThinkTime:        &dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 750},
+		LogLevel:         "extended",
+		AutoTransactions: "per_iteration",
+		ErrorHandling:    &dsl.ErrorHandlingConfig{ContinueOnError: true, SnapshotOnError: true},
+	})
+
+	if script.Config.RunLogic.Iterations != 4 {
+		t.Fatalf("iterations = %d, want 4", script.Config.RunLogic.Iterations)
+	}
+	if script.Config.Pacing.Type != "fixed_interval" || script.Config.Pacing.IntervalMs != 2500 {
+		t.Fatalf("pacing = %#v, want fixed_interval 2500ms", script.Config.Pacing)
+	}
+	if script.Config.ThinkTime.Type != "fixed" || script.Config.ThinkTime.MeanMs != 750 {
+		t.Fatalf("think_time = %#v, want fixed 750ms", script.Config.ThinkTime)
+	}
+	if script.Config.Log.Level != "extended" {
+		t.Fatalf("log level = %q, want extended", script.Config.Log.Level)
+	}
+	if script.Config.RunLogic.AutoTransactions != "per_iteration" {
+		t.Fatalf("auto transactions = %q, want per_iteration", script.Config.RunLogic.AutoTransactions)
+	}
+	if !script.Config.ErrorHandling.ContinueOnError || !script.Config.ErrorHandling.SnapshotOnError {
+		t.Fatalf("error handling = %#v, want continue_on_error and snapshot_on_error", script.Config.ErrorHandling)
 	}
 }
 
