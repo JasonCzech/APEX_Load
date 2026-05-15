@@ -344,7 +344,6 @@ describe('ScriptEditor', () => {
           engine: 'chromium',
           headless: true,
           slow_mo_ms: 25,
-          device_profile: 'iphone_15_pro',
           touch_mode: true,
           orientation: 'portrait',
           client_metrics: true,
@@ -399,6 +398,27 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('Viewport Width')
     expect(container.textContent).toContain('Viewport Height')
 
+    const deviceProfileSelect = Array.from(container.querySelectorAll('select')).find(select =>
+      Array.from(select.options).some(option => option.value === 'iphone_15_pro')
+      && Array.from(select.options).some(option => option.value === 'desktop_1080p'),
+    ) as HTMLSelectElement | undefined
+    expect(deviceProfileSelect).toBeDefined()
+    if (!deviceProfileSelect) {
+      return
+    }
+
+    await act(async () => {
+      deviceProfileSelect.value = 'iphone_15_pro'
+      deviceProfileSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const engineSelect = Array.from(container.querySelectorAll('select')).find(select =>
+      Array.from(select.options).some(option => option.value === 'chromium')
+      && Array.from(select.options).some(option => option.value === 'webkit'),
+    ) as HTMLSelectElement | undefined
+    expect(engineSelect?.value).toBe('webkit')
+    expect(container.textContent).toContain('WebKit validates in scripts and replay payloads, but execution is not implemented in this build yet.')
+
     const actionItem = container.querySelector('.action-item') as HTMLDivElement | null
     expect(actionItem).not.toBeNull()
     if (!actionItem) {
@@ -428,7 +448,7 @@ describe('ScriptEditor', () => {
 
     expect(apiMock.startDraftBrowserReplaySession).toHaveBeenCalledWith(expect.objectContaining({
       browser: expect.objectContaining({
-        engine: 'chromium',
+        engine: 'webkit',
         headless: true,
         slow_mo_ms: 25,
         device_profile: 'iphone_15_pro',

@@ -79,14 +79,29 @@ type DOMSummary = BrowserReplayDomSummary
 type ReplayActionEvent = BrowserReplayEvent
 type ReplayReport = BrowserReplayReport
 
-const BROWSER_DEVICE_PROFILES = [
-  'desktop_1080p',
-  'galaxy_s24',
-  'ipad_air',
-  'iphone_15_pro',
-  'iphone_se',
-  'pixel_8',
-] as const
+type BrowserEngineName = 'chromium' | 'webkit'
+
+type BrowserDeviceProfileOption = {
+  name: string
+  engine: BrowserEngineName
+}
+
+const BROWSER_DEVICE_PROFILES: readonly BrowserDeviceProfileOption[] = [
+  { name: 'desktop_1080p', engine: 'chromium' },
+  { name: 'galaxy_s24', engine: 'chromium' },
+  { name: 'ipad_air', engine: 'webkit' },
+  { name: 'iphone_15_pro', engine: 'webkit' },
+  { name: 'iphone_se', engine: 'webkit' },
+  { name: 'pixel_8', engine: 'chromium' },
+]
+
+function lookupBrowserDeviceProfile(name?: string) {
+  return BROWSER_DEVICE_PROFILES.find(profile => profile.name === name)
+}
+
+function formatBrowserDeviceProfileLabel(profile: BrowserDeviceProfileOption) {
+  return profile.engine === 'webkit' ? `${profile.name} (WebKit)` : profile.name
+}
 
 function hasStructuredReplaySnapshot(snapshot?: ReplaySnapshot | null) {
   return Boolean(
@@ -373,6 +388,13 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
   const isSoapScript = script.protocol === 'soap'
   const importMetadata = script.metadata?.import
   const importSummary = getImportSummary(importMetadata)
+  const selectedBrowserEngine = script.config.browser?.engine || 'chromium'
+  const selectedBrowserProfile = lookupBrowserDeviceProfile(script.config.browser?.device_profile)
+  const browserEngineAdvisory = selectedBrowserProfile && selectedBrowserProfile.engine !== selectedBrowserEngine
+    ? `${selectedBrowserProfile.name} requires ${selectedBrowserProfile.engine}. Choose a matching engine or switch to a compatible preset.`
+    : selectedBrowserEngine === 'webkit'
+      ? 'WebKit validates in scripts and replay payloads, but execution is not implemented in this build yet.'
+      : ''
 
   useEffect(() => {
     if (!isParameterDialogOpen) return
@@ -2859,11 +2881,22 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
                           <label>
                             <span>Device Profile</span>
                             <select value={script.config.browser?.device_profile || ''}
-                              onChange={e => updateField('config.browser', { ...script.config.browser, device_profile: e.target.value || undefined })}>
+                              onChange={e => {
+                                const nextDeviceProfile = e.target.value || undefined
+                                const nextProfile = lookupBrowserDeviceProfile(nextDeviceProfile)
+                                updateField('config.browser', {
+                                  ...script.config.browser,
+                                  device_profile: nextDeviceProfile,
+                                  engine: nextProfile?.engine || script.config.browser?.engine,
+                                })
+                              }}>
                               <option value="">Custom viewport</option>
-                              {BROWSER_DEVICE_PROFILES.map(profile => <option key={profile} value={profile}>{profile}</option>)}
+                              {BROWSER_DEVICE_PROFILES.map(profile => <option key={profile.name} value={profile.name}>{formatBrowserDeviceProfileLabel(profile)}</option>)}
                             </select>
                           </label>
+                          {browserEngineAdvisory && (
+                            <div className="browser-config-warning">{browserEngineAdvisory}</div>
+                          )}
                           <label>
                             <span>Orientation</span>
                             <select value={script.config.browser?.orientation || ''}
