@@ -79,6 +79,15 @@ type DOMSummary = BrowserReplayDomSummary
 type ReplayActionEvent = BrowserReplayEvent
 type ReplayReport = BrowserReplayReport
 
+const BROWSER_DEVICE_PROFILES = [
+  'desktop_1080p',
+  'galaxy_s24',
+  'ipad_air',
+  'iphone_15_pro',
+  'iphone_se',
+  'pixel_8',
+] as const
+
 function hasStructuredReplaySnapshot(snapshot?: ReplaySnapshot | null) {
   return Boolean(
     snapshot?.request_method ||
@@ -1142,8 +1151,14 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
         variables,
         script: currentScript,
         browser: currentScript.protocol === 'browser' ? {
+          engine: currentScript.config.browser?.engine || 'chromium',
           headless: currentScript.config.browser?.headless ?? true,
           slow_mo_ms: currentScript.config.browser?.slow_mo_ms,
+          user_agent: currentScript.config.browser?.user_agent,
+          device_profile: currentScript.config.browser?.device_profile,
+          touch_mode: currentScript.config.browser?.touch_mode,
+          orientation: currentScript.config.browser?.orientation,
+          client_metrics: currentScript.config.browser?.client_metrics,
           capture_screenshots: captureScreenshots,
           viewport: currentScript.config.browser?.viewport?.width || currentScript.config.browser?.viewport?.height
             ? {
@@ -1854,7 +1869,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
                 )}
                 {isBrowserScript && (
                   <div className="parameter-empty-state" style={{ marginTop: 12 }}>
-                    Browser scripts can use navigate, click, fill, wait, and screenshot actions with selector, wait, and capture settings in the action editor below.
+                    Browser scripts can use navigate, click, fill, wait, tap, long-press, swipe, and screenshot actions with device presets, touch controls, and client metrics in the action editor below.
                   </div>
                 )}
                 {isSoapScript && (
@@ -2833,6 +2848,60 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
                       <div className="settings-sub-group">
                         <h5>Browser Emulation</h5>
                         <div className="form-grid">
+                          <label>
+                            <span>Browser Engine</span>
+                            <select value={script.config.browser?.engine || 'chromium'}
+                              onChange={e => updateField('config.browser', { ...script.config.browser, engine: e.target.value })}>
+                              <option value="chromium">Chromium</option>
+                              <option value="webkit">WebKit (reserved)</option>
+                            </select>
+                          </label>
+                          <label>
+                            <span>Device Profile</span>
+                            <select value={script.config.browser?.device_profile || ''}
+                              onChange={e => updateField('config.browser', { ...script.config.browser, device_profile: e.target.value || undefined })}>
+                              <option value="">Custom viewport</option>
+                              {BROWSER_DEVICE_PROFILES.map(profile => <option key={profile} value={profile}>{profile}</option>)}
+                            </select>
+                          </label>
+                          <label>
+                            <span>Orientation</span>
+                            <select value={script.config.browser?.orientation || ''}
+                              onChange={e => updateField('config.browser', { ...script.config.browser, orientation: e.target.value || undefined })}>
+                              <option value="">Profile default</option>
+                              <option value="portrait">Portrait</option>
+                              <option value="landscape">Landscape</option>
+                            </select>
+                          </label>
+                          <label><span>Viewport Width</span>
+                            <input type="number" min="0" value={script.config.browser?.viewport?.width ?? ''} placeholder="393"
+                              onChange={e => updateField('config.browser', {
+                                ...script.config.browser,
+                                viewport: {
+                                  ...script.config.browser?.viewport,
+                                  width: e.target.value === '' ? undefined : Math.max(0, Number(e.target.value) || 0),
+                                },
+                              })} /></label>
+                          <label><span>Viewport Height</span>
+                            <input type="number" min="0" value={script.config.browser?.viewport?.height ?? ''} placeholder="852"
+                              onChange={e => updateField('config.browser', {
+                                ...script.config.browser,
+                                viewport: {
+                                  ...script.config.browser?.viewport,
+                                  height: e.target.value === '' ? undefined : Math.max(0, Number(e.target.value) || 0),
+                                },
+                              })} /></label>
+                          <label><span>Slow Mo (ms)</span>
+                            <input type="number" min="0" value={script.config.browser?.slow_mo_ms ?? ''} placeholder="50"
+                              onChange={e => updateField('config.browser', { ...script.config.browser, slow_mo_ms: e.target.value === '' ? undefined : Math.max(0, Number(e.target.value) || 0) })} /></label>
+                          <label><span>Capture Screenshots</span>
+                            <select value={script.config.browser?.capture_screenshots || 'per_action'}
+                              onChange={e => updateField('config.browser', { ...script.config.browser, capture_screenshots: e.target.value })}>
+                              <option value="off">Off</option>
+                              <option value="on_error">On error</option>
+                              <option value="per_action">Per action</option>
+                            </select>
+                          </label>
                           <label className="full-width"><span>User-Agent</span>
                             <input value={script.config.http?.user_agent || ''} placeholder="Mozilla/5.0 ..."
                               onChange={e => updateField('config.http', { ...script.config.http, user_agent: e.target.value })} /></label>
@@ -2850,6 +2919,21 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
                               <option value="recorded">Recorded resources</option>
                               <option value="all">All non-HTML resources</option>
                             </select>
+                          </label>
+                          <label className="checkbox-label">
+                            <input type="checkbox" checked={script.config.browser?.headless ?? true}
+                              onChange={e => updateField('config.browser', { ...script.config.browser, headless: e.target.checked })} />
+                            <span>Run headless</span>
+                          </label>
+                          <label className="checkbox-label">
+                            <input type="checkbox" checked={script.config.browser?.touch_mode ?? false}
+                              onChange={e => updateField('config.browser', { ...script.config.browser, touch_mode: e.target.checked })} />
+                            <span>Force touch mode</span>
+                          </label>
+                          <label className="checkbox-label">
+                            <input type="checkbox" checked={script.config.browser?.client_metrics ?? false}
+                              onChange={e => updateField('config.browser', { ...script.config.browser, client_metrics: e.target.checked })} />
+                            <span>Capture client metrics</span>
                           </label>
                           <label className="checkbox-label">
                             <input type="checkbox" checked={script.config.browser?.cache_enabled || false}
@@ -4298,7 +4382,7 @@ function ActionEditor({ action, index, parameters, onUpdate, onAddExtractor, onU
   )
 }
 
-const BROWSER_ACTION_TYPES = ['browser_navigate', 'browser_click', 'browser_fill', 'browser_wait', 'browser_screenshot']
+const BROWSER_ACTION_TYPES = ['browser_navigate', 'browser_click', 'browser_fill', 'browser_wait', 'browser_screenshot', 'browser_tap', 'browser_long_press', 'browser_swipe']
 const JMS_ACTION_TYPES = ['jms_publish', 'jms_consume', 'jms_request_reply', 'jms_ack', 'jms_commit', 'jms_rollback']
 const HTTP_ACTION_TYPES = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']
 
@@ -4325,7 +4409,7 @@ interface ActionCoreFieldsProps {
 }
 
 function ActionCoreFields({ action, index, isBrowserScript, isJmsScript, onUpdate }: ActionCoreFieldsProps) {
-  const showSelector = isBrowserScript && ['browser_click', 'browser_fill', 'browser_wait', 'browser_screenshot'].includes(action.type)
+  const showSelector = isBrowserScript && ['browser_click', 'browser_fill', 'browser_wait', 'browser_screenshot', 'browser_tap', 'browser_long_press', 'browser_swipe'].includes(action.type)
   const showValue = isBrowserScript && action.type === 'browser_fill'
   const targetLabel = isJmsScript
     ? 'Destination'
@@ -4635,6 +4719,7 @@ interface BrowserActionFieldsProps {
 function BrowserActionFields({ action, index, onUpdate }: BrowserActionFieldsProps) {
   const waitFor = action.wait_for || {}
   const capture = action.capture || {}
+  const params = action.params || {}
 
   return (
     <>
@@ -4670,6 +4755,52 @@ function BrowserActionFields({ action, index, onUpdate }: BrowserActionFieldsPro
                 min="0"
                 value={waitFor.timeout_ms ?? 10000}
                 onChange={e => onUpdate(index, 'wait_for', { ...waitFor, timeout_ms: Math.max(0, Number(e.target.value) || 0) })}
+              />
+            </label>
+          </div>
+        </div>
+      )}
+
+      {action.type === 'browser_long_press' && (
+        <div className="sub-section browser-action-section">
+          <div className="sub-header"><h4>Long Press</h4></div>
+          <div className="browser-action-grid">
+            <label>
+              <span>Duration (ms)</span>
+              <input
+                type="number"
+                min="1"
+                value={typeof params.duration_ms === 'number' ? params.duration_ms : 350}
+                onChange={e => onUpdate(index, 'params', { ...params, duration_ms: Math.max(1, Number(e.target.value) || 1) })}
+              />
+            </label>
+          </div>
+        </div>
+      )}
+
+      {action.type === 'browser_swipe' && (
+        <div className="sub-section browser-action-section">
+          <div className="sub-header"><h4>Swipe Gesture</h4></div>
+          <div className="browser-action-grid">
+            <label>
+              <span>Direction</span>
+              <select
+                value={typeof params.direction === 'string' ? params.direction : 'left'}
+                onChange={e => onUpdate(index, 'params', { ...params, direction: e.target.value })}
+              >
+                <option value="left">Left</option>
+                <option value="right">Right</option>
+                <option value="up">Up</option>
+                <option value="down">Down</option>
+              </select>
+            </label>
+            <label>
+              <span>Distance (px)</span>
+              <input
+                type="number"
+                min="1"
+                value={typeof params.distance === 'number' ? params.distance : 180}
+                onChange={e => onUpdate(index, 'params', { ...params, distance: Math.max(1, Number(e.target.value) || 1) })}
               />
             </label>
           </div>

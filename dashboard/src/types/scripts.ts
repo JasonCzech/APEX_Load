@@ -129,6 +129,10 @@ export interface BrowserConfig {
   headless?: boolean
   slow_mo_ms?: number
   user_agent?: string
+  device_profile?: string
+  touch_mode?: boolean
+  orientation?: string
+  client_metrics?: boolean
   capture_screenshots?: string
   cache_enabled?: boolean
   cache_content_urls?: boolean

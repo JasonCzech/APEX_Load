@@ -105,7 +105,9 @@ export function createWebDraft(): ScriptDefinition {
       browser: {
         engine: 'chromium',
         headless: true,
+        client_metrics: true,
         capture_screenshots: 'per_action',
+        download_resources: 'recorded',
         viewport: { width: 1440, height: 900 },
       },
     },

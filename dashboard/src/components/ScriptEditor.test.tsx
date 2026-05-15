@@ -17,6 +17,11 @@ const apiMock = {
   updateScript: vi.fn(),
   replayDraftScript: vi.fn(),
   replayScript: vi.fn(),
+  startDraftBrowserReplaySession: vi.fn(),
+  startBrowserReplaySession: vi.fn(),
+  pauseBrowserReplaySession: vi.fn(),
+  resumeBrowserReplaySession: vi.fn(),
+  stopBrowserReplaySession: vi.fn(),
 }
 
 vi.mock('../hooks/useApi', () => ({
@@ -118,6 +123,31 @@ describe('ScriptEditor', () => {
         events: [],
       },
     })
+    apiMock.startDraftBrowserReplaySession.mockResolvedValue({
+      session: {
+        id: 'browser-replay-1',
+        group: 'Checkout Flow-browser-replay',
+        protocol: 'browser',
+        status: 'running',
+        started_at: '2026-05-14T20:00:00Z',
+        updated_at: '2026-05-14T20:00:00Z',
+        events: [],
+      },
+    })
+    apiMock.startBrowserReplaySession.mockResolvedValue({
+      session: {
+        id: 'browser-replay-1',
+        group: 'Checkout Flow-browser-replay',
+        protocol: 'browser',
+        status: 'running',
+        started_at: '2026-05-14T20:00:00Z',
+        updated_at: '2026-05-14T20:00:00Z',
+        events: [],
+      },
+    })
+    apiMock.pauseBrowserReplaySession.mockResolvedValue({ session: { status: 'paused' } })
+    apiMock.resumeBrowserReplaySession.mockResolvedValue({ session: { status: 'running' } })
+    apiMock.stopBrowserReplaySession.mockResolvedValue(undefined)
   })
 
   afterEach(async () => {
@@ -301,6 +331,124 @@ describe('ScriptEditor', () => {
     expect(dfeArea?.value).toContain('base64')
     expect(container.textContent).toContain('Network Speed Simulation')
     expect(container.textContent).toContain('Data Formatting')
+  })
+
+  it('surfaces mobile browser authoring controls and forwards them to browser replay', async () => {
+    const browserScript: ScriptDefinition = {
+      ...initialScript,
+      protocol: 'browser',
+      config: {
+        ...initialScript.config,
+        base_url: 'https://shop.example.com',
+        browser: {
+          engine: 'chromium',
+          headless: true,
+          slow_mo_ms: 25,
+          device_profile: 'iphone_15_pro',
+          touch_mode: true,
+          orientation: 'portrait',
+          client_metrics: true,
+          capture_screenshots: 'per_action',
+          download_resources: 'recorded',
+          viewport: { width: 393, height: 852 },
+        },
+      },
+      actions: [
+        {
+          name: 'Open Home',
+          type: 'browser_navigate',
+          target: '/',
+          selector: '',
+          value: '',
+          capture: { screenshot: false, full_page: false, html: false },
+          think_time_after: true,
+        },
+      ],
+    }
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={browserScript} />)
+    })
+
+    const runtimeToggle = Array.from(container.querySelectorAll('button')).find(button =>
+      button.textContent?.includes('Runtime Settings'),
+    )
+    expect(runtimeToggle).toBeDefined()
+    if (!runtimeToggle) {
+      return
+    }
+
+    await act(async () => {
+      runtimeToggle.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const collapsedSectionToggles = Array.from(container.querySelectorAll('button')).filter(button =>
+      button.className.includes('section-toggle') && button.textContent?.includes('▸'),
+    )
+
+    await act(async () => {
+      collapsedSectionToggles.forEach(button => {
+        button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+    })
+
+    expect(container.textContent).toContain('Browser Engine')
+    expect(container.textContent).toContain('Device Profile')
+    expect(container.textContent).toContain('Force touch mode')
+    expect(container.textContent).toContain('Capture client metrics')
+    expect(container.textContent).toContain('Viewport Width')
+    expect(container.textContent).toContain('Viewport Height')
+
+    const actionItem = container.querySelector('.action-item') as HTMLDivElement | null
+    expect(actionItem).not.toBeNull()
+    if (!actionItem) {
+      return
+    }
+
+    await act(async () => {
+      actionItem.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.textContent).toContain('browser_tap')
+    expect(container.textContent).toContain('browser_long_press')
+    expect(container.textContent).toContain('browser_swipe')
+
+    const replayButton = Array.from(container.querySelectorAll('button')).find(button =>
+      button.textContent?.trim() === 'Run Browser Replay',
+    )
+    expect(replayButton).toBeDefined()
+    if (!replayButton) {
+      return
+    }
+
+    await act(async () => {
+      replayButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(apiMock.startDraftBrowserReplaySession).toHaveBeenCalledWith(expect.objectContaining({
+      browser: expect.objectContaining({
+        engine: 'chromium',
+        headless: true,
+        slow_mo_ms: 25,
+        device_profile: 'iphone_15_pro',
+        touch_mode: true,
+        orientation: 'portrait',
+        client_metrics: true,
+        capture_screenshots: 'per_action',
+        viewport: { width: 393, height: 852 },
+      }),
+      script: expect.objectContaining({
+        protocol: 'browser',
+        config: expect.objectContaining({
+          browser: expect.objectContaining({
+            device_profile: 'iphone_15_pro',
+            touch_mode: true,
+            client_metrics: true,
+          }),
+        }),
+      }),
+    }))
   })
 
   it('round-trips DFE chain options in the compatibility editor', async () => {
