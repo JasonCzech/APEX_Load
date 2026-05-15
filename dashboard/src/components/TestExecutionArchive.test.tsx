@@ -73,6 +73,27 @@ describe('TestExecutionArchive', () => {
       },
     },
     by_action: {},
+    browser_by_engine: {
+      webkit: {
+        browser_engine: 'webkit',
+        samples: 1,
+        avg_fcp_ms: 130,
+        avg_lcp_ms: 240,
+        avg_cls_score: 0.031,
+        avg_inp_ms: 56,
+      },
+    },
+    browser_by_platform: {
+      ios: {
+        device_platform: 'ios',
+        browser_engine: 'webkit',
+        samples: 1,
+        avg_fcp_ms: 130,
+        avg_lcp_ms: 240,
+        avg_cls_score: 0.031,
+        avg_inp_ms: 56,
+      },
+    },
     browser_by_device: {
       iphone_se: {
         device_profile: 'iphone_se',
@@ -193,10 +214,16 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('Reason: Request validation failed')
     expect(container.textContent).toContain('Browser Metrics')
     expect(container.textContent).toContain('Avg FCP')
+    expect(container.textContent).toContain('Engine Rollup')
+    expect(container.textContent).toContain('Platform Rollup')
+    expect(container.textContent).toContain('Devices')
+    expect(container.textContent).toContain('WebKit')
+    expect(container.textContent).toContain('1 samples')
+    expect(container.textContent).toContain('iOS')
     expect(container.textContent).toContain('iphone_se')
     expect(container.textContent).toContain('iOS · WebKit · low tier')
     const archiveDeviceTierTexts = Array.from(container.querySelectorAll('.archive-browser-section .browser-device-tier')).map(node => node.textContent)
-    expect(archiveDeviceTierTexts).toEqual(['iOS · WebKit · low tier'])
+    expect(archiveDeviceTierTexts).toEqual(['1 samples', 'WebKit · 1 samples', 'iOS · WebKit · low tier'])
     expect(container.textContent).toContain('Client Metrics')
     expect(container.textContent).toContain('iphone_se · iOS · WebKit · low tier')
     const detailValueTexts = Array.from(container.querySelectorAll('.scenario-script-detail-value')).map(node => node.textContent)

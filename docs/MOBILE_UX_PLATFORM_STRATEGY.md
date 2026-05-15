@@ -10,7 +10,7 @@ This plan is the strategic umbrella that aligns the existing `MOBILE_BROWSER_EMU
 ### Implemented
 - Layer 1 foundation is in place: named device profiles, browser-family compatibility rules, orientation/touch configuration, mobile gesture actions, and script-editor authoring support are all shipped.
 - Real WebKit execution is now available through a Playwright-backed runtime path for iOS/iPadOS-style profiles, alongside the existing Chromium path for Android and desktop profiles.
-- Layer 2 collection is in place for the current browser metric contract: per-action `ClientMetrics`, optional `browser.client_metrics`, live `browser` and `browser_by_device` summaries, archive persistence, and dashboard drilldown are implemented.
+- Layer 2 collection is in place for the current browser metric contract: per-action `ClientMetrics`, optional `browser.client_metrics`, live `browser` and `browser_by_device` summaries, archive persistence, canonical archive `browser_by_engine` / `browser_by_platform` / `browser_by_device` rollups, and dashboard drilldown are implemented.
 - Validation and replay now surface actionable WebKit prerequisite warnings before execution, and saved scripts can be validated directly from the editor.
 
 ### Remaining
@@ -409,11 +409,11 @@ Dashboard renders side-by-side Core Web Vitals per device group — immediate vi
 ### Implemented Today
 - A browser script can run against named device profiles with browser-family-aware routing (`chromium` or `webkit`), touch semantics, and per-action client metrics.
 - `ClientMetrics` are attached per browser action and remain nil for non-browser protocols.
-- Live and archived results expose browser summaries plus `browser_by_device` segmentation, and the dashboard can drill into archived client metrics.
+- Live and archived results expose browser summaries plus engine/platform/device browser segmentation, and the dashboard can drill into archived client metrics with normalized `Platform · Engine · Tier` labels.
 
 ### Still Required To Close Stage 2 And Stage 4
 - Publish evidence that the configured CPU/network profile differences produce meaningful timing separation on representative applications.
-- Add richer dashboard comparison UX for side-by-side device analysis and per-action waterfall-style diagnostics.
+- Add richer dashboard comparison UX beyond the current overall/platform/engine/device rollups, plus per-action waterfall-style diagnostics.
 - Expand manual browser validation coverage, especially on WebKit hosts with Playwright assets installed.
 
 ### Long-Term

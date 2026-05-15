@@ -1,6 +1,6 @@
 import { Fragment, useState } from 'react'
 
-import { BrowserDeviceLiveMetrics, BrowserLiveMetrics, RunArchiveActionStats, RunArchiveReport, TestSummary, TransactionEvent } from '../types'
+import { BrowserDeviceLiveMetrics, BrowserEngineLiveMetrics, BrowserLiveMetrics, BrowserPlatformLiveMetrics, RunArchiveActionStats, RunArchiveReport, TestSummary, TransactionEvent } from '../types'
 import SnapshotBodyPreview from './SnapshotBodyPreview'
 import SnapshotTextPreview from './SnapshotTextPreview'
 import { extractSOAPFaultSummaryFromBody, formatSOAPFaultSummary } from './soapFaultUtils'
@@ -67,7 +67,14 @@ function formatDevicePlatform(value?: string): string {
   return value || 'unknown'
 }
 
-function renderBrowserSummary(summary: BrowserLiveMetrics, devices?: Record<string, BrowserDeviceLiveMetrics>) {
+function renderBrowserSummary(
+  summary: BrowserLiveMetrics,
+  devices?: Record<string, BrowserDeviceLiveMetrics>,
+  platforms?: Record<string, BrowserPlatformLiveMetrics>,
+  engines?: Record<string, BrowserEngineLiveMetrics>,
+) {
+  const engineEntries = Object.values(engines ?? {}).sort((left, right) => formatBrowserEngine(left.browser_engine).localeCompare(formatBrowserEngine(right.browser_engine)))
+  const platformEntries = Object.values(platforms ?? {}).sort((left, right) => formatDevicePlatform(left.device_platform).localeCompare(formatDevicePlatform(right.device_platform)))
   const deviceEntries = Object.entries(devices ?? {})
 
   return (
@@ -107,23 +114,70 @@ function renderBrowserSummary(summary: BrowserLiveMetrics, devices?: Record<stri
         </div>
       </div>
 
+      {engineEntries.length > 0 && (
+        <>
+          <span className="results-compare-label">Engine Rollup</span>
+          <div className="browser-device-grid archive-browser-device-grid">
+            {engineEntries.map(metrics => (
+              <div key={metrics.browser_engine || 'browser'} className="browser-device-card">
+                <div className="browser-device-header">
+                  <span className="browser-device-name">{formatBrowserEngine(metrics.browser_engine)}</span>
+                  <span className="browser-device-tier">{metrics.samples} samples</span>
+                </div>
+                <div className="browser-device-stats">
+                  <span>FCP {formatBrowserMetric(metrics.avg_fcp_ms, ' ms')}</span>
+                  <span>LCP {formatBrowserMetric(metrics.avg_lcp_ms, ' ms')}</span>
+                  <span>CLS {formatBrowserScore(metrics.avg_cls_score)}</span>
+                  <span>INP {formatBrowserMetric(metrics.avg_inp_ms, ' ms')}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {platformEntries.length > 0 && (
+        <>
+          <span className="results-compare-label">Platform Rollup</span>
+          <div className="browser-device-grid archive-browser-device-grid">
+            {platformEntries.map(metrics => (
+              <div key={metrics.device_platform || 'unknown'} className="browser-device-card">
+                <div className="browser-device-header">
+                  <span className="browser-device-name">{formatDevicePlatform(metrics.device_platform)}</span>
+                  <span className="browser-device-tier">{formatBrowserEngine(metrics.browser_engine)} · {metrics.samples} samples</span>
+                </div>
+                <div className="browser-device-stats">
+                  <span>FCP {formatBrowserMetric(metrics.avg_fcp_ms, ' ms')}</span>
+                  <span>LCP {formatBrowserMetric(metrics.avg_lcp_ms, ' ms')}</span>
+                  <span>CLS {formatBrowserScore(metrics.avg_cls_score)}</span>
+                  <span>INP {formatBrowserMetric(metrics.avg_inp_ms, ' ms')}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
       {deviceEntries.length > 0 && (
-        <div className="browser-device-grid archive-browser-device-grid">
-          {deviceEntries.map(([profile, metrics]) => (
-            <div key={profile} className="browser-device-card">
-              <div className="browser-device-header">
-                <span className="browser-device-name">{profile}</span>
-                <span className="browser-device-tier">{formatDevicePlatform(metrics.device_platform)} · {formatBrowserEngine(metrics.browser_engine)} · {metrics.device_tier || 'unknown'} tier</span>
+        <>
+          <span className="results-compare-label">Devices</span>
+          <div className="browser-device-grid archive-browser-device-grid">
+            {deviceEntries.map(([profile, metrics]) => (
+              <div key={profile} className="browser-device-card">
+                <div className="browser-device-header">
+                  <span className="browser-device-name">{profile}</span>
+                  <span className="browser-device-tier">{formatDevicePlatform(metrics.device_platform)} · {formatBrowserEngine(metrics.browser_engine)} · {metrics.device_tier || 'unknown'} tier</span>
+                </div>
+                <div className="browser-device-stats">
+                  <span>FCP {formatBrowserMetric(metrics.avg_fcp_ms, ' ms')}</span>
+                  <span>LCP {formatBrowserMetric(metrics.avg_lcp_ms, ' ms')}</span>
+                  <span>CLS {formatBrowserScore(metrics.avg_cls_score)}</span>
+                  <span>INP {formatBrowserMetric(metrics.avg_inp_ms, ' ms')}</span>
+                </div>
               </div>
-              <div className="browser-device-stats">
-                <span>FCP {formatBrowserMetric(metrics.avg_fcp_ms, ' ms')}</span>
-                <span>LCP {formatBrowserMetric(metrics.avg_lcp_ms, ' ms')}</span>
-                <span>CLS {formatBrowserScore(metrics.avg_cls_score)}</span>
-                <span>INP {formatBrowserMetric(metrics.avg_inp_ms, ' ms')}</span>
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        </>
       )}
     </div>
   )
@@ -224,7 +278,12 @@ export default function TestExecutionArchive({
             </div>
           </div>
 
-          {archiveReport.overview.browser && renderBrowserSummary(archiveReport.overview.browser, archiveReport.browser_by_device)}
+          {archiveReport.overview.browser && renderBrowserSummary(
+            archiveReport.overview.browser,
+            archiveReport.browser_by_device,
+            archiveReport.browser_by_platform,
+            archiveReport.browser_by_engine,
+          )}
 
           <div className="archive-artifact-row">
             <div className="archive-artifact-group">

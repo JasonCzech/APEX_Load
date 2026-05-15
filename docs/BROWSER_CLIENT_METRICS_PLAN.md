@@ -53,12 +53,13 @@ Primary seams:
 - Product scope is locked to browser web applications running through the existing `browser` protocol.
 - The DSL and result model are in place: `config.browser.client_metrics` exists, browser scripts can opt in explicitly, and `protocol.Result` carries optional `ClientMetrics`.
 - Runtime collection is in place for browser timing and page-performance telemetry: FCP, LCP, CLS, INP, DOM timing, blocking-resource counts, long-task counts, JS heap, layout/style/task duration, screenshots, HTML, console, and network evidence.
-- Aggregation and APIs are in place: live `browser` and `browser_by_device` summaries stream through the API, and archived transaction events persist per-action `client_metrics`.
-- Core dashboard and authoring support are in place: script-editor controls, replay/debug drilldown, archive views, results summaries, and warning flows for WebKit/browser prerequisites.
+- Aggregation and APIs are in place: live `browser` and `browser_by_device` summaries stream through the API, archive reports expose canonical `browser_by_engine`, `browser_by_platform`, and `browser_by_device` rollups, and archived transaction events persist per-action `client_metrics`.
+- Core dashboard and authoring support are in place: script-editor controls, replay/debug drilldown, archive views, run comparison breakdowns, CSV export, and warning flows for WebKit/browser prerequisites.
+- Browser metadata presentation has been normalized in the live and archive UI: device cards now show a single canonical `Platform · Engine · Tier` label instead of duplicating partial browser metadata.
 
 ### Remaining
 - Browser-process CPU and OS-memory sampling are still open; the shipped metrics are browser/page telemetry plus JS heap, not full per-browser process attribution.
-- Dedicated comparison charts and richer resource-waterfall UX are still open.
+- Dedicated comparison charts beyond the current overall/platform/engine/device card breakdowns and richer resource-waterfall UX are still open.
 - Benchmark publication and final positioning guidance for density/overhead are still open.
 
 ## Implementation Phases
@@ -103,7 +104,7 @@ Status: partially complete.
 - Expose capture settings in authoring and validation flows.
 
 Remaining in this phase:
-- add more explicit comparison views and richer waterfall-style diagnostics where the current archive/debug surfaces are still summary-oriented.
+- add charted comparison views and richer waterfall-style diagnostics where the current archive/debug surfaces still emphasize summary cards and event drilldown.
 
 ### Phase 5: Benchmark And Positioning
 Status: not complete.
