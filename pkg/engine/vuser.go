@@ -387,9 +387,17 @@ func actionLogAttrs(actionName string, resolved *protocol.Action, result *protoc
 	}
 
 	if _, ok := options["parameter_substitution"]; ok {
+		target := resolved.Target
+		if resolved.RedactedTarget != "" {
+			target = resolved.RedactedTarget
+		}
+		requestBody := string(resolved.Body)
+		if len(resolved.RedactedBody) > 0 {
+			requestBody = string(resolved.RedactedBody)
+		}
 		attrs = append(attrs,
-			"target", resolved.Target,
-			"request_body", string(resolved.Body),
+			"target", target,
+			"request_body", requestBody,
 		)
 	}
 	if _, ok := options["data_returned"]; ok {
@@ -410,42 +418,72 @@ func actionLogAttrs(actionName string, resolved *protocol.Action, result *protoc
 }
 
 func (vu *VUser) resolveAction(action dsl.Action) *protocol.Action {
+	target, redactedTarget := vu.interpolateWithSecrets(action.Target)
+	selector, _ := vu.interpolateWithSecrets(action.Selector)
+	value, _ := vu.interpolateWithSecrets(action.Value)
+	headers, redactedHeaders := vu.interpolateMapWithSecrets(action.Headers)
+	body, redactedBody := vu.interpolateWithSecrets(action.Body)
+	soapAction, redactedSOAPAction := toProtocolSOAPActions(action.SOAP, vu)
 	return &protocol.Action{
-		Name:       action.Name,
-		Type:       action.Type,
-		Method:     action.Method,
-		Target:     vu.interpolate(action.Target),
-		Selector:   vu.interpolate(action.Selector),
-		Value:      vu.interpolate(action.Value),
-		Headers:    vu.interpolateMap(action.Headers),
-		Body:       []byte(vu.interpolate(action.Body)),
-		Params:     vu.interpolateAnyMap(action.Params),
-		WaitFor:    toProtocolWaitCondition(action.WaitFor, vu),
-		Capture:    toProtocolCaptureOptions(action.Capture),
-		Metadata:   vu.interpolateAnyMap(action.Metadata),
-		Extractors: toProtocolExtractors(action.Extractors),
-		Assertions: toProtocolAssertions(action.Assertions),
-		SOAP:       toProtocolSOAPAction(action.SOAP, vu),
+		Name:            action.Name,
+		Type:            action.Type,
+		Method:          action.Method,
+		Target:          target,
+		RedactedTarget:  redactedTarget,
+		Selector:        selector,
+		Value:           value,
+		Headers:         headers,
+		RedactedHeaders: redactedHeaders,
+		Body:            []byte(body),
+		RedactedBody:    []byte(redactedBody),
+		Params:          vu.interpolateAnyMap(action.Params),
+		WaitFor:         toProtocolWaitCondition(action.WaitFor, vu),
+		Capture:         toProtocolCaptureOptions(action.Capture),
+		Metadata:        vu.interpolateAnyMap(action.Metadata),
+		Extractors:      toProtocolExtractors(action.Extractors),
+		Assertions:      toProtocolAssertions(action.Assertions),
+		SOAP:            soapAction,
+		RedactedSOAP:    redactedSOAPAction,
 	}
 }
 
 func toProtocolSOAPAction(action *dsl.SOAPActionConfig, vu *VUser) *protocol.SOAPActionConfig {
+	resolved, _ := toProtocolSOAPActions(action, vu)
+	return resolved
+}
+
+func toProtocolSOAPActions(action *dsl.SOAPActionConfig, vu *VUser) (*protocol.SOAPActionConfig, *protocol.SOAPActionConfig) {
 	if action == nil {
-		return nil
+		return nil, nil
 	}
+	resolvedAction, redactedAction := vu.interpolateWithSecrets(action.Action)
+	resolvedOperation, redactedOperation := vu.interpolateWithSecrets(action.Operation)
+	resolvedBodyMode, redactedBodyMode := vu.interpolateWithSecrets(action.BodyMode)
 	return &protocol.SOAPActionConfig{
-		Action:    vu.interpolate(action.Action),
-		Operation: vu.interpolate(action.Operation),
-		BodyMode:  vu.interpolate(action.BodyMode),
-	}
+			Action:    resolvedAction,
+			Operation: resolvedOperation,
+			BodyMode:  resolvedBodyMode,
+		}, &protocol.SOAPActionConfig{
+			Action:    redactedAction,
+			Operation: redactedOperation,
+			BodyMode:  redactedBodyMode,
+		}
 }
 
 func (vu *VUser) interpolate(s string) string {
 	if s == "" {
 		return s
 	}
-	return templatePattern.ReplaceAllStringFunc(s, func(token string) string {
-		// token is always {{...}} from the regex.
+	resolved, _ := vu.interpolateWithSecrets(s)
+	return resolved
+}
+
+func (vu *VUser) interpolateWithSecrets(s string) (string, string) {
+	if s == "" {
+		return s, s
+	}
+	hasSecret := false
+	resolved := templatePattern.ReplaceAllStringFunc(s, func(token string) string {
 		expr := strings.TrimSpace(token[2 : len(token)-2])
 		if expr == "" {
 			return token
@@ -455,17 +493,46 @@ func (vu *VUser) interpolate(s string) string {
 		}
 		return token
 	})
+	redacted := templatePattern.ReplaceAllStringFunc(s, func(token string) string {
+		expr := strings.TrimSpace(token[2 : len(token)-2])
+		if expr == "" {
+			return token
+		}
+		if strings.HasPrefix(expr, "secret.") {
+			hasSecret = true
+			return "[REDACTED]"
+		}
+		if value, ok := vu.resolveTemplateValue(expr); ok {
+			return value
+		}
+		return token
+	})
+	if !hasSecret {
+		return resolved, resolved
+	}
+	return resolved, redacted
 }
 
 func (vu *VUser) interpolateMap(m map[string]string) map[string]string {
 	if m == nil {
 		return nil
 	}
-	out := make(map[string]string, len(m))
-	for k, v := range m {
-		out[k] = vu.interpolate(v)
+	resolved, _ := vu.interpolateMapWithSecrets(m)
+	return resolved
+}
+
+func (vu *VUser) interpolateMapWithSecrets(m map[string]string) (map[string]string, map[string]string) {
+	if m == nil {
+		return nil, nil
 	}
-	return out
+	out := make(map[string]string, len(m))
+	redacted := make(map[string]string, len(m))
+	for k, v := range m {
+		resolvedValue, redactedValue := vu.interpolateWithSecrets(v)
+		out[k] = resolvedValue
+		redacted[k] = redactedValue
+	}
+	return out, redacted
 }
 
 func (vu *VUser) interpolateAnyMap(m map[string]any) map[string]any {
@@ -523,6 +590,17 @@ func (vu *VUser) resolveTemplateValue(expr string) (string, bool) {
 	case strings.HasPrefix(expr, "env."):
 		key := strings.TrimSpace(strings.TrimPrefix(expr, "env."))
 		value, ok := os.LookupEnv(key)
+		return value, ok
+	case strings.HasPrefix(expr, "secret."):
+		key := strings.TrimSpace(strings.TrimPrefix(expr, "secret."))
+		if key == "" {
+			return "", false
+		}
+		if value, ok := os.LookupEnv(key); ok {
+			return value, true
+		}
+		normalized := strings.NewReplacer(".", "_", "-", "_").Replace(strings.ToUpper(key))
+		value, ok := os.LookupEnv("STORMRUNNER_SECRET_" + normalized)
 		return value, ok
 	case strings.HasPrefix(expr, "fn."):
 		return resolveBuiltinFunction(expr, time.Now)

@@ -82,6 +82,7 @@ func TestVUser_Interpolate(t *testing.T) {
 
 func TestVUser_Interpolate_EnvAndFn(t *testing.T) {
 	t.Setenv("STORMRUNNER_TEST_ENV", "env-value")
+	t.Setenv("STORMRUNNER_SECRET_DB_PASSWORD", "super-secret")
 	vu := &VUser{Variables: map[string]string{}}
 
 	if got := vu.interpolate("{{env.STORMRUNNER_TEST_ENV}}"); got != "env-value" {
@@ -96,6 +97,10 @@ func TestVUser_Interpolate_EnvAndFn(t *testing.T) {
 
 	if got := vu.interpolate("{{env.STORMRUNNER_MISSING_ENV}}"); got != "{{env.STORMRUNNER_MISSING_ENV}}" {
 		t.Fatalf("missing env should remain unchanged, got %q", got)
+	}
+
+	if got := vu.interpolate("{{secret.db_password}}"); got != "super-secret" {
+		t.Fatalf("secret interpolation = %q, want %q", got, "super-secret")
 	}
 }
 
@@ -428,6 +433,55 @@ func TestVUser_Run_LogsExtendedOptions(t *testing.T) {
 		"dns_ms=2",
 		"ttfb_ms=5",
 	} {
+		if !strings.Contains(logOutput, expected) {
+			t.Fatalf("log output missing %q: %s", expected, logOutput)
+		}
+	}
+}
+
+func TestVUser_Run_RedactsSecretValuesFromLogs(t *testing.T) {
+	t.Setenv("STORMRUNNER_SECRET_LOG_TOKEN", "super-secret")
+
+	protoStub := &loggingProtocol{result: &protocol.Result{
+		Success:       true,
+		StatusCode:    200,
+		Duration:      10 * time.Millisecond,
+		BytesReceived: 64,
+	}}
+
+	var logBuf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	defer slog.SetDefault(prev)
+
+	vu := &VUser{
+		ID:    1,
+		Group: "Checkout",
+		Proto: protoStub,
+		Script: &dsl.Script{
+			Protocol: "http",
+			Config: dsl.ScriptConfig{
+				RunLogic: dsl.RunLogicConfig{Iterations: 1},
+				Log:      dsl.LogConfig{Level: "extended", ExtendedOptions: []string{"parameter_substitution"}},
+			},
+			Actions: []dsl.Action{{
+				Name:   "Checkout",
+				Type:   "request",
+				Method: "POST",
+				Target: "https://example.test/login?token={{secret.log_token}}",
+				Body:   "token={{secret.log_token}}",
+			}},
+		},
+		Metrics: NewMetricsCollector(16),
+	}
+
+	vu.Run(context.Background())
+
+	logOutput := logBuf.String()
+	if strings.Contains(logOutput, "super-secret") {
+		t.Fatalf("expected secret value to be redacted from logs, got %s", logOutput)
+	}
+	for _, expected := range []string{"target=\"https://example.test/login?token=[REDACTED]\"", "request_body=\"token=[REDACTED]\""} {
 		if !strings.Contains(logOutput, expected) {
 			t.Fatalf("log output missing %q: %s", expected, logOutput)
 		}

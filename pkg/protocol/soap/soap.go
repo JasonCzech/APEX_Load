@@ -85,10 +85,30 @@ func (s *SOAP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	prepared := *action
 	prepared.Method = stdhttp.MethodPost
 	prepared.Headers = cloneHeaders(action.Headers)
+	prepared.RedactedTarget = action.RedactedTarget
+	prepared.RedactedHeaders = cloneHeaders(action.RedactedHeaders)
+	prepared.RedactedSOAP = action.RedactedSOAP
 	preparedBody, namespaceConflict := shapeSOAPBody(action, s.version, s.namespaces)
 	prepared.Body = preparedBody
 	prepared.Body = s.applySecurity(prepared.Body)
 	applySOAPDefaults(&prepared, s.version, s.defaultCharset)
+	if len(prepared.RedactedBody) == 0 {
+		redactedPrepared := *action
+		redactedPrepared.Method = stdhttp.MethodPost
+		redactedPrepared.Headers = cloneHeaders(action.Headers)
+		if len(action.RedactedHeaders) > 0 {
+			redactedPrepared.Headers = cloneHeaders(action.RedactedHeaders)
+		}
+		redactedPrepared.SOAP = action.SOAP
+		if action.RedactedSOAP != nil {
+			redactedPrepared.SOAP = action.RedactedSOAP
+		}
+		redactedPreparedBody, _ := shapeSOAPBody(&redactedPrepared, s.version, s.namespaces)
+		redactedPrepared.Body = redactedPreparedBody
+		applySOAPDefaults(&redactedPrepared, s.version, s.defaultCharset)
+		prepared.RedactedBody = redactedPreparedBody
+		prepared.RedactedHeaders = cloneHeaders(redactedPrepared.Headers)
+	}
 	targetURL := resolveSOAPURL(s.baseURL, prepared.Target)
 	envelopeOverheadKB := soapEnvelopeOverheadKB(action, prepared.Body)
 
@@ -133,7 +153,7 @@ func (s *SOAP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 			}
 		}
 	} else if s.failOnFault && result.StatusCode >= 500 && result.ErrorMessage == "" {
-			result.ErrorMessage = "soap fault response"
+		result.ErrorMessage = "soap fault response"
 	}
 
 	return result, nil
@@ -276,11 +296,23 @@ func buildSOAPSnapshot(action *protocol.Action, targetURL string, result *protoc
 	if action == nil || result == nil {
 		return nil
 	}
+	requestURL := targetURL
+	if action.RedactedTarget != "" {
+		requestURL = action.RedactedTarget
+	}
+	headers := cloneHeaders(action.Headers)
+	if len(action.RedactedHeaders) > 0 {
+		headers = cloneHeaders(action.RedactedHeaders)
+	}
+	body := string(action.Body)
+	if len(action.RedactedBody) > 0 {
+		body = string(action.RedactedBody)
+	}
 	return &protocol.ErrorSnapshot{
 		RequestMethod:  action.Method,
-		RequestURL:     targetURL,
-		RequestHeaders: cloneHeaders(action.Headers),
-		RequestBody:    string(action.Body),
+		RequestURL:     requestURL,
+		RequestHeaders: headers,
+		RequestBody:    body,
 		ResponseStatus: result.StatusCode,
 		ResponseBody:   result.ResponseBody,
 	}

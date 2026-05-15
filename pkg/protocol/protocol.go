@@ -55,22 +55,26 @@ type Protocol interface {
 
 // Action represents a single operation (HTTP request, message, etc.) to execute.
 type Action struct {
-	Name       string                 `json:"name"`
-	Type       string                 `json:"type"`
-	Method     string                 `json:"method,omitempty"`
-	Target     string                 `json:"target"`
-	Selector   string                 `json:"selector,omitempty"`
-	Value      string                 `json:"value,omitempty"`
-	Headers    map[string]string      `json:"headers,omitempty"`
-	Body       []byte                 `json:"body,omitempty"`
-	Params     map[string]any         `json:"params,omitempty"`
-	WaitFor    *WaitCondition         `json:"wait_for,omitempty"`
-	Capture    *BrowserCaptureOptions `json:"capture,omitempty"`
-	Metadata   map[string]any         `json:"metadata,omitempty"`
-	Extractors []Extractor            `json:"extractors,omitempty"`
-	Assertions []Assertion            `json:"assertions,omitempty"`
-	ThinkTime  ThinkTimeConfig        `json:"think_time,omitempty"`
-	SOAP       *SOAPActionConfig      `json:"soap,omitempty"`
+	Name            string                 `json:"name"`
+	Type            string                 `json:"type"`
+	Method          string                 `json:"method,omitempty"`
+	Target          string                 `json:"target"`
+	RedactedTarget  string                 `json:"-"`
+	Selector        string                 `json:"selector,omitempty"`
+	Value           string                 `json:"value,omitempty"`
+	Headers         map[string]string      `json:"headers,omitempty"`
+	RedactedHeaders map[string]string      `json:"-"`
+	Body            []byte                 `json:"body,omitempty"`
+	RedactedBody    []byte                 `json:"-"`
+	Params          map[string]any         `json:"params,omitempty"`
+	WaitFor         *WaitCondition         `json:"wait_for,omitempty"`
+	Capture         *BrowserCaptureOptions `json:"capture,omitempty"`
+	Metadata        map[string]any         `json:"metadata,omitempty"`
+	Extractors      []Extractor            `json:"extractors,omitempty"`
+	Assertions      []Assertion            `json:"assertions,omitempty"`
+	ThinkTime       ThinkTimeConfig        `json:"think_time,omitempty"`
+	SOAP            *SOAPActionConfig      `json:"soap,omitempty"`
+	RedactedSOAP    *SOAPActionConfig      `json:"-"`
 }
 
 type SOAPActionConfig struct {
@@ -114,53 +118,53 @@ type DOMSummary struct {
 }
 
 type ClientMetrics struct {
-	DeviceProfile       string  `json:"device_profile,omitempty"`
-	DevicePlatform      string  `json:"device_platform,omitempty"`
-	DeviceTier          string  `json:"device_tier,omitempty"`
-	BrowserEngine       string  `json:"browser_engine,omitempty"`
-	ActionDurationMs    float64 `json:"action_duration_ms,omitempty"`
-	FCPMs               float64 `json:"fcp_ms,omitempty"`
-	LCPMs               float64 `json:"lcp_ms,omitempty"`
-	CLSScore            float64 `json:"cls_score,omitempty"`
-	INPMs               float64 `json:"inp_ms,omitempty"`
-	DOMContentLoadedMs  float64 `json:"dom_content_loaded_ms,omitempty"`
-	DOMCompleteMs       float64 `json:"dom_complete_ms,omitempty"`
-	LoadEventMs         float64 `json:"load_event_ms,omitempty"`
-	BlockingResourceCount int   `json:"blocking_resource_count,omitempty"`
-	TotalResourceCount  int     `json:"total_resource_count,omitempty"`
-	ResourceTransferKB  float64 `json:"resource_transfer_kb,omitempty"`
-	JSHeapUsedMB        float64 `json:"js_heap_used_mb,omitempty"`
-	JSHeapTotalMB       float64 `json:"js_heap_total_mb,omitempty"`
-	LayoutCount         int     `json:"layout_count,omitempty"`
-	RecalcStyleCount    int     `json:"recalc_style_count,omitempty"`
-	ScriptDurationMs    float64 `json:"script_duration_ms,omitempty"`
-	LayoutDurationMs    float64 `json:"layout_duration_ms,omitempty"`
-	TaskDurationMs      float64 `json:"task_duration_ms,omitempty"`
-	LongTaskCount       int     `json:"long_task_count,omitempty"`
+	DeviceProfile         string  `json:"device_profile,omitempty"`
+	DevicePlatform        string  `json:"device_platform,omitempty"`
+	DeviceTier            string  `json:"device_tier,omitempty"`
+	BrowserEngine         string  `json:"browser_engine,omitempty"`
+	ActionDurationMs      float64 `json:"action_duration_ms,omitempty"`
+	FCPMs                 float64 `json:"fcp_ms,omitempty"`
+	LCPMs                 float64 `json:"lcp_ms,omitempty"`
+	CLSScore              float64 `json:"cls_score,omitempty"`
+	INPMs                 float64 `json:"inp_ms,omitempty"`
+	DOMContentLoadedMs    float64 `json:"dom_content_loaded_ms,omitempty"`
+	DOMCompleteMs         float64 `json:"dom_complete_ms,omitempty"`
+	LoadEventMs           float64 `json:"load_event_ms,omitempty"`
+	BlockingResourceCount int     `json:"blocking_resource_count,omitempty"`
+	TotalResourceCount    int     `json:"total_resource_count,omitempty"`
+	ResourceTransferKB    float64 `json:"resource_transfer_kb,omitempty"`
+	JSHeapUsedMB          float64 `json:"js_heap_used_mb,omitempty"`
+	JSHeapTotalMB         float64 `json:"js_heap_total_mb,omitempty"`
+	LayoutCount           int     `json:"layout_count,omitempty"`
+	RecalcStyleCount      int     `json:"recalc_style_count,omitempty"`
+	ScriptDurationMs      float64 `json:"script_duration_ms,omitempty"`
+	LayoutDurationMs      float64 `json:"layout_duration_ms,omitempty"`
+	TaskDurationMs        float64 `json:"task_duration_ms,omitempty"`
+	LongTaskCount         int     `json:"long_task_count,omitempty"`
 }
 
 type ServerTelemetry struct {
-	ServerProcessingMs float64 `json:"server_processing_ms,omitempty"`
-	TransferMs         float64 `json:"transfer_ms,omitempty"`
-	SerializationMs    float64 `json:"serialization_ms,omitempty"`
-	DeserializationMs  float64 `json:"deserialization_ms,omitempty"`
-	RequestPayloadKB   float64 `json:"request_payload_kb,omitempty"`
-	RequestSizeClass   string  `json:"request_size_class,omitempty"`
-	ResponsePayloadKB  float64 `json:"response_payload_kb,omitempty"`
-	ResponseSizeClass  string  `json:"response_size_class,omitempty"`
-	EnvelopeOverheadKB float64 `json:"envelope_overhead_kb,omitempty"`
-	SOAPFaultCode      string  `json:"soap_fault_code,omitempty"`
-	SOAPFaultCategory  string  `json:"soap_fault_category,omitempty"`
-	SOAPNamespaceConflict string `json:"soap_namespace_conflict,omitempty"`
-	RedirectCount      int     `json:"redirect_count,omitempty"`
-	RedirectMs         float64 `json:"redirect_ms,omitempty"`
-	MessageLatencyMs   float64 `json:"message_latency_ms,omitempty"`
-	MessagesSent       int     `json:"messages_sent,omitempty"`
-	MessagesReceived   int     `json:"messages_received,omitempty"`
-	MessagesSentPerSec float64 `json:"messages_sent_per_sec,omitempty"`
+	ServerProcessingMs     float64 `json:"server_processing_ms,omitempty"`
+	TransferMs             float64 `json:"transfer_ms,omitempty"`
+	SerializationMs        float64 `json:"serialization_ms,omitempty"`
+	DeserializationMs      float64 `json:"deserialization_ms,omitempty"`
+	RequestPayloadKB       float64 `json:"request_payload_kb,omitempty"`
+	RequestSizeClass       string  `json:"request_size_class,omitempty"`
+	ResponsePayloadKB      float64 `json:"response_payload_kb,omitempty"`
+	ResponseSizeClass      string  `json:"response_size_class,omitempty"`
+	EnvelopeOverheadKB     float64 `json:"envelope_overhead_kb,omitempty"`
+	SOAPFaultCode          string  `json:"soap_fault_code,omitempty"`
+	SOAPFaultCategory      string  `json:"soap_fault_category,omitempty"`
+	SOAPNamespaceConflict  string  `json:"soap_namespace_conflict,omitempty"`
+	RedirectCount          int     `json:"redirect_count,omitempty"`
+	RedirectMs             float64 `json:"redirect_ms,omitempty"`
+	MessageLatencyMs       float64 `json:"message_latency_ms,omitempty"`
+	MessagesSent           int     `json:"messages_sent,omitempty"`
+	MessagesReceived       int     `json:"messages_received,omitempty"`
+	MessagesSentPerSec     float64 `json:"messages_sent_per_sec,omitempty"`
 	MessagesReceivedPerSec float64 `json:"messages_received_per_sec,omitempty"`
-	ConsumerLagMs      float64 `json:"consumer_lag_ms,omitempty"`
-	ConnectionReused   bool    `json:"connection_reused"`
+	ConsumerLagMs          float64 `json:"consumer_lag_ms,omitempty"`
+	ConnectionReused       bool    `json:"connection_reused"`
 }
 
 // Extractor extracts a value from the response for use in later templates or variables.

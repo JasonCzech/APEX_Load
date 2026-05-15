@@ -791,6 +791,34 @@ func TestHTTP_Execute_FailedAssertion(t *testing.T) {
 	}
 }
 
+func TestBuildHTTPSnapshot_RedactsSecretRequestValues(t *testing.T) {
+	headers := http.Header{}
+	headers.Set("Authorization", "Bearer super-secret")
+
+	snapshot := buildHTTPSnapshot(
+		http.MethodPost,
+		"https://api.example.test/login?token=super-secret",
+		headers,
+		[]byte("token=super-secret"),
+		"https://api.example.test/login?token=[REDACTED]",
+		map[string]string{"Authorization": "Bearer [REDACTED]"},
+		[]byte("token=[REDACTED]"),
+		500,
+		map[string]string{"Content-Type": "text/plain"},
+		[]byte("failure"),
+	)
+
+	if snapshot.RequestURL != "https://api.example.test/login?token=[REDACTED]" {
+		t.Fatalf("RequestURL = %q", snapshot.RequestURL)
+	}
+	if snapshot.RequestHeaders["Authorization"] != "Bearer [REDACTED]" {
+		t.Fatalf("RequestHeaders[Authorization] = %q", snapshot.RequestHeaders["Authorization"])
+	}
+	if snapshot.RequestBody != "token=[REDACTED]" {
+		t.Fatalf("RequestBody = %q", snapshot.RequestBody)
+	}
+}
+
 func TestHTTP_Execute_WithRequiredGlobalContentCheck(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)

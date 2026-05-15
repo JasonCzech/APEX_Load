@@ -364,6 +364,30 @@ func TestSOAPExecuteFlagsSOAP11FaultEnvelope(t *testing.T) {
 	}
 }
 
+func TestBuildSOAPSnapshot_RedactsSecretRequestValues(t *testing.T) {
+	action := &protocol.Action{
+		Method:          http.MethodPost,
+		Headers:         map[string]string{"SOAPAction": "urn:auth#super-secret"},
+		RedactedHeaders: map[string]string{"SOAPAction": "urn:auth#[REDACTED]"},
+		Body:            []byte(`<Envelope><Body><Token>super-secret</Token></Body></Envelope>`),
+		RedactedBody:    []byte(`<Envelope><Body><Token>[REDACTED]</Token></Body></Envelope>`),
+		RedactedTarget:  "https://soap.example.test/AuthService?token=[REDACTED]",
+	}
+	result := &protocol.Result{StatusCode: 500, ResponseBody: "fault"}
+
+	snapshot := buildSOAPSnapshot(action, "https://soap.example.test/AuthService?token=super-secret", result)
+
+	if snapshot.RequestURL != "https://soap.example.test/AuthService?token=[REDACTED]" {
+		t.Fatalf("RequestURL = %q", snapshot.RequestURL)
+	}
+	if snapshot.RequestHeaders["SOAPAction"] != "urn:auth#[REDACTED]" {
+		t.Fatalf("RequestHeaders[SOAPAction] = %q", snapshot.RequestHeaders["SOAPAction"])
+	}
+	if snapshot.RequestBody != `<Envelope><Body><Token>[REDACTED]</Token></Body></Envelope>` {
+		t.Fatalf("RequestBody = %q", snapshot.RequestBody)
+	}
+}
+
 func TestSOAPExecuteFlagsSOAP12FaultEnvelope(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)

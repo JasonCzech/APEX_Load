@@ -106,7 +106,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	if err != nil {
 		result.Duration = time.Since(result.StartTime)
 		result.ErrorMessage = err.Error()
-		result.Snapshot = buildHTTPSnapshot(method, targetURL, nil, action.Body, 0, nil, nil)
+		result.Snapshot = buildHTTPSnapshot(method, targetURL, nil, action.Body, action.RedactedTarget, action.RedactedHeaders, action.RedactedBody, 0, nil, nil)
 		return result, nil
 	}
 	result.DependencyTarget = classifyHTTPDependencyTarget(targetURL)
@@ -162,7 +162,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		result.Duration = time.Since(result.StartTime)
 		result.ServerTelemetry = finalizeHTTPServerTelemetry(result, requestBytes, 0, connectionReused, redirectCount, redirectDuration)
 		result.ErrorMessage = err.Error()
-		result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, action.Body, 0, nil, nil)
+		result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, action.Body, action.RedactedTarget, action.RedactedHeaders, action.RedactedBody, 0, nil, nil)
 		return result, nil
 	}
 
@@ -188,7 +188,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	if err != nil {
 		result.Duration = time.Since(result.StartTime)
 		result.ErrorMessage = err.Error()
-		result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, action.Body, resp.StatusCode, responseHeaders, respBody)
+		result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, action.Body, action.RedactedTarget, action.RedactedHeaders, action.RedactedBody, resp.StatusCode, responseHeaders, respBody)
 		return result, nil
 	}
 	respBody = formattedBody
@@ -214,7 +214,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		}
 	}
 	if !result.Success {
-		result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, action.Body, resp.StatusCode, responseHeaders, respBody)
+		result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, action.Body, action.RedactedTarget, action.RedactedHeaders, action.RedactedBody, resp.StatusCode, responseHeaders, respBody)
 	}
 
 	return result, nil
@@ -292,12 +292,24 @@ func correlationIDFromHTTPHeader(headers http.Header) string {
 	return ""
 }
 
-func buildHTTPSnapshot(method string, targetURL string, requestHeaders http.Header, requestBody []byte, responseStatus int, responseHeaders map[string]string, responseBody []byte) *protocol.ErrorSnapshot {
+func buildHTTPSnapshot(method string, targetURL string, requestHeaders http.Header, requestBody []byte, redactedTarget string, redactedHeaders map[string]string, redactedBody []byte, responseStatus int, responseHeaders map[string]string, responseBody []byte) *protocol.ErrorSnapshot {
+	requestURL := targetURL
+	if redactedTarget != "" {
+		requestURL = redactedTarget
+	}
+	headers := cloneHTTPHeaders(requestHeaders)
+	if len(redactedHeaders) > 0 {
+		headers = cloneStringMap(redactedHeaders)
+	}
+	body := string(requestBody)
+	if len(redactedBody) > 0 {
+		body = string(redactedBody)
+	}
 	return &protocol.ErrorSnapshot{
 		RequestMethod:   method,
-		RequestURL:      targetURL,
-		RequestHeaders:  cloneHTTPHeaders(requestHeaders),
-		RequestBody:     string(requestBody),
+		RequestURL:      requestURL,
+		RequestHeaders:  headers,
+		RequestBody:     body,
 		ResponseStatus:  responseStatus,
 		ResponseHeaders: cloneStringMap(responseHeaders),
 		ResponseBody:    string(responseBody),
