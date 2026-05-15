@@ -18,7 +18,7 @@ The Mobile UX Strategy defines three layers. The equivalent for each protocol fa
 ## Implemented So Far
 
 - Shared `ServerTelemetry` on `protocol.Result`, propagated through engine rollups, controller/generator RPC, archive retention, and dashboard contracts.
-- HTTP timing decomposition for server processing, transfer, payload sizes, and connection reuse.
+- HTTP timing decomposition for server processing, transfer, payload sizes, connection reuse, and redirect-hop timing.
 - SOAP operation tagging, fault categorization, raw envelope-overhead tracking, and fault-code retention on archived events.
 - Java HTTP dependency tagging plus helper/codec metadata propagation.
 - JMS payload sizing, request/reply timing, message counts, and consumer-lag retention on archived events.
@@ -55,13 +55,9 @@ Each protocol must populate enough telemetry for the dashboard to answer the sam
 
 ### 1. HTTP Protocol
 
-**Current state:** Most mature. Has DNS, TCP, TLS, TTFB timing phases, content checks, data formatting, proxy, auth, correlation IDs, dependency classification. Missing the analytical layer.
+**Current state:** Most mature. Has DNS, TCP, TLS, TTFB timing phases, server-processing and transfer decomposition, redirect hop timing, content checks, data formatting, proxy, auth, correlation IDs, and dependency classification. Missing the analytical layer.
 
 **L2 gaps:**
-- No **server processing time** decomposition (TTFB minus connect = server think time)
-- No **transfer time** isolation (total minus TTFB = content transfer)
-- No **redirect chain** timing (time spent following redirects, number of hops)
-- No **connection reuse** signal (new vs. pooled connection per request)
 - No **response size classification** (small/medium/large for pattern detection)
 
 **L3 gaps:**
