@@ -227,7 +227,6 @@ export default function TestExecutionStatusPanels({
                 <div key={profile} className="browser-device-card">
                   <div className="browser-device-header">
                     <span className="browser-device-name">{profile}</span>
-                    <span className="browser-device-tier">{formatBrowserEngine(deviceMetrics.browser_engine)} · {deviceMetrics.device_tier || 'unknown'} tier</span>
                     <span className="browser-device-tier">{formatDevicePlatform(deviceMetrics.device_platform)} · {formatBrowserEngine(deviceMetrics.browser_engine)} · {deviceMetrics.device_tier || 'unknown'} tier</span>
                   </div>
                   <div className="browser-device-stats">
