@@ -53,6 +53,12 @@ function formatBrowserScore(value: number | undefined): string {
   return value.toFixed(3)
 }
 
+function formatBrowserEngine(value?: string): string {
+  if (value === 'webkit') return 'WebKit'
+  if (value === 'chromium') return 'Chromium'
+  return value || 'browser'
+}
+
 function telemetryBadgeClass(metrics?: LiveMetricsSummary): 'healthy' | 'warning' | 'danger' {
   const telemetry = metrics?.telemetry
   if (!telemetry) return 'healthy'
@@ -213,7 +219,7 @@ export default function TestExecutionStatusPanels({
                 <div key={profile} className="browser-device-card">
                   <div className="browser-device-header">
                     <span className="browser-device-name">{profile}</span>
-                    <span className="browser-device-tier">{deviceMetrics.device_tier || 'unknown'} tier</span>
+                    <span className="browser-device-tier">{formatBrowserEngine(deviceMetrics.browser_engine)} · {deviceMetrics.device_tier || 'unknown'} tier</span>
                   </div>
                   <div className="browser-device-stats">
                     <span>FCP {formatBrowserMetric(deviceMetrics.avg_fcp_ms, ' ms')}</span>

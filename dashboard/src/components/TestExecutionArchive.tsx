@@ -53,6 +53,12 @@ function formatBrowserScore(value: number | undefined): string {
   return value.toFixed(3)
 }
 
+function formatBrowserEngine(value?: string): string {
+  if (value === 'webkit') return 'WebKit'
+  if (value === 'chromium') return 'Chromium'
+  return value || 'browser'
+}
+
 function renderBrowserSummary(summary: BrowserLiveMetrics, devices?: Record<string, BrowserDeviceLiveMetrics>) {
   const deviceEntries = Object.entries(devices ?? {})
 
@@ -99,7 +105,7 @@ function renderBrowserSummary(summary: BrowserLiveMetrics, devices?: Record<stri
             <div key={profile} className="browser-device-card">
               <div className="browser-device-header">
                 <span className="browser-device-name">{profile}</span>
-                <span className="browser-device-tier">{metrics.device_tier || 'unknown'} tier</span>
+                <span className="browser-device-tier">{formatBrowserEngine(metrics.browser_engine)} · {metrics.device_tier || 'unknown'} tier</span>
               </div>
               <div className="browser-device-stats">
                 <span>FCP {formatBrowserMetric(metrics.avg_fcp_ms, ' ms')}</span>
@@ -423,7 +429,7 @@ export default function TestExecutionArchive({
                                       <div className="archive-event-detail-header">
                                         <span className="scenario-script-detail-label">Client Metrics</span>
                                       </div>
-                                      <span className="scenario-script-detail-value">{event.client_metrics.device_profile || 'browser'} · {event.client_metrics.device_tier || 'unknown'} tier</span>
+                                      <span className="scenario-script-detail-value">{event.client_metrics.device_profile || 'browser'} · {formatBrowserEngine(event.client_metrics.browser_engine)} · {event.client_metrics.device_tier || 'unknown'} tier</span>
                                       <pre className="archive-event-detail-pre">
                                         FCP: {formatBrowserMetric(event.client_metrics.fcp_ms, ' ms')}{'\n'}
                                         LCP: {formatBrowserMetric(event.client_metrics.lcp_ms, ' ms')}{'\n'}

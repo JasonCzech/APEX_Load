@@ -204,6 +204,7 @@ func TestMetricsCollector_BrowserMetricsSummary(t *testing.T) {
 			ClientMetrics: &protocol.ClientMetrics{
 				DeviceProfile:         "iphone_se",
 				DeviceTier:            "low",
+				BrowserEngine:         "webkit",
 				FCPMs:                 120,
 				LCPMs:                 220,
 				CLSScore:              0.02,
@@ -220,6 +221,7 @@ func TestMetricsCollector_BrowserMetricsSummary(t *testing.T) {
 			ClientMetrics: &protocol.ClientMetrics{
 				DeviceProfile:         "iphone_se",
 				DeviceTier:            "low",
+				BrowserEngine:         "webkit",
 				FCPMs:                 180,
 				LCPMs:                 280,
 				CLSScore:              0.04,
@@ -236,6 +238,7 @@ func TestMetricsCollector_BrowserMetricsSummary(t *testing.T) {
 			ClientMetrics: &protocol.ClientMetrics{
 				DeviceProfile:         "pixel_8",
 				DeviceTier:            "high",
+				BrowserEngine:         "chromium",
 				FCPMs:                 90,
 				LCPMs:                 160,
 				CLSScore:              0.01,
@@ -263,8 +266,18 @@ func TestMetricsCollector_BrowserMetricsSummary(t *testing.T) {
 	if iphone.DeviceTier != "low" {
 		t.Fatalf("DeviceTier = %q, want low", iphone.DeviceTier)
 	}
+	if iphone.BrowserEngine != "webkit" {
+		t.Fatalf("BrowserEngine = %q, want webkit", iphone.BrowserEngine)
+	}
 	if iphone.AvgFCPMs != 150 {
 		t.Fatalf("AvgFCPMs = %v, want 150", iphone.AvgFCPMs)
+	}
+	pixel := snap.BrowserByDevice["pixel_8"]
+	if pixel == nil {
+		t.Fatal("missing pixel_8 summary")
+	}
+	if pixel.BrowserEngine != "chromium" {
+		t.Fatalf("pixel_8 BrowserEngine = %q, want chromium", pixel.BrowserEngine)
 	}
 }
 

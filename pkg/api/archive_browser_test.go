@@ -40,6 +40,7 @@ func TestBuildRunArchiveReportAggregatesBrowserMetrics(t *testing.T) {
 		ClientMetrics: &protocol.ClientMetrics{
 			DeviceProfile:         "iphone_se",
 			DeviceTier:            "low",
+			BrowserEngine:         "webkit",
 			FCPMs:                 120,
 			LCPMs:                 240,
 			CLSScore:              0.03,
@@ -75,5 +76,8 @@ func TestBuildRunArchiveReportAggregatesBrowserMetrics(t *testing.T) {
 	}
 	if report.BrowserByDevice["iphone_se"].DeviceTier != "low" {
 		t.Fatalf("device tier = %q, want low", report.BrowserByDevice["iphone_se"].DeviceTier)
+	}
+	if report.BrowserByDevice["iphone_se"].BrowserEngine != "webkit" {
+		t.Fatalf("browser engine = %q, want webkit", report.BrowserByDevice["iphone_se"].BrowserEngine)
 	}
 }

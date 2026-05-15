@@ -499,6 +499,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 					deviceMetrics = &BrowserDeviceLiveMetrics{
 						DeviceProfile: profile,
 						DeviceTier:    tx.ClientMetrics.DeviceTier,
+						BrowserEngine: tx.ClientMetrics.BrowserEngine,
 					}
 					report.BrowserByDevice[profile] = deviceMetrics
 				}
@@ -620,6 +621,9 @@ func finalizeReportBrowserMetrics(summary *BrowserLiveMetrics) {
 func mergeReportBrowserDeviceMetrics(summary *BrowserDeviceLiveMetrics, metrics *protocol.ClientMetrics) {
 	if summary == nil || metrics == nil {
 		return
+	}
+	if summary.BrowserEngine == "" {
+		summary.BrowserEngine = metrics.BrowserEngine
 	}
 	summary.Samples++
 	summary.AvgFCPMs += metrics.FCPMs

@@ -244,6 +244,7 @@ export interface IntervalSummaryRecord {
 export interface ClientMetrics {
   device_profile?: string
   device_tier?: string
+  browser_engine?: string
   action_duration_ms?: number
   fcp_ms?: number
   lcp_ms?: number
@@ -417,6 +418,7 @@ export interface BrowserLiveMetrics {
 export interface BrowserDeviceLiveMetrics extends BrowserLiveMetrics {
   device_profile?: string
   device_tier?: string
+  browser_engine?: string
 }
 
 export interface TelemetryHealth {

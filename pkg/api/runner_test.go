@@ -514,6 +514,7 @@ func TestBuildLiveMetricsFromSnapshot(t *testing.T) {
 			"iphone_se": {
 				DeviceProfile:        "iphone_se",
 				DeviceTier:           "low",
+				BrowserEngine:        "webkit",
 				Samples:              2,
 				AvgFCPMs:             120,
 				AvgLCPMs:             240,
@@ -547,6 +548,9 @@ func TestBuildLiveMetricsFromSnapshot(t *testing.T) {
 	}
 	if live.BrowserByDevice == nil || live.BrowserByDevice["iphone_se"] == nil {
 		t.Fatalf("expected browser-by-device metrics to be mapped, got %#v", live.BrowserByDevice)
+	}
+	if live.BrowserByDevice["iphone_se"].BrowserEngine != "webkit" {
+		t.Fatalf("expected browser engine to be mapped, got %#v", live.BrowserByDevice["iphone_se"])
 	}
 
 	login, ok := live.Transactions["login"]
@@ -979,6 +983,7 @@ func TestLoadStoredTestHistoryBuildsLiveMetricsFromTypedIntervalSummaries(t *tes
 					"iphone_se": {
 						DeviceProfile:        "iphone_se",
 						DeviceTier:           "low",
+						BrowserEngine:        "webkit",
 						Samples:              2,
 						AvgFCPMs:             120,
 						AvgLCPMs:             240,
@@ -1019,6 +1024,9 @@ func TestLoadStoredTestHistoryBuildsLiveMetricsFromTypedIntervalSummaries(t *tes
 	}
 	if testRun.LiveMetrics.BrowserByDevice == nil || testRun.LiveMetrics.BrowserByDevice["iphone_se"] == nil || testRun.LiveMetrics.BrowserByDevice["iphone_se"].DeviceTier != "low" {
 		t.Fatalf("expected browser-by-device summary to round-trip from typed history, got %#v", testRun.LiveMetrics.BrowserByDevice)
+	}
+	if testRun.LiveMetrics.BrowserByDevice["iphone_se"].BrowserEngine != "webkit" {
+		t.Fatalf("expected browser engine to round-trip from typed history, got %#v", testRun.LiveMetrics.BrowserByDevice["iphone_se"])
 	}
 }
 

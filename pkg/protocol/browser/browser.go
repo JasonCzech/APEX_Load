@@ -1049,6 +1049,7 @@ func (b *Browser) captureClientMetrics(ctx context.Context, duration time.Durati
 	metrics := &protocol.ClientMetrics{
 		DeviceProfile:    b.deviceProfile,
 		DeviceTier:       b.deviceTier,
+		BrowserEngine:    b.engine,
 		ActionDurationMs: float64(duration) / float64(time.Millisecond),
 	}
 
