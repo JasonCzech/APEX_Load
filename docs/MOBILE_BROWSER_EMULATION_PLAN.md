@@ -3,38 +3,51 @@
 ## Objective
 Add mobile device emulation to Stormrunner's existing browser protocol so that the same engine used for desktop browser tests can run mobile web tests with accurate device simulation.
 
-This is positioned as a configuration extension of the existing `pkg/protocol/browser` implementation, not a new protocol. It replaces the need for a dedicated "TrueClient MobileWeb" protocol by leveraging the Chromium DevTools Protocol (CDP) device emulation capabilities already available through the `chromedp` driver.
+This is positioned as a configuration extension of the existing `pkg/protocol/browser` implementation, not a new protocol. The current implementation now uses a browser-family-aware runtime split: Chromium-backed execution continues through `chromedp`/CDP, while iOS/iPadOS-style WebKit execution uses Playwright. The public DSL surface remains the singular `browser` protocol.
 
 ## Relationship To Other Plans
 - **Browser Client Metrics** (`docs/BROWSER_CLIENT_METRICS_PLAN.md`): That plan focuses on collecting user-perceived performance telemetry from browser sessions. Mobile emulation adds device simulation beneath it. Both features compose naturally — mobile emulation controls the browser environment, client metrics collect the telemetry.
 - **Protocol Extension** (`docs/PROTOCOL_EXTENSION_PLAN.md`): SOAP and Java-over-HTTP are separate protocol implementations. Mobile emulation stays within the existing browser protocol boundary.
+
+## Status Snapshot (May 2026)
+
+### Implemented
+- Named device profiles are compiled into `pkg/protocol/browser/devices.go`, including browser-family metadata, orientation defaults, CPU throttle defaults, network presets, and device tiers.
+- DSL, engine wiring, and validation support `config.browser.device_profile`, `touch_mode`, `orientation`, and `client_metrics`, including compatibility checks between profiles and browser engines.
+- Mobile interaction support is shipped: `browser_tap`, `browser_long_press`, `browser_swipe`, plus automatic click-to-touch mapping in mobile mode.
+- WebKit-backed execution is shipped for WebKit device profiles, with actionable install guidance surfaced through validation and replay APIs and the dashboard editor.
+- Script-editor authoring and replay flows support browser engine selection, device profiles, touch mode, orientation, and saved-script validation.
+
+### Remaining
+- TrueClient MobileWeb import is still unimplemented.
+- Published mobile-browser benchmark guidance and hardening work are still open.
+- Broader scenario-level/dashboard mobile UX polish is still incomplete compared with the script-editor/browser-replay surfaces.
 
 ## Current Baseline
 
 ### What The Browser Protocol Already Supports
 The existing `pkg/protocol/browser` implementation provides:
 
-- Chromium execution via `chromedp` (the same browser engine used by TruClient 2.0)
+- Chromium execution via `chromedp` and WebKit execution via Playwright, both under the same `browser` protocol surface
 - Headless and headed modes
 - Custom user agent via `config["browser_user_agent"]`
 - Custom viewport dimensions via `config["browser_viewport_width"]` and `config["browser_viewport_height"]`
 - Network throttling with presets (56K, DSL, T1, 10Mbps) and custom bandwidth/latency
 - Download filtering (allow list / block list)
 - Cache control, recorded resource filtering, and new-user-per-iteration browser reset
-- Actions: `browser_navigate`, `browser_click`, `browser_fill`, `browser_wait`, `browser_screenshot`
+- Actions: `browser_navigate`, `browser_click`, `browser_fill`, `browser_wait`, `browser_screenshot`, `browser_tap`, `browser_long_press`, `browser_swipe`
 - Full network event capture, console log capture, DOM summary extraction
 - Error snapshots with screenshots, HTML, console, and network evidence
+- Per-action browser client metrics when `browser.client_metrics` is enabled
 
 ### What The DSL Already Supports
-`pkg/dsl/types.go` includes `BrowserConfig` with viewport, user agent, headless, cache, and download settings. `WebRuntimeConfig` covers network simulation, download filters, and content checks. `WaitCondition` and `BrowserCaptureOptions` are available on actions.
+`pkg/dsl/types.go` includes `BrowserConfig` with viewport, user agent, headless, cache, engine, device profile, orientation, touch mode, and client metrics settings. `WebRuntimeConfig` covers network simulation, download filters, and content checks. `WaitCondition` and `BrowserCaptureOptions` are available on actions.
 
 ### What Is Missing
-- No CDP device metric override (`Emulation.setDeviceMetricsOverride`) for `mobile: true` and `deviceScaleFactor`
-- No touch event dispatch (`Input.dispatchTouchEvent`) — all interactions use mouse events
-- No device profile presets (viewport + user agent + scale factor + touch mode as a named bundle)
-- No orientation emulation (portrait/landscape toggle)
 - No TrueClient script format import or conversion
-- No automatic click-to-tap mapping when running in mobile mode
+- No published mobile-browser benchmark envelope or hardening guidance
+- No complete scenario/dashboard device UX across every authoring surface
+- No broad real-application validation matrix yet for WebKit- and Chromium-backed mobile profiles
 
 ## Design Principles
 
@@ -429,13 +442,13 @@ When editing a browser script with a device profile:
 
 ## 8. Implementation Phases
 
-| Phase | Milestone | Deliverables | Exit Criteria |
-|:---|:---|:---|:---|
-| **Phase 1** | **Device Profiles + CDP Emulation** | Device profile registry, `Emulation.setDeviceMetricsOverride`, orientation support, DSL extensions, engine config wiring, unit tests | A browser script with `device_profile: iphone_15_pro` launches Chromium with correct viewport, scale, mobile flag, and user agent |
-| **Phase 2** | **Touch Event Simulation** | `browser_tap`, `browser_swipe`, `browser_long_press` action types, auto click-to-tap mapping, touch emulation via CDP, unit tests | Touch actions execute on mobile-configured browser; `browser_click` automatically dispatches touch events in mobile mode |
-| **Phase 3** | **Dashboard UX** | Device profile selector in Create Scenario modal, device badge on cards, orientation toggle, script editor device indicator | Users can create and configure mobile browser scenarios from the dashboard |
-| **Phase 4** | **TrueClient Import** | `pkg/convert/trueclient` package, step-to-action mapping, device profile extraction from `.usr` + `default.cfg`, API endpoint, unit tests | A TrueClient MobileWeb `.zip` import produces a runnable Stormrunner browser script with correct device profile and mapped actions |
-| **Phase 5** | **Hardening + Benchmarks** | Memory benchmarks, touch latency benchmarks, documented scale guidance, edge case coverage | Published memory/latency measurements; documented operational guidance for mobile browser VUser density |
+| Phase | Status | Milestone | Deliverables | Exit Criteria |
+|:---|:---|:---|:---|:---|
+| **Phase 1** | **Complete** | **Device Profiles + Runtime Emulation** | Device profile registry, orientation support, DSL extensions, engine config wiring, browser-family-aware runtime selection, unit tests | Named device profiles launch with the expected viewport, scale, mobile flag, user agent, and browser engine |
+| **Phase 2** | **Complete** | **Touch Event Simulation** | `browser_tap`, `browser_swipe`, `browser_long_press` action types, auto click-to-tap mapping, touch emulation, unit tests | Touch actions execute on mobile-configured browser; `browser_click` dispatches touch interactions in mobile mode |
+| **Phase 3** | **Partially Complete** | **Dashboard UX** | Script-editor device profile selector, orientation toggle, replay/config validation warnings, mobile/browser settings authoring | Core mobile browser scenarios can be authored and replayed from the dashboard, but broader scenario-level UX is still incomplete |
+| **Phase 4** | **Not Started** | **TrueClient Import** | `pkg/convert/trueclient` package, step-to-action mapping, device profile extraction from `.usr` + `default.cfg`, API endpoint, unit tests | A TrueClient MobileWeb `.zip` import produces a runnable Stormrunner browser script with correct device profile and mapped actions |
+| **Phase 5** | **Not Started** | **Hardening + Benchmarks** | Memory benchmarks, touch latency benchmarks, documented scale guidance, edge case coverage | Published memory/latency measurements; documented operational guidance for mobile browser VUser density |
 
 ## 9. Risks And Mitigations
 
@@ -456,12 +469,13 @@ When editing a browser script with a device profile:
 
 ### External Requirements
 - Chromium/Chrome installed on generator pods (already required for existing browser protocol)
+- Playwright WebKit assets installed on the controller host for WebKit-backed mobile/browser runs
 - 3–5 sample TrueClient MobileWeb scripts for import test fixtures (Phase 4 blocker)
 
 ## Summary
-Mobile browser emulation extends Stormrunner's existing browser protocol with device profiles, touch events, and orientation support. The architecture stays within the current protocol boundary — no new protocol registration, no separate runtime, no external dependencies beyond what the browser protocol already requires.
+Mobile browser emulation now extends Stormrunner's existing browser protocol with device profiles, touch events, orientation support, browser-family-aware runtime execution, and editor/replay validation guidance. The architecture still stays within the current protocol boundary — no new protocol registration, and no split public DSL surface.
 
-The implementation is ordered so that Phases 1–3 (device emulation + touch + dashboard) can ship independently of Phase 4 (TrueClient import). Net-new mobile web tests are available immediately; legacy script migration follows when sample scripts are available for validation.
+The remaining work is now concentrated in three areas: broader dashboard/scenario UX polish, TrueClient import, and published benchmark guidance. Net-new mobile web tests are already available; legacy script migration and operational scale guidance still need dedicated follow-through.
 
 Related documentation:
 - Browser client metrics: `docs/BROWSER_CLIENT_METRICS_PLAN.md`

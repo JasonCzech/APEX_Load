@@ -1,7 +1,7 @@
 # Browser Client Metrics Plan
 
 ## Objective
-Add a browser-client metrics capability that serves as Stormrunner's practical equivalent to LoadRunner TrueClient for web applications. The first release should focus on real browser sessions for web apps and capture user-perceived action latency, browser process CPU and memory, and screenshots or related artifacts.
+Add a browser-client metrics capability that serves as Stormrunner's practical equivalent to LoadRunner TrueClient for web applications. The current implementation already covers the browser-side timing and artifact portion of that goal; the remaining gap is mainly browser-process sampling, benchmark publication, and some comparison UX.
 
 This is intentionally not a full TrueClient clone. The current architecture is well suited for browser-side synthetic UX telemetry, but not for native desktop UI automation parity.
 
@@ -47,35 +47,67 @@ Primary seams:
 - `pkg/api/archive.go` for archived per-action browser metric persistence
 - `dashboard/src/types.ts` and browser replay UI surfaces for presentation
 
+## Status Snapshot (May 2026)
+
+### Implemented
+- Product scope is locked to browser web applications running through the existing `browser` protocol.
+- The DSL and result model are in place: `config.browser.client_metrics` exists, browser scripts can opt in explicitly, and `protocol.Result` carries optional `ClientMetrics`.
+- Runtime collection is in place for browser timing and page-performance telemetry: FCP, LCP, CLS, INP, DOM timing, blocking-resource counts, long-task counts, JS heap, layout/style/task duration, screenshots, HTML, console, and network evidence.
+- Aggregation and APIs are in place: live `browser` and `browser_by_device` summaries stream through the API, and archived transaction events persist per-action `client_metrics`.
+- Core dashboard and authoring support are in place: script-editor controls, replay/debug drilldown, archive views, results summaries, and warning flows for WebKit/browser prerequisites.
+
+### Remaining
+- Browser-process CPU and OS-memory sampling are still open; the shipped metrics are browser/page telemetry plus JS heap, not full per-browser process attribution.
+- Dedicated comparison charts and richer resource-waterfall UX are still open.
+- Benchmark publication and final positioning guidance for density/overhead are still open.
+
 ## Implementation Phases
 
 ### Phase 0: Lock Product Boundaries
+Status: complete.
+
 - Confirm this feature targets browser web apps first.
 - Define the metric contract for v1.
 - Set non-goals explicitly so the work does not expand into desktop automation.
 
 ### Phase 1: DSL And Result Model
+Status: complete.
+
 - Add browser metric capture settings to the DSL.
 - Extend protocol results with optional browser client metric fields.
 - Preserve backward compatibility for existing browser and non-browser scripts.
 
 ### Phase 2: Runtime Collection
+Status: mostly complete.
+
 - Reuse the existing browser protocol runtime.
 - Capture post-action timing using browser performance APIs and CDP.
 - Sample browser process CPU and memory conservatively.
 - Attach screenshots and other artifacts using the current snapshot model.
 
+Remaining in this phase:
+- add browser-process CPU and OS-memory sampling, or explicitly narrow the v1 contract to the current page/runtime metrics.
+
 ### Phase 3: Aggregation And APIs
+Status: complete for the current metric contract.
+
 - Add summarized browser KPIs to live metrics.
 - Extend archive transaction records for per-action browser client detail.
 - Keep payload size controlled so live streaming remains practical.
 
 ### Phase 4: Dashboard And Authoring
+Status: partially complete.
+
 - Add browser-specific execution cards and charts.
 - Reuse browser replay drilldown for screenshots, console, network, and DOM detail.
 - Expose capture settings in authoring and validation flows.
 
+Remaining in this phase:
+- add more explicit comparison views and richer waterfall-style diagnostics where the current archive/debug surfaces are still summary-oriented.
+
 ### Phase 5: Benchmark And Positioning
+Status: not complete.
+
 - Benchmark browser density and overhead with client metrics disabled and enabled.
 - Document this as a low-concurrency diagnostic mode, not a replacement for Stormrunner's high-scale HTTP engine.
 

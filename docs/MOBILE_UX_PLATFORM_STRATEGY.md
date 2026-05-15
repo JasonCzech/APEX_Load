@@ -5,6 +5,20 @@ Position Stormrunner as a **synthetic digital experience platform** — capable 
 
 This plan is the strategic umbrella that aligns the existing `MOBILE_BROWSER_EMULATION_PLAN.md` and `BROWSER_CLIENT_METRICS_PLAN.md` under one long-term trajectory. Both plans remain valid as tactical implementation guides — this document ensures they converge toward the same product goal rather than diverging into disconnected features.
 
+## Status Snapshot (May 2026)
+
+### Implemented
+- Layer 1 foundation is in place: named device profiles, browser-family compatibility rules, orientation/touch configuration, mobile gesture actions, and script-editor authoring support are all shipped.
+- Real WebKit execution is now available through a Playwright-backed runtime path for iOS/iPadOS-style profiles, alongside the existing Chromium path for Android and desktop profiles.
+- Layer 2 collection is in place for the current browser metric contract: per-action `ClientMetrics`, optional `browser.client_metrics`, live `browser` and `browser_by_device` summaries, archive persistence, and dashboard drilldown are implemented.
+- Validation and replay now surface actionable WebKit prerequisite warnings before execution, and saved scripts can be validated directly from the editor.
+
+### Remaining
+- Stage 2 is only partially complete: device profiles now carry `CPUThrottleRate` and `NetworkPreset`, and the runtime applies them, but calibration against real devices, benchmark evidence, and any memory-pressure model are still open.
+- Stage 4 still has UX gaps: dedicated device-comparison views, richer resource-waterfall drilldown, and broader manual browser validation on real applications are not finished.
+- Stage 5 TrueClient MobileWeb import has not started and remains blocked on representative fixture scripts.
+- Stage 6 UX intelligence work has not started.
+
 ## Why This Matters
 Traditional performance testing measures server response time. Modern web applications spend 40-70% of perceived latency in **client-side rendering, JavaScript execution, and layout computation**. A user on an iPhone SE over 4G experiences a fundamentally different application than a user on a desktop with fiber — even when the server response is identical.
 
@@ -182,7 +196,7 @@ The existing plans define tactical phases. This section maps them to the strateg
 
 **Strategic gate:** After this stage, validate that mobile-configured browsers serve mobile CSS, fire touch events, and render responsively. If visual fidelity is poor, stop and fix before adding performance measurement.
 
-### Stage 2: Performance Simulation (New Work)
+### Stage 2: Performance Simulation (Partially Complete)
 - Extend device profiles with `CPUThrottleRate` and `NetworkPreset`
 - Apply `Emulation.setCPUThrottlingRate` during `Init()`
 - Wire device-specific network presets to existing throttling infrastructure
@@ -191,9 +205,9 @@ The existing plans define tactical phases. This section maps them to the strateg
 **Key deliverables:**
 - `browser/devices.go` updated with performance characteristics per device
 - `browser.go Init()` applies CPU throttling from profile
-- Unit tests confirming throttle rate is applied and timing changes
+- Unit tests confirming profile defaults are wired; benchmark calibration and timing validation are still open
 
-**Effort:** 1-2 days (builds directly on Stage 1)
+**Remaining work:** benchmark calibration, decide whether to add memory-pressure simulation, and publish operational guidance for how approximate the simulated profile timings are.
 
 ### Stage 3: Client Metrics Collection (Browser Client Metrics Plan Phases 1-2)
 - `ClientMetrics` struct on `protocol.Result`
@@ -390,22 +404,20 @@ Dashboard renders side-by-side Core Web Vitals per device group — immediate vi
 | Device comparison requires many browser VUsers | High resource cost | Position as canary mode (5-10 VUsers per profile); pair with HTTP bulk load |
 | Layer 3 UX Intelligence scope creep | Delays Layers 1-2 | Defer Layer 3 until Stages 1-4 produce real data; treat as separate product phase |
 
-## Success Criteria
+## Completion Bar
 
-### Stage 1-2 Complete (Device Emulation + Performance Simulation)
-- A browser script with `device_profile: iphone_se` produces measurably slower page loads than `device_profile: desktop_1080p` on the same application
-- CPU throttle rate is visible in CDP `Performance.getMetrics` output
+### Implemented Today
+- A browser script can run against named device profiles with browser-family-aware routing (`chromium` or `webkit`), touch semantics, and per-action client metrics.
+- `ClientMetrics` are attached per browser action and remain nil for non-browser protocols.
+- Live and archived results expose browser summaries plus `browser_by_device` segmentation, and the dashboard can drill into archived client metrics.
 
-### Stage 3 Complete (Client Metrics Collection)
-- Every browser action populates `ClientMetrics` with LCP, FCP, CLS, JS heap, layout counts
-- Metrics are nil for non-browser protocols (zero overhead)
+### Still Required To Close Stage 2 And Stage 4
+- Publish evidence that the configured CPU/network profile differences produce meaningful timing separation on representative applications.
+- Add richer dashboard comparison UX for side-by-side device analysis and per-action waterfall-style diagnostics.
+- Expand manual browser validation coverage, especially on WebKit hosts with Playwright assets installed.
 
-### Stage 4 Complete (Dashboard)
-- Dashboard shows Core Web Vitals per device group in a comparison view
-- Per-action resource waterfall is available in results drilldown
-
-### Long-Term (Stage 6)
-- Teams can answer: "Will this release degrade the checkout experience on iPhone SE over 4G?" before deploying to production
+### Long-Term
+- Teams should eventually be able to answer: "Will this release degrade the checkout experience on iPhone SE over 4G?" before deploying to production, with anomaly detection layered on top of the collected metrics.
 
 ## Summary
 This plan ensures that the mobile emulation work (device profiles, touch events) and the client metrics work (Core Web Vitals, CDP performance) converge toward a unified mobile UX performance platform. The key architectural decision is extending `DeviceProfile` with performance characteristics (CPU throttle, network preset) so that device simulation and measurement are always coupled — you can't measure mobile performance without simulating mobile constraints.
