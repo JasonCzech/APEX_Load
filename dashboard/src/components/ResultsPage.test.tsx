@@ -76,6 +76,16 @@ describe('ResultsPage', () => {
         },
       },
       by_action: {},
+      browser_by_platform: {
+        [id === 'run-a' ? 'ios' : 'ipados']: {
+          samples: id === 'run-a' ? 4 : 2,
+          device_platform: id === 'run-a' ? 'ios' : 'ipados',
+          browser_engine: 'webkit',
+          avg_lcp_ms: id === 'run-a' ? 250 : 280,
+          avg_cls_score: id === 'run-a' ? 0.029 : 0.018,
+          avg_inp_ms: id === 'run-a' ? 68 : 64,
+        },
+      },
       browser_by_device: {
         [id === 'run-a' ? 'iPhone 14 Pro' : 'iPad Air']: {
           samples: 2,
@@ -193,8 +203,8 @@ describe('ResultsPage', () => {
 
     expect(container.textContent).toContain('Platform Rollup')
     expect(container.textContent).toContain('iOS')
-    expect(container.textContent).toContain('WebKit · 3 samples')
-    expect(container.textContent).toContain('246.7 ms')
+    expect(container.textContent).toContain('WebKit · 4 samples')
+    expect(container.textContent).toContain('250.0 ms')
     expect(container.textContent).not.toContain('iPhone 14 Pro')
 
     await act(async () => {

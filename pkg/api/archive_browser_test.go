@@ -30,32 +30,60 @@ func TestBuildRunArchiveReportAggregatesBrowserMetrics(t *testing.T) {
 	if err := os.WriteFile(manifestPath, manifestBytes, 0o644); err != nil {
 		t.Fatalf("write manifest: %v", err)
 	}
-	transaction := TransactionEvent{
-		Timestamp:  manifest.CreatedAt,
-		TestID:     manifest.TestID,
-		TestName:   manifest.TestName,
-		ActionName: "browser_navigate",
-		DurationMs: 150,
-		Success:    true,
-		ClientMetrics: &protocol.ClientMetrics{
-			DeviceProfile:         "iphone_se",
-			DevicePlatform:        "ios",
-			DeviceTier:            "low",
-			BrowserEngine:         "webkit",
-			FCPMs:                 120,
-			LCPMs:                 240,
-			CLSScore:              0.03,
-			INPMs:                 55,
-			BlockingResourceCount: 2,
-			LongTaskCount:         1,
-			JSHeapUsedMB:          18,
+	transactions := []TransactionEvent{
+		{
+			Timestamp:  manifest.CreatedAt,
+			TestID:     manifest.TestID,
+			TestName:   manifest.TestName,
+			ActionName: "browser_navigate",
+			DurationMs: 150,
+			Success:    true,
+			ClientMetrics: &protocol.ClientMetrics{
+				DeviceProfile:         "iphone_se",
+				DevicePlatform:        "ios",
+				DeviceTier:            "low",
+				BrowserEngine:         "webkit",
+				FCPMs:                 120,
+				LCPMs:                 240,
+				CLSScore:              0.03,
+				INPMs:                 55,
+				BlockingResourceCount: 2,
+				LongTaskCount:         1,
+				JSHeapUsedMB:          18,
+			},
+		},
+		{
+			Timestamp:  manifest.CreatedAt.Add(5 * time.Second),
+			TestID:     manifest.TestID,
+			TestName:   manifest.TestName,
+			ActionName: "browser_navigate",
+			DurationMs: 170,
+			Success:    true,
+			ClientMetrics: &protocol.ClientMetrics{
+				DeviceProfile:         "iphone_15_pro",
+				DevicePlatform:        "ios",
+				DeviceTier:            "high",
+				BrowserEngine:         "webkit",
+				FCPMs:                 140,
+				LCPMs:                 300,
+				CLSScore:              0.05,
+				INPMs:                 65,
+				BlockingResourceCount: 3,
+				LongTaskCount:         2,
+				JSHeapUsedMB:          20,
+			},
 		},
 	}
-	txBytes, err := json.Marshal(transaction)
-	if err != nil {
-		t.Fatalf("marshal transaction: %v", err)
+	var txPayload []byte
+	for _, transaction := range transactions {
+		txBytes, err := json.Marshal(transaction)
+		if err != nil {
+			t.Fatalf("marshal transaction: %v", err)
+		}
+		txPayload = append(txPayload, txBytes...)
+		txPayload = append(txPayload, '\n')
 	}
-	if err := os.WriteFile(filepath.Join(tempDir, manifest.TransactionsFile), append(txBytes, '\n'), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(tempDir, manifest.TransactionsFile), txPayload, 0o644); err != nil {
 		t.Fatalf("write transactions: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(tempDir, manifest.ResourceSamplesFile), nil, 0o644); err != nil {
@@ -69,7 +97,7 @@ func TestBuildRunArchiveReportAggregatesBrowserMetrics(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildRunArchiveReport: %v", err)
 	}
-	if report.Overview.Browser == nil || report.Overview.Browser.Samples != 1 {
+	if report.Overview.Browser == nil || report.Overview.Browser.Samples != 2 {
 		t.Fatalf("expected browser overview summary, got %#v", report.Overview.Browser)
 	}
 	if report.BrowserByDevice == nil || report.BrowserByDevice["iphone_se"] == nil {
@@ -83,5 +111,17 @@ func TestBuildRunArchiveReportAggregatesBrowserMetrics(t *testing.T) {
 	}
 	if report.BrowserByDevice["iphone_se"].DevicePlatform != "ios" {
 		t.Fatalf("device platform = %q, want ios", report.BrowserByDevice["iphone_se"].DevicePlatform)
+	}
+	if report.BrowserByPlatform == nil || report.BrowserByPlatform["ios"] == nil {
+		t.Fatalf("expected browser-by-platform summary, got %#v", report.BrowserByPlatform)
+	}
+	if report.BrowserByPlatform["ios"].BrowserEngine != "webkit" {
+		t.Fatalf("platform browser engine = %q, want webkit", report.BrowserByPlatform["ios"].BrowserEngine)
+	}
+	if report.BrowserByPlatform["ios"].Samples != 2 {
+		t.Fatalf("platform samples = %d, want 2", report.BrowserByPlatform["ios"].Samples)
+	}
+	if report.BrowserByPlatform["ios"].AvgLCPMs != 270 {
+		t.Fatalf("platform AvgLCPMs = %v, want 270", report.BrowserByPlatform["ios"].AvgLCPMs)
 	}
 }

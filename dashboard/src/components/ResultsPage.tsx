@@ -2,7 +2,7 @@ import { memo, useCallback, useEffect, useMemo, useState } from 'react'
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 
 import { downloadBlob } from '../utils/fileUtils'
-import { Application, BrowserDeviceLiveMetrics, IntervalSummaryRecord, Release, RunArchiveReport, TestSummary } from '../types'
+import { Application, BrowserDeviceLiveMetrics, BrowserPlatformLiveMetrics, IntervalSummaryRecord, Release, RunArchiveReport, TestSummary } from '../types'
 import { useApi } from '../hooks/useApi'
 import { getErrorMessage } from '../utils/errorUtils'
 import StatusBadge from './StatusBadge'
@@ -57,16 +57,12 @@ function getBrowserDeviceEntries(report?: RunArchiveReport): Array<[string, Brow
   return Object.entries(report?.browser_by_device ?? {}).sort(([left], [right]) => left.localeCompare(right))
 }
 
-interface BrowserPlatformMetrics {
-  platform: string
-  engine?: string
-  samples: number
-  avg_lcp_ms?: number
-  avg_cls_score?: number
-  avg_inp_ms?: number
-}
+function getBrowserPlatformEntries(report?: RunArchiveReport): BrowserPlatformLiveMetrics[] {
+  const archivedEntries = Object.values(report?.browser_by_platform ?? {})
+  if (archivedEntries.length > 0) {
+    return archivedEntries.sort((left, right) => formatDevicePlatform(left.device_platform).localeCompare(formatDevicePlatform(right.device_platform)))
+  }
 
-function getBrowserPlatformEntries(report?: RunArchiveReport): BrowserPlatformMetrics[] {
   const entries = Object.values(report?.browser_by_device ?? {})
   if (entries.length === 0) return []
 
@@ -105,14 +101,14 @@ function getBrowserPlatformEntries(report?: RunArchiveReport): BrowserPlatformMe
 
   return Array.from(grouped.values())
     .map(entry => ({
-      platform: entry.platform,
-      engine: entry.engine,
+      device_platform: entry.platform,
+      browser_engine: entry.engine,
       samples: entry.samples,
       avg_lcp_ms: entry.samples > 0 ? entry.lcpTotal / entry.samples : undefined,
       avg_cls_score: entry.samples > 0 ? entry.clsTotal / entry.samples : undefined,
       avg_inp_ms: entry.samples > 0 ? entry.inpTotal / entry.samples : undefined,
     }))
-    .sort((left, right) => formatDevicePlatform(left.platform).localeCompare(formatDevicePlatform(right.platform)))
+    .sort((left, right) => formatDevicePlatform(left.device_platform).localeCompare(formatDevicePlatform(right.device_platform)))
 }
 
 function resolveStatus(test: TestSummary, testStatuses: Record<string, string>) {
@@ -609,10 +605,10 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
                           <span className="results-compare-label">Platform Rollup</span>
                           <div className="browser-device-grid archive-browser-device-grid">
                             {platformEntries.map(metrics => (
-                              <div key={metrics.platform} className="browser-device-card">
+                              <div key={metrics.device_platform || 'unknown'} className="browser-device-card">
                                 <div className="browser-device-header">
-                                  <span className="browser-device-name">{formatDevicePlatform(metrics.platform)}</span>
-                                  <span className="browser-device-tier">{formatBrowserEngine(metrics.engine)} · {metrics.samples} samples</span>
+                                  <span className="browser-device-name">{formatDevicePlatform(metrics.device_platform)}</span>
+                                  <span className="browser-device-tier">{formatBrowserEngine(metrics.browser_engine)} · {metrics.samples} samples</span>
                                 </div>
                                 <div className="browser-device-stats">
                                   <span>LCP {formatBrowserMetric(metrics.avg_lcp_ms, ' ms')}</span>

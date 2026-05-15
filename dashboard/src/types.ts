@@ -314,8 +314,14 @@ export interface RunArchiveReport {
   manifest: RunArchiveManifest
   overview: RunArchiveOverview
   by_action: Record<string, RunArchiveActionStats>
+  browser_by_platform?: Record<string, BrowserPlatformLiveMetrics>
   browser_by_device?: Record<string, BrowserDeviceLiveMetrics>
   resource_peaks: RunArchiveResourcePeaks
+}
+
+export interface BrowserPlatformLiveMetrics extends BrowserLiveMetrics {
+  device_platform?: string
+  browser_engine?: string
 }
 
 export interface ScenarioDraftGroup {
