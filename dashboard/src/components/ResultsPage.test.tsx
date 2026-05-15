@@ -80,7 +80,9 @@ describe('ResultsPage', () => {
         [id === 'run-a' ? 'iPhone 14 Pro' : 'iPad Air']: {
           samples: 2,
           device_profile: id === 'run-a' ? 'iPhone 14 Pro' : 'iPad Air',
+          device_platform: id === 'run-a' ? 'ios' : 'ipados',
           device_tier: id === 'run-a' ? 'mobile' : 'tablet',
+          browser_engine: 'webkit',
           avg_lcp_ms: id === 'run-a' ? 240 : 280,
           avg_cls_score: id === 'run-a' ? 0.023 : 0.018,
           avg_inp_ms: id === 'run-a' ? 56 : 64,
@@ -151,8 +153,8 @@ describe('ResultsPage', () => {
     expect(container.textContent).toContain('56.0 ms')
     expect(container.textContent).toContain('64.0 ms')
     expect(container.textContent).toContain('iPhone 14 Pro')
-    expect(container.textContent).toContain('mobile tier')
+    expect(container.textContent).toContain('iOS · WebKit · mobile tier')
     expect(container.textContent).toContain('iPad Air')
-    expect(container.textContent).toContain('tablet tier')
+    expect(container.textContent).toContain('iPadOS · WebKit · tablet tier')
   })
 })

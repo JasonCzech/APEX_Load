@@ -38,6 +38,20 @@ function formatBrowserScore(value?: number) {
   return typeof value === 'number' && Number.isFinite(value) ? value.toFixed(3) : 'n/a'
 }
 
+function formatBrowserEngine(value?: string) {
+  if (value === 'webkit') return 'WebKit'
+  if (value === 'chromium') return 'Chromium'
+  return value || 'browser'
+}
+
+function formatDevicePlatform(value?: string) {
+  if (value === 'ios') return 'iOS'
+  if (value === 'ipados') return 'iPadOS'
+  if (value === 'android') return 'Android'
+  if (value === 'desktop') return 'Desktop'
+  return value || 'unknown'
+}
+
 function getBrowserDeviceEntries(report?: RunArchiveReport): Array<[string, BrowserDeviceLiveMetrics]> {
   return Object.entries(report?.browser_by_device ?? {}).sort(([left], [right]) => left.localeCompare(right))
 }
@@ -514,7 +528,7 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
                             <div key={profile} className="browser-device-card">
                               <div className="browser-device-header">
                                 <span className="browser-device-name">{profile}</span>
-                                <span className="browser-device-tier">{metrics.device_tier || 'unknown'} tier</span>
+                                <span className="browser-device-tier">{formatDevicePlatform(metrics.device_platform)} · {formatBrowserEngine(metrics.browser_engine)} · {metrics.device_tier || 'unknown'} tier</span>
                               </div>
                               <div className="browser-device-stats">
                                 <span>LCP {formatBrowserMetric(metrics.avg_lcp_ms, ' ms')}</span>
