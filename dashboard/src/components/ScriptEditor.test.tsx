@@ -15,6 +15,7 @@ const apiMock = {
   getScript: vi.fn(),
   createScript: vi.fn(),
   updateScript: vi.fn(),
+  validateScript: vi.fn(),
   replayDraftScript: vi.fn(),
   replayScript: vi.fn(),
   startDraftBrowserReplaySession: vi.fn(),
@@ -103,6 +104,12 @@ describe('ScriptEditor', () => {
     apiMock.getScript.mockResolvedValue({ script: initialScript })
     apiMock.createScript.mockResolvedValue({ id: 'script-1' })
     apiMock.updateScript.mockResolvedValue({ id: 'script-1' })
+    apiMock.validateScript.mockResolvedValue({
+      script_id: 'script-1',
+      valid: true,
+      issues: [],
+      warnings: [],
+    })
     apiMock.replayDraftScript.mockResolvedValue({
       report: {
         group: 'Checkout Flow-replay',
@@ -263,6 +270,65 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('Protocol')
     const protocolSelect = container.querySelector('select')
     expect(protocolSelect?.value).toBe('http')
+  })
+
+  it('validates a saved script and renders returned warnings', async () => {
+    apiMock.validateScript.mockResolvedValueOnce({
+      script_id: 'script-1',
+      valid: true,
+      issues: [],
+      warnings: ['WebKit execution depends on Playwright assets being installed on the controller host.'],
+    })
+
+    await act(async () => {
+      root.render(<ScriptEditor scriptId="script-1" initialScript={initialScript} />)
+    })
+
+    const validateButton = Array.from(container.querySelectorAll('button')).find(button =>
+      button.textContent?.trim() === 'Validate Saved Script',
+    )
+    expect(validateButton).toBeDefined()
+    if (!validateButton) {
+      return
+    }
+
+    await act(async () => {
+      validateButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(apiMock.validateScript).toHaveBeenCalledWith('script-1')
+    expect(container.textContent).toContain('Saved script validation passed with warnings.')
+    expect(container.textContent).toContain('WebKit execution depends on Playwright assets being installed on the controller host.')
+  })
+
+  it('renders saved script validation issues when validation fails', async () => {
+    apiMock.validateScript.mockResolvedValueOnce({
+      script_id: 'script-1',
+      valid: false,
+      issues: ['browser action 1 is missing a selector for browser_click'],
+      warnings: ['WebKit device profile requires the WebKit engine.'],
+    })
+
+    await act(async () => {
+      root.render(<ScriptEditor scriptId="script-1" initialScript={initialScript} />)
+    })
+
+    const validateButton = Array.from(container.querySelectorAll('button')).find(button =>
+      button.textContent?.trim() === 'Validate Saved Script',
+    )
+    expect(validateButton).toBeDefined()
+    if (!validateButton) {
+      return
+    }
+
+    await act(async () => {
+      validateButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('browser action 1 is missing a selector for browser_click')
+    expect(container.textContent).toContain('WebKit device profile requires the WebKit engine.')
   })
 
   it('renders the new Web HTTP/HTML runtime sections from the draft model', async () => {

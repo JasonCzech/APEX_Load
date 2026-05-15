@@ -384,9 +384,11 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
     setSaving,
     setScript,
     setSuccess,
+    setValidating,
     setWarnings,
     success,
     toggleSection,
+    validating,
     warnings,
     closeParameterDialog,
     closeReplayScreenshot,
@@ -1126,6 +1128,30 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
     } finally { setSaving(false) }
   }
 
+  const handleValidateSavedScript = async () => {
+    if (!scriptId) return
+    setError('')
+    setSuccess('')
+    setWarnings([])
+    setValidating(true)
+    try {
+      const res = await api.validateScript(scriptId)
+      const validationWarnings = normalizeWarnings(res.warnings)
+      setWarnings(validationWarnings)
+      if (res.valid) {
+        setSuccess(validationWarnings.length > 0 ? 'Saved script validation passed with warnings.' : 'Saved script validation passed.')
+        return
+      }
+      setError(res.issues.join(' | ') || 'Saved script validation failed.')
+    } catch (e: unknown) {
+      const validationWarnings = normalizeWarnings(getErrorWarnings(e))
+      setWarnings(validationWarnings)
+      setError(getErrorMessage(e, 'Saved script validation failed'))
+    } finally {
+      setValidating(false)
+    }
+  }
+
   const handleReplay = async () => {
     setError('')
     setSuccess('')
@@ -1822,15 +1848,20 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
             <button className="btn btn-ghost" onClick={toggleJsonMode}>
               {jsonMode ? '◧ Form' : '{ } JSON'}
             </button>
+            {scriptId && (
+              <button className="btn btn-ghost" onClick={handleValidateSavedScript} disabled={saving || replaying || validating}>
+                {validating ? 'Validating…' : 'Validate Saved Script'}
+              </button>
+            )}
             {isBrowserScript && activeReplaySessionId && (
               <button className="btn btn-ghost" onClick={handleStopReplay} disabled={!replaying}>
                 Stop Replay
               </button>
             )}
-            <button className="btn btn-ghost" onClick={handleReplay} disabled={replaying || saving || !script.name || script.actions.length === 0}>
+            <button className="btn btn-ghost" onClick={handleReplay} disabled={replaying || saving || validating || !script.name || script.actions.length === 0}>
               {replaying ? (isBrowserScript ? 'Browser Replay…' : 'Replaying…') : (isBrowserScript ? 'Browser Replay' : 'Replay')}
             </button>
-            <button className="btn btn-primary" onClick={handleSave} disabled={saving || !script.name}>
+            <button className="btn btn-primary" onClick={handleSave} disabled={saving || validating || !script.name}>
               {saving ? 'Saving…' : 'Save Script'}
             </button>
             {onClose && <button className="btn btn-ghost" onClick={onClose}>✕</button>}
@@ -4552,6 +4583,7 @@ function useScriptEditorState(initialScript?: ScriptData | null) {
   const [script, setScript] = useState<ScriptData>(initialScript || { ...EMPTY_SCRIPT })
   const [activeAction, setActiveAction] = useState<number | null>(null)
   const [saving, setSaving] = useState(false)
+  const [validating, setValidating] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [warnings, setWarnings] = useState<string[]>([])
@@ -4668,9 +4700,11 @@ function useScriptEditorState(initialScript?: ScriptData | null) {
     setSaving,
     setScript,
     setSuccess,
+    setValidating,
     setWarnings,
     success,
     toggleSection,
+    validating,
     warnings,
     closeReplayScreenshot,
   }
