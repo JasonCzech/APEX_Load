@@ -76,12 +76,13 @@ function getBrowserBreakdownChartData(
   devices?: Record<string, BrowserDeviceLiveMetrics>,
   platforms?: Record<string, BrowserPlatformLiveMetrics>,
   engines?: Record<string, BrowserEngineLiveMetrics>,
-): Array<{ segment: string; lcp?: number; inp?: number }> {
+): Array<{ segment: string; lcp?: number; inp?: number; cls?: number }> {
   if (breakdown === 'overall') {
     return [{
       segment: 'Overall',
       lcp: summary.avg_lcp_ms,
       inp: summary.avg_inp_ms,
+      cls: summary.avg_cls_score,
     }]
   }
 
@@ -91,6 +92,7 @@ function getBrowserBreakdownChartData(
         segment: formatDevicePlatform(metrics.device_platform),
         lcp: metrics.avg_lcp_ms,
         inp: metrics.avg_inp_ms,
+        cls: metrics.avg_cls_score,
       }))
       .sort((left, right) => left.segment.localeCompare(right.segment))
   }
@@ -101,6 +103,7 @@ function getBrowserBreakdownChartData(
         segment: formatBrowserEngine(metrics.browser_engine),
         lcp: metrics.avg_lcp_ms,
         inp: metrics.avg_inp_ms,
+        cls: metrics.avg_cls_score,
       }))
       .sort((left, right) => left.segment.localeCompare(right.segment))
   }
@@ -110,15 +113,16 @@ function getBrowserBreakdownChartData(
       segment: profile,
       lcp: metrics.avg_lcp_ms,
       inp: metrics.avg_inp_ms,
+      cls: metrics.avg_cls_score,
     }))
     .sort((left, right) => left.segment.localeCompare(right.segment))
 }
 
 function getBrowserBreakdownTitle(breakdown: BrowserBreakdown): string {
-  if (breakdown === 'overall') return 'Browser Overview Breakdown'
-  if (breakdown === 'platform') return 'Browser Platform Breakdown'
-  if (breakdown === 'engine') return 'Browser Engine Breakdown'
-  return 'Browser Device Breakdown'
+  if (breakdown === 'overall') return 'Browser Overview Breakdown (LCP / INP / CLS)'
+  if (breakdown === 'platform') return 'Browser Platform Breakdown (LCP / INP / CLS)'
+  if (breakdown === 'engine') return 'Browser Engine Breakdown (LCP / INP / CLS)'
+  return 'Browser Device Breakdown (LCP / INP / CLS)'
 }
 
 function renderBrowserSummary(
@@ -190,15 +194,18 @@ function renderBrowserSummary(
           </div>
           <div className="results-compare-chart-card">
             <h4 className="results-compare-chart-title">{chartTitle}</h4>
+            <p className="results-compare-chart-copy">Series: LCP and INP on the left axis, CLS on the right axis.</p>
             <ResponsiveContainer width="100%" height={260}>
               <LineChart data={breakdownChartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 <XAxis dataKey="segment" stroke="var(--text-muted)" fontSize={11} />
-                <YAxis stroke="var(--text-muted)" fontSize={11} />
+                <YAxis yAxisId="timings" stroke="var(--text-muted)" fontSize={11} />
+                <YAxis yAxisId="cls" orientation="right" stroke="var(--text-muted)" fontSize={11} domain={[0, 'auto']} />
                 <Tooltip />
                 <Legend />
-                <Line type="monotone" dataKey="lcp" name="LCP" stroke="var(--accent)" strokeWidth={2} dot={{ r: 3 }} connectNulls />
-                <Line type="monotone" dataKey="inp" name="INP" stroke="var(--accent-2, #d97706)" strokeWidth={2} dot={{ r: 3 }} connectNulls />
+                <Line yAxisId="timings" type="monotone" dataKey="lcp" name="LCP" stroke="var(--accent)" strokeWidth={2} dot={{ r: 3 }} connectNulls />
+                <Line yAxisId="timings" type="monotone" dataKey="inp" name="INP" stroke="var(--accent-2, #d97706)" strokeWidth={2} dot={{ r: 3 }} connectNulls />
+                <Line yAxisId="cls" type="monotone" dataKey="cls" name="CLS" stroke="var(--chart-4, #10b981)" strokeWidth={2} dot={{ r: 3 }} connectNulls />
               </LineChart>
             </ResponsiveContainer>
           </div>

@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, memo, useCallback, useEffect, useMemo, useState } from 'react'
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 
 import { downloadBlob } from '../utils/fileUtils'
@@ -582,10 +582,10 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
   }, [comparisonBreakdown, comparisonCards])
 
   const browserBreakdownChartTitle = useMemo(() => {
-    if (comparisonBreakdown === 'overall') return 'Browser Overview Comparison'
-    if (comparisonBreakdown === 'platform') return 'Browser Platform Comparison'
-    if (comparisonBreakdown === 'engine') return 'Browser Engine Comparison'
-    return 'Browser Device Comparison'
+    if (comparisonBreakdown === 'overall') return 'Browser Overview Comparison (LCP / INP)'
+    if (comparisonBreakdown === 'platform') return 'Browser Platform Comparison (LCP / INP)'
+    if (comparisonBreakdown === 'engine') return 'Browser Engine Comparison (LCP / INP)'
+    return 'Browser Device Comparison (LCP / INP)'
   }, [comparisonBreakdown])
 
   const handleSort = (field: SortField) => {
@@ -917,6 +917,7 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
                   {browserBreakdownChartData.length > 0 && comparisonCards.length === 2 && (
                     <div className="results-compare-chart-card">
                       <h4 className="results-compare-chart-title">{browserBreakdownChartTitle}</h4>
+                      <p className="results-compare-chart-copy">Series: solid LCP and dashed INP for each selected run.</p>
                       <ResponsiveContainer width="100%" height={280}>
                         <LineChart data={browserBreakdownChartData}>
                           <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
@@ -925,16 +926,27 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
                           <Tooltip />
                           <Legend />
                           {comparisonCards.map(({ test }, index) => (
-                            <Line
-                              key={test.id}
-                              type="monotone"
-                              dataKey={test.id}
-                              name={`${test.name} LCP`}
-                              stroke={comparisonRunColor(index)}
-                              strokeWidth={2}
-                              dot={{ r: 3 }}
-                              connectNulls
-                            />
+                            <Fragment key={test.id}>
+                              <Line
+                                type="monotone"
+                                dataKey={test.id}
+                                name={`${test.name} LCP`}
+                                stroke={comparisonRunColor(index)}
+                                strokeWidth={2}
+                                dot={{ r: 3 }}
+                                connectNulls
+                              />
+                              <Line
+                                type="monotone"
+                                dataKey={`${test.id}_inp`}
+                                name={`${test.name} INP`}
+                                stroke={comparisonRunColor(index)}
+                                strokeWidth={2}
+                                strokeDasharray="4 2"
+                                dot={{ r: 3 }}
+                                connectNulls
+                              />
+                            </Fragment>
                           ))}
                         </LineChart>
                       </ResponsiveContainer>

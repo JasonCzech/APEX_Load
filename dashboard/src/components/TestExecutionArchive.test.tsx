@@ -218,7 +218,7 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('Code: env:Sender')
     expect(container.textContent).toContain('Reason: Request validation failed')
     expect(container.textContent).toContain('Browser Metrics')
-    expect(container.textContent).toContain('Browser Device Breakdown')
+    expect(container.textContent).toContain('Browser Device Breakdown (LCP / INP / CLS)')
     expect(container.textContent).toContain('Avg FCP')
     expect(container.textContent).toContain('Engine Rollup')
     expect(container.textContent).toContain('Platform Rollup')
@@ -252,21 +252,22 @@ describe('TestExecutionArchive', () => {
       await Promise.resolve()
     })
 
-    expect(container.textContent).toContain('Browser Overview Breakdown')
+    expect(container.textContent).toContain('Browser Overview Breakdown (LCP / INP / CLS)')
 
     await act(async () => {
       engineBreakdownButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       await Promise.resolve()
     })
 
-    expect(container.textContent).toContain('Browser Engine Breakdown')
+    expect(container.textContent).toContain('Browser Engine Breakdown (LCP / INP / CLS)')
 
     await act(async () => {
       platformBreakdownButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       await Promise.resolve()
     })
 
-    expect(container.textContent).toContain('Browser Platform Breakdown')
+    expect(container.textContent).toContain('Browser Platform Breakdown (LCP / INP / CLS)')
+    expect(container.textContent).toContain('Series: LCP and INP on the left axis, CLS on the right axis.')
     const copyFaultButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Copy fault'))
     const copyRequestButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Copy request'))
     const copyResponseButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Copy response'))
@@ -444,7 +445,8 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('Engine Rollup')
     expect(container.textContent).toContain('Platform Rollup')
     expect(container.textContent).toContain('Devices')
-    expect(container.textContent).toContain('Browser Device Breakdown')
+    expect(container.textContent).toContain('Browser Device Breakdown (LCP / INP / CLS)')
+    expect(container.textContent).toContain('Series: LCP and INP on the left axis, CLS on the right axis.')
 
     const browserNames = Array.from(container.querySelectorAll('.archive-browser-section .browser-device-name')).map(node => node.textContent)
     expect(browserNames).toEqual(['Chromium', 'WebKit', 'Android', 'iOS', 'iphone_se', 'pixel_8'])
