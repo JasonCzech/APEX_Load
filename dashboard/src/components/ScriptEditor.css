@@ -710,6 +710,14 @@
   object-fit: contain;
 }
 
+.browser-viewport-image-button {
+  display: block;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: zoom-in;
+}
+
 .browser-viewport-empty {
   display: flex;
   flex-direction: column;
@@ -758,6 +766,136 @@
 .browser-debugger-metrics strong {
   color: var(--text-primary);
   font-size: 13px;
+}
+
+.browser-debugger-details {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(148, 163, 184, 0.04);
+}
+
+.browser-debugger-details-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.browser-debugger-detail-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.browser-debugger-details-header strong {
+  display: block;
+  color: var(--text-primary);
+  font-size: 13px;
+  margin-top: 2px;
+}
+
+.browser-debugger-section-label {
+  color: var(--text-muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.browser-debugger-detail-status {
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: rgba(148, 163, 184, 0.15);
+  color: var(--text-muted);
+}
+
+.browser-debugger-detail-status.success {
+  background: rgba(34, 197, 94, 0.14);
+  color: var(--success);
+}
+
+.browser-debugger-detail-status.error {
+  background: rgba(239, 68, 68, 0.14);
+  color: var(--danger);
+}
+
+.browser-debugger-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.browser-debugger-detail-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-primary);
+  min-width: 0;
+}
+
+.browser-debugger-detail-item-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+}
+
+.browser-debugger-detail-actions-group {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.browser-debugger-detail-item-wide {
+  grid-column: 1 / -1;
+}
+
+.browser-debugger-detail-item span {
+  color: var(--text-muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.browser-debugger-detail-item strong {
+  color: var(--text-primary);
+  font-size: 12px;
+  word-break: break-word;
+}
+
+.browser-debugger-detail-item small {
+  color: var(--text-muted);
+  font-size: 11px;
+  word-break: break-all;
+}
+
+.browser-debugger-detail-preview {
+  margin: 2px 0 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 120px;
+  overflow: auto;
+}
+
+.browser-debugger-detail-item.error strong {
+  color: var(--danger);
 }
 
 .browser-debugger-events {
@@ -833,6 +971,13 @@
   border-radius: 10px;
   background: var(--bg-primary);
   padding: 12px 14px;
+}
+
+.replay-code-block-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
 }
 
 .replay-activity-card {
@@ -945,6 +1090,18 @@
   color: var(--text-primary);
 }
 
+.snapshot-body-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.snapshot-body-toggle {
+  padding-inline: 10px;
+}
+
 .replay-variables-empty {
   margin-top: 6px;
   color: var(--text-secondary);
@@ -1050,11 +1207,29 @@
   gap: 10px;
 }
 
+.replay-browser-grid-header {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
 .replay-screenshot-block {
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--bg-primary);
   padding: 12px 14px;
+}
+
+.replay-screenshot-button {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: zoom-in;
 }
 
 .replay-screenshot-block img {
@@ -1064,6 +1239,25 @@
   object-fit: contain;
   margin-top: 8px;
   border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+}
+
+.replay-screenshot-dialog {
+  width: min(1100px, calc(100vw - 48px));
+}
+
+.replay-screenshot-dialog-body {
+  align-items: center;
+}
+
+.replay-screenshot-dialog-image {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  max-height: calc(100vh - 180px);
+  margin: 0 auto;
+  border-radius: 10px;
   border: 1px solid var(--border);
   background: var(--bg-secondary);
 }
@@ -1507,11 +1701,16 @@
   .replay-summary-grid,
   .replay-event-detail-grid,
   .replay-browser-grid,
-  .browser-action-grid { grid-template-columns: 1fr; }
+  .browser-action-grid,
+  .browser-debugger-detail-grid { grid-template-columns: 1fr; }
   .replay-activity-header-row { flex-direction: column; align-items: flex-start; }
   .replay-variable-diff-item,
   .replay-variable-diff-values { justify-content: flex-start; }
   .replay-variable-diff-item { flex-direction: column; }
   .replay-event-header { flex-direction: column; }
   .replay-event-header-meta { align-items: flex-start; }
+  .browser-debugger-details-header,
+  .browser-debugger-detail-actions,
+  .browser-debugger-detail-item-header,
+  .browser-debugger-detail-actions-group { flex-direction: column; align-items: flex-start; }
 }

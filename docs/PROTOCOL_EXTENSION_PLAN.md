@@ -24,7 +24,7 @@ The SOAP runtime is no longer just planned work. The following Phase 1 items are
 - Registered `pkg/protocol/soap` execution on top of the existing HTTP transport.
 - SOAP 1.1 and SOAP 1.2 request defaults, `SOAPAction` handling, and generated-envelope shaping with namespace support.
 - WS-Security UsernameToken and Timestamp header generation, including nonce and created support.
-- SOAP Fault detection that maps fault envelopes into Stormrunner result semantics and preserves the raw response body for reporting.
+- SOAP Fault detection that maps fault envelopes into Stormrunner result semantics, preserves the raw response body for reporting, and now populates error snapshots for `snapshot_on_error` flows even when the transport status remains HTTP 200.
 - Unit coverage for DSL parsing, validation, engine config propagation, envelope shaping, WS-Security headers, and SOAP 1.1/1.2 fault handling.
 - A focused benchmark that compares plain HTTP execution with SOAP-generated envelope execution against the same local server path.
 

@@ -256,6 +256,27 @@ func TestSOAPExecuteFlagsSOAP11FaultEnvelope(t *testing.T) {
 	if !strings.Contains(result.ResponseBody, `<faultstring>Invalid login</faultstring>`) {
 		t.Fatalf("ResponseBody = %q, want original fault payload", result.ResponseBody)
 	}
+	if result.Snapshot == nil {
+		t.Fatal("Snapshot = nil, want SOAP fault snapshot")
+	}
+	if result.Snapshot.RequestMethod != http.MethodPost {
+		t.Fatalf("Snapshot.RequestMethod = %q, want POST", result.Snapshot.RequestMethod)
+	}
+	if result.Snapshot.RequestURL != ts.URL+"/AuthService" {
+		t.Fatalf("Snapshot.RequestURL = %q, want %q", result.Snapshot.RequestURL, ts.URL+"/AuthService")
+	}
+	if result.Snapshot.RequestHeaders["SOAPAction"] != "urn:auth#Login" {
+		t.Fatalf("Snapshot.RequestHeaders SOAPAction = %q, want urn:auth#Login", result.Snapshot.RequestHeaders["SOAPAction"])
+	}
+	if !strings.Contains(result.Snapshot.RequestHeaders["Content-Type"], "text/xml") {
+		t.Fatalf("Snapshot.RequestHeaders Content-Type = %q, want text/xml", result.Snapshot.RequestHeaders["Content-Type"])
+	}
+	if result.Snapshot.RequestBody != `<Envelope><Body><Login/></Body></Envelope>` {
+		t.Fatalf("Snapshot.RequestBody = %q, want original request body", result.Snapshot.RequestBody)
+	}
+	if !strings.Contains(result.Snapshot.ResponseBody, `<faultstring>Invalid login</faultstring>`) {
+		t.Fatalf("Snapshot.ResponseBody = %q, want fault payload", result.Snapshot.ResponseBody)
+	}
 }
 
 func TestSOAPExecuteFlagsSOAP12FaultEnvelope(t *testing.T) {

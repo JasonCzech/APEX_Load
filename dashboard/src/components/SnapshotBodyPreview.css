@@ -1,0 +1,35 @@
+.snapshot-code {
+  background: linear-gradient(180deg, rgba(8, 15, 27, 0.78), rgba(5, 10, 19, 0.92));
+  color: var(--text-primary);
+}
+
+.snapshot-code-token-key {
+  color: #7dd3fc;
+}
+
+.snapshot-code-token-string,
+.snapshot-code-token-attr-value {
+  color: #86efac;
+}
+
+.snapshot-code-token-number {
+  color: #f9a8d4;
+}
+
+.snapshot-code-token-boolean,
+.snapshot-code-token-null {
+  color: #fca5a5;
+}
+
+.snapshot-code-token-punctuation {
+  color: rgba(226, 232, 240, 0.78);
+}
+
+.snapshot-code-token-tag,
+.snapshot-code-token-attr-name {
+  color: #fcd34d;
+}
+
+.snapshot-code-token-text {
+  color: rgba(226, 232, 240, 0.92);
+}

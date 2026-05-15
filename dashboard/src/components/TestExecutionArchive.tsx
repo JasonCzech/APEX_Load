@@ -1,6 +1,14 @@
-import { Fragment } from 'react'
+import { Fragment, useState } from 'react'
 
 import { RunArchiveActionStats, RunArchiveReport, TestSummary, TransactionEvent } from '../types'
+import SnapshotBodyPreview from './SnapshotBodyPreview'
+import SnapshotTextPreview from './SnapshotTextPreview'
+import { extractSOAPFaultSummaryFromBody, formatSOAPFaultSummary } from './soapFaultUtils'
+import {
+  formatCapturedHeaders,
+  formatSnapshotRequestSection,
+  formatSnapshotResponseSection,
+} from '../utils/snapshotFormatUtils'
 
 interface Props {
   hasArchive: boolean
@@ -35,13 +43,6 @@ function formatArchiveTimestamp(value?: string): string {
   return new Date(value).toLocaleString()
 }
 
-function formatHeaderPairs(headers?: Record<string, string>): string {
-  if (!headers || Object.keys(headers).length === 0) return 'n/a'
-  return Object.entries(headers)
-    .map(([key, value]) => `${key}: ${value}`)
-    .join('\n')
-}
-
 export default function TestExecutionArchive({
   hasArchive,
   test,
@@ -69,6 +70,14 @@ export default function TestExecutionArchive({
   expandedArchiveEvent,
   onExpandedArchiveEventChange,
 }: Props) {
+  const [copiedSection, setCopiedSection] = useState<string | null>(null)
+
+  const handleCopySection = async (key: string, value: string) => {
+    if (!navigator.clipboard?.writeText) return
+    await navigator.clipboard.writeText(value)
+    setCopiedSection(key)
+  }
+
   if (!hasArchive) {
     return null
   }
@@ -259,6 +268,7 @@ export default function TestExecutionArchive({
                       const rowKey = `${event.timestamp}-${index}`
                       const hasSnapshot = Boolean(event.snapshot)
                       const isExpanded = expandedArchiveEvent === rowKey
+                      const soapFault = extractSOAPFaultSummaryFromBody(event.snapshot?.response_body)
 
                       return (
                         <Fragment key={rowKey}>
@@ -286,17 +296,61 @@ export default function TestExecutionArchive({
                             <tr className="archive-event-detail-row">
                               <td colSpan={7}>
                                 <div className="archive-event-detail-grid">
+                                  {soapFault && (
+                                    <div className="archive-event-detail-card">
+                                      <div className="archive-event-detail-header">
+                                        <span className="scenario-script-detail-label">SOAP Fault</span>
+                                        <button
+                                          type="button"
+                                          className="btn btn-sm btn-ghost"
+                                          onClick={() => void handleCopySection(`${rowKey}:soap-fault`, formatSOAPFaultSummary(soapFault))}
+                                        >
+                                          {copiedSection === `${rowKey}:soap-fault` ? 'Copied' : 'Copy fault'}
+                                        </button>
+                                      </div>
+                                      <span className="scenario-script-detail-value">SOAP {soapFault.version}</span>
+                                      <pre className="archive-event-detail-pre">Code: {soapFault.code}{'\n'}Reason: {soapFault.reason}</pre>
+                                    </div>
+                                  )}
                                   <div className="archive-event-detail-card">
-                                    <span className="scenario-script-detail-label">Request</span>
+                                    <div className="archive-event-detail-header">
+                                      <span className="scenario-script-detail-label">Request</span>
+                                      <button
+                                        type="button"
+                                        className="btn btn-sm btn-ghost"
+                                        onClick={() => void handleCopySection(`${rowKey}:request`, formatSnapshotRequestSection(event.snapshot))}
+                                      >
+                                        {copiedSection === `${rowKey}:request` ? 'Copied' : 'Copy request'}
+                                      </button>
+                                    </div>
                                     <span className="scenario-script-detail-value">{event.snapshot?.request_method || 'n/a'} {event.snapshot?.request_url || ''}</span>
-                                    <pre className="archive-event-detail-pre">{formatHeaderPairs(event.snapshot?.request_headers)}</pre>
-                                    <pre className="archive-event-detail-pre">{event.snapshot?.request_body || 'No request body captured'}</pre>
+                                    <SnapshotTextPreview text={formatCapturedHeaders(event.snapshot?.request_headers)} preClassName="archive-event-detail-pre" />
+                                    <SnapshotBodyPreview
+                                      body={event.snapshot?.request_body}
+                                      headers={event.snapshot?.request_headers}
+                                      emptyMessage="No request body captured"
+                                      preClassName="archive-event-detail-pre"
+                                    />
                                   </div>
                                   <div className="archive-event-detail-card">
-                                    <span className="scenario-script-detail-label">Response</span>
+                                    <div className="archive-event-detail-header">
+                                      <span className="scenario-script-detail-label">Response</span>
+                                      <button
+                                        type="button"
+                                        className="btn btn-sm btn-ghost"
+                                        onClick={() => void handleCopySection(`${rowKey}:response`, formatSnapshotResponseSection(event.snapshot, event.status_code))}
+                                      >
+                                        {copiedSection === `${rowKey}:response` ? 'Copied' : 'Copy response'}
+                                      </button>
+                                    </div>
                                     <span className="scenario-script-detail-value">{event.snapshot?.response_status || event.status_code || 'n/a'}</span>
-                                    <pre className="archive-event-detail-pre">{formatHeaderPairs(event.snapshot?.response_headers)}</pre>
-                                    <pre className="archive-event-detail-pre">{event.snapshot?.response_body || 'No response body captured'}</pre>
+                                    <SnapshotTextPreview text={formatCapturedHeaders(event.snapshot?.response_headers)} preClassName="archive-event-detail-pre" />
+                                    <SnapshotBodyPreview
+                                      body={event.snapshot?.response_body}
+                                      headers={event.snapshot?.response_headers}
+                                      emptyMessage="No response body captured"
+                                      preClassName="archive-event-detail-pre"
+                                    />
                                   </div>
                                 </div>
                               </td>

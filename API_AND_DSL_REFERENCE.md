@@ -615,6 +615,17 @@ Emits JSON messages for all test events:
 - `config.java_http.extractor_type`: Defaults to `opaque`
 - `config.java_http.preserve_binary_result`: When `true`, response bodies stay base64-encoded in replay output
 
+**SOAP config keys:**
+- `config.soap.version`: `1.1` or `1.2`
+- `config.soap.namespaces`: Prefix-to-URI map used for generated envelopes and namespace-aware SOAP authoring
+- `config.soap.ws_security.username_token.username`: WS-Security UsernameToken username
+- `config.soap.ws_security.username_token.password`: WS-Security UsernameToken password
+- `config.soap.ws_security.username_token.password_type`: `text` or `digest`
+- `config.soap.ws_security.username_token.nonce`: Include a nonce when `true`
+- `config.soap.ws_security.username_token.created`: Include a created timestamp when `true`
+- `config.soap.ws_security.timestamp.ttl_seconds`: Optional WS-Security Timestamp TTL in seconds
+- `config.soap.fault_handling.fail_on_fault`: When `true`, SOAP Fault envelopes fail the action even if the HTTP status is 200; fault responses also populate action snapshots for `snapshot_on_error` workflows
+
 **JMS Solace config keys:**
 - `config.jms.broker_url`: Solace broker URL, for example `tcps://broker.example.com:55443`
 - `config.jms.message_vpn`: Solace message VPN

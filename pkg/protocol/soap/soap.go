@@ -25,6 +25,7 @@ func init() {
 
 type SOAP struct {
 	http           *httpproto.HTTP
+	baseURL        string
 	version        string
 	failOnFault    bool
 	defaultCharset string
@@ -61,6 +62,9 @@ func (s *SOAP) Init(ctx context.Context, config map[string]any) error {
 	}
 	s.failOnFault, _ = config["soap_fault_fail_on_fault"].(bool)
 	s.defaultCharset = "utf-8"
+	if baseURL, ok := config["base_url"].(string); ok {
+		s.baseURL = strings.TrimSpace(baseURL)
+	}
 	s.namespaces = readNamespaces(config)
 	s.security = readSecurityConfig(config)
 	s.http = &httpproto.HTTP{}
@@ -81,6 +85,7 @@ func (s *SOAP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	prepared.Body = shapeSOAPBody(action, s.version, s.namespaces)
 	prepared.Body = s.applySecurity(prepared.Body)
 	applySOAPDefaults(&prepared, s.version, s.defaultCharset)
+	targetURL := resolveSOAPURL(s.baseURL, prepared.Target)
 
 	result, err := s.http.Execute(ctx, &prepared)
 	if err != nil || result == nil {
@@ -92,6 +97,9 @@ func (s *SOAP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 			result.Success = false
 			if result.ErrorMessage == "" {
 				result.ErrorMessage = fault
+			}
+			if result.Snapshot == nil {
+				result.Snapshot = buildSOAPSnapshot(&prepared, targetURL, result)
 			}
 		} else if result.StatusCode >= 500 && result.ErrorMessage == "" {
 			result.ErrorMessage = "soap fault response"
@@ -124,6 +132,27 @@ func cloneHeaders(headers map[string]string) map[string]string {
 		cloned[key] = value
 	}
 	return cloned
+}
+
+func resolveSOAPURL(baseURL, target string) string {
+	if strings.HasPrefix(target, "http://") || strings.HasPrefix(target, "https://") {
+		return target
+	}
+	return strings.TrimRight(baseURL, "/") + "/" + strings.TrimLeft(target, "/")
+}
+
+func buildSOAPSnapshot(action *protocol.Action, targetURL string, result *protocol.Result) *protocol.ErrorSnapshot {
+	if action == nil || result == nil {
+		return nil
+	}
+	return &protocol.ErrorSnapshot{
+		RequestMethod:   action.Method,
+		RequestURL:      targetURL,
+		RequestHeaders:  cloneHeaders(action.Headers),
+		RequestBody:     string(action.Body),
+		ResponseStatus:  result.StatusCode,
+		ResponseBody:    result.ResponseBody,
+	}
 }
 
 func readSecurityConfig(config map[string]any) soapSecurityConfig {

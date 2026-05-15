@@ -309,13 +309,16 @@ export function formatNetworkEntries(entries?: NetworkEntry[]): string {
 
 export function hasBrowserReplayArtifacts(event: ReplayActionEvent): boolean {
   return !!(
-    event.page_url ||
-    event.page_title ||
     event.dom_summary ||
+    event.snapshot?.dom_summary ||
     event.console_entries?.length ||
+    event.snapshot?.console_entries?.length ||
     event.network_entries?.length ||
+    event.snapshot?.network_entries?.length ||
     event.html ||
-    event.screenshot_base64
+    event.snapshot?.html ||
+    event.screenshot_base64 ||
+    event.snapshot?.screenshot_base64
   )
 }
 

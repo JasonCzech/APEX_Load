@@ -5,6 +5,8 @@ import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ScriptDefinition } from '../types/scripts'
+import { formatSnapshotRequestSection, formatSnapshotResponseSection } from '../utils/snapshotFormatUtils'
+import { formatSOAPFaultSummary } from './soapFaultUtils'
 import ScriptEditor from './ScriptEditor'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -13,6 +15,8 @@ const apiMock = {
   getScript: vi.fn(),
   createScript: vi.fn(),
   updateScript: vi.fn(),
+  replayDraftScript: vi.fn(),
+  replayScript: vi.fn(),
 }
 
 vi.mock('../hooks/useApi', () => ({
@@ -26,6 +30,7 @@ vi.mock('../hooks/useWebSocket', () => ({
 describe('ScriptEditor', () => {
   let container: HTMLDivElement
   let root: Root
+  const writeText = vi.fn()
 
   const initialScript: ScriptDefinition = {
     name: 'Checkout Flow',
@@ -79,9 +84,40 @@ describe('ScriptEditor', () => {
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
+    if (!HTMLElement.prototype.scrollIntoView) {
+      Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+        configurable: true,
+        value: vi.fn(),
+      })
+    }
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    })
+    writeText.mockReset()
     apiMock.getScript.mockResolvedValue({ script: initialScript })
     apiMock.createScript.mockResolvedValue({ id: 'script-1' })
     apiMock.updateScript.mockResolvedValue({ id: 'script-1' })
+    apiMock.replayDraftScript.mockResolvedValue({
+      report: {
+        group: 'Checkout Flow-replay',
+        protocol: 'http',
+        started_at: '2026-05-14T20:00:00Z',
+        completed_at: '2026-05-14T20:00:01Z',
+        success: true,
+        events: [],
+      },
+    })
+    apiMock.replayScript.mockResolvedValue({
+      report: {
+        group: 'Checkout Flow-replay',
+        protocol: 'http',
+        started_at: '2026-05-14T20:00:00Z',
+        completed_at: '2026-05-14T20:00:01Z',
+        success: true,
+        events: [],
+      },
+    })
   })
 
   afterEach(async () => {
@@ -576,6 +612,658 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('WS-Security UsernameToken')
     expect(container.textContent).toContain('Fail on SOAP Fault')
     expect(container.textContent).toContain('SOAPAction')
+  })
+
+  it('updates the default SOAP envelope namespace when the version changes and saves it', async () => {
+    const soapScript: ScriptDefinition = {
+      ...initialScript,
+      protocol: 'soap',
+      config: {
+        ...initialScript.config,
+        soap: {
+          version: '1.1',
+          namespaces: {
+            soapenv: 'http://schemas.xmlsoap.org/soap/envelope/',
+          },
+          fault_handling: {
+            fail_on_fault: true,
+          },
+        },
+      },
+      actions: [
+        {
+          name: 'CreateOrder',
+          type: 'POST',
+          method: 'POST',
+          target: '/soap/orders',
+          headers: {},
+          body: '<CreateOrder />',
+          extractors: [],
+          assertions: [{ type: 'status_code', expected: 200 }],
+          soap: {
+            action: 'urn:CreateOrder',
+            operation: 'CreateOrder',
+            body_mode: 'generated',
+          },
+        },
+      ],
+    }
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={soapScript} />)
+    })
+
+    const runtimeToggle = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Runtime Settings'))
+    expect(runtimeToggle).toBeDefined()
+    if (!runtimeToggle) {
+      return
+    }
+
+    await act(async () => {
+      runtimeToggle.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const soapToggle = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('SOAP Settings'))
+    expect(soapToggle).toBeDefined()
+    if (!soapToggle) {
+      return
+    }
+
+    await act(async () => {
+      soapToggle.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const versionSelect = Array.from(container.querySelectorAll('select')).find(select =>
+      Array.from(select.options).some(option => option.value === '1.1')
+      && Array.from(select.options).some(option => option.value === '1.2'),
+    ) as HTMLSelectElement | undefined
+    expect(versionSelect).toBeDefined()
+    if (!versionSelect) {
+      return
+    }
+
+    const namespaceInput = Array.from(container.querySelectorAll('input')).find(input =>
+      input.value === 'http://schemas.xmlsoap.org/soap/envelope/',
+    ) as HTMLInputElement | undefined
+    expect(namespaceInput).toBeDefined()
+    if (!namespaceInput) {
+      return
+    }
+
+    await act(async () => {
+      const valueSetter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set
+      valueSetter?.call(versionSelect, '1.2')
+      versionSelect.dispatchEvent(new Event('input', { bubbles: true }))
+      versionSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    expect(versionSelect.value).toBe('1.2')
+    expect(namespaceInput.value).toBe('http://www.w3.org/2003/05/soap-envelope')
+
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save Script'))
+    expect(saveButton).toBeDefined()
+    if (!saveButton) {
+      return
+    }
+
+    await act(async () => {
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({
+      config: expect.objectContaining({
+        soap: expect.objectContaining({
+          version: '1.2',
+          namespaces: {
+            soapenv: 'http://www.w3.org/2003/05/soap-envelope',
+          },
+        }),
+      }),
+    }), undefined, undefined)
+  })
+
+  it('saves SOAP WS-Security and fault-handling edits through the runtime settings form', async () => {
+    const soapScript: ScriptDefinition = {
+      ...initialScript,
+      protocol: 'soap',
+      config: {
+        ...initialScript.config,
+        soap: {
+          version: '1.1',
+          namespaces: {
+            soapenv: 'http://schemas.xmlsoap.org/soap/envelope/',
+          },
+          ws_security: {
+            username_token: {
+              username: 'svc-user',
+              password: 'svc-pass',
+              password_type: 'text',
+              nonce: false,
+              created: false,
+            },
+            timestamp: {
+              ttl_seconds: 30,
+            },
+          },
+          fault_handling: {
+            fail_on_fault: true,
+          },
+        },
+      },
+      actions: [
+        {
+          name: 'CreateOrder',
+          type: 'POST',
+          method: 'POST',
+          target: '/soap/orders',
+          headers: {},
+          body: '<CreateOrder />',
+          extractors: [],
+          assertions: [{ type: 'status_code', expected: 200 }],
+          soap: {
+            action: 'urn:CreateOrder',
+            operation: 'CreateOrder',
+            body_mode: 'generated',
+          },
+        },
+      ],
+    }
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={soapScript} />)
+    })
+
+    const runtimeToggle = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Runtime Settings'))
+    expect(runtimeToggle).toBeDefined()
+    if (!runtimeToggle) {
+      return
+    }
+
+    await act(async () => {
+      runtimeToggle.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const soapToggle = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('SOAP Settings'))
+    expect(soapToggle).toBeDefined()
+    if (!soapToggle) {
+      return
+    }
+
+    await act(async () => {
+      soapToggle.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const usernameInput = Array.from(container.querySelectorAll('input')).find(input => input.placeholder === 'service-user') as HTMLInputElement | undefined
+    const passwordInput = Array.from(container.querySelectorAll('input')).find(input => input.placeholder === 'secret') as HTMLInputElement | undefined
+    const ttlInput = Array.from(container.querySelectorAll('input')).find(input => input.type === 'number' && input.value === '30') as HTMLInputElement | undefined
+    const passwordTypeSelect = Array.from(container.querySelectorAll('select')).find(select =>
+      Array.from(select.options).some(option => option.value === 'text')
+      && Array.from(select.options).some(option => option.value === 'digest'),
+    ) as HTMLSelectElement | undefined
+
+    const failOnFaultCheckbox = Array.from(container.querySelectorAll('label.checkbox-label')).find(label =>
+      label.textContent?.includes('Fail on SOAP Fault'),
+    )?.querySelector('input') as HTMLInputElement | null
+    const nonceCheckbox = Array.from(container.querySelectorAll('label.checkbox-label')).find(label =>
+      label.textContent?.includes('Include nonce'),
+    )?.querySelector('input') as HTMLInputElement | null
+    const createdCheckbox = Array.from(container.querySelectorAll('label.checkbox-label')).find(label =>
+      label.textContent?.includes('Include created timestamp'),
+    )?.querySelector('input') as HTMLInputElement | null
+
+    expect(usernameInput).toBeDefined()
+    expect(passwordInput).toBeDefined()
+    expect(ttlInput).toBeDefined()
+    expect(passwordTypeSelect).toBeDefined()
+    expect(failOnFaultCheckbox).not.toBeNull()
+    expect(nonceCheckbox).not.toBeNull()
+    expect(createdCheckbox).not.toBeNull()
+    if (!usernameInput || !passwordInput || !ttlInput || !passwordTypeSelect || !failOnFaultCheckbox || !nonceCheckbox || !createdCheckbox) {
+      return
+    }
+
+    await act(async () => {
+      const inputSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+      const selectSetter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set
+
+      inputSetter?.call(usernameInput, 'svc-next')
+      usernameInput.dispatchEvent(new Event('input', { bubbles: true }))
+      usernameInput.dispatchEvent(new Event('change', { bubbles: true }))
+
+      inputSetter?.call(passwordInput, 'svc-secret')
+      passwordInput.dispatchEvent(new Event('input', { bubbles: true }))
+      passwordInput.dispatchEvent(new Event('change', { bubbles: true }))
+
+      selectSetter?.call(passwordTypeSelect, 'digest')
+      passwordTypeSelect.dispatchEvent(new Event('input', { bubbles: true }))
+      passwordTypeSelect.dispatchEvent(new Event('change', { bubbles: true }))
+
+      failOnFaultCheckbox.click()
+      nonceCheckbox.click()
+      createdCheckbox.click()
+
+      inputSetter?.call(ttlInput, '90')
+      ttlInput.dispatchEvent(new Event('input', { bubbles: true }))
+      ttlInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    expect(usernameInput.value).toBe('svc-next')
+    expect(passwordInput.value).toBe('svc-secret')
+    expect(passwordTypeSelect.value).toBe('digest')
+    expect(failOnFaultCheckbox.checked).toBe(false)
+    expect(nonceCheckbox.checked).toBe(true)
+    expect(createdCheckbox.checked).toBe(true)
+    expect(ttlInput.value).toBe('90')
+
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save Script'))
+    expect(saveButton).toBeDefined()
+    if (!saveButton) {
+      return
+    }
+
+    await act(async () => {
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({
+      config: expect.objectContaining({
+        soap: expect.objectContaining({
+          fault_handling: {
+            fail_on_fault: false,
+          },
+          ws_security: {
+            username_token: {
+              username: 'svc-next',
+              password: 'svc-secret',
+              password_type: 'digest',
+              nonce: true,
+              created: true,
+            },
+            timestamp: {
+              ttl_seconds: 90,
+            },
+          },
+        }),
+      }),
+    }), undefined, undefined)
+  })
+
+  it('shows structured SOAP fault snapshot details in replay events', async () => {
+    const soapScript: ScriptDefinition = {
+      ...initialScript,
+      name: 'SOAP Replay',
+      protocol: 'soap',
+      config: {
+        ...initialScript.config,
+        soap: {
+          version: '1.2',
+          namespaces: {
+            soapenv: 'http://www.w3.org/2003/05/soap-envelope',
+          },
+          fault_handling: {
+            fail_on_fault: true,
+          },
+        },
+      },
+      actions: [
+        {
+          name: 'CreateOrder',
+          type: 'POST',
+          method: 'POST',
+          target: '/soap/orders',
+          headers: {
+            'Content-Type': 'application/soap+xml',
+          },
+          body: '<CreateOrder />',
+          extractors: [],
+          assertions: [{ type: 'status_code', expected: 200 }],
+          soap: {
+            action: 'urn:CreateOrder',
+            operation: 'CreateOrder',
+            body_mode: 'generated',
+          },
+        },
+      ],
+    }
+
+    apiMock.replayDraftScript.mockResolvedValueOnce({
+      report: {
+        group: 'SOAP Replay-replay',
+        protocol: 'soap',
+        started_at: '2026-05-14T20:00:00Z',
+        completed_at: '2026-05-14T20:00:01Z',
+        success: false,
+        error: 'soap fault: env:Sender: Request validation failed',
+        final_variables: {
+          orderId: 'A-100',
+        },
+        events: [
+          {
+            phase: 'action',
+            action_name: 'CreateOrder',
+            action_type: 'request',
+            method: 'POST',
+            target: '/soap/orders',
+            started_at: '2026-05-14T20:00:00Z',
+            completed_at: '2026-05-14T20:00:01Z',
+            duration_ms: 120,
+            status_code: 200,
+            success: false,
+            error_message: 'soap fault: env:Sender: Request validation failed',
+            headers: {
+              'Content-Type': 'application/soap+xml',
+            },
+            body: '<CreateOrder />',
+            extractions: {
+              confirmationId: 'CONF-42',
+            },
+            snapshot: {
+              request_method: 'POST',
+              request_url: 'https://api.example.com/soap/orders',
+              request_headers: {
+                'Content-Type': 'application/soap+xml',
+                ...Object.fromEntries(Array.from({ length: 12 }, (_, index) => [`X-Debug-${index}`, `value-${index}`])),
+              },
+              request_body: '<CreateOrder />',
+              response_status: 200,
+              response_headers: {
+                'Content-Type': 'application/soap+xml',
+                ...Object.fromEntries(Array.from({ length: 12 }, (_, index) => [`X-Trace-${index}`, `trace-${index}`])),
+              },
+              response_body: '<env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope"><env:Body><env:Fault><env:Code><env:Value>env:Sender</env:Value></env:Code><env:Reason><env:Text xml:lang="en">Request validation failed</env:Text></env:Reason></env:Fault></env:Body></env:Envelope>',
+            },
+          },
+        ],
+      },
+    })
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={soapScript} />)
+    })
+
+    const replayButton = Array.from(container.querySelectorAll('button')).find(button =>
+      button.textContent?.trim() === 'Replay',
+    )
+    expect(replayButton).toBeDefined()
+    if (!replayButton) {
+      return
+    }
+
+    await act(async () => {
+      replayButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(apiMock.replayDraftScript).toHaveBeenCalled()
+    expect(container.textContent).toContain('SOAP Fault')
+    expect(container.textContent).toContain('SOAP 1.2')
+    expect(container.textContent).toContain('Code: env:Sender')
+    expect(container.textContent).toContain('Reason: Request validation failed')
+    expect(container.textContent).toContain('Variable Inspector')
+    expect(container.textContent).toContain('Extractions')
+    expect(container.textContent).toContain('Snapshot Request')
+    expect(container.textContent).toContain('Snapshot Response')
+    const copyFaultButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Copy fault'))
+    const copyRequestButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Copy request'))
+    const copyResponseButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Copy response'))
+    expect(copyFaultButton).toBeDefined()
+    expect(copyRequestButton).toBeDefined()
+    expect(copyResponseButton).toBeDefined()
+    if (!copyFaultButton || !copyRequestButton || !copyResponseButton) {
+      return
+    }
+
+    await act(async () => {
+      copyFaultButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(writeText).toHaveBeenCalledWith(formatSOAPFaultSummary({
+      version: '1.2',
+      code: 'env:Sender',
+      reason: 'Request validation failed',
+    }))
+
+    await act(async () => {
+      copyRequestButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(writeText).toHaveBeenCalledWith(formatSnapshotRequestSection({
+      request_method: 'POST',
+      request_url: 'https://api.example.com/soap/orders',
+      request_headers: {
+        'Content-Type': 'application/soap+xml',
+        ...Object.fromEntries(Array.from({ length: 12 }, (_, index) => [`X-Debug-${index}`, `value-${index}`])),
+      },
+      request_body: '<CreateOrder />',
+    }))
+
+    await act(async () => {
+      copyResponseButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(writeText).toHaveBeenLastCalledWith(formatSnapshotResponseSection({
+      response_status: 200,
+      response_headers: {
+        'Content-Type': 'application/soap+xml',
+        ...Object.fromEntries(Array.from({ length: 12 }, (_, index) => [`X-Trace-${index}`, `trace-${index}`])),
+      },
+      response_body: '<env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope"><env:Body><env:Fault><env:Code><env:Value>env:Sender</env:Value></env:Code><env:Reason><env:Text xml:lang="en">Request validation failed</env:Text></env:Reason></env:Fault></env:Body></env:Envelope>',
+    }, 200))
+    expect(container.textContent).toContain('Show full text')
+    const highlightedBlocks = Array.from(container.querySelectorAll('.snapshot-code'))
+    expect(highlightedBlocks).toHaveLength(5)
+    expect(highlightedBlocks.some(block => block.textContent?.includes('"orderId": "A-100"'))).toBe(true)
+    expect(highlightedBlocks.some(block => block.textContent?.includes('"confirmationId": "CONF-42"'))).toBe(true)
+    expect(highlightedBlocks.some(block => block.textContent?.includes('<CreateOrder />'))).toBe(true)
+    const resolvedHeadersLabel = Array.from(container.querySelectorAll('.replay-code-block .replay-detail-label')).find(node => node.textContent === 'Resolved Headers')
+    expect(resolvedHeadersLabel?.parentElement?.textContent).toContain('Copy')
+    expect(container.querySelectorAll('.snapshot-code-token-tag').length).toBeGreaterThan(0)
+    expect(container.querySelectorAll('.snapshot-code-token-key').length).toBeGreaterThan(0)
+    expect(container.textContent).toContain('env:Body')
+    expect(container.textContent).toContain('env:Fault')
+  })
+
+  it('renders browser replay DOM summary and fallback snapshot with highlighted JSON previews', async () => {
+    apiMock.replayDraftScript.mockResolvedValueOnce({
+      report: {
+        group: 'Checkout Flow-replay',
+        protocol: 'web_http_html',
+        started_at: '2026-05-14T20:00:00Z',
+        completed_at: '2026-05-14T20:00:01Z',
+        success: true,
+        events: [
+          {
+            phase: 'action',
+            action_name: 'OpenCatalog',
+            action_type: 'navigate',
+            target: 'https://shop.example.com/catalog',
+            started_at: '2026-05-14T20:00:00Z',
+            completed_at: '2026-05-14T20:00:01Z',
+            duration_ms: 85,
+            success: true,
+            headers: {
+              Accept: 'text/html',
+            },
+            snapshot: {
+              page_url: 'https://shop.example.com/catalog',
+              page_title: 'Catalog',
+              screenshot_base64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7Z0nQAAAAASUVORK5CYII=',
+              dom_summary: {
+                title: 'Catalog',
+                ready_state: 'complete',
+                visible_text: ['Featured products', 'Search'],
+              },
+              console_entries: [
+                ...Array.from({ length: 12 }, (_, index) => ({
+                  level: index % 2 === 0 ? 'info' : 'warn',
+                  text: `Catalog loaded ${index}`,
+                  timestamp: `2026-05-14T20:00:${String(index).padStart(2, '0')}Z`,
+                })),
+              ],
+              network_entries: [
+                ...Array.from({ length: 12 }, (_, index) => ({
+                  method: 'GET',
+                  url: `https://shop.example.com/api/catalog/${index}`,
+                  status_code: 200,
+                  duration_ms: 20 + index,
+                })),
+              ],
+              html: `<html><body>${Array.from({ length: 60 }, (_, index) => `<section>Catalog ${index} featured product with additional merchandising detail</section>`).join('')}</body></html>`,
+            },
+          },
+        ],
+      },
+    })
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={initialScript} />)
+    })
+
+    const replayButton = Array.from(container.querySelectorAll('button')).find(button =>
+      button.textContent?.trim() === 'Replay',
+    )
+    expect(replayButton).toBeDefined()
+    if (!replayButton) {
+      return
+    }
+
+    await act(async () => {
+      replayButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(apiMock.replayDraftScript).toHaveBeenCalled()
+    expect(container.textContent).toContain('Page URL')
+    expect(container.textContent).toContain('https://shop.example.com/catalog')
+    expect(container.textContent).toContain('Page Title')
+    expect(container.textContent).toContain('Catalog')
+    expect(container.textContent).toContain('DOM Summary')
+    expect(container.textContent).toContain('Snapshot')
+    expect(container.textContent).toContain('Console')
+    expect(container.textContent).toContain('Network')
+    expect(container.textContent).toContain('HTML')
+    expect(container.textContent).toContain('View full size')
+    expect(container.textContent).toContain('Expand artifacts')
+    expect(container.textContent).not.toContain('Catalog loaded 11')
+    expect(container.textContent).not.toContain('https://shop.example.com/api/catalog/11')
+    expect(container.textContent).not.toContain('Catalog 59 featured product with additional merchandising detail')
+    const highlightedBlocks = Array.from(container.querySelectorAll('.snapshot-code'))
+    expect(highlightedBlocks).toHaveLength(2)
+    expect(highlightedBlocks.some(block => block.textContent?.includes('"ready_state": "complete"'))).toBe(true)
+    expect(highlightedBlocks.some(block => block.textContent?.includes('"page_url": "https://shop.example.com/catalog"'))).toBe(true)
+    const consoleLabel = Array.from(container.querySelectorAll('.replay-code-block .replay-detail-label')).find(node => node.textContent === 'Console')
+    const networkLabel = Array.from(container.querySelectorAll('.replay-code-block .replay-detail-label')).find(node => node.textContent === 'Network')
+    const htmlLabel = Array.from(container.querySelectorAll('.replay-code-block .replay-detail-label')).find(node => node.textContent === 'HTML')
+    expect(consoleLabel?.parentElement?.textContent).toContain('Copy')
+    expect(networkLabel?.parentElement?.textContent).toContain('Copy')
+    expect(htmlLabel?.parentElement?.textContent).toContain('Copy')
+    expect(container.querySelectorAll('.snapshot-code-token-key').length).toBeGreaterThan(0)
+
+    const expandArtifactsButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Expand artifacts'))
+    expect(expandArtifactsButton).toBeDefined()
+    if (!expandArtifactsButton) {
+      return
+    }
+
+    await act(async () => {
+      expandArtifactsButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('Collapse artifacts')
+    expect(container.textContent).toContain('Catalog loaded 11')
+    expect(container.textContent).toContain('https://shop.example.com/api/catalog/11')
+    expect(container.textContent).toContain('Catalog 59 featured product with additional merchandising detail')
+
+    const viewScreenshotButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('View full size'))
+    expect(viewScreenshotButton).toBeDefined()
+    if (!viewScreenshotButton) {
+      return
+    }
+
+    await act(async () => {
+      viewScreenshotButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    const screenshotDialog = container.querySelector('[aria-label="Replay Screenshot"]')
+    expect(screenshotDialog).not.toBeNull()
+    expect(screenshotDialog?.textContent).toContain('Inspect the captured browser replay screenshot at full size.')
+
+    const closeScreenshotButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Close')
+    expect(closeScreenshotButton).toBeDefined()
+    if (!closeScreenshotButton) {
+      return
+    }
+
+    await act(async () => {
+      closeScreenshotButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(container.querySelector('[aria-label="Replay Screenshot"]')).toBeNull()
+  })
+
+  it('does not render an empty browser artifacts section for metadata-only replay events', async () => {
+    apiMock.replayDraftScript.mockResolvedValueOnce({
+      report: {
+        group: 'Checkout Flow-replay',
+        protocol: 'web_http_html',
+        started_at: '2026-05-14T20:00:00Z',
+        completed_at: '2026-05-14T20:00:01Z',
+        success: true,
+        events: [
+          {
+            phase: 'action',
+            action_name: 'OpenCatalog',
+            action_type: 'navigate',
+            target: 'https://shop.example.com/catalog',
+            started_at: '2026-05-14T20:00:00Z',
+            completed_at: '2026-05-14T20:00:01Z',
+            duration_ms: 85,
+            success: true,
+            headers: {
+              Accept: 'text/html',
+            },
+            snapshot: {
+              page_url: 'https://shop.example.com/catalog',
+              page_title: 'Catalog',
+            },
+          },
+        ],
+      },
+    })
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={initialScript} />)
+    })
+
+    const replayButton = Array.from(container.querySelectorAll('button')).find(button =>
+      button.textContent?.trim() === 'Replay',
+    )
+    expect(replayButton).toBeDefined()
+    if (!replayButton) {
+      return
+    }
+
+    await act(async () => {
+      replayButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('Page URL')
+    expect(container.textContent).toContain('https://shop.example.com/catalog')
+    expect(container.textContent).toContain('Page Title')
+    expect(container.textContent).toContain('Catalog')
+    expect(container.textContent).not.toContain('Browser Artifacts')
+    expect(container.textContent).not.toContain('Console')
+    expect(container.textContent).not.toContain('Network')
+    expect(container.textContent).not.toContain('View full size')
   })
 
   it('renders Java-over-HTTP settings for java_http drafts', async () => {

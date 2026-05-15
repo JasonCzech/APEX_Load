@@ -24,6 +24,13 @@ import {
   type ScriptWaitCondition,
 } from '../types/scripts'
 import BrowserReplayDebugger from './BrowserReplayDebugger'
+import SnapshotBodyPreview from './SnapshotBodyPreview'
+import SnapshotTextPreview from './SnapshotTextPreview'
+import { extractSOAPFaultSummaryFromBody, formatSOAPFaultSummary } from './soapFaultUtils'
+import {
+  formatSnapshotRequestSection,
+  formatSnapshotResponseSection,
+} from '../utils/snapshotFormatUtils'
 import {
   EMPTY_ACTION,
   EMPTY_BROWSER_ACTION,
@@ -71,6 +78,18 @@ type NetworkEntry = BrowserReplayNetworkEntry
 type DOMSummary = BrowserReplayDomSummary
 type ReplayActionEvent = BrowserReplayEvent
 type ReplayReport = BrowserReplayReport
+
+function hasStructuredReplaySnapshot(snapshot?: ReplaySnapshot | null) {
+  return Boolean(
+    snapshot?.request_method ||
+    snapshot?.request_url ||
+    snapshot?.request_headers ||
+    snapshot?.request_body ||
+    snapshot?.response_status ||
+    snapshot?.response_headers ||
+    snapshot?.response_body,
+  )
+}
 
 interface ReplayOptionsState {
   groupName: string
@@ -189,6 +208,23 @@ function formatDFEChain(value?: DFETransform[]) {
     .join('\n')
 }
 
+const SOAP11EnvelopeNamespace = 'http://schemas.xmlsoap.org/soap/envelope/'
+const SOAP12EnvelopeNamespace = 'http://www.w3.org/2003/05/soap-envelope'
+
+function defaultSOAPEnvelopeNamespace(version?: string) {
+  return version === '1.2' ? SOAP12EnvelopeNamespace : SOAP11EnvelopeNamespace
+}
+
+function syncSOAPEnvelopeNamespace(version: string, namespaces?: Record<string, string>, previousVersion?: string) {
+  const nextNamespaces = { ...(namespaces || {}) }
+  const currentEnvelope = nextNamespaces.soapenv?.trim()
+  const previousEnvelope = defaultSOAPEnvelopeNamespace(previousVersion)
+  if (!currentEnvelope || currentEnvelope === previousEnvelope) {
+    nextNamespaces.soapenv = defaultSOAPEnvelopeNamespace(version)
+  }
+  return nextNamespaces
+}
+
 function parseDFEChain(value: string): DFETransform[] {
   return value
     .split(/\r?\n/)
@@ -256,6 +292,11 @@ function upsertReplayActivity(items: ReplayActivityItem[], next: ReplayActivityI
   return updated
 }
 
+interface ReplayScreenshotSelection {
+  alt: string
+  src: string
+}
+
 
 export default function ScriptEditor({ scriptId, initialScript, projectId, folderId, onSave, onClose }: Props) {
   const api = useApi()
@@ -264,9 +305,11 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
     activeAction,
     activeReplaySessionId,
     browserReplaySession,
+    copiedReplaySnapshotSection,
     dataEditorMode,
     dataSourceHistory,
     error,
+    expandedReplayBrowserArtifacts,
     expandedReplayEvent,
     hydrateEditorState,
     isParameterDialogOpen,
@@ -280,6 +323,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
     replayEventRefs,
     replayOptions,
     replayReport,
+    replayScreenshotSelection,
     replaySeedVariables,
     replaying,
     saving,
@@ -287,9 +331,11 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
     setActiveAction,
     setActiveReplaySessionId,
     setBrowserReplaySession,
+    setCopiedReplaySnapshotSection,
     setDataEditorMode,
     setDataSourceHistory,
     setError,
+    setExpandedReplayBrowserArtifacts,
     setExpandedReplayEvent,
     setIsParameterDialogOpen,
     setJsonMode,
@@ -300,6 +346,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
     setReplayActivity,
     setReplayOptions,
     setReplayReport,
+    setReplayScreenshotSelection,
     setReplaySeedVariables,
     setReplaying,
     setSaving,
@@ -308,6 +355,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
     success,
     toggleSection,
     closeParameterDialog,
+    closeReplayScreenshot,
   } = useScriptEditorState(initialScript)
   const isBrowserScript = script.protocol === 'browser'
   const isHttpScript = script.protocol === 'http'
@@ -326,7 +374,31 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isParameterDialogOpen])
+  }, [closeParameterDialog, isParameterDialogOpen])
+
+  useEffect(() => {
+    if (!replayScreenshotSelection) return
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeReplayScreenshot()
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [closeReplayScreenshot, replayScreenshotSelection])
+
+  const handleCopyReplaySnapshotSection = async (key: string, value: string) => {
+    if (!navigator.clipboard?.writeText) return
+    await navigator.clipboard.writeText(value)
+    setCopiedReplaySnapshotSection(key)
+  }
+
+  const toggleReplayBrowserArtifact = (key: string, expanded: boolean) => {
+    setExpandedReplayBrowserArtifacts(prev => ({
+      ...prev,
+      [key]: expanded,
+    }))
+  }
 
   const buildAutoParameterCandidates = (current: ScriptData): ParameterCandidate[] => {
     const buckets = new Map<string, { keyHint: string; value: string; occurrences: CandidateOccurrence[] }>()
@@ -464,6 +536,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
         timestamp: session.started_at || new Date().toISOString(),
       }))
       setExpandedReplayEvent(null)
+      setExpandedReplayBrowserArtifacts({})
       return
     }
 
@@ -478,6 +551,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
         timestamp: report.started_at,
       }))
       setExpandedReplayEvent(null)
+      setExpandedReplayBrowserArtifacts({})
       return
     }
 
@@ -584,6 +658,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
         success: report.success,
       }))
       setExpandedReplayEvent(report.events.length ? report.events.length - 1 : null)
+      setExpandedReplayBrowserArtifacts({})
       setActiveReplaySessionId(null)
       setReplaying(false)
       return
@@ -619,6 +694,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
       if (report) {
         setExpandedReplayEvent(report.events.length ? report.events.length - 1 : null)
       }
+      setExpandedReplayBrowserArtifacts({})
       setActiveReplaySessionId(null)
       setReplaying(false)
     }
@@ -663,7 +739,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
           version: next.config.soap?.version || '1.1',
           namespaces: Object.keys(next.config.soap?.namespaces || {}).length > 0
             ? next.config.soap?.namespaces
-            : { soapenv: 'http://schemas.xmlsoap.org/soap/envelope/' },
+            : { soapenv: defaultSOAPEnvelopeNamespace(next.config.soap?.version || '1.1') },
           ws_security: next.config.soap?.ws_security,
           fault_handling: {
             fail_on_fault: next.config.soap?.fault_handling?.fail_on_fault ?? true,
@@ -1038,6 +1114,8 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
         detail: replayGroup,
         timestamp: new Date().toISOString(),
       }])
+      setExpandedReplayBrowserArtifacts({})
+      setReplayScreenshotSelection(null)
       setReplayReport({
         group: replayGroup,
         protocol: currentScript.protocol,
@@ -1113,6 +1191,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
         success: res.report?.success,
       }))
       setExpandedReplayEvent(res.report?.events?.length ? res.report.events.length - 1 : null)
+      setExpandedReplayBrowserArtifacts({})
       setActiveReplaySessionId(null)
       setSuccess(res.report?.success ? 'Replay completed successfully.' : 'Replay completed with failures.')
     } catch (e: unknown) {
@@ -1122,6 +1201,8 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
       setReplayReport(null)
       setActiveReplaySessionId(null)
       setBrowserReplaySession(null)
+      setExpandedReplayBrowserArtifacts({})
+      setReplayScreenshotSelection(null)
       setReplaySeedVariables({})
       setReplayActivity(prev => upsertReplayActivity(prev, {
         id: 'error',
@@ -1980,7 +2061,10 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
                       <div className="replay-variables-card">
                         <h4>{replaying ? 'Live Variables' : 'Variable Inspector'}</h4>
                         {Object.keys(replayVariableInspector).length > 0 ? (
-                          <pre>{JSON.stringify(replayVariableInspector, null, 2)}</pre>
+                          <SnapshotBodyPreview
+                            body={JSON.stringify(replayVariableInspector, null, 2)}
+                            headers={{ 'Content-Type': 'application/json' }}
+                          />
                         ) : (
                           <div className="replay-variables-empty">
                             {replaying
@@ -1995,6 +2079,14 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
                         const isOpen = expandedReplayEvent === index
                         const variableDiff = replayVariableDiffs[index] || {}
                         const changedVariables = Object.entries(variableDiff)
+                        const snapshotSoapFault = event.snapshot ? extractSOAPFaultSummaryFromBody(event.snapshot.response_body) : null
+                        const replayPageURL = event.page_url || event.snapshot?.page_url
+                        const replayPageTitle = event.page_title || event.snapshot?.page_title
+                        const replayDOMSummary = event.dom_summary || event.snapshot?.dom_summary
+                        const replayConsoleEntries = event.console_entries || event.snapshot?.console_entries
+                        const replayNetworkEntries = event.network_entries || event.snapshot?.network_entries
+                        const replayHTML = event.html || event.snapshot?.html
+                        const replayScreenshotBase64 = event.screenshot_base64 || event.snapshot?.screenshot_base64
                         return (
                           <div
                             key={`${event.phase}-${event.action_name}-${index}`}
@@ -2029,63 +2121,140 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
                                     <span className="replay-detail-label">Completed</span>
                                     <div>{formatReplayTime(event.completed_at)}</div>
                                   </div>
-                                  {event.page_url && (
+                                  {replayPageURL && (
                                     <div>
                                       <span className="replay-detail-label">Page URL</span>
-                                      <div className="replay-page-url">{event.page_url}</div>
+                                      <div className="replay-page-url">{replayPageURL}</div>
                                     </div>
                                   )}
-                                  {event.page_title && (
+                                  {replayPageTitle && (
                                     <div>
                                       <span className="replay-detail-label">Page Title</span>
-                                      <div>{event.page_title}</div>
+                                      <div>{replayPageTitle}</div>
                                     </div>
                                   )}
                                 </div>
                                 {hasBrowserReplayArtifacts(event) && (
                                   <div className="replay-browser-grid">
-                                    {event.dom_summary && (
+                                    {(() => {
+                                      const browserArtifacts = [
+                                        replayDOMSummary ? 'dom_summary' : null,
+                                        replayConsoleEntries?.length ? 'console' : null,
+                                        replayNetworkEntries?.length ? 'network' : null,
+                                        replayHTML ? 'html' : null,
+                                      ].filter((artifact): artifact is 'dom_summary' | 'console' | 'network' | 'html' => Boolean(artifact))
+                                      const browserArtifactKey = (artifact: 'dom_summary' | 'console' | 'network' | 'html') => `${index}:${artifact}`
+                                      const allBrowserArtifactsExpanded = browserArtifacts.length > 0 && browserArtifacts.every(artifact => expandedReplayBrowserArtifacts[browserArtifactKey(artifact)])
+
+                                      return (
+                                        <div className="replay-browser-grid-header">
+                                          <span className="replay-detail-label">Browser Artifacts</span>
+                                          {browserArtifacts.length > 0 && (
+                                            <button
+                                              type="button"
+                                              className="btn btn-sm btn-ghost"
+                                              onClick={() => {
+                                                browserArtifacts.forEach(artifact => {
+                                                  toggleReplayBrowserArtifact(browserArtifactKey(artifact), !allBrowserArtifactsExpanded)
+                                                })
+                                              }}
+                                            >
+                                              {allBrowserArtifactsExpanded ? 'Collapse artifacts' : 'Expand artifacts'}
+                                            </button>
+                                          )}
+                                        </div>
+                                      )
+                                    })()}
+                                    {replayDOMSummary && (
                                       <div className="replay-code-block">
                                         <span className="replay-detail-label">DOM Summary</span>
-                                        <pre>{JSON.stringify(event.dom_summary, null, 2)}</pre>
+                                        <SnapshotBodyPreview
+                                          body={JSON.stringify(replayDOMSummary, null, 2)}
+                                          headers={{ 'Content-Type': 'application/json' }}
+                                          expanded={expandedReplayBrowserArtifacts[`${index}:dom_summary`]}
+                                          onExpandedChange={(expanded) => toggleReplayBrowserArtifact(`${index}:dom_summary`, expanded)}
+                                        />
                                       </div>
                                     )}
-                                    <div className="replay-code-block">
-                                      <span className="replay-detail-label">Console</span>
-                                      <pre>{formatConsoleEntries(event.console_entries)}</pre>
-                                    </div>
-                                    <div className="replay-code-block">
-                                      <span className="replay-detail-label">Network</span>
-                                      <pre>{formatNetworkEntries(event.network_entries)}</pre>
-                                    </div>
-                                    {event.screenshot_base64 && (
+                                    {replayConsoleEntries?.length ? (
+                                      <div className="replay-code-block">
+                                        <span className="replay-detail-label">Console</span>
+                                        <SnapshotTextPreview
+                                          text={formatConsoleEntries(replayConsoleEntries)}
+                                          expanded={expandedReplayBrowserArtifacts[`${index}:console`]}
+                                          onExpandedChange={(expanded) => toggleReplayBrowserArtifact(`${index}:console`, expanded)}
+                                        />
+                                      </div>
+                                    ) : null}
+                                    {replayNetworkEntries?.length ? (
+                                      <div className="replay-code-block">
+                                        <span className="replay-detail-label">Network</span>
+                                        <SnapshotTextPreview
+                                          text={formatNetworkEntries(replayNetworkEntries)}
+                                          expanded={expandedReplayBrowserArtifacts[`${index}:network`]}
+                                          onExpandedChange={(expanded) => toggleReplayBrowserArtifact(`${index}:network`, expanded)}
+                                        />
+                                      </div>
+                                    ) : null}
+                                    {replayScreenshotBase64 && (
                                       <div className="replay-screenshot-block">
-                                        <span className="replay-detail-label">Screenshot</span>
-                                        <img src={`data:image/png;base64,${event.screenshot_base64}`} alt={`${event.action_name || 'Replay action'} screenshot`} />
+                                        <div className="replay-code-block-header">
+                                          <span className="replay-detail-label">Screenshot</span>
+                                          <button
+                                            type="button"
+                                            className="btn btn-sm btn-ghost"
+                                            onClick={() => setReplayScreenshotSelection({
+                                              alt: `${event.action_name || 'Replay action'} screenshot`,
+                                              src: `data:image/png;base64,${replayScreenshotBase64}`,
+                                            })}
+                                          >
+                                            View full size
+                                          </button>
+                                        </div>
+                                        <button
+                                          type="button"
+                                          className="replay-screenshot-button"
+                                          onClick={() => setReplayScreenshotSelection({
+                                            alt: `${event.action_name || 'Replay action'} screenshot`,
+                                            src: `data:image/png;base64,${replayScreenshotBase64}`,
+                                          })}
+                                        >
+                                          <img src={`data:image/png;base64,${replayScreenshotBase64}`} alt={`${event.action_name || 'Replay action'} screenshot`} />
+                                        </button>
                                       </div>
                                     )}
-                                    {event.html && (
+                                    {replayHTML && (
                                       <div className="replay-code-block replay-browser-html">
                                         <span className="replay-detail-label">HTML</span>
-                                        <pre>{event.html}</pre>
+                                        <SnapshotTextPreview
+                                          text={replayHTML}
+                                          expanded={expandedReplayBrowserArtifacts[`${index}:html`]}
+                                          onExpandedChange={(expanded) => toggleReplayBrowserArtifact(`${index}:html`, expanded)}
+                                        />
                                       </div>
                                     )}
                                   </div>
                                 )}
                                 <div className="replay-code-block">
                                   <span className="replay-detail-label">Resolved Headers</span>
-                                  <pre>{formatReplayHeaders(event.headers)}</pre>
+                                  <SnapshotTextPreview text={formatReplayHeaders(event.headers)} />
                                 </div>
                                 {event.body && (
                                   <div className="replay-code-block">
                                     <span className="replay-detail-label">Resolved Body</span>
-                                    <pre>{event.body}</pre>
+                                    <SnapshotBodyPreview
+                                      body={event.body}
+                                      headers={event.headers}
+                                    />
                                   </div>
                                 )}
                                 {event.extractions && Object.keys(event.extractions).length > 0 && (
                                   <div className="replay-code-block">
                                     <span className="replay-detail-label">Extractions</span>
-                                    <pre>{JSON.stringify(event.extractions, null, 2)}</pre>
+                                    <SnapshotBodyPreview
+                                      body={JSON.stringify(event.extractions, null, 2)}
+                                      headers={{ 'Content-Type': 'application/json' }}
+                                    />
                                   </div>
                                 )}
                                 {changedVariables.length > 0 && (
@@ -2106,10 +2275,71 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
                                   </div>
                                 )}
                                 {event.snapshot && (
-                                  <div className="replay-code-block">
-                                    <span className="replay-detail-label">Snapshot</span>
-                                    <pre>{JSON.stringify(event.snapshot, null, 2)}</pre>
-                                  </div>
+                                  hasStructuredReplaySnapshot(event.snapshot) ? (
+                                    <div className="replay-event-detail-grid">
+                                      {snapshotSoapFault && (
+                                        <div className="replay-code-block">
+                                          <div className="replay-code-block-header">
+                                            <span className="replay-detail-label">SOAP Fault</span>
+                                            <button
+                                              type="button"
+                                              className="btn btn-sm btn-ghost"
+                                              onClick={() => void handleCopyReplaySnapshotSection(`${index}:soap-fault`, formatSOAPFaultSummary(snapshotSoapFault))}
+                                            >
+                                              {copiedReplaySnapshotSection === `${index}:soap-fault` ? 'Copied' : 'Copy fault'}
+                                            </button>
+                                          </div>
+                                          <pre>{formatSOAPFaultSummary(snapshotSoapFault)}</pre>
+                                        </div>
+                                      )}
+                                      <div className="replay-code-block">
+                                        <div className="replay-code-block-header">
+                                          <span className="replay-detail-label">Snapshot Request</span>
+                                          <button
+                                            type="button"
+                                            className="btn btn-sm btn-ghost"
+                                            onClick={() => void handleCopyReplaySnapshotSection(`${index}:request`, formatSnapshotRequestSection(event.snapshot))}
+                                          >
+                                            {copiedReplaySnapshotSection === `${index}:request` ? 'Copied' : 'Copy request'}
+                                          </button>
+                                        </div>
+                                        <pre>{`${event.snapshot.request_method || 'n/a'} ${event.snapshot.request_url || ''}`.trim()}</pre>
+                                        <SnapshotTextPreview text={formatReplayHeaders(event.snapshot.request_headers)} />
+                                        <SnapshotBodyPreview
+                                          body={event.snapshot.request_body}
+                                          headers={event.snapshot.request_headers}
+                                          emptyMessage="No request body captured"
+                                        />
+                                      </div>
+                                      <div className="replay-code-block">
+                                        <div className="replay-code-block-header">
+                                          <span className="replay-detail-label">Snapshot Response</span>
+                                          <button
+                                            type="button"
+                                            className="btn btn-sm btn-ghost"
+                                            onClick={() => void handleCopyReplaySnapshotSection(`${index}:response`, formatSnapshotResponseSection(event.snapshot, event.status_code))}
+                                          >
+                                            {copiedReplaySnapshotSection === `${index}:response` ? 'Copied' : 'Copy response'}
+                                          </button>
+                                        </div>
+                                        <pre>{String(event.snapshot.response_status || event.status_code || 'n/a')}</pre>
+                                        <SnapshotTextPreview text={formatReplayHeaders(event.snapshot.response_headers)} />
+                                        <SnapshotBodyPreview
+                                          body={event.snapshot.response_body}
+                                          headers={event.snapshot.response_headers}
+                                          emptyMessage="No response body captured"
+                                        />
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <div className="replay-code-block">
+                                      <span className="replay-detail-label">Snapshot</span>
+                                      <SnapshotBodyPreview
+                                        body={JSON.stringify(event.snapshot, null, 2)}
+                                        headers={{ 'Content-Type': 'application/json' }}
+                                      />
+                                    </div>
+                                  )
                                 )}
                               </div>
                             )}
@@ -2665,7 +2895,15 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
                         <div className="form-grid">
                           <label>
                             <span>SOAP Version</span>
-                            <select value={script.config.soap?.version || '1.1'} onChange={e => updateField('config.soap.version', e.target.value)}>
+                            <select value={script.config.soap?.version || '1.1'} onChange={e => updateField('config.soap', {
+                              ...(script.config.soap || {}),
+                              version: e.target.value,
+                              namespaces: syncSOAPEnvelopeNamespace(
+                                e.target.value,
+                                script.config.soap?.namespaces,
+                                script.config.soap?.version,
+                              ),
+                            })}>
                               <option value="1.1">SOAP 1.1</option>
                               <option value="1.2">SOAP 1.2</option>
                             </select>
@@ -3198,8 +3436,47 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
               script={script}
             />
           )}
+
+          {replayScreenshotSelection && (
+            <ReplayScreenshotDialog
+              alt={replayScreenshotSelection.alt}
+              onClose={closeReplayScreenshot}
+              src={replayScreenshotSelection.src}
+            />
+          )}
         </div>
       )}
+    </div>
+  )
+}
+
+interface ReplayScreenshotDialogProps {
+  alt: string
+  onClose: () => void
+  src: string
+}
+
+function ReplayScreenshotDialog({ alt, onClose, src }: ReplayScreenshotDialogProps) {
+  return (
+    <div className="editor-dialog-backdrop" onClick={onClose}>
+      <div
+        className="editor-dialog replay-screenshot-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Replay Screenshot"
+        onClick={event => event.stopPropagation()}
+      >
+        <div className="editor-dialog-header">
+          <div>
+            <h3 className="panel-title">Replay Screenshot</h3>
+            <p className="editor-dialog-subtitle">Inspect the captured browser replay screenshot at full size.</p>
+          </div>
+          <button className="btn btn-sm btn-ghost" onClick={onClose}>Close</button>
+        </div>
+        <div className="editor-dialog-body replay-screenshot-dialog-body">
+          <img className="replay-screenshot-dialog-image" src={src} alt={alt} />
+        </div>
+      </div>
     </div>
   )
 }
@@ -4155,8 +4432,11 @@ function useScriptEditorState(initialScript?: ScriptData | null) {
   const [replaying, setReplaying] = useState(false)
   const [replayReport, setReplayReport] = useState<ReplayReport | null>(null)
   const [expandedReplayEvent, setExpandedReplayEvent] = useState<number | null>(null)
+  const [expandedReplayBrowserArtifacts, setExpandedReplayBrowserArtifacts] = useState<Record<string, boolean>>({})
+  const [copiedReplaySnapshotSection, setCopiedReplaySnapshotSection] = useState<string | null>(null)
   const [activeReplaySessionId, setActiveReplaySessionId] = useState<string | null>(null)
   const [browserReplaySession, setBrowserReplaySession] = useState<BrowserReplaySession | null>(null)
+  const [replayScreenshotSelection, setReplayScreenshotSelection] = useState<ReplayScreenshotSelection | null>(null)
   const [replayActivity, setReplayActivity] = useState<ReplayActivityItem[]>([])
   const [replaySeedVariables, setReplaySeedVariables] = useState<Record<string, string>>({})
   const replayEventRefs = useRef<Record<number, HTMLDivElement | null>>({})
@@ -4181,6 +4461,8 @@ function useScriptEditorState(initialScript?: ScriptData | null) {
     setParameterCandidates([])
     setError('')
     setSuccess('')
+    setExpandedReplayBrowserArtifacts({})
+    setReplayScreenshotSelection(null)
   }, [])
 
   const closeParameterDialog = () => {
@@ -4188,14 +4470,20 @@ function useScriptEditorState(initialScript?: ScriptData | null) {
     setPendingParameterDraft(null)
   }
 
+  const closeReplayScreenshot = () => {
+    setReplayScreenshotSelection(null)
+  }
+
   return {
     activeAction,
     activeReplaySessionId,
     browserReplaySession,
     closeParameterDialog,
+    copiedReplaySnapshotSection,
     dataEditorMode,
     dataSourceHistory,
     error,
+    expandedReplayBrowserArtifacts,
     expandedReplayEvent,
     hydrateEditorState,
     isParameterDialogOpen,
@@ -4209,6 +4497,7 @@ function useScriptEditorState(initialScript?: ScriptData | null) {
     replayEventRefs,
     replayOptions,
     replayReport,
+    replayScreenshotSelection,
     replaySeedVariables,
     replaying,
     saving,
@@ -4216,9 +4505,11 @@ function useScriptEditorState(initialScript?: ScriptData | null) {
     setActiveAction,
     setActiveReplaySessionId,
     setBrowserReplaySession,
+    setCopiedReplaySnapshotSection,
     setDataEditorMode,
     setDataSourceHistory,
     setError,
+    setExpandedReplayBrowserArtifacts,
     setExpandedReplayEvent,
     setIsParameterDialogOpen,
     setJsonMode,
@@ -4229,6 +4520,7 @@ function useScriptEditorState(initialScript?: ScriptData | null) {
     setReplayActivity,
     setReplayOptions,
     setReplayReport,
+    setReplayScreenshotSelection,
     setReplaySeedVariables,
     setReplaying,
     setSaving,
@@ -4236,6 +4528,7 @@ function useScriptEditorState(initialScript?: ScriptData | null) {
     setSuccess,
     success,
     toggleSection,
+    closeReplayScreenshot,
   }
 }
 
