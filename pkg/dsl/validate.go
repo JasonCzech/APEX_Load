@@ -70,8 +70,8 @@ func validateBrowserConfigIssues(script *Script) []string {
 
 	browser := script.Config.Browser
 	var issues []string
-	if browser.Engine != "" && !isAllowedValue(browser.Engine, "chromium") {
-		issues = append(issues, "config.browser.engine must be chromium")
+	if browser.Engine != "" && !isAllowedValue(browser.Engine, "chromium", "webkit") {
+		issues = append(issues, "config.browser.engine must be chromium or webkit")
 	}
 	if browser.Orientation != "" && !isAllowedValue(browser.Orientation, "portrait", "landscape") {
 		issues = append(issues, "config.browser.orientation must be portrait or landscape")

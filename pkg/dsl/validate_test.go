@@ -218,7 +218,7 @@ func TestValidateScriptIssues_BrowserValidation(t *testing.T) {
 		Protocol: "browser",
 		Config: ScriptConfig{
 			Browser: BrowserConfig{
-				Engine:      "webkit",
+				Engine:      "gecko",
 				Orientation: "diagonal",
 				Viewport: BrowserViewport{
 					Width:  -1,
@@ -259,7 +259,7 @@ func TestValidateScriptIssues_BrowserValidation(t *testing.T) {
 
 	issues := ValidateScriptIssues(script)
 
-	assertIssue(t, issues, "config.browser.engine must be chromium")
+	assertIssue(t, issues, "config.browser.engine must be chromium or webkit")
 	assertIssue(t, issues, "config.browser.orientation must be portrait or landscape")
 	assertIssue(t, issues, "config.browser.viewport.width must be zero or greater")
 	assertIssue(t, issues, "config.browser.viewport.height must be zero or greater")
@@ -278,7 +278,7 @@ func TestValidateScriptIssues_BrowserValidationAllowsSupportedFields(t *testing.
 		Protocol: "browser",
 		Config: ScriptConfig{
 			Browser: BrowserConfig{
-				Engine:        "chromium",
+				Engine:        "webkit",
 				DeviceProfile: "iphone_se",
 				TouchMode:     &touchMode,
 				Orientation:   "portrait",

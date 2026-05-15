@@ -47,10 +47,23 @@ func TestBrowserConfigIntAcceptsEngineNumericTypes(t *testing.T) {
 	}
 }
 
-func TestBrowserInitRejectsUnsupportedEngine(t *testing.T) {
+func TestBrowserInitRejectsUnimplementedWebKitEngine(t *testing.T) {
 	b := &Browser{}
 	err := b.Init(context.Background(), map[string]any{
 		"browser_engine": "webkit",
+	})
+	if err == nil {
+		t.Fatal("Init error = nil, want unimplemented engine")
+	}
+	if !strings.Contains(err.Error(), "not implemented in this build") {
+		t.Fatalf("Init error = %v, want explicit not implemented error", err)
+	}
+}
+
+func TestBrowserInitRejectsUnsupportedEngine(t *testing.T) {
+	b := &Browser{}
+	err := b.Init(context.Background(), map[string]any{
+		"browser_engine": "gecko",
 	})
 	if err == nil {
 		t.Fatal("Init error = nil, want unsupported engine")

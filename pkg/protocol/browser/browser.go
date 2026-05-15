@@ -120,6 +120,9 @@ func (b *Browser) Init(ctx context.Context, config map[string]any) error {
 	if engine, ok := config["browser_engine"].(string); ok && strings.TrimSpace(engine) != "" {
 		b.engine = strings.TrimSpace(engine)
 	}
+	if b.engine == "webkit" {
+		return fmt.Errorf("browser engine webkit is not implemented in this build")
+	}
 	if b.engine != "chromium" {
 		return fmt.Errorf("unsupported browser engine: %s", b.engine)
 	}

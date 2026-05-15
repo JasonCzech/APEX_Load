@@ -290,7 +290,7 @@ Stormrunner keeps mobile emulation under the `browser` protocol rather than intr
 ```
 
 Supported browser config keys:
-- `config.browser.engine`: currently `chromium`
+- `config.browser.engine`: `chromium` or `webkit` (`webkit` is reserved and returns a not-implemented runtime error in this build)
 - `config.browser.device_profile`: named preset from the built-in device registry
 - `config.browser.touch_mode`: optional boolean override for touch emulation
 - `config.browser.orientation`: `portrait` or `landscape`

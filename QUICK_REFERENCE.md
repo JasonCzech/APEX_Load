@@ -220,7 +220,7 @@ Supported browser actions:
 - `browser_swipe`
 
 Browser/mobile config keys:
-- `config.browser.engine`: currently `chromium`
+- `config.browser.engine`: `chromium` or `webkit` (`webkit` is reserved and returns a not-implemented runtime error in this build)
 - `config.browser.device_profile`: named preset such as `iPhone 14 Pro` or `iPad Air`
 - `config.browser.touch_mode`: force touch interactions on or off
 - `config.browser.orientation`: `portrait` or `landscape`
