@@ -146,12 +146,12 @@ func buildSOAPSnapshot(action *protocol.Action, targetURL string, result *protoc
 		return nil
 	}
 	return &protocol.ErrorSnapshot{
-		RequestMethod:   action.Method,
-		RequestURL:      targetURL,
-		RequestHeaders:  cloneHeaders(action.Headers),
-		RequestBody:     string(action.Body),
-		ResponseStatus:  result.StatusCode,
-		ResponseBody:    result.ResponseBody,
+		RequestMethod:  action.Method,
+		RequestURL:     targetURL,
+		RequestHeaders: cloneHeaders(action.Headers),
+		RequestBody:    string(action.Body),
+		ResponseStatus: result.StatusCode,
+		ResponseBody:   result.ResponseBody,
 	}
 }
 

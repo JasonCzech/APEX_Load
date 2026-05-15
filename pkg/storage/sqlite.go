@@ -20,35 +20,61 @@ type SQLiteStore struct {
 
 const (
 	intervalSummarySchemaVersionV1 = "stormrunner.interval-summary.v1"
-	intervalSummarySchemaVersion   = "stormrunner.interval-summary.v2"
-	archiveRecordSchemaVersion   = "stormrunner.archive.v1"
+	intervalSummarySchemaVersion   = "stormrunner.interval-summary.v3"
+	archiveRecordSchemaVersion     = "stormrunner.archive.v1"
 )
 
+type BrowserMetricsSummaryRecord struct {
+	Samples              int64   `json:"samples"`
+	AvgFCPMs             float64 `json:"avg_fcp_ms,omitempty"`
+	AvgLCPMs             float64 `json:"avg_lcp_ms,omitempty"`
+	AvgCLSScore          float64 `json:"avg_cls_score,omitempty"`
+	AvgINPMs             float64 `json:"avg_inp_ms,omitempty"`
+	AvgBlockingResources float64 `json:"avg_blocking_resources,omitempty"`
+	AvgLongTaskCount     float64 `json:"avg_long_task_count,omitempty"`
+	AvgJSHeapUsedMB      float64 `json:"avg_js_heap_used_mb,omitempty"`
+}
+
+type BrowserDeviceMetricsRecord struct {
+	DeviceProfile        string  `json:"device_profile,omitempty"`
+	DeviceTier           string  `json:"device_tier,omitempty"`
+	Samples              int64   `json:"samples"`
+	AvgFCPMs             float64 `json:"avg_fcp_ms,omitempty"`
+	AvgLCPMs             float64 `json:"avg_lcp_ms,omitempty"`
+	AvgCLSScore          float64 `json:"avg_cls_score,omitempty"`
+	AvgINPMs             float64 `json:"avg_inp_ms,omitempty"`
+	AvgBlockingResources float64 `json:"avg_blocking_resources,omitempty"`
+	AvgLongTaskCount     float64 `json:"avg_long_task_count,omitempty"`
+	AvgJSHeapUsedMB      float64 `json:"avg_js_heap_used_mb,omitempty"`
+}
+
 type IntervalSummaryRecord struct {
-	SchemaVersion           string    `json:"schema_version,omitempty"`
-	Timestamp                time.Time `json:"timestamp"`
-	ActiveVUsers             int64     `json:"active_vusers"`
-	TPS                      float64   `json:"tps"`
-	AvgResponseMs            float64   `json:"avg_response_ms"`
-	ErrorPct                 float64   `json:"error_pct"`
-	TotalTx                  int64     `json:"total_transactions"`
-	TotalErrors              int64     `json:"total_errors"`
-	P50Ms                    float64   `json:"p50_ms"`
-	P90Ms                    float64   `json:"p90_ms"`
-	P95Ms                    float64   `json:"p95_ms"`
-	P99Ms                    float64   `json:"p99_ms"`
-	DroppedResults           int64     `json:"dropped_results,omitempty"`
-	WebsocketClients         int       `json:"websocket_clients,omitempty"`
-	WebsocketDroppedMessages int64     `json:"websocket_dropped_messages,omitempty"`
-	WebsocketDroppedEvents   int64     `json:"websocket_dropped_events,omitempty"`
-	GeneratorPublishedAt     time.Time `json:"generator_published_at,omitempty"`
-	ControllerReceivedAt     time.Time `json:"controller_received_at,omitempty"`
-	CollectedAt              time.Time `json:"collected_at,omitempty"`
-	PublishedAt              time.Time `json:"published_at,omitempty"`
-	GeneratorProcessingLagMs float64   `json:"generator_processing_lag_ms,omitempty"`
-	TransportLagMs           float64   `json:"transport_lag_ms,omitempty"`
-	ControllerFanoutLagMs    float64   `json:"controller_fanout_lag_ms,omitempty"`
-	SampleAgeMs              float64   `json:"sample_age_ms,omitempty"`
+	SchemaVersion            string                                 `json:"schema_version,omitempty"`
+	Timestamp                time.Time                              `json:"timestamp"`
+	ActiveVUsers             int64                                  `json:"active_vusers"`
+	TPS                      float64                                `json:"tps"`
+	AvgResponseMs            float64                                `json:"avg_response_ms"`
+	ErrorPct                 float64                                `json:"error_pct"`
+	TotalTx                  int64                                  `json:"total_transactions"`
+	TotalErrors              int64                                  `json:"total_errors"`
+	P50Ms                    float64                                `json:"p50_ms"`
+	P90Ms                    float64                                `json:"p90_ms"`
+	P95Ms                    float64                                `json:"p95_ms"`
+	P99Ms                    float64                                `json:"p99_ms"`
+	Browser                  *BrowserMetricsSummaryRecord           `json:"browser,omitempty"`
+	BrowserByDevice          map[string]*BrowserDeviceMetricsRecord `json:"browser_by_device,omitempty"`
+	DroppedResults           int64                                  `json:"dropped_results,omitempty"`
+	WebsocketClients         int                                    `json:"websocket_clients,omitempty"`
+	WebsocketDroppedMessages int64                                  `json:"websocket_dropped_messages,omitempty"`
+	WebsocketDroppedEvents   int64                                  `json:"websocket_dropped_events,omitempty"`
+	GeneratorPublishedAt     time.Time                              `json:"generator_published_at,omitempty"`
+	ControllerReceivedAt     time.Time                              `json:"controller_received_at,omitempty"`
+	CollectedAt              time.Time                              `json:"collected_at,omitempty"`
+	PublishedAt              time.Time                              `json:"published_at,omitempty"`
+	GeneratorProcessingLagMs float64                                `json:"generator_processing_lag_ms,omitempty"`
+	TransportLagMs           float64                                `json:"transport_lag_ms,omitempty"`
+	ControllerFanoutLagMs    float64                                `json:"controller_fanout_lag_ms,omitempty"`
+	SampleAgeMs              float64                                `json:"sample_age_ms,omitempty"`
 }
 
 func NewSQLiteStore(path string) (*SQLiteStore, error) {
@@ -216,6 +242,8 @@ func (s *SQLiteStore) init() error {
 			p90_ms REAL,
 			p95_ms REAL,
 			p99_ms REAL,
+			browser_json TEXT,
+			browser_by_device_json TEXT,
 			dropped_results INTEGER,
 			websocket_clients INTEGER,
 			websocket_dropped_messages INTEGER,
@@ -318,6 +346,8 @@ func (s *SQLiteStore) init() error {
 		{`ALTER TABLE test_interval_summaries ADD COLUMN generator_processing_lag_ms REAL`, "test_interval_summaries.generator_processing_lag_ms"},
 		{`ALTER TABLE test_interval_summaries ADD COLUMN transport_lag_ms REAL`, "test_interval_summaries.transport_lag_ms"},
 		{`ALTER TABLE test_interval_summaries ADD COLUMN controller_fanout_lag_ms REAL`, "test_interval_summaries.controller_fanout_lag_ms"},
+		{`ALTER TABLE test_interval_summaries ADD COLUMN browser_json TEXT`, "test_interval_summaries.browser_json"},
+		{`ALTER TABLE test_interval_summaries ADD COLUMN browser_by_device_json TEXT`, "test_interval_summaries.browser_by_device_json"},
 	} {
 		if _, err := s.db.Exec(migration.query); err != nil && !isDuplicateColumnErr(err) {
 			return fmt.Errorf("failed to add %s column: %w", migration.name, err)
@@ -1520,6 +1550,14 @@ func (s *SQLiteStore) MoveTest(id string, folderID *string) error {
 func (s *SQLiteStore) SaveHistory(testID string, timestamp time.Time, metrics any) error {
 	record, err := intervalSummaryRecordFromMetrics(timestamp, metrics)
 	if err == nil {
+		browserJSON, err := marshalNullableJSON(record.Browser)
+		if err != nil {
+			return err
+		}
+		browserByDeviceJSON, err := marshalNullableJSON(record.BrowserByDevice)
+		if err != nil {
+			return err
+		}
 		var collectedAt any
 		if !record.CollectedAt.IsZero() {
 			collectedAt = record.CollectedAt
@@ -1539,10 +1577,11 @@ func (s *SQLiteStore) SaveHistory(testID string, timestamp time.Time, metrics an
 		_, err = s.db.Exec(`INSERT INTO test_interval_summaries (
 			test_id, schema_version, timestamp, active_vusers, tps, avg_response_ms, error_pct,
 			total_transactions, total_errors, p50_ms, p90_ms, p95_ms, p99_ms,
+			browser_json, browser_by_device_json,
 			dropped_results, websocket_clients, websocket_dropped_messages, websocket_dropped_events,
 			generator_published_at, controller_received_at, collected_at, published_at,
 			generator_processing_lag_ms, transport_lag_ms, controller_fanout_lag_ms, sample_age_ms
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			testID,
 			record.SchemaVersion,
 			record.Timestamp,
@@ -1556,6 +1595,8 @@ func (s *SQLiteStore) SaveHistory(testID string, timestamp time.Time, metrics an
 			record.P90Ms,
 			record.P95Ms,
 			record.P99Ms,
+			browserJSON,
+			browserByDeviceJSON,
 			record.DroppedResults,
 			record.WebsocketClients,
 			record.WebsocketDroppedMessages,
@@ -1619,6 +1660,8 @@ func (s *SQLiteStore) getTypedHistory(testID string) ([]any, error) {
 		p90_ms,
 		p95_ms,
 		p99_ms,
+		browser_json,
+		browser_by_device_json,
 		dropped_results,
 		websocket_clients,
 		websocket_dropped_messages,
@@ -1640,6 +1683,8 @@ func (s *SQLiteStore) getTypedHistory(testID string) ([]any, error) {
 	history := make([]any, 0)
 	for rows.Next() {
 		var record IntervalSummaryRecord
+		var browserJSON sql.NullString
+		var browserByDeviceJSON sql.NullString
 		var droppedResults sql.NullInt64
 		var websocketClients sql.NullInt64
 		var websocketDroppedMessages sql.NullInt64
@@ -1666,6 +1711,8 @@ func (s *SQLiteStore) getTypedHistory(testID string) ([]any, error) {
 			&record.P90Ms,
 			&record.P95Ms,
 			&record.P99Ms,
+			&browserJSON,
+			&browserByDeviceJSON,
 			&droppedResults,
 			&websocketClients,
 			&websocketDroppedMessages,
@@ -1682,6 +1729,16 @@ func (s *SQLiteStore) getTypedHistory(testID string) ([]any, error) {
 			return nil, err
 		}
 		record.SchemaVersion = normalizeTelemetrySchemaVersion(schemaVersion.String, intervalSummarySchemaVersionV1)
+		if browserJSON.Valid && strings.TrimSpace(browserJSON.String) != "" {
+			if err := json.Unmarshal([]byte(browserJSON.String), &record.Browser); err != nil {
+				return nil, err
+			}
+		}
+		if browserByDeviceJSON.Valid && strings.TrimSpace(browserByDeviceJSON.String) != "" {
+			if err := json.Unmarshal([]byte(browserByDeviceJSON.String), &record.BrowserByDevice); err != nil {
+				return nil, err
+			}
+		}
 		if droppedResults.Valid {
 			record.DroppedResults = droppedResults.Int64
 		}
@@ -1724,33 +1781,57 @@ func (s *SQLiteStore) getTypedHistory(testID string) ([]any, error) {
 }
 
 func intervalSummaryRecordFromMetrics(timestamp time.Time, metrics any) (IntervalSummaryRecord, error) {
+	type browserEnvelope struct {
+		Samples              int64   `json:"samples"`
+		AvgFCPMs             float64 `json:"avg_fcp_ms,omitempty"`
+		AvgLCPMs             float64 `json:"avg_lcp_ms,omitempty"`
+		AvgCLSScore          float64 `json:"avg_cls_score,omitempty"`
+		AvgINPMs             float64 `json:"avg_inp_ms,omitempty"`
+		AvgBlockingResources float64 `json:"avg_blocking_resources,omitempty"`
+		AvgLongTaskCount     float64 `json:"avg_long_task_count,omitempty"`
+		AvgJSHeapUsedMB      float64 `json:"avg_js_heap_used_mb,omitempty"`
+	}
+	type browserDeviceEnvelope struct {
+		DeviceProfile        string  `json:"device_profile,omitempty"`
+		DeviceTier           string  `json:"device_tier,omitempty"`
+		Samples              int64   `json:"samples"`
+		AvgFCPMs             float64 `json:"avg_fcp_ms,omitempty"`
+		AvgLCPMs             float64 `json:"avg_lcp_ms,omitempty"`
+		AvgCLSScore          float64 `json:"avg_cls_score,omitempty"`
+		AvgINPMs             float64 `json:"avg_inp_ms,omitempty"`
+		AvgBlockingResources float64 `json:"avg_blocking_resources,omitempty"`
+		AvgLongTaskCount     float64 `json:"avg_long_task_count,omitempty"`
+		AvgJSHeapUsedMB      float64 `json:"avg_js_heap_used_mb,omitempty"`
+	}
 	type telemetryEnvelope struct {
 		DroppedResults           int64     `json:"dropped_results,omitempty"`
 		WebsocketClients         int       `json:"websocket_clients,omitempty"`
 		WebsocketDroppedMessages int64     `json:"websocket_dropped_messages,omitempty"`
 		WebsocketDroppedEvents   int64     `json:"websocket_dropped_events,omitempty"`
-			GeneratorPublishedAt     time.Time `json:"generator_published_at,omitempty"`
-			ControllerReceivedAt     time.Time `json:"controller_received_at,omitempty"`
+		GeneratorPublishedAt     time.Time `json:"generator_published_at,omitempty"`
+		ControllerReceivedAt     time.Time `json:"controller_received_at,omitempty"`
 		CollectedAt              time.Time `json:"collected_at,omitempty"`
 		PublishedAt              time.Time `json:"published_at,omitempty"`
-			GeneratorProcessingLagMs float64   `json:"generator_processing_lag_ms,omitempty"`
-			TransportLagMs           float64   `json:"transport_lag_ms,omitempty"`
-			ControllerFanoutLagMs    float64   `json:"controller_fanout_lag_ms,omitempty"`
+		GeneratorProcessingLagMs float64   `json:"generator_processing_lag_ms,omitempty"`
+		TransportLagMs           float64   `json:"transport_lag_ms,omitempty"`
+		ControllerFanoutLagMs    float64   `json:"controller_fanout_lag_ms,omitempty"`
 		SampleAgeMs              float64   `json:"sample_age_ms,omitempty"`
 	}
 	type summaryEnvelope struct {
-		Timestamp     time.Time          `json:"timestamp"`
-		ActiveVUsers  int64              `json:"active_vusers"`
-		TPS           float64            `json:"tps"`
-		AvgResponseMs float64            `json:"avg_response_ms"`
-		ErrorPct      float64            `json:"error_pct"`
-		TotalTx       int64              `json:"total_transactions"`
-		TotalErrors   int64              `json:"total_errors"`
-		P50Ms         float64            `json:"p50_ms"`
-		P90Ms         float64            `json:"p90_ms"`
-		P95Ms         float64            `json:"p95_ms"`
-		P99Ms         float64            `json:"p99_ms"`
-		Telemetry     *telemetryEnvelope `json:"telemetry,omitempty"`
+		Timestamp       time.Time                         `json:"timestamp"`
+		ActiveVUsers    int64                             `json:"active_vusers"`
+		TPS             float64                           `json:"tps"`
+		AvgResponseMs   float64                           `json:"avg_response_ms"`
+		ErrorPct        float64                           `json:"error_pct"`
+		TotalTx         int64                             `json:"total_transactions"`
+		TotalErrors     int64                             `json:"total_errors"`
+		P50Ms           float64                           `json:"p50_ms"`
+		P90Ms           float64                           `json:"p90_ms"`
+		P95Ms           float64                           `json:"p95_ms"`
+		P99Ms           float64                           `json:"p99_ms"`
+		Browser         *browserEnvelope                  `json:"browser,omitempty"`
+		BrowserByDevice map[string]*browserDeviceEnvelope `json:"browser_by_device,omitempty"`
+		Telemetry       *telemetryEnvelope                `json:"telemetry,omitempty"`
 	}
 
 	payload, err := json.Marshal(metrics)
@@ -1775,6 +1856,38 @@ func intervalSummaryRecordFromMetrics(timestamp time.Time, metrics any) (Interva
 		P95Ms:         summary.P95Ms,
 		P99Ms:         summary.P99Ms,
 	}
+	if summary.Browser != nil {
+		record.Browser = &BrowserMetricsSummaryRecord{
+			Samples:              summary.Browser.Samples,
+			AvgFCPMs:             summary.Browser.AvgFCPMs,
+			AvgLCPMs:             summary.Browser.AvgLCPMs,
+			AvgCLSScore:          summary.Browser.AvgCLSScore,
+			AvgINPMs:             summary.Browser.AvgINPMs,
+			AvgBlockingResources: summary.Browser.AvgBlockingResources,
+			AvgLongTaskCount:     summary.Browser.AvgLongTaskCount,
+			AvgJSHeapUsedMB:      summary.Browser.AvgJSHeapUsedMB,
+		}
+	}
+	if len(summary.BrowserByDevice) > 0 {
+		record.BrowserByDevice = make(map[string]*BrowserDeviceMetricsRecord, len(summary.BrowserByDevice))
+		for name, metrics := range summary.BrowserByDevice {
+			if metrics == nil {
+				continue
+			}
+			record.BrowserByDevice[name] = &BrowserDeviceMetricsRecord{
+				DeviceProfile:        metrics.DeviceProfile,
+				DeviceTier:           metrics.DeviceTier,
+				Samples:              metrics.Samples,
+				AvgFCPMs:             metrics.AvgFCPMs,
+				AvgLCPMs:             metrics.AvgLCPMs,
+				AvgCLSScore:          metrics.AvgCLSScore,
+				AvgINPMs:             metrics.AvgINPMs,
+				AvgBlockingResources: metrics.AvgBlockingResources,
+				AvgLongTaskCount:     metrics.AvgLongTaskCount,
+				AvgJSHeapUsedMB:      metrics.AvgJSHeapUsedMB,
+			}
+		}
+	}
 	if record.Timestamp.IsZero() {
 		record.Timestamp = timestamp
 	}
@@ -1793,6 +1906,20 @@ func intervalSummaryRecordFromMetrics(timestamp time.Time, metrics any) (Interva
 		record.SampleAgeMs = summary.Telemetry.SampleAgeMs
 	}
 	return record, nil
+}
+
+func marshalNullableJSON(value any) (any, error) {
+	if value == nil {
+		return nil, nil
+	}
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if string(encoded) == "null" || string(encoded) == "{}" {
+		return nil, nil
+	}
+	return string(encoded), nil
 }
 
 func (s *SQLiteStore) SaveRunArchive(record *RunArchiveRecord) error {

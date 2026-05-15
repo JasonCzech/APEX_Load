@@ -135,6 +135,9 @@ describe('DashboardPage', () => {
       overview: {
         peak_tps: 32,
         avg_response_ms: 95,
+        browser: {
+          avg_lcp_ms: 240,
+        },
         error_pct: 0,
         peak_active_vusers: 12,
         transactions: 1200,
@@ -176,6 +179,8 @@ describe('DashboardPage', () => {
     })
 
     expect(getButtonByText('Generators Available').textContent).toContain('1')
+  expect(container.textContent).toContain('LCP ms')
+  expect(container.textContent).toContain('240')
 
     clickButtonByText('API Server')
     expect(onNavigate).toHaveBeenCalledWith('monitoring')

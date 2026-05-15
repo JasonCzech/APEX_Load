@@ -113,6 +113,30 @@ type DOMSummary struct {
 	VisibleText []string `json:"visible_text,omitempty"`
 }
 
+type ClientMetrics struct {
+	DeviceProfile       string  `json:"device_profile,omitempty"`
+	DeviceTier          string  `json:"device_tier,omitempty"`
+	ActionDurationMs    float64 `json:"action_duration_ms,omitempty"`
+	FCPMs               float64 `json:"fcp_ms,omitempty"`
+	LCPMs               float64 `json:"lcp_ms,omitempty"`
+	CLSScore            float64 `json:"cls_score,omitempty"`
+	INPMs               float64 `json:"inp_ms,omitempty"`
+	DOMContentLoadedMs  float64 `json:"dom_content_loaded_ms,omitempty"`
+	DOMCompleteMs       float64 `json:"dom_complete_ms,omitempty"`
+	LoadEventMs         float64 `json:"load_event_ms,omitempty"`
+	BlockingResourceCount int   `json:"blocking_resource_count,omitempty"`
+	TotalResourceCount  int     `json:"total_resource_count,omitempty"`
+	ResourceTransferKB  float64 `json:"resource_transfer_kb,omitempty"`
+	JSHeapUsedMB        float64 `json:"js_heap_used_mb,omitempty"`
+	JSHeapTotalMB       float64 `json:"js_heap_total_mb,omitempty"`
+	LayoutCount         int     `json:"layout_count,omitempty"`
+	RecalcStyleCount    int     `json:"recalc_style_count,omitempty"`
+	ScriptDurationMs    float64 `json:"script_duration_ms,omitempty"`
+	LayoutDurationMs    float64 `json:"layout_duration_ms,omitempty"`
+	TaskDurationMs      float64 `json:"task_duration_ms,omitempty"`
+	LongTaskCount       int     `json:"long_task_count,omitempty"`
+}
+
 // Extractor extracts a value from the response for use in later templates or variables.
 //
 // Example: Extract session token from JSON response for use in subsequent requests.
@@ -175,6 +199,7 @@ type Result struct {
 	ConsoleEntries   []ConsoleEntry
 	NetworkEntries   []NetworkEntry
 	DOMSummary       *DOMSummary
+	ClientMetrics    *ClientMetrics
 	Snapshot         *ErrorSnapshot // populated when snapshot_on_error is enabled
 }
 

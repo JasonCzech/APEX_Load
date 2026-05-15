@@ -42,14 +42,14 @@ func (p *iterationResetProtocol) Teardown(_ context.Context) error {
 }
 func (p *iterationResetProtocol) HealthCheck(_ context.Context) error { return nil }
 
-func (p *loggingProtocol) Name() string { return "http" }
+func (p *loggingProtocol) Name() string                                   { return "http" }
 func (p *loggingProtocol) Init(_ context.Context, _ map[string]any) error { return nil }
 func (p *loggingProtocol) Execute(_ context.Context, action *protocol.Action) (*protocol.Result, error) {
 	result := *p.result
 	result.ActionName = action.Name
 	return &result, nil
 }
-func (p *loggingProtocol) Teardown(_ context.Context) error { return nil }
+func (p *loggingProtocol) Teardown(_ context.Context) error    { return nil }
 func (p *loggingProtocol) HealthCheck(_ context.Context) error { return nil }
 
 func TestVUser_Interpolate(t *testing.T) {

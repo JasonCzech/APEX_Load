@@ -396,6 +396,8 @@ func TestBuildProtoConfig_Browser(t *testing.T) {
 	headless := false
 	cacheEnabled := false
 	checkNewerVersions := true
+	touchMode := true
+	clientMetrics := true
 	latencyMs := 75
 	script := &dsl.Script{
 		Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{Preserved: map[string]any{
@@ -412,6 +414,10 @@ func TestBuildProtoConfig_Browser(t *testing.T) {
 				DownloadResources:  "recorded",
 				SlowMoMs:           125,
 				UserAgent:          "StormrunnerBrowser/0.1",
+				DeviceProfile:      "iphone_se",
+				TouchMode:          &touchMode,
+				Orientation:        "portrait",
+				ClientMetrics:      &clientMetrics,
 				CaptureScreenshots: "per_action",
 				Viewport: dsl.BrowserViewport{
 					Width:  1440,
@@ -425,7 +431,7 @@ func TestBuildProtoConfig_Browser(t *testing.T) {
 				},
 				DataFormatting: dsl.DataFormattingConfig{
 					AutoDetect: true,
-					Chain: []dsl.DFETransform{{Type: "base64"}, {Type: "gzip", Options: map[string]string{"mode": "decode"}}},
+					Chain:      []dsl.DFETransform{{Type: "base64"}, {Type: "gzip", Options: map[string]string{"mode": "decode"}}},
 				},
 				NetworkSimulation: dsl.NetworkSimulationConfig{
 					Mode:          "custom",
@@ -468,6 +474,18 @@ func TestBuildProtoConfig_Browser(t *testing.T) {
 	}
 	if cfg["browser_capture_screenshots"] != "per_action" {
 		t.Errorf("browser_capture_screenshots = %v, want per_action", cfg["browser_capture_screenshots"])
+	}
+	if cfg["browser_device_profile"] != "iphone_se" {
+		t.Errorf("browser_device_profile = %v, want iphone_se", cfg["browser_device_profile"])
+	}
+	if cfg["browser_touch_mode"] != true {
+		t.Errorf("browser_touch_mode = %v, want true", cfg["browser_touch_mode"])
+	}
+	if cfg["browser_orientation"] != "portrait" {
+		t.Errorf("browser_orientation = %v, want portrait", cfg["browser_orientation"])
+	}
+	if cfg["browser_client_metrics"] != true {
+		t.Errorf("browser_client_metrics = %v, want true", cfg["browser_client_metrics"])
 	}
 	if cfg["browser_viewport_width"] != float64(1440) {
 		t.Errorf("browser_viewport_width = %v, want 1440", cfg["browser_viewport_width"])

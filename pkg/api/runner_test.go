@@ -337,11 +337,11 @@ func TestApplyRuntimeOverridesAppliesExtendedOverrideFields(t *testing.T) {
 	iterations := 4
 	script := &dsl.Script{
 		Config: dsl.ScriptConfig{
-			RunLogic: dsl.RunLogicConfig{Iterations: 1, AutoTransactions: "none"},
-			Pacing: dsl.PacingConfig{Type: "none"},
-			ThinkTime: dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 1000},
+			RunLogic:      dsl.RunLogicConfig{Iterations: 1, AutoTransactions: "none"},
+			Pacing:        dsl.PacingConfig{Type: "none"},
+			ThinkTime:     dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 1000},
 			ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: false, SnapshotOnError: false},
-			Log: dsl.LogConfig{Level: "standard"},
+			Log:           dsl.LogConfig{Level: "standard"},
 		},
 	}
 
@@ -500,6 +500,30 @@ func TestBuildLiveMetricsFromSnapshot(t *testing.T) {
 				P99:          900 * time.Millisecond,
 			},
 		},
+		Browser: &engine.BrowserMetricsSummary{
+			Samples:              2,
+			AvgFCPMs:             120,
+			AvgLCPMs:             240,
+			AvgCLSScore:          0.03,
+			AvgINPMs:             55,
+			AvgBlockingResources: 2,
+			AvgLongTaskCount:     1.5,
+			AvgJSHeapUsedMB:      18,
+		},
+		BrowserByDevice: map[string]*engine.BrowserDeviceMetrics{
+			"iphone_se": {
+				DeviceProfile:        "iphone_se",
+				DeviceTier:           "low",
+				Samples:              2,
+				AvgFCPMs:             120,
+				AvgLCPMs:             240,
+				AvgCLSScore:          0.03,
+				AvgINPMs:             55,
+				AvgBlockingResources: 2,
+				AvgLongTaskCount:     1.5,
+				AvgJSHeapUsedMB:      18,
+			},
+		},
 		Resources: resources,
 	}, map[string]int{"buyers": 12})
 
@@ -517,6 +541,12 @@ func TestBuildLiveMetricsFromSnapshot(t *testing.T) {
 	}
 	if live.Resources != resources {
 		t.Fatal("expected resources pointer to be preserved")
+	}
+	if live.Browser == nil || live.Browser.Samples != 2 {
+		t.Fatalf("expected browser summary to be mapped, got %#v", live.Browser)
+	}
+	if live.BrowserByDevice == nil || live.BrowserByDevice["iphone_se"] == nil {
+		t.Fatalf("expected browser-by-device metrics to be mapped, got %#v", live.BrowserByDevice)
 	}
 
 	login, ok := live.Transactions["login"]
@@ -924,17 +954,41 @@ func TestLoadStoredTestHistoryBuildsLiveMetricsFromTypedIntervalSummaries(t *tes
 	store := &metricsStoreSpy{historyByTestID: map[string][]any{
 		"test-1": {
 			storage.IntervalSummaryRecord{
-				Timestamp:                time.Date(2026, time.May, 13, 17, 15, 0, 0, time.UTC),
-				ActiveVUsers:             9,
-				TPS:                      22.5,
-				AvgResponseMs:            180.5,
-				ErrorPct:                 2.5,
-				TotalTx:                  90,
-				TotalErrors:              2,
-				P50Ms:                    140,
-				P90Ms:                    260,
-				P95Ms:                    310,
-				P99Ms:                    400,
+				Timestamp:     time.Date(2026, time.May, 13, 17, 15, 0, 0, time.UTC),
+				ActiveVUsers:  9,
+				TPS:           22.5,
+				AvgResponseMs: 180.5,
+				ErrorPct:      2.5,
+				TotalTx:       90,
+				TotalErrors:   2,
+				P50Ms:         140,
+				P90Ms:         260,
+				P95Ms:         310,
+				P99Ms:         400,
+				Browser: &storage.BrowserMetricsSummaryRecord{
+					Samples:              2,
+					AvgFCPMs:             120,
+					AvgLCPMs:             240,
+					AvgCLSScore:          0.031,
+					AvgINPMs:             55,
+					AvgBlockingResources: 2,
+					AvgLongTaskCount:     1.5,
+					AvgJSHeapUsedMB:      18,
+				},
+				BrowserByDevice: map[string]*storage.BrowserDeviceMetricsRecord{
+					"iphone_se": {
+						DeviceProfile:        "iphone_se",
+						DeviceTier:           "low",
+						Samples:              2,
+						AvgFCPMs:             120,
+						AvgLCPMs:             240,
+						AvgCLSScore:          0.031,
+						AvgINPMs:             55,
+						AvgBlockingResources: 2,
+						AvgLongTaskCount:     1.5,
+						AvgJSHeapUsedMB:      18,
+					},
+				},
 				DroppedResults:           5,
 				WebsocketDroppedMessages: 2,
 				CollectedAt:              time.Date(2026, time.May, 13, 17, 14, 59, 0, time.UTC),
@@ -959,6 +1013,12 @@ func TestLoadStoredTestHistoryBuildsLiveMetricsFromTypedIntervalSummaries(t *tes
 	}
 	if testRun.LiveMetrics.Telemetry == nil || testRun.LiveMetrics.Telemetry.DroppedResults != 5 || testRun.LiveMetrics.Telemetry.WebsocketDroppedMessages != 2 {
 		t.Fatalf("expected telemetry to round-trip from typed history, got %#v", testRun.LiveMetrics.Telemetry)
+	}
+	if testRun.LiveMetrics.Browser == nil || testRun.LiveMetrics.Browser.AvgCLSScore != 0.031 {
+		t.Fatalf("expected browser summary to round-trip from typed history, got %#v", testRun.LiveMetrics.Browser)
+	}
+	if testRun.LiveMetrics.BrowserByDevice == nil || testRun.LiveMetrics.BrowserByDevice["iphone_se"] == nil || testRun.LiveMetrics.BrowserByDevice["iphone_se"].DeviceTier != "low" {
+		t.Fatalf("expected browser-by-device summary to round-trip from typed history, got %#v", testRun.LiveMetrics.BrowserByDevice)
 	}
 }
 

@@ -62,8 +62,28 @@ describe('TestExecutionArchive', () => {
       interval_summaries: 0,
       peak_tps: 1,
       peak_active_vusers: 1,
+      browser: {
+        samples: 1,
+        avg_fcp_ms: 130,
+        avg_lcp_ms: 240,
+        avg_cls_score: 0.031,
+        avg_inp_ms: 56,
+        avg_long_task_count: 1,
+        avg_blocking_resources: 2,
+      },
     },
     by_action: {},
+    browser_by_device: {
+      iphone_se: {
+        device_profile: 'iphone_se',
+        device_tier: 'low',
+        samples: 1,
+        avg_fcp_ms: 130,
+        avg_lcp_ms: 240,
+        avg_cls_score: 0.031,
+        avg_inp_ms: 56,
+      },
+    },
     resource_peaks: {
       cpu_process_pct: 0,
       mem_process_mb: 0,
@@ -104,6 +124,16 @@ describe('TestExecutionArchive', () => {
       success: false,
       error_message: 'soap fault: env:Sender: Request validation failed',
       bytes_received: 512,
+      client_metrics: {
+        device_profile: 'iphone_se',
+        device_tier: 'low',
+        fcp_ms: 130,
+        lcp_ms: 240,
+        cls_score: 0.031,
+        inp_ms: 56,
+        blocking_resource_count: 2,
+        long_task_count: 1,
+      },
       snapshot: {
         request_method: 'POST',
         request_url: 'https://soap.example.test/orders',
@@ -157,6 +187,11 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('SOAP 1.2')
     expect(container.textContent).toContain('Code: env:Sender')
     expect(container.textContent).toContain('Reason: Request validation failed')
+    expect(container.textContent).toContain('Browser Metrics')
+    expect(container.textContent).toContain('Avg FCP')
+    expect(container.textContent).toContain('iphone_se')
+    expect(container.textContent).toContain('Client Metrics')
+    expect(container.textContent).toContain('INP: 56.0 ms')
     expect(container.textContent).toContain('Response')
     const copyFaultButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Copy fault'))
     const copyRequestButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Copy request'))

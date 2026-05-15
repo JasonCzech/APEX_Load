@@ -41,11 +41,11 @@ func TestJavaHTTPExecuteDecodesRequestAndEncodesResponse(t *testing.T) {
 	p := &JavaHTTP{}
 	if err := p.Init(context.Background(), map[string]any{
 		"base_url":                         ts.URL,
-		"java_http_codec":                 supportedCodec,
-		"java_http_helper_mode":           "embedded",
-		"java_http_content_type":          "application/x-java-serialized-object",
-		"java_http_accept":                "application/x-java-serialized-object",
-		"java_http_body_encoding":         "base64",
+		"java_http_codec":                  supportedCodec,
+		"java_http_helper_mode":            "embedded",
+		"java_http_content_type":           "application/x-java-serialized-object",
+		"java_http_accept":                 "application/x-java-serialized-object",
+		"java_http_body_encoding":          "base64",
 		"java_http_preserve_binary_result": true,
 	}); err != nil {
 		t.Fatalf("Init returned error: %v", err)
@@ -83,7 +83,7 @@ func TestJavaHTTPExecuteDecodesRequestAndEncodesResponse(t *testing.T) {
 func TestJavaHTTPExecuteRejectsInvalidBase64(t *testing.T) {
 	p := &JavaHTTP{}
 	if err := p.Init(context.Background(), map[string]any{
-		"base_url":                 "https://example.com",
+		"base_url":                "https://example.com",
 		"java_http_codec":         supportedCodec,
 		"java_http_helper_mode":   "embedded",
 		"java_http_body_encoding": "base64",
@@ -103,7 +103,7 @@ func TestJavaHTTPExecuteRejectsInvalidBase64(t *testing.T) {
 func TestJavaHTTPInitAllowsSidecarHelperMode(t *testing.T) {
 	p := &JavaHTTP{}
 	if err := p.Init(context.Background(), map[string]any{
-		"base_url":                 "https://example.com",
+		"base_url":                "https://example.com",
 		"java_http_codec":         supportedCodec,
 		"java_http_helper_mode":   "sidecar",
 		"java_http_body_encoding": "base64",

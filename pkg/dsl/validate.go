@@ -40,18 +40,7 @@ func ValidateScriptIssues(script *Script) []string {
 		}
 
 		if script.Protocol == "browser" {
-			switch action.Type {
-			case "browser_screenshot":
-				continue
-			case "browser_wait":
-				if action.WaitFor == nil && action.Selector == "" && action.Target == "" {
-					issues = append(issues, fmt.Sprintf("actions[%d] %q: browser_wait requires wait_for, selector, or target", i, action.Name))
-				}
-			default:
-				if action.Target == "" && action.Selector == "" {
-					issues = append(issues, fmt.Sprintf("actions[%d] %q: missing target or selector", i, action.Name))
-				}
-			}
+			issues = append(issues, validateBrowserActionIssues(i, action)...)
 			continue
 		}
 
@@ -68,9 +57,114 @@ func ValidateScriptIssues(script *Script) []string {
 	}
 
 	issues = append(issues, validateParameterIssues(script)...)
+	issues = append(issues, validateBrowserConfigIssues(script)...)
 	issues = append(issues, validateWebRuntimeIssues(script)...)
 
 	return issues
+}
+
+func validateBrowserConfigIssues(script *Script) []string {
+	if script == nil || strings.TrimSpace(script.Protocol) != "browser" {
+		return nil
+	}
+
+	browser := script.Config.Browser
+	var issues []string
+	if browser.Engine != "" && !isAllowedValue(browser.Engine, "chromium") {
+		issues = append(issues, "config.browser.engine must be chromium")
+	}
+	if browser.Orientation != "" && !isAllowedValue(browser.Orientation, "portrait", "landscape") {
+		issues = append(issues, "config.browser.orientation must be portrait or landscape")
+	}
+	if browser.Viewport.Width < 0 {
+		issues = append(issues, "config.browser.viewport.width must be zero or greater")
+	}
+	if browser.Viewport.Height < 0 {
+		issues = append(issues, "config.browser.viewport.height must be zero or greater")
+	}
+	return issues
+}
+
+func validateBrowserActionIssues(index int, action Action) []string {
+	label := fmt.Sprintf("actions[%d] %q", index, action.Name)
+	var issues []string
+	switch action.Type {
+	case "browser_screenshot":
+		return nil
+	case "browser_wait":
+		if action.WaitFor == nil && action.Selector == "" && action.Target == "" {
+			issues = append(issues, fmt.Sprintf("%s: browser_wait requires wait_for, selector, or target", label))
+		}
+		return issues
+	case "browser_navigate", "browser_click", "browser_fill", "browser_tap", "browser_long_press", "browser_swipe":
+		if action.Target == "" && action.Selector == "" {
+			issues = append(issues, fmt.Sprintf("%s: missing target or selector", label))
+		}
+	default:
+		issues = append(issues, fmt.Sprintf("%s: unsupported browser action type %q", label, action.Type))
+		return issues
+	}
+
+	switch action.Type {
+	case "browser_fill":
+		if action.Value == "" {
+			issues = append(issues, fmt.Sprintf("%s: browser_fill requires value", label))
+		}
+	case "browser_long_press":
+		if durationMs, ok := actionParamIntValue(action.Params, "duration_ms"); ok && durationMs <= 0 {
+			issues = append(issues, fmt.Sprintf("%s: browser_long_press duration_ms must be greater than zero", label))
+		}
+	case "browser_swipe":
+		if direction, ok := actionParamStringValue(action.Params, "direction"); ok && !isAllowedValue(direction, "left", "right", "up", "down") {
+			issues = append(issues, fmt.Sprintf("%s: browser_swipe direction must be left, right, up, or down", label))
+		}
+		if distance, ok := actionParamIntValue(action.Params, "distance"); ok && distance <= 0 {
+			issues = append(issues, fmt.Sprintf("%s: browser_swipe distance must be greater than zero", label))
+		}
+	}
+
+	return issues
+}
+
+func actionParamIntValue(params map[string]any, key string) (int, bool) {
+	if params == nil {
+		return 0, false
+	}
+	value, ok := params[key]
+	if !ok {
+		return 0, false
+	}
+	switch typed := value.(type) {
+	case int:
+		return typed, true
+	case int64:
+		return int(typed), true
+	case float64:
+		return int(typed), true
+	case float32:
+		return int(typed), true
+	default:
+		return 0, false
+	}
+}
+
+func actionParamStringValue(params map[string]any, key string) (string, bool) {
+	if params == nil {
+		return "", false
+	}
+	value, ok := params[key]
+	if !ok {
+		return "", false
+	}
+	typed, ok := value.(string)
+	if !ok {
+		return "", false
+	}
+	trimmed := strings.TrimSpace(typed)
+	if trimmed == "" {
+		return "", false
+	}
+	return trimmed, true
 }
 
 // ValidateScriptError returns the first validation issue as an error.

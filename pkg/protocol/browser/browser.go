@@ -7,12 +7,16 @@ import (
 	"fmt"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/chromedp/cdproto/emulation"
 	"github.com/chromedp/cdproto/fetch"
 	"github.com/chromedp/cdproto/network"
+	"github.com/chromedp/cdproto/page"
+	"github.com/chromedp/cdproto/performance"
 	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 	"github.com/jasonczech/stormrunner/pkg/protocol"
@@ -25,26 +29,35 @@ func init() {
 }
 
 type Browser struct {
-	baseURL            string
-	currentURL         string
-	headless           bool
-	cacheEnabled       bool
-	cacheContentURLs   bool
-	checkNewerVersions bool
+	engine                     string
+	baseURL                    string
+	currentURL                 string
+	deviceProfile              string
+	deviceTier                 string
+	headless                   bool
+	cacheEnabled               bool
+	cacheContentURLs           bool
+	checkNewerVersions         bool
 	recordedResourcesAvailable bool
-	recordedResources map[string]struct{}
-	downloadFilterMode string
-	downloadFilterHosts []string
-	networkMode        string
-	networkPreset      string
-	networkBandwidthKB int
-	networkLatencyMS   int
-	downloadResources  string
-	slowMo             time.Duration
-	userAgent          string
-	captureScreenshots string
-	viewportW          int
-	viewportH          int
+	recordedResources          map[string]struct{}
+	downloadFilterMode         string
+	downloadFilterHosts        []string
+	networkMode                string
+	networkPreset              string
+	networkBandwidthKB         int
+	networkLatencyMS           int
+	downloadResources          string
+	slowMo                     time.Duration
+	userAgent                  string
+	captureScreenshots         string
+	clientMetricsEnabled       bool
+	mobile                     bool
+	touchMode                  bool
+	orientation                string
+	deviceScaleFactor          float64
+	cpuThrottleRate            float64
+	viewportW                  int
+	viewportH                  int
 
 	allocCtx    context.Context
 	browserCtx  context.Context
@@ -74,6 +87,7 @@ func (b *Browser) Name() string { return "browser" }
 
 func (b *Browser) Init(ctx context.Context, config map[string]any) error {
 	b.close()
+	b.engine = "chromium"
 	b.headless = true
 	b.cacheEnabled = true
 	b.cacheContentURLs = true
@@ -87,13 +101,27 @@ func (b *Browser) Init(ctx context.Context, config map[string]any) error {
 	b.networkBandwidthKB = 0
 	b.networkLatencyMS = 0
 	b.downloadResources = "all"
+	b.orientation = "landscape"
+	b.deviceScaleFactor = 1
+	b.cpuThrottleRate = 1
 	b.viewportW = 1440
 	b.viewportH = 900
 	b.pendingNetwork = make(map[network.RequestID]networkRequest)
 	b.currentURL = ""
+	b.clientMetricsEnabled = false
+	b.mobile = false
+	b.touchMode = false
+	b.deviceProfile = ""
+	b.deviceTier = ""
 
 	if baseURL, ok := config["base_url"].(string); ok {
 		b.baseURL = baseURL
+	}
+	if engine, ok := config["browser_engine"].(string); ok && strings.TrimSpace(engine) != "" {
+		b.engine = strings.TrimSpace(engine)
+	}
+	if b.engine != "chromium" {
+		return fmt.Errorf("unsupported browser engine: %s", b.engine)
 	}
 	if headless, ok := config["browser_headless"].(bool); ok {
 		b.headless = headless
@@ -140,6 +168,25 @@ func (b *Browser) Init(ctx context.Context, config map[string]any) error {
 	if userAgent, ok := config["browser_user_agent"].(string); ok {
 		b.userAgent = userAgent
 	}
+	if deviceProfile, ok := config["browser_device_profile"].(string); ok && strings.TrimSpace(deviceProfile) != "" {
+		profile, found := LookupDevice(strings.TrimSpace(deviceProfile))
+		if !found {
+			return fmt.Errorf("unknown browser device profile: %s", deviceProfile)
+		}
+		b.applyDeviceProfile(profile)
+	}
+	if touchMode, ok := config["browser_touch_mode"].(bool); ok {
+		b.touchMode = touchMode
+	}
+	if orientation, ok := config["browser_orientation"].(string); ok && strings.TrimSpace(orientation) != "" {
+		b.orientation = normalizeOrientation(orientation)
+	}
+	if b.orientation == "" {
+		return fmt.Errorf("unsupported browser orientation")
+	}
+	if clientMetrics, ok := config["browser_client_metrics"].(bool); ok {
+		b.clientMetricsEnabled = clientMetrics
+	}
 	if captureScreenshots, ok := config["browser_capture_screenshots"].(string); ok {
 		b.captureScreenshots = captureScreenshots
 	}
@@ -148,6 +195,12 @@ func (b *Browser) Init(ctx context.Context, config map[string]any) error {
 	}
 	if viewportH := configInt(config, "browser_viewport_height"); viewportH > 0 {
 		b.viewportH = viewportH
+	}
+	if b.networkMode == "" && b.networkPreset == "" {
+		if profile, ok := LookupDevice(b.deviceProfile); ok && profile.NetworkPreset != "" {
+			b.networkMode = "preset"
+			b.networkPreset = profile.NetworkPreset
+		}
 	}
 	if b.downloadResources == "recorded" && !b.recordedResourcesAvailable {
 		return fmt.Errorf("browser download_resources=recorded requires recorded resource metadata")
@@ -171,7 +224,26 @@ func (b *Browser) Init(ctx context.Context, config map[string]any) error {
 		network.Enable(),
 		network.SetCacheDisabled(!b.cacheEnabled),
 		runtime.Enable(),
-		chromedp.EmulateViewport(int64(b.viewportW), int64(b.viewportH)),
+		emulation.SetDeviceMetricsOverride(int64(b.viewportW), int64(b.viewportH), b.deviceScaleFactor, b.mobile).
+			WithScreenOrientation(&emulation.ScreenOrientation{
+				Type:  screenOrientationType(b.orientation),
+				Angle: screenOrientationAngle(b.orientation),
+			}),
+	}
+	if b.clientMetricsEnabled {
+		startupActions = append(startupActions,
+			chromedp.ActionFunc(func(ctx context.Context) error {
+				_, err := page.AddScriptToEvaluateOnNewDocument(browserMetricsBootstrapScript).Do(ctx)
+				return err
+			}),
+			performance.Enable(),
+		)
+	}
+	if b.touchMode {
+		startupActions = append(startupActions, emulation.SetTouchEmulationEnabled(true).WithMaxTouchPoints(5))
+	}
+	if b.cpuThrottleRate > 1 {
+		startupActions = append(startupActions, emulation.SetCPUThrottlingRate(b.cpuThrottleRate))
 	}
 	if b.downloadResources == "none" {
 		startupActions = append(startupActions, network.SetBlockedURLS(blockedStaticAssetPatterns()))
@@ -194,6 +266,46 @@ func (b *Browser) Init(ctx context.Context, config map[string]any) error {
 	}
 
 	return nil
+}
+
+func (b *Browser) applyDeviceProfile(profile DeviceProfile) {
+	b.deviceProfile = profile.Name
+	b.deviceTier = profile.DeviceTier
+	b.viewportW = profile.Width
+	b.viewportH = profile.Height
+	b.deviceScaleFactor = profile.DeviceScaleFactor
+	b.mobile = profile.Mobile
+	b.touchMode = profile.HasTouch
+	b.orientation = normalizeOrientation(profile.DefaultOrientation)
+	b.cpuThrottleRate = profile.CPUThrottleRate
+	if b.userAgent == "" {
+		b.userAgent = profile.UserAgent
+	}
+}
+
+func normalizeOrientation(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "landscape":
+		return "landscape"
+	case "portrait":
+		return "portrait"
+	default:
+		return ""
+	}
+}
+
+func screenOrientationType(orientation string) emulation.OrientationType {
+	if normalizeOrientation(orientation) == "portrait" {
+		return emulation.OrientationTypePortraitPrimary
+	}
+	return emulation.OrientationTypeLandscapePrimary
+}
+
+func screenOrientationAngle(orientation string) int64 {
+	if normalizeOrientation(orientation) == "portrait" {
+		return 0
+	}
+	return 90
 }
 
 func blockedStaticAssetPatterns() []string {
@@ -480,10 +592,47 @@ func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protoc
 			result.Duration = time.Since(result.StartTime)
 			return result, nil
 		}
-		actionErr = chromedp.Run(actionCtx,
-			chromedp.WaitVisible(selector, chromedp.ByQuery),
-			chromedp.Click(selector, chromedp.ByQuery),
-		)
+		if b.touchMode {
+			actionErr = b.dispatchTap(actionCtx, selector)
+		} else {
+			actionErr = chromedp.Run(actionCtx,
+				chromedp.WaitVisible(selector, chromedp.ByQuery),
+				chromedp.Click(selector, chromedp.ByQuery),
+			)
+		}
+	case "browser_tap":
+		selector := b.actionSelector(action)
+		if selector == "" {
+			result.ErrorMessage = "browser_tap requires selector or target"
+			result.Duration = time.Since(result.StartTime)
+			return result, nil
+		}
+		actionErr = b.dispatchTap(actionCtx, selector)
+	case "browser_long_press":
+		selector := b.actionSelector(action)
+		if selector == "" {
+			result.ErrorMessage = "browser_long_press requires selector or target"
+			result.Duration = time.Since(result.StartTime)
+			return result, nil
+		}
+		durationMS := actionParamInt(action.Params, "duration_ms", 500)
+		if durationMS <= 0 {
+			durationMS = 500
+		}
+		actionErr = b.dispatchLongPress(actionCtx, selector, time.Duration(durationMS)*time.Millisecond)
+	case "browser_swipe":
+		selector := b.actionSelector(action)
+		if selector == "" {
+			result.ErrorMessage = "browser_swipe requires selector or target"
+			result.Duration = time.Since(result.StartTime)
+			return result, nil
+		}
+		direction := actionParamString(action.Params, "direction", "left")
+		distance := actionParamInt(action.Params, "distance", 300)
+		if distance <= 0 {
+			distance = 300
+		}
+		actionErr = b.dispatchSwipe(actionCtx, selector, direction, distance)
 	case "browser_fill":
 		selector := b.actionSelector(action)
 		if selector == "" {
@@ -524,6 +673,7 @@ func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protoc
 	result.ConsoleEntries = b.consoleEntriesSince(consoleStart)
 	result.NetworkEntries = b.networkEntriesSince(networkStart)
 	result.Duration = time.Since(result.StartTime)
+	result.ClientMetrics = b.captureClientMetrics(actionCtx, result.Duration)
 
 	if actionErr != nil {
 		result.ErrorMessage = actionErr.Error()
@@ -633,6 +783,198 @@ func (b *Browser) actionSelector(action *protocol.Action) string {
 	return action.Target
 }
 
+func (b *Browser) dispatchTap(ctx context.Context, selector string) error {
+	return b.runTouchScript(ctx, selector, `
+		dispatchPointer('pointerdown', x, y);
+		dispatchTouch('touchstart', x, y, true);
+		dispatchTouch('touchend', x, y, false);
+		dispatchPointer('pointerup', x, y);
+		dispatchClick(x, y);
+	`, "browser tap")
+}
+
+func (b *Browser) dispatchLongPress(ctx context.Context, selector string, duration time.Duration) error {
+	if err := b.runTouchScript(ctx, selector, `
+		dispatchPointer('pointerdown', x, y);
+		dispatchTouch('touchstart', x, y, true);
+	`, "browser long press start"); err != nil {
+		return err
+	}
+	if err := b.sleep(ctx, duration); err != nil {
+		return err
+	}
+	return b.runTouchScript(ctx, selector, `
+		dispatchTouch('touchend', x, y, false);
+		dispatchPointer('pointerup', x, y);
+		dispatchClick(x, y);
+	`, "browser long press end")
+}
+
+func (b *Browser) dispatchSwipe(ctx context.Context, selector, direction string, distance int) error {
+	return b.runTouchScript(ctx, selector, fmt.Sprintf(`
+		const startX = x;
+		const startY = y;
+		let endX = startX;
+		let endY = startY;
+		switch (%q) {
+		case 'right':
+			endX = startX + %d;
+			break;
+		case 'up':
+			endY = startY - %d;
+			break;
+		case 'down':
+			endY = startY + %d;
+			break;
+		default:
+			endX = startX - %d;
+			break;
+		}
+		dispatchPointer('pointerdown', startX, startY);
+		dispatchTouch('touchstart', startX, startY, true);
+		const steps = 5;
+		for (let i = 1; i <= steps; i++) {
+			const nextX = startX + ((endX - startX) * i / steps);
+			const nextY = startY + ((endY - startY) * i / steps);
+			dispatchPointer('pointermove', nextX, nextY);
+			dispatchTouch('touchmove', nextX, nextY, true);
+		}
+		dispatchTouch('touchend', endX, endY, false);
+		dispatchPointer('pointerup', endX, endY);
+	`, strings.ToLower(strings.TrimSpace(direction)), distance, distance, distance, distance), "browser swipe")
+}
+
+func (b *Browser) runTouchScript(ctx context.Context, selector, operation, label string) error {
+	if err := chromedp.Run(ctx, chromedp.WaitVisible(selector, chromedp.ByQuery)); err != nil {
+		return err
+	}
+
+	var evalErr string
+	expression := fmt.Sprintf(`(() => {
+		const el = document.querySelector(%q);
+		if (!el) {
+			return 'selector not found';
+		}
+		el.scrollIntoView({ block: 'center', inline: 'center' });
+		const rect = el.getBoundingClientRect();
+		const x = rect.left + (rect.width / 2);
+		const y = rect.top + (rect.height / 2);
+		const makeTouchList = (clientX, clientY, active) => {
+			const touchLike = {
+				identifier: Date.now(),
+				target: el,
+				clientX,
+				clientY,
+				pageX: clientX + window.scrollX,
+				pageY: clientY + window.scrollY,
+				screenX: clientX,
+				screenY: clientY,
+				radiusX: 2,
+				radiusY: 2,
+				rotationAngle: 0,
+				force: 1,
+			};
+			if (typeof Touch === 'function') {
+				const touch = new Touch(touchLike);
+				return { changed: [touch], active: active ? [touch] : [] };
+			}
+			return { changed: [touchLike], active: active ? [touchLike] : [] };
+		};
+		const dispatchTouch = (type, clientX, clientY, active) => {
+			const list = makeTouchList(clientX, clientY, active);
+			let event;
+			if (typeof TouchEvent === 'function') {
+				event = new TouchEvent(type, {
+					bubbles: true,
+					cancelable: true,
+					composed: true,
+					touches: list.active,
+					targetTouches: list.active,
+					changedTouches: list.changed,
+				});
+			} else {
+				event = new Event(type, { bubbles: true, cancelable: true, composed: true });
+				Object.defineProperty(event, 'touches', { value: list.active });
+				Object.defineProperty(event, 'targetTouches', { value: list.active });
+				Object.defineProperty(event, 'changedTouches', { value: list.changed });
+			}
+			el.dispatchEvent(event);
+		};
+		const dispatchPointer = (type, clientX, clientY) => {
+			if (typeof PointerEvent !== 'function') {
+				return;
+			}
+			el.dispatchEvent(new PointerEvent(type, {
+				bubbles: true,
+				cancelable: true,
+				composed: true,
+				pointerType: 'touch',
+				isPrimary: true,
+				clientX,
+				clientY,
+			}));
+		};
+		const dispatchClick = (clientX, clientY) => {
+			el.dispatchEvent(new MouseEvent('click', {
+			bubbles: true,
+			cancelable: true,
+			composed: true,
+			clientX,
+			clientY,
+		}));
+		};
+		%s
+		return '';
+	})()`, selector, operation)
+	if err := chromedp.Run(ctx, chromedp.Evaluate(expression, &evalErr)); err != nil {
+		return err
+	}
+	if evalErr != "" {
+		return fmt.Errorf("%s failed: %s", label, evalErr)
+	}
+	return nil
+}
+
+func actionParamInt(params map[string]any, key string, defaultValue int) int {
+	if params == nil {
+		return defaultValue
+	}
+	value, ok := params[key]
+	if !ok {
+		return defaultValue
+	}
+	switch typed := value.(type) {
+	case int:
+		return typed
+	case int64:
+		return int(typed)
+	case float64:
+		return int(typed)
+	case float32:
+		return int(typed)
+	case string:
+		parsed, err := strconv.Atoi(strings.TrimSpace(typed))
+		if err == nil {
+			return parsed
+		}
+	}
+	return defaultValue
+}
+
+func actionParamString(params map[string]any, key, defaultValue string) string {
+	if params == nil {
+		return defaultValue
+	}
+	value, ok := params[key]
+	if !ok {
+		return defaultValue
+	}
+	if typed, ok := value.(string); ok && strings.TrimSpace(typed) != "" {
+		return strings.TrimSpace(typed)
+	}
+	return defaultValue
+}
+
 func (b *Browser) captureRequestedArtifacts(ctx context.Context, action *protocol.Action) (string, string, error) {
 	captureEveryAction := b.captureScreenshots == "per_action"
 	if action.Type != "browser_screenshot" && action.Capture == nil && !captureEveryAction {
@@ -676,6 +1018,164 @@ func (b *Browser) capturePageState(ctx context.Context, action *protocol.Action,
 		}
 	}
 	return pageURL, pageTitle, domSummary, html, screenshot, nil
+}
+
+type browserPageMetrics struct {
+	FCPMs                 float64 `json:"fcp_ms"`
+	LCPMs                 float64 `json:"lcp_ms"`
+	CLSScore              float64 `json:"cls_score"`
+	INPMs                 float64 `json:"inp_ms"`
+	DOMContentLoadedMs    float64 `json:"dom_content_loaded_ms"`
+	DOMCompleteMs         float64 `json:"dom_complete_ms"`
+	LoadEventMs           float64 `json:"load_event_ms"`
+	BlockingResourceCount int     `json:"blocking_resource_count"`
+	TotalResourceCount    int     `json:"total_resource_count"`
+	ResourceTransferKB    float64 `json:"resource_transfer_kb"`
+	LongTaskCount         int     `json:"long_task_count"`
+}
+
+func (b *Browser) captureClientMetrics(ctx context.Context, duration time.Duration) *protocol.ClientMetrics {
+	if !b.clientMetricsEnabled {
+		return nil
+	}
+
+	metrics := &protocol.ClientMetrics{
+		DeviceProfile:    b.deviceProfile,
+		DeviceTier:       b.deviceTier,
+		ActionDurationMs: float64(duration) / float64(time.Millisecond),
+	}
+
+	if err := b.capturePageMetrics(ctx, metrics); err != nil {
+		// Keep metrics collection non-fatal for the browser action.
+	}
+	if err := b.captureRuntimeMetrics(ctx, metrics); err != nil {
+		// Keep metrics collection non-fatal for the browser action.
+	}
+
+	if *metrics == (protocol.ClientMetrics{ActionDurationMs: metrics.ActionDurationMs}) {
+		return metrics
+	}
+	return metrics
+}
+
+func (b *Browser) capturePageMetrics(ctx context.Context, metrics *protocol.ClientMetrics) error {
+	var snapshot browserPageMetrics
+	expression := `(() => {
+		const paints = performance.getEntriesByType('paint');
+		const fcp = paints.find((entry) => entry.name === 'first-contentful-paint');
+		const nav = performance.getEntriesByType('navigation')[0] || {};
+		const resources = performance.getEntriesByType('resource');
+		const lcpEntries = performance.getEntriesByType('largest-contentful-paint');
+		const lcp = lcpEntries.length ? lcpEntries[lcpEntries.length - 1].startTime : 0;
+		const shifts = performance.getEntriesByType('layout-shift');
+		const cls = shifts.reduce((sum, entry) => sum + (entry.hadRecentInput ? 0 : (entry.value || 0)), 0);
+		const eventEntries = performance.getEntriesByType('event');
+		const inp = eventEntries.reduce((max, entry) => Math.max(max, entry.duration || entry.processingEnd || 0), 0);
+		const longTasks = performance.getEntriesByType('longtask');
+		const observerMetrics = window.__stormrunnerMetrics || {};
+		const blocking = resources.filter((entry) => entry.renderBlockingStatus === 'blocking');
+		return {
+			fcp_ms: fcp ? fcp.startTime : 0,
+			lcp_ms: observerMetrics.lcp || lcp,
+			cls_score: observerMetrics.cls || cls,
+			inp_ms: observerMetrics.inp || inp,
+			dom_content_loaded_ms: nav.domContentLoadedEventEnd || 0,
+			dom_complete_ms: nav.domComplete || 0,
+			load_event_ms: nav.loadEventEnd || 0,
+			blocking_resource_count: blocking.length,
+			total_resource_count: resources.length,
+			resource_transfer_kb: resources.reduce((sum, entry) => sum + ((entry.transferSize || 0) / 1024), 0),
+			long_task_count: observerMetrics.longTaskCount || longTasks.length,
+		};
+	})()`
+	if err := chromedp.Run(ctx, chromedp.Evaluate(expression, &snapshot)); err != nil {
+		return err
+	}
+	metrics.FCPMs = snapshot.FCPMs
+	metrics.LCPMs = snapshot.LCPMs
+	metrics.CLSScore = snapshot.CLSScore
+	metrics.INPMs = snapshot.INPMs
+	metrics.DOMContentLoadedMs = snapshot.DOMContentLoadedMs
+	metrics.DOMCompleteMs = snapshot.DOMCompleteMs
+	metrics.LoadEventMs = snapshot.LoadEventMs
+	metrics.BlockingResourceCount = snapshot.BlockingResourceCount
+	metrics.TotalResourceCount = snapshot.TotalResourceCount
+	metrics.ResourceTransferKB = snapshot.ResourceTransferKB
+	metrics.LongTaskCount = snapshot.LongTaskCount
+	return nil
+}
+
+const browserMetricsBootstrapScript = `(() => {
+	if (window.__stormrunnerMetrics) {
+		return;
+	}
+	window.__stormrunnerMetrics = {
+		lcp: 0,
+		cls: 0,
+		inp: 0,
+		longTaskCount: 0,
+	};
+	try {
+		new PerformanceObserver((list) => {
+			for (const entry of list.getEntries()) {
+				window.__stormrunnerMetrics.lcp = entry.startTime || window.__stormrunnerMetrics.lcp;
+			}
+		}).observe({ type: 'largest-contentful-paint', buffered: true });
+	} catch (e) {}
+	try {
+		new PerformanceObserver((list) => {
+			for (const entry of list.getEntries()) {
+				if (!entry.hadRecentInput) {
+					window.__stormrunnerMetrics.cls += entry.value || 0;
+				}
+			}
+		}).observe({ type: 'layout-shift', buffered: true });
+	} catch (e) {}
+	try {
+		new PerformanceObserver((list) => {
+			window.__stormrunnerMetrics.longTaskCount += list.getEntries().length;
+		}).observe({ type: 'longtask', buffered: true });
+	} catch (e) {}
+	try {
+		new PerformanceObserver((list) => {
+			for (const entry of list.getEntries()) {
+				const duration = entry.duration || entry.processingEnd || 0;
+				if (duration > window.__stormrunnerMetrics.inp) {
+					window.__stormrunnerMetrics.inp = duration;
+				}
+			}
+		}).observe({ type: 'event', buffered: true, durationThreshold: 16 });
+	} catch (e) {}
+})();`
+
+func (b *Browser) captureRuntimeMetrics(ctx context.Context, metrics *protocol.ClientMetrics) error {
+	var perfMetrics []*performance.Metric
+	if err := chromedp.Run(ctx, chromedp.ActionFunc(func(ctx context.Context) error {
+		var err error
+		perfMetrics, err = performance.GetMetrics().Do(ctx)
+		return err
+	})); err != nil {
+		return err
+	}
+	for _, metric := range perfMetrics {
+		switch metric.Name {
+		case "JSHeapUsedSize":
+			metrics.JSHeapUsedMB = metric.Value / (1024 * 1024)
+		case "JSHeapTotalSize":
+			metrics.JSHeapTotalMB = metric.Value / (1024 * 1024)
+		case "LayoutCount":
+			metrics.LayoutCount = int(metric.Value)
+		case "RecalcStyleCount":
+			metrics.RecalcStyleCount = int(metric.Value)
+		case "ScriptDuration":
+			metrics.ScriptDurationMs = metric.Value * 1000
+		case "LayoutDuration":
+			metrics.LayoutDurationMs = metric.Value * 1000
+		case "TaskDuration":
+			metrics.TaskDurationMs = metric.Value * 1000
+		}
+	}
+	return nil
 }
 
 func (b *Browser) readDOMSummary(ctx context.Context) (string, string, *protocol.DOMSummary, error) {

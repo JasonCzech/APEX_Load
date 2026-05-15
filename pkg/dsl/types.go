@@ -111,6 +111,10 @@ type BrowserConfig struct {
 	Headless           *bool           `json:"headless,omitempty"`
 	SlowMoMs           int             `json:"slow_mo_ms,omitempty"`
 	UserAgent          string          `json:"user_agent,omitempty"`
+	DeviceProfile      string          `json:"device_profile,omitempty"`
+	TouchMode          *bool           `json:"touch_mode,omitempty"`
+	Orientation        string          `json:"orientation,omitempty"`
+	ClientMetrics      *bool           `json:"client_metrics,omitempty"`
 	CaptureScreenshots string          `json:"capture_screenshots,omitempty"`
 	CacheEnabled       *bool           `json:"cache_enabled,omitempty"`
 	CacheContentURLs   *bool           `json:"cache_content_urls,omitempty"`
@@ -121,12 +125,12 @@ type BrowserConfig struct {
 }
 
 type WebRuntimeConfig struct {
-	AdditionalAttributes map[string]string        `json:"additional_attributes,omitempty"`
-	DownloadFilters      DownloadFiltersConfig    `json:"download_filters,omitempty"`
-	ContentChecks        []ContentCheckConfig     `json:"content_checks,omitempty"`
-	NetworkSimulation    NetworkSimulationConfig  `json:"network_simulation,omitempty"`
-	Streaming            StreamingConfig          `json:"streaming,omitempty"`
-	DataFormatting       DataFormattingConfig     `json:"data_formatting,omitempty"`
+	AdditionalAttributes map[string]string       `json:"additional_attributes,omitempty"`
+	DownloadFilters      DownloadFiltersConfig   `json:"download_filters,omitempty"`
+	ContentChecks        []ContentCheckConfig    `json:"content_checks,omitempty"`
+	NetworkSimulation    NetworkSimulationConfig `json:"network_simulation,omitempty"`
+	Streaming            StreamingConfig         `json:"streaming,omitempty"`
+	DataFormatting       DataFormattingConfig    `json:"data_formatting,omitempty"`
 }
 
 type DownloadFiltersConfig struct {
@@ -216,7 +220,7 @@ type HTTPConfig struct {
 
 	// Proxy
 	ProxyMode string      `json:"proxy_mode,omitempty"` // "none", "system", "custom"
-	Proxy ProxyConfig `json:"proxy,omitempty"`
+	Proxy     ProxyConfig `json:"proxy,omitempty"`
 
 	// Authentication
 	Auth AuthConfig `json:"auth,omitempty"`

@@ -23,18 +23,18 @@ func init() {
 }
 
 type HTTP struct {
-	client         *http.Client
-	transport      *http.Transport
-	baseURL        string
-	bufPool        sync.Pool
-	contentChecks  []contentCheck
+	client                   *http.Client
+	transport                *http.Transport
+	baseURL                  string
+	bufPool                  sync.Pool
+	contentChecks            []contentCheck
 	dataFormattingAutoDetect bool
-	dataFormattingChain []dataFormattingTransform
-	defaultHeaders map[string]string
-	authType       string
-	authHeader     string // pre-computed Authorization header value
-	maxRedirects   int    // -1 = no follow, 0 = default (10)
-	requestTimeout time.Duration
+	dataFormattingChain      []dataFormattingTransform
+	defaultHeaders           map[string]string
+	authType                 string
+	authHeader               string // pre-computed Authorization header value
+	maxRedirects             int    // -1 = no follow, 0 = default (10)
+	requestTimeout           time.Duration
 }
 
 func (h *HTTP) Name() string { return "http" }

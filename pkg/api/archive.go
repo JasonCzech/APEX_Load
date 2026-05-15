@@ -58,6 +58,7 @@ type TransactionEvent struct {
 	Success       bool                    `json:"success"`
 	ErrorMessage  string                  `json:"error_message,omitempty"`
 	Extractions   map[string]string       `json:"extractions,omitempty"`
+	ClientMetrics *protocol.ClientMetrics `json:"client_metrics,omitempty"`
 	Snapshot      *protocol.ErrorSnapshot `json:"snapshot,omitempty"`
 }
 
@@ -90,6 +91,8 @@ type IntervalSummaryRecord struct {
 	P90Ms         float64   `json:"p90_ms"`
 	P95Ms         float64   `json:"p95_ms"`
 	P99Ms         float64   `json:"p99_ms"`
+	Browser       *BrowserLiveMetrics                    `json:"browser,omitempty"`
+	BrowserByDevice map[string]*BrowserDeviceLiveMetrics `json:"browser_by_device,omitempty"`
 }
 
 type archivePage struct {
@@ -110,6 +113,7 @@ type RunArchiveReport struct {
 	Manifest      *RunArchiveManifest              `json:"manifest"`
 	Overview      RunArchiveOverview               `json:"overview"`
 	ByAction      map[string]RunArchiveActionStats `json:"by_action"`
+	BrowserByDevice map[string]*BrowserDeviceLiveMetrics `json:"browser_by_device,omitempty"`
 	ResourcePeaks RunArchiveResourcePeaks          `json:"resource_peaks"`
 }
 
@@ -124,6 +128,7 @@ type RunArchiveOverview struct {
 	IntervalSummaries int64   `json:"interval_summaries"`
 	PeakTPS           float64 `json:"peak_tps"`
 	PeakActiveVUsers  int64   `json:"peak_active_vusers"`
+	Browser           *BrowserLiveMetrics `json:"browser,omitempty"`
 }
 
 type RunArchiveActionStats struct {
@@ -245,6 +250,7 @@ func (w *runArchiveWriter) RecordResult(result *protocol.Result) error {
 		Success:       result.Success,
 		ErrorMessage:  result.ErrorMessage,
 		Extractions:   result.Extractions,
+		ClientMetrics: result.ClientMetrics,
 		Snapshot:      result.Snapshot,
 	}
 	if err := w.txEncoder.Encode(event); err != nil {
@@ -301,6 +307,8 @@ func (w *runArchiveWriter) RecordIntervalSummary(live *LiveMetrics) error {
 		P90Ms:         live.P90Ms,
 		P95Ms:         live.P95Ms,
 		P99Ms:         live.P99Ms,
+		Browser:       cloneBrowserLiveMetrics(live.Browser),
+		BrowserByDevice: cloneBrowserByDeviceMetrics(live.BrowserByDevice),
 	}
 	if err := w.summaryEncoder.Encode(record); err != nil {
 		return err
@@ -450,6 +458,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	report := &RunArchiveReport{
 		Manifest: manifest,
 		ByAction: make(map[string]RunArchiveActionStats),
+		BrowserByDevice: make(map[string]*BrowserDeviceLiveMetrics),
 	}
 
 	var totalDuration float64
@@ -479,10 +488,34 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 			stats.MaxResponseMs = tx.DurationMs
 		}
 		report.ByAction[tx.ActionName] = stats
+		if tx.ClientMetrics != nil {
+			if report.Overview.Browser == nil {
+				report.Overview.Browser = &BrowserLiveMetrics{}
+			}
+			mergeReportBrowserMetrics(report.Overview.Browser, tx.ClientMetrics)
+			if profile := tx.ClientMetrics.DeviceProfile; profile != "" {
+				deviceMetrics, ok := report.BrowserByDevice[profile]
+				if !ok {
+					deviceMetrics = &BrowserDeviceLiveMetrics{
+						DeviceProfile: profile,
+						DeviceTier:    tx.ClientMetrics.DeviceTier,
+					}
+					report.BrowserByDevice[profile] = deviceMetrics
+				}
+				mergeReportBrowserDeviceMetrics(deviceMetrics, tx.ClientMetrics)
+			}
+		}
 	}
 	if report.Overview.Transactions > 0 {
 		report.Overview.AvgResponseMs = totalDuration / float64(report.Overview.Transactions)
 		report.Overview.ErrorPct = float64(report.Overview.Errors) / float64(report.Overview.Transactions) * 100
+	}
+	finalizeReportBrowserMetrics(report.Overview.Browser)
+	for _, metrics := range report.BrowserByDevice {
+		finalizeReportBrowserDeviceMetrics(metrics)
+	}
+	if len(report.BrowserByDevice) == 0 {
+		report.BrowserByDevice = nil
 	}
 	for action, stats := range report.ByAction {
 		if stats.Transactions > 0 {
@@ -528,6 +561,88 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	}
 
 	return report, nil
+}
+
+func cloneBrowserLiveMetrics(metrics *BrowserLiveMetrics) *BrowserLiveMetrics {
+	if metrics == nil {
+		return nil
+	}
+	clone := *metrics
+	return &clone
+}
+
+func cloneBrowserByDeviceMetrics(metrics map[string]*BrowserDeviceLiveMetrics) map[string]*BrowserDeviceLiveMetrics {
+	if len(metrics) == 0 {
+		return nil
+	}
+	clone := make(map[string]*BrowserDeviceLiveMetrics, len(metrics))
+	for name, value := range metrics {
+		if value == nil {
+			continue
+		}
+		copied := *value
+		clone[name] = &copied
+	}
+	if len(clone) == 0 {
+		return nil
+	}
+	return clone
+}
+
+func mergeReportBrowserMetrics(summary *BrowserLiveMetrics, metrics *protocol.ClientMetrics) {
+	if summary == nil || metrics == nil {
+		return
+	}
+	summary.Samples++
+	summary.AvgFCPMs += metrics.FCPMs
+	summary.AvgLCPMs += metrics.LCPMs
+	summary.AvgCLSScore += metrics.CLSScore
+	summary.AvgINPMs += metrics.INPMs
+	summary.AvgBlockingResources += float64(metrics.BlockingResourceCount)
+	summary.AvgLongTaskCount += float64(metrics.LongTaskCount)
+	summary.AvgJSHeapUsedMB += metrics.JSHeapUsedMB
+}
+
+func finalizeReportBrowserMetrics(summary *BrowserLiveMetrics) {
+	if summary == nil || summary.Samples == 0 {
+		return
+	}
+	divisor := float64(summary.Samples)
+	summary.AvgFCPMs /= divisor
+	summary.AvgLCPMs /= divisor
+	summary.AvgCLSScore /= divisor
+	summary.AvgINPMs /= divisor
+	summary.AvgBlockingResources /= divisor
+	summary.AvgLongTaskCount /= divisor
+	summary.AvgJSHeapUsedMB /= divisor
+}
+
+func mergeReportBrowserDeviceMetrics(summary *BrowserDeviceLiveMetrics, metrics *protocol.ClientMetrics) {
+	if summary == nil || metrics == nil {
+		return
+	}
+	summary.Samples++
+	summary.AvgFCPMs += metrics.FCPMs
+	summary.AvgLCPMs += metrics.LCPMs
+	summary.AvgCLSScore += metrics.CLSScore
+	summary.AvgINPMs += metrics.INPMs
+	summary.AvgBlockingResources += float64(metrics.BlockingResourceCount)
+	summary.AvgLongTaskCount += float64(metrics.LongTaskCount)
+	summary.AvgJSHeapUsedMB += metrics.JSHeapUsedMB
+}
+
+func finalizeReportBrowserDeviceMetrics(summary *BrowserDeviceLiveMetrics) {
+	if summary == nil || summary.Samples == 0 {
+		return
+	}
+	divisor := float64(summary.Samples)
+	summary.AvgFCPMs /= divisor
+	summary.AvgLCPMs /= divisor
+	summary.AvgCLSScore /= divisor
+	summary.AvgINPMs /= divisor
+	summary.AvgBlockingResources /= divisor
+	summary.AvgLongTaskCount /= divisor
+	summary.AvgJSHeapUsedMB /= divisor
 }
 
 func readAllArchiveTransactions(record *storage.RunArchiveRecord) ([]TransactionEvent, error) {

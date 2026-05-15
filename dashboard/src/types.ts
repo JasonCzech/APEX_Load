@@ -211,6 +211,7 @@ export interface TransactionEvent {
   success: boolean
   error_message?: string
   extractions?: Record<string, string>
+  client_metrics?: ClientMetrics
   snapshot?: {
     request_method: string
     request_url: string
@@ -236,6 +237,32 @@ export interface IntervalSummaryRecord {
   p90_ms: number
   p95_ms: number
   p99_ms: number
+  browser?: BrowserLiveMetrics
+  browser_by_device?: Record<string, BrowserDeviceLiveMetrics>
+}
+
+export interface ClientMetrics {
+  device_profile?: string
+  device_tier?: string
+  action_duration_ms?: number
+  fcp_ms?: number
+  lcp_ms?: number
+  cls_score?: number
+  inp_ms?: number
+  dom_content_loaded_ms?: number
+  dom_complete_ms?: number
+  load_event_ms?: number
+  blocking_resource_count?: number
+  total_resource_count?: number
+  resource_transfer_kb?: number
+  js_heap_used_mb?: number
+  js_heap_total_mb?: number
+  layout_count?: number
+  recalc_style_count?: number
+  script_duration_ms?: number
+  layout_duration_ms?: number
+  task_duration_ms?: number
+  long_task_count?: number
 }
 
 export interface ArchivePage<T> {
@@ -278,12 +305,14 @@ export interface RunArchiveOverview {
   interval_summaries: number
   peak_tps: number
   peak_active_vusers: number
+  browser?: BrowserLiveMetrics
 }
 
 export interface RunArchiveReport {
   manifest: RunArchiveManifest
   overview: RunArchiveOverview
   by_action: Record<string, RunArchiveActionStats>
+  browser_by_device?: Record<string, BrowserDeviceLiveMetrics>
   resource_peaks: RunArchiveResourcePeaks
 }
 
@@ -366,10 +395,28 @@ export interface LiveMetrics {
   p99_ms: number
   transactions?: Record<string, TxMetrics>
   groups?: Record<string, GroupLiveMetrics>
+  browser?: BrowserLiveMetrics
+  browser_by_device?: Record<string, BrowserDeviceLiveMetrics>
   goal_status?: GoalStatus
   telemetry?: TelemetryHealth
   resources?: SystemResources
   latency?: NetworkLatency
+}
+
+export interface BrowserLiveMetrics {
+  samples: number
+  avg_fcp_ms?: number
+  avg_lcp_ms?: number
+  avg_cls_score?: number
+  avg_inp_ms?: number
+  avg_blocking_resources?: number
+  avg_long_task_count?: number
+  avg_js_heap_used_mb?: number
+}
+
+export interface BrowserDeviceLiveMetrics extends BrowserLiveMetrics {
+  device_profile?: string
+  device_tier?: string
 }
 
 export interface TelemetryHealth {

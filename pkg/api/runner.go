@@ -156,23 +156,49 @@ type TestGroup struct {
 }
 
 type LiveMetrics struct {
-	Timestamp     time.Time                    `json:"timestamp"`
-	ActiveVUsers  int64                        `json:"active_vusers"`
-	TPS           float64                      `json:"tps"`
-	AvgResponseMs float64                      `json:"avg_response_ms"`
-	ErrorPct      float64                      `json:"error_pct"`
-	TotalTx       int64                        `json:"total_transactions"`
-	TotalErrors   int64                        `json:"total_errors"`
-	P50Ms         float64                      `json:"p50_ms"`
-	P90Ms         float64                      `json:"p90_ms"`
-	P95Ms         float64                      `json:"p95_ms"`
-	P99Ms         float64                      `json:"p99_ms"`
-	Transactions  map[string]*TxMetrics        `json:"transactions,omitempty"`
-	GroupMetrics  map[string]*GroupLiveMetrics `json:"groups,omitempty"`
-	GoalStatus    *GoalStatus                  `json:"goal_status,omitempty"`
-	Telemetry     *TelemetryHealth             `json:"telemetry,omitempty"`
-	Resources     *engine.SystemResources      `json:"resources,omitempty"`
-	Latency       *NetworkLatency              `json:"latency,omitempty"`
+	Timestamp       time.Time                            `json:"timestamp"`
+	ActiveVUsers    int64                                `json:"active_vusers"`
+	TPS             float64                              `json:"tps"`
+	AvgResponseMs   float64                              `json:"avg_response_ms"`
+	ErrorPct        float64                              `json:"error_pct"`
+	TotalTx         int64                                `json:"total_transactions"`
+	TotalErrors     int64                                `json:"total_errors"`
+	P50Ms           float64                              `json:"p50_ms"`
+	P90Ms           float64                              `json:"p90_ms"`
+	P95Ms           float64                              `json:"p95_ms"`
+	P99Ms           float64                              `json:"p99_ms"`
+	Transactions    map[string]*TxMetrics                `json:"transactions,omitempty"`
+	GroupMetrics    map[string]*GroupLiveMetrics         `json:"groups,omitempty"`
+	Browser         *BrowserLiveMetrics                  `json:"browser,omitempty"`
+	BrowserByDevice map[string]*BrowserDeviceLiveMetrics `json:"browser_by_device,omitempty"`
+	GoalStatus      *GoalStatus                          `json:"goal_status,omitempty"`
+	Telemetry       *TelemetryHealth                     `json:"telemetry,omitempty"`
+	Resources       *engine.SystemResources              `json:"resources,omitempty"`
+	Latency         *NetworkLatency                      `json:"latency,omitempty"`
+}
+
+type BrowserLiveMetrics struct {
+	Samples              int64   `json:"samples"`
+	AvgFCPMs             float64 `json:"avg_fcp_ms,omitempty"`
+	AvgLCPMs             float64 `json:"avg_lcp_ms,omitempty"`
+	AvgCLSScore          float64 `json:"avg_cls_score,omitempty"`
+	AvgINPMs             float64 `json:"avg_inp_ms,omitempty"`
+	AvgBlockingResources float64 `json:"avg_blocking_resources,omitempty"`
+	AvgLongTaskCount     float64 `json:"avg_long_task_count,omitempty"`
+	AvgJSHeapUsedMB      float64 `json:"avg_js_heap_used_mb,omitempty"`
+}
+
+type BrowserDeviceLiveMetrics struct {
+	DeviceProfile        string  `json:"device_profile,omitempty"`
+	DeviceTier           string  `json:"device_tier,omitempty"`
+	Samples              int64   `json:"samples"`
+	AvgFCPMs             float64 `json:"avg_fcp_ms,omitempty"`
+	AvgLCPMs             float64 `json:"avg_lcp_ms,omitempty"`
+	AvgCLSScore          float64 `json:"avg_cls_score,omitempty"`
+	AvgINPMs             float64 `json:"avg_inp_ms,omitempty"`
+	AvgBlockingResources float64 `json:"avg_blocking_resources,omitempty"`
+	AvgLongTaskCount     float64 `json:"avg_long_task_count,omitempty"`
+	AvgJSHeapUsedMB      float64 `json:"avg_js_heap_used_mb,omitempty"`
 }
 
 type TelemetryHealth struct {
@@ -627,17 +653,19 @@ func mapToLiveMetrics(m map[string]any) *LiveMetrics {
 
 func intervalSummaryRecordToLiveMetrics(record storage.IntervalSummaryRecord) *LiveMetrics {
 	live := &LiveMetrics{
-		Timestamp:     record.Timestamp,
-		ActiveVUsers:  record.ActiveVUsers,
-		TPS:           record.TPS,
-		AvgResponseMs: record.AvgResponseMs,
-		ErrorPct:      record.ErrorPct,
-		TotalTx:       record.TotalTx,
-		TotalErrors:   record.TotalErrors,
-		P50Ms:         record.P50Ms,
-		P90Ms:         record.P90Ms,
-		P95Ms:         record.P95Ms,
-		P99Ms:         record.P99Ms,
+		Timestamp:       record.Timestamp,
+		ActiveVUsers:    record.ActiveVUsers,
+		TPS:             record.TPS,
+		AvgResponseMs:   record.AvgResponseMs,
+		ErrorPct:        record.ErrorPct,
+		TotalTx:         record.TotalTx,
+		TotalErrors:     record.TotalErrors,
+		P50Ms:           record.P50Ms,
+		P90Ms:           record.P90Ms,
+		P95Ms:           record.P95Ms,
+		P99Ms:           record.P99Ms,
+		Browser:         browserSummaryRecordToLiveMetrics(record.Browser),
+		BrowserByDevice: browserDeviceSummaryRecordToLiveMetrics(record.BrowserByDevice),
 	}
 	if record.DroppedResults > 0 || record.WebsocketClients > 0 || record.WebsocketDroppedMessages > 0 || record.WebsocketDroppedEvents > 0 || !record.CollectedAt.IsZero() || !record.GeneratorPublishedAt.IsZero() || !record.ControllerReceivedAt.IsZero() || !record.PublishedAt.IsZero() || record.SampleAgeMs > 0 || record.GeneratorProcessingLagMs > 0 || record.TransportLagMs > 0 || record.ControllerFanoutLagMs > 0 {
 		live.Telemetry = &TelemetryHealth{
@@ -656,6 +684,50 @@ func intervalSummaryRecordToLiveMetrics(record storage.IntervalSummaryRecord) *L
 		}
 	}
 	return live
+}
+
+func browserSummaryRecordToLiveMetrics(record *storage.BrowserMetricsSummaryRecord) *BrowserLiveMetrics {
+	if record == nil {
+		return nil
+	}
+	return &BrowserLiveMetrics{
+		Samples:              record.Samples,
+		AvgFCPMs:             record.AvgFCPMs,
+		AvgLCPMs:             record.AvgLCPMs,
+		AvgCLSScore:          record.AvgCLSScore,
+		AvgINPMs:             record.AvgINPMs,
+		AvgBlockingResources: record.AvgBlockingResources,
+		AvgLongTaskCount:     record.AvgLongTaskCount,
+		AvgJSHeapUsedMB:      record.AvgJSHeapUsedMB,
+	}
+}
+
+func browserDeviceSummaryRecordToLiveMetrics(records map[string]*storage.BrowserDeviceMetricsRecord) map[string]*BrowserDeviceLiveMetrics {
+	if len(records) == 0 {
+		return nil
+	}
+	result := make(map[string]*BrowserDeviceLiveMetrics, len(records))
+	for name, record := range records {
+		if record == nil {
+			continue
+		}
+		result[name] = &BrowserDeviceLiveMetrics{
+			DeviceProfile:        record.DeviceProfile,
+			DeviceTier:           record.DeviceTier,
+			Samples:              record.Samples,
+			AvgFCPMs:             record.AvgFCPMs,
+			AvgLCPMs:             record.AvgLCPMs,
+			AvgCLSScore:          record.AvgCLSScore,
+			AvgINPMs:             record.AvgINPMs,
+			AvgBlockingResources: record.AvgBlockingResources,
+			AvgLongTaskCount:     record.AvgLongTaskCount,
+			AvgJSHeapUsedMB:      record.AvgJSHeapUsedMB,
+		}
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
 }
 
 func (tr *TestRunner) StoreScript(script *dsl.Script) *StoredScript {
@@ -2374,6 +2446,35 @@ func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[s
 		Transactions:  make(map[string]*TxMetrics),
 		GroupMetrics:  make(map[string]*GroupLiveMetrics),
 		Resources:     snap.Resources,
+	}
+	if snap.Browser != nil {
+		live.Browser = &BrowserLiveMetrics{
+			Samples:              snap.Browser.Samples,
+			AvgFCPMs:             snap.Browser.AvgFCPMs,
+			AvgLCPMs:             snap.Browser.AvgLCPMs,
+			AvgCLSScore:          snap.Browser.AvgCLSScore,
+			AvgINPMs:             snap.Browser.AvgINPMs,
+			AvgBlockingResources: snap.Browser.AvgBlockingResources,
+			AvgLongTaskCount:     snap.Browser.AvgLongTaskCount,
+			AvgJSHeapUsedMB:      snap.Browser.AvgJSHeapUsedMB,
+		}
+	}
+	if len(snap.BrowserByDevice) > 0 {
+		live.BrowserByDevice = make(map[string]*BrowserDeviceLiveMetrics, len(snap.BrowserByDevice))
+		for name, metrics := range snap.BrowserByDevice {
+			live.BrowserByDevice[name] = &BrowserDeviceLiveMetrics{
+				DeviceProfile:        metrics.DeviceProfile,
+				DeviceTier:           metrics.DeviceTier,
+				Samples:              metrics.Samples,
+				AvgFCPMs:             metrics.AvgFCPMs,
+				AvgLCPMs:             metrics.AvgLCPMs,
+				AvgCLSScore:          metrics.AvgCLSScore,
+				AvgINPMs:             metrics.AvgINPMs,
+				AvgBlockingResources: metrics.AvgBlockingResources,
+				AvgLongTaskCount:     metrics.AvgLongTaskCount,
+				AvgJSHeapUsedMB:      metrics.AvgJSHeapUsedMB,
+			}
+		}
 	}
 	if snap.Telemetry != nil {
 		live.Telemetry = &TelemetryHealth{

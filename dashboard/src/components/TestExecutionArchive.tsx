@@ -1,6 +1,6 @@
 import { Fragment, useState } from 'react'
 
-import { RunArchiveActionStats, RunArchiveReport, TestSummary, TransactionEvent } from '../types'
+import { BrowserDeviceLiveMetrics, BrowserLiveMetrics, RunArchiveActionStats, RunArchiveReport, TestSummary, TransactionEvent } from '../types'
 import SnapshotBodyPreview from './SnapshotBodyPreview'
 import SnapshotTextPreview from './SnapshotTextPreview'
 import { extractSOAPFaultSummaryFromBody, formatSOAPFaultSummary } from './soapFaultUtils'
@@ -41,6 +41,78 @@ interface Props {
 function formatArchiveTimestamp(value?: string): string {
   if (!value) return 'n/a'
   return new Date(value).toLocaleString()
+}
+
+function formatBrowserMetric(value: number | undefined, suffix = '', digits = 1): string {
+  if (value === undefined) return 'n/a'
+  return `${value.toFixed(digits)}${suffix}`
+}
+
+function formatBrowserScore(value: number | undefined): string {
+  if (value === undefined) return 'n/a'
+  return value.toFixed(3)
+}
+
+function renderBrowserSummary(summary: BrowserLiveMetrics, devices?: Record<string, BrowserDeviceLiveMetrics>) {
+  const deviceEntries = Object.entries(devices ?? {})
+
+  return (
+    <div className="archive-browser-section">
+      <div className="archive-section-header archive-section-header-stack">
+        <div>
+          <h3 className="chart-title">Browser Metrics</h3>
+          <p className="archive-section-copy">Client-side rendering and interaction timings captured during browser actions.</p>
+        </div>
+        <span className="archive-chip">{summary.samples} samples</span>
+      </div>
+
+      <div className="archive-overview-grid">
+        <div className="scenario-script-detail-card">
+          <span className="scenario-script-detail-label">Avg FCP</span>
+          <span className="scenario-script-detail-value">{formatBrowserMetric(summary.avg_fcp_ms, ' ms')}</span>
+        </div>
+        <div className="scenario-script-detail-card">
+          <span className="scenario-script-detail-label">Avg LCP</span>
+          <span className="scenario-script-detail-value">{formatBrowserMetric(summary.avg_lcp_ms, ' ms')}</span>
+        </div>
+        <div className="scenario-script-detail-card">
+          <span className="scenario-script-detail-label">Avg CLS</span>
+          <span className="scenario-script-detail-value">{formatBrowserScore(summary.avg_cls_score)}</span>
+        </div>
+        <div className="scenario-script-detail-card">
+          <span className="scenario-script-detail-label">Avg INP</span>
+          <span className="scenario-script-detail-value">{formatBrowserMetric(summary.avg_inp_ms, ' ms')}</span>
+        </div>
+        <div className="scenario-script-detail-card">
+          <span className="scenario-script-detail-label">Avg Long Tasks</span>
+          <span className="scenario-script-detail-value">{formatBrowserMetric(summary.avg_long_task_count, '', 1)}</span>
+        </div>
+        <div className="scenario-script-detail-card">
+          <span className="scenario-script-detail-label">Avg Blocking Resources</span>
+          <span className="scenario-script-detail-value">{formatBrowserMetric(summary.avg_blocking_resources, '', 1)}</span>
+        </div>
+      </div>
+
+      {deviceEntries.length > 0 && (
+        <div className="browser-device-grid archive-browser-device-grid">
+          {deviceEntries.map(([profile, metrics]) => (
+            <div key={profile} className="browser-device-card">
+              <div className="browser-device-header">
+                <span className="browser-device-name">{profile}</span>
+                <span className="browser-device-tier">{metrics.device_tier || 'unknown'} tier</span>
+              </div>
+              <div className="browser-device-stats">
+                <span>FCP {formatBrowserMetric(metrics.avg_fcp_ms, ' ms')}</span>
+                <span>LCP {formatBrowserMetric(metrics.avg_lcp_ms, ' ms')}</span>
+                <span>CLS {formatBrowserScore(metrics.avg_cls_score)}</span>
+                <span>INP {formatBrowserMetric(metrics.avg_inp_ms, ' ms')}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
 }
 
 export default function TestExecutionArchive({
@@ -137,6 +209,8 @@ export default function TestExecutionArchive({
               <span className="scenario-script-detail-value">{archiveReport.resource_peaks.net_sent_kbps.toFixed(1)} / {archiveReport.resource_peaks.net_recv_kbps.toFixed(1)} KB/s</span>
             </div>
           </div>
+
+          {archiveReport.overview.browser && renderBrowserSummary(archiveReport.overview.browser, archiveReport.browser_by_device)}
 
           <div className="archive-artifact-row">
             <div className="archive-artifact-group">
@@ -342,6 +416,22 @@ export default function TestExecutionArchive({
                                       </div>
                                       <span className="scenario-script-detail-value">SOAP {soapFault.version}</span>
                                       <pre className="archive-event-detail-pre">Code: {soapFault.code}{'\n'}Reason: {soapFault.reason}</pre>
+                                    </div>
+                                  )}
+                                  {event.client_metrics && (
+                                    <div className="archive-event-detail-card">
+                                      <div className="archive-event-detail-header">
+                                        <span className="scenario-script-detail-label">Client Metrics</span>
+                                      </div>
+                                      <span className="scenario-script-detail-value">{event.client_metrics.device_profile || 'browser'} · {event.client_metrics.device_tier || 'unknown'} tier</span>
+                                      <pre className="archive-event-detail-pre">
+                                        FCP: {formatBrowserMetric(event.client_metrics.fcp_ms, ' ms')}{'\n'}
+                                        LCP: {formatBrowserMetric(event.client_metrics.lcp_ms, ' ms')}{'\n'}
+                                        CLS: {formatBrowserScore(event.client_metrics.cls_score)}{'\n'}
+                                        INP: {formatBrowserMetric(event.client_metrics.inp_ms, ' ms')}{'\n'}
+                                        Blocking resources: {formatBrowserMetric(event.client_metrics.blocking_resource_count, '', 0)}{'\n'}
+                                        Long tasks: {formatBrowserMetric(event.client_metrics.long_task_count, '', 0)}
+                                      </pre>
                                     </div>
                                   )}
                                   <div className="archive-event-detail-card">

@@ -248,17 +248,41 @@ func TestSQLiteStoreSaveHistoryUsesTypedIntervalSummaries(t *testing.T) {
 
 	timestamp := time.Date(2026, time.May, 13, 17, 0, 0, 0, time.UTC)
 	metrics := map[string]any{
-		"timestamp":        timestamp,
-		"active_vusers":    12,
-		"tps":              48.5,
-		"avg_response_ms":  220.5,
-		"error_pct":        1.25,
+		"timestamp":          timestamp,
+		"active_vusers":      12,
+		"tps":                48.5,
+		"avg_response_ms":    220.5,
+		"error_pct":          1.25,
 		"total_transactions": 120,
-		"total_errors":     2,
-		"p50_ms":           150.0,
-		"p90_ms":           300.0,
-		"p95_ms":           350.0,
-		"p99_ms":           420.0,
+		"total_errors":       2,
+		"p50_ms":             150.0,
+		"p90_ms":             300.0,
+		"p95_ms":             350.0,
+		"p99_ms":             420.0,
+		"browser": map[string]any{
+			"samples":                2,
+			"avg_fcp_ms":             120.0,
+			"avg_lcp_ms":             240.0,
+			"avg_cls_score":          0.031,
+			"avg_inp_ms":             55.0,
+			"avg_blocking_resources": 2.0,
+			"avg_long_task_count":    1.5,
+			"avg_js_heap_used_mb":    18.0,
+		},
+		"browser_by_device": map[string]any{
+			"iphone_se": map[string]any{
+				"device_profile":         "iphone_se",
+				"device_tier":            "low",
+				"samples":                2,
+				"avg_fcp_ms":             120.0,
+				"avg_lcp_ms":             240.0,
+				"avg_cls_score":          0.031,
+				"avg_inp_ms":             55.0,
+				"avg_blocking_resources": 2.0,
+				"avg_long_task_count":    1.5,
+				"avg_js_heap_used_mb":    18.0,
+			},
+		},
 		"telemetry": map[string]any{
 			"dropped_results":             3,
 			"websocket_clients":           2,
@@ -308,6 +332,12 @@ func TestSQLiteStoreSaveHistoryUsesTypedIntervalSummaries(t *testing.T) {
 	}
 	if record.ActiveVUsers != 12 || record.TotalTx != 120 || record.DroppedResults != 3 || record.WebsocketDroppedMessages != 4 {
 		t.Fatalf("unexpected typed interval summary: %#v", record)
+	}
+	if record.Browser == nil || record.Browser.Samples != 2 || record.Browser.AvgCLSScore != 0.031 {
+		t.Fatalf("unexpected browser summary: %#v", record.Browser)
+	}
+	if record.BrowserByDevice == nil || record.BrowserByDevice["iphone_se"] == nil || record.BrowserByDevice["iphone_se"].DeviceTier != "low" {
+		t.Fatalf("unexpected browser by device summary: %#v", record.BrowserByDevice)
 	}
 	if !record.GeneratorPublishedAt.Equal(timestamp.Add(-400 * time.Millisecond)) {
 		t.Fatalf("generator_published_at = %s, want %s", record.GeneratorPublishedAt, timestamp.Add(-400*time.Millisecond))

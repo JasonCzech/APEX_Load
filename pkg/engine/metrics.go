@@ -39,8 +39,34 @@ type MetricsSnapshot struct {
 	P99          time.Duration
 	ByAction     map[string]*ActionMetrics
 	ByGroup      map[string]*GroupMetrics
+	Browser      *BrowserMetricsSummary               `json:"browser,omitempty"`
+	BrowserByDevice map[string]*BrowserDeviceMetrics `json:"browser_by_device,omitempty"`
 	Telemetry    *TelemetryMetrics `json:"telemetry,omitempty"`
 	Resources    *SystemResources `json:"resources,omitempty"`
+}
+
+type BrowserMetricsSummary struct {
+	Samples              int64   `json:"samples"`
+	AvgFCPMs             float64 `json:"avg_fcp_ms,omitempty"`
+	AvgLCPMs             float64 `json:"avg_lcp_ms,omitempty"`
+	AvgCLSScore          float64 `json:"avg_cls_score,omitempty"`
+	AvgINPMs             float64 `json:"avg_inp_ms,omitempty"`
+	AvgBlockingResources float64 `json:"avg_blocking_resources,omitempty"`
+	AvgLongTaskCount     float64 `json:"avg_long_task_count,omitempty"`
+	AvgJSHeapUsedMB      float64 `json:"avg_js_heap_used_mb,omitempty"`
+}
+
+type BrowserDeviceMetrics struct {
+	DeviceProfile        string  `json:"device_profile,omitempty"`
+	DeviceTier           string  `json:"device_tier,omitempty"`
+	Samples              int64   `json:"samples"`
+	AvgFCPMs             float64 `json:"avg_fcp_ms,omitempty"`
+	AvgLCPMs             float64 `json:"avg_lcp_ms,omitempty"`
+	AvgCLSScore          float64 `json:"avg_cls_score,omitempty"`
+	AvgINPMs             float64 `json:"avg_inp_ms,omitempty"`
+	AvgBlockingResources float64 `json:"avg_blocking_resources,omitempty"`
+	AvgLongTaskCount     float64 `json:"avg_long_task_count,omitempty"`
+	AvgJSHeapUsedMB      float64 `json:"avg_js_heap_used_mb,omitempty"`
 }
 
 type TelemetryMetrics struct {
@@ -214,6 +240,7 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 		ActiveVUsers: mc.current.activeVUsers.Load(),
 		ByAction:     make(map[string]*ActionMetrics),
 		ByGroup:      make(map[string]*GroupMetrics),
+		BrowserByDevice: make(map[string]*BrowserDeviceMetrics),
 		Telemetry: &TelemetryMetrics{
 			DroppedResults: mc.current.droppedResults.Load(),
 		},
@@ -271,6 +298,23 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 			}
 			groupDigests[r.Group].Add(float64(r.Duration))
 		}
+		if r.ClientMetrics != nil {
+			if snap.Browser == nil {
+				snap.Browser = &BrowserMetricsSummary{}
+			}
+			mergeBrowserMetricsSummary(snap.Browser, r.ClientMetrics)
+			if profile := r.ClientMetrics.DeviceProfile; profile != "" {
+				metrics, ok := snap.BrowserByDevice[profile]
+				if !ok {
+					metrics = &BrowserDeviceMetrics{
+						DeviceProfile: profile,
+						DeviceTier:    r.ClientMetrics.DeviceTier,
+					}
+					snap.BrowserByDevice[profile] = metrics
+				}
+				mergeBrowserDeviceMetrics(metrics, r.ClientMetrics)
+			}
+		}
 	}
 
 	if snap.Transactions > 0 {
@@ -292,6 +336,13 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 			gm.P90 = time.Duration(gd.Quantile(0.90))
 			gm.P99 = time.Duration(gd.Quantile(0.99))
 		}
+	}
+	finalizeBrowserMetricsSummary(snap.Browser)
+	for _, metrics := range snap.BrowserByDevice {
+		finalizeBrowserDeviceMetrics(metrics)
+	}
+	if len(snap.BrowserByDevice) == 0 {
+		snap.BrowserByDevice = nil
 	}
 
 	return snap
@@ -330,4 +381,60 @@ func mergeStableActionMetadata(current *string, next string) {
 	if *current != next {
 		*current = "multiple"
 	}
+}
+
+func mergeBrowserMetricsSummary(summary *BrowserMetricsSummary, metrics *protocol.ClientMetrics) {
+	if summary == nil || metrics == nil {
+		return
+	}
+	summary.Samples++
+	summary.AvgFCPMs += metrics.FCPMs
+	summary.AvgLCPMs += metrics.LCPMs
+	summary.AvgCLSScore += metrics.CLSScore
+	summary.AvgINPMs += metrics.INPMs
+	summary.AvgBlockingResources += float64(metrics.BlockingResourceCount)
+	summary.AvgLongTaskCount += float64(metrics.LongTaskCount)
+	summary.AvgJSHeapUsedMB += metrics.JSHeapUsedMB
+}
+
+func finalizeBrowserMetricsSummary(summary *BrowserMetricsSummary) {
+	if summary == nil || summary.Samples == 0 {
+		return
+	}
+	divisor := float64(summary.Samples)
+	summary.AvgFCPMs /= divisor
+	summary.AvgLCPMs /= divisor
+	summary.AvgCLSScore /= divisor
+	summary.AvgINPMs /= divisor
+	summary.AvgBlockingResources /= divisor
+	summary.AvgLongTaskCount /= divisor
+	summary.AvgJSHeapUsedMB /= divisor
+}
+
+func mergeBrowserDeviceMetrics(summary *BrowserDeviceMetrics, metrics *protocol.ClientMetrics) {
+	if summary == nil || metrics == nil {
+		return
+	}
+	summary.Samples++
+	summary.AvgFCPMs += metrics.FCPMs
+	summary.AvgLCPMs += metrics.LCPMs
+	summary.AvgCLSScore += metrics.CLSScore
+	summary.AvgINPMs += metrics.INPMs
+	summary.AvgBlockingResources += float64(metrics.BlockingResourceCount)
+	summary.AvgLongTaskCount += float64(metrics.LongTaskCount)
+	summary.AvgJSHeapUsedMB += metrics.JSHeapUsedMB
+}
+
+func finalizeBrowserDeviceMetrics(summary *BrowserDeviceMetrics) {
+	if summary == nil || summary.Samples == 0 {
+		return
+	}
+	divisor := float64(summary.Samples)
+	summary.AvgFCPMs /= divisor
+	summary.AvgLCPMs /= divisor
+	summary.AvgCLSScore /= divisor
+	summary.AvgINPMs /= divisor
+	summary.AvgBlockingResources /= divisor
+	summary.AvgLongTaskCount /= divisor
+	summary.AvgJSHeapUsedMB /= divisor
 }

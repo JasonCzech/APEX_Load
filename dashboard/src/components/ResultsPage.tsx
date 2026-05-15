@@ -2,7 +2,7 @@ import { memo, useCallback, useEffect, useMemo, useState } from 'react'
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 
 import { downloadBlob } from '../utils/fileUtils'
-import { Application, IntervalSummaryRecord, Release, RunArchiveReport, TestSummary } from '../types'
+import { Application, BrowserDeviceLiveMetrics, IntervalSummaryRecord, Release, RunArchiveReport, TestSummary } from '../types'
 import { useApi } from '../hooks/useApi'
 import { getErrorMessage } from '../utils/errorUtils'
 import StatusBadge from './StatusBadge'
@@ -24,6 +24,22 @@ function formatDate(value?: string) {
 
 function formatShortDate(value?: string) {
   return value ? new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Never'
+}
+
+function formatBrowserMetric(value?: number, suffix = '', digits = 1) {
+  return typeof value === 'number' && Number.isFinite(value) ? `${value.toFixed(digits)}${suffix}` : 'n/a'
+}
+
+function hasBrowserOverview(report?: RunArchiveReport) {
+  return Boolean(report?.overview.browser)
+}
+
+function formatBrowserScore(value?: number) {
+  return typeof value === 'number' && Number.isFinite(value) ? value.toFixed(3) : 'n/a'
+}
+
+function getBrowserDeviceEntries(report?: RunArchiveReport): Array<[string, BrowserDeviceLiveMetrics]> {
+  return Object.entries(report?.browser_by_device ?? {}).sort(([left], [right]) => left.localeCompare(right))
 }
 
 function resolveStatus(test: TestSummary, testStatuses: Record<string, string>) {
@@ -442,6 +458,11 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
                 <div className="results-compare-grid">
                   {comparisonCards.map(({ test, report }) => (
                     <div key={test.id} className="results-compare-panel">
+                      {(() => {
+                        const deviceEntries = getBrowserDeviceEntries(report)
+
+                        return (
+                          <>
                       <div className="results-compare-panel-header">
                         <div>
                           <h4>{test.name}</h4>
@@ -474,7 +495,39 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
                           <span className="results-compare-label">CPU Peak</span>
                           <span className="results-compare-value">{report!.resource_peaks.cpu_process_pct.toFixed(1)}%</span>
                         </div>
+                        {(hasBrowserOverview(report) || comparisonCards.some(item => hasBrowserOverview(item.report))) && (
+                          <>
+                            <div className="results-compare-metric">
+                              <span className="results-compare-label">Avg LCP</span>
+                              <span className="results-compare-value">{formatBrowserMetric(report!.overview.browser?.avg_lcp_ms, ' ms')}</span>
+                            </div>
+                            <div className="results-compare-metric">
+                              <span className="results-compare-label">Avg INP</span>
+                              <span className="results-compare-value">{formatBrowserMetric(report!.overview.browser?.avg_inp_ms, ' ms')}</span>
+                            </div>
+                          </>
+                        )}
                       </div>
+                      {deviceEntries.length > 0 && (
+                        <div className="browser-device-grid archive-browser-device-grid">
+                          {deviceEntries.map(([profile, metrics]) => (
+                            <div key={profile} className="browser-device-card">
+                              <div className="browser-device-header">
+                                <span className="browser-device-name">{profile}</span>
+                                <span className="browser-device-tier">{metrics.device_tier || 'unknown'} tier</span>
+                              </div>
+                              <div className="browser-device-stats">
+                                <span>LCP {formatBrowserMetric(metrics.avg_lcp_ms, ' ms')}</span>
+                                <span>CLS {formatBrowserScore(metrics.avg_cls_score)}</span>
+                                <span>INP {formatBrowserMetric(metrics.avg_inp_ms, ' ms')}</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                          </>
+                        )
+                      })()}
                     </div>
                   ))}
                 </div>

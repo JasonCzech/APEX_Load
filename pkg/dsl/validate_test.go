@@ -212,6 +212,126 @@ func TestValidateScriptIssues_WebRuntimeValidationAllowsSupportedFields(t *testi
 	}
 }
 
+func TestValidateScriptIssues_BrowserValidation(t *testing.T) {
+	script := &Script{
+		Name:     "browser-invalid",
+		Protocol: "browser",
+		Config: ScriptConfig{
+			Browser: BrowserConfig{
+				Engine:      "webkit",
+				Orientation: "diagonal",
+				Viewport: BrowserViewport{
+					Width:  -1,
+					Height: -2,
+				},
+			},
+		},
+		Actions: []Action{
+			{
+				Name:   "bad type",
+				Type:   "browser_scroll",
+				Target: "#app",
+			},
+			{
+				Name: "missing fill value",
+				Type: "browser_fill",
+				Target: "#name",
+			},
+			{
+				Name:   "bad swipe",
+				Type:   "browser_swipe",
+				Target: "#carousel",
+				Params: map[string]any{
+					"direction": "northwest",
+					"distance":  0,
+				},
+			},
+			{
+				Name:   "bad long press",
+				Type:   "browser_long_press",
+				Target: "#hold",
+				Params: map[string]any{
+					"duration_ms": 0,
+				},
+			},
+		},
+	}
+
+	issues := ValidateScriptIssues(script)
+
+	assertIssue(t, issues, "config.browser.engine must be chromium")
+	assertIssue(t, issues, "config.browser.orientation must be portrait or landscape")
+	assertIssue(t, issues, "config.browser.viewport.width must be zero or greater")
+	assertIssue(t, issues, "config.browser.viewport.height must be zero or greater")
+	assertIssue(t, issues, `actions[0] "bad type": unsupported browser action type "browser_scroll"`)
+	assertIssue(t, issues, `actions[1] "missing fill value": browser_fill requires value`)
+	assertIssue(t, issues, `actions[2] "bad swipe": browser_swipe direction must be left, right, up, or down`)
+	assertIssue(t, issues, `actions[2] "bad swipe": browser_swipe distance must be greater than zero`)
+	assertIssue(t, issues, `actions[3] "bad long press": browser_long_press duration_ms must be greater than zero`)
+}
+
+func TestValidateScriptIssues_BrowserValidationAllowsSupportedFields(t *testing.T) {
+	touchMode := true
+	clientMetrics := true
+	script := &Script{
+		Name:     "browser-valid",
+		Protocol: "browser",
+		Config: ScriptConfig{
+			Browser: BrowserConfig{
+				Engine:        "chromium",
+				DeviceProfile: "iphone_se",
+				TouchMode:     &touchMode,
+				Orientation:   "portrait",
+				ClientMetrics: &clientMetrics,
+				Viewport: BrowserViewport{
+					Width:  375,
+					Height: 667,
+				},
+			},
+		},
+		Actions: []Action{
+			{
+				Name:   "open",
+				Type:   "browser_navigate",
+				Target: "/",
+			},
+			{
+				Name:   "tap",
+				Type:   "browser_tap",
+				Target: "#menu",
+			},
+			{
+				Name:   "swipe",
+				Type:   "browser_swipe",
+				Target: "#carousel",
+				Params: map[string]any{
+					"direction": "left",
+					"distance":  180,
+				},
+			},
+			{
+				Name:   "press",
+				Type:   "browser_long_press",
+				Target: "#hold",
+				Params: map[string]any{
+					"duration_ms": 350,
+				},
+			},
+			{
+				Name:   "fill",
+				Type:   "browser_fill",
+				Target: "#query",
+				Value:  "stormrunner",
+			},
+		},
+	}
+
+	issues := ValidateScriptIssues(script)
+	if len(issues) != 0 {
+		t.Fatalf("issues = %v, want none", issues)
+	}
+}
+
 func assertIssue(t *testing.T, issues []string, want string) {
 	t.Helper()
 	for _, issue := range issues {

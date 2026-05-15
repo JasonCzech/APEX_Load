@@ -184,6 +184,18 @@ func buildProtoConfig(script *dsl.Script) map[string]any {
 	if browserCfg.UserAgent != "" {
 		cfg["browser_user_agent"] = browserCfg.UserAgent
 	}
+	if browserCfg.DeviceProfile != "" {
+		cfg["browser_device_profile"] = browserCfg.DeviceProfile
+	}
+	if browserCfg.TouchMode != nil {
+		cfg["browser_touch_mode"] = *browserCfg.TouchMode
+	}
+	if browserCfg.Orientation != "" {
+		cfg["browser_orientation"] = browserCfg.Orientation
+	}
+	if browserCfg.ClientMetrics != nil {
+		cfg["browser_client_metrics"] = *browserCfg.ClientMetrics
+	}
 	if browserCfg.CaptureScreenshots != "" {
 		cfg["browser_capture_screenshots"] = browserCfg.CaptureScreenshots
 	}

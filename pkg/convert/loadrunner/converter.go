@@ -40,7 +40,7 @@ type ConvertOptions struct {
 	PreserveTransactions bool    // Wrap actions in transaction markers (as comments in name)
 
 	// HTTP runtime settings (mapped from VuGen runtime config)
-	HTTPConfig      *dsl.HTTPConfig  // Pre-built HTTP config to embed in script
+	HTTPConfig      *dsl.HTTPConfig   // Pre-built HTTP config to embed in script
 	RuntimeSettings *dsl.ScriptConfig // Broader runtime settings mapped from default.cfg
 }
 
@@ -306,7 +306,7 @@ func isEmptyHTTPConfig(cfg dsl.HTTPConfig) bool {
 }
 
 func isEmptyBrowserConfig(cfg dsl.BrowserConfig) bool {
-	return cfg.Engine == "" && cfg.Headless == nil && cfg.SlowMoMs == 0 && cfg.UserAgent == "" && cfg.CaptureScreenshots == "" && cfg.CacheEnabled == nil && cfg.CacheContentURLs == nil && cfg.CheckNewerVersions == nil && cfg.NewUserPerIter == nil && cfg.DownloadResources == "" && cfg.Viewport.Width == 0 && cfg.Viewport.Height == 0
+	return cfg.Engine == "" && cfg.Headless == nil && cfg.SlowMoMs == 0 && cfg.UserAgent == "" && cfg.DeviceProfile == "" && cfg.TouchMode == nil && cfg.Orientation == "" && cfg.ClientMetrics == nil && cfg.CaptureScreenshots == "" && cfg.CacheEnabled == nil && cfg.CacheContentURLs == nil && cfg.CheckNewerVersions == nil && cfg.NewUserPerIter == nil && cfg.DownloadResources == "" && cfg.Viewport.Width == 0 && cfg.Viewport.Height == 0
 }
 
 func isEmptyErrorHandlingConfig(cfg dsl.ErrorHandlingConfig) bool {
@@ -736,69 +736,77 @@ func computeThinkTimeStats(times []float64) (mean, std float64) {
 
 // RuntimeConfig holds parsed VuGen runtime settings from a .cfg file.
 type RuntimeConfig struct {
-	ConnectTimeoutSec int
-	ReceiveTimeoutSec int
-	StepTimeoutSec    int
-	HTTPVersion       string // "1.0" or "1.1"
-	KeepAlive         bool
-	MaxConnsPerHost   int
-	ProxyMode         string
-	ProxyURL          string
-	ProxyUser         string
-	ProxyPass         string
-	UserAgent         string
-	AcceptLanguage    string
-	UseGzip           bool
-	SSLVersion        string
-	AuthUser          string
-	AuthPass          string
-	MaxRedirects      int
-	Iterations        int
-	AutoTransactions  string
-	BlockScheduling   string
-	ActionSequence    []string
-	PacingType        string
-	DelayMs           int
-	MinDelayMs        int
-	MaxDelayMs        int
-	IntervalMs        int
-	MinIntervalMs     int
-	MaxIntervalMs     int
-	ThinkTimeIgnore   bool
-	ThinkTimeMultiplier float64
-	ThinkTimeLimitMs  float64
-	LogLevel          string
-	OnErrorOnly       bool
-	LogExtendedOptions []string
-	ContinueOnError   bool
-	SnapshotOnError   bool
-	CacheEnabled      bool
-	CacheContentURLs  bool
-	CheckNewerVersions bool
-	NewUserPerIteration bool
-	DownloadResources string
-	AdditionalAttributes map[string]string
-	DownloadFilterMode string
-	DownloadFilterHosts []string
-	ContentChecks []dsl.ContentCheckConfig
-	NetworkSimulationMode string
-	NetworkSimulationPreset string
-	NetworkBandwidthKbps int
-	NetworkLatencyMs int
-	StreamingMode string
-	StreamingBufferSizeSeconds int
-	StreamingFixedBitrateKbps int
+	ConnectTimeoutSec            int
+	ReceiveTimeoutSec            int
+	StepTimeoutSec               int
+	HTTPVersion                  string // "1.0" or "1.1"
+	KeepAlive                    bool
+	MaxConnsPerHost              int
+	ProxyMode                    string
+	ProxyURL                     string
+	ProxyUser                    string
+	ProxyPass                    string
+	UserAgent                    string
+	AcceptLanguage               string
+	UseGzip                      bool
+	SSLVersion                   string
+	AuthUser                     string
+	AuthPass                     string
+	MaxRedirects                 int
+	Iterations                   int
+	AutoTransactions             string
+	BlockScheduling              string
+	ActionSequence               []string
+	PacingType                   string
+	DelayMs                      int
+	MinDelayMs                   int
+	MaxDelayMs                   int
+	IntervalMs                   int
+	MinIntervalMs                int
+	MaxIntervalMs                int
+	ThinkTimeIgnore              bool
+	ThinkTimeMultiplier          float64
+	ThinkTimeLimitMs             float64
+	LogLevel                     string
+	OnErrorOnly                  bool
+	LogExtendedOptions           []string
+	ContinueOnError              bool
+	SnapshotOnError              bool
+	CacheEnabled                 bool
+	CacheContentURLs             bool
+	CheckNewerVersions           bool
+	NewUserPerIteration          bool
+	BrowserEngine                string
+	BrowserDeviceProfile         string
+	BrowserTouchMode             bool
+	BrowserOrientation           string
+	BrowserClientMetrics         bool
+	BrowserSlowMoMs              int
+	BrowserViewportWidth         int
+	BrowserViewportHeight        int
+	DownloadResources            string
+	AdditionalAttributes         map[string]string
+	DownloadFilterMode           string
+	DownloadFilterHosts          []string
+	ContentChecks                []dsl.ContentCheckConfig
+	NetworkSimulationMode        string
+	NetworkSimulationPreset      string
+	NetworkBandwidthKbps         int
+	NetworkLatencyMs             int
+	StreamingMode                string
+	StreamingBufferSizeSeconds   int
+	StreamingFixedBitrateKbps    int
 	StreamingBandwidthEstimation string
-	DataFormattingAutoDetect bool
-	DataFormattingChain []dsl.DFETransform
+	DataFormattingAutoDetect     bool
+	DataFormattingChain          []dsl.DFETransform
 }
 
 // ParseRuntimeCfg parses a VuGen default.cfg / runtime settings .cfg file.
 func ParseRuntimeCfg(content string) *RuntimeConfig {
 	rc := &RuntimeConfig{
-		KeepAlive:    true,
-		HTTPVersion:  "1.1",
-		MaxRedirects: 10,
+		KeepAlive:            true,
+		HTTPVersion:          "1.1",
+		MaxRedirects:         10,
 		AdditionalAttributes: make(map[string]string),
 	}
 
@@ -832,6 +840,14 @@ func ParseRuntimeCfg(content string) *RuntimeConfig {
 	rc.CacheContentURLs = parseBool(firstNonBlank(browserSection["CacheContentURLs"], browserSection["CacheURLsRequiringContent"]))
 	rc.CheckNewerVersions = parseBool(firstNonBlank(browserSection["CheckNewerVersions"], browserSection["CheckForNewerPages"]))
 	rc.NewUserPerIteration = parseBool(firstNonBlank(browserSection["NewUserPerIteration"], browserSection["SimulateNewUser"]))
+	rc.BrowserEngine = normalizeEnum(strings.TrimSpace(firstNonBlank(browserSection["Engine"], browserSection["BrowserEngine"])))
+	rc.BrowserDeviceProfile = normalizeEnum(strings.TrimSpace(firstNonBlank(browserSection["DeviceProfile"], browserSection["MobileProfile"], browserSection["EmulatedDevice"])))
+	rc.BrowserTouchMode = parseBool(firstNonBlank(browserSection["TouchMode"], browserSection["TouchEnabled"]))
+	rc.BrowserOrientation = normalizeEnum(strings.TrimSpace(browserSection["Orientation"]))
+	rc.BrowserClientMetrics = parseBool(firstNonBlank(browserSection["ClientMetrics"], browserSection["CollectClientMetrics"]))
+	rc.BrowserSlowMoMs = firstNonZeroInt(browserSection["SlowMoMs"], browserSection["SlowMotionMs"])
+	rc.BrowserViewportWidth = firstNonZeroInt(browserSection["ViewportWidth"], browserSection["ScreenWidth"])
+	rc.BrowserViewportHeight = firstNonZeroInt(browserSection["ViewportHeight"], browserSection["ScreenHeight"])
 	rc.DownloadResources = normalizeEnum(strings.TrimSpace(firstNonBlank(browserSection["DownloadResources"], browserSection["DownloadNonHtmlResources"])))
 
 	sslSection := findSection(sections, "SSL", "Security")
@@ -876,7 +892,7 @@ func ParseRuntimeCfg(content string) *RuntimeConfig {
 	}
 
 	miscSection := findSection(sections, "Misc", "Miscellaneous")
-	rc.ContinueOnError = parseBool(firstNonBlank(miscSection["ContinueOnError"], miscSection["ErrorContinue"] ))
+	rc.ContinueOnError = parseBool(firstNonBlank(miscSection["ContinueOnError"], miscSection["ErrorContinue"]))
 	rc.SnapshotOnError = parseBool(firstNonBlank(miscSection["SnapshotOnError"], miscSection["GenerateSnapshotOnError"]))
 
 	attrsSection := findSection(sections, "Additional Attributes", "Attributes")
@@ -974,17 +990,29 @@ func (rc *RuntimeConfig) ToScriptConfig() *dsl.ScriptConfig {
 			SnapshotOnError: rc.SnapshotOnError,
 		}
 	}
-	if rc.CacheEnabled || rc.CacheContentURLs || rc.CheckNewerVersions || rc.NewUserPerIteration || rc.DownloadResources != "" {
+	if rc.CacheEnabled || rc.CacheContentURLs || rc.CheckNewerVersions || rc.NewUserPerIteration || rc.BrowserEngine != "" || rc.BrowserDeviceProfile != "" || rc.BrowserTouchMode || rc.BrowserOrientation != "" || rc.BrowserClientMetrics || rc.BrowserSlowMoMs != 0 || rc.BrowserViewportWidth != 0 || rc.BrowserViewportHeight != 0 || rc.DownloadResources != "" {
 		cacheEnabled := rc.CacheEnabled
 		cacheContentURLs := rc.CacheContentURLs
 		checkNewerVersions := rc.CheckNewerVersions
 		newUserPerIter := rc.NewUserPerIteration
+		touchMode := rc.BrowserTouchMode
+		clientMetrics := rc.BrowserClientMetrics
 		config.Browser = dsl.BrowserConfig{
+			Engine:             rc.BrowserEngine,
+			SlowMoMs:           rc.BrowserSlowMoMs,
+			DeviceProfile:      rc.BrowserDeviceProfile,
+			TouchMode:          &touchMode,
+			Orientation:        rc.BrowserOrientation,
+			ClientMetrics:      &clientMetrics,
 			CacheEnabled:       &cacheEnabled,
 			CacheContentURLs:   &cacheContentURLs,
 			CheckNewerVersions: &checkNewerVersions,
 			NewUserPerIter:     &newUserPerIter,
 			DownloadResources:  rc.DownloadResources,
+			Viewport: dsl.BrowserViewport{
+				Width:  rc.BrowserViewportWidth,
+				Height: rc.BrowserViewportHeight,
+			},
 		}
 	}
 	if len(rc.AdditionalAttributes) > 0 || rc.DownloadFilterMode != "" || len(rc.DownloadFilterHosts) > 0 || len(rc.ContentChecks) > 0 || rc.NetworkSimulationMode != "" || rc.NetworkSimulationPreset != "" || rc.NetworkBandwidthKbps != 0 || rc.NetworkLatencyMs != 0 || rc.StreamingMode != "" || rc.StreamingBufferSizeSeconds != 0 || rc.StreamingFixedBitrateKbps != 0 || rc.StreamingBandwidthEstimation != "" || rc.DataFormattingAutoDetect || len(rc.DataFormattingChain) > 0 {

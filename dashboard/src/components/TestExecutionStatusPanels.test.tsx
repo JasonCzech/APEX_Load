@@ -148,4 +148,59 @@ describe('TestExecutionStatusPanels', () => {
     expect(container.textContent).toContain('WS Drops')
     expect(container.textContent).toContain('Degraded')
   })
+
+  it('renders browser UX signals and per-device summaries when available', async () => {
+    await act(async () => {
+      root.render(
+        <TestExecutionStatusPanels
+          isGoalOriented={false}
+          goalDescription=""
+          test={{
+            id: 'test-1',
+            name: 'Browser Run',
+            status: 'RUNNING',
+            total_vusers: 4,
+            duration: '5m',
+            created_at: '2026-05-12T20:00:00Z',
+            groups: [],
+          } as never}
+          metrics={{
+            browser: {
+              samples: 3,
+              avg_fcp_ms: 120,
+              avg_lcp_ms: 240,
+              avg_cls_score: 0.034,
+              avg_inp_ms: 52,
+              avg_long_task_count: 1.3,
+              avg_blocking_resources: 2,
+              avg_js_heap_used_mb: 18,
+            },
+            browser_by_device: {
+              iphone_se: {
+                device_profile: 'iphone_se',
+                device_tier: 'low',
+                samples: 2,
+                avg_fcp_ms: 130,
+                avg_lcp_ms: 260,
+                avg_cls_score: 0.041,
+                avg_inp_ms: 58,
+              },
+            },
+          }}
+          isMultiGroup={false}
+          groupMetrics={[]}
+          groupColors={[]}
+        />,
+      )
+    })
+
+    expect(container.textContent).toContain('Browser UX Signals')
+    expect(container.textContent).toContain('Avg FCP')
+    expect(container.textContent).toContain('120.0 ms')
+    expect(container.textContent).toContain('Avg CLS')
+    expect(container.textContent).toContain('0.034')
+    expect(container.textContent).toContain('iphone_se')
+    expect(container.textContent).toContain('low tier')
+    expect(container.textContent).toContain('FCP 130.0 ms')
+  })
 })

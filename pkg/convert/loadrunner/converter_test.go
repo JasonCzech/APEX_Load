@@ -488,6 +488,14 @@ ProxyUserName=perf-user
 ProxyPassword=secret
 
 [Browser Emulation]
+Engine=chromium
+DeviceProfile=iPhone_SE
+TouchMode=1
+Orientation=portrait
+ClientMetrics=1
+SlowMoMs=125
+ViewportWidth=390
+ViewportHeight=844
 UserAgent=VuGen Browser
 AcceptLanguage=en-US
 AcceptEncoding=gzip, deflate
@@ -585,6 +593,9 @@ Chain=base64,gzip mode=decode,html_unescape
 	}
 	if config.Browser.DownloadResources != "all" || config.Browser.CacheEnabled == nil || !*config.Browser.CacheEnabled || config.Browser.NewUserPerIter == nil || !*config.Browser.NewUserPerIter {
 		t.Fatalf("browser config = %#v, want cache and new user settings", config.Browser)
+	}
+	if config.Browser.Engine != "chromium" || config.Browser.DeviceProfile != "iphone_se" || config.Browser.TouchMode == nil || !*config.Browser.TouchMode || config.Browser.Orientation != "portrait" || config.Browser.ClientMetrics == nil || !*config.Browser.ClientMetrics || config.Browser.SlowMoMs != 125 || config.Browser.Viewport.Width != 390 || config.Browser.Viewport.Height != 844 {
+		t.Fatalf("browser mobile config = %#v, want mobile emulation settings", config.Browser)
 	}
 	if config.WebRuntime.AdditionalAttributes["env"] != "perf" || config.WebRuntime.DownloadFilters.Mode != "block_list" {
 		t.Fatalf("web runtime = %#v, want additional attributes and download filters", config.WebRuntime)
@@ -757,5 +768,60 @@ FailIfFound=1
 	}
 	if result.Script.Config.WebRuntime.DownloadFilters.Mode != "block_list" || len(result.Script.Config.WebRuntime.ContentChecks) != 1 {
 		t.Fatalf("web runtime = %#v, want download filter and content check", result.Script.Config.WebRuntime)
+	}
+}
+
+func TestConvertZipMapsMobileBrowserRuntimeSettings(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	addFile := func(name string, content string) {
+		writer, err := zw.Create(name)
+		if err != nil {
+			t.Fatalf("Create(%q) returned error: %v", name, err)
+		}
+		if _, err := writer.Write([]byte(content)); err != nil {
+			t.Fatalf("Write(%q) returned error: %v", name, err)
+		}
+	}
+
+	addFile("Mobile.usr", `[General]
+Type=Web
+RuntimeSettings=default.cfg
+
+[Actions]
+Action1=Action.c
+`)
+	addFile("Action.c", sampleActionC)
+	addFile("default.cfg", `[Browser Emulation]
+DeviceProfile=iPad_Pro
+TouchMode=1
+Orientation=landscape
+ClientMetrics=1
+SlowMoMs=80
+ViewportWidth=1024
+ViewportHeight=1366
+`)
+	if err := zw.Close(); err != nil {
+		t.Fatalf("zip.Close returned error: %v", err)
+	}
+
+	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip returned error: %v", err)
+	}
+	if result.Script.Config.Browser.DeviceProfile != "ipad_pro" {
+		t.Fatalf("device profile = %q, want ipad_pro", result.Script.Config.Browser.DeviceProfile)
+	}
+	if result.Script.Config.Browser.TouchMode == nil || !*result.Script.Config.Browser.TouchMode {
+		t.Fatalf("touch mode = %#v, want true", result.Script.Config.Browser.TouchMode)
+	}
+	if result.Script.Config.Browser.Orientation != "landscape" {
+		t.Fatalf("orientation = %q, want landscape", result.Script.Config.Browser.Orientation)
+	}
+	if result.Script.Config.Browser.ClientMetrics == nil || !*result.Script.Config.Browser.ClientMetrics {
+		t.Fatalf("client metrics = %#v, want true", result.Script.Config.Browser.ClientMetrics)
+	}
+	if result.Script.Config.Browser.SlowMoMs != 80 || result.Script.Config.Browser.Viewport.Width != 1024 || result.Script.Config.Browser.Viewport.Height != 1366 {
+		t.Fatalf("browser config = %#v, want imported viewport and slow-mo", result.Script.Config.Browser)
 	}
 }

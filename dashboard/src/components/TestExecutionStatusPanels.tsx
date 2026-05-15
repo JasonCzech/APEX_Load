@@ -1,10 +1,12 @@
-import { GoalStatus, GroupLiveMetrics, TelemetryHealth, TestSummary } from '../types'
+import { BrowserDeviceLiveMetrics, BrowserLiveMetrics, GoalStatus, GroupLiveMetrics, TelemetryHealth, TestSummary } from '../types'
 import { formatTimeCompact } from '../utils/timeUtils'
 
 interface LiveMetricsSummary {
   tps?: number
   active_vusers?: number
   telemetry?: TelemetryHealth
+  browser?: BrowserLiveMetrics
+  browser_by_device?: Record<string, BrowserDeviceLiveMetrics>
 }
 
 interface Props {
@@ -41,6 +43,16 @@ function formatTelemetryTime(value?: string): string {
   return date.toLocaleTimeString()
 }
 
+function formatBrowserMetric(value: number | undefined, suffix = '', digits = 1): string {
+  if (value === undefined) return 'n/a'
+  return `${value.toFixed(digits)}${suffix}`
+}
+
+function formatBrowserScore(value: number | undefined): string {
+  if (value === undefined) return 'n/a'
+  return value.toFixed(3)
+}
+
 function telemetryBadgeClass(metrics?: LiveMetricsSummary): 'healthy' | 'warning' | 'danger' {
   const telemetry = metrics?.telemetry
   if (!telemetry) return 'healthy'
@@ -75,6 +87,8 @@ export default function TestExecutionStatusPanels({
   groupMetrics,
   groupColors,
 }: Props) {
+  const browserDevices = Object.entries(metrics?.browser_by_device ?? {})
+
   return (
     <>
       {metrics?.telemetry && (
@@ -147,6 +161,70 @@ export default function TestExecutionStatusPanels({
               <span className="goal-status-value">{(metrics.telemetry.websocket_dropped_messages ?? 0) + (metrics.telemetry.websocket_dropped_events ?? 0)}</span>
             </div>
           </div>
+        </div>
+      )}
+
+      {metrics?.browser && (
+        <div className="goal-status-card browser-metrics-card">
+          <div className="goal-status-header">
+            <div>
+              <h3 className="goal-status-title">Browser UX Signals</h3>
+              <p className="goal-status-subtitle">Client-side timings captured from browser actions and normalized by device profile.</p>
+            </div>
+            <div className="goal-status-badge healthy">
+              {metrics.browser.samples} samples
+            </div>
+          </div>
+
+          <div className="goal-status-grid">
+            <div className="goal-status-metric">
+              <span className="goal-status-label">Avg FCP</span>
+              <span className="goal-status-value">{formatBrowserMetric(metrics.browser.avg_fcp_ms, ' ms')}</span>
+            </div>
+            <div className="goal-status-metric">
+              <span className="goal-status-label">Avg LCP</span>
+              <span className="goal-status-value">{formatBrowserMetric(metrics.browser.avg_lcp_ms, ' ms')}</span>
+            </div>
+            <div className="goal-status-metric">
+              <span className="goal-status-label">Avg CLS</span>
+              <span className="goal-status-value">{formatBrowserScore(metrics.browser.avg_cls_score)}</span>
+            </div>
+            <div className="goal-status-metric">
+              <span className="goal-status-label">Avg INP</span>
+              <span className="goal-status-value">{formatBrowserMetric(metrics.browser.avg_inp_ms, ' ms')}</span>
+            </div>
+            <div className="goal-status-metric">
+              <span className="goal-status-label">Avg Long Tasks</span>
+              <span className="goal-status-value">{formatBrowserMetric(metrics.browser.avg_long_task_count, '', 1)}</span>
+            </div>
+            <div className="goal-status-metric">
+              <span className="goal-status-label">Avg Blocking Resources</span>
+              <span className="goal-status-value">{formatBrowserMetric(metrics.browser.avg_blocking_resources, '', 1)}</span>
+            </div>
+            <div className="goal-status-metric">
+              <span className="goal-status-label">Avg JS Heap</span>
+              <span className="goal-status-value">{formatBrowserMetric(metrics.browser.avg_js_heap_used_mb, ' MB')}</span>
+            </div>
+          </div>
+
+          {browserDevices.length > 0 && (
+            <div className="browser-device-grid">
+              {browserDevices.map(([profile, deviceMetrics]) => (
+                <div key={profile} className="browser-device-card">
+                  <div className="browser-device-header">
+                    <span className="browser-device-name">{profile}</span>
+                    <span className="browser-device-tier">{deviceMetrics.device_tier || 'unknown'} tier</span>
+                  </div>
+                  <div className="browser-device-stats">
+                    <span>FCP {formatBrowserMetric(deviceMetrics.avg_fcp_ms, ' ms')}</span>
+                    <span>LCP {formatBrowserMetric(deviceMetrics.avg_lcp_ms, ' ms')}</span>
+                    <span>CLS {formatBrowserScore(deviceMetrics.avg_cls_score)}</span>
+                    <span>INP {formatBrowserMetric(deviceMetrics.avg_inp_ms, ' ms')}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

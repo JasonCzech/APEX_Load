@@ -4,8 +4,8 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
-	"sync/atomic"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -44,6 +44,70 @@ func TestBrowserConfigIntAcceptsEngineNumericTypes(t *testing.T) {
 		if got := configInt(config, key); got != want {
 			t.Fatalf("configInt(%q) = %d, want %d", key, got, want)
 		}
+	}
+}
+
+func TestBrowserInitRejectsUnsupportedEngine(t *testing.T) {
+	b := &Browser{}
+	err := b.Init(context.Background(), map[string]any{
+		"browser_engine": "webkit",
+	})
+	if err == nil {
+		t.Fatal("Init error = nil, want unsupported engine")
+	}
+	if !strings.Contains(err.Error(), "unsupported browser engine") {
+		t.Fatalf("Init error = %v, want unsupported browser engine", err)
+	}
+}
+
+func TestBrowserInitRejectsUnknownDeviceProfile(t *testing.T) {
+	b := &Browser{}
+	err := b.Init(context.Background(), map[string]any{
+		"browser_device_profile": "unknown-device",
+	})
+	if err == nil {
+		t.Fatal("Init error = nil, want unknown device profile")
+	}
+	if !strings.Contains(err.Error(), "unknown browser device profile") {
+		t.Fatalf("Init error = %v, want unknown browser device profile", err)
+	}
+}
+
+func TestBrowserApplyDeviceProfile(t *testing.T) {
+	b := &Browser{}
+	b.userAgent = ""
+	b.applyDeviceProfile(DeviceProfile{
+		Name:               "iphone_se",
+		Width:              375,
+		Height:             667,
+		DeviceScaleFactor:  2,
+		Mobile:             true,
+		HasTouch:           true,
+		DefaultOrientation: "portrait",
+		UserAgent:          "MobileUA",
+		CPUThrottleRate:    4,
+		DeviceTier:         "low",
+	})
+	if b.deviceProfile != "iphone_se" {
+		t.Fatalf("deviceProfile = %q, want iphone_se", b.deviceProfile)
+	}
+	if b.viewportW != 375 || b.viewportH != 667 {
+		t.Fatalf("viewport = %dx%d, want 375x667", b.viewportW, b.viewportH)
+	}
+	if !b.mobile || !b.touchMode {
+		t.Fatalf("mobile/touchMode = %v/%v, want true/true", b.mobile, b.touchMode)
+	}
+	if b.orientation != "portrait" {
+		t.Fatalf("orientation = %q, want portrait", b.orientation)
+	}
+	if b.userAgent != "MobileUA" {
+		t.Fatalf("userAgent = %q, want MobileUA", b.userAgent)
+	}
+	if b.cpuThrottleRate != 4 {
+		t.Fatalf("cpuThrottleRate = %v, want 4", b.cpuThrottleRate)
+	}
+	if b.deviceTier != "low" {
+		t.Fatalf("deviceTier = %q, want low", b.deviceTier)
 	}
 }
 
@@ -195,6 +259,311 @@ func TestBrowserProtocolExecuteBrowserActions(t *testing.T) {
 	}
 }
 
+func TestBrowserProtocolTouchActions(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`<!doctype html>
+<html>
+  <head>
+    <title>Touch Test</title>
+    <script>
+      function renderCounts() {
+        const touches = document.querySelector('#touch-count').textContent;
+        const clicks = document.querySelector('#click-count').textContent;
+        document.querySelector('#status').textContent = 'touches=' + touches + ' clicks=' + clicks;
+      }
+      window.addEventListener('load', () => {
+        const button = document.querySelector('#touch-target');
+        button.addEventListener('touchend', (event) => {
+          event.preventDefault();
+          const counter = document.querySelector('#touch-count');
+          counter.textContent = String(Number(counter.textContent) + 1);
+          renderCounts();
+        });
+        button.addEventListener('click', () => {
+          const counter = document.querySelector('#click-count');
+          counter.textContent = String(Number(counter.textContent) + 1);
+          renderCounts();
+        });
+        renderCounts();
+      });
+    </script>
+  </head>
+  <body>
+    <button id="touch-target">Touch me</button>
+    <div id="touch-count">0</div>
+    <div id="click-count">0</div>
+    <div id="status">pending</div>
+  </body>
+</html>`))
+	}))
+	defer server.Close()
+
+	b := &Browser{}
+	if err := b.Init(context.Background(), map[string]any{
+		"base_url":              server.URL,
+		"browser_headless":      true,
+		"browser_device_profile": "iphone_se",
+		"browser_touch_mode":    true,
+	}); err != nil {
+		lower := strings.ToLower(err.Error())
+		if strings.Contains(lower, "executable") || strings.Contains(lower, "chrome") {
+			t.Skipf("browser runtime unavailable: %v", err)
+		}
+		t.Fatalf("Init returned error: %v", err)
+	}
+	defer b.Teardown(context.Background())
+
+	navigate, err := b.Execute(context.Background(), &protocol.Action{
+		Name:   "Open touch page",
+		Type:   "browser_navigate",
+		Target: "/",
+	})
+	if err != nil {
+		t.Fatalf("navigate returned error: %v", err)
+	}
+	if !navigate.Success {
+		t.Fatalf("navigate failed: %s", navigate.ErrorMessage)
+	}
+
+	tap, err := b.Execute(context.Background(), &protocol.Action{
+		Name:     "Tap target",
+		Type:     "browser_tap",
+		Selector: "#touch-target",
+	})
+	if err != nil {
+		t.Fatalf("tap returned error: %v", err)
+	}
+	if !tap.Success {
+		t.Fatalf("tap failed: %s", tap.ErrorMessage)
+	}
+
+	click, err := b.Execute(context.Background(), &protocol.Action{
+		Name:     "Click target in touch mode",
+		Type:     "browser_click",
+		Selector: "#touch-target",
+	})
+	if err != nil {
+		t.Fatalf("click returned error: %v", err)
+	}
+	if !click.Success {
+		t.Fatalf("click failed: %s", click.ErrorMessage)
+	}
+
+	capture, err := b.Execute(context.Background(), &protocol.Action{
+		Name: "Capture touch state",
+		Type: "browser_screenshot",
+		Capture: &protocol.BrowserCaptureOptions{
+			HTML: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("capture returned error: %v", err)
+	}
+	if !capture.Success {
+		t.Fatalf("capture failed: %s", capture.ErrorMessage)
+	}
+	if !strings.Contains(capture.HTML, `<div id="touch-count">2</div>`) {
+		t.Fatalf("capture HTML missing touch count 2: %s", capture.HTML)
+	}
+}
+
+func TestBrowserProtocolAdvancedTouchActions(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`<!doctype html>
+<html>
+  <head>
+    <title>Advanced Touch Test</title>
+    <script>
+      window.addEventListener('load', () => {
+        let longPressTimer = null;
+        const holdTarget = document.querySelector('#hold-target');
+        holdTarget.addEventListener('touchstart', () => {
+          longPressTimer = setTimeout(() => {
+            const counter = document.querySelector('#long-press-count');
+            counter.textContent = String(Number(counter.textContent) + 1);
+          }, 200);
+        });
+        holdTarget.addEventListener('touchend', () => {
+          if (longPressTimer) {
+            clearTimeout(longPressTimer);
+            longPressTimer = null;
+          }
+        });
+
+        let swipeStartX = 0;
+        const swipeTarget = document.querySelector('#swipe-target');
+        swipeTarget.addEventListener('touchstart', (event) => {
+          swipeStartX = event.changedTouches[0].clientX;
+        });
+        swipeTarget.addEventListener('touchend', (event) => {
+          const delta = event.changedTouches[0].clientX - swipeStartX;
+          if (delta < -80) {
+            const counter = document.querySelector('#swipe-count');
+            counter.textContent = String(Number(counter.textContent) + 1);
+          }
+        });
+      });
+    </script>
+  </head>
+  <body>
+    <button id="hold-target">Hold me</button>
+    <div id="long-press-count">0</div>
+    <div id="swipe-target" style="width: 320px; height: 80px; border: 1px solid #000;">Swipe here</div>
+    <div id="swipe-count">0</div>
+  </body>
+</html>`))
+	}))
+	defer server.Close()
+
+	b := &Browser{}
+	if err := b.Init(context.Background(), map[string]any{
+		"base_url":               server.URL,
+		"browser_headless":       true,
+		"browser_device_profile": "iphone_se",
+		"browser_touch_mode":     true,
+	}); err != nil {
+		lower := strings.ToLower(err.Error())
+		if strings.Contains(lower, "executable") || strings.Contains(lower, "chrome") {
+			t.Skipf("browser runtime unavailable: %v", err)
+		}
+		t.Fatalf("Init returned error: %v", err)
+	}
+	defer b.Teardown(context.Background())
+
+	navigate, err := b.Execute(context.Background(), &protocol.Action{
+		Name:   "Open gesture page",
+		Type:   "browser_navigate",
+		Target: "/",
+	})
+	if err != nil {
+		t.Fatalf("navigate returned error: %v", err)
+	}
+	if !navigate.Success {
+		t.Fatalf("navigate failed: %s", navigate.ErrorMessage)
+	}
+
+	longPress, err := b.Execute(context.Background(), &protocol.Action{
+		Name:     "Long press target",
+		Type:     "browser_long_press",
+		Selector: "#hold-target",
+		Params: map[string]any{
+			"duration_ms": 350,
+		},
+	})
+	if err != nil {
+		t.Fatalf("long press returned error: %v", err)
+	}
+	if !longPress.Success {
+		t.Fatalf("long press failed: %s", longPress.ErrorMessage)
+	}
+
+	swipe, err := b.Execute(context.Background(), &protocol.Action{
+		Name:     "Swipe left",
+		Type:     "browser_swipe",
+		Selector: "#swipe-target",
+		Params: map[string]any{
+			"direction": "left",
+			"distance":  180,
+		},
+	})
+	if err != nil {
+		t.Fatalf("swipe returned error: %v", err)
+	}
+	if !swipe.Success {
+		t.Fatalf("swipe failed: %s", swipe.ErrorMessage)
+	}
+
+	capture, err := b.Execute(context.Background(), &protocol.Action{
+		Name: "Capture gesture state",
+		Type: "browser_screenshot",
+		Capture: &protocol.BrowserCaptureOptions{
+			HTML: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("capture returned error: %v", err)
+	}
+	if !capture.Success {
+		t.Fatalf("capture failed: %s", capture.ErrorMessage)
+	}
+	if !strings.Contains(capture.HTML, `<div id="long-press-count">1</div>`) {
+		t.Fatalf("capture HTML missing long press count 1: %s", capture.HTML)
+	}
+	if !strings.Contains(capture.HTML, `<div id="swipe-count">1</div>`) {
+		t.Fatalf("capture HTML missing swipe count 1: %s", capture.HTML)
+	}
+}
+
+func TestBrowserProtocolClientMetrics(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/style.css":
+			w.Header().Set("Content-Type", "text/css")
+			_, _ = w.Write([]byte(`body { background: #fff; }`))
+		default:
+			_, _ = w.Write([]byte(`<!doctype html>
+<html>
+  <head>
+    <title>Metrics Test</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <div id="status">metrics ready</div>
+  </body>
+</html>`))
+		}
+	}))
+	defer server.Close()
+
+	b := &Browser{}
+	if err := b.Init(context.Background(), map[string]any{
+		"base_url":               server.URL,
+		"browser_headless":       true,
+		"browser_client_metrics": true,
+		"browser_device_profile": "iphone_se",
+	}); err != nil {
+		lower := strings.ToLower(err.Error())
+		if strings.Contains(lower, "executable") || strings.Contains(lower, "chrome") {
+			t.Skipf("browser runtime unavailable: %v", err)
+		}
+		t.Fatalf("Init returned error: %v", err)
+	}
+	defer b.Teardown(context.Background())
+
+	result, err := b.Execute(context.Background(), &protocol.Action{
+		Name:   "Open metrics page",
+		Type:   "browser_navigate",
+		Target: "/",
+	})
+	if err != nil {
+		t.Fatalf("navigate returned error: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("navigate failed: %s", result.ErrorMessage)
+	}
+	if result.ClientMetrics == nil {
+		t.Fatal("ClientMetrics = nil, want populated metrics")
+	}
+	if result.ClientMetrics.DeviceProfile != "iphone_se" {
+		t.Fatalf("DeviceProfile = %q, want iphone_se", result.ClientMetrics.DeviceProfile)
+	}
+	if result.ClientMetrics.DeviceTier != "low" {
+		t.Fatalf("DeviceTier = %q, want low", result.ClientMetrics.DeviceTier)
+	}
+	if result.ClientMetrics.ActionDurationMs <= 0 {
+		t.Fatalf("ActionDurationMs = %v, want > 0", result.ClientMetrics.ActionDurationMs)
+	}
+	if result.ClientMetrics.JSHeapTotalMB <= 0 {
+		t.Fatalf("JSHeapTotalMB = %v, want > 0", result.ClientMetrics.JSHeapTotalMB)
+	}
+	if result.ClientMetrics.TotalResourceCount <= 0 {
+		t.Fatalf("TotalResourceCount = %d, want > 0", result.ClientMetrics.TotalResourceCount)
+	}
+	if result.ClientMetrics.LongTaskCount < 0 {
+		t.Fatalf("LongTaskCount = %d, want >= 0", result.ClientMetrics.LongTaskCount)
+	}
+}
+
 func TestBrowserProtocolCacheDisabledReloadsCacheableAssets(t *testing.T) {
 	var assetHits int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -277,8 +646,8 @@ func TestBrowserProtocolDownloadResourcesNoneBlocksStaticAssets(t *testing.T) {
 
 	b := &Browser{}
 	if err := b.Init(context.Background(), map[string]any{
-		"base_url":                  server.URL,
-		"browser_headless":          true,
+		"base_url":                   server.URL,
+		"browser_headless":           true,
 		"browser_download_resources": "none",
 	}); err != nil {
 		lower := strings.ToLower(err.Error())
@@ -327,13 +696,13 @@ func TestNormalizeDownloadFilterHosts(t *testing.T) {
 
 func TestBrowserFetchRequestPatterns(t *testing.T) {
 	tests := []struct {
-		name  string
-		b     Browser
-		want  []network.ResourceType
+		name string
+		b    Browser
+		want []network.ResourceType
 	}{
 		{
 			name: "download filters only",
-			b: Browser{downloadFilterMode: "block_list", downloadFilterHosts: []string{"ads.example.com"}, cacheContentURLs: true},
+			b:    Browser{downloadFilterMode: "block_list", downloadFilterHosts: []string{"ads.example.com"}, cacheContentURLs: true},
 			want: []network.ResourceType{
 				network.ResourceTypeImage,
 				network.ResourceTypeStylesheet,
@@ -345,7 +714,7 @@ func TestBrowserFetchRequestPatterns(t *testing.T) {
 		},
 		{
 			name: "content cache override only",
-			b: Browser{cacheContentURLs: false},
+			b:    Browser{cacheContentURLs: false},
 			want: []network.ResourceType{
 				network.ResourceTypeDocument,
 				network.ResourceTypeFetch,
@@ -354,7 +723,7 @@ func TestBrowserFetchRequestPatterns(t *testing.T) {
 		},
 		{
 			name: "combined patterns are unique",
-			b: Browser{downloadFilterMode: "allow_list", downloadFilterHosts: []string{"cdn.example.com"}, cacheContentURLs: false},
+			b:    Browser{downloadFilterMode: "allow_list", downloadFilterHosts: []string{"cdn.example.com"}, cacheContentURLs: false},
 			want: []network.ResourceType{
 				network.ResourceTypeImage,
 				network.ResourceTypeStylesheet,
@@ -560,10 +929,10 @@ func TestBrowserProtocolCheckNewerVersionsRevalidatesCachedAssets(t *testing.T) 
 
 	b := &Browser{}
 	if err := b.Init(context.Background(), map[string]any{
-		"base_url":                      server.URL,
-		"browser_headless":              true,
-		"browser_cache_enabled":         true,
-		"browser_check_newer_versions":  true,
+		"base_url":                     server.URL,
+		"browser_headless":             true,
+		"browser_cache_enabled":        true,
+		"browser_check_newer_versions": true,
 	}); err != nil {
 		lower := strings.ToLower(err.Error())
 		if strings.Contains(lower, "executable") || strings.Contains(lower, "chrome") {
@@ -610,10 +979,10 @@ func TestBrowserProtocolNetworkSimulationAddsLatency(t *testing.T) {
 
 	b := &Browser{}
 	if err := b.Init(context.Background(), map[string]any{
-		"base_url":                           server.URL,
-		"browser_headless":                   true,
-		"web_network_simulation_mode":        "custom",
-		"web_network_simulation_latency_ms":  250,
+		"base_url":                          server.URL,
+		"browser_headless":                  true,
+		"web_network_simulation_mode":       "custom",
+		"web_network_simulation_latency_ms": 250,
 	}); err != nil {
 		lower := strings.ToLower(err.Error())
 		if strings.Contains(lower, "executable") || strings.Contains(lower, "chrome") {

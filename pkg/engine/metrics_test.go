@@ -194,6 +194,80 @@ func TestMetricsCollector_ByGroup(t *testing.T) {
 	}
 }
 
+func TestMetricsCollector_BrowserMetricsSummary(t *testing.T) {
+	mc := NewMetricsCollector(100)
+	snap := mc.computeSnapshot([]*protocol.Result{
+		{
+			ActionName: "page-1",
+			Success:    true,
+			Duration:   10 * time.Millisecond,
+			ClientMetrics: &protocol.ClientMetrics{
+				DeviceProfile:         "iphone_se",
+				DeviceTier:            "low",
+				FCPMs:                 120,
+				LCPMs:                 220,
+				CLSScore:              0.02,
+				INPMs:                 45,
+				BlockingResourceCount: 2,
+				LongTaskCount:         1,
+				JSHeapUsedMB:          12,
+			},
+		},
+		{
+			ActionName: "page-2",
+			Success:    true,
+			Duration:   20 * time.Millisecond,
+			ClientMetrics: &protocol.ClientMetrics{
+				DeviceProfile:         "iphone_se",
+				DeviceTier:            "low",
+				FCPMs:                 180,
+				LCPMs:                 280,
+				CLSScore:              0.04,
+				INPMs:                 55,
+				BlockingResourceCount: 4,
+				LongTaskCount:         3,
+				JSHeapUsedMB:          18,
+			},
+		},
+		{
+			ActionName: "page-3",
+			Success:    true,
+			Duration:   15 * time.Millisecond,
+			ClientMetrics: &protocol.ClientMetrics{
+				DeviceProfile:         "pixel_8",
+				DeviceTier:            "high",
+				FCPMs:                 90,
+				LCPMs:                 160,
+				CLSScore:              0.01,
+				INPMs:                 35,
+				BlockingResourceCount: 1,
+				LongTaskCount:         0,
+				JSHeapUsedMB:          10,
+			},
+		},
+	}, time.Second)
+
+	if snap.Browser == nil {
+		t.Fatal("Browser = nil, want summary")
+	}
+	if snap.Browser.Samples != 3 {
+		t.Fatalf("Browser.Samples = %d, want 3", snap.Browser.Samples)
+	}
+	if len(snap.BrowserByDevice) != 2 {
+		t.Fatalf("len(BrowserByDevice) = %d, want 2", len(snap.BrowserByDevice))
+	}
+	iphone := snap.BrowserByDevice["iphone_se"]
+	if iphone == nil {
+		t.Fatal("missing iphone_se summary")
+	}
+	if iphone.DeviceTier != "low" {
+		t.Fatalf("DeviceTier = %q, want low", iphone.DeviceTier)
+	}
+	if iphone.AvgFCPMs != 150 {
+		t.Fatalf("AvgFCPMs = %v, want 150", iphone.AvgFCPMs)
+	}
+}
+
 func TestMetricsCollector_RecordTransaction(t *testing.T) {
 	mc := NewMetricsCollector(100)
 	mc.Start(50 * time.Millisecond)

@@ -52,6 +52,10 @@ function formatNumber(value: number, digits = 0) {
   return Number.isFinite(value) ? value.toFixed(digits) : digits > 0 ? '0.0' : '0'
 }
 
+function formatBrowserMs(value?: number, digits = 0) {
+  return typeof value === 'number' && Number.isFinite(value) ? value.toFixed(digits) : '—'
+}
+
 function formatDateTime(value?: string) {
   return value ? new Date(value).toLocaleString() : 'Never'
 }
@@ -517,6 +521,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                   <th>Completed</th>
                   <th className="num">Peak TPS</th>
                   <th className="num">Avg ms</th>
+                  <th className="num">LCP ms</th>
                   <th className="num">Errors</th>
                   <th className="num">Peak VUsers</th>
                   <th className="num">Transactions</th>
@@ -532,6 +537,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                     <td>{formatDateTime(test.ended_at || test.start_time || test.created_at)}</td>
                     <td className="num strong">{formatNumber(report.overview.peak_tps, 1)}</td>
                     <td className="num">{formatNumber(report.overview.avg_response_ms)}</td>
+                    <td className="num">{formatBrowserMs(report.overview.browser?.avg_lcp_ms)}</td>
                     <td className={`num ${report.overview.error_pct > 0 ? 'text-danger strong' : ''}`}>
                       {formatNumber(report.overview.error_pct, 2)}%
                     </td>

@@ -516,7 +516,7 @@ func TestHTTP_Execute_AppliesDataFormattingChainBeforeExtractionAndAssertions(t 
 	defer ts.Close()
 
 	h := initHTTP(t, map[string]any{
-		"base_url": ts.URL,
+		"base_url":                        ts.URL,
 		"web_data_formatting_auto_detect": true,
 		"web_data_formatting_chain": []map[string]any{
 			{"type": "base64"},
@@ -555,7 +555,7 @@ func TestHTTP_Execute_AutoDetectsBase64ResponseBeforeExtractionAndAssertions(t *
 	defer ts.Close()
 
 	h := initHTTP(t, map[string]any{
-		"base_url": ts.URL,
+		"base_url":                        ts.URL,
 		"web_data_formatting_auto_detect": true,
 	})
 
