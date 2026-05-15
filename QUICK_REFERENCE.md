@@ -173,8 +173,8 @@ cp stormrunner.db stormrunner.db.backup
   "config": {
     "base_url": "https://www.example.com",
     "browser": {
-      "engine": "chromium",
-      "device_profile": "iPhone 14 Pro",
+      "engine": "webkit",
+      "device_profile": "iphone_15_pro",
       "touch_mode": true,
       "orientation": "portrait",
       "client_metrics": true,
@@ -221,7 +221,7 @@ Supported browser actions:
 
 Browser/mobile config keys:
 - `config.browser.engine`: `chromium` or `webkit` (`webkit` is reserved and returns a not-implemented runtime error in this build)
-- `config.browser.device_profile`: named preset such as `iPhone 14 Pro` or `iPad Air`
+- `config.browser.device_profile`: named preset such as `pixel_8`, `iphone_15_pro`, or `ipad_air`
 - `config.browser.touch_mode`: force touch interactions on or off
 - `config.browser.orientation`: `portrait` or `landscape`
 - `config.browser.client_metrics`: enable FCP/LCP/CLS/INP and long-task capture

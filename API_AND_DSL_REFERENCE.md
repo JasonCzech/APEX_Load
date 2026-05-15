@@ -274,8 +274,8 @@ Stormrunner keeps mobile emulation under the `browser` protocol rather than intr
   "config": {
     "base_url": "https://www.example.com",
     "browser": {
-      "engine": "chromium",
-      "device_profile": "iPad Air",
+      "engine": "webkit",
+      "device_profile": "ipad_air",
       "touch_mode": true,
       "orientation": "landscape",
       "client_metrics": true,
@@ -291,7 +291,7 @@ Stormrunner keeps mobile emulation under the `browser` protocol rather than intr
 
 Supported browser config keys:
 - `config.browser.engine`: `chromium` or `webkit` (`webkit` is reserved and returns a not-implemented runtime error in this build)
-- `config.browser.device_profile`: named preset from the built-in device registry
+- `config.browser.device_profile`: named preset from the built-in device registry such as `pixel_8`, `iphone_15_pro`, or `ipad_air`
 - `config.browser.touch_mode`: optional boolean override for touch emulation
 - `config.browser.orientation`: `portrait` or `landscape`
 - `config.browser.client_metrics`: enables browser UX metrics collection
@@ -351,17 +351,17 @@ Example archive report excerpt:
     }
   },
   "browser_by_device": {
-    "iPhone 14 Pro": {
+    "iphone_15_pro": {
       "samples": 640,
-      "device_profile": "iPhone 14 Pro",
-      "device_tier": "mobile",
+      "device_profile": "iphone_15_pro",
+      "device_tier": "high",
       "avg_lcp_ms": 1488.2,
       "avg_inp_ms": 92.1
     },
-    "iPad Air": {
+    "ipad_air": {
       "samples": 640,
-      "device_profile": "iPad Air",
-      "device_tier": "tablet",
+      "device_profile": "ipad_air",
+      "device_tier": "mid",
       "avg_lcp_ms": 1353.5,
       "avg_inp_ms": 79.4
     }
