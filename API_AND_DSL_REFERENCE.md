@@ -290,7 +290,7 @@ Stormrunner keeps mobile emulation under the `browser` protocol rather than intr
 ```
 
 Supported browser config keys:
-- `config.browser.engine`: `chromium` or `webkit` (`webkit` is reserved and returns a not-implemented runtime error in this build)
+- `config.browser.engine`: `chromium` or `webkit` (`webkit` executes through Playwright WebKit and requires Playwright WebKit assets installed on the controller host)
 - `config.browser.device_profile`: named preset from the built-in device registry such as `pixel_8`, `iphone_15_pro`, or `ipad_air`
 - `config.browser.touch_mode`: optional boolean override for touch emulation
 - `config.browser.orientation`: `portrait` or `landscape`
@@ -743,7 +743,7 @@ Emits JSON messages for all test events:
 - `config.jms.mock`: Use the local in-memory broker for replay. Real Solace broker execution requires the Solace adapter build.
 
 **Browser config keys:**
-- `config.browser.engine`: Browser engine identifier, currently `chromium`
+- `config.browser.engine`: Browser engine identifier: `chromium` or `webkit` (`webkit` requires Playwright WebKit assets on the controller host)
 - `config.browser.headless`: Run the browser headlessly when `true`
 - `config.browser.slow_mo_ms`: Add fixed browser-action delay in milliseconds
 - `config.browser.user_agent`: Override browser user agent string

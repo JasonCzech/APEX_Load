@@ -2928,7 +2928,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
                             <select value={script.config.browser?.engine || 'chromium'}
                               onChange={e => updateField('config.browser', { ...script.config.browser, engine: e.target.value })}>
                               <option value="chromium">Chromium</option>
-                              <option value="webkit">WebKit (reserved)</option>
+                              <option value="webkit">WebKit</option>
                             </select>
                           </label>
                           <label>

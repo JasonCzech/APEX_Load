@@ -220,7 +220,7 @@ Supported browser actions:
 - `browser_swipe`
 
 Browser/mobile config keys:
-- `config.browser.engine`: `chromium` or `webkit` (`webkit` is reserved and returns a not-implemented runtime error in this build)
+- `config.browser.engine`: `chromium` or `webkit` (`webkit` executes through Playwright WebKit and requires Playwright WebKit assets installed on the controller host)
 - `config.browser.device_profile`: named preset such as `pixel_8`, `iphone_15_pro`, or `ipad_air`
 - `config.browser.touch_mode`: force touch interactions on or off
 - `config.browser.orientation`: `portrait` or `landscape`
