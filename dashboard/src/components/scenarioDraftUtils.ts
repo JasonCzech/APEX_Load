@@ -51,8 +51,11 @@ export function buildInitialScenarioDraft(initialScenario: ScenarioDraft | undef
     },
     runtimeSettings: {
       iterations: initialScenario?.runtimeSettings?.iterations,
+      pacing: initialScenario?.runtimeSettings?.pacing ? { ...initialScenario.runtimeSettings.pacing } : undefined,
+      think_time: initialScenario?.runtimeSettings?.think_time ? { ...initialScenario.runtimeSettings.think_time } : undefined,
       log_level: initialScenario?.runtimeSettings?.log_level || '',
       auto_transactions: initialScenario?.runtimeSettings?.auto_transactions || '',
+      continue_on_error: Boolean(initialScenario?.runtimeSettings?.continue_on_error),
       snapshot_on_error: initialScenario?.runtimeSettings?.snapshot_on_error || false,
     },
     groups: initialScenario?.groups.length ? initialScenario.groups : [buildDefaultScenarioGroup(scripts)],
@@ -104,8 +107,11 @@ export function buildScenarioDraftFromTest(test: TestSummary): ScenarioDraft {
     },
     runtimeSettings: {
       iterations: test.runtime_settings?.iterations,
+      pacing: test.runtime_settings?.pacing ? { ...test.runtime_settings.pacing } : undefined,
+      think_time: test.runtime_settings?.think_time ? { ...test.runtime_settings.think_time } : undefined,
       log_level: test.runtime_settings?.log_level || '',
       auto_transactions: test.runtime_settings?.auto_transactions || '',
+      continue_on_error: Boolean(test.runtime_settings?.error_handling?.continue_on_error),
       snapshot_on_error: Boolean(test.runtime_settings?.error_handling?.snapshot_on_error),
     },
     groups,

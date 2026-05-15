@@ -1,4 +1,4 @@
-import { type ScriptDefinition } from './types/scripts'
+import { type PacingConfig, type ScriptDefinition, type ThinkTimeConfig } from './types/scripts'
 
 export interface TestGroup {
   name: string
@@ -75,11 +75,24 @@ export interface Folder {
 
 export interface RuntimeSettingsOverride {
   iterations?: number
+  pacing?: PacingConfig
+  think_time?: ThinkTimeConfig
   log_level?: string
   auto_transactions?: string
   error_handling?: {
+    continue_on_error?: boolean
     snapshot_on_error?: boolean
   }
+}
+
+export interface ScenarioRuntimeSettingsDraft {
+  iterations?: number
+  pacing?: PacingConfig
+  think_time?: ThinkTimeConfig
+  log_level: string
+  auto_transactions: string
+  continue_on_error: boolean
+  snapshot_on_error: boolean
 }
 
 export type ScenarioMode = 'vuser_driven' | 'goal_oriented'
@@ -294,12 +307,7 @@ export interface ScenarioDraft {
   assignment: GeneratorAssignmentSettings
   goalConfig: GoalConfig
   groups: ScenarioDraftGroup[]
-  runtimeSettings: {
-    iterations?: number
-    log_level: string
-    auto_transactions: string
-    snapshot_on_error: boolean
-  }
+  runtimeSettings: ScenarioRuntimeSettingsDraft
 }
 
 export interface SharedDataPool {

@@ -175,8 +175,11 @@ function TestHub({ onSelectTest }: Props) {
       goalConfig: {},
       runtimeSettings: {
         iterations: undefined,
+        pacing: undefined,
+        think_time: undefined,
         log_level: '',
         auto_transactions: '',
+        continue_on_error: false,
         snapshot_on_error: false,
       },
     }))
@@ -310,8 +313,11 @@ function TestHub({ onSelectTest }: Props) {
       goalConfig: {},
       runtimeSettings: {
         iterations: undefined,
+        pacing: undefined,
+        think_time: undefined,
         log_level: '',
         auto_transactions: '',
+        continue_on_error: false,
         snapshot_on_error: false,
       },
       dataPools: dataPoolsPayload,

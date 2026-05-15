@@ -31,6 +31,7 @@ describe('scenarioDraftUtils', () => {
 	  expect(draft.assignment).toEqual({ mode: 'auto', selected_targets: [] })
 	  expect(draft.goalConfig.sla_breach_window).toBe('30s')
 	  expect(draft.goalConfig.stop_on_max_errors).toBe(false)
+	  expect(draft.runtimeSettings.continue_on_error).toBe(false)
 	  expect(draft.runtimeSettings.snapshot_on_error).toBe(false)
 	})
 
@@ -58,9 +59,11 @@ describe('scenarioDraftUtils', () => {
 	    },
 	    runtime_settings: {
 	      iterations: 5,
+	      pacing: { type: 'fixed_delay', delay_ms: 1500 },
+	      think_time: { type: 'fixed', mean_ms: 750 },
 	      log_level: 'standard',
 	      auto_transactions: 'per_action',
-	      error_handling: { snapshot_on_error: true },
+	      error_handling: { continue_on_error: true, snapshot_on_error: true },
 	    },
 	    groups: [{
 	      name: 'Checkout',
@@ -80,6 +83,9 @@ describe('scenarioDraftUtils', () => {
 	  expect(draft.goalConfig.target_average_tps).toBe(300)
 	  expect(draft.goalConfig.max_error_count).toBe(12)
 	  expect(draft.goalConfig.stop_on_max_errors).toBe(true)
+	  expect(draft.runtimeSettings.pacing).toEqual({ type: 'fixed_delay', delay_ms: 1500 })
+	  expect(draft.runtimeSettings.think_time).toEqual({ type: 'fixed', mean_ms: 750 })
+	  expect(draft.runtimeSettings.continue_on_error).toBe(true)
 	  expect(draft.runtimeSettings.snapshot_on_error).toBe(true)
 	  expect(draft.groups).toEqual([{
 	    name: 'Checkout',
@@ -126,13 +132,19 @@ describe('scenarioDraftUtils', () => {
 		})
 		const withRuntime = scenarioDraftReducer(withGoal, {
 			type: 'setRuntimeSettingField',
-			field: 'snapshot_on_error',
+			field: 'pacing',
+			value: { type: 'fixed_delay', delay_ms: 1000 },
+		})
+		const withErrorHandling = scenarioDraftReducer(withRuntime, {
+			type: 'setRuntimeSettingField',
+			field: 'continue_on_error',
 			value: true,
 		})
 
-		expect(withRuntime.goalConfig.max_error_count).toBe(20)
-		expect(withRuntime.runtimeSettings.snapshot_on_error).toBe(true)
-		expect(withRuntime.groups[0].scriptId).toBe('script-1')
-		expect(withRuntime.duration).toBe('1m')
+		expect(withErrorHandling.goalConfig.max_error_count).toBe(20)
+		expect(withErrorHandling.runtimeSettings.pacing).toEqual({ type: 'fixed_delay', delay_ms: 1000 })
+		expect(withErrorHandling.runtimeSettings.continue_on_error).toBe(true)
+		expect(withErrorHandling.groups[0].scriptId).toBe('script-1')
+		expect(withErrorHandling.duration).toBe('1m')
 	})
 })

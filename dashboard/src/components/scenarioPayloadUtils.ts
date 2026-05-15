@@ -1,5 +1,6 @@
 import { GeneratorAssignmentSettings, GoalConfig, ScenarioDataPoolBinding, ScenarioDraftGroup, ScenarioMode } from '../types'
 import { ScenarioRuntimeSettings } from './scenarioDraftUtils'
+import { PacingConfig, ThinkTimeConfig } from '../types/scripts'
 
 export type ScenarioGroupPayload = {
   name?: string
@@ -23,10 +24,13 @@ export type ScenarioUpsertPayload = {
   goal_config?: GoalConfig
   runtime_settings?: {
     iterations?: number
+    pacing?: PacingConfig
+    think_time?: ThinkTimeConfig
     log_level?: string
     auto_transactions?: string
     error_handling?: {
-      snapshot_on_error: true
+      continue_on_error?: true
+      snapshot_on_error?: true
     }
   }
   data_pools?: ScenarioDataPoolBinding[]
@@ -124,15 +128,38 @@ export function buildGoalConfigPayload(scenarioMode: ScenarioMode, goalConfig: G
 }
 
 export function buildRuntimeSettingsPayload(runtimeSettings: ScenarioRuntimeSettings): ScenarioUpsertPayload['runtime_settings'] | undefined {
-  if (!runtimeSettings.iterations && !runtimeSettings.log_level && !runtimeSettings.auto_transactions && !runtimeSettings.snapshot_on_error) {
+  const pacing = runtimeSettings.pacing && runtimeSettings.pacing.type
+    ? { ...runtimeSettings.pacing }
+    : undefined
+  const thinkTime = runtimeSettings.think_time && (
+    runtimeSettings.think_time.ignore
+    || runtimeSettings.think_time.type
+    || runtimeSettings.think_time.mean_ms !== undefined
+    || runtimeSettings.think_time.std_ms !== undefined
+    || runtimeSettings.think_time.min_ms !== undefined
+    || runtimeSettings.think_time.max_ms !== undefined
+    || runtimeSettings.think_time.multiplier !== undefined
+    || runtimeSettings.think_time.limit_ms !== undefined
+  )
+    ? { ...runtimeSettings.think_time }
+    : undefined
+
+  if (!runtimeSettings.iterations && !pacing && !thinkTime && !runtimeSettings.log_level && !runtimeSettings.auto_transactions && !runtimeSettings.continue_on_error && !runtimeSettings.snapshot_on_error) {
     return undefined
   }
 
   return {
     iterations: runtimeSettings.iterations ? Number(runtimeSettings.iterations) : undefined,
+    pacing,
+    think_time: thinkTime,
     log_level: runtimeSettings.log_level || undefined,
     auto_transactions: runtimeSettings.auto_transactions || undefined,
-    error_handling: runtimeSettings.snapshot_on_error ? { snapshot_on_error: true } : undefined,
+    error_handling: runtimeSettings.continue_on_error || runtimeSettings.snapshot_on_error
+      ? {
+        continue_on_error: runtimeSettings.continue_on_error || undefined,
+        snapshot_on_error: runtimeSettings.snapshot_on_error || undefined,
+      }
+      : undefined,
   }
 }
 

@@ -73,6 +73,11 @@ describe('TestExecutionScenarioPreview', () => {
               stop_on_max_errors: true,
               sla_breach_window: '45s',
             },
+            runtime_settings: {
+              pacing: { type: 'fixed_delay', delay_ms: 1200 },
+              think_time: { type: 'fixed', mean_ms: 900 },
+              error_handling: { continue_on_error: true, snapshot_on_error: true },
+            },
             created_at: '2026-05-12T20:00:00Z',
             groups: [{
               name: 'Checkout',
@@ -159,6 +164,12 @@ describe('TestExecutionScenarioPreview', () => {
     expect(container.textContent).toContain('45s')
     expect(container.textContent).toContain('Stop On SLA Breach')
     expect(container.textContent).toContain('Stop On Max Errors')
+    expect(container.textContent).toContain('Pacing')
+    expect(container.textContent).toContain('Fixed delay · 1200ms')
+    expect(container.textContent).toContain('Think Time')
+    expect(container.textContent).toContain('fixed · 900ms')
+    expect(container.textContent).toContain('Continue On Error')
+    expect(container.textContent).toContain('Enabled')
 
     const nestingWarning = consoleErrorSpy.mock.calls.some(([message]) =>
       typeof message === 'string' && message.includes('validateDOMNesting'),

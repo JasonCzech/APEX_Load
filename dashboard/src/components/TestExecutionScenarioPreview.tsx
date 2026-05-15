@@ -81,6 +81,29 @@ function formatPacingLabel(scriptDetail?: ScenarioScriptDetail): string {
   return pacing.type.replace(/_/g, ' ')
 }
 
+function formatOverridePacing(test: TestSummary): string {
+  const pacing = test.runtime_settings?.pacing
+  if (!pacing?.type) return 'Script default'
+  if (pacing.type === 'none') return 'None'
+  if (pacing.type === 'fixed_delay') return `Fixed delay · ${pacing.delay_ms || 0}ms`
+  if (pacing.type === 'fixed_interval') return `Fixed interval · ${pacing.interval_ms || 0}ms`
+  if (pacing.type === 'tps') return `Target TPS · ${pacing.tps || 0}`
+  return pacing.type.replace(/_/g, ' ')
+}
+
+function formatOverrideThinkTime(test: TestSummary): string {
+  const thinkTime = test.runtime_settings?.think_time
+  if (!thinkTime) return 'Script default'
+  if (thinkTime.ignore) return 'Disabled'
+  return `${thinkTime.type || 'fixed'} · ${thinkTime.mean_ms || 0}ms`
+}
+
+function formatContinueOnError(test: TestSummary): string {
+  const override = test.runtime_settings?.error_handling?.continue_on_error
+  if (override === undefined) return 'Script default'
+  return override ? 'Enabled' : 'Disabled'
+}
+
 function formatEffectiveIterations(group: TestSummary['groups'][number], scriptDetail: ScenarioScriptDetail | undefined, test: TestSummary): string {
   if (group.iterations !== undefined) return `${group.iterations} (group override)`
   const override = test.runtime_settings?.iterations
@@ -354,6 +377,18 @@ export default function TestExecutionScenarioPreview({
             <div className="scenario-setting-card">
               <span className="scenario-setting-label">Auto Transactions</span>
               <span className="scenario-setting-value">{test.runtime_settings?.auto_transactions || 'Script default'}</span>
+            </div>
+            <div className="scenario-setting-card">
+              <span className="scenario-setting-label">Pacing</span>
+              <span className="scenario-setting-value">{formatOverridePacing(test)}</span>
+            </div>
+            <div className="scenario-setting-card">
+              <span className="scenario-setting-label">Think Time</span>
+              <span className="scenario-setting-value">{formatOverrideThinkTime(test)}</span>
+            </div>
+            <div className="scenario-setting-card">
+              <span className="scenario-setting-label">Continue On Error</span>
+              <span className="scenario-setting-value">{formatContinueOnError(test)}</span>
             </div>
             <div className="scenario-setting-card">
               <span className="scenario-setting-label">Snapshot On Error</span>

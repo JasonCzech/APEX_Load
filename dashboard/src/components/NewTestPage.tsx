@@ -19,6 +19,29 @@ function formatScenarioMode(value?: StoredScenario['scenario_mode']) {
   return value === 'goal_oriented' ? 'Goal Oriented' : 'VUser Driven'
 }
 
+function formatRuntimePacing(scenario?: StoredScenario | null) {
+  const pacing = scenario?.runtime_settings?.pacing
+  if (!pacing?.type) return 'Script default'
+  if (pacing.type === 'none') return 'None'
+  if (pacing.type === 'fixed_delay') return `Fixed delay · ${pacing.delay_ms || 0}ms`
+  if (pacing.type === 'fixed_interval') return `Fixed interval · ${pacing.interval_ms || 0}ms`
+  if (pacing.type === 'tps') return `Target TPS · ${pacing.tps || 0}`
+  return pacing.type.replace(/_/g, ' ')
+}
+
+function formatRuntimeThinkTime(scenario?: StoredScenario | null) {
+  const thinkTime = scenario?.runtime_settings?.think_time
+  if (!thinkTime) return 'Script default'
+  if (thinkTime.ignore) return 'Disabled'
+  return `${thinkTime.type || 'fixed'} · ${thinkTime.mean_ms || 0}ms`
+}
+
+function formatRuntimeContinueOnError(scenario?: StoredScenario | null) {
+  const value = scenario?.runtime_settings?.error_handling?.continue_on_error
+  if (value === undefined) return 'Script default'
+  return value ? 'Enabled' : 'Disabled'
+}
+
 export default function NewTestPage({ activeApplication, activeRelease, releases, onSelectTest, onCreateRelease }: Props) {
   const api = useApi()
   const [scenarios, setScenarios] = useState<StoredScenario[]>([])
@@ -279,6 +302,18 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
                 <div>
                   <span>Auto Transactions</span>
                   <strong>{scenario.runtime_settings?.auto_transactions || 'Script default'}</strong>
+                </div>
+                <div>
+                  <span>Pacing</span>
+                  <strong>{formatRuntimePacing(scenario)}</strong>
+                </div>
+                <div>
+                  <span>Think Time</span>
+                  <strong>{formatRuntimeThinkTime(scenario)}</strong>
+                </div>
+                <div>
+                  <span>Continue On Error</span>
+                  <strong>{formatRuntimeContinueOnError(scenario)}</strong>
                 </div>
                 <div>
                   <span>Snapshot On Error</span>
