@@ -296,6 +296,7 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
       <TestExecutionSummary
         transactions={transactions}
         metrics={metrics}
+        history={test.history}
       />
     </div>
   )

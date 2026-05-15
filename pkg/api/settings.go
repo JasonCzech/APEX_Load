@@ -20,8 +20,10 @@ type GeneralSettings struct {
 }
 
 type ThresholdSettings struct {
-	MaxErrorRatePct *float64 `json:"max_error_rate_pct,omitempty"`
-	MaxP99LatencyMs *float64 `json:"max_p99_latency_ms,omitempty"`
+	MaxErrorRatePct          *float64 `json:"max_error_rate_pct,omitempty"`
+	MaxP99LatencyMs          *float64 `json:"max_p99_latency_ms,omitempty"`
+	MaxAvgServerProcessingMs *float64 `json:"max_avg_server_processing_ms,omitempty"`
+	MaxAvgTransferMs         *float64 `json:"max_avg_transfer_ms,omitempty"`
 }
 
 type CapacityPlanningSettings struct {
@@ -84,6 +86,14 @@ func cloneSystemSettings(in SystemSettings) SystemSettings {
 		v := *in.Thresholds.MaxP99LatencyMs
 		out.Thresholds.MaxP99LatencyMs = &v
 	}
+	if in.Thresholds.MaxAvgServerProcessingMs != nil {
+		v := *in.Thresholds.MaxAvgServerProcessingMs
+		out.Thresholds.MaxAvgServerProcessingMs = &v
+	}
+	if in.Thresholds.MaxAvgTransferMs != nil {
+		v := *in.Thresholds.MaxAvgTransferMs
+		out.Thresholds.MaxAvgTransferMs = &v
+	}
 	return out
 }
 
@@ -143,6 +153,16 @@ func validateSystemSettings(settings SystemSettings) error {
 	if settings.Thresholds.MaxP99LatencyMs != nil {
 		if *settings.Thresholds.MaxP99LatencyMs <= 0 {
 			return fmt.Errorf("thresholds.max_p99_latency_ms must be > 0")
+		}
+	}
+	if settings.Thresholds.MaxAvgServerProcessingMs != nil {
+		if *settings.Thresholds.MaxAvgServerProcessingMs <= 0 {
+			return fmt.Errorf("thresholds.max_avg_server_processing_ms must be > 0")
+		}
+	}
+	if settings.Thresholds.MaxAvgTransferMs != nil {
+		if *settings.Thresholds.MaxAvgTransferMs <= 0 {
+			return fmt.Errorf("thresholds.max_avg_transfer_ms must be > 0")
 		}
 	}
 	if settings.CapacityPlanning.HeadroomPct < 0 || settings.CapacityPlanning.HeadroomPct >= 100 {

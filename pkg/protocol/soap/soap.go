@@ -91,10 +91,16 @@ func (s *SOAP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	if err != nil || result == nil {
 		return result, err
 	}
+	result.DependencyType = "soap"
+	if operation := resolveSOAPOperation(action, prepared.Body); operation != "" {
+		result.DependencyTarget = appendSOAPOperationTarget(result.DependencyTarget, operation)
+		result.Extractions["soap_operation"] = operation
+	}
 
 	if s.failOnFault {
 		if fault, ok := detectSOAPFault(result.ResponseBody); ok {
 			result.Success = false
+			result.Extractions["soap_fault_category"] = classifySOAPFaultCategory(fault)
 			if result.ErrorMessage == "" {
 				result.ErrorMessage = fault
 			}
@@ -139,6 +145,87 @@ func resolveSOAPURL(baseURL, target string) string {
 		return target
 	}
 	return strings.TrimRight(baseURL, "/") + "/" + strings.TrimLeft(target, "/")
+}
+
+func resolveSOAPOperation(action *protocol.Action, body []byte) string {
+	if action == nil {
+		return ""
+	}
+	if action.SOAP != nil {
+		if operation := strings.TrimSpace(action.SOAP.Operation); operation != "" {
+			return operation
+		}
+		if operation := soapOperationFromAction(strings.TrimSpace(action.SOAP.Action)); operation != "" {
+			return operation
+		}
+	}
+	return soapOperationFromBody(body)
+}
+
+func soapOperationFromAction(action string) string {
+	if action == "" {
+		return ""
+	}
+	for _, separator := range []string{"#", "/", ":"} {
+		if idx := strings.LastIndex(action, separator); idx >= 0 && idx < len(action)-1 {
+			return strings.TrimSpace(action[idx+1:])
+		}
+	}
+	return strings.TrimSpace(action)
+}
+
+func soapOperationFromBody(body []byte) string {
+	text := string(body)
+	bodyStart := strings.Index(strings.ToLower(text), "<body")
+	if bodyStart == -1 {
+		return ""
+	}
+	segment := text[bodyStart:]
+	gt := strings.Index(segment, ">")
+	if gt == -1 || gt == len(segment)-1 {
+		return ""
+	}
+	segment = segment[gt+1:]
+	start := strings.Index(segment, "<")
+	if start == -1 || start == len(segment)-1 {
+		return ""
+	}
+	segment = segment[start+1:]
+	end := strings.IndexAny(segment, " >/\t\r\n")
+	if end == -1 {
+		end = len(segment)
+	}
+	name := strings.TrimSpace(segment[:end])
+	if idx := strings.Index(name, ":"); idx >= 0 && idx < len(name)-1 {
+		name = name[idx+1:]
+	}
+	return name
+}
+
+func appendSOAPOperationTarget(target string, operation string) string {
+	if operation == "" {
+		return target
+	}
+	if target == "" {
+		return operation
+	}
+	return target + "#" + operation
+}
+
+func classifySOAPFaultCategory(fault string) string {
+	lower := strings.ToLower(fault)
+	switch {
+	case strings.Contains(lower, "client") || strings.Contains(lower, "sender"):
+		return "client"
+	case strings.Contains(lower, "server") || strings.Contains(lower, "receiver"):
+		return "server"
+	case strings.Contains(lower, "version"):
+		return "version"
+	case strings.Contains(lower, "mustunderstand"):
+		return "mustunderstand"
+	default:
+		return "unknown"
+	}
 }
 
 func buildSOAPSnapshot(action *protocol.Action, targetURL string, result *protocol.Result) *protocol.ErrorSnapshot {

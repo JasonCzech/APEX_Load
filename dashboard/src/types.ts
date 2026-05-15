@@ -796,6 +796,8 @@ export interface SystemInventoryResponse {
 export interface DashboardThresholdSettings {
   max_error_rate_pct?: number
   max_p99_latency_ms?: number
+  max_avg_server_processing_ms?: number
+  max_avg_transfer_ms?: number
 }
 
 export interface DashboardGeneralSettings {

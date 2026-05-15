@@ -94,6 +94,14 @@ func (j *JavaHTTP) Execute(ctx context.Context, action *protocol.Action) (*proto
 	if result != nil && j.preserveBinaryResult {
 		result.ResponseBody = base64.StdEncoding.EncodeToString([]byte(result.ResponseBody))
 	}
+	if result != nil {
+		result.DependencyType = "java_http"
+		if result.Extractions == nil {
+			result.Extractions = make(map[string]string)
+		}
+		result.Extractions["java_http_codec"] = j.codec
+		result.Extractions["java_http_helper_mode"] = j.helperMode
+	}
 	return result, err
 }
 

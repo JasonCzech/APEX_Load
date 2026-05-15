@@ -72,6 +72,12 @@ func TestJMSPublishConsumeWithExtractionAndAssertion(t *testing.T) {
 	if consumed.BytesReceived == 0 {
 		t.Fatal("BytesReceived = 0, want message bytes")
 	}
+	if consumed.ServerTelemetry == nil {
+		t.Fatal("ServerTelemetry = nil, want JMS telemetry")
+	}
+	if consumed.ServerTelemetry.ResponsePayloadKB <= 0 {
+		t.Fatalf("ResponsePayloadKB = %v, want > 0", consumed.ServerTelemetry.ResponsePayloadKB)
+	}
 }
 
 func TestJMSConsumeTimeoutFailsResult(t *testing.T) {
@@ -180,5 +186,14 @@ func TestJMSRequestReplyEchoesResponse(t *testing.T) {
 	}
 	if result.DependencyTarget != "orders.request" {
 		t.Fatalf("DependencyTarget = %q, want orders.request", result.DependencyTarget)
+	}
+	if result.ServerTelemetry == nil {
+		t.Fatal("ServerTelemetry = nil, want request/reply telemetry")
+	}
+	if result.ServerTelemetry.ServerProcessingMs < 0 {
+		t.Fatalf("ServerProcessingMs = %v, want non-negative", result.ServerTelemetry.ServerProcessingMs)
+	}
+	if result.ServerTelemetry.TransferMs < 0 {
+		t.Fatalf("TransferMs = %v, want non-negative", result.ServerTelemetry.TransferMs)
 	}
 }

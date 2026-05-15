@@ -586,19 +586,35 @@ func TestBuildLiveMetricsFromSnapshot(t *testing.T) {
 func TestBuildThresholdAlerts(t *testing.T) {
 	p99Threshold := 750.0
 	errorThreshold := 2.5
+	serverThreshold := 200.0
+	transferThreshold := 90.0
 	timestamp := time.Date(2026, time.May, 10, 9, 0, 0, 0, time.UTC)
 
 	alerts := buildThresholdAlerts(&ManagedTest{ID: "test-1", Name: "Checkout"}, &LiveMetrics{
 		Timestamp: timestamp,
 		P99Ms:     900,
 		ErrorPct:  4.2,
+		Transactions: map[string]*TxMetrics{
+			"POST /checkout": {
+				Name:             "POST /checkout",
+				DependencyType:   "soap",
+				DependencyTarget: "checkout.example.com#SubmitOrder",
+				ServerTelemetry: &ServerTelemetrySummary{
+					Samples:               8,
+					AvgServerProcessingMs: 245,
+					AvgTransferMs:         110,
+				},
+			},
+		},
 	}, ThresholdSettings{
-		MaxP99LatencyMs: &p99Threshold,
-		MaxErrorRatePct: &errorThreshold,
+		MaxP99LatencyMs:          &p99Threshold,
+		MaxErrorRatePct:          &errorThreshold,
+		MaxAvgServerProcessingMs: &serverThreshold,
+		MaxAvgTransferMs:         &transferThreshold,
 	})
 
-	if len(alerts) != 2 {
-		t.Fatalf("expected 2 threshold alerts, got %d", len(alerts))
+	if len(alerts) != 4 {
+		t.Fatalf("expected 4 threshold alerts, got %d", len(alerts))
 	}
 
 	alertsByMetric := make(map[string]map[string]any, len(alerts))
@@ -624,6 +640,17 @@ func TestBuildThresholdAlerts(t *testing.T) {
 	}
 	if errorAlert["action"] != "stop_requested" {
 		t.Fatalf("expected stop_requested action, got %#v", errorAlert["action"])
+	}
+	serverAlert := alertsByMetric["avg_server_processing_ms"]
+	if serverAlert["threshold"] != serverThreshold {
+		t.Fatalf("expected server threshold %v, got %#v", serverThreshold, serverAlert["threshold"])
+	}
+	if serverAlert["transaction"] != "POST /checkout" {
+		t.Fatalf("expected server alert to identify POST /checkout, got %#v", serverAlert["transaction"])
+	}
+	transferAlert := alertsByMetric["avg_transfer_ms"]
+	if transferAlert["threshold"] != transferThreshold {
+		t.Fatalf("expected transfer threshold %v, got %#v", transferThreshold, transferAlert["threshold"])
 	}
 	if !shouldStopForErrorThreshold(&LiveMetrics{ErrorPct: 4.2}, ThresholdSettings{MaxErrorRatePct: &errorThreshold}) {
 		t.Fatal("expected error threshold helper to request stop")

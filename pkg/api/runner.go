@@ -2785,7 +2785,7 @@ func shouldPublishTelemetryDiagnostic(state *telemetryDiagnosticState, signature
 }
 
 func buildThresholdAlerts(test *ManagedTest, live *LiveMetrics, thresholds ThresholdSettings) []map[string]any {
-	alerts := make([]map[string]any, 0, 2)
+	alerts := make([]map[string]any, 0, 4)
 	if thresholds.MaxP99LatencyMs != nil && live.P99Ms > *thresholds.MaxP99LatencyMs {
 		alerts = append(alerts, map[string]any{
 			"type":      "threshold_alert",
@@ -2809,7 +2809,57 @@ func buildThresholdAlerts(test *ManagedTest, live *LiveMetrics, thresholds Thres
 			"action":    "stop_requested",
 		})
 	}
+	if alert := buildServerTelemetryThresholdAlert(test, live, thresholds.MaxAvgServerProcessingMs, "avg_server_processing_ms", func(summary *ServerTelemetrySummary) float64 {
+		return summary.AvgServerProcessingMs
+	}); alert != nil {
+		alerts = append(alerts, alert)
+	}
+	if alert := buildServerTelemetryThresholdAlert(test, live, thresholds.MaxAvgTransferMs, "avg_transfer_ms", func(summary *ServerTelemetrySummary) float64 {
+		return summary.AvgTransferMs
+	}); alert != nil {
+		alerts = append(alerts, alert)
+	}
 	return alerts
+}
+
+func buildServerTelemetryThresholdAlert(test *ManagedTest, live *LiveMetrics, threshold *float64, metric string, pickValue func(summary *ServerTelemetrySummary) float64) map[string]any {
+	if threshold == nil || live == nil || len(live.Transactions) == 0 {
+		return nil
+	}
+
+	var hotTx *TxMetrics
+	hotValue := 0.0
+	hotName := ""
+	for name, tx := range live.Transactions {
+		if tx == nil || tx.ServerTelemetry == nil {
+			continue
+		}
+		value := pickValue(tx.ServerTelemetry)
+		if value <= *threshold {
+			continue
+		}
+		if hotTx == nil || value > hotValue {
+			hotTx = tx
+			hotValue = value
+			hotName = name
+		}
+	}
+	if hotTx == nil {
+		return nil
+	}
+
+	return map[string]any{
+		"type":              "threshold_alert",
+		"test_id":           test.ID,
+		"test_name":         test.Name,
+		"timestamp":         live.Timestamp,
+		"metric":            metric,
+		"value":             hotValue,
+		"threshold":         *threshold,
+		"transaction":       hotName,
+		"dependency_type":   hotTx.DependencyType,
+		"dependency_target": hotTx.DependencyTarget,
+	}
 }
 
 func shouldStopForErrorThreshold(live *LiveMetrics, thresholds ThresholdSettings) bool {

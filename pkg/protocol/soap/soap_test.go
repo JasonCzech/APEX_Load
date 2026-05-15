@@ -67,6 +67,15 @@ func TestSOAPExecuteAddsSOAP11Defaults(t *testing.T) {
 	if seenSOAPAction != "urn:auth#Login" {
 		t.Fatalf("SOAPAction = %q, want urn:auth#Login", seenSOAPAction)
 	}
+	if result.DependencyType != "soap" {
+		t.Fatalf("DependencyType = %q, want soap", result.DependencyType)
+	}
+	if result.DependencyTarget != "127.0.0.1#Login" && !strings.HasSuffix(result.DependencyTarget, "#Login") {
+		t.Fatalf("DependencyTarget = %q, want operation-tagged target", result.DependencyTarget)
+	}
+	if result.Extractions["soap_operation"] != "Login" {
+		t.Fatalf("soap_operation = %q, want Login", result.Extractions["soap_operation"])
+	}
 }
 
 func TestSOAPExecuteAddsSOAP12Defaults(t *testing.T) {
@@ -252,6 +261,9 @@ func TestSOAPExecuteFlagsSOAP11FaultEnvelope(t *testing.T) {
 	}
 	if result.ErrorMessage != "soap fault: soapenv:Client: Invalid login" {
 		t.Fatalf("ErrorMessage = %q, want SOAP fault details", result.ErrorMessage)
+	}
+	if result.Extractions["soap_fault_category"] != "client" {
+		t.Fatalf("soap_fault_category = %q, want client", result.Extractions["soap_fault_category"])
 	}
 	if !strings.Contains(result.ResponseBody, `<faultstring>Invalid login</faultstring>`) {
 		t.Fatalf("ResponseBody = %q, want original fault payload", result.ResponseBody)

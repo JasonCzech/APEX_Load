@@ -152,13 +152,21 @@ func (j *JMS) Execute(ctx context.Context, action *protocol.Action) (*protocol.R
 	}
 
 	var err error
+	var requestMsg message
+	var responseMsg message
+	hasRequestMsg := false
+	hasResponseMsg := false
 	switch strings.ToLower(action.Type) {
 	case "jms_publish":
-		err = j.publish(ctx, action, result)
+		requestMsg, err = j.publish(ctx, action, result)
+		hasRequestMsg = err == nil
 	case "jms_consume":
-		err = j.consume(ctx, action, result)
+		responseMsg, err = j.consume(ctx, action, result)
+		hasResponseMsg = err == nil
 	case "jms_request_reply":
-		err = j.requestReply(ctx, action, result)
+		requestMsg, responseMsg, err = j.requestReply(ctx, action, result)
+		hasRequestMsg = err == nil
+		hasResponseMsg = err == nil
 	case "jms_ack", "jms_commit", "jms_rollback":
 		result.Extractions["jms_operation"] = action.Type
 	default:
@@ -166,6 +174,7 @@ func (j *JMS) Execute(ctx context.Context, action *protocol.Action) (*protocol.R
 	}
 
 	result.Duration = time.Since(start)
+	result.ServerTelemetry = finalizeJMSServerTelemetry(result, requestMsg, hasRequestMsg, responseMsg, hasResponseMsg)
 	if err != nil {
 		result.Success = false
 		if result.StatusCode == 0 || result.StatusCode == 200 {
@@ -196,49 +205,49 @@ func (j *JMS) HealthCheck(ctx context.Context) error {
 	return j.adapter.HealthCheck(ctx)
 }
 
-func (j *JMS) publish(ctx context.Context, action *protocol.Action, result *protocol.Result) error {
+func (j *JMS) publish(ctx context.Context, action *protocol.Action, result *protocol.Result) (message, error) {
 	destination := j.destination(action)
 	if destination == "" {
-		return fmt.Errorf("JMS destination is required")
+		return message{}, fmt.Errorf("JMS destination is required")
 	}
 	msg := j.buildMessage(action, destination)
 	published, err := j.adapter.Publish(ctx, destination, msg)
 	if err != nil {
-		return err
+		return message{}, err
 	}
 	result.BytesSent = int64(len(published.Body))
 	addMessageExtractions(result, published)
 	result.Extractions["jms_operation"] = "publish"
-	return evaluateAssertions(action.Assertions, result, published)
+	return published, evaluateAssertions(action.Assertions, result, published)
 }
 
-func (j *JMS) consume(ctx context.Context, action *protocol.Action, result *protocol.Result) error {
+func (j *JMS) consume(ctx context.Context, action *protocol.Action, result *protocol.Result) (message, error) {
 	destination := j.destination(action)
 	if destination == "" {
-		return fmt.Errorf("JMS destination is required")
+		return message{}, fmt.Errorf("JMS destination is required")
 	}
 	msg, err := j.adapter.Consume(ctx, destination, j.timeout(action))
 	if err != nil {
 		result.StatusCode = 204
-		return err
+		return message{}, err
 	}
 	result.BytesReceived = int64(len(msg.Body))
 	addMessageExtractions(result, msg)
 	result.Extractions["jms_operation"] = "consume"
 	if err := runExtractors(action.Extractors, result, msg); err != nil {
-		return err
+		return message{}, err
 	}
-	return evaluateAssertions(action.Assertions, result, msg)
+	return msg, evaluateAssertions(action.Assertions, result, msg)
 }
 
-func (j *JMS) requestReply(ctx context.Context, action *protocol.Action, result *protocol.Result) error {
+func (j *JMS) requestReply(ctx context.Context, action *protocol.Action, result *protocol.Result) (message, message, error) {
 	requestDestination := j.destination(action)
 	if requestDestination == "" {
-		return fmt.Errorf("JMS request destination is required")
+		return message{}, message{}, fmt.Errorf("JMS request destination is required")
 	}
 	replyDestination := paramString(action.Params, "reply_to", j.cfg.ReplyTo)
 	if replyDestination == "" {
-		return fmt.Errorf("JMS reply_to destination is required")
+		return message{}, message{}, fmt.Errorf("JMS reply_to destination is required")
 	}
 
 	request := j.buildMessage(action, requestDestination)
@@ -248,7 +257,7 @@ func (j *JMS) requestReply(ctx context.Context, action *protocol.Action, result 
 	sent, response, err := j.adapter.RequestReply(ctx, requestDestination, replyDestination, request, j.timeout(action))
 	if err != nil {
 		result.StatusCode = 204
-		return err
+		return message{}, message{}, err
 	}
 	result.BytesSent = int64(len(sent.Body))
 	result.BytesReceived = int64(len(response.Body))
@@ -256,9 +265,9 @@ func (j *JMS) requestReply(ctx context.Context, action *protocol.Action, result 
 	result.Extractions["jms_request_message_id"] = sent.ID
 	result.Extractions["jms_operation"] = "request_reply"
 	if err := runExtractors(action.Extractors, result, response); err != nil {
-		return err
+		return message{}, message{}, err
 	}
-	return evaluateAssertions(action.Assertions, result, response)
+	return sent, response, evaluateAssertions(action.Assertions, result, response)
 }
 
 func (j *JMS) timeout(action *protocol.Action) time.Duration {
@@ -388,6 +397,45 @@ func addMessageExtractions(result *protocol.Result, msg message) {
 	result.Extractions["jms_correlation_id"] = msg.CorrelationID
 	result.Extractions["jms_destination"] = msg.Destination
 	result.Extractions["jms_body"] = string(msg.Body)
+}
+
+func finalizeJMSServerTelemetry(result *protocol.Result, request message, hasRequest bool, response message, hasResponse bool) *protocol.ServerTelemetry {
+	if result == nil || (!hasRequest && !hasResponse) {
+		return nil
+	}
+	telemetry := &protocol.ServerTelemetry{
+		TransferMs: durationToNonNegativeMilliseconds(result.Duration),
+	}
+	if hasRequest {
+		telemetry.RequestPayloadKB = bytesToKilobytes(int64(len(request.Body)))
+	} else if result.BytesSent > 0 {
+		telemetry.RequestPayloadKB = bytesToKilobytes(result.BytesSent)
+	}
+	if hasResponse {
+		telemetry.ResponsePayloadKB = bytesToKilobytes(int64(len(response.Body)))
+	} else if result.BytesReceived > 0 {
+		telemetry.ResponsePayloadKB = bytesToKilobytes(result.BytesReceived)
+	}
+	if hasRequest && hasResponse && !request.CreatedAt.IsZero() && !response.CreatedAt.IsZero() && !response.CreatedAt.Before(request.CreatedAt) {
+		serverProcessing := response.CreatedAt.Sub(request.CreatedAt)
+		telemetry.ServerProcessingMs = durationToNonNegativeMilliseconds(serverProcessing)
+		telemetry.TransferMs = durationToNonNegativeMilliseconds(result.Duration - serverProcessing)
+	}
+	return telemetry
+}
+
+func durationToNonNegativeMilliseconds(duration time.Duration) float64 {
+	if duration <= 0 {
+		return 0
+	}
+	return float64(duration.Microseconds()) / 1000.0
+}
+
+func bytesToKilobytes(bytes int64) float64 {
+	if bytes <= 0 {
+		return 0
+	}
+	return float64(bytes) / 1024.0
 }
 
 func classifyJMSDependencyType(defaultDestinationType string, action *protocol.Action) string {

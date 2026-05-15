@@ -78,6 +78,15 @@ func TestJavaHTTPExecuteDecodesRequestAndEncodesResponse(t *testing.T) {
 	if result.BytesSent != int64(len(requestPayload)) {
 		t.Fatalf("bytes sent = %d, want %d", result.BytesSent, len(requestPayload))
 	}
+	if result.DependencyType != "java_http" {
+		t.Fatalf("dependency type = %q, want java_http", result.DependencyType)
+	}
+	if result.Extractions["java_http_codec"] != supportedCodec {
+		t.Fatalf("java_http_codec = %q, want %q", result.Extractions["java_http_codec"], supportedCodec)
+	}
+	if result.Extractions["java_http_helper_mode"] != "embedded" {
+		t.Fatalf("java_http_helper_mode = %q, want embedded", result.Extractions["java_http_helper_mode"])
+	}
 }
 
 func TestJavaHTTPExecuteRejectsInvalidBase64(t *testing.T) {

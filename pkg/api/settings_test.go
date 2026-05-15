@@ -46,6 +46,8 @@ func TestSystemSettingsAPIAndPersistence(t *testing.T) {
 
 	maxErr := 1.5
 	maxP99 := 1800.0
+	maxServer := 350.0
+	maxTransfer := 120.0
 	update := SystemSettings{
 		General: GeneralSettings{
 			APIEndpoint:            ":9090",
@@ -53,8 +55,10 @@ func TestSystemSettingsAPIAndPersistence(t *testing.T) {
 			MetricsIntervalSeconds: 2,
 		},
 		Thresholds: ThresholdSettings{
-			MaxErrorRatePct: &maxErr,
-			MaxP99LatencyMs: &maxP99,
+			MaxErrorRatePct:          &maxErr,
+			MaxP99LatencyMs:          &maxP99,
+			MaxAvgServerProcessingMs: &maxServer,
+			MaxAvgTransferMs:         &maxTransfer,
 		},
 		CapacityPlanning: CapacityPlanningSettings{
 			HeadroomPct: 25,
@@ -101,6 +105,12 @@ func TestSystemSettingsAPIAndPersistence(t *testing.T) {
 	}
 	if updated.Thresholds.MaxP99LatencyMs == nil || *updated.Thresholds.MaxP99LatencyMs != maxP99 {
 		t.Fatalf("max p99 latency = %#v, want %v", updated.Thresholds.MaxP99LatencyMs, maxP99)
+	}
+	if updated.Thresholds.MaxAvgServerProcessingMs == nil || *updated.Thresholds.MaxAvgServerProcessingMs != maxServer {
+		t.Fatalf("max avg server processing = %#v, want %v", updated.Thresholds.MaxAvgServerProcessingMs, maxServer)
+	}
+	if updated.Thresholds.MaxAvgTransferMs == nil || *updated.Thresholds.MaxAvgTransferMs != maxTransfer {
+		t.Fatalf("max avg transfer = %#v, want %v", updated.Thresholds.MaxAvgTransferMs, maxTransfer)
 	}
 	if updated.CapacityPlanning.HeadroomPct != 25 {
 		t.Fatalf("headroom = %v, want 25", updated.CapacityPlanning.HeadroomPct)

@@ -75,6 +75,8 @@ describe('SettingsPage', () => {
       thresholds: {
         max_error_rate_pct: undefined,
         max_p99_latency_ms: undefined,
+        max_avg_server_processing_ms: undefined,
+        max_avg_transfer_ms: undefined,
       },
       capacity_planning: {
         headroom_pct: 20,
@@ -178,6 +180,8 @@ describe('SettingsPage', () => {
       thresholds: {
         max_error_rate_pct: undefined,
         max_p99_latency_ms: undefined,
+        max_avg_server_processing_ms: undefined,
+        max_avg_transfer_ms: undefined,
       },
       capacity_planning: {
         headroom_pct: 20,

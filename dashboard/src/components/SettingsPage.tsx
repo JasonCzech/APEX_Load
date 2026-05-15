@@ -15,6 +15,8 @@ const DEFAULT_SETTINGS: DashboardSystemSettings = {
   thresholds: {
     max_error_rate_pct: undefined,
     max_p99_latency_ms: undefined,
+    max_avg_server_processing_ms: undefined,
+    max_avg_transfer_ms: undefined,
   },
   capacity_planning: {
     headroom_pct: 20,
@@ -73,6 +75,12 @@ function validateSettings(settings: DashboardSystemSettings): string[] {
   }
   if (settings.thresholds.max_p99_latency_ms !== undefined && settings.thresholds.max_p99_latency_ms <= 0) {
     errors.push('Max P99 latency must be greater than 0 ms.')
+  }
+  if (settings.thresholds.max_avg_server_processing_ms !== undefined && settings.thresholds.max_avg_server_processing_ms <= 0) {
+    errors.push('Max average server processing must be greater than 0 ms.')
+  }
+  if (settings.thresholds.max_avg_transfer_ms !== undefined && settings.thresholds.max_avg_transfer_ms <= 0) {
+    errors.push('Max average transfer time must be greater than 0 ms.')
   }
   if (settings.capacity_planning.headroom_pct < 0 || settings.capacity_planning.headroom_pct >= 100) {
     errors.push('Capacity planning headroom must be between 0 and 100%.')
@@ -925,6 +933,36 @@ export default function SettingsPage({ theme, onThemeChange }: SettingsPageProps
                 step={1}
                 value={settings.thresholds.max_p99_latency_ms ?? ''}
                 onChange={(e) => updateThreshold('max_p99_latency_ms', e.target.value)}
+                placeholder="Not configured"
+              />
+            </div>
+            <div className="setting-row">
+              <div className="setting-info">
+                <span className="setting-label">Max Avg Server Processing (ms)</span>
+                <span className="setting-desc">Optional: alert threshold for the worst transaction server-processing average</span>
+              </div>
+              <input
+                className="settings-input settings-input-number"
+                type="number"
+                min={1}
+                step={1}
+                value={settings.thresholds.max_avg_server_processing_ms ?? ''}
+                onChange={(e) => updateThreshold('max_avg_server_processing_ms', e.target.value)}
+                placeholder="Not configured"
+              />
+            </div>
+            <div className="setting-row">
+              <div className="setting-info">
+                <span className="setting-label">Max Avg Transfer Time (ms)</span>
+                <span className="setting-desc">Optional: alert threshold for the worst transaction transfer average</span>
+              </div>
+              <input
+                className="settings-input settings-input-number"
+                type="number"
+                min={1}
+                step={1}
+                value={settings.thresholds.max_avg_transfer_ms ?? ''}
+                onChange={(e) => updateThreshold('max_avg_transfer_ms', e.target.value)}
                 placeholder="Not configured"
               />
             </div>
