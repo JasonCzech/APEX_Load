@@ -1,10 +1,17 @@
-import { Fragment, memo, useCallback, useEffect, useMemo, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useState } from 'react'
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 
 import { downloadBlob } from '../utils/fileUtils'
 import { Application, BrowserDeviceLiveMetrics, BrowserEngineLiveMetrics, BrowserPlatformLiveMetrics, IntervalSummaryRecord, Release, RunArchiveReport, TestSummary } from '../types'
 import { useApi } from '../hooks/useApi'
 import { getErrorMessage } from '../utils/errorUtils'
+import BrowserBreakdownChart, {
+  BrowserBreakdown,
+  BrowserBreakdownDatum,
+  buildComparisonBrowserBreakdownSeries,
+  getBrowserBreakdownChartCopy,
+  getBrowserBreakdownTitle,
+} from './BrowserBreakdownChart'
 import StatusBadge from './StatusBadge'
 
 interface Props {
@@ -17,7 +24,7 @@ interface Props {
 type SortField = 'name' | 'status' | 'total_vusers' | 'groups' | 'started' | 'duration' | 'archive'
 type StatusFilter = 'all' | 'complete' | 'failed' | 'aborted'
 type ArchiveFilter = 'all' | 'ready' | 'pending'
-type ComparisonBreakdown = 'overall' | 'platform' | 'engine' | 'device'
+type ComparisonBreakdown = BrowserBreakdown
 
 function formatDate(value?: string) {
   return value ? new Date(value).toLocaleString() : 'Never'
@@ -162,10 +169,6 @@ function csvEscape(value: string | number | undefined): string {
   const stringValue = String(value)
   if (!/[",\n]/.test(stringValue)) return stringValue
   return `"${stringValue.replace(/"/g, '""')}"`
-}
-
-function comparisonRunColor(index: number): string {
-  return index === 0 ? 'var(--accent)' : 'var(--accent-2, #d97706)'
 }
 
 function resolveStatus(test: TestSummary, testStatuses: Record<string, string>) {
@@ -530,10 +533,10 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
 
   const browserBreakdownChartData = useMemo(() => {
     if (comparisonCards.length !== 2 || !comparisonCards.every(item => item.report)) {
-      return [] as Array<Record<string, number | string | undefined>>
+      return [] as BrowserBreakdownDatum[]
     }
 
-    const segmentMap = new Map<string, Record<string, number | string | undefined>>()
+    const segmentMap = new Map<string, BrowserBreakdownDatum>()
 
     for (const { test, report } of comparisonCards) {
       if (!report) continue
@@ -581,12 +584,20 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
     return Array.from(segmentMap.values()).sort((left, right) => String(left.segment).localeCompare(String(right.segment)))
   }, [comparisonBreakdown, comparisonCards])
 
-  const browserBreakdownChartTitle = useMemo(() => {
-    if (comparisonBreakdown === 'overall') return 'Browser Overview Comparison (LCP / INP)'
-    if (comparisonBreakdown === 'platform') return 'Browser Platform Comparison (LCP / INP)'
-    if (comparisonBreakdown === 'engine') return 'Browser Engine Comparison (LCP / INP)'
-    return 'Browser Device Comparison (LCP / INP)'
-  }, [comparisonBreakdown])
+  const browserBreakdownChartSeries = useMemo(
+    () => buildComparisonBrowserBreakdownSeries(comparisonCards.map(({ test }) => ({ id: test.id, name: test.name }))),
+    [comparisonCards],
+  )
+
+  const browserBreakdownChartTitle = useMemo(
+    () => getBrowserBreakdownTitle(comparisonBreakdown, 'Comparison', 'LCP / INP'),
+    [comparisonBreakdown],
+  )
+
+  const browserBreakdownChartCopy = useMemo(
+    () => getBrowserBreakdownChartCopy(browserBreakdownChartSeries),
+    [browserBreakdownChartSeries],
+  )
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -915,42 +926,13 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
 
                 <div className="results-compare-table-wrap">
                   {browserBreakdownChartData.length > 0 && comparisonCards.length === 2 && (
-                    <div className="results-compare-chart-card">
-                      <h4 className="results-compare-chart-title">{browserBreakdownChartTitle}</h4>
-                      <p className="results-compare-chart-copy">Series: solid LCP and dashed INP for each selected run.</p>
-                      <ResponsiveContainer width="100%" height={280}>
-                        <LineChart data={browserBreakdownChartData}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                          <XAxis dataKey="segment" stroke="var(--text-muted)" fontSize={11} />
-                          <YAxis stroke="var(--text-muted)" fontSize={11} />
-                          <Tooltip />
-                          <Legend />
-                          {comparisonCards.map(({ test }, index) => (
-                            <Fragment key={test.id}>
-                              <Line
-                                type="monotone"
-                                dataKey={test.id}
-                                name={`${test.name} LCP`}
-                                stroke={comparisonRunColor(index)}
-                                strokeWidth={2}
-                                dot={{ r: 3 }}
-                                connectNulls
-                              />
-                              <Line
-                                type="monotone"
-                                dataKey={`${test.id}_inp`}
-                                name={`${test.name} INP`}
-                                stroke={comparisonRunColor(index)}
-                                strokeWidth={2}
-                                strokeDasharray="4 2"
-                                dot={{ r: 3 }}
-                                connectNulls
-                              />
-                            </Fragment>
-                          ))}
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </div>
+                    <BrowserBreakdownChart
+                      title={browserBreakdownChartTitle}
+                      copy={browserBreakdownChartCopy}
+                      data={browserBreakdownChartData}
+                      series={browserBreakdownChartSeries}
+                      height={280}
+                    />
                   )}
 
                   {comparisonChartData.length > 0 && (

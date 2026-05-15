@@ -1,7 +1,13 @@
 import { Fragment, useState } from 'react'
-import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 
 import { BrowserDeviceLiveMetrics, BrowserEngineLiveMetrics, BrowserLiveMetrics, BrowserPlatformLiveMetrics, RunArchiveActionStats, RunArchiveReport, TestSummary, TransactionEvent } from '../types'
+import BrowserBreakdownChart, {
+  BrowserBreakdown,
+  BrowserBreakdownDatum,
+  buildArchiveBrowserBreakdownSeries,
+  getBrowserBreakdownChartCopy,
+  getBrowserBreakdownTitle,
+} from './BrowserBreakdownChart'
 import SnapshotBodyPreview from './SnapshotBodyPreview'
 import SnapshotTextPreview from './SnapshotTextPreview'
 import { extractSOAPFaultSummaryFromBody, formatSOAPFaultSummary } from './soapFaultUtils'
@@ -39,8 +45,6 @@ interface Props {
   onExpandedArchiveEventChange: (value: string | null) => void
 }
 
-type BrowserBreakdown = 'overall' | 'platform' | 'engine' | 'device'
-
 function formatArchiveTimestamp(value?: string): string {
   if (!value) return 'n/a'
   return new Date(value).toLocaleString()
@@ -76,7 +80,7 @@ function getBrowserBreakdownChartData(
   devices?: Record<string, BrowserDeviceLiveMetrics>,
   platforms?: Record<string, BrowserPlatformLiveMetrics>,
   engines?: Record<string, BrowserEngineLiveMetrics>,
-): Array<{ segment: string; lcp?: number; inp?: number; cls?: number }> {
+): BrowserBreakdownDatum[] {
   if (breakdown === 'overall') {
     return [{
       segment: 'Overall',
@@ -118,13 +122,6 @@ function getBrowserBreakdownChartData(
     .sort((left, right) => left.segment.localeCompare(right.segment))
 }
 
-function getBrowserBreakdownTitle(breakdown: BrowserBreakdown): string {
-  if (breakdown === 'overall') return 'Browser Overview Breakdown (LCP / INP / CLS)'
-  if (breakdown === 'platform') return 'Browser Platform Breakdown (LCP / INP / CLS)'
-  if (breakdown === 'engine') return 'Browser Engine Breakdown (LCP / INP / CLS)'
-  return 'Browser Device Breakdown (LCP / INP / CLS)'
-}
-
 function renderBrowserSummary(
   summary: BrowserLiveMetrics,
   devices?: Record<string, BrowserDeviceLiveMetrics>,
@@ -137,7 +134,9 @@ function renderBrowserSummary(
   const platformEntries = Object.values(platforms ?? {}).sort((left, right) => formatDevicePlatform(left.device_platform).localeCompare(formatDevicePlatform(right.device_platform)))
   const deviceEntries = Object.entries(devices ?? {})
   const breakdownChartData = getBrowserBreakdownChartData(breakdown, summary, devices, platforms, engines)
-  const chartTitle = getBrowserBreakdownTitle(breakdown)
+  const breakdownSeries = buildArchiveBrowserBreakdownSeries()
+  const chartTitle = getBrowserBreakdownTitle(breakdown, 'Breakdown', 'LCP / INP / CLS')
+  const chartCopy = getBrowserBreakdownChartCopy(breakdownSeries)
 
   return (
     <div className="archive-browser-section">
@@ -192,23 +191,7 @@ function renderBrowserSummary(
               </button>
             ))}
           </div>
-          <div className="results-compare-chart-card">
-            <h4 className="results-compare-chart-title">{chartTitle}</h4>
-            <p className="results-compare-chart-copy">Series: LCP and INP on the left axis, CLS on the right axis.</p>
-            <ResponsiveContainer width="100%" height={260}>
-              <LineChart data={breakdownChartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                <XAxis dataKey="segment" stroke="var(--text-muted)" fontSize={11} />
-                <YAxis yAxisId="timings" stroke="var(--text-muted)" fontSize={11} />
-                <YAxis yAxisId="cls" orientation="right" stroke="var(--text-muted)" fontSize={11} domain={[0, 'auto']} />
-                <Tooltip />
-                <Legend />
-                <Line yAxisId="timings" type="monotone" dataKey="lcp" name="LCP" stroke="var(--accent)" strokeWidth={2} dot={{ r: 3 }} connectNulls />
-                <Line yAxisId="timings" type="monotone" dataKey="inp" name="INP" stroke="var(--accent-2, #d97706)" strokeWidth={2} dot={{ r: 3 }} connectNulls />
-                <Line yAxisId="cls" type="monotone" dataKey="cls" name="CLS" stroke="var(--chart-4, #10b981)" strokeWidth={2} dot={{ r: 3 }} connectNulls />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
+          <BrowserBreakdownChart title={chartTitle} copy={chartCopy} data={breakdownChartData} series={breakdownSeries} />
         </>
       )}
 
