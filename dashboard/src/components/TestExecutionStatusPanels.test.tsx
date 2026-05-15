@@ -39,6 +39,8 @@ describe('TestExecutionStatusPanels', () => {
             target_average_tps: 150,
             suggested_total_vusers: 36,
             max_error_count: 25,
+            server_processing_breached: true,
+            transfer_breached: false,
             breach_active: true,
             breach_duration_sec: 45,
             stop_triggered: true,
@@ -57,6 +59,8 @@ describe('TestExecutionStatusPanels', () => {
               target_average_tps: 150,
               p95_latency_ms: 800,
               max_error_pct: 2.5,
+              max_avg_server_processing_ms: 450,
+              max_avg_transfer_ms: 120,
               max_error_count: 25,
               min_vusers: 20,
               max_vusers: 50,
@@ -77,12 +81,18 @@ describe('TestExecutionStatusPanels', () => {
     expect(container.textContent).toContain('800 ms')
     expect(container.textContent).toContain('Max Error %')
     expect(container.textContent).toContain('2.5%')
+    expect(container.textContent).toContain('Server Processing Ceiling')
+    expect(container.textContent).toContain('450 ms')
+    expect(container.textContent).toContain('Transfer Ceiling')
+    expect(container.textContent).toContain('120 ms')
     expect(container.textContent).toContain('Max Error Count')
     expect(container.textContent).toContain('25')
     expect(container.textContent).toContain('Breach Duration')
     expect(container.textContent).toContain('45s')
     expect(container.textContent).toContain('Stop Reason')
     expect(container.textContent).toContain('sla breach')
+    expect(container.textContent).toContain('Server processing breached')
+    expect(container.textContent).toContain('Transfer healthy')
   })
 
   it('renders telemetry freshness and websocket health details when available', async () => {

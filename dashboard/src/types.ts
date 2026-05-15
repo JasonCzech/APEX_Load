@@ -101,6 +101,8 @@ export interface GoalConfig {
   target_average_tps?: number
   p95_latency_ms?: number
   max_error_pct?: number
+  max_avg_server_processing_ms?: number
+  max_avg_transfer_ms?: number
   max_error_count?: number
   min_vusers?: number
   max_vusers?: number
@@ -123,11 +125,20 @@ export interface GoalStatus {
   last_scale_at?: string
   latency_breached?: boolean
   error_breached?: boolean
+  server_processing_breached?: boolean
+  transfer_breached?: boolean
   error_count_breached?: boolean
   breach_active?: boolean
   breach_duration_sec?: number
   stop_triggered?: boolean
   stop_reason?: string
+}
+
+export interface RunComparisonBaseline {
+  source_test_id: string
+  source_test_name: string
+  completed_at?: string
+  transactions?: Record<string, TxMetrics>
 }
 
 export interface TestSummary {
@@ -153,6 +164,7 @@ export interface TestSummary {
   live_metrics?: LiveMetrics
   error?: string
   history?: LiveMetrics[]
+  comparison_baseline?: RunComparisonBaseline
   start_time?: string
   runtime_settings?: RuntimeSettingsOverride
   scenario_mode?: ScenarioMode

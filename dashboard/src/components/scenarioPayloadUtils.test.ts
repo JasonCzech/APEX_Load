@@ -72,6 +72,8 @@ describe('scenarioPayloadUtils', () => {
       }],
       goalConfig: {
         target_average_tps: 300,
+        max_avg_server_processing_ms: 450,
+        max_avg_transfer_ms: 120,
         max_error_count: 25,
         stop_on_max_errors: true,
         sla_breach_window: '45s',
@@ -111,6 +113,8 @@ describe('scenarioPayloadUtils', () => {
       }],
       goal_config: {
         target_average_tps: 300,
+        max_avg_server_processing_ms: 450,
+        max_avg_transfer_ms: 120,
           max_error_count: 25,
           stop_on_max_errors: true,
         sla_breach_window: '45s',
@@ -221,6 +225,8 @@ describe('scenarioPayloadUtils', () => {
       resource_baseline: true,
       goal_config: {
         target_average_tps: 300,
+        max_avg_server_processing_ms: 450,
+        max_avg_transfer_ms: 120,
         max_error_count: 12,
         stop_on_max_errors: true,
         sla_breach_window: '45s',
@@ -266,6 +272,8 @@ describe('scenarioPayloadUtils', () => {
       initialization: 'at_runtime',
       goal_config: {
         target_average_tps: 300,
+        max_avg_server_processing_ms: 450,
+        max_avg_transfer_ms: 120,
         max_error_count: 12,
         stop_on_max_errors: true,
         sla_breach_window: '45s',

@@ -1470,6 +1470,88 @@ func TestEvaluateGoalControllerStopsOnSustainedSLABreach(t *testing.T) {
 	}
 }
 
+func TestEvaluateGoalControllerStopsOnServerTelemetrySLABreach(t *testing.T) {
+	maxServerProcessingMs := 300.0
+	maxTransferMs := 100.0
+	now := time.Date(2026, time.May, 9, 12, 0, 45, 0, time.UTC)
+	breachStarted := now.Add(-31 * time.Second)
+
+	update := evaluateGoalController(now, 55, &LiveMetrics{
+		TPS: 260,
+		Transactions: map[string]*TxMetrics{
+			"POST /checkout": {
+				Name: "POST /checkout",
+				ServerTelemetry: &ServerTelemetrySummary{
+					AvgServerProcessingMs: 420,
+					AvgTransferMs:         140,
+				},
+			},
+		},
+	}, &GoalConfig{
+		MaxAvgServerProcessingMs: &maxServerProcessingMs,
+		MaxAvgTransferMs:         &maxTransferMs,
+		StopOnSLABreach:          true,
+		SLABreachWindow:          "30s",
+	}, &goalControllerState{breachStartedAt: &breachStarted})
+
+	if !update.ShouldStop {
+		t.Fatal("expected sustained server telemetry SLA breach to trigger stop")
+	}
+	if update.Status == nil || !update.Status.ServerProcessingBreached || !update.Status.TransferBreached {
+		t.Fatalf("expected goal status to mark server telemetry breaches, got %#v", update.Status)
+	}
+	if update.StopReason != "server processing and transfer SLA breached" {
+		t.Fatalf("expected server telemetry stop reason, got %q", update.StopReason)
+	}
+}
+
+func TestGetTestIncludesPreviousRunComparisonBaseline(t *testing.T) {
+	runner := NewTestRunner(2, NewHub(), nil)
+	baselineCompletedAt := time.Date(2026, time.May, 10, 10, 0, 0, 0, time.UTC)
+	runner.tests["baseline"] = &ManagedTest{
+		ID:         "baseline",
+		Name:       "Checkout Run",
+		Status:     "COMPLETE",
+		ScenarioID: "scenario-1",
+		CreatedAt:  baselineCompletedAt.Add(-5 * time.Minute),
+		EndedAt:    &baselineCompletedAt,
+		History: []*LiveMetrics{{
+			Timestamp: baselineCompletedAt,
+			Transactions: map[string]*TxMetrics{
+				"POST /checkout": {
+					Name: "POST /checkout",
+					ServerTelemetry: &ServerTelemetrySummary{
+						AvgServerProcessingMs: 220,
+						AvgTransferMs:         85,
+					},
+				},
+			},
+		}},
+	}
+	currentCreatedAt := baselineCompletedAt.Add(10 * time.Minute)
+	runner.tests["current"] = &ManagedTest{
+		ID:         "current",
+		Name:       "Checkout Run",
+		Status:     "RUNNING",
+		ScenarioID: "scenario-1",
+		CreatedAt:  currentCreatedAt,
+	}
+
+	testRun, ok := runner.GetTest("current")
+	if !ok {
+		t.Fatal("expected current test to be found")
+	}
+	if testRun.ComparisonBaseline == nil {
+		t.Fatal("expected comparison baseline to be populated")
+	}
+	if testRun.ComparisonBaseline.SourceTestID != "baseline" {
+		t.Fatalf("expected baseline source test id baseline, got %q", testRun.ComparisonBaseline.SourceTestID)
+	}
+	if testRun.ComparisonBaseline.Transactions["POST /checkout"] == nil {
+		t.Fatal("expected baseline transaction metrics to be available")
+	}
+}
+
 func TestEvaluateGoalControllerStopsOnMaxErrorCount(t *testing.T) {
 	maxErrorCount := 10
 	now := time.Date(2026, time.May, 9, 12, 1, 0, 0, time.UTC)

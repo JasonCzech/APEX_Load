@@ -53,6 +53,8 @@ describe('scenarioDraftUtils', () => {
 	    },
 	    goal_config: {
 	      target_average_tps: 300,
+	      max_avg_server_processing_ms: 450,
+	      max_avg_transfer_ms: 120,
 	      max_error_count: 12,
 	      stop_on_max_errors: true,
 	      sla_breach_window: '45s',
@@ -81,6 +83,8 @@ describe('scenarioDraftUtils', () => {
 	  expect(draft.startDelay).toBe('45s')
 	  expect(draft.assignment).toEqual({ mode: 'specific_hosts', selected_targets: ['gen-a'] })
 	  expect(draft.goalConfig.target_average_tps).toBe(300)
+	  expect(draft.goalConfig.max_avg_server_processing_ms).toBe(450)
+	  expect(draft.goalConfig.max_avg_transfer_ms).toBe(120)
 	  expect(draft.goalConfig.max_error_count).toBe(12)
 	  expect(draft.goalConfig.stop_on_max_errors).toBe(true)
 	  expect(draft.runtimeSettings.pacing).toEqual({ type: 'fixed_delay', delay_ms: 1500 })

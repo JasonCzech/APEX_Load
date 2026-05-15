@@ -1,4 +1,4 @@
-import { LiveMetrics, TxMetrics } from '../types'
+import { RunComparisonBaseline, TxMetrics } from '../types'
 
 interface MetricsSummary {
   p50_ms?: number
@@ -10,14 +10,68 @@ interface MetricsSummary {
 interface Props {
   transactions: TxMetrics[]
   metrics: MetricsSummary | null | undefined
-  history?: LiveMetrics[]
+  baseline?: RunComparisonBaseline
 }
 
-export default function TestExecutionSummary({ transactions, metrics, history }: Props) {
-  const previousTransactions = previousTransactionMap(history)
+export default function TestExecutionSummary({ transactions, metrics, baseline }: Props) {
+  const previousTransactions = baseline?.transactions || {}
+  const topServerTelemetry = transactions
+    .filter((tx) => tx.server_telemetry)
+    .sort((left, right) => (right.server_telemetry?.avg_server_processing_ms || 0) - (left.server_telemetry?.avg_server_processing_ms || 0))
+    .slice(0, 4)
 
   return (
     <>
+      {topServerTelemetry.length > 0 && (
+        <div className="tx-section server-telemetry-section">
+          <div className="server-telemetry-header">
+            <div>
+              <h3 className="chart-title">Live Server Telemetry</h3>
+              <p className="server-telemetry-subtitle">
+                Server-processing and transfer hotspots from the current run.
+                {baseline?.source_test_name ? ` Baseline: ${baseline.source_test_name}` : ' No previous run baseline available.'}
+              </p>
+            </div>
+            {baseline?.completed_at && (
+              <div className="server-telemetry-baseline-badge">
+                Prev run {new Date(baseline.completed_at).toLocaleString()}
+              </div>
+            )}
+          </div>
+          <div className="server-telemetry-grid">
+            {topServerTelemetry.map((tx) => {
+              const previous = previousTransactions[tx.name]
+              return (
+                <div key={tx.name} className="server-telemetry-card">
+                  <div className="server-telemetry-card-header">
+                    <span className="server-telemetry-name">{tx.name}</span>
+                    <span className="server-telemetry-target">{tx.dependency_target || tx.dependency_type || 'transaction'}</span>
+                  </div>
+                  <div className="server-telemetry-stat-grid">
+                    <div className="server-telemetry-stat">
+                      <span className="server-telemetry-label">Server</span>
+                      <span className="server-telemetry-value">{formatTelemetryValue(tx.server_telemetry?.avg_server_processing_ms, ' ms')}{formatTelemetryDelta(tx.server_telemetry?.avg_server_processing_ms, previous?.server_telemetry?.avg_server_processing_ms, ' ms')}</span>
+                    </div>
+                    <div className="server-telemetry-stat">
+                      <span className="server-telemetry-label">Transfer</span>
+                      <span className="server-telemetry-value">{formatTelemetryValue(tx.server_telemetry?.avg_transfer_ms, ' ms')}{formatTelemetryDelta(tx.server_telemetry?.avg_transfer_ms, previous?.server_telemetry?.avg_transfer_ms, ' ms')}</span>
+                    </div>
+                    <div className="server-telemetry-stat">
+                      <span className="server-telemetry-label">Payload</span>
+                      <span className="server-telemetry-value">{formatTelemetryValue(tx.server_telemetry?.avg_request_payload_kb, ' KB', 2)} / {formatTelemetryValue(tx.server_telemetry?.avg_response_payload_kb, ' KB', 2)}</span>
+                    </div>
+                    <div className="server-telemetry-stat">
+                      <span className="server-telemetry-label">Reuse</span>
+                      <span className="server-telemetry-value">{formatTelemetryValue(tx.server_telemetry?.connection_reused_pct, '%', 0)}{formatTelemetryDelta(tx.server_telemetry?.connection_reused_pct, previous?.server_telemetry?.connection_reused_pct, '%', 0)}</span>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
       {transactions.length > 0 && (
         <div className="tx-section">
           <h3 className="chart-title">Transaction Breakdown</h3>
@@ -89,19 +143,6 @@ function renderServerTelemetry(current: TxMetrics, previous?: TxMetrics) {
     `Reuse ${formatTelemetryValue(telemetry.connection_reused_pct, '%', 0)}${formatTelemetryDelta(telemetry.connection_reused_pct, previousTelemetry?.connection_reused_pct, '%', 0)}`,
   ]
   return parts.join(' | ')
-}
-
-function previousTransactionMap(history?: LiveMetrics[]): Record<string, TxMetrics> {
-  if (!history || history.length < 2) {
-    return {}
-  }
-  for (let index = history.length - 2; index >= 0; index -= 1) {
-    const snapshot = history[index]
-    if (snapshot?.transactions) {
-      return snapshot.transactions
-    }
-  }
-  return {}
 }
 
 function formatTelemetryValue(value?: number, suffix = ' ms', digits = 1): string {

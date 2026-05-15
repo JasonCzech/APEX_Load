@@ -167,6 +167,8 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
       }
     : metrics
 
+  const summaryTransactions = statusMetrics?.transactions ? Object.values(statusMetrics.transactions) : transactions
+
   return (
     <div className="execution">
       <TestExecutionHeader
@@ -294,9 +296,9 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
       />
 
       <TestExecutionSummary
-        transactions={transactions}
-        metrics={metrics}
-        history={test.history}
+        transactions={summaryTransactions}
+        metrics={statusMetrics}
+        baseline={test.comparison_baseline}
       />
     </div>
   )

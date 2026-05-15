@@ -48,6 +48,28 @@ export default function CreateTestGoalSettings({ goalConfig, onGoalConfigChange 
           />
         </label>
         <label>
+          <span>Avg Server Processing Ceiling (ms)</span>
+          <input
+            type="number"
+            min={1}
+            step="1"
+            value={goalConfig.max_avg_server_processing_ms || ''}
+            onChange={(event) => onGoalConfigChange('max_avg_server_processing_ms', event.target.value ? Number(event.target.value) : undefined)}
+            placeholder="e.g. 450"
+          />
+        </label>
+        <label>
+          <span>Avg Transfer Ceiling (ms)</span>
+          <input
+            type="number"
+            min={1}
+            step="1"
+            value={goalConfig.max_avg_transfer_ms || ''}
+            onChange={(event) => onGoalConfigChange('max_avg_transfer_ms', event.target.value ? Number(event.target.value) : undefined)}
+            placeholder="e.g. 120"
+          />
+        </label>
+        <label>
           <span>Max Error Count</span>
           <input
             type="number"

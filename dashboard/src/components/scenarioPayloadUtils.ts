@@ -116,6 +116,8 @@ export function buildGoalConfigPayload(scenarioMode: ScenarioMode, goalConfig: G
     ...(goalConfig.target_average_tps ? { target_average_tps: goalConfig.target_average_tps } : {}),
     ...(goalConfig.p95_latency_ms ? { p95_latency_ms: goalConfig.p95_latency_ms } : {}),
     ...(goalConfig.max_error_pct ? { max_error_pct: goalConfig.max_error_pct } : {}),
+    ...(goalConfig.max_avg_server_processing_ms ? { max_avg_server_processing_ms: goalConfig.max_avg_server_processing_ms } : {}),
+    ...(goalConfig.max_avg_transfer_ms ? { max_avg_transfer_ms: goalConfig.max_avg_transfer_ms } : {}),
     ...(goalConfig.max_error_count ? { max_error_count: goalConfig.max_error_count } : {}),
     ...(goalConfig.min_vusers ? { min_vusers: goalConfig.min_vusers } : {}),
     ...(goalConfig.max_vusers ? { max_vusers: goalConfig.max_vusers } : {}),

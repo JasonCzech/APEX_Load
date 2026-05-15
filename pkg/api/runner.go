@@ -117,6 +117,7 @@ type ManagedTest struct {
 	EndedAt          *time.Time                   `json:"ended_at,omitempty"`
 	LiveMetrics      *LiveMetrics                 `json:"live_metrics,omitempty"`
 	History          []*LiveMetrics               `json:"history,omitempty"`
+	ComparisonBaseline *RunComparisonBaseline     `json:"comparison_baseline,omitempty"`
 	Archive          *storage.RunArchiveRecord    `json:"archive,omitempty"`
 	Error            string                       `json:"error,omitempty"`
 
@@ -257,11 +258,20 @@ type GoalStatus struct {
 	LastScaleAt          *time.Time `json:"last_scale_at,omitempty"`
 	LatencyBreached      bool       `json:"latency_breached,omitempty"`
 	ErrorBreached        bool       `json:"error_breached,omitempty"`
+	ServerProcessingBreached bool   `json:"server_processing_breached,omitempty"`
+	TransferBreached     bool       `json:"transfer_breached,omitempty"`
 	ErrorCountBreached   bool       `json:"error_count_breached,omitempty"`
 	BreachActive         bool       `json:"breach_active,omitempty"`
 	BreachDurationSec    int        `json:"breach_duration_sec,omitempty"`
 	StopTriggered        bool       `json:"stop_triggered,omitempty"`
 	StopReason           string     `json:"stop_reason,omitempty"`
+}
+
+type RunComparisonBaseline struct {
+	SourceTestID   string                `json:"source_test_id"`
+	SourceTestName string                `json:"source_test_name"`
+	CompletedAt    time.Time             `json:"completed_at,omitempty"`
+	Transactions   map[string]*TxMetrics `json:"transactions,omitempty"`
 }
 
 type TelemetryDiagnostic struct {
@@ -1203,6 +1213,8 @@ type GoalConfig struct {
 	TargetAverageTPS *float64 `json:"target_average_tps,omitempty"`
 	P95LatencyMs     *float64 `json:"p95_latency_ms,omitempty"`
 	MaxErrorPct      *float64 `json:"max_error_pct,omitempty"`
+	MaxAvgServerProcessingMs *float64 `json:"max_avg_server_processing_ms,omitempty"`
+	MaxAvgTransferMs *float64 `json:"max_avg_transfer_ms,omitempty"`
 	MaxErrorCount    *int     `json:"max_error_count,omitempty"`
 	MinVUsers        *int     `json:"min_vusers,omitempty"`
 	MaxVUsers        *int     `json:"max_vusers,omitempty"`
@@ -1615,6 +1627,12 @@ func validateScenarioRequest(req CreateTestRequest) (string, error) {
 	if req.GoalConfig.MaxErrorPct != nil && (*req.GoalConfig.MaxErrorPct < 0 || *req.GoalConfig.MaxErrorPct > 100) {
 		return "", fmt.Errorf("goal-oriented scenarios require max_error_pct to be between 0 and 100")
 	}
+	if req.GoalConfig.MaxAvgServerProcessingMs != nil && *req.GoalConfig.MaxAvgServerProcessingMs <= 0 {
+		return "", fmt.Errorf("goal-oriented scenarios require max_avg_server_processing_ms to be greater than 0")
+	}
+	if req.GoalConfig.MaxAvgTransferMs != nil && *req.GoalConfig.MaxAvgTransferMs <= 0 {
+		return "", fmt.Errorf("goal-oriented scenarios require max_avg_transfer_ms to be greater than 0")
+	}
 	if req.GoalConfig.MinVUsers != nil && *req.GoalConfig.MinVUsers < 1 {
 		return "", fmt.Errorf("goal-oriented scenarios require min_vusers to be greater than 0")
 	}
@@ -1632,8 +1650,8 @@ func validateScenarioRequest(req CreateTestRequest) (string, error) {
 			return "", fmt.Errorf("invalid sla_breach_window: %w", err)
 		}
 	}
-	if req.GoalConfig.StopOnSLABreach && req.GoalConfig.P95LatencyMs == nil && req.GoalConfig.MaxErrorPct == nil {
-		return "", fmt.Errorf("goal-oriented scenarios require p95_latency_ms or max_error_pct when stop_on_sla_breach is enabled")
+	if req.GoalConfig.StopOnSLABreach && req.GoalConfig.P95LatencyMs == nil && req.GoalConfig.MaxErrorPct == nil && req.GoalConfig.MaxAvgServerProcessingMs == nil && req.GoalConfig.MaxAvgTransferMs == nil {
+		return "", fmt.Errorf("goal-oriented scenarios require a latency, error, server processing, or transfer threshold when stop_on_sla_breach is enabled")
 	}
 	if req.GoalConfig.StopOnMaxErrors && req.GoalConfig.MaxErrorCount == nil {
 		return "", fmt.Errorf("goal-oriented scenarios require max_error_count when stop_on_max_errors is enabled")
@@ -1872,7 +1890,126 @@ func (tr *TestRunner) GetTest(id string) (*ManagedTest, bool) {
 	if ok && t.Status == "QUEUED" {
 		tr.refreshCapacityAdvisoryLocked(t)
 	}
-	return t, ok
+	if !ok {
+		return nil, false
+	}
+	cloned := *t
+	cloned.ComparisonBaseline = tr.buildRunComparisonBaselineLocked(t)
+	return &cloned, true
+}
+
+func (tr *TestRunner) buildRunComparisonBaselineLocked(test *ManagedTest) *RunComparisonBaseline {
+	if test == nil {
+		return nil
+	}
+	referenceTime := test.CreatedAt
+	if test.StartedAt != nil && !test.StartedAt.IsZero() {
+		referenceTime = *test.StartedAt
+	}
+	var selected *ManagedTest
+	var selectedCompletedAt time.Time
+	for _, candidate := range tr.tests {
+		if !isComparableBaselineCandidate(test, candidate) {
+			continue
+		}
+		completedAt, ok := baselineCandidateCompletedAt(candidate)
+		if !ok || (!referenceTime.IsZero() && !completedAt.Before(referenceTime)) {
+			continue
+		}
+		if selected == nil || completedAt.After(selectedCompletedAt) {
+			selected = candidate
+			selectedCompletedAt = completedAt
+		}
+	}
+	if selected == nil {
+		return nil
+	}
+	metrics := latestMetricsWithTransactions(selected)
+	if metrics == nil || len(metrics.Transactions) == 0 {
+		return nil
+	}
+	return &RunComparisonBaseline{
+		SourceTestID:   selected.ID,
+		SourceTestName: selected.Name,
+		CompletedAt:    selectedCompletedAt,
+		Transactions:   cloneTxMetricsMap(metrics.Transactions),
+	}
+}
+
+func isComparableBaselineCandidate(current *ManagedTest, candidate *ManagedTest) bool {
+	if current == nil || candidate == nil || current.ID == candidate.ID {
+		return false
+	}
+	switch candidate.Status {
+	case "COMPLETE", "FAILED", "ABORTED":
+	default:
+		return false
+	}
+	if current.ScenarioID != "" || candidate.ScenarioID != "" {
+		return current.ScenarioID != "" && current.ScenarioID == candidate.ScenarioID
+	}
+	if current.ReleaseID != "" || candidate.ReleaseID != "" {
+		return current.ReleaseID != "" && current.ReleaseID == candidate.ReleaseID && current.Name == candidate.Name
+	}
+	if current.ApplicationID != "" || candidate.ApplicationID != "" {
+		return current.ApplicationID != "" && current.ApplicationID == candidate.ApplicationID && current.Name == candidate.Name
+	}
+	return current.Name != "" && current.Name == candidate.Name
+}
+
+func baselineCandidateCompletedAt(candidate *ManagedTest) (time.Time, bool) {
+	if candidate == nil {
+		return time.Time{}, false
+	}
+	if candidate.EndedAt != nil && !candidate.EndedAt.IsZero() {
+		return *candidate.EndedAt, true
+	}
+	for index := len(candidate.History) - 1; index >= 0; index-- {
+		if candidate.History[index] != nil && !candidate.History[index].Timestamp.IsZero() {
+			return candidate.History[index].Timestamp, true
+		}
+	}
+	return time.Time{}, false
+}
+
+func latestMetricsWithTransactions(test *ManagedTest) *LiveMetrics {
+	if test == nil {
+		return nil
+	}
+	if test.LiveMetrics != nil && len(test.LiveMetrics.Transactions) > 0 {
+		return test.LiveMetrics
+	}
+	for index := len(test.History) - 1; index >= 0; index-- {
+		if test.History[index] != nil && len(test.History[index].Transactions) > 0 {
+			return test.History[index]
+		}
+	}
+	return nil
+}
+
+func cloneTxMetricsMap(in map[string]*TxMetrics) map[string]*TxMetrics {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]*TxMetrics, len(in))
+	for key, tx := range in {
+		if tx == nil {
+			continue
+		}
+		clone := *tx
+		if tx.ServerTelemetry != nil {
+			telemetry := *tx.ServerTelemetry
+			clone.ServerTelemetry = &telemetry
+		}
+		if len(tx.CorrelationIDs) > 0 {
+			clone.CorrelationIDs = append([]string(nil), tx.CorrelationIDs...)
+		}
+		out[key] = &clone
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func (tr *TestRunner) ListTests() []*ManagedTest {
@@ -3210,6 +3347,14 @@ func cloneGoalConfig(config *GoalConfig) *GoalConfig {
 		value := *config.MaxErrorPct
 		clone.MaxErrorPct = &value
 	}
+	if config.MaxAvgServerProcessingMs != nil {
+		value := *config.MaxAvgServerProcessingMs
+		clone.MaxAvgServerProcessingMs = &value
+	}
+	if config.MaxAvgTransferMs != nil {
+		value := *config.MaxAvgTransferMs
+		clone.MaxAvgTransferMs = &value
+	}
 	if config.MaxErrorCount != nil {
 		value := *config.MaxErrorCount
 		clone.MaxErrorCount = &value
@@ -3239,6 +3384,8 @@ func hasGoalConfig(config *GoalConfig) bool {
 	return config.TargetAverageTPS != nil ||
 		config.P95LatencyMs != nil ||
 		config.MaxErrorPct != nil ||
+		config.MaxAvgServerProcessingMs != nil ||
+		config.MaxAvgTransferMs != nil ||
 		config.MaxErrorCount != nil ||
 		config.MinVUsers != nil ||
 		config.MaxVUsers != nil ||
@@ -3266,11 +3413,19 @@ func evaluateGoalController(now time.Time, currentTotalVUsers int, live *LiveMet
 
 	latencyBreached := config.P95LatencyMs != nil && live.P95Ms > *config.P95LatencyMs
 	errorBreached := config.MaxErrorPct != nil && live.ErrorPct > *config.MaxErrorPct
+	serverProcessingBreached := hasServerTelemetryBreach(live, config.MaxAvgServerProcessingMs, func(summary *ServerTelemetrySummary) float64 {
+		return summary.AvgServerProcessingMs
+	})
+	transferBreached := hasServerTelemetryBreach(live, config.MaxAvgTransferMs, func(summary *ServerTelemetrySummary) float64 {
+		return summary.AvgTransferMs
+	})
 	errorCountBreached := config.MaxErrorCount != nil && live.TotalErrors > int64(*config.MaxErrorCount)
 	status.LatencyBreached = latencyBreached
 	status.ErrorBreached = errorBreached
+	status.ServerProcessingBreached = serverProcessingBreached
+	status.TransferBreached = transferBreached
 	status.ErrorCountBreached = errorCountBreached
-	status.BreachActive = latencyBreached || errorBreached
+	status.BreachActive = latencyBreached || errorBreached || serverProcessingBreached || transferBreached
 
 	if status.BreachActive {
 		if state != nil && state.breachStartedAt == nil {
@@ -3286,7 +3441,7 @@ func evaluateGoalController(now time.Time, currentTotalVUsers int, live *LiveMet
 
 	if config.StopOnMaxErrors && errorCountBreached {
 		status.StopTriggered = true
-		status.StopReason = goalStopReason(latencyBreached, errorBreached, errorCountBreached)
+		status.StopReason = goalStopReason(latencyBreached, errorBreached, serverProcessingBreached, transferBreached, errorCountBreached)
 		return goalControllerUpdate{
 			Status:     status,
 			ShouldStop: true,
@@ -3298,7 +3453,7 @@ func evaluateGoalController(now time.Time, currentTotalVUsers int, live *LiveMet
 		window := goalBreachWindow(config)
 		if time.Duration(status.BreachDurationSec)*time.Second >= window {
 			status.StopTriggered = true
-			status.StopReason = goalStopReason(latencyBreached, errorBreached, errorCountBreached)
+			status.StopReason = goalStopReason(latencyBreached, errorBreached, serverProcessingBreached, transferBreached, errorCountBreached)
 			return goalControllerUpdate{
 				Status:     status,
 				ShouldStop: true,
@@ -3342,6 +3497,21 @@ func evaluateGoalController(now time.Time, currentTotalVUsers int, live *LiveMet
 	}
 
 	return goalControllerUpdate{Status: status}
+}
+
+func hasServerTelemetryBreach(live *LiveMetrics, threshold *float64, pickValue func(summary *ServerTelemetrySummary) float64) bool {
+	if live == nil || threshold == nil || len(live.Transactions) == 0 {
+		return false
+	}
+	for _, tx := range live.Transactions {
+		if tx == nil || tx.ServerTelemetry == nil {
+			continue
+		}
+		if pickValue(tx.ServerTelemetry) > *threshold {
+			return true
+		}
+	}
+	return false
 }
 
 func shouldEvaluateScale(now time.Time, state *goalControllerState) bool {
@@ -3393,16 +3563,22 @@ func goalBreachWindow(config *GoalConfig) time.Duration {
 	return window
 }
 
-func goalStopReason(latencyBreached bool, errorBreached bool, errorCountBreached bool) string {
+func goalStopReason(latencyBreached bool, errorBreached bool, serverProcessingBreached bool, transferBreached bool, errorCountBreached bool) string {
 	switch {
 	case errorCountBreached:
 		return "max error count reached"
 	case latencyBreached && errorBreached:
 		return "latency and error SLA breached"
+	case serverProcessingBreached && transferBreached:
+		return "server processing and transfer SLA breached"
 	case latencyBreached:
 		return "p95 latency SLA breached"
 	case errorBreached:
 		return "error rate SLA breached"
+	case serverProcessingBreached:
+		return "server processing SLA breached"
+	case transferBreached:
+		return "transfer SLA breached"
 	default:
 		return "SLA breached"
 	}

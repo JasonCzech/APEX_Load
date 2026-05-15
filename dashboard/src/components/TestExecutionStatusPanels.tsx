@@ -279,6 +279,14 @@ export default function TestExecutionStatusPanels({
               <span className="goal-status-value">{formatGoalThreshold(test.goal_config?.max_error_pct, '%')}</span>
             </div>
             <div className="goal-status-metric">
+              <span className="goal-status-label">Server Processing Ceiling</span>
+              <span className="goal-status-value">{formatGoalThreshold(test.goal_config?.max_avg_server_processing_ms, ' ms')}</span>
+            </div>
+            <div className="goal-status-metric">
+              <span className="goal-status-label">Transfer Ceiling</span>
+              <span className="goal-status-value">{formatGoalThreshold(test.goal_config?.max_avg_transfer_ms, ' ms')}</span>
+            </div>
+            <div className="goal-status-metric">
               <span className="goal-status-label">Breach Duration</span>
               <span className="goal-status-value">{goalStatus?.breach_active ? formatTimeCompact(goalStatus?.breach_duration_sec ?? 0) : 'inactive'}</span>
             </div>
@@ -294,6 +302,12 @@ export default function TestExecutionStatusPanels({
             </span>
             <span className={`goal-flag ${goalStatus?.error_breached ? 'alert' : ''}`}>
               Error rate {goalStatus?.error_breached ? 'breached' : 'healthy'}
+            </span>
+            <span className={`goal-flag ${goalStatus?.server_processing_breached ? 'alert' : ''}`}>
+              Server processing {goalStatus?.server_processing_breached ? 'breached' : 'healthy'}
+            </span>
+            <span className={`goal-flag ${goalStatus?.transfer_breached ? 'alert' : ''}`}>
+              Transfer {goalStatus?.transfer_breached ? 'breached' : 'healthy'}
             </span>
             <span className={`goal-flag ${goalStatus?.error_count_breached ? 'alert' : ''}`}>
               Error count {goalStatus?.error_count_breached ? 'breached' : 'healthy'}

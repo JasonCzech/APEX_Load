@@ -37,6 +37,12 @@ function validateGoalConfig(goalConfig: ScenarioDraftState['goalConfig']): strin
   if (goalConfig.max_error_pct !== undefined && (goalConfig.max_error_pct < 0 || goalConfig.max_error_pct > 100)) {
     return 'Goal-oriented scenarios require max error % to be between 0 and 100'
   }
+  if (goalConfig.max_avg_server_processing_ms !== undefined && goalConfig.max_avg_server_processing_ms <= 0) {
+    return 'Goal-oriented scenarios require max average server processing to be greater than 0 ms'
+  }
+  if (goalConfig.max_avg_transfer_ms !== undefined && goalConfig.max_avg_transfer_ms <= 0) {
+    return 'Goal-oriented scenarios require max average transfer time to be greater than 0 ms'
+  }
   if (goalConfig.min_vusers !== undefined && goalConfig.min_vusers < 1) {
     return 'Goal-oriented scenarios require min VUsers to be greater than 0'
   }
@@ -56,8 +62,14 @@ function validateGoalConfig(goalConfig: ScenarioDraftState['goalConfig']): strin
   if (goalConfig.sla_breach_window && !isValidDurationInput(goalConfig.sla_breach_window)) {
     return 'Goal-oriented scenarios require a valid SLA breach window duration'
   }
-  if (goalConfig.stop_on_sla_breach && goalConfig.p95_latency_ms === undefined && goalConfig.max_error_pct === undefined) {
-    return 'Goal-oriented scenarios require a P95 latency ceiling or max error % when stop on sustained SLA breach is enabled'
+  if (
+    goalConfig.stop_on_sla_breach &&
+    goalConfig.p95_latency_ms === undefined &&
+    goalConfig.max_error_pct === undefined &&
+    goalConfig.max_avg_server_processing_ms === undefined &&
+    goalConfig.max_avg_transfer_ms === undefined
+  ) {
+    return 'Goal-oriented scenarios require a latency, error, server processing, or transfer threshold when stop on sustained SLA breach is enabled'
   }
   if (goalConfig.stop_on_max_errors && goalConfig.max_error_count === undefined) {
     return 'Goal-oriented scenarios require max error count when stop on max errors is enabled'
@@ -135,6 +147,8 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
     goalConfig.target_average_tps ||
     goalConfig.p95_latency_ms ||
     goalConfig.max_error_pct ||
+    goalConfig.max_avg_server_processing_ms ||
+    goalConfig.max_avg_transfer_ms ||
     goalConfig.max_error_count ||
     goalConfig.min_vusers ||
     goalConfig.max_vusers ||
