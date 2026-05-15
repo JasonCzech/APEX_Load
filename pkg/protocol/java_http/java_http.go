@@ -42,7 +42,7 @@ func (j *JavaHTTP) Init(ctx context.Context, config map[string]any) error {
 	if value, ok := config["java_http_helper_mode"].(string); ok && strings.TrimSpace(value) != "" {
 		j.helperMode = strings.TrimSpace(value)
 	}
-	if j.helperMode != "embedded" {
+	if j.helperMode != "embedded" && j.helperMode != "sidecar" {
 		return fmt.Errorf("unsupported java_http helper mode: %s", j.helperMode)
 	}
 	j.contentType = "application/x-java-serialized-object"

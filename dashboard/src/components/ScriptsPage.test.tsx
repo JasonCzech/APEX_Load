@@ -247,6 +247,7 @@ describe('ScriptsPage', () => {
 
     expect(container.textContent).toContain('Web Services (SOAP)')
     expect(container.textContent).toContain('Java over HTTP')
+    expect(container.textContent).toContain('embedded or sidecar helper execution')
 
     const soapButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Web Services (SOAP)'))
     expect(soapButton).toBeDefined()

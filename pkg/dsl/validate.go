@@ -327,8 +327,8 @@ func validateJavaHTTPScriptIssues(script *Script) []string {
 	} else if javaCfg.Codec != "java_serialized_object_base64" {
 		issues = append(issues, fmt.Sprintf("config.java_http.codec %q is not supported", javaCfg.Codec))
 	}
-	if javaCfg.HelperMode != "" && !isAllowedValue(javaCfg.HelperMode, "embedded") {
-		issues = append(issues, "config.java_http.helper_mode must be embedded")
+	if javaCfg.HelperMode != "" && !isAllowedValue(javaCfg.HelperMode, "embedded", "sidecar") {
+		issues = append(issues, "config.java_http.helper_mode must be embedded or sidecar")
 	}
 	if javaCfg.BodyEncoding != "" && !isAllowedValue(javaCfg.BodyEncoding, "base64") {
 		issues = append(issues, "config.java_http.body_encoding must be base64")

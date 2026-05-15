@@ -294,22 +294,24 @@ export default function BrowserReplayDebugger({
                     <span>Console Entries</span>
                     <div className="browser-debugger-detail-actions-group">
                       {selectedConsoleEntries.length > 0 && (
-                        <button
-                          type="button"
-                          className="btn btn-sm btn-ghost"
-                          onClick={() => togglePreview(selectedArtifactKey('console'))}
-                        >
-                          {expandedPreviewKeys[selectedArtifactKey('console')] ? 'Hide preview' : 'Show preview'}
-                        </button>
+                        <>
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-ghost"
+                            onClick={() => togglePreview(selectedArtifactKey('console'))}
+                          >
+                            {expandedPreviewKeys[selectedArtifactKey('console')] ? 'Hide preview' : 'Show preview'}
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-ghost"
+                            onClick={() => void handleCopy('console', selectedConsoleText)}
+                            disabled={!copySupported}
+                          >
+                            {copiedKey === 'console' ? 'Console copied' : 'Copy console'}
+                          </button>
+                        </>
                       )}
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-ghost"
-                        onClick={() => void handleCopy('console', selectedConsoleText)}
-                        disabled={!copySupported}
-                      >
-                        {copiedKey === 'console' ? 'Console copied' : 'Copy console'}
-                      </button>
                     </div>
                   </div>
                   <strong>{selectedConsoleEntries.length}</strong>
@@ -322,22 +324,24 @@ export default function BrowserReplayDebugger({
                     <span>Network Entries</span>
                     <div className="browser-debugger-detail-actions-group">
                       {selectedNetworkEntries.length > 0 && (
-                        <button
-                          type="button"
-                          className="btn btn-sm btn-ghost"
-                          onClick={() => togglePreview(selectedArtifactKey('network'))}
-                        >
-                          {expandedPreviewKeys[selectedArtifactKey('network')] ? 'Hide preview' : 'Show preview'}
-                        </button>
+                        <>
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-ghost"
+                            onClick={() => togglePreview(selectedArtifactKey('network'))}
+                          >
+                            {expandedPreviewKeys[selectedArtifactKey('network')] ? 'Hide preview' : 'Show preview'}
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-ghost"
+                            onClick={() => void handleCopy('network', selectedNetworkText)}
+                            disabled={!copySupported}
+                          >
+                            {copiedKey === 'network' ? 'Network copied' : 'Copy network'}
+                          </button>
+                        </>
                       )}
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-ghost"
-                        onClick={() => void handleCopy('network', selectedNetworkText)}
-                        disabled={!copySupported}
-                      >
-                        {copiedKey === 'network' ? 'Network copied' : 'Copy network'}
-                      </button>
                     </div>
                   </div>
                   <strong>{selectedNetworkEntries.length}</strong>

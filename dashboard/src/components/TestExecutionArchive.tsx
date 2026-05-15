@@ -71,11 +71,19 @@ export default function TestExecutionArchive({
   onExpandedArchiveEventChange,
 }: Props) {
   const [copiedSection, setCopiedSection] = useState<string | null>(null)
+  const [expandedSnapshotSections, setExpandedSnapshotSections] = useState<Record<string, boolean>>({})
 
   const handleCopySection = async (key: string, value: string) => {
     if (!navigator.clipboard?.writeText) return
     await navigator.clipboard.writeText(value)
     setCopiedSection(key)
+  }
+
+  const toggleSnapshotSection = (key: string, expanded: boolean) => {
+    setExpandedSnapshotSections(prev => ({
+      ...prev,
+      [key]: expanded,
+    }))
   }
 
   if (!hasArchive) {
@@ -269,6 +277,14 @@ export default function TestExecutionArchive({
                       const hasSnapshot = Boolean(event.snapshot)
                       const isExpanded = expandedArchiveEvent === rowKey
                       const soapFault = extractSOAPFaultSummaryFromBody(event.snapshot?.response_body)
+                      const snapshotSections = [
+                        event.snapshot?.request_headers && Object.keys(event.snapshot.request_headers).length > 0 ? 'request-headers' : null,
+                        event.snapshot?.request_body ? 'request-body' : null,
+                        event.snapshot?.response_headers && Object.keys(event.snapshot.response_headers).length > 0 ? 'response-headers' : null,
+                        event.snapshot?.response_body ? 'response-body' : null,
+                      ].filter((section): section is 'request-headers' | 'request-body' | 'response-headers' | 'response-body' => Boolean(section))
+                      const snapshotSectionKey = (section: 'request-headers' | 'request-body' | 'response-headers' | 'response-body') => `${rowKey}:${section}`
+                      const allSnapshotSectionsExpanded = snapshotSections.length > 0 && snapshotSections.every(section => expandedSnapshotSections[snapshotSectionKey(section)])
 
                       return (
                         <Fragment key={rowKey}>
@@ -296,6 +312,22 @@ export default function TestExecutionArchive({
                             <tr className="archive-event-detail-row">
                               <td colSpan={7}>
                                 <div className="archive-event-detail-grid">
+                                  {snapshotSections.length > 0 && (
+                                    <div className="archive-event-detail-grid-header">
+                                      <span className="scenario-script-detail-label">Captured Snapshot</span>
+                                      <button
+                                        type="button"
+                                        className="btn btn-sm btn-ghost"
+                                        onClick={() => {
+                                          snapshotSections.forEach(section => {
+                                            toggleSnapshotSection(snapshotSectionKey(section), !allSnapshotSectionsExpanded)
+                                          })
+                                        }}
+                                      >
+                                        {allSnapshotSectionsExpanded ? 'Collapse snapshots' : 'Expand snapshots'}
+                                      </button>
+                                    </div>
+                                  )}
                                   {soapFault && (
                                     <div className="archive-event-detail-card">
                                       <div className="archive-event-detail-header">
@@ -324,12 +356,19 @@ export default function TestExecutionArchive({
                                       </button>
                                     </div>
                                     <span className="scenario-script-detail-value">{event.snapshot?.request_method || 'n/a'} {event.snapshot?.request_url || ''}</span>
-                                    <SnapshotTextPreview text={formatCapturedHeaders(event.snapshot?.request_headers)} preClassName="archive-event-detail-pre" />
+                                    <SnapshotTextPreview
+                                      text={formatCapturedHeaders(event.snapshot?.request_headers)}
+                                      preClassName="archive-event-detail-pre"
+                                      expanded={expandedSnapshotSections[snapshotSectionKey('request-headers')]}
+                                      onExpandedChange={(expanded) => toggleSnapshotSection(snapshotSectionKey('request-headers'), expanded)}
+                                    />
                                     <SnapshotBodyPreview
                                       body={event.snapshot?.request_body}
                                       headers={event.snapshot?.request_headers}
                                       emptyMessage="No request body captured"
                                       preClassName="archive-event-detail-pre"
+                                      expanded={expandedSnapshotSections[snapshotSectionKey('request-body')]}
+                                      onExpandedChange={(expanded) => toggleSnapshotSection(snapshotSectionKey('request-body'), expanded)}
                                     />
                                   </div>
                                   <div className="archive-event-detail-card">
@@ -344,12 +383,19 @@ export default function TestExecutionArchive({
                                       </button>
                                     </div>
                                     <span className="scenario-script-detail-value">{event.snapshot?.response_status || event.status_code || 'n/a'}</span>
-                                    <SnapshotTextPreview text={formatCapturedHeaders(event.snapshot?.response_headers)} preClassName="archive-event-detail-pre" />
+                                    <SnapshotTextPreview
+                                      text={formatCapturedHeaders(event.snapshot?.response_headers)}
+                                      preClassName="archive-event-detail-pre"
+                                      expanded={expandedSnapshotSections[snapshotSectionKey('response-headers')]}
+                                      onExpandedChange={(expanded) => toggleSnapshotSection(snapshotSectionKey('response-headers'), expanded)}
+                                    />
                                     <SnapshotBodyPreview
                                       body={event.snapshot?.response_body}
                                       headers={event.snapshot?.response_headers}
                                       emptyMessage="No response body captured"
                                       preClassName="archive-event-detail-pre"
+                                      expanded={expandedSnapshotSections[snapshotSectionKey('response-body')]}
+                                      onExpandedChange={(expanded) => toggleSnapshotSection(snapshotSectionKey('response-body'), expanded)}
                                     />
                                   </div>
                                 </div>

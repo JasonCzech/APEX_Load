@@ -356,6 +356,24 @@ func TestBuildProtoConfig_JavaHTTP(t *testing.T) {
 	}
 }
 
+func TestBuildProtoConfig_JavaHTTPSidecarHelperMode(t *testing.T) {
+	script := &dsl.Script{
+		Config: dsl.ScriptConfig{
+			JavaHTTP: dsl.JavaHTTPConfig{
+				Codec:        "java_serialized_object_base64",
+				HelperMode:   "sidecar",
+				BodyEncoding: "base64",
+			},
+		},
+	}
+
+	cfg := buildProtoConfig(script)
+
+	if cfg["java_http_helper_mode"] != "sidecar" {
+		t.Errorf("java_http_helper_mode = %v, want sidecar", cfg["java_http_helper_mode"])
+	}
+}
+
 func TestBuildProtoConfig_EmptyConfig(t *testing.T) {
 	script := &dsl.Script{}
 	cfg := buildProtoConfig(script)

@@ -19,7 +19,7 @@ describe('TestExecutionArchive', () => {
   const test: TestSummary = {
     id: 'test-1',
     name: 'SOAP Fault Test',
-    status: 'failed',
+    status: 'FAILED',
     groups: [],
     total_vusers: 1,
     duration: '1m',
@@ -207,9 +207,27 @@ describe('TestExecutionArchive', () => {
       },
       response_body: '<env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope"><env:Body><env:Fault><env:Code><env:Value>env:Sender</env:Value></env:Code><env:Reason><env:Text xml:lang="en">Request validation failed</env:Text></env:Reason></env:Fault></env:Body></env:Envelope>',
     }, 200))
+    expect(container.textContent).toContain('Expand snapshots')
     expect(container.textContent).toContain('Show full text')
+    expect(container.textContent).not.toContain('X-Debug-11')
+    expect(container.textContent).not.toContain('X-Trace-11')
     expect(container.querySelectorAll('.snapshot-code-token-tag').length).toBeGreaterThan(0)
     expect(container.textContent).toContain('env:Body')
     expect(container.textContent).toContain('env:Fault')
+
+    const expandSnapshotsButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Expand snapshots'))
+    expect(expandSnapshotsButton).toBeDefined()
+    if (!expandSnapshotsButton) {
+      return
+    }
+
+    await act(async () => {
+      expandSnapshotsButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('Collapse snapshots')
+    expect(container.textContent).toContain('X-Debug-11')
+    expect(container.textContent).toContain('X-Trace-11')
   })
 })

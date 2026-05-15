@@ -99,3 +99,18 @@ func TestJavaHTTPExecuteRejectsInvalidBase64(t *testing.T) {
 		t.Fatalf("result = %#v, want validation error", result)
 	}
 }
+
+func TestJavaHTTPInitAllowsSidecarHelperMode(t *testing.T) {
+	p := &JavaHTTP{}
+	if err := p.Init(context.Background(), map[string]any{
+		"base_url":                 "https://example.com",
+		"java_http_codec":         supportedCodec,
+		"java_http_helper_mode":   "sidecar",
+		"java_http_body_encoding": "base64",
+	}); err != nil {
+		t.Fatalf("Init returned error: %v", err)
+	}
+	if p.helperMode != "sidecar" {
+		t.Fatalf("helperMode = %q, want sidecar", p.helperMode)
+	}
+}

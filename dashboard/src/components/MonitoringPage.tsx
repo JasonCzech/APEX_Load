@@ -36,6 +36,17 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const generatorIssueCount = generators.length - generatorConnectedCount
   const generatorAvailableCapacity = generators.reduce((sum, generator) => sum + generator.available_capacity, 0)
   const generatorActiveVUsers = generators.reduce((sum, generator) => sum + generator.active_vusers, 0)
+  const controllerStatusLabel = inventory?.controller.status || health?.status || 'unknown'
+  const controllerHeaderSeverity = controllerStatusLabel === 'healthy' || controllerStatusLabel === 'ok'
+    ? 'healthy'
+    : controllerStatusLabel === 'unknown'
+      ? 'unknown'
+      : 'warning'
+  const controllerGeneratorInventoryLabel = inventory?.controller.execution_mode === 'distributed'
+    ? `${generatorConnectedCount}/${generators.length} connected`
+    : inventory?.controller.execution_mode === 'local'
+      ? 'Local mode'
+      : '-'
   const generatorHeaderSeverity = generatorIssueCount > 0 ? 'warning' : generators.length > 0 ? 'healthy' : 'unknown'
   const generatorHeaderLabel = generators.length > 0
     ? `${generatorConnectedCount}/${generators.length} online`
@@ -105,6 +116,11 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
     {
       id: 'controller',
       title: 'Controller',
+      headerBadge: (
+        <span className={`monitor-header-badge ${controllerHeaderSeverity}`}>
+          {controllerStatusLabel}
+        </span>
+      ),
       icon: (
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
@@ -114,6 +130,10 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       ),
       content: (
         <div className="monitor-body">
+          <div className="monitor-row">
+            <span className="monitor-label">Status</span>
+            <span className="monitor-value">{controllerStatusLabel}</span>
+          </div>
           <div className="monitor-row">
             <span className="monitor-label">Version</span>
             <span className="monitor-value">{health?.version || '-'}</span>
@@ -125,6 +145,10 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
           <div className="monitor-row">
             <span className="monitor-label">WS Clients</span>
             <span className="monitor-value">{health?.ws_clients ?? '-'}</span>
+          </div>
+          <div className="monitor-row">
+            <span className="monitor-label">Generator Inventory</span>
+            <span className="monitor-value">{controllerGeneratorInventoryLabel}</span>
           </div>
           <div className="monitor-row">
             <span className="monitor-label">Execution</span>

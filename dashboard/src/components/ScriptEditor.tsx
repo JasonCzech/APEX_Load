@@ -1864,7 +1864,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
                 )}
                 {isJavaHttpScript && (
                   <div className="parameter-empty-state" style={{ marginTop: 12 }}>
-                    Java-over-HTTP scripts reuse the HTTP transport client and currently support the `java_serialized_object_base64` codec, where request bodies are base64-encoded serialized bytes.
+                    Java-over-HTTP scripts reuse the HTTP transport client, support embedded or sidecar helper modes, and currently ship with the `java_serialized_object_base64` codec where request bodies are base64-encoded serialized bytes.
                   </div>
                 )}
                 <div className="auto-parameter-toolbar">
@@ -2972,7 +2972,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
                   <button className="section-toggle" onClick={() => toggleSection('java_http')}>
                     <span className="section-icon">JAVA</span>
                     <span className="section-label">Java HTTP Settings</span>
-                    <span className="section-summary">{script.config.java_http?.codec || 'java_serialized_object_base64'}</span>
+                    <span className="section-summary">{`${script.config.java_http?.codec || 'java_serialized_object_base64'} · ${script.config.java_http?.helper_mode || 'embedded'}`}</span>
                     <span className="chevron">{openSections['java_http'] ? '▾' : '▸'}</span>
                   </button>
                   {openSections['java_http'] && (
@@ -2990,6 +2990,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
                             <span>Helper Mode</span>
                             <select value={script.config.java_http?.helper_mode || 'embedded'} onChange={e => updateField('config.java_http.helper_mode', e.target.value)}>
                               <option value="embedded">embedded</option>
+                              <option value="sidecar">sidecar</option>
                             </select>
                           </label>
                           <label>
@@ -3029,7 +3030,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
 
                       <div className="settings-sub-group">
                         <div className="sub-header"><h4>Request Mapping</h4><button className="btn btn-sm btn-ghost" onClick={() => addJavaHTTPMapping('request_mapping')}>+ Add</button></div>
-                        <div className="cell-muted" style={{ marginBottom: 8 }}>Mappings are stored with the draft for future helper-aware serializers. The current embedded codec still sends opaque base64 payloads.</div>
+                        <div className="cell-muted" style={{ marginBottom: 8 }}>Mappings are stored with the draft for future helper-aware serializers. Current Java-over-HTTP execution still sends opaque base64 payloads.</div>
                         {Object.entries(script.config.java_http?.request_mapping || {}).length === 0 && <div className="cell-muted">No request mapping entries defined.</div>}
                         {Object.entries(script.config.java_http?.request_mapping || {}).map(([key, value]) => (
                           <div key={`request-${key}`} className="pair-row">

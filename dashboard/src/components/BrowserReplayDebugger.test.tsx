@@ -129,8 +129,8 @@ describe('BrowserReplayDebugger', () => {
     const copyConsoleButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Copy console'))
     const copyNetworkButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Copy network'))
     expect(copyConsoleButton).toBeDefined()
-    expect(copyNetworkButton).toBeDefined()
-    if (!copyConsoleButton || !copyNetworkButton) {
+    expect(copyNetworkButton).toBeUndefined()
+    if (!copyConsoleButton) {
       return
     }
 
@@ -141,14 +141,6 @@ describe('BrowserReplayDebugger', () => {
 
     expect(writeText).toHaveBeenLastCalledWith(formatConsoleEntries(report.events[1].console_entries))
     expect(copyConsoleButton.textContent).toContain('Console copied')
-
-    await act(async () => {
-      copyNetworkButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-      await Promise.resolve()
-    })
-
-    expect(writeText).toHaveBeenLastCalledWith(formatNetworkEntries(report.events[1].network_entries))
-    expect(copyNetworkButton.textContent).toContain('Network copied')
 
     const showConsolePreviewButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Show preview'))
     expect(showConsolePreviewButton).toBeDefined()

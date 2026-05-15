@@ -55,7 +55,7 @@ export default function ScriptCreateOptions({
             <button className="script-create-option" onClick={onStartJavaHttpScript}>
               <span className="script-create-type-badge">JAVA</span>
               <h3>Java over HTTP</h3>
-              <p>Create a first-class Java-over-HTTP draft with the `java_serialized_object_base64` codec on the existing HTTP transport.</p>
+              <p>Create a first-class Java-over-HTTP draft with the `java_serialized_object_base64` codec and choose embedded or sidecar helper execution on the HTTP transport.</p>
             </button>
             <button className="script-create-option" onClick={onOpenSampleImport}>
               <span className="script-create-type-badge">API</span>

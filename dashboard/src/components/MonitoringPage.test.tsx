@@ -82,6 +82,9 @@ describe('MonitoringPage', () => {
     })
 
     expect(container.textContent).toContain('Telemetry Diagnostics')
+    expect(container.textContent).toContain('Controller')
+    expect(container.textContent).toContain('Generator Inventory')
+    expect(container.textContent).toContain('0/0 connected')
     expect(container.textContent).toContain('danger')
     expect(container.textContent).toContain('1 danger')
     expect(container.textContent).toContain('Checkout: collector dropped 4 metric samples')
@@ -133,6 +136,8 @@ describe('MonitoringPage', () => {
     })
 
     expect(container.textContent).toContain('stormrunner-controller-0')
+  expect(container.textContent).toContain('healthy')
+  expect(container.textContent).toContain('1/1 connected')
     expect(container.textContent).toContain('Generators')
     expect(container.textContent).toContain('1/1 online')
     expect(container.textContent).toContain('all connected')

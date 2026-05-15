@@ -415,6 +415,43 @@ func TestParseFile_NotFound(t *testing.T) {
 	}
 }
 
+func TestParse_JavaHTTPExampleFiles(t *testing.T) {
+	tests := []struct {
+		name       string
+		path       string
+		helperMode string
+	}{
+		{
+			name:       "embedded helper example",
+			path:       filepath.Join("..", "..", "examples", "simple-java-http-embedded.json"),
+			helperMode: "embedded",
+		},
+		{
+			name:       "sidecar helper example",
+			path:       filepath.Join("..", "..", "examples", "simple-java-http-sidecar.json"),
+			helperMode: "sidecar",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			script, err := ParseFile(tt.path)
+			if err != nil {
+				t.Fatalf("unexpected error parsing %s: %v", tt.path, err)
+			}
+			if script.Protocol != "java_http" {
+				t.Fatalf("protocol = %q, want java_http", script.Protocol)
+			}
+			if script.Config.JavaHTTP.HelperMode != tt.helperMode {
+				t.Fatalf("helper_mode = %q, want %q", script.Config.JavaHTTP.HelperMode, tt.helperMode)
+			}
+			if len(script.Actions) != 1 {
+				t.Fatalf("actions count = %d, want 1", len(script.Actions))
+			}
+		})
+	}
+}
+
 func TestParse_InitAndTeardown(t *testing.T) {
 	input := `{
 		"script": {

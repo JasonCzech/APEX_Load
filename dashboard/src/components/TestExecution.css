@@ -1212,6 +1212,14 @@
   gap: 12px;
 }
 
+.archive-event-detail-grid-header {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
 .archive-event-detail-card {
   display: flex;
   flex-direction: column;

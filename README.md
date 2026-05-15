@@ -93,7 +93,7 @@ Navigate to `http://127.0.0.1:8080`.
    - Go to **Scripts** page
    - Click **New Script**
    - Name: "API Load Test"
-   - Paste example from `examples/simple-http.json`
+  - Paste example from `examples/simple-http.json` or `examples/simple-java-http-embedded.json`
    - Click **Save**
 
 2. **Create a scenario** (test configuration):

@@ -1274,7 +1274,7 @@ describe('ScriptEditor', () => {
         ...initialScript.config,
         java_http: {
           codec: 'java_serialized_object_base64',
-          helper_mode: 'embedded',
+          helper_mode: 'sidecar',
           content_type: 'application/x-java-serialized-object',
           accept: 'application/x-java-serialized-object',
           body_encoding: 'base64',
@@ -1308,7 +1308,7 @@ describe('ScriptEditor', () => {
     })
 
     expect(container.textContent).toContain('java_serialized_object_base64')
-    expect(container.textContent).toContain('Java-over-HTTP scripts reuse the HTTP transport client')
+    expect(container.textContent).toContain('support embedded or sidecar helper modes')
 
     const runtimeToggle = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Runtime Settings'))
     expect(runtimeToggle).toBeDefined()
@@ -1326,6 +1326,8 @@ describe('ScriptEditor', () => {
       return
     }
 
+    expect(javaToggle.textContent).toContain('java_serialized_object_base64 · sidecar')
+
     await act(async () => {
       javaToggle.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
@@ -1333,6 +1335,8 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('Wire Format')
     expect(container.textContent).toContain('Request Mapping')
     expect(container.textContent).toContain('Response Mapping')
+  const helperModeSelect = Array.from(container.querySelectorAll('select')).find(select => select.value === 'sidecar')
+  expect(helperModeSelect).toBeDefined()
     const principalInput = Array.from(container.querySelectorAll('input')).find(input => input.value === 'principal.name')
     const tokenInput = Array.from(container.querySelectorAll('input')).find(input => input.value === 'session_token')
     expect(principalInput).toBeDefined()
