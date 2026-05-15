@@ -544,6 +544,10 @@ export default function TestExecutionArchive({
                                         Transfer: {formatBrowserMetric(event.server_telemetry.transfer_ms, ' ms')}{'\n'}
                                         Request payload: {formatBrowserMetric(event.server_telemetry.request_payload_kb, ' KB', 2)}{'\n'}
                                         Response payload: {formatBrowserMetric(event.server_telemetry.response_payload_kb, ' KB', 2)}{'\n'}
+                                        Envelope overhead: {formatBrowserMetric(event.server_telemetry.envelope_overhead_kb, ' KB', 2)}{'\n'}
+                                        SOAP fault: {event.server_telemetry.soap_fault_code || 'n/a'} / {event.server_telemetry.soap_fault_category || 'n/a'}{'\n'}
+                                        Messages: {event.server_telemetry.messages_sent ?? 0} sent / {event.server_telemetry.messages_received ?? 0} received{'\n'}
+                                        Consumer lag: {formatBrowserMetric(event.server_telemetry.consumer_lag_ms, ' ms')}{'\n'}
                                         Connection: {event.server_telemetry.connection_reused === undefined ? 'n/a' : event.server_telemetry.connection_reused ? 'reused' : 'new'}
                                       </pre>
                                     </div>

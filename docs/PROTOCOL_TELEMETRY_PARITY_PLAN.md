@@ -13,7 +13,17 @@ The Mobile UX Strategy defines three layers. The equivalent for each protocol fa
 | **L2: Deep Telemetry** | Core Web Vitals, JS heap, layout counts | Timing phases, response decomposition, dependency chain | Message latency distribution, throughput, backpressure | Per-method timing, stream throughput, protobuf size | Queue depth, broker latency, consumer lag |
 | **L3: Intelligence** | Frustration detection, device comparison | SLA breach detection, dependency health scoring, response time decomposition | Connection stability scoring, throughput regression | Method hotspot detection, error classification | Broker health correlation, dead-letter analysis |
 
-**Current state:** Every protocol implements Layer 1. HTTP and JMS already expose some Layer 2-enabling metadata in the current repo, including timing phases, correlation IDs, and dependency metadata, alongside the broader telemetry hardening work in [RUNTIME_TELEMETRY_SLA_PLAN.md](RUNTIME_TELEMETRY_SLA_PLAN.md). No protocol has a full Layer 3. The browser protocol has the most complete Layer 2 today via `ClientMetrics`.
+**Current state:** Every protocol implements Layer 1. HTTP, SOAP, Java HTTP, and JMS now share a protocol-neutral `ServerTelemetry` contract that flows through live metrics, distributed execution, archives, thresholding, goal-controller guardrails, and previous-run baseline comparison. No protocol has a full Layer 3 yet, but the server-side protocols now have a common telemetry baseline comparable to the browser protocol's `ClientMetrics` path.
+
+## Implemented So Far
+
+- Shared `ServerTelemetry` on `protocol.Result`, propagated through engine rollups, controller/generator RPC, archive retention, and dashboard contracts.
+- HTTP timing decomposition for server processing, transfer, payload sizes, and connection reuse.
+- SOAP operation tagging, fault categorization, raw envelope-overhead tracking, and fault-code retention on archived events.
+- Java HTTP dependency tagging plus helper/codec metadata propagation.
+- JMS payload sizing, request/reply timing, message counts, and consumer-lag retention on archived events.
+- Goal-oriented SLA parity for server processing and transfer thresholds, including stop-on-breach behavior.
+- Previous-run comparison baselines on `GetTest`, used by the live execution summary and dedicated server telemetry panel.
 
 ## Current Repo Anchors
 
