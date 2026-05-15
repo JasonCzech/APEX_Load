@@ -36,8 +36,16 @@ type ApiTestResult struct {
 }
 
 func (c *ApiClient) RunTest(scriptPath string, vusers int, duration string, rampUp string, format string) (*ApiTestResult, error) {
+	file, err := os.ReadFile(scriptPath)
+	if err != nil {
+		return nil, fmt.Errorf("read script: %w", err)
+	}
+	return c.RunPreparedTest(scriptPath, file, vusers, duration, rampUp, format)
+}
+
+func (c *ApiClient) RunPreparedTest(scriptName string, scriptBody []byte, vusers int, duration string, rampUp string, format string) (*ApiTestResult, error) {
 	// 1. Upload script
-	scriptID, err := c.uploadScript(scriptPath)
+	scriptID, err := c.uploadScript(scriptName, scriptBody)
 	if err != nil {
 		return nil, fmt.Errorf("upload script: %w", err)
 	}
@@ -62,20 +70,16 @@ func (c *ApiClient) RunTest(scriptPath string, vusers int, duration string, ramp
 	return c.pollTest(testID, format)
 }
 
-func (c *ApiClient) uploadScript(scriptPath string) (string, error) {
-	file, err := os.Open(scriptPath)
-	if err != nil {
-		return "", err
-	}
-	defer file.Close()
-
+func (c *ApiClient) uploadScript(scriptName string, scriptBody []byte) (string, error) {
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
-	part, err := writer.CreateFormFile("file", filepath.Base(scriptPath))
+	part, err := writer.CreateFormFile("file", filepath.Base(scriptName))
 	if err != nil {
 		return "", err
 	}
-	io.Copy(part, file)
+	if _, err := part.Write(scriptBody); err != nil {
+		return "", err
+	}
 	writer.Close()
 
 	req, _ := http.NewRequest("POST", c.BaseURL+"/api/v1/scripts", body)

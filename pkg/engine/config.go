@@ -7,6 +7,10 @@ import (
 )
 
 func buildProtoConfig(script *dsl.Script) map[string]any {
+	return buildProtoConfigWithSecretResolver(script, newDefaultSecretResolver())
+}
+
+func buildProtoConfigWithSecretResolver(script *dsl.Script, resolver SecretResolver) map[string]any {
 	cfg := map[string]any{
 		"base_url": script.Config.BaseURL,
 	}
@@ -307,7 +311,7 @@ func buildProtoConfig(script *dsl.Script) map[string]any {
 		cfg["auth_domain"] = auth.Domain
 	}
 
-	return cfg
+	return resolveProtoConfigSecrets(cfg, resolver).(map[string]any)
 }
 
 func flattenContentChecks(checks []dsl.ContentCheckConfig) []map[string]any {

@@ -1,6 +1,8 @@
 package engine
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/jasonczech/stormrunner/pkg/dsl"
@@ -169,6 +171,79 @@ func TestBuildProtoConfig_BearerAuth(t *testing.T) {
 	}
 	if cfg["auth_token"] != "my-jwt-token" {
 		t.Errorf("auth_token = %v", cfg["auth_token"])
+	}
+}
+
+func TestBuildProtoConfig_ResolvesSecretPlaceholders(t *testing.T) {
+	resolver := SecretResolverFunc(func(name string) (string, bool) {
+		switch name {
+		case "proxy_password":
+			return "proxy-pass", true
+		case "auth_token":
+			return "runtime-token", true
+		case "ws_password":
+			return "soap-pass", true
+		default:
+			return "", false
+		}
+	})
+
+	script := &dsl.Script{
+		Config: dsl.ScriptConfig{
+			HTTP: dsl.HTTPConfig{
+				Proxy: dsl.ProxyConfig{Password: "{{secret.proxy_password}}"},
+				Auth:  dsl.AuthConfig{Type: "bearer", Token: "{{secret.auth_token}}"},
+			},
+			SOAP: dsl.SOAPConfig{
+				WSSecurity: &dsl.SOAPWSSecurityConfig{
+					UsernameToken: &dsl.SOAPUsernameTokenConfig{Password: "{{secret.ws_password}}"},
+				},
+			},
+		},
+	}
+
+	cfg := buildProtoConfigWithSecretResolver(script, resolver)
+
+	if cfg["proxy_password"] != "proxy-pass" {
+		t.Fatalf("proxy_password = %v, want proxy-pass", cfg["proxy_password"])
+	}
+	if cfg["auth_token"] != "runtime-token" {
+		t.Fatalf("auth_token = %v, want runtime-token", cfg["auth_token"])
+	}
+	if cfg["soap_ws_security_password"] != "soap-pass" {
+		t.Fatalf("soap_ws_security_password = %v, want soap-pass", cfg["soap_ws_security_password"])
+	}
+}
+
+func TestAzureKeyVaultSecretResolver_Resolve(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer test-token" {
+			t.Fatalf("Authorization = %q, want Bearer test-token", got)
+		}
+		if r.URL.Path != "/secrets/db-password" {
+			t.Fatalf("path = %q, want /secrets/db-password", r.URL.Path)
+		}
+		if r.URL.Query().Get("api-version") != "7.4" {
+			t.Fatalf("api-version = %q, want 7.4", r.URL.Query().Get("api-version"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"value":"kv-secret"}`))
+	}))
+	defer server.Close()
+
+	resolver := &azureKeyVaultSecretResolver{
+		baseURL:    server.URL,
+		token:      "test-token",
+		apiVersion: "7.4",
+		client:     server.Client(),
+	}
+
+	value, ok := resolver.Resolve("db_password")
+	if !ok {
+		t.Fatal("Resolve returned ok=false, want true")
+	}
+	if value != "kv-secret" {
+		t.Fatalf("value = %q, want kv-secret", value)
 	}
 }
 

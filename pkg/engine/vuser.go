@@ -15,17 +15,18 @@ import (
 )
 
 type VUser struct {
-	ID            int
-	Group         string
-	Proto         protocol.Protocol
-	Script        *dsl.Script
-	Metrics       *MetricsCollector
-	ResultSink    ResultSink
-	Variables     map[string]string
-	DataProvider  *DataProvider
-	Parameters    *ParameterRuntime
-	SnapshotStore *SnapshotStore
-	PauseControl  PauseController
+	ID             int
+	Group          string
+	Proto          protocol.Protocol
+	Script         *dsl.Script
+	Metrics        *MetricsCollector
+	ResultSink     ResultSink
+	Variables      map[string]string
+	DataProvider   *DataProvider
+	Parameters     *ParameterRuntime
+	SecretResolver SecretResolver
+	SnapshotStore  *SnapshotStore
+	PauseControl   PauseController
 }
 
 type PauseController interface {
@@ -593,20 +594,19 @@ func (vu *VUser) resolveTemplateValue(expr string) (string, bool) {
 		return value, ok
 	case strings.HasPrefix(expr, "secret."):
 		key := strings.TrimSpace(strings.TrimPrefix(expr, "secret."))
-		if key == "" {
-			return "", false
-		}
-		if value, ok := os.LookupEnv(key); ok {
-			return value, true
-		}
-		normalized := strings.NewReplacer(".", "_", "-", "_").Replace(strings.ToUpper(key))
-		value, ok := os.LookupEnv("STORMRUNNER_SECRET_" + normalized)
-		return value, ok
+		return resolveSecretTemplateValue(key, vu.secretResolver())
 	case strings.HasPrefix(expr, "fn."):
 		return resolveBuiltinFunction(expr, time.Now)
 	default:
 		return "", false
 	}
+}
+
+func (vu *VUser) secretResolver() SecretResolver {
+	if vu.SecretResolver == nil {
+		vu.SecretResolver = newDefaultSecretResolver()
+	}
+	return vu.SecretResolver
 }
 
 func (vu *VUser) mergeExtractions(r *protocol.Result) {

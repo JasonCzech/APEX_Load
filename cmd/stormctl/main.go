@@ -10,7 +10,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/jasonczech/stormrunner/pkg/dsl"
 	"github.com/jasonczech/stormrunner/pkg/engine"
 	_ "github.com/jasonczech/stormrunner/pkg/protocol/browser"
 	_ "github.com/jasonczech/stormrunner/pkg/protocol/http"
@@ -48,19 +47,25 @@ func runTest() {
 		os.Exit(1)
 	}
 
+	script, err := loadScriptForRun(args.script, args)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error preparing script: %v\n", err)
+		os.Exit(1)
+	}
+
 	var result *engine.RunResult
 	var apiResult *ApiTestResult
 	var runErr error
 
 	if args.api != "" {
-		client := NewApiClient(args.api)
-		apiResult, runErr = client.RunTest(args.script, args.vusers, args.duration.String(), args.rampUp.String(), args.format)
-	} else {
-		script, err := dsl.ParseFile(args.script)
+		scriptBody, err := marshalScriptForUpload(script)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "error parsing script: %v\n", err)
+			fmt.Fprintf(os.Stderr, "error preparing upload script: %v\n", err)
 			os.Exit(1)
 		}
+		client := NewApiClient(args.api)
+		apiResult, runErr = client.RunPreparedTest(args.script, scriptBody, args.vusers, args.duration.String(), args.rampUp.String(), args.format)
+	} else {
 
 		eng, err := engine.New(engine.Config{
 			Script:   script,
@@ -152,10 +157,12 @@ func runTest() {
 type runArgs struct {
 	script   string
 	api      string
+	baseURL  string
 	format   string
 	vusers   int
 	duration time.Duration
 	rampUp   time.Duration
+	env      map[string]string
 }
 
 func parseRunArgs(args []string) runArgs {
@@ -163,6 +170,7 @@ func parseRunArgs(args []string) runArgs {
 		vusers:   10,
 		duration: 60 * time.Second,
 		format:   "text",
+		env:      make(map[string]string),
 	}
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
@@ -175,6 +183,18 @@ func parseRunArgs(args []string) runArgs {
 			if i+1 < len(args) {
 				i++
 				r.api = args[i]
+			}
+		case "--base-url":
+			if i+1 < len(args) {
+				i++
+				r.baseURL = args[i]
+			}
+		case "--env", "-env":
+			if i+1 < len(args) {
+				i++
+				if key, value, ok := parseEnvAssignment(args[i]); ok {
+					r.env[key] = value
+				}
 			}
 		case "--format":
 			if i+1 < len(args) {
@@ -217,10 +237,13 @@ Run Flags:
   --vusers, -v    Number of virtual users             [default: 10]
   --duration, -d  Test duration (e.g. 5m, 1h)         [default: 1m]
   --ramp-up, -r   Ramp-up period (e.g. 30s, 2m)       [default: 0s]
+	--env, -env     Runtime variable override (k=v)     [repeatable]
+	--base-url      Override scenario base URL at run time
   --api           Run via API instead of locally (e.g. http://localhost:8080)
   --format        Output format (text, json)          [default: text]
 
 Examples:
   stormctl run --script order-flow.json --vusers 100 --duration 5m
+	stormctl run --script order-flow.json -env target_namespace=pr-123 --base-url https://preview.example.com
   stormctl run --api http://localhost:8080 --script order-flow.json --format json`)
 }
