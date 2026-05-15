@@ -165,6 +165,83 @@ cp stormrunner.db stormrunner.db.backup
 
 **Supported protocol surfaces:** `http`, `soap`, `java_http`, `browser`, `jms-solace`
 
+## Browser And Mobile DSL
+
+```json
+{
+  "protocol": "browser",
+  "config": {
+    "base_url": "https://www.example.com",
+    "browser": {
+      "engine": "chromium",
+      "device_profile": "iPhone 14 Pro",
+      "touch_mode": true,
+      "orientation": "portrait",
+      "client_metrics": true,
+      "slow_mo_ms": 50,
+      "viewport": {
+        "width": 393,
+        "height": 852
+      }
+    }
+  },
+  "actions": [
+    {
+      "name": "open-home",
+      "type": "browser_navigate",
+      "target": "/"
+    },
+    {
+      "name": "open-menu",
+      "type": "browser_tap",
+      "selector": "button[data-testid='menu-toggle']"
+    },
+    {
+      "name": "swipe-carousel",
+      "type": "browser_swipe",
+      "selector": "[data-testid='hero-carousel']",
+      "params": {
+        "direction": "left",
+        "distance": 220
+      }
+    }
+  ]
+}
+```
+
+Supported browser actions:
+- `browser_navigate`
+- `browser_click`
+- `browser_fill`
+- `browser_wait`
+- `browser_screenshot`
+- `browser_tap`
+- `browser_long_press`
+- `browser_swipe`
+
+Browser/mobile config keys:
+- `config.browser.engine`: currently `chromium`
+- `config.browser.device_profile`: named preset such as `iPhone 14 Pro` or `iPad Air`
+- `config.browser.touch_mode`: force touch interactions on or off
+- `config.browser.orientation`: `portrait` or `landscape`
+- `config.browser.client_metrics`: enable FCP/LCP/CLS/INP and long-task capture
+
+Gesture params:
+- `browser_long_press.params.duration_ms`
+- `browser_swipe.params.direction`: `left`, `right`, `up`, `down`
+- `browser_swipe.params.distance`: positive pixel distance
+
+Captured browser metrics:
+- `avg_fcp_ms`
+- `avg_lcp_ms`
+- `avg_cls_score`
+- `avg_inp_ms`
+- `avg_blocking_resources`
+- `avg_long_task_count`
+- `avg_js_heap_used_mb`
+
+Archived and live browser summaries are exposed through `metrics.browser`, `metrics.browser_by_device`, archive interval summaries, and archive reports.
+
 **Java-over-HTTP MVP:**
 - Reuses the HTTP transport with the `java_serialized_object_base64` codec.
 - Sample imports for Java-over-HTTP are intentionally limited to raw HTTP and cURL bodies that already contain base64-encoded serialized Java bytes.

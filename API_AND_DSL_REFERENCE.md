@@ -262,6 +262,113 @@ GET /api/v1/tests/test-789/metrics
 WS /api/v1/tests/test-789/stream
 ```
 
+## Browser and Mobile DSL
+
+Stormrunner keeps mobile emulation under the `browser` protocol rather than introducing a separate mobile protocol. Use browser config to apply named device presets, touch behavior, orientation, and client-side UX telemetry.
+
+### Browser Config
+
+```json
+{
+  "protocol": "browser",
+  "config": {
+    "base_url": "https://www.example.com",
+    "browser": {
+      "engine": "chromium",
+      "device_profile": "iPad Air",
+      "touch_mode": true,
+      "orientation": "landscape",
+      "client_metrics": true,
+      "user_agent": "Mozilla/5.0 (...) Safari/601.1",
+      "viewport": {
+        "width": 1180,
+        "height": 820
+      }
+    }
+  }
+}
+```
+
+Supported browser config keys:
+- `config.browser.engine`: currently `chromium`
+- `config.browser.device_profile`: named preset from the built-in device registry
+- `config.browser.touch_mode`: optional boolean override for touch emulation
+- `config.browser.orientation`: `portrait` or `landscape`
+- `config.browser.client_metrics`: enables browser UX metrics collection
+- `config.browser.user_agent`: custom UA override layered on top of the chosen device profile
+- `config.browser.viewport`: explicit viewport override
+
+### Supported Browser Actions
+
+Stormrunner validates and executes these browser action types:
+- `browser_navigate`
+- `browser_click`
+- `browser_fill`
+- `browser_wait`
+- `browser_screenshot`
+- `browser_tap`
+- `browser_long_press`
+- `browser_swipe`
+
+Gesture action parameters:
+- `browser_long_press.params.duration_ms`: positive integer hold time
+- `browser_swipe.params.direction`: `left`, `right`, `up`, or `down`
+- `browser_swipe.params.distance`: positive integer swipe distance in pixels
+
+### Browser Metrics In Live And Archived Results
+
+When `config.browser.client_metrics` is enabled, browser actions can populate `client_metrics` on archived transaction events and browser summary blocks on live and archived metrics payloads.
+
+Summary metrics fields:
+- `avg_fcp_ms`
+- `avg_lcp_ms`
+- `avg_cls_score`
+- `avg_inp_ms`
+- `avg_blocking_resources`
+- `avg_long_task_count`
+- `avg_js_heap_used_mb`
+
+Response surfaces carrying these summaries:
+- live test details and `/api/v1/tests/{id}/metrics` via `browser` and `browser_by_device`
+- interval summary history records via `browser` and `browser_by_device`
+- archive reports via `overview.browser` and `browser_by_device`
+- archived transaction events via `client_metrics`
+
+Example archive report excerpt:
+
+```json
+{
+  "overview": {
+    "transactions": 1280,
+    "avg_response_ms": 142.6,
+    "browser": {
+      "samples": 1280,
+      "avg_fcp_ms": 811.4,
+      "avg_lcp_ms": 1420.8,
+      "avg_cls_score": 0.031,
+      "avg_inp_ms": 88.7,
+      "avg_long_task_count": 1.4
+    }
+  },
+  "browser_by_device": {
+    "iPhone 14 Pro": {
+      "samples": 640,
+      "device_profile": "iPhone 14 Pro",
+      "device_tier": "mobile",
+      "avg_lcp_ms": 1488.2,
+      "avg_inp_ms": 92.1
+    },
+    "iPad Air": {
+      "samples": 640,
+      "device_profile": "iPad Air",
+      "device_tier": "tablet",
+      "avg_lcp_ms": 1353.5,
+      "avg_inp_ms": 79.4
+    }
+  }
+}
+```
+
 Emits JSON messages:
 - `metrics_update`: Periodic snapshot (every 1-5 seconds)
 - `test_complete`: Test finished successfully
