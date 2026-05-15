@@ -76,6 +76,7 @@ describe('TestExecutionArchive', () => {
     browser_by_device: {
       iphone_se: {
         device_profile: 'iphone_se',
+        device_platform: 'ios',
         device_tier: 'low',
         browser_engine: 'webkit',
         samples: 1,
@@ -127,6 +128,7 @@ describe('TestExecutionArchive', () => {
       bytes_received: 512,
       client_metrics: {
         device_profile: 'iphone_se',
+        device_platform: 'ios',
         device_tier: 'low',
         browser_engine: 'webkit',
         fcp_ms: 130,
@@ -193,8 +195,10 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('Avg FCP')
     expect(container.textContent).toContain('iphone_se')
     expect(container.textContent).toContain('WebKit · low tier')
+    expect(container.textContent).toContain('iOS · WebKit · low tier')
     expect(container.textContent).toContain('Client Metrics')
     expect(container.textContent).toContain('iphone_se · WebKit · low tier')
+    expect(container.textContent).toContain('iphone_se · iOS · WebKit · low tier')
     expect(container.textContent).toContain('INP: 56.0 ms')
     expect(container.textContent).toContain('Response')
     const copyFaultButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Copy fault'))

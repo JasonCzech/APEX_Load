@@ -203,6 +203,7 @@ func TestMetricsCollector_BrowserMetricsSummary(t *testing.T) {
 			Duration:   10 * time.Millisecond,
 			ClientMetrics: &protocol.ClientMetrics{
 				DeviceProfile:         "iphone_se",
+				DevicePlatform:        "ios",
 				DeviceTier:            "low",
 				BrowserEngine:         "webkit",
 				FCPMs:                 120,
@@ -220,6 +221,7 @@ func TestMetricsCollector_BrowserMetricsSummary(t *testing.T) {
 			Duration:   20 * time.Millisecond,
 			ClientMetrics: &protocol.ClientMetrics{
 				DeviceProfile:         "iphone_se",
+				DevicePlatform:        "ios",
 				DeviceTier:            "low",
 				BrowserEngine:         "webkit",
 				FCPMs:                 180,
@@ -237,6 +239,7 @@ func TestMetricsCollector_BrowserMetricsSummary(t *testing.T) {
 			Duration:   15 * time.Millisecond,
 			ClientMetrics: &protocol.ClientMetrics{
 				DeviceProfile:         "pixel_8",
+				DevicePlatform:        "android",
 				DeviceTier:            "high",
 				BrowserEngine:         "chromium",
 				FCPMs:                 90,
@@ -269,6 +272,9 @@ func TestMetricsCollector_BrowserMetricsSummary(t *testing.T) {
 	if iphone.BrowserEngine != "webkit" {
 		t.Fatalf("BrowserEngine = %q, want webkit", iphone.BrowserEngine)
 	}
+	if iphone.DevicePlatform != "ios" {
+		t.Fatalf("DevicePlatform = %q, want ios", iphone.DevicePlatform)
+	}
 	if iphone.AvgFCPMs != 150 {
 		t.Fatalf("AvgFCPMs = %v, want 150", iphone.AvgFCPMs)
 	}
@@ -278,6 +284,9 @@ func TestMetricsCollector_BrowserMetricsSummary(t *testing.T) {
 	}
 	if pixel.BrowserEngine != "chromium" {
 		t.Fatalf("pixel_8 BrowserEngine = %q, want chromium", pixel.BrowserEngine)
+	}
+	if pixel.DevicePlatform != "android" {
+		t.Fatalf("pixel_8 DevicePlatform = %q, want android", pixel.DevicePlatform)
 	}
 }
 

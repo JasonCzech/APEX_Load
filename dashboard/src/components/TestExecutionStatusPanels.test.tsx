@@ -178,6 +178,7 @@ describe('TestExecutionStatusPanels', () => {
             browser_by_device: {
               iphone_se: {
                 device_profile: 'iphone_se',
+                device_platform: 'ios',
                 device_tier: 'low',
                 browser_engine: 'webkit',
                 samples: 2,
@@ -202,6 +203,7 @@ describe('TestExecutionStatusPanels', () => {
     expect(container.textContent).toContain('0.034')
     expect(container.textContent).toContain('iphone_se')
     expect(container.textContent).toContain('WebKit · low tier')
+    expect(container.textContent).toContain('iOS · WebKit · low tier')
     expect(container.textContent).toContain('FCP 130.0 ms')
   })
 })

@@ -58,6 +58,7 @@ type BrowserMetricsSummary struct {
 
 type BrowserDeviceMetrics struct {
 	DeviceProfile        string  `json:"device_profile,omitempty"`
+	DevicePlatform       string  `json:"device_platform,omitempty"`
 	DeviceTier           string  `json:"device_tier,omitempty"`
 	BrowserEngine        string  `json:"browser_engine,omitempty"`
 	Samples              int64   `json:"samples"`
@@ -309,6 +310,7 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 				if !ok {
 					metrics = &BrowserDeviceMetrics{
 						DeviceProfile: profile,
+						DevicePlatform: r.ClientMetrics.DevicePlatform,
 						DeviceTier:    r.ClientMetrics.DeviceTier,
 						BrowserEngine: r.ClientMetrics.BrowserEngine,
 					}
@@ -419,6 +421,9 @@ func mergeBrowserDeviceMetrics(summary *BrowserDeviceMetrics, metrics *protocol.
 	}
 	if summary.BrowserEngine == "" {
 		summary.BrowserEngine = metrics.BrowserEngine
+	}
+	if summary.DevicePlatform == "" {
+		summary.DevicePlatform = metrics.DevicePlatform
 	}
 	summary.Samples++
 	summary.AvgFCPMs += metrics.FCPMs

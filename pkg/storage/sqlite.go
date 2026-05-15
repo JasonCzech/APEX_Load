@@ -37,6 +37,7 @@ type BrowserMetricsSummaryRecord struct {
 
 type BrowserDeviceMetricsRecord struct {
 	DeviceProfile        string  `json:"device_profile,omitempty"`
+	DevicePlatform       string  `json:"device_platform,omitempty"`
 	DeviceTier           string  `json:"device_tier,omitempty"`
 	BrowserEngine        string  `json:"browser_engine,omitempty"`
 	Samples              int64   `json:"samples"`
@@ -1794,6 +1795,7 @@ func intervalSummaryRecordFromMetrics(timestamp time.Time, metrics any) (Interva
 	}
 	type browserDeviceEnvelope struct {
 		DeviceProfile        string  `json:"device_profile,omitempty"`
+		DevicePlatform       string  `json:"device_platform,omitempty"`
 		DeviceTier           string  `json:"device_tier,omitempty"`
 		BrowserEngine        string  `json:"browser_engine,omitempty"`
 		Samples              int64   `json:"samples"`
@@ -1878,6 +1880,7 @@ func intervalSummaryRecordFromMetrics(timestamp time.Time, metrics any) (Interva
 			}
 			record.BrowserByDevice[name] = &BrowserDeviceMetricsRecord{
 				DeviceProfile:        metrics.DeviceProfile,
+				DevicePlatform:       metrics.DevicePlatform,
 				DeviceTier:           metrics.DeviceTier,
 				BrowserEngine:        metrics.BrowserEngine,
 				Samples:              metrics.Samples,

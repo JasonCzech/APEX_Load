@@ -190,6 +190,7 @@ type BrowserLiveMetrics struct {
 
 type BrowserDeviceLiveMetrics struct {
 	DeviceProfile        string  `json:"device_profile,omitempty"`
+	DevicePlatform       string  `json:"device_platform,omitempty"`
 	DeviceTier           string  `json:"device_tier,omitempty"`
 	BrowserEngine        string  `json:"browser_engine,omitempty"`
 	Samples              int64   `json:"samples"`
@@ -714,6 +715,7 @@ func browserDeviceSummaryRecordToLiveMetrics(records map[string]*storage.Browser
 		}
 		result[name] = &BrowserDeviceLiveMetrics{
 			DeviceProfile:        record.DeviceProfile,
+			DevicePlatform:       record.DevicePlatform,
 			DeviceTier:           record.DeviceTier,
 			BrowserEngine:        record.BrowserEngine,
 			Samples:              record.Samples,
@@ -2466,6 +2468,7 @@ func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[s
 		for name, metrics := range snap.BrowserByDevice {
 			live.BrowserByDevice[name] = &BrowserDeviceLiveMetrics{
 				DeviceProfile:        metrics.DeviceProfile,
+				DevicePlatform:       metrics.DevicePlatform,
 				DeviceTier:           metrics.DeviceTier,
 				BrowserEngine:        metrics.BrowserEngine,
 				Samples:              metrics.Samples,

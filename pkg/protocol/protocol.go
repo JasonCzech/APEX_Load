@@ -115,6 +115,7 @@ type DOMSummary struct {
 
 type ClientMetrics struct {
 	DeviceProfile       string  `json:"device_profile,omitempty"`
+	DevicePlatform      string  `json:"device_platform,omitempty"`
 	DeviceTier          string  `json:"device_tier,omitempty"`
 	BrowserEngine       string  `json:"browser_engine,omitempty"`
 	ActionDurationMs    float64 `json:"action_duration_ms,omitempty"`

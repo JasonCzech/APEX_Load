@@ -34,6 +34,7 @@ type Browser struct {
 	baseURL                    string
 	currentURL                 string
 	deviceProfile              string
+	devicePlatform             string
 	deviceTier                 string
 	headless                   bool
 	cacheEnabled               bool
@@ -117,6 +118,7 @@ func (b *Browser) Init(ctx context.Context, config map[string]any) error {
 	b.mobile = false
 	b.touchMode = false
 	b.deviceProfile = ""
+	b.devicePlatform = ""
 	b.deviceTier = ""
 	engineConfigured := false
 
@@ -286,6 +288,7 @@ func (b *Browser) Init(ctx context.Context, config map[string]any) error {
 
 func (b *Browser) applyDeviceProfile(profile DeviceProfile) {
 	b.deviceProfile = profile.Name
+	b.devicePlatform = profile.Platform
 	b.deviceTier = profile.DeviceTier
 	b.viewportW = profile.Width
 	b.viewportH = profile.Height
@@ -1048,6 +1051,7 @@ func (b *Browser) captureClientMetrics(ctx context.Context, duration time.Durati
 
 	metrics := &protocol.ClientMetrics{
 		DeviceProfile:    b.deviceProfile,
+		DevicePlatform:   b.devicePlatform,
 		DeviceTier:       b.deviceTier,
 		BrowserEngine:    b.engine,
 		ActionDurationMs: float64(duration) / float64(time.Millisecond),

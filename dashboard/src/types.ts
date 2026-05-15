@@ -243,6 +243,7 @@ export interface IntervalSummaryRecord {
 
 export interface ClientMetrics {
   device_profile?: string
+  device_platform?: string
   device_tier?: string
   browser_engine?: string
   action_duration_ms?: number
@@ -417,6 +418,7 @@ export interface BrowserLiveMetrics {
 
 export interface BrowserDeviceLiveMetrics extends BrowserLiveMetrics {
   device_profile?: string
+  device_platform?: string
   device_tier?: string
   browser_engine?: string
 }

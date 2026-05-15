@@ -59,6 +59,14 @@ function formatBrowserEngine(value?: string): string {
   return value || 'browser'
 }
 
+function formatDevicePlatform(value?: string): string {
+  if (value === 'ios') return 'iOS'
+  if (value === 'ipados') return 'iPadOS'
+  if (value === 'android') return 'Android'
+  if (value === 'desktop') return 'Desktop'
+  return value || 'unknown'
+}
+
 function telemetryBadgeClass(metrics?: LiveMetricsSummary): 'healthy' | 'warning' | 'danger' {
   const telemetry = metrics?.telemetry
   if (!telemetry) return 'healthy'
@@ -220,6 +228,7 @@ export default function TestExecutionStatusPanels({
                   <div className="browser-device-header">
                     <span className="browser-device-name">{profile}</span>
                     <span className="browser-device-tier">{formatBrowserEngine(deviceMetrics.browser_engine)} · {deviceMetrics.device_tier || 'unknown'} tier</span>
+                    <span className="browser-device-tier">{formatDevicePlatform(deviceMetrics.device_platform)} · {formatBrowserEngine(deviceMetrics.browser_engine)} · {deviceMetrics.device_tier || 'unknown'} tier</span>
                   </div>
                   <div className="browser-device-stats">
                     <span>FCP {formatBrowserMetric(deviceMetrics.avg_fcp_ms, ' ms')}</span>
