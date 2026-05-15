@@ -3,9 +3,12 @@ import { Fragment, useState } from 'react'
 import { BrowserDeviceLiveMetrics, BrowserEngineLiveMetrics, BrowserLiveMetrics, BrowserPlatformLiveMetrics, RunArchiveActionStats, RunArchiveReport, TestSummary, TransactionEvent } from '../types'
 import BrowserBreakdownChart, {
   BrowserBreakdown,
-  BrowserBreakdownDatum,
+  buildBrowserBreakdownData,
   buildArchiveBrowserBreakdownSeries,
+  formatBrowserEngineLabel,
+  formatDevicePlatformLabel,
   getBrowserBreakdownChartCopy,
+  getBrowserBreakdownSegmentLabel,
   getBrowserBreakdownTitle,
 } from './BrowserBreakdownChart'
 import SnapshotBodyPreview from './SnapshotBodyPreview'
@@ -60,68 +63,6 @@ function formatBrowserScore(value: number | undefined): string {
   return value.toFixed(3)
 }
 
-function formatBrowserEngine(value?: string): string {
-  if (value === 'webkit') return 'WebKit'
-  if (value === 'chromium') return 'Chromium'
-  return value || 'browser'
-}
-
-function formatDevicePlatform(value?: string): string {
-  if (value === 'ios') return 'iOS'
-  if (value === 'ipados') return 'iPadOS'
-  if (value === 'android') return 'Android'
-  if (value === 'desktop') return 'Desktop'
-  return value || 'unknown'
-}
-
-function getBrowserBreakdownChartData(
-  breakdown: BrowserBreakdown,
-  summary: BrowserLiveMetrics,
-  devices?: Record<string, BrowserDeviceLiveMetrics>,
-  platforms?: Record<string, BrowserPlatformLiveMetrics>,
-  engines?: Record<string, BrowserEngineLiveMetrics>,
-): BrowserBreakdownDatum[] {
-  if (breakdown === 'overall') {
-    return [{
-      segment: 'Overall',
-      lcp: summary.avg_lcp_ms,
-      inp: summary.avg_inp_ms,
-      cls: summary.avg_cls_score,
-    }]
-  }
-
-  if (breakdown === 'platform') {
-    return Object.values(platforms ?? {})
-      .map(metrics => ({
-        segment: formatDevicePlatform(metrics.device_platform),
-        lcp: metrics.avg_lcp_ms,
-        inp: metrics.avg_inp_ms,
-        cls: metrics.avg_cls_score,
-      }))
-      .sort((left, right) => left.segment.localeCompare(right.segment))
-  }
-
-  if (breakdown === 'engine') {
-    return Object.values(engines ?? {})
-      .map(metrics => ({
-        segment: formatBrowserEngine(metrics.browser_engine),
-        lcp: metrics.avg_lcp_ms,
-        inp: metrics.avg_inp_ms,
-        cls: metrics.avg_cls_score,
-      }))
-      .sort((left, right) => left.segment.localeCompare(right.segment))
-  }
-
-  return Object.entries(devices ?? {})
-    .map(([profile, metrics]) => ({
-      segment: profile,
-      lcp: metrics.avg_lcp_ms,
-      inp: metrics.avg_inp_ms,
-      cls: metrics.avg_cls_score,
-    }))
-    .sort((left, right) => left.segment.localeCompare(right.segment))
-}
-
 function renderBrowserSummary(
   summary: BrowserLiveMetrics,
   devices?: Record<string, BrowserDeviceLiveMetrics>,
@@ -130,13 +71,14 @@ function renderBrowserSummary(
   breakdown: BrowserBreakdown = 'device',
   onBreakdownChange?: (value: BrowserBreakdown) => void,
 ) {
-  const engineEntries = Object.values(engines ?? {}).sort((left, right) => formatBrowserEngine(left.browser_engine).localeCompare(formatBrowserEngine(right.browser_engine)))
-  const platformEntries = Object.values(platforms ?? {}).sort((left, right) => formatDevicePlatform(left.device_platform).localeCompare(formatDevicePlatform(right.device_platform)))
+  const engineEntries = Object.values(engines ?? {}).sort((left, right) => formatBrowserEngineLabel(left.browser_engine).localeCompare(formatBrowserEngineLabel(right.browser_engine)))
+  const platformEntries = Object.values(platforms ?? {}).sort((left, right) => formatDevicePlatformLabel(left.device_platform).localeCompare(formatDevicePlatformLabel(right.device_platform)))
   const deviceEntries = Object.entries(devices ?? {})
-  const breakdownChartData = getBrowserBreakdownChartData(breakdown, summary, devices, platforms, engines)
+  const breakdownChartData = buildBrowserBreakdownData(breakdown, { summary, devices, platforms, engines })
   const breakdownSeries = buildArchiveBrowserBreakdownSeries()
   const chartTitle = getBrowserBreakdownTitle(breakdown, 'Breakdown', 'LCP / INP / CLS')
   const chartCopy = getBrowserBreakdownChartCopy(breakdownSeries)
+  const segmentLabel = getBrowserBreakdownSegmentLabel(breakdown)
 
   return (
     <div className="archive-browser-section">
@@ -191,7 +133,7 @@ function renderBrowserSummary(
               </button>
             ))}
           </div>
-          <BrowserBreakdownChart title={chartTitle} copy={chartCopy} data={breakdownChartData} series={breakdownSeries} />
+          <BrowserBreakdownChart title={chartTitle} copy={chartCopy} data={breakdownChartData} series={breakdownSeries} segmentLabel={segmentLabel} />
         </>
       )}
 
@@ -202,7 +144,7 @@ function renderBrowserSummary(
             {engineEntries.map(metrics => (
               <div key={metrics.browser_engine || 'browser'} className="browser-device-card">
                 <div className="browser-device-header">
-                  <span className="browser-device-name">{formatBrowserEngine(metrics.browser_engine)}</span>
+                  <span className="browser-device-name">{formatBrowserEngineLabel(metrics.browser_engine)}</span>
                   <span className="browser-device-tier">{metrics.samples} samples</span>
                 </div>
                 <div className="browser-device-stats">
@@ -224,8 +166,8 @@ function renderBrowserSummary(
             {platformEntries.map(metrics => (
               <div key={metrics.device_platform || 'unknown'} className="browser-device-card">
                 <div className="browser-device-header">
-                  <span className="browser-device-name">{formatDevicePlatform(metrics.device_platform)}</span>
-                  <span className="browser-device-tier">{formatBrowserEngine(metrics.browser_engine)} · {metrics.samples} samples</span>
+                  <span className="browser-device-name">{formatDevicePlatformLabel(metrics.device_platform)}</span>
+                  <span className="browser-device-tier">{formatBrowserEngineLabel(metrics.browser_engine)} · {metrics.samples} samples</span>
                 </div>
                 <div className="browser-device-stats">
                   <span>FCP {formatBrowserMetric(metrics.avg_fcp_ms, ' ms')}</span>
@@ -247,7 +189,7 @@ function renderBrowserSummary(
               <div key={profile} className="browser-device-card">
                 <div className="browser-device-header">
                   <span className="browser-device-name">{profile}</span>
-                  <span className="browser-device-tier">{formatDevicePlatform(metrics.device_platform)} · {formatBrowserEngine(metrics.browser_engine)} · {metrics.device_tier || 'unknown'} tier</span>
+                  <span className="browser-device-tier">{formatDevicePlatformLabel(metrics.device_platform)} · {formatBrowserEngineLabel(metrics.browser_engine)} · {metrics.device_tier || 'unknown'} tier</span>
                 </div>
                 <div className="browser-device-stats">
                   <span>FCP {formatBrowserMetric(metrics.avg_fcp_ms, ' ms')}</span>
@@ -580,7 +522,7 @@ export default function TestExecutionArchive({
                                       <div className="archive-event-detail-header">
                                         <span className="scenario-script-detail-label">Client Metrics</span>
                                       </div>
-                                      <span className="scenario-script-detail-value">{event.client_metrics.device_profile || 'browser'} · {formatDevicePlatform(event.client_metrics.device_platform)} · {formatBrowserEngine(event.client_metrics.browser_engine)} · {event.client_metrics.device_tier || 'unknown'} tier</span>
+                                      <span className="scenario-script-detail-value">{event.client_metrics.device_profile || 'browser'} · {formatDevicePlatformLabel(event.client_metrics.device_platform)} · {formatBrowserEngineLabel(event.client_metrics.browser_engine)} · {event.client_metrics.device_tier || 'unknown'} tier</span>
                                       <pre className="archive-event-detail-pre">
                                         FCP: {formatBrowserMetric(event.client_metrics.fcp_ms, ' ms')}{'\n'}
                                         LCP: {formatBrowserMetric(event.client_metrics.lcp_ms, ' ms')}{'\n'}

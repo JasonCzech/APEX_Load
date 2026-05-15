@@ -8,8 +8,12 @@ import { getErrorMessage } from '../utils/errorUtils'
 import BrowserBreakdownChart, {
   BrowserBreakdown,
   BrowserBreakdownDatum,
+  buildBrowserBreakdownData,
   buildComparisonBrowserBreakdownSeries,
+  formatBrowserEngineLabel,
+  formatDevicePlatformLabel,
   getBrowserBreakdownChartCopy,
+  getBrowserBreakdownSegmentLabel,
   getBrowserBreakdownTitle,
 } from './BrowserBreakdownChart'
 import StatusBadge from './StatusBadge'
@@ -46,20 +50,6 @@ function formatBrowserScore(value?: number) {
   return typeof value === 'number' && Number.isFinite(value) ? value.toFixed(3) : 'n/a'
 }
 
-function formatBrowserEngine(value?: string) {
-  if (value === 'webkit') return 'WebKit'
-  if (value === 'chromium') return 'Chromium'
-  return value || 'browser'
-}
-
-function formatDevicePlatform(value?: string) {
-  if (value === 'ios') return 'iOS'
-  if (value === 'ipados') return 'iPadOS'
-  if (value === 'android') return 'Android'
-  if (value === 'desktop') return 'Desktop'
-  return value || 'unknown'
-}
-
 function getBrowserDeviceEntries(report?: RunArchiveReport): Array<[string, BrowserDeviceLiveMetrics]> {
   return Object.entries(report?.browser_by_device ?? {}).sort(([left], [right]) => left.localeCompare(right))
 }
@@ -67,7 +57,7 @@ function getBrowserDeviceEntries(report?: RunArchiveReport): Array<[string, Brow
 function getBrowserPlatformEntries(report?: RunArchiveReport): BrowserPlatformLiveMetrics[] {
   const archivedEntries = Object.values(report?.browser_by_platform ?? {})
   if (archivedEntries.length > 0) {
-    return archivedEntries.sort((left, right) => formatDevicePlatform(left.device_platform).localeCompare(formatDevicePlatform(right.device_platform)))
+    return archivedEntries.sort((left, right) => formatDevicePlatformLabel(left.device_platform).localeCompare(formatDevicePlatformLabel(right.device_platform)))
   }
 
   const entries = Object.values(report?.browser_by_device ?? {})
@@ -115,13 +105,13 @@ function getBrowserPlatformEntries(report?: RunArchiveReport): BrowserPlatformLi
       avg_cls_score: entry.samples > 0 ? entry.clsTotal / entry.samples : undefined,
       avg_inp_ms: entry.samples > 0 ? entry.inpTotal / entry.samples : undefined,
     }))
-    .sort((left, right) => formatDevicePlatform(left.device_platform).localeCompare(formatDevicePlatform(right.device_platform)))
+    .sort((left, right) => formatDevicePlatformLabel(left.device_platform).localeCompare(formatDevicePlatformLabel(right.device_platform)))
 }
 
 function getBrowserEngineEntries(report?: RunArchiveReport): BrowserEngineLiveMetrics[] {
   const archivedEntries = Object.values(report?.browser_by_engine ?? {})
   if (archivedEntries.length > 0) {
-    return archivedEntries.sort((left, right) => formatBrowserEngine(left.browser_engine).localeCompare(formatBrowserEngine(right.browser_engine)))
+    return archivedEntries.sort((left, right) => formatBrowserEngineLabel(left.browser_engine).localeCompare(formatBrowserEngineLabel(right.browser_engine)))
   }
 
   const entries = Object.values(report?.browser_by_device ?? {})
@@ -161,7 +151,7 @@ function getBrowserEngineEntries(report?: RunArchiveReport): BrowserEngineLiveMe
       avg_cls_score: entry.samples > 0 ? entry.clsTotal / entry.samples : undefined,
       avg_inp_ms: entry.samples > 0 ? entry.inpTotal / entry.samples : undefined,
     }))
-    .sort((left, right) => formatBrowserEngine(left.browser_engine).localeCompare(formatBrowserEngine(right.browser_engine)))
+    .sort((left, right) => formatBrowserEngineLabel(left.browser_engine).localeCompare(formatBrowserEngineLabel(right.browser_engine)))
 }
 
 function csvEscape(value: string | number | undefined): string {
@@ -541,43 +531,16 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
     for (const { test, report } of comparisonCards) {
       if (!report) continue
 
-      if (comparisonBreakdown === 'overall') {
-        segmentMap.set('Overall', {
-          segment: 'Overall',
-          [test.id]: report.overview.browser?.avg_lcp_ms,
-          [`${test.id}_inp`]: report.overview.browser?.avg_inp_ms,
-        })
-        continue
-      }
-
-      if (comparisonBreakdown === 'platform') {
-        for (const metrics of getBrowserPlatformEntries(report)) {
-          const segment = formatDevicePlatform(metrics.device_platform)
-          const current = segmentMap.get(segment) ?? { segment }
-          current[test.id] = metrics.avg_lcp_ms
-          current[`${test.id}_inp`] = metrics.avg_inp_ms
-          segmentMap.set(segment, current)
-        }
-        continue
-      }
-
-      if (comparisonBreakdown === 'engine') {
-        for (const metrics of getBrowserEngineEntries(report)) {
-          const segment = formatBrowserEngine(metrics.browser_engine)
-          const current = segmentMap.get(segment) ?? { segment }
-          current[test.id] = metrics.avg_lcp_ms
-          current[`${test.id}_inp`] = metrics.avg_inp_ms
-          segmentMap.set(segment, current)
-        }
-        continue
-      }
-
-      for (const [profile, metrics] of getBrowserDeviceEntries(report)) {
-        const segment = profile
-        const current = segmentMap.get(segment) ?? { segment }
-        current[test.id] = metrics.avg_lcp_ms
-        current[`${test.id}_inp`] = metrics.avg_inp_ms
-        segmentMap.set(segment, current)
+      for (const metrics of buildBrowserBreakdownData(comparisonBreakdown, {
+        summary: report.overview.browser,
+        devices: report.browser_by_device,
+        platforms: report.browser_by_platform,
+        engines: report.browser_by_engine,
+      })) {
+        const current = segmentMap.get(metrics.segment) ?? { segment: metrics.segment }
+        current[test.id] = metrics.lcp
+        current[`${test.id}_inp`] = metrics.inp
+        segmentMap.set(metrics.segment, current)
       }
     }
 
@@ -597,6 +560,11 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
   const browserBreakdownChartCopy = useMemo(
     () => getBrowserBreakdownChartCopy(browserBreakdownChartSeries),
     [browserBreakdownChartSeries],
+  )
+
+  const browserBreakdownSegmentLabel = useMemo(
+    () => getBrowserBreakdownSegmentLabel(comparisonBreakdown),
+    [comparisonBreakdown],
   )
 
   const handleSort = (field: SortField) => {
@@ -864,8 +832,8 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
                             {platformEntries.map(metrics => (
                               <div key={metrics.device_platform || 'unknown'} className="browser-device-card">
                                 <div className="browser-device-header">
-                                  <span className="browser-device-name">{formatDevicePlatform(metrics.device_platform)}</span>
-                                  <span className="browser-device-tier">{formatBrowserEngine(metrics.browser_engine)} · {metrics.samples} samples</span>
+                                  <span className="browser-device-name">{formatDevicePlatformLabel(metrics.device_platform)}</span>
+                                  <span className="browser-device-tier">{formatBrowserEngineLabel(metrics.browser_engine)} · {metrics.samples} samples</span>
                                 </div>
                                 <div className="browser-device-stats">
                                   <span>LCP {formatBrowserMetric(metrics.avg_lcp_ms, ' ms')}</span>
@@ -884,7 +852,7 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
                             {engineEntries.map(metrics => (
                               <div key={metrics.browser_engine || 'browser'} className="browser-device-card">
                                 <div className="browser-device-header">
-                                  <span className="browser-device-name">{formatBrowserEngine(metrics.browser_engine)}</span>
+                                  <span className="browser-device-name">{formatBrowserEngineLabel(metrics.browser_engine)}</span>
                                   <span className="browser-device-tier">{metrics.samples} samples</span>
                                 </div>
                                 <div className="browser-device-stats">
@@ -905,7 +873,7 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
                               <div key={profile} className="browser-device-card">
                                 <div className="browser-device-header">
                                   <span className="browser-device-name">{profile}</span>
-                                  <span className="browser-device-tier">{formatDevicePlatform(metrics.device_platform)} · {formatBrowserEngine(metrics.browser_engine)} · {metrics.device_tier || 'unknown'} tier</span>
+                                  <span className="browser-device-tier">{formatDevicePlatformLabel(metrics.device_platform)} · {formatBrowserEngineLabel(metrics.browser_engine)} · {metrics.device_tier || 'unknown'} tier</span>
                                 </div>
                                 <div className="browser-device-stats">
                                   <span>LCP {formatBrowserMetric(metrics.avg_lcp_ms, ' ms')}</span>
@@ -932,6 +900,7 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
                       data={browserBreakdownChartData}
                       series={browserBreakdownChartSeries}
                       height={280}
+                      segmentLabel={browserBreakdownSegmentLabel}
                     />
                   )}
 

@@ -1,5 +1,7 @@
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 
+import { BrowserDeviceLiveMetrics, BrowserEngineLiveMetrics, BrowserLiveMetrics, BrowserPlatformLiveMetrics } from '../types'
+
 export type BrowserBreakdown = 'overall' | 'platform' | 'engine' | 'device'
 
 export interface BrowserBreakdownDatum {
@@ -16,12 +18,20 @@ export interface BrowserBreakdownSeries {
   valueFormat?: 'ms' | 'score'
 }
 
+export interface BrowserBreakdownSource {
+  summary?: Pick<BrowserLiveMetrics, 'avg_lcp_ms' | 'avg_inp_ms' | 'avg_cls_score'>
+  devices?: Record<string, BrowserDeviceLiveMetrics>
+  platforms?: Record<string, BrowserPlatformLiveMetrics>
+  engines?: Record<string, BrowserEngineLiveMetrics>
+}
+
 interface BrowserBreakdownChartProps {
   title: string
   copy?: string
   data: BrowserBreakdownDatum[]
   series: BrowserBreakdownSeries[]
   height?: number
+  segmentLabel?: string
 }
 
 const tooltipStyle = {
@@ -38,6 +48,156 @@ export function formatBrowserBreakdownTooltipValue(value: unknown, format: 'ms' 
     return value.toFixed(3)
   }
   return `${value.toFixed(1)} ms`
+}
+
+export function formatBrowserEngineLabel(value?: string): string {
+  if (value === 'webkit') return 'WebKit'
+  if (value === 'chromium') return 'Chromium'
+  return value || 'browser'
+}
+
+export function formatDevicePlatformLabel(value?: string): string {
+  if (value === 'ios') return 'iOS'
+  if (value === 'ipados') return 'iPadOS'
+  if (value === 'android') return 'Android'
+  if (value === 'desktop') return 'Desktop'
+  return value || 'unknown'
+}
+
+export function formatBrowserBreakdownTooltipLabel(value: unknown, segmentLabel = 'Segment'): string {
+  if (typeof value !== 'string' || value.length === 0) {
+    return `${segmentLabel}: unknown`
+  }
+  return `${segmentLabel}: ${value}`
+}
+
+export function getBrowserBreakdownSegmentLabel(breakdown: BrowserBreakdown): string {
+  if (breakdown === 'overall') return 'Overview'
+  if (breakdown === 'platform') return 'Platform'
+  if (breakdown === 'engine') return 'Engine'
+  return 'Device'
+}
+
+function derivePlatformBreakdownData(devices?: Record<string, BrowserDeviceLiveMetrics>): BrowserBreakdownDatum[] {
+  const entries = Object.values(devices ?? {})
+  if (entries.length === 0) {
+    return []
+  }
+
+  const grouped = new Map<string, { segment: string; samples: number; lcpTotal: number; inpTotal: number; clsTotal: number }>()
+  for (const metrics of entries) {
+    if (!metrics) continue
+    const segment = formatDevicePlatformLabel(metrics.device_platform)
+    const current = grouped.get(segment) ?? {
+      segment,
+      samples: 0,
+      lcpTotal: 0,
+      inpTotal: 0,
+      clsTotal: 0,
+    }
+    const samples = metrics.samples || 0
+    current.samples += samples
+    current.lcpTotal += (metrics.avg_lcp_ms ?? 0) * samples
+    current.inpTotal += (metrics.avg_inp_ms ?? 0) * samples
+    current.clsTotal += (metrics.avg_cls_score ?? 0) * samples
+    grouped.set(segment, current)
+  }
+
+  return Array.from(grouped.values())
+    .map(entry => ({
+      segment: entry.segment,
+      lcp: entry.samples > 0 ? entry.lcpTotal / entry.samples : undefined,
+      inp: entry.samples > 0 ? entry.inpTotal / entry.samples : undefined,
+      cls: entry.samples > 0 ? entry.clsTotal / entry.samples : undefined,
+    }))
+    .sort((left, right) => left.segment.localeCompare(right.segment))
+}
+
+function deriveEngineBreakdownData(devices?: Record<string, BrowserDeviceLiveMetrics>): BrowserBreakdownDatum[] {
+  const entries = Object.values(devices ?? {})
+  if (entries.length === 0) {
+    return []
+  }
+
+  const grouped = new Map<string, { segment: string; samples: number; lcpTotal: number; inpTotal: number; clsTotal: number }>()
+  for (const metrics of entries) {
+    if (!metrics) continue
+    const segment = formatBrowserEngineLabel(metrics.browser_engine)
+    const current = grouped.get(segment) ?? {
+      segment,
+      samples: 0,
+      lcpTotal: 0,
+      inpTotal: 0,
+      clsTotal: 0,
+    }
+    const samples = metrics.samples || 0
+    current.samples += samples
+    current.lcpTotal += (metrics.avg_lcp_ms ?? 0) * samples
+    current.inpTotal += (metrics.avg_inp_ms ?? 0) * samples
+    current.clsTotal += (metrics.avg_cls_score ?? 0) * samples
+    grouped.set(segment, current)
+  }
+
+  return Array.from(grouped.values())
+    .map(entry => ({
+      segment: entry.segment,
+      lcp: entry.samples > 0 ? entry.lcpTotal / entry.samples : undefined,
+      inp: entry.samples > 0 ? entry.inpTotal / entry.samples : undefined,
+      cls: entry.samples > 0 ? entry.clsTotal / entry.samples : undefined,
+    }))
+    .sort((left, right) => left.segment.localeCompare(right.segment))
+}
+
+export function buildBrowserBreakdownData(breakdown: BrowserBreakdown, source: BrowserBreakdownSource): BrowserBreakdownDatum[] {
+  if (breakdown === 'overall') {
+    return source.summary
+      ? [{
+          segment: 'Overall',
+          lcp: source.summary.avg_lcp_ms,
+          inp: source.summary.avg_inp_ms,
+          cls: source.summary.avg_cls_score,
+        }]
+      : []
+  }
+
+  if (breakdown === 'platform') {
+    const archivedEntries = Object.values(source.platforms ?? {})
+    if (archivedEntries.length > 0) {
+      return archivedEntries
+        .map(metrics => ({
+          segment: formatDevicePlatformLabel(metrics.device_platform),
+          lcp: metrics.avg_lcp_ms,
+          inp: metrics.avg_inp_ms,
+          cls: metrics.avg_cls_score,
+        }))
+        .sort((left, right) => left.segment.localeCompare(right.segment))
+    }
+    return derivePlatformBreakdownData(source.devices)
+  }
+
+  if (breakdown === 'engine') {
+    const archivedEntries = Object.values(source.engines ?? {})
+    if (archivedEntries.length > 0) {
+      return archivedEntries
+        .map(metrics => ({
+          segment: formatBrowserEngineLabel(metrics.browser_engine),
+          lcp: metrics.avg_lcp_ms,
+          inp: metrics.avg_inp_ms,
+          cls: metrics.avg_cls_score,
+        }))
+        .sort((left, right) => left.segment.localeCompare(right.segment))
+    }
+    return deriveEngineBreakdownData(source.devices)
+  }
+
+  return Object.entries(source.devices ?? {})
+    .map(([profile, metrics]) => ({
+      segment: profile,
+      lcp: metrics.avg_lcp_ms,
+      inp: metrics.avg_inp_ms,
+      cls: metrics.avg_cls_score,
+    }))
+    .sort((left, right) => left.segment.localeCompare(right.segment))
 }
 
 export function getBrowserBreakdownTitle(breakdown: BrowserBreakdown, context: 'Comparison' | 'Breakdown', metricsLabel: string): string {
@@ -110,6 +270,7 @@ export default function BrowserBreakdownChart({
   data,
   series,
   height = 260,
+  segmentLabel = 'Segment',
 }: BrowserBreakdownChartProps) {
   if (data.length === 0 || series.length === 0) {
     return null
@@ -130,6 +291,7 @@ export default function BrowserBreakdownChart({
           {hasScoreAxis && <YAxis yAxisId="cls" orientation="right" stroke="var(--text-muted)" fontSize={11} domain={[0, 'auto']} />}
           <Tooltip
             contentStyle={tooltipStyle}
+            labelFormatter={value => formatBrowserBreakdownTooltipLabel(value, segmentLabel)}
             formatter={(value, name, item) => {
               const metadata = seriesByKey.get(String((item as { dataKey?: string } | undefined)?.dataKey ?? ''))
               return [formatBrowserBreakdownTooltipValue(value, metadata?.valueFormat), metadata?.name || String(name)]
