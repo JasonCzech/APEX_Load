@@ -96,6 +96,9 @@ func applyBrowserReplayOverrides(script *dsl.Script, req BrowserReplayStartReque
 	clone := *script
 	clone.Config = script.Config
 	browserCfg := clone.Config.Browser
+	if req.Browser.Engine != "" {
+		browserCfg.Engine = req.Browser.Engine
+	}
 	if req.Browser.Headless != nil {
 		browserCfg.Headless = req.Browser.Headless
 	}
@@ -104,6 +107,18 @@ func applyBrowserReplayOverrides(script *dsl.Script, req BrowserReplayStartReque
 	}
 	if req.Browser.UserAgent != "" {
 		browserCfg.UserAgent = req.Browser.UserAgent
+	}
+	if req.Browser.DeviceProfile != "" {
+		browserCfg.DeviceProfile = req.Browser.DeviceProfile
+	}
+	if req.Browser.TouchMode != nil {
+		browserCfg.TouchMode = req.Browser.TouchMode
+	}
+	if req.Browser.Orientation != "" {
+		browserCfg.Orientation = req.Browser.Orientation
+	}
+	if req.Browser.ClientMetrics != nil {
+		browserCfg.ClientMetrics = req.Browser.ClientMetrics
 	}
 	if req.Browser.CaptureScreenshots != "" {
 		browserCfg.CaptureScreenshots = req.Browser.CaptureScreenshots

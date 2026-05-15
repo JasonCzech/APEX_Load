@@ -153,6 +153,8 @@ func TestBrowserReplayManagerRetainsStreamedEvents(t *testing.T) {
 
 func TestApplyBrowserReplayOverrides(t *testing.T) {
 	headless := false
+	touchMode := true
+	clientMetrics := true
 	script := &dsl.Script{
 		Name:     "Browser Script",
 		Protocol: "browser",
@@ -165,8 +167,14 @@ func TestApplyBrowserReplayOverrides(t *testing.T) {
 
 	updated := applyBrowserReplayOverrides(script, BrowserReplayStartRequest{
 		Browser: &dsl.BrowserConfig{
+			Engine:             "webkit",
 			Headless:           &headless,
 			SlowMoMs:           125,
+			UserAgent:          "Mozilla/5.0 Test Browser",
+			DeviceProfile:      "iphone_15_pro",
+			TouchMode:          &touchMode,
+			Orientation:        "portrait",
+			ClientMetrics:      &clientMetrics,
 			CaptureScreenshots: "per_action",
 			Viewport:           dsl.BrowserViewport{Width: 1280, Height: 720},
 		},
@@ -175,11 +183,29 @@ func TestApplyBrowserReplayOverrides(t *testing.T) {
 	if updated == script {
 		t.Fatal("expected copy, got original script pointer")
 	}
+	if updated.Config.Browser.Engine != "webkit" {
+		t.Fatalf("engine = %q, want webkit", updated.Config.Browser.Engine)
+	}
 	if updated.Config.Browser.Headless == nil || *updated.Config.Browser.Headless != false {
 		t.Fatalf("headless = %#v, want false", updated.Config.Browser.Headless)
 	}
 	if updated.Config.Browser.SlowMoMs != 125 {
 		t.Fatalf("slow_mo_ms = %d, want 125", updated.Config.Browser.SlowMoMs)
+	}
+	if updated.Config.Browser.UserAgent != "Mozilla/5.0 Test Browser" {
+		t.Fatalf("user_agent = %q, want test browser UA", updated.Config.Browser.UserAgent)
+	}
+	if updated.Config.Browser.DeviceProfile != "iphone_15_pro" {
+		t.Fatalf("device_profile = %q, want iphone_15_pro", updated.Config.Browser.DeviceProfile)
+	}
+	if updated.Config.Browser.TouchMode == nil || *updated.Config.Browser.TouchMode != true {
+		t.Fatalf("touch_mode = %#v, want true", updated.Config.Browser.TouchMode)
+	}
+	if updated.Config.Browser.Orientation != "portrait" {
+		t.Fatalf("orientation = %q, want portrait", updated.Config.Browser.Orientation)
+	}
+	if updated.Config.Browser.ClientMetrics == nil || *updated.Config.Browser.ClientMetrics != true {
+		t.Fatalf("client_metrics = %#v, want true", updated.Config.Browser.ClientMetrics)
 	}
 	if updated.Config.Browser.CaptureScreenshots != "per_action" {
 		t.Fatalf("capture_screenshots = %q, want per_action", updated.Config.Browser.CaptureScreenshots)
@@ -189,6 +215,43 @@ func TestApplyBrowserReplayOverrides(t *testing.T) {
 	}
 	if script.Config.Browser.CaptureScreenshots != "off" {
 		t.Fatalf("original script was mutated: %#v", script.Config.Browser)
+	}
+}
+
+func TestHandleStartBrowserReplayDraftScriptAcceptsMobileBrowserOverrides(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	body, _ := json.Marshal(map[string]any{
+		"script": map[string]any{
+			"name":     "Browser Draft",
+			"version":  "1.0.0",
+			"protocol": "browser",
+			"config": map[string]any{
+				"browser": map[string]any{
+					"engine": "chromium",
+				},
+			},
+			"actions": []map[string]any{{
+				"name": "Capture current page",
+				"type": "browser_screenshot",
+			}},
+		},
+		"browser": map[string]any{
+			"engine":              "chromium",
+			"device_profile":      "iphone_15_pro",
+			"touch_mode":          true,
+			"orientation":         "portrait",
+			"client_metrics":      true,
+			"capture_screenshots": "per_action",
+		},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/browser-replay/sessions", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
 	}
 }
 

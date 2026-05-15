@@ -671,7 +671,13 @@ export interface BrowserReplayStartRequest {
   start_paused?: boolean
   breakpoints?: number[]
   browser?: {
+    engine?: string
     headless?: boolean
+    user_agent?: string
+    device_profile?: string
+    touch_mode?: boolean
+    orientation?: string
+    client_metrics?: boolean
     viewport?: {
       width: number
       height: number
