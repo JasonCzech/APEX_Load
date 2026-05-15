@@ -159,21 +159,59 @@ describe('ResultsPage', () => {
       await Promise.resolve()
     })
 
+    const platformToggle = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Platform') as HTMLButtonElement | undefined
+    const overallToggle = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Overall') as HTMLButtonElement | undefined
+    const deviceToggle = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Device') as HTMLButtonElement | undefined
+
+    expect(platformToggle).toBeDefined()
+    expect(overallToggle).toBeDefined()
+    expect(deviceToggle).toBeDefined()
+
     expect(container.textContent).toContain('Run Comparison')
-    expect(container.textContent).toContain('Platform Rollup')
     expect(container.textContent).toContain('Avg LCP')
     expect(container.textContent).toContain('240.0 ms')
     expect(container.textContent).toContain('280.0 ms')
     expect(container.textContent).toContain('Avg INP')
     expect(container.textContent).toContain('56.0 ms')
     expect(container.textContent).toContain('64.0 ms')
-    expect(container.textContent).toContain('iOS')
-    expect(container.textContent).toContain('WebKit · 3 samples')
-    expect(container.textContent).toContain('246.7 ms')
+    expect(container.textContent).not.toContain('Platform Rollup')
+    expect(container.textContent).toContain('Devices')
     expect(container.textContent).toContain('iPhone 14 Pro')
     expect(container.textContent).toContain('iPhone SE')
     expect(container.textContent).toContain('iOS · WebKit · mobile tier')
     expect(container.textContent).toContain('iPad Air')
     expect(container.textContent).toContain('iPadOS · WebKit · tablet tier')
+
+    if (!platformToggle || !overallToggle || !deviceToggle) {
+      return
+    }
+
+    await act(async () => {
+      platformToggle.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('Platform Rollup')
+    expect(container.textContent).toContain('iOS')
+    expect(container.textContent).toContain('WebKit · 3 samples')
+    expect(container.textContent).toContain('246.7 ms')
+    expect(container.textContent).not.toContain('iPhone 14 Pro')
+
+    await act(async () => {
+      overallToggle.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).not.toContain('Platform Rollup')
+    expect(container.textContent).not.toContain('Devices')
+    expect(container.textContent).not.toContain('iPhone 14 Pro')
+
+    await act(async () => {
+      deviceToggle.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('Devices')
+    expect(container.textContent).toContain('iPhone 14 Pro')
   })
 })

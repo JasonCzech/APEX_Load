@@ -17,6 +17,7 @@ interface Props {
 type SortField = 'name' | 'status' | 'total_vusers' | 'groups' | 'started' | 'duration' | 'archive'
 type StatusFilter = 'all' | 'complete' | 'failed' | 'aborted'
 type ArchiveFilter = 'all' | 'ready' | 'pending'
+type ComparisonBreakdown = 'overall' | 'platform' | 'device'
 
 function formatDate(value?: string) {
   return value ? new Date(value).toLocaleString() : 'Never'
@@ -135,6 +136,7 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
   const [comparisonSummaries, setComparisonSummaries] = useState<Record<string, IntervalSummaryRecord[]>>({})
   const [comparisonLoading, setComparisonLoading] = useState(false)
   const [comparisonError, setComparisonError] = useState('')
+  const [comparisonBreakdown, setComparisonBreakdown] = useState<ComparisonBreakdown>('device')
   const [error, setError] = useState('')
   const [sortField, setSortField] = useState<SortField>('started')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
@@ -311,6 +313,11 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
     if (comparableTests.length !== 2) return []
     return comparableTests.map(test => ({ test, report: comparisonReports[test.id] }))
   }, [comparableTests, comparisonReports])
+
+  const comparisonHasBrowserBreakdowns = useMemo(
+    () => comparisonCards.some(({ report }) => getBrowserDeviceEntries(report).length > 0),
+    [comparisonCards],
+  )
 
   const comparisonActionRows = useMemo(() => {
     if (comparisonCards.length !== 2 || !comparisonCards[0].report || !comparisonCards[1].report) return []
@@ -520,6 +527,22 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
                 <h3 className="section-title">Run Comparison</h3>
                 <p className="page-subtitle">Side-by-side view of two archived runs from this release.</p>
               </div>
+              {comparisonCards.length === 2 && comparisonCards.every(item => item.report) && comparisonHasBrowserBreakdowns && (
+                <div className="results-breakdown-toggle" role="tablist" aria-label="Comparison breakdown mode">
+                  {(['overall', 'platform', 'device'] as ComparisonBreakdown[]).map(mode => (
+                    <button
+                      key={mode}
+                      type="button"
+                      role="tab"
+                      aria-selected={comparisonBreakdown === mode}
+                      className={`results-breakdown-button${comparisonBreakdown === mode ? ' active' : ''}`}
+                      onClick={() => setComparisonBreakdown(mode)}
+                    >
+                      {mode === 'overall' ? 'Overall' : mode === 'platform' ? 'Platform' : 'Device'}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             {comparisonLoading && <p className="results-compare-status">Loading comparison...</p>}
@@ -581,7 +604,7 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
                           </>
                         )}
                       </div>
-                      {platformEntries.length > 0 && (
+                      {comparisonBreakdown === 'platform' && platformEntries.length > 0 && (
                         <>
                           <span className="results-compare-label">Platform Rollup</span>
                           <div className="browser-device-grid archive-browser-device-grid">
@@ -601,7 +624,7 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
                           </div>
                         </>
                       )}
-                      {deviceEntries.length > 0 && (
+                      {comparisonBreakdown === 'device' && deviceEntries.length > 0 && (
                         <>
                           <span className="results-compare-label">Devices</span>
                           <div className="browser-device-grid archive-browser-device-grid">
