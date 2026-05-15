@@ -78,6 +78,7 @@ describe('TestExecutionArchive', () => {
       },
     },
     by_action: {},
+    by_soap_operation: {},
     browser_by_engine: {
       webkit: {
         browser_engine: 'webkit',
@@ -551,5 +552,77 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('Message throughput: 6.4 sent/s / 5.8 received/s')
     expect(container.textContent).toContain('Consumer lag: 22.0 ms')
     expect(container.textContent).toContain('Connection: new')
+  })
+
+  it('renders SOAP operation archive summaries when present', async () => {
+    const operationReport: RunArchiveReport = {
+      ...archiveReport,
+      by_action: {
+        SOAPRequest: {
+          transactions: 3,
+          errors: 1,
+          error_pct: 33.33,
+          avg_response_ms: 120,
+          min_response_ms: 80,
+          max_response_ms: 180,
+        },
+      },
+      by_soap_operation: {
+        CreateOrder: {
+          transactions: 2,
+          errors: 0,
+          error_pct: 0,
+          avg_response_ms: 95,
+          min_response_ms: 80,
+          max_response_ms: 110,
+        },
+        CancelOrder: {
+          transactions: 1,
+          errors: 1,
+          error_pct: 100,
+          avg_response_ms: 170,
+          min_response_ms: 170,
+          max_response_ms: 170,
+        },
+      },
+    }
+
+    await act(async () => {
+      root.render(
+        <TestExecutionArchive
+          hasArchive={true}
+          test={test}
+          archiveError=""
+          archiveLoading={false}
+          archiveReport={operationReport}
+          onDownloadArchiveArtifact={vi.fn()}
+          archiveActionEntries={Object.entries(operationReport.by_action)}
+          selectedArchiveAction="SOAPRequest"
+          onSelectedArchiveActionChange={vi.fn()}
+          archiveGroups={[]}
+          selectedArchiveGroup=""
+          onSelectedArchiveGroupChange={vi.fn()}
+          archiveErrorsOnly={false}
+          onArchiveErrorsOnlyChange={vi.fn()}
+          archiveTransactionsLoading={false}
+          archiveTransactionsTotal={0}
+          archivePageStart={0}
+          archivePageEnd={0}
+          archiveTransactionsOffset={0}
+          archivePageSize={50}
+          onPreviousPage={vi.fn()}
+          onNextPage={vi.fn()}
+          archiveTransactions={[]}
+          expandedArchiveEvent={null}
+          onExpandedArchiveEventChange={vi.fn()}
+        />,
+      )
+    })
+
+    expect(container.textContent).toContain('SOAP Operation Summary')
+    expect(container.textContent).toContain('CreateOrder')
+    expect(container.textContent).toContain('CancelOrder')
+    expect(container.textContent).toContain('95.0')
+    expect(container.textContent).toContain('170.0')
   })
 })

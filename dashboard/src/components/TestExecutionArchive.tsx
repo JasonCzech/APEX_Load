@@ -63,6 +63,10 @@ function formatBrowserScore(value: number | undefined): string {
   return value.toFixed(3)
 }
 
+function buildArchiveStatsEntries(stats?: Record<string, RunArchiveActionStats>) {
+  return Object.entries(stats || {}).sort((left, right) => right[1].transactions - left[1].transactions)
+}
+
 function renderBrowserSummary(
   summary: BrowserLiveMetrics,
   devices?: Record<string, BrowserDeviceLiveMetrics>,
@@ -236,6 +240,7 @@ export default function TestExecutionArchive({
   const [copiedSection, setCopiedSection] = useState<string | null>(null)
   const [expandedSnapshotSections, setExpandedSnapshotSections] = useState<Record<string, boolean>>({})
   const [browserBreakdown, setBrowserBreakdown] = useState<BrowserBreakdown>('device')
+  const soapOperationEntries = buildArchiveStatsEntries(archiveReport?.by_soap_operation)
 
   const handleCopySection = async (key: string, value: string) => {
     if (!navigator.clipboard?.writeText) return
@@ -370,6 +375,41 @@ export default function TestExecutionArchive({
                   ))}
                 </tbody>
               </table>
+
+              {soapOperationEntries.length > 0 && (
+                <>
+                  <div className="archive-section-header archive-subsection-header">
+                    <div>
+                      <h3 className="chart-title">SOAP Operation Summary</h3>
+                      <p className="archive-section-copy">Archived totals grouped by extracted SOAP operation tags.</p>
+                    </div>
+                  </div>
+                  <table className="tx-table">
+                    <thead>
+                      <tr>
+                        <th>Operation</th>
+                        <th>Count</th>
+                        <th>Errors</th>
+                        <th>Error %</th>
+                        <th>Avg (ms)</th>
+                        <th>Max (ms)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {soapOperationEntries.slice(0, 8).map(([name, stats]) => (
+                        <tr key={name}>
+                          <td className="tx-name">{name}</td>
+                          <td>{stats.transactions}</td>
+                          <td className={stats.errors > 0 ? 'error-cell' : ''}>{stats.errors}</td>
+                          <td>{stats.error_pct.toFixed(2)}%</td>
+                          <td>{stats.avg_response_ms.toFixed(1)}</td>
+                          <td>{stats.max_response_ms.toFixed(1)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </>
+              )}
             </div>
 
             <div className="tx-section archive-drilldown-section">

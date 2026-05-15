@@ -78,10 +78,10 @@ Each protocol must populate enough telemetry for the dashboard to answer the sam
 
 ### 2. SOAP Protocol
 
-**Current state:** HTTP-backed execution with inherited HTTP timing, SOAP fault parsing, WS-Security, operation tagging, envelope shaping, generated-body namespace conflict detection, raw envelope-overhead tracking, and fault-code categorization. Missing SOAP-specific analytical depth.
+**Current state:** HTTP-backed execution with inherited HTTP timing, SOAP fault parsing, WS-Security, operation tagging, archive-side operation grouping, envelope shaping, generated-body namespace conflict detection, raw envelope-overhead tracking, and fault-code categorization. Missing SOAP-specific analytical depth.
 
 **L2 gaps:**
-- No **first-class per-operation aggregation** (operation tags exist, but rollups still follow action naming unless tests are authored that way)
+- No **live first-class per-operation aggregation** (archive reports now group by extracted operation, but live rollups still follow action naming)
 
 **L3 gaps:**
 - No **WSDL-aware operation profiling** (timing by operation name, not just action name)

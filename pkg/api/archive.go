@@ -114,6 +114,7 @@ type RunArchiveReport struct {
 	Manifest      *RunArchiveManifest              `json:"manifest"`
 	Overview      RunArchiveOverview               `json:"overview"`
 	ByAction      map[string]RunArchiveActionStats `json:"by_action"`
+	BySOAPOperation map[string]RunArchiveActionStats `json:"by_soap_operation,omitempty"`
 	BrowserByEngine map[string]*BrowserEngineLiveMetrics `json:"browser_by_engine,omitempty"`
 	BrowserByPlatform map[string]*BrowserPlatformLiveMetrics `json:"browser_by_platform,omitempty"`
 	BrowserByDevice map[string]*BrowserDeviceLiveMetrics `json:"browser_by_device,omitempty"`
@@ -487,6 +488,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	report := &RunArchiveReport{
 		Manifest: manifest,
 		ByAction: make(map[string]RunArchiveActionStats),
+		BySOAPOperation: make(map[string]RunArchiveActionStats),
 		BrowserByEngine: make(map[string]*BrowserEngineLiveMetrics),
 		BrowserByPlatform: make(map[string]*BrowserPlatformLiveMetrics),
 		BrowserByDevice: make(map[string]*BrowserDeviceLiveMetrics),
@@ -507,18 +509,10 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 		}
 
 		stats := report.ByAction[tx.ActionName]
-		stats.Transactions++
-		stats.AvgResponseMs += tx.DurationMs
-		if !tx.Success {
-			stats.Errors++
+		report.ByAction[tx.ActionName] = mergeRunArchiveActionStats(stats, tx)
+		if operation := archiveSOAPOperation(tx); operation != "" {
+			report.BySOAPOperation[operation] = mergeRunArchiveActionStats(report.BySOAPOperation[operation], tx)
 		}
-		if stats.Transactions == 1 || tx.DurationMs < stats.MinResponseMs {
-			stats.MinResponseMs = tx.DurationMs
-		}
-		if tx.DurationMs > stats.MaxResponseMs {
-			stats.MaxResponseMs = tx.DurationMs
-		}
-		report.ByAction[tx.ActionName] = stats
 		if tx.ClientMetrics != nil {
 			if report.Overview.Browser == nil {
 				report.Overview.Browser = &BrowserLiveMetrics{}
@@ -582,11 +576,13 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 		report.BrowserByDevice = nil
 	}
 	for action, stats := range report.ByAction {
-		if stats.Transactions > 0 {
-			stats.ErrorPct = float64(stats.Errors) / float64(stats.Transactions) * 100
-			stats.AvgResponseMs = stats.AvgResponseMs / float64(stats.Transactions)
-		}
-		report.ByAction[action] = stats
+		report.ByAction[action] = finalizeRunArchiveActionStats(stats)
+	}
+	for operation, stats := range report.BySOAPOperation {
+		report.BySOAPOperation[operation] = finalizeRunArchiveActionStats(stats)
+	}
+	if len(report.BySOAPOperation) == 0 {
+		report.BySOAPOperation = nil
 	}
 
 	report.Overview.ResourceSamples = int64(len(resources))
@@ -625,6 +621,36 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	}
 
 	return report, nil
+}
+
+func archiveSOAPOperation(tx TransactionEvent) string {
+	if len(tx.Extractions) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(tx.Extractions["soap_operation"])
+}
+
+func mergeRunArchiveActionStats(stats RunArchiveActionStats, tx TransactionEvent) RunArchiveActionStats {
+	stats.Transactions++
+	stats.AvgResponseMs += tx.DurationMs
+	if !tx.Success {
+		stats.Errors++
+	}
+	if stats.Transactions == 1 || tx.DurationMs < stats.MinResponseMs {
+		stats.MinResponseMs = tx.DurationMs
+	}
+	if tx.DurationMs > stats.MaxResponseMs {
+		stats.MaxResponseMs = tx.DurationMs
+	}
+	return stats
+}
+
+func finalizeRunArchiveActionStats(stats RunArchiveActionStats) RunArchiveActionStats {
+	if stats.Transactions > 0 {
+		stats.ErrorPct = float64(stats.Errors) / float64(stats.Transactions) * 100
+		stats.AvgResponseMs = stats.AvgResponseMs / float64(stats.Transactions)
+	}
+	return stats
 }
 
 func cloneBrowserLiveMetrics(metrics *BrowserLiveMetrics) *BrowserLiveMetrics {

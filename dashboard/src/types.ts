@@ -364,6 +364,7 @@ export interface RunArchiveReport {
   manifest: RunArchiveManifest
   overview: RunArchiveOverview
   by_action: Record<string, RunArchiveActionStats>
+  by_soap_operation?: Record<string, RunArchiveActionStats>
   browser_by_engine?: Record<string, BrowserEngineLiveMetrics>
   browser_by_platform?: Record<string, BrowserPlatformLiveMetrics>
   browser_by_device?: Record<string, BrowserDeviceLiveMetrics>
