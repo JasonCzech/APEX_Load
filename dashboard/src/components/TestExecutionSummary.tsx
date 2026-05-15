@@ -20,9 +20,11 @@ export default function TestExecutionSummary({ transactions, metrics, baseline }
     .filter((tx) => tx.server_telemetry)
     .sort((left, right) => (right.server_telemetry?.avg_server_processing_ms || 0) - (left.server_telemetry?.avg_server_processing_ms || 0))
     .slice(0, 4)
-  const topSOAPOperations = Object.values(metrics?.soap_operations ?? {})
+  const soapOperations = Object.values(metrics?.soap_operations ?? {})
+  const topSOAPOperations = [...soapOperations]
     .sort((left, right) => ((right.server_telemetry?.avg_server_processing_ms ?? right.avg_ms ?? 0) - (left.server_telemetry?.avg_server_processing_ms ?? left.avg_ms ?? 0)))
     .slice(0, 4)
+  const soapOperationProfiles = buildSOAPOperationProfiles(soapOperations)
 
   return (
     <>
@@ -80,6 +82,36 @@ export default function TestExecutionSummary({ transactions, metrics, baseline }
         <div className="tx-section">
           <h3 className="chart-title">Live SOAP Operations</h3>
           <p className="server-telemetry-subtitle">Operation-level hotspots grouped by extracted SOAP operation tags from live results.</p>
+          {soapOperationProfiles.length > 0 && (
+            <div className="server-telemetry-grid">
+              {soapOperationProfiles.map((profile) => (
+                <div key={profile.label} className="server-telemetry-card">
+                  <div className="server-telemetry-card-header">
+                    <span className="server-telemetry-name">{profile.label}</span>
+                    <span className="server-telemetry-target">{profile.operation.name}</span>
+                  </div>
+                  <div className="server-telemetry-stat-grid">
+                    <div className="server-telemetry-stat">
+                      <span className="server-telemetry-label">Signal</span>
+                      <span className="server-telemetry-value">{profile.metricValue}</span>
+                    </div>
+                    <div className="server-telemetry-stat">
+                      <span className="server-telemetry-label">Count</span>
+                      <span className="server-telemetry-value">{profile.operation.count}</span>
+                    </div>
+                    <div className="server-telemetry-stat">
+                      <span className="server-telemetry-label">Avg</span>
+                      <span className="server-telemetry-value">{formatTelemetryValue(profile.operation.avg_ms, ' ms')}</span>
+                    </div>
+                    <div className="server-telemetry-stat">
+                      <span className="server-telemetry-label">Server</span>
+                      <span className="server-telemetry-value">{formatTelemetryValue(profile.operation.server_telemetry?.avg_server_processing_ms, ' ms')}</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
           <table className="tx-table">
             <thead>
               <tr>
@@ -165,6 +197,65 @@ export default function TestExecutionSummary({ transactions, metrics, baseline }
       )}
     </>
   )
+}
+
+interface SOAPOperationProfile {
+  label: string
+  metricValue: string
+  operation: TxMetrics
+}
+
+function buildSOAPOperationProfiles(operations: TxMetrics[]): SOAPOperationProfile[] {
+  if (operations.length === 0) {
+    return []
+  }
+
+  const profiles: SOAPOperationProfile[] = []
+  const seen = new Set<string>()
+  const candidates: Array<SOAPOperationProfile | null> = [
+    buildSOAPOperationProfile('Busiest Operation', operations, (operation) => operation.count, (operation) => `${operation.count} calls`),
+    buildSOAPOperationProfile('Slowest Avg Operation', operations, (operation) => operation.avg_ms, (operation) => formatTelemetryValue(operation.avg_ms, ' ms')),
+    buildSOAPOperationProfile('Highest Error Rate', operations, (operation) => operation.count > 0 ? operation.errors / operation.count : -1, (operation) => `${((operation.count > 0 ? operation.errors / operation.count : 0) * 100).toFixed(1)}%`),
+    buildSOAPOperationProfile('Heaviest Server Stage', operations, (operation) => operation.server_telemetry?.avg_server_processing_ms ?? -1, (operation) => formatTelemetryValue(operation.server_telemetry?.avg_server_processing_ms, ' ms')),
+  ]
+
+  for (const candidate of candidates) {
+    if (!candidate || seen.has(candidate.operation.name)) {
+      continue
+    }
+    seen.add(candidate.operation.name)
+    profiles.push(candidate)
+  }
+
+  if (profiles.length === 0) {
+    const fallback = [...operations].sort((left, right) => right.avg_ms - left.avg_ms)[0]
+    if (fallback) {
+      profiles.push({
+        label: 'SOAP Operation Profile',
+        metricValue: formatTelemetryValue(fallback.avg_ms, ' ms'),
+        operation: fallback,
+      })
+    }
+  }
+
+  return profiles
+}
+
+function buildSOAPOperationProfile(
+  label: string,
+  operations: TxMetrics[],
+  metric: (operation: TxMetrics) => number,
+  format: (operation: TxMetrics) => string,
+): SOAPOperationProfile | null {
+  const candidate = [...operations].sort((left, right) => metric(right) - metric(left))[0]
+  if (!candidate || metric(candidate) < 0) {
+    return null
+  }
+  return {
+    label,
+    metricValue: format(candidate),
+    operation: candidate,
+  }
 }
 
 function renderServerTelemetry(current: TxMetrics, previous?: TxMetrics) {

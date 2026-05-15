@@ -83,7 +83,7 @@ describe('TestExecutionSummary', () => {
 	})
 
 	it('renders live SOAP operation hotspots when available', async () => {
-		const operation: TxMetrics = {
+		const createOrder: TxMetrics = {
 			name: 'CreateOrder',
 			dependency_type: 'soap',
 			dependency_target: 'checkout.example.test#CreateOrder',
@@ -99,6 +99,38 @@ describe('TestExecutionSummary', () => {
 				avg_transfer_ms: 18,
 			},
 		}
+		const cancelOrder: TxMetrics = {
+			name: 'CancelOrder',
+			dependency_type: 'soap',
+			dependency_target: 'checkout.example.test#CancelOrder',
+			count: 10,
+			errors: 0,
+			avg_ms: 90,
+			p50_ms: 82,
+			p90_ms: 120,
+			p99_ms: 150,
+			server_telemetry: {
+				samples: 10,
+				avg_server_processing_ms: 28,
+				avg_transfer_ms: 12,
+			},
+		}
+		const getStatus: TxMetrics = {
+			name: 'GetOrderStatus',
+			dependency_type: 'soap',
+			dependency_target: 'checkout.example.test#GetOrderStatus',
+			count: 4,
+			errors: 2,
+			avg_ms: 110,
+			p50_ms: 108,
+			p90_ms: 132,
+			p99_ms: 160,
+			server_telemetry: {
+				samples: 4,
+				avg_server_processing_ms: 24,
+				avg_transfer_ms: 16,
+			},
+		}
 
 		await act(async () => {
 			root.render(
@@ -110,7 +142,9 @@ describe('TestExecutionSummary', () => {
 						p95_ms: 230,
 						p99_ms: 260,
 						soap_operations: {
-							CreateOrder: operation,
+							CreateOrder: createOrder,
+							CancelOrder: cancelOrder,
+							GetOrderStatus: getStatus,
 						},
 					}}
 				/>,
@@ -118,6 +152,15 @@ describe('TestExecutionSummary', () => {
 		})
 
 		expect(container.textContent).toContain('Live SOAP Operations')
+		expect(container.textContent).toContain('Busiest Operation')
+		expect(container.textContent).toContain('CancelOrder')
+		expect(container.textContent).toContain('10 calls')
+		expect(container.textContent).toContain('Slowest Avg Operation')
+		expect(container.textContent).toContain('CreateOrder')
+		expect(container.textContent).toContain('140.0 ms')
+		expect(container.textContent).toContain('Highest Error Rate')
+		expect(container.textContent).toContain('GetOrderStatus')
+		expect(container.textContent).toContain('50.0%')
 		expect(container.textContent).toContain('CreateOrder')
 		expect(container.textContent).toContain('140.0')
 		expect(container.textContent).toContain('52.0 ms')
