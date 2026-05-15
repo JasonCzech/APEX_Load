@@ -168,7 +168,7 @@ Each protocol must populate enough telemetry for the dashboard to answer the sam
 
 ### 6. JMS Protocol
 
-**Current state:** Solace and IBM MQ providers, pub/sub/request-reply, message properties, correlation IDs, dependency classification, and raw per-action message-throughput, size-class, message-latency, and consumer-lag retention for request/reply flows. Most complete L1 after HTTP.
+**Current state:** Solace and IBM MQ providers, pub/sub/request-reply, message properties, correlation IDs, dependency classification, and raw per-action message-throughput, size-class, message-latency, and consumer-lag retention for request/reply flows. The live dashboard now also exposes JMS payload hotspots from existing average request/response payload telemetry, but full message-size histogram views remain open. Most complete L1 after HTTP.
 
 **L2 gaps:**
 - No **broker-side latency** isolation (time in broker vs. time in network)

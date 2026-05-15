@@ -20,6 +20,11 @@ export default function TestExecutionSummary({ transactions, metrics, baseline }
     .filter((tx) => tx.server_telemetry)
     .sort((left, right) => (right.server_telemetry?.avg_server_processing_ms || 0) - (left.server_telemetry?.avg_server_processing_ms || 0))
     .slice(0, 4)
+  const jmsTransactions = transactions.filter((tx) => tx.dependency_type?.startsWith('jms_') && tx.server_telemetry)
+  const jmsPayloadProfiles = buildJMSPayloadProfiles(jmsTransactions)
+  const topJMSPayloads = [...jmsTransactions]
+    .sort((left, right) => combinedPayloadKB(right) - combinedPayloadKB(left))
+    .slice(0, 4)
   const soapOperations = Object.values(metrics?.soap_operations ?? {})
   const topSOAPOperations = [...soapOperations]
     .sort((left, right) => ((right.server_telemetry?.avg_server_processing_ms ?? right.avg_ms ?? 0) - (left.server_telemetry?.avg_server_processing_ms ?? left.avg_ms ?? 0)))
@@ -141,6 +146,69 @@ export default function TestExecutionSummary({ transactions, metrics, baseline }
         </div>
       )}
 
+      {topJMSPayloads.length > 0 && (
+        <div className="tx-section">
+          <h3 className="chart-title">Live JMS Payload Hotspots</h3>
+          <p className="server-telemetry-subtitle">Payload-heavy JMS actions ranked from existing average request and response sizes. This is a hotspot view, not a per-message histogram.</p>
+          {jmsPayloadProfiles.length > 0 && (
+            <div className="server-telemetry-grid">
+              {jmsPayloadProfiles.map((profile) => (
+                <div key={profile.label} className="server-telemetry-card">
+                  <div className="server-telemetry-card-header">
+                    <span className="server-telemetry-name">{profile.label}</span>
+                    <span className="server-telemetry-target">{profile.transaction.name}</span>
+                  </div>
+                  <div className="server-telemetry-stat-grid">
+                    <div className="server-telemetry-stat">
+                      <span className="server-telemetry-label">Signal</span>
+                      <span className="server-telemetry-value">{profile.metricValue}</span>
+                    </div>
+                    <div className="server-telemetry-stat">
+                      <span className="server-telemetry-label">Payload</span>
+                      <span className="server-telemetry-value">{formatTelemetryValue(profile.transaction.server_telemetry?.avg_request_payload_kb, ' KB', 2)} / {formatTelemetryValue(profile.transaction.server_telemetry?.avg_response_payload_kb, ' KB', 2)}</span>
+                    </div>
+                    <div className="server-telemetry-stat">
+                      <span className="server-telemetry-label">Transfer</span>
+                      <span className="server-telemetry-value">{formatTelemetryValue(profile.transaction.server_telemetry?.avg_transfer_ms, ' ms')}</span>
+                    </div>
+                    <div className="server-telemetry-stat">
+                      <span className="server-telemetry-label">Count</span>
+                      <span className="server-telemetry-value">{profile.transaction.count}</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          <table className="tx-table">
+            <thead>
+              <tr>
+                <th>Action</th>
+                <th>Count</th>
+                <th>Avg Request</th>
+                <th>Avg Response</th>
+                <th>Combined</th>
+                <th>Transfer (ms)</th>
+                <th>Target</th>
+              </tr>
+            </thead>
+            <tbody>
+              {topJMSPayloads.map((tx) => (
+                <tr key={tx.name}>
+                  <td className="tx-name">{tx.name}</td>
+                  <td>{tx.count}</td>
+                  <td>{formatTelemetryValue(tx.server_telemetry?.avg_request_payload_kb, ' KB', 2)}</td>
+                  <td>{formatTelemetryValue(tx.server_telemetry?.avg_response_payload_kb, ' KB', 2)}</td>
+                  <td>{formatTelemetryValue(combinedPayloadKB(tx), ' KB', 2)}</td>
+                  <td>{formatTelemetryValue(tx.server_telemetry?.avg_transfer_ms, ' ms')}</td>
+                  <td>{tx.dependency_target || tx.dependency_type || 'jms'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       {transactions.length > 0 && (
         <div className="tx-section">
           <h3 className="chart-title">Transaction Breakdown</h3>
@@ -205,6 +273,12 @@ interface SOAPOperationProfile {
   operation: TxMetrics
 }
 
+interface JMSPayloadProfile {
+  label: string
+  metricValue: string
+  transaction: TxMetrics
+}
+
 function buildSOAPOperationProfiles(operations: TxMetrics[]): SOAPOperationProfile[] {
   if (operations.length === 0) {
     return []
@@ -256,6 +330,42 @@ function buildSOAPOperationProfile(
     metricValue: format(candidate),
     operation: candidate,
   }
+}
+
+function buildJMSPayloadProfiles(transactions: TxMetrics[]): JMSPayloadProfile[] {
+  if (transactions.length === 0) {
+    return []
+  }
+
+  const candidates: Array<JMSPayloadProfile | null> = [
+    buildJMSPayloadProfile('Largest Request Payload', transactions, (tx) => tx.server_telemetry?.avg_request_payload_kb ?? -1, (tx) => formatTelemetryValue(tx.server_telemetry?.avg_request_payload_kb, ' KB', 2)),
+    buildJMSPayloadProfile('Largest Response Payload', transactions, (tx) => tx.server_telemetry?.avg_response_payload_kb ?? -1, (tx) => formatTelemetryValue(tx.server_telemetry?.avg_response_payload_kb, ' KB', 2)),
+    buildJMSPayloadProfile('Heaviest Round Trip', transactions, (tx) => combinedPayloadKB(tx), (tx) => formatTelemetryValue(combinedPayloadKB(tx), ' KB', 2)),
+    buildJMSPayloadProfile('Slowest Transfer Stage', transactions, (tx) => tx.server_telemetry?.avg_transfer_ms ?? -1, (tx) => formatTelemetryValue(tx.server_telemetry?.avg_transfer_ms, ' ms')),
+  ]
+
+  return candidates.filter((candidate): candidate is JMSPayloadProfile => Boolean(candidate))
+}
+
+function buildJMSPayloadProfile(
+  label: string,
+  transactions: TxMetrics[],
+  metric: (transaction: TxMetrics) => number,
+  format: (transaction: TxMetrics) => string,
+): JMSPayloadProfile | null {
+  const candidate = [...transactions].sort((left, right) => metric(right) - metric(left))[0]
+  if (!candidate || metric(candidate) < 0) {
+    return null
+  }
+  return {
+    label,
+    metricValue: format(candidate),
+    transaction: candidate,
+  }
+}
+
+function combinedPayloadKB(transaction: TxMetrics): number {
+  return (transaction.server_telemetry?.avg_request_payload_kb ?? 0) + (transaction.server_telemetry?.avg_response_payload_kb ?? 0)
 }
 
 function renderServerTelemetry(current: TxMetrics, previous?: TxMetrics) {

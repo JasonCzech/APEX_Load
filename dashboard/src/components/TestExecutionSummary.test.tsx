@@ -167,4 +167,81 @@ describe('TestExecutionSummary', () => {
 		expect(container.textContent).toContain('18.0 ms')
 		expect(container.textContent).toContain('checkout.example.test#CreateOrder')
 	})
+
+	it('renders live JMS payload hotspots when JMS payload telemetry is available', async () => {
+		const publish: TxMetrics = {
+			name: 'PublishOrder',
+			dependency_type: 'jms_queue',
+			dependency_target: 'orders.in',
+			count: 12,
+			errors: 0,
+			avg_ms: 95,
+			p50_ms: 80,
+			p90_ms: 120,
+			p99_ms: 150,
+			server_telemetry: {
+				samples: 12,
+				avg_transfer_ms: 18,
+				avg_request_payload_kb: 6.5,
+				avg_response_payload_kb: 0.5,
+			},
+		}
+		const requestReply: TxMetrics = {
+			name: 'RequestReplyQuote',
+			dependency_type: 'jms_queue',
+			dependency_target: 'quotes.rpc',
+			count: 5,
+			errors: 1,
+			avg_ms: 140,
+			p50_ms: 132,
+			p90_ms: 170,
+			p99_ms: 210,
+			server_telemetry: {
+				samples: 5,
+				avg_transfer_ms: 42,
+				avg_request_payload_kb: 2.25,
+				avg_response_payload_kb: 12.5,
+			},
+		}
+		const consume: TxMetrics = {
+			name: 'ConsumeAudit',
+			dependency_type: 'jms_topic',
+			dependency_target: 'audit.events',
+			count: 20,
+			errors: 0,
+			avg_ms: 60,
+			p50_ms: 54,
+			p90_ms: 74,
+			p99_ms: 88,
+			server_telemetry: {
+				samples: 20,
+				avg_transfer_ms: 12,
+				avg_request_payload_kb: 0,
+				avg_response_payload_kb: 3.4,
+			},
+		}
+
+		await act(async () => {
+			root.render(
+				<TestExecutionSummary
+					transactions={[publish, requestReply, consume]}
+					metrics={{ p50_ms: 80, p90_ms: 120, p95_ms: 150, p99_ms: 210 }}
+				/>,
+			)
+		})
+
+		expect(container.textContent).toContain('Live JMS Payload Hotspots')
+		expect(container.textContent).toContain('Largest Request Payload')
+		expect(container.textContent).toContain('PublishOrder')
+		expect(container.textContent).toContain('6.50 KB')
+		expect(container.textContent).toContain('Largest Response Payload')
+		expect(container.textContent).toContain('RequestReplyQuote')
+		expect(container.textContent).toContain('12.50 KB')
+		expect(container.textContent).toContain('Heaviest Round Trip')
+		expect(container.textContent).toContain('14.75 KB')
+		expect(container.textContent).toContain('Slowest Transfer Stage')
+		expect(container.textContent).toContain('42.0 ms')
+		expect(container.textContent).toContain('orders.in')
+		expect(container.textContent).toContain('quotes.rpc')
+	})
 })
