@@ -550,6 +550,7 @@ export default function TestExecutionArchive({
                                         Response size class: {event.server_telemetry.response_size_class || 'n/a'}{'\n'}
                                         Envelope overhead: {formatBrowserMetric(event.server_telemetry.envelope_overhead_kb, ' KB', 2)}{'\n'}
                                         SOAP fault: {event.server_telemetry.soap_fault_code || 'n/a'} / {event.server_telemetry.soap_fault_category || 'n/a'}{'\n'}
+                                        SOAP namespace conflict: {event.server_telemetry.soap_namespace_conflict || 'n/a'}{'\n'}
                                         Redirects: {event.server_telemetry.redirect_count ?? 0} hops / {formatBrowserMetric(event.server_telemetry.redirect_ms, ' ms')}{'\n'}
                                         Message latency: {formatBrowserMetric(event.server_telemetry.message_latency_ms, ' ms')}{'\n'}
                                         Messages: {event.server_telemetry.messages_sent ?? 0} sent / {event.server_telemetry.messages_received ?? 0} received{'\n'}

@@ -170,6 +170,64 @@ func TestSOAPExecuteWrapsGeneratedBodyInEnvelope(t *testing.T) {
 	}
 }
 
+func TestSOAPExecuteCapturesNamespaceConflictTelemetry(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`<Envelope><Body><ok/></Body></Envelope>`))
+	}))
+	defer ts.Close()
+
+	s := &SOAP{}
+	if err := s.Init(context.Background(), map[string]any{
+		"base_url":     ts.URL,
+		"soap_version": "1.1",
+	}); err != nil {
+		t.Fatalf("Init returned error: %v", err)
+	}
+
+	result, err := s.Execute(context.Background(), &protocol.Action{
+		Name:   "login",
+		Target: "/AuthService",
+		Body:   []byte(`<auth:username>alice</auth:username>`),
+		SOAP: &protocol.SOAPActionConfig{
+			Operation: "Login",
+			BodyMode:  "generated",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if result.ServerTelemetry == nil {
+		t.Fatal("ServerTelemetry = nil, want namespace conflict telemetry")
+	}
+	if result.ServerTelemetry.SOAPNamespaceConflict != "undeclared prefixes: auth" {
+		t.Fatalf("SOAPNamespaceConflict = %q, want undeclared prefixes: auth", result.ServerTelemetry.SOAPNamespaceConflict)
+	}
+	if result.Extractions["soap_namespace_conflict"] != "undeclared prefixes: auth" {
+		t.Fatalf("soap_namespace_conflict = %q, want undeclared prefixes: auth", result.Extractions["soap_namespace_conflict"])
+	}
+	if !result.Success {
+		t.Fatalf("result.Success = false, want namespace conflict to be non-fatal")
+	}
+}
+
+func TestShapeSOAPBodyDetectsReservedEnvelopePrefixConflict(t *testing.T) {
+	body, conflict := shapeSOAPBody(&protocol.Action{
+		Body: []byte(`<username>alice</username>`),
+		SOAP: &protocol.SOAPActionConfig{
+			Operation: "Login",
+			BodyMode:  "generated",
+		},
+	}, "1.1", map[string]string{"soapenv": "urn:auth"})
+
+	if conflict != "prefix soapenv already mapped to urn:auth" {
+		t.Fatalf("conflict = %q, want reserved soapenv prefix conflict", conflict)
+	}
+	if !strings.Contains(string(body), `xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"`) {
+		t.Fatalf("body = %q, want SOAP envelope namespace to win", string(body))
+	}
+}
+
 func TestSOAPExecuteAddsWSSecurityHeader(t *testing.T) {
 	var seenBody string
 

@@ -19,7 +19,7 @@ The Mobile UX Strategy defines three layers. The equivalent for each protocol fa
 
 - Shared `ServerTelemetry` on `protocol.Result`, propagated through engine rollups, controller/generator RPC, archive retention, and dashboard contracts.
 - HTTP timing decomposition for server processing, transfer, request/response payload sizes, request/response size classification, connection reuse, and redirect-hop timing.
-- SOAP operation tagging, fault categorization, raw envelope-overhead tracking, and fault-code retention on archived events.
+- SOAP operation tagging, fault categorization, namespace-conflict detection, raw envelope-overhead tracking, and fault-code retention on archived events.
 - Java HTTP dependency tagging plus helper/codec metadata propagation and raw codec timing retention.
 - JMS payload sizing, request/reply timing, message counts, message latency, and consumer-lag retention on archived events.
 - Goal-oriented SLA parity for server processing and transfer thresholds, including stop-on-breach behavior.
@@ -83,13 +83,12 @@ Each protocol must populate enough telemetry for the dashboard to answer the sam
 
 ### 2. SOAP Protocol
 
-**Current state:** HTTP-backed execution, SOAP fault parsing, WS-Security, envelope shaping. Inherits all HTTP timing. Missing SOAP-specific analytical depth.
+**Current state:** HTTP-backed execution, SOAP fault parsing, WS-Security, envelope shaping, and generated-body namespace conflict detection. Inherits all HTTP timing. Missing SOAP-specific analytical depth.
 
 **L2 gaps:**
 - No **per-operation** metric grouping (all SOAP calls aggregate together unless manually named)
 - No **envelope overhead** measurement (XML size vs. payload size)
 - No **fault classification** beyond pass/fail (fault code categorization)
-- No **namespace conflict** detection
 
 **L3 gaps:**
 - No **WSDL-aware operation profiling** (timing by operation name, not just action name)

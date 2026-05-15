@@ -46,6 +46,9 @@ type soapSecurityConfig struct {
 }
 
 var envelopePrefixPattern = regexp.MustCompile(`<([A-Za-z_][A-Za-z0-9_.-]*):Envelope\b`)
+var soapNamespaceDeclPattern = regexp.MustCompile(`xmlns:([A-Za-z_][A-Za-z0-9_.-]*)\s*=\s*['"][^'"]+['"]`)
+var soapElementPrefixPattern = regexp.MustCompile(`</?([A-Za-z_][A-Za-z0-9_.-]*):[A-Za-z_][A-Za-z0-9_.-]*\b`)
+var soapAttributePrefixPattern = regexp.MustCompile(`\s([A-Za-z_][A-Za-z0-9_.-]*):[A-Za-z_][A-Za-z0-9_.-]*\s*=`)
 
 func (s *SOAP) Name() string { return "soap" }
 
@@ -82,7 +85,8 @@ func (s *SOAP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	prepared := *action
 	prepared.Method = stdhttp.MethodPost
 	prepared.Headers = cloneHeaders(action.Headers)
-	prepared.Body = shapeSOAPBody(action, s.version, s.namespaces)
+	preparedBody, namespaceConflict := shapeSOAPBody(action, s.version, s.namespaces)
+	prepared.Body = preparedBody
 	prepared.Body = s.applySecurity(prepared.Body)
 	applySOAPDefaults(&prepared, s.version, s.defaultCharset)
 	targetURL := resolveSOAPURL(s.baseURL, prepared.Target)
@@ -98,6 +102,13 @@ func (s *SOAP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 			result.ServerTelemetry = &protocol.ServerTelemetry{}
 		}
 		result.ServerTelemetry.EnvelopeOverheadKB = envelopeOverheadKB
+	}
+	if namespaceConflict != "" {
+		if result.ServerTelemetry == nil {
+			result.ServerTelemetry = &protocol.ServerTelemetry{}
+		}
+		result.ServerTelemetry.SOAPNamespaceConflict = namespaceConflict
+		result.Extractions["soap_namespace_conflict"] = namespaceConflict
 	}
 	if operation := resolveSOAPOperation(action, prepared.Body); operation != "" {
 		result.DependencyTarget = appendSOAPOperationTarget(result.DependencyTarget, operation)
@@ -324,21 +335,27 @@ func readNamespaces(config map[string]any) map[string]string {
 	return cloned
 }
 
-func shapeSOAPBody(action *protocol.Action, version string, namespaces map[string]string) []byte {
+func shapeSOAPBody(action *protocol.Action, version string, namespaces map[string]string) ([]byte, string) {
 	if action == nil || action.SOAP == nil {
-		return action.Body
+		if action == nil {
+			return nil, ""
+		}
+		return action.Body, ""
 	}
 	if strings.TrimSpace(action.SOAP.BodyMode) != "generated" {
-		return action.Body
+		return action.Body, ""
 	}
 
 	body := strings.TrimSpace(string(action.Body))
 	if body == "" || looksLikeSOAPEnvelope(body) {
-		return action.Body
+		return action.Body, ""
 	}
 
-	envelopePrefix, allNamespaces := mergeSOAPNamespaces(version, namespaces)
+	envelopePrefix, allNamespaces, namespaceConflict := mergeSOAPNamespaces(version, namespaces)
 	body = wrapSOAPOperation(body, action.SOAP.Operation)
+	if bodyConflict := detectSOAPBodyNamespaceConflict(body, allNamespaces); bodyConflict != "" {
+		namespaceConflict = joinSOAPNamespaceConflicts(namespaceConflict, bodyConflict)
+	}
 
 	var attrs []string
 	keys := make([]string, 0, len(allNamespaces))
@@ -356,7 +373,7 @@ func shapeSOAPBody(action *protocol.Action, version string, namespaces map[strin
 		strings.Join(attrs, " "),
 		body,
 	)
-	return []byte(envelope)
+	return []byte(envelope), namespaceConflict
 }
 
 func (s *SOAP) applySecurity(body []byte) []byte {
@@ -403,19 +420,75 @@ func detectEnvelopePrefix(body string) string {
 	return ""
 }
 
-func mergeSOAPNamespaces(version string, namespaces map[string]string) (string, map[string]string) {
+func mergeSOAPNamespaces(version string, namespaces map[string]string) (string, map[string]string, string) {
 	allNamespaces := make(map[string]string, len(namespaces)+1)
 	for key, value := range namespaces {
 		allNamespaces[key] = value
 	}
 	envelopeURI := soapEnvelopeURI(version)
+	namespaceConflict := ""
+	if configuredURI, ok := allNamespaces["soapenv"]; ok && configuredURI != envelopeURI {
+		namespaceConflict = fmt.Sprintf("prefix soapenv already mapped to %s", configuredURI)
+	}
 	for key, value := range allNamespaces {
 		if value == envelopeURI {
-			return key, allNamespaces
+			return key, allNamespaces, namespaceConflict
 		}
 	}
 	allNamespaces["soapenv"] = envelopeURI
-	return "soapenv", allNamespaces
+	return "soapenv", allNamespaces, namespaceConflict
+}
+
+func detectSOAPBodyNamespaceConflict(body string, namespaces map[string]string) string {
+	declared := map[string]struct{}{"xml": {}}
+	for key := range namespaces {
+		declared[key] = struct{}{}
+	}
+	for _, match := range soapNamespaceDeclPattern.FindAllStringSubmatch(body, -1) {
+		if len(match) == 2 {
+			declared[match[1]] = struct{}{}
+		}
+	}
+
+	missing := make(map[string]struct{})
+	for _, match := range soapElementPrefixPattern.FindAllStringSubmatch(body, -1) {
+		if len(match) == 2 {
+			prefix := match[1]
+			if _, ok := declared[prefix]; !ok {
+				missing[prefix] = struct{}{}
+			}
+		}
+	}
+	for _, match := range soapAttributePrefixPattern.FindAllStringSubmatch(body, -1) {
+		if len(match) == 2 {
+			prefix := match[1]
+			if prefix == "xmlns" {
+				continue
+			}
+			if _, ok := declared[prefix]; !ok {
+				missing[prefix] = struct{}{}
+			}
+		}
+	}
+	if len(missing) == 0 {
+		return ""
+	}
+	prefixes := make([]string, 0, len(missing))
+	for prefix := range missing {
+		prefixes = append(prefixes, prefix)
+	}
+	sort.Strings(prefixes)
+	return "undeclared prefixes: " + strings.Join(prefixes, ", ")
+}
+
+func joinSOAPNamespaceConflicts(existing string, next string) string {
+	if existing == "" {
+		return next
+	}
+	if next == "" {
+		return existing
+	}
+	return existing + "; " + next
 }
 
 func soapEnvelopeURI(version string) string {

@@ -488,6 +488,7 @@ describe('TestExecutionArchive', () => {
         envelope_overhead_kb: 0.75,
         soap_fault_code: 'soapenv:Client',
         soap_fault_category: 'client',
+        soap_namespace_conflict: 'undeclared prefixes: auth',
         redirect_count: 2,
         redirect_ms: 31,
         message_latency_ms: 18,
@@ -541,6 +542,7 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('Response size class: small')
     expect(container.textContent).toContain('Envelope overhead: 0.75 KB')
     expect(container.textContent).toContain('SOAP fault: soapenv:Client / client')
+    expect(container.textContent).toContain('SOAP namespace conflict: undeclared prefixes: auth')
     expect(container.textContent).toContain('Redirects: 2 hops / 31.0 ms')
     expect(container.textContent).toContain('Message latency: 18.0 ms')
     expect(container.textContent).toContain('Messages: 1 sent / 1 received')
