@@ -118,6 +118,14 @@ message ServerTelemetry {
   double request_payload_kb = 3;
   double response_payload_kb = 4;
   bool connection_reused = 5;
+  string request_size_class = 6;
+  string response_size_class = 7;
+  double consumer_lag_ms = 8;
+  double message_latency_ms = 9;
+  int32 messages_sent = 10;
+  int32 messages_received = 11;
+  double messages_sent_per_sec = 12;
+  double messages_received_per_sec = 13;
 }
 
 message TransactionMetric {

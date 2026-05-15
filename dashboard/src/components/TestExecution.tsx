@@ -305,6 +305,8 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
         transactions={summaryTransactions}
         metrics={statusMetrics}
         baseline={test.comparison_baseline}
+        history={filteredData}
+        goalConfig={test.goal_config}
       />
     </div>
   )

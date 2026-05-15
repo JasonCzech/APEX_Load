@@ -139,6 +139,7 @@ export interface RunComparisonBaseline {
   source_test_name: string
   completed_at?: string
   transactions?: Record<string, TxMetrics>
+  dependency_health?: Record<string, TxMetrics>
 }
 
 export interface TestSummary {
@@ -313,6 +314,18 @@ export interface ServerTelemetrySummary {
   avg_transfer_ms?: number
   avg_request_payload_kb?: number
   avg_response_payload_kb?: number
+  request_payload_histogram?: Record<string, number>
+  response_payload_histogram?: Record<string, number>
+  avg_message_latency_ms?: number
+  max_message_latency_ms?: number
+  messages_sent?: number
+  messages_received?: number
+  avg_messages_sent_per_sec?: number
+  avg_messages_received_per_sec?: number
+  avg_consumer_lag_ms?: number
+  max_consumer_lag_ms?: number
+  request_size_classes?: Record<string, number>
+  response_size_classes?: Record<string, number>
   connection_reused_count?: number
   connection_reused_pct?: number
 }
@@ -478,6 +491,7 @@ export interface LiveMetrics {
   p95_ms: number
   p99_ms: number
   transactions?: Record<string, TxMetrics>
+  dependency_health?: Record<string, TxMetrics>
   soap_operations?: Record<string, TxMetrics>
   groups?: Record<string, GroupLiveMetrics>
   browser?: BrowserLiveMetrics
@@ -530,7 +544,7 @@ export interface TelemetryDiagnostic {
   summary: string
   conditions?: string[]
   samples?: {
-    issue: 'slow' | 'error'
+    issue: 'slow' | 'error' | 'broker' | 'dead_letter'
     transaction: string
     dependency_type?: string
     dependency_target?: string
@@ -540,6 +554,10 @@ export interface TelemetryDiagnostic {
     error_pct?: number
     avg_ms?: number
     p99_ms?: number
+    avg_message_latency_ms?: number
+    avg_consumer_lag_ms?: number
+    avg_messages_sent_per_sec?: number
+    avg_messages_received_per_sec?: number
   }[]
   telemetry?: TelemetryHealth
 }
@@ -581,6 +599,10 @@ export interface TxMetrics {
   dependency_type?: string
   dependency_target?: string
   server_telemetry?: ServerTelemetrySummary
+  avg_dns_ms?: number
+  avg_connect_ms?: number
+  avg_tls_ms?: number
+  avg_ttfb_ms?: number
   correlation_ids?: string[]
   correlation_count?: number
   count: number
@@ -588,6 +610,7 @@ export interface TxMetrics {
   avg_ms: number
   p50_ms: number
   p90_ms: number
+  p95_ms?: number
   p99_ms: number
 }
 
@@ -798,6 +821,8 @@ export interface MetricsHistoryPoint {
   netRecv?: number
   diskRead?: number
   diskWrite?: number
+  jmsConsumerLagMs?: number
+  jmsPeakConsumerLagMs?: number
   [key: string]: string | number | undefined
 }
 

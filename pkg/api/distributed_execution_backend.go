@@ -1076,6 +1076,7 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 		Timestamp:    timestamp,
 		ActiveVUsers: int64(batch.Stats.ActiveVUsers),
 		Transactions: make(map[string]*TxMetrics),
+		DependencyHealth: make(map[string]*TxMetrics),
 		SOAPOperations: make(map[string]*TxMetrics),
 		GroupMetrics: make(map[string]*GroupLiveMetrics),
 		Telemetry:    &TelemetryHealth{},
@@ -1108,6 +1109,7 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 	}
 
 	durationsByName := make(map[string][]float64)
+	durationsByDependencyTarget := make(map[string][]float64)
 	durationsBySOAPOperation := make(map[string][]float64)
 	for _, tx := range batch.Transactions {
 		live.TotalTx++
@@ -1122,6 +1124,16 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 			live.Transactions[tx.Name] = metrics
 		}
 		mergeDistributedTransactionMetrics(metrics, tx)
+
+		if dependencyTarget := strings.TrimSpace(tx.DependencyTarget); dependencyTarget != "" {
+			durationsByDependencyTarget[dependencyTarget] = append(durationsByDependencyTarget[dependencyTarget], tx.DurationMs)
+			dependencyMetrics := live.DependencyHealth[dependencyTarget]
+			if dependencyMetrics == nil {
+				dependencyMetrics = &TxMetrics{Name: dependencyTarget}
+				live.DependencyHealth[dependencyTarget] = dependencyMetrics
+			}
+			mergeDistributedTransactionMetrics(dependencyMetrics, tx)
+		}
 
 		if operation := strings.TrimSpace(tx.SOAPOperation); operation != "" {
 			soapMetrics := live.SOAPOperations[operation]
@@ -1146,19 +1158,43 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 		sort.Float64s(durations)
 		allDurations = append(allDurations, durations...)
 		metrics := live.Transactions[name]
+		metrics.AvgDNSMs /= float64(metrics.Count)
+		metrics.AvgConnectMs /= float64(metrics.Count)
+		metrics.AvgTLSMs /= float64(metrics.Count)
+		metrics.AvgTTFBMs /= float64(metrics.Count)
 		metrics.AvgMs /= float64(metrics.Count)
 		finalizeAPIServerTelemetrySummary(metrics.ServerTelemetry)
 		metrics.P50Ms = percentileValue(durations, 0.50)
 		metrics.P90Ms = percentileValue(durations, 0.90)
+		metrics.P95Ms = percentileValue(durations, 0.95)
+		metrics.P99Ms = percentileValue(durations, 0.99)
+	}
+	for dependencyTarget, durations := range durationsByDependencyTarget {
+		sort.Float64s(durations)
+		metrics := live.DependencyHealth[dependencyTarget]
+		metrics.AvgDNSMs /= float64(metrics.Count)
+		metrics.AvgConnectMs /= float64(metrics.Count)
+		metrics.AvgTLSMs /= float64(metrics.Count)
+		metrics.AvgTTFBMs /= float64(metrics.Count)
+		metrics.AvgMs /= float64(metrics.Count)
+		finalizeAPIServerTelemetrySummary(metrics.ServerTelemetry)
+		metrics.P50Ms = percentileValue(durations, 0.50)
+		metrics.P90Ms = percentileValue(durations, 0.90)
+		metrics.P95Ms = percentileValue(durations, 0.95)
 		metrics.P99Ms = percentileValue(durations, 0.99)
 	}
 	for operation, durations := range durationsBySOAPOperation {
 		sort.Float64s(durations)
 		metrics := live.SOAPOperations[operation]
+		metrics.AvgDNSMs /= float64(metrics.Count)
+		metrics.AvgConnectMs /= float64(metrics.Count)
+		metrics.AvgTLSMs /= float64(metrics.Count)
+		metrics.AvgTTFBMs /= float64(metrics.Count)
 		metrics.AvgMs /= float64(metrics.Count)
 		finalizeAPIServerTelemetrySummary(metrics.ServerTelemetry)
 		metrics.P50Ms = percentileValue(durations, 0.50)
 		metrics.P90Ms = percentileValue(durations, 0.90)
+		metrics.P95Ms = percentileValue(durations, 0.95)
 		metrics.P99Ms = percentileValue(durations, 0.99)
 	}
 	sort.Strings(names)
@@ -1211,6 +1247,10 @@ func mergeDistributedTransactionMetrics(metrics *TxMetrics, tx generatorrpc.Tran
 	}
 	mergeTransactionMetricMetadata(metrics, tx.DependencyType, tx.DependencyTarget, tx.CorrelationID)
 	mergeDistributedServerTelemetry(metrics, tx.ServerTelemetry)
+	metrics.AvgDNSMs += tx.DNSMs
+	metrics.AvgConnectMs += tx.ConnectMs
+	metrics.AvgTLSMs += tx.TLSMs
+	metrics.AvgTTFBMs += tx.TTFBMs
 	metrics.AvgMs += tx.DurationMs
 }
 
@@ -1257,6 +1297,18 @@ func cloneEngineServerTelemetrySummary(summary *engine.ServerTelemetrySummary) *
 		AvgTransferMs:         summary.AvgTransferMs,
 		AvgRequestPayloadKB:   summary.AvgRequestPayloadKB,
 		AvgResponsePayloadKB:  summary.AvgResponsePayloadKB,
+		RequestPayloadHistogram: cloneTelemetryClassCounts(summary.RequestPayloadHistogram),
+		ResponsePayloadHistogram: cloneTelemetryClassCounts(summary.ResponsePayloadHistogram),
+		AvgMessageLatencyMs:   summary.AvgMessageLatencyMs,
+		MaxMessageLatencyMs:   summary.MaxMessageLatencyMs,
+		MessagesSent:          summary.MessagesSent,
+		MessagesReceived:      summary.MessagesReceived,
+		AvgMessagesSentPerSec: summary.AvgMessagesSentPerSec,
+		AvgMessagesReceivedPerSec: summary.AvgMessagesReceivedPerSec,
+		AvgConsumerLagMs:      summary.AvgConsumerLagMs,
+		MaxConsumerLagMs:      summary.MaxConsumerLagMs,
+		RequestSizeClasses:    cloneTelemetryClassCounts(summary.RequestSizeClasses),
+		ResponseSizeClasses:   cloneTelemetryClassCounts(summary.ResponseSizeClasses),
 		ConnectionReusedCount: summary.ConnectionReusedCount,
 		ConnectionReusedPct:   summary.ConnectionReusedPct,
 	}
@@ -1274,6 +1326,22 @@ func mergeDistributedServerTelemetry(metrics *TxMetrics, telemetry *generatorrpc
 	metrics.ServerTelemetry.AvgTransferMs += telemetry.TransferMs
 	metrics.ServerTelemetry.AvgRequestPayloadKB += telemetry.RequestPayloadKB
 	metrics.ServerTelemetry.AvgResponsePayloadKB += telemetry.ResponsePayloadKB
+	incrementTelemetryHistogramCount(&metrics.ServerTelemetry.RequestPayloadHistogram, telemetry.RequestPayloadKB)
+	incrementTelemetryHistogramCount(&metrics.ServerTelemetry.ResponsePayloadHistogram, telemetry.ResponsePayloadKB)
+	metrics.ServerTelemetry.AvgMessageLatencyMs += telemetry.MessageLatencyMs
+	if telemetry.MessageLatencyMs > metrics.ServerTelemetry.MaxMessageLatencyMs {
+		metrics.ServerTelemetry.MaxMessageLatencyMs = telemetry.MessageLatencyMs
+	}
+	metrics.ServerTelemetry.MessagesSent += int64(telemetry.MessagesSent)
+	metrics.ServerTelemetry.MessagesReceived += int64(telemetry.MessagesReceived)
+	metrics.ServerTelemetry.AvgMessagesSentPerSec += telemetry.MessagesSentPerSec
+	metrics.ServerTelemetry.AvgMessagesReceivedPerSec += telemetry.MessagesReceivedPerSec
+	metrics.ServerTelemetry.AvgConsumerLagMs += telemetry.ConsumerLagMs
+	if telemetry.ConsumerLagMs > metrics.ServerTelemetry.MaxConsumerLagMs {
+		metrics.ServerTelemetry.MaxConsumerLagMs = telemetry.ConsumerLagMs
+	}
+	incrementTelemetryClassCount(&metrics.ServerTelemetry.RequestSizeClasses, telemetry.RequestSizeClass)
+	incrementTelemetryClassCount(&metrics.ServerTelemetry.ResponseSizeClasses, telemetry.ResponseSizeClass)
 	if telemetry.ConnectionReused {
 		metrics.ServerTelemetry.ConnectionReusedCount++
 	}
@@ -1288,7 +1356,75 @@ func finalizeAPIServerTelemetrySummary(summary *ServerTelemetrySummary) {
 	summary.AvgTransferMs /= divisor
 	summary.AvgRequestPayloadKB /= divisor
 	summary.AvgResponsePayloadKB /= divisor
+	summary.AvgMessageLatencyMs /= divisor
+	summary.AvgMessagesSentPerSec /= divisor
+	summary.AvgMessagesReceivedPerSec /= divisor
+	summary.AvgConsumerLagMs /= divisor
 	summary.ConnectionReusedPct = float64(summary.ConnectionReusedCount) / divisor * 100
+	if len(summary.RequestSizeClasses) == 0 {
+		summary.RequestSizeClasses = nil
+	}
+	if len(summary.ResponseSizeClasses) == 0 {
+		summary.ResponseSizeClasses = nil
+	}
+	if len(summary.RequestPayloadHistogram) == 0 {
+		summary.RequestPayloadHistogram = nil
+	}
+	if len(summary.ResponsePayloadHistogram) == 0 {
+		summary.ResponsePayloadHistogram = nil
+	}
+}
+
+func cloneTelemetryClassCounts(in map[string]int64) map[string]int64 {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]int64, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
+}
+
+func incrementTelemetryHistogramCount(values *map[string]int64, payloadKB float64) {
+	if values == nil {
+		return
+	}
+	key := payloadHistogramBucket(payloadKB)
+	if key == "" {
+		return
+	}
+	if *values == nil {
+		*values = make(map[string]int64)
+	}
+	(*values)[key]++
+}
+
+func payloadHistogramBucket(payloadKB float64) string {
+	switch {
+	case payloadKB <= 0:
+		return ""
+	case payloadKB < 1:
+		return "0-1 KB"
+	case payloadKB < 4:
+		return "1-4 KB"
+	case payloadKB < 16:
+		return "4-16 KB"
+	case payloadKB < 64:
+		return "16-64 KB"
+	default:
+		return "64+ KB"
+	}
+}
+
+func incrementTelemetryClassCount(values *map[string]int64, key string) {
+	if values == nil || key == "" {
+		return
+	}
+	if *values == nil {
+		*values = make(map[string]int64)
+	}
+	(*values)[key]++
 }
 
 func percentileValue(sorted []float64, percentile float64) float64 {

@@ -104,6 +104,96 @@ describe('MonitoringPage', () => {
     expect(container.textContent).toContain('Close')
   })
 
+  it('renders JMS broker diagnostics with lag and throughput details', async () => {
+    await act(async () => {
+      root.render(
+        <MonitoringPage
+          connectionState="connected"
+          telemetryDiagnostics={[
+            {
+              test_id: 'test-2',
+              test_name: 'JMS Quotes',
+              timestamp: '2026-05-12T20:06:01Z',
+              diagnostic: {
+                severity: 'warning',
+                summary: 'sampled 1 JMS broker pressure hotspots where consumer lag materially exceeds request-reply latency',
+                conditions: ['jms_broker_pressure'],
+                samples: [
+                  {
+                    issue: 'broker',
+                    transaction: 'RequestReplyQuote',
+                    dependency_target: 'quotes.rpc',
+                    avg_message_latency_ms: 60,
+                    avg_consumer_lag_ms: 280,
+                    avg_messages_sent_per_sec: 30,
+                    avg_messages_received_per_sec: 12,
+                  },
+                ],
+              },
+            },
+          ]}
+        />,
+      )
+    })
+
+    const telemetryButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('View details'))
+    expect(telemetryButton).not.toBeUndefined()
+
+    await act(async () => {
+      telemetryButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.textContent).toContain('jms_broker_pressure')
+    expect(container.textContent).toContain('broker')
+    expect(container.textContent).toContain('lag 280 ms')
+    expect(container.textContent).toContain('msg 60 ms')
+    expect(container.textContent).toContain('30/12 msg/s')
+    expect(container.textContent).toContain('quotes.rpc')
+  })
+
+  it('renders JMS dead-letter diagnostics with message counts', async () => {
+    await act(async () => {
+      root.render(
+        <MonitoringPage
+          connectionState="connected"
+          telemetryDiagnostics={[
+            {
+              test_id: 'test-3',
+              test_name: 'JMS DLQ',
+              timestamp: '2026-05-12T20:07:01Z',
+              diagnostic: {
+                severity: 'warning',
+                summary: 'observed 1 JMS dead-letter destinations with live traffic',
+                conditions: ['jms_dead_letter_activity'],
+                samples: [
+                  {
+                    issue: 'dead_letter',
+                    transaction: 'ConsumeOrderDLQ',
+                    dependency_target: 'orders.dlq',
+                    count: 7,
+                    errors: 2,
+                  },
+                ],
+              },
+            },
+          ]}
+        />,
+      )
+    })
+
+    const telemetryButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('View details'))
+    expect(telemetryButton).not.toBeUndefined()
+
+    await act(async () => {
+      telemetryButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.textContent).toContain('jms_dead_letter_activity')
+    expect(container.textContent).toContain('dead_letter')
+    expect(container.textContent).toContain('7 dead-letter msgs')
+    expect(container.textContent).toContain('orders.dlq')
+  })
+
   it('renders live generator inventory when the controller reports it', async () => {
     apiMock.getSystemInventory.mockResolvedValue({
       execution_mode: 'distributed',

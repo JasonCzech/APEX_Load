@@ -36,6 +36,7 @@ type config struct {
 	ClientID        string
 	Destination     string
 	DestinationType string
+	DeadLetterDestinations []string
 	ReplyTo         string
 	Acknowledgement string
 	DeliveryMode    string
@@ -108,6 +109,7 @@ func (j *JMS) Init(_ context.Context, cfg map[string]any) error {
 		ClientID:        stringValue(cfg, "jms_client_id"),
 		Destination:     stringValue(cfg, "jms_destination"),
 		DestinationType: stringValue(cfg, "jms_destination_type"),
+		DeadLetterDestinations: stringSliceValue(cfg, "jms_dead_letter_destinations"),
 		ReplyTo:         stringValue(cfg, "jms_reply_to"),
 		Acknowledgement: stringValue(cfg, "jms_acknowledgement"),
 		DeliveryMode:    stringValue(cfg, "jms_delivery_mode"),
@@ -141,14 +143,20 @@ func (j *JMS) Init(_ context.Context, cfg map[string]any) error {
 
 func (j *JMS) Execute(ctx context.Context, action *protocol.Action) (*protocol.Result, error) {
 	start := time.Now()
+	destination := j.destination(action)
+	isDeadLetter := j.isDeadLetterAction(action, destination)
 	result := &protocol.Result{
 		ActionName:       action.Name,
 		StartTime:        start,
 		StatusCode:       200,
 		Success:          true,
 		Extractions:      make(map[string]string),
-		DependencyType:   classifyJMSDependencyType(j.cfg.DestinationType, action),
-		DependencyTarget: j.destination(action),
+		DependencyType:   classifyJMSDependencyType(j.cfg.DestinationType, action, isDeadLetter),
+		DependencyTarget: destination,
+	}
+	if isDeadLetter {
+		result.Extractions["jms_dead_letter"] = "true"
+		result.Extractions["jms_dead_letter_destination"] = destination
 	}
 
 	var err error
@@ -397,6 +405,12 @@ func addMessageExtractions(result *protocol.Result, msg message) {
 	result.Extractions["jms_correlation_id"] = msg.CorrelationID
 	result.Extractions["jms_destination"] = msg.Destination
 	result.Extractions["jms_body"] = string(msg.Body)
+	if reason, ok := firstMatchingMapValue(msg.Properties, "dead_letter_reason", "dlq_reason", "x-dead-letter-reason"); ok {
+		result.Extractions["jms_dead_letter_reason"] = reason
+	}
+	if deliveryCount, ok := firstMatchingMapValue(msg.Properties, "delivery_count", "x-delivery-count", "JMSXDeliveryCount"); ok {
+		result.Extractions["jms_delivery_count"] = deliveryCount
+	}
 }
 
 func finalizeJMSServerTelemetry(result *protocol.Result, request message, hasRequest bool, response message, hasResponse bool) *protocol.ServerTelemetry {
@@ -462,12 +476,27 @@ func messagesPerSecond(count int, duration time.Duration) float64 {
 	return float64(count) / duration.Seconds()
 }
 
-func classifyJMSDependencyType(defaultDestinationType string, action *protocol.Action) string {
+func classifyJMSDependencyType(defaultDestinationType string, action *protocol.Action, deadLetter bool) string {
 	destinationType := strings.TrimSpace(paramString(action.Params, "destination_type", defaultDestinationType))
 	if destinationType == "" {
 		destinationType = "queue"
 	}
+	if deadLetter {
+		return "jms_dead_letter_" + strings.ToLower(destinationType)
+	}
 	return "jms_" + strings.ToLower(destinationType)
+}
+
+func (j *JMS) isDeadLetterAction(action *protocol.Action, destination string) bool {
+	if boolParam(action.Params, "dead_letter", false) {
+		return true
+	}
+	for _, candidate := range j.cfg.DeadLetterDestinations {
+		if strings.EqualFold(strings.TrimSpace(candidate), strings.TrimSpace(destination)) {
+			return true
+		}
+	}
+	return false
 }
 
 func runExtractors(extractors []protocol.Extractor, result *protocol.Result, msg message) error {
@@ -619,6 +648,17 @@ func durationParam(params map[string]any, key string, fallback time.Duration) ti
 	return durationValue(params, key, fallback)
 }
 
+func boolParam(params map[string]any, key string, fallback bool) bool {
+	if params == nil {
+		return fallback
+	}
+	value, ok := params[key].(bool)
+	if !ok {
+		return fallback
+	}
+	return value
+}
+
 func cloneStringMap(in map[string]string) map[string]string {
 	if len(in) == 0 {
 		return nil
@@ -628,6 +668,62 @@ func cloneStringMap(in map[string]string) map[string]string {
 		out[k] = v
 	}
 	return out
+}
+
+func stringSliceValue(cfg map[string]any, key string) []string {
+	raw, ok := cfg[key]
+	if !ok {
+		return nil
+	}
+	switch value := raw.(type) {
+	case []string:
+		out := make([]string, 0, len(value))
+		for _, item := range value {
+			if trimmed := strings.TrimSpace(item); trimmed != "" {
+				out = append(out, trimmed)
+			}
+		}
+		if len(out) == 0 {
+			return nil
+		}
+		return out
+	case []any:
+		out := make([]string, 0, len(value))
+		for _, item := range value {
+			if itemStr, ok := item.(string); ok {
+				if trimmed := strings.TrimSpace(itemStr); trimmed != "" {
+					out = append(out, trimmed)
+				}
+			}
+		}
+		if len(out) == 0 {
+			return nil
+		}
+		return out
+	case string:
+		parts := strings.Split(value, ",")
+		out := make([]string, 0, len(parts))
+		for _, item := range parts {
+			if trimmed := strings.TrimSpace(item); trimmed != "" {
+				out = append(out, trimmed)
+			}
+		}
+		if len(out) == 0 {
+			return nil
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+func firstMatchingMapValue(values map[string]string, keys ...string) (string, bool) {
+	for _, key := range keys {
+		if value, ok := values[key]; ok && strings.TrimSpace(value) != "" {
+			return value, true
+		}
+	}
+	return "", false
 }
 
 func lookupString(key string, values map[string]string, label string) (string, error) {

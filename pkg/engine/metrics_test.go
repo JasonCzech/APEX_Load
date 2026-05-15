@@ -347,11 +347,22 @@ func TestMetricsCollector_ByActionAggregatesServerTelemetry(t *testing.T) {
 			ActionName: "login",
 			Success:    true,
 			Duration:   10 * time.Millisecond,
+			DNSTime:    8 * time.Millisecond,
+			ConnectTime: 12 * time.Millisecond,
+			TLSTime:    5 * time.Millisecond,
+			TTFB:       55 * time.Millisecond,
 			ServerTelemetry: &protocol.ServerTelemetry{
 				ServerProcessingMs: 60,
 				TransferMs:         20,
 				RequestPayloadKB:   1.5,
+				RequestSizeClass:   "small",
 				ResponsePayloadKB:  3.0,
+				ResponseSizeClass:  "medium",
+				MessageLatencyMs:   25,
+				MessagesSent:       1,
+				MessagesReceived:   0,
+				MessagesSentPerSec: 100,
+				ConsumerLagMs:      40,
 				ConnectionReused:   false,
 			},
 		},
@@ -359,11 +370,22 @@ func TestMetricsCollector_ByActionAggregatesServerTelemetry(t *testing.T) {
 			ActionName: "login",
 			Success:    true,
 			Duration:   15 * time.Millisecond,
+			DNSTime:    12 * time.Millisecond,
+			ConnectTime: 18 * time.Millisecond,
+			TTFB:       50 * time.Millisecond,
 			ServerTelemetry: &protocol.ServerTelemetry{
 				ServerProcessingMs: 40,
 				TransferMs:         10,
 				RequestPayloadKB:   2.5,
+				RequestSizeClass:   "medium",
 				ResponsePayloadKB:  5.0,
+				ResponseSizeClass:  "large",
+				MessageLatencyMs:   45,
+				MessagesSent:       1,
+				MessagesReceived:   1,
+				MessagesSentPerSec: 50,
+				MessagesReceivedPerSec: 50,
+				ConsumerLagMs:      70,
 				ConnectionReused:   true,
 			},
 		},
@@ -385,14 +407,117 @@ func TestMetricsCollector_ByActionAggregatesServerTelemetry(t *testing.T) {
 	if login.ServerTelemetry.AvgRequestPayloadKB != 2 {
 		t.Fatalf("AvgRequestPayloadKB = %v, want 2", login.ServerTelemetry.AvgRequestPayloadKB)
 	}
+	if login.AvgDNSMs != 10 || login.AvgConnectMs != 15 || login.AvgTLSMs != 2.5 || login.AvgTTFBMs != 52.5 {
+		t.Fatalf("HTTP timing averages = dns:%v connect:%v tls:%v ttfb:%v, want 10/15/2.5/52.5", login.AvgDNSMs, login.AvgConnectMs, login.AvgTLSMs, login.AvgTTFBMs)
+	}
 	if login.ServerTelemetry.AvgResponsePayloadKB != 4 {
 		t.Fatalf("AvgResponsePayloadKB = %v, want 4", login.ServerTelemetry.AvgResponsePayloadKB)
+	}
+	if login.ServerTelemetry.RequestPayloadHistogram["1-4 KB"] != 2 {
+		t.Fatalf("RequestPayloadHistogram = %#v, want 1-4 KB count 2", login.ServerTelemetry.RequestPayloadHistogram)
+	}
+	if login.ServerTelemetry.ResponsePayloadHistogram["1-4 KB"] != 1 || login.ServerTelemetry.ResponsePayloadHistogram["4-16 KB"] != 1 {
+		t.Fatalf("ResponsePayloadHistogram = %#v, want 1-4 KB and 4-16 KB counts", login.ServerTelemetry.ResponsePayloadHistogram)
+	}
+	if login.ServerTelemetry.AvgMessageLatencyMs != 35 {
+		t.Fatalf("AvgMessageLatencyMs = %v, want 35", login.ServerTelemetry.AvgMessageLatencyMs)
+	}
+	if login.ServerTelemetry.MaxMessageLatencyMs != 45 {
+		t.Fatalf("MaxMessageLatencyMs = %v, want 45", login.ServerTelemetry.MaxMessageLatencyMs)
+	}
+	if login.ServerTelemetry.MessagesSent != 2 || login.ServerTelemetry.MessagesReceived != 1 {
+		t.Fatalf("message totals = sent:%d received:%d, want 2 and 1", login.ServerTelemetry.MessagesSent, login.ServerTelemetry.MessagesReceived)
+	}
+	if login.ServerTelemetry.AvgMessagesSentPerSec != 75 {
+		t.Fatalf("AvgMessagesSentPerSec = %v, want 75", login.ServerTelemetry.AvgMessagesSentPerSec)
+	}
+	if login.ServerTelemetry.AvgMessagesReceivedPerSec != 25 {
+		t.Fatalf("AvgMessagesReceivedPerSec = %v, want 25", login.ServerTelemetry.AvgMessagesReceivedPerSec)
+	}
+	if login.ServerTelemetry.AvgConsumerLagMs != 55 {
+		t.Fatalf("AvgConsumerLagMs = %v, want 55", login.ServerTelemetry.AvgConsumerLagMs)
+	}
+	if login.ServerTelemetry.MaxConsumerLagMs != 70 {
+		t.Fatalf("MaxConsumerLagMs = %v, want 70", login.ServerTelemetry.MaxConsumerLagMs)
+	}
+	if login.ServerTelemetry.RequestSizeClasses["small"] != 1 || login.ServerTelemetry.RequestSizeClasses["medium"] != 1 {
+		t.Fatalf("RequestSizeClasses = %#v, want small=1 medium=1", login.ServerTelemetry.RequestSizeClasses)
+	}
+	if login.ServerTelemetry.ResponseSizeClasses["medium"] != 1 || login.ServerTelemetry.ResponseSizeClasses["large"] != 1 {
+		t.Fatalf("ResponseSizeClasses = %#v, want medium=1 large=1", login.ServerTelemetry.ResponseSizeClasses)
 	}
 	if login.ServerTelemetry.ConnectionReusedCount != 1 {
 		t.Fatalf("ConnectionReusedCount = %d, want 1", login.ServerTelemetry.ConnectionReusedCount)
 	}
 	if login.ServerTelemetry.ConnectionReusedPct != 50 {
 		t.Fatalf("ConnectionReusedPct = %v, want 50", login.ServerTelemetry.ConnectionReusedPct)
+	}
+}
+
+func TestMetricsCollector_ByDependencyTargetAggregatesLatencyAndTelemetry(t *testing.T) {
+	mc := NewMetricsCollector(100)
+	snap := mc.computeSnapshot([]*protocol.Result{
+		{
+			ActionName:       "GET /",
+			Success:          true,
+			Duration:         50 * time.Millisecond,
+			DependencyType:   "http",
+			DependencyTarget: "api.example.test",
+			DNSTime:          5 * time.Millisecond,
+			ConnectTime:      10 * time.Millisecond,
+			ServerTelemetry:  &protocol.ServerTelemetry{ServerProcessingMs: 20, TransferMs: 8},
+		},
+		{
+			ActionName:       "GET /catalog",
+			Success:          true,
+			Duration:         100 * time.Millisecond,
+			DependencyType:   "http",
+			DependencyTarget: "api.example.test",
+			DNSTime:          7 * time.Millisecond,
+			ConnectTime:      14 * time.Millisecond,
+			ServerTelemetry:  &protocol.ServerTelemetry{ServerProcessingMs: 40, TransferMs: 12},
+		},
+		{
+			ActionName:       "POST /checkout",
+			Success:          false,
+			Duration:         150 * time.Millisecond,
+			DependencyType:   "http",
+			DependencyTarget: "api.example.test",
+			DNSTime:          9 * time.Millisecond,
+			ConnectTime:      16 * time.Millisecond,
+			ServerTelemetry:  &protocol.ServerTelemetry{ServerProcessingMs: 60, TransferMs: 16},
+		},
+		{
+			ActionName:       "GET /search",
+			Success:          true,
+			Duration:         80 * time.Millisecond,
+			DependencyType:   "http",
+			DependencyTarget: "search.example.test",
+			ServerTelemetry:  &protocol.ServerTelemetry{ServerProcessingMs: 30, TransferMs: 10},
+		},
+	}, time.Second)
+
+	dep := snap.ByDependencyTarget["api.example.test"]
+	if dep == nil {
+		t.Fatal("missing dependency-target aggregate for api.example.test")
+	}
+	if dep.DependencyType != "http" || dep.DependencyTarget != "api.example.test" {
+		t.Fatalf("unexpected dependency aggregate metadata: %#v", dep)
+	}
+	if dep.Count != 3 || dep.Errors != 1 {
+		t.Fatalf("dependency aggregate counts = %#v, want count 3 and errors 1", dep)
+	}
+	if dep.AvgDuration != 100*time.Millisecond {
+		t.Fatalf("AvgDuration = %v, want 100ms", dep.AvgDuration)
+	}
+	assertWithinRange(t, "dependency P50", dep.P50, 70*time.Millisecond, 130*time.Millisecond)
+	assertWithinRange(t, "dependency P95", dep.P95, 120*time.Millisecond, 180*time.Millisecond)
+	assertWithinRange(t, "dependency P99", dep.P99, 130*time.Millisecond, 180*time.Millisecond)
+	if dep.AvgDNSMs != 7 || dep.AvgConnectMs != 13.333333333333334 {
+		t.Fatalf("dependency timing averages = dns:%v connect:%v, want 7 and 13.333...", dep.AvgDNSMs, dep.AvgConnectMs)
+	}
+	if dep.ServerTelemetry == nil || dep.ServerTelemetry.AvgServerProcessingMs != 40 || dep.ServerTelemetry.AvgTransferMs != 12 {
+		t.Fatalf("dependency server telemetry = %#v, want avg server 40 and transfer 12", dep.ServerTelemetry)
 	}
 }
 

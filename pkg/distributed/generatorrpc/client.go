@@ -89,11 +89,23 @@ type ServerTelemetry struct {
 	RequestPayloadKB   float64
 	ResponsePayloadKB  float64
 	ConnectionReused   bool
+	RequestSizeClass   string
+	ResponseSizeClass  string
+	MessageLatencyMs   float64
+	MessagesSent       int32
+	MessagesReceived   int32
+	MessagesSentPerSec float64
+	MessagesReceivedPerSec float64
+	ConsumerLagMs      float64
 }
 
 type TransactionMetric struct {
 	Name             string
 	DurationMs       float64
+	DNSMs            float64
+	ConnectMs        float64
+	TLSMs            float64
+	TTFBMs           float64
 	StatusCode       int32
 	Success          bool
 	ErrorMessage     string
@@ -363,11 +375,23 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 				RequestPayloadKB:   tx.GetServerTelemetry().GetRequestPayloadKb(),
 				ResponsePayloadKB:  tx.GetServerTelemetry().GetResponsePayloadKb(),
 				ConnectionReused:   tx.GetServerTelemetry().GetConnectionReused(),
+				RequestSizeClass:   tx.GetServerTelemetry().GetRequestSizeClass(),
+				ResponseSizeClass:  tx.GetServerTelemetry().GetResponseSizeClass(),
+				MessageLatencyMs:   tx.GetServerTelemetry().GetMessageLatencyMs(),
+				MessagesSent:       tx.GetServerTelemetry().GetMessagesSent(),
+				MessagesReceived:   tx.GetServerTelemetry().GetMessagesReceived(),
+				MessagesSentPerSec: tx.GetServerTelemetry().GetMessagesSentPerSec(),
+				MessagesReceivedPerSec: tx.GetServerTelemetry().GetMessagesReceivedPerSec(),
+				ConsumerLagMs:      tx.GetServerTelemetry().GetConsumerLagMs(),
 			}
 		}
 		transactions = append(transactions, TransactionMetric{
 			Name:             tx.GetName(),
 			DurationMs:       tx.GetDurationMs(),
+			DNSMs:            tx.GetDnsMs(),
+			ConnectMs:        tx.GetConnectMs(),
+			TLSMs:            tx.GetTlsMs(),
+			TTFBMs:           tx.GetTtfbMs(),
 			StatusCode:       tx.GetStatusCode(),
 			Success:          tx.GetSuccess(),
 			ErrorMessage:     tx.GetErrorMessage(),

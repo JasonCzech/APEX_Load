@@ -169,6 +169,7 @@ type LiveMetrics struct {
 	P95Ms           float64                              `json:"p95_ms"`
 	P99Ms           float64                              `json:"p99_ms"`
 	Transactions    map[string]*TxMetrics                `json:"transactions,omitempty"`
+	DependencyHealth map[string]*TxMetrics               `json:"dependency_health,omitempty"`
 	SOAPOperations  map[string]*TxMetrics                `json:"soap_operations,omitempty"`
 	GroupMetrics    map[string]*GroupLiveMetrics         `json:"groups,omitempty"`
 	Browser         *BrowserLiveMetrics                  `json:"browser,omitempty"`
@@ -211,6 +212,18 @@ type ServerTelemetrySummary struct {
 	AvgTransferMs         float64 `json:"avg_transfer_ms,omitempty"`
 	AvgRequestPayloadKB   float64 `json:"avg_request_payload_kb,omitempty"`
 	AvgResponsePayloadKB  float64 `json:"avg_response_payload_kb,omitempty"`
+	RequestPayloadHistogram map[string]int64 `json:"request_payload_histogram,omitempty"`
+	ResponsePayloadHistogram map[string]int64 `json:"response_payload_histogram,omitempty"`
+	AvgMessageLatencyMs   float64 `json:"avg_message_latency_ms,omitempty"`
+	MaxMessageLatencyMs   float64 `json:"max_message_latency_ms,omitempty"`
+	MessagesSent          int64   `json:"messages_sent,omitempty"`
+	MessagesReceived      int64   `json:"messages_received,omitempty"`
+	AvgMessagesSentPerSec float64 `json:"avg_messages_sent_per_sec,omitempty"`
+	AvgMessagesReceivedPerSec float64 `json:"avg_messages_received_per_sec,omitempty"`
+	AvgConsumerLagMs      float64 `json:"avg_consumer_lag_ms,omitempty"`
+	MaxConsumerLagMs      float64 `json:"max_consumer_lag_ms,omitempty"`
+	RequestSizeClasses    map[string]int64 `json:"request_size_classes,omitempty"`
+	ResponseSizeClasses   map[string]int64 `json:"response_size_classes,omitempty"`
 	ConnectionReusedCount int64   `json:"connection_reused_count,omitempty"`
 	ConnectionReusedPct   float64 `json:"connection_reused_pct,omitempty"`
 }
@@ -273,6 +286,7 @@ type RunComparisonBaseline struct {
 	SourceTestName string                `json:"source_test_name"`
 	CompletedAt    time.Time             `json:"completed_at,omitempty"`
 	Transactions   map[string]*TxMetrics `json:"transactions,omitempty"`
+	DependencyHealth map[string]*TxMetrics `json:"dependency_health,omitempty"`
 }
 
 type TelemetryDiagnostic struct {
@@ -294,6 +308,10 @@ type DiagnosticSample struct {
 	ErrorPct         float64  `json:"error_pct,omitempty"`
 	AvgMs            float64  `json:"avg_ms,omitempty"`
 	P99Ms            float64  `json:"p99_ms,omitempty"`
+	AvgMessageLatencyMs       float64 `json:"avg_message_latency_ms,omitempty"`
+	AvgConsumerLagMs          float64 `json:"avg_consumer_lag_ms,omitempty"`
+	AvgMessagesSentPerSec     float64 `json:"avg_messages_sent_per_sec,omitempty"`
+	AvgMessagesReceivedPerSec float64 `json:"avg_messages_received_per_sec,omitempty"`
 }
 
 type goalControllerState struct {
@@ -323,6 +341,10 @@ type TxMetrics struct {
 	DependencyType   string   `json:"dependency_type,omitempty"`
 	DependencyTarget string   `json:"dependency_target,omitempty"`
 	ServerTelemetry  *ServerTelemetrySummary `json:"server_telemetry,omitempty"`
+	AvgDNSMs         float64  `json:"avg_dns_ms,omitempty"`
+	AvgConnectMs     float64  `json:"avg_connect_ms,omitempty"`
+	AvgTLSMs         float64  `json:"avg_tls_ms,omitempty"`
+	AvgTTFBMs        float64  `json:"avg_ttfb_ms,omitempty"`
 	CorrelationIDs   []string `json:"correlation_ids,omitempty"`
 	CorrelationCount int64    `json:"correlation_count,omitempty"`
 	Count            int64    `json:"count"`
@@ -330,6 +352,7 @@ type TxMetrics struct {
 	AvgMs            float64  `json:"avg_ms"`
 	P50Ms            float64  `json:"p50_ms"`
 	P90Ms            float64  `json:"p90_ms"`
+	P95Ms            float64  `json:"p95_ms,omitempty"`
 	P99Ms            float64  `json:"p99_ms"`
 }
 
@@ -401,6 +424,9 @@ const (
 	telemetryDiagnosticSampleInterval    = 5 * time.Second
 	maxTelemetryDiagnosticSamples        = 3
 	slowTransactionDiagnosticThresholdMs = 1000.0
+	jmsBrokerPressureMinLagMs            = 200.0
+	jmsBrokerPressureLagMultiplier       = 2.0
+	jmsBrokerPressureSendRecvRatio       = 1.5
 )
 
 type GeneratorAssignmentSettings struct {
@@ -1925,8 +1951,8 @@ func (tr *TestRunner) buildRunComparisonBaselineLocked(test *ManagedTest) *RunCo
 	if selected == nil {
 		return nil
 	}
-	metrics := latestMetricsWithTransactions(selected)
-	if metrics == nil || len(metrics.Transactions) == 0 {
+	metrics := latestMetricsWithComparableBreakdown(selected)
+	if metrics == nil {
 		return nil
 	}
 	return &RunComparisonBaseline{
@@ -1934,6 +1960,7 @@ func (tr *TestRunner) buildRunComparisonBaselineLocked(test *ManagedTest) *RunCo
 		SourceTestName: selected.Name,
 		CompletedAt:    selectedCompletedAt,
 		Transactions:   cloneTxMetricsMap(metrics.Transactions),
+		DependencyHealth: cloneTxMetricsMap(metrics.DependencyHealth),
 	}
 }
 
@@ -1973,15 +2000,15 @@ func baselineCandidateCompletedAt(candidate *ManagedTest) (time.Time, bool) {
 	return time.Time{}, false
 }
 
-func latestMetricsWithTransactions(test *ManagedTest) *LiveMetrics {
+func latestMetricsWithComparableBreakdown(test *ManagedTest) *LiveMetrics {
 	if test == nil {
 		return nil
 	}
-	if test.LiveMetrics != nil && len(test.LiveMetrics.Transactions) > 0 {
+	if test.LiveMetrics != nil && (len(test.LiveMetrics.Transactions) > 0 || len(test.LiveMetrics.DependencyHealth) > 0) {
 		return test.LiveMetrics
 	}
 	for index := len(test.History) - 1; index >= 0; index-- {
-		if test.History[index] != nil && len(test.History[index].Transactions) > 0 {
+		if test.History[index] != nil && (len(test.History[index].Transactions) > 0 || len(test.History[index].DependencyHealth) > 0) {
 			return test.History[index]
 		}
 	}
@@ -2000,6 +2027,10 @@ func cloneTxMetricsMap(in map[string]*TxMetrics) map[string]*TxMetrics {
 		clone := *tx
 		if tx.ServerTelemetry != nil {
 			telemetry := *tx.ServerTelemetry
+			telemetry.RequestSizeClasses = cloneTelemetryClassCounts(tx.ServerTelemetry.RequestSizeClasses)
+			telemetry.ResponseSizeClasses = cloneTelemetryClassCounts(tx.ServerTelemetry.ResponseSizeClasses)
+			telemetry.RequestPayloadHistogram = cloneTelemetryClassCounts(tx.ServerTelemetry.RequestPayloadHistogram)
+			telemetry.ResponsePayloadHistogram = cloneTelemetryClassCounts(tx.ServerTelemetry.ResponsePayloadHistogram)
 			clone.ServerTelemetry = &telemetry
 		}
 		if len(tx.CorrelationIDs) > 0 {
@@ -2597,6 +2628,7 @@ func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[s
 		P95Ms:         float64(snap.P95.Microseconds()) / 1000.0,
 		P99Ms:         float64(snap.P99.Microseconds()) / 1000.0,
 		Transactions:  make(map[string]*TxMetrics),
+		DependencyHealth: make(map[string]*TxMetrics),
 		SOAPOperations: make(map[string]*TxMetrics),
 		GroupMetrics:  make(map[string]*GroupLiveMetrics),
 		Resources:     snap.Resources,
@@ -2644,37 +2676,15 @@ func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[s
 	}
 
 	for name, am := range snap.ByAction {
-		live.Transactions[name] = &TxMetrics{
-			Name:             name,
-			DependencyType:   am.DependencyType,
-			DependencyTarget: am.DependencyTarget,
-			ServerTelemetry:  cloneEngineServerTelemetrySummary(am.ServerTelemetry),
-			CorrelationIDs:   append([]string(nil), am.CorrelationIDs...),
-			CorrelationCount: am.CorrelationCount,
-			Count:            am.Count,
-			Errors:           am.Errors,
-			AvgMs:            float64(am.AvgDuration.Microseconds()) / 1000.0,
-			P50Ms:            float64(am.P50.Microseconds()) / 1000.0,
-			P90Ms:            float64(am.P90.Microseconds()) / 1000.0,
-			P99Ms:            float64(am.P99.Microseconds()) / 1000.0,
-		}
+		live.Transactions[name] = buildTxMetricsFromAction(name, am)
+	}
+
+	for name, am := range snap.ByDependencyTarget {
+		live.DependencyHealth[name] = buildTxMetricsFromAction(name, am)
 	}
 
 	for name, am := range snap.BySOAPOperation {
-		live.SOAPOperations[name] = &TxMetrics{
-			Name:             name,
-			DependencyType:   am.DependencyType,
-			DependencyTarget: am.DependencyTarget,
-			ServerTelemetry:  cloneEngineServerTelemetrySummary(am.ServerTelemetry),
-			CorrelationIDs:   append([]string(nil), am.CorrelationIDs...),
-			CorrelationCount: am.CorrelationCount,
-			Count:            am.Count,
-			Errors:           am.Errors,
-			AvgMs:            float64(am.AvgDuration.Microseconds()) / 1000.0,
-			P50Ms:            float64(am.P50.Microseconds()) / 1000.0,
-			P90Ms:            float64(am.P90.Microseconds()) / 1000.0,
-			P99Ms:            float64(am.P99.Microseconds()) / 1000.0,
-		}
+		live.SOAPOperations[name] = buildTxMetricsFromAction(name, am)
 	}
 
 	for name, gm := range snap.ByGroup {
@@ -2692,6 +2702,31 @@ func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[s
 	}
 
 	return live
+}
+
+func buildTxMetricsFromAction(name string, am *engine.ActionMetrics) *TxMetrics {
+	if am == nil {
+		return nil
+	}
+	return &TxMetrics{
+		Name:             name,
+		DependencyType:   am.DependencyType,
+		DependencyTarget: am.DependencyTarget,
+		ServerTelemetry:  cloneEngineServerTelemetrySummary(am.ServerTelemetry),
+		AvgDNSMs:         am.AvgDNSMs,
+		AvgConnectMs:     am.AvgConnectMs,
+		AvgTLSMs:         am.AvgTLSMs,
+		AvgTTFBMs:        am.AvgTTFBMs,
+		CorrelationIDs:   append([]string(nil), am.CorrelationIDs...),
+		CorrelationCount: am.CorrelationCount,
+		Count:            am.Count,
+		Errors:           am.Errors,
+		AvgMs:            float64(am.AvgDuration.Microseconds()) / 1000.0,
+		P50Ms:            float64(am.P50.Microseconds()) / 1000.0,
+		P90Ms:            float64(am.P90.Microseconds()) / 1000.0,
+		P95Ms:            float64(am.P95.Microseconds()) / 1000.0,
+		P99Ms:            float64(am.P99.Microseconds()) / 1000.0,
+	}
 }
 
 func buildLiveMetricsForBroadcast(snap engine.MetricsSnapshot, groupVUsers map[string]int, now time.Time) *LiveMetrics {
@@ -2747,6 +2782,24 @@ func buildTelemetryDiagnostic(test *ManagedTest, live *LiveMetrics) (*TelemetryD
 		summaries = append(summaries, sampleSummaries...)
 		signatureParts = append(signatureParts, sampleSignature...)
 		severity = maxDiagnosticSeverity(severity, sampleSeverity)
+	}
+
+	jmsSamples, jmsConditions, jmsSummaries, jmsSeverity, jmsSignature := sampleJMSBrokerDiagnostics(live)
+	if len(jmsConditions) > 0 {
+		samples = append(samples, jmsSamples...)
+		conditions = append(conditions, jmsConditions...)
+		summaries = append(summaries, jmsSummaries...)
+		signatureParts = append(signatureParts, jmsSignature...)
+		severity = maxDiagnosticSeverity(severity, jmsSeverity)
+	}
+
+	dlqSamples, dlqConditions, dlqSummaries, dlqSeverity, dlqSignature := sampleJMSDeadLetterDiagnostics(live)
+	if len(dlqConditions) > 0 {
+		samples = append(samples, dlqSamples...)
+		conditions = append(conditions, dlqConditions...)
+		summaries = append(summaries, dlqSummaries...)
+		signatureParts = append(signatureParts, dlqSignature...)
+		severity = maxDiagnosticSeverity(severity, dlqSeverity)
 	}
 
 	if len(conditions) == 0 {
@@ -2900,6 +2953,155 @@ func countSlowSamples(samples []DiagnosticSample, latencyThreshold float64) int 
 		}
 	}
 	return count
+}
+
+func sampleJMSBrokerDiagnostics(live *LiveMetrics) ([]DiagnosticSample, []string, []string, string, []string) {
+	if live == nil || len(live.Transactions) == 0 {
+		return nil, nil, nil, "healthy", nil
+	}
+
+	type candidate struct {
+		sample DiagnosticSample
+		key    string
+	}
+
+	candidates := make([]candidate, 0, len(live.Transactions))
+	for name, tx := range live.Transactions {
+		if tx == nil || !strings.HasPrefix(tx.DependencyType, "jms_") || tx.ServerTelemetry == nil {
+			continue
+		}
+		telemetry := tx.ServerTelemetry
+		if telemetry.AvgConsumerLagMs < jmsBrokerPressureMinLagMs {
+			continue
+		}
+		baselineLatency := telemetry.AvgMessageLatencyMs
+		if baselineLatency <= 0 {
+			baselineLatency = telemetry.AvgTransferMs
+		}
+		if baselineLatency <= 0 {
+			baselineLatency = jmsBrokerPressureMinLagMs / jmsBrokerPressureLagMultiplier
+		}
+		if telemetry.AvgConsumerLagMs < baselineLatency*jmsBrokerPressureLagMultiplier {
+			continue
+		}
+		sendRate := telemetry.AvgMessagesSentPerSec
+		recvRate := telemetry.AvgMessagesReceivedPerSec
+		if recvRate > 0 && sendRate < recvRate*jmsBrokerPressureSendRecvRatio {
+			continue
+		}
+		if sendRate == 0 && recvRate == 0 && telemetry.MessagesSent == 0 && telemetry.MessagesReceived == 0 {
+			continue
+		}
+		candidates = append(candidates, candidate{
+			sample: DiagnosticSample{
+				Issue:                    "broker",
+				Transaction:              name,
+				DependencyType:           tx.DependencyType,
+				DependencyTarget:         tx.DependencyTarget,
+				CorrelationIDs:           append([]string(nil), tx.CorrelationIDs...),
+				Count:                    tx.Count,
+				AvgMs:                    tx.AvgMs,
+				P99Ms:                    tx.P99Ms,
+				AvgMessageLatencyMs:      telemetry.AvgMessageLatencyMs,
+				AvgConsumerLagMs:         telemetry.AvgConsumerLagMs,
+				AvgMessagesSentPerSec:    sendRate,
+				AvgMessagesReceivedPerSec: recvRate,
+			},
+			key: name,
+		})
+	}
+
+	if len(candidates) == 0 {
+		return nil, nil, nil, "healthy", nil
+	}
+
+	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].sample.AvgConsumerLagMs != candidates[j].sample.AvgConsumerLagMs {
+			return candidates[i].sample.AvgConsumerLagMs > candidates[j].sample.AvgConsumerLagMs
+		}
+		if candidates[i].sample.AvgMessagesSentPerSec != candidates[j].sample.AvgMessagesSentPerSec {
+			return candidates[i].sample.AvgMessagesSentPerSec > candidates[j].sample.AvgMessagesSentPerSec
+		}
+		return strings.Compare(candidates[i].key, candidates[j].key) < 0
+	})
+
+	limit := maxTelemetryDiagnosticSamples
+	if len(candidates) < limit {
+		limit = len(candidates)
+	}
+	samples := make([]DiagnosticSample, 0, limit)
+	signatureParts := make([]string, 0, limit+1)
+	for _, candidate := range candidates[:limit] {
+		samples = append(samples, candidate.sample)
+		signatureParts = append(signatureParts, fmt.Sprintf("broker:%s:%.0f:%.1f:%.1f", candidate.sample.Transaction, candidate.sample.AvgConsumerLagMs, candidate.sample.AvgMessagesSentPerSec, candidate.sample.AvgMessagesReceivedPerSec))
+	}
+
+	conditions := []string{"jms_broker_pressure"}
+	summaries := []string{fmt.Sprintf("sampled %d JMS broker pressure hotspots where consumer lag materially exceeds request-reply latency", len(samples))}
+	signatureParts = append(signatureParts, "condition:jms_broker_pressure")
+	return samples, conditions, summaries, "warning", signatureParts
+}
+
+func sampleJMSDeadLetterDiagnostics(live *LiveMetrics) ([]DiagnosticSample, []string, []string, string, []string) {
+	if live == nil || len(live.Transactions) == 0 {
+		return nil, nil, nil, "healthy", nil
+	}
+
+	type candidate struct {
+		sample DiagnosticSample
+		key    string
+	}
+
+	candidates := make([]candidate, 0, len(live.Transactions))
+	for name, tx := range live.Transactions {
+		if tx == nil || !strings.HasPrefix(tx.DependencyType, "jms_dead_letter_") || tx.Count == 0 {
+			continue
+		}
+		candidates = append(candidates, candidate{
+			sample: DiagnosticSample{
+				Issue:            "dead_letter",
+				Transaction:      name,
+				DependencyType:   tx.DependencyType,
+				DependencyTarget: tx.DependencyTarget,
+				CorrelationIDs:   append([]string(nil), tx.CorrelationIDs...),
+				Count:            tx.Count,
+				Errors:           tx.Errors,
+				AvgMs:            tx.AvgMs,
+				P99Ms:            tx.P99Ms,
+			},
+			key: name,
+		})
+	}
+
+	if len(candidates) == 0 {
+		return nil, nil, nil, "healthy", nil
+	}
+
+	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].sample.Count != candidates[j].sample.Count {
+			return candidates[i].sample.Count > candidates[j].sample.Count
+		}
+		if candidates[i].sample.Errors != candidates[j].sample.Errors {
+			return candidates[i].sample.Errors > candidates[j].sample.Errors
+		}
+		return strings.Compare(candidates[i].key, candidates[j].key) < 0
+	})
+
+	limit := maxTelemetryDiagnosticSamples
+	if len(candidates) < limit {
+		limit = len(candidates)
+	}
+	samples := make([]DiagnosticSample, 0, limit)
+	signatureParts := make([]string, 0, limit+1)
+	for _, candidate := range candidates[:limit] {
+		samples = append(samples, candidate.sample)
+		signatureParts = append(signatureParts, fmt.Sprintf("dead_letter:%s:%d:%d", candidate.sample.Transaction, candidate.sample.Count, candidate.sample.Errors))
+	}
+
+	conditions := []string{"jms_dead_letter_activity"}
+	summaries := []string{fmt.Sprintf("observed %d JMS dead-letter destinations with live traffic", len(samples))}
+	signatureParts = append(signatureParts, "condition:jms_dead_letter_activity")
+	return samples, conditions, summaries, "warning", signatureParts
 }
 
 func maxDiagnosticSeverity(current string, next string) string {

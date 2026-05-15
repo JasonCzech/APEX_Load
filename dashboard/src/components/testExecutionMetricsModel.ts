@@ -28,6 +28,33 @@ export function mapExecutionMetricToHistoryPoint(metric: LiveMetrics): MetricsHi
     diskWrite: metric.resources?.disk_write_kbps,
   }
 
+  const jmsTransactions = Object.values(metric.transactions ?? {}).filter((tx) => tx.dependency_type?.startsWith('jms_') && tx.server_telemetry)
+  if (jmsTransactions.length > 0) {
+    let lagSamples = 0
+    let lagSum = 0
+    let lagPeak = 0
+
+    jmsTransactions.forEach((tx) => {
+      const samples = tx.server_telemetry?.samples ?? 0
+      const avgLag = tx.server_telemetry?.avg_consumer_lag_ms ?? 0
+      if (samples > 0 && avgLag > 0) {
+        lagSamples += samples
+        lagSum += avgLag * samples
+      }
+      const maxLag = tx.server_telemetry?.max_consumer_lag_ms ?? 0
+      if (maxLag > lagPeak) {
+        lagPeak = maxLag
+      }
+    })
+
+    if (lagSamples > 0) {
+      point.jmsConsumerLagMs = lagSum / lagSamples
+    }
+    if (lagPeak > 0) {
+      point.jmsPeakConsumerLagMs = lagPeak
+    }
+  }
+
   if (metric.groups) {
     Object.entries(metric.groups).forEach(([name, groupMetric]) => {
       point[`${name}_tps`] = groupMetric.tps

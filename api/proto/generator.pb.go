@@ -798,14 +798,22 @@ func (x *GroupMetric) GetActiveVusers() int32 {
 }
 
 type ServerTelemetry struct {
-	state              protoimpl.MessageState `protogen:"open.v1"`
-	ServerProcessingMs float64                `protobuf:"fixed64,1,opt,name=server_processing_ms,json=serverProcessingMs,proto3" json:"server_processing_ms,omitempty"`
-	TransferMs         float64                `protobuf:"fixed64,2,opt,name=transfer_ms,json=transferMs,proto3" json:"transfer_ms,omitempty"`
-	RequestPayloadKb   float64                `protobuf:"fixed64,3,opt,name=request_payload_kb,json=requestPayloadKb,proto3" json:"request_payload_kb,omitempty"`
-	ResponsePayloadKb  float64                `protobuf:"fixed64,4,opt,name=response_payload_kb,json=responsePayloadKb,proto3" json:"response_payload_kb,omitempty"`
-	ConnectionReused   bool                   `protobuf:"varint,5,opt,name=connection_reused,json=connectionReused,proto3" json:"connection_reused,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	state                  protoimpl.MessageState `protogen:"open.v1"`
+	ServerProcessingMs     float64                `protobuf:"fixed64,1,opt,name=server_processing_ms,json=serverProcessingMs,proto3" json:"server_processing_ms,omitempty"`
+	TransferMs             float64                `protobuf:"fixed64,2,opt,name=transfer_ms,json=transferMs,proto3" json:"transfer_ms,omitempty"`
+	RequestPayloadKb       float64                `protobuf:"fixed64,3,opt,name=request_payload_kb,json=requestPayloadKb,proto3" json:"request_payload_kb,omitempty"`
+	ResponsePayloadKb      float64                `protobuf:"fixed64,4,opt,name=response_payload_kb,json=responsePayloadKb,proto3" json:"response_payload_kb,omitempty"`
+	ConnectionReused       bool                   `protobuf:"varint,5,opt,name=connection_reused,json=connectionReused,proto3" json:"connection_reused,omitempty"`
+	RequestSizeClass       string                 `protobuf:"bytes,6,opt,name=request_size_class,json=requestSizeClass,proto3" json:"request_size_class,omitempty"`
+	ResponseSizeClass      string                 `protobuf:"bytes,7,opt,name=response_size_class,json=responseSizeClass,proto3" json:"response_size_class,omitempty"`
+	ConsumerLagMs          float64                `protobuf:"fixed64,8,opt,name=consumer_lag_ms,json=consumerLagMs,proto3" json:"consumer_lag_ms,omitempty"`
+	MessageLatencyMs       float64                `protobuf:"fixed64,9,opt,name=message_latency_ms,json=messageLatencyMs,proto3" json:"message_latency_ms,omitempty"`
+	MessagesSent           int32                  `protobuf:"varint,10,opt,name=messages_sent,json=messagesSent,proto3" json:"messages_sent,omitempty"`
+	MessagesReceived       int32                  `protobuf:"varint,11,opt,name=messages_received,json=messagesReceived,proto3" json:"messages_received,omitempty"`
+	MessagesSentPerSec     float64                `protobuf:"fixed64,12,opt,name=messages_sent_per_sec,json=messagesSentPerSec,proto3" json:"messages_sent_per_sec,omitempty"`
+	MessagesReceivedPerSec float64                `protobuf:"fixed64,13,opt,name=messages_received_per_sec,json=messagesReceivedPerSec,proto3" json:"messages_received_per_sec,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
 }
 
 func (x *ServerTelemetry) Reset() {
@@ -871,6 +879,62 @@ func (x *ServerTelemetry) GetConnectionReused() bool {
 		return x.ConnectionReused
 	}
 	return false
+}
+
+func (x *ServerTelemetry) GetRequestSizeClass() string {
+	if x != nil {
+		return x.RequestSizeClass
+	}
+	return ""
+}
+
+func (x *ServerTelemetry) GetResponseSizeClass() string {
+	if x != nil {
+		return x.ResponseSizeClass
+	}
+	return ""
+}
+
+func (x *ServerTelemetry) GetConsumerLagMs() float64 {
+	if x != nil {
+		return x.ConsumerLagMs
+	}
+	return 0
+}
+
+func (x *ServerTelemetry) GetMessageLatencyMs() float64 {
+	if x != nil {
+		return x.MessageLatencyMs
+	}
+	return 0
+}
+
+func (x *ServerTelemetry) GetMessagesSent() int32 {
+	if x != nil {
+		return x.MessagesSent
+	}
+	return 0
+}
+
+func (x *ServerTelemetry) GetMessagesReceived() int32 {
+	if x != nil {
+		return x.MessagesReceived
+	}
+	return 0
+}
+
+func (x *ServerTelemetry) GetMessagesSentPerSec() float64 {
+	if x != nil {
+		return x.MessagesSentPerSec
+	}
+	return 0
+}
+
+func (x *ServerTelemetry) GetMessagesReceivedPerSec() float64 {
+	if x != nil {
+		return x.MessagesReceivedPerSec
+	}
+	return 0
 }
 
 type TransactionMetric struct {
@@ -1705,14 +1769,23 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\rsample_age_ms\x18\x04 \x01(\x01R\vsampleAgeMs\"F\n" +
 	"\vGroupMetric\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12#\n" +
-	"\ractive_vusers\x18\x02 \x01(\x05R\factiveVusers\"\xef\x01\n" +
+	"\ractive_vusers\x18\x02 \x01(\x05R\factiveVusers\"\xe3\x04\n" +
 	"\x0fServerTelemetry\x120\n" +
 	"\x14server_processing_ms\x18\x01 \x01(\x01R\x12serverProcessingMs\x12\x1f\n" +
 	"\vtransfer_ms\x18\x02 \x01(\x01R\n" +
 	"transferMs\x12,\n" +
 	"\x12request_payload_kb\x18\x03 \x01(\x01R\x10requestPayloadKb\x12.\n" +
 	"\x13response_payload_kb\x18\x04 \x01(\x01R\x11responsePayloadKb\x12+\n" +
-	"\x11connection_reused\x18\x05 \x01(\bR\x10connectionReused\"\xf1\x04\n" +
+	"\x11connection_reused\x18\x05 \x01(\bR\x10connectionReused\x12,\n" +
+	"\x12request_size_class\x18\x06 \x01(\tR\x10requestSizeClass\x12.\n" +
+	"\x13response_size_class\x18\a \x01(\tR\x11responseSizeClass\x12&\n" +
+	"\x0fconsumer_lag_ms\x18\b \x01(\x01R\rconsumerLagMs\x12,\n" +
+	"\x12message_latency_ms\x18\t \x01(\x01R\x10messageLatencyMs\x12#\n" +
+	"\rmessages_sent\x18\n" +
+	" \x01(\x05R\fmessagesSent\x12+\n" +
+	"\x11messages_received\x18\v \x01(\x05R\x10messagesReceived\x121\n" +
+	"\x15messages_sent_per_sec\x18\f \x01(\x01R\x12messagesSentPerSec\x129\n" +
+	"\x19messages_received_per_sec\x18\r \x01(\x01R\x16messagesReceivedPerSec\"\xf1\x04\n" +
 	"\x11TransactionMetric\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12+\n" +
 	"\x12start_time_unix_ms\x18\x02 \x01(\x03R\x0fstartTimeUnixMs\x12\x1f\n" +

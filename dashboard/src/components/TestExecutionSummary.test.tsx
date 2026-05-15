@@ -168,6 +168,200 @@ describe('TestExecutionSummary', () => {
 		expect(container.textContent).toContain('checkout.example.test#CreateOrder')
 	})
 
+	it('renders live HTTP response decomposition when phase timing is available', async () => {
+		const home: TxMetrics = {
+			name: 'GET /',
+			dependency_type: 'http',
+			dependency_target: 'storefront.example.test',
+			count: 12,
+			errors: 0,
+			avg_ms: 118,
+			p50_ms: 102,
+			p90_ms: 144,
+			p95_ms: 168,
+			p99_ms: 188,
+			avg_dns_ms: 8,
+			avg_connect_ms: 14,
+			avg_tls_ms: 20,
+			avg_ttfb_ms: 84,
+			server_telemetry: {
+				samples: 12,
+				avg_server_processing_ms: 42,
+				avg_transfer_ms: 18,
+			},
+		}
+		const checkout: TxMetrics = {
+			name: 'POST /checkout',
+			dependency_type: 'http',
+			dependency_target: 'api.example.test',
+			count: 8,
+			errors: 1,
+			avg_ms: 96,
+			p50_ms: 90,
+			p90_ms: 118,
+			p95_ms: 134,
+			p99_ms: 140,
+			avg_dns_ms: 3,
+			avg_connect_ms: 9,
+			avg_tls_ms: 0,
+			avg_ttfb_ms: 58,
+			server_telemetry: {
+				samples: 8,
+				avg_server_processing_ms: 39,
+				avg_transfer_ms: 12,
+			},
+		}
+
+		const baseline: RunComparisonBaseline = {
+			source_test_id: 'test-0',
+			source_test_name: 'Checkout Run - Previous',
+			completed_at: '2026-05-15T18:59:59Z',
+			transactions: {
+				'GET /': {
+					...home,
+					avg_ms: 104,
+					p95_ms: 140,
+					p99_ms: 170,
+					server_telemetry: {
+						samples: 10,
+						avg_server_processing_ms: 36,
+						avg_transfer_ms: 16,
+					},
+				},
+				'POST /checkout': {
+					...checkout,
+					avg_ms: 88,
+					p95_ms: 120,
+					p99_ms: 132,
+					server_telemetry: {
+						samples: 8,
+						avg_server_processing_ms: 34,
+						avg_transfer_ms: 10,
+					},
+				},
+			},
+			dependency_health: {
+				'storefront.example.test': {
+					name: 'storefront.example.test',
+					dependency_type: 'http',
+					dependency_target: 'storefront.example.test',
+					count: 10,
+					errors: 1,
+					avg_ms: 104,
+					p50_ms: 96,
+					p90_ms: 132,
+					p95_ms: 150,
+					p99_ms: 170,
+					server_telemetry: {
+						samples: 10,
+						avg_server_processing_ms: 36,
+						avg_transfer_ms: 16,
+					},
+				},
+				'api.example.test': {
+					name: 'api.example.test',
+					dependency_type: 'http',
+					dependency_target: 'api.example.test',
+					count: 8,
+					errors: 0,
+					avg_ms: 88,
+					p50_ms: 84,
+					p90_ms: 110,
+					p95_ms: 120,
+					p99_ms: 132,
+					server_telemetry: {
+						samples: 8,
+						avg_server_processing_ms: 34,
+						avg_transfer_ms: 10,
+					},
+				},
+			},
+		}
+
+		await act(async () => {
+			root.render(
+				<TestExecutionSummary
+					transactions={[home, checkout]}
+					metrics={{
+						p50_ms: 95,
+						p90_ms: 132,
+						p95_ms: 150,
+						p99_ms: 188,
+						dependency_health: {
+							'storefront.example.test': {
+								name: 'storefront.example.test',
+								dependency_type: 'http',
+								dependency_target: 'storefront.example.test',
+								count: 12,
+								errors: 0,
+								avg_ms: 118,
+								p50_ms: 102,
+								p90_ms: 144,
+								p95_ms: 172,
+								p99_ms: 188,
+								server_telemetry: {
+									samples: 12,
+									avg_server_processing_ms: 42,
+									avg_transfer_ms: 18,
+								},
+							},
+							'api.example.test': {
+								name: 'api.example.test',
+								dependency_type: 'http',
+								dependency_target: 'api.example.test',
+								count: 8,
+								errors: 1,
+								avg_ms: 96,
+								p50_ms: 90,
+								p90_ms: 118,
+								p95_ms: 134,
+								p99_ms: 140,
+								server_telemetry: {
+									samples: 8,
+									avg_server_processing_ms: 39,
+									avg_transfer_ms: 12,
+								},
+							},
+						},
+					}}
+					baseline={baseline}
+					goalConfig={{
+						p95_latency_ms: 160,
+						max_error_pct: 10,
+						max_avg_server_processing_ms: 40,
+					}}
+				/>,
+			)
+		})
+
+		expect(container.textContent).toContain('Live HTTP Dependency Health')
+		expect(container.textContent).toContain('storefront.example.test')
+		expect(container.textContent).toContain('172.0 ms (+22.0 ms vs prev)')
+		expect(container.textContent).toContain('12.5%')
+		expect(container.textContent).toContain('0.0% (-10.0% vs prev)')
+		expect(container.textContent).toContain('Breach: P95, Server')
+		expect(container.textContent).toContain('Breach: Errors')
+		expect(container.textContent).toContain('Live HTTP Response Decomposition')
+		expect(container.textContent).toContain('Stacked Phase View')
+		expect(container.textContent).toContain('Transaction Breakdown')
+		expect(container.textContent).toContain('118.0 ms (+14.0 ms vs prev)')
+		expect(container.textContent).toContain('168.0 ms (+28.0 ms vs prev)')
+		expect(container.textContent).toContain('GET /')
+		expect(container.textContent).toContain('storefront.example.test')
+		expect(container.textContent).toContain('DNS 8.0 ms')
+		expect(container.textContent).toContain('TCP 14.0 ms')
+		expect(container.textContent).toContain('TLS 20.0 ms')
+		expect(container.textContent).toContain('Server 42.0 ms')
+		expect(container.textContent).toContain('Transfer 18.0 ms')
+		expect(container.textContent).toContain('8.0 ms')
+		expect(container.textContent).toContain('14.0 ms')
+		expect(container.textContent).toContain('20.0 ms')
+		expect(container.textContent).toContain('42.0 ms')
+		expect(container.textContent).toContain('18.0 ms')
+		expect(container.textContent).toContain('84.0 ms')
+		expect(container.textContent).toContain('102.0 ms')
+	})
+
 	it('renders live JMS payload hotspots when JMS payload telemetry is available', async () => {
 		const publish: TxMetrics = {
 			name: 'PublishOrder',
@@ -184,6 +378,12 @@ describe('TestExecutionSummary', () => {
 				avg_transfer_ms: 18,
 				avg_request_payload_kb: 6.5,
 				avg_response_payload_kb: 0.5,
+				request_payload_histogram: { '4-16 KB': 12 },
+				response_payload_histogram: { '0-1 KB': 12 },
+				messages_sent: 12,
+				avg_messages_sent_per_sec: 18,
+				request_size_classes: { medium: 12 },
+				response_size_classes: { small: 12 },
 			},
 		}
 		const requestReply: TxMetrics = {
@@ -201,6 +401,18 @@ describe('TestExecutionSummary', () => {
 				avg_transfer_ms: 42,
 				avg_request_payload_kb: 2.25,
 				avg_response_payload_kb: 12.5,
+				request_payload_histogram: { '1-4 KB': 5 },
+				response_payload_histogram: { '4-16 KB': 5 },
+				avg_message_latency_ms: 95,
+				max_message_latency_ms: 110,
+				messages_sent: 5,
+				messages_received: 5,
+				avg_messages_sent_per_sec: 7.5,
+				avg_messages_received_per_sec: 7.5,
+				avg_consumer_lag_ms: 35,
+				max_consumer_lag_ms: 52,
+				request_size_classes: { small: 5 },
+				response_size_classes: { medium: 5 },
 			},
 		}
 		const consume: TxMetrics = {
@@ -218,14 +430,101 @@ describe('TestExecutionSummary', () => {
 				avg_transfer_ms: 12,
 				avg_request_payload_kb: 0,
 				avg_response_payload_kb: 3.4,
+				response_payload_histogram: { '1-4 KB': 20 },
+				messages_received: 20,
+				avg_messages_received_per_sec: 24,
+				avg_consumer_lag_ms: 18,
+				max_consumer_lag_ms: 24,
+				response_size_classes: { small: 20 },
+			},
+		}
+		const publishTopic: TxMetrics = {
+			name: 'BroadcastAudit',
+			dependency_type: 'jms_topic',
+			dependency_target: 'audit.events',
+			count: 8,
+			errors: 0,
+			avg_ms: 40,
+			p50_ms: 35,
+			p90_ms: 50,
+			p99_ms: 64,
+			server_telemetry: {
+				samples: 8,
+				messages_sent: 8,
+				avg_messages_sent_per_sec: 14,
+				avg_request_payload_kb: 1.5,
+				request_payload_histogram: { '1-4 KB': 8 },
+				request_size_classes: { small: 8 },
+			},
+		}
+		const consumeReplica: TxMetrics = {
+			name: 'ConsumeAuditReplica',
+			dependency_type: 'jms_topic',
+			dependency_target: 'audit.events',
+			count: 4,
+			errors: 0,
+			avg_ms: 58,
+			p50_ms: 55,
+			p90_ms: 68,
+			p99_ms: 80,
+			server_telemetry: {
+				samples: 4,
+				messages_received: 4,
+				avg_messages_received_per_sec: 6,
+				avg_consumer_lag_ms: 16,
+				response_payload_histogram: { '1-4 KB': 4 },
+				response_size_classes: { small: 4 },
+			},
+		}
+		const consumeOrderDLQ: TxMetrics = {
+			name: 'ConsumeOrderDLQ',
+			dependency_type: 'jms_dead_letter_queue',
+			dependency_target: 'orders.dlq',
+			count: 7,
+			errors: 2,
+			avg_ms: 185,
+			p50_ms: 170,
+			p90_ms: 220,
+			p99_ms: 300,
+			server_telemetry: {
+				samples: 7,
+				messages_received: 7,
+				avg_messages_received_per_sec: 5,
+				avg_response_payload_kb: 2.2,
+				response_payload_histogram: { '1-4 KB': 7 },
+				response_size_classes: { small: 7 },
+			},
+		}
+		const consumeAuditDLQ: TxMetrics = {
+			name: 'ConsumeAuditDLQ',
+			dependency_type: 'jms_dead_letter_queue',
+			dependency_target: 'audit.dlq',
+			count: 3,
+			errors: 0,
+			avg_ms: 90,
+			p50_ms: 84,
+			p90_ms: 110,
+			p99_ms: 125,
+			server_telemetry: {
+				samples: 3,
+				messages_received: 3,
+				avg_messages_received_per_sec: 4,
+				avg_response_payload_kb: 1.1,
+				response_payload_histogram: { '1-4 KB': 3 },
+				response_size_classes: { small: 3 },
 			},
 		}
 
 		await act(async () => {
 			root.render(
 				<TestExecutionSummary
-					transactions={[publish, requestReply, consume]}
+					transactions={[publish, requestReply, consume, publishTopic, consumeReplica, consumeOrderDLQ, consumeAuditDLQ]}
 					metrics={{ p50_ms: 80, p90_ms: 120, p95_ms: 150, p99_ms: 210 }}
+					history={[
+						{ time: '10:00:00', vusers: 5, tps: 12, avgMs: 90, errorPct: 0, p50: 80, p90: 110, p99: 140, jmsConsumerLagMs: 18, jmsPeakConsumerLagMs: 24 },
+						{ time: '10:00:30', vusers: 5, tps: 11, avgMs: 92, errorPct: 0, p50: 82, p90: 112, p99: 145, jmsConsumerLagMs: 32, jmsPeakConsumerLagMs: 40 },
+						{ time: '10:01:00', vusers: 5, tps: 10, avgMs: 95, errorPct: 0, p50: 85, p90: 120, p99: 150, jmsConsumerLagMs: 45, jmsPeakConsumerLagMs: 52 },
+					]}
 				/>,
 			)
 		})
@@ -243,5 +542,43 @@ describe('TestExecutionSummary', () => {
 		expect(container.textContent).toContain('42.0 ms')
 		expect(container.textContent).toContain('orders.in')
 		expect(container.textContent).toContain('quotes.rpc')
+		expect(container.textContent).toContain('Live JMS Payload Distribution')
+		expect(container.textContent).toContain('small')
+		expect(container.textContent).toContain('medium')
+		expect(container.textContent).toContain('17')
+		expect(container.textContent).toContain('32')
+		expect(container.textContent).toContain('Live JMS Payload Histogram')
+		expect(container.textContent).toContain('0-1 KB')
+		expect(container.textContent).toContain('1-4 KB')
+		expect(container.textContent).toContain('4-16 KB')
+		expect(container.textContent).toContain('13')
+		expect(container.textContent).toContain('34')
+		expect(container.textContent).toContain('Live JMS Messaging')
+		expect(container.textContent).toContain('Highest Message Latency')
+		expect(container.textContent).toContain('95.0 ms')
+		expect(container.textContent).toContain('Fastest Producer Rate')
+		expect(container.textContent).toContain('18.0 msg/s')
+		expect(container.textContent).toContain('Fastest Consumer Rate')
+		expect(container.textContent).toContain('24.0 msg/s')
+		expect(container.textContent).toContain('Largest Message Volume')
+		expect(container.textContent).toContain('20 msgs')
+		expect(container.textContent).toContain('Live JMS Topic Fan-Out')
+		expect(container.textContent).toContain('Widest Observed Fan-Out')
+		expect(container.textContent).toContain('3.00x')
+		expect(container.textContent).toContain('Highest Delivery Volume')
+		expect(container.textContent).toContain('24 copies')
+		expect(container.textContent).toContain('audit.events')
+		expect(container.textContent).toContain('Live JMS Dead-Letter Activity')
+		expect(container.textContent).toContain('Busiest Dead-Letter Destination')
+		expect(container.textContent).toContain('7 msgs')
+		expect(container.textContent).toContain('Highest Dead-Letter Error Rate')
+		expect(container.textContent).toContain('28.6%')
+		expect(container.textContent).toContain('Most Distinct DLQ Actions')
+		expect(container.textContent).toContain('orders.dlq')
+		expect(container.textContent).toContain('JMS Consumer Lag Trend')
+		expect(container.textContent).toContain('Current lag is at the visible-window peak.')
+		expect(container.textContent).toContain('Latest Avg Lag')
+		expect(container.textContent).toContain('45.0 ms')
+		expect(container.textContent).toContain('Window Peak')
 	})
 })

@@ -61,6 +61,10 @@ func (b *transactionBuffer) RecordResult(result *protocol.Result) error {
 	b.transactions = append(b.transactions, TransactionMetric{
 		Name:             result.ActionName,
 		DurationMs:       float64(result.Duration) / float64(time.Millisecond),
+		DNSMs:            float64(result.DNSTime) / float64(time.Millisecond),
+		ConnectMs:        float64(result.ConnectTime) / float64(time.Millisecond),
+		TLSMs:            float64(result.TLSTime) / float64(time.Millisecond),
+		TTFBMs:           float64(result.TTFB) / float64(time.Millisecond),
 		StatusCode:       int32(result.StatusCode),
 		Success:          result.Success,
 		ErrorMessage:     result.ErrorMessage,
@@ -738,11 +742,23 @@ func (s *Service) metricsBatchForMetrics(testID string, stats GeneratorStats, tr
 				RequestPayloadKb:   tx.ServerTelemetry.RequestPayloadKB,
 				ResponsePayloadKb:  tx.ServerTelemetry.ResponsePayloadKB,
 				ConnectionReused:   tx.ServerTelemetry.ConnectionReused,
+				RequestSizeClass:   tx.ServerTelemetry.RequestSizeClass,
+				ResponseSizeClass:  tx.ServerTelemetry.ResponseSizeClass,
+				MessageLatencyMs:   tx.ServerTelemetry.MessageLatencyMs,
+				MessagesSent:       tx.ServerTelemetry.MessagesSent,
+				MessagesReceived:   tx.ServerTelemetry.MessagesReceived,
+				MessagesSentPerSec: tx.ServerTelemetry.MessagesSentPerSec,
+				MessagesReceivedPerSec: tx.ServerTelemetry.MessagesReceivedPerSec,
+				ConsumerLagMs:      tx.ServerTelemetry.ConsumerLagMs,
 			}
 		}
 		protoTransactions = append(protoTransactions, &pb.TransactionMetric{
 			Name:             tx.Name,
 			DurationMs:       tx.DurationMs,
+			DnsMs:            tx.DNSMs,
+			ConnectMs:        tx.ConnectMs,
+			TlsMs:            tx.TLSMs,
+			TtfbMs:           tx.TTFBMs,
 			StatusCode:       tx.StatusCode,
 			Success:          tx.Success,
 			ErrorMessage:     tx.ErrorMessage,
@@ -811,6 +827,14 @@ func cloneServerTelemetry(input *protocol.ServerTelemetry) *ServerTelemetry {
 		RequestPayloadKB:   input.RequestPayloadKB,
 		ResponsePayloadKB:  input.ResponsePayloadKB,
 		ConnectionReused:   input.ConnectionReused,
+		RequestSizeClass:   input.RequestSizeClass,
+		ResponseSizeClass:  input.ResponseSizeClass,
+		MessageLatencyMs:   input.MessageLatencyMs,
+		MessagesSent:       int32(input.MessagesSent),
+		MessagesReceived:   int32(input.MessagesReceived),
+		MessagesSentPerSec: input.MessagesSentPerSec,
+		MessagesReceivedPerSec: input.MessagesReceivedPerSec,
+		ConsumerLagMs:      input.ConsumerLagMs,
 	}
 }
 

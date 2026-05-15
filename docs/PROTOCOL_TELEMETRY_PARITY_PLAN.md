@@ -21,7 +21,7 @@ The Mobile UX Strategy defines three layers. The equivalent for each protocol fa
 - HTTP timing decomposition for server processing, transfer, request/response payload sizes, request/response size classification, connection reuse, and redirect-hop timing.
 - SOAP operation tagging, fault categorization, namespace-conflict detection, raw envelope-overhead tracking, and fault-code retention on archived events.
 - Java HTTP dependency tagging plus helper/codec metadata propagation and raw codec timing retention.
-- JMS payload sizing, request/reply timing, message counts, per-action message throughput, message latency, and consumer-lag retention on archived events.
+- JMS payload sizing, request/reply timing, message counts, per-action message throughput, message latency, consumer-lag retention on archived events, live payload size-class distributions, live consumer-lag trend surfacing, live JMS messaging cards for throughput and request-reply latency, sampled broker-pressure diagnostics inferred from consumer-lag versus messaging-rate patterns, and observed topic fan-out analysis from sent-versus-received topic totals.
 - Goal-oriented SLA parity for server processing and transfer thresholds, including stop-on-breach behavior.
 - Previous-run comparison baselines on `GetTest`, used by the live execution summary and dedicated server telemetry panel.
 
@@ -55,24 +55,18 @@ Each protocol must populate enough telemetry for the dashboard to answer the sam
 
 ### 1. HTTP Protocol
 
-**Current state:** Most mature. Has DNS, TCP, TLS, TTFB timing phases, server-processing and transfer decomposition, redirect hop timing, request/response payload-size classification, content checks, data formatting, proxy, auth, correlation IDs, dependency classification, run-level server telemetry thresholds, and previous-run baseline comparison. Missing the remaining analytical layer.
+**Current state:** Most mature. Has DNS, TCP, TLS, TTFB timing phases, server-processing and transfer decomposition, redirect hop timing, request/response payload-size classification, content checks, data formatting, proxy, auth, correlation IDs, dependency classification, run-level server telemetry thresholds, previous-run baseline comparison, live HTTP response decomposition table and stacked phase views in the execution summary, live dependency-health aggregation by downstream target with P95/P99 latency and error-rate summaries, per-transaction and per-dependency SLA status derived from goal-config thresholds, and action/dependency baseline deltas in the execution summary.
 
 **L2 gaps:**
 
 **L3 gaps:**
-- No **response time decomposition** dashboard (stacked bar: DNS + TCP + TLS + server + transfer)
-- No **dependency health** aggregation (P95 by downstream host)
-- No **per-transaction / per-dependency** SLA scoring beyond run-level goal-controller thresholds
-- No **per-transaction / per-dependency** baseline breakdown against prior runs
+- No additional HTTP parity gaps are currently tracked for the telemetry already captured in this build.
 
 **Work items:**
 
 | Item | Layer | Location | Effort |
 |:---|:---|:---|:---|
-| Response time decomposition chart in dashboard | L3 | `dashboard/` | 2 days |
-| Per-dependency P95/P99 aggregation | L3 | `engine/metrics.go` | 2 days |
-| Per-transaction / per-dependency SLA evaluation beyond run goals | L3 | `engine/`, `api/`, `dashboard/` | 2 days |
-| Baseline comparison at action / dependency granularity | L3 | `api/`, `dashboard/` | 2 days |
+| None for current captured telemetry | - | - | - |
 
 ---
 
@@ -168,31 +162,22 @@ Each protocol must populate enough telemetry for the dashboard to answer the sam
 
 ### 6. JMS Protocol
 
-**Current state:** Solace and IBM MQ providers, pub/sub/request-reply, message properties, correlation IDs, dependency classification, and raw per-action message-throughput, size-class, message-latency, and consumer-lag retention for request/reply flows. The live dashboard now also exposes JMS payload hotspots from existing average request/response payload telemetry, but full message-size histogram views remain open. Most complete L1 after HTTP.
+**Current state:** Solace and IBM MQ providers, pub/sub/request-reply, message properties, correlation IDs, dependency classification, and raw per-action message-throughput, size-class, message-latency, and consumer-lag retention for request/reply flows. The live dashboard now exposes JMS payload hotspots from average request/response payload telemetry, truthful size-class distribution tables, finer byte-range payload histograms from exact message sizes, a visible-window consumer-lag trend from live history, messaging cards/tables for live send rate, receive rate, observed message volume, and request-reply latency, monitoring diagnostics that flag likely broker pressure when consumer lag materially outpaces request-reply latency and consumer throughput trails producers, an observed topic fan-out view derived from sent-versus-received message totals for JMS topic targets, sampled dead-letter diagnostics for explicitly classified DLQ destinations and actions, and a live dead-letter destination summary derived from those same classified DLQ transactions. Most complete L1 after HTTP.
 
 **L2 gaps:**
 - No **broker-side latency** isolation (time in broker vs. time in network)
 - No **queue depth** sampling (requires broker management API, provider-specific)
 - No **consumer acknowledgement** latency
-- No **message size distribution** beyond raw payload sizes and size classes
 
 **L3 gaps:**
-- No **broker health** correlation (latency spike vs. queue depth)
-- No **dead-letter** monitoring
-- No **consumer lag trend / alerting** across a run
-- No **topic fan-out** analysis (message delivered to N subscribers)
+- No **automatic broker-managed dead-letter discovery** or queue-depth correlation via provider management APIs
 
 **Work items:**
 
 | Item | Layer | Location | Effort |
 |:---|:---|:---|:---|
-| `JMSTelemetry` struct on `protocol.Result` | L2 | `protocol.go` | 0.5 days |
 | Acknowledgement latency timing | L2 | `jms/jms.go` | 0.5 days |
-| Message size distribution / histogram views from payload telemetry | L2 | `engine/metrics.go`, `dashboard/` | 1 day |
-| Broker health inference from latency patterns | L3 | `engine/metrics.go` | 2 days |
-| JMS-specific dashboard cards | L3 | `dashboard/` | 2 days |
-| Consumer lag trend / alerting | L3 | `engine/metrics.go`, `dashboard/` | 1 day |
-| Dead-letter queue alerting (provider-specific) | L3 | `jms/jms.go`, `api/` | 1.5 days |
+| Automatic dead-letter discovery / queue-depth correlation (provider-specific) | L3 | `jms/jms.go`, `api/` | 1.5 days |
 
 ---
 

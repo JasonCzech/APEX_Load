@@ -39,6 +39,7 @@ type MetricsSnapshot struct {
 	P95          time.Duration
 	P99          time.Duration
 	ByAction     map[string]*ActionMetrics
+	ByDependencyTarget map[string]*ActionMetrics `json:"by_dependency_target,omitempty"`
 	BySOAPOperation map[string]*ActionMetrics `json:"by_soap_operation,omitempty"`
 	ByGroup      map[string]*GroupMetrics
 	Browser      *BrowserMetricsSummary               `json:"browser,omitempty"`
@@ -79,6 +80,18 @@ type ServerTelemetrySummary struct {
 	AvgTransferMs         float64 `json:"avg_transfer_ms,omitempty"`
 	AvgRequestPayloadKB   float64 `json:"avg_request_payload_kb,omitempty"`
 	AvgResponsePayloadKB  float64 `json:"avg_response_payload_kb,omitempty"`
+	RequestPayloadHistogram map[string]int64 `json:"request_payload_histogram,omitempty"`
+	ResponsePayloadHistogram map[string]int64 `json:"response_payload_histogram,omitempty"`
+	AvgMessageLatencyMs   float64 `json:"avg_message_latency_ms,omitempty"`
+	MaxMessageLatencyMs   float64 `json:"max_message_latency_ms,omitempty"`
+	MessagesSent          int64   `json:"messages_sent,omitempty"`
+	MessagesReceived      int64   `json:"messages_received,omitempty"`
+	AvgMessagesSentPerSec float64 `json:"avg_messages_sent_per_sec,omitempty"`
+	AvgMessagesReceivedPerSec float64 `json:"avg_messages_received_per_sec,omitempty"`
+	AvgConsumerLagMs      float64 `json:"avg_consumer_lag_ms,omitempty"`
+	MaxConsumerLagMs      float64 `json:"max_consumer_lag_ms,omitempty"`
+	RequestSizeClasses    map[string]int64 `json:"request_size_classes,omitempty"`
+	ResponseSizeClasses   map[string]int64 `json:"response_size_classes,omitempty"`
 	ConnectionReusedCount int64   `json:"connection_reused_count,omitempty"`
 	ConnectionReusedPct   float64 `json:"connection_reused_pct,omitempty"`
 }
@@ -115,6 +128,10 @@ type ActionMetrics struct {
 	DependencyType   string
 	DependencyTarget string
 	ServerTelemetry  *ServerTelemetrySummary `json:"server_telemetry,omitempty"`
+	AvgDNSMs         float64 `json:"avg_dns_ms,omitempty"`
+	AvgConnectMs     float64 `json:"avg_connect_ms,omitempty"`
+	AvgTLSMs         float64 `json:"avg_tls_ms,omitempty"`
+	AvgTTFBMs        float64 `json:"avg_ttfb_ms,omitempty"`
 	CorrelationIDs   []string
 	CorrelationCount int64
 	Count            int64
@@ -124,6 +141,7 @@ type ActionMetrics struct {
 	MaxDuration      time.Duration
 	P50              time.Duration
 	P90              time.Duration
+	P95              time.Duration
 	P99              time.Duration
 	BytesSent        int64
 	BytesRecv        int64
@@ -254,6 +272,7 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 		Window:       window,
 		ActiveVUsers: mc.current.activeVUsers.Load(),
 		ByAction:     make(map[string]*ActionMetrics),
+		ByDependencyTarget: make(map[string]*ActionMetrics),
 		BySOAPOperation: make(map[string]*ActionMetrics),
 		ByGroup:      make(map[string]*GroupMetrics),
 		BrowserByDevice: make(map[string]*BrowserDeviceMetrics),
@@ -264,6 +283,12 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 
 	var totalDuration time.Duration
 	td := NewTDigest(200)
+	actionDigests := make(map[string]*TDigest)
+	actionDurationSum := make(map[string]time.Duration)
+	dependencyDigests := make(map[string]*TDigest)
+	dependencyDurationSum := make(map[string]time.Duration)
+	soapDigests := make(map[string]*TDigest)
+	soapDurationSum := make(map[string]time.Duration)
 	groupDigests := make(map[string]*TDigest)
 	groupDurationSum := make(map[string]time.Duration)
 
@@ -285,6 +310,21 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 			snap.ByAction[r.ActionName] = am
 		}
 		mergeActionResult(am, r)
+		recordDurationSample(actionDigests, actionDurationSum, r.ActionName, r.Duration)
+
+		if dependencyTarget := strings.TrimSpace(r.DependencyTarget); dependencyTarget != "" {
+			dm, ok := snap.ByDependencyTarget[dependencyTarget]
+			if !ok {
+				dm = &ActionMetrics{
+					Name:        dependencyTarget,
+					MinDuration: r.Duration,
+					MaxDuration: r.Duration,
+				}
+				snap.ByDependencyTarget[dependencyTarget] = dm
+			}
+			mergeActionResult(dm, r)
+			recordDurationSample(dependencyDigests, dependencyDurationSum, dependencyTarget, r.Duration)
+		}
 
 		if operation := soapOperationFromResult(r); operation != "" {
 			om, ok := snap.BySOAPOperation[operation]
@@ -297,6 +337,7 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 				snap.BySOAPOperation[operation] = om
 			}
 			mergeActionResult(om, r)
+			recordDurationSample(soapDigests, soapDurationSum, operation, r.Duration)
 		}
 
 		if r.Group != "" {
@@ -356,11 +397,14 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 			gm.P99 = time.Duration(gd.Quantile(0.99))
 		}
 	}
-	for _, am := range snap.ByAction {
-		finalizeServerTelemetrySummary(am.ServerTelemetry)
+	for name, am := range snap.ByAction {
+		finalizeActionMetrics(am, actionDurationSum[name], actionDigests[name])
 	}
-	for _, am := range snap.BySOAPOperation {
-		finalizeServerTelemetrySummary(am.ServerTelemetry)
+	for name, am := range snap.ByDependencyTarget {
+		finalizeActionMetrics(am, dependencyDurationSum[name], dependencyDigests[name])
+	}
+	for name, am := range snap.BySOAPOperation {
+		finalizeActionMetrics(am, soapDurationSum[name], soapDigests[name])
 	}
 	finalizeBrowserMetricsSummary(snap.Browser)
 	for _, metrics := range snap.BrowserByDevice {
@@ -389,6 +433,10 @@ func mergeActionResult(metrics *ActionMetrics, result *protocol.Result) {
 		metrics.Errors++
 	}
 	mergeActionMetadata(metrics, result)
+	metrics.AvgDNSMs += durationToMilliseconds(result.DNSTime)
+	metrics.AvgConnectMs += durationToMilliseconds(result.ConnectTime)
+	metrics.AvgTLSMs += durationToMilliseconds(result.TLSTime)
+	metrics.AvgTTFBMs += durationToMilliseconds(result.TTFB)
 	if result.ServerTelemetry != nil {
 		if metrics.ServerTelemetry == nil {
 			metrics.ServerTelemetry = &ServerTelemetrySummary{}
@@ -403,6 +451,38 @@ func mergeActionResult(metrics *ActionMetrics, result *protocol.Result) {
 	if result.Duration > metrics.MaxDuration {
 		metrics.MaxDuration = result.Duration
 	}
+}
+
+func recordDurationSample(digests map[string]*TDigest, totals map[string]time.Duration, key string, duration time.Duration) {
+	if key == "" {
+		return
+	}
+	totals[key] += duration
+	if _, ok := digests[key]; !ok {
+		digests[key] = NewTDigest(200)
+	}
+	digests[key].Add(float64(duration))
+}
+
+func finalizeActionMetrics(metrics *ActionMetrics, totalDuration time.Duration, td *TDigest) {
+	if metrics == nil || metrics.Count == 0 {
+		return
+	}
+	if totalDuration > 0 {
+		metrics.AvgDuration = totalDuration / time.Duration(metrics.Count)
+	}
+	if td != nil {
+		metrics.P50 = time.Duration(td.Quantile(0.50))
+		metrics.P90 = time.Duration(td.Quantile(0.90))
+		metrics.P95 = time.Duration(td.Quantile(0.95))
+		metrics.P99 = time.Duration(td.Quantile(0.99))
+	}
+	divisor := float64(metrics.Count)
+	metrics.AvgDNSMs /= divisor
+	metrics.AvgConnectMs /= divisor
+	metrics.AvgTLSMs /= divisor
+	metrics.AvgTTFBMs /= divisor
+	finalizeServerTelemetrySummary(metrics.ServerTelemetry)
 }
 
 const maxCorrelationSamplesPerAction = 3
@@ -463,6 +543,22 @@ func mergeServerTelemetrySummary(summary *ServerTelemetrySummary, telemetry *pro
 	summary.AvgTransferMs += telemetry.TransferMs
 	summary.AvgRequestPayloadKB += telemetry.RequestPayloadKB
 	summary.AvgResponsePayloadKB += telemetry.ResponsePayloadKB
+	incrementTelemetryHistogramCount(&summary.RequestPayloadHistogram, telemetry.RequestPayloadKB)
+	incrementTelemetryHistogramCount(&summary.ResponsePayloadHistogram, telemetry.ResponsePayloadKB)
+	summary.AvgMessageLatencyMs += telemetry.MessageLatencyMs
+	if telemetry.MessageLatencyMs > summary.MaxMessageLatencyMs {
+		summary.MaxMessageLatencyMs = telemetry.MessageLatencyMs
+	}
+	summary.MessagesSent += int64(telemetry.MessagesSent)
+	summary.MessagesReceived += int64(telemetry.MessagesReceived)
+	summary.AvgMessagesSentPerSec += telemetry.MessagesSentPerSec
+	summary.AvgMessagesReceivedPerSec += telemetry.MessagesReceivedPerSec
+	summary.AvgConsumerLagMs += telemetry.ConsumerLagMs
+	if telemetry.ConsumerLagMs > summary.MaxConsumerLagMs {
+		summary.MaxConsumerLagMs = telemetry.ConsumerLagMs
+	}
+	incrementTelemetryClassCount(&summary.RequestSizeClasses, telemetry.RequestSizeClass)
+	incrementTelemetryClassCount(&summary.ResponseSizeClasses, telemetry.ResponseSizeClass)
 	if telemetry.ConnectionReused {
 		summary.ConnectionReusedCount++
 	}
@@ -477,7 +573,71 @@ func finalizeServerTelemetrySummary(summary *ServerTelemetrySummary) {
 	summary.AvgTransferMs /= divisor
 	summary.AvgRequestPayloadKB /= divisor
 	summary.AvgResponsePayloadKB /= divisor
+	summary.AvgMessageLatencyMs /= divisor
+	summary.AvgMessagesSentPerSec /= divisor
+	summary.AvgMessagesReceivedPerSec /= divisor
+	summary.AvgConsumerLagMs /= divisor
 	summary.ConnectionReusedPct = float64(summary.ConnectionReusedCount) / divisor * 100
+	if len(summary.RequestSizeClasses) == 0 {
+		summary.RequestSizeClasses = nil
+	}
+	if len(summary.ResponseSizeClasses) == 0 {
+		summary.ResponseSizeClasses = nil
+	}
+	if len(summary.RequestPayloadHistogram) == 0 {
+		summary.RequestPayloadHistogram = nil
+	}
+	if len(summary.ResponsePayloadHistogram) == 0 {
+		summary.ResponsePayloadHistogram = nil
+	}
+}
+
+func incrementTelemetryClassCount(values *map[string]int64, key string) {
+	if values == nil || key == "" {
+		return
+	}
+	if *values == nil {
+		*values = make(map[string]int64)
+	}
+	(*values)[key]++
+}
+
+func incrementTelemetryHistogramCount(values *map[string]int64, payloadKB float64) {
+	if values == nil {
+		return
+	}
+	key := payloadHistogramBucket(payloadKB)
+	if key == "" {
+		return
+	}
+	if *values == nil {
+		*values = make(map[string]int64)
+	}
+	(*values)[key]++
+}
+
+func payloadHistogramBucket(payloadKB float64) string {
+	switch {
+	case payloadKB <= 0:
+		return ""
+	case payloadKB < 1:
+		return "0-1 KB"
+	case payloadKB < 4:
+		return "1-4 KB"
+	case payloadKB < 16:
+		return "4-16 KB"
+	case payloadKB < 64:
+		return "16-64 KB"
+	default:
+		return "64+ KB"
+	}
+}
+
+func durationToMilliseconds(duration time.Duration) float64 {
+	if duration <= 0 {
+		return 0
+	}
+	return float64(duration.Microseconds()) / 1000.0
 }
 
 func finalizeBrowserMetricsSummary(summary *BrowserMetricsSummary) {

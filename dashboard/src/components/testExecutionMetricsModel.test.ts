@@ -21,6 +21,38 @@ describe('testExecutionMetricsModel', () => {
       p90_ms: 150,
       p95_ms: 160,
       p99_ms: 220,
+      transactions: {
+        PublishOrder: {
+          name: 'PublishOrder',
+          dependency_type: 'jms_queue',
+          count: 3,
+          errors: 0,
+          avg_ms: 90,
+          p50_ms: 80,
+          p90_ms: 100,
+          p99_ms: 120,
+          server_telemetry: {
+            samples: 3,
+            avg_consumer_lag_ms: 20,
+            max_consumer_lag_ms: 28,
+          },
+        },
+        RequestReply: {
+          name: 'RequestReply',
+          dependency_type: 'jms_queue',
+          count: 2,
+          errors: 0,
+          avg_ms: 110,
+          p50_ms: 100,
+          p90_ms: 130,
+          p99_ms: 150,
+          server_telemetry: {
+            samples: 2,
+            avg_consumer_lag_ms: 50,
+            max_consumer_lag_ms: 65,
+          },
+        },
+      },
       groups: {
         Checkout: {
           name: 'Checkout',
@@ -66,6 +98,8 @@ describe('testExecutionMetricsModel', () => {
       latency_edge: 42,
       cpuProcess: 10,
       memProcess: 256,
+      jmsConsumerLagMs: 32,
+      jmsPeakConsumerLagMs: 65,
     })
   })
 

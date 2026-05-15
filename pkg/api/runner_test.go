@@ -482,12 +482,39 @@ func TestBuildLiveMetricsFromSnapshot(t *testing.T) {
 		P99:          600 * time.Millisecond,
 		ByAction: map[string]*engine.ActionMetrics{
 			"login": {
+				Name:         "login",
+				DependencyType: "http",
+				DependencyTarget: "api.example.test",
+				AvgDNSMs:     8,
+				AvgConnectMs: 14,
+				AvgTLSMs:     6,
+				AvgTTFBMs:    74,
 				Count:       10,
 				Errors:      1,
 				AvgDuration: 150 * time.Millisecond,
 				P50:         120 * time.Millisecond,
 				P90:         240 * time.Millisecond,
+				P95:         320 * time.Millisecond,
 				P99:         500 * time.Millisecond,
+			},
+		},
+		ByDependencyTarget: map[string]*engine.ActionMetrics{
+			"api.example.test": {
+				Name:             "api.example.test",
+				DependencyType:   "http",
+				DependencyTarget: "api.example.test",
+				Count:            12,
+				Errors:           2,
+				AvgDuration:      180 * time.Millisecond,
+				P50:              140 * time.Millisecond,
+				P90:              260 * time.Millisecond,
+				P95:              330 * time.Millisecond,
+				P99:              470 * time.Millisecond,
+				ServerTelemetry: &engine.ServerTelemetrySummary{
+					Samples:               12,
+					AvgServerProcessingMs: 58,
+					AvgTransferMs:         16,
+				},
 			},
 		},
 		BySOAPOperation: map[string]*engine.ActionMetrics{
@@ -504,6 +531,26 @@ func TestBuildLiveMetricsFromSnapshot(t *testing.T) {
 					Samples:               8,
 					AvgServerProcessingMs: 55,
 					AvgTransferMs:         15,
+					RequestPayloadHistogram: map[string]int64{
+						"1-4 KB": 3,
+					},
+					ResponsePayloadHistogram: map[string]int64{
+						"4-16 KB": 8,
+					},
+					AvgMessageLatencyMs:   42,
+					MaxMessageLatencyMs:   61,
+					MessagesSent:          8,
+					MessagesReceived:      6,
+					AvgMessagesSentPerSec: 11,
+					AvgMessagesReceivedPerSec: 8.5,
+					AvgConsumerLagMs:      12,
+					MaxConsumerLagMs:      18,
+					RequestSizeClasses: map[string]int64{
+						"small": 6,
+					},
+					ResponseSizeClasses: map[string]int64{
+						"medium": 8,
+					},
 				},
 			},
 		},
@@ -580,6 +627,21 @@ func TestBuildLiveMetricsFromSnapshot(t *testing.T) {
 	if live.SOAPOperations["CreateOrder"].DependencyTarget != "checkout.example.test#CreateOrder" {
 		t.Fatalf("expected SOAP operation dependency target to be mapped, got %#v", live.SOAPOperations["CreateOrder"])
 	}
+	if live.SOAPOperations["CreateOrder"].ServerTelemetry == nil || live.SOAPOperations["CreateOrder"].ServerTelemetry.AvgConsumerLagMs != 12 {
+		t.Fatalf("expected SOAP operation consumer lag telemetry to be mapped, got %#v", live.SOAPOperations["CreateOrder"].ServerTelemetry)
+	}
+	if live.SOAPOperations["CreateOrder"].ServerTelemetry.AvgMessageLatencyMs != 42 || live.SOAPOperations["CreateOrder"].ServerTelemetry.MessagesSent != 8 {
+		t.Fatalf("expected SOAP operation messaging telemetry to be mapped, got %#v", live.SOAPOperations["CreateOrder"].ServerTelemetry)
+	}
+	if live.SOAPOperations["CreateOrder"].ServerTelemetry.RequestSizeClasses["small"] != 6 {
+		t.Fatalf("expected SOAP operation request size classes to be mapped, got %#v", live.SOAPOperations["CreateOrder"].ServerTelemetry.RequestSizeClasses)
+	}
+	if live.SOAPOperations["CreateOrder"].ServerTelemetry.RequestPayloadHistogram["1-4 KB"] != 3 {
+		t.Fatalf("expected SOAP operation request payload histogram to be mapped, got %#v", live.SOAPOperations["CreateOrder"].ServerTelemetry.RequestPayloadHistogram)
+	}
+	if live.SOAPOperations["CreateOrder"].ServerTelemetry.ResponsePayloadHistogram["4-16 KB"] != 8 {
+		t.Fatalf("expected SOAP operation response payload histogram to be mapped, got %#v", live.SOAPOperations["CreateOrder"].ServerTelemetry.ResponsePayloadHistogram)
+	}
 
 	login, ok := live.Transactions["login"]
 	if !ok {
@@ -588,8 +650,17 @@ func TestBuildLiveMetricsFromSnapshot(t *testing.T) {
 	if login.Count != 10 || login.Errors != 1 {
 		t.Fatalf("unexpected login metrics: %+v", login)
 	}
-	if login.AvgMs != 150 || login.P50Ms != 120 || login.P90Ms != 240 || login.P99Ms != 500 {
+	if login.AvgDNSMs != 8 || login.AvgConnectMs != 14 || login.AvgTLSMs != 6 || login.AvgTTFBMs != 74 {
+		t.Fatalf("expected login timing phases to be mapped, got %+v", login)
+	}
+	if login.AvgMs != 150 || login.P50Ms != 120 || login.P90Ms != 240 || login.P95Ms != 320 || login.P99Ms != 500 {
 		t.Fatalf("unexpected converted login percentiles: %+v", login)
+	}
+	if live.DependencyHealth == nil || live.DependencyHealth["api.example.test"] == nil {
+		t.Fatalf("expected dependency health metrics to be mapped, got %#v", live.DependencyHealth)
+	}
+	if live.DependencyHealth["api.example.test"].P95Ms != 330 || live.DependencyHealth["api.example.test"].ServerTelemetry == nil || live.DependencyHealth["api.example.test"].ServerTelemetry.AvgServerProcessingMs != 58 {
+		t.Fatalf("expected dependency health p95 and telemetry to be mapped, got %#v", live.DependencyHealth["api.example.test"])
 	}
 
 	buyers, ok := live.GroupMetrics["buyers"]
@@ -934,6 +1005,135 @@ func TestPublishLiveMetricsBroadcastsSampledTransactionDiagnostics(t *testing.T)
 		}
 		if diagnosticPayload.Data.Samples[1].Transaction != "Search" || diagnosticPayload.Data.Samples[1].DependencyTarget != "catalog.example.test" {
 			t.Fatalf("unexpected second diagnostic sample: %#v", diagnosticPayload.Data.Samples[1])
+		}
+	default:
+		t.Fatal("expected telemetry_diagnostic broadcast payload")
+	}
+}
+
+func TestPublishLiveMetricsBroadcastsJMSBrokerPressureDiagnostic(t *testing.T) {
+	hub := NewHub()
+	runner := NewTestRunner(2, hub, nil)
+	testRun := &ManagedTest{ID: "test-1", Name: "JMS Checkout"}
+	live := &LiveMetrics{
+		Timestamp: time.Now(),
+		TotalTx:   12,
+		Transactions: map[string]*TxMetrics{
+			"RequestReplyQuote": {
+				Name:             "RequestReplyQuote",
+				DependencyType:   "jms_queue",
+				DependencyTarget: "quotes.rpc",
+				CorrelationIDs:   []string{"corr-quote-1"},
+				Count:            6,
+				AvgMs:            320,
+				P99Ms:            540,
+				ServerTelemetry: &ServerTelemetrySummary{
+					Samples:                  6,
+					AvgMessageLatencyMs:      60,
+					AvgConsumerLagMs:         280,
+					AvgMessagesSentPerSec:    30,
+					AvgMessagesReceivedPerSec: 12,
+				},
+			},
+		},
+		Telemetry: &TelemetryHealth{},
+	}
+
+	runner.publishLiveMetrics(testRun, live, nil)
+
+	select {
+	case <-hub.broadcast:
+	default:
+		t.Fatal("expected metrics_update broadcast")
+	}
+
+	var diagnosticPayload struct {
+		Type string               `json:"type"`
+		Data *TelemetryDiagnostic `json:"data"`
+	}
+	select {
+	case msg := <-hub.broadcast:
+		if err := json.Unmarshal(msg, &diagnosticPayload); err != nil {
+			t.Fatalf("failed to decode diagnostic payload: %v", err)
+		}
+		if diagnosticPayload.Type != "telemetry_diagnostic" {
+			t.Fatalf("expected telemetry_diagnostic second, got %#v", diagnosticPayload)
+		}
+		if diagnosticPayload.Data == nil || diagnosticPayload.Data.Severity != "warning" {
+			t.Fatalf("expected warning severity, got %#v", diagnosticPayload.Data)
+		}
+		if !strings.Contains(diagnosticPayload.Data.Summary, "JMS broker pressure hotspots") {
+			t.Fatalf("unexpected diagnostic summary: %#v", diagnosticPayload.Data)
+		}
+		if len(diagnosticPayload.Data.Conditions) != 1 || diagnosticPayload.Data.Conditions[0] != "jms_broker_pressure" {
+			t.Fatalf("unexpected diagnostic conditions: %#v", diagnosticPayload.Data)
+		}
+		if len(diagnosticPayload.Data.Samples) != 1 || diagnosticPayload.Data.Samples[0].Issue != "broker" {
+			t.Fatalf("unexpected diagnostic samples: %#v", diagnosticPayload.Data)
+		}
+		if diagnosticPayload.Data.Samples[0].AvgConsumerLagMs != 280 || diagnosticPayload.Data.Samples[0].AvgMessagesSentPerSec != 30 {
+			t.Fatalf("unexpected broker sample metrics: %#v", diagnosticPayload.Data.Samples[0])
+		}
+	default:
+		t.Fatal("expected telemetry_diagnostic broadcast payload")
+	}
+}
+
+func TestPublishLiveMetricsBroadcastsJMSDeadLetterDiagnostic(t *testing.T) {
+	hub := NewHub()
+	runner := NewTestRunner(2, hub, nil)
+	testRun := &ManagedTest{ID: "test-1", Name: "JMS DLQ Monitor"}
+	live := &LiveMetrics{
+		Timestamp: time.Now(),
+		TotalTx:   7,
+		Transactions: map[string]*TxMetrics{
+			"ConsumeOrderDLQ": {
+				Name:             "ConsumeOrderDLQ",
+				DependencyType:   "jms_dead_letter_queue",
+				DependencyTarget: "orders.dlq",
+				CorrelationIDs:   []string{"corr-dlq-1"},
+				Count:            7,
+				AvgMs:            185,
+				P99Ms:            300,
+			},
+		},
+		Telemetry: &TelemetryHealth{},
+	}
+
+	runner.publishLiveMetrics(testRun, live, nil)
+
+	select {
+	case <-hub.broadcast:
+	default:
+		t.Fatal("expected metrics_update broadcast")
+	}
+
+	var diagnosticPayload struct {
+		Type string               `json:"type"`
+		Data *TelemetryDiagnostic `json:"data"`
+	}
+	select {
+	case msg := <-hub.broadcast:
+		if err := json.Unmarshal(msg, &diagnosticPayload); err != nil {
+			t.Fatalf("failed to decode diagnostic payload: %v", err)
+		}
+		if diagnosticPayload.Type != "telemetry_diagnostic" {
+			t.Fatalf("expected telemetry_diagnostic second, got %#v", diagnosticPayload)
+		}
+		if diagnosticPayload.Data == nil || diagnosticPayload.Data.Severity != "warning" {
+			t.Fatalf("expected warning severity, got %#v", diagnosticPayload.Data)
+		}
+		if !strings.Contains(diagnosticPayload.Data.Summary, "dead-letter destinations") {
+			t.Fatalf("unexpected diagnostic summary: %#v", diagnosticPayload.Data)
+		}
+		if len(diagnosticPayload.Data.Conditions) != 1 || diagnosticPayload.Data.Conditions[0] != "jms_dead_letter_activity" {
+			t.Fatalf("unexpected diagnostic conditions: %#v", diagnosticPayload.Data)
+		}
+		if len(diagnosticPayload.Data.Samples) != 1 || diagnosticPayload.Data.Samples[0].Issue != "dead_letter" {
+			t.Fatalf("unexpected diagnostic samples: %#v", diagnosticPayload.Data)
+		}
+		if diagnosticPayload.Data.Samples[0].DependencyTarget != "orders.dlq" || diagnosticPayload.Data.Samples[0].Count != 7 {
+			t.Fatalf("unexpected dead-letter sample metrics: %#v", diagnosticPayload.Data.Samples[0])
 		}
 	default:
 		t.Fatal("expected telemetry_diagnostic broadcast payload")
@@ -1550,6 +1750,20 @@ func TestGetTestIncludesPreviousRunComparisonBaseline(t *testing.T) {
 					},
 				},
 			},
+			DependencyHealth: map[string]*TxMetrics{
+				"api.example.test": {
+					Name:             "api.example.test",
+					DependencyType:   "http",
+					DependencyTarget: "api.example.test",
+					Count:            12,
+					Errors:           1,
+					AvgMs:            180,
+					P50Ms:            150,
+					P90Ms:            240,
+					P95Ms:            300,
+					P99Ms:            360,
+				},
+			},
 		}},
 	}
 	currentCreatedAt := baselineCompletedAt.Add(10 * time.Minute)
@@ -1573,6 +1787,9 @@ func TestGetTestIncludesPreviousRunComparisonBaseline(t *testing.T) {
 	}
 	if testRun.ComparisonBaseline.Transactions["POST /checkout"] == nil {
 		t.Fatal("expected baseline transaction metrics to be available")
+	}
+	if testRun.ComparisonBaseline.DependencyHealth["api.example.test"] == nil {
+		t.Fatal("expected baseline dependency health metrics to be available")
 	}
 }
 

@@ -644,8 +644,14 @@ function TelemetryDiagnosticList({ telemetryDiagnostics }: { telemetryDiagnostic
                   <span className="telemetry-diagnostic-sample-issue">{sample.issue}</span>
                   <span className="telemetry-diagnostic-sample-name">{sample.transaction}</span>
                   <span className="telemetry-diagnostic-sample-stats">
-                    {sample.errors ? `${sample.errors}/${sample.count ?? 0} errors` : `p99 ${Math.round(sample.p99_ms ?? 0)} ms`}
-                    {sample.avg_ms ? ` · avg ${Math.round(sample.avg_ms)} ms` : ''}
+                    {sample.issue === 'broker'
+                      ? `lag ${Math.round(sample.avg_consumer_lag_ms ?? 0)} ms · msg ${Math.round(sample.avg_message_latency_ms ?? 0)} ms · ${Math.round(sample.avg_messages_sent_per_sec ?? 0)}/${Math.round(sample.avg_messages_received_per_sec ?? 0)} msg/s`
+                      : sample.issue === 'dead_letter'
+                        ? `${sample.count ?? 0} dead-letter msg${sample.count === 1 ? '' : 's'}`
+                      : sample.errors
+                        ? `${sample.errors}/${sample.count ?? 0} errors`
+                        : `p99 ${Math.round(sample.p99_ms ?? 0)} ms`}
+                    {sample.issue !== 'broker' && sample.issue !== 'dead_letter' && sample.avg_ms ? ` · avg ${Math.round(sample.avg_ms)} ms` : ''}
                     {sample.dependency_target ? ` · ${sample.dependency_target}` : ''}
                   </span>
                 </div>

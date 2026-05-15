@@ -514,11 +514,22 @@ func TestDistributedExecutionBackendPublishesRemoteTransactionMetrics(t *testing
 		CorrelationID:    "corr-home-1",
 		DependencyType:   "http",
 		DependencyTarget: "api.example.test",
+		DNSMs:            9,
+		ConnectMs:        14,
+		TLSMs:            6,
+		TTFBMs:           74,
 		ServerTelemetry: &generatorrpc.ServerTelemetry{
 			ServerProcessingMs: 40,
 			TransferMs:         20,
 			RequestPayloadKB:   1.5,
+			RequestSizeClass:   "small",
 			ResponsePayloadKB:  3,
+			ResponseSizeClass:  "medium",
+			MessageLatencyMs:   35,
+			MessagesSent:       1,
+			MessagesReceived:   0,
+			MessagesSentPerSec: 10,
+			ConsumerLagMs:      30,
 			ConnectionReused:   false,
 		},
 	}, {
@@ -532,11 +543,23 @@ func TestDistributedExecutionBackendPublishesRemoteTransactionMetrics(t *testing
 		CorrelationID:    "corr-home-2",
 		DependencyType:   "http",
 		DependencyTarget: "api.example.test",
+		DNSMs:            3,
+		ConnectMs:        6,
+		TLSMs:            0,
+		TTFBMs:           60,
 		ServerTelemetry: &generatorrpc.ServerTelemetry{
 			ServerProcessingMs: 60,
 			TransferMs:         40,
 			RequestPayloadKB:   2.5,
+			RequestSizeClass:   "medium",
 			ResponsePayloadKB:  5,
+			ResponseSizeClass:  "large",
+			MessageLatencyMs:   55,
+			MessagesSent:       1,
+			MessagesReceived:   1,
+			MessagesSentPerSec: 5,
+			MessagesReceivedPerSec: 5,
+			ConsumerLagMs:      60,
 			ConnectionReused:   true,
 		},
 	}, {
@@ -621,6 +644,9 @@ func TestDistributedExecutionBackendPublishesRemoteTransactionMetrics(t *testing
 	if updated.LiveMetrics.Transactions["Home"].DependencyType != "http" || updated.LiveMetrics.Transactions["Home"].DependencyTarget != "api.example.test" {
 		t.Fatalf("unexpected Home dependency metadata: %#v", updated.LiveMetrics.Transactions["Home"])
 	}
+	if updated.LiveMetrics.Transactions["Home"].AvgDNSMs != 6 || updated.LiveMetrics.Transactions["Home"].AvgConnectMs != 10 || updated.LiveMetrics.Transactions["Home"].AvgTLSMs != 3 || updated.LiveMetrics.Transactions["Home"].AvgTTFBMs != 67 {
+		t.Fatalf("unexpected Home timing phase averages: %#v", updated.LiveMetrics.Transactions["Home"])
+	}
 	if updated.LiveMetrics.Transactions["Home"].CorrelationCount != 2 {
 		t.Fatalf("unexpected Home correlation count: %#v", updated.LiveMetrics.Transactions["Home"])
 	}
@@ -638,6 +664,36 @@ func TestDistributedExecutionBackendPublishesRemoteTransactionMetrics(t *testing
 	}
 	if updated.LiveMetrics.Transactions["Home"].ServerTelemetry.ConnectionReusedPct != 50 {
 		t.Fatalf("Home connection_reused_pct = %v, want 50", updated.LiveMetrics.Transactions["Home"].ServerTelemetry.ConnectionReusedPct)
+	}
+	if updated.LiveMetrics.Transactions["Home"].ServerTelemetry.AvgMessageLatencyMs != 45 {
+		t.Fatalf("Home avg_message_latency_ms = %v, want 45", updated.LiveMetrics.Transactions["Home"].ServerTelemetry.AvgMessageLatencyMs)
+	}
+	if updated.LiveMetrics.Transactions["Home"].ServerTelemetry.MaxMessageLatencyMs != 55 {
+		t.Fatalf("Home max_message_latency_ms = %v, want 55", updated.LiveMetrics.Transactions["Home"].ServerTelemetry.MaxMessageLatencyMs)
+	}
+	if updated.LiveMetrics.Transactions["Home"].ServerTelemetry.MessagesSent != 2 || updated.LiveMetrics.Transactions["Home"].ServerTelemetry.MessagesReceived != 1 {
+		t.Fatalf("Home message totals = %#v", updated.LiveMetrics.Transactions["Home"].ServerTelemetry)
+	}
+	if updated.LiveMetrics.Transactions["Home"].ServerTelemetry.AvgMessagesSentPerSec != 7.5 || updated.LiveMetrics.Transactions["Home"].ServerTelemetry.AvgMessagesReceivedPerSec != 2.5 {
+		t.Fatalf("Home message rates = %#v", updated.LiveMetrics.Transactions["Home"].ServerTelemetry)
+	}
+	if updated.LiveMetrics.Transactions["Home"].ServerTelemetry.AvgConsumerLagMs != 45 {
+		t.Fatalf("Home avg_consumer_lag_ms = %v, want 45", updated.LiveMetrics.Transactions["Home"].ServerTelemetry.AvgConsumerLagMs)
+	}
+	if updated.LiveMetrics.Transactions["Home"].ServerTelemetry.MaxConsumerLagMs != 60 {
+		t.Fatalf("Home max_consumer_lag_ms = %v, want 60", updated.LiveMetrics.Transactions["Home"].ServerTelemetry.MaxConsumerLagMs)
+	}
+	if updated.LiveMetrics.Transactions["Home"].ServerTelemetry.RequestSizeClasses["small"] != 1 || updated.LiveMetrics.Transactions["Home"].ServerTelemetry.RequestSizeClasses["medium"] != 1 {
+		t.Fatalf("Home request_size_classes = %#v", updated.LiveMetrics.Transactions["Home"].ServerTelemetry.RequestSizeClasses)
+	}
+	if updated.LiveMetrics.Transactions["Home"].ServerTelemetry.ResponseSizeClasses["medium"] != 1 || updated.LiveMetrics.Transactions["Home"].ServerTelemetry.ResponseSizeClasses["large"] != 1 {
+		t.Fatalf("Home response_size_classes = %#v", updated.LiveMetrics.Transactions["Home"].ServerTelemetry.ResponseSizeClasses)
+	}
+	if updated.LiveMetrics.Transactions["Home"].ServerTelemetry.RequestPayloadHistogram["1-4 KB"] != 2 {
+		t.Fatalf("Home request_payload_histogram = %#v", updated.LiveMetrics.Transactions["Home"].ServerTelemetry.RequestPayloadHistogram)
+	}
+	if updated.LiveMetrics.Transactions["Home"].ServerTelemetry.ResponsePayloadHistogram["1-4 KB"] != 1 || updated.LiveMetrics.Transactions["Home"].ServerTelemetry.ResponsePayloadHistogram["4-16 KB"] != 1 {
+		t.Fatalf("Home response_payload_histogram = %#v", updated.LiveMetrics.Transactions["Home"].ServerTelemetry.ResponsePayloadHistogram)
 	}
 }
 
@@ -708,6 +764,47 @@ func TestBuildLiveMetricsFromDistributedBatchAggregatesSOAPOperations(t *testing
 	}
 	if operation.ServerTelemetry == nil || operation.ServerTelemetry.AvgServerProcessingMs != 50 {
 		t.Fatalf("unexpected SOAP operation server telemetry %#v", operation.ServerTelemetry)
+	}
+}
+
+func TestBuildLiveMetricsFromDistributedBatchAggregatesDependencyHealth(t *testing.T) {
+	live := buildLiveMetricsFromDistributedBatch(&ManagedTest{}, generatorrpc.MetricsBatch{
+		Transactions: []generatorrpc.TransactionMetric{
+			{
+				Name:             "GET /",
+				DurationMs:       90,
+				Success:          true,
+				DNSMs:            6,
+				ConnectMs:        12,
+				DependencyType:   "http",
+				DependencyTarget: "api.example.test",
+				ServerTelemetry:  &generatorrpc.ServerTelemetry{ServerProcessingMs: 35, TransferMs: 10},
+			},
+			{
+				Name:             "POST /checkout",
+				DurationMs:       180,
+				Success:          false,
+				DNSMs:            10,
+				ConnectMs:        18,
+				DependencyType:   "http",
+				DependencyTarget: "api.example.test",
+				ServerTelemetry:  &generatorrpc.ServerTelemetry{ServerProcessingMs: 55, TransferMs: 14},
+			},
+		},
+	})
+
+	if live.DependencyHealth == nil || live.DependencyHealth["api.example.test"] == nil {
+		t.Fatalf("expected dependency health aggregate, got %#v", live.DependencyHealth)
+	}
+	dep := live.DependencyHealth["api.example.test"]
+	if dep.Count != 2 || dep.Errors != 1 {
+		t.Fatalf("unexpected dependency health counts %#v", dep)
+	}
+	if dep.AvgMs != 135 || dep.P95Ms <= 0 || dep.P99Ms <= 0 {
+		t.Fatalf("expected dependency health latency stats, got %#v", dep)
+	}
+	if dep.ServerTelemetry == nil || dep.ServerTelemetry.AvgServerProcessingMs != 45 || dep.ServerTelemetry.AvgTransferMs != 12 {
+		t.Fatalf("unexpected dependency health telemetry %#v", dep.ServerTelemetry)
 	}
 }
 
