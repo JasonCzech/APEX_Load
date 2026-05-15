@@ -1,4 +1,4 @@
-import { type PacingConfig, type ScriptDefinition, type ThinkTimeConfig } from './types/scripts'
+import { type BrowserConfig, type PacingConfig, type ScriptDefinition, type ThinkTimeConfig } from './types/scripts'
 
 export interface TestGroup {
   name: string
@@ -670,21 +670,7 @@ export interface BrowserReplayStartRequest {
   variables?: Record<string, string>
   start_paused?: boolean
   breakpoints?: number[]
-  browser?: {
-    engine?: string
-    headless?: boolean
-    user_agent?: string
-    device_profile?: string
-    touch_mode?: boolean
-    orientation?: string
-    client_metrics?: boolean
-    viewport?: {
-      width: number
-      height: number
-    }
-    capture_screenshots?: 'off' | 'on_error' | 'per_action'
-    slow_mo_ms?: number
-  }
+  browser?: BrowserConfig
   ignore_think_time?: boolean
   script?: ScriptDefinition
 }
