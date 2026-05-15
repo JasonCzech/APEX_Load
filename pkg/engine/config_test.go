@@ -380,13 +380,18 @@ func TestBuildProtoConfig_Browser(t *testing.T) {
 	checkNewerVersions := true
 	latencyMs := 75
 	script := &dsl.Script{
+		Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{Preserved: map[string]any{
+			"recorded_resource_urls_available": true,
+			"recorded_resource_urls":           []string{"https://example.com/static/logo.png", "https://cdn.example.com/app/site.css?v=2"},
+		}}},
 		Config: dsl.ScriptConfig{
 			Browser: dsl.BrowserConfig{
 				Engine:             "chromium",
 				Headless:           &headless,
 				CacheEnabled:       &cacheEnabled,
+				CacheContentURLs:   &cacheEnabled,
 				CheckNewerVersions: &checkNewerVersions,
-				DownloadResources:  "none",
+				DownloadResources:  "recorded",
 				SlowMoMs:           125,
 				UserAgent:          "StormrunnerBrowser/0.1",
 				CaptureScreenshots: "per_action",
@@ -396,6 +401,14 @@ func TestBuildProtoConfig_Browser(t *testing.T) {
 				},
 			},
 			WebRuntime: dsl.WebRuntimeConfig{
+				DownloadFilters: dsl.DownloadFiltersConfig{
+					Mode:  "block_list",
+					Hosts: []string{"ads.example.com", "cdn.example.com"},
+				},
+				DataFormatting: dsl.DataFormattingConfig{
+					AutoDetect: true,
+					Chain: []dsl.DFETransform{{Type: "base64"}, {Type: "json_to_xml"}},
+				},
 				NetworkSimulation: dsl.NetworkSimulationConfig{
 					Mode:          "custom",
 					BandwidthKbps: 2048,
@@ -416,11 +429,21 @@ func TestBuildProtoConfig_Browser(t *testing.T) {
 	if cfg["browser_cache_enabled"] != false {
 		t.Errorf("browser_cache_enabled = %v, want false", cfg["browser_cache_enabled"])
 	}
+	if cfg["browser_cache_content_urls"] != false {
+		t.Errorf("browser_cache_content_urls = %v, want false", cfg["browser_cache_content_urls"])
+	}
 	if cfg["browser_check_newer_versions"] != true {
 		t.Errorf("browser_check_newer_versions = %v, want true", cfg["browser_check_newer_versions"])
 	}
-	if cfg["browser_download_resources"] != "none" {
-		t.Errorf("browser_download_resources = %v, want none", cfg["browser_download_resources"])
+	if cfg["browser_download_resources"] != "recorded" {
+		t.Errorf("browser_download_resources = %v, want recorded", cfg["browser_download_resources"])
+	}
+	if cfg["browser_recorded_resources_available"] != true {
+		t.Errorf("browser_recorded_resources_available = %v, want true", cfg["browser_recorded_resources_available"])
+	}
+	recordedResources, ok := cfg["browser_recorded_resources"].([]string)
+	if !ok || len(recordedResources) != 2 {
+		t.Errorf("browser_recorded_resources = %v, want 2 urls", cfg["browser_recorded_resources"])
 	}
 	if cfg["browser_slow_mo_ms"] != float64(125) {
 		t.Errorf("browser_slow_mo_ms = %v, want 125", cfg["browser_slow_mo_ms"])
@@ -436,6 +459,20 @@ func TestBuildProtoConfig_Browser(t *testing.T) {
 	}
 	if cfg["web_network_simulation_mode"] != "custom" {
 		t.Errorf("web_network_simulation_mode = %v, want custom", cfg["web_network_simulation_mode"])
+	}
+	if cfg["web_download_filters_mode"] != "block_list" {
+		t.Errorf("web_download_filters_mode = %v, want block_list", cfg["web_download_filters_mode"])
+	}
+	downloadFilterHosts, ok := cfg["web_download_filters_hosts"].([]string)
+	if !ok || len(downloadFilterHosts) != 2 {
+		t.Errorf("web_download_filters_hosts = %v, want 2 hosts", cfg["web_download_filters_hosts"])
+	}
+	if cfg["web_data_formatting_auto_detect"] != true {
+		t.Errorf("web_data_formatting_auto_detect = %v, want true", cfg["web_data_formatting_auto_detect"])
+	}
+	chain, ok := cfg["web_data_formatting_chain"].([]map[string]any)
+	if !ok || len(chain) != 2 || chain[0]["type"] != "base64" || chain[1]["type"] != "json_to_xml" {
+		t.Errorf("web_data_formatting_chain = %v, want base64 -> json_to_xml", cfg["web_data_formatting_chain"])
 	}
 	if cfg["web_network_simulation_bandwidth_kbps"] != float64(2048) {
 		t.Errorf("web_network_simulation_bandwidth_kbps = %v, want 2048", cfg["web_network_simulation_bandwidth_kbps"])

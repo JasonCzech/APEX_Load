@@ -28,6 +28,8 @@ type HTTP struct {
 	baseURL        string
 	bufPool        sync.Pool
 	contentChecks  []contentCheck
+	dataFormattingAutoDetect bool
+	dataFormattingChain []dataFormattingTransform
 	defaultHeaders map[string]string
 	authType       string
 	authHeader     string // pre-computed Authorization header value
@@ -65,6 +67,8 @@ func (h *HTTP) Init(ctx context.Context, config map[string]any) error {
 
 	h.defaultHeaders = buildDefaultHeaders(config)
 	h.contentChecks = parseContentChecks(config)
+	h.dataFormattingAutoDetect = parseDataFormattingAutoDetect(config)
+	h.dataFormattingChain = parseDataFormattingChain(config)
 	h.authType, h.authHeader = buildAuthHeader(config)
 
 	h.bufPool = sync.Pool{
@@ -156,6 +160,13 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	}
 
 	respBody := buf.Bytes()
+	formattedBody, err := applyDataFormattingChain(respBody, h.dataFormattingAutoDetect, h.dataFormattingChain)
+	if err != nil {
+		result.Duration = time.Since(result.StartTime)
+		result.ErrorMessage = err.Error()
+		return result, nil
+	}
+	respBody = formattedBody
 	result.ResponseBody = string(respBody)
 	for _, ext := range action.Extractors {
 		val, err := extract(ext, resp.Header, respBody)

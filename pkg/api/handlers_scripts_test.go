@@ -31,6 +31,205 @@ Action()
 }
 `
 
+func TestHandleCreateAndUpdateScriptPreservesExtendedRTSSettings(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	cacheEnabled := true
+	checkNewerVersions := true
+	newUserPerIter := true
+	projectID := "project-rts"
+	folderID := "folder-rts"
+
+	script := dsl.Script{
+		Name:     "Extended RTS Browser Script",
+		Version:  "1.0.0",
+		Protocol: "browser",
+		Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{
+			Source:           "loadrunner",
+			SourceScriptName: "ExtendedRTS",
+			Preserved: map[string]any{
+				"runtime_cfg": "default.cfg",
+			},
+		}},
+		Config: dsl.ScriptConfig{
+			BaseURL: "https://example.com",
+			Log: dsl.LogConfig{
+				Level:           "debug",
+				OnErrorOnly:     true,
+				ExtendedOptions: []string{"parameter_substitution", "data_returned"},
+			},
+			HTTP: dsl.HTTPConfig{
+				ProxyMode: "custom",
+				Proxy: dsl.ProxyConfig{
+					URL:      "http://proxy.example.com:8080",
+					Username: "proxy-user",
+					Password: "proxy-pass",
+				},
+			},
+			Browser: dsl.BrowserConfig{
+				Engine:             "chromium",
+				Headless:           &cacheEnabled,
+				CacheEnabled:       &cacheEnabled,
+				CheckNewerVersions: &checkNewerVersions,
+				NewUserPerIter:     &newUserPerIter,
+				DownloadResources:  "all",
+				Viewport: dsl.BrowserViewport{
+					Width:  1440,
+					Height: 900,
+				},
+			},
+			WebRuntime: dsl.WebRuntimeConfig{
+				AdditionalAttributes: map[string]string{
+					"record_snapshot": "true",
+				},
+				DownloadFilters: dsl.DownloadFiltersConfig{
+					Mode:  "allow_list",
+					Hosts: []string{"cdn.example.com"},
+				},
+				ContentChecks: []dsl.ContentCheckConfig{{
+					Text:        "Access Denied",
+					Scope:       "main_document",
+					FailIfFound: &cacheEnabled,
+				}},
+				NetworkSimulation: dsl.NetworkSimulationConfig{
+					Mode:          "custom",
+					BandwidthKbps: 2048,
+					LatencyMs:     120,
+				},
+				Streaming: dsl.StreamingConfig{
+					Mode:                "fixed",
+					BufferSizeSeconds:   30,
+					FixedBitrateKbps:    1200,
+					BandwidthEstimation: "rolling",
+				},
+				DataFormatting: dsl.DataFormattingConfig{
+					AutoDetect: true,
+					Chain: []dsl.DFETransform{{
+						Type: "gzip",
+						Options: map[string]string{
+							"mode": "decode",
+						},
+					}},
+				},
+			},
+		},
+		Actions: []dsl.Action{{
+			Name:   "Open homepage",
+			Type:   "browser_navigate",
+			Target: "/",
+		}},
+	}
+
+	createBody, err := json.Marshal(map[string]any{
+		"project_id": projectID,
+		"folder_id":  folderID,
+		"script":     script,
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal(create) returned error: %v", err)
+	}
+
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts", bytes.NewReader(createBody))
+	createReq.Header.Set("Content-Type", "application/json")
+	createResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(createResp, createReq)
+
+	if createResp.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want %d body=%s", createResp.Code, http.StatusCreated, createResp.Body.String())
+	}
+
+	var created StoredScript
+	if err := json.Unmarshal(createResp.Body.Bytes(), &created); err != nil {
+		t.Fatalf("json.Unmarshal(create) returned error: %v", err)
+	}
+	if created.ProjectID != projectID {
+		t.Fatalf("created project_id = %q, want %q", created.ProjectID, projectID)
+	}
+	if created.FolderID == nil || *created.FolderID != folderID {
+		t.Fatalf("created folder_id = %v, want %q", created.FolderID, folderID)
+	}
+	if created.Script == nil {
+		t.Fatal("created script = nil")
+	}
+	if !reflect.DeepEqual(created.Script.Config.WebRuntime, script.Config.WebRuntime) {
+		t.Fatalf("created web_runtime = %#v, want %#v", created.Script.Config.WebRuntime, script.Config.WebRuntime)
+	}
+	if !reflect.DeepEqual(created.Script.Config.Browser, script.Config.Browser) {
+		t.Fatalf("created browser config = %#v, want %#v", created.Script.Config.Browser, script.Config.Browser)
+	}
+	if !reflect.DeepEqual(created.Script.Metadata, script.Metadata) {
+		t.Fatalf("created metadata = %#v, want %#v", created.Script.Metadata, script.Metadata)
+	}
+
+	validateReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/"+created.ID+"/validate", nil)
+	validateResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(validateResp, validateReq)
+
+	if validateResp.Code != http.StatusOK {
+		t.Fatalf("validate status = %d, want %d body=%s", validateResp.Code, http.StatusOK, validateResp.Body.String())
+	}
+
+	var validatePayload struct {
+		Valid  bool     `json:"valid"`
+		Issues []string `json:"issues"`
+	}
+	if err := json.Unmarshal(validateResp.Body.Bytes(), &validatePayload); err != nil {
+		t.Fatalf("json.Unmarshal(validate) returned error: %v", err)
+	}
+	if !validatePayload.Valid || len(validatePayload.Issues) != 0 {
+		t.Fatalf("validate payload = %#v, want valid script with no issues", validatePayload)
+	}
+
+	updatedScript := *created.Script
+	updatedScript.Config.Browser.DownloadResources = "none"
+	updatedScript.Config.WebRuntime.NetworkSimulation = dsl.NetworkSimulationConfig{
+		Mode:      "preset",
+		Preset:    "dsl",
+		LatencyMs: 50,
+	}
+	updatedScript.Config.WebRuntime.DownloadFilters = dsl.DownloadFiltersConfig{
+		Mode:  "block_list",
+		Hosts: []string{"ads.example.com", "tracker.example.com"},
+	}
+	updatedScript.Config.WebRuntime.ContentChecks = []dsl.ContentCheckConfig{{
+		Text:  "Service Unavailable",
+		Scope: "any_response",
+	}}
+
+	updateBody, err := json.Marshal(map[string]any{"script": updatedScript})
+	if err != nil {
+		t.Fatalf("json.Marshal(update) returned error: %v", err)
+	}
+
+	updateReq := httptest.NewRequest(http.MethodPut, "/api/v1/scripts/"+created.ID, bytes.NewReader(updateBody))
+	updateReq.Header.Set("Content-Type", "application/json")
+	updateResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(updateResp, updateReq)
+
+	if updateResp.Code != http.StatusOK {
+		t.Fatalf("update status = %d, want %d body=%s", updateResp.Code, http.StatusOK, updateResp.Body.String())
+	}
+
+	var updated StoredScript
+	if err := json.Unmarshal(updateResp.Body.Bytes(), &updated); err != nil {
+		t.Fatalf("json.Unmarshal(update) returned error: %v", err)
+	}
+	if updated.Script == nil {
+		t.Fatal("updated script = nil")
+	}
+	if updated.Script.Config.Browser.DownloadResources != "none" {
+		t.Fatalf("updated download_resources = %q, want none", updated.Script.Config.Browser.DownloadResources)
+	}
+	if !reflect.DeepEqual(updated.Script.Config.WebRuntime.DownloadFilters, updatedScript.Config.WebRuntime.DownloadFilters) {
+		t.Fatalf("updated download_filters = %#v, want %#v", updated.Script.Config.WebRuntime.DownloadFilters, updatedScript.Config.WebRuntime.DownloadFilters)
+	}
+	if !reflect.DeepEqual(updated.Script.Config.WebRuntime.NetworkSimulation, updatedScript.Config.WebRuntime.NetworkSimulation) {
+		t.Fatalf("updated network_simulation = %#v, want %#v", updated.Script.Config.WebRuntime.NetworkSimulation, updatedScript.Config.WebRuntime.NetworkSimulation)
+	}
+	if !reflect.DeepEqual(updated.Script.Config.WebRuntime.ContentChecks, updatedScript.Config.WebRuntime.ContentChecks) {
+		t.Fatalf("updated content_checks = %#v, want %#v", updated.Script.Config.WebRuntime.ContentChecks, updatedScript.Config.WebRuntime.ContentChecks)
+	}
+}
+
 func TestHandleCreateScriptRejectsMissingBaseURL(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	payload := map[string]any{

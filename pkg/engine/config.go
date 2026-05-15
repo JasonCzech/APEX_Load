@@ -1,6 +1,10 @@
 package engine
 
-import "github.com/jasonczech/stormrunner/pkg/dsl"
+import (
+	"strings"
+
+	"github.com/jasonczech/stormrunner/pkg/dsl"
+)
 
 func buildProtoConfig(script *dsl.Script) map[string]any {
 	cfg := map[string]any{
@@ -60,6 +64,20 @@ func buildProtoConfig(script *dsl.Script) map[string]any {
 	}
 	if len(script.Config.WebRuntime.ContentChecks) > 0 {
 		cfg["web_content_checks"] = flattenContentChecks(script.Config.WebRuntime.ContentChecks)
+	}
+	if filters := script.Config.WebRuntime.DownloadFilters; filters.Mode != "" {
+		cfg["web_download_filters_mode"] = filters.Mode
+		if len(filters.Hosts) > 0 {
+			cfg["web_download_filters_hosts"] = filters.Hosts
+		}
+	}
+	if dataFormatting := script.Config.WebRuntime.DataFormatting; dataFormatting.AutoDetect || len(dataFormatting.Chain) > 0 {
+		if dataFormatting.AutoDetect {
+			cfg["web_data_formatting_auto_detect"] = true
+		}
+		if len(dataFormatting.Chain) > 0 {
+			cfg["web_data_formatting_chain"] = flattenDFEChain(dataFormatting.Chain)
+		}
 	}
 	if networkCfg := script.Config.WebRuntime.NetworkSimulation; networkCfg.Mode != "" {
 		cfg["web_network_simulation_mode"] = networkCfg.Mode
@@ -145,11 +163,20 @@ func buildProtoConfig(script *dsl.Script) map[string]any {
 	if browserCfg.CacheEnabled != nil {
 		cfg["browser_cache_enabled"] = *browserCfg.CacheEnabled
 	}
+	if browserCfg.CacheContentURLs != nil {
+		cfg["browser_cache_content_urls"] = *browserCfg.CacheContentURLs
+	}
 	if browserCfg.CheckNewerVersions != nil {
 		cfg["browser_check_newer_versions"] = *browserCfg.CheckNewerVersions
 	}
 	if browserCfg.DownloadResources != "" {
 		cfg["browser_download_resources"] = browserCfg.DownloadResources
+	}
+	if browserCfg.DownloadResources == "recorded" {
+		if recordedResources, ok := recordedResourceURLs(script); ok {
+			cfg["browser_recorded_resources_available"] = true
+			cfg["browser_recorded_resources"] = recordedResources
+		}
 	}
 	if browserCfg.SlowMoMs > 0 {
 		cfg["browser_slow_mo_ms"] = float64(browserCfg.SlowMoMs)
@@ -284,4 +311,53 @@ func flattenContentChecks(checks []dsl.ContentCheckConfig) []map[string]any {
 		flattened = append(flattened, item)
 	}
 	return flattened
+}
+
+func flattenDFEChain(chain []dsl.DFETransform) []map[string]any {
+	flattened := make([]map[string]any, 0, len(chain))
+	for _, transform := range chain {
+		item := map[string]any{
+			"type": transform.Type,
+		}
+		if len(transform.Options) > 0 {
+			item["options"] = transform.Options
+		}
+		flattened = append(flattened, item)
+	}
+	return flattened
+}
+
+func recordedResourceURLs(script *dsl.Script) ([]string, bool) {
+	if script == nil || script.Metadata == nil || script.Metadata.Import == nil || script.Metadata.Import.Preserved == nil {
+		return nil, false
+	}
+	preserved := script.Metadata.Import.Preserved
+	rawAvailable, ok := preserved["recorded_resource_urls_available"]
+	if !ok {
+		return nil, false
+	}
+	available, ok := rawAvailable.(bool)
+	if !ok || !available {
+		return nil, false
+	}
+	rawURLs, ok := preserved["recorded_resource_urls"]
+	if !ok {
+		return []string{}, true
+	}
+	switch urls := rawURLs.(type) {
+	case []string:
+		return append([]string(nil), urls...), true
+	case []any:
+		result := make([]string, 0, len(urls))
+		for _, value := range urls {
+			text, ok := value.(string)
+			if !ok || strings.TrimSpace(text) == "" {
+				continue
+			}
+			result = append(result, text)
+		}
+		return result, true
+	default:
+		return []string{}, true
+	}
 }

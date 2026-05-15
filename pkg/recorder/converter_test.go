@@ -108,6 +108,17 @@ func TestConvertSession_StaticFiltered(t *testing.T) {
 	if len(result.Script.Actions) != 1 {
 		t.Fatalf("expected 1 non-static action, got %d", len(result.Script.Actions))
 	}
+	if result.Script.Metadata == nil || result.Script.Metadata.Import == nil {
+		t.Fatal("expected import metadata with recorded resources")
+	}
+	preserved := result.Script.Metadata.Import.Preserved
+	if preserved["recorded_resource_urls_available"] != true {
+		t.Fatalf("recorded_resource_urls_available = %#v, want true", preserved["recorded_resource_urls_available"])
+	}
+	urls, ok := preserved["recorded_resource_urls"].([]string)
+	if !ok || len(urls) != 2 {
+		t.Fatalf("recorded_resource_urls = %#v, want two static URLs", preserved["recorded_resource_urls"])
+	}
 }
 
 func TestConvertSession_ExcludedRequestsAndStepNames(t *testing.T) {

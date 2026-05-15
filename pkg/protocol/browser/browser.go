@@ -5,10 +5,13 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net/url"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/chromedp/cdproto/fetch"
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
@@ -26,7 +29,12 @@ type Browser struct {
 	currentURL         string
 	headless           bool
 	cacheEnabled       bool
+	cacheContentURLs   bool
 	checkNewerVersions bool
+	recordedResourcesAvailable bool
+	recordedResources map[string]struct{}
+	downloadFilterMode string
+	downloadFilterHosts []string
 	networkMode        string
 	networkPreset      string
 	networkBandwidthKB int
@@ -68,7 +76,12 @@ func (b *Browser) Init(ctx context.Context, config map[string]any) error {
 	b.close()
 	b.headless = true
 	b.cacheEnabled = true
+	b.cacheContentURLs = true
 	b.checkNewerVersions = false
+	b.recordedResourcesAvailable = false
+	b.recordedResources = nil
+	b.downloadFilterMode = ""
+	b.downloadFilterHosts = nil
 	b.networkMode = ""
 	b.networkPreset = ""
 	b.networkBandwidthKB = 0
@@ -88,8 +101,23 @@ func (b *Browser) Init(ctx context.Context, config map[string]any) error {
 	if cacheEnabled, ok := config["browser_cache_enabled"].(bool); ok {
 		b.cacheEnabled = cacheEnabled
 	}
+	if cacheContentURLs, ok := config["browser_cache_content_urls"].(bool); ok {
+		b.cacheContentURLs = cacheContentURLs
+	}
 	if checkNewerVersions, ok := config["browser_check_newer_versions"].(bool); ok {
 		b.checkNewerVersions = checkNewerVersions
+	}
+	if recordedResourcesAvailable, ok := config["browser_recorded_resources_available"].(bool); ok {
+		b.recordedResourcesAvailable = recordedResourcesAvailable
+	}
+	if recordedResources, ok := config["browser_recorded_resources"].([]string); ok {
+		b.recordedResources = normalizeRecordedResources(recordedResources)
+	}
+	if downloadFilterMode, ok := config["web_download_filters_mode"].(string); ok {
+		b.downloadFilterMode = strings.TrimSpace(downloadFilterMode)
+	}
+	if downloadFilterHosts, ok := config["web_download_filters_hosts"].([]string); ok {
+		b.downloadFilterHosts = normalizeDownloadFilterHosts(downloadFilterHosts)
 	}
 	if networkMode, ok := config["web_network_simulation_mode"].(string); ok {
 		b.networkMode = strings.TrimSpace(networkMode)
@@ -121,6 +149,9 @@ func (b *Browser) Init(ctx context.Context, config map[string]any) error {
 	if viewportH := configInt(config, "browser_viewport_height"); viewportH > 0 {
 		b.viewportH = viewportH
 	}
+	if b.downloadResources == "recorded" && !b.recordedResourcesAvailable {
+		return fmt.Errorf("browser download_resources=recorded requires recorded resource metadata")
+	}
 
 	allocatorOpts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.Flag("headless", b.headless),
@@ -150,6 +181,9 @@ func (b *Browser) Init(ctx context.Context, config map[string]any) error {
 			"Cache-Control": "no-cache",
 			"Pragma":        "no-cache",
 		})))
+	}
+	if patterns := b.fetchRequestPatterns(); len(patterns) > 0 {
+		startupActions = append(startupActions, fetch.Enable().WithPatterns(patterns))
 	}
 	if throttleAction := b.networkThrottleAction(); throttleAction != nil {
 		startupActions = append(startupActions, throttleAction)
@@ -183,6 +217,185 @@ func blockedStaticAssetPatterns() []string {
 		"*.avi",
 		"*.mov",
 	}
+}
+
+func assetRequestPatterns() []*fetch.RequestPattern {
+	requestStage := fetch.RequestStageRequest
+	return []*fetch.RequestPattern{
+		{ResourceType: network.ResourceTypeImage, RequestStage: requestStage},
+		{ResourceType: network.ResourceTypeStylesheet, RequestStage: requestStage},
+		{ResourceType: network.ResourceTypeScript, RequestStage: requestStage},
+		{ResourceType: network.ResourceTypeFont, RequestStage: requestStage},
+		{ResourceType: network.ResourceTypeMedia, RequestStage: requestStage},
+		{ResourceType: network.ResourceTypeOther, RequestStage: requestStage},
+	}
+}
+
+func contentRequestPatterns() []*fetch.RequestPattern {
+	requestStage := fetch.RequestStageRequest
+	return []*fetch.RequestPattern{
+		{ResourceType: network.ResourceTypeDocument, RequestStage: requestStage},
+		{ResourceType: network.ResourceTypeFetch, RequestStage: requestStage},
+		{ResourceType: network.ResourceTypeXHR, RequestStage: requestStage},
+	}
+}
+
+func (b *Browser) fetchRequestPatterns() []*fetch.RequestPattern {
+	if !b.hasDownloadFilters() && b.cacheContentURLs && b.downloadResources != "recorded" {
+		return nil
+	}
+	patterns := make([]*fetch.RequestPattern, 0, 9)
+	seen := make(map[network.ResourceType]struct{})
+	appendUnique := func(items []*fetch.RequestPattern) {
+		for _, item := range items {
+			if item == nil {
+				continue
+			}
+			if _, ok := seen[item.ResourceType]; ok {
+				continue
+			}
+			seen[item.ResourceType] = struct{}{}
+			patterns = append(patterns, item)
+		}
+	}
+	if b.hasDownloadFilters() {
+		appendUnique(assetRequestPatterns())
+	}
+	if b.downloadResources == "recorded" {
+		appendUnique(assetRequestPatterns())
+	}
+	if !b.cacheContentURLs {
+		appendUnique(contentRequestPatterns())
+	}
+	return patterns
+}
+
+func normalizeRecordedResources(urls []string) map[string]struct{} {
+	normalized := make(map[string]struct{})
+	for _, rawURL := range urls {
+		for _, key := range recordedResourceKeys(rawURL) {
+			normalized[key] = struct{}{}
+		}
+	}
+	if len(normalized) == 0 {
+		return nil
+	}
+	return normalized
+}
+
+func recordedResourceKeys(rawURL string) []string {
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil {
+		return nil
+	}
+	path := parsed.EscapedPath()
+	if path == "" {
+		path = "/"
+	}
+	if parsed.RawQuery != "" {
+		path += "?" + parsed.RawQuery
+	}
+	if parsed.Host == "" {
+		return []string{path}
+	}
+	return []string{strings.ToLower(parsed.Host) + path, path}
+}
+
+func normalizeDownloadFilterHosts(hosts []string) []string {
+	normalized := make([]string, 0, len(hosts))
+	seen := make(map[string]struct{}, len(hosts))
+	for _, host := range hosts {
+		candidate := strings.ToLower(strings.TrimSpace(host))
+		candidate = strings.TrimPrefix(candidate, "http://")
+		candidate = strings.TrimPrefix(candidate, "https://")
+		candidate = strings.TrimRight(candidate, "/")
+		if candidate == "" {
+			continue
+		}
+		if _, ok := seen[candidate]; ok {
+			continue
+		}
+		seen[candidate] = struct{}{}
+		normalized = append(normalized, candidate)
+	}
+	return normalized
+}
+
+func (b *Browser) hasDownloadFilters() bool {
+	return (b.downloadFilterMode == "allow_list" || b.downloadFilterMode == "block_list") && len(b.downloadFilterHosts) > 0
+}
+
+func (b *Browser) shouldBlockFilteredRequest(rawURL string) bool {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	fullHost := strings.ToLower(parsed.Host)
+	hostName := strings.ToLower(parsed.Hostname())
+	matched := false
+	for _, allowedHost := range b.downloadFilterHosts {
+		if allowedHost == fullHost || allowedHost == hostName {
+			matched = true
+			break
+		}
+	}
+	switch b.downloadFilterMode {
+	case "allow_list":
+		return !matched
+	case "block_list":
+		return matched
+	default:
+		return false
+	}
+}
+
+func (b *Browser) shouldBlockUnrecordedRequest(rawURL string) bool {
+	if b.downloadResources != "recorded" || !b.recordedResourcesAvailable {
+		return false
+	}
+	if len(b.recordedResources) == 0 {
+		return true
+	}
+	for _, key := range recordedResourceKeys(rawURL) {
+		if _, ok := b.recordedResources[key]; ok {
+			return false
+		}
+	}
+	return true
+}
+
+func shouldRevalidateContentRequest(resourceType network.ResourceType) bool {
+	switch resourceType {
+	case network.ResourceTypeDocument, network.ResourceTypeFetch, network.ResourceTypeXHR:
+		return true
+	default:
+		return false
+	}
+}
+
+func continuedRequestHeaders(headers network.Headers) []*fetch.HeaderEntry {
+	keys := make([]string, 0, len(headers)+2)
+	for key := range headers {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	entries := make([]*fetch.HeaderEntry, 0, len(keys)+2)
+	seen := make(map[string]struct{}, len(keys)+2)
+	for _, key := range keys {
+		lowerKey := strings.ToLower(strings.TrimSpace(key))
+		if lowerKey == "cache-control" || lowerKey == "pragma" {
+			continue
+		}
+		entries = append(entries, &fetch.HeaderEntry{Name: key, Value: fmt.Sprint(headers[key])})
+		seen[lowerKey] = struct{}{}
+	}
+	if _, ok := seen["cache-control"]; !ok {
+		entries = append(entries, &fetch.HeaderEntry{Name: "Cache-Control", Value: "no-cache"})
+	}
+	if _, ok := seen["pragma"]; !ok {
+		entries = append(entries, &fetch.HeaderEntry{Name: "Pragma", Value: "no-cache"})
+	}
+	return entries
 }
 
 func (b *Browser) networkThrottleAction() chromedp.Action {
@@ -618,6 +831,11 @@ func (b *Browser) networkEntriesSince(offset int) []protocol.NetworkEntry {
 }
 
 func (b *Browser) handleBrowserEvent(ev any) {
+	if event, ok := ev.(*fetch.EventRequestPaused); ok {
+		go b.handleInterceptedRequest(event)
+		return
+	}
+
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -681,6 +899,25 @@ func (b *Browser) handleBrowserEvent(ev any) {
 		})
 		delete(b.pendingNetwork, event.RequestID)
 	}
+}
+
+func (b *Browser) handleInterceptedRequest(event *fetch.EventRequestPaused) {
+	if event == nil || event.Request == nil || b.browserCtx == nil {
+		return
+	}
+	if b.shouldBlockUnrecordedRequest(event.Request.URL) {
+		_ = fetch.FailRequest(event.RequestID, network.ErrorReasonBlockedByClient).Do(b.browserCtx)
+		return
+	}
+	if b.hasDownloadFilters() && b.shouldBlockFilteredRequest(event.Request.URL) {
+		_ = fetch.FailRequest(event.RequestID, network.ErrorReasonBlockedByClient).Do(b.browserCtx)
+		return
+	}
+	continueRequest := fetch.ContinueRequest(event.RequestID)
+	if !b.cacheContentURLs && shouldRevalidateContentRequest(event.ResourceType) {
+		continueRequest = continueRequest.WithHeaders(continuedRequestHeaders(event.Request.Headers))
+	}
+	_ = continueRequest.Do(b.browserCtx)
 }
 
 func (b *Browser) close() {

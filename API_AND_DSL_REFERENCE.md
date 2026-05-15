@@ -624,6 +624,52 @@ Emits JSON messages for all test events:
 - `config.jms.timeout_ms`: Default consume/request timeout
 - `config.jms.mock`: Use the local in-memory broker for replay. Real Solace broker execution requires the Solace adapter build.
 
+**Browser config keys:**
+- `config.browser.engine`: Browser engine identifier, currently `chromium`
+- `config.browser.headless`: Run the browser headlessly when `true`
+- `config.browser.slow_mo_ms`: Add fixed browser-action delay in milliseconds
+- `config.browser.user_agent`: Override browser user agent string
+- `config.browser.capture_screenshots`: Screenshot capture policy, for example `per_action`
+- `config.browser.cache_enabled`: Enable browser cache when `true`
+- `config.browser.cache_content_urls`: When `false`, Stormrunner forces content-bearing browser requests to revalidate instead of using cached content responses
+- `config.browser.check_newer_versions`: Force browser cache revalidation with `Cache-Control: no-cache` / `Pragma: no-cache`
+- `config.browser.new_user_per_iteration`: Reset the browser protocol between iterations when `true`
+- `config.browser.download_resources`: `all`, `none`, or `recorded` (`recorded` executes in browser replay when preserved recorded-resource metadata is available)
+- `config.browser.viewport.width`, `config.browser.viewport.height`: Browser viewport dimensions
+
+**Web HTTP/HTML compatibility keys:**
+- `config.web_runtime.additional_attributes`: Arbitrary preserved RTS name/value pairs
+- `config.web_runtime.download_filters.mode`: `none`, `allow_list`, or `block_list`
+- `config.web_runtime.download_filters.hosts`: Hostnames matched by the selected download-filter mode
+- `config.web_runtime.content_checks[]`: Global response content checks with `text`, `scope`, and `fail_if_found`
+- `config.web_runtime.network_simulation.mode`: `max`, `preset`, or `custom`
+- `config.web_runtime.network_simulation.preset`: `56k`, `dsl`, `t1`, or `10mbps`
+- `config.web_runtime.network_simulation.bandwidth_kbps`, `config.web_runtime.network_simulation.latency_ms`: Custom browser network throttling values
+- `config.web_runtime.streaming.mode`: `adaptive` or `fixed` compatibility setting for imported/authored media RTS
+- `config.web_runtime.streaming.buffer_size_seconds`: Preserved streaming buffer setting
+- `config.web_runtime.streaming.fixed_bitrate_kbps`: Preserved fixed-bitrate setting
+- `config.web_runtime.streaming.bandwidth_estimation`: `rolling` or `instant` compatibility setting
+- `config.web_runtime.data_formatting.auto_detect`: Preserve or enable automatic DFE detection behavior
+- `config.web_runtime.data_formatting.chain[]`: Ordered DFE transform chain
+
+### Web HTTP/HTML RTS Support
+
+| Surface | Stormrunner field(s) | Current support |
+| --- | --- | --- |
+| Browser cache toggle | `config.browser.cache_enabled` | Executed in browser runtime |
+| Cache content URLs | `config.browser.cache_content_urls` | Executed in browser runtime |
+| Check newer versions | `config.browser.check_newer_versions` | Executed in browser runtime |
+| New user each iteration | `config.browser.new_user_per_iteration` | Executed in browser runtime |
+| Download resources | `config.browser.download_resources` | Partial: `all` and `none` execute directly; `recorded` executes when preserved recorded-resource metadata is available |
+| Download filters | `config.web_runtime.download_filters.*` | Executed in browser runtime |
+| Global content checks | `config.web_runtime.content_checks[]` | Executed in HTTP runtime |
+| Network speed simulation | `config.web_runtime.network_simulation.*` | Executed in browser runtime |
+| Data formatting | `config.web_runtime.data_formatting.*` | Partial: HTTP runtime executes configured DFE chains; browser/runtime-wide DFE parity is still incomplete |
+| Streaming | `config.web_runtime.streaming.*` | Compatibility-only: preserved and importable, but media playback semantics are not executed yet |
+| Additional attributes | `config.web_runtime.additional_attributes` | Compatibility-only metadata |
+
+See [docs/LOADRUNNER_RTS_REFERENCE.md](docs/LOADRUNNER_RTS_REFERENCE.md) for the broader Web HTTP/HTML mapping, including compatibility-only and non-applicable RTS concepts.
+
 ### Data Sources Section
 
 ```json

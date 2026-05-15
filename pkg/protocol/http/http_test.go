@@ -3,6 +3,7 @@ package http
 import (
 	"context"
 	"crypto/tls"
+	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -483,6 +484,45 @@ func TestHTTP_Execute_WithExtractor(t *testing.T) {
 
 	if result.Extractions["token"] != "abc123" {
 		t.Errorf("extracted token = %q, want %q", result.Extractions["token"], "abc123")
+	}
+}
+
+func TestHTTP_Execute_AppliesDataFormattingChainBeforeExtractionAndAssertions(t *testing.T) {
+	encodedJSON := base64.StdEncoding.EncodeToString([]byte(`{"access_token":"abc123","expires_in":3600}`))
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(encodedJSON))
+	}))
+	defer ts.Close()
+
+	h := initHTTP(t, map[string]any{
+		"base_url": ts.URL,
+		"web_data_formatting_auto_detect": true,
+		"web_data_formatting_chain": []map[string]any{
+			{"type": "base64"},
+			{"type": "json_to_xml"},
+		},
+	})
+
+	result, _ := h.Execute(context.Background(), &protocol.Action{
+		Name:   "formatted-response",
+		Method: "GET",
+		Target: "/formatted",
+		Extractors: []protocol.Extractor{
+			{Name: "token", Source: "body", Type: "xpath", Expression: "/json/value/access_token/text()"},
+		},
+		Assertions: []protocol.Assertion{
+			{Type: "body_contains", Value: "<access_token>abc123</access_token>"},
+		},
+	})
+
+	if !result.Success {
+		t.Fatalf("formatted response should pass, error: %s", result.ErrorMessage)
+	}
+	if result.Extractions["token"] != "abc123" {
+		t.Fatalf("extracted token = %q, want abc123", result.Extractions["token"])
+	}
+	if !strings.Contains(result.ResponseBody, "<expires_in>3600</expires_in>") {
+		t.Fatalf("response body = %q, want transformed xml", result.ResponseBody)
 	}
 }
 

@@ -603,6 +603,70 @@ Chain=base64,json_to_xml
 	}
 }
 
+func TestConvertZipPreservesRecordedResourceURLs(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	addFile := func(name string, content string) {
+		writer, err := zw.Create(name)
+		if err != nil {
+			t.Fatalf("Create(%q) returned error: %v", name, err)
+		}
+		if _, err := writer.Write([]byte(content)); err != nil {
+			t.Fatalf("Write(%q) returned error: %v", name, err)
+		}
+	}
+
+	addFile("Recorded.usr", `[General]
+Type=Web
+DefaultCfg=default.cfg
+Action=Action.c
+`)
+	addFile("default.cfg", `[Browser Emulation]
+DownloadResources=recorded
+`)
+	addFile("Action.c", `Action()
+{
+	web_url("Homepage",
+		"URL=https://example.com/app/home",
+		"Resource=0",
+		LAST);
+
+	web_url("Logo",
+		"URL=https://example.com/static/logo.png",
+		"Resource=1",
+		LAST);
+
+	web_url("Styles",
+		"URL=https://cdn.example.com/app/site.css?v=2",
+		"Resource=1",
+		LAST);
+
+	return 0;
+}`)
+	if err := zw.Close(); err != nil {
+		t.Fatalf("zip.Close returned error: %v", err)
+	}
+
+	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip returned error: %v", err)
+	}
+	if result.Script.Metadata == nil || result.Script.Metadata.Import == nil {
+		t.Fatal("expected import metadata")
+	}
+	preserved := result.Script.Metadata.Import.Preserved
+	if preserved["recorded_resource_urls_available"] != true {
+		t.Fatalf("recorded_resource_urls_available = %#v, want true", preserved["recorded_resource_urls_available"])
+	}
+	urls, ok := preserved["recorded_resource_urls"].([]string)
+	if !ok {
+		t.Fatalf("recorded_resource_urls = %#v, want []string", preserved["recorded_resource_urls"])
+	}
+	if len(urls) != 2 || urls[0] != "https://example.com/static/logo.png" || urls[1] != "https://cdn.example.com/app/site.css?v=2" {
+		t.Fatalf("recorded_resource_urls = %#v, want preserved resource URLs", urls)
+	}
+}
+
 func TestConvertZipMapsExtendedRuntimeSettings(t *testing.T) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)

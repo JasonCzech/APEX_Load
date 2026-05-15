@@ -13,9 +13,11 @@ import (
 
 // ConvertResult holds the output of a LoadRunner to Stormrunner DSL conversion.
 type ConvertResult struct {
-	Script   *dsl.Script  `json:"script"`
-	Warnings []string     `json:"warnings,omitempty"`
-	Stats    ConvertStats `json:"stats"`
+	Script                       *dsl.Script  `json:"script"`
+	Warnings                     []string     `json:"warnings,omitempty"`
+	Stats                        ConvertStats `json:"stats"`
+	RecordedResourceURLs         []string     `json:"recorded_resource_urls,omitempty"`
+	RecordedResourceURLsCaptured bool         `json:"recorded_resource_urls_captured,omitempty"`
 }
 
 // ConvertStats provides conversion statistics for reporting.
@@ -82,6 +84,8 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 		baseURL = detectBaseURL(allFunctions)
 	}
 	result.Script.Config.BaseURL = baseURL
+	result.RecordedResourceURLs = collectRecordedResourceURLs(allFunctions)
+	result.RecordedResourceURLsCaptured = true
 
 	// Set script name
 	if opts.ScriptName != "" {
@@ -631,6 +635,29 @@ func makeRelative(rawURL, baseURL string) string {
 		path = "/"
 	}
 	return path
+}
+
+func collectRecordedResourceURLs(functions []ParsedFunction) []string {
+	urls := make([]string, 0)
+	seen := make(map[string]struct{})
+	for _, fn := range functions {
+		if !isRequestFunction(fn.Name) || firstNonEmptyArg(fn, "Resource") != "1" {
+			continue
+		}
+		rawURL := strings.TrimSpace(fn.URL)
+		if rawURL == "" {
+			rawURL = strings.TrimSpace(fn.Action)
+		}
+		if rawURL == "" {
+			continue
+		}
+		if _, ok := seen[rawURL]; ok {
+			continue
+		}
+		seen[rawURL] = struct{}{}
+		urls = append(urls, rawURL)
+	}
+	return urls
 }
 
 // sanitizeName converts a LoadRunner step name to a valid DSL action name.

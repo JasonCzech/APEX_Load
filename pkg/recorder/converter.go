@@ -51,8 +51,19 @@ func ConvertSession(session *Session, name string) *ConvertResult {
 		},
 		CreatedAt: time.Now(),
 	}
+	recordedResourceURLs := make([]string, 0)
+	recordedResourceSeen := make(map[string]struct{})
 
 	for i, req := range session.Requests {
+		if req.IsStatic && !req.Excluded {
+			rawURL := strings.TrimSpace(req.URL)
+			if rawURL != "" {
+				if _, ok := recordedResourceSeen[rawURL]; !ok {
+					recordedResourceSeen[rawURL] = struct{}{}
+					recordedResourceURLs = append(recordedResourceURLs, rawURL)
+				}
+			}
+		}
 		if req.IsStatic || req.Excluded {
 			continue
 		}
@@ -123,6 +134,16 @@ func ConvertSession(session *Session, name string) *ConvertResult {
 
 	if len(script.Actions) == 0 {
 		result.Warnings = append(result.Warnings, "no non-static requests found in recording")
+	}
+	if len(recordedResourceURLs) > 0 {
+		script.Metadata = &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{
+			Source:           "recorder",
+			SourceScriptName: session.Name,
+			Preserved: map[string]any{
+				"recorded_resource_urls_available": true,
+				"recorded_resource_urls":           recordedResourceURLs,
+			},
+		}}
 	}
 
 	result.Script = script

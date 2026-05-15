@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chromedp/cdproto/network"
 	"github.com/jasonczech/stormrunner/pkg/protocol"
 )
 
@@ -301,6 +302,227 @@ func TestBrowserProtocolDownloadResourcesNoneBlocksStaticAssets(t *testing.T) {
 	}
 	if got := atomic.LoadInt32(&imageHits); got != 0 {
 		t.Fatalf("image hits = %d, want 0 when download_resources is none", got)
+	}
+}
+
+func TestNormalizeDownloadFilterHosts(t *testing.T) {
+	hosts := normalizeDownloadFilterHosts([]string{
+		" https://cdn.example.com/ ",
+		"http://cdn.example.com",
+		"assets.example.com:8443/",
+		"",
+		"assets.example.com:8443",
+	})
+
+	want := []string{"cdn.example.com", "assets.example.com:8443"}
+	if len(hosts) != len(want) {
+		t.Fatalf("normalizeDownloadFilterHosts length = %d, want %d (%v)", len(hosts), len(want), hosts)
+	}
+	for idx, expected := range want {
+		if hosts[idx] != expected {
+			t.Fatalf("normalizeDownloadFilterHosts[%d] = %q, want %q", idx, hosts[idx], expected)
+		}
+	}
+}
+
+func TestBrowserFetchRequestPatterns(t *testing.T) {
+	tests := []struct {
+		name  string
+		b     Browser
+		want  []network.ResourceType
+	}{
+		{
+			name: "download filters only",
+			b: Browser{downloadFilterMode: "block_list", downloadFilterHosts: []string{"ads.example.com"}, cacheContentURLs: true},
+			want: []network.ResourceType{
+				network.ResourceTypeImage,
+				network.ResourceTypeStylesheet,
+				network.ResourceTypeScript,
+				network.ResourceTypeFont,
+				network.ResourceTypeMedia,
+				network.ResourceTypeOther,
+			},
+		},
+		{
+			name: "content cache override only",
+			b: Browser{cacheContentURLs: false},
+			want: []network.ResourceType{
+				network.ResourceTypeDocument,
+				network.ResourceTypeFetch,
+				network.ResourceTypeXHR,
+			},
+		},
+		{
+			name: "combined patterns are unique",
+			b: Browser{downloadFilterMode: "allow_list", downloadFilterHosts: []string{"cdn.example.com"}, cacheContentURLs: false},
+			want: []network.ResourceType{
+				network.ResourceTypeImage,
+				network.ResourceTypeStylesheet,
+				network.ResourceTypeScript,
+				network.ResourceTypeFont,
+				network.ResourceTypeMedia,
+				network.ResourceTypeOther,
+				network.ResourceTypeDocument,
+				network.ResourceTypeFetch,
+				network.ResourceTypeXHR,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			patterns := tt.b.fetchRequestPatterns()
+			if len(patterns) != len(tt.want) {
+				t.Fatalf("len(patterns) = %d, want %d", len(patterns), len(tt.want))
+			}
+			for idx, expected := range tt.want {
+				if patterns[idx].ResourceType != expected {
+					t.Fatalf("patterns[%d] = %v, want %v", idx, patterns[idx].ResourceType, expected)
+				}
+			}
+		})
+	}
+}
+
+func TestContinuedRequestHeadersAddsNoCache(t *testing.T) {
+	headers := continuedRequestHeaders(network.Headers{
+		"Accept":        "application/json",
+		"Cache-Control": "public, max-age=3600",
+	})
+	values := make(map[string]string, len(headers))
+	for _, header := range headers {
+		values[strings.ToLower(header.Name)] = header.Value
+	}
+	if values["accept"] != "application/json" {
+		t.Fatalf("accept header = %q, want application/json", values["accept"])
+	}
+	if values["cache-control"] != "no-cache" {
+		t.Fatalf("cache-control header = %q, want no-cache", values["cache-control"])
+	}
+	if values["pragma"] != "no-cache" {
+		t.Fatalf("pragma header = %q, want no-cache", values["pragma"])
+	}
+}
+
+func TestShouldRevalidateContentRequest(t *testing.T) {
+	if !shouldRevalidateContentRequest(network.ResourceTypeDocument) {
+		t.Fatal("document requests should be revalidated")
+	}
+	if !shouldRevalidateContentRequest(network.ResourceTypeXHR) {
+		t.Fatal("xhr requests should be revalidated")
+	}
+	if shouldRevalidateContentRequest(network.ResourceTypeImage) {
+		t.Fatal("image requests should not be revalidated by cache_content_urls")
+	}
+}
+
+func TestNormalizeRecordedResources(t *testing.T) {
+	resources := normalizeRecordedResources([]string{
+		"https://example.com/static/logo.png",
+		"/static/logo.png",
+		"https://cdn.example.com/app/site.css?v=2",
+	})
+	if _, ok := resources["example.com/static/logo.png"]; !ok {
+		t.Fatal("expected host-qualified recorded resource key")
+	}
+	if _, ok := resources["/static/logo.png"]; !ok {
+		t.Fatal("expected path-only recorded resource key")
+	}
+	if _, ok := resources["cdn.example.com/app/site.css?v=2"]; !ok {
+		t.Fatal("expected query-preserving recorded resource key")
+	}
+}
+
+func TestBrowserShouldBlockUnrecordedRequest(t *testing.T) {
+	browser := &Browser{
+		downloadResources:          "recorded",
+		recordedResourcesAvailable: true,
+		recordedResources: normalizeRecordedResources([]string{
+			"https://example.com/static/logo.png",
+			"https://cdn.example.com/app/site.css?v=2",
+		}),
+	}
+	if browser.shouldBlockUnrecordedRequest("https://example.com/static/logo.png") {
+		t.Fatal("recorded asset should not be blocked")
+	}
+	if browser.shouldBlockUnrecordedRequest("https://cdn.example.com/app/site.css?v=2") {
+		t.Fatal("recorded asset with query should not be blocked")
+	}
+	if !browser.shouldBlockUnrecordedRequest("https://example.com/static/app.js") {
+		t.Fatal("unrecorded asset should be blocked")
+	}
+	empty := &Browser{downloadResources: "recorded", recordedResourcesAvailable: true}
+	if !empty.shouldBlockUnrecordedRequest("https://example.com/static/app.js") {
+		t.Fatal("recorded mode with empty metadata should block assets")
+	}
+	unavailable := &Browser{downloadResources: "recorded", recordedResourcesAvailable: false}
+	if unavailable.shouldBlockUnrecordedRequest("https://example.com/static/app.js") {
+		t.Fatal("missing recorded metadata should not silently classify in helper")
+	}
+}
+
+func TestBrowserShouldBlockFilteredRequest(t *testing.T) {
+	tests := []struct {
+		name   string
+		mode   string
+		hosts  []string
+		rawURL string
+		want   bool
+	}{
+		{
+			name:   "allow list keeps listed host",
+			mode:   "allow_list",
+			hosts:  []string{"cdn.example.com"},
+			rawURL: "https://cdn.example.com/app.js",
+			want:   false,
+		},
+		{
+			name:   "allow list blocks unlisted host",
+			mode:   "allow_list",
+			hosts:  []string{"cdn.example.com"},
+			rawURL: "https://ads.example.com/banner.js",
+			want:   true,
+		},
+		{
+			name:   "block list blocks listed host",
+			mode:   "block_list",
+			hosts:  []string{"ads.example.com"},
+			rawURL: "https://ads.example.com/banner.js",
+			want:   true,
+		},
+		{
+			name:   "block list allows unlisted host",
+			mode:   "block_list",
+			hosts:  []string{"ads.example.com"},
+			rawURL: "https://cdn.example.com/app.js",
+			want:   false,
+		},
+		{
+			name:   "host match accepts explicit port",
+			mode:   "block_list",
+			hosts:  []string{"assets.example.com:8443"},
+			rawURL: "https://assets.example.com:8443/file.css",
+			want:   true,
+		},
+		{
+			name:   "invalid url does not block",
+			mode:   "allow_list",
+			hosts:  []string{"cdn.example.com"},
+			rawURL: "://bad-url",
+			want:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			browser := &Browser{
+				downloadFilterMode:  tt.mode,
+				downloadFilterHosts: tt.hosts,
+			}
+			if got := browser.shouldBlockFilteredRequest(tt.rawURL); got != tt.want {
+				t.Fatalf("shouldBlockFilteredRequest(%q) = %v, want %v", tt.rawURL, got, tt.want)
+			}
+		})
 	}
 }
 

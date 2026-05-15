@@ -300,6 +300,10 @@ func attachLoadRunnerMetadata(script *dsl.Script, result *ConvertResult, project
 	if result != nil && len(result.Warnings) > 0 {
 		preserved["warnings"] = append([]string(nil), result.Warnings...)
 	}
+	if result != nil && result.RecordedResourceURLsCaptured {
+		preserved["recorded_resource_urls_available"] = true
+		preserved["recorded_resource_urls"] = append([]string(nil), result.RecordedResourceURLs...)
+	}
 	if len(preserved) == 0 {
 		return
 	}

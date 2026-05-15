@@ -13,6 +13,8 @@ import {
 } from '../types'
 import {
   type BrowserCaptureOptions as SharedBrowserCaptureOptions,
+  type ContentCheckConfig,
+  type DFETransform,
   type ScriptActionDefinition,
   type ScriptAssertionDefinition,
   type ScriptDefinition,
@@ -61,180 +63,7 @@ type Extractor = ScriptExtractorDefinition
 type Assertion = ScriptAssertionDefinition
 type WaitCondition = ScriptWaitCondition
 type BrowserCaptureOptions = SharedBrowserCaptureOptions
-
-interface ThinkTimeConfig {
-  type: string; mean_ms: number; std_ms?: number; min_ms?: number; max_ms?: number
-  multiplier?: number; limit_ms?: number; ignore?: boolean
-}
-interface PacingConfig {
-  type: string; delay_ms?: number; min_delay_ms?: number; max_delay_ms?: number
-  interval_ms?: number; min_interval_ms?: number; max_interval_ms?: number; tps?: number
-}
-interface RunLogicConfig {
-  iterations?: number; auto_transactions?: string; block_scheduling?: string; action_sequence?: string[]
-}
-interface ErrorHandlingConfig {
-  continue_on_error?: boolean; max_retries?: number; retry_delay_ms?: number
-  retry_backoff?: string; snapshot_on_error?: boolean
-}
-interface LogConfig {
-  level?: string; on_error_only?: boolean; extended_options?: string[]
-}
-interface HTTPConfig {
-  connect_timeout_ms?: number; request_timeout_ms?: number; tls_timeout_ms?: number; idle_timeout_ms?: number
-  version?: string; max_conns_per_host?: number; keep_alive?: boolean
-  user_agent?: string; accept_encoding?: string; accept_language?: string
-  max_redirects?: number; proxy_mode?: string
-  tls?: { min_version?: string; insecure_skip_verify?: boolean; client_cert_file?: string; client_key_file?: string; ca_cert_file?: string }
-  proxy?: { url?: string; username?: string; password?: string }
-  auth?: { type?: string; username?: string; password?: string; token?: string }
-}
-
-interface JavaHTTPConfig {
-  codec?: string
-  helper_mode?: string
-  content_type?: string
-  accept?: string
-  body_encoding?: string
-  object_schema?: string
-  request_mapping?: Record<string, string>
-  response_mapping?: Record<string, string>
-  extractor_type?: string
-  preserve_binary_result?: boolean
-}
-
-interface SOAPUsernameTokenConfig {
-  username?: string
-  password?: string
-  password_type?: string
-  nonce?: boolean
-  created?: boolean
-}
-
-interface SOAPTimestampConfig {
-  ttl_seconds?: number
-}
-
-interface SOAPConfig {
-  version?: string
-  namespaces?: Record<string, string>
-  ws_security?: {
-    username_token?: SOAPUsernameTokenConfig
-    timestamp?: SOAPTimestampConfig
-  }
-  fault_handling?: {
-    fail_on_fault?: boolean
-  }
-}
-
-interface BrowserConfig {
-  engine?: string
-  headless?: boolean
-  slow_mo_ms?: number
-  user_agent?: string
-  capture_screenshots?: string
-  cache_enabled?: boolean
-  cache_content_urls?: boolean
-  check_newer_versions?: boolean
-  new_user_per_iteration?: boolean
-  download_resources?: string
-  viewport?: { width?: number; height?: number }
-}
-
-interface DownloadFiltersConfig {
-  mode?: string
-  hosts?: string[]
-}
-
-interface ContentCheckConfig {
-  text?: string
-  scope?: string
-  fail_if_found?: boolean
-}
-
-interface NetworkSimulationConfig {
-  mode?: string
-  preset?: string
-  bandwidth_kbps?: number
-  latency_ms?: number
-}
-
-interface StreamingConfig {
-  mode?: string
-  buffer_size_seconds?: number
-  fixed_bitrate_kbps?: number
-  bandwidth_estimation?: string
-}
-
-interface DFETransform {
-  type?: string
-  options?: Record<string, string>
-}
-
-interface DataFormattingConfig {
-  auto_detect?: boolean
-  chain?: DFETransform[]
-}
-
-interface WebRuntimeConfig {
-  additional_attributes?: Record<string, string>
-  download_filters?: DownloadFiltersConfig
-  content_checks?: ContentCheckConfig[]
-  network_simulation?: NetworkSimulationConfig
-  streaming?: StreamingConfig
-  data_formatting?: DataFormattingConfig
-}
-
-interface JMSConfig {
-  provider?: string
-  broker_url?: string
-  message_vpn?: string
-  username?: string
-  password?: string
-  client_id?: string
-  destination?: string
-  destination_type?: string
-  reply_to?: string
-  acknowledgement?: string
-  delivery_mode?: string
-  timeout_ms?: number
-  properties?: Record<string, string>
-  mock?: boolean
-}
-
-interface ImportMetadata {
-  source?: string
-  source_script_name?: string
-  preserved?: Record<string, unknown>
-}
-
-interface ScriptMetadata {
-  import?: ImportMetadata
-}
-
-interface ScriptConfig {
-  base_url: string
-  think_time?: ThinkTimeConfig
-  pacing?: PacingConfig
-  run_logic?: RunLogicConfig
-  error_handling?: ErrorHandlingConfig
-  log?: LogConfig
-  http?: HTTPConfig
-  web_runtime?: WebRuntimeConfig
-  java_http?: JavaHTTPConfig
-  soap?: SOAPConfig
-  browser?: BrowserConfig
-  jms?: JMSConfig
-}
-
-interface ScriptData {
-  name: string; version: string; protocol: string
-  metadata?: ScriptMetadata
-  config: ScriptConfig
-  actions: Action[]
-  data_sources?: DataSourceConfig[]
-  parameters?: ParameterConfig[]
-}
+type ScriptData = ScriptDefinition
 
 type ReplaySnapshot = BrowserReplaySnapshot
 type ConsoleEntry = BrowserReplayConsoleEntry
@@ -3089,6 +2918,9 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
                       </div>
                       <div className="settings-sub-group">
                         <h5>Streaming</h5>
+                        <div className="cell-muted" style={{ marginBottom: 12 }}>
+                          Streaming settings are compatibility-only today. Stormrunner preserves and imports these values, but does not execute media playback buffering or adaptive bitrate behavior yet.
+                        </div>
                         <div className="form-grid">
                           <label>
                             <span>Mode</span>
