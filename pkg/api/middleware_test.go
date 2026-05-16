@@ -113,6 +113,54 @@ func TestTrustedHeaderAuthProjectRoleGuardsProjectEndpoints(t *testing.T) {
 	}
 }
 
+func TestTrustedHeaderAuthProjectRoleGuardsTestStreamEndpoint(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	project := &storage.Project{ID: uuid.New().String(), Name: "Checkout", CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	if err := store.SaveProject(project); err != nil {
+		t.Fatalf("SaveProject returned error: %v", err)
+	}
+	testRecord := &storage.TestRecord{ID: uuid.New().String(), ProjectID: project.ID, Name: "Checkout Smoke", Status: "RUNNING", StartTime: time.Now()}
+	if err := store.SaveTest(testRecord); err != nil {
+		t.Fatalf("SaveTest returned error: %v", err)
+	}
+
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	enableTrustedHeaderAuth(t, server)
+
+	unauthorizedReq := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRecord.ID+"/stream", nil)
+	unauthorizedResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(unauthorizedResp, unauthorizedReq)
+	if unauthorizedResp.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthorized test stream status = %d, want %d body=%s", unauthorizedResp.Code, http.StatusUnauthorized, unauthorizedResp.Body.String())
+	}
+
+	forbiddenReq := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRecord.ID+"/stream", nil)
+	forbiddenReq.Header.Set("X-Auth-Request-User", "viewer-user")
+	forbiddenReq.Header.Set("X-Stormrunner-Project-Roles", uuid.New().String()+"="+RoleViewer)
+	forbiddenResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(forbiddenResp, forbiddenReq)
+	if forbiddenResp.Code != http.StatusForbidden {
+		t.Fatalf("foreign project test stream status = %d, want %d body=%s", forbiddenResp.Code, http.StatusForbidden, forbiddenResp.Body.String())
+	}
+
+	viewerReq := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRecord.ID+"/stream", nil)
+	viewerReq.Header.Set("X-Auth-Request-User", "viewer-user")
+	viewerReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	viewerResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(viewerResp, viewerReq)
+	if viewerResp.Code == http.StatusUnauthorized || viewerResp.Code == http.StatusForbidden {
+		t.Fatalf("project viewer test stream status = %d, want websocket upgrade attempt body=%s", viewerResp.Code, viewerResp.Body.String())
+	}
+	if viewerResp.Code != http.StatusBadRequest {
+		t.Fatalf("project viewer test stream status = %d, want %d body=%s", viewerResp.Code, http.StatusBadRequest, viewerResp.Body.String())
+	}
+}
+
 func TestTrustedHeaderAuthScopesApplicationListAndCreateToProjectRoles(t *testing.T) {
 	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
 	if err != nil {
