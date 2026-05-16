@@ -173,6 +173,10 @@ function buildTestReportHref(testId: string) {
   return `/api/v1/tests/${encodeURIComponent(testId)}/report`
 }
 
+function formatBaselinePin(value?: string) {
+  return value ? new Date(value).toLocaleString() : 'Pinned baseline'
+}
+
 function SortIcon({ active, direction }: { active: boolean; direction: 'asc' | 'desc' }) {
   if (!active) return <span className="sort-icon">↕</span>
   return <span className="sort-icon active">{direction === 'asc' ? '↑' : '↓'}</span>
@@ -625,6 +629,24 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
     downloadBlob(blob, filename)
   }
 
+  const applyUpdatedTest = useCallback((updated: TestSummary) => {
+    setTests(prev => prev.map(test => (test.id === updated.id ? { ...test, ...updated } : test)))
+  }, [])
+
+  const toggleBaselinePin = useCallback(async (test: TestSummary, event: React.MouseEvent) => {
+    event.stopPropagation()
+    try {
+      const updated = test.baseline_pinned
+        ? await api.unpinComparisonBaseline(test.id)
+        : await api.pinComparisonBaseline(test.id)
+      applyUpdatedTest(updated)
+      setError('')
+      await refresh()
+    } catch (error: unknown) {
+      setError(getErrorMessage(error, 'Unable to update pinned comparison baseline'))
+    }
+  }, [api, applyUpdatedTest, refresh])
+
   if (!activeApplication?.id || !activeRelease?.id) {
     return (
       <div className="page">
@@ -1016,8 +1038,19 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
                     <td>{test.groups?.length || 1}</td>
                     <td className="cell-muted">{formatDate(test.start_time || test.created_at)}</td>
                     <td className="cell-muted">{test.duration}</td>
-                    <td className="cell-muted">{test.archive ? `${test.archive.transaction_count} tx` : 'Pending'}</td>
+                    <td className="cell-muted">
+                      {test.archive ? `${test.archive.transaction_count} tx` : 'Pending'}
+                      {test.baseline_pinned && (
+                        <>
+                          <br />
+                          <span title={formatBaselinePin(test.baseline_pinned_at)}>Pinned baseline</span>
+                        </>
+                      )}
+                    </td>
                     <td style={{ textAlign: 'right' }}>
+                      <button className="btn btn-sm btn-ghost" onClick={event => toggleBaselinePin(test, event)}>
+                        {test.baseline_pinned ? 'Unpin Baseline' : 'Pin Baseline'}
+                      </button>
                       {test.archive && (
                         <>
                           <button className="btn btn-sm btn-secondary" onClick={event => downloadArchive(test, event)}>

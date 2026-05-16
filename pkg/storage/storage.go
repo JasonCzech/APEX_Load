@@ -172,6 +172,7 @@ type Project struct {
 type ProjectSettings struct {
 	RedactionRules     []engine.RedactionRule `json:"redaction_rules,omitempty"`
 	MaxConcurrentTests int                    `json:"max_concurrent_tests,omitempty"`
+	MaxVUsers          int                    `json:"max_vusers,omitempty"`
 }
 
 type Folder struct {
@@ -214,6 +215,9 @@ type TestRecord struct {
 	TotalVUsers      int        `json:"total_vusers"`
 	Duration         int64      `json:"duration_ns"`
 	StartTime        time.Time  `json:"start_time"`
+	PendingSince     *time.Time `json:"pending_since,omitempty"`
+	BaselinePinned   bool       `json:"baseline_pinned,omitempty"`
+	BaselinePinnedAt *time.Time `json:"baseline_pinned_at,omitempty"`
 	EndTime          *time.Time `json:"end_time,omitempty"`
 	Error            string     `json:"error,omitempty"`
 	Groups           any        `json:"groups"`                     // JSON blob

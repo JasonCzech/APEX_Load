@@ -156,6 +156,69 @@ export interface RunComparisonBaseline {
   dependency_health?: Record<string, TxMetrics>
 }
 
+export interface RunArchiveExecutionSettingsSnapshot {
+  general: {
+    api_endpoint: string
+    max_concurrent_tests: number
+    metrics_interval_seconds: number
+  }
+  thresholds: {
+    max_error_rate_pct?: number
+    max_p99_latency_ms?: number
+    max_avg_server_processing_ms?: number
+    max_avg_transfer_ms?: number
+  }
+  capacity_planning: {
+    headroom_pct: number
+    generator: {
+      cpu_cores: number
+      memory_mb: number
+      network_mbps: number
+      max_vusers: number
+    }
+    availability: {
+      source: string
+      configured_available_generators: number
+    }
+  }
+}
+
+export interface RunArchiveProvenance {
+  application_id?: string
+  release_id?: string
+  scenario_id?: string
+  project_id?: string
+  requested_at?: string
+  started_at?: string
+  scenario_mode?: ScenarioMode
+  script_shakeout?: boolean
+  resource_baseline?: boolean
+  start_delay?: string
+  total_vusers?: number
+  duration?: string
+  assignment?: GeneratorAssignmentSettings
+  goal_config?: GoalConfig
+  runtime_settings?: RuntimeSettingsOverride
+  groups?: TestGroup[]
+  baseline_pinned?: boolean
+  baseline_pinned_at?: string
+  execution_settings: RunArchiveExecutionSettingsSnapshot
+  controller_env?: Record<string, string>
+  generator_inventory?: Array<{
+    target: string
+    generator_id?: string
+    status: string
+    available_capacity: number
+    active_vusers?: number
+    cpu_percent?: number
+    memory_bytes?: number
+    goroutine_count?: number
+    cpu_limit_cores?: number
+    memory_limit_bytes?: number
+    max_vusers?: number
+  }>
+}
+
 export interface TestSummary {
   id: string
   name: string
@@ -177,6 +240,8 @@ export interface TestSummary {
   pending_since?: string
   pending_reason?: string
   queue_position?: number
+  baseline_pinned?: boolean
+  baseline_pinned_at?: string
   started_at?: string
   ended_at?: string
   live_metrics?: LiveMetrics
@@ -213,6 +278,7 @@ export interface RunArchiveManifest {
   completed_at?: string
   status?: string
   error?: string
+  provenance?: RunArchiveProvenance
   transactions_file: string
   transactions_parquet_file?: string
   resource_samples_file: string

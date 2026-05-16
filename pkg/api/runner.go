@@ -125,6 +125,8 @@ type ManagedTest struct {
 	PendingSince       *time.Time                   `json:"pending_since,omitempty"`
 	PendingReason      string                       `json:"pending_reason,omitempty"`
 	QueuePosition      int                          `json:"queue_position,omitempty"`
+	BaselinePinned     bool                         `json:"baseline_pinned,omitempty"`
+	BaselinePinnedAt   *time.Time                   `json:"baseline_pinned_at,omitempty"`
 	StartedAt          *time.Time                   `json:"started_at,omitempty"`
 	EndedAt            *time.Time                   `json:"ended_at,omitempty"`
 	LiveMetrics        *LiveMetrics                 `json:"live_metrics,omitempty"`
@@ -690,6 +692,8 @@ func managedTestFromRecord(record *storage.TestRecord) *ManagedTest {
 		DurationStr:      time.Duration(record.Duration).String(),
 		CreatedAt:        record.StartTime,
 		PendingSince:     record.PendingSince,
+		BaselinePinned:   record.BaselinePinned,
+		BaselinePinnedAt: record.BaselinePinnedAt,
 		Error:            record.Error,
 	}
 	if record.EndTime != nil {
@@ -2020,6 +2024,9 @@ func (tr *TestRunner) buildRunComparisonBaselineLocked(test *ManagedTest) *RunCo
 	if test.StartedAt != nil && !test.StartedAt.IsZero() {
 		referenceTime = *test.StartedAt
 	}
+	var pinned *ManagedTest
+	var pinnedMarkedAt time.Time
+	var pinnedCompletedAt time.Time
 	var selected *ManagedTest
 	var selectedCompletedAt time.Time
 	for _, candidate := range tr.tests {
@@ -2030,10 +2037,26 @@ func (tr *TestRunner) buildRunComparisonBaselineLocked(test *ManagedTest) *RunCo
 		if !ok || (!referenceTime.IsZero() && !completedAt.Before(referenceTime)) {
 			continue
 		}
+		if candidate.BaselinePinned {
+			markedAt := completedAt
+			if candidate.BaselinePinnedAt != nil && !candidate.BaselinePinnedAt.IsZero() {
+				markedAt = *candidate.BaselinePinnedAt
+			}
+			if pinned == nil || markedAt.After(pinnedMarkedAt) || (markedAt.Equal(pinnedMarkedAt) && completedAt.After(pinnedCompletedAt)) {
+				pinned = candidate
+				pinnedMarkedAt = markedAt
+				pinnedCompletedAt = completedAt
+			}
+			continue
+		}
 		if selected == nil || completedAt.After(selectedCompletedAt) {
 			selected = candidate
 			selectedCompletedAt = completedAt
 		}
+	}
+	if pinned != nil {
+		selected = pinned
+		selectedCompletedAt = pinnedCompletedAt
 	}
 	if selected == nil {
 		return nil
@@ -2070,6 +2093,80 @@ func isComparableBaselineCandidate(current *ManagedTest, candidate *ManagedTest)
 		return current.ApplicationID != "" && current.ApplicationID == candidate.ApplicationID && current.Name == candidate.Name
 	}
 	return current.Name != "" && current.Name == candidate.Name
+}
+
+func sharesComparisonScope(left *ManagedTest, right *ManagedTest) bool {
+	if left == nil || right == nil {
+		return false
+	}
+	if left.ScenarioID != "" || right.ScenarioID != "" {
+		return left.ScenarioID != "" && left.ScenarioID == right.ScenarioID
+	}
+	if left.ReleaseID != "" || right.ReleaseID != "" {
+		return left.ReleaseID != "" && left.ReleaseID == right.ReleaseID && left.Name == right.Name
+	}
+	if left.ApplicationID != "" || right.ApplicationID != "" {
+		return left.ApplicationID != "" && left.ApplicationID == right.ApplicationID && left.Name == right.Name
+	}
+	return left.Name != "" && left.Name == right.Name
+}
+
+func canPinComparisonBaseline(test *ManagedTest) bool {
+	if test == nil {
+		return false
+	}
+	switch test.Status {
+	case "COMPLETE", "FAILED", "ABORTED":
+		return true
+	default:
+		return false
+	}
+}
+
+func (tr *TestRunner) PinComparisonBaseline(id string) (*ManagedTest, error) {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+
+	test, ok := tr.tests[id]
+	if !ok {
+		return nil, fmt.Errorf("test not found: %s", id)
+	}
+	if !canPinComparisonBaseline(test) {
+		return nil, fmt.Errorf("comparison baseline pinning requires a completed, failed, or aborted test")
+	}
+	pinnedAt := time.Now().UTC()
+	for _, candidate := range tr.tests {
+		if !sharesComparisonScope(test, candidate) {
+			continue
+		}
+		if candidate.ID == test.ID {
+			candidate.BaselinePinned = true
+			candidate.BaselinePinnedAt = &pinnedAt
+		} else if candidate.BaselinePinned || candidate.BaselinePinnedAt != nil {
+			candidate.BaselinePinned = false
+			candidate.BaselinePinnedAt = nil
+		}
+		tr.saveManagedTestRecord(candidate)
+	}
+	cloned := *test
+	cloned.ComparisonBaseline = tr.buildRunComparisonBaselineLocked(test)
+	return &cloned, nil
+}
+
+func (tr *TestRunner) UnpinComparisonBaseline(id string) (*ManagedTest, error) {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+
+	test, ok := tr.tests[id]
+	if !ok {
+		return nil, fmt.Errorf("test not found: %s", id)
+	}
+	test.BaselinePinned = false
+	test.BaselinePinnedAt = nil
+	tr.saveManagedTestRecord(test)
+	cloned := *test
+	cloned.ComparisonBaseline = tr.buildRunComparisonBaselineLocked(test)
+	return &cloned, nil
 }
 
 func baselineCandidateCompletedAt(candidate *ManagedTest) (time.Time, bool) {
@@ -2561,6 +2658,8 @@ func buildManagedTestRecord(test *ManagedTest) *storage.TestRecord {
 		Duration:         int64(test.Duration),
 		StartTime:        test.CreatedAt,
 		PendingSince:     test.PendingSince,
+		BaselinePinned:   test.BaselinePinned,
+		BaselinePinnedAt: test.BaselinePinnedAt,
 		Groups:           test.Groups,
 		GoalConfig:       test.GoalConfig,
 		RuntimeSettings:  test.RuntimeSettings,

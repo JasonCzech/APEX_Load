@@ -93,6 +93,7 @@ func TestSQLiteStoreProjectsFoldersAndFiltering(t *testing.T) {
 		Settings: ProjectSettings{
 			RedactionRules:     []engine.RedactionRule{{Name: "customer id", Pattern: `customer-[0-9]+`}},
 			MaxConcurrentTests: 2,
+			MaxVUsers:          250,
 		},
 		CreatedAt: time.Now(),
 	}
@@ -108,6 +109,9 @@ func TestSQLiteStoreProjectsFoldersAndFiltering(t *testing.T) {
 	}
 	if roundTripProject.Settings.MaxConcurrentTests != 2 {
 		t.Fatalf("expected persisted project max concurrent tests, got %#v", roundTripProject.Settings)
+	}
+	if roundTripProject.Settings.MaxVUsers != 250 {
+		t.Fatalf("expected persisted project max vusers, got %#v", roundTripProject.Settings)
 	}
 	folder := &Folder{ID: "folder-1", ProjectID: project.ID, Name: "Checkout", Category: "scripts", CreatedAt: time.Now()}
 	if err := store.SaveFolder(folder); err != nil {
@@ -144,6 +148,81 @@ func TestSQLiteStoreProjectsFoldersAndFiltering(t *testing.T) {
 	}
 	if err := store.DeleteFolder(folder.ID); err != nil {
 		t.Fatalf("DeleteFolder returned error after moving script: %v", err)
+	}
+}
+
+func TestSQLiteStorePersistsPendingSince(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	pendingSince := time.Now().UTC().Truncate(time.Second)
+	record := &TestRecord{
+		ID:           "test-pending",
+		Name:         "Queued Checkout",
+		Status:       "PENDING",
+		ProjectID:    DefaultProjectID,
+		TotalVUsers:  25,
+		Duration:     int64(30 * time.Second),
+		StartTime:    time.Now().UTC(),
+		PendingSince: &pendingSince,
+		Groups: []map[string]any{{
+			"name": "Checkout",
+		}},
+	}
+
+	if err := store.SaveTest(record); err != nil {
+		t.Fatalf("SaveTest returned error: %v", err)
+	}
+	roundTrip, err := store.GetTest(record.ID)
+	if err != nil {
+		t.Fatalf("GetTest returned error: %v", err)
+	}
+	if roundTrip.PendingSince == nil {
+		t.Fatal("expected pending_since to round-trip through sqlite")
+	}
+	if !roundTrip.PendingSince.Equal(pendingSince) {
+		t.Fatalf("pending_since = %v, want %v", roundTrip.PendingSince, pendingSince)
+	}
+}
+
+func TestSQLiteStorePersistsBaselinePin(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	pinnedAt := time.Now().UTC().Truncate(time.Second)
+	record := &TestRecord{
+		ID:               "test-baseline-pin",
+		Name:             "Checkout Baseline",
+		Status:           "COMPLETE",
+		ProjectID:        DefaultProjectID,
+		TotalVUsers:      25,
+		Duration:         int64(30 * time.Second),
+		StartTime:        time.Now().UTC(),
+		BaselinePinned:   true,
+		BaselinePinnedAt: &pinnedAt,
+		Groups: []map[string]any{{
+			"name": "Checkout",
+		}},
+	}
+
+	if err := store.SaveTest(record); err != nil {
+		t.Fatalf("SaveTest returned error: %v", err)
+	}
+	roundTrip, err := store.GetTest(record.ID)
+	if err != nil {
+		t.Fatalf("GetTest returned error: %v", err)
+	}
+	if !roundTrip.BaselinePinned {
+		t.Fatal("expected baseline_pinned to round-trip through sqlite")
+	}
+	if roundTrip.BaselinePinnedAt == nil || !roundTrip.BaselinePinnedAt.Equal(pinnedAt) {
+		t.Fatalf("baseline_pinned_at = %v, want %v", roundTrip.BaselinePinnedAt, pinnedAt)
 	}
 }
 

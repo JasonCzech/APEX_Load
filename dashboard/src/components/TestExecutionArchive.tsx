@@ -87,12 +87,24 @@ function formatArchiveCountSummary(counts?: Record<string, number>) {
   return entries.map(([name, count]) => `${name} (${count})`).join(', ')
 }
 
+function formatArchiveFlag(enabled: boolean | undefined, truthy = 'Enabled', falsy = 'Disabled') {
+  return enabled ? truthy : falsy
+}
+
+function formatGeneratorInventoryLabel(target?: string) {
+  return target || 'generator'
+}
+
 function buildArchiveFaultTimelineEntries(buckets?: RunArchiveSOAPFaultTimelineBucket[]) {
   return [...(buckets || [])].sort((left, right) => left.timestamp.localeCompare(right.timestamp))
 }
 
 function buildArchivePayloadTimelineEntries(buckets?: RunArchiveSOAPPayloadTimelineBucket[]) {
   return [...(buckets || [])].sort((left, right) => left.timestamp.localeCompare(right.timestamp))
+}
+
+function buildArchiveSummaryTimelineEntries(points?: RunArchiveReport['summary_timeline']) {
+  return [...(points || [])].sort((left, right) => left.timestamp.localeCompare(right.timestamp))
 }
 
 function buildReportHref(testId: string) {
@@ -280,6 +292,7 @@ export default function TestExecutionArchive({
   const soapFaultCategoryEntries = buildArchiveCountEntries(archiveReport?.by_soap_fault_category)
   const soapFaultTimelineEntries = buildArchiveFaultTimelineEntries(archiveReport?.soap_fault_timeline)
   const soapPayloadTimelineEntries = buildArchivePayloadTimelineEntries(archiveReport?.soap_payload_timeline)
+  const summaryTimelineEntries = buildArchiveSummaryTimelineEntries(archiveReport?.summary_timeline)
 
   const handleCopySection = async (key: string, value: string) => {
     if (!navigator.clipboard?.writeText) return
@@ -346,6 +359,88 @@ export default function TestExecutionArchive({
             </div>
           </div>
 
+          {archiveReport.manifest.provenance && (
+            <div className="tx-section archive-summary-section">
+              <div className="archive-section-header archive-section-header-stack">
+                <div>
+                  <h3 className="chart-title">Run Provenance</h3>
+                  <p className="archive-section-copy">Immutable execution inputs captured when the archive bundle was created.</p>
+                </div>
+              </div>
+              <div className="archive-overview-grid">
+                <div className="scenario-script-detail-card">
+                  <span className="scenario-script-detail-label">Execution Profile</span>
+                  <span className="scenario-script-detail-value">
+                    {archiveReport.manifest.provenance.scenario_mode || 'vuser_driven'} · {archiveReport.manifest.provenance.total_vusers || test.total_vusers} VUsers · {archiveReport.manifest.provenance.duration || test.duration}
+                  </span>
+                </div>
+                <div className="scenario-script-detail-card">
+                  <span className="scenario-script-detail-label">Scope</span>
+                  <span className="scenario-script-detail-value">
+                    {(archiveReport.manifest.provenance.project_id || 'unassigned')}
+                    {archiveReport.manifest.provenance.release_id ? ` / ${archiveReport.manifest.provenance.release_id}` : ''}
+                    {archiveReport.manifest.provenance.scenario_id ? ` / ${archiveReport.manifest.provenance.scenario_id}` : ''}
+                  </span>
+                </div>
+                <div className="scenario-script-detail-card">
+                  <span className="scenario-script-detail-label">Runtime Flags</span>
+                  <span className="scenario-script-detail-value">
+                    Shakeout {formatArchiveFlag(archiveReport.manifest.provenance.script_shakeout)} · Baseline {formatArchiveFlag(archiveReport.manifest.provenance.resource_baseline)}
+                  </span>
+                </div>
+                <div className="scenario-script-detail-card">
+                  <span className="scenario-script-detail-label">Metrics Interval</span>
+                  <span className="scenario-script-detail-value">{archiveReport.manifest.provenance.execution_settings.general.metrics_interval_seconds}s</span>
+                </div>
+                <div className="scenario-script-detail-card">
+                  <span className="scenario-script-detail-label">Start Delay</span>
+                  <span className="scenario-script-detail-value">{archiveReport.manifest.provenance.start_delay || 'None'}</span>
+                </div>
+                <div className="scenario-script-detail-card">
+                  <span className="scenario-script-detail-label">Pinned Baseline</span>
+                  <span className="scenario-script-detail-value">{archiveReport.manifest.provenance.baseline_pinned ? 'Pinned' : 'Not pinned'}</span>
+                </div>
+              </div>
+
+              {archiveReport.manifest.provenance.groups && archiveReport.manifest.provenance.groups.length > 0 && (
+                <div>
+                  <span className="results-compare-label">Scenario Groups</span>
+                  <div className="archive-report-badges">
+                    {archiveReport.manifest.provenance.groups.map(group => (
+                      <span key={`${group.script_id}-${group.name}`} className="archive-chip">
+                        {group.name || group.script_name || group.script_id} · {group.vusers} VUsers
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {archiveReport.manifest.provenance.controller_env && Object.keys(archiveReport.manifest.provenance.controller_env).length > 0 && (
+                <div>
+                  <span className="results-compare-label">Controller Environment</span>
+                  <div className="archive-report-badges">
+                    {Object.entries(archiveReport.manifest.provenance.controller_env).map(([key, value]) => (
+                      <span key={key} className="archive-chip">{key}={value}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {archiveReport.manifest.provenance.generator_inventory && archiveReport.manifest.provenance.generator_inventory.length > 0 && (
+                <div>
+                  <span className="results-compare-label">Generator Inventory</span>
+                  <div className="archive-report-badges">
+                    {archiveReport.manifest.provenance.generator_inventory.map(entry => (
+                      <span key={`${entry.target}-${entry.generator_id || entry.status}`} className="archive-chip">
+                        {formatGeneratorInventoryLabel(entry.target)} · {entry.status} · {entry.available_capacity} available
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {archiveReport.overview.browser && renderBrowserSummary(
             archiveReport.overview.browser,
             archiveReport.browser_by_device,
@@ -392,6 +487,43 @@ export default function TestExecutionArchive({
               </button>
             </div>
           </div>
+
+          {summaryTimelineEntries.length > 0 && (
+            <div className="tx-section archive-summary-section">
+              <div className="archive-section-header">
+                <div>
+                  <h3 className="chart-title">Summary Timeline</h3>
+                  <p className="archive-section-copy">Archived interval snapshots for throughput, latency, and error progression across the run.</p>
+                </div>
+              </div>
+              <table className="tx-table">
+                <thead>
+                  <tr>
+                    <th>Bucket</th>
+                    <th>Active VUsers</th>
+                    <th>TPS</th>
+                    <th>P95</th>
+                    <th>Error %</th>
+                    <th>Total Tx</th>
+                    <th>Total Errors</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {summaryTimelineEntries.map((point) => (
+                    <tr key={point.timestamp}>
+                      <td className="tx-name">{formatArchiveBucketTimestamp(point.timestamp)}</td>
+                      <td>{point.active_vusers}</td>
+                      <td>{point.tps.toFixed(1)}</td>
+                      <td>{point.p95_ms.toFixed(1)} ms</td>
+                      <td>{point.error_pct.toFixed(2)}%</td>
+                      <td>{point.total_transactions}</td>
+                      <td>{point.total_errors}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
 
           <div className="archive-report-layout">
             <div className="tx-section archive-action-section">

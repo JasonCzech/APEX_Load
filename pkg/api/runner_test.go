@@ -32,6 +32,14 @@ type metricsStoreSpy struct {
 	archiveByTestID       map[string]*storage.RunArchiveRecord
 }
 
+type provenanceInventoryBackend struct{}
+
+func (provenanceInventoryBackend) Run(_ *TestRunner, _ *ManagedTest) {}
+
+func (provenanceInventoryBackend) SystemInventory(_ context.Context) []GeneratorInventoryEntry {
+	return []GeneratorInventoryEntry{{Target: "generator-1", Status: "healthy", AvailableCapacity: 50}}
+}
+
 func (s *metricsStoreSpy) SaveScript(script *dsl.Script) error {
 	s.savedScripts = append(s.savedScripts, script)
 	return nil
@@ -2069,6 +2077,100 @@ func TestGetTestIncludesPreviousRunComparisonBaseline(t *testing.T) {
 	}
 }
 
+func TestGetTestPrefersPinnedComparisonBaseline(t *testing.T) {
+	runner := NewTestRunner(2, NewHub(), nil)
+	olderCompletedAt := time.Date(2026, time.May, 10, 9, 0, 0, 0, time.UTC)
+	newerCompletedAt := olderCompletedAt.Add(30 * time.Minute)
+	pinnedAt := newerCompletedAt.Add(5 * time.Minute)
+	runner.tests["baseline-pinned"] = &ManagedTest{
+		ID:               "baseline-pinned",
+		Name:             "Checkout Run",
+		Status:           "COMPLETE",
+		ScenarioID:       "scenario-1",
+		CreatedAt:        olderCompletedAt.Add(-5 * time.Minute),
+		EndedAt:          &olderCompletedAt,
+		BaselinePinned:   true,
+		BaselinePinnedAt: &pinnedAt,
+		History: []*LiveMetrics{{
+			Timestamp: olderCompletedAt,
+			Transactions: map[string]*TxMetrics{
+				"POST /checkout": {Name: "POST /checkout", Count: 10, AvgMs: 150, P50Ms: 130, P90Ms: 180, P99Ms: 220},
+			},
+		}},
+	}
+	runner.tests["baseline-latest"] = &ManagedTest{
+		ID:         "baseline-latest",
+		Name:       "Checkout Run",
+		Status:     "COMPLETE",
+		ScenarioID: "scenario-1",
+		CreatedAt:  newerCompletedAt.Add(-5 * time.Minute),
+		EndedAt:    &newerCompletedAt,
+		History: []*LiveMetrics{{
+			Timestamp: newerCompletedAt,
+			Transactions: map[string]*TxMetrics{
+				"POST /checkout": {Name: "POST /checkout", Count: 10, AvgMs: 120, P50Ms: 100, P90Ms: 140, P99Ms: 180},
+			},
+		}},
+	}
+	runner.tests["current"] = &ManagedTest{
+		ID:         "current",
+		Name:       "Checkout Run",
+		Status:     "RUNNING",
+		ScenarioID: "scenario-1",
+		CreatedAt:  newerCompletedAt.Add(10 * time.Minute),
+	}
+
+	testRun, ok := runner.GetTest("current")
+	if !ok {
+		t.Fatal("expected current test to be found")
+	}
+	if testRun.ComparisonBaseline == nil {
+		t.Fatal("expected comparison baseline to be populated")
+	}
+	if testRun.ComparisonBaseline.SourceTestID != "baseline-pinned" {
+		t.Fatalf("expected pinned baseline to win, got %q", testRun.ComparisonBaseline.SourceTestID)
+	}
+}
+
+func TestPinComparisonBaselineUnpinsComparableRuns(t *testing.T) {
+	store := &metricsStoreSpy{}
+	runner := NewTestRunner(2, NewHub(), store)
+	baselineCompletedAt := time.Date(2026, time.May, 10, 10, 0, 0, 0, time.UTC)
+	otherPinnedAt := baselineCompletedAt.Add(-time.Minute)
+	failedEndedAt := baselineCompletedAt.Add(10 * time.Minute)
+	runner.tests["baseline-a"] = &ManagedTest{ID: "baseline-a", Name: "Checkout Run", Status: "COMPLETE", ScenarioID: "scenario-1", CreatedAt: baselineCompletedAt.Add(-5 * time.Minute), EndedAt: &baselineCompletedAt}
+	runner.tests["baseline-b"] = &ManagedTest{ID: "baseline-b", Name: "Checkout Run", Status: "FAILED", ScenarioID: "scenario-1", CreatedAt: baselineCompletedAt.Add(5 * time.Minute), EndedAt: &failedEndedAt, BaselinePinned: true, BaselinePinnedAt: &otherPinnedAt}
+	runner.tests["other-scope"] = &ManagedTest{ID: "other-scope", Name: "Search Run", Status: "COMPLETE", ScenarioID: "scenario-2", CreatedAt: baselineCompletedAt, EndedAt: &baselineCompletedAt, BaselinePinned: true, BaselinePinnedAt: &otherPinnedAt}
+
+	pinned, err := runner.PinComparisonBaseline("baseline-a")
+	if err != nil {
+		t.Fatalf("PinComparisonBaseline returned error: %v", err)
+	}
+	if !pinned.BaselinePinned || pinned.BaselinePinnedAt == nil {
+		t.Fatalf("expected pinned baseline metadata, got %#v", pinned)
+	}
+	if !runner.tests["baseline-a"].BaselinePinned {
+		t.Fatal("expected target baseline to remain pinned")
+	}
+	if runner.tests["baseline-b"].BaselinePinned || runner.tests["baseline-b"].BaselinePinnedAt != nil {
+		t.Fatalf("expected comparable baseline to be unpinned, got %#v", runner.tests["baseline-b"])
+	}
+	if !runner.tests["other-scope"].BaselinePinned {
+		t.Fatal("expected other scope baseline pin to remain intact")
+	}
+	if len(store.savedTests) != 2 {
+		t.Fatalf("expected comparable runs to be persisted, got %d saves", len(store.savedTests))
+	}
+
+	updated, err := runner.UnpinComparisonBaseline("baseline-a")
+	if err != nil {
+		t.Fatalf("UnpinComparisonBaseline returned error: %v", err)
+	}
+	if updated.BaselinePinned || updated.BaselinePinnedAt != nil {
+		t.Fatalf("expected baseline to be unpinned, got %#v", updated)
+	}
+}
+
 func TestEvaluateGoalControllerStopsOnMaxErrorCount(t *testing.T) {
 	maxErrorCount := 10
 	now := time.Date(2026, time.May, 9, 12, 1, 0, 0, time.UTC)
@@ -2761,6 +2863,8 @@ func TestGetTestRefreshesCapacityAdvisoryUsingLiveAvailability(t *testing.T) {
 func TestRunTestCreatesArchiveBundle(t *testing.T) {
 	archiveDir := t.TempDir()
 	t.Setenv("STORMRUNNER_ARCHIVE_DIR", archiveDir)
+	t.Setenv("STORMRUNNER_SAMPLE_FLAG", "enabled")
+	t.Setenv("STORMRUNNER_SECRET_TOKEN", "hidden")
 
 	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
 	if err != nil {
@@ -2775,6 +2879,13 @@ func TestRunTestCreatesArchiveBundle(t *testing.T) {
 
 	hub := NewHub()
 	runner := NewTestRunner(1, hub, store)
+	settings := runner.GetSystemSettings()
+	settings.General.MetricsIntervalSeconds = 3
+	maxErrorPct := 2.5
+	settings.Thresholds.MaxErrorRatePct = &maxErrorPct
+	if _, err := runner.UpdateSystemSettings(settings); err != nil {
+		t.Fatalf("UpdateSystemSettings returned error: %v", err)
+	}
 	runner.StoreScript(&dsl.Script{
 		ID:       "script-archive",
 		Name:     "Archive Script",
@@ -2785,10 +2896,11 @@ func TestRunTestCreatesArchiveBundle(t *testing.T) {
 	})
 
 	test, err := runner.CreateTest(CreateTestRequest{
-		Name:     "Archive Run",
-		Duration: "2200ms",
-		ScriptID: "script-archive",
-		VUsers:   1,
+		Name:       "Archive Run",
+		Duration:   "2200ms",
+		ScriptID:   "script-archive",
+		VUsers:     1,
+		StartDelay: "2s",
 	})
 	if err != nil {
 		t.Fatalf("CreateTest returned error: %v", err)
@@ -2819,11 +2931,80 @@ func TestRunTestCreatesArchiveBundle(t *testing.T) {
 	if manifest.TransactionsParquetFile == "" || manifest.ResourceSamplesParquetFile == "" || manifest.IntervalSummariesParquetFile == "" {
 		t.Fatalf("expected manifest parquet files to be populated, got %#v", manifest)
 	}
+	if manifest.Provenance.ProjectID != storage.DefaultProjectID {
+		t.Fatalf("manifest provenance project_id = %q, want %q", manifest.Provenance.ProjectID, storage.DefaultProjectID)
+	}
+	if manifest.Provenance.StartDelay != "2s" {
+		t.Fatalf("unexpected provenance timing flags: %#v", manifest.Provenance)
+	}
+	if manifest.Provenance.ExecutionSettings.General.MetricsIntervalSeconds != 3 {
+		t.Fatalf("manifest execution settings = %#v, want metrics interval 3", manifest.Provenance.ExecutionSettings)
+	}
+	if manifest.Provenance.ControllerEnv["STORMRUNNER_SAMPLE_FLAG"] != "enabled" {
+		t.Fatalf("manifest controller env = %#v, want STORMRUNNER_SAMPLE_FLAG", manifest.Provenance.ControllerEnv)
+	}
+	if _, found := manifest.Provenance.ControllerEnv["STORMRUNNER_SECRET_TOKEN"]; found {
+		t.Fatalf("expected secret-like env vars to be excluded, got %#v", manifest.Provenance.ControllerEnv)
+	}
+	if manifest.Provenance.Groups[0].ScriptID != "script-archive" {
+		t.Fatalf("manifest groups = %#v, want script-archive", manifest.Provenance.Groups)
+	}
 
 	for _, name := range []string{"manifest.json", "transactions.jsonl", "interval_summaries.jsonl", "transactions.parquet", "resources.parquet", "interval_summaries.parquet"} {
 		if _, err := os.Stat(filepath.Join(completed.Archive.ArchivePath, name)); err != nil {
 			t.Fatalf("expected archive file %s to exist: %v", name, err)
 		}
+	}
+}
+
+func TestBuildRunArchiveProvenanceCapturesExecutionSnapshots(t *testing.T) {
+	t.Setenv("STORMRUNNER_SAMPLE_FLAG", "enabled")
+	t.Setenv("STORMRUNNER_API_TOKEN", "hidden")
+
+	runner := NewTestRunner(2, NewHub(), nil)
+	settings := runner.GetSystemSettings()
+	settings.General.MetricsIntervalSeconds = 5
+	maxErrorPct := 1.5
+	settings.Thresholds.MaxErrorRatePct = &maxErrorPct
+	if _, err := runner.UpdateSystemSettings(settings); err != nil {
+		t.Fatalf("UpdateSystemSettings returned error: %v", err)
+	}
+	backend := provenanceInventoryBackend{}
+	test := &ManagedTest{
+		ID:               "test-provenance",
+		Name:             "Checkout",
+		Status:           "RUNNING",
+		ProjectID:        storage.DefaultProjectID,
+		ScenarioID:       "scenario-1",
+		ScenarioMode:     "goal_oriented",
+		ScriptShakeout:   true,
+		ResourceBaseline: true,
+		StartDelay:       "3s",
+		TotalVUsers:      25,
+		DurationStr:      "1m0s",
+		Groups:           []TestGroup{{Name: "buyers", ScriptID: "script-1", ScriptName: "Checkout", Protocol: "http", VUsers: 25}},
+		Assignment:       &GeneratorAssignmentSettings{Mode: "specific_hosts", SelectedTargets: []string{"generator-1"}},
+		GoalConfig:       &GoalConfig{MaxErrorPct: &maxErrorPct},
+		CreatedAt:        time.Date(2026, time.May, 13, 12, 0, 0, 0, time.UTC),
+		StartedAt:        func() *time.Time { ts := time.Date(2026, time.May, 13, 12, 0, 3, 0, time.UTC); return &ts }(),
+		executionBackend: backend,
+	}
+
+	provenance := buildRunArchiveProvenance(runner, test)
+	if !provenance.ResourceBaseline || provenance.StartDelay != "3s" {
+		t.Fatalf("unexpected provenance timing fields: %#v", provenance)
+	}
+	if provenance.ExecutionSettings.General.MetricsIntervalSeconds != 5 {
+		t.Fatalf("execution settings = %#v, want metrics interval 5", provenance.ExecutionSettings)
+	}
+	if len(provenance.GeneratorInventory) != 1 || provenance.GeneratorInventory[0].Target != "generator-1" {
+		t.Fatalf("generator inventory = %#v, want generator-1", provenance.GeneratorInventory)
+	}
+	if provenance.ControllerEnv["STORMRUNNER_SAMPLE_FLAG"] != "enabled" {
+		t.Fatalf("controller env = %#v, want STORMRUNNER_SAMPLE_FLAG", provenance.ControllerEnv)
+	}
+	if _, found := provenance.ControllerEnv["STORMRUNNER_API_TOKEN"]; found {
+		t.Fatalf("expected secret-like env vars to be filtered, got %#v", provenance.ControllerEnv)
 	}
 }
 

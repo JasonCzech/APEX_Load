@@ -112,7 +112,48 @@ func (s *Server) handleStartTest(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	test, ok := s.runner.GetTest(id)
+	if !ok {
+		writeError(w, http.StatusNotFound, "test not found")
+		return
+	}
+	if test.Status == "PENDING" {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"status":  "pending",
+			"test_id": id,
+			"message": "test queued until project capacity is available",
+		})
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "started", "test_id": id})
+}
+
+func (s *Server) handlePinComparisonBaseline(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	test, err := s.runner.PinComparisonBaseline(id)
+	if err != nil {
+		if strings.Contains(err.Error(), "test not found") {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, test)
+}
+
+func (s *Server) handleUnpinComparisonBaseline(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	test, err := s.runner.UnpinComparisonBaseline(id)
+	if err != nil {
+		if strings.Contains(err.Error(), "test not found") {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, test)
 }
 
 func (s *Server) handleStopTest(w http.ResponseWriter, r *http.Request) {

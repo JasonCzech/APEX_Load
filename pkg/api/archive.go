@@ -21,24 +21,55 @@ import (
 const archiveSchemaVersion = "stormrunner.archive.v1"
 
 type RunArchiveManifest struct {
-	SchemaVersion                string    `json:"schema_version"`
-	TestID                       string    `json:"test_id"`
-	TestName                     string    `json:"test_name"`
-	CreatedAt                    time.Time `json:"created_at"`
-	CompletedAt                  time.Time `json:"completed_at,omitempty"`
-	Status                       string    `json:"status,omitempty"`
-	Error                        string    `json:"error,omitempty"`
-	TransactionsFile             string    `json:"transactions_file"`
-	TransactionsParquetFile      string    `json:"transactions_parquet_file,omitempty"`
-	ResourceSamplesFile          string    `json:"resource_samples_file"`
-	ResourceSamplesParquetFile   string    `json:"resource_samples_parquet_file,omitempty"`
-	IntervalSummariesFile        string    `json:"interval_summaries_file"`
-	IntervalSummariesParquetFile string    `json:"interval_summaries_parquet_file,omitempty"`
-	TransactionCount             int64     `json:"transaction_count"`
-	ResourceSampleCount          int64     `json:"resource_sample_count"`
-	IntervalSummaryCount         int64     `json:"interval_summary_count"`
-	SLABreached                  bool      `json:"sla_breached"`
-	SLADetails                   []string  `json:"sla_details,omitempty"`
+	SchemaVersion                string               `json:"schema_version"`
+	TestID                       string               `json:"test_id"`
+	TestName                     string               `json:"test_name"`
+	CreatedAt                    time.Time            `json:"created_at"`
+	CompletedAt                  time.Time            `json:"completed_at,omitempty"`
+	Status                       string               `json:"status,omitempty"`
+	Error                        string               `json:"error,omitempty"`
+	Provenance                   RunArchiveProvenance `json:"provenance,omitempty"`
+	TransactionsFile             string               `json:"transactions_file"`
+	TransactionsParquetFile      string               `json:"transactions_parquet_file,omitempty"`
+	ResourceSamplesFile          string               `json:"resource_samples_file"`
+	ResourceSamplesParquetFile   string               `json:"resource_samples_parquet_file,omitempty"`
+	IntervalSummariesFile        string               `json:"interval_summaries_file"`
+	IntervalSummariesParquetFile string               `json:"interval_summaries_parquet_file,omitempty"`
+	TransactionCount             int64                `json:"transaction_count"`
+	ResourceSampleCount          int64                `json:"resource_sample_count"`
+	IntervalSummaryCount         int64                `json:"interval_summary_count"`
+	SLABreached                  bool                 `json:"sla_breached"`
+	SLADetails                   []string             `json:"sla_details,omitempty"`
+}
+
+type RunArchiveExecutionSettingsSnapshot struct {
+	General          GeneralSettings          `json:"general"`
+	Thresholds       ThresholdSettings        `json:"thresholds"`
+	CapacityPlanning CapacityPlanningSettings `json:"capacity_planning"`
+}
+
+type RunArchiveProvenance struct {
+	ApplicationID      string                              `json:"application_id,omitempty"`
+	ReleaseID          string                              `json:"release_id,omitempty"`
+	ScenarioID         string                              `json:"scenario_id,omitempty"`
+	ProjectID          string                              `json:"project_id,omitempty"`
+	RequestedAt        time.Time                           `json:"requested_at,omitempty"`
+	StartedAt          *time.Time                          `json:"started_at,omitempty"`
+	ScenarioMode       string                              `json:"scenario_mode,omitempty"`
+	ScriptShakeout     bool                                `json:"script_shakeout,omitempty"`
+	ResourceBaseline   bool                                `json:"resource_baseline,omitempty"`
+	StartDelay         string                              `json:"start_delay,omitempty"`
+	TotalVUsers        int                                 `json:"total_vusers,omitempty"`
+	Duration           string                              `json:"duration,omitempty"`
+	Assignment         *GeneratorAssignmentSettings        `json:"assignment,omitempty"`
+	GoalConfig         *GoalConfig                         `json:"goal_config,omitempty"`
+	RuntimeSettings    *RuntimeSettingsOverride            `json:"runtime_settings,omitempty"`
+	Groups             []TestGroup                         `json:"groups,omitempty"`
+	BaselinePinned     bool                                `json:"baseline_pinned,omitempty"`
+	BaselinePinnedAt   *time.Time                          `json:"baseline_pinned_at,omitempty"`
+	ExecutionSettings  RunArchiveExecutionSettingsSnapshot `json:"execution_settings"`
+	ControllerEnv      map[string]string                   `json:"controller_env,omitempty"`
+	GeneratorInventory []GeneratorInventoryEntry           `json:"generator_inventory,omitempty"`
 }
 
 type TransactionEvent struct {
@@ -226,7 +257,7 @@ type runArchiveWriter struct {
 	summaryEncoder  *json.Encoder
 }
 
-func newRunArchiveWriter(test *ManagedTest) (*runArchiveWriter, error) {
+func newRunArchiveWriter(test *ManagedTest, provenance RunArchiveProvenance) (*runArchiveWriter, error) {
 	rootDir := resolveArchiveRoot()
 	archiveDir := filepath.Join(rootDir, test.ID)
 	if err := os.MkdirAll(archiveDir, 0o755); err != nil {
@@ -263,6 +294,7 @@ func newRunArchiveWriter(test *ManagedTest) (*runArchiveWriter, error) {
 			TestID:                       test.ID,
 			TestName:                     test.Name,
 			CreatedAt:                    time.Now(),
+			Provenance:                   provenance,
 			TransactionsFile:             "transactions.jsonl",
 			TransactionsParquetFile:      "transactions.parquet",
 			ResourceSamplesFile:          "resources.jsonl",
@@ -279,6 +311,43 @@ func newRunArchiveWriter(test *ManagedTest) (*runArchiveWriter, error) {
 		resourceEncoder: resourceEncoder,
 		summaryEncoder:  summaryEncoder,
 	}, nil
+}
+
+func cloneArchiveTestGroups(groups []TestGroup) []TestGroup {
+	if len(groups) == 0 {
+		return nil
+	}
+	cloned := make([]TestGroup, len(groups))
+	copy(cloned, groups)
+	return cloned
+}
+
+func cloneGeneratorInventoryEntries(entries []GeneratorInventoryEntry) []GeneratorInventoryEntry {
+	if len(entries) == 0 {
+		return nil
+	}
+	cloned := make([]GeneratorInventoryEntry, len(entries))
+	copy(cloned, entries)
+	return cloned
+}
+
+func captureStormrunnerEnv() map[string]string {
+	env := make(map[string]string)
+	for _, entry := range os.Environ() {
+		key, value, ok := strings.Cut(entry, "=")
+		if !ok || !strings.HasPrefix(key, "STORMRUNNER_") {
+			continue
+		}
+		upper := strings.ToUpper(key)
+		if strings.Contains(upper, "SECRET") || strings.Contains(upper, "TOKEN") || strings.Contains(upper, "PASSWORD") || strings.Contains(upper, "KEY") {
+			continue
+		}
+		env[key] = value
+	}
+	if len(env) == 0 {
+		return nil
+	}
+	return env
 }
 
 func resolveArchiveRoot() string {

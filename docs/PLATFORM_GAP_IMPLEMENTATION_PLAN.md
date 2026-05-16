@@ -60,6 +60,12 @@ The 19 gaps are organized into five sequential delivery waves. Each wave targets
 ## Wave 3: Shared Platform Readiness (Weeks 8-12)
 **Goal:** Make Stormrunner a governable, multi-tenant service.
 
+### Implemented Status
+- **3.2 Multi-Tenant Governance & Capacity Controls:** Project-level concurrent-test and VUser quotas are enforced, quota-blocked runs enter a persisted pending queue, startup/quota reconciliation promotes eligible work, and queue metadata is exposed in the API and dashboard.
+- **3.3 Alerting & Notifications:** Lifecycle webhook notifications are available through system settings with Slack Block Kit and Microsoft Teams payload formatters.
+- **3.5 Run Provenance & Reproducibility:** Archived manifests now capture immutable execution provenance snapshots, and completed runs can be explicitly pinned as the preferred future comparison baseline.
+- **Remaining Wave 3 item:** `3.4 Scheduled Tests` is still pending.
+
 ### 3.1 User Management & RBAC (P1)
 **Effort:** 8-12 days
 - **Auth Middleware:** Implement OIDC/SAML integration in `pkg/api/middleware.go`.

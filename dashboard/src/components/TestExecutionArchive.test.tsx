@@ -49,6 +49,46 @@ describe('TestExecutionArchive', () => {
       test_name: 'SOAP Fault Test',
       created_at: '2026-05-14T20:00:00Z',
       completed_at: '2026-05-14T20:01:00Z',
+      provenance: {
+        project_id: 'project-1',
+        release_id: 'release-7',
+        scenario_id: 'scenario-9',
+        scenario_mode: 'goal_oriented',
+        resource_baseline: true,
+        script_shakeout: true,
+        start_delay: '3s',
+        total_vusers: 1,
+        duration: '1m',
+        baseline_pinned: true,
+        execution_settings: {
+          general: {
+            api_endpoint: ':8080',
+            max_concurrent_tests: 10,
+            metrics_interval_seconds: 5,
+          },
+          thresholds: {
+            max_error_rate_pct: 2,
+          },
+          capacity_planning: {
+            headroom_pct: 20,
+            generator: {
+              cpu_cores: 4,
+              memory_mb: 8192,
+              network_mbps: 1000,
+              max_vusers: 10000,
+            },
+            availability: {
+              source: 'configured',
+              configured_available_generators: 1,
+            },
+          },
+        },
+        groups: [{ name: 'buyers', script_id: 'script-1', script_name: 'Checkout', protocol: 'soap', vusers: 1 }],
+        controller_env: {
+          STORMRUNNER_SAMPLE_FLAG: 'enabled',
+        },
+        generator_inventory: [{ target: 'generator-1', status: 'healthy', available_capacity: 50 }],
+      },
       transactions_file: 'transactions.jsonl',
       resource_samples_file: 'resources.jsonl',
       interval_summaries_file: 'intervals.jsonl',
@@ -81,6 +121,15 @@ describe('TestExecutionArchive', () => {
     by_soap_operation: {},
     by_soap_fault_code: {},
     by_soap_fault_category: {},
+    summary_timeline: [{
+      timestamp: '2026-05-14T20:00:00Z',
+      active_vusers: 1,
+      tps: 1,
+      error_pct: 100,
+      p95_ms: 120,
+      total_transactions: 1,
+      total_errors: 1,
+    }],
     soap_fault_timeline: [],
     soap_payload_timeline: [],
     browser_by_engine: {
@@ -225,6 +274,16 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('SOAP 1.2')
     expect(container.textContent).toContain('Code: env:Sender')
     expect(container.textContent).toContain('Reason: Request validation failed')
+    expect(container.textContent).toContain('Summary Timeline')
+    expect(container.textContent).toContain('2026-05-14 20:00Z')
+    expect(container.textContent).toContain('120.0 ms')
+    expect(container.textContent).toContain('Run Provenance')
+    expect(container.textContent).toContain('goal_oriented · 1 VUsers · 1m')
+    expect(container.textContent).toContain('project-1 / release-7 / scenario-9')
+    expect(container.textContent).toContain('Shakeout Enabled · Baseline Enabled')
+    expect(container.textContent).toContain('Pinned')
+    expect(container.textContent).toContain('STORMRUNNER_SAMPLE_FLAG=enabled')
+    expect(container.textContent).toContain('generator-1 · healthy · 50 available')
     expect(container.textContent).toContain('Browser Metrics')
     const reportLink = container.querySelector('a[href="/api/v1/tests/test-1/report"]') as HTMLAnchorElement | null
     expect(reportLink).toBeTruthy()

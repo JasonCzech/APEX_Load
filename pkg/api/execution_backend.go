@@ -44,7 +44,7 @@ func (localExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 			return
 		}
 	}
-	artifacts, err := newRunArtifacts(test, tr.saveRunArchiveRecord)
+	artifacts, err := newRunArtifacts(tr, test, tr.saveRunArchiveRecord)
 	if err != nil {
 		tr.failTestBeforeRun(test, fmt.Sprintf("initialize archive writer: %v", err))
 		return
@@ -83,12 +83,55 @@ func (localExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 	)
 }
 
-func newRunArtifacts(test *ManagedTest, saveRecord func(record *storage.RunArchiveRecord) error) (*runArtifacts, error) {
-	recorder, err := newRunArchiveWriter(test)
+func newRunArtifacts(tr *TestRunner, test *ManagedTest, saveRecord func(record *storage.RunArchiveRecord) error) (*runArtifacts, error) {
+	recorder, err := newRunArchiveWriter(test, buildRunArchiveProvenance(tr, test))
 	if err != nil {
 		return nil, err
 	}
 	return &runArtifacts{recorder: recorder, saveRecord: saveRecord}, nil
+}
+
+func buildRunArchiveProvenance(tr *TestRunner, test *ManagedTest) RunArchiveProvenance {
+	provenance := RunArchiveProvenance{}
+	if test == nil {
+		return provenance
+	}
+	provenance.ApplicationID = test.ApplicationID
+	provenance.ReleaseID = test.ReleaseID
+	provenance.ScenarioID = test.ScenarioID
+	provenance.ProjectID = normalizeProjectID(test.ProjectID)
+	provenance.RequestedAt = test.CreatedAt
+	provenance.StartedAt = test.StartedAt
+	provenance.ScenarioMode = test.ScenarioMode
+	provenance.ScriptShakeout = test.ScriptShakeout
+	provenance.ResourceBaseline = test.ResourceBaseline
+	provenance.StartDelay = test.StartDelay
+	provenance.TotalVUsers = test.TotalVUsers
+	provenance.Duration = test.DurationStr
+	provenance.Assignment = cloneGeneratorAssignmentSettings(test.Assignment)
+	provenance.GoalConfig = cloneGoalConfig(test.GoalConfig)
+	provenance.RuntimeSettings = cloneRuntimeSettings(test.RuntimeSettings)
+	provenance.Groups = cloneArchiveTestGroups(test.Groups)
+	provenance.BaselinePinned = test.BaselinePinned
+	provenance.BaselinePinnedAt = test.BaselinePinnedAt
+	provenance.ControllerEnv = captureStormrunnerEnv()
+	if tr == nil {
+		return provenance
+	}
+	settings := tr.GetSystemSettings()
+	provenance.ExecutionSettings = RunArchiveExecutionSettingsSnapshot{
+		General:          settings.General,
+		Thresholds:       settings.Thresholds,
+		CapacityPlanning: settings.CapacityPlanning,
+	}
+	backend := test.executionBackend
+	if backend == nil {
+		backend = tr.getExecutionBackend()
+	}
+	if inventoryBackend, ok := backend.(inventoryExecutionBackend); ok {
+		provenance.GeneratorInventory = cloneGeneratorInventoryEntries(inventoryBackend.SystemInventory(context.Background()))
+	}
+	return provenance
 }
 
 func (a *runArtifacts) resultSink() engine.ResultSink {

@@ -76,6 +76,7 @@ type TestCreateRequest = {
 type TestActionResponse = {
   status: string
   test_id: string
+  message?: string
 }
 
 type DeleteTestResponse = {
@@ -172,6 +173,16 @@ export function useTestApi() {
     [],
   )
 
+  const pinComparisonBaseline = useCallback(
+    (id: string) => request<TestSummary>(`/tests/${id}/comparison-baseline/pin`, { method: 'POST' }),
+    [],
+  )
+
+  const unpinComparisonBaseline = useCallback(
+    (id: string) => request<TestSummary>(`/tests/${id}/comparison-baseline/pin`, { method: 'DELETE' }),
+    [],
+  )
+
   const stopTest = useCallback((id: string) => request<TestActionResponse>(`/tests/${id}/stop`, { method: 'POST' }), [])
 
   const abortTest = useCallback((id: string) => request<TestActionResponse>(`/tests/${id}/abort`, { method: 'POST' }), [])
@@ -257,6 +268,8 @@ export function useTestApi() {
       createTest,
       estimateTest,
       startTest,
+      pinComparisonBaseline,
+      unpinComparisonBaseline,
       stopTest,
       abortTest,
       deleteTest,

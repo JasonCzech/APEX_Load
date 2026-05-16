@@ -11,6 +11,7 @@ import (
 
 	"github.com/jasonczech/stormrunner/pkg/dsl"
 	"github.com/jasonczech/stormrunner/pkg/protocol"
+	"github.com/jasonczech/stormrunner/pkg/storage"
 )
 
 func newRunningControlTestServer(t *testing.T) (*Server, *ManagedTest) {
@@ -167,6 +168,47 @@ func TestHandleScaleVUsersReturnsGroupError(t *testing.T) {
 	}
 	if !strings.Contains(resp.Body.String(), "group not found") {
 		t.Fatalf("scale body = %q, want group not found", resp.Body.String())
+	}
+}
+
+func TestHandlePinAndUnpinComparisonBaseline(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	completedAt := time.Date(2026, time.May, 12, 12, 0, 0, 0, time.UTC)
+	pinnedAt := completedAt.Add(-time.Minute)
+	server.runner.tests["baseline-a"] = &ManagedTest{ID: "baseline-a", Name: "Checkout", Status: "COMPLETE", ScenarioID: "scenario-1", ProjectID: storage.DefaultProjectID, CreatedAt: completedAt.Add(-5 * time.Minute), EndedAt: &completedAt}
+	server.runner.tests["baseline-b"] = &ManagedTest{ID: "baseline-b", Name: "Checkout", Status: "FAILED", ScenarioID: "scenario-1", ProjectID: storage.DefaultProjectID, CreatedAt: completedAt.Add(-15 * time.Minute), EndedAt: &completedAt, BaselinePinned: true, BaselinePinnedAt: &pinnedAt}
+
+	pinReq := httptest.NewRequest(http.MethodPost, "/api/v1/tests/baseline-a/comparison-baseline/pin", nil)
+	pinResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(pinResp, pinReq)
+
+	if pinResp.Code != http.StatusOK {
+		t.Fatalf("pin status = %d, want %d body=%s", pinResp.Code, http.StatusOK, pinResp.Body.String())
+	}
+	var pinPayload ManagedTest
+	if err := json.Unmarshal(pinResp.Body.Bytes(), &pinPayload); err != nil {
+		t.Fatalf("json.Unmarshal pin returned error: %v", err)
+	}
+	if !pinPayload.BaselinePinned || pinPayload.BaselinePinnedAt == nil {
+		t.Fatalf("expected pin payload to include baseline pin metadata, got %#v", pinPayload)
+	}
+	if server.runner.tests["baseline-b"].BaselinePinned {
+		t.Fatal("expected previous comparable baseline pin to be cleared")
+	}
+
+	unpinReq := httptest.NewRequest(http.MethodDelete, "/api/v1/tests/baseline-a/comparison-baseline/pin", nil)
+	unpinResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(unpinResp, unpinReq)
+
+	if unpinResp.Code != http.StatusOK {
+		t.Fatalf("unpin status = %d, want %d body=%s", unpinResp.Code, http.StatusOK, unpinResp.Body.String())
+	}
+	var unpinPayload ManagedTest
+	if err := json.Unmarshal(unpinResp.Body.Bytes(), &unpinPayload); err != nil {
+		t.Fatalf("json.Unmarshal unpin returned error: %v", err)
+	}
+	if unpinPayload.BaselinePinned || unpinPayload.BaselinePinnedAt != nil {
+		t.Fatalf("expected unpin payload to clear baseline pin metadata, got %#v", unpinPayload)
 	}
 }
 
