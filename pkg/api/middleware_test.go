@@ -645,6 +645,27 @@ func TestTrustedHeaderAuthProjectRoleGuardsJMeterImportSave(t *testing.T) {
 	}
 }
 
+func TestTrustedHeaderAuthRequiresViewerForJMeterSupportMatrix(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	enableTrustedHeaderAuth(t, server)
+
+	unauthorizedReq := httptest.NewRequest(http.MethodGet, "/api/v1/scripts/import/jmeter/support-matrix", nil)
+	unauthorizedResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(unauthorizedResp, unauthorizedReq)
+	if unauthorizedResp.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthorized support matrix status = %d, want %d body=%s", unauthorizedResp.Code, http.StatusUnauthorized, unauthorizedResp.Body.String())
+	}
+
+	viewerReq := httptest.NewRequest(http.MethodGet, "/api/v1/scripts/import/jmeter/support-matrix", nil)
+	viewerReq.Header.Set("X-Auth-Request-User", "viewer-user")
+	viewerReq.Header.Set("X-Stormrunner-Roles", RoleViewer)
+	viewerResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(viewerResp, viewerReq)
+	if viewerResp.Code != http.StatusOK {
+		t.Fatalf("viewer support matrix status = %d, want %d body=%s", viewerResp.Code, http.StatusOK, viewerResp.Body.String())
+	}
+}
+
 func TestTrustedHeaderAuthProjectRoleGuardsImportPreviewEndpoints(t *testing.T) {
 	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
 	enableTrustedHeaderAuth(t, server)
