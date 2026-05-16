@@ -3,6 +3,8 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
+	"strings"
 )
 
 const systemSettingsStoreKey = "system_settings"
@@ -48,6 +50,9 @@ type AvailabilitySettings struct {
 
 type AuthSettings struct {
 	Mode               string `json:"mode"`
+	ProviderName       string `json:"provider_name,omitempty"`
+	LoginURL           string `json:"login_url,omitempty"`
+	LogoutURL          string `json:"logout_url,omitempty"`
 	UserHeader         string `json:"user_header,omitempty"`
 	NameHeader         string `json:"name_header,omitempty"`
 	EmailHeader        string `json:"email_header,omitempty"`
@@ -76,6 +81,9 @@ func defaultAuthSettings() AuthSettings {
 func normalizeAuthSettings(in AuthSettings) AuthSettings {
 	defaults := defaultAuthSettings()
 	out := in
+	out.ProviderName = strings.TrimSpace(out.ProviderName)
+	out.LoginURL = strings.TrimSpace(out.LoginURL)
+	out.LogoutURL = strings.TrimSpace(out.LogoutURL)
 	if out.Mode == "" {
 		out.Mode = defaults.Mode
 	}
@@ -261,10 +269,34 @@ func validateAuthSettings(settings AuthSettings) error {
 		if settings.RolesHeader == "" && settings.ProjectRolesHeader == "" {
 			return fmt.Errorf("auth.roles_header or auth.project_roles_header is required when auth.mode=%q", authModeTrustedHeaders)
 		}
+		if err := validateOptionalAuthURL("login_url", settings.LoginURL); err != nil {
+			return err
+		}
+		if err := validateOptionalAuthURL("logout_url", settings.LogoutURL); err != nil {
+			return err
+		}
 		return nil
 	default:
 		return fmt.Errorf("auth.mode must be one of %q or %q", authModeDisabled, authModeTrustedHeaders)
 	}
+}
+
+func validateOptionalAuthURL(field string, value string) error {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return nil
+	}
+	if strings.HasPrefix(trimmed, "/") {
+		return nil
+	}
+	parsed, err := url.Parse(trimmed)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return fmt.Errorf("auth.%s must be an absolute http(s) URL or absolute path", field)
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return fmt.Errorf("auth.%s must be an absolute http(s) URL or absolute path", field)
+	}
+	return nil
 }
 
 func (tr *TestRunner) loadSystemSettings(defaultMaxConcurrent int) {

@@ -1036,6 +1036,9 @@ export interface DashboardCapacityPlanningSettings {
 
 export interface DashboardAuthSettings {
   mode: 'disabled' | 'trusted_headers'
+  provider_name?: string
+  login_url?: string
+  logout_url?: string
   user_header: string
   name_header: string
   email_header: string
@@ -1066,6 +1069,9 @@ export interface DashboardAuthenticatedUser {
 export interface DashboardAuthStatus {
   enabled: boolean
   mode: DashboardAuthSettings['mode']
+  provider_name?: string
+  login_url?: string
+  logout_url?: string
   authenticated: boolean
   user?: DashboardAuthenticatedUser
 }

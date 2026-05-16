@@ -93,6 +93,9 @@ func TestSystemSettingsAPIAndPersistence(t *testing.T) {
 		},
 		Auth: AuthSettings{
 			Mode:               authModeTrustedHeaders,
+			ProviderName:       "Okta Workforce",
+			LoginURL:           "https://login.example.test/stormrunner/start",
+			LogoutURL:          "/logout",
 			UserHeader:         "X-Test-User",
 			NameHeader:         "X-Test-Name",
 			EmailHeader:        "X-Test-Email",
@@ -161,6 +164,15 @@ func TestSystemSettingsAPIAndPersistence(t *testing.T) {
 	if updated.Auth.RolesHeader != "X-Test-Roles" {
 		t.Fatalf("roles header = %q, want X-Test-Roles", updated.Auth.RolesHeader)
 	}
+	if updated.Auth.ProviderName != "Okta Workforce" {
+		t.Fatalf("provider name = %q, want Okta Workforce", updated.Auth.ProviderName)
+	}
+	if updated.Auth.LoginURL != "https://login.example.test/stormrunner/start" {
+		t.Fatalf("login url = %q, want configured login url", updated.Auth.LoginURL)
+	}
+	if updated.Auth.LogoutURL != "/logout" {
+		t.Fatalf("logout url = %q, want /logout", updated.Auth.LogoutURL)
+	}
 
 	runner := NewTestRunner(10, NewHub(), store)
 	persisted := runner.GetSystemSettings()
@@ -178,6 +190,9 @@ func TestSystemSettingsAPIAndPersistence(t *testing.T) {
 	}
 	if persisted.Auth.ProjectRolesHeader != "X-Test-Project-Roles" {
 		t.Fatalf("persisted project roles header = %q, want X-Test-Project-Roles", persisted.Auth.ProjectRolesHeader)
+	}
+	if persisted.Auth.LoginURL != "https://login.example.test/stormrunner/start" {
+		t.Fatalf("persisted login url = %q, want configured login url", persisted.Auth.LoginURL)
 	}
 }
 
@@ -321,6 +336,38 @@ func TestSystemSettingsValidationRejectsInvalidAuthSettings(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected missing roles headers to fail validation")
+	}
+
+	err = validateSystemSettings(SystemSettings{
+		General: GeneralSettings{
+			APIEndpoint:            ":8080",
+			MaxConcurrentTests:     2,
+			MetricsIntervalSeconds: 1,
+		},
+		Thresholds: ThresholdSettings{},
+		CapacityPlanning: CapacityPlanningSettings{
+			HeadroomPct: 20,
+			Generator: GeneratorCapacitySettings{
+				CPUCores:    4,
+				MemoryMB:    8192,
+				NetworkMbps: 1000,
+				MaxVUsers:   10000,
+			},
+			Availability: AvailabilitySettings{
+				Source:                        capacityAvailabilityConfigured,
+				ConfiguredAvailableGenerators: 1,
+			},
+		},
+		Auth: AuthSettings{
+			Mode:               authModeTrustedHeaders,
+			UserHeader:         "X-Forwarded-User",
+			RolesHeader:        "X-Forwarded-Roles",
+			LoginURL:           "ftp://login.example.test/start",
+			ProjectRolesHeader: "X-Forwarded-Project-Roles",
+		},
+	})
+	if err == nil {
+		t.Fatal("expected invalid auth login url to fail validation")
 	}
 }
 

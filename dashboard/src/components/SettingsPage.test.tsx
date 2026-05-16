@@ -118,6 +118,9 @@ describe('SettingsPage', () => {
       },
       auth: {
         mode: 'disabled',
+        provider_name: '',
+        login_url: '',
+        logout_url: '',
         user_header: 'X-Auth-Request-User',
         name_header: 'X-Auth-Request-Name',
         email_header: 'X-Auth-Request-Email',
@@ -274,6 +277,9 @@ describe('SettingsPage', () => {
       },
       auth: {
         mode: 'disabled',
+        provider_name: '',
+        login_url: '',
+        logout_url: '',
         user_header: 'X-Auth-Request-User',
         name_header: 'X-Auth-Request-Name',
         email_header: 'X-Auth-Request-Email',
@@ -466,6 +472,9 @@ describe('SettingsPage', () => {
     expect(apiMock.updateSystemSettings).toHaveBeenCalledWith(expect.objectContaining({
       auth: expect.objectContaining({
         mode: 'trusted_headers',
+        provider_name: '',
+        login_url: '',
+        logout_url: '',
         user_header: 'X-Auth-Request-User',
         roles_header: 'X-Stormrunner-Roles',
         project_roles_header: 'X-Stormrunner-Project-Roles',

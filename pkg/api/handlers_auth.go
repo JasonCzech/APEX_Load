@@ -16,6 +16,9 @@ type AuthUserSummary struct {
 type AuthStatusResponse struct {
 	Enabled       bool             `json:"enabled"`
 	Mode          string           `json:"mode"`
+	ProviderName  string           `json:"provider_name,omitempty"`
+	LoginURL      string           `json:"login_url,omitempty"`
+	LogoutURL     string           `json:"logout_url,omitempty"`
 	Authenticated bool             `json:"authenticated"`
 	User          *AuthUserSummary `json:"user,omitempty"`
 }
@@ -83,8 +86,11 @@ var authRoleCatalog = []AuthRoleDefinition{
 func (s *Server) handleGetAuthStatus(w http.ResponseWriter, r *http.Request) {
 	settings := normalizeAuthSettings(s.runner.GetSystemSettings().Auth)
 	response := AuthStatusResponse{
-		Enabled: settings.Mode != authModeDisabled,
-		Mode:    settings.Mode,
+		Enabled:      settings.Mode != authModeDisabled,
+		Mode:         settings.Mode,
+		ProviderName: settings.ProviderName,
+		LoginURL:     settings.LoginURL,
+		LogoutURL:    settings.LogoutURL,
 	}
 
 	if settings.Mode == authModeDisabled {

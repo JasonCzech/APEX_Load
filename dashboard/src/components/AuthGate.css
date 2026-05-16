@@ -49,6 +49,22 @@
   color: #9cc6f0;
 }
 
+.auth-gate-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 16px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #f0bf72 0%, #d28a3b 100%);
+  color: #13202d;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.auth-gate-action:hover {
+  filter: brightness(1.05);
+}
+
 .auth-gate-card--error {
   border-color: rgba(222, 107, 78, 0.5);
 }

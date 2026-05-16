@@ -38,6 +38,9 @@ const DEFAULT_SETTINGS: DashboardSystemSettings = {
   },
   auth: {
     mode: 'disabled',
+    provider_name: '',
+    login_url: '',
+    logout_url: '',
     user_header: 'X-Auth-Request-User',
     name_header: 'X-Auth-Request-Name',
     email_header: 'X-Auth-Request-Email',
@@ -279,6 +282,27 @@ function validateSettings(settings: DashboardSystemSettings): string[] {
     if (!settings.auth.roles_header.trim() && !settings.auth.project_roles_header.trim()) {
       errors.push('Trusted header auth requires a roles header or project roles header.')
     }
+    const authURLFields: Array<[string, string | undefined]> = [
+      ['Login URL', settings.auth.login_url],
+      ['Logout URL', settings.auth.logout_url],
+    ]
+    authURLFields.forEach(([label, value]) => {
+      const trimmed = value?.trim() || ''
+      if (!trimmed) {
+        return
+      }
+      if (trimmed.startsWith('/')) {
+        return
+      }
+      try {
+        const parsed = new URL(trimmed)
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+          errors.push(`${label} must use http, https, or an absolute path.`)
+        }
+      } catch {
+        errors.push(`${label} must use http, https, or an absolute path.`)
+      }
+    })
   }
   settings.notifications.webhooks.forEach((webhook, index) => {
     const label = `Notification webhook ${index + 1}`
@@ -1379,6 +1403,42 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
               </div>
               {settings.auth.mode === 'trusted_headers' && (
                 <>
+                  <div className="setting-row">
+                    <div className="setting-info">
+                      <span className="setting-label">Provider Label</span>
+                      <span className="setting-desc">Optional identity provider or gateway name shown in the dashboard sign-in screen.</span>
+                    </div>
+                    <input
+                      className="settings-input"
+                      value={settings.auth.provider_name || ''}
+                      onChange={(e) => updateAuth('provider_name', e.target.value)}
+                      placeholder="Okta Workforce"
+                    />
+                  </div>
+                  <div className="setting-row">
+                    <div className="setting-info">
+                      <span className="setting-label">Login URL</span>
+                      <span className="setting-desc">Optional upstream sign-in URL or absolute path used by the dashboard access gate.</span>
+                    </div>
+                    <input
+                      className="settings-input cell-mono"
+                      value={settings.auth.login_url || ''}
+                      onChange={(e) => updateAuth('login_url', e.target.value)}
+                      placeholder="https://login.example.com/stormrunner/start"
+                    />
+                  </div>
+                  <div className="setting-row">
+                    <div className="setting-info">
+                      <span className="setting-label">Logout URL</span>
+                      <span className="setting-desc">Optional upstream sign-out URL or absolute path surfaced for future dashboard navigation.</span>
+                    </div>
+                    <input
+                      className="settings-input cell-mono"
+                      value={settings.auth.logout_url || ''}
+                      onChange={(e) => updateAuth('logout_url', e.target.value)}
+                      placeholder="/logout"
+                    />
+                  </div>
                   <div className="setting-row">
                     <div className="setting-info">
                       <span className="setting-label">User Header</span>

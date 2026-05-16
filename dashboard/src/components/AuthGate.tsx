@@ -5,6 +5,10 @@ import './AuthGate.css'
 
 export default function AuthGate({ children, state }: { children: ReactNode; state: AuthStatusState }) {
 
+  const providerLabel = state.status === 'ready' && state.auth.provider_name?.trim()
+    ? state.auth.provider_name.trim()
+    : 'access gateway'
+
   if (state.status === 'loading') {
     return (
       <div className="auth-gate-shell">
@@ -37,9 +41,14 @@ export default function AuthGate({ children, state }: { children: ReactNode; sta
           <p className="auth-gate-kicker">Stormrunner Access</p>
           <h1>Sign-in required</h1>
           <p>
-            This dashboard is configured for trusted-header authentication. Open it through the configured access
-            proxy so Stormrunner receives your identity headers.
+            This dashboard is configured for trusted-header authentication. Complete sign-in through the configured
+            upstream {providerLabel} so Stormrunner receives your identity headers.
           </p>
+          {state.auth.login_url && (
+            <p>
+              <a className="auth-gate-action" href={state.auth.login_url}>Continue to {providerLabel}</a>
+            </p>
+          )}
           <p className="auth-gate-note">Current auth mode: {state.auth.mode.replace('_', ' ')}</p>
         </section>
       </div>
