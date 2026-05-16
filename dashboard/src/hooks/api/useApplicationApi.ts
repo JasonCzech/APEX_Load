@@ -8,10 +8,13 @@ type DeleteEntityResponse = {
 }
 
 export function useApplicationApi() {
-  const listApplications = useCallback(() => request<{ applications: Application[]; count: number }>('/applications'), [])
+  const listApplications = useCallback((projectId?: string) => {
+    const query = projectId ? `?project_id=${encodeURIComponent(projectId)}` : ''
+    return request<{ applications: Application[]; count: number }>(`/applications${query}`)
+  }, [])
 
   const createApplication = useCallback(
-    (data: { name: string }) => request<Application>('/applications', { method: 'POST', body: JSON.stringify(data) }),
+    (data: { name: string; project_id?: string }) => request<Application>('/applications', { method: 'POST', body: JSON.stringify(data) }),
     [],
   )
 

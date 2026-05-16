@@ -281,6 +281,77 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 		}
 	}
 
+	if path == "/api/v1/applications" {
+		switch method {
+		case http.MethodGet:
+			if strings.TrimSpace(r.URL.Query().Get("project_id")) == "" {
+				return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
+			}
+			return accessRequirement{
+				GlobalRoles:   []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+				ProjectRoles:  []string{RoleViewer, RoleEditor, RoleProjectAdmin},
+				ProjectLookup: resolveApplicationListProjectID,
+			}, true
+		case http.MethodPost:
+			return accessRequirement{
+				GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+				ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
+				ProjectLookup: resolveApplicationCreateProjectID,
+			}, true
+		}
+	}
+
+	if r.PathValue("id") != "" && strings.HasPrefix(path, "/api/v1/applications/") {
+		if strings.HasSuffix(path, "/releases") {
+			switch method {
+			case http.MethodGet:
+				return accessRequirement{
+					GlobalRoles:   []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+					ProjectRoles:  []string{RoleViewer, RoleEditor, RoleProjectAdmin},
+					ProjectLookup: resolveApplicationProjectID,
+				}, true
+			case http.MethodPost:
+				return accessRequirement{
+					GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+					ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
+					ProjectLookup: resolveApplicationProjectID,
+				}, true
+			}
+		}
+
+		switch method {
+		case http.MethodGet:
+			return accessRequirement{
+				GlobalRoles:   []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+				ProjectRoles:  []string{RoleViewer, RoleEditor, RoleProjectAdmin},
+				ProjectLookup: resolveApplicationProjectID,
+			}, true
+		case http.MethodPut, http.MethodDelete:
+			return accessRequirement{
+				GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+				ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
+				ProjectLookup: resolveApplicationProjectID,
+			}, true
+		}
+	}
+
+	if r.PathValue("id") != "" && strings.HasPrefix(path, "/api/v1/releases/") {
+		switch method {
+		case http.MethodGet:
+			return accessRequirement{
+				GlobalRoles:   []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+				ProjectRoles:  []string{RoleViewer, RoleEditor, RoleProjectAdmin},
+				ProjectLookup: resolveReleaseProjectID,
+			}, true
+		case http.MethodPut, http.MethodPost, http.MethodDelete:
+			return accessRequirement{
+				GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+				ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
+				ProjectLookup: resolveReleaseProjectID,
+			}, true
+		}
+	}
+
 	if path == "/api/v1/scripts" {
 		switch method {
 		case http.MethodGet:
@@ -406,7 +477,11 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 		switch method {
 		case http.MethodGet:
 			if strings.TrimSpace(r.URL.Query().Get("application_id")) != "" || strings.TrimSpace(r.URL.Query().Get("release_id")) != "" || strings.TrimSpace(r.URL.Query().Get("scenario_id")) != "" {
-				return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
+				return accessRequirement{
+					GlobalRoles:   []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+					ProjectRoles:  []string{RoleViewer, RoleEditor, RoleProjectAdmin},
+					ProjectLookup: resolveTestContextProjectID,
+				}, true
 			}
 			if strings.TrimSpace(r.URL.Query().Get("project_id")) == "" && !r.URL.Query().Has("folder_id") {
 				return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
@@ -547,6 +622,50 @@ func resolveFolderProjectID(r *http.Request, store storage.Store) (string, int, 
 	return normalizeProjectID(folder.ProjectID), 0, ""
 }
 
+func resolveApplicationListProjectID(r *http.Request, _ storage.Store) (string, int, string) {
+	projectID := strings.TrimSpace(r.URL.Query().Get("project_id"))
+	if projectID == "" {
+		return "", http.StatusBadRequest, "project_id is required"
+	}
+	return normalizeProjectID(projectID), 0, ""
+}
+
+func resolveApplicationCreateProjectID(r *http.Request, _ storage.Store) (string, int, string) {
+	var req struct {
+		ProjectID string `json:"project_id"`
+	}
+	if err := decodeRequestBody(r, &req); err != nil {
+		return "", http.StatusBadRequest, "invalid request body"
+	}
+	return normalizeProjectID(req.ProjectID), 0, ""
+}
+
+func resolveApplicationProjectID(r *http.Request, store storage.Store) (string, int, string) {
+	if store == nil {
+		return "", http.StatusServiceUnavailable, "application storage is not configured"
+	}
+	application, err := store.GetApplication(r.PathValue("id"))
+	if err != nil {
+		return "", http.StatusNotFound, "application not found"
+	}
+	return normalizeProjectID(application.ProjectID), 0, ""
+}
+
+func resolveReleaseProjectID(r *http.Request, store storage.Store) (string, int, string) {
+	if store == nil {
+		return "", http.StatusServiceUnavailable, "release storage is not configured"
+	}
+	release, err := store.GetRelease(r.PathValue("id"))
+	if err != nil {
+		return "", http.StatusNotFound, "release not found"
+	}
+	application, err := store.GetApplication(release.ApplicationID)
+	if err != nil {
+		return "", http.StatusNotFound, "application not found"
+	}
+	return normalizeProjectID(application.ProjectID), 0, ""
+}
+
 func resolveScriptProjectID(r *http.Request, store storage.Store) (string, int, string) {
 	if store == nil {
 		return "", http.StatusServiceUnavailable, "script storage is not configured"
@@ -587,6 +706,59 @@ func resolveTestListProjectID(r *http.Request, store storage.Store) (string, int
 		return "", http.StatusBadRequest, "project_id or folder_id is required for project-scoped test access"
 	}
 	return resolveFolderProjectIDValue(r.URL.Query().Get("folder_id"), store)
+}
+
+func resolveTestContextProjectID(r *http.Request, store storage.Store) (string, int, string) {
+	if store == nil {
+		return "", http.StatusServiceUnavailable, "test storage is not configured"
+	}
+	resolvedProjectID := ""
+	mergeProjectID := func(candidate string) (int, string) {
+		normalized := normalizeProjectID(candidate)
+		if resolvedProjectID == "" {
+			resolvedProjectID = normalized
+			return 0, ""
+		}
+		if resolvedProjectID != normalized {
+			return http.StatusBadRequest, "test context filters must belong to the same project"
+		}
+		return 0, ""
+	}
+	if applicationID := strings.TrimSpace(r.URL.Query().Get("application_id")); applicationID != "" {
+		application, err := store.GetApplication(applicationID)
+		if err != nil {
+			return "", http.StatusNotFound, "application not found"
+		}
+		if status, msg := mergeProjectID(application.ProjectID); status != 0 {
+			return "", status, msg
+		}
+	}
+	if releaseID := strings.TrimSpace(r.URL.Query().Get("release_id")); releaseID != "" {
+		releaseReq := r.Clone(r.Context())
+		releaseReq.SetPathValue("id", releaseID)
+		releaseProjectID, status, msg := resolveReleaseProjectID(releaseReq, store)
+		if status != 0 {
+			return "", status, msg
+		}
+		if status, msg := mergeProjectID(releaseProjectID); status != 0 {
+			return "", status, msg
+		}
+	}
+	if scenarioID := strings.TrimSpace(r.URL.Query().Get("scenario_id")); scenarioID != "" {
+		scenarioReq := r.Clone(r.Context())
+		scenarioReq.SetPathValue("id", scenarioID)
+		scenarioProjectID, status, msg := resolveScenarioProjectID(scenarioReq, store)
+		if status != 0 {
+			return "", status, msg
+		}
+		if status, msg := mergeProjectID(scenarioProjectID); status != 0 {
+			return "", status, msg
+		}
+	}
+	if resolvedProjectID == "" {
+		return "", http.StatusBadRequest, "application_id, release_id, or scenario_id is required"
+	}
+	return resolvedProjectID, 0, ""
 }
 
 func resolveTestCreateProjectID(r *http.Request, store storage.Store) (string, int, string) {

@@ -174,6 +174,17 @@ func TestSQLiteStoreBackfillsDefaultProject(t *testing.T) {
 	if roundTrip.ProjectID != DefaultProjectID {
 		t.Fatalf("project id = %q, want %q", roundTrip.ProjectID, DefaultProjectID)
 	}
+	application := &Application{ID: "legacy-application", Name: "Legacy App", CreatedAt: time.Now()}
+	if err := reopened.SaveApplication(application); err != nil {
+		t.Fatalf("SaveApplication returned error: %v", err)
+	}
+	applicationRoundTrip, err := reopened.GetApplication(application.ID)
+	if err != nil {
+		t.Fatalf("GetApplication returned error: %v", err)
+	}
+	if applicationRoundTrip.ProjectID != DefaultProjectID {
+		t.Fatalf("application project id = %q, want %q", applicationRoundTrip.ProjectID, DefaultProjectID)
+	}
 	pool := &SharedDataPool{ID: "legacy-pool", Name: "Legacy Pool", CreatedAt: time.Now()}
 	if err := reopened.SaveDataPool(pool); err != nil {
 		t.Fatalf("SaveDataPool returned error: %v", err)
@@ -194,9 +205,12 @@ func TestSQLiteStoreApplicationsReleasesScenariosAndContext(t *testing.T) {
 	}
 	defer store.Close()
 
-	app := &Application{ID: "app-1", Name: "Payments", CreatedAt: time.Now()}
+	app := &Application{ID: "app-1", ProjectID: DefaultProjectID, Name: "Payments", CreatedAt: time.Now()}
 	if err := store.SaveApplication(app); err != nil {
 		t.Fatalf("SaveApplication returned error: %v", err)
+	}
+	if app.ProjectID != DefaultProjectID {
+		t.Fatalf("saved application project id = %q, want %q", app.ProjectID, DefaultProjectID)
 	}
 	release := &Release{ID: "rel-1", ApplicationID: app.ID, Name: "2026.05", CreatedAt: time.Now()}
 	if err := store.SaveRelease(release); err != nil {

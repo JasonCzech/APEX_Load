@@ -16,7 +16,8 @@ func (s *Server) handleCreateApplication(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	var req struct {
-		Name string `json:"name"`
+		Name      string `json:"name"`
+		ProjectID string `json:"project_id,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
@@ -26,7 +27,7 @@ func (s *Server) handleCreateApplication(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "application name is required")
 		return
 	}
-	application := &storage.Application{ID: uuid.New().String(), Name: strings.TrimSpace(req.Name), CreatedAt: time.Now()}
+	application := &storage.Application{ID: uuid.New().String(), ProjectID: normalizeProjectID(req.ProjectID), Name: strings.TrimSpace(req.Name), CreatedAt: time.Now()}
 	if err := s.store.SaveApplication(application); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -43,6 +44,16 @@ func (s *Server) handleListApplications(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	if projectID := strings.TrimSpace(r.URL.Query().Get("project_id")); projectID != "" {
+		normalizedProjectID := normalizeProjectID(projectID)
+		filtered := make([]*storage.Application, 0, len(applications))
+		for _, application := range applications {
+			if normalizeProjectID(application.ProjectID) == normalizedProjectID {
+				filtered = append(filtered, application)
+			}
+		}
+		applications = filtered
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"applications": applications, "count": len(applications)})
 }

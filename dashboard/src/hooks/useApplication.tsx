@@ -2,6 +2,7 @@ import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, 
 
 import { Application, Release } from '../types'
 import { useApplicationApi } from './api/useApplicationApi'
+import { useProject } from './useProject'
 
 const STORAGE_KEY = 'stormrunner.activeApplicationId'
 const RELEASE_STORAGE_KEY = 'stormrunner.activeReleaseId'
@@ -23,6 +24,7 @@ const ApplicationContext = createContext<ApplicationContextValue | null>(null)
 
 export function ApplicationProvider({ children }: { children: ReactNode }) {
   const api = useApplicationApi()
+  const { activeProject } = useProject()
   const [applications, setApplications] = useState<Application[]>([])
   const [releases, setReleases] = useState<Release[]>([])
   const [activeApplication, setActiveApplicationState] = useState<Application | null>(null)
@@ -55,10 +57,18 @@ export function ApplicationProvider({ children }: { children: ReactNode }) {
   }, [api, activeApplication?.id])
 
   const refreshApplications = useCallback(async () => {
-    const res = await api.listApplications()
+    if (!activeProject?.id) {
+      setApplications([])
+      setActiveApplicationState(null)
+      setReleases([])
+      setActiveReleaseState(null)
+      return
+    }
+
+    const res = await api.listApplications(activeProject.id)
     let next = res.applications || []
     if (next.length === 0) {
-      const created = await api.createApplication({ name: 'Legacy' })
+      const created = await api.createApplication({ name: 'Legacy', project_id: activeProject.id })
       next = [created]
     }
     setApplications(next)
@@ -67,18 +77,21 @@ export function ApplicationProvider({ children }: { children: ReactNode }) {
     if (selected) {
       setActiveApplicationState(selected)
       localStorage.setItem(STORAGE_KEY, selected.id)
-      await refreshReleases(selected.id)
+      return
     }
-  }, [api, refreshReleases])
+    setActiveApplicationState(null)
+    setReleases([])
+    setActiveReleaseState(null)
+  }, [activeProject?.id, api])
 
   const createAndSelectApplication = useCallback(async (name: string) => {
-    const created = await api.createApplication({ name })
+    const created = await api.createApplication({ name, project_id: activeProject?.id })
     setApplications(prev => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)))
     setActiveApplication(created)
     setReleases([])
     setActiveReleaseState(null)
     return created
-  }, [api, setActiveApplication])
+  }, [activeProject?.id, api, setActiveApplication])
 
   const createAndSelectRelease = useCallback(async (name: string) => {
     if (!activeApplication) return null
@@ -89,23 +102,37 @@ export function ApplicationProvider({ children }: { children: ReactNode }) {
   }, [api, activeApplication, setActiveRelease])
 
   useEffect(() => {
+    if (!activeProject?.id) {
+      setApplications([])
+      setActiveApplicationState(null)
+      setReleases([])
+      setActiveReleaseState(null)
+      return
+    }
+
     refreshApplications().catch(() => {
       const fallback: Application = {
         id: 'legacy',
+        project_id: activeProject.id,
         name: 'Legacy',
         created_at: new Date(0).toISOString(),
         updated_at: new Date(0).toISOString(),
       }
       setApplications([fallback])
       setActiveApplicationState(fallback)
+      setReleases([])
+      setActiveReleaseState(null)
     })
-  }, [])
+  }, [activeProject?.id, refreshApplications])
 
   useEffect(() => {
     if (activeApplication?.id) {
       refreshReleases(activeApplication.id).catch(() => undefined)
+      return
     }
-  }, [activeApplication?.id])
+    setReleases([])
+    setActiveReleaseState(null)
+  }, [activeApplication?.id, refreshReleases])
 
   const value = useMemo(
     () => ({

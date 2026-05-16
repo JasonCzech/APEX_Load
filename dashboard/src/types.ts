@@ -54,6 +54,7 @@ export interface ProjectSettings {
 
 export interface Application {
   id: string
+  project_id?: string
   name: string
   created_at: string
   updated_at: string

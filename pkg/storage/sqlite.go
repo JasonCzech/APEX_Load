@@ -97,6 +97,7 @@ func (s *SQLiteStore) init() error {
 	queries := []string{
 		`CREATE TABLE IF NOT EXISTS applications (
 			id TEXT PRIMARY KEY,
+			project_id TEXT REFERENCES projects(id),
 			name TEXT NOT NULL,
 			created_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL
@@ -336,6 +337,7 @@ func (s *SQLiteStore) init() error {
 		name  string
 	}{
 		{`ALTER TABLE projects ADD COLUMN settings_json TEXT`, "projects.settings_json"},
+		{`ALTER TABLE applications ADD COLUMN project_id TEXT REFERENCES projects(id)`, "applications.project_id"},
 		{`ALTER TABLE scripts ADD COLUMN project_id TEXT REFERENCES projects(id)`, "scripts.project_id"},
 		{`ALTER TABLE scripts ADD COLUMN folder_id TEXT REFERENCES folders(id)`, "scripts.folder_id"},
 		{`ALTER TABLE tests ADD COLUMN project_id TEXT REFERENCES projects(id)`, "tests.project_id"},
@@ -385,6 +387,9 @@ func (s *SQLiteStore) ensureDefaultProject() error {
 	if _, err := s.db.Exec(`UPDATE scripts SET project_id = ? WHERE project_id IS NULL OR project_id = ''`, DefaultProjectID); err != nil {
 		return fmt.Errorf("failed to backfill script project ids: %w", err)
 	}
+	if _, err := s.db.Exec(`UPDATE applications SET project_id = ? WHERE project_id IS NULL OR project_id = ''`, DefaultProjectID); err != nil {
+		return fmt.Errorf("failed to backfill application project ids: %w", err)
+	}
 	if _, err := s.db.Exec(`UPDATE tests SET project_id = ? WHERE project_id IS NULL OR project_id = ''`, DefaultProjectID); err != nil {
 		return fmt.Errorf("failed to backfill test project ids: %w", err)
 	}
@@ -425,7 +430,7 @@ func legacyScenarioID(name string) string {
 
 func (s *SQLiteStore) ensureLegacyApplication() error {
 	now := time.Now()
-	if _, err := s.db.Exec(`INSERT OR IGNORE INTO applications (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)`, LegacyApplicationID, "Legacy", now, now); err != nil {
+	if _, err := s.db.Exec(`INSERT OR IGNORE INTO applications (id, project_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`, LegacyApplicationID, DefaultProjectID, "Legacy", now, now); err != nil {
 		return fmt.Errorf("failed to create legacy application: %w", err)
 	}
 	if _, err := s.db.Exec(`INSERT OR IGNORE INTO releases (id, application_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`, LegacyReleaseID, LegacyApplicationID, "Imported Legacy", now, now); err != nil {
@@ -544,6 +549,7 @@ func (s *SQLiteStore) SaveApplication(application *Application) error {
 	if application.ID == "" {
 		return errors.New("application id is required")
 	}
+	application.ProjectID = normalizeProjectID(application.ProjectID)
 	if strings.TrimSpace(application.Name) == "" {
 		return errors.New("application name is required")
 	}
@@ -551,25 +557,26 @@ func (s *SQLiteStore) SaveApplication(application *Application) error {
 		application.CreatedAt = time.Now()
 	}
 	application.UpdatedAt = time.Now()
-	_, err := s.db.Exec(`INSERT INTO applications (id, name, created_at, updated_at)
-		VALUES (?, ?, ?, ?)
-		ON CONFLICT(id) DO UPDATE SET name=excluded.name, updated_at=excluded.updated_at`,
-		application.ID, application.Name, application.CreatedAt, application.UpdatedAt)
+	_, err := s.db.Exec(`INSERT INTO applications (id, project_id, name, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET project_id=excluded.project_id, name=excluded.name, updated_at=excluded.updated_at`,
+		application.ID, application.ProjectID, application.Name, application.CreatedAt, application.UpdatedAt)
 	return err
 }
 
 func (s *SQLiteStore) GetApplication(id string) (*Application, error) {
 	var application Application
-	err := s.db.QueryRow(`SELECT id, name, created_at, updated_at FROM applications WHERE id = ?`, id).Scan(
-		&application.ID, &application.Name, &application.CreatedAt, &application.UpdatedAt)
+	err := s.db.QueryRow(`SELECT id, COALESCE(project_id, ''), name, created_at, updated_at FROM applications WHERE id = ?`, id).Scan(
+		&application.ID, &application.ProjectID, &application.Name, &application.CreatedAt, &application.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
+	application.ProjectID = normalizeProjectID(application.ProjectID)
 	return &application, nil
 }
 
 func (s *SQLiteStore) ListApplications() ([]*Application, error) {
-	rows, err := s.db.Query(`SELECT id, name, created_at, updated_at FROM applications ORDER BY name ASC`)
+	rows, err := s.db.Query(`SELECT id, COALESCE(project_id, ''), name, created_at, updated_at FROM applications ORDER BY name ASC`)
 	if err != nil {
 		return nil, err
 	}
@@ -577,9 +584,10 @@ func (s *SQLiteStore) ListApplications() ([]*Application, error) {
 	var applications []*Application
 	for rows.Next() {
 		var application Application
-		if err := rows.Scan(&application.ID, &application.Name, &application.CreatedAt, &application.UpdatedAt); err != nil {
+		if err := rows.Scan(&application.ID, &application.ProjectID, &application.Name, &application.CreatedAt, &application.UpdatedAt); err != nil {
 			return nil, err
 		}
+		application.ProjectID = normalizeProjectID(application.ProjectID)
 		applications = append(applications, &application)
 	}
 	return applications, rows.Err()

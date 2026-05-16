@@ -113,6 +113,190 @@ func TestTrustedHeaderAuthProjectRoleGuardsProjectEndpoints(t *testing.T) {
 	}
 }
 
+func TestTrustedHeaderAuthScopesApplicationListAndCreateToProjectRoles(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	project := &storage.Project{ID: uuid.New().String(), Name: "Project One", CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	if err := store.SaveProject(project); err != nil {
+		t.Fatalf("SaveProject returned error: %v", err)
+	}
+	if err := store.SaveApplication(&storage.Application{ID: uuid.New().String(), ProjectID: project.ID, Name: "Payments", CreatedAt: time.Now(), UpdatedAt: time.Now()}); err != nil {
+		t.Fatalf("SaveApplication returned error: %v", err)
+	}
+
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	enableTrustedHeaderAuth(t, server)
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/applications", nil)
+	listReq.Header.Set("X-Auth-Request-User", "viewer-user")
+	listReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	listResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(listResp, listReq)
+	if listResp.Code != http.StatusForbidden {
+		t.Fatalf("unfiltered application list status = %d, want %d body=%s", listResp.Code, http.StatusForbidden, listResp.Body.String())
+	}
+
+	filteredReq := httptest.NewRequest(http.MethodGet, "/api/v1/applications?project_id="+project.ID, nil)
+	filteredReq.Header.Set("X-Auth-Request-User", "viewer-user")
+	filteredReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	filteredResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(filteredResp, filteredReq)
+	if filteredResp.Code != http.StatusOK {
+		t.Fatalf("filtered application list status = %d, want %d body=%s", filteredResp.Code, http.StatusOK, filteredResp.Body.String())
+	}
+
+	createBody := []byte(`{"name":"Checkout","project_id":"` + project.ID + `"}`)
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/applications", bytes.NewReader(createBody))
+	createReq.Header.Set("Content-Type", "application/json")
+	createReq.Header.Set("X-Auth-Request-User", "editor-user")
+	createReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleEditor)
+	createResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(createResp, createReq)
+	if createResp.Code != http.StatusCreated {
+		t.Fatalf("project editor application create status = %d, want %d body=%s", createResp.Code, http.StatusCreated, createResp.Body.String())
+	}
+	var created storage.Application
+	if err := json.Unmarshal(createResp.Body.Bytes(), &created); err != nil {
+		t.Fatalf("unmarshal application: %v", err)
+	}
+	if created.ProjectID != project.ID {
+		t.Fatalf("created application project id = %q, want %q", created.ProjectID, project.ID)
+	}
+}
+
+func TestTrustedHeaderAuthProjectRoleGuardsApplicationAndReleaseEndpoints(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	project := &storage.Project{ID: uuid.New().String(), Name: "Project One", CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	if err := store.SaveProject(project); err != nil {
+		t.Fatalf("SaveProject returned error: %v", err)
+	}
+	application := &storage.Application{ID: uuid.New().String(), ProjectID: project.ID, Name: "Payments", CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	if err := store.SaveApplication(application); err != nil {
+		t.Fatalf("SaveApplication returned error: %v", err)
+	}
+	release := &storage.Release{ID: uuid.New().String(), ApplicationID: application.ID, Name: "2026.05", CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	if err := store.SaveRelease(release); err != nil {
+		t.Fatalf("SaveRelease returned error: %v", err)
+	}
+
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	enableTrustedHeaderAuth(t, server)
+
+	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/applications/"+application.ID, nil)
+	getReq.Header.Set("X-Auth-Request-User", "viewer-user")
+	getReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	getResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(getResp, getReq)
+	if getResp.Code != http.StatusOK {
+		t.Fatalf("application viewer GET status = %d, want %d body=%s", getResp.Code, http.StatusOK, getResp.Body.String())
+	}
+
+	updateReq := httptest.NewRequest(http.MethodPut, "/api/v1/applications/"+application.ID, bytes.NewReader([]byte(`{"name":"Renamed"}`)))
+	updateReq.Header.Set("Content-Type", "application/json")
+	updateReq.Header.Set("X-Auth-Request-User", "viewer-user")
+	updateReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	updateResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(updateResp, updateReq)
+	if updateResp.Code != http.StatusForbidden {
+		t.Fatalf("application viewer PUT status = %d, want %d body=%s", updateResp.Code, http.StatusForbidden, updateResp.Body.String())
+	}
+
+	releasesReq := httptest.NewRequest(http.MethodGet, "/api/v1/applications/"+application.ID+"/releases", nil)
+	releasesReq.Header.Set("X-Auth-Request-User", "viewer-user")
+	releasesReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	releasesResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(releasesResp, releasesReq)
+	if releasesResp.Code != http.StatusOK {
+		t.Fatalf("release list viewer GET status = %d, want %d body=%s", releasesResp.Code, http.StatusOK, releasesResp.Body.String())
+	}
+
+	archiveReq := httptest.NewRequest(http.MethodPost, "/api/v1/releases/"+release.ID+"/archive", nil)
+	archiveReq.Header.Set("X-Auth-Request-User", "viewer-user")
+	archiveReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	archiveResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(archiveResp, archiveReq)
+	if archiveResp.Code != http.StatusForbidden {
+		t.Fatalf("release viewer archive status = %d, want %d body=%s", archiveResp.Code, http.StatusForbidden, archiveResp.Body.String())
+	}
+
+	createReleaseReq := httptest.NewRequest(http.MethodPost, "/api/v1/applications/"+application.ID+"/releases", bytes.NewReader([]byte(`{"name":"2026.06"}`)))
+	createReleaseReq.Header.Set("Content-Type", "application/json")
+	createReleaseReq.Header.Set("X-Auth-Request-User", "editor-user")
+	createReleaseReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleEditor)
+	createReleaseResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(createReleaseResp, createReleaseReq)
+	if createReleaseResp.Code != http.StatusCreated {
+		t.Fatalf("release editor create status = %d, want %d body=%s", createReleaseResp.Code, http.StatusCreated, createReleaseResp.Body.String())
+	}
+}
+
+func TestTrustedHeaderAuthScopesTestListByContextToProjectRoles(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	project := &storage.Project{ID: uuid.New().String(), Name: "Project One", CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	if err := store.SaveProject(project); err != nil {
+		t.Fatalf("SaveProject returned error: %v", err)
+	}
+	application := &storage.Application{ID: uuid.New().String(), ProjectID: project.ID, Name: "Payments", CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	if err := store.SaveApplication(application); err != nil {
+		t.Fatalf("SaveApplication returned error: %v", err)
+	}
+	release := &storage.Release{ID: uuid.New().String(), ApplicationID: application.ID, Name: "2026.05", CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	if err := store.SaveRelease(release); err != nil {
+		t.Fatalf("SaveRelease returned error: %v", err)
+	}
+	if err := store.SaveTest(&storage.TestRecord{ID: uuid.New().String(), ProjectID: project.ID, Name: "Checkout", Status: "COMPLETE", ApplicationID: application.ID, ReleaseID: release.ID, StartTime: time.Now()}); err != nil {
+		t.Fatalf("SaveTest returned error: %v", err)
+	}
+
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	enableTrustedHeaderAuth(t, server)
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/tests?application_id="+application.ID+"&release_id="+release.ID, nil)
+	listReq.Header.Set("X-Auth-Request-User", "viewer-user")
+	listReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	listResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(listResp, listReq)
+	if listResp.Code != http.StatusOK {
+		t.Fatalf("project viewer test context list status = %d, want %d body=%s", listResp.Code, http.StatusOK, listResp.Body.String())
+	}
+
+	otherProject := &storage.Project{ID: uuid.New().String(), Name: "Project Two", CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	if err := store.SaveProject(otherProject); err != nil {
+		t.Fatalf("SaveProject returned error: %v", err)
+	}
+	foreignApplication := &storage.Application{ID: uuid.New().String(), ProjectID: otherProject.ID, Name: "Billing", CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	if err := store.SaveApplication(foreignApplication); err != nil {
+		t.Fatalf("SaveApplication returned error: %v", err)
+	}
+	foreignRelease := &storage.Release{ID: uuid.New().String(), ApplicationID: foreignApplication.ID, Name: "2026.07", CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	if err := store.SaveRelease(foreignRelease); err != nil {
+		t.Fatalf("SaveRelease returned error: %v", err)
+	}
+
+	inconsistentReq := httptest.NewRequest(http.MethodGet, "/api/v1/tests?application_id="+application.ID+"&release_id="+foreignRelease.ID, nil)
+	inconsistentReq.Header.Set("X-Auth-Request-User", "viewer-user")
+	inconsistentReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	inconsistentResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(inconsistentResp, inconsistentReq)
+	if inconsistentResp.Code != http.StatusBadRequest {
+		t.Fatalf("inconsistent test context list status = %d, want %d body=%s", inconsistentResp.Code, http.StatusBadRequest, inconsistentResp.Body.String())
+	}
+}
+
 func TestTrustedHeaderAuthResolvesFolderProjectForMutations(t *testing.T) {
 	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
 	if err != nil {
