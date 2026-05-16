@@ -259,6 +259,70 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 		}
 	}
 
+	if path == "/api/v1/tests" {
+		switch method {
+		case http.MethodGet:
+			if strings.TrimSpace(r.URL.Query().Get("application_id")) != "" || strings.TrimSpace(r.URL.Query().Get("release_id")) != "" || strings.TrimSpace(r.URL.Query().Get("scenario_id")) != "" {
+				return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
+			}
+			if strings.TrimSpace(r.URL.Query().Get("project_id")) == "" && !r.URL.Query().Has("folder_id") {
+				return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
+			}
+			return accessRequirement{
+				GlobalRoles:   []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+				ProjectRoles:  []string{RoleViewer, RoleEditor, RoleProjectAdmin},
+				ProjectLookup: resolveTestListProjectID,
+			}, true
+		case http.MethodPost:
+			return accessRequirement{
+				GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+				ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
+				ProjectLookup: resolveTestCreateProjectID,
+			}, true
+		}
+	}
+
+	if path == "/api/v1/tests/estimate" && method == http.MethodPost {
+		return accessRequirement{
+			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
+			ProjectLookup: resolveTestCreateProjectID,
+		}, true
+	}
+
+	if r.PathValue("id") != "" && strings.HasPrefix(path, "/api/v1/tests/") {
+		switch method {
+		case http.MethodGet:
+			return accessRequirement{
+				GlobalRoles:   []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+				ProjectRoles:  []string{RoleViewer, RoleEditor, RoleProjectAdmin},
+				ProjectLookup: resolveTestProjectID,
+			}, true
+		case http.MethodDelete:
+			return accessRequirement{
+				GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+				ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
+				ProjectLookup: resolveTestProjectID,
+			}, true
+		case http.MethodPatch:
+			lookup := resolveTestProjectID
+			if strings.HasSuffix(path, "/move") {
+				lookup = resolveTestMoveProjectID
+			}
+			return accessRequirement{
+				GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+				ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
+				ProjectLookup: lookup,
+			}, true
+		case http.MethodPost:
+			return accessRequirement{
+				GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+				ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
+				ProjectLookup: resolveTestProjectID,
+			}, true
+		}
+	}
+
 	if r.PathValue("id") != "" && strings.HasPrefix(path, "/api/v1/scripts/") {
 		switch method {
 		case http.MethodGet:
@@ -322,6 +386,123 @@ func resolveScriptListProjectID(r *http.Request, store storage.Store) (string, i
 		return "", http.StatusBadRequest, "project_id or folder_id is required for project-scoped script access"
 	}
 	return resolveFolderProjectIDValue(r.URL.Query().Get("folder_id"), store)
+}
+
+func resolveTestProjectID(r *http.Request, store storage.Store) (string, int, string) {
+	if store == nil {
+		return "", http.StatusServiceUnavailable, "test storage is not configured"
+	}
+	test, err := store.GetTest(r.PathValue("id"))
+	if err != nil {
+		return "", http.StatusNotFound, "test not found"
+	}
+	return normalizeProjectID(test.ProjectID), 0, ""
+}
+
+func resolveTestListProjectID(r *http.Request, store storage.Store) (string, int, string) {
+	if projectID := strings.TrimSpace(r.URL.Query().Get("project_id")); projectID != "" {
+		return normalizeProjectID(projectID), 0, ""
+	}
+	if !r.URL.Query().Has("folder_id") {
+		return "", http.StatusBadRequest, "project_id or folder_id is required for project-scoped test access"
+	}
+	return resolveFolderProjectIDValue(r.URL.Query().Get("folder_id"), store)
+}
+
+func resolveTestCreateProjectID(r *http.Request, store storage.Store) (string, int, string) {
+	var req CreateTestRequest
+	if err := decodeRequestBody(r, &req); err != nil {
+		return "", http.StatusBadRequest, "invalid request body: " + err.Error()
+	}
+
+	requestedProjectID := normalizeProjectID(req.ProjectID)
+	folderProjectID := ""
+	if req.FolderID != nil {
+		projectID, status, msg := resolveFolderProjectIDValue(*req.FolderID, store)
+		if status != 0 {
+			return "", status, msg
+		}
+		folderProjectID = projectID
+		if req.ProjectID != "" && requestedProjectID != folderProjectID {
+			return "", http.StatusBadRequest, "project_id does not match folder project"
+		}
+	}
+
+	inferredProjectID, status, msg := resolveCreateTestScriptProjectID(req, store)
+	if status != 0 {
+		return "", status, msg
+	}
+	if inferredProjectID != "" {
+		if req.ProjectID != "" && requestedProjectID != inferredProjectID {
+			return "", http.StatusBadRequest, "project_id does not match test scripts"
+		}
+		if folderProjectID != "" && folderProjectID != inferredProjectID {
+			return "", http.StatusBadRequest, "folder project does not match test scripts"
+		}
+	}
+
+	if folderProjectID != "" {
+		return folderProjectID, 0, ""
+	}
+	if req.ProjectID != "" {
+		return requestedProjectID, 0, ""
+	}
+	if inferredProjectID != "" {
+		return inferredProjectID, 0, ""
+	}
+	return normalizeProjectID(""), 0, ""
+}
+
+func resolveCreateTestScriptProjectID(req CreateTestRequest, store storage.Store) (string, int, string) {
+	scriptIDs := make([]string, 0, len(req.Groups)+1)
+	if req.ScriptID != "" {
+		scriptIDs = append(scriptIDs, req.ScriptID)
+	}
+	for _, group := range req.Groups {
+		if group.ScriptID != "" {
+			scriptIDs = append(scriptIDs, group.ScriptID)
+		}
+	}
+	projectID := ""
+	for _, scriptID := range scriptIDs {
+		script, err := store.GetScript(scriptID)
+		if err != nil {
+			return "", http.StatusNotFound, "script not found"
+		}
+		candidate := normalizeProjectID(script.ProjectID)
+		if projectID == "" {
+			projectID = candidate
+			continue
+		}
+		if candidate != projectID {
+			return "", http.StatusBadRequest, "test scripts span multiple projects"
+		}
+	}
+	return projectID, 0, ""
+}
+
+func resolveTestMoveProjectID(r *http.Request, store storage.Store) (string, int, string) {
+	projectID, status, msg := resolveTestProjectID(r, store)
+	if status != 0 {
+		return "", status, msg
+	}
+	var req struct {
+		FolderID *string `json:"folder_id"`
+	}
+	if err := decodeRequestBody(r, &req); err != nil {
+		return "", http.StatusBadRequest, "invalid request body: " + err.Error()
+	}
+	if req.FolderID == nil {
+		return projectID, 0, ""
+	}
+	destinationProjectID, destStatus, destMsg := resolveFolderProjectIDValue(*req.FolderID, store)
+	if destStatus != 0 {
+		return "", destStatus, destMsg
+	}
+	if destinationProjectID != projectID {
+		return "", http.StatusBadRequest, "destination folder belongs to a different project"
+	}
+	return projectID, 0, ""
 }
 
 func resolveScriptCreateProjectID(r *http.Request, store storage.Store) (string, int, string) {
