@@ -55,7 +55,7 @@ describe('ScriptEditor', () => {
         additional_attributes: { env: 'perf' },
         download_filters: { mode: 'block_list', hosts: ['metrics.example.test'] },
         content_checks: [{ text: 'Access Denied', scope: 'any_response', fail_if_found: true }],
-        network_simulation: { mode: 'preset', preset: 'dsl', latency_ms: 50 },
+        network_simulation: { mode: 'preset', preset: 'dsl', latency_ms: 50, jitter_ms: 10, packet_loss_pct: 1.5 },
         streaming: { mode: 'adaptive', buffer_size_seconds: 30, bandwidth_estimation: 'rolling' },
         data_formatting: { auto_detect: true, chain: [{ type: 'base64' }] },
       },
@@ -206,6 +206,36 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('.parameter-data-dialog')).not.toBeNull()
     expect(container.textContent).toContain('Named Parameters')
     expect(container.textContent).toContain('session_id')
+  })
+
+  it('renders jitter and packet loss inputs for network emulation', async () => {
+  await act(async () => {
+    root.render(<ScriptEditor initialScript={initialScript} />)
+  })
+
+  const runtimeButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Runtime Settings'))
+  expect(runtimeButton).toBeDefined()
+  if (!runtimeButton) {
+    return
+  }
+
+  await act(async () => {
+    runtimeButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+  })
+
+  const webRuntimeButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Web HTTP/HTML Compatibility'))
+  expect(webRuntimeButton).toBeDefined()
+  if (!webRuntimeButton) {
+    return
+  }
+
+  await act(async () => {
+    webRuntimeButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+  })
+
+  expect(container.textContent).toContain('Network Emulation')
+  expect(container.textContent).toContain('Jitter (ms)')
+  expect(container.textContent).toContain('Packet Loss (%)')
   })
 
   it('rehydrates editor state when a different initial script is provided', async () => {
@@ -451,7 +481,9 @@ describe('ScriptEditor', () => {
     expect(attributesArea?.value).toContain('env=perf')
     expect(checksArea?.value).toContain('Access Denied|any_response|true')
     expect(dfeArea?.value).toContain('base64')
-    expect(container.textContent).toContain('Network Speed Simulation')
+    expect(container.textContent).toContain('Network Emulation')
+    expect(container.textContent).toContain('Jitter (ms)')
+    expect(container.textContent).toContain('Packet Loss (%)')
     expect(container.textContent).toContain('Data Formatting')
   })
 

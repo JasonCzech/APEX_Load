@@ -413,11 +413,17 @@ func validateWebRuntimeIssues(script *Script) []string {
 	if network.Mode == "preset" && !isAllowedValue(network.Preset, "56k", "dsl", "t1", "10mbps") {
 		issues = append(issues, "config.web_runtime.network_simulation.preset must be 56k, dsl, t1, or 10mbps when mode is preset")
 	}
-	if network.Mode == "custom" && network.BandwidthKbps <= 0 {
-		issues = append(issues, "config.web_runtime.network_simulation.bandwidth_kbps must be greater than zero when mode is custom")
+	if network.Mode == "custom" && network.BandwidthKbps <= 0 && network.LatencyMs <= 0 && network.JitterMs <= 0 && network.PacketLossPct <= 0 {
+		issues = append(issues, "config.web_runtime.network_simulation custom mode requires bandwidth_kbps, latency_ms, jitter_ms, or packet_loss_pct")
 	}
 	if network.LatencyMs < 0 {
 		issues = append(issues, "config.web_runtime.network_simulation.latency_ms must be zero or greater")
+	}
+	if network.JitterMs < 0 {
+		issues = append(issues, "config.web_runtime.network_simulation.jitter_ms must be zero or greater")
+	}
+	if network.PacketLossPct < 0 || network.PacketLossPct > 100 {
+		issues = append(issues, "config.web_runtime.network_simulation.packet_loss_pct must be between 0 and 100")
 	}
 
 	streaming := script.Config.WebRuntime.Streaming

@@ -161,6 +161,8 @@ export interface NetworkSimulationConfig {
   preset?: string
   bandwidth_kbps?: number
   latency_ms?: number
+  jitter_ms?: number
+  packet_loss_pct?: number
 }
 
 export interface StreamingConfig {

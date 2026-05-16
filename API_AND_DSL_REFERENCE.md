@@ -820,7 +820,8 @@ Emits JSON messages for all test events:
 - `config.web_runtime.content_checks[]`: Global response content checks with `text`, `scope`, and `fail_if_found`
 - `config.web_runtime.network_simulation.mode`: `max`, `preset`, or `custom`
 - `config.web_runtime.network_simulation.preset`: `56k`, `dsl`, `t1`, or `10mbps`
-- `config.web_runtime.network_simulation.bandwidth_kbps`, `config.web_runtime.network_simulation.latency_ms`: Custom browser network throttling values
+- `config.web_runtime.network_simulation.bandwidth_kbps`, `config.web_runtime.network_simulation.latency_ms`: Custom transport shaping values
+- `config.web_runtime.network_simulation.jitter_ms`, `config.web_runtime.network_simulation.packet_loss_pct`: Optional jitter and packet-loss simulation values for custom HTTP transport shaping
 - `config.web_runtime.streaming.mode`: `adaptive` or `fixed` compatibility setting for imported/authored media RTS
 - `config.web_runtime.streaming.buffer_size_seconds`: Preserved streaming buffer setting
 - `config.web_runtime.streaming.fixed_bitrate_kbps`: Preserved fixed-bitrate setting
@@ -839,7 +840,7 @@ Emits JSON messages for all test events:
 | Download resources | `config.browser.download_resources` | Partial: `all` and `none` execute directly; `recorded` executes when preserved recorded-resource metadata is available |
 | Download filters | `config.web_runtime.download_filters.*` | Executed in browser runtime |
 | Global content checks | `config.web_runtime.content_checks[]` | Executed in HTTP runtime |
-| Network speed simulation | `config.web_runtime.network_simulation.*` | Executed in browser runtime |
+| Network emulation | `config.web_runtime.network_simulation.*` | Executed in browser runtime and HTTP-family transport shaping |
 | Data formatting | `config.web_runtime.data_formatting.*` | Partial: HTTP runtime executes configured DFE chains and auto-detects obvious base64-encoded text payloads; browser/runtime-wide DFE parity is still incomplete |
 | Streaming | `config.web_runtime.streaming.*` | Compatibility-only: preserved and importable, but media playback semantics are not executed yet |
 | Additional attributes | `config.web_runtime.additional_attributes` | Compatibility-only metadata |

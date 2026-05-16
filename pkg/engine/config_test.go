@@ -512,6 +512,8 @@ func TestBuildProtoConfig_Browser(t *testing.T) {
 					Mode:          "custom",
 					BandwidthKbps: 2048,
 					LatencyMs:     latencyMs,
+					JitterMs:      15,
+					PacketLossPct: 1.5,
 				},
 			},
 		},
@@ -594,6 +596,12 @@ func TestBuildProtoConfig_Browser(t *testing.T) {
 	}
 	if cfg["web_network_simulation_latency_ms"] != float64(latencyMs) {
 		t.Errorf("web_network_simulation_latency_ms = %v, want %d", cfg["web_network_simulation_latency_ms"], latencyMs)
+	}
+	if cfg["web_network_simulation_jitter_ms"] != float64(15) {
+		t.Errorf("web_network_simulation_jitter_ms = %v, want 15", cfg["web_network_simulation_jitter_ms"])
+	}
+	if cfg["web_network_simulation_packet_loss_pct"] != 1.5 {
+		t.Errorf("web_network_simulation_packet_loss_pct = %v, want 1.5", cfg["web_network_simulation_packet_loss_pct"])
 	}
 }
 

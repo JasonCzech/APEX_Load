@@ -5,6 +5,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"fmt"
+	"math"
 	"net"
 	"net/http"
 	"net/http/cookiejar"
@@ -119,6 +120,79 @@ func newTransport(settings transportConfig, tlsCfg *tls.Config) *http.Transport 
 		TLSClientConfig:     tlsCfg,
 		DisableKeepAlives:   settings.disableKeepAlive,
 	}
+}
+
+func applyNetworkSimulation(transport *http.Transport, config map[string]any) {
+	profile := parseNetworkSimulationProfile(config)
+	if !profile.active() {
+		return
+	}
+
+	baseDialContext := transport.DialContext
+	if baseDialContext == nil {
+		baseDialContext = (&net.Dialer{}).DialContext
+	}
+	transport.DialContext = newShapedDialContext(baseDialContext, profile)
+}
+
+func parseNetworkSimulationProfile(config map[string]any) networkSimulationProfile {
+	mode, _ := config["web_network_simulation_mode"].(string)
+	preset, _ := config["web_network_simulation_preset"].(string)
+	latencyMS, bandwidthKbps := resolveNetworkProfile(mode, preset, configInt(config, "web_network_simulation_latency_ms"), configInt(config, "web_network_simulation_bandwidth_kbps"))
+	return networkSimulationProfile{
+		latency:          time.Duration(latencyMS) * time.Millisecond,
+		jitter:           time.Duration(configInt(config, "web_network_simulation_jitter_ms")) * time.Millisecond,
+		bandwidthBytesPS: bandwidthBytesPerSecond(bandwidthKbps),
+		packetLossPct:    configFloat(config, "web_network_simulation_packet_loss_pct"),
+		sleep:            time.Sleep,
+		randFloat64:      defaultRandFloat64,
+	}
+}
+
+func resolveNetworkProfile(mode, preset string, latencyMS, bandwidthKbps int) (int, int) {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "preset":
+		switch strings.ToLower(strings.TrimSpace(preset)) {
+		case "56k":
+			return 120, 56
+		case "dsl":
+			return 50, 1536
+		case "t1":
+			return 20, 1544
+		case "10mbps":
+			return 5, 10240
+		}
+	case "custom":
+		return latencyMS, bandwidthKbps
+	}
+	return 0, 0
+}
+
+func configInt(config map[string]any, key string) int {
+	if value, ok := config[key].(float64); ok {
+		return int(value)
+	}
+	if value, ok := config[key].(int); ok {
+		return value
+	}
+	return 0
+}
+
+func configFloat(config map[string]any, key string) float64 {
+	if value, ok := config[key].(float64); ok {
+		return value
+	}
+	if value, ok := config[key].(int); ok {
+		return float64(value)
+	}
+	return 0
+}
+
+func bandwidthBytesPerSecond(kbps int) int {
+	if kbps <= 0 {
+		return 0
+	}
+	return int(math.Round(float64(kbps*1024) / 8))
 }
 
 func applyHTTPVersion(transport *http.Transport, config map[string]any) {

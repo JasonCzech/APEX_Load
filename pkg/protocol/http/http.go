@@ -53,6 +53,7 @@ func (h *HTTP) Init(ctx context.Context, config map[string]any) error {
 
 	h.transport = newTransport(transportSettings, tlsCfg)
 	applyHTTPVersion(h.transport, config)
+	applyNetworkSimulation(h.transport, config)
 	if err := applyProxy(h.transport, config); err != nil {
 		return err
 	}

@@ -94,6 +94,12 @@ func buildProtoConfigWithSecretResolver(script *dsl.Script, resolver SecretResol
 		if networkCfg.LatencyMs > 0 {
 			cfg["web_network_simulation_latency_ms"] = float64(networkCfg.LatencyMs)
 		}
+		if networkCfg.JitterMs > 0 {
+			cfg["web_network_simulation_jitter_ms"] = float64(networkCfg.JitterMs)
+		}
+		if networkCfg.PacketLossPct > 0 {
+			cfg["web_network_simulation_packet_loss_pct"] = networkCfg.PacketLossPct
+		}
 	}
 	if javaHTTPCfg.Codec != "" {
 		cfg["java_http_codec"] = javaHTTPCfg.Codec

@@ -145,10 +145,12 @@ type ContentCheckConfig struct {
 }
 
 type NetworkSimulationConfig struct {
-	Mode          string `json:"mode,omitempty"`
-	Preset        string `json:"preset,omitempty"`
-	BandwidthKbps int    `json:"bandwidth_kbps,omitempty"`
-	LatencyMs     int    `json:"latency_ms,omitempty"`
+	Mode          string  `json:"mode,omitempty"`
+	Preset        string  `json:"preset,omitempty"`
+	BandwidthKbps int     `json:"bandwidth_kbps,omitempty"`
+	LatencyMs     int     `json:"latency_ms,omitempty"`
+	JitterMs      int     `json:"jitter_ms,omitempty"`
+	PacketLossPct float64 `json:"packet_loss_pct,omitempty"`
 }
 
 type StreamingConfig struct {

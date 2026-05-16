@@ -3322,7 +3322,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
                         </label>
                       </div>
                       <div className="settings-sub-group">
-                        <h5>Network Speed Simulation</h5>
+                        <h5>Network Emulation</h5>
                         <div className="form-grid">
                           <label>
                             <span>Mode</span>
@@ -3334,9 +3334,9 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
                                   mode: e.target.value,
                                 },
                               })}>
-                              <option value="max">Maximum bandwidth</option>
-                              <option value="preset">Preset bandwidth</option>
-                              <option value="custom">Custom bandwidth</option>
+                              <option value="max">Maximum throughput</option>
+                              <option value="preset">Preset profile</option>
+                              <option value="custom">Custom profile</option>
                             </select>
                           </label>
                           <label>
@@ -3374,6 +3374,28 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
                                 network_simulation: {
                                   ...script.config.web_runtime?.network_simulation,
                                   latency_ms: Number(e.target.value),
+                                },
+                              })} />
+                          </label>
+                          <label>
+                            <span>Jitter (ms)</span>
+                            <input type="number" value={script.config.web_runtime?.network_simulation?.jitter_ms || 0}
+                              onChange={e => updateField('config.web_runtime', {
+                                ...script.config.web_runtime,
+                                network_simulation: {
+                                  ...script.config.web_runtime?.network_simulation,
+                                  jitter_ms: Number(e.target.value),
+                                },
+                              })} />
+                          </label>
+                          <label>
+                            <span>Packet Loss (%)</span>
+                            <input type="number" min="0" max="100" step="0.1" value={script.config.web_runtime?.network_simulation?.packet_loss_pct || 0}
+                              onChange={e => updateField('config.web_runtime', {
+                                ...script.config.web_runtime,
+                                network_simulation: {
+                                  ...script.config.web_runtime?.network_simulation,
+                                  packet_loss_pct: Number(e.target.value),
                                 },
                               })} />
                           </label>

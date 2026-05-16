@@ -122,9 +122,11 @@ func TestValidateScriptIssues_WebRuntimeValidation(t *testing.T) {
 					Scope: "global",
 				}},
 				NetworkSimulation: NetworkSimulationConfig{
-					Mode:      "preset",
-					Preset:    "dialup",
-					LatencyMs: -1,
+					Mode:          "preset",
+					Preset:        "dialup",
+					LatencyMs:     -1,
+					JitterMs:      -5,
+					PacketLossPct: 120,
 				},
 				Streaming: StreamingConfig{
 					Mode:              "fixed",
@@ -155,6 +157,8 @@ func TestValidateScriptIssues_WebRuntimeValidation(t *testing.T) {
 	assertIssue(t, issues, "config.web_runtime.content_checks[0].scope must be any_response, main_document, or resource")
 	assertIssue(t, issues, "config.web_runtime.network_simulation.preset must be 56k, dsl, t1, or 10mbps when mode is preset")
 	assertIssue(t, issues, "config.web_runtime.network_simulation.latency_ms must be zero or greater")
+	assertIssue(t, issues, "config.web_runtime.network_simulation.jitter_ms must be zero or greater")
+	assertIssue(t, issues, "config.web_runtime.network_simulation.packet_loss_pct must be between 0 and 100")
 	assertIssue(t, issues, "config.web_runtime.streaming.buffer_size_seconds must be zero or greater")
 	assertIssue(t, issues, "config.web_runtime.streaming.fixed_bitrate_kbps must be greater than zero when mode is fixed")
 	assertIssue(t, issues, "config.web_runtime.data_formatting.chain[0].type is required")
@@ -212,6 +216,8 @@ func TestValidateScriptIssues_WebRuntimeValidationAllowsSupportedFields(t *testi
 					Mode:          "custom",
 					BandwidthKbps: 2048,
 					LatencyMs:     75,
+					JitterMs:      12,
+					PacketLossPct: 0.5,
 				},
 				Streaming: StreamingConfig{
 					Mode:                "adaptive",
@@ -223,6 +229,32 @@ func TestValidateScriptIssues_WebRuntimeValidationAllowsSupportedFields(t *testi
 					Chain: []DFETransform{{
 						Type: "base64",
 					}},
+				},
+			},
+		},
+		Actions: []Action{{
+			Name:   "home",
+			Type:   "request",
+			Target: "/",
+		}},
+	}
+
+	issues := ValidateScriptIssues(script)
+	if len(issues) != 0 {
+		t.Fatalf("issues = %v, want none", issues)
+	}
+}
+
+func TestValidateScriptIssues_WebRuntimeCustomNetworkSimulationAllowsLossOnly(t *testing.T) {
+	script := &Script{
+		Name:     "web-loss-only",
+		Protocol: "http",
+		Config: ScriptConfig{
+			BaseURL: "https://example.test",
+			WebRuntime: WebRuntimeConfig{
+				NetworkSimulation: NetworkSimulationConfig{
+					Mode:          "custom",
+					PacketLossPct: 5,
 				},
 			},
 		},
