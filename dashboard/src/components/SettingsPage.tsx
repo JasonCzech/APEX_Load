@@ -1665,6 +1665,43 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
                       </div>
                     )}
                   </div>
+                  <div className="settings-subsection">
+                    <div className="settings-manager-summary">
+                      <div>
+                        <span className="setting-label">Microsoft Entra ID Troubleshooting</span>
+                        <span className="setting-desc">Use this checklist when Stormrunner is configured for trusted headers but the current request is missing an authenticated identity.</span>
+                      </div>
+                      <strong>{authStatus?.authenticated ? 'Headers detected' : 'Check gateway mapping'}</strong>
+                    </div>
+                    <div className="setting-row">
+                      <div className="setting-info">
+                        <span className="setting-label">Open Through Entra Gateway</span>
+                        <span className="setting-desc">Reach the dashboard through the Entra-protected ingress or reverse proxy instead of calling the controller origin directly.</span>
+                      </div>
+                      <span className="settings-value-display">{authStatus?.authenticated ? 'Current request is authenticated' : 'Required for sign-in'}</span>
+                    </div>
+                    <div className="setting-row">
+                      <div className="setting-info">
+                        <span className="setting-label">Subject Header Check</span>
+                        <span className="setting-desc">Verify the gateway forwards the configured subject header on every authenticated request.</span>
+                      </div>
+                      <span className="settings-value-display cell-mono">{formatHeaderContractValue(settings.auth.user_header)}</span>
+                    </div>
+                    <div className="setting-row">
+                      <div className="setting-info">
+                        <span className="setting-label">Role Header Check</span>
+                        <span className="setting-desc">Forward either the global roles header or the project roles header so Stormrunner can evaluate RBAC.</span>
+                      </div>
+                      <span className="settings-value-display cell-mono">{formatHeaderContractValue(settings.auth.roles_header, 'No global role header')} | {formatHeaderContractValue(settings.auth.project_roles_header, 'No project role header')}</span>
+                    </div>
+                    <div className="setting-row">
+                      <div className="setting-info">
+                        <span className="setting-label">Gateway UX</span>
+                        <span className="setting-desc">Provider label and login URL should point operators back to the correct Microsoft Entra ID entry point when Stormrunner blocks unauthenticated access.</span>
+                      </div>
+                      <span className="settings-value-display">{settings.auth.provider_name?.trim() || 'Microsoft Entra ID'}{settings.auth.login_url?.trim() ? ` | ${settings.auth.login_url.trim()}` : ''}</span>
+                    </div>
+                  </div>
                   {authRoles.length > 0 && (
                     <div className="settings-subsection">
                       <div className="settings-manager-summary">

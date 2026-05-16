@@ -530,6 +530,9 @@ describe('SettingsPage', () => {
         project_roles_header: 'X-Stormrunner-Project-Roles',
       }),
     }))
+    expect(generalSection.textContent).toContain('Microsoft Entra ID Troubleshooting')
+    expect(generalSection.textContent).toContain('Subject Header Check')
+    expect(generalSection.textContent).toContain('Role Header Check')
     expect(container.textContent).toContain('Settings saved.')
   })
 
@@ -592,6 +595,8 @@ describe('SettingsPage', () => {
     expect(generalSection.textContent).toContain('X-Auth-Request-User')
     expect(generalSection.textContent).toContain('Global Role Mapping')
     expect(generalSection.textContent).toContain('X-Stormrunner-Roles')
+    expect(generalSection.textContent).toContain('Microsoft Entra ID Troubleshooting')
+    expect(generalSection.textContent).toContain('Headers detected')
   })
 
   it('saves notification webhook settings through system settings', async () => {

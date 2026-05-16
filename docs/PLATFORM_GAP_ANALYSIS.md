@@ -185,7 +185,7 @@ The most powerful analysis comes from correlating load test metrics with applica
 Enterprise deployments need access control.
 
 **What's needed:**
-- **Authentication** — SSO (SAML/OIDC) integration for enterprise identity providers
+- **Authentication** — Microsoft Entra ID-backed SSO via the trusted-header gateway pattern, with Stormrunner enforcing RBAC from forwarded identity and role headers
 - **Role-based access** — Admin, Editor, Viewer roles at project level
 - **Audit log** — who created/started/stopped which test
 - **API key management** — service account keys for CI/CD pipelines
@@ -339,7 +339,7 @@ In CI/CD environments, PRs are often deployed to ephemeral namespaces where host
 | **P0** | Open vs. Closed Workload Modeling | Coordinated omission hides real issues in microservices |
 | **P0** | PII / PHI Redaction & Compliance | Legal/regulatory blocker for saving payload snapshots |
 | **P1** | Alerting & Notifications | Automation requires notification |
-| **P1** | User Management & RBAC | Shared enterprise deployment needs SSO, audit, and isolation before broad rollout |
+| **P1** | User Management & RBAC | Shared enterprise deployment needs Microsoft Entra ID-backed SSO, audit, and isolation before broad rollout |
 | **P1** | Multi-Tenant Governance & Capacity Controls | A shared service needs quotas, queueing, and fair-share protection |
 | **P1** | Scheduled / Recurring Tests | Enables continuous performance monitoring |
 | **P1** | Correlation Intelligence | Bridges "converter" to "migration assistant" |
