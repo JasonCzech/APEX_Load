@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState, type DragEvent } from 'react'
 import { type DashboardTheme } from '../hooks/useDashboardTheme'
 import { useApplicationApi } from '../hooks/api/useApplicationApi'
+import { useProjectApi } from '../hooks/api/useProjectApi'
 import { useApplication } from '../hooks/useApplication'
 import { useApi } from '../hooks/useApi'
-import { DashboardSystemSettings, HealthResponse, SharedDataPool, SharedDataPoolRow, SystemInventoryResponse } from '../types'
+import { DashboardSystemSettings, HealthResponse, Project, RedactionRule, SharedDataPool, SharedDataPoolRow, SystemInventoryResponse } from '../types'
 import { getErrorMessage } from '../utils/errorUtils'
 
 const DEFAULT_SETTINGS: DashboardSystemSettings = {
@@ -38,6 +39,7 @@ const SETTINGS_SECTIONS = [
   { id: 'thresholds', title: 'Performance Thresholds' },
   { id: 'capacity', title: 'Capacity Planning' },
   { id: 'applications', title: 'Applications & Releases' },
+  { id: 'projects', title: 'Projects & Compliance' },
   { id: 'data-pools', title: 'Shared Data Pools' },
   { id: 'integrations', title: 'Integrations' },
 ] as const
@@ -50,11 +52,64 @@ const GENERATOR_PRESETS = [
 
 type SettingsSectionId = typeof SETTINGS_SECTIONS[number]['id']
 
+type DraftRedactionRule = {
+  name: string
+  pattern: string
+  replacement: string
+}
+
 function parseOptionalNumber(value: string): number | undefined {
   const trimmed = value.trim()
   if (!trimmed) return undefined
   const parsed = Number(trimmed)
   return Number.isFinite(parsed) ? parsed : undefined
+}
+
+function sortProjects(projects: Project[]) {
+  return [...projects].sort((left, right) => left.name.localeCompare(right.name))
+}
+
+function toDraftRedactionRules(rules?: RedactionRule[]): DraftRedactionRule[] {
+  return (rules || []).map(rule => ({
+    name: rule.name || '',
+    pattern: rule.pattern || '',
+    replacement: rule.replacement || '',
+  }))
+}
+
+function normalizeProjectRedactionRules(rules: DraftRedactionRule[]): RedactionRule[] {
+  return rules.flatMap(rule => {
+    const name = rule.name.trim()
+    const pattern = rule.pattern.trim()
+    const replacement = rule.replacement.trim()
+    if (!name && !pattern && !replacement) {
+      return []
+    }
+
+    const normalized: RedactionRule = { pattern }
+    if (name) normalized.name = name
+    if (replacement) normalized.replacement = replacement
+    return [normalized]
+  })
+}
+
+function validateProjectDraft(name: string, rules: DraftRedactionRule[]): string {
+  if (!name.trim()) {
+    return 'Project name is required.'
+  }
+
+  for (let index = 0; index < rules.length; index += 1) {
+    const rule = rules[index]
+    const isBlank = !rule.name.trim() && !rule.pattern.trim() && !rule.replacement.trim()
+    if (isBlank) {
+      continue
+    }
+    if (!rule.pattern.trim()) {
+      return `Redaction rule ${index + 1} needs a regex pattern.`
+    }
+  }
+
+  return ''
 }
 
 function validateSettings(settings: DashboardSystemSettings): string[] {
@@ -175,6 +230,7 @@ interface SettingsPageProps {
 export default function SettingsPage({ theme, onThemeChange }: SettingsPageProps) {
   const api = useApi()
   const applicationApi = useApplicationApi()
+  const projectApi = useProjectApi()
   const {
     applications,
     releases,
@@ -200,6 +256,13 @@ export default function SettingsPage({ theme, onThemeChange }: SettingsPageProps
   const [managedReleases, setManagedReleases] = useState(releases)
   const [newApplicationName, setNewApplicationName] = useState('')
   const [applicationActionError, setApplicationActionError] = useState('')
+  const [projects, setProjects] = useState<Project[]>([])
+  const [selectedProjectId, setSelectedProjectId] = useState('')
+  const [newProjectName, setNewProjectName] = useState('')
+  const [projectDraftName, setProjectDraftName] = useState('')
+  const [projectDraftRules, setProjectDraftRules] = useState<DraftRedactionRule[]>([])
+  const [projectActionError, setProjectActionError] = useState('')
+  const [projectActionMessage, setProjectActionMessage] = useState('')
   const [dataPools, setDataPools] = useState<SharedDataPool[]>([])
   const [selectedDataPoolId, setSelectedDataPoolId] = useState('')
   const [dataPoolRows, setDataPoolRows] = useState<SharedDataPoolRow[]>([])
@@ -283,6 +346,38 @@ export default function SettingsPage({ theme, onThemeChange }: SettingsPageProps
   const validationErrors = useMemo(() => validateSettings(settings), [settings])
   const hasUnsavedChanges = useMemo(() => JSON.stringify(settings) !== JSON.stringify(savedSettings), [settings, savedSettings])
   const canSave = validationErrors.length === 0 && !loading && hasUnsavedChanges
+  const selectedProject = useMemo(
+    () => projects.find(project => project.id === selectedProjectId) || null,
+    [projects, selectedProjectId],
+  )
+  const projectDraftValidationError = useMemo(
+    () => selectedProject ? validateProjectDraft(projectDraftName, projectDraftRules) : '',
+    [projectDraftName, projectDraftRules, selectedProject],
+  )
+  const projectHasUnsavedChanges = useMemo(() => {
+    if (!selectedProject) {
+      return false
+    }
+
+    const current = {
+      name: selectedProject.name,
+      settings: {
+        redaction_rules: selectedProject.settings?.redaction_rules || [],
+      },
+    }
+    const draft = {
+      name: projectDraftName.trim(),
+      settings: {
+        redaction_rules: normalizeProjectRedactionRules(projectDraftRules),
+      },
+    }
+
+    return JSON.stringify(current) !== JSON.stringify(draft)
+  }, [projectDraftName, projectDraftRules, selectedProject])
+  const customRuleCount = useMemo(
+    () => normalizeProjectRedactionRules(projectDraftRules).length,
+    [projectDraftRules],
+  )
   const availabilitySnapshot = health?.capacity_availability
   const availabilitySourceLabel = availabilitySnapshot?.source === 'configured_plus_live'
     ? availabilitySnapshot.live_available_generators !== undefined
@@ -323,6 +418,35 @@ export default function SettingsPage({ theme, onThemeChange }: SettingsPageProps
       cancelled = true
     }
   }, [activeApplication?.id, applicationApi, releases])
+
+  useEffect(() => {
+    let cancelled = false
+    const loadProjects = async () => {
+      try {
+        const response = await projectApi.listProjects()
+        if (cancelled) {
+          return
+        }
+
+        const nextProjects = sortProjects(response.projects || [])
+        const nextSelected = nextProjects[0] || null
+        setProjects(nextProjects)
+        setSelectedProjectId(nextSelected?.id || '')
+        setProjectDraftName(nextSelected?.name || '')
+        setProjectDraftRules(toDraftRedactionRules(nextSelected?.settings?.redaction_rules))
+        setProjectActionError('')
+      } catch (error: unknown) {
+        if (!cancelled) {
+          setProjectActionError(getErrorMessage(error, 'Unable to load projects'))
+        }
+      }
+    }
+
+    loadProjects()
+    return () => {
+      cancelled = true
+    }
+  }, [projectApi])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -549,6 +673,73 @@ export default function SettingsPage({ theme, onThemeChange }: SettingsPageProps
       setApplicationActionError('')
     } catch (error: unknown) {
       setApplicationActionError(getErrorMessage(error, 'Unable to create application'))
+    }
+  }
+
+  const selectProject = (project: Project | null) => {
+    setSelectedProjectId(project?.id || '')
+    setProjectDraftName(project?.name || '')
+    setProjectDraftRules(toDraftRedactionRules(project?.settings?.redaction_rules))
+    setProjectActionError('')
+    setProjectActionMessage('')
+  }
+
+  const createProject = async () => {
+    const name = newProjectName.trim()
+    if (!name) return
+    try {
+      const created = await projectApi.createProject({ name })
+      const nextProjects = sortProjects([...projects, created])
+      setProjects(nextProjects)
+      setNewProjectName('')
+      selectProject(created)
+      setProjectActionMessage(`Project "${created.name}" created.`)
+    } catch (error: unknown) {
+      setProjectActionError(getErrorMessage(error, 'Unable to create project'))
+      setProjectActionMessage('')
+    }
+  }
+
+  const updateProjectRule = (index: number, key: keyof DraftRedactionRule, value: string) => {
+    setProjectDraftRules(prev => prev.map((rule, ruleIndex) => (ruleIndex === index ? { ...rule, [key]: value } : rule)))
+    setProjectActionError('')
+    setProjectActionMessage('')
+  }
+
+  const addProjectRule = () => {
+    setProjectDraftRules(prev => [...prev, { name: '', pattern: '', replacement: '' }])
+    setProjectActionError('')
+    setProjectActionMessage('')
+  }
+
+  const removeProjectRule = (index: number) => {
+    setProjectDraftRules(prev => prev.filter((_, ruleIndex) => ruleIndex !== index))
+    setProjectActionError('')
+    setProjectActionMessage('')
+  }
+
+  const saveProjectCompliance = async () => {
+    if (!selectedProject) return
+    if (projectDraftValidationError) {
+      setProjectActionError(projectDraftValidationError)
+      setProjectActionMessage('')
+      return
+    }
+
+    try {
+      const updated = await projectApi.updateProject(selectedProject.id, {
+        name: projectDraftName.trim(),
+        settings: {
+          redaction_rules: normalizeProjectRedactionRules(projectDraftRules),
+        },
+      })
+      const nextProjects = sortProjects(projects.map(project => (project.id === updated.id ? updated : project)))
+      setProjects(nextProjects)
+      selectProject(updated)
+      setProjectActionMessage(`Saved compliance defaults for ${updated.name}.`)
+    } catch (error: unknown) {
+      setProjectActionError(getErrorMessage(error, 'Unable to save project compliance defaults'))
+      setProjectActionMessage('')
     }
   }
 
@@ -800,8 +991,10 @@ export default function SettingsPage({ theme, onThemeChange }: SettingsPageProps
 
       {loading && <p className="settings-notice">Loading settings...</p>}
       {!loading && saveMessage && <p className="settings-notice">{saveMessage}</p>}
+      {projectActionMessage && <p className="settings-notice">{projectActionMessage}</p>}
       {requestError && <p className="settings-error-inline">{requestError}</p>}
       {applicationActionError && <p className="settings-error-inline">{applicationActionError}</p>}
+      {projectActionError && <p className="settings-error-inline">{projectActionError}</p>}
       {dataPoolActionError && <p className="settings-error-inline">{dataPoolActionError}</p>}
       {validationErrors.length > 0 && (
         <div className="settings-errors" role="alert">
@@ -1247,6 +1440,161 @@ export default function SettingsPage({ theme, onThemeChange }: SettingsPageProps
                 <p className="new-test-inline-note">No releases yet for this application.</p>
               )}
             </div>
+          </div>
+        </div>
+
+        <div
+          id="settings-section-projects"
+          className={sectionClass('projects')}
+          hidden={!visibleSections.some(section => section.id === 'projects')}
+          draggable={customizingSections}
+          onDragStart={event => handleSectionDragStart(event, 'projects')}
+          onDragOver={event => handleSectionDragOver(event, 'projects')}
+          onDrop={event => handleSectionDrop(event, 'projects')}
+          onDragEnd={() => setDraggedSectionId(null)}
+          style={{ order: getSectionOrder('projects') }}
+        >
+          {renderSettingsHeader('projects', 'Projects & Compliance')}
+          <div className="settings-group">
+            <div className="settings-subsection">
+              <div className="settings-manager-summary">
+                <div>
+                  <span className="setting-label">Projects</span>
+                  <span className="setting-desc">Compliance defaults apply automatically to tests and replay sessions that resolve this project by `project_id`.</span>
+                </div>
+                <strong>{projects.length}</strong>
+              </div>
+              {projects.length > 0 ? (
+                <div className="settings-app-grid">
+                  {projects.map(project => (
+                    <button
+                      key={project.id}
+                      type="button"
+                      className={`settings-app-card ${selectedProject?.id === project.id ? 'active' : ''}`}
+                      onClick={() => selectProject(project)}
+                    >
+                      <span>{project.name}</span>
+                      <small>
+                        {selectedProject?.id === project.id
+                          ? 'Editing compliance defaults'
+                          : `${project.settings?.redaction_rules?.length || 0} custom rule${project.settings?.redaction_rules?.length === 1 ? '' : 's'}`}
+                      </small>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="new-test-inline-note">No projects yet. Create one to define project-specific redaction defaults.</p>
+              )}
+              <div className="inline-create-row">
+                <input
+                  className="settings-input"
+                  value={newProjectName}
+                  onChange={event => setNewProjectName(event.target.value)}
+                  placeholder="Create project, e.g. Customer Portal"
+                />
+                <button className="btn btn-secondary" type="button" onClick={createProject} disabled={!newProjectName.trim()}>
+                  Add Project
+                </button>
+              </div>
+            </div>
+
+            {selectedProject ? (
+              <>
+                <div className="setting-row">
+                  <div className="setting-info">
+                    <span className="setting-label">Selected Project</span>
+                    <span className="setting-desc">Built-in token and PII scrubbing still runs globally. Add regex rules here only for project-specific payload shapes.</span>
+                  </div>
+                  <input
+                    className="settings-input"
+                    value={projectDraftName}
+                    onChange={event => {
+                      setProjectDraftName(event.target.value)
+                      setProjectActionError('')
+                      setProjectActionMessage('')
+                    }}
+                    placeholder="Project name"
+                  />
+                </div>
+
+                <div className="settings-subsection">
+                  <div className="settings-manager-summary">
+                    <div>
+                      <span className="setting-label">Custom Redaction Rules</span>
+                      <span className="setting-desc">Each regex runs after the built-in scrubbing pass. Leave replacement empty to fall back to the engine default `[REDACTED]` token.</span>
+                    </div>
+                    <strong>{customRuleCount}</strong>
+                  </div>
+
+                  {projectDraftRules.length > 0 ? (
+                    <div className="project-redaction-rule-list">
+                      {projectDraftRules.map((rule, index) => (
+                        <div key={`${selectedProject.id}-rule-${index}`} className="project-redaction-rule-card">
+                          <div className="project-redaction-rule-header">
+                            <strong>Rule {index + 1}</strong>
+                            <button className="btn btn-ghost" type="button" onClick={() => removeProjectRule(index)}>
+                              Remove
+                            </button>
+                          </div>
+                          <div className="project-redaction-rule-grid">
+                            <label className="project-redaction-rule-field">
+                              <span>Name</span>
+                              <input
+                                className="settings-input"
+                                value={rule.name}
+                                onChange={event => updateProjectRule(index, 'name', event.target.value)}
+                                placeholder="Optional label"
+                              />
+                            </label>
+                            <label className="project-redaction-rule-field">
+                              <span>Replacement</span>
+                              <input
+                                className="settings-input"
+                                value={rule.replacement}
+                                onChange={event => updateProjectRule(index, 'replacement', event.target.value)}
+                                placeholder="Defaults to [REDACTED]"
+                              />
+                            </label>
+                          </div>
+                          <label className="project-redaction-rule-field">
+                            <span>Regex Pattern</span>
+                            <textarea
+                              className="settings-input project-redaction-rule-pattern"
+                              rows={3}
+                              value={rule.pattern}
+                              onChange={event => updateProjectRule(index, 'pattern', event.target.value)}
+                              placeholder="customer-[0-9]+"
+                            />
+                          </label>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="new-test-inline-note">No custom rules yet. Built-in header, token, SSN, MRN, and high-entropy redaction still applies.</p>
+                  )}
+
+                  {projectDraftValidationError && <p className="settings-error-inline">{projectDraftValidationError}</p>}
+
+                  <div className="settings-inline-actions">
+                    <button className="btn btn-secondary" type="button" onClick={addProjectRule}>
+                      Add Rule
+                    </button>
+                    <button
+                      className="btn btn-primary"
+                      type="button"
+                      onClick={saveProjectCompliance}
+                      disabled={!projectHasUnsavedChanges || Boolean(projectDraftValidationError)}
+                    >
+                      Save Project Compliance
+                    </button>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="settings-subsection">
+                <p className="new-test-inline-note">Select a project to edit its compliance defaults.</p>
+              </div>
+            )}
           </div>
         </div>
 

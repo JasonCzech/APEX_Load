@@ -33,6 +33,17 @@ const applicationApiMock = {
   deleteRelease: vi.fn(),
 }
 
+const projectApiMock = {
+  listProjects: vi.fn(),
+  createProject: vi.fn(),
+  updateProject: vi.fn(),
+  deleteProject: vi.fn(),
+  listFolders: vi.fn(),
+  createFolder: vi.fn(),
+  updateFolder: vi.fn(),
+  deleteFolder: vi.fn(),
+}
+
 const applicationContextMock = {
   applications: [],
   releases: [],
@@ -51,6 +62,10 @@ vi.mock('../hooks/useApi', () => ({
 
 vi.mock('../hooks/api/useApplicationApi', () => ({
   useApplicationApi: () => applicationApiMock,
+}))
+
+vi.mock('../hooks/api/useProjectApi', () => ({
+  useProjectApi: () => projectApiMock,
 }))
 
 vi.mock('../hooks/useApplication', () => ({
@@ -135,6 +150,25 @@ describe('SettingsPage', () => {
     apiMock.getDataPool.mockResolvedValue({ rows: [] })
     apiMock.listTests.mockResolvedValue({ tests: [] })
     applicationApiMock.listReleases.mockResolvedValue({ releases: [] })
+    projectApiMock.listProjects.mockResolvedValue({
+      projects: [
+        {
+          id: 'project-1',
+          name: 'Customer Portal',
+          settings: {
+            redaction_rules: [
+              {
+                name: 'customer id',
+                pattern: 'customer-[0-9]+',
+              },
+            ],
+          },
+          created_at: '2026-05-15T00:00:00Z',
+          updated_at: '2026-05-15T00:00:00Z',
+        },
+      ],
+      count: 1,
+    })
   })
 
   afterEach(async () => {
@@ -231,12 +265,134 @@ describe('SettingsPage', () => {
     expect(container.textContent).toContain('memory set to 4,096 MB')
     expect(apiMock.getSystemInventory).toHaveBeenCalledTimes(1)
   })
+
+  it('loads project compliance defaults and saves edited redaction rules', async () => {
+    projectApiMock.updateProject.mockImplementation(async (id: string, data: { name: string; settings?: { redaction_rules?: Array<{ name?: string; pattern: string; replacement?: string }> } }) => ({
+      id,
+      name: data.name,
+      settings: data.settings,
+      created_at: '2026-05-15T00:00:00Z',
+      updated_at: '2026-05-15T12:00:00Z',
+    }))
+
+    await act(async () => {
+      root.render(<SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+
+    await flushPromises()
+    await flushPromises()
+
+    const projectSection = container.querySelector('#settings-section-projects')
+    expect(projectSection).toBeTruthy()
+    expect(projectSection?.textContent).toContain('Customer Portal')
+    expect(projectSection?.textContent).toContain('Custom Redaction Rules')
+
+    const addRuleButton = findButton('Add Rule')
+    expect(addRuleButton).toBeDefined()
+    if (!addRuleButton || !projectSection) return
+
+    await act(async () => {
+      addRuleButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const ruleCards = Array.from(projectSection.querySelectorAll('.project-redaction-rule-card'))
+    expect(ruleCards).toHaveLength(2)
+    const secondRuleInputs = ruleCards[1].querySelectorAll('input')
+    const secondRulePattern = ruleCards[1].querySelector('textarea') as HTMLTextAreaElement | null
+    expect(secondRuleInputs).toHaveLength(2)
+    expect(secondRulePattern).toBeTruthy()
+    if (secondRuleInputs.length < 2 || !secondRulePattern) return
+
+    await setInputValue(secondRuleInputs[0] as HTMLInputElement, 'account token')
+    await setInputValue(secondRuleInputs[1] as HTMLInputElement, '[ACCOUNT]')
+    await setInputValue(secondRulePattern, 'account-[A-Z0-9]+')
+
+    const saveButton = findButton('Save Project Compliance')
+    expect(saveButton).toBeDefined()
+    if (!saveButton) return
+
+    await act(async () => {
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushPromises()
+
+    expect(projectApiMock.updateProject).toHaveBeenCalledWith('project-1', {
+      name: 'Customer Portal',
+      settings: {
+        redaction_rules: [
+          {
+            name: 'customer id',
+            pattern: 'customer-[0-9]+',
+          },
+          {
+            name: 'account token',
+            pattern: 'account-[A-Z0-9]+',
+            replacement: '[ACCOUNT]',
+          },
+        ],
+      },
+    })
+    expect(container.textContent).toContain('Saved compliance defaults for Customer Portal.')
+  })
+
+  it('blocks saving project compliance when a rule is missing its regex pattern', async () => {
+    await act(async () => {
+      root.render(<SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+
+    await flushPromises()
+    await flushPromises()
+
+    const addRuleButton = findButton('Add Rule')
+    expect(addRuleButton).toBeDefined()
+    if (!addRuleButton) return
+
+    await act(async () => {
+      addRuleButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const projectSection = container.querySelector('#settings-section-projects')
+    expect(projectSection).toBeTruthy()
+    if (!projectSection) return
+
+    const ruleCards = Array.from(projectSection.querySelectorAll('.project-redaction-rule-card'))
+    const secondRuleInputs = ruleCards[1].querySelectorAll('input')
+    expect(secondRuleInputs).toHaveLength(2)
+    if (secondRuleInputs.length < 1) return
+
+    await setInputValue(secondRuleInputs[0] as HTMLInputElement, 'broken rule')
+
+    await flushPromises()
+
+    const saveButton = findButton('Save Project Compliance')
+    expect(saveButton).toBeDefined()
+    if (!saveButton) return
+
+    expect(saveButton.disabled).toBe(true)
+    expect(projectApiMock.updateProject).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('Redaction rule 2 needs a regex pattern.')
+  })
 })
+
+function findButton(label: string) {
+  return Array.from(document.querySelectorAll('button')).find(button => button.textContent?.trim() === label) as HTMLButtonElement | undefined
+}
 
 function findSettingInput(root: Element, label: string) {
   const rows = Array.from(root.querySelectorAll('.setting-row'))
   const row = rows.find(item => item.textContent?.includes(label))
   return row?.querySelector('input') as HTMLInputElement | null
+}
+
+async function setInputValue(element: HTMLInputElement | HTMLTextAreaElement, value: string) {
+  await act(async () => {
+    const prototype = Object.getPrototypeOf(element)
+    const descriptor = Object.getOwnPropertyDescriptor(prototype, 'value')
+    descriptor?.set?.call(element, value)
+    element.dispatchEvent(new Event('input', { bubbles: true }))
+    element.dispatchEvent(new Event('change', { bubbles: true }))
+  })
 }
 
 async function flushPromises() {

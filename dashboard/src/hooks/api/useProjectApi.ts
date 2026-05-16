@@ -1,10 +1,15 @@
 import { useCallback, useMemo } from 'react'
 
-import { Project, Folder } from '../../types'
+import { Project, Folder, ProjectSettings } from '../../types'
 import { request } from '../apiClient'
 
 type DeleteEntityResponse = {
   deleted: string
+}
+
+type ProjectRequest = {
+  name: string
+  settings?: ProjectSettings
 }
 
 function query(params: Record<string, string | undefined>) {
@@ -20,12 +25,12 @@ export function useProjectApi() {
   const listProjects = useCallback(() => request<{ projects: Project[]; count: number }>('/projects'), [])
 
   const createProject = useCallback(
-    (data: { name: string }) => request<Project>('/projects', { method: 'POST', body: JSON.stringify(data) }),
+    (data: ProjectRequest) => request<Project>('/projects', { method: 'POST', body: JSON.stringify(data) }),
     [],
   )
 
   const updateProject = useCallback(
-    (id: string, data: { name: string }) => request<Project>(`/projects/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    (id: string, data: ProjectRequest) => request<Project>(`/projects/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
     [],
   )
 

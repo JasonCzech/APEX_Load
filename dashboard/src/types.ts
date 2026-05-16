@@ -37,8 +37,19 @@ export interface AssignmentRecommendation {
 export interface Project {
   id: string
   name: string
+  settings?: ProjectSettings
   created_at: string
   updated_at: string
+}
+
+export interface RedactionRule {
+  name?: string
+  pattern: string
+  replacement?: string
+}
+
+export interface ProjectSettings {
+  redaction_rules?: RedactionRule[]
 }
 
 export interface Application {
@@ -493,6 +504,9 @@ export interface LiveMetrics {
   timestamp: string
   active_vusers: number
   tps: number
+  target_tps?: number
+  throughput_gap_pct?: number
+  throughput_target_missed?: boolean
   avg_response_ms: number
   error_pct: number
   total_transactions: number
@@ -631,6 +645,9 @@ export interface GroupLiveMetrics {
   transactions: number
   errors: number
   tps: number
+  target_tps?: number
+  throughput_gap_pct?: number
+  throughput_target_missed?: boolean
   avg_response_ms: number
   p50_ms: number
   p90_ms: number

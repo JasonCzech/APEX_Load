@@ -1,6 +1,6 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 
-import { Project } from '../types'
+import { Project, ProjectSettings } from '../types'
 import { useProjectApi } from './api/useProjectApi'
 
 const STORAGE_KEY = 'stormrunner.activeProjectId'
@@ -10,7 +10,7 @@ interface ProjectContextValue {
   activeProject: Project | null
   setActiveProject: (project: Project) => void
   refreshProjects: () => Promise<void>
-  createAndSelectProject: (name: string) => Promise<Project>
+  createAndSelectProject: (project: { name: string; settings?: ProjectSettings } | string) => Promise<Project>
 }
 
 const ProjectContext = createContext<ProjectContextValue | null>(null)
@@ -42,8 +42,9 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     }
   }, [api, activeProject])
 
-  const createAndSelectProject = useCallback(async (name: string) => {
-    const created = await api.createProject({ name })
+  const createAndSelectProject = useCallback(async (project: { name: string; settings?: ProjectSettings } | string) => {
+    const payload = typeof project === 'string' ? { name: project } : project
+    const created = await api.createProject(payload)
     setProjects(prev => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)))
     setActiveProject(created)
     return created
