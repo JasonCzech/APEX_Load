@@ -95,6 +95,7 @@ cp stormrunner.db stormrunner.db.backup
 | PATCH | `/api/v1/tests/{id}/duration` | Adjust duration at runtime |
 | DELETE | `/api/v1/tests/{id}` | Delete a non-active test |
 | GET | `/api/v1/tests/{id}/metrics` | Get current metrics |
+| GET | `/api/v1/tests/{id}/archive/browser-diagnostics` | Download browser evidence bundle |
 
 ### Scripts
 
@@ -240,7 +241,7 @@ Captured browser metrics:
 - `avg_long_task_count`
 - `avg_js_heap_used_mb`
 
-Archived and live browser summaries are exposed through `metrics.browser`, `metrics.browser_by_device`, archive interval summaries, and archive reports.
+Archived and live browser summaries are exposed through `metrics.browser`, `metrics.browser_by_device`, archive interval summaries, and archive reports. Browser evidence bundles can be downloaded from `/api/v1/tests/{id}/archive/browser-diagnostics`; each bundle contains `browser_diagnostics.json` plus captured screenshot and HTML artifacts when those snapshots are available.
 
 **Java-over-HTTP MVP:**
 - Reuses the HTTP transport with the `java_serialized_object_base64` codec.

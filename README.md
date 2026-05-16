@@ -241,6 +241,14 @@ POST   /api/v1/tests/{id}/abort         — Immediate abort
 WS     /api/v1/ws                       — Global WebSocket stream
 ```
 
+**Archives:**
+```
+GET    /api/v1/tests/{id}/archive                    — Download full archive bundle
+GET    /api/v1/tests/{id}/archive/browser-diagnostics — Download browser evidence bundle
+GET    /api/v1/tests/{id}/archive/report             — Get archive report JSON
+GET    /api/v1/tests/{id}/report                     — Get standalone HTML report
+```
+
 **Scripts:**
 ```
 POST   /api/v1/scripts                  — Create script

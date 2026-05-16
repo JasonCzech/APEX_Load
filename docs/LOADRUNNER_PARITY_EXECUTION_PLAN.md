@@ -88,6 +88,9 @@ Goal: make browser failures and performance regressions explorable from one plac
 | B1.4 | Add side-by-side browser run comparison views for device, platform, engine, and action-level metrics | L | B1.2 |
 | B1.5 | Add browser-diagnostics export bundles for support and migration review | M | B1.3 |
 
+Status:
+- B1.5 has a first backend slice implemented through `GET /api/v1/tests/{id}/archive/browser-diagnostics`. The endpoint exports `browser_diagnostics.json` plus screenshot and HTML artifacts captured from archived browser evidence. Remaining B1.5 work is a dashboard download affordance and richer replay-session export parity.
+
 Acceptance criteria:
 - A browser action can be inspected with timing, screenshots, console logs, network evidence, and page context from one UI path
 - Browser archive views include waterfall-style resource diagnostics

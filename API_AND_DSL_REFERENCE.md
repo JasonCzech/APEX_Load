@@ -382,6 +382,9 @@ Response surfaces carrying these summaries:
 - interval summary history records via `browser` and `browser_by_device`
 - archive reports via `overview.browser` and `browser_by_device`
 - archived transaction events via `client_metrics`
+- browser evidence bundles via `GET /api/v1/tests/{id}/archive/browser-diagnostics`
+
+Browser diagnostics downloads are zip files. Each bundle contains `browser_diagnostics.json` as an index plus `screenshots/*.b64` and `html/*.html` artifacts when archived browser snapshots include screenshots or HTML.
 
 Example archive report excerpt:
 

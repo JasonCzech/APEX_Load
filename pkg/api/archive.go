@@ -20,6 +20,7 @@ import (
 )
 
 const archiveSchemaVersion = "stormrunner.archive.v1"
+const browserDiagnosticsSchemaVersion = "stormrunner.browser_diagnostics.v1"
 
 type RunArchiveManifest struct {
 	SchemaVersion                string               `json:"schema_version"`
@@ -254,6 +255,62 @@ type RunArchiveResourcePeaks struct {
 	NetRecvKbps   float64 `json:"net_recv_kbps"`
 	DiskReadKbps  float64 `json:"disk_read_kbps"`
 	DiskWriteKbps float64 `json:"disk_write_kbps"`
+}
+
+type BrowserDiagnosticsBundle struct {
+	SchemaVersion string                     `json:"schema_version"`
+	GeneratedAt   time.Time                  `json:"generated_at"`
+	Manifest      *RunArchiveManifest        `json:"manifest"`
+	Overview      BrowserDiagnosticsOverview `json:"overview"`
+	Events        []BrowserDiagnosticsEvent  `json:"events"`
+}
+
+type BrowserDiagnosticsOverview struct {
+	BrowserTransactions       int64 `json:"browser_transactions"`
+	FailedBrowserTransactions int64 `json:"failed_browser_transactions"`
+	ClientMetricSamples       int64 `json:"client_metric_samples"`
+	ScreenshotArtifacts       int64 `json:"screenshot_artifacts"`
+	HTMLArtifacts             int64 `json:"html_artifacts"`
+	ConsoleEntries            int64 `json:"console_entries"`
+	NetworkEntries            int64 `json:"network_entries"`
+	DOMSnapshots              int64 `json:"dom_snapshots"`
+}
+
+type BrowserDiagnosticsEvent struct {
+	Index          int                        `json:"index"`
+	Timestamp      time.Time                  `json:"timestamp"`
+	Group          string                     `json:"group,omitempty"`
+	ActionName     string                     `json:"action_name,omitempty"`
+	DurationMs     float64                    `json:"duration_ms"`
+	StatusCode     int                        `json:"status_code,omitempty"`
+	Success        bool                       `json:"success"`
+	ErrorMessage   string                     `json:"error_message,omitempty"`
+	PageURL        string                     `json:"page_url,omitempty"`
+	PageTitle      string                     `json:"page_title,omitempty"`
+	ClientMetrics  *protocol.ClientMetrics    `json:"client_metrics,omitempty"`
+	ConsoleEntries []protocol.ConsoleEntry    `json:"console_entries,omitempty"`
+	NetworkEntries []protocol.NetworkEntry    `json:"network_entries,omitempty"`
+	DOMSummary     *protocol.DOMSummary       `json:"dom_summary,omitempty"`
+	Snapshot       *BrowserDiagnosticSnapshot `json:"snapshot,omitempty"`
+	Artifacts      BrowserDiagnosticArtifacts `json:"artifacts,omitempty"`
+
+	screenshotBase64 string
+	html             string
+}
+
+type BrowserDiagnosticSnapshot struct {
+	RequestMethod   string            `json:"request_method,omitempty"`
+	RequestURL      string            `json:"request_url,omitempty"`
+	RequestHeaders  map[string]string `json:"request_headers,omitempty"`
+	RequestBody     string            `json:"request_body,omitempty"`
+	ResponseStatus  int               `json:"response_status,omitempty"`
+	ResponseHeaders map[string]string `json:"response_headers,omitempty"`
+	ResponseBody    string            `json:"response_body,omitempty"`
+}
+
+type BrowserDiagnosticArtifacts struct {
+	ScreenshotFile string `json:"screenshot_file,omitempty"`
+	HTMLFile       string `json:"html_file,omitempty"`
 }
 
 var archiveErrorUUIDPattern = regexp.MustCompile(`\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b`)
@@ -821,6 +878,169 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	}
 
 	return report, nil
+}
+
+func buildRunArchiveBrowserDiagnostics(record *storage.RunArchiveRecord) (*BrowserDiagnosticsBundle, error) {
+	manifest, err := loadRunArchiveManifest(record.ManifestPath)
+	if err != nil {
+		return nil, err
+	}
+	transactions, err := readAllArchiveTransactions(record)
+	if err != nil {
+		return nil, err
+	}
+	bundle := &BrowserDiagnosticsBundle{
+		SchemaVersion: browserDiagnosticsSchemaVersion,
+		GeneratedAt:   time.Now().UTC(),
+		Manifest:      manifest,
+		Events:        make([]BrowserDiagnosticsEvent, 0),
+	}
+	for _, tx := range transactions {
+		if !archiveTransactionHasBrowserDiagnostics(tx) {
+			continue
+		}
+		event := BrowserDiagnosticsEvent{
+			Index:         len(bundle.Events) + 1,
+			Timestamp:     tx.Timestamp,
+			Group:         tx.Group,
+			ActionName:    tx.ActionName,
+			DurationMs:    tx.DurationMs,
+			StatusCode:    tx.StatusCode,
+			Success:       tx.Success,
+			ErrorMessage:  tx.ErrorMessage,
+			ClientMetrics: tx.ClientMetrics,
+		}
+		if tx.ClientMetrics != nil {
+			bundle.Overview.ClientMetricSamples++
+		}
+		if !tx.Success {
+			bundle.Overview.FailedBrowserTransactions++
+		}
+		if snapshot := tx.Snapshot; snapshot != nil {
+			event.PageURL = snapshot.PageURL
+			event.PageTitle = snapshot.PageTitle
+			event.ConsoleEntries = cloneProtocolConsoleEntries(snapshot.ConsoleEntries)
+			event.NetworkEntries = cloneProtocolNetworkEntries(snapshot.NetworkEntries)
+			event.DOMSummary = cloneProtocolDOMSummary(snapshot.DOMSummary)
+			event.Snapshot = &BrowserDiagnosticSnapshot{
+				RequestMethod:   snapshot.RequestMethod,
+				RequestURL:      snapshot.RequestURL,
+				RequestHeaders:  cloneStringMap(snapshot.RequestHeaders),
+				RequestBody:     snapshot.RequestBody,
+				ResponseStatus:  snapshot.ResponseStatus,
+				ResponseHeaders: cloneStringMap(snapshot.ResponseHeaders),
+				ResponseBody:    snapshot.ResponseBody,
+			}
+			event.screenshotBase64 = snapshot.ScreenshotBase64
+			event.html = snapshot.HTML
+		}
+		if event.screenshotBase64 != "" {
+			bundle.Overview.ScreenshotArtifacts++
+		}
+		if event.html != "" {
+			bundle.Overview.HTMLArtifacts++
+		}
+		if len(event.ConsoleEntries) > 0 {
+			bundle.Overview.ConsoleEntries += int64(len(event.ConsoleEntries))
+		}
+		if len(event.NetworkEntries) > 0 {
+			bundle.Overview.NetworkEntries += int64(len(event.NetworkEntries))
+		}
+		if event.DOMSummary != nil {
+			bundle.Overview.DOMSnapshots++
+		}
+		bundle.Overview.BrowserTransactions++
+		bundle.Events = append(bundle.Events, event)
+	}
+	return bundle, nil
+}
+
+func archiveTransactionHasBrowserDiagnostics(tx TransactionEvent) bool {
+	if tx.ClientMetrics != nil {
+		return true
+	}
+	if strings.HasPrefix(strings.ToLower(tx.ActionName), "browser_") {
+		return true
+	}
+	if tx.Snapshot == nil {
+		return false
+	}
+	return tx.Snapshot.PageURL != "" ||
+		tx.Snapshot.PageTitle != "" ||
+		tx.Snapshot.HTML != "" ||
+		tx.Snapshot.ScreenshotBase64 != "" ||
+		len(tx.Snapshot.ConsoleEntries) > 0 ||
+		len(tx.Snapshot.NetworkEntries) > 0 ||
+		tx.Snapshot.DOMSummary != nil
+}
+
+func writeRunArchiveBrowserDiagnosticsZip(bundle *BrowserDiagnosticsBundle, dst io.Writer) error {
+	zipWriter := zip.NewWriter(dst)
+	defer zipWriter.Close()
+
+	for index := range bundle.Events {
+		event := &bundle.Events[index]
+		baseName := fmt.Sprintf("%03d-%s", event.Index, sanitizeFilename(event.ActionName))
+		if event.screenshotBase64 != "" {
+			event.Artifacts.ScreenshotFile = filepath.ToSlash(filepath.Join("screenshots", baseName+".b64"))
+			if err := writeZipString(zipWriter, event.Artifacts.ScreenshotFile, event.screenshotBase64); err != nil {
+				return err
+			}
+		}
+		if event.html != "" {
+			event.Artifacts.HTMLFile = filepath.ToSlash(filepath.Join("html", baseName+".html"))
+			if err := writeZipString(zipWriter, event.Artifacts.HTMLFile, event.html); err != nil {
+				return err
+			}
+		}
+	}
+	indexBytes, err := json.MarshalIndent(bundle, "", "  ")
+	if err != nil {
+		return err
+	}
+	return writeZipBytes(zipWriter, "browser_diagnostics.json", indexBytes)
+}
+
+func writeZipString(zipWriter *zip.Writer, name string, value string) error {
+	return writeZipBytes(zipWriter, name, []byte(value))
+}
+
+func writeZipBytes(zipWriter *zip.Writer, name string, value []byte) error {
+	writer, err := zipWriter.Create(name)
+	if err != nil {
+		return err
+	}
+	_, err = writer.Write(value)
+	return err
+}
+
+func cloneProtocolConsoleEntries(entries []protocol.ConsoleEntry) []protocol.ConsoleEntry {
+	if len(entries) == 0 {
+		return nil
+	}
+	cloned := make([]protocol.ConsoleEntry, len(entries))
+	copy(cloned, entries)
+	return cloned
+}
+
+func cloneProtocolNetworkEntries(entries []protocol.NetworkEntry) []protocol.NetworkEntry {
+	if len(entries) == 0 {
+		return nil
+	}
+	cloned := make([]protocol.NetworkEntry, len(entries))
+	copy(cloned, entries)
+	return cloned
+}
+
+func cloneProtocolDOMSummary(summary *protocol.DOMSummary) *protocol.DOMSummary {
+	if summary == nil {
+		return nil
+	}
+	cloned := *summary
+	if len(summary.VisibleText) > 0 {
+		cloned.VisibleText = append([]string(nil), summary.VisibleText...)
+	}
+	return &cloned
 }
 
 func normalizeArchiveErrorSignature(message string) string {

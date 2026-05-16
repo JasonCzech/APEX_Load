@@ -1,7 +1,10 @@
 package api
 
 import (
+	"archive/zip"
+	"bytes"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -156,6 +159,146 @@ func TestBuildRunArchiveReportAggregatesBrowserMetrics(t *testing.T) {
 	}
 	if report.BrowserByEngine["chromium"] == nil || report.BrowserByEngine["chromium"].AvgLCPMs != 180 {
 		t.Fatalf("chromium summary = %#v, want AvgLCPMs 180", report.BrowserByEngine["chromium"])
+	}
+}
+
+func TestBuildRunArchiveBrowserDiagnosticsExportsEvidence(t *testing.T) {
+	tempDir := t.TempDir()
+	manifest := RunArchiveManifest{
+		SchemaVersion:         archiveSchemaVersion,
+		TestID:                "test-browser-diagnostics",
+		TestName:              "Browser Diagnostics",
+		CreatedAt:             time.Date(2026, time.May, 16, 9, 30, 0, 0, time.UTC),
+		TransactionsFile:      "transactions.jsonl",
+		ResourceSamplesFile:   "resources.jsonl",
+		IntervalSummariesFile: "interval_summaries.jsonl",
+	}
+	manifestPath := filepath.Join(tempDir, "manifest.json")
+	manifestBytes, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatalf("marshal manifest: %v", err)
+	}
+	if err := os.WriteFile(manifestPath, manifestBytes, 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+	transactions := []TransactionEvent{
+		{
+			Timestamp:  manifest.CreatedAt,
+			TestID:     manifest.TestID,
+			TestName:   manifest.TestName,
+			ActionName: "browser_navigate",
+			DurationMs: 250,
+			StatusCode: 200,
+			Success:    true,
+			ClientMetrics: &protocol.ClientMetrics{
+				DeviceProfile: "iphone_15_pro",
+				BrowserEngine: "webkit",
+				FCPMs:         120,
+				LCPMs:         240,
+			},
+			Snapshot: &protocol.ErrorSnapshot{
+				RequestMethod:    "GET",
+				RequestURL:       "https://example.test/home",
+				ResponseStatus:   200,
+				PageURL:          "https://example.test/home",
+				PageTitle:        "Home",
+				HTML:             "<html><title>Home</title></html>",
+				ScreenshotBase64: "c2NyZWVuc2hvdA==",
+				ConsoleEntries:   []protocol.ConsoleEntry{{Level: "log", Text: "ready", Source: "console", Timestamp: manifest.CreatedAt}},
+				NetworkEntries:   []protocol.NetworkEntry{{URL: "https://example.test/app.js", Method: "GET", StatusCode: 200, ResourceType: "script", DurationMs: 12, BytesReceived: 512}},
+				DOMSummary:       &protocol.DOMSummary{Title: "Home", ReadyState: "complete", VisibleText: []string{"Welcome"}},
+			},
+		},
+		{
+			Timestamp:  manifest.CreatedAt.Add(time.Second),
+			TestID:     manifest.TestID,
+			TestName:   manifest.TestName,
+			ActionName: "api_call",
+			DurationMs: 50,
+			Success:    true,
+		},
+	}
+	var txPayload []byte
+	for _, transaction := range transactions {
+		txBytes, err := json.Marshal(transaction)
+		if err != nil {
+			t.Fatalf("marshal transaction: %v", err)
+		}
+		txPayload = append(txPayload, txBytes...)
+		txPayload = append(txPayload, '\n')
+	}
+	if err := os.WriteFile(filepath.Join(tempDir, manifest.TransactionsFile), txPayload, 0o644); err != nil {
+		t.Fatalf("write transactions: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tempDir, manifest.ResourceSamplesFile), nil, 0o644); err != nil {
+		t.Fatalf("write resources: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tempDir, manifest.IntervalSummariesFile), nil, 0o644); err != nil {
+		t.Fatalf("write summaries: %v", err)
+	}
+
+	bundle, err := buildRunArchiveBrowserDiagnostics(&storage.RunArchiveRecord{ArchivePath: tempDir, ManifestPath: manifestPath})
+	if err != nil {
+		t.Fatalf("buildRunArchiveBrowserDiagnostics: %v", err)
+	}
+	if bundle.SchemaVersion != browserDiagnosticsSchemaVersion {
+		t.Fatalf("schema_version = %q, want %q", bundle.SchemaVersion, browserDiagnosticsSchemaVersion)
+	}
+	if bundle.Overview.BrowserTransactions != 1 || bundle.Overview.ClientMetricSamples != 1 {
+		t.Fatalf("unexpected diagnostics overview %#v", bundle.Overview)
+	}
+	if bundle.Overview.ScreenshotArtifacts != 1 || bundle.Overview.HTMLArtifacts != 1 {
+		t.Fatalf("unexpected artifact counts %#v", bundle.Overview)
+	}
+	if bundle.Overview.ConsoleEntries != 1 || bundle.Overview.NetworkEntries != 1 || bundle.Overview.DOMSnapshots != 1 {
+		t.Fatalf("unexpected evidence counts %#v", bundle.Overview)
+	}
+	if len(bundle.Events) != 1 {
+		t.Fatalf("events = %d, want 1", len(bundle.Events))
+	}
+	if bundle.Events[0].Snapshot == nil || bundle.Events[0].Snapshot.RequestURL != "https://example.test/home" {
+		t.Fatalf("unexpected snapshot %#v", bundle.Events[0].Snapshot)
+	}
+
+	var zipBuf bytes.Buffer
+	if err := writeRunArchiveBrowserDiagnosticsZip(bundle, &zipBuf); err != nil {
+		t.Fatalf("writeRunArchiveBrowserDiagnosticsZip: %v", err)
+	}
+	zipReader, err := zip.NewReader(bytes.NewReader(zipBuf.Bytes()), int64(zipBuf.Len()))
+	if err != nil {
+		t.Fatalf("read diagnostics zip: %v", err)
+	}
+	files := map[string]string{}
+	for _, file := range zipReader.File {
+		reader, err := file.Open()
+		if err != nil {
+			t.Fatalf("open zip file %s: %v", file.Name, err)
+		}
+		data, err := io.ReadAll(reader)
+		_ = reader.Close()
+		if err != nil {
+			t.Fatalf("read zip file %s: %v", file.Name, err)
+		}
+		files[file.Name] = string(data)
+	}
+	if files["browser_diagnostics.json"] == "" {
+		t.Fatal("expected browser_diagnostics.json in diagnostics zip")
+	}
+	if files["screenshots/001-browser_navigate.b64"] != "c2NyZWVuc2hvdA==" {
+		t.Fatalf("unexpected screenshot artifact %q", files["screenshots/001-browser_navigate.b64"])
+	}
+	if files["html/001-browser_navigate.html"] != "<html><title>Home</title></html>" {
+		t.Fatalf("unexpected html artifact %q", files["html/001-browser_navigate.html"])
+	}
+	var indexed BrowserDiagnosticsBundle
+	if err := json.Unmarshal([]byte(files["browser_diagnostics.json"]), &indexed); err != nil {
+		t.Fatalf("unmarshal diagnostics index: %v", err)
+	}
+	if indexed.Events[0].Artifacts.ScreenshotFile != "screenshots/001-browser_navigate.b64" {
+		t.Fatalf("unexpected screenshot reference %#v", indexed.Events[0].Artifacts)
+	}
+	if indexed.Events[0].Artifacts.HTMLFile != "html/001-browser_navigate.html" {
+		t.Fatalf("unexpected html reference %#v", indexed.Events[0].Artifacts)
 	}
 }
 

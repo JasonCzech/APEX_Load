@@ -122,6 +122,25 @@ func TestArchiveQueryEndpoints(t *testing.T) {
 		}
 	})
 
+	t.Run("browser diagnostics download", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/archive/browser-diagnostics", nil)
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusOK {
+			t.Fatalf("browser diagnostics status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+		}
+		if got := resp.Header().Get("Content-Type"); !strings.Contains(got, "application/zip") {
+			t.Fatalf("browser diagnostics content type = %q, want application/zip", got)
+		}
+		if got := resp.Header().Get("Content-Disposition"); !strings.Contains(got, "browser-diagnostics.zip") {
+			t.Fatalf("browser diagnostics content disposition = %q, want browser-diagnostics.zip", got)
+		}
+		if resp.Body.Len() == 0 {
+			t.Fatal("expected browser diagnostics download to return zip content")
+		}
+	})
+
 	t.Run("transactions", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/archive/transactions?limit=5&offset=0&action=step-1&success=true&correlation_id=corr-archive-1&dependency_type=http&dependency_target=archive.example.test&soap_operation=CreateOrder", nil)
 		resp := httptest.NewRecorder()

@@ -75,6 +75,34 @@ func (s *Server) handleDownloadRunArchiveArtifact(w http.ResponseWriter, r *http
 	http.ServeFile(w, r, fullPath)
 }
 
+func (s *Server) handleDownloadRunArchiveBrowserDiagnostics(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	test, ok := s.runner.GetTest(id)
+	if !ok {
+		writeError(w, http.StatusNotFound, "test not found")
+		return
+	}
+	record, ok := s.runner.GetRunArchive(id)
+	if !ok {
+		writeError(w, http.StatusNotFound, "archive not found")
+		return
+	}
+	bundle, err := buildRunArchiveBrowserDiagnostics(record)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to build browser diagnostics bundle: "+err.Error())
+		return
+	}
+	filename := fmt.Sprintf("%s-%s-browser-diagnostics.zip", sanitizeFilename(test.Name), id)
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
+	w.Header().Set("Last-Modified", record.CompletedAt.UTC().Format(http.TimeFormat))
+	w.WriteHeader(http.StatusOK)
+	if err := writeRunArchiveBrowserDiagnosticsZip(bundle, w); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to write browser diagnostics bundle: "+err.Error())
+		return
+	}
+}
+
 func (s *Server) handleGetRunArchiveTransactions(w http.ResponseWriter, r *http.Request) {
 	record, ok := s.requireRunArchive(w, r)
 	if !ok {
