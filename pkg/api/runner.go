@@ -53,6 +53,10 @@ type dataPoolPersistence interface {
 	ListDataPoolRows(poolID string) ([]*storage.SharedDataPoolRow, error)
 }
 
+type projectPersistence interface {
+	GetProject(id string) (*storage.Project, error)
+}
+
 type releasePersistence interface {
 	GetRelease(id string) (*storage.Release, error)
 }
@@ -85,6 +89,7 @@ type TestRunner struct {
 	testStore     testPersistence
 	scenarioStore scenarioPersistence
 	dataPoolStore dataPoolPersistence
+	projectStore  projectPersistence
 	releaseStore  releasePersistence
 	historyStore  historyPersistence
 	archiveStore  archivePersistence
@@ -490,6 +495,7 @@ func NewTestRunner(maxTests int, hub *Hub, store storage.Store) *TestRunner {
 		testStore:     store,
 		scenarioStore: store,
 		dataPoolStore: store,
+		projectStore:  store,
 		releaseStore:  store,
 		historyStore:  store,
 		archiveStore:  store,
@@ -838,6 +844,11 @@ func (tr *TestRunner) ReplayScriptDefinition(script *dsl.Script, opts engine.Rep
 	if script == nil {
 		return nil, fmt.Errorf("script is required")
 	}
+	effectiveRedactionRules, err := tr.resolveEffectiveRedactionRules(script.ProjectID, opts.RedactionRules)
+	if err != nil {
+		return nil, err
+	}
+	opts.RedactionRules = effectiveRedactionRules
 	return engine.ReplayScript(context.Background(), script, opts)
 }
 
@@ -1547,6 +1558,15 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 
 	testName := deriveManagedTestName(req.Name, testGroups)
 
+	projectID, err := tr.resolveCreateTestProjectID(req.ProjectID, groups)
+	if err != nil {
+		return nil, err
+	}
+	effectiveRuntimeSettings, err := tr.resolveEffectiveRuntimeSettings(projectID, req.RuntimeSettings)
+	if err != nil {
+		return nil, err
+	}
+
 	if req.ReleaseID == "" && status != "DRAFT" {
 		req.ReleaseID = storage.LegacyReleaseID
 	}
@@ -1559,8 +1579,6 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 	if applicationID == "" && req.ReleaseID != "" {
 		applicationID = storage.LegacyApplicationID
 	}
-	projectID := normalizeProjectID(req.ProjectID)
-
 	test := &ManagedTest{
 		ID:               id,
 		Name:             testName,
@@ -1572,13 +1590,13 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 		FolderID:         req.FolderID,
 		Groups:           testGroups,
 		Assignment:       cloneGeneratorAssignmentSettings(req.Assignment),
-		CapacityAdvisory: tr.estimateCapacityAdvisoryForAssignment(testGroups, totalVUsers, dur, req.ResourceBaseline, req.RuntimeSettings, req.Assignment),
+		CapacityAdvisory: tr.estimateCapacityAdvisoryForAssignment(testGroups, totalVUsers, dur, req.ResourceBaseline, effectiveRuntimeSettings, req.Assignment),
 		ScenarioMode:     scenarioMode,
 		ScriptShakeout:   req.ScriptShakeout,
 		ResourceBaseline: req.ResourceBaseline,
 		StartDelay:       req.StartDelay,
 		GoalConfig:       cloneGoalConfig(req.GoalConfig),
-		RuntimeSettings:  cloneRuntimeSettings(req.RuntimeSettings),
+		RuntimeSettings:  cloneRuntimeSettings(effectiveRuntimeSettings),
 		TotalVUsers:      totalVUsers,
 		Duration:         dur,
 		DurationStr:      req.Duration,
@@ -1800,6 +1818,10 @@ func (tr *TestRunner) compileManagedTestGroupLocked(index int, totalGroups int, 
 		if err := applyRuntimeOverrides(&scriptCopy, effectiveRuntimeSettings); err != nil {
 			return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: apply runtime overrides: %w", index, err)
 		}
+	}
+	effectiveRuntimeSettings, err = tr.resolveEffectiveRuntimeSettings(script.ProjectID, effectiveRuntimeSettings)
+	if err != nil {
+		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: resolve redaction rules: %w", index, err)
 	}
 	redactionConfig, err := buildRuntimeRedactionConfig(effectiveRuntimeSettings)
 	if err != nil {
@@ -3667,6 +3689,74 @@ func buildRuntimeRedactionConfig(runtimeSettings *RuntimeSettingsOverride) (*eng
 		return nil, nil
 	}
 	return engine.NewRedactionConfig(runtimeSettings.RedactionRules)
+}
+
+func cloneRedactionRules(rules []engine.RedactionRule) []engine.RedactionRule {
+	if len(rules) == 0 {
+		return nil
+	}
+	clone := make([]engine.RedactionRule, len(rules))
+	copy(clone, rules)
+	return clone
+}
+
+func (tr *TestRunner) resolveCreateTestProjectID(requestProjectID string, groups []CreateGroupEntry) (string, error) {
+	if requestProjectID != "" {
+		return normalizeProjectID(requestProjectID), nil
+	}
+	projectID := ""
+	for _, group := range groups {
+		script, ok := tr.scripts[group.ScriptID]
+		if !ok {
+			continue
+		}
+		candidate := normalizeProjectID(script.ProjectID)
+		if projectID == "" {
+			projectID = candidate
+			continue
+		}
+		if candidate != projectID {
+			return storage.DefaultProjectID, nil
+		}
+	}
+	return normalizeProjectID(projectID), nil
+}
+
+func (tr *TestRunner) resolveEffectiveRuntimeSettings(projectID string, runtimeSettings *RuntimeSettingsOverride) (*RuntimeSettingsOverride, error) {
+	effective := cloneRuntimeSettings(runtimeSettings)
+	rules, err := tr.resolveEffectiveRedactionRules(projectID, nilIfNoRules(runtimeSettings))
+	if err != nil {
+		return nil, err
+	}
+	if len(rules) == 0 {
+		return effective, nil
+	}
+	if effective == nil {
+		effective = &RuntimeSettingsOverride{}
+	}
+	effective.RedactionRules = rules
+	return effective, nil
+}
+
+func nilIfNoRules(runtimeSettings *RuntimeSettingsOverride) []engine.RedactionRule {
+	if runtimeSettings == nil {
+		return nil
+	}
+	return runtimeSettings.RedactionRules
+}
+
+func (tr *TestRunner) resolveEffectiveRedactionRules(projectID string, explicit []engine.RedactionRule) ([]engine.RedactionRule, error) {
+	merged := cloneRedactionRules(explicit)
+	if tr.projectStore == nil {
+		return merged, nil
+	}
+	projectID = normalizeProjectID(projectID)
+	project, err := tr.projectStore.GetProject(projectID)
+	if err != nil || project == nil || len(project.Settings.RedactionRules) == 0 {
+		return merged, nil
+	}
+	merged = append(merged, cloneRedactionRules(project.Settings.RedactionRules)...)
+	return merged, nil
 }
 
 func cloneGoalConfig(config *GoalConfig) *GoalConfig {

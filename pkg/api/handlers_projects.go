@@ -8,17 +8,21 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jasonczech/stormrunner/pkg/engine"
 	"github.com/jasonczech/stormrunner/pkg/storage"
 )
+
+type projectRequest struct {
+	Name     string                  `json:"name"`
+	Settings storage.ProjectSettings `json:"settings,omitempty"`
+}
 
 func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 	if s.store == nil {
 		writeError(w, http.StatusServiceUnavailable, "project storage is not configured")
 		return
 	}
-	var req struct {
-		Name string `json:"name"`
-	}
+	var req projectRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
@@ -27,8 +31,12 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "project name is required")
 		return
 	}
+	if err := validateProjectSettings(req.Settings); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	now := time.Now()
-	project := &storage.Project{ID: uuid.New().String(), Name: strings.TrimSpace(req.Name), CreatedAt: now, UpdatedAt: now}
+	project := &storage.Project{ID: uuid.New().String(), Name: strings.TrimSpace(req.Name), Settings: req.Settings, CreatedAt: now, UpdatedAt: now}
 	if err := s.store.SaveProject(project); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -79,9 +87,7 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "project not found")
 		return
 	}
-	var req struct {
-		Name string `json:"name"`
-	}
+	var req projectRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
@@ -90,12 +96,27 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "project name is required")
 		return
 	}
+	if err := validateProjectSettings(req.Settings); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	project.Name = strings.TrimSpace(req.Name)
+	project.Settings = req.Settings
 	if err := s.store.SaveProject(project); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, project)
+}
+
+func validateProjectSettings(settings storage.ProjectSettings) error {
+	if len(settings.RedactionRules) == 0 {
+		return nil
+	}
+	if _, err := engine.NewRedactionConfig(settings.RedactionRules); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {

@@ -171,6 +171,7 @@ func (s *SQLiteStore) init() error {
 		`CREATE TABLE IF NOT EXISTS projects (
 			id TEXT PRIMARY KEY,
 			name TEXT NOT NULL,
+			settings_json TEXT,
 			created_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL
 		)`,
@@ -333,6 +334,7 @@ func (s *SQLiteStore) init() error {
 		query string
 		name  string
 	}{
+		{`ALTER TABLE projects ADD COLUMN settings_json TEXT`, "projects.settings_json"},
 		{`ALTER TABLE scripts ADD COLUMN project_id TEXT REFERENCES projects(id)`, "scripts.project_id"},
 		{`ALTER TABLE scripts ADD COLUMN folder_id TEXT REFERENCES folders(id)`, "scripts.folder_id"},
 		{`ALTER TABLE tests ADD COLUMN project_id TEXT REFERENCES projects(id)`, "tests.project_id"},
@@ -1057,25 +1059,35 @@ func (s *SQLiteStore) SaveProject(project *Project) error {
 		project.CreatedAt = time.Now()
 	}
 	project.UpdatedAt = time.Now()
-	_, err := s.db.Exec(`INSERT INTO projects (id, name, created_at, updated_at)
-		VALUES (?, ?, ?, ?)
-		ON CONFLICT(id) DO UPDATE SET name=excluded.name, updated_at=excluded.updated_at`,
-		project.ID, project.Name, project.CreatedAt, project.UpdatedAt)
+	settingsJSON, err := json.Marshal(project.Settings)
+	if err != nil {
+		return fmt.Errorf("marshal project settings: %w", err)
+	}
+	_, err = s.db.Exec(`INSERT INTO projects (id, name, settings_json, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET name=excluded.name, settings_json=excluded.settings_json, updated_at=excluded.updated_at`,
+		project.ID, project.Name, string(settingsJSON), project.CreatedAt, project.UpdatedAt)
 	return err
 }
 
 func (s *SQLiteStore) GetProject(id string) (*Project, error) {
 	var project Project
-	err := s.db.QueryRow(`SELECT id, name, created_at, updated_at FROM projects WHERE id = ?`, id).Scan(
-		&project.ID, &project.Name, &project.CreatedAt, &project.UpdatedAt)
+	var settingsJSON string
+	err := s.db.QueryRow(`SELECT id, name, COALESCE(settings_json, ''), created_at, updated_at FROM projects WHERE id = ?`, id).Scan(
+		&project.ID, &project.Name, &settingsJSON, &project.CreatedAt, &project.UpdatedAt)
 	if err != nil {
 		return nil, err
+	}
+	if settingsJSON != "" && settingsJSON != "null" {
+		if err := json.Unmarshal([]byte(settingsJSON), &project.Settings); err != nil {
+			return nil, fmt.Errorf("unmarshal project settings: %w", err)
+		}
 	}
 	return &project, nil
 }
 
 func (s *SQLiteStore) ListProjects() ([]*Project, error) {
-	rows, err := s.db.Query(`SELECT id, name, created_at, updated_at FROM projects ORDER BY name ASC`)
+	rows, err := s.db.Query(`SELECT id, name, COALESCE(settings_json, ''), created_at, updated_at FROM projects ORDER BY name ASC`)
 	if err != nil {
 		return nil, err
 	}
@@ -1083,8 +1095,14 @@ func (s *SQLiteStore) ListProjects() ([]*Project, error) {
 	var projects []*Project
 	for rows.Next() {
 		var project Project
-		if err := rows.Scan(&project.ID, &project.Name, &project.CreatedAt, &project.UpdatedAt); err != nil {
+		var settingsJSON string
+		if err := rows.Scan(&project.ID, &project.Name, &settingsJSON, &project.CreatedAt, &project.UpdatedAt); err != nil {
 			return nil, err
+		}
+		if settingsJSON != "" && settingsJSON != "null" {
+			if err := json.Unmarshal([]byte(settingsJSON), &project.Settings); err != nil {
+				return nil, fmt.Errorf("unmarshal project settings: %w", err)
+			}
 		}
 		projects = append(projects, &project)
 	}

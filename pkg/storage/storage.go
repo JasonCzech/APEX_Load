@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/stormrunner/pkg/dsl"
+	"github.com/jasonczech/stormrunner/pkg/engine"
 )
 
 const DefaultProjectID = "unassigned"
@@ -159,10 +160,15 @@ type ScenarioDataPoolBinding struct {
 }
 
 type Project struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID        string          `json:"id"`
+	Name      string          `json:"name"`
+	Settings  ProjectSettings `json:"settings,omitempty"`
+	CreatedAt time.Time       `json:"created_at"`
+	UpdatedAt time.Time       `json:"updated_at"`
+}
+
+type ProjectSettings struct {
+	RedactionRules []engine.RedactionRule `json:"redaction_rules,omitempty"`
 }
 
 type Folder struct {
@@ -201,7 +207,7 @@ type TestRecord struct {
 	ScriptShakeout   bool       `json:"script_shakeout,omitempty"`
 	ResourceBaseline bool       `json:"resource_baseline,omitempty"`
 	StartDelay       string     `json:"start_delay,omitempty"`
-	Assignment       any        `json:"assignment,omitempty"`       // JSON blob
+	Assignment       any        `json:"assignment,omitempty"` // JSON blob
 	TotalVUsers      int        `json:"total_vusers"`
 	Duration         int64      `json:"duration_ns"`
 	StartTime        time.Time  `json:"start_time"`

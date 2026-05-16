@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/stormrunner/pkg/dsl"
+	"github.com/jasonczech/stormrunner/pkg/engine"
 )
 
 func TestSQLiteStoreSaveScriptPreservesMetadata(t *testing.T) {
@@ -86,9 +87,23 @@ func TestSQLiteStoreProjectsFoldersAndFiltering(t *testing.T) {
 		t.Fatalf("expected default project, got %#v", projects)
 	}
 
-	project := &Project{ID: "project-1", Name: "Payments", CreatedAt: time.Now()}
+	project := &Project{
+		ID:   "project-1",
+		Name: "Payments",
+		Settings: ProjectSettings{
+			RedactionRules: []engine.RedactionRule{{Name: "customer id", Pattern: `customer-[0-9]+`}},
+		},
+		CreatedAt: time.Now(),
+	}
 	if err := store.SaveProject(project); err != nil {
 		t.Fatalf("SaveProject returned error: %v", err)
+	}
+	roundTripProject, err := store.GetProject(project.ID)
+	if err != nil {
+		t.Fatalf("GetProject returned error: %v", err)
+	}
+	if len(roundTripProject.Settings.RedactionRules) != 1 || roundTripProject.Settings.RedactionRules[0].Pattern != `customer-[0-9]+` {
+		t.Fatalf("expected persisted project settings, got %#v", roundTripProject.Settings)
 	}
 	folder := &Folder{ID: "folder-1", ProjectID: project.ID, Name: "Checkout", Category: "scripts", CreatedAt: time.Now()}
 	if err := store.SaveFolder(folder); err != nil {

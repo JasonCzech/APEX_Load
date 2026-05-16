@@ -27,6 +27,7 @@ type metricsStoreSpy struct {
 	deletedTestIDs        []string
 	listedScripts         []*dsl.Script
 	listedTests           []*storage.TestRecord
+	projectsByID          map[string]*storage.Project
 	historyByTestID       map[string][]any
 	archiveByTestID       map[string]*storage.RunArchiveRecord
 }
@@ -109,10 +110,31 @@ func (s *metricsStoreSpy) SaveDataPoolRow(row *storage.SharedDataPoolRow) error 
 func (s *metricsStoreSpy) ListDataPoolRows(poolID string) ([]*storage.SharedDataPoolRow, error) {
 	return nil, nil
 }
-func (s *metricsStoreSpy) DeleteDataPoolRow(id string) error          { return nil }
-func (s *metricsStoreSpy) SaveProject(project *storage.Project) error { return nil }
+func (s *metricsStoreSpy) DeleteDataPoolRow(id string) error { return nil }
+func (s *metricsStoreSpy) SaveProject(project *storage.Project) error {
+	if s.projectsByID == nil {
+		s.projectsByID = make(map[string]*storage.Project)
+	}
+	clone := *project
+	if len(project.Settings.RedactionRules) > 0 {
+		clone.Settings.RedactionRules = append([]engine.RedactionRule(nil), project.Settings.RedactionRules...)
+	}
+	s.projectsByID[project.ID] = &clone
+	return nil
+}
 func (s *metricsStoreSpy) GetProject(id string) (*storage.Project, error) {
-	return nil, nil
+	if s.projectsByID == nil {
+		return nil, nil
+	}
+	project, ok := s.projectsByID[id]
+	if !ok {
+		return nil, nil
+	}
+	clone := *project
+	if len(project.Settings.RedactionRules) > 0 {
+		clone.Settings.RedactionRules = append([]engine.RedactionRule(nil), project.Settings.RedactionRules...)
+	}
+	return &clone, nil
 }
 func (s *metricsStoreSpy) ListProjects() ([]*storage.Project, error) { return nil, nil }
 func (s *metricsStoreSpy) DeleteProject(id string) error             { return nil }
@@ -343,6 +365,50 @@ func TestCreateTestPreservesRuntimeSettingsAndGroups(t *testing.T) {
 	}
 	if test.StartDelay != "30s" {
 		t.Fatalf("expected start delay 30s, got %q", test.StartDelay)
+	}
+}
+
+func TestCreateTestInheritsProjectRedactionRules(t *testing.T) {
+	hub := NewHub()
+	store := &metricsStoreSpy{projectsByID: map[string]*storage.Project{
+		"project-1": {
+			ID:   "project-1",
+			Name: "Payments",
+			Settings: storage.ProjectSettings{
+				RedactionRules: []engine.RedactionRule{{Name: "customer id", Pattern: `customer-[0-9]+`}},
+			},
+		},
+	}}
+	runner := NewTestRunner(1, hub, store)
+	runner.StoreScript(&dsl.Script{
+		ID:        "script-project-redaction",
+		Name:      "Project Redaction Script",
+		Protocol:  "http",
+		Version:   "1.0.0",
+		ProjectID: "project-1",
+		Actions:   []dsl.Action{{Name: "lookup", Type: "GET", Target: "/orders/customer-1234"}},
+	})
+
+	test, err := runner.CreateTest(CreateTestRequest{
+		Name:     "Project Rules",
+		Duration: "30s",
+		ScriptID: "script-project-redaction",
+		VUsers:   3,
+	})
+	if err != nil {
+		t.Fatalf("CreateTest returned error: %v", err)
+	}
+	if test.ProjectID != "project-1" {
+		t.Fatalf("project id = %q, want project-1", test.ProjectID)
+	}
+	if test.RuntimeSettings == nil || len(test.RuntimeSettings.RedactionRules) != 1 {
+		t.Fatalf("runtime settings = %#v, want inherited project redaction rule", test.RuntimeSettings)
+	}
+	if len(test.groupSpecs) != 1 || test.groupSpecs[0].RedactionConfig == nil {
+		t.Fatalf("group specs = %#v, want redaction config", test.groupSpecs)
+	}
+	if got := test.groupSpecs[0].RedactionConfig.ScrubText("customer-1234 ok"); got != "[REDACTED] ok" {
+		t.Fatalf("scrubbed text = %q, want inherited project rule applied", got)
 	}
 }
 
