@@ -13,6 +13,7 @@ import NewTestPage from './components/NewTestPage'
 import MonitoringPage from './components/MonitoringPage'
 import SettingsPage from './components/SettingsPage'
 import { appendTelemetryDiagnostic } from './components/monitoringTelemetryDiagnostics'
+import AuthGate from './components/AuthGate'
 import './App.css'
 import './components/Pages.css'
 
@@ -167,8 +168,10 @@ function AppShell() {
 
 export default function App() {
   return (
-    <ApplicationProvider>
-      <AppShell />
-    </ApplicationProvider>
+    <AuthGate>
+      <ApplicationProvider>
+        <AppShell />
+      </ApplicationProvider>
+    </AuthGate>
   )
 }

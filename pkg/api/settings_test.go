@@ -97,8 +97,8 @@ func TestSystemSettingsAPIAndPersistence(t *testing.T) {
 	}
 
 	getResp2 := httptest.NewRecorder()
-	getReq.Header.Set("X-Auth-Request-User", "root")
-	getReq.Header.Set("X-Stormrunner-Roles", RoleSystemAdmin)
+	getReq.Header.Set("X-Test-User", "root")
+	getReq.Header.Set("X-Test-Roles", RoleSystemAdmin)
 	server.mux.ServeHTTP(getResp2, getReq)
 	if getResp2.Code != http.StatusOK {
 		t.Fatalf("second GET status = %d, want %d", getResp2.Code, http.StatusOK)

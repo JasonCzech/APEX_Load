@@ -936,6 +936,21 @@ export interface DashboardAuthSettings {
   project_roles_header: string
 }
 
+export interface DashboardAuthenticatedUser {
+  subject: string
+  display_name?: string
+  email?: string
+  global_roles?: string[]
+  project_roles?: Record<string, string[]>
+}
+
+export interface DashboardAuthStatus {
+  enabled: boolean
+  mode: DashboardAuthSettings['mode']
+  authenticated: boolean
+  user?: DashboardAuthenticatedUser
+}
+
 export interface CapacityResourceEstimate {
   cpu_cores: number
   memory_mb: number
