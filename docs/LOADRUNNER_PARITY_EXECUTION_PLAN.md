@@ -90,7 +90,7 @@ Goal: make browser failures and performance regressions explorable from one plac
 
 Status:
 - B1.1 has a first Chromium-backed implementation. Browser client metrics now carry `browser_process_cpu_pct` and `browser_process_mem_mb`, and live/archive/report summaries aggregate them as `avg_browser_process_cpu_pct` and `avg_browser_process_mem_mb`. WebKit process attribution remains open until the Playwright runtime exposes stable process IDs.
-- B1.5 has a first backend slice implemented through `GET /api/v1/tests/{id}/archive/browser-diagnostics`. The endpoint exports `browser_diagnostics.json` plus screenshot and HTML artifacts captured from archived browser evidence. Remaining B1.5 work is a dashboard download affordance and richer replay-session export parity.
+- B1.5 has a first backend slice implemented through `GET /api/v1/tests/{id}/archive/browser-diagnostics`. The endpoint exports `browser_diagnostics.json` plus screenshot and HTML artifacts captured from archived browser evidence. The dashboard now exposes archived browser-diagnostics downloads, and the script editor can export both the current browser replay session JSON and a richer replay ZIP bundle with manifest, session/report JSON, per-event request/response snapshots, console and network logs, HTML captures, DOM summaries, and screenshots for support review.
 
 Acceptance criteria:
 - A browser action can be inspected with timing, screenshots, console logs, network evidence, and page context from one UI path

@@ -9,6 +9,14 @@ import { formatSnapshotRequestSection, formatSnapshotResponseSection } from '../
 import { formatSOAPFaultSummary } from './soapFaultUtils'
 import ScriptEditor from './ScriptEditor'
 
+const { downloadTextFileMock } = vi.hoisted(() => ({
+  downloadTextFileMock: vi.fn(),
+}))
+
+const { downloadBlobMock } = vi.hoisted(() => ({
+  downloadBlobMock: vi.fn(),
+}))
+
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 const apiMock = {
@@ -32,6 +40,52 @@ vi.mock('../hooks/useApi', () => ({
 vi.mock('../hooks/useWebSocket', () => ({
   useWebSocket: vi.fn(),
 }))
+
+vi.mock('./scriptEditorUtils', async () => {
+  const actual = await vi.importActual<typeof import('./scriptEditorUtils')>('./scriptEditorUtils')
+  return {
+    ...actual,
+    downloadTextFile: downloadTextFileMock,
+  }
+})
+
+vi.mock('../utils/fileUtils', async () => {
+  const actual = await vi.importActual<typeof import('../utils/fileUtils')>('../utils/fileUtils')
+  return {
+    ...actual,
+    downloadBlob: downloadBlobMock,
+  }
+})
+
+const zipDecoder = new TextDecoder()
+
+async function readStoredZipEntries(blob: Blob) {
+  const bytes = new Uint8Array(await blob.arrayBuffer())
+  const entries = new Map<string, Uint8Array>()
+  let offset = 0
+
+  while (offset + 30 <= bytes.length) {
+    const view = new DataView(bytes.buffer, bytes.byteOffset + offset)
+    const signature = view.getUint32(0, true)
+    if (signature !== 0x04034b50) {
+      break
+    }
+
+    const compressedSize = view.getUint32(18, true)
+    const fileNameLength = view.getUint16(26, true)
+    const extraFieldLength = view.getUint16(28, true)
+    const fileNameStart = offset + 30
+    const fileNameEnd = fileNameStart + fileNameLength
+    const dataStart = fileNameEnd + extraFieldLength
+    const dataEnd = dataStart + compressedSize
+    const fileName = zipDecoder.decode(bytes.slice(fileNameStart, fileNameEnd))
+
+    entries.set(fileName, bytes.slice(dataStart, dataEnd))
+    offset = dataEnd
+  }
+
+  return entries
+}
 
 describe('ScriptEditor', () => {
   let container: HTMLDivElement
@@ -101,6 +155,8 @@ describe('ScriptEditor', () => {
       value: { writeText },
     })
     writeText.mockReset()
+    downloadTextFileMock.mockReset()
+    downloadBlobMock.mockReset()
     apiMock.getScript.mockResolvedValue({ script: initialScript })
     apiMock.createScript.mockResolvedValue({ id: 'script-1' })
     apiMock.updateScript.mockResolvedValue({ id: 'script-1' })
@@ -683,6 +739,219 @@ describe('ScriptEditor', () => {
 
     expect(container.textContent).toContain('Browser replay started with warnings.')
     expect(container.textContent).toContain('WebKit controller host is missing the Playwright browser cache warmup.')
+  })
+
+  it('exports the current browser replay session as JSON', async () => {
+    apiMock.startDraftBrowserReplaySession.mockResolvedValueOnce({
+      replay_session_id: 'browser-replay-1',
+      session: {
+        id: 'browser-replay-1',
+        group: 'Checkout Flow-browser-replay',
+        protocol: 'browser',
+        status: 'running',
+        started_at: '2026-05-14T20:00:00Z',
+        events: [],
+      },
+    })
+
+    const browserScript: ScriptDefinition = {
+      ...initialScript,
+      protocol: 'browser',
+      config: {
+        ...initialScript.config,
+        browser: {
+          engine: 'chromium',
+          headless: true,
+        },
+      },
+      actions: [
+        {
+          name: 'Open Home',
+          type: 'browser_navigate',
+          target: '/',
+          selector: '',
+          value: '',
+          capture: { screenshot: false, full_page: false, html: false },
+          think_time_after: true,
+        },
+      ],
+    }
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={browserScript} />)
+    })
+
+    const replayButton = Array.from(container.querySelectorAll('button')).find(button =>
+      button.textContent?.trim() === 'Run Browser Replay',
+    )
+    expect(replayButton).toBeDefined()
+    if (!replayButton) {
+      return
+    }
+
+    await act(async () => {
+      replayButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    const exportButton = Array.from(container.querySelectorAll('button')).find(button =>
+      button.textContent?.trim() === 'Download Replay JSON',
+    )
+    expect(exportButton).toBeDefined()
+    if (!exportButton) {
+      return
+    }
+
+    await act(async () => {
+      exportButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(downloadTextFileMock).toHaveBeenCalledTimes(1)
+    const [content, filename] = downloadTextFileMock.mock.calls[0]
+    expect(filename).toBe('checkout-flow-browser-replay-1-browser-replay.json')
+    const parsed = JSON.parse(content)
+    expect(parsed.schema_version).toBe('stormrunner.browser_replay_export.v1')
+    expect(parsed.replay_session_id).toBe('browser-replay-1')
+    expect(parsed.script).toMatchObject({
+      name: 'Checkout Flow',
+      protocol: 'browser',
+    })
+    expect(parsed.replay_options).toMatchObject({
+      group_name: 'Checkout Flow-replay',
+      ignore_think_time: true,
+      start_paused: false,
+      variables: {},
+    })
+    expect(parsed.session).toMatchObject({
+      id: 'browser-replay-1',
+      status: 'running',
+    })
+    expect(parsed.report).toMatchObject({
+      group: 'Checkout Flow-replay',
+      protocol: 'browser',
+    })
+    expect(container.textContent).toContain('Exported browser replay session JSON.')
+  })
+
+  it('exports the current browser replay session as a ZIP bundle', async () => {
+    apiMock.startDraftBrowserReplaySession.mockResolvedValueOnce({
+      replay_session_id: 'browser-replay-1',
+      session: {
+        id: 'browser-replay-1',
+        group: 'Checkout Flow-browser-replay',
+        protocol: 'browser',
+        status: 'completed',
+        started_at: '2026-05-14T20:00:00Z',
+        completed_at: '2026-05-14T20:00:03Z',
+        events: [
+          {
+            phase: 'action',
+            action_name: 'Open Home',
+            action_type: 'browser_navigate',
+            target: '/',
+            success: true,
+            started_at: '2026-05-14T20:00:00Z',
+            completed_at: '2026-05-14T20:00:01Z',
+            duration_ms: 125.5,
+            screenshot_base64: btoa('png-bytes'),
+            html: '<html><body>Home</body></html>',
+            console_entries: [{ level: 'info', text: 'Loaded home page', source: 'console' }],
+            network_entries: [{ method: 'GET', status_code: 200, url: 'https://example.test/', duration_ms: 32.4 }],
+            dom_summary: { title: 'Home', ready_state: 'complete', visible_text: ['Home'] },
+            snapshot: {
+              request_method: 'GET',
+              request_url: 'https://example.test/',
+              response_status: 200,
+              response_headers: { 'content-type': 'text/html' },
+              response_body: '<html><body>Home</body></html>',
+            },
+          },
+        ],
+      },
+    })
+
+    const browserScript: ScriptDefinition = {
+      ...initialScript,
+      protocol: 'browser',
+      config: {
+        ...initialScript.config,
+        browser: {
+          engine: 'chromium',
+          headless: true,
+        },
+      },
+      actions: [
+        {
+          name: 'Open Home',
+          type: 'browser_navigate',
+          target: '/',
+          selector: '',
+          value: '',
+          capture: { screenshot: true, full_page: false, html: true },
+          think_time_after: true,
+        },
+      ],
+    }
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={browserScript} />)
+    })
+
+    const replayButton = Array.from(container.querySelectorAll('button')).find(button =>
+      button.textContent?.trim() === 'Run Browser Replay',
+    )
+    expect(replayButton).toBeDefined()
+    if (!replayButton) {
+      return
+    }
+
+    await act(async () => {
+      replayButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    const exportButton = Array.from(container.querySelectorAll('button')).find(button =>
+      button.textContent?.trim() === 'Download Replay ZIP',
+    )
+    expect(exportButton).toBeDefined()
+    if (!exportButton) {
+      return
+    }
+
+    await act(async () => {
+      exportButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(downloadBlobMock).toHaveBeenCalledTimes(1)
+    const [blob, filename] = downloadBlobMock.mock.calls[0]
+    expect(blob).toBeInstanceOf(Blob)
+    expect(filename).toBe('checkout-flow-browser-replay-1-browser-replay.zip')
+
+    const entries = await readStoredZipEntries(blob)
+    expect(entries.has('checkout-flow-browser-replay-1-browser-replay/manifest.json')).toBe(true)
+    expect(entries.has('checkout-flow-browser-replay-1-browser-replay/replay-export.json')).toBe(true)
+    expect(entries.has('checkout-flow-browser-replay-1-browser-replay/session.json')).toBe(true)
+    expect(entries.has('checkout-flow-browser-replay-1-browser-replay/events/01-open-home/event.json')).toBe(true)
+    expect(entries.has('checkout-flow-browser-replay-1-browser-replay/events/01-open-home/request.txt')).toBe(true)
+    expect(entries.has('checkout-flow-browser-replay-1-browser-replay/events/01-open-home/response.txt')).toBe(true)
+    expect(entries.has('checkout-flow-browser-replay-1-browser-replay/events/01-open-home/page.html')).toBe(true)
+    expect(entries.has('checkout-flow-browser-replay-1-browser-replay/events/01-open-home/screenshot.png')).toBe(true)
+
+    const manifest = JSON.parse(zipDecoder.decode(entries.get('checkout-flow-browser-replay-1-browser-replay/manifest.json')))
+    expect(manifest.schema_version).toBe('stormrunner.browser_replay_bundle.v1')
+    expect(manifest.event_count).toBe(1)
+
+    const eventJson = JSON.parse(zipDecoder.decode(entries.get('checkout-flow-browser-replay-1-browser-replay/events/01-open-home/event.json')))
+    expect(eventJson.action_name).toBe('Open Home')
+    expect(eventJson.snapshot.request_url).toBe('https://example.test/')
+
+    expect(zipDecoder.decode(entries.get('checkout-flow-browser-replay-1-browser-replay/events/01-open-home/console.txt'))).toContain('Loaded home page')
+    expect(zipDecoder.decode(entries.get('checkout-flow-browser-replay-1-browser-replay/events/01-open-home/network.txt'))).toContain('https://example.test/')
+    expect(zipDecoder.decode(entries.get('checkout-flow-browser-replay-1-browser-replay/events/01-open-home/page.html'))).toContain('Home')
+    expect(zipDecoder.decode(entries.get('checkout-flow-browser-replay-1-browser-replay/events/01-open-home/screenshot.png'))).toBe('png-bytes')
+    expect(container.textContent).toContain('Exported browser replay bundle ZIP.')
   })
 
   it('renders replay validation warnings returned on failed browser replay start', async () => {

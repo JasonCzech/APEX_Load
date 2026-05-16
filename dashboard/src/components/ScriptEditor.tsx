@@ -25,6 +25,7 @@ import {
   formatSnapshotRequestSection,
   formatSnapshotResponseSection,
 } from '../utils/snapshotFormatUtils'
+import { createZipBlob, downloadBlob, type ZipFileEntry } from '../utils/fileUtils'
 import {
   EMPTY_ACTION,
   EMPTY_BROWSER_ACTION,
@@ -94,6 +95,15 @@ function formatBrowserDeviceProfileLabel(profile: BrowserDeviceProfileOption) {
   return profile.engine === 'webkit' ? `${profile.name} (WebKit)` : profile.name
 }
 
+function sanitizeDownloadName(value: string | undefined, fallback: string) {
+  const normalized = (value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+  return normalized || fallback
+}
+
 function normalizeWarnings(messages?: string[]) {
   if (!Array.isArray(messages)) return []
   return Array.from(new Set(messages.map(message => message.trim()).filter(Boolean)))
@@ -109,6 +119,15 @@ function hasStructuredReplaySnapshot(snapshot?: ReplaySnapshot | null) {
     snapshot?.response_headers ||
     snapshot?.response_body,
   )
+}
+
+function decodeBase64Bytes(value: string): Uint8Array {
+  const decoded = atob(value)
+  const bytes = new Uint8Array(decoded.length)
+  for (let index = 0; index < decoded.length; index += 1) {
+    bytes[index] = decoded.charCodeAt(index)
+  }
+  return bytes
 }
 
 interface ReplayOptionsState {
@@ -1315,6 +1334,179 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
     }
   }
 
+  const handleDownloadBrowserReplayExport = () => {
+    if (!isBrowserScript || !replayReport) return
+
+    const replaySessionId = activeReplaySessionId || browserReplaySession?.id
+    const payload = {
+      schema_version: 'stormrunner.browser_replay_export.v1',
+      exported_at: new Date().toISOString(),
+      replay_session_id: replaySessionId,
+      script: {
+        id: scriptId || undefined,
+        name: script.name,
+        project_id: script.project_id || projectId,
+        protocol: script.protocol,
+      },
+      replay_options: {
+        group_name: replayReport.group || replayOptions.groupName || undefined,
+        ignore_think_time: replayOptions.ignoreThinkTime,
+        start_paused: replayOptions.startPaused,
+        variables: replaySeedVariables,
+      },
+      session: browserReplaySession,
+      report: replayReport,
+    }
+
+    const scriptBase = sanitizeDownloadName(script.name, 'script')
+    const replayBase = sanitizeDownloadName(replaySessionId || replayReport.group || 'browser-replay', 'browser-replay')
+    downloadTextFile(JSON.stringify(payload, null, 2), `${scriptBase}-${replayBase}-browser-replay.json`)
+    setError('')
+    setSuccess('Exported browser replay session JSON.')
+  }
+
+  const handleDownloadBrowserReplayBundle = () => {
+    if (!isBrowserScript || !replayReport) return
+
+    const replaySessionId = activeReplaySessionId || browserReplaySession?.id
+    const exportedAt = new Date().toISOString()
+    const exportPayload = {
+      schema_version: 'stormrunner.browser_replay_export.v1',
+      exported_at: exportedAt,
+      replay_session_id: replaySessionId,
+      script: {
+        id: scriptId || undefined,
+        name: script.name,
+        project_id: script.project_id || projectId,
+        protocol: script.protocol,
+      },
+      replay_options: {
+        group_name: replayReport.group || replayOptions.groupName || undefined,
+        ignore_think_time: replayOptions.ignoreThinkTime,
+        start_paused: replayOptions.startPaused,
+        variables: replaySeedVariables,
+      },
+      session: browserReplaySession,
+      report: replayReport,
+    }
+    const replayEvents = replayReport.events.length >= (browserReplaySession?.events?.length || 0)
+      ? replayReport.events
+      : browserReplaySession?.events || []
+    const scriptBase = sanitizeDownloadName(script.name, 'script')
+    const replayBase = sanitizeDownloadName(replaySessionId || replayReport.group || 'browser-replay', 'browser-replay')
+    const bundleBase = `${scriptBase}-${replayBase}-browser-replay`
+    const eventNumberWidth = Math.max(2, String(Math.max(replayEvents.length, 1)).length)
+    const entries: ZipFileEntry[] = [
+      {
+        name: `${bundleBase}/manifest.json`,
+        content: JSON.stringify({
+          schema_version: 'stormrunner.browser_replay_bundle.v1',
+          exported_at: exportedAt,
+          replay_session_id: replaySessionId,
+          group_name: replayReport.group,
+          status: browserReplaySession?.status || (replayReport.success ? 'completed' : 'failed'),
+          success: replayReport.success,
+          event_count: replayEvents.length,
+          includes_session: Boolean(browserReplaySession),
+          includes_report: true,
+        }, null, 2),
+      },
+      {
+        name: `${bundleBase}/replay-export.json`,
+        content: JSON.stringify(exportPayload, null, 2),
+      },
+      {
+        name: `${bundleBase}/script.json`,
+        content: JSON.stringify(script, null, 2),
+      },
+      {
+        name: `${bundleBase}/seed-variables.json`,
+        content: JSON.stringify(replaySeedVariables, null, 2),
+      },
+      {
+        name: `${bundleBase}/report.json`,
+        content: JSON.stringify(replayReport, null, 2),
+      },
+    ]
+
+    if (browserReplaySession) {
+      entries.push({
+        name: `${bundleBase}/session.json`,
+        content: JSON.stringify(browserReplaySession, null, 2),
+      })
+    }
+
+    replayEvents.forEach((event, index) => {
+      const eventBase = `${bundleBase}/events/${String(index + 1).padStart(eventNumberWidth, '0')}-${sanitizeDownloadName(event.action_name || event.action_type, 'event')}`
+      const replayConsoleEntries = event.console_entries || event.snapshot?.console_entries
+      const replayNetworkEntries = event.network_entries || event.snapshot?.network_entries
+      const replayHTML = event.html || event.snapshot?.html
+      const replayScreenshotBase64 = event.screenshot_base64 || event.snapshot?.screenshot_base64
+      const replayDOMSummary = event.dom_summary || event.snapshot?.dom_summary
+
+      entries.push({
+        name: `${eventBase}/event.json`,
+        content: JSON.stringify(event, null, 2),
+      })
+
+      if (hasStructuredReplaySnapshot(event.snapshot)) {
+        entries.push(
+          {
+            name: `${eventBase}/snapshot.json`,
+            content: JSON.stringify(event.snapshot, null, 2),
+          },
+          {
+            name: `${eventBase}/request.txt`,
+            content: formatSnapshotRequestSection(event.snapshot),
+          },
+          {
+            name: `${eventBase}/response.txt`,
+            content: formatSnapshotResponseSection(event.snapshot),
+          },
+        )
+      }
+
+      if (replayDOMSummary) {
+        entries.push({
+          name: `${eventBase}/dom-summary.json`,
+          content: JSON.stringify(replayDOMSummary, null, 2),
+        })
+      }
+
+      if (replayConsoleEntries?.length) {
+        entries.push({
+          name: `${eventBase}/console.txt`,
+          content: formatConsoleEntries(replayConsoleEntries),
+        })
+      }
+
+      if (replayNetworkEntries?.length) {
+        entries.push({
+          name: `${eventBase}/network.txt`,
+          content: formatNetworkEntries(replayNetworkEntries),
+        })
+      }
+
+      if (replayHTML) {
+        entries.push({
+          name: `${eventBase}/page.html`,
+          content: replayHTML,
+        })
+      }
+
+      if (replayScreenshotBase64) {
+        entries.push({
+          name: `${eventBase}/screenshot.png`,
+          content: decodeBase64Bytes(replayScreenshotBase64),
+        })
+      }
+    })
+
+    downloadBlob(createZipBlob(entries), `${bundleBase}.zip`)
+    setError('')
+    setSuccess('Exported browser replay bundle ZIP.')
+  }
+
   const toggleJsonMode = () => {
     if (!jsonMode) {
       setJsonText(JSON.stringify({ script }, null, 2))
@@ -2050,6 +2242,16 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
                   </label>
                 </div>
                 <div className="replay-panel-actions" style={{ marginTop: 12, justifyContent: 'flex-end' }}>
+                  {isBrowserScript && replayReport && (
+                    <button className="btn btn-sm btn-ghost" onClick={handleDownloadBrowserReplayBundle}>
+                      Download Replay ZIP
+                    </button>
+                  )}
+                  {isBrowserScript && replayReport && (
+                    <button className="btn btn-sm btn-ghost" onClick={handleDownloadBrowserReplayExport}>
+                      Download Replay JSON
+                    </button>
+                  )}
                   {isBrowserScript && activeReplaySessionId && (
                     <button className="btn btn-sm btn-ghost" onClick={handlePauseResumeReplay} disabled={!replaying || !browserReplaySession || browserReplaySession.status === 'completed' || browserReplaySession.status === 'failed' || browserReplaySession.status === 'stopped'}>
                       {isReplayPaused ? 'Resume Replay' : 'Pause Replay'}
