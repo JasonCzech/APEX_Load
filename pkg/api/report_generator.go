@@ -194,6 +194,55 @@ var runArchiveReportTemplate = template.Must(template.New("run-archive-report").
       color: var(--muted);
       font-size: 13px;
     }
+    @page {
+      size: auto;
+      margin: 12mm;
+    }
+    @media print {
+      :root {
+        --bg: #ffffff;
+        --surface: #ffffff;
+        --line: #c9c9c9;
+      }
+      body {
+        background: #ffffff;
+        color: #111111;
+        font-size: 11pt;
+      }
+      main {
+        max-width: none;
+        margin: 0;
+        padding: 0;
+      }
+      .hero,
+      .card,
+      .metric,
+      table {
+        box-shadow: none;
+        border-radius: 0;
+      }
+      .hero,
+      section,
+      table,
+      tr {
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+      thead {
+        display: table-header-group;
+      }
+      tfoot {
+        display: table-footer-group;
+      }
+      .eyebrow,
+      .metric-label,
+      th {
+        color: #333333;
+      }
+      .footer {
+        margin-top: 18px;
+      }
+    }
     @media (max-width: 640px) {
       main { padding: 20px 14px 32px; }
       h1 { font-size: 28px; }
@@ -286,6 +335,37 @@ var runArchiveReportTemplate = template.Must(template.New("run-archive-report").
             <td>{{formatPercent .ErrorPct}}</td>
             <td>{{.TotalTx}}</td>
             <td>{{.TotalErrors}}</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </section>
+    {{end}}
+
+    {{if .Report.ErrorPatterns}}
+    <section>
+      <h2>Error Patterns</h2>
+      <p class="section-copy">Grouped failure signatures derived from archived transaction errors. The first retained snapshot stays attached to each cluster.</p>
+      <table>
+        <thead>
+          <tr>
+            <th>Pattern</th>
+            <th>Occurrences</th>
+            <th>First Seen</th>
+            <th>Latest Seen</th>
+            <th>Actions</th>
+            <th>Snapshot</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .Report.ErrorPatterns}}
+          <tr>
+            <td>{{.Sample}}</td>
+            <td>{{.Count}}</td>
+            <td>{{formatTime .FirstSeen}}</td>
+            <td>{{formatTime .LatestSeen}}</td>
+            <td>{{if .Actions}}{{join .Actions}}{{else}}n/a{{end}}</td>
+            <td>{{if .Snapshot}}retained{{else}}n/a{{end}}</td>
           </tr>
           {{end}}
         </tbody>

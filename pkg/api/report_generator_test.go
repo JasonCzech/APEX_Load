@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jasonczech/stormrunner/pkg/protocol"
 )
 
 func TestRenderRunArchiveHTMLReportIncludesBrowserAndSOAPSections(t *testing.T) {
@@ -44,6 +46,15 @@ func TestRenderRunArchiveHTMLReportIncludesBrowserAndSOAPSections(t *testing.T) 
 			P95Ms:        410.5,
 			TotalTx:      120,
 			TotalErrors:  4,
+		}},
+		ErrorPatterns: []RunArchiveErrorPattern{{
+			Signature:  "soap fault: request validation failed for order #",
+			Sample:     "soap fault: Request validation failed for order 1001",
+			Count:      2,
+			FirstSeen:  now,
+			LatestSeen: now.Add(2 * time.Minute),
+			Actions:    []string{"CreateOrder"},
+			Snapshot:   &protocol.ErrorSnapshot{RequestURL: "https://soap.example.test/orders"},
 		}},
 		ResourcePeaks: RunArchiveResourcePeaks{
 			CPUProcessPct: 64.2,
@@ -96,7 +107,13 @@ func TestRenderRunArchiveHTMLReportIncludesBrowserAndSOAPSections(t *testing.T) 
 	body := string(html)
 	checks := []string{
 		"Checkout Flow",
+		"@media print",
+		"@page",
+		"break-inside: avoid",
 		"Summary Timeline",
+		"Error Patterns",
+		"soap fault: Request validation failed for order 1001",
+		"retained",
 		"2026-05-15T12:30:00Z",
 		"410.5",
 		"Browser Metrics",

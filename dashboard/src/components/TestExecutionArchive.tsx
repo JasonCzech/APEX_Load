@@ -441,6 +441,41 @@ export default function TestExecutionArchive({
             </div>
           )}
 
+          {archiveReport.error_patterns && archiveReport.error_patterns.length > 0 && (
+            <div className="tx-section archive-summary-section">
+              <div className="archive-section-header">
+                <div>
+                  <h3 className="chart-title">Error Patterns</h3>
+                  <p className="archive-section-copy">Grouped failure signatures with the first retained snapshot preserved for each cluster.</p>
+                </div>
+              </div>
+              <table className="tx-table">
+                <thead>
+                  <tr>
+                    <th>Pattern</th>
+                    <th>Occurrences</th>
+                    <th>First Seen</th>
+                    <th>Latest Seen</th>
+                    <th>Actions</th>
+                    <th>Snapshot</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {archiveReport.error_patterns.map(pattern => (
+                    <tr key={`${pattern.signature}-${pattern.first_seen}`}>
+                      <td className="tx-name">{pattern.sample}</td>
+                      <td>{pattern.count}</td>
+                      <td>{formatArchiveTimestamp(pattern.first_seen)}</td>
+                      <td>{formatArchiveTimestamp(pattern.latest_seen)}</td>
+                      <td>{pattern.actions && pattern.actions.length > 0 ? pattern.actions.join(', ') : 'n/a'}</td>
+                      <td>{pattern.snapshot ? 'retained' : 'n/a'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
           {archiveReport.overview.browser && renderBrowserSummary(
             archiveReport.overview.browser,
             archiveReport.browser_by_device,

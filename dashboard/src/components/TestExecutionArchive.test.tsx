@@ -130,6 +130,15 @@ describe('TestExecutionArchive', () => {
       total_transactions: 1,
       total_errors: 1,
     }],
+    error_patterns: [{
+      signature: 'soap fault: request validation failed for order #',
+      sample: 'soap fault: Request validation failed for order 1001',
+      count: 2,
+      first_seen: '2026-05-14T20:00:10Z',
+      latest_seen: '2026-05-14T20:00:30Z',
+      actions: ['CreateOrder'],
+      snapshot: { request_url: 'https://soap.example.test/orders' },
+    }],
     soap_fault_timeline: [],
     soap_payload_timeline: [],
     browser_by_engine: {
@@ -278,6 +287,10 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('2026-05-14 20:00Z')
     expect(container.textContent).toContain('120.0 ms')
     expect(container.textContent).toContain('Run Provenance')
+    expect(container.textContent).toContain('Error Patterns')
+    expect(container.textContent).toContain('soap fault: Request validation failed for order 1001')
+    expect(container.textContent).toContain('CreateOrder')
+    expect(container.textContent).toContain('retained')
     expect(container.textContent).toContain('goal_oriented · 1 VUsers · 1m')
     expect(container.textContent).toContain('project-1 / release-7 / scenario-9')
     expect(container.textContent).toContain('Shakeout Enabled · Baseline Enabled')

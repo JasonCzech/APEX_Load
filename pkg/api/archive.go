@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -148,6 +149,7 @@ type transactionEventFilter struct {
 type RunArchiveReport struct {
 	Manifest            *RunArchiveManifest                    `json:"manifest"`
 	Overview            RunArchiveOverview                     `json:"overview"`
+	ErrorPatterns       []RunArchiveErrorPattern               `json:"error_patterns,omitempty"`
 	SummaryTimeline     []RunArchiveSummaryPoint               `json:"summary_timeline,omitempty"`
 	ByAction            map[string]RunArchiveActionStats       `json:"by_action"`
 	BySOAPOperation     map[string]RunArchiveActionStats       `json:"by_soap_operation,omitempty"`
@@ -169,6 +171,16 @@ type RunArchiveSummaryPoint struct {
 	P95Ms        float64   `json:"p95_ms"`
 	TotalTx      int64     `json:"total_transactions"`
 	TotalErrors  int64     `json:"total_errors"`
+}
+
+type RunArchiveErrorPattern struct {
+	Signature  string                  `json:"signature"`
+	Sample     string                  `json:"sample"`
+	Count      int64                   `json:"count"`
+	FirstSeen  time.Time               `json:"first_seen"`
+	LatestSeen time.Time               `json:"latest_seen"`
+	Actions    []string                `json:"actions,omitempty"`
+	Snapshot   *protocol.ErrorSnapshot `json:"snapshot,omitempty"`
 }
 
 type RunArchiveSOAPFaultTimelineBucket struct {
@@ -243,6 +255,10 @@ type RunArchiveResourcePeaks struct {
 	DiskReadKbps  float64 `json:"disk_read_kbps"`
 	DiskWriteKbps float64 `json:"disk_write_kbps"`
 }
+
+var archiveErrorUUIDPattern = regexp.MustCompile(`\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b`)
+var archiveErrorNumberPattern = regexp.MustCompile(`\b\d+\b`)
+var archiveErrorWhitespacePattern = regexp.MustCompile(`\s+`)
 
 type runArchiveWriter struct {
 	mu              sync.Mutex
@@ -606,6 +622,8 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	}
 	faultTimelineBuckets := make(map[time.Time]*RunArchiveSOAPFaultTimelineBucket)
 	payloadTimelineBuckets := make(map[time.Time]*RunArchiveSOAPPayloadTimelineBucket)
+	errorPatterns := make(map[string]*RunArchiveErrorPattern)
+	errorPatternActions := make(map[string]map[string]struct{})
 
 	var totalDuration float64
 	for index, tx := range transactions {
@@ -613,6 +631,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 		totalDuration += tx.DurationMs
 		if !tx.Success {
 			report.Overview.Errors++
+			mergeArchiveErrorPattern(errorPatterns, errorPatternActions, tx)
 		}
 		if index == 0 || tx.DurationMs < report.Overview.MinResponseMs {
 			report.Overview.MinResponseMs = tx.DurationMs
@@ -672,6 +691,28 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	if report.Overview.Transactions > 0 {
 		report.Overview.AvgResponseMs = totalDuration / float64(report.Overview.Transactions)
 		report.Overview.ErrorPct = float64(report.Overview.Errors) / float64(report.Overview.Transactions) * 100
+	}
+	if len(errorPatterns) > 0 {
+		report.ErrorPatterns = make([]RunArchiveErrorPattern, 0, len(errorPatterns))
+		for signature, pattern := range errorPatterns {
+			if pattern == nil {
+				continue
+			}
+			if actions := errorPatternActions[signature]; len(actions) > 0 {
+				pattern.Actions = make([]string, 0, len(actions))
+				for action := range actions {
+					pattern.Actions = append(pattern.Actions, action)
+				}
+				sort.Strings(pattern.Actions)
+			}
+			report.ErrorPatterns = append(report.ErrorPatterns, *pattern)
+		}
+		sort.Slice(report.ErrorPatterns, func(left, right int) bool {
+			if report.ErrorPatterns[left].Count == report.ErrorPatterns[right].Count {
+				return report.ErrorPatterns[left].FirstSeen.Before(report.ErrorPatterns[right].FirstSeen)
+			}
+			return report.ErrorPatterns[left].Count > report.ErrorPatterns[right].Count
+		})
 	}
 	finalizeReportBrowserMetrics(report.Overview.Browser)
 	for _, metrics := range report.BrowserByEngine {
@@ -780,6 +821,61 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	}
 
 	return report, nil
+}
+
+func normalizeArchiveErrorSignature(message string) string {
+	normalized := strings.TrimSpace(strings.ToLower(message))
+	if normalized == "" {
+		return "request failed"
+	}
+	normalized = archiveErrorUUIDPattern.ReplaceAllString(normalized, "<id>")
+	normalized = archiveErrorNumberPattern.ReplaceAllString(normalized, "#")
+	normalized = archiveErrorWhitespacePattern.ReplaceAllString(normalized, " ")
+	return strings.TrimSpace(normalized)
+}
+
+func archiveErrorPatternSource(tx TransactionEvent) string {
+	if message := strings.TrimSpace(tx.ErrorMessage); message != "" {
+		return message
+	}
+	if tx.StatusCode > 0 {
+		return fmt.Sprintf("request failed with status %d", tx.StatusCode)
+	}
+	return "request failed"
+}
+
+func mergeArchiveErrorPattern(patterns map[string]*RunArchiveErrorPattern, actions map[string]map[string]struct{}, tx TransactionEvent) {
+	source := archiveErrorPatternSource(tx)
+	signature := normalizeArchiveErrorSignature(source)
+	pattern, ok := patterns[signature]
+	if !ok {
+		pattern = &RunArchiveErrorPattern{
+			Signature:  signature,
+			Sample:     source,
+			FirstSeen:  tx.Timestamp,
+			LatestSeen: tx.Timestamp,
+		}
+		if tx.Snapshot != nil {
+			pattern.Snapshot = tx.Snapshot
+		}
+		patterns[signature] = pattern
+	}
+	pattern.Count++
+	if pattern.FirstSeen.IsZero() || (!tx.Timestamp.IsZero() && tx.Timestamp.Before(pattern.FirstSeen)) {
+		pattern.FirstSeen = tx.Timestamp
+	}
+	if tx.Timestamp.After(pattern.LatestSeen) {
+		pattern.LatestSeen = tx.Timestamp
+	}
+	if pattern.Snapshot == nil && tx.Snapshot != nil {
+		pattern.Snapshot = tx.Snapshot
+	}
+	if tx.ActionName != "" {
+		if actions[signature] == nil {
+			actions[signature] = make(map[string]struct{})
+		}
+		actions[signature][tx.ActionName] = struct{}{}
+	}
 }
 
 func archiveSOAPOperation(tx TransactionEvent) string {

@@ -219,6 +219,18 @@ export interface RunArchiveProvenance {
   }>
 }
 
+export interface RunArchiveErrorPattern {
+  signature: string
+  sample: string
+  count: number
+  first_seen: string
+  latest_seen: string
+  actions?: string[]
+  snapshot?: {
+    request_url?: string
+  }
+}
+
 export interface TestSummary {
   id: string
   name: string
@@ -485,6 +497,7 @@ export interface RunArchiveSummaryPoint {
 export interface RunArchiveReport {
   manifest: RunArchiveManifest
   overview: RunArchiveOverview
+  error_patterns?: RunArchiveErrorPattern[]
   summary_timeline?: RunArchiveSummaryPoint[]
   by_action: Record<string, RunArchiveActionStats>
   by_soap_operation?: Record<string, RunArchiveActionStats>
