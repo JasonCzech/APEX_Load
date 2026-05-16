@@ -48,6 +48,7 @@ type SampleImportOptionsAction =
   | { type: 'reset' }
 
 interface Props {
+  projectId?: string
   onImported?: (script: ImportedScript) => void
   onEdit?: (script: ScriptDefinition) => void
   onClose?: () => void
@@ -221,7 +222,7 @@ function sampleImportOptionsReducer(state: SampleImportOptions, action: SampleIm
   }
 }
 
-export default function SampleScriptImport({ onImported, onEdit, onClose, preset = 'default' }: Props) {
+export default function SampleScriptImport({ projectId, onImported, onEdit, onClose, preset = 'default' }: Props) {
   const api = useApi()
   const primaryFileRef = useRef<HTMLInputElement>(null)
   const secondaryFileRef = useRef<HTMLInputElement>(null)
@@ -423,7 +424,7 @@ export default function SampleScriptImport({ onImported, onEdit, onClose, preset
     setMessageError('')
     try {
       await saveTask.run(async () => {
-        await api.createScript(reviewedScript)
+        await api.createScript(reviewedScript, projectId)
         return true
       })
       onImported?.(reviewedScript)

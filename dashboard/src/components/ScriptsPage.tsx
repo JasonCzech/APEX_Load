@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { StoredScript, TestSummary } from '../types'
 import { useApi } from '../hooks/useApi'
+import { useProject } from '../hooks/useProject'
 import ScriptCreateOptions from './ScriptCreateOptions'
 import ScriptsAuthoringSurface from './ScriptsAuthoringSurface'
 import ScriptsLibraryTable from './ScriptsLibraryTable'
@@ -15,14 +16,15 @@ interface Props {
 
 export default function ScriptsPage({ initialMode = 'list', initialEditId, onSelectScenario }: Props) {
   const api = useApi()
+  const { activeProject } = useProject()
   const [scripts, setScripts] = useState<StoredScript[]>([])
 
   const refresh = useCallback(async () => {
     try {
-      const res = await api.listScripts()
+      const res = await api.listScripts(activeProject?.id)
       setScripts(res.scripts || [])
     } catch { /* API not available */ }
-  }, [api])
+  }, [api, activeProject?.id])
 
   const {
     authoringState,
@@ -81,6 +83,8 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
         draftScript={authoringState.draftScript}
         editingId={authoringState.editingId}
         editingScript={authoringState.editingScript}
+        projectId={activeProject?.id}
+        activeProject={activeProject}
         onSaved={handleSaved}
         onOpenLibrary={openLibrary}
         onOpenCreateOptions={openCreateOptions}

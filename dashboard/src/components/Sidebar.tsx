@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { type WebSocketConnectionState } from '../hooks/useWebSocket'
-import { Application, DashboardAuthStatus, Release } from '../types'
+import { Application, DashboardAuthStatus, Project, Release } from '../types'
 import ProjectModal from './ProjectModal'
 import './Sidebar.css'
 
@@ -11,6 +11,10 @@ interface Props {
   onNavigate: (page: NavPage) => void
   connectionState: WebSocketConnectionState
   authStatus?: DashboardAuthStatus
+  projects?: Project[]
+  activeProject?: Project | null
+  onProjectChange?: (project: Project) => void
+  onCreateProject?: (name: string) => Promise<Project>
   applications?: Application[]
   releases?: Release[]
   activeApplication?: Application | null
@@ -103,6 +107,10 @@ export default function Sidebar({
   onNavigate,
   connectionState,
   authStatus,
+  projects = [],
+  activeProject,
+  onProjectChange,
+  onCreateProject,
   applications = [],
   releases = [],
   activeApplication,
@@ -113,7 +121,9 @@ export default function Sidebar({
 }: Props) {
   const [collapsed, setCollapsed] = useState(false)
   const [projectOpen, setProjectOpen] = useState(false)
+  const [applicationOpen, setApplicationOpen] = useState(false)
   const [showProjectModal, setShowProjectModal] = useState(false)
+  const [showApplicationModal, setShowApplicationModal] = useState(false)
   const connectionClass = connectionState === 'connected' ? 'connected' : connectionState === 'connecting' ? 'connecting' : 'disconnected'
   const connectionLabel = connectionState === 'connected' ? 'Live' : connectionState === 'connecting' ? 'Connecting' : 'Disconnected'
   const identityName = formatIdentityName(authStatus)
@@ -122,9 +132,15 @@ export default function Sidebar({
   const identityTitle = formatIdentityTitle(authStatus, identityMeta)
 
   const handleNewProject = async (name: string) => {
+    if (!onCreateProject) return
+    await onCreateProject(name)
+    setProjectOpen(false)
+  }
+
+  const handleNewApplication = async (name: string) => {
     if (!onCreateApplication) return
     await onCreateApplication(name)
-    setProjectOpen(false)
+    setApplicationOpen(false)
   }
 
   return (
@@ -140,6 +156,53 @@ export default function Sidebar({
         <button
           className="project-selector"
           onClick={() => setProjectOpen(!projectOpen)}
+          title={collapsed ? activeProject?.name || 'Project' : undefined}
+        >
+          <span className="project-icon">◫</span>
+          {!collapsed && (
+            <>
+              <span className="project-name">{activeProject?.name || 'Project'}</span>
+              <span className="project-chevron">⌄</span>
+            </>
+          )}
+        </button>
+        {projectOpen && !collapsed && (
+          <div className="project-menu">
+            <div className="project-menu-list">
+              {projects.map(project => (
+                <button
+                  key={project.id}
+                  className={`project-menu-item ${activeProject?.id === project.id ? 'active' : ''}`}
+                  onClick={() => {
+                    onProjectChange?.(project)
+                    setProjectOpen(false)
+                  }}
+                >
+                  {project.name}
+                </button>
+              ))}
+            </div>
+            <button className="project-menu-action" onClick={() => setShowProjectModal(true)}>+ New Project</button>
+            <button
+              className="project-menu-action muted"
+              onClick={() => {
+                if (typeof window !== 'undefined') {
+                  window.localStorage.setItem('stormrunner.settings.focusSection', 'projects')
+                }
+                setProjectOpen(false)
+                onNavigate('settings')
+              }}
+            >
+              Manage Projects
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div className="sidebar-project">
+        <button
+          className="project-selector"
+          onClick={() => setApplicationOpen(!applicationOpen)}
           title={collapsed ? activeApplication?.name || 'Application' : undefined}
         >
           <span className="project-icon">▣</span>
@@ -150,7 +213,7 @@ export default function Sidebar({
             </>
           )}
         </button>
-        {projectOpen && !collapsed && (
+        {applicationOpen && !collapsed && (
           <div className="project-menu">
             <div className="project-menu-list">
               {applications.map(application => (
@@ -159,7 +222,7 @@ export default function Sidebar({
                   className={`project-menu-item ${activeApplication?.id === application.id ? 'active' : ''}`}
                   onClick={() => {
                     onApplicationChange?.(application)
-                    setProjectOpen(false)
+                    setApplicationOpen(false)
                   }}
                 >
                   {application.name}
@@ -174,7 +237,7 @@ export default function Sidebar({
                     className={`project-menu-item ${activeRelease?.id === release.id ? 'active' : ''}`}
                     onClick={() => {
                       onReleaseChange?.(release)
-                      setProjectOpen(false)
+                      setApplicationOpen(false)
                     }}
                   >
                     ↳ {release.name}
@@ -182,14 +245,14 @@ export default function Sidebar({
                 ))}
               </div>
             )}
-            <button className="project-menu-action" onClick={() => setShowProjectModal(true)}>+ New Application</button>
+            <button className="project-menu-action" onClick={() => setShowApplicationModal(true)}>+ New Application</button>
             <button
               className="project-menu-action muted"
               onClick={() => {
                 if (typeof window !== 'undefined') {
                   window.localStorage.setItem('stormrunner.settings.focusSection', 'applications')
                 }
-                setProjectOpen(false)
+                setApplicationOpen(false)
                 onNavigate('settings')
               }}
             >
@@ -247,9 +310,16 @@ export default function Sidebar({
       </div>
       {showProjectModal && (
         <ProjectModal
-          title="New Application"
+          title="New Project"
           onClose={() => setShowProjectModal(false)}
           onSubmit={handleNewProject}
+        />
+      )}
+      {showApplicationModal && (
+        <ProjectModal
+          title="New Application"
+          onClose={() => setShowApplicationModal(false)}
+          onSubmit={handleNewApplication}
         />
       )}
     </aside>

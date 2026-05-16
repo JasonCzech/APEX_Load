@@ -1,4 +1,5 @@
 import { type ScriptDefinition } from '../types/scripts'
+import { Project } from '../types'
 import ScriptEditor from './ScriptEditor'
 import LoadRunnerImport from './LoadRunnerImport'
 import JMeterImport from './JMeterImport'
@@ -12,6 +13,8 @@ interface Props {
   draftScript: ScriptDefinition | null
   editingId: string | null
   editingScript: ScriptDefinition | null
+  projectId?: string
+  activeProject?: Project | null
   onSaved: () => void
   onOpenLibrary: () => void
   onOpenCreateOptions: () => void
@@ -24,6 +27,8 @@ export default function ScriptsAuthoringSurface({
   draftScript,
   editingId,
   editingScript,
+  projectId,
+  activeProject,
   onSaved,
   onOpenLibrary,
   onOpenCreateOptions,
@@ -32,25 +37,25 @@ export default function ScriptsAuthoringSurface({
 }: Props) {
   switch (subView) {
     case 'create':
-      return <div className="page"><ScriptEditor initialScript={draftScript} onSave={onSaved} onClose={onOpenLibrary} /></div>
+      return <div className="page"><ScriptEditor initialScript={draftScript} projectId={projectId} onSave={onSaved} onClose={onOpenLibrary} /></div>
     case 'edit':
-      return <div className="page"><ScriptEditor scriptId={editingId} initialScript={editingScript} onSave={onSaved} onClose={onOpenLibrary} /></div>
+      return <div className="page"><ScriptEditor scriptId={editingId} initialScript={editingScript} projectId={projectId} onSave={onSaved} onClose={onOpenLibrary} /></div>
     case 'import':
-      return <div className="page"><LoadRunnerImport onImported={onImported} onEdit={onEditDraft} onClose={onOpenLibrary} /></div>
+      return <div className="page"><LoadRunnerImport projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenLibrary} /></div>
     case 'jmeter-import':
       return <div className="page"><JMeterImport onImported={onImported} onEdit={onEditDraft} onClose={onOpenLibrary} /></div>
     case 'recorder':
       return (
         <div className="page">
           <button className="btn btn-secondary" onClick={onOpenCreateOptions} style={{ alignSelf: 'flex-start' }}>Back to Create Script</button>
-          <RecordingStudio onImported={onImported} onEdit={onEditDraft} />
+          <RecordingStudio activeProject={activeProject} onImported={onImported} onEdit={onEditDraft} />
         </div>
       )
     case 'sample':
       return (
         <div className="page">
           <button className="btn btn-secondary" onClick={onOpenCreateOptions} style={{ alignSelf: 'flex-start' }}>Back to Create Script</button>
-          <SampleScriptImport onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />
+          <SampleScriptImport projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />
         </div>
       )
     case 'java-http-import':

@@ -102,6 +102,13 @@ function buildScriptQuery(projectId?: string, folderId?: string | null) {
   return suffix ? `?${suffix}` : ''
 }
 
+function buildScenarioQuery(projectId?: string) {
+  if (!projectId) return ''
+  const query = new URLSearchParams()
+  query.set('project_id', projectId)
+  return `?${query.toString()}`
+}
+
 export function useScriptApi() {
   const listScripts = useCallback(
     (projectId?: string, folderId?: string | null) =>
@@ -301,7 +308,7 @@ export function useScriptApi() {
     [],
   )
 
-  const listScenarios = useCallback(() => request<ScenarioListResponse>('/scenarios'), [])
+  const listScenarios = useCallback((projectId?: string) => request<ScenarioListResponse>(`/scenarios${buildScenarioQuery(projectId)}`), [])
 
   const createScenario = useCallback(
     (data: ScenarioUpsertRequest) => request<StoredScenario>('/scenarios', { method: 'POST', body: JSON.stringify(data) }),

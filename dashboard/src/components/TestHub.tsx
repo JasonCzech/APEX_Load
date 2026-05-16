@@ -1,6 +1,7 @@
 import { Fragment, memo, useCallback, useEffect, useMemo, useState } from 'react'
 import { DraftCapacityEstimate, ScenarioDataPoolBinding, SharedDataPool, StoredScenario, StoredScript, TestSummary } from '../types'
 import { useApi } from '../hooks/useApi'
+import { useProject } from '../hooks/useProject'
 import { getErrorMessage } from '../utils/errorUtils'
 import './TestHub.css'
 import { buildCreateTestPayload, buildScenarioUpsertPayload } from './scenarioPayloadUtils'
@@ -104,6 +105,7 @@ function SortIndicator({ active, direction }: { active: boolean, direction: 'asc
 
 function TestHub({ onSelectTest }: Props) {
   const api = useApi()
+  const { activeProject } = useProject()
   const [scenarios, setScenarios] = useState<StoredScenario[]>([])
   const [scripts, setScripts] = useState<StoredScript[]>([])
   const [dataPools, setDataPools] = useState<SharedDataPool[]>([])
@@ -124,17 +126,20 @@ function TestHub({ onSelectTest }: Props) {
 
   const refresh = useCallback(async () => {
     try {
-      const [scenarioRes, scriptRes, dataPoolRes] = await Promise.all([api.listScenarios(), api.listScripts(), api.listDataPools()])
+      const [scenarioRes, scriptRes, dataPoolRes] = await Promise.all([api.listScenarios(activeProject?.id), api.listScripts(activeProject?.id), api.listDataPools()])
       const nextScenarios = scenarioRes.scenarios || []
       const nextScripts = scriptRes.scripts || []
       setScenarios(nextScenarios)
       setScripts(nextScripts)
       setDataPools(dataPoolRes.data_pools || [])
-      setForm(prev => ({ ...prev, script_id: prev.script_id || nextScripts[0]?.id || '' }))
+      setForm(prev => ({
+        ...prev,
+        script_id: nextScripts.some(script => script.id === prev.script_id) ? prev.script_id : nextScripts[0]?.id || '',
+      }))
     } catch (err: unknown) {
       setError(getErrorMessage(err, 'Unable to load scenarios'))
     }
-  }, [api])
+  }, [activeProject?.id, api])
 
   useEffect(() => { refresh() }, [refresh])
 

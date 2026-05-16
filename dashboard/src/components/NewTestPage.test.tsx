@@ -18,6 +18,12 @@ vi.mock('../hooks/useApi', () => ({
   useApi: () => apiMock,
 }))
 
+vi.mock('../hooks/useProject', () => ({
+  useProject: () => ({
+    activeProject: { id: 'project-1', name: 'Checkout', created_at: '', updated_at: '' },
+  }),
+}))
+
 describe('NewTestPage', () => {
   let container: HTMLDivElement
   let root: Root
@@ -84,6 +90,8 @@ describe('NewTestPage', () => {
     })
 
     await flushPromises()
+
+    expect(apiMock.listScenarios).toHaveBeenCalledWith('project-1')
 
     const duplicateKeyWarning = consoleErrorSpy.mock.calls.some(([message]) =>
       typeof message === 'string' && message.includes('Encountered two children with the same key'),

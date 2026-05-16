@@ -15,6 +15,7 @@ import SettingsPage from './components/SettingsPage'
 import { appendTelemetryDiagnostic } from './components/monitoringTelemetryDiagnostics'
 import AuthGate from './components/AuthGate'
 import { useAuthStatus } from './hooks/useAuthStatus'
+import { ProjectProvider, useProject } from './hooks/useProject'
 import './App.css'
 import './components/Pages.css'
 
@@ -93,6 +94,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
 
   const { connected, connectionState } = useWebSocket({ onMessage: handleWSMessage })
   const { applications, releases, activeApplication, activeRelease, setActiveApplication, setActiveRelease, createAndSelectApplication, createAndSelectRelease } = useApplication()
+  const { projects, activeProject, setActiveProject, createAndSelectProject } = useProject()
 
   const navigateToTest = (id: string) => setView({ page: 'test', testId: id })
   const activePage = view.page === 'test' ? 'tests' : view.page
@@ -110,6 +112,10 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
         onNavigate={handleNavigate}
         connectionState={connectionState}
         authStatus={authStatus}
+        projects={projects}
+        activeProject={activeProject}
+        onProjectChange={setActiveProject}
+        onCreateProject={createAndSelectProject}
         applications={applications}
         releases={releases}
         activeApplication={activeApplication}
@@ -173,9 +179,11 @@ export default function App() {
 
   return (
     <AuthGate state={authState}>
-      <ApplicationProvider>
-        <AppShell authStatus={authState.status === 'ready' ? authState.auth : undefined} />
-      </ApplicationProvider>
+      <ProjectProvider>
+        <ApplicationProvider>
+          <AppShell authStatus={authState.status === 'ready' ? authState.auth : undefined} />
+        </ApplicationProvider>
+      </ProjectProvider>
     </AuthGate>
   )
 }

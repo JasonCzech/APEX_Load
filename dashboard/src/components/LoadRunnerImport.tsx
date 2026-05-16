@@ -40,6 +40,7 @@ function getSummaryList(values?: string[]) {
 }
 
 interface Props {
+  projectId?: string
   onImported?: (script: ImportedScript) => void
   onEdit?: (script: ScriptDefinition) => void
   onClose?: () => void
@@ -47,7 +48,7 @@ interface Props {
 
 type ReviewMode = 'validation' | 'conversion'
 
-export default function LoadRunnerImport({ onImported, onEdit, onClose }: Props) {
+export default function LoadRunnerImport({ projectId, onImported, onEdit, onClose }: Props) {
   const api = useApi()
   const fileRef = useRef<HTMLInputElement>(null)
   const [file, setFile] = useState<File | null>(null)
@@ -115,7 +116,7 @@ export default function LoadRunnerImport({ onImported, onEdit, onClose }: Props)
   const handleSaveConverted = async () => {
     if (!importedScript) return
     try {
-      await api.createScript(importedScript)
+      await api.createScript(importedScript, projectId)
       onImported?.(importedScript)
     } catch (error: unknown) {
       setError(getErrorMessage(error, 'Failed to save script'))

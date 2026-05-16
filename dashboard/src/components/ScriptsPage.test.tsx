@@ -19,6 +19,12 @@ vi.mock('../hooks/useApi', () => ({
   useApi: () => apiMock,
 }))
 
+vi.mock('../hooks/useProject', () => ({
+  useProject: () => ({
+    activeProject: { id: 'project-1', name: 'Checkout', created_at: '', updated_at: '' },
+  }),
+}))
+
 vi.mock('./ScriptEditor', () => ({
   default: ({ initialScript, scriptId, onSave, onClose }: { initialScript?: { name?: string }, scriptId?: string | null, onSave?: () => void, onClose?: () => void }) => (
     <div data-testid="script-editor">
@@ -128,6 +134,8 @@ describe('ScriptsPage', () => {
 
     await flushPromises()
 
+    expect(apiMock.listScripts).toHaveBeenCalledWith('project-1')
+
     expect(container.textContent).toContain('Scripts')
     expect(container.textContent).toContain('Existing Script')
 
@@ -181,6 +189,7 @@ describe('ScriptsPage', () => {
     await flushPromises()
 
     expect(apiMock.listScripts).toHaveBeenCalledTimes(2)
+    expect(apiMock.listScripts).toHaveBeenLastCalledWith('project-1')
     expect(container.textContent).toContain('Scripts')
     expect(container.textContent).toContain('Existing Script')
   })

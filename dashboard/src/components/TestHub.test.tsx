@@ -23,6 +23,12 @@ vi.mock('../hooks/useApi', () => ({
   useApi: () => apiMock,
 }))
 
+vi.mock('../hooks/useProject', () => ({
+  useProject: () => ({
+    activeProject: { id: 'project-1', name: 'Checkout', created_at: '', updated_at: '' },
+  }),
+}))
+
 describe('TestHub', () => {
   let container: HTMLDivElement
   let root: Root
@@ -78,6 +84,9 @@ describe('TestHub', () => {
     })
 
     await flushPromises()
+
+    expect(apiMock.listScenarios).toHaveBeenCalledWith('project-1')
+    expect(apiMock.listScripts).toHaveBeenCalledWith('project-1')
 
     const newScenarioButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('New Scenario'))
     expect(newScenarioButton).toBeDefined()

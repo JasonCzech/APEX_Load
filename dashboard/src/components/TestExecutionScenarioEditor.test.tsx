@@ -16,10 +16,17 @@ vi.mock('../hooks/useApi', () => ({
   useApi: () => apiMock,
 }))
 
+vi.mock('../hooks/useProject', () => ({
+  useProject: () => ({
+    activeProject: { id: 'project-1', name: 'Checkout', created_at: '', updated_at: '' },
+  }),
+}))
+
 vi.mock('./CreateTestModal', () => ({
-  default: ({ mode, scripts, initialScenario, onCreated }: { mode?: string, scripts: Array<{ id: string }>, initialScenario?: { name?: string }, onCreated: (test: { id: string }) => void }) => (
+  default: ({ mode, projectId, scripts, initialScenario, onCreated }: { mode?: string, projectId?: string, scripts: Array<{ id: string }>, initialScenario?: { name?: string }, onCreated: (test: { id: string }) => void }) => (
     <div data-testid="create-test-modal">
       <span>mode:{mode}</span>
+      <span>project:{projectId || 'none'}</span>
       <span>scripts:{scripts.length}</span>
       <span>scenario:{initialScenario?.name || 'none'}</span>
       <button onClick={() => onCreated({ id: 'revised-test-1' })}>create-copy</button>
@@ -82,7 +89,9 @@ describe('TestExecutionScenarioEditor', () => {
     await flushPromises()
 
     expect(apiMock.listScripts).toHaveBeenCalledTimes(1)
+    expect(apiMock.listScripts).toHaveBeenCalledWith('project-1')
     expect(container.textContent).toContain('mode:revise-queued-run')
+    expect(container.textContent).toContain('project:project-1')
     expect(container.textContent).toContain('scripts:1')
     expect(container.textContent).toContain('scenario:Queued Checkout Run')
 

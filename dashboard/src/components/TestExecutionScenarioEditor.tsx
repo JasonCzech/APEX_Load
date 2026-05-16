@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useApi } from '../hooks/useApi'
+import { useProject } from '../hooks/useProject'
 import { StoredScript, TestSummary } from '../types'
 import CreateTestModal from './CreateTestModal'
 import { buildScenarioDraftFromTest } from './scenarioDraftUtils'
@@ -13,6 +14,7 @@ interface Props {
 
 export default function TestExecutionScenarioEditor({ open, test, onClose, onSelectTest }: Props) {
   const api = useApi()
+  const { activeProject } = useProject()
   const [availableScripts, setAvailableScripts] = useState<StoredScript[]>([])
   const initialScenario = useMemo(() => (test ? buildScenarioDraftFromTest(test) : undefined), [test])
 
@@ -23,7 +25,7 @@ export default function TestExecutionScenarioEditor({ open, test, onClose, onSel
 
     const loadScripts = async () => {
       try {
-        const response = await api.listScripts()
+        const response = await api.listScripts(activeProject?.id)
         if (!cancelled) {
           setAvailableScripts(response.scripts || [])
         }
@@ -38,7 +40,7 @@ export default function TestExecutionScenarioEditor({ open, test, onClose, onSel
     return () => {
       cancelled = true
     }
-  }, [api, open])
+  }, [activeProject?.id, api, open])
 
   if (!open || !test || !initialScenario) {
     return null
@@ -47,6 +49,7 @@ export default function TestExecutionScenarioEditor({ open, test, onClose, onSel
   return (
     <CreateTestModal
       mode="revise-queued-run"
+      projectId={activeProject?.id}
       scripts={availableScripts}
       initialScenario={initialScenario}
       onClose={onClose}

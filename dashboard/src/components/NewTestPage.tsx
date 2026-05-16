@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Application, Release, StoredScenario } from '../types'
 import { useApi } from '../hooks/useApi'
+import { useProject } from '../hooks/useProject'
 import { getErrorMessage } from '../utils/errorUtils'
 
 interface Props {
@@ -44,6 +45,7 @@ function formatRuntimeContinueOnError(scenario?: StoredScenario | null) {
 
 export default function NewTestPage({ activeApplication, activeRelease, releases, onSelectTest, onCreateRelease }: Props) {
   const api = useApi()
+  const { activeProject } = useProject()
   const [scenarios, setScenarios] = useState<StoredScenario[]>([])
   const [scenarioId, setScenarioId] = useState('')
   const [releaseId, setReleaseId] = useState(activeRelease?.id || '')
@@ -54,14 +56,14 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
 
   const refresh = useCallback(async () => {
     try {
-      const res = await api.listScenarios()
+      const res = await api.listScenarios(activeProject?.id)
       const next = res.scenarios || []
       setScenarios(next)
-      if (!scenarioId && next[0]) setScenarioId(next[0].id)
+      setScenarioId(prev => (next.some(item => item.id === prev) ? prev : next[0]?.id || ''))
     } catch (err: unknown) {
       setError(getErrorMessage(err, 'Unable to load scenarios'))
     }
-  }, [api, scenarioId])
+  }, [activeProject?.id, api])
 
   useEffect(() => { refresh() }, [refresh])
   useEffect(() => { setReleaseId(activeRelease?.id || releases[0]?.id || '') }, [activeRelease?.id, releases])
@@ -111,6 +113,7 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
         application_id: activeApplication.id,
         release_id: releaseId,
         scenario_id: scenario.id,
+        project_id: activeProject?.id,
       })
       if (start) {
         await api.startTest(test.id)
