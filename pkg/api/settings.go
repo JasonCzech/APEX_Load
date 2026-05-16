@@ -11,6 +11,7 @@ type SystemSettings struct {
 	General          GeneralSettings          `json:"general"`
 	Thresholds       ThresholdSettings        `json:"thresholds"`
 	CapacityPlanning CapacityPlanningSettings `json:"capacity_planning"`
+	Auth             AuthSettings             `json:"auth"`
 }
 
 type GeneralSettings struct {
@@ -44,10 +45,56 @@ type AvailabilitySettings struct {
 	ConfiguredAvailableGenerators int    `json:"configured_available_generators"`
 }
 
+type AuthSettings struct {
+	Mode               string `json:"mode"`
+	UserHeader         string `json:"user_header,omitempty"`
+	NameHeader         string `json:"name_header,omitempty"`
+	EmailHeader        string `json:"email_header,omitempty"`
+	RolesHeader        string `json:"roles_header,omitempty"`
+	ProjectRolesHeader string `json:"project_roles_header,omitempty"`
+}
+
 const (
 	capacityAvailabilityConfigured         = "configured"
 	capacityAvailabilityConfiguredPlusLive = "configured_plus_live"
+	authModeDisabled                       = "disabled"
+	authModeTrustedHeaders                 = "trusted_headers"
 )
+
+func defaultAuthSettings() AuthSettings {
+	return AuthSettings{
+		Mode:               authModeDisabled,
+		UserHeader:         "X-Auth-Request-User",
+		NameHeader:         "X-Auth-Request-Name",
+		EmailHeader:        "X-Auth-Request-Email",
+		RolesHeader:        "X-Stormrunner-Roles",
+		ProjectRolesHeader: "X-Stormrunner-Project-Roles",
+	}
+}
+
+func normalizeAuthSettings(in AuthSettings) AuthSettings {
+	defaults := defaultAuthSettings()
+	out := in
+	if out.Mode == "" {
+		out.Mode = defaults.Mode
+	}
+	if out.UserHeader == "" {
+		out.UserHeader = defaults.UserHeader
+	}
+	if out.NameHeader == "" {
+		out.NameHeader = defaults.NameHeader
+	}
+	if out.EmailHeader == "" {
+		out.EmailHeader = defaults.EmailHeader
+	}
+	if out.RolesHeader == "" {
+		out.RolesHeader = defaults.RolesHeader
+	}
+	if out.ProjectRolesHeader == "" {
+		out.ProjectRolesHeader = defaults.ProjectRolesHeader
+	}
+	return out
+}
 
 func defaultSystemSettings(maxConcurrent int) SystemSettings {
 	if maxConcurrent <= 0 {
@@ -73,6 +120,7 @@ func defaultSystemSettings(maxConcurrent int) SystemSettings {
 				ConfiguredAvailableGenerators: 1,
 			},
 		},
+		Auth: defaultAuthSettings(),
 	}
 }
 
@@ -131,6 +179,7 @@ func normalizeLoadedSystemSettings(in SystemSettings, defaultMaxConcurrent int) 
 	if out.CapacityPlanning.Availability.ConfiguredAvailableGenerators == 0 {
 		out.CapacityPlanning.Availability.ConfiguredAvailableGenerators = defaults.CapacityPlanning.Availability.ConfiguredAvailableGenerators
 	}
+	out.Auth = normalizeAuthSettings(out.Auth)
 
 	return out
 }
@@ -188,7 +237,27 @@ func validateSystemSettings(settings SystemSettings) error {
 	default:
 		return fmt.Errorf("capacity_planning.availability.source must be one of %q or %q", capacityAvailabilityConfigured, capacityAvailabilityConfiguredPlusLive)
 	}
+	if err := validateAuthSettings(settings.Auth); err != nil {
+		return err
+	}
 	return nil
+}
+
+func validateAuthSettings(settings AuthSettings) error {
+	switch settings.Mode {
+	case "", authModeDisabled:
+		return nil
+	case authModeTrustedHeaders:
+		if settings.UserHeader == "" {
+			return fmt.Errorf("auth.user_header is required when auth.mode=%q", authModeTrustedHeaders)
+		}
+		if settings.RolesHeader == "" && settings.ProjectRolesHeader == "" {
+			return fmt.Errorf("auth.roles_header or auth.project_roles_header is required when auth.mode=%q", authModeTrustedHeaders)
+		}
+		return nil
+	default:
+		return fmt.Errorf("auth.mode must be one of %q or %q", authModeDisabled, authModeTrustedHeaders)
+	}
 }
 
 func (tr *TestRunner) loadSystemSettings(defaultMaxConcurrent int) {
@@ -225,11 +294,13 @@ func (tr *TestRunner) GetSystemSettings() SystemSettings {
 }
 
 func (tr *TestRunner) UpdateSystemSettings(settings SystemSettings) (SystemSettings, error) {
-	if err := validateSystemSettings(settings); err != nil {
+	normalized := cloneSystemSettings(settings)
+	normalized.Auth = normalizeAuthSettings(normalized.Auth)
+	if err := validateSystemSettings(normalized); err != nil {
 		return SystemSettings{}, err
 	}
 
-	normalized := cloneSystemSettings(settings)
+	normalized = cloneSystemSettings(normalized)
 	encoded, err := json.Marshal(normalized)
 	if err != nil {
 		return SystemSettings{}, fmt.Errorf("encode settings: %w", err)

@@ -79,6 +79,7 @@ func NewServer(cfg ServerConfig) *Server {
 func (s *Server) routes(allowedOrigins []string) {
 	cors := corsMiddleware(allowedOrigins)
 	log := loggingMiddleware
+	auth := authMiddleware(func() AuthSettings { return s.runner.GetSystemSettings().Auth }, s.store)
 
 	// Test lifecycle and archive endpoints.
 	s.mux.Handle("POST /api/v1/applications", cors(log(http.HandlerFunc(s.handleCreateApplication))))
@@ -93,15 +94,15 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("POST /api/v1/releases/{id}/archive", cors(log(http.HandlerFunc(s.handleArchiveRelease))))
 	s.mux.Handle("DELETE /api/v1/releases/{id}", cors(log(http.HandlerFunc(s.handleDeleteRelease))))
 
-	s.mux.Handle("POST /api/v1/projects", cors(log(http.HandlerFunc(s.handleCreateProject))))
-	s.mux.Handle("GET /api/v1/projects", cors(log(http.HandlerFunc(s.handleListProjects))))
-	s.mux.Handle("GET /api/v1/projects/{id}", cors(log(http.HandlerFunc(s.handleGetProject))))
-	s.mux.Handle("PUT /api/v1/projects/{id}", cors(log(http.HandlerFunc(s.handleUpdateProject))))
-	s.mux.Handle("DELETE /api/v1/projects/{id}", cors(log(http.HandlerFunc(s.handleDeleteProject))))
-	s.mux.Handle("POST /api/v1/projects/{pid}/folders", cors(log(http.HandlerFunc(s.handleCreateFolder))))
-	s.mux.Handle("GET /api/v1/projects/{pid}/folders", cors(log(http.HandlerFunc(s.handleListFolders))))
-	s.mux.Handle("PUT /api/v1/folders/{id}", cors(log(http.HandlerFunc(s.handleUpdateFolder))))
-	s.mux.Handle("DELETE /api/v1/folders/{id}", cors(log(http.HandlerFunc(s.handleDeleteFolder))))
+	s.mux.Handle("POST /api/v1/projects", cors(log(auth(http.HandlerFunc(s.handleCreateProject)))))
+	s.mux.Handle("GET /api/v1/projects", cors(log(auth(http.HandlerFunc(s.handleListProjects)))))
+	s.mux.Handle("GET /api/v1/projects/{id}", cors(log(auth(http.HandlerFunc(s.handleGetProject)))))
+	s.mux.Handle("PUT /api/v1/projects/{id}", cors(log(auth(http.HandlerFunc(s.handleUpdateProject)))))
+	s.mux.Handle("DELETE /api/v1/projects/{id}", cors(log(auth(http.HandlerFunc(s.handleDeleteProject)))))
+	s.mux.Handle("POST /api/v1/projects/{pid}/folders", cors(log(auth(http.HandlerFunc(s.handleCreateFolder)))))
+	s.mux.Handle("GET /api/v1/projects/{pid}/folders", cors(log(auth(http.HandlerFunc(s.handleListFolders)))))
+	s.mux.Handle("PUT /api/v1/folders/{id}", cors(log(auth(http.HandlerFunc(s.handleUpdateFolder)))))
+	s.mux.Handle("DELETE /api/v1/folders/{id}", cors(log(auth(http.HandlerFunc(s.handleDeleteFolder)))))
 
 	s.mux.Handle("POST /api/v1/tests", cors(log(http.HandlerFunc(s.handleCreateTest))))
 	s.mux.Handle("POST /api/v1/tests/estimate", cors(log(http.HandlerFunc(s.handleEstimateTest))))
@@ -192,8 +193,8 @@ func (s *Server) routes(allowedOrigins []string) {
 	// System endpoints for health and global settings.
 	s.mux.Handle("GET /api/v1/system/health", cors(log(http.HandlerFunc(s.handleHealthCheck))))
 	s.mux.Handle("GET /api/v1/system/inventory", cors(log(http.HandlerFunc(s.handleGetSystemInventory))))
-	s.mux.Handle("GET /api/v1/system/settings", cors(log(http.HandlerFunc(s.handleGetSystemSettings))))
-	s.mux.Handle("PUT /api/v1/system/settings", cors(log(http.HandlerFunc(s.handleUpdateSystemSettings))))
+	s.mux.Handle("GET /api/v1/system/settings", cors(log(auth(http.HandlerFunc(s.handleGetSystemSettings)))))
+	s.mux.Handle("PUT /api/v1/system/settings", cors(log(auth(http.HandlerFunc(s.handleUpdateSystemSettings)))))
 
 	// WebSocket — no CORS wrapper (handled by upgrade check)
 	s.mux.Handle("GET /api/v1/ws", log(http.HandlerFunc(s.handleWebSocket)))

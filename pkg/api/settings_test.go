@@ -43,6 +43,12 @@ func TestSystemSettingsAPIAndPersistence(t *testing.T) {
 	if initial.CapacityPlanning.Availability.Source != capacityAvailabilityConfigured {
 		t.Fatalf("initial availability source = %q, want %q", initial.CapacityPlanning.Availability.Source, capacityAvailabilityConfigured)
 	}
+	if initial.Auth.Mode != authModeDisabled {
+		t.Fatalf("initial auth mode = %q, want %q", initial.Auth.Mode, authModeDisabled)
+	}
+	if initial.Auth.UserHeader != "X-Auth-Request-User" {
+		t.Fatalf("initial auth user header = %q, want X-Auth-Request-User", initial.Auth.UserHeader)
+	}
 
 	maxErr := 1.5
 	maxP99 := 1800.0
@@ -73,6 +79,14 @@ func TestSystemSettingsAPIAndPersistence(t *testing.T) {
 				ConfiguredAvailableGenerators: 6,
 			},
 		},
+		Auth: AuthSettings{
+			Mode:               authModeTrustedHeaders,
+			UserHeader:         "X-Test-User",
+			NameHeader:         "X-Test-Name",
+			EmailHeader:        "X-Test-Email",
+			RolesHeader:        "X-Test-Roles",
+			ProjectRolesHeader: "X-Test-Project-Roles",
+		},
 	}
 	body, _ := json.Marshal(update)
 	putReq := httptest.NewRequest(http.MethodPut, "/api/v1/system/settings", bytes.NewReader(body))
@@ -83,6 +97,8 @@ func TestSystemSettingsAPIAndPersistence(t *testing.T) {
 	}
 
 	getResp2 := httptest.NewRecorder()
+	getReq.Header.Set("X-Auth-Request-User", "root")
+	getReq.Header.Set("X-Stormrunner-Roles", RoleSystemAdmin)
 	server.mux.ServeHTTP(getResp2, getReq)
 	if getResp2.Code != http.StatusOK {
 		t.Fatalf("second GET status = %d, want %d", getResp2.Code, http.StatusOK)
@@ -121,6 +137,12 @@ func TestSystemSettingsAPIAndPersistence(t *testing.T) {
 	if updated.CapacityPlanning.Availability.ConfiguredAvailableGenerators != 6 {
 		t.Fatalf("configured available generators = %d, want 6", updated.CapacityPlanning.Availability.ConfiguredAvailableGenerators)
 	}
+	if updated.Auth.Mode != authModeTrustedHeaders {
+		t.Fatalf("auth mode = %q, want %q", updated.Auth.Mode, authModeTrustedHeaders)
+	}
+	if updated.Auth.RolesHeader != "X-Test-Roles" {
+		t.Fatalf("roles header = %q, want X-Test-Roles", updated.Auth.RolesHeader)
+	}
 
 	runner := NewTestRunner(10, NewHub(), store)
 	persisted := runner.GetSystemSettings()
@@ -132,6 +154,9 @@ func TestSystemSettingsAPIAndPersistence(t *testing.T) {
 	}
 	if persisted.CapacityPlanning.Availability.Source != capacityAvailabilityConfiguredPlusLive {
 		t.Fatalf("persisted availability source = %q, want %q", persisted.CapacityPlanning.Availability.Source, capacityAvailabilityConfiguredPlusLive)
+	}
+	if persisted.Auth.ProjectRolesHeader != "X-Test-Project-Roles" {
+		t.Fatalf("persisted project roles header = %q, want X-Test-Project-Roles", persisted.Auth.ProjectRolesHeader)
 	}
 }
 
@@ -211,6 +236,37 @@ func TestSystemSettingsValidationRejectsInvalidCapacityPlanning(t *testing.T) {
 	}
 }
 
+func TestSystemSettingsValidationRejectsInvalidAuthSettings(t *testing.T) {
+	err := validateSystemSettings(SystemSettings{
+		General: GeneralSettings{
+			APIEndpoint:            ":8080",
+			MaxConcurrentTests:     2,
+			MetricsIntervalSeconds: 1,
+		},
+		Thresholds: ThresholdSettings{},
+		CapacityPlanning: CapacityPlanningSettings{
+			HeadroomPct: 20,
+			Generator: GeneratorCapacitySettings{
+				CPUCores:    4,
+				MemoryMB:    8192,
+				NetworkMbps: 1000,
+				MaxVUsers:   10000,
+			},
+			Availability: AvailabilitySettings{
+				Source:                        capacityAvailabilityConfigured,
+				ConfiguredAvailableGenerators: 1,
+			},
+		},
+		Auth: AuthSettings{
+			Mode:       authModeTrustedHeaders,
+			UserHeader: "X-Forwarded-User",
+		},
+	})
+	if err == nil {
+		t.Fatal("expected missing roles headers to fail validation")
+	}
+}
+
 func TestNormalizeLoadedSystemSettingsBackfillsCapacityPlanningDefaults(t *testing.T) {
 	normalized := normalizeLoadedSystemSettings(SystemSettings{
 		General: GeneralSettings{
@@ -229,6 +285,12 @@ func TestNormalizeLoadedSystemSettingsBackfillsCapacityPlanningDefaults(t *testi
 	}
 	if normalized.CapacityPlanning.Availability.Source != capacityAvailabilityConfigured {
 		t.Fatalf("normalized availability source = %q, want %q", normalized.CapacityPlanning.Availability.Source, capacityAvailabilityConfigured)
+	}
+	if normalized.Auth.Mode != authModeDisabled {
+		t.Fatalf("normalized auth mode = %q, want %q", normalized.Auth.Mode, authModeDisabled)
+	}
+	if normalized.Auth.RolesHeader != "X-Stormrunner-Roles" {
+		t.Fatalf("normalized roles header = %q, want X-Stormrunner-Roles", normalized.Auth.RolesHeader)
 	}
 }
 
