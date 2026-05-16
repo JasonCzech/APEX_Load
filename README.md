@@ -266,6 +266,10 @@ DELETE /api/v1/scenarios/{id}/schedules/{schedule_id} — Delete a recurring sch
 GET    /api/v1/system/health            — Health check
 ```
 
+**CI/CD Templates:**
+- GitHub composite action: `.github/actions/stormrunner-run/action.yml`
+- Azure Pipelines template: `azure-pipelines-task.yml`
+
 See [API_AND_DSL_REFERENCE.md](API_AND_DSL_REFERENCE.md) for complete endpoint documentation.
 
 ## DSL Script Structure

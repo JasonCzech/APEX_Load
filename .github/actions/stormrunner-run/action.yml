@@ -1,0 +1,113 @@
+name: Stormrunner SLA Gate
+description: Build and run stormctl with optional SLA guardrails for CI/CD pipelines.
+
+inputs:
+  script:
+    description: Path to the Stormrunner DSL script.
+    required: true
+  vusers:
+    description: Number of virtual users.
+    required: false
+    default: "10"
+  duration:
+    description: Test duration.
+    required: false
+    default: "1m"
+  ramp-up:
+    description: Ramp-up duration.
+    required: false
+    default: "0s"
+  api-url:
+    description: Optional controller base URL for API-backed execution.
+    required: false
+    default: ""
+  base-url:
+    description: Optional base URL override for the DSL script.
+    required: false
+    default: ""
+  env:
+    description: Optional newline-delimited KEY=value runtime overrides.
+    required: false
+    default: ""
+  p95-latency-ms:
+    description: Optional P95 latency guardrail.
+    required: false
+    default: ""
+  max-error-pct:
+    description: Optional max error percentage guardrail.
+    required: false
+    default: ""
+  max-avg-server-processing-ms:
+    description: Optional average server processing guardrail.
+    required: false
+    default: ""
+  max-avg-transfer-ms:
+    description: Optional average transfer guardrail.
+    required: false
+    default: ""
+  max-error-count:
+    description: Optional max error count guardrail.
+    required: false
+    default: ""
+
+outputs:
+  json:
+    description: JSON result returned by stormctl.
+    value: ${{ steps.stormrunner.outputs.json }}
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: go.mod
+
+    - name: Run stormctl
+      id: stormrunner
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        cmd=(go run ./cmd/stormctl run \
+          --script "${{ inputs.script }}" \
+          --vusers "${{ inputs.vusers }}" \
+          --duration "${{ inputs.duration }}" \
+          --ramp-up "${{ inputs.ramp-up }}" \
+          --format json)
+
+        if [[ -n "${{ inputs.api-url }}" ]]; then
+          cmd+=(--api "${{ inputs.api-url }}")
+        fi
+        if [[ -n "${{ inputs.base-url }}" ]]; then
+          cmd+=(--base-url "${{ inputs.base-url }}")
+        fi
+        if [[ -n "${{ inputs.p95-latency-ms }}" ]]; then
+          cmd+=(--p95-latency-ms "${{ inputs.p95-latency-ms }}")
+        fi
+        if [[ -n "${{ inputs.max-error-pct }}" ]]; then
+          cmd+=(--max-error-pct "${{ inputs.max-error-pct }}")
+        fi
+        if [[ -n "${{ inputs.max-avg-server-processing-ms }}" ]]; then
+          cmd+=(--max-avg-server-processing-ms "${{ inputs.max-avg-server-processing-ms }}")
+        fi
+        if [[ -n "${{ inputs.max-avg-transfer-ms }}" ]]; then
+          cmd+=(--max-avg-transfer-ms "${{ inputs.max-avg-transfer-ms }}")
+        fi
+        if [[ -n "${{ inputs.max-error-count }}" ]]; then
+          cmd+=(--max-error-count "${{ inputs.max-error-count }}")
+        fi
+
+        while IFS= read -r entry; do
+          [[ -z "$entry" ]] && continue
+          cmd+=(--env "$entry")
+        done <<< "${{ inputs.env }}"
+
+        result="$(${cmd[@]})"
+        echo "$result"
+
+        {
+          echo 'json<<EOF'
+          echo "$result"
+          echo 'EOF'
+        } >> "$GITHUB_OUTPUT"
