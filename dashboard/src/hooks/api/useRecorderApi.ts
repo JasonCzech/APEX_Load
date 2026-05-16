@@ -129,7 +129,10 @@ export function useRecorderApi() {
     [],
   )
 
-  const getRecorderStatus = useCallback(() => request<RecorderStatusResponse>('/recorder/status'), [])
+  const getRecorderStatus = useCallback(
+    (projectId?: string) => request<RecorderStatusResponse>(projectId ? `/recorder/status?project_id=${encodeURIComponent(projectId)}` : '/recorder/status'),
+    [],
+  )
 
   return useMemo(
     () => ({

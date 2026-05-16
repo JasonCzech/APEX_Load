@@ -695,6 +695,10 @@ func TestTrustedHeaderAuthScopesRecorderListAndStartToProjectRoles(t *testing.T)
 	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
 	enableTrustedHeaderAuth(t, server)
 	projectID := uuid.New().String()
+	_, err := server.recorder.StartSessionForProject("rec-1", "Checkout Recording", projectID, recorder.SessionFilters{}, nil)
+	if err != nil {
+		t.Fatalf("StartSessionForProject returned error: %v", err)
+	}
 
 	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/recorder", nil)
 	listReq.Header.Set("X-Auth-Request-User", "viewer-user")
@@ -714,6 +718,24 @@ func TestTrustedHeaderAuthScopesRecorderListAndStartToProjectRoles(t *testing.T)
 		t.Fatalf("filtered recorder list status = %d, want %d body=%s", filteredResp.Code, http.StatusOK, filteredResp.Body.String())
 	}
 
+	statusReq := httptest.NewRequest(http.MethodGet, "/api/v1/recorder/status", nil)
+	statusReq.Header.Set("X-Auth-Request-User", "viewer-user")
+	statusReq.Header.Set("X-Stormrunner-Project-Roles", projectID+"="+RoleViewer)
+	statusResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(statusResp, statusReq)
+	if statusResp.Code != http.StatusForbidden {
+		t.Fatalf("unfiltered recorder status = %d, want %d body=%s", statusResp.Code, http.StatusForbidden, statusResp.Body.String())
+	}
+
+	filteredStatusReq := httptest.NewRequest(http.MethodGet, "/api/v1/recorder/status?project_id="+projectID, nil)
+	filteredStatusReq.Header.Set("X-Auth-Request-User", "viewer-user")
+	filteredStatusReq.Header.Set("X-Stormrunner-Project-Roles", projectID+"="+RoleViewer)
+	filteredStatusResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(filteredStatusResp, filteredStatusReq)
+	if filteredStatusResp.Code != http.StatusOK {
+		t.Fatalf("filtered recorder status = %d, want %d body=%s", filteredStatusResp.Code, http.StatusOK, filteredStatusResp.Body.String())
+	}
+
 	body := []byte(`{"name":"Checkout Recording","project_id":"` + projectID + `"}`)
 	viewerStartReq := httptest.NewRequest(http.MethodPost, "/api/v1/recorder/start", bytes.NewReader(body))
 	viewerStartReq.Header.Set("Content-Type", "application/json")
@@ -731,8 +753,8 @@ func TestTrustedHeaderAuthScopesRecorderListAndStartToProjectRoles(t *testing.T)
 	editorStartReq.Header.Set("X-Stormrunner-Project-Roles", projectID+"="+RoleEditor)
 	editorStartResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(editorStartResp, editorStartReq)
-	if editorStartResp.Code != http.StatusCreated {
-		t.Fatalf("recorder editor start status = %d, want %d body=%s", editorStartResp.Code, http.StatusCreated, editorStartResp.Body.String())
+	if editorStartResp.Code != http.StatusConflict {
+		t.Fatalf("recorder editor start status = %d, want %d body=%s", editorStartResp.Code, http.StatusConflict, editorStartResp.Body.String())
 	}
 }
 

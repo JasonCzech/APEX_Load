@@ -235,3 +235,45 @@ func TestHandleRecorderStatusIncludesPersistentCAPath(t *testing.T) {
 		t.Fatalf("ca_cert_path = %q, want %q", got, want)
 	}
 }
+
+func TestHandleRecorderStatusFiltersActiveSessionByProject(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	_, err := server.recorder.StartSessionForProject("rec-1", "Checkout Recording", "project-1", recorder.SessionFilters{}, nil)
+	if err != nil {
+		t.Fatalf("StartSessionForProject returned error: %v", err)
+	}
+
+	matchingReq := httptest.NewRequest(http.MethodGet, "/api/v1/recorder/status?project_id=project-1", nil)
+	matchingResp := httptest.NewRecorder()
+	server.handleRecorderStatus(matchingResp, matchingReq)
+	if matchingResp.Code != http.StatusOK {
+		t.Fatalf("matching status = %d, want %d body=%s", matchingResp.Code, http.StatusOK, matchingResp.Body.String())
+	}
+	var matchingPayload struct {
+		Active *struct {
+			ID string `json:"id"`
+		} `json:"active"`
+	}
+	if err := json.Unmarshal(matchingResp.Body.Bytes(), &matchingPayload); err != nil {
+		t.Fatalf("json.Unmarshal matching payload returned error: %v", err)
+	}
+	if matchingPayload.Active == nil || matchingPayload.Active.ID != "rec-1" {
+		t.Fatalf("matching active = %#v, want rec-1", matchingPayload.Active)
+	}
+
+	foreignReq := httptest.NewRequest(http.MethodGet, "/api/v1/recorder/status?project_id=project-2", nil)
+	foreignResp := httptest.NewRecorder()
+	server.handleRecorderStatus(foreignResp, foreignReq)
+	if foreignResp.Code != http.StatusOK {
+		t.Fatalf("foreign status = %d, want %d body=%s", foreignResp.Code, http.StatusOK, foreignResp.Body.String())
+	}
+	var foreignPayload struct {
+		Active any `json:"active"`
+	}
+	if err := json.Unmarshal(foreignResp.Body.Bytes(), &foreignPayload); err != nil {
+		t.Fatalf("json.Unmarshal foreign payload returned error: %v", err)
+	}
+	if foreignPayload.Active != nil {
+		t.Fatalf("foreign active = %#v, want nil", foreignPayload.Active)
+	}
+}

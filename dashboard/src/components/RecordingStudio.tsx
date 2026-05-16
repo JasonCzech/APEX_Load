@@ -129,7 +129,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: P
     try {
       const [listRes, statusRes] = await Promise.all([
         api.listRecordings(activeProject?.id),
-        api.getRecorderStatus(),
+        api.getRecorderStatus(activeProject?.id),
       ])
       setSessions(listRes.sessions || [])
       setProxyAddr(statusRes.proxy_addr || '')

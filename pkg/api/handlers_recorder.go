@@ -278,8 +278,12 @@ func sanitizeDownloadName(name string) string {
 }
 
 func (s *Server) handleRecorderStatus(w http.ResponseWriter, r *http.Request) {
+	projectID := strings.TrimSpace(r.URL.Query().Get("project_id"))
 	active := s.recorder.ActiveSession()
 	var activeInfo any
+	if active != nil && projectID != "" && normalizeProjectID(active.ProjectID) != normalizeProjectID(projectID) {
+		active = nil
+	}
 	if active != nil {
 		activeInfo = map[string]any{
 			"id":            active.ID,
