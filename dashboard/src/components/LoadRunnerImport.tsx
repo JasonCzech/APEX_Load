@@ -99,6 +99,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
       const request = mode === 'validate' ? api.validateLoadRunnerImport : api.importLoadRunner
       const res = await request(file, {
         name: options.name || undefined,
+        project_id: projectId,
         base_url: options.base_url || undefined,
         include_assertions: options.include_assertions,
         preserve_transactions: options.preserve_transactions,

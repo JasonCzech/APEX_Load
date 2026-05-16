@@ -390,6 +390,7 @@ export default function SampleScriptImport({ projectId, onImported, onEdit, onCl
         async () => {
           const res = await api.importSample({
             name: options.name || undefined,
+            project_id: projectId,
             format,
             content: primaryContent,
             response_content: secondaryContent || undefined,

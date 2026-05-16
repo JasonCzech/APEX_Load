@@ -16,6 +16,7 @@ import (
 
 type ImportRequest struct {
 	Name            string         `json:"name,omitempty"`
+	ProjectID       string         `json:"project_id,omitempty"`
 	Format          string         `json:"format"`
 	Content         string         `json:"content"`
 	ResponseContent string         `json:"response_content,omitempty"`

@@ -283,6 +283,46 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 		}, true
 	}
 
+	if path == "/api/v1/scripts/import/loadrunner" && method == http.MethodPost {
+		return accessRequirement{
+			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
+			ProjectLookup: resolveImportProjectIDFromForm,
+		}, true
+	}
+
+	if path == "/api/v1/scripts/import/loadrunner/validate" && method == http.MethodPost {
+		return accessRequirement{
+			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
+			ProjectLookup: resolveImportProjectIDFromForm,
+		}, true
+	}
+
+	if path == "/api/v1/scripts/import/jmeter" && method == http.MethodPost {
+		return accessRequirement{
+			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
+			ProjectLookup: resolveImportProjectIDFromForm,
+		}, true
+	}
+
+	if path == "/api/v1/scripts/import/jmeter/validate" && method == http.MethodPost {
+		return accessRequirement{
+			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
+			ProjectLookup: resolveImportProjectIDFromForm,
+		}, true
+	}
+
+	if path == "/api/v1/scripts/import/sample" && method == http.MethodPost {
+		return accessRequirement{
+			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
+			ProjectLookup: resolveImportProjectIDFromJSON,
+		}, true
+	}
+
 	if path == "/api/v1/tests" {
 		switch method {
 		case http.MethodGet:
@@ -662,6 +702,32 @@ func resolveJMeterSaveProjectID(r *http.Request, _ storage.Store) (string, int, 
 		if candidate != projectID {
 			return "", http.StatusBadRequest, "imported scripts span multiple projects"
 		}
+	}
+	return projectID, 0, ""
+}
+
+func resolveImportProjectIDFromForm(r *http.Request, _ storage.Store) (string, int, string) {
+	if projectID := normalizeProjectID(r.URL.Query().Get("project_id")); projectID != "" {
+		return projectID, 0, ""
+	}
+	if err := r.ParseMultipartForm(50 << 20); err == nil {
+		if projectID := normalizeProjectID(r.FormValue("project_id")); projectID != "" {
+			return projectID, 0, ""
+		}
+	}
+	return "", http.StatusBadRequest, "project_id is required for project-scoped import access"
+}
+
+func resolveImportProjectIDFromJSON(r *http.Request, _ storage.Store) (string, int, string) {
+	var req struct {
+		ProjectID string `json:"project_id,omitempty"`
+	}
+	if err := decodeRequestBody(r, &req); err != nil {
+		return "", http.StatusBadRequest, "invalid request body: " + err.Error()
+	}
+	projectID := normalizeProjectID(req.ProjectID)
+	if projectID == "" {
+		return "", http.StatusBadRequest, "project_id is required for project-scoped import access"
 	}
 	return projectID, 0, ""
 }

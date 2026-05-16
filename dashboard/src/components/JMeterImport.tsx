@@ -94,6 +94,7 @@ export default function JMeterImport({ projectId, onImported, onEdit, onClose }:
     try {
       const response = await api.importJMeter(file, {
         name: options.name || undefined,
+        project_id: projectId,
         base_url: options.base_url || undefined,
         include_assertions: options.include_assertions,
         scenario_draft: options.scenario_draft,
@@ -117,6 +118,7 @@ export default function JMeterImport({ projectId, onImported, onEdit, onClose }:
     try {
       const response = await api.validateJMeterImport(file, {
         name: options.name || undefined,
+        project_id: projectId,
         base_url: options.base_url || undefined,
         include_assertions: options.include_assertions,
         scenario_draft: options.scenario_draft,

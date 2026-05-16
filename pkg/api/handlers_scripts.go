@@ -17,13 +17,15 @@ import (
 )
 
 type jmeterImportRequest struct {
-	Data []byte
-	Opts jmeter.ConvertOptions
+	Data      []byte
+	ProjectID string
+	Opts      jmeter.ConvertOptions
 }
 
 type loadRunnerImportRequest struct {
-	Data []byte
-	Opts loadrunner.ConvertOptions
+	Data      []byte
+	ProjectID string
+	Opts      loadrunner.ConvertOptions
 }
 
 type loadRunnerImportSummary struct {
@@ -49,6 +51,9 @@ func (s *Server) handleImportLoadRunner(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusUnprocessableEntity, "conversion failed: "+err.Error())
 		return
 	}
+	if result.Script != nil {
+		result.Script.ProjectID = normalizeProjectID(importReq.ProjectID)
+	}
 
 	writeLoadRunnerImportResponse(w, http.StatusOK, result)
 }
@@ -65,6 +70,9 @@ func (s *Server) handleValidateLoadRunnerImport(w http.ResponseWriter, r *http.R
 	if err != nil {
 		writeError(w, http.StatusUnprocessableEntity, "validation failed: "+err.Error())
 		return
+	}
+	if result.Script != nil {
+		result.Script.ProjectID = normalizeProjectID(importReq.ProjectID)
 	}
 
 	writeLoadRunnerImportResponse(w, http.StatusOK, result)
@@ -83,6 +91,12 @@ func (s *Server) handleImportJMeter(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnprocessableEntity, "conversion failed: "+err.Error())
 		return
 	}
+	for index := range result.Scripts {
+		result.Scripts[index].ProjectID = normalizeProjectID(importReq.ProjectID)
+	}
+	if result.Script != nil {
+		result.Script.ProjectID = normalizeProjectID(importReq.ProjectID)
+	}
 
 	writeJMeterImportResponse(w, http.StatusOK, result)
 }
@@ -100,6 +114,12 @@ func (s *Server) handleValidateJMeterImport(w http.ResponseWriter, r *http.Reque
 	if err != nil {
 		writeError(w, http.StatusUnprocessableEntity, "validation failed: "+err.Error())
 		return
+	}
+	for index := range result.Scripts {
+		result.Scripts[index].ProjectID = normalizeProjectID(importReq.ProjectID)
+	}
+	if result.Script != nil {
+		result.Script.ProjectID = normalizeProjectID(importReq.ProjectID)
 	}
 
 	writeJMeterImportResponse(w, http.StatusOK, result)
@@ -153,7 +173,8 @@ func readJMeterImportRequest(w http.ResponseWriter, r *http.Request) (*jmeterImp
 	}
 
 	return &jmeterImportRequest{
-		Data: data,
+		Data:      data,
+		ProjectID: firstNonEmpty(r.FormValue("project_id"), r.URL.Query().Get("project_id")),
 		Opts: jmeter.ConvertOptions{
 			ScriptName:        r.FormValue("name"),
 			BaseURL:           r.FormValue("base_url"),
@@ -204,7 +225,8 @@ func readLoadRunnerImportRequest(w http.ResponseWriter, r *http.Request) (*loadR
 	}
 
 	return &loadRunnerImportRequest{
-		Data: data,
+		Data:      data,
+		ProjectID: firstNonEmpty(r.FormValue("project_id"), r.URL.Query().Get("project_id")),
 		Opts: loadrunner.ConvertOptions{
 			ScriptName:           r.FormValue("name"),
 			BaseURL:              r.FormValue("base_url"),
@@ -413,6 +435,9 @@ func (s *Server) handleImportSample(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "sample conversion failed: "+err.Error())
 		return
+	}
+	if result.Script != nil {
+		result.Script.ProjectID = normalizeProjectID(req.ProjectID)
 	}
 
 	issues := validateScript(result.Script)

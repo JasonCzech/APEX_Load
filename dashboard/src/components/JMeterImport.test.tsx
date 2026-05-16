@@ -132,6 +132,7 @@ describe('JMeterImport', () => {
     await flushPromises()
 
     expect(apiMock.validateJMeterImport).toHaveBeenCalledTimes(1)
+    expect(apiMock.validateJMeterImport).toHaveBeenCalledWith(file, expect.objectContaining({ project_id: undefined }))
     expect(container.textContent).toContain('Captured Variables (2)')
     expect(container.textContent).toContain('session_token')
     expect(container.textContent).toContain('access_token')
@@ -241,6 +242,43 @@ describe('JMeterImport', () => {
     expect(apiMock.saveJMeterImport).toHaveBeenCalledWith(expect.objectContaining({
       scripts: [expect.objectContaining({ project_id: 'project-1' })],
     }))
+  })
+
+  it('passes the active project id into JMeter preview conversion', async () => {
+    await act(async () => {
+      root.render(<JMeterImport projectId="project-1" />)
+    })
+
+    await flushPromises()
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
+    expect(fileInput).not.toBeNull()
+    if (!fileInput) {
+      return
+    }
+
+    const file = new File(['<jmeterTestPlan />'], 'extractors.jmx', { type: 'application/xml' })
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [file],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const validateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Validate Only'))
+    expect(validateButton).toBeDefined()
+    if (!validateButton) {
+      return
+    }
+
+    await act(async () => {
+      validateButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushPromises()
+
+    expect(apiMock.validateJMeterImport).toHaveBeenCalledWith(file, expect.objectContaining({ project_id: 'project-1' }))
   })
 })
 

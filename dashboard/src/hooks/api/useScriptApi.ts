@@ -194,10 +194,11 @@ export function useScriptApi() {
   )
 
   const importLoadRunner = useCallback(
-    async (file: File, options?: { name?: string; base_url?: string; include_assertions?: boolean; preserve_transactions?: boolean }): Promise<LoadRunnerImportResult> => {
+    async (file: File, options?: { name?: string; base_url?: string; include_assertions?: boolean; preserve_transactions?: boolean; project_id?: string }): Promise<LoadRunnerImportResult> => {
       const formData = new FormData()
       formData.append('file', file)
       if (options?.name) formData.append('name', options.name)
+      if (options?.project_id) formData.append('project_id', options.project_id)
       if (options?.base_url) formData.append('base_url', options.base_url)
       if (options?.include_assertions) formData.append('include_assertions', 'true')
       if (options?.preserve_transactions !== undefined) formData.append('preserve_transactions', String(options.preserve_transactions))
@@ -216,10 +217,11 @@ export function useScriptApi() {
   )
 
   const validateLoadRunnerImport = useCallback(
-    async (file: File, options?: { name?: string; base_url?: string; include_assertions?: boolean; preserve_transactions?: boolean }): Promise<LoadRunnerImportResult> => {
+    async (file: File, options?: { name?: string; base_url?: string; include_assertions?: boolean; preserve_transactions?: boolean; project_id?: string }): Promise<LoadRunnerImportResult> => {
       const formData = new FormData()
       formData.append('file', file)
       if (options?.name) formData.append('name', options.name)
+      if (options?.project_id) formData.append('project_id', options.project_id)
       if (options?.base_url) formData.append('base_url', options.base_url)
       if (options?.include_assertions) formData.append('include_assertions', 'true')
       if (options?.preserve_transactions !== undefined) formData.append('preserve_transactions', String(options.preserve_transactions))
@@ -238,10 +240,11 @@ export function useScriptApi() {
   )
 
   const importJMeter = useCallback(
-    async (file: File, options?: { name?: string; base_url?: string; include_assertions?: boolean; scenario_draft?: boolean }): Promise<JMeterImportResult> => {
+    async (file: File, options?: { name?: string; base_url?: string; include_assertions?: boolean; scenario_draft?: boolean; project_id?: string }): Promise<JMeterImportResult> => {
       const formData = new FormData()
       formData.append('file', file)
       if (options?.name) formData.append('name', options.name)
+      if (options?.project_id) formData.append('project_id', options.project_id)
       if (options?.base_url) formData.append('base_url', options.base_url)
       if (options?.include_assertions) formData.append('include_assertions', 'true')
       if (options?.scenario_draft) formData.append('scenario_draft', 'true')
@@ -260,10 +263,11 @@ export function useScriptApi() {
   )
 
   const validateJMeterImport = useCallback(
-    async (file: File, options?: { name?: string; base_url?: string; include_assertions?: boolean; scenario_draft?: boolean }): Promise<JMeterImportResult> => {
+    async (file: File, options?: { name?: string; base_url?: string; include_assertions?: boolean; scenario_draft?: boolean; project_id?: string }): Promise<JMeterImportResult> => {
       const formData = new FormData()
       formData.append('file', file)
       if (options?.name) formData.append('name', options.name)
+      if (options?.project_id) formData.append('project_id', options.project_id)
       if (options?.base_url) formData.append('base_url', options.base_url)
       if (options?.include_assertions) formData.append('include_assertions', 'true')
       if (options?.scenario_draft) formData.append('scenario_draft', 'true')
@@ -295,6 +299,7 @@ export function useScriptApi() {
   const importSample = useCallback(
     (data: {
       name?: string
+      project_id?: string
       format: string
       content: string
       response_content?: string

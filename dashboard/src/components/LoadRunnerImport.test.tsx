@@ -136,6 +136,7 @@ describe('LoadRunnerImport', () => {
 
     expect(apiMock.importLoadRunner).toHaveBeenCalledWith(file, {
       name: undefined,
+      project_id: undefined,
       base_url: undefined,
       include_assertions: true,
       preserve_transactions: true,
@@ -163,7 +164,7 @@ describe('LoadRunnerImport', () => {
     expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({
       name: 'Demo LoadRunner Script',
       protocol: 'http',
-    }))
+    }), undefined)
     expect(onImported).toHaveBeenCalledWith(expect.objectContaining({
       name: 'Demo LoadRunner Script',
       protocol: 'http',
@@ -211,6 +212,7 @@ describe('LoadRunnerImport', () => {
 
     expect(apiMock.validateLoadRunnerImport).toHaveBeenCalledWith(file, {
       name: undefined,
+      project_id: undefined,
       base_url: undefined,
       include_assertions: true,
       preserve_transactions: false,

@@ -341,6 +341,52 @@ func TestTrustedHeaderAuthProjectRoleGuardsJMeterImportSave(t *testing.T) {
 	}
 }
 
+func TestTrustedHeaderAuthProjectRoleGuardsImportPreviewEndpoints(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	enableTrustedHeaderAuth(t, server)
+	projectID := uuid.New().String()
+
+	viewerLoadRunnerReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/loadrunner?project_id="+projectID, bytes.NewReader([]byte("zip")))
+	viewerLoadRunnerReq.Header.Set("Content-Type", "application/zip")
+	viewerLoadRunnerReq.Header.Set("X-Auth-Request-User", "viewer-user")
+	viewerLoadRunnerReq.Header.Set("X-Stormrunner-Project-Roles", projectID+"="+RoleViewer)
+	viewerLoadRunnerResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(viewerLoadRunnerResp, viewerLoadRunnerReq)
+	if viewerLoadRunnerResp.Code != http.StatusForbidden {
+		t.Fatalf("loadrunner import viewer status = %d, want %d body=%s", viewerLoadRunnerResp.Code, http.StatusForbidden, viewerLoadRunnerResp.Body.String())
+	}
+
+	editorLoadRunnerReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/loadrunner?project_id="+projectID, bytes.NewReader([]byte("zip")))
+	editorLoadRunnerReq.Header.Set("Content-Type", "application/zip")
+	editorLoadRunnerReq.Header.Set("X-Auth-Request-User", "editor-user")
+	editorLoadRunnerReq.Header.Set("X-Stormrunner-Project-Roles", projectID+"="+RoleEditor)
+	editorLoadRunnerResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(editorLoadRunnerResp, editorLoadRunnerReq)
+	if editorLoadRunnerResp.Code == http.StatusForbidden || editorLoadRunnerResp.Code == http.StatusUnauthorized {
+		t.Fatalf("loadrunner import editor status = %d, want auth to pass body=%s", editorLoadRunnerResp.Code, editorLoadRunnerResp.Body.String())
+	}
+
+	viewerSampleReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/sample", bytes.NewReader([]byte(`{"project_id":"`+projectID+`","format":"raw_http","content":"GET / HTTP/1.1\nHost: example.com\n\n"}`)))
+	viewerSampleReq.Header.Set("Content-Type", "application/json")
+	viewerSampleReq.Header.Set("X-Auth-Request-User", "viewer-user")
+	viewerSampleReq.Header.Set("X-Stormrunner-Project-Roles", projectID+"="+RoleViewer)
+	viewerSampleResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(viewerSampleResp, viewerSampleReq)
+	if viewerSampleResp.Code != http.StatusForbidden {
+		t.Fatalf("sample import viewer status = %d, want %d body=%s", viewerSampleResp.Code, http.StatusForbidden, viewerSampleResp.Body.String())
+	}
+
+	editorSampleReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/sample", bytes.NewReader([]byte(`{"project_id":"`+projectID+`","format":"raw_http","content":"GET / HTTP/1.1\nHost: example.com\n\n"}`)))
+	editorSampleReq.Header.Set("Content-Type", "application/json")
+	editorSampleReq.Header.Set("X-Auth-Request-User", "editor-user")
+	editorSampleReq.Header.Set("X-Stormrunner-Project-Roles", projectID+"="+RoleEditor)
+	editorSampleResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(editorSampleResp, editorSampleReq)
+	if editorSampleResp.Code == http.StatusForbidden || editorSampleResp.Code == http.StatusUnauthorized {
+		t.Fatalf("sample import editor status = %d, want auth to pass body=%s", editorSampleResp.Code, editorSampleResp.Body.String())
+	}
+}
+
 func TestTrustedHeaderAuthProjectRoleGuardsStoredTestEndpoints(t *testing.T) {
 	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
 	if err != nil {

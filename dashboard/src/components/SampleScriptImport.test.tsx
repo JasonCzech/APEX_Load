@@ -94,6 +94,7 @@ describe('SampleScriptImport', () => {
     await flushPromises()
 
     expect(apiMock.importSample).toHaveBeenCalledWith(expect.objectContaining({
+      project_id: undefined,
       format: 'rest_json',
       options: expect.objectContaining({
         include_assertions: true,
@@ -124,7 +125,7 @@ describe('SampleScriptImport', () => {
       config: expect.objectContaining({
         base_url: 'https://api.example.com',
       }),
-    }))
+    }), undefined)
     expect(onImported).toHaveBeenCalledWith(expect.objectContaining({
       name: 'POST_v1_session',
       protocol: 'http',
@@ -156,6 +157,7 @@ describe('SampleScriptImport', () => {
     await flushPromises()
 
     expect(apiMock.importSample).toHaveBeenCalledWith(expect.objectContaining({
+      project_id: undefined,
       format: 'raw_http',
     }))
     expect(container.textContent).toContain('Java-over-HTTP imports assume request and response payloads are already base64-encoded serialized Java bytes')
@@ -180,10 +182,30 @@ describe('SampleScriptImport', () => {
           body_encoding: 'base64',
         }),
       }),
-    }))
+    }), undefined)
     expect(onImported).toHaveBeenCalledWith(expect.objectContaining({
       protocol: 'java_http',
     }))
+  })
+
+  it('passes the active project id into sample conversion previews', async () => {
+    await act(async () => {
+      root.render(<SampleScriptImport projectId="project-1" />)
+    })
+
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Sample'))
+    expect(convertButton).toBeDefined()
+    if (!convertButton) {
+      return
+    }
+
+    await act(async () => {
+      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushPromises()
+
+    expect(apiMock.importSample).toHaveBeenCalledWith(expect.objectContaining({ project_id: 'project-1' }))
   })
 })
 
