@@ -9,7 +9,7 @@ import {
   getBrowserBreakdownChartCopy,
   getBrowserBreakdownSegmentLabel,
   getBrowserBreakdownTitle,
-} from './BrowserBreakdownChart'
+} from './browserBreakdownModel'
 
 describe('BrowserBreakdownChart helpers', () => {
   it('formats tooltip values by metric type', () => {

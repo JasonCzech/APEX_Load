@@ -41,7 +41,7 @@ export function useExecutionActionBridge(
   }, [])
 
   useEffect(() => {
-    if (test?.status && test.status !== 'QUEUED') {
+    if (test?.status && test.status !== 'QUEUED' && test.status !== 'PENDING') {
       setStartCapacityConflict(null)
       setStartFeedback('')
     }
@@ -58,8 +58,19 @@ export function useExecutionActionBridge(
   const runStart = useCallback(async (override = false) => {
     setStartFeedback('')
     try {
-      await api.startTest(testId, override ? { override_capacity_shortfall: true } : undefined)
+      const response = await api.startTest(testId, override ? { override_capacity_shortfall: true } : undefined)
       setStartCapacityConflict(null)
+      if (response.status === 'pending') {
+        setStartFeedback(response.message || 'Queued until project capacity is available.')
+        setTest((prev) => (prev ? {
+          ...prev,
+          status: 'PENDING',
+          pending_reason: response.message || prev.pending_reason,
+          pending_since: prev.pending_since || new Date().toISOString(),
+        } : null))
+        return
+      }
+      setTest((prev) => (prev ? { ...prev, status: 'INITIALIZING' } : null))
     } catch (error: unknown) {
       if (error instanceof ApiError && error.code === 'capacity_shortfall') {
         const capacityAdvisory = typeof error.payload === 'object' && error.payload !== null && 'capacity_advisory' in error.payload
@@ -71,7 +82,7 @@ export function useExecutionActionBridge(
       }
       setStartFeedback(getErrorMessage(error, 'Unable to start test'))
     }
-  }, [api, test?.capacity_advisory, testId])
+  }, [api, setTest, test?.capacity_advisory, testId])
 
   const onPause = useCallback(async () => {
     try {

@@ -12,6 +12,12 @@ const apiMock = {
   getAuthEffectiveAccess: vi.fn(),
   getAuthAccessMatrix: vi.fn(),
   getAuthRoleCatalog: vi.fn(),
+  listAuthServiceAccounts: vi.fn(),
+  createAuthServiceAccount: vi.fn(),
+  updateAuthServiceAccount: vi.fn(),
+  rotateAuthServiceAccount: vi.fn(),
+  deleteAuthServiceAccount: vi.fn(),
+  listAuthAuditEvents: vi.fn(),
   getSystemSettings: vi.fn(),
   getHealth: vi.fn(),
   getSystemInventory: vi.fn(),
@@ -119,7 +125,7 @@ describe('SettingsPage', () => {
         webhooks: [],
       },
       auth: {
-        mode: 'disabled',
+        mode: 'dev',
         provider_name: '',
         login_url: '',
         logout_url: '',
@@ -171,6 +177,65 @@ describe('SettingsPage', () => {
         },
       ],
     })
+    apiMock.listAuthServiceAccounts.mockResolvedValue({
+      service_accounts: [
+        {
+          id: 'svc-1',
+          name: 'Nightly CI',
+          description: 'Runs nightly smoke coverage',
+          active: true,
+          global_roles: ['viewer'],
+          project_roles: { 'project-1': ['editor'] },
+          created_at: '2026-05-16T00:00:00Z',
+          updated_at: '2026-05-16T00:00:00Z',
+        },
+      ],
+      count: 1,
+    })
+    apiMock.listAuthAuditEvents.mockResolvedValue({
+      events: [
+        {
+          id: 'audit-1',
+          action: 'system.settings.update',
+          actor_type: 'dev_mode',
+          actor_subject: 'dev-mode',
+          actor_display_name: 'Development Mode',
+          resource_type: 'system_settings',
+          resource_id: 'global',
+          status: 'success',
+          created_at: '2026-05-16T01:00:00Z',
+        },
+      ],
+      count: 1,
+    })
+    apiMock.createAuthServiceAccount.mockResolvedValue({
+      service_account: {
+        id: 'svc-2',
+        name: 'Release Automation',
+        description: 'Runs release checks',
+        active: true,
+        global_roles: ['editor'],
+        project_roles: {},
+        created_at: '2026-05-16T02:00:00Z',
+        updated_at: '2026-05-16T02:00:00Z',
+      },
+      api_key: 'srk_test_key',
+    })
+    apiMock.updateAuthServiceAccount.mockResolvedValue({})
+    apiMock.rotateAuthServiceAccount.mockResolvedValue({
+      service_account: {
+        id: 'svc-1',
+        name: 'Nightly CI',
+        description: 'Runs nightly smoke coverage',
+        active: true,
+        global_roles: ['viewer'],
+        project_roles: { 'project-1': ['editor'] },
+        created_at: '2026-05-16T00:00:00Z',
+        updated_at: '2026-05-16T03:00:00Z',
+      },
+      api_key: 'srk_rotated_key',
+    })
+    apiMock.deleteAuthServiceAccount.mockResolvedValue({ deleted: 'svc-1' })
     apiMock.getAuthEffectiveAccess.mockResolvedValue({
       enabled: true,
       authenticated: true,
@@ -326,7 +391,7 @@ describe('SettingsPage', () => {
         webhooks: [],
       },
       auth: {
-        mode: 'disabled',
+        mode: 'dev',
         provider_name: '',
         login_url: '',
         logout_url: '',
@@ -534,6 +599,221 @@ describe('SettingsPage', () => {
     expect(generalSection.textContent).toContain('Subject Header Check')
     expect(generalSection.textContent).toContain('Role Header Check')
     expect(container.textContent).toContain('Settings saved.')
+  })
+
+  it('saves native OIDC auth settings through system settings', async () => {
+    apiMock.updateSystemSettings.mockImplementation(async (settings) => settings)
+
+    await act(async () => {
+      root.render(<SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+
+    await flushPromises()
+
+    const generalSection = container.querySelector('#settings-section-general')
+    expect(generalSection).toBeTruthy()
+    if (!generalSection) return
+
+    const authModeSelect = findSettingSelect(generalSection, 'Access Control Mode')
+    expect(authModeSelect).toBeTruthy()
+    if (!authModeSelect) return
+
+    await setFieldValue(authModeSelect, 'oidc')
+
+    const issuerInput = findSettingInput(generalSection, 'Issuer URL')
+    const clientIDInput = findSettingInput(generalSection, 'Client ID')
+    const redirectURLInput = findSettingInput(generalSection, 'Redirect URL')
+    expect(issuerInput).toBeTruthy()
+    expect(clientIDInput).toBeTruthy()
+    expect(redirectURLInput).toBeTruthy()
+    if (!issuerInput || !clientIDInput || !redirectURLInput) return
+
+    await setFieldValue(issuerInput, 'https://login.example.test/tenant/v2.0')
+    await setFieldValue(clientIDInput, 'stormrunner-dashboard')
+    await setFieldValue(redirectURLInput, 'https://stormrunner.example.test/api/v1/auth/callback')
+
+    const saveButton = findButton('Save Changes')
+    expect(saveButton).toBeDefined()
+    if (!saveButton) return
+
+    await act(async () => {
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushPromises()
+
+    expect(apiMock.updateSystemSettings).toHaveBeenCalledWith(expect.objectContaining({
+      auth: expect.objectContaining({
+        mode: 'oidc',
+        issuer_url: 'https://login.example.test/tenant/v2.0',
+        client_id: 'stormrunner-dashboard',
+        client_secret_env_var: 'STORMRUNNER_OIDC_CLIENT_SECRET',
+        redirect_url: 'https://stormrunner.example.test/api/v1/auth/callback',
+        scopes: ['openid', 'profile', 'email'],
+        roles_claim: 'roles',
+        project_roles_claim: 'project_roles',
+        session_secret_env_var: 'STORMRUNNER_AUTH_SESSION_SECRET',
+      }),
+    }))
+    expect(generalSection.textContent).toContain('Native OIDC Session Flow')
+    expect(container.textContent).toContain('Settings saved.')
+  })
+
+  it('shows dev-mode auth admin panels and provisions service accounts', async () => {
+    apiMock.listAuthServiceAccounts
+      .mockResolvedValueOnce({
+        service_accounts: [
+          {
+            id: 'svc-1',
+            name: 'Nightly CI',
+            description: 'Runs nightly smoke coverage',
+            active: true,
+            global_roles: ['viewer'],
+            project_roles: { 'project-1': ['editor'] },
+            created_at: '2026-05-16T00:00:00Z',
+            updated_at: '2026-05-16T00:00:00Z',
+          },
+        ],
+        count: 1,
+      })
+      .mockResolvedValueOnce({
+        service_accounts: [
+          {
+            id: 'svc-1',
+            name: 'Nightly CI',
+            description: 'Runs nightly smoke coverage',
+            active: true,
+            global_roles: ['viewer'],
+            project_roles: { 'project-1': ['editor'] },
+            created_at: '2026-05-16T00:00:00Z',
+            updated_at: '2026-05-16T00:00:00Z',
+          },
+          {
+            id: 'svc-2',
+            name: 'Release Automation',
+            description: 'Runs release checks',
+            active: true,
+            global_roles: ['editor'],
+            project_roles: {},
+            created_at: '2026-05-16T02:00:00Z',
+            updated_at: '2026-05-16T02:00:00Z',
+          },
+        ],
+        count: 2,
+      })
+    apiMock.listAuthAuditEvents
+      .mockResolvedValueOnce({
+        events: [
+          {
+            id: 'audit-1',
+            action: 'system.settings.update',
+            actor_type: 'dev_mode',
+            actor_subject: 'dev-mode',
+            actor_display_name: 'Development Mode',
+            resource_type: 'system_settings',
+            resource_id: 'global',
+            status: 'success',
+            created_at: '2026-05-16T01:00:00Z',
+          },
+        ],
+        count: 1,
+      })
+      .mockResolvedValueOnce({
+        events: [
+          {
+            id: 'audit-2',
+            action: 'auth.service_account.create',
+            actor_type: 'dev_mode',
+            actor_subject: 'dev-mode',
+            actor_display_name: 'Development Mode',
+            resource_type: 'service_account',
+            resource_id: 'svc-2',
+            status: 'success',
+            created_at: '2026-05-16T02:00:00Z',
+          },
+        ],
+        count: 1,
+      })
+
+    await act(async () => {
+      root.render(<SettingsPage theme="dark" onThemeChange={vi.fn()} authStatus={{ enabled: false, mode: 'dev', authenticated: false }} />)
+    })
+
+    await flushPromises()
+
+    const generalSection = container.querySelector('#settings-section-general')
+    expect(generalSection).toBeTruthy()
+    if (!generalSection) return
+
+    expect(generalSection.textContent).toContain('Development Bypass')
+    expect(generalSection.textContent).toContain('Service Account API Keys')
+    expect(generalSection.textContent).toContain('Recent Audit Events')
+    expect(generalSection.textContent).toContain('Nightly CI')
+    expect(generalSection.textContent).toContain('system.settings.update')
+
+    const nameInput = Array.from(generalSection.querySelectorAll('input')).find(input => (input as HTMLInputElement).placeholder === 'Nightly CI') as HTMLInputElement | undefined
+    expect(nameInput).toBeDefined()
+    if (!nameInput) return
+    await setFieldValue(nameInput, 'Release Automation')
+
+    const descriptionInput = Array.from(generalSection.querySelectorAll('input')).find(input => (input as HTMLInputElement).placeholder === 'Runs nightly smoke coverage') as HTMLInputElement | undefined
+    expect(descriptionInput).toBeDefined()
+    if (!descriptionInput) return
+    await setFieldValue(descriptionInput, 'Runs release checks')
+
+    const createButton = findButton('Create Service Account')
+    expect(createButton).toBeDefined()
+    if (!createButton) return
+
+    await act(async () => {
+      createButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushPromises()
+
+    expect(apiMock.createAuthServiceAccount).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Release Automation',
+      description: 'Runs release checks',
+      global_roles: ['viewer'],
+    }))
+    expect(generalSection.textContent).toContain('Copy the issued API key now')
+    expect(generalSection.textContent).toContain('srk_test_key')
+
+    const rotateButton = Array.from(generalSection.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Rotate Key') as HTMLButtonElement | undefined
+    expect(rotateButton).toBeDefined()
+    if (!rotateButton) return
+    await act(async () => {
+      rotateButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+    expect(apiMock.rotateAuthServiceAccount).toHaveBeenCalledWith('svc-1')
+    expect(generalSection.textContent).toContain('srk_rotated_key')
+
+    const disableButton = Array.from(generalSection.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Disable') as HTMLButtonElement | undefined
+    expect(disableButton).toBeDefined()
+    if (!disableButton) return
+    await act(async () => {
+      disableButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+    expect(apiMock.updateAuthServiceAccount).toHaveBeenCalledWith('svc-1', { active: false })
+
+    const auditFilterInputs = Array.from(generalSection.querySelectorAll('input')).filter(input => {
+      const element = input as HTMLInputElement
+      return element.placeholder === 'action' || element.placeholder === 'actor_type' || element.placeholder === 'status'
+    }) as HTMLInputElement[]
+    expect(auditFilterInputs).toHaveLength(3)
+    if (auditFilterInputs.length !== 3) return
+    await setFieldValue(auditFilterInputs[0], 'auth.service_account.rotate')
+    await setFieldValue(auditFilterInputs[1], 'dev_mode')
+    await setFieldValue(auditFilterInputs[2], 'success')
+    await flushPromises()
+    expect(apiMock.listAuthAuditEvents).toHaveBeenLastCalledWith(expect.objectContaining({
+      limit: 20,
+      action: 'auth.service_account.rotate',
+      actor_type: 'dev_mode',
+      status: 'success',
+    }))
   })
 
   it('shows the current authenticated identity and effective roles when trusted-header auth is enabled', async () => {

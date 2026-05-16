@@ -1,13 +1,17 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
+
+	"github.com/jasonczech/stormrunner/pkg/storage"
 )
 
-func TestHandleGetAuthStatusReturnsDisabledByDefault(t *testing.T) {
+func TestHandleGetAuthStatusReturnsDevByDefault(t *testing.T) {
 	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/me", nil)
 	resp := httptest.NewRecorder()
@@ -23,13 +27,13 @@ func TestHandleGetAuthStatusReturnsDisabledByDefault(t *testing.T) {
 		t.Fatalf("unmarshal auth status: %v", err)
 	}
 	if payload.Enabled {
-		t.Fatal("expected auth to be disabled by default")
+		t.Fatal("expected auth to be bypassed by default")
 	}
 	if payload.Authenticated {
-		t.Fatal("expected no authenticated user when auth is disabled")
+		t.Fatal("expected no authenticated user when auth is in dev mode")
 	}
-	if payload.Mode != authModeDisabled {
-		t.Fatalf("mode = %q, want %q", payload.Mode, authModeDisabled)
+	if payload.Mode != authModeDev {
+		t.Fatalf("mode = %q, want %q", payload.Mode, authModeDev)
 	}
 }
 
@@ -185,7 +189,7 @@ func TestHandleGetAuthAccessMatrixReturnsResourcePolicies(t *testing.T) {
 	}
 }
 
-func TestHandleGetAuthEffectiveAccessReturnsOpenAccessWhenDisabled(t *testing.T) {
+func TestHandleGetAuthEffectiveAccessReturnsOpenAccessWhenDevModeBypassesAuth(t *testing.T) {
 	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/effective-access", nil)
 	resp := httptest.NewRecorder()
@@ -201,13 +205,13 @@ func TestHandleGetAuthEffectiveAccessReturnsOpenAccessWhenDisabled(t *testing.T)
 		t.Fatalf("unmarshal auth effective access: %v", err)
 	}
 	if payload.Enabled {
-		t.Fatal("expected disabled auth mode")
+		t.Fatal("expected dev mode to keep upstream auth disabled")
 	}
 	if payload.Authenticated {
-		t.Fatal("expected no authenticated user in disabled mode")
+		t.Fatal("expected no authenticated user in dev mode")
 	}
-	if !payload.Resources[0].Operations[0].Allowed || payload.Resources[0].Operations[0].GrantSource != "disabled" {
-		t.Fatalf("first operation = %#v, want allowed via disabled mode", payload.Resources[0].Operations[0])
+	if !payload.Resources[0].Operations[0].Allowed || payload.Resources[0].Operations[0].GrantSource != "dev_mode" {
+		t.Fatalf("first operation = %#v, want allowed via dev mode", payload.Resources[0].Operations[0])
 	}
 }
 
@@ -252,5 +256,139 @@ func TestHandleGetAuthEffectiveAccessEvaluatesProjectRoles(t *testing.T) {
 	}
 	if manageSystem.Allowed {
 		t.Fatalf("manage system = %#v, want denied for project editor", manageSystem)
+	}
+}
+
+func TestHandleServiceAccountCRUD(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	body := []byte(`{"name":"Nightly CI","description":"Runs automation","global_roles":["system_admin"],"project_roles":{"project-a":["editor"]}}`)
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/service-accounts", bytes.NewReader(body))
+	createResp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(createResp, createReq)
+
+	if createResp.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want %d body=%s", createResp.Code, http.StatusCreated, createResp.Body.String())
+	}
+	var created AuthServiceAccountCreateResponse
+	if err := json.Unmarshal(createResp.Body.Bytes(), &created); err != nil {
+		t.Fatalf("unmarshal service account create: %v", err)
+	}
+	if created.APIKey == "" || created.ServiceAccount == nil {
+		t.Fatalf("create payload = %#v, want service account and api key", created)
+	}
+	if !created.ServiceAccount.Active {
+		t.Fatalf("expected created service account to be active, got %#v", created.ServiceAccount)
+	}
+	if created.ServiceAccount.GlobalRoles[0] != RoleSystemAdmin {
+		t.Fatalf("global roles = %#v, want system_admin", created.ServiceAccount.GlobalRoles)
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/auth/service-accounts", nil)
+	listResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(listResp, listReq)
+	if listResp.Code != http.StatusOK {
+		t.Fatalf("list status = %d, want %d body=%s", listResp.Code, http.StatusOK, listResp.Body.String())
+	}
+	var listed AuthServiceAccountListResponse
+	if err := json.Unmarshal(listResp.Body.Bytes(), &listed); err != nil {
+		t.Fatalf("unmarshal service account list: %v", err)
+	}
+	if listed.Count != 1 || listed.ServiceAccounts[0].ID != created.ServiceAccount.ID {
+		t.Fatalf("listed service accounts = %#v, want created account", listed)
+	}
+
+	rotateReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/service-accounts/"+created.ServiceAccount.ID+"/rotate", nil)
+	rotateResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(rotateResp, rotateReq)
+	if rotateResp.Code != http.StatusOK {
+		t.Fatalf("rotate status = %d, want %d body=%s", rotateResp.Code, http.StatusOK, rotateResp.Body.String())
+	}
+	var rotated AuthServiceAccountCreateResponse
+	if err := json.Unmarshal(rotateResp.Body.Bytes(), &rotated); err != nil {
+		t.Fatalf("unmarshal service account rotate: %v", err)
+	}
+	if rotated.APIKey == "" || rotated.APIKey == created.APIKey {
+		t.Fatalf("rotate payload = %#v, want new api key", rotated)
+	}
+
+	updateReq := httptest.NewRequest(http.MethodPatch, "/api/v1/auth/service-accounts/"+created.ServiceAccount.ID, bytes.NewReader([]byte(`{"active":false}`)))
+	updateResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(updateResp, updateReq)
+	if updateResp.Code != http.StatusOK {
+		t.Fatalf("update status = %d, want %d body=%s", updateResp.Code, http.StatusOK, updateResp.Body.String())
+	}
+	var updated storage.ServiceAccount
+	if err := json.Unmarshal(updateResp.Body.Bytes(), &updated); err != nil {
+		t.Fatalf("unmarshal service account update: %v", err)
+	}
+	if updated.Active {
+		t.Fatalf("expected service account to be disabled, got %#v", updated)
+	}
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/v1/auth/service-accounts/"+created.ServiceAccount.ID, nil)
+	deleteResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(deleteResp, deleteReq)
+	if deleteResp.Code != http.StatusOK {
+		t.Fatalf("delete status = %d, want %d body=%s", deleteResp.Code, http.StatusOK, deleteResp.Body.String())
+	}
+}
+
+func TestHandleGetAuditEventsReturnsRecordedSystemSettingsChange(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	settings := server.runner.GetSystemSettings()
+	settings.General.MaxConcurrentTests = 5
+	body, _ := json.Marshal(settings)
+	updateReq := httptest.NewRequest(http.MethodPut, "/api/v1/system/settings", bytes.NewReader(body))
+	updateResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(updateResp, updateReq)
+	if updateResp.Code != http.StatusOK {
+		t.Fatalf("settings update status = %d, want %d body=%s", updateResp.Code, http.StatusOK, updateResp.Body.String())
+	}
+
+	auditReq := httptest.NewRequest(http.MethodGet, "/api/v1/auth/audit-events", nil)
+	auditResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(auditResp, auditReq)
+	if auditResp.Code != http.StatusOK {
+		t.Fatalf("audit list status = %d, want %d body=%s", auditResp.Code, http.StatusOK, auditResp.Body.String())
+	}
+	var payload AuthAuditEventListResponse
+	if err := json.Unmarshal(auditResp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal audit list: %v", err)
+	}
+	if payload.Count == 0 {
+		t.Fatal("expected at least one audit event")
+	}
+	if payload.Events[0].Action != "system.settings.update" {
+		t.Fatalf("first audit event = %#v, want system.settings.update", payload.Events[0])
+	}
+	if payload.Events[0].ActorType != "dev_mode" {
+		t.Fatalf("actor type = %q, want dev_mode", payload.Events[0].ActorType)
+	}
+
+	filteredReq := httptest.NewRequest(http.MethodGet, "/api/v1/auth/audit-events?action=system.settings.update&actor_type=dev_mode&limit=1&offset=0", nil)
+	filteredResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(filteredResp, filteredReq)
+	if filteredResp.Code != http.StatusOK {
+		t.Fatalf("filtered audit list status = %d, want %d body=%s", filteredResp.Code, http.StatusOK, filteredResp.Body.String())
+	}
+	var filtered AuthAuditEventListResponse
+	if err := json.Unmarshal(filteredResp.Body.Bytes(), &filtered); err != nil {
+		t.Fatalf("unmarshal filtered audit list: %v", err)
+	}
+	if filtered.Count != 1 || filtered.Limit != 1 || filtered.Offset != 0 {
+		t.Fatalf("filtered audit payload = %#v, want one paged event", filtered)
 	}
 }

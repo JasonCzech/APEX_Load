@@ -303,6 +303,31 @@ func (s *SQLiteStore) init() error {
 			value TEXT,
 			updated_at DATETIME
 		)`,
+		`CREATE TABLE IF NOT EXISTS service_accounts (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL,
+			description TEXT,
+			key_hash TEXT NOT NULL UNIQUE,
+			active INTEGER NOT NULL DEFAULT 1,
+			global_roles_json TEXT,
+			project_roles_json TEXT,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL,
+			last_used_at DATETIME
+		)`,
+		`CREATE TABLE IF NOT EXISTS audit_events (
+			id TEXT PRIMARY KEY,
+			action TEXT NOT NULL,
+			actor_type TEXT NOT NULL,
+			actor_subject TEXT NOT NULL,
+			actor_display_name TEXT,
+			project_id TEXT,
+			resource_type TEXT,
+			resource_id TEXT,
+			status TEXT NOT NULL,
+			details_json TEXT,
+			created_at DATETIME NOT NULL
+		)`,
 	}
 
 	for _, q := range queries {
@@ -386,6 +411,7 @@ func (s *SQLiteStore) init() error {
 		{`ALTER TABLE test_interval_summaries ADD COLUMN controller_fanout_lag_ms REAL`, "test_interval_summaries.controller_fanout_lag_ms"},
 		{`ALTER TABLE test_interval_summaries ADD COLUMN browser_json TEXT`, "test_interval_summaries.browser_json"},
 		{`ALTER TABLE test_interval_summaries ADD COLUMN browser_by_device_json TEXT`, "test_interval_summaries.browser_by_device_json"},
+		{`ALTER TABLE service_accounts ADD COLUMN active INTEGER NOT NULL DEFAULT 1`, "service_accounts.active"},
 	} {
 		if _, err := s.db.Exec(migration.query); err != nil && !isDuplicateColumnErr(err) {
 			return fmt.Errorf("failed to add %s column: %w", migration.name, err)
@@ -2171,6 +2197,220 @@ func (s *SQLiteStore) GetSetting(key string) (string, error) {
 		return "", err
 	}
 	return value, nil
+}
+
+func (s *SQLiteStore) SaveServiceAccount(account *ServiceAccount) error {
+	if account == nil {
+		return fmt.Errorf("service account is required")
+	}
+	globalRolesJSON, err := json.Marshal(account.GlobalRoles)
+	if err != nil {
+		return err
+	}
+	projectRolesJSON, err := json.Marshal(account.ProjectRoles)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`INSERT INTO service_accounts (id, name, description, key_hash, active, global_roles_json, project_roles_json, created_at, updated_at, last_used_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			name=excluded.name,
+			description=excluded.description,
+			key_hash=excluded.key_hash,
+			active=excluded.active,
+			global_roles_json=excluded.global_roles_json,
+			project_roles_json=excluded.project_roles_json,
+			updated_at=excluded.updated_at,
+			last_used_at=excluded.last_used_at`,
+		account.ID,
+		account.Name,
+		account.Description,
+		account.KeyHash,
+		boolToSQLite(account.Active),
+		string(globalRolesJSON),
+		string(projectRolesJSON),
+		account.CreatedAt,
+		account.UpdatedAt,
+		account.LastUsedAt,
+	)
+	return err
+}
+
+func (s *SQLiteStore) GetServiceAccount(id string) (*ServiceAccount, error) {
+	return s.getServiceAccountByQuery(`SELECT id, name, description, key_hash, active, global_roles_json, project_roles_json, created_at, updated_at, last_used_at FROM service_accounts WHERE id = ?`, id)
+}
+
+func (s *SQLiteStore) GetServiceAccountByKeyHash(keyHash string) (*ServiceAccount, error) {
+	return s.getServiceAccountByQuery(`SELECT id, name, description, key_hash, active, global_roles_json, project_roles_json, created_at, updated_at, last_used_at FROM service_accounts WHERE key_hash = ? AND active = 1`, keyHash)
+}
+
+func (s *SQLiteStore) getServiceAccountByQuery(query string, arg string) (*ServiceAccount, error) {
+	var account ServiceAccount
+	var active int
+	var globalRolesJSON string
+	var projectRolesJSON string
+	var lastUsedAt sql.NullTime
+	err := s.db.QueryRow(query, arg).Scan(
+		&account.ID,
+		&account.Name,
+		&account.Description,
+		&account.KeyHash,
+		&active,
+		&globalRolesJSON,
+		&projectRolesJSON,
+		&account.CreatedAt,
+		&account.UpdatedAt,
+		&lastUsedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	account.Active = active != 0
+	if lastUsedAt.Valid {
+		account.LastUsedAt = &lastUsedAt.Time
+	}
+	if err := json.Unmarshal([]byte(globalRolesJSON), &account.GlobalRoles); err != nil && strings.TrimSpace(globalRolesJSON) != "" {
+		return nil, err
+	}
+	if err := json.Unmarshal([]byte(projectRolesJSON), &account.ProjectRoles); err != nil && strings.TrimSpace(projectRolesJSON) != "" {
+		return nil, err
+	}
+	if account.ProjectRoles == nil {
+		account.ProjectRoles = map[string][]string{}
+	}
+	return &account, nil
+}
+
+func (s *SQLiteStore) ListServiceAccounts() ([]*ServiceAccount, error) {
+	rows, err := s.db.Query(`SELECT id, name, description, key_hash, active, global_roles_json, project_roles_json, created_at, updated_at, last_used_at FROM service_accounts ORDER BY created_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	accounts := []*ServiceAccount{}
+	for rows.Next() {
+		var account ServiceAccount
+		var active int
+		var globalRolesJSON string
+		var projectRolesJSON string
+		var lastUsedAt sql.NullTime
+		if err := rows.Scan(&account.ID, &account.Name, &account.Description, &account.KeyHash, &active, &globalRolesJSON, &projectRolesJSON, &account.CreatedAt, &account.UpdatedAt, &lastUsedAt); err != nil {
+			return nil, err
+		}
+		account.Active = active != 0
+		if lastUsedAt.Valid {
+			account.LastUsedAt = &lastUsedAt.Time
+		}
+		if err := json.Unmarshal([]byte(globalRolesJSON), &account.GlobalRoles); err != nil && strings.TrimSpace(globalRolesJSON) != "" {
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(projectRolesJSON), &account.ProjectRoles); err != nil && strings.TrimSpace(projectRolesJSON) != "" {
+			return nil, err
+		}
+		if account.ProjectRoles == nil {
+			account.ProjectRoles = map[string][]string{}
+		}
+		accounts = append(accounts, &account)
+	}
+	return accounts, rows.Err()
+}
+
+func (s *SQLiteStore) RotateServiceAccountKey(id string, keyHash string, updatedAt time.Time) error {
+	_, err := s.db.Exec(`UPDATE service_accounts SET key_hash = ?, updated_at = ? WHERE id = ?`, keyHash, updatedAt, id)
+	return err
+}
+
+func (s *SQLiteStore) UpdateServiceAccountLastUsed(id string, lastUsedAt time.Time) error {
+	_, err := s.db.Exec(`UPDATE service_accounts SET last_used_at = ?, updated_at = ? WHERE id = ?`, lastUsedAt, lastUsedAt, id)
+	return err
+}
+
+func (s *SQLiteStore) UpdateServiceAccountActive(id string, active bool, updatedAt time.Time) error {
+	_, err := s.db.Exec(`UPDATE service_accounts SET active = ?, updated_at = ? WHERE id = ?`, boolToSQLite(active), updatedAt, id)
+	return err
+}
+
+func (s *SQLiteStore) DeleteServiceAccount(id string) error {
+	_, err := s.db.Exec(`DELETE FROM service_accounts WHERE id = ?`, id)
+	return err
+}
+
+func (s *SQLiteStore) SaveAuditEvent(event *AuditEvent) error {
+	if event == nil {
+		return fmt.Errorf("audit event is required")
+	}
+	detailsJSON, err := json.Marshal(event.Details)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`INSERT INTO audit_events (id, action, actor_type, actor_subject, actor_display_name, project_id, resource_type, resource_id, status, details_json, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		event.ID,
+		event.Action,
+		event.ActorType,
+		event.ActorSubject,
+		event.ActorDisplayName,
+		event.ProjectID,
+		event.ResourceType,
+		event.ResourceID,
+		event.Status,
+		string(detailsJSON),
+		event.CreatedAt,
+	)
+	return err
+}
+
+func (s *SQLiteStore) ListAuditEvents(filter AuditEventFilter) ([]*AuditEvent, error) {
+	if filter.Limit <= 0 {
+		filter.Limit = 100
+	}
+	if filter.Offset < 0 {
+		filter.Offset = 0
+	}
+	query := strings.Builder{}
+	query.WriteString(`SELECT id, action, actor_type, actor_subject, actor_display_name, project_id, resource_type, resource_id, status, details_json, created_at FROM audit_events WHERE 1 = 1`)
+	args := make([]any, 0, 8)
+	appendFilter := func(column string, value string) {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			return
+		}
+		query.WriteString(` AND ` + column + ` = ?`)
+		args = append(args, trimmed)
+	}
+	appendFilter("action", filter.Action)
+	appendFilter("actor_type", filter.ActorType)
+	appendFilter("project_id", filter.ProjectID)
+	appendFilter("resource_type", filter.ResourceType)
+	appendFilter("resource_id", filter.ResourceID)
+	appendFilter("status", filter.Status)
+	query.WriteString(` ORDER BY created_at DESC LIMIT ? OFFSET ?`)
+	args = append(args, filter.Limit, filter.Offset)
+	rows, err := s.db.Query(query.String(), args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	events := []*AuditEvent{}
+	for rows.Next() {
+		var event AuditEvent
+		var detailsJSON string
+		if err := rows.Scan(&event.ID, &event.Action, &event.ActorType, &event.ActorSubject, &event.ActorDisplayName, &event.ProjectID, &event.ResourceType, &event.ResourceID, &event.Status, &detailsJSON, &event.CreatedAt); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(detailsJSON), &event.Details); err != nil && strings.TrimSpace(detailsJSON) != "" {
+			return nil, err
+		}
+		events = append(events, &event)
+	}
+	return events, rows.Err()
+}
+
+func boolToSQLite(value bool) int {
+	if value {
+		return 1
+	}
+	return 0
 }
 
 func (s *SQLiteStore) Close() error {

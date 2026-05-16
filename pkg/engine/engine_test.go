@@ -16,6 +16,8 @@ type stubProtocol struct {
 	initConfig     map[string]any
 }
 
+type slowStubProtocol struct{}
+
 func (s *stubProtocol) Name() string { return "stub" }
 func (s *stubProtocol) Init(_ context.Context, config map[string]any) error {
 	s.initCalled = true
@@ -36,9 +38,25 @@ func (s *stubProtocol) Teardown(_ context.Context) error {
 }
 func (s *stubProtocol) HealthCheck(_ context.Context) error { return nil }
 
+func (s *slowStubProtocol) Name() string                                   { return "slow-stub" }
+func (s *slowStubProtocol) Init(_ context.Context, _ map[string]any) error { return nil }
+func (s *slowStubProtocol) Execute(_ context.Context, action *protocol.Action) (*protocol.Result, error) {
+	time.Sleep(200 * time.Millisecond)
+	return &protocol.Result{
+		ActionName: action.Name,
+		Success:    true,
+		Duration:   200 * time.Millisecond,
+	}, nil
+}
+func (s *slowStubProtocol) Teardown(_ context.Context) error    { return nil }
+func (s *slowStubProtocol) HealthCheck(_ context.Context) error { return nil }
+
 func init() {
 	protocol.Register("stub", func() protocol.Protocol {
 		return &stubProtocol{}
+	})
+	protocol.Register("slow-stub", func() protocol.Protocol {
+		return &slowStubProtocol{}
 	})
 }
 
@@ -200,5 +218,139 @@ func TestMultiGroup_RunIncludesBaselinePeriods(t *testing.T) {
 	}
 	if result.Duration < 120*time.Millisecond {
 		t.Fatalf("expected runtime to include baseline windows, got %v", result.Duration)
+	}
+}
+
+func TestEngine_RunHonorsSharedTPSPacing(t *testing.T) {
+	script := &dsl.Script{
+		Name:     "tps-run-test",
+		Protocol: "stub",
+		Config: dsl.ScriptConfig{
+			RunLogic: dsl.RunLogicConfig{Iterations: 2},
+			Pacing:   dsl.PacingConfig{Type: "tps", TPS: 2},
+		},
+		Actions: []dsl.Action{{Name: "homepage", Type: "request", Target: "/"}},
+	}
+
+	e, err := New(Config{
+		Script:   script,
+		VUsers:   2,
+		Duration: 5 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	started := time.Now()
+	result, err := e.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if result.TotalTransactions != 4 {
+		t.Fatalf("transactions = %d, want 4", result.TotalTransactions)
+	}
+	if elapsed := time.Since(started); elapsed < 1500*time.Millisecond {
+		t.Fatalf("expected shared TPS pacing to stretch runtime, got %v", elapsed)
+	}
+}
+
+func TestMultiGroup_RunHonorsSharedTPSPacing(t *testing.T) {
+	mge, err := NewMultiGroup(MultiGroupConfig{
+		Groups: []GroupConfig{{
+			Name: "tps-group",
+			Script: &dsl.Script{
+				Name:     "tps-group-script",
+				Protocol: "stub",
+				Config: dsl.ScriptConfig{
+					RunLogic: dsl.RunLogicConfig{Iterations: 2},
+					Pacing:   dsl.PacingConfig{Type: "tps", TPS: 2},
+				},
+				Actions: []dsl.Action{{Name: "a", Type: "request", Target: "/"}},
+			},
+			VUsers: 2,
+		}},
+		Duration: 5 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("NewMultiGroup: %v", err)
+	}
+
+	started := time.Now()
+	result, err := mge.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if result.TotalTransactions != 4 {
+		t.Fatalf("transactions = %d, want 4", result.TotalTransactions)
+	}
+	if elapsed := time.Since(started); elapsed < 1500*time.Millisecond {
+		t.Fatalf("expected shared TPS pacing to stretch runtime, got %v", elapsed)
+	}
+}
+
+func TestEngine_RunOpenWorkloadOverlapsSlowIterations(t *testing.T) {
+	script := &dsl.Script{
+		Name:     "open-workload-run-test",
+		Protocol: "slow-stub",
+		Config: dsl.ScriptConfig{
+			RunLogic: dsl.RunLogicConfig{Iterations: 5, WorkloadModel: "open"},
+			Pacing:   dsl.PacingConfig{Type: "tps", TPS: 10},
+		},
+		Actions: []dsl.Action{{Name: "homepage", Type: "request", Target: "/"}},
+	}
+
+	e, err := New(Config{
+		Script:   script,
+		VUsers:   1,
+		Duration: 5 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	started := time.Now()
+	result, err := e.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if result.TotalTransactions != 5 {
+		t.Fatalf("transactions = %d, want 5", result.TotalTransactions)
+	}
+	if elapsed := time.Since(started); elapsed > 900*time.Millisecond {
+		t.Fatalf("expected open workload to overlap slow iterations, got %v", elapsed)
+	}
+}
+
+func TestMultiGroup_RunOpenWorkloadOverlapsSlowIterations(t *testing.T) {
+	mge, err := NewMultiGroup(MultiGroupConfig{
+		Groups: []GroupConfig{{
+			Name: "open-group",
+			Script: &dsl.Script{
+				Name:     "open-workload-group-script",
+				Protocol: "slow-stub",
+				Config: dsl.ScriptConfig{
+					RunLogic: dsl.RunLogicConfig{Iterations: 5, WorkloadModel: "open"},
+					Pacing:   dsl.PacingConfig{Type: "tps", TPS: 10},
+				},
+				Actions: []dsl.Action{{Name: "a", Type: "request", Target: "/"}},
+			},
+			VUsers: 1,
+		}},
+		Duration: 5 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("NewMultiGroup: %v", err)
+	}
+
+	started := time.Now()
+	result, err := mge.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if result.TotalTransactions != 5 {
+		t.Fatalf("transactions = %d, want 5", result.TotalTransactions)
+	}
+	if elapsed := time.Since(started); elapsed > 900*time.Millisecond {
+		t.Fatalf("expected open workload to overlap slow iterations, got %v", elapsed)
 	}
 }

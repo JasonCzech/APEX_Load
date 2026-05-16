@@ -172,6 +172,18 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
     [resolvedTests],
   )
 
+  const pendingTests = useMemo(() =>
+    resolvedTests
+      .filter(t => t.status === 'PENDING')
+      .sort((a, b) => {
+        const aPosition = a.queue_position ?? Number.MAX_SAFE_INTEGER
+        const bPosition = b.queue_position ?? Number.MAX_SAFE_INTEGER
+        if (aPosition !== bPosition) return aPosition - bPosition
+        return Date.parse(a.pending_since || a.created_at || '') - Date.parse(b.pending_since || b.created_at || '')
+      }),
+    [resolvedTests],
+  )
+
   useEffect(() => {
     const activeIds = activeTests.map(test => test.id)
     setActiveCardOrder(prev => {
@@ -283,7 +295,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
       ? activeLiveMetrics.reduce((sum, metrics) => sum + (metrics?.error_pct || 0), 0) / activeLiveMetrics.length
       : 0
     return { total: resolvedTests.length, completed, failed, aborted, active: activeTests.length, activeVUsers, activeTps, avgLatency, avgError }
-  }, [resolvedTests, activeTests])
+  }, [resolvedTests, activeTests, activeLiveMetrics])
 
   const releaseStats = useMemo(() => {
     const completed = releaseCompleted.filter(t => t.status === 'COMPLETE').length
@@ -318,8 +330,17 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
     if (health?.capacity_availability?.warnings?.length) {
       items.push({ tone: 'warning', title: 'Capacity warning', detail: health.capacity_availability.warnings[0] })
     }
+    pendingTests.slice(0, 3).forEach(test => {
+      const queuePrefix = test.queue_position ? `Queue #${test.queue_position}` : 'Queued'
+      items.push({
+        tone: 'info',
+        title: `${test.name} waiting`,
+        detail: `${queuePrefix} · ${test.pending_reason || 'waiting for capacity'}${test.pending_since ? ` · since ${formatDateTime(test.pending_since)}` : ''}`,
+        testId: test.id,
+      })
+    })
     return items.slice(0, 6)
-  }, [activeTests, releaseCompleted, health])
+  }, [activeTests, health, pendingTests, releaseCompleted])
 
   const statusColor = connectionState === 'connected'
     ? health?.status === 'healthy' ? 'healthy' : 'degraded'
@@ -567,7 +588,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
               </svg>
             </span>
             <span>No tests currently running</span>
-            <span className="dash-empty-hint">Start a scenario from the Scenarios page</span>
+            <span className="dash-empty-hint">{pendingTests.length > 0 ? `${pendingTests.length} test${pendingTests.length === 1 ? '' : 's'} waiting on project capacity.` : 'Start a scenario from the Scenarios page'}</span>
           </div>
         ) : (
           <div className={`dash-active-grid ${customizingCards ? 'is-customizing' : ''}`}>

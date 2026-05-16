@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -53,6 +54,55 @@ func newRunningControlTestServer(t *testing.T) (*Server, *ManagedTest) {
 	})
 
 	return server, testRun
+}
+
+func newRunningControlAuditServer(t *testing.T) (*Server, *ManagedTest, *storage.SQLiteStore) {
+	t.Helper()
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+
+	protocolName := "control-audit-" + strings.ReplaceAll(strings.ToLower(t.Name()), "/", "-")
+	protocol.Register(protocolName, func() protocol.Protocol {
+		return &archiveStubProtocol{}
+	})
+
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	server.runner.StoreScript(&dsl.Script{
+		ID:        protocolName + "-script",
+		Name:      "Controller Lifecycle Script",
+		ProjectID: storage.DefaultProjectID,
+		Protocol:  protocolName,
+		Version:   "1.0.0",
+		Actions:   []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+
+	testRun, err := server.runner.CreateTest(CreateTestRequest{
+		Name:     "Controller Lifecycle Test",
+		Duration: "10s",
+		Groups: []CreateGroupEntry{{
+			Name:     "buyers",
+			ScriptID: protocolName + "-script",
+			VUsers:   1,
+		}},
+	})
+	if err != nil {
+		store.Close()
+		t.Fatalf("CreateTest returned error: %v", err)
+	}
+	if err := server.runner.StartTest(testRun.ID); err != nil {
+		store.Close()
+		t.Fatalf("StartTest returned error: %v", err)
+	}
+	waitForTestStatus(t, server.runner, testRun.ID, "RUNNING")
+
+	t.Cleanup(func() {
+		cleanupControlTestRun(t, server, testRun.ID)
+		store.Close()
+	})
+
+	return server, testRun, store
 }
 
 func cleanupControlTestRun(t *testing.T, server *Server, testID string) {
@@ -238,5 +288,95 @@ func TestHandleAdjustDurationUpdatesRunningTest(t *testing.T) {
 	}
 	if updated.Duration != 5*time.Second || updated.DurationStr != "5s" {
 		t.Fatalf("duration = %v (%q), want 5s", updated.Duration, updated.DurationStr)
+	}
+}
+
+func TestHandleMoveScaleAdjustAndDeleteTestWriteAuditEvents(t *testing.T) {
+	server, testRun, store := newRunningControlAuditServer(t)
+
+	moveReq := httptest.NewRequest(http.MethodPatch, "/api/v1/tests/"+testRun.ID+"/move", bytes.NewBufferString(`{"folder_id":null}`))
+	moveReq.Header.Set("Content-Type", "application/json")
+	moveResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(moveResp, moveReq)
+	if moveResp.Code != http.StatusOK {
+		t.Fatalf("move status = %d, want %d body=%s", moveResp.Code, http.StatusOK, moveResp.Body.String())
+	}
+
+	scaleReq := httptest.NewRequest(http.MethodPatch, "/api/v1/tests/"+testRun.ID+"/vusers", bytes.NewBufferString(`{"group":"buyers","target_vusers":2}`))
+	scaleReq.Header.Set("Content-Type", "application/json")
+	scaleResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(scaleResp, scaleReq)
+	if scaleResp.Code != http.StatusOK {
+		t.Fatalf("scale status = %d, want %d body=%s", scaleResp.Code, http.StatusOK, scaleResp.Body.String())
+	}
+
+	adjustReq := httptest.NewRequest(http.MethodPatch, "/api/v1/tests/"+testRun.ID+"/duration", bytes.NewBufferString(`{"duration":"5s"}`))
+	adjustReq.Header.Set("Content-Type", "application/json")
+	adjustResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(adjustResp, adjustReq)
+	if adjustResp.Code != http.StatusOK {
+		t.Fatalf("adjust status = %d, want %d body=%s", adjustResp.Code, http.StatusOK, adjustResp.Body.String())
+	}
+
+	if err := server.runner.StopTest(testRun.ID); err != nil {
+		t.Fatalf("StopTest returned error: %v", err)
+	}
+	waitForStatusAny(t, server.runner, testRun.ID, 5*time.Second, "COMPLETE", "FAILED")
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/v1/tests/"+testRun.ID, nil)
+	deleteResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(deleteResp, deleteReq)
+	if deleteResp.Code != http.StatusOK {
+		t.Fatalf("delete status = %d, want %d body=%s", deleteResp.Code, http.StatusOK, deleteResp.Body.String())
+	}
+
+	events, err := store.ListAuditEvents(storage.AuditEventFilter{Limit: 10, ProjectID: storage.DefaultProjectID})
+	if err != nil {
+		t.Fatalf("ListAuditEvents returned error: %v", err)
+	}
+	if len(events) != 4 {
+		t.Fatalf("audit event count = %d, want 4", len(events))
+	}
+	if events[0].Action != "test.delete" || events[1].Action != "test.duration.adjust" || events[2].Action != "test.vusers.scale" || events[3].Action != "test.move" {
+		t.Fatalf("audit actions = [%s %s %s %s], want delete/adjust/scale/move", events[0].Action, events[1].Action, events[2].Action, events[3].Action)
+	}
+}
+
+func TestHandlePinAndUnpinComparisonBaselineWriteAuditEvents(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	completedAt := time.Date(2026, time.May, 12, 12, 0, 0, 0, time.UTC)
+	pinnedAt := completedAt.Add(-time.Minute)
+	server.runner.tests["baseline-a"] = &ManagedTest{ID: "baseline-a", Name: "Checkout", Status: "COMPLETE", ScenarioID: "scenario-1", ProjectID: storage.DefaultProjectID, CreatedAt: completedAt.Add(-5 * time.Minute), EndedAt: &completedAt}
+	server.runner.tests["baseline-b"] = &ManagedTest{ID: "baseline-b", Name: "Checkout", Status: "FAILED", ScenarioID: "scenario-1", ProjectID: storage.DefaultProjectID, CreatedAt: completedAt.Add(-15 * time.Minute), EndedAt: &completedAt, BaselinePinned: true, BaselinePinnedAt: &pinnedAt}
+
+	pinReq := httptest.NewRequest(http.MethodPost, "/api/v1/tests/baseline-a/comparison-baseline/pin", nil)
+	pinResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(pinResp, pinReq)
+	if pinResp.Code != http.StatusOK {
+		t.Fatalf("pin status = %d, want %d body=%s", pinResp.Code, http.StatusOK, pinResp.Body.String())
+	}
+
+	unpinReq := httptest.NewRequest(http.MethodDelete, "/api/v1/tests/baseline-a/comparison-baseline/pin", nil)
+	unpinResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(unpinResp, unpinReq)
+	if unpinResp.Code != http.StatusOK {
+		t.Fatalf("unpin status = %d, want %d body=%s", unpinResp.Code, http.StatusOK, unpinResp.Body.String())
+	}
+
+	events, err := store.ListAuditEvents(storage.AuditEventFilter{Limit: 10, ProjectID: storage.DefaultProjectID})
+	if err != nil {
+		t.Fatalf("ListAuditEvents returned error: %v", err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("audit event count = %d, want 2", len(events))
+	}
+	if events[0].Action != "test.comparison_baseline.unpin" || events[1].Action != "test.comparison_baseline.pin" {
+		t.Fatalf("audit actions = [%s %s], want unpin/pin", events[0].Action, events[1].Action)
 	}
 }

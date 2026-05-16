@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/chromedp/chromedp"
-	playwright "github.com/playwright-community/playwright-go"
 	"github.com/jasonczech/stormrunner/pkg/protocol"
+	playwright "github.com/playwright-community/playwright-go"
 )
 
 const playwrightGoVersion = "v0.5700.1"

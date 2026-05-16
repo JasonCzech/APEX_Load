@@ -194,6 +194,46 @@ func TestMetricsCollector_ByGroup(t *testing.T) {
 	}
 }
 
+func TestMetricsCollector_TracksThroughputTargetGap(t *testing.T) {
+	mc := NewMetricsCollector(100)
+	mc.SetTargetTPS(8)
+	mc.SetGroupTargetTPS("buyers", 6)
+
+	snap := mc.computeSnapshot([]*protocol.Result{
+		{ActionName: "a", Group: "buyers", Success: true, Duration: 10 * time.Millisecond},
+		{ActionName: "b", Group: "buyers", Success: true, Duration: 12 * time.Millisecond},
+		{ActionName: "c", Group: "buyers", Success: true, Duration: 14 * time.Millisecond},
+		{ActionName: "d", Group: "buyers", Success: true, Duration: 16 * time.Millisecond},
+	}, time.Second)
+
+	if snap.TargetTPS != 8 {
+		t.Fatalf("target TPS = %v, want 8", snap.TargetTPS)
+	}
+	if snap.TPS != 4 {
+		t.Fatalf("actual TPS = %v, want 4", snap.TPS)
+	}
+	if !snap.ThroughputTargetMissed {
+		t.Fatal("expected overall throughput target miss")
+	}
+	if snap.ThroughputGapPct < 49 || snap.ThroughputGapPct > 51 {
+		t.Fatalf("overall throughput gap = %v, want about 50%%", snap.ThroughputGapPct)
+	}
+
+	buyers := snap.ByGroup["buyers"]
+	if buyers == nil {
+		t.Fatal("expected buyers group metrics")
+	}
+	if buyers.TargetTPS != 6 {
+		t.Fatalf("buyers target TPS = %v, want 6", buyers.TargetTPS)
+	}
+	if !buyers.ThroughputTargetMissed {
+		t.Fatal("expected buyers throughput target miss")
+	}
+	if buyers.ThroughputGapPct < 32 || buyers.ThroughputGapPct > 34 {
+		t.Fatalf("buyers throughput gap = %v, want about 33%%", buyers.ThroughputGapPct)
+	}
+}
+
 func TestMetricsCollector_BrowserMetricsSummary(t *testing.T) {
 	mc := NewMetricsCollector(100)
 	snap := mc.computeSnapshot([]*protocol.Result{
@@ -344,13 +384,13 @@ func TestMetricsCollector_ByActionAggregatesServerTelemetry(t *testing.T) {
 	mc := NewMetricsCollector(100)
 	snap := mc.computeSnapshot([]*protocol.Result{
 		{
-			ActionName: "login",
-			Success:    true,
-			Duration:   10 * time.Millisecond,
-			DNSTime:    8 * time.Millisecond,
+			ActionName:  "login",
+			Success:     true,
+			Duration:    10 * time.Millisecond,
+			DNSTime:     8 * time.Millisecond,
 			ConnectTime: 12 * time.Millisecond,
-			TLSTime:    5 * time.Millisecond,
-			TTFB:       55 * time.Millisecond,
+			TLSTime:     5 * time.Millisecond,
+			TTFB:        55 * time.Millisecond,
 			ServerTelemetry: &protocol.ServerTelemetry{
 				ServerProcessingMs: 60,
 				TransferMs:         20,
@@ -367,26 +407,26 @@ func TestMetricsCollector_ByActionAggregatesServerTelemetry(t *testing.T) {
 			},
 		},
 		{
-			ActionName: "login",
-			Success:    true,
-			Duration:   15 * time.Millisecond,
-			DNSTime:    12 * time.Millisecond,
+			ActionName:  "login",
+			Success:     true,
+			Duration:    15 * time.Millisecond,
+			DNSTime:     12 * time.Millisecond,
 			ConnectTime: 18 * time.Millisecond,
-			TTFB:       50 * time.Millisecond,
+			TTFB:        50 * time.Millisecond,
 			ServerTelemetry: &protocol.ServerTelemetry{
-				ServerProcessingMs: 40,
-				TransferMs:         10,
-				RequestPayloadKB:   2.5,
-				RequestSizeClass:   "medium",
-				ResponsePayloadKB:  5.0,
-				ResponseSizeClass:  "large",
-				MessageLatencyMs:   45,
-				MessagesSent:       1,
-				MessagesReceived:   1,
-				MessagesSentPerSec: 50,
+				ServerProcessingMs:     40,
+				TransferMs:             10,
+				RequestPayloadKB:       2.5,
+				RequestSizeClass:       "medium",
+				ResponsePayloadKB:      5.0,
+				ResponseSizeClass:      "large",
+				MessageLatencyMs:       45,
+				MessagesSent:           1,
+				MessagesReceived:       1,
+				MessagesSentPerSec:     50,
 				MessagesReceivedPerSec: 50,
-				ConsumerLagMs:      70,
-				ConnectionReused:   true,
+				ConsumerLagMs:          70,
+				ConnectionReused:       true,
 			},
 		},
 	}, time.Second)

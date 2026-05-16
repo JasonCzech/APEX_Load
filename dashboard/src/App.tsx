@@ -1,7 +1,8 @@
 import { useState, useCallback } from 'react'
 import { useDashboardTheme } from './hooks/useDashboardTheme'
 import { useWebSocket } from './hooks/useWebSocket'
-import { ApplicationProvider, useApplication } from './hooks/useApplication'
+import { ApplicationProvider } from './hooks/ApplicationProvider'
+import { useApplication } from './hooks/useApplication'
 import { MetricsHistoryPoint, TelemetryDiagnostic, TelemetryDiagnosticEntry, WSMessage } from './types'
 import Sidebar, { NavPage } from './components/Sidebar'
 import TestHub from './components/TestHub'
@@ -15,7 +16,8 @@ import SettingsPage from './components/SettingsPage'
 import { appendTelemetryDiagnostic } from './components/monitoringTelemetryDiagnostics'
 import AuthGate from './components/AuthGate'
 import { useAuthStatus } from './hooks/useAuthStatus'
-import { ProjectProvider, useProject } from './hooks/useProject'
+import { ProjectProvider } from './hooks/ProjectProvider'
+import { useProject } from './hooks/useProject'
 import './App.css'
 import './components/Pages.css'
 
@@ -93,7 +95,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   }, [])
 
   const { projects, activeProject, setActiveProject, createAndSelectProject } = useProject()
-  const { connected, connectionState } = useWebSocket({ onMessage: handleWSMessage, projectId: activeProject?.id })
+  const { connectionState } = useWebSocket({ onMessage: handleWSMessage, projectId: activeProject?.id })
   const { applications, releases, activeApplication, activeRelease, setActiveApplication, setActiveRelease, createAndSelectApplication, createAndSelectRelease } = useApplication()
 
   const navigateToTest = (id: string) => setView({ page: 'test', testId: id })

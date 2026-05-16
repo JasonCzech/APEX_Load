@@ -195,4 +195,56 @@ describe('TestExecutionScenarioPreview', () => {
     expect(onEditScript).toHaveBeenCalledWith('script-1')
     expect(onExpandedScenarioScriptChange).toHaveBeenCalledTimes(1)
   })
+
+  it('shows pending queue metadata for queued starts waiting on capacity', async () => {
+    await act(async () => {
+      root.render(
+        <TestExecutionScenarioPreview
+          test={{
+            id: 'test-pending',
+            name: 'Pending Scenario',
+            status: 'PENDING',
+            total_vusers: 10,
+            duration: '5m',
+            created_at: '2026-05-12T20:00:00Z',
+            pending_since: '2026-05-12T20:01:00Z',
+            queue_position: 2,
+            pending_reason: 'waiting for project test slot (1 max concurrent tests)',
+            groups: [{
+              name: 'Checkout',
+              script_id: 'script-1',
+              script_name: 'Checkout Script',
+              protocol: 'http',
+              vusers: 10,
+            }],
+          } as never}
+          startCapacityConflict={null}
+          startFeedback=""
+          onDismissStartConflict={vi.fn()}
+          onConfirmStartAnyway={vi.fn()}
+          queuedScenarioPreview={{
+            points: [],
+            totalVUsers: 10,
+            totalSeconds: 300,
+            steadySeconds: 300,
+            startDelaySeconds: 0,
+            preBaselineSeconds: 0,
+            postBaselineSeconds: 0,
+          }}
+          queuedScenarioRows={[]}
+          scriptDetailsLoading={false}
+          scriptDetailsError=""
+          expandedScenarioScript={null}
+          onExpandedScenarioScriptChange={vi.fn()}
+          onEditScript={vi.fn()}
+          groupColors={['#0a84ff']}
+        />,
+      )
+    })
+
+    expect(container.textContent).toContain('Queued for project capacity')
+    expect(container.textContent).toContain('Queue position #2')
+    expect(container.textContent).toContain('waiting for project test slot')
+    expect(container.textContent).toContain('Waiting since')
+  })
 })

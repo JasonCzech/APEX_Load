@@ -191,6 +191,8 @@ Enterprise deployments need access control.
 - **API key management** — service account keys for CI/CD pipelines
 - **Team/project isolation** — teams only see their projects and results
 
+**Current direction:** Stormrunner now defaults local environments to an explicit `dev` bypass mode while keeping production aligned to Microsoft Entra ID-backed trusted-header auth. Service-account API keys, audit-event persistence, and dashboard visibility for both governance surfaces are now in place, leaving upstream identity lifecycle and broader team isolation as the remaining enterprise-auth expansion areas.
+
 **Why it matters:** Once Stormrunner is shared across teams, this becomes a rollout blocker rather than a late-stage enhancement.
 
 ---

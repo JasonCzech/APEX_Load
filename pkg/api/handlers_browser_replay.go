@@ -34,7 +34,7 @@ func (s *Server) handleStartBrowserReplayDraftScript(w http.ResponseWriter, r *h
 		writeError(w, http.StatusBadRequest, "script is required")
 		return
 	}
-	s.handleStartBrowserReplayRequest(w, "", req.Script, req)
+	s.handleStartBrowserReplayRequest(w, r, "", req.Script, req)
 }
 
 func (s *Server) handleStartBrowserReplayScript(w http.ResponseWriter, r *http.Request) {
@@ -64,10 +64,10 @@ func (s *Server) handleStartBrowserReplayScript(w http.ResponseWriter, r *http.R
 		}
 	}
 
-	s.handleStartBrowserReplayRequest(w, id, script, req)
+	s.handleStartBrowserReplayRequest(w, r, id, script, req)
 }
 
-func (s *Server) handleStartBrowserReplayRequest(w http.ResponseWriter, id string, script *dsl.Script, req BrowserReplayStartRequest) {
+func (s *Server) handleStartBrowserReplayRequest(w http.ResponseWriter, r *http.Request, id string, script *dsl.Script, req BrowserReplayStartRequest) {
 	script = applyBrowserReplayOverrides(script, req)
 	issues := validateScript(script)
 	warnings := validationWarnings(script)
@@ -86,6 +86,7 @@ func (s *Server) handleStartBrowserReplayRequest(w http.ResponseWriter, id strin
 	}
 
 	session := s.browserReplay.Start(id, script, req)
+	s.recordAuditEvent(r, "browser_replay.session.start", "success", "browser_replay_session", session.ID, session.ProjectID, map[string]any{"script_id": session.ScriptID, "script_name": script.Name, "status": session.Status, "start_paused": req.StartPaused})
 	writeJSON(w, http.StatusOK, map[string]any{
 		"script_id":         id,
 		"replay_session_id": session.ID,
@@ -145,6 +146,7 @@ func (s *Server) handleGetBrowserReplaySession(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusNotFound, "browser replay session not found")
 		return
 	}
+	s.recordAuditEvent(r, "browser_replay.session.stop", "success", "browser_replay_session", session.ID, session.ProjectID, map[string]any{"script_id": session.ScriptID, "status": session.Status})
 	writeJSON(w, http.StatusOK, map[string]any{"session": session})
 }
 
@@ -169,6 +171,7 @@ func (s *Server) handlePauseBrowserReplaySession(w http.ResponseWriter, r *http.
 		writeError(w, http.StatusConflict, "browser replay session is not running")
 		return
 	}
+	s.recordAuditEvent(r, "browser_replay.session.pause", "success", "browser_replay_session", session.ID, session.ProjectID, map[string]any{"script_id": session.ScriptID, "status": session.Status})
 	writeJSON(w, http.StatusOK, map[string]any{"session": session})
 }
 
@@ -183,5 +186,6 @@ func (s *Server) handleResumeBrowserReplaySession(w http.ResponseWriter, r *http
 		writeError(w, http.StatusConflict, "browser replay session is not paused")
 		return
 	}
+	s.recordAuditEvent(r, "browser_replay.session.resume", "success", "browser_replay_session", session.ID, session.ProjectID, map[string]any{"script_id": session.ScriptID, "status": session.Status})
 	writeJSON(w, http.StatusOK, map[string]any{"session": session})
 }

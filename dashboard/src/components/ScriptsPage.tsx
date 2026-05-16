@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { StoredScript, TestSummary } from '../types'
+import { StoredScript } from '../types'
 import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
 import ScriptCreateOptions from './ScriptCreateOptions'

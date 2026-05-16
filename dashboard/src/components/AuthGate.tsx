@@ -4,10 +4,15 @@ import { AuthStatusState } from '../hooks/useAuthStatus'
 import './AuthGate.css'
 
 export default function AuthGate({ children, state }: { children: ReactNode; state: AuthStatusState }) {
-
   const providerLabel = state.status === 'ready' && state.auth.provider_name?.trim()
     ? state.auth.provider_name.trim()
-    : 'access gateway'
+    : state.status === 'ready' && state.auth.mode === 'oidc'
+      ? 'identity provider'
+      : 'access gateway'
+
+  const blockedMessage = state.status === 'ready' && state.auth.mode === 'oidc'
+    ? `This dashboard is configured for native OIDC authentication. Complete sign-in with ${providerLabel} so Stormrunner can establish your session.`
+    : `This dashboard is configured for trusted-header authentication. Complete sign-in through the configured upstream ${providerLabel} so Stormrunner receives your identity headers.`
 
   if (state.status === 'loading') {
     return (
@@ -40,10 +45,7 @@ export default function AuthGate({ children, state }: { children: ReactNode; sta
         <section className="auth-gate-card auth-gate-card--blocked">
           <p className="auth-gate-kicker">Stormrunner Access</p>
           <h1>Sign-in required</h1>
-          <p>
-            This dashboard is configured for trusted-header authentication. Complete sign-in through the configured
-            upstream {providerLabel} so Stormrunner receives your identity headers.
-          </p>
+          <p>{blockedMessage}</p>
           {state.auth.login_url && (
             <p>
               <a className="auth-gate-action" href={state.auth.login_url}>Continue to {providerLabel}</a>

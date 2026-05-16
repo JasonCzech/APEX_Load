@@ -58,6 +58,11 @@
   border-color: rgba(16, 185, 129, 0.18);
 }
 
+.throughput-status-card {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.12), rgba(120, 53, 15, 0.08));
+  border-color: rgba(245, 158, 11, 0.24);
+}
+
 .browser-metrics-card {
   background: linear-gradient(135deg, rgba(249, 115, 22, 0.08), rgba(255, 255, 255, 0.02));
   border-color: rgba(249, 115, 22, 0.18);
@@ -848,6 +853,11 @@
   border: 1px solid rgba(245, 158, 11, 0.28);
 }
 
+.scenario-alert-banner.scenario-alert-info {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.16), rgba(30, 64, 175, 0.08));
+  border: 1px solid rgba(59, 130, 246, 0.28);
+}
+
 .scenario-alert-title {
   margin: 0 0 6px;
   font-size: 16px;
@@ -856,6 +866,10 @@
 
 .scenario-alert-warning .scenario-alert-title {
   color: #ffe7b8;
+}
+
+.scenario-alert-info .scenario-alert-title {
+  color: #dbeafe;
 }
 
 .scenario-alert-message {
@@ -1486,6 +1500,27 @@
   flex-direction: column;
   align-items: center;
   gap: 2px;
+
+.gm-throughput-status {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.gm-throughput-status.healthy {
+  color: var(--success);
+}
+
+.gm-throughput-status.danger {
+  color: var(--danger);
+}
 }
 
 .gm-value {

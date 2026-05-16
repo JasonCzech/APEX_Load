@@ -65,6 +65,7 @@ func (s *Server) handleCreateDataPool(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	s.recordAuditEvent(r, "data_pool.create", "success", "data_pool", req.ID, req.ProjectID, map[string]any{"name": req.Name})
 	writeJSON(w, http.StatusCreated, req)
 }
 
@@ -121,6 +122,7 @@ func (s *Server) handleUpdateDataPool(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	s.recordAuditEvent(r, "data_pool.update", "success", "data_pool", existing.ID, existing.ProjectID, map[string]any{"name": existing.Name})
 	writeJSON(w, http.StatusOK, existing)
 }
 
@@ -130,10 +132,17 @@ func (s *Server) handleDeleteDataPool(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := r.PathValue("id")
+	projectID := ""
+	name := ""
+	if pool, err := s.store.GetDataPool(id); err == nil && pool != nil {
+		projectID = pool.ProjectID
+		name = pool.Name
+	}
 	if err := s.store.DeleteDataPool(id); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	s.recordAuditEvent(r, "data_pool.delete", "success", "data_pool", id, projectID, map[string]any{"name": name})
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})
 }
 
@@ -172,6 +181,11 @@ func (s *Server) handleCreateDataPoolRow(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	projectID := ""
+	if pool, err := s.store.GetDataPool(req.PoolID); err == nil && pool != nil {
+		projectID = pool.ProjectID
+	}
+	s.recordAuditEvent(r, "data_pool.row.create", "success", "data_pool_row", req.ID, projectID, map[string]any{"pool_id": req.PoolID})
 	writeJSON(w, http.StatusCreated, req)
 }
 
@@ -191,6 +205,11 @@ func (s *Server) handleUpdateDataPoolRow(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	projectID := ""
+	if pool, err := s.store.GetDataPool(req.PoolID); err == nil && pool != nil {
+		projectID = pool.ProjectID
+	}
+	s.recordAuditEvent(r, "data_pool.row.update", "success", "data_pool_row", req.ID, projectID, map[string]any{"pool_id": req.PoolID})
 	writeJSON(w, http.StatusOK, req)
 }
 
@@ -200,10 +219,16 @@ func (s *Server) handleDeleteDataPoolRow(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	id := r.PathValue("row_id")
+	projectID := ""
+	poolID := r.PathValue("id")
+	if pool, err := s.store.GetDataPool(poolID); err == nil && pool != nil {
+		projectID = pool.ProjectID
+	}
 	if err := s.store.DeleteDataPoolRow(id); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	s.recordAuditEvent(r, "data_pool.row.delete", "success", "data_pool_row", id, projectID, map[string]any{"pool_id": poolID})
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})
 }
 
@@ -257,6 +282,7 @@ func (s *Server) handleUpdateScenarioDataPools(w http.ResponseWriter, r *http.Re
 	if scenario, ok := s.runner.GetScenario(scenarioID); ok {
 		scenario.DataPools = bindings
 	}
+	s.recordAuditEvent(r, "scenario.data_pools.update", "success", "scenario", scenarioID, scenario.ProjectID, map[string]any{"binding_count": len(bindings)})
 	writeJSON(w, http.StatusOK, map[string]any{"data_pools": bindings, "count": len(bindings)})
 }
 

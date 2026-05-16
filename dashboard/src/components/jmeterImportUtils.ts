@@ -1,4 +1,4 @@
-import { type ImportedAction, type ImportedExtractor, type ImportedScript, type JMeterConvertStats as ConvertStats, type JMeterImportResult as ImportResult, type JMeterImportSummary, type SupportMatrix } from '../types/scriptImports'
+import { type ImportedAction, type ImportedExtractor, type ImportedScript, type JMeterImportResult as ImportResult, type SupportMatrix } from '../types/scriptImports'
 
 export interface SupportMatrixSection {
   key: 'supported' | 'partial' | 'unsupported'

@@ -235,18 +235,18 @@ func TestJMSConsumeClassifiesDeadLetterDestinations(t *testing.T) {
 	ctx := context.Background()
 	p := &JMS{name: "jms-solace", provider: "solace"}
 	if err := p.Init(ctx, map[string]any{
-		"jms_destination":               "orders.dlq",
+		"jms_destination":              "orders.dlq",
 		"jms_dead_letter_destinations": []string{"orders.dlq"},
-		"jms_mock":                      true,
-		"jms_timeout_ms":                float64(250),
+		"jms_mock":                     true,
+		"jms_timeout_ms":               float64(250),
 	}); err != nil {
 		t.Fatalf("Init returned error: %v", err)
 	}
 
 	_, err := p.Execute(ctx, &protocol.Action{
-		Name: "publish-dead-letter",
-		Type: "jms_publish",
-		Body: []byte(`{"orderId":"A-404"}`),
+		Name:     "publish-dead-letter",
+		Type:     "jms_publish",
+		Body:     []byte(`{"orderId":"A-404"}`),
 		Metadata: map[string]any{},
 	})
 	if err != nil {

@@ -16,6 +16,7 @@ func (s *Server) handleCreateScenario(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	s.recordAuditEvent(r, "scenario.create", "success", "scenario", scenario.ID, scenario.ProjectID, map[string]any{"name": scenario.Name, "duration": scenario.Duration})
 	writeJSON(w, http.StatusCreated, scenario)
 }
 
@@ -54,15 +55,21 @@ func (s *Server) handleUpdateScenario(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "scenario not found")
 		return
 	}
+	s.recordAuditEvent(r, "scenario.update", "success", "scenario", scenario.ID, scenario.ProjectID, map[string]any{"name": scenario.Name, "duration": scenario.Duration})
 	writeJSON(w, http.StatusOK, scenario)
 }
 
 func (s *Server) handleDeleteScenario(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	projectID := ""
+	if scenario, ok := s.runner.GetScenario(id); ok {
+		projectID = scenario.ProjectID
+	}
 	if !s.runner.DeleteScenario(id) {
 		writeError(w, http.StatusBadRequest, "scenario not found or has results")
 		return
 	}
+	s.recordAuditEvent(r, "scenario.delete", "success", "scenario", id, projectID, nil)
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})
 }
 
@@ -87,6 +94,11 @@ func (s *Server) handleCreateScenarioSchedule(w http.ResponseWriter, r *http.Req
 		writeError(w, status, err.Error())
 		return
 	}
+	projectID := ""
+	if scenario, ok := s.runner.GetScenario(r.PathValue("id")); ok {
+		projectID = scenario.ProjectID
+	}
+	s.recordAuditEvent(r, "scenario.schedule.create", "success", "scenario_schedule", schedule.ID, projectID, map[string]any{"scenario_id": schedule.ScenarioID, "name": schedule.Name, "cron_expr": schedule.CronExpr, "enabled": schedule.Enabled})
 	writeJSON(w, http.StatusCreated, schedule)
 }
 
@@ -114,13 +126,23 @@ func (s *Server) handleUpdateScenarioSchedule(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusNotFound, "scenario schedule not found")
 		return
 	}
+	projectID := ""
+	if scenario, ok := s.runner.GetScenario(r.PathValue("id")); ok {
+		projectID = scenario.ProjectID
+	}
+	s.recordAuditEvent(r, "scenario.schedule.update", "success", "scenario_schedule", schedule.ID, projectID, map[string]any{"scenario_id": schedule.ScenarioID, "name": schedule.Name, "cron_expr": schedule.CronExpr, "enabled": schedule.Enabled})
 	writeJSON(w, http.StatusOK, schedule)
 }
 
 func (s *Server) handleDeleteScenarioSchedule(w http.ResponseWriter, r *http.Request) {
+	projectID := ""
+	if scenario, ok := s.runner.GetScenario(r.PathValue("id")); ok {
+		projectID = scenario.ProjectID
+	}
 	if !s.runner.DeleteScenarioSchedule(r.PathValue("id"), r.PathValue("schedule_id")) {
 		writeError(w, http.StatusNotFound, "scenario schedule not found")
 		return
 	}
+	s.recordAuditEvent(r, "scenario.schedule.delete", "success", "scenario_schedule", r.PathValue("schedule_id"), projectID, map[string]any{"scenario_id": r.PathValue("id")})
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": r.PathValue("schedule_id")})
 }

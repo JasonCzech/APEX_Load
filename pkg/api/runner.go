@@ -1370,11 +1370,16 @@ type GoalConfig struct {
 
 // RuntimeSettingsOverride allows overriding script-level runtime settings at test time,
 // mirroring LoadRunner Controller's override capability.
+type RuntimeBrowserOverride struct {
+	Headless *bool `json:"headless,omitempty"`
+}
+
 type RuntimeSettingsOverride struct {
 	Iterations       *int                     `json:"iterations,omitempty"`
 	Pacing           *dsl.PacingConfig        `json:"pacing,omitempty"`
 	ThinkTime        *dsl.ThinkTimeConfig     `json:"think_time,omitempty"`
 	ErrorHandling    *dsl.ErrorHandlingConfig `json:"error_handling,omitempty"`
+	Browser          *RuntimeBrowserOverride  `json:"browser,omitempty"`
 	LogLevel         string                   `json:"log_level,omitempty"`
 	AutoTransactions string                   `json:"auto_transactions,omitempty"`
 	BaseURL          string                   `json:"base_url,omitempty"`
@@ -4202,6 +4207,10 @@ func applyRuntimeOverrides(script *dsl.Script, overrides *RuntimeSettingsOverrid
 	if overrides.ErrorHandling != nil {
 		script.Config.ErrorHandling = *overrides.ErrorHandling
 	}
+	if overrides.Browser != nil && overrides.Browser.Headless != nil {
+		headless := *overrides.Browser.Headless
+		script.Config.Browser.Headless = &headless
+	}
 	if overrides.LogLevel != "" {
 		script.Config.Log.Level = overrides.LogLevel
 	}
@@ -4283,6 +4292,14 @@ func cloneRuntimeSettings(overrides *RuntimeSettingsOverride) *RuntimeSettingsOv
 	if overrides.ErrorHandling != nil {
 		errorHandling := *overrides.ErrorHandling
 		clone.ErrorHandling = &errorHandling
+	}
+	if overrides.Browser != nil {
+		browser := *overrides.Browser
+		if overrides.Browser.Headless != nil {
+			headless := *overrides.Browser.Headless
+			browser.Headless = &headless
+		}
+		clone.Browser = &browser
 	}
 	if len(overrides.Env) > 0 {
 		clone.Env = make(map[string]string, len(overrides.Env))

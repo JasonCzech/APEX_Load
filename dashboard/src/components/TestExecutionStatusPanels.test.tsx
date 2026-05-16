@@ -217,4 +217,61 @@ describe('TestExecutionStatusPanels', () => {
     expect(deviceTierTexts).toEqual(['iOS · WebKit · low tier'])
     expect(container.textContent).toContain('FCP 130.0 ms')
   })
+
+  it('renders throughput tracking and group target miss details when throughput targets are available', async () => {
+    await act(async () => {
+      root.render(
+        <TestExecutionStatusPanels
+          isGoalOriented={false}
+          goalDescription=""
+          test={{
+            id: 'test-1',
+            name: 'Throughput Run',
+            status: 'RUNNING',
+            total_vusers: 8,
+            duration: '5m',
+            created_at: '2026-05-12T20:00:00Z',
+            groups: [],
+          } as never}
+          metrics={{
+            tps: 180,
+            target_tps: 250,
+            throughput_gap_pct: 28,
+            throughput_target_missed: true,
+            active_vusers: 8,
+          }}
+          isMultiGroup={true}
+          groupMetrics={[
+            {
+              name: 'buyers',
+              vusers: 4,
+              transactions: 25,
+              errors: 1,
+              tps: 90,
+              target_tps: 120,
+              throughput_gap_pct: 25,
+              throughput_target_missed: true,
+              avg_response_ms: 220,
+              p50_ms: 180,
+              p90_ms: 310,
+              p99_ms: 480,
+            },
+          ]}
+          groupColors={['#f59e0b']}
+        />,
+      )
+    })
+
+    expect(container.textContent).toContain('Throughput Tracking')
+    expect(container.textContent).toContain('Configured arrival target versus delivered live throughput for this run.')
+    expect(container.textContent).toContain('Target TPS')
+    expect(container.textContent).toContain('250.0')
+    expect(container.textContent).toContain('Actual TPS')
+    expect(container.textContent).toContain('180.0')
+    expect(container.textContent).toContain('Gap')
+    expect(container.textContent).toContain('28.0%')
+    expect(container.textContent).toContain('Behind Target')
+    expect(container.textContent).toContain('Target 120.0 TPS')
+    expect(container.textContent).toContain('Gap 25.0%')
+  })
 })

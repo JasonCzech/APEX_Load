@@ -1,4 +1,4 @@
-import { useEffect, useReducer, useState } from 'react'
+import { useCallback, useEffect, useReducer, useState } from 'react'
 import { useApi } from '../hooks/useApi'
 import { DraftCapacityEstimate, ScenarioDraft, ScenarioDraftGroup, StoredScript, TestSummary } from '../types'
 import './CreateTestModal.css'
@@ -224,7 +224,7 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
     folderId,
   })
 
-  const buildEstimatePayload = () => buildCreateTestPayload({
+  const buildEstimatePayload = useCallback(() => buildCreateTestPayload({
     name,
     duration,
     startDelay,
@@ -239,7 +239,7 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
       : assignment,
     projectId,
     folderId,
-  })
+  }), [assignment, duration, folderId, goalConfig, groups, name, projectId, resourceBaseline, runtimeSettings, scenarioMode, scriptShakeout, startDelay])
 
   useEffect(() => {
     const canEstimate = Boolean(duration.trim()) && groups.every((group) => group.scriptId)
@@ -275,7 +275,7 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
       cancelled = true
       window.clearTimeout(timer)
     }
-  }, [api, assignment, duration, goalConfig, groups, name, resourceBaseline, runtimeSettings, scenarioMode, scriptShakeout, startDelay])
+  }, [api, buildEstimatePayload, groups, duration])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()

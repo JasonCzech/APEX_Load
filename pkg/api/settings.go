@@ -53,6 +53,14 @@ type AuthSettings struct {
 	ProviderName       string `json:"provider_name,omitempty"`
 	LoginURL           string `json:"login_url,omitempty"`
 	LogoutURL          string `json:"logout_url,omitempty"`
+	IssuerURL          string `json:"issuer_url,omitempty"`
+	ClientID           string `json:"client_id,omitempty"`
+	ClientSecretEnvVar string `json:"client_secret_env_var,omitempty"`
+	RedirectURL        string `json:"redirect_url,omitempty"`
+	Scopes             []string `json:"scopes,omitempty"`
+	RolesClaim         string `json:"roles_claim,omitempty"`
+	ProjectRolesClaim  string `json:"project_roles_claim,omitempty"`
+	SessionSecretEnvVar string `json:"session_secret_env_var,omitempty"`
 	UserHeader         string `json:"user_header,omitempty"`
 	NameHeader         string `json:"name_header,omitempty"`
 	EmailHeader        string `json:"email_header,omitempty"`
@@ -63,13 +71,19 @@ type AuthSettings struct {
 const (
 	capacityAvailabilityConfigured         = "configured"
 	capacityAvailabilityConfiguredPlusLive = "configured_plus_live"
+	authModeDev                            = "dev"
 	authModeDisabled                       = "disabled"
 	authModeTrustedHeaders                 = "trusted_headers"
+	authModeOIDC                           = "oidc"
 )
 
 func defaultAuthSettings() AuthSettings {
 	return AuthSettings{
-		Mode:               authModeDisabled,
+		Mode:               authModeDev,
+		Scopes:             []string{"openid", "profile", "email"},
+		RolesClaim:         "roles",
+		ProjectRolesClaim:  "project_roles",
+		SessionSecretEnvVar: "STORMRUNNER_AUTH_SESSION_SECRET",
 		UserHeader:         "X-Auth-Request-User",
 		NameHeader:         "X-Auth-Request-Name",
 		EmailHeader:        "X-Auth-Request-Email",
@@ -81,11 +95,32 @@ func defaultAuthSettings() AuthSettings {
 func normalizeAuthSettings(in AuthSettings) AuthSettings {
 	defaults := defaultAuthSettings()
 	out := in
+	out.Mode = strings.TrimSpace(out.Mode)
 	out.ProviderName = strings.TrimSpace(out.ProviderName)
 	out.LoginURL = strings.TrimSpace(out.LoginURL)
 	out.LogoutURL = strings.TrimSpace(out.LogoutURL)
-	if out.Mode == "" {
+	out.IssuerURL = strings.TrimSpace(out.IssuerURL)
+	out.ClientID = strings.TrimSpace(out.ClientID)
+	out.ClientSecretEnvVar = strings.TrimSpace(out.ClientSecretEnvVar)
+	out.RedirectURL = strings.TrimSpace(out.RedirectURL)
+	out.RolesClaim = strings.TrimSpace(out.RolesClaim)
+	out.ProjectRolesClaim = strings.TrimSpace(out.ProjectRolesClaim)
+	out.SessionSecretEnvVar = strings.TrimSpace(out.SessionSecretEnvVar)
+	out.Scopes = normalizeAuthScopes(out.Scopes)
+	if isAuthBypassMode(out.Mode) {
 		out.Mode = defaults.Mode
+	}
+	if len(out.Scopes) == 0 {
+		out.Scopes = append([]string(nil), defaults.Scopes...)
+	}
+	if out.RolesClaim == "" {
+		out.RolesClaim = defaults.RolesClaim
+	}
+	if out.ProjectRolesClaim == "" {
+		out.ProjectRolesClaim = defaults.ProjectRolesClaim
+	}
+	if out.SessionSecretEnvVar == "" {
+		out.SessionSecretEnvVar = defaults.SessionSecretEnvVar
 	}
 	if out.UserHeader == "" {
 		out.UserHeader = defaults.UserHeader
@@ -103,6 +138,15 @@ func normalizeAuthSettings(in AuthSettings) AuthSettings {
 		out.ProjectRolesHeader = defaults.ProjectRolesHeader
 	}
 	return out
+}
+
+func isAuthBypassMode(mode string) bool {
+	switch strings.TrimSpace(mode) {
+	case "", authModeDev, authModeDisabled:
+		return true
+	default:
+		return false
+	}
 }
 
 func defaultSystemSettings(maxConcurrent int) SystemSettings {
@@ -153,6 +197,10 @@ func cloneSystemSettings(in SystemSettings) SystemSettings {
 		out.Thresholds.MaxAvgTransferMs = &v
 	}
 	out.Notifications = cloneNotificationsSettings(in.Notifications)
+	out.Auth = in.Auth
+	if in.Auth.Scopes != nil {
+		out.Auth.Scopes = append([]string(nil), in.Auth.Scopes...)
+	}
 	return out
 }
 
@@ -259,8 +307,13 @@ func validateSystemSettings(settings SystemSettings) error {
 }
 
 func validateAuthSettings(settings AuthSettings) error {
-	switch settings.Mode {
-	case "", authModeDisabled:
+	mode := strings.TrimSpace(settings.Mode)
+	if mode == authModeDisabled {
+		mode = authModeDev
+	}
+
+	switch mode {
+	case "", authModeDev:
 		return nil
 	case authModeTrustedHeaders:
 		if settings.UserHeader == "" {
@@ -276,9 +329,76 @@ func validateAuthSettings(settings AuthSettings) error {
 			return err
 		}
 		return nil
+	case authModeOIDC:
+		if settings.IssuerURL == "" {
+			return fmt.Errorf("auth.issuer_url is required when auth.mode=%q", authModeOIDC)
+		}
+		if settings.ClientID == "" {
+			return fmt.Errorf("auth.client_id is required when auth.mode=%q", authModeOIDC)
+		}
+		if settings.ClientSecretEnvVar == "" {
+			return fmt.Errorf("auth.client_secret_env_var is required when auth.mode=%q", authModeOIDC)
+		}
+		if settings.RedirectURL == "" {
+			return fmt.Errorf("auth.redirect_url is required when auth.mode=%q", authModeOIDC)
+		}
+		if settings.SessionSecretEnvVar == "" {
+			return fmt.Errorf("auth.session_secret_env_var is required when auth.mode=%q", authModeOIDC)
+		}
+		if err := validateRequiredAuthURL("issuer_url", settings.IssuerURL); err != nil {
+			return err
+		}
+		if err := validateRequiredAuthURL("redirect_url", settings.RedirectURL); err != nil {
+			return err
+		}
+		if err := validateOptionalAuthURL("login_url", settings.LoginURL); err != nil {
+			return err
+		}
+		if err := validateOptionalAuthURL("logout_url", settings.LogoutURL); err != nil {
+			return err
+		}
+		if len(normalizeAuthScopes(settings.Scopes)) == 0 {
+			return fmt.Errorf("auth.scopes must contain at least one scope when auth.mode=%q", authModeOIDC)
+		}
+		return nil
 	default:
-		return fmt.Errorf("auth.mode must be one of %q or %q", authModeDisabled, authModeTrustedHeaders)
+		return fmt.Errorf("auth.mode must be one of %q, %q, or %q", authModeDev, authModeTrustedHeaders, authModeOIDC)
 	}
+}
+
+func normalizeAuthScopes(scopes []string) []string {
+	if len(scopes) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(scopes))
+	out := make([]string, 0, len(scopes))
+	for _, scope := range scopes {
+		trimmed := strings.TrimSpace(scope)
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		out = append(out, trimmed)
+	}
+	return out
+}
+
+func validateRequiredAuthURL(field string, value string) error {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return fmt.Errorf("auth.%s is required", field)
+	}
+	parsed, err := url.Parse(trimmed)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return fmt.Errorf("auth.%s must be an absolute http(s) URL", field)
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return fmt.Errorf("auth.%s must be an absolute http(s) URL", field)
+	}
+	return nil
 }
 
 func validateOptionalAuthURL(field string, value string) error {

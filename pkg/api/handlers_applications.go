@@ -32,6 +32,7 @@ func (s *Server) handleCreateApplication(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	s.recordAuditEvent(r, "application.create", "success", "application", application.ID, application.ProjectID, map[string]any{"name": application.Name})
 	writeJSON(w, http.StatusCreated, application)
 }
 
@@ -95,6 +96,7 @@ func (s *Server) handleUpdateApplication(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	s.recordAuditEvent(r, "application.update", "success", "application", application.ID, application.ProjectID, map[string]any{"name": application.Name})
 	writeJSON(w, http.StatusOK, application)
 }
 
@@ -104,10 +106,17 @@ func (s *Server) handleDeleteApplication(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	id := r.PathValue("id")
+	projectID := ""
+	name := ""
+	if application, err := s.store.GetApplication(id); err == nil && application != nil {
+		projectID = application.ProjectID
+		name = application.Name
+	}
 	if err := s.store.DeleteApplication(id); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	s.recordAuditEvent(r, "application.delete", "success", "application", id, projectID, map[string]any{"name": name})
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})
 }
 
@@ -132,6 +141,11 @@ func (s *Server) handleCreateRelease(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	projectID := ""
+	if application, err := s.store.GetApplication(release.ApplicationID); err == nil && application != nil {
+		projectID = application.ProjectID
+	}
+	s.recordAuditEvent(r, "release.create", "success", "release", release.ID, projectID, map[string]any{"name": release.Name, "application_id": release.ApplicationID})
 	writeJSON(w, http.StatusCreated, release)
 }
 
@@ -186,6 +200,11 @@ func (s *Server) handleUpdateRelease(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	projectID := ""
+	if application, err := s.store.GetApplication(release.ApplicationID); err == nil && application != nil {
+		projectID = application.ProjectID
+	}
+	s.recordAuditEvent(r, "release.update", "success", "release", release.ID, projectID, map[string]any{"name": release.Name, "application_id": release.ApplicationID})
 	writeJSON(w, http.StatusOK, release)
 }
 
@@ -195,10 +214,21 @@ func (s *Server) handleDeleteRelease(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := r.PathValue("id")
+	projectID := ""
+	name := ""
+	applicationID := ""
+	if release, err := s.store.GetRelease(id); err == nil && release != nil {
+		name = release.Name
+		applicationID = release.ApplicationID
+		if application, err := s.store.GetApplication(release.ApplicationID); err == nil && application != nil {
+			projectID = application.ProjectID
+		}
+	}
 	if err := s.store.DeleteRelease(id); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	s.recordAuditEvent(r, "release.delete", "success", "release", id, projectID, map[string]any{"name": name, "application_id": applicationID})
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})
 }
 
@@ -217,5 +247,10 @@ func (s *Server) handleArchiveRelease(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "release not found")
 		return
 	}
+	projectID := ""
+	if application, err := s.store.GetApplication(release.ApplicationID); err == nil && application != nil {
+		projectID = application.ProjectID
+	}
+	s.recordAuditEvent(r, "release.archive", "success", "release", release.ID, projectID, map[string]any{"name": release.Name, "application_id": release.ApplicationID})
 	writeJSON(w, http.StatusOK, release)
 }

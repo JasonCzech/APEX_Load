@@ -737,19 +737,19 @@ func (s *Service) metricsBatchForMetrics(testID string, stats GeneratorStats, tr
 		var protoServerTelemetry *pb.ServerTelemetry
 		if tx.ServerTelemetry != nil {
 			protoServerTelemetry = &pb.ServerTelemetry{
-				ServerProcessingMs: tx.ServerTelemetry.ServerProcessingMs,
-				TransferMs:         tx.ServerTelemetry.TransferMs,
-				RequestPayloadKb:   tx.ServerTelemetry.RequestPayloadKB,
-				ResponsePayloadKb:  tx.ServerTelemetry.ResponsePayloadKB,
-				ConnectionReused:   tx.ServerTelemetry.ConnectionReused,
-				RequestSizeClass:   tx.ServerTelemetry.RequestSizeClass,
-				ResponseSizeClass:  tx.ServerTelemetry.ResponseSizeClass,
-				MessageLatencyMs:   tx.ServerTelemetry.MessageLatencyMs,
-				MessagesSent:       tx.ServerTelemetry.MessagesSent,
-				MessagesReceived:   tx.ServerTelemetry.MessagesReceived,
-				MessagesSentPerSec: tx.ServerTelemetry.MessagesSentPerSec,
+				ServerProcessingMs:     tx.ServerTelemetry.ServerProcessingMs,
+				TransferMs:             tx.ServerTelemetry.TransferMs,
+				RequestPayloadKb:       tx.ServerTelemetry.RequestPayloadKB,
+				ResponsePayloadKb:      tx.ServerTelemetry.ResponsePayloadKB,
+				ConnectionReused:       tx.ServerTelemetry.ConnectionReused,
+				RequestSizeClass:       tx.ServerTelemetry.RequestSizeClass,
+				ResponseSizeClass:      tx.ServerTelemetry.ResponseSizeClass,
+				MessageLatencyMs:       tx.ServerTelemetry.MessageLatencyMs,
+				MessagesSent:           tx.ServerTelemetry.MessagesSent,
+				MessagesReceived:       tx.ServerTelemetry.MessagesReceived,
+				MessagesSentPerSec:     tx.ServerTelemetry.MessagesSentPerSec,
 				MessagesReceivedPerSec: tx.ServerTelemetry.MessagesReceivedPerSec,
-				ConsumerLagMs:      tx.ServerTelemetry.ConsumerLagMs,
+				ConsumerLagMs:          tx.ServerTelemetry.ConsumerLagMs,
 			}
 		}
 		protoTransactions = append(protoTransactions, &pb.TransactionMetric{
@@ -822,19 +822,19 @@ func cloneServerTelemetry(input *protocol.ServerTelemetry) *ServerTelemetry {
 		return nil
 	}
 	return &ServerTelemetry{
-		ServerProcessingMs: input.ServerProcessingMs,
-		TransferMs:         input.TransferMs,
-		RequestPayloadKB:   input.RequestPayloadKB,
-		ResponsePayloadKB:  input.ResponsePayloadKB,
-		ConnectionReused:   input.ConnectionReused,
-		RequestSizeClass:   input.RequestSizeClass,
-		ResponseSizeClass:  input.ResponseSizeClass,
-		MessageLatencyMs:   input.MessageLatencyMs,
-		MessagesSent:       int32(input.MessagesSent),
-		MessagesReceived:   int32(input.MessagesReceived),
-		MessagesSentPerSec: input.MessagesSentPerSec,
+		ServerProcessingMs:     input.ServerProcessingMs,
+		TransferMs:             input.TransferMs,
+		RequestPayloadKB:       input.RequestPayloadKB,
+		ResponsePayloadKB:      input.ResponsePayloadKB,
+		ConnectionReused:       input.ConnectionReused,
+		RequestSizeClass:       input.RequestSizeClass,
+		ResponseSizeClass:      input.ResponseSizeClass,
+		MessageLatencyMs:       input.MessageLatencyMs,
+		MessagesSent:           int32(input.MessagesSent),
+		MessagesReceived:       int32(input.MessagesReceived),
+		MessagesSentPerSec:     input.MessagesSentPerSec,
 		MessagesReceivedPerSec: input.MessagesReceivedPerSec,
-		ConsumerLagMs:      input.ConsumerLagMs,
+		ConsumerLagMs:          input.ConsumerLagMs,
 	}
 }
 

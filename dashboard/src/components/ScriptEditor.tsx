@@ -2,26 +2,20 @@ import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react
 import { useApi } from '../hooks/useApi'
 import { useWebSocket } from '../hooks/useWebSocket'
 import {
-  BrowserReplayConsoleEntry,
-  BrowserReplayDomSummary,
   BrowserReplayEvent,
-  BrowserReplayNetworkEntry,
   BrowserReplayReport,
   BrowserReplaySession,
   BrowserReplaySnapshot,
   WSMessage,
 } from '../types'
 import {
-  type BrowserCaptureOptions as SharedBrowserCaptureOptions,
   type ContentCheckConfig,
   type DFETransform,
   type ScriptActionDefinition,
   type ScriptAssertionDefinition,
   type ScriptDefinition,
   type ScriptDataSource,
-  type ScriptExtractorDefinition,
   type ScriptParameterDefinition,
-  type ScriptWaitCondition,
 } from '../types/scripts'
 import BrowserReplayDebugger from './BrowserReplayDebugger'
 import SnapshotBodyPreview from './SnapshotBodyPreview'
@@ -67,16 +61,10 @@ import {
 import './ScriptEditor.css'
 
 type Action = ScriptActionDefinition
-type Extractor = ScriptExtractorDefinition
 type Assertion = ScriptAssertionDefinition
-type WaitCondition = ScriptWaitCondition
-type BrowserCaptureOptions = SharedBrowserCaptureOptions
 type ScriptData = ScriptDefinition
 
 type ReplaySnapshot = BrowserReplaySnapshot
-type ConsoleEntry = BrowserReplayConsoleEntry
-type NetworkEntry = BrowserReplayNetworkEntry
-type DOMSummary = BrowserReplayDomSummary
 type ReplayActionEvent = BrowserReplayEvent
 type ReplayReport = BrowserReplayReport
 
@@ -544,7 +532,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
     return () => {
       isCancelled = true
     }
-  }, [api, hydrateEditorState, initialScript, scriptId])
+  }, [api, hydrateEditorState, initialScript, scriptId, setError])
 
   const handleReplaySocketMessage = useCallback((message: WSMessage) => {
     const msg = message as ReplayWSMessage
@@ -741,7 +729,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
       setActiveReplaySessionId(null)
       setReplaying(false)
     }
-  }, [activeReplaySessionId])
+  }, [activeReplaySessionId, setActiveReplaySessionId, setBrowserReplaySession, setExpandedReplayBrowserArtifacts, setExpandedReplayEvent, setReplayActivity, setReplayReport, setReplaying])
 
   useWebSocket({ onMessage: handleReplaySocketMessage, projectId })
 
@@ -753,7 +741,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
       block: 'nearest',
       behavior: activeReplaySessionId ? 'smooth' : 'auto',
     })
-  }, [activeReplaySessionId, expandedReplayEvent])
+  }, [activeReplaySessionId, expandedReplayEvent, replayEventRefs])
 
   const updateField = (path: string, value: unknown) => {
     setScript(prev => {

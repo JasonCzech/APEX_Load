@@ -51,7 +51,7 @@ func TestMeasureNetworkLatency(t *testing.T) {
 
 	hub := NewHub()
 	tr := NewTestRunner(1, hub, nil)
-	
+
 	test := &ManagedTest{
 		ID: "test-latency",
 		Groups: []TestGroup{

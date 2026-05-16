@@ -5,7 +5,7 @@ import { useProjectApi } from '../hooks/api/useProjectApi'
 import { useApplication } from '../hooks/useApplication'
 import { useProject } from '../hooks/useProject'
 import { useApi } from '../hooks/useApi'
-import { DashboardAuthAccessResource, DashboardAuthEffectiveAccessResource, DashboardAuthRoleDefinition, DashboardAuthStatus, DashboardSystemSettings, HealthResponse, Project, RedactionRule, SharedDataPool, SharedDataPoolRow, SystemInventoryResponse } from '../types'
+import { DashboardAuditEvent, DashboardAuthAccessResource, DashboardAuthEffectiveAccessResource, DashboardAuthRoleDefinition, DashboardAuthStatus, DashboardServiceAccount, DashboardSystemSettings, HealthResponse, Project, RedactionRule, SharedDataPool, SharedDataPoolRow, SystemInventoryResponse } from '../types'
 import { getErrorMessage } from '../utils/errorUtils'
 
 const DEFAULT_SETTINGS: DashboardSystemSettings = {
@@ -37,10 +37,18 @@ const DEFAULT_SETTINGS: DashboardSystemSettings = {
     webhooks: [],
   },
   auth: {
-    mode: 'disabled',
+    mode: 'dev',
     provider_name: '',
     login_url: '',
     logout_url: '',
+    issuer_url: '',
+    client_id: '',
+    client_secret_env_var: 'STORMRUNNER_OIDC_CLIENT_SECRET',
+    redirect_url: '',
+    scopes: ['openid', 'profile', 'email'],
+    roles_claim: 'roles',
+    project_roles_claim: 'project_roles',
+    session_secret_env_var: 'STORMRUNNER_AUTH_SESSION_SECRET',
     user_header: 'X-Auth-Request-User',
     name_header: 'X-Auth-Request-Name',
     email_header: 'X-Auth-Request-Email',
@@ -158,10 +166,13 @@ function formatProjectRoleAssignments(projectRoles?: Record<string, string[]>): 
 
 function formatAuthStatusSummary(authStatus?: DashboardAuthStatus): string {
   if (!authStatus || !authStatus.enabled) {
+    if (authStatus?.mode === 'dev') {
+      return 'Development bypass'
+    }
     return 'Disabled'
   }
   if (!authStatus.authenticated) {
-    return 'Awaiting trusted headers'
+    return authStatus.mode === 'oidc' ? 'Sign-in required' : 'Awaiting trusted headers'
   }
   return 'Authenticated'
 }
@@ -190,6 +201,8 @@ function formatAccessOperation(operation: { global_roles?: string[]; project_rol
 
 function formatGrantSource(grantSource?: string): string {
   switch (grantSource) {
+  case 'dev_mode':
+    return 'Allowed while development bypass is enabled'
   case 'disabled':
     return 'Allowed while auth is disabled'
   case 'global':
@@ -204,6 +217,93 @@ function formatGrantSource(grantSource?: string): string {
 function formatHeaderContractValue(value?: string, fallback = 'Not configured'): string {
   const normalized = value?.trim() || ''
   return normalized || fallback
+}
+
+function normalizeDashboardAuthMode(mode?: DashboardSystemSettings['auth']['mode']): DashboardSystemSettings['auth']['mode'] {
+  if (mode === 'trusted_headers' || mode === 'oidc' || mode === 'disabled') {
+    return mode
+  }
+  return 'dev'
+}
+
+function formatAuthMode(mode: DashboardSystemSettings['auth']['mode']): string {
+  switch (mode) {
+    case 'oidc':
+      return 'Native OIDC'
+    case 'trusted_headers':
+      return 'Trusted Headers'
+    case 'disabled':
+    case 'dev':
+    default:
+      return 'Dev Bypass'
+  }
+}
+
+function formatAuthScopes(scopes?: string[]): string {
+  return (scopes || []).join(', ')
+}
+
+function parseAuthScopes(value: string): string[] {
+  return value
+    .split(/[\s,]+/)
+    .map(token => token.trim())
+    .filter(Boolean)
+}
+
+function validateAuthURL(label: string, value: string | undefined, allowAbsolutePath: boolean): string | null {
+  const trimmed = value?.trim() || ''
+  if (!trimmed) {
+    return null
+  }
+  if (allowAbsolutePath && trimmed.startsWith('/')) {
+    return null
+  }
+  try {
+    const parsed = new URL(trimmed)
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return `${label} must use http${allowAbsolutePath ? ', https, or an absolute path.' : ' or https.'}`
+    }
+  } catch {
+    return `${label} must use http${allowAbsolutePath ? ', https, or an absolute path.' : ' or https.'}`
+  }
+  return null
+}
+
+function parseRoleInput(value: string): string[] {
+  return value
+    .split(/[|,]/)
+    .map(token => token.trim())
+    .filter(Boolean)
+}
+
+function parseServiceAccountProjectRoles(value: string): Record<string, string[]> {
+  return value.split(';').reduce<Record<string, string[]>>((accumulator, assignment) => {
+    const [projectID, rawRoles] = assignment.split('=')
+    const normalizedProjectID = projectID?.trim()
+    if (!normalizedProjectID || !rawRoles) {
+      return accumulator
+    }
+    const roles = rawRoles
+      .split(/[|,]/)
+      .map(token => token.trim())
+      .filter(Boolean)
+    if (roles.length > 0) {
+      accumulator[normalizedProjectID] = roles
+    }
+    return accumulator
+  }, {})
+}
+
+function formatAuditActor(event: DashboardAuditEvent): string {
+  return event.actor_display_name || event.actor_subject || event.actor_type
+}
+
+function formatAuditTimestamp(value?: string): string {
+  if (!value) {
+    return 'Unknown'
+  }
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString()
 }
 
 function validateProjectDraft(name: string, rules: DraftRedactionRule[]): string {
@@ -301,8 +401,8 @@ function validateSettings(settings: DashboardSystemSettings): string[] {
   if (!Number.isInteger(settings.capacity_planning.availability.configured_available_generators) || settings.capacity_planning.availability.configured_available_generators < 1) {
     errors.push('Configured available generators must be an integer >= 1.')
   }
-  if (settings.auth.mode !== 'disabled' && settings.auth.mode !== 'trusted_headers') {
-    errors.push('Access control mode must be Disabled or Trusted Headers.')
+  if (settings.auth.mode !== 'dev' && settings.auth.mode !== 'disabled' && settings.auth.mode !== 'trusted_headers' && settings.auth.mode !== 'oidc') {
+    errors.push('Access control mode must be Dev Bypass, Trusted Headers, or Native OIDC.')
   }
   if (settings.auth.mode === 'trusted_headers') {
     if (!settings.auth.user_header.trim()) {
@@ -316,20 +416,40 @@ function validateSettings(settings: DashboardSystemSettings): string[] {
       ['Logout URL', settings.auth.logout_url],
     ]
     authURLFields.forEach(([label, value]) => {
-      const trimmed = value?.trim() || ''
-      if (!trimmed) {
-        return
+      const error = validateAuthURL(label, value, true)
+      if (error) {
+        errors.push(error)
       }
-      if (trimmed.startsWith('/')) {
-        return
-      }
-      try {
-        const parsed = new URL(trimmed)
-        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-          errors.push(`${label} must use http, https, or an absolute path.`)
-        }
-      } catch {
-        errors.push(`${label} must use http, https, or an absolute path.`)
+    })
+  }
+  if (settings.auth.mode === 'oidc') {
+    if (!settings.auth.issuer_url?.trim()) {
+      errors.push('OIDC auth requires an issuer URL.')
+    }
+    if (!settings.auth.client_id?.trim()) {
+      errors.push('OIDC auth requires a client ID.')
+    }
+    if (!settings.auth.client_secret_env_var?.trim()) {
+      errors.push('OIDC auth requires a client secret environment variable name.')
+    }
+    if (!settings.auth.redirect_url?.trim()) {
+      errors.push('OIDC auth requires a redirect URL.')
+    }
+    if (!settings.auth.session_secret_env_var?.trim()) {
+      errors.push('OIDC auth requires a session secret environment variable name.')
+    }
+    if (!settings.auth.scopes || settings.auth.scopes.length === 0) {
+      errors.push('OIDC auth requires at least one scope.')
+    }
+    const oidcURLFields: Array<[string, string | undefined, boolean]> = [
+      ['Issuer URL', settings.auth.issuer_url, false],
+      ['Redirect URL', settings.auth.redirect_url, false],
+      ['Post-Logout Redirect URL', settings.auth.logout_url, true],
+    ]
+    oidcURLFields.forEach(([label, value, allowAbsolutePath]) => {
+      const error = validateAuthURL(label, value, allowAbsolutePath)
+      if (error) {
+        errors.push(error)
       }
     })
   }
@@ -385,6 +505,8 @@ function normalizeDashboardSystemSettings(settings: DashboardSystemSettings): Da
     auth: {
       ...DEFAULT_SETTINGS.auth,
       ...settings.auth,
+	      scopes: settings.auth?.scopes ? [...settings.auth.scopes] : [...(DEFAULT_SETTINGS.auth.scopes || [])],
+      mode: normalizeDashboardAuthMode(settings.auth?.mode),
     },
   }
 }
@@ -481,6 +603,18 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
   const [authAccessResources, setAuthAccessResources] = useState<DashboardAuthAccessResource[]>([])
   const [effectiveAuthAccessResources, setEffectiveAuthAccessResources] = useState<DashboardAuthEffectiveAccessResource[]>([])
   const [authRoles, setAuthRoles] = useState<DashboardAuthRoleDefinition[]>([])
+  const [serviceAccounts, setServiceAccounts] = useState<DashboardServiceAccount[]>([])
+  const [auditEvents, setAuditEvents] = useState<DashboardAuditEvent[]>([])
+  const [serviceAccountName, setServiceAccountName] = useState('')
+  const [serviceAccountDescription, setServiceAccountDescription] = useState('')
+  const [serviceAccountGlobalRoles, setServiceAccountGlobalRoles] = useState('viewer')
+  const [serviceAccountProjectRoles, setServiceAccountProjectRoles] = useState('')
+  const [serviceAccountActionMessage, setServiceAccountActionMessage] = useState('')
+  const [serviceAccountActionError, setServiceAccountActionError] = useState('')
+  const [issuedServiceAccountKey, setIssuedServiceAccountKey] = useState('')
+  const [auditActionFilter, setAuditActionFilter] = useState('')
+  const [auditActorTypeFilter, setAuditActorTypeFilter] = useState('')
+  const [auditStatusFilter, setAuditStatusFilter] = useState('')
   const [loading, setLoading] = useState(true)
   const [saveMessage, setSaveMessage] = useState('')
   const [requestError, setRequestError] = useState('')
@@ -607,6 +741,53 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
       cancelled = true
     }
   }, [api])
+
+  useEffect(() => {
+    let cancelled = false
+    const loadServiceAccounts = async () => {
+      try {
+        const response = await api.listAuthServiceAccounts()
+        if (!cancelled) {
+          setServiceAccounts(response.service_accounts || [])
+        }
+      } catch {
+        if (!cancelled) {
+          setServiceAccounts([])
+        }
+      }
+    }
+
+    loadServiceAccounts()
+    return () => {
+      cancelled = true
+    }
+  }, [api])
+
+  useEffect(() => {
+    let cancelled = false
+    const loadAuditEvents = async () => {
+      try {
+        const response = await api.listAuthAuditEvents({
+          limit: 20,
+          action: auditActionFilter.trim() || undefined,
+          actor_type: auditActorTypeFilter.trim() || undefined,
+          status: auditStatusFilter.trim() || undefined,
+        })
+        if (!cancelled) {
+          setAuditEvents(response.events || [])
+        }
+      } catch {
+        if (!cancelled) {
+          setAuditEvents([])
+        }
+      }
+    }
+
+    loadAuditEvents()
+    return () => {
+      cancelled = true
+    }
+  }, [api, auditActionFilter, auditActorTypeFilter, auditStatusFilter])
 
   useEffect(() => {
     let cancelled = false
@@ -887,7 +1068,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
     setRequestError('')
   }
 
-  const updateAuth = (key: keyof DashboardSystemSettings['auth'], value: string) => {
+  const updateAuth = (key: keyof DashboardSystemSettings['auth'], value: string | string[]) => {
     setSettings((prev) => ({
       ...prev,
       auth: {
@@ -897,6 +1078,89 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
     }))
     setSaveMessage('')
     setRequestError('')
+  }
+
+  const loadServiceAccounts = async () => {
+    const response = await api.listAuthServiceAccounts()
+    setServiceAccounts(response.service_accounts || [])
+  }
+
+  const loadAuditEvents = async () => {
+    const response = await api.listAuthAuditEvents({
+      limit: 20,
+      action: auditActionFilter.trim() || undefined,
+      actor_type: auditActorTypeFilter.trim() || undefined,
+      status: auditStatusFilter.trim() || undefined,
+    })
+    setAuditEvents(response.events || [])
+  }
+
+  const createServiceAccount = async () => {
+    if (!serviceAccountName.trim()) {
+      setServiceAccountActionError('Service account name is required.')
+      setServiceAccountActionMessage('')
+      return
+    }
+    setServiceAccountActionError('')
+    setServiceAccountActionMessage('')
+    try {
+      const response = await api.createAuthServiceAccount({
+        name: serviceAccountName.trim(),
+        description: serviceAccountDescription.trim() || undefined,
+        global_roles: parseRoleInput(serviceAccountGlobalRoles),
+        project_roles: parseServiceAccountProjectRoles(serviceAccountProjectRoles),
+      })
+      setIssuedServiceAccountKey(response.api_key)
+      setServiceAccountActionMessage(`Created service account ${response.service_account.name}. Copy the issued API key now; it is only returned once.`)
+      setServiceAccountName('')
+      setServiceAccountDescription('')
+      setServiceAccountGlobalRoles('viewer')
+      setServiceAccountProjectRoles('')
+      await Promise.all([loadServiceAccounts(), loadAuditEvents()])
+    } catch (error: unknown) {
+      setServiceAccountActionError(getErrorMessage(error, 'Unable to create service account'))
+      setIssuedServiceAccountKey('')
+    }
+  }
+
+  const deleteServiceAccount = async (account: DashboardServiceAccount) => {
+    setServiceAccountActionError('')
+    setServiceAccountActionMessage('')
+    try {
+      await api.deleteAuthServiceAccount(account.id)
+      setIssuedServiceAccountKey('')
+      setServiceAccountActionMessage(`Deleted service account ${account.name}.`)
+      await Promise.all([loadServiceAccounts(), loadAuditEvents()])
+    } catch (error: unknown) {
+      setServiceAccountActionError(getErrorMessage(error, 'Unable to delete service account'))
+    }
+  }
+
+  const setServiceAccountActive = async (account: DashboardServiceAccount, active: boolean) => {
+    setServiceAccountActionError('')
+    setServiceAccountActionMessage('')
+    try {
+      await api.updateAuthServiceAccount(account.id, { active })
+      setIssuedServiceAccountKey('')
+      setServiceAccountActionMessage(`${active ? 'Enabled' : 'Disabled'} service account ${account.name}.`)
+      await Promise.all([loadServiceAccounts(), loadAuditEvents()])
+    } catch (error: unknown) {
+      setServiceAccountActionError(getErrorMessage(error, `Unable to ${active ? 'enable' : 'disable'} service account`))
+    }
+  }
+
+  const rotateServiceAccount = async (account: DashboardServiceAccount) => {
+    setServiceAccountActionError('')
+    setServiceAccountActionMessage('')
+    try {
+      const response = await api.rotateAuthServiceAccount(account.id)
+      setIssuedServiceAccountKey(response.api_key)
+      setServiceAccountActionMessage(`Rotated API key for ${account.name}. Copy the issued API key now; it is only returned once.`)
+      await Promise.all([loadServiceAccounts(), loadAuditEvents()])
+    } catch (error: unknown) {
+      setServiceAccountActionError(getErrorMessage(error, 'Unable to rotate service account key'))
+      setIssuedServiceAccountKey('')
+    }
   }
 
   const saveSettings = async () => {
@@ -1456,24 +1720,43 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
               <div className="settings-manager-summary">
                 <div>
                   <span className="setting-label">Access Control</span>
-                  <span className="setting-desc">Backend 3.1 scaffold for identity forwarded by Microsoft Entra ID or another upstream OIDC or SAML gateway.</span>
+                  <span className="setting-desc">Backend 3.1 scaffold for local development bypass, Microsoft Entra ID-backed trusted headers, service-account API keys, and governance audit history.</span>
                 </div>
-                <strong>{settings.auth.mode === 'disabled' ? 'Off' : 'Headers'}</strong>
+                <strong>{formatAuthMode(settings.auth.mode)}</strong>
               </div>
               <div className="setting-row">
                 <div className="setting-info">
                   <span className="setting-label">Access Control Mode</span>
-                  <span className="setting-desc">Trusted Headers expects an authenticating reverse proxy to inject user and role headers before requests reach Stormrunner. In production this is expected to be Microsoft Entra ID-backed.</span>
+                  <span className="setting-desc">Dev Bypass keeps local development open by default. Trusted Headers expects an authenticating reverse proxy to inject user and role headers before requests reach Stormrunner. In production this is expected to be Microsoft Entra ID-backed.</span>
                 </div>
                 <select
                   className="settings-input"
                   value={settings.auth.mode}
                   onChange={(e) => updateAuth('mode', e.target.value)}
                 >
-                  <option value="disabled">Disabled</option>
+                  <option value="dev">Dev Bypass</option>
+                  <option value="oidc">Native OIDC</option>
                   <option value="trusted_headers">Trusted Headers</option>
                 </select>
               </div>
+              {settings.auth.mode === 'dev' && (
+                <div className="settings-subsection">
+                  <div className="settings-manager-summary">
+                    <div>
+                      <span className="setting-label">Development Bypass</span>
+                      <span className="setting-desc">Local development bypass is active. Stormrunner allows dashboard and API access without upstream identity, while still recording audit events and supporting service-account API keys for automation flows.</span>
+                    </div>
+                    <strong>{formatAuthStatusSummary(authStatus)}</strong>
+                  </div>
+                  <div className="setting-row">
+                    <div className="setting-info">
+                      <span className="setting-label">Current Access</span>
+                      <span className="setting-desc">All operations are currently permitted through the explicit dev-mode bypass. Switch to Trusted Headers before production use.</span>
+                    </div>
+                    <span className="settings-value-display">Open access for local development</span>
+                  </div>
+                </div>
+              )}
               {settings.auth.mode === 'trusted_headers' && (
                 <>
                   <div className="setting-row">
@@ -1702,12 +1985,295 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
                       <span className="settings-value-display">{settings.auth.provider_name?.trim() || 'Microsoft Entra ID'}{settings.auth.login_url?.trim() ? ` | ${settings.auth.login_url.trim()}` : ''}</span>
                     </div>
                   </div>
+                </>
+              )}
+              {settings.auth.mode === 'oidc' && (
+                <>
+                  <div className="setting-row">
+                    <div className="setting-info">
+                      <span className="setting-label">Provider Label</span>
+                      <span className="setting-desc">Friendly identity provider name shown in the dashboard sign-in experience.</span>
+                    </div>
+                    <input
+                      className="settings-input"
+                      value={settings.auth.provider_name || ''}
+                      onChange={(e) => updateAuth('provider_name', e.target.value)}
+                      placeholder="Microsoft Entra ID"
+                    />
+                  </div>
+                  <div className="setting-row">
+                    <div className="setting-info">
+                      <span className="setting-label">Issuer URL</span>
+                      <span className="setting-desc">Absolute OIDC issuer URL used for discovery and ID-token verification.</span>
+                    </div>
+                    <input
+                      className="settings-input cell-mono"
+                      value={settings.auth.issuer_url || ''}
+                      onChange={(e) => updateAuth('issuer_url', e.target.value)}
+                      placeholder="https://login.example.com/tenant/v2.0"
+                    />
+                  </div>
+                  <div className="setting-row">
+                    <div className="setting-info">
+                      <span className="setting-label">Client ID</span>
+                      <span className="setting-desc">OIDC client/application identifier registered for the dashboard.</span>
+                    </div>
+                    <input
+                      className="settings-input cell-mono"
+                      value={settings.auth.client_id || ''}
+                      onChange={(e) => updateAuth('client_id', e.target.value)}
+                      placeholder="stormrunner-dashboard"
+                    />
+                  </div>
+                  <div className="setting-row">
+                    <div className="setting-info">
+                      <span className="setting-label">Client Secret Env Var</span>
+                      <span className="setting-desc">Environment variable name read by the controller at runtime for the OIDC client secret.</span>
+                    </div>
+                    <input
+                      className="settings-input cell-mono"
+                      value={settings.auth.client_secret_env_var || ''}
+                      onChange={(e) => updateAuth('client_secret_env_var', e.target.value)}
+                      placeholder="STORMRUNNER_OIDC_CLIENT_SECRET"
+                    />
+                  </div>
+                  <div className="setting-row">
+                    <div className="setting-info">
+                      <span className="setting-label">Redirect URL</span>
+                      <span className="setting-desc">Absolute callback URL registered with the identity provider and served by the controller.</span>
+                    </div>
+                    <input
+                      className="settings-input cell-mono"
+                      value={settings.auth.redirect_url || ''}
+                      onChange={(e) => updateAuth('redirect_url', e.target.value)}
+                      placeholder="https://stormrunner.example.com/api/v1/auth/callback"
+                    />
+                  </div>
+                  <div className="setting-row">
+                    <div className="setting-info">
+                      <span className="setting-label">Scopes</span>
+                      <span className="setting-desc">Comma or space-delimited OIDC scopes requested during sign-in.</span>
+                    </div>
+                    <input
+                      className="settings-input cell-mono"
+                      value={formatAuthScopes(settings.auth.scopes)}
+                      onChange={(e) => updateAuth('scopes', parseAuthScopes(e.target.value))}
+                      placeholder="openid, profile, email"
+                    />
+                  </div>
+                  <div className="setting-row">
+                    <div className="setting-info">
+                      <span className="setting-label">Roles Claim</span>
+                      <span className="setting-desc">Token claim used to map global RBAC roles such as viewer, editor, project_admin, or system_admin.</span>
+                    </div>
+                    <input
+                      className="settings-input cell-mono"
+                      value={settings.auth.roles_claim || ''}
+                      onChange={(e) => updateAuth('roles_claim', e.target.value)}
+                      placeholder="roles"
+                    />
+                  </div>
+                  <div className="setting-row">
+                    <div className="setting-info">
+                      <span className="setting-label">Project Roles Claim</span>
+                      <span className="setting-desc">Token claim that carries project-scoped role assignments.</span>
+                    </div>
+                    <input
+                      className="settings-input cell-mono"
+                      value={settings.auth.project_roles_claim || ''}
+                      onChange={(e) => updateAuth('project_roles_claim', e.target.value)}
+                      placeholder="project_roles"
+                    />
+                  </div>
+                  <div className="setting-row">
+                    <div className="setting-info">
+                      <span className="setting-label">Session Secret Env Var</span>
+                      <span className="setting-desc">Environment variable name read by the controller to sign the Stormrunner auth session cookie.</span>
+                    </div>
+                    <input
+                      className="settings-input cell-mono"
+                      value={settings.auth.session_secret_env_var || ''}
+                      onChange={(e) => updateAuth('session_secret_env_var', e.target.value)}
+                      placeholder="STORMRUNNER_AUTH_SESSION_SECRET"
+                    />
+                  </div>
+                  <div className="setting-row">
+                    <div className="setting-info">
+                      <span className="setting-label">Post-Logout Redirect URL</span>
+                      <span className="setting-desc">Optional absolute URL or absolute path used after Stormrunner clears its local OIDC session.</span>
+                    </div>
+                    <input
+                      className="settings-input cell-mono"
+                      value={settings.auth.logout_url || ''}
+                      onChange={(e) => updateAuth('logout_url', e.target.value)}
+                      placeholder="/"
+                    />
+                  </div>
+                  <div className="settings-subsection">
+                    <div className="settings-manager-summary">
+                      <div>
+                        <span className="setting-label">Native OIDC Session Flow</span>
+                        <span className="setting-desc">Stormrunner redirects the dashboard through the identity provider, exchanges the authorization code, and then serves its own signed session cookie for API access.</span>
+                      </div>
+                      <strong>{settings.auth.provider_name?.trim() || 'OIDC Provider'}</strong>
+                    </div>
+                    <div className="setting-row">
+                      <div className="setting-info">
+                        <span className="setting-label">Sign-In Route</span>
+                        <span className="setting-desc">Dashboard entry point exposed by the controller when native OIDC mode is enabled.</span>
+                      </div>
+                      <span className="settings-value-display cell-mono">/api/v1/auth/login</span>
+                    </div>
+                    <div className="setting-row">
+                      <div className="setting-info">
+                        <span className="setting-label">Callback Route</span>
+                        <span className="setting-desc">Must match the registered redirect URI at the identity provider.</span>
+                      </div>
+                      <span className="settings-value-display cell-mono">{settings.auth.redirect_url?.trim() || 'Not configured'}</span>
+                    </div>
+                    <div className="setting-row">
+                      <div className="setting-info">
+                        <span className="setting-label">Claim Mapping</span>
+                        <span className="setting-desc">Stormrunner maps token claims back onto the same RBAC role catalog used by service accounts and project governance.</span>
+                      </div>
+                      <span className="settings-value-display cell-mono">{settings.auth.roles_claim?.trim() || 'roles'} | {settings.auth.project_roles_claim?.trim() || 'project_roles'}</span>
+                    </div>
+                  </div>
+                </>
+              )}
+              <div className="settings-subsection">
+                    <div className="settings-manager-summary">
+                      <div>
+                        <span className="setting-label">Service Account API Keys</span>
+                        <span className="setting-desc">Create automation principals for CLI jobs, CI workflows, or external controllers. Outside dev mode, API keys are evaluated before interactive session or header auth and inherit the same RBAC model.</span>
+                      </div>
+                      <strong>{serviceAccounts.length}</strong>
+                    </div>
+                    <div className="setting-row">
+                      <div className="setting-info">
+                        <span className="setting-label">Service Account Name</span>
+                        <span className="setting-desc">Friendly label shown in audit history and API-key attribution.</span>
+                      </div>
+                      <input className="settings-input" value={serviceAccountName} onChange={(e) => setServiceAccountName(e.target.value)} placeholder="Nightly CI" />
+                    </div>
+                    <div className="setting-row">
+                      <div className="setting-info">
+                        <span className="setting-label">Description</span>
+                        <span className="setting-desc">Optional context for operators.</span>
+                      </div>
+                      <input className="settings-input" value={serviceAccountDescription} onChange={(e) => setServiceAccountDescription(e.target.value)} placeholder="Runs nightly smoke coverage" />
+                    </div>
+                    <div className="setting-row">
+                      <div className="setting-info">
+                        <span className="setting-label">Global Roles</span>
+                        <span className="setting-desc">Comma or pipe-delimited roles such as viewer, editor, project_admin, or system_admin.</span>
+                      </div>
+                      <input className="settings-input cell-mono" value={serviceAccountGlobalRoles} onChange={(e) => setServiceAccountGlobalRoles(e.target.value)} placeholder="viewer,editor" />
+                    </div>
+                    <div className="setting-row">
+                      <div className="setting-info">
+                        <span className="setting-label">Project Roles</span>
+                        <span className="setting-desc">Optional project assignments in the form project-id=viewer|editor;other-project=project_admin.</span>
+                      </div>
+                      <input className="settings-input cell-mono" value={serviceAccountProjectRoles} onChange={(e) => setServiceAccountProjectRoles(e.target.value)} placeholder="checkout=editor;governance=viewer" />
+                    </div>
+                    <div className="setting-row">
+                      <div className="setting-info">
+                        <span className="setting-label">Provisioning</span>
+                        <span className="setting-desc">Stormrunner returns the generated API key exactly once. Store it in your secret manager after creation.</span>
+                      </div>
+                      <div className="settings-inline-actions">
+                        <button className="btn btn-secondary" type="button" onClick={createServiceAccount} disabled={!serviceAccountName.trim()}>
+                          Create Service Account
+                        </button>
+                      </div>
+                    </div>
+                    {serviceAccountActionError && <p className="settings-error">{serviceAccountActionError}</p>}
+                    {serviceAccountActionMessage && <p className="settings-notice">{serviceAccountActionMessage}</p>}
+                    {issuedServiceAccountKey && (
+                      <div className="setting-row">
+                        <div className="setting-info">
+                          <span className="setting-label">Issued API Key</span>
+                          <span className="setting-desc">Copy this now. Only the hash is retained by the controller.</span>
+                        </div>
+                        <span className="settings-value-display cell-mono">{issuedServiceAccountKey}</span>
+                      </div>
+                    )}
+                    {serviceAccounts.length > 0 ? serviceAccounts.map((account) => (
+                      <div className="setting-row" key={account.id}>
+                        <div className="setting-info">
+                          <span className="setting-label">{account.name} {account.active ? '(Active)' : '(Disabled)'}</span>
+                          <span className="setting-desc">{account.description || 'No description provided.'}</span>
+                          <span className="setting-desc">Global roles: {formatAuthRoleList(account.global_roles)}</span>
+                          <span className="setting-desc">Project roles: {formatProjectRoleAssignments(account.project_roles)}</span>
+                          <span className="setting-desc">Created: {formatAuditTimestamp(account.created_at)}{account.last_used_at ? ` | Last used: ${formatAuditTimestamp(account.last_used_at)}` : ''}</span>
+                        </div>
+                        <div className="settings-inline-actions">
+                          <button className="btn btn-secondary" type="button" onClick={() => rotateServiceAccount(account)}>
+                            Rotate Key
+                          </button>
+                          <button className="btn btn-secondary" type="button" onClick={() => setServiceAccountActive(account, !account.active)}>
+                            {account.active ? 'Disable' : 'Enable'}
+                          </button>
+                          <button className="btn btn-ghost" style={{ color: 'var(--danger)' }} type="button" onClick={() => deleteServiceAccount(account)}>
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    )) : (
+                      <div className="setting-row">
+                        <div className="setting-info">
+                          <span className="setting-label">No service accounts yet</span>
+                          <span className="setting-desc">Create an automation principal when you need scoped API access for CI or external control loops.</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <div className="settings-subsection">
+                    <div className="settings-manager-summary">
+                      <div>
+                        <span className="setting-label">Recent Audit Events</span>
+                        <span className="setting-desc">Backend-recorded governance history for settings changes, project administration, service-account provisioning, and core test control actions.</span>
+                      </div>
+                      <strong>{auditEvents.length}</strong>
+                    </div>
+                    <div className="setting-row">
+                      <div className="setting-info">
+                        <span className="setting-label">Audit Filters</span>
+                        <span className="setting-desc">Narrow the recent audit feed by action, actor type, or status.</span>
+                      </div>
+                      <div className="settings-inline-actions">
+                        <input className="settings-input cell-mono" value={auditActionFilter} onChange={(e) => setAuditActionFilter(e.target.value)} placeholder="action" />
+                        <input className="settings-input cell-mono" value={auditActorTypeFilter} onChange={(e) => setAuditActorTypeFilter(e.target.value)} placeholder="actor_type" />
+                        <input className="settings-input cell-mono" value={auditStatusFilter} onChange={(e) => setAuditStatusFilter(e.target.value)} placeholder="status" />
+                      </div>
+                    </div>
+                    {auditEvents.length > 0 ? auditEvents.map((event) => (
+                      <div className="setting-row" key={event.id}>
+                        <div className="setting-info">
+                          <span className="setting-label">{event.action}</span>
+                          <span className="setting-desc">{formatAuditActor(event)} · {event.actor_type} · {event.status}</span>
+                          <span className="setting-desc">Resource: {event.resource_type}{event.resource_id ? `/${event.resource_id}` : ''}{event.project_id ? ` | Project: ${event.project_id}` : ''}</span>
+                          <span className="setting-desc">Recorded: {formatAuditTimestamp(event.created_at)}</span>
+                        </div>
+                      </div>
+                    )) : (
+                      <div className="setting-row">
+                        <div className="setting-info">
+                          <span className="setting-label">No audit events yet</span>
+                          <span className="setting-desc">Audit history appears here after configuration, project, or execution lifecycle changes.</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+              {settings.auth.mode !== 'dev' && (
+                <>
                   {authRoles.length > 0 && (
                     <div className="settings-subsection">
                       <div className="settings-manager-summary">
                         <div>
                           <span className="setting-label">Built-In Role Reference</span>
-                          <span className="setting-desc">Stormrunner consumes these roles from the upstream gateway and applies them through the request RBAC matrix.</span>
+                          <span className="setting-desc">Stormrunner applies these roles through the request RBAC matrix regardless of whether identity arrives from trusted headers or a native OIDC session.</span>
                         </div>
                         <strong>{authRoles.length} roles</strong>
                       </div>
@@ -1749,7 +2315,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
                       <div className="settings-manager-summary">
                         <div>
                           <span className="setting-label">Effective Access For Current Session</span>
-                          <span className="setting-desc">Evaluates the currently forwarded identity against the active project selection and the backend RBAC policy.</span>
+                          <span className="setting-desc">Evaluates the current interactive identity against the active project selection and the backend RBAC policy.</span>
                         </div>
                         <strong>{activeProject?.name || 'Global'}</strong>
                       </div>

@@ -26,6 +26,9 @@ export type ScenarioUpsertPayload = {
     iterations?: number
     pacing?: PacingConfig
     think_time?: ThinkTimeConfig
+    browser?: {
+      headless?: boolean
+    }
     log_level?: string
     auto_transactions?: string
     error_handling?: {

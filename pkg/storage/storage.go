@@ -85,8 +85,56 @@ type Store interface {
 	// System settings
 	SaveSetting(key string, value string) error
 	GetSetting(key string) (string, error)
+	SaveServiceAccount(account *ServiceAccount) error
+	GetServiceAccount(id string) (*ServiceAccount, error)
+	GetServiceAccountByKeyHash(keyHash string) (*ServiceAccount, error)
+	ListServiceAccounts() ([]*ServiceAccount, error)
+	RotateServiceAccountKey(id string, keyHash string, updatedAt time.Time) error
+	UpdateServiceAccountLastUsed(id string, lastUsedAt time.Time) error
+	UpdateServiceAccountActive(id string, active bool, updatedAt time.Time) error
+	DeleteServiceAccount(id string) error
+	SaveAuditEvent(event *AuditEvent) error
+	ListAuditEvents(filter AuditEventFilter) ([]*AuditEvent, error)
 
 	Close() error
+}
+
+type ServiceAccount struct {
+	ID           string              `json:"id"`
+	Name         string              `json:"name"`
+	Description  string              `json:"description,omitempty"`
+	KeyHash      string              `json:"-"`
+	Active       bool                `json:"active"`
+	GlobalRoles  []string            `json:"global_roles,omitempty"`
+	ProjectRoles map[string][]string `json:"project_roles,omitempty"`
+	CreatedAt    time.Time           `json:"created_at"`
+	UpdatedAt    time.Time           `json:"updated_at"`
+	LastUsedAt   *time.Time          `json:"last_used_at,omitempty"`
+}
+
+type AuditEventFilter struct {
+	Limit        int
+	Offset       int
+	Action       string
+	ActorType    string
+	ProjectID    string
+	ResourceType string
+	ResourceID   string
+	Status       string
+}
+
+type AuditEvent struct {
+	ID               string         `json:"id"`
+	Action           string         `json:"action"`
+	ActorType        string         `json:"actor_type"`
+	ActorSubject     string         `json:"actor_subject"`
+	ActorDisplayName string         `json:"actor_display_name,omitempty"`
+	ProjectID        string         `json:"project_id,omitempty"`
+	ResourceType     string         `json:"resource_type,omitempty"`
+	ResourceID       string         `json:"resource_id,omitempty"`
+	Status           string         `json:"status"`
+	Details          map[string]any `json:"details,omitempty"`
+	CreatedAt        time.Time      `json:"created_at"`
 }
 
 type Application struct {

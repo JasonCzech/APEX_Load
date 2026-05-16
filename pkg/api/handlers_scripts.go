@@ -565,6 +565,7 @@ func (s *Server) handleUpdateScript(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "script not found")
 		return
 	}
+	s.recordAuditEvent(r, "script.update", "success", "script", updated.ID, updated.ProjectID, map[string]any{"name": updated.Name, "folder_id": updated.FolderID})
 
 	writeJSON(w, http.StatusOK, updated)
 }
@@ -572,10 +573,16 @@ func (s *Server) handleUpdateScript(w http.ResponseWriter, r *http.Request) {
 // handleDeleteScript handles DELETE /api/v1/scripts/{id}
 func (s *Server) handleDeleteScript(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	stored, ok := s.runner.GetScript(id)
+	if !ok {
+		writeError(w, http.StatusNotFound, "script not found")
+		return
+	}
 	if !s.runner.DeleteScript(id) {
 		writeError(w, http.StatusNotFound, "script not found")
 		return
 	}
+	s.recordAuditEvent(r, "script.delete", "success", "script", id, stored.ProjectID, map[string]any{"name": stored.Name, "folder_id": stored.FolderID})
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})
 }
 

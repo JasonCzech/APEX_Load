@@ -1,7 +1,8 @@
 import { Fragment, useState } from 'react'
 
 import { BrowserDeviceLiveMetrics, BrowserEngineLiveMetrics, BrowserLiveMetrics, BrowserPlatformLiveMetrics, RunArchiveActionStats, RunArchiveReport, RunArchiveSOAPFaultTimelineBucket, RunArchiveSOAPPayloadTimelineBucket, TestSummary, TransactionEvent } from '../types'
-import BrowserBreakdownChart, {
+import BrowserBreakdownChart from './BrowserBreakdownChart'
+import {
   BrowserBreakdown,
   buildBrowserBreakdownData,
   buildArchiveBrowserBreakdownSeries,
@@ -10,7 +11,7 @@ import BrowserBreakdownChart, {
   getBrowserBreakdownChartCopy,
   getBrowserBreakdownSegmentLabel,
   getBrowserBreakdownTitle,
-} from './BrowserBreakdownChart'
+} from './browserBreakdownModel'
 import SnapshotBodyPreview from './SnapshotBodyPreview'
 import SnapshotTextPreview from './SnapshotTextPreview'
 import { extractSOAPFaultSummaryFromBody, formatSOAPFaultSummary } from './soapFaultUtils'

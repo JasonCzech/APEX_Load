@@ -1,7 +1,4 @@
-import { useCallback } from 'react'
-import { useApi } from '../hooks/useApi'
 import {
-  TestSummary,
   MetricsHistoryPoint,
 } from '../types'
 import TestExecutionArchive from './TestExecutionArchive'
@@ -39,7 +36,6 @@ interface Props {
 }
 
 export default function TestExecution({ testId, history, onBack, onEditScript, onSelectTest }: Props) {
-  const api = useApi()
   const { test, setTest, error } = useExecutionTestPolling(testId)
   const {
     expandedChart,

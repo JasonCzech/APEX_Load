@@ -29,20 +29,20 @@ type JMS struct {
 }
 
 type config struct {
-	BrokerURL       string
-	MessageVPN      string
-	Username        string
-	Password        string
-	ClientID        string
-	Destination     string
-	DestinationType string
+	BrokerURL              string
+	MessageVPN             string
+	Username               string
+	Password               string
+	ClientID               string
+	Destination            string
+	DestinationType        string
 	DeadLetterDestinations []string
-	ReplyTo         string
-	Acknowledgement string
-	DeliveryMode    string
-	Timeout         time.Duration
-	Properties      map[string]string
-	Mock            bool
+	ReplyTo                string
+	Acknowledgement        string
+	DeliveryMode           string
+	Timeout                time.Duration
+	Properties             map[string]string
+	Mock                   bool
 }
 
 type brokerAdapter interface {
@@ -102,20 +102,20 @@ func (j *JMS) Name() string {
 
 func (j *JMS) Init(_ context.Context, cfg map[string]any) error {
 	j.cfg = config{
-		BrokerURL:       stringValue(cfg, "broker_url"),
-		MessageVPN:      stringValue(cfg, "jms_message_vpn"),
-		Username:        stringValue(cfg, "jms_username"),
-		Password:        stringValue(cfg, "jms_password"),
-		ClientID:        stringValue(cfg, "jms_client_id"),
-		Destination:     stringValue(cfg, "jms_destination"),
-		DestinationType: stringValue(cfg, "jms_destination_type"),
+		BrokerURL:              stringValue(cfg, "broker_url"),
+		MessageVPN:             stringValue(cfg, "jms_message_vpn"),
+		Username:               stringValue(cfg, "jms_username"),
+		Password:               stringValue(cfg, "jms_password"),
+		ClientID:               stringValue(cfg, "jms_client_id"),
+		Destination:            stringValue(cfg, "jms_destination"),
+		DestinationType:        stringValue(cfg, "jms_destination_type"),
 		DeadLetterDestinations: stringSliceValue(cfg, "jms_dead_letter_destinations"),
-		ReplyTo:         stringValue(cfg, "jms_reply_to"),
-		Acknowledgement: stringValue(cfg, "jms_acknowledgement"),
-		DeliveryMode:    stringValue(cfg, "jms_delivery_mode"),
-		Timeout:         durationValue(cfg, "jms_timeout_ms", 5*time.Second),
-		Properties:      stringMapValue(cfg, "jms_properties"),
-		Mock:            boolValue(cfg, "jms_mock"),
+		ReplyTo:                stringValue(cfg, "jms_reply_to"),
+		Acknowledgement:        stringValue(cfg, "jms_acknowledgement"),
+		DeliveryMode:           stringValue(cfg, "jms_delivery_mode"),
+		Timeout:                durationValue(cfg, "jms_timeout_ms", 5*time.Second),
+		Properties:             stringMapValue(cfg, "jms_properties"),
+		Mock:                   boolValue(cfg, "jms_mock"),
 	}
 	if provider := stringValue(cfg, "jms_provider"); provider != "" {
 		j.provider = provider

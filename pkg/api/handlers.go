@@ -24,6 +24,7 @@ func (s *Server) handleCreateTest(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	s.recordAuditEvent(r, "test.create", "success", "test", test.ID, test.ProjectID, map[string]any{"name": test.Name, "status": test.Status})
 
 	writeJSON(w, http.StatusCreated, test)
 }
@@ -118,6 +119,7 @@ func (s *Server) handleStartTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if test.Status == "PENDING" {
+		s.recordAuditEvent(r, "test.start", "pending", "test", id, test.ProjectID, map[string]any{"status": test.Status})
 		writeJSON(w, http.StatusOK, map[string]any{
 			"status":  "pending",
 			"test_id": id,
@@ -125,6 +127,7 @@ func (s *Server) handleStartTest(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	s.recordAuditEvent(r, "test.start", "success", "test", id, test.ProjectID, map[string]any{"status": test.Status})
 	writeJSON(w, http.StatusOK, map[string]string{"status": "started", "test_id": id})
 }
 
@@ -139,6 +142,7 @@ func (s *Server) handlePinComparisonBaseline(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	s.recordAuditEvent(r, "test.comparison_baseline.pin", "success", "test", id, test.ProjectID, map[string]any{"name": test.Name, "scenario_id": test.ScenarioID, "baseline_pinned": test.BaselinePinned})
 	writeJSON(w, http.StatusOK, test)
 }
 
@@ -153,6 +157,7 @@ func (s *Server) handleUnpinComparisonBaseline(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	s.recordAuditEvent(r, "test.comparison_baseline.unpin", "success", "test", id, test.ProjectID, map[string]any{"name": test.Name, "scenario_id": test.ScenarioID, "baseline_pinned": test.BaselinePinned})
 	writeJSON(w, http.StatusOK, test)
 }
 
@@ -162,6 +167,11 @@ func (s *Server) handleStopTest(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	projectID := ""
+	if test, ok := s.runner.GetTest(id); ok {
+		projectID = test.ProjectID
+	}
+	s.recordAuditEvent(r, "test.stop", "success", "test", id, projectID, nil)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "stopping", "test_id": id})
 }
 
@@ -171,6 +181,11 @@ func (s *Server) handleAbortTest(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	projectID := ""
+	if test, ok := s.runner.GetTest(id); ok {
+		projectID = test.ProjectID
+	}
+	s.recordAuditEvent(r, "test.abort", "success", "test", id, projectID, nil)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "aborted", "test_id": id})
 }
 
@@ -180,6 +195,11 @@ func (s *Server) handlePauseTest(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	projectID := ""
+	if test, ok := s.runner.GetTest(id); ok {
+		projectID = test.ProjectID
+	}
+	s.recordAuditEvent(r, "test.pause", "success", "test", id, projectID, nil)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "paused", "test_id": id})
 }
 
@@ -189,15 +209,29 @@ func (s *Server) handleResumeTest(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	projectID := ""
+	if test, ok := s.runner.GetTest(id); ok {
+		projectID = test.ProjectID
+	}
+	s.recordAuditEvent(r, "test.resume", "success", "test", id, projectID, nil)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "resumed", "test_id": id})
 }
 
 func (s *Server) handleDeleteTest(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	projectID := ""
+	name := ""
+	status := ""
+	if test, ok := s.runner.GetTest(id); ok {
+		projectID = test.ProjectID
+		name = test.Name
+		status = test.Status
+	}
 	if !s.runner.DeleteTest(id) {
 		writeError(w, http.StatusNotFound, "test not found or currently active")
 		return
 	}
+	s.recordAuditEvent(r, "test.delete", "success", "test", id, projectID, map[string]any{"name": name, "status": status})
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})
 }
 
@@ -248,6 +282,7 @@ func (s *Server) handleCreateScript(w http.ResponseWriter, r *http.Request) {
 	}
 
 	stored := s.runner.StoreScript(script)
+	s.recordAuditEvent(r, "script.create", "success", "script", stored.ID, stored.ProjectID, map[string]any{"name": stored.Name, "folder_id": stored.FolderID})
 	writeJSON(w, http.StatusCreated, stored)
 }
 
@@ -305,6 +340,11 @@ func (s *Server) handleValidateScript(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleMoveScript(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	stored, ok := s.runner.GetScript(id)
+	if !ok {
+		writeError(w, http.StatusNotFound, "script not found")
+		return
+	}
 	var req struct {
 		FolderID *string `json:"folder_id"`
 	}
@@ -316,11 +356,17 @@ func (s *Server) handleMoveScript(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "script not found")
 		return
 	}
+	s.recordAuditEvent(r, "script.move", "success", "script", id, stored.ProjectID, map[string]any{"name": stored.Name, "folder_id": req.FolderID})
 	writeJSON(w, http.StatusOK, map[string]any{"id": id, "folder_id": req.FolderID})
 }
 
 func (s *Server) handleMoveTest(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	test, ok := s.runner.GetTest(id)
+	if !ok {
+		writeError(w, http.StatusNotFound, "test not found")
+		return
+	}
 	var req struct {
 		FolderID *string `json:"folder_id"`
 	}
@@ -332,6 +378,7 @@ func (s *Server) handleMoveTest(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "test not found")
 		return
 	}
+	s.recordAuditEvent(r, "test.move", "success", "test", id, test.ProjectID, map[string]any{"name": test.Name, "folder_id": req.FolderID})
 	writeJSON(w, http.StatusOK, map[string]any{"id": id, "folder_id": req.FolderID})
 }
 
@@ -358,6 +405,13 @@ func (s *Server) handleScaleVUsers(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	projectID := ""
+	name := ""
+	if test, ok := s.runner.GetTest(id); ok {
+		projectID = test.ProjectID
+		name = test.Name
+	}
+	s.recordAuditEvent(r, "test.vusers.scale", "success", "test", id, projectID, map[string]any{"name": name, "group": req.Group, "target_vusers": req.TargetVUsers})
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"test_id":       id,
@@ -391,6 +445,13 @@ func (s *Server) handleAdjustDuration(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	projectID := ""
+	name := ""
+	if test, ok := s.runner.GetTest(id); ok {
+		projectID = test.ProjectID
+		name = test.Name
+	}
+	s.recordAuditEvent(r, "test.duration.adjust", "success", "test", id, projectID, map[string]any{"name": name, "duration": req.Duration})
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"test_id":      id,
@@ -478,6 +539,7 @@ func (s *Server) handleUpdateSystemSettings(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	s.recordAuditEvent(r, "system.settings.update", "success", "system_settings", "global", "", map[string]any{"auth_mode": updated.Auth.Mode})
 
 	writeJSON(w, http.StatusOK, updated)
 }

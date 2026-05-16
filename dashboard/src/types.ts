@@ -91,6 +91,7 @@ export interface RuntimeSettingsOverride {
   iterations?: number
   pacing?: PacingConfig
   think_time?: ThinkTimeConfig
+  browser?: Pick<BrowserConfig, 'headless'>
   log_level?: string
   auto_transactions?: string
   error_handling?: {
@@ -1035,10 +1036,18 @@ export interface DashboardCapacityPlanningSettings {
 }
 
 export interface DashboardAuthSettings {
-  mode: 'disabled' | 'trusted_headers'
+  mode: 'dev' | 'disabled' | 'trusted_headers' | 'oidc'
   provider_name?: string
   login_url?: string
   logout_url?: string
+  issuer_url?: string
+  client_id?: string
+  client_secret_env_var?: string
+  redirect_url?: string
+  scopes?: string[]
+  roles_claim?: string
+  project_roles_claim?: string
+  session_secret_env_var?: string
   user_header: string
   name_header: string
   email_header: string
@@ -1127,6 +1136,71 @@ export interface DashboardAuthEffectiveAccess {
   authenticated: boolean
   project_id?: string
   resources: DashboardAuthEffectiveAccessResource[]
+}
+
+export interface DashboardServiceAccount {
+  id: string
+  name: string
+  description?: string
+  active: boolean
+  global_roles?: string[]
+  project_roles?: Record<string, string[]>
+  last_used_at?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface DashboardServiceAccountListResponse {
+  service_accounts: DashboardServiceAccount[]
+  count: number
+}
+
+export interface DashboardCreateServiceAccountRequest {
+  name: string
+  description?: string
+  global_roles?: string[]
+  project_roles?: Record<string, string[]>
+}
+
+export interface DashboardCreateServiceAccountResponse {
+  service_account: DashboardServiceAccount
+  api_key: string
+}
+
+export interface DashboardUpdateServiceAccountRequest {
+  active: boolean
+}
+
+export interface DashboardAuditEvent {
+  id: string
+  action: string
+  actor_type: string
+  actor_subject: string
+  actor_display_name?: string
+  project_id?: string
+  resource_type: string
+  resource_id?: string
+  status: string
+  details?: Record<string, unknown>
+  created_at: string
+}
+
+export interface DashboardAuditEventListResponse {
+  events: DashboardAuditEvent[]
+  count: number
+  limit?: number
+  offset?: number
+}
+
+export interface DashboardAuditEventFilter {
+  limit?: number
+  offset?: number
+  action?: string
+  actor_type?: string
+  project_id?: string
+  resource_type?: string
+  resource_id?: string
+  status?: string
 }
 
 export interface CapacityResourceEstimate {

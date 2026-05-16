@@ -2,7 +2,9 @@ package api
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -26,6 +28,64 @@ func TestTrustedHeaderAuthRequiresIdentityForSystemSettings(t *testing.T) {
 
 	if resp.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusUnauthorized, resp.Body.String())
+	}
+}
+
+func TestTrustedHeaderAuthAllowsServiceAccountAPIKeyForSystemSettings(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	key := "stormrunner-service-account-key"
+	sum := sha256.Sum256([]byte(key))
+	now := time.Now()
+	if err := store.SaveServiceAccount(&storage.ServiceAccount{
+		ID:          "svc-settings",
+		Name:        "Settings Automation",
+		Description: "Applies controller settings",
+		KeyHash:     fmt.Sprintf("%x", sum[:]),
+		Active:      true,
+		GlobalRoles: []string{RoleSystemAdmin},
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}); err != nil {
+		t.Fatalf("SaveServiceAccount returned error: %v", err)
+	}
+
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	enableTrustedHeaderAuth(t, server)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/system/settings", nil)
+	req.Header.Set("X-Stormrunner-API-Key", key)
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("service account GET status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+}
+
+func TestTrustedHeaderAuthRejectsUnknownServiceAccountAPIKey(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	enableTrustedHeaderAuth(t, server)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/system/settings", nil)
+	req.Header.Set("X-Stormrunner-API-Key", "missing-key")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusUnauthorized {
+		t.Fatalf("unknown service account GET status = %d, want %d body=%s", resp.Code, http.StatusUnauthorized, resp.Body.String())
 	}
 }
 
@@ -452,6 +512,42 @@ func TestTrustedHeaderAuthResolvesFolderProjectForMutations(t *testing.T) {
 	}
 	if updated.Name != "Archived Results" {
 		t.Fatalf("folder name = %q, want Archived Results", updated.Name)
+	}
+}
+
+func TestTrustedHeaderAuthScopesProjectFolderListToProjectRoles(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	project := &storage.Project{ID: uuid.New().String(), Name: "Project One", CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	if err := store.SaveProject(project); err != nil {
+		t.Fatalf("SaveProject returned error: %v", err)
+	}
+	folder := &storage.Folder{ID: uuid.New().String(), ProjectID: project.ID, Name: "Scenarios", Category: "scenarios", CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	if err := store.SaveFolder(folder); err != nil {
+		t.Fatalf("SaveFolder returned error: %v", err)
+	}
+
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	enableTrustedHeaderAuth(t, server)
+
+	unauthorizedReq := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+project.ID+"/folders", nil)
+	unauthorizedResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(unauthorizedResp, unauthorizedReq)
+	if unauthorizedResp.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthorized project folders GET status = %d, want %d body=%s", unauthorizedResp.Code, http.StatusUnauthorized, unauthorizedResp.Body.String())
+	}
+
+	viewerReq := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+project.ID+"/folders", nil)
+	viewerReq.Header.Set("X-Auth-Request-User", "viewer-user")
+	viewerReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	viewerResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(viewerResp, viewerReq)
+	if viewerResp.Code != http.StatusOK {
+		t.Fatalf("project viewer folders GET status = %d, want %d body=%s", viewerResp.Code, http.StatusOK, viewerResp.Body.String())
 	}
 }
 
@@ -1274,6 +1370,27 @@ func TestTrustedHeaderAuthProjectRoleGuardsScenarioEndpoints(t *testing.T) {
 	server.mux.ServeHTTP(resultsResp, resultsReq)
 	if resultsResp.Code != http.StatusOK {
 		t.Fatalf("scenario viewer results GET status = %d, want %d body=%s", resultsResp.Code, http.StatusOK, resultsResp.Body.String())
+	}
+
+	scheduleBody := []byte(`{"name":"Nightly Smoke","cron_expr":"0 0 * * *","timezone":"UTC"}`)
+	viewerScheduleReq := httptest.NewRequest(http.MethodPost, "/api/v1/scenarios/"+scenario.ID+"/schedules", bytes.NewReader(scheduleBody))
+	viewerScheduleReq.Header.Set("Content-Type", "application/json")
+	viewerScheduleReq.Header.Set("X-Auth-Request-User", "viewer-user")
+	viewerScheduleReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	viewerScheduleResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(viewerScheduleResp, viewerScheduleReq)
+	if viewerScheduleResp.Code != http.StatusForbidden {
+		t.Fatalf("scenario viewer schedule POST status = %d, want %d body=%s", viewerScheduleResp.Code, http.StatusForbidden, viewerScheduleResp.Body.String())
+	}
+
+	editorScheduleReq := httptest.NewRequest(http.MethodPost, "/api/v1/scenarios/"+scenario.ID+"/schedules", bytes.NewReader(scheduleBody))
+	editorScheduleReq.Header.Set("Content-Type", "application/json")
+	editorScheduleReq.Header.Set("X-Auth-Request-User", "editor-user")
+	editorScheduleReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleEditor)
+	editorScheduleResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(editorScheduleResp, editorScheduleReq)
+	if editorScheduleResp.Code != http.StatusCreated {
+		t.Fatalf("scenario editor schedule POST status = %d, want %d body=%s", editorScheduleResp.Code, http.StatusCreated, editorScheduleResp.Body.String())
 	}
 
 	adminUpdateReq := httptest.NewRequest(http.MethodPut, "/api/v1/scenarios/"+scenario.ID, bytes.NewReader([]byte(`{"name":"Smoke Renamed","duration":"1m","groups":[{"script_id":"`+script.ID+`","vusers":5}]}`)))

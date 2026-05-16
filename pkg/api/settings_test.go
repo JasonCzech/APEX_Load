@@ -46,8 +46,8 @@ func TestSystemSettingsAPIAndPersistence(t *testing.T) {
 	if len(initial.Notifications.Webhooks) != 0 {
 		t.Fatalf("initial notifications = %#v, want none", initial.Notifications.Webhooks)
 	}
-	if initial.Auth.Mode != authModeDisabled {
-		t.Fatalf("initial auth mode = %q, want %q", initial.Auth.Mode, authModeDisabled)
+	if initial.Auth.Mode != authModeDev {
+		t.Fatalf("initial auth mode = %q, want %q", initial.Auth.Mode, authModeDev)
 	}
 	if initial.Auth.UserHeader != "X-Auth-Request-User" {
 		t.Fatalf("initial auth user header = %q, want X-Auth-Request-User", initial.Auth.UserHeader)
@@ -369,6 +369,71 @@ func TestSystemSettingsValidationRejectsInvalidAuthSettings(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected invalid auth login url to fail validation")
 	}
+
+	err = validateSystemSettings(SystemSettings{
+		General: GeneralSettings{
+			APIEndpoint:            ":8080",
+			MaxConcurrentTests:     2,
+			MetricsIntervalSeconds: 1,
+		},
+		Thresholds: ThresholdSettings{},
+		CapacityPlanning: CapacityPlanningSettings{
+			HeadroomPct: 20,
+			Generator: GeneratorCapacitySettings{
+				CPUCores:    4,
+				MemoryMB:    8192,
+				NetworkMbps: 1000,
+				MaxVUsers:   10000,
+			},
+			Availability: AvailabilitySettings{
+				Source:                        capacityAvailabilityConfigured,
+				ConfiguredAvailableGenerators: 1,
+			},
+		},
+		Auth: AuthSettings{
+			Mode:               authModeOIDC,
+			IssuerURL:          "https://login.example.test",
+			ClientID:           "stormrunner-dashboard",
+			ClientSecretEnvVar: "STORMRUNNER_OIDC_CLIENT_SECRET",
+			RedirectURL:        "https://stormrunner.example.test/api/v1/auth/callback",
+			SessionSecretEnvVar: "STORMRUNNER_AUTH_SESSION_SECRET",
+			Scopes:             []string{"openid", "profile", "email"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected valid oidc settings, got error: %v", err)
+	}
+
+	err = validateSystemSettings(SystemSettings{
+		General: GeneralSettings{
+			APIEndpoint:            ":8080",
+			MaxConcurrentTests:     2,
+			MetricsIntervalSeconds: 1,
+		},
+		Thresholds: ThresholdSettings{},
+		CapacityPlanning: CapacityPlanningSettings{
+			HeadroomPct: 20,
+			Generator: GeneratorCapacitySettings{
+				CPUCores:    4,
+				MemoryMB:    8192,
+				NetworkMbps: 1000,
+				MaxVUsers:   10000,
+			},
+			Availability: AvailabilitySettings{
+				Source:                        capacityAvailabilityConfigured,
+				ConfiguredAvailableGenerators: 1,
+			},
+		},
+		Auth: AuthSettings{
+			Mode:       authModeOIDC,
+			IssuerURL:  "https://login.example.test",
+			ClientID:   "stormrunner-dashboard",
+			RedirectURL: "https://stormrunner.example.test/api/v1/auth/callback",
+		},
+	})
+	if err == nil {
+		t.Fatal("expected missing oidc secret settings to fail validation")
+	}
 }
 
 func TestNormalizeLoadedSystemSettingsBackfillsCapacityPlanningDefaults(t *testing.T) {
@@ -390,11 +455,30 @@ func TestNormalizeLoadedSystemSettingsBackfillsCapacityPlanningDefaults(t *testi
 	if normalized.CapacityPlanning.Availability.Source != capacityAvailabilityConfigured {
 		t.Fatalf("normalized availability source = %q, want %q", normalized.CapacityPlanning.Availability.Source, capacityAvailabilityConfigured)
 	}
-	if normalized.Auth.Mode != authModeDisabled {
-		t.Fatalf("normalized auth mode = %q, want %q", normalized.Auth.Mode, authModeDisabled)
+	if normalized.Auth.Mode != authModeDev {
+		t.Fatalf("normalized auth mode = %q, want %q", normalized.Auth.Mode, authModeDev)
 	}
 	if normalized.Auth.RolesHeader != "X-Stormrunner-Roles" {
 		t.Fatalf("normalized roles header = %q, want X-Stormrunner-Roles", normalized.Auth.RolesHeader)
+	}
+	if len(normalized.Auth.Scopes) != 3 || normalized.Auth.Scopes[0] != "openid" {
+		t.Fatalf("normalized auth scopes = %#v, want default oidc scopes", normalized.Auth.Scopes)
+	}
+	if normalized.Auth.SessionSecretEnvVar != "STORMRUNNER_AUTH_SESSION_SECRET" {
+		t.Fatalf("normalized session secret env var = %q, want STORMRUNNER_AUTH_SESSION_SECRET", normalized.Auth.SessionSecretEnvVar)
+	}
+
+	normalizedAlias := normalizeLoadedSystemSettings(SystemSettings{
+		General: GeneralSettings{
+			APIEndpoint:            ":8080",
+			MaxConcurrentTests:     4,
+			MetricsIntervalSeconds: 2,
+		},
+		Thresholds: ThresholdSettings{},
+		Auth: AuthSettings{Mode: authModeDisabled},
+	}, 4)
+	if normalizedAlias.Auth.Mode != authModeDev {
+		t.Fatalf("normalized disabled alias auth mode = %q, want %q", normalizedAlias.Auth.Mode, authModeDev)
 	}
 }
 

@@ -47,6 +47,7 @@ func (s *Server) handleCreateFolder(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	s.recordAuditEvent(r, "folder.create", "success", "folder", folder.ID, folder.ProjectID, map[string]any{"name": folder.Name, "category": folder.Category})
 	writeJSON(w, http.StatusCreated, folder)
 }
 
@@ -103,6 +104,7 @@ func (s *Server) handleUpdateFolder(w http.ResponseWriter, r *http.Request) {
 		}
 		folder.ParentID = req.ParentID
 	}
+	s.recordAuditEvent(r, "folder.update", "success", "folder", folder.ID, folder.ProjectID, map[string]any{"name": folder.Name, "parent_id": folder.ParentID})
 	writeJSON(w, http.StatusOK, folder)
 }
 
@@ -112,9 +114,16 @@ func (s *Server) handleDeleteFolder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := r.PathValue("id")
+	projectID := ""
+	name := ""
+	if folder, err := s.store.GetFolder(id); err == nil && folder != nil {
+		projectID = folder.ProjectID
+		name = folder.Name
+	}
 	if err := s.store.DeleteFolder(id); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	s.recordAuditEvent(r, "folder.delete", "success", "folder", id, projectID, map[string]any{"name": name})
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})
 }

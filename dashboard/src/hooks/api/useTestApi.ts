@@ -332,6 +332,8 @@ export function useTestApi() {
       createTest,
       estimateTest,
       startTest,
+      pinComparisonBaseline,
+      unpinComparisonBaseline,
       stopTest,
       abortTest,
       deleteTest,

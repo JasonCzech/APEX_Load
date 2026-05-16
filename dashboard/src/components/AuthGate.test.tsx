@@ -79,6 +79,22 @@ describe('AuthGate', () => {
     expect(container.textContent).toContain('Protected content')
     expect(container.textContent).not.toContain('Checking access')
   })
+
+  it('blocks the dashboard with OIDC-specific copy when native OIDC is enabled without a session', async () => {
+    await act(async () => {
+      root.render(
+        <AuthGate state={readyState({ enabled: true, mode: 'oidc', provider_name: 'Microsoft Entra ID', login_url: '/api/v1/auth/login', authenticated: false })}>
+          <div data-testid="protected">Protected content</div>
+        </AuthGate>,
+      )
+    })
+
+    expect(container.textContent).toContain('native OIDC authentication')
+    expect(container.textContent).toContain('Continue to Microsoft Entra ID')
+    const link = container.querySelector('a') as HTMLAnchorElement | null
+    expect(link?.getAttribute('href')).toBe('/api/v1/auth/login')
+    expect(container.textContent).not.toContain('Protected content')
+  })
 })
 
 function readyState(auth: ReadyAuthState): AuthStatusState {

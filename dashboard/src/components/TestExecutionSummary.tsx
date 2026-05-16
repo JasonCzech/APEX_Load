@@ -1223,13 +1223,6 @@ function totalHTTPDecompositionMs(transaction: TxMetrics): number {
     + (transaction.server_telemetry?.avg_transfer_ms ?? 0)
 }
 
-function httpDependencyErrorPct(transaction: TxMetrics): number {
-  if (!transaction || transaction.count <= 0) {
-    return 0
-  }
-  return (transaction.errors / transaction.count) * 100
-}
-
 function transactionErrorPct(transaction?: TxMetrics): number {
   if (!transaction || transaction.count <= 0) {
     return 0

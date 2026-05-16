@@ -79,11 +79,19 @@ The 19 gaps are organized into five sequential delivery waves. Each wave targets
 - **Role Model:** Define System Admin, Project Admin, Editor, and Viewer roles.
 - **Dashboard UI:** Add Login screen and User Management panels.
 - **Progress:** Partially implemented via trusted-header auth middleware, the full System Admin / Project Admin / Editor / Viewer role model, request-scoped RBAC enforcement, `GET /api/v1/auth/me`, `GET /api/v1/auth/roles`, `GET /api/v1/auth/access-matrix`, `GET /api/v1/auth/effective-access`, configurable upstream provider/login metadata in system settings, the dashboard auth gate with actionable sign-in links, sidebar identity visibility with sign-out affordance, and settings panels that show the current forwarded identity, the Microsoft Entra ID header contract, built-in role reference, backend-owned route access matrix, and active-project effective permissions for the current session. Production sign-in is now explicitly modeled as Microsoft Entra ID-backed trusted-header auth, while direct user lifecycle management still remains delegated to the upstream identity gateway rather than Stormrunner itself.
+- **Current Increment:** Local development now defaults to an explicit `dev` bypass mode, while production remains modeled as Microsoft Entra ID-backed trusted-header auth. Stormrunner now persists hashed service-account API keys and audit events, exposes `GET/POST/PATCH/DELETE /api/v1/auth/service-accounts`, `POST /api/v1/auth/service-accounts/{id}/rotate`, and filtered `GET /api/v1/auth/audit-events`, records audit entries for key settings, project, test-control mutations including test move/delete, comparison-baseline pin/unpin, live VUser scaling, and duration adjustment, scenario CRUD and schedules, application and release CRUD/archive, folder CRUD, shared data-pool and row CRUD, scenario data-pool binding updates, recorder-session actions, browser-replay lifecycle actions, and script create/update/move/delete actions, tracks service-account last-use timestamps, and surfaces service-account provisioning, key rotation, enable/disable actions, and audit filtering in the dashboard settings UI. Route-level RBAC coverage was also tightened for project folder listing and scenario schedule creation so those endpoints no longer bypass project-role enforcement.
+- **Remaining Scope:** The current implementation supports `dev`, `disabled`, and `trusted_headers` auth modes plus service-account API keys, but it does not yet add a native `oidc` or `saml` mode, callback/session handling, or an internal user/group directory. Storage currently persists service accounts and audit events, not first-class user or role-binding tables, so direct user lifecycle management remains an upstream identity-gateway concern rather than a Stormrunner-owned surface.
+- **Concrete Remaining Tickets:**
+	1. Add a native `oidc` auth mode with IdP metadata/config validation, login redirect, callback processing, logout flow, and session/cookie handling.
+	2. Decide whether `saml` is a first-class runtime mode or stays intentionally unsupported behind the trusted-header gateway pattern.
+	3. Decide whether Stormrunner should own user/group-to-role bindings; if yes, add persisted user/group/role mapping tables and admin workflows, and if not, mark upstream lifecycle delegation as the intended final architecture.
+	4. Keep RBAC route coverage and audit coverage aligned as new API endpoints are added so governance does not regress after the auth foundation is considered complete.
 
 ### 3.2 Multi-Tenant Governance & Capacity Controls (P1)
 **Effort:** 6-9 days
 - **Quotas:** Implement concurrent execution limits and VUser caps per project/team.
 - **Queueing System:** If a team exceeds capacity, place the test in a pending queue rather than failing immediately.
+- **Status:** Implemented at project scope. Stormrunner currently enforces project-level quotas and a persisted pending queue, but it does not yet model a separate first-class team entity with independent quota policy.
 
 ### 3.3 Alerting & Notifications (P1)
 **Effort:** 3-4 days
@@ -169,14 +177,20 @@ The 19 gaps are organized into five sequential delivery waves. Each wave targets
 
 ### Critical Paths
 1. **Reports (1.2)** depend on the stability of the Parquet archives. If the schema changes, the report generator breaks.
-2. **Alerts (1.3)** and **Schedules (1.4)** require the Controller to be running 24/7, shifting it from an ephemeral tool to a persistent control plane service.
+2. **Alerts (3.3)** and **Schedules (3.4)** require the Controller to be running 24/7, shifting it from an ephemeral tool to a persistent control plane service.
 
 ### Risk Mitigations
-- **Database Migrations:** As we add Schedules, Users, and Roles to the SQLite database, we must implement a robust schema migration system (e.g., `golang-migrate`) before Phase 1.4.
+- **Database Migrations:** Stormrunner currently uses in-process SQLite schema evolution and backfill logic in the storage layer rather than an external migration tool. If the platform keeps evolving the shared control-plane schema, keep adding regression coverage for legacy database upgrades and decide whether that in-process approach remains sufficient before introducing user/group persistence.
 - **LLM Hallucinations in Correlation:** The correlation assistant (Phase 2.1) must always present suggestions for user approval, never auto-mutating the script without consent.
-- **Prometheus Cardinality:** When exporting metrics to Prometheus (Phase 3.2), we must aggregate by transaction name and status, not by individual VUser, to avoid cardinality explosions in the APM tool.
+- **Prometheus Cardinality:** When exporting metrics to Prometheus (Phase 5.1), aggregate by transaction name and status, not by individual VUser, to avoid cardinality explosions in downstream observability tooling.
+
+### Validation Snapshot (May 2026)
+- Sample validation against the codebase confirms the implementation claims for Wave 3.2-3.5, Wave 4.1-4.4, and Wave 5.1-5.4 are represented in controller/runtime/dashboard code paths.
+- The material remaining feature gap in this plan is 3.1 native identity ownership: auth settings still model trusted-header integration rather than native OIDC/SAML, and persistence currently covers service accounts plus audit events rather than a first-class user directory.
+- The only notable scope caveat outside 3.1 is that quota enforcement is project-scoped today; the plan's original "project/team" wording assumes a team construct that is not yet modeled in the platform.
 
 ## Next Steps
-1. Create GitHub issues/tickets for Phase 1.
-2. Begin implementation of **1.1 CI/CD Integration** (CLI enhancements and GitHub Action template).
-3. Draft the HTML template layout for **1.2 Report Generation**.
+1. Decide whether 3.1 should finish as an upstream-managed trusted-header architecture or grow a native OIDC/SAML mode inside Stormrunner.
+2. If native auth is required, implement the `oidc` login/callback/logout/session flow and extend auth settings beyond the current trusted-header contract.
+3. Decide whether user/group role assignment remains upstream-owned or becomes Stormrunner-owned persistence and UI surface.
+4. Keep the plan aligned with implementation status as governance/auth features evolve so stale early-phase next steps do not reappear as misleading backlog items.

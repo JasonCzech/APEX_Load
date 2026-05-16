@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -27,6 +28,7 @@ const (
 )
 
 type authUserContextKey struct{}
+type authServiceAccountContextKey struct{}
 
 type AuthenticatedUser struct {
 	Subject      string
@@ -36,6 +38,12 @@ type AuthenticatedUser struct {
 	ProjectRoles map[string]map[string]struct{}
 }
 
+type AuthenticatedServiceAccount struct {
+	ID          string
+	Name        string
+	Description string
+}
+
 type accessRequirement struct {
 	GlobalRoles   []string
 	ProjectRoles  []string
@@ -43,6 +51,11 @@ type accessRequirement struct {
 }
 
 type requestProjectLookup func(*http.Request) (string, int, string)
+
+type authResolution struct {
+	User           *AuthenticatedUser
+	ServiceAccount *AuthenticatedServiceAccount
+}
 
 func authMiddleware(settings func() AuthSettings, store storage.Store) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
@@ -59,19 +72,20 @@ func authMiddleware(settings func() AuthSettings, store storage.Store) func(http
 			}
 
 			current := normalizeAuthSettings(settings())
-			if current.Mode == authModeDisabled {
+			if isAuthBypassMode(current.Mode) {
 				next.ServeHTTP(w, r)
 				return
 			}
 
-			user, err := authenticatedUserFromHeaders(r, current)
+			resolution, err := resolveRequestAuth(r, current, store)
 			if err != nil {
 				writeError(w, http.StatusUnauthorized, err.Error())
 				return
 			}
+			user := resolution.User
 
 			if len(requirement.GlobalRoles) > 0 && user.hasGlobalRole(requirement.GlobalRoles...) {
-				next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), authUserContextKey{}, user)))
+				next.ServeHTTP(w, withAuthenticatedContext(r, resolution))
 				return
 			}
 
@@ -82,7 +96,7 @@ func authMiddleware(settings func() AuthSettings, store storage.Store) func(http
 					return
 				}
 				if user.hasProjectRole(projectID, requirement.ProjectRoles...) {
-					next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), authUserContextKey{}, user)))
+					next.ServeHTTP(w, withAuthenticatedContext(r, resolution))
 					return
 				}
 			}
@@ -92,23 +106,24 @@ func authMiddleware(settings func() AuthSettings, store storage.Store) func(http
 	}
 }
 
-func projectScopedAuthMiddleware(settings func() AuthSettings, globalRoles []string, projectRoles []string, projectLookup requestProjectLookup) func(http.Handler) http.Handler {
+func projectScopedAuthMiddleware(settings func() AuthSettings, store storage.Store, globalRoles []string, projectRoles []string, projectLookup requestProjectLookup) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			current := normalizeAuthSettings(settings())
-			if current.Mode == authModeDisabled {
+			if isAuthBypassMode(current.Mode) {
 				next.ServeHTTP(w, r)
 				return
 			}
 
-			user, err := authenticatedUserFromHeaders(r, current)
+			resolution, err := resolveRequestAuth(r, current, store)
 			if err != nil {
 				writeError(w, http.StatusUnauthorized, err.Error())
 				return
 			}
+			user := resolution.User
 
 			if len(globalRoles) > 0 && user.hasGlobalRole(globalRoles...) {
-				next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), authUserContextKey{}, user)))
+				next.ServeHTTP(w, withAuthenticatedContext(r, resolution))
 				return
 			}
 
@@ -119,7 +134,7 @@ func projectScopedAuthMiddleware(settings func() AuthSettings, globalRoles []str
 					return
 				}
 				if user.hasProjectRole(projectID, projectRoles...) {
-					next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), authUserContextKey{}, user)))
+					next.ServeHTTP(w, withAuthenticatedContext(r, resolution))
 					return
 				}
 			}
@@ -132,6 +147,118 @@ func projectScopedAuthMiddleware(settings func() AuthSettings, globalRoles []str
 func AuthenticatedUserFromContext(ctx context.Context) (*AuthenticatedUser, bool) {
 	user, ok := ctx.Value(authUserContextKey{}).(*AuthenticatedUser)
 	return user, ok
+}
+
+func AuthenticatedServiceAccountFromContext(ctx context.Context) (*AuthenticatedServiceAccount, bool) {
+	account, ok := ctx.Value(authServiceAccountContextKey{}).(*AuthenticatedServiceAccount)
+	return account, ok
+}
+
+func withAuthenticatedContext(r *http.Request, resolution authResolution) *http.Request {
+	ctx := r.Context()
+	if resolution.User != nil {
+		ctx = context.WithValue(ctx, authUserContextKey{}, resolution.User)
+	}
+	if resolution.ServiceAccount != nil {
+		ctx = context.WithValue(ctx, authServiceAccountContextKey{}, resolution.ServiceAccount)
+	}
+	return r.WithContext(ctx)
+}
+
+func resolveRequestAuth(r *http.Request, settings AuthSettings, store storage.Store) (authResolution, error) {
+	if account, user, ok, err := authenticatedUserFromAPIKey(r, store); err != nil {
+		return authResolution{}, err
+	} else if ok {
+		return authResolution{User: user, ServiceAccount: account}, nil
+	}
+	if settings.Mode == authModeOIDC {
+		user, err := authenticatedUserFromOIDCSession(r, settings)
+		if err != nil {
+			return authResolution{}, err
+		}
+		return authResolution{User: user}, nil
+	}
+	user, err := authenticatedUserFromHeaders(r, settings)
+	if err != nil {
+		return authResolution{}, err
+	}
+	return authResolution{User: user}, nil
+}
+
+func authenticatedUserFromAPIKey(r *http.Request, store storage.Store) (*AuthenticatedServiceAccount, *AuthenticatedUser, bool, error) {
+	if store == nil {
+		return nil, nil, false, nil
+	}
+	key := extractAPIKey(r)
+	if key == "" {
+		return nil, nil, false, nil
+	}
+	account, err := store.GetServiceAccountByKeyHash(hashAPIKey(key))
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil, false, fmt.Errorf("authentication required")
+		}
+		return nil, nil, false, fmt.Errorf("authentication required")
+	}
+	usedAt := time.Now().UTC()
+	if err := store.UpdateServiceAccountLastUsed(account.ID, usedAt); err == nil {
+		account.LastUsedAt = &usedAt
+	}
+	user := authenticatedUserFromServiceAccount(account)
+	return &AuthenticatedServiceAccount{ID: account.ID, Name: account.Name, Description: account.Description}, user, true, nil
+}
+
+func extractAPIKey(r *http.Request) string {
+	key := strings.TrimSpace(r.Header.Get("X-Stormrunner-API-Key"))
+	if key != "" {
+		return key
+	}
+	authorization := strings.TrimSpace(r.Header.Get("Authorization"))
+	if authorization == "" {
+		return ""
+	}
+	parts := strings.SplitN(authorization, " ", 2)
+	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
+		return ""
+	}
+	return strings.TrimSpace(parts[1])
+}
+
+func hashAPIKey(key string) string {
+	sum := sha256.Sum256([]byte(strings.TrimSpace(key)))
+	return fmt.Sprintf("%x", sum[:])
+}
+
+func authenticatedUserFromServiceAccount(account *storage.ServiceAccount) *AuthenticatedUser {
+	user := &AuthenticatedUser{
+		Subject:      "service-account:" + account.ID,
+		DisplayName:  account.Name,
+		GlobalRoles:  make(map[string]struct{}),
+		ProjectRoles: make(map[string]map[string]struct{}),
+	}
+	for _, role := range account.GlobalRoles {
+		trimmed := strings.ToLower(strings.TrimSpace(role))
+		if trimmed != "" {
+			user.GlobalRoles[trimmed] = struct{}{}
+		}
+	}
+	for projectID, roles := range account.ProjectRoles {
+		normalizedProjectID := normalizeProjectID(projectID)
+		if normalizedProjectID == "" {
+			continue
+		}
+		roleSet := make(map[string]struct{})
+		for _, role := range roles {
+			trimmed := strings.ToLower(strings.TrimSpace(role))
+			if trimmed != "" {
+				roleSet[trimmed] = struct{}{}
+			}
+		}
+		if len(roleSet) > 0 {
+			user.ProjectRoles[normalizedProjectID] = roleSet
+		}
+	}
+	return user
 }
 
 func authenticatedUserFromHeaders(r *http.Request, settings AuthSettings) (*AuthenticatedUser, error) {
@@ -230,6 +357,28 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 		}
 	}
 
+	if path == "/api/v1/auth/service-accounts" {
+		if method == http.MethodGet || method == http.MethodPost {
+			return accessRequirement{GlobalRoles: []string{RoleSystemAdmin}}, true
+		}
+	}
+
+	if strings.HasPrefix(path, "/api/v1/auth/service-accounts/") && method == http.MethodPatch {
+		return accessRequirement{GlobalRoles: []string{RoleSystemAdmin}}, true
+	}
+
+	if strings.HasSuffix(path, "/rotate") && strings.HasPrefix(path, "/api/v1/auth/service-accounts/") && method == http.MethodPost {
+		return accessRequirement{GlobalRoles: []string{RoleSystemAdmin}}, true
+	}
+
+	if strings.HasPrefix(path, "/api/v1/auth/service-accounts/") && method == http.MethodDelete {
+		return accessRequirement{GlobalRoles: []string{RoleSystemAdmin}}, true
+	}
+
+	if path == "/api/v1/auth/audit-events" && method == http.MethodGet {
+		return accessRequirement{GlobalRoles: []string{RoleSystemAdmin}}, true
+	}
+
 	if path == "/api/v1/system/inventory" && method == http.MethodGet {
 		return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
 	}
@@ -283,6 +432,15 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 	if strings.HasPrefix(path, "/api/v1/projects/") {
 		switch method {
 		case http.MethodGet:
+			if strings.HasSuffix(path, "/folders") {
+				return accessRequirement{
+					GlobalRoles:  []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+					ProjectRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin},
+					ProjectLookup: func(r *http.Request, _ storage.Store) (string, int, string) {
+						return normalizeProjectID(r.PathValue("pid")), 0, ""
+					},
+				}, true
+			}
 			return accessRequirement{
 				GlobalRoles:  []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
 				ProjectRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin},
@@ -571,6 +729,12 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 			return accessRequirement{
 				GlobalRoles:   []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
 				ProjectRoles:  []string{RoleViewer, RoleEditor, RoleProjectAdmin},
+				ProjectLookup: resolveScenarioProjectID,
+			}, true
+		case http.MethodPost:
+			return accessRequirement{
+				GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+				ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
 				ProjectLookup: resolveScenarioProjectID,
 			}, true
 		case http.MethodPut, http.MethodDelete:

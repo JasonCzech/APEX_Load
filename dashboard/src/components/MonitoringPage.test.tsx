@@ -257,4 +257,30 @@ describe('MonitoringPage', () => {
     expect(container.textContent).toContain('2 GB')
     expect(container.textContent).toContain('Close')
   })
+
+  it('shows pending queue details in the run timeline', async () => {
+    apiMock.listTests.mockResolvedValue({
+      tests: [{
+        id: 'test-pending',
+        name: 'Checkout Capacity Queue',
+        status: 'PENDING',
+        groups: [{ name: 'Checkout', script_id: 'script-1', script_name: 'Checkout', protocol: 'http', vusers: 2500 }],
+        total_vusers: 2500,
+        duration: '15m',
+        created_at: '2026-05-12T20:00:00Z',
+        pending_since: '2026-05-12T20:03:00Z',
+        queue_position: 1,
+        pending_reason: 'waiting for project VUser capacity (2000 max vusers)',
+      }],
+    })
+
+    await act(async () => {
+      root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} />)
+    })
+
+    expect(container.textContent).toContain('Run Timeline')
+    expect(container.textContent).toContain('Checkout Capacity Queue')
+    expect(container.textContent).toContain('Queue #1')
+    expect(container.textContent).toContain('waiting for project VUser capacity')
+  })
 })

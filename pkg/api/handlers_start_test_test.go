@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/jasonczech/stormrunner/pkg/dsl"
+	"github.com/jasonczech/stormrunner/pkg/storage"
 )
 
 func TestHandleStartTestReturnsCapacityShortfallPayload(t *testing.T) {
@@ -99,5 +100,61 @@ func TestHandleStartTestAllowsOverridePayload(t *testing.T) {
 
 	if resp.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+}
+
+func TestHandleStartTestReturnsPendingWhenProjectQuotaReached(t *testing.T) {
+	store := &metricsStoreSpy{projectsByID: map[string]*storage.Project{
+		"project-1": {
+			ID:   "project-1",
+			Name: "Payments",
+			Settings: storage.ProjectSettings{
+				MaxConcurrentTests: 1,
+			},
+		},
+	}}
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	server.runner.StoreScript(&dsl.Script{
+		ID:        "script-api-project-quota",
+		Name:      "API Project Quota Script",
+		Protocol:  "http",
+		Version:   "1.0.0",
+		ProjectID: "project-1",
+		Actions:   []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+
+	first, err := server.runner.CreateTest(CreateTestRequest{Name: "First", Duration: "30s", ScriptID: "script-api-project-quota", VUsers: 1})
+	if err != nil {
+		t.Fatalf("CreateTest(first) returned error: %v", err)
+	}
+	second, err := server.runner.CreateTest(CreateTestRequest{Name: "Second", Duration: "30s", ScriptID: "script-api-project-quota", VUsers: 1})
+	if err != nil {
+		t.Fatalf("CreateTest(second) returned error: %v", err)
+	}
+
+	server.runner.mu.Lock()
+	server.runner.tests[first.ID].Status = "RUNNING"
+	server.runner.mu.Unlock()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tests/"+second.ID+"/start", nil)
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var payload struct {
+		Status  string `json:"status"`
+		TestID  string `json:"test_id"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+	if payload.Status != "pending" {
+		t.Fatalf("status = %q, want pending", payload.Status)
+	}
+	if payload.TestID != second.ID {
+		t.Fatalf("test_id = %q, want %q", payload.TestID, second.ID)
 	}
 }

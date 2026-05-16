@@ -104,7 +104,7 @@ const sampleTemplates: Record<SampleFormat, { primary: string; secondary?: strin
         },
         "response": {
           "status": 200,
-          "content": {"text": "{\"orders\":[]}"}
+          "content": {"text": "{"orders":[]}"}
         }
       }
     ]
@@ -269,10 +269,6 @@ export default function SampleScriptImport({ projectId, onImported, onEdit, onCl
     convertTask.reset()
     saveTask.clearError()
     setMessageError('')
-  }
-
-  const handleFileLoad = async (file: File, target: 'primary' | 'secondary') => {
-    await handleFilesLoad([file], target)
   }
 
   const handleFilesLoad = async (files: File[], target: 'primary' | 'secondary') => {

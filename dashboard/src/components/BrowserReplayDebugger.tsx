@@ -94,8 +94,14 @@ export default function BrowserReplayDebugger({
   const selectedPageURL = selectedEvent?.page_url || selectedEvent?.snapshot?.page_url
   const selectedPageTitle = selectedEvent?.page_title || selectedEvent?.snapshot?.page_title || selectedEvent?.dom_summary?.title
   const selectedDOMSummary = selectedEvent?.dom_summary || selectedEvent?.snapshot?.dom_summary
-  const selectedConsoleEntries = selectedEvent?.console_entries || selectedEvent?.snapshot?.console_entries || []
-  const selectedNetworkEntries = selectedEvent?.network_entries || selectedEvent?.snapshot?.network_entries || []
+  const selectedConsoleEntries = useMemo(
+    () => selectedEvent?.console_entries || selectedEvent?.snapshot?.console_entries || [],
+    [selectedEvent],
+  )
+  const selectedNetworkEntries = useMemo(
+    () => selectedEvent?.network_entries || selectedEvent?.snapshot?.network_entries || [],
+    [selectedEvent],
+  )
   const selectedHTML = selectedEvent?.html || selectedEvent?.snapshot?.html
   const selectedConsoleText = useMemo(() => formatConsoleEntries(selectedConsoleEntries), [selectedConsoleEntries])
   const selectedNetworkText = useMemo(() => formatNetworkEntries(selectedNetworkEntries), [selectedNetworkEntries])

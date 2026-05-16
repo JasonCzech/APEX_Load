@@ -9,8 +9,8 @@ import (
 	"syscall"
 
 	pb "github.com/jasonczech/stormrunner/api/proto"
-	"github.com/jasonczech/stormrunner/pkg/distributed/generatorrpc"
 	"github.com/jasonczech/stormrunner/pkg/config"
+	"github.com/jasonczech/stormrunner/pkg/distributed/generatorrpc"
 	_ "github.com/jasonczech/stormrunner/pkg/protocol/browser"
 	_ "github.com/jasonczech/stormrunner/pkg/protocol/http"
 	_ "github.com/jasonczech/stormrunner/pkg/protocol/java_http"

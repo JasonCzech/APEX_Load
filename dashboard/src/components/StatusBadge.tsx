@@ -2,6 +2,7 @@ import './StatusBadge.css'
 
 const STATUS_STYLES: Record<string, string> = {
   QUEUED: 'status-queued',
+  PENDING: 'status-queued',
   INITIALIZING: 'status-init',
   RUNNING: 'status-running',
   STOPPING: 'status-stopping',

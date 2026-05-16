@@ -5,7 +5,8 @@ import { downloadBlob } from '../utils/fileUtils'
 import { Application, BrowserDeviceLiveMetrics, BrowserEngineLiveMetrics, BrowserPlatformLiveMetrics, IntervalSummaryRecord, Release, RunArchiveReport, TestSummary } from '../types'
 import { useApi } from '../hooks/useApi'
 import { getErrorMessage } from '../utils/errorUtils'
-import BrowserBreakdownChart, {
+import BrowserBreakdownChart from './BrowserBreakdownChart'
+import {
   BrowserBreakdown,
   BrowserBreakdownDatum,
   buildBrowserBreakdownData,
@@ -15,7 +16,7 @@ import BrowserBreakdownChart, {
   getBrowserBreakdownChartCopy,
   getBrowserBreakdownSegmentLabel,
   getBrowserBreakdownTitle,
-} from './BrowserBreakdownChart'
+} from './browserBreakdownModel'
 import StatusBadge from './StatusBadge'
 
 interface Props {

@@ -31,7 +31,7 @@ function shouldCollapseBody(value: string): boolean {
 }
 
 function renderJSONLine(line: string, lineKey: string): ReactNode[] {
-  const tokenPattern = /("(?:\\.|[^"\\])*")(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|[{}\[\],:]/g
+  const tokenPattern = /("(?:\\.|[^"\\])*")(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|[{}[\],:]/g
   const nodes: ReactNode[] = []
   let cursor = 0
 

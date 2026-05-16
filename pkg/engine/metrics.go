@@ -13,11 +13,16 @@ type MetricsCollector struct {
 	ch                chan *protocol.Result
 	snapshots         []MetricsSnapshot
 	snapshotsMu       sync.RWMutex
+	targetsMu         sync.RWMutex
 	current           *liveCounters
 	resCollector      *ResourceCollector
 	emitIdleSnapshots bool
 	done              chan struct{}
+	targetTPS         float64
+	groupTargetTPS    map[string]float64
 }
+
+const throughputGapAlertThresholdPct = 5.0
 
 type liveCounters struct {
 	totalTransactions atomic.Int64
@@ -27,25 +32,28 @@ type liveCounters struct {
 }
 
 type MetricsSnapshot struct {
-	Timestamp    time.Time
-	Window       time.Duration
-	Transactions int64
-	Errors       int64
-	ActiveVUsers int64
-	TPS          float64
-	AvgDuration  time.Duration
-	P50          time.Duration
-	P90          time.Duration
-	P95          time.Duration
-	P99          time.Duration
-	ByAction     map[string]*ActionMetrics
-	ByDependencyTarget map[string]*ActionMetrics `json:"by_dependency_target,omitempty"`
-	BySOAPOperation map[string]*ActionMetrics `json:"by_soap_operation,omitempty"`
-	ByGroup      map[string]*GroupMetrics
-	Browser      *BrowserMetricsSummary               `json:"browser,omitempty"`
-	BrowserByDevice map[string]*BrowserDeviceMetrics `json:"browser_by_device,omitempty"`
-	Telemetry    *TelemetryMetrics `json:"telemetry,omitempty"`
-	Resources    *SystemResources `json:"resources,omitempty"`
+	Timestamp              time.Time
+	Window                 time.Duration
+	Transactions           int64
+	Errors                 int64
+	ActiveVUsers           int64
+	TPS                    float64
+	TargetTPS              float64 `json:"target_tps,omitempty"`
+	ThroughputGapPct       float64 `json:"throughput_gap_pct,omitempty"`
+	ThroughputTargetMissed bool    `json:"throughput_target_missed,omitempty"`
+	AvgDuration            time.Duration
+	P50                    time.Duration
+	P90                    time.Duration
+	P95                    time.Duration
+	P99                    time.Duration
+	ByAction               map[string]*ActionMetrics
+	ByDependencyTarget     map[string]*ActionMetrics `json:"by_dependency_target,omitempty"`
+	BySOAPOperation        map[string]*ActionMetrics `json:"by_soap_operation,omitempty"`
+	ByGroup                map[string]*GroupMetrics
+	Browser                *BrowserMetricsSummary           `json:"browser,omitempty"`
+	BrowserByDevice        map[string]*BrowserDeviceMetrics `json:"browser_by_device,omitempty"`
+	Telemetry              *TelemetryMetrics                `json:"telemetry,omitempty"`
+	Resources              *SystemResources                 `json:"resources,omitempty"`
 }
 
 type BrowserMetricsSummary struct {
@@ -75,25 +83,25 @@ type BrowserDeviceMetrics struct {
 }
 
 type ServerTelemetrySummary struct {
-	Samples               int64   `json:"samples"`
-	AvgServerProcessingMs float64 `json:"avg_server_processing_ms,omitempty"`
-	AvgTransferMs         float64 `json:"avg_transfer_ms,omitempty"`
-	AvgRequestPayloadKB   float64 `json:"avg_request_payload_kb,omitempty"`
-	AvgResponsePayloadKB  float64 `json:"avg_response_payload_kb,omitempty"`
-	RequestPayloadHistogram map[string]int64 `json:"request_payload_histogram,omitempty"`
-	ResponsePayloadHistogram map[string]int64 `json:"response_payload_histogram,omitempty"`
-	AvgMessageLatencyMs   float64 `json:"avg_message_latency_ms,omitempty"`
-	MaxMessageLatencyMs   float64 `json:"max_message_latency_ms,omitempty"`
-	MessagesSent          int64   `json:"messages_sent,omitempty"`
-	MessagesReceived      int64   `json:"messages_received,omitempty"`
-	AvgMessagesSentPerSec float64 `json:"avg_messages_sent_per_sec,omitempty"`
-	AvgMessagesReceivedPerSec float64 `json:"avg_messages_received_per_sec,omitempty"`
-	AvgConsumerLagMs      float64 `json:"avg_consumer_lag_ms,omitempty"`
-	MaxConsumerLagMs      float64 `json:"max_consumer_lag_ms,omitempty"`
-	RequestSizeClasses    map[string]int64 `json:"request_size_classes,omitempty"`
-	ResponseSizeClasses   map[string]int64 `json:"response_size_classes,omitempty"`
-	ConnectionReusedCount int64   `json:"connection_reused_count,omitempty"`
-	ConnectionReusedPct   float64 `json:"connection_reused_pct,omitempty"`
+	Samples                   int64            `json:"samples"`
+	AvgServerProcessingMs     float64          `json:"avg_server_processing_ms,omitempty"`
+	AvgTransferMs             float64          `json:"avg_transfer_ms,omitempty"`
+	AvgRequestPayloadKB       float64          `json:"avg_request_payload_kb,omitempty"`
+	AvgResponsePayloadKB      float64          `json:"avg_response_payload_kb,omitempty"`
+	RequestPayloadHistogram   map[string]int64 `json:"request_payload_histogram,omitempty"`
+	ResponsePayloadHistogram  map[string]int64 `json:"response_payload_histogram,omitempty"`
+	AvgMessageLatencyMs       float64          `json:"avg_message_latency_ms,omitempty"`
+	MaxMessageLatencyMs       float64          `json:"max_message_latency_ms,omitempty"`
+	MessagesSent              int64            `json:"messages_sent,omitempty"`
+	MessagesReceived          int64            `json:"messages_received,omitempty"`
+	AvgMessagesSentPerSec     float64          `json:"avg_messages_sent_per_sec,omitempty"`
+	AvgMessagesReceivedPerSec float64          `json:"avg_messages_received_per_sec,omitempty"`
+	AvgConsumerLagMs          float64          `json:"avg_consumer_lag_ms,omitempty"`
+	MaxConsumerLagMs          float64          `json:"max_consumer_lag_ms,omitempty"`
+	RequestSizeClasses        map[string]int64 `json:"request_size_classes,omitempty"`
+	ResponseSizeClasses       map[string]int64 `json:"response_size_classes,omitempty"`
+	ConnectionReusedCount     int64            `json:"connection_reused_count,omitempty"`
+	ConnectionReusedPct       float64          `json:"connection_reused_pct,omitempty"`
 }
 
 type TelemetryMetrics struct {
@@ -112,15 +120,18 @@ type SystemResources struct {
 }
 
 type GroupMetrics struct {
-	Name         string
-	Transactions int64
-	Errors       int64
-	ActiveVUsers int64
-	TPS          float64
-	AvgDuration  time.Duration
-	P50          time.Duration
-	P90          time.Duration
-	P99          time.Duration
+	Name                   string
+	Transactions           int64
+	Errors                 int64
+	ActiveVUsers           int64
+	TPS                    float64
+	TargetTPS              float64 `json:"target_tps,omitempty"`
+	ThroughputGapPct       float64 `json:"throughput_gap_pct,omitempty"`
+	ThroughputTargetMissed bool    `json:"throughput_target_missed,omitempty"`
+	AvgDuration            time.Duration
+	P50                    time.Duration
+	P90                    time.Duration
+	P99                    time.Duration
 }
 
 type ActionMetrics struct {
@@ -128,10 +139,10 @@ type ActionMetrics struct {
 	DependencyType   string
 	DependencyTarget string
 	ServerTelemetry  *ServerTelemetrySummary `json:"server_telemetry,omitempty"`
-	AvgDNSMs         float64 `json:"avg_dns_ms,omitempty"`
-	AvgConnectMs     float64 `json:"avg_connect_ms,omitempty"`
-	AvgTLSMs         float64 `json:"avg_tls_ms,omitempty"`
-	AvgTTFBMs        float64 `json:"avg_ttfb_ms,omitempty"`
+	AvgDNSMs         float64                 `json:"avg_dns_ms,omitempty"`
+	AvgConnectMs     float64                 `json:"avg_connect_ms,omitempty"`
+	AvgTLSMs         float64                 `json:"avg_tls_ms,omitempty"`
+	AvgTTFBMs        float64                 `json:"avg_ttfb_ms,omitempty"`
 	CorrelationIDs   []string
 	CorrelationCount int64
 	Count            int64
@@ -152,11 +163,31 @@ func NewMetricsCollector(bufferSize int) *MetricsCollector {
 		bufferSize = 10000
 	}
 	return &MetricsCollector{
-		ch:           make(chan *protocol.Result, bufferSize),
-		current:      &liveCounters{},
-		resCollector: NewResourceCollector(),
-		done:         make(chan struct{}),
+		ch:             make(chan *protocol.Result, bufferSize),
+		current:        &liveCounters{},
+		resCollector:   NewResourceCollector(),
+		done:           make(chan struct{}),
+		groupTargetTPS: make(map[string]float64),
 	}
+}
+
+func (mc *MetricsCollector) SetTargetTPS(target float64) {
+	mc.targetsMu.Lock()
+	defer mc.targetsMu.Unlock()
+	mc.targetTPS = target
+}
+
+func (mc *MetricsCollector) SetGroupTargetTPS(group string, target float64) {
+	mc.targetsMu.Lock()
+	defer mc.targetsMu.Unlock()
+	if mc.groupTargetTPS == nil {
+		mc.groupTargetTPS = make(map[string]float64)
+	}
+	if target <= 0 {
+		delete(mc.groupTargetTPS, group)
+		return
+	}
+	mc.groupTargetTPS[group] = target
 }
 
 func (mc *MetricsCollector) Record(r *protocol.Result) {
@@ -268,18 +299,25 @@ func (mc *MetricsCollector) aggregate(interval time.Duration) {
 
 func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window time.Duration) MetricsSnapshot {
 	snap := MetricsSnapshot{
-		Timestamp:    time.Now(),
-		Window:       window,
-		ActiveVUsers: mc.current.activeVUsers.Load(),
-		ByAction:     make(map[string]*ActionMetrics),
+		Timestamp:          time.Now(),
+		Window:             window,
+		ActiveVUsers:       mc.current.activeVUsers.Load(),
+		ByAction:           make(map[string]*ActionMetrics),
 		ByDependencyTarget: make(map[string]*ActionMetrics),
-		BySOAPOperation: make(map[string]*ActionMetrics),
-		ByGroup:      make(map[string]*GroupMetrics),
-		BrowserByDevice: make(map[string]*BrowserDeviceMetrics),
+		BySOAPOperation:    make(map[string]*ActionMetrics),
+		ByGroup:            make(map[string]*GroupMetrics),
+		BrowserByDevice:    make(map[string]*BrowserDeviceMetrics),
 		Telemetry: &TelemetryMetrics{
 			DroppedResults: mc.current.droppedResults.Load(),
 		},
 	}
+	mc.targetsMu.RLock()
+	snap.TargetTPS = mc.targetTPS
+	groupTargets := make(map[string]float64, len(mc.groupTargetTPS))
+	for name, target := range mc.groupTargetTPS {
+		groupTargets[name] = target
+	}
+	mc.targetsMu.RUnlock()
 
 	var totalDuration time.Duration
 	td := NewTDigest(200)
@@ -365,10 +403,10 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 				metrics, ok := snap.BrowserByDevice[profile]
 				if !ok {
 					metrics = &BrowserDeviceMetrics{
-						DeviceProfile: profile,
+						DeviceProfile:  profile,
 						DevicePlatform: r.ClientMetrics.DevicePlatform,
-						DeviceTier:    r.ClientMetrics.DeviceTier,
-						BrowserEngine: r.ClientMetrics.BrowserEngine,
+						DeviceTier:     r.ClientMetrics.DeviceTier,
+						BrowserEngine:  r.ClientMetrics.BrowserEngine,
 					}
 					snap.BrowserByDevice[profile] = metrics
 				}
@@ -386,8 +424,10 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 		snap.P95 = time.Duration(td.Quantile(0.95))
 		snap.P99 = time.Duration(td.Quantile(0.99))
 	}
+	applyThroughputGap(&snap.TPS, snap.TargetTPS, &snap.ThroughputGapPct, &snap.ThroughputTargetMissed)
 
 	for name, gm := range snap.ByGroup {
+		gm.TargetTPS = groupTargets[name]
 		if gm.Transactions > 0 {
 			gd := groupDigests[name]
 			gm.AvgDuration = groupDurationSum[name] / time.Duration(gm.Transactions)
@@ -396,6 +436,7 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 			gm.P90 = time.Duration(gd.Quantile(0.90))
 			gm.P99 = time.Duration(gd.Quantile(0.99))
 		}
+		applyThroughputGap(&gm.TPS, gm.TargetTPS, &gm.ThroughputGapPct, &gm.ThroughputTargetMissed)
 	}
 	for name, am := range snap.ByAction {
 		finalizeActionMetrics(am, actionDurationSum[name], actionDigests[name])
@@ -415,6 +456,17 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 	}
 
 	return snap
+}
+
+func applyThroughputGap(actual *float64, target float64, gapPct *float64, missed *bool) {
+	if actual == nil || gapPct == nil || missed == nil || target <= 0 {
+		return
+	}
+	if *actual >= target {
+		return
+	}
+	*gapPct = ((target - *actual) / target) * 100
+	*missed = *gapPct >= throughputGapAlertThresholdPct
 }
 
 func soapOperationFromResult(result *protocol.Result) string {

@@ -7,11 +7,13 @@ import (
 
 type mockProtocol struct{ name string }
 
-func (m *mockProtocol) Name() string                                       { return m.name }
-func (m *mockProtocol) Init(_ context.Context, _ map[string]any) error     { return nil }
-func (m *mockProtocol) Execute(_ context.Context, _ *Action) (*Result, error) { return &Result{Success: true}, nil }
-func (m *mockProtocol) Teardown(_ context.Context) error                   { return nil }
-func (m *mockProtocol) HealthCheck(_ context.Context) error                { return nil }
+func (m *mockProtocol) Name() string                                   { return m.name }
+func (m *mockProtocol) Init(_ context.Context, _ map[string]any) error { return nil }
+func (m *mockProtocol) Execute(_ context.Context, _ *Action) (*Result, error) {
+	return &Result{Success: true}, nil
+}
+func (m *mockProtocol) Teardown(_ context.Context) error    { return nil }
+func (m *mockProtocol) HealthCheck(_ context.Context) error { return nil }
 
 func TestRegisterAndGet(t *testing.T) {
 	Register("test-proto", func() Protocol {

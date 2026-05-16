@@ -150,12 +150,27 @@ export default function TestExecutionScenarioPreview({
   onEditScript,
   groupColors,
 }: Props) {
-  if (test.status !== 'QUEUED') {
+  if (test.status !== 'QUEUED' && test.status !== 'PENDING') {
     return null
   }
 
   return (
     <>
+      {test.status === 'PENDING' && (
+        <div className="scenario-alert-banner scenario-alert-info" role="status">
+          <div>
+            <h3 className="scenario-alert-title">Queued for project capacity</h3>
+            <p className="scenario-alert-message">
+              {test.queue_position ? `Queue position #${test.queue_position}. ` : ''}
+              {test.pending_reason || 'Waiting for an available project slot.'}
+            </p>
+            {test.pending_since && (
+              <p className="scenario-alert-message secondary">Waiting since {new Date(test.pending_since).toLocaleString()}.</p>
+            )}
+          </div>
+        </div>
+      )}
+
       {startCapacityConflict && (
         <div className="scenario-alert-banner scenario-alert-warning" role="alert">
           <div>

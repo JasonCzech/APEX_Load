@@ -1,9 +1,17 @@
 package api
 
 import (
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
 	"net/http"
+	"encoding/json"
 	"sort"
 	"strings"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/jasonczech/stormrunner/pkg/storage"
 )
 
 type AuthUserSummary struct {
@@ -75,6 +83,34 @@ type AuthEffectiveAccessResponse struct {
 	Authenticated bool                          `json:"authenticated"`
 	ProjectID     string                        `json:"project_id,omitempty"`
 	Resources     []AuthEffectiveAccessResource `json:"resources"`
+}
+
+type AuthServiceAccountRequest struct {
+	Name         string              `json:"name"`
+	Description  string              `json:"description,omitempty"`
+	GlobalRoles  []string            `json:"global_roles,omitempty"`
+	ProjectRoles map[string][]string `json:"project_roles,omitempty"`
+}
+
+type AuthServiceAccountUpdateRequest struct {
+	Active *bool `json:"active"`
+}
+
+type AuthServiceAccountCreateResponse struct {
+	ServiceAccount *storage.ServiceAccount `json:"service_account"`
+	APIKey         string                  `json:"api_key"`
+}
+
+type AuthServiceAccountListResponse struct {
+	ServiceAccounts []*storage.ServiceAccount `json:"service_accounts"`
+	Count           int                       `json:"count"`
+}
+
+type AuthAuditEventListResponse struct {
+	Events []*storage.AuditEvent `json:"events"`
+	Count  int                   `json:"count"`
+	Limit  int                   `json:"limit"`
+	Offset int                   `json:"offset"`
 }
 
 var authRoleCatalog = []AuthRoleDefinition{
@@ -188,44 +224,62 @@ var authAccessMatrix = []AuthAccessResource{
 			{ID: "manage_replay", Label: "Create or control recorder and browser replay sessions", GlobalRoles: []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleEditor, RoleProjectAdmin}},
 		},
 	},
+	{
+		ID:          "identity_and_audit",
+		Name:        "Identity, Service Accounts, and Audit",
+		Description: "Service-account API keys, auth troubleshooting, and governance audit history.",
+		Operations: []AuthAccessOperation{
+			{ID: "view_audit", Label: "View audit events", GlobalRoles: []string{RoleSystemAdmin}},
+			{ID: "manage_service_accounts", Label: "Create, disable, rotate, and delete service-account API keys", GlobalRoles: []string{RoleSystemAdmin}},
+		},
+	},
 }
 
 func (s *Server) handleGetAuthStatus(w http.ResponseWriter, r *http.Request) {
 	settings := normalizeAuthSettings(s.runner.GetSystemSettings().Auth)
+	loginURL, logoutURL := authStatusURLs(settings)
 	response := AuthStatusResponse{
-		Enabled:      settings.Mode != authModeDisabled,
+		Enabled:      !isAuthBypassMode(settings.Mode),
 		Mode:         settings.Mode,
 		ProviderName: settings.ProviderName,
-		LoginURL:     settings.LoginURL,
-		LogoutURL:    settings.LogoutURL,
+		LoginURL:     loginURL,
+		LogoutURL:    logoutURL,
 	}
 
-	if settings.Mode == authModeDisabled {
+	if isAuthBypassMode(settings.Mode) {
 		writeJSON(w, http.StatusOK, response)
 		return
 	}
 
-	user, err := authenticatedUserFromHeaders(r, settings)
+	resolution, err := resolveRequestAuth(r, settings, s.store)
 	if err != nil {
 		writeJSON(w, http.StatusOK, response)
 		return
 	}
 
 	response.Authenticated = true
-	response.User = authUserSummary(user)
+	response.User = authUserSummary(resolution.User)
 	writeJSON(w, http.StatusOK, response)
 }
 
 func (s *Server) handleGetAuthRoleCatalog(w http.ResponseWriter, _ *http.Request) {
+	providerModel := "upstream_gateway"
+	if normalizeAuthSettings(s.runner.GetSystemSettings().Auth).Mode == authModeOIDC {
+		providerModel = "native_oidc"
+	}
 	writeJSON(w, http.StatusOK, AuthRoleCatalogResponse{
-		ProviderModel: "upstream_gateway",
+		ProviderModel: providerModel,
 		Roles:         authRoleCatalog,
 	})
 }
 
 func (s *Server) handleGetAuthAccessMatrix(w http.ResponseWriter, _ *http.Request) {
+	version := "trusted_headers_v1"
+	if normalizeAuthSettings(s.runner.GetSystemSettings().Auth).Mode == authModeOIDC {
+		version = "rbac_v1"
+	}
 	writeJSON(w, http.StatusOK, AuthAccessMatrixResponse{
-		Version:   "trusted_headers_v1",
+		Version:   version,
 		Resources: authAccessMatrix,
 	})
 }
@@ -234,17 +288,17 @@ func (s *Server) handleGetAuthEffectiveAccess(w http.ResponseWriter, r *http.Req
 	settings := normalizeAuthSettings(s.runner.GetSystemSettings().Auth)
 	projectID := normalizeProjectID(strings.TrimSpace(r.URL.Query().Get("project_id")))
 	response := AuthEffectiveAccessResponse{
-		Enabled:   settings.Mode != authModeDisabled,
+		Enabled:   !isAuthBypassMode(settings.Mode),
 		ProjectID: projectID,
 	}
 
-	if settings.Mode == authModeDisabled {
-		response.Resources = buildDisabledEffectiveAccess(authAccessMatrix)
+	if isAuthBypassMode(settings.Mode) {
+		response.Resources = buildDevModeEffectiveAccess(authAccessMatrix)
 		writeJSON(w, http.StatusOK, response)
 		return
 	}
 
-	user, err := authenticatedUserFromHeaders(r, settings)
+	resolution, err := resolveRequestAuth(r, settings, s.store)
 	if err != nil {
 		response.Resources = buildDeniedEffectiveAccess(authAccessMatrix)
 		writeJSON(w, http.StatusOK, response)
@@ -252,11 +306,252 @@ func (s *Server) handleGetAuthEffectiveAccess(w http.ResponseWriter, r *http.Req
 	}
 
 	response.Authenticated = true
-	response.Resources = buildUserEffectiveAccess(authAccessMatrix, user, projectID)
+	response.Resources = buildUserEffectiveAccess(authAccessMatrix, resolution.User, projectID)
 	writeJSON(w, http.StatusOK, response)
 }
 
-func buildDisabledEffectiveAccess(resources []AuthAccessResource) []AuthEffectiveAccessResource {
+func (s *Server) handleListServiceAccounts(w http.ResponseWriter, _ *http.Request) {
+	if s.store == nil {
+		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
+		return
+	}
+	accounts, err := s.store.ListServiceAccounts()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, AuthServiceAccountListResponse{ServiceAccounts: accounts, Count: len(accounts)})
+}
+
+func (s *Server) handleCreateServiceAccount(w http.ResponseWriter, r *http.Request) {
+	if s.store == nil {
+		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
+		return
+	}
+	var req AuthServiceAccountRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+	account, apiKey, err := buildServiceAccount(req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := s.store.SaveServiceAccount(account); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.recordAuditEvent(r, "auth.service_account.create", "success", "service_account", account.ID, "", map[string]any{"name": account.Name})
+	writeJSON(w, http.StatusCreated, AuthServiceAccountCreateResponse{ServiceAccount: account, APIKey: apiKey})
+}
+
+func (s *Server) handleUpdateServiceAccount(w http.ResponseWriter, r *http.Request) {
+	if s.store == nil {
+		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
+		return
+	}
+	id := strings.TrimSpace(r.PathValue("id"))
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "service account id is required")
+		return
+	}
+	account, err := s.store.GetServiceAccount(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "service account not found")
+		return
+	}
+	var req AuthServiceAccountUpdateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+	if req.Active == nil {
+		writeError(w, http.StatusBadRequest, "active field is required")
+		return
+	}
+	updatedAt := time.Now().UTC()
+	if err := s.store.UpdateServiceAccountActive(account.ID, *req.Active, updatedAt); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	account.Active = *req.Active
+	account.UpdatedAt = updatedAt
+	s.recordAuditEvent(r, "auth.service_account.update", "success", "service_account", account.ID, "", map[string]any{"active": account.Active})
+	writeJSON(w, http.StatusOK, account)
+}
+
+func (s *Server) handleRotateServiceAccount(w http.ResponseWriter, r *http.Request) {
+	if s.store == nil {
+		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
+		return
+	}
+	id := strings.TrimSpace(r.PathValue("id"))
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "service account id is required")
+		return
+	}
+	account, err := s.store.GetServiceAccount(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "service account not found")
+		return
+	}
+	apiKey, err := generateAPIKey()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	updatedAt := time.Now().UTC()
+	hashedKey := hashAPIKey(apiKey)
+	if err := s.store.RotateServiceAccountKey(account.ID, hashedKey, updatedAt); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	account.KeyHash = hashedKey
+	account.UpdatedAt = updatedAt
+	s.recordAuditEvent(r, "auth.service_account.rotate", "success", "service_account", account.ID, "", map[string]any{"name": account.Name})
+	writeJSON(w, http.StatusOK, AuthServiceAccountCreateResponse{ServiceAccount: account, APIKey: apiKey})
+}
+
+func (s *Server) handleDeleteServiceAccount(w http.ResponseWriter, r *http.Request) {
+	if s.store == nil {
+		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
+		return
+	}
+	id := r.PathValue("id")
+	if strings.TrimSpace(id) == "" {
+		writeError(w, http.StatusBadRequest, "service account id is required")
+		return
+	}
+	if err := s.store.DeleteServiceAccount(id); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.recordAuditEvent(r, "auth.service_account.delete", "success", "service_account", id, "", nil)
+	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})
+}
+
+func (s *Server) handleListAuditEvents(w http.ResponseWriter, r *http.Request) {
+	if s.store == nil {
+		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
+		return
+	}
+	limit := 50
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		if _, err := fmt.Sscanf(raw, "%d", &limit); err != nil || limit <= 0 {
+			writeError(w, http.StatusBadRequest, "limit must be a positive integer")
+			return
+		}
+	}
+	offset := 0
+	if raw := strings.TrimSpace(r.URL.Query().Get("offset")); raw != "" {
+		if _, err := fmt.Sscanf(raw, "%d", &offset); err != nil || offset < 0 {
+			writeError(w, http.StatusBadRequest, "offset must be a non-negative integer")
+			return
+		}
+	}
+	filter := storage.AuditEventFilter{
+		Limit:        limit,
+		Offset:       offset,
+		Action:       strings.TrimSpace(r.URL.Query().Get("action")),
+		ActorType:    strings.TrimSpace(r.URL.Query().Get("actor_type")),
+		ProjectID:    normalizeProjectID(strings.TrimSpace(r.URL.Query().Get("project_id"))),
+		ResourceType: strings.TrimSpace(r.URL.Query().Get("resource_type")),
+		ResourceID:   strings.TrimSpace(r.URL.Query().Get("resource_id")),
+		Status:       strings.TrimSpace(r.URL.Query().Get("status")),
+	}
+	events, err := s.store.ListAuditEvents(filter)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, AuthAuditEventListResponse{Events: events, Count: len(events), Limit: filter.Limit, Offset: filter.Offset})
+}
+
+func buildServiceAccount(req AuthServiceAccountRequest) (*storage.ServiceAccount, string, error) {
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		return nil, "", fmt.Errorf("service account name is required")
+	}
+	globalRoles, projectRoles, err := normalizeServiceAccountRoles(req.GlobalRoles, req.ProjectRoles)
+	if err != nil {
+		return nil, "", err
+	}
+	apiKey, err := generateAPIKey()
+	if err != nil {
+		return nil, "", err
+	}
+	now := time.Now().UTC()
+	account := &storage.ServiceAccount{
+		ID:           uuid.New().String(),
+		Name:         name,
+		Description:  strings.TrimSpace(req.Description),
+		KeyHash:      hashAPIKey(apiKey),
+		Active:       true,
+		GlobalRoles:  globalRoles,
+		ProjectRoles: projectRoles,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}
+	return account, apiKey, nil
+}
+
+func normalizeServiceAccountRoles(globalRoles []string, projectRoles map[string][]string) ([]string, map[string][]string, error) {
+	allowed := map[string]struct{}{
+		RoleSystemAdmin:  {},
+		RoleProjectAdmin: {},
+		RoleEditor:       {},
+		RoleViewer:       {},
+	}
+	normalizeRoles := func(roles []string) ([]string, error) {
+		set := make(map[string]struct{})
+		for _, role := range roles {
+			normalized := strings.ToLower(strings.TrimSpace(role))
+			if normalized == "" {
+				continue
+			}
+			if _, ok := allowed[normalized]; !ok {
+				return nil, fmt.Errorf("unsupported role %q", normalized)
+			}
+			set[normalized] = struct{}{}
+		}
+		out := make([]string, 0, len(set))
+		for role := range set {
+			out = append(out, role)
+		}
+		sort.Strings(out)
+		return out, nil
+	}
+	normalizedGlobal, err := normalizeRoles(globalRoles)
+	if err != nil {
+		return nil, nil, err
+	}
+	normalizedProjects := make(map[string][]string)
+	for projectID, roles := range projectRoles {
+		normalizedProjectID := normalizeProjectID(projectID)
+		if normalizedProjectID == "" {
+			continue
+		}
+		normalizedRoleList, err := normalizeRoles(roles)
+		if err != nil {
+			return nil, nil, err
+		}
+		if len(normalizedRoleList) > 0 {
+			normalizedProjects[normalizedProjectID] = normalizedRoleList
+		}
+	}
+	return normalizedGlobal, normalizedProjects, nil
+}
+
+func generateAPIKey() (string, error) {
+	buf := make([]byte, 24)
+	if _, err := rand.Read(buf); err != nil {
+		return "", fmt.Errorf("failed to generate api key: %w", err)
+	}
+	return "srk_" + hex.EncodeToString(buf), nil
+}
+
+func buildDevModeEffectiveAccess(resources []AuthAccessResource) []AuthEffectiveAccessResource {
 	out := make([]AuthEffectiveAccessResource, 0, len(resources))
 	for _, resource := range resources {
 		entry := AuthEffectiveAccessResource{
@@ -270,7 +565,7 @@ func buildDisabledEffectiveAccess(resources []AuthAccessResource) []AuthEffectiv
 				ID:          operation.ID,
 				Label:       operation.Label,
 				Allowed:     true,
-				GrantSource: "disabled",
+				GrantSource: "dev_mode",
 			})
 		}
 		out = append(out, entry)

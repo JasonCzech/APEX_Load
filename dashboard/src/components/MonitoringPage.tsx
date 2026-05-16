@@ -379,7 +379,10 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
                   <div key={run.id} className="run-timeline-row">
                     <div className="run-timeline-meta">
                       <span className="run-timeline-name">{run.name}</span>
-                      <span className="run-timeline-detail">{run.status} / {run.vusers.toLocaleString()} VUsers / {run.durationLabel}</span>
+                      <span className="run-timeline-detail">{run.status} / {run.vusers.toLocaleString()} VUsers / {run.durationLabel}{run.status === 'PENDING' ? ` / ${run.queuePosition ? `Queue #${run.queuePosition}` : 'Queued'}` : ''}</span>
+                      {run.status === 'PENDING' && (run.pendingReason || run.pendingSinceLabel) && (
+                        <span className="run-timeline-detail">{run.pendingReason || 'waiting for capacity'}{run.pendingSinceLabel ? ` · since ${run.pendingSinceLabel}` : ''}</span>
+                      )}
                     </div>
                     <div className="run-timeline-track" title={`${run.name}: ${run.startLabel} to ${run.endLabel}`}>
                       <span className={`run-timeline-bar ${run.status.toLowerCase()}`} style={{ left: `${run.leftPct}%`, width: `${run.widthPct}%` }} />
@@ -403,7 +406,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
         </div>
       ),
     },
-  ], [connectionState, generatorActiveVUsers, generatorAvailableCapacity, generatorConnectedCount, generatorHeaderLabel, generatorHeaderSeverity, generatorIssueCount, generators.length, health, inventory, telemetryDangerCount, telemetryHeaderLabel, telemetryHeaderSeverity, telemetryLatestEntry, telemetryDiagnostics, telemetryWarningCount, timeline, websocketLabel, websocketValueClass])
+  ], [controllerGeneratorInventoryLabel, controllerHeaderSeverity, controllerStatusLabel, generatorActiveVUsers, generatorAvailableCapacity, generatorConnectedCount, generatorHeaderLabel, generatorHeaderSeverity, generatorIssueCount, generators.length, health, inventory, telemetryDangerCount, telemetryHeaderLabel, telemetryHeaderSeverity, telemetryLatestEntry, telemetryDiagnostics, telemetryWarningCount, timeline, websocketLabel, websocketValueClass])
 
   useEffect(() => {
     setCardOrder(prev => mergeOrder(prev, cards.map(card => card.id)))
@@ -681,6 +684,9 @@ interface TimelineRun {
   vusers: number
   generators: number
   durationLabel: string
+  queuePosition?: number
+  pendingReason?: string
+  pendingSinceLabel?: string
   startMs: number
   endMs: number
   startLabel: string
@@ -701,7 +707,7 @@ interface TimelineModel {
 function buildRunTimeline(tests: TestSummary[], health: HealthResponse | null): TimelineModel {
   const now = Date.now()
   const candidates = tests
-    .filter(test => ['QUEUED', 'INITIALIZING', 'RUNNING', 'STOPPING'].includes(test.status))
+    .filter(test => ['QUEUED', 'PENDING', 'INITIALIZING', 'RUNNING', 'STOPPING'].includes(test.status))
     .sort((a, b) => {
       const aActive = a.status === 'RUNNING' || a.status === 'INITIALIZING' || a.status === 'STOPPING'
       const bActive = b.status === 'RUNNING' || b.status === 'INITIALIZING' || b.status === 'STOPPING'
@@ -747,6 +753,9 @@ function buildRunTimeline(tests: TestSummary[], health: HealthResponse | null): 
       vusers: test.total_vusers || 0,
       generators,
       durationLabel: test.duration || formatDurationShort(durationMs),
+      queuePosition: test.queue_position,
+      pendingReason: test.pending_reason,
+      pendingSinceLabel: test.pending_since ? formatTimelineTime(new Date(test.pending_since).getTime()) : undefined,
       startMs,
       endMs,
       startLabel: formatTimelineTime(startMs),

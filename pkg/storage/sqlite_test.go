@@ -1,8 +1,10 @@
 package storage
 
 import (
+	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -148,6 +150,137 @@ func TestSQLiteStoreProjectsFoldersAndFiltering(t *testing.T) {
 	}
 	if err := store.DeleteFolder(folder.ID); err != nil {
 		t.Fatalf("DeleteFolder returned error after moving script: %v", err)
+	}
+}
+
+func TestSQLiteStoreServiceAccountsAndAuditEvents(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	sum := sha256.Sum256([]byte("stormrunner-key"))
+	now := time.Now().UTC().Truncate(time.Second)
+	account := &ServiceAccount{
+		ID:          "svc-1",
+		Name:        "CI Pipeline",
+		Description: "Runs nightly tests",
+		KeyHash:     fmt.Sprintf("%x", sum[:]),
+		Active:      true,
+		GlobalRoles: []string{"system_admin"},
+		ProjectRoles: map[string][]string{
+			"project-a": {"editor"},
+		},
+		CreatedAt:  now,
+		UpdatedAt:  now,
+		LastUsedAt: &now,
+	}
+	if err := store.SaveServiceAccount(account); err != nil {
+		t.Fatalf("SaveServiceAccount returned error: %v", err)
+	}
+
+	byID, err := store.GetServiceAccount(account.ID)
+	if err != nil {
+		t.Fatalf("GetServiceAccount returned error: %v", err)
+	}
+	if byID.Name != account.Name || byID.KeyHash != account.KeyHash {
+		t.Fatalf("service account round trip = %#v, want name/hash preserved", byID)
+	}
+	if !byID.Active {
+		t.Fatalf("expected service account to be active, got %#v", byID)
+	}
+	if got := byID.ProjectRoles["project-a"]; len(got) != 1 || got[0] != "editor" {
+		t.Fatalf("project roles = %#v, want editor for project-a", byID.ProjectRoles)
+	}
+
+	byHash, err := store.GetServiceAccountByKeyHash(account.KeyHash)
+	if err != nil {
+		t.Fatalf("GetServiceAccountByKeyHash returned error: %v", err)
+	}
+	if byHash.ID != account.ID {
+		t.Fatalf("service account by hash = %#v, want id %q", byHash, account.ID)
+	}
+
+	accounts, err := store.ListServiceAccounts()
+	if err != nil {
+		t.Fatalf("ListServiceAccounts returned error: %v", err)
+	}
+	if len(accounts) != 1 || accounts[0].ID != account.ID {
+		t.Fatalf("service account list = %#v, want one account", accounts)
+	}
+
+	rotatedSum := sha256.Sum256([]byte("stormrunner-key-rotated"))
+	if err := store.RotateServiceAccountKey(account.ID, fmt.Sprintf("%x", rotatedSum[:]), now.Add(time.Minute)); err != nil {
+		t.Fatalf("RotateServiceAccountKey returned error: %v", err)
+	}
+	if err := store.UpdateServiceAccountActive(account.ID, false, now.Add(2*time.Minute)); err != nil {
+		t.Fatalf("UpdateServiceAccountActive returned error: %v", err)
+	}
+	if _, err := store.GetServiceAccountByKeyHash(fmt.Sprintf("%x", rotatedSum[:])); err != sql.ErrNoRows {
+		t.Fatalf("expected inactive service account lookup to miss, got %v", err)
+	}
+	if err := store.UpdateServiceAccountActive(account.ID, true, now.Add(3*time.Minute)); err != nil {
+		t.Fatalf("UpdateServiceAccountActive returned error: %v", err)
+	}
+	lastUsedAt := now.Add(4 * time.Minute)
+	if err := store.UpdateServiceAccountLastUsed(account.ID, lastUsedAt); err != nil {
+		t.Fatalf("UpdateServiceAccountLastUsed returned error: %v", err)
+	}
+	rotatedAccount, err := store.GetServiceAccountByKeyHash(fmt.Sprintf("%x", rotatedSum[:]))
+	if err != nil {
+		t.Fatalf("GetServiceAccountByKeyHash after rotate returned error: %v", err)
+	}
+	if rotatedAccount.LastUsedAt == nil || !rotatedAccount.LastUsedAt.Equal(lastUsedAt) {
+		t.Fatalf("last used at = %#v, want %v", rotatedAccount.LastUsedAt, lastUsedAt)
+	}
+
+	event := &AuditEvent{
+		ID:               "audit-1",
+		Action:           "system.settings.update",
+		ActorType:        "service_account",
+		ActorSubject:     "service-account:svc-1",
+		ActorDisplayName: "CI Pipeline",
+		ProjectID:        "project-a",
+		ResourceType:     "system_settings",
+		ResourceID:       "global",
+		Status:           "success",
+		Details:          map[string]any{"mode": "trusted_headers"},
+		CreatedAt:        now,
+	}
+	if err := store.SaveAuditEvent(event); err != nil {
+		t.Fatalf("SaveAuditEvent returned error: %v", err)
+	}
+	if err := store.SaveAuditEvent(&AuditEvent{
+		ID:           "audit-2",
+		Action:       "project.update",
+		ActorType:    "user",
+		ActorSubject: "alice",
+		ProjectID:    "project-b",
+		ResourceType: "project",
+		ResourceID:   "project-b",
+		Status:       "success",
+		CreatedAt:    now.Add(time.Minute),
+	}); err != nil {
+		t.Fatalf("SaveAuditEvent returned error: %v", err)
+	}
+
+	events, err := store.ListAuditEvents(AuditEventFilter{Limit: 10, ProjectID: "project-a", ActorType: "service_account"})
+	if err != nil {
+		t.Fatalf("ListAuditEvents returned error: %v", err)
+	}
+	if len(events) != 1 || events[0].Action != event.Action {
+		t.Fatalf("audit events = %#v, want one saved event", events)
+	}
+	if got := events[0].Details["mode"]; got != "trusted_headers" {
+		t.Fatalf("audit details = %#v, want mode trusted_headers", events[0].Details)
+	}
+	secondPage, err := store.ListAuditEvents(AuditEventFilter{Limit: 1, Offset: 1})
+	if err != nil {
+		t.Fatalf("ListAuditEvents second page returned error: %v", err)
+	}
+	if len(secondPage) != 1 || secondPage[0].ID != "audit-1" {
+		t.Fatalf("audit event page 2 = %#v, want audit-1", secondPage)
 	}
 }
 

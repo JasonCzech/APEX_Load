@@ -230,6 +230,34 @@ func (s *metricsStoreSpy) GetRunArchive(testID string) (*storage.RunArchiveRecor
 }
 func (s *metricsStoreSpy) SaveSetting(key string, value string) error { return nil }
 func (s *metricsStoreSpy) GetSetting(key string) (string, error)      { return "", nil }
+func (s *metricsStoreSpy) SaveServiceAccount(account *storage.ServiceAccount) error {
+	return nil
+}
+func (s *metricsStoreSpy) GetServiceAccount(id string) (*storage.ServiceAccount, error) {
+	return nil, nil
+}
+func (s *metricsStoreSpy) GetServiceAccountByKeyHash(keyHash string) (*storage.ServiceAccount, error) {
+	return nil, nil
+}
+func (s *metricsStoreSpy) ListServiceAccounts() ([]*storage.ServiceAccount, error) {
+	return nil, nil
+}
+func (s *metricsStoreSpy) RotateServiceAccountKey(id string, keyHash string, updatedAt time.Time) error {
+	return nil
+}
+func (s *metricsStoreSpy) UpdateServiceAccountLastUsed(id string, lastUsedAt time.Time) error {
+	return nil
+}
+func (s *metricsStoreSpy) UpdateServiceAccountActive(id string, active bool, updatedAt time.Time) error {
+	return nil
+}
+func (s *metricsStoreSpy) DeleteServiceAccount(id string) error { return nil }
+func (s *metricsStoreSpy) SaveAuditEvent(event *storage.AuditEvent) error {
+	return nil
+}
+func (s *metricsStoreSpy) ListAuditEvents(filter storage.AuditEventFilter) ([]*storage.AuditEvent, error) {
+	return nil, nil
+}
 func (s *metricsStoreSpy) Close() error                               { return nil }
 
 type archiveStubProtocol struct{}
@@ -474,10 +502,13 @@ func TestCreateTestInheritsProjectRedactionRules(t *testing.T) {
 }
 
 func TestApplyRuntimeOverridesAppliesExtendedOverrideFields(t *testing.T) {
+	headless := false
+	defaultHeadless := true
 	iterations := 4
 	script := &dsl.Script{
 		Config: dsl.ScriptConfig{
 			BaseURL:       "https://default.example.com",
+			Browser:       dsl.BrowserConfig{Headless: &defaultHeadless},
 			RunLogic:      dsl.RunLogicConfig{Iterations: 1, AutoTransactions: "none"},
 			Pacing:        dsl.PacingConfig{Type: "none"},
 			ThinkTime:     dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 1000},
@@ -497,6 +528,7 @@ func TestApplyRuntimeOverridesAppliesExtendedOverrideFields(t *testing.T) {
 		Iterations:       &iterations,
 		Pacing:           &dsl.PacingConfig{Type: "fixed_interval", IntervalMs: 2500},
 		ThinkTime:        &dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 750},
+		Browser:          &RuntimeBrowserOverride{Headless: &headless},
 		LogLevel:         "extended",
 		AutoTransactions: "per_iteration",
 		BaseURL:          "https://pr-123.example.com",
@@ -518,6 +550,9 @@ func TestApplyRuntimeOverridesAppliesExtendedOverrideFields(t *testing.T) {
 	}
 	if script.Config.ThinkTime.Type != "fixed" || script.Config.ThinkTime.MeanMs != 750 {
 		t.Fatalf("think_time = %#v, want fixed 750ms", script.Config.ThinkTime)
+	}
+	if script.Config.Browser.Headless == nil || *script.Config.Browser.Headless != false {
+		t.Fatalf("browser.headless = %#v, want false", script.Config.Browser.Headless)
 	}
 	if script.Config.Log.Level != "extended" {
 		t.Fatalf("log level = %q, want extended", script.Config.Log.Level)
@@ -604,6 +639,47 @@ func TestCompileManagedTestGroupLockedAppliesEphemeralTargetOverridesWithoutMuta
 	}
 	if stored.Script.Actions[0].Headers["X-Namespace"] != "{{env.target_namespace}}" {
 		t.Fatalf("stored header X-Namespace = %q, want template to remain intact", stored.Script.Actions[0].Headers["X-Namespace"])
+	}
+}
+
+func TestCompileManagedTestGroupLockedAppliesHeadlessOverrideWithoutMutatingStoredScript(t *testing.T) {
+	hub := NewHub()
+	runner := NewTestRunner(1, hub, nil)
+	defaultHeadless := true
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-browser-headless-override",
+		Name:     "Browser Script",
+		Protocol: "browser",
+		Version:  "1.0.0",
+		Config: dsl.ScriptConfig{
+			Browser: dsl.BrowserConfig{Headless: &defaultHeadless},
+		},
+		Actions: []dsl.Action{{Name: "open-home", Type: "navigate", Target: "/"}},
+	})
+
+	headless := false
+	_, engineGroup, err := runner.compileManagedTestGroupLocked(0, 1, CreateGroupEntry{
+		ScriptID: "script-browser-headless-override",
+		VUsers:   2,
+	}, &RuntimeSettingsOverride{
+		Browser: &RuntimeBrowserOverride{Headless: &headless},
+	}, nil)
+	if err != nil {
+		t.Fatalf("compileManagedTestGroupLocked returned error: %v", err)
+	}
+	if engineGroup.Script == nil {
+		t.Fatal("expected engine group script")
+	}
+	if engineGroup.Script.Config.Browser.Headless == nil || *engineGroup.Script.Config.Browser.Headless != false {
+		t.Fatalf("compiled browser.headless = %#v, want false", engineGroup.Script.Config.Browser.Headless)
+	}
+
+	stored, ok := runner.GetScript("script-browser-headless-override")
+	if !ok {
+		t.Fatal("expected stored script to remain available")
+	}
+	if stored.Script.Config.Browser.Headless == nil || *stored.Script.Config.Browser.Headless != true {
+		t.Fatalf("stored browser.headless = %#v, want true", stored.Script.Config.Browser.Headless)
 	}
 }
 

@@ -14,28 +14,28 @@ import (
 )
 
 type parquetTransactionEvent struct {
-	TimestampUnixMs  int64   `parquet:"name=timestamp_unix_ms, type=INT64"`
-	TimestampRFC3339 string  `parquet:"name=timestamp_rfc3339, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
-	TestID           string  `parquet:"name=test_id, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
-	TestName         string  `parquet:"name=test_name, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
-	Group            string  `parquet:"name=group_name, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
-	ActionName       string  `parquet:"name=action_name, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
-	CorrelationID    string  `parquet:"name=correlation_id, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
-	DependencyType   string  `parquet:"name=dependency_type, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
-	DependencyTarget string  `parquet:"name=dependency_target, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
-	DurationMs       float64 `parquet:"name=duration_ms, type=DOUBLE"`
-	DNSMs            float64 `parquet:"name=dns_ms, type=DOUBLE"`
-	ConnectMs        float64 `parquet:"name=connect_ms, type=DOUBLE"`
-	TLSMs            float64 `parquet:"name=tls_ms, type=DOUBLE"`
-	TTFBMs           float64 `parquet:"name=ttfb_ms, type=DOUBLE"`
-	BytesSent        int64   `parquet:"name=bytes_sent, type=INT64"`
-	BytesReceived    int64   `parquet:"name=bytes_received, type=INT64"`
-	StatusCode       int64   `parquet:"name=status_code, type=INT64"`
-	Success          bool    `parquet:"name=success, type=BOOLEAN"`
-	ErrorMessage     string  `parquet:"name=error_message, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
-	ExtractionsJSON  string  `parquet:"name=extractions_json, type=BYTE_ARRAY, convertedtype=UTF8"`
-	ServerTelemetryJSON string `parquet:"name=server_telemetry_json, type=BYTE_ARRAY, convertedtype=UTF8"`
-	SnapshotJSON     string  `parquet:"name=snapshot_json, type=BYTE_ARRAY, convertedtype=UTF8"`
+	TimestampUnixMs     int64   `parquet:"name=timestamp_unix_ms, type=INT64"`
+	TimestampRFC3339    string  `parquet:"name=timestamp_rfc3339, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	TestID              string  `parquet:"name=test_id, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	TestName            string  `parquet:"name=test_name, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	Group               string  `parquet:"name=group_name, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	ActionName          string  `parquet:"name=action_name, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	CorrelationID       string  `parquet:"name=correlation_id, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	DependencyType      string  `parquet:"name=dependency_type, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	DependencyTarget    string  `parquet:"name=dependency_target, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	DurationMs          float64 `parquet:"name=duration_ms, type=DOUBLE"`
+	DNSMs               float64 `parquet:"name=dns_ms, type=DOUBLE"`
+	ConnectMs           float64 `parquet:"name=connect_ms, type=DOUBLE"`
+	TLSMs               float64 `parquet:"name=tls_ms, type=DOUBLE"`
+	TTFBMs              float64 `parquet:"name=ttfb_ms, type=DOUBLE"`
+	BytesSent           int64   `parquet:"name=bytes_sent, type=INT64"`
+	BytesReceived       int64   `parquet:"name=bytes_received, type=INT64"`
+	StatusCode          int64   `parquet:"name=status_code, type=INT64"`
+	Success             bool    `parquet:"name=success, type=BOOLEAN"`
+	ErrorMessage        string  `parquet:"name=error_message, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	ExtractionsJSON     string  `parquet:"name=extractions_json, type=BYTE_ARRAY, convertedtype=UTF8"`
+	ServerTelemetryJSON string  `parquet:"name=server_telemetry_json, type=BYTE_ARRAY, convertedtype=UTF8"`
+	SnapshotJSON        string  `parquet:"name=snapshot_json, type=BYTE_ARRAY, convertedtype=UTF8"`
 }
 
 type parquetResourceSample struct {
@@ -151,28 +151,28 @@ func toParquetTransactions(items []TransactionEvent) []parquetTransactionEvent {
 	rows := make([]parquetTransactionEvent, 0, len(items))
 	for _, item := range items {
 		rows = append(rows, parquetTransactionEvent{
-			TimestampUnixMs:  item.Timestamp.UnixMilli(),
-			TimestampRFC3339: item.Timestamp.Format(time.RFC3339Nano),
-			TestID:           item.TestID,
-			TestName:         item.TestName,
-			Group:            item.Group,
-			ActionName:       item.ActionName,
-			CorrelationID:    item.CorrelationID,
-			DependencyType:   item.DependencyType,
-			DependencyTarget: item.DependencyTarget,
-			DurationMs:       item.DurationMs,
-			DNSMs:            item.DNSMs,
-			ConnectMs:        item.ConnectMs,
-			TLSMs:            item.TLSMs,
-			TTFBMs:           item.TTFBMs,
-			BytesSent:        item.BytesSent,
-			BytesReceived:    item.BytesReceived,
-			StatusCode:       int64(item.StatusCode),
-			Success:          item.Success,
-			ErrorMessage:     item.ErrorMessage,
-			ExtractionsJSON:  mustJSON(item.Extractions),
+			TimestampUnixMs:     item.Timestamp.UnixMilli(),
+			TimestampRFC3339:    item.Timestamp.Format(time.RFC3339Nano),
+			TestID:              item.TestID,
+			TestName:            item.TestName,
+			Group:               item.Group,
+			ActionName:          item.ActionName,
+			CorrelationID:       item.CorrelationID,
+			DependencyType:      item.DependencyType,
+			DependencyTarget:    item.DependencyTarget,
+			DurationMs:          item.DurationMs,
+			DNSMs:               item.DNSMs,
+			ConnectMs:           item.ConnectMs,
+			TLSMs:               item.TLSMs,
+			TTFBMs:              item.TTFBMs,
+			BytesSent:           item.BytesSent,
+			BytesReceived:       item.BytesReceived,
+			StatusCode:          int64(item.StatusCode),
+			Success:             item.Success,
+			ErrorMessage:        item.ErrorMessage,
+			ExtractionsJSON:     mustJSON(item.Extractions),
 			ServerTelemetryJSON: mustJSON(item.ServerTelemetry),
-			SnapshotJSON:     mustJSON(item.Snapshot),
+			SnapshotJSON:        mustJSON(item.Snapshot),
 		})
 	}
 	return rows

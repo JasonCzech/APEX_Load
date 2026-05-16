@@ -41,6 +41,7 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.recordAuditEvent(r, "project.create", "success", "project", project.ID, project.ID, map[string]any{"name": project.Name})
 	writeJSON(w, http.StatusCreated, project)
 }
 
@@ -106,12 +107,17 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.runner.ReconcilePendingTests()
+	s.recordAuditEvent(r, "project.update", "success", "project", project.ID, project.ID, map[string]any{"name": project.Name, "max_concurrent_tests": project.Settings.MaxConcurrentTests, "max_vusers": project.Settings.MaxVUsers})
 	writeJSON(w, http.StatusOK, project)
 }
 
 func validateProjectSettings(settings storage.ProjectSettings) error {
 	if settings.MaxConcurrentTests < 0 {
 		return errProjectSettings("max_concurrent_tests must be greater than or equal to 0")
+	}
+	if settings.MaxVUsers < 0 {
+		return errProjectSettings("max_vusers must be greater than or equal to 0")
 	}
 	if len(settings.RedactionRules) == 0 {
 		return nil
@@ -144,5 +150,6 @@ func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	s.recordAuditEvent(r, "project.delete", "success", "project", id, id, nil)
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})
 }

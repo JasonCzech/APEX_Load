@@ -19,8 +19,8 @@ import (
 	"github.com/chromedp/cdproto/performance"
 	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
-	playwright "github.com/playwright-community/playwright-go"
 	"github.com/jasonczech/stormrunner/pkg/protocol"
+	playwright "github.com/playwright-community/playwright-go"
 )
 
 func init() {

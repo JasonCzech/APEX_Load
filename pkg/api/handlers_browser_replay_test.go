@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/jasonczech/stormrunner/pkg/dsl"
 	"github.com/jasonczech/stormrunner/pkg/engine"
 	"github.com/jasonczech/stormrunner/pkg/protocol"
+	"github.com/jasonczech/stormrunner/pkg/storage"
 )
 
 func TestHandleStartBrowserReplayDraftScriptReturnsSession(t *testing.T) {
@@ -396,11 +398,17 @@ func TestHandlePauseResumeBrowserReplaySessionNotFound(t *testing.T) {
 }
 
 func TestHandleResumeBrowserReplaySessionFromStartPaused(t *testing.T) {
-	server := NewServer(ServerConfig{})
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+	server := NewServer(ServerConfig{Store: store, Addr: ":8080"})
 	body, _ := json.Marshal(map[string]any{
 		"start_paused": true,
 		"script": map[string]any{
 			"name":     "Paused Browser Draft",
+			"project_id": "project-browser",
 			"version":  "1.0.0",
 			"protocol": "browser",
 			"config": map[string]any{
@@ -464,6 +472,17 @@ func TestHandleResumeBrowserReplaySessionFromStartPaused(t *testing.T) {
 	}
 	if resumePayload.Session.Status != BrowserReplayRunning {
 		t.Fatalf("resume status = %q, want %q", resumePayload.Session.Status, BrowserReplayRunning)
+	}
+
+	events, err := store.ListAuditEvents(storage.AuditEventFilter{Limit: 10, ProjectID: "project-browser"})
+	if err != nil {
+		t.Fatalf("ListAuditEvents returned error: %v", err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("audit event count = %d, want 2", len(events))
+	}
+	if events[0].Action != "browser_replay.session.resume" || events[1].Action != "browser_replay.session.start" {
+		t.Fatalf("audit actions = [%s %s], want resume/start", events[0].Action, events[1].Action)
 	}
 
 	deadline := time.Now().Add(2 * time.Second)

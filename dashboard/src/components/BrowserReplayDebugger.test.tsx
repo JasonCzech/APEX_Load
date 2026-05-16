@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { BrowserReplayReport } from '../types'
 import BrowserReplayDebugger from './BrowserReplayDebugger'
-import { formatConsoleEntries, formatNetworkEntries } from './scriptEditorUtils'
+import { formatConsoleEntries } from './scriptEditorUtils'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 

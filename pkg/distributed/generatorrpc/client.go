@@ -84,19 +84,19 @@ type GroupMetric struct {
 }
 
 type ServerTelemetry struct {
-	ServerProcessingMs float64
-	TransferMs         float64
-	RequestPayloadKB   float64
-	ResponsePayloadKB  float64
-	ConnectionReused   bool
-	RequestSizeClass   string
-	ResponseSizeClass  string
-	MessageLatencyMs   float64
-	MessagesSent       int32
-	MessagesReceived   int32
-	MessagesSentPerSec float64
+	ServerProcessingMs     float64
+	TransferMs             float64
+	RequestPayloadKB       float64
+	ResponsePayloadKB      float64
+	ConnectionReused       bool
+	RequestSizeClass       string
+	ResponseSizeClass      string
+	MessageLatencyMs       float64
+	MessagesSent           int32
+	MessagesReceived       int32
+	MessagesSentPerSec     float64
 	MessagesReceivedPerSec float64
-	ConsumerLagMs      float64
+	ConsumerLagMs          float64
 }
 
 type TransactionMetric struct {
@@ -370,19 +370,19 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 		var serverTelemetry *ServerTelemetry
 		if tx.GetServerTelemetry() != nil {
 			serverTelemetry = &ServerTelemetry{
-				ServerProcessingMs: tx.GetServerTelemetry().GetServerProcessingMs(),
-				TransferMs:         tx.GetServerTelemetry().GetTransferMs(),
-				RequestPayloadKB:   tx.GetServerTelemetry().GetRequestPayloadKb(),
-				ResponsePayloadKB:  tx.GetServerTelemetry().GetResponsePayloadKb(),
-				ConnectionReused:   tx.GetServerTelemetry().GetConnectionReused(),
-				RequestSizeClass:   tx.GetServerTelemetry().GetRequestSizeClass(),
-				ResponseSizeClass:  tx.GetServerTelemetry().GetResponseSizeClass(),
-				MessageLatencyMs:   tx.GetServerTelemetry().GetMessageLatencyMs(),
-				MessagesSent:       tx.GetServerTelemetry().GetMessagesSent(),
-				MessagesReceived:   tx.GetServerTelemetry().GetMessagesReceived(),
-				MessagesSentPerSec: tx.GetServerTelemetry().GetMessagesSentPerSec(),
+				ServerProcessingMs:     tx.GetServerTelemetry().GetServerProcessingMs(),
+				TransferMs:             tx.GetServerTelemetry().GetTransferMs(),
+				RequestPayloadKB:       tx.GetServerTelemetry().GetRequestPayloadKb(),
+				ResponsePayloadKB:      tx.GetServerTelemetry().GetResponsePayloadKb(),
+				ConnectionReused:       tx.GetServerTelemetry().GetConnectionReused(),
+				RequestSizeClass:       tx.GetServerTelemetry().GetRequestSizeClass(),
+				ResponseSizeClass:      tx.GetServerTelemetry().GetResponseSizeClass(),
+				MessageLatencyMs:       tx.GetServerTelemetry().GetMessageLatencyMs(),
+				MessagesSent:           tx.GetServerTelemetry().GetMessagesSent(),
+				MessagesReceived:       tx.GetServerTelemetry().GetMessagesReceived(),
+				MessagesSentPerSec:     tx.GetServerTelemetry().GetMessagesSentPerSec(),
 				MessagesReceivedPerSec: tx.GetServerTelemetry().GetMessagesReceivedPerSec(),
-				ConsumerLagMs:      tx.GetServerTelemetry().GetConsumerLagMs(),
+				ConsumerLagMs:          tx.GetServerTelemetry().GetConsumerLagMs(),
 			}
 		}
 		transactions = append(transactions, TransactionMetric{

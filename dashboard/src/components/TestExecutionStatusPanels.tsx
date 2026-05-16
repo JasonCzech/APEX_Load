@@ -1,9 +1,12 @@
 import { BrowserDeviceLiveMetrics, BrowserLiveMetrics, GoalStatus, GroupLiveMetrics, TelemetryHealth, TestSummary } from '../types'
 import { formatTimeCompact } from '../utils/timeUtils'
-import { formatBrowserEngineLabel, formatDevicePlatformLabel } from './BrowserBreakdownChart'
+import { formatBrowserEngineLabel, formatDevicePlatformLabel } from './browserBreakdownModel'
 
 interface LiveMetricsSummary {
   tps?: number
+  target_tps?: number
+  throughput_gap_pct?: number
+  throughput_target_missed?: boolean
   active_vusers?: number
   telemetry?: TelemetryHealth
   browser?: BrowserLiveMetrics
@@ -54,6 +57,25 @@ function formatBrowserScore(value: number | undefined): string {
   return value.toFixed(3)
 }
 
+function formatThroughputGap(value?: number): string {
+  if (value === undefined) return '0.0%'
+  return `${value.toFixed(1)}%`
+}
+
+function throughputBadgeClass(metrics?: LiveMetricsSummary): 'healthy' | 'warning' | 'danger' {
+  if (!metrics?.target_tps) return 'healthy'
+  if (metrics.throughput_target_missed) return 'danger'
+  if ((metrics.throughput_gap_pct ?? 0) > 0) return 'warning'
+  return 'healthy'
+}
+
+function throughputBadgeLabel(metrics?: LiveMetricsSummary): string {
+  if (!metrics?.target_tps) return 'Untracked'
+  if (metrics.throughput_target_missed) return 'Behind Target'
+  if ((metrics.throughput_gap_pct ?? 0) > 0) return 'Catching Up'
+  return 'On Target'
+}
+
 function telemetryBadgeClass(metrics?: LiveMetricsSummary): 'healthy' | 'warning' | 'danger' {
   const telemetry = metrics?.telemetry
   if (!telemetry) return 'healthy'
@@ -92,6 +114,39 @@ export default function TestExecutionStatusPanels({
 
   return (
     <>
+      {metrics?.target_tps ? (
+        <div className="goal-status-card throughput-status-card">
+          <div className="goal-status-header">
+            <div>
+              <h3 className="goal-status-title">Throughput Tracking</h3>
+              <p className="goal-status-subtitle">Configured arrival target versus delivered live throughput for this run.</p>
+            </div>
+            <div className={`goal-status-badge ${throughputBadgeClass(metrics)}`}>
+              {throughputBadgeLabel(metrics)}
+            </div>
+          </div>
+
+          <div className="goal-status-grid">
+            <div className="goal-status-metric">
+              <span className="goal-status-label">Target TPS</span>
+              <span className="goal-status-value">{metrics.target_tps.toFixed(1)}</span>
+            </div>
+            <div className="goal-status-metric">
+              <span className="goal-status-label">Actual TPS</span>
+              <span className="goal-status-value">{(metrics.tps ?? 0).toFixed(1)}</span>
+            </div>
+            <div className="goal-status-metric">
+              <span className="goal-status-label">Gap</span>
+              <span className="goal-status-value">{formatThroughputGap(metrics.throughput_gap_pct)}</span>
+            </div>
+            <div className="goal-status-metric">
+              <span className="goal-status-label">Status</span>
+              <span className="goal-status-value">{throughputBadgeLabel(metrics)}</span>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {metrics?.telemetry && (
         <div className="goal-status-card telemetry-status-card">
           <div className="goal-status-header">
@@ -352,6 +407,12 @@ export default function TestExecutionStatusPanels({
                   <span className="gm-label">Errors</span>
                 </div>
               </div>
+              {groupMetric.target_tps ? (
+                <div className={`gm-throughput-status ${groupMetric.throughput_target_missed ? 'danger' : 'healthy'}`}>
+                  <span>Target {groupMetric.target_tps.toFixed(1)} TPS</span>
+                  <span>Gap {formatThroughputGap(groupMetric.throughput_gap_pct)}</span>
+                </div>
+              ) : null}
             </div>
           ))}
         </div>

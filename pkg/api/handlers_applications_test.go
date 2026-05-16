@@ -57,6 +57,7 @@ func TestApplicationReleaseAndScenarioHandlers(t *testing.T) {
 			"iterations":4,
 			"pacing":{"type":"fixed_delay","delay_ms":1500},
 			"think_time":{"type":"fixed","mean_ms":750},
+			"browser":{"headless":false},
 			"log_level":"extended",
 			"auto_transactions":"per_iteration",
 			"error_handling":{"continue_on_error":true,"snapshot_on_error":true}
@@ -83,6 +84,9 @@ func TestApplicationReleaseAndScenarioHandlers(t *testing.T) {
 	}
 	if scenario.RuntimeSettings.ThinkTime == nil || scenario.RuntimeSettings.ThinkTime.Type != "fixed" || scenario.RuntimeSettings.ThinkTime.MeanMs != 750 {
 		t.Fatalf("scenario think_time = %#v, want fixed 750ms", scenario.RuntimeSettings.ThinkTime)
+	}
+	if scenario.RuntimeSettings.Browser == nil || scenario.RuntimeSettings.Browser.Headless == nil || *scenario.RuntimeSettings.Browser.Headless != false {
+		t.Fatalf("scenario browser override = %#v, want headless false", scenario.RuntimeSettings.Browser)
 	}
 	if scenario.RuntimeSettings.LogLevel != "extended" {
 		t.Fatalf("scenario log level = %q, want extended", scenario.RuntimeSettings.LogLevel)
