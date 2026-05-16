@@ -130,6 +130,7 @@ export default function Sidebar({
   const identityInitials = formatIdentityInitials(identityName)
   const identityMeta = formatIdentityMeta(authStatus)
   const identityTitle = formatIdentityTitle(authStatus, identityMeta)
+  const logoutURL = authStatus?.authenticated ? authStatus.logout_url?.trim() || '' : ''
 
   const handleNewProject = async (name: string) => {
     if (!onCreateProject) return
@@ -285,6 +286,7 @@ export default function Sidebar({
                 <div className="sidebar-identity-copy">
                   <span className="sidebar-identity-name">{identityName}</span>
                   {identityMeta && <span className="sidebar-identity-meta">{identityMeta}</span>}
+                  {logoutURL && <a className="sidebar-identity-action" href={logoutURL}>Sign out</a>}
                 </div>
               </div>
             )}

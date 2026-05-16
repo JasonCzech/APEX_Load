@@ -266,9 +266,19 @@ func (s *BrowserReplaySession) snapshot() *BrowserReplaySession {
 }
 
 func (s *BrowserReplaySession) snapshotLocked() *BrowserReplaySession {
-	clone := *s
-	clone.mu = sync.RWMutex{}
-	clone.cancel = nil
+	clone := &BrowserReplaySession{
+		ID:                s.ID,
+		ScriptID:          s.ScriptID,
+		ProjectID:         s.ProjectID,
+		Status:            s.Status,
+		Group:             s.Group,
+		Protocol:          s.Protocol,
+		StartedAt:         s.StartedAt,
+		CompletedAt:       s.CompletedAt,
+		CurrentEventIndex: s.CurrentEventIndex,
+		FinalReport:       cloneBrowserReplayReport(s.FinalReport),
+		Error:             s.Error,
+	}
 	if s.CurrentEvent != nil {
 		current := cloneBrowserReplayEvent(*s.CurrentEvent)
 		clone.CurrentEvent = &current
@@ -279,7 +289,41 @@ func (s *BrowserReplaySession) snapshotLocked() *BrowserReplaySession {
 			clone.Events[i] = cloneBrowserReplayEvent(event)
 		}
 	}
-	return &clone
+	return clone
+}
+
+func cloneBrowserReplayReport(report *engine.ReplayReport) *engine.ReplayReport {
+	if report == nil {
+		return nil
+	}
+	cloned := *report
+	cloned.FinalVariables = cloneBrowserStringMap(report.FinalVariables)
+	if len(report.Events) > 0 {
+		cloned.Events = make([]engine.ReplayActionEvent, len(report.Events))
+		for i, event := range report.Events {
+			cloned.Events[i] = cloneBrowserReplayEvent(event)
+		}
+	}
+	if len(report.Snapshots) > 0 {
+		cloned.Snapshots = make([]*protocol.ErrorSnapshot, len(report.Snapshots))
+		for i, snapshot := range report.Snapshots {
+			cloned.Snapshots[i] = cloneBrowserErrorSnapshot(snapshot)
+		}
+	}
+	return &cloned
+}
+
+func cloneBrowserErrorSnapshot(snapshot *protocol.ErrorSnapshot) *protocol.ErrorSnapshot {
+	if snapshot == nil {
+		return nil
+	}
+	cloned := *snapshot
+	cloned.RequestHeaders = cloneBrowserStringMap(snapshot.RequestHeaders)
+	cloned.ResponseHeaders = cloneBrowserStringMap(snapshot.ResponseHeaders)
+	cloned.ConsoleEntries = cloneBrowserConsoleEntries(snapshot.ConsoleEntries)
+	cloned.NetworkEntries = cloneBrowserNetworkEntries(snapshot.NetworkEntries)
+	cloned.DOMSummary = cloneBrowserDOMSummary(snapshot.DOMSummary)
+	return &cloned
 }
 
 func cloneBrowserReplayEvent(event engine.ReplayActionEvent) engine.ReplayActionEvent {

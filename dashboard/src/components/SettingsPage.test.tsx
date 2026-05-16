@@ -9,6 +9,7 @@ import SettingsPage from './SettingsPage'
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 const apiMock = {
+  getAuthAccessMatrix: vi.fn(),
   getAuthRoleCatalog: vi.fn(),
   getSystemSettings: vi.fn(),
   getHealth: vi.fn(),
@@ -144,6 +145,28 @@ describe('SettingsPage', () => {
           scope: 'global_or_project',
           description: 'Govern a project\'s assets, quotas, and execution lifecycle.',
           capabilities: ['Manage project governance'],
+        },
+      ],
+    })
+    apiMock.getAuthAccessMatrix.mockResolvedValue({
+      version: 'trusted_headers_v1',
+      resources: [
+        {
+          id: 'system_configuration',
+          name: 'System Configuration',
+          description: 'Controller-wide settings, infrastructure inventory, and global observer surfaces.',
+          operations: [
+            {
+              id: 'view_system',
+              label: 'View settings and inventory',
+              global_roles: ['viewer', 'editor', 'project_admin', 'system_admin'],
+            },
+            {
+              id: 'manage_system',
+              label: 'Update system settings',
+              global_roles: ['system_admin'],
+            },
+          ],
         },
       ],
     })
@@ -531,6 +554,9 @@ describe('SettingsPage', () => {
     expect(generalSection.textContent).toContain('Built-In Role Reference')
     expect(generalSection.textContent).toContain('Manage global settings')
     expect(generalSection.textContent).toContain('Global only')
+    expect(generalSection.textContent).toContain('Route Access Matrix')
+    expect(generalSection.textContent).toContain('System Configuration')
+    expect(generalSection.textContent).toContain('Update system settings: Global: System Admin')
   })
 
   it('saves notification webhook settings through system settings', async () => {

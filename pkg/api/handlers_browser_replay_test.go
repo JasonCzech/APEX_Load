@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/stormrunner/pkg/dsl"
+	"github.com/jasonczech/stormrunner/pkg/engine"
 	"github.com/jasonczech/stormrunner/pkg/protocol"
 )
 
@@ -148,6 +149,55 @@ func TestBrowserReplayManagerRetainsStreamedEvents(t *testing.T) {
 	}
 	if len(got.Events) != 1 || got.Events[0].Screenshot != "c2NyZWVu" {
 		t.Fatalf("events = %#v, want retained screenshot event", got.Events)
+	}
+}
+
+func TestBrowserReplaySessionSnapshotReturnsDetachedCopy(t *testing.T) {
+	now := time.Now()
+	session := &BrowserReplaySession{
+		ID:                "session-detached",
+		Status:            BrowserReplayRunning,
+		StartedAt:         &now,
+		CurrentEventIndex: 0,
+		CurrentEvent: &engine.ReplayActionEvent{
+			ActionName: "step-1",
+			Headers:    map[string]string{"Authorization": "Bearer original"},
+		},
+		Events: []engine.ReplayActionEvent{{
+			ActionName: "step-1",
+			Headers:    map[string]string{"Authorization": "Bearer original"},
+		}},
+		FinalReport: &engine.ReplayReport{
+			Group:          "browser",
+			FinalVariables: map[string]string{"token": "original"},
+			Events: []engine.ReplayActionEvent{{
+				ActionName: "step-1",
+				Headers:    map[string]string{"Authorization": "Bearer original"},
+			}},
+		},
+	}
+
+	snapshot := session.snapshot()
+	if snapshot == nil {
+		t.Fatal("snapshot returned nil")
+	}
+
+	session.CurrentEvent.Headers["Authorization"] = "Bearer updated"
+	session.Events[0].Headers["Authorization"] = "Bearer updated"
+	session.FinalReport.FinalVariables["token"] = "updated"
+	session.FinalReport.Events[0].Headers["Authorization"] = "Bearer updated"
+
+	if got := snapshot.CurrentEvent.Headers["Authorization"]; got != "Bearer original" {
+		t.Fatalf("snapshot current event header = %q, want original value", got)
+	}
+	if got := snapshot.Events[0].Headers["Authorization"]; got != "Bearer original" {
+		t.Fatalf("snapshot event header = %q, want original value", got)
+	}
+	if got := snapshot.FinalReport.FinalVariables["token"]; got != "original" {
+		t.Fatalf("snapshot final variable = %q, want original value", got)
+	}
+	if got := snapshot.FinalReport.Events[0].Headers["Authorization"]; got != "Bearer original" {
+		t.Fatalf("snapshot final report header = %q, want original value", got)
 	}
 }
 

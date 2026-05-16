@@ -5,7 +5,7 @@ import { useProjectApi } from '../hooks/api/useProjectApi'
 import { useApplication } from '../hooks/useApplication'
 import { useProject } from '../hooks/useProject'
 import { useApi } from '../hooks/useApi'
-import { DashboardAuthRoleDefinition, DashboardAuthStatus, DashboardSystemSettings, HealthResponse, Project, RedactionRule, SharedDataPool, SharedDataPoolRow, SystemInventoryResponse } from '../types'
+import { DashboardAuthAccessResource, DashboardAuthRoleDefinition, DashboardAuthStatus, DashboardSystemSettings, HealthResponse, Project, RedactionRule, SharedDataPool, SharedDataPoolRow, SystemInventoryResponse } from '../types'
 import { getErrorMessage } from '../utils/errorUtils'
 
 const DEFAULT_SETTINGS: DashboardSystemSettings = {
@@ -175,6 +175,17 @@ function formatRoleScope(scope: string): string {
     default:
       return scope
   }
+}
+
+function formatAccessOperation(operation: { global_roles?: string[]; project_roles?: string[] }): string {
+  const segments: string[] = []
+  if (operation.global_roles && operation.global_roles.length > 0) {
+    segments.push(`Global: ${formatAuthRoleList(operation.global_roles)}`)
+  }
+  if (operation.project_roles && operation.project_roles.length > 0) {
+    segments.push(`Project: ${formatAuthRoleList(operation.project_roles)}`)
+  }
+  return segments.join(' | ') || 'No roles'
 }
 
 function validateProjectDraft(name: string, rules: DraftRedactionRule[]): string {
@@ -449,6 +460,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
   const [settings, setSettings] = useState<DashboardSystemSettings>(DEFAULT_SETTINGS)
   const [savedSettings, setSavedSettings] = useState<DashboardSystemSettings>(DEFAULT_SETTINGS)
   const [health, setHealth] = useState<HealthResponse | null>(null)
+  const [authAccessResources, setAuthAccessResources] = useState<DashboardAuthAccessResource[]>([])
   const [authRoles, setAuthRoles] = useState<DashboardAuthRoleDefinition[]>([])
   const [loading, setLoading] = useState(true)
   const [saveMessage, setSaveMessage] = useState('')
@@ -512,6 +524,27 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
     return () => {
       cancelled = true
     }
+  }, [api])
+
+  useEffect(() => {
+  let cancelled = false
+  const loadAuthAccessMatrix = async () => {
+    try {
+      const response = await api.getAuthAccessMatrix()
+      if (!cancelled) {
+        setAuthAccessResources(response.resources || [])
+      }
+    } catch {
+      if (!cancelled) {
+        setAuthAccessResources([])
+      }
+    }
+  }
+
+  loadAuthAccessMatrix()
+  return () => {
+    cancelled = true
+  }
   }, [api])
 
   useEffect(() => {
@@ -1571,6 +1604,28 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
                             <span className="setting-desc">{role.description}</span>
                           </div>
                           <span className="settings-value-display">{formatRoleScope(role.scope)}{role.capabilities && role.capabilities.length > 0 ? ` | ${role.capabilities.join(', ')}` : ''}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {authAccessResources.length > 0 && (
+                    <div className="settings-subsection">
+                      <div className="settings-manager-summary">
+                        <div>
+                          <span className="setting-label">Route Access Matrix</span>
+                          <span className="setting-desc">Backend-owned summary of which roles can read or mutate each major platform surface.</span>
+                        </div>
+                        <strong>{authAccessResources.length} resources</strong>
+                      </div>
+                      {authAccessResources.map((resource) => (
+                        <div className="setting-row" key={resource.id}>
+                          <div className="setting-info">
+                            <span className="setting-label">{resource.name}</span>
+                            <span className="setting-desc">{resource.description}</span>
+                            {resource.operations.map((operation) => (
+                              <span className="setting-desc" key={operation.id}>{operation.label}: {formatAccessOperation(operation)}</span>
+                            ))}
+                          </div>
                         </div>
                       ))}
                     </div>

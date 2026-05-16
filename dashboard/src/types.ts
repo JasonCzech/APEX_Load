@@ -1089,6 +1089,25 @@ export interface DashboardAuthRoleCatalog {
   roles: DashboardAuthRoleDefinition[]
 }
 
+export interface DashboardAuthAccessOperation {
+  id: string
+  label: string
+  global_roles?: string[]
+  project_roles?: string[]
+}
+
+export interface DashboardAuthAccessResource {
+  id: string
+  name: string
+  description: string
+  operations: DashboardAuthAccessOperation[]
+}
+
+export interface DashboardAuthAccessMatrix {
+  version: string
+  resources: DashboardAuthAccessResource[]
+}
+
 export interface CapacityResourceEstimate {
   cpu_cores: number
   memory_mb: number

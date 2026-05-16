@@ -36,6 +36,25 @@ type AuthRoleCatalogResponse struct {
 	Roles         []AuthRoleDefinition `json:"roles"`
 }
 
+type AuthAccessOperation struct {
+	ID           string   `json:"id"`
+	Label        string   `json:"label"`
+	GlobalRoles  []string `json:"global_roles,omitempty"`
+	ProjectRoles []string `json:"project_roles,omitempty"`
+}
+
+type AuthAccessResource struct {
+	ID          string                `json:"id"`
+	Name        string                `json:"name"`
+	Description string                `json:"description"`
+	Operations  []AuthAccessOperation `json:"operations"`
+}
+
+type AuthAccessMatrixResponse struct {
+	Version   string               `json:"version"`
+	Resources []AuthAccessResource `json:"resources"`
+}
+
 var authRoleCatalog = []AuthRoleDefinition{
 	{
 		ID:          RoleSystemAdmin,
@@ -83,6 +102,72 @@ var authRoleCatalog = []AuthRoleDefinition{
 	},
 }
 
+var authAccessMatrix = []AuthAccessResource{
+	{
+		ID:          "system_configuration",
+		Name:        "System Configuration",
+		Description: "Controller-wide settings, infrastructure inventory, and global observer surfaces.",
+		Operations: []AuthAccessOperation{
+			{ID: "view_system", Label: "View settings and inventory", GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}},
+			{ID: "manage_system", Label: "Update system settings", GlobalRoles: []string{RoleSystemAdmin}},
+		},
+	},
+	{
+		ID:          "projects_and_folders",
+		Name:        "Projects and Folders",
+		Description: "Project catalog, governance defaults, and result-folder organization.",
+		Operations: []AuthAccessOperation{
+			{ID: "view_projects", Label: "View projects and project details", GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin}},
+			{ID: "manage_projects", Label: "Create, update, delete projects and folders", GlobalRoles: []string{RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleProjectAdmin}},
+		},
+	},
+	{
+		ID:          "applications_and_releases",
+		Name:        "Applications and Releases",
+		Description: "Application inventory and release context used to organize test history.",
+		Operations: []AuthAccessOperation{
+			{ID: "view_applications", Label: "View applications and releases", GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin}},
+			{ID: "manage_applications", Label: "Create, update, archive, and delete applications or releases", GlobalRoles: []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleEditor, RoleProjectAdmin}},
+		},
+	},
+	{
+		ID:          "scripts_and_imports",
+		Name:        "Scripts, Imports, and Replay",
+		Description: "Script CRUD, validation, exports, protocol imports, and replay tooling.",
+		Operations: []AuthAccessOperation{
+			{ID: "view_scripts", Label: "View, validate, and export scripts", GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin}},
+			{ID: "manage_scripts", Label: "Create, edit, move, import, and replay scripts", GlobalRoles: []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleEditor, RoleProjectAdmin}},
+		},
+	},
+	{
+		ID:          "tests_and_scenarios",
+		Name:        "Tests and Scenarios",
+		Description: "Scenario definitions, queued runs, live controls, archives, and comparison baselines.",
+		Operations: []AuthAccessOperation{
+			{ID: "view_tests", Label: "View scenarios, tests, metrics, and archives", GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin}},
+			{ID: "manage_tests", Label: "Create, start, stop, pause, move, scale, and delete tests or scenarios", GlobalRoles: []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleEditor, RoleProjectAdmin}},
+		},
+	},
+	{
+		ID:          "data_pools",
+		Name:        "Shared Data Pools",
+		Description: "Reusable project data sets and row-level mutations for scenario execution.",
+		Operations: []AuthAccessOperation{
+			{ID: "view_data_pools", Label: "View data pools and rows", GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin}},
+			{ID: "manage_data_pools", Label: "Create, update, and delete pools or rows", GlobalRoles: []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleEditor, RoleProjectAdmin}},
+		},
+	},
+	{
+		ID:          "recorder_and_browser_replay",
+		Name:        "Recorder and Browser Replay",
+		Description: "Project-scoped recorder sessions, replay sessions, and related control endpoints.",
+		Operations: []AuthAccessOperation{
+			{ID: "view_replay", Label: "Monitor recorder or browser replay sessions", GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin}},
+			{ID: "manage_replay", Label: "Create or control recorder and browser replay sessions", GlobalRoles: []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleEditor, RoleProjectAdmin}},
+		},
+	},
+}
+
 func (s *Server) handleGetAuthStatus(w http.ResponseWriter, r *http.Request) {
 	settings := normalizeAuthSettings(s.runner.GetSystemSettings().Auth)
 	response := AuthStatusResponse{
@@ -113,6 +198,13 @@ func (s *Server) handleGetAuthRoleCatalog(w http.ResponseWriter, _ *http.Request
 	writeJSON(w, http.StatusOK, AuthRoleCatalogResponse{
 		ProviderModel: "upstream_gateway",
 		Roles:         authRoleCatalog,
+	})
+}
+
+func (s *Server) handleGetAuthAccessMatrix(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, AuthAccessMatrixResponse{
+		Version:   "trusted_headers_v1",
+		Resources: authAccessMatrix,
 	})
 }
 

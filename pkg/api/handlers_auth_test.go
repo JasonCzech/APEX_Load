@@ -149,3 +149,38 @@ func TestHandleGetAuthRoleCatalogReturnsBuiltInRoles(t *testing.T) {
 		t.Fatalf("last role = %#v, want viewer descriptor", payload.Roles[3])
 	}
 }
+
+func TestHandleGetAuthAccessMatrixReturnsResourcePolicies(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/access-matrix", nil)
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var payload AuthAccessMatrixResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal auth access matrix: %v", err)
+	}
+	if payload.Version != "trusted_headers_v1" {
+		t.Fatalf("version = %q, want trusted_headers_v1", payload.Version)
+	}
+	if len(payload.Resources) < 6 {
+		t.Fatalf("resource count = %d, want >= 6", len(payload.Resources))
+	}
+	if payload.Resources[0].ID != "system_configuration" {
+		t.Fatalf("first resource = %#v, want system configuration", payload.Resources[0])
+	}
+	if len(payload.Resources[0].Operations) != 2 {
+		t.Fatalf("system configuration operations = %#v, want 2 operations", payload.Resources[0].Operations)
+	}
+	if payload.Resources[0].Operations[1].GlobalRoles[0] != RoleSystemAdmin {
+		t.Fatalf("manage system roles = %#v, want system admin", payload.Resources[0].Operations[1].GlobalRoles)
+	}
+	if payload.Resources[1].Operations[1].ProjectRoles[0] != RoleProjectAdmin {
+		t.Fatalf("project governance roles = %#v, want project admin project scope", payload.Resources[1].Operations[1].ProjectRoles)
+	}
+}

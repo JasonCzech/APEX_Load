@@ -36,6 +36,7 @@ describe('Sidebar', () => {
           authStatus={{
             enabled: true,
             mode: 'trusted_headers',
+            logout_url: '/logout',
             authenticated: true,
             user: {
               subject: 'alice',
@@ -49,6 +50,9 @@ describe('Sidebar', () => {
 
     expect(container.textContent).toContain('Alice Admin')
     expect(container.textContent).toContain('System Admin · Viewer')
+    const logoutLink = container.querySelector('.sidebar-identity-action') as HTMLAnchorElement | null
+    expect(logoutLink?.getAttribute('href')).toBe('/logout')
+    expect(logoutLink?.textContent).toBe('Sign out')
   })
 
   it('renders the active project and switches projects from the selector', async () => {

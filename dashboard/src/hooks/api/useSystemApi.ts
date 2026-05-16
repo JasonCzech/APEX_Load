@@ -1,9 +1,10 @@
 import { useCallback, useMemo } from 'react'
 
-import { DashboardAuthRoleCatalog, DashboardSystemSettings, HealthResponse, SystemInventoryResponse } from '../../types'
+import { DashboardAuthAccessMatrix, DashboardAuthRoleCatalog, DashboardSystemSettings, HealthResponse, SystemInventoryResponse } from '../../types'
 import { request } from '../apiClient'
 
 export function useSystemApi() {
+	const getAuthAccessMatrix = useCallback(() => request<DashboardAuthAccessMatrix>('/auth/access-matrix'), [])
   const getAuthRoleCatalog = useCallback(() => request<DashboardAuthRoleCatalog>('/auth/roles'), [])
   const getHealth = useCallback(() => request<HealthResponse>('/system/health'), [])
   const getSystemInventory = useCallback(() => request<SystemInventoryResponse>('/system/inventory'), [])
@@ -17,12 +18,13 @@ export function useSystemApi() {
 
   return useMemo(
     () => ({
+		getAuthAccessMatrix,
       getAuthRoleCatalog,
       getHealth,
       getSystemInventory,
       getSystemSettings,
       updateSystemSettings,
     }),
-    [getAuthRoleCatalog, getHealth, getSystemInventory, getSystemSettings, updateSystemSettings],
+    [getAuthAccessMatrix, getAuthRoleCatalog, getHealth, getSystemInventory, getSystemSettings, updateSystemSettings],
   )
 }

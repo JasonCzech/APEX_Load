@@ -286,6 +286,17 @@
   font-size: 12px;
 }
 
+.sidebar-identity-action {
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.sidebar-identity-action:hover {
+  text-decoration: underline;
+}
+
 .sidebar-status {
   display: flex;
   align-items: center;
