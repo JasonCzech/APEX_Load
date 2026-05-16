@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jasonczech/stormrunner/pkg/recorder"
 	"github.com/jasonczech/stormrunner/pkg/storage"
 )
 
@@ -38,6 +39,8 @@ type accessRequirement struct {
 	ProjectRoles  []string
 	ProjectLookup func(*http.Request, storage.Store) (string, int, string)
 }
+
+type requestProjectLookup func(*http.Request) (string, int, string)
 
 func authMiddleware(settings func() AuthSettings, store storage.Store) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
@@ -77,6 +80,43 @@ func authMiddleware(settings func() AuthSettings, store storage.Store) func(http
 					return
 				}
 				if user.hasProjectRole(projectID, requirement.ProjectRoles...) {
+					next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), authUserContextKey{}, user)))
+					return
+				}
+			}
+
+			writeError(w, http.StatusForbidden, "forbidden")
+		})
+	}
+}
+
+func projectScopedAuthMiddleware(settings func() AuthSettings, globalRoles []string, projectRoles []string, projectLookup requestProjectLookup) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			current := normalizeAuthSettings(settings())
+			if current.Mode == authModeDisabled {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			user, err := authenticatedUserFromHeaders(r, current)
+			if err != nil {
+				writeError(w, http.StatusUnauthorized, err.Error())
+				return
+			}
+
+			if len(globalRoles) > 0 && user.hasGlobalRole(globalRoles...) {
+				next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), authUserContextKey{}, user)))
+				return
+			}
+
+			if projectLookup != nil {
+				projectID, status, msg := projectLookup(r)
+				if status != 0 {
+					writeError(w, status, msg)
+					return
+				}
+				if user.hasProjectRole(projectID, projectRoles...) {
 					next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), authUserContextKey{}, user)))
 					return
 				}
@@ -704,6 +744,41 @@ func resolveJMeterSaveProjectID(r *http.Request, _ storage.Store) (string, int, 
 		}
 	}
 	return projectID, 0, ""
+}
+
+func resolveRecorderListProjectID(r *http.Request) (string, int, string) {
+	projectID := normalizeProjectID(r.URL.Query().Get("project_id"))
+	if projectID == "" {
+		return "", http.StatusBadRequest, "project_id is required for project-scoped recorder access"
+	}
+	return projectID, 0, ""
+}
+
+func resolveRecorderCreateProjectID(r *http.Request) (string, int, string) {
+	var req struct {
+		ProjectID string `json:"project_id,omitempty"`
+	}
+	if err := decodeRequestBody(r, &req); err != nil {
+		return "", http.StatusBadRequest, "invalid request body: " + err.Error()
+	}
+	projectID := normalizeProjectID(req.ProjectID)
+	if projectID == "" {
+		return "", http.StatusBadRequest, "project_id is required for project-scoped recorder access"
+	}
+	return projectID, 0, ""
+}
+
+func resolveRecorderSessionProjectID(rec *recorder.Recorder) requestProjectLookup {
+	return func(r *http.Request) (string, int, string) {
+		if rec == nil {
+			return "", http.StatusServiceUnavailable, "recorder is not configured"
+		}
+		session, ok := rec.GetSession(r.PathValue("id"))
+		if !ok {
+			return "", http.StatusNotFound, "recording session not found"
+		}
+		return normalizeProjectID(session.ProjectID), 0, ""
+	}
 }
 
 func resolveImportProjectIDFromForm(r *http.Request, _ storage.Store) (string, int, string) {

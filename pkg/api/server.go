@@ -80,6 +80,30 @@ func (s *Server) routes(allowedOrigins []string) {
 	cors := corsMiddleware(allowedOrigins)
 	log := loggingMiddleware
 	auth := authMiddleware(func() AuthSettings { return s.runner.GetSystemSettings().Auth }, s.store)
+	recorderViewAuth := projectScopedAuthMiddleware(
+		func() AuthSettings { return s.runner.GetSystemSettings().Auth },
+		[]string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+		[]string{RoleViewer, RoleEditor, RoleProjectAdmin},
+		resolveRecorderListProjectID,
+	)
+	recorderCreateAuth := projectScopedAuthMiddleware(
+		func() AuthSettings { return s.runner.GetSystemSettings().Auth },
+		[]string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+		[]string{RoleEditor, RoleProjectAdmin},
+		resolveRecorderCreateProjectID,
+	)
+	recorderSessionViewAuth := projectScopedAuthMiddleware(
+		func() AuthSettings { return s.runner.GetSystemSettings().Auth },
+		[]string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+		[]string{RoleViewer, RoleEditor, RoleProjectAdmin},
+		resolveRecorderSessionProjectID(s.recorder),
+	)
+	recorderSessionEditAuth := projectScopedAuthMiddleware(
+		func() AuthSettings { return s.runner.GetSystemSettings().Auth },
+		[]string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+		[]string{RoleEditor, RoleProjectAdmin},
+		resolveRecorderSessionProjectID(s.recorder),
+	)
 
 	// Test lifecycle and archive endpoints.
 	s.mux.Handle("POST /api/v1/applications", cors(log(http.HandlerFunc(s.handleCreateApplication))))
@@ -176,17 +200,17 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("POST /api/v1/browser-replay/sessions/{session_id}/stop", cors(log(http.HandlerFunc(s.handleStopBrowserReplaySession))))
 
 	// Recording proxy control and artifact retrieval.
-	s.mux.Handle("POST /api/v1/recorder/start", cors(log(http.HandlerFunc(s.handleStartRecording))))
-	s.mux.Handle("POST /api/v1/recorder/{id}/pause", cors(log(http.HandlerFunc(s.handlePauseRecording))))
-	s.mux.Handle("POST /api/v1/recorder/{id}/resume", cors(log(http.HandlerFunc(s.handleResumeRecording))))
-	s.mux.Handle("POST /api/v1/recorder/{id}/stop", cors(log(http.HandlerFunc(s.handleStopRecording))))
-	s.mux.Handle("GET /api/v1/recorder/{id}", cors(log(http.HandlerFunc(s.handleGetRecording))))
-	s.mux.Handle("GET /api/v1/recorder", cors(log(http.HandlerFunc(s.handleListRecordings))))
-	s.mux.Handle("DELETE /api/v1/recorder/{id}", cors(log(http.HandlerFunc(s.handleDeleteRecording))))
-	s.mux.Handle("PATCH /api/v1/recorder/{id}/requests/{seq}", cors(log(http.HandlerFunc(s.handleUpdateRecordedRequest))))
-	s.mux.Handle("POST /api/v1/recorder/{id}/convert/preview", cors(log(http.HandlerFunc(s.handlePreviewRecordingConversion))))
-	s.mux.Handle("POST /api/v1/recorder/{id}/convert", cors(log(http.HandlerFunc(s.handleConvertRecording))))
-	s.mux.Handle("GET /api/v1/recorder/{id}/export", cors(log(http.HandlerFunc(s.handleExportRecording))))
+	s.mux.Handle("POST /api/v1/recorder/start", cors(log(recorderCreateAuth(http.HandlerFunc(s.handleStartRecording)))))
+	s.mux.Handle("POST /api/v1/recorder/{id}/pause", cors(log(recorderSessionEditAuth(http.HandlerFunc(s.handlePauseRecording)))))
+	s.mux.Handle("POST /api/v1/recorder/{id}/resume", cors(log(recorderSessionEditAuth(http.HandlerFunc(s.handleResumeRecording)))))
+	s.mux.Handle("POST /api/v1/recorder/{id}/stop", cors(log(recorderSessionEditAuth(http.HandlerFunc(s.handleStopRecording)))))
+	s.mux.Handle("GET /api/v1/recorder/{id}", cors(log(recorderSessionViewAuth(http.HandlerFunc(s.handleGetRecording)))))
+	s.mux.Handle("GET /api/v1/recorder", cors(log(recorderViewAuth(http.HandlerFunc(s.handleListRecordings)))))
+	s.mux.Handle("DELETE /api/v1/recorder/{id}", cors(log(recorderSessionEditAuth(http.HandlerFunc(s.handleDeleteRecording)))))
+	s.mux.Handle("PATCH /api/v1/recorder/{id}/requests/{seq}", cors(log(recorderSessionEditAuth(http.HandlerFunc(s.handleUpdateRecordedRequest)))))
+	s.mux.Handle("POST /api/v1/recorder/{id}/convert/preview", cors(log(recorderSessionEditAuth(http.HandlerFunc(s.handlePreviewRecordingConversion)))))
+	s.mux.Handle("POST /api/v1/recorder/{id}/convert", cors(log(recorderSessionEditAuth(http.HandlerFunc(s.handleConvertRecording)))))
+	s.mux.Handle("GET /api/v1/recorder/{id}/export", cors(log(recorderSessionViewAuth(http.HandlerFunc(s.handleExportRecording)))))
 	s.mux.Handle("GET /api/v1/recorder/status", cors(log(http.HandlerFunc(s.handleRecorderStatus))))
 	s.mux.Handle("GET /api/v1/recorder/ca.pem", cors(log(http.HandlerFunc(s.handleRecorderCACert))))
 
