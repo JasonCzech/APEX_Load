@@ -106,6 +106,14 @@ describe('SettingsPage', () => {
           configured_available_generators: 1,
         },
       },
+      auth: {
+        mode: 'disabled',
+        user_header: 'X-Auth-Request-User',
+        name_header: 'X-Auth-Request-Name',
+        email_header: 'X-Auth-Request-Email',
+        roles_header: 'X-Stormrunner-Roles',
+        project_roles_header: 'X-Stormrunner-Project-Roles',
+      },
     })
     apiMock.getHealth.mockResolvedValue({ status: 'healthy', version: '0.1.0', ws_clients: 1, test_count: 0 })
     apiMock.getSystemInventory.mockResolvedValue({
@@ -230,6 +238,14 @@ describe('SettingsPage', () => {
           configured_available_generators: 3,
         },
       },
+      auth: {
+        mode: 'disabled',
+        user_header: 'X-Auth-Request-User',
+        name_header: 'X-Auth-Request-Name',
+        email_header: 'X-Auth-Request-Email',
+        roles_header: 'X-Stormrunner-Roles',
+        project_roles_header: 'X-Stormrunner-Project-Roles',
+      },
     })
 
     await act(async () => {
@@ -303,9 +319,9 @@ describe('SettingsPage', () => {
     expect(secondRulePattern).toBeTruthy()
     if (secondRuleInputs.length < 2 || !secondRulePattern) return
 
-    await setInputValue(secondRuleInputs[0] as HTMLInputElement, 'account token')
-    await setInputValue(secondRuleInputs[1] as HTMLInputElement, '[ACCOUNT]')
-    await setInputValue(secondRulePattern, 'account-[A-Z0-9]+')
+    await setFieldValue(secondRuleInputs[0] as HTMLInputElement, 'account token')
+    await setFieldValue(secondRuleInputs[1] as HTMLInputElement, '[ACCOUNT]')
+    await setFieldValue(secondRulePattern, 'account-[A-Z0-9]+')
 
     const saveButton = findButton('Save Project Compliance')
     expect(saveButton).toBeDefined()
@@ -361,7 +377,7 @@ describe('SettingsPage', () => {
     expect(secondRuleInputs).toHaveLength(2)
     if (secondRuleInputs.length < 1) return
 
-    await setInputValue(secondRuleInputs[0] as HTMLInputElement, 'broken rule')
+    await setFieldValue(secondRuleInputs[0] as HTMLInputElement, 'broken rule')
 
     await flushPromises()
 
@@ -372,6 +388,78 @@ describe('SettingsPage', () => {
     expect(saveButton.disabled).toBe(true)
     expect(projectApiMock.updateProject).not.toHaveBeenCalled()
     expect(container.textContent).toContain('Redaction rule 2 needs a regex pattern.')
+  })
+
+  it('saves trusted-header auth settings through system settings', async () => {
+    apiMock.updateSystemSettings.mockImplementation(async (settings) => settings)
+
+    await act(async () => {
+      root.render(<SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+
+    await flushPromises()
+
+    const generalSection = container.querySelector('#settings-section-general')
+    expect(generalSection).toBeTruthy()
+    if (!generalSection) return
+
+    const authModeSelect = findSettingSelect(generalSection, 'Access Control Mode')
+    expect(authModeSelect).toBeTruthy()
+    if (!authModeSelect) return
+
+    await setFieldValue(authModeSelect, 'trusted_headers')
+
+    const saveButton = findButton('Save Changes')
+    expect(saveButton).toBeDefined()
+    if (!saveButton) return
+
+    await act(async () => {
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushPromises()
+
+    expect(apiMock.updateSystemSettings).toHaveBeenCalledWith(expect.objectContaining({
+      auth: expect.objectContaining({
+        mode: 'trusted_headers',
+        user_header: 'X-Auth-Request-User',
+        roles_header: 'X-Stormrunner-Roles',
+        project_roles_header: 'X-Stormrunner-Project-Roles',
+      }),
+    }))
+    expect(container.textContent).toContain('Settings saved.')
+  })
+
+  it('validates trusted-header auth when no roles headers are configured', async () => {
+    await act(async () => {
+      root.render(<SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+
+    await flushPromises()
+
+    const generalSection = container.querySelector('#settings-section-general')
+    expect(generalSection).toBeTruthy()
+    if (!generalSection) return
+
+    const authModeSelect = findSettingSelect(generalSection, 'Access Control Mode')
+    expect(authModeSelect).toBeTruthy()
+    if (!authModeSelect) return
+
+    await setFieldValue(authModeSelect, 'trusted_headers')
+
+    const authInputs = Array.from(generalSection.querySelectorAll('input')).filter(input => {
+      const element = input as HTMLInputElement
+      return element.placeholder === 'X-Stormrunner-Roles' || element.placeholder === 'X-Stormrunner-Project-Roles'
+    }) as HTMLInputElement[]
+    expect(authInputs).toHaveLength(2)
+    if (authInputs.length !== 2) return
+
+    await setFieldValue(authInputs[0], '')
+    await setFieldValue(authInputs[1], '')
+
+    expect(container.textContent).toContain('Trusted header auth requires a roles header or project roles header.')
+    const saveButton = findButton('Save Changes')
+    expect(saveButton?.disabled).toBe(true)
   })
 })
 
@@ -385,7 +473,13 @@ function findSettingInput(root: Element, label: string) {
   return row?.querySelector('input') as HTMLInputElement | null
 }
 
-async function setInputValue(element: HTMLInputElement | HTMLTextAreaElement, value: string) {
+function findSettingSelect(root: Element, label: string) {
+  const rows = Array.from(root.querySelectorAll('.setting-row'))
+  const row = rows.find(item => item.textContent?.includes(label))
+  return row?.querySelector('select') as HTMLSelectElement | null
+}
+
+async function setFieldValue(element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement, value: string) {
   await act(async () => {
     const prototype = Object.getPrototypeOf(element)
     const descriptor = Object.getOwnPropertyDescriptor(prototype, 'value')

@@ -927,6 +927,15 @@ export interface DashboardCapacityPlanningSettings {
   availability: DashboardCapacityAvailabilitySettings
 }
 
+export interface DashboardAuthSettings {
+  mode: 'disabled' | 'trusted_headers'
+  user_header: string
+  name_header: string
+  email_header: string
+  roles_header: string
+  project_roles_header: string
+}
+
 export interface CapacityResourceEstimate {
   cpu_cores: number
   memory_mb: number
@@ -977,4 +986,5 @@ export interface DashboardSystemSettings {
   general: DashboardGeneralSettings
   thresholds: DashboardThresholdSettings
   capacity_planning: DashboardCapacityPlanningSettings
+  auth: DashboardAuthSettings
 }

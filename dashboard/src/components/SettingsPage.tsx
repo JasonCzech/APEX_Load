@@ -32,6 +32,14 @@ const DEFAULT_SETTINGS: DashboardSystemSettings = {
       configured_available_generators: 1,
     },
   },
+  auth: {
+    mode: 'disabled',
+    user_header: 'X-Auth-Request-User',
+    name_header: 'X-Auth-Request-Name',
+    email_header: 'X-Auth-Request-Email',
+    roles_header: 'X-Stormrunner-Roles',
+    project_roles_header: 'X-Stormrunner-Project-Roles',
+  },
 }
 
 const SETTINGS_SECTIONS = [
@@ -154,6 +162,17 @@ function validateSettings(settings: DashboardSystemSettings): string[] {
   }
   if (!Number.isInteger(settings.capacity_planning.availability.configured_available_generators) || settings.capacity_planning.availability.configured_available_generators < 1) {
     errors.push('Configured available generators must be an integer >= 1.')
+  }
+  if (settings.auth.mode !== 'disabled' && settings.auth.mode !== 'trusted_headers') {
+    errors.push('Access control mode must be Disabled or Trusted Headers.')
+  }
+  if (settings.auth.mode === 'trusted_headers') {
+    if (!settings.auth.user_header.trim()) {
+      errors.push('Trusted header auth requires a user header.')
+    }
+    if (!settings.auth.roles_header.trim() && !settings.auth.project_roles_header.trim()) {
+      errors.push('Trusted header auth requires a roles header or project roles header.')
+    }
   }
   return errors
 }
@@ -570,6 +589,18 @@ export default function SettingsPage({ theme, onThemeChange }: SettingsPageProps
           ...prev.capacity_planning.availability,
           [key]: key === 'source' ? value : Math.max(0, Number(value) || 0),
         },
+      },
+    }))
+    setSaveMessage('')
+    setRequestError('')
+  }
+
+  const updateAuth = (key: keyof DashboardSystemSettings['auth'], value: string) => {
+    setSettings((prev) => ({
+      ...prev,
+      auth: {
+        ...prev.auth,
+        [key]: value,
       },
     }))
     setSaveMessage('')
@@ -1081,6 +1112,93 @@ export default function SettingsPage({ theme, onThemeChange }: SettingsPageProps
                 <option value="dark">Dark</option>
                 <option value="light">Light</option>
               </select>
+            </div>
+            <div className="settings-subsection">
+              <div className="settings-manager-summary">
+                <div>
+                  <span className="setting-label">Access Control</span>
+                  <span className="setting-desc">Backend 3.1 scaffold for identity forwarded by an upstream OIDC or SAML gateway.</span>
+                </div>
+                <strong>{settings.auth.mode === 'disabled' ? 'Off' : 'Headers'}</strong>
+              </div>
+              <div className="setting-row">
+                <div className="setting-info">
+                  <span className="setting-label">Access Control Mode</span>
+                  <span className="setting-desc">Trusted Headers expects an authenticating reverse proxy to inject user and role headers before requests reach Stormrunner.</span>
+                </div>
+                <select
+                  className="settings-input"
+                  value={settings.auth.mode}
+                  onChange={(e) => updateAuth('mode', e.target.value)}
+                >
+                  <option value="disabled">Disabled</option>
+                  <option value="trusted_headers">Trusted Headers</option>
+                </select>
+              </div>
+              {settings.auth.mode === 'trusted_headers' && (
+                <>
+                  <div className="setting-row">
+                    <div className="setting-info">
+                      <span className="setting-label">User Header</span>
+                      <span className="setting-desc">Required identity header. Missing values return 401 before the request reaches protected handlers.</span>
+                    </div>
+                    <input
+                      className="settings-input cell-mono"
+                      value={settings.auth.user_header}
+                      onChange={(e) => updateAuth('user_header', e.target.value)}
+                      placeholder="X-Auth-Request-User"
+                    />
+                  </div>
+                  <div className="setting-row">
+                    <div className="setting-info">
+                      <span className="setting-label">Display Name Header</span>
+                      <span className="setting-desc">Optional friendly name forwarded into the request context for future UI and audit use.</span>
+                    </div>
+                    <input
+                      className="settings-input cell-mono"
+                      value={settings.auth.name_header}
+                      onChange={(e) => updateAuth('name_header', e.target.value)}
+                      placeholder="X-Auth-Request-Name"
+                    />
+                  </div>
+                  <div className="setting-row">
+                    <div className="setting-info">
+                      <span className="setting-label">Email Header</span>
+                      <span className="setting-desc">Optional email address from the upstream identity provider.</span>
+                    </div>
+                    <input
+                      className="settings-input cell-mono"
+                      value={settings.auth.email_header}
+                      onChange={(e) => updateAuth('email_header', e.target.value)}
+                      placeholder="X-Auth-Request-Email"
+                    />
+                  </div>
+                  <div className="setting-row">
+                    <div className="setting-info">
+                      <span className="setting-label">Global Roles Header</span>
+                      <span className="setting-desc">Comma or pipe-delimited roles such as viewer, editor, project_admin, or system_admin.</span>
+                    </div>
+                    <input
+                      className="settings-input cell-mono"
+                      value={settings.auth.roles_header}
+                      onChange={(e) => updateAuth('roles_header', e.target.value)}
+                      placeholder="X-Stormrunner-Roles"
+                    />
+                  </div>
+                  <div className="setting-row">
+                    <div className="setting-info">
+                      <span className="setting-label">Project Roles Header</span>
+                      <span className="setting-desc">Project-scoped assignments in the form project-id=viewer|editor;other-project=project_admin.</span>
+                    </div>
+                    <input
+                      className="settings-input cell-mono"
+                      value={settings.auth.project_roles_header}
+                      onChange={(e) => updateAuth('project_roles_header', e.target.value)}
+                      placeholder="X-Stormrunner-Project-Roles"
+                    />
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>
