@@ -1057,7 +1057,7 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
                             Archive
                           </button>
                           <a className="btn btn-sm btn-ghost" href={buildTestReportHref(test.id)} target="_blank" rel="noreferrer" onClick={event => event.stopPropagation()}>
-                            Report
+                            Download Report
                           </a>
                         </>
                       )}

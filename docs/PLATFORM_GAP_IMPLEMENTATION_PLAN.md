@@ -29,6 +29,7 @@ The 19 gaps are organized into five sequential delivery waves. Each wave targets
 - **Backend Generator:** Implement `pkg/api/report_generator.go`. It will read the Parquet/JSONL archives and construct a standalone HTML document using a Go template.
 - **API Endpoint:** `GET /api/v1/tests/{id}/report` returning `text/html`.
 - **Dashboard UI:** Add a "Download Report" button to the `TestExecutionArchive` and `ResultsPage` components.
+- **Progress:** Implemented via `pkg/api/report_generator.go`, `GET /api/v1/tests/{id}/report`, `GET /api/v1/tests/{id}/archive/report`, and report download affordances in both `TestExecutionArchive` and `ResultsPage`.
 
 ### 1.3 Secrets, PKI, and Secure Credential Handling (P0)
 **Effort:** 5-8 days
