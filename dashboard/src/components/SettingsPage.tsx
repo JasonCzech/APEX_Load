@@ -201,6 +201,11 @@ function formatGrantSource(grantSource?: string): string {
   }
 }
 
+function formatHeaderContractValue(value?: string, fallback = 'Not configured'): string {
+  const normalized = value?.trim() || ''
+  return normalized || fallback
+}
+
 function validateProjectDraft(name: string, rules: DraftRedactionRule[]): string {
   if (!name.trim()) {
     return 'Project name is required.'
@@ -1566,6 +1571,43 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
                       onChange={(e) => updateAuth('project_roles_header', e.target.value)}
                       placeholder="X-Stormrunner-Project-Roles"
                     />
+                  </div>
+                  <div className="settings-subsection">
+                    <div className="settings-manager-summary">
+                      <div>
+                        <span className="setting-label">Microsoft Entra ID Gateway Contract</span>
+                        <span className="setting-desc">Use your Entra-backed ingress or reverse proxy to translate identity claims into the headers Stormrunner evaluates for RBAC.</span>
+                      </div>
+                      <strong>{settings.auth.provider_name?.trim() || 'Microsoft Entra ID'}</strong>
+                    </div>
+                    <div className="setting-row">
+                      <div className="setting-info">
+                        <span className="setting-label">Required Subject Header</span>
+                        <span className="setting-desc">Stable user identifier forwarded on every authenticated request.</span>
+                      </div>
+                      <span className="settings-value-display cell-mono">{formatHeaderContractValue(settings.auth.user_header)}</span>
+                    </div>
+                    <div className="setting-row">
+                      <div className="setting-info">
+                        <span className="setting-label">Optional Identity Headers</span>
+                        <span className="setting-desc">Friendly display data forwarded from Entra claims when available.</span>
+                      </div>
+                      <span className="settings-value-display cell-mono">{formatHeaderContractValue(settings.auth.name_header)} | {formatHeaderContractValue(settings.auth.email_header)}</span>
+                    </div>
+                    <div className="setting-row">
+                      <div className="setting-info">
+                        <span className="setting-label">Global Role Mapping</span>
+                        <span className="setting-desc">Map Entra groups or app roles into Stormrunner roles such as viewer, editor, project_admin, and system_admin.</span>
+                      </div>
+                      <span className="settings-value-display cell-mono">{formatHeaderContractValue(settings.auth.roles_header, 'No global role header')}</span>
+                    </div>
+                    <div className="setting-row">
+                      <div className="setting-info">
+                        <span className="setting-label">Project Role Mapping</span>
+                        <span className="setting-desc">Emit assignments in the form project-id=viewer|editor;other-project=project_admin.</span>
+                      </div>
+                      <span className="settings-value-display cell-mono">{formatHeaderContractValue(settings.auth.project_roles_header, 'No project role header')}</span>
+                    </div>
                   </div>
                   <div className="settings-subsection">
                     <div className="settings-manager-summary">

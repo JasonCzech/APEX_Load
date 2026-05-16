@@ -587,6 +587,11 @@ describe('SettingsPage', () => {
     expect(generalSection.textContent).toContain('Effective Access For Current Session')
     expect(generalSection.textContent).toContain('Tests and Scenarios')
     expect(generalSection.textContent).toContain('Allowed via project role')
+    expect(generalSection.textContent).toContain('Microsoft Entra ID Gateway Contract')
+    expect(generalSection.textContent).toContain('Required Subject Header')
+    expect(generalSection.textContent).toContain('X-Auth-Request-User')
+    expect(generalSection.textContent).toContain('Global Role Mapping')
+    expect(generalSection.textContent).toContain('X-Stormrunner-Roles')
   })
 
   it('saves notification webhook settings through system settings', async () => {
