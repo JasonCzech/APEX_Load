@@ -6,7 +6,9 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -32,6 +34,8 @@ type metricsStoreSpy struct {
 	archiveByTestID       map[string]*storage.RunArchiveRecord
 	schedulesByID         map[string]*storage.ScenarioSchedule
 }
+
+var runnerTestProtocolCounter atomic.Uint64
 
 type provenanceInventoryBackend struct{}
 
@@ -259,6 +263,13 @@ func (s *metricsStoreSpy) ListAuditEvents(filter storage.AuditEventFilter) ([]*s
 	return nil, nil
 }
 func (s *metricsStoreSpy) Close() error { return nil }
+
+func registerRunnerTestProtocol(t *testing.T, prefix string, factory func() protocol.Protocol) string {
+	t.Helper()
+	name := prefix + "-" + strings.ReplaceAll(strings.ToLower(t.Name()), "/", "-") + "-" + strconv.FormatUint(runnerTestProtocolCounter.Add(1), 10)
+	protocol.Register(name, factory)
+	return name
+}
 
 type archiveStubProtocol struct{}
 
@@ -3066,15 +3077,14 @@ func TestRunTestCreatesArchiveBundle(t *testing.T) {
 	}
 	defer store.Close()
 
-	protocolName := "archive-stub-" + strings.ReplaceAll(strings.ToLower(t.Name()), "/", "-")
-	protocol.Register(protocolName, func() protocol.Protocol {
+	protocolName := registerRunnerTestProtocol(t, "archive-stub", func() protocol.Protocol {
 		return &archiveStubProtocol{}
 	})
 
 	hub := NewHub()
 	runner := NewTestRunner(1, hub, store)
 	settings := runner.GetSystemSettings()
-	settings.General.MetricsIntervalSeconds = 3
+	settings.General.MetricsIntervalSeconds = 1
 	maxErrorPct := 2.5
 	settings.Thresholds.MaxErrorRatePct = &maxErrorPct
 	if _, err := runner.UpdateSystemSettings(settings); err != nil {
@@ -3094,7 +3104,7 @@ func TestRunTestCreatesArchiveBundle(t *testing.T) {
 		Duration:   "2200ms",
 		ScriptID:   "script-archive",
 		VUsers:     1,
-		StartDelay: "2s",
+		StartDelay: "150ms",
 	})
 	if err != nil {
 		t.Fatalf("CreateTest returned error: %v", err)
@@ -3104,7 +3114,7 @@ func TestRunTestCreatesArchiveBundle(t *testing.T) {
 		t.Fatalf("StartTest returned error: %v", err)
 	}
 
-	completed := waitForTestStatus(t, runner, test.ID, "COMPLETE")
+	completed := waitForTestStatusWithin(t, runner, test.ID, 20*time.Second, "COMPLETE")
 	if completed.Archive == nil {
 		t.Fatal("expected completed test to include archive metadata")
 	}
@@ -3128,11 +3138,11 @@ func TestRunTestCreatesArchiveBundle(t *testing.T) {
 	if manifest.Provenance.ProjectID != storage.DefaultProjectID {
 		t.Fatalf("manifest provenance project_id = %q, want %q", manifest.Provenance.ProjectID, storage.DefaultProjectID)
 	}
-	if manifest.Provenance.StartDelay != "2s" {
+	if manifest.Provenance.StartDelay != "150ms" {
 		t.Fatalf("unexpected provenance timing flags: %#v", manifest.Provenance)
 	}
-	if manifest.Provenance.ExecutionSettings.General.MetricsIntervalSeconds != 3 {
-		t.Fatalf("manifest execution settings = %#v, want metrics interval 3", manifest.Provenance.ExecutionSettings)
+	if manifest.Provenance.ExecutionSettings.General.MetricsIntervalSeconds != 1 {
+		t.Fatalf("manifest execution settings = %#v, want metrics interval 1", manifest.Provenance.ExecutionSettings)
 	}
 	if manifest.Provenance.ControllerEnv["STORMRUNNER_SAMPLE_FLAG"] != "enabled" {
 		t.Fatalf("manifest controller env = %#v, want STORMRUNNER_SAMPLE_FLAG", manifest.Provenance.ControllerEnv)
@@ -3212,8 +3222,7 @@ func TestRunTestIncludesConfiguredStartDelay(t *testing.T) {
 	}
 	defer store.Close()
 
-	protocolName := "start-delay-" + strings.ReplaceAll(strings.ToLower(t.Name()), "/", "-")
-	protocol.Register(protocolName, func() protocol.Protocol {
+	protocolName := registerRunnerTestProtocol(t, "start-delay", func() protocol.Protocol {
 		return &archiveStubProtocol{}
 	})
 
@@ -3361,8 +3370,7 @@ func TestDeleteTestRemovesArchiveBundle(t *testing.T) {
 	}
 	defer store.Close()
 
-	protocolName := "archive-delete-" + strings.ReplaceAll(strings.ToLower(t.Name()), "/", "-")
-	protocol.Register(protocolName, func() protocol.Protocol {
+	protocolName := registerRunnerTestProtocol(t, "archive-delete", func() protocol.Protocol {
 		return &archiveStubProtocol{}
 	})
 
@@ -3423,8 +3431,7 @@ func TestDeleteTestRejectsPausedRuns(t *testing.T) {
 	}
 	defer store.Close()
 
-	protocolName := "archive-delete-paused-" + strings.ReplaceAll(strings.ToLower(t.Name()), "/", "-")
-	protocol.Register(protocolName, func() protocol.Protocol {
+	protocolName := registerRunnerTestProtocol(t, "archive-delete-paused", func() protocol.Protocol {
 		return &archiveStubProtocol{}
 	})
 
@@ -3491,8 +3498,12 @@ func TestDeleteTestRejectsPausedRuns(t *testing.T) {
 }
 
 func waitForTestStatus(t *testing.T, runner *TestRunner, testID string, want string) *ManagedTest {
+	return waitForTestStatusWithin(t, runner, testID, 12*time.Second, want)
+}
+
+func waitForTestStatusWithin(t *testing.T, runner *TestRunner, testID string, timeout time.Duration, want string) *ManagedTest {
 	t.Helper()
-	deadline := time.Now().Add(12 * time.Second)
+	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		test, ok := runner.GetTest(testID)
 		if !ok {
