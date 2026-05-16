@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { Suspense, lazy, useState, useCallback } from 'react'
 import { useDashboardTheme } from './hooks/useDashboardTheme'
 import { useWebSocket } from './hooks/useWebSocket'
 import { ApplicationProvider } from './hooks/ApplicationProvider'
@@ -8,7 +8,6 @@ import Sidebar, { NavPage } from './components/Sidebar'
 import TestHub from './components/TestHub'
 import TestExecution from './components/TestExecution'
 import DashboardPage from './components/DashboardPage'
-import ScriptsPage from './components/ScriptsPage'
 import ResultsPage from './components/ResultsPage'
 import NewTestPage from './components/NewTestPage'
 import MonitoringPage from './components/MonitoringPage'
@@ -20,6 +19,8 @@ import { ProjectProvider } from './hooks/ProjectProvider'
 import { useProject } from './hooks/useProject'
 import './App.css'
 import './components/Pages.css'
+
+const ScriptsPage = lazy(() => import('./components/ScriptsPage'))
 
 type View =
   | { page: NavPage }
@@ -160,7 +161,11 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
             onSelectTest={navigateToTest}
           />
         )}
-        {view.page === 'scripts' && <ScriptsPage initialMode={scriptMode} initialEditId={scriptEditId} onSelectScenario={navigateToTest} />}
+        {view.page === 'scripts' && (
+          <Suspense fallback={<div className="page">Loading scripts...</div>}>
+            <ScriptsPage initialMode={scriptMode} initialEditId={scriptEditId} onSelectScenario={navigateToTest} />
+          </Suspense>
+        )}
         {view.page === 'results' && (
           <ResultsPage
             testStatuses={testStatuses}
