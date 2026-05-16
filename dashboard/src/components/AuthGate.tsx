@@ -1,40 +1,9 @@
-import { ReactNode, useEffect, useState } from 'react'
+import { ReactNode } from 'react'
 
-import { DashboardAuthStatus } from '../types'
-import { useAuthApi } from '../hooks/api/useAuthApi'
+import { AuthStatusState } from '../hooks/useAuthStatus'
 import './AuthGate.css'
 
-type AuthGateState =
-  | { status: 'loading' }
-  | { status: 'ready'; auth: DashboardAuthStatus }
-  | { status: 'error'; message: string }
-
-export default function AuthGate({ children }: { children: ReactNode }) {
-  const { getAuthStatus } = useAuthApi()
-  const [state, setState] = useState<AuthGateState>({ status: 'loading' })
-
-  useEffect(() => {
-    let active = true
-
-    getAuthStatus()
-      .then((auth) => {
-        if (!active) {
-          return
-        }
-        setState({ status: 'ready', auth })
-      })
-      .catch((error: unknown) => {
-        if (!active) {
-          return
-        }
-        const message = error instanceof Error ? error.message : 'Unable to determine authentication status.'
-        setState({ status: 'error', message })
-      })
-
-    return () => {
-      active = false
-    }
-  }, [getAuthStatus])
+export default function AuthGate({ children, state }: { children: ReactNode; state: AuthStatusState }) {
 
   if (state.status === 'loading') {
     return (

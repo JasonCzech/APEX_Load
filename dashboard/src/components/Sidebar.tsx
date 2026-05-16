@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { type WebSocketConnectionState } from '../hooks/useWebSocket'
-import { Application, Release } from '../types'
+import { Application, DashboardAuthStatus, Release } from '../types'
 import ProjectModal from './ProjectModal'
 import './Sidebar.css'
 
@@ -10,6 +10,7 @@ interface Props {
   active: NavPage
   onNavigate: (page: NavPage) => void
   connectionState: WebSocketConnectionState
+  authStatus?: DashboardAuthStatus
   applications?: Application[]
   releases?: Release[]
   activeApplication?: Application | null
@@ -101,6 +102,7 @@ export default function Sidebar({
   active,
   onNavigate,
   connectionState,
+  authStatus,
   applications = [],
   releases = [],
   activeApplication,
@@ -114,6 +116,10 @@ export default function Sidebar({
   const [showProjectModal, setShowProjectModal] = useState(false)
   const connectionClass = connectionState === 'connected' ? 'connected' : connectionState === 'connecting' ? 'connecting' : 'disconnected'
   const connectionLabel = connectionState === 'connected' ? 'Live' : connectionState === 'connecting' ? 'Connecting' : 'Disconnected'
+  const identityName = formatIdentityName(authStatus)
+  const identityInitials = formatIdentityInitials(identityName)
+  const identityMeta = formatIdentityMeta(authStatus)
+  const identityTitle = formatIdentityTitle(authStatus, identityMeta)
 
   const handleNewProject = async (name: string) => {
     if (!onCreateApplication) return
@@ -209,9 +215,20 @@ export default function Sidebar({
 
       <div className="sidebar-footer">
         {!collapsed && (
-          <div className={`sidebar-status ${connectionClass}`}>
-            <span className="status-dot" />
-            <span className="status-text">{connectionLabel}</span>
+          <div className="sidebar-footer-meta">
+            {authStatus?.authenticated && authStatus.user && identityName && (
+              <div className="sidebar-identity" title={identityTitle}>
+                <div className="sidebar-identity-avatar" aria-hidden="true">{identityInitials}</div>
+                <div className="sidebar-identity-copy">
+                  <span className="sidebar-identity-name">{identityName}</span>
+                  {identityMeta && <span className="sidebar-identity-meta">{identityMeta}</span>}
+                </div>
+              </div>
+            )}
+            <div className={`sidebar-status ${connectionClass}`}>
+              <span className="status-dot" />
+              <span className="status-text">{connectionLabel}</span>
+            </div>
           </div>
         )}
         <button
@@ -237,4 +254,61 @@ export default function Sidebar({
       )}
     </aside>
   )
+}
+
+const ROLE_LABELS: Record<string, string> = {
+  system_admin: 'System Admin',
+  project_admin: 'Project Admin',
+  editor: 'Editor',
+  viewer: 'Viewer',
+}
+
+function formatIdentityName(authStatus?: DashboardAuthStatus): string {
+  const user = authStatus?.user
+  return user?.display_name || user?.subject || 'User'
+}
+
+function formatIdentityInitials(identityName: string): string {
+  return identityName
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() || '')
+    .join('') || 'SR'
+}
+
+function formatIdentityMeta(authStatus?: DashboardAuthStatus): string {
+  const user = authStatus?.user
+  if (!user) {
+    return ''
+  }
+
+  if (user.global_roles && user.global_roles.length > 0) {
+    return user.global_roles.slice(0, 2).map((role) => ROLE_LABELS[role] || role).join(' · ')
+  }
+
+  if (user.project_roles) {
+    const projectRoleCount = Object.values(user.project_roles).reduce((count, roles) => count + roles.length, 0)
+    if (projectRoleCount > 0) {
+      return `${projectRoleCount} project role${projectRoleCount === 1 ? '' : 's'}`
+    }
+  }
+
+  return user.email || user.subject
+}
+
+function formatIdentityTitle(authStatus?: DashboardAuthStatus, identityMeta?: string): string {
+  const user = authStatus?.user
+  if (!user) {
+    return ''
+  }
+
+  const parts = [user.display_name || user.subject]
+  if (user.email) {
+    parts.push(user.email)
+  }
+  if (identityMeta && identityMeta !== user.email && identityMeta !== user.subject) {
+    parts.push(identityMeta)
+  }
+  return parts.join(' • ')
 }

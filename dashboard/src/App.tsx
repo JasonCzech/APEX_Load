@@ -14,6 +14,7 @@ import MonitoringPage from './components/MonitoringPage'
 import SettingsPage from './components/SettingsPage'
 import { appendTelemetryDiagnostic } from './components/monitoringTelemetryDiagnostics'
 import AuthGate from './components/AuthGate'
+import { useAuthStatus } from './hooks/useAuthStatus'
 import './App.css'
 import './components/Pages.css'
 
@@ -22,7 +23,7 @@ type View =
   | { page: 'scripts'; mode?: 'list' | 'create' | 'edit' | 'import'; scriptId?: string }
   | { page: 'test'; testId: string }
 
-function AppShell() {
+function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuthStatus }) {
   const [view, setView] = useState<View>({ page: 'dashboard' })
   const [metricsHistory, setMetricsHistory] = useState<Record<string, MetricsHistoryPoint[]>>({})
   const [testStatuses, setTestStatuses] = useState<Record<string, string>>({})
@@ -108,6 +109,7 @@ function AppShell() {
         active={activePage}
         onNavigate={handleNavigate}
         connectionState={connectionState}
+        authStatus={authStatus}
         applications={applications}
         releases={releases}
         activeApplication={activeApplication}
@@ -167,10 +169,12 @@ function AppShell() {
 }
 
 export default function App() {
+  const authState = useAuthStatus()
+
   return (
-    <AuthGate>
+    <AuthGate state={authState}>
       <ApplicationProvider>
-        <AppShell />
+        <AppShell authStatus={authState.status === 'ready' ? authState.auth : undefined} />
       </ApplicationProvider>
     </AuthGate>
   )
