@@ -586,6 +586,8 @@ For `TruClientMobileWeb` archives, Stormrunner reads the `.usr` file plus UTF-16
 
 Import responses include a shared `review_sections` array. Each section has a stable `key`, `title`, `severity`, `summary`, and `items` list so clients can render warnings, unsupported elements, preserved metadata, and browser import assumptions consistently.
 
+They also include `repair_suggestions`, a deterministic list of suggested cleanup actions with `id`, `category`, `severity`, `title`, `description`, `action`, and optional `target_action` fields. LoadRunner and TruClient imports use this to call out unsupported constructs, selector validation, wait refinement, runtime-setting review, and browser replay validation.
+
 **Response:**
 ```json
 {

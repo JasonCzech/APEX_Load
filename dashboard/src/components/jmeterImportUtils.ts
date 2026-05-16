@@ -1,4 +1,4 @@
-import { type ImportedAction, type ImportedExtractor, type ImportedScript, type ImportReviewSection, type JMeterImportResult as ImportResult, type SupportMatrix } from '../types/scriptImports'
+import { type ImportedAction, type ImportedExtractor, type ImportedScript, type ImportRepairSuggestion, type ImportReviewSection, type JMeterImportResult as ImportResult, type SupportMatrix } from '../types/scriptImports'
 
 export interface SupportMatrixSection {
   key: 'supported' | 'partial' | 'unsupported'
@@ -36,7 +36,25 @@ function normalizeReviewSections(value: unknown): ImportReviewSection[] {
     .filter(section => section.key && section.title)
 }
 
-function normalizeSharedImportFields(response: unknown): Pick<ImportResult, 'scripts' | 'script' | 'scenario_draft' | 'warnings' | 'unsupported_elements' | 'assumptions' | 'review_sections' | 'correlations'> {
+function normalizeRepairSuggestions(value: unknown): ImportRepairSuggestion[] {
+  if (!Array.isArray(value)) {
+    return []
+  }
+  return value
+    .filter(isObjectRecord)
+    .map(suggestion => ({
+      id: typeof suggestion.id === 'string' ? suggestion.id : '',
+      category: typeof suggestion.category === 'string' ? suggestion.category : '',
+      severity: typeof suggestion.severity === 'string' ? suggestion.severity : 'info',
+      title: typeof suggestion.title === 'string' ? suggestion.title : '',
+      description: typeof suggestion.description === 'string' ? suggestion.description : '',
+      action: typeof suggestion.action === 'string' ? suggestion.action : '',
+      target_action: typeof suggestion.target_action === 'string' ? suggestion.target_action : undefined,
+    }))
+    .filter(suggestion => suggestion.id && suggestion.title)
+}
+
+function normalizeSharedImportFields(response: unknown): Pick<ImportResult, 'scripts' | 'script' | 'scenario_draft' | 'warnings' | 'unsupported_elements' | 'assumptions' | 'review_sections' | 'repair_suggestions' | 'correlations'> {
   const payload = isObjectRecord(response) ? response : {}
   const script = payload.script as ImportedScript | undefined
   const scripts = Array.isArray(payload.scripts)
@@ -51,6 +69,7 @@ function normalizeSharedImportFields(response: unknown): Pick<ImportResult, 'scr
     unsupported_elements: Array.isArray(payload.unsupported_elements) ? payload.unsupported_elements as string[] : [],
     assumptions: Array.isArray(payload.assumptions) ? payload.assumptions as string[] : [],
     review_sections: normalizeReviewSections(payload.review_sections),
+    repair_suggestions: normalizeRepairSuggestions(payload.repair_suggestions),
     correlations: Array.isArray(payload.correlations) ? payload.correlations : [],
   }
 }

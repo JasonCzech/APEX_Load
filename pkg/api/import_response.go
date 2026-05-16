@@ -10,6 +10,7 @@ type scriptImportResponseOptions struct {
 	Assumptions         []string
 	UnsupportedElements []string
 	ReviewSections      []scriptImportReviewSection
+	RepairSuggestions   []scriptImportRepairSuggestion
 	ScenarioDraft       any
 	Summary             any
 }
@@ -20,6 +21,16 @@ type scriptImportReviewSection struct {
 	Severity string   `json:"severity"`
 	Summary  string   `json:"summary"`
 	Items    []string `json:"items"`
+}
+
+type scriptImportRepairSuggestion struct {
+	ID           string `json:"id"`
+	Category     string `json:"category"`
+	Severity     string `json:"severity"`
+	Title        string `json:"title"`
+	Description  string `json:"description"`
+	Action       string `json:"action"`
+	TargetAction string `json:"target_action,omitempty"`
 }
 
 func newScriptImportResponse(opts scriptImportResponseOptions) map[string]any {
@@ -48,6 +59,10 @@ func newScriptImportResponse(opts scriptImportResponseOptions) map[string]any {
 	if reviewSections == nil {
 		reviewSections = []scriptImportReviewSection{}
 	}
+	repairSuggestions := opts.RepairSuggestions
+	if repairSuggestions == nil {
+		repairSuggestions = []scriptImportRepairSuggestion{}
+	}
 	correlations := opts.Correlations
 	if correlations == nil {
 		correlations = []any{}
@@ -70,6 +85,7 @@ func newScriptImportResponse(opts scriptImportResponseOptions) map[string]any {
 		"assumptions":          assumptions,
 		"unsupported_elements": unsupported,
 		"review_sections":      reviewSections,
+		"repair_suggestions":   repairSuggestions,
 		"scenario_draft":       opts.ScenarioDraft,
 		"summary":              summary,
 	}

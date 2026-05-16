@@ -490,6 +490,11 @@ UpdateValueOn=Each Iteration
 			Severity string   `json:"severity"`
 			Items    []string `json:"items"`
 		} `json:"review_sections"`
+		RepairSuggestions []struct {
+			Category string `json:"category"`
+			Severity string `json:"severity"`
+			Title    string `json:"title"`
+		} `json:"repair_suggestions"`
 		Summary map[string]any `json:"summary"`
 		Stats   struct {
 			ConvertedActions int `json:"converted_actions"`
@@ -515,6 +520,8 @@ UpdateValueOn=Each Iteration
 	}
 	assertReviewSection(t, result.ReviewSections, "unsupported_elements", "blocker", "web_set_max_html_param_len")
 	assertReviewSection(t, result.ReviewSections, "preserved_metadata", "info", "Project file: Demo.usr")
+	assertRepairSuggestion(t, result.RepairSuggestions, "unsupported", "blocker", "Replace unsupported web_set_max_html_param_len")
+	assertRepairSuggestion(t, result.RepairSuggestions, "runtime", "info", "Review preserved runtime settings")
 	if got := result.Summary["project_file"]; got != "Demo.usr" {
 		t.Fatalf("summary.project_file = %#v, want Demo.usr", got)
 	}
@@ -706,6 +713,12 @@ TouchMode=1
 			Severity string   `json:"severity"`
 			Items    []string `json:"items"`
 		} `json:"review_sections"`
+		RepairSuggestions []struct {
+			Category     string `json:"category"`
+			Severity     string `json:"severity"`
+			Title        string `json:"title"`
+			TargetAction string `json:"target_action"`
+		} `json:"repair_suggestions"`
 		Summary map[string]any `json:"summary"`
 		Stats   struct {
 			ConvertedActions int `json:"converted_actions"`
@@ -739,6 +752,8 @@ TouchMode=1
 		t.Fatalf("unsupported_elements = %#v, want none", result.UnsupportedElements)
 	}
 	assertReviewSection(t, result.ReviewSections, "browser_import_assumptions", "info", "Legacy desktop TruClient remains out of scope.")
+	assertRepairSuggestion(t, result.RepairSuggestions, "replay", "warning", "Run browser replay before saving as production-ready")
+	assertRepairSuggestion(t, result.RepairSuggestions, "selector", "warning", "Validate selector for Evaluate JavaScript Fill 1")
 	if got := result.Summary["project_file"]; got != "MobileWeb.usr" {
 		t.Fatalf("summary.project_file = %#v, want MobileWeb.usr", got)
 	}
@@ -885,6 +900,11 @@ DeviceProfile=iPhone_SE
 			Severity string   `json:"severity"`
 			Items    []string `json:"items"`
 		} `json:"review_sections"`
+		RepairSuggestions []struct {
+			Category string `json:"category"`
+			Severity string `json:"severity"`
+			Title    string `json:"title"`
+		} `json:"repair_suggestions"`
 		Stats struct {
 			ConvertedActions int `json:"converted_actions"`
 			Skipped          int `json:"skipped"`
@@ -905,6 +925,8 @@ DeviceProfile=iPhone_SE
 	assertReviewSection(t, result.ReviewSections, "warnings", "warning", result.Warnings[0])
 	assertReviewSection(t, result.ReviewSections, "unsupported_elements", "blocker", "Evaluate JavaScript")
 	assertReviewSection(t, result.ReviewSections, "browser_import_assumptions", "info", "Selector fidelity should be checked with browser replay before production use.")
+	assertRepairSuggestion(t, result.RepairSuggestions, "unsupported", "blocker", "Replace unsupported Evaluate JavaScript")
+	assertRepairSuggestion(t, result.RepairSuggestions, "replay", "warning", "Run browser replay before saving as production-ready")
 }
 
 func TestHandleImportJMeter(t *testing.T) {
@@ -1294,11 +1316,33 @@ func decodeImportEnvelope(t *testing.T, body []byte) map[string]any {
 
 func assertSharedImportEnvelopeKeys(t *testing.T, envelope map[string]any) {
 	t.Helper()
-	for _, key := range []string{"scripts", "script", "warnings", "stats", "correlations", "assumptions", "unsupported_elements", "review_sections", "scenario_draft", "summary", "result"} {
+	for _, key := range []string{"scripts", "script", "warnings", "stats", "correlations", "assumptions", "unsupported_elements", "review_sections", "repair_suggestions", "scenario_draft", "summary", "result"} {
 		if _, ok := envelope[key]; !ok {
 			t.Fatalf("envelope missing key %q: %#v", key, envelope)
 		}
 	}
+}
+
+func assertRepairSuggestion(t *testing.T, suggestions any, wantCategory string, wantSeverity string, wantTitle string) {
+	t.Helper()
+
+	value := reflect.ValueOf(suggestions)
+	if value.Kind() != reflect.Slice {
+		t.Fatalf("repair suggestions = %#v, want slice", suggestions)
+	}
+	for i := 0; i < value.Len(); i++ {
+		suggestion := value.Index(i)
+		category := suggestion.FieldByName("Category")
+		severity := suggestion.FieldByName("Severity")
+		title := suggestion.FieldByName("Title")
+		if !category.IsValid() || !severity.IsValid() || !title.IsValid() {
+			continue
+		}
+		if category.String() == wantCategory && severity.String() == wantSeverity && title.String() == wantTitle {
+			return
+		}
+	}
+	t.Fatalf("repair_suggestions = %#v, want category=%q severity=%q title=%q", suggestions, wantCategory, wantSeverity, wantTitle)
 }
 
 func assertReviewSection(t *testing.T, sections any, wantKey string, wantSeverity string, wantItem string) {

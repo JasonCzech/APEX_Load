@@ -63,6 +63,16 @@ describe('LoadRunnerImport', () => {
           items: ['Project file: Demo.usr'],
         },
       ],
+      repair_suggestions: [
+        {
+          id: 'unsupported:web-set-max-html-param-len',
+          category: 'unsupported',
+          severity: 'blocker',
+          title: 'Replace unsupported web_set_max_html_param_len',
+          description: 'Review the preserved source construct.',
+          action: 'Open the generated script in the visual editor.',
+        },
+      ],
       summary: {
         project_file: 'Demo.usr',
         mapped_runtime_file: 'default.cfg',
@@ -97,6 +107,7 @@ describe('LoadRunnerImport', () => {
           items: ['web_set_max_html_param_len'],
         },
       ],
+      repair_suggestions: [],
       summary: {
         project_file: 'Demo.usr',
         mapped_runtime_file: 'default.cfg',
@@ -173,6 +184,8 @@ describe('LoadRunnerImport', () => {
     expect(container.textContent).toContain('manual review recommended')
     expect(container.textContent).toContain('Unsupported LoadRunner Functions (1)')
     expect(container.textContent).toContain('Import Review Sections (2)')
+    expect(container.textContent).toContain('Repair Suggestions (1)')
+    expect(container.textContent).toContain('Replace unsupported web_set_max_html_param_len')
     expect(container.textContent).toContain('Unsupported LoadRunner Elements')
     expect(container.textContent).toContain('blocker')
     expect(container.textContent).toContain('web_set_max_html_param_len')

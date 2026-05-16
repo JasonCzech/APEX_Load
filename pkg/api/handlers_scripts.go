@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -255,6 +256,7 @@ func writeLoadRunnerImportResponse(w http.ResponseWriter, status int, result *lo
 	unsupportedElements := uniqueSortedStrings(result.Stats.UnsupportedFuncs)
 	summary := buildLoadRunnerImportSummary(result, unsupportedElements)
 	reviewSections := buildLoadRunnerImportReviewSections(result, unsupportedElements, summary)
+	repairSuggestions := buildLoadRunnerImportRepairSuggestions(result, unsupportedElements, summary)
 
 	writeJSON(w, status, newScriptImportResponse(scriptImportResponseOptions{
 		Result:              result,
@@ -263,8 +265,120 @@ func writeLoadRunnerImportResponse(w http.ResponseWriter, status int, result *lo
 		Stats:               result.Stats,
 		UnsupportedElements: unsupportedElements,
 		ReviewSections:      reviewSections,
+		RepairSuggestions:   repairSuggestions,
 		Summary:             summary,
 	}))
+}
+
+func buildLoadRunnerImportRepairSuggestions(result *loadrunner.ConvertResult, unsupportedElements []string, summary loadRunnerImportSummary) []scriptImportRepairSuggestion {
+	suggestions := make([]scriptImportRepairSuggestion, 0)
+	if result == nil {
+		return suggestions
+	}
+
+	for _, element := range unsupportedElements {
+		normalized := strings.ToLower(element)
+		description := "Review the preserved source construct and replace it with equivalent Stormrunner DSL behavior before relying on this script."
+		action := "Open the generated script in the visual editor, inspect preserved metadata, and either remove the unsupported construct or model it with supported actions."
+		if strings.Contains(normalized, "evaluate javascript") {
+			description = "This TruClient JavaScript statement could not be decomposed into a supported browser action."
+			action = "Replace the JavaScript with browser_click, browser_fill, browser_wait, browser_swipe, or a supported assertion, then validate with browser replay."
+		}
+		suggestions = append(suggestions, scriptImportRepairSuggestion{
+			ID:          "unsupported:" + stableReviewKey(element),
+			Category:    "unsupported",
+			Severity:    "blocker",
+			Title:       "Replace unsupported " + element,
+			Description: description,
+			Action:      action,
+		})
+	}
+
+	if result.Script != nil && result.Script.Protocol == "browser" {
+		suggestions = append(suggestions, browserImportRepairSuggestions(result.Script)...)
+	}
+
+	if len(summary.RuntimeFiles) > 0 || summary.MappedRuntimeFile != "" {
+		suggestions = append(suggestions, scriptImportRepairSuggestion{
+			ID:          "runtime:review-preserved-settings",
+			Category:    "runtime",
+			Severity:    "info",
+			Title:       "Review preserved runtime settings",
+			Description: "The source archive included LoadRunner runtime metadata that may not all execute natively in Stormrunner yet.",
+			Action:      "Compare the preserved runtime file and project settings against the generated Stormrunner config before promoting the script.",
+		})
+	}
+
+	return suggestions
+}
+
+func browserImportRepairSuggestions(script *dsl.Script) []scriptImportRepairSuggestion {
+	suggestions := []scriptImportRepairSuggestion{
+		{
+			ID:          "browser:replay-validation",
+			Category:    "replay",
+			Severity:    "warning",
+			Title:       "Run browser replay before saving as production-ready",
+			Description: "Imported browser scripts depend on source selectors, waits, and device assumptions that should be verified against a live page.",
+			Action:      "Open the imported draft in the visual editor and run browser replay. Update selectors or waits for any failed action.",
+		},
+	}
+
+	for index, action := range script.Actions {
+		actionID := firstNonEmpty(action.Name, fmt.Sprintf("action_%d", index+1))
+		switch action.Type {
+		case "browser_click", "browser_fill", "browser_tap", "browser_long_press", "browser_swipe":
+			selector := firstNonEmpty(action.Selector, action.Target)
+			if selector != "" {
+				suggestions = append(suggestions, scriptImportRepairSuggestion{
+					ID:           fmt.Sprintf("selector:%d:%s", index+1, stableReviewKey(actionID)),
+					Category:     "selector",
+					Severity:     "warning",
+					Title:        "Validate selector for " + actionID,
+					Description:  "Imported selectors can be brittle when they came from recorder object metadata or decomposed JavaScript.",
+					Action:       "Prefer stable attributes such as data-testid, aria labels, or unique form names; confirm the selector with browser replay.",
+					TargetAction: actionID,
+				})
+			}
+		case "browser_wait":
+			waitType := ""
+			if action.WaitFor != nil {
+				waitType = action.WaitFor.Type
+			}
+			suggestions = append(suggestions, scriptImportRepairSuggestion{
+				ID:           fmt.Sprintf("wait:%d:%s", index+1, stableReviewKey(actionID)),
+				Category:     "wait",
+				Severity:     "info",
+				Title:        "Review wait condition for " + actionID,
+				Description:  "Imported waits may represent timing intent rather than the most stable page-ready condition.",
+				Action:       "Prefer visible selector or text waits over fixed durations when the application exposes a reliable readiness signal.",
+				TargetAction: firstNonEmpty(actionID, waitType),
+			})
+		}
+	}
+
+	return suggestions
+}
+
+func stableReviewKey(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
+		return "unknown"
+	}
+	var b strings.Builder
+	lastDash := false
+	for _, r := range value {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			lastDash = false
+			continue
+		}
+		if !lastDash {
+			b.WriteByte('-')
+			lastDash = true
+		}
+	}
+	return strings.Trim(b.String(), "-")
 }
 
 func buildLoadRunnerImportReviewSections(result *loadrunner.ConvertResult, unsupportedElements []string, summary loadRunnerImportSummary) []scriptImportReviewSection {

@@ -56,6 +56,7 @@ describe('JMeterImport', () => {
       unsupported_elements: [],
       assumptions: ['Flattened safely'],
       review_sections: [],
+      repair_suggestions: [],
       stats: {
         thread_groups: 1,
         samplers: 1,

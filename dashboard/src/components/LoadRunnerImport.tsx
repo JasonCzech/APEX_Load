@@ -79,6 +79,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
     ? result.unsupported_elements
     : metadataSummary.unsupportedFunctions
   const reviewSections = result?.review_sections || []
+  const repairSuggestions = result?.repair_suggestions || []
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault(); setDragOver(false)
@@ -243,6 +244,23 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
                     {section.items.length > 0 && (
                       <ul>{section.items.slice(0, 6).map((item, index) => <li key={`${section.key}-${index}`}>{item}</li>)}</ul>
                     )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {repairSuggestions.length > 0 && (
+              <div className="lr-warnings">
+                <h4>Repair Suggestions ({repairSuggestions.length})</h4>
+                {repairSuggestions.map(suggestion => (
+                  <div key={suggestion.id} className="lr-review-section">
+                    <div className="lr-review-section-header">
+                      <strong>{suggestion.title}</strong>
+                      <span>{suggestion.severity}</span>
+                    </div>
+                    {suggestion.target_action && <p>Action: {suggestion.target_action}</p>}
+                    {suggestion.description && <p>{suggestion.description}</p>}
+                    {suggestion.action && <ul><li>{suggestion.action}</li></ul>}
                   </div>
                 ))}
               </div>

@@ -25,6 +25,16 @@ export interface ImportReviewSection {
   items: string[]
 }
 
+export interface ImportRepairSuggestion {
+  id: string
+  category: string
+  severity: 'info' | 'warning' | 'blocker' | string
+  title: string
+  description: string
+  action: string
+  target_action?: string
+}
+
 export interface ScriptImportResult<
   TStats = Record<string, unknown>,
   TCorrelation = unknown,
@@ -39,6 +49,7 @@ export interface ScriptImportResult<
   unsupported_elements: string[]
   assumptions: string[]
   review_sections: ImportReviewSection[]
+  repair_suggestions: ImportRepairSuggestion[]
   correlations: TCorrelation[]
   stats: TStats
   summary: TSummary

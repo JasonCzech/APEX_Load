@@ -393,6 +393,7 @@ Current step support matrix:
 - `pkg/convert/loadrunner/zip.go` now checks the parsed `.usr` type before trying to parse C action files.
 - A `TruClient - Mobile Web` archive with `default.xml` now imports into a browser script with URL navigation, click, fill, wait, simple decomposed JavaScript fill/click, transaction-preserved action names, and mobile device settings from LoadRunner runtime configuration.
 - Import responses now include standardized `review_sections` for warnings, unsupported steps, preserved metadata, and browser-import assumptions so cleanup can be rendered consistently across API and dashboard flows.
+- Import responses now include deterministic `repair_suggestions` for unsupported constructs, selector validation, wait refinement, runtime-setting review, and replay validation.
 - A `TruClient` desktop archive returns an explicit out-of-scope error instead of failing later with `no parseable .c action files found`.
 
 ### Import Risks

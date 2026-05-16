@@ -28,6 +28,7 @@ describe('jmeterImportUtils', () => {
     expect(result.unsupported_elements).toEqual([])
     expect(result.assumptions).toEqual(['flattened'])
     expect(result.review_sections).toEqual([])
+    expect(result.repair_suggestions).toEqual([])
     expect(result.summary).toEqual({
       file_name: 'smoke.jmx',
       thread_group_count: 0,
@@ -55,6 +56,7 @@ describe('jmeterImportUtils', () => {
     })
     expect(result.correlations).toEqual([])
     expect(result.review_sections).toEqual([])
+    expect(result.repair_suggestions).toEqual([])
   })
 
   it('falls back to a single script entry and normalizes shared import fields', () => {
@@ -74,6 +76,18 @@ describe('jmeterImportUtils', () => {
         },
         { key: 123, title: null, items: ['ignored'] },
       ],
+      repair_suggestions: [
+        {
+          id: 'unsupported:jsr223',
+          category: 'unsupported',
+          severity: 'blocker',
+          title: 'Replace unsupported JSR223',
+          description: 'Review script code.',
+          action: 'Model with supported actions.',
+          target_action: 'Sampler 1',
+        },
+        { id: '', title: 'ignored' },
+      ],
     })
 
     expect(result.script).toEqual({ name: 'Converted_LR_Script' })
@@ -89,6 +103,17 @@ describe('jmeterImportUtils', () => {
         severity: 'blocker',
         summary: 'Review before saving.',
         items: ['JSR223'],
+      },
+    ])
+    expect(result.repair_suggestions).toEqual([
+      {
+        id: 'unsupported:jsr223',
+        category: 'unsupported',
+        severity: 'blocker',
+        title: 'Replace unsupported JSR223',
+        description: 'Review script code.',
+        action: 'Model with supported actions.',
+        target_action: 'Sampler 1',
       },
     ])
   })
