@@ -253,6 +253,9 @@ func TestCreateTestPreservesRuntimeSettingsAndGroups(t *testing.T) {
 			ThinkTime:        &dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 750},
 			LogLevel:         "extended",
 			AutoTransactions: "per_iteration",
+			BaseURL:          "https://pr-123.example.com",
+			Env:              map[string]string{"target_namespace": "pr-123"},
+			RedactionRules:   []engine.RedactionRule{{Name: "customer id", Pattern: `customer-[0-9]+`}},
 			ErrorHandling: &dsl.ErrorHandlingConfig{
 				ContinueOnError: true,
 				SnapshotOnError: true,
@@ -281,8 +284,17 @@ func TestCreateTestPreservesRuntimeSettingsAndGroups(t *testing.T) {
 	if test.RuntimeSettings.AutoTransactions != "per_iteration" {
 		t.Fatalf("expected auto transactions per_iteration, got %q", test.RuntimeSettings.AutoTransactions)
 	}
+	if test.RuntimeSettings.BaseURL != "https://pr-123.example.com" {
+		t.Fatalf("expected base_url override, got %q", test.RuntimeSettings.BaseURL)
+	}
+	if test.RuntimeSettings.Env["target_namespace"] != "pr-123" {
+		t.Fatalf("expected env override target_namespace=pr-123, got %#v", test.RuntimeSettings.Env)
+	}
 	if test.RuntimeSettings.ErrorHandling == nil || !test.RuntimeSettings.ErrorHandling.SnapshotOnError || !test.RuntimeSettings.ErrorHandling.ContinueOnError {
 		t.Fatal("expected continue_on_error and snapshot_on_error overrides to be preserved")
+	}
+	if len(test.RuntimeSettings.RedactionRules) != 1 || test.RuntimeSettings.RedactionRules[0].Pattern != `customer-[0-9]+` {
+		t.Fatalf("expected redaction rule to be preserved, got %#v", test.RuntimeSettings.RedactionRules)
 	}
 	if test.ScenarioMode != "goal_oriented" {
 		t.Fatalf("expected scenario mode goal_oriented, got %q", test.ScenarioMode)
@@ -338,25 +350,41 @@ func TestApplyRuntimeOverridesAppliesExtendedOverrideFields(t *testing.T) {
 	iterations := 4
 	script := &dsl.Script{
 		Config: dsl.ScriptConfig{
+			BaseURL:       "https://default.example.com",
 			RunLogic:      dsl.RunLogicConfig{Iterations: 1, AutoTransactions: "none"},
 			Pacing:        dsl.PacingConfig{Type: "none"},
 			ThinkTime:     dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 1000},
 			ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: false, SnapshotOnError: false},
 			Log:           dsl.LogConfig{Level: "standard"},
 		},
+		Actions: []dsl.Action{{
+			Name:    "runtime-step",
+			Type:    "GET",
+			Target:  "/namespaces/{{env.target_namespace}}/orders",
+			Body:    "namespace={{env.target_namespace}}",
+			Headers: map[string]string{"X-Namespace": "{{env.target_namespace}}"},
+		}},
 	}
 
-	applyRuntimeOverrides(script, &RuntimeSettingsOverride{
+	err := applyRuntimeOverrides(script, &RuntimeSettingsOverride{
 		Iterations:       &iterations,
 		Pacing:           &dsl.PacingConfig{Type: "fixed_interval", IntervalMs: 2500},
 		ThinkTime:        &dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 750},
 		LogLevel:         "extended",
 		AutoTransactions: "per_iteration",
+		BaseURL:          "https://pr-123.example.com",
+		Env:              map[string]string{"target_namespace": "pr-123"},
 		ErrorHandling:    &dsl.ErrorHandlingConfig{ContinueOnError: true, SnapshotOnError: true},
 	})
+	if err != nil {
+		t.Fatalf("applyRuntimeOverrides returned error: %v", err)
+	}
 
 	if script.Config.RunLogic.Iterations != 4 {
 		t.Fatalf("iterations = %d, want 4", script.Config.RunLogic.Iterations)
+	}
+	if script.Config.BaseURL != "https://pr-123.example.com" {
+		t.Fatalf("base_url = %q, want https://pr-123.example.com", script.Config.BaseURL)
 	}
 	if script.Config.Pacing.Type != "fixed_interval" || script.Config.Pacing.IntervalMs != 2500 {
 		t.Fatalf("pacing = %#v, want fixed_interval 2500ms", script.Config.Pacing)
@@ -372,6 +400,133 @@ func TestApplyRuntimeOverridesAppliesExtendedOverrideFields(t *testing.T) {
 	}
 	if !script.Config.ErrorHandling.ContinueOnError || !script.Config.ErrorHandling.SnapshotOnError {
 		t.Fatalf("error handling = %#v, want continue_on_error and snapshot_on_error", script.Config.ErrorHandling)
+	}
+	if len(script.Actions) != 1 {
+		t.Fatalf("expected 1 action, got %d", len(script.Actions))
+	}
+	if script.Actions[0].Target != "/namespaces/pr-123/orders" {
+		t.Fatalf("target = %q, want /namespaces/pr-123/orders", script.Actions[0].Target)
+	}
+	if script.Actions[0].Body != "namespace=pr-123" {
+		t.Fatalf("body = %q, want namespace=pr-123", script.Actions[0].Body)
+	}
+	if script.Actions[0].Headers["X-Namespace"] != "pr-123" {
+		t.Fatalf("header X-Namespace = %q, want pr-123", script.Actions[0].Headers["X-Namespace"])
+	}
+}
+
+func TestCompileManagedTestGroupLockedAppliesEphemeralTargetOverridesWithoutMutatingStoredScript(t *testing.T) {
+	hub := NewHub()
+	runner := NewTestRunner(1, hub, nil)
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-ephemeral-target",
+		Name:     "Ephemeral Target Script",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Config: dsl.ScriptConfig{
+			BaseURL: "https://default.example.com",
+		},
+		Actions: []dsl.Action{{
+			Name:    "runtime-step",
+			Type:    "GET",
+			Target:  "/namespaces/{{env.target_namespace}}/orders",
+			Body:    "namespace={{env.target_namespace}}",
+			Headers: map[string]string{"X-Namespace": "{{env.target_namespace}}"},
+		}},
+	})
+
+	_, engineGroup, err := runner.compileManagedTestGroupLocked(0, 1, CreateGroupEntry{
+		ScriptID: "script-ephemeral-target",
+		VUsers:   5,
+	}, &RuntimeSettingsOverride{
+		BaseURL: "https://pr-123.example.com",
+		Env:     map[string]string{"target_namespace": "pr-123"},
+	}, nil)
+	if err != nil {
+		t.Fatalf("compileManagedTestGroupLocked returned error: %v", err)
+	}
+
+	if engineGroup.Script == nil {
+		t.Fatal("expected engine group script")
+	}
+	if engineGroup.Script.Config.BaseURL != "https://pr-123.example.com" {
+		t.Fatalf("compiled base_url = %q, want https://pr-123.example.com", engineGroup.Script.Config.BaseURL)
+	}
+	if engineGroup.Script.Actions[0].Target != "/namespaces/pr-123/orders" {
+		t.Fatalf("compiled target = %q, want /namespaces/pr-123/orders", engineGroup.Script.Actions[0].Target)
+	}
+	if engineGroup.Script.Actions[0].Body != "namespace=pr-123" {
+		t.Fatalf("compiled body = %q, want namespace=pr-123", engineGroup.Script.Actions[0].Body)
+	}
+	if engineGroup.Script.Actions[0].Headers["X-Namespace"] != "pr-123" {
+		t.Fatalf("compiled header X-Namespace = %q, want pr-123", engineGroup.Script.Actions[0].Headers["X-Namespace"])
+	}
+
+	stored, ok := runner.GetScript("script-ephemeral-target")
+	if !ok {
+		t.Fatal("expected stored script to remain available")
+	}
+	if stored.Script.Config.BaseURL != "https://default.example.com" {
+		t.Fatalf("stored base_url = %q, want https://default.example.com", stored.Script.Config.BaseURL)
+	}
+	if stored.Script.Actions[0].Target != "/namespaces/{{env.target_namespace}}/orders" {
+		t.Fatalf("stored target = %q, want template to remain intact", stored.Script.Actions[0].Target)
+	}
+	if stored.Script.Actions[0].Body != "namespace={{env.target_namespace}}" {
+		t.Fatalf("stored body = %q, want template to remain intact", stored.Script.Actions[0].Body)
+	}
+	if stored.Script.Actions[0].Headers["X-Namespace"] != "{{env.target_namespace}}" {
+		t.Fatalf("stored header X-Namespace = %q, want template to remain intact", stored.Script.Actions[0].Headers["X-Namespace"])
+	}
+}
+
+func TestCompileManagedTestGroupLockedBuildsCustomRedactionConfig(t *testing.T) {
+	hub := NewHub()
+	runner := NewTestRunner(1, hub, nil)
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-redaction-rules",
+		Name:     "Redaction Rule Script",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Actions:  []dsl.Action{{Name: "runtime-step", Type: "GET", Target: "/orders"}},
+	})
+
+	_, engineGroup, err := runner.compileManagedTestGroupLocked(0, 1, CreateGroupEntry{
+		ScriptID: "script-redaction-rules",
+		VUsers:   2,
+	}, &RuntimeSettingsOverride{
+		RedactionRules: []engine.RedactionRule{{Name: "customer id", Pattern: `customer-[0-9]+`}},
+	}, nil)
+	if err != nil {
+		t.Fatalf("compileManagedTestGroupLocked returned error: %v", err)
+	}
+	if engineGroup.RedactionConfig == nil {
+		t.Fatal("expected engine redaction config")
+	}
+	if got := engineGroup.RedactionConfig.ScrubText(`customer-1234 ok`); got != `[REDACTED] ok` {
+		t.Fatalf("scrubbed text = %q, want custom rule applied", got)
+	}
+}
+
+func TestCompileManagedTestGroupLockedRejectsInvalidRedactionRule(t *testing.T) {
+	hub := NewHub()
+	runner := NewTestRunner(1, hub, nil)
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-invalid-redaction-rules",
+		Name:     "Invalid Redaction Rule Script",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Actions:  []dsl.Action{{Name: "runtime-step", Type: "GET", Target: "/orders"}},
+	})
+
+	_, _, err := runner.compileManagedTestGroupLocked(0, 1, CreateGroupEntry{
+		ScriptID: "script-invalid-redaction-rules",
+		VUsers:   2,
+	}, &RuntimeSettingsOverride{
+		RedactionRules: []engine.RedactionRule{{Name: "broken", Pattern: `[`}},
+	}, nil)
+	if err == nil {
+		t.Fatal("expected invalid redaction rule to fail")
 	}
 }
 
@@ -470,32 +625,35 @@ func TestBuildLiveMetricsFromSnapshot(t *testing.T) {
 	resources := &engine.SystemResources{CPUProcessPct: 12.5, MemProcessMb: 256}
 
 	live := buildLiveMetricsFromSnapshot(engine.MetricsSnapshot{
-		Timestamp:    timestamp,
-		ActiveVUsers: 18,
-		TPS:          24.5,
-		Transactions: 40,
-		Errors:       5,
-		AvgDuration:  250 * time.Millisecond,
-		P50:          200 * time.Millisecond,
-		P90:          350 * time.Millisecond,
-		P95:          400 * time.Millisecond,
-		P99:          600 * time.Millisecond,
+		Timestamp:              timestamp,
+		ActiveVUsers:           18,
+		TPS:                    24.5,
+		TargetTPS:              30,
+		ThroughputGapPct:       18.3333333333,
+		ThroughputTargetMissed: true,
+		Transactions:           40,
+		Errors:                 5,
+		AvgDuration:            250 * time.Millisecond,
+		P50:                    200 * time.Millisecond,
+		P90:                    350 * time.Millisecond,
+		P95:                    400 * time.Millisecond,
+		P99:                    600 * time.Millisecond,
 		ByAction: map[string]*engine.ActionMetrics{
 			"login": {
-				Name:         "login",
-				DependencyType: "http",
+				Name:             "login",
+				DependencyType:   "http",
 				DependencyTarget: "api.example.test",
-				AvgDNSMs:     8,
-				AvgConnectMs: 14,
-				AvgTLSMs:     6,
-				AvgTTFBMs:    74,
-				Count:       10,
-				Errors:      1,
-				AvgDuration: 150 * time.Millisecond,
-				P50:         120 * time.Millisecond,
-				P90:         240 * time.Millisecond,
-				P95:         320 * time.Millisecond,
-				P99:         500 * time.Millisecond,
+				AvgDNSMs:         8,
+				AvgConnectMs:     14,
+				AvgTLSMs:         6,
+				AvgTTFBMs:        74,
+				Count:            10,
+				Errors:           1,
+				AvgDuration:      150 * time.Millisecond,
+				P50:              120 * time.Millisecond,
+				P90:              240 * time.Millisecond,
+				P95:              320 * time.Millisecond,
+				P99:              500 * time.Millisecond,
 			},
 		},
 		ByDependencyTarget: map[string]*engine.ActionMetrics{
@@ -537,14 +695,14 @@ func TestBuildLiveMetricsFromSnapshot(t *testing.T) {
 					ResponsePayloadHistogram: map[string]int64{
 						"4-16 KB": 8,
 					},
-					AvgMessageLatencyMs:   42,
-					MaxMessageLatencyMs:   61,
-					MessagesSent:          8,
-					MessagesReceived:      6,
-					AvgMessagesSentPerSec: 11,
+					AvgMessageLatencyMs:       42,
+					MaxMessageLatencyMs:       61,
+					MessagesSent:              8,
+					MessagesReceived:          6,
+					AvgMessagesSentPerSec:     11,
 					AvgMessagesReceivedPerSec: 8.5,
-					AvgConsumerLagMs:      12,
-					MaxConsumerLagMs:      18,
+					AvgConsumerLagMs:          12,
+					MaxConsumerLagMs:          18,
 					RequestSizeClasses: map[string]int64{
 						"small": 6,
 					},
@@ -556,13 +714,16 @@ func TestBuildLiveMetricsFromSnapshot(t *testing.T) {
 		},
 		ByGroup: map[string]*engine.GroupMetrics{
 			"buyers": {
-				Transactions: 25,
-				Errors:       3,
-				TPS:          15.5,
-				AvgDuration:  300 * time.Millisecond,
-				P50:          210 * time.Millisecond,
-				P90:          420 * time.Millisecond,
-				P99:          900 * time.Millisecond,
+				Transactions:           25,
+				Errors:                 3,
+				TPS:                    15.5,
+				TargetTPS:              20,
+				ThroughputGapPct:       22.5,
+				ThroughputTargetMissed: true,
+				AvgDuration:            300 * time.Millisecond,
+				P50:                    210 * time.Millisecond,
+				P90:                    420 * time.Millisecond,
+				P99:                    900 * time.Millisecond,
 			},
 		},
 		Browser: &engine.BrowserMetricsSummary{
@@ -599,6 +760,12 @@ func TestBuildLiveMetricsFromSnapshot(t *testing.T) {
 	}
 	if live.ActiveVUsers != 18 {
 		t.Fatalf("expected 18 active vusers, got %d", live.ActiveVUsers)
+	}
+	if live.TargetTPS != 30 {
+		t.Fatalf("expected target TPS 30, got %v", live.TargetTPS)
+	}
+	if !live.ThroughputTargetMissed {
+		t.Fatal("expected throughput target miss to be mapped")
 	}
 	if live.AvgResponseMs != 250 {
 		t.Fatalf("expected avg response 250ms, got %v", live.AvgResponseMs)
@@ -670,6 +837,12 @@ func TestBuildLiveMetricsFromSnapshot(t *testing.T) {
 	if buyers.VUsers != 12 {
 		t.Fatalf("expected buyers vusers 12, got %d", buyers.VUsers)
 	}
+	if buyers.TargetTPS != 20 {
+		t.Fatalf("expected buyers target TPS 20, got %v", buyers.TargetTPS)
+	}
+	if !buyers.ThroughputTargetMissed {
+		t.Fatal("expected buyers throughput target miss to be mapped")
+	}
 	if buyers.Transactions != 25 || buyers.Errors != 3 {
 		t.Fatalf("unexpected buyers counts: %+v", buyers)
 	}
@@ -686,9 +859,13 @@ func TestBuildThresholdAlerts(t *testing.T) {
 	timestamp := time.Date(2026, time.May, 10, 9, 0, 0, 0, time.UTC)
 
 	alerts := buildThresholdAlerts(&ManagedTest{ID: "test-1", Name: "Checkout"}, &LiveMetrics{
-		Timestamp: timestamp,
-		P99Ms:     900,
-		ErrorPct:  4.2,
+		Timestamp:              timestamp,
+		P99Ms:                  900,
+		ErrorPct:               4.2,
+		TPS:                    180,
+		TargetTPS:              250,
+		ThroughputGapPct:       28,
+		ThroughputTargetMissed: true,
 		Transactions: map[string]*TxMetrics{
 			"POST /checkout": {
 				Name:             "POST /checkout",
@@ -708,8 +885,8 @@ func TestBuildThresholdAlerts(t *testing.T) {
 		MaxAvgTransferMs:         &transferThreshold,
 	})
 
-	if len(alerts) != 4 {
-		t.Fatalf("expected 4 threshold alerts, got %d", len(alerts))
+	if len(alerts) != 5 {
+		t.Fatalf("expected 5 threshold alerts, got %d", len(alerts))
 	}
 
 	alertsByMetric := make(map[string]map[string]any, len(alerts))
@@ -735,6 +912,16 @@ func TestBuildThresholdAlerts(t *testing.T) {
 	}
 	if errorAlert["action"] != "stop_requested" {
 		t.Fatalf("expected stop_requested action, got %#v", errorAlert["action"])
+	}
+	throughputAlert := alertsByMetric["throughput_gap_pct"]
+	if throughputAlert["threshold"] != 250.0 {
+		t.Fatalf("expected throughput target 250, got %#v", throughputAlert["threshold"])
+	}
+	if throughputAlert["value"] != 180.0 {
+		t.Fatalf("expected actual throughput 180, got %#v", throughputAlert["value"])
+	}
+	if throughputAlert["gap_pct"] != 28.0 {
+		t.Fatalf("expected throughput gap 28, got %#v", throughputAlert["gap_pct"])
 	}
 	serverAlert := alertsByMetric["avg_server_processing_ms"]
 	if serverAlert["threshold"] != serverThreshold {
@@ -1028,10 +1215,10 @@ func TestPublishLiveMetricsBroadcastsJMSBrokerPressureDiagnostic(t *testing.T) {
 				AvgMs:            320,
 				P99Ms:            540,
 				ServerTelemetry: &ServerTelemetrySummary{
-					Samples:                  6,
-					AvgMessageLatencyMs:      60,
-					AvgConsumerLagMs:         280,
-					AvgMessagesSentPerSec:    30,
+					Samples:                   6,
+					AvgMessageLatencyMs:       60,
+					AvgConsumerLagMs:          280,
+					AvgMessagesSentPerSec:     30,
 					AvgMessagesReceivedPerSec: 12,
 				},
 			},

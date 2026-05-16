@@ -191,6 +191,80 @@ func TestHandleReplayScriptUsesDraftOverride(t *testing.T) {
 	}
 }
 
+func TestHandleReplayScriptAppliesCustomRedactionRules(t *testing.T) {
+	protocolName := registerReplayAPIProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+		return &protocol.Result{
+			Success:      true,
+			StatusCode:   200,
+			ResponseBody: `{"customer":"customer-1234"}`,
+			Snapshot: &protocol.ErrorSnapshot{
+				RequestURL:     "https://example.test/customers/customer-1234",
+				RequestHeaders: map[string]string{"X-Customer": "customer-1234"},
+				RequestBody:    "customer=customer-1234",
+				ResponseBody:   `{"customer":"customer-1234"}`,
+			},
+		}, nil
+	})
+
+	server := NewServer(ServerConfig{})
+	stored := server.runner.StoreScript(&dsl.Script{
+		Name:     "Replayable Redacted",
+		Protocol: protocolName,
+		Version:  "1.0.0",
+		Config:   dsl.ScriptConfig{BaseURL: "https://example.com"},
+		Actions: []dsl.Action{{
+			Name:    "lookup",
+			Type:    "GET",
+			Target:  "/customers/customer-1234",
+			Headers: map[string]string{"X-Customer": "customer-1234"},
+			Body:    "customer=customer-1234",
+		}},
+	})
+
+	body, _ := json.Marshal(map[string]any{
+		"redaction_rules": []map[string]any{{"name": "customer id", "pattern": `customer-[0-9]+`}},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/"+stored.ID+"/replay", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var payload struct {
+		Report struct {
+			Events []struct {
+				Target   string                  `json:"target"`
+				Headers  map[string]string       `json:"headers"`
+				Body     string                  `json:"body"`
+				Snapshot *protocol.ErrorSnapshot `json:"snapshot"`
+			} `json:"events"`
+		} `json:"report"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if len(payload.Report.Events) != 1 {
+		t.Fatalf("event count = %d, want 1", len(payload.Report.Events))
+	}
+	event := payload.Report.Events[0]
+	if event.Target != "/customers/[REDACTED]" {
+		t.Fatalf("target = %q, want /customers/[REDACTED]", event.Target)
+	}
+	if event.Headers["X-Customer"] != "[REDACTED]" {
+		t.Fatalf("header X-Customer = %q, want [REDACTED]", event.Headers["X-Customer"])
+	}
+	if event.Body != "customer=[REDACTED]" {
+		t.Fatalf("body = %q, want customer=[REDACTED]", event.Body)
+	}
+	if event.Snapshot == nil || event.Snapshot.ResponseBody != `{"customer":"[REDACTED]"}` {
+		t.Fatalf("snapshot = %#v, want redacted response body", event.Snapshot)
+	}
+}
+
 func TestHandleReplayDraftScriptRunsUnsavedDefinition(t *testing.T) {
 	protocolName := registerReplayAPIProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
 		if action.Target != "/unsaved" {

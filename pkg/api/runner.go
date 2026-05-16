@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -92,34 +93,34 @@ type TestRunner struct {
 }
 
 type ManagedTest struct {
-	ID               string                       `json:"id"`
-	Name             string                       `json:"name"`
-	Status           string                       `json:"status"`
-	ApplicationID    string                       `json:"application_id,omitempty"`
-	ReleaseID        string                       `json:"release_id,omitempty"`
-	ScenarioID       string                       `json:"scenario_id,omitempty"`
-	ProjectID        string                       `json:"project_id,omitempty"`
-	FolderID         *string                      `json:"folder_id,omitempty"`
-	Groups           []TestGroup                  `json:"groups"`
-	CapacityAdvisory *CapacityAdvisory            `json:"capacity_advisory,omitempty"`
-	Assignment       *GeneratorAssignmentSettings `json:"assignment,omitempty"`
-	ScenarioMode     string                       `json:"scenario_mode,omitempty"`
-	ScriptShakeout   bool                         `json:"script_shakeout,omitempty"`
-	ResourceBaseline bool                         `json:"resource_baseline,omitempty"`
-	StartDelay       string                       `json:"start_delay,omitempty"`
-	GoalConfig       *GoalConfig                  `json:"goal_config,omitempty"`
-	RuntimeSettings  *RuntimeSettingsOverride     `json:"runtime_settings,omitempty"`
-	TotalVUsers      int                          `json:"total_vusers"`
-	Duration         time.Duration                `json:"duration_ns"`
-	DurationStr      string                       `json:"duration"`
-	CreatedAt        time.Time                    `json:"created_at"`
-	StartedAt        *time.Time                   `json:"started_at,omitempty"`
-	EndedAt          *time.Time                   `json:"ended_at,omitempty"`
-	LiveMetrics      *LiveMetrics                 `json:"live_metrics,omitempty"`
-	History          []*LiveMetrics               `json:"history,omitempty"`
-	ComparisonBaseline *RunComparisonBaseline     `json:"comparison_baseline,omitempty"`
-	Archive          *storage.RunArchiveRecord    `json:"archive,omitempty"`
-	Error            string                       `json:"error,omitempty"`
+	ID                 string                       `json:"id"`
+	Name               string                       `json:"name"`
+	Status             string                       `json:"status"`
+	ApplicationID      string                       `json:"application_id,omitempty"`
+	ReleaseID          string                       `json:"release_id,omitempty"`
+	ScenarioID         string                       `json:"scenario_id,omitempty"`
+	ProjectID          string                       `json:"project_id,omitempty"`
+	FolderID           *string                      `json:"folder_id,omitempty"`
+	Groups             []TestGroup                  `json:"groups"`
+	CapacityAdvisory   *CapacityAdvisory            `json:"capacity_advisory,omitempty"`
+	Assignment         *GeneratorAssignmentSettings `json:"assignment,omitempty"`
+	ScenarioMode       string                       `json:"scenario_mode,omitempty"`
+	ScriptShakeout     bool                         `json:"script_shakeout,omitempty"`
+	ResourceBaseline   bool                         `json:"resource_baseline,omitempty"`
+	StartDelay         string                       `json:"start_delay,omitempty"`
+	GoalConfig         *GoalConfig                  `json:"goal_config,omitempty"`
+	RuntimeSettings    *RuntimeSettingsOverride     `json:"runtime_settings,omitempty"`
+	TotalVUsers        int                          `json:"total_vusers"`
+	Duration           time.Duration                `json:"duration_ns"`
+	DurationStr        string                       `json:"duration"`
+	CreatedAt          time.Time                    `json:"created_at"`
+	StartedAt          *time.Time                   `json:"started_at,omitempty"`
+	EndedAt            *time.Time                   `json:"ended_at,omitempty"`
+	LiveMetrics        *LiveMetrics                 `json:"live_metrics,omitempty"`
+	History            []*LiveMetrics               `json:"history,omitempty"`
+	ComparisonBaseline *RunComparisonBaseline       `json:"comparison_baseline,omitempty"`
+	Archive            *storage.RunArchiveRecord    `json:"archive,omitempty"`
+	Error              string                       `json:"error,omitempty"`
 
 	// deprecated single-script fields kept for backwards compat in JSON
 	ScriptID   string `json:"script_id,omitempty"`
@@ -157,27 +158,30 @@ type TestGroup struct {
 }
 
 type LiveMetrics struct {
-	Timestamp       time.Time                            `json:"timestamp"`
-	ActiveVUsers    int64                                `json:"active_vusers"`
-	TPS             float64                              `json:"tps"`
-	AvgResponseMs   float64                              `json:"avg_response_ms"`
-	ErrorPct        float64                              `json:"error_pct"`
-	TotalTx         int64                                `json:"total_transactions"`
-	TotalErrors     int64                                `json:"total_errors"`
-	P50Ms           float64                              `json:"p50_ms"`
-	P90Ms           float64                              `json:"p90_ms"`
-	P95Ms           float64                              `json:"p95_ms"`
-	P99Ms           float64                              `json:"p99_ms"`
-	Transactions    map[string]*TxMetrics                `json:"transactions,omitempty"`
-	DependencyHealth map[string]*TxMetrics               `json:"dependency_health,omitempty"`
-	SOAPOperations  map[string]*TxMetrics                `json:"soap_operations,omitempty"`
-	GroupMetrics    map[string]*GroupLiveMetrics         `json:"groups,omitempty"`
-	Browser         *BrowserLiveMetrics                  `json:"browser,omitempty"`
-	BrowserByDevice map[string]*BrowserDeviceLiveMetrics `json:"browser_by_device,omitempty"`
-	GoalStatus      *GoalStatus                          `json:"goal_status,omitempty"`
-	Telemetry       *TelemetryHealth                     `json:"telemetry,omitempty"`
-	Resources       *engine.SystemResources              `json:"resources,omitempty"`
-	Latency         *NetworkLatency                      `json:"latency,omitempty"`
+	Timestamp              time.Time                            `json:"timestamp"`
+	ActiveVUsers           int64                                `json:"active_vusers"`
+	TPS                    float64                              `json:"tps"`
+	TargetTPS              float64                              `json:"target_tps,omitempty"`
+	ThroughputGapPct       float64                              `json:"throughput_gap_pct,omitempty"`
+	ThroughputTargetMissed bool                                 `json:"throughput_target_missed,omitempty"`
+	AvgResponseMs          float64                              `json:"avg_response_ms"`
+	ErrorPct               float64                              `json:"error_pct"`
+	TotalTx                int64                                `json:"total_transactions"`
+	TotalErrors            int64                                `json:"total_errors"`
+	P50Ms                  float64                              `json:"p50_ms"`
+	P90Ms                  float64                              `json:"p90_ms"`
+	P95Ms                  float64                              `json:"p95_ms"`
+	P99Ms                  float64                              `json:"p99_ms"`
+	Transactions           map[string]*TxMetrics                `json:"transactions,omitempty"`
+	DependencyHealth       map[string]*TxMetrics                `json:"dependency_health,omitempty"`
+	SOAPOperations         map[string]*TxMetrics                `json:"soap_operations,omitempty"`
+	GroupMetrics           map[string]*GroupLiveMetrics         `json:"groups,omitempty"`
+	Browser                *BrowserLiveMetrics                  `json:"browser,omitempty"`
+	BrowserByDevice        map[string]*BrowserDeviceLiveMetrics `json:"browser_by_device,omitempty"`
+	GoalStatus             *GoalStatus                          `json:"goal_status,omitempty"`
+	Telemetry              *TelemetryHealth                     `json:"telemetry,omitempty"`
+	Resources              *engine.SystemResources              `json:"resources,omitempty"`
+	Latency                *NetworkLatency                      `json:"latency,omitempty"`
 }
 
 type BrowserLiveMetrics struct {
@@ -207,25 +211,25 @@ type BrowserDeviceLiveMetrics struct {
 }
 
 type ServerTelemetrySummary struct {
-	Samples               int64   `json:"samples"`
-	AvgServerProcessingMs float64 `json:"avg_server_processing_ms,omitempty"`
-	AvgTransferMs         float64 `json:"avg_transfer_ms,omitempty"`
-	AvgRequestPayloadKB   float64 `json:"avg_request_payload_kb,omitempty"`
-	AvgResponsePayloadKB  float64 `json:"avg_response_payload_kb,omitempty"`
-	RequestPayloadHistogram map[string]int64 `json:"request_payload_histogram,omitempty"`
-	ResponsePayloadHistogram map[string]int64 `json:"response_payload_histogram,omitempty"`
-	AvgMessageLatencyMs   float64 `json:"avg_message_latency_ms,omitempty"`
-	MaxMessageLatencyMs   float64 `json:"max_message_latency_ms,omitempty"`
-	MessagesSent          int64   `json:"messages_sent,omitempty"`
-	MessagesReceived      int64   `json:"messages_received,omitempty"`
-	AvgMessagesSentPerSec float64 `json:"avg_messages_sent_per_sec,omitempty"`
-	AvgMessagesReceivedPerSec float64 `json:"avg_messages_received_per_sec,omitempty"`
-	AvgConsumerLagMs      float64 `json:"avg_consumer_lag_ms,omitempty"`
-	MaxConsumerLagMs      float64 `json:"max_consumer_lag_ms,omitempty"`
-	RequestSizeClasses    map[string]int64 `json:"request_size_classes,omitempty"`
-	ResponseSizeClasses   map[string]int64 `json:"response_size_classes,omitempty"`
-	ConnectionReusedCount int64   `json:"connection_reused_count,omitempty"`
-	ConnectionReusedPct   float64 `json:"connection_reused_pct,omitempty"`
+	Samples                   int64            `json:"samples"`
+	AvgServerProcessingMs     float64          `json:"avg_server_processing_ms,omitempty"`
+	AvgTransferMs             float64          `json:"avg_transfer_ms,omitempty"`
+	AvgRequestPayloadKB       float64          `json:"avg_request_payload_kb,omitempty"`
+	AvgResponsePayloadKB      float64          `json:"avg_response_payload_kb,omitempty"`
+	RequestPayloadHistogram   map[string]int64 `json:"request_payload_histogram,omitempty"`
+	ResponsePayloadHistogram  map[string]int64 `json:"response_payload_histogram,omitempty"`
+	AvgMessageLatencyMs       float64          `json:"avg_message_latency_ms,omitempty"`
+	MaxMessageLatencyMs       float64          `json:"max_message_latency_ms,omitempty"`
+	MessagesSent              int64            `json:"messages_sent,omitempty"`
+	MessagesReceived          int64            `json:"messages_received,omitempty"`
+	AvgMessagesSentPerSec     float64          `json:"avg_messages_sent_per_sec,omitempty"`
+	AvgMessagesReceivedPerSec float64          `json:"avg_messages_received_per_sec,omitempty"`
+	AvgConsumerLagMs          float64          `json:"avg_consumer_lag_ms,omitempty"`
+	MaxConsumerLagMs          float64          `json:"max_consumer_lag_ms,omitempty"`
+	RequestSizeClasses        map[string]int64 `json:"request_size_classes,omitempty"`
+	ResponseSizeClasses       map[string]int64 `json:"response_size_classes,omitempty"`
+	ConnectionReusedCount     int64            `json:"connection_reused_count,omitempty"`
+	ConnectionReusedPct       float64          `json:"connection_reused_pct,omitempty"`
 }
 
 type TelemetryHealth struct {
@@ -259,33 +263,33 @@ type LatencyTarget struct {
 }
 
 type GoalStatus struct {
-	Mode                 string     `json:"mode"`
-	CurrentTPS           float64    `json:"current_tps"`
-	CurrentTotalVUsers   int        `json:"current_total_vusers"`
-	TargetAverageTPS     *float64   `json:"target_average_tps,omitempty"`
-	MaxErrorCount        *int       `json:"max_error_count,omitempty"`
-	MinVUsers            *int       `json:"min_vusers,omitempty"`
-	MaxVUsers            *int       `json:"max_vusers,omitempty"`
-	SuggestedTotalVUsers int        `json:"suggested_total_vusers,omitempty"`
-	LastScaleDirection   string     `json:"last_scale_direction,omitempty"`
-	LastScaleReason      string     `json:"last_scale_reason,omitempty"`
-	LastScaleAt          *time.Time `json:"last_scale_at,omitempty"`
-	LatencyBreached      bool       `json:"latency_breached,omitempty"`
-	ErrorBreached        bool       `json:"error_breached,omitempty"`
-	ServerProcessingBreached bool   `json:"server_processing_breached,omitempty"`
-	TransferBreached     bool       `json:"transfer_breached,omitempty"`
-	ErrorCountBreached   bool       `json:"error_count_breached,omitempty"`
-	BreachActive         bool       `json:"breach_active,omitempty"`
-	BreachDurationSec    int        `json:"breach_duration_sec,omitempty"`
-	StopTriggered        bool       `json:"stop_triggered,omitempty"`
-	StopReason           string     `json:"stop_reason,omitempty"`
+	Mode                     string     `json:"mode"`
+	CurrentTPS               float64    `json:"current_tps"`
+	CurrentTotalVUsers       int        `json:"current_total_vusers"`
+	TargetAverageTPS         *float64   `json:"target_average_tps,omitempty"`
+	MaxErrorCount            *int       `json:"max_error_count,omitempty"`
+	MinVUsers                *int       `json:"min_vusers,omitempty"`
+	MaxVUsers                *int       `json:"max_vusers,omitempty"`
+	SuggestedTotalVUsers     int        `json:"suggested_total_vusers,omitempty"`
+	LastScaleDirection       string     `json:"last_scale_direction,omitempty"`
+	LastScaleReason          string     `json:"last_scale_reason,omitempty"`
+	LastScaleAt              *time.Time `json:"last_scale_at,omitempty"`
+	LatencyBreached          bool       `json:"latency_breached,omitempty"`
+	ErrorBreached            bool       `json:"error_breached,omitempty"`
+	ServerProcessingBreached bool       `json:"server_processing_breached,omitempty"`
+	TransferBreached         bool       `json:"transfer_breached,omitempty"`
+	ErrorCountBreached       bool       `json:"error_count_breached,omitempty"`
+	BreachActive             bool       `json:"breach_active,omitempty"`
+	BreachDurationSec        int        `json:"breach_duration_sec,omitempty"`
+	StopTriggered            bool       `json:"stop_triggered,omitempty"`
+	StopReason               string     `json:"stop_reason,omitempty"`
 }
 
 type RunComparisonBaseline struct {
-	SourceTestID   string                `json:"source_test_id"`
-	SourceTestName string                `json:"source_test_name"`
-	CompletedAt    time.Time             `json:"completed_at,omitempty"`
-	Transactions   map[string]*TxMetrics `json:"transactions,omitempty"`
+	SourceTestID     string                `json:"source_test_id"`
+	SourceTestName   string                `json:"source_test_name"`
+	CompletedAt      time.Time             `json:"completed_at,omitempty"`
+	Transactions     map[string]*TxMetrics `json:"transactions,omitempty"`
 	DependencyHealth map[string]*TxMetrics `json:"dependency_health,omitempty"`
 }
 
@@ -298,20 +302,20 @@ type TelemetryDiagnostic struct {
 }
 
 type DiagnosticSample struct {
-	Issue            string   `json:"issue"`
-	Transaction      string   `json:"transaction"`
-	DependencyType   string   `json:"dependency_type,omitempty"`
-	DependencyTarget string   `json:"dependency_target,omitempty"`
-	CorrelationIDs   []string `json:"correlation_ids,omitempty"`
-	Count            int64    `json:"count,omitempty"`
-	Errors           int64    `json:"errors,omitempty"`
-	ErrorPct         float64  `json:"error_pct,omitempty"`
-	AvgMs            float64  `json:"avg_ms,omitempty"`
-	P99Ms            float64  `json:"p99_ms,omitempty"`
-	AvgMessageLatencyMs       float64 `json:"avg_message_latency_ms,omitempty"`
-	AvgConsumerLagMs          float64 `json:"avg_consumer_lag_ms,omitempty"`
-	AvgMessagesSentPerSec     float64 `json:"avg_messages_sent_per_sec,omitempty"`
-	AvgMessagesReceivedPerSec float64 `json:"avg_messages_received_per_sec,omitempty"`
+	Issue                     string   `json:"issue"`
+	Transaction               string   `json:"transaction"`
+	DependencyType            string   `json:"dependency_type,omitempty"`
+	DependencyTarget          string   `json:"dependency_target,omitempty"`
+	CorrelationIDs            []string `json:"correlation_ids,omitempty"`
+	Count                     int64    `json:"count,omitempty"`
+	Errors                    int64    `json:"errors,omitempty"`
+	ErrorPct                  float64  `json:"error_pct,omitempty"`
+	AvgMs                     float64  `json:"avg_ms,omitempty"`
+	P99Ms                     float64  `json:"p99_ms,omitempty"`
+	AvgMessageLatencyMs       float64  `json:"avg_message_latency_ms,omitempty"`
+	AvgConsumerLagMs          float64  `json:"avg_consumer_lag_ms,omitempty"`
+	AvgMessagesSentPerSec     float64  `json:"avg_messages_sent_per_sec,omitempty"`
+	AvgMessagesReceivedPerSec float64  `json:"avg_messages_received_per_sec,omitempty"`
 }
 
 type goalControllerState struct {
@@ -337,35 +341,38 @@ type goalControllerUpdate struct {
 }
 
 type TxMetrics struct {
-	Name             string   `json:"name"`
-	DependencyType   string   `json:"dependency_type,omitempty"`
-	DependencyTarget string   `json:"dependency_target,omitempty"`
+	Name             string                  `json:"name"`
+	DependencyType   string                  `json:"dependency_type,omitempty"`
+	DependencyTarget string                  `json:"dependency_target,omitempty"`
 	ServerTelemetry  *ServerTelemetrySummary `json:"server_telemetry,omitempty"`
-	AvgDNSMs         float64  `json:"avg_dns_ms,omitempty"`
-	AvgConnectMs     float64  `json:"avg_connect_ms,omitempty"`
-	AvgTLSMs         float64  `json:"avg_tls_ms,omitempty"`
-	AvgTTFBMs        float64  `json:"avg_ttfb_ms,omitempty"`
-	CorrelationIDs   []string `json:"correlation_ids,omitempty"`
-	CorrelationCount int64    `json:"correlation_count,omitempty"`
-	Count            int64    `json:"count"`
-	Errors           int64    `json:"errors"`
-	AvgMs            float64  `json:"avg_ms"`
-	P50Ms            float64  `json:"p50_ms"`
-	P90Ms            float64  `json:"p90_ms"`
-	P95Ms            float64  `json:"p95_ms,omitempty"`
-	P99Ms            float64  `json:"p99_ms"`
+	AvgDNSMs         float64                 `json:"avg_dns_ms,omitempty"`
+	AvgConnectMs     float64                 `json:"avg_connect_ms,omitempty"`
+	AvgTLSMs         float64                 `json:"avg_tls_ms,omitempty"`
+	AvgTTFBMs        float64                 `json:"avg_ttfb_ms,omitempty"`
+	CorrelationIDs   []string                `json:"correlation_ids,omitempty"`
+	CorrelationCount int64                   `json:"correlation_count,omitempty"`
+	Count            int64                   `json:"count"`
+	Errors           int64                   `json:"errors"`
+	AvgMs            float64                 `json:"avg_ms"`
+	P50Ms            float64                 `json:"p50_ms"`
+	P90Ms            float64                 `json:"p90_ms"`
+	P95Ms            float64                 `json:"p95_ms,omitempty"`
+	P99Ms            float64                 `json:"p99_ms"`
 }
 
 type GroupLiveMetrics struct {
-	Name          string  `json:"name"`
-	VUsers        int     `json:"vusers"`
-	Transactions  int64   `json:"transactions"`
-	Errors        int64   `json:"errors"`
-	TPS           float64 `json:"tps"`
-	AvgResponseMs float64 `json:"avg_response_ms"`
-	P50Ms         float64 `json:"p50_ms"`
-	P90Ms         float64 `json:"p90_ms"`
-	P99Ms         float64 `json:"p99_ms"`
+	Name                   string  `json:"name"`
+	VUsers                 int     `json:"vusers"`
+	Transactions           int64   `json:"transactions"`
+	Errors                 int64   `json:"errors"`
+	TPS                    float64 `json:"tps"`
+	TargetTPS              float64 `json:"target_tps,omitempty"`
+	ThroughputGapPct       float64 `json:"throughput_gap_pct,omitempty"`
+	ThroughputTargetMissed bool    `json:"throughput_target_missed,omitempty"`
+	AvgResponseMs          float64 `json:"avg_response_ms"`
+	P50Ms                  float64 `json:"p50_ms"`
+	P90Ms                  float64 `json:"p90_ms"`
+	P99Ms                  float64 `json:"p99_ms"`
 }
 
 type StoredScript struct {
@@ -428,6 +435,8 @@ const (
 	jmsBrokerPressureLagMultiplier       = 2.0
 	jmsBrokerPressureSendRecvRatio       = 1.5
 )
+
+var runtimeOverrideEnvPattern = regexp.MustCompile(`\{\{\s*env\.([^{}\s]+)\s*\}\}`)
 
 type GeneratorAssignmentSettings struct {
 	Mode            string   `json:"mode,omitempty"`
@@ -1237,17 +1246,17 @@ type CreateScenarioRequest struct {
 }
 
 type GoalConfig struct {
-	TargetAverageTPS *float64 `json:"target_average_tps,omitempty"`
-	P95LatencyMs     *float64 `json:"p95_latency_ms,omitempty"`
-	MaxErrorPct      *float64 `json:"max_error_pct,omitempty"`
+	TargetAverageTPS         *float64 `json:"target_average_tps,omitempty"`
+	P95LatencyMs             *float64 `json:"p95_latency_ms,omitempty"`
+	MaxErrorPct              *float64 `json:"max_error_pct,omitempty"`
 	MaxAvgServerProcessingMs *float64 `json:"max_avg_server_processing_ms,omitempty"`
-	MaxAvgTransferMs *float64 `json:"max_avg_transfer_ms,omitempty"`
-	MaxErrorCount    *int     `json:"max_error_count,omitempty"`
-	MinVUsers        *int     `json:"min_vusers,omitempty"`
-	MaxVUsers        *int     `json:"max_vusers,omitempty"`
-	StopOnSLABreach  bool     `json:"stop_on_sla_breach,omitempty"`
-	StopOnMaxErrors  bool     `json:"stop_on_max_errors,omitempty"`
-	SLABreachWindow  string   `json:"sla_breach_window,omitempty"`
+	MaxAvgTransferMs         *float64 `json:"max_avg_transfer_ms,omitempty"`
+	MaxErrorCount            *int     `json:"max_error_count,omitempty"`
+	MinVUsers                *int     `json:"min_vusers,omitempty"`
+	MaxVUsers                *int     `json:"max_vusers,omitempty"`
+	StopOnSLABreach          bool     `json:"stop_on_sla_breach,omitempty"`
+	StopOnMaxErrors          bool     `json:"stop_on_max_errors,omitempty"`
+	SLABreachWindow          string   `json:"sla_breach_window,omitempty"`
 }
 
 // RuntimeSettingsOverride allows overriding script-level runtime settings at test time,
@@ -1259,6 +1268,9 @@ type RuntimeSettingsOverride struct {
 	ErrorHandling    *dsl.ErrorHandlingConfig `json:"error_handling,omitempty"`
 	LogLevel         string                   `json:"log_level,omitempty"`
 	AutoTransactions string                   `json:"auto_transactions,omitempty"`
+	BaseURL          string                   `json:"base_url,omitempty"`
+	Env              map[string]string        `json:"env,omitempty"`
+	RedactionRules   []engine.RedactionRule   `json:"redaction_rules,omitempty"`
 }
 
 type CreateGroupEntry struct {
@@ -1785,16 +1797,23 @@ func (tr *TestRunner) compileManagedTestGroupLocked(index int, totalGroups int, 
 		effectiveRuntimeSettings.Iterations = &iterations
 	}
 	if effectiveRuntimeSettings != nil {
-		applyRuntimeOverrides(&scriptCopy, effectiveRuntimeSettings)
+		if err := applyRuntimeOverrides(&scriptCopy, effectiveRuntimeSettings); err != nil {
+			return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: apply runtime overrides: %w", index, err)
+		}
+	}
+	redactionConfig, err := buildRuntimeRedactionConfig(effectiveRuntimeSettings)
+	if err != nil {
+		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: build redaction config: %w", index, err)
 	}
 
 	engineGroup := engine.GroupConfig{
-		Name:         name,
-		Script:       &scriptCopy,
-		VUsers:       vusers,
-		RampUp:       rampUp,
-		RampDown:     rampDown,
-		InitStrategy: initStrategy,
+		Name:            name,
+		Script:          &scriptCopy,
+		VUsers:          vusers,
+		RampUp:          rampUp,
+		RampDown:        rampDown,
+		InitStrategy:    initStrategy,
+		RedactionConfig: redactionConfig,
 	}
 
 	return testGroup, engineGroup, nil
@@ -1956,10 +1975,10 @@ func (tr *TestRunner) buildRunComparisonBaselineLocked(test *ManagedTest) *RunCo
 		return nil
 	}
 	return &RunComparisonBaseline{
-		SourceTestID:   selected.ID,
-		SourceTestName: selected.Name,
-		CompletedAt:    selectedCompletedAt,
-		Transactions:   cloneTxMetricsMap(metrics.Transactions),
+		SourceTestID:     selected.ID,
+		SourceTestName:   selected.Name,
+		CompletedAt:      selectedCompletedAt,
+		Transactions:     cloneTxMetricsMap(metrics.Transactions),
 		DependencyHealth: cloneTxMetricsMap(metrics.DependencyHealth),
 	}
 }
@@ -2617,21 +2636,24 @@ func startDelayWindow(raw string) time.Duration {
 
 func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[string]int) *LiveMetrics {
 	live := &LiveMetrics{
-		Timestamp:     snap.Timestamp,
-		ActiveVUsers:  snap.ActiveVUsers,
-		TPS:           snap.TPS,
-		AvgResponseMs: float64(snap.AvgDuration.Microseconds()) / 1000.0,
-		TotalTx:       snap.Transactions,
-		TotalErrors:   snap.Errors,
-		P50Ms:         float64(snap.P50.Microseconds()) / 1000.0,
-		P90Ms:         float64(snap.P90.Microseconds()) / 1000.0,
-		P95Ms:         float64(snap.P95.Microseconds()) / 1000.0,
-		P99Ms:         float64(snap.P99.Microseconds()) / 1000.0,
-		Transactions:  make(map[string]*TxMetrics),
-		DependencyHealth: make(map[string]*TxMetrics),
-		SOAPOperations: make(map[string]*TxMetrics),
-		GroupMetrics:  make(map[string]*GroupLiveMetrics),
-		Resources:     snap.Resources,
+		Timestamp:              snap.Timestamp,
+		ActiveVUsers:           snap.ActiveVUsers,
+		TPS:                    snap.TPS,
+		TargetTPS:              snap.TargetTPS,
+		ThroughputGapPct:       snap.ThroughputGapPct,
+		ThroughputTargetMissed: snap.ThroughputTargetMissed,
+		AvgResponseMs:          float64(snap.AvgDuration.Microseconds()) / 1000.0,
+		TotalTx:                snap.Transactions,
+		TotalErrors:            snap.Errors,
+		P50Ms:                  float64(snap.P50.Microseconds()) / 1000.0,
+		P90Ms:                  float64(snap.P90.Microseconds()) / 1000.0,
+		P95Ms:                  float64(snap.P95.Microseconds()) / 1000.0,
+		P99Ms:                  float64(snap.P99.Microseconds()) / 1000.0,
+		Transactions:           make(map[string]*TxMetrics),
+		DependencyHealth:       make(map[string]*TxMetrics),
+		SOAPOperations:         make(map[string]*TxMetrics),
+		GroupMetrics:           make(map[string]*GroupLiveMetrics),
+		Resources:              snap.Resources,
 	}
 	if snap.Browser != nil {
 		live.Browser = &BrowserLiveMetrics{
@@ -2689,15 +2711,18 @@ func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[s
 
 	for name, gm := range snap.ByGroup {
 		live.GroupMetrics[name] = &GroupLiveMetrics{
-			Name:          name,
-			VUsers:        groupVUsers[name],
-			Transactions:  gm.Transactions,
-			Errors:        gm.Errors,
-			TPS:           gm.TPS,
-			AvgResponseMs: float64(gm.AvgDuration.Microseconds()) / 1000.0,
-			P50Ms:         float64(gm.P50.Microseconds()) / 1000.0,
-			P90Ms:         float64(gm.P90.Microseconds()) / 1000.0,
-			P99Ms:         float64(gm.P99.Microseconds()) / 1000.0,
+			Name:                   name,
+			VUsers:                 groupVUsers[name],
+			Transactions:           gm.Transactions,
+			Errors:                 gm.Errors,
+			TPS:                    gm.TPS,
+			TargetTPS:              gm.TargetTPS,
+			ThroughputGapPct:       gm.ThroughputGapPct,
+			ThroughputTargetMissed: gm.ThroughputTargetMissed,
+			AvgResponseMs:          float64(gm.AvgDuration.Microseconds()) / 1000.0,
+			P50Ms:                  float64(gm.P50.Microseconds()) / 1000.0,
+			P90Ms:                  float64(gm.P90.Microseconds()) / 1000.0,
+			P99Ms:                  float64(gm.P99.Microseconds()) / 1000.0,
 		}
 	}
 
@@ -2994,17 +3019,17 @@ func sampleJMSBrokerDiagnostics(live *LiveMetrics) ([]DiagnosticSample, []string
 		}
 		candidates = append(candidates, candidate{
 			sample: DiagnosticSample{
-				Issue:                    "broker",
-				Transaction:              name,
-				DependencyType:           tx.DependencyType,
-				DependencyTarget:         tx.DependencyTarget,
-				CorrelationIDs:           append([]string(nil), tx.CorrelationIDs...),
-				Count:                    tx.Count,
-				AvgMs:                    tx.AvgMs,
-				P99Ms:                    tx.P99Ms,
-				AvgMessageLatencyMs:      telemetry.AvgMessageLatencyMs,
-				AvgConsumerLagMs:         telemetry.AvgConsumerLagMs,
-				AvgMessagesSentPerSec:    sendRate,
+				Issue:                     "broker",
+				Transaction:               name,
+				DependencyType:            tx.DependencyType,
+				DependencyTarget:          tx.DependencyTarget,
+				CorrelationIDs:            append([]string(nil), tx.CorrelationIDs...),
+				Count:                     tx.Count,
+				AvgMs:                     tx.AvgMs,
+				P99Ms:                     tx.P99Ms,
+				AvgMessageLatencyMs:       telemetry.AvgMessageLatencyMs,
+				AvgConsumerLagMs:          telemetry.AvgConsumerLagMs,
+				AvgMessagesSentPerSec:     sendRate,
 				AvgMessagesReceivedPerSec: recvRate,
 			},
 			key: name,
@@ -3143,7 +3168,7 @@ func shouldPublishTelemetryDiagnostic(state *telemetryDiagnosticState, signature
 }
 
 func buildThresholdAlerts(test *ManagedTest, live *LiveMetrics, thresholds ThresholdSettings) []map[string]any {
-	alerts := make([]map[string]any, 0, 4)
+	alerts := make([]map[string]any, 0, 5)
 	if thresholds.MaxP99LatencyMs != nil && live.P99Ms > *thresholds.MaxP99LatencyMs {
 		alerts = append(alerts, map[string]any{
 			"type":      "threshold_alert",
@@ -3165,6 +3190,19 @@ func buildThresholdAlerts(test *ManagedTest, live *LiveMetrics, thresholds Thres
 			"value":     live.ErrorPct,
 			"threshold": *thresholds.MaxErrorRatePct,
 			"action":    "stop_requested",
+		})
+	}
+	if live != nil && live.TargetTPS > 0 && live.ThroughputTargetMissed {
+		alerts = append(alerts, map[string]any{
+			"type":       "threshold_alert",
+			"test_id":    test.ID,
+			"test_name":  test.Name,
+			"timestamp":  live.Timestamp,
+			"metric":     "throughput_gap_pct",
+			"value":      live.TPS,
+			"threshold":  live.TargetTPS,
+			"target_tps": live.TargetTPS,
+			"gap_pct":    live.ThroughputGapPct,
 		})
 	}
 	if alert := buildServerTelemetryThresholdAlert(test, live, thresholds.MaxAvgServerProcessingMs, "avg_server_processing_ms", func(summary *ServerTelemetrySummary) float64 {
@@ -3503,9 +3541,19 @@ func (tr *TestRunner) broadcastEvent(eventType string, test *ManagedTest) {
 
 // applyRuntimeOverrides merges test-level runtime settings into a script config,
 // mirroring LoadRunner Controller's override behavior (test-level wins where specified).
-func applyRuntimeOverrides(script *dsl.Script, overrides *RuntimeSettingsOverride) {
-	if overrides == nil {
-		return
+func applyRuntimeOverrides(script *dsl.Script, overrides *RuntimeSettingsOverride) error {
+	if script == nil || overrides == nil {
+		return nil
+	}
+	if len(overrides.Env) > 0 {
+		overridden, err := applyRuntimeEnvOverrides(script, overrides.Env)
+		if err != nil {
+			return err
+		}
+		*script = *overridden
+	}
+	if overrides.BaseURL != "" {
+		script.Config.BaseURL = overrides.BaseURL
 	}
 	if overrides.Iterations != nil {
 		script.Config.RunLogic.Iterations = *overrides.Iterations
@@ -3524,6 +3572,59 @@ func applyRuntimeOverrides(script *dsl.Script, overrides *RuntimeSettingsOverrid
 	}
 	if overrides.AutoTransactions != "" {
 		script.Config.RunLogic.AutoTransactions = overrides.AutoTransactions
+	}
+	return nil
+}
+
+func applyRuntimeEnvOverrides(script *dsl.Script, overrides map[string]string) (*dsl.Script, error) {
+	payload, err := json.Marshal(script)
+	if err != nil {
+		return nil, fmt.Errorf("marshal runtime env overrides: %w", err)
+	}
+	var generic any
+	if err := json.Unmarshal(payload, &generic); err != nil {
+		return nil, fmt.Errorf("decode runtime env overrides: %w", err)
+	}
+	generic = replaceRuntimeEnvTemplates(generic, overrides)
+	payload, err = json.Marshal(generic)
+	if err != nil {
+		return nil, fmt.Errorf("marshal overridden runtime script: %w", err)
+	}
+	var overridden dsl.Script
+	if err := json.Unmarshal(payload, &overridden); err != nil {
+		return nil, fmt.Errorf("decode overridden runtime script: %w", err)
+	}
+	return &overridden, nil
+}
+
+func replaceRuntimeEnvTemplates(value any, overrides map[string]string) any {
+	switch typed := value.(type) {
+	case string:
+		return runtimeOverrideEnvPattern.ReplaceAllStringFunc(typed, func(token string) string {
+			match := runtimeOverrideEnvPattern.FindStringSubmatch(token)
+			if len(match) != 2 {
+				return token
+			}
+			key := strings.TrimSpace(match[1])
+			if replacement, ok := overrides[key]; ok {
+				return replacement
+			}
+			return token
+		})
+	case []any:
+		resolved := make([]any, len(typed))
+		for i := range typed {
+			resolved[i] = replaceRuntimeEnvTemplates(typed[i], overrides)
+		}
+		return resolved
+	case map[string]any:
+		resolved := make(map[string]any, len(typed))
+		for key, item := range typed {
+			resolved[key] = replaceRuntimeEnvTemplates(item, overrides)
+		}
+		return resolved
+	default:
+		return value
 	}
 }
 
@@ -3548,7 +3649,24 @@ func cloneRuntimeSettings(overrides *RuntimeSettingsOverride) *RuntimeSettingsOv
 		errorHandling := *overrides.ErrorHandling
 		clone.ErrorHandling = &errorHandling
 	}
+	if len(overrides.Env) > 0 {
+		clone.Env = make(map[string]string, len(overrides.Env))
+		for key, value := range overrides.Env {
+			clone.Env[key] = value
+		}
+	}
+	if len(overrides.RedactionRules) > 0 {
+		clone.RedactionRules = make([]engine.RedactionRule, len(overrides.RedactionRules))
+		copy(clone.RedactionRules, overrides.RedactionRules)
+	}
 	return &clone
+}
+
+func buildRuntimeRedactionConfig(runtimeSettings *RuntimeSettingsOverride) (*engine.RedactionConfig, error) {
+	if runtimeSettings == nil || len(runtimeSettings.RedactionRules) == 0 {
+		return nil, nil
+	}
+	return engine.NewRedactionConfig(runtimeSettings.RedactionRules)
 }
 
 func cloneGoalConfig(config *GoalConfig) *GoalConfig {

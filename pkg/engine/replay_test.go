@@ -232,3 +232,56 @@ func TestReplayScriptCarriesBrowserArtifacts(t *testing.T) {
 		t.Fatalf("selector/value = %q/%q, want body/ignored", event.Selector, event.Value)
 	}
 }
+
+func TestReplayScriptAppliesCustomRedactionRulesToEventsAndSnapshots(t *testing.T) {
+	protocolName := registerReplayProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+		return &protocol.Result{
+			ActionName:   action.Name,
+			Success:      true,
+			StatusCode:   200,
+			ResponseBody: `{"customer":"customer-1234"}`,
+			Snapshot: &protocol.ErrorSnapshot{
+				RequestURL:      "https://example.test/customers/customer-1234",
+				RequestHeaders:  map[string]string{"X-Customer": "customer-1234"},
+				RequestBody:     "customer=customer-1234",
+				ResponseHeaders: map[string]string{"X-Customer": "customer-1234"},
+				ResponseBody:    `{"customer":"customer-1234"}`,
+			},
+		}, nil
+	})
+
+	report, err := ReplayScript(context.Background(), &dsl.Script{
+		Name:     "Replay Redaction Script",
+		Protocol: protocolName,
+		Config:   dsl.ScriptConfig{},
+		Actions: []dsl.Action{{
+			Name:    "lookup",
+			Type:    "GET",
+			Target:  "/customers/customer-1234",
+			Headers: map[string]string{"X-Customer": "customer-1234"},
+			Body:    "customer=customer-1234",
+		}},
+	}, ReplayOptions{IgnoreThinkTime: true, RedactionRules: []RedactionRule{{Name: "customer id", Pattern: `customer-[0-9]+`}}})
+	if err != nil {
+		t.Fatalf("ReplayScript returned error: %v", err)
+	}
+	if len(report.Events) != 1 {
+		t.Fatalf("event count = %d, want 1", len(report.Events))
+	}
+	event := report.Events[0]
+	if event.Target != "/customers/[REDACTED]" {
+		t.Fatalf("target = %q, want /customers/[REDACTED]", event.Target)
+	}
+	if event.Headers["X-Customer"] != "[REDACTED]" {
+		t.Fatalf("header X-Customer = %q, want [REDACTED]", event.Headers["X-Customer"])
+	}
+	if event.Body != "customer=[REDACTED]" {
+		t.Fatalf("body = %q, want customer=[REDACTED]", event.Body)
+	}
+	if event.Snapshot == nil || event.Snapshot.RequestURL != "https://example.test/customers/[REDACTED]" {
+		t.Fatalf("snapshot request url = %#v, want redacted customer id", event.Snapshot)
+	}
+	if event.Snapshot.ResponseBody != `{"customer":"[REDACTED]"}` {
+		t.Fatalf("snapshot response body = %q, want redacted response body", event.Snapshot.ResponseBody)
+	}
+}

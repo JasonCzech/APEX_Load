@@ -104,6 +104,7 @@ func (m *BrowserReplayManager) Start(scriptID string, script *dsl.Script, req Br
 		report, err := engine.ReplayScript(ctx, script, engine.ReplayOptions{
 			GroupName:       groupName,
 			Variables:       req.Variables,
+			RedactionRules:  req.RedactionRules,
 			IgnoreThinkTime: ignoreThinkTime,
 			OnProgress: func(event engine.ReplayProgressEvent) {
 				if event.Type == engine.ReplayProgressEventRun {

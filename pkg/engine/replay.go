@@ -12,6 +12,7 @@ import (
 type ReplayOptions struct {
 	GroupName       string
 	Variables       map[string]string
+	RedactionRules  []RedactionRule
 	IgnoreThinkTime bool
 	OnProgress      func(ReplayProgressEvent)
 }
@@ -93,6 +94,10 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 	if err != nil {
 		return nil, fmt.Errorf("data source init: %w", err)
 	}
+	redactionConfig, err := NewRedactionConfig(opts.RedactionRules)
+	if err != nil {
+		return nil, fmt.Errorf("redaction config: %w", err)
+	}
 
 	report := &ReplayReport{
 		Group:     groupName,
@@ -109,14 +114,15 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 	})
 
 	vu := &VUser{
-		ID:            0,
-		Group:         groupName,
-		Proto:         proto,
-		Script:        script,
-		Metrics:       NewMetricsCollector(16),
-		Variables:     make(map[string]string),
-		DataProvider:  dataProvider,
-		SnapshotStore: NewSnapshotStore(128),
+		ID:              0,
+		Group:           groupName,
+		Proto:           proto,
+		Script:          script,
+		Metrics:         NewMetricsCollector(16),
+		Variables:       make(map[string]string),
+		DataProvider:    dataProvider,
+		RedactionConfig: redactionConfig,
+		SnapshotStore:   NewSnapshotStore(128),
 	}
 	vu.loadDataRow()
 	for key, value := range opts.Variables {
@@ -209,11 +215,11 @@ func runReplayAction(
 		ActionName:  action.Name,
 		ActionType:  action.Type,
 		Method:      resolved.Method,
-		Target:      resolved.Target,
+		Target:      scrubReplayTarget(resolved, vu.RedactionConfig),
 		Selector:    resolved.Selector,
 		Value:       resolved.Value,
-		Headers:     cloneStringMap(resolved.Headers),
-		Body:        string(resolved.Body),
+		Headers:     scrubReplayHeaders(resolved, vu.RedactionConfig),
+		Body:        scrubReplayBody(resolved, vu.RedactionConfig),
 		StartedAt:   start,
 		CompletedAt: completedAt,
 		DurationMs:  float64(completedAt.Sub(start).Microseconds()) / 1000,
@@ -285,6 +291,38 @@ func runReplayAction(
 	}
 
 	return event, true
+}
+
+func scrubReplayTarget(action *protocol.Action, config *RedactionConfig) string {
+	if action == nil {
+		return ""
+	}
+	target := action.Target
+	if action.RedactedTarget != "" {
+		target = action.RedactedTarget
+	}
+	return scrubSensitiveTextWithConfig(target, config)
+}
+
+func scrubReplayHeaders(action *protocol.Action, config *RedactionConfig) map[string]string {
+	if action == nil {
+		return nil
+	}
+	if len(action.RedactedHeaders) > 0 {
+		return scrubSensitiveHeaders(cloneStringMap(action.RedactedHeaders), config)
+	}
+	return scrubSensitiveHeaders(cloneStringMap(action.Headers), config)
+}
+
+func scrubReplayBody(action *protocol.Action, config *RedactionConfig) string {
+	if action == nil {
+		return ""
+	}
+	body := string(action.Body)
+	if len(action.RedactedBody) > 0 {
+		body = string(action.RedactedBody)
+	}
+	return scrubSensitiveTextWithConfig(body, config)
 }
 
 func cloneStringMap(input map[string]string) map[string]string {

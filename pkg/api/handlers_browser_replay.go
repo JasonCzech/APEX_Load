@@ -5,17 +5,19 @@ import (
 	"net/http"
 
 	"github.com/jasonczech/stormrunner/pkg/dsl"
+	"github.com/jasonczech/stormrunner/pkg/engine"
 )
 
 type BrowserReplayStartRequest struct {
-	GroupName       string             `json:"group_name,omitempty"`
-	ReplaySessionID string             `json:"replay_session_id,omitempty"`
-	Variables       map[string]string  `json:"variables,omitempty"`
-	StartPaused     bool               `json:"start_paused,omitempty"`
-	Breakpoints     []int              `json:"breakpoints,omitempty"`
-	Browser         *dsl.BrowserConfig `json:"browser,omitempty"`
-	IgnoreThinkTime *bool              `json:"ignore_think_time,omitempty"`
-	Script          *dsl.Script        `json:"script,omitempty"`
+	GroupName       string                 `json:"group_name,omitempty"`
+	ReplaySessionID string                 `json:"replay_session_id,omitempty"`
+	Variables       map[string]string      `json:"variables,omitempty"`
+	RedactionRules  []engine.RedactionRule `json:"redaction_rules,omitempty"`
+	StartPaused     bool                   `json:"start_paused,omitempty"`
+	Breakpoints     []int                  `json:"breakpoints,omitempty"`
+	Browser         *dsl.BrowserConfig     `json:"browser,omitempty"`
+	IgnoreThinkTime *bool                  `json:"ignore_think_time,omitempty"`
+	Script          *dsl.Script            `json:"script,omitempty"`
 }
 
 func (s *Server) handleStartBrowserReplayDraftScript(w http.ResponseWriter, r *http.Request) {

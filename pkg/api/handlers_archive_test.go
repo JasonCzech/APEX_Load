@@ -1,17 +1,48 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jasonczech/stormrunner/pkg/dsl"
+	"github.com/jasonczech/stormrunner/pkg/engine"
 	"github.com/jasonczech/stormrunner/pkg/protocol"
 	"github.com/jasonczech/stormrunner/pkg/storage"
 )
+
+type archiveRedactionProtocol struct{}
+
+func (p *archiveRedactionProtocol) Name() string                                   { return "archive-redaction" }
+func (p *archiveRedactionProtocol) Init(_ context.Context, _ map[string]any) error { return nil }
+func (p *archiveRedactionProtocol) Execute(_ context.Context, action *protocol.Action) (*protocol.Result, error) {
+	return &protocol.Result{
+		ActionName:       action.Name,
+		StartTime:        time.Now(),
+		Duration:         5 * time.Millisecond,
+		BytesSent:        128,
+		BytesReceived:    512,
+		StatusCode:       200,
+		Success:          true,
+		CorrelationID:    "corr-archive-redaction-1",
+		DependencyType:   "http",
+		DependencyTarget: "archive.example.test",
+		Snapshot: &protocol.ErrorSnapshot{
+			RequestURL:      "https://archive.example.test/customers/customer-1234",
+			RequestHeaders:  map[string]string{"X-Customer": "customer-1234"},
+			RequestBody:     "customer=customer-1234",
+			ResponseHeaders: map[string]string{"X-Customer": "customer-1234"},
+			ResponseBody:    `{"customer":"customer-1234"}`,
+		},
+	}, nil
+}
+func (p *archiveRedactionProtocol) Teardown(_ context.Context) error    { return nil }
+func (p *archiveRedactionProtocol) HealthCheck(_ context.Context) error { return nil }
 
 func TestArchiveQueryEndpoints(t *testing.T) {
 	archiveDir := t.TempDir()
@@ -224,4 +255,84 @@ func TestArchiveQueryEndpoints(t *testing.T) {
 			t.Fatalf("expected report to contain summary timeline, got %q", body)
 		}
 	})
+}
+
+func TestArchiveTransactionsApplyConfiguredRedactionRules(t *testing.T) {
+	archiveDir := t.TempDir()
+	t.Setenv("STORMRUNNER_ARCHIVE_DIR", archiveDir)
+
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	server := NewServer(ServerConfig{Store: store})
+	protocolName := "archive-redaction-" + strings.ReplaceAll(strings.ToLower(t.Name()), "/", "-")
+	protocol.Register(protocolName, func() protocol.Protocol {
+		return &archiveRedactionProtocol{}
+	})
+
+	server.runner.StoreScript(&dsl.Script{
+		ID:       "script-archive-redaction",
+		Name:     "Archive Redaction Script",
+		Protocol: protocolName,
+		Version:  "1.0.0",
+		Actions:  []dsl.Action{{Name: "lookup", Type: "request", Target: "/"}},
+	})
+
+	testRun, err := server.runner.CreateTest(CreateTestRequest{
+		Name:     "Archive Redaction Run",
+		Duration: "2200ms",
+		ScriptID: "script-archive-redaction",
+		VUsers:   1,
+		RuntimeSettings: &RuntimeSettingsOverride{
+			RedactionRules: []engine.RedactionRule{{Name: "customer id", Pattern: `customer-[0-9]+`}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateTest returned error: %v", err)
+	}
+	if err := server.runner.StartTest(testRun.ID); err != nil {
+		t.Fatalf("StartTest returned error: %v", err)
+	}
+
+	completed := waitForTestStatus(t, server.runner, testRun.ID, "COMPLETE")
+	if completed.Archive == nil {
+		t.Fatal("expected archive metadata after completion")
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/archive/transactions?limit=5&offset=0", nil)
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("transactions status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var payload struct {
+		Transactions []TransactionEvent `json:"transactions"`
+		Total        int                `json:"total"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal transactions: %v", err)
+	}
+	if payload.Total == 0 || len(payload.Transactions) == 0 {
+		t.Fatal("expected at least one transaction event")
+	}
+	snapshot := payload.Transactions[0].Snapshot
+	if snapshot == nil {
+		t.Fatal("expected archived transaction snapshot")
+	}
+	if snapshot.RequestURL != "https://archive.example.test/customers/[REDACTED]" {
+		t.Fatalf("request url = %q, want redacted customer id", snapshot.RequestURL)
+	}
+	if snapshot.RequestHeaders["X-Customer"] != "[REDACTED]" {
+		t.Fatalf("request header X-Customer = %q, want [REDACTED]", snapshot.RequestHeaders["X-Customer"])
+	}
+	if snapshot.RequestBody != "customer=[REDACTED]" {
+		t.Fatalf("request body = %q, want customer=[REDACTED]", snapshot.RequestBody)
+	}
+	if snapshot.ResponseBody != `{"customer":"[REDACTED]"}` {
+		t.Fatalf("response body = %q, want custom rule redaction", snapshot.ResponseBody)
+	}
 }

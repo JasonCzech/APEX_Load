@@ -15,18 +15,20 @@ import (
 )
 
 type VUser struct {
-	ID             int
-	Group          string
-	Proto          protocol.Protocol
-	Script         *dsl.Script
-	Metrics        *MetricsCollector
-	ResultSink     ResultSink
-	Variables      map[string]string
-	DataProvider   *DataProvider
-	Parameters     *ParameterRuntime
-	SecretResolver SecretResolver
-	SnapshotStore  *SnapshotStore
-	PauseControl   PauseController
+	ID                   int
+	Group                string
+	Proto                protocol.Protocol
+	Script               *dsl.Script
+	Metrics              *MetricsCollector
+	ResultSink           ResultSink
+	Variables            map[string]string
+	DataProvider         *DataProvider
+	Parameters           *ParameterRuntime
+	SecretResolver       SecretResolver
+	RedactionConfig      *RedactionConfig
+	SnapshotStore        *SnapshotStore
+	PauseControl         PauseController
+	IterationRateLimiter *TokenBucket
 }
 
 type PauseController interface {
@@ -115,6 +117,8 @@ func (vu *VUser) Run(ctx context.Context) {
 		IntervalMs:    cfg.Pacing.IntervalMs,
 		MinIntervalMs: cfg.Pacing.MinIntervalMs,
 		MaxIntervalMs: cfg.Pacing.MaxIntervalMs,
+		TPS:           cfg.Pacing.TPS,
+		RateLimiter:   vu.IterationRateLimiter,
 	}
 
 	// --- Build think time config ---
@@ -141,6 +145,9 @@ func (vu *VUser) Run(ctx context.Context) {
 			break
 		}
 		if ctx.Err() != nil {
+			break
+		}
+		if pacingCfg.Type == "tps" && !pacingCfg.RateLimiter.WaitContext(ctx) {
 			break
 		}
 
@@ -273,6 +280,7 @@ func (vu *VUser) recordResult(result *protocol.Result, errCfg dsl.ErrorHandlingC
 	result.Group = vu.Group
 	vu.Metrics.Record(result)
 	vu.mergeExtractions(result)
+	scrubSensitiveResult(result, vu.RedactionConfig)
 	vu.handleSnapshot(result, errCfg)
 	if vu.ResultSink != nil {
 		_ = vu.ResultSink.RecordResult(result)

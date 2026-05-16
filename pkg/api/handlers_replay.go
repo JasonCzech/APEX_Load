@@ -10,11 +10,12 @@ import (
 )
 
 type ReplayScriptRequest struct {
-	GroupName       string            `json:"group_name,omitempty"`
-	ReplaySessionID string            `json:"replay_session_id,omitempty"`
-	Variables       map[string]string `json:"variables,omitempty"`
-	IgnoreThinkTime *bool             `json:"ignore_think_time,omitempty"`
-	Script          *dsl.Script       `json:"script,omitempty"`
+	GroupName       string                 `json:"group_name,omitempty"`
+	ReplaySessionID string                 `json:"replay_session_id,omitempty"`
+	Variables       map[string]string      `json:"variables,omitempty"`
+	RedactionRules  []engine.RedactionRule `json:"redaction_rules,omitempty"`
+	IgnoreThinkTime *bool                  `json:"ignore_think_time,omitempty"`
+	Script          *dsl.Script            `json:"script,omitempty"`
 }
 
 func (s *Server) handleReplayDraftScript(w http.ResponseWriter, r *http.Request) {
@@ -96,6 +97,7 @@ func (s *Server) handleReplayRequest(w http.ResponseWriter, id string, script *d
 	report, err := s.runner.ReplayScriptDefinition(script, engine.ReplayOptions{
 		GroupName:       req.GroupName,
 		Variables:       req.Variables,
+		RedactionRules:  req.RedactionRules,
 		IgnoreThinkTime: ignoreThinkTime,
 		OnProgress: func(event engine.ReplayProgressEvent) {
 			s.broadcastReplayProgress(replaySessionID, id, event)
