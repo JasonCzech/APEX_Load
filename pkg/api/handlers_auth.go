@@ -20,6 +20,66 @@ type AuthStatusResponse struct {
 	User          *AuthUserSummary `json:"user,omitempty"`
 }
 
+type AuthRoleDefinition struct {
+	ID           string   `json:"id"`
+	Name         string   `json:"name"`
+	Scope        string   `json:"scope"`
+	Description  string   `json:"description"`
+	Capabilities []string `json:"capabilities,omitempty"`
+}
+
+type AuthRoleCatalogResponse struct {
+	ProviderModel string               `json:"provider_model"`
+	Roles         []AuthRoleDefinition `json:"roles"`
+}
+
+var authRoleCatalog = []AuthRoleDefinition{
+	{
+		ID:          RoleSystemAdmin,
+		Name:        "System Admin",
+		Scope:       "global",
+		Description: "Full platform administration across settings, projects, and executions.",
+		Capabilities: []string{
+			"Manage global settings",
+			"Create and delete projects",
+			"Read and mutate all test assets",
+		},
+	},
+	{
+		ID:          RoleProjectAdmin,
+		Name:        "Project Admin",
+		Scope:       "global_or_project",
+		Description: "Govern a project's assets, quotas, and execution lifecycle.",
+		Capabilities: []string{
+			"Manage project governance",
+			"Edit scripts and scenarios",
+			"Start, stop, and delete project tests",
+		},
+	},
+	{
+		ID:          RoleEditor,
+		Name:        "Editor",
+		Scope:       "global_or_project",
+		Description: "Create and modify scripts, scenarios, and active executions without governance controls.",
+		Capabilities: []string{
+			"Create and edit scripts",
+			"Launch and control tests",
+			"Use draft replay tooling",
+		},
+	},
+	{
+		ID:          RoleViewer,
+		Name:        "Viewer",
+		Scope:       "global_or_project",
+		Description: "Read-only access to dashboards, archives, and project-scoped monitoring surfaces.",
+		Capabilities: []string{
+			"View dashboards and results",
+			"Read scripts and scenarios",
+			"Access project-scoped live telemetry",
+		},
+	},
+}
+
 func (s *Server) handleGetAuthStatus(w http.ResponseWriter, r *http.Request) {
 	settings := normalizeAuthSettings(s.runner.GetSystemSettings().Auth)
 	response := AuthStatusResponse{
@@ -41,6 +101,13 @@ func (s *Server) handleGetAuthStatus(w http.ResponseWriter, r *http.Request) {
 	response.Authenticated = true
 	response.User = authUserSummary(user)
 	writeJSON(w, http.StatusOK, response)
+}
+
+func (s *Server) handleGetAuthRoleCatalog(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, AuthRoleCatalogResponse{
+		ProviderModel: "upstream_gateway",
+		Roles:         authRoleCatalog,
+	})
 }
 
 func authUserSummary(user *AuthenticatedUser) *AuthUserSummary {

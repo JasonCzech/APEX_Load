@@ -1070,6 +1070,19 @@ export interface DashboardAuthStatus {
   user?: DashboardAuthenticatedUser
 }
 
+export interface DashboardAuthRoleDefinition {
+  id: string
+  name: string
+  scope: string
+  description: string
+  capabilities?: string[]
+}
+
+export interface DashboardAuthRoleCatalog {
+  provider_model: string
+  roles: DashboardAuthRoleDefinition[]
+}
+
 export interface CapacityResourceEstimate {
   cpu_cores: number
   memory_mb: number

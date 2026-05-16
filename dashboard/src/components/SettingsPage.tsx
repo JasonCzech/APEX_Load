@@ -5,7 +5,7 @@ import { useProjectApi } from '../hooks/api/useProjectApi'
 import { useApplication } from '../hooks/useApplication'
 import { useProject } from '../hooks/useProject'
 import { useApi } from '../hooks/useApi'
-import { DashboardAuthStatus, DashboardSystemSettings, HealthResponse, Project, RedactionRule, SharedDataPool, SharedDataPoolRow, SystemInventoryResponse } from '../types'
+import { DashboardAuthRoleDefinition, DashboardAuthStatus, DashboardSystemSettings, HealthResponse, Project, RedactionRule, SharedDataPool, SharedDataPoolRow, SystemInventoryResponse } from '../types'
 import { getErrorMessage } from '../utils/errorUtils'
 
 const DEFAULT_SETTINGS: DashboardSystemSettings = {
@@ -161,6 +161,17 @@ function formatAuthStatusSummary(authStatus?: DashboardAuthStatus): string {
     return 'Awaiting trusted headers'
   }
   return 'Authenticated'
+}
+
+function formatRoleScope(scope: string): string {
+  switch (scope) {
+    case 'global':
+      return 'Global only'
+    case 'global_or_project':
+      return 'Global or project'
+    default:
+      return scope
+  }
 }
 
 function validateProjectDraft(name: string, rules: DraftRedactionRule[]): string {
@@ -414,6 +425,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
   const [settings, setSettings] = useState<DashboardSystemSettings>(DEFAULT_SETTINGS)
   const [savedSettings, setSavedSettings] = useState<DashboardSystemSettings>(DEFAULT_SETTINGS)
   const [health, setHealth] = useState<HealthResponse | null>(null)
+  const [authRoles, setAuthRoles] = useState<DashboardAuthRoleDefinition[]>([])
   const [loading, setLoading] = useState(true)
   const [saveMessage, setSaveMessage] = useState('')
   const [requestError, setRequestError] = useState('')
@@ -473,6 +485,27 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
       }
     }
     load()
+    return () => {
+      cancelled = true
+    }
+  }, [api])
+
+  useEffect(() => {
+    let cancelled = false
+    const loadAuthRoleCatalog = async () => {
+      try {
+        const response = await api.getAuthRoleCatalog()
+        if (!cancelled) {
+          setAuthRoles(response.roles || [])
+        }
+      } catch {
+        if (!cancelled) {
+          setAuthRoles([])
+        }
+      }
+    }
+
+    loadAuthRoleCatalog()
     return () => {
       cancelled = true
     }
@@ -1462,6 +1495,26 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
                       </div>
                     )}
                   </div>
+                  {authRoles.length > 0 && (
+                    <div className="settings-subsection">
+                      <div className="settings-manager-summary">
+                        <div>
+                          <span className="setting-label">Built-In Role Reference</span>
+                          <span className="setting-desc">Stormrunner consumes these roles from the upstream gateway and applies them through the request RBAC matrix.</span>
+                        </div>
+                        <strong>{authRoles.length} roles</strong>
+                      </div>
+                      {authRoles.map((role) => (
+                        <div className="setting-row" key={role.id}>
+                          <div className="setting-info">
+                            <span className="setting-label">{role.name}</span>
+                            <span className="setting-desc">{role.description}</span>
+                          </div>
+                          <span className="settings-value-display">{formatRoleScope(role.scope)}{role.capabilities && role.capabilities.length > 0 ? ` | ${role.capabilities.join(', ')}` : ''}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </>
               )}
             </div>

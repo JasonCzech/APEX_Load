@@ -106,3 +106,35 @@ func TestHandleGetAuthStatusReturnsTrustedHeaderIdentity(t *testing.T) {
 		t.Fatalf("project-b roles = %#v, want [project_admin]", got)
 	}
 }
+
+func TestHandleGetAuthRoleCatalogReturnsBuiltInRoles(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/roles", nil)
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var payload AuthRoleCatalogResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal auth role catalog: %v", err)
+	}
+	if payload.ProviderModel != "upstream_gateway" {
+		t.Fatalf("provider model = %q, want upstream_gateway", payload.ProviderModel)
+	}
+	if len(payload.Roles) != 4 {
+		t.Fatalf("role count = %d, want 4", len(payload.Roles))
+	}
+	if payload.Roles[0].ID != RoleSystemAdmin || payload.Roles[0].Name != "System Admin" {
+		t.Fatalf("first role = %#v, want system admin descriptor", payload.Roles[0])
+	}
+	if len(payload.Roles[0].Capabilities) == 0 {
+		t.Fatalf("expected system admin capabilities, got %#v", payload.Roles[0].Capabilities)
+	}
+	if payload.Roles[3].ID != RoleViewer {
+		t.Fatalf("last role = %#v, want viewer descriptor", payload.Roles[3])
+	}
+}

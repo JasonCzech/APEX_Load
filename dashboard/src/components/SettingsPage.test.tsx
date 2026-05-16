@@ -9,6 +9,7 @@ import SettingsPage from './SettingsPage'
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 const apiMock = {
+  getAuthRoleCatalog: vi.fn(),
   getSystemSettings: vi.fn(),
   getHealth: vi.fn(),
   getSystemInventory: vi.fn(),
@@ -123,6 +124,25 @@ describe('SettingsPage', () => {
         roles_header: 'X-Stormrunner-Roles',
         project_roles_header: 'X-Stormrunner-Project-Roles',
       },
+    })
+    apiMock.getAuthRoleCatalog.mockResolvedValue({
+      provider_model: 'upstream_gateway',
+      roles: [
+        {
+          id: 'system_admin',
+          name: 'System Admin',
+          scope: 'global',
+          description: 'Full platform administration across settings, projects, and executions.',
+          capabilities: ['Manage global settings', 'Create and delete projects'],
+        },
+        {
+          id: 'project_admin',
+          name: 'Project Admin',
+          scope: 'global_or_project',
+          description: 'Govern a project\'s assets, quotas, and execution lifecycle.',
+          capabilities: ['Manage project governance'],
+        },
+      ],
     })
     apiMock.getHealth.mockResolvedValue({ status: 'healthy', version: '0.1.0', ws_clients: 1, test_count: 0 })
     apiMock.getSystemInventory.mockResolvedValue({
@@ -499,6 +519,9 @@ describe('SettingsPage', () => {
     expect(generalSection.textContent).toContain('System Admin, Viewer')
     expect(generalSection.textContent).toContain('project-1: Editor, Viewer')
     expect(generalSection.textContent).toContain('project-2: Project Admin')
+    expect(generalSection.textContent).toContain('Built-In Role Reference')
+    expect(generalSection.textContent).toContain('Manage global settings')
+    expect(generalSection.textContent).toContain('Global only')
   })
 
   it('saves notification webhook settings through system settings', async () => {
