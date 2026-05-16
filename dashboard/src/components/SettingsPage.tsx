@@ -5,7 +5,7 @@ import { useProjectApi } from '../hooks/api/useProjectApi'
 import { useApplication } from '../hooks/useApplication'
 import { useProject } from '../hooks/useProject'
 import { useApi } from '../hooks/useApi'
-import { DashboardAuthAccessResource, DashboardAuthRoleDefinition, DashboardAuthStatus, DashboardSystemSettings, HealthResponse, Project, RedactionRule, SharedDataPool, SharedDataPoolRow, SystemInventoryResponse } from '../types'
+import { DashboardAuthAccessResource, DashboardAuthEffectiveAccessResource, DashboardAuthRoleDefinition, DashboardAuthStatus, DashboardSystemSettings, HealthResponse, Project, RedactionRule, SharedDataPool, SharedDataPoolRow, SystemInventoryResponse } from '../types'
 import { getErrorMessage } from '../utils/errorUtils'
 
 const DEFAULT_SETTINGS: DashboardSystemSettings = {
@@ -186,6 +186,19 @@ function formatAccessOperation(operation: { global_roles?: string[]; project_rol
     segments.push(`Project: ${formatAuthRoleList(operation.project_roles)}`)
   }
   return segments.join(' | ') || 'No roles'
+}
+
+function formatGrantSource(grantSource?: string): string {
+  switch (grantSource) {
+  case 'disabled':
+    return 'Allowed while auth is disabled'
+  case 'global':
+    return 'Allowed via global role'
+  case 'project':
+    return 'Allowed via project role'
+  default:
+    return 'Not granted'
+  }
 }
 
 function validateProjectDraft(name: string, rules: DraftRedactionRule[]): string {
@@ -461,6 +474,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
   const [savedSettings, setSavedSettings] = useState<DashboardSystemSettings>(DEFAULT_SETTINGS)
   const [health, setHealth] = useState<HealthResponse | null>(null)
   const [authAccessResources, setAuthAccessResources] = useState<DashboardAuthAccessResource[]>([])
+  const [effectiveAuthAccessResources, setEffectiveAuthAccessResources] = useState<DashboardAuthEffectiveAccessResource[]>([])
   const [authRoles, setAuthRoles] = useState<DashboardAuthRoleDefinition[]>([])
   const [loading, setLoading] = useState(true)
   const [saveMessage, setSaveMessage] = useState('')
@@ -525,6 +539,27 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
       cancelled = true
     }
   }, [api])
+
+  useEffect(() => {
+    let cancelled = false
+    const loadEffectiveAccess = async () => {
+      try {
+        const response = await api.getAuthEffectiveAccess(activeProject?.id)
+        if (!cancelled) {
+          setEffectiveAuthAccessResources(response.resources || [])
+        }
+      } catch {
+        if (!cancelled) {
+          setEffectiveAuthAccessResources([])
+        }
+      }
+    }
+
+    loadEffectiveAccess()
+    return () => {
+      cancelled = true
+    }
+  }, [activeProject?.id, api])
 
   useEffect(() => {
   let cancelled = false
@@ -1624,6 +1659,28 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
                             <span className="setting-desc">{resource.description}</span>
                             {resource.operations.map((operation) => (
                               <span className="setting-desc" key={operation.id}>{operation.label}: {formatAccessOperation(operation)}</span>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {effectiveAuthAccessResources.length > 0 && (
+                    <div className="settings-subsection">
+                      <div className="settings-manager-summary">
+                        <div>
+                          <span className="setting-label">Effective Access For Current Session</span>
+                          <span className="setting-desc">Evaluates the currently forwarded identity against the active project selection and the backend RBAC policy.</span>
+                        </div>
+                        <strong>{activeProject?.name || 'Global'}</strong>
+                      </div>
+                      {effectiveAuthAccessResources.map((resource) => (
+                        <div className="setting-row" key={resource.id}>
+                          <div className="setting-info">
+                            <span className="setting-label">{resource.name}</span>
+                            <span className="setting-desc">{resource.description}</span>
+                            {resource.operations.map((operation) => (
+                              <span className="setting-desc" key={operation.id}>{operation.label}: {formatGrantSource(operation.grant_source)}</span>
                             ))}
                           </div>
                         </div>

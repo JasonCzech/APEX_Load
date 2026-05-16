@@ -184,3 +184,73 @@ func TestHandleGetAuthAccessMatrixReturnsResourcePolicies(t *testing.T) {
 		t.Fatalf("project governance roles = %#v, want project admin project scope", payload.Resources[1].Operations[1].ProjectRoles)
 	}
 }
+
+func TestHandleGetAuthEffectiveAccessReturnsOpenAccessWhenDisabled(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/effective-access", nil)
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var payload AuthEffectiveAccessResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal auth effective access: %v", err)
+	}
+	if payload.Enabled {
+		t.Fatal("expected disabled auth mode")
+	}
+	if payload.Authenticated {
+		t.Fatal("expected no authenticated user in disabled mode")
+	}
+	if !payload.Resources[0].Operations[0].Allowed || payload.Resources[0].Operations[0].GrantSource != "disabled" {
+		t.Fatalf("first operation = %#v, want allowed via disabled mode", payload.Resources[0].Operations[0])
+	}
+}
+
+func TestHandleGetAuthEffectiveAccessEvaluatesProjectRoles(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	enableTrustedHeaderAuth(t, server)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/effective-access?project_id=project-a", nil)
+	req.Header.Set("X-Auth-Request-User", "editor-user")
+	req.Header.Set("X-Stormrunner-Project-Roles", "project-a="+RoleEditor)
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var payload AuthEffectiveAccessResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal auth effective access: %v", err)
+	}
+	if !payload.Enabled || !payload.Authenticated {
+		t.Fatalf("expected enabled authenticated payload, got %#v", payload)
+	}
+	if payload.ProjectID != "project-a" {
+		t.Fatalf("project id = %q, want project-a", payload.ProjectID)
+	}
+	var manageTests AuthEffectiveAccessOperation
+	var manageSystem AuthEffectiveAccessOperation
+	for _, resource := range payload.Resources {
+		for _, operation := range resource.Operations {
+			switch operation.ID {
+			case "manage_tests":
+				manageTests = operation
+			case "manage_system":
+				manageSystem = operation
+			}
+		}
+	}
+	if !manageTests.Allowed || manageTests.GrantSource != "project" {
+		t.Fatalf("manage tests = %#v, want allowed via project role", manageTests)
+	}
+	if manageSystem.Allowed {
+		t.Fatalf("manage system = %#v, want denied for project editor", manageSystem)
+	}
+}

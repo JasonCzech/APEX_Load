@@ -9,6 +9,7 @@ import SettingsPage from './SettingsPage'
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 const apiMock = {
+  getAuthEffectiveAccess: vi.fn(),
   getAuthAccessMatrix: vi.fn(),
   getAuthRoleCatalog: vi.fn(),
   getSystemSettings: vi.fn(),
@@ -165,6 +166,32 @@ describe('SettingsPage', () => {
               id: 'manage_system',
               label: 'Update system settings',
               global_roles: ['system_admin'],
+            },
+          ],
+        },
+      ],
+    })
+    apiMock.getAuthEffectiveAccess.mockResolvedValue({
+      enabled: true,
+      authenticated: true,
+      project_id: 'project-1',
+      resources: [
+        {
+          id: 'tests_and_scenarios',
+          name: 'Tests and Scenarios',
+          description: 'Scenario definitions, queued runs, live controls, archives, and comparison baselines.',
+          operations: [
+            {
+              id: 'view_tests',
+              label: 'View scenarios, tests, metrics, and archives',
+              allowed: true,
+              grant_source: 'global',
+            },
+            {
+              id: 'manage_tests',
+              label: 'Create, start, stop, pause, move, scale, and delete tests or scenarios',
+              allowed: true,
+              grant_source: 'project',
             },
           ],
         },
@@ -557,6 +584,9 @@ describe('SettingsPage', () => {
     expect(generalSection.textContent).toContain('Route Access Matrix')
     expect(generalSection.textContent).toContain('System Configuration')
     expect(generalSection.textContent).toContain('Update system settings: Global: System Admin')
+    expect(generalSection.textContent).toContain('Effective Access For Current Session')
+    expect(generalSection.textContent).toContain('Tests and Scenarios')
+    expect(generalSection.textContent).toContain('Allowed via project role')
   })
 
   it('saves notification webhook settings through system settings', async () => {

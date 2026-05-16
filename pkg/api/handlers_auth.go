@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"sort"
+	"strings"
 )
 
 type AuthUserSummary struct {
@@ -53,6 +54,27 @@ type AuthAccessResource struct {
 type AuthAccessMatrixResponse struct {
 	Version   string               `json:"version"`
 	Resources []AuthAccessResource `json:"resources"`
+}
+
+type AuthEffectiveAccessOperation struct {
+	ID          string `json:"id"`
+	Label       string `json:"label"`
+	Allowed     bool   `json:"allowed"`
+	GrantSource string `json:"grant_source,omitempty"`
+}
+
+type AuthEffectiveAccessResource struct {
+	ID          string                        `json:"id"`
+	Name        string                        `json:"name"`
+	Description string                        `json:"description"`
+	Operations  []AuthEffectiveAccessOperation `json:"operations"`
+}
+
+type AuthEffectiveAccessResponse struct {
+	Enabled       bool                          `json:"enabled"`
+	Authenticated bool                          `json:"authenticated"`
+	ProjectID     string                        `json:"project_id,omitempty"`
+	Resources     []AuthEffectiveAccessResource `json:"resources"`
 }
 
 var authRoleCatalog = []AuthRoleDefinition{
@@ -206,6 +228,106 @@ func (s *Server) handleGetAuthAccessMatrix(w http.ResponseWriter, _ *http.Reques
 		Version:   "trusted_headers_v1",
 		Resources: authAccessMatrix,
 	})
+}
+
+func (s *Server) handleGetAuthEffectiveAccess(w http.ResponseWriter, r *http.Request) {
+	settings := normalizeAuthSettings(s.runner.GetSystemSettings().Auth)
+	projectID := normalizeProjectID(strings.TrimSpace(r.URL.Query().Get("project_id")))
+	response := AuthEffectiveAccessResponse{
+		Enabled:   settings.Mode != authModeDisabled,
+		ProjectID: projectID,
+	}
+
+	if settings.Mode == authModeDisabled {
+		response.Resources = buildDisabledEffectiveAccess(authAccessMatrix)
+		writeJSON(w, http.StatusOK, response)
+		return
+	}
+
+	user, err := authenticatedUserFromHeaders(r, settings)
+	if err != nil {
+		response.Resources = buildDeniedEffectiveAccess(authAccessMatrix)
+		writeJSON(w, http.StatusOK, response)
+		return
+	}
+
+	response.Authenticated = true
+	response.Resources = buildUserEffectiveAccess(authAccessMatrix, user, projectID)
+	writeJSON(w, http.StatusOK, response)
+}
+
+func buildDisabledEffectiveAccess(resources []AuthAccessResource) []AuthEffectiveAccessResource {
+	out := make([]AuthEffectiveAccessResource, 0, len(resources))
+	for _, resource := range resources {
+		entry := AuthEffectiveAccessResource{
+			ID:          resource.ID,
+			Name:        resource.Name,
+			Description: resource.Description,
+			Operations:  make([]AuthEffectiveAccessOperation, 0, len(resource.Operations)),
+		}
+		for _, operation := range resource.Operations {
+			entry.Operations = append(entry.Operations, AuthEffectiveAccessOperation{
+				ID:          operation.ID,
+				Label:       operation.Label,
+				Allowed:     true,
+				GrantSource: "disabled",
+			})
+		}
+		out = append(out, entry)
+	}
+	return out
+}
+
+func buildDeniedEffectiveAccess(resources []AuthAccessResource) []AuthEffectiveAccessResource {
+	out := make([]AuthEffectiveAccessResource, 0, len(resources))
+	for _, resource := range resources {
+		entry := AuthEffectiveAccessResource{
+			ID:          resource.ID,
+			Name:        resource.Name,
+			Description: resource.Description,
+			Operations:  make([]AuthEffectiveAccessOperation, 0, len(resource.Operations)),
+		}
+		for _, operation := range resource.Operations {
+			entry.Operations = append(entry.Operations, AuthEffectiveAccessOperation{
+				ID:      operation.ID,
+				Label:   operation.Label,
+				Allowed: false,
+			})
+		}
+		out = append(out, entry)
+	}
+	return out
+}
+
+func buildUserEffectiveAccess(resources []AuthAccessResource, user *AuthenticatedUser, projectID string) []AuthEffectiveAccessResource {
+	out := make([]AuthEffectiveAccessResource, 0, len(resources))
+	for _, resource := range resources {
+		entry := AuthEffectiveAccessResource{
+			ID:          resource.ID,
+			Name:        resource.Name,
+			Description: resource.Description,
+			Operations:  make([]AuthEffectiveAccessOperation, 0, len(resource.Operations)),
+		}
+		for _, operation := range resource.Operations {
+			allowed := false
+			grantSource := ""
+			if len(operation.GlobalRoles) > 0 && user.hasGlobalRole(operation.GlobalRoles...) {
+				allowed = true
+				grantSource = "global"
+			} else if projectID != "" && len(operation.ProjectRoles) > 0 && user.hasProjectRole(projectID, operation.ProjectRoles...) {
+				allowed = true
+				grantSource = "project"
+			}
+			entry.Operations = append(entry.Operations, AuthEffectiveAccessOperation{
+				ID:          operation.ID,
+				Label:       operation.Label,
+				Allowed:     allowed,
+				GrantSource: grantSource,
+			})
+		}
+		out = append(out, entry)
+	}
+	return out
 }
 
 func authUserSummary(user *AuthenticatedUser) *AuthUserSummary {

@@ -1,9 +1,10 @@
 import { useCallback, useMemo } from 'react'
 
-import { DashboardAuthAccessMatrix, DashboardAuthRoleCatalog, DashboardSystemSettings, HealthResponse, SystemInventoryResponse } from '../../types'
+import { DashboardAuthAccessMatrix, DashboardAuthEffectiveAccess, DashboardAuthRoleCatalog, DashboardSystemSettings, HealthResponse, SystemInventoryResponse } from '../../types'
 import { request } from '../apiClient'
 
 export function useSystemApi() {
+  const getAuthEffectiveAccess = useCallback((projectId?: string) => request<DashboardAuthEffectiveAccess>(`/auth/effective-access${projectId ? `?project_id=${encodeURIComponent(projectId)}` : ''}`), [])
 	const getAuthAccessMatrix = useCallback(() => request<DashboardAuthAccessMatrix>('/auth/access-matrix'), [])
   const getAuthRoleCatalog = useCallback(() => request<DashboardAuthRoleCatalog>('/auth/roles'), [])
   const getHealth = useCallback(() => request<HealthResponse>('/system/health'), [])
@@ -18,6 +19,7 @@ export function useSystemApi() {
 
   return useMemo(
     () => ({
+		getAuthEffectiveAccess,
 		getAuthAccessMatrix,
       getAuthRoleCatalog,
       getHealth,
@@ -25,6 +27,6 @@ export function useSystemApi() {
       getSystemSettings,
       updateSystemSettings,
     }),
-    [getAuthAccessMatrix, getAuthRoleCatalog, getHealth, getSystemInventory, getSystemSettings, updateSystemSettings],
+    [getAuthEffectiveAccess, getAuthAccessMatrix, getAuthRoleCatalog, getHealth, getSystemInventory, getSystemSettings, updateSystemSettings],
   )
 }

@@ -1108,6 +1108,27 @@ export interface DashboardAuthAccessMatrix {
   resources: DashboardAuthAccessResource[]
 }
 
+export interface DashboardAuthEffectiveAccessOperation {
+  id: string
+  label: string
+  allowed: boolean
+  grant_source?: string
+}
+
+export interface DashboardAuthEffectiveAccessResource {
+  id: string
+  name: string
+  description: string
+  operations: DashboardAuthEffectiveAccessOperation[]
+}
+
+export interface DashboardAuthEffectiveAccess {
+  enabled: boolean
+  authenticated: boolean
+  project_id?: string
+  resources: DashboardAuthEffectiveAccessResource[]
+}
+
 export interface CapacityResourceEstimate {
   cpu_cores: number
   memory_mb: number
