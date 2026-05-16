@@ -70,6 +70,14 @@ describe('DashboardPage', () => {
           total_vusers: 10,
           duration: '10m',
           created_at: '2026-05-12T20:00:00Z',
+          runtime_settings: {
+            browser: {
+              device_profile: 'iphone_se',
+              orientation: 'portrait',
+              touch_mode: true,
+              headless: false,
+            },
+          },
           live_metrics: { active_vusers: 8, tps: 25, avg_response_ms: 120, error_pct: 0.2 },
         },
         {
@@ -83,6 +91,14 @@ describe('DashboardPage', () => {
           duration: '5m',
           created_at: '2026-05-12T18:00:00Z',
           ended_at: '2026-05-12T18:05:00Z',
+          runtime_settings: {
+            browser: {
+              device_profile: 'pixel_8',
+              orientation: 'landscape',
+              touch_mode: true,
+              headless: true,
+            },
+          },
           archive: { transaction_count: 1200 },
         },
         {
@@ -138,6 +154,18 @@ describe('DashboardPage', () => {
       ],
     })
     apiMock.getTestArchiveReport.mockResolvedValue({
+      manifest: {
+        provenance: {
+          runtime_settings: {
+            browser: {
+              device_profile: 'pixel_8',
+              orientation: 'landscape',
+              touch_mode: true,
+              headless: true,
+            },
+          },
+        },
+      },
       overview: {
         peak_tps: 32,
         avg_response_ms: 95,
@@ -187,8 +215,11 @@ describe('DashboardPage', () => {
     expect(apiMock.listTests).toHaveBeenCalledWith({ application_id: 'app-1', project_id: 'project-1' })
 
     expect(getButtonByText('Generators Available').textContent).toContain('1')
-  expect(container.textContent).toContain('LCP ms')
-  expect(container.textContent).toContain('240')
+    expect(container.textContent).toContain('LCP ms')
+    expect(container.textContent).toContain('240')
+    expect(container.textContent).toContain('Browser Runtime')
+    expect(container.textContent).toContain('iphone_se · Portrait · Touch enabled · Headed')
+    expect(container.textContent).toContain('pixel_8 · Landscape · Touch enabled · Headless')
 
     clickButtonByText('API Server')
     expect(onNavigate).toHaveBeenCalledWith('monitoring')

@@ -5,6 +5,7 @@ import { useApi } from '../hooks/useApi'
 import { useApplication } from '../hooks/useApplication'
 import { useProject } from '../hooks/useProject'
 import { TestSummary, MetricsHistoryPoint, RunArchiveReport, SystemInventoryResponse } from '../types'
+import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
 import { type NavPage } from './Sidebar'
 import StatusBadge from './StatusBadge'
 import './DashboardPage.css'
@@ -276,9 +277,13 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
       .map(test => {
         const report = archiveReports[test.id]
         if (!report) return null
-        return { test, report }
+        return {
+          test,
+          report,
+          runtimeSummary: formatBrowserRuntimeSummary(report.manifest?.provenance?.runtime_settings?.browser ?? test.runtime_settings?.browser),
+        }
       })
-      .filter((entry): entry is { test: TestSummary; report: RunArchiveReport } => Boolean(entry)),
+      .filter((entry): entry is { test: TestSummary; report: RunArchiveReport; runtimeSummary: string | null } => Boolean(entry)),
     [archivedReleaseRuns, archiveReports],
   )
 
@@ -542,6 +547,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                 <tr>
                   <th>Run</th>
                   <th>Completed</th>
+                  <th>Browser Runtime</th>
                   <th className="num">Peak TPS</th>
                   <th className="num">Avg ms</th>
                   <th className="num">LCP ms</th>
@@ -551,13 +557,14 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                 </tr>
               </thead>
               <tbody>
-                {performanceTrend.map(({ test, report }) => (
+                {performanceTrend.map(({ test, report, runtimeSummary }) => (
                   <tr key={test.id} onClick={() => onSelectTest(test.id)}>
                     <td>
                       <span className="trend-run-name">{test.name}</span>
                       <span className="trend-run-meta">{test.script_name || `${test.total_vusers} VUsers`}</span>
                     </td>
                     <td>{formatDateTime(test.ended_at || test.start_time || test.created_at)}</td>
+                    <td>{runtimeSummary || 'Default browser'}</td>
                     <td className="num strong">{formatNumber(report.overview.peak_tps, 1)}</td>
                     <td className="num">{formatNumber(report.overview.avg_response_ms)}</td>
                     <td className="num">{formatBrowserMs(report.overview.browser?.avg_lcp_ms)}</td>
@@ -595,6 +602,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
             {orderedActiveTests.map(test => {
               const history = metricsHistory[test.id] || []
               const latest = test.live_metrics
+              const runtimeSummary = formatBrowserRuntimeSummary(test.runtime_settings?.browser)
               const cardSettings = { ...defaultGraphCardSettings, ...activeCardSettings[test.id] }
               const metricOption = graphMetricOptions.find(option => option.key === cardSettings.metric) || graphMetricOptions[0]
               const chartData = history.slice(-60).map(point => ({
@@ -687,7 +695,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                   )}
                   <div className="dac-footer">
                     <span className="dac-detail">{test.total_vusers} VUsers · {test.groups?.length || 1} group{(test.groups?.length || 1) > 1 ? 's' : ''}</span>
-                    <span className="dac-detail">{test.duration}</span>
+                    <span className="dac-detail">{test.duration}{runtimeSummary ? ` · ${runtimeSummary}` : ''}</span>
                   </div>
                 </div>
               )
@@ -715,6 +723,9 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                     <span className="feed-meta">
                       {test.total_vusers} VUsers · {test.duration} · {test.archive ? `${test.archive.transaction_count.toLocaleString()} tx` : 'archive pending'}
                     </span>
+                    {formatBrowserRuntimeSummary(test.runtime_settings?.browser) && (
+                      <span className="feed-meta">Browser runtime · {formatBrowserRuntimeSummary(test.runtime_settings?.browser)}</span>
+                    )}
                     <span className="feed-meta">
                       {formatDateTime(test.ended_at || test.start_time || test.created_at)}
                     </span>

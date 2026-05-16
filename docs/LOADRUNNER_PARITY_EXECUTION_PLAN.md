@@ -111,6 +111,7 @@ Goal: make device-aware browser testing first-class beyond the script editor.
 Status:
 - B2.1 is implemented across scenario authoring, payload serialization, and backend runtime override application for `headless`, `device_profile`, `touch_mode`, and `orientation`.
 - B2.2 now has explicit compatibility-matrix coverage across stored validation, draft replay, stored replay, draft browser replay, and stored browser replay APIs, and scenario compilation rejects incompatible browser runtime overrides before they can be persisted.
+- B2.3 now surfaces effective mobile browser runtime context across dashboard run summaries and archive provenance views so device profile, orientation, touch mode, and headless or headed execution are visible after launch.
 
 Acceptance criteria:
 - Device profiles are available across all browser scenario authoring paths

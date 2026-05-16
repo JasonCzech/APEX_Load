@@ -20,6 +20,7 @@ import {
   formatSnapshotRequestSection,
   formatSnapshotResponseSection,
 } from '../utils/snapshotFormatUtils'
+import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
 
 interface Props {
   hasArchive: boolean
@@ -304,6 +305,7 @@ export default function TestExecutionArchive({
   const soapFaultTimelineEntries = buildArchiveFaultTimelineEntries(archiveReport?.soap_fault_timeline)
   const soapPayloadTimelineEntries = buildArchivePayloadTimelineEntries(archiveReport?.soap_payload_timeline)
   const summaryTimelineEntries = buildArchiveSummaryTimelineEntries(archiveReport?.summary_timeline)
+  const runtimeBrowserSummary = formatBrowserRuntimeSummary(archiveReport?.manifest.provenance?.runtime_settings?.browser)
 
   const handleCopySection = async (key: string, value: string) => {
     if (!navigator.clipboard?.writeText) return
@@ -399,6 +401,12 @@ export default function TestExecutionArchive({
                     Shakeout {formatArchiveFlag(archiveReport.manifest.provenance.script_shakeout)} · Baseline {formatArchiveFlag(archiveReport.manifest.provenance.resource_baseline)}
                   </span>
                 </div>
+                {runtimeBrowserSummary && (
+                  <div className="scenario-script-detail-card">
+                    <span className="scenario-script-detail-label">Browser Runtime</span>
+                    <span className="scenario-script-detail-value">{runtimeBrowserSummary}</span>
+                  </div>
+                )}
                 <div className="scenario-script-detail-card">
                   <span className="scenario-script-detail-label">Metrics Interval</span>
                   <span className="scenario-script-detail-value">{archiveReport.manifest.provenance.execution_settings.general.metrics_interval_seconds}s</span>

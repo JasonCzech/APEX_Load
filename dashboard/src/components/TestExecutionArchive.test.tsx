@@ -60,6 +60,14 @@ describe('TestExecutionArchive', () => {
         total_vusers: 1,
         duration: '1m',
         baseline_pinned: true,
+        runtime_settings: {
+          browser: {
+            device_profile: 'iphone_se',
+            orientation: 'portrait',
+            touch_mode: true,
+            headless: false,
+          },
+        },
         execution_settings: {
           general: {
             api_endpoint: ':8080',
@@ -297,6 +305,8 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('goal_oriented · 1 VUsers · 1m')
     expect(container.textContent).toContain('project-1 / release-7 / scenario-9')
     expect(container.textContent).toContain('Shakeout Enabled · Baseline Enabled')
+    expect(container.textContent).toContain('Browser Runtime')
+    expect(container.textContent).toContain('iphone_se · Portrait · Touch enabled · Headed')
     expect(container.textContent).toContain('Pinned')
     expect(container.textContent).toContain('STORMRUNNER_SAMPLE_FLAG=enabled')
     expect(container.textContent).toContain('generator-1 · healthy · 50 available')
