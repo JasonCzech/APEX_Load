@@ -63,6 +63,40 @@ func TestParseRunArgs_SLAFlags(t *testing.T) {
 	}
 }
 
+func TestResolveGoalConfig_UsesScriptDefaultsAndCLIOverrides(t *testing.T) {
+	scriptP95 := 900.0
+	scriptErrorPct := 1.5
+	cliErrorPct := 2.5
+	maxErrorCount := 3
+
+	goalConfig := resolveGoalConfig(&dsl.Script{
+		GoalConfig: &dsl.GoalConfig{
+			P95LatencyMs:    &scriptP95,
+			MaxErrorPct:     &scriptErrorPct,
+			MaxErrorCount:   &maxErrorCount,
+			StopOnMaxErrors: true,
+		},
+	}, runArgs{
+		maxErrorPct: &cliErrorPct,
+	})
+
+	if goalConfig == nil {
+		t.Fatal("goalConfig = nil, want merged config")
+	}
+	if goalConfig.P95LatencyMs == nil || *goalConfig.P95LatencyMs != scriptP95 {
+		t.Fatalf("P95LatencyMs = %#v, want %v", goalConfig.P95LatencyMs, scriptP95)
+	}
+	if goalConfig.MaxErrorPct == nil || *goalConfig.MaxErrorPct != cliErrorPct {
+		t.Fatalf("MaxErrorPct = %#v, want CLI override %v", goalConfig.MaxErrorPct, cliErrorPct)
+	}
+	if goalConfig.MaxErrorCount == nil || *goalConfig.MaxErrorCount != maxErrorCount {
+		t.Fatalf("MaxErrorCount = %#v, want script value %d", goalConfig.MaxErrorCount, maxErrorCount)
+	}
+	if !goalConfig.StopOnMaxErrors {
+		t.Fatalf("StopOnMaxErrors = %v, want true", goalConfig.StopOnMaxErrors)
+	}
+}
+
 func TestApplyRuntimeOverrides_ReplacesEnvPlaceholdersAndBaseURL(t *testing.T) {
 	script := &dsl.Script{
 		Name:     "preview",

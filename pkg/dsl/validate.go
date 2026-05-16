@@ -65,6 +65,52 @@ func ValidateScriptIssues(script *Script) []string {
 	issues = append(issues, validateParameterIssues(script)...)
 	issues = append(issues, validateBrowserConfigIssues(script)...)
 	issues = append(issues, validateWebRuntimeIssues(script)...)
+	issues = append(issues, validateGoalConfigIssues(script.GoalConfig)...)
+
+	return issues
+}
+
+func validateGoalConfigIssues(goal *GoalConfig) []string {
+	if goal == nil {
+		return nil
+	}
+
+	var issues []string
+	if goal.P95LatencyMs != nil && *goal.P95LatencyMs <= 0 {
+		issues = append(issues, "goal_config.p95_latency_ms must be greater than zero")
+	}
+	if goal.MaxErrorPct != nil && (*goal.MaxErrorPct < 0 || *goal.MaxErrorPct > 100) {
+		issues = append(issues, "goal_config.max_error_pct must be between 0 and 100")
+	}
+	if goal.MaxAvgServerProcessingMs != nil && *goal.MaxAvgServerProcessingMs <= 0 {
+		issues = append(issues, "goal_config.max_avg_server_processing_ms must be greater than zero")
+	}
+	if goal.MaxAvgTransferMs != nil && *goal.MaxAvgTransferMs <= 0 {
+		issues = append(issues, "goal_config.max_avg_transfer_ms must be greater than zero")
+	}
+	if goal.MinVUsers != nil && *goal.MinVUsers < 1 {
+		issues = append(issues, "goal_config.min_vusers must be at least 1")
+	}
+	if goal.MaxVUsers != nil && *goal.MaxVUsers < 1 {
+		issues = append(issues, "goal_config.max_vusers must be at least 1")
+	}
+	if goal.MinVUsers != nil && goal.MaxVUsers != nil && *goal.MinVUsers > *goal.MaxVUsers {
+		issues = append(issues, "goal_config.min_vusers cannot exceed goal_config.max_vusers")
+	}
+	if goal.MaxErrorCount != nil && *goal.MaxErrorCount < 1 {
+		issues = append(issues, "goal_config.max_error_count must be at least 1")
+	}
+	if goal.SLABreachWindow != "" {
+		if _, err := time.ParseDuration(goal.SLABreachWindow); err != nil {
+			issues = append(issues, fmt.Sprintf("goal_config.sla_breach_window is invalid: %v", err))
+		}
+	}
+	if goal.StopOnSLABreach && goal.P95LatencyMs == nil && goal.MaxErrorPct == nil && goal.MaxAvgServerProcessingMs == nil && goal.MaxAvgTransferMs == nil {
+		issues = append(issues, "goal_config.stop_on_sla_breach requires a latency, error, server processing, or transfer threshold")
+	}
+	if goal.StopOnMaxErrors && goal.MaxErrorCount == nil {
+		issues = append(issues, "goal_config.stop_on_max_errors requires goal_config.max_error_count")
+	}
 
 	return issues
 }

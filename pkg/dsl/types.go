@@ -7,6 +7,7 @@ type Script struct {
 	Name          string          `json:"name"`
 	Version       string          `json:"version"`
 	Protocol      string          `json:"protocol"`
+	GoalConfig    *GoalConfig     `json:"goal_config,omitempty"`
 	ProjectID     string          `json:"project_id,omitempty"`
 	FolderID      *string         `json:"folder_id,omitempty"`
 	GeneratedBy   string          `json:"generated_by,omitempty"`
@@ -20,6 +21,20 @@ type Script struct {
 	Teardown      []Action        `json:"teardown,omitempty"`
 	CreatedAt     time.Time       `json:"created_at,omitempty"`
 	UpdatedAt     time.Time       `json:"updated_at,omitempty"`
+}
+
+type GoalConfig struct {
+	TargetAverageTPS         *float64 `json:"target_average_tps,omitempty"`
+	P95LatencyMs             *float64 `json:"p95_latency_ms,omitempty"`
+	MaxErrorPct              *float64 `json:"max_error_pct,omitempty"`
+	MaxAvgServerProcessingMs *float64 `json:"max_avg_server_processing_ms,omitempty"`
+	MaxAvgTransferMs         *float64 `json:"max_avg_transfer_ms,omitempty"`
+	MaxErrorCount            *int     `json:"max_error_count,omitempty"`
+	MinVUsers                *int     `json:"min_vusers,omitempty"`
+	MaxVUsers                *int     `json:"max_vusers,omitempty"`
+	StopOnSLABreach          bool     `json:"stop_on_sla_breach,omitempty"`
+	StopOnMaxErrors          bool     `json:"stop_on_max_errors,omitempty"`
+	SLABreachWindow          string   `json:"sla_breach_window,omitempty"`
 }
 
 type ScriptMetadata struct {

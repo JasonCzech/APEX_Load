@@ -177,6 +177,70 @@ func TestParse_FullConfig(t *testing.T) {
 	}
 }
 
+func TestParse_GoalConfig(t *testing.T) {
+	input := `{
+		"script": {
+			"name": "goal-config",
+			"protocol": "http",
+			"goal_config": {
+				"p95_latency_ms": 800,
+				"max_error_pct": 2.5,
+				"max_error_count": 4,
+				"stop_on_max_errors": true
+			},
+			"config": {
+				"base_url": "https://example.com"
+			},
+			"actions": [
+				{"name": "homepage", "type": "request", "method": "GET", "target": "/"}
+			]
+		}
+	}`
+
+	script, err := Parse([]byte(input))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if script.GoalConfig == nil {
+		t.Fatal("GoalConfig = nil, want parsed goal config")
+	}
+	if script.GoalConfig.P95LatencyMs == nil || *script.GoalConfig.P95LatencyMs != 800 {
+		t.Fatalf("P95LatencyMs = %#v, want 800", script.GoalConfig.P95LatencyMs)
+	}
+	if script.GoalConfig.MaxErrorPct == nil || *script.GoalConfig.MaxErrorPct != 2.5 {
+		t.Fatalf("MaxErrorPct = %#v, want 2.5", script.GoalConfig.MaxErrorPct)
+	}
+	if script.GoalConfig.MaxErrorCount == nil || *script.GoalConfig.MaxErrorCount != 4 {
+		t.Fatalf("MaxErrorCount = %#v, want 4", script.GoalConfig.MaxErrorCount)
+	}
+	if !script.GoalConfig.StopOnMaxErrors {
+		t.Fatal("StopOnMaxErrors = false, want true")
+	}
+}
+
+func TestParse_InvalidGoalConfig(t *testing.T) {
+	input := `{
+		"script": {
+			"name": "goal-config",
+			"protocol": "http",
+			"goal_config": {
+				"max_error_pct": 120
+			},
+			"config": {
+				"base_url": "https://example.com"
+			},
+			"actions": [
+				{"name": "homepage", "type": "request", "method": "GET", "target": "/"}
+			]
+		}
+	}`
+
+	_, err := Parse([]byte(input))
+	if err == nil {
+		t.Fatal("expected validation error for invalid goal_config")
+	}
+}
+
 func TestParse_SOAPConfigAndActionFields(t *testing.T) {
 	input := `{
 		"script": {

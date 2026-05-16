@@ -42,7 +42,6 @@ func main() {
 
 func runTest() {
 	args := parseRunArgs(os.Args[2:])
-	goalConfig := buildGoalConfigFromArgs(args)
 
 	if args.script == "" {
 		fmt.Fprintln(os.Stderr, "error: --script is required")
@@ -54,6 +53,7 @@ func runTest() {
 		fmt.Fprintf(os.Stderr, "error preparing script: %v\n", err)
 		os.Exit(1)
 	}
+	goalConfig := resolveGoalConfig(script, args)
 
 	var result *engine.RunResult
 	var apiResult *ApiTestResult

@@ -278,6 +278,11 @@ Scripts are JSON with these sections:
 
 ```json
 {
+  "goal_config": {
+    "p95_latency_ms": 800,
+    "max_error_pct": 2.5,
+    "max_error_count": 10
+  },
   "config": {
     "protocol": "http",
     "base_url": "https://api.example.com",
@@ -314,6 +319,7 @@ Scripts are JSON with these sections:
 
 **Features:**
 - **Template variables**: `{{env.VAR}}`, `{{data.source.column}}`, `{{param.name}}`, `{{var.name}}`, `{{fn.uuid()}}`
+- **Scenario-native guardrails**: Optional top-level `goal_config` thresholds are honored by `stormctl run`, with explicit CLI guardrail flags taking precedence when both are present
 - **Named parameters**: random number, date/time, timestamp, counter, file/list, UUID, and random string generators with `once`, `each_iteration`, and `each_occurrence` update modes
 - **Protocol surfaces**: `http`, `soap`, `java_http`, `browser`, and `jms-solace` authoring paths in the dashboard
 - **Extractors**: Pull values from responses for use in subsequent requests
