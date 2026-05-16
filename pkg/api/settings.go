@@ -11,6 +11,7 @@ type SystemSettings struct {
 	General          GeneralSettings          `json:"general"`
 	Thresholds       ThresholdSettings        `json:"thresholds"`
 	CapacityPlanning CapacityPlanningSettings `json:"capacity_planning"`
+	Notifications    NotificationsSettings    `json:"notifications"`
 	Auth             AuthSettings             `json:"auth"`
 }
 
@@ -120,7 +121,8 @@ func defaultSystemSettings(maxConcurrent int) SystemSettings {
 				ConfiguredAvailableGenerators: 1,
 			},
 		},
-		Auth: defaultAuthSettings(),
+		Notifications: NotificationsSettings{},
+		Auth:          defaultAuthSettings(),
 	}
 }
 
@@ -142,6 +144,7 @@ func cloneSystemSettings(in SystemSettings) SystemSettings {
 		v := *in.Thresholds.MaxAvgTransferMs
 		out.Thresholds.MaxAvgTransferMs = &v
 	}
+	out.Notifications = cloneNotificationsSettings(in.Notifications)
 	return out
 }
 
@@ -179,6 +182,7 @@ func normalizeLoadedSystemSettings(in SystemSettings, defaultMaxConcurrent int) 
 	if out.CapacityPlanning.Availability.ConfiguredAvailableGenerators == 0 {
 		out.CapacityPlanning.Availability.ConfiguredAvailableGenerators = defaults.CapacityPlanning.Availability.ConfiguredAvailableGenerators
 	}
+	out.Notifications = cloneNotificationsSettings(out.Notifications)
 	out.Auth = normalizeAuthSettings(out.Auth)
 
 	return out
@@ -236,6 +240,9 @@ func validateSystemSettings(settings SystemSettings) error {
 	case capacityAvailabilityConfigured, capacityAvailabilityConfiguredPlusLive:
 	default:
 		return fmt.Errorf("capacity_planning.availability.source must be one of %q or %q", capacityAvailabilityConfigured, capacityAvailabilityConfiguredPlusLive)
+	}
+	if err := validateNotificationsSettings(settings.Notifications); err != nil {
+		return err
 	}
 	if err := validateAuthSettings(settings.Auth); err != nil {
 		return err

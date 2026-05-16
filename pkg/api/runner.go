@@ -95,6 +95,7 @@ type TestRunner struct {
 	archiveStore  archivePersistence
 	settingsStore settingsPersistence
 	execution     testExecutionBackend
+	notifier      *notificationDispatcher
 }
 
 type ManagedTest struct {
@@ -119,6 +120,9 @@ type ManagedTest struct {
 	Duration           time.Duration                `json:"duration_ns"`
 	DurationStr        string                       `json:"duration"`
 	CreatedAt          time.Time                    `json:"created_at"`
+	PendingSince       *time.Time                   `json:"pending_since,omitempty"`
+	PendingReason      string                       `json:"pending_reason,omitempty"`
+	QueuePosition      int                          `json:"queue_position,omitempty"`
 	StartedAt          *time.Time                   `json:"started_at,omitempty"`
 	EndedAt            *time.Time                   `json:"ended_at,omitempty"`
 	LiveMetrics        *LiveMetrics                 `json:"live_metrics,omitempty"`
@@ -502,11 +506,13 @@ func NewTestRunner(maxTests int, hub *Hub, store storage.Store) *TestRunner {
 		archiveStore:  store,
 		settingsStore: store,
 		execution:     localExecutionBackend{},
+		notifier:      newNotificationDispatcher(nil),
 	}
 	tr.loadSystemSettings(maxTests)
 	tr.loadStoredScripts()
 	tr.loadStoredScenarios()
 	tr.loadStoredTests()
+	tr.ReconcilePendingTests()
 
 	return tr
 }
@@ -681,6 +687,7 @@ func managedTestFromRecord(record *storage.TestRecord) *ManagedTest {
 		Duration:         time.Duration(record.Duration),
 		DurationStr:      time.Duration(record.Duration).String(),
 		CreatedAt:        record.StartTime,
+		PendingSince:     record.PendingSince,
 		Error:            record.Error,
 	}
 	if record.EndTime != nil {
@@ -1546,9 +1553,6 @@ func (tr *TestRunner) CreateTest(req CreateTestRequest) (*ManagedTest, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := tr.validateConcurrencyLimitsLocked(test.ProjectID); err != nil {
-		return nil, err
-	}
 
 	tr.tests[test.ID] = test
 
@@ -1990,8 +1994,12 @@ func deriveManagedTestName(requestName string, groups []TestGroup) string {
 func (tr *TestRunner) GetTest(id string) (*ManagedTest, bool) {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
+	tr.refreshPendingQueueMetadataLocked()
 	t, ok := tr.tests[id]
 	if ok && t.Status == "QUEUED" {
+		tr.refreshCapacityAdvisoryLocked(t)
+	}
+	if ok && t.Status == "PENDING" {
 		tr.refreshCapacityAdvisoryLocked(t)
 	}
 	if !ok {
@@ -2124,9 +2132,13 @@ func cloneTxMetricsMap(in map[string]*TxMetrics) map[string]*TxMetrics {
 func (tr *TestRunner) ListTests() []*ManagedTest {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
+	tr.refreshPendingQueueMetadataLocked()
 	out := make([]*ManagedTest, 0, len(tr.tests))
 	for _, t := range tr.tests {
 		if t.Status == "QUEUED" {
+			tr.refreshCapacityAdvisoryLocked(t)
+		}
+		if t.Status == "PENDING" {
 			tr.refreshCapacityAdvisoryLocked(t)
 		}
 		out = append(out, t)
@@ -2138,6 +2150,7 @@ func (tr *TestRunner) ListTestsFiltered(projectID string, folderID *string) []*M
 	projectID = normalizeProjectID(projectID)
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
+	tr.refreshPendingQueueMetadataLocked()
 	out := make([]*ManagedTest, 0, len(tr.tests))
 	for _, t := range tr.tests {
 		if t.ProjectID != projectID {
@@ -2155,6 +2168,9 @@ func (tr *TestRunner) ListTestsFiltered(projectID string, folderID *string) []*M
 		if t.Status == "QUEUED" {
 			tr.refreshCapacityAdvisoryLocked(t)
 		}
+		if t.Status == "PENDING" {
+			tr.refreshCapacityAdvisoryLocked(t)
+		}
 		out = append(out, t)
 	}
 	return out
@@ -2163,6 +2179,7 @@ func (tr *TestRunner) ListTestsFiltered(projectID string, folderID *string) []*M
 func (tr *TestRunner) ListTestsByContext(applicationID string, releaseID string, scenarioID string) []*ManagedTest {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
+	tr.refreshPendingQueueMetadataLocked()
 	out := make([]*ManagedTest, 0, len(tr.tests))
 	for _, t := range tr.tests {
 		if applicationID != "" && t.ApplicationID != applicationID {
@@ -2175,6 +2192,9 @@ func (tr *TestRunner) ListTestsByContext(applicationID string, releaseID string,
 			continue
 		}
 		if t.Status == "QUEUED" {
+			tr.refreshCapacityAdvisoryLocked(t)
+		}
+		if t.Status == "PENDING" {
 			tr.refreshCapacityAdvisoryLocked(t)
 		}
 		out = append(out, t)
@@ -2262,6 +2282,9 @@ func (tr *TestRunner) StartTestWithOptions(id string, opts StartTestOptions) err
 	if err != nil {
 		return err
 	}
+	if test == nil {
+		return nil
+	}
 
 	go tr.runTest(test)
 	return nil
@@ -2272,23 +2295,38 @@ func (tr *TestRunner) prepareTestStartLocked(id string, opts StartTestOptions) (
 	if !ok {
 		return nil, fmt.Errorf("test not found: %s", id)
 	}
-	if test.Status != "QUEUED" {
-		return nil, fmt.Errorf("test is %s, must be QUEUED to start", test.Status)
-	}
-	if err := tr.validateConcurrencyLimitsLocked(test.ProjectID); err != nil {
-		return nil, err
+	if test.Status != "QUEUED" && test.Status != "PENDING" {
+		return nil, fmt.Errorf("test is %s, must be QUEUED or PENDING to start", test.Status)
 	}
 
 	tr.refreshCapacityAdvisoryLocked(test)
 	if err := buildCapacityShortfallStartError(id, test.CapacityAdvisory, opts); err != nil {
 		return nil, err
 	}
+	if blocked, reason := tr.evaluateQuotaBlockLocked(test, ""); blocked {
+		now := time.Now()
+		test.Status = "PENDING"
+		if test.PendingSince == nil || test.PendingSince.IsZero() {
+			test.PendingSince = &now
+		}
+		test.PendingReason = reason
+		test.QueuePosition = 0
+		test.Error = ""
+		tr.saveManagedTestRecord(test)
+		tr.broadcastEvent("test_pending", test)
+		return nil, nil
+	}
 
 	test.Status = "INITIALIZING"
+	test.PendingSince = nil
+	test.PendingReason = ""
+	test.QueuePosition = 0
+	test.Error = ""
 	test.executionBackend = tr.execution
 	if test.executionBackend == nil {
 		test.executionBackend = localExecutionBackend{}
 	}
+	tr.saveManagedTestRecord(test)
 	return test, nil
 }
 
@@ -2316,6 +2354,30 @@ func (tr *TestRunner) countActiveTestsForProjectLocked(projectID string) int {
 	return active
 }
 
+func (tr *TestRunner) countActiveVUsersLocked() int {
+	total := 0
+	for _, test := range tr.tests {
+		if test.Status == "RUNNING" || test.Status == "INITIALIZING" {
+			total += test.TotalVUsers
+		}
+	}
+	return total
+}
+
+func (tr *TestRunner) countActiveVUsersForProjectLocked(projectID string) int {
+	projectID = normalizeProjectID(projectID)
+	total := 0
+	for _, test := range tr.tests {
+		if normalizeProjectID(test.ProjectID) != projectID {
+			continue
+		}
+		if test.Status == "RUNNING" || test.Status == "INITIALIZING" {
+			total += test.TotalVUsers
+		}
+	}
+	return total
+}
+
 func (tr *TestRunner) validateConcurrencyLimitsLocked(projectID string) error {
 	maxConcurrent := tr.settings.General.MaxConcurrentTests
 	if tr.countActiveTestsLocked() >= maxConcurrent {
@@ -2326,6 +2388,37 @@ func (tr *TestRunner) validateConcurrencyLimitsLocked(projectID string) error {
 		return fmt.Errorf("project max concurrent tests (%d) reached", projectMaxConcurrent)
 	}
 	return nil
+}
+
+func (tr *TestRunner) evaluateQuotaBlockLocked(test *ManagedTest, excludeTestID string) (bool, string) {
+	if test == nil {
+		return false, ""
+	}
+	globalActiveTests := tr.countActiveTestsLocked()
+	projectActiveTests := tr.countActiveTestsForProjectLocked(test.ProjectID)
+	globalActiveVUsers := tr.countActiveVUsersLocked()
+	projectActiveVUsers := tr.countActiveVUsersForProjectLocked(test.ProjectID)
+	if excludeTestID != "" {
+		if existing, ok := tr.tests[excludeTestID]; ok && (existing.Status == "RUNNING" || existing.Status == "INITIALIZING") {
+			globalActiveTests--
+			projectActiveTests--
+			globalActiveVUsers -= existing.TotalVUsers
+			projectActiveVUsers -= existing.TotalVUsers
+		}
+	}
+	maxConcurrent := tr.settings.General.MaxConcurrentTests
+	if globalActiveTests >= maxConcurrent {
+		return true, fmt.Sprintf("waiting for a global test slot (%d max concurrent tests)", maxConcurrent)
+	}
+	projectMaxConcurrent := tr.projectMaxConcurrentTests(test.ProjectID)
+	if projectMaxConcurrent > 0 && projectActiveTests >= projectMaxConcurrent {
+		return true, fmt.Sprintf("waiting for a project test slot (%d max concurrent tests)", projectMaxConcurrent)
+	}
+	projectMaxVUsers := tr.projectMaxVUsers(test.ProjectID)
+	if projectMaxVUsers > 0 && projectActiveVUsers+test.TotalVUsers > projectMaxVUsers {
+		return true, fmt.Sprintf("waiting for project VUser capacity (%d max vusers)", projectMaxVUsers)
+	}
+	return false, ""
 }
 
 func (tr *TestRunner) projectMaxConcurrentTests(projectID string) int {
@@ -2341,6 +2434,64 @@ func (tr *TestRunner) projectMaxConcurrentTests(projectID string) int {
 		return 0
 	}
 	return project.Settings.MaxConcurrentTests
+}
+
+func (tr *TestRunner) projectMaxVUsers(projectID string) int {
+	if tr.projectStore == nil {
+		return 0
+	}
+	projectID = normalizeProjectID(projectID)
+	project, err := tr.projectStore.GetProject(projectID)
+	if err != nil || project == nil {
+		return 0
+	}
+	if project.Settings.MaxVUsers < 1 {
+		return 0
+	}
+	return project.Settings.MaxVUsers
+}
+
+func pendingAnchor(test *ManagedTest) time.Time {
+	if test != nil && test.PendingSince != nil && !test.PendingSince.IsZero() {
+		return *test.PendingSince
+	}
+	if test != nil {
+		return test.CreatedAt
+	}
+	return time.Time{}
+}
+
+func (tr *TestRunner) refreshPendingQueueMetadataLocked() {
+	pending := make([]*ManagedTest, 0)
+	for _, test := range tr.tests {
+		if test.Status != "PENDING" {
+			test.PendingReason = ""
+			test.QueuePosition = 0
+			continue
+		}
+		if test.PendingSince == nil || test.PendingSince.IsZero() {
+			pendingSince := test.CreatedAt
+			test.PendingSince = &pendingSince
+		}
+		pending = append(pending, test)
+	}
+	sort.Slice(pending, func(i, j int) bool {
+		left := pendingAnchor(pending[i])
+		right := pendingAnchor(pending[j])
+		if left.Equal(right) {
+			return pending[i].CreatedAt.Before(pending[j].CreatedAt)
+		}
+		return left.Before(right)
+	})
+	for index, test := range pending {
+		test.QueuePosition = index + 1
+		blocked, reason := tr.evaluateQuotaBlockLocked(test, "")
+		if blocked {
+			test.PendingReason = reason
+		} else {
+			test.PendingReason = "ready to start when the queue advances"
+		}
+	}
 }
 
 func buildCapacityShortfallStartError(id string, advisory *CapacityAdvisory, opts StartTestOptions) error {
@@ -2407,10 +2558,18 @@ func buildManagedTestRecord(test *ManagedTest) *storage.TestRecord {
 		TotalVUsers:      test.TotalVUsers,
 		Duration:         int64(test.Duration),
 		StartTime:        test.CreatedAt,
+		PendingSince:     test.PendingSince,
 		Groups:           test.Groups,
 		GoalConfig:       test.GoalConfig,
 		RuntimeSettings:  test.RuntimeSettings,
 	}
+}
+
+func (tr *TestRunner) ReconcilePendingTests() {
+	tr.promotePendingTests()
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	tr.refreshPendingQueueMetadataLocked()
 }
 
 func normalizeProjectID(projectID string) string {
@@ -3502,16 +3661,23 @@ func (tr *TestRunner) failTestBeforeRun(test *ManagedTest, message string) {
 	now := time.Now()
 	tr.mu.Lock()
 	test.Status = "FAILED"
+	test.PendingSince = nil
+	test.PendingReason = ""
+	test.QueuePosition = 0
 	test.Error = message
 	test.EndedAt = &now
 	tr.mu.Unlock()
 	tr.updateStoredTestStatus(test.ID, "FAILED", &now, message)
 	tr.broadcastEvent("test_failed", test)
+	tr.promotePendingTests()
 }
 
 func (tr *TestRunner) completeTestRun(test *ManagedTest, finalStatus string, endTime time.Time, finalError string, archiveRecord *storage.RunArchiveRecord) {
 	tr.mu.Lock()
 	test.Status = finalStatus
+	test.PendingSince = nil
+	test.PendingReason = ""
+	test.QueuePosition = 0
 	test.Error = finalError
 	test.EndedAt = &endTime
 	test.Archive = archiveRecord
@@ -3522,9 +3688,66 @@ func (tr *TestRunner) completeTestRun(test *ManagedTest, finalStatus string, end
 	tr.updateStoredTestStatus(test.ID, finalStatus, &endTime, finalError)
 	if finalStatus == "FAILED" {
 		tr.broadcastEvent("test_failed", test)
+		tr.promotePendingTests()
 		return
 	}
 	tr.broadcastEvent("test_complete", test)
+	tr.promotePendingTests()
+}
+
+func (tr *TestRunner) promotePendingTests() {
+	for {
+		tr.mu.Lock()
+		pending := tr.nextPromotablePendingTestLocked()
+		if pending == nil {
+			tr.mu.Unlock()
+			return
+		}
+		pending.Status = "INITIALIZING"
+		pending.PendingSince = nil
+		pending.PendingReason = ""
+		pending.QueuePosition = 0
+		pending.Error = ""
+		pending.executionBackend = tr.execution
+		if pending.executionBackend == nil {
+			pending.executionBackend = localExecutionBackend{}
+		}
+		tr.mu.Unlock()
+		tr.saveManagedTestRecord(pending)
+		tr.broadcastEvent("test_started", pending)
+		go tr.runTest(pending)
+	}
+}
+
+func (tr *TestRunner) nextPromotablePendingTestLocked() *ManagedTest {
+	pending := make([]*ManagedTest, 0)
+	for _, test := range tr.tests {
+		if test.Status == "PENDING" {
+			pending = append(pending, test)
+		}
+	}
+	if len(pending) == 0 {
+		return nil
+	}
+	sort.Slice(pending, func(i, j int) bool {
+		left := pendingAnchor(pending[i])
+		right := pendingAnchor(pending[j])
+		if left.Equal(right) {
+			return pending[i].CreatedAt.Before(pending[j].CreatedAt)
+		}
+		return left.Before(right)
+	})
+	for _, test := range pending {
+		tr.refreshCapacityAdvisoryLocked(test)
+		if buildCapacityShortfallStartError(test.ID, test.CapacityAdvisory, StartTestOptions{}) != nil {
+			continue
+		}
+		if blocked, _ := tr.evaluateQuotaBlockLocked(test, ""); blocked {
+			continue
+		}
+		return test
+	}
+	return nil
 }
 
 func appendRunError(existing string, prefix string, err error) string {
@@ -3632,14 +3855,27 @@ func (tr *TestRunner) processMetricsSnapshot(test *ManagedTest, snap engine.Metr
 }
 
 func (tr *TestRunner) broadcastEvent(eventType string, test *ManagedTest) {
-	tr.hub.BroadcastJSON(map[string]any{
-		"type":       eventType,
-		"test_id":    test.ID,
-		"project_id": normalizeProjectID(test.ProjectID),
-		"test_name":  test.Name,
-		"status":     test.Status,
-		"timestamp":  time.Now(),
-	})
+	now := time.Now()
+	if tr.hub != nil {
+		tr.hub.BroadcastJSON(map[string]any{
+			"type":       eventType,
+			"test_id":    test.ID,
+			"project_id": normalizeProjectID(test.ProjectID),
+			"test_name":  test.Name,
+			"status":     test.Status,
+			"timestamp":  now,
+		})
+	}
+	if tr.notifier != nil {
+		tr.notifier.Dispatch(tr.GetSystemSettings().Notifications, NotificationEvent{
+			Type:      eventType,
+			TestID:    test.ID,
+			ProjectID: normalizeProjectID(test.ProjectID),
+			TestName:  test.Name,
+			Status:    test.Status,
+			Timestamp: now,
+		})
+	}
 }
 
 // applyRuntimeOverrides merges test-level runtime settings into a script config,

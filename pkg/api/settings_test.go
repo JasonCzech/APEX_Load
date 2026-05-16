@@ -43,6 +43,9 @@ func TestSystemSettingsAPIAndPersistence(t *testing.T) {
 	if initial.CapacityPlanning.Availability.Source != capacityAvailabilityConfigured {
 		t.Fatalf("initial availability source = %q, want %q", initial.CapacityPlanning.Availability.Source, capacityAvailabilityConfigured)
 	}
+	if len(initial.Notifications.Webhooks) != 0 {
+		t.Fatalf("initial notifications = %#v, want none", initial.Notifications.Webhooks)
+	}
 	if initial.Auth.Mode != authModeDisabled {
 		t.Fatalf("initial auth mode = %q, want %q", initial.Auth.Mode, authModeDisabled)
 	}
@@ -78,6 +81,15 @@ func TestSystemSettingsAPIAndPersistence(t *testing.T) {
 				Source:                        capacityAvailabilityConfiguredPlusLive,
 				ConfiguredAvailableGenerators: 6,
 			},
+		},
+		Notifications: NotificationsSettings{
+			Webhooks: []NotificationWebhookSettings{{
+				Name:    "Perf Alerts",
+				Enabled: true,
+				URL:     "https://hooks.slack.test/services/T000/B000/abc123",
+				Format:  notificationFormatSlack,
+				Events:  []string{"test_failed", "test_complete"},
+			}},
 		},
 		Auth: AuthSettings{
 			Mode:               authModeTrustedHeaders,
@@ -137,6 +149,12 @@ func TestSystemSettingsAPIAndPersistence(t *testing.T) {
 	if updated.CapacityPlanning.Availability.ConfiguredAvailableGenerators != 6 {
 		t.Fatalf("configured available generators = %d, want 6", updated.CapacityPlanning.Availability.ConfiguredAvailableGenerators)
 	}
+	if len(updated.Notifications.Webhooks) != 1 {
+		t.Fatalf("notification webhooks = %d, want 1", len(updated.Notifications.Webhooks))
+	}
+	if updated.Notifications.Webhooks[0].Format != notificationFormatSlack {
+		t.Fatalf("notification format = %q, want %q", updated.Notifications.Webhooks[0].Format, notificationFormatSlack)
+	}
 	if updated.Auth.Mode != authModeTrustedHeaders {
 		t.Fatalf("auth mode = %q, want %q", updated.Auth.Mode, authModeTrustedHeaders)
 	}
@@ -154,6 +172,9 @@ func TestSystemSettingsAPIAndPersistence(t *testing.T) {
 	}
 	if persisted.CapacityPlanning.Availability.Source != capacityAvailabilityConfiguredPlusLive {
 		t.Fatalf("persisted availability source = %q, want %q", persisted.CapacityPlanning.Availability.Source, capacityAvailabilityConfiguredPlusLive)
+	}
+	if len(persisted.Notifications.Webhooks) != 1 || persisted.Notifications.Webhooks[0].URL != "https://hooks.slack.test/services/T000/B000/abc123" {
+		t.Fatalf("persisted notifications = %#v, want webhook URL", persisted.Notifications.Webhooks)
 	}
 	if persisted.Auth.ProjectRolesHeader != "X-Test-Project-Roles" {
 		t.Fatalf("persisted project roles header = %q, want X-Test-Project-Roles", persisted.Auth.ProjectRolesHeader)
@@ -236,6 +257,42 @@ func TestSystemSettingsValidationRejectsInvalidCapacityPlanning(t *testing.T) {
 	}
 }
 
+func TestSystemSettingsValidationRejectsInvalidNotifications(t *testing.T) {
+	err := validateSystemSettings(SystemSettings{
+		General: GeneralSettings{
+			APIEndpoint:            ":8080",
+			MaxConcurrentTests:     2,
+			MetricsIntervalSeconds: 1,
+		},
+		Thresholds: ThresholdSettings{},
+		CapacityPlanning: CapacityPlanningSettings{
+			HeadroomPct: 20,
+			Generator: GeneratorCapacitySettings{
+				CPUCores:    4,
+				MemoryMB:    8192,
+				NetworkMbps: 1000,
+				MaxVUsers:   10000,
+			},
+			Availability: AvailabilitySettings{
+				Source:                        capacityAvailabilityConfigured,
+				ConfiguredAvailableGenerators: 1,
+			},
+		},
+		Notifications: NotificationsSettings{
+			Webhooks: []NotificationWebhookSettings{{
+				Enabled: true,
+				URL:     "ftp://hooks.example.test/notify",
+				Format:  "email",
+				Events:  []string{"test_created"},
+			}},
+		},
+		Auth: defaultAuthSettings(),
+	})
+	if err == nil {
+		t.Fatal("expected invalid notifications to fail validation")
+	}
+}
+
 func TestSystemSettingsValidationRejectsInvalidAuthSettings(t *testing.T) {
 	err := validateSystemSettings(SystemSettings{
 		General: GeneralSettings{
@@ -294,7 +351,7 @@ func TestNormalizeLoadedSystemSettingsBackfillsCapacityPlanningDefaults(t *testi
 	}
 }
 
-func TestStartTestRespectsConfiguredMaxConcurrent(t *testing.T) {
+func TestStartTestQueuesWhenConfiguredMaxConcurrentReached(t *testing.T) {
 	runner := NewTestRunner(10, NewHub(), nil)
 
 	_, err := runner.UpdateSystemSettings(SystemSettings{
@@ -328,7 +385,15 @@ func TestStartTestRespectsConfiguredMaxConcurrent(t *testing.T) {
 	runner.mu.Unlock()
 
 	err = runner.StartTest("queued")
-	if err == nil {
-		t.Fatal("expected StartTest to fail when max concurrent limit is reached")
+	if err != nil {
+		t.Fatalf("StartTest returned error: %v", err)
+	}
+
+	queued, ok := runner.GetTest("queued")
+	if !ok {
+		t.Fatal("expected queued test to remain in runner")
+	}
+	if queued.Status != "PENDING" {
+		t.Fatalf("test status = %s, want PENDING", queued.Status)
 	}
 }

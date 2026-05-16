@@ -51,6 +51,7 @@ export interface RedactionRule {
 export interface ProjectSettings {
   redaction_rules?: RedactionRule[]
   max_concurrent_tests?: number
+  max_vusers?: number
 }
 
 export interface Application {
@@ -173,6 +174,9 @@ export interface TestSummary {
   duration: string
   start_delay?: string
   created_at: string
+  pending_since?: string
+  pending_reason?: string
+  queue_position?: number
   started_at?: string
   ended_at?: string
   live_metrics?: LiveMetrics
@@ -495,6 +499,7 @@ export interface ScenarioDataPoolBinding {
 
 export type TestStatus =
   | 'QUEUED'
+  | 'PENDING'
   | 'INITIALIZING'
   | 'RUNNING'
   | 'STOPPING'
@@ -941,6 +946,18 @@ export interface DashboardAuthSettings {
   project_roles_header: string
 }
 
+export interface DashboardNotificationWebhook {
+  name?: string
+  enabled: boolean
+  url: string
+  format: 'slack' | 'teams'
+  events?: string[]
+}
+
+export interface DashboardNotificationsSettings {
+  webhooks: DashboardNotificationWebhook[]
+}
+
 export interface DashboardAuthenticatedUser {
   subject: string
   display_name?: string
@@ -1006,5 +1023,6 @@ export interface DashboardSystemSettings {
   general: DashboardGeneralSettings
   thresholds: DashboardThresholdSettings
   capacity_planning: DashboardCapacityPlanningSettings
+  notifications: DashboardNotificationsSettings
   auth: DashboardAuthSettings
 }

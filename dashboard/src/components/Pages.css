@@ -1079,6 +1079,10 @@
   background: var(--chart-3);
 }
 
+.run-timeline-bar.pending {
+  background: var(--accent);
+}
+
 .run-timeline-bar.stopping {
   background: var(--danger);
 }
@@ -1600,6 +1604,22 @@
 }
 
 .project-redaction-rule-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-secondary);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.settings-notification-webhook-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.settings-notification-webhook-card {
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--bg-secondary);

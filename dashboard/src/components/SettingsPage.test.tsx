@@ -112,6 +112,9 @@ describe('SettingsPage', () => {
           configured_available_generators: 1,
         },
       },
+      notifications: {
+        webhooks: [],
+      },
       auth: {
         mode: 'disabled',
         user_header: 'X-Auth-Request-User',
@@ -170,6 +173,8 @@ describe('SettingsPage', () => {
           id: 'project-1',
           name: 'Customer Portal',
           settings: {
+            max_concurrent_tests: 2,
+            max_vusers: 250,
             redaction_rules: [
               {
                 name: 'customer id',
@@ -244,6 +249,9 @@ describe('SettingsPage', () => {
           configured_available_generators: 3,
         },
       },
+      notifications: {
+        webhooks: [],
+      },
       auth: {
         mode: 'disabled',
         user_header: 'X-Auth-Request-User',
@@ -288,8 +296,8 @@ describe('SettingsPage', () => {
     expect(apiMock.getSystemInventory).toHaveBeenCalledTimes(1)
   })
 
-  it('loads project compliance defaults and saves edited redaction rules', async () => {
-    projectApiMock.updateProject.mockImplementation(async (id: string, data: { name: string; settings?: { redaction_rules?: Array<{ name?: string; pattern: string; replacement?: string }> } }) => ({
+  it('loads project compliance defaults and saves edited redaction rules and quotas', async () => {
+    projectApiMock.updateProject.mockImplementation(async (id: string, data: { name: string; settings?: { redaction_rules?: Array<{ name?: string; pattern: string; replacement?: string }>; max_concurrent_tests?: number; max_vusers?: number } }) => ({
       id,
       name: data.name,
       settings: data.settings,
@@ -308,10 +316,18 @@ describe('SettingsPage', () => {
     expect(projectSection).toBeTruthy()
     expect(projectSection?.textContent).toContain('Customer Portal')
     expect(projectSection?.textContent).toContain('Custom Redaction Rules')
+    if (!projectSection) return
+
+    const quotaInputs = Array.from(projectSection.querySelectorAll('input')).filter(input => input.placeholder === 'Unlimited') as HTMLInputElement[]
+    expect(quotaInputs).toHaveLength(2)
+    if (quotaInputs.length !== 2) return
+
+    await setFieldValue(quotaInputs[0], '3')
+    await setFieldValue(quotaInputs[1], '400')
 
     const addRuleButton = findButton('Add Rule')
     expect(addRuleButton).toBeDefined()
-    if (!addRuleButton || !projectSection) return
+  if (!addRuleButton) return
 
     await act(async () => {
       addRuleButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -329,7 +345,7 @@ describe('SettingsPage', () => {
     await setFieldValue(secondRuleInputs[1] as HTMLInputElement, '[ACCOUNT]')
     await setFieldValue(secondRulePattern, 'account-[A-Z0-9]+')
 
-    const saveButton = findButton('Save Project Compliance')
+    const saveButton = findButton('Save Project Governance')
     expect(saveButton).toBeDefined()
     if (!saveButton) return
 
@@ -353,9 +369,11 @@ describe('SettingsPage', () => {
             replacement: '[ACCOUNT]',
           },
         ],
+        max_concurrent_tests: 3,
+        max_vusers: 400,
       },
     })
-    expect(container.textContent).toContain('Saved compliance defaults for Customer Portal.')
+    expect(container.textContent).toContain('Saved project governance defaults for Customer Portal.')
   })
 
   it('blocks saving project compliance when a rule is missing its regex pattern', async () => {
@@ -387,7 +405,7 @@ describe('SettingsPage', () => {
 
     await flushPromises()
 
-    const saveButton = findButton('Save Project Compliance')
+    const saveButton = findButton('Save Project Governance')
     expect(saveButton).toBeDefined()
     if (!saveButton) return
 
@@ -432,6 +450,66 @@ describe('SettingsPage', () => {
         roles_header: 'X-Stormrunner-Roles',
         project_roles_header: 'X-Stormrunner-Project-Roles',
       }),
+    }))
+    expect(container.textContent).toContain('Settings saved.')
+  })
+
+  it('saves notification webhook settings through system settings', async () => {
+    apiMock.updateSystemSettings.mockImplementation(async (settings) => settings)
+
+    await act(async () => {
+      root.render(<SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+
+    await flushPromises()
+
+    const addWebhookButton = findButton('Add Webhook')
+    expect(addWebhookButton).toBeDefined()
+    if (!addWebhookButton) return
+
+    await act(async () => {
+      addWebhookButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const integrationsSection = container.querySelector('#settings-section-integrations')
+    expect(integrationsSection).toBeTruthy()
+    if (!integrationsSection) return
+
+    const webhookCard = integrationsSection.querySelector('.settings-notification-webhook-card')
+    expect(webhookCard).toBeTruthy()
+    if (!webhookCard) return
+
+    const nameInput = webhookCard.querySelector('input[placeholder="Perf Alerts"]') as HTMLInputElement | null
+    const urlInput = webhookCard.querySelector('input[placeholder="https://hooks.slack.com/services/..."]') as HTMLInputElement | null
+    const formatSelect = webhookCard.querySelector('select') as HTMLSelectElement | null
+    expect(nameInput).toBeTruthy()
+    expect(urlInput).toBeTruthy()
+    expect(formatSelect).toBeTruthy()
+    if (!nameInput || !urlInput || !formatSelect) return
+
+    await setFieldValue(nameInput, 'Slack Alerts')
+    await setFieldValue(urlInput, 'https://hooks.slack.test/services/T000/B000/abc123')
+    await setFieldValue(formatSelect, 'slack')
+
+    const saveButton = findButton('Save Changes')
+    expect(saveButton).toBeDefined()
+    if (!saveButton) return
+
+    await act(async () => {
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushPromises()
+
+    expect(apiMock.updateSystemSettings).toHaveBeenCalledWith(expect.objectContaining({
+      notifications: {
+        webhooks: [expect.objectContaining({
+          name: 'Slack Alerts',
+          enabled: true,
+          url: 'https://hooks.slack.test/services/T000/B000/abc123',
+          format: 'slack',
+        })],
+      },
     }))
     expect(container.textContent).toContain('Settings saved.')
   })

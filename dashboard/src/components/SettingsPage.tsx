@@ -33,6 +33,9 @@ const DEFAULT_SETTINGS: DashboardSystemSettings = {
       configured_available_generators: 1,
     },
   },
+  notifications: {
+    webhooks: [],
+  },
   auth: {
     mode: 'disabled',
     user_header: 'X-Auth-Request-User',
@@ -65,6 +68,19 @@ type DraftRedactionRule = {
   name: string
   pattern: string
   replacement: string
+}
+
+const NOTIFICATION_FORMAT_OPTIONS = [
+  { value: 'slack', label: 'Slack Block Kit' },
+  { value: 'teams', label: 'Microsoft Teams Adaptive Card' },
+] as const
+
+function parseOptionalWholeNumber(value: string): number | undefined {
+  const trimmed = value.trim()
+  if (!trimmed) return undefined
+  const parsed = Number(trimmed)
+  if (!Number.isInteger(parsed) || parsed < 0) return undefined
+  return parsed
 }
 
 function parseOptionalNumber(value: string): number | undefined {
@@ -118,6 +134,39 @@ function validateProjectDraft(name: string, rules: DraftRedactionRule[]): string
     }
   }
 
+  return ''
+}
+
+function buildProjectSettingsDraft(
+  rules: DraftRedactionRule[],
+  maxConcurrentTests: string,
+  maxVUsers: string,
+) {
+  const settings: {
+    redaction_rules?: RedactionRule[]
+    max_concurrent_tests?: number
+    max_vusers?: number
+  } = {
+    redaction_rules: normalizeProjectRedactionRules(rules),
+  }
+  const parsedConcurrent = parseOptionalWholeNumber(maxConcurrentTests)
+  if (parsedConcurrent !== undefined) {
+    settings.max_concurrent_tests = parsedConcurrent
+  }
+  const parsedVUsers = parseOptionalWholeNumber(maxVUsers)
+  if (parsedVUsers !== undefined) {
+    settings.max_vusers = parsedVUsers
+  }
+  return settings
+}
+
+function validateProjectQuotaField(label: string, value: string): string {
+  const trimmed = value.trim()
+  if (!trimmed) return ''
+  const parsed = Number(trimmed)
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    return `${label} must be an integer greater than or equal to 0.`
+  }
   return ''
 }
 
@@ -175,7 +224,60 @@ function validateSettings(settings: DashboardSystemSettings): string[] {
       errors.push('Trusted header auth requires a roles header or project roles header.')
     }
   }
+  settings.notifications.webhooks.forEach((webhook, index) => {
+    const label = `Notification webhook ${index + 1}`
+    if (!webhook.url.trim()) {
+      errors.push(`${label} requires a destination URL.`)
+    } else {
+      try {
+        const parsed = new URL(webhook.url)
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+          errors.push(`${label} URL must use http or https.`)
+        }
+      } catch {
+        errors.push(`${label} URL must be a valid absolute URL.`)
+      }
+    }
+    if (webhook.format !== 'slack' && webhook.format !== 'teams') {
+      errors.push(`${label} format must be Slack or Microsoft Teams.`)
+    }
+  })
   return errors
+}
+
+function normalizeDashboardSystemSettings(settings: DashboardSystemSettings): DashboardSystemSettings {
+  return {
+    general: {
+      ...DEFAULT_SETTINGS.general,
+      ...settings.general,
+    },
+    thresholds: {
+      ...DEFAULT_SETTINGS.thresholds,
+      ...settings.thresholds,
+    },
+    capacity_planning: {
+      ...DEFAULT_SETTINGS.capacity_planning,
+      ...settings.capacity_planning,
+      generator: {
+        ...DEFAULT_SETTINGS.capacity_planning.generator,
+        ...settings.capacity_planning.generator,
+      },
+      availability: {
+        ...DEFAULT_SETTINGS.capacity_planning.availability,
+        ...settings.capacity_planning.availability,
+      },
+    },
+    notifications: {
+      webhooks: (settings.notifications?.webhooks || []).map(webhook => ({
+        ...webhook,
+        events: webhook.events ? [...webhook.events] : [],
+      })),
+    },
+    auth: {
+      ...DEFAULT_SETTINGS.auth,
+      ...settings.auth,
+    },
+  }
 }
 
 function deriveLiveGeneratorPreset(inventory: SystemInventoryResponse) {
@@ -282,6 +384,8 @@ export default function SettingsPage({ theme, onThemeChange }: SettingsPageProps
   const [newProjectName, setNewProjectName] = useState('')
   const [projectDraftName, setProjectDraftName] = useState('')
   const [projectDraftRules, setProjectDraftRules] = useState<DraftRedactionRule[]>([])
+  const [projectDraftMaxConcurrentTests, setProjectDraftMaxConcurrentTests] = useState('')
+  const [projectDraftMaxVUsers, setProjectDraftMaxVUsers] = useState('')
   const [projectActionError, setProjectActionError] = useState('')
   const [projectActionMessage, setProjectActionMessage] = useState('')
   const [dataPools, setDataPools] = useState<SharedDataPool[]>([])
@@ -299,7 +403,7 @@ export default function SettingsPage({ theme, onThemeChange }: SettingsPageProps
       setLoading(true)
       setRequestError('')
       try {
-        const response = await api.getSystemSettings()
+        const response = normalizeDashboardSystemSettings(await api.getSystemSettings())
         let resolvedSettings = response
         if (usesDefaultGeneratorCapacity(response)) {
           try {
@@ -372,8 +476,15 @@ export default function SettingsPage({ theme, onThemeChange }: SettingsPageProps
     [projects, selectedProjectId],
   )
   const projectDraftValidationError = useMemo(
-    () => selectedProject ? validateProjectDraft(projectDraftName, projectDraftRules) : '',
-    [projectDraftName, projectDraftRules, selectedProject],
+    () => {
+      if (!selectedProject) return ''
+      return (
+        validateProjectDraft(projectDraftName, projectDraftRules) ||
+        validateProjectQuotaField('Project max concurrent tests', projectDraftMaxConcurrentTests) ||
+        validateProjectQuotaField('Project max VUsers', projectDraftMaxVUsers)
+      )
+    },
+    [projectDraftMaxConcurrentTests, projectDraftMaxVUsers, projectDraftName, projectDraftRules, selectedProject],
   )
   const projectHasUnsavedChanges = useMemo(() => {
     if (!selectedProject) {
@@ -382,24 +493,25 @@ export default function SettingsPage({ theme, onThemeChange }: SettingsPageProps
 
     const current = {
       name: selectedProject.name,
-      settings: {
-        redaction_rules: selectedProject.settings?.redaction_rules || [],
-      },
+      settings: buildProjectSettingsDraft(
+        toDraftRedactionRules(selectedProject.settings?.redaction_rules),
+        selectedProject.settings?.max_concurrent_tests !== undefined ? String(selectedProject.settings.max_concurrent_tests) : '',
+        selectedProject.settings?.max_vusers !== undefined ? String(selectedProject.settings.max_vusers) : '',
+      ),
     }
     const draft = {
       name: projectDraftName.trim(),
-      settings: {
-        redaction_rules: normalizeProjectRedactionRules(projectDraftRules),
-      },
+      settings: buildProjectSettingsDraft(projectDraftRules, projectDraftMaxConcurrentTests, projectDraftMaxVUsers),
     }
 
     return JSON.stringify(current) !== JSON.stringify(draft)
-  }, [projectDraftName, projectDraftRules, selectedProject])
+  }, [projectDraftMaxConcurrentTests, projectDraftMaxVUsers, projectDraftName, projectDraftRules, selectedProject])
   const customRuleCount = useMemo(
     () => normalizeProjectRedactionRules(projectDraftRules).length,
     [projectDraftRules],
   )
   const availabilitySnapshot = health?.capacity_availability
+  const notificationWebhookCount = settings.notifications.webhooks.length
   const availabilitySourceLabel = availabilitySnapshot?.source === 'configured_plus_live'
     ? availabilitySnapshot.live_available_generators !== undefined
       ? 'Live snapshot + configured ceiling'
@@ -455,6 +567,8 @@ export default function SettingsPage({ theme, onThemeChange }: SettingsPageProps
         setSelectedProjectId(nextSelected?.id || '')
         setProjectDraftName(nextSelected?.name || '')
         setProjectDraftRules(toDraftRedactionRules(nextSelected?.settings?.redaction_rules))
+        setProjectDraftMaxConcurrentTests(nextSelected?.settings?.max_concurrent_tests !== undefined ? String(nextSelected.settings.max_concurrent_tests) : '')
+        setProjectDraftMaxVUsers(nextSelected?.settings?.max_vusers !== undefined ? String(nextSelected.settings.max_vusers) : '')
         setProjectActionError('')
       } catch (error: unknown) {
         if (!cancelled) {
@@ -713,6 +827,8 @@ export default function SettingsPage({ theme, onThemeChange }: SettingsPageProps
     setSelectedProjectId(project?.id || '')
     setProjectDraftName(project?.name || '')
     setProjectDraftRules(toDraftRedactionRules(project?.settings?.redaction_rules))
+    setProjectDraftMaxConcurrentTests(project?.settings?.max_concurrent_tests !== undefined ? String(project.settings.max_concurrent_tests) : '')
+    setProjectDraftMaxVUsers(project?.settings?.max_vusers !== undefined ? String(project.settings.max_vusers) : '')
     setProjectActionError('')
     setProjectActionMessage('')
   }
@@ -762,16 +878,14 @@ export default function SettingsPage({ theme, onThemeChange }: SettingsPageProps
     try {
       const updated = await projectApi.updateProject(selectedProject.id, {
         name: projectDraftName.trim(),
-        settings: {
-          redaction_rules: normalizeProjectRedactionRules(projectDraftRules),
-        },
+        settings: buildProjectSettingsDraft(projectDraftRules, projectDraftMaxConcurrentTests, projectDraftMaxVUsers),
       })
       const nextProjects = sortProjects(projects.map(project => (project.id === updated.id ? updated : project)))
       setProjects(nextProjects)
       selectProject(updated)
-      setProjectActionMessage(`Saved compliance defaults for ${updated.name}.`)
+      setProjectActionMessage(`Saved project governance defaults for ${updated.name}.`)
     } catch (error: unknown) {
-      setProjectActionError(getErrorMessage(error, 'Unable to save project compliance defaults'))
+      setProjectActionError(getErrorMessage(error, 'Unable to save project governance defaults'))
       setProjectActionMessage('')
     }
   }
@@ -909,6 +1023,53 @@ export default function SettingsPage({ theme, onThemeChange }: SettingsPageProps
   const editDataPoolRow = (row: SharedDataPoolRow) => {
     setEditingDataPoolRowId(row.id)
     setDataPoolRowJson(JSON.stringify(row.data || {}, null, 2))
+  }
+
+  const addNotificationWebhook = () => {
+    setSettings(current => ({
+      ...current,
+      notifications: {
+        ...current.notifications,
+        webhooks: [
+          ...current.notifications.webhooks,
+          {
+            name: '',
+            enabled: true,
+            url: '',
+            format: 'slack',
+            events: [],
+          },
+        ],
+      },
+    }))
+    setSaveMessage('')
+    setRequestError('')
+  }
+
+  const updateNotificationWebhook = (index: number, updates: Partial<DashboardSystemSettings['notifications']['webhooks'][number]>) => {
+    setSettings(current => ({
+      ...current,
+      notifications: {
+        ...current.notifications,
+        webhooks: current.notifications.webhooks.map((webhook, webhookIndex) => (
+          webhookIndex === index ? { ...webhook, ...updates } : webhook
+        )),
+      },
+    }))
+    setSaveMessage('')
+    setRequestError('')
+  }
+
+  const removeNotificationWebhook = (index: number) => {
+    setSettings(current => ({
+      ...current,
+      notifications: {
+        ...current.notifications,
+        webhooks: current.notifications.webhooks.filter((_, webhookIndex) => webhookIndex !== index),
+      },
+    }))
+    setSaveMessage('')
+    setRequestError('')
   }
 
   const deleteDataPoolRow = async (row: SharedDataPoolRow) => {
@@ -1646,6 +1807,42 @@ export default function SettingsPage({ theme, onThemeChange }: SettingsPageProps
                     <strong>{customRuleCount}</strong>
                   </div>
 
+                  <div className="setting-row">
+                    <div className="setting-info">
+                      <span className="setting-label">Project Max Concurrent Tests</span>
+                      <span className="setting-desc">Leave blank or set to 0 for no project-level concurrency cap.</span>
+                    </div>
+                    <input
+                      className="settings-input"
+                      inputMode="numeric"
+                      value={projectDraftMaxConcurrentTests}
+                      onChange={event => {
+                        setProjectDraftMaxConcurrentTests(event.target.value)
+                        setProjectActionError('')
+                        setProjectActionMessage('')
+                      }}
+                      placeholder="Unlimited"
+                    />
+                  </div>
+
+                  <div className="setting-row">
+                    <div className="setting-info">
+                      <span className="setting-label">Project Max VUsers</span>
+                      <span className="setting-desc">Leave blank or set to 0 for no project-level VUser cap.</span>
+                    </div>
+                    <input
+                      className="settings-input"
+                      inputMode="numeric"
+                      value={projectDraftMaxVUsers}
+                      onChange={event => {
+                        setProjectDraftMaxVUsers(event.target.value)
+                        setProjectActionError('')
+                        setProjectActionMessage('')
+                      }}
+                      placeholder="Unlimited"
+                    />
+                  </div>
+
                   {projectDraftRules.length > 0 ? (
                     <div className="project-redaction-rule-list">
                       {projectDraftRules.map((rule, index) => (
@@ -1705,7 +1902,7 @@ export default function SettingsPage({ theme, onThemeChange }: SettingsPageProps
                       onClick={saveProjectCompliance}
                       disabled={!projectHasUnsavedChanges || Boolean(projectDraftValidationError)}
                     >
-                      Save Project Compliance
+                      Save Project Governance
                     </button>
                   </div>
                 </div>
@@ -1868,26 +2065,89 @@ export default function SettingsPage({ theme, onThemeChange }: SettingsPageProps
         >
           {renderSettingsHeader('integrations', 'Integrations')}
           <div className="settings-group">
-            <div className="setting-row">
-              <div className="setting-info">
-                <span className="setting-label">Prometheus</span>
-                <span className="setting-desc">Export metrics to Prometheus endpoint</span>
+            <div className="settings-subsection">
+              <div className="settings-manager-summary">
+                <div>
+                  <span className="setting-label">Lifecycle Notification Webhooks</span>
+                  <span className="setting-desc">Send Slack Block Kit or Microsoft Teams Adaptive Card notifications when tests change state.</span>
+                </div>
+                <strong>{notificationWebhookCount}</strong>
               </div>
-              <span className="setting-value text-muted">Phase 2</span>
-            </div>
-            <div className="setting-row">
-              <div className="setting-info">
-                <span className="setting-label">Dynatrace</span>
-                <span className="setting-desc">Push metrics to Dynatrace via OpenTelemetry</span>
+
+              {settings.notifications.webhooks.length > 0 ? (
+                <div className="settings-notification-webhook-list">
+                  {settings.notifications.webhooks.map((webhook, index) => (
+                    <div className="settings-notification-webhook-card" key={`${webhook.url}-${index}`}>
+                      <div className="project-redaction-rule-header">
+                        <div>
+                          <strong>{webhook.name?.trim() || `Webhook ${index + 1}`}</strong>
+                          <p className="setting-desc">All test lifecycle events are sent. Event filtering is supported by the backend and can be added to the UI later.</p>
+                        </div>
+                        <button className="btn btn-sm btn-ghost" type="button" onClick={() => removeNotificationWebhook(index)}>
+                          Remove
+                        </button>
+                      </div>
+
+                      <div className="project-redaction-rule-grid">
+                        <label className="project-redaction-rule-field">
+                          <span>Webhook Name</span>
+                          <input
+                            className="settings-input"
+                            value={webhook.name || ''}
+                            onChange={event => updateNotificationWebhook(index, { name: event.target.value })}
+                            placeholder="Perf Alerts"
+                          />
+                        </label>
+                        <label className="project-redaction-rule-field">
+                          <span>Format</span>
+                          <select
+                            className="settings-select"
+                            value={webhook.format}
+                            onChange={event => updateNotificationWebhook(index, { format: event.target.value as 'slack' | 'teams' })}
+                          >
+                            {NOTIFICATION_FORMAT_OPTIONS.map(option => (
+                              <option key={option.value} value={option.value}>{option.label}</option>
+                            ))}
+                          </select>
+                        </label>
+                      </div>
+
+                      <label className="project-redaction-rule-field">
+                        <span>Destination URL</span>
+                        <input
+                          className="settings-input"
+                          value={webhook.url}
+                          onChange={event => updateNotificationWebhook(index, { url: event.target.value })}
+                          placeholder="https://hooks.slack.com/services/..."
+                        />
+                      </label>
+
+                      <div className="setting-row">
+                        <div className="setting-info">
+                          <span className="setting-label">Enabled</span>
+                          <span className="setting-desc">Disable the target without removing the stored destination.</span>
+                        </div>
+                        <label className="settings-toggle">
+                          <input
+                            type="checkbox"
+                            checked={webhook.enabled}
+                            onChange={event => updateNotificationWebhook(index, { enabled: event.target.checked })}
+                          />
+                          <span>{webhook.enabled ? 'Enabled' : 'Disabled'}</span>
+                        </label>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="new-test-inline-note">No webhook destinations configured yet.</p>
+              )}
+
+              <div className="settings-inline-actions">
+                <button className="btn btn-secondary" type="button" onClick={addNotificationWebhook}>
+                  Add Webhook
+                </button>
               </div>
-              <span className="setting-value text-muted">Phase 2</span>
-            </div>
-            <div className="setting-row">
-              <div className="setting-info">
-                <span className="setting-label">ELK Stack</span>
-                <span className="setting-desc">Send logs and metrics to Elasticsearch</span>
-              </div>
-              <span className="setting-value text-muted">Phase 2</span>
             </div>
           </div>
         </div>
