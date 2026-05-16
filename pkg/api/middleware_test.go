@@ -497,6 +497,77 @@ func TestTrustedHeaderAuthProjectRoleGuardsRecorderSessionEndpoints(t *testing.T
 	}
 }
 
+func TestTrustedHeaderAuthProjectRoleGuardsBrowserReplaySessionEndpoints(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	enableTrustedHeaderAuth(t, server)
+	projectID := uuid.New().String()
+	pauseBody := []byte(`{"script":{"name":"Draft Browser Replay","version":"1.0.0","protocol":"browser","project_id":"` + projectID + `","config":{"browser":{"engine":"chromium"}},"actions":[{"name":"Open homepage","type":"browser_navigate","target":"/"}]},"start_paused":true}`)
+	startReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/browser-replay/sessions", bytes.NewReader(pauseBody))
+	startReq.Header.Set("Content-Type", "application/json")
+	startReq.Header.Set("X-Auth-Request-User", "editor-user")
+	startReq.Header.Set("X-Stormrunner-Project-Roles", projectID+"="+RoleEditor)
+	startResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(startResp, startReq)
+	if startResp.Code != http.StatusOK {
+		t.Fatalf("browser replay editor start status = %d, want %d body=%s", startResp.Code, http.StatusOK, startResp.Body.String())
+	}
+
+	var startPayload struct {
+		ReplaySessionID string `json:"replay_session_id"`
+	}
+	if err := json.Unmarshal(startResp.Body.Bytes(), &startPayload); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if startPayload.ReplaySessionID == "" {
+		t.Fatal("expected replay_session_id in browser replay response")
+	}
+
+	viewerGetReq := httptest.NewRequest(http.MethodGet, "/api/v1/browser-replay/sessions/"+startPayload.ReplaySessionID, nil)
+	viewerGetReq.Header.Set("X-Auth-Request-User", "viewer-user")
+	viewerGetReq.Header.Set("X-Stormrunner-Project-Roles", projectID+"="+RoleViewer)
+	viewerGetResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(viewerGetResp, viewerGetReq)
+	if viewerGetResp.Code != http.StatusOK {
+		t.Fatalf("browser replay viewer GET status = %d, want %d body=%s", viewerGetResp.Code, http.StatusOK, viewerGetResp.Body.String())
+	}
+
+	viewerResumeReq := httptest.NewRequest(http.MethodPost, "/api/v1/browser-replay/sessions/"+startPayload.ReplaySessionID+"/resume", nil)
+	viewerResumeReq.Header.Set("X-Auth-Request-User", "viewer-user")
+	viewerResumeReq.Header.Set("X-Stormrunner-Project-Roles", projectID+"="+RoleViewer)
+	viewerResumeResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(viewerResumeResp, viewerResumeReq)
+	if viewerResumeResp.Code != http.StatusForbidden {
+		t.Fatalf("browser replay viewer resume status = %d, want %d body=%s", viewerResumeResp.Code, http.StatusForbidden, viewerResumeResp.Body.String())
+	}
+
+	editorResumeReq := httptest.NewRequest(http.MethodPost, "/api/v1/browser-replay/sessions/"+startPayload.ReplaySessionID+"/resume", nil)
+	editorResumeReq.Header.Set("X-Auth-Request-User", "editor-user")
+	editorResumeReq.Header.Set("X-Stormrunner-Project-Roles", projectID+"="+RoleEditor)
+	editorResumeResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(editorResumeResp, editorResumeReq)
+	if editorResumeResp.Code != http.StatusOK {
+		t.Fatalf("browser replay editor resume status = %d, want %d body=%s", editorResumeResp.Code, http.StatusOK, editorResumeResp.Body.String())
+	}
+
+	editorPauseReq := httptest.NewRequest(http.MethodPost, "/api/v1/browser-replay/sessions/"+startPayload.ReplaySessionID+"/pause", nil)
+	editorPauseReq.Header.Set("X-Auth-Request-User", "editor-user")
+	editorPauseReq.Header.Set("X-Stormrunner-Project-Roles", projectID+"="+RoleEditor)
+	editorPauseResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(editorPauseResp, editorPauseReq)
+	if editorPauseResp.Code != http.StatusOK {
+		t.Fatalf("browser replay editor pause status = %d, want %d body=%s", editorPauseResp.Code, http.StatusOK, editorPauseResp.Body.String())
+	}
+
+	editorStopReq := httptest.NewRequest(http.MethodPost, "/api/v1/browser-replay/sessions/"+startPayload.ReplaySessionID+"/stop", nil)
+	editorStopReq.Header.Set("X-Auth-Request-User", "editor-user")
+	editorStopReq.Header.Set("X-Stormrunner-Project-Roles", projectID+"="+RoleEditor)
+	editorStopResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(editorStopResp, editorStopReq)
+	if editorStopResp.Code != http.StatusOK {
+		t.Fatalf("browser replay editor stop status = %d, want %d body=%s", editorStopResp.Code, http.StatusOK, editorStopResp.Body.String())
+	}
+}
+
 func TestTrustedHeaderAuthProjectRoleGuardsStoredTestEndpoints(t *testing.T) {
 	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
 	if err != nil {

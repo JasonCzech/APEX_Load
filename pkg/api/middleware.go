@@ -781,6 +781,19 @@ func resolveRecorderSessionProjectID(rec *recorder.Recorder) requestProjectLooku
 	}
 }
 
+func resolveBrowserReplaySessionProjectID(manager *BrowserReplayManager) requestProjectLookup {
+	return func(r *http.Request) (string, int, string) {
+		if manager == nil {
+			return "", http.StatusServiceUnavailable, "browser replay is not configured"
+		}
+		session, ok := manager.Get(r.PathValue("session_id"))
+		if !ok {
+			return "", http.StatusNotFound, "browser replay session not found"
+		}
+		return normalizeProjectID(session.ProjectID), 0, ""
+	}
+}
+
 func resolveImportProjectIDFromForm(r *http.Request, _ storage.Store) (string, int, string) {
 	if projectID := normalizeProjectID(r.URL.Query().Get("project_id")); projectID != "" {
 		return projectID, 0, ""

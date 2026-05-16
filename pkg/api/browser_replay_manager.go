@@ -23,6 +23,7 @@ const (
 type BrowserReplaySession struct {
 	ID                string                     `json:"id"`
 	ScriptID          string                     `json:"script_id,omitempty"`
+	ProjectID         string                     `json:"project_id,omitempty"`
 	Status            string                     `json:"status"`
 	Group             string                     `json:"group"`
 	Protocol          string                     `json:"protocol"`
@@ -65,6 +66,7 @@ func (m *BrowserReplayManager) Start(scriptID string, script *dsl.Script, req Br
 	session := &BrowserReplaySession{
 		ID:                sessionID,
 		ScriptID:          scriptID,
+		ProjectID:         normalizeProjectID(script.ProjectID),
 		Status:            BrowserReplayRunning,
 		Group:             groupName,
 		Protocol:          script.Protocol,

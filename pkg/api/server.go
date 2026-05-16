@@ -104,6 +104,18 @@ func (s *Server) routes(allowedOrigins []string) {
 		[]string{RoleEditor, RoleProjectAdmin},
 		resolveRecorderSessionProjectID(s.recorder),
 	)
+	browserReplaySessionViewAuth := projectScopedAuthMiddleware(
+		func() AuthSettings { return s.runner.GetSystemSettings().Auth },
+		[]string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+		[]string{RoleViewer, RoleEditor, RoleProjectAdmin},
+		resolveBrowserReplaySessionProjectID(s.browserReplay),
+	)
+	browserReplaySessionEditAuth := projectScopedAuthMiddleware(
+		func() AuthSettings { return s.runner.GetSystemSettings().Auth },
+		[]string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+		[]string{RoleEditor, RoleProjectAdmin},
+		resolveBrowserReplaySessionProjectID(s.browserReplay),
+	)
 
 	// Test lifecycle and archive endpoints.
 	s.mux.Handle("POST /api/v1/applications", cors(log(http.HandlerFunc(s.handleCreateApplication))))
@@ -194,10 +206,10 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("POST /api/v1/scripts/import/jmeter/validate", cors(log(auth(http.HandlerFunc(s.handleValidateJMeterImport)))))
 	s.mux.Handle("GET /api/v1/scripts/import/jmeter/support-matrix", cors(log(http.HandlerFunc(s.handleJMeterSupportMatrix))))
 	s.mux.Handle("POST /api/v1/scripts/import/sample", cors(log(auth(http.HandlerFunc(s.handleImportSample)))))
-	s.mux.Handle("GET /api/v1/browser-replay/sessions/{session_id}", cors(log(http.HandlerFunc(s.handleGetBrowserReplaySession))))
-	s.mux.Handle("POST /api/v1/browser-replay/sessions/{session_id}/pause", cors(log(http.HandlerFunc(s.handlePauseBrowserReplaySession))))
-	s.mux.Handle("POST /api/v1/browser-replay/sessions/{session_id}/resume", cors(log(http.HandlerFunc(s.handleResumeBrowserReplaySession))))
-	s.mux.Handle("POST /api/v1/browser-replay/sessions/{session_id}/stop", cors(log(http.HandlerFunc(s.handleStopBrowserReplaySession))))
+	s.mux.Handle("GET /api/v1/browser-replay/sessions/{session_id}", cors(log(browserReplaySessionViewAuth(http.HandlerFunc(s.handleGetBrowserReplaySession)))))
+	s.mux.Handle("POST /api/v1/browser-replay/sessions/{session_id}/pause", cors(log(browserReplaySessionEditAuth(http.HandlerFunc(s.handlePauseBrowserReplaySession)))))
+	s.mux.Handle("POST /api/v1/browser-replay/sessions/{session_id}/resume", cors(log(browserReplaySessionEditAuth(http.HandlerFunc(s.handleResumeBrowserReplaySession)))))
+	s.mux.Handle("POST /api/v1/browser-replay/sessions/{session_id}/stop", cors(log(browserReplaySessionEditAuth(http.HandlerFunc(s.handleStopBrowserReplaySession)))))
 
 	// Recording proxy control and artifact retrieval.
 	s.mux.Handle("POST /api/v1/recorder/start", cors(log(recorderCreateAuth(http.HandlerFunc(s.handleStartRecording)))))
