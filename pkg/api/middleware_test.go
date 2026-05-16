@@ -779,6 +779,37 @@ func TestTrustedHeaderAuthScopesRecorderListAndStartToProjectRoles(t *testing.T)
 	}
 }
 
+func TestTrustedHeaderAuthScopesRecorderCACertToProjectRoles(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	enableTrustedHeaderAuth(t, server)
+	projectID := uuid.New().String()
+
+	unauthorizedReq := httptest.NewRequest(http.MethodGet, "/api/v1/recorder/ca.pem", nil)
+	unauthorizedResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(unauthorizedResp, unauthorizedReq)
+	if unauthorizedResp.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthorized recorder ca status = %d, want %d body=%s", unauthorizedResp.Code, http.StatusUnauthorized, unauthorizedResp.Body.String())
+	}
+
+	viewerReq := httptest.NewRequest(http.MethodGet, "/api/v1/recorder/ca.pem", nil)
+	viewerReq.Header.Set("X-Auth-Request-User", "viewer-user")
+	viewerReq.Header.Set("X-Stormrunner-Project-Roles", projectID+"="+RoleViewer)
+	viewerResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(viewerResp, viewerReq)
+	if viewerResp.Code != http.StatusForbidden {
+		t.Fatalf("unfiltered recorder ca status = %d, want %d body=%s", viewerResp.Code, http.StatusForbidden, viewerResp.Body.String())
+	}
+
+	filteredReq := httptest.NewRequest(http.MethodGet, "/api/v1/recorder/ca.pem?project_id="+projectID, nil)
+	filteredReq.Header.Set("X-Auth-Request-User", "viewer-user")
+	filteredReq.Header.Set("X-Stormrunner-Project-Roles", projectID+"="+RoleViewer)
+	filteredResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(filteredResp, filteredReq)
+	if filteredResp.Code != http.StatusOK {
+		t.Fatalf("filtered recorder ca status = %d, want %d body=%s", filteredResp.Code, http.StatusOK, filteredResp.Body.String())
+	}
+}
+
 func TestTrustedHeaderAuthProjectRoleGuardsRecorderSessionEndpoints(t *testing.T) {
 	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
 	enableTrustedHeaderAuth(t, server)

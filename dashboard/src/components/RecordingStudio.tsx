@@ -108,7 +108,10 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: P
 
   const handleDownloadCA = async (format: 'crt' | 'pem' = 'crt') => {
     try {
-      const url = format === 'pem' ? `${BASE}/recorder/ca.pem?format=pem` : `${BASE}/recorder/ca.pem`
+      const params = new URLSearchParams()
+      if (format === 'pem') params.set('format', 'pem')
+      if (activeProject?.id) params.set('project_id', activeProject.id)
+      const url = `${BASE}/recorder/ca.pem${params.size ? `?${params.toString()}` : ''}`
       const res = await fetch(url)
       if (!res.ok) throw new Error('Failed to download CA certificate')
       const blob = await res.blob()
