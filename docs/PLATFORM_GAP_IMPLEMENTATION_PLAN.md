@@ -100,6 +100,7 @@ The 19 gaps are organized into five sequential delivery waves. Each wave targets
 
 ### Implemented Status
 - **4.2 Error Analysis & Pattern Detection:** Archived run reports now cluster similar error messages, retain the first captured snapshot for each pattern, and surface those clusters in both the embedded dashboard archive view and the standalone HTML report.
+- **4.4 Think Time & Pacing Intelligence:** HAR sample imports now preserve inter-request pauses as per-action `think_time` blocks when entry timestamps are present.
 
 ### 4.1 Correlation Intelligence (P1)
 **Effort:** 5-7 days
@@ -119,6 +120,7 @@ The 19 gaps are organized into five sequential delivery waves. Each wave targets
 ### 4.4 Think Time & Pacing Intelligence (P2)
 **Effort:** 2-3 days
 - **HAR Analyzer:** Automatically calculate wait times between recorded actions and insert think_time blocks.
+- **Status:** Implemented for HAR sample imports by deriving the pause between consecutive HAR entries and mapping it onto `think_time_after` in generated DSL actions.
 
 ---
 

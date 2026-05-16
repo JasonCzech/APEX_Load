@@ -109,7 +109,7 @@ func TestConvertCurl(t *testing.T) {
 
 func TestConvertCurlSOAP(t *testing.T) {
 	result, err := Convert(ImportRequest{
-		Format: "curl",
+		Format:  "curl",
 		Content: `curl -X POST https://example.com/services/quotes -H 'Content-Type: text/xml; charset=utf-8' -H 'SOAPAction: urn:GetQuote' -d '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"><soapenv:Body><GetQuote xmlns="urn:quotes"><Symbol>STORM</Symbol></GetQuote></soapenv:Body></soapenv:Envelope>'`,
 	})
 	if err != nil {
@@ -165,5 +165,64 @@ func TestConvertBatchRawHTTP(t *testing.T) {
 	}
 	if result.Stats.CorrelationsDetected != 1 {
 		t.Fatalf("correlations = %d, want 1", result.Stats.CorrelationsDetected)
+	}
+}
+
+func TestConvertHARWithThinkTime(t *testing.T) {
+	result, err := Convert(ImportRequest{
+		Format: "har",
+		Content: `{
+			"log": {
+				"entries": [
+					{
+						"startedDateTime": "2026-05-17T10:00:00.000Z",
+						"time": 200,
+						"request": {
+							"method": "GET",
+							"url": "https://api.example.com/v1/session",
+							"headers": []
+						},
+						"response": {
+							"status": 200,
+							"headers": [],
+							"content": {"text": "{}"}
+						}
+					},
+					{
+						"startedDateTime": "2026-05-17T10:00:03.700Z",
+						"time": 150,
+						"request": {
+							"method": "GET",
+							"url": "https://api.example.com/v1/orders",
+							"headers": []
+						},
+						"response": {
+							"status": 200,
+							"headers": [],
+							"content": {"text": "{}"}
+						}
+					}
+				]
+			}
+		}`,
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if len(result.Script.Actions) != 2 {
+		t.Fatalf("action count = %d, want 2", len(result.Script.Actions))
+	}
+	first := result.Script.Actions[0]
+	if !first.ThinkTimeAfter {
+		t.Fatal("expected first HAR action to preserve think time after the request")
+	}
+	if first.ThinkTime.Type != "fixed" || first.ThinkTime.MeanMs != 3500 {
+		t.Fatalf("first action think time = %#v, want fixed 3500ms", first.ThinkTime)
+	}
+	if result.Script.Actions[1].ThinkTimeAfter {
+		t.Fatal("expected final HAR action to omit trailing think time")
+	}
+	if len(result.Warnings) == 0 || !strings.Contains(result.Warnings[0], "think time") {
+		t.Fatalf("warnings = %#v, want think time guidance", result.Warnings)
 	}
 }

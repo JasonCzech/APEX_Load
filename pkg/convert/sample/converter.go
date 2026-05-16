@@ -56,11 +56,14 @@ type ConvertResult struct {
 }
 
 type exchange struct {
-	Method   string
-	URL      string
-	Headers  map[string]string
-	Body     string
-	Response *response
+	Method       string
+	URL          string
+	Headers      map[string]string
+	Body         string
+	Response     *response
+	StartedAt    time.Time
+	HasStartedAt bool
+	DurationMs   float64
 }
 
 type response struct {
@@ -217,6 +220,13 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			Target:  target,
 			Headers: headers,
 			Body:    body,
+		}
+		if thinkTimeMs, ok := thinkTimeAfter(exchanges, idx); ok {
+			action.ThinkTimeAfter = true
+			action.ThinkTime = dsl.ThinkTimeConfig{
+				Type:   "fixed",
+				MeanMs: thinkTimeMs,
+			}
 		}
 
 		if len(action.Headers) == 0 {
@@ -623,7 +633,7 @@ func parseHAR(content string) ([]exchange, []string, error) {
 	}
 	warnings := []string{}
 	if len(exchanges) > 1 {
-		warnings = append(warnings, "HAR import includes only request/response essentials; browser-specific timing and asset metadata are not preserved")
+		warnings = append(warnings, "HAR import preserves inter-request think time when entry timestamps are available, but browser-specific asset metadata is not preserved")
 	}
 	return exchanges, warnings, nil
 }
@@ -713,10 +723,15 @@ func parseHARItem(item map[string]any) (exchange, error) {
 		return exchange{}, errors.New("HAR entry is missing request")
 	}
 	ex := exchange{
-		Method:  strings.ToUpper(stringValue(requestData["method"])),
-		URL:     stringValue(requestData["url"]),
-		Body:    harBody(requestData),
-		Headers: headerListToMap(requestData["headers"]),
+		Method:     strings.ToUpper(stringValue(requestData["method"])),
+		URL:        stringValue(requestData["url"]),
+		Body:       harBody(requestData),
+		Headers:    headerListToMap(requestData["headers"]),
+		DurationMs: floatValue(item["time"]),
+	}
+	if startedAt, ok := parseHARStartedAt(item["startedDateTime"]); ok {
+		ex.StartedAt = startedAt
+		ex.HasStartedAt = true
 	}
 	if ex.Method == "" || ex.URL == "" {
 		return exchange{}, errors.New("HAR request entries must include method and url")
@@ -733,6 +748,24 @@ func parseHARItem(item map[string]any) (exchange, error) {
 		}
 	}
 	return ex, nil
+}
+
+func thinkTimeAfter(exchanges []exchange, index int) (float64, bool) {
+	if index < 0 || index >= len(exchanges)-1 {
+		return 0, false
+	}
+	current := exchanges[index]
+	next := exchanges[index+1]
+	if current.HasStartedAt && next.HasStartedAt {
+		gap := next.StartedAt.Sub(current.StartedAt) - time.Duration(current.DurationMs*float64(time.Millisecond))
+		if gap > 500*time.Millisecond {
+			return float64(gap / time.Millisecond), true
+		}
+	}
+	if current.DurationMs > 500 {
+		return current.DurationMs, true
+	}
+	return 0, false
 }
 
 func detectBaseURL(exchanges []exchange) string {
@@ -1097,6 +1130,39 @@ func intValue(value any) int {
 	default:
 		return 0
 	}
+}
+
+func floatValue(value any) float64 {
+	switch typed := value.(type) {
+	case float64:
+		return typed
+	case float32:
+		return float64(typed)
+	case int:
+		return float64(typed)
+	case int64:
+		return float64(typed)
+	case json.Number:
+		parsed, _ := typed.Float64()
+		return parsed
+	case string:
+		parsed, _ := strconv.ParseFloat(typed, 64)
+		return parsed
+	default:
+		return 0
+	}
+}
+
+func parseHARStartedAt(value any) (time.Time, bool) {
+	raw := stringValue(value)
+	if raw == "" {
+		return time.Time{}, false
+	}
+	parsed, err := time.Parse(time.RFC3339Nano, raw)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return parsed, true
 }
 
 func bodyValue(value any) string {
