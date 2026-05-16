@@ -259,6 +259,30 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 		}
 	}
 
+	if path == "/api/v1/scripts/replay" && method == http.MethodPost {
+		return accessRequirement{
+			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
+			ProjectLookup: resolveDraftScriptProjectID,
+		}, true
+	}
+
+	if path == "/api/v1/scripts/browser-replay/sessions" && method == http.MethodPost {
+		return accessRequirement{
+			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
+			ProjectLookup: resolveDraftScriptProjectID,
+		}, true
+	}
+
+	if path == "/api/v1/scripts/import/jmeter/save" && method == http.MethodPost {
+		return accessRequirement{
+			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
+			ProjectLookup: resolveJMeterSaveProjectID,
+		}, true
+	}
+
 	if path == "/api/v1/tests" {
 		switch method {
 		case http.MethodGet:
@@ -597,6 +621,47 @@ func resolveProjectIDFromScenarioScripts(scripts []storage.ScenarioScript, store
 	}
 	if projectID == "" {
 		return normalizeProjectID(""), 0, ""
+	}
+	return projectID, 0, ""
+}
+
+func resolveDraftScriptProjectID(r *http.Request, _ storage.Store) (string, int, string) {
+	var req struct {
+		Script *struct {
+			ProjectID string `json:"project_id,omitempty"`
+		} `json:"script,omitempty"`
+	}
+	if err := decodeRequestBody(r, &req); err != nil {
+		return "", http.StatusBadRequest, "invalid request body: " + err.Error()
+	}
+	if req.Script == nil {
+		return "", http.StatusBadRequest, "script is required"
+	}
+	return normalizeProjectID(req.Script.ProjectID), 0, ""
+}
+
+func resolveJMeterSaveProjectID(r *http.Request, _ storage.Store) (string, int, string) {
+	var req struct {
+		Scripts []struct {
+			ProjectID string `json:"project_id,omitempty"`
+		} `json:"scripts"`
+	}
+	if err := decodeRequestBody(r, &req); err != nil {
+		return "", http.StatusBadRequest, "invalid request body: " + err.Error()
+	}
+	if len(req.Scripts) == 0 {
+		return "", http.StatusBadRequest, "at least one script is required"
+	}
+	projectID := ""
+	for _, script := range req.Scripts {
+		candidate := normalizeProjectID(script.ProjectID)
+		if projectID == "" {
+			projectID = candidate
+			continue
+		}
+		if candidate != projectID {
+			return "", http.StatusBadRequest, "imported scripts span multiple projects"
+		}
 	}
 	return projectID, 0, ""
 }

@@ -8,6 +8,7 @@ import ScriptImportReview from './ScriptImportReview'
 import './LoadRunnerImport.css'
 
 interface Props {
+  projectId?: string
   onImported?: (script: ImportedScript) => void
   onEdit?: (script: ScriptDefinition) => void
   onClose?: () => void
@@ -23,7 +24,7 @@ function getPrimaryScript(result: ImportResult | null): ImportedScript | null {
   return result?.script || result?.scripts?.[0] || null
 }
 
-export default function JMeterImport({ onImported, onEdit, onClose }: Props) {
+export default function JMeterImport({ projectId, onImported, onEdit, onClose }: Props) {
   const api = useApi()
   const fileRef = useRef<HTMLInputElement>(null)
   const [file, setFile] = useState<File | null>(null)
@@ -136,8 +137,9 @@ export default function JMeterImport({ onImported, onEdit, onClose }: Props) {
     setError('')
     setNotice('')
     try {
+      const scripts = result.scripts.map(script => script.project_id ? script : { ...script, project_id: projectId })
       const response = await api.saveJMeterImport({
-        scripts: result.scripts,
+        scripts,
         scenario_draft: result.scenario_draft,
       })
       const scenarioText = response.scenario ? ' and scenario draft' : ''

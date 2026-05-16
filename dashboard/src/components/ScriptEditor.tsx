@@ -1202,13 +1202,17 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
           ? currentScript.config.browser.capture_screenshots
           : 'per_action'
 
+      const replayScript = projectId && !currentScript.project_id
+        ? { ...currentScript, project_id: projectId }
+        : currentScript
+
       const payload = {
         group_name: replayGroup,
         replay_session_id: replaySessionId,
         ignore_think_time: replayOptions.ignoreThinkTime,
         start_paused: currentScript.protocol === 'browser' ? replayOptions.startPaused : undefined,
         variables,
-        script: currentScript,
+        script: replayScript,
         browser: currentScript.protocol === 'browser' ? {
           engine: currentScript.config.browser?.engine || 'chromium',
           headless: currentScript.config.browser?.headless ?? true,

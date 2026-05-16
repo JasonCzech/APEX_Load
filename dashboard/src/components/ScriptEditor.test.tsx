@@ -251,6 +251,27 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('Select an action to edit its details')
   })
 
+  it('includes the active project id in draft replay payloads', async () => {
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={initialScript} projectId="project-1" />)
+    })
+
+    const replayButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Replay')
+    expect(replayButton).toBeDefined()
+    if (!replayButton) {
+      return
+    }
+
+    await act(async () => {
+      replayButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(apiMock.replayDraftScript).toHaveBeenCalledWith(expect.objectContaining({
+      script: expect.objectContaining({ project_id: 'project-1' }),
+    }))
+  })
+
   it('surfaces script load failures when fetching by id', async () => {
     apiMock.getScript.mockRejectedValueOnce(new Error('Network unavailable'))
 

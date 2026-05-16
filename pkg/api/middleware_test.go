@@ -266,6 +266,81 @@ func TestTrustedHeaderAuthScopesScriptListAndCreateToProjectRoles(t *testing.T) 
 	}
 }
 
+func TestTrustedHeaderAuthProjectRoleGuardsDraftScriptExecution(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	enableTrustedHeaderAuth(t, server)
+	projectID := uuid.New().String()
+
+	replayBody := []byte(`{"script":{"name":"Draft Replay","version":"1.0.0","protocol":"http","project_id":"` + projectID + `","config":{"base_url":"https://example.com"},"actions":[]}}`)
+	viewerReplayReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/replay", bytes.NewReader(replayBody))
+	viewerReplayReq.Header.Set("Content-Type", "application/json")
+	viewerReplayReq.Header.Set("X-Auth-Request-User", "viewer-user")
+	viewerReplayReq.Header.Set("X-Stormrunner-Project-Roles", projectID+"="+RoleViewer)
+	viewerReplayResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(viewerReplayResp, viewerReplayReq)
+	if viewerReplayResp.Code != http.StatusForbidden {
+		t.Fatalf("draft replay viewer status = %d, want %d body=%s", viewerReplayResp.Code, http.StatusForbidden, viewerReplayResp.Body.String())
+	}
+
+	editorReplayReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/replay", bytes.NewReader(replayBody))
+	editorReplayReq.Header.Set("Content-Type", "application/json")
+	editorReplayReq.Header.Set("X-Auth-Request-User", "editor-user")
+	editorReplayReq.Header.Set("X-Stormrunner-Project-Roles", projectID+"="+RoleEditor)
+	editorReplayResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(editorReplayResp, editorReplayReq)
+	if editorReplayResp.Code == http.StatusForbidden || editorReplayResp.Code == http.StatusUnauthorized {
+		t.Fatalf("draft replay editor status = %d, want auth to pass body=%s", editorReplayResp.Code, editorReplayResp.Body.String())
+	}
+
+	browserBody := []byte(`{"script":{"name":"Draft Browser Replay","version":"1.0.0","protocol":"browser","project_id":"` + projectID + `","config":{"browser":{"engine":"chromium"}},"actions":[]}}`)
+	viewerBrowserReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/browser-replay/sessions", bytes.NewReader(browserBody))
+	viewerBrowserReq.Header.Set("Content-Type", "application/json")
+	viewerBrowserReq.Header.Set("X-Auth-Request-User", "viewer-user")
+	viewerBrowserReq.Header.Set("X-Stormrunner-Project-Roles", projectID+"="+RoleViewer)
+	viewerBrowserResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(viewerBrowserResp, viewerBrowserReq)
+	if viewerBrowserResp.Code != http.StatusForbidden {
+		t.Fatalf("draft browser replay viewer status = %d, want %d body=%s", viewerBrowserResp.Code, http.StatusForbidden, viewerBrowserResp.Body.String())
+	}
+
+	editorBrowserReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/browser-replay/sessions", bytes.NewReader(browserBody))
+	editorBrowserReq.Header.Set("Content-Type", "application/json")
+	editorBrowserReq.Header.Set("X-Auth-Request-User", "editor-user")
+	editorBrowserReq.Header.Set("X-Stormrunner-Project-Roles", projectID+"="+RoleEditor)
+	editorBrowserResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(editorBrowserResp, editorBrowserReq)
+	if editorBrowserResp.Code == http.StatusForbidden || editorBrowserResp.Code == http.StatusUnauthorized {
+		t.Fatalf("draft browser replay editor status = %d, want auth to pass body=%s", editorBrowserResp.Code, editorBrowserResp.Body.String())
+	}
+}
+
+func TestTrustedHeaderAuthProjectRoleGuardsJMeterImportSave(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	enableTrustedHeaderAuth(t, server)
+	projectID := uuid.New().String()
+	body := []byte(`{"scripts":[{"name":"Imported Flow","version":"1.0.0","protocol":"http","project_id":"` + projectID + `","config":{"base_url":"https://example.com"},"actions":[{"name":"Open","type":"http","method":"GET","target":"/"}]}]}`)
+
+	viewerReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/jmeter/save", bytes.NewReader(body))
+	viewerReq.Header.Set("Content-Type", "application/json")
+	viewerReq.Header.Set("X-Auth-Request-User", "viewer-user")
+	viewerReq.Header.Set("X-Stormrunner-Project-Roles", projectID+"="+RoleViewer)
+	viewerResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(viewerResp, viewerReq)
+	if viewerResp.Code != http.StatusForbidden {
+		t.Fatalf("jmeter save viewer status = %d, want %d body=%s", viewerResp.Code, http.StatusForbidden, viewerResp.Body.String())
+	}
+
+	editorReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/jmeter/save", bytes.NewReader(body))
+	editorReq.Header.Set("Content-Type", "application/json")
+	editorReq.Header.Set("X-Auth-Request-User", "editor-user")
+	editorReq.Header.Set("X-Stormrunner-Project-Roles", projectID+"="+RoleEditor)
+	editorResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(editorResp, editorReq)
+	if editorResp.Code != http.StatusCreated {
+		t.Fatalf("jmeter save editor status = %d, want %d body=%s", editorResp.Code, http.StatusCreated, editorResp.Body.String())
+	}
+}
+
 func TestTrustedHeaderAuthProjectRoleGuardsStoredTestEndpoints(t *testing.T) {
 	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
 	if err != nil {

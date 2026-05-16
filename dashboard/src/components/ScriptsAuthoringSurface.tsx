@@ -43,7 +43,7 @@ export default function ScriptsAuthoringSurface({
     case 'import':
       return <div className="page"><LoadRunnerImport projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenLibrary} /></div>
     case 'jmeter-import':
-      return <div className="page"><JMeterImport onImported={onImported} onEdit={onEditDraft} onClose={onOpenLibrary} /></div>
+      return <div className="page"><JMeterImport projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenLibrary} /></div>
     case 'recorder':
       return (
         <div className="page">
