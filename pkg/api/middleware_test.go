@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jasonczech/stormrunner/pkg/dsl"
 	"github.com/jasonczech/stormrunner/pkg/storage"
 )
 
@@ -147,6 +148,121 @@ func TestTrustedHeaderAuthResolvesFolderProjectForMutations(t *testing.T) {
 	}
 	if updated.Name != "Archived Results" {
 		t.Fatalf("folder name = %q, want Archived Results", updated.Name)
+	}
+}
+
+func TestTrustedHeaderAuthProjectRoleGuardsStoredScriptEndpoints(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	project := &storage.Project{ID: uuid.New().String(), Name: "Project One", CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	if err := store.SaveProject(project); err != nil {
+		t.Fatalf("SaveProject returned error: %v", err)
+	}
+	script := &dsl.Script{
+		ID:        uuid.New().String(),
+		Name:      "Checkout",
+		Version:   "1.0.0",
+		Protocol:  "http",
+		ProjectID: project.ID,
+		Config:    dsl.ScriptConfig{BaseURL: "https://example.com"},
+		Actions:   []dsl.Action{{Name: "Open", Type: "http", Method: "GET", Target: "/"}},
+	}
+	if err := store.SaveScript(script); err != nil {
+		t.Fatalf("SaveScript returned error: %v", err)
+	}
+
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	enableTrustedHeaderAuth(t, server)
+
+	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/scripts/"+script.ID, nil)
+	getReq.Header.Set("X-Auth-Request-User", "viewer-user")
+	getReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	getResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(getResp, getReq)
+	if getResp.Code != http.StatusOK {
+		t.Fatalf("script viewer GET status = %d, want %d body=%s", getResp.Code, http.StatusOK, getResp.Body.String())
+	}
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/v1/scripts/"+script.ID, nil)
+	deleteReq.Header.Set("X-Auth-Request-User", "viewer-user")
+	deleteReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	deleteResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(deleteResp, deleteReq)
+	if deleteResp.Code != http.StatusForbidden {
+		t.Fatalf("script viewer DELETE status = %d, want %d body=%s", deleteResp.Code, http.StatusForbidden, deleteResp.Body.String())
+	}
+
+	editorDeleteReq := httptest.NewRequest(http.MethodDelete, "/api/v1/scripts/"+script.ID, nil)
+	editorDeleteReq.Header.Set("X-Auth-Request-User", "editor-user")
+	editorDeleteReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleEditor)
+	editorDeleteResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(editorDeleteResp, editorDeleteReq)
+	if editorDeleteResp.Code != http.StatusOK {
+		t.Fatalf("script editor DELETE status = %d, want %d body=%s", editorDeleteResp.Code, http.StatusOK, editorDeleteResp.Body.String())
+	}
+	if _, err := store.GetScript(script.ID); err == nil {
+		t.Fatal("expected deleted script to be removed from storage")
+	}
+}
+
+func TestTrustedHeaderAuthScopesScriptListAndCreateToProjectRoles(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	project := &storage.Project{ID: uuid.New().String(), Name: "Project One", CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	if err := store.SaveProject(project); err != nil {
+		t.Fatalf("SaveProject returned error: %v", err)
+	}
+	existing := &dsl.Script{
+		ID:        uuid.New().String(),
+		Name:      "Existing",
+		Version:   "1.0.0",
+		Protocol:  "http",
+		ProjectID: project.ID,
+		Config:    dsl.ScriptConfig{BaseURL: "https://example.com"},
+		Actions:   []dsl.Action{{Name: "Open", Type: "http", Method: "GET", Target: "/"}},
+	}
+	if err := store.SaveScript(existing); err != nil {
+		t.Fatalf("SaveScript returned error: %v", err)
+	}
+
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	enableTrustedHeaderAuth(t, server)
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/scripts", nil)
+	listReq.Header.Set("X-Auth-Request-User", "viewer-user")
+	listReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	listResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(listResp, listReq)
+	if listResp.Code != http.StatusForbidden {
+		t.Fatalf("unfiltered script list status = %d, want %d body=%s", listResp.Code, http.StatusForbidden, listResp.Body.String())
+	}
+
+	filteredReq := httptest.NewRequest(http.MethodGet, "/api/v1/scripts?project_id="+project.ID, nil)
+	filteredReq.Header.Set("X-Auth-Request-User", "viewer-user")
+	filteredReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	filteredResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(filteredResp, filteredReq)
+	if filteredResp.Code != http.StatusOK {
+		t.Fatalf("filtered script list status = %d, want %d body=%s", filteredResp.Code, http.StatusOK, filteredResp.Body.String())
+	}
+
+	body := []byte(`{"project_id":"` + project.ID + `","script":{"name":"Created","version":"1.0.0","protocol":"http","config":{"base_url":"https://example.com"},"actions":[{"name":"Open","type":"http","method":"GET","target":"/"}]}}`)
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts", bytes.NewReader(body))
+	createReq.Header.Set("Content-Type", "application/json")
+	createReq.Header.Set("X-Auth-Request-User", "editor-user")
+	createReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleEditor)
+	createResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(createResp, createReq)
+	if createResp.Code != http.StatusCreated {
+		t.Fatalf("project editor create status = %d, want %d body=%s", createResp.Code, http.StatusCreated, createResp.Body.String())
 	}
 }
 

@@ -2,8 +2,11 @@ package api
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -229,9 +232,59 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 		switch method {
 		case http.MethodPut, http.MethodDelete:
 			return accessRequirement{
-				GlobalRoles:  []string{RoleProjectAdmin, RoleSystemAdmin},
-				ProjectRoles: []string{RoleProjectAdmin},
+				GlobalRoles:   []string{RoleProjectAdmin, RoleSystemAdmin},
+				ProjectRoles:  []string{RoleProjectAdmin},
 				ProjectLookup: resolveFolderProjectID,
+			}, true
+		}
+	}
+
+	if path == "/api/v1/scripts" {
+		switch method {
+		case http.MethodGet:
+			if strings.TrimSpace(r.URL.Query().Get("project_id")) == "" && !r.URL.Query().Has("folder_id") {
+				return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
+			}
+			return accessRequirement{
+				GlobalRoles:   []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+				ProjectRoles:  []string{RoleViewer, RoleEditor, RoleProjectAdmin},
+				ProjectLookup: resolveScriptListProjectID,
+			}, true
+		case http.MethodPost:
+			return accessRequirement{
+				GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+				ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
+				ProjectLookup: resolveScriptCreateProjectID,
+			}, true
+		}
+	}
+
+	if r.PathValue("id") != "" && strings.HasPrefix(path, "/api/v1/scripts/") {
+		switch method {
+		case http.MethodGet:
+			return accessRequirement{
+				GlobalRoles:   []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+				ProjectRoles:  []string{RoleViewer, RoleEditor, RoleProjectAdmin},
+				ProjectLookup: resolveScriptProjectID,
+			}, true
+		case http.MethodPut, http.MethodDelete, http.MethodPatch:
+			return accessRequirement{
+				GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+				ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
+				ProjectLookup: resolveScriptProjectID,
+			}, true
+		case http.MethodPost:
+			if strings.HasSuffix(path, "/validate") || strings.HasSuffix(path, "/export") {
+				return accessRequirement{
+					GlobalRoles:   []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+					ProjectRoles:  []string{RoleViewer, RoleEditor, RoleProjectAdmin},
+					ProjectLookup: resolveScriptProjectID,
+				}, true
+			}
+			return accessRequirement{
+				GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+				ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
+				ProjectLookup: resolveScriptProjectID,
 			}, true
 		}
 	}
@@ -248,6 +301,64 @@ func resolveFolderProjectID(r *http.Request, store storage.Store) (string, int, 
 		return "", http.StatusNotFound, "folder not found"
 	}
 	return normalizeProjectID(folder.ProjectID), 0, ""
+}
+
+func resolveScriptProjectID(r *http.Request, store storage.Store) (string, int, string) {
+	if store == nil {
+		return "", http.StatusServiceUnavailable, "script storage is not configured"
+	}
+	script, err := store.GetScript(r.PathValue("id"))
+	if err != nil {
+		return "", http.StatusNotFound, "script not found"
+	}
+	return normalizeProjectID(script.ProjectID), 0, ""
+}
+
+func resolveScriptListProjectID(r *http.Request, store storage.Store) (string, int, string) {
+	if projectID := strings.TrimSpace(r.URL.Query().Get("project_id")); projectID != "" {
+		return normalizeProjectID(projectID), 0, ""
+	}
+	if !r.URL.Query().Has("folder_id") {
+		return "", http.StatusBadRequest, "project_id or folder_id is required for project-scoped script access"
+	}
+	return resolveFolderProjectIDValue(r.URL.Query().Get("folder_id"), store)
+}
+
+func resolveScriptCreateProjectID(r *http.Request, store storage.Store) (string, int, string) {
+	var req struct {
+		ProjectID string  `json:"project_id,omitempty"`
+		FolderID  *string `json:"folder_id,omitempty"`
+	}
+	if err := decodeRequestBody(r, &req); err != nil {
+		return "", http.StatusBadRequest, "invalid request body: " + err.Error()
+	}
+	if req.FolderID != nil {
+		return resolveFolderProjectIDValue(*req.FolderID, store)
+	}
+	return normalizeProjectID(req.ProjectID), 0, ""
+}
+
+func resolveFolderProjectIDValue(folderID string, store storage.Store) (string, int, string) {
+	if store == nil {
+		return "", http.StatusServiceUnavailable, "folder storage is not configured"
+	}
+	folder, err := store.GetFolder(folderID)
+	if err != nil {
+		return "", http.StatusNotFound, "folder not found"
+	}
+	return normalizeProjectID(folder.ProjectID), 0, ""
+}
+
+func decodeRequestBody(r *http.Request, target any) error {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		return err
+	}
+	r.Body = io.NopCloser(bytes.NewReader(body))
+	if len(bytes.TrimSpace(body)) == 0 {
+		return io.EOF
+	}
+	return json.Unmarshal(body, target)
 }
 
 func corsMiddleware(allowedOrigins []string) func(http.Handler) http.Handler {
