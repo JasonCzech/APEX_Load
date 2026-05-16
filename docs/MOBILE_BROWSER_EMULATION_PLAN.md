@@ -20,8 +20,45 @@ This is positioned as a configuration extension of the existing `pkg/protocol/br
 
 ### Remaining
 - TrueClient MobileWeb import is still unimplemented.
-- Published mobile-browser benchmark guidance and hardening work are still open.
+- Production hardening beyond the conservative browser envelope below is still open.
 - Broader scenario-level/dashboard mobile UX polish is still incomplete compared with the script-editor/browser-replay surfaces.
+
+### Supported Browser And Device Profile Envelope
+
+The currently shipped browser/profile matrix is defined in `pkg/protocol/browser/devices.go` and enforced by DSL and replay validation.
+
+| Engine | Supported Profiles | Platform | Tier | Default Orientation |
+|:---|:---|:---|:---|:---|
+| `chromium` | `desktop_1080p` | desktop | high | landscape |
+| `chromium` | `galaxy_s24` | android | high | portrait |
+| `chromium` | `pixel_8` | android | high | portrait |
+| `webkit` | `ipad_air` | ipados | mid | portrait |
+| `webkit` | `iphone_15_pro` | ios | high | portrait |
+| `webkit` | `iphone_se` | ios | low | portrait |
+
+Rules that are already enforced:
+
+- `iphone_*` and `ipad_*` profiles require `webkit`.
+- `desktop_1080p`, `galaxy_s24`, and `pixel_8` require `chromium`.
+- `touch_mode` and `orientation` overrides are valid on top of the selected device profile, but the profile remains the source of truth for platform, tier, and default viewport.
+- Headed or headless execution is supported for both engines, but headed mode should be treated as a diagnostic workflow rather than a scaling target.
+
+### Conservative Benchmark Guidance
+
+Stormrunner should currently position browser device-profile runs as low-concurrency diagnostic workloads, not as high-density browser load generation.
+
+Recommended starting envelope per generator or local controller process:
+
+- Desktop Chromium (`desktop_1080p`): start at `1-15` concurrent browser VUsers.
+- Mobile Chromium (`pixel_8`, `galaxy_s24`): start at `1-10` concurrent browser VUsers.
+- Mobile WebKit (`iphone_15_pro`, `iphone_se`, `ipad_air`): start at `1-5` concurrent browser VUsers.
+
+Scaling guidance:
+
+- Increase concurrency only after confirming stable host CPU, memory, and browser-process telemetry on the target hardware.
+- Enable `browser.client_metrics` for benchmark runs so LCP, INP, CLS, and blocking-resource counts can be compared across profiles.
+- Treat cross-engine comparisons as diagnostic evidence, not proof that one engine's density envelope transfers to another.
+- Re-run the representative matrix tests and a local sample-app benchmark after browser runtime upgrades, especially Playwright/WebKit upgrades.
 
 ## Current Baseline
 
@@ -92,22 +129,16 @@ Browser VUsers are inherently expensive (~150–300 MB each). Mobile emulation d
 ### Design
 A device profile bundles viewport, user agent, device scale factor, touch capability, and default orientation into a named preset. Profiles are compiled into the binary as a lookup table.
 
-### Proposed Profiles
+### Current Supported Profiles
 
-| Profile Name | Width | Height | Scale | Touch | User Agent Fragment |
+| Profile Name | Width | Height | Scale | Touch | Engine | User Agent Fragment |
 |:---|:---|:---|:---|:---|:---|
-| `iphone_15_pro` | 393 | 852 | 3.0 | yes | iPhone; CPU iPhone OS 17 |
-| `iphone_14` | 390 | 844 | 3.0 | yes | iPhone; CPU iPhone OS 16 |
+| `iphone_15_pro` | 393 | 852 | 3.0 | yes | `webkit` | iPhone; CPU iPhone OS 17 |
 | `iphone_se` | 375 | 667 | 2.0 | yes | iPhone; CPU iPhone OS 15 |
-| `galaxy_s24` | 360 | 780 | 3.0 | yes | Linux; Android 14; SM-S921B |
-| `galaxy_s23` | 360 | 780 | 3.0 | yes | Linux; Android 13; SM-S911B |
-| `pixel_8` | 412 | 915 | 2.625 | yes | Linux; Android 14; Pixel 8 |
-| `pixel_7` | 412 | 915 | 2.625 | yes | Linux; Android 13; Pixel 7 |
-| `ipad_pro_12` | 1024 | 1366 | 2.0 | yes | iPad; CPU OS 17 |
-| `ipad_air` | 820 | 1180 | 2.0 | yes | iPad; CPU OS 17 |
-| `galaxy_tab_s9` | 800 | 1280 | 2.0 | yes | Linux; Android 14; SM-X710 |
-| `desktop_1080p` | 1920 | 1080 | 1.0 | no | (default Chrome UA) |
-| `desktop_1440p` | 2560 | 1440 | 1.0 | no | (default Chrome UA) |
+| `galaxy_s24` | 360 | 780 | 3.0 | yes | `chromium` | Linux; Android 14; SM-S921B |
+| `pixel_8` | 412 | 915 | 2.625 | yes | `chromium` | Linux; Android 14; Pixel 8 |
+| `ipad_air` | 820 | 1180 | 2.0 | yes | `webkit` | iPad; CPU OS 17 |
+| `desktop_1080p` | 1920 | 1080 | 1.0 | no | `chromium` | (default Chrome UA) |
 
 ### Implementation Location
 New file: `pkg/protocol/browser/devices.go`

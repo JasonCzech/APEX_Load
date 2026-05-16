@@ -218,6 +218,11 @@ Supported browser actions:
 - `browser_screenshot`
 - `browser_tap`
 - `browser_long_press`
+
+Current mobile-browser support envelope:
+- `chromium`: `desktop_1080p`, `galaxy_s24`, `pixel_8`
+- `webkit`: `ipad_air`, `iphone_15_pro`, `iphone_se`
+- Conservative starting concurrency and benchmark guidance live in `docs/MOBILE_BROWSER_EMULATION_PLAN.md`
 - `browser_swipe`
 
 Browser/mobile config keys:

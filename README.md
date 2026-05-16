@@ -55,6 +55,7 @@ The current controller can run in either local or distributed mode without chang
 - **[API_AND_DSL_REFERENCE.md](API_AND_DSL_REFERENCE.md)** — Complete REST API reference, DSL syntax guide, example scripts, template variables
 - **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** — Common issues, debugging techniques, solutions
 - **[docs/LOADRUNNER_PARITY_EXECUTION_PLAN.md](docs/LOADRUNNER_PARITY_EXECUTION_PLAN.md)** — Epic backlog and delivery plan to close practical parity gaps with LoadRunner in browser testing, script authoring UX, runtime settings, and auth/RBAC
+- **[docs/MOBILE_BROWSER_EMULATION_PLAN.md](docs/MOBILE_BROWSER_EMULATION_PLAN.md)** — Current browser engine and device profile support matrix plus conservative mobile-browser benchmark guidance
 - **[AGENTS.md](AGENTS.md)** — High-level platform overview, tech stack, release phases
 
 ## Requirements
