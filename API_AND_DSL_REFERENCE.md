@@ -376,6 +376,10 @@ Summary metrics fields:
 - `avg_blocking_resources`
 - `avg_long_task_count`
 - `avg_js_heap_used_mb`
+- `avg_browser_process_cpu_pct`
+- `avg_browser_process_mem_mb`
+
+Per-action browser client metrics can also include `browser_process_cpu_pct` and `browser_process_mem_mb` for Chromium-backed browser runs. WebKit runs currently keep browser process attribution empty because the Playwright WebKit integration does not expose stable process IDs for OS-level sampling.
 
 Response surfaces carrying these summaries:
 - live test details and `/api/v1/tests/{id}/metrics` via `browser` and `browser_by_device`

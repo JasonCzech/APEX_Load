@@ -261,6 +261,14 @@ export default function TestExecutionStatusPanels({
               <span className="goal-status-label">Avg JS Heap</span>
               <span className="goal-status-value">{formatBrowserMetric(metrics.browser.avg_js_heap_used_mb, ' MB')}</span>
             </div>
+            <div className="goal-status-metric">
+              <span className="goal-status-label">Avg Browser CPU</span>
+              <span className="goal-status-value">{formatBrowserMetric(metrics.browser.avg_browser_process_cpu_pct, '%')}</span>
+            </div>
+            <div className="goal-status-metric">
+              <span className="goal-status-label">Avg Browser Memory</span>
+              <span className="goal-status-value">{formatBrowserMetric(metrics.browser.avg_browser_process_mem_mb, ' MB')}</span>
+            </div>
           </div>
 
           {browserDevices.length > 0 && (

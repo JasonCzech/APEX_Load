@@ -243,6 +243,8 @@ Captured browser metrics:
 
 Archived and live browser summaries are exposed through `metrics.browser`, `metrics.browser_by_device`, archive interval summaries, and archive reports. Browser evidence bundles can be downloaded from `/api/v1/tests/{id}/archive/browser-diagnostics`; each bundle contains `browser_diagnostics.json` plus captured screenshot and HTML artifacts when those snapshots are available.
 
+Chromium browser runs with `config.browser.client_metrics` enabled also report browser-process CPU and memory as `browser_process_cpu_pct` / `browser_process_mem_mb` on transaction events and `avg_browser_process_cpu_pct` / `avg_browser_process_mem_mb` on summaries.
+
 **Java-over-HTTP MVP:**
 - Reuses the HTTP transport with the `java_serialized_object_base64` codec.
 - Sample imports for Java-over-HTTP are intentionally limited to raw HTTP and cURL bodies that already contain base64-encoded serialized Java bytes.

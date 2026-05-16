@@ -938,6 +938,8 @@ func TestBuildLiveMetricsFromSnapshot(t *testing.T) {
 			AvgBlockingResources: 2,
 			AvgLongTaskCount:     1.5,
 			AvgJSHeapUsedMB:      18,
+			AvgBrowserProcessCPU: 22,
+			AvgBrowserProcessMem: 256,
 		},
 		BrowserByDevice: map[string]*engine.BrowserDeviceMetrics{
 			"iphone_se": {
@@ -953,6 +955,8 @@ func TestBuildLiveMetricsFromSnapshot(t *testing.T) {
 				AvgBlockingResources: 2,
 				AvgLongTaskCount:     1.5,
 				AvgJSHeapUsedMB:      18,
+				AvgBrowserProcessCPU: 22,
+				AvgBrowserProcessMem: 256,
 			},
 		},
 		Resources: resources,
@@ -981,6 +985,9 @@ func TestBuildLiveMetricsFromSnapshot(t *testing.T) {
 	}
 	if live.Browser == nil || live.Browser.Samples != 2 {
 		t.Fatalf("expected browser summary to be mapped, got %#v", live.Browser)
+	}
+	if live.Browser.AvgBrowserProcessCPU != 22 || live.Browser.AvgBrowserProcessMem != 256 {
+		t.Fatalf("expected browser process metrics to be mapped, got %#v", live.Browser)
 	}
 	if live.BrowserByDevice == nil || live.BrowserByDevice["iphone_se"] == nil {
 		t.Fatalf("expected browser-by-device metrics to be mapped, got %#v", live.BrowserByDevice)
@@ -1641,6 +1648,8 @@ func TestLoadStoredTestHistoryBuildsLiveMetricsFromTypedIntervalSummaries(t *tes
 					AvgBlockingResources: 2,
 					AvgLongTaskCount:     1.5,
 					AvgJSHeapUsedMB:      18,
+					AvgBrowserProcessCPU: 22,
+					AvgBrowserProcessMem: 256,
 				},
 				BrowserByDevice: map[string]*storage.BrowserDeviceMetricsRecord{
 					"iphone_se": {
@@ -1656,6 +1665,8 @@ func TestLoadStoredTestHistoryBuildsLiveMetricsFromTypedIntervalSummaries(t *tes
 						AvgBlockingResources: 2,
 						AvgLongTaskCount:     1.5,
 						AvgJSHeapUsedMB:      18,
+						AvgBrowserProcessCPU: 22,
+						AvgBrowserProcessMem: 256,
 					},
 				},
 				DroppedResults:           5,
@@ -1685,6 +1696,9 @@ func TestLoadStoredTestHistoryBuildsLiveMetricsFromTypedIntervalSummaries(t *tes
 	}
 	if testRun.LiveMetrics.Browser == nil || testRun.LiveMetrics.Browser.AvgCLSScore != 0.031 {
 		t.Fatalf("expected browser summary to round-trip from typed history, got %#v", testRun.LiveMetrics.Browser)
+	}
+	if testRun.LiveMetrics.Browser.AvgBrowserProcessCPU != 22 || testRun.LiveMetrics.Browser.AvgBrowserProcessMem != 256 {
+		t.Fatalf("expected browser process metrics to round-trip from typed history, got %#v", testRun.LiveMetrics.Browser)
 	}
 	if testRun.LiveMetrics.BrowserByDevice == nil || testRun.LiveMetrics.BrowserByDevice["iphone_se"] == nil || testRun.LiveMetrics.BrowserByDevice["iphone_se"].DeviceTier != "low" {
 		t.Fatalf("expected browser-by-device summary to round-trip from typed history, got %#v", testRun.LiveMetrics.BrowserByDevice)

@@ -457,6 +457,14 @@ var runArchiveReportTemplate = template.Must(template.New("run-archive-report").
           <span class="metric-label">Avg JS Heap</span>
           <span class="metric-value">{{formatFloat .Report.Overview.Browser.AvgJSHeapUsedMB}} MB</span>
         </div>
+        <div class="metric">
+          <span class="metric-label">Avg Browser CPU</span>
+          <span class="metric-value">{{formatFloat .Report.Overview.Browser.AvgBrowserProcessCPU}}%</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Avg Browser Memory</span>
+          <span class="metric-value">{{formatFloat .Report.Overview.Browser.AvgBrowserProcessMem}} MB</span>
+        </div>
       </div>
 
       {{if .BrowserEngineRows}}

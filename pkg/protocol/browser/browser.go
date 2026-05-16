@@ -18,8 +18,10 @@ import (
 	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/cdproto/performance"
 	"github.com/chromedp/cdproto/runtime"
+	"github.com/chromedp/cdproto/systeminfo"
 	"github.com/chromedp/chromedp"
 	"github.com/jasonczech/stormrunner/pkg/protocol"
+	"github.com/shirou/gopsutil/v3/process"
 	playwright "github.com/playwright-community/playwright-go"
 )
 
@@ -87,6 +89,12 @@ type networkRequest struct {
 type domState struct {
 	ReadyState string   `json:"readyState"`
 	Visible    []string `json:"visible"`
+}
+
+type browserProcessSnapshot struct {
+	CPUTimeSeconds float64
+	MemoryMB       float64
+	CapturedAt      time.Time
 }
 
 func (b *Browser) Name() string { return "browser" }
@@ -589,6 +597,7 @@ func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protoc
 	consoleStart, networkStart := b.eventOffsets()
 	actionCtx, cancel := b.executionContext(ctx)
 	defer cancel()
+	processBefore, _ := b.captureBrowserProcessSnapshot(actionCtx)
 
 	var actionErr error
 	switch action.Type {
@@ -683,7 +692,7 @@ func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protoc
 	result.ConsoleEntries = b.consoleEntriesSince(consoleStart)
 	result.NetworkEntries = b.networkEntriesSince(networkStart)
 	result.Duration = time.Since(result.StartTime)
-	result.ClientMetrics = b.captureClientMetrics(actionCtx, result.Duration)
+	result.ClientMetrics = b.captureClientMetrics(actionCtx, result.Duration, processBefore)
 
 	if actionErr != nil {
 		result.ErrorMessage = actionErr.Error()
@@ -1044,7 +1053,7 @@ type browserPageMetrics struct {
 	LongTaskCount         int     `json:"long_task_count"`
 }
 
-func (b *Browser) captureClientMetrics(ctx context.Context, duration time.Duration) *protocol.ClientMetrics {
+func (b *Browser) captureClientMetrics(ctx context.Context, duration time.Duration, processBefore browserProcessSnapshot) *protocol.ClientMetrics {
 	if !b.clientMetricsEnabled {
 		return nil
 	}
@@ -1062,6 +1071,9 @@ func (b *Browser) captureClientMetrics(ctx context.Context, duration time.Durati
 	}
 	if err := b.captureRuntimeMetrics(ctx, metrics); err != nil {
 		// Keep metrics collection non-fatal for the browser action.
+	}
+	if err := b.captureBrowserProcessMetrics(ctx, metrics, processBefore); err != nil {
+		// Keep browser-process attribution non-fatal because CDP support varies by runtime.
 	}
 
 	if *metrics == (protocol.ClientMetrics{ActionDurationMs: metrics.ActionDurationMs}) {
@@ -1191,6 +1203,60 @@ func (b *Browser) captureRuntimeMetrics(ctx context.Context, metrics *protocol.C
 		}
 	}
 	return nil
+}
+
+func (b *Browser) captureBrowserProcessMetrics(ctx context.Context, metrics *protocol.ClientMetrics, before browserProcessSnapshot) error {
+	after, err := b.captureBrowserProcessSnapshot(ctx)
+	if err != nil {
+		return err
+	}
+	cpuPct, memoryMB := browserProcessResourceMetrics(before, after)
+	metrics.BrowserProcessCPUPct = cpuPct
+	metrics.BrowserProcessMemMB = memoryMB
+	return nil
+}
+
+func (b *Browser) captureBrowserProcessSnapshot(ctx context.Context) (browserProcessSnapshot, error) {
+	if !b.clientMetricsEnabled || b.engine != "chromium" {
+		return browserProcessSnapshot{}, nil
+	}
+	var processes []*systeminfo.ProcessInfo
+	if err := chromedp.Run(ctx, chromedp.ActionFunc(func(ctx context.Context) error {
+		var err error
+		processes, err = systeminfo.GetProcessInfo().Do(ctx)
+		return err
+	})); err != nil {
+		return browserProcessSnapshot{}, err
+	}
+	snapshot := browserProcessSnapshot{CapturedAt: time.Now()}
+	for _, proc := range processes {
+		if proc == nil {
+			continue
+		}
+		snapshot.CPUTimeSeconds += proc.CPUTime
+		if p, err := process.NewProcess(int32(proc.ID)); err == nil {
+			if info, err := p.MemoryInfo(); err == nil && info != nil {
+				snapshot.MemoryMB += float64(info.RSS) / 1024 / 1024
+			}
+		}
+	}
+	return snapshot, nil
+}
+
+func browserProcessResourceMetrics(before, after browserProcessSnapshot) (float64, float64) {
+	memoryMB := after.MemoryMB
+	if before.CapturedAt.IsZero() || after.CapturedAt.IsZero() || !after.CapturedAt.After(before.CapturedAt) {
+		return 0, memoryMB
+	}
+	cpuDelta := after.CPUTimeSeconds - before.CPUTimeSeconds
+	if cpuDelta <= 0 {
+		return 0, memoryMB
+	}
+	elapsedSeconds := after.CapturedAt.Sub(before.CapturedAt).Seconds()
+	if elapsedSeconds <= 0 {
+		return 0, memoryMB
+	}
+	return cpuDelta / elapsedSeconds * 100, memoryMB
 }
 
 func (b *Browser) readDOMSummary(ctx context.Context) (string, string, *protocol.DOMSummary, error) {

@@ -65,6 +65,8 @@ type BrowserMetricsSummary struct {
 	AvgBlockingResources float64 `json:"avg_blocking_resources,omitempty"`
 	AvgLongTaskCount     float64 `json:"avg_long_task_count,omitempty"`
 	AvgJSHeapUsedMB      float64 `json:"avg_js_heap_used_mb,omitempty"`
+	AvgBrowserProcessCPU float64 `json:"avg_browser_process_cpu_pct,omitempty"`
+	AvgBrowserProcessMem float64 `json:"avg_browser_process_mem_mb,omitempty"`
 }
 
 type BrowserDeviceMetrics struct {
@@ -80,6 +82,8 @@ type BrowserDeviceMetrics struct {
 	AvgBlockingResources float64 `json:"avg_blocking_resources,omitempty"`
 	AvgLongTaskCount     float64 `json:"avg_long_task_count,omitempty"`
 	AvgJSHeapUsedMB      float64 `json:"avg_js_heap_used_mb,omitempty"`
+	AvgBrowserProcessCPU float64 `json:"avg_browser_process_cpu_pct,omitempty"`
+	AvgBrowserProcessMem float64 `json:"avg_browser_process_mem_mb,omitempty"`
 }
 
 type ServerTelemetrySummary struct {
@@ -584,6 +588,8 @@ func mergeBrowserMetricsSummary(summary *BrowserMetricsSummary, metrics *protoco
 	summary.AvgBlockingResources += float64(metrics.BlockingResourceCount)
 	summary.AvgLongTaskCount += float64(metrics.LongTaskCount)
 	summary.AvgJSHeapUsedMB += metrics.JSHeapUsedMB
+	summary.AvgBrowserProcessCPU += metrics.BrowserProcessCPUPct
+	summary.AvgBrowserProcessMem += metrics.BrowserProcessMemMB
 }
 
 func mergeServerTelemetrySummary(summary *ServerTelemetrySummary, telemetry *protocol.ServerTelemetry) {
@@ -704,6 +710,8 @@ func finalizeBrowserMetricsSummary(summary *BrowserMetricsSummary) {
 	summary.AvgBlockingResources /= divisor
 	summary.AvgLongTaskCount /= divisor
 	summary.AvgJSHeapUsedMB /= divisor
+	summary.AvgBrowserProcessCPU /= divisor
+	summary.AvgBrowserProcessMem /= divisor
 }
 
 func mergeBrowserDeviceMetrics(summary *BrowserDeviceMetrics, metrics *protocol.ClientMetrics) {
@@ -724,6 +732,8 @@ func mergeBrowserDeviceMetrics(summary *BrowserDeviceMetrics, metrics *protocol.
 	summary.AvgBlockingResources += float64(metrics.BlockingResourceCount)
 	summary.AvgLongTaskCount += float64(metrics.LongTaskCount)
 	summary.AvgJSHeapUsedMB += metrics.JSHeapUsedMB
+	summary.AvgBrowserProcessCPU += metrics.BrowserProcessCPUPct
+	summary.AvgBrowserProcessMem += metrics.BrowserProcessMemMB
 }
 
 func finalizeBrowserDeviceMetrics(summary *BrowserDeviceMetrics) {
@@ -738,4 +748,6 @@ func finalizeBrowserDeviceMetrics(summary *BrowserDeviceMetrics) {
 	summary.AvgBlockingResources /= divisor
 	summary.AvgLongTaskCount /= divisor
 	summary.AvgJSHeapUsedMB /= divisor
+	summary.AvgBrowserProcessCPU /= divisor
+	summary.AvgBrowserProcessMem /= divisor
 }

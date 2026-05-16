@@ -58,7 +58,7 @@ Primary seams:
 - Browser metadata presentation has been normalized in the live and archive UI: device cards now show a single canonical `Platform · Engine · Tier` label instead of duplicating partial browser metadata.
 
 ### Remaining
-- Browser-process CPU and OS-memory sampling are still open; the shipped metrics are browser/page telemetry plus JS heap, not full per-browser process attribution.
+- Chromium browser-process CPU and OS-memory sampling are now captured through CDP process information plus OS RSS lookup when `browser.client_metrics` is enabled. WebKit process attribution remains open because the current Playwright WebKit runtime does not expose stable browser process IDs through the public integration path.
 - Dedicated comparison charts beyond the current overall/platform/engine/device card breakdowns and richer resource-waterfall UX are still open.
 - Benchmark publication and final positioning guidance for density/overhead are still open.
 
@@ -87,7 +87,7 @@ Status: mostly complete.
 - Attach screenshots and other artifacts using the current snapshot model.
 
 Remaining in this phase:
-- add browser-process CPU and OS-memory sampling, or explicitly narrow the v1 contract to the current page/runtime metrics.
+- extend process attribution to WebKit if a stable Playwright process discovery path is added, or keep WebKit explicitly scoped to page/runtime metrics plus JS heap where available.
 
 ### Phase 3: Aggregation And APIs
 Status: complete for the current metric contract.

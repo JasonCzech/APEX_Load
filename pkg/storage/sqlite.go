@@ -33,6 +33,8 @@ type BrowserMetricsSummaryRecord struct {
 	AvgBlockingResources float64 `json:"avg_blocking_resources,omitempty"`
 	AvgLongTaskCount     float64 `json:"avg_long_task_count,omitempty"`
 	AvgJSHeapUsedMB      float64 `json:"avg_js_heap_used_mb,omitempty"`
+	AvgBrowserProcessCPU float64 `json:"avg_browser_process_cpu_pct,omitempty"`
+	AvgBrowserProcessMem float64 `json:"avg_browser_process_mem_mb,omitempty"`
 }
 
 type BrowserDeviceMetricsRecord struct {
@@ -48,6 +50,8 @@ type BrowserDeviceMetricsRecord struct {
 	AvgBlockingResources float64 `json:"avg_blocking_resources,omitempty"`
 	AvgLongTaskCount     float64 `json:"avg_long_task_count,omitempty"`
 	AvgJSHeapUsedMB      float64 `json:"avg_js_heap_used_mb,omitempty"`
+	AvgBrowserProcessCPU float64 `json:"avg_browser_process_cpu_pct,omitempty"`
+	AvgBrowserProcessMem float64 `json:"avg_browser_process_mem_mb,omitempty"`
 }
 
 type IntervalSummaryRecord struct {
@@ -1989,6 +1993,8 @@ func intervalSummaryRecordFromMetrics(timestamp time.Time, metrics any) (Interva
 		AvgBlockingResources float64 `json:"avg_blocking_resources,omitempty"`
 		AvgLongTaskCount     float64 `json:"avg_long_task_count,omitempty"`
 		AvgJSHeapUsedMB      float64 `json:"avg_js_heap_used_mb,omitempty"`
+		AvgBrowserProcessCPU float64 `json:"avg_browser_process_cpu_pct,omitempty"`
+		AvgBrowserProcessMem float64 `json:"avg_browser_process_mem_mb,omitempty"`
 	}
 	type browserDeviceEnvelope struct {
 		DeviceProfile        string  `json:"device_profile,omitempty"`
@@ -2003,6 +2009,8 @@ func intervalSummaryRecordFromMetrics(timestamp time.Time, metrics any) (Interva
 		AvgBlockingResources float64 `json:"avg_blocking_resources,omitempty"`
 		AvgLongTaskCount     float64 `json:"avg_long_task_count,omitempty"`
 		AvgJSHeapUsedMB      float64 `json:"avg_js_heap_used_mb,omitempty"`
+		AvgBrowserProcessCPU float64 `json:"avg_browser_process_cpu_pct,omitempty"`
+		AvgBrowserProcessMem float64 `json:"avg_browser_process_mem_mb,omitempty"`
 	}
 	type telemetryEnvelope struct {
 		DroppedResults           int64     `json:"dropped_results,omitempty"`
@@ -2067,6 +2075,8 @@ func intervalSummaryRecordFromMetrics(timestamp time.Time, metrics any) (Interva
 			AvgBlockingResources: summary.Browser.AvgBlockingResources,
 			AvgLongTaskCount:     summary.Browser.AvgLongTaskCount,
 			AvgJSHeapUsedMB:      summary.Browser.AvgJSHeapUsedMB,
+			AvgBrowserProcessCPU: summary.Browser.AvgBrowserProcessCPU,
+			AvgBrowserProcessMem: summary.Browser.AvgBrowserProcessMem,
 		}
 	}
 	if len(summary.BrowserByDevice) > 0 {
@@ -2088,6 +2098,8 @@ func intervalSummaryRecordFromMetrics(timestamp time.Time, metrics any) (Interva
 				AvgBlockingResources: metrics.AvgBlockingResources,
 				AvgLongTaskCount:     metrics.AvgLongTaskCount,
 				AvgJSHeapUsedMB:      metrics.AvgJSHeapUsedMB,
+				AvgBrowserProcessCPU: metrics.AvgBrowserProcessCPU,
+				AvgBrowserProcessMem: metrics.AvgBrowserProcessMem,
 			}
 		}
 	}

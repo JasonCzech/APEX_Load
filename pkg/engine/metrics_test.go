@@ -253,6 +253,8 @@ func TestMetricsCollector_BrowserMetricsSummary(t *testing.T) {
 				BlockingResourceCount: 2,
 				LongTaskCount:         1,
 				JSHeapUsedMB:          12,
+				BrowserProcessCPUPct:  10,
+				BrowserProcessMemMB:   120,
 			},
 		},
 		{
@@ -271,6 +273,8 @@ func TestMetricsCollector_BrowserMetricsSummary(t *testing.T) {
 				BlockingResourceCount: 4,
 				LongTaskCount:         3,
 				JSHeapUsedMB:          18,
+				BrowserProcessCPUPct:  30,
+				BrowserProcessMemMB:   180,
 			},
 		},
 		{
@@ -289,6 +293,8 @@ func TestMetricsCollector_BrowserMetricsSummary(t *testing.T) {
 				BlockingResourceCount: 1,
 				LongTaskCount:         0,
 				JSHeapUsedMB:          10,
+				BrowserProcessCPUPct:  20,
+				BrowserProcessMemMB:   100,
 			},
 		},
 	}, time.Second)
@@ -317,6 +323,12 @@ func TestMetricsCollector_BrowserMetricsSummary(t *testing.T) {
 	}
 	if iphone.AvgFCPMs != 150 {
 		t.Fatalf("AvgFCPMs = %v, want 150", iphone.AvgFCPMs)
+	}
+	if iphone.AvgBrowserProcessCPU != 20 {
+		t.Fatalf("AvgBrowserProcessCPU = %v, want 20", iphone.AvgBrowserProcessCPU)
+	}
+	if iphone.AvgBrowserProcessMem != 150 {
+		t.Fatalf("AvgBrowserProcessMem = %v, want 150", iphone.AvgBrowserProcessMem)
 	}
 	pixel := snap.BrowserByDevice["pixel_8"]
 	if pixel == nil {

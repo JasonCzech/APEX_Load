@@ -211,6 +211,8 @@ type BrowserLiveMetrics struct {
 	AvgBlockingResources float64 `json:"avg_blocking_resources,omitempty"`
 	AvgLongTaskCount     float64 `json:"avg_long_task_count,omitempty"`
 	AvgJSHeapUsedMB      float64 `json:"avg_js_heap_used_mb,omitempty"`
+	AvgBrowserProcessCPU float64 `json:"avg_browser_process_cpu_pct,omitempty"`
+	AvgBrowserProcessMem float64 `json:"avg_browser_process_mem_mb,omitempty"`
 }
 
 type BrowserDeviceLiveMetrics struct {
@@ -226,6 +228,8 @@ type BrowserDeviceLiveMetrics struct {
 	AvgBlockingResources float64 `json:"avg_blocking_resources,omitempty"`
 	AvgLongTaskCount     float64 `json:"avg_long_task_count,omitempty"`
 	AvgJSHeapUsedMB      float64 `json:"avg_js_heap_used_mb,omitempty"`
+	AvgBrowserProcessCPU float64 `json:"avg_browser_process_cpu_pct,omitempty"`
+	AvgBrowserProcessMem float64 `json:"avg_browser_process_mem_mb,omitempty"`
 }
 
 type ServerTelemetrySummary struct {
@@ -824,6 +828,8 @@ func browserSummaryRecordToLiveMetrics(record *storage.BrowserMetricsSummaryReco
 		AvgBlockingResources: record.AvgBlockingResources,
 		AvgLongTaskCount:     record.AvgLongTaskCount,
 		AvgJSHeapUsedMB:      record.AvgJSHeapUsedMB,
+		AvgBrowserProcessCPU: record.AvgBrowserProcessCPU,
+		AvgBrowserProcessMem: record.AvgBrowserProcessMem,
 	}
 }
 
@@ -849,6 +855,8 @@ func browserDeviceSummaryRecordToLiveMetrics(records map[string]*storage.Browser
 			AvgBlockingResources: record.AvgBlockingResources,
 			AvgLongTaskCount:     record.AvgLongTaskCount,
 			AvgJSHeapUsedMB:      record.AvgJSHeapUsedMB,
+			AvgBrowserProcessCPU: record.AvgBrowserProcessCPU,
+			AvgBrowserProcessMem: record.AvgBrowserProcessMem,
 		}
 	}
 	if len(result) == 0 {
@@ -3224,6 +3232,8 @@ func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[s
 			AvgBlockingResources: snap.Browser.AvgBlockingResources,
 			AvgLongTaskCount:     snap.Browser.AvgLongTaskCount,
 			AvgJSHeapUsedMB:      snap.Browser.AvgJSHeapUsedMB,
+			AvgBrowserProcessCPU: snap.Browser.AvgBrowserProcessCPU,
+			AvgBrowserProcessMem: snap.Browser.AvgBrowserProcessMem,
 		}
 	}
 	if len(snap.BrowserByDevice) > 0 {
@@ -3242,6 +3252,8 @@ func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[s
 				AvgBlockingResources: metrics.AvgBlockingResources,
 				AvgLongTaskCount:     metrics.AvgLongTaskCount,
 				AvgJSHeapUsedMB:      metrics.AvgJSHeapUsedMB,
+				AvgBrowserProcessCPU: metrics.AvgBrowserProcessCPU,
+				AvgBrowserProcessMem: metrics.AvgBrowserProcessMem,
 			}
 		}
 	}

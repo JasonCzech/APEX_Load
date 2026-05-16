@@ -164,6 +164,14 @@ function renderBrowserSummary(
           <span className="scenario-script-detail-label">Avg Blocking Resources</span>
           <span className="scenario-script-detail-value">{formatBrowserMetric(summary.avg_blocking_resources, '', 1)}</span>
         </div>
+        <div className="scenario-script-detail-card">
+          <span className="scenario-script-detail-label">Avg Browser CPU</span>
+          <span className="scenario-script-detail-value">{formatBrowserMetric(summary.avg_browser_process_cpu_pct, '%')}</span>
+        </div>
+        <div className="scenario-script-detail-card">
+          <span className="scenario-script-detail-label">Avg Browser Memory</span>
+          <span className="scenario-script-detail-value">{formatBrowserMetric(summary.avg_browser_process_mem_mb, ' MB')}</span>
+        </div>
       </div>
 
       {onBreakdownChange && breakdownChartData.length > 0 && (
@@ -921,7 +929,9 @@ export default function TestExecutionArchive({
                                         CLS: {formatBrowserScore(event.client_metrics.cls_score)}{'\n'}
                                         INP: {formatBrowserMetric(event.client_metrics.inp_ms, ' ms')}{'\n'}
                                         Blocking resources: {formatBrowserMetric(event.client_metrics.blocking_resource_count, '', 0)}{'\n'}
-                                        Long tasks: {formatBrowserMetric(event.client_metrics.long_task_count, '', 0)}
+                                        Long tasks: {formatBrowserMetric(event.client_metrics.long_task_count, '', 0)}{'\n'}
+                                        Browser CPU: {formatBrowserMetric(event.client_metrics.browser_process_cpu_pct, '%')}{'\n'}
+                                        Browser memory: {formatBrowserMetric(event.client_metrics.browser_process_mem_mb, ' MB')}
                                       </pre>
                                     </div>
                                   )}

@@ -372,6 +372,8 @@ export interface ClientMetrics {
   resource_transfer_kb?: number
   js_heap_used_mb?: number
   js_heap_total_mb?: number
+  browser_process_cpu_pct?: number
+  browser_process_mem_mb?: number
   layout_count?: number
   recalc_style_count?: number
   script_duration_ms?: number
@@ -641,6 +643,8 @@ export interface BrowserLiveMetrics {
   avg_blocking_resources?: number
   avg_long_task_count?: number
   avg_js_heap_used_mb?: number
+  avg_browser_process_cpu_pct?: number
+  avg_browser_process_mem_mb?: number
 }
 
 export interface BrowserDeviceLiveMetrics extends BrowserLiveMetrics {

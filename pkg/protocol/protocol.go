@@ -141,6 +141,8 @@ type ClientMetrics struct {
 	LayoutDurationMs      float64 `json:"layout_duration_ms,omitempty"`
 	TaskDurationMs        float64 `json:"task_duration_ms,omitempty"`
 	LongTaskCount         int     `json:"long_task_count,omitempty"`
+	BrowserProcessCPUPct  float64 `json:"browser_process_cpu_pct,omitempty"`
+	BrowserProcessMemMB   float64 `json:"browser_process_mem_mb,omitempty"`
 }
 
 type ServerTelemetry struct {

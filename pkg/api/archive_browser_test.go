@@ -53,6 +53,8 @@ func TestBuildRunArchiveReportAggregatesBrowserMetrics(t *testing.T) {
 				BlockingResourceCount: 2,
 				LongTaskCount:         1,
 				JSHeapUsedMB:          18,
+				BrowserProcessCPUPct:  20,
+				BrowserProcessMemMB:   160,
 			},
 		},
 		{
@@ -74,6 +76,8 @@ func TestBuildRunArchiveReportAggregatesBrowserMetrics(t *testing.T) {
 				BlockingResourceCount: 3,
 				LongTaskCount:         2,
 				JSHeapUsedMB:          20,
+				BrowserProcessCPUPct:  40,
+				BrowserProcessMemMB:   240,
 			},
 		},
 		{
@@ -95,6 +99,8 @@ func TestBuildRunArchiveReportAggregatesBrowserMetrics(t *testing.T) {
 				BlockingResourceCount: 1,
 				LongTaskCount:         1,
 				JSHeapUsedMB:          16,
+				BrowserProcessCPUPct:  30,
+				BrowserProcessMemMB:   180,
 			},
 		},
 	}
@@ -147,6 +153,12 @@ func TestBuildRunArchiveReportAggregatesBrowserMetrics(t *testing.T) {
 	}
 	if report.BrowserByPlatform["ios"].AvgLCPMs != 270 {
 		t.Fatalf("platform AvgLCPMs = %v, want 270", report.BrowserByPlatform["ios"].AvgLCPMs)
+	}
+	if report.BrowserByPlatform["ios"].AvgBrowserProcessCPU != 30 {
+		t.Fatalf("platform AvgBrowserProcessCPU = %v, want 30", report.BrowserByPlatform["ios"].AvgBrowserProcessCPU)
+	}
+	if report.BrowserByPlatform["ios"].AvgBrowserProcessMem != 200 {
+		t.Fatalf("platform AvgBrowserProcessMem = %v, want 200", report.BrowserByPlatform["ios"].AvgBrowserProcessMem)
 	}
 	if report.BrowserByEngine == nil || report.BrowserByEngine["webkit"] == nil {
 		t.Fatalf("expected browser-by-engine summary, got %#v", report.BrowserByEngine)

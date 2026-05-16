@@ -210,6 +210,8 @@ type BrowserEngineLiveMetrics struct {
 	AvgBlockingResources float64 `json:"avg_blocking_resources,omitempty"`
 	AvgLongTaskCount     float64 `json:"avg_long_task_count,omitempty"`
 	AvgJSHeapUsedMB      float64 `json:"avg_js_heap_used_mb,omitempty"`
+	AvgBrowserProcessCPU float64 `json:"avg_browser_process_cpu_pct,omitempty"`
+	AvgBrowserProcessMem float64 `json:"avg_browser_process_mem_mb,omitempty"`
 }
 
 type BrowserPlatformLiveMetrics struct {
@@ -223,6 +225,8 @@ type BrowserPlatformLiveMetrics struct {
 	AvgBlockingResources float64 `json:"avg_blocking_resources,omitempty"`
 	AvgLongTaskCount     float64 `json:"avg_long_task_count,omitempty"`
 	AvgJSHeapUsedMB      float64 `json:"avg_js_heap_used_mb,omitempty"`
+	AvgBrowserProcessCPU float64 `json:"avg_browser_process_cpu_pct,omitempty"`
+	AvgBrowserProcessMem float64 `json:"avg_browser_process_mem_mb,omitempty"`
 }
 
 type RunArchiveOverview struct {
@@ -1278,6 +1282,8 @@ func mergeReportBrowserMetrics(summary *BrowserLiveMetrics, metrics *protocol.Cl
 	summary.AvgBlockingResources += float64(metrics.BlockingResourceCount)
 	summary.AvgLongTaskCount += float64(metrics.LongTaskCount)
 	summary.AvgJSHeapUsedMB += metrics.JSHeapUsedMB
+	summary.AvgBrowserProcessCPU += metrics.BrowserProcessCPUPct
+	summary.AvgBrowserProcessMem += metrics.BrowserProcessMemMB
 }
 
 func finalizeReportBrowserMetrics(summary *BrowserLiveMetrics) {
@@ -1292,6 +1298,8 @@ func finalizeReportBrowserMetrics(summary *BrowserLiveMetrics) {
 	summary.AvgBlockingResources /= divisor
 	summary.AvgLongTaskCount /= divisor
 	summary.AvgJSHeapUsedMB /= divisor
+	summary.AvgBrowserProcessCPU /= divisor
+	summary.AvgBrowserProcessMem /= divisor
 }
 
 func mergeReportBrowserDeviceMetrics(summary *BrowserDeviceLiveMetrics, metrics *protocol.ClientMetrics) {
@@ -1312,6 +1320,8 @@ func mergeReportBrowserDeviceMetrics(summary *BrowserDeviceLiveMetrics, metrics 
 	summary.AvgBlockingResources += float64(metrics.BlockingResourceCount)
 	summary.AvgLongTaskCount += float64(metrics.LongTaskCount)
 	summary.AvgJSHeapUsedMB += metrics.JSHeapUsedMB
+	summary.AvgBrowserProcessCPU += metrics.BrowserProcessCPUPct
+	summary.AvgBrowserProcessMem += metrics.BrowserProcessMemMB
 }
 
 func mergeReportBrowserPlatformMetrics(summary *BrowserPlatformLiveMetrics, metrics *protocol.ClientMetrics) {
@@ -1331,6 +1341,8 @@ func mergeReportBrowserPlatformMetrics(summary *BrowserPlatformLiveMetrics, metr
 	summary.AvgBlockingResources += float64(metrics.BlockingResourceCount)
 	summary.AvgLongTaskCount += float64(metrics.LongTaskCount)
 	summary.AvgJSHeapUsedMB += metrics.JSHeapUsedMB
+	summary.AvgBrowserProcessCPU += metrics.BrowserProcessCPUPct
+	summary.AvgBrowserProcessMem += metrics.BrowserProcessMemMB
 }
 
 func mergeReportBrowserEngineMetrics(summary *BrowserEngineLiveMetrics, metrics *protocol.ClientMetrics) {
@@ -1345,6 +1357,8 @@ func mergeReportBrowserEngineMetrics(summary *BrowserEngineLiveMetrics, metrics 
 	summary.AvgBlockingResources += float64(metrics.BlockingResourceCount)
 	summary.AvgLongTaskCount += float64(metrics.LongTaskCount)
 	summary.AvgJSHeapUsedMB += metrics.JSHeapUsedMB
+	summary.AvgBrowserProcessCPU += metrics.BrowserProcessCPUPct
+	summary.AvgBrowserProcessMem += metrics.BrowserProcessMemMB
 }
 
 func finalizeReportBrowserEngineMetrics(summary *BrowserEngineLiveMetrics) {
@@ -1359,6 +1373,8 @@ func finalizeReportBrowserEngineMetrics(summary *BrowserEngineLiveMetrics) {
 	summary.AvgBlockingResources /= divisor
 	summary.AvgLongTaskCount /= divisor
 	summary.AvgJSHeapUsedMB /= divisor
+	summary.AvgBrowserProcessCPU /= divisor
+	summary.AvgBrowserProcessMem /= divisor
 }
 
 func finalizeReportBrowserPlatformMetrics(summary *BrowserPlatformLiveMetrics) {
@@ -1373,6 +1389,8 @@ func finalizeReportBrowserPlatformMetrics(summary *BrowserPlatformLiveMetrics) {
 	summary.AvgBlockingResources /= divisor
 	summary.AvgLongTaskCount /= divisor
 	summary.AvgJSHeapUsedMB /= divisor
+	summary.AvgBrowserProcessCPU /= divisor
+	summary.AvgBrowserProcessMem /= divisor
 }
 
 func finalizeReportBrowserDeviceMetrics(summary *BrowserDeviceLiveMetrics) {
@@ -1387,6 +1405,8 @@ func finalizeReportBrowserDeviceMetrics(summary *BrowserDeviceLiveMetrics) {
 	summary.AvgBlockingResources /= divisor
 	summary.AvgLongTaskCount /= divisor
 	summary.AvgJSHeapUsedMB /= divisor
+	summary.AvgBrowserProcessCPU /= divisor
+	summary.AvgBrowserProcessMem /= divisor
 }
 
 func readAllArchiveTransactions(record *storage.RunArchiveRecord) ([]TransactionEvent, error) {
