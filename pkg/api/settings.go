@@ -269,6 +269,7 @@ func validateAuthSettings(settings AuthSettings) error {
 
 func (tr *TestRunner) loadSystemSettings(defaultMaxConcurrent int) {
 	tr.settings = defaultSystemSettings(defaultMaxConcurrent)
+	defer tr.setNotificationSettings(tr.settings.Notifications)
 	if tr.settingsStore == nil {
 		tr.maxTests = tr.settings.General.MaxConcurrentTests
 		return
@@ -300,6 +301,28 @@ func (tr *TestRunner) GetSystemSettings() SystemSettings {
 	return cloneSystemSettings(tr.settings)
 }
 
+func (tr *TestRunner) setNotificationSettings(settings NotificationsSettings) {
+	if tr == nil {
+		return
+	}
+	tr.notifications.Store(cloneNotificationsSettings(settings))
+}
+
+func (tr *TestRunner) currentNotificationSettings() NotificationsSettings {
+	if tr == nil {
+		return NotificationsSettings{}
+	}
+	stored := tr.notifications.Load()
+	if stored == nil {
+		return NotificationsSettings{}
+	}
+	settings, ok := stored.(NotificationsSettings)
+	if !ok {
+		return NotificationsSettings{}
+	}
+	return cloneNotificationsSettings(settings)
+}
+
 func (tr *TestRunner) UpdateSystemSettings(settings SystemSettings) (SystemSettings, error) {
 	normalized := cloneSystemSettings(settings)
 	normalized.Auth = normalizeAuthSettings(normalized.Auth)
@@ -323,6 +346,7 @@ func (tr *TestRunner) UpdateSystemSettings(settings SystemSettings) (SystemSetti
 	tr.settings = normalized
 	tr.maxTests = normalized.General.MaxConcurrentTests
 	tr.mu.Unlock()
+	tr.setNotificationSettings(normalized.Notifications)
 
 	return normalized, nil
 }

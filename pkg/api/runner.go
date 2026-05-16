@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -96,6 +97,7 @@ type TestRunner struct {
 	settingsStore settingsPersistence
 	execution     testExecutionBackend
 	notifier      *notificationDispatcher
+	notifications atomic.Value
 }
 
 type ManagedTest struct {
@@ -3867,7 +3869,7 @@ func (tr *TestRunner) broadcastEvent(eventType string, test *ManagedTest) {
 		})
 	}
 	if tr.notifier != nil {
-		tr.notifier.Dispatch(tr.GetSystemSettings().Notifications, NotificationEvent{
+		tr.notifier.Dispatch(tr.currentNotificationSettings(), NotificationEvent{
 			Type:      eventType,
 			TestID:    test.ID,
 			ProjectID: normalizeProjectID(test.ProjectID),

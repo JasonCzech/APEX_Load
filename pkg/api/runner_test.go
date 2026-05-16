@@ -1830,6 +1830,29 @@ func TestNewTestRunnerLoadsPersistedScriptsAndTests(t *testing.T) {
 	}
 }
 
+func TestBroadcastEventDoesNotDeadlockWhenHoldingRunnerLock(t *testing.T) {
+	runner := NewTestRunner(2, NewHub(), nil)
+	done := make(chan struct{})
+
+	go func() {
+		runner.mu.Lock()
+		defer runner.mu.Unlock()
+		runner.broadcastEvent("test_created", &ManagedTest{
+			ID:        "test-1",
+			Name:      "Checkout",
+			Status:    "QUEUED",
+			ProjectID: storage.DefaultProjectID,
+		})
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("broadcastEvent deadlocked while runner lock was held")
+	}
+}
+
 func TestProcessMetricsSnapshotBroadcastsAlertAndStopRequest(t *testing.T) {
 	hub := NewHub()
 	runner := NewTestRunner(2, hub, nil)
@@ -2352,7 +2375,7 @@ func TestStartTestAllowsOverrideOnCapacityShortfall(t *testing.T) {
 	}
 }
 
-func TestStartTestFailsWhenMaxConcurrentTestsReached(t *testing.T) {
+func TestStartTestQueuesWhenMaxConcurrentTestsReached(t *testing.T) {
 	hub := NewHub()
 	runner := NewTestRunner(1, hub, nil)
 	runner.StoreScript(&dsl.Script{
@@ -2387,18 +2410,15 @@ func TestStartTestFailsWhenMaxConcurrentTestsReached(t *testing.T) {
 	runner.mu.Unlock()
 
 	err = runner.StartTest(second.ID)
-	if err == nil {
-		t.Fatal("expected StartTest to fail when max concurrent tests is reached")
-	}
-	if err.Error() != "max concurrent tests (1) reached" {
-		t.Fatalf("expected max concurrent error, got %q", err.Error())
+	if err != nil {
+		t.Fatalf("StartTest returned error: %v", err)
 	}
 	queued, ok := runner.GetTest(second.ID)
 	if !ok {
 		t.Fatalf("expected queued test %s to remain in runner", second.ID)
 	}
-	if queued.Status != "QUEUED" {
-		t.Fatalf("test status = %s, want QUEUED", queued.Status)
+	if queued.Status != "PENDING" {
+		t.Fatalf("test status = %s, want PENDING", queued.Status)
 	}
 }
 
@@ -2437,17 +2457,17 @@ func TestCreateTestFailsWhenProjectMaxConcurrentTestsReached(t *testing.T) {
 	runner.tests[first.ID].Status = "RUNNING"
 	runner.mu.Unlock()
 
-	_, err = runner.CreateTest(CreateTestRequest{
+	second, err := runner.CreateTest(CreateTestRequest{
 		Name:     "Second Project Scenario",
 		Duration: "30s",
 		ScriptID: "script-project-create-limit",
 		VUsers:   10,
 	})
-	if err == nil {
-		t.Fatal("expected CreateTest to fail when project max concurrent tests is reached")
+	if err != nil {
+		t.Fatalf("CreateTest(second) returned error: %v", err)
 	}
-	if err.Error() != "project max concurrent tests (1) reached" {
-		t.Fatalf("expected project max concurrent error, got %q", err.Error())
+	if second.Status != "QUEUED" {
+		t.Fatalf("second status = %s, want QUEUED", second.Status)
 	}
 }
 
@@ -2520,18 +2540,15 @@ func TestStartTestFailsWhenProjectMaxConcurrentTestsReached(t *testing.T) {
 	runner.mu.Unlock()
 
 	err = runner.StartTest(second.ID)
-	if err == nil {
-		t.Fatal("expected StartTest to fail when project max concurrent tests is reached")
-	}
-	if err.Error() != "project max concurrent tests (1) reached" {
-		t.Fatalf("expected project max concurrent error, got %q", err.Error())
+	if err != nil {
+		t.Fatalf("StartTest returned error: %v", err)
 	}
 	queued, ok := runner.GetTest(second.ID)
 	if !ok {
 		t.Fatalf("expected queued test %s to remain in runner", second.ID)
 	}
-	if queued.Status != "QUEUED" {
-		t.Fatalf("test status = %s, want QUEUED", queued.Status)
+	if queued.Status != "PENDING" {
+		t.Fatalf("test status = %s, want PENDING", queued.Status)
 	}
 
 	runner.mu.Lock()
@@ -2542,6 +2559,153 @@ func TestStartTestFailsWhenProjectMaxConcurrentTestsReached(t *testing.T) {
 	}
 	if prepared.Status != "INITIALIZING" {
 		t.Fatalf("other project status = %s, want INITIALIZING", prepared.Status)
+	}
+}
+
+func TestStartTestQueuesWhenProjectVUserLimitReached(t *testing.T) {
+	store := &metricsStoreSpy{projectsByID: map[string]*storage.Project{
+		"project-1": {
+			ID:   "project-1",
+			Name: "Payments",
+			Settings: storage.ProjectSettings{
+				MaxVUsers: 15,
+			},
+		},
+	}}
+	hub := NewHub()
+	runner := NewTestRunner(10, hub, store)
+	runner.StoreScript(&dsl.Script{
+		ID:        "script-project-vuser-limit",
+		Name:      "Project VUser Limit Script",
+		Protocol:  "http",
+		Version:   "1.0.0",
+		ProjectID: "project-1",
+		Actions:   []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+
+	first, err := runner.CreateTest(CreateTestRequest{Name: "First", Duration: "30s", ScriptID: "script-project-vuser-limit", VUsers: 10})
+	if err != nil {
+		t.Fatalf("CreateTest(first) returned error: %v", err)
+	}
+	second, err := runner.CreateTest(CreateTestRequest{Name: "Second", Duration: "30s", ScriptID: "script-project-vuser-limit", VUsers: 10})
+	if err != nil {
+		t.Fatalf("CreateTest(second) returned error: %v", err)
+	}
+
+	runner.mu.Lock()
+	runner.tests[first.ID].Status = "RUNNING"
+	runner.mu.Unlock()
+
+	if err := runner.StartTest(second.ID); err != nil {
+		t.Fatalf("StartTest(second) returned error: %v", err)
+	}
+	pending, ok := runner.GetTest(second.ID)
+	if !ok {
+		t.Fatalf("expected pending test %s", second.ID)
+	}
+	if pending.Status != "PENDING" {
+		t.Fatalf("second status = %s, want PENDING", pending.Status)
+	}
+	if pending.PendingSince == nil || pending.PendingSince.IsZero() {
+		t.Fatal("expected pending_since to be recorded")
+	}
+	if pending.QueuePosition != 1 {
+		t.Fatalf("queue position = %d, want 1", pending.QueuePosition)
+	}
+	if !strings.Contains(pending.PendingReason, "project VUser capacity") {
+		t.Fatalf("pending reason = %q, want project VUser capacity detail", pending.PendingReason)
+	}
+}
+
+func TestReconcilePendingTestsPromotesQueuedWork(t *testing.T) {
+	hub := NewHub()
+	runner := NewTestRunner(10, hub, nil)
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-reconcile-pending",
+		Name:     "Reconcile Pending Script",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Actions:  []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+
+	pendingSince := time.Now().Add(-2 * time.Minute)
+	pending := &ManagedTest{
+		ID:           "pending-1",
+		Name:         "Pending Scenario",
+		Status:       "PENDING",
+		TotalVUsers:  1,
+		Duration:     30 * time.Second,
+		DurationStr:  "30s",
+		CreatedAt:    time.Now().Add(-5 * time.Minute),
+		PendingSince: &pendingSince,
+		Groups: []TestGroup{{
+			Name:       "g1",
+			ScriptID:   "script-reconcile-pending",
+			ScriptName: "Reconcile Pending Script",
+			Protocol:   "http",
+			VUsers:     1,
+		}},
+	}
+	runner.mu.Lock()
+	runner.tests[pending.ID] = pending
+	runner.mu.Unlock()
+
+	runner.ReconcilePendingTests()
+
+	promoted := waitForStatusAny(t, runner, pending.ID, 5*time.Second, "INITIALIZING", "RUNNING", "COMPLETE")
+	if promoted.Status == "PENDING" {
+		t.Fatalf("expected reconcile to promote pending test, got %s", promoted.Status)
+	}
+}
+
+func TestCompleteTestRunPromotesPendingTests(t *testing.T) {
+	store := &metricsStoreSpy{projectsByID: map[string]*storage.Project{
+		"project-1": {
+			ID:   "project-1",
+			Name: "Payments",
+			Settings: storage.ProjectSettings{
+				MaxConcurrentTests: 1,
+			},
+		},
+	}}
+	hub := NewHub()
+	runner := NewTestRunner(10, hub, store)
+	runner.StoreScript(&dsl.Script{
+		ID:        "script-project-promotion",
+		Name:      "Project Promotion Script",
+		Protocol:  "http",
+		Version:   "1.0.0",
+		ProjectID: "project-1",
+		Actions:   []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+
+	first, err := runner.CreateTest(CreateTestRequest{Name: "First", Duration: "30s", ScriptID: "script-project-promotion", VUsers: 1})
+	if err != nil {
+		t.Fatalf("CreateTest(first) returned error: %v", err)
+	}
+	second, err := runner.CreateTest(CreateTestRequest{Name: "Second", Duration: "30s", ScriptID: "script-project-promotion", VUsers: 1})
+	if err != nil {
+		t.Fatalf("CreateTest(second) returned error: %v", err)
+	}
+
+	runner.mu.Lock()
+	runner.tests[first.ID].Status = "RUNNING"
+	runner.mu.Unlock()
+
+	if err := runner.StartTest(second.ID); err != nil {
+		t.Fatalf("StartTest(second) returned error: %v", err)
+	}
+	pending, _ := runner.GetTest(second.ID)
+	if pending.Status != "PENDING" {
+		t.Fatalf("pending status = %s, want PENDING", pending.Status)
+	}
+
+	endTime := time.Now()
+	runner.completeTestRun(first, "COMPLETE", endTime, "", nil)
+
+	promoted := waitForStatusAny(t, runner, second.ID, 5*time.Second, "INITIALIZING", "RUNNING", "COMPLETE")
+	if promoted.Status == "PENDING" || promoted.Status == "QUEUED" {
+		t.Fatalf("expected pending test to be promoted, got %s", promoted.Status)
 	}
 }
 
