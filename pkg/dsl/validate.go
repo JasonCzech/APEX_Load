@@ -160,7 +160,7 @@ func validateBrowserActionIssues(index int, action Action) []string {
 			issues = append(issues, fmt.Sprintf("%s: browser_wait requires wait_for, selector, or target", label))
 		}
 		return issues
-	case "browser_navigate", "browser_click", "browser_fill", "browser_tap", "browser_long_press", "browser_swipe":
+	case "browser_navigate", "browser_click", "browser_fill", "browser_select", "browser_tap", "browser_long_press", "browser_swipe":
 		if action.Target == "" && action.Selector == "" {
 			issues = append(issues, fmt.Sprintf("%s: missing target or selector", label))
 		}
@@ -170,9 +170,9 @@ func validateBrowserActionIssues(index int, action Action) []string {
 	}
 
 	switch action.Type {
-	case "browser_fill":
+	case "browser_fill", "browser_select":
 		if action.Value == "" {
-			issues = append(issues, fmt.Sprintf("%s: browser_fill requires value", label))
+			issues = append(issues, fmt.Sprintf("%s: %s requires value", label, action.Type))
 		}
 	case "browser_long_press":
 		if durationMs, ok := actionParamIntValue(action.Params, "duration_ms"); ok && durationMs <= 0 {

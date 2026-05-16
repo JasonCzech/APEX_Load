@@ -2128,7 +2128,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
                 )}
                 {isBrowserScript && (
                   <div className="parameter-empty-state" style={{ marginTop: 12 }}>
-                    Browser scripts can use navigate, click, fill, wait, tap, long-press, swipe, and screenshot actions with device presets, touch controls, and client metrics in the action editor below.
+                    Browser scripts can use navigate, click, fill, select, wait, tap, long-press, swipe, and screenshot actions with device presets, touch controls, and client metrics in the action editor below.
                   </div>
                 )}
                 {isSoapScript && (
@@ -4706,7 +4706,7 @@ function ActionEditor({ action, index, parameters, onUpdate, onAddExtractor, onU
   )
 }
 
-const BROWSER_ACTION_TYPES = ['browser_navigate', 'browser_click', 'browser_fill', 'browser_wait', 'browser_screenshot', 'browser_tap', 'browser_long_press', 'browser_swipe']
+const BROWSER_ACTION_TYPES = ['browser_navigate', 'browser_click', 'browser_fill', 'browser_select', 'browser_wait', 'browser_screenshot', 'browser_tap', 'browser_long_press', 'browser_swipe']
 const JMS_ACTION_TYPES = ['jms_publish', 'jms_consume', 'jms_request_reply', 'jms_ack', 'jms_commit', 'jms_rollback']
 const HTTP_ACTION_TYPES = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']
 
@@ -4733,8 +4733,8 @@ interface ActionCoreFieldsProps {
 }
 
 function ActionCoreFields({ action, index, isBrowserScript, isJmsScript, onUpdate }: ActionCoreFieldsProps) {
-  const showSelector = isBrowserScript && ['browser_click', 'browser_fill', 'browser_wait', 'browser_screenshot', 'browser_tap', 'browser_long_press', 'browser_swipe'].includes(action.type)
-  const showValue = isBrowserScript && action.type === 'browser_fill'
+  const showSelector = isBrowserScript && ['browser_click', 'browser_fill', 'browser_select', 'browser_wait', 'browser_screenshot', 'browser_tap', 'browser_long_press', 'browser_swipe'].includes(action.type)
+  const showValue = isBrowserScript && ['browser_fill', 'browser_select'].includes(action.type)
   const targetLabel = isJmsScript
     ? 'Destination'
     : isBrowserScript

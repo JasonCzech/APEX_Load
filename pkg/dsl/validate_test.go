@@ -298,6 +298,11 @@ func TestValidateScriptIssues_BrowserValidation(t *testing.T) {
 				Target: "#name",
 			},
 			{
+				Name:   "missing select value",
+				Type:   "browser_select",
+				Target: "#country",
+			},
+			{
 				Name:   "bad swipe",
 				Type:   "browser_swipe",
 				Target: "#carousel",
@@ -326,9 +331,10 @@ func TestValidateScriptIssues_BrowserValidation(t *testing.T) {
 	assertIssue(t, issues, "config.browser.viewport.height must be zero or greater")
 	assertIssue(t, issues, `actions[0] "bad type": unsupported browser action type "browser_scroll"`)
 	assertIssue(t, issues, `actions[1] "missing fill value": browser_fill requires value`)
-	assertIssue(t, issues, `actions[2] "bad swipe": browser_swipe direction must be left, right, up, or down`)
-	assertIssue(t, issues, `actions[2] "bad swipe": browser_swipe distance must be greater than zero`)
-	assertIssue(t, issues, `actions[3] "bad long press": browser_long_press duration_ms must be greater than zero`)
+	assertIssue(t, issues, `actions[2] "missing select value": browser_select requires value`)
+	assertIssue(t, issues, `actions[3] "bad swipe": browser_swipe direction must be left, right, up, or down`)
+	assertIssue(t, issues, `actions[3] "bad swipe": browser_swipe distance must be greater than zero`)
+	assertIssue(t, issues, `actions[4] "bad long press": browser_long_press duration_ms must be greater than zero`)
 }
 
 func TestValidateScriptIssues_BrowserValidationAllowsSupportedFields(t *testing.T) {
@@ -383,6 +389,12 @@ func TestValidateScriptIssues_BrowserValidationAllowsSupportedFields(t *testing.
 				Type:   "browser_fill",
 				Target: "#query",
 				Value:  "stormrunner",
+			},
+			{
+				Name:   "select",
+				Type:   "browser_select",
+				Target: "#country",
+				Value:  "US",
 			},
 		},
 	}

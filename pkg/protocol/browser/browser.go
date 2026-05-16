@@ -668,6 +668,19 @@ func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protoc
 			return result, nil
 		}
 		actionErr = b.fill(actionCtx, selector, action.Value)
+	case "browser_select":
+		selector := b.actionSelector(action)
+		if selector == "" {
+			result.ErrorMessage = "browser_select requires selector or target"
+			result.Duration = time.Since(result.StartTime)
+			return result, nil
+		}
+		if action.Value == "" {
+			result.ErrorMessage = "browser_select requires value"
+			result.Duration = time.Since(result.StartTime)
+			return result, nil
+		}
+		actionErr = b.selectOption(actionCtx, selector, action.Value)
 	case "browser_screenshot":
 		// Capture is handled with the rest of the page state below.
 	default:
@@ -711,9 +724,80 @@ func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protoc
 		result.ErrorMessage = captureErr.Error()
 		return result, nil
 	}
+	if requiresBrowserAssertionHTML(action.Assertions) && result.HTML == "" {
+		html, err := b.captureHTML(actionCtx)
+		if err != nil {
+			result.ErrorMessage = err.Error()
+			return result, nil
+		}
+		result.HTML = html
+	}
+	if assertionErr := evaluateBrowserAssertions(action.Assertions, result); assertionErr != nil {
+		result.ErrorMessage = assertionErr.Error()
+		result.Snapshot = &protocol.ErrorSnapshot{
+			PageURL:          result.PageURL,
+			PageTitle:        result.PageTitle,
+			HTML:             result.HTML,
+			ScreenshotBase64: result.ScreenshotBase64,
+			ConsoleEntries:   cloneConsoleEntries(result.ConsoleEntries),
+			NetworkEntries:   cloneNetworkEntries(result.NetworkEntries),
+			DOMSummary:       cloneDOMSummary(result.DOMSummary),
+		}
+		return result, nil
+	}
 
 	result.Success = true
 	return result, nil
+}
+
+func requiresBrowserAssertionHTML(assertions []protocol.Assertion) bool {
+	for _, assertion := range assertions {
+		switch assertion.Type {
+		case "body_contains", "body_not_contains":
+			return true
+		}
+	}
+	return false
+}
+
+func evaluateBrowserAssertions(assertions []protocol.Assertion, result *protocol.Result) error {
+	for _, assertion := range assertions {
+		switch assertion.Type {
+		case "response_time_ms":
+			if assertion.Max > 0 && result.Duration.Milliseconds() > int64(assertion.Max) {
+				return fmt.Errorf("browser response time %dms exceeded max %dms", result.Duration.Milliseconds(), assertion.Max)
+			}
+		case "body_contains":
+			if !strings.Contains(result.HTML, assertion.Value) {
+				return fmt.Errorf("browser page HTML does not contain %q", assertion.Value)
+			}
+		case "body_not_contains":
+			if strings.Contains(result.HTML, assertion.Value) {
+				return fmt.Errorf("browser page HTML contains %q (unexpected)", assertion.Value)
+			}
+		case "page_title":
+			expected := strings.TrimSpace(assertion.Value)
+			if expected == "" && assertion.Expected != nil {
+				expected = strings.TrimSpace(fmt.Sprint(assertion.Expected))
+			}
+			if expected == "" {
+				return fmt.Errorf("page_title assertion requires value or expected")
+			}
+			if result.PageTitle != expected {
+				return fmt.Errorf("browser page title = %q, want %q", result.PageTitle, expected)
+			}
+		case "url_contains":
+			if assertion.Value == "" {
+				return fmt.Errorf("url_contains assertion requires value")
+			}
+			if !strings.Contains(result.PageURL, assertion.Value) {
+				return fmt.Errorf("browser page URL %q does not contain %q", result.PageURL, assertion.Value)
+			}
+		default:
+			return fmt.Errorf("unsupported browser assertion type: %s", assertion.Type)
+		}
+	}
+	return nil
 }
 
 func (b *Browser) Teardown(_ context.Context) error {
@@ -1334,7 +1418,7 @@ func (b *Browser) screenshotSelector(action *protocol.Action) string {
 		return action.Selector
 	}
 	switch action.Type {
-	case "browser_click", "browser_fill", "browser_wait", "browser_screenshot":
+	case "browser_click", "browser_fill", "browser_select", "browser_wait", "browser_screenshot":
 		return action.Target
 	default:
 		return ""

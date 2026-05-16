@@ -104,6 +104,26 @@ func ConvertArchive(files map[string]string, opts ConvertOptions) (*ConvertResul
 			}
 			continue
 		}
+		if strings.EqualFold(strings.TrimSpace(step.Action), "Verify") {
+			assertion, ok, err := convertVerifyStep(step)
+			if err != nil {
+				return nil, err
+			}
+			if !ok {
+				result.Warnings = append(result.Warnings, "TruClient step \"Verify\" is not supported yet and was skipped during import")
+				result.Stats.Skipped++
+				result.Stats.UnsupportedSteps = appendIfMissing(result.Stats.UnsupportedSteps, "Verify")
+				continue
+			}
+			if len(result.Script.Actions) == 0 {
+				result.Warnings = append(result.Warnings, "TruClient Verify step could not be attached because no preceding browser action was imported")
+				result.Stats.Skipped++
+				continue
+			}
+			last := &result.Script.Actions[len(result.Script.Actions)-1]
+			last.Assertions = append(last.Assertions, assertion)
+			continue
+		}
 
 		actions, warnings, unsupported, err := convertStep(step)
 		if err != nil {
@@ -111,6 +131,10 @@ func ConvertArchive(files map[string]string, opts ConvertOptions) (*ConvertResul
 		}
 		if len(warnings) > 0 {
 			result.Warnings = append(result.Warnings, warnings...)
+			if !unsupported && strings.EqualFold(strings.TrimSpace(step.Action), "Evaluate JavaScript") {
+				result.Stats.Skipped++
+				result.Stats.UnsupportedSteps = appendIfMissing(result.Stats.UnsupportedSteps, "Evaluate JavaScript")
+			}
 		}
 		if unsupported {
 			result.Stats.Skipped++
@@ -371,6 +395,30 @@ func convertStep(step truXMLStep) ([]dsl.Action, []string, bool, error) {
 			Selector: selector,
 			Value:    value,
 		}}, nil, false, nil
+	case "Select":
+		selector, err := parseFirstArgumentValue(step.Arguments, "Selector", "selector", "Target", "target", "Element", "element")
+		if err != nil {
+			return nil, nil, false, fmt.Errorf("parse TruClient Select step selector arguments: %w", err)
+		}
+		value, err := parseFirstArgumentValue(step.Arguments, "Value", "value", "Text", "text", "VisibleText", "visible_text", "Selected Value", "selected value", "SelectedValue", "selectedvalue", "Option", "option", "Selection", "selection")
+		if err != nil {
+			return nil, nil, false, fmt.Errorf("parse TruClient Select step value arguments: %w", err)
+		}
+		selector = trimQuotedValue(selector)
+		value = trimQuotedValue(value)
+		if selector == "" {
+			return nil, nil, false, fmt.Errorf("TruClient Select step is missing a selector value")
+		}
+		if value == "" {
+			return nil, nil, false, fmt.Errorf("TruClient Select step is missing a value")
+		}
+		return []dsl.Action{{
+			Name:     stepDisplayName(step, "Select"),
+			Type:     "browser_select",
+			Target:   selector,
+			Selector: selector,
+			Value:    value,
+		}}, nil, false, nil
 	case "Wait":
 		waitAction, ok, err := convertWaitStep(step)
 		if err != nil {
@@ -447,6 +495,25 @@ func convertWaitStep(step truXMLStep) (dsl.Action, bool, error) {
 		}, true, nil
 	}
 	return dsl.Action{}, false, nil
+}
+
+func convertVerifyStep(step truXMLStep) (dsl.Assertion, bool, error) {
+	if text, err := parseFirstArgumentValue(step.Arguments, "Text", "text", "Value", "value"); err != nil {
+		return dsl.Assertion{}, false, fmt.Errorf("parse TruClient Verify step text arguments: %w", err)
+	} else if text = trimQuotedValue(text); text != "" {
+		return dsl.Assertion{Type: "body_contains", Value: text}, true, nil
+	}
+	if title, err := parseFirstArgumentValue(step.Arguments, "Title", "title", "Page Title", "page_title"); err != nil {
+		return dsl.Assertion{}, false, fmt.Errorf("parse TruClient Verify step title arguments: %w", err)
+	} else if title = trimQuotedValue(title); title != "" {
+		return dsl.Assertion{Type: "page_title", Value: title}, true, nil
+	}
+	if target, err := parseFirstArgumentValue(step.Arguments, "URL", "Url", "url", "Location", "location"); err != nil {
+		return dsl.Assertion{}, false, fmt.Errorf("parse TruClient Verify step URL arguments: %w", err)
+	} else if target = trimQuotedValue(target); target != "" {
+		return dsl.Assertion{Type: "url_contains", Value: target}, true, nil
+	}
+	return dsl.Assertion{}, false, nil
 }
 
 func parseTransactionBoundary(step truXMLStep) (bool, string, error) {

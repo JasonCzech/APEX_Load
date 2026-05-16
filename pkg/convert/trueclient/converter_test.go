@@ -1,6 +1,7 @@
 package trueclient
 
 import (
+	"strings"
 	"testing"
 	"unicode/utf16"
 
@@ -43,6 +44,37 @@ func TestConvertArchiveParsesUTF16DefaultXML(t *testing.T) {
 	}
 	if result.Stats.TotalSteps != 2 || result.Stats.ConvertedActions != 3 || result.Stats.Skipped != 0 {
 		t.Fatalf("stats = %#v, want total=2 converted=3 skipped=0", result.Stats)
+	}
+	if len(result.Warnings) != 0 {
+		t.Fatalf("warnings = %#v, want none", result.Warnings)
+	}
+	issues := dsl.ValidateScriptIssues(result.Script)
+	if len(issues) != 0 {
+		t.Fatalf("ValidateScriptIssues returned %v, want no issues", issues)
+	}
+}
+
+func TestConvertArchiveMapsQuerySelectorValueAssignment(t *testing.T) {
+	result, err := ConvertArchive(map[string]string{
+		"default.xml": encodeUTF16LE(`<?xml version="1.0" encoding="utf-16"?>
+<truScript>
+  <step type="block" action="action" actionName="Action">
+    <step type="testObject" action="Navigate" index="1" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://m.example.com/profile\&quot;&quot;}}" />
+    <step type="util" action="Evaluate JavaScript" index="2" arguments="{&quot;Code&quot;:{&quot;value&quot;:&quot;document.querySelector('#displayName').value = 'Stormrunner QA'&quot;}}" />
+  </step>
+</truScript>`),
+	}, ConvertOptions{ScriptName: "Profile Flow"})
+	if err != nil {
+		t.Fatalf("ConvertArchive returned error: %v", err)
+	}
+	if len(result.Script.Actions) != 2 {
+		t.Fatalf("actions len = %d, want 2", len(result.Script.Actions))
+	}
+	if action := result.Script.Actions[1]; action.Type != "browser_fill" || action.Selector != "#displayName" || action.Value != "Stormrunner QA" {
+		t.Fatalf("action = %#v, want browser fill for #displayName", action)
+	}
+	if result.Stats.TotalSteps != 2 || result.Stats.ConvertedActions != 2 || result.Stats.Skipped != 0 {
+		t.Fatalf("stats = %#v, want total=2 converted=2 skipped=0", result.Stats)
 	}
 	if len(result.Warnings) != 0 {
 		t.Fatalf("warnings = %#v, want none", result.Warnings)
@@ -146,6 +178,33 @@ func TestConvertArchiveMapsDirectClickAndTypeSteps(t *testing.T) {
 	}
 }
 
+func TestConvertArchiveMapsSelectStep(t *testing.T) {
+	result, err := ConvertArchive(map[string]string{
+		"default.xml": encodeUTF16LE(`<?xml version="1.0" encoding="utf-16"?>
+<truScript>
+  <step type="block" action="action" actionName="Action">
+    <step type="testObject" action="Navigate" index="1" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://m.example.com/profile\&quot;&quot;}}" />
+    <step type="testObject" action="Select" index="2" arguments="{&quot;Selector&quot;:{&quot;value&quot;:&quot;\&quot;#country\&quot;&quot;},&quot;VisibleText&quot;:{&quot;value&quot;:&quot;\&quot;United States\&quot;&quot;}}" />
+  </step>
+</truScript>`),
+	}, ConvertOptions{ScriptName: "Select Flow"})
+	if err != nil {
+		t.Fatalf("ConvertArchive returned error: %v", err)
+	}
+	if len(result.Script.Actions) != 2 {
+		t.Fatalf("actions len = %d, want 2", len(result.Script.Actions))
+	}
+	if action := result.Script.Actions[1]; action.Type != "browser_select" || action.Selector != "#country" || action.Value != "United States" {
+		t.Fatalf("action = %#v, want browser_select for #country", action)
+	}
+	if result.Stats.TotalSteps != 2 || result.Stats.ConvertedActions != 2 || result.Stats.Skipped != 0 {
+		t.Fatalf("stats = %#v, want total=2 converted=2 skipped=0", result.Stats)
+	}
+	if len(result.Warnings) != 0 {
+		t.Fatalf("warnings = %#v, want none", result.Warnings)
+	}
+}
+
 func TestConvertArchiveMapsWaitAndPreservesTransactions(t *testing.T) {
 	result, err := ConvertArchive(map[string]string{
 		"default.xml": encodeUTF16LE(`<?xml version="1.0" encoding="utf-16"?>
@@ -184,6 +243,98 @@ func TestConvertArchiveMapsWaitAndPreservesTransactions(t *testing.T) {
 	issues := dsl.ValidateScriptIssues(result.Script)
 	if len(issues) != 0 {
 		t.Fatalf("ValidateScriptIssues returned %v, want no issues", issues)
+	}
+}
+
+func TestConvertArchiveMapsVerifyToPreviousActionAssertions(t *testing.T) {
+	result, err := ConvertArchive(map[string]string{
+		"default.xml": encodeUTF16LE(`<?xml version="1.0" encoding="utf-16"?>
+<truScript>
+  <step type="block" action="action" actionName="Action">
+    <step type="testObject" action="Navigate" index="1" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://m.example.com/login\&quot;&quot;}}" />
+    <step type="util" action="Verify" index="2" arguments="{&quot;Title&quot;:{&quot;value&quot;:&quot;\&quot;Login Page\&quot;&quot;}}" />
+    <step type="testObject" action="Click" index="3" arguments="{&quot;Selector&quot;:{&quot;value&quot;:&quot;\&quot;#submit\&quot;&quot;}}" />
+    <step type="util" action="Verify" index="4" arguments="{&quot;Text&quot;:{&quot;value&quot;:&quot;\&quot;Saved stormrunner\&quot;&quot;}}" />
+  </step>
+</truScript>`),
+	}, ConvertOptions{ScriptName: "Verify Flow"})
+	if err != nil {
+		t.Fatalf("ConvertArchive returned error: %v", err)
+	}
+	if len(result.Script.Actions) != 2 {
+		t.Fatalf("actions len = %d, want 2", len(result.Script.Actions))
+	}
+	if assertions := result.Script.Actions[0].Assertions; len(assertions) != 1 || assertions[0].Type != "page_title" || assertions[0].Value != "Login Page" {
+		t.Fatalf("action[0].assertions = %#v, want page_title Login Page", assertions)
+	}
+	if assertions := result.Script.Actions[1].Assertions; len(assertions) != 1 || assertions[0].Type != "body_contains" || assertions[0].Value != "Saved stormrunner" {
+		t.Fatalf("action[1].assertions = %#v, want body_contains Saved stormrunner", assertions)
+	}
+	if result.Stats.TotalSteps != 4 || result.Stats.ConvertedActions != 2 || result.Stats.Skipped != 0 {
+		t.Fatalf("stats = %#v, want total=4 converted=2 skipped=0", result.Stats)
+	}
+	if len(result.Warnings) != 0 {
+		t.Fatalf("warnings = %#v, want none", result.Warnings)
+	}
+}
+
+func TestConvertArchiveWarnsWhenVerifyHasNoPrecedingImportedAction(t *testing.T) {
+	result, err := ConvertArchive(map[string]string{
+		"default.xml": encodeUTF16LE(`<?xml version="1.0" encoding="utf-16"?>
+<truScript>
+  <step type="block" action="action" actionName="Action">
+    <step type="util" action="Verify" index="1" arguments="{&quot;Title&quot;:{&quot;value&quot;:&quot;\&quot;Login Page\&quot;&quot;}}" />
+    <step type="testObject" action="Click" index="2" arguments="{&quot;Selector&quot;:{&quot;value&quot;:&quot;\&quot;#submit\&quot;&quot;}}" />
+  </step>
+</truScript>`),
+	}, ConvertOptions{ScriptName: "Verify Without Prior Action"})
+	if err != nil {
+		t.Fatalf("ConvertArchive returned error: %v", err)
+	}
+	if len(result.Script.Actions) != 1 {
+		t.Fatalf("actions len = %d, want 1", len(result.Script.Actions))
+	}
+	if len(result.Script.Actions[0].Assertions) != 0 {
+		t.Fatalf("action[0].assertions = %#v, want none", result.Script.Actions[0].Assertions)
+	}
+	if result.Stats.TotalSteps != 2 || result.Stats.ConvertedActions != 1 || result.Stats.Skipped != 1 {
+		t.Fatalf("stats = %#v, want total=2 converted=1 skipped=1", result.Stats)
+	}
+	if len(result.Stats.UnsupportedSteps) != 0 {
+		t.Fatalf("unsupported steps = %#v, want none", result.Stats.UnsupportedSteps)
+	}
+	if len(result.Warnings) != 1 || !strings.Contains(result.Warnings[0], "could not be attached") {
+		t.Fatalf("warnings = %#v, want unattached verify warning", result.Warnings)
+	}
+}
+
+func TestConvertArchiveTracksMixedEvaluateJavaScriptUnsupportedStatements(t *testing.T) {
+	result, err := ConvertArchive(map[string]string{
+		"default.xml": encodeUTF16LE(`<?xml version="1.0" encoding="utf-16"?>
+<truScript>
+  <step type="block" action="action" actionName="Action">
+    <step type="testObject" action="Navigate" index="1" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://m.example.com/profile\&quot;&quot;}}" />
+    <step type="util" action="Evaluate JavaScript" index="2" arguments="{&quot;Code&quot;:{&quot;value&quot;:&quot;document.querySelector('#displayName').value = 'Stormrunner QA';\nwindow.scrollTo(0, 400)&quot;}}" />
+  </step>
+</truScript>`),
+	}, ConvertOptions{ScriptName: "Mixed Evaluate JavaScript"})
+	if err != nil {
+		t.Fatalf("ConvertArchive returned error: %v", err)
+	}
+	if len(result.Script.Actions) != 2 {
+		t.Fatalf("actions len = %d, want 2", len(result.Script.Actions))
+	}
+	if action := result.Script.Actions[1]; action.Type != "browser_fill" || action.Selector != "#displayName" || action.Value != "Stormrunner QA" {
+		t.Fatalf("action = %#v, want browser_fill for #displayName", action)
+	}
+	if result.Stats.TotalSteps != 2 || result.Stats.ConvertedActions != 2 || result.Stats.Skipped != 1 {
+		t.Fatalf("stats = %#v, want total=2 converted=2 skipped=1", result.Stats)
+	}
+	if len(result.Stats.UnsupportedSteps) != 1 || result.Stats.UnsupportedSteps[0] != "Evaluate JavaScript" {
+		t.Fatalf("unsupported steps = %#v, want [Evaluate JavaScript]", result.Stats.UnsupportedSteps)
+	}
+	if len(result.Warnings) != 1 || !strings.Contains(result.Warnings[0], "window.scrollTo(0, 400)") {
+		t.Fatalf("warnings = %#v, want skipped scroll warning", result.Warnings)
 	}
 }
 

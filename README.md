@@ -257,10 +257,29 @@ GET    /api/v1/scripts                  — List scripts
 GET    /api/v1/scripts/{id}             — Get script
 PUT    /api/v1/scripts/{id}             — Update script
 DELETE /api/v1/scripts/{id}             — Delete script
+PATCH  /api/v1/scripts/{id}/move        — Move script to another folder
+POST   /api/v1/scripts/replay           — Replay a draft script
+POST   /api/v1/scripts/browser-replay/sessions — Start browser replay for a draft script
 POST   /api/v1/scripts/{id}/validate    — Validate script
+POST   /api/v1/scripts/{id}/replay      — Replay a saved script
+POST   /api/v1/scripts/{id}/browser-replay/sessions — Start browser replay for a saved script
+POST   /api/v1/scripts/{id}/export      — Export script JSON to disk
+GET    /api/v1/scripts/{id}/download    — Download script JSON
 POST   /api/v1/scripts/import/sample    — Build a script from raw HTTP, cURL, REST JSON, or HAR samples
 POST   /api/v1/scripts/import/loadrunner — Convert a LoadRunner archive to DSL
+POST   /api/v1/scripts/import/loadrunner/validate — Validate a LoadRunner import draft
+POST   /api/v1/scripts/import/jmeter    — Convert a JMeter plan to DSL
+POST   /api/v1/scripts/import/jmeter/save — Save a reviewed JMeter import draft
 POST   /api/v1/scripts/import/jmeter/validate — Validate a JMeter import draft
+GET    /api/v1/scripts/import/jmeter/support-matrix — Get JMeter support matrix
+```
+
+**Browser Replay:**
+```
+GET    /api/v1/browser-replay/sessions/{session_id}        — Get browser replay session state
+POST   /api/v1/browser-replay/sessions/{session_id}/pause  — Pause browser replay session
+POST   /api/v1/browser-replay/sessions/{session_id}/resume — Resume browser replay session
+POST   /api/v1/browser-replay/sessions/{session_id}/stop   — Stop browser replay session
 ```
 
 **Scenario Schedules:**

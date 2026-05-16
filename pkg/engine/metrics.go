@@ -287,7 +287,7 @@ func (mc *MetricsCollector) aggregate(interval time.Duration) {
 			}
 			snap := mc.computeSnapshot(batch, interval)
 			if mc.resCollector != nil {
-				snap.Resources = mc.resCollector.Collect()
+				snap.Resources = &SystemResources{}
 			}
 			mc.snapshotsMu.Lock()
 			mc.snapshots = append(mc.snapshots, snap)
@@ -295,7 +295,18 @@ func (mc *MetricsCollector) aggregate(interval time.Duration) {
 			if len(mc.snapshots) > 3600 {
 				mc.snapshots = mc.snapshots[len(mc.snapshots)-3600:]
 			}
+			snapshotIndex := len(mc.snapshots) - 1
 			mc.snapshotsMu.Unlock()
+			if mc.resCollector != nil {
+				resources := mc.resCollector.Collect()
+				if resources != nil {
+					mc.snapshotsMu.Lock()
+					if snapshotIndex >= 0 && snapshotIndex < len(mc.snapshots) {
+						mc.snapshots[snapshotIndex].Resources = resources
+					}
+					mc.snapshotsMu.Unlock()
+				}
+			}
 			batch = batch[:0]
 		}
 	}

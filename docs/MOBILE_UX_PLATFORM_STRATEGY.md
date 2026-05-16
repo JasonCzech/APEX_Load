@@ -236,10 +236,10 @@ The existing plans define tactical phases. This section maps them to the strateg
 ### Stage 5: TrueClient Import (Mobile Emulation Plan Phase 4)
 - `pkg/convert/trueclient` converter
 - MVP implemented for `TruClientMobileWeb` LoadRunner ZIP archives
-- Step-to-action mapping for navigate, click, fill, wait, transaction-preserved names, and simple decomposed JavaScript fill/click statements
+- Step-to-action mapping for navigate, click, fill, select, wait, conservative verify assertions, transaction-preserved names, and simple decomposed JavaScript fill/click statements
 - Device profile extraction from LoadRunner runtime settings
 
-**Remaining effort:** 3-5 days for assertions, repair suggestions, import review UX, and replay validation
+**Remaining effort:** 3-5 days for review-only step hardening, import review UX refinements, and broader replay-validation coverage
 
 ### Stage 6: UX Intelligence (Future)
 - Frustration detection: rage taps, repeated navigation, abandonment patterns

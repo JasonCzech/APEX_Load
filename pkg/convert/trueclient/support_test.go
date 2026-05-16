@@ -45,6 +45,8 @@ func TestLookupStepScope(t *testing.T) {
 		wantOK   bool
 	}{
 		{stepName: "Set / Type", wantName: "Set / Type", wantType: "browser_fill", wantOK: true},
+		{stepName: "Select", wantName: "Select", wantType: "browser_select", wantOK: true},
+		{stepName: "Verify", wantName: "Verify", wantType: "action assertions", wantOK: true},
 		{stepName: "Start Transaction", wantName: "Start Transaction", wantType: "transaction metadata", wantOK: true},
 		{stepName: "Evaluate JavaScript", wantName: "Evaluate JavaScript", wantType: "browser_fill or browser_click when decomposable", wantOK: true},
 		{stepName: "Unknown Step", wantOK: false},

@@ -34,7 +34,7 @@ var scriptTypeScopes = []ScriptTypeScope{
 		CanonicalName: "truclient_mobile_web",
 		DisplayName:   "TruClient - Mobile Web",
 		Status:        ScopeSupported,
-		Notes:         "The MVP importer maps common navigation, click, fill, wait, simple JavaScript-derived fill or click, and transaction flows into browser DSL actions.",
+		Notes:         "The MVP importer maps navigation, click, fill, select, wait, conservative verify assertions, simple JavaScript-derived fill or click, and transaction flows into browser DSL actions.",
 	},
 	{
 		CanonicalName: "truclient_web",
@@ -76,9 +76,9 @@ var stepScopes = []StepScope{
 	{
 		CanonicalName:    "verify",
 		DisplayName:      "Verify",
-		Status:           ScopePlanned,
+		Status:           ScopeSupported,
 		StormrunnerShape: "action assertions",
-		Notes:            "Verification steps are expected to map into existing assertion support instead of a new browser action type.",
+		Notes:            "Verification steps map into browser action assertions instead of a separate browser action type.",
 	},
 	{
 		CanonicalName:    "start_transaction",
@@ -97,9 +97,9 @@ var stepScopes = []StepScope{
 	{
 		CanonicalName:    "select",
 		DisplayName:      "Select",
-		Status:           ScopeReviewOnly,
-		StormrunnerShape: "browser_click plus browser_fill",
-		Notes:            "Select-style controls may require importer review because element semantics are recorder-specific.",
+		Status:           ScopeSupported,
+		StormrunnerShape: "browser_select",
+		Notes:            "Select inputs map to a native browser_select action that chooses an option by value, text, or label.",
 	},
 	{
 		CanonicalName:    "scroll",
@@ -113,7 +113,7 @@ var stepScopes = []StepScope{
 		DisplayName:      "Evaluate JavaScript",
 		Status:           ScopeReviewOnly,
 		StormrunnerShape: "browser_fill or browser_click when decomposable",
-		Notes:            "Simple jQuery and document.querySelector fill/click statements are decomposed; other JavaScript remains a review warning because Stormrunner does not expose a public browser-eval action.",
+		Notes:            "Simple jQuery and document.querySelector fill/click statements are decomposed; unsupported shapes stay in guided review with warnings, blocker repair suggestions, and preserved unsupported-step reporting because Stormrunner does not expose a public browser-eval action.",
 	},
 }
 

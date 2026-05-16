@@ -147,6 +147,47 @@ func (b *Browser) fill(ctx context.Context, selector, value string) error {
 	)
 }
 
+func (b *Browser) selectOption(ctx context.Context, selector, value string) error {
+	if err := b.waitVisible(ctx, selector); err != nil {
+		return err
+	}
+	var status string
+	expression := fmt.Sprintf(`(() => {
+		const el = document.querySelector(%q);
+		if (!el) {
+			return "missing";
+		}
+		if (!(el instanceof HTMLSelectElement)) {
+			return "not_select";
+		}
+		const desired = %q;
+		const option = Array.from(el.options).find((candidate) => candidate.value === desired || candidate.text === desired || candidate.label === desired);
+		if (!option) {
+			return "not_found";
+		}
+		option.selected = true;
+		el.value = option.value;
+		el.dispatchEvent(new Event('input', { bubbles: true }));
+		el.dispatchEvent(new Event('change', { bubbles: true }));
+		return "";
+	})()`, selector, value)
+	if err := b.evaluatePageExpression(ctx, expression, &status); err != nil {
+		return err
+	}
+	switch status {
+	case "":
+		return nil
+	case "missing":
+		return fmt.Errorf("browser_select could not find selector %q", selector)
+	case "not_select":
+		return fmt.Errorf("browser_select selector %q did not resolve to a select element", selector)
+	case "not_found":
+		return fmt.Errorf("browser_select could not find option %q for selector %q", value, selector)
+	default:
+		return fmt.Errorf("browser_select failed for selector %q", selector)
+	}
+}
+
 func (b *Browser) waitVisible(ctx context.Context, selector string) error {
 	if b.engine == "webkit" {
 		return b.waitForPlaywrightSelectorState(ctx, selector, true)

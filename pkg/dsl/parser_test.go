@@ -359,7 +359,7 @@ func TestParse_WithExtractorsAndAssertions(t *testing.T) {
 	}
 }
 
-func TestParse_BrowserActionsAllowSelectorWaitAndScreenshot(t *testing.T) {
+func TestParse_BrowserActionsAllowSelectWaitAndScreenshot(t *testing.T) {
 	input := `{
 		"script": {
 			"name": "browser-flow",
@@ -370,6 +370,7 @@ func TestParse_BrowserActionsAllowSelectorWaitAndScreenshot(t *testing.T) {
 			"actions": [
 				{"name": "open", "type": "browser_navigate", "target": "/login"},
 				{"name": "fill", "type": "browser_fill", "selector": "#email", "value": "user@example.com"},
+				{"name": "select-country", "type": "browser_select", "selector": "#country", "value": "United States"},
 				{"name": "wait", "type": "browser_wait", "wait_for": {"type": "text", "value": "Welcome", "timeout_ms": 5000}},
 				{"name": "shot", "type": "browser_screenshot", "capture": {"screenshot": true, "html": true}}
 			]
@@ -383,11 +384,14 @@ func TestParse_BrowserActionsAllowSelectorWaitAndScreenshot(t *testing.T) {
 	if got := script.Actions[1].Selector; got != "#email" {
 		t.Fatalf("selector = %q, want #email", got)
 	}
-	if script.Actions[2].WaitFor == nil || script.Actions[2].WaitFor.TimeoutMs != 5000 {
-		t.Fatalf("wait_for = %#v, want timeout", script.Actions[2].WaitFor)
+	if action := script.Actions[2]; action.Type != "browser_select" || action.Selector != "#country" || action.Value != "United States" {
+		t.Fatalf("action = %#v, want browser_select with selector/value", action)
 	}
-	if script.Actions[3].Capture == nil || !script.Actions[3].Capture.HTML {
-		t.Fatalf("capture = %#v, want html capture", script.Actions[3].Capture)
+	if script.Actions[3].WaitFor == nil || script.Actions[3].WaitFor.TimeoutMs != 5000 {
+		t.Fatalf("wait_for = %#v, want timeout", script.Actions[3].WaitFor)
+	}
+	if script.Actions[4].Capture == nil || !script.Actions[4].Capture.HTML {
+		t.Fatalf("capture = %#v, want html capture", script.Actions[4].Capture)
 	}
 }
 

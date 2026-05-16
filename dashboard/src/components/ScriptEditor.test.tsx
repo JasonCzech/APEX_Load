@@ -682,6 +682,50 @@ describe('ScriptEditor', () => {
     }))
   })
 
+  it('renders browser_select actions with selector and value fields', async () => {
+    const browserScript: ScriptDefinition = {
+      ...initialScript,
+      protocol: 'browser',
+      config: {
+        ...initialScript.config,
+        base_url: 'https://shop.example.com',
+        browser: {
+          engine: 'chromium',
+          headless: true,
+        },
+      },
+      actions: [
+        {
+          name: 'Choose Country',
+          type: 'browser_select',
+          target: '#country',
+          selector: '#country',
+          value: 'United States',
+          capture: { screenshot: false, full_page: false, html: false },
+          think_time_after: true,
+        },
+      ],
+    }
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={browserScript} />)
+    })
+
+    const actionItem = container.querySelector('.action-item') as HTMLDivElement | null
+    expect(actionItem).not.toBeNull()
+    if (!actionItem) {
+      return
+    }
+
+    await act(async () => {
+      actionItem.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.textContent).toContain('browser_select')
+    expect(container.textContent).toContain('Selector Override')
+    expect(container.textContent).toContain('Value')
+  })
+
   it('renders replay start warnings returned by the browser replay API', async () => {
     apiMock.startDraftBrowserReplaySession.mockResolvedValueOnce({
       replay_session_id: 'browser-replay-1',

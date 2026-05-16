@@ -214,16 +214,17 @@ Supported browser actions:
 - `browser_navigate`
 - `browser_click`
 - `browser_fill`
+- `browser_select`
 - `browser_wait`
 - `browser_screenshot`
 - `browser_tap`
 - `browser_long_press`
+- `browser_swipe`
 
 Current mobile-browser support envelope:
 - `chromium`: `desktop_1080p`, `galaxy_s24`, `pixel_8`
 - `webkit`: `ipad_air`, `iphone_15_pro`, `iphone_se`
 - Conservative starting concurrency and benchmark guidance live in `docs/MOBILE_BROWSER_EMULATION_PLAN.md`
-- `browser_swipe`
 
 Browser/mobile config keys:
 - `config.browser.engine`: `chromium` or `webkit` (`webkit` executes through Playwright WebKit and requires Playwright WebKit assets installed on the controller host)
@@ -231,6 +232,10 @@ Browser/mobile config keys:
 - `config.browser.touch_mode`: force touch interactions on or off
 - `config.browser.orientation`: `portrait` or `landscape`
 - `config.browser.client_metrics`: enable FCP/LCP/CLS/INP and long-task capture
+
+Browser action value requirements:
+- `browser_fill.value`: text to enter into the targeted field
+- `browser_select.value`: option value, visible text, or label to choose from the targeted `<select>` element
 
 Gesture params:
 - `browser_long_press.params.duration_ms`

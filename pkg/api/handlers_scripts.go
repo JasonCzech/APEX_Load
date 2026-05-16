@@ -282,7 +282,11 @@ func buildLoadRunnerImportRepairSuggestions(result *loadrunner.ConvertResult, un
 		action := "Open the generated script in the visual editor, inspect preserved metadata, and either remove the unsupported construct or model it with supported actions."
 		if strings.Contains(normalized, "evaluate javascript") {
 			description = "This TruClient JavaScript statement could not be decomposed into a supported browser action."
-			action = "Replace the JavaScript with browser_click, browser_fill, browser_wait, browser_swipe, or a supported assertion, then validate with browser replay."
+			action = "Replace the JavaScript with browser_click, browser_fill, browser_select, browser_wait, browser_swipe, or a supported assertion, then validate with browser replay."
+			if loadRunnerWarningsContain(result, "window.scrollto(") {
+				description = "This TruClient JavaScript scroll statement could not be decomposed safely into a supported browser action."
+				action = "Replace the JavaScript with browser_swipe and any required browser_wait actions, then validate the resulting scroll behavior with browser replay."
+			}
 		}
 		suggestions = append(suggestions, scriptImportRepairSuggestion{
 			ID:          "unsupported:" + stableReviewKey(element),
@@ -312,6 +316,22 @@ func buildLoadRunnerImportRepairSuggestions(result *loadrunner.ConvertResult, un
 	return suggestions
 }
 
+func loadRunnerWarningsContain(result *loadrunner.ConvertResult, needle string) bool {
+	if result == nil {
+		return false
+	}
+	needle = strings.ToLower(strings.TrimSpace(needle))
+	if needle == "" {
+		return false
+	}
+	for _, warning := range result.Warnings {
+		if strings.Contains(strings.ToLower(warning), needle) {
+			return true
+		}
+	}
+	return false
+}
+
 func browserImportRepairSuggestions(script *dsl.Script) []scriptImportRepairSuggestion {
 	suggestions := []scriptImportRepairSuggestion{
 		{
@@ -327,7 +347,7 @@ func browserImportRepairSuggestions(script *dsl.Script) []scriptImportRepairSugg
 	for index, action := range script.Actions {
 		actionID := firstNonEmpty(action.Name, fmt.Sprintf("action_%d", index+1))
 		switch action.Type {
-		case "browser_click", "browser_fill", "browser_tap", "browser_long_press", "browser_swipe":
+		case "browser_click", "browser_fill", "browser_select", "browser_tap", "browser_long_press", "browser_swipe":
 			selector := firstNonEmpty(action.Selector, action.Target)
 			if selector != "" {
 				suggestions = append(suggestions, scriptImportRepairSuggestion{

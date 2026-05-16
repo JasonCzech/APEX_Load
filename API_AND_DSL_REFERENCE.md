@@ -353,11 +353,16 @@ Stormrunner validates and executes these browser action types:
 - `browser_navigate`
 - `browser_click`
 - `browser_fill`
+- `browser_select`
 - `browser_wait`
 - `browser_screenshot`
 - `browser_tap`
 - `browser_long_press`
 - `browser_swipe`
+
+Browser action value requirements:
+- `browser_fill.value`: text to enter into the targeted field
+- `browser_select.value`: option value, visible text, or label to choose from the targeted `<select>` element
 
 Gesture action parameters:
 - `browser_long_press.params.duration_ms`: positive integer hold time
@@ -582,7 +587,7 @@ Content-Type: multipart/form-data
 
 Converts a LoadRunner project archive into Stormrunner JSON DSL. The importer supports C-based web request archives and the TruClient Mobile Web MVP path for browser scripts. Legacy desktop-style `TruClient` archives are reported as out of scope with explicit guidance.
 
-For `TruClientMobileWeb` archives, Stormrunner reads the `.usr` file plus UTF-16 `default.xml`, maps common navigate, click, fill, wait, transaction, and simple JavaScript-derived fill/click steps into browser DSL actions, and carries supported mobile browser runtime settings into `config.browser`.
+For `TruClientMobileWeb` archives, Stormrunner reads the `.usr` file plus UTF-16 `default.xml`, maps common navigate, click, fill, select, wait, transaction, conservative verify assertions, and simple JavaScript-derived fill/click steps into browser DSL actions, and carries supported mobile browser runtime settings into `config.browser`.
 
 Import responses include a shared `review_sections` array. Each section has a stable `key`, `title`, `severity`, `summary`, and `items` list so clients can render warnings, unsupported elements, preserved metadata, and browser import assumptions consistently.
 

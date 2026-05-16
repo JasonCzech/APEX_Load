@@ -398,54 +398,50 @@ func TestHandlePauseResumeBrowserReplaySessionNotFound(t *testing.T) {
 }
 
 func TestHandleResumeBrowserReplaySessionFromStartPaused(t *testing.T) {
+	protocolName := registerReplayAPIProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+		return &protocol.Result{
+			ActionName: action.Name,
+			Success:    true,
+			PageURL:    "https://example.com/",
+			PageTitle:  "Example",
+		}, nil
+	})
+
 	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore returned error: %v", err)
 	}
 	defer store.Close()
 	server := NewServer(ServerConfig{Store: store, Addr: ":8080"})
-	body, _ := json.Marshal(map[string]any{
-		"start_paused": true,
-		"script": map[string]any{
-			"name":     "Paused Browser Draft",
-			"project_id": "project-browser",
-			"version":  "1.0.0",
-			"protocol": "browser",
-			"config": map[string]any{
-				"base_url": "https://example.com",
-			},
-			"actions": []map[string]any{{
-				"name": "shot",
-				"type": "browser_screenshot",
-			}},
+	script := &dsl.Script{
+		Name:      "Paused Browser Draft",
+		ProjectID: "project-browser",
+		Version:   "1.0.0",
+		Protocol:  protocolName,
+		Config: dsl.ScriptConfig{
+			BaseURL: "https://example.com",
 		},
+		Actions: []dsl.Action{{
+			Name:   "shot",
+			Type:   "GET",
+			Method: "GET",
+			Target: "/",
+		}},
+	}
+	session := server.browserReplay.Start("", script, BrowserReplayStartRequest{
+		ReplaySessionID: "browser-replay-start-paused",
+		StartPaused:     true,
 	})
-
-	startReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/browser-replay/sessions", bytes.NewReader(body))
-	startReq.Header.Set("Content-Type", "application/json")
-	startResp := httptest.NewRecorder()
-	server.mux.ServeHTTP(startResp, startReq)
-	if startResp.Code != http.StatusOK {
-		t.Fatalf("start status = %d, want %d body=%s", startResp.Code, http.StatusOK, startResp.Body.String())
-	}
-
-	var startPayload struct {
-		ReplaySessionID string `json:"replay_session_id"`
-		Session         struct {
-			Status string `json:"status"`
-		} `json:"session"`
-	}
-	if err := json.Unmarshal(startResp.Body.Bytes(), &startPayload); err != nil {
-		t.Fatalf("json.Unmarshal start returned error: %v", err)
-	}
-	if startPayload.ReplaySessionID == "" {
+	if session.ID == "" {
 		t.Fatal("replay_session_id is empty")
 	}
-	if startPayload.Session.Status != BrowserReplayPaused {
-		t.Fatalf("start status = %q, want %q", startPayload.Session.Status, BrowserReplayPaused)
+	if session.Status != BrowserReplayPaused {
+		t.Fatalf("start status = %q, want %q", session.Status, BrowserReplayPaused)
 	}
+	startReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/browser-replay/sessions", nil)
+	server.recordAuditEvent(startReq, "browser_replay.session.start", "success", "browser_replay_session", session.ID, session.ProjectID, map[string]any{"script_id": session.ScriptID, "script_name": script.Name, "status": session.Status, "start_paused": true})
 
-	pauseReq := httptest.NewRequest(http.MethodPost, "/api/v1/browser-replay/sessions/"+startPayload.ReplaySessionID+"/pause", nil)
+	pauseReq := httptest.NewRequest(http.MethodPost, "/api/v1/browser-replay/sessions/"+session.ID+"/pause", nil)
 	pauseResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(pauseResp, pauseReq)
 	if pauseResp.Code != http.StatusConflict {
@@ -455,7 +451,7 @@ func TestHandleResumeBrowserReplaySessionFromStartPaused(t *testing.T) {
 		t.Fatalf("pause conflict body = %q, want not running", pauseResp.Body.String())
 	}
 
-	resumeReq := httptest.NewRequest(http.MethodPost, "/api/v1/browser-replay/sessions/"+startPayload.ReplaySessionID+"/resume", nil)
+	resumeReq := httptest.NewRequest(http.MethodPost, "/api/v1/browser-replay/sessions/"+session.ID+"/resume", nil)
 	resumeResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(resumeResp, resumeReq)
 	if resumeResp.Code != http.StatusOK {
@@ -487,7 +483,7 @@ func TestHandleResumeBrowserReplaySessionFromStartPaused(t *testing.T) {
 
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		session, ok := server.browserReplay.Get(startPayload.ReplaySessionID)
+		session, ok := server.browserReplay.Get(session.ID)
 		if !ok {
 			t.Fatal("session disappeared")
 		}

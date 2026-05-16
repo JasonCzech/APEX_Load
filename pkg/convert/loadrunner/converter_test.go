@@ -901,6 +901,56 @@ TouchMode=1
 	}
 }
 
+func TestConvertZipMapsTruClientQuerySelectorValueAssignment(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	addFile := func(name string, content string) {
+		writer, err := zw.Create(name)
+		if err != nil {
+			t.Fatalf("Create(%q) returned error: %v", name, err)
+		}
+		if _, err := writer.Write([]byte(content)); err != nil {
+			t.Fatalf("Write(%q) returned error: %v", name, err)
+		}
+	}
+
+	addFile("MobileWeb.usr", `[General]
+Type=TruClientMobileWeb
+RuntimeSettings=default.cfg
+`)
+	addFile("default.xml", encodeUTF16LEForZip(`<?xml version="1.0" encoding="utf-16"?>
+<truScript>
+  <step type="block" action="action" actionName="Action">
+    <step type="testObject" action="Navigate" index="1" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://m.example.com/profile\&quot;&quot;}}" />
+    <step type="util" action="Evaluate JavaScript" index="2" arguments="{&quot;Code&quot;:{&quot;value&quot;:&quot;document.querySelector('#displayName').value = 'Stormrunner QA'&quot;}}" />
+  </step>
+</truScript>`))
+	addFile("default.cfg", `[Browser Emulation]
+DeviceProfile=iPhone_SE
+TouchMode=1
+`)
+	if err := zw.Close(); err != nil {
+		t.Fatalf("zip.Close returned error: %v", err)
+	}
+
+	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip returned error: %v", err)
+	}
+	if len(result.Script.Actions) != 2 {
+		t.Fatalf("actions len = %d, want 2", len(result.Script.Actions))
+	}
+	if action := result.Script.Actions[1]; action.Type != "browser_fill" || action.Selector != "#displayName" || action.Value != "Stormrunner QA" {
+		t.Fatalf("action = %#v, want browser fill for #displayName", action)
+	}
+	if result.Stats.TotalFunctions != 2 || result.Stats.ConvertedActions != 2 || result.Stats.Skipped != 0 {
+		t.Fatalf("stats = %#v, want total=2 converted=2 skipped=0", result.Stats)
+	}
+	if len(result.Warnings) != 0 {
+		t.Fatalf("warnings = %#v, want none", result.Warnings)
+	}
+}
+
 func TestConvertZipIgnoresStructuralTruClientRunLogicSteps(t *testing.T) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
@@ -1063,6 +1113,56 @@ TouchMode=1
 	}
 }
 
+func TestConvertZipMapsTruClientSelectStep(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	addFile := func(name string, content string) {
+		writer, err := zw.Create(name)
+		if err != nil {
+			t.Fatalf("Create(%q) returned error: %v", name, err)
+		}
+		if _, err := writer.Write([]byte(content)); err != nil {
+			t.Fatalf("Write(%q) returned error: %v", name, err)
+		}
+	}
+
+	addFile("MobileWeb.usr", `[General]
+Type=TruClientMobileWeb
+RuntimeSettings=default.cfg
+`)
+	addFile("default.xml", encodeUTF16LEForZip(`<?xml version="1.0" encoding="utf-16"?>
+<truScript>
+  <step type="block" action="action" actionName="Action">
+    <step type="testObject" action="Navigate" index="1" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://m.example.com/profile\&quot;&quot;}}" />
+    <step type="testObject" action="Select" index="2" arguments="{&quot;Selector&quot;:{&quot;value&quot;:&quot;\&quot;#country\&quot;&quot;},&quot;VisibleText&quot;:{&quot;value&quot;:&quot;\&quot;United States\&quot;&quot;}}" />
+  </step>
+</truScript>`))
+	addFile("default.cfg", `[Browser Emulation]
+DeviceProfile=iPhone_SE
+TouchMode=1
+`)
+	if err := zw.Close(); err != nil {
+		t.Fatalf("zip.Close returned error: %v", err)
+	}
+
+	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip returned error: %v", err)
+	}
+	if len(result.Script.Actions) != 2 {
+		t.Fatalf("actions len = %d, want 2", len(result.Script.Actions))
+	}
+	if action := result.Script.Actions[1]; action.Type != "browser_select" || action.Selector != "#country" || action.Value != "United States" {
+		t.Fatalf("action = %#v, want browser_select for #country", action)
+	}
+	if result.Stats.TotalFunctions != 2 || result.Stats.ConvertedActions != 2 || result.Stats.Skipped != 0 {
+		t.Fatalf("stats = %#v, want total=2 converted=2 skipped=0", result.Stats)
+	}
+	if len(result.Warnings) != 0 {
+		t.Fatalf("warnings = %#v, want none", result.Warnings)
+	}
+}
+
 func TestConvertZipMapsTruClientWaitAndPreservesTransactions(t *testing.T) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
@@ -1116,6 +1216,114 @@ TouchMode=1
 	}
 	if len(result.Warnings) != 0 {
 		t.Fatalf("warnings = %#v, want none", result.Warnings)
+	}
+}
+
+func TestConvertZipMapsTruClientVerifyToAssertions(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	addFile := func(name string, content string) {
+		writer, err := zw.Create(name)
+		if err != nil {
+			t.Fatalf("Create(%q) returned error: %v", name, err)
+		}
+		if _, err := writer.Write([]byte(content)); err != nil {
+			t.Fatalf("Write(%q) returned error: %v", name, err)
+		}
+	}
+
+	addFile("MobileWeb.usr", `[General]
+Type=TruClientMobileWeb
+RuntimeSettings=default.cfg
+`)
+	addFile("default.xml", encodeUTF16LEForZip(`<?xml version="1.0" encoding="utf-16"?>
+<truScript>
+  <step type="block" action="action" actionName="Action">
+    <step type="testObject" action="Navigate" index="1" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://m.example.com/login\&quot;&quot;}}" />
+    <step type="util" action="Verify" index="2" arguments="{&quot;Title&quot;:{&quot;value&quot;:&quot;\&quot;Login Page\&quot;&quot;}}" />
+    <step type="testObject" action="Click" index="3" arguments="{&quot;Selector&quot;:{&quot;value&quot;:&quot;\&quot;#submit\&quot;&quot;}}" />
+    <step type="util" action="Verify" index="4" arguments="{&quot;Text&quot;:{&quot;value&quot;:&quot;\&quot;Saved stormrunner\&quot;&quot;}}" />
+  </step>
+</truScript>`))
+	addFile("default.cfg", `[Browser Emulation]
+DeviceProfile=iPhone_SE
+TouchMode=1
+`)
+	if err := zw.Close(); err != nil {
+		t.Fatalf("zip.Close returned error: %v", err)
+	}
+
+	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip returned error: %v", err)
+	}
+	if len(result.Script.Actions) != 2 {
+		t.Fatalf("actions len = %d, want 2", len(result.Script.Actions))
+	}
+	if assertions := result.Script.Actions[0].Assertions; len(assertions) != 1 || assertions[0].Type != "page_title" || assertions[0].Value != "Login Page" {
+		t.Fatalf("action[0].assertions = %#v, want page_title Login Page", assertions)
+	}
+	if assertions := result.Script.Actions[1].Assertions; len(assertions) != 1 || assertions[0].Type != "body_contains" || assertions[0].Value != "Saved stormrunner" {
+		t.Fatalf("action[1].assertions = %#v, want body_contains Saved stormrunner", assertions)
+	}
+	if result.Stats.TotalFunctions != 4 || result.Stats.ConvertedActions != 2 || result.Stats.Skipped != 0 {
+		t.Fatalf("stats = %#v, want total=4 converted=2 skipped=0", result.Stats)
+	}
+	if len(result.Warnings) != 0 {
+		t.Fatalf("warnings = %#v, want none", result.Warnings)
+	}
+}
+
+func TestConvertZipTracksMixedTruClientEvaluateJavaScriptUnsupportedStatements(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	addFile := func(name string, content string) {
+		writer, err := zw.Create(name)
+		if err != nil {
+			t.Fatalf("Create(%q) returned error: %v", name, err)
+		}
+		if _, err := writer.Write([]byte(content)); err != nil {
+			t.Fatalf("Write(%q) returned error: %v", name, err)
+		}
+	}
+
+	addFile("MobileWeb.usr", `[General]
+Type=TruClientMobileWeb
+RuntimeSettings=default.cfg
+`)
+	addFile("default.xml", encodeUTF16LEForZip(`<?xml version="1.0" encoding="utf-16"?>
+<truScript>
+  <step type="block" action="action" actionName="Action">
+    <step type="testObject" action="Navigate" index="1" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://m.example.com/profile\&quot;&quot;}}" />
+    <step type="util" action="Evaluate JavaScript" index="2" arguments="{&quot;Code&quot;:{&quot;value&quot;:&quot;document.querySelector('#displayName').value = 'Stormrunner QA';\nwindow.scrollTo(0, 400)&quot;}}" />
+  </step>
+</truScript>`))
+	addFile("default.cfg", `[Browser Emulation]
+DeviceProfile=iPhone_SE
+TouchMode=1
+`)
+	if err := zw.Close(); err != nil {
+		t.Fatalf("zip.Close returned error: %v", err)
+	}
+
+	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip returned error: %v", err)
+	}
+	if len(result.Script.Actions) != 2 {
+		t.Fatalf("actions len = %d, want 2", len(result.Script.Actions))
+	}
+	if action := result.Script.Actions[1]; action.Type != "browser_fill" || action.Selector != "#displayName" || action.Value != "Stormrunner QA" {
+		t.Fatalf("action = %#v, want browser fill for #displayName", action)
+	}
+	if result.Stats.TotalFunctions != 2 || result.Stats.ConvertedActions != 2 || result.Stats.Skipped != 1 {
+		t.Fatalf("stats = %#v, want total=2 converted=2 skipped=1", result.Stats)
+	}
+	if len(result.Stats.UnsupportedFuncs) != 1 || result.Stats.UnsupportedFuncs[0] != "Evaluate JavaScript" {
+		t.Fatalf("unsupported funcs = %#v, want [Evaluate JavaScript]", result.Stats.UnsupportedFuncs)
+	}
+	if len(result.Warnings) != 1 || !strings.Contains(result.Warnings[0], "window.scrollTo(0, 400)") {
+		t.Fatalf("warnings = %#v, want skipped scroll warning", result.Warnings)
 	}
 }
 

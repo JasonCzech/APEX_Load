@@ -8,7 +8,9 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/jasonczech/stormrunner/pkg/dsl"
@@ -21,6 +23,8 @@ type replayAPIProtocol struct {
 	execute func(action *protocol.Action) (*protocol.Result, error)
 }
 
+var replayAPIProtocolCounter atomic.Uint64
+
 func (p *replayAPIProtocol) Name() string                                   { return "replay-api" }
 func (p *replayAPIProtocol) Init(_ context.Context, _ map[string]any) error { return nil }
 func (p *replayAPIProtocol) Execute(_ context.Context, action *protocol.Action) (*protocol.Result, error) {
@@ -31,7 +35,7 @@ func (p *replayAPIProtocol) HealthCheck(_ context.Context) error { return nil }
 
 func registerReplayAPIProtocol(t *testing.T, execute func(action *protocol.Action) (*protocol.Result, error)) string {
 	t.Helper()
-	name := "replay-api-" + strings.ReplaceAll(strings.ToLower(t.Name()), "/", "-")
+	name := "replay-api-" + strings.ReplaceAll(strings.ToLower(t.Name()), "/", "-") + "-" + strconv.FormatUint(replayAPIProtocolCounter.Add(1), 10)
 	protocol.Register(name, func() protocol.Protocol {
 		return &replayAPIProtocol{execute: execute}
 	})

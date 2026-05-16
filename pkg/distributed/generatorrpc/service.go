@@ -965,6 +965,9 @@ func (s *Service) publishExecutionSnapshot(testID string, groupName string, exec
 	if !ok && len(transactions) == 0 {
 		return
 	}
+	if ok && snapshot.Transactions == 0 && len(transactions) == 0 {
+		return
+	}
 	stats := GeneratorStats{GoroutineCount: int32(runtime.NumGoroutine())}
 	telemetry := MetricsTelemetry{}
 	if ok {

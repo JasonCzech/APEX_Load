@@ -19,7 +19,7 @@ This is positioned as a configuration extension of the existing `pkg/protocol/br
 - Script-editor authoring and replay flows support browser engine selection, device profiles, touch mode, orientation, and saved-script validation.
 
 ### Remaining
-- TrueClient MobileWeb import is still unimplemented.
+- TruClient MobileWeb import is shipped for the current MVP browser step envelope, but review-only constructs such as `Scroll` and non-decomposable `Evaluate JavaScript` still need sample-backed hardening.
 - Production hardening beyond the conservative browser envelope below is still open.
 - Broader scenario-level/dashboard mobile UX polish is still incomplete compared with the script-editor/browser-replay surfaces.
 
@@ -72,7 +72,7 @@ The existing `pkg/protocol/browser` implementation provides:
 - Network throttling with presets (56K, DSL, T1, 10Mbps) and custom bandwidth/latency
 - Download filtering (allow list / block list)
 - Cache control, recorded resource filtering, and new-user-per-iteration browser reset
-- Actions: `browser_navigate`, `browser_click`, `browser_fill`, `browser_wait`, `browser_screenshot`, `browser_tap`, `browser_long_press`, `browser_swipe`
+- Actions: `browser_navigate`, `browser_click`, `browser_fill`, `browser_select`, `browser_wait`, `browser_screenshot`, `browser_tap`, `browser_long_press`, `browser_swipe`
 - Full network event capture, console log capture, DOM summary extraction
 - Error snapshots with screenshots, HTML, console, and network evidence
 - Per-action browser client metrics when `browser.client_metrics` is enabled
@@ -381,17 +381,17 @@ Current step support matrix:
 | Click | Supported | `browser_click` | Direct object clicks map to browser click actions with the captured selector. |
 | Set / Type | Supported | `browser_fill` | Text-entry steps stay inside the MVP import scope. |
 | Wait | Supported | `browser_wait` | Duration, text, and visible-selector waits normalize to existing wait semantics. |
-| Verify | Planned | action assertions | Verification should map to the existing assertion surface instead of a new browser action type. |
+| Verify | Supported | action assertions | Verification maps to browser action assertions instead of a new browser action type. |
 | Start Transaction | Supported | transaction metadata | Transaction preservation prefixes converted action names when requested. |
 | End Transaction | Supported | transaction metadata | Close events stay in scope with the same preservation model. |
-| Select | Review only | `browser_click` + `browser_fill` | Control semantics are recorder-specific and likely need explicit review. |
+| Select | Supported | `browser_select` | Select inputs map to a native browser select action that chooses an option by value, text, or label. |
 | Scroll | Review only | `browser_swipe` or preserved review note | Scroll intent depends on viewport state and may require repair suggestions. |
-| Evaluate JavaScript | Review only | `browser_fill` or `browser_click` when decomposable | Simple jQuery and `document.querySelector` fill/click statements are decomposed; other JavaScript remains a warning because Stormrunner does not expose a supported public browser-eval action. |
+| Evaluate JavaScript | Review only | `browser_fill` or `browser_click` when decomposable | Simple jQuery and `document.querySelector` fill/click statements are decomposed; unsupported shapes remain in guided review with warnings and blocker repair suggestions because Stormrunner does not expose a supported public browser-eval action. |
 
 ### Current Importer Behavior
 
 - `pkg/convert/loadrunner/zip.go` now checks the parsed `.usr` type before trying to parse C action files.
-- A `TruClient - Mobile Web` archive with `default.xml` now imports into a browser script with URL navigation, click, fill, wait, simple decomposed JavaScript fill/click, transaction-preserved action names, and mobile device settings from LoadRunner runtime configuration.
+- A `TruClient - Mobile Web` archive with `default.xml` now imports into a browser script with URL navigation, click, fill, select, wait, conservative verify assertions, simple decomposed JavaScript fill/click, transaction-preserved action names, and mobile device settings from LoadRunner runtime configuration.
 - Import responses now include standardized `review_sections` for warnings, unsupported steps, preserved metadata, and browser-import assumptions so cleanup can be rendered consistently across API and dashboard flows.
 - Import responses now include deterministic `repair_suggestions` for unsupported constructs, selector validation, wait refinement, runtime-setting review, and replay validation.
 - A `TruClient` desktop archive returns an explicit out-of-scope error instead of failing later with `no parseable .c action files found`.
@@ -400,7 +400,7 @@ Current step support matrix:
 - TrueClient step format is proprietary and not publicly documented
 - Object identification methods may not map cleanly to CSS selectors
 - End events may require custom `wait_for` logic
-- Review-only steps such as `Select` and `Scroll` will need importer warnings and repair guidance before they are practical in a shared import flow
+- Review-only steps such as `Scroll` will still need importer warnings, repair guidance, and representative sample fixtures before they are practical in a shared import flow
 
 Mitigation: Require 3–5 sample TrueClient MobileWeb scripts as test fixtures before starting this phase. Accept partial import coverage with clear warnings for unmapped steps.
 

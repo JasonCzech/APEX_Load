@@ -126,14 +126,14 @@ Goal: reduce the work required to move browser-centric LoadRunner assets into St
 | ID | Story | Size | Dependencies |
 | --- | --- | --- | --- |
 | B3.1 | Define TrueClient Mobile/Web import scope and support matrix | M | none |
-| B3.2 | Implement TrueClient import MVP for common navigation, click, fill, wait, assertion, and transaction flows | XL | B3.1 |
+| B3.2 | Implement TrueClient import MVP for common navigation, click, fill, select, wait, assertion, and transaction flows | XL | B3.1 |
 | B3.3 | Surface unsupported browser steps and assumptions in standardized import review sections | M | B3.2 |
 | B3.4 | Add post-import repair suggestions for selectors, waits, timing, and unsupported constructs | L | B3.2 |
 | B3.5 | Add imported-browser-script replay validation path before save | M | B3.2 |
 
 Status:
 - B3.1 now has a code-owned scope definition in `pkg/convert/trueclient/support.go`, including the initial TrueClient Mobile Web versus legacy TruClient script-type matrix and the first step support matrix for planned, review-only, and out-of-scope constructs.
-- B3.2 now has an MVP implementation for `TruClientMobileWeb` LoadRunner ZIP archives. The importer routes supported Mobile Web archives through `pkg/convert/trueclient`, reads UTF-16 `default.xml`, maps navigate/click/fill/wait plus simple decomposed JavaScript fill/click into browser DSL actions, preserves transaction names when requested, applies mobile browser runtime settings, and keeps legacy desktop `TruClient` explicitly out of scope.
+- B3.2 now has an MVP implementation for `TruClientMobileWeb` LoadRunner ZIP archives. The importer routes supported Mobile Web archives through `pkg/convert/trueclient`, reads UTF-16 `default.xml`, maps navigate/click/fill/select/wait plus conservative verify assertions and simple decomposed JavaScript fill/click into browser DSL actions, preserves transaction names when requested, applies mobile browser runtime settings, and keeps legacy desktop `TruClient` explicitly out of scope.
 - B3.3 now has a shared `review_sections` response shape on import envelopes. LoadRunner and TruClient imports surface warnings, unsupported elements, preserved source metadata, and browser-import assumptions as machine-readable sections with stable keys, severity, summary, and item lists.
 - B3.4 now has deterministic `repair_suggestions` on LoadRunner and TruClient import envelopes. Suggestions call out unsupported constructs, browser selector validation, wait refinement, runtime-setting review, and browser replay validation with stable IDs and categories that the dashboard can render.
 
