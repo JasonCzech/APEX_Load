@@ -26,6 +26,12 @@ vi.mock('../hooks/useApplication', () => ({
   useApplication: () => applicationState,
 }))
 
+vi.mock('../hooks/useProject', () => ({
+  useProject: () => ({
+    activeProject: { id: 'project-1', name: 'Checkout', created_at: '2026-05-01T00:00:00Z', updated_at: '2026-05-01T00:00:00Z' },
+  }),
+}))
+
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 ;(globalThis as typeof globalThis & { ResizeObserver?: typeof ResizeObserver }).ResizeObserver = class {
   observe() {}
@@ -177,6 +183,8 @@ describe('DashboardPage', () => {
     await act(async () => {
       await Promise.resolve()
     })
+
+    expect(apiMock.listTests).toHaveBeenCalledWith({ application_id: 'app-1', project_id: 'project-1' })
 
     expect(getButtonByText('Generators Available').textContent).toContain('1')
   expect(container.textContent).toContain('LCP ms')

@@ -55,6 +55,7 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
   } = useScriptsLibraryModel({
     api,
     scripts,
+    projectId: activeProject?.id,
   })
 
   useEffect(() => { refresh() }, [refresh])

@@ -3,6 +3,7 @@ import { type WebSocketConnectionState } from '../hooks/useWebSocket'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useApi } from '../hooks/useApi'
 import { useApplication } from '../hooks/useApplication'
+import { useProject } from '../hooks/useProject'
 import { TestSummary, MetricsHistoryPoint, RunArchiveReport, SystemInventoryResponse } from '../types'
 import { type NavPage } from './Sidebar'
 import StatusBadge from './StatusBadge'
@@ -108,6 +109,7 @@ function loadJson<T>(key: string, fallback: T): T {
 export default function DashboardPage({ testStatuses, metricsHistory, connectionState, onSelectTest, onNavigate }: Props) {
   const api = useApi()
   const { activeApplication, activeRelease } = useApplication()
+  const { activeProject } = useProject()
   const [tests, setTests] = useState<TestSummary[]>([])
   const [health, setHealth] = useState<HealthData | null>(null)
   const [inventory, setInventory] = useState<SystemInventoryResponse | null>(null)
@@ -126,7 +128,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
       }
       try {
         const [testRes, healthRes, inventoryRes] = await Promise.all([
-          api.listTests(activeApplication?.id ? { application_id: activeApplication.id } : undefined),
+          api.listTests(activeApplication?.id ? { application_id: activeApplication.id, project_id: activeProject?.id } : (activeProject?.id ? { project_id: activeProject.id } : undefined)),
           api.getHealth().catch(() => null),
           api.getSystemInventory().catch(() => null),
         ])
@@ -155,7 +157,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
         document.removeEventListener('visibilitychange', handleVisibilityChange)
       }
     }
-  }, [api, activeApplication?.id])
+  }, [api, activeApplication?.id, activeProject?.id])
 
   const resolvedTests = useMemo(() =>
     tests.map(t => ({

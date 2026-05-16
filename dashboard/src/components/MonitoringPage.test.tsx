@@ -16,6 +16,12 @@ vi.mock('../hooks/useApi', () => ({
   useApi: () => apiMock,
 }))
 
+vi.mock('../hooks/useProject', () => ({
+  useProject: () => ({
+    activeProject: { id: 'project-1', name: 'Checkout', created_at: '', updated_at: '' },
+  }),
+}))
+
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 describe('MonitoringPage', () => {
@@ -102,6 +108,7 @@ describe('MonitoringPage', () => {
     expect(container.textContent).toContain('4/10 errors')
     expect(container.textContent).toContain('payments.example.test')
     expect(container.textContent).toContain('Close')
+    expect(apiMock.listTests).toHaveBeenCalledWith({ project_id: 'project-1' })
   })
 
   it('renders JMS broker diagnostics with lag and throughput details', async () => {

@@ -11,6 +11,7 @@ export type ScriptRunSortField = 'name' | 'status' | 'scenario_id' | 'release_id
 interface UseScriptsLibraryModelOptions {
   api: ReturnType<typeof useApi>
   scripts: StoredScript[]
+  projectId?: string
 }
 
 interface ScriptsLibraryModel {
@@ -51,7 +52,7 @@ function getRunSortValue(run: TestSummary, field: ScriptRunSortField): SortValue
   return String(run[field] || '').toLowerCase()
 }
 
-export function useScriptsLibraryModel({ api, scripts }: UseScriptsLibraryModelOptions): ScriptsLibraryModel {
+export function useScriptsLibraryModel({ api, scripts, projectId }: UseScriptsLibraryModelOptions): ScriptsLibraryModel {
   const [sortField, setSortField] = useState<ScriptLibrarySortField>('name')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
   const [expandedScriptId, setExpandedScriptId] = useState<string | null>(null)
@@ -93,7 +94,7 @@ export function useScriptsLibraryModel({ api, scripts }: UseScriptsLibraryModelO
 
     setLoadingRunsFor(script.id)
     try {
-      const res = await api.listTests()
+      const res = await api.listTests(projectId ? { project_id: projectId } : undefined)
       const linkedRuns = (res.tests || [])
         .filter((test: TestSummary) => !!test.scenario_id && (test.groups || []).some((group) => group.script_id === script.id))
         .sort((a: TestSummary, b: TestSummary) => {
@@ -107,7 +108,7 @@ export function useScriptsLibraryModel({ api, scripts }: UseScriptsLibraryModelO
     } finally {
       setLoadingRunsFor(null)
     }
-  }, [api, expandedScriptId, scriptRuns])
+  }, [api, expandedScriptId, projectId, scriptRuns])
 
   const onInnerSort = useCallback((field: ScriptRunSortField) => {
     if (innerSortField === field) {

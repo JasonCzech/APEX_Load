@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, type DragEvent, type ReactNode } from 'react'
 import { type WebSocketConnectionState } from '../hooks/useWebSocket'
 import { useApi } from '../hooks/useApi'
+import { useProject } from '../hooks/useProject'
 import { HealthResponse, SystemInventoryResponse, TelemetryDiagnosticEntry, TestSummary } from '../types'
 import { formatTelemetryDiagnosticTime, telemetryDiagnosticSeverityClass } from './monitoringTelemetryDiagnostics'
 
@@ -11,6 +12,7 @@ interface Props {
 
 export default function MonitoringPage({ connectionState, telemetryDiagnostics = [] }: Props) {
   const api = useApi()
+  const { activeProject } = useProject()
   const [health, setHealth] = useState<HealthResponse | null>(null)
   const [inventory, setInventory] = useState<SystemInventoryResponse | null>(null)
   const [tests, setTests] = useState<TestSummary[]>([])
@@ -59,7 +61,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
     try {
       const [healthRes, testsRes, inventoryRes] = await Promise.all([
         api.getHealth(),
-        api.listTests().catch(() => ({ tests: [] })),
+        api.listTests(activeProject?.id ? { project_id: activeProject.id } : undefined).catch(() => ({ tests: [] })),
         api.getSystemInventory().catch(() => null),
       ])
       setHealth(healthRes)
@@ -68,7 +70,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
     } catch {
       // API not available
     }
-  }, [api])
+  }, [activeProject?.id, api])
 
   useEffect(() => {
     refresh()
