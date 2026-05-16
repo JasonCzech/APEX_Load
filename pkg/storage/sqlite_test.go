@@ -91,7 +91,8 @@ func TestSQLiteStoreProjectsFoldersAndFiltering(t *testing.T) {
 		ID:   "project-1",
 		Name: "Payments",
 		Settings: ProjectSettings{
-			RedactionRules: []engine.RedactionRule{{Name: "customer id", Pattern: `customer-[0-9]+`}},
+			RedactionRules:     []engine.RedactionRule{{Name: "customer id", Pattern: `customer-[0-9]+`}},
+			MaxConcurrentTests: 2,
 		},
 		CreatedAt: time.Now(),
 	}
@@ -104,6 +105,9 @@ func TestSQLiteStoreProjectsFoldersAndFiltering(t *testing.T) {
 	}
 	if len(roundTripProject.Settings.RedactionRules) != 1 || roundTripProject.Settings.RedactionRules[0].Pattern != `customer-[0-9]+` {
 		t.Fatalf("expected persisted project settings, got %#v", roundTripProject.Settings)
+	}
+	if roundTripProject.Settings.MaxConcurrentTests != 2 {
+		t.Fatalf("expected persisted project max concurrent tests, got %#v", roundTripProject.Settings)
 	}
 	folder := &Folder{ID: "folder-1", ProjectID: project.ID, Name: "Checkout", Category: "scripts", CreatedAt: time.Now()}
 	if err := store.SaveFolder(folder); err != nil {

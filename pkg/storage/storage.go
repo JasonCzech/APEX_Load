@@ -170,7 +170,8 @@ type Project struct {
 }
 
 type ProjectSettings struct {
-	RedactionRules []engine.RedactionRule `json:"redaction_rules,omitempty"`
+	RedactionRules     []engine.RedactionRule `json:"redaction_rules,omitempty"`
+	MaxConcurrentTests int                    `json:"max_concurrent_tests,omitempty"`
 }
 
 type Folder struct {

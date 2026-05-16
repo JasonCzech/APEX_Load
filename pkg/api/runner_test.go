@@ -2402,6 +2402,149 @@ func TestStartTestFailsWhenMaxConcurrentTestsReached(t *testing.T) {
 	}
 }
 
+func TestCreateTestFailsWhenProjectMaxConcurrentTestsReached(t *testing.T) {
+	store := &metricsStoreSpy{projectsByID: map[string]*storage.Project{
+		"project-1": {
+			ID:   "project-1",
+			Name: "Payments",
+			Settings: storage.ProjectSettings{
+				MaxConcurrentTests: 1,
+			},
+		},
+	}}
+	hub := NewHub()
+	runner := NewTestRunner(10, hub, store)
+	runner.StoreScript(&dsl.Script{
+		ID:        "script-project-create-limit",
+		Name:      "Project Create Limit Script",
+		Protocol:  "http",
+		Version:   "1.0.0",
+		ProjectID: "project-1",
+		Actions:   []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+
+	first, err := runner.CreateTest(CreateTestRequest{
+		Name:     "First Project Scenario",
+		Duration: "30s",
+		ScriptID: "script-project-create-limit",
+		VUsers:   10,
+	})
+	if err != nil {
+		t.Fatalf("CreateTest(first) returned error: %v", err)
+	}
+
+	runner.mu.Lock()
+	runner.tests[first.ID].Status = "RUNNING"
+	runner.mu.Unlock()
+
+	_, err = runner.CreateTest(CreateTestRequest{
+		Name:     "Second Project Scenario",
+		Duration: "30s",
+		ScriptID: "script-project-create-limit",
+		VUsers:   10,
+	})
+	if err == nil {
+		t.Fatal("expected CreateTest to fail when project max concurrent tests is reached")
+	}
+	if err.Error() != "project max concurrent tests (1) reached" {
+		t.Fatalf("expected project max concurrent error, got %q", err.Error())
+	}
+}
+
+func TestStartTestFailsWhenProjectMaxConcurrentTestsReached(t *testing.T) {
+	store := &metricsStoreSpy{projectsByID: map[string]*storage.Project{
+		"project-1": {
+			ID:   "project-1",
+			Name: "Payments",
+			Settings: storage.ProjectSettings{
+				MaxConcurrentTests: 1,
+			},
+		},
+		"project-2": {
+			ID:   "project-2",
+			Name: "Orders",
+			Settings: storage.ProjectSettings{
+				MaxConcurrentTests: 1,
+			},
+		},
+	}}
+	hub := NewHub()
+	runner := NewTestRunner(10, hub, store)
+	runner.StoreScript(&dsl.Script{
+		ID:        "script-project-start-limit",
+		Name:      "Project Start Limit Script",
+		Protocol:  "http",
+		Version:   "1.0.0",
+		ProjectID: "project-1",
+		Actions:   []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+	runner.StoreScript(&dsl.Script{
+		ID:        "script-other-project",
+		Name:      "Other Project Script",
+		Protocol:  "http",
+		Version:   "1.0.0",
+		ProjectID: "project-2",
+		Actions:   []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+
+	first, err := runner.CreateTest(CreateTestRequest{
+		Name:     "First Project Scenario",
+		Duration: "30s",
+		ScriptID: "script-project-start-limit",
+		VUsers:   10,
+	})
+	if err != nil {
+		t.Fatalf("CreateTest(first) returned error: %v", err)
+	}
+	second, err := runner.CreateTest(CreateTestRequest{
+		Name:     "Second Project Scenario",
+		Duration: "30s",
+		ScriptID: "script-project-start-limit",
+		VUsers:   10,
+	})
+	if err != nil {
+		t.Fatalf("CreateTest(second) returned error: %v", err)
+	}
+	other, err := runner.CreateTest(CreateTestRequest{
+		Name:     "Other Project Scenario",
+		Duration: "30s",
+		ScriptID: "script-other-project",
+		VUsers:   10,
+	})
+	if err != nil {
+		t.Fatalf("CreateTest(other) returned error: %v", err)
+	}
+
+	runner.mu.Lock()
+	runner.tests[first.ID].Status = "RUNNING"
+	runner.mu.Unlock()
+
+	err = runner.StartTest(second.ID)
+	if err == nil {
+		t.Fatal("expected StartTest to fail when project max concurrent tests is reached")
+	}
+	if err.Error() != "project max concurrent tests (1) reached" {
+		t.Fatalf("expected project max concurrent error, got %q", err.Error())
+	}
+	queued, ok := runner.GetTest(second.ID)
+	if !ok {
+		t.Fatalf("expected queued test %s to remain in runner", second.ID)
+	}
+	if queued.Status != "QUEUED" {
+		t.Fatalf("test status = %s, want QUEUED", queued.Status)
+	}
+
+	runner.mu.Lock()
+	prepared, err := runner.prepareTestStartLocked(other.ID, StartTestOptions{})
+	runner.mu.Unlock()
+	if err != nil {
+		t.Fatalf("prepareTestStartLocked(other) returned error: %v", err)
+	}
+	if prepared.Status != "INITIALIZING" {
+		t.Fatalf("other project status = %s, want INITIALIZING", prepared.Status)
+	}
+}
+
 func TestGetTestRefreshesCapacityAdvisoryUsingLiveAvailability(t *testing.T) {
 	hub := NewHub()
 	runner := NewTestRunner(2, hub, nil)

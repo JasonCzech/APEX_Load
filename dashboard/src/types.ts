@@ -50,6 +50,7 @@ export interface RedactionRule {
 
 export interface ProjectSettings {
   redaction_rules?: RedactionRule[]
+  max_concurrent_tests?: number
 }
 
 export interface Application {

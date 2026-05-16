@@ -64,7 +64,7 @@ func TestProjectHandlersPersistRedactionSettings(t *testing.T) {
 	defer store.Close()
 	server := NewServer(ServerConfig{Store: store})
 
-	createProject := httptest.NewRequest(http.MethodPost, "/api/v1/projects", bytes.NewBufferString(`{"name":"Payments","settings":{"redaction_rules":[{"name":"customer id","pattern":"customer-[0-9]+"}]}}`))
+	createProject := httptest.NewRequest(http.MethodPost, "/api/v1/projects", bytes.NewBufferString(`{"name":"Payments","settings":{"redaction_rules":[{"name":"customer id","pattern":"customer-[0-9]+"}],"max_concurrent_tests":2}}`))
 	createProject.Header.Set("Content-Type", "application/json")
 	projectResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(projectResp, createProject)
@@ -77,6 +77,9 @@ func TestProjectHandlersPersistRedactionSettings(t *testing.T) {
 	}
 	if len(created.Settings.RedactionRules) != 1 || created.Settings.RedactionRules[0].Pattern != "customer-[0-9]+" {
 		t.Fatalf("created settings = %#v, want redaction rule", created.Settings)
+	}
+	if created.Settings.MaxConcurrentTests != 2 {
+		t.Fatalf("created max_concurrent_tests = %d, want 2", created.Settings.MaxConcurrentTests)
 	}
 
 	getProject := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+created.ID, nil)
@@ -92,6 +95,9 @@ func TestProjectHandlersPersistRedactionSettings(t *testing.T) {
 	if len(fetched.Settings.RedactionRules) != 1 || fetched.Settings.RedactionRules[0].Name != "customer id" {
 		t.Fatalf("fetched settings = %#v, want persisted rule", fetched.Settings)
 	}
+	if fetched.Settings.MaxConcurrentTests != 2 {
+		t.Fatalf("fetched max_concurrent_tests = %d, want 2", fetched.Settings.MaxConcurrentTests)
+	}
 }
 
 func TestProjectHandlersRejectInvalidRedactionSettings(t *testing.T) {
@@ -103,6 +109,24 @@ func TestProjectHandlersRejectInvalidRedactionSettings(t *testing.T) {
 	server := NewServer(ServerConfig{Store: store})
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/projects", bytes.NewBufferString(`{"name":"Payments","settings":{"redaction_rules":[{"name":"broken","pattern":"["}]}}`))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusBadRequest, resp.Body.String())
+	}
+}
+
+func TestProjectHandlersRejectNegativeConcurrentLimit(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+	server := NewServer(ServerConfig{Store: store})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/projects", bytes.NewBufferString(`{"name":"Payments","settings":{"max_concurrent_tests":-1}}`))
 	req.Header.Set("Content-Type", "application/json")
 	resp := httptest.NewRecorder()
 	server.mux.ServeHTTP(resp, req)

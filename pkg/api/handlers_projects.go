@@ -110,6 +110,9 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 }
 
 func validateProjectSettings(settings storage.ProjectSettings) error {
+	if settings.MaxConcurrentTests < 0 {
+		return errProjectSettings("max_concurrent_tests must be greater than or equal to 0")
+	}
 	if len(settings.RedactionRules) == 0 {
 		return nil
 	}
@@ -117,6 +120,18 @@ func validateProjectSettings(settings storage.ProjectSettings) error {
 		return err
 	}
 	return nil
+}
+
+func errProjectSettings(message string) error {
+	return &projectSettingsError{message: message}
+}
+
+type projectSettingsError struct {
+	message string
+}
+
+func (e *projectSettingsError) Error() string {
+	return e.message
 }
 
 func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {

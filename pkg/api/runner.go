@@ -1542,19 +1542,11 @@ func (tr *TestRunner) CreateTest(req CreateTestRequest) (*ManagedTest, error) {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 
-	running := 0
-	for _, t := range tr.tests {
-		if t.Status == "RUNNING" || t.Status == "INITIALIZING" {
-			running++
-		}
-	}
-	maxConcurrent := tr.settings.General.MaxConcurrentTests
-	if running >= maxConcurrent {
-		return nil, fmt.Errorf("max concurrent tests (%d) reached", maxConcurrent)
-	}
-
 	test, err := tr.buildManagedTestLocked(req, uuid.New().String(), "QUEUED")
 	if err != nil {
+		return nil, err
+	}
+	if err := tr.validateConcurrencyLimitsLocked(test.ProjectID); err != nil {
 		return nil, err
 	}
 
@@ -2276,17 +2268,15 @@ func (tr *TestRunner) StartTestWithOptions(id string, opts StartTestOptions) err
 }
 
 func (tr *TestRunner) prepareTestStartLocked(id string, opts StartTestOptions) (*ManagedTest, error) {
-	maxConcurrent := tr.settings.General.MaxConcurrentTests
-	if tr.countActiveTestsLocked() >= maxConcurrent {
-		return nil, fmt.Errorf("max concurrent tests (%d) reached", maxConcurrent)
-	}
-
 	test, ok := tr.tests[id]
 	if !ok {
 		return nil, fmt.Errorf("test not found: %s", id)
 	}
 	if test.Status != "QUEUED" {
 		return nil, fmt.Errorf("test is %s, must be QUEUED to start", test.Status)
+	}
+	if err := tr.validateConcurrencyLimitsLocked(test.ProjectID); err != nil {
+		return nil, err
 	}
 
 	tr.refreshCapacityAdvisoryLocked(test)
@@ -2310,6 +2300,47 @@ func (tr *TestRunner) countActiveTestsLocked() int {
 		}
 	}
 	return active
+}
+
+func (tr *TestRunner) countActiveTestsForProjectLocked(projectID string) int {
+	projectID = normalizeProjectID(projectID)
+	active := 0
+	for _, test := range tr.tests {
+		if normalizeProjectID(test.ProjectID) != projectID {
+			continue
+		}
+		if test.Status == "RUNNING" || test.Status == "INITIALIZING" {
+			active++
+		}
+	}
+	return active
+}
+
+func (tr *TestRunner) validateConcurrencyLimitsLocked(projectID string) error {
+	maxConcurrent := tr.settings.General.MaxConcurrentTests
+	if tr.countActiveTestsLocked() >= maxConcurrent {
+		return fmt.Errorf("max concurrent tests (%d) reached", maxConcurrent)
+	}
+	projectMaxConcurrent := tr.projectMaxConcurrentTests(projectID)
+	if projectMaxConcurrent > 0 && tr.countActiveTestsForProjectLocked(projectID) >= projectMaxConcurrent {
+		return fmt.Errorf("project max concurrent tests (%d) reached", projectMaxConcurrent)
+	}
+	return nil
+}
+
+func (tr *TestRunner) projectMaxConcurrentTests(projectID string) int {
+	if tr.projectStore == nil {
+		return 0
+	}
+	projectID = normalizeProjectID(projectID)
+	project, err := tr.projectStore.GetProject(projectID)
+	if err != nil || project == nil {
+		return 0
+	}
+	if project.Settings.MaxConcurrentTests < 1 {
+		return 0
+	}
+	return project.Settings.MaxConcurrentTests
 }
 
 func buildCapacityShortfallStartError(id string, advisory *CapacityAdvisory, opts StartTestOptions) error {
