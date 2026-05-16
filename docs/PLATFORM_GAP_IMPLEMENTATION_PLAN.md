@@ -97,6 +97,9 @@ The 19 gaps are organized into five sequential delivery waves. Each wave targets
 ## Wave 4: Script Quality and Analysis Depth (Weeks 13-16)
 **Goal:** Make script authoring smarter and result analysis faster.
 
+### Implemented Status
+- **4.2 Error Analysis & Pattern Detection:** Archived run reports now cluster similar error messages, retain the first captured snapshot for each pattern, and surface those clusters in both the embedded dashboard archive view and the standalone HTML report.
+
 ### 4.1 Correlation Intelligence (P1)
 **Effort:** 5-7 days
 - **Analysis Engine:** Detect dynamic values flowing from responses into subsequent requests during HAR import.
@@ -120,6 +123,9 @@ The 19 gaps are organized into five sequential delivery waves. Each wave targets
 
 ## Wave 5: Ecosystem and Advanced Modeling (Weeks 17-21)
 **Goal:** Connect to the observability ecosystem and support edge-case loads.
+
+### Implemented Status
+- **5.1 APM / Observability Correlation:** The controller now exposes a Prometheus-compatible `/metrics` endpoint with health, websocket, in-memory test counts, test status breakdowns, and capacity-planning gauges.
 
 ### 5.1 APM / Observability Correlation (P2)
 **Effort:** 5-8 days

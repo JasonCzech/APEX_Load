@@ -417,6 +417,50 @@ func (s *Server) handleHealthCheck(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) handlePrometheusMetrics(w http.ResponseWriter, r *http.Request) {
+	settings := s.runner.GetSystemSettings()
+	availability := resolveCapacityAvailability(settings)
+	tests := s.runner.ListTests()
+	statusCounts := make(map[string]int)
+	for _, test := range tests {
+		if test == nil || strings.TrimSpace(test.Status) == "" {
+			continue
+		}
+		statusCounts[test.Status]++
+	}
+
+	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+	var body strings.Builder
+	body.WriteString("# HELP stormrunner_up Whether the Stormrunner controller is healthy.\n")
+	body.WriteString("# TYPE stormrunner_up gauge\n")
+	body.WriteString("stormrunner_up 1\n")
+	body.WriteString("# HELP stormrunner_websocket_clients Number of connected websocket clients.\n")
+	body.WriteString("# TYPE stormrunner_websocket_clients gauge\n")
+	fmt.Fprintf(&body, "stormrunner_websocket_clients %d\n", s.hub.ClientCount())
+	body.WriteString("# HELP stormrunner_test_count Number of tracked tests in memory.\n")
+	body.WriteString("# TYPE stormrunner_test_count gauge\n")
+	fmt.Fprintf(&body, "stormrunner_test_count %d\n", len(tests))
+	body.WriteString("# HELP stormrunner_tests_by_status Number of tracked tests by status.\n")
+	body.WriteString("# TYPE stormrunner_tests_by_status gauge\n")
+	for status, count := range statusCounts {
+		fmt.Fprintf(&body, "stormrunner_tests_by_status{status=%q} %d\n", status, count)
+	}
+	body.WriteString("# HELP stormrunner_capacity_available_generators Available generators from capacity planning.\n")
+	body.WriteString("# TYPE stormrunner_capacity_available_generators gauge\n")
+	fmt.Fprintf(&body, "stormrunner_capacity_available_generators{scope=%q} %d\n", "configured", availability.ConfiguredAvailableGenerators)
+	fmt.Fprintf(&body, "stormrunner_capacity_available_generators{scope=%q} %d\n", "effective", availability.EffectiveAvailableGenerators)
+	if availability.LiveAvailableGenerators != nil {
+		fmt.Fprintf(&body, "stormrunner_capacity_available_generators{scope=%q} %d\n", "live", *availability.LiveAvailableGenerators)
+	}
+	body.WriteString("# HELP stormrunner_max_concurrent_tests Configured maximum concurrent tests.\n")
+	body.WriteString("# TYPE stormrunner_max_concurrent_tests gauge\n")
+	fmt.Fprintf(&body, "stormrunner_max_concurrent_tests %d\n", settings.General.MaxConcurrentTests)
+	body.WriteString("# HELP stormrunner_metrics_interval_seconds Configured metrics publish interval in seconds.\n")
+	body.WriteString("# TYPE stormrunner_metrics_interval_seconds gauge\n")
+	fmt.Fprintf(&body, "stormrunner_metrics_interval_seconds %d\n", settings.General.MetricsIntervalSeconds)
+	_, _ = w.Write([]byte(body.String()))
+}
+
 func (s *Server) handleGetSystemSettings(w http.ResponseWriter, r *http.Request) {
 	settings := s.runner.GetSystemSettings()
 	writeJSON(w, http.StatusOK, settings)
