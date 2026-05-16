@@ -27,6 +27,7 @@ interface Props {
   archiveError: string
   archiveLoading: boolean
   archiveReport: RunArchiveReport | null
+  onDownloadBrowserDiagnostics: () => void
   onDownloadArchiveArtifact: (artifactName: string) => void
   archiveActionEntries: Array<[string, RunArchiveActionStats]>
   archiveSOAPOperationEntries: Array<[string, RunArchiveActionStats]>
@@ -269,6 +270,7 @@ export default function TestExecutionArchive({
   archiveError,
   archiveLoading,
   archiveReport,
+  onDownloadBrowserDiagnostics,
   onDownloadArchiveArtifact,
   archiveActionEntries,
   archiveSOAPOperationEntries,
@@ -495,6 +497,14 @@ export default function TestExecutionArchive({
           )}
 
           <div className="archive-artifact-row">
+            {archiveReport.overview.browser && (
+              <div className="archive-artifact-group">
+                <span className="archive-artifact-label">Browser</span>
+                <button className="btn btn-secondary btn-sm" onClick={onDownloadBrowserDiagnostics}>
+                  Download Browser Diagnostics ZIP
+                </button>
+              </div>
+            )}
             <div className="archive-artifact-group">
               <span className="archive-artifact-label">Report</span>
               <a

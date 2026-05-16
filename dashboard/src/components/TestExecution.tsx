@@ -119,6 +119,7 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
     expandedArchiveEvent,
     onExpandedArchiveEventChange,
     onDownloadArchive,
+    onDownloadBrowserDiagnostics,
     onDownloadArchiveArtifact,
   } = useExecutionArchiveModel(test)
 
@@ -244,6 +245,7 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
           archiveError={archiveError}
           archiveLoading={archiveLoading}
           archiveReport={archiveReport}
+          onDownloadBrowserDiagnostics={onDownloadBrowserDiagnostics}
           onDownloadArchiveArtifact={onDownloadArchiveArtifact}
           archiveActionEntries={archiveActionEntries}
           selectedArchiveAction={selectedArchiveAction}

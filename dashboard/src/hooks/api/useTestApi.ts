@@ -273,6 +273,11 @@ export function useTestApi() {
 
   const downloadTestArchive = useCallback((id: string) => fetchBlob(`/tests/${id}/archive`), [])
 
+  const downloadTestArchiveBrowserDiagnostics = useCallback(
+    (id: string) => fetchBlob(`/tests/${id}/archive/browser-diagnostics`),
+    [],
+  )
+
   const downloadTestArchiveArtifact = useCallback(
     (id: string, name: string) => fetchBlob(`/tests/${id}/archive/files/${encodeURIComponent(name)}`),
     [],
@@ -316,6 +321,7 @@ export function useTestApi() {
       getTestArchiveSummaries,
       getTestArchiveReport,
       downloadTestArchive,
+      downloadTestArchiveBrowserDiagnostics,
       downloadTestArchiveArtifact,
       scaleVUsers,
       adjustDuration,
@@ -351,6 +357,7 @@ export function useTestApi() {
       getTestArchiveSummaries,
       getTestArchiveReport,
       downloadTestArchive,
+      downloadTestArchiveBrowserDiagnostics,
       downloadTestArchiveArtifact,
       scaleVUsers,
       adjustDuration,

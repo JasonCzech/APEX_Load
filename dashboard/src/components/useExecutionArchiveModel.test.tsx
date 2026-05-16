@@ -5,6 +5,7 @@ import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { TestSummary } from '../types'
+import { downloadBlob } from '../utils/fileUtils'
 import { useExecutionArchiveModel } from './useExecutionArchiveModel'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -13,6 +14,7 @@ const apiMock = {
   getTestArchiveReport: vi.fn(),
   getTestArchiveTransactions: vi.fn(),
   downloadTestArchive: vi.fn(),
+  downloadTestArchiveBrowserDiagnostics: vi.fn(),
   downloadTestArchiveArtifact: vi.fn(),
 }
 
@@ -274,6 +276,66 @@ describe('useExecutionArchiveModel', () => {
     })
     expect(readTestId('group')).toBe('Checkout')
     expect(readTestId('offset')).toBe('0')
+  })
+
+  it('downloads browser diagnostics bundles for archived tests', async () => {
+    const blob = new Blob(['zip'], { type: 'application/zip' })
+    apiMock.downloadTestArchiveBrowserDiagnostics.mockResolvedValue(blob)
+    apiMock.getTestArchiveReport.mockResolvedValue({
+      manifest: {
+        schema_version: 'v1',
+        test_id: 'test-1',
+        test_name: 'Checkout Journey',
+        created_at: '2026-05-12T20:00:00Z',
+        transactions_file: 'transactions.jsonl',
+        resource_samples_file: 'resources.jsonl',
+        interval_summaries_file: 'interval_summaries.jsonl',
+        transaction_count: 0,
+        resource_sample_count: 0,
+        interval_summary_count: 0,
+      },
+      overview: {
+        transactions: 0,
+        errors: 0,
+        error_pct: 0,
+        avg_response_ms: 0,
+        min_response_ms: 0,
+        max_response_ms: 0,
+        resource_samples: 0,
+        interval_summaries: 0,
+        peak_tps: 0,
+        peak_active_vusers: 0,
+      },
+      by_action: {},
+      by_soap_operation: {},
+      resource_peaks: {
+        cpu_process_pct: 0,
+        mem_process_mb: 0,
+        net_sent_kbps: 0,
+        net_recv_kbps: 0,
+        disk_read_kbps: 0,
+        disk_write_kbps: 0,
+      },
+    })
+
+    let model: ReturnType<typeof useExecutionArchiveModel> | null = null
+
+    function DownloadHarness({ test }: { test: TestSummary | null }) {
+      model = useExecutionArchiveModel(test)
+      return null
+    }
+
+    await act(async () => {
+      root.render(<DownloadHarness test={buildArchivedTest()} />)
+    })
+    await flushPromises()
+
+    await act(async () => {
+      await model?.onDownloadBrowserDiagnostics()
+    })
+
+    expect(apiMock.downloadTestArchiveBrowserDiagnostics).toHaveBeenCalledWith('test-1')
+    expect(downloadBlob).toHaveBeenCalledWith(blob, 'checkout-journey-test-1-browser-diagnostics.zip')
   })
 
   function readTestId(testId: string) {

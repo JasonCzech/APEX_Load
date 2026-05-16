@@ -40,6 +40,7 @@ interface ExecutionArchiveModel {
   expandedArchiveEvent: string | null
   onExpandedArchiveEventChange: (value: string | null) => void
   onDownloadArchive: () => Promise<void>
+  onDownloadBrowserDiagnostics: () => Promise<void>
   onDownloadArchiveArtifact: (artifactName: string) => Promise<void>
 }
 
@@ -214,6 +215,16 @@ export function useExecutionArchiveModel(test: TestSummary | null): ExecutionArc
     }
   }, [api, test])
 
+  const onDownloadBrowserDiagnostics = useCallback(async () => {
+    if (!test) return
+    try {
+      const blob = await api.downloadTestArchiveBrowserDiagnostics(test.id)
+      downloadBlob(blob, `${buildArchiveDownloadName(test)}-browser-diagnostics.zip`)
+    } catch (error: unknown) {
+      setArchiveError(getErrorMessage(error, 'Unable to download browser diagnostics bundle'))
+    }
+  }, [api, test])
+
   const onDownloadArchiveArtifact = useCallback(async (artifactName: string) => {
     if (!test) return
     try {
@@ -252,6 +263,7 @@ export function useExecutionArchiveModel(test: TestSummary | null): ExecutionArc
     expandedArchiveEvent,
     onExpandedArchiveEventChange: setExpandedArchiveEvent,
     onDownloadArchive,
+    onDownloadBrowserDiagnostics,
     onDownloadArchiveArtifact,
   }
 }

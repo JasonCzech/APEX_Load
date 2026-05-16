@@ -204,6 +204,8 @@ describe('TestExecutionArchive', () => {
   })
 
   it('surfaces parsed SOAP fault details from archived snapshots', async () => {
+    const onDownloadBrowserDiagnostics = vi.fn()
+
     const transactions: TransactionEvent[] = [{
       timestamp: '2026-05-14T20:00:30Z',
       test_id: 'test-1',
@@ -252,6 +254,7 @@ describe('TestExecutionArchive', () => {
           archiveError=""
           archiveLoading={false}
           archiveReport={archiveReport}
+          onDownloadBrowserDiagnostics={onDownloadBrowserDiagnostics}
           onDownloadArchiveArtifact={vi.fn()}
           archiveActionEntries={[]}
           archiveSOAPOperationEntries={[]}
@@ -301,6 +304,12 @@ describe('TestExecutionArchive', () => {
     const reportLink = container.querySelector('a[href="/api/v1/tests/test-1/report"]') as HTMLAnchorElement | null
     expect(reportLink).toBeTruthy()
     expect(reportLink?.textContent).toContain('Download Report')
+    const browserDiagnosticsButton = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.includes('Download Browser Diagnostics ZIP'))
+    expect(browserDiagnosticsButton).toBeTruthy()
+    await act(async () => {
+      browserDiagnosticsButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(onDownloadBrowserDiagnostics).toHaveBeenCalledTimes(1)
     expect(container.textContent).toContain('Browser Device Breakdown (LCP / INP / CLS)')
     expect(container.textContent).toContain('Avg FCP')
     expect(container.textContent).toContain('Engine Rollup')
@@ -501,6 +510,7 @@ describe('TestExecutionArchive', () => {
           archiveError=""
           archiveLoading={false}
           archiveReport={mixedReport}
+          onDownloadBrowserDiagnostics={vi.fn()}
           onDownloadArchiveArtifact={vi.fn()}
           archiveActionEntries={[]}
           archiveSOAPOperationEntries={[]}
@@ -595,6 +605,7 @@ describe('TestExecutionArchive', () => {
           archiveError=""
           archiveLoading={false}
           archiveReport={archiveReport}
+          onDownloadBrowserDiagnostics={vi.fn()}
           onDownloadArchiveArtifact={vi.fn()}
           archiveActionEntries={[]}
           archiveSOAPOperationEntries={[]}
@@ -731,6 +742,7 @@ describe('TestExecutionArchive', () => {
           archiveError=""
           archiveLoading={false}
           archiveReport={operationReport}
+          onDownloadBrowserDiagnostics={vi.fn()}
           onDownloadArchiveArtifact={vi.fn()}
           archiveActionEntries={Object.entries(operationReport.by_action)}
           archiveSOAPOperationEntries={Object.entries(operationReport.by_soap_operation || {})}
