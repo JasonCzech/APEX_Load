@@ -3,7 +3,9 @@ package http
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/tls"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
@@ -126,6 +128,8 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	for k, v := range action.Headers {
 		req.Header.Set(k, v)
 	}
+	explicitCorrelationID := correlationIDFromHTTPHeader(req.Header)
+	generatedTraceparent := ensureTraceparentHeader(req.Header)
 
 	var dnsStart, connStart, tlsStart time.Time
 	trace := &httptrace.ClientTrace{
@@ -178,8 +182,12 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	result.BytesReceived = n
 	result.ServerTelemetry = finalizeHTTPServerTelemetry(result, requestBytes, n, connectionReused, redirectCount, redirectDuration)
 	result.Success = resp.StatusCode >= 200 && resp.StatusCode < 400
+	result.CorrelationID = explicitCorrelationID
 	if result.CorrelationID == "" {
 		result.CorrelationID = correlationIDFromHTTPHeader(resp.Header)
+	}
+	if result.CorrelationID == "" {
+		result.CorrelationID = generatedTraceparent
 	}
 	responseHeaders := cloneHTTPHeaders(resp.Header)
 
@@ -218,6 +226,30 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	}
 
 	return result, nil
+}
+
+func ensureTraceparentHeader(headers http.Header) string {
+	if headers == nil {
+		return ""
+	}
+	if existing := strings.TrimSpace(headers.Get("Traceparent")); existing != "" {
+		return existing
+	}
+	traceparent := newTraceparent()
+	headers.Set("Traceparent", traceparent)
+	return traceparent
+}
+
+func newTraceparent() string {
+	traceID := make([]byte, 16)
+	if _, err := rand.Read(traceID); err != nil || bytes.Equal(traceID, make([]byte, len(traceID))) {
+		traceID[len(traceID)-1] = 1
+	}
+	spanID := make([]byte, 8)
+	if _, err := rand.Read(spanID); err != nil || bytes.Equal(spanID, make([]byte, len(spanID))) {
+		spanID[len(spanID)-1] = 1
+	}
+	return "00-" + hex.EncodeToString(traceID) + "-" + hex.EncodeToString(spanID) + "-01"
 }
 
 func (h *HTTP) Teardown(_ context.Context) error {

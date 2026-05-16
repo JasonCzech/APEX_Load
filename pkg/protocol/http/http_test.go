@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -339,6 +340,61 @@ func TestHTTP_ExecuteCapturesDependencyAndCorrelationMetadata(t *testing.T) {
 	}
 	if result.CorrelationID != "resp-corr-2" {
 		t.Fatalf("CorrelationID = %q, want resp-corr-2", result.CorrelationID)
+	}
+}
+
+func TestHTTP_ExecuteInjectsTraceparentHeaderWhenMissing(t *testing.T) {
+	var receivedTraceparent string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedTraceparent = r.Header.Get("Traceparent")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	h := initHTTP(t, map[string]any{"base_url": ts.URL})
+	result, err := h.Execute(context.Background(), &protocol.Action{
+		Name:   "test-traceparent",
+		Method: "GET",
+		Target: "/trace",
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	pattern := regexp.MustCompile(`^00-[0-9a-f]{32}-[0-9a-f]{16}-01$`)
+	if !pattern.MatchString(receivedTraceparent) {
+		t.Fatalf("Traceparent header = %q, want W3C traceparent format", receivedTraceparent)
+	}
+	if result.CorrelationID != receivedTraceparent {
+		t.Fatalf("CorrelationID = %q, want generated traceparent %q", result.CorrelationID, receivedTraceparent)
+	}
+}
+
+func TestHTTP_ExecutePreservesExplicitTraceparentHeader(t *testing.T) {
+	const traceparent = "00-00000000000000000000000000000001-0000000000000001-01"
+	var receivedTraceparent string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedTraceparent = r.Header.Get("Traceparent")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	h := initHTTP(t, map[string]any{"base_url": ts.URL})
+	result, err := h.Execute(context.Background(), &protocol.Action{
+		Name:   "test-explicit-traceparent",
+		Method: "GET",
+		Target: "/trace",
+		Headers: map[string]string{
+			"Traceparent": traceparent,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if receivedTraceparent != traceparent {
+		t.Fatalf("Traceparent header = %q, want %q", receivedTraceparent, traceparent)
+	}
+	if result.CorrelationID != traceparent {
+		t.Fatalf("CorrelationID = %q, want %q", result.CorrelationID, traceparent)
 	}
 }
 

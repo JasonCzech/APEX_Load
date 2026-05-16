@@ -125,7 +125,7 @@ The 19 gaps are organized into five sequential delivery waves. Each wave targets
 **Goal:** Connect to the observability ecosystem and support edge-case loads.
 
 ### Implemented Status
-- **5.1 APM / Observability Correlation:** The controller now exposes a Prometheus-compatible `/metrics` endpoint with health, websocket, in-memory test counts, test status breakdowns, and capacity-planning gauges.
+- **5.1 APM / Observability Correlation:** Stormrunner now injects W3C `traceparent` headers into HTTP and SOAP test requests, preserves caller-supplied trace headers, and exposes a Prometheus-compatible `/metrics` endpoint with health, websocket, in-memory test counts, test status breakdowns, and capacity-planning gauges.
 
 ### 5.1 APM / Observability Correlation (P2)
 **Effort:** 5-8 days
