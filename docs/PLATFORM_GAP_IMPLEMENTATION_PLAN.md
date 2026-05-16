@@ -36,11 +36,13 @@ The 19 gaps are organized into five sequential delivery waves. Each wave targets
 - **Secret Abstraction:** Add `SecretReference` to the DSL (e.g., `{{secret.db_password}}`).
 - **Runtime Injection:** Resolve secrets only at the generator level during execution; never log or serialize them.
 - **External Vault Integration:** Support Azure Key Vault integration for fetching secret payloads.
+- **Progress:** Implemented via `{{secret.*}}` template support in the DSL/runtime, engine-side secret resolution and redaction, provenance filtering to avoid serializing secret-like values, and Azure Key Vault lookup support in `pkg/engine/secrets.go`.
 
 ### 1.4 Ephemeral Environment Target Resolution (P1)
 **Effort:** 3-5 days
 - **Dynamic Targeting:** Support runtime variables passed via `stormctl` (e.g., `-env target_namespace=pr-123`).
 - **Base URL Overrides:** Enable overriding the base URL of a scenario at runtime without modifying the JSON DSL.
+- **Progress:** Implemented via `stormctl` runtime `--env` and `--base-url` overrides plus controller-side runtime overrides that compile ephemeral targets without mutating the stored DSL.
 
 ---
 
@@ -51,11 +53,13 @@ The 19 gaps are organized into five sequential delivery waves. Each wave targets
 **Effort:** 6-10 days
 - **Arrival-Rate Engine:** Implement an open workload scheduler in `pkg/engine/pacing.go` that spawns ephemeral goroutines to achieve exact target throughput.
 - **Coordinated Omission Tracking:** Compare expected arrival rate vs. actual departure rate and flag divergence in the telemetry stream.
+- **Progress:** Implemented via open-workload arrival scheduling in the engine, scenario/runtime support for throughput-oriented execution, and throughput-gap telemetry fields (`target_tps`, miss flags, and gap percentage) in metrics snapshots.
 
 ### 2.2 PII / PHI Redaction & Compliance (P0)
 **Effort:** 4-6 days
 - **Scrubbing Pipeline:** Add a regex/entropy-based redaction step in `pkg/engine/metrics.go` for all HTTP headers and body payloads before they are serialized to Parquet or sent over WebSockets.
 - **Compliance Config:** Allow users to define custom redaction rules per project.
+- **Progress:** Implemented via built-in sensitive-data scrubbing across runtime/archive surfaces plus project-scoped custom redaction rules managed through the API, persistence layer, and dashboard governance settings.
 
 ---
 
@@ -73,6 +77,7 @@ The 19 gaps are organized into five sequential delivery waves. Each wave targets
 - **Auth Middleware:** Implement OIDC/SAML integration in `pkg/api/middleware.go`.
 - **Role Model:** Define System Admin, Project Admin, Editor, and Viewer roles.
 - **Dashboard UI:** Add Login screen and User Management panels.
+- **Progress:** Partially implemented via trusted-header auth middleware, the full System Admin / Project Admin / Editor / Viewer role model, request-scoped RBAC enforcement, `GET /api/v1/auth/me`, the dashboard auth gate, sidebar identity visibility, and a settings access panel that shows the current forwarded identity and effective roles. Direct user lifecycle management still remains delegated to the upstream OIDC/SAML gateway rather than Stormrunner itself.
 
 ### 3.2 Multi-Tenant Governance & Capacity Controls (P1)
 **Effort:** 6-9 days

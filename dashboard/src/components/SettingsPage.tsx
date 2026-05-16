@@ -5,7 +5,7 @@ import { useProjectApi } from '../hooks/api/useProjectApi'
 import { useApplication } from '../hooks/useApplication'
 import { useProject } from '../hooks/useProject'
 import { useApi } from '../hooks/useApi'
-import { DashboardSystemSettings, HealthResponse, Project, RedactionRule, SharedDataPool, SharedDataPoolRow, SystemInventoryResponse } from '../types'
+import { DashboardAuthStatus, DashboardSystemSettings, HealthResponse, Project, RedactionRule, SharedDataPool, SharedDataPoolRow, SystemInventoryResponse } from '../types'
 import { getErrorMessage } from '../utils/errorUtils'
 
 const DEFAULT_SETTINGS: DashboardSystemSettings = {
@@ -75,6 +75,13 @@ const NOTIFICATION_FORMAT_OPTIONS = [
   { value: 'teams', label: 'Microsoft Teams Adaptive Card' },
 ] as const
 
+const AUTH_ROLE_LABELS: Record<string, string> = {
+  system_admin: 'System Admin',
+  project_admin: 'Project Admin',
+  editor: 'Editor',
+  viewer: 'Viewer',
+}
+
 function parseOptionalWholeNumber(value: string): number | undefined {
   const trimmed = value.trim()
   if (!trimmed) return undefined
@@ -116,6 +123,44 @@ function normalizeProjectRedactionRules(rules: DraftRedactionRule[]): RedactionR
     if (replacement) normalized.replacement = replacement
     return [normalized]
   })
+}
+
+function formatAuthRole(role: string): string {
+  return AUTH_ROLE_LABELS[role] || role
+}
+
+function formatAuthRoleList(roles?: string[]): string {
+  if (!roles || roles.length === 0) {
+    return 'None'
+  }
+  return roles.map(formatAuthRole).join(', ')
+}
+
+function formatProjectRoleAssignments(projectRoles?: Record<string, string[]>): string {
+  if (!projectRoles) {
+    return 'None'
+  }
+
+  const assignments = Object.entries(projectRoles)
+    .filter(([, roles]) => roles.length > 0)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([projectID, roles]) => `${projectID}: ${roles.map(formatAuthRole).join(', ')}`)
+
+  if (assignments.length === 0) {
+    return 'None'
+  }
+
+  return assignments.join(' | ')
+}
+
+function formatAuthStatusSummary(authStatus?: DashboardAuthStatus): string {
+  if (!authStatus || !authStatus.enabled) {
+    return 'Disabled'
+  }
+  if (!authStatus.authenticated) {
+    return 'Awaiting trusted headers'
+  }
+  return 'Authenticated'
 }
 
 function validateProjectDraft(name: string, rules: DraftRedactionRule[]): string {
@@ -347,9 +392,10 @@ function applyLiveGeneratorPresetToSettings(settings: DashboardSystemSettings, p
 interface SettingsPageProps {
   theme: DashboardTheme
   onThemeChange: (theme: DashboardTheme) => void
+  authStatus?: DashboardAuthStatus
 }
 
-export default function SettingsPage({ theme, onThemeChange }: SettingsPageProps) {
+export default function SettingsPage({ theme, onThemeChange, authStatus }: SettingsPageProps) {
   const api = useApi()
   const applicationApi = useApplicationApi()
   const projectApi = useProjectApi()
@@ -1359,6 +1405,62 @@ export default function SettingsPage({ theme, onThemeChange }: SettingsPageProps
                       onChange={(e) => updateAuth('project_roles_header', e.target.value)}
                       placeholder="X-Stormrunner-Project-Roles"
                     />
+                  </div>
+                  <div className="settings-subsection">
+                    <div className="settings-manager-summary">
+                      <div>
+                        <span className="setting-label">Current Session Access</span>
+                        <span className="setting-desc">Shows the identity and role assignments from the trusted headers reaching Stormrunner right now. User lifecycle remains managed by the upstream OIDC or SAML gateway.</span>
+                      </div>
+                      <strong>{formatAuthStatusSummary(authStatus)}</strong>
+                    </div>
+                    {authStatus?.authenticated && authStatus.user ? (
+                      <>
+                        <div className="setting-row">
+                          <div className="setting-info">
+                            <span className="setting-label">Subject</span>
+                            <span className="setting-desc">Stable upstream identity key used for access checks.</span>
+                          </div>
+                          <span className="settings-value-display cell-mono">{authStatus.user.subject}</span>
+                        </div>
+                        <div className="setting-row">
+                          <div className="setting-info">
+                            <span className="setting-label">Display Name</span>
+                            <span className="setting-desc">Friendly identity label if the proxy forwards one.</span>
+                          </div>
+                          <span className="settings-value-display">{authStatus.user.display_name || 'Not provided'}</span>
+                        </div>
+                        <div className="setting-row">
+                          <div className="setting-info">
+                            <span className="setting-label">Email</span>
+                            <span className="setting-desc">Optional email forwarded from the upstream identity provider.</span>
+                          </div>
+                          <span className="settings-value-display">{authStatus.user.email || 'Not provided'}</span>
+                        </div>
+                        <div className="setting-row">
+                          <div className="setting-info">
+                            <span className="setting-label">Global Roles</span>
+                            <span className="setting-desc">Effective instance-wide roles on this request.</span>
+                          </div>
+                          <span className="settings-value-display">{formatAuthRoleList(authStatus.user.global_roles)}</span>
+                        </div>
+                        <div className="setting-row">
+                          <div className="setting-info">
+                            <span className="setting-label">Project Roles</span>
+                            <span className="setting-desc">Project-scoped assignments resolved from the forwarded headers.</span>
+                          </div>
+                          <span className="settings-value-display">{formatProjectRoleAssignments(authStatus.user.project_roles)}</span>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="setting-row">
+                        <div className="setting-info">
+                          <span className="setting-label">Session Status</span>
+                          <span className="setting-desc">Open the dashboard through the authenticating proxy so Stormrunner receives identity and role headers.</span>
+                        </div>
+                        <span className="settings-value-display">No authenticated user detected</span>
+                      </div>
+                    )}
                   </div>
                 </>
               )}

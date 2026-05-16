@@ -454,6 +454,53 @@ describe('SettingsPage', () => {
     expect(container.textContent).toContain('Settings saved.')
   })
 
+  it('shows the current authenticated identity and effective roles when trusted-header auth is enabled', async () => {
+    await act(async () => {
+      root.render(
+        <SettingsPage
+          theme="dark"
+          onThemeChange={vi.fn()}
+          authStatus={{
+            enabled: true,
+            mode: 'trusted_headers',
+            authenticated: true,
+            user: {
+              subject: 'alice-admin',
+              display_name: 'Alice Admin',
+              email: 'alice@example.com',
+              global_roles: ['system_admin', 'viewer'],
+              project_roles: {
+                'project-1': ['editor', 'viewer'],
+                'project-2': ['project_admin'],
+              },
+            },
+          }}
+        />,
+      )
+    })
+
+    await flushPromises()
+
+    const generalSection = container.querySelector('#settings-section-general')
+    expect(generalSection).toBeTruthy()
+    if (!generalSection) return
+
+    const authModeSelect = findSettingSelect(generalSection, 'Access Control Mode')
+    expect(authModeSelect).toBeTruthy()
+    if (!authModeSelect) return
+
+    await setFieldValue(authModeSelect, 'trusted_headers')
+
+    expect(generalSection.textContent).toContain('Current Session Access')
+    expect(generalSection.textContent).toContain('Authenticated')
+    expect(generalSection.textContent).toContain('alice-admin')
+    expect(generalSection.textContent).toContain('Alice Admin')
+    expect(generalSection.textContent).toContain('alice@example.com')
+    expect(generalSection.textContent).toContain('System Admin, Viewer')
+    expect(generalSection.textContent).toContain('project-1: Editor, Viewer')
+    expect(generalSection.textContent).toContain('project-2: Project Admin')
+  })
+
   it('saves notification webhook settings through system settings', async () => {
     apiMock.updateSystemSettings.mockImplementation(async (settings) => settings)
 

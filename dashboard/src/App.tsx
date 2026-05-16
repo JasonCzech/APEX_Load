@@ -168,7 +168,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
           />
         )}
         {view.page === 'monitoring' && <MonitoringPage connectionState={connectionState} telemetryDiagnostics={telemetryDiagnostics} />}
-        {view.page === 'settings' && <SettingsPage theme={theme} onThemeChange={setTheme} />}
+        {view.page === 'settings' && <SettingsPage theme={theme} onThemeChange={setTheme} authStatus={authStatus} />}
       </main>
     </div>
   )
