@@ -21,6 +21,7 @@ type GroupConfig struct {
 	ResultSink      ResultSink
 	RedactionConfig *RedactionConfig
 	rateLimiter     *TokenBucket
+	rendezvous      *RendezvousCoordinator
 }
 
 type ResultSink interface {
@@ -118,6 +119,11 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 	// Create a base context for VUsers that only cancels on hard stop/abort
 	baseCtx, baseCancel := context.WithCancel(ctx)
 	mge.baseCtx = baseCtx
+	for i := range mge.groups {
+		if !isOpenWorkload(mge.groups[i].Script) {
+			mge.groups[i].rendezvous = NewRendezvousCoordinator()
+		}
+	}
 	mge.stopVUsers = baseCancel
 	mge.mu.Unlock()
 
@@ -300,6 +306,7 @@ func (mge *MultiGroupEngine) spawnVUser(vuserID int, group GroupConfig, protoCon
 
 		vu := &VUser{
 			ID:                   vuserID,
+			TotalVUsers:          group.VUsers,
 			Group:                group.Name,
 			Proto:                vuProto,
 			Script:               group.Script,
@@ -308,6 +315,7 @@ func (mge *MultiGroupEngine) spawnVUser(vuserID int, group GroupConfig, protoCon
 			RedactionConfig:      group.RedactionConfig,
 			PauseControl:         mge,
 			IterationRateLimiter: group.rateLimiter,
+			Rendezvous:           group.rendezvous,
 		}
 		vu.Run(vuCtx)
 	}()

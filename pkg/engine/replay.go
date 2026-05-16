@@ -205,6 +205,21 @@ func runReplayAction(
 	globalThinkCfg protocol.ThinkTimeConfig,
 	report *ReplayReport,
 ) (ReplayActionEvent, bool) {
+	if handled, err := vu.handleEngineAction(ctx, action); handled {
+		now := time.Now()
+		event := ReplayActionEvent{
+			Phase:       phase,
+			ActionName:  action.Name,
+			ActionType:  action.Type,
+			StartedAt:   now,
+			CompletedAt: now,
+			Success:     err == nil,
+		}
+		if err != nil {
+			event.ErrorMessage = err.Error()
+		}
+		return event, err == nil
+	}
 	resolved := vu.resolveAction(action)
 	start := time.Now()
 	result, err := vu.executeWithRetry(ctx, resolved, vu.Script.Config.ErrorHandling)

@@ -968,6 +968,7 @@ See [docs/LOADRUNNER_RTS_REFERENCE.md](docs/LOADRUNNER_RTS_REFERENCE.md) for the
 
 **Java-over-HTTP action note:**
 - Use normal HTTP-style request actions with `protocol: "java_http"`, but keep request bodies as opaque base64-encoded serialized bytes when using the current MVP codec.
+- Use `type: "rendezvous"` for engine-level synchronization points. Set `params.count` to the number of VUsers that must arrive before the barrier releases, and `params.timeout_ms` to bound how long a VUser waits.
 
 ```json
 {
@@ -1006,6 +1007,14 @@ See [docs/LOADRUNNER_RTS_REFERENCE.md](docs/LOADRUNNER_RTS_REFERENCE.md) for the
           "expected": null
         }
       ]
+    },
+    {
+      "name": "sync_buyers",
+      "type": "rendezvous",
+      "params": {
+        "count": 50,
+        "timeout_ms": 15000
+      }
     },
     {
       "name": "add_to_cart",

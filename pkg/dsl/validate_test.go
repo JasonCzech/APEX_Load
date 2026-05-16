@@ -2,6 +2,33 @@ package dsl
 
 import "testing"
 
+func TestValidateScriptIssues_RendezvousValidation(t *testing.T) {
+	script := &Script{
+		Name:     "rendezvous-valid",
+		Protocol: "http",
+		Config:   ScriptConfig{BaseURL: "https://example.test"},
+		Actions: []Action{{
+			Name:   "sync-buyers",
+			Type:   "rendezvous",
+			Params: map[string]any{"count": 10, "timeout_ms": 5000},
+		}, {
+			Name:   "checkout",
+			Type:   "request",
+			Target: "/checkout",
+		}},
+	}
+
+	issues := ValidateScriptIssues(script)
+	if len(issues) != 0 {
+		t.Fatalf("issues = %v, want none", issues)
+	}
+
+	script.Actions[0].Params = map[string]any{"count": 0, "timeout_ms": -1}
+	issues = ValidateScriptIssues(script)
+	assertIssue(t, issues, `actions[0] "sync-buyers": rendezvous count must be greater than zero`)
+	assertIssue(t, issues, `actions[0] "sync-buyers": rendezvous timeout_ms must be zero or greater`)
+}
+
 func TestValidateScriptIssues_SOAPValidation(t *testing.T) {
 	script := &Script{
 		Name:     "soap-invalid",
@@ -234,8 +261,8 @@ func TestValidateScriptIssues_BrowserValidation(t *testing.T) {
 				Target: "#app",
 			},
 			{
-				Name: "missing fill value",
-				Type: "browser_fill",
+				Name:   "missing fill value",
+				Type:   "browser_fill",
 				Target: "#name",
 			},
 			{

@@ -16,6 +16,7 @@ import (
 
 type VUser struct {
 	ID                   int
+	TotalVUsers          int
 	Group                string
 	Proto                protocol.Protocol
 	Script               *dsl.Script
@@ -29,6 +30,7 @@ type VUser struct {
 	SnapshotStore        *SnapshotStore
 	PauseControl         PauseController
 	IterationRateLimiter *TokenBucket
+	Rendezvous           *RendezvousCoordinator
 }
 
 type PauseController interface {
@@ -89,6 +91,13 @@ func (vu *VUser) Run(ctx context.Context) {
 		}
 		if ctx.Err() != nil {
 			return
+		}
+		if handled, err := vu.handleEngineAction(ctx, action); handled {
+			if err != nil {
+				logger.Error("init action failed", "action", action.Name, "err", err)
+				return
+			}
+			continue
 		}
 		resolved := vu.resolveAction(action)
 		result, err := vu.executeWithRetry(ctx, resolved, cfg.ErrorHandling)
@@ -184,6 +193,16 @@ func (vu *VUser) Run(ctx context.Context) {
 			if ctx.Err() != nil {
 				goto teardown
 			}
+			if handled, err := vu.handleEngineAction(ctx, action); handled {
+				if err != nil {
+					logger.Error("action error", "action", action.Name, "err", err)
+					iterSuccess = false
+					if !continueOnError {
+						goto teardown
+					}
+				}
+				continue
+			}
 
 			resolved := vu.resolveAction(action)
 
@@ -265,6 +284,9 @@ func (vu *VUser) Run(ctx context.Context) {
 
 teardown:
 	for _, action := range vu.Script.Teardown {
+		if handled, _ := vu.handleEngineAction(context.Background(), action); handled {
+			continue
+		}
 		resolved := vu.resolveAction(action)
 		result, _ := vu.Proto.Execute(context.Background(), resolved)
 		if result != nil {
@@ -295,6 +317,75 @@ func (vu *VUser) resetProtocolForIteration(ctx context.Context) error {
 		return err
 	}
 	return vu.Proto.Init(ctx, buildProtoConfig(vu.Script))
+}
+
+func (vu *VUser) handleEngineAction(ctx context.Context, action dsl.Action) (bool, error) {
+	switch action.Type {
+	case "rendezvous":
+		return true, vu.waitAtRendezvous(ctx, action)
+	default:
+		return false, nil
+	}
+}
+
+func (vu *VUser) waitAtRendezvous(ctx context.Context, action dsl.Action) error {
+	participants := vu.TotalVUsers
+	if participants <= 0 {
+		participants = 1
+	}
+	if count, ok := actionParamInt(action.Params, "count"); ok {
+		participants = count
+	}
+	timeout := time.Duration(0)
+	if timeoutMs, ok := actionParamInt(action.Params, "timeout_ms"); ok && timeoutMs > 0 {
+		timeout = time.Duration(timeoutMs) * time.Millisecond
+	}
+	key := action.Name
+	if configuredKey, ok := actionParamString(action.Params, "key"); ok {
+		key = configuredKey
+	}
+	return vu.Rendezvous.Wait(ctx, key, participants, timeout)
+}
+
+func actionParamInt(params map[string]any, key string) (int, bool) {
+	if params == nil {
+		return 0, false
+	}
+	value, ok := params[key]
+	if !ok {
+		return 0, false
+	}
+	switch typed := value.(type) {
+	case int:
+		return typed, true
+	case int64:
+		return int(typed), true
+	case float64:
+		return int(typed), true
+	case float32:
+		return int(typed), true
+	default:
+		return 0, false
+	}
+}
+
+func actionParamString(params map[string]any, key string) (string, bool) {
+	if params == nil {
+		return "", false
+	}
+	value, ok := params[key]
+	if !ok {
+		return "", false
+	}
+	typed, ok := value.(string)
+	if !ok {
+		return "", false
+	}
+	trimmed := strings.TrimSpace(typed)
+	if trimmed == "" {
+		return "", false
+	}
+	return trimmed, true
 }
 
 // executeWithRetry wraps a single action execution with retry logic.

@@ -61,6 +61,9 @@ func RunScriptShakeout(ctx context.Context, groupName string, script *dsl.Script
 }
 
 func runShakeoutAction(ctx context.Context, vu *VUser, action dsl.Action, phase string) error {
+	if handled, err := vu.handleEngineAction(ctx, action); handled {
+		return err
+	}
 	resolved := vu.resolveAction(action)
 	result, err := vu.executeWithRetry(ctx, resolved, vu.Script.Config.ErrorHandling)
 	if err != nil {

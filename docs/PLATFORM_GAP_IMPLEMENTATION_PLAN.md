@@ -131,6 +131,7 @@ The 19 gaps are organized into five sequential delivery waves. Each wave targets
 
 ### Implemented Status
 - **5.1 APM / Observability Correlation:** Stormrunner now injects W3C `traceparent` headers into HTTP and SOAP test requests, preserves caller-supplied trace headers, and exposes a Prometheus-compatible `/metrics` endpoint with health, websocket, in-memory test counts, test status breakdowns, and capacity-planning gauges.
+- **5.2 Iteration & Rendezvous Control:** Fixed-iteration execution is supported through `run_logic.iterations`, and scripts can now use a `rendezvous` action to synchronize VUsers at a specific point before proceeding.
 
 ### 5.1 APM / Observability Correlation (P2)
 **Effort:** 5-8 days
@@ -141,6 +142,7 @@ The 19 gaps are organized into five sequential delivery waves. Each wave targets
 **Effort:** 3-4 days
 - **Rendezvous Primitive:** Synchronize VUsers at a specific action to simulate spike loads.
 - **Iteration Limits:** Support fixed-iteration testing instead of fixed-duration.
+- **Status:** Implemented. Fixed-iteration execution is available in the DSL and runtime, and the engine now provides a reusable `rendezvous` action with optional participant counts and timeouts.
 
 ### 5.3 Network Emulation & Traffic Shaping (P2)
 **Effort:** 5-8 days

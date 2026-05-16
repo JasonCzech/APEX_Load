@@ -40,6 +40,10 @@ func ValidateScriptIssues(script *Script) []string {
 			issues = append(issues, fmt.Sprintf("actions[%d] %q: missing type", i, action.Name))
 			continue
 		}
+		if action.Type == "rendezvous" {
+			issues = append(issues, validateRendezvousActionIssues(i, action)...)
+			continue
+		}
 
 		if script.Protocol == "browser" {
 			issues = append(issues, validateBrowserActionIssues(i, action)...)
@@ -101,6 +105,8 @@ func validateBrowserActionIssues(index int, action Action) []string {
 	label := fmt.Sprintf("actions[%d] %q", index, action.Name)
 	var issues []string
 	switch action.Type {
+	case "rendezvous":
+		return validateRendezvousActionIssues(index, action)
 	case "browser_screenshot":
 		return nil
 	case "browser_wait":
@@ -135,6 +141,18 @@ func validateBrowserActionIssues(index int, action Action) []string {
 		}
 	}
 
+	return issues
+}
+
+func validateRendezvousActionIssues(index int, action Action) []string {
+	label := fmt.Sprintf("actions[%d] %q", index, action.Name)
+	var issues []string
+	if count, ok := actionParamIntValue(action.Params, "count"); ok && count <= 0 {
+		issues = append(issues, fmt.Sprintf("%s: rendezvous count must be greater than zero", label))
+	}
+	if timeoutMs, ok := actionParamIntValue(action.Params, "timeout_ms"); ok && timeoutMs < 0 {
+		issues = append(issues, fmt.Sprintf("%s: rendezvous timeout_ms must be zero or greater", label))
+	}
 	return issues
 }
 

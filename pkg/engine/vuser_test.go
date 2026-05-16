@@ -521,3 +521,72 @@ func TestVUser_Run_ResetsBrowserProtocolPerIteration(t *testing.T) {
 		t.Fatalf("teardownCalls = %d, want 1 between iterations", protoStub.teardownCalls)
 	}
 }
+
+type rendezvousTestProtocol struct {
+	executeTimes chan time.Time
+}
+
+func (p *rendezvousTestProtocol) Name() string                               { return "rendezvous-test" }
+func (p *rendezvousTestProtocol) Init(context.Context, map[string]any) error { return nil }
+func (p *rendezvousTestProtocol) Execute(_ context.Context, action *protocol.Action) (*protocol.Result, error) {
+	p.executeTimes <- time.Now()
+	return &protocol.Result{ActionName: action.Name, Success: true, Duration: time.Millisecond}, nil
+}
+func (p *rendezvousTestProtocol) Teardown(context.Context) error    { return nil }
+func (p *rendezvousTestProtocol) HealthCheck(context.Context) error { return nil }
+
+func TestVUser_Run_RendezvousSynchronizesStaggeredVUsers(t *testing.T) {
+	executeTimes := make(chan time.Time, 2)
+	script := &dsl.Script{
+		Protocol: "http",
+		Config:   dsl.ScriptConfig{RunLogic: dsl.RunLogicConfig{Iterations: 1}},
+		Actions: []dsl.Action{{
+			Name:   "sync-buyers",
+			Type:   "rendezvous",
+			Params: map[string]any{"count": 2, "timeout_ms": 500},
+		}, {
+			Name:   "checkout",
+			Type:   "request",
+			Target: "/checkout",
+		}},
+	}
+	coordinator := NewRendezvousCoordinator()
+
+	makeVU := func(id int) *VUser {
+		return &VUser{
+			ID:          id,
+			TotalVUsers: 2,
+			Proto:       &rendezvousTestProtocol{executeTimes: executeTimes},
+			Script:      script,
+			Metrics:     NewMetricsCollector(16),
+			Rendezvous:  coordinator,
+		}
+	}
+
+	vuOne := makeVU(0)
+	vuTwo := makeVU(1)
+
+	done := make(chan struct{}, 2)
+	go func() {
+		vuOne.Run(context.Background())
+		done <- struct{}{}
+	}()
+	time.Sleep(150 * time.Millisecond)
+	go func() {
+		vuTwo.Run(context.Background())
+		done <- struct{}{}
+	}()
+
+	first := <-executeTimes
+	second := <-executeTimes
+	<-done
+	<-done
+
+	delta := first.Sub(second)
+	if delta < 0 {
+		delta = -delta
+	}
+	if delta > 60*time.Millisecond {
+		t.Fatalf("execute delta = %v, want rendezvous to release both VUsers together", delta)
+	}
+}
