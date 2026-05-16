@@ -129,14 +129,14 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("GET /api/v1/tests/{id}/archive/report", cors(log(auth(http.HandlerFunc(s.handleGetRunArchiveReport)))))
 
 	// Reusable scenario definitions.
-	s.mux.Handle("POST /api/v1/scenarios", cors(log(http.HandlerFunc(s.handleCreateScenario))))
-	s.mux.Handle("GET /api/v1/scenarios", cors(log(http.HandlerFunc(s.handleListScenarios))))
-	s.mux.Handle("GET /api/v1/scenarios/{id}", cors(log(http.HandlerFunc(s.handleGetScenario))))
-	s.mux.Handle("PUT /api/v1/scenarios/{id}", cors(log(http.HandlerFunc(s.handleUpdateScenario))))
-	s.mux.Handle("DELETE /api/v1/scenarios/{id}", cors(log(http.HandlerFunc(s.handleDeleteScenario))))
-	s.mux.Handle("GET /api/v1/scenarios/{id}/results", cors(log(http.HandlerFunc(s.handleScenarioResults))))
-	s.mux.Handle("GET /api/v1/scenarios/{id}/data-pools", cors(log(http.HandlerFunc(s.handleListScenarioDataPools))))
-	s.mux.Handle("PUT /api/v1/scenarios/{id}/data-pools", cors(log(http.HandlerFunc(s.handleUpdateScenarioDataPools))))
+	s.mux.Handle("POST /api/v1/scenarios", cors(log(auth(http.HandlerFunc(s.handleCreateScenario)))))
+	s.mux.Handle("GET /api/v1/scenarios", cors(log(auth(http.HandlerFunc(s.handleListScenarios)))))
+	s.mux.Handle("GET /api/v1/scenarios/{id}", cors(log(auth(http.HandlerFunc(s.handleGetScenario)))))
+	s.mux.Handle("PUT /api/v1/scenarios/{id}", cors(log(auth(http.HandlerFunc(s.handleUpdateScenario)))))
+	s.mux.Handle("DELETE /api/v1/scenarios/{id}", cors(log(auth(http.HandlerFunc(s.handleDeleteScenario)))))
+	s.mux.Handle("GET /api/v1/scenarios/{id}/results", cors(log(auth(http.HandlerFunc(s.handleScenarioResults)))))
+	s.mux.Handle("GET /api/v1/scenarios/{id}/data-pools", cors(log(auth(http.HandlerFunc(s.handleListScenarioDataPools)))))
+	s.mux.Handle("PUT /api/v1/scenarios/{id}/data-pools", cors(log(auth(http.HandlerFunc(s.handleUpdateScenarioDataPools)))))
 
 	// Shared data pools used across scripts in a scenario run.
 	s.mux.Handle("POST /api/v1/data-pools", cors(log(http.HandlerFunc(s.handleCreateDataPool))))

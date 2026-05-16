@@ -282,6 +282,43 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 		}
 	}
 
+	if path == "/api/v1/scenarios" {
+		switch method {
+		case http.MethodGet:
+			if strings.TrimSpace(r.URL.Query().Get("project_id")) == "" {
+				return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
+			}
+			return accessRequirement{
+				GlobalRoles:   []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+				ProjectRoles:  []string{RoleViewer, RoleEditor, RoleProjectAdmin},
+				ProjectLookup: resolveScenarioListProjectID,
+			}, true
+		case http.MethodPost:
+			return accessRequirement{
+				GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+				ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
+				ProjectLookup: resolveScenarioCreateProjectID,
+			}, true
+		}
+	}
+
+	if r.PathValue("id") != "" && strings.HasPrefix(path, "/api/v1/scenarios/") {
+		switch method {
+		case http.MethodGet:
+			return accessRequirement{
+				GlobalRoles:   []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+				ProjectRoles:  []string{RoleViewer, RoleEditor, RoleProjectAdmin},
+				ProjectLookup: resolveScenarioProjectID,
+			}, true
+		case http.MethodPut, http.MethodDelete:
+			return accessRequirement{
+				GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+				ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
+				ProjectLookup: resolveScenarioProjectID,
+			}, true
+		}
+	}
+
 	if path == "/api/v1/tests/estimate" && method == http.MethodPost {
 		return accessRequirement{
 			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
@@ -501,6 +538,65 @@ func resolveTestMoveProjectID(r *http.Request, store storage.Store) (string, int
 	}
 	if destinationProjectID != projectID {
 		return "", http.StatusBadRequest, "destination folder belongs to a different project"
+	}
+	return projectID, 0, ""
+}
+
+func resolveScenarioProjectID(r *http.Request, store storage.Store) (string, int, string) {
+	if store == nil {
+		return "", http.StatusServiceUnavailable, "scenario storage is not configured"
+	}
+	_, scripts, err := store.GetScenario(r.PathValue("id"))
+	if err != nil {
+		return "", http.StatusNotFound, "scenario not found"
+	}
+	return resolveProjectIDFromScenarioScripts(scripts, store)
+}
+
+func resolveScenarioListProjectID(r *http.Request, _ storage.Store) (string, int, string) {
+	projectID := strings.TrimSpace(r.URL.Query().Get("project_id"))
+	if projectID == "" {
+		return "", http.StatusBadRequest, "project_id is required for project-scoped scenario access"
+	}
+	return normalizeProjectID(projectID), 0, ""
+}
+
+func resolveScenarioCreateProjectID(r *http.Request, store storage.Store) (string, int, string) {
+	var req CreateScenarioRequest
+	if err := decodeRequestBody(r, &req); err != nil {
+		return "", http.StatusBadRequest, "invalid request body: " + err.Error()
+	}
+	scripts := make([]storage.ScenarioScript, 0, len(req.Groups))
+	for index, group := range req.Groups {
+		scripts = append(scripts, storage.ScenarioScript{Order: index, ScriptID: group.ScriptID})
+	}
+	return resolveProjectIDFromScenarioScripts(scripts, store)
+}
+
+func resolveProjectIDFromScenarioScripts(scripts []storage.ScenarioScript, store storage.Store) (string, int, string) {
+	if store == nil {
+		return "", http.StatusServiceUnavailable, "script storage is not configured"
+	}
+	projectID := ""
+	for _, scenarioScript := range scripts {
+		if strings.TrimSpace(scenarioScript.ScriptID) == "" {
+			continue
+		}
+		script, err := store.GetScript(scenarioScript.ScriptID)
+		if err != nil {
+			return "", http.StatusNotFound, "script not found"
+		}
+		candidate := normalizeProjectID(script.ProjectID)
+		if projectID == "" {
+			projectID = candidate
+			continue
+		}
+		if candidate != projectID {
+			return "", http.StatusBadRequest, "scenario scripts span multiple projects"
+		}
+	}
+	if projectID == "" {
+		return normalizeProjectID(""), 0, ""
 	}
 	return projectID, 0, ""
 }

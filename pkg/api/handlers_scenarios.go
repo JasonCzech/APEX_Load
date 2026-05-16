@@ -20,6 +20,12 @@ func (s *Server) handleCreateScenario(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListScenarios(w http.ResponseWriter, r *http.Request) {
+	projectID := r.URL.Query().Get("project_id")
+	if projectID != "" {
+		scenarios := s.runner.ListScenariosFiltered(projectID)
+		writeJSON(w, http.StatusOK, map[string]any{"scenarios": scenarios, "count": len(scenarios)})
+		return
+	}
 	scenarios := s.runner.ListScenarios()
 	writeJSON(w, http.StatusOK, map[string]any{"scenarios": scenarios, "count": len(scenarios)})
 }

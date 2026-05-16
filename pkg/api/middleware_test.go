@@ -391,6 +391,146 @@ func TestTrustedHeaderAuthScopesTestListAndCreateToProjectRoles(t *testing.T) {
 	}
 }
 
+func TestTrustedHeaderAuthProjectRoleGuardsScenarioEndpoints(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	project := &storage.Project{ID: uuid.New().String(), Name: "Project One", CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	if err := store.SaveProject(project); err != nil {
+		t.Fatalf("SaveProject returned error: %v", err)
+	}
+	script := &dsl.Script{
+		ID:        uuid.New().String(),
+		Name:      "Checkout",
+		Version:   "1.0.0",
+		Protocol:  "http",
+		ProjectID: project.ID,
+		Config:    dsl.ScriptConfig{BaseURL: "https://example.com"},
+		Actions:   []dsl.Action{{Name: "Open", Type: "http", Method: "GET", Target: "/"}},
+	}
+	if err := store.SaveScript(script); err != nil {
+		t.Fatalf("SaveScript returned error: %v", err)
+	}
+	scenario := &storage.Scenario{ID: uuid.New().String(), Name: "Smoke", Duration: "1m", CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	if err := store.SaveScenario(scenario, []storage.ScenarioScript{{ScenarioID: scenario.ID, Order: 0, ScriptID: script.ID, VUsers: 5}}); err != nil {
+		t.Fatalf("SaveScenario returned error: %v", err)
+	}
+
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	enableTrustedHeaderAuth(t, server)
+
+	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/scenarios/"+scenario.ID, nil)
+	getReq.Header.Set("X-Auth-Request-User", "viewer-user")
+	getReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	getResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(getResp, getReq)
+	if getResp.Code != http.StatusOK {
+		t.Fatalf("scenario viewer GET status = %d, want %d body=%s", getResp.Code, http.StatusOK, getResp.Body.String())
+	}
+
+	updateReq := httptest.NewRequest(http.MethodPut, "/api/v1/scenarios/"+scenario.ID, bytes.NewReader([]byte(`{"name":"Smoke","duration":"1m","groups":[{"script_id":"`+script.ID+`","vusers":5}]}`)))
+	updateReq.Header.Set("Content-Type", "application/json")
+	updateReq.Header.Set("X-Auth-Request-User", "viewer-user")
+	updateReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	updateResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(updateResp, updateReq)
+	if updateResp.Code != http.StatusForbidden {
+		t.Fatalf("scenario viewer PUT status = %d, want %d body=%s", updateResp.Code, http.StatusForbidden, updateResp.Body.String())
+	}
+
+	dataPoolsReq := httptest.NewRequest(http.MethodGet, "/api/v1/scenarios/"+scenario.ID+"/data-pools", nil)
+	dataPoolsReq.Header.Set("X-Auth-Request-User", "viewer-user")
+	dataPoolsReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	dataPoolsResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(dataPoolsResp, dataPoolsReq)
+	if dataPoolsResp.Code != http.StatusOK {
+		t.Fatalf("scenario viewer data pools GET status = %d, want %d body=%s", dataPoolsResp.Code, http.StatusOK, dataPoolsResp.Body.String())
+	}
+
+	resultsReq := httptest.NewRequest(http.MethodGet, "/api/v1/scenarios/"+scenario.ID+"/results", nil)
+	resultsReq.Header.Set("X-Auth-Request-User", "viewer-user")
+	resultsReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	resultsResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resultsResp, resultsReq)
+	if resultsResp.Code != http.StatusOK {
+		t.Fatalf("scenario viewer results GET status = %d, want %d body=%s", resultsResp.Code, http.StatusOK, resultsResp.Body.String())
+	}
+
+	adminUpdateReq := httptest.NewRequest(http.MethodPut, "/api/v1/scenarios/"+scenario.ID, bytes.NewReader([]byte(`{"name":"Smoke Renamed","duration":"1m","groups":[{"script_id":"`+script.ID+`","vusers":5}]}`)))
+	adminUpdateReq.Header.Set("Content-Type", "application/json")
+	adminUpdateReq.Header.Set("X-Auth-Request-User", "editor-user")
+	adminUpdateReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleEditor)
+	adminUpdateResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(adminUpdateResp, adminUpdateReq)
+	if adminUpdateResp.Code != http.StatusOK {
+		t.Fatalf("scenario editor PUT status = %d, want %d body=%s", adminUpdateResp.Code, http.StatusOK, adminUpdateResp.Body.String())
+	}
+}
+
+func TestTrustedHeaderAuthScopesScenarioListAndCreateToProjectRoles(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	project := &storage.Project{ID: uuid.New().String(), Name: "Project One", CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	if err := store.SaveProject(project); err != nil {
+		t.Fatalf("SaveProject returned error: %v", err)
+	}
+	script := &dsl.Script{
+		ID:        uuid.New().String(),
+		Name:      "Checkout",
+		Version:   "1.0.0",
+		Protocol:  "http",
+		ProjectID: project.ID,
+		Config:    dsl.ScriptConfig{BaseURL: "https://example.com"},
+		Actions:   []dsl.Action{{Name: "Open", Type: "http", Method: "GET", Target: "/"}},
+	}
+	if err := store.SaveScript(script); err != nil {
+		t.Fatalf("SaveScript returned error: %v", err)
+	}
+	scenario := &storage.Scenario{ID: uuid.New().String(), Name: "Smoke", Duration: "1m", CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	if err := store.SaveScenario(scenario, []storage.ScenarioScript{{ScenarioID: scenario.ID, Order: 0, ScriptID: script.ID, VUsers: 5}}); err != nil {
+		t.Fatalf("SaveScenario returned error: %v", err)
+	}
+
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	enableTrustedHeaderAuth(t, server)
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/scenarios", nil)
+	listReq.Header.Set("X-Auth-Request-User", "viewer-user")
+	listReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	listResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(listResp, listReq)
+	if listResp.Code != http.StatusForbidden {
+		t.Fatalf("unfiltered scenario list status = %d, want %d body=%s", listResp.Code, http.StatusForbidden, listResp.Body.String())
+	}
+
+	filteredReq := httptest.NewRequest(http.MethodGet, "/api/v1/scenarios?project_id="+project.ID, nil)
+	filteredReq.Header.Set("X-Auth-Request-User", "viewer-user")
+	filteredReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	filteredResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(filteredResp, filteredReq)
+	if filteredResp.Code != http.StatusOK {
+		t.Fatalf("filtered scenario list status = %d, want %d body=%s", filteredResp.Code, http.StatusOK, filteredResp.Body.String())
+	}
+
+	createBody := []byte(`{"name":"Created","duration":"30s","groups":[{"name":"buyers","script_id":"` + script.ID + `","vusers":1}]}`)
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/scenarios", bytes.NewReader(createBody))
+	createReq.Header.Set("Content-Type", "application/json")
+	createReq.Header.Set("X-Auth-Request-User", "editor-user")
+	createReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleEditor)
+	createResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(createResp, createReq)
+	if createResp.Code != http.StatusCreated {
+		t.Fatalf("project editor scenario create status = %d, want %d body=%s", createResp.Code, http.StatusCreated, createResp.Body.String())
+	}
+}
+
 func TestTrustedHeaderAuthRejectsCrossProjectTestMoves(t *testing.T) {
 	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
 	if err != nil {

@@ -398,6 +398,7 @@ type StoredScript struct {
 type StoredScenario struct {
 	ID                 string                            `json:"id"`
 	Name               string                            `json:"name"`
+	ProjectID          string                            `json:"project_id,omitempty"`
 	Duration           string                            `json:"duration"`
 	StartDelay         string                            `json:"start_delay,omitempty"`
 	ScenarioMode       string                            `json:"scenario_mode,omitempty"`
@@ -569,6 +570,7 @@ func (tr *TestRunner) buildStoredScenario(scenario *storage.Scenario, scripts []
 		return nil
 	}
 	refs := make([]ScenarioScriptRef, 0, len(scripts))
+	projectID, singleProject := tr.scenarioProjectIDFromScriptsLocked(scripts)
 	for _, script := range scripts {
 		ref := ScenarioScriptRef{
 			Order:          script.Order,
@@ -595,9 +597,14 @@ func (tr *TestRunner) buildStoredScenario(scenario *storage.Scenario, scripts []
 			dataPools = bindings
 		}
 	}
+	derivedProjectID := ""
+	if singleProject {
+		derivedProjectID = projectID
+	}
 	return &StoredScenario{
 		ID:               scenario.ID,
 		Name:             scenario.Name,
+		ProjectID:        derivedProjectID,
 		Duration:         scenario.Duration,
 		StartDelay:       scenario.StartDelay,
 		ScenarioMode:     normalizeScenarioMode(scenario.ScenarioMode),
@@ -612,6 +619,28 @@ func (tr *TestRunner) buildStoredScenario(scenario *storage.Scenario, scripts []
 		UpdatedAt:        scenario.UpdatedAt,
 		ScriptCount:      len(refs),
 	}
+}
+
+func (tr *TestRunner) scenarioProjectIDFromScriptsLocked(scripts []storage.ScenarioScript) (string, bool) {
+	projectID := ""
+	for _, scenarioScript := range scripts {
+		stored, ok := tr.scripts[scenarioScript.ScriptID]
+		if !ok || stored == nil {
+			continue
+		}
+		candidate := normalizeProjectID(stored.ProjectID)
+		if projectID == "" {
+			projectID = candidate
+			continue
+		}
+		if candidate != projectID {
+			return "", false
+		}
+	}
+	if projectID == "" {
+		return "", false
+	}
+	return projectID, true
 }
 
 func (tr *TestRunner) loadStoredTests() {
@@ -1091,6 +1120,21 @@ func (tr *TestRunner) ListScenarios() []*StoredScenario {
 	out := make([]*StoredScenario, 0, len(tr.scenarios))
 	for _, scenario := range tr.scenarios {
 		out = append(out, tr.enrichScenarioSummaryLocked(scenario))
+	}
+	return out
+}
+
+func (tr *TestRunner) ListScenariosFiltered(projectID string) []*StoredScenario {
+	projectID = normalizeProjectID(projectID)
+	tr.mu.RLock()
+	defer tr.mu.RUnlock()
+	out := make([]*StoredScenario, 0, len(tr.scenarios))
+	for _, scenario := range tr.scenarios {
+		enriched := tr.enrichScenarioSummaryLocked(scenario)
+		if enriched.ProjectID != projectID {
+			continue
+		}
+		out = append(out, enriched)
 	}
 	return out
 }
