@@ -116,6 +116,7 @@ The 19 gaps are organized into five sequential delivery waves. Each wave targets
 **Effort:** 5-7 days
 - **Generators:** Add Faker-style functions (`{{fake.email}}`, `{{fake.uuid}}`).
 - **Unique Allocation:** Ensure "pop" semantics for data pools so rows are used exactly once.
+- **Status:** Faker-style generators are now available for email and UUID templates. Data-pool pop semantics are still pending.
 
 ### 4.4 Think Time & Pacing Intelligence (P2)
 **Effort:** 2-3 days

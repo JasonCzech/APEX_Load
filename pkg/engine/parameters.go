@@ -13,12 +13,12 @@ import (
 const defaultDateTimeLayout = "2006-01-02 15:04:05"
 
 type ParameterRuntime struct {
-	params    map[string]dsl.Parameter
-	order     []string
-	states    map[string]*parameterState
-	provider  *DataProvider
-	vuserID   int
-	now       func() time.Time
+	params   map[string]dsl.Parameter
+	order    []string
+	states   map[string]*parameterState
+	provider *DataProvider
+	vuserID  int
+	now      func() time.Time
 }
 
 type parameterState struct {
@@ -340,6 +340,12 @@ func resolveBuiltinFunction(expr string, now func() time.Time) (string, bool) {
 	switch expr {
 	case "fn.uuid()", "fn.uuid", "fn.uuid.v4":
 		return uuid.NewString(), true
+	case "fake.uuid", "fake.uuid()":
+		return uuid.NewString(), true
+	case "fake.email", "fake.email()":
+		generator := rand.New(rand.NewSource(time.Now().UnixNano()))
+		localPart := strings.ToLower(generateRandomString(generator, 12, "abcdefghijklmnopqrstuvwxyz0123456789"))
+		return localPart + "@example.test", true
 	case "fn.timestamp.unix":
 		return strconv.FormatInt(now().Unix(), 10), true
 	case "fn.timestamp.unix_ms":

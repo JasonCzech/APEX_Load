@@ -1068,6 +1068,8 @@ Imported LoadRunner `{ParamName}` references are also resolved through `{{var.Pa
 {{fn.uuid()}}                  — Generate UUID
 {{fn.uuid}}                    — Generate UUID
 {{fn.uuid.v4}}                 — Generate UUID v4
+{{fake.uuid}}                  — Generate UUID using faker-style alias
+{{fake.email}}                 — Generate a synthetic email address
 {{fn.random(1,100)}}           — Random integer 1-100
 {{fn.timestamp.unix}}          — Current Unix timestamp
 {{fn.timestamp.unix_ms}}       — Current Unix timestamp in milliseconds

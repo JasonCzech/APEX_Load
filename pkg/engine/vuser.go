@@ -603,7 +603,7 @@ func (vu *VUser) resolveTemplateValue(expr string) (string, bool) {
 	case strings.HasPrefix(expr, "secret."):
 		key := strings.TrimSpace(strings.TrimPrefix(expr, "secret."))
 		return resolveSecretTemplateValue(key, vu.secretResolver())
-	case strings.HasPrefix(expr, "fn."):
+	case strings.HasPrefix(expr, "fn."), strings.HasPrefix(expr, "fake."):
 		return resolveBuiltinFunction(expr, time.Now)
 	default:
 		return "", false

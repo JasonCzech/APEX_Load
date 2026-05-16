@@ -109,4 +109,15 @@ func TestVUser_Interpolate_ParametersAndFunctions(t *testing.T) {
 	if !uuidPattern.MatchString(uuidValue) {
 		t.Fatalf("fn.uuid() interpolation returned non-uuid value: %q", uuidValue)
 	}
+
+	fakeUUIDValue := vu.interpolate("{{fake.uuid}}")
+	if !uuidPattern.MatchString(fakeUUIDValue) {
+		t.Fatalf("fake.uuid interpolation returned non-uuid value: %q", fakeUUIDValue)
+	}
+
+	fakeEmailValue := vu.interpolate("{{fake.email}}")
+	fakeEmailPattern := regexp.MustCompile(`^[a-z0-9]{12}@example\.test$`)
+	if !fakeEmailPattern.MatchString(fakeEmailValue) {
+		t.Fatalf("fake.email interpolation returned unexpected value: %q", fakeEmailValue)
+	}
 }
