@@ -503,12 +503,14 @@ func TestCreateTestInheritsProjectRedactionRules(t *testing.T) {
 
 func TestApplyRuntimeOverridesAppliesExtendedOverrideFields(t *testing.T) {
 	headless := false
+	touchMode := true
 	defaultHeadless := true
+	defaultTouchMode := false
 	iterations := 4
 	script := &dsl.Script{
 		Config: dsl.ScriptConfig{
 			BaseURL:       "https://default.example.com",
-			Browser:       dsl.BrowserConfig{Headless: &defaultHeadless},
+			Browser:       dsl.BrowserConfig{Headless: &defaultHeadless, DeviceProfile: "desktop_1080p", TouchMode: &defaultTouchMode, Orientation: "landscape"},
 			RunLogic:      dsl.RunLogicConfig{Iterations: 1, AutoTransactions: "none"},
 			Pacing:        dsl.PacingConfig{Type: "none"},
 			ThinkTime:     dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 1000},
@@ -528,7 +530,7 @@ func TestApplyRuntimeOverridesAppliesExtendedOverrideFields(t *testing.T) {
 		Iterations:       &iterations,
 		Pacing:           &dsl.PacingConfig{Type: "fixed_interval", IntervalMs: 2500},
 		ThinkTime:        &dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 750},
-		Browser:          &RuntimeBrowserOverride{Headless: &headless},
+		Browser:          &RuntimeBrowserOverride{Headless: &headless, DeviceProfile: "iphone_se", TouchMode: &touchMode, Orientation: "portrait"},
 		LogLevel:         "extended",
 		AutoTransactions: "per_iteration",
 		BaseURL:          "https://pr-123.example.com",
@@ -553,6 +555,15 @@ func TestApplyRuntimeOverridesAppliesExtendedOverrideFields(t *testing.T) {
 	}
 	if script.Config.Browser.Headless == nil || *script.Config.Browser.Headless != false {
 		t.Fatalf("browser.headless = %#v, want false", script.Config.Browser.Headless)
+	}
+	if script.Config.Browser.DeviceProfile != "iphone_se" {
+		t.Fatalf("browser.device_profile = %q, want iphone_se", script.Config.Browser.DeviceProfile)
+	}
+	if script.Config.Browser.TouchMode == nil || *script.Config.Browser.TouchMode != true {
+		t.Fatalf("browser.touch_mode = %#v, want true", script.Config.Browser.TouchMode)
+	}
+	if script.Config.Browser.Orientation != "portrait" {
+		t.Fatalf("browser.orientation = %q, want portrait", script.Config.Browser.Orientation)
 	}
 	if script.Config.Log.Level != "extended" {
 		t.Fatalf("log level = %q, want extended", script.Config.Log.Level)
@@ -646,23 +657,25 @@ func TestCompileManagedTestGroupLockedAppliesHeadlessOverrideWithoutMutatingStor
 	hub := NewHub()
 	runner := NewTestRunner(1, hub, nil)
 	defaultHeadless := true
+	defaultTouchMode := false
 	runner.StoreScript(&dsl.Script{
 		ID:       "script-browser-headless-override",
 		Name:     "Browser Script",
 		Protocol: "browser",
 		Version:  "1.0.0",
 		Config: dsl.ScriptConfig{
-			Browser: dsl.BrowserConfig{Headless: &defaultHeadless},
+			Browser: dsl.BrowserConfig{Headless: &defaultHeadless, DeviceProfile: "desktop_1080p", TouchMode: &defaultTouchMode, Orientation: "landscape"},
 		},
 		Actions: []dsl.Action{{Name: "open-home", Type: "navigate", Target: "/"}},
 	})
 
 	headless := false
+	touchMode := true
 	_, engineGroup, err := runner.compileManagedTestGroupLocked(0, 1, CreateGroupEntry{
 		ScriptID: "script-browser-headless-override",
 		VUsers:   2,
 	}, &RuntimeSettingsOverride{
-		Browser: &RuntimeBrowserOverride{Headless: &headless},
+		Browser: &RuntimeBrowserOverride{Headless: &headless, DeviceProfile: "iphone_se", TouchMode: &touchMode, Orientation: "portrait"},
 	}, nil)
 	if err != nil {
 		t.Fatalf("compileManagedTestGroupLocked returned error: %v", err)
@@ -673,6 +686,15 @@ func TestCompileManagedTestGroupLockedAppliesHeadlessOverrideWithoutMutatingStor
 	if engineGroup.Script.Config.Browser.Headless == nil || *engineGroup.Script.Config.Browser.Headless != false {
 		t.Fatalf("compiled browser.headless = %#v, want false", engineGroup.Script.Config.Browser.Headless)
 	}
+	if engineGroup.Script.Config.Browser.DeviceProfile != "iphone_se" {
+		t.Fatalf("compiled browser.device_profile = %q, want iphone_se", engineGroup.Script.Config.Browser.DeviceProfile)
+	}
+	if engineGroup.Script.Config.Browser.TouchMode == nil || *engineGroup.Script.Config.Browser.TouchMode != true {
+		t.Fatalf("compiled browser.touch_mode = %#v, want true", engineGroup.Script.Config.Browser.TouchMode)
+	}
+	if engineGroup.Script.Config.Browser.Orientation != "portrait" {
+		t.Fatalf("compiled browser.orientation = %q, want portrait", engineGroup.Script.Config.Browser.Orientation)
+	}
 
 	stored, ok := runner.GetScript("script-browser-headless-override")
 	if !ok {
@@ -680,6 +702,15 @@ func TestCompileManagedTestGroupLockedAppliesHeadlessOverrideWithoutMutatingStor
 	}
 	if stored.Script.Config.Browser.Headless == nil || *stored.Script.Config.Browser.Headless != true {
 		t.Fatalf("stored browser.headless = %#v, want true", stored.Script.Config.Browser.Headless)
+	}
+	if stored.Script.Config.Browser.DeviceProfile != "desktop_1080p" {
+		t.Fatalf("stored browser.device_profile = %q, want desktop_1080p", stored.Script.Config.Browser.DeviceProfile)
+	}
+	if stored.Script.Config.Browser.TouchMode == nil || *stored.Script.Config.Browser.TouchMode != false {
+		t.Fatalf("stored browser.touch_mode = %#v, want false", stored.Script.Config.Browser.TouchMode)
+	}
+	if stored.Script.Config.Browser.Orientation != "landscape" {
+		t.Fatalf("stored browser.orientation = %q, want landscape", stored.Script.Config.Browser.Orientation)
 	}
 }
 

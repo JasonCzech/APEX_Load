@@ -35,6 +35,7 @@ describe('CreateTestRuntimeOverrides', () => {
         iterations: undefined,
         pacing: undefined,
         think_time: undefined,
+        browser: undefined,
         log_level: '',
         auto_transactions: '',
         continue_on_error: false,
@@ -58,10 +59,25 @@ describe('CreateTestRuntimeOverrides', () => {
 
     expect(container.textContent).toContain('Pacing')
     expect(container.textContent).toContain('Think Time Override (ms)')
+    expect(container.textContent).toContain('Browser Device Profile')
+    expect(container.textContent).toContain('Browser Headless')
+    expect(container.textContent).toContain('Touch Mode')
     expect(container.textContent).toContain('Continue on error')
 
     const selects = Array.from(container.querySelectorAll('select'))
     const pacingSelect = selects[0]
+    const deviceProfileSelect = selects.find(
+      select => select.parentElement?.textContent?.includes('Browser Device Profile'),
+    ) as HTMLSelectElement | undefined
+    const orientationSelect = selects.find(
+      select => select.parentElement?.textContent?.includes('Orientation'),
+    ) as HTMLSelectElement | undefined
+    const headlessSelect = selects.find(
+      select => select.parentElement?.textContent?.includes('Browser Headless'),
+    ) as HTMLSelectElement | undefined
+    const touchModeSelect = selects.find(
+      select => select.parentElement?.textContent?.includes('Touch Mode'),
+    ) as HTMLSelectElement | undefined
     const thinkTimeInput = Array.from(container.querySelectorAll('input')).find(
       input => input.getAttribute('placeholder') === 'Script default'
         && input.getAttribute('type') === 'number'
@@ -78,6 +94,10 @@ describe('CreateTestRuntimeOverrides', () => {
     ) as HTMLInputElement | undefined
 
     expect(pacingSelect).toBeDefined()
+    expect(deviceProfileSelect).toBeDefined()
+    expect(orientationSelect).toBeDefined()
+    expect(headlessSelect).toBeDefined()
+    expect(touchModeSelect).toBeDefined()
     expect(thinkTimeInput).toBeDefined()
     expect(continueOnErrorCheckbox).toBeDefined()
     expect(snapshotOnErrorCheckbox).toBeDefined()
@@ -126,6 +146,51 @@ describe('CreateTestRuntimeOverrides', () => {
     })
 
     expect(onChangeSpy).toHaveBeenCalledWith('think_time', { type: 'fixed', mean_ms: 500, ignore: true })
+
+    await act(async () => {
+      if (deviceProfileSelect) {
+        deviceProfileSelect.value = 'iphone_se'
+        deviceProfileSelect.dispatchEvent(new Event('change', { bubbles: true }))
+      }
+    })
+
+    expect(onChangeSpy).toHaveBeenCalledWith('browser', { device_profile: 'iphone_se' })
+
+    await act(async () => {
+      if (orientationSelect) {
+        orientationSelect.value = 'portrait'
+        orientationSelect.dispatchEvent(new Event('change', { bubbles: true }))
+      }
+    })
+
+    expect(onChangeSpy).toHaveBeenCalledWith('browser', { device_profile: 'iphone_se', orientation: 'portrait' })
+
+    await act(async () => {
+      if (headlessSelect) {
+        headlessSelect.value = 'false'
+        headlessSelect.dispatchEvent(new Event('change', { bubbles: true }))
+      }
+    })
+
+    expect(onChangeSpy).toHaveBeenCalledWith('browser', {
+      device_profile: 'iphone_se',
+      orientation: 'portrait',
+      headless: false,
+    })
+
+    await act(async () => {
+      if (touchModeSelect) {
+        touchModeSelect.value = 'true'
+        touchModeSelect.dispatchEvent(new Event('change', { bubbles: true }))
+      }
+    })
+
+    expect(onChangeSpy).toHaveBeenCalledWith('browser', {
+      device_profile: 'iphone_se',
+      orientation: 'portrait',
+      headless: false,
+      touch_mode: true,
+    })
 
     await act(async () => {
       if (continueOnErrorCheckbox) {

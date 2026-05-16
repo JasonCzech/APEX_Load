@@ -108,6 +108,10 @@ Goal: make device-aware browser testing first-class beyond the script editor.
 | B2.4 | Build a validation matrix of real sample apps across Chromium and WebKit device profiles | L | B2.2 |
 | B2.5 | Publish supported mobile-browser execution envelope and benchmark guidance | M | B2.4 |
 
+Status:
+- B2.1 is implemented across scenario authoring, payload serialization, and backend runtime override application for `headless`, `device_profile`, `touch_mode`, and `orientation`.
+- B2.2 now has explicit compatibility-matrix coverage across stored validation, draft replay, stored replay, draft browser replay, and stored browser replay APIs, and scenario compilation rejects incompatible browser runtime overrides before they can be persisted.
+
 Acceptance criteria:
 - Device profiles are available across all browser scenario authoring paths
 - Browser validation calls out unsupported engine/profile combinations before execution

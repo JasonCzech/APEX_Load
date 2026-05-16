@@ -1379,7 +1379,10 @@ type GoalConfig struct {
 // RuntimeSettingsOverride allows overriding script-level runtime settings at test time,
 // mirroring LoadRunner Controller's override capability.
 type RuntimeBrowserOverride struct {
-	Headless *bool `json:"headless,omitempty"`
+	Headless      *bool  `json:"headless,omitempty"`
+	DeviceProfile string `json:"device_profile,omitempty"`
+	TouchMode     *bool  `json:"touch_mode,omitempty"`
+	Orientation   string `json:"orientation,omitempty"`
 }
 
 type RuntimeSettingsOverride struct {
@@ -2071,6 +2074,9 @@ func (tr *TestRunner) compileManagedTestGroupLocked(index int, totalGroups int, 
 	if effectiveRuntimeSettings != nil {
 		if err := applyRuntimeOverrides(&scriptCopy, effectiveRuntimeSettings); err != nil {
 			return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: apply runtime overrides: %w", index, err)
+		}
+		if issues := dsl.ValidateScriptIssues(&scriptCopy); len(issues) > 0 {
+			return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: %s", index, strings.Join(issues, "; "))
 		}
 	}
 	effectiveRuntimeSettings, err = tr.resolveEffectiveRuntimeSettings(script.ProjectID, effectiveRuntimeSettings)
@@ -4219,9 +4225,21 @@ func applyRuntimeOverrides(script *dsl.Script, overrides *RuntimeSettingsOverrid
 	if overrides.ErrorHandling != nil {
 		script.Config.ErrorHandling = *overrides.ErrorHandling
 	}
-	if overrides.Browser != nil && overrides.Browser.Headless != nil {
-		headless := *overrides.Browser.Headless
-		script.Config.Browser.Headless = &headless
+	if overrides.Browser != nil {
+		if overrides.Browser.Headless != nil {
+			headless := *overrides.Browser.Headless
+			script.Config.Browser.Headless = &headless
+		}
+		if overrides.Browser.DeviceProfile != "" {
+			script.Config.Browser.DeviceProfile = overrides.Browser.DeviceProfile
+		}
+		if overrides.Browser.TouchMode != nil {
+			touchMode := *overrides.Browser.TouchMode
+			script.Config.Browser.TouchMode = &touchMode
+		}
+		if overrides.Browser.Orientation != "" {
+			script.Config.Browser.Orientation = overrides.Browser.Orientation
+		}
 	}
 	if overrides.LogLevel != "" {
 		script.Config.Log.Level = overrides.LogLevel
@@ -4310,6 +4328,10 @@ func cloneRuntimeSettings(overrides *RuntimeSettingsOverride) *RuntimeSettingsOv
 		if overrides.Browser.Headless != nil {
 			headless := *overrides.Browser.Headless
 			browser.Headless = &headless
+		}
+		if overrides.Browser.TouchMode != nil {
+			touchMode := *overrides.Browser.TouchMode
+			browser.TouchMode = &touchMode
 		}
 		clone.Browser = &browser
 	}

@@ -1,6 +1,6 @@
 import { GeneratorAssignmentSettings, GoalConfig, ScenarioDataPoolBinding, ScenarioDraftGroup, ScenarioMode } from '../types'
 import { ScenarioRuntimeSettings } from './scenarioDraftUtils'
-import { PacingConfig, ThinkTimeConfig } from '../types/scripts'
+import { BrowserConfig, PacingConfig, ThinkTimeConfig } from '../types/scripts'
 
 export type ScenarioGroupPayload = {
   name?: string
@@ -26,9 +26,7 @@ export type ScenarioUpsertPayload = {
     iterations?: number
     pacing?: PacingConfig
     think_time?: ThinkTimeConfig
-    browser?: {
-      headless?: boolean
-    }
+    browser?: Pick<BrowserConfig, 'headless' | 'device_profile' | 'touch_mode' | 'orientation'>
     log_level?: string
     auto_transactions?: string
     error_handling?: {
@@ -148,8 +146,16 @@ export function buildRuntimeSettingsPayload(runtimeSettings: ScenarioRuntimeSett
   )
     ? { ...runtimeSettings.think_time }
     : undefined
+  const browser = runtimeSettings.browser && (
+    runtimeSettings.browser.headless !== undefined
+    || runtimeSettings.browser.device_profile
+    || runtimeSettings.browser.touch_mode !== undefined
+    || runtimeSettings.browser.orientation
+  )
+    ? { ...runtimeSettings.browser }
+    : undefined
 
-  if (!runtimeSettings.iterations && !pacing && !thinkTime && !runtimeSettings.log_level && !runtimeSettings.auto_transactions && !runtimeSettings.continue_on_error && !runtimeSettings.snapshot_on_error) {
+  if (!runtimeSettings.iterations && !pacing && !thinkTime && !browser && !runtimeSettings.log_level && !runtimeSettings.auto_transactions && !runtimeSettings.continue_on_error && !runtimeSettings.snapshot_on_error) {
     return undefined
   }
 
@@ -157,6 +163,7 @@ export function buildRuntimeSettingsPayload(runtimeSettings: ScenarioRuntimeSett
     iterations: runtimeSettings.iterations ? Number(runtimeSettings.iterations) : undefined,
     pacing,
     think_time: thinkTime,
+    browser,
     log_level: runtimeSettings.log_level || undefined,
     auto_transactions: runtimeSettings.auto_transactions || undefined,
     error_handling: runtimeSettings.continue_on_error || runtimeSettings.snapshot_on_error

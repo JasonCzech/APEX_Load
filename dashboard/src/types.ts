@@ -87,11 +87,13 @@ export interface Folder {
   updated_at: string
 }
 
+export type RuntimeBrowserSettings = Pick<BrowserConfig, 'headless' | 'device_profile' | 'touch_mode' | 'orientation'>
+
 export interface RuntimeSettingsOverride {
   iterations?: number
   pacing?: PacingConfig
   think_time?: ThinkTimeConfig
-  browser?: Pick<BrowserConfig, 'headless'>
+  browser?: RuntimeBrowserSettings
   log_level?: string
   auto_transactions?: string
   error_handling?: {
@@ -104,6 +106,7 @@ export interface ScenarioRuntimeSettingsDraft {
   iterations?: number
   pacing?: PacingConfig
   think_time?: ThinkTimeConfig
+  browser?: RuntimeBrowserSettings
   log_level: string
   auto_transactions: string
   continue_on_error: boolean

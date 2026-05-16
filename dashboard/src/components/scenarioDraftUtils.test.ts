@@ -33,6 +33,7 @@ describe('scenarioDraftUtils', () => {
 	  expect(draft.goalConfig.stop_on_max_errors).toBe(false)
 	  expect(draft.runtimeSettings.continue_on_error).toBe(false)
 	  expect(draft.runtimeSettings.snapshot_on_error).toBe(false)
+	  expect(draft.runtimeSettings.browser).toBeUndefined()
 	})
 
 	it('maps a test summary into a reusable scenario draft', () => {
@@ -63,6 +64,12 @@ describe('scenarioDraftUtils', () => {
 	      iterations: 5,
 	      pacing: { type: 'fixed_delay', delay_ms: 1500 },
 	      think_time: { type: 'fixed', mean_ms: 750 },
+	      browser: {
+	        headless: false,
+	        device_profile: 'iphone_se',
+	        touch_mode: true,
+	        orientation: 'portrait',
+	      },
 	      log_level: 'standard',
 	      auto_transactions: 'per_action',
 	      error_handling: { continue_on_error: true, snapshot_on_error: true },
@@ -89,6 +96,12 @@ describe('scenarioDraftUtils', () => {
 	  expect(draft.goalConfig.stop_on_max_errors).toBe(true)
 	  expect(draft.runtimeSettings.pacing).toEqual({ type: 'fixed_delay', delay_ms: 1500 })
 	  expect(draft.runtimeSettings.think_time).toEqual({ type: 'fixed', mean_ms: 750 })
+	  expect(draft.runtimeSettings.browser).toEqual({
+	    headless: false,
+	    device_profile: 'iphone_se',
+	    touch_mode: true,
+	    orientation: 'portrait',
+	  })
 	  expect(draft.runtimeSettings.continue_on_error).toBe(true)
 	  expect(draft.runtimeSettings.snapshot_on_error).toBe(true)
 	  expect(draft.groups).toEqual([{
@@ -139,7 +152,12 @@ describe('scenarioDraftUtils', () => {
 			field: 'pacing',
 			value: { type: 'fixed_delay', delay_ms: 1000 },
 		})
-		const withErrorHandling = scenarioDraftReducer(withRuntime, {
+		const withBrowserRuntime = scenarioDraftReducer(withRuntime, {
+			type: 'setRuntimeSettingField',
+			field: 'browser',
+			value: { device_profile: 'pixel_8', touch_mode: true },
+		})
+		const withErrorHandling = scenarioDraftReducer(withBrowserRuntime, {
 			type: 'setRuntimeSettingField',
 			field: 'continue_on_error',
 			value: true,
@@ -147,6 +165,7 @@ describe('scenarioDraftUtils', () => {
 
 		expect(withErrorHandling.goalConfig.max_error_count).toBe(20)
 		expect(withErrorHandling.runtimeSettings.pacing).toEqual({ type: 'fixed_delay', delay_ms: 1000 })
+		expect(withErrorHandling.runtimeSettings.browser).toEqual({ device_profile: 'pixel_8', touch_mode: true })
 		expect(withErrorHandling.runtimeSettings.continue_on_error).toBe(true)
 		expect(withErrorHandling.groups[0].scriptId).toBe('script-1')
 		expect(withErrorHandling.duration).toBe('1m')

@@ -98,11 +98,11 @@ type RequestUpdate struct {
 }
 
 type Recorder struct {
-	mu         sync.RWMutex
-	sessions   map[string]*Session
-	active     *Session
-	proxy      *http.Server
-	addr       string
+	mu       sync.RWMutex
+	sessions map[string]*Session
+	active   *Session
+	proxy    *http.Server
+	addr     string
 	caCertPath string
 	caKeyPath  string
 
@@ -125,8 +125,8 @@ func NewWithCAFiles(proxyAddr, caCertPath, caKeyPath string) *Recorder {
 		proxyAddr = ":8081"
 	}
 	return &Recorder{
-		sessions:   make(map[string]*Session),
-		addr:       proxyAddr,
+		sessions: make(map[string]*Session),
+		addr:     proxyAddr,
 		caCertPath: caCertPath,
 		caKeyPath:  caKeyPath,
 	}

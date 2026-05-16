@@ -4,11 +4,6 @@ import { useAsyncTask } from '../hooks/useAsyncTask'
 import { useApi } from '../hooks/useApi'
 import { BASE } from '../hooks/apiClient'
 import { Project } from '../types'
-import { getErrorMessage } from '../utils/errorUtils'
-import { type RecorderCorrelation as Correlation, type ScriptImportResult } from '../types/scriptImports'
-import { type ScriptDefinition } from '../types/scripts'
-import ScriptImportReview from './ScriptImportReview'
-import { attachImportCorrelationSuggestions } from './scriptEditorUtils'
 import './RecordingStudio.css'
 
 interface RecordedRequest {
@@ -52,23 +47,29 @@ interface RecordingSession {
   }
 }
 
-interface StartRecordingRequest {
+interface Correlation {
   name: string
-  project_id?: string
-  exclude_static: boolean
-  include_hosts?: string[]
-  exclude_hosts?: string[]
+  source: string
+  expression: string
+  extract_type: string
+  found_in_seq: number
+  used_in_seqs: number[]
+  sample_value: string
 }
 
-type RecorderPreviewResult = ScriptImportResult<Record<string, unknown>, Correlation, ScriptDefinition>
-
-interface Props {
-  activeProject?: Project | null
-  onImported?: (script: ScriptDefinition) => void
-  onEdit?: (script: ScriptDefinition) => void
+interface RecorderStatus {
+  proxy_addr?: string
+  ca_cert_path?: string
+  active?: {
+    id: string
+    name: string
+    status: string
+    request_count: number
+    started_at: string
+  } | null
 }
 
-export default function RecordingStudio({ activeProject, onImported, onEdit }: Props) {
+export default function RecordingStudio({ activeProject }: { activeProject?: Project | null }) {
   const api = useApi()
   const [sessions, setSessions] = useState<RecordingSession[]>([])
   const [activeSession, setActiveSession] = useState<RecordingSession | null>(null)
@@ -89,8 +90,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: P
     excluded: false,
   })
   const [showSetup, setShowSetup] = useState(true)
-  const convertTask = useAsyncTask<RecorderPreviewResult>()
-  const saveTask = useAsyncTask<boolean>()
+  const convertTask = useAsyncTask<{ script: any; correlations: Correlation[]; warnings: string[] }>()
 
   const proxyPort = (proxyAddr || ':8081').split(':').pop() || '8081'
 
@@ -102,24 +102,21 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: P
       }
       await navigator.clipboard.writeText(caCertPath)
       showFeedback('CA certificate path copied')
-    } catch (error: unknown) {
-      showFeedback(getErrorMessage(error, 'Failed to copy CA certificate path'), 'error')
+    } catch (e: any) {
+      showFeedback(e.message || 'Failed to copy CA certificate path', 'error')
     }
   }
 
   const handleDownloadCA = async (format: 'crt' | 'pem' = 'crt') => {
     try {
-      const params = new URLSearchParams()
-      if (format === 'pem') params.set('format', 'pem')
-      if (activeProject?.id) params.set('project_id', activeProject.id)
-      const url = `${BASE}/recorder/ca.pem${params.size ? `?${params.toString()}` : ''}`
+      const url = format === 'pem' ? `${BASE}/recorder/ca.pem?format=pem` : `${BASE}/recorder/ca.pem`
       const res = await fetch(url)
       if (!res.ok) throw new Error('Failed to download CA certificate')
       const blob = await res.blob()
       const filename = format === 'pem' ? 'stormrunner-ca.pem' : 'stormrunner-ca.crt'
       downloadBlob(blob, filename)
-    } catch (error: unknown) {
-      showFeedback(getErrorMessage(error, 'Failed to download CA certificate'), 'error')
+    } catch (e: any) {
+      showFeedback(e.message || 'Failed to download CA certificate', 'error')
     }
   }
 
@@ -133,13 +130,14 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: P
     try {
       const [listRes, statusRes] = await Promise.all([
         api.listRecordings(activeProject?.id),
-        api.getRecorderStatus(activeProject?.id),
+        api.getRecorderStatus(),
       ])
+      const recorderStatus = statusRes as RecorderStatus
       setSessions(listRes.sessions || [])
-      setProxyAddr(statusRes.proxy_addr || '')
-      setCaCertPath(statusRes.ca_cert_path || '')
-      if (statusRes.active) {
-        const full = await api.getRecording(statusRes.active.id)
+      setProxyAddr(recorderStatus.proxy_addr || '')
+      setCaCertPath(recorderStatus.ca_cert_path || '')
+      if (recorderStatus.active) {
+        const full = await api.getRecording(recorderStatus.active.id)
         setActiveSession(full)
       } else {
         setActiveSession(null)
@@ -166,22 +164,22 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: P
 
   const handleStart = async () => {
     try {
-      const data: StartRecordingRequest = {
+      const data: any = {
         name: sessionName || 'Recording Session',
         project_id: activeProject?.id,
         exclude_static: true,
       }
       if (includeHosts.trim()) {
-        data.include_hosts = includeHosts.split(',').map(host => host.trim()).filter(Boolean)
+        data.include_hosts = includeHosts.split(',').map((h: string) => h.trim()).filter(Boolean)
       }
       if (excludeHosts.trim()) {
-        data.exclude_hosts = excludeHosts.split(',').map(host => host.trim()).filter(Boolean)
+        data.exclude_hosts = excludeHosts.split(',').map((h: string) => h.trim()).filter(Boolean)
       }
       const res = await api.startRecording(data)
       setActiveSession(res.session)
       showFeedback('Recording started — configure your browser proxy and navigate the target site')
-    } catch (error: unknown) {
-      showFeedback(getErrorMessage(error, 'Failed to start recording'), 'error')
+    } catch (e: any) {
+      showFeedback(e.message, 'error')
     }
   }
 
@@ -192,8 +190,8 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: P
       showFeedback(`Recording stopped — ${activeSession.requests?.length || 0} requests captured`)
       setActiveSession(null)
       refresh()
-    } catch (error: unknown) {
-      showFeedback(getErrorMessage(error, 'Failed to stop recording'), 'error')
+    } catch (e: any) {
+      showFeedback(e.message, 'error')
     }
   }
 
@@ -205,8 +203,8 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: P
         : await api.pauseRecording(activeSession.id)
       setActiveSession(next)
       showFeedback(next.status === 'paused' ? 'Recording paused' : 'Recording resumed')
-    } catch (error: unknown) {
-      showFeedback(getErrorMessage(error, 'Failed to update recording state'), 'error')
+    } catch (e: any) {
+      showFeedback(e.message, 'error')
     }
   }
 
@@ -228,8 +226,8 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: P
     try {
       const updated = await api.updateRecordedRequest(session.id, req.seq, { excluded: !req.excluded })
       replaceRequest(session.id, updated)
-    } catch (error: unknown) {
-      showFeedback(getErrorMessage(error, 'Failed to update recorded request'), 'error')
+    } catch (e: any) {
+      showFeedback(e.message, 'error')
     }
   }
 
@@ -239,33 +237,20 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: P
       const updated = await api.updateRecordedRequest(selectedSession.id, selectedRequest.seq, requestDraft)
       replaceRequest(selectedSession.id, updated)
       showFeedback(`Request #${updated.seq} updated`)
-    } catch (error: unknown) {
-      showFeedback(getErrorMessage(error, 'Failed to save request details'), 'error')
+    } catch (e: any) {
+      showFeedback(e.message, 'error')
     }
   }
 
   const handlePreviewConversion = async (session: RecordingSession) => {
     try {
       const result = await convertTask.run(
-        async () => {
-          const response = await api.previewRecordingConversion(session.id, session.name)
-          const correlations = Array.isArray(response.correlations) ? response.correlations : []
-          return {
-            ...response,
-            script: response.script
-              ? attachImportCorrelationSuggestions(response.script as ScriptDefinition, 'recorder', correlations)
-              : undefined,
-            scripts: Array.isArray(response.scripts)
-              ? (response.scripts as ScriptDefinition[]).map(script => attachImportCorrelationSuggestions(script, 'recorder', correlations))
-              : [],
-          }
-        },
+        () => api.previewRecordingConversion(session.id, session.name),
         { clearValue: true },
       )
-      const previewScript = result.script ?? result.scripts?.[0]
-      showFeedback(`Preview generated with ${previewScript?.actions?.length || 0} actions and ${result.correlations?.length || 0} correlations`)
-    } catch (error: unknown) {
-      showFeedback(getErrorMessage(error, 'Failed to preview recording conversion'), 'error')
+      showFeedback(`Preview generated with ${result.script.actions?.length || 0} actions and ${result.correlations?.length || 0} correlations`)
+    } catch (e: any) {
+      showFeedback(e.message, 'error')
     }
   }
 
@@ -280,22 +265,20 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: P
       const safeName = (session.name || 'recording').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
       downloadBlob(blob, `${safeName || 'recording'}.har`)
       showFeedback(`Exported "${session.name}" as HAR`)
-    } catch (error: unknown) {
-      showFeedback(getErrorMessage(error, 'Failed to export HAR'), 'error')
+    } catch (e: any) {
+      showFeedback(e.message, 'error')
     }
   }
 
-  const handleSaveConverted = async () => {
-    if (!convertScript) return
+  const handleConvert = async (session: RecordingSession) => {
     try {
-      await saveTask.run(async () => {
-        await api.createScript(convertScript)
-        return true
-      })
-      showFeedback(`Script "${convertScript.name}" created with ${convertTask.value?.correlations?.length || 0} correlations detected`)
-      onImported?.(convertScript)
-    } catch (error: unknown) {
-      showFeedback(getErrorMessage(error, 'Failed to save generated script'), 'error')
+      const result = await convertTask.run(
+        () => api.convertRecording(session.id, session.name),
+        { clearValue: true },
+      )
+      showFeedback(`Script "${result.script.name}" created with ${result.correlations?.length || 0} correlations detected`)
+    } catch (e: any) {
+      showFeedback(e.message, 'error')
     }
   }
 
@@ -304,16 +287,14 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: P
       await api.deleteRecording(id)
       if (selectedSession?.id === id) setSelectedSession(null)
       refresh()
-    } catch (error: unknown) {
-      showFeedback(getErrorMessage(error, 'Failed to delete recording'), 'error')
+    } catch (e: any) {
+      showFeedback(e.message, 'error')
     }
   }
 
   const stoppedSessions = sessions.filter(s => s.status === 'stopped')
   const convertResult = convertTask.value
-  const convertScript = convertResult?.script ?? convertResult?.scripts?.[0]
   const converting = convertTask.pending
-  const saving = saveTask.pending
 
   return (
     <div className="page recording-studio">
@@ -548,10 +529,17 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: P
                 <div className="rec-session-actions">
                   <button
                     className="btn btn-sm btn-primary"
+                    onClick={(e) => { e.stopPropagation(); handleConvert(session) }}
+                    disabled={converting}
+                  >
+                    {converting ? 'Converting...' : 'Convert to Script'}
+                  </button>
+                  <button
+                    className="btn btn-sm btn-secondary"
                     onClick={(e) => { e.stopPropagation(); handlePreviewConversion(session) }}
                     disabled={converting}
                   >
-                    {converting ? 'Generating...' : 'Review Script'}
+                    Preview
                   </button>
                   <button
                     className="btn btn-sm btn-secondary"
@@ -692,55 +680,54 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: P
       )}
 
       {/* Convert Result */}
-      {convertResult && convertScript && (
+      {convertResult && (
         <div className="rec-convert-result">
-          <ScriptImportReview
-            title="Conversion Result"
-            subtitle="Review the generated script, warnings, and correlations before saving."
-            script={convertScript}
-            warnings={convertResult.warnings}
-            saving={saving}
-            onSave={handleSaveConverted}
-            onEdit={onEdit ? () => onEdit(convertScript) : undefined}
-          >
-            <div className="rec-result-summary">
-              <div className="rec-result-item">
-                <span className="rec-result-label">Script</span>
-                <span className="rec-result-value">{convertScript.name}</span>
-              </div>
-              <div className="rec-result-item">
-                <span className="rec-result-label">Protocol</span>
-                <span className="rec-result-value">{convertScript.protocol}</span>
-              </div>
-              <div className="rec-result-item">
-                <span className="rec-result-label">Actions</span>
-                <span className="rec-result-value">{convertScript.actions?.length || 0}</span>
+          <h3 className="rec-section-title">Conversion Result</h3>
+          <div className="rec-result-summary">
+            <div className="rec-result-item">
+              <span className="rec-result-label">Script</span>
+              <span className="rec-result-value">{convertResult.script.name}</span>
+            </div>
+            <div className="rec-result-item">
+              <span className="rec-result-label">Protocol</span>
+              <span className="rec-result-value">{convertResult.script.protocol}</span>
+            </div>
+            <div className="rec-result-item">
+              <span className="rec-result-label">Script ID</span>
+              <code className="rec-result-value">{convertResult.script.id}</code>
+            </div>
+          </div>
+
+          {convertResult.correlations && convertResult.correlations.length > 0 && (
+            <div className="rec-correlations">
+              <h4 className="rec-subsection-title">Auto-Detected Correlations ({convertResult.correlations.length})</h4>
+              <div className="rec-corr-list">
+                {convertResult.correlations.map((c, i) => (
+                  <div key={i} className="rec-corr-item">
+                    <div className="rec-corr-header">
+                      <code className="rec-corr-name">{`{{var.${c.name}}}`}</code>
+                      <span className="rec-corr-type">{c.extract_type} / {c.source}</span>
+                    </div>
+                    <div className="rec-corr-detail">
+                      <span>Extracted from request #{c.found_in_seq}</span>
+                      <span>Used in #{c.used_in_seqs.join(', #')}</span>
+                    </div>
+                    <div className="rec-corr-sample">
+                      Sample: <code>{c.sample_value}</code>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
+          )}
 
-            {convertResult.correlations && convertResult.correlations.length > 0 && (
-              <div className="rec-correlations">
-                <h4 className="rec-subsection-title">Auto-Detected Correlations ({convertResult.correlations.length})</h4>
-                <div className="rec-corr-list">
-                  {convertResult.correlations.map((c, i) => (
-                    <div key={i} className="rec-corr-item">
-                      <div className="rec-corr-header">
-                        <code className="rec-corr-name">{`{{var.${c.name}}}`}</code>
-                        <span className="rec-corr-type">{c.extract_type} / {c.source}</span>
-                      </div>
-                      <div className="rec-corr-detail">
-                        <span>Extracted from request #{c.found_in_seq}</span>
-                        <span>Used in #{c.used_in_seqs.join(', #')}</span>
-                      </div>
-                      <div className="rec-corr-sample">
-                        Sample: <code>{c.sample_value}</code>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </ScriptImportReview>
+          {convertResult.warnings && convertResult.warnings.length > 0 && (
+            <div className="rec-warnings">
+              {convertResult.warnings.map((w, i) => (
+                <div key={i} className="rec-warning-item">{w}</div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -32,13 +32,8 @@ func (s *Server) handleStartRecording(w http.ResponseWriter, r *http.Request) {
 	id := uuid.New().String()
 
 	notify := func(evt recorder.SessionEvent) {
-		projectID := ""
-		if evt.Session != nil {
-			projectID = evt.Session.ProjectID
-		}
 		s.hub.BroadcastJSON(map[string]any{
 			"type":       evt.Type,
-			"project_id": projectID,
 			"session_id": evt.SessionID,
 			"request":    evt.Request,
 			"session":    evt.Session,
@@ -56,7 +51,6 @@ func (s *Server) handleStartRecording(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, err.Error())
 		return
 	}
-	s.recordAuditEvent(r, "recorder.session.start", "success", "recording_session", session.ID, session.ProjectID, map[string]any{"name": session.Name, "status": session.Status})
 
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"session":      session,
@@ -72,7 +66,6 @@ func (s *Server) handlePauseRecording(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	s.recordAuditEvent(r, "recorder.session.pause", "success", "recording_session", session.ID, session.ProjectID, map[string]any{"name": session.Name, "status": session.Status})
 	writeJSON(w, http.StatusOK, session)
 }
 
@@ -83,7 +76,6 @@ func (s *Server) handleResumeRecording(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	s.recordAuditEvent(r, "recorder.session.resume", "success", "recording_session", session.ID, session.ProjectID, map[string]any{"name": session.Name, "status": session.Status})
 	writeJSON(w, http.StatusOK, session)
 }
 
@@ -94,7 +86,6 @@ func (s *Server) handleStopRecording(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	s.recordAuditEvent(r, "recorder.session.stop", "success", "recording_session", session.ID, session.ProjectID, map[string]any{"name": session.Name, "status": session.Status})
 	writeJSON(w, http.StatusOK, session)
 }
 
@@ -129,16 +120,10 @@ func (s *Server) handleListRecordings(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleDeleteRecording(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	session, ok := s.recorder.GetSession(id)
-	if !ok {
-		writeError(w, http.StatusNotFound, "recording session not found")
-		return
-	}
 	if !s.recorder.DeleteSession(id) {
 		writeError(w, http.StatusNotFound, "recording session not found")
 		return
 	}
-	s.recordAuditEvent(r, "recorder.session.delete", "success", "recording_session", id, session.ProjectID, map[string]any{"name": session.Name})
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})
 }
 
@@ -183,15 +168,12 @@ func (s *Server) handleConvertRecording(w http.ResponseWriter, r *http.Request) 
 	}
 
 	stored := s.runner.StoreScript(result.Script)
-	stats := newRecorderImportStats(len(result.Script.Actions), len(result.Correlations))
-	s.recordAuditEvent(r, "recorder.session.convert", "success", "recording_session", session.ID, session.ProjectID, map[string]any{"script_id": stored.ID, "script_name": stored.Name, "converted_actions": stats["converted_actions"], "correlations_detected": stats["correlations_detected"]})
 
-	writeJSON(w, http.StatusCreated, newScriptImportResponse(scriptImportResponseOptions{
-		Script:       stored,
-		Warnings:     result.Warnings,
-		Stats:        stats,
-		Correlations: result.Correlations,
-	}))
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"script":       stored,
+		"correlations": result.Correlations,
+		"warnings":     result.Warnings,
+	})
 }
 
 func (s *Server) handlePreviewRecordingConversion(w http.ResponseWriter, r *http.Request) {
@@ -211,14 +193,7 @@ func (s *Server) handlePreviewRecordingConversion(w http.ResponseWriter, r *http
 	if result.Script != nil {
 		result.Script.ProjectID = normalizeProjectID(session.ProjectID)
 	}
-	stats := newRecorderImportStats(len(result.Script.Actions), len(result.Correlations))
-	writeJSON(w, http.StatusOK, newScriptImportResponse(scriptImportResponseOptions{
-		Result:       result,
-		Script:       result.Script,
-		Warnings:     result.Warnings,
-		Stats:        stats,
-		Correlations: result.Correlations,
-	}))
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (s *Server) handleExportRecording(w http.ResponseWriter, r *http.Request) {
@@ -289,12 +264,8 @@ func sanitizeDownloadName(name string) string {
 }
 
 func (s *Server) handleRecorderStatus(w http.ResponseWriter, r *http.Request) {
-	projectID := strings.TrimSpace(r.URL.Query().Get("project_id"))
 	active := s.recorder.ActiveSession()
 	var activeInfo any
-	if active != nil && projectID != "" && normalizeProjectID(active.ProjectID) != normalizeProjectID(projectID) {
-		active = nil
-	}
 	if active != nil {
 		activeInfo = map[string]any{
 			"id":            active.ID,

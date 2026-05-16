@@ -128,6 +128,79 @@ func TestValidateScriptIncludesWebKitWarnings(t *testing.T) {
 	}
 }
 
+func TestBrowserCompatibilityMatrixParityAcrossValidationAndReplayEndpoints(t *testing.T) {
+	server := NewServer(ServerConfig{})
+
+	invalidScript := dsl.Script{
+		Name:     "Invalid Browser Compatibility Draft",
+		Version:  "1.0.0",
+		Protocol: "browser",
+		Config: dsl.ScriptConfig{
+			Browser: dsl.BrowserConfig{
+				Engine:        "chromium",
+				DeviceProfile: "iphone_15_pro",
+			},
+		},
+		Actions: []dsl.Action{{Name: "Capture current page", Type: "browser_screenshot"}},
+	}
+	storedInvalid := server.runner.StoreScript(&invalidScript)
+
+	expectedIssues := validateScript(&invalidScript)
+	if len(expectedIssues) == 0 {
+		t.Fatal("expected invalid compatibility script to produce validation issues")
+	}
+
+	draftBody := func(t *testing.T) []byte {
+		t.Helper()
+		body, err := json.Marshal(map[string]any{"script": invalidScript})
+		if err != nil {
+			t.Fatalf("json.Marshal returned error: %v", err)
+		}
+		return body
+	}
+
+	testCases := []struct {
+		name       string
+		method     string
+		path       string
+		body       func(*testing.T) []byte
+		wantStatus int
+	}{
+		{name: "validate stored", method: http.MethodPost, path: "/api/v1/scripts/" + storedInvalid.ID + "/validate", wantStatus: http.StatusOK},
+		{name: "replay draft", method: http.MethodPost, path: "/api/v1/scripts/replay", body: draftBody, wantStatus: http.StatusBadRequest},
+		{name: "replay stored", method: http.MethodPost, path: "/api/v1/scripts/" + storedInvalid.ID + "/replay", wantStatus: http.StatusBadRequest},
+		{name: "browser replay draft", method: http.MethodPost, path: "/api/v1/scripts/browser-replay/sessions", body: draftBody, wantStatus: http.StatusBadRequest},
+		{name: "browser replay stored", method: http.MethodPost, path: "/api/v1/scripts/" + storedInvalid.ID + "/browser-replay/sessions", wantStatus: http.StatusBadRequest},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			var bodyReader *bytes.Reader
+			if tc.body != nil {
+				bodyReader = bytes.NewReader(tc.body(t))
+			} else {
+				bodyReader = bytes.NewReader(nil)
+			}
+
+			req := httptest.NewRequest(tc.method, tc.path, bodyReader)
+			if tc.body != nil {
+				req.Header.Set("Content-Type", "application/json")
+			}
+			resp := httptest.NewRecorder()
+			server.mux.ServeHTTP(resp, req)
+
+			if resp.Code != tc.wantStatus {
+				t.Fatalf("status = %d, want %d body=%s", resp.Code, tc.wantStatus, resp.Body.String())
+			}
+
+			issues := extractValidationIssues(t, resp.Body.Bytes())
+			if !reflect.DeepEqual(issues, expectedIssues) {
+				t.Fatalf("issues = %#v, want %#v body=%s", issues, expectedIssues, resp.Body.String())
+			}
+		})
+	}
+}
+
 func extractValidationIssues(t *testing.T, body []byte) []string {
 	t.Helper()
 

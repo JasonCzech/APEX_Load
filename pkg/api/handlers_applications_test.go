@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/jasonczech/stormrunner/pkg/dsl"
@@ -57,7 +58,7 @@ func TestApplicationReleaseAndScenarioHandlers(t *testing.T) {
 			"iterations":4,
 			"pacing":{"type":"fixed_delay","delay_ms":1500},
 			"think_time":{"type":"fixed","mean_ms":750},
-			"browser":{"headless":false},
+			"browser":{"headless":false,"device_profile":"iphone_se","touch_mode":true,"orientation":"portrait"},
 			"log_level":"extended",
 			"auto_transactions":"per_iteration",
 			"error_handling":{"continue_on_error":true,"snapshot_on_error":true}
@@ -88,6 +89,15 @@ func TestApplicationReleaseAndScenarioHandlers(t *testing.T) {
 	if scenario.RuntimeSettings.Browser == nil || scenario.RuntimeSettings.Browser.Headless == nil || *scenario.RuntimeSettings.Browser.Headless != false {
 		t.Fatalf("scenario browser override = %#v, want headless false", scenario.RuntimeSettings.Browser)
 	}
+	if scenario.RuntimeSettings.Browser.DeviceProfile != "iphone_se" {
+		t.Fatalf("scenario browser device_profile = %q, want iphone_se", scenario.RuntimeSettings.Browser.DeviceProfile)
+	}
+	if scenario.RuntimeSettings.Browser.TouchMode == nil || *scenario.RuntimeSettings.Browser.TouchMode != true {
+		t.Fatalf("scenario browser touch_mode = %#v, want true", scenario.RuntimeSettings.Browser.TouchMode)
+	}
+	if scenario.RuntimeSettings.Browser.Orientation != "portrait" {
+		t.Fatalf("scenario browser orientation = %q, want portrait", scenario.RuntimeSettings.Browser.Orientation)
+	}
 	if scenario.RuntimeSettings.LogLevel != "extended" {
 		t.Fatalf("scenario log level = %q, want extended", scenario.RuntimeSettings.LogLevel)
 	}
@@ -96,6 +106,46 @@ func TestApplicationReleaseAndScenarioHandlers(t *testing.T) {
 	}
 	if scenario.RuntimeSettings.ErrorHandling == nil || !scenario.RuntimeSettings.ErrorHandling.ContinueOnError || !scenario.RuntimeSettings.ErrorHandling.SnapshotOnError {
 		t.Fatalf("scenario error handling = %#v, want continue_on_error and snapshot_on_error", scenario.RuntimeSettings.ErrorHandling)
+	}
+}
+
+func TestScenarioCreateRejectsIncompatibleBrowserRuntimeOverride(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+	server := NewServer(ServerConfig{Store: store})
+
+	script := &dsl.Script{
+		ID:       "script-browser",
+		Name:     "Browser Script",
+		Protocol: "browser",
+		Version:  "1.0",
+		Config: dsl.ScriptConfig{
+			Browser: dsl.BrowserConfig{Engine: "chromium"},
+		},
+		Actions: []dsl.Action{{Name: "Capture current page", Type: "browser_screenshot"}},
+	}
+	server.runner.StoreScript(script)
+
+	createScenario := httptest.NewRequest(http.MethodPost, "/api/v1/scenarios", bytes.NewBufferString(`{
+		"name":"Smoke",
+		"duration":"1m",
+		"groups":[{"script_id":"`+script.ID+`","vusers":5}],
+		"runtime_settings":{
+			"browser":{"device_profile":"iphone_15_pro"}
+		}
+	}`))
+	createScenario.Header.Set("Content-Type", "application/json")
+	scenarioResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(scenarioResp, createScenario)
+
+	if scenarioResp.Code != http.StatusBadRequest {
+		t.Fatalf("create scenario status = %d, want %d body=%s", scenarioResp.Code, http.StatusBadRequest, scenarioResp.Body.String())
+	}
+	if !strings.Contains(scenarioResp.Body.String(), "incompatible with device_profile") || !strings.Contains(scenarioResp.Body.String(), "requires webkit") {
+		t.Fatalf("create scenario body = %s, want incompatible browser override issue", scenarioResp.Body.String())
 	}
 }
 
