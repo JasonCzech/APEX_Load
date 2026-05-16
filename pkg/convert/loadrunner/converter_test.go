@@ -828,3 +828,69 @@ ViewportHeight=1366
 		t.Fatalf("browser config = %#v, want imported viewport and slow-mo", result.Script.Config.Browser)
 	}
 }
+
+func TestConvertZipRejectsTruClientMobileWebWithScopeGuidance(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	addFile := func(name string, content string) {
+		writer, err := zw.Create(name)
+		if err != nil {
+			t.Fatalf("Create(%q) returned error: %v", name, err)
+		}
+		if _, err := writer.Write([]byte(content)); err != nil {
+			t.Fatalf("Write(%q) returned error: %v", name, err)
+		}
+	}
+
+	addFile("MobileWeb.usr", `[General]
+Type=TruClient - Mobile Web
+RuntimeSettings=default.cfg
+`)
+	addFile("default.cfg", `[Browser Emulation]
+DeviceProfile=iPhone_SE
+`)
+	if err := zw.Close(); err != nil {
+		t.Fatalf("zip.Close returned error: %v", err)
+	}
+
+	_, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	if err == nil {
+		t.Fatal("ConvertZip error = nil, want planned-scope TruClient guidance")
+	}
+	for _, want := range []string{"recognized but not implemented yet", "navigate", "click or tap", "transaction flows"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("ConvertZip error = %q, want substring %q", err.Error(), want)
+		}
+	}
+}
+
+func TestConvertZipRejectsLegacyTruClientAsOutOfScope(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	addFile := func(name string, content string) {
+		writer, err := zw.Create(name)
+		if err != nil {
+			t.Fatalf("Create(%q) returned error: %v", name, err)
+		}
+		if _, err := writer.Write([]byte(content)); err != nil {
+			t.Fatalf("Write(%q) returned error: %v", name, err)
+		}
+	}
+
+	addFile("Desktop.usr", `[General]
+Type=TruClient
+`)
+	if err := zw.Close(); err != nil {
+		t.Fatalf("zip.Close returned error: %v", err)
+	}
+
+	_, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	if err == nil {
+		t.Fatal("ConvertZip error = nil, want out-of-scope TruClient guidance")
+	}
+	for _, want := range []string{"out of scope", "desktop-style TruClient parity"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("ConvertZip error = %q, want substring %q", err.Error(), want)
+		}
+	}
+}

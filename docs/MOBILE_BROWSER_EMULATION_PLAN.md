@@ -362,67 +362,43 @@ case "browser_set_orientation":
 
 ## 5. TrueClient Script Import
 
-### Strategy
-TrueClient scripts use a proprietary step-based format stored in the script directory alongside the `.usr` file. The import strategy is:
+### Current Scope Definition
 
-1. Detect the protocol from the `.usr` file (`Type=TruClient` or `Type=TruClient - Mobile Web`)
-2. Parse the TrueClient step data (XML/JSON format within the script folder)
-3. Map TrueClient steps to Stormrunner browser DSL actions
-4. Extract the device profile from `default.cfg` runtime settings
-5. Emit a Stormrunner DSL script with `protocol: browser` and the appropriate `device_profile`
+The code-owned import scope now lives in `pkg/convert/trueclient/support.go`.
 
-### Step Mapping
+Current script-type scope:
 
-| TrueClient Step | Stormrunner Action | Notes |
+| `.usr` Type | Current Status | Notes |
 |:---|:---|:---|
-| Navigate | `browser_navigate` | URL from step arguments |
-| Click | `browser_tap` (mobile) / `browser_click` (desktop) | Selector from object ID |
-| Set / Type | `browser_fill` | Selector + value from arguments |
-| Wait | `browser_wait` | End event maps to `wait_for` condition |
-| Verify | assertion | Text/element verification |
-| Evaluate JavaScript | `browser_eval` (new) | Custom JS execution |
-| Scroll | `browser_swipe` | Map scroll to vertical swipe |
-| Select | `browser_click` + `browser_fill` | Dropdown interaction |
+| `TruClient - Mobile Web` | Planned | This is the only browser-import target in scope for the MVP. The current LoadRunner ZIP importer recognizes it and returns a scope-aware message instead of a generic parse failure. |
+| `TruClient` | Out of scope | Legacy desktop-style TruClient parity remains outside Stormrunner's browser-import target. |
 
-### Converter Extension
-In `pkg/convert/loadrunner/converter.go`, add TrueClient detection:
+Current step support matrix:
 
-```go
-func detectImportProtocol(functions []ParsedFunction) (string, ...) {
-    // Existing HTTP/SOAP detection...
+| TrueClient Step | Status | Planned Stormrunner Shape | Notes |
+|:---|:---|:---|:---|
+| Navigate | Planned | `browser_navigate` | URL-driven transitions map cleanly into browser navigation. |
+| Click | Planned | `browser_click` or `browser_tap` | Device profile resolution determines whether click or tap is emitted. |
+| Set / Type | Planned | `browser_fill` | Text-entry steps stay inside the MVP import scope. |
+| Wait | Planned | `browser_wait` | Wait conditions remain in scope when they normalize to existing wait semantics. |
+| Verify | Planned | action assertions | Verification should map to the existing assertion surface instead of a new browser action type. |
+| Start Transaction | Planned | transaction metadata | Transaction preservation should reuse the current import preservation model. |
+| End Transaction | Planned | transaction metadata | Close events stay in scope with the same preservation model. |
+| Select | Review only | `browser_click` + `browser_fill` | Control semantics are recorder-specific and likely need explicit review. |
+| Scroll | Review only | `browser_swipe` or preserved review note | Scroll intent depends on viewport state and may require repair suggestions. |
+| Evaluate JavaScript | Out of scope | not supported | Stormrunner does not currently expose a supported public browser-eval action. |
 
-    // TrueClient detection happens at the .usr file level,
-    // before function parsing. This is handled in the handler layer.
-}
-```
+### Current Importer Behavior
 
-New file: `pkg/convert/trueclient/converter.go`
-
-```go
-package trueclient
-
-type ConvertResult struct {
-    Script   *dsl.Script  `json:"script"`
-    Warnings []string     `json:"warnings,omitempty"`
-    Stats    ConvertStats `json:"stats"`
-}
-
-// ConvertTrueClientScript converts a parsed TrueClient script directory
-// into a Stormrunner browser DSL script.
-func ConvertTrueClientScript(dir TrueClientDir, opts ConvertOptions) (*ConvertResult, error) {
-    // 1. Read .usr file for protocol type and device profile
-    // 2. Parse step files for recorded actions
-    // 3. Map steps to DSL actions
-    // 4. Extract runtime config from default.cfg
-    // 5. Build script with browser config and device profile
-}
-```
+- `pkg/convert/loadrunner/zip.go` now checks the parsed `.usr` type before trying to parse C action files.
+- A `TruClient - Mobile Web` archive returns an explicit “recognized but not implemented yet” error that cites the planned MVP step scope.
+- A `TruClient` desktop archive returns an explicit out-of-scope error instead of failing later with `no parseable .c action files found`.
 
 ### Import Risks
 - TrueClient step format is proprietary and not publicly documented
 - Object identification methods may not map cleanly to CSS selectors
 - End events may require custom `wait_for` logic
-- JavaScript evaluation steps need a new `browser_eval` action type
+- Review-only steps such as `Select` and `Scroll` will need importer warnings and repair guidance before they are practical in a shared import flow
 
 Mitigation: Require 3–5 sample TrueClient MobileWeb scripts as test fixtures before starting this phase. Accept partial import coverage with clear warnings for unmapped steps.
 

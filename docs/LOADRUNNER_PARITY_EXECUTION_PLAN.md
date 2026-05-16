@@ -131,6 +131,10 @@ Goal: reduce the work required to move browser-centric LoadRunner assets into St
 | B3.4 | Add post-import repair suggestions for selectors, waits, timing, and unsupported constructs | L | B3.2 |
 | B3.5 | Add imported-browser-script replay validation path before save | M | B3.2 |
 
+Status:
+- B3.1 now has a code-owned scope definition in `pkg/convert/trueclient/support.go`, including the initial TrueClient Mobile Web versus legacy TruClient script-type matrix and the first step support matrix for planned, review-only, and out-of-scope constructs.
+- The current LoadRunner ZIP importer now detects TruClient script types from the `.usr` file and returns explicit scope-aware errors, so unsupported browser archives no longer fall through to a generic `no parseable .c action files found` failure.
+
 Acceptance criteria:
 - Imported browser scripts land in the same review/edit/save flow as other authoring paths
 - Unsupported steps are explicit and machine-readable

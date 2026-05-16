@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/jasonczech/stormrunner/pkg/convert/trueclient"
 	"github.com/jasonczech/stormrunner/pkg/dsl"
 )
 
@@ -65,6 +66,11 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 				}
 			}
 			break
+		}
+	}
+	if projectConfig != nil {
+		if err := trueclient.ImportScopeError(projectConfig.ScriptType); err != nil {
+			return nil, err
 		}
 	}
 
