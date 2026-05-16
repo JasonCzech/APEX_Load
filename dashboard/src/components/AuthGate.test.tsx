@@ -45,14 +45,14 @@ describe('AuthGate', () => {
   it('blocks the dashboard when trusted-header auth is enabled without a user', async () => {
     await act(async () => {
       root.render(
-        <AuthGate state={readyState({ enabled: true, mode: 'trusted_headers', provider_name: 'Okta Workforce', login_url: 'https://login.example.test/start', authenticated: false })}>
+        <AuthGate state={readyState({ enabled: true, mode: 'trusted_headers', provider_name: 'Microsoft Entra ID', login_url: 'https://login.example.test/start', authenticated: false })}>
           <div data-testid="protected">Protected content</div>
         </AuthGate>,
       )
     })
 
     expect(container.textContent).toContain('Sign-in required')
-    expect(container.textContent).toContain('Continue to Okta Workforce')
+    expect(container.textContent).toContain('Continue to Microsoft Entra ID')
     const link = container.querySelector('a') as HTMLAnchorElement | null
     expect(link?.href).toBe('https://login.example.test/start')
     expect(container.textContent).not.toContain('Protected content')

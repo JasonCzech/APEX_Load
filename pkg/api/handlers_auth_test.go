@@ -36,7 +36,7 @@ func TestHandleGetAuthStatusReturnsDisabledByDefault(t *testing.T) {
 func TestHandleGetAuthStatusReturnsUnauthenticatedWhenTrustedHeadersEnabled(t *testing.T) {
 	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
 	settings := enableTrustedHeaderAuth(t, server)
-	settings.Auth.ProviderName = "Entra ID"
+	settings.Auth.ProviderName = "Microsoft Entra ID"
 	settings.Auth.LoginURL = "https://login.example.test/oauth2/start"
 	if _, err := server.runner.UpdateSystemSettings(settings); err != nil {
 		t.Fatalf("UpdateSystemSettings returned error: %v", err)
@@ -57,8 +57,8 @@ func TestHandleGetAuthStatusReturnsUnauthenticatedWhenTrustedHeadersEnabled(t *t
 	if !payload.Enabled {
 		t.Fatal("expected auth to be enabled")
 	}
-	if payload.ProviderName != "Entra ID" {
-		t.Fatalf("provider name = %q, want Entra ID", payload.ProviderName)
+	if payload.ProviderName != "Microsoft Entra ID" {
+		t.Fatalf("provider name = %q, want Microsoft Entra ID", payload.ProviderName)
 	}
 	if payload.LoginURL != "https://login.example.test/oauth2/start" {
 		t.Fatalf("login url = %q, want configured login url", payload.LoginURL)

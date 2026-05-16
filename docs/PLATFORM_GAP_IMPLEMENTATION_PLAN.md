@@ -75,9 +75,10 @@ The 19 gaps are organized into five sequential delivery waves. Each wave targets
 ### 3.1 User Management & RBAC (P1)
 **Effort:** 8-12 days
 - **Auth Middleware:** Implement OIDC/SAML integration in `pkg/api/middleware.go`.
+- **Production Assumption:** Enterprise sign-in is expected to come from Microsoft Entra ID, forwarded through the existing trusted-header gateway pattern.
 - **Role Model:** Define System Admin, Project Admin, Editor, and Viewer roles.
 - **Dashboard UI:** Add Login screen and User Management panels.
-- **Progress:** Partially implemented via trusted-header auth middleware, the full System Admin / Project Admin / Editor / Viewer role model, request-scoped RBAC enforcement, `GET /api/v1/auth/me`, `GET /api/v1/auth/roles`, `GET /api/v1/auth/access-matrix`, `GET /api/v1/auth/effective-access`, configurable upstream provider/login metadata in system settings, the dashboard auth gate with actionable sign-in links, sidebar identity visibility with sign-out affordance, and settings panels that show the current forwarded identity, built-in role reference, backend-owned route access matrix, and active-project effective permissions for the current session. Direct user lifecycle management still remains delegated to the upstream OIDC/SAML gateway rather than Stormrunner itself.
+- **Progress:** Partially implemented via trusted-header auth middleware, the full System Admin / Project Admin / Editor / Viewer role model, request-scoped RBAC enforcement, `GET /api/v1/auth/me`, `GET /api/v1/auth/roles`, `GET /api/v1/auth/access-matrix`, `GET /api/v1/auth/effective-access`, configurable upstream provider/login metadata in system settings, the dashboard auth gate with actionable sign-in links, sidebar identity visibility with sign-out affordance, and settings panels that show the current forwarded identity, built-in role reference, backend-owned route access matrix, and active-project effective permissions for the current session. Production sign-in is now explicitly modeled as Microsoft Entra ID-backed trusted-header auth, while direct user lifecycle management still remains delegated to the upstream identity gateway rather than Stormrunner itself.
 
 ### 3.2 Multi-Tenant Governance & Capacity Controls (P1)
 **Effort:** 6-9 days

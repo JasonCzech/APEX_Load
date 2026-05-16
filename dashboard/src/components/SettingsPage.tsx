@@ -1451,14 +1451,14 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
               <div className="settings-manager-summary">
                 <div>
                   <span className="setting-label">Access Control</span>
-                  <span className="setting-desc">Backend 3.1 scaffold for identity forwarded by an upstream OIDC or SAML gateway.</span>
+                  <span className="setting-desc">Backend 3.1 scaffold for identity forwarded by Microsoft Entra ID or another upstream OIDC or SAML gateway.</span>
                 </div>
                 <strong>{settings.auth.mode === 'disabled' ? 'Off' : 'Headers'}</strong>
               </div>
               <div className="setting-row">
                 <div className="setting-info">
                   <span className="setting-label">Access Control Mode</span>
-                  <span className="setting-desc">Trusted Headers expects an authenticating reverse proxy to inject user and role headers before requests reach Stormrunner.</span>
+                  <span className="setting-desc">Trusted Headers expects an authenticating reverse proxy to inject user and role headers before requests reach Stormrunner. In production this is expected to be Microsoft Entra ID-backed.</span>
                 </div>
                 <select
                   className="settings-input"
@@ -1480,7 +1480,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
                       className="settings-input"
                       value={settings.auth.provider_name || ''}
                       onChange={(e) => updateAuth('provider_name', e.target.value)}
-                      placeholder="Okta Workforce"
+                      placeholder="Microsoft Entra ID"
                     />
                   </div>
                   <div className="setting-row">
@@ -1571,7 +1571,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
                     <div className="settings-manager-summary">
                       <div>
                         <span className="setting-label">Current Session Access</span>
-                        <span className="setting-desc">Shows the identity and role assignments from the trusted headers reaching Stormrunner right now. User lifecycle remains managed by the upstream OIDC or SAML gateway.</span>
+                        <span className="setting-desc">Shows the identity and role assignments from the trusted headers reaching Stormrunner right now. User lifecycle remains managed by Microsoft Entra ID or another upstream OIDC or SAML gateway.</span>
                       </div>
                       <strong>{formatAuthStatusSummary(authStatus)}</strong>
                     </div>

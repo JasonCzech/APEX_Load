@@ -93,7 +93,7 @@ func TestSystemSettingsAPIAndPersistence(t *testing.T) {
 		},
 		Auth: AuthSettings{
 			Mode:               authModeTrustedHeaders,
-			ProviderName:       "Okta Workforce",
+			ProviderName:       "Microsoft Entra ID",
 			LoginURL:           "https://login.example.test/stormrunner/start",
 			LogoutURL:          "/logout",
 			UserHeader:         "X-Test-User",
@@ -164,8 +164,8 @@ func TestSystemSettingsAPIAndPersistence(t *testing.T) {
 	if updated.Auth.RolesHeader != "X-Test-Roles" {
 		t.Fatalf("roles header = %q, want X-Test-Roles", updated.Auth.RolesHeader)
 	}
-	if updated.Auth.ProviderName != "Okta Workforce" {
-		t.Fatalf("provider name = %q, want Okta Workforce", updated.Auth.ProviderName)
+	if updated.Auth.ProviderName != "Microsoft Entra ID" {
+		t.Fatalf("provider name = %q, want Microsoft Entra ID", updated.Auth.ProviderName)
 	}
 	if updated.Auth.LoginURL != "https://login.example.test/stormrunner/start" {
 		t.Fatalf("login url = %q, want configured login url", updated.Auth.LoginURL)
