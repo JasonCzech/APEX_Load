@@ -10,6 +10,10 @@ import NewTestPage from './NewTestPage'
 
 const apiMock = {
   listScenarios: vi.fn(),
+  listScenarioSchedules: vi.fn(),
+  createScenarioSchedule: vi.fn(),
+  updateScenarioSchedule: vi.fn(),
+  deleteScenarioSchedule: vi.fn(),
   createTest: vi.fn(),
   startTest: vi.fn(),
 }
@@ -65,6 +69,8 @@ describe('NewTestPage', () => {
     })
     apiMock.createTest.mockResolvedValue({ id: 'test-1' })
     apiMock.startTest.mockResolvedValue({})
+    apiMock.listScenarioSchedules.mockResolvedValue({ schedules: [], count: 0 })
+    apiMock.createScenarioSchedule.mockResolvedValue({ id: 'schedule-1' })
   })
 
   afterEach(async () => {
@@ -101,6 +107,44 @@ describe('NewTestPage', () => {
 
     const releaseTags = Array.from(container.querySelectorAll('.new-test-tag')).map((element) => element.textContent)
     expect(releaseTags).toEqual(['PI29', 'PI29'])
+  })
+
+  it('creates a scenario schedule from the schedules view', async () => {
+    await act(async () => {
+      root.render(
+        <NewTestPage
+          activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+          activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+          releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+          onSelectTest={vi.fn()}
+          onCreateRelease={vi.fn().mockResolvedValue(null)}
+        />,
+      )
+    })
+
+    await flushPromises()
+
+    const schedulesButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Schedules')
+    expect(schedulesButton).toBeTruthy()
+
+    await act(async () => {
+      schedulesButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const saveButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Save Schedule')
+    expect(saveButton).toBeTruthy()
+
+    await act(async () => {
+      saveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.listScenarioSchedules).toHaveBeenCalledWith('scenario-1')
+    expect(apiMock.createScenarioSchedule).toHaveBeenCalledWith('scenario-1', expect.objectContaining({
+      name: 'Multi-group (3 groups) Schedule',
+      cron_expr: '0 9 * * 1-5',
+      enabled: true,
+    }))
   })
 })
 

@@ -71,3 +71,56 @@ func (s *Server) handleScenarioResults(w http.ResponseWriter, r *http.Request) {
 	tests := s.runner.ListTestsByContext(r.URL.Query().Get("application_id"), r.URL.Query().Get("release_id"), scenarioID)
 	writeJSON(w, http.StatusOK, map[string]any{"tests": tests, "count": len(tests)})
 }
+
+func (s *Server) handleCreateScenarioSchedule(w http.ResponseWriter, r *http.Request) {
+	var req CreateScenarioScheduleRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+	schedule, err := s.runner.CreateScenarioSchedule(r.PathValue("id"), req)
+	if err != nil {
+		status := http.StatusBadRequest
+		if err.Error() == "scenario not found: "+r.PathValue("id") {
+			status = http.StatusNotFound
+		}
+		writeError(w, status, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, schedule)
+}
+
+func (s *Server) handleListScenarioSchedules(w http.ResponseWriter, r *http.Request) {
+	schedules, ok := s.runner.ListScenarioSchedules(r.PathValue("id"))
+	if !ok {
+		writeError(w, http.StatusNotFound, "scenario not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"schedules": schedules, "count": len(schedules)})
+}
+
+func (s *Server) handleUpdateScenarioSchedule(w http.ResponseWriter, r *http.Request) {
+	var req CreateScenarioScheduleRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+	schedule, ok, err := s.runner.UpdateScenarioSchedule(r.PathValue("id"), r.PathValue("schedule_id"), req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if !ok {
+		writeError(w, http.StatusNotFound, "scenario schedule not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, schedule)
+}
+
+func (s *Server) handleDeleteScenarioSchedule(w http.ResponseWriter, r *http.Request) {
+	if !s.runner.DeleteScenarioSchedule(r.PathValue("id"), r.PathValue("schedule_id")) {
+		writeError(w, http.StatusNotFound, "scenario schedule not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"deleted": r.PathValue("schedule_id")})
+}

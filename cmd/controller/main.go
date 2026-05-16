@@ -56,6 +56,20 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := server.RunDueSchedules(); err != nil {
+					slog.Error("scheduled test evaluator failed", "err", err)
+				}
+			}
+		}
+	}()
 
 	// Run server in background so the main goroutine can handle shutdown signals.
 	go func() {

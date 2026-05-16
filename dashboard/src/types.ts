@@ -576,6 +576,23 @@ export interface ScenarioDataPoolBinding {
   updated_at?: string
 }
 
+export interface ScenarioSchedule {
+  id: string
+  scenario_id: string
+  name: string
+  cron_expr: string
+  timezone?: string
+  release_id?: string
+  run_name_template?: string
+  enabled: boolean
+  last_run_test_id?: string
+  last_run_at?: string
+  next_run_at?: string
+  last_error?: string
+  created_at: string
+  updated_at: string
+}
+
 export type TestStatus =
   | 'QUEUED'
   | 'PENDING'
@@ -778,6 +795,7 @@ export interface StoredScenario {
     ramp_down?: string
     initialization?: 'at_runtime' | 'at_once'
   }>
+  schedules?: ScenarioSchedule[]
   data_pools?: ScenarioDataPoolBinding[]
   created_at: string
   updated_at: string

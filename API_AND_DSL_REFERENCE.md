@@ -390,6 +390,62 @@ Emits JSON messages:
 }
 ```
 
+### Scenario Schedules
+
+Scenario schedules bind a reusable scenario to a five-field cron expression. The controller evaluates these schedules on its background loop and creates queued runs through the same scenario execution path used by manual launches.
+
+#### List schedules for a scenario
+
+```
+GET /api/v1/scenarios/scenario-123/schedules
+```
+
+**Response:**
+```json
+{
+  "schedules": [
+    {
+      "id": "schedule-456",
+      "scenario_id": "scenario-123",
+      "name": "Weekday smoke",
+      "cron_expr": "0 9 * * 1-5",
+      "release_id": "release-22",
+      "run_name_template": "Checkout Smoke",
+      "enabled": true,
+      "next_run_at": "2026-05-18T09:00:00Z",
+      "last_run_at": "2026-05-17T09:00:12Z",
+      "created_at": "2026-05-12T10:00:00Z",
+      "updated_at": "2026-05-17T09:00:12Z"
+    }
+  ],
+  "count": 1
+}
+```
+
+#### Create or update a schedule
+
+```
+POST /api/v1/scenarios/scenario-123/schedules
+PUT /api/v1/scenarios/scenario-123/schedules/schedule-456
+Content-Type: application/json
+
+{
+  "name": "Weekday smoke",
+  "cron_expr": "0 9 * * 1-5",
+  "release_id": "release-22",
+  "run_name_template": "Checkout Smoke",
+  "enabled": true
+}
+```
+
+The `PUT` variant updates the targeted schedule in place. Setting `enabled` to `false` keeps the schedule persisted while preventing future launches.
+
+#### Delete a schedule
+
+```
+DELETE /api/v1/scenarios/scenario-123/schedules/schedule-456
+```
+
 ### Scripts
 
 #### Create/upload script

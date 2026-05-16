@@ -9,6 +9,7 @@ import {
   RunArchiveManifest,
   RunArchiveReport,
   RuntimeSettingsOverride,
+  ScenarioSchedule,
   ScenarioDataPoolBinding,
   ScenarioMode,
   TestSummary,
@@ -77,6 +78,20 @@ type TestActionResponse = {
   status: string
   test_id: string
   message?: string
+}
+
+type ScenarioScheduleRequest = {
+  name: string
+  cron_expr: string
+  timezone?: string
+  release_id?: string
+  run_name_template?: string
+  enabled?: boolean
+}
+
+type ScenarioScheduleListResponse = {
+  schedules: ScenarioSchedule[]
+  count: number
 }
 
 type DeleteTestResponse = {
@@ -193,6 +208,26 @@ export function useTestApi() {
   
   const resumeTest = useCallback((id: string) => request<TestActionResponse>(`/tests/${id}/resume`, { method: 'POST' }), [])
 
+  const listScenarioSchedules = useCallback(
+    (scenarioId: string) => request<ScenarioScheduleListResponse>(`/scenarios/${scenarioId}/schedules`),
+    [],
+  )
+
+  const createScenarioSchedule = useCallback(
+    (scenarioId: string, data: ScenarioScheduleRequest) => request<ScenarioSchedule>(`/scenarios/${scenarioId}/schedules`, { method: 'POST', body: JSON.stringify(data) }),
+    [],
+  )
+
+  const updateScenarioSchedule = useCallback(
+    (scenarioId: string, scheduleId: string, data: ScenarioScheduleRequest) => request<ScenarioSchedule>(`/scenarios/${scenarioId}/schedules/${scheduleId}`, { method: 'PUT', body: JSON.stringify(data) }),
+    [],
+  )
+
+  const deleteScenarioSchedule = useCallback(
+    (scenarioId: string, scheduleId: string) => request<{ deleted: string }>(`/scenarios/${scenarioId}/schedules/${scheduleId}`, { method: 'DELETE' }),
+    [],
+  )
+
   const moveTest = useCallback(
     (id: string, folderId: string | null) =>
       request<MoveTestResponse>(`/tests/${id}/move`, { method: 'PATCH', body: JSON.stringify({ folder_id: folderId }) }),
@@ -286,6 +321,10 @@ export function useTestApi() {
       adjustDuration,
       pauseTest,
       resumeTest,
+      listScenarioSchedules,
+      createScenarioSchedule,
+      updateScenarioSchedule,
+      deleteScenarioSchedule,
     }),
     [
       listTests,
@@ -298,6 +337,10 @@ export function useTestApi() {
       deleteTest,
       pauseTest,
       resumeTest,
+      listScenarioSchedules,
+      createScenarioSchedule,
+      updateScenarioSchedule,
+      deleteScenarioSchedule,
       moveTest,
       getMetrics,
       getTestArchiveManifest,

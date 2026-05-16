@@ -63,8 +63,8 @@ The 19 gaps are organized into five sequential delivery waves. Each wave targets
 ### Implemented Status
 - **3.2 Multi-Tenant Governance & Capacity Controls:** Project-level concurrent-test and VUser quotas are enforced, quota-blocked runs enter a persisted pending queue, startup/quota reconciliation promotes eligible work, and queue metadata is exposed in the API and dashboard.
 - **3.3 Alerting & Notifications:** Lifecycle webhook notifications are available through system settings with Slack Block Kit and Microsoft Teams payload formatters.
+- **3.4 Scheduled Tests:** Scenarios can now carry persisted recurring schedules, the controller evaluates five-field cron expressions on a background loop, and the dashboard includes a Schedules view for create, edit, pause, and delete flows.
 - **3.5 Run Provenance & Reproducibility:** Archived manifests now capture immutable execution provenance snapshots, and completed runs can be explicitly pinned as the preferred future comparison baseline.
-- **Remaining Wave 3 item:** `3.4 Scheduled Tests` is still pending.
 
 ### 3.1 User Management & RBAC (P1)
 **Effort:** 8-12 days
@@ -86,6 +86,7 @@ The 19 gaps are organized into five sequential delivery waves. Each wave targets
 **Effort:** 3-5 days
 - **Scheduler Loop:** Add a cron evaluator in `cmd/controller/main.go`.
 - **Dashboard UI:** Add a Schedules tab to manage recurring tests.
+- **Status:** Implemented. Schedules are stored per scenario, reconciled across controller restarts, and materialize queued runs through the existing scenario-backed execution path.
 
 ### 3.5 Run Provenance & Reproducibility (P1)
 **Effort:** 4-6 days

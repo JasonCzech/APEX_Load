@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Application, Release, StoredScenario } from '../types'
+import { Application, Release, ScenarioSchedule, StoredScenario } from '../types'
 import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
 import { getErrorMessage } from '../utils/errorUtils'
@@ -14,6 +14,10 @@ interface Props {
 
 function formatDate(value?: string) {
   return value ? new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Never'
+}
+
+function formatScheduleTimestamp(value?: string) {
+  return value ? new Date(value).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Not scheduled'
 }
 
 function formatScenarioMode(value?: StoredScenario['scenario_mode']) {
@@ -43,12 +47,28 @@ function formatRuntimeContinueOnError(scenario?: StoredScenario | null) {
   return value ? 'Enabled' : 'Disabled'
 }
 
+function buildDefaultScheduleDraft(scenario?: StoredScenario | null, releaseId?: string) {
+  return {
+    name: scenario ? `${scenario.name} Schedule` : '',
+    cron_expr: '0 9 * * 1-5',
+    release_id: releaseId || '',
+    run_name_template: scenario?.name || '',
+    enabled: true,
+  }
+}
+
 export default function NewTestPage({ activeApplication, activeRelease, releases, onSelectTest, onCreateRelease }: Props) {
   const api = useApi()
   const { activeProject } = useProject()
+  const [pageMode, setPageMode] = useState<'launch' | 'schedules'>('launch')
   const [scenarios, setScenarios] = useState<StoredScenario[]>([])
   const [scenarioId, setScenarioId] = useState('')
   const [releaseId, setReleaseId] = useState(activeRelease?.id || '')
+  const [schedules, setSchedules] = useState<ScenarioSchedule[]>([])
+  const [scheduleLoading, setScheduleLoading] = useState(false)
+  const [scheduleSubmitting, setScheduleSubmitting] = useState(false)
+  const [editingScheduleId, setEditingScheduleId] = useState<string | null>(null)
+  const [scheduleDraft, setScheduleDraft] = useState(buildDefaultScheduleDraft())
   const [runName, setRunName] = useState('')
   const [newReleaseName, setNewReleaseName] = useState('')
   const [creating, setCreating] = useState(false)
@@ -70,6 +90,21 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
 
   const scenario = useMemo(() => scenarios.find(item => item.id === scenarioId), [scenarios, scenarioId])
   const release = useMemo(() => releases.find(item => item.id === releaseId), [releases, releaseId])
+  const refreshSchedules = useCallback(async (currentScenarioId: string) => {
+    if (!currentScenarioId) {
+      setSchedules([])
+      return
+    }
+    setScheduleLoading(true)
+    try {
+      const res = await api.listScenarioSchedules(currentScenarioId)
+      setSchedules(res.schedules || [])
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Unable to load schedules'))
+    } finally {
+      setScheduleLoading(false)
+    }
+  }, [api])
   const totalVUsers = useMemo(() => scenario?.scripts.reduce((sum, script) => sum + (script.vusers || 0), 0) || 0, [scenario])
   const protocols = useMemo(() => {
     const values = new Set((scenario?.scripts || []).map(script => script.protocol || 'http'))
@@ -86,10 +121,19 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
     return checks
   }, [activeApplication, release, scenario])
   const canLaunch = readiness.every(item => item.ready) && !creating
+  const nextScheduledRun = useMemo(() => schedules.filter(item => item.enabled && item.next_run_at).sort((left, right) => (left.next_run_at || '').localeCompare(right.next_run_at || ''))[0], [schedules])
 
   useEffect(() => {
     if (scenario && !runName) setRunName(scenario.name)
   }, [scenario, runName])
+  useEffect(() => {
+    void refreshSchedules(scenarioId)
+  }, [refreshSchedules, scenarioId])
+  useEffect(() => {
+    if (!editingScheduleId) {
+      setScheduleDraft(buildDefaultScheduleDraft(scenario, releaseId))
+    }
+  }, [editingScheduleId, releaseId, scenario])
 
   const createRelease = async () => {
     const name = newReleaseName.trim()
@@ -126,6 +170,79 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
     }
   }
 
+  const submitSchedule = async () => {
+	if (!scenario) {
+	  setError('Choose a scenario before managing schedules.')
+	  return
+	}
+	setScheduleSubmitting(true)
+	setError('')
+	const payload = {
+	  name: scheduleDraft.name.trim(),
+	  cron_expr: scheduleDraft.cron_expr.trim(),
+	  release_id: scheduleDraft.release_id || undefined,
+	  run_name_template: scheduleDraft.run_name_template.trim() || undefined,
+	  enabled: scheduleDraft.enabled,
+	}
+	try {
+	  if (editingScheduleId) {
+	    await api.updateScenarioSchedule(scenario.id, editingScheduleId, payload)
+	  } else {
+	    await api.createScenarioSchedule(scenario.id, payload)
+	  }
+	  setEditingScheduleId(null)
+	  setScheduleDraft(buildDefaultScheduleDraft(scenario, releaseId))
+	  await refreshSchedules(scenario.id)
+	} catch (err: unknown) {
+	  setError(getErrorMessage(err, 'Unable to save schedule'))
+	} finally {
+	  setScheduleSubmitting(false)
+	}
+  }
+
+  const editSchedule = (schedule: ScenarioSchedule) => {
+	setEditingScheduleId(schedule.id)
+	setScheduleDraft({
+	  name: schedule.name,
+	  cron_expr: schedule.cron_expr,
+	  release_id: schedule.release_id || '',
+	  run_name_template: schedule.run_name_template || '',
+	  enabled: schedule.enabled,
+	})
+  }
+
+  const toggleSchedule = async (schedule: ScenarioSchedule) => {
+	if (!scenario) return
+	setError('')
+	try {
+	  await api.updateScenarioSchedule(scenario.id, schedule.id, {
+	    name: schedule.name,
+	    cron_expr: schedule.cron_expr,
+	    release_id: schedule.release_id || undefined,
+	    run_name_template: schedule.run_name_template || undefined,
+	    enabled: !schedule.enabled,
+	  })
+	  await refreshSchedules(scenario.id)
+	} catch (err: unknown) {
+	  setError(getErrorMessage(err, 'Unable to update schedule'))
+	}
+  }
+
+  const deleteSchedule = async (scheduleId: string) => {
+	if (!scenario) return
+	setError('')
+	try {
+	  await api.deleteScenarioSchedule(scenario.id, scheduleId)
+	  if (editingScheduleId === scheduleId) {
+	    setEditingScheduleId(null)
+	    setScheduleDraft(buildDefaultScheduleDraft(scenario, releaseId))
+	  }
+	  await refreshSchedules(scenario.id)
+	} catch (err: unknown) {
+	  setError(getErrorMessage(err, 'Unable to delete schedule'))
+	}
+  }
+
   return (
     <div className="page">
       <div className="page-header">
@@ -133,10 +250,153 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
           <h2>New Test</h2>
           <p className="page-subtitle">Choose the release context, scenario, and run setup.</p>
         </div>
+        <div className="inline-create-row">
+          <button className={`btn ${pageMode === 'launch' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setPageMode('launch')}>Launch Runs</button>
+          <button className={`btn ${pageMode === 'schedules' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setPageMode('schedules')}>Schedules</button>
+        </div>
       </div>
 
       {error && <div className="settings-error-inline">{error}</div>}
 
+      {pageMode === 'schedules' ? (
+        <div className="new-test-layout">
+          <div className="new-test-main">
+            <section className="new-test-step">
+              <div className="new-test-step-header">
+                <span className="new-test-step-index">1</span>
+                <div>
+                  <h3>Scenario Schedule</h3>
+                  <p>Bind a recurring cron expression to a reusable scenario.</p>
+                </div>
+              </div>
+              <div className="settings-group">
+                <div className="setting-row">
+                  <div className="setting-info">
+                    <span className="setting-label">Scenario</span>
+                    <span className="setting-desc">Recurring runs always execute one stored scenario</span>
+                  </div>
+                  <select className="settings-input" value={scenarioId} onChange={(event) => { setScenarioId(event.target.value); setEditingScheduleId(null) }}>
+                    <option value="">Select scenario</option>
+                    {scenarios.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+                  </select>
+                </div>
+                <div className="setting-row">
+                  <div className="setting-info">
+                    <span className="setting-label">Schedule Name</span>
+                    <span className="setting-desc">Human-friendly label for the recurring trigger</span>
+                  </div>
+                  <input className="settings-input" value={scheduleDraft.name} onChange={(event) => setScheduleDraft(prev => ({ ...prev, name: event.target.value }))} placeholder="Nightly smoke" />
+                </div>
+                <div className="setting-row">
+                  <div className="setting-info">
+                    <span className="setting-label">Cron Expression</span>
+                    <span className="setting-desc">Five-field cron format, for example `0 9 * * 1-5`</span>
+                  </div>
+                  <input className="settings-input" value={scheduleDraft.cron_expr} onChange={(event) => setScheduleDraft(prev => ({ ...prev, cron_expr: event.target.value }))} placeholder="0 9 * * 1-5" />
+                </div>
+                <div className="setting-row">
+                  <div className="setting-info">
+                    <span className="setting-label">Release Context</span>
+                    <span className="setting-desc">Optional release to attach to scheduled runs</span>
+                  </div>
+                  <select className="settings-input" value={scheduleDraft.release_id} onChange={(event) => setScheduleDraft(prev => ({ ...prev, release_id: event.target.value }))}>
+                    <option value="">No release</option>
+                    {releases.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+                  </select>
+                </div>
+                <div className="setting-row">
+                  <div className="setting-info">
+                    <span className="setting-label">Run Name Template</span>
+                    <span className="setting-desc">Default run name used when the schedule fires</span>
+                  </div>
+                  <input className="settings-input" value={scheduleDraft.run_name_template} onChange={(event) => setScheduleDraft(prev => ({ ...prev, run_name_template: event.target.value }))} placeholder={scenario?.name || 'Scheduled run'} />
+                </div>
+                <label className="setting-row" style={{ alignItems: 'center', gap: 12 }}>
+                  <input type="checkbox" checked={scheduleDraft.enabled} onChange={(event) => setScheduleDraft(prev => ({ ...prev, enabled: event.target.checked }))} />
+                  <div className="setting-info">
+                    <span className="setting-label">Enabled</span>
+                    <span className="setting-desc">Disabled schedules stay saved but do not trigger</span>
+                  </div>
+                </label>
+                <div className="inline-create-row">
+                  <button className="btn btn-primary" onClick={submitSchedule} disabled={!scenario || scheduleSubmitting}>{editingScheduleId ? 'Update Schedule' : 'Save Schedule'}</button>
+                  {editingScheduleId && <button className="btn btn-secondary" onClick={() => { setEditingScheduleId(null); setScheduleDraft(buildDefaultScheduleDraft(scenario, releaseId)) }}>Cancel Edit</button>}
+                </div>
+              </div>
+            </section>
+
+            <section className="new-test-step">
+              <div className="new-test-step-header">
+                <span className="new-test-step-index">2</span>
+                <div>
+                  <h3>Recurring Triggers</h3>
+                  <p>Review next run times, recent executions, and disable or remove stale schedules.</p>
+                </div>
+              </div>
+              {scheduleLoading ? (
+                <div className="new-test-empty">Loading schedules…</div>
+              ) : schedules.length > 0 ? (
+                <div className="data-table">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Cron</th>
+                        <th>Next Run</th>
+                        <th>Last Run</th>
+                        <th>Release</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {schedules.map(item => (
+                        <tr key={item.id}>
+                          <td className="cell-name">{item.name}</td>
+                          <td className="cell-mono">{item.cron_expr}</td>
+                          <td>{formatScheduleTimestamp(item.next_run_at)}</td>
+                          <td>{formatScheduleTimestamp(item.last_run_at)}</td>
+                          <td>{releases.find(releaseItem => releaseItem.id === item.release_id)?.name || 'None'}</td>
+                          <td>{item.enabled ? 'Enabled' : 'Paused'}{item.last_error ? ` · ${item.last_error}` : ''}</td>
+                          <td>
+                            <div className="inline-create-row">
+                              <button className="btn btn-secondary" onClick={() => editSchedule(item)}>Edit</button>
+                              <button className="btn btn-secondary" onClick={() => toggleSchedule(item)}>{item.enabled ? 'Pause' : 'Enable'}</button>
+                              <button className="btn btn-secondary" onClick={() => deleteSchedule(item.id)}>Delete</button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="new-test-empty">No schedules exist for this scenario yet.</div>
+              )}
+            </section>
+          </div>
+
+          <aside className="new-test-summary">
+            <h3>Schedule Summary</h3>
+            <div className="new-test-summary-grid">
+              <div><span>Scenario</span><strong>{scenario?.name || 'None'}</strong></div>
+              <div><span>Schedules</span><strong>{schedules.length}</strong></div>
+              <div><span>Enabled</span><strong>{schedules.filter(item => item.enabled).length}</strong></div>
+              <div><span>Next Run</span><strong>{nextScheduledRun ? formatScheduleTimestamp(nextScheduledRun.next_run_at) : 'Not scheduled'}</strong></div>
+            </div>
+            <div className="readiness-list">
+              <div className={`readiness-item ${scenario ? 'ready' : 'blocked'}`}>
+                <span>{scenario ? 'Ready' : 'Needed'}</span>
+                <p>{scenario ? `${scenario.name} selected` : 'Select a scenario to manage schedules'}</p>
+              </div>
+              <div className={`readiness-item ${scheduleDraft.name.trim() && scheduleDraft.cron_expr.trim() ? 'ready' : 'blocked'}`}>
+                <span>{scheduleDraft.name.trim() && scheduleDraft.cron_expr.trim() ? 'Ready' : 'Needed'}</span>
+                <p>{scheduleDraft.name.trim() && scheduleDraft.cron_expr.trim() ? 'Schedule form is complete' : 'Enter a name and cron expression'}</p>
+              </div>
+            </div>
+          </aside>
+        </div>
+      ) : (
       <div className="new-test-layout">
         <div className="new-test-main">
           <section className="new-test-step">
@@ -360,6 +620,7 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
           </div>
         </aside>
       </div>
+      )}
     </div>
   )
 }

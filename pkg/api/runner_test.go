@@ -30,14 +30,25 @@ type metricsStoreSpy struct {
 	projectsByID          map[string]*storage.Project
 	historyByTestID       map[string][]any
 	archiveByTestID       map[string]*storage.RunArchiveRecord
+	schedulesByID         map[string]*storage.ScenarioSchedule
 }
 
 type provenanceInventoryBackend struct{}
+
+type scheduleExecutionBackend struct {
+	started chan string
+}
 
 func (provenanceInventoryBackend) Run(_ *TestRunner, _ *ManagedTest) {}
 
 func (provenanceInventoryBackend) SystemInventory(_ context.Context) []GeneratorInventoryEntry {
 	return []GeneratorInventoryEntry{{Target: "generator-1", Status: "healthy", AvailableCapacity: 50}}
+}
+
+func (b *scheduleExecutionBackend) Run(_ *TestRunner, test *ManagedTest) {
+	if b != nil && b.started != nil {
+		b.started <- test.ID
+	}
 }
 
 func (s *metricsStoreSpy) SaveScript(script *dsl.Script) error {
@@ -95,6 +106,48 @@ func (s *metricsStoreSpy) GetScenario(id string) (*storage.Scenario, []storage.S
 }
 func (s *metricsStoreSpy) ListScenarios() ([]*storage.Scenario, error) { return nil, nil }
 func (s *metricsStoreSpy) DeleteScenario(id string) error              { return nil }
+func (s *metricsStoreSpy) SaveScenarioSchedule(schedule *storage.ScenarioSchedule) error {
+	if s.schedulesByID == nil {
+		s.schedulesByID = make(map[string]*storage.ScenarioSchedule)
+	}
+	clone := *schedule
+	if schedule.LastRunAt != nil {
+		lastRunAt := *schedule.LastRunAt
+		clone.LastRunAt = &lastRunAt
+	}
+	if schedule.NextRunAt != nil {
+		nextRunAt := *schedule.NextRunAt
+		clone.NextRunAt = &nextRunAt
+	}
+	s.schedulesByID[schedule.ID] = &clone
+	return nil
+}
+func (s *metricsStoreSpy) GetScenarioSchedule(id string) (*storage.ScenarioSchedule, error) {
+	if s.schedulesByID == nil {
+		return nil, nil
+	}
+	return s.schedulesByID[id], nil
+}
+func (s *metricsStoreSpy) ListScenarioSchedules(scenarioID string) ([]*storage.ScenarioSchedule, error) {
+	out := []*storage.ScenarioSchedule{}
+	for _, schedule := range s.schedulesByID {
+		if schedule.ScenarioID == scenarioID {
+			out = append(out, schedule)
+		}
+	}
+	return out, nil
+}
+func (s *metricsStoreSpy) ListAllScenarioSchedules() ([]*storage.ScenarioSchedule, error) {
+	out := make([]*storage.ScenarioSchedule, 0, len(s.schedulesByID))
+	for _, schedule := range s.schedulesByID {
+		out = append(out, schedule)
+	}
+	return out, nil
+}
+func (s *metricsStoreSpy) DeleteScenarioSchedule(id string) error {
+	delete(s.schedulesByID, id)
+	return nil
+}
 func (s *metricsStoreSpy) SaveScenarioDataPoolBindings(scenarioID string, bindings []storage.ScenarioDataPoolBinding) error {
 	return nil
 }
@@ -3059,6 +3112,100 @@ func TestRunTestIncludesConfiguredStartDelay(t *testing.T) {
 	}
 	if completed.EndedAt.Sub(startedAt) < 1800*time.Millisecond {
 		t.Fatalf("expected run duration to include start delay, got %v", completed.EndedAt.Sub(startedAt))
+	}
+}
+
+func TestNextScenarioScheduleRun(t *testing.T) {
+	schedule := &storage.ScenarioSchedule{CronExpr: "*/15 * * * *"}
+	next, err := nextScenarioScheduleRun(schedule, time.Date(2026, time.May, 16, 10, 7, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("nextScenarioScheduleRun returned error: %v", err)
+	}
+	want := time.Date(2026, time.May, 16, 10, 15, 0, 0, time.UTC)
+	if next == nil || !next.Equal(want) {
+		t.Fatalf("next run = %v, want %s", next, want)
+	}
+}
+
+func TestScenarioSchedulerRunDueSchedulesCreatesAndStartsRun(t *testing.T) {
+	store := &metricsStoreSpy{}
+	runner := NewTestRunner(2, NewHub(), store)
+	backend := &scheduleExecutionBackend{started: make(chan string, 1)}
+	runner.setExecutionBackend(backend)
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-schedule",
+		Name:     "Scheduled Script",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Actions:  []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+	scenario, err := runner.StoreScenario(CreateScenarioRequest{
+		Name:     "Scheduled Checkout",
+		Duration: "1m",
+		Groups: []CreateGroupEntry{{
+			ScriptID: "script-schedule",
+			VUsers:   1,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("StoreScenario returned error: %v", err)
+	}
+	now := time.Date(2026, time.May, 16, 12, 0, 0, 0, time.UTC)
+	due := now.Add(-time.Minute)
+	schedule := &storage.ScenarioSchedule{
+		ID:              "schedule-1",
+		ScenarioID:      scenario.ID,
+		Name:            "Lunch Run",
+		CronExpr:        "*/5 * * * *",
+		RunNameTemplate: "Daily Smoke",
+		Enabled:         true,
+		NextRunAt:       &due,
+		CreatedAt:       now.Add(-time.Hour),
+		UpdatedAt:       now.Add(-time.Hour),
+	}
+	runner.mu.Lock()
+	if err := runner.saveScenarioScheduleLocked(schedule); err != nil {
+		runner.mu.Unlock()
+		t.Fatalf("saveScenarioScheduleLocked returned error: %v", err)
+	}
+	runner.mu.Unlock()
+
+	scheduler := newScenarioScheduler(runner)
+	scheduler.now = func() time.Time { return now }
+	if err := scheduler.RunDueSchedules(); err != nil {
+		t.Fatalf("RunDueSchedules returned error: %v", err)
+	}
+
+	select {
+	case testID := <-backend.started:
+		if testID == "" {
+			t.Fatal("expected scheduled run to start a test")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for scheduled test to start")
+	}
+
+	runner.mu.RLock()
+	defer runner.mu.RUnlock()
+	if len(runner.tests) != 1 {
+		t.Fatalf("runner.tests length = %d, want 1", len(runner.tests))
+	}
+	storedScenario, ok := runner.scenarios[scenario.ID]
+	if !ok || len(storedScenario.Schedules) != 1 {
+		t.Fatalf("scenario schedules = %#v, want 1 stored schedule", storedScenario)
+	}
+	updated := storedScenario.Schedules[0]
+	if updated.LastRunTestID == "" {
+		t.Fatal("expected LastRunTestID to be recorded")
+	}
+	if updated.LastRunAt == nil || !updated.LastRunAt.Equal(now) {
+		t.Fatalf("LastRunAt = %v, want %s", updated.LastRunAt, now)
+	}
+	if updated.NextRunAt == nil || !updated.NextRunAt.After(now) {
+		t.Fatalf("NextRunAt = %v, want value after %s", updated.NextRunAt, now)
+	}
+	if updated.LastError != "" {
+		t.Fatalf("LastError = %q, want empty", updated.LastError)
 	}
 }
 

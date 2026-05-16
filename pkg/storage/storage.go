@@ -29,6 +29,11 @@ type Store interface {
 	GetScenario(id string) (*Scenario, []ScenarioScript, error)
 	ListScenarios() ([]*Scenario, error)
 	DeleteScenario(id string) error
+	SaveScenarioSchedule(schedule *ScenarioSchedule) error
+	GetScenarioSchedule(id string) (*ScenarioSchedule, error)
+	ListScenarioSchedules(scenarioID string) ([]*ScenarioSchedule, error)
+	ListAllScenarioSchedules() ([]*ScenarioSchedule, error)
+	DeleteScenarioSchedule(id string) error
 	SaveScenarioDataPoolBindings(scenarioID string, bindings []ScenarioDataPoolBinding) error
 	ListScenarioDataPoolBindings(scenarioID string) ([]ScenarioDataPoolBinding, error)
 	DeleteScenarioDataPoolBinding(id string) error
@@ -126,6 +131,23 @@ type ScenarioScript struct {
 	RampDown       string `json:"ramp_down,omitempty"`
 	Iterations     *int   `json:"iterations,omitempty"`
 	Initialization string `json:"initialization,omitempty"`
+}
+
+type ScenarioSchedule struct {
+	ID                string     `json:"id"`
+	ScenarioID        string     `json:"scenario_id"`
+	Name              string     `json:"name"`
+	CronExpr          string     `json:"cron_expr"`
+	Timezone          string     `json:"timezone,omitempty"`
+	ReleaseID         string     `json:"release_id,omitempty"`
+	RunNameTemplate   string     `json:"run_name_template,omitempty"`
+	Enabled           bool       `json:"enabled"`
+	LastRunTestID     string     `json:"last_run_test_id,omitempty"`
+	LastRunAt         *time.Time `json:"last_run_at,omitempty"`
+	NextRunAt         *time.Time `json:"next_run_at,omitempty"`
+	LastError         string     `json:"last_error,omitempty"`
+	CreatedAt         time.Time  `json:"created_at"`
+	UpdatedAt         time.Time  `json:"updated_at"`
 }
 
 type SharedDataPool struct {

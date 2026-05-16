@@ -103,6 +103,8 @@ Navigate to `http://127.0.0.1:8080`.
    - Set VUsers: 50, Duration: 5 minutes, Ramp-up: 30 seconds
    - Click **Start Test**
 
+Recurring runs can be managed from the same **Scenarios** page by switching to the **Schedules** view, selecting a stored scenario, and saving a five-field cron expression.
+
 3. **Monitor in real-time**:
    - Watch metrics dashboard: throughput, latency (p50/p95/p99), error rate
    - Results available after test completes
@@ -233,6 +235,14 @@ POST   /api/v1/scripts/{id}/validate    — Validate script
 POST   /api/v1/scripts/import/sample    — Build a script from raw HTTP, cURL, REST JSON, or HAR samples
 POST   /api/v1/scripts/import/loadrunner — Convert a LoadRunner archive to DSL
 POST   /api/v1/scripts/import/jmeter/validate — Validate a JMeter import draft
+```
+
+**Scenario Schedules:**
+```
+GET    /api/v1/scenarios/{id}/schedules              — List recurring schedules for a scenario
+POST   /api/v1/scenarios/{id}/schedules              — Create a recurring schedule
+PUT    /api/v1/scenarios/{id}/schedules/{schedule_id} — Update or pause a schedule
+DELETE /api/v1/scenarios/{id}/schedules/{schedule_id} — Delete a recurring schedule
 ```
 
 **System:**

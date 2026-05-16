@@ -21,6 +21,7 @@ type Server struct {
 	httpServer    *http.Server
 	hub           *Hub
 	runner        *TestRunner
+	scheduler     *scenarioScheduler
 	browserReplay *BrowserReplayManager
 	recorder      *recorder.Recorder
 	store         storage.Store
@@ -57,6 +58,7 @@ func NewServer(cfg ServerConfig) *Server {
 	s := &Server{
 		hub:           hub,
 		runner:        runner,
+		scheduler:     newScenarioScheduler(runner),
 		browserReplay: NewBrowserReplayManager(hub),
 		recorder:      rec,
 		store:         cfg.Store,
@@ -172,6 +174,10 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("GET /api/v1/scenarios/{id}", cors(log(auth(http.HandlerFunc(s.handleGetScenario)))))
 	s.mux.Handle("PUT /api/v1/scenarios/{id}", cors(log(auth(http.HandlerFunc(s.handleUpdateScenario)))))
 	s.mux.Handle("DELETE /api/v1/scenarios/{id}", cors(log(auth(http.HandlerFunc(s.handleDeleteScenario)))))
+	s.mux.Handle("POST /api/v1/scenarios/{id}/schedules", cors(log(auth(http.HandlerFunc(s.handleCreateScenarioSchedule)))))
+	s.mux.Handle("GET /api/v1/scenarios/{id}/schedules", cors(log(auth(http.HandlerFunc(s.handleListScenarioSchedules)))))
+	s.mux.Handle("PUT /api/v1/scenarios/{id}/schedules/{schedule_id}", cors(log(auth(http.HandlerFunc(s.handleUpdateScenarioSchedule)))))
+	s.mux.Handle("DELETE /api/v1/scenarios/{id}/schedules/{schedule_id}", cors(log(auth(http.HandlerFunc(s.handleDeleteScenarioSchedule)))))
 	s.mux.Handle("GET /api/v1/scenarios/{id}/results", cors(log(auth(http.HandlerFunc(s.handleScenarioResults)))))
 	s.mux.Handle("GET /api/v1/scenarios/{id}/data-pools", cors(log(auth(http.HandlerFunc(s.handleListScenarioDataPools)))))
 	s.mux.Handle("PUT /api/v1/scenarios/{id}/data-pools", cors(log(auth(http.HandlerFunc(s.handleUpdateScenarioDataPools)))))
@@ -297,4 +303,11 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	s.hub.Stop()
 	s.recorder.StopProxy()
 	return s.httpServer.Shutdown(ctx)
+}
+
+func (s *Server) RunDueSchedules() error {
+	if s == nil || s.scheduler == nil {
+		return nil
+	}
+	return s.scheduler.RunDueSchedules()
 }

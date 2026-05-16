@@ -115,6 +115,7 @@ func (s *SQLiteStore) init() error {
 			id TEXT PRIMARY KEY,
 			name TEXT NOT NULL,
 			duration TEXT NOT NULL,
+			start_delay TEXT,
 			scenario_mode TEXT,
 			shakeout_enabled INTEGER DEFAULT 0,
 			resource_baseline_enabled INTEGER DEFAULT 0,
@@ -123,6 +124,25 @@ func (s *SQLiteStore) init() error {
 			runtime_settings_json TEXT,
 			created_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL
+		)`,
+		`CREATE TABLE IF NOT EXISTS scenario_schedules (
+			id TEXT PRIMARY KEY,
+			scenario_id TEXT NOT NULL,
+			name TEXT NOT NULL,
+			cron_expr TEXT NOT NULL,
+			timezone TEXT,
+			release_id TEXT,
+			run_name_template TEXT,
+			enabled INTEGER DEFAULT 1,
+			last_run_test_id TEXT,
+			last_run_at DATETIME,
+			next_run_at DATETIME,
+			last_error TEXT,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL,
+			FOREIGN KEY(scenario_id) REFERENCES scenarios(id),
+			FOREIGN KEY(release_id) REFERENCES releases(id),
+			FOREIGN KEY(last_run_test_id) REFERENCES tests(id)
 		)`,
 		`CREATE TABLE IF NOT EXISTS scenario_scripts (
 			scenario_id TEXT NOT NULL,
@@ -323,6 +343,10 @@ func (s *SQLiteStore) init() error {
 
 	if _, err := s.db.Exec(`ALTER TABLE scenarios ADD COLUMN assignment_json TEXT`); err != nil && !isDuplicateColumnErr(err) {
 		return fmt.Errorf("failed to add scenarios.assignment_json column: %w", err)
+	}
+
+	if _, err := s.db.Exec(`ALTER TABLE scenarios ADD COLUMN start_delay TEXT`); err != nil && !isDuplicateColumnErr(err) {
+		return fmt.Errorf("failed to add scenarios.start_delay column: %w", err)
 	}
 
 	if _, err := s.db.Exec(`ALTER TABLE tests ADD COLUMN assignment_json TEXT`); err != nil && !isDuplicateColumnErr(err) {
@@ -737,12 +761,12 @@ func (s *SQLiteStore) SaveScenario(scenario *Scenario, scripts []ScenarioScript)
 		return err
 	}
 	defer tx.Rollback()
-	if _, err := tx.Exec(`INSERT INTO scenarios (id, name, duration, scenario_mode, shakeout_enabled, resource_baseline_enabled, assignment_json, goal_config_json, runtime_settings_json, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(id) DO UPDATE SET name=excluded.name, duration=excluded.duration, scenario_mode=excluded.scenario_mode,
+	if _, err := tx.Exec(`INSERT INTO scenarios (id, name, duration, start_delay, scenario_mode, shakeout_enabled, resource_baseline_enabled, assignment_json, goal_config_json, runtime_settings_json, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET name=excluded.name, duration=excluded.duration, start_delay=excluded.start_delay, scenario_mode=excluded.scenario_mode,
 		shakeout_enabled=excluded.shakeout_enabled, resource_baseline_enabled=excluded.resource_baseline_enabled,
 		assignment_json=excluded.assignment_json, goal_config_json=excluded.goal_config_json, runtime_settings_json=excluded.runtime_settings_json, updated_at=excluded.updated_at`,
-		scenario.ID, scenario.Name, scenario.Duration, scenario.ScenarioMode, scenario.ScriptShakeout, scenario.ResourceBaseline, string(assignmentJSON), string(goalJSON), string(runtimeJSON), scenario.CreatedAt, scenario.UpdatedAt); err != nil {
+		scenario.ID, scenario.Name, scenario.Duration, scenario.StartDelay, scenario.ScenarioMode, scenario.ScriptShakeout, scenario.ResourceBaseline, string(assignmentJSON), string(goalJSON), string(runtimeJSON), scenario.CreatedAt, scenario.UpdatedAt); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(`DELETE FROM scenario_scripts WHERE scenario_id = ?`, scenario.ID); err != nil {
@@ -763,11 +787,72 @@ func (s *SQLiteStore) SaveScenario(scenario *Scenario, scripts []ScenarioScript)
 	return tx.Commit()
 }
 
+func (s *SQLiteStore) SaveScenarioSchedule(schedule *ScenarioSchedule) error {
+	if schedule == nil {
+		return errors.New("schedule is required")
+	}
+	if strings.TrimSpace(schedule.ID) == "" {
+		return errors.New("schedule id is required")
+	}
+	if strings.TrimSpace(schedule.ScenarioID) == "" {
+		return errors.New("schedule scenario_id is required")
+	}
+	if strings.TrimSpace(schedule.Name) == "" {
+		return errors.New("schedule name is required")
+	}
+	if strings.TrimSpace(schedule.CronExpr) == "" {
+		return errors.New("schedule cron_expr is required")
+	}
+	if schedule.CreatedAt.IsZero() {
+		schedule.CreatedAt = time.Now()
+	}
+	if schedule.UpdatedAt.IsZero() {
+		schedule.UpdatedAt = time.Now()
+	}
+	_, err := s.db.Exec(`INSERT INTO scenario_schedules (id, scenario_id, name, cron_expr, timezone, release_id, run_name_template, enabled, last_run_test_id, last_run_at, next_run_at, last_error, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET scenario_id=excluded.scenario_id, name=excluded.name, cron_expr=excluded.cron_expr,
+		timezone=excluded.timezone, release_id=excluded.release_id, run_name_template=excluded.run_name_template,
+		enabled=excluded.enabled, last_run_test_id=excluded.last_run_test_id, last_run_at=excluded.last_run_at,
+		next_run_at=excluded.next_run_at, last_error=excluded.last_error, updated_at=excluded.updated_at`,
+		schedule.ID, schedule.ScenarioID, schedule.Name, schedule.CronExpr, schedule.Timezone, schedule.ReleaseID, schedule.RunNameTemplate, schedule.Enabled,
+		schedule.LastRunTestID, schedule.LastRunAt, schedule.NextRunAt, schedule.LastError, schedule.CreatedAt, schedule.UpdatedAt)
+	return err
+}
+
+func (s *SQLiteStore) GetScenarioSchedule(id string) (*ScenarioSchedule, error) {
+	row := s.db.QueryRow(`SELECT id, scenario_id, name, cron_expr, COALESCE(timezone, ''), COALESCE(release_id, ''), COALESCE(run_name_template, ''), COALESCE(enabled, 1), COALESCE(last_run_test_id, ''), last_run_at, next_run_at, COALESCE(last_error, ''), created_at, updated_at FROM scenario_schedules WHERE id = ?`, id)
+	return scanScenarioSchedule(row)
+}
+
+func (s *SQLiteStore) ListScenarioSchedules(scenarioID string) ([]*ScenarioSchedule, error) {
+	rows, err := s.db.Query(`SELECT id, scenario_id, name, cron_expr, COALESCE(timezone, ''), COALESCE(release_id, ''), COALESCE(run_name_template, ''), COALESCE(enabled, 1), COALESCE(last_run_test_id, ''), last_run_at, next_run_at, COALESCE(last_error, ''), created_at, updated_at FROM scenario_schedules WHERE scenario_id = ? ORDER BY created_at ASC`, scenarioID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return collectScenarioSchedules(rows)
+}
+
+func (s *SQLiteStore) ListAllScenarioSchedules() ([]*ScenarioSchedule, error) {
+	rows, err := s.db.Query(`SELECT id, scenario_id, name, cron_expr, COALESCE(timezone, ''), COALESCE(release_id, ''), COALESCE(run_name_template, ''), COALESCE(enabled, 1), COALESCE(last_run_test_id, ''), last_run_at, next_run_at, COALESCE(last_error, ''), created_at, updated_at FROM scenario_schedules ORDER BY created_at ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return collectScenarioSchedules(rows)
+}
+
+func (s *SQLiteStore) DeleteScenarioSchedule(id string) error {
+	_, err := s.db.Exec(`DELETE FROM scenario_schedules WHERE id = ?`, id)
+	return err
+}
+
 func (s *SQLiteStore) GetScenario(id string) (*Scenario, []ScenarioScript, error) {
 	var scenario Scenario
 	var assignmentJSON, goalJSON, runtimeJSON string
-	err := s.db.QueryRow(`SELECT id, name, duration, COALESCE(scenario_mode, ''), COALESCE(shakeout_enabled, 0), COALESCE(resource_baseline_enabled, 0), COALESCE(assignment_json, ''), COALESCE(goal_config_json, ''), COALESCE(runtime_settings_json, ''), created_at, updated_at FROM scenarios WHERE id = ?`, id).Scan(
-		&scenario.ID, &scenario.Name, &scenario.Duration, &scenario.ScenarioMode, &scenario.ScriptShakeout, &scenario.ResourceBaseline, &assignmentJSON, &goalJSON, &runtimeJSON, &scenario.CreatedAt, &scenario.UpdatedAt)
+	err := s.db.QueryRow(`SELECT id, name, duration, COALESCE(start_delay, ''), COALESCE(scenario_mode, ''), COALESCE(shakeout_enabled, 0), COALESCE(resource_baseline_enabled, 0), COALESCE(assignment_json, ''), COALESCE(goal_config_json, ''), COALESCE(runtime_settings_json, ''), created_at, updated_at FROM scenarios WHERE id = ?`, id).Scan(
+		&scenario.ID, &scenario.Name, &scenario.Duration, &scenario.StartDelay, &scenario.ScenarioMode, &scenario.ScriptShakeout, &scenario.ResourceBaseline, &assignmentJSON, &goalJSON, &runtimeJSON, &scenario.CreatedAt, &scenario.UpdatedAt)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -788,7 +873,7 @@ func (s *SQLiteStore) GetScenario(id string) (*Scenario, []ScenarioScript, error
 }
 
 func (s *SQLiteStore) ListScenarios() ([]*Scenario, error) {
-	rows, err := s.db.Query(`SELECT id, name, duration, COALESCE(scenario_mode, ''), COALESCE(shakeout_enabled, 0), COALESCE(resource_baseline_enabled, 0), COALESCE(assignment_json, ''), COALESCE(goal_config_json, ''), COALESCE(runtime_settings_json, ''), created_at, updated_at FROM scenarios ORDER BY updated_at DESC`)
+	rows, err := s.db.Query(`SELECT id, name, duration, COALESCE(start_delay, ''), COALESCE(scenario_mode, ''), COALESCE(shakeout_enabled, 0), COALESCE(resource_baseline_enabled, 0), COALESCE(assignment_json, ''), COALESCE(goal_config_json, ''), COALESCE(runtime_settings_json, ''), created_at, updated_at FROM scenarios ORDER BY updated_at DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -797,7 +882,7 @@ func (s *SQLiteStore) ListScenarios() ([]*Scenario, error) {
 	for rows.Next() {
 		var scenario Scenario
 		var assignmentJSON, goalJSON, runtimeJSON string
-		if err := rows.Scan(&scenario.ID, &scenario.Name, &scenario.Duration, &scenario.ScenarioMode, &scenario.ScriptShakeout, &scenario.ResourceBaseline, &assignmentJSON, &goalJSON, &runtimeJSON, &scenario.CreatedAt, &scenario.UpdatedAt); err != nil {
+		if err := rows.Scan(&scenario.ID, &scenario.Name, &scenario.Duration, &scenario.StartDelay, &scenario.ScenarioMode, &scenario.ScriptShakeout, &scenario.ResourceBaseline, &assignmentJSON, &goalJSON, &runtimeJSON, &scenario.CreatedAt, &scenario.UpdatedAt); err != nil {
 			return nil, err
 		}
 		if assignmentJSON != "" && assignmentJSON != "null" {
@@ -847,6 +932,9 @@ func (s *SQLiteStore) DeleteScenario(id string) error {
 	if _, err := tx.Exec(`DELETE FROM scenario_scripts WHERE scenario_id = ?`, id); err != nil {
 		return err
 	}
+	if _, err := tx.Exec(`DELETE FROM scenario_schedules WHERE scenario_id = ?`, id); err != nil {
+		return err
+	}
 	if _, err := tx.Exec(`DELETE FROM scenario_data_pool_bindings WHERE scenario_id = ?`, id); err != nil {
 		return err
 	}
@@ -854,6 +942,48 @@ func (s *SQLiteStore) DeleteScenario(id string) error {
 		return err
 	}
 	return tx.Commit()
+}
+
+type scanner interface {
+	Scan(dest ...any) error
+}
+
+func scanScenarioSchedule(row scanner) (*ScenarioSchedule, error) {
+	var schedule ScenarioSchedule
+	var enabled int
+	err := row.Scan(
+		&schedule.ID,
+		&schedule.ScenarioID,
+		&schedule.Name,
+		&schedule.CronExpr,
+		&schedule.Timezone,
+		&schedule.ReleaseID,
+		&schedule.RunNameTemplate,
+		&enabled,
+		&schedule.LastRunTestID,
+		&schedule.LastRunAt,
+		&schedule.NextRunAt,
+		&schedule.LastError,
+		&schedule.CreatedAt,
+		&schedule.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	schedule.Enabled = enabled != 0
+	return &schedule, nil
+}
+
+func collectScenarioSchedules(rows *sql.Rows) ([]*ScenarioSchedule, error) {
+	var schedules []*ScenarioSchedule
+	for rows.Next() {
+		schedule, err := scanScenarioSchedule(rows)
+		if err != nil {
+			return nil, err
+		}
+		schedules = append(schedules, schedule)
+	}
+	return schedules, rows.Err()
 }
 
 func (s *SQLiteStore) SaveDataPool(pool *SharedDataPool) error {

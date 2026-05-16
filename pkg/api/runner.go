@@ -46,6 +46,11 @@ type scenarioPersistence interface {
 	GetScenario(id string) (*storage.Scenario, []storage.ScenarioScript, error)
 	ListScenarios() ([]*storage.Scenario, error)
 	DeleteScenario(id string) error
+	SaveScenarioSchedule(schedule *storage.ScenarioSchedule) error
+	GetScenarioSchedule(id string) (*storage.ScenarioSchedule, error)
+	ListScenarioSchedules(scenarioID string) ([]*storage.ScenarioSchedule, error)
+	ListAllScenarioSchedules() ([]*storage.ScenarioSchedule, error)
+	DeleteScenarioSchedule(id string) error
 	SaveScenarioDataPoolBindings(scenarioID string, bindings []storage.ScenarioDataPoolBinding) error
 	ListScenarioDataPoolBindings(scenarioID string) ([]storage.ScenarioDataPoolBinding, error)
 }
@@ -416,6 +421,7 @@ type StoredScenario struct {
 	GoalConfig         *GoalConfig                       `json:"goal_config,omitempty"`
 	RuntimeSettings    *RuntimeSettingsOverride          `json:"runtime_settings,omitempty"`
 	Scripts            []ScenarioScriptRef               `json:"scripts"`
+	Schedules          []*storage.ScenarioSchedule       `json:"schedules,omitempty"`
 	DataPools          []storage.ScenarioDataPoolBinding `json:"data_pools,omitempty"`
 	CreatedAt          time.Time                         `json:"created_at"`
 	UpdatedAt          time.Time                         `json:"updated_at"`
@@ -607,6 +613,14 @@ func (tr *TestRunner) buildStoredScenario(scenario *storage.Scenario, scripts []
 			dataPools = bindings
 		}
 	}
+	schedules := []*storage.ScenarioSchedule{}
+	if tr.scenarioStore != nil {
+		if storedSchedules, err := tr.scenarioStore.ListScenarioSchedules(scenario.ID); err == nil {
+			for _, schedule := range storedSchedules {
+				schedules = append(schedules, cloneScenarioSchedule(schedule))
+			}
+		}
+	}
 	derivedProjectID := ""
 	if singleProject {
 		derivedProjectID = projectID
@@ -624,6 +638,7 @@ func (tr *TestRunner) buildStoredScenario(scenario *storage.Scenario, scripts []
 		GoalConfig:       decodeStoredGoalConfig(scenario.GoalConfig),
 		RuntimeSettings:  decodeStoredRuntimeSettings(scenario.RuntimeSettings),
 		Scripts:          refs,
+		Schedules:        schedules,
 		DataPools:        dataPools,
 		CreatedAt:        scenario.CreatedAt,
 		UpdatedAt:        scenario.UpdatedAt,
@@ -1168,6 +1183,29 @@ func (tr *TestRunner) DeleteScenario(id string) bool {
 		_ = tr.scenarioStore.DeleteScenario(id)
 	}
 	return true
+}
+
+func (tr *TestRunner) saveScenarioScheduleLocked(schedule *storage.ScenarioSchedule) error {
+	if schedule == nil {
+		return fmt.Errorf("schedule is required")
+	}
+	scenario, ok := tr.scenarios[schedule.ScenarioID]
+	if !ok {
+		return fmt.Errorf("scenario not found: %s", schedule.ScenarioID)
+	}
+	if tr.scenarioStore != nil {
+		if err := tr.scenarioStore.SaveScenarioSchedule(schedule); err != nil {
+			return err
+		}
+	}
+	for index, existing := range scenario.Schedules {
+		if existing != nil && existing.ID == schedule.ID {
+			scenario.Schedules[index] = cloneScenarioSchedule(schedule)
+			return nil
+		}
+	}
+	scenario.Schedules = append(scenario.Schedules, cloneScenarioSchedule(schedule))
+	return nil
 }
 
 func (tr *TestRunner) ListScriptsWithUsage() []*StoredScript {
