@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -41,6 +42,7 @@ func main() {
 
 func runTest() {
 	args := parseRunArgs(os.Args[2:])
+	goalConfig := buildGoalConfigFromArgs(args)
 
 	if args.script == "" {
 		fmt.Fprintln(os.Stderr, "error: --script is required")
@@ -56,6 +58,7 @@ func runTest() {
 	var result *engine.RunResult
 	var apiResult *ApiTestResult
 	var runErr error
+	var slaSummary *SLASummary
 
 	if args.api != "" {
 		scriptBody, err := marshalScriptForUpload(script)
@@ -64,7 +67,10 @@ func runTest() {
 			os.Exit(1)
 		}
 		client := NewApiClient(args.api)
-		apiResult, runErr = client.RunPreparedTest(args.script, scriptBody, args.vusers, args.duration.String(), args.rampUp.String(), args.format)
+		apiResult, runErr = client.RunPreparedTest(args.script, scriptBody, args.vusers, args.duration.String(), args.rampUp.String(), args.format, goalConfig)
+		if apiResult != nil {
+			slaSummary = apiResult.SLASummary
+		}
 	} else {
 
 		eng, err := engine.New(engine.Config{
@@ -93,13 +99,28 @@ func runTest() {
 		}
 
 		result, runErr = eng.Run(ctx)
+		slaSummary = evaluateLocalSLA(result, goalConfig)
 	}
 
 	if args.format == "json" {
 		out := map[string]any{
 			"status": "success",
 		}
-		if runErr != nil {
+		if slaSummary != nil && slaSummary.Evaluated {
+			out["sla_evaluated"] = true
+			out["sla_breached"] = slaSummary.Breached
+			if len(slaSummary.Details) > 0 {
+				out["sla_details"] = slaSummary.Details
+			}
+		}
+		if slaSummary != nil && slaSummary.Breached {
+			out["status"] = "failed"
+			if runErr != nil {
+				out["error"] = runErr.Error()
+			} else {
+				out["error"] = "SLA thresholds breached"
+			}
+		} else if runErr != nil {
 			out["status"] = "error"
 			out["error"] = runErr.Error()
 		}
@@ -118,13 +139,13 @@ func runTest() {
 		b, _ := json.MarshalIndent(out, "", "  ")
 		fmt.Println(string(b))
 
-		if runErr != nil {
+		if runErr != nil || (slaSummary != nil && slaSummary.Breached) {
 			os.Exit(1)
 		}
 		return
 	}
 
-	if runErr != nil {
+	if runErr != nil && result == nil && apiResult == nil {
 		fmt.Fprintf(os.Stderr, "test failed: %v\n", runErr)
 		os.Exit(1)
 	}
@@ -152,17 +173,39 @@ func runTest() {
 		}
 		fmt.Printf("  TPS:          %.1f\n", apiResult.FinalSnapshot.TPS)
 	}
+	if slaSummary != nil && slaSummary.Evaluated {
+		status := "passing"
+		if slaSummary.Breached {
+			status = "breached"
+		}
+		fmt.Printf("  SLA:          %s\n", status)
+		for _, detail := range slaSummary.Details {
+			fmt.Printf("    - %s\n", detail)
+		}
+	}
+	if runErr != nil {
+		fmt.Fprintf(os.Stderr, "test failed: %v\n", runErr)
+		os.Exit(1)
+	}
+	if slaSummary != nil && slaSummary.Breached {
+		os.Exit(1)
+	}
 }
 
 type runArgs struct {
-	script   string
-	api      string
-	baseURL  string
-	format   string
-	vusers   int
-	duration time.Duration
-	rampUp   time.Duration
-	env      map[string]string
+	script                   string
+	api                      string
+	baseURL                  string
+	format                   string
+	vusers                   int
+	duration                 time.Duration
+	rampUp                   time.Duration
+	env                      map[string]string
+	p95LatencyMs             *float64
+	maxErrorPct              *float64
+	maxAvgServerProcessingMs *float64
+	maxAvgTransferMs         *float64
+	maxErrorCount            *int
 }
 
 func parseRunArgs(args []string) runArgs {
@@ -216,6 +259,41 @@ func parseRunArgs(args []string) runArgs {
 				i++
 				r.rampUp, _ = time.ParseDuration(args[i])
 			}
+		case "--p95-latency-ms":
+			if i+1 < len(args) {
+				i++
+				if value, err := strconv.ParseFloat(args[i], 64); err == nil {
+					r.p95LatencyMs = &value
+				}
+			}
+		case "--max-error-pct":
+			if i+1 < len(args) {
+				i++
+				if value, err := strconv.ParseFloat(args[i], 64); err == nil {
+					r.maxErrorPct = &value
+				}
+			}
+		case "--max-avg-server-processing-ms":
+			if i+1 < len(args) {
+				i++
+				if value, err := strconv.ParseFloat(args[i], 64); err == nil {
+					r.maxAvgServerProcessingMs = &value
+				}
+			}
+		case "--max-avg-transfer-ms":
+			if i+1 < len(args) {
+				i++
+				if value, err := strconv.ParseFloat(args[i], 64); err == nil {
+					r.maxAvgTransferMs = &value
+				}
+			}
+		case "--max-error-count":
+			if i+1 < len(args) {
+				i++
+				if value, err := strconv.Atoi(args[i]); err == nil {
+					r.maxErrorCount = &value
+				}
+			}
 		}
 	}
 	return r
@@ -241,9 +319,15 @@ Run Flags:
 	--base-url      Override scenario base URL at run time
   --api           Run via API instead of locally (e.g. http://localhost:8080)
   --format        Output format (text, json)          [default: text]
+	--p95-latency-ms Maximum allowed P95 latency in ms
+	--max-error-pct  Maximum allowed error rate percentage
+	--max-avg-server-processing-ms  Maximum allowed average server processing time in ms
+	--max-avg-transfer-ms           Maximum allowed average transfer time in ms
+	--max-error-count               Maximum allowed total error count
 
 Examples:
   stormctl run --script order-flow.json --vusers 100 --duration 5m
 	stormctl run --script order-flow.json -env target_namespace=pr-123 --base-url https://preview.example.com
+	stormctl run --script order-flow.json --p95-latency-ms 800 --max-error-pct 2.5
   stormctl run --api http://localhost:8080 --script order-flow.json --format json`)
 }

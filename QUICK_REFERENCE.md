@@ -336,8 +336,9 @@ go run ./cmd/stormctl run \
   --vusers 100 \
   --duration 5m \
   --ramp-up 30s \
-  --log-level debug \
-  --output results.json
+  --format json \
+  --p95-latency-ms 800 \
+  --max-error-pct 2.5
 ```
 
 | Flag | Default | Description |
@@ -346,7 +347,15 @@ go run ./cmd/stormctl run \
 | `--vusers, -v` | 10 | Number of virtual users |
 | `--duration, -d` | 1m | Test duration |
 | `--ramp-up, -r` | 0s | Ramp-up period |
-| `--output, -o` | (none) | Results output file |
+| `--format` | `text` | Output format: `text` or `json` |
+| `--api` | (none) | Execute through the controller API |
+| `--env, -env` | (repeatable) | Runtime placeholder override (`KEY=value`) |
+| `--base-url` | (none) | Override the script base URL |
+| `--p95-latency-ms` | (none) | Fail the run if P95 latency exceeds this threshold |
+| `--max-error-pct` | (none) | Fail the run if error rate exceeds this threshold |
+| `--max-avg-server-processing-ms` | (none) | Fail the run if average server processing exceeds this threshold |
+| `--max-avg-transfer-ms` | (none) | Fail the run if average transfer exceeds this threshold |
+| `--max-error-count` | (none) | Fail the run if total error count exceeds this threshold |
 
 ---
 

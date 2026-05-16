@@ -22,6 +22,7 @@ The 19 gaps are organized into five sequential delivery waves. Each wave targets
 - **CLI Enhancements:** Update `cmd/stormctl` to parse SLA thresholds from the scenario. Implement non-zero exit codes when SLAs are breached or the test fails. Add `--format json` for machine-readable stdout.
 - **API Endpoints:** Create `GET /api/v1/tests/{id}/sla-status` to return a summarized boolean evaluation of all SLAs.
 - **Pipeline Templates:** Create reusable GitHub Actions (`action.yml`) and Azure DevOps tasks (`azure-pipelines-task.yml`).
+- **Progress:** `stormctl run` now supports machine-readable JSON output, non-zero exit codes when local or API-backed SLA guardrails are breached, and explicit CLI guardrail flags for P95 latency, error rate, server processing, transfer time, and error count. Pipeline templates and scenario-native threshold ingestion remain open.
 
 ### 1.2 Report Generation (P0)
 **Effort:** 7-10 days

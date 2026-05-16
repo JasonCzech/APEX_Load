@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/jasonczech/stormrunner/pkg/api"
@@ -33,17 +34,18 @@ type ApiTestResult struct {
 	TotalTransactions int64
 	TotalErrors       int64
 	FinalSnapshot     engine.MetricsSnapshot
+	SLASummary        *SLASummary
 }
 
-func (c *ApiClient) RunTest(scriptPath string, vusers int, duration string, rampUp string, format string) (*ApiTestResult, error) {
+func (c *ApiClient) RunTest(scriptPath string, vusers int, duration string, rampUp string, format string, goalConfig *api.GoalConfig) (*ApiTestResult, error) {
 	file, err := os.ReadFile(scriptPath)
 	if err != nil {
 		return nil, fmt.Errorf("read script: %w", err)
 	}
-	return c.RunPreparedTest(scriptPath, file, vusers, duration, rampUp, format)
+	return c.RunPreparedTest(scriptPath, file, vusers, duration, rampUp, format, goalConfig)
 }
 
-func (c *ApiClient) RunPreparedTest(scriptName string, scriptBody []byte, vusers int, duration string, rampUp string, format string) (*ApiTestResult, error) {
+func (c *ApiClient) RunPreparedTest(scriptName string, scriptBody []byte, vusers int, duration string, rampUp string, format string, goalConfig *api.GoalConfig) (*ApiTestResult, error) {
 	// 1. Upload script
 	scriptID, err := c.uploadScript(scriptName, scriptBody)
 	if err != nil {
@@ -51,7 +53,7 @@ func (c *ApiClient) RunPreparedTest(scriptName string, scriptBody []byte, vusers
 	}
 
 	// 2. Create Test
-	testID, err := c.createTest(scriptID, vusers, duration, rampUp)
+	testID, err := c.createTest(scriptID, vusers, duration, rampUp, goalConfig)
 	if err != nil {
 		return nil, fmt.Errorf("create test: %w", err)
 	}
@@ -67,7 +69,7 @@ func (c *ApiClient) RunPreparedTest(scriptName string, scriptBody []byte, vusers
 	}
 
 	// 4. Poll Test Status
-	return c.pollTest(testID, format)
+	return c.pollTest(testID, format, goalConfig != nil)
 }
 
 func (c *ApiClient) uploadScript(scriptName string, scriptBody []byte) (string, error) {
@@ -100,13 +102,17 @@ func (c *ApiClient) uploadScript(scriptName string, scriptBody []byte) (string, 
 	return m["id"].(string), nil
 }
 
-func (c *ApiClient) createTest(scriptID string, vusers int, duration, rampUp string) (string, error) {
+func (c *ApiClient) createTest(scriptID string, vusers int, duration, rampUp string, goalConfig *api.GoalConfig) (string, error) {
 	reqBody := api.CreateTestRequest{
 		Name:     "CLI Run " + time.Now().Format("2006-01-02 15:04:05"),
 		Duration: duration,
 		ScriptID: scriptID,
 		RampUp:   rampUp,
 		VUsers:   vusers,
+	}
+	if goalConfig != nil {
+		reqBody.ScenarioMode = "goal_oriented"
+		reqBody.GoalConfig = goalConfig
 	}
 
 	b, _ := json.Marshal(reqBody)
@@ -139,7 +145,7 @@ func (c *ApiClient) startTest(testID string) error {
 	return nil
 }
 
-func (c *ApiClient) pollTest(testID string, format string) (*ApiTestResult, error) {
+func (c *ApiClient) pollTest(testID string, format string, expectSLA bool) (*ApiTestResult, error) {
 	start := time.Now()
 	for {
 		time.Sleep(2 * time.Second)
@@ -158,9 +164,6 @@ func (c *ApiClient) pollTest(testID string, format string) (*ApiTestResult, erro
 		}
 
 		if test.Status == "COMPLETE" || test.Status == "FAILED" || test.Status == "ABORTED" {
-			// Get SLA status
-			sla, _ := c.GetSLAStatus(testID)
-
 			res := &ApiTestResult{
 				Duration: time.Since(start),
 			}
@@ -172,9 +175,24 @@ func (c *ApiClient) pollTest(testID string, format string) (*ApiTestResult, erro
 					TPS:          test.LiveMetrics.TPS,
 				}
 			}
-
-			if sla != nil && sla.SLABreached {
-				return res, fmt.Errorf("SLA Breached: %v", sla.Details)
+			if expectSLA {
+				sla, err := c.GetSLAStatus(testID)
+				if err != nil {
+					return res, fmt.Errorf("fetch SLA status: %w", err)
+				}
+				if sla != nil {
+					res.SLASummary = &SLASummary{
+						Evaluated: true,
+						Breached:  sla.SLABreached,
+						Details:   append([]string(nil), sla.Details...),
+					}
+					if sla.SLABreached {
+						return res, fmt.Errorf("SLA breached: %s", strings.Join(sla.Details, "; "))
+					}
+				}
+			}
+			if test.Status == "FAILED" || test.Status == "ABORTED" {
+				return res, fmt.Errorf("test completed with status %s", strings.ToLower(test.Status))
 			}
 			return res, nil
 		}

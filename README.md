@@ -186,7 +186,9 @@ go run ./cmd/stormctl run \
   --script path/to/script.json \
   --vusers 50 \
   --duration 2m \
-  --ramp-up 30s
+  --ramp-up 30s \
+  --p95-latency-ms 800 \
+  --max-error-pct 2.5
 ```
 
 **Key flags:**
@@ -195,20 +197,31 @@ go run ./cmd/stormctl run \
 - `--vusers, -v` (default: 10) — Number of virtual users
 - `--duration, -d` (default: 1m) — Total test duration
 - `--ramp-up, -r` (default: 0s) — VUser ramp-up period
+- `--format` (`text`, `json`) — Human or machine-readable result output
+- `--api` — Execute through the controller API instead of locally
+- `--env, -env` — Runtime environment substitution for `{{env.KEY}}` placeholders
+- `--base-url` — Override the script base URL at run time
+- `--p95-latency-ms`, `--max-error-pct`, `--max-avg-server-processing-ms`, `--max-avg-transfer-ms`, `--max-error-count` — CI/CD guardrails that make `stormctl` exit non-zero when breached
+
+**JSON pipeline example:**
+```bash
+go run ./cmd/stormctl run \
+  --api http://localhost:8080 \
+  --script path/to/script.json \
+  --format json \
+  --p95-latency-ms 800 \
+  --max-error-pct 2.5
+```
 
 **Example output:**
 ```
-Results:
-  Duration: 2m5s
-  Total Transactions: 12,450
-  Total Errors: 8
-  Throughput: 99.6 req/sec
-  Latency (ms):
-    Min: 45.2
-    Avg: 156.3
-    P95: 482.5
-    P99: 892.1
-    Max: 1205.3
+=== Test Complete ===
+  Duration:     2m5s
+  Transactions: 12450
+  Errors:       8
+  Error Rate:   0.06%
+  TPS:          99.6
+  SLA:          passing
 ```
 
 ## API Endpoints (Controller)
@@ -220,6 +233,7 @@ Results:
 POST   /api/v1/tests                    — Create and queue test
 GET    /api/v1/tests                    — List all tests
 GET    /api/v1/tests/{id}               — Get test details
+GET    /api/v1/tests/{id}/sla-status    — Get summarized SLA pass/fail status
 POST   /api/v1/tests/{id}/start         — Start test
 POST   /api/v1/tests/{id}/stop          — Graceful stop
 POST   /api/v1/tests/{id}/abort         — Immediate abort

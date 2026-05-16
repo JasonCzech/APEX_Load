@@ -2,8 +2,11 @@ package main
 
 import (
 	"testing"
+	"time"
 
+	"github.com/jasonczech/stormrunner/pkg/api"
 	"github.com/jasonczech/stormrunner/pkg/dsl"
+	"github.com/jasonczech/stormrunner/pkg/engine"
 )
 
 func TestParseRunArgs_RuntimeOverrides(t *testing.T) {
@@ -25,6 +28,38 @@ func TestParseRunArgs_RuntimeOverrides(t *testing.T) {
 	}
 	if args.env["api_host"] != "preview.example.com" {
 		t.Fatalf("api_host = %q, want preview.example.com", args.env["api_host"])
+	}
+}
+
+func TestParseRunArgs_SLAFlags(t *testing.T) {
+	args := parseRunArgs([]string{
+		"--script", "example.json",
+		"--p95-latency-ms", "800",
+		"--max-error-pct", "2.5",
+		"--max-avg-server-processing-ms", "300",
+		"--max-avg-transfer-ms", "120",
+		"--max-error-count", "5",
+	})
+
+	if args.p95LatencyMs == nil || *args.p95LatencyMs != 800 {
+		t.Fatalf("p95LatencyMs = %#v, want 800", args.p95LatencyMs)
+	}
+	if args.maxErrorPct == nil || *args.maxErrorPct != 2.5 {
+		t.Fatalf("maxErrorPct = %#v, want 2.5", args.maxErrorPct)
+	}
+	if args.maxAvgServerProcessingMs == nil || *args.maxAvgServerProcessingMs != 300 {
+		t.Fatalf("maxAvgServerProcessingMs = %#v, want 300", args.maxAvgServerProcessingMs)
+	}
+	if args.maxAvgTransferMs == nil || *args.maxAvgTransferMs != 120 {
+		t.Fatalf("maxAvgTransferMs = %#v, want 120", args.maxAvgTransferMs)
+	}
+	if args.maxErrorCount == nil || *args.maxErrorCount != 5 {
+		t.Fatalf("maxErrorCount = %#v, want 5", args.maxErrorCount)
+	}
+
+	goalConfig := buildGoalConfigFromArgs(args)
+	if goalConfig == nil || goalConfig.MaxErrorCount == nil || *goalConfig.MaxErrorCount != 5 {
+		t.Fatalf("goalConfig = %#v, want populated thresholds", goalConfig)
 	}
 }
 
@@ -84,5 +119,45 @@ func TestParseEnvAssignment(t *testing.T) {
 	}
 	if _, _, ok := parseEnvAssignment("missing-separator"); ok {
 		t.Fatal("parseEnvAssignment accepted invalid input")
+	}
+}
+
+func TestEvaluateLocalSLAReportsBreaches(t *testing.T) {
+	maxErrorPct := 2.0
+	maxServerProcessingMs := 300.0
+	maxTransferMs := 120.0
+	maxErrorCount := 3
+	p95LatencyMs := 800.0
+
+	summary := evaluateLocalSLA(&engine.RunResult{
+		TotalTransactions: 100,
+		TotalErrors:       5,
+		FinalSnapshot: engine.MetricsSnapshot{
+			P95: 950 * time.Millisecond,
+			ByAction: map[string]*engine.ActionMetrics{
+				"Checkout": {
+					ServerTelemetry: &engine.ServerTelemetrySummary{
+						AvgServerProcessingMs: 320,
+						AvgTransferMs:         130,
+					},
+				},
+			},
+		},
+	}, &api.GoalConfig{
+		P95LatencyMs:             &p95LatencyMs,
+		MaxErrorPct:              &maxErrorPct,
+		MaxAvgServerProcessingMs: &maxServerProcessingMs,
+		MaxAvgTransferMs:         &maxTransferMs,
+		MaxErrorCount:            &maxErrorCount,
+	})
+
+	if summary == nil || !summary.Evaluated {
+		t.Fatalf("summary = %#v, want evaluated SLA summary", summary)
+	}
+	if !summary.Breached {
+		t.Fatalf("summary = %#v, want SLA breach", summary)
+	}
+	if len(summary.Details) != 5 {
+		t.Fatalf("details = %#v, want 5 breach details", summary.Details)
 	}
 }
