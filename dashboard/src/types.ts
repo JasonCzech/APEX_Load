@@ -705,6 +705,7 @@ export interface StoredScenario {
 export interface WSMessage {
   type: string
   test_id?: string
+  project_id?: string
   script_id?: string
   replay_session_id?: string
   test_name?: string
@@ -797,6 +798,7 @@ export interface BrowserReplayReport {
 export interface BrowserReplaySession {
   id: string
   script_id?: string
+  project_id?: string
   status: 'queued' | 'running' | 'paused' | 'completed' | 'failed' | 'stopped'
   group: string
   protocol: string

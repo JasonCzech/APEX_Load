@@ -398,7 +398,7 @@ func (s *Server) handleUpdateSystemSettings(w http.ResponseWriter, r *http.Reque
 }
 
 func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
-	s.hub.serveWS(w, r, "")
+	s.hub.serveWS(w, r, "", strings.TrimSpace(r.URL.Query().Get("project_id")))
 }
 
 func (s *Server) handleTestStream(w http.ResponseWriter, r *http.Request) {
@@ -408,7 +408,7 @@ func (s *Server) handleTestStream(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "test not found")
 		return
 	}
-	s.hub.serveWS(w, r, id)
+	s.hub.serveWS(w, r, id, "")
 }
 
 func validateScript(script *dsl.Script) []string {

@@ -234,7 +234,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("PUT /api/v1/system/settings", cors(log(auth(http.HandlerFunc(s.handleUpdateSystemSettings)))))
 
 	// WebSocket — no CORS wrapper (handled by upgrade check)
-	s.mux.Handle("GET /api/v1/ws", log(http.HandlerFunc(s.handleWebSocket)))
+	s.mux.Handle("GET /api/v1/ws", log(auth(http.HandlerFunc(s.handleWebSocket))))
 	s.mux.Handle("GET /api/v1/tests/{id}/stream", log(auth(http.HandlerFunc(s.handleTestStream))))
 
 	// OPTIONS preflight for all API routes

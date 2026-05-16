@@ -32,8 +32,13 @@ func (s *Server) handleStartRecording(w http.ResponseWriter, r *http.Request) {
 	id := uuid.New().String()
 
 	notify := func(evt recorder.SessionEvent) {
+		projectID := ""
+		if evt.Session != nil {
+			projectID = evt.Session.ProjectID
+		}
 		s.hub.BroadcastJSON(map[string]any{
 			"type":       evt.Type,
+			"project_id": projectID,
 			"session_id": evt.SessionID,
 			"request":    evt.Request,
 			"session":    evt.Session,

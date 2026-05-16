@@ -161,6 +161,47 @@ func TestTrustedHeaderAuthProjectRoleGuardsTestStreamEndpoint(t *testing.T) {
 	}
 }
 
+func TestTrustedHeaderAuthScopesGlobalWebSocketToProjectRoles(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	project := &storage.Project{ID: uuid.New().String(), Name: "Checkout", CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	if err := store.SaveProject(project); err != nil {
+		t.Fatalf("SaveProject returned error: %v", err)
+	}
+
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	enableTrustedHeaderAuth(t, server)
+
+	unauthorizedReq := httptest.NewRequest(http.MethodGet, "/api/v1/ws", nil)
+	unauthorizedResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(unauthorizedResp, unauthorizedReq)
+	if unauthorizedResp.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthorized global websocket status = %d, want %d body=%s", unauthorizedResp.Code, http.StatusUnauthorized, unauthorizedResp.Body.String())
+	}
+
+	viewerReq := httptest.NewRequest(http.MethodGet, "/api/v1/ws", nil)
+	viewerReq.Header.Set("X-Auth-Request-User", "viewer-user")
+	viewerReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	viewerResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(viewerResp, viewerReq)
+	if viewerResp.Code != http.StatusForbidden {
+		t.Fatalf("project viewer unfiltered global websocket status = %d, want %d body=%s", viewerResp.Code, http.StatusForbidden, viewerResp.Body.String())
+	}
+
+	filteredReq := httptest.NewRequest(http.MethodGet, "/api/v1/ws?project_id="+project.ID, nil)
+	filteredReq.Header.Set("X-Auth-Request-User", "viewer-user")
+	filteredReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	filteredResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(filteredResp, filteredReq)
+	if filteredResp.Code != http.StatusBadRequest {
+		t.Fatalf("project viewer filtered global websocket status = %d, want %d body=%s", filteredResp.Code, http.StatusBadRequest, filteredResp.Body.String())
+	}
+}
+
 func TestTrustedHeaderAuthScopesApplicationListAndCreateToProjectRoles(t *testing.T) {
 	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
 	if err != nil {

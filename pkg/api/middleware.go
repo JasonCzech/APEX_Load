@@ -230,6 +230,17 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 		}
 	}
 
+	if path == "/api/v1/ws" && method == http.MethodGet {
+		if strings.TrimSpace(r.URL.Query().Get("project_id")) == "" {
+			return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
+		}
+		return accessRequirement{
+			GlobalRoles:   []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+			ProjectRoles:  []string{RoleViewer, RoleEditor, RoleProjectAdmin},
+			ProjectLookup: resolveProjectIDFromQuery,
+		}, true
+	}
+
 	if path == "/api/v1/projects" {
 		switch method {
 		case http.MethodGet:
@@ -620,6 +631,14 @@ func resolveFolderProjectID(r *http.Request, store storage.Store) (string, int, 
 		return "", http.StatusNotFound, "folder not found"
 	}
 	return normalizeProjectID(folder.ProjectID), 0, ""
+}
+
+func resolveProjectIDFromQuery(r *http.Request, _ storage.Store) (string, int, string) {
+	projectID := strings.TrimSpace(r.URL.Query().Get("project_id"))
+	if projectID == "" {
+		return "", http.StatusBadRequest, "project_id is required"
+	}
+	return normalizeProjectID(projectID), 0, ""
 }
 
 func resolveApplicationListProjectID(r *http.Request, _ storage.Store) (string, int, string) {

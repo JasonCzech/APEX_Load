@@ -2524,6 +2524,7 @@ func (tr *TestRunner) ScaleVUsers(id string, groupName string, targetVUsers int)
 	tr.hub.BroadcastJSON(map[string]any{
 		"type":          "vusers_changed",
 		"test_id":       id,
+		"project_id":    normalizeProjectID(test.ProjectID),
 		"group":         groupName,
 		"target_vusers": targetVUsers,
 		"total_vusers":  totalVUsers,
@@ -2569,6 +2570,7 @@ func (tr *TestRunner) AdjustDuration(id string, newDuration time.Duration) error
 	tr.hub.BroadcastJSON(map[string]any{
 		"type":         "duration_changed",
 		"test_id":      id,
+		"project_id":   normalizeProjectID(test.ProjectID),
 		"new_duration": newDuration.String(),
 		"timestamp":    time.Now(),
 	})
@@ -3376,19 +3378,21 @@ func (tr *TestRunner) publishLiveMetrics(test *ManagedTest, live *LiveMetrics, a
 	artifacts.recordLiveMetrics(test, live)
 
 	tr.hub.BroadcastJSON(map[string]any{
-		"type":      "metrics_update",
-		"test_id":   test.ID,
-		"test_name": test.Name,
-		"timestamp": live.Timestamp,
-		"data":      live,
+		"type":       "metrics_update",
+		"test_id":    test.ID,
+		"project_id": normalizeProjectID(test.ProjectID),
+		"test_name":  test.Name,
+		"timestamp":  live.Timestamp,
+		"data":       live,
 	})
 	if publishDiagnostic {
 		tr.hub.BroadcastJSON(map[string]any{
-			"type":      "telemetry_diagnostic",
-			"test_id":   test.ID,
-			"test_name": test.Name,
-			"timestamp": now,
-			"data":      diagnostic,
+			"type":       "telemetry_diagnostic",
+			"test_id":    test.ID,
+			"project_id": normalizeProjectID(test.ProjectID),
+			"test_name":  test.Name,
+			"timestamp":  now,
+			"data":       diagnostic,
 		})
 	}
 }
@@ -3583,6 +3587,7 @@ func (tr *TestRunner) processMetricsSnapshot(test *ManagedTest, snap engine.Metr
 
 	settings := tr.GetSystemSettings()
 	for _, alert := range buildThresholdAlerts(test, live, settings.Thresholds) {
+		alert["project_id"] = normalizeProjectID(test.ProjectID)
 		tr.hub.BroadcastJSON(alert)
 	}
 
@@ -3597,11 +3602,12 @@ func (tr *TestRunner) processMetricsSnapshot(test *ManagedTest, snap engine.Metr
 
 func (tr *TestRunner) broadcastEvent(eventType string, test *ManagedTest) {
 	tr.hub.BroadcastJSON(map[string]any{
-		"type":      eventType,
-		"test_id":   test.ID,
-		"test_name": test.Name,
-		"status":    test.Status,
-		"timestamp": time.Now(),
+		"type":       eventType,
+		"test_id":    test.ID,
+		"project_id": normalizeProjectID(test.ProjectID),
+		"test_name":  test.Name,
+		"status":     test.Status,
+		"timestamp":  time.Now(),
 	})
 }
 
@@ -4230,9 +4236,10 @@ func (tr *TestRunner) measureNetworkLatency(test *ManagedTest, live *LiveMetrics
 	// Broadcast the latency update specifically if needed,
 	// though it will be part of the next metrics broadcast too.
 	tr.hub.BroadcastJSON(map[string]any{
-		"type":    "latency_update",
-		"test_id": test.ID,
-		"latency": latency,
+		"type":       "latency_update",
+		"test_id":    test.ID,
+		"project_id": normalizeProjectID(test.ProjectID),
+		"latency":    latency,
 	})
 }
 

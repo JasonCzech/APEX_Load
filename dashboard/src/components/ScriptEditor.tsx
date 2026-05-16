@@ -743,7 +743,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
     }
   }, [activeReplaySessionId])
 
-  useWebSocket({ onMessage: handleReplaySocketMessage })
+  useWebSocket({ onMessage: handleReplaySocketMessage, projectId })
 
   useEffect(() => {
     if (expandedReplayEvent === null) return

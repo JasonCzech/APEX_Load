@@ -100,7 +100,7 @@ func (s *Server) handleReplayRequest(w http.ResponseWriter, id string, script *d
 		RedactionRules:  req.RedactionRules,
 		IgnoreThinkTime: ignoreThinkTime,
 		OnProgress: func(event engine.ReplayProgressEvent) {
-			s.broadcastReplayProgress(replaySessionID, id, event)
+			s.broadcastReplayProgress(replaySessionID, id, normalizeProjectID(script.ProjectID), event)
 		},
 	})
 	if err != nil {
@@ -115,11 +115,12 @@ func (s *Server) handleReplayRequest(w http.ResponseWriter, id string, script *d
 	})
 }
 
-func (s *Server) broadcastReplayProgress(replaySessionID string, scriptID string, event engine.ReplayProgressEvent) {
+func (s *Server) broadcastReplayProgress(replaySessionID string, scriptID string, projectID string, event engine.ReplayProgressEvent) {
 	message := map[string]any{
 		"type":              event.Type,
 		"replay_session_id": replaySessionID,
 		"script_id":         scriptID,
+		"project_id":        projectID,
 		"timestamp":         event.Timestamp,
 	}
 	if event.EventIndex >= 0 {

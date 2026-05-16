@@ -92,9 +92,9 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
     }
   }, [])
 
-  const { connected, connectionState } = useWebSocket({ onMessage: handleWSMessage })
-  const { applications, releases, activeApplication, activeRelease, setActiveApplication, setActiveRelease, createAndSelectApplication, createAndSelectRelease } = useApplication()
   const { projects, activeProject, setActiveProject, createAndSelectProject } = useProject()
+  const { connected, connectionState } = useWebSocket({ onMessage: handleWSMessage, projectId: activeProject?.id })
+  const { applications, releases, activeApplication, activeRelease, setActiveApplication, setActiveRelease, createAndSelectApplication, createAndSelectRelease } = useApplication()
 
   const navigateToTest = (id: string) => setView({ page: 'test', testId: id })
   const activePage = view.page === 'test' ? 'tests' : view.page

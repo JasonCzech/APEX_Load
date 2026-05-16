@@ -25,8 +25,8 @@ class MockWebSocket {
   }
 }
 
-function Harness() {
-  const { connected, connectionState } = useWebSocket()
+function Harness({ projectId }: { projectId?: string }) {
+  const { connected, connectionState } = useWebSocket({ projectId })
 
   return (
     <div
@@ -88,5 +88,13 @@ describe('useWebSocket', () => {
     const stateNode = container.querySelector('[data-testid="state"]')
     expect(stateNode?.getAttribute('data-connection-state')).toBe('connected')
     expect(stateNode?.getAttribute('data-connected')).toBe('true')
+  })
+
+  it('adds the active project to the global websocket URL when provided', async () => {
+    await act(async () => {
+      root.render(<Harness projectId="project-1" />)
+    })
+
+    expect(MockWebSocket.instances[0]?.url).toContain('/api/v1/ws?project_id=project-1')
   })
 })

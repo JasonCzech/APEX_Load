@@ -6,11 +6,12 @@ export type WebSocketConnectionState = 'connecting' | 'connected' | 'disconnecte
 
 interface UseWebSocketOptions {
   testId?: string
+  projectId?: string
   enabled?: boolean
   onMessage?: (msg: WSMessage) => void
 }
 
-export function useWebSocket({ testId, enabled = true, onMessage }: UseWebSocketOptions = {}) {
+export function useWebSocket({ testId, projectId, enabled = true, onMessage }: UseWebSocketOptions = {}) {
   const [connectionState, setConnectionState] = useState<WebSocketConnectionState>(enabled ? 'connecting' : 'disconnected')
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimer = useRef<number | null>(null)
@@ -24,7 +25,8 @@ export function useWebSocket({ testId, enabled = true, onMessage }: UseWebSocket
   const connect = useCallback(() => {
     if (!enabled || !shouldReconnectRef.current || !isPageVisibleRef.current) return
 
-    const path = testId ? `/api/v1/tests/${testId}/stream` : '/api/v1/ws'
+    const query = !testId && projectId ? `?project_id=${encodeURIComponent(projectId)}` : ''
+    const path = testId ? `/api/v1/tests/${testId}/stream` : `/api/v1/ws${query}`
     const url = wsUrl(path)
 
     setConnectionState('connecting')
@@ -62,7 +64,7 @@ export function useWebSocket({ testId, enabled = true, onMessage }: UseWebSocket
     ws.onerror = () => {
       ws.close()
     }
-  }, [enabled, testId])
+  }, [enabled, projectId, testId])
 
   useEffect(() => {
     shouldReconnectRef.current = true

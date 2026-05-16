@@ -243,6 +243,7 @@ func (m *BrowserReplayManager) broadcast(messageType string, session *BrowserRep
 		"type":              messageType,
 		"replay_session_id": sessionPayload.ID,
 		"script_id":         sessionPayload.ScriptID,
+		"project_id":        sessionPayload.ProjectID,
 		"timestamp":         time.Now(),
 		"session":           sessionPayload,
 	}

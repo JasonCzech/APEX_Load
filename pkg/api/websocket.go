@@ -18,12 +18,12 @@ var upgrader = websocket.Upgrader{
 }
 
 type Hub struct {
-	clients    map[*Client]bool
-	clientsMu  sync.RWMutex
-	broadcast  chan []byte
-	register   chan *Client
-	unregister chan *Client
-	done       chan struct{}
+	clients           map[*Client]bool
+	clientsMu         sync.RWMutex
+	broadcast         chan []byte
+	register          chan *Client
+	unregister        chan *Client
+	done              chan struct{}
 	droppedBroadcasts atomic.Int64
 	droppedClientMsgs atomic.Int64
 }
@@ -35,10 +35,11 @@ type HubStats struct {
 }
 
 type Client struct {
-	hub    *Hub
-	conn   *websocket.Conn
-	send   chan []byte
-	testID string // empty = all tests, set = specific test
+	hub       *Hub
+	conn      *websocket.Conn
+	send      chan []byte
+	testID    string // empty = all tests, set = specific test
+	projectID string // empty = all projects, set = specific project
 }
 
 func NewHub() *Hub {
@@ -67,7 +68,7 @@ func (h *Hub) Run() {
 			h.clientsMu.Lock()
 			h.clients[client] = true
 			h.clientsMu.Unlock()
-			slog.Info("websocket client connected", "test_filter", client.testID, "clients", len(h.clients))
+			slog.Info("websocket client connected", "test_filter", client.testID, "project_filter", client.projectID, "clients", len(h.clients))
 
 		case client := <-h.unregister:
 			h.clientsMu.Lock()
@@ -80,14 +81,17 @@ func (h *Hub) Run() {
 
 		case msg := <-h.broadcast:
 			h.clientsMu.RLock()
+			var envelope struct {
+				TestID    string `json:"test_id"`
+				ProjectID string `json:"project_id"`
+			}
+			_ = json.Unmarshal(msg, &envelope)
 			for client := range h.clients {
-				if client.testID != "" {
-					var envelope struct {
-						TestID string `json:"test_id"`
-					}
-					if json.Unmarshal(msg, &envelope) == nil && envelope.TestID != client.testID {
-						continue
-					}
+				if client.testID != "" && envelope.TestID != client.testID {
+					continue
+				}
+				if client.projectID != "" && envelope.ProjectID != client.projectID {
+					continue
 				}
 				select {
 				case client.send <- msg:
@@ -139,7 +143,7 @@ func (h *Hub) Stats() HubStats {
 	}
 }
 
-func (h *Hub) serveWS(w http.ResponseWriter, r *http.Request, testID string) {
+func (h *Hub) serveWS(w http.ResponseWriter, r *http.Request, testID string, projectID string) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		slog.Error("websocket upgrade failed", "err", err)
@@ -147,10 +151,11 @@ func (h *Hub) serveWS(w http.ResponseWriter, r *http.Request, testID string) {
 	}
 
 	client := &Client{
-		hub:    h,
-		conn:   conn,
-		send:   make(chan []byte, 64),
-		testID: testID,
+		hub:       h,
+		conn:      conn,
+		send:      make(chan []byte, 64),
+		testID:    testID,
+		projectID: projectID,
 	}
 
 	h.register <- client
