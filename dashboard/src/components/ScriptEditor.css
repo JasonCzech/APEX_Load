@@ -321,6 +321,41 @@
   font-size: 12px;
   line-height: 1.4;
 }
+.import-correlation-section {
+  margin-top: 18px;
+}
+.import-correlation-section h4 {
+  margin: 0 0 6px;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+.import-correlation-section p {
+  margin: 0 0 12px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.import-correlation-list {
+  display: grid;
+  gap: 10px;
+}
+.import-correlation-card {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-secondary);
+}
+.import-correlation-card strong {
+  font-size: 13px;
+  color: var(--text-primary);
+}
+.import-correlation-card span,
+.import-correlation-card code {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
 .import-metadata-details {
   margin-top: 14px;
 }

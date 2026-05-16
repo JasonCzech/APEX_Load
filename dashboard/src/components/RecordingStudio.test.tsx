@@ -166,6 +166,18 @@ describe('RecordingStudio', () => {
     expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
       name: 'Checkout Preview',
       protocol: 'http',
+      metadata: expect.objectContaining({
+        import: expect.objectContaining({
+          source: 'recorder',
+          preserved: expect.objectContaining({
+            correlation_suggestions: [expect.objectContaining({
+              name: 'session_id',
+              found_at: 'Request 1',
+              used_at: ['Request 2'],
+            })],
+          }),
+        }),
+      }),
     }))
 
     const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Save To Script Library')
@@ -184,6 +196,11 @@ describe('RecordingStudio', () => {
     expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({
       name: 'Checkout Preview',
       protocol: 'http',
+      metadata: expect.objectContaining({
+        import: expect.objectContaining({
+          source: 'recorder',
+        }),
+      }),
     }))
     expect(container.textContent).toContain('Script "Checkout Preview" created with 1 correlations detected')
     expect(onImported).toHaveBeenCalledWith(expect.objectContaining({

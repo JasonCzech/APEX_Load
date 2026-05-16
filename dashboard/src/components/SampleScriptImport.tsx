@@ -16,6 +16,7 @@ import { type ImportedScript, type SampleImportResult } from '../types/scriptImp
 import { type ScriptDefinition } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import { createJavaHttpDraft } from './scriptDraftFactories'
+import { attachImportCorrelationSuggestions } from './scriptEditorUtils'
 import ScriptImportReview from './ScriptImportReview'
 import './SampleScriptImport.css'
 
@@ -404,11 +405,12 @@ export default function SampleScriptImport({ projectId, onImported, onEdit, onCl
 
           const builtScript = buildScriptWithOptions(res.script)
           const finalScript = isJavaHttpPreset ? promoteScriptToJavaHTTP(builtScript) : builtScript
+          const correlatedScript = attachImportCorrelationSuggestions(finalScript, 'sample-import', res.correlations)
           const warnings = isJavaHttpPreset ? appendJavaHTTPWarnings(finalScript, res.warnings) : res.warnings
 
           return {
             ...res,
-            script: finalScript,
+            script: correlatedScript,
             warnings,
           }
         },

@@ -10,6 +10,10 @@ import {
   type ScriptImportMetadata,
   type ScriptParameterDefinition,
 } from '../types/scripts'
+import {
+  type RecorderCorrelation,
+  type SampleCorrelation,
+} from '../types/scriptImports'
 
 type Action = ScriptActionDefinition
 type DataSourceConfig = ScriptDataSource
@@ -17,6 +21,15 @@ type ParameterConfig = ScriptParameterDefinition
 type ConsoleEntry = BrowserReplayConsoleEntry
 type NetworkEntry = BrowserReplayNetworkEntry
 type ReplayActionEvent = BrowserReplayEvent
+
+type ImportCorrelationSuggestion = {
+  name: string
+  source: string
+  expression: string
+  sample_value?: string
+  found_at: string
+  used_at: string[]
+}
 
 export const EMPTY_SCRIPT: ScriptDefinition = {
   name: '', version: '1.0.0', protocol: 'http',
@@ -80,12 +93,144 @@ export const EMPTY_SOAP_ACTION: Action = {
 
 export function getImportSummary(metadata?: ScriptImportMetadata | null) {
   const preserved = metadata?.preserved || {}
+  const correlationSuggestions = Array.isArray(preserved.correlation_suggestions)
+    ? preserved.correlation_suggestions
+      .map(normalizeImportCorrelationSuggestion)
+      .filter((suggestion): suggestion is ImportCorrelationSuggestion => suggestion !== null)
+    : []
 
   return {
     runtimeFiles: Object.keys(preserved.runtime_files || {}),
     projectSections: Object.keys(preserved.project_settings || {}),
     unsupportedFunctions: Array.isArray(preserved.unsupported_functions) ? preserved.unsupported_functions : [],
+    correlationSuggestions,
   }
+}
+
+export function attachImportCorrelationSuggestions(
+  script: ScriptDefinition,
+  source: string,
+  correlations?: Array<SampleCorrelation | RecorderCorrelation> | null,
+): ScriptDefinition {
+  if (!Array.isArray(correlations) || correlations.length === 0) {
+    return script
+  }
+
+  const suggestions = correlations
+    .map(buildImportCorrelationSuggestion)
+    .filter((suggestion): suggestion is ImportCorrelationSuggestion => suggestion !== null)
+
+  if (suggestions.length === 0) {
+    return script
+  }
+
+  return {
+    ...script,
+    metadata: {
+      ...(script.metadata || {}),
+      import: {
+        ...(script.metadata?.import || {}),
+        source: script.metadata?.import?.source || source,
+        source_script_name: script.metadata?.import?.source_script_name || script.name,
+        preserved: {
+          ...(script.metadata?.import?.preserved || {}),
+          correlation_suggestions: suggestions,
+        },
+      },
+    },
+  }
+}
+
+function buildImportCorrelationSuggestion(correlation: SampleCorrelation | RecorderCorrelation): ImportCorrelationSuggestion | null {
+  const name = normalizeString(correlation.name)
+  const source = normalizeString(correlation.source)
+  const expression = normalizeString(correlation.expression)
+  if (!name || !source || !expression) {
+    return null
+  }
+
+  if ('found_in_step' in correlation) {
+    const foundAt = labelIndexedLocation('Step', correlation.found_in_step)
+    if (!foundAt) {
+      return null
+    }
+    return {
+      name,
+      source,
+      expression,
+      sample_value: normalizeOptionalString(correlation.sample_value),
+      found_at: foundAt,
+      used_at: normalizeIndexedLocations('Step', correlation.used_in_steps),
+    }
+  }
+
+  const foundAt = labelIndexedLocation('Request', correlation.found_in_seq)
+  if (!foundAt) {
+    return null
+  }
+  return {
+    name,
+    source,
+    expression,
+    sample_value: normalizeOptionalString(correlation.sample_value),
+    found_at: foundAt,
+    used_at: normalizeIndexedLocations('Request', correlation.used_in_seqs),
+  }
+}
+
+function normalizeImportCorrelationSuggestion(value: unknown): ImportCorrelationSuggestion | null {
+  if (!value || typeof value !== 'object') {
+    return null
+  }
+
+  const candidate = value as Record<string, unknown>
+  const name = normalizeString(candidate.name)
+  const source = normalizeString(candidate.source)
+  const expression = normalizeString(candidate.expression)
+  const foundAt = normalizeString(candidate.found_at)
+  const usedAt = Array.isArray(candidate.used_at)
+    ? candidate.used_at.map(normalizeString).filter(Boolean)
+    : []
+
+  if (!name || !source || !expression || !foundAt) {
+    return null
+  }
+
+  return {
+    name,
+    source,
+    expression,
+    sample_value: normalizeOptionalString(candidate.sample_value),
+    found_at: foundAt,
+    used_at: usedAt,
+  }
+}
+
+function normalizeIndexedLocations(prefix: string, values: unknown): string[] {
+  if (!Array.isArray(values)) {
+    return []
+  }
+
+  return values
+    .map(value => labelIndexedLocation(prefix, value))
+    .filter((value): value is string => Boolean(value))
+}
+
+function labelIndexedLocation(prefix: string, value: unknown): string {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    return ''
+  }
+
+  return `${prefix} ${Math.trunc(value)}`
+}
+
+function normalizeString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function normalizeOptionalString(value: unknown): string | undefined {
+  const normalized = normalizeString(value)
+  return normalized || undefined
 }
 
 export function inferDelimiter(source: DataSourceConfig): string {

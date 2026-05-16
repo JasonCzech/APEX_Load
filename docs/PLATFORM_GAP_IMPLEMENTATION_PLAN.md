@@ -107,6 +107,7 @@ The 19 gaps are organized into five sequential delivery waves. Each wave targets
 **Effort:** 5-7 days
 - **Analysis Engine:** Detect dynamic values flowing from responses into subsequent requests during HAR import.
 - **Dashboard UI:** Add "Correlation Assistant" in the ScriptEditor.
+- **Status:** Implemented. Import conversions now preserve detected correlation suggestions in script metadata, and the ScriptEditor surfaces those mappings so authors can review variable flow while editing the generated draft.
 
 ### 4.2 Error Analysis & Pattern Detection (P1)
 **Effort:** 4-6 days

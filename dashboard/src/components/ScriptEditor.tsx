@@ -2461,7 +2461,7 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
 
               {openSections['import'] && (
                 <div className="panel-body" style={{ padding: '0 20px 20px' }}>
-                  <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 14 }}>This script retains source-specific LoadRunner settings that Stormrunner does not edit directly.</p>
+                  <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 14 }}>This script retains source-specific import metadata that Stormrunner uses during review but does not edit directly.</p>
                   <div className="import-metadata-grid">
                     <div className="import-metadata-card">
                       <span>Source Script</span>
@@ -2482,7 +2482,29 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
                       <strong>{importSummary.unsupportedFunctions.length}</strong>
                       <small>{importSummary.unsupportedFunctions.slice(0, 4).join(', ') || 'None'}</small>
                     </div>
+                    <div className="import-metadata-card">
+                      <span>Correlation Suggestions</span>
+                      <strong>{importSummary.correlationSuggestions.length}</strong>
+                      <small>{importSummary.correlationSuggestions.length > 0 ? 'Imported from the conversion preview' : 'None detected'}</small>
+                    </div>
                   </div>
+
+                  {importSummary.correlationSuggestions.length > 0 && (
+                    <div className="import-correlation-section">
+                      <h4>Correlation Suggestions</h4>
+                      <p>Review the imported extractor mappings before you rename variables or rewrite dependent requests.</p>
+                      <div className="import-correlation-list">
+                        {importSummary.correlationSuggestions.map((correlation) => (
+                          <div key={`${correlation.name}:${correlation.expression}:${correlation.found_at}`} className="import-correlation-card">
+                            <strong>{correlation.name}</strong>
+                            <span>{correlation.source} via {correlation.expression}</span>
+                            <span>{correlation.found_at}{correlation.used_at.length > 0 ? ` -> ${correlation.used_at.join(', ')}` : ''}</span>
+                            {correlation.sample_value && <code>{correlation.sample_value}</code>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   <details className="import-metadata-details">
                     <summary>View preserved metadata JSON</summary>

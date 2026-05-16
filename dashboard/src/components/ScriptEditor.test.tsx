@@ -251,6 +251,41 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('Select an action to edit its details')
   })
 
+  it('shows imported correlation suggestions inside the metadata panel', async () => {
+    const importedScript: ScriptDefinition = {
+      ...initialScript,
+      metadata: {
+        import: {
+          source: 'sample-import',
+          source_script_name: 'checkout.har',
+          preserved: {
+            correlation_suggestions: [
+              {
+                name: 'session_id',
+                source: 'response',
+                expression: '$.sessionId',
+                sample_value: 'abc123',
+                found_at: 'Step 1',
+                used_at: ['Step 2'],
+              },
+            ],
+          },
+        },
+      },
+    }
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={importedScript} />)
+    })
+
+    expect(container.textContent).toContain('Imported Metadata')
+    expect(container.textContent).toContain('Correlation Suggestions')
+    expect(container.textContent).toContain('session_id')
+    expect(container.textContent).toContain('response via $.sessionId')
+    expect(container.textContent).toContain('Step 1 -> Step 2')
+    expect(container.textContent).toContain('abc123')
+  })
+
   it('includes the active project id in draft replay payloads', async () => {
     await act(async () => {
       root.render(<ScriptEditor initialScript={initialScript} projectId="project-1" />)

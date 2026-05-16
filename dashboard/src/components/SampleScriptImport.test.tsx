@@ -122,6 +122,18 @@ describe('SampleScriptImport', () => {
     expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({
       name: 'POST_v1_session',
       protocol: 'http',
+      metadata: expect.objectContaining({
+        import: expect.objectContaining({
+          source: 'sample-import',
+          preserved: expect.objectContaining({
+            correlation_suggestions: [expect.objectContaining({
+              name: 'session_id',
+              found_at: 'Step 1',
+              used_at: ['Step 2'],
+            })],
+          }),
+        }),
+      }),
       config: expect.objectContaining({
         base_url: 'https://api.example.com',
       }),
@@ -129,6 +141,11 @@ describe('SampleScriptImport', () => {
     expect(onImported).toHaveBeenCalledWith(expect.objectContaining({
       name: 'POST_v1_session',
       protocol: 'http',
+      metadata: expect.objectContaining({
+        import: expect.objectContaining({
+          source: 'sample-import',
+        }),
+      }),
     }))
   })
 

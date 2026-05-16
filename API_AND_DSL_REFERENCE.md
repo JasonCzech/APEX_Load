@@ -559,6 +559,7 @@ Content-Type: application/json
 **Notes:**
 - `format` may be `raw_http`, `curl`, `rest_json`, or `har`.
 - HAR imports preserve inter-request pauses as `think_time` blocks when `startedDateTime` metadata is present on consecutive entries.
+- When sample or recorder conversion detects reusable correlations, the dashboard preserves those mappings in imported script metadata so the Script Editor can show them during visual review.
 - SOAP-oriented samples can be promoted onto the `soap` protocol surface when the import set is consistently SOAP-shaped.
 - Java-over-HTTP imports are intentionally narrower: use raw HTTP or cURL samples whose opaque request bodies are already base64-encoded serialized Java bytes. The dashboard then promotes the reviewed draft to `protocol: "java_http"`.
 

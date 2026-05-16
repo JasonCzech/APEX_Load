@@ -8,6 +8,7 @@ import { getErrorMessage } from '../utils/errorUtils'
 import { type RecorderCorrelation as Correlation, type ScriptImportResult } from '../types/scriptImports'
 import { type ScriptDefinition } from '../types/scripts'
 import ScriptImportReview from './ScriptImportReview'
+import { attachImportCorrelationSuggestions } from './scriptEditorUtils'
 import './RecordingStudio.css'
 
 interface RecordedRequest {
@@ -248,10 +249,15 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: P
       const result = await convertTask.run(
         async () => {
           const response = await api.previewRecordingConversion(session.id, session.name)
+          const correlations = Array.isArray(response.correlations) ? response.correlations : []
           return {
             ...response,
-            script: response.script as ScriptDefinition | undefined,
-            scripts: response.scripts as ScriptDefinition[],
+            script: response.script
+              ? attachImportCorrelationSuggestions(response.script as ScriptDefinition, 'recorder', correlations)
+              : undefined,
+            scripts: Array.isArray(response.scripts)
+              ? (response.scripts as ScriptDefinition[]).map(script => attachImportCorrelationSuggestions(script, 'recorder', correlations))
+              : [],
           }
         },
         { clearValue: true },
