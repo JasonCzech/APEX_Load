@@ -297,6 +297,7 @@ func TestArchiveTransactionsApplyConfiguredRedactionRules(t *testing.T) {
 		Name:     "Archive Redaction Script",
 		Protocol: protocolName,
 		Version:  "1.0.0",
+		Config:   dsl.ScriptConfig{BaseURL: "https://example.com"},
 		Actions:  []dsl.Action{{Name: "lookup", Type: "request", Target: "/"}},
 	})
 

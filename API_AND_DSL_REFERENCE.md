@@ -580,6 +580,10 @@ Content-Type: multipart/form-data
 [file: loadrunner_project.zip]
 ```
 
+Converts a LoadRunner project archive into Stormrunner JSON DSL. The importer supports C-based web request archives and the TruClient Mobile Web MVP path for browser scripts. Legacy desktop-style `TruClient` archives are reported as out of scope with explicit guidance.
+
+For `TruClientMobileWeb` archives, Stormrunner reads the `.usr` file plus UTF-16 `default.xml`, maps common navigate, click, fill, wait, transaction, and simple JavaScript-derived fill/click steps into browser DSL actions, and carries supported mobile browser runtime settings into `config.browser`.
+
 **Response:**
 ```json
 {

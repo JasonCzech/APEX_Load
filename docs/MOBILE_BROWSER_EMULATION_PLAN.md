@@ -370,28 +370,28 @@ Current script-type scope:
 
 | `.usr` Type | Current Status | Notes |
 |:---|:---|:---|
-| `TruClient - Mobile Web` | Planned | This is the only browser-import target in scope for the MVP. The current LoadRunner ZIP importer recognizes it and returns a scope-aware message instead of a generic parse failure. |
+| `TruClient - Mobile Web` | MVP implemented | This is the only browser-import target in scope for the MVP. The current LoadRunner ZIP importer converts `default.xml` steps into browser DSL actions and keeps unsupported constructs visible as warnings. |
 | `TruClient` | Out of scope | Legacy desktop-style TruClient parity remains outside Stormrunner's browser-import target. |
 
 Current step support matrix:
 
 | TrueClient Step | Status | Planned Stormrunner Shape | Notes |
 |:---|:---|:---|:---|
-| Navigate | Planned | `browser_navigate` | URL-driven transitions map cleanly into browser navigation. |
-| Click | Planned | `browser_click` or `browser_tap` | Device profile resolution determines whether click or tap is emitted. |
-| Set / Type | Planned | `browser_fill` | Text-entry steps stay inside the MVP import scope. |
-| Wait | Planned | `browser_wait` | Wait conditions remain in scope when they normalize to existing wait semantics. |
+| Navigate | Supported | `browser_navigate` | URL-driven transitions map cleanly into browser navigation. |
+| Click | Supported | `browser_click` | Direct object clicks map to browser click actions with the captured selector. |
+| Set / Type | Supported | `browser_fill` | Text-entry steps stay inside the MVP import scope. |
+| Wait | Supported | `browser_wait` | Duration, text, and visible-selector waits normalize to existing wait semantics. |
 | Verify | Planned | action assertions | Verification should map to the existing assertion surface instead of a new browser action type. |
-| Start Transaction | Planned | transaction metadata | Transaction preservation should reuse the current import preservation model. |
-| End Transaction | Planned | transaction metadata | Close events stay in scope with the same preservation model. |
+| Start Transaction | Supported | transaction metadata | Transaction preservation prefixes converted action names when requested. |
+| End Transaction | Supported | transaction metadata | Close events stay in scope with the same preservation model. |
 | Select | Review only | `browser_click` + `browser_fill` | Control semantics are recorder-specific and likely need explicit review. |
 | Scroll | Review only | `browser_swipe` or preserved review note | Scroll intent depends on viewport state and may require repair suggestions. |
-| Evaluate JavaScript | Out of scope | not supported | Stormrunner does not currently expose a supported public browser-eval action. |
+| Evaluate JavaScript | Review only | `browser_fill` or `browser_click` when decomposable | Simple jQuery and `document.querySelector` fill/click statements are decomposed; other JavaScript remains a warning because Stormrunner does not expose a supported public browser-eval action. |
 
 ### Current Importer Behavior
 
 - `pkg/convert/loadrunner/zip.go` now checks the parsed `.usr` type before trying to parse C action files.
-- A `TruClient - Mobile Web` archive returns an explicit “recognized but not implemented yet” error that cites the planned MVP step scope.
+- A `TruClient - Mobile Web` archive with `default.xml` now imports into a browser script with URL navigation, click, fill, wait, simple decomposed JavaScript fill/click, transaction-preserved action names, and mobile device settings from LoadRunner runtime configuration.
 - A `TruClient` desktop archive returns an explicit out-of-scope error instead of failing later with `no parseable .c action files found`.
 
 ### Import Risks

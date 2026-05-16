@@ -13,9 +13,11 @@ func TestLookupScriptTypeScope(t *testing.T) {
 		wantStatus ScopeStatus
 		wantFound  bool
 	}{
-		{name: "mobile web", scriptType: "TruClient - Mobile Web", wantName: "TruClient - Mobile Web", wantStatus: ScopePlanned, wantFound: true},
-		{name: "mobile web normalized", scriptType: " truclient_mobile_web ", wantName: "TruClient - Mobile Web", wantStatus: ScopePlanned, wantFound: true},
+		{name: "mobile web", scriptType: "TruClient - Mobile Web", wantName: "TruClient - Mobile Web", wantStatus: ScopeSupported, wantFound: true},
+		{name: "mobile web normalized", scriptType: " truclient_mobile_web ", wantName: "TruClient - Mobile Web", wantStatus: ScopeSupported, wantFound: true},
+		{name: "mobile web compact", scriptType: "TruClientMobileWeb", wantName: "TruClient - Mobile Web", wantStatus: ScopeSupported, wantFound: true},
 		{name: "desktop truclient", scriptType: "TruClient", wantName: "TruClient", wantStatus: ScopeOutOfScope, wantFound: true},
+		{name: "desktop truclient compact", scriptType: "TruClientWeb", wantName: "TruClient", wantStatus: ScopeOutOfScope, wantFound: true},
 		{name: "unknown", scriptType: "Web", wantFound: false},
 	}
 
@@ -44,7 +46,7 @@ func TestLookupStepScope(t *testing.T) {
 	}{
 		{stepName: "Set / Type", wantName: "Set / Type", wantType: "browser_fill", wantOK: true},
 		{stepName: "Start Transaction", wantName: "Start Transaction", wantType: "transaction metadata", wantOK: true},
-		{stepName: "Evaluate JavaScript", wantName: "Evaluate JavaScript", wantType: "not supported", wantOK: true},
+		{stepName: "Evaluate JavaScript", wantName: "Evaluate JavaScript", wantType: "browser_fill or browser_click when decomposable", wantOK: true},
 		{stepName: "Unknown Step", wantOK: false},
 	}
 
@@ -64,11 +66,8 @@ func TestLookupStepScope(t *testing.T) {
 
 func TestImportScopeError(t *testing.T) {
 	err := ImportScopeError("TruClient - Mobile Web")
-	if err == nil || err.Error() == "" {
-		t.Fatal("ImportScopeError should describe planned TruClient Mobile Web scope")
-	}
-	if got := err.Error(); got == "" || !containsAll(got, "recognized but not implemented yet", "navigate", "transaction") {
-		t.Fatalf("ImportScopeError mobile web = %q, want planned scope guidance", got)
+	if err != nil {
+		t.Fatalf("ImportScopeError mobile web = %v, want nil for supported scope", err)
 	}
 
 	err = ImportScopeError("TruClient")

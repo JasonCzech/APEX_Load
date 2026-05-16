@@ -258,7 +258,7 @@ func (s *metricsStoreSpy) SaveAuditEvent(event *storage.AuditEvent) error {
 func (s *metricsStoreSpy) ListAuditEvents(filter storage.AuditEventFilter) ([]*storage.AuditEvent, error) {
 	return nil, nil
 }
-func (s *metricsStoreSpy) Close() error                               { return nil }
+func (s *metricsStoreSpy) Close() error { return nil }
 
 type archiveStubProtocol struct{}
 
@@ -664,9 +664,10 @@ func TestCompileManagedTestGroupLockedAppliesHeadlessOverrideWithoutMutatingStor
 		Protocol: "browser",
 		Version:  "1.0.0",
 		Config: dsl.ScriptConfig{
+			BaseURL: "https://example.com",
 			Browser: dsl.BrowserConfig{Headless: &defaultHeadless, DeviceProfile: "desktop_1080p", TouchMode: &defaultTouchMode, Orientation: "landscape"},
 		},
-		Actions: []dsl.Action{{Name: "open-home", Type: "navigate", Target: "/"}},
+		Actions: []dsl.Action{{Name: "open-home", Type: "browser_navigate", Target: "/"}},
 	})
 
 	headless := false
@@ -722,6 +723,7 @@ func TestCompileManagedTestGroupLockedBuildsCustomRedactionConfig(t *testing.T) 
 		Name:     "Redaction Rule Script",
 		Protocol: "http",
 		Version:  "1.0.0",
+		Config:   dsl.ScriptConfig{BaseURL: "https://example.com"},
 		Actions:  []dsl.Action{{Name: "runtime-step", Type: "GET", Target: "/orders"}},
 	})
 
@@ -3276,6 +3278,7 @@ func TestScenarioSchedulerRunDueSchedulesCreatesAndStartsRun(t *testing.T) {
 		Name:     "Scheduled Script",
 		Protocol: "http",
 		Version:  "1.0.0",
+		Config:   dsl.ScriptConfig{BaseURL: "https://example.com"},
 		Actions:  []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
 	})
 	scenario, err := runner.StoreScenario(CreateScenarioRequest{

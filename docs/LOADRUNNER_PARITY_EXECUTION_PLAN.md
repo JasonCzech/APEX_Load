@@ -133,7 +133,7 @@ Goal: reduce the work required to move browser-centric LoadRunner assets into St
 
 Status:
 - B3.1 now has a code-owned scope definition in `pkg/convert/trueclient/support.go`, including the initial TrueClient Mobile Web versus legacy TruClient script-type matrix and the first step support matrix for planned, review-only, and out-of-scope constructs.
-- The current LoadRunner ZIP importer now detects TruClient script types from the `.usr` file and returns explicit scope-aware errors, so unsupported browser archives no longer fall through to a generic `no parseable .c action files found` failure.
+- B3.2 now has an MVP implementation for `TruClientMobileWeb` LoadRunner ZIP archives. The importer routes supported Mobile Web archives through `pkg/convert/trueclient`, reads UTF-16 `default.xml`, maps navigate/click/fill/wait plus simple decomposed JavaScript fill/click into browser DSL actions, preserves transaction names when requested, applies mobile browser runtime settings, and keeps legacy desktop `TruClient` explicitly out of scope.
 
 Acceptance criteria:
 - Imported browser scripts land in the same review/edit/save flow as other authoring paths

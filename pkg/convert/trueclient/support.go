@@ -8,6 +8,7 @@ import (
 type ScopeStatus string
 
 const (
+	ScopeSupported  ScopeStatus = "supported"
 	ScopePlanned    ScopeStatus = "planned"
 	ScopeReviewOnly ScopeStatus = "review_only"
 	ScopeOutOfScope ScopeStatus = "out_of_scope"
@@ -32,8 +33,8 @@ var scriptTypeScopes = []ScriptTypeScope{
 	{
 		CanonicalName: "truclient_mobile_web",
 		DisplayName:   "TruClient - Mobile Web",
-		Status:        ScopePlanned,
-		Notes:         "The planned MVP targets navigate, click or tap, fill, wait, verify or assertion, and transaction flows once representative fixture archives are available.",
+		Status:        ScopeSupported,
+		Notes:         "The MVP importer maps common navigation, click, fill, wait, simple JavaScript-derived fill or click, and transaction flows into browser DSL actions.",
 	},
 	{
 		CanonicalName: "truclient_web",
@@ -47,28 +48,28 @@ var stepScopes = []StepScope{
 	{
 		CanonicalName:    "navigate",
 		DisplayName:      "Navigate",
-		Status:           ScopePlanned,
+		Status:           ScopeSupported,
 		StormrunnerShape: "browser_navigate",
 		Notes:            "URL-driven page transitions map cleanly to browser navigation.",
 	},
 	{
 		CanonicalName:    "click",
 		DisplayName:      "Click",
-		Status:           ScopePlanned,
-		StormrunnerShape: "browser_click or browser_tap",
-		Notes:            "The importer can choose click versus tap from the resolved device profile.",
+		Status:           ScopeSupported,
+		StormrunnerShape: "browser_click",
+		Notes:            "Direct object clicks map to browser click actions with the captured selector.",
 	},
 	{
 		CanonicalName:    "set_type",
 		DisplayName:      "Set / Type",
-		Status:           ScopePlanned,
+		Status:           ScopeSupported,
 		StormrunnerShape: "browser_fill",
 		Notes:            "Text entry is in scope for the MVP action mapping.",
 	},
 	{
 		CanonicalName:    "wait",
 		DisplayName:      "Wait",
-		Status:           ScopePlanned,
+		Status:           ScopeSupported,
 		StormrunnerShape: "browser_wait",
 		Notes:            "Wait conditions remain in scope when they can be normalized to existing browser wait semantics.",
 	},
@@ -82,14 +83,14 @@ var stepScopes = []StepScope{
 	{
 		CanonicalName:    "start_transaction",
 		DisplayName:      "Start Transaction",
-		Status:           ScopePlanned,
+		Status:           ScopeSupported,
 		StormrunnerShape: "transaction metadata",
 		Notes:            "Transaction boundaries should reuse the existing import preservation model instead of inventing a second representation.",
 	},
 	{
 		CanonicalName:    "end_transaction",
 		DisplayName:      "End Transaction",
-		Status:           ScopePlanned,
+		Status:           ScopeSupported,
 		StormrunnerShape: "transaction metadata",
 		Notes:            "Transaction close events remain in scope with the same preservation model as start events.",
 	},
@@ -110,9 +111,9 @@ var stepScopes = []StepScope{
 	{
 		CanonicalName:    "evaluate_javascript",
 		DisplayName:      "Evaluate JavaScript",
-		Status:           ScopeOutOfScope,
-		StormrunnerShape: "not supported",
-		Notes:            "Stormrunner does not expose a supported browser-eval action in the current public DSL.",
+		Status:           ScopeReviewOnly,
+		StormrunnerShape: "browser_fill or browser_click when decomposable",
+		Notes:            "Simple jQuery and document.querySelector fill/click statements are decomposed; other JavaScript remains a review warning because Stormrunner does not expose a public browser-eval action.",
 	},
 }
 
@@ -151,6 +152,8 @@ func ImportScopeError(scriptType string) error {
 	}
 
 	switch scope.Status {
+	case ScopeSupported:
+		return nil
 	case ScopePlanned:
 		return fmt.Errorf("LoadRunner script type %q is recognized but not implemented yet. Current planned scope is %s", scope.DisplayName, scope.Notes)
 	case ScopeOutOfScope:
@@ -162,9 +165,16 @@ func ImportScopeError(scriptType string) error {
 
 func normalizeScriptType(scriptType string) string {
 	value := strings.ToLower(strings.TrimSpace(scriptType))
-	value = strings.ReplaceAll(value, "_", " ")
+	value = strings.NewReplacer("_", " ", "-", " ").Replace(value)
 	value = strings.Join(strings.Fields(value), " ")
-	value = strings.ReplaceAll(value, " - ", " ")
+	compact := strings.ReplaceAll(value, " ", "")
+
+	switch compact {
+	case "truclientmobileweb":
+		return "truclient_mobile_web"
+	case "truclient", "truclientweb":
+		return "truclient_web"
+	}
 
 	switch value {
 	case "truclient mobile web":

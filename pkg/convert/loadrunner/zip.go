@@ -53,6 +53,7 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 	var projectConfig *ProjectConfig
 	var projectFileName string
 	var projectSections map[string]map[string]string
+	var trueClientScope *trueclient.ScriptTypeScope
 	for name, content := range files {
 		if strings.HasSuffix(strings.ToLower(name), ".usr") {
 			projectFileName = name
@@ -69,8 +70,15 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 		}
 	}
 	if projectConfig != nil {
-		if err := trueclient.ImportScopeError(projectConfig.ScriptType); err != nil {
-			return nil, err
+		if scope, ok := trueclient.LookupScriptTypeScope(projectConfig.ScriptType); ok {
+			switch scope.Status {
+			case trueclient.ScopeSupported:
+				trueClientScope = &scope
+			default:
+				if err := trueclient.ImportScopeError(projectConfig.ScriptType); err != nil {
+					return nil, err
+				}
+			}
 		}
 	}
 
@@ -85,6 +93,52 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 		}
 	}
 	parameterFileNames := findParameterFiles(files, projectConfig)
+	if trueClientScope != nil {
+		trueClientResult, err := trueclient.ConvertArchive(files, trueclient.ConvertOptions{
+			ScriptName:           opts.ScriptName,
+			BaseURL:              opts.BaseURL,
+			PreserveTransactions: opts.PreserveTransactions,
+		})
+		if err != nil {
+			return nil, err
+		}
+		if opts.RuntimeSettings != nil {
+			mergeScriptConfig(&trueClientResult.Script.Config, opts.RuntimeSettings)
+		}
+		result := &ConvertResult{
+			Script:   trueClientResult.Script,
+			Warnings: append([]string(nil), trueClientResult.Warnings...),
+			Stats: ConvertStats{
+				TotalFunctions:   trueClientResult.Stats.TotalSteps,
+				ConvertedActions: trueClientResult.Stats.ConvertedActions,
+				Skipped:          trueClientResult.Stats.Skipped,
+				Transactions:     trueClientResult.Stats.Transactions,
+				UnsupportedFuncs: append([]string(nil), trueClientResult.Stats.UnsupportedSteps...),
+			},
+		}
+		parameterSections := make(map[string]map[string]map[string]string)
+		for _, parameterFileName := range parameterFileNames {
+			content, ok := findFile(files, parameterFileName)
+			if !ok {
+				continue
+			}
+			parsed := ParseParameterFile(parameterFileName, content, files)
+			if len(parsed.Parameters) > 0 {
+				result.Script.Parameters = append(result.Script.Parameters, parsed.Parameters...)
+			}
+			if len(parsed.DataSources) > 0 {
+				result.Script.DataSources = append(result.Script.DataSources, parsed.DataSources...)
+			}
+			if len(parsed.Warnings) > 0 {
+				result.Warnings = append(result.Warnings, parsed.Warnings...)
+			}
+			if len(parsed.Sections) > 0 {
+				parameterSections[filepath.Base(parameterFileName)] = parsed.Sections
+			}
+		}
+		attachLoadRunnerMetadata(result.Script, result, projectFileName, projectSections, projectConfig, files, runtimeFileName, parameterSections, parameterFileNames)
+		return result, nil
+	}
 
 	// Determine which .c files to parse
 	actionFileNames := []string{"Action.c"}

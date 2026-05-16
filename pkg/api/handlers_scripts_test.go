@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"unicode/utf16"
 
 	"github.com/jasonczech/stormrunner/pkg/dsl"
 )
@@ -632,6 +633,195 @@ func TestHandleValidateLoadRunnerImportMatchesImportEnvelope(t *testing.T) {
 	}
 }
 
+func TestHandleImportLoadRunnerSupportsTruClientMobileWebArchive(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	var body bytes.Buffer
+	writer := zip.NewWriter(&body)
+	addFile := func(name string, content string) {
+		entry, err := writer.Create(name)
+		if err != nil {
+			t.Fatalf("Create(%q) returned error: %v", name, err)
+		}
+		if _, err := entry.Write([]byte(content)); err != nil {
+			t.Fatalf("Write(%q) returned error: %v", name, err)
+		}
+	}
+	addFile("MobileWeb.usr", `[General]
+Type=TruClientMobileWeb
+RuntimeSettings=default.cfg
+`)
+	addFile("default.xml", encodeUTF16LEForTruClientZip(`<?xml version="1.0" encoding="utf-16"?>
+<truScript>
+  <step type="top" action="TopStep">
+    <step type="block" action="Run Block" actionName="Run">
+      <step type="control" action="Call Action" arguments="{&quot;Action Name&quot;:{&quot;value&quot;:&quot;Action&quot;}}" />
+    </step>
+    <step type="block" action="action" actionName="Action">
+      <step type="testObject" action="Navigate" index="1" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://m.example.com/catalog\&quot;&quot;}}" />
+      <step type="util" action="Evaluate JavaScript" index="2" arguments="{&quot;Code&quot;:{&quot;value&quot;:&quot;$(\&quot;input[name='q']\&quot;).val(\&quot;QAInsights\&quot;);\ndocument.querySelector('#menu').click()&quot;}}" />
+    </step>
+  </step>
+</truScript>`))
+	addFile("default.cfg", `[Browser Emulation]
+DeviceProfile=iPhone_SE
+TouchMode=1
+`)
+	if err := writer.Close(); err != nil {
+		t.Fatalf("zip.Close returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/loadrunner", bytes.NewReader(body.Bytes()))
+	req.Header.Set("Content-Type", "application/zip")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var result struct {
+		Script struct {
+			Protocol string `json:"protocol"`
+			Name     string `json:"name"`
+			Actions  []struct {
+				Type     string `json:"type"`
+				Selector string `json:"selector"`
+				Target   string `json:"target"`
+				Value    string `json:"value"`
+			} `json:"actions"`
+		} `json:"script"`
+		Warnings            []string       `json:"warnings"`
+		UnsupportedElements []string       `json:"unsupported_elements"`
+		Summary             map[string]any `json:"summary"`
+		Stats               struct {
+			ConvertedActions int `json:"converted_actions"`
+		} `json:"stats"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if result.Script.Protocol != "browser" || result.Script.Name != "MobileWeb" {
+		t.Fatalf("script = %#v, want browser script named MobileWeb", result.Script)
+	}
+	if len(result.Script.Actions) != 3 {
+		t.Fatalf("actions len = %d, want 3", len(result.Script.Actions))
+	}
+	if action := result.Script.Actions[0]; action.Type != "browser_navigate" || action.Target != "https://m.example.com/catalog" {
+		t.Fatalf("action[0] = %#v, want browser_navigate to catalog", action)
+	}
+	if action := result.Script.Actions[1]; action.Type != "browser_fill" || action.Selector != "input[name='q']" || action.Value != "QAInsights" {
+		t.Fatalf("action[1] = %#v, want browser_fill on search input", action)
+	}
+	if action := result.Script.Actions[2]; action.Type != "browser_click" || action.Selector != "#menu" {
+		t.Fatalf("action[2] = %#v, want browser_click on #menu", action)
+	}
+	if result.Stats.ConvertedActions != 3 {
+		t.Fatalf("converted_actions = %d, want 3", result.Stats.ConvertedActions)
+	}
+	if len(result.Warnings) != 0 {
+		t.Fatalf("warnings = %#v, want none", result.Warnings)
+	}
+	if len(result.UnsupportedElements) != 0 {
+		t.Fatalf("unsupported_elements = %#v, want none", result.UnsupportedElements)
+	}
+	if got := result.Summary["project_file"]; got != "MobileWeb.usr" {
+		t.Fatalf("summary.project_file = %#v, want MobileWeb.usr", got)
+	}
+	if got := result.Summary["mapped_runtime_file"]; got != "default.cfg" {
+		t.Fatalf("summary.mapped_runtime_file = %#v, want default.cfg", got)
+	}
+	if got := result.Summary["unsupported_function_count"]; got != float64(0) {
+		t.Fatalf("summary.unsupported_function_count = %#v, want 0", got)
+	}
+}
+
+func TestHandleImportLoadRunnerPreservesTruClientTransactionsAndWaitSteps(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	var body bytes.Buffer
+	writer := zip.NewWriter(&body)
+	addFile := func(name string, content string) {
+		entry, err := writer.Create(name)
+		if err != nil {
+			t.Fatalf("Create(%q) returned error: %v", name, err)
+		}
+		if _, err := entry.Write([]byte(content)); err != nil {
+			t.Fatalf("Write(%q) returned error: %v", name, err)
+		}
+	}
+	addFile("MobileWeb.usr", `[General]
+Type=TruClientMobileWeb
+RuntimeSettings=default.cfg
+`)
+	addFile("default.xml", encodeUTF16LEForTruClientZip(`<?xml version="1.0" encoding="utf-16"?>
+<truScript>
+  <step type="block" action="action" actionName="Action">
+    <step type="util" action="Start Transaction" index="1" arguments="{&quot;Transaction Name&quot;:{&quot;value&quot;:&quot;\&quot;Login\&quot;&quot;}}" />
+    <step type="testObject" action="Navigate" index="2" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://m.example.com/login\&quot;&quot;}}" />
+    <step type="util" action="Wait" index="3" arguments="{&quot;Duration&quot;:{&quot;value&quot;:&quot;500&quot;}}" />
+    <step type="testObject" action="Click" index="4" arguments="{&quot;Selector&quot;:{&quot;value&quot;:&quot;\&quot;#submit\&quot;&quot;}}" />
+    <step type="util" action="End Transaction" index="5" arguments="{&quot;Transaction Name&quot;:{&quot;value&quot;:&quot;\&quot;Login\&quot;&quot;}}" />
+  </step>
+</truScript>`))
+	addFile("default.cfg", `[Browser Emulation]
+DeviceProfile=iPhone_SE
+TouchMode=1
+`)
+	if err := writer.Close(); err != nil {
+		t.Fatalf("zip.Close returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/loadrunner", bytes.NewReader(body.Bytes()))
+	req.Header.Set("Content-Type", "application/zip")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var result struct {
+		Script struct {
+			Actions []struct {
+				Name    string `json:"name"`
+				Type    string `json:"type"`
+				Value   string `json:"value"`
+				WaitFor *struct {
+					Type  string `json:"type"`
+					Value string `json:"value"`
+				} `json:"wait_for"`
+			} `json:"actions"`
+		} `json:"script"`
+		Warnings []string `json:"warnings"`
+		Stats    struct {
+			ConvertedActions int `json:"converted_actions"`
+			Transactions     int `json:"transactions"`
+		} `json:"stats"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if len(result.Script.Actions) != 3 {
+		t.Fatalf("actions len = %d, want 3", len(result.Script.Actions))
+	}
+	if action := result.Script.Actions[0]; action.Name != "Login_Navigate" || action.Type != "browser_navigate" {
+		t.Fatalf("action[0] = %#v, want Login_Navigate browser_navigate", action)
+	}
+	if action := result.Script.Actions[1]; action.Name != "Login_Wait" || action.Type != "browser_wait" || action.WaitFor == nil || action.WaitFor.Type != "duration" || action.WaitFor.Value != "500" {
+		t.Fatalf("action[1] = %#v, want Login_Wait browser_wait duration 500", action)
+	}
+	if action := result.Script.Actions[2]; action.Name != "Login_Click" || action.Type != "browser_click" {
+		t.Fatalf("action[2] = %#v, want Login_Click browser_click", action)
+	}
+	if result.Stats.ConvertedActions != 3 || result.Stats.Transactions != 1 {
+		t.Fatalf("stats = %#v, want converted_actions=3 transactions=1", result.Stats)
+	}
+	if len(result.Warnings) != 0 {
+		t.Fatalf("warnings = %#v, want none", result.Warnings)
+	}
+}
+
 func TestHandleImportJMeter(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	var body bytes.Buffer
@@ -948,6 +1138,15 @@ UpdateValueOn=Each Iteration
 		t.Fatalf("zip.Close returned error: %v", err)
 	}
 	return body.Bytes()
+}
+
+func encodeUTF16LEForTruClientZip(text string) string {
+	words := utf16.Encode([]rune(text))
+	bytes := make([]byte, 0, len(words)*2)
+	for _, word := range words {
+		bytes = append(bytes, byte(word), byte(word>>8))
+	}
+	return string(bytes)
 }
 
 func buildJMeterImportMultipartBody(t *testing.T, scenarioDraft bool) ([]byte, string) {
