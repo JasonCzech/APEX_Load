@@ -24,8 +24,7 @@ type dataSource struct {
 	rows     [][]string
 	strategy string
 	seqIdx   atomic.Int64
-	mu       sync.Mutex // for unique strategy
-	used     map[int]bool
+	mu       sync.Mutex
 }
 
 // NewDataProvider creates a provider from DSL DataSource definitions.
@@ -77,7 +76,6 @@ func loadDataSource(src dsl.DataSource) (*dataSource, error) {
 	ds := &dataSource{
 		name:     src.Name,
 		strategy: src.Strategy,
-		used:     make(map[int]bool),
 	}
 
 	if src.FirstRowHeader {
@@ -110,6 +108,11 @@ func loadDataSource(src dsl.DataSource) (*dataSource, error) {
 	if ds.strategy == "" {
 		ds.strategy = "sequential"
 	}
+	switch ds.strategy {
+	case "sequential", "random", "unique", "pop":
+	default:
+		return nil, fmt.Errorf("unsupported data source strategy %q", ds.strategy)
+	}
 
 	return ds, nil
 }
@@ -133,6 +136,7 @@ func openDataSourceReader(src dsl.DataSource) (io.ReadCloser, error) {
 //   - sequential: round-robin through rows
 //   - random: pick a random row each time
 //   - unique: each VUser gets a distinct row (wraps if more VUsers than rows)
+//   - pop: globally consume rows in order and stop returning rows after exhaustion
 func (dp *DataProvider) GetRow(sourceName string, vuserID int) map[string]string {
 	ds, ok := dp.sources[sourceName]
 	if !ok || len(ds.rows) == 0 {
@@ -152,6 +156,16 @@ func (dp *DataProvider) GetRow(sourceName string, vuserID int) map[string]string
 	case "unique":
 		// Each VUser gets its own row; wraps around if needed
 		rowIdx = vuserID % len(ds.rows)
+
+	case "pop":
+		ds.mu.Lock()
+		defer ds.mu.Unlock()
+		idx := int(ds.seqIdx.Load())
+		if idx >= len(ds.rows) {
+			return nil
+		}
+		rowIdx = idx
+		ds.seqIdx.Add(1)
 
 	default:
 		rowIdx = 0

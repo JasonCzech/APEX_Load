@@ -100,6 +100,7 @@ The 19 gaps are organized into five sequential delivery waves. Each wave targets
 
 ### Implemented Status
 - **4.2 Error Analysis & Pattern Detection:** Archived run reports now cluster similar error messages, retain the first captured snapshot for each pattern, and surface those clusters in both the embedded dashboard archive view and the standalone HTML report.
+- **4.3 Test Data Management:** Faker-style template generators are available for synthetic email and UUID values, and shared data pools now support `pop` semantics so rows are consumed exactly once.
 - **4.4 Think Time & Pacing Intelligence:** HAR sample imports now preserve inter-request pauses as per-action `think_time` blocks when entry timestamps are present.
 
 ### 4.1 Correlation Intelligence (P1)
@@ -116,7 +117,7 @@ The 19 gaps are organized into five sequential delivery waves. Each wave targets
 **Effort:** 5-7 days
 - **Generators:** Add Faker-style functions (`{{fake.email}}`, `{{fake.uuid}}`).
 - **Unique Allocation:** Ensure "pop" semantics for data pools so rows are used exactly once.
-- **Status:** Faker-style generators are now available for email and UUID templates. Data-pool pop semantics are still pending.
+- **Status:** Implemented. Faker-style generators are available for email and UUID templates, and data-pool bindings can now use `selection_strategy: "pop"` to consume rows exactly once.
 
 ### 4.4 Think Time & Pacing Intelligence (P2)
 **Effort:** 2-3 days

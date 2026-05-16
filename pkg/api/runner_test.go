@@ -1098,6 +1098,24 @@ func TestInlineCSVFromDataPoolRowsRequiresColumns(t *testing.T) {
 	}
 }
 
+func TestNormalizeScenarioDataPoolBindingsAcceptsPopStrategy(t *testing.T) {
+	bindings, err := normalizeScenarioDataPoolBindings("scenario-1", []storage.ScenarioDataPoolBinding{{
+		PoolID:            "pool-1",
+		Alias:             "customers",
+		AccessMode:        "consume",
+		SelectionStrategy: "pop",
+	}})
+	if err != nil {
+		t.Fatalf("normalizeScenarioDataPoolBindings returned error: %v", err)
+	}
+	if len(bindings) != 1 {
+		t.Fatalf("binding count = %d, want 1", len(bindings))
+	}
+	if bindings[0].SelectionStrategy != "pop" {
+		t.Fatalf("selection strategy = %q, want pop", bindings[0].SelectionStrategy)
+	}
+}
+
 func TestPublishLiveMetricsUpdatesStatePersistsHistoryAndBroadcasts(t *testing.T) {
 	hub := NewHub()
 	store := &metricsStoreSpy{}

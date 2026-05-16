@@ -188,6 +188,7 @@ type BrowserCaptureOptions struct {
 // RunLogicConfig controls iteration behavior and automatic transaction wrapping.
 type RunLogicConfig struct {
 	Iterations       int      `json:"iterations,omitempty"`        // 0 = run until duration (default)
+	WorkloadModel    string   `json:"workload_model,omitempty"`    // "closed" (default), "open"
 	AutoTransactions string   `json:"auto_transactions,omitempty"` // "none" (default), "per_action", "per_iteration"
 	BlockScheduling  string   `json:"block_scheduling,omitempty"`  // "sequential", "random", "percentage"
 	ActionSequence   []string `json:"action_sequence,omitempty"`   // e.g. ["init", "action", "teardown"]
@@ -302,7 +303,7 @@ type DataSource struct {
 	Type           string   `json:"type"` // "csv", "dat"
 	Path           string   `json:"path,omitempty"`
 	InlineData     string   `json:"inline_data,omitempty"` // optional inline CSV/DAT content
-	Strategy       string   `json:"strategy"`              // "sequential", "random", "unique"
+	Strategy       string   `json:"strategy"`              // "sequential", "random", "unique", "pop"
 	Delimiter      string   `json:"delimiter,omitempty"`   // default ","
 	FirstRowHeader bool     `json:"first_row_header,omitempty"`
 	Columns        []string `json:"columns,omitempty"` // explicit column names if no header

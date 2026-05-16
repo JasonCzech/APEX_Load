@@ -866,7 +866,8 @@ See [docs/LOADRUNNER_RTS_REFERENCE.md](docs/LOADRUNNER_RTS_REFERENCE.md) for the
 - `type`: `csv` or `dat`
 - `path`: File path when inline data is not used
 - `inline_data`: Optional inline CSV or DAT content
-- `strategy`: `sequential`, `random`, or `unique`
+- `strategy`: `sequential`, `random`, `unique`, or `pop`
+- `pop`: consume each row once globally and return no more rows after exhaustion
 - `delimiter`: Optional column delimiter
 - `first_row_header`: Whether the first row contains column names
 - `columns`: Explicit column names when the file has no header row

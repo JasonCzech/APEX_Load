@@ -1119,7 +1119,7 @@ func normalizeScenarioDataPoolBindings(scenarioID string, bindings []storage.Sce
 			binding.SelectionStrategy = "sequential"
 		}
 		switch binding.SelectionStrategy {
-		case "sequential", "random", "unique":
+		case "sequential", "random", "unique", "pop":
 		default:
 			return nil, fmt.Errorf("unsupported data pool selection strategy %q", binding.SelectionStrategy)
 		}
