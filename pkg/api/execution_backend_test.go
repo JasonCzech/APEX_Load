@@ -201,6 +201,49 @@ func TestDistributedExecutionBackendAssignsWorkToGenerator(t *testing.T) {
 	}
 }
 
+func TestPlanDistributedGroupTargetsUsesRegionWeights(t *testing.T) {
+	groups := []TestGroup{
+		{Name: "buyers-east-1", VUsers: 10},
+		{Name: "buyers-east-2", VUsers: 10},
+		{Name: "buyers-west", VUsers: 10},
+	}
+	loadByTarget := map[string]generatorLoadSnapshot{
+		"gen-a": {Target: "gen-a", AvailableCapacity: 50},
+		"gen-b": {Target: "gen-b", AvailableCapacity: 50},
+		"gen-c": {Target: "gen-c", AvailableCapacity: 50},
+	}
+	assignment := &GeneratorAssignmentSettings{
+		Mode: generatorAssignmentModeRegionWeighted,
+		RegionWeights: map[string]int{
+			"us-east": 2,
+			"eu-west": 1,
+		},
+	}
+	targetSpecs := []generatorTargetSpec{
+		{Address: "gen-a", Region: "us-east"},
+		{Address: "gen-b", Region: "eu-west"},
+		{Address: "gen-c", Region: "us-east"},
+	}
+
+	assignments := planDistributedGroupTargets(groups, loadByTarget, []string{"gen-a", "gen-b", "gen-c"}, assignment, targetSpecs)
+
+	assignedByRegion := map[string]int{}
+	regionByTarget := map[string]string{
+		"gen-a": "us-east",
+		"gen-b": "eu-west",
+		"gen-c": "us-east",
+	}
+	for _, target := range assignments {
+		assignedByRegion[regionByTarget[target]]++
+	}
+	if assignedByRegion["us-east"] != 2 {
+		t.Fatalf("us-east assignments = %d, want 2 (%v)", assignedByRegion["us-east"], assignments)
+	}
+	if assignedByRegion["eu-west"] != 1 {
+		t.Fatalf("eu-west assignments = %d, want 1 (%v)", assignedByRegion["eu-west"], assignments)
+	}
+}
+
 func TestDistributedExecutionBackendStopTestClearsRemoteAssignment(t *testing.T) {
 	const bufSize = 1024 * 1024
 
@@ -548,19 +591,19 @@ func TestDistributedExecutionBackendPublishesRemoteTransactionMetrics(t *testing
 		TLSMs:            0,
 		TTFBMs:           60,
 		ServerTelemetry: &generatorrpc.ServerTelemetry{
-			ServerProcessingMs: 60,
-			TransferMs:         40,
-			RequestPayloadKB:   2.5,
-			RequestSizeClass:   "medium",
-			ResponsePayloadKB:  5,
-			ResponseSizeClass:  "large",
-			MessageLatencyMs:   55,
-			MessagesSent:       1,
-			MessagesReceived:   1,
-			MessagesSentPerSec: 5,
+			ServerProcessingMs:     60,
+			TransferMs:             40,
+			RequestPayloadKB:       2.5,
+			RequestSizeClass:       "medium",
+			ResponsePayloadKB:      5,
+			ResponseSizeClass:      "large",
+			MessageLatencyMs:       55,
+			MessagesSent:           1,
+			MessagesReceived:       1,
+			MessagesSentPerSec:     5,
 			MessagesReceivedPerSec: 5,
-			ConsumerLagMs:      60,
-			ConnectionReused:   true,
+			ConsumerLagMs:          60,
+			ConnectionReused:       true,
 		},
 	}, {
 		Name:             "Search",
@@ -1337,8 +1380,8 @@ func TestDistributedExecutionBackendPrefersHigherCapacityGenerator(t *testing.T)
 		Name:     "Checkout",
 		Protocol: "http",
 		Version:  "1.0.0",
-		Config: dsl.ScriptConfig{BaseURL: "https://example.com", RunLogic: dsl.RunLogicConfig{Iterations: 1}},
-		Actions: []dsl.Action{{Name: "Home", Type: "GET", Target: "/"}},
+		Config:   dsl.ScriptConfig{BaseURL: "https://example.com", RunLogic: dsl.RunLogicConfig{Iterations: 1}},
+		Actions:  []dsl.Action{{Name: "Home", Type: "GET", Target: "/"}},
 	})
 
 	testRun, err := runner.CreateTest(CreateTestRequest{
@@ -2157,8 +2200,11 @@ func TestNewServerConfiguresDistributedExecutionBackend(t *testing.T) {
 	if !ok {
 		t.Fatalf("runner execution backend = %T, want *distributedExecutionBackend", server.runner.execution)
 	}
-	if !reflect.DeepEqual(backend.targets, []string{"127.0.0.1:9090"}) {
-		t.Fatalf("backend targets = %v, want [127.0.0.1:9090]", backend.targets)
+	if !reflect.DeepEqual(backend.configuredTargets(), []string{"127.0.0.1:9090"}) {
+		t.Fatalf("backend configured targets = %v, want [127.0.0.1:9090]", backend.configuredTargets())
+	}
+	if len(backend.targets) != 1 || backend.targets[0].Address != "127.0.0.1:9090" || backend.targets[0].Region != "" {
+		t.Fatalf("backend target specs = %#v, want address-only spec", backend.targets)
 	}
 	if backend.timeout != 3*time.Second {
 		t.Fatalf("backend timeout = %v, want 3s", backend.timeout)

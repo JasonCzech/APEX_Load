@@ -23,6 +23,7 @@ func TestHandleGetSystemInventoryReturnsControllerAndGenerators(t *testing.T) {
 	server.runner.setExecutionBackend(stubInventoryBackend{entries: []GeneratorInventoryEntry{{
 		Target:            "stormrunner-generator-0.stormrunner-generator:9090",
 		GeneratorID:       "stormrunner-generator-0",
+		Region:            "us-east",
 		Status:            "connected",
 		AvailableCapacity: 9600,
 		ActiveVUsers:      400,
@@ -60,6 +61,9 @@ func TestHandleGetSystemInventoryReturnsControllerAndGenerators(t *testing.T) {
 	}
 	if payload.Generators[0].GeneratorID != "stormrunner-generator-0" {
 		t.Fatalf("generator_id = %q, want stormrunner-generator-0", payload.Generators[0].GeneratorID)
+	}
+	if payload.Generators[0].Region != "us-east" {
+		t.Fatalf("region = %q, want us-east", payload.Generators[0].Region)
 	}
 	if payload.Generators[0].AvailableCapacity != 9600 {
 		t.Fatalf("available_capacity = %d, want 9600", payload.Generators[0].AvailableCapacity)

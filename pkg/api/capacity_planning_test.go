@@ -1,6 +1,8 @@
 package api
 
 import (
+	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -206,6 +208,59 @@ func TestEstimateDraftCapacityIncludesAssignmentRecommendation(t *testing.T) {
 	}
 	if !estimate.CapacityAdvisory.RequiresOverride {
 		t.Fatal("expected explicit single-host estimate to require override")
+	}
+}
+
+func TestEstimateDraftCapacityIncludesRegionWeightedRecommendation(t *testing.T) {
+	hub := NewHub()
+	runner := NewTestRunner(2, hub, nil)
+	runner.setExecutionBackend(newDistributedExecutionBackend([]string{"gen-a|region=us-east", "gen-b|region=us-east", "gen-c|region=eu-west"}, 5*time.Second, nil))
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-region-estimate",
+		Name:     "Region Estimate Script",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Actions:  []dsl.Action{{Name: "Home", Type: "GET", Target: "/"}},
+	})
+
+	settings := runner.GetSystemSettings()
+	settings.CapacityPlanning.Availability.ConfiguredAvailableGenerators = 3
+	if _, err := runner.UpdateSystemSettings(settings); err != nil {
+		t.Fatalf("UpdateSystemSettings returned error: %v", err)
+	}
+
+	estimate, err := runner.EstimateDraftCapacity(CreateTestRequest{
+		Duration: "10m",
+		ScriptID: "script-region-estimate",
+		VUsers:   9000,
+		Assignment: &GeneratorAssignmentSettings{
+			Mode: generatorAssignmentModeRegionWeighted,
+			RegionWeights: map[string]int{
+				"us-east": 2,
+				"eu-west": 1,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("EstimateDraftCapacity returned error: %v", err)
+	}
+	if estimate.Recommendation == nil {
+		t.Fatal("expected assignment recommendation")
+	}
+	if estimate.Recommendation.Mode != generatorAssignmentModeRegionWeighted {
+		t.Fatalf("recommendation mode = %q, want %q", estimate.Recommendation.Mode, generatorAssignmentModeRegionWeighted)
+	}
+	if !reflect.DeepEqual(estimate.Recommendation.AvailableRegions, []string{"eu-west", "us-east"}) {
+		t.Fatalf("available regions = %v, want [eu-west us-east]", estimate.Recommendation.AvailableRegions)
+	}
+	if !strings.Contains(estimate.Recommendation.Summary, "us-east 67%") || !strings.Contains(estimate.Recommendation.Summary, "eu-west 33%") {
+		t.Fatalf("recommendation summary = %q, want weighted region summary", estimate.Recommendation.Summary)
+	}
+	if estimate.CapacityAdvisory == nil || estimate.CapacityAdvisory.AvailableGenerators != 3 {
+		t.Fatalf("capacity advisory = %#v, want 3 available generators across weighted regions", estimate.CapacityAdvisory)
+	}
+	if estimate.CapacityAdvisory.RequiresOverride {
+		t.Fatalf("expected weighted region estimate to fit available tagged generators, advisory=%#v", estimate.CapacityAdvisory)
 	}
 }
 

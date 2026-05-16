@@ -10,25 +10,74 @@ Currently, Stormrunner uses project-based scoping without user authentication. A
 
 #### Create and queue a test
 
-```
+```http
 POST /api/v1/tests
 Content-Type: application/json
+```
 
+```json
 {
   "name": "Homepage Load Test",
   "project_id": "proj-123",
+  "duration": "5m",
+  "assignment": {
+    "mode": "region_weighted",
+    "region_weights": {
+      "us-east": 2,
+      "eu-west": 1
+    }
+  },
+  "groups": [
+    {
+      "name": "buyers-east",
+      "script_id": "script-456",
+      "vusers": 50,
+      "ramp_up": "30s"
+    },
+    {
+      "name": "buyers-west",
+      "script_id": "script-456",
+      "vusers": 50,
+      "ramp_up": "30s"
+    }
+  ]
+}
+```
+
+**Assignment modes:**
+- `auto`: controller chooses from all configured generators.
+- `specific_hosts`: request includes `selected_targets` with explicit hostnames.
+- `region_weighted`: request includes `region_weights` and the controller distributes groups across generators tagged with `STORMRUNNER_GENERATORS=host:9090|region=<name>`.
+
 **Response:**
 ```json
 {
-  "status": "started",
-  "test_id": "test-789"
+  "id": "test-789",
+  "name": "Homepage Load Test",
+  "status": "QUEUED",
+  "duration": "5m",
+  "assignment": {
+    "mode": "region_weighted",
+    "region_weights": {
+      "us-east": 2,
+      "eu-west": 1
+    }
+  }
 }
 ```
-  "vusers": 100,
-  "duration_seconds": 300,
-  "ramp_up_seconds": 30,
-  "notes": "Peak hour simulation"
-}
+
+#### Start a queued test
+
+```http
+POST /api/v1/tests/test-789/start
+```
+
+**Response:** `204 No Content`
+
+#### Stop test gracefully
+
+```http
+POST /api/v1/tests/test-789/stop
 ```
 
 Allows VUsers to complete the current action and cleanup while transitioning the run into `STOPPING`.
@@ -40,13 +89,13 @@ Allows VUsers to complete the current action and cleanup while transitioning the
   "test_id": "test-789"
 }
 ```
-```json
-{
-  "id": "test-789",
-  "name": "Homepage Load Test",
-  "script_id": "script-456",
-  "status": "queued",
-  "vusers": 100,
+
+#### Abort test immediately
+
+```http
+POST /api/v1/tests/test-789/abort
+```
+
 Terminates the run through the same immediate-stop control path exposed by the current controller.
 
 **Response:**

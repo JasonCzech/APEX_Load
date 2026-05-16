@@ -46,8 +46,13 @@ type generatorLoadSnapshot struct {
 	MaxVUsers         int32
 }
 
+type generatorTargetSpec struct {
+	Address string
+	Region  string
+}
+
 type distributedExecutionBackend struct {
-	targets []string
+	targets []generatorTargetSpec
 	timeout time.Duration
 	dial    generatorDial
 }
@@ -62,7 +67,14 @@ func newDistributedExecutionBackend(targets []string, timeout time.Duration, dia
 		}
 	}
 
-	clonedTargets := append([]string(nil), targets...)
+	clonedTargets := make([]generatorTargetSpec, 0, len(targets))
+	for _, target := range targets {
+		spec := parseGeneratorTargetSpec(target)
+		if spec.Address == "" {
+			continue
+		}
+		clonedTargets = append(clonedTargets, spec)
+	}
 	return &distributedExecutionBackend{
 		targets: clonedTargets,
 		timeout: timeout,
@@ -71,27 +83,36 @@ func newDistributedExecutionBackend(targets []string, timeout time.Duration, dia
 }
 
 func (b *distributedExecutionBackend) configuredTargets() []string {
-	return append([]string(nil), b.targets...)
+	targets := make([]string, 0, len(b.targets))
+	for _, target := range b.targets {
+		targets = append(targets, target.Address)
+	}
+	return targets
+}
+
+func (b *distributedExecutionBackend) configuredTargetSpecs() []generatorTargetSpec {
+	return append([]generatorTargetSpec(nil), b.targets...)
 }
 
 func (b *distributedExecutionBackend) SystemInventory(ctx context.Context) []GeneratorInventoryEntry {
 	entries := make([]GeneratorInventoryEntry, 0, len(b.targets))
 	for _, target := range b.targets {
 		entry := GeneratorInventoryEntry{
-			Target:      target,
-			GeneratorID: target,
+			Target:      target.Address,
+			GeneratorID: target.Address,
+			Region:      target.Region,
 			Status:      "unreachable",
 		}
 
 		probeCtx, cancel := context.WithTimeout(ctx, b.timeout)
-		client, err := b.dial(probeCtx, target)
+		client, err := b.dial(probeCtx, target.Address)
 		if err != nil {
 			cancel()
 			entries = append(entries, entry)
 			continue
 		}
 
-		snapshot := b.probeGeneratorLoad(probeCtx, target, client)
+		snapshot := b.probeGeneratorLoad(probeCtx, target.Address, client)
 		_ = client.Close()
 		cancel()
 
@@ -125,7 +146,7 @@ func (b *distributedExecutionBackend) allowedTargetsForTest(test *ManagedTest) (
 	}
 	configured := make(map[string]struct{}, len(b.targets))
 	for _, target := range b.targets {
-		configured[target] = struct{}{}
+		configured[target.Address] = struct{}{}
 	}
 	allowed := make([]string, 0, len(assignment.SelectedTargets))
 	for _, target := range assignment.SelectedTargets {
@@ -147,6 +168,12 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 			return
 		}
 	}
+	assignment, err := normalizeGeneratorAssignmentSettings(test.Assignment)
+	if err != nil {
+		tr.failTestBeforeRun(test, err.Error())
+		return
+	}
+	test.Assignment = assignment
 	if len(b.targets) == 0 {
 		tr.failTestBeforeRun(test, "no generator targets configured")
 		return
@@ -185,7 +212,7 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		tr.failTestBeforeRun(test, "no reachable generator targets configured")
 		return
 	}
-	groupTargets := planDistributedGroupTargets(test.Groups, loadByTarget, allowedTargets)
+	groupTargets := planDistributedGroupTargets(test.Groups, loadByTarget, allowedTargets, assignment, b.targets)
 	for _, group := range test.Groups {
 		if group.script == nil {
 			cleanup()
@@ -270,7 +297,7 @@ func (b *distributedExecutionBackend) StopTest(tr *TestRunner, test *ManagedTest
 		return err
 	}
 	var stopErr error
-	for _, target := range orderedGeneratorTargets(clients, b.targets) {
+	for _, target := range orderedGeneratorTargets(clients, b.configuredTargets()) {
 		ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
 		stop, err := clients[target].StopTest(ctx, test.ID, true)
 		cancel()
@@ -331,7 +358,7 @@ func (b *distributedExecutionBackend) AdjustDuration(tr *TestRunner, test *Manag
 	if err != nil {
 		return err
 	}
-	for _, target := range orderedGeneratorTargets(clients, b.targets) {
+	for _, target := range orderedGeneratorTargets(clients, b.configuredTargets()) {
 		ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
 		result, err := clients[target].AdjustDuration(ctx, generatorrpc.DurationAdjustment{
 			TestID:                test.ID,
@@ -353,7 +380,7 @@ func (b *distributedExecutionBackend) PauseTest(tr *TestRunner, test *ManagedTes
 	if len(streams) == 0 {
 		return fmt.Errorf("distributed metrics stream is not initialized")
 	}
-	for _, target := range orderedMetricsTargets(streams, b.targets) {
+	for _, target := range orderedMetricsTargets(streams, b.configuredTargets()) {
 		if err := streams[target].SendPause(generatorrpc.PauseControl{TestID: test.ID, Pause: true}); err != nil {
 			return fmt.Errorf("send remote pause control to %s: %w", target, err)
 		}
@@ -366,7 +393,7 @@ func (b *distributedExecutionBackend) ResumeTest(tr *TestRunner, test *ManagedTe
 	if len(streams) == 0 {
 		return fmt.Errorf("distributed metrics stream is not initialized")
 	}
-	for _, target := range orderedMetricsTargets(streams, b.targets) {
+	for _, target := range orderedMetricsTargets(streams, b.configuredTargets()) {
 		if err := streams[target].SendPause(generatorrpc.PauseControl{TestID: test.ID, Pause: false}); err != nil {
 			return fmt.Errorf("send remote pause control to %s: %w", target, err)
 		}
@@ -386,7 +413,7 @@ func marshalDistributedScript(script any) ([]byte, string, error) {
 func (b *distributedExecutionBackend) startDistributedTestRun(tr *TestRunner, test *ManagedTest, groupTargets map[string]string, clientsByTarget map[string]generatorClient, streamsByTarget map[string]*generatorrpc.MetricsStream) {
 	ctx, cancel := context.WithCancel(context.Background())
 	now := time.Now()
-	orderedTargets := orderedGeneratorTargets(clientsByTarget, b.targets)
+	orderedTargets := orderedGeneratorTargets(clientsByTarget, b.configuredTargets())
 	firstTarget := ""
 	if len(orderedTargets) > 0 {
 		firstTarget = orderedTargets[0]
@@ -419,7 +446,7 @@ func (b *distributedExecutionBackend) startDistributedTestRun(tr *TestRunner, te
 	tr.mu.Unlock()
 
 	tr.broadcastEvent("test_started", test)
-	for _, target := range orderedMetricsTargets(streamsByTarget, b.targets) {
+	for _, target := range orderedMetricsTargets(streamsByTarget, b.configuredTargets()) {
 		go b.consumeMetrics(ctx, tr, test, target, streamsByTarget[target])
 	}
 }
@@ -692,7 +719,7 @@ func (b *distributedExecutionBackend) fetchRemoteArchiveBundles(test *ManagedTes
 	defer cancel()
 	bundles := make([]remoteArchiveBundle, 0, len(clients))
 	missingTargets := make([]string, 0)
-	for _, target := range orderedGeneratorTargets(clients, b.targets) {
+	for _, target := range orderedGeneratorTargets(clients, b.configuredTargets()) {
 		client := clients[target]
 		manifestContent, err := client.GetArchiveArtifact(ctx, generatorrpc.ArchiveArtifactRequest{TestID: test.ID, Name: "manifest.json"})
 		if err != nil {
@@ -824,7 +851,7 @@ func (b *distributedExecutionBackend) stopRemainingRemoteTargets(test *ManagedTe
 		return err
 	}
 	var stopErr error
-	for _, target := range orderedGeneratorTargets(clients, b.targets) {
+	for _, target := range orderedGeneratorTargets(clients, b.configuredTargets()) {
 		if state := test.remoteTargetStates[target]; state == "COMPLETE" || state == "FAILED" {
 			continue
 		}
@@ -876,7 +903,100 @@ func (b *distributedExecutionBackend) probeGeneratorLoad(ctx context.Context, ta
 	return snapshot
 }
 
-func planDistributedGroupTargets(groups []TestGroup, loadByTarget map[string]generatorLoadSnapshot, preferred []string) map[string]string {
+func parseGeneratorTargetSpec(raw string) generatorTargetSpec {
+	parts := strings.Split(raw, "|")
+	spec := generatorTargetSpec{Address: strings.TrimSpace(parts[0])}
+	for _, part := range parts[1:] {
+		key, value, ok := strings.Cut(strings.TrimSpace(part), "=")
+		if !ok {
+			continue
+		}
+		switch strings.TrimSpace(strings.ToLower(key)) {
+		case "region":
+			spec.Region = strings.TrimSpace(value)
+		}
+	}
+	return spec
+}
+
+type regionPlacementState struct {
+	remaining      map[string]float64
+	targetRegion   map[string]string
+	weightedRegion map[string]struct{}
+}
+
+func newRegionPlacementState(groups []TestGroup, assignment *GeneratorAssignmentSettings, targetSpecs []generatorTargetSpec) *regionPlacementState {
+	if assignment == nil || assignment.Mode != generatorAssignmentModeRegionWeighted || len(assignment.RegionWeights) == 0 {
+		return nil
+	}
+	available := make(map[string]struct{})
+	targetRegion := make(map[string]string, len(targetSpecs))
+	for _, spec := range targetSpecs {
+		targetRegion[spec.Address] = spec.Region
+		if spec.Region == "" {
+			continue
+		}
+		available[spec.Region] = struct{}{}
+	}
+	totalWeight := 0
+	remaining := make(map[string]float64)
+	weightedRegions := make(map[string]struct{})
+	totalVUsers := 0
+	for _, group := range groups {
+		totalVUsers += group.VUsers
+	}
+	for region, weight := range assignment.RegionWeights {
+		if weight <= 0 {
+			continue
+		}
+		if _, ok := available[region]; !ok {
+			continue
+		}
+		totalWeight += weight
+		weightedRegions[region] = struct{}{}
+	}
+	if totalWeight == 0 || totalVUsers == 0 {
+		return nil
+	}
+	for region, weight := range assignment.RegionWeights {
+		if _, ok := weightedRegions[region]; !ok {
+			continue
+		}
+		remaining[region] = float64(totalVUsers) * float64(weight) / float64(totalWeight)
+	}
+	return &regionPlacementState{remaining: remaining, targetRegion: targetRegion, weightedRegion: weightedRegions}
+}
+
+func (s *regionPlacementState) preference(target string) (float64, bool) {
+	if s == nil {
+		return 0, false
+	}
+	region, ok := s.targetRegion[target]
+	if !ok || region == "" {
+		return 0, false
+	}
+	_, weighted := s.weightedRegion[region]
+	if !weighted {
+		return 0, false
+	}
+	return s.remaining[region], true
+}
+
+func (s *regionPlacementState) consume(target string, vusers int) {
+	if s == nil {
+		return
+	}
+	region, ok := s.targetRegion[target]
+	if !ok || region == "" {
+		return
+	}
+	if _, weighted := s.weightedRegion[region]; !weighted {
+		return
+	}
+	s.remaining[region] -= float64(vusers)
+}
+
+func planDistributedGroupTargets(groups []TestGroup, loadByTarget map[string]generatorLoadSnapshot, preferred []string, assignment *GeneratorAssignmentSettings, targetSpecs []generatorTargetSpec) map[string]string {
 	assignments := make(map[string]string, len(groups))
 	if len(loadByTarget) == 0 {
 		return assignments
@@ -885,19 +1005,21 @@ func planDistributedGroupTargets(groups []TestGroup, loadByTarget map[string]gen
 	for key, value := range loadByTarget {
 		projected[key] = value
 	}
+	regionState := newRegionPlacementState(groups, assignment, targetSpecs)
 	for _, group := range groups {
-		target := chooseGeneratorTargetForGroup(group, projected, preferred)
+		target := chooseGeneratorTargetForGroup(group, projected, preferred, regionState)
 		assignments[group.Name] = target
 		snapshot := projected[target]
 		snapshot.AvailableCapacity -= int32(group.VUsers)
 		snapshot.Stats.ActiveVUsers += int32(group.VUsers)
 		projected[target] = snapshot
+		regionState.consume(target, group.VUsers)
 	}
 	return assignments
 }
 
-func chooseGeneratorTargetForGroup(group TestGroup, loadByTarget map[string]generatorLoadSnapshot, preferred []string) string {
-	ordered := orderedLoadTargets(loadByTarget, preferred)
+func chooseGeneratorTargetForGroup(group TestGroup, loadByTarget map[string]generatorLoadSnapshot, preferred []string, regionState *regionPlacementState) string {
+	ordered := orderedLoadTargets(loadByTarget, preferred, regionState)
 	if len(ordered) == 0 {
 		return ""
 	}
@@ -909,7 +1031,7 @@ func chooseGeneratorTargetForGroup(group TestGroup, loadByTarget map[string]gene
 	return ordered[0]
 }
 
-func orderedLoadTargets(loadByTarget map[string]generatorLoadSnapshot, preferred []string) []string {
+func orderedLoadTargets(loadByTarget map[string]generatorLoadSnapshot, preferred []string, regionState *regionPlacementState) []string {
 	ordered := make([]string, 0, len(loadByTarget))
 	for target := range loadByTarget {
 		ordered = append(ordered, target)
@@ -921,6 +1043,16 @@ func orderedLoadTargets(loadByTarget map[string]generatorLoadSnapshot, preferred
 	sort.SliceStable(ordered, func(left int, right int) bool {
 		leftSnapshot := loadByTarget[ordered[left]]
 		rightSnapshot := loadByTarget[ordered[right]]
+		if regionState != nil {
+			leftQuota, leftWeighted := regionState.preference(ordered[left])
+			rightQuota, rightWeighted := regionState.preference(ordered[right])
+			if leftWeighted != rightWeighted {
+				return leftWeighted
+			}
+			if leftWeighted && leftQuota != rightQuota {
+				return leftQuota > rightQuota
+			}
+		}
 		if leftSnapshot.AvailableCapacity != rightSnapshot.AvailableCapacity {
 			return leftSnapshot.AvailableCapacity > rightSnapshot.AvailableCapacity
 		}
@@ -1073,13 +1205,13 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 	}
 
 	live := &LiveMetrics{
-		Timestamp:    timestamp,
-		ActiveVUsers: int64(batch.Stats.ActiveVUsers),
-		Transactions: make(map[string]*TxMetrics),
+		Timestamp:        timestamp,
+		ActiveVUsers:     int64(batch.Stats.ActiveVUsers),
+		Transactions:     make(map[string]*TxMetrics),
 		DependencyHealth: make(map[string]*TxMetrics),
-		SOAPOperations: make(map[string]*TxMetrics),
-		GroupMetrics: make(map[string]*GroupLiveMetrics),
-		Telemetry:    &TelemetryHealth{},
+		SOAPOperations:   make(map[string]*TxMetrics),
+		GroupMetrics:     make(map[string]*GroupLiveMetrics),
+		Telemetry:        &TelemetryHealth{},
 		Resources: &engine.SystemResources{
 			CPUProcessPct: batch.Stats.CPUPercent,
 			MemProcessMb:  float64(batch.Stats.MemoryBytes) / (1024 * 1024),
@@ -1292,25 +1424,25 @@ func cloneEngineServerTelemetrySummary(summary *engine.ServerTelemetrySummary) *
 		return nil
 	}
 	return &ServerTelemetrySummary{
-		Samples:               summary.Samples,
-		AvgServerProcessingMs: summary.AvgServerProcessingMs,
-		AvgTransferMs:         summary.AvgTransferMs,
-		AvgRequestPayloadKB:   summary.AvgRequestPayloadKB,
-		AvgResponsePayloadKB:  summary.AvgResponsePayloadKB,
-		RequestPayloadHistogram: cloneTelemetryClassCounts(summary.RequestPayloadHistogram),
-		ResponsePayloadHistogram: cloneTelemetryClassCounts(summary.ResponsePayloadHistogram),
-		AvgMessageLatencyMs:   summary.AvgMessageLatencyMs,
-		MaxMessageLatencyMs:   summary.MaxMessageLatencyMs,
-		MessagesSent:          summary.MessagesSent,
-		MessagesReceived:      summary.MessagesReceived,
-		AvgMessagesSentPerSec: summary.AvgMessagesSentPerSec,
+		Samples:                   summary.Samples,
+		AvgServerProcessingMs:     summary.AvgServerProcessingMs,
+		AvgTransferMs:             summary.AvgTransferMs,
+		AvgRequestPayloadKB:       summary.AvgRequestPayloadKB,
+		AvgResponsePayloadKB:      summary.AvgResponsePayloadKB,
+		RequestPayloadHistogram:   cloneTelemetryClassCounts(summary.RequestPayloadHistogram),
+		ResponsePayloadHistogram:  cloneTelemetryClassCounts(summary.ResponsePayloadHistogram),
+		AvgMessageLatencyMs:       summary.AvgMessageLatencyMs,
+		MaxMessageLatencyMs:       summary.MaxMessageLatencyMs,
+		MessagesSent:              summary.MessagesSent,
+		MessagesReceived:          summary.MessagesReceived,
+		AvgMessagesSentPerSec:     summary.AvgMessagesSentPerSec,
 		AvgMessagesReceivedPerSec: summary.AvgMessagesReceivedPerSec,
-		AvgConsumerLagMs:      summary.AvgConsumerLagMs,
-		MaxConsumerLagMs:      summary.MaxConsumerLagMs,
-		RequestSizeClasses:    cloneTelemetryClassCounts(summary.RequestSizeClasses),
-		ResponseSizeClasses:   cloneTelemetryClassCounts(summary.ResponseSizeClasses),
-		ConnectionReusedCount: summary.ConnectionReusedCount,
-		ConnectionReusedPct:   summary.ConnectionReusedPct,
+		AvgConsumerLagMs:          summary.AvgConsumerLagMs,
+		MaxConsumerLagMs:          summary.MaxConsumerLagMs,
+		RequestSizeClasses:        cloneTelemetryClassCounts(summary.RequestSizeClasses),
+		ResponseSizeClasses:       cloneTelemetryClassCounts(summary.ResponseSizeClasses),
+		ConnectionReusedCount:     summary.ConnectionReusedCount,
+		ConnectionReusedPct:       summary.ConnectionReusedPct,
 	}
 }
 

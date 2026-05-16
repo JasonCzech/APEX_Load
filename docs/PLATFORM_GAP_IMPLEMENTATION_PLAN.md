@@ -153,6 +153,7 @@ The 19 gaps are organized into five sequential delivery waves. Each wave targets
 ### 5.4 Multi-Region Distribution (P3)
 **Effort:** 8-12 days
 - **Generator Tags:** Deploy generators with region tags and distribute load dynamically based on region weighting.
+- **Status:** Implemented. Distributed generators can now be tagged inline through `STORMRUNNER_GENERATORS=host:9090|region=<name>`, inventory responses expose each generator region, and test/scenario assignment supports `mode: "region_weighted"` with `region_weights` for capacity-aware group placement across tagged regions.
 
 ---
 

@@ -23,6 +23,7 @@ type ControllerInventoryEntry struct {
 type GeneratorInventoryEntry struct {
 	Target            string  `json:"target"`
 	GeneratorID       string  `json:"generator_id"`
+	Region            string  `json:"region,omitempty"`
 	Status            string  `json:"status"`
 	AvailableCapacity int32   `json:"available_capacity"`
 	ActiveVUsers      int32   `json:"active_vusers"`

@@ -447,6 +447,7 @@ type ScenarioScriptRef struct {
 const (
 	generatorAssignmentModeAuto          = "auto"
 	generatorAssignmentModeSpecificHosts = "specific_hosts"
+	generatorAssignmentModeRegionWeighted = "region_weighted"
 	maxManagedTestHistory                = 3600
 	telemetryDiagnosticSampleInterval    = 5 * time.Second
 	maxTelemetryDiagnosticSamples        = 3
@@ -459,8 +460,9 @@ const (
 var runtimeOverrideEnvPattern = regexp.MustCompile(`\{\{\s*env\.([^{}\s]+)\s*\}\}`)
 
 type GeneratorAssignmentSettings struct {
-	Mode            string   `json:"mode,omitempty"`
-	SelectedTargets []string `json:"selected_targets,omitempty"`
+	Mode            string         `json:"mode,omitempty"`
+	SelectedTargets []string       `json:"selected_targets,omitempty"`
+	RegionWeights   map[string]int `json:"region_weights,omitempty"`
 }
 
 type ScenarioFootprint struct {
@@ -475,6 +477,7 @@ type ScenarioFootprint struct {
 type AssignmentRecommendation struct {
 	Mode               string   `json:"mode"`
 	AvailableTargets   []string `json:"available_targets,omitempty"`
+	AvailableRegions   []string `json:"available_regions,omitempty"`
 	RecommendedTargets []string `json:"recommended_targets,omitempty"`
 	Summary            string   `json:"summary,omitempty"`
 	Warnings           []string `json:"warnings,omitempty"`
@@ -1422,6 +1425,7 @@ func normalizeGeneratorAssignmentSettings(in *GeneratorAssignmentSettings) (*Gen
 	switch out.Mode {
 	case generatorAssignmentModeAuto:
 		out.SelectedTargets = nil
+		out.RegionWeights = nil
 		return out, nil
 	case generatorAssignmentModeSpecificHosts:
 		seen := make(map[string]struct{})
@@ -1439,9 +1443,34 @@ func normalizeGeneratorAssignmentSettings(in *GeneratorAssignmentSettings) (*Gen
 		if len(out.SelectedTargets) == 0 {
 			return nil, fmt.Errorf("assignment.selected_targets must include at least one hostname when mode is specific_hosts")
 		}
+		out.RegionWeights = nil
+		return out, nil
+	case generatorAssignmentModeRegionWeighted:
+		seen := make(map[string]struct{})
+		for region, weight := range in.RegionWeights {
+			normalizedRegion := strings.TrimSpace(region)
+			if normalizedRegion == "" {
+				continue
+			}
+			if _, exists := seen[normalizedRegion]; exists {
+				continue
+			}
+			seen[normalizedRegion] = struct{}{}
+			if weight <= 0 {
+				return nil, fmt.Errorf("assignment.region_weights[%q] must be greater than zero", normalizedRegion)
+			}
+			if out.RegionWeights == nil {
+				out.RegionWeights = make(map[string]int, len(in.RegionWeights))
+			}
+			out.RegionWeights[normalizedRegion] = weight
+		}
+		if len(out.RegionWeights) == 0 {
+			return nil, fmt.Errorf("assignment.region_weights must include at least one region when mode is region_weighted")
+		}
+		out.SelectedTargets = nil
 		return out, nil
 	default:
-		return nil, fmt.Errorf("assignment.mode must be auto or specific_hosts")
+		return nil, fmt.Errorf("assignment.mode must be auto, specific_hosts, or region_weighted")
 	}
 }
 
@@ -1451,6 +1480,12 @@ func cloneGeneratorAssignmentSettings(in *GeneratorAssignmentSettings) *Generato
 	}
 	out := *in
 	out.SelectedTargets = append([]string(nil), in.SelectedTargets...)
+	if len(in.RegionWeights) > 0 {
+		out.RegionWeights = make(map[string]int, len(in.RegionWeights))
+		for region, weight := range in.RegionWeights {
+			out.RegionWeights[region] = weight
+		}
+	}
 	return &out
 }
 
@@ -1483,7 +1518,93 @@ func (tr *TestRunner) assignmentTargets() []string {
 	return provider.configuredTargets()
 }
 
-func adjustCapacityAdvisoryForAssignment(advisory *CapacityAdvisory, assignment *GeneratorAssignmentSettings, availableTargets int) *CapacityAdvisory {
+func (tr *TestRunner) assignmentTargetSpecs() []generatorTargetSpec {
+	provider, ok := tr.execution.(interface{ configuredTargetSpecs() []generatorTargetSpec })
+	if !ok {
+		return nil
+	}
+	return provider.configuredTargetSpecs()
+}
+
+func assignmentAvailableRegions(specs []generatorTargetSpec) []string {
+	set := make(map[string]struct{})
+	for _, spec := range specs {
+		if spec.Region == "" {
+			continue
+		}
+		set[spec.Region] = struct{}{}
+	}
+	regions := make([]string, 0, len(set))
+	for region := range set {
+		regions = append(regions, region)
+	}
+	sort.Strings(regions)
+	return regions
+}
+
+func matchingRegionWeightedTargets(specs []generatorTargetSpec, weights map[string]int) int {
+	if len(specs) == 0 || len(weights) == 0 {
+		return 0
+	}
+	count := 0
+	for _, spec := range specs {
+		if spec.Region == "" {
+			continue
+		}
+		if weights[spec.Region] > 0 {
+			count++
+		}
+	}
+	return count
+}
+
+func missingWeightedRegions(specs []generatorTargetSpec, weights map[string]int) []string {
+	if len(weights) == 0 {
+		return nil
+	}
+	available := make(map[string]struct{})
+	for _, spec := range specs {
+		if spec.Region == "" {
+			continue
+		}
+		available[spec.Region] = struct{}{}
+	}
+	missing := make([]string, 0)
+	for region := range weights {
+		if _, ok := available[region]; ok {
+			continue
+		}
+		missing = append(missing, region)
+	}
+	sort.Strings(missing)
+	return missing
+}
+
+func formatRegionWeightSummary(weights map[string]int) string {
+	if len(weights) == 0 {
+		return ""
+	}
+	total := 0
+	regions := make([]string, 0, len(weights))
+	for region, weight := range weights {
+		if weight <= 0 {
+			continue
+		}
+		total += weight
+		regions = append(regions, region)
+	}
+	if total <= 0 || len(regions) == 0 {
+		return ""
+	}
+	sort.Strings(regions)
+	parts := make([]string, 0, len(regions))
+	for _, region := range regions {
+		parts = append(parts, fmt.Sprintf("%s %d%%", region, int(math.Round(float64(weights[region])*100/float64(total)))))
+	}
+	return strings.Join(parts, ", ")
+}
+
+func adjustCapacityAdvisoryForAssignment(advisory *CapacityAdvisory, assignment *GeneratorAssignmentSettings, targetSpecs []generatorTargetSpec) *CapacityAdvisory {
 	if advisory == nil {
 		return nil
 	}
@@ -1494,12 +1615,29 @@ func adjustCapacityAdvisoryForAssignment(advisory *CapacityAdvisory, assignment 
 		cloned.Warnings = append(cloned.Warnings, err.Error())
 		return cloned
 	}
-	if assignment == nil || assignment.Mode != generatorAssignmentModeSpecificHosts {
+	if assignment == nil {
 		return advisory
 	}
-	selected := len(assignment.SelectedTargets)
-	if selected == 0 {
+	availableTargets := len(targetSpecs)
+	selected := 0
+	warning := ""
+	switch assignment.Mode {
+	case generatorAssignmentModeSpecificHosts:
+		selected = len(assignment.SelectedTargets)
+		warning = fmt.Sprintf("Selected hosts provide %d generator slot%s, but the scenario footprint recommends %%d.", selected, pluralSuffix(selected))
+	case generatorAssignmentModeRegionWeighted:
+		selected = matchingRegionWeightedTargets(targetSpecs, assignment.RegionWeights)
+		warning = fmt.Sprintf("Configured region weights match %d generator slot%s, but the scenario footprint recommends %%d.", selected, pluralSuffix(selected))
+	default:
 		return advisory
+	}
+	if selected == 0 {
+		cloned := cloneCapacityAdvisory(advisory)
+		cloned.RequiresOverride = true
+		if assignment.Mode == generatorAssignmentModeRegionWeighted {
+			cloned.Warnings = append(cloned.Warnings, "No configured generators match the requested region weights on this controller.")
+		}
+		return cloned
 	}
 	cloned := cloneCapacityAdvisory(advisory)
 	if availableTargets > 0 && selected > availableTargets {
@@ -1512,16 +1650,26 @@ func adjustCapacityAdvisoryForAssignment(advisory *CapacityAdvisory, assignment 
 	if cloned.RecommendedGenerators > selected {
 		cloned.ShortfallGenerators = cloned.RecommendedGenerators - selected
 		cloned.RequiresOverride = true
-		cloned.Warnings = append(cloned.Warnings, fmt.Sprintf("Selected hosts provide %d generator slot%s, but the scenario footprint recommends %d.", selected, pluralSuffix(selected), cloned.RecommendedGenerators))
+		cloned.Warnings = append(cloned.Warnings, fmt.Sprintf(warning, cloned.RecommendedGenerators))
+		if assignment.Mode == generatorAssignmentModeRegionWeighted {
+			if missing := missingWeightedRegions(targetSpecs, assignment.RegionWeights); len(missing) > 0 {
+				cloned.Warnings = append(cloned.Warnings, fmt.Sprintf("No connected generator targets are tagged for region%s %s.", pluralSuffix(len(missing)), strings.Join(missing, ", ")))
+			}
+		}
 		return cloned
 	}
 	cloned.RequiresOverride = false
+	if assignment.Mode == generatorAssignmentModeRegionWeighted {
+		if missing := missingWeightedRegions(targetSpecs, assignment.RegionWeights); len(missing) > 0 {
+			cloned.Warnings = append(cloned.Warnings, fmt.Sprintf("No connected generator targets are tagged for region%s %s.", pluralSuffix(len(missing)), strings.Join(missing, ", ")))
+		}
+	}
 	return cloned
 }
 
 func (tr *TestRunner) estimateCapacityAdvisoryForAssignment(groups []TestGroup, totalVUsers int, duration time.Duration, resourceBaseline bool, runtimeSettings *RuntimeSettingsOverride, assignment *GeneratorAssignmentSettings) *CapacityAdvisory {
 	advisory := estimateCapacityAdvisory(tr.settings, groups, totalVUsers, duration, resourceBaseline, runtimeSettings)
-	return adjustCapacityAdvisoryForAssignment(advisory, assignment, len(tr.assignmentTargets()))
+	return adjustCapacityAdvisoryForAssignment(advisory, assignment, tr.assignmentTargetSpecs())
 }
 
 func (tr *TestRunner) buildAssignmentRecommendation(test *ManagedTest) *AssignmentRecommendation {
@@ -1529,6 +1677,7 @@ func (tr *TestRunner) buildAssignmentRecommendation(test *ManagedTest) *Assignme
 		return nil
 	}
 	availableTargets := tr.assignmentTargets()
+	availableRegions := assignmentAvailableRegions(tr.assignmentTargetSpecs())
 	assignment := cloneGeneratorAssignmentSettings(test.Assignment)
 	if assignment == nil {
 		assignment = &GeneratorAssignmentSettings{Mode: generatorAssignmentModeAuto}
@@ -1544,10 +1693,18 @@ func (tr *TestRunner) buildAssignmentRecommendation(test *ManagedTest) *Assignme
 	recommendation := &AssignmentRecommendation{
 		Mode:               assignment.Mode,
 		AvailableTargets:   availableTargets,
+		AvailableRegions:   availableRegions,
 		RecommendedTargets: recommendedTargets,
 	}
 	if assignment.Mode == generatorAssignmentModeSpecificHosts {
 		recommendation.Summary = fmt.Sprintf("Manual host selection uses %d configured host%s for this scenario footprint.", len(assignment.SelectedTargets), pluralSuffix(len(assignment.SelectedTargets)))
+		if test.CapacityAdvisory.RequiresOverride {
+			recommendation.Warnings = append(recommendation.Warnings, test.CapacityAdvisory.Warnings...)
+		}
+		return recommendation
+	}
+	if assignment.Mode == generatorAssignmentModeRegionWeighted {
+		recommendation.Summary = fmt.Sprintf("Region-weighted assignment will place groups across tagged generators using %s.", formatRegionWeightSummary(assignment.RegionWeights))
 		if test.CapacityAdvisory.RequiresOverride {
 			recommendation.Warnings = append(recommendation.Warnings, test.CapacityAdvisory.Warnings...)
 		}
