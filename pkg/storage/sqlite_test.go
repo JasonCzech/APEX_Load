@@ -174,6 +174,17 @@ func TestSQLiteStoreBackfillsDefaultProject(t *testing.T) {
 	if roundTrip.ProjectID != DefaultProjectID {
 		t.Fatalf("project id = %q, want %q", roundTrip.ProjectID, DefaultProjectID)
 	}
+	pool := &SharedDataPool{ID: "legacy-pool", Name: "Legacy Pool", CreatedAt: time.Now()}
+	if err := reopened.SaveDataPool(pool); err != nil {
+		t.Fatalf("SaveDataPool returned error: %v", err)
+	}
+	poolRoundTrip, err := reopened.GetDataPool(pool.ID)
+	if err != nil {
+		t.Fatalf("GetDataPool returned error: %v", err)
+	}
+	if poolRoundTrip.ProjectID != DefaultProjectID {
+		t.Fatalf("data pool project id = %q, want %q", poolRoundTrip.ProjectID, DefaultProjectID)
+	}
 }
 
 func TestSQLiteStoreApplicationsReleasesScenariosAndContext(t *testing.T) {
@@ -481,10 +492,18 @@ func TestSQLiteStoreSharedDataPoolsAndScenarioBindings(t *testing.T) {
 		Name:        "Customers",
 		Description: "Reusable customer identities",
 		Schema:      map[string]string{"customer_id": "string", "zip": "string"},
+		ProjectID:   DefaultProjectID,
 		CreatedAt:   time.Now(),
 	}
 	if err := store.SaveDataPool(pool); err != nil {
 		t.Fatalf("SaveDataPool returned error: %v", err)
+	}
+	roundTripPool, err := store.GetDataPool(pool.ID)
+	if err != nil {
+		t.Fatalf("GetDataPool returned error: %v", err)
+	}
+	if roundTripPool.ProjectID != DefaultProjectID {
+		t.Fatalf("data pool project id = %q, want %q", roundTripPool.ProjectID, DefaultProjectID)
 	}
 	if err := store.SaveDataPoolRow(&SharedDataPoolRow{
 		ID:     "row-1",

@@ -72,6 +72,12 @@ vi.mock('../hooks/useApplication', () => ({
   useApplication: () => applicationContextMock,
 }))
 
+vi.mock('../hooks/useProject', () => ({
+  useProject: () => ({
+    activeProject: { id: 'project-1', name: 'Checkout', created_at: '', updated_at: '' },
+  }),
+}))
+
 describe('SettingsPage', () => {
   let container: HTMLDivElement
   let root: Root

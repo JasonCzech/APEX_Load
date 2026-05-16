@@ -4,7 +4,9 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -361,6 +363,43 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
 			ProjectLookup: resolveImportProjectIDFromJSON,
 		}, true
+	}
+
+	if path == "/api/v1/data-pools" {
+		switch method {
+		case http.MethodGet:
+			if strings.TrimSpace(r.URL.Query().Get("project_id")) == "" {
+				return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
+			}
+			return accessRequirement{
+				GlobalRoles:   []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+				ProjectRoles:  []string{RoleViewer, RoleEditor, RoleProjectAdmin},
+				ProjectLookup: resolveDataPoolListProjectID,
+			}, true
+		case http.MethodPost:
+			return accessRequirement{
+				GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+				ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
+				ProjectLookup: resolveDataPoolCreateProjectID,
+			}, true
+		}
+	}
+
+	if r.PathValue("id") != "" && strings.HasPrefix(path, "/api/v1/data-pools/") {
+		switch method {
+		case http.MethodGet:
+			return accessRequirement{
+				GlobalRoles:   []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+				ProjectRoles:  []string{RoleViewer, RoleEditor, RoleProjectAdmin},
+				ProjectLookup: resolveDataPoolProjectID,
+			}, true
+		case http.MethodPost, http.MethodPut, http.MethodDelete:
+			return accessRequirement{
+				GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+				ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
+				ProjectLookup: resolveDataPoolProjectID,
+			}, true
+		}
 	}
 
 	if path == "/api/v1/tests" {
@@ -744,6 +783,41 @@ func resolveJMeterSaveProjectID(r *http.Request, _ storage.Store) (string, int, 
 		}
 	}
 	return projectID, 0, ""
+}
+
+func resolveDataPoolListProjectID(r *http.Request, _ storage.Store) (string, int, string) {
+	projectID := strings.TrimSpace(r.URL.Query().Get("project_id"))
+	if projectID == "" {
+		return "", http.StatusBadRequest, "project_id is required for project-scoped data pool access"
+	}
+	return normalizeProjectID(projectID), 0, ""
+}
+
+func resolveDataPoolCreateProjectID(r *http.Request, _ storage.Store) (string, int, string) {
+	var req struct {
+		ProjectID string `json:"project_id,omitempty"`
+	}
+	if err := decodeRequestBody(r, &req); err != nil {
+		return "", http.StatusBadRequest, "invalid request body: " + err.Error()
+	}
+	if strings.TrimSpace(req.ProjectID) == "" {
+		return "", http.StatusBadRequest, "project_id is required for project-scoped data pool access"
+	}
+	return normalizeProjectID(req.ProjectID), 0, ""
+}
+
+func resolveDataPoolProjectID(r *http.Request, store storage.Store) (string, int, string) {
+	if store == nil {
+		return "", http.StatusServiceUnavailable, "storage is not configured"
+	}
+	pool, err := store.GetDataPool(r.PathValue("id"))
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", http.StatusNotFound, "data pool not found"
+		}
+		return "", http.StatusInternalServerError, "failed to load data pool"
+	}
+	return normalizeProjectID(pool.ProjectID), 0, ""
 }
 
 func resolveRecorderListProjectID(r *http.Request) (string, int, string) {

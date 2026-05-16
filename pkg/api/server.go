@@ -175,15 +175,15 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("PUT /api/v1/scenarios/{id}/data-pools", cors(log(auth(http.HandlerFunc(s.handleUpdateScenarioDataPools)))))
 
 	// Shared data pools used across scripts in a scenario run.
-	s.mux.Handle("POST /api/v1/data-pools", cors(log(http.HandlerFunc(s.handleCreateDataPool))))
-	s.mux.Handle("GET /api/v1/data-pools", cors(log(http.HandlerFunc(s.handleListDataPools))))
-	s.mux.Handle("GET /api/v1/data-pools/{id}", cors(log(http.HandlerFunc(s.handleGetDataPool))))
-	s.mux.Handle("PUT /api/v1/data-pools/{id}", cors(log(http.HandlerFunc(s.handleUpdateDataPool))))
-	s.mux.Handle("DELETE /api/v1/data-pools/{id}", cors(log(http.HandlerFunc(s.handleDeleteDataPool))))
-	s.mux.Handle("GET /api/v1/data-pools/{id}/rows", cors(log(http.HandlerFunc(s.handleListDataPoolRows))))
-	s.mux.Handle("POST /api/v1/data-pools/{id}/rows", cors(log(http.HandlerFunc(s.handleCreateDataPoolRow))))
-	s.mux.Handle("PUT /api/v1/data-pools/{id}/rows/{row_id}", cors(log(http.HandlerFunc(s.handleUpdateDataPoolRow))))
-	s.mux.Handle("DELETE /api/v1/data-pools/{id}/rows/{row_id}", cors(log(http.HandlerFunc(s.handleDeleteDataPoolRow))))
+	s.mux.Handle("POST /api/v1/data-pools", cors(log(auth(http.HandlerFunc(s.handleCreateDataPool)))))
+	s.mux.Handle("GET /api/v1/data-pools", cors(log(auth(http.HandlerFunc(s.handleListDataPools)))))
+	s.mux.Handle("GET /api/v1/data-pools/{id}", cors(log(auth(http.HandlerFunc(s.handleGetDataPool)))))
+	s.mux.Handle("PUT /api/v1/data-pools/{id}", cors(log(auth(http.HandlerFunc(s.handleUpdateDataPool)))))
+	s.mux.Handle("DELETE /api/v1/data-pools/{id}", cors(log(auth(http.HandlerFunc(s.handleDeleteDataPool)))))
+	s.mux.Handle("GET /api/v1/data-pools/{id}/rows", cors(log(auth(http.HandlerFunc(s.handleListDataPoolRows)))))
+	s.mux.Handle("POST /api/v1/data-pools/{id}/rows", cors(log(auth(http.HandlerFunc(s.handleCreateDataPoolRow)))))
+	s.mux.Handle("PUT /api/v1/data-pools/{id}/rows/{row_id}", cors(log(auth(http.HandlerFunc(s.handleUpdateDataPoolRow)))))
+	s.mux.Handle("DELETE /api/v1/data-pools/{id}/rows/{row_id}", cors(log(auth(http.HandlerFunc(s.handleDeleteDataPoolRow)))))
 
 	// Script CRUD, validation, import, and export endpoints.
 	s.mux.Handle("POST /api/v1/scripts", cors(log(auth(http.HandlerFunc(s.handleCreateScript)))))

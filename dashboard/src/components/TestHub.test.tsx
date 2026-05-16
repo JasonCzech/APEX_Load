@@ -87,6 +87,7 @@ describe('TestHub', () => {
 
     expect(apiMock.listScenarios).toHaveBeenCalledWith('project-1')
     expect(apiMock.listScripts).toHaveBeenCalledWith('project-1')
+    expect(apiMock.listDataPools).toHaveBeenCalledWith('project-1')
 
     const newScenarioButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('New Scenario'))
     expect(newScenarioButton).toBeDefined()

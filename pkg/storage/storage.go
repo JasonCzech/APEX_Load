@@ -132,6 +132,7 @@ type SharedDataPool struct {
 	Name        string            `json:"name"`
 	Description string            `json:"description,omitempty"`
 	Schema      map[string]string `json:"schema,omitempty"`
+	ProjectID   string            `json:"project_id,omitempty"`
 	CreatedAt   time.Time         `json:"created_at"`
 	UpdatedAt   time.Time         `json:"updated_at"`
 	ArchivedAt  *time.Time        `json:"archived_at,omitempty"`

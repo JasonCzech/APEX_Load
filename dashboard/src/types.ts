@@ -463,6 +463,7 @@ export interface SharedDataPool {
   name: string
   description?: string
   schema?: Record<string, string>
+  project_id?: string
   created_at: string
   updated_at: string
   archived_at?: string

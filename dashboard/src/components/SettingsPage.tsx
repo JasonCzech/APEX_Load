@@ -3,6 +3,7 @@ import { type DashboardTheme } from '../hooks/useDashboardTheme'
 import { useApplicationApi } from '../hooks/api/useApplicationApi'
 import { useProjectApi } from '../hooks/api/useProjectApi'
 import { useApplication } from '../hooks/useApplication'
+import { useProject } from '../hooks/useProject'
 import { useApi } from '../hooks/useApi'
 import { DashboardSystemSettings, HealthResponse, Project, RedactionRule, SharedDataPool, SharedDataPoolRow, SystemInventoryResponse } from '../types'
 import { getErrorMessage } from '../utils/errorUtils'
@@ -261,6 +262,7 @@ export default function SettingsPage({ theme, onThemeChange }: SettingsPageProps
     refreshReleases,
     createAndSelectApplication,
   } = useApplication()
+  const { activeProject } = useProject()
   const [settings, setSettings] = useState<DashboardSystemSettings>(DEFAULT_SETTINGS)
   const [savedSettings, setSavedSettings] = useState<DashboardSystemSettings>(DEFAULT_SETTINGS)
   const [health, setHealth] = useState<HealthResponse | null>(null)
@@ -484,7 +486,7 @@ export default function SettingsPage({ theme, onThemeChange }: SettingsPageProps
 
   const loadDataPools = async (preferredId?: string) => {
     try {
-      const response = await api.listDataPools()
+      const response = await api.listDataPools(activeProject?.id)
       const pools: SharedDataPool[] = response.data_pools || []
       setDataPools(pools)
       const nextSelected = preferredId || selectedDataPoolId || pools[0]?.id || ''
@@ -504,7 +506,7 @@ export default function SettingsPage({ theme, onThemeChange }: SettingsPageProps
   useEffect(() => {
     loadDataPools()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [activeProject?.id])
 
   useEffect(() => {
     let cancelled = false
@@ -855,7 +857,7 @@ export default function SettingsPage({ theme, onThemeChange }: SettingsPageProps
     const name = dataPoolName.trim()
     if (!name) return
     try {
-      const pool = await api.createDataPool({ name, description: dataPoolDescription.trim() })
+      const pool = await api.createDataPool({ name, description: dataPoolDescription.trim(), project_id: activeProject?.id })
       setDataPoolName('')
       setDataPoolDescription('')
       await loadDataPools(pool.id)

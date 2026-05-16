@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -18,10 +19,21 @@ func (s *Server) handleListDataPools(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	includeArchived := r.URL.Query().Get("include_archived") == "true"
+	projectID := strings.TrimSpace(r.URL.Query().Get("project_id"))
 	pools, err := s.store.ListDataPools(includeArchived)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	if projectID != "" {
+		normalizedProjectID := normalizeProjectID(projectID)
+		filtered := pools[:0]
+		for _, pool := range pools {
+			if normalizeProjectID(pool.ProjectID) == normalizedProjectID {
+				filtered = append(filtered, pool)
+			}
+		}
+		pools = filtered
 	}
 	if pools == nil {
 		pools = []*storage.SharedDataPool{}
@@ -41,6 +53,7 @@ func (s *Server) handleCreateDataPool(w http.ResponseWriter, r *http.Request) {
 	}
 	req.ID = uuid.New().String()
 	req.Name = strings.TrimSpace(req.Name)
+	req.ProjectID = normalizeProjectID(req.ProjectID)
 	if req.Name == "" {
 		writeError(w, http.StatusBadRequest, "data pool name is required")
 		return
@@ -216,7 +229,8 @@ func (s *Server) handleUpdateScenarioDataPools(w http.ResponseWriter, r *http.Re
 		return
 	}
 	scenarioID := r.PathValue("id")
-	if _, ok := s.runner.GetScenario(scenarioID); !ok {
+	scenario, ok := s.runner.GetScenario(scenarioID)
+	if !ok {
 		writeError(w, http.StatusNotFound, "scenario not found")
 		return
 	}
@@ -232,6 +246,10 @@ func (s *Server) handleUpdateScenarioDataPools(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if err := s.validateScenarioDataPoolProjects(scenario.ProjectID, bindings); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	if err := s.store.SaveScenarioDataPoolBindings(scenarioID, bindings); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -240,4 +258,24 @@ func (s *Server) handleUpdateScenarioDataPools(w http.ResponseWriter, r *http.Re
 		scenario.DataPools = bindings
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data_pools": bindings, "count": len(bindings)})
+}
+
+func (s *Server) validateScenarioDataPoolProjects(projectID string, bindings []storage.ScenarioDataPoolBinding) error {
+	if s.store == nil || len(bindings) == 0 {
+		return nil
+	}
+	expectedProjectID := normalizeProjectID(projectID)
+	for _, binding := range bindings {
+		pool, err := s.store.GetDataPool(binding.PoolID)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return fmt.Errorf("data pool %q not found", binding.PoolID)
+			}
+			return fmt.Errorf("load data pool %q: %w", binding.PoolID, err)
+		}
+		if normalizeProjectID(pool.ProjectID) != expectedProjectID {
+			return fmt.Errorf("data pool %q does not belong to scenario project", binding.PoolID)
+		}
+	}
+	return nil
 }

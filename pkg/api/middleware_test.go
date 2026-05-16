@@ -568,6 +568,144 @@ func TestTrustedHeaderAuthProjectRoleGuardsBrowserReplaySessionEndpoints(t *test
 	}
 }
 
+func TestTrustedHeaderAuthScopesDataPoolListAndCreateToProjectRoles(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	project := &storage.Project{ID: uuid.New().String(), Name: "Checkout", CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	if err := store.SaveProject(project); err != nil {
+		t.Fatalf("SaveProject returned error: %v", err)
+	}
+	if err := store.SaveDataPool(&storage.SharedDataPool{ID: uuid.New().String(), Name: "Customers", ProjectID: project.ID, CreatedAt: time.Now(), UpdatedAt: time.Now()}); err != nil {
+		t.Fatalf("SaveDataPool returned error: %v", err)
+	}
+
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	enableTrustedHeaderAuth(t, server)
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/data-pools", nil)
+	listReq.Header.Set("X-Auth-Request-User", "viewer-user")
+	listReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	listResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(listResp, listReq)
+	if listResp.Code != http.StatusForbidden {
+		t.Fatalf("unfiltered data pool list status = %d, want %d body=%s", listResp.Code, http.StatusForbidden, listResp.Body.String())
+	}
+
+	filteredReq := httptest.NewRequest(http.MethodGet, "/api/v1/data-pools?project_id="+project.ID, nil)
+	filteredReq.Header.Set("X-Auth-Request-User", "viewer-user")
+	filteredReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	filteredResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(filteredResp, filteredReq)
+	if filteredResp.Code != http.StatusOK {
+		t.Fatalf("filtered data pool list status = %d, want %d body=%s", filteredResp.Code, http.StatusOK, filteredResp.Body.String())
+	}
+
+	createBody := []byte(`{"name":"New Pool","project_id":"` + project.ID + `"}`)
+	viewerCreateReq := httptest.NewRequest(http.MethodPost, "/api/v1/data-pools", bytes.NewReader(createBody))
+	viewerCreateReq.Header.Set("Content-Type", "application/json")
+	viewerCreateReq.Header.Set("X-Auth-Request-User", "viewer-user")
+	viewerCreateReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	viewerCreateResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(viewerCreateResp, viewerCreateReq)
+	if viewerCreateResp.Code != http.StatusForbidden {
+		t.Fatalf("data pool viewer create status = %d, want %d body=%s", viewerCreateResp.Code, http.StatusForbidden, viewerCreateResp.Body.String())
+	}
+
+	editorCreateReq := httptest.NewRequest(http.MethodPost, "/api/v1/data-pools", bytes.NewReader(createBody))
+	editorCreateReq.Header.Set("Content-Type", "application/json")
+	editorCreateReq.Header.Set("X-Auth-Request-User", "editor-user")
+	editorCreateReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleEditor)
+	editorCreateResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(editorCreateResp, editorCreateReq)
+	if editorCreateResp.Code != http.StatusCreated {
+		t.Fatalf("data pool editor create status = %d, want %d body=%s", editorCreateResp.Code, http.StatusCreated, editorCreateResp.Body.String())
+	}
+}
+
+func TestTrustedHeaderAuthProjectRoleGuardsDataPoolEndpoints(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	project := &storage.Project{ID: uuid.New().String(), Name: "Checkout", CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	if err := store.SaveProject(project); err != nil {
+		t.Fatalf("SaveProject returned error: %v", err)
+	}
+	pool := &storage.SharedDataPool{ID: uuid.New().String(), Name: "Customers", ProjectID: project.ID, CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	if err := store.SaveDataPool(pool); err != nil {
+		t.Fatalf("SaveDataPool returned error: %v", err)
+	}
+	if err := store.SaveDataPoolRow(&storage.SharedDataPoolRow{ID: uuid.New().String(), PoolID: pool.ID, Data: map[string]string{"customer_id": "C-100"}, CreatedAt: time.Now(), UpdatedAt: time.Now()}); err != nil {
+		t.Fatalf("SaveDataPoolRow returned error: %v", err)
+	}
+
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	enableTrustedHeaderAuth(t, server)
+
+	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/data-pools/"+pool.ID, nil)
+	getReq.Header.Set("X-Auth-Request-User", "viewer-user")
+	getReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	getResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(getResp, getReq)
+	if getResp.Code != http.StatusOK {
+		t.Fatalf("data pool viewer GET status = %d, want %d body=%s", getResp.Code, http.StatusOK, getResp.Body.String())
+	}
+
+	rowsReq := httptest.NewRequest(http.MethodGet, "/api/v1/data-pools/"+pool.ID+"/rows", nil)
+	rowsReq.Header.Set("X-Auth-Request-User", "viewer-user")
+	rowsReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	rowsResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(rowsResp, rowsReq)
+	if rowsResp.Code != http.StatusOK {
+		t.Fatalf("data pool viewer rows GET status = %d, want %d body=%s", rowsResp.Code, http.StatusOK, rowsResp.Body.String())
+	}
+
+	viewerRowCreateReq := httptest.NewRequest(http.MethodPost, "/api/v1/data-pools/"+pool.ID+"/rows", bytes.NewReader([]byte(`{"data":{"customer_id":"C-101"}}`)))
+	viewerRowCreateReq.Header.Set("Content-Type", "application/json")
+	viewerRowCreateReq.Header.Set("X-Auth-Request-User", "viewer-user")
+	viewerRowCreateReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleViewer)
+	viewerRowCreateResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(viewerRowCreateResp, viewerRowCreateReq)
+	if viewerRowCreateResp.Code != http.StatusForbidden {
+		t.Fatalf("data pool viewer row create status = %d, want %d body=%s", viewerRowCreateResp.Code, http.StatusForbidden, viewerRowCreateResp.Body.String())
+	}
+
+	editorUpdateReq := httptest.NewRequest(http.MethodPut, "/api/v1/data-pools/"+pool.ID, bytes.NewReader([]byte(`{"name":"Customers Updated"}`)))
+	editorUpdateReq.Header.Set("Content-Type", "application/json")
+	editorUpdateReq.Header.Set("X-Auth-Request-User", "editor-user")
+	editorUpdateReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleEditor)
+	editorUpdateResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(editorUpdateResp, editorUpdateReq)
+	if editorUpdateResp.Code != http.StatusOK {
+		t.Fatalf("data pool editor update status = %d, want %d body=%s", editorUpdateResp.Code, http.StatusOK, editorUpdateResp.Body.String())
+	}
+
+	editorRowCreateReq := httptest.NewRequest(http.MethodPost, "/api/v1/data-pools/"+pool.ID+"/rows", bytes.NewReader([]byte(`{"data":{"customer_id":"C-101"}}`)))
+	editorRowCreateReq.Header.Set("Content-Type", "application/json")
+	editorRowCreateReq.Header.Set("X-Auth-Request-User", "editor-user")
+	editorRowCreateReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleEditor)
+	editorRowCreateResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(editorRowCreateResp, editorRowCreateReq)
+	if editorRowCreateResp.Code != http.StatusCreated {
+		t.Fatalf("data pool editor row create status = %d, want %d body=%s", editorRowCreateResp.Code, http.StatusCreated, editorRowCreateResp.Body.String())
+	}
+
+	editorDeleteReq := httptest.NewRequest(http.MethodDelete, "/api/v1/data-pools/"+pool.ID, nil)
+	editorDeleteReq.Header.Set("X-Auth-Request-User", "editor-user")
+	editorDeleteReq.Header.Set("X-Stormrunner-Project-Roles", project.ID+"="+RoleEditor)
+	editorDeleteResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(editorDeleteResp, editorDeleteReq)
+	if editorDeleteResp.Code != http.StatusOK {
+		t.Fatalf("data pool editor delete status = %d, want %d body=%s", editorDeleteResp.Code, http.StatusOK, editorDeleteResp.Body.String())
+	}
+}
+
 func TestTrustedHeaderAuthProjectRoleGuardsStoredTestEndpoints(t *testing.T) {
 	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
 	if err != nil {

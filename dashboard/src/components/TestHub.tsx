@@ -126,7 +126,7 @@ function TestHub({ onSelectTest }: Props) {
 
   const refresh = useCallback(async () => {
     try {
-      const [scenarioRes, scriptRes, dataPoolRes] = await Promise.all([api.listScenarios(activeProject?.id), api.listScripts(activeProject?.id), api.listDataPools()])
+      const [scenarioRes, scriptRes, dataPoolRes] = await Promise.all([api.listScenarios(activeProject?.id), api.listScripts(activeProject?.id), api.listDataPools(activeProject?.id)])
       const nextScenarios = scenarioRes.scenarios || []
       const nextScripts = scriptRes.scripts || []
       setScenarios(nextScenarios)

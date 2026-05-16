@@ -85,7 +85,7 @@ type DataPoolDeleteResponse = {
   deleted: string
 }
 
-type DataPoolUpsertRequest = Pick<SharedDataPool, 'name'> & Partial<Pick<SharedDataPool, 'description' | 'schema' | 'archived_at'>>
+type DataPoolUpsertRequest = Pick<SharedDataPool, 'name'> & Partial<Pick<SharedDataPool, 'description' | 'schema' | 'archived_at' | 'project_id'>>
 
 type DataPoolRowUpsertRequest = Pick<SharedDataPoolRow, 'data'> & Partial<Pick<SharedDataPoolRow, 'status' | 'version'>>
 
@@ -341,7 +341,13 @@ export function useScriptApi() {
   )
 
   const listDataPools = useCallback(
-    (includeArchived = false) => request<DataPoolListResponse>(`/data-pools${includeArchived ? '?include_archived=true' : ''}`),
+    (projectId?: string, includeArchived = false) => {
+      const query = new URLSearchParams()
+      if (projectId) query.set('project_id', projectId)
+      if (includeArchived) query.set('include_archived', 'true')
+      const suffix = query.toString()
+      return request<DataPoolListResponse>(`/data-pools${suffix ? `?${suffix}` : ''}`)
+    },
     [],
   )
 

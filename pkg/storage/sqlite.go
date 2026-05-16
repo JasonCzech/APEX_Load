@@ -141,6 +141,7 @@ func (s *SQLiteStore) init() error {
 			name TEXT NOT NULL,
 			description TEXT,
 			schema_json TEXT,
+			project_id TEXT REFERENCES projects(id),
 			created_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL,
 			archived_at DATETIME
@@ -342,6 +343,7 @@ func (s *SQLiteStore) init() error {
 		{`ALTER TABLE tests ADD COLUMN application_id TEXT REFERENCES applications(id)`, "tests.application_id"},
 		{`ALTER TABLE tests ADD COLUMN release_id TEXT REFERENCES releases(id)`, "tests.release_id"},
 		{`ALTER TABLE tests ADD COLUMN scenario_id TEXT REFERENCES scenarios(id)`, "tests.scenario_id"},
+		{`ALTER TABLE shared_data_pools ADD COLUMN project_id TEXT REFERENCES projects(id)`, "shared_data_pools.project_id"},
 		{`ALTER TABLE releases ADD COLUMN archived_at DATETIME`, "releases.archived_at"},
 		{`ALTER TABLE test_interval_summaries ADD COLUMN schema_version TEXT`, "test_interval_summaries.schema_version"},
 		{`ALTER TABLE run_archives ADD COLUMN schema_version TEXT`, "run_archives.schema_version"},
@@ -385,6 +387,9 @@ func (s *SQLiteStore) ensureDefaultProject() error {
 	}
 	if _, err := s.db.Exec(`UPDATE tests SET project_id = ? WHERE project_id IS NULL OR project_id = ''`, DefaultProjectID); err != nil {
 		return fmt.Errorf("failed to backfill test project ids: %w", err)
+	}
+	if _, err := s.db.Exec(`UPDATE shared_data_pools SET project_id = ? WHERE project_id IS NULL OR project_id = ''`, DefaultProjectID); err != nil {
+		return fmt.Errorf("failed to backfill data pool project ids: %w", err)
 	}
 	return nil
 }
@@ -847,26 +852,28 @@ func (s *SQLiteStore) SaveDataPool(pool *SharedDataPool) error {
 	if pool.CreatedAt.IsZero() {
 		pool.CreatedAt = time.Now()
 	}
+	pool.ProjectID = normalizeProjectID(pool.ProjectID)
 	pool.UpdatedAt = time.Now()
 	schemaJSON, err := json.Marshal(pool.Schema)
 	if err != nil {
 		return fmt.Errorf("marshal data pool schema: %w", err)
 	}
-	_, err = s.db.Exec(`INSERT INTO shared_data_pools (id, name, description, schema_json, created_at, updated_at, archived_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(id) DO UPDATE SET name=excluded.name, description=excluded.description, schema_json=excluded.schema_json, updated_at=excluded.updated_at, archived_at=excluded.archived_at`,
-		pool.ID, pool.Name, pool.Description, string(schemaJSON), pool.CreatedAt, pool.UpdatedAt, pool.ArchivedAt)
+	_, err = s.db.Exec(`INSERT INTO shared_data_pools (id, name, description, schema_json, project_id, created_at, updated_at, archived_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET name=excluded.name, description=excluded.description, schema_json=excluded.schema_json, project_id=excluded.project_id, updated_at=excluded.updated_at, archived_at=excluded.archived_at`,
+		pool.ID, pool.Name, pool.Description, string(schemaJSON), pool.ProjectID, pool.CreatedAt, pool.UpdatedAt, pool.ArchivedAt)
 	return err
 }
 
 func (s *SQLiteStore) GetDataPool(id string) (*SharedDataPool, error) {
 	var pool SharedDataPool
 	var schemaJSON string
-	err := s.db.QueryRow(`SELECT id, name, COALESCE(description, ''), COALESCE(schema_json, ''), created_at, updated_at, archived_at FROM shared_data_pools WHERE id = ?`, id).Scan(
-		&pool.ID, &pool.Name, &pool.Description, &schemaJSON, &pool.CreatedAt, &pool.UpdatedAt, &pool.ArchivedAt)
+	err := s.db.QueryRow(`SELECT id, name, COALESCE(description, ''), COALESCE(schema_json, ''), COALESCE(project_id, ''), created_at, updated_at, archived_at FROM shared_data_pools WHERE id = ?`, id).Scan(
+		&pool.ID, &pool.Name, &pool.Description, &schemaJSON, &pool.ProjectID, &pool.CreatedAt, &pool.UpdatedAt, &pool.ArchivedAt)
 	if err != nil {
 		return nil, err
 	}
+	pool.ProjectID = normalizeProjectID(pool.ProjectID)
 	if schemaJSON != "" && schemaJSON != "null" {
 		_ = json.Unmarshal([]byte(schemaJSON), &pool.Schema)
 	}
@@ -874,7 +881,7 @@ func (s *SQLiteStore) GetDataPool(id string) (*SharedDataPool, error) {
 }
 
 func (s *SQLiteStore) ListDataPools(includeArchived bool) ([]*SharedDataPool, error) {
-	query := `SELECT id, name, COALESCE(description, ''), COALESCE(schema_json, ''), created_at, updated_at, archived_at FROM shared_data_pools`
+	query := `SELECT id, name, COALESCE(description, ''), COALESCE(schema_json, ''), COALESCE(project_id, ''), created_at, updated_at, archived_at FROM shared_data_pools`
 	if !includeArchived {
 		query += ` WHERE archived_at IS NULL`
 	}
@@ -888,9 +895,10 @@ func (s *SQLiteStore) ListDataPools(includeArchived bool) ([]*SharedDataPool, er
 	for rows.Next() {
 		var pool SharedDataPool
 		var schemaJSON string
-		if err := rows.Scan(&pool.ID, &pool.Name, &pool.Description, &schemaJSON, &pool.CreatedAt, &pool.UpdatedAt, &pool.ArchivedAt); err != nil {
+		if err := rows.Scan(&pool.ID, &pool.Name, &pool.Description, &schemaJSON, &pool.ProjectID, &pool.CreatedAt, &pool.UpdatedAt, &pool.ArchivedAt); err != nil {
 			return nil, err
 		}
+		pool.ProjectID = normalizeProjectID(pool.ProjectID)
 		if schemaJSON != "" && schemaJSON != "null" {
 			_ = json.Unmarshal([]byte(schemaJSON), &pool.Schema)
 		}
