@@ -17,6 +17,14 @@ export interface SupportMatrix {
   notes?: string[]
 }
 
+export interface ImportReviewSection {
+  key: string
+  title: string
+  severity: 'info' | 'warning' | 'blocker' | string
+  summary: string
+  items: string[]
+}
+
 export interface ScriptImportResult<
   TStats = Record<string, unknown>,
   TCorrelation = unknown,
@@ -30,6 +38,7 @@ export interface ScriptImportResult<
   warnings: string[]
   unsupported_elements: string[]
   assumptions: string[]
+  review_sections: ImportReviewSection[]
   correlations: TCorrelation[]
   stats: TStats
   summary: TSummary

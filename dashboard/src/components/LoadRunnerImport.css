@@ -73,6 +73,37 @@
 .lr-warnings { padding: 14px 20px; border-bottom: 1px solid var(--border); }
 .lr-warnings h4 { font-size: 13px; color: var(--warning); margin: 0 0 8px 0; }
 .lr-warnings ul { margin: 0; padding-left: 18px; font-size: 12px; color: var(--text-secondary); line-height: 1.8; max-height: 160px; overflow-y: auto; }
+.lr-review-section {
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+.lr-review-section:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+}
+.lr-review-section-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 4px;
+}
+.lr-review-section-header strong {
+  font-size: 12px;
+  color: var(--text-primary);
+}
+.lr-review-section-header span {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.lr-review-section p {
+  margin: 0 0 6px 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
 .lr-preserved {
   padding: 16px 20px;
   border-bottom: 1px solid var(--border);

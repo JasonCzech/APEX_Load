@@ -1,4 +1,4 @@
-import { type ImportedAction, type ImportedExtractor, type ImportedScript, type JMeterImportResult as ImportResult, type SupportMatrix } from '../types/scriptImports'
+import { type ImportedAction, type ImportedExtractor, type ImportedScript, type ImportReviewSection, type JMeterImportResult as ImportResult, type SupportMatrix } from '../types/scriptImports'
 
 export interface SupportMatrixSection {
   key: 'supported' | 'partial' | 'unsupported'
@@ -20,7 +20,23 @@ function isObjectRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }
 
-function normalizeSharedImportFields(response: unknown): Pick<ImportResult, 'scripts' | 'script' | 'scenario_draft' | 'warnings' | 'unsupported_elements' | 'assumptions' | 'correlations'> {
+function normalizeReviewSections(value: unknown): ImportReviewSection[] {
+  if (!Array.isArray(value)) {
+    return []
+  }
+  return value
+    .filter(isObjectRecord)
+    .map(section => ({
+      key: typeof section.key === 'string' ? section.key : '',
+      title: typeof section.title === 'string' ? section.title : '',
+      severity: typeof section.severity === 'string' ? section.severity : 'info',
+      summary: typeof section.summary === 'string' ? section.summary : '',
+      items: Array.isArray(section.items) ? section.items.filter((item): item is string => typeof item === 'string') : [],
+    }))
+    .filter(section => section.key && section.title)
+}
+
+function normalizeSharedImportFields(response: unknown): Pick<ImportResult, 'scripts' | 'script' | 'scenario_draft' | 'warnings' | 'unsupported_elements' | 'assumptions' | 'review_sections' | 'correlations'> {
   const payload = isObjectRecord(response) ? response : {}
   const script = payload.script as ImportedScript | undefined
   const scripts = Array.isArray(payload.scripts)
@@ -34,6 +50,7 @@ function normalizeSharedImportFields(response: unknown): Pick<ImportResult, 'scr
     warnings: Array.isArray(payload.warnings) ? payload.warnings as string[] : [],
     unsupported_elements: Array.isArray(payload.unsupported_elements) ? payload.unsupported_elements as string[] : [],
     assumptions: Array.isArray(payload.assumptions) ? payload.assumptions as string[] : [],
+    review_sections: normalizeReviewSections(payload.review_sections),
     correlations: Array.isArray(payload.correlations) ? payload.correlations : [],
   }
 }

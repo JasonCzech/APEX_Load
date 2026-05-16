@@ -46,6 +46,23 @@ describe('LoadRunnerImport', () => {
       },
       warnings: ['manual review recommended'],
       unsupported_elements: ['web_set_max_html_param_len'],
+      assumptions: [],
+      review_sections: [
+        {
+          key: 'unsupported_elements',
+          title: 'Unsupported LoadRunner Elements',
+          severity: 'blocker',
+          summary: 'These source constructs were preserved for review but were not converted into executable Stormrunner actions.',
+          items: ['web_set_max_html_param_len'],
+        },
+        {
+          key: 'preserved_metadata',
+          title: 'Preserved LoadRunner Metadata',
+          severity: 'info',
+          summary: 'Source project metadata was saved with the generated script for audit and repair workflows.',
+          items: ['Project file: Demo.usr'],
+        },
+      ],
       summary: {
         project_file: 'Demo.usr',
         mapped_runtime_file: 'default.cfg',
@@ -70,6 +87,16 @@ describe('LoadRunnerImport', () => {
       },
       warnings: ['validation review'],
       unsupported_elements: ['web_set_max_html_param_len'],
+      assumptions: [],
+      review_sections: [
+        {
+          key: 'unsupported_elements',
+          title: 'Unsupported LoadRunner Elements',
+          severity: 'blocker',
+          summary: 'These source constructs were preserved for review but were not converted into executable Stormrunner actions.',
+          items: ['web_set_max_html_param_len'],
+        },
+      ],
       summary: {
         project_file: 'Demo.usr',
         mapped_runtime_file: 'default.cfg',
@@ -145,6 +172,9 @@ describe('LoadRunnerImport', () => {
     expect(container.textContent).toContain('Demo LoadRunner Script')
     expect(container.textContent).toContain('manual review recommended')
     expect(container.textContent).toContain('Unsupported LoadRunner Functions (1)')
+    expect(container.textContent).toContain('Import Review Sections (2)')
+    expect(container.textContent).toContain('Unsupported LoadRunner Elements')
+    expect(container.textContent).toContain('blocker')
     expect(container.textContent).toContain('web_set_max_html_param_len')
     expect(container.textContent).toContain('Demo.usr')
     expect(container.textContent).toContain('default.cfg')

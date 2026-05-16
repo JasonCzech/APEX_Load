@@ -27,6 +27,7 @@ describe('jmeterImportUtils', () => {
     expect(result.warnings).toEqual([])
     expect(result.unsupported_elements).toEqual([])
     expect(result.assumptions).toEqual(['flattened'])
+    expect(result.review_sections).toEqual([])
     expect(result.summary).toEqual({
       file_name: 'smoke.jmx',
       thread_group_count: 0,
@@ -53,6 +54,7 @@ describe('jmeterImportUtils', () => {
       sampler_count: 0,
     })
     expect(result.correlations).toEqual([])
+    expect(result.review_sections).toEqual([])
   })
 
   it('falls back to a single script entry and normalizes shared import fields', () => {
@@ -62,6 +64,16 @@ describe('jmeterImportUtils', () => {
       correlations: [{ name: 'corr_session' }],
       unsupported_elements: null,
       assumptions: null,
+      review_sections: [
+        {
+          key: 'unsupported_elements',
+          title: 'Unsupported Elements',
+          severity: 'blocker',
+          summary: 'Review before saving.',
+          items: ['JSR223'],
+        },
+        { key: 123, title: null, items: ['ignored'] },
+      ],
     })
 
     expect(result.script).toEqual({ name: 'Converted_LR_Script' })
@@ -70,6 +82,15 @@ describe('jmeterImportUtils', () => {
     expect(result.correlations).toEqual([{ name: 'corr_session' }])
     expect(result.unsupported_elements).toEqual([])
     expect(result.assumptions).toEqual([])
+    expect(result.review_sections).toEqual([
+      {
+        key: 'unsupported_elements',
+        title: 'Unsupported Elements',
+        severity: 'blocker',
+        summary: 'Review before saving.',
+        items: ['JSR223'],
+      },
+    ])
   })
 
   it('summarizes generated extractors for review rendering', () => {

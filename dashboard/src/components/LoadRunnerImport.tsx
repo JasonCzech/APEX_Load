@@ -78,6 +78,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
   const unsupportedFunctions = result?.unsupported_elements.length
     ? result.unsupported_elements
     : metadataSummary.unsupportedFunctions
+  const reviewSections = result?.review_sections || []
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault(); setDragOver(false)
@@ -226,6 +227,24 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
               <div className="lr-warnings">
                 <h4>Unsupported LoadRunner Functions ({unsupportedFunctions.length})</h4>
                 <ul>{unsupportedFunctions.map((fnName, index) => <li key={`${fnName}-${index}`}>{fnName}</li>)}</ul>
+              </div>
+            )}
+
+            {reviewSections.length > 0 && (
+              <div className="lr-warnings">
+                <h4>Import Review Sections ({reviewSections.length})</h4>
+                {reviewSections.map(section => (
+                  <div key={section.key} className="lr-review-section">
+                    <div className="lr-review-section-header">
+                      <strong>{section.title}</strong>
+                      <span>{section.severity}</span>
+                    </div>
+                    {section.summary && <p>{section.summary}</p>}
+                    {section.items.length > 0 && (
+                      <ul>{section.items.slice(0, 6).map((item, index) => <li key={`${section.key}-${index}`}>{item}</li>)}</ul>
+                    )}
+                  </div>
+                ))}
               </div>
             )}
 

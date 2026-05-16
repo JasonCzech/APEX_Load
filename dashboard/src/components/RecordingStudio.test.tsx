@@ -88,6 +88,11 @@ describe('RecordingStudio', () => {
         },
       ],
       warnings: ['review dynamic headers'],
+      unsupported_elements: [],
+      assumptions: [],
+      review_sections: [],
+      stats: {},
+      summary: {},
     })
     apiMock.convertRecording.mockResolvedValue({
       script: {
@@ -108,6 +113,11 @@ describe('RecordingStudio', () => {
         },
       ],
       warnings: ['review dynamic headers'],
+      unsupported_elements: [],
+      assumptions: [],
+      review_sections: [],
+      stats: {},
+      summary: {},
     })
     apiMock.createScript.mockResolvedValue({ id: 'script-1' })
   })
@@ -201,7 +211,7 @@ describe('RecordingStudio', () => {
           source: 'recorder',
         }),
       }),
-    }))
+    }), undefined)
     expect(container.textContent).toContain('Script "Checkout Preview" created with 1 correlations detected')
     expect(onImported).toHaveBeenCalledWith(expect.objectContaining({
       name: 'Checkout Preview',

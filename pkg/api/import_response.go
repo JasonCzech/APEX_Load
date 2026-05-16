@@ -9,8 +9,17 @@ type scriptImportResponseOptions struct {
 	Correlations        any
 	Assumptions         []string
 	UnsupportedElements []string
+	ReviewSections      []scriptImportReviewSection
 	ScenarioDraft       any
 	Summary             any
+}
+
+type scriptImportReviewSection struct {
+	Key      string   `json:"key"`
+	Title    string   `json:"title"`
+	Severity string   `json:"severity"`
+	Summary  string   `json:"summary"`
+	Items    []string `json:"items"`
 }
 
 func newScriptImportResponse(opts scriptImportResponseOptions) map[string]any {
@@ -35,6 +44,10 @@ func newScriptImportResponse(opts scriptImportResponseOptions) map[string]any {
 	if unsupported == nil {
 		unsupported = []string{}
 	}
+	reviewSections := opts.ReviewSections
+	if reviewSections == nil {
+		reviewSections = []scriptImportReviewSection{}
+	}
 	correlations := opts.Correlations
 	if correlations == nil {
 		correlations = []any{}
@@ -56,6 +69,7 @@ func newScriptImportResponse(opts scriptImportResponseOptions) map[string]any {
 		"correlations":         correlations,
 		"assumptions":          assumptions,
 		"unsupported_elements": unsupported,
+		"review_sections":      reviewSections,
 		"scenario_draft":       opts.ScenarioDraft,
 		"summary":              summary,
 	}

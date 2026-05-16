@@ -584,6 +584,8 @@ Converts a LoadRunner project archive into Stormrunner JSON DSL. The importer su
 
 For `TruClientMobileWeb` archives, Stormrunner reads the `.usr` file plus UTF-16 `default.xml`, maps common navigate, click, fill, wait, transaction, and simple JavaScript-derived fill/click steps into browser DSL actions, and carries supported mobile browser runtime settings into `config.browser`.
 
+Import responses include a shared `review_sections` array. Each section has a stable `key`, `title`, `severity`, `summary`, and `items` list so clients can render warnings, unsupported elements, preserved metadata, and browser import assumptions consistently.
+
 **Response:**
 ```json
 {

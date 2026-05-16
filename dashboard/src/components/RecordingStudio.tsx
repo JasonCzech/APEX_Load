@@ -4,6 +4,9 @@ import { useAsyncTask } from '../hooks/useAsyncTask'
 import { useApi } from '../hooks/useApi'
 import { BASE } from '../hooks/apiClient'
 import { Project } from '../types'
+import { type RecorderImportResult } from '../types/scriptImports'
+import { type ScriptDefinition } from '../types/scripts'
+import { attachImportCorrelationSuggestions } from './scriptEditorUtils'
 import './RecordingStudio.css'
 
 interface RecordedRequest {
@@ -69,7 +72,13 @@ interface RecorderStatus {
   } | null
 }
 
-export default function RecordingStudio({ activeProject }: { activeProject?: Project | null }) {
+interface RecordingStudioProps {
+  activeProject?: Project | null
+  onImported?: (script: ScriptDefinition) => void
+  onEdit?: (script: ScriptDefinition) => void
+}
+
+export default function RecordingStudio({ activeProject, onImported, onEdit }: RecordingStudioProps) {
   const api = useApi()
   const [sessions, setSessions] = useState<RecordingSession[]>([])
   const [activeSession, setActiveSession] = useState<RecordingSession | null>(null)
@@ -90,7 +99,7 @@ export default function RecordingStudio({ activeProject }: { activeProject?: Pro
     excluded: false,
   })
   const [showSetup, setShowSetup] = useState(true)
-  const convertTask = useAsyncTask<{ script: any; correlations: Correlation[]; warnings: string[] }>()
+  const convertTask = useAsyncTask<RecorderImportResult>()
 
   const proxyPort = (proxyAddr || ':8081').split(':').pop() || '8081'
 
@@ -248,7 +257,7 @@ export default function RecordingStudio({ activeProject }: { activeProject?: Pro
         () => api.previewRecordingConversion(session.id, session.name),
         { clearValue: true },
       )
-      showFeedback(`Preview generated with ${result.script.actions?.length || 0} actions and ${result.correlations?.length || 0} correlations`)
+      showFeedback(`Preview generated with ${result.script?.actions?.length || 0} actions and ${result.correlations?.length || 0} correlations`)
     } catch (e: any) {
       showFeedback(e.message, 'error')
     }
@@ -276,7 +285,37 @@ export default function RecordingStudio({ activeProject }: { activeProject?: Pro
         () => api.convertRecording(session.id, session.name),
         { clearValue: true },
       )
-      showFeedback(`Script "${result.script.name}" created with ${result.correlations?.length || 0} correlations detected`)
+      showFeedback(`Script "${result.script?.name || session.name}" created with ${result.correlations?.length || 0} correlations detected`)
+    } catch (e: any) {
+      showFeedback(e.message, 'error')
+    }
+  }
+
+  const buildReviewedScript = (): ScriptDefinition | null => {
+    const script = convertTask.value?.script
+    if (!script) {
+      return null
+    }
+    return attachImportCorrelationSuggestions(script as ScriptDefinition, 'recorder', convertTask.value?.correlations)
+  }
+
+  const handleEditConvertedScript = () => {
+    const script = buildReviewedScript()
+    if (!script) {
+      return
+    }
+    onEdit?.(script)
+  }
+
+  const handleSaveConvertedScript = async () => {
+    const script = buildReviewedScript()
+    if (!script) {
+      return
+    }
+    try {
+      await api.createScript(script, activeProject?.id)
+      showFeedback(`Script "${script.name}" created with ${convertTask.value?.correlations?.length || 0} correlations detected`)
+      onImported?.(script)
     } catch (e: any) {
       showFeedback(e.message, 'error')
     }
@@ -294,6 +333,7 @@ export default function RecordingStudio({ activeProject }: { activeProject?: Pro
 
   const stoppedSessions = sessions.filter(s => s.status === 'stopped')
   const convertResult = convertTask.value
+  const convertedScript = convertResult?.script
   const converting = convertTask.pending
 
   return (
@@ -539,7 +579,7 @@ export default function RecordingStudio({ activeProject }: { activeProject?: Pro
                     onClick={(e) => { e.stopPropagation(); handlePreviewConversion(session) }}
                     disabled={converting}
                   >
-                    Preview
+                    Review Script
                   </button>
                   <button
                     className="btn btn-sm btn-secondary"
@@ -680,22 +720,26 @@ export default function RecordingStudio({ activeProject }: { activeProject?: Pro
       )}
 
       {/* Convert Result */}
-      {convertResult && (
+      {convertResult && convertedScript && (
         <div className="rec-convert-result">
           <h3 className="rec-section-title">Conversion Result</h3>
           <div className="rec-result-summary">
             <div className="rec-result-item">
               <span className="rec-result-label">Script</span>
-              <span className="rec-result-value">{convertResult.script.name}</span>
+              <span className="rec-result-value">{convertedScript.name}</span>
             </div>
             <div className="rec-result-item">
               <span className="rec-result-label">Protocol</span>
-              <span className="rec-result-value">{convertResult.script.protocol}</span>
+              <span className="rec-result-value">{convertedScript.protocol}</span>
             </div>
             <div className="rec-result-item">
               <span className="rec-result-label">Script ID</span>
-              <code className="rec-result-value">{convertResult.script.id}</code>
+              <code className="rec-result-value">{convertedScript.id || 'preview'}</code>
             </div>
+          </div>
+          <div className="rec-result-actions">
+            <button className="btn btn-primary" type="button" onClick={handleSaveConvertedScript}>Save To Script Library</button>
+            {onEdit && <button className="btn btn-secondary" type="button" onClick={handleEditConvertedScript}>Open In Visual Editor</button>}
           </div>
 
           {convertResult.correlations && convertResult.correlations.length > 0 && (

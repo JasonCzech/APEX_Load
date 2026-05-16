@@ -254,6 +254,7 @@ func parseBoolDefault(value string, defaultValue bool) bool {
 func writeLoadRunnerImportResponse(w http.ResponseWriter, status int, result *loadrunner.ConvertResult) {
 	unsupportedElements := uniqueSortedStrings(result.Stats.UnsupportedFuncs)
 	summary := buildLoadRunnerImportSummary(result, unsupportedElements)
+	reviewSections := buildLoadRunnerImportReviewSections(result, unsupportedElements, summary)
 
 	writeJSON(w, status, newScriptImportResponse(scriptImportResponseOptions{
 		Result:              result,
@@ -261,8 +262,79 @@ func writeLoadRunnerImportResponse(w http.ResponseWriter, status int, result *lo
 		Warnings:            result.Warnings,
 		Stats:               result.Stats,
 		UnsupportedElements: unsupportedElements,
+		ReviewSections:      reviewSections,
 		Summary:             summary,
 	}))
+}
+
+func buildLoadRunnerImportReviewSections(result *loadrunner.ConvertResult, unsupportedElements []string, summary loadRunnerImportSummary) []scriptImportReviewSection {
+	sections := make([]scriptImportReviewSection, 0, 4)
+	if result == nil {
+		return sections
+	}
+
+	warnings := uniqueSortedStrings(result.Warnings)
+	if len(warnings) > 0 {
+		sections = append(sections, scriptImportReviewSection{
+			Key:      "warnings",
+			Title:    "Conversion Warnings",
+			Severity: "warning",
+			Summary:  "Review converter warnings before saving or replaying the imported draft.",
+			Items:    warnings,
+		})
+	}
+
+	if len(unsupportedElements) > 0 {
+		sections = append(sections, scriptImportReviewSection{
+			Key:      "unsupported_elements",
+			Title:    "Unsupported LoadRunner Elements",
+			Severity: "blocker",
+			Summary:  "These source constructs were preserved for review but were not converted into executable Stormrunner actions.",
+			Items:    unsupportedElements,
+		})
+	}
+
+	preservedItems := make([]string, 0)
+	if summary.ProjectFile != "" {
+		preservedItems = append(preservedItems, "Project file: "+summary.ProjectFile)
+	}
+	if summary.MappedRuntimeFile != "" {
+		preservedItems = append(preservedItems, "Mapped runtime file: "+summary.MappedRuntimeFile)
+	}
+	for _, parameterFile := range summary.ParameterFiles {
+		preservedItems = append(preservedItems, "Parameter file: "+parameterFile)
+	}
+	for _, runtimeFile := range summary.RuntimeFiles {
+		preservedItems = append(preservedItems, "Runtime file: "+runtimeFile)
+	}
+	for _, projectSection := range summary.ProjectSections {
+		preservedItems = append(preservedItems, "Project section: "+projectSection)
+	}
+	if len(preservedItems) > 0 {
+		sections = append(sections, scriptImportReviewSection{
+			Key:      "preserved_metadata",
+			Title:    "Preserved LoadRunner Metadata",
+			Severity: "info",
+			Summary:  "Source project metadata was saved with the generated script for audit and repair workflows.",
+			Items:    preservedItems,
+		})
+	}
+
+	if result.Script != nil && result.Script.Protocol == "browser" {
+		sections = append(sections, scriptImportReviewSection{
+			Key:      "browser_import_assumptions",
+			Title:    "Browser Import Assumptions",
+			Severity: "info",
+			Summary:  "TruClient Mobile Web imports map supported steps into browser DSL and require replay validation for selectors, waits, and device behavior.",
+			Items: []string{
+				"Legacy desktop TruClient remains out of scope.",
+				"Simple JavaScript fill/click statements are decomposed when possible; other JavaScript is preserved as review guidance.",
+				"Selector fidelity should be checked with browser replay before production use.",
+			},
+		})
+	}
+
+	return sections
 }
 
 func buildLoadRunnerImportSummary(result *loadrunner.ConvertResult, unsupportedElements []string) loadRunnerImportSummary {

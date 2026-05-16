@@ -481,11 +481,17 @@ UpdateValueOn=Each Iteration
 			Protocol string `json:"protocol"`
 			Name     string `json:"name"`
 		} `json:"script"`
-		Warnings            []string       `json:"warnings"`
-		UnsupportedElements []string       `json:"unsupported_elements"`
-		Assumptions         []string       `json:"assumptions"`
-		Summary             map[string]any `json:"summary"`
-		Stats               struct {
+		Warnings            []string `json:"warnings"`
+		UnsupportedElements []string `json:"unsupported_elements"`
+		Assumptions         []string `json:"assumptions"`
+		ReviewSections      []struct {
+			Key      string   `json:"key"`
+			Title    string   `json:"title"`
+			Severity string   `json:"severity"`
+			Items    []string `json:"items"`
+		} `json:"review_sections"`
+		Summary map[string]any `json:"summary"`
+		Stats   struct {
 			ConvertedActions int `json:"converted_actions"`
 		} `json:"stats"`
 	}
@@ -507,6 +513,8 @@ UpdateValueOn=Each Iteration
 	if len(result.Assumptions) != 0 {
 		t.Fatalf("assumptions = %v, want none", result.Assumptions)
 	}
+	assertReviewSection(t, result.ReviewSections, "unsupported_elements", "blocker", "web_set_max_html_param_len")
+	assertReviewSection(t, result.ReviewSections, "preserved_metadata", "info", "Project file: Demo.usr")
 	if got := result.Summary["project_file"]; got != "Demo.usr" {
 		t.Fatalf("summary.project_file = %#v, want Demo.usr", got)
 	}
@@ -691,10 +699,15 @@ TouchMode=1
 				Value    string `json:"value"`
 			} `json:"actions"`
 		} `json:"script"`
-		Warnings            []string       `json:"warnings"`
-		UnsupportedElements []string       `json:"unsupported_elements"`
-		Summary             map[string]any `json:"summary"`
-		Stats               struct {
+		Warnings            []string `json:"warnings"`
+		UnsupportedElements []string `json:"unsupported_elements"`
+		ReviewSections      []struct {
+			Key      string   `json:"key"`
+			Severity string   `json:"severity"`
+			Items    []string `json:"items"`
+		} `json:"review_sections"`
+		Summary map[string]any `json:"summary"`
+		Stats   struct {
 			ConvertedActions int `json:"converted_actions"`
 		} `json:"stats"`
 	}
@@ -725,6 +738,7 @@ TouchMode=1
 	if len(result.UnsupportedElements) != 0 {
 		t.Fatalf("unsupported_elements = %#v, want none", result.UnsupportedElements)
 	}
+	assertReviewSection(t, result.ReviewSections, "browser_import_assumptions", "info", "Legacy desktop TruClient remains out of scope.")
 	if got := result.Summary["project_file"]; got != "MobileWeb.usr" {
 		t.Fatalf("summary.project_file = %#v, want MobileWeb.usr", got)
 	}
@@ -820,6 +834,77 @@ TouchMode=1
 	if len(result.Warnings) != 0 {
 		t.Fatalf("warnings = %#v, want none", result.Warnings)
 	}
+}
+
+func TestHandleImportLoadRunnerSurfacesTruClientUnsupportedStepsInReviewSections(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	var body bytes.Buffer
+	writer := zip.NewWriter(&body)
+	addFile := func(name string, content string) {
+		entry, err := writer.Create(name)
+		if err != nil {
+			t.Fatalf("Create(%q) returned error: %v", name, err)
+		}
+		if _, err := entry.Write([]byte(content)); err != nil {
+			t.Fatalf("Write(%q) returned error: %v", name, err)
+		}
+	}
+	addFile("MobileWeb.usr", `[General]
+Type=TruClientMobileWeb
+RuntimeSettings=default.cfg
+`)
+	addFile("default.xml", encodeUTF16LEForTruClientZip(`<?xml version="1.0" encoding="utf-16"?>
+<truScript>
+  <step type="block" action="action" actionName="Action">
+    <step type="testObject" action="Navigate" index="1" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://m.example.com/home\&quot;&quot;}}" />
+    <step type="util" action="Evaluate JavaScript" index="2" arguments="{&quot;Code&quot;:{&quot;value&quot;:&quot;window.scrollTo(0, 400)&quot;}}" />
+  </step>
+</truScript>`))
+	addFile("default.cfg", `[Browser Emulation]
+DeviceProfile=iPhone_SE
+`)
+	if err := writer.Close(); err != nil {
+		t.Fatalf("zip.Close returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/loadrunner", bytes.NewReader(body.Bytes()))
+	req.Header.Set("Content-Type", "application/zip")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var result struct {
+		Warnings            []string `json:"warnings"`
+		UnsupportedElements []string `json:"unsupported_elements"`
+		ReviewSections      []struct {
+			Key      string   `json:"key"`
+			Severity string   `json:"severity"`
+			Items    []string `json:"items"`
+		} `json:"review_sections"`
+		Stats struct {
+			ConvertedActions int `json:"converted_actions"`
+			Skipped          int `json:"skipped"`
+		} `json:"stats"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if result.Stats.ConvertedActions != 1 || result.Stats.Skipped != 1 {
+		t.Fatalf("stats = %#v, want converted_actions=1 skipped=1", result.Stats)
+	}
+	if len(result.UnsupportedElements) != 1 || result.UnsupportedElements[0] != "Evaluate JavaScript" {
+		t.Fatalf("unsupported_elements = %#v, want [Evaluate JavaScript]", result.UnsupportedElements)
+	}
+	if len(result.Warnings) == 0 {
+		t.Fatal("warnings len = 0, want unsupported JavaScript warning")
+	}
+	assertReviewSection(t, result.ReviewSections, "warnings", "warning", result.Warnings[0])
+	assertReviewSection(t, result.ReviewSections, "unsupported_elements", "blocker", "Evaluate JavaScript")
+	assertReviewSection(t, result.ReviewSections, "browser_import_assumptions", "info", "Selector fidelity should be checked with browser replay before production use.")
 }
 
 func TestHandleImportJMeter(t *testing.T) {
@@ -1209,9 +1294,40 @@ func decodeImportEnvelope(t *testing.T, body []byte) map[string]any {
 
 func assertSharedImportEnvelopeKeys(t *testing.T, envelope map[string]any) {
 	t.Helper()
-	for _, key := range []string{"scripts", "script", "warnings", "stats", "correlations", "assumptions", "unsupported_elements", "scenario_draft", "summary", "result"} {
+	for _, key := range []string{"scripts", "script", "warnings", "stats", "correlations", "assumptions", "unsupported_elements", "review_sections", "scenario_draft", "summary", "result"} {
 		if _, ok := envelope[key]; !ok {
 			t.Fatalf("envelope missing key %q: %#v", key, envelope)
 		}
 	}
+}
+
+func assertReviewSection(t *testing.T, sections any, wantKey string, wantSeverity string, wantItem string) {
+	t.Helper()
+
+	value := reflect.ValueOf(sections)
+	if value.Kind() != reflect.Slice {
+		t.Fatalf("review sections = %#v, want slice", sections)
+	}
+	for i := 0; i < value.Len(); i++ {
+		section := value.Index(i)
+		key := section.FieldByName("Key")
+		severity := section.FieldByName("Severity")
+		items := section.FieldByName("Items")
+		if !key.IsValid() || !severity.IsValid() || !items.IsValid() {
+			continue
+		}
+		if key.String() != wantKey {
+			continue
+		}
+		if severity.String() != wantSeverity {
+			t.Fatalf("review section %q severity = %q, want %q", wantKey, severity.String(), wantSeverity)
+		}
+		for itemIndex := 0; itemIndex < items.Len(); itemIndex++ {
+			if items.Index(itemIndex).String() == wantItem {
+				return
+			}
+		}
+		t.Fatalf("review section %q items = %#v, want item %q", wantKey, items.Interface(), wantItem)
+	}
+	t.Fatalf("review_sections = %#v, want section %q", sections, wantKey)
 }
