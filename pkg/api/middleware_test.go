@@ -60,6 +60,36 @@ func TestTrustedHeaderAuthSystemSettingsRequireSystemAdmin(t *testing.T) {
 	}
 }
 
+func TestTrustedHeaderAuthRequiresIdentityForSystemInventory(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	enableTrustedHeaderAuth(t, server)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/system/inventory", nil)
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusUnauthorized, resp.Body.String())
+	}
+}
+
+func TestTrustedHeaderAuthAllowsViewerToReadSystemInventory(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	enableTrustedHeaderAuth(t, server)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/system/inventory", nil)
+	req.Header.Set("X-Auth-Request-User", "viewer-user")
+	req.Header.Set("X-Stormrunner-Roles", RoleViewer)
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("viewer GET status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+}
+
 func TestTrustedHeaderAuthProjectRoleGuardsProjectEndpoints(t *testing.T) {
 	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
 	if err != nil {
