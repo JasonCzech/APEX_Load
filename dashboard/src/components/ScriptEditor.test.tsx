@@ -345,6 +345,21 @@ describe('ScriptEditor', () => {
           source: 'sample-import',
           source_script_name: 'checkout.har',
           preserved: {
+            runtime_settings_migration_readiness: {
+              score_pct: 72,
+              blocked: true,
+              summary: 'Migration readiness score 72%. Blocking runtime settings matched the selected block statuses: partial, compatibility_only.',
+              blocking_statuses: ['partial', 'compatibility_only'],
+              blocking_settings: [
+                {
+                  id: 'logging',
+                  area: 'Logging',
+                  concept: 'Log level, error-only, and extended logging options',
+                  status: 'partial',
+                  runtime_files: ['default.cfg'],
+                },
+              ],
+            },
             runtime_settings_parity: [
               {
                 id: 'run_logic_iterations',
@@ -387,6 +402,9 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('Imported Metadata')
   expect(container.textContent).toContain('Runtime Setting Parity')
   expect(container.textContent).toContain('1 Executed, 1 Partial')
+    expect(container.textContent).toContain('Migration Readiness')
+    expect(container.textContent).toContain('72%')
+    expect(container.textContent).toContain('Blocking runtime settings matched the selected block statuses')
   expect(container.textContent).toContain('Executed: Run Logic')
   expect(container.textContent).toContain('Iterations')
   expect(container.textContent).toContain('default.cfg')

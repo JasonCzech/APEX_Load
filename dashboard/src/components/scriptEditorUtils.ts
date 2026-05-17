@@ -39,6 +39,14 @@ type ImportRuntimeSettingParity = {
   runtime_files: string[]
 }
 
+type ImportRuntimeSettingReadiness = {
+  score_pct: number
+  blocked: boolean
+  summary: string
+  blocking_statuses: string[]
+  blocking_settings: ImportRuntimeSettingParity[]
+}
+
 export const EMPTY_SCRIPT: ScriptDefinition = {
   name: '', version: '1.0.0', protocol: 'http',
   config: {
@@ -112,6 +120,7 @@ export function getImportSummary(metadata?: ScriptImportMetadata | null) {
       .filter((entry): entry is ImportRuntimeSettingParity => entry !== null)
     : []
   const runtimeSettingStatusCounts = normalizeRuntimeSettingStatusCounts(preserved.runtime_settings_status_counts)
+  const runtimeSettingReadiness = normalizeImportRuntimeSettingReadiness(preserved.runtime_settings_migration_readiness)
 
   return {
     runtimeFiles: Object.keys(preserved.runtime_files || {}),
@@ -120,6 +129,7 @@ export function getImportSummary(metadata?: ScriptImportMetadata | null) {
     correlationSuggestions,
     runtimeSettingsParity,
     runtimeSettingStatusCounts,
+    runtimeSettingReadiness,
   }
 }
 
@@ -214,6 +224,29 @@ function normalizeImportRuntimeSettingParity(value: unknown): ImportRuntimeSetti
     concept,
     status,
     runtime_files: normalizeStringArray(entry.runtime_files),
+  }
+}
+
+function normalizeImportRuntimeSettingReadiness(value: unknown): ImportRuntimeSettingReadiness | null {
+  if (!value || typeof value !== 'object') {
+    return null
+  }
+
+  const readiness = value as Record<string, unknown>
+  const scorePct = typeof readiness.score_pct === 'number' ? readiness.score_pct : 0
+  const blocked = readiness.blocked === true
+  const summary = normalizeString(readiness.summary) || ''
+
+  return {
+    score_pct: scorePct,
+    blocked,
+    summary,
+    blocking_statuses: normalizeStringArray(readiness.blocking_statuses),
+    blocking_settings: Array.isArray(readiness.blocking_settings)
+      ? readiness.blocking_settings
+        .map(normalizeImportRuntimeSettingParity)
+        .filter((entry): entry is ImportRuntimeSettingParity => entry !== null)
+      : [],
   }
 }
 

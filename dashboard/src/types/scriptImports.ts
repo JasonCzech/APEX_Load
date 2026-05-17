@@ -73,6 +73,7 @@ export interface LoadRunnerImportSummary {
   parameter_files?: string[]
   runtime_settings_parity?: LoadRunnerRuntimeSettingParity[]
   runtime_settings_status_counts?: Record<string, number>
+  migration_readiness?: LoadRunnerMigrationReadiness
   unsupported_function_count: number
 }
 
@@ -87,6 +88,25 @@ export interface LoadRunnerSupportMatrixEntry {
 
 export interface LoadRunnerRuntimeSettingParity extends LoadRunnerSupportMatrixEntry {
   runtime_files?: string[]
+}
+
+export interface LoadRunnerMigrationPolicy {
+  block_statuses?: string[]
+}
+
+export interface LoadRunnerMigrationReadiness {
+  score_pct: number
+  blocked: boolean
+  summary?: string
+  blocking_statuses?: string[]
+  blocking_settings?: LoadRunnerRuntimeSettingParity[]
+  policy?: LoadRunnerMigrationPolicy
+}
+
+export interface LoadRunnerSupportMatrixExample {
+  title: string
+  coverage: string
+  test: string
 }
 
 export interface JMeterConvertStats {
@@ -164,6 +184,8 @@ export interface JMeterSupportMatrixResponse {
 
 export interface LoadRunnerSupportMatrixResponse {
   support_matrix?: LoadRunnerSupportMatrixEntry[]
+  notes?: string[]
+  tested_examples?: LoadRunnerSupportMatrixExample[]
 }
 
 export interface SaveJMeterImportRequest {

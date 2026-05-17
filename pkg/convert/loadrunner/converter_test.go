@@ -818,6 +818,34 @@ Chain=base64,gzip mode=decode
 	}
 }
 
+func TestBuildRTSMigrationReadinessHonorsBlockStatuses(t *testing.T) {
+	parity := []RuntimeSettingParityEntry{
+		{ID: "run_logic_iterations", Area: "Run Logic", Concept: "Iterations", Status: RuntimeSettingStatusExecuted, RuntimeFiles: []string{"default.cfg"}},
+		{ID: "logging", Area: "Logging", Concept: "Log level, error-only, and extended logging options", Status: RuntimeSettingStatusPartial, RuntimeFiles: []string{"default.cfg"}},
+		{ID: "streaming", Area: "Streaming", Concept: "Adaptive or fixed playback settings", Status: RuntimeSettingStatusCompatibilityOnly, RuntimeFiles: []string{"default.cfg"}},
+	}
+
+	readiness := BuildRTSMigrationReadiness(parity, RuntimeSettingMigrationPolicy{BlockStatuses: []RuntimeSettingStatus{RuntimeSettingStatusPartial, RuntimeSettingStatusCompatibilityOnly}})
+	if readiness == nil {
+		t.Fatal("expected migration readiness")
+	}
+	if readiness.ScorePct != 62 {
+		t.Fatalf("score_pct = %d, want 62", readiness.ScorePct)
+	}
+	if !readiness.Blocked {
+		t.Fatal("expected readiness to be blocked")
+	}
+	if len(readiness.BlockingStatuses) != 2 || readiness.BlockingStatuses[0] != RuntimeSettingStatusPartial || readiness.BlockingStatuses[1] != RuntimeSettingStatusCompatibilityOnly {
+		t.Fatalf("blocking_statuses = %#v, want partial + compatibility_only", readiness.BlockingStatuses)
+	}
+	if len(readiness.BlockingSettings) != 2 {
+		t.Fatalf("blocking_settings = %#v, want 2 entries", readiness.BlockingSettings)
+	}
+	if !strings.Contains(readiness.Summary, "62%") || !strings.Contains(readiness.Summary, "partial, compatibility_only") {
+		t.Fatalf("summary = %q, want score and policy statuses", readiness.Summary)
+	}
+}
+
 func assertRuntimeSettingParityEntry(t *testing.T, entries []RuntimeSettingParityEntry, wantID string, wantStatus RuntimeSettingStatus) {
 	t.Helper()
 	for _, entry := range entries {

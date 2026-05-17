@@ -24,20 +24,22 @@ type jmeterImportRequest struct {
 }
 
 type loadRunnerImportRequest struct {
-	Data      []byte
-	ProjectID string
-	Opts      loadrunner.ConvertOptions
+	Data            []byte
+	ProjectID       string
+	Opts            loadrunner.ConvertOptions
+	ReadinessPolicy loadrunner.RuntimeSettingMigrationPolicy
 }
 
 type loadRunnerImportSummary struct {
-	ProjectFile                 string                                 `json:"project_file,omitempty"`
-	MappedRuntimeFile           string                                 `json:"mapped_runtime_file,omitempty"`
-	ProjectSections             []string                               `json:"project_sections,omitempty"`
-	RuntimeFiles                []string                               `json:"runtime_files,omitempty"`
-	ParameterFiles              []string                               `json:"parameter_files,omitempty"`
-	RuntimeSettingsParity       []loadrunner.RuntimeSettingParityEntry `json:"runtime_settings_parity,omitempty"`
-	RuntimeSettingsStatusCounts map[string]int                         `json:"runtime_settings_status_counts,omitempty"`
-	UnsupportedFunctionCount    int                                    `json:"unsupported_function_count"`
+	ProjectFile                 string                                       `json:"project_file,omitempty"`
+	MappedRuntimeFile           string                                       `json:"mapped_runtime_file,omitempty"`
+	ProjectSections             []string                                     `json:"project_sections,omitempty"`
+	RuntimeFiles                []string                                     `json:"runtime_files,omitempty"`
+	ParameterFiles              []string                                     `json:"parameter_files,omitempty"`
+	RuntimeSettingsParity       []loadrunner.RuntimeSettingParityEntry       `json:"runtime_settings_parity,omitempty"`
+	RuntimeSettingsStatusCounts map[string]int                               `json:"runtime_settings_status_counts,omitempty"`
+	MigrationReadiness          *loadrunner.RuntimeSettingMigrationReadiness `json:"migration_readiness,omitempty"`
+	UnsupportedFunctionCount    int                                          `json:"unsupported_function_count"`
 }
 
 // handleImportLoadRunner handles POST /api/v1/scripts/import/loadrunner
@@ -58,7 +60,7 @@ func (s *Server) handleImportLoadRunner(w http.ResponseWriter, r *http.Request) 
 		result.Script.ProjectID = normalizeProjectID(importReq.ProjectID)
 	}
 
-	writeLoadRunnerImportResponse(w, http.StatusOK, result)
+	writeLoadRunnerImportResponse(w, http.StatusOK, result, importReq.ReadinessPolicy)
 }
 
 // handleValidateLoadRunnerImport handles POST /api/v1/scripts/import/loadrunner/validate.
@@ -78,7 +80,7 @@ func (s *Server) handleValidateLoadRunnerImport(w http.ResponseWriter, r *http.R
 		result.Script.ProjectID = normalizeProjectID(importReq.ProjectID)
 	}
 
-	writeLoadRunnerImportResponse(w, http.StatusOK, result)
+	writeLoadRunnerImportResponse(w, http.StatusOK, result, importReq.ReadinessPolicy)
 }
 
 // handleImportJMeter handles POST /api/v1/scripts/import/jmeter.
@@ -136,7 +138,9 @@ func (s *Server) handleJMeterSupportMatrix(w http.ResponseWriter, r *http.Reques
 
 func (s *Server) handleLoadRunnerSupportMatrix(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
-		"support_matrix": loadrunner.GetRTSSupportMatrix(),
+		"support_matrix":  loadrunner.GetRTSSupportMatrix(),
+		"notes":           loadrunner.GetRTSSupportMatrixNotes(),
+		"tested_examples": loadrunner.GetRTSSupportMatrixExamples(),
 	})
 }
 
@@ -242,6 +246,7 @@ func readLoadRunnerImportRequest(w http.ResponseWriter, r *http.Request) (*loadR
 			IncludeAssertions:    r.FormValue("include_assertions") == "true",
 			PreserveTransactions: parseBoolDefault(r.FormValue("preserve_transactions"), true),
 		},
+		ReadinessPolicy: loadrunner.ParseRuntimeSettingMigrationPolicy(r.FormValue("migration_block_statuses")),
 	}, true
 }
 
@@ -260,9 +265,10 @@ func parseBoolDefault(value string, defaultValue bool) bool {
 	}
 }
 
-func writeLoadRunnerImportResponse(w http.ResponseWriter, status int, result *loadrunner.ConvertResult) {
+func writeLoadRunnerImportResponse(w http.ResponseWriter, status int, result *loadrunner.ConvertResult, readinessPolicy loadrunner.RuntimeSettingMigrationPolicy) {
 	unsupportedElements := uniqueSortedStrings(result.Stats.UnsupportedFuncs)
-	summary := buildLoadRunnerImportSummary(result, unsupportedElements)
+	summary := buildLoadRunnerImportSummary(result, unsupportedElements, readinessPolicy)
+	persistLoadRunnerImportSummary(result, summary)
 	reviewSections := buildLoadRunnerImportReviewSections(result, unsupportedElements, summary)
 	repairSuggestions := buildLoadRunnerImportRepairSuggestions(result, unsupportedElements, summary)
 
@@ -318,6 +324,17 @@ func buildLoadRunnerImportRepairSuggestions(result *loadrunner.ConvertResult, un
 			Title:       "Review preserved runtime settings",
 			Description: "The source archive included LoadRunner runtime metadata that may not all execute natively in Stormrunner yet.",
 			Action:      "Compare the preserved runtime file and project settings against the generated Stormrunner config before promoting the script.",
+		})
+	}
+
+	if summary.MigrationReadiness != nil && summary.MigrationReadiness.Blocked {
+		suggestions = append(suggestions, scriptImportRepairSuggestion{
+			ID:          "runtime:migration-readiness",
+			Category:    "runtime",
+			Severity:    "blocker",
+			Title:       "Resolve blocking runtime settings before promotion",
+			Description: "The selected migration block policy matched imported runtime settings that are not fully executable in Stormrunner yet.",
+			Action:      "Review the blocking runtime settings, adjust the generated Stormrunner config where possible, or relax the migration block policy before saving the script.",
 		})
 	}
 
@@ -472,6 +489,16 @@ func buildLoadRunnerImportReviewSections(result *loadrunner.ConvertResult, unsup
 		})
 	}
 
+	if summary.MigrationReadiness != nil {
+		sections = append(sections, scriptImportReviewSection{
+			Key:      "runtime_settings_migration_readiness",
+			Title:    "Migration Readiness",
+			Severity: migrationReadinessSeverity(summary.MigrationReadiness),
+			Summary:  summary.MigrationReadiness.Summary,
+			Items:    migrationReadinessItems(summary.MigrationReadiness),
+		})
+	}
+
 	if result.Script != nil && result.Script.Protocol == "browser" {
 		sections = append(sections, scriptImportReviewSection{
 			Key:      "browser_import_assumptions",
@@ -489,7 +516,7 @@ func buildLoadRunnerImportReviewSections(result *loadrunner.ConvertResult, unsup
 	return sections
 }
 
-func buildLoadRunnerImportSummary(result *loadrunner.ConvertResult, unsupportedElements []string) loadRunnerImportSummary {
+func buildLoadRunnerImportSummary(result *loadrunner.ConvertResult, unsupportedElements []string, readinessPolicy loadrunner.RuntimeSettingMigrationPolicy) loadRunnerImportSummary {
 	summary := loadRunnerImportSummary{
 		UnsupportedFunctionCount: len(unsupportedElements),
 	}
@@ -510,8 +537,24 @@ func buildLoadRunnerImportSummary(result *loadrunner.ConvertResult, unsupportedE
 	summary.ParameterFiles = stringSliceValue(preserved["parameter_files"])
 	summary.RuntimeSettingsParity = runtimeSettingsParityValue(preserved["runtime_settings_parity"])
 	summary.RuntimeSettingsStatusCounts = intMapValue(preserved["runtime_settings_status_counts"])
+	summary.MigrationReadiness = loadRunnerMigrationReadinessValue(preserved["runtime_settings_migration_readiness"])
+	if summary.MigrationReadiness == nil && len(summary.RuntimeSettingsParity) > 0 {
+		summary.MigrationReadiness = loadrunner.BuildRTSMigrationReadiness(summary.RuntimeSettingsParity, readinessPolicy)
+	}
 
 	return summary
+}
+
+func persistLoadRunnerImportSummary(result *loadrunner.ConvertResult, summary loadRunnerImportSummary) {
+	if result == nil || result.Script == nil || result.Script.Metadata == nil || result.Script.Metadata.Import == nil {
+		return
+	}
+	if result.Script.Metadata.Import.Preserved == nil {
+		result.Script.Metadata.Import.Preserved = make(map[string]any)
+	}
+	if summary.MigrationReadiness != nil {
+		result.Script.Metadata.Import.Preserved["runtime_settings_migration_readiness"] = summary.MigrationReadiness
+	}
 }
 
 func runtimeSettingsParityValue(value any) []loadrunner.RuntimeSettingParityEntry {
@@ -540,6 +583,33 @@ func runtimeSettingsParityValue(value any) []loadrunner.RuntimeSettingParityEntr
 			entries = append(entries, entry)
 		}
 		return entries
+	default:
+		return nil
+	}
+}
+
+func loadRunnerMigrationReadinessValue(value any) *loadrunner.RuntimeSettingMigrationReadiness {
+	switch typed := value.(type) {
+	case *loadrunner.RuntimeSettingMigrationReadiness:
+		return typed
+	case loadrunner.RuntimeSettingMigrationReadiness:
+		clone := typed
+		return &clone
+	case map[string]any:
+		readiness := &loadrunner.RuntimeSettingMigrationReadiness{
+			ScorePct:         intValue(typed["score_pct"]),
+			Blocked:          boolValue(typed["blocked"]),
+			Summary:          stringValue(typed["summary"]),
+			BlockingStatuses: runtimeSettingStatusSliceValue(typed["blocking_statuses"]),
+			BlockingSettings: runtimeSettingsParityValue(typed["blocking_settings"]),
+			Policy: loadrunner.RuntimeSettingMigrationPolicy{
+				BlockStatuses: runtimeSettingPolicyStatuses(typed["policy"]),
+			},
+		}
+		if readiness.ScorePct == 0 && !readiness.Blocked && readiness.Summary == "" && len(readiness.BlockingStatuses) == 0 && len(readiness.BlockingSettings) == 0 {
+			return nil
+		}
+		return readiness
 	default:
 		return nil
 	}
@@ -576,6 +646,55 @@ func intMapValue(value any) map[string]int {
 	default:
 		return nil
 	}
+}
+
+func intValue(value any) int {
+	switch typed := value.(type) {
+	case int:
+		return typed
+	case float64:
+		return int(typed)
+	default:
+		return 0
+	}
+}
+
+func boolValue(value any) bool {
+	switch typed := value.(type) {
+	case bool:
+		return typed
+	case string:
+		return parseBoolDefault(typed, false)
+	default:
+		return false
+	}
+}
+
+func runtimeSettingStatusSliceValue(value any) []loadrunner.RuntimeSettingStatus {
+	switch typed := value.(type) {
+	case []loadrunner.RuntimeSettingStatus:
+		return append([]loadrunner.RuntimeSettingStatus(nil), typed...)
+	case []any:
+		statuses := make([]loadrunner.RuntimeSettingStatus, 0, len(typed))
+		for _, item := range typed {
+			status := loadrunner.RuntimeSettingStatus(stringValue(item))
+			if status == "" {
+				continue
+			}
+			statuses = append(statuses, status)
+		}
+		return statuses
+	default:
+		return nil
+	}
+}
+
+func runtimeSettingPolicyStatuses(value any) []loadrunner.RuntimeSettingStatus {
+	mapping, ok := value.(map[string]any)
+	if !ok {
+		return nil
+	}
+	return runtimeSettingStatusSliceValue(mapping["block_statuses"])
 }
 
 func runtimeSettingsParitySeverity(entries []loadrunner.RuntimeSettingParityEntry) string {
@@ -624,6 +743,49 @@ func runtimeSettingsParityItems(entries []loadrunner.RuntimeSettingParityEntry) 
 		items = append(items, item)
 	}
 	return items
+}
+
+func migrationReadinessSeverity(readiness *loadrunner.RuntimeSettingMigrationReadiness) string {
+	if readiness == nil {
+		return "info"
+	}
+	if readiness.Blocked {
+		return "blocker"
+	}
+	if readiness.ScorePct < 85 {
+		return "warning"
+	}
+	return "info"
+}
+
+func migrationReadinessItems(readiness *loadrunner.RuntimeSettingMigrationReadiness) []string {
+	if readiness == nil {
+		return nil
+	}
+	items := []string{
+		fmt.Sprintf("Score: %d%%", readiness.ScorePct),
+		"Block policy: " + runtimeSettingStatusLabels(readiness.Policy.BlockStatuses),
+	}
+	if readiness.Blocked {
+		items = append(items, "Matched blocking statuses: "+runtimeSettingStatusLabels(readiness.BlockingStatuses))
+		for _, entry := range readiness.BlockingSettings {
+			items = append(items, fmt.Sprintf("Blocking setting: %s / %s", entry.Area, entry.Concept))
+		}
+	} else {
+		items = append(items, "No imported runtime settings matched the selected block statuses.")
+	}
+	return items
+}
+
+func runtimeSettingStatusLabels(statuses []loadrunner.RuntimeSettingStatus) string {
+	if len(statuses) == 0 {
+		return "None"
+	}
+	labels := make([]string, 0, len(statuses))
+	for _, status := range statuses {
+		labels = append(labels, runtimeSettingStatusLabel(status))
+	}
+	return strings.Join(labels, ", ")
 }
 
 func runtimeSettingStatusLabel(status loadrunner.RuntimeSettingStatus) string {

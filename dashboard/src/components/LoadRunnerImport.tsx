@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { useApi } from '../hooks/useApi'
-import { type ImportedScript, type LoadRunnerImportResult, type LoadRunnerImportSummary, type LoadRunnerSupportMatrixEntry, type LoadRunnerSupportMatrixResponse } from '../types/scriptImports'
+import { type ImportedScript, type LoadRunnerImportResult, type LoadRunnerImportSummary, type LoadRunnerMigrationReadiness, type LoadRunnerSupportMatrixEntry, type LoadRunnerSupportMatrixExample, type LoadRunnerSupportMatrixResponse } from '../types/scriptImports'
 import { type ScriptDefinition } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import ScriptImportReview from './ScriptImportReview'
@@ -66,9 +66,12 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
   const [result, setResult] = useState<LoadRunnerImportResult | null>(null)
   const [reviewMode, setReviewMode] = useState<ReviewMode | null>(null)
   const [supportMatrix, setSupportMatrix] = useState<LoadRunnerSupportMatrixEntry[]>([])
+  const [supportMatrixNotes, setSupportMatrixNotes] = useState<string[]>([])
+  const [supportMatrixExamples, setSupportMatrixExamples] = useState<LoadRunnerSupportMatrixExample[]>([])
 
   const [options, setOptions] = useState({
     name: '', base_url: '', include_assertions: true, preserve_transactions: true,
+    block_partial: true, block_compatibility_only: true, block_non_applicable: false,
   })
   const importedScript = result?.script ?? result?.scripts?.[0] ?? null
   const importMetadata = getImportMetadata(importedScript || undefined)
@@ -89,6 +92,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
   const reviewSections = result?.review_sections || []
   const repairSuggestions = result?.repair_suggestions || []
   const supportMatrixSections = summarizeLoadRunnerSupportMatrix(supportMatrix)
+  const migrationReadiness: LoadRunnerMigrationReadiness | null = reviewSummary?.migration_readiness || null
 
   useEffect(() => {
     let cancelled = false
@@ -97,11 +101,15 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
       .then((response: LoadRunnerSupportMatrixResponse) => {
         if (!cancelled) {
           setSupportMatrix(Array.isArray(response.support_matrix) ? response.support_matrix : [])
+          setSupportMatrixNotes(Array.isArray(response.notes) ? response.notes : [])
+          setSupportMatrixExamples(Array.isArray(response.tested_examples) ? response.tested_examples : [])
         }
       })
       .catch(() => {
         if (!cancelled) {
           setSupportMatrix([])
+          setSupportMatrixNotes([])
+          setSupportMatrixExamples([])
         }
       })
 
@@ -134,6 +142,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
         base_url: options.base_url || undefined,
         include_assertions: options.include_assertions,
         preserve_transactions: options.preserve_transactions,
+        migration_block_statuses: buildMigrationBlockStatuses(options),
       })
       setResult(res)
       setReviewMode(mode === 'validate' ? 'validation' : 'conversion')
@@ -208,6 +217,18 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
             <input type="checkbox" checked={options.preserve_transactions} onChange={e => setOptions(o => ({ ...o, preserve_transactions: e.target.checked }))} />
             <span>Preserve transaction names in generated actions</span>
           </label>
+          <label className="lr-checkbox">
+            <input type="checkbox" checked={options.block_partial} onChange={e => setOptions(o => ({ ...o, block_partial: e.target.checked }))} />
+            <span>Treat partial runtime settings as blockers</span>
+          </label>
+          <label className="lr-checkbox">
+            <input type="checkbox" checked={options.block_compatibility_only} onChange={e => setOptions(o => ({ ...o, block_compatibility_only: e.target.checked }))} />
+            <span>Treat preserved-only runtime settings as blockers</span>
+          </label>
+          <label className="lr-checkbox">
+            <input type="checkbox" checked={options.block_non_applicable} onChange={e => setOptions(o => ({ ...o, block_non_applicable: e.target.checked }))} />
+            <span>Treat non-applicable runtime settings as blockers</span>
+          </label>
         </div>
       </div>
 
@@ -245,6 +266,29 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
               </details>
             ))}
           </div>
+
+          {supportMatrixExamples.length > 0 && (
+            <div className="lr-warnings">
+              <h4>Tested Examples</h4>
+              {supportMatrixExamples.map(example => (
+                <div key={example.test} className="lr-review-section">
+                  <div className="lr-review-section-header">
+                    <strong>{example.title}</strong>
+                    <span>tested</span>
+                  </div>
+                  <p>{example.coverage}</p>
+                  <ul><li>{example.test}</li></ul>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {supportMatrixNotes.length > 0 && (
+            <div className="lr-warnings">
+              <h4>Known Caveats</h4>
+              <ul>{supportMatrixNotes.map((note, index) => <li key={index}>{note}</li>)}</ul>
+            </div>
+          )}
         </div>
       )}
 
@@ -366,6 +410,13 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
                     <strong>{importMetadata.source || 'loadrunner'}</strong>
                     <small>{importedScript.name}</small>
                   </div>
+                  {migrationReadiness && (
+                    <div className="lr-preserved-card">
+                      <span className="lr-preserved-label">Migration Readiness</span>
+                      <strong>{migrationReadiness.score_pct}%</strong>
+                      <small>{migrationReadiness.blocked ? 'Blocked by current policy' : migrationReadiness.summary || 'Ready for review'}</small>
+                    </div>
+                  )}
                 </div>
 
                 <details className="lr-preserved-details">
@@ -389,6 +440,18 @@ function summarizeLoadRunnerSupportMatrix(entries: LoadRunnerSupportMatrixEntry[
     buildLoadRunnerSupportMatrixSection('non_applicable', 'Non-applicable', entries),
     buildLoadRunnerSupportMatrixSection('blocked', 'Blocked', entries),
   ]
+}
+
+function buildMigrationBlockStatuses(options: {
+  block_partial: boolean
+  block_compatibility_only: boolean
+  block_non_applicable: boolean
+}) {
+  const statuses = ['blocked']
+  if (options.block_partial) statuses.push('partial')
+  if (options.block_compatibility_only) statuses.push('compatibility_only')
+  if (options.block_non_applicable) statuses.push('non_applicable')
+  return statuses
 }
 
 function buildLoadRunnerSupportMatrixSection(status: string, title: string, entries: LoadRunnerSupportMatrixEntry[]): LoadRunnerSupportMatrixSection {

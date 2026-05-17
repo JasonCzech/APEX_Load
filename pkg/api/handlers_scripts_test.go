@@ -429,9 +429,10 @@ func TestHandleImportSampleBadRequest(t *testing.T) {
 func TestHandleImportLoadRunnerReturnsStandardizedEnvelope(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	var body bytes.Buffer
-	writer := zip.NewWriter(&body)
+	writer := multipart.NewWriter(&body)
+	var zipWriter *zip.Writer
 	addFile := func(name string, content string) {
-		entry, err := writer.Create(name)
+		entry, err := zipWriter.Create(name)
 		if err != nil {
 			t.Fatalf("Create(%q) returned error: %v", name, err)
 		}
@@ -439,6 +440,14 @@ func TestHandleImportLoadRunnerReturnsStandardizedEnvelope(t *testing.T) {
 			t.Fatalf("Write(%q) returned error: %v", name, err)
 		}
 	}
+	if err := writer.WriteField("migration_block_statuses", "partial,compatibility_only"); err != nil {
+		t.Fatalf("WriteField returned error: %v", err)
+	}
+	part, err := writer.CreateFormFile("file", "demo.zip")
+	if err != nil {
+		t.Fatalf("CreateFormFile returned error: %v", err)
+	}
+	zipWriter = zip.NewWriter(part)
 	addFile("Demo.usr", `[General]
 Type=Web
 RuntimeSettings=default.cfg
@@ -461,12 +470,15 @@ SelectNextRow=Sequential
 UpdateValueOn=Each Iteration
 `)
 	addFile("Users.dat", "username\nalice\nbob\n")
+	if err := zipWriter.Close(); err != nil {
+		t.Fatalf("zip.Close returned error: %v", err)
+	}
 	if err := writer.Close(); err != nil {
 		t.Fatalf("zip.Close returned error: %v", err)
 	}
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/loadrunner", bytes.NewReader(body.Bytes()))
-	req.Header.Set("Content-Type", "application/zip")
+	req.Header.Set("Content-Type", writer.FormDataContentType())
 	resp := httptest.NewRecorder()
 
 	server.mux.ServeHTTP(resp, req)
@@ -521,6 +533,7 @@ UpdateValueOn=Each Iteration
 	assertReviewSection(t, result.ReviewSections, "unsupported_elements", "blocker", "web_set_max_html_param_len")
 	assertReviewSection(t, result.ReviewSections, "preserved_metadata", "info", "Project file: Demo.usr")
 	assertReviewSection(t, result.ReviewSections, "runtime_settings_parity", "info", "Executed: HTTP / Timeouts, redirects, and connection reuse [default.cfg]")
+	assertReviewSection(t, result.ReviewSections, "runtime_settings_migration_readiness", "info", "Score: 100%")
 	assertRepairSuggestion(t, result.RepairSuggestions, "unsupported", "blocker", "Replace unsupported web_set_max_html_param_len")
 	assertRepairSuggestion(t, result.RepairSuggestions, "runtime", "info", "Review preserved runtime settings")
 	if got := result.Summary["project_file"]; got != "Demo.usr" {
@@ -548,14 +561,19 @@ UpdateValueOn=Each Iteration
 	if !ok || statusCounts["executed"] != float64(1) {
 		t.Fatalf("summary.runtime_settings_status_counts = %#v, want executed=1", result.Summary["runtime_settings_status_counts"])
 	}
+	readiness, ok := result.Summary["migration_readiness"].(map[string]any)
+	if !ok || readiness["score_pct"] != float64(100) || readiness["blocked"] != false {
+		t.Fatalf("summary.migration_readiness = %#v, want score=100 blocked=false", result.Summary["migration_readiness"])
+	}
 }
 
 func TestHandleImportLoadRunnerSummarizesRuntimeSettingParity(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	var body bytes.Buffer
-	writer := zip.NewWriter(&body)
+	writer := multipart.NewWriter(&body)
+	var zipWriter *zip.Writer
 	addFile := func(name string, content string) {
-		entry, err := writer.Create(name)
+		entry, err := zipWriter.Create(name)
 		if err != nil {
 			t.Fatalf("Create(%q) returned error: %v", name, err)
 		}
@@ -563,6 +581,14 @@ func TestHandleImportLoadRunnerSummarizesRuntimeSettingParity(t *testing.T) {
 			t.Fatalf("Write(%q) returned error: %v", name, err)
 		}
 	}
+	if err := writer.WriteField("migration_block_statuses", "partial,compatibility_only"); err != nil {
+		t.Fatalf("WriteField returned error: %v", err)
+	}
+	part, err := writer.CreateFormFile("file", "demo.zip")
+	if err != nil {
+		t.Fatalf("CreateFormFile returned error: %v", err)
+	}
+	zipWriter = zip.NewWriter(part)
 	addFile("Demo.usr", `[General]
 Type=Web
 RuntimeSettings=default.cfg
@@ -583,12 +609,15 @@ OnErrorOnly=1
 Mode=fixed
 BufferSizeSeconds=30
 `)
+	if err := zipWriter.Close(); err != nil {
+		t.Fatalf("zip.Close returned error: %v", err)
+	}
 	if err := writer.Close(); err != nil {
 		t.Fatalf("zip.Close returned error: %v", err)
 	}
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/loadrunner", bytes.NewReader(body.Bytes()))
-	req.Header.Set("Content-Type", "application/zip")
+	req.Header.Set("Content-Type", writer.FormDataContentType())
 	resp := httptest.NewRecorder()
 
 	server.mux.ServeHTTP(resp, req)
@@ -611,6 +640,7 @@ BufferSizeSeconds=30
 	}
 
 	assertReviewSection(t, result.ReviewSections, "runtime_settings_parity", "warning", "Partial: Logging / Log level, error-only, and extended logging options [default.cfg]")
+	assertReviewSection(t, result.ReviewSections, "runtime_settings_migration_readiness", "blocker", "Blocking setting: Logging / Log level, error-only, and extended logging options")
 	statusCounts, ok := result.Summary["runtime_settings_status_counts"].(map[string]any)
 	if !ok {
 		t.Fatalf("summary.runtime_settings_status_counts = %#v, want map", result.Summary["runtime_settings_status_counts"])
@@ -621,6 +651,10 @@ BufferSizeSeconds=30
 	runtimeParity, ok := result.Summary["runtime_settings_parity"].([]any)
 	if !ok || len(runtimeParity) != 4 {
 		t.Fatalf("summary.runtime_settings_parity = %#v, want 4 entries", result.Summary["runtime_settings_parity"])
+	}
+	readiness, ok := result.Summary["migration_readiness"].(map[string]any)
+	if !ok || readiness["score_pct"] != float64(71) || readiness["blocked"] != true {
+		t.Fatalf("summary.migration_readiness = %#v, want score=71 blocked=true", result.Summary["migration_readiness"])
 	}
 }
 
@@ -1523,6 +1557,12 @@ func TestHandleLoadRunnerSupportMatrix(t *testing.T) {
 			Status  string   `json:"status"`
 			Notes   string   `json:"notes"`
 		} `json:"support_matrix"`
+		Notes          []string `json:"notes"`
+		TestedExamples []struct {
+			Title    string `json:"title"`
+			Coverage string `json:"coverage"`
+			Test     string `json:"test"`
+		} `json:"tested_examples"`
 	}
 	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
 		t.Fatalf("json.Unmarshal returned error: %v", err)
@@ -1535,6 +1575,12 @@ func TestHandleLoadRunnerSupportMatrix(t *testing.T) {
 	}
 	if !containsLoadRunnerSupportMatrixStatus(result.SupportMatrix, "partial") {
 		t.Fatalf("expected at least one partial loadrunner support matrix entry, got %#v", result.SupportMatrix)
+	}
+	if len(result.Notes) == 0 {
+		t.Fatal("expected loadrunner support matrix notes")
+	}
+	if len(result.TestedExamples) == 0 || result.TestedExamples[0].Title == "" || result.TestedExamples[0].Test == "" {
+		t.Fatalf("tested_examples = %#v, want populated tested examples", result.TestedExamples)
 	}
 }
 

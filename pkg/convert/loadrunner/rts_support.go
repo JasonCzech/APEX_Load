@@ -1,5 +1,7 @@
 package loadrunner
 
+import "strconv"
+
 import (
 	"path/filepath"
 	"sort"
@@ -23,6 +25,25 @@ type RuntimeSettingSupportEntry struct {
 	Fields  []string             `json:"fields,omitempty"`
 	Status  RuntimeSettingStatus `json:"status"`
 	Notes   string               `json:"notes,omitempty"`
+}
+
+type RuntimeSettingSupportExample struct {
+	Title    string `json:"title"`
+	Coverage string `json:"coverage"`
+	Test     string `json:"test"`
+}
+
+type RuntimeSettingMigrationPolicy struct {
+	BlockStatuses []RuntimeSettingStatus `json:"block_statuses,omitempty"`
+}
+
+type RuntimeSettingMigrationReadiness struct {
+	ScorePct         int                           `json:"score_pct"`
+	Blocked          bool                          `json:"blocked"`
+	Summary          string                        `json:"summary,omitempty"`
+	BlockingStatuses []RuntimeSettingStatus        `json:"blocking_statuses,omitempty"`
+	BlockingSettings []RuntimeSettingParityEntry   `json:"blocking_settings,omitempty"`
+	Policy           RuntimeSettingMigrationPolicy `json:"policy"`
 }
 
 type RuntimeSettingParityEntry struct {
@@ -378,6 +399,39 @@ var loadRunnerRTSSupportDefinitions = []runtimeSettingSupportDefinition{
 	},
 }
 
+var loadRunnerRTSSupportMatrixNotes = []string{
+	"download_resources = recorded still depends on preserved recorded-resource metadata; manually authored scripts without those URLs cannot execute that mode yet.",
+	"Streaming and media playback settings remain compatibility-only and do not execute browser media semantics.",
+	"DFE parity is intentionally bounded to the current HTTP response transform chain instead of the full LoadRunner surface.",
+	"Extended logging and snapshot-on-error behavior are narrower than full VuGen parity even when the settings are imported and preserved.",
+}
+
+var loadRunnerRTSSupportMatrixExamples = []RuntimeSettingSupportExample{
+	{
+		Title:    "Extended Web HTTP/HTML runtime import",
+		Coverage: "Parses transport, proxy, pacing, think time, logging, browser emulation, download filters, content checks, network shaping, streaming, and DFE settings into Stormrunner config.",
+		Test:     "pkg/convert/loadrunner/converter_test.go::TestParseRuntimeCfgToScriptConfigMapsExtendedRuntimeSettings",
+	},
+	{
+		Title:    "ZIP import parity metadata",
+		Coverage: "Preserves runtime files and emits per-import runtime setting parity classifications with status counts for review workflows.",
+		Test:     "pkg/convert/loadrunner/converter_test.go::TestConvertZipMapsExtendedRuntimeSettings",
+	},
+	{
+		Title:    "Import envelope parity review",
+		Coverage: "Surfaces runtime setting parity in the shared LoadRunner import response, including summary counts and review sections.",
+		Test:     "pkg/api/handlers_scripts_test.go::TestHandleImportLoadRunnerSummarizesRuntimeSettingParity",
+	},
+}
+
+var runtimeSettingMigrationStatusWeights = map[RuntimeSettingStatus]int{
+	RuntimeSettingStatusExecuted:          100,
+	RuntimeSettingStatusPartial:           60,
+	RuntimeSettingStatusCompatibilityOnly: 25,
+	RuntimeSettingStatusNonApplicable:     10,
+	RuntimeSettingStatusBlocked:           0,
+}
+
 func GetRTSSupportMatrix() []RuntimeSettingSupportEntry {
 	entries := make([]RuntimeSettingSupportEntry, 0, len(loadRunnerRTSSupportDefinitions))
 	for _, definition := range loadRunnerRTSSupportDefinitions {
@@ -391,6 +445,85 @@ func GetRTSSupportMatrix() []RuntimeSettingSupportEntry {
 		})
 	}
 	return entries
+}
+
+func GetRTSSupportMatrixNotes() []string {
+	return cloneStrings(loadRunnerRTSSupportMatrixNotes)
+}
+
+func GetRTSSupportMatrixExamples() []RuntimeSettingSupportExample {
+	if len(loadRunnerRTSSupportMatrixExamples) == 0 {
+		return nil
+	}
+	examples := make([]RuntimeSettingSupportExample, 0, len(loadRunnerRTSSupportMatrixExamples))
+	for _, example := range loadRunnerRTSSupportMatrixExamples {
+		examples = append(examples, example)
+	}
+	return examples
+}
+
+func DefaultRuntimeSettingMigrationPolicy() RuntimeSettingMigrationPolicy {
+	return RuntimeSettingMigrationPolicy{
+		BlockStatuses: []RuntimeSettingStatus{RuntimeSettingStatusBlocked},
+	}
+}
+
+func ParseRuntimeSettingMigrationPolicy(statusesCSV string) RuntimeSettingMigrationPolicy {
+	policy := DefaultRuntimeSettingMigrationPolicy()
+	if strings.TrimSpace(statusesCSV) == "" {
+		return policy
+	}
+
+	parsed := make([]RuntimeSettingStatus, 0)
+	for _, raw := range strings.Split(statusesCSV, ",") {
+		status := RuntimeSettingStatus(normalizeEnum(strings.TrimSpace(raw)))
+		if !isRuntimeSettingStatus(status) {
+			continue
+		}
+		parsed = append(parsed, status)
+	}
+	parsed = uniqueRuntimeSettingStatuses(parsed)
+	if len(parsed) == 0 {
+		return policy
+	}
+	policy.BlockStatuses = parsed
+	return policy
+}
+
+func BuildRTSMigrationReadiness(entries []RuntimeSettingParityEntry, policy RuntimeSettingMigrationPolicy) *RuntimeSettingMigrationReadiness {
+	if len(entries) == 0 {
+		return nil
+	}
+
+	policy = normalizeRuntimeSettingMigrationPolicy(policy)
+	points := 0
+	blockingEntries := make([]RuntimeSettingParityEntry, 0)
+	blockingStatusSet := make(map[RuntimeSettingStatus]struct{})
+	for _, entry := range entries {
+		points += runtimeSettingMigrationStatusWeights[entry.Status]
+		if runtimeSettingStatusInList(entry.Status, policy.BlockStatuses) {
+			blockingEntries = append(blockingEntries, cloneRuntimeSettingParityEntry(entry))
+			blockingStatusSet[entry.Status] = struct{}{}
+		}
+	}
+
+	scorePct := (points + len(entries)/2) / len(entries)
+	blockingStatuses := make([]RuntimeSettingStatus, 0, len(blockingStatusSet))
+	for _, status := range policy.BlockStatuses {
+		if _, ok := blockingStatusSet[status]; ok {
+			blockingStatuses = append(blockingStatuses, status)
+		}
+	}
+
+	readiness := &RuntimeSettingMigrationReadiness{
+		ScorePct:         scorePct,
+		Blocked:          len(blockingEntries) > 0,
+		BlockingStatuses: blockingStatuses,
+		BlockingSettings: blockingEntries,
+		Policy:           policy,
+	}
+	readiness.Summary = buildRuntimeSettingMigrationSummary(readiness)
+	return readiness
 }
 
 func BuildRTSParityReport(runtimeSections map[string]map[string]map[string]string) []RuntimeSettingParityEntry {
@@ -427,6 +560,18 @@ func RuntimeSettingStatusCounts(entries []RuntimeSettingParityEntry) map[string]
 		counts[string(entry.Status)]++
 	}
 	return counts
+}
+
+func cloneRuntimeSettingParityEntry(entry RuntimeSettingParityEntry) RuntimeSettingParityEntry {
+	return RuntimeSettingParityEntry{
+		ID:           entry.ID,
+		Area:         entry.Area,
+		Concept:      entry.Concept,
+		Fields:       cloneStrings(entry.Fields),
+		Status:       entry.Status,
+		Notes:        entry.Notes,
+		RuntimeFiles: cloneStrings(entry.RuntimeFiles),
+	}
 }
 
 func runtimeSettingFilesForDefinition(definition runtimeSettingSupportDefinition, runtimeSections map[string]map[string]map[string]string) []string {
@@ -513,6 +658,65 @@ func matcher(sectionAliases []string, keyAliases []string) runtimeSettingMatcher
 
 func matcherWithValues(sectionAliases []string, keyAliases []string, values []string) runtimeSettingMatcher {
 	return runtimeSettingMatcher{sectionAliases: sectionAliases, keyAliases: keyAliases, values: values}
+}
+
+func buildRuntimeSettingMigrationSummary(readiness *RuntimeSettingMigrationReadiness) string {
+	if readiness == nil {
+		return ""
+	}
+	policyStatuses := make([]string, 0, len(readiness.Policy.BlockStatuses))
+	for _, status := range readiness.Policy.BlockStatuses {
+		policyStatuses = append(policyStatuses, string(status))
+	}
+	if readiness.Blocked {
+		return "Migration readiness score " + strconv.Itoa(readiness.ScorePct) + "%. Blocking runtime settings matched the selected block statuses: " + strings.Join(policyStatuses, ", ") + "."
+	}
+	return "Migration readiness score " + strconv.Itoa(readiness.ScorePct) + "%. No imported runtime settings matched the selected block statuses: " + strings.Join(policyStatuses, ", ") + "."
+}
+
+func isRuntimeSettingStatus(status RuntimeSettingStatus) bool {
+	switch status {
+	case RuntimeSettingStatusExecuted, RuntimeSettingStatusPartial, RuntimeSettingStatusCompatibilityOnly, RuntimeSettingStatusNonApplicable, RuntimeSettingStatusBlocked:
+		return true
+	default:
+		return false
+	}
+}
+
+func normalizeRuntimeSettingMigrationPolicy(policy RuntimeSettingMigrationPolicy) RuntimeSettingMigrationPolicy {
+	policy.BlockStatuses = uniqueRuntimeSettingStatuses(policy.BlockStatuses)
+	if len(policy.BlockStatuses) == 0 {
+		return DefaultRuntimeSettingMigrationPolicy()
+	}
+	return policy
+}
+
+func runtimeSettingStatusInList(status RuntimeSettingStatus, statuses []RuntimeSettingStatus) bool {
+	for _, candidate := range statuses {
+		if candidate == status {
+			return true
+		}
+	}
+	return false
+}
+
+func uniqueRuntimeSettingStatuses(statuses []RuntimeSettingStatus) []RuntimeSettingStatus {
+	if len(statuses) == 0 {
+		return nil
+	}
+	seen := make(map[RuntimeSettingStatus]struct{}, len(statuses))
+	result := make([]RuntimeSettingStatus, 0, len(statuses))
+	for _, status := range statuses {
+		if !isRuntimeSettingStatus(status) {
+			continue
+		}
+		if _, ok := seen[status]; ok {
+			continue
+		}
+		seen[status] = struct{}{}
+		result = append(result, status)
+	}
+	return result
 }
 
 func cloneStrings(values []string) []string {

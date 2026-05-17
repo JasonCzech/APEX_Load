@@ -49,6 +49,14 @@ describe('LoadRunnerImport', () => {
           status: 'compatibility_only',
         },
       ],
+      notes: ['Streaming and media playback settings remain compatibility-only.'],
+      tested_examples: [
+        {
+          title: 'Extended Web HTTP/HTML runtime import',
+          coverage: 'Parses transport, pacing, logging, browser emulation, and DFE settings into Stormrunner config.',
+          test: 'pkg/convert/loadrunner/converter_test.go::TestParseRuntimeCfgToScriptConfigMapsExtendedRuntimeSettings',
+        },
+      ],
     })
     apiMock.importLoadRunner.mockResolvedValue({
       script: {
@@ -101,6 +109,12 @@ describe('LoadRunnerImport', () => {
         mapped_runtime_file: 'default.cfg',
         project_sections: ['Actions', 'General'],
         runtime_files: ['default.cfg'],
+        migration_readiness: {
+          score_pct: 100,
+          blocked: false,
+          summary: 'Migration readiness score 100%. No imported runtime settings matched the selected block statuses: blocked, partial, compatibility_only.',
+          policy: { block_statuses: ['blocked', 'partial', 'compatibility_only'] },
+        },
         unsupported_function_count: 1,
       },
       stats: {
@@ -136,6 +150,12 @@ describe('LoadRunnerImport', () => {
         mapped_runtime_file: 'default.cfg',
         project_sections: ['Actions', 'General'],
         runtime_files: ['default.cfg'],
+        migration_readiness: {
+          score_pct: 100,
+          blocked: false,
+          summary: 'Migration readiness score 100%. No imported runtime settings matched the selected block statuses: blocked, partial, compatibility_only.',
+          policy: { block_statuses: ['blocked', 'partial', 'compatibility_only'] },
+        },
         unsupported_function_count: 1,
       },
       stats: {
@@ -174,6 +194,9 @@ describe('LoadRunnerImport', () => {
     expect(container.textContent).toContain('Partial')
     expect(container.textContent).toContain('Compatibility-only')
     expect(container.textContent).toContain('HTTP: Timeouts, redirects, and connection reuse')
+    expect(container.textContent).toContain('Tested Examples')
+    expect(container.textContent).toContain('Known Caveats')
+    expect(container.textContent).toContain('Streaming and media playback settings remain compatibility-only')
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
     expect(fileInput).not.toBeNull()
@@ -208,6 +231,7 @@ describe('LoadRunnerImport', () => {
       base_url: undefined,
       include_assertions: true,
       preserve_transactions: true,
+      migration_block_statuses: ['blocked', 'partial', 'compatibility_only'],
     })
     expect(container.textContent).toContain('Conversion Complete')
     expect(container.textContent).toContain('Demo LoadRunner Script')
@@ -221,6 +245,8 @@ describe('LoadRunnerImport', () => {
     expect(container.textContent).toContain('web_set_max_html_param_len')
     expect(container.textContent).toContain('Demo.usr')
     expect(container.textContent).toContain('default.cfg')
+    expect(container.textContent).toContain('Migration Readiness')
+    expect(container.textContent).toContain('100%')
 
     const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save to Script Library'))
     expect(saveButton).toBeDefined()
@@ -266,9 +292,10 @@ describe('LoadRunnerImport', () => {
     })
 
     const checkboxes = Array.from(container.querySelectorAll('input[type="checkbox"]')) as HTMLInputElement[]
-    expect(checkboxes).toHaveLength(2)
+    expect(checkboxes).toHaveLength(5)
     await act(async () => {
       checkboxes[1].dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      checkboxes[2].dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
     const validateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Validate Only'))
@@ -289,6 +316,7 @@ describe('LoadRunnerImport', () => {
       base_url: undefined,
       include_assertions: true,
       preserve_transactions: false,
+      migration_block_statuses: ['blocked', 'compatibility_only'],
     })
     expect(container.textContent).toContain('Validation Review')
     expect(container.textContent).toContain('validation review')

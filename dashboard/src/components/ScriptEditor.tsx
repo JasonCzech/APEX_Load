@@ -411,6 +411,9 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
     .filter(([, count]) => count > 0)
     .map(([status, count]) => `${count} ${formatRuntimeSettingStatusLabel(status)}`)
     .join(', ')
+  const runtimeSettingReadinessSummary = importSummary.runtimeSettingReadiness
+    ? importSummary.runtimeSettingReadiness.summary || `${importSummary.runtimeSettingReadiness.score_pct}% readiness`
+    : ''
   const selectedBrowserEngine = script.config.browser?.engine || 'chromium'
   const selectedBrowserProfile = lookupBrowserDeviceProfile(script.config.browser?.device_profile)
   const browserEngineAdvisory = selectedBrowserProfile && selectedBrowserProfile.engine !== selectedBrowserEngine
@@ -2686,7 +2689,30 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
                       <strong>{importSummary.runtimeSettingsParity.length}</strong>
                       <small>{runtimeSettingParitySummary || 'No classified runtime settings found'}</small>
                     </div>
+                    <div className="import-metadata-card">
+                      <span>Migration Readiness</span>
+                      <strong>{importSummary.runtimeSettingReadiness ? `${importSummary.runtimeSettingReadiness.score_pct}%` : 'N/A'}</strong>
+                      <small>{runtimeSettingReadinessSummary || 'No migration readiness score captured'}</small>
+                    </div>
                   </div>
+
+                  {importSummary.runtimeSettingReadiness && (
+                    <div className="import-correlation-section">
+                      <h4>Migration Readiness</h4>
+                      <p>{runtimeSettingReadinessSummary}</p>
+                      {importSummary.runtimeSettingReadiness.blocking_settings.length > 0 && (
+                        <div className="import-correlation-list">
+                          {importSummary.runtimeSettingReadiness.blocking_settings.map((entry) => (
+                            <div key={`readiness-${entry.id}`} className="import-correlation-card">
+                              <strong>{formatRuntimeSettingStatusLabel(entry.status)}: {entry.area}</strong>
+                              <span>{entry.concept}</span>
+                              <span>{entry.runtime_files.length > 0 ? entry.runtime_files.join(', ') : 'No runtime file recorded'}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {importSummary.runtimeSettingsParity.length > 0 && (
                     <div className="import-correlation-section">

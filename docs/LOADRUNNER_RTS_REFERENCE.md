@@ -2,6 +2,8 @@
 
 This document maps the Web HTTP/HTML runtime settings surfaced in Stormrunner to their current support status. The goal is to make imported and manually authored RTS values visible, preserve compatibility where possible, and make execution gaps explicit.
 
+The code-owned source of truth for this matrix now lives in `pkg/convert/loadrunner/rts_support.go` and is published through `GET /api/v1/scripts/import/loadrunner/support-matrix`. The dashboard LoadRunner import flow renders the same entries, tested examples, and caveats before conversion.
+
 ## Status Legend
 
 - `Executed`: Stormrunner enforces the setting at runtime today.
@@ -52,3 +54,9 @@ This document maps the Web HTTP/HTML runtime settings surfaced in Stormrunner to
 - Browser/runtime-wide DFE parity is not complete beyond the current HTTP response transform chain.
 - Logging fidelity is narrower than full VuGen extended trace behavior.
 - Snapshot-on-error parity is still incomplete outside the HTTP and browser runtimes.
+
+## Tested examples
+
+- `pkg/convert/loadrunner/converter_test.go::TestParseRuntimeCfgToScriptConfigMapsExtendedRuntimeSettings` exercises the extended Web HTTP/HTML runtime import path across transport, proxy, pacing, logging, browser emulation, download filters, content checks, network shaping, streaming, and DFE settings.
+- `pkg/convert/loadrunner/converter_test.go::TestConvertZipMapsExtendedRuntimeSettings` verifies that ZIP import preserves runtime metadata and emits per-import parity classifications.
+- `pkg/api/handlers_scripts_test.go::TestHandleImportLoadRunnerSummarizesRuntimeSettingParity` verifies that the shared LoadRunner import envelope carries parity counts and review sections for the imported runtime settings.
