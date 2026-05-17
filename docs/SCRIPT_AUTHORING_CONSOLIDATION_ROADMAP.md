@@ -227,6 +227,7 @@ That order minimizes churn and avoids rebuilding the UI around unstable backend 
 - Import save handoffs now also backfill the reviewed draft payload when the save API returns a thin stored-script response, so persisted reopen stays hydrated for import-review flows even without an embedded script body from the backend.
 - Import and recorder subviews now share one create-options frame in `ScriptsAuthoringSurface`, which removes the remaining per-surface back-navigation drift and starts trimming duplicated wrapper orchestration as the contracts stabilize.
 - The remaining JMeter response adapter has been removed from the dashboard. `JMeterImport` now trusts the backend's shared import envelope directly, so A1.5 cleanup has started by deleting one of the last temporary normalization seams rather than keeping it alive out of habit.
+- Imported script types are now aligned with the real DSL contract instead of a weaker partial shape, which let the dashboard delete several `ImportedScript -> ScriptDefinition` bridge casts and keep edit/save flows on one canonical script model.
 
 ### Remaining High-Value Work
 - Finish the scenario assembly path by tightening `TestExecution` adjacencies and shared execution/result models now that `CreateTestModal` is aligned on one shared draft state owner.

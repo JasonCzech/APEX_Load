@@ -174,6 +174,7 @@ Status:
 - A1.4 now also hydrates thin import save responses with the reviewed draft payload. If an import save returns persisted ids and metadata without embedding the full script body, the shared authoring handoff still reopens the editor with the reviewed script content instead of a blank persisted shell.
 - A1.4 now aligns import navigation around the create-options shell. LoadRunner, JMeter, sample, Java-over-HTTP, and recorder authoring surfaces all expose the same `Back to Create Script` return path, and import components' own close actions now land there instead of jumping back to the library.
 - A1.5 has started by removing the frontend JMeter import-result normalizer. The API already guarantees non-nil import envelope arrays plus populated `stats` and `summary`, so `JMeterImport` now consumes the typed backend response directly and the adapter has been deleted instead of maintained.
+- A1.5 now also tightens the imported-script contract on the dashboard side. Import flows treat returned scripts as full `ScriptDefinition` payloads, which removes cast helpers from JMeter, LoadRunner, and sample-import handoffs and makes the remaining save/edit plumbing rely on one real DSL shape.
 
 Acceptance criteria:
 - Every script acquisition path resolves into the same lifecycle model

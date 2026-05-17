@@ -19,12 +19,18 @@ interface Props {
 
 type ReviewMode = 'validation' | 'conversion'
 
-function toScriptDefinition(script: ImportedScript): ScriptDefinition {
-  return script as unknown as ScriptDefinition
-}
-
 function getPrimaryScript(result: ImportResult | null): ImportedScript | null {
   return result?.script || result?.scripts?.[0] || null
+}
+
+function buildFallbackPrimaryScript(name: string): ImportedScript {
+  return {
+    name,
+    version: '1.0.0',
+    protocol: 'http',
+    config: { base_url: '' },
+    actions: [],
+  }
 }
 
 export default function JMeterImport({ projectId, onImported, onEdit, onClose }: Props) {
@@ -147,7 +153,7 @@ export default function JMeterImport({ projectId, onImported, onEdit, onClose }:
         scripts,
         scenario_draft: result.scenario_draft,
       })
-      const savedScripts = withFallbackPersistedScripts(response.scripts, result.scripts.map(script => toScriptDefinition(script)))
+      const savedScripts = withFallbackPersistedScripts(response.scripts, result.scripts)
       const scenarioText = response.scenario ? ' and scenario draft' : ''
       setNotice(`Saved ${response.count || result.scripts.length} script${result.scripts.length === 1 ? '' : 's'}${scenarioText} to the library.`)
       if (savedScripts.length) {
@@ -277,14 +283,14 @@ export default function JMeterImport({ projectId, onImported, onEdit, onClose }:
             subtitle={reviewMode === 'validation'
               ? 'This preview came from the dry-run validator. You can still save the reviewed assets if the output looks correct.'
               : 'This preview came from the converter and is ready for final review before saving.'}
-            script={primaryScript || { name: result.summary?.file_name || file?.name || 'Imported JMeter Plan' }}
+            script={primaryScript || buildFallbackPrimaryScript(result.summary?.file_name || file?.name || 'Imported JMeter Plan')}
             previewData={{ scripts: result.scripts, scenario_draft: result.scenario_draft, summary: result.summary }}
             warnings={result.warnings}
             warningsTitle={`Conversion Warnings (${result.warnings.length})`}
             saving={saving}
             saveLabel={`${reviewMode === 'validation' ? 'Save Reviewed' : 'Save'} ${result.scripts?.length || 0} Script${(result.scripts?.length || 0) === 1 ? '' : 's'}`}
             onSave={handleSaveConverted}
-            onEdit={onEdit && primaryScript ? () => onEdit(toScriptDefinition(primaryScript)) : undefined}
+            onEdit={onEdit && primaryScript ? () => onEdit(primaryScript) : undefined}
             editLabel={result.scripts.length > 1 ? 'Open First Script In Visual Editor' : 'Open In Visual Editor'}
             previewTitle="Import Preview"
           >

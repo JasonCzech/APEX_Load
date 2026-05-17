@@ -1,15 +1,9 @@
 import { type StoredScenario, type StoredScript } from '../types'
 import { type ScriptActionDefinition, type ScriptDefinition, type ScriptExtractorDefinition } from './scripts'
 
-export type ImportedExtractor = Partial<ScriptExtractorDefinition>
-
-export type ImportedAction = Omit<Partial<ScriptActionDefinition>, 'extractors'> & {
-  extractors?: ImportedExtractor[]
-}
-
-export type ImportedScript = Omit<Partial<ScriptDefinition>, 'actions'> & {
-  actions?: ImportedAction[]
-}
+export type ImportedExtractor = ScriptExtractorDefinition
+export type ImportedAction = ScriptActionDefinition
+export type ImportedScript = ScriptDefinition
 
 export interface SupportMatrix {
   supported: string[]

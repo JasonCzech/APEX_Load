@@ -7,12 +7,17 @@ describe('jmeterImportUtils', () => {
     const summary = summarizeImportExtractors([
       {
         name: 'Auth_Users',
+        version: '1.0.0',
+        protocol: 'http',
+        config: { base_url: 'https://example.com' },
         actions: [
           {
             name: 'Create_Session',
+            type: 'http',
+            target: '/session',
             extractors: [
-              { name: 'session_token', type: 'regex', expression: 'token=([^&]+)' },
-              { name: 'access_token', type: 'jsonpath', expression: '$.access_token' },
+              { name: 'session_token', source: 'response', type: 'regex', expression: 'token=([^&]+)' },
+              { name: 'access_token', source: 'response', type: 'jsonpath', expression: '$.access_token' },
             ],
           },
         ],

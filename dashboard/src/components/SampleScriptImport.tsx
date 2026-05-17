@@ -428,7 +428,7 @@ export default function SampleScriptImport({ projectId, onImported, onEdit, onCl
       const savedScript = await saveTask.run(async () => {
         return api.createScript(reviewedScript, projectId)
       })
-      onImported?.({ scripts: [withFallbackPersistedScript(savedScript, reviewedScript as unknown as ScriptDefinition)] })
+      onImported?.({ scripts: [withFallbackPersistedScript(savedScript, reviewedScript)] })
     } catch (error: unknown) {
       setMessageError(getErrorMessage(error, 'Failed to save generated script'))
     }

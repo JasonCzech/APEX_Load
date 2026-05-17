@@ -20,10 +20,6 @@ function getImportMetadata(script?: ImportedScript): ImportMetadata | null {
   return script?.metadata?.import || null
 }
 
-function toScriptDefinition(script: ImportedScript): ScriptDefinition {
-  return script as unknown as ScriptDefinition
-}
-
 function getSummaryList(values?: string[]) {
   return Array.isArray(values) ? values : []
 }
@@ -298,7 +294,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
                 : 'Review the generated script, preserved metadata, and warnings before saving.')))
   const runtimeBlockingSettings = importSummary.runtimeSettingReadiness?.blocking_settings || []
   const generatedDataSources = importedScript
-    ? (toScriptDefinition(importedScript).data_sources || []).map((source, index) => {
+    ? (importedScript.data_sources || []).map((source, index) => {
       const summary = summarizeInlineData(source)
       const columns = source.first_row_header === false
         ? source.columns || []
@@ -330,9 +326,9 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
   const sectionActionStyle: CSSProperties = { marginBottom: 12, justifyContent: 'flex-start', flexWrap: 'wrap' }
 
   const openImportedScriptInEditor = (focus?: DraftEditorFocus) => {
-		if (!importedScript || !onEdit) return
-    onEdit(toScriptDefinition(importedScript), focus)
-	}
+    if (!importedScript || !onEdit) return
+    onEdit(importedScript, focus)
+  }
 
   const openImportedRuntimeSettingsInEditor = (area: string) => {
     openImportedScriptInEditor({ targetSection: 'runtime', targetRuntimeArea: area })
@@ -598,7 +594,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
 
   const startBrowserReplayValidation = async () => {
     if (!importedScript) return
-    const script = toScriptDefinition(importedScript)
+    const script = importedScript
 
     setReplayValidationLoading(true)
     setReplayValidationError('')
@@ -640,7 +636,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
     }
     try {
       const savedScript = await api.createScript(importedScript, projectId)
-      onImported?.({ scripts: [withFallbackPersistedScript(savedScript, toScriptDefinition(importedScript))] })
+      onImported?.({ scripts: [withFallbackPersistedScript(savedScript, importedScript)] })
     } catch (error: unknown) {
       setError(getErrorMessage(error, 'Failed to save script'))
     }
