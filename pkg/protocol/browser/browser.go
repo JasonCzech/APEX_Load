@@ -272,7 +272,7 @@ func (b *Browser) Init(ctx context.Context, config map[string]any) error {
 		startupActions = append(startupActions, emulation.SetCPUThrottlingRate(b.cpuThrottleRate))
 	}
 	if b.downloadResources == "none" {
-		startupActions = append(startupActions, network.SetBlockedURLS(blockedStaticAssetPatterns()))
+		startupActions = append(startupActions, network.SetBlockedURLs().WithURLPatterns(blockedStaticAssetPatterns()))
 	}
 	if b.checkNewerVersions {
 		startupActions = append(startupActions, network.SetExtraHTTPHeaders(network.Headers(map[string]any{
@@ -335,27 +335,35 @@ func screenOrientationAngle(orientation string) int64 {
 	return 90
 }
 
-func blockedStaticAssetPatterns() []string {
-	return []string{
-		"*.png",
-		"*.jpg",
-		"*.jpeg",
-		"*.gif",
-		"*.webp",
-		"*.svg",
-		"*.ico",
-		"*.css",
-		"*.js",
-		"*.woff",
-		"*.woff2",
-		"*.ttf",
-		"*.eot",
-		"*.mp3",
-		"*.mp4",
-		"*.webm",
-		"*.avi",
-		"*.mov",
+func blockedStaticAssetPatterns() []*network.BlockPattern {
+	extensions := []string{
+		"png",
+		"jpg",
+		"jpeg",
+		"gif",
+		"webp",
+		"svg",
+		"ico",
+		"css",
+		"js",
+		"woff",
+		"woff2",
+		"ttf",
+		"eot",
+		"mp3",
+		"mp4",
+		"webm",
+		"avi",
+		"mov",
 	}
+	blocked := make([]*network.BlockPattern, 0, len(extensions)*2)
+	for _, extension := range extensions {
+		blocked = append(blocked,
+			&network.BlockPattern{URLPattern: "*://*/*." + extension, Block: true},
+			&network.BlockPattern{URLPattern: "*://*:*/*." + extension, Block: true},
+		)
+	}
+	return blocked
 }
 
 func assetRequestPatterns() []*fetch.RequestPattern {
@@ -551,11 +559,28 @@ func (b *Browser) networkThrottleAction() chromedp.Action {
 		uploadThroughput = bytesPerSecond
 	}
 
-	action := network.EmulateNetworkConditions(false, float64(latencyMS), downloadThroughput, uploadThroughput)
-	if connectionType != "" {
-		action = action.WithConnectionType(connectionType)
+	conditions := &network.Conditions{
+		URLPattern:         "",
+		Latency:            float64(latencyMS),
+		DownloadThroughput: downloadThroughput,
+		UploadThroughput:   uploadThroughput,
 	}
-	return action
+	if connectionType != "" {
+		conditions.ConnectionType = connectionType
+	}
+
+	overrideState := network.OverrideNetworkState(false, float64(latencyMS), downloadThroughput, uploadThroughput)
+	if connectionType != "" {
+		overrideState = overrideState.WithConnectionType(connectionType)
+	}
+
+	return chromedp.Tasks{
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			_, err := network.EmulateNetworkConditionsByRule(false, []*network.Conditions{conditions}).Do(ctx)
+			return err
+		}),
+		overrideState,
+	}
 }
 
 func resolveNetworkProfile(mode, preset string, latencyMS, bandwidthKB int) (int, int, network.ConnectionType) {
