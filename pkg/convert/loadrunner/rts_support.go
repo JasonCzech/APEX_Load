@@ -424,6 +424,11 @@ var loadRunnerRTSSupportMatrixExamples = []RuntimeSettingSupportExample{
 		Coverage: "Surfaces runtime setting parity in the shared LoadRunner import response, including summary counts and review sections.",
 		Test:     "pkg/api/handlers_scripts_test.go::TestHandleImportLoadRunnerSummarizesRuntimeSettingParity",
 	},
+	{
+		Title:    "Golden Web HTTP/HTML fixture",
+		Coverage: "Converts a representative LoadRunner Web HTTP/HTML archive with transport, proxy, auth, browser emulation, recorded resources, logging, streaming, DFE, and network settings, then asserts side-by-side runtime support statuses.",
+		Test:     "pkg/convert/loadrunner/converter_test.go::TestGoldenWebHTTPHTMLFixtureRuntimeParity",
+	},
 }
 
 var runtimeSettingMigrationStatusWeights = map[RuntimeSettingStatus]int{

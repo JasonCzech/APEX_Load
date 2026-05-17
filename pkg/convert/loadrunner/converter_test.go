@@ -4,6 +4,8 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"unicode/utf16"
@@ -784,6 +786,122 @@ FailIfFound=1
 	assertRuntimeSettingParityEntry(t, parity, "download_filters", RuntimeSettingStatusExecuted)
 }
 
+func TestGoldenWebHTTPHTMLFixtureRuntimeParity(t *testing.T) {
+	zipBytes := zipTestDataDir(t, "testdata/golden_web_http_html")
+
+	result, err := ConvertZip(zipBytes, ConvertOptions{
+		IncludeAssertions:    true,
+		PreserveTransactions: true,
+	})
+	if err != nil {
+		t.Fatalf("ConvertZip returned error: %v", err)
+	}
+
+	if result.Script.Protocol != "http" {
+		t.Fatalf("protocol = %q, want http", result.Script.Protocol)
+	}
+	if result.Script.Config.BaseURL != "https://shop.example.test" {
+		t.Fatalf("base_url = %q, want https://shop.example.test", result.Script.Config.BaseURL)
+	}
+	if result.Stats.ConvertedActions != 5 {
+		t.Fatalf("converted_actions = %d, want 5", result.Stats.ConvertedActions)
+	}
+	if result.Stats.Transactions != 1 {
+		t.Fatalf("transactions = %d, want 1", result.Stats.Transactions)
+	}
+	if got := convertedAssertionCount(result.Script.Actions); got != 6 {
+		t.Fatalf("assertion count = %d, want one imported assertion plus status checks", got)
+	}
+
+	config := result.Script.Config
+	if config.HTTP.ConnectTimeoutMs != 45000 || config.HTTP.RequestTimeoutMs != 20000 || config.HTTP.MaxConnsPerHost != 12 {
+		t.Fatalf("http config = %#v, want imported transport settings", config.HTTP)
+	}
+	if config.HTTP.ProxyMode != "custom" || config.HTTP.Proxy.URL != "http://proxy.example.test:8080" {
+		t.Fatalf("proxy config = %#v, want custom proxy", config.HTTP)
+	}
+	if config.HTTP.TLS.MinVersion != "1.2" {
+		t.Fatalf("tls min version = %q, want 1.2", config.HTTP.TLS.MinVersion)
+	}
+	if config.HTTP.Auth.Type != "basic" || config.HTTP.Auth.Username != "perfuser" {
+		t.Fatalf("auth config = %#v, want basic perfuser", config.HTTP.Auth)
+	}
+	if config.RunLogic.Iterations != 3 || config.RunLogic.AutoTransactions != "per_action" || config.RunLogic.BlockScheduling != "sequential" {
+		t.Fatalf("run logic = %#v, want imported run logic", config.RunLogic)
+	}
+	if config.Pacing.Type != "random_delay" || config.Pacing.MinDelayMs != 1000 || config.Pacing.MaxDelayMs != 5000 {
+		t.Fatalf("pacing = %#v, want random delay bounds", config.Pacing)
+	}
+	if config.Log.Level != "extended" || !config.Log.OnErrorOnly || len(config.Log.ExtendedOptions) != 3 {
+		t.Fatalf("log config = %#v, want extended error-only logging options", config.Log)
+	}
+	if !config.ErrorHandling.ContinueOnError || !config.ErrorHandling.SnapshotOnError {
+		t.Fatalf("error handling = %#v, want continue and snapshot on error", config.ErrorHandling)
+	}
+	if config.Browser.DownloadResources != "recorded" || config.Browser.DeviceProfile != "pixel_7" {
+		t.Fatalf("browser config = %#v, want recorded pixel_7 browser settings", config.Browser)
+	}
+	if config.WebRuntime.NetworkSimulation.Mode != "custom" || config.WebRuntime.NetworkSimulation.BandwidthKbps != 2048 || config.WebRuntime.NetworkSimulation.LatencyMs != 75 {
+		t.Fatalf("network simulation = %#v, want custom bandwidth and latency", config.WebRuntime.NetworkSimulation)
+	}
+	if config.WebRuntime.Streaming.Mode != "fixed" || config.WebRuntime.Streaming.FixedBitrateKbps != 1800 {
+		t.Fatalf("streaming = %#v, want preserved fixed streaming settings", config.WebRuntime.Streaming)
+	}
+	if !config.WebRuntime.DataFormatting.AutoDetect || len(config.WebRuntime.DataFormatting.Chain) != 4 {
+		t.Fatalf("data formatting = %#v, want autodetect plus four transforms", config.WebRuntime.DataFormatting)
+	}
+
+	preserved := result.Script.Metadata.Import.Preserved
+	if preserved["mapped_runtime_file"] != "default.cfg" {
+		t.Fatalf("mapped_runtime_file = %#v, want default.cfg", preserved["mapped_runtime_file"])
+	}
+	recordedURLs, ok := preserved["recorded_resource_urls"].([]string)
+	if !ok || len(recordedURLs) != 2 {
+		t.Fatalf("recorded_resource_urls = %#v, want two preserved resources", preserved["recorded_resource_urls"])
+	}
+
+	parity, ok := preserved["runtime_settings_parity"].([]RuntimeSettingParityEntry)
+	if !ok {
+		t.Fatalf("runtime_settings_parity = %#v, want []RuntimeSettingParityEntry", preserved["runtime_settings_parity"])
+	}
+	expectedStatuses := map[string]RuntimeSettingStatus{
+		"http_transport":                      RuntimeSettingStatusExecuted,
+		"proxy":                               RuntimeSettingStatusExecuted,
+		"request_headers":                     RuntimeSettingStatusExecuted,
+		"tls":                                 RuntimeSettingStatusExecuted,
+		"authentication":                      RuntimeSettingStatusExecuted,
+		"run_logic_iterations":                RuntimeSettingStatusExecuted,
+		"run_logic_auto_transactions":         RuntimeSettingStatusExecuted,
+		"run_logic_block_scheduling":          RuntimeSettingStatusExecuted,
+		"run_logic_action_sequence":           RuntimeSettingStatusExecuted,
+		"pacing":                              RuntimeSettingStatusExecuted,
+		"think_time":                          RuntimeSettingStatusExecuted,
+		"logging":                             RuntimeSettingStatusPartial,
+		"continue_on_error":                   RuntimeSettingStatusExecuted,
+		"snapshot_on_error":                   RuntimeSettingStatusPartial,
+		"browser_device_emulation":            RuntimeSettingStatusExecuted,
+		"browser_cache_enabled":               RuntimeSettingStatusExecuted,
+		"browser_cache_content_urls":          RuntimeSettingStatusExecuted,
+		"browser_check_newer_versions":        RuntimeSettingStatusExecuted,
+		"browser_new_user_per_iteration":      RuntimeSettingStatusExecuted,
+		"browser_download_resources_recorded": RuntimeSettingStatusPartial,
+		"additional_attributes":               RuntimeSettingStatusCompatibilityOnly,
+		"download_filters":                    RuntimeSettingStatusExecuted,
+		"content_checks":                      RuntimeSettingStatusExecuted,
+		"network_simulation":                  RuntimeSettingStatusExecuted,
+		"streaming":                           RuntimeSettingStatusCompatibilityOnly,
+		"data_formatting_auto_detect":         RuntimeSettingStatusPartial,
+		"data_formatting_chain":               RuntimeSettingStatusPartial,
+	}
+	for id, status := range expectedStatuses {
+		assertRuntimeSettingParityEntry(t, parity, id, status)
+	}
+	counts := RuntimeSettingStatusCounts(parity)
+	if counts[string(RuntimeSettingStatusExecuted)] != 20 || counts[string(RuntimeSettingStatusPartial)] != 5 || counts[string(RuntimeSettingStatusCompatibilityOnly)] != 2 {
+		t.Fatalf("status counts = %#v, want executed=20 partial=5 compatibility_only=2", counts)
+	}
+}
+
 func TestBuildRTSParityReportClassifiesConfiguredSettings(t *testing.T) {
 	runtimeSections := map[string]map[string]map[string]string{
 		"default.cfg": ParseConfigSections(`[Run Logic]
@@ -912,6 +1030,46 @@ func TestBuildRTSMigrationReadinessHonorsBlockStatuses(t *testing.T) {
 	if !strings.Contains(readiness.Summary, "62%") || !strings.Contains(readiness.Summary, "partial, compatibility_only") {
 		t.Fatalf("summary = %q, want score and policy statuses", readiness.Summary)
 	}
+}
+
+func zipTestDataDir(t *testing.T, dir string) []byte {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("ReadDir(%q) returned error: %v", dir, err)
+	}
+
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		content, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			t.Fatalf("ReadFile(%q) returned error: %v", name, err)
+		}
+		writer, err := zw.Create(name)
+		if err != nil {
+			t.Fatalf("Create(%q) returned error: %v", name, err)
+		}
+		if _, err := writer.Write(content); err != nil {
+			t.Fatalf("Write(%q) returned error: %v", name, err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatalf("zip.Close returned error: %v", err)
+	}
+	return buf.Bytes()
+}
+
+func convertedAssertionCount(actions []dsl.Action) int {
+	count := 0
+	for _, action := range actions {
+		count += len(action.Assertions)
+	}
+	return count
 }
 
 func assertRuntimeSettingParityEntry(t *testing.T, entries []RuntimeSettingParityEntry, wantID string, wantStatus RuntimeSettingStatus) {

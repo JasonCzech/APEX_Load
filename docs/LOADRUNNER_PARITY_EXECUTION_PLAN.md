@@ -261,6 +261,9 @@ Acceptance criteria:
 - Partial support is explicit where full execution is not practical
 - High-value imported scripts do not silently degrade at runtime
 
+Recent progress:
+- R2.5 has a first warning/validation slice for preserved-only streaming and media runtime settings. Import and validation responses now warn that media playback semantics are not executed, include preserved streaming values for review, and keep those settings classified as compatibility-only in parity metadata.
+
 ### Epic R3: Parity Verification Harness
 Goal: make parity claims testable and regression-resistant.
 
@@ -275,6 +278,10 @@ Acceptance criteria:
 - The repo contains parity fixtures that prove support claims
 - Changes to importers or runtime behavior can be regression-tested against migration expectations
 - Support claims in docs are backed by executable coverage
+
+Recent progress:
+- R3.1/R3.2 now have an initial golden Web HTTP/HTML fixture under `pkg/convert/loadrunner/testdata/golden_web_http_html`. The regression test converts the archive, verifies generated DSL runtime settings, preserved recorded-resource metadata, and side-by-side expected support statuses for executed, partial, and compatibility-only settings.
+- R3.4 now references the golden fixture from the code-owned support-matrix examples and `docs/LOADRUNNER_RTS_REFERENCE.md`, keeping the public runtime-settings matrix tied to executable coverage.
 
 ### Runtime Parity Workstream Notes
 - Existing seams: `docs/LOADRUNNER_RTS_REFERENCE.md`, converter packages, `pkg/protocol/http`, browser protocol, validation APIs
