@@ -616,6 +616,10 @@ func validationWarnings(script *dsl.Script) []string {
 		warnings = append(warnings, streamingCompatibilityWarning())
 	}
 
+	if needsRecordedResourceMetadataWarning(script) {
+		warnings = append(warnings, recordedResourceMetadataWarning())
+	}
+
 	return warnings
 }
 
@@ -629,6 +633,32 @@ func hasStreamingCompatibilityOnlySettings(script *dsl.Script) bool {
 
 func streamingCompatibilityWarning() string {
 	return "LoadRunner-style streaming and media runtime settings are preserved for migration parity, but Stormrunner does not execute media playback semantics yet."
+}
+
+func needsRecordedResourceMetadataWarning(script *dsl.Script) bool {
+	if script == nil || script.Protocol != "browser" {
+		return false
+	}
+	if !strings.EqualFold(strings.TrimSpace(script.Config.Browser.DownloadResources), "recorded") {
+		return false
+	}
+	return !hasRecordedResourceMetadata(script)
+}
+
+func hasRecordedResourceMetadata(script *dsl.Script) bool {
+	if script == nil || script.Metadata == nil || script.Metadata.Import == nil || script.Metadata.Import.Preserved == nil {
+		return false
+	}
+	rawAvailable, ok := script.Metadata.Import.Preserved["recorded_resource_urls_available"]
+	if !ok {
+		return false
+	}
+	available, ok := rawAvailable.(bool)
+	return ok && available
+}
+
+func recordedResourceMetadataWarning() string {
+	return "Browser replay with download_resources=recorded requires preserved recorded-resource metadata. Manually authored scripts or imports without captured resource URLs cannot enforce recorded-only asset loading yet."
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

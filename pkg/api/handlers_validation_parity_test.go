@@ -162,6 +162,35 @@ func TestValidateScriptIncludesStreamingCompatibilityWarnings(t *testing.T) {
 	}
 }
 
+func TestValidateScriptIncludesRecordedResourceMetadataWarnings(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	stored := server.runner.StoreScript(&dsl.Script{
+		Name:     "Recorded Resources Browser Script",
+		Version:  "1.0.0",
+		Protocol: "browser",
+		Config: dsl.ScriptConfig{
+			Browser: dsl.BrowserConfig{
+				Engine:            "chromium",
+				DownloadResources: "recorded",
+			},
+		},
+		Actions: []dsl.Action{{Name: "Capture current page", Type: "browser_screenshot"}},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/"+stored.ID+"/validate", bytes.NewReader(nil))
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	warnings := extractValidationWarnings(t, resp.Body.Bytes())
+	if len(warnings) != 1 || !strings.Contains(strings.ToLower(warnings[0]), "recorded-resource metadata") {
+		t.Fatalf("warnings = %#v, want recorded resource metadata guidance", warnings)
+	}
+}
+
 func TestBrowserCompatibilityMatrixParityAcrossValidationAndReplayEndpoints(t *testing.T) {
 	server := NewServer(ServerConfig{})
 
