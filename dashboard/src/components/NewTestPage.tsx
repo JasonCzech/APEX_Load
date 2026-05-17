@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Application, Release, ScenarioSchedule, StoredScenario } from '../types'
+import { Application, DashboardAuthEffectiveAccessResource, Release, ScenarioSchedule, StoredScenario } from '../types'
 import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
 import { getErrorMessage } from '../utils/errorUtils'
@@ -57,6 +57,16 @@ function buildDefaultScheduleDraft(scenario?: StoredScenario | null, releaseId?:
   }
 }
 
+function isEffectiveOperationAllowed(resources: DashboardAuthEffectiveAccessResource[], operationID: string): boolean {
+  for (const resource of resources) {
+    const operation = resource.operations.find(item => item.id === operationID)
+    if (operation) {
+      return operation.allowed
+    }
+  }
+  return true
+}
+
 export default function NewTestPage({ activeApplication, activeRelease, releases, onSelectTest, onCreateRelease }: Props) {
   const api = useApi()
   const { activeProject } = useProject()
@@ -73,6 +83,7 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
   const [newReleaseName, setNewReleaseName] = useState('')
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState('')
+  const [effectiveAuthAccessResources, setEffectiveAuthAccessResources] = useState<DashboardAuthEffectiveAccessResource[]>([])
 
   const refresh = useCallback(async () => {
     try {
@@ -87,6 +98,25 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
 
   useEffect(() => { refresh() }, [refresh])
   useEffect(() => { setReleaseId(activeRelease?.id || releases[0]?.id || '') }, [activeRelease?.id, releases])
+  useEffect(() => {
+    let cancelled = false
+    const loadEffectiveAccess = async () => {
+      try {
+        const response = await api.getAuthEffectiveAccess(activeProject?.id)
+        if (!cancelled) {
+          setEffectiveAuthAccessResources(response.resources || [])
+        }
+      } catch {
+        if (!cancelled) {
+          setEffectiveAuthAccessResources([])
+        }
+      }
+    }
+    loadEffectiveAccess()
+    return () => {
+      cancelled = true
+    }
+  }, [activeProject?.id, api])
 
   const scenario = useMemo(() => scenarios.find(item => item.id === scenarioId), [scenarios, scenarioId])
   const release = useMemo(() => releases.find(item => item.id === releaseId), [releases, releaseId])
@@ -120,7 +150,8 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
     ]
     return checks
   }, [activeApplication, release, scenario])
-  const canLaunch = readiness.every(item => item.ready) && !creating
+  const canManageTests = useMemo(() => isEffectiveOperationAllowed(effectiveAuthAccessResources, 'manage_tests'), [effectiveAuthAccessResources])
+  const canLaunch = readiness.every(item => item.ready) && !creating && canManageTests
   const nextScheduledRun = useMemo(() => schedules.filter(item => item.enabled && item.next_run_at).sort((left, right) => (left.next_run_at || '').localeCompare(right.next_run_at || ''))[0], [schedules])
 
   useEffect(() => {
@@ -144,6 +175,10 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
   }
 
   const createRun = async (start: boolean) => {
+    if (!canManageTests) {
+      setError('Current session cannot create or start test runs for this project.')
+      return
+    }
     if (!scenario || !releaseId || !activeApplication) {
       setError('Choose a release and scenario before creating a test.')
       return
@@ -171,6 +206,10 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
   }
 
   const submitSchedule = async () => {
+	if (!canManageTests) {
+	  setError('Current session cannot manage scenario schedules for this project.')
+	  return
+	}
 	if (!scenario) {
 	  setError('Choose a scenario before managing schedules.')
 	  return
@@ -212,6 +251,10 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
   }
 
   const toggleSchedule = async (schedule: ScenarioSchedule) => {
+	if (!canManageTests) {
+	  setError('Current session cannot manage scenario schedules for this project.')
+	  return
+	}
 	if (!scenario) return
 	setError('')
 	try {
@@ -229,6 +272,10 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
   }
 
   const deleteSchedule = async (scheduleId: string) => {
+	if (!canManageTests) {
+	  setError('Current session cannot manage scenario schedules for this project.')
+	  return
+	}
 	if (!scenario) return
 	setError('')
 	try {
@@ -257,6 +304,7 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
       </div>
 
       {error && <div className="settings-error-inline">{error}</div>}
+      {!canManageTests && <div className="settings-error-inline">Current session can view scenarios but cannot create runs or schedules for this project.</div>}
 
       {pageMode === 'schedules' ? (
         <div className="new-test-layout">
@@ -319,7 +367,7 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
                   </div>
                 </label>
                 <div className="inline-create-row">
-                  <button className="btn btn-primary" onClick={submitSchedule} disabled={!scenario || scheduleSubmitting}>{editingScheduleId ? 'Update Schedule' : 'Save Schedule'}</button>
+                  <button className="btn btn-primary" onClick={submitSchedule} disabled={!scenario || scheduleSubmitting || !canManageTests}>{editingScheduleId ? 'Update Schedule' : 'Save Schedule'}</button>
                   {editingScheduleId && <button className="btn btn-secondary" onClick={() => { setEditingScheduleId(null); setScheduleDraft(buildDefaultScheduleDraft(scenario, releaseId)) }}>Cancel Edit</button>}
                 </div>
               </div>
@@ -360,9 +408,9 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
                           <td>{item.enabled ? 'Enabled' : 'Paused'}{item.last_error ? ` · ${item.last_error}` : ''}</td>
                           <td>
                             <div className="inline-create-row">
-                              <button className="btn btn-secondary" onClick={() => editSchedule(item)}>Edit</button>
-                              <button className="btn btn-secondary" onClick={() => toggleSchedule(item)}>{item.enabled ? 'Pause' : 'Enable'}</button>
-                              <button className="btn btn-secondary" onClick={() => deleteSchedule(item.id)}>Delete</button>
+                              <button className="btn btn-secondary" onClick={() => editSchedule(item)} disabled={!canManageTests}>Edit</button>
+                              <button className="btn btn-secondary" onClick={() => toggleSchedule(item)} disabled={!canManageTests}>{item.enabled ? 'Pause' : 'Enable'}</button>
+                              <button className="btn btn-secondary" onClick={() => deleteSchedule(item.id)} disabled={!canManageTests}>Delete</button>
                             </div>
                           </td>
                         </tr>

@@ -16,6 +16,7 @@ const apiMock = {
   deleteScenarioSchedule: vi.fn(),
   createTest: vi.fn(),
   startTest: vi.fn(),
+  getAuthEffectiveAccess: vi.fn(),
 }
 
 vi.mock('../hooks/useApi', () => ({
@@ -71,6 +72,22 @@ describe('NewTestPage', () => {
     apiMock.startTest.mockResolvedValue({})
     apiMock.listScenarioSchedules.mockResolvedValue({ schedules: [], count: 0 })
     apiMock.createScenarioSchedule.mockResolvedValue({ id: 'schedule-1' })
+    apiMock.getAuthEffectiveAccess.mockResolvedValue({
+      enabled: true,
+      authenticated: true,
+      project_id: 'project-1',
+      resources: [
+        {
+          id: 'tests_and_scenarios',
+          name: 'Tests and Scenarios',
+          description: 'Scenario definitions and runs.',
+          operations: [
+            { id: 'view_tests', label: 'View tests', allowed: true, grant_source: 'project' },
+            { id: 'manage_tests', label: 'Manage tests', allowed: true, grant_source: 'project' },
+          ],
+        },
+      ],
+    })
   })
 
   afterEach(async () => {
@@ -145,6 +162,56 @@ describe('NewTestPage', () => {
       cron_expr: '0 9 * * 1-5',
       enabled: true,
     }))
+  })
+
+  it('disables run and schedule mutations when effective RBAC denies test management', async () => {
+    apiMock.getAuthEffectiveAccess.mockResolvedValue({
+      enabled: true,
+      authenticated: true,
+      project_id: 'project-1',
+      resources: [
+        {
+          id: 'tests_and_scenarios',
+          name: 'Tests and Scenarios',
+          description: 'Scenario definitions and runs.',
+          operations: [
+            { id: 'view_tests', label: 'View tests', allowed: true, grant_source: 'project' },
+            { id: 'manage_tests', label: 'Manage tests', allowed: false },
+          ],
+        },
+      ],
+    })
+
+    await act(async () => {
+      root.render(
+        <NewTestPage
+          activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+          activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+          releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+          onSelectTest={vi.fn()}
+          onCreateRelease={vi.fn().mockResolvedValue(null)}
+        />,
+      )
+    })
+
+    await flushPromises()
+
+    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Create Queued Run') as HTMLButtonElement | undefined
+    const createStartButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Create & Start') as HTMLButtonElement | undefined
+    expect(createQueuedButton?.disabled).toBe(true)
+    expect(createStartButton?.disabled).toBe(true)
+    expect(container.textContent).toContain('Current session can view scenarios but cannot create runs or schedules for this project.')
+
+    const schedulesButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Schedules')
+    expect(schedulesButton).toBeTruthy()
+    await act(async () => {
+      schedulesButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const saveScheduleButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Save Schedule') as HTMLButtonElement | undefined
+    expect(saveScheduleButton?.disabled).toBe(true)
+    expect(apiMock.createTest).not.toHaveBeenCalled()
+    expect(apiMock.createScenarioSchedule).not.toHaveBeenCalled()
   })
 })
 
