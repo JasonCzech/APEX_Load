@@ -352,6 +352,18 @@ describe('ScriptEditor', () => {
           source: 'sample-import',
           source_script_name: 'checkout.har',
           preserved: {
+            parameter_files: ['LoginUsers.prm'],
+            parameter_file_sections: {
+              'LoginUsers.prm': {
+                LoginUser: {
+                  Type: 'File',
+                  Table: 'Users.dat',
+                  ColumnName: 'username',
+                  SelectNextRow: 'Sequential',
+                  UpdateValueOn: 'Each Iteration',
+                },
+              },
+            },
             runtime_settings_migration_readiness: {
               score_pct: 72,
               blocked: true,
@@ -400,6 +412,14 @@ describe('ScriptEditor', () => {
           },
         },
       },
+      data_sources: [
+        {
+          name: 'login_users',
+          type: 'csv',
+          first_row_header: true,
+          inline_data: 'username\nalice\nbob',
+        },
+      ],
     }
 
     await act(async () => {
@@ -415,6 +435,15 @@ describe('ScriptEditor', () => {
   expect(container.textContent).toContain('Executed: Run Logic')
   expect(container.textContent).toContain('Iterations')
   expect(container.textContent).toContain('default.cfg')
+    expect(container.textContent).toContain('Parameter Files')
+    expect(container.textContent).toContain('LoginUsers.prm')
+    expect(container.textContent).toContain('Parameter File Mappings')
+    expect(container.textContent).toContain('LoginUsers.prm: LoginUser')
+    expect(container.textContent).toContain('column username')
+    expect(container.textContent).toContain('table Users.dat')
+    expect(container.textContent).toContain('Generated Data Sources')
+    expect(container.textContent).toContain('login_users')
+    expect(container.textContent).toContain('2 rows')
     expect(container.textContent).toContain('Correlation Suggestions')
     expect(container.textContent).toContain('session_id')
     expect(container.textContent).toContain('response via $.sessionId')

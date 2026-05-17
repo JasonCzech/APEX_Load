@@ -129,6 +129,39 @@ func TestValidateScriptIncludesWebKitWarnings(t *testing.T) {
 	}
 }
 
+func TestValidateScriptIncludesStreamingCompatibilityWarnings(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	stored := server.runner.StoreScript(&dsl.Script{
+		Name:     "Streaming Import Draft",
+		Version:  "1.0.0",
+		Protocol: "http",
+		Config: dsl.ScriptConfig{
+			WebRuntime: dsl.WebRuntimeConfig{
+				Streaming: dsl.StreamingConfig{
+					Mode:                "fixed",
+					BufferSizeSeconds:   30,
+					FixedBitrateKbps:    1800,
+					BandwidthEstimation: "instant",
+				},
+			},
+		},
+		Actions: []dsl.Action{{Name: "Homepage", Type: "GET", Target: "/"}},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/"+stored.ID+"/validate", bytes.NewReader(nil))
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	warnings := extractValidationWarnings(t, resp.Body.Bytes())
+	if len(warnings) != 1 || !strings.Contains(strings.ToLower(warnings[0]), "media playback semantics") {
+		t.Fatalf("warnings = %#v, want streaming compatibility guidance", warnings)
+	}
+}
+
 func TestBrowserCompatibilityMatrixParityAcrossValidationAndReplayEndpoints(t *testing.T) {
 	server := NewServer(ServerConfig{})
 

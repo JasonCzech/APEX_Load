@@ -594,22 +594,41 @@ func validateScript(script *dsl.Script) []string {
 }
 
 func validationWarnings(script *dsl.Script) []string {
-	if script == nil || script.Protocol != "browser" {
+	if script == nil {
 		return nil
 	}
 
-	engine := strings.TrimSpace(script.Config.Browser.Engine)
-	if deviceProfile := strings.TrimSpace(script.Config.Browser.DeviceProfile); deviceProfile != "" {
-		if profile, ok := browserprotocol.LookupDevice(deviceProfile); ok && profile.BrowserFamily != "" && engine == "" {
-			engine = profile.BrowserFamily
+	warnings := make([]string, 0, 2)
+	if script.Protocol == "browser" {
+		engine := strings.TrimSpace(script.Config.Browser.Engine)
+		if deviceProfile := strings.TrimSpace(script.Config.Browser.DeviceProfile); deviceProfile != "" {
+			if profile, ok := browserprotocol.LookupDevice(deviceProfile); ok && profile.BrowserFamily != "" && engine == "" {
+				engine = profile.BrowserFamily
+			}
+		}
+
+		if engine == "webkit" {
+			warnings = append(warnings, browserprotocol.WebKitInstallWarning())
 		}
 	}
 
-	if engine != "webkit" {
-		return nil
+	if hasStreamingCompatibilityOnlySettings(script) {
+		warnings = append(warnings, streamingCompatibilityWarning())
 	}
 
-	return []string{browserprotocol.WebKitInstallWarning()}
+	return warnings
+}
+
+func hasStreamingCompatibilityOnlySettings(script *dsl.Script) bool {
+	if script == nil {
+		return false
+	}
+	streaming := script.Config.WebRuntime.Streaming
+	return strings.TrimSpace(streaming.Mode) != "" || streaming.BufferSizeSeconds > 0 || streaming.FixedBitrateKbps > 0 || strings.TrimSpace(streaming.BandwidthEstimation) != ""
+}
+
+func streamingCompatibilityWarning() string {
+	return "LoadRunner-style streaming and media runtime settings are preserved for migration parity, but Stormrunner does not execute media playback semantics yet."
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

@@ -417,6 +417,18 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
   const runtimeSettingReadinessSummary = importSummary.runtimeSettingReadiness
     ? importSummary.runtimeSettingReadiness.summary || `${importSummary.runtimeSettingReadiness.score_pct}% readiness`
     : ''
+  const importedDataSourceSummaries = (script.data_sources || []).map((source, index) => {
+    const summary = summarizeInlineData(source)
+    const columnDetails = source.first_row_header === false
+      ? source.columns || []
+      : []
+    return {
+      name: source.name || `source_${index + 1}`,
+      type: source.type || 'csv',
+      rows: summary.rows,
+      columns: columnDetails.length > 0 ? columnDetails : summary.columns,
+    }
+  })
   const selectedBrowserEngine = script.config.browser?.engine || 'chromium'
   const selectedBrowserProfile = lookupBrowserDeviceProfile(script.config.browser?.device_profile)
   const browserEngineAdvisory = selectedBrowserProfile && selectedBrowserProfile.engine !== selectedBrowserEngine
@@ -2647,9 +2659,19 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
                       <small>{importSummary.unsupportedFunctions.slice(0, 4).join(', ') || 'None'}</small>
                     </div>
                     <div className="import-metadata-card">
+                      <span>Parameter Files</span>
+                      <strong>{importSummary.parameterFiles.length}</strong>
+                      <small>{importSummary.parameterFiles.join(', ') || 'None found'}</small>
+                    </div>
+                    <div className="import-metadata-card">
                       <span>Correlation Suggestions</span>
                       <strong>{importSummary.correlationSuggestions.length}</strong>
                       <small>{importSummary.correlationSuggestions.length > 0 ? 'Imported from the conversion preview' : 'None detected'}</small>
+                    </div>
+                    <div className="import-metadata-card">
+                      <span>Generated Data Sources</span>
+                      <strong>{importedDataSourceSummaries.length}</strong>
+                      <small>{importedDataSourceSummaries.length > 0 ? importedDataSourceSummaries.map((source) => source.name).join(', ') : 'None generated'}</small>
                     </div>
                     <div className="import-metadata-card">
                       <span>Runtime Setting Parity</span>
@@ -2708,6 +2730,39 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
                             <span>{correlation.source} via {correlation.expression}</span>
                             <span>{correlation.found_at}{correlation.used_at.length > 0 ? ` -> ${correlation.used_at.join(', ')}` : ''}</span>
                             {correlation.sample_value && <code>{correlation.sample_value}</code>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {importSummary.parameterFileSections.length > 0 && (
+                    <div className="import-correlation-section">
+                      <h4>Parameter File Mappings</h4>
+                      <p>These preserved LoadRunner parameter definitions show how the converter mapped file-backed data into Stormrunner data sources.</p>
+                      <div className="import-correlation-list">
+                        {importSummary.parameterFileSections.map((section) => (
+                          <div key={`${section.file}:${section.name}`} className="import-correlation-card">
+                            <strong>{section.file}: {section.name}</strong>
+                            <span>{formatImportParameterMapping(section.values)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {importedDataSourceSummaries.length > 0 && (
+                    <div className="import-correlation-section">
+                      <h4>Generated Data Sources</h4>
+                      <p>These data sources were created from the imported parameter files and are ready for review in the editor.</p>
+                      <div className="import-correlation-list">
+                        {importedDataSourceSummaries.map((source) => (
+                          <div key={source.name} className="import-correlation-card">
+                            <strong>{source.name}</strong>
+                            <span>{source.type} • {source.rows} row{source.rows === 1 ? '' : 's'}</span>
+                            <span>{typeof source.columns === 'number'
+                              ? `${source.columns} column${source.columns === 1 ? '' : 's'}`
+                              : source.columns.join(', ') || 'No columns'}</span>
                           </div>
                         ))}
                       </div>
@@ -3892,6 +3947,16 @@ function formatRuntimeSettingStatusLabel(status: string) {
     default:
       return status.replace(/_/g, ' ')
   }
+}
+
+function formatImportParameterMapping(values: Record<string, string>) {
+  const details: string[] = []
+  if (values.Type) details.push(values.Type)
+  if (values.ColumnName) details.push(`column ${values.ColumnName}`)
+  if (values.Table) details.push(`table ${values.Table}`)
+  if (values.SelectNextRow) details.push(values.SelectNextRow)
+  if (values.UpdateValueOn) details.push(values.UpdateValueOn)
+  return details.join(' • ') || 'No preserved mapping details'
 }
 
 interface ReplayScreenshotDialogProps {

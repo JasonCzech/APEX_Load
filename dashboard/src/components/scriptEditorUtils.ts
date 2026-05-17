@@ -49,6 +49,12 @@ type ImportRuntimeSettingReadiness = {
   blocking_settings: ImportRuntimeSettingParity[]
 }
 
+type ImportParameterFileSection = {
+	file: string
+	name: string
+	values: Record<string, string>
+}
+
 export const EMPTY_SCRIPT: ScriptDefinition = {
   name: '', version: '1.0.0', protocol: 'http',
   config: {
@@ -121,11 +127,15 @@ export function getImportSummary(metadata?: ScriptImportMetadata | null) {
       .map(normalizeImportRuntimeSettingParity)
       .filter((entry): entry is ImportRuntimeSettingParity => entry !== null)
     : []
+  const parameterFiles = normalizeStringArray(preserved.parameter_files)
+  const parameterFileSections = normalizeImportParameterFileSections(preserved.parameter_file_sections)
   const runtimeSettingStatusCounts = normalizeRuntimeSettingStatusCounts(preserved.runtime_settings_status_counts)
   const runtimeSettingReadiness = normalizeImportRuntimeSettingReadiness(preserved.runtime_settings_migration_readiness)
 
   return {
     runtimeFiles: Object.keys(preserved.runtime_files || {}),
+    parameterFiles,
+    parameterFileSections,
     projectSections: Object.keys(preserved.project_settings || {}),
     unsupportedFunctions: Array.isArray(preserved.unsupported_functions) ? preserved.unsupported_functions : [],
     correlationSuggestions,
@@ -252,6 +262,32 @@ function normalizeImportRuntimeSettingReadiness(value: unknown): ImportRuntimeSe
   }
 }
 
+function normalizeImportParameterFileSections(value: unknown): ImportParameterFileSection[] {
+  if (!value || typeof value !== 'object') {
+    return []
+  }
+
+  const sections: ImportParameterFileSection[] = []
+  for (const [fileName, rawFileSections] of Object.entries(value as Record<string, unknown>).sort(([left], [right]) => left.localeCompare(right))) {
+    if (!rawFileSections || typeof rawFileSections !== 'object') {
+      continue
+    }
+    for (const [sectionName, rawSectionValues] of Object.entries(rawFileSections as Record<string, unknown>).sort(([left], [right]) => left.localeCompare(right))) {
+      const values = normalizeStringRecord(rawSectionValues)
+      if (!sectionName.trim() && Object.keys(values).length === 0) {
+        continue
+      }
+      sections.push({
+        file: fileName,
+        name: sectionName,
+        values,
+      })
+    }
+  }
+
+  return sections
+}
+
 function normalizeRuntimeSettingStatusCounts(value: unknown): Record<string, number> {
   if (!value || typeof value !== 'object') {
     return {}
@@ -273,6 +309,22 @@ function normalizeStringArray(value: unknown): string[] {
   return value
     .map(item => normalizeString(item))
     .filter((item): item is string => item.length > 0)
+}
+
+function normalizeStringRecord(value: unknown): Record<string, string> {
+  if (!value || typeof value !== 'object') {
+    return {}
+  }
+
+  const normalized: Record<string, string> = {}
+  for (const [key, rawValue] of Object.entries(value as Record<string, unknown>)) {
+    const normalizedKey = normalizeString(key)
+    const normalizedValue = normalizeString(rawValue)
+    if (normalizedKey && normalizedValue) {
+      normalized[normalizedKey] = normalizedValue
+    }
+  }
+  return normalized
 }
 
 function normalizeImportCorrelationSuggestion(value: unknown): ImportCorrelationSuggestion | null {

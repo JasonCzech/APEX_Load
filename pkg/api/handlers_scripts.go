@@ -267,21 +267,33 @@ func parseBoolDefault(value string, defaultValue bool) bool {
 
 func writeLoadRunnerImportResponse(w http.ResponseWriter, status int, result *loadrunner.ConvertResult, readinessPolicy loadrunner.RuntimeSettingMigrationPolicy) {
 	unsupportedElements := uniqueSortedStrings(result.Stats.UnsupportedFuncs)
+	warnings := loadRunnerImportWarnings(result)
 	summary := buildLoadRunnerImportSummary(result, unsupportedElements, readinessPolicy)
 	persistLoadRunnerImportSummary(result, summary)
-	reviewSections := buildLoadRunnerImportReviewSections(result, unsupportedElements, summary)
+	reviewSections := buildLoadRunnerImportReviewSections(warnings, result, unsupportedElements, summary)
 	repairSuggestions := buildLoadRunnerImportRepairSuggestions(result, unsupportedElements, summary)
 
 	writeJSON(w, status, newScriptImportResponse(scriptImportResponseOptions{
 		Result:              result,
 		Script:              result.Script,
-		Warnings:            result.Warnings,
+		Warnings:            warnings,
 		Stats:               result.Stats,
 		UnsupportedElements: unsupportedElements,
 		ReviewSections:      reviewSections,
 		RepairSuggestions:   repairSuggestions,
 		Summary:             summary,
 	}))
+}
+
+func loadRunnerImportWarnings(result *loadrunner.ConvertResult) []string {
+	if result == nil {
+		return nil
+	}
+	warnings := append([]string(nil), result.Warnings...)
+	if result.Script != nil && hasStreamingCompatibilityOnlySettings(result.Script) {
+		warnings = append(warnings, streamingCompatibilityWarning())
+	}
+	return uniqueSortedStrings(warnings)
 }
 
 func buildLoadRunnerImportRepairSuggestions(result *loadrunner.ConvertResult, unsupportedElements []string, summary loadRunnerImportSummary) []scriptImportRepairSuggestion {
@@ -426,13 +438,12 @@ func stableReviewKey(value string) string {
 	return strings.Trim(b.String(), "-")
 }
 
-func buildLoadRunnerImportReviewSections(result *loadrunner.ConvertResult, unsupportedElements []string, summary loadRunnerImportSummary) []scriptImportReviewSection {
+func buildLoadRunnerImportReviewSections(warnings []string, result *loadrunner.ConvertResult, unsupportedElements []string, summary loadRunnerImportSummary) []scriptImportReviewSection {
 	sections := make([]scriptImportReviewSection, 0, 4)
 	if result == nil {
 		return sections
 	}
 
-	warnings := uniqueSortedStrings(result.Warnings)
 	if len(warnings) > 0 {
 		sections = append(sections, scriptImportReviewSection{
 			Key:      "warnings",

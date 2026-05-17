@@ -4,7 +4,7 @@ import { type ImportedScript, type LoadRunnerImportResult, type LoadRunnerImport
 import { type BrowserReplaySession } from '../types'
 import { type ScriptDefinition } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
-import { buildReplayStartPayload } from './scriptEditorUtils'
+import { buildReplayStartPayload, getImportSummary, summarizeInlineData } from './scriptEditorUtils'
 import ScriptImportReview from './ScriptImportReview'
 import './LoadRunnerImport.css'
 
@@ -20,21 +20,6 @@ function getImportMetadata(script?: ImportedScript): ImportMetadata | null {
 
 function toScriptDefinition(script: ImportedScript): ScriptDefinition {
   return script as unknown as ScriptDefinition
-}
-
-function getObjectKeys(value: unknown): string[] {
-  return typeof value === 'object' && value !== null ? Object.keys(value as Record<string, unknown>) : []
-}
-
-function getMetadataSummary(metadata: ImportMetadata | null) {
-  const preserved = metadata?.preserved || {}
-
-  return {
-    runtimeFiles: getObjectKeys(preserved.runtime_files),
-    parameterFiles: Array.isArray(preserved.parameter_files) ? preserved.parameter_files as string[] : [],
-    projectSections: getObjectKeys(preserved.project_settings),
-    unsupportedFunctions: Array.isArray(preserved.unsupported_functions) ? preserved.unsupported_functions : [],
-  }
 }
 
 function getSummaryList(values?: string[]) {
@@ -85,25 +70,39 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
   })
   const importedScript = result?.script ?? result?.scripts?.[0] ?? null
   const importMetadata = getImportMetadata(importedScript || undefined)
-  const metadataSummary = getMetadataSummary(importMetadata)
+  const importSummary = getImportSummary(importMetadata)
   const reviewSummary: LoadRunnerImportSummary | null = result?.summary || null
   const projectSections = getSummaryList(reviewSummary?.project_sections).length > 0
     ? getSummaryList(reviewSummary?.project_sections)
-    : metadataSummary.projectSections
+    : importSummary.projectSections
   const runtimeFiles = getSummaryList(reviewSummary?.runtime_files).length > 0
     ? getSummaryList(reviewSummary?.runtime_files)
-    : metadataSummary.runtimeFiles
+    : importSummary.runtimeFiles
   const parameterFiles = getSummaryList(reviewSummary?.parameter_files).length > 0
     ? getSummaryList(reviewSummary?.parameter_files)
-    : metadataSummary.parameterFiles
+    : importSummary.parameterFiles
   const unsupportedFunctions = result?.unsupported_elements.length
     ? result.unsupported_elements
-    : metadataSummary.unsupportedFunctions
+    : importSummary.unsupportedFunctions
   const reviewSections = result?.review_sections || []
   const repairSuggestions = result?.repair_suggestions || []
   const supportMatrixSections = summarizeLoadRunnerSupportMatrix(supportMatrix)
   const migrationReadiness: LoadRunnerMigrationReadiness | null = reviewSummary?.migration_readiness || null
   const browserImport = isBrowserImport(importedScript)
+  const generatedDataSources = importedScript
+    ? (toScriptDefinition(importedScript).data_sources || []).map((source, index) => {
+      const summary = summarizeInlineData(source)
+      const columns = source.first_row_header === false
+        ? source.columns || []
+        : []
+      return {
+        name: source.name || `source_${index + 1}`,
+        type: source.type || 'csv',
+        rows: summary.rows,
+        columns: columns.length > 0 ? columns : summary.columns,
+      }
+    })
+    : []
 
   const resetReplayValidation = () => {
     setReplayValidationLoading(false)
@@ -488,6 +487,44 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
                   )}
                 </div>
 
+                {importSummary.parameterFileSections.length > 0 && (
+                  <div className="lr-review-section">
+                    <div className="lr-review-section-header">
+                      <strong>Parameter File Mappings</strong>
+                      <span>{importSummary.parameterFileSections.length}</span>
+                    </div>
+                    <ul>
+                      {importSummary.parameterFileSections.map((section) => (
+                        <li key={`${section.file}:${section.name}`}>
+                          <strong>{section.file}</strong>
+                          {`: ${section.name}`}
+                          {renderParameterMappingDetails(section.values)}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {generatedDataSources.length > 0 && (
+                  <div className="lr-review-section">
+                    <div className="lr-review-section-header">
+                      <strong>Generated Data Sources</strong>
+                      <span>{generatedDataSources.length}</span>
+                    </div>
+                    <ul>
+                      {generatedDataSources.map((source) => (
+                        <li key={source.name}>
+                          <strong>{source.name}</strong>
+                          {`: ${source.type} • ${source.rows} row${source.rows === 1 ? '' : 's'} • `}
+                          {typeof source.columns === 'number'
+                            ? `${source.columns} column${source.columns === 1 ? '' : 's'}`
+                            : source.columns.join(', ') || 'No columns'}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
                 <details className="lr-preserved-details">
                   <summary>View preserved metadata JSON</summary>
                   <pre>{JSON.stringify(importMetadata, null, 2)}</pre>
@@ -531,4 +568,14 @@ function buildLoadRunnerSupportMatrixSection(status: string, title: string, entr
     items,
     preview: items.slice(0, 2).map(entry => `${entry.area}: ${entry.concept}`).join(' • '),
   }
+}
+
+function renderParameterMappingDetails(values: Record<string, string>) {
+  const details: string[] = []
+  if (values.Type) details.push(values.Type)
+  if (values.ColumnName) details.push(`column ${values.ColumnName}`)
+  if (values.Table) details.push(`table ${values.Table}`)
+  if (values.SelectNextRow) details.push(values.SelectNextRow)
+  if (values.UpdateValueOn) details.push(values.UpdateValueOn)
+  return details.length > 0 ? ` • ${details.join(' • ')}` : ''
 }

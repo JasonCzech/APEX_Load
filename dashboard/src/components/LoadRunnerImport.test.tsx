@@ -70,11 +70,31 @@ describe('LoadRunnerImport', () => {
             source_script_name: 'Demo.usr',
             preserved: {
               runtime_files: { 'default.cfg': {} },
+              parameter_files: ['LoginUsers.prm'],
+              parameter_file_sections: {
+                'LoginUsers.prm': {
+                  LoginUser: {
+                    Type: 'File',
+                    Table: 'Users.dat',
+                    ColumnName: 'username',
+                    SelectNextRow: 'Sequential',
+                    UpdateValueOn: 'Each Iteration',
+                  },
+                },
+              },
               project_settings: { General: { Type: 'Web' } },
               unsupported_functions: ['web_set_max_html_param_len'],
             },
           },
         },
+        data_sources: [
+          {
+            name: 'login_users',
+            type: 'csv',
+            first_row_header: true,
+            inline_data: 'username\nalice\nbob',
+          },
+        ],
       },
       warnings: ['manual review recommended'],
       unsupported_elements: ['web_set_max_html_param_len'],
@@ -260,6 +280,14 @@ describe('LoadRunnerImport', () => {
     expect(container.textContent).toContain('default.cfg')
     expect(container.textContent).toContain('Migration Readiness')
     expect(container.textContent).toContain('100%')
+    expect(container.textContent).toContain('Parameter File Mappings')
+    expect(container.textContent).toContain('LoginUsers.prm')
+    expect(container.textContent).toContain('LoginUser')
+    expect(container.textContent).toContain('column username')
+    expect(container.textContent).toContain('table Users.dat')
+    expect(container.textContent).toContain('Generated Data Sources')
+    expect(container.textContent).toContain('login_users')
+    expect(container.textContent).toContain('2 rows')
 
     const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save to Script Library'))
     expect(saveButton).toBeDefined()

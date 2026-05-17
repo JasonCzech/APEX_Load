@@ -627,6 +627,7 @@ BufferSizeSeconds=30
 	}
 
 	var result struct {
+		Warnings       []string `json:"warnings"`
 		ReviewSections []struct {
 			Key      string   `json:"key"`
 			Severity string   `json:"severity"`
@@ -639,6 +640,10 @@ BufferSizeSeconds=30
 		t.Fatalf("json.Unmarshal returned error: %v", err)
 	}
 
+	if len(result.Warnings) != 1 || !strings.Contains(strings.ToLower(result.Warnings[0]), "media playback semantics") {
+		t.Fatalf("warnings = %#v, want streaming compatibility warning", result.Warnings)
+	}
+	assertReviewSection(t, result.ReviewSections, "warnings", "warning", streamingCompatibilityWarning())
 	assertReviewSection(t, result.ReviewSections, "runtime_settings_parity", "warning", "Partial: Logging / Log level, error-only, and extended logging options [default.cfg]")
 	assertReviewSection(t, result.ReviewSections, "runtime_settings_migration_readiness", "blocker", "Blocking setting: Logging / Log level, error-only, and extended logging options")
 	statusCounts, ok := result.Summary["runtime_settings_status_counts"].(map[string]any)
