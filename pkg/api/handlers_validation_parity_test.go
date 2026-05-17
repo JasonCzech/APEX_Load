@@ -161,6 +161,9 @@ func TestValidateScriptIncludesStreamingCompatibilityWarnings(t *testing.T) {
 	if len(warnings) != 1 || !strings.Contains(strings.ToLower(warnings[0]), "media playback semantics") {
 		t.Fatalf("warnings = %#v, want streaming compatibility guidance", warnings)
 	}
+	if !strings.Contains(warnings[0], "mode=fixed") || !strings.Contains(warnings[0], "buffer=30s") || !strings.Contains(warnings[0], "fixed_bitrate=1800kbps") || !strings.Contains(warnings[0], "bandwidth_estimation=instant") {
+		t.Fatalf("warnings = %#v, want preserved streaming settings", warnings)
+	}
 }
 
 func TestValidateScriptIncludesRecordedResourceMetadataWarnings(t *testing.T) {

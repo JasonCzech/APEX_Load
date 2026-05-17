@@ -643,7 +643,10 @@ BufferSizeSeconds=30
 	if len(result.Warnings) != 1 || !strings.Contains(strings.ToLower(result.Warnings[0]), "media playback semantics") {
 		t.Fatalf("warnings = %#v, want streaming compatibility warning", result.Warnings)
 	}
-	assertReviewSection(t, result.ReviewSections, "warnings", "warning", streamingCompatibilityWarning())
+	if !strings.Contains(result.Warnings[0], "mode=fixed") || !strings.Contains(result.Warnings[0], "buffer=30s") {
+		t.Fatalf("warnings = %#v, want preserved streaming settings", result.Warnings)
+	}
+	assertReviewSection(t, result.ReviewSections, "warnings", "warning", result.Warnings[0])
 	assertReviewSection(t, result.ReviewSections, "runtime_settings_parity", "warning", "Partial: Logging / Log level, error-only, and extended logging options [default.cfg]")
 	assertReviewSection(t, result.ReviewSections, "runtime_settings_migration_readiness", "blocker", "Blocking setting: Logging / Log level, error-only, and extended logging options")
 	statusCounts, ok := result.Summary["runtime_settings_status_counts"].(map[string]any)

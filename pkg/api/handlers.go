@@ -672,7 +672,7 @@ func validationWarnings(script *dsl.Script) []string {
 	}
 
 	if hasStreamingCompatibilityOnlySettings(script) {
-		warnings = append(warnings, streamingCompatibilityWarning())
+		warnings = append(warnings, streamingCompatibilityWarning(script))
 	}
 
 	if needsRecordedResourceMetadataWarning(script) {
@@ -690,8 +690,32 @@ func hasStreamingCompatibilityOnlySettings(script *dsl.Script) bool {
 	return strings.TrimSpace(streaming.Mode) != "" || streaming.BufferSizeSeconds > 0 || streaming.FixedBitrateKbps > 0 || strings.TrimSpace(streaming.BandwidthEstimation) != ""
 }
 
-func streamingCompatibilityWarning() string {
-	return "LoadRunner-style streaming and media runtime settings are preserved for migration parity, but Stormrunner does not execute media playback semantics yet."
+func streamingCompatibilityWarning(script *dsl.Script) string {
+	message := "LoadRunner-style streaming and media runtime settings are preserved for migration parity, but Stormrunner does not execute media playback semantics yet."
+	if script == nil {
+		return message
+	}
+	if details := streamingCompatibilityDetails(script.Config.WebRuntime.Streaming); details != "" {
+		return message + " Preserved settings: " + details + "."
+	}
+	return message
+}
+
+func streamingCompatibilityDetails(streaming dsl.StreamingConfig) string {
+	details := make([]string, 0, 4)
+	if mode := strings.TrimSpace(streaming.Mode); mode != "" {
+		details = append(details, "mode="+mode)
+	}
+	if streaming.BufferSizeSeconds > 0 {
+		details = append(details, fmt.Sprintf("buffer=%ds", streaming.BufferSizeSeconds))
+	}
+	if streaming.FixedBitrateKbps > 0 {
+		details = append(details, fmt.Sprintf("fixed_bitrate=%dkbps", streaming.FixedBitrateKbps))
+	}
+	if bandwidth := strings.TrimSpace(streaming.BandwidthEstimation); bandwidth != "" {
+		details = append(details, "bandwidth_estimation="+bandwidth)
+	}
+	return strings.Join(details, ", ")
 }
 
 func needsRecordedResourceMetadataWarning(script *dsl.Script) bool {
