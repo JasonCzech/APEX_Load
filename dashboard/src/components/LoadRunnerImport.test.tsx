@@ -1817,7 +1817,7 @@ describe('LoadRunnerImport', () => {
     expect(container.textContent).toContain('Browser Replay Validation')
     expect(container.textContent).toContain('Not Run')
 
-    const validateReplayButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Validate Browser Replay'))
+    const validateReplayButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Start Browser Replay'))
     expect(validateReplayButton).toBeDefined()
     if (!validateReplayButton) {
       return
