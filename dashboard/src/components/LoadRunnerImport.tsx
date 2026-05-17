@@ -84,6 +84,21 @@ function formatRuntimeSettingStatusLabel(status?: string | null) {
   return normalized.replace(/\b\w/g, char => char.toUpperCase())
 }
 
+function findImportedActionName(script?: ImportedScript | null, location?: string | null): string | null {
+  const normalizedLocation = location?.trim()
+  if (!normalizedLocation || !Array.isArray(script?.actions)) return null
+
+  const match = normalizedLocation.match(/^(?:Step|Request)\s+(\d+)$/i)
+  if (!match) return null
+
+  const actionIndex = Number.parseInt(match[1], 10) - 1
+  if (!Number.isInteger(actionIndex) || actionIndex < 0 || actionIndex >= script.actions.length) {
+    return null
+  }
+
+  return script.actions[actionIndex]?.name?.trim() || null
+}
+
 export default function LoadRunnerImport({ projectId, onImported, onEdit, onClose }: Props) {
   const api = useApi()
   const fileRef = useRef<HTMLInputElement>(null)
@@ -490,6 +505,13 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
                         </button>
                       </div>
                     )}
+                    {!suggestion.target_action && suggestion.category === 'runtime' && onEdit && (
+                      <div className="replay-panel-actions" style={{ marginTop: 12, justifyContent: 'flex-start' }}>
+                        <button className="btn btn-secondary btn-sm" onClick={() => openImportedScriptInEditor({ targetSection: 'runtime' })}>
+                          Open Runtime Review In Editor
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -524,6 +546,18 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
                     <span className="lr-preserved-label">Parameter Files</span>
                     <strong>{parameterFiles.length}</strong>
                     <small>{parameterFiles.join(', ') || 'No parameter files found'}</small>
+                    {onEdit && parameterFiles.length > 0 && (
+                      <div className="replay-panel-actions" style={{ marginTop: 12, justifyContent: 'flex-start' }}>
+                        <button className="btn btn-secondary btn-sm" onClick={() => openImportedScriptInEditor({ targetSection: 'parameter-data' })}>
+                          Open Parameter Files In Editor
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  <div className="lr-preserved-card">
+                    <span className="lr-preserved-label">Correlation Suggestions</span>
+                    <strong>{importSummary.correlationSuggestions.length}</strong>
+                    <small>{importSummary.correlationSuggestions.length > 0 ? 'Imported from preserved metadata' : 'None detected'}</small>
                   </div>
                   <div className="lr-preserved-card">
                     <span className="lr-preserved-label">Project Sections</span>
@@ -574,6 +608,47 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
                           </li>
                         )
                       })}
+                    </ul>
+                  </div>
+                )}
+
+                {importSummary.correlationSuggestions.length > 0 && (
+                  <div className="lr-review-section">
+                    <div className="lr-review-section-header">
+                      <strong>Correlation Suggestions</strong>
+                      <span>{importSummary.correlationSuggestions.length}</span>
+                    </div>
+                    <ul>
+                      {importSummary.correlationSuggestions.map((correlation) => {
+                        const sourceActionName = findImportedActionName(importedScript, correlation.found_at)
+                        const usedActionTargets = correlation.used_at
+                          .map((location) => ({ location, actionName: findImportedActionName(importedScript, location) }))
+                          .filter((target): target is { location: string; actionName: string } => Boolean(target.actionName))
+                        return (
+                        <li key={`${correlation.name}:${correlation.expression}:${correlation.found_at}`}>
+                          <strong>{correlation.name}</strong>
+                          {`: ${correlation.source} via ${correlation.expression}`}
+                          {correlation.sample_value ? ` • ${correlation.sample_value}` : ''}
+                          {` • Found in ${correlation.found_at}`}
+                          {correlation.used_at.length > 0 ? ` • Used in ${correlation.used_at.join(', ')}` : ''}
+                          {sourceActionName && onEdit && (
+                            <>
+                              {' '}
+                              <button className="btn btn-secondary btn-sm" onClick={() => openImportedScriptInEditor({ targetAction: sourceActionName })}>
+                                Open Source Action In Editor
+                              </button>
+                            </>
+                          )}
+                          {usedActionTargets.map(({ location, actionName }) => (
+                            <>
+                              {' '}
+                              <button key={`${correlation.name}:${location}`} className="btn btn-secondary btn-sm" onClick={() => openImportedScriptInEditor({ targetAction: actionName })}>
+                                {`Open ${location} In Editor`}
+                              </button>
+                            </>
+                          ))}
+                        </li>
+                      )})}
                     </ul>
                   </div>
                 )}

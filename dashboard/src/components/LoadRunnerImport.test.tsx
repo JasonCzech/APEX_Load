@@ -63,7 +63,7 @@ describe('LoadRunnerImport', () => {
       script: {
         name: 'Demo LoadRunner Script',
         protocol: 'http',
-        actions: [{ name: 'Homepage' }],
+        actions: [{ name: 'Homepage' }, { name: 'Submit Order' }, { name: 'Confirmation' }],
         metadata: {
           import: {
             source: 'loadrunner',
@@ -82,6 +82,16 @@ describe('LoadRunnerImport', () => {
                   },
                 },
               },
+              correlation_suggestions: [
+                {
+                  name: 'SessionId',
+                  source: 'web_reg_save_param',
+                  expression: 'LB=sessionId= RB=&',
+                  sample_value: 'abc123',
+                  found_at: 'Step 1',
+                  used_at: ['Step 2', 'Step 3'],
+                },
+              ],
               runtime_settings_migration_readiness: {
                 score_pct: 72,
                 blocked: true,
@@ -155,6 +165,14 @@ describe('LoadRunnerImport', () => {
           description: 'Review the preserved source construct.',
           action: 'Open the generated script in the visual editor.',
           target_action: 'Homepage',
+        },
+        {
+          id: 'runtime:review-preserved-settings',
+          category: 'runtime',
+          severity: 'info',
+          title: 'Review preserved runtime settings',
+          description: 'The source archive included LoadRunner runtime metadata that may not all execute natively in Stormrunner yet.',
+          action: 'Compare the preserved runtime file and project settings against the generated Stormrunner config before promoting the script.',
         },
       ],
       summary: {
@@ -303,8 +321,9 @@ describe('LoadRunnerImport', () => {
     expect(container.textContent).toContain('manual review recommended')
     expect(container.textContent).toContain('Unsupported LoadRunner Functions (1)')
     expect(container.textContent).toContain('Import Review Sections (2)')
-    expect(container.textContent).toContain('Repair Suggestions (1)')
+    expect(container.textContent).toContain('Repair Suggestions (2)')
     expect(container.textContent).toContain('Replace unsupported web_set_max_html_param_len')
+    expect(container.textContent).toContain('Review preserved runtime settings')
     expect(container.textContent).toContain('Unsupported LoadRunner Elements')
     expect(container.textContent).toContain('blocker')
     expect(container.textContent).toContain('web_set_max_html_param_len')
@@ -316,6 +335,10 @@ describe('LoadRunnerImport', () => {
     expect(container.textContent).toContain('Partial: Logging')
     expect(container.textContent).toContain('Runtime Settings Parity')
     expect(container.textContent).toContain('Executed: Run Logic')
+    expect(container.textContent).toContain('Correlation Suggestions')
+    expect(container.textContent).toContain('SessionId')
+    expect(container.textContent).toContain('Found in Step 1')
+    expect(container.textContent).toContain('Used in Step 2, Step 3')
     expect(container.textContent).toContain('Parameter File Mappings')
     expect(container.textContent).toContain('LoginUsers.prm')
     expect(container.textContent).toContain('LoginUser')
@@ -504,6 +527,58 @@ describe('LoadRunnerImport', () => {
     }), { targetSection: 'runtime' })
   })
 
+  it('opens a runtime repair suggestion in the visual editor with a runtime focus hint', async () => {
+    const onEdit = vi.fn()
+
+    await act(async () => {
+      root.render(<LoadRunnerImport onEdit={onEdit} />)
+    })
+
+    await flushPromises()
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
+    expect(fileInput).not.toBeNull()
+    if (!fileInput) {
+      return
+    }
+
+    const file = new File(['zip-content'], 'demo.zip', { type: 'application/zip' })
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [file],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert LoadRunner Script'))
+    expect(convertButton).toBeDefined()
+    if (!convertButton) {
+      return
+    }
+
+    await act(async () => {
+      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushPromises()
+
+    const openRuntimeSuggestionButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Open Runtime Review In Editor'))
+    expect(openRuntimeSuggestionButton).toBeDefined()
+    if (!openRuntimeSuggestionButton) {
+      return
+    }
+
+    await act(async () => {
+      openRuntimeSuggestionButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Demo LoadRunner Script',
+      protocol: 'http',
+    }), { targetSection: 'runtime' })
+  })
+
   it('opens a specific runtime area in the visual editor with a runtime area focus hint', async () => {
     const onEdit = vi.fn()
 
@@ -556,6 +631,110 @@ describe('LoadRunnerImport', () => {
     }), { targetSection: 'runtime', targetRuntimeArea: 'Logging' })
   })
 
+  it('opens a correlation source action in the visual editor with an action focus hint', async () => {
+    const onEdit = vi.fn()
+
+    await act(async () => {
+      root.render(<LoadRunnerImport onEdit={onEdit} />)
+    })
+
+    await flushPromises()
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
+    expect(fileInput).not.toBeNull()
+    if (!fileInput) {
+      return
+    }
+
+    const file = new File(['zip-content'], 'demo.zip', { type: 'application/zip' })
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [file],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert LoadRunner Script'))
+    expect(convertButton).toBeDefined()
+    if (!convertButton) {
+      return
+    }
+
+    await act(async () => {
+      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushPromises()
+
+    const openSourceButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Open Source Action In Editor'))
+    expect(openSourceButton).toBeDefined()
+    if (!openSourceButton) {
+      return
+    }
+
+    await act(async () => {
+      openSourceButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Demo LoadRunner Script',
+      protocol: 'http',
+    }), { targetAction: 'Homepage' })
+  })
+
+  it('opens a correlation usage action in the visual editor with an action focus hint', async () => {
+    const onEdit = vi.fn()
+
+    await act(async () => {
+      root.render(<LoadRunnerImport onEdit={onEdit} />)
+    })
+
+    await flushPromises()
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
+    expect(fileInput).not.toBeNull()
+    if (!fileInput) {
+      return
+    }
+
+    const file = new File(['zip-content'], 'demo.zip', { type: 'application/zip' })
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [file],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert LoadRunner Script'))
+    expect(convertButton).toBeDefined()
+    if (!convertButton) {
+      return
+    }
+
+    await act(async () => {
+      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushPromises()
+
+    const openUsageButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Open Step 2 In Editor'))
+    expect(openUsageButton).toBeDefined()
+    if (!openUsageButton) {
+      return
+    }
+
+    await act(async () => {
+      openUsageButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Demo LoadRunner Script',
+      protocol: 'http',
+    }), { targetAction: 'Submit Order' })
+  })
+
   it('opens imported parameter data review in the visual editor with a parameter-data focus hint', async () => {
     const onEdit = vi.fn()
 
@@ -600,6 +779,58 @@ describe('LoadRunnerImport', () => {
 
     await act(async () => {
       openParameterDataButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Demo LoadRunner Script',
+      protocol: 'http',
+    }), { targetSection: 'parameter-data' })
+  })
+
+  it('opens parameter files from the summary card in the visual editor with a parameter-data focus hint', async () => {
+    const onEdit = vi.fn()
+
+    await act(async () => {
+      root.render(<LoadRunnerImport onEdit={onEdit} />)
+    })
+
+    await flushPromises()
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
+    expect(fileInput).not.toBeNull()
+    if (!fileInput) {
+      return
+    }
+
+    const file = new File(['zip-content'], 'demo.zip', { type: 'application/zip' })
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [file],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert LoadRunner Script'))
+    expect(convertButton).toBeDefined()
+    if (!convertButton) {
+      return
+    }
+
+    await act(async () => {
+      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushPromises()
+
+    const openParameterFilesButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Open Parameter Files In Editor'))
+    expect(openParameterFilesButton).toBeDefined()
+    if (!openParameterFilesButton) {
+      return
+    }
+
+    await act(async () => {
+      openParameterFilesButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
     expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
