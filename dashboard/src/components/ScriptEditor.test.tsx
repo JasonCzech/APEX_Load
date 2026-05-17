@@ -429,7 +429,7 @@ describe('ScriptEditor', () => {
       },
       data_sources: [
         {
-          name: 'login_users',
+          name: 'users',
           type: 'csv',
           path: '',
           strategy: 'sequential',
@@ -458,8 +458,10 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('LoginUsers.prm: LoginUser')
     expect(container.textContent).toContain('column username')
     expect(container.textContent).toContain('table Users.dat')
+    expect(container.textContent).toContain('Generated source: users')
+    expect(container.textContent).toContain('Open Mapped Data Source')
     expect(container.textContent).toContain('Generated Data Sources')
-    expect(container.textContent).toContain('login_users')
+    expect(container.textContent).toContain('users')
     expect(container.textContent).toContain('2 rows')
     expect(container.textContent).toContain('Open In Parameter Data')
     expect(container.textContent).toContain('Correlation Suggestions')
@@ -488,6 +490,22 @@ describe('ScriptEditor', () => {
     const activeAction = container.querySelector('.action-item.active') as HTMLDivElement | null
     expect(activeAction).not.toBeNull()
     expect(activeAction?.textContent).toContain('Complete Checkout')
+
+    const openMappedDataSourceButton = Array.from(container.querySelectorAll('button')).find(button =>
+      button.textContent?.trim() === 'Open Mapped Data Source',
+    )
+    expect(openMappedDataSourceButton).toBeDefined()
+    if (!openMappedDataSourceButton) {
+      return
+    }
+
+    await act(async () => {
+      openMappedDataSourceButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.querySelector('.parameter-data-dialog')).not.toBeNull()
+    expect(container.textContent).toContain('Parameter Data (1)')
+    expect(container.textContent).toContain('Hide Data')
 
     const openImportedDataSourceButton = Array.from(container.querySelectorAll('button')).find(button =>
       button.textContent?.trim() === 'Open In Parameter Data',

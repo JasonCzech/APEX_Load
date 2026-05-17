@@ -377,6 +377,33 @@ function findDataSourceIndexByName(dataSources: ScriptDataSource[] | undefined, 
   return caseInsensitiveMatch >= 0 ? caseInsensitiveMatch : null
 }
 
+function getImportedParameterMappingValue(values: Record<string, string>, keys: string[]): string {
+  const targetKeys = new Set(keys.map(key => key.toLowerCase()))
+  const match = Object.entries(values).find(([key]) => targetKeys.has(key.trim().toLowerCase()))
+  return match?.[1]?.trim() || ''
+}
+
+function sanitizeImportedParameterDataSourceName(dataFile?: string | null): string {
+  const normalizedFile = dataFile?.trim()
+  if (!normalizedFile) return 'parameter_data'
+
+  const baseName = normalizedFile.split(/[\\/]/).pop() || normalizedFile
+  const withoutExtension = baseName.replace(/\.[^.]+$/, '')
+  const normalized = withoutExtension
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+
+  return normalized || 'parameter_data'
+}
+
+function findImportedParameterMappingDataSourceIndex(dataSources: ScriptDataSource[] | undefined, values: Record<string, string>): number | null {
+  const dataFile = getImportedParameterMappingValue(values, ['table', 'filename', 'file', 'datafile', 'sourcefile'])
+  if (!dataFile) return null
+
+  return findDataSourceIndexByName(dataSources, sanitizeImportedParameterDataSourceName(dataFile))
+}
+
 function upsertReplayActivity(items: ReplayActivityItem[], next: ReplayActivityItem): ReplayActivityItem[] {
   const index = items.findIndex(item => item.id === next.id)
   if (index === -1) return [...items, next]
@@ -489,6 +516,13 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const runtimeSettingReadinessSummary = importSummary.runtimeSettingReadiness
     ? importSummary.runtimeSettingReadiness.summary || `${importSummary.runtimeSettingReadiness.score_pct}% readiness`
     : ''
+  const importedParameterFileMappings = importSummary.parameterFileSections.map((section) => {
+    const sourceIndex = findImportedParameterMappingDataSourceIndex(script.data_sources, section.values)
+    return {
+      section,
+      sourceName: sourceIndex !== null ? script.data_sources?.[sourceIndex]?.name || null : null,
+    }
+  })
   const importedDataSourceSummaries = (script.data_sources || []).map((source, index) => {
     const summary = summarizeInlineData(source)
     const columnDetails = source.first_row_header === false
@@ -2854,10 +2888,18 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                       <h4>Parameter File Mappings</h4>
                       <p>These preserved LoadRunner parameter definitions show how the converter mapped file-backed data into Stormrunner data sources.</p>
                       <div className="import-correlation-list">
-                        {importSummary.parameterFileSections.map((section) => (
+                        {importedParameterFileMappings.map(({ section, sourceName }) => (
                           <div key={`${section.file}:${section.name}`} className="import-correlation-card">
                             <strong>{section.file}: {section.name}</strong>
                             <span>{formatImportParameterMapping(section.values)}</span>
+                            {sourceName && <span>Generated source: {sourceName}</span>}
+                            {sourceName && (
+                              <div className="replay-panel-actions" style={{ marginTop: 12, justifyContent: 'flex-start', flexWrap: 'wrap' }}>
+                                <button className="btn btn-secondary btn-sm" type="button" onClick={() => openImportedDataSourceReview(sourceName)}>
+                                  Open Mapped Data Source
+                                </button>
+                              </div>
+                            )}
                           </div>
                         ))}
                       </div>
