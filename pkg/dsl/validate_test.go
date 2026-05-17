@@ -464,6 +464,7 @@ func TestValidateScriptIssues_GRPCValidation(t *testing.T) {
 			Name:   "streaming",
 			Type:   "grpc_server_stream",
 			Target: "stormrunner.v1.GeneratorControl/StreamMetrics",
+			Params: map[string]any{"max_messages": -1},
 		}, {
 			Name: "unsupported",
 			Type: "grpc_batch",
@@ -478,7 +479,7 @@ func TestValidateScriptIssues_GRPCValidation(t *testing.T) {
 	assertIssue(t, issues, `actions[0] "missing target": missing target`)
 	assertIssue(t, issues, `actions[1] "bad target": grpc_unary target must be service/method`)
 	assertIssue(t, issues, `actions[2] "bad timeout": grpc_unary timeout_ms must be zero or greater`)
-	assertIssue(t, issues, `actions[3] "streaming": grpc_server_stream is planned but not implemented yet`)
+	assertIssue(t, issues, `actions[3] "streaming": grpc_server_stream max_messages must be zero or greater`)
 	assertIssue(t, issues, `actions[4] "unsupported": unsupported grpc action type "grpc_batch"`)
 }
 
@@ -503,6 +504,11 @@ func TestValidateScriptIssues_GRPCValidationAllowsUnaryReflection(t *testing.T) 
 			Target: "stormrunner.v1.GeneratorControl/DistributeScript",
 			Body:   `{"scriptId":"script-1"}`,
 			Params: map[string]any{"timeout_ms": 1000},
+		}, {
+			Name:   "heartbeat",
+			Type:   "grpc_bidi_stream",
+			Target: "stormrunner.v1.GeneratorControl/Heartbeat",
+			Params: map[string]any{"max_messages": 1, "messages": []any{map[string]any{"generatorId": "gen-1"}}},
 		}},
 	}
 

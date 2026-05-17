@@ -106,17 +106,18 @@ func validateGRPCActionIssues(index int, action Action) []string {
 	label := fmt.Sprintf("actions[%d] %q", index, action.Name)
 	var issues []string
 	switch action.Type {
-	case "grpc_unary":
+	case "grpc_unary", "grpc_server_stream", "grpc_client_stream", "grpc_bidi_stream":
 		if strings.TrimSpace(action.Target) == "" {
 			issues = append(issues, fmt.Sprintf("%s: missing target", label))
 		} else if !strings.Contains(strings.Trim(action.Target, "/"), "/") {
-			issues = append(issues, fmt.Sprintf("%s: grpc_unary target must be service/method", label))
+			issues = append(issues, fmt.Sprintf("%s: %s target must be service/method", label, action.Type))
 		}
 		if timeoutMs, ok := actionParamIntValue(action.Params, "timeout_ms"); ok && timeoutMs < 0 {
-			issues = append(issues, fmt.Sprintf("%s: grpc_unary timeout_ms must be zero or greater", label))
+			issues = append(issues, fmt.Sprintf("%s: %s timeout_ms must be zero or greater", label, action.Type))
 		}
-	case "grpc_server_stream", "grpc_client_stream", "grpc_bidi_stream":
-		issues = append(issues, fmt.Sprintf("%s: %s is planned but not implemented yet", label, action.Type))
+		if maxMessages, ok := actionParamIntValue(action.Params, "max_messages"); ok && maxMessages < 0 {
+			issues = append(issues, fmt.Sprintf("%s: %s max_messages must be zero or greater", label, action.Type))
+		}
 	default:
 		issues = append(issues, fmt.Sprintf("%s: unsupported grpc action type %q", label, action.Type))
 	}

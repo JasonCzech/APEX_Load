@@ -6,6 +6,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -64,6 +66,9 @@ func (g *GRPC) Init(ctx context.Context, config map[string]any) error {
 	g.callTimeout = durationConfig(config, "grpc_timeout_ms", defaultCallTimeout)
 	g.metadata = buildMetadata(config)
 	g.methods = make(map[string]protoreflect.MethodDescriptor)
+	if err := g.loadConfiguredDescriptorFiles(config); err != nil {
+		return err
+	}
 
 	opts := []googlegrpc.DialOption{}
 	if authority, ok := stringConfig(config, "grpc_authority"); ok {
@@ -98,6 +103,12 @@ func (g *GRPC) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	switch action.Type {
 	case "grpc_unary":
 		err = g.invokeUnary(ctx, action, result)
+	case "grpc_server_stream":
+		err = g.invokeServerStream(ctx, action, result)
+	case "grpc_client_stream":
+		err = g.invokeClientStream(ctx, action, result)
+	case "grpc_bidi_stream":
+		err = g.invokeBidiStream(ctx, action, result)
 	default:
 		err = fmt.Errorf("unsupported grpc action type: %s", action.Type)
 	}
@@ -137,6 +148,9 @@ func (g *GRPC) invokeUnary(ctx context.Context, action *protocol.Action, result 
 	if err != nil {
 		return err
 	}
+	if method.IsStreamingClient() || method.IsStreamingServer() {
+		return fmt.Errorf("grpc_unary requires a unary method, got streaming method %q", action.Target)
+	}
 	callCtx, cancel := context.WithTimeout(ctx, actionTimeout(action, g.callTimeout))
 	defer cancel()
 	callCtx = metadata.NewOutgoingContext(callCtx, g.callMetadata(action))
@@ -163,6 +177,128 @@ func (g *GRPC) invokeUnary(ctx context.Context, action *protocol.Action, result 
 	result.ResponseBody = string(responseBody)
 	result.BytesReceived = int64(len(responseBody))
 	result.StatusCode = int(codes.OK)
+	return g.applyResponseChecks(action, result, responseBody)
+}
+
+func (g *GRPC) invokeServerStream(ctx context.Context, action *protocol.Action, result *protocol.Result) error {
+	method, err := g.resolveMethod(ctx, action.Target)
+	if err != nil {
+		return err
+	}
+	if !method.IsStreamingServer() || method.IsStreamingClient() {
+		return fmt.Errorf("grpc_server_stream requires a server-streaming method, got %q", action.Target)
+	}
+	callCtx, cancel := context.WithTimeout(ctx, actionTimeout(action, g.callTimeout))
+	defer cancel()
+	callCtx = metadata.NewOutgoingContext(callCtx, g.callMetadata(action))
+
+	stream, err := g.conn.NewStream(callCtx, streamDesc(method), fullMethodName(method))
+	if err != nil {
+		return err
+	}
+	request, requestBytes, err := buildDynamicMessage(method.Input(), action.Body)
+	if err != nil {
+		return err
+	}
+	result.BytesSent = int64(requestBytes)
+	if err := stream.SendMsg(request); err != nil {
+		return err
+	}
+	if err := stream.CloseSend(); err != nil {
+		return err
+	}
+
+	responseBody, received, err := receiveStreamMessages(stream, method.Output(), intParam(action.Params, "max_messages", 1))
+	if err != nil {
+		return err
+	}
+	result.ResponseBody = string(responseBody)
+	result.BytesReceived = int64(len(responseBody))
+	result.StatusCode = int(codes.OK)
+	result.ServerTelemetry = &protocol.ServerTelemetry{MessagesSent: 1, MessagesReceived: received}
+	return g.applyResponseChecks(action, result, responseBody)
+}
+
+func (g *GRPC) invokeClientStream(ctx context.Context, action *protocol.Action, result *protocol.Result) error {
+	method, err := g.resolveMethod(ctx, action.Target)
+	if err != nil {
+		return err
+	}
+	if !method.IsStreamingClient() || method.IsStreamingServer() {
+		return fmt.Errorf("grpc_client_stream requires a client-streaming method, got %q", action.Target)
+	}
+	callCtx, cancel := context.WithTimeout(ctx, actionTimeout(action, g.callTimeout))
+	defer cancel()
+	callCtx = metadata.NewOutgoingContext(callCtx, g.callMetadata(action))
+
+	stream, err := g.conn.NewStream(callCtx, streamDesc(method), fullMethodName(method))
+	if err != nil {
+		return err
+	}
+	sent, sentBytes, err := sendStreamMessages(stream, method.Input(), streamBodies(action))
+	if err != nil {
+		return err
+	}
+	if err := stream.CloseSend(); err != nil {
+		return err
+	}
+	response := dynamicpb.NewMessage(method.Output())
+	if err := stream.RecvMsg(response); err != nil {
+		return err
+	}
+	responseBody, err := (protojson.MarshalOptions{EmitUnpopulated: true}).Marshal(response)
+	if err != nil {
+		return fmt.Errorf("encode grpc response body: %w", err)
+	}
+	result.BytesSent = int64(sentBytes)
+	result.ResponseBody = string(responseBody)
+	result.BytesReceived = int64(len(responseBody))
+	result.StatusCode = int(codes.OK)
+	result.ServerTelemetry = &protocol.ServerTelemetry{MessagesSent: sent, MessagesReceived: 1}
+	return g.applyResponseChecks(action, result, responseBody)
+}
+
+func (g *GRPC) invokeBidiStream(ctx context.Context, action *protocol.Action, result *protocol.Result) error {
+	method, err := g.resolveMethod(ctx, action.Target)
+	if err != nil {
+		return err
+	}
+	if !method.IsStreamingClient() || !method.IsStreamingServer() {
+		return fmt.Errorf("grpc_bidi_stream requires a bidirectional streaming method, got %q", action.Target)
+	}
+	callCtx, cancel := context.WithTimeout(ctx, actionTimeout(action, g.callTimeout))
+	defer cancel()
+	callCtx = metadata.NewOutgoingContext(callCtx, g.callMetadata(action))
+
+	stream, err := g.conn.NewStream(callCtx, streamDesc(method), fullMethodName(method))
+	if err != nil {
+		return err
+	}
+	bodies := streamBodies(action)
+	sent, sentBytes, err := sendStreamMessages(stream, method.Input(), bodies)
+	if err != nil {
+		return err
+	}
+	if err := stream.CloseSend(); err != nil {
+		return err
+	}
+	maxMessages := intParam(action.Params, "max_messages", len(bodies))
+	if maxMessages <= 0 {
+		maxMessages = len(bodies)
+	}
+	responseBody, received, err := receiveStreamMessages(stream, method.Output(), maxMessages)
+	if err != nil {
+		return err
+	}
+	result.BytesSent = int64(sentBytes)
+	result.ResponseBody = string(responseBody)
+	result.BytesReceived = int64(len(responseBody))
+	result.StatusCode = int(codes.OK)
+	result.ServerTelemetry = &protocol.ServerTelemetry{MessagesSent: sent, MessagesReceived: received}
+	return g.applyResponseChecks(action, result, responseBody)
+}
+
+func (g *GRPC) applyResponseChecks(action *protocol.Action, result *protocol.Result, responseBody []byte) error {
 	for _, extractor := range action.Extractors {
 		value, err := extract(extractor, responseBody)
 		if err == nil {
@@ -175,6 +311,107 @@ func (g *GRPC) invokeUnary(ctx context.Context, action *protocol.Action, result 
 		}
 	}
 	return nil
+}
+
+func buildDynamicMessage(desc protoreflect.MessageDescriptor, body []byte) (*dynamicpb.Message, int, error) {
+	message := dynamicpb.NewMessage(desc)
+	if len(body) == 0 {
+		return message, 0, nil
+	}
+	if err := (protojson.UnmarshalOptions{DiscardUnknown: true}).Unmarshal(body, message); err != nil {
+		return nil, 0, fmt.Errorf("decode grpc request body: %w", err)
+	}
+	return message, len(body), nil
+}
+
+func streamBodies(action *protocol.Action) [][]byte {
+	if raw, ok := action.Params["messages"]; ok {
+		if messages := bodiesFromParam(raw); len(messages) > 0 {
+			return messages
+		}
+	}
+	if len(action.Body) > 0 {
+		return [][]byte{action.Body}
+	}
+	return [][]byte{[]byte(`{}`)}
+}
+
+func bodiesFromParam(raw any) [][]byte {
+	switch typed := raw.(type) {
+	case []string:
+		out := make([][]byte, 0, len(typed))
+		for _, value := range typed {
+			out = append(out, []byte(value))
+		}
+		return out
+	case []any:
+		out := make([][]byte, 0, len(typed))
+		for _, value := range typed {
+			switch item := value.(type) {
+			case string:
+				out = append(out, []byte(item))
+			default:
+				encoded, err := json.Marshal(item)
+				if err == nil {
+					out = append(out, encoded)
+				}
+			}
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+func sendStreamMessages(stream googlegrpc.ClientStream, input protoreflect.MessageDescriptor, bodies [][]byte) (int, int, error) {
+	sentBytes := 0
+	for _, body := range bodies {
+		message, size, err := buildDynamicMessage(input, body)
+		if err != nil {
+			return 0, 0, err
+		}
+		if err := stream.SendMsg(message); err != nil {
+			return 0, 0, err
+		}
+		sentBytes += size
+	}
+	return len(bodies), sentBytes, nil
+}
+
+func receiveStreamMessages(stream googlegrpc.ClientStream, output protoreflect.MessageDescriptor, maxMessages int) ([]byte, int, error) {
+	if maxMessages <= 0 {
+		maxMessages = 1
+	}
+	messages := make([]json.RawMessage, 0, maxMessages)
+	for len(messages) < maxMessages {
+		response := dynamicpb.NewMessage(output)
+		err := stream.RecvMsg(response)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, len(messages), err
+		}
+		encoded, err := (protojson.MarshalOptions{EmitUnpopulated: true}).Marshal(response)
+		if err != nil {
+			return nil, len(messages), fmt.Errorf("encode grpc response body: %w", err)
+		}
+		messages = append(messages, json.RawMessage(encoded))
+	}
+	encoded, err := json.Marshal(messages)
+	return encoded, len(messages), err
+}
+
+func streamDesc(method protoreflect.MethodDescriptor) *googlegrpc.StreamDesc {
+	return &googlegrpc.StreamDesc{
+		StreamName:    string(method.Name()),
+		ServerStreams: method.IsStreamingServer(),
+		ClientStreams: method.IsStreamingClient(),
+	}
+}
+
+func fullMethodName(method protoreflect.MethodDescriptor) string {
+	return "/" + string(method.Parent().FullName()) + "/" + string(method.Name())
 }
 
 func (g *GRPC) resolveMethod(ctx context.Context, target string) (protoreflect.MethodDescriptor, error) {
@@ -245,6 +482,52 @@ func (g *GRPC) loadReflectionFiles(ctx context.Context, serviceName string) (*pr
 		set.File = append(set.File, file)
 	}
 	return protodesc.NewFiles(set)
+}
+
+func (g *GRPC) loadConfiguredDescriptorFiles(config map[string]any) error {
+	paths := stringSliceConfig(config, "grpc_proto_files")
+	for _, path := range paths {
+		set, err := readDescriptorSet(path)
+		if err != nil {
+			return err
+		}
+		files, err := protodesc.NewFiles(set)
+		if err != nil {
+			return fmt.Errorf("load grpc descriptor set %q: %w", path, err)
+		}
+		files.RangeFiles(func(file protoreflect.FileDescriptor) bool {
+			registerFileMethods(g.methods, file)
+			return true
+		})
+	}
+	return nil
+}
+
+func readDescriptorSet(path string) (*descriptorpb.FileDescriptorSet, error) {
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read grpc descriptor set %q: %w", path, err)
+	}
+	set := &descriptorpb.FileDescriptorSet{}
+	if err := proto.Unmarshal(body, set); err == nil {
+		return set, nil
+	}
+	if err := json.Unmarshal(body, set); err != nil {
+		return nil, fmt.Errorf("decode grpc descriptor set %q: %w", path, err)
+	}
+	return set, nil
+}
+
+func registerFileMethods(methods map[string]protoreflect.MethodDescriptor, file protoreflect.FileDescriptor) {
+	services := file.Services()
+	for i := 0; i < services.Len(); i++ {
+		service := services.Get(i)
+		serviceName := string(service.FullName())
+		for j := 0; j < service.Methods().Len(); j++ {
+			method := service.Methods().Get(j)
+			methods[serviceName+"/"+string(method.Name())] = method
+		}
+	}
 }
 
 func (g *GRPC) callMetadata(action *protocol.Action) metadata.MD {
@@ -472,6 +755,36 @@ func intParamOK(params map[string]any, key string) (int, bool) {
 		return int(typed), true
 	default:
 		return 0, false
+	}
+}
+
+func intParam(params map[string]any, key string, fallback int) int {
+	value, ok := intParamOK(params, key)
+	if !ok {
+		return fallback
+	}
+	return value
+}
+
+func stringSliceConfig(config map[string]any, key string) []string {
+	raw, ok := config[key]
+	if !ok {
+		return nil
+	}
+	switch typed := raw.(type) {
+	case []string:
+		return append([]string(nil), typed...)
+	case []any:
+		out := make([]string, 0, len(typed))
+		for _, value := range typed {
+			text, ok := value.(string)
+			if ok && strings.TrimSpace(text) != "" {
+				out = append(out, strings.TrimSpace(text))
+			}
+		}
+		return out
+	default:
+		return nil
 	}
 }
 

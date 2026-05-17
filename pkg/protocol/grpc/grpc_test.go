@@ -3,6 +3,8 @@ package grpc
 import (
 	"context"
 	"net"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -11,6 +13,10 @@ import (
 	"github.com/jasonczech/stormrunner/pkg/protocol"
 	googlegrpc "google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protodesc"
+	"google.golang.org/protobuf/reflect/protoregistry"
+	"google.golang.org/protobuf/types/descriptorpb"
 )
 
 func TestGRPCUnaryWithReflection(t *testing.T) {
@@ -79,6 +85,91 @@ func TestGRPCUnaryWithReflection(t *testing.T) {
 	}
 }
 
+func TestGRPCUnaryWithDescriptorFile(t *testing.T) {
+	addr, stop := startReflectionGenerator(t)
+	defer stop()
+
+	descriptorPath := writeGeneratorDescriptorSet(t)
+	client := &GRPC{}
+	err := client.Init(context.Background(), map[string]any{
+		"base_url":        addr,
+		"grpc_plain_text": true,
+		"grpc_proto_files": []string{
+			descriptorPath,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	defer client.Teardown(context.Background())
+
+	result, err := client.Execute(context.Background(), &protocol.Action{
+		Name:   "cache script",
+		Type:   "grpc_unary",
+		Target: "stormrunner.v1.GeneratorControl/DistributeScript",
+		Body:   []byte(`{"scriptId":"script-2","content":"e30=","contentHash":"hash-2"}`),
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("Execute failed: %s", result.ErrorMessage)
+	}
+	if !strings.Contains(result.ResponseBody, `"contentHash":"hash-2"`) {
+		t.Fatalf("ResponseBody = %s", result.ResponseBody)
+	}
+}
+
+func TestGRPCBidiStreamWithReflection(t *testing.T) {
+	addr, stop := startReflectionGenerator(t)
+	defer stop()
+
+	client := &GRPC{}
+	err := client.Init(context.Background(), map[string]any{
+		"base_url":            addr,
+		"grpc_plain_text":     true,
+		"grpc_use_reflection": true,
+		"grpc_timeout_ms":     float64(1000),
+	})
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	defer client.Teardown(context.Background())
+
+	result, err := client.Execute(context.Background(), &protocol.Action{
+		Name:   "heartbeat",
+		Type:   "grpc_bidi_stream",
+		Target: "stormrunner.v1.GeneratorControl/Heartbeat",
+		Params: map[string]any{
+			"max_messages": float64(1),
+			"messages": []any{
+				map[string]any{"generatorId": "client-1", "timestampUnixMs": float64(42)},
+			},
+		},
+		Extractors: []protocol.Extractor{{
+			Name:       "generator",
+			Source:     "body",
+			Type:       "jmespath",
+			Expression: "[0].generatorId",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("Execute failed: %s", result.ErrorMessage)
+	}
+	if result.ServerTelemetry == nil || result.ServerTelemetry.MessagesSent != 1 || result.ServerTelemetry.MessagesReceived != 1 {
+		t.Fatalf("ServerTelemetry = %#v", result.ServerTelemetry)
+	}
+	if !strings.Contains(result.ResponseBody, `"generatorId":"grpc-test"`) {
+		t.Fatalf("ResponseBody = %s", result.ResponseBody)
+	}
+	if result.Extractions["generator"] != "grpc-test" {
+		t.Fatalf("generator extraction = %q", result.Extractions["generator"])
+	}
+}
+
 func TestGRPCUnaryRequiresServiceMethodTarget(t *testing.T) {
 	client := &GRPC{}
 	result, err := client.Execute(context.Background(), &protocol.Action{
@@ -113,4 +204,24 @@ func startReflectionGenerator(t *testing.T) (string, func()) {
 		server.Stop()
 		_ = listener.Close()
 	}
+}
+
+func writeGeneratorDescriptorSet(t *testing.T) string {
+	t.Helper()
+	file, err := protoregistry.GlobalFiles.FindFileByPath("api/proto/generator.proto")
+	if err != nil {
+		t.Fatalf("FindFileByPath: %v", err)
+	}
+	set := &descriptorpb.FileDescriptorSet{
+		File: []*descriptorpb.FileDescriptorProto{protodesc.ToFileDescriptorProto(file)},
+	}
+	body, err := proto.Marshal(set)
+	if err != nil {
+		t.Fatalf("Marshal descriptor set: %v", err)
+	}
+	path := filepath.Join(t.TempDir(), "generator.pb")
+	if err := os.WriteFile(path, body, 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	return path
 }

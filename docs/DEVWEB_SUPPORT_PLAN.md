@@ -29,12 +29,13 @@ DevWeb is OpenText's JavaScript-based protocol-level HTTP testing engine. Stormr
 | WebSocket connect/send/receive/ping/close | ✅ Implemented | `pkg/protocol/websocket` |
 | WebSocket DSL config + engine wiring | ✅ Implemented | `pkg/dsl/types.go`, `pkg/engine/config.go` |
 | gRPC unary invocation via reflection | ✅ Implemented | `pkg/protocol/grpc` |
+| gRPC descriptor-set loading | ✅ Implemented | `pkg/protocol/grpc` |
+| gRPC streaming client paths | ✅ Implemented | `pkg/protocol/grpc` |
 | gRPC DSL config + engine wiring | ✅ Implemented | `pkg/dsl/types.go`, `pkg/engine/config.go` |
 
 ### Not Yet Implemented
 | DevWeb Capability | Priority | Notes |
 |:---|:---|:---|
-| gRPC streaming calls | High | `grpc_server_stream`, `grpc_client_stream`, and `grpc_bidi_stream` |
 | DevWeb `.js` script import | Medium | New converter: `pkg/convert/devweb` |
 | HAR file import | Medium | Separate from DevWeb but complementary |
 | OpenAPI/Swagger → script | Low | Planned for Agentic Script Engine (Phase 4) |
@@ -483,8 +484,8 @@ if len(grpcCfg.Metadata) > 0 {
 | WebSocket config parsing | `pkg/protocol/websocket/websocket_test.go` | ✅ Timeout, subprotocol, origin, compression |
 | WebSocket engine execution | `pkg/engine/websocket_integration_test.go` | ✅ Init/action/teardown script through the VUser engine |
 | gRPC unary invocation | `pkg/protocol/grpc/grpc_test.go` | ✅ Dynamic invoke with server reflection and JSON protobuf body |
-| gRPC streaming | `grpc/grpc_test.go` | Server-stream, client-stream, bidi |
-| gRPC reflection fallback | `grpc/grpc_test.go` | Reflection vs. file-based descriptors |
+| gRPC streaming | `pkg/protocol/grpc/grpc_test.go` | ✅ Bidirectional streaming against reflected generator heartbeat; server/client stream runtime paths implemented |
+| gRPC reflection fallback | `pkg/protocol/grpc/grpc_test.go` | ✅ Reflection and file-based descriptor set loading |
 | DevWeb JS parser | `convert/devweb/parser_test.go` | WebRequest, WebSocket, GrpcClient extraction |
 | DevWeb converter | `convert/devweb/converter_test.go` | SDK mapping, protocol detection, warnings |
 | HAR converter | `convert/har/converter_test.go` | Entry mapping, resource filtering, base URL |
@@ -506,7 +507,7 @@ if len(grpcCfg.Metadata) > 0 {
 | Phase | Milestone | Deliverables | Effort | Exit Criteria |
 |:---|:---|:---|:---|:---|
 | **Phase 1** | **WebSocket Protocol** | ✅ `pkg/protocol/websocket`, DSL config, engine wiring, action types, unit tests with echo server | Complete | WebSocket script executes end-to-end through the engine with connect, send, receive, ping, close |
-| **Phase 2** | **gRPC Protocol** | 🟡 `pkg/protocol/grpc`, reflection-based unary dynamic invocation, DSL config, unit tests | In progress | Unary gRPC calls execute with dynamic message construction; streaming and proto file loading remain |
+| **Phase 2** | **gRPC Protocol** | ✅ `pkg/protocol/grpc`, reflection and descriptor-set loading, unary + streaming runtime paths, DSL config, unit tests | Complete | Unary calls execute with dynamic message construction; streaming client paths execute through the same dynamic protobuf transport |
 | **Phase 3** | **DevWeb Script Import** | `pkg/convert/devweb` parser and converter, API endpoint, unit tests | 3-5 days | DevWeb `.js` files with `load.WebRequest` calls convert to runnable HTTP DSL scripts |
 | **Phase 4** | **HAR Import** | `pkg/convert/har` converter, API endpoint, resource filtering, unit tests | 2-3 days | `.har` files from Chrome DevTools convert to HTTP DSL scripts |
 | **Phase 5** | **Dashboard Integration** | Protocol selector, import UI, WebSocket/gRPC execution metrics, config panels | 3-4 days | Users can create, import, and monitor WebSocket and gRPC scenarios |
