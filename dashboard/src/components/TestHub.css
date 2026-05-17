@@ -321,6 +321,37 @@
   background: rgba(255, 255, 255, 0.02);
 }
 
+.scenario-browser-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 16px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-primary);
+}
+
+.scenario-browser-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.scenario-browser-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.scenario-browser-grid label span {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 .scenario-assignment-header {
   display: flex;
   justify-content: space-between;
@@ -472,6 +503,26 @@
   align-items: center;
   gap: 8px;
   margin-top: 6px;
+}
+
+.scenario-table-browser {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.scenario-table-browser-badge {
+  padding: 3px 8px;
+  border-radius: 999px;
+  color: #22c55e;
+  background: rgba(34, 197, 94, 0.12);
+  border: 1px solid rgba(34, 197, 94, 0.22);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .scenario-table-assignment-badge {

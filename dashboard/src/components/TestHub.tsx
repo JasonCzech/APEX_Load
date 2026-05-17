@@ -5,6 +5,7 @@ import { useProject } from '../hooks/useProject'
 import { getErrorMessage } from '../utils/errorUtils'
 import './TestHub.css'
 import { buildCreateTestPayload, buildScenarioUpsertPayload } from './scenarioPayloadUtils'
+import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
 
 interface Props {
   testStatuses: Record<string, string>
@@ -16,6 +17,10 @@ interface ScenarioFormState {
   duration: string
   script_id: string
   vusers: number
+  browser_device_profile?: string
+  browser_orientation?: string
+  browser_touch_mode?: '' | 'true' | 'false'
+  browser_headless?: '' | 'true' | 'false'
   assignment_mode: 'auto' | 'specific_hosts'
   assignment_targets: string[]
   data_pool_id?: string
@@ -30,6 +35,10 @@ function emptyScenarioForm(scriptId = ''): ScenarioFormState {
     duration: '1m',
     script_id: scriptId,
     vusers: 10,
+    browser_device_profile: '',
+    browser_orientation: '',
+    browser_touch_mode: '',
+    browser_headless: '',
     assignment_mode: 'auto',
     assignment_targets: [],
     data_pool_id: '',
@@ -37,6 +46,21 @@ function emptyScenarioForm(scriptId = ''): ScenarioFormState {
     data_pool_access_mode: 'read_only',
     data_pool_selection_strategy: 'sequential',
   }
+}
+
+function browserRuntimeFromForm(form: ScenarioFormState) {
+  const browser = {
+    ...(form.browser_device_profile ? { device_profile: form.browser_device_profile } : {}),
+    ...(form.browser_orientation ? { orientation: form.browser_orientation } : {}),
+    ...(form.browser_touch_mode ? { touch_mode: form.browser_touch_mode === 'true' } : {}),
+    ...(form.browser_headless ? { headless: form.browser_headless === 'true' } : {}),
+  }
+  return Object.keys(browser).length > 0 ? browser : undefined
+}
+
+function booleanSelectValue(value?: boolean): '' | 'true' | 'false' {
+  if (value === undefined) return ''
+  return value ? 'true' : 'false'
 }
 
 function getScenarioSortValue(scenario: StoredScenario, field: 'name' | 'scripts' | 'data_pools' | 'created_at' | 'associated_releases' | 'last_run_at' | 'result_count'): string | number {
@@ -123,6 +147,8 @@ function TestHub({ onSelectTest }: Props) {
   const [draftEstimate, setDraftEstimate] = useState<DraftCapacityEstimate | null>(null)
   const [estimateLoading, setEstimateLoading] = useState(false)
   const [estimateError, setEstimateError] = useState('')
+  const selectedScript = scripts.find(script => script.id === form.script_id)
+  const showBrowserRuntimeSettings = selectedScript?.protocol === 'browser'
 
   const refresh = useCallback(async () => {
     try {
@@ -182,6 +208,7 @@ function TestHub({ onSelectTest }: Props) {
         iterations: undefined,
         pacing: undefined,
         think_time: undefined,
+        browser: showBrowserRuntimeSettings ? browserRuntimeFromForm(form) : undefined,
         log_level: '',
         auto_transactions: '',
         continue_on_error: false,
@@ -203,7 +230,7 @@ function TestHub({ onSelectTest }: Props) {
       })
 
     return () => { cancelled = true }
-  }, [api, form, showForm])
+  }, [api, form, showBrowserRuntimeSettings, showForm])
 
   const sorted = useMemo(() => {
     return [...scenarios].sort((a, b) => {
@@ -276,6 +303,10 @@ function TestHub({ onSelectTest }: Props) {
       duration: scenario.duration,
       script_id: first?.script_id || scripts[0]?.id || '',
       vusers: first?.vusers || 10,
+      browser_device_profile: scenario.runtime_settings?.browser?.device_profile || '',
+      browser_orientation: scenario.runtime_settings?.browser?.orientation || '',
+      browser_touch_mode: booleanSelectValue(scenario.runtime_settings?.browser?.touch_mode),
+      browser_headless: booleanSelectValue(scenario.runtime_settings?.browser?.headless),
       assignment_mode: scenario.assignment?.mode === 'specific_hosts' ? 'specific_hosts' : 'auto',
       assignment_targets: scenario.assignment?.selected_targets ? [...scenario.assignment.selected_targets] : [],
       data_pool_id: firstPool?.pool_id || '',
@@ -320,6 +351,7 @@ function TestHub({ onSelectTest }: Props) {
         iterations: undefined,
         pacing: undefined,
         think_time: undefined,
+        browser: showBrowserRuntimeSettings ? browserRuntimeFromForm(form) : undefined,
         log_level: '',
         auto_transactions: '',
         continue_on_error: false,
@@ -413,6 +445,54 @@ function TestHub({ onSelectTest }: Props) {
               <option value="unique">Unique rows</option>
             </select>
           </div>
+          {showBrowserRuntimeSettings && (
+            <div className="scenario-browser-panel">
+              <div className="scenario-assignment-header">
+                <div>
+                  <h4>Browser Runtime</h4>
+                  <p>Store device defaults with this scenario so queued runs and comparisons carry the same mobile profile.</p>
+                </div>
+              </div>
+              <div className="scenario-browser-grid">
+                <label>
+                  <span>Device profile</span>
+                  <select className="settings-input" value={form.browser_device_profile || ''} onChange={event => setForm({ ...form, browser_device_profile: event.target.value })}>
+                    <option value="">Script default</option>
+                    <option value="desktop_1080p">desktop_1080p</option>
+                    <option value="galaxy_s24">galaxy_s24</option>
+                    <option value="pixel_8">pixel_8</option>
+                    <option value="ipad_air">ipad_air (WebKit)</option>
+                    <option value="iphone_15_pro">iphone_15_pro (WebKit)</option>
+                    <option value="iphone_se">iphone_se (WebKit)</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Orientation</span>
+                  <select className="settings-input" value={form.browser_orientation || ''} onChange={event => setForm({ ...form, browser_orientation: event.target.value })}>
+                    <option value="">Script default</option>
+                    <option value="portrait">Portrait</option>
+                    <option value="landscape">Landscape</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Touch mode</span>
+                  <select className="settings-input" value={form.browser_touch_mode || ''} onChange={event => setForm({ ...form, browser_touch_mode: event.target.value as ScenarioFormState['browser_touch_mode'] })}>
+                    <option value="">Script default</option>
+                    <option value="true">Enabled</option>
+                    <option value="false">Disabled</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Headless</span>
+                  <select className="settings-input" value={form.browser_headless || ''} onChange={event => setForm({ ...form, browser_headless: event.target.value as ScenarioFormState['browser_headless'] })}>
+                    <option value="">Script default</option>
+                    <option value="true">Enabled</option>
+                    <option value="false">Disabled</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+          )}
           <div className="scenario-assignment-panel">
             <div className="scenario-assignment-header">
               <div>
@@ -542,6 +622,12 @@ function TestHub({ onSelectTest }: Props) {
                         </span>
                         <span className="scenario-table-assignment-detail">{scenarioAssignmentSummary(scenario).detail}</span>
                       </div>
+                      {formatBrowserRuntimeSummary(scenario.runtime_settings?.browser) && (
+                        <div className="scenario-table-browser">
+                          <span className="scenario-table-browser-badge">Browser</span>
+                          <span className="scenario-table-assignment-detail">{formatBrowserRuntimeSummary(scenario.runtime_settings?.browser)}</span>
+                        </div>
+                      )}
                     </td>
                     <td>{scenario.scripts.map(script => script.script_name || script.name || script.script_id).join(', ')}</td>
                     <td className="cell-muted">{(scenario.data_pools || []).map(pool => `${pool.alias} (${pool.pool_name || pool.pool_id})`).join(', ') || 'None'}</td>

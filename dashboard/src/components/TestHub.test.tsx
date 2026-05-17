@@ -172,6 +172,121 @@ describe('TestHub', () => {
     expect(container.textContent).toContain('Specific Hosts')
     expect(container.textContent).toContain('gen-a, gen-b')
   })
+
+  it('creates a browser scenario with mobile runtime overrides', async () => {
+    const onSelectTest = vi.fn()
+    apiMock.listScripts.mockResolvedValue({
+      scripts: [{ id: 'script-browser', name: 'Mobile Checkout', protocol: 'browser', version: '1.0.0', created_at: '2026-05-12T00:00:00Z' }],
+      count: 1,
+    })
+
+    await act(async () => {
+      root.render(<TestHub testStatuses={{}} onSelectTest={onSelectTest} />)
+    })
+
+    await flushPromises()
+
+    const newScenarioButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('New Scenario'))
+    expect(newScenarioButton).toBeDefined()
+    if (!newScenarioButton) return
+
+    await act(async () => {
+      newScenarioButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.textContent).toContain('Browser Runtime')
+
+    const inputs = Array.from(container.querySelectorAll('input'))
+    const nameInput = inputs.find(input => input.placeholder === 'Scenario name')
+    const profileSelect = Array.from(container.querySelectorAll('select')).find(select => select.parentElement?.textContent?.includes('Device profile')) as HTMLSelectElement | undefined
+    const orientationSelect = Array.from(container.querySelectorAll('select')).find(select => select.parentElement?.textContent?.includes('Orientation')) as HTMLSelectElement | undefined
+    const touchSelect = Array.from(container.querySelectorAll('select')).find(select => select.parentElement?.textContent?.includes('Touch mode')) as HTMLSelectElement | undefined
+    const headlessSelect = Array.from(container.querySelectorAll('select')).find(select => select.parentElement?.textContent?.includes('Headless')) as HTMLSelectElement | undefined
+
+    expect(nameInput).toBeDefined()
+    expect(profileSelect).toBeDefined()
+    expect(orientationSelect).toBeDefined()
+    expect(touchSelect).toBeDefined()
+    expect(headlessSelect).toBeDefined()
+    if (!nameInput || !profileSelect || !orientationSelect || !touchSelect || !headlessSelect) return
+
+    await act(async () => {
+      setInputValue(nameInput, 'Mobile Browser Scenario')
+      setSelectValue(profileSelect, 'iphone_se')
+      setSelectValue(orientationSelect, 'portrait')
+      setSelectValue(touchSelect, 'true')
+      setSelectValue(headlessSelect, 'false')
+    })
+
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save Scenario'))
+    expect(saveButton).toBeDefined()
+    if (!saveButton) return
+
+    await act(async () => {
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushPromises()
+
+    expect(apiMock.createScenario).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Mobile Browser Scenario',
+      runtime_settings: {
+        browser: {
+          device_profile: 'iphone_se',
+          orientation: 'portrait',
+          touch_mode: true,
+          headless: false,
+        },
+      },
+    }))
+    expect(apiMock.estimateTest).toHaveBeenLastCalledWith(expect.objectContaining({
+      runtime_settings: {
+        browser: expect.objectContaining({
+          device_profile: 'iphone_se',
+          orientation: 'portrait',
+          touch_mode: true,
+          headless: false,
+        }),
+      },
+    }))
+  })
+
+  it('shows saved browser runtime defaults in the scenario library', async () => {
+    const onSelectTest = vi.fn()
+    apiMock.listScenarios.mockResolvedValue({
+      scenarios: [{
+        id: 'scenario-1',
+        name: 'Mobile Checkout',
+        duration: '5m',
+        assignment: { mode: 'auto' },
+        runtime_settings: {
+          browser: {
+            device_profile: 'iphone_se',
+            orientation: 'portrait',
+            touch_mode: true,
+            headless: false,
+          },
+        },
+        scripts: [{ script_id: 'script-browser', script_name: 'Mobile Checkout', vusers: 5 }],
+        data_pools: [],
+        associated_releases: [],
+        result_count: 0,
+        created_at: '2026-05-12T00:00:00Z',
+        last_run_at: '2026-05-13T00:00:00Z',
+      }],
+      count: 1,
+    })
+
+    await act(async () => {
+      root.render(<TestHub testStatuses={{}} onSelectTest={onSelectTest} />)
+    })
+
+    await flushPromises()
+
+    expect(container.textContent).toContain('Mobile Checkout')
+    expect(container.textContent).toContain('Browser')
+    expect(container.textContent).toContain('iphone_se · Portrait · Touch enabled · Headed')
+  })
 })
 
 async function flushPromises() {
@@ -186,4 +301,11 @@ function setInputValue(input: HTMLInputElement, value: string) {
   const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set
   setter?.call(input, value)
   input.dispatchEvent(new Event(input.type === 'number' ? 'change' : 'input', { bubbles: true }))
+}
+
+function setSelectValue(select: HTMLSelectElement, value: string) {
+  const prototype = Object.getPrototypeOf(select) as HTMLSelectElement
+  const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set
+  setter?.call(select, value)
+  select.dispatchEvent(new Event('change', { bubbles: true }))
 }

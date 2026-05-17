@@ -15,7 +15,7 @@ This plan is the strategic umbrella that aligns the existing `MOBILE_BROWSER_EMU
 
 ### Remaining
 - Stage 2 is only partially complete: device profiles now carry `CPUThrottleRate` and `NetworkPreset`, and the runtime applies them, but calibration against real devices, benchmark evidence, and any memory-pressure model are still open.
-- Stage 4 still has UX gaps: dedicated device-comparison views, per-resource waterfall drilldown, and broader manual browser validation on real applications are not finished. Archive event inspection now includes a richer navigation/resource waterfall summary from persisted client metrics, including DOM/load phase gaps and blocking-resource pressure.
+- Stage 4 dashboard UX is complete for the current first-cut mobile/browser workflow: script editing, scenario authoring, queued previews, archive drilldown, and run comparisons preserve and surface browser runtime settings. Dedicated charted comparison views, per-resource waterfall drilldown, and broader manual browser validation on real applications remain product-hardening work.
 - Stage 5 TrueClient MobileWeb import is partially shipped for the current browser step envelope, including runtime-setting extraction and common decomposed JavaScript fill/click, scroll, and navigation patterns; broader fixture-backed hardening remains open.
 - Stage 6 UX intelligence work has not started.
 
@@ -415,7 +415,7 @@ Dashboard renders side-by-side Core Web Vitals per device group — immediate vi
 
 ### Still Required To Close Stage 2 And Stage 4
 - Publish evidence that the configured CPU/network profile differences produce meaningful timing separation on representative applications.
-- Add richer dashboard comparison UX beyond the current overall/platform/engine/device rollups, plus per-resource waterfall diagnostics beyond the event-level archive waterfall summary.
+- Add richer charted comparison UX beyond the current overall/platform/engine/device rollups, plus per-resource waterfall diagnostics beyond the event-level archive waterfall summary.
 - Expand manual browser validation coverage, especially on WebKit hosts with Playwright assets installed.
 
 ### Long-Term

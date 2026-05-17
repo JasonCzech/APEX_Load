@@ -17,11 +17,12 @@ This is positioned as a configuration extension of the existing `pkg/protocol/br
 - Mobile interaction support is shipped: `browser_tap`, `browser_long_press`, `browser_swipe`, plus automatic click-to-touch mapping in mobile mode.
 - WebKit-backed execution is shipped for WebKit device profiles, with actionable install guidance surfaced through validation and replay APIs and the dashboard editor.
 - Script-editor authoring and replay flows support browser engine selection, device profiles, touch mode, orientation, and saved-script validation.
+- Scenario authoring now preserves browser runtime defaults for browser scripts, including device profile, orientation, touch mode, and headed/headless mode, and the scenario library surfaces those saved defaults.
 
 ### Remaining
 - TruClient MobileWeb import is shipped for the current MVP browser step envelope. Direct `Scroll` steps, simple JavaScript fill/click object-identification patterns, `window.scrollTo` / `window.scrollBy` statements, and JavaScript `location` navigation assignments/method calls now convert to browser DSL actions; non-decomposable `Evaluate JavaScript` shapes still need sample-backed hardening.
 - Production hardening beyond the conservative browser envelope below is still open, but scenario capacity advice now treats browser VUsers as real browser runtimes rather than HTTP goroutines.
-- Scenario-level dashboard polish is improving: queued run previews and archived run comparisons now surface saved browser runtime overrides so operators can confirm device profile, orientation, touch, and headed/headless state before starting, revising, or comparing scenarios. Broader dashboard mobile UX polish remains less complete than the script-editor/browser-replay surfaces.
+- Scenario-level dashboard polish is complete for the current first-cut surface: scenario authoring, queued run previews, and archived run comparisons all surface saved browser runtime overrides so operators can confirm device profile, orientation, touch, and headed/headless state before saving, starting, revising, or comparing scenarios.
 
 ### Supported Browser And Device Profile Envelope
 
@@ -94,10 +95,9 @@ The existing `pkg/protocol/browser` implementation provides:
 `pkg/dsl/types.go` includes `BrowserConfig` with viewport, user agent, headless, cache, engine, device profile, orientation, touch mode, and client metrics settings. `WebRuntimeConfig` covers network simulation, download filters, and content checks. `WaitCondition` and `BrowserCaptureOptions` are available on actions.
 
 ### What Is Missing
-- No TrueClient script format import or conversion
-- No published mobile-browser benchmark envelope or hardening guidance
-- No complete scenario/dashboard device UX across every authoring surface
-- No broad real-application validation matrix yet for WebKit- and Chromium-backed mobile profiles
+- No measured benchmark publication from a controlled hardware matrix yet; current capacity guidance is conservative and code-backed, but not empirically calibrated.
+- No representative external TrueClient MobileWeb archive corpus is checked in, so importer hardening is limited to synthetic fixtures and decomposable patterns.
+- No broad real-application validation matrix yet for WebKit- and Chromium-backed mobile profiles.
 
 ## Design Principles
 
@@ -420,20 +420,22 @@ Mitigation: Require 3–5 sample TrueClient MobileWeb scripts as test fixtures b
 
 ## 6. Dashboard Support
 
-### Create Scenario Modal
-When the user selects `protocol: browser`, show a device profile dropdown:
+### Scenario Authoring
+When the selected script uses `protocol: browser`, scenario authoring shows browser runtime defaults:
 
-- Device category tabs: Phone / Tablet / Desktop
-- Device preset list with preview (viewport dimensions, scale factor)
-- Orientation toggle (portrait/landscape)
-- Custom device option with manual viewport/scale/UA entry
-- Touch mode toggle
+- Device preset selector for the supported profile matrix
+- Orientation selector
+- Touch mode selector
+- Headed/headless selector
+- Saved runtime defaults carried into queued-run payloads, capacity estimates, queued previews, and archived comparisons
 
 ### Scenario Cards
-Show device profile badge on browser scenario cards:
-- Device icon (phone/tablet/desktop)
+Saved browser runtime defaults are shown in the scenario library:
+- Browser badge
 - Profile name
-- Viewport dimensions
+- Orientation
+- Touch mode
+- Headed/headless mode
 
 ### Script Editor
 When editing a browser script with a device profile:
@@ -469,7 +471,7 @@ When editing a browser script with a device profile:
 |:---|:---|:---|:---|:---|
 | **Phase 1** | **Complete** | **Device Profiles + Runtime Emulation** | Device profile registry, orientation support, DSL extensions, engine config wiring, browser-family-aware runtime selection, unit tests | Named device profiles launch with the expected viewport, scale, mobile flag, user agent, and browser engine |
 | **Phase 2** | **Complete** | **Touch Event Simulation** | `browser_tap`, `browser_swipe`, `browser_long_press` action types, auto click-to-tap mapping, touch emulation, unit tests | Touch actions execute on mobile-configured browser; `browser_click` dispatches touch interactions in mobile mode |
-| **Phase 3** | **Partially Complete** | **Dashboard UX** | Script-editor device profile selector, orientation toggle, replay/config validation warnings, mobile/browser settings authoring, queued scenario browser-runtime visibility, archive comparison browser-runtime visibility | Core mobile browser scenarios can be authored and replayed from the dashboard, and queued scenario plus archived comparison views expose saved browser runtime overrides; broader scenario-level UX is still incomplete |
+| **Phase 3** | **Complete** | **Dashboard UX** | Script-editor device profile selector, orientation toggle, replay/config validation warnings, mobile/browser settings authoring, scenario-library browser runtime defaults, queued scenario browser-runtime visibility, archive comparison browser-runtime visibility | Core mobile browser scenarios can be authored, saved, replayed, queued, revised, and compared from the dashboard while preserving browser runtime overrides |
 | **Phase 4** | **Partially Complete** | **TrueClient Import** | `pkg/convert/trueclient` package, step-to-action mapping, device profile extraction from `.usr` + `default.cfg`, API endpoint, unit tests, direct Scroll conversion, JavaScript fill/click decomposition, JavaScript scroll-to-swipe conversion, JavaScript location navigation conversion | A TrueClient MobileWeb `.zip` import produces a runnable Stormrunner browser script with correct device profile and mapped actions; remaining work is sample-backed coverage for less common TruClient constructs |
 | **Phase 5** | **Partially Complete** | **Hardening + Benchmarks** | Browser-aware capacity advice, memory benchmarks, touch latency benchmarks, documented scale guidance, edge case coverage | Capacity planning now exposes conservative mobile browser VUser density; measured memory/latency benchmark publication remains open |
 
@@ -498,7 +500,7 @@ When editing a browser script with a device profile:
 ## Summary
 Mobile browser emulation now extends Stormrunner's existing browser protocol with device profiles, touch events, orientation support, browser-family-aware runtime execution, and editor/replay validation guidance. The architecture still stays within the current protocol boundary — no new protocol registration, and no split public DSL surface.
 
-The remaining work is now concentrated in three areas: broader dashboard/scenario UX polish, TrueClient import, and published benchmark guidance. Net-new mobile web tests are already available; legacy script migration and operational scale guidance still need dedicated follow-through.
+The remaining work is now concentrated in two areas that require external evidence: representative TrueClient MobileWeb fixture archives and measured benchmark publication. Net-new mobile web tests and scenario/dashboard runtime UX are available; legacy script migration and operational scale guidance should continue once fixture archives and benchmark hardware data are available.
 
 Related documentation:
 - Browser client metrics: `docs/BROWSER_CLIENT_METRICS_PLAN.md`
