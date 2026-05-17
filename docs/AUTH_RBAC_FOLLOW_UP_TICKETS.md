@@ -1,6 +1,6 @@
 # Auth / RBAC Follow-Up Tickets
 
-This document turns the remaining 3.1 platform-gap work into issue-ready tickets after the native OIDC implementation pass. The current codebase now supports:
+This document records the Workstream 4 Auth/RBAC follow-up decisions made after the native OIDC implementation pass. The planned W4 scope is now complete; future changes should be treated as release hardening or enterprise-directory expansion rather than missing foundational auth/RBAC work. The current codebase supports:
 
 - `dev` bypass mode
 - `trusted_headers` mode
@@ -9,12 +9,12 @@ This document turns the remaining 3.1 platform-gap work into issue-ready tickets
 - audit coverage for service-account lifecycle changes plus OIDC login, logout, and representative callback failure events
 - filtered audit CSV export for operator evidence packs and incident review
 
-The remaining backlog is mostly about hardening, lifecycle ownership, and architectural decisions rather than missing foundational RBAC primitives.
+The original follow-up backlog has been resolved for the planned parity phase. The durable product decisions are: trusted headers remain the recommended default when an upstream gateway owns sign-in, native OIDC is the direct-auth option, human identity lifecycle stays upstream-owned, native SAML is handled through trusted-header gateways, and Stormrunner owns service-account principals for automation.
 
 ## Audit Snapshot
 
 - Implemented claims for multi-tenant governance, notifications, schedules, provenance, analysis depth, and ecosystem integration still line up with code.
-- The material remaining auth gap is not basic sign-in anymore; it is long-term identity ownership and operational hardening.
+- Basic sign-in, RBAC enforcement, service-account governance, audit evidence, and the long-term identity ownership decision are complete for Workstream 4.
 - Native OIDC logout now uses an explicit `POST /api/v1/auth/logout` flow with CSRF proof from the dashboard rather than a plain top-level `GET`, which closes the most obvious session-mutation gap from the first implementation pass.
 - Native OIDC sessions now report active, missing, invalid, or expired state through `/api/v1/auth/me`, and the dashboard warns users before short-lived sessions expire instead of letting them discover expiry through abrupt protected-route failures.
 - Audit evidence can now be exported from `GET /api/v1/auth/audit-events/export` or the dashboard settings audit panel with the same action, actor type, and status filters used by the recent event feed.
@@ -38,7 +38,7 @@ The remaining backlog is mostly about hardening, lifecycle ownership, and archit
 ## Ticket 2: Expand OIDC Runtime Health and Misconfiguration Diagnostics
 
 - Priority: High
-- Problem: Stormrunner now exposes a first-pass auth diagnostics surface for trusted-header and native OIDC readiness, but operators still need broader runtime and post-login diagnostics before the auth lane feels fully production-hardened.
+- Problem: Stormrunner exposes auth diagnostics for trusted-header and native OIDC readiness. Future operator experience can improve with provider-specific runtime and post-login troubleshooting if pilot deployments reveal repeated IdP-specific failure patterns.
 - Scope:
   - Build on the existing diagnostics surface that already checks environment-variable presence, URL validity, trusted-header mappings, issuer discovery reachability, and current request/session status without exposing secrets.
   - Add deeper post-login diagnostics for callback/session/cookie failures.

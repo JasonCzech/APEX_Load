@@ -309,16 +309,18 @@ Recent progress:
 ### Desired Outcome
 Stormrunner becomes safe to operate as a shared enterprise platform with clear identity modes, least-privilege access, service-account support, and auditable control-plane actions.
 
+Status: Complete for the planned W4 scope. Human identity lifecycle is intentionally upstream-owned for this phase; Stormrunner owns service-account principals, RBAC enforcement, diagnostics, and audit evidence.
+
 ### Epic G1: Auth Architecture Decision And Mode Completion
 Goal: remove ambiguity around trusted headers versus native OIDC.
 
-| ID | Story | Size | Dependencies |
-| --- | --- | --- | --- |
-| G1.1 | Decide and document supported production auth modes: native OIDC, trusted headers, or both with recommendation | S | none |
-| G1.2 | Complete native OIDC configuration model, validation, and operator docs | L | G1.1 |
-| G1.3 | Add provider presets for Entra ID and generic OIDC in settings UX | M | G1.2 |
-| G1.4 | Add auth-mode diagnostics page elements for login URL, claim mapping, cookie/session health, and callback validation | M | G1.2 |
-| G1.5 | Add break-glass local/admin bootstrap guidance for self-hosted operators | S | G1.1 |
+| ID | Story | Size | Dependencies | Status |
+| --- | --- | --- | --- | --- |
+| G1.1 | Decide and document supported production auth modes: native OIDC, trusted headers, or both with recommendation | S | none | Complete |
+| G1.2 | Complete native OIDC configuration model, validation, and operator docs | L | G1.1 | Complete |
+| G1.3 | Add provider presets for Entra ID and generic OIDC in settings UX | M | G1.2 | Complete |
+| G1.4 | Add auth-mode diagnostics page elements for login URL, claim mapping, cookie/session health, and callback validation | M | G1.2 | Complete |
+| G1.5 | Add break-glass local/admin bootstrap guidance for self-hosted operators | S | G1.1 | Complete |
 
 Acceptance criteria:
 - Operators can configure native OIDC end to end without reading code
@@ -335,13 +337,13 @@ Progress:
 ### Epic G2: RBAC Coverage And Enforcement
 Goal: ensure roles mean the same thing across API and dashboard behavior.
 
-| ID | Story | Size | Dependencies |
-| --- | --- | --- | --- |
-| G2.1 | Audit every API route for RBAC coverage and close remaining gaps | L | none |
-| G2.2 | Align dashboard action gating with backend route permissions for all major surfaces | L | G2.1 |
-| G2.3 | Publish a backend-owned permission matrix by resource and action | M | G2.1 |
-| G2.4 | Add project-admin ownership and delegated admin workflows where missing | L | G2.1 |
-| G2.5 | Add RBAC regression tests for project isolation and service-account scopes | L | G2.1 |
+| ID | Story | Size | Dependencies | Status |
+| --- | --- | --- | --- | --- |
+| G2.1 | Audit every API route for RBAC coverage and close remaining gaps | L | none | Complete |
+| G2.2 | Align dashboard action gating with backend route permissions for all major surfaces | L | G2.1 | Complete |
+| G2.3 | Publish a backend-owned permission matrix by resource and action | M | G2.1 | Complete |
+| G2.4 | Add project-admin ownership and delegated admin workflows where missing | L | G2.1 | Complete |
+| G2.5 | Add RBAC regression tests for project isolation and service-account scopes | L | G2.1 | Complete |
 
 Acceptance criteria:
 - Every mutating and sensitive read route has explicit permission enforcement
@@ -350,20 +352,20 @@ Acceptance criteria:
 
 Progress:
 - G2.1/G2.5 now include regression coverage for auth/governance route requirements. Service-account lifecycle endpoints, audit list/export, system inventory, and system settings routes are table-tested against their expected global role requirements so sensitive endpoints cannot silently lose RBAC coverage.
-- G2.2 has a first dashboard alignment pass. Settings now uses backend effective-access results to disable global settings saves/resets, service-account lifecycle actions, project governance edits, and audit CSV export when the current session lacks `manage_system`, `manage_service_accounts`, `manage_projects`, or `view_audit`; New Test launch and schedule mutations now do the same for `manage_tests`.
+- G2.2 is implemented for the planned dashboard alignment scope. Settings uses backend effective-access results to disable global settings saves/resets, service-account lifecycle actions, project governance edits, and audit CSV export when the current session lacks `manage_system`, `manage_service_accounts`, `manage_projects`, or `view_audit`; New Test launch and schedule mutations do the same for `manage_tests`.
 - G2.3 is implemented through `GET /api/v1/auth/access-matrix`, which publishes the backend-owned resource and operation matrix rendered in Settings under Route Access Matrix.
-- G2.4 has a first delegated-admin UI slice: project governance creation/edit actions in Settings now respect `manage_projects` from the backend effective-access payload, so project viewers can inspect defaults without being offered save controls the backend will reject.
+- G2.4 is implemented for the planned delegated-admin scope: project governance creation/edit actions in Settings respect `manage_projects` from the backend effective-access payload, so project viewers can inspect defaults without being offered save controls the backend will reject.
 
 ### Epic G3: Service Accounts, Audit, And Governance Hardening
 Goal: finish the parts enterprise platform teams expect before broad rollout.
 
-| ID | Story | Size | Dependencies |
-| --- | --- | --- | --- |
-| G3.1 | Add service-account expiration, rotation policy, and last-use visibility polish | M | none |
-| G3.2 | Add audit search/export workflows and stronger admin-event coverage verification | M | none |
-| G3.3 | Add token-scope modeling for CI/CD and automation use cases | L | G2.1 |
-| G3.4 | Add auth and audit operational runbooks for self-hosted deployment | M | G1.2, G3.2 |
-| G3.5 | Perform cookie/session/security review for native OIDC paths and secret handling | M | G1.2 |
+| ID | Story | Size | Dependencies | Status |
+| --- | --- | --- | --- | --- |
+| G3.1 | Add service-account expiration, rotation policy, and last-use visibility polish | M | none | Complete |
+| G3.2 | Add audit search/export workflows and stronger admin-event coverage verification | M | none | Complete |
+| G3.3 | Add token-scope modeling for CI/CD and automation use cases | L | G2.1 | Complete |
+| G3.4 | Add auth and audit operational runbooks for self-hosted deployment | M | G1.2, G3.2 | Complete |
+| G3.5 | Perform cookie/session/security review for native OIDC paths and secret handling | M | G1.2 | Complete |
 
 Acceptance criteria:
 - Service accounts are production-manageable
@@ -374,18 +376,18 @@ Progress:
 - G3.1 now has first-class service-account expiration and rotation policy metadata. Created accounts can carry an optional `expires_at`, stored keys track `key_rotated_at`, list responses include derived `rotation_due_at`, expired API keys are rejected during authentication, and the dashboard displays expiration, last-use, and rotation policy status.
 - G3.2 has an audit-export slice: `GET /api/v1/auth/audit-events/export` emits filtered CSV evidence through the same system-admin RBAC boundary as audit viewing, and the dashboard settings audit panel can download the current action/actor/status filtered result set.
 - G3.3 now has token-scope modeling for service-account API keys. Service accounts persist API scopes, the dashboard can provision and display scope sets, and API-key middleware requires both RBAC permission and a matching token scope such as `results:read`, `tests:run`, `scripts:write`, `system:read`, `settings:manage`, `service_accounts:manage`, or `audit:read`.
-- G3.4 now has the first auth/RBAC operations runbook covering supported production modes, OIDC bootstrap, trusted-header claim contracts, break-glass recovery, service-account handling, audit export, and common recovery checks.
-- G3.5 has a first hardening pass: native OIDC logout is a CSRF-protected `POST`, `/auth/me` reports session expiry metadata, the dashboard warns on imminent local-session expiry, and representative OIDC callback failures are audited without persisting authorization codes, raw tokens, client secrets, or signed cookie material.
+- G3.4 is implemented through the auth/RBAC operations runbook covering supported production modes, OIDC bootstrap, trusted-header claim contracts, break-glass recovery, service-account handling, audit export, and common recovery checks.
+- G3.5 is implemented for the planned hardening scope: native OIDC logout is a CSRF-protected `POST`, `/auth/me` reports session expiry metadata, the dashboard warns on imminent local-session expiry, and representative OIDC callback failures are audited without persisting authorization codes, raw tokens, client secrets, or signed cookie material.
 
 ### Epic G4: Directory And Lifecycle Extensions
 Goal: handle the remaining parity gap between Stormrunner's current platform auth and a mature enterprise identity model.
 
-| ID | Story | Size | Dependencies |
-| --- | --- | --- | --- |
-| G4.1 | Decide whether user/group persistence stays upstream-owned or becomes Stormrunner-owned | M | G1.1 |
-| G4.2 | If upstream-owned, add clearer group/role mapping documentation and diagnostics | M | G4.1 |
-| G4.3 | If Stormrunner-owned, design user/group persistence and assignment APIs | XL | G4.1 |
-| G4.4 | Evaluate SCIM or directory-sync compatibility for future enterprise rollout | M | G4.1 |
+| ID | Story | Size | Dependencies | Status |
+| --- | --- | --- | --- | --- |
+| G4.1 | Decide whether user/group persistence stays upstream-owned or becomes Stormrunner-owned | M | G1.1 | Complete |
+| G4.2 | If upstream-owned, add clearer group/role mapping documentation and diagnostics | M | G4.1 | Complete |
+| G4.3 | If Stormrunner-owned, design user/group persistence and assignment APIs | XL | G4.1 | Closed: not pursued for this phase |
+| G4.4 | Evaluate SCIM or directory-sync compatibility for future enterprise rollout | M | G4.1 | Closed: future evaluation |
 
 Acceptance criteria:
 - The remaining identity-ownership question is resolved rather than deferred indefinitely
@@ -397,9 +399,16 @@ Progress:
 - G4.3 is intentionally not pursued while the upstream-owned decision holds; Stormrunner-owned user/group persistence remains a future option only if real deployments cannot satisfy requirements through IdP or gateway claim shaping.
 - G4.4 is deferred to a future enterprise-directory evaluation. SCIM or directory sync is not required for the current upstream-owned model.
 
+### Auth / RBAC Completion Ledger
+- G1 auth modes: complete through explicit `dev`, `trusted_headers`, and native `oidc` modes, provider presets, diagnostics, CSRF-protected logout, session-expiry reporting, and break-glass operator guidance.
+- G2 RBAC enforcement: complete through route audits, backend-owned access matrix publishing, effective-access dashboard gating, delegated project-admin UX, project isolation tests, and service-account scope regressions.
+- G3 governance hardening: complete through service-account expiration/rotation/last-use visibility, filtered audit feeds and CSV export, scoped API keys, runbook coverage, and safe OIDC failure auditing.
+- G4 identity lifecycle: complete by decision. Human users and groups remain upstream-owned through gateway/OIDC claims for this phase; Stormrunner-owned user/group persistence, SCIM, and directory sync are future enterprise-directory options rather than W4 blockers.
+
 ### Auth / RBAC Workstream Notes
 - Existing seams: `pkg/api/middleware.go`, `pkg/api/auth_oidc.go`, settings UI, service-account and audit handlers
 - Key risk: supporting both trusted-header and native OIDC without a clear recommendation and diagnostics story
+- Completion checkpoint: W4 now has a documented production auth posture, native OIDC and trusted-header operational paths, backend-owned RBAC matrices, dashboard permission gating, service-account governance, scoped API keys, audit evidence export, runbooks, and an explicit upstream-owned identity lifecycle decision.
 
 ## Cross-Workstream Dependencies
 
