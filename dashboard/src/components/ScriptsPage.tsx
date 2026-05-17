@@ -2,8 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { StoredScript } from '../types'
 import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
-import ScriptCreateOptions from './ScriptCreateOptions'
-import ScriptsAuthoringSurface from './ScriptsAuthoringSurface'
+import ScriptsAuthoringShell from './ScriptsAuthoringShell'
 import ScriptsLibraryTable from './ScriptsLibraryTable'
 import { useScriptsLibraryModel } from './useScriptsLibraryModel'
 import { type ScriptsAuthoringSubView, useScriptsAuthoringState } from './useScriptsAuthoringState'
@@ -75,78 +74,48 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
     openLibrary()
   }, [openLibrary, refresh])
 
-  const hasAuthoringSubview = authoringState.subView !== 'list' && authoringState.subView !== 'create-options'
-
-  const subviewContent = hasAuthoringSubview
-    ? (
-      <ScriptsAuthoringSurface
-        subView={authoringState.subView}
-        draftScript={authoringState.draftScript}
-        editingId={authoringState.editingId}
-        editingScript={authoringState.editingScript}
-        projectId={activeProject?.id}
-        activeProject={activeProject}
-        onSaved={handleSaved}
-        onOpenLibrary={openLibrary}
-        onOpenCreateOptions={openCreateOptions}
-        onImported={handleImported}
-        onEditDraft={handleDraftEdit}
-      />
-    )
-    : null
-
-  if (subviewContent) {
-    return subviewContent
-  }
-
-  if (authoringState.subView === 'create-options') {
-    return (
-      <ScriptCreateOptions
-        onBack={openLibrary}
-        onStartApiScript={createOptionActions.startApiScript}
-        onStartSoapScript={createOptionActions.startSoapScript}
-        onStartJavaHttpScript={createOptionActions.startJavaHttpScript}
-        onOpenJavaHttpImport={createOptionActions.openJavaHttpImport}
-        onOpenSampleImport={createOptionActions.openSampleImport}
-        onStartWebScript={createOptionActions.startWebScript}
-        onOpenRecorder={createOptionActions.openRecorder}
-        onStartJmsScript={createOptionActions.startJmsScript}
-        onOpenLoadRunnerImport={createOptionActions.openLoadRunnerImport}
-        onOpenJMeterImport={createOptionActions.openJMeterImport}
-      />
-    )
-  }
-
   return (
-    <div className="page">
-      <div className="page-header">
-        <div>
-          <h2>Scripts</h2>
-          <p className="page-subtitle">Reusable scripts. Release associations are inferred from actual test usage.</p>
+    <ScriptsAuthoringShell
+      authoringState={authoringState}
+      projectId={activeProject?.id}
+      activeProject={activeProject}
+      createOptionActions={createOptionActions}
+      onSaved={handleSaved}
+      onOpenLibrary={openLibrary}
+      onOpenCreateOptions={openCreateOptions}
+      onImported={handleImported}
+      onEditDraft={handleDraftEdit}
+    >
+      <div className="page">
+        <div className="page-header">
+          <div>
+            <h2>Scripts</h2>
+            <p className="page-subtitle">Reusable scripts. Release associations are inferred from actual test usage.</p>
+          </div>
+          <button className="btn btn-primary" onClick={openCreateOptions}>+ Create Script</button>
         </div>
-        <button className="btn btn-primary" onClick={openCreateOptions}>+ Create Script</button>
-      </div>
 
-      <div className="page-section">
-        <h3 className="section-title">Script Library ({scripts.length})</h3>
-        <ScriptsLibraryTable
-          scripts={sortedScripts}
-          sortField={sortField}
-          sortDirection={sortDirection}
-          onSort={onSort}
-          expandedScriptId={expandedScriptId}
-          onToggleScriptRuns={(script) => { void onToggleScriptRuns(script) }}
-          loadingRunsFor={loadingRunsFor}
-          scriptRuns={scriptRuns}
-          innerSortField={innerSortField}
-          innerSortDirection={innerSortDirection}
-          onInnerSort={onInnerSort}
-          getSortedInnerRuns={getSortedInnerRuns}
-          onSelectScenario={onSelectScenario}
-          onEdit={(id) => { void handleEdit(id) }}
-          onDelete={(id) => { void handleDelete(id) }}
-        />
+        <div className="page-section">
+          <h3 className="section-title">Script Library ({scripts.length})</h3>
+          <ScriptsLibraryTable
+            scripts={sortedScripts}
+            sortField={sortField}
+            sortDirection={sortDirection}
+            onSort={onSort}
+            expandedScriptId={expandedScriptId}
+            onToggleScriptRuns={(script) => { void onToggleScriptRuns(script) }}
+            loadingRunsFor={loadingRunsFor}
+            scriptRuns={scriptRuns}
+            innerSortField={innerSortField}
+            innerSortDirection={innerSortDirection}
+            onInnerSort={onInnerSort}
+            getSortedInnerRuns={getSortedInnerRuns}
+            onSelectScenario={onSelectScenario}
+            onEdit={(id) => { void handleEdit(id) }}
+            onDelete={(id) => { void handleDelete(id) }}
+          />
+        </div>
       </div>
-    </div>
+    </ScriptsAuthoringShell>
   )
 }

@@ -163,6 +163,9 @@ Goal: finish the shared authoring shell already outlined in the repo roadmap.
 | A1.4 | Add shared draft state transitions for acquire -> review -> edit -> validate -> save | L | A1.1, A1.3 |
 | A1.5 | Remove remaining temporary normalization adapters after parity verification | M | A1.2, A1.4 |
 
+Status:
+- A1.1 now has the remaining scripts-page route branching moved into `ScriptsAuthoringShell`, so `ScriptsPage` owns library data/actions while the shell owns list, create-options, and active authoring-surface selection.
+
 Acceptance criteria:
 - Every script acquisition path resolves into the same lifecycle model
 - Validation results are identical across entry points

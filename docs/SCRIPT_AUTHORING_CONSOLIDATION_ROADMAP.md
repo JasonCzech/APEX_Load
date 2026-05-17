@@ -217,10 +217,11 @@ That order minimizes churn and avoids rebuilding the UI around unstable backend 
 - The scripts library now drives table sorting, linked-run expansion, cached run loading, and inner-run sorting through a dedicated library-model hook instead of keeping that state and fetch logic inline in `ScriptsPage`.
 - The scripts library table and linked-run drill-down markup now render through a dedicated table component instead of keeping the entire sortable library table inline in `ScriptsPage`.
 - The scripts library now sources protocol-specific starter drafts from a dedicated factory module instead of keeping HTTP, browser, and JMS default draft definitions inline in `ScriptsPage`.
+- The scripts library now renders list, create-options, and active authoring subviews through a dedicated `ScriptsAuthoringShell`, leaving `ScriptsPage` focused on library fetch, refresh, delete, and table callbacks.
 
 ### Remaining High-Value Work
 - Finish the scenario assembly path by tightening `TestExecution` adjacencies and shared execution/result models now that `CreateTestModal` is aligned on one shared draft state owner.
-- Complete the shared authoring-shell consolidation so the script hub stops owning the remaining route-level create/import state transitions.
+- Continue shared authoring lifecycle work by aligning validation/replay/save handoffs now that the scripts-page route branching is shell-owned.
 - Run the end-to-end parity pass, then remove any temporary normalization or migration adapters that remain after validation.
 
 ### Current Cleanup Note

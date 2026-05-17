@@ -6,7 +6,7 @@ import { createApiDraft, createJavaHttpDraft, createJmsDraft, createSoapDraft, c
 
 export type ScriptsAuthoringSubView = 'list' | 'create-options' | 'create' | 'edit' | 'import' | 'jmeter-import' | 'recorder' | 'sample' | 'java-http-import'
 
-interface AuthoringState {
+export interface AuthoringState {
   subView: ScriptsAuthoringSubView
   editingId: string | null
   editingScript: ScriptDefinition | null
@@ -19,7 +19,7 @@ interface UseScriptsAuthoringStateOptions {
   initialEditId?: string
 }
 
-interface ScriptsCreateOptionActions {
+export interface ScriptsCreateOptionActions {
   startApiScript: () => void
   startSoapScript: () => void
   startJavaHttpScript: () => void
