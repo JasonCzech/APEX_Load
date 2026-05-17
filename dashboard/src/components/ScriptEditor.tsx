@@ -365,6 +365,18 @@ function formatImportedLocationLabel(actions: ScriptActionDefinition[], location
   return actionName ? `${normalizedLocation}: ${actionName}` : normalizedLocation
 }
 
+function findDataSourceIndexByName(dataSources: ScriptDataSource[] | undefined, targetName?: string | null): number | null {
+  const normalizedTarget = targetName?.trim()
+  if (!normalizedTarget) return null
+
+  const exactMatch = (dataSources || []).findIndex(source => source.name?.trim() === normalizedTarget)
+  if (exactMatch >= 0) return exactMatch
+
+  const normalizedLower = normalizedTarget.toLowerCase()
+  const caseInsensitiveMatch = (dataSources || []).findIndex(source => source.name?.trim().toLowerCase() === normalizedLower)
+  return caseInsensitiveMatch >= 0 ? caseInsensitiveMatch : null
+}
+
 function upsertReplayActivity(items: ReplayActivityItem[], next: ReplayActivityItem): ReplayActivityItem[] {
   const index = items.findIndex(item => item.id === next.id)
   if (index === -1) return [...items, next]
@@ -489,6 +501,13 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       columns: columnDetails.length > 0 ? columnDetails : summary.columns,
     }
   })
+  const openImportedDataSourceReview = useCallback((sourceName?: string | null) => {
+    setIsParameterDialogOpen(true)
+    const sourceIndex = findDataSourceIndexByName(script.data_sources, sourceName)
+    if (sourceIndex !== null) {
+      setOpenDataEditor(sourceIndex)
+    }
+  }, [script.data_sources, setIsParameterDialogOpen, setOpenDataEditor])
   const selectedBrowserEngine = script.config.browser?.engine || 'chromium'
   const selectedBrowserProfile = lookupBrowserDeviceProfile(script.config.browser?.device_profile)
   const browserEngineAdvisory = selectedBrowserProfile && selectedBrowserProfile.engine !== selectedBrowserEngine
@@ -2857,6 +2876,11 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                             <span>{typeof source.columns === 'number'
                               ? `${source.columns} column${source.columns === 1 ? '' : 's'}`
                               : source.columns.join(', ') || 'No columns'}</span>
+                            <div className="replay-panel-actions" style={{ marginTop: 12, justifyContent: 'flex-start', flexWrap: 'wrap' }}>
+                              <button className="btn btn-secondary btn-sm" type="button" onClick={() => openImportedDataSourceReview(source.name)}>
+                                Open In Parameter Data
+                              </button>
+                            </div>
                           </div>
                         ))}
                       </div>

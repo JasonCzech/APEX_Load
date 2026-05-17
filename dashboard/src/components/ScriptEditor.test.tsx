@@ -461,6 +461,7 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('Generated Data Sources')
     expect(container.textContent).toContain('login_users')
     expect(container.textContent).toContain('2 rows')
+    expect(container.textContent).toContain('Open In Parameter Data')
     expect(container.textContent).toContain('Correlation Suggestions')
     expect(container.textContent).toContain('session_id')
     expect(container.textContent).toContain('response via $.sessionId')
@@ -487,6 +488,22 @@ describe('ScriptEditor', () => {
     const activeAction = container.querySelector('.action-item.active') as HTMLDivElement | null
     expect(activeAction).not.toBeNull()
     expect(activeAction?.textContent).toContain('Complete Checkout')
+
+    const openImportedDataSourceButton = Array.from(container.querySelectorAll('button')).find(button =>
+      button.textContent?.trim() === 'Open In Parameter Data',
+    )
+    expect(openImportedDataSourceButton).toBeDefined()
+    if (!openImportedDataSourceButton) {
+      return
+    }
+
+    await act(async () => {
+      openImportedDataSourceButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.querySelector('.parameter-data-dialog')).not.toBeNull()
+    expect(container.textContent).toContain('Parameter Data (1)')
+    expect(container.textContent).toContain('Hide Data')
   })
 
   it('preselects the requested action when a draft opens with a focus hint', async () => {
