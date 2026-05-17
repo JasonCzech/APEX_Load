@@ -360,6 +360,12 @@ Acceptance criteria:
 - The remaining identity-ownership question is resolved rather than deferred indefinitely
 - Operators understand where identity lifecycle lives
 
+Progress:
+- G4.1 is resolved as upstream-owned for this parity phase. Stormrunner consumes human identity, group, and role claims from trusted-header gateways or native OIDC tokens and owns only service-account principals for automation.
+- G4.2 is documented in `docs/AUTH_RBAC_OPERATIONS_RUNBOOK.md` with the trusted-header contract, OIDC claim defaults, project-role assignment format, and diagnostics paths operators should use when claims are missing.
+- G4.3 is intentionally not pursued while the upstream-owned decision holds; Stormrunner-owned user/group persistence remains a future option only if real deployments cannot satisfy requirements through IdP or gateway claim shaping.
+- G4.4 is deferred to a future enterprise-directory evaluation. SCIM or directory sync is not required for the current upstream-owned model.
+
 ### Auth / RBAC Workstream Notes
 - Existing seams: `pkg/api/middleware.go`, `pkg/api/auth_oidc.go`, settings UI, service-account and audit handlers
 - Key risk: supporting both trusted-header and native OIDC without a clear recommendation and diagnostics story
