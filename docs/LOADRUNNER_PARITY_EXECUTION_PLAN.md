@@ -90,6 +90,9 @@ Goal: make browser failures and performance regressions explorable from one plac
 
 Status:
 - B1.1 has a first Chromium-backed implementation. Browser client metrics now carry `browser_process_cpu_pct` and `browser_process_mem_mb`, and live/archive/report summaries aggregate them as `avg_browser_process_cpu_pct` and `avg_browser_process_mem_mb`. WebKit process attribution remains open until the Playwright runtime exposes stable process IDs.
+- B1.2 now has a first archive-backed waterfall implementation. Archived browser reports derive capped resource timing rows from persisted network entries, archive views render a Browser Resource Waterfall table, and browser event inspection shows navigation/resource timing summaries with blocking-resource diagnostics.
+- B1.3 has a first unified evidence path across archive and replay surfaces. Expanded browser evidence keeps page timing, screenshots, HTML, console/network entries, DOM summaries, and request/response snapshots together, while browser diagnostics bundles export the same evidence for support review.
+- B1.4 now has a two-run browser comparison surface in Results. Archived runs can be compared side by side by overall, platform, engine, or device breakdown, including browser runtime context, Core Web Vitals deltas, action-level rows, trend charts, and CSV export.
 - B1.5 has a first backend slice implemented through `GET /api/v1/tests/{id}/archive/browser-diagnostics`. The endpoint exports `browser_diagnostics.json` plus screenshot and HTML artifacts captured from archived browser evidence. The dashboard now exposes archived browser-diagnostics downloads, and the script editor can export both the current browser replay session JSON and a richer replay ZIP bundle with manifest, session/report JSON, per-event request/response snapshots, console and network logs, HTML captures, DOM summaries, and screenshots for support review.
 
 Acceptance criteria:
