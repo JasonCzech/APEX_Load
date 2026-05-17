@@ -23,6 +23,18 @@ import SnapshotBodyPreview from './SnapshotBodyPreview'
 import SnapshotTextPreview from './SnapshotTextPreview'
 import { extractSOAPFaultSummaryFromBody, formatSOAPFaultSummary } from './soapFaultUtils'
 import {
+  applyMigrationAssistantSuggestion,
+  buildImportedDraftDiffSummary,
+  buildMigrationAssistantSuggestions,
+  buildProtocolStarterTemplates,
+  collectAuthoringIssues,
+  groupIssuesByAction,
+  summarizeDataSources,
+  summarizeParameters,
+  type AuthoringIssue,
+  type MigrationAssistantSuggestion,
+} from './scriptAuthoringAssist'
+import {
   formatSnapshotRequestSection,
   formatSnapshotResponseSection,
 } from '../utils/snapshotFormatUtils'
@@ -156,6 +168,12 @@ interface ReplayWSMessage extends WSMessage {
   event?: ReplayActionEvent
   report?: ReplayReport
   session?: BrowserReplaySession
+}
+
+interface AssistantChangeLogItem {
+  id: string
+  summary: string
+  title: string
 }
 
 type DataSourceConfig = ScriptDataSource
@@ -482,6 +500,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     replaying,
     saving,
     script,
+    importBaselineScript,
     setActiveAction,
     setActiveReplaySessionId,
     setBrowserReplaySession,
@@ -588,6 +607,24 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     })
   }, [setOpenSections])
   const selectedBrowserEngine = script.config.browser?.engine || 'chromium'
+  const [assistantChangeLog, setAssistantChangeLog] = useState<AssistantChangeLogItem[]>([])
+  const authoringIssues = collectAuthoringIssues(script)
+  const actionIssueBuckets = groupIssuesByAction(authoringIssues, script.actions.length)
+  const scriptLevelIssues = authoringIssues.filter((issue) => typeof issue.actionIndex !== 'number')
+  const errorCount = authoringIssues.filter((issue) => issue.severity === 'error').length
+  const warningCount = authoringIssues.filter((issue) => issue.severity === 'warning').length
+  const starterTemplates = buildProtocolStarterTemplates(script.protocol, script.actions.length)
+  const migrationSuggestions = buildMigrationAssistantSuggestions(script)
+  const importedDraftDiff = importMetadata ? buildImportedDraftDiffSummary(importBaselineScript, script) : null
+  const parameterInspectorItems = summarizeParameters(script.parameters || [])
+  const dataSourceInspectorItems = summarizeDataSources(script.data_sources || [])
+  const extractorInspectorItems = script.actions.flatMap((action, actionIndex) =>
+    (action.extractors || []).map((extractor, extractorIndex) => ({
+      id: `${actionIndex}:${extractorIndex}`,
+      label: `${extractor.name || `extractor_${extractorIndex + 1}`} • ${action.name || `Action ${actionIndex + 1}`}`,
+      actionIndex,
+    })),
+  )
   const selectedBrowserProfile = lookupBrowserDeviceProfile(script.config.browser?.device_profile)
   const browserEngineAdvisory = selectedBrowserProfile && selectedBrowserProfile.engine !== selectedBrowserEngine
     ? `${selectedBrowserProfile.name} requires ${selectedBrowserProfile.engine}. Choose a matching engine or switch to a compatible preset.`
@@ -616,6 +653,10 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [closeReplayScreenshot, replayScreenshotSelection])
+
+  useEffect(() => {
+    setAssistantChangeLog([])
+  }, [importBaselineScript, initialScript, scriptId])
 
   const handleCopyReplaySnapshotSection = async (key: string, value: string) => {
     if (!navigator.clipboard?.writeText) return
@@ -1062,6 +1103,16 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     })) as Action
     setScript(prev => ({ ...prev, actions: [...prev.actions, a] }))
     setActiveAction(script.actions.length)
+  }
+
+  const addActionTemplate = (templateKey: string) => {
+    const template = starterTemplates.find((candidate) => candidate.key === templateKey)
+    if (!template) return
+    const nextAction = JSON.parse(JSON.stringify(template.action)) as Action
+    setScript(prev => ({ ...prev, actions: [...prev.actions, nextAction] }))
+    setActiveAction(script.actions.length)
+    setSuccess(`Added starter block: ${template.label}.`)
+    setError('')
   }
 
   const removeAction = (idx: number) => {
@@ -2196,6 +2247,29 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     })
 
     setSuccess(`Applied auto-parameterization for ${selected.length} candidate${selected.length === 1 ? '' : 's'}.`)
+    setError('')
+  }
+
+  const openEditorSection = (section: 'config' | 'replay' | 'runtime' | 'import' | 'parameter-data') => {
+    if (section === 'parameter-data') {
+      setIsParameterDialogOpen(true)
+      return
+    }
+    setOpenSections(prev => ({ ...prev, [section]: true }))
+  }
+
+  const applyMigrationSuggestion = (suggestion: MigrationAssistantSuggestion) => {
+    const result = applyMigrationAssistantSuggestion(script, suggestion.key)
+    setScript(result.script)
+    setAssistantChangeLog((previous) => [
+      {
+        id: `${suggestion.key}:${previous.length}:${Date.now()}`,
+        title: suggestion.title,
+        summary: result.summary,
+      },
+      ...previous,
+    ].slice(0, 8))
+    setSuccess(result.summary)
     setError('')
   }
 
@@ -4064,6 +4138,19 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
           <div className="actions-layout">
             <div className="actions-content-grid">
               <div className="actions-sidebar">
+                <div className="editor-outline-nav">
+                  <div className="editor-outline-header">
+                    <strong>Outline</strong>
+                    <span>{script.actions.length} actions</span>
+                  </div>
+                  <div className="editor-outline-list">
+                    <button className="editor-outline-link" type="button" onClick={() => openEditorSection('config')}>Script Configuration</button>
+                    <button className="editor-outline-link" type="button" onClick={() => openEditorSection('replay')}>Replay Output</button>
+                    {importMetadata && <button className="editor-outline-link" type="button" onClick={() => openEditorSection('import')}>Imported Metadata</button>}
+                    <button className="editor-outline-link" type="button" onClick={() => openEditorSection('runtime')}>Runtime Settings</button>
+                    <button className="editor-outline-link" type="button" onClick={() => openEditorSection('parameter-data')}>Parameter Data</button>
+                  </div>
+                </div>
                 <div className="actions-sidebar-header">
                   <h3 className="panel-title" style={{ fontSize: 11 }}>Action List</h3>
                   <div className="actions-sidebar-controls">
@@ -4076,6 +4163,14 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                     <div key={i} className={`action-item ${activeAction === i ? 'active' : ''}`} onClick={() => setActiveAction(i)}>
                       <span className="action-method" style={{ color: methodColor(a.type) }}>{a.type}</span>
                       <span className="action-name-text">{a.name || 'Unnamed'}</span>
+                      <div className="action-item-signals">
+                        {(a.extractors || []).length > 0 && <span className="action-signal-pill">E{a.extractors?.length || 0}</span>}
+                        {actionIssueBuckets[i]?.length > 0 && (
+                          <span className={`action-signal-pill ${actionIssueBuckets[i].some((issue) => issue.severity === 'error') ? 'error' : 'warning'}`}>
+                            {actionIssueBuckets[i].length}
+                          </span>
+                        )}
+                      </div>
                       <div className="action-item-actions">
                         <button className="btn-icon" onClick={e => { e.stopPropagation(); moveAction(i, -1) }} disabled={i === 0}>↑</button>
                         <button className="btn-icon" onClick={e => { e.stopPropagation(); moveAction(i, 1) }} disabled={i === script.actions.length - 1}>↓</button>
@@ -4086,6 +4181,20 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                   {script.actions.length === 0 && (
                     <div className="action-empty">No actions yet. Click "+ Add" to create one.</div>
                   )}
+                </div>
+                <div className="starter-blocks-panel">
+                  <div className="starter-blocks-header">
+                    <strong>Starter Blocks</strong>
+                    <span>{starterTemplates.length}</span>
+                  </div>
+                  <div className="starter-blocks-list">
+                    {starterTemplates.map((template) => (
+                      <button key={template.key} type="button" className="starter-block-card" onClick={() => addActionTemplate(template.key)}>
+                        <strong>{template.label}</strong>
+                        <span>{template.description}</span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
 
@@ -4114,6 +4223,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                     isBrowserScript={isBrowserScript}
                     isJmsScript={isJmsScript}
                     isSoapScript={isSoapScript}
+                    issues={actionIssueBuckets[activeAction] || []}
                   />
                 ) : (
                   <div className="action-placeholder">
@@ -4121,6 +4231,186 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                     <p>Select an action to edit its details</p>
                   </div>
                 )}
+              </div>
+
+              <div className="editor-utility-sidebar">
+                <div className="utility-card">
+                  <div className="utility-card-header">
+                    <strong>Authoring Signals</strong>
+                    <span>{errorCount} error{errorCount === 1 ? '' : 's'} • {warningCount} warning{warningCount === 1 ? '' : 's'}</span>
+                  </div>
+                  {scriptLevelIssues.length > 0 ? (
+                    <ul className="utility-list">
+                      {scriptLevelIssues.map((issue) => (
+                        <li key={issue.id} className={`utility-list-item ${issue.severity}`}>{issue.message}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <div className="utility-empty-state">No script-level issues detected.</div>
+                  )}
+                </div>
+
+                {importMetadata && (
+                  <div className="utility-card">
+                    <div className="utility-card-header">
+                      <strong>Migration Assistant</strong>
+                      <span>{migrationSuggestions.length} suggestion{migrationSuggestions.length === 1 ? '' : 's'}</span>
+                    </div>
+                    {migrationSuggestions.length > 0 ? (
+                      <div className="utility-stack">
+                        {migrationSuggestions.map((suggestion) => (
+                          <div key={suggestion.key} className="utility-suggestion-card">
+                            <strong>{suggestion.title}</strong>
+                            <p>{suggestion.description}</p>
+                            <button type="button" className="btn btn-sm btn-secondary" onClick={() => applyMigrationSuggestion(suggestion)}>
+                              {suggestion.applyLabel}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="utility-empty-state">Imported draft cleanup suggestions are already applied.</div>
+                    )}
+                    {assistantChangeLog.length > 0 && (
+                      <div className="utility-audit-log">
+                        <strong>Change Summary</strong>
+                        <ul className="utility-list">
+                          {assistantChangeLog.map((entry) => (
+                            <li key={entry.id} className="utility-list-item">
+                              <strong>{entry.title}</strong>
+                              <span>{entry.summary}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {importMetadata && importedDraftDiff && (
+                  <div className="utility-card">
+                    <div className="utility-card-header">
+                      <strong>Imported Draft Review</strong>
+                      <span>{importedDraftDiff.changed ? 'Changed' : 'No changes'}</span>
+                    </div>
+                    <div className="utility-metric-row">
+                      <span className="action-signal-pill">{importedDraftDiff.actionChanges} action</span>
+                      <span className="action-signal-pill">{importedDraftDiff.parameterChanges} parameter</span>
+                      <span className="action-signal-pill">{importedDraftDiff.dataSourceChanges} data</span>
+                    </div>
+                    {importedDraftDiff.details.length > 0 ? (
+                      <ul className="utility-list">
+                        {importedDraftDiff.details.map((detail, index) => (
+                          <li key={`imported-diff-${index}`} className="utility-list-item">{detail}</li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <div className="utility-empty-state">Current draft still matches the imported baseline.</div>
+                    )}
+                    <details className="utility-json-review">
+                      <summary>Review baseline vs current JSON</summary>
+                      <div className="utility-json-grid">
+                        <div>
+                          <strong>Imported Baseline</strong>
+                          <pre>{JSON.stringify(importBaselineScript, null, 2)}</pre>
+                        </div>
+                        <div>
+                          <strong>Current Draft</strong>
+                          <pre>{JSON.stringify(script, null, 2)}</pre>
+                        </div>
+                      </div>
+                    </details>
+                  </div>
+                )}
+
+                {importSummary.correlationSuggestions.length > 0 && (
+                  <div className="utility-card">
+                    <div className="utility-card-header">
+                      <strong>Correlation Inspector</strong>
+                      <span>{importSummary.correlationSuggestions.length} mappings</span>
+                    </div>
+                    <div className="utility-stack">
+                      {importedCorrelationFocusTargets.map(({ correlation, foundAtActionIndex, foundAtLabel, usedAtTargets }) => (
+                        <div key={`${correlation.name}:${correlation.found_at}`} className="utility-suggestion-card">
+                          <strong>{correlation.name}</strong>
+                          <p>{foundAtLabel}{usedAtTargets.length > 0 ? ` -> ${usedAtTargets.map((target) => target.label).join(', ')}` : ''}</p>
+                          <div className="utility-inline-actions">
+                            {foundAtActionIndex !== null && (
+                              <button type="button" className="btn btn-sm btn-ghost" onClick={() => setActiveAction(foundAtActionIndex)}>
+                                Open source
+                              </button>
+                            )}
+                            {usedAtTargets.slice(0, 2).map((target) => (
+                              <button key={`${correlation.name}:${target.location}`} type="button" className="btn btn-sm btn-ghost" onClick={() => setActiveAction(target.actionIndex)}>
+                                Open use
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="utility-card">
+                  <div className="utility-card-header">
+                    <strong>Parameter & Variable Inspector</strong>
+                    <button type="button" className="btn btn-sm btn-ghost" onClick={() => setIsParameterDialogOpen(true)}>
+                      Open
+                    </button>
+                  </div>
+                  {parameterInspectorItems.length > 0 ? (
+                    <ul className="utility-list">
+                      {parameterInspectorItems.map((item, index) => (
+                        <li key={`parameter-inspector-${index}`} className="utility-list-item">{item}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <div className="utility-empty-state">No named parameters defined yet.</div>
+                  )}
+                  {importedParameterFileMappings.length > 0 && (
+                    <div className="utility-subsection">
+                      <strong>Imported Mappings</strong>
+                      <ul className="utility-list">
+                        {importedParameterFileMappings.map(({ section, sourceName }) => (
+                          <li key={`${section.file}:${section.name}`} className="utility-list-item">
+                            {section.file}: {section.name}{sourceName ? ` -> ${sourceName}` : ''}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+
+                <div className="utility-card">
+                  <div className="utility-card-header">
+                    <strong>Data Sources & Extractors</strong>
+                    <span>{dataSourceInspectorItems.length} data • {extractorInspectorItems.length} extractor{extractorInspectorItems.length === 1 ? '' : 's'}</span>
+                  </div>
+                  {dataSourceInspectorItems.length > 0 ? (
+                    <ul className="utility-list">
+                      {dataSourceInspectorItems.map((item, index) => (
+                        <li key={`source-inspector-${index}`} className="utility-list-item">{item}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <div className="utility-empty-state">No data sources defined yet.</div>
+                  )}
+                  {extractorInspectorItems.length > 0 && (
+                    <div className="utility-subsection">
+                      <strong>Extractors</strong>
+                      <ul className="utility-list">
+                        {extractorInspectorItems.map((item) => (
+                          <li key={item.id} className="utility-list-item">
+                            <button type="button" className="utility-link-button" onClick={() => setActiveAction(item.actionIndex)}>
+                              {item.label}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -4960,7 +5250,7 @@ function ParameterDataSourceRows({
 }
 
 /* Sub-component for editing a single action's details */
-function ActionEditor({ action, index, parameters, onUpdate, onAddExtractor, onUpdateExtractor, onRemoveExtractor, onAddAssertion, onUpdateAssertion, onRemoveAssertion, onAddHeader, onUpdateHeader, onRemoveHeader, onAddMetadata, onUpdateMetadata, onRemoveMetadata, onBeginParameterEdit, methodColor, isBrowserScript, isJmsScript, isSoapScript }: {
+function ActionEditor({ action, index, parameters, onUpdate, onAddExtractor, onUpdateExtractor, onRemoveExtractor, onAddAssertion, onUpdateAssertion, onRemoveAssertion, onAddHeader, onUpdateHeader, onRemoveHeader, onAddMetadata, onUpdateMetadata, onRemoveMetadata, onBeginParameterEdit, methodColor, isBrowserScript, isJmsScript, isSoapScript, issues }: {
   action: Action; index: number
   parameters: ParameterConfig[]
   onUpdate: (i: number, f: keyof Action, v: unknown) => void
@@ -4981,6 +5271,7 @@ function ActionEditor({ action, index, parameters, onUpdate, onAddExtractor, onU
   isBrowserScript: boolean
   isJmsScript: boolean
   isSoapScript: boolean
+  issues: AuthoringIssue[]
 }) {
   const { selectionState, openSelectionMenu, openParameterEditor } = useActionParameterMenu({
     index,
@@ -4990,7 +5281,7 @@ function ActionEditor({ action, index, parameters, onUpdate, onAddExtractor, onU
 
   return (
     <div className="action-editor-panel">
-      <ActionEditorHeader action={action} methodColor={methodColor} />
+      <ActionEditorHeader action={action} issues={issues} methodColor={methodColor} />
 
       <ActionCoreFields
         action={action}
@@ -5056,15 +5347,34 @@ const HTTP_ACTION_TYPES = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPT
 
 interface ActionEditorHeaderProps {
   action: Action
+  issues: AuthoringIssue[]
   methodColor: (method: string) => string
 }
 
-function ActionEditorHeader({ action, methodColor }: ActionEditorHeaderProps) {
+function ActionEditorHeader({ action, issues, methodColor }: ActionEditorHeaderProps) {
   return (
-    <div className="action-editor-top">
-      <span className="action-badge" style={{ background: methodColor(action.type), color: '#fff' }}>{action.type}</span>
-      <h3>{action.name || 'Unnamed Action'}</h3>
-    </div>
+    <>
+      <div className="action-editor-top">
+        <span className="action-badge" style={{ background: methodColor(action.type), color: '#fff' }}>{action.type}</span>
+        <h3>{action.name || 'Unnamed Action'}</h3>
+        {issues.length > 0 && (
+          <div className="action-editor-issue-pills">
+            {issues.map((issue) => (
+              <span key={issue.id} className={`action-signal-pill ${issue.severity}`}>{issue.severity}</span>
+            ))}
+          </div>
+        )}
+      </div>
+      {issues.length > 0 && (
+        <div className="action-editor-issues">
+          {issues.map((issue) => (
+            <div key={`${issue.id}:message`} className={`action-editor-issue ${issue.severity}`}>
+              {issue.message}
+            </div>
+          ))}
+        </div>
+      )}
+    </>
   )
 }
 
@@ -5163,6 +5473,9 @@ function ActionParameterMenu({ selectionState, onOpenParameterEditor }: ActionPa
 
 function useScriptEditorState(initialScript?: ScriptData | null) {
   const [script, setScript] = useState<ScriptData>(initialScript || { ...EMPTY_SCRIPT })
+  const [importBaselineScript, setImportBaselineScript] = useState<ScriptData | null>(
+    initialScript?.metadata?.import ? JSON.parse(JSON.stringify(initialScript)) as ScriptData : null,
+  )
   const [activeAction, setActiveAction] = useState<number | null>(null)
   const [saving, setSaving] = useState(false)
   const [validating, setValidating] = useState(false)
@@ -5206,6 +5519,7 @@ function useScriptEditorState(initialScript?: ScriptData | null) {
 
   const hydrateEditorState = useCallback((nextScript: ScriptData) => {
     setScript(nextScript)
+    setImportBaselineScript(nextScript.metadata?.import ? JSON.parse(JSON.stringify(nextScript)) as ScriptData : null)
     setJsonText(JSON.stringify({ script: nextScript }, null, 2))
     setActiveAction(null)
     setIsParameterDialogOpen(false)
@@ -5242,6 +5556,7 @@ function useScriptEditorState(initialScript?: ScriptData | null) {
     expandedReplayBrowserArtifacts,
     expandedReplayEvent,
     hydrateEditorState,
+    importBaselineScript,
     isParameterDialogOpen,
     jsonMode,
     jsonText,

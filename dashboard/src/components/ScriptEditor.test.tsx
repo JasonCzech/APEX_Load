@@ -2341,6 +2341,130 @@ describe('ScriptEditor', () => {
     expect(container.textContent).not.toContain('View full size')
   })
 
+  it('renders the authoring utility sidebar for imported drafts', async () => {
+    const importedAuthoringScript: ScriptDefinition = {
+      ...initialScript,
+      actions: [
+        {
+          ...initialScript.actions[0],
+          name: ' Login Request ',
+          body: '{"session":"{{param.session_id}}"}',
+        },
+        {
+          ...initialScript.actions[0],
+          name: 'Login Request',
+          method: 'GET',
+          type: 'GET',
+          target: '/orders',
+          body: '',
+        },
+      ],
+      metadata: {
+        import: {
+          source: 'loadrunner',
+          source_script_name: 'checkout.usr',
+          preserved: {
+            correlation_suggestions: [
+              {
+                name: 'session_id',
+                source: 'response',
+                expression: '$.session.id',
+                found_at: 'Step 1',
+                used_at: ['Step 2'],
+              },
+            ],
+            parameter_file_sections: {
+              'Users.prm': {
+                LoginUser: {
+                  Table: 'users.csv',
+                  ColumnName: 'username',
+                },
+              },
+            },
+          },
+        },
+      },
+    }
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={importedAuthoringScript} />)
+    })
+
+    expect(container.textContent).toContain('Outline')
+    expect(container.textContent).toContain('Starter Blocks')
+    expect(container.textContent).toContain('Migration Assistant')
+    expect(container.textContent).toContain('Imported Draft Review')
+    expect(container.textContent).toContain('Correlation Inspector')
+    expect(container.textContent).toContain('Parameter & Variable Inspector')
+    expect(container.textContent).toContain('0 errors • 2 warnings')
+  })
+
+  it('applies migration assistant fixes and starter blocks from the utility sidebar', async () => {
+    const importedAuthoringScript: ScriptDefinition = {
+      ...initialScript,
+      config: {
+        ...initialScript.config,
+        think_time: { type: 'fixed', mean_ms: 0, ignore: true },
+        pacing: { type: 'none' },
+        run_logic: { auto_transactions: 'none' },
+      },
+      actions: [
+        {
+          ...initialScript.actions[0],
+          name: ' Login Request ',
+        },
+        {
+          ...initialScript.actions[0],
+          name: 'Login Request',
+          target: '/profile',
+          body: '',
+        },
+      ],
+      metadata: {
+        import: {
+          source: 'loadrunner',
+          source_script_name: 'checkout.usr',
+          preserved: {},
+        },
+      },
+    }
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={importedAuthoringScript} />)
+    })
+
+    const normalizeButton = Array.from(container.querySelectorAll('button')).find(button =>
+      button.textContent?.includes('Normalize Names'),
+    )
+    expect(normalizeButton).toBeDefined()
+    if (!normalizeButton) {
+      return
+    }
+
+    await act(async () => {
+      normalizeButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.textContent).toContain('Normalized 2 imported action names')
+    expect(container.textContent).toContain('Login_Request')
+    expect(container.textContent).toContain('Login_Request_2')
+
+    const starterButton = Array.from(container.querySelectorAll('button')).find(button =>
+      button.textContent?.includes('POST JSON'),
+    )
+    expect(starterButton).toBeDefined()
+    if (!starterButton) {
+      return
+    }
+
+    await act(async () => {
+      starterButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.textContent).toContain('Added starter block: POST JSON.')
+    expect(Array.from(container.querySelectorAll('.action-item')).length).toBe(3)
+  })
+
   it('renders Java-over-HTTP settings for java_http drafts', async () => {
     const javaScript: ScriptDefinition = {
       ...initialScript,
