@@ -546,6 +546,14 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
                           {typeof source.columns === 'number'
                             ? `${source.columns} column${source.columns === 1 ? '' : 's'}`
                             : source.columns.join(', ') || 'No columns'}
+                          {onEdit && (
+                            <>
+                              {' '}
+                              <button className="btn btn-secondary btn-sm" onClick={() => openImportedScriptInEditor({ targetSection: 'parameter-data', targetDataSource: source.name })}>
+                                Open Source In Editor
+                              </button>
+                            </>
+                          )}
                         </li>
                       ))}
                     </ul>

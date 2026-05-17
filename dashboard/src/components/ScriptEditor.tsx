@@ -322,6 +322,7 @@ interface Props {
   initialScript?: ScriptData | null
   initialFocusedActionName?: string | null
   initialFocusedSection?: string | null
+  initialFocusedDataSourceName?: string | null
   projectId?: string
   folderId?: string | null
   onSave?: (script: StoredScript) => void
@@ -450,7 +451,7 @@ interface ReplayScreenshotSelection {
 }
 
 
-export default function ScriptEditor({ scriptId, initialScript, initialFocusedActionName, initialFocusedSection, projectId, folderId, onSave, onClose }: Props) {
+export default function ScriptEditor({ scriptId, initialScript, initialFocusedActionName, initialFocusedSection, initialFocusedDataSourceName, projectId, folderId, onSave, onClose }: Props) {
   const api = useApi()
   const showProtocolSelector = Boolean(scriptId)
   const {
@@ -718,7 +719,13 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     if (initialFocusedSection === 'parameter-data') {
       setIsParameterDialogOpen(true)
     }
-  }, [hydrateEditorState, initialFocusedActionName, initialFocusedSection, initialScript, setActiveAction, setIsParameterDialogOpen, setOpenSections])
+
+    const focusedDataSourceIndex = findDataSourceIndexByName(initialScript.data_sources, initialFocusedDataSourceName)
+    if (focusedDataSourceIndex !== null) {
+      setIsParameterDialogOpen(true)
+      setOpenDataEditor(focusedDataSourceIndex)
+    }
+  }, [hydrateEditorState, initialFocusedActionName, initialFocusedDataSourceName, initialFocusedSection, initialScript, setActiveAction, setIsParameterDialogOpen, setOpenDataEditor, setOpenSections])
 
   useEffect(() => {
     if (!scriptId || initialScript) return

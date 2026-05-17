@@ -600,6 +600,30 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('Named Parameters')
   })
 
+  it('opens the requested data source when a draft opens with a data source focus hint', async () => {
+    const focusedScript: ScriptDefinition = {
+      ...initialScript,
+      data_sources: [
+        {
+          name: 'users',
+          type: 'csv',
+          path: '',
+          strategy: 'sequential',
+          first_row_header: true,
+          inline_data: 'username\nalice\nbob',
+        },
+      ],
+    }
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={focusedScript} initialFocusedDataSourceName="users" />)
+    })
+
+    expect(container.querySelector('.parameter-data-dialog')).not.toBeNull()
+    expect(container.textContent).toContain('Parameter Data (1)')
+    expect(container.textContent).toContain('Hide Data')
+  })
+
   it('includes the active project id in draft replay payloads', async () => {
     await act(async () => {
       root.render(<ScriptEditor initialScript={initialScript} projectId="project-1" />)

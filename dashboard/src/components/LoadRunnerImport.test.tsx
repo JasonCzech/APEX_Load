@@ -521,6 +521,58 @@ describe('LoadRunnerImport', () => {
     }), { targetSection: 'parameter-data' })
   })
 
+  it('opens a generated source in the visual editor with a data source focus hint', async () => {
+    const onEdit = vi.fn()
+
+    await act(async () => {
+      root.render(<LoadRunnerImport onEdit={onEdit} />)
+    })
+
+    await flushPromises()
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
+    expect(fileInput).not.toBeNull()
+    if (!fileInput) {
+      return
+    }
+
+    const file = new File(['zip-content'], 'demo.zip', { type: 'application/zip' })
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [file],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert LoadRunner Script'))
+    expect(convertButton).toBeDefined()
+    if (!convertButton) {
+      return
+    }
+
+    await act(async () => {
+      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushPromises()
+
+    const openDataSourceButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Open Source In Editor'))
+    expect(openDataSourceButton).toBeDefined()
+    if (!openDataSourceButton) {
+      return
+    }
+
+    await act(async () => {
+      openDataSourceButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Demo LoadRunner Script',
+      protocol: 'http',
+    }), { targetSection: 'parameter-data', targetDataSource: 'login_users' })
+  })
+
   it('starts draft browser replay validation for converted browser imports before save', async () => {
     apiMock.importLoadRunner.mockResolvedValueOnce({
       script: {

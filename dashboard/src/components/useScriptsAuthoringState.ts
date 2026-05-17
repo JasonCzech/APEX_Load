@@ -9,6 +9,7 @@ export type ScriptsAuthoringSubView = 'list' | 'create-options' | 'create' | 'ed
 export interface DraftEditorFocus {
 	targetAction?: string | null
   targetSection?: 'runtime' | 'parameter-data' | null
+  targetDataSource?: string | null
 }
 
 export interface AuthoringState {
@@ -55,10 +56,12 @@ function normalizeDraftEditorFocus(focus?: DraftEditorFocus | null): DraftEditor
   const targetSection = focus.targetSection === 'runtime' || focus.targetSection === 'parameter-data'
     ? focus.targetSection
     : null
-  if (!targetAction && !targetSection) return null
+  const targetDataSource = focus.targetDataSource?.trim()
+  if (!targetAction && !targetSection && !targetDataSource) return null
   return {
     ...(targetAction ? { targetAction } : {}),
     ...(targetSection ? { targetSection } : {}),
+    ...(targetDataSource ? { targetDataSource } : {}),
   }
 }
 
