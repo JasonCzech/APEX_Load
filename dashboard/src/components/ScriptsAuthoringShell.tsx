@@ -53,6 +53,7 @@ export default function ScriptsAuthoringShell({
       <ScriptsAuthoringSurface
         subView={authoringState.subView}
         draftScript={authoringState.draftScript}
+        draftEditorFocus={authoringState.draftEditorFocus}
         editingId={authoringState.editingId}
         editingScript={authoringState.editingScript}
         projectId={projectId}

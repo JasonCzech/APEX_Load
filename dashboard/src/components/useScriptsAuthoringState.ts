@@ -6,11 +6,16 @@ import { createApiDraft, createJavaHttpDraft, createJmsDraft, createSoapDraft, c
 
 export type ScriptsAuthoringSubView = 'list' | 'create-options' | 'create' | 'edit' | 'import' | 'jmeter-import' | 'recorder' | 'sample' | 'java-http-import'
 
+export interface DraftEditorFocus {
+	targetAction?: string | null
+}
+
 export interface AuthoringState {
   subView: ScriptsAuthoringSubView
   editingId: string | null
   editingScript: ScriptDefinition | null
   draftScript: ScriptDefinition | null
+  draftEditorFocus: DraftEditorFocus | null
 }
 
 interface UseScriptsAuthoringStateOptions {
@@ -38,9 +43,16 @@ interface ScriptsAuthoringStateModel {
   openLibrary: () => void
   openCreateOptions: () => void
   handleEdit: (id: string) => Promise<void>
-  handleDraftEdit: (script: ScriptDefinition) => void
+  handleDraftEdit: (script: ScriptDefinition, focus?: DraftEditorFocus) => void
   startDraft: (factory: () => ScriptDefinition) => void
   createOptionActions: ScriptsCreateOptionActions
+}
+
+function normalizeDraftEditorFocus(focus?: DraftEditorFocus | null): DraftEditorFocus | null {
+	if (!focus) return null
+	const targetAction = focus.targetAction?.trim()
+	if (!targetAction) return null
+	return { targetAction }
 }
 
 function normalizeSubView(mode?: ScriptsAuthoringSubView): ScriptsAuthoringSubView {
@@ -54,6 +66,7 @@ function createAuthoringState(mode?: ScriptsAuthoringSubView, editId?: string): 
     editingId: editId || null,
     editingScript: null,
     draftScript: null,
+    draftEditorFocus: null,
   }
 }
 
@@ -65,7 +78,7 @@ export function useScriptsAuthoringState({
   const [authoringState, setAuthoringState] = useState<AuthoringState>(() => createAuthoringState(initialMode, initialEditId))
 
   const setSubview = useCallback((subView: ScriptsAuthoringSubView) => {
-    setAuthoringState({ subView, editingId: null, editingScript: null, draftScript: null })
+    setAuthoringState({ subView, editingId: null, editingScript: null, draftScript: null, draftEditorFocus: null })
   }, [])
 
   const openLibrary = useCallback(() => {
@@ -96,12 +109,13 @@ export function useScriptsAuthoringState({
     setSubview('java-http-import')
   }, [setSubview])
 
-  const openDraftEditor = useCallback((script: ScriptDefinition) => {
+  const openDraftEditor = useCallback((script: ScriptDefinition, focus?: DraftEditorFocus) => {
     setAuthoringState({
       subView: 'create',
       editingId: null,
       editingScript: null,
       draftScript: script,
+      draftEditorFocus: normalizeDraftEditorFocus(focus),
     })
   }, [])
 
@@ -137,6 +151,7 @@ export function useScriptsAuthoringState({
         editingId: id,
         editingScript: res.script ?? null,
         draftScript: null,
+        draftEditorFocus: null,
       })
     } catch {
       // Ignore edit-load failures to preserve existing page behavior.

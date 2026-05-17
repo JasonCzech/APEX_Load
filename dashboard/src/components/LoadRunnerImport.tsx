@@ -6,6 +6,7 @@ import { type ScriptDefinition } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import { buildReplayStartPayload, getImportSummary, summarizeInlineData } from './scriptEditorUtils'
 import ScriptImportReview from './ScriptImportReview'
+import { type DraftEditorFocus } from './useScriptsAuthoringState'
 import './LoadRunnerImport.css'
 
 interface ImportMetadata {
@@ -33,7 +34,7 @@ function isBrowserImport(script: ImportedScript | null): boolean {
 interface Props {
   projectId?: string
   onImported?: (script: ImportedScript) => void
-  onEdit?: (script: ScriptDefinition) => void
+  onEdit?: (script: ScriptDefinition, focus?: DraftEditorFocus) => void
   onClose?: () => void
 }
 
@@ -103,6 +104,11 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
       }
     })
     : []
+
+  const openImportedScriptInEditor = (targetAction?: string) => {
+		if (!importedScript || !onEdit) return
+		onEdit(toScriptDefinition(importedScript), targetAction ? { targetAction } : undefined)
+	}
 
   const resetReplayValidation = () => {
     setReplayValidationLoading(false)
@@ -357,7 +363,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
             warningsTitle={`Conversion Warnings (${result.warnings.length})`}
             saveLabel={reviewMode === 'validation' ? 'Save Reviewed Script' : 'Save to Script Library'}
             onSave={handleSaveConverted}
-            onEdit={onEdit ? () => onEdit(toScriptDefinition(importedScript)) : undefined}
+            onEdit={onEdit ? () => openImportedScriptInEditor() : undefined}
           >
 
             {browserImport && (
@@ -435,6 +441,13 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
                     {suggestion.target_action && <p>Action: {suggestion.target_action}</p>}
                     {suggestion.description && <p>{suggestion.description}</p>}
                     {suggestion.action && <ul><li>{suggestion.action}</li></ul>}
+                    {suggestion.target_action && onEdit && (
+                      <div className="replay-panel-actions" style={{ marginTop: 12, justifyContent: 'flex-start' }}>
+                        <button className="btn btn-secondary btn-sm" onClick={() => openImportedScriptInEditor(suggestion.target_action)}>
+                          Open Target Action In Editor
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

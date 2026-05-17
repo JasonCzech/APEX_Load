@@ -416,6 +416,8 @@ describe('ScriptEditor', () => {
         {
           name: 'login_users',
           type: 'csv',
+          path: '',
+          strategy: 'sequential',
           first_row_header: true,
           inline_data: 'username\nalice\nbob',
         },
@@ -449,6 +451,35 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('response via $.sessionId')
     expect(container.textContent).toContain('Step 1 -> Step 2')
     expect(container.textContent).toContain('abc123')
+  })
+
+  it('preselects the requested action when a draft opens with a focus hint', async () => {
+    const focusedScript: ScriptDefinition = {
+      ...initialScript,
+      actions: [
+        initialScript.actions[0],
+        {
+          name: 'Submit Order',
+          type: 'request',
+          method: 'POST',
+          target: '/checkout',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: '{"cart_id":"demo"}',
+          extractors: [],
+          assertions: [{ type: 'status_code', expected: 200 }],
+        },
+      ],
+    }
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={focusedScript} initialFocusedActionName="Submit Order" />)
+    })
+
+    const activeAction = container.querySelector('.action-item.active') as HTMLDivElement | null
+    expect(activeAction).not.toBeNull()
+    expect(activeAction?.textContent).toContain('Submit Order')
   })
 
   it('includes the active project id in draft replay payloads', async () => {

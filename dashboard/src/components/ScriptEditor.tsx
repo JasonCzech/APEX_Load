@@ -320,10 +320,23 @@ interface ActionEditorParameterDraft {
 interface Props {
   scriptId?: string | null
   initialScript?: ScriptData | null
+  initialFocusedActionName?: string | null
   projectId?: string
   folderId?: string | null
   onSave?: (script: StoredScript) => void
   onClose?: () => void
+}
+
+function findActionIndexByName(actions: ScriptActionDefinition[], targetName?: string | null): number | null {
+	const normalizedTarget = targetName?.trim()
+	if (!normalizedTarget) return null
+
+	const exactMatch = actions.findIndex(action => action.name?.trim() === normalizedTarget)
+	if (exactMatch >= 0) return exactMatch
+
+	const normalizedLower = normalizedTarget.toLowerCase()
+	const caseInsensitiveMatch = actions.findIndex(action => action.name?.trim().toLowerCase() === normalizedLower)
+	return caseInsensitiveMatch >= 0 ? caseInsensitiveMatch : null
 }
 
 function upsertReplayActivity(items: ReplayActivityItem[], next: ReplayActivityItem): ReplayActivityItem[] {
@@ -340,7 +353,7 @@ interface ReplayScreenshotSelection {
 }
 
 
-export default function ScriptEditor({ scriptId, initialScript, projectId, folderId, onSave, onClose }: Props) {
+export default function ScriptEditor({ scriptId, initialScript, initialFocusedActionName, projectId, folderId, onSave, onClose }: Props) {
   const api = useApi()
   const showProtocolSelector = Boolean(scriptId)
   const {
@@ -549,7 +562,12 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
   useEffect(() => {
     if (!initialScript) return
     hydrateEditorState(initialScript)
-  }, [hydrateEditorState, initialScript])
+
+		const focusedActionIndex = findActionIndexByName(initialScript.actions, initialFocusedActionName)
+		if (focusedActionIndex !== null) {
+			setActiveAction(focusedActionIndex)
+		}
+  }, [hydrateEditorState, initialFocusedActionName, initialScript, setActiveAction])
 
   useEffect(() => {
     if (!scriptId || initialScript) return

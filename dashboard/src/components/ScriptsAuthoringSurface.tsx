@@ -6,11 +6,12 @@ import JMeterImport from './JMeterImport'
 import JavaHttpImport from './JavaHttpImport'
 import RecordingStudio from './RecordingStudio'
 import SampleScriptImport from './SampleScriptImport'
-import { type ScriptsAuthoringSubView } from './useScriptsAuthoringState'
+import { type DraftEditorFocus, type ScriptsAuthoringSubView } from './useScriptsAuthoringState'
 
 interface Props {
   subView: ScriptsAuthoringSubView
   draftScript: ScriptDefinition | null
+  draftEditorFocus: DraftEditorFocus | null
   editingId: string | null
   editingScript: ScriptDefinition | null
   projectId?: string
@@ -19,12 +20,13 @@ interface Props {
   onOpenLibrary: () => void
   onOpenCreateOptions: () => void
   onImported: () => void
-  onEditDraft: (script: ScriptDefinition) => void
+  onEditDraft: (script: ScriptDefinition, focus?: DraftEditorFocus) => void
 }
 
 export default function ScriptsAuthoringSurface({
   subView,
   draftScript,
+  draftEditorFocus,
   editingId,
   editingScript,
   projectId,
@@ -37,7 +39,7 @@ export default function ScriptsAuthoringSurface({
 }: Props) {
   switch (subView) {
     case 'create':
-      return <div className="page"><ScriptEditor initialScript={draftScript} projectId={projectId} onSave={onSaved} onClose={onOpenLibrary} /></div>
+      return <div className="page"><ScriptEditor initialScript={draftScript} initialFocusedActionName={draftEditorFocus?.targetAction || null} projectId={projectId} onSave={onSaved} onClose={onOpenLibrary} /></div>
     case 'edit':
       return <div className="page"><ScriptEditor scriptId={editingId} initialScript={editingScript} projectId={projectId} onSave={onSaved} onClose={onOpenLibrary} /></div>
     case 'import':

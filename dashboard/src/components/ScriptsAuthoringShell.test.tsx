@@ -83,6 +83,7 @@ function createState(subView: AuthoringState['subView'], overrides: Partial<Auth
     editingId: null,
     editingScript: null,
     draftScript: null,
+    draftEditorFocus: null,
     ...overrides,
   }
 }
