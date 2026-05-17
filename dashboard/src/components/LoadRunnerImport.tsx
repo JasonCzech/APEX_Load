@@ -246,6 +246,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
   const hasPendingMigrationPolicyChanges = reviewedMigrationPolicy !== null && !sameMigrationBlockPolicy(options, reviewedMigrationPolicy)
   const saveBlockedByMigrationPolicy = Boolean(migrationReadiness?.blocked)
   const browserImport = isBrowserImport(importedScript)
+  const saveRequiresBrowserReplay = browserImport && !replayValidationSession
   const runtimeBlockingSettings = importSummary.runtimeSettingReadiness?.blocking_settings || []
   const generatedDataSources = importedScript
     ? (toScriptDefinition(importedScript).data_sources || []).map((source, index) => {
@@ -723,8 +724,10 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
             script={importedScript}
             warnings={result.warnings}
             warningsTitle={`Conversion Warnings (${result.warnings.length})`}
-            saveDisabled={saveBlockedByMigrationPolicy}
-            saveLabel={reviewMode === 'validation' ? 'Save Reviewed Script' : 'Save to Script Library'}
+            saveDisabled={saveBlockedByMigrationPolicy || replayValidationLoading}
+            saveLabel={reviewMode === 'validation'
+              ? 'Save Reviewed Script'
+              : (saveRequiresBrowserReplay ? 'Start Browser Replay Before Saving' : 'Save to Script Library')}
             onSave={handleSaveConverted}
             onEdit={onEdit ? () => openImportedScriptInEditor() : undefined}
           >

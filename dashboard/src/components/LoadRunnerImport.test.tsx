@@ -1950,7 +1950,7 @@ describe('LoadRunnerImport', () => {
 
     await flushPromises()
 
-    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save to Script Library'))
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Start Browser Replay Before Saving'))
     expect(saveButton).toBeDefined()
     if (!saveButton) {
       return
