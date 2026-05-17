@@ -1876,7 +1876,7 @@ describe('LoadRunnerImport', () => {
         project_id: 'project-1',
       }),
     }))
-    expect(container.textContent).toContain('Browser replay validation started. Review the draft session before saving this import.')
+    expect(container.textContent).toContain('Draft browser replay started. Review the draft session before saving this import.')
     expect(container.textContent).toContain('Session: draft-browser-validation')
     expect(container.textContent).toContain('Status: Running')
     expect(container.textContent).toContain('selector repair recommended')
@@ -2054,7 +2054,7 @@ describe('LoadRunnerImport', () => {
           project_id: 'project-1',
         }),
       }))
-      expect(container.textContent).toContain('Browser replay validation started. Review the draft session before saving this import.')
+      expect(container.textContent).toContain('Draft browser replay started. Review the draft session before saving this import.')
       expect(container.textContent).toContain('Session: draft-browser-validation')
       expect(container.textContent).toContain('Status: Running')
       expect(container.textContent).toContain('Browser Replay In Progress')
@@ -2333,7 +2333,7 @@ describe('LoadRunnerImport', () => {
       await flushPromises()
 
       expect(apiMock.startDraftBrowserReplaySession).toHaveBeenCalledTimes(2)
-      expect(container.textContent).toContain('Browser replay validation restarted. Review the refreshed draft session before saving this import.')
+      expect(container.textContent).toContain('Draft browser replay restarted. Review the refreshed draft session before saving this import.')
       expect(container.textContent).toContain('Session: draft-browser-validation-rerun')
       expect(container.textContent).toContain('Status: Running')
     } finally {

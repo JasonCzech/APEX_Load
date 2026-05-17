@@ -485,8 +485,8 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
 
   const setBrowserReplayStartedNotice = (wasStarted: boolean) => {
     setNotice(wasStarted
-      ? 'Browser replay validation restarted. Review the refreshed draft session before saving this import.'
-      : 'Browser replay validation started. Review the draft session before saving this import.')
+      ? 'Draft browser replay restarted. Review the refreshed draft session before saving this import.'
+      : 'Draft browser replay started. Review the draft session before saving this import.')
   }
 
   useEffect(() => {
@@ -617,7 +617,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
       return
     }
     if (browserReplayInProgress) {
-      setNotice('Browser replay validation is still running. Wait for it to finish before saving this import.')
+      setNotice('Draft browser replay is still running. Wait for it to finish before saving this import.')
       return
     }
     if (browserReplayNeedsRerun) {
