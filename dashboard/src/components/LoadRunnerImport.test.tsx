@@ -1770,18 +1770,21 @@ describe('LoadRunnerImport', () => {
         skipped: 0,
       },
     })
-    apiMock.startDraftBrowserReplaySession.mockResolvedValueOnce({
-      script_id: '',
-      replay_session_id: 'draft-browser-validation',
+    let resolveReplayStart: ((value: {
+      script_id: string
+      replay_session_id: string
       session: {
-        id: 'draft-browser-validation',
-        status: 'running',
-        group: 'default',
-        protocol: 'browser',
-        current_event_index: 0,
-      },
-      warnings: ['selector repair recommended'],
-    })
+        id: string
+        status: string
+        group: string
+        protocol: string
+        current_event_index: number
+      }
+      warnings: string[]
+    }) => void) | null = null
+    apiMock.startDraftBrowserReplaySession.mockReturnValueOnce(new Promise((resolve) => {
+      resolveReplayStart = resolve
+    }))
 
     await act(async () => {
       root.render(<LoadRunnerImport projectId="project-1" />)
@@ -1825,6 +1828,33 @@ describe('LoadRunnerImport', () => {
 
     await act(async () => {
       validateReplayButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushPromises()
+
+    expect(container.textContent).toContain('Starting')
+    expect(container.textContent).toContain('Wait for the draft replay to finish before saving it to the library.')
+    expect(container.textContent).toContain('Review the generated script, preserved metadata, and warnings. Wait for the draft browser replay to finish before saving.')
+    const startingReplayButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Starting Browser Replay...')) as HTMLButtonElement | undefined
+    expect(startingReplayButton).toBeDefined()
+    expect(startingReplayButton?.disabled).toBe(true)
+    const inProgressSaveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Browser Replay In Progress')) as HTMLButtonElement | undefined
+    expect(inProgressSaveButton).toBeDefined()
+    expect(inProgressSaveButton?.disabled).toBe(true)
+
+    await act(async () => {
+      resolveReplayStart?.({
+        script_id: '',
+        replay_session_id: 'draft-browser-validation',
+        session: {
+          id: 'draft-browser-validation',
+          status: 'running',
+          group: 'default',
+          protocol: 'browser',
+          current_event_index: 0,
+        },
+        warnings: ['selector repair recommended'],
+      })
     })
 
     await flushPromises()

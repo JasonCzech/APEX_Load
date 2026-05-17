@@ -247,10 +247,13 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
   const saveBlockedByMigrationPolicy = Boolean(migrationReadiness?.blocked)
   const browserImport = isBrowserImport(importedScript)
   const browserReplayStatus = replayValidationSession?.status || null
-  const browserReplayStatusLabel = formatRuntimeSettingStatusLabel(browserReplayStatus || 'not run')
+  const browserReplayStarting = browserImport && replayValidationLoading && replayValidationSession === null
+  const browserReplayStatusLabel = browserReplayStarting
+    ? 'Starting'
+    : formatRuntimeSettingStatusLabel(browserReplayStatus || 'not run')
   const browserReplayWasStarted = browserImport && replayValidationSession !== null
-  const browserReplayInProgress = browserImport && (browserReplayStatus === 'queued' || browserReplayStatus === 'running' || browserReplayStatus === 'paused')
-  const browserReplayNeedsRerun = browserImport && (replayValidationSession === null || browserReplayStatus === 'failed' || browserReplayStatus === 'stopped')
+  const browserReplayInProgress = browserImport && (browserReplayStarting || browserReplayStatus === 'queued' || browserReplayStatus === 'running' || browserReplayStatus === 'paused')
+  const browserReplayNeedsRerun = browserImport && !browserReplayInProgress && (replayValidationSession === null || browserReplayStatus === 'failed' || browserReplayStatus === 'stopped')
   const saveRequiresBrowserReplay = browserReplayNeedsRerun
   const saveActionLabel = browserReplayInProgress
     ? 'Browser Replay In Progress'
