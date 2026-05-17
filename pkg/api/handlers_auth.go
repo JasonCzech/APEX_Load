@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"crypto/rand"
+	"encoding/csv"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -598,21 +599,81 @@ func (s *Server) handleListAuditEvents(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
 		return
 	}
-	limit := 50
+	filter, ok := parseAuditEventFilter(w, r, 50)
+	if !ok {
+		return
+	}
+	events, err := s.store.ListAuditEvents(filter)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, AuthAuditEventListResponse{Events: events, Count: len(events), Limit: filter.Limit, Offset: filter.Offset})
+}
+
+func (s *Server) handleExportAuditEvents(w http.ResponseWriter, r *http.Request) {
+	if s.store == nil {
+		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
+		return
+	}
+	filter, ok := parseAuditEventFilter(w, r, 1000)
+	if !ok {
+		return
+	}
+	events, err := s.store.ListAuditEvents(filter)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="stormrunner-audit-events.csv"`)
+	writer := csv.NewWriter(w)
+	if err := writer.Write([]string{"id", "created_at", "action", "status", "actor_type", "actor_subject", "actor_display_name", "project_id", "resource_type", "resource_id", "details_json"}); err != nil {
+		return
+	}
+	for _, event := range events {
+		details := ""
+		if len(event.Details) > 0 {
+			if encoded, err := json.Marshal(event.Details); err == nil {
+				details = string(encoded)
+			}
+		}
+		record := []string{
+			event.ID,
+			event.CreatedAt.UTC().Format(time.RFC3339),
+			event.Action,
+			event.Status,
+			event.ActorType,
+			event.ActorSubject,
+			event.ActorDisplayName,
+			event.ProjectID,
+			event.ResourceType,
+			event.ResourceID,
+			details,
+		}
+		if err := writer.Write(record); err != nil {
+			return
+		}
+	}
+	writer.Flush()
+}
+
+func parseAuditEventFilter(w http.ResponseWriter, r *http.Request, defaultLimit int) (storage.AuditEventFilter, bool) {
+	limit := defaultLimit
 	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
 		if _, err := fmt.Sscanf(raw, "%d", &limit); err != nil || limit <= 0 {
 			writeError(w, http.StatusBadRequest, "limit must be a positive integer")
-			return
+			return storage.AuditEventFilter{}, false
 		}
 	}
 	offset := 0
 	if raw := strings.TrimSpace(r.URL.Query().Get("offset")); raw != "" {
 		if _, err := fmt.Sscanf(raw, "%d", &offset); err != nil || offset < 0 {
 			writeError(w, http.StatusBadRequest, "offset must be a non-negative integer")
-			return
+			return storage.AuditEventFilter{}, false
 		}
 	}
-	filter := storage.AuditEventFilter{
+	return storage.AuditEventFilter{
 		Limit:        limit,
 		Offset:       offset,
 		Action:       strings.TrimSpace(r.URL.Query().Get("action")),
@@ -621,13 +682,7 @@ func (s *Server) handleListAuditEvents(w http.ResponseWriter, r *http.Request) {
 		ResourceType: strings.TrimSpace(r.URL.Query().Get("resource_type")),
 		ResourceID:   strings.TrimSpace(r.URL.Query().Get("resource_id")),
 		Status:       strings.TrimSpace(r.URL.Query().Get("status")),
-	}
-	events, err := s.store.ListAuditEvents(filter)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, AuthAuditEventListResponse{Events: events, Count: len(events), Limit: filter.Limit, Offset: filter.Offset})
+	}, true
 }
 
 func buildServiceAccount(req AuthServiceAccountRequest) (*storage.ServiceAccount, string, error) {

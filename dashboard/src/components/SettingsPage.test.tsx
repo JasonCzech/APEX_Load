@@ -8,6 +8,10 @@ import SettingsPage from './SettingsPage'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
+const { downloadBlobMock } = vi.hoisted(() => ({
+  downloadBlobMock: vi.fn(),
+}))
+
 const apiMock = {
   getAuthEffectiveAccess: vi.fn(),
   getAuthAccessMatrix: vi.fn(),
@@ -19,6 +23,7 @@ const apiMock = {
   rotateAuthServiceAccount: vi.fn(),
   deleteAuthServiceAccount: vi.fn(),
   listAuthAuditEvents: vi.fn(),
+  downloadAuthAuditEvents: vi.fn(),
   getSystemSettings: vi.fn(),
   getHealth: vi.fn(),
   getSystemInventory: vi.fn(),
@@ -86,6 +91,10 @@ vi.mock('../hooks/useProject', () => ({
   useProject: () => ({
     activeProject: { id: 'project-1', name: 'Checkout', created_at: '', updated_at: '' },
   }),
+}))
+
+vi.mock('../utils/fileUtils', () => ({
+  downloadBlob: downloadBlobMock,
 }))
 
 describe('SettingsPage', () => {
@@ -225,6 +234,7 @@ describe('SettingsPage', () => {
       ],
       count: 1,
     })
+    apiMock.downloadAuthAuditEvents.mockResolvedValue(new Blob(['id,action\n'], { type: 'text/csv' }))
     apiMock.createAuthServiceAccount.mockResolvedValue({
       service_account: {
         id: 'svc-2',
@@ -351,6 +361,7 @@ describe('SettingsPage', () => {
     })
     container.remove()
     vi.clearAllMocks()
+    downloadBlobMock.mockReset()
   })
 
   it('defaults generator capacity fields to the connected live pod capacity when settings are still at the stock defaults', async () => {
@@ -884,6 +895,22 @@ describe('SettingsPage', () => {
       actor_type: 'dev_mode',
       status: 'success',
     }))
+
+    const exportAuditButton = Array.from(generalSection.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Export CSV') as HTMLButtonElement | undefined
+    expect(exportAuditButton).toBeDefined()
+    if (!exportAuditButton) return
+    await act(async () => {
+      exportAuditButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+    expect(apiMock.downloadAuthAuditEvents).toHaveBeenCalledWith(expect.objectContaining({
+      limit: 1000,
+      action: 'auth.service_account.rotate',
+      actor_type: 'dev_mode',
+      status: 'success',
+    }))
+    expect(downloadBlobMock).toHaveBeenCalledWith(expect.any(Blob), expect.stringMatching(/^stormrunner-audit-events-\d{4}-\d{2}-\d{2}\.csv$/))
+    expect(generalSection.textContent).toContain('Audit export downloaded.')
   })
 
   it('shows the current authenticated identity and effective roles when trusted-header auth is enabled', async () => {

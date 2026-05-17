@@ -340,6 +340,7 @@ Acceptance criteria:
 - Security-sensitive auth flows are explicitly reviewed and documented
 
 Progress:
+- G3.2 has an audit-export slice: `GET /api/v1/auth/audit-events/export` emits filtered CSV evidence through the same system-admin RBAC boundary as audit viewing, and the dashboard settings audit panel can download the current action/actor/status filtered result set.
 - G3.5 has a first hardening pass: native OIDC logout is a CSRF-protected `POST`, `/auth/me` reports session expiry metadata, the dashboard warns on imminent local-session expiry, and representative OIDC callback failures are audited without persisting authorization codes, raw tokens, client secrets, or signed cookie material.
 
 ### Epic G4: Directory And Lifecycle Extensions

@@ -7,6 +7,7 @@ This document turns the remaining 3.1 platform-gap work into issue-ready tickets
 - `oidc` mode with local login, callback, logout, signed session cookies, and RBAC claim mapping
 - service-account API keys
 - audit coverage for service-account lifecycle changes plus OIDC login, logout, and representative callback failure events
+- filtered audit CSV export for operator evidence packs and incident review
 
 The remaining backlog is mostly about hardening, lifecycle ownership, and architectural decisions rather than missing foundational RBAC primitives.
 
@@ -16,6 +17,7 @@ The remaining backlog is mostly about hardening, lifecycle ownership, and archit
 - The material remaining auth gap is not basic sign-in anymore; it is long-term identity ownership and operational hardening.
 - Native OIDC logout now uses an explicit `POST /api/v1/auth/logout` flow with CSRF proof from the dashboard rather than a plain top-level `GET`, which closes the most obvious session-mutation gap from the first implementation pass.
 - Native OIDC sessions now report active, missing, invalid, or expired state through `/api/v1/auth/me`, and the dashboard warns users before short-lived sessions expire instead of letting them discover expiry through abrupt protected-route failures.
+- Audit evidence can now be exported from `GET /api/v1/auth/audit-events/export` or the dashboard settings audit panel with the same action, actor type, and status filters used by the recent event feed.
 
 ## Ticket 1: Harden OIDC Logout and Session CSRF Boundaries
 

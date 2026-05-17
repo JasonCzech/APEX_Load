@@ -15,7 +15,29 @@ import {
   HealthResponse,
   SystemInventoryResponse,
 } from '../../types'
-import { request } from '../apiClient'
+import { BASE, request } from '../apiClient'
+
+function buildQuery(params: Record<string, string | number | undefined>) {
+  const query = new URLSearchParams()
+
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== '') {
+      query.set(key, String(value))
+    }
+  })
+
+  const suffix = query.toString()
+  return suffix ? `?${suffix}` : ''
+}
+
+async function fetchBlob(path: string): Promise<Blob> {
+  const res = await fetch(`${BASE}${path}`)
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: res.statusText }))
+    throw new Error(body.error || res.statusText)
+  }
+  return res.blob()
+}
 
 export function useSystemApi() {
   const getAuthEffectiveAccess = useCallback((projectId?: string) => request<DashboardAuthEffectiveAccess>(`/auth/effective-access${projectId ? `?project_id=${encodeURIComponent(projectId)}` : ''}`), [])
@@ -37,19 +59,9 @@ export function useSystemApi() {
   )
   const deleteAuthServiceAccount = useCallback((id: string) => request<{ deleted: string }>(`/auth/service-accounts/${encodeURIComponent(id)}`, { method: 'DELETE' }), [])
   const listAuthAuditEvents = useCallback((filter: DashboardAuditEventFilter = {}) => {
-    const params = new URLSearchParams()
-    const entries = Object.entries(filter) as Array<[keyof DashboardAuditEventFilter, string | number | undefined]>
-    entries.forEach(([key, value]) => {
-      if (value === undefined || value === '') {
-        return
-      }
-      params.set(key, String(value))
-    })
-    if (!params.has('limit')) {
-      params.set('limit', '20')
-    }
-    return request<DashboardAuditEventListResponse>(`/auth/audit-events?${params.toString()}`)
+    return request<DashboardAuditEventListResponse>(`/auth/audit-events${buildQuery({ limit: 20, ...filter })}`)
   }, [])
+  const downloadAuthAuditEvents = useCallback((filter: DashboardAuditEventFilter = {}) => fetchBlob(`/auth/audit-events/export${buildQuery({ limit: 1000, ...filter })}`), [])
   const getHealth = useCallback(() => request<HealthResponse>('/system/health'), [])
   const getSystemInventory = useCallback(() => request<SystemInventoryResponse>('/system/inventory'), [])
 
@@ -72,11 +84,12 @@ export function useSystemApi() {
       rotateAuthServiceAccount,
       deleteAuthServiceAccount,
       listAuthAuditEvents,
+      downloadAuthAuditEvents,
       getHealth,
       getSystemInventory,
       getSystemSettings,
       updateSystemSettings,
     }),
-    [getAuthEffectiveAccess, getAuthAccessMatrix, getAuthDiagnostics, getAuthRoleCatalog, listAuthServiceAccounts, createAuthServiceAccount, updateAuthServiceAccount, rotateAuthServiceAccount, deleteAuthServiceAccount, listAuthAuditEvents, getHealth, getSystemInventory, getSystemSettings, updateSystemSettings],
+    [getAuthEffectiveAccess, getAuthAccessMatrix, getAuthDiagnostics, getAuthRoleCatalog, listAuthServiceAccounts, createAuthServiceAccount, updateAuthServiceAccount, rotateAuthServiceAccount, deleteAuthServiceAccount, listAuthAuditEvents, downloadAuthAuditEvents, getHealth, getSystemInventory, getSystemSettings, updateSystemSettings],
   )
 }

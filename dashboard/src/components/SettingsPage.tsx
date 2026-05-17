@@ -7,6 +7,7 @@ import { useProject } from '../hooks/useProject'
 import { useApi } from '../hooks/useApi'
 import { DashboardAuditEvent, DashboardAuthAccessResource, DashboardAuthDiagnostics, DashboardAuthDiagnosticsCheck, DashboardAuthEffectiveAccessResource, DashboardAuthRoleDefinition, DashboardAuthStatus, DashboardServiceAccount, DashboardSystemSettings, HealthResponse, Project, RedactionRule, SharedDataPool, SharedDataPoolRow, SystemInventoryResponse } from '../types'
 import { getErrorMessage } from '../utils/errorUtils'
+import { downloadBlob } from '../utils/fileUtils'
 
 const DEFAULT_SETTINGS: DashboardSystemSettings = {
   general: {
@@ -670,6 +671,8 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
   const [serviceAccountProjectRoles, setServiceAccountProjectRoles] = useState('')
   const [serviceAccountActionMessage, setServiceAccountActionMessage] = useState('')
   const [serviceAccountActionError, setServiceAccountActionError] = useState('')
+  const [auditActionMessage, setAuditActionMessage] = useState('')
+  const [auditActionError, setAuditActionError] = useState('')
   const [issuedServiceAccountKey, setIssuedServiceAccountKey] = useState('')
   const [auditActionFilter, setAuditActionFilter] = useState('')
   const [auditActorTypeFilter, setAuditActorTypeFilter] = useState('')
@@ -1174,6 +1177,24 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
       status: auditStatusFilter.trim() || undefined,
     })
     setAuditEvents(response.events || [])
+  }
+
+  const exportAuditEvents = async () => {
+    try {
+      const blob = await api.downloadAuthAuditEvents({
+        limit: 1000,
+        action: auditActionFilter.trim() || undefined,
+        actor_type: auditActorTypeFilter.trim() || undefined,
+        status: auditStatusFilter.trim() || undefined,
+      })
+      const date = new Date().toISOString().slice(0, 10)
+      downloadBlob(blob, `stormrunner-audit-events-${date}.csv`)
+      setAuditActionMessage('Audit export downloaded.')
+      setAuditActionError('')
+    } catch (error: unknown) {
+      setAuditActionError(getErrorMessage(error, 'Unable to export audit events'))
+      setAuditActionMessage('')
+    }
   }
 
   const createServiceAccount = async () => {
@@ -2418,14 +2439,22 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
                     <div className="setting-row">
                       <div className="setting-info">
                         <span className="setting-label">Audit Filters</span>
-                        <span className="setting-desc">Narrow the recent audit feed by action, actor type, or status.</span>
+                        <span className="setting-desc">Narrow the recent audit feed and CSV export by action, actor type, or status.</span>
                       </div>
                       <div className="settings-inline-actions">
                         <input className="settings-input cell-mono" value={auditActionFilter} onChange={(e) => setAuditActionFilter(e.target.value)} placeholder="action" />
                         <input className="settings-input cell-mono" value={auditActorTypeFilter} onChange={(e) => setAuditActorTypeFilter(e.target.value)} placeholder="actor_type" />
                         <input className="settings-input cell-mono" value={auditStatusFilter} onChange={(e) => setAuditStatusFilter(e.target.value)} placeholder="status" />
+                        <button className="btn btn-secondary" type="button" onClick={exportAuditEvents}>
+                          Export CSV
+                        </button>
                       </div>
                     </div>
+                    {(auditActionMessage || auditActionError) && (
+                      <div className={`settings-alert ${auditActionError ? 'error' : 'success'}`}>
+                        {auditActionError || auditActionMessage}
+                      </div>
+                    )}
                     {auditEvents.length > 0 ? auditEvents.map((event) => (
                       <div className="setting-row" key={event.id}>
                         <div className="setting-info">

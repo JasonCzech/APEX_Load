@@ -2,10 +2,12 @@ package api
 
 import (
 	"bytes"
+	"encoding/csv"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/jasonczech/stormrunner/pkg/storage"
@@ -475,5 +477,31 @@ func TestHandleGetAuditEventsReturnsRecordedSystemSettingsChange(t *testing.T) {
 	}
 	if filtered.Count != 1 || filtered.Limit != 1 || filtered.Offset != 0 {
 		t.Fatalf("filtered audit payload = %#v, want one paged event", filtered)
+	}
+
+	exportReq := httptest.NewRequest(http.MethodGet, "/api/v1/auth/audit-events/export?action=system.settings.update&actor_type=dev_mode&limit=10", nil)
+	exportResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(exportResp, exportReq)
+	if exportResp.Code != http.StatusOK {
+		t.Fatalf("audit export status = %d, want %d body=%s", exportResp.Code, http.StatusOK, exportResp.Body.String())
+	}
+	if got := exportResp.Header().Get("Content-Type"); !strings.HasPrefix(got, "text/csv") {
+		t.Fatalf("audit export content type = %q, want text/csv", got)
+	}
+	if got := exportResp.Header().Get("Content-Disposition"); !strings.Contains(got, "stormrunner-audit-events.csv") {
+		t.Fatalf("audit export disposition = %q, want filename", got)
+	}
+	csvRows, err := csv.NewReader(strings.NewReader(exportResp.Body.String())).ReadAll()
+	if err != nil {
+		t.Fatalf("read audit export csv: %v", err)
+	}
+	if len(csvRows) < 2 {
+		t.Fatalf("audit export rows = %#v, want header plus event", csvRows)
+	}
+	if csvRows[0][0] != "id" || csvRows[0][2] != "action" || csvRows[0][10] != "details_json" {
+		t.Fatalf("audit export header = %#v", csvRows[0])
+	}
+	if csvRows[1][2] != "system.settings.update" || csvRows[1][4] != "dev_mode" {
+		t.Fatalf("audit export event row = %#v", csvRows[1])
 	}
 }

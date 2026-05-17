@@ -379,6 +379,10 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 		return accessRequirement{GlobalRoles: []string{RoleSystemAdmin}}, true
 	}
 
+	if path == "/api/v1/auth/audit-events/export" && method == http.MethodGet {
+		return accessRequirement{GlobalRoles: []string{RoleSystemAdmin}}, true
+	}
+
 	if path == "/api/v1/system/inventory" && method == http.MethodGet {
 		return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
 	}
