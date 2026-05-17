@@ -354,6 +354,17 @@ function findActionIndexByImportedLocation(actions: ScriptActionDefinition[], lo
   return actionIndex
 }
 
+function formatImportedLocationLabel(actions: ScriptActionDefinition[], location?: string | null, actionIndex?: number | null): string {
+  const normalizedLocation = location?.trim()
+  if (!normalizedLocation) return 'Unknown action'
+  if (actionIndex === null || actionIndex === undefined || actionIndex < 0 || actionIndex >= actions.length) {
+    return normalizedLocation
+  }
+
+  const actionName = actions[actionIndex]?.name?.trim()
+  return actionName ? `${normalizedLocation}: ${actionName}` : normalizedLocation
+}
+
 function upsertReplayActivity(items: ReplayActivityItem[], next: ReplayActivityItem): ReplayActivityItem[] {
   const index = items.findIndex(item => item.id === next.id)
   if (index === -1) return [...items, next]
@@ -440,16 +451,22 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const importSummary = getImportSummary(importMetadata)
   const importedCorrelationFocusTargets = importSummary.correlationSuggestions.map((correlation) => {
     const foundAtActionIndex = findActionIndexByImportedLocation(script.actions, correlation.found_at)
-    const usedAtTargets = correlation.used_at
+    const foundAtLabel = formatImportedLocationLabel(script.actions, correlation.found_at, foundAtActionIndex)
+    const usedAtLocations = correlation.used_at
       .map((location) => ({
         location,
         actionIndex: findActionIndexByImportedLocation(script.actions, location),
+        label: formatImportedLocationLabel(script.actions, location, findActionIndexByImportedLocation(script.actions, location)),
       }))
-      .filter((target): target is { location: string; actionIndex: number } => target.actionIndex !== null)
+
+    const usedAtTargets = usedAtLocations
+      .filter((target): target is { location: string; actionIndex: number; label: string } => target.actionIndex !== null)
 
     return {
       correlation,
       foundAtActionIndex,
+      foundAtLabel,
+      usedAtLocations,
       usedAtTargets,
     }
   })
@@ -2772,11 +2789,26 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                       <h4>Correlation Suggestions</h4>
                       <p>Review the imported extractor mappings before you rename variables or rewrite dependent requests.</p>
                       <div className="import-correlation-list">
-                        {importedCorrelationFocusTargets.map(({ correlation, foundAtActionIndex, usedAtTargets }) => (
+                        {importedCorrelationFocusTargets.map(({ correlation, foundAtActionIndex, foundAtLabel, usedAtLocations, usedAtTargets }) => (
                           <div key={`${correlation.name}:${correlation.expression}:${correlation.found_at}`} className="import-correlation-card">
                             <strong>{correlation.name}</strong>
                             <span>{correlation.source} via {correlation.expression}</span>
-                            <span>{correlation.found_at}{correlation.used_at.length > 0 ? ` -> ${correlation.used_at.join(', ')}` : ''}</span>
+                            <div className="import-correlation-flow">
+                              <div className="import-correlation-flow-row">
+                                <span className="import-correlation-flow-label">Found In</span>
+                                <span className="import-correlation-flow-value">{foundAtLabel}</span>
+                              </div>
+                              {usedAtLocations.length > 0 && (
+                                <div className="import-correlation-flow-row">
+                                  <span className="import-correlation-flow-label">Used In</span>
+                                  <div className="import-correlation-flow-tags">
+                                    {usedAtLocations.map(({ location, label }) => (
+                                      <span key={`${correlation.name}:${location}:label`} className="import-correlation-flow-chip">{label}</span>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
                             {correlation.sample_value && <code>{correlation.sample_value}</code>}
                             {(foundAtActionIndex !== null || usedAtTargets.length > 0) && (
                               <div className="replay-panel-actions" style={{ marginTop: 12, justifyContent: 'flex-start', flexWrap: 'wrap' }}>
