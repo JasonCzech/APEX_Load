@@ -325,6 +325,7 @@ Acceptance criteria:
 - Project isolation is provable in tests
 
 Progress:
+- G2.1/G2.5 now include regression coverage for auth/governance route requirements. Service-account lifecycle endpoints, audit list/export, system inventory, and system settings routes are table-tested against their expected global role requirements so sensitive endpoints cannot silently lose RBAC coverage.
 - G2.2 has a first settings-surface alignment pass. The dashboard now uses backend effective-access results to disable global settings saves/resets, service-account lifecycle actions, and audit CSV export when the current session lacks `manage_system`, `manage_service_accounts`, or `view_audit`.
 - G2.3 is implemented through `GET /api/v1/auth/access-matrix`, which publishes the backend-owned resource and operation matrix rendered in Settings under Route Access Matrix.
 

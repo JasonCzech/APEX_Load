@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -16,6 +17,41 @@ import (
 	"github.com/jasonczech/stormrunner/pkg/recorder"
 	"github.com/jasonczech/stormrunner/pkg/storage"
 )
+
+func TestAccessRequirementCoversAuthGovernanceRoutes(t *testing.T) {
+	systemAdminOnly := []string{RoleSystemAdmin}
+	allGlobalReaders := []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}
+	tests := []struct {
+		name        string
+		method      string
+		path        string
+		globalRoles []string
+	}{
+		{name: "list service accounts", method: http.MethodGet, path: "/api/v1/auth/service-accounts", globalRoles: systemAdminOnly},
+		{name: "create service account", method: http.MethodPost, path: "/api/v1/auth/service-accounts", globalRoles: systemAdminOnly},
+		{name: "update service account", method: http.MethodPatch, path: "/api/v1/auth/service-accounts/svc-1", globalRoles: systemAdminOnly},
+		{name: "rotate service account", method: http.MethodPost, path: "/api/v1/auth/service-accounts/svc-1/rotate", globalRoles: systemAdminOnly},
+		{name: "delete service account", method: http.MethodDelete, path: "/api/v1/auth/service-accounts/svc-1", globalRoles: systemAdminOnly},
+		{name: "list audit events", method: http.MethodGet, path: "/api/v1/auth/audit-events", globalRoles: systemAdminOnly},
+		{name: "export audit events", method: http.MethodGet, path: "/api/v1/auth/audit-events/export", globalRoles: systemAdminOnly},
+		{name: "read system inventory", method: http.MethodGet, path: "/api/v1/system/inventory", globalRoles: allGlobalReaders},
+		{name: "read system settings", method: http.MethodGet, path: "/api/v1/system/settings", globalRoles: allGlobalReaders},
+		{name: "update system settings", method: http.MethodPut, path: "/api/v1/system/settings", globalRoles: systemAdminOnly},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(tt.method, tt.path, nil)
+			requirement, ok := accessRequirementForRequest(req)
+			if !ok {
+				t.Fatalf("accessRequirementForRequest(%s %s) returned no requirement", tt.method, tt.path)
+			}
+			if !reflect.DeepEqual(requirement.GlobalRoles, tt.globalRoles) {
+				t.Fatalf("global roles = %#v, want %#v", requirement.GlobalRoles, tt.globalRoles)
+			}
+		})
+	}
+}
 
 func TestTrustedHeaderAuthRequiresIdentityForSystemSettings(t *testing.T) {
 	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
