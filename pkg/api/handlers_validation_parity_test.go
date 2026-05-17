@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jasonczech/stormrunner/pkg/convert/loadrunner"
 	"github.com/jasonczech/stormrunner/pkg/dsl"
 )
 
@@ -191,6 +192,111 @@ func TestValidateScriptIncludesRecordedResourceMetadataWarnings(t *testing.T) {
 	}
 }
 
+func TestScriptValidationIncludesRuntimeSettingParityForImportedDraftsAndStoredScripts(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	importedScript := dsl.Script{
+		Name:     "Imported Runtime Script",
+		Version:  "1.0.0",
+		Protocol: "browser",
+		Config: dsl.ScriptConfig{
+			RunLogic: dsl.RunLogicConfig{
+				Iterations:       3,
+				AutoTransactions: "per_action",
+			},
+			Log: dsl.LogConfig{
+				Level: "extended",
+			},
+			Browser: dsl.BrowserConfig{
+				DownloadResources: "recorded",
+			},
+			WebRuntime: dsl.WebRuntimeConfig{
+				Streaming: dsl.StreamingConfig{
+					Mode:              "fixed",
+					BufferSizeSeconds: 30,
+				},
+			},
+		},
+		Actions: []dsl.Action{{Name: "Capture current page", Type: "browser_screenshot"}},
+		Metadata: &dsl.ScriptMetadata{
+			Import: &dsl.ImportMetadata{
+				Source: "loadrunner",
+				Preserved: map[string]any{
+					"runtime_settings_parity": []loadrunner.RuntimeSettingParityEntry{
+						{ID: "run_logic_iterations", Area: "Run Logic", Concept: "Iterations", Status: loadrunner.RuntimeSettingStatusExecuted, RuntimeFiles: []string{"default.cfg"}},
+						{ID: "run_logic_auto_transactions", Area: "Run Logic", Concept: "Auto-transactions", Status: loadrunner.RuntimeSettingStatusExecuted, RuntimeFiles: []string{"default.cfg"}},
+						{ID: "logging", Area: "Logging", Concept: "Log level, error-only, and extended logging options", Status: loadrunner.RuntimeSettingStatusPartial, RuntimeFiles: []string{"default.cfg"}},
+						{ID: "browser_download_resources_recorded", Area: "Browser Emulation", Concept: "Download resources = recorded", Status: loadrunner.RuntimeSettingStatusPartial, RuntimeFiles: []string{"default.cfg"}},
+						{ID: "streaming", Area: "Streaming", Concept: "Adaptive or fixed playback settings", Status: loadrunner.RuntimeSettingStatusCompatibilityOnly, RuntimeFiles: []string{"default.cfg"}},
+					},
+					"runtime_settings_migration_readiness": &loadrunner.RuntimeSettingMigrationReadiness{
+						ScorePct:         0,
+						Blocked:          false,
+						BlockingStatuses: []loadrunner.RuntimeSettingStatus{},
+						BlockingSettings: []loadrunner.RuntimeSettingParityEntry{},
+						Policy: loadrunner.RuntimeSettingMigrationPolicy{
+							BlockStatuses: []loadrunner.RuntimeSettingStatus{loadrunner.RuntimeSettingStatusPartial, loadrunner.RuntimeSettingStatusCompatibilityOnly},
+						},
+					},
+				},
+			},
+		},
+	}
+	stored := server.runner.StoreScript(&importedScript)
+
+	draftBody, err := json.Marshal(map[string]any{"script": importedScript})
+	if err != nil {
+		t.Fatalf("json.Marshal returned error: %v", err)
+	}
+
+	testCases := []struct {
+		name string
+		path string
+		body []byte
+	}{
+		{name: "draft", path: "/api/v1/scripts/validate", body: draftBody},
+		{name: "stored", path: "/api/v1/scripts/" + stored.ID + "/validate"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, tc.path, bytes.NewReader(tc.body))
+			if tc.body != nil {
+				req.Header.Set("Content-Type", "application/json")
+			}
+			resp := httptest.NewRecorder()
+			server.mux.ServeHTTP(resp, req)
+
+			if resp.Code != http.StatusOK {
+				t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+			}
+
+			parity := extractValidationRuntimeSettingParity(t, resp.Body.Bytes())
+			if len(parity) != 5 {
+				t.Fatalf("runtime_settings_parity = %#v, want 5 entries", parity)
+			}
+			if parity[0].RuntimeFiles == nil {
+				t.Fatalf("runtime_settings_parity[0].runtime_files = %#v, want preserved runtime file metadata", parity[0].RuntimeFiles)
+			}
+
+			counts := extractValidationRuntimeSettingStatusCounts(t, resp.Body.Bytes())
+			if counts["executed"] != 2 || counts["partial"] != 2 || counts["compatibility_only"] != 1 {
+				t.Fatalf("runtime_settings_status_counts = %#v, want executed=2 partial=2 compatibility_only=1", counts)
+			}
+
+			readiness := extractValidationMigrationReadiness(t, resp.Body.Bytes())
+			if readiness == nil {
+				t.Fatal("expected migration_readiness")
+			}
+			if !readiness.Blocked || readiness.ScorePct != 69 {
+				t.Fatalf("migration_readiness = %#v, want blocked score=69", readiness)
+			}
+			if len(readiness.Policy.BlockStatuses) != 2 || readiness.Policy.BlockStatuses[0] != loadrunner.RuntimeSettingStatusPartial || readiness.Policy.BlockStatuses[1] != loadrunner.RuntimeSettingStatusCompatibilityOnly {
+				t.Fatalf("migration_readiness.policy = %#v, want partial + compatibility_only", readiness.Policy)
+			}
+		})
+	}
+}
+
 func TestBrowserCompatibilityMatrixParityAcrossValidationAndReplayEndpoints(t *testing.T) {
 	server := NewServer(ServerConfig{})
 
@@ -324,4 +430,40 @@ func extractValidationWarnings(t *testing.T, body []byte) []string {
 		warnings = append(warnings, text)
 	}
 	return warnings
+}
+
+func extractValidationRuntimeSettingParity(t *testing.T, body []byte) []loadrunner.RuntimeSettingParityEntry {
+	t.Helper()
+
+	var payload struct {
+		RuntimeSettingsParity []loadrunner.RuntimeSettingParityEntry `json:"runtime_settings_parity"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	return payload.RuntimeSettingsParity
+}
+
+func extractValidationRuntimeSettingStatusCounts(t *testing.T, body []byte) map[string]int {
+	t.Helper()
+
+	var payload struct {
+		RuntimeSettingsStatusCounts map[string]int `json:"runtime_settings_status_counts"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	return payload.RuntimeSettingsStatusCounts
+}
+
+func extractValidationMigrationReadiness(t *testing.T, body []byte) *loadrunner.RuntimeSettingMigrationReadiness {
+	t.Helper()
+
+	var payload struct {
+		MigrationReadiness *loadrunner.RuntimeSettingMigrationReadiness `json:"migration_readiness"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	return payload.MigrationReadiness
 }

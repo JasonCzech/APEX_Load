@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jasonczech/stormrunner/pkg/convert/loadrunner"
 	"github.com/jasonczech/stormrunner/pkg/dsl"
 	browserprotocol "github.com/jasonczech/stormrunner/pkg/protocol/browser"
 )
@@ -326,16 +327,7 @@ func (s *Server) handleValidateScript(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	issues := validateScript(script.Script)
-	warnings := validationWarnings(script.Script)
-	valid := len(issues) == 0
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"script_id": id,
-		"valid":     valid,
-		"issues":    issues,
-		"warnings":  warnings,
-	})
+	writeJSON(w, http.StatusOK, buildScriptValidationResponse(id, script.Script))
 }
 
 func (s *Server) handleValidateDraftScript(w http.ResponseWriter, r *http.Request) {
@@ -357,16 +349,7 @@ func (s *Server) handleValidateDraftScript(w http.ResponseWriter, r *http.Reques
 		script.FolderID = wrapper.FolderID
 	}
 
-	issues := validateScript(script)
-	warnings := validationWarnings(script)
-	valid := len(issues) == 0
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"script_id": "",
-		"valid":     valid,
-		"issues":    issues,
-		"warnings":  warnings,
-	})
+	writeJSON(w, http.StatusOK, buildScriptValidationResponse("", script))
 }
 
 func (s *Server) handleMoveScript(w http.ResponseWriter, r *http.Request) {
@@ -593,6 +576,34 @@ func validateScript(script *dsl.Script) []string {
 	return dsl.ValidateScriptIssues(script)
 }
 
+type scriptValidationResponse struct {
+	ScriptID                    string                                       `json:"script_id"`
+	Valid                       bool                                         `json:"valid"`
+	Issues                      []string                                     `json:"issues"`
+	Warnings                    []string                                     `json:"warnings,omitempty"`
+	RuntimeSettingsParity       []loadrunner.RuntimeSettingParityEntry       `json:"runtime_settings_parity,omitempty"`
+	RuntimeSettingsStatusCounts map[string]int                               `json:"runtime_settings_status_counts,omitempty"`
+	MigrationReadiness          *loadrunner.RuntimeSettingMigrationReadiness `json:"migration_readiness,omitempty"`
+}
+
+func buildScriptValidationResponse(scriptID string, script *dsl.Script) scriptValidationResponse {
+	issues := validateScript(script)
+	warnings := validationWarnings(script)
+	parity := buildValidationRuntimeSettingsParity(script)
+	counts := loadrunner.RuntimeSettingStatusCounts(parity)
+	readiness := loadrunner.BuildRTSMigrationReadiness(parity, validationRuntimeSettingMigrationPolicy(script))
+
+	return scriptValidationResponse{
+		ScriptID:                    scriptID,
+		Valid:                       len(issues) == 0,
+		Issues:                      issues,
+		Warnings:                    warnings,
+		RuntimeSettingsParity:       parity,
+		RuntimeSettingsStatusCounts: counts,
+		MigrationReadiness:          readiness,
+	}
+}
+
 func validationWarnings(script *dsl.Script) []string {
 	if script == nil {
 		return nil
@@ -659,6 +670,51 @@ func hasRecordedResourceMetadata(script *dsl.Script) bool {
 
 func recordedResourceMetadataWarning() string {
 	return "Browser replay with download_resources=recorded requires preserved recorded-resource metadata. Manually authored scripts or imports without captured resource URLs cannot enforce recorded-only asset loading yet."
+}
+
+func buildValidationRuntimeSettingsParity(script *dsl.Script) []loadrunner.RuntimeSettingParityEntry {
+	if script == nil {
+		return nil
+	}
+
+	preserved := runtimeSettingsParityValue(validationImportPreservedValue(script, "runtime_settings_parity"))
+	derived := loadrunner.BuildRTSParityReportFromScript(script)
+	if len(derived) == 0 {
+		return preserved
+	}
+	if len(preserved) == 0 {
+		return derived
+	}
+
+	preservedByID := make(map[string]loadrunner.RuntimeSettingParityEntry, len(preserved))
+	for _, entry := range preserved {
+		preservedByID[entry.ID] = entry
+	}
+
+	merged := make([]loadrunner.RuntimeSettingParityEntry, 0, len(derived))
+	for _, entry := range derived {
+		if preservedEntry, ok := preservedByID[entry.ID]; ok && len(entry.RuntimeFiles) == 0 {
+			entry.RuntimeFiles = append([]string(nil), preservedEntry.RuntimeFiles...)
+		}
+		merged = append(merged, entry)
+	}
+
+	return merged
+}
+
+func validationRuntimeSettingMigrationPolicy(script *dsl.Script) loadrunner.RuntimeSettingMigrationPolicy {
+	readiness := loadRunnerMigrationReadinessValue(validationImportPreservedValue(script, "runtime_settings_migration_readiness"))
+	if readiness != nil && len(readiness.Policy.BlockStatuses) > 0 {
+		return readiness.Policy
+	}
+	return loadrunner.DefaultRuntimeSettingMigrationPolicy()
+}
+
+func validationImportPreservedValue(script *dsl.Script, key string) any {
+	if script == nil || script.Metadata == nil || script.Metadata.Import == nil || script.Metadata.Import.Preserved == nil {
+		return nil
+	}
+	return script.Metadata.Import.Preserved[key]
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

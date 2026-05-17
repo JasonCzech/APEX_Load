@@ -766,6 +766,108 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('Draft browser config will use Chromium defaults.')
   })
 
+  it('refreshes imported runtime parity metadata from validation responses', async () => {
+    const importedScript: ScriptDefinition = {
+      ...initialScript,
+      metadata: {
+        import: {
+          source: 'loadrunner',
+          source_script_name: 'checkout.usr',
+          preserved: {
+            runtime_settings_migration_readiness: {
+              score_pct: 72,
+              blocked: true,
+              summary: 'Migration readiness score 72%. Blocking runtime settings matched the selected block statuses: partial.',
+              blocking_statuses: ['partial'],
+              blocking_settings: [
+                {
+                  id: 'logging',
+                  area: 'Logging',
+                  concept: 'Log level, error-only, and extended logging options',
+                  status: 'partial',
+                  runtime_files: ['default.cfg'],
+                },
+              ],
+            },
+            runtime_settings_parity: [
+              {
+                id: 'logging',
+                area: 'Logging',
+                concept: 'Log level, error-only, and extended logging options',
+                status: 'partial',
+                runtime_files: ['default.cfg'],
+              },
+            ],
+            runtime_settings_status_counts: {
+              partial: 1,
+            },
+          },
+        },
+      },
+    }
+
+    apiMock.validateDraftScript.mockResolvedValueOnce({
+      script_id: '',
+      valid: true,
+      issues: [],
+      warnings: [],
+      runtime_settings_parity: [
+        {
+          id: 'run_logic_iterations',
+          area: 'Run Logic',
+          concept: 'Iterations',
+          status: 'executed',
+          runtime_files: ['default.cfg'],
+        },
+        {
+          id: 'logging',
+          area: 'Logging',
+          concept: 'Log level, error-only, and extended logging options',
+          status: 'partial',
+          runtime_files: ['default.cfg'],
+        },
+      ],
+      runtime_settings_status_counts: {
+        executed: 1,
+        partial: 1,
+      },
+      migration_readiness: {
+        score_pct: 80,
+        blocked: false,
+        summary: 'Migration readiness score 80%. No imported runtime settings matched the selected block statuses: blocked.',
+        blocking_statuses: [],
+        blocking_settings: [],
+        policy: {
+          block_statuses: ['blocked'],
+        },
+      },
+    })
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={importedScript} projectId="project-1" />)
+    })
+
+    expect(container.textContent).toContain('72%')
+    expect(container.textContent).toContain('1 Partial')
+
+    const validateButton = Array.from(container.querySelectorAll('button')).find(button =>
+      button.textContent?.trim() === 'Validate Draft',
+    )
+    expect(validateButton).toBeDefined()
+    if (!validateButton) {
+      return
+    }
+
+    await act(async () => {
+      validateButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('80%')
+    expect(container.textContent).toContain('1 Executed, 1 Partial')
+    expect(container.textContent).toContain('No imported runtime settings matched the selected block statuses: blocked.')
+  })
+
   it('passes the stored script response through the save callback', async () => {
     const onSave = vi.fn()
     apiMock.createScript.mockResolvedValueOnce({

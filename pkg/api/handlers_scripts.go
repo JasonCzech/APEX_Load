@@ -617,7 +617,7 @@ func loadRunnerMigrationReadinessValue(value any) *loadrunner.RuntimeSettingMigr
 				BlockStatuses: runtimeSettingPolicyStatuses(typed["policy"]),
 			},
 		}
-		if readiness.ScorePct == 0 && !readiness.Blocked && readiness.Summary == "" && len(readiness.BlockingStatuses) == 0 && len(readiness.BlockingSettings) == 0 {
+		if readiness.ScorePct == 0 && !readiness.Blocked && readiness.Summary == "" && len(readiness.BlockingStatuses) == 0 && len(readiness.BlockingSettings) == 0 && len(readiness.Policy.BlockStatuses) == 0 {
 			return nil
 		}
 		return readiness

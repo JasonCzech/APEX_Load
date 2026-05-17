@@ -17,6 +17,7 @@ import {
   type ScriptDefinition,
   type ScriptDataSource,
   type ScriptParameterDefinition,
+  type ScriptValidationResponse,
 } from '../types/scripts'
 import BrowserReplayDebugger from './BrowserReplayDebugger'
 import SnapshotBodyPreview from './SnapshotBodyPreview'
@@ -117,6 +118,47 @@ function sanitizeDownloadName(value: string | undefined, fallback: string) {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
   return normalized || fallback
+}
+
+function applyValidationRuntimeSettingsMetadata(script: ScriptDefinition, validation: ScriptValidationResponse): ScriptDefinition {
+  const importMetadata = script.metadata?.import
+  if (!importMetadata) {
+    return script
+  }
+
+  const preserved = { ...(importMetadata.preserved || {}) }
+  const runtimeSettingsParity = Array.isArray(validation.runtime_settings_parity) ? validation.runtime_settings_parity : []
+  const runtimeSettingsStatusCounts = validation.runtime_settings_status_counts
+  const migrationReadiness = validation.migration_readiness
+
+  if (runtimeSettingsParity.length > 0) {
+    preserved.runtime_settings_parity = runtimeSettingsParity
+  } else {
+    delete preserved.runtime_settings_parity
+  }
+
+  if (runtimeSettingsStatusCounts && Object.keys(runtimeSettingsStatusCounts).length > 0) {
+    preserved.runtime_settings_status_counts = runtimeSettingsStatusCounts
+  } else {
+    delete preserved.runtime_settings_status_counts
+  }
+
+  if (migrationReadiness) {
+    preserved.runtime_settings_migration_readiness = migrationReadiness
+  } else {
+    delete preserved.runtime_settings_migration_readiness
+  }
+
+  return {
+    ...script,
+    metadata: {
+      ...(script.metadata || {}),
+      import: {
+        ...importMetadata,
+        preserved,
+      },
+    },
+  }
 }
 
 function normalizeWarnings(messages?: string[]) {
@@ -1407,9 +1449,12 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       const res = scriptId
         ? await api.validateScript(scriptId)
         : await api.validateDraftScript(currentScript, projectId, folderId)
+      const validationScript = applyValidationRuntimeSettingsMetadata(currentScript, res)
       const validationWarnings = normalizeWarnings(res.warnings)
       setWarnings(validationWarnings)
-      if (jsonMode) setScript(currentScript)
+      if (jsonMode || validationScript !== currentScript) {
+        setScript(validationScript)
+      }
       if (res.valid) {
         setSuccess(validationWarnings.length > 0 ? 'Script validation passed with warnings.' : 'Script validation passed.')
         return

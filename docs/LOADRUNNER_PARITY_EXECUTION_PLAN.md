@@ -240,6 +240,11 @@ Acceptance criteria:
 - Imported scripts receive a machine-readable parity report
 - Teams can block runs or saves on unsupported critical settings
 
+Recent progress:
+- Stormrunner now owns a code-backed LoadRunner RTS support matrix with tested examples and import-envelope parity summaries.
+- Draft and stored script validation now return `runtime_settings_parity`, `runtime_settings_status_counts`, and `migration_readiness` so validation, import review, and replay surfaces share one machine-readable runtime classification contract.
+- The shared script editor now refreshes imported runtime parity metadata from validation results, keeping migration-readiness cards aligned with current draft runtime settings instead of stale import-time snapshots.
+
 ### Epic R2: Highest-Value Web HTTP/HTML Execution Gaps
 Goal: close the runtime behaviors most likely to break real migrations.
 

@@ -818,6 +818,74 @@ Chain=base64,gzip mode=decode
 	}
 }
 
+func TestBuildRTSParityReportFromScriptClassifiesConfiguredScriptSettings(t *testing.T) {
+	script := &dsl.Script{
+		Name:     "Imported Runtime Draft",
+		Version:  "1.0.0",
+		Protocol: "browser",
+		Config: dsl.ScriptConfig{
+			HTTP: dsl.HTTPConfig{
+				ConnectTimeoutMs: 15000,
+			},
+			RunLogic: dsl.RunLogicConfig{
+				Iterations:       3,
+				AutoTransactions: "per_action",
+			},
+			Log: dsl.LogConfig{
+				Level: "extended",
+			},
+			Browser: dsl.BrowserConfig{
+				DownloadResources: "recorded",
+			},
+			WebRuntime: dsl.WebRuntimeConfig{
+				Streaming: dsl.StreamingConfig{
+					Mode:              "fixed",
+					BufferSizeSeconds: 30,
+				},
+			},
+		},
+	}
+
+	parity := BuildRTSParityReportFromScript(script)
+	if len(parity) != 6 {
+		t.Fatalf("parity count = %d, want 6 entries", len(parity))
+	}
+	assertRuntimeSettingParityStatus(t, parity, "http_transport", RuntimeSettingStatusExecuted)
+	assertRuntimeSettingParityStatus(t, parity, "run_logic_iterations", RuntimeSettingStatusExecuted)
+	assertRuntimeSettingParityStatus(t, parity, "run_logic_auto_transactions", RuntimeSettingStatusExecuted)
+	assertRuntimeSettingParityStatus(t, parity, "logging", RuntimeSettingStatusPartial)
+	assertRuntimeSettingParityStatus(t, parity, "browser_download_resources_recorded", RuntimeSettingStatusPartial)
+	assertRuntimeSettingParityStatus(t, parity, "streaming", RuntimeSettingStatusCompatibilityOnly)
+}
+
+func TestBuildRTSParityReportFromScriptSkipsDefaultCompatibilityNoise(t *testing.T) {
+	script := &dsl.Script{
+		Name:     "Default Draft",
+		Version:  "1.0.0",
+		Protocol: "http",
+		Config: dsl.ScriptConfig{
+			ThinkTime: dsl.ThinkTimeConfig{
+				Type:   "fixed",
+				MeanMs: 1000,
+			},
+			Pacing: dsl.PacingConfig{
+				Type: "none",
+			},
+			RunLogic: dsl.RunLogicConfig{
+				AutoTransactions: "none",
+			},
+			Log: dsl.LogConfig{
+				Level: "standard",
+			},
+		},
+	}
+
+	parity := BuildRTSParityReportFromScript(script)
+	if len(parity) != 0 {
+		t.Fatalf("parity = %#v, want no default-only runtime parity entries", parity)
+	}
+}
+
 func TestBuildRTSMigrationReadinessHonorsBlockStatuses(t *testing.T) {
 	parity := []RuntimeSettingParityEntry{
 		{ID: "run_logic_iterations", Area: "Run Logic", Concept: "Iterations", Status: RuntimeSettingStatusExecuted, RuntimeFiles: []string{"default.cfg"}},
@@ -857,6 +925,20 @@ func assertRuntimeSettingParityEntry(t *testing.T, entries []RuntimeSettingParit
 		}
 		if len(entry.RuntimeFiles) == 0 {
 			t.Fatalf("parity[%s].runtime_files = %#v, want non-empty list", wantID, entry.RuntimeFiles)
+		}
+		return
+	}
+	t.Fatalf("parity entry %q not found in %#v", wantID, entries)
+}
+
+func assertRuntimeSettingParityStatus(t *testing.T, entries []RuntimeSettingParityEntry, wantID string, wantStatus RuntimeSettingStatus) {
+	t.Helper()
+	for _, entry := range entries {
+		if entry.ID != wantID {
+			continue
+		}
+		if entry.Status != wantStatus {
+			t.Fatalf("parity[%s].status = %q, want %q", wantID, entry.Status, wantStatus)
 		}
 		return
 	}

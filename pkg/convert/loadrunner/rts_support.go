@@ -1,11 +1,13 @@
 package loadrunner
 
-import "strconv"
-
 import (
 	"path/filepath"
+	"reflect"
 	"sort"
+	"strconv"
 	"strings"
+
+	"github.com/jasonczech/stormrunner/pkg/dsl"
 )
 
 type RuntimeSettingStatus string
@@ -551,6 +553,29 @@ func BuildRTSParityReport(runtimeSections map[string]map[string]map[string]strin
 	return entries
 }
 
+func BuildRTSParityReportFromScript(script *dsl.Script) []RuntimeSettingParityEntry {
+	if script == nil {
+		return nil
+	}
+
+	entries := make([]RuntimeSettingParityEntry, 0)
+	for _, definition := range loadRunnerRTSSupportDefinitions {
+		if !scriptConfigMatchesRuntimeSettingDefinition(script.Config, definition) {
+			continue
+		}
+		entries = append(entries, RuntimeSettingParityEntry{
+			ID:      definition.entry.ID,
+			Area:    definition.entry.Area,
+			Concept: definition.entry.Concept,
+			Fields:  cloneStrings(definition.entry.Fields),
+			Status:  definition.entry.Status,
+			Notes:   definition.entry.Notes,
+		})
+	}
+
+	return entries
+}
+
 func RuntimeSettingStatusCounts(entries []RuntimeSettingParityEntry) map[string]int {
 	if len(entries) == 0 {
 		return nil
@@ -724,4 +749,127 @@ func cloneStrings(values []string) []string {
 		return nil
 	}
 	return append([]string(nil), values...)
+}
+
+func scriptConfigMatchesRuntimeSettingDefinition(config dsl.ScriptConfig, definition runtimeSettingSupportDefinition) bool {
+	switch definition.entry.ID {
+	case "proxy":
+		return (config.HTTP.ProxyMode != "" && !strings.EqualFold(config.HTTP.ProxyMode, "none")) || hasConfiguredValue(reflect.ValueOf(config.HTTP.Proxy))
+	case "think_time":
+		return config.ThinkTime.Ignore || config.ThinkTime.Multiplier != 0 || config.ThinkTime.LimitMs != 0
+	case "pacing":
+		return (config.Pacing.Type != "" && !strings.EqualFold(config.Pacing.Type, "none")) ||
+			config.Pacing.DelayMs != 0 ||
+			config.Pacing.MinDelayMs != 0 ||
+			config.Pacing.MaxDelayMs != 0 ||
+			config.Pacing.IntervalMs != 0 ||
+			config.Pacing.MinIntervalMs != 0 ||
+			config.Pacing.MaxIntervalMs != 0 ||
+			config.Pacing.TPS != 0
+	case "run_logic_auto_transactions":
+		return config.RunLogic.AutoTransactions != "" && !strings.EqualFold(config.RunLogic.AutoTransactions, "none")
+	case "logging":
+		return (config.Log.Level != "" && !strings.EqualFold(config.Log.Level, "standard")) || config.Log.OnErrorOnly || len(config.Log.ExtendedOptions) > 0
+	case "browser_download_resources_all":
+		return strings.EqualFold(config.Browser.DownloadResources, "all")
+	case "browser_download_resources_none":
+		return strings.EqualFold(config.Browser.DownloadResources, "none")
+	case "browser_download_resources_recorded":
+		return strings.EqualFold(config.Browser.DownloadResources, "recorded")
+	case "additional_attributes":
+		return len(config.WebRuntime.AdditionalAttributes) > 0
+	case "data_formatting_auto_detect":
+		return config.WebRuntime.DataFormatting.AutoDetect
+	case "data_formatting_chain":
+		return len(config.WebRuntime.DataFormatting.Chain) > 0
+	}
+
+	for _, fieldPath := range definition.entry.Fields {
+		if scriptConfigHasConfiguredField(config, fieldPath) {
+			return true
+		}
+	}
+	return false
+}
+
+func scriptConfigHasConfiguredField(config dsl.ScriptConfig, fieldPath string) bool {
+	segments := strings.Split(fieldPath, ".")
+	if len(segments) < 2 || segments[0] != "config" {
+		return false
+	}
+
+	current := reflect.ValueOf(config)
+	for _, segment := range segments[1:] {
+		for current.Kind() == reflect.Pointer {
+			if current.IsNil() {
+				return false
+			}
+			current = current.Elem()
+		}
+		field, ok := jsonFieldByName(current, segment)
+		if !ok {
+			return false
+		}
+		current = field
+	}
+
+	return hasConfiguredValue(current)
+}
+
+func jsonFieldByName(value reflect.Value, jsonName string) (reflect.Value, bool) {
+	if value.Kind() != reflect.Struct {
+		return reflect.Value{}, false
+	}
+
+	typ := value.Type()
+	for index := 0; index < typ.NumField(); index++ {
+		field := typ.Field(index)
+		if field.PkgPath != "" {
+			continue
+		}
+		tag := strings.Split(field.Tag.Get("json"), ",")[0]
+		if tag != jsonName {
+			continue
+		}
+		return value.Field(index), true
+	}
+
+	return reflect.Value{}, false
+}
+
+func hasConfiguredValue(value reflect.Value) bool {
+	if !value.IsValid() {
+		return false
+	}
+
+	switch value.Kind() {
+	case reflect.Pointer:
+		return !value.IsNil()
+	case reflect.String:
+		return strings.TrimSpace(value.String()) != ""
+	case reflect.Bool:
+		return value.Bool()
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return value.Int() != 0
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		return value.Uint() != 0
+	case reflect.Float32, reflect.Float64:
+		return value.Float() != 0
+	case reflect.Map, reflect.Slice, reflect.Array:
+		return value.Len() > 0
+	case reflect.Struct:
+		for index := 0; index < value.NumField(); index++ {
+			if hasConfiguredValue(value.Field(index)) {
+				return true
+			}
+		}
+		return false
+	case reflect.Interface:
+		if value.IsNil() {
+			return false
+		}
+		return hasConfiguredValue(value.Elem())
+	default:
+		return !value.IsZero()
+	}
 }

@@ -401,11 +401,37 @@ export interface ScriptReplayResponse {
   report: ScriptReplayReport
 }
 
+export interface ScriptValidationRuntimeSettingParity {
+  id: string
+  area: string
+  concept: string
+  fields?: string[]
+  status: string
+  notes?: string
+  runtime_files?: string[]
+}
+
+export interface ScriptValidationMigrationPolicy {
+  block_statuses?: string[]
+}
+
+export interface ScriptValidationMigrationReadiness {
+  score_pct: number
+  blocked: boolean
+  summary?: string
+  blocking_statuses?: string[]
+  blocking_settings?: ScriptValidationRuntimeSettingParity[]
+  policy?: ScriptValidationMigrationPolicy
+}
+
 export interface ScriptValidationResponse {
   script_id: string
   valid: boolean
   issues: string[]
   warnings?: string[]
+  runtime_settings_parity?: ScriptValidationRuntimeSettingParity[]
+  runtime_settings_status_counts?: Record<string, number>
+  migration_readiness?: ScriptValidationMigrationReadiness
 }
 
 export interface ScriptExportResponse {
