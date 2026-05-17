@@ -968,7 +968,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
                       renderEditorActionButtons([
                         {
                           key: `${suggestion.id}:open-script`,
-                          label: 'Open Imported Script In Editor',
+                          label: 'Open Imported Draft In Editor',
                           onClick: () => openImportedScriptInEditor(),
                         },
                       ])
