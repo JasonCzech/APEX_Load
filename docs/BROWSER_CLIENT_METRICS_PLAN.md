@@ -60,7 +60,7 @@ Primary seams:
 ### Remaining
 - Chromium browser-process CPU and OS-memory sampling are now captured through CDP process information plus OS RSS lookup when `browser.client_metrics` is enabled. WebKit process attribution remains open because the current Playwright WebKit runtime does not expose stable browser process IDs through the public integration path.
 - Dedicated comparison charts beyond the current overall/platform/engine/device card breakdowns are still open. Archive event drilldown now includes a richer navigation/resource waterfall summary from persisted client metrics, including DOM/load phase gaps and blocking-resource pressure; per-resource waterfall UX remains open until the archive stores resource-level timing rows.
-- Benchmark publication and final positioning guidance for density/overhead are still open.
+- Benchmark collection and final positioning guidance now have an opt-in Go harness plus `docs/MOBILE_BROWSER_BENCHMARK_RUNBOOK.md`; measured density/overhead publication from controlled hardware is still open.
 
 ## Implementation Phases
 
@@ -107,10 +107,11 @@ Remaining in this phase:
 - add charted comparison views and per-resource waterfall diagnostics where the current archive/debug surfaces still emphasize summary cards and event-level waterfall summaries.
 
 ### Phase 5: Benchmark And Positioning
-Status: not complete.
+Status: implementation complete, evidence pending.
 
 - Benchmark browser density and overhead with client metrics disabled and enabled.
 - Document this as a low-concurrency diagnostic mode, not a replacement for Stormrunner's high-scale HTTP engine.
+- Use `STORMRUNNER_BROWSER_BENCHMARKS=1 go test ./pkg/protocol/browser -run '^$' -bench 'BenchmarkBrowser' -benchmem -count 5` to collect launch, action-latency, and Chromium RSS evidence before publishing higher density claims.
 
 ## Tradeoffs And Challenges
 

@@ -14,7 +14,7 @@ This plan is the strategic umbrella that aligns the existing `MOBILE_BROWSER_EMU
 - Validation and replay now surface actionable WebKit prerequisite warnings before execution, and saved scripts can be validated directly from the editor.
 
 ### Remaining
-- Stage 2 is only partially complete: device profiles now carry `CPUThrottleRate` and `NetworkPreset`, and the runtime applies them, but calibration against real devices, benchmark evidence, and any memory-pressure model are still open.
+- Stage 2 is implementation-complete for the current runtime: device profiles carry `CPUThrottleRate` and `NetworkPreset`, the runtime applies them, and an opt-in mobile-browser benchmark harness/runbook exists. Calibration against real devices, measured benchmark evidence, and any memory-pressure model are still external evidence/hardening work.
 - Stage 4 dashboard UX is complete for the current first-cut mobile/browser workflow: script editing, scenario authoring, queued previews, archive drilldown, and run comparisons preserve and surface browser runtime settings. Dedicated charted comparison views, per-resource waterfall drilldown, and broader manual browser validation on real applications remain product-hardening work.
 - Stage 5 TrueClient MobileWeb import is partially shipped for the current browser step envelope, including runtime-setting extraction and common decomposed JavaScript fill/click, scroll, and navigation patterns; broader fixture-backed hardening remains open.
 - Stage 6 UX intelligence work has not started.
@@ -207,7 +207,7 @@ The existing plans define tactical phases. This section maps them to the strateg
 - `browser.go Init()` applies CPU throttling from profile
 - Unit tests confirming profile defaults are wired; benchmark calibration and timing validation are still open
 
-**Remaining work:** benchmark calibration, decide whether to add memory-pressure simulation, and publish operational guidance for how approximate the simulated profile timings are. Scenario capacity planning now uses conservative tier-based browser VUser density caps so users get safer generator estimates while benchmark calibration is still in progress.
+**Remaining work:** benchmark calibration, decide whether to add memory-pressure simulation, and publish operational guidance for how approximate the simulated profile timings are. Scenario capacity planning now uses conservative tier-based browser VUser density caps, and `docs/MOBILE_BROWSER_BENCHMARK_RUNBOOK.md` defines the evidence path for changing those limits.
 
 ### Stage 3: Client Metrics Collection (Browser Client Metrics Plan Phases 1-2)
 - `ClientMetrics` struct on `protocol.Result`

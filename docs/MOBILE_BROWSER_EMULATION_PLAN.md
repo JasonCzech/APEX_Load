@@ -73,6 +73,7 @@ Scaling guidance:
 - Enable `browser.client_metrics` for benchmark runs so LCP, INP, CLS, and blocking-resource counts can be compared across profiles.
 - Treat cross-engine comparisons as diagnostic evidence, not proof that one engine's density envelope transfers to another.
 - Re-run the representative matrix tests and a local sample-app benchmark after browser runtime upgrades, especially Playwright/WebKit upgrades.
+- Use `docs/MOBILE_BROWSER_BENCHMARK_RUNBOOK.md` to collect repeatable launch, touch/click latency, and Chromium RSS evidence before changing these starting envelopes.
 
 ## Current Baseline
 
@@ -95,7 +96,7 @@ The existing `pkg/protocol/browser` implementation provides:
 `pkg/dsl/types.go` includes `BrowserConfig` with viewport, user agent, headless, cache, engine, device profile, orientation, touch mode, and client metrics settings. `WebRuntimeConfig` covers network simulation, download filters, and content checks. `WaitCondition` and `BrowserCaptureOptions` are available on actions.
 
 ### What Is Missing
-- No measured benchmark publication from a controlled hardware matrix yet; current capacity guidance is conservative and code-backed, but not empirically calibrated.
+- Benchmark collection is now repeatable through an opt-in Go benchmark harness and runbook, but no measured publication from a controlled hardware matrix is checked in yet. Current capacity guidance is conservative and code-backed, but not empirically calibrated.
 - No representative external TrueClient MobileWeb archive corpus is checked in, so importer hardening is limited to synthetic fixtures and decomposable patterns.
 - No broad real-application validation matrix yet for WebKit- and Chromium-backed mobile profiles.
 
@@ -465,6 +466,8 @@ When editing a browser script with a device profile:
 | Touch dispatch latency | Overhead of touch events vs. mouse clicks | < 10ms additional |
 | Memory per mobile VUser | RSS of headless Chromium with mobile viewport | < 250 MB |
 
+The executable harness for these measurements lives in `pkg/protocol/browser/mobile_benchmark_test.go` and is intentionally opt-in with `STORMRUNNER_BROWSER_BENCHMARKS=1` so normal unit tests do not launch real browser processes. The operational procedure and publication checklist are documented in `docs/MOBILE_BROWSER_BENCHMARK_RUNBOOK.md`.
+
 ## 8. Implementation Phases
 
 | Phase | Status | Milestone | Deliverables | Exit Criteria |
@@ -473,7 +476,7 @@ When editing a browser script with a device profile:
 | **Phase 2** | **Complete** | **Touch Event Simulation** | `browser_tap`, `browser_swipe`, `browser_long_press` action types, auto click-to-tap mapping, touch emulation, unit tests | Touch actions execute on mobile-configured browser; `browser_click` dispatches touch interactions in mobile mode |
 | **Phase 3** | **Complete** | **Dashboard UX** | Script-editor device profile selector, orientation toggle, replay/config validation warnings, mobile/browser settings authoring, scenario-library browser runtime defaults, queued scenario browser-runtime visibility, archive comparison browser-runtime visibility | Core mobile browser scenarios can be authored, saved, replayed, queued, revised, and compared from the dashboard while preserving browser runtime overrides |
 | **Phase 4** | **Partially Complete** | **TrueClient Import** | `pkg/convert/trueclient` package, step-to-action mapping, device profile extraction from `.usr` + `default.cfg`, API endpoint, unit tests, direct Scroll conversion, JavaScript fill/click decomposition, JavaScript scroll-to-swipe conversion, JavaScript location navigation conversion | A TrueClient MobileWeb `.zip` import produces a runnable Stormrunner browser script with correct device profile and mapped actions; remaining work is sample-backed coverage for less common TruClient constructs |
-| **Phase 5** | **Partially Complete** | **Hardening + Benchmarks** | Browser-aware capacity advice, memory benchmarks, touch latency benchmarks, documented scale guidance, edge case coverage | Capacity planning now exposes conservative mobile browser VUser density; measured memory/latency benchmark publication remains open |
+| **Phase 5** | **Complete, Evidence Pending** | **Hardening + Benchmarks** | Browser-aware capacity advice, opt-in launch/action/RSS benchmark harness, documented benchmark runbook, documented scale guidance, edge case coverage | Capacity planning exposes conservative mobile browser VUser density and benchmark collection is reproducible; measured hardware publication remains an external evidence task |
 
 ## 9. Risks And Mitigations
 
@@ -495,14 +498,16 @@ When editing a browser script with a device profile:
 ### External Requirements
 - Chromium/Chrome installed on generator pods (already required for existing browser protocol)
 - Playwright WebKit assets installed on the controller host for WebKit-backed mobile/browser runs
+- Controlled benchmark hardware/run artifacts for publishing empirically calibrated density claims
 - 3–5 sample TrueClient MobileWeb scripts for import test fixtures (Phase 4 blocker)
 
 ## Summary
 Mobile browser emulation now extends Stormrunner's existing browser protocol with device profiles, touch events, orientation support, browser-family-aware runtime execution, and editor/replay validation guidance. The architecture still stays within the current protocol boundary — no new protocol registration, and no split public DSL surface.
 
-The remaining work is now concentrated in two areas that require external evidence: representative TrueClient MobileWeb fixture archives and measured benchmark publication. Net-new mobile web tests and scenario/dashboard runtime UX are available; legacy script migration and operational scale guidance should continue once fixture archives and benchmark hardware data are available.
+The implementation work for net-new mobile web tests, scenario/dashboard runtime UX, conservative capacity guidance, and repeatable benchmark collection is now in place. The remaining open items require external evidence: representative TrueClient MobileWeb fixture archives and measured benchmark publication from controlled hardware.
 
 Related documentation:
+- Mobile browser benchmark runbook: `docs/MOBILE_BROWSER_BENCHMARK_RUNBOOK.md`
 - Browser client metrics: `docs/BROWSER_CLIENT_METRICS_PLAN.md`
 - Protocol extensions (SOAP, Java): `docs/PROTOCOL_EXTENSION_PLAN.md`
 - LoadRunner RTS reference: `docs/LOADRUNNER_RTS_REFERENCE.md`
