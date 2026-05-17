@@ -166,6 +166,7 @@ Goal: finish the shared authoring shell already outlined in the repo roadmap.
 Status:
 - A1.1 now has the remaining scripts-page route branching moved into `ScriptsAuthoringShell`, so `ScriptsPage` owns library data/actions while the shell owns list, create-options, and active authoring-surface selection.
 - A1.2 now has a shared dashboard replay handoff helper for editor replay and imported-browser validation. Drafts, saved scripts, and imported browser scripts now share project binding, group naming, variable parsing, browser defaults, viewport fallback, and screenshot-capture normalization before they call replay APIs.
+- A1.3 now has a draft validation endpoint at `POST /api/v1/scripts/validate`, giving unsaved editor drafts the same validator and warning payload shape used by saved script validation. The dashboard editor now exposes one validation action for saved and unsaved scripts, with parity coverage across draft validation, stored validation, replay, and browser replay paths.
 
 Acceptance criteria:
 - Every script acquisition path resolves into the same lifecycle model

@@ -219,10 +219,11 @@ That order minimizes churn and avoids rebuilding the UI around unstable backend 
 - The scripts library now sources protocol-specific starter drafts from a dedicated factory module instead of keeping HTTP, browser, and JMS default draft definitions inline in `ScriptsPage`.
 - The scripts library now renders list, create-options, and active authoring subviews through a dedicated `ScriptsAuthoringShell`, leaving `ScriptsPage` focused on library fetch, refresh, delete, and table callbacks.
 - Editor replay and LoadRunner browser-import replay validation now build replay requests through one shared helper, so draft, saved, and imported browser paths agree on project binding, group names, variables, browser defaults, viewport fallback, and screenshot-capture behavior.
+- Draft script validation now has a first-class API endpoint and the script editor uses one validation action for both unsaved drafts and stored scripts, keeping browser compatibility warnings and validation issues aligned before save.
 
 ### Remaining High-Value Work
 - Finish the scenario assembly path by tightening `TestExecution` adjacencies and shared execution/result models now that `CreateTestModal` is aligned on one shared draft state owner.
-- Continue shared authoring lifecycle work by aligning validation and save handoffs now that route branching and replay request construction are shared.
+- Continue shared authoring lifecycle work by aligning save handoffs and remaining acquire/review/edit state transitions now that route branching, replay request construction, and draft validation are shared.
 - Run the end-to-end parity pass, then remove any temporary normalization or migration adapters that remain after validation.
 
 ### Current Cleanup Note
@@ -269,7 +270,7 @@ That order minimizes churn and avoids rebuilding the UI around unstable backend 
 ## Verification Checklist
 
 1. Completed: confirm that only live dashboard pages are referenced before deleting duplicate page files.
-2. Build a validation matrix and verify that parser, create, update, replay, browser replay, and import save all return the same validation outcome for the same scripts.
+2. In progress: build a validation matrix and verify that parser, create, update, draft validation, stored validation, replay, browser replay, and import save all return the same validation outcome for the same scripts.
 3. Snapshot current import payloads before standardization, then verify that every builder emits the shared envelope afterward.
 4. Verify that each authoring path supports the same lifecycle after consolidation: acquire input, review warnings and stats, edit if needed, save, and reopen the saved script.
 5. Verify that scenario editing still works both from new test creation and execution-time editing after scenario assembly extraction.

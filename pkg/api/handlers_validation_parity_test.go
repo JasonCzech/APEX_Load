@@ -67,6 +67,7 @@ func TestScriptValidationParityAcrossCurrentEndpoints(t *testing.T) {
 	}{
 		{name: "create", method: http.MethodPost, path: "/api/v1/scripts", body: invalidScriptBody, wantStatus: http.StatusBadRequest},
 		{name: "update", method: http.MethodPut, path: "/api/v1/scripts/" + storedValid.ID, body: invalidScriptBody, wantStatus: http.StatusBadRequest},
+		{name: "validate draft", method: http.MethodPost, path: "/api/v1/scripts/validate", body: invalidScriptBody, wantStatus: http.StatusOK},
 		{name: "validate stored", method: http.MethodPost, path: "/api/v1/scripts/" + storedInvalid.ID + "/validate", wantStatus: http.StatusOK},
 		{name: "replay draft", method: http.MethodPost, path: "/api/v1/scripts/replay", body: invalidScriptBody, wantStatus: http.StatusBadRequest},
 		{name: "replay stored", method: http.MethodPost, path: "/api/v1/scripts/" + storedInvalid.ID + "/replay", wantStatus: http.StatusBadRequest},
@@ -166,6 +167,7 @@ func TestBrowserCompatibilityMatrixParityAcrossValidationAndReplayEndpoints(t *t
 		body       func(*testing.T) []byte
 		wantStatus int
 	}{
+		{name: "validate draft", method: http.MethodPost, path: "/api/v1/scripts/validate", body: draftBody, wantStatus: http.StatusOK},
 		{name: "validate stored", method: http.MethodPost, path: "/api/v1/scripts/" + storedInvalid.ID + "/validate", wantStatus: http.StatusOK},
 		{name: "replay draft", method: http.MethodPost, path: "/api/v1/scripts/replay", body: draftBody, wantStatus: http.StatusBadRequest},
 		{name: "replay stored", method: http.MethodPost, path: "/api/v1/scripts/" + storedInvalid.ID + "/replay", wantStatus: http.StatusBadRequest},

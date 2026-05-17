@@ -24,6 +24,7 @@ const apiMock = {
   createScript: vi.fn(),
   updateScript: vi.fn(),
   validateScript: vi.fn(),
+  validateDraftScript: vi.fn(),
   replayDraftScript: vi.fn(),
   replayScript: vi.fn(),
   startDraftBrowserReplaySession: vi.fn(),
@@ -162,6 +163,12 @@ describe('ScriptEditor', () => {
     apiMock.updateScript.mockResolvedValue({ id: 'script-1' })
     apiMock.validateScript.mockResolvedValue({
       script_id: 'script-1',
+      valid: true,
+      issues: [],
+      warnings: [],
+    })
+    apiMock.validateDraftScript.mockResolvedValue({
+      script_id: '',
       valid: true,
       issues: [],
       warnings: [],
@@ -483,7 +490,7 @@ describe('ScriptEditor', () => {
     })
 
     expect(apiMock.validateScript).toHaveBeenCalledWith('script-1')
-    expect(container.textContent).toContain('Saved script validation passed with warnings.')
+    expect(container.textContent).toContain('Script validation passed with warnings.')
     expect(container.textContent).toContain('WebKit execution depends on Playwright assets being installed on the controller host.')
   })
 
@@ -514,6 +521,39 @@ describe('ScriptEditor', () => {
 
     expect(container.textContent).toContain('browser action 1 is missing a selector for browser_click')
     expect(container.textContent).toContain('WebKit device profile requires the WebKit engine.')
+  })
+
+  it('validates a draft script before save', async () => {
+    apiMock.validateDraftScript.mockResolvedValueOnce({
+      script_id: '',
+      valid: true,
+      issues: [],
+      warnings: ['Draft browser config will use Chromium defaults.'],
+    })
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={initialScript} projectId="project-1" />)
+    })
+
+    const validateButton = Array.from(container.querySelectorAll('button')).find(button =>
+      button.textContent?.trim() === 'Validate Draft',
+    )
+    expect(validateButton).toBeDefined()
+    if (!validateButton) {
+      return
+    }
+
+    await act(async () => {
+      validateButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(apiMock.validateDraftScript).toHaveBeenCalledWith(expect.objectContaining({
+      name: initialScript.name,
+      protocol: initialScript.protocol,
+    }), 'project-1', undefined)
+    expect(container.textContent).toContain('Script validation passed with warnings.')
+    expect(container.textContent).toContain('Draft browser config will use Chromium defaults.')
   })
 
   it('renders the new Web HTTP/HTML runtime sections from the draft model', async () => {

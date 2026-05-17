@@ -338,6 +338,37 @@ func (s *Server) handleValidateScript(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) handleValidateDraftScript(w http.ResponseWriter, r *http.Request) {
+	var wrapper struct {
+		ProjectID string     `json:"project_id,omitempty"`
+		FolderID  *string    `json:"folder_id,omitempty"`
+		Script    dsl.Script `json:"script"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&wrapper); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+
+	script := &wrapper.Script
+	if wrapper.ProjectID != "" {
+		script.ProjectID = wrapper.ProjectID
+	}
+	if wrapper.FolderID != nil {
+		script.FolderID = wrapper.FolderID
+	}
+
+	issues := validateScript(script)
+	warnings := validationWarnings(script)
+	valid := len(issues) == 0
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"script_id": "",
+		"valid":     valid,
+		"issues":    issues,
+		"warnings":  warnings,
+	})
+}
+
 func (s *Server) handleMoveScript(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	stored, ok := s.runner.GetScript(id)

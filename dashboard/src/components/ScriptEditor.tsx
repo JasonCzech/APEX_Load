@@ -1144,25 +1144,28 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
     } finally { setSaving(false) }
   }
 
-  const handleValidateSavedScript = async () => {
-    if (!scriptId) return
+  const handleValidateScript = async () => {
     setError('')
     setSuccess('')
     setWarnings([])
     setValidating(true)
     try {
-      const res = await api.validateScript(scriptId)
+      const currentScript = resolveCurrentScript()
+      const res = scriptId
+        ? await api.validateScript(scriptId)
+        : await api.validateDraftScript(currentScript, projectId, folderId)
       const validationWarnings = normalizeWarnings(res.warnings)
       setWarnings(validationWarnings)
+      if (jsonMode) setScript(currentScript)
       if (res.valid) {
-        setSuccess(validationWarnings.length > 0 ? 'Saved script validation passed with warnings.' : 'Saved script validation passed.')
+        setSuccess(validationWarnings.length > 0 ? 'Script validation passed with warnings.' : 'Script validation passed.')
         return
       }
-      setError(res.issues.join(' | ') || 'Saved script validation failed.')
+      setError(res.issues.join(' | ') || 'Script validation failed.')
     } catch (e: unknown) {
       const validationWarnings = normalizeWarnings(getErrorWarnings(e))
       setWarnings(validationWarnings)
-      setError(getErrorMessage(e, 'Saved script validation failed'))
+      setError(getErrorMessage(e, 'Script validation failed'))
     } finally {
       setValidating(false)
     }
@@ -2003,11 +2006,9 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
             <button className="btn btn-ghost" onClick={toggleJsonMode}>
               {jsonMode ? '◧ Form' : '{ } JSON'}
             </button>
-            {scriptId && (
-              <button className="btn btn-ghost" onClick={handleValidateSavedScript} disabled={saving || replaying || validating}>
-                {validating ? 'Validating…' : 'Validate Saved Script'}
-              </button>
-            )}
+            <button className="btn btn-ghost" onClick={handleValidateScript} disabled={saving || replaying || validating || !script.name}>
+              {validating ? 'Validating…' : (scriptId ? 'Validate Saved Script' : 'Validate Draft')}
+            </button>
             {isBrowserScript && activeReplaySessionId && (
               <button className="btn btn-ghost" onClick={handleStopReplay} disabled={!replaying}>
                 Stop Replay
