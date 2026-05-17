@@ -66,7 +66,6 @@ describe('SampleScriptImport', () => {
       protocol: script.protocol || 'http',
       version: script.version || '1.0.0',
       created_at: '2026-05-17T00:00:00Z',
-      script,
     }))
   })
 

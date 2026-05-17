@@ -271,6 +271,13 @@ describe('LoadRunnerImport', () => {
 
   it('imports a zip and saves the converted script', async () => {
     const onImported = vi.fn()
+    apiMock.createScript.mockResolvedValueOnce({
+      id: 'saved-script',
+      name: 'Demo LoadRunner Script',
+      protocol: 'http',
+      version: '1.0.0',
+      created_at: '2026-05-17T00:00:00Z',
+    })
 
     await act(async () => {
       root.render(<LoadRunnerImport onImported={onImported} />)
@@ -376,6 +383,14 @@ describe('LoadRunnerImport', () => {
       scripts: [expect.objectContaining({
         name: 'Demo LoadRunner Script',
         protocol: 'http',
+        script: expect.objectContaining({
+          name: 'Demo LoadRunner Script',
+          metadata: expect.objectContaining({
+            import: expect.objectContaining({
+              source: 'loadrunner',
+            }),
+          }),
+        }),
       })],
     }))
   })

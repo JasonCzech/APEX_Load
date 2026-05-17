@@ -19,6 +19,7 @@ import { getErrorMessage } from '../utils/errorUtils'
 import { createJavaHttpDraft } from './scriptDraftFactories'
 import { attachImportCorrelationSuggestions } from './scriptEditorUtils'
 import ScriptImportReview from './ScriptImportReview'
+import { withFallbackPersistedScript } from './importSaveUtils'
 import { type ImportedSaveResult } from './useScriptsAuthoringState'
 import './SampleScriptImport.css'
 
@@ -427,7 +428,7 @@ export default function SampleScriptImport({ projectId, onImported, onEdit, onCl
       const savedScript = await saveTask.run(async () => {
         return api.createScript(reviewedScript, projectId)
       })
-      onImported?.({ scripts: [savedScript] })
+      onImported?.({ scripts: [withFallbackPersistedScript(savedScript, reviewedScript as unknown as ScriptDefinition)] })
     } catch (error: unknown) {
       setMessageError(getErrorMessage(error, 'Failed to save generated script'))
     }

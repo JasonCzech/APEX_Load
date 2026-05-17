@@ -6,6 +6,7 @@ import { type StoredScript } from '../types'
 import { type ScriptDefinition } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import ScriptImportReview from './ScriptImportReview'
+import { withFallbackPersistedScripts } from './importSaveUtils'
 import { type ImportedSaveResult } from './useScriptsAuthoringState'
 import './LoadRunnerImport.css'
 
@@ -146,11 +147,12 @@ export default function JMeterImport({ projectId, onImported, onEdit, onClose }:
         scripts,
         scenario_draft: result.scenario_draft,
       })
+      const savedScripts = withFallbackPersistedScripts(response.scripts, result.scripts.map(script => toScriptDefinition(script)))
       const scenarioText = response.scenario ? ' and scenario draft' : ''
       setNotice(`Saved ${response.count || result.scripts.length} script${result.scripts.length === 1 ? '' : 's'}${scenarioText} to the library.`)
-      if (response.scripts?.length) {
+      if (savedScripts.length) {
         onImported?.({
-          scripts: response.scripts,
+          scripts: savedScripts,
           scenario: response.scenario,
         })
       }

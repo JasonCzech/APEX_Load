@@ -322,6 +322,14 @@ describe('JMeterImport', () => {
         id: 'jmeter-script-1',
         name: 'Auth_Users',
         protocol: 'http',
+        script: expect.objectContaining({
+          name: 'Auth_Users',
+          actions: expect.arrayContaining([
+            expect.objectContaining({
+              name: 'Create_Session',
+            }),
+          ]),
+        }),
       })],
     }))
   })

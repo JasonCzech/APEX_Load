@@ -6,6 +6,7 @@ import { BASE } from '../hooks/apiClient'
 import { Project, type StoredScript } from '../types'
 import { type RecorderImportResult } from '../types/scriptImports'
 import { type ScriptDefinition } from '../types/scripts'
+import { withFallbackPersistedScript } from './importSaveUtils'
 import { attachImportCorrelationSuggestions } from './scriptEditorUtils'
 import { type ImportedSaveResult } from './useScriptsAuthoringState'
 import './RecordingStudio.css'
@@ -316,7 +317,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
     try {
       const savedScript = await api.createScript(script, activeProject?.id)
       showFeedback(`Script "${script.name}" created with ${convertTask.value?.correlations?.length || 0} correlations detected`)
-      onImported?.({ scripts: [savedScript] })
+      onImported?.({ scripts: [withFallbackPersistedScript(savedScript, script)] })
     } catch (e: any) {
       showFeedback(e.message, 'error')
     }

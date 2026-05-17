@@ -6,6 +6,7 @@ import { type ScriptDefinition } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import { buildReplayStartPayload, getImportSummary, summarizeInlineData } from './scriptEditorUtils'
 import ScriptImportReview from './ScriptImportReview'
+import { withFallbackPersistedScript } from './importSaveUtils'
 import { type DraftEditorFocus, type ImportedSaveResult } from './useScriptsAuthoringState'
 import './LoadRunnerImport.css'
 
@@ -639,7 +640,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
     }
     try {
       const savedScript = await api.createScript(importedScript, projectId)
-      onImported?.({ scripts: [savedScript] })
+      onImported?.({ scripts: [withFallbackPersistedScript(savedScript, toScriptDefinition(importedScript))] })
     } catch (error: unknown) {
       setError(getErrorMessage(error, 'Failed to save script'))
     }
