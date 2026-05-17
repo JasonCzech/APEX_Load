@@ -1876,7 +1876,7 @@ describe('LoadRunnerImport', () => {
         project_id: 'project-1',
       }),
     }))
-    expect(container.textContent).toContain('Draft browser replay started. Review the draft browser replay session before saving this import.')
+    expect(container.textContent).toContain('Draft browser replay started. Review the draft browser replay session before saving it to the library.')
     expect(container.textContent).toContain('Replay Session: draft-browser-validation')
     expect(container.textContent).toContain('Replay Status: Running')
     expect(container.textContent).toContain('Replay Group: default')
@@ -2055,7 +2055,7 @@ describe('LoadRunnerImport', () => {
           project_id: 'project-1',
         }),
       }))
-      expect(container.textContent).toContain('Draft browser replay started. Review the draft browser replay session before saving this import.')
+      expect(container.textContent).toContain('Draft browser replay started. Review the draft browser replay session before saving it to the library.')
       expect(container.textContent).toContain('Replay Session: draft-browser-validation')
       expect(container.textContent).toContain('Replay Status: Running')
       expect(container.textContent).toContain('Replay Group: default')
@@ -2572,7 +2572,7 @@ describe('LoadRunnerImport', () => {
       await flushPromises()
 
       expect(apiMock.startDraftBrowserReplaySession).toHaveBeenCalledTimes(2)
-      expect(container.textContent).toContain('Draft browser replay restarted. Review the refreshed draft browser replay session before saving this import.')
+      expect(container.textContent).toContain('Draft browser replay restarted. Review the refreshed draft browser replay session before saving it to the library.')
       expect(container.textContent).toContain('Replay Session: draft-browser-validation-rerun')
       expect(container.textContent).toContain('Replay Status: Running')
     } finally {

@@ -493,8 +493,8 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
 
   const setBrowserReplayStartedNotice = (wasStarted: boolean) => {
     setNotice(wasStarted
-      ? 'Draft browser replay restarted. Review the refreshed draft browser replay session before saving this import.'
-      : 'Draft browser replay started. Review the draft browser replay session before saving this import.')
+      ? 'Draft browser replay restarted. Review the refreshed draft browser replay session before saving it to the library.'
+      : 'Draft browser replay started. Review the draft browser replay session before saving it to the library.')
   }
 
   useEffect(() => {
