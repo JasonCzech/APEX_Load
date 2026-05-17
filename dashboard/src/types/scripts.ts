@@ -274,9 +274,30 @@ export interface ScriptConfig {
   web_runtime?: WebRuntimeConfig
   java_http?: JavaHTTPConfig
   soap?: SOAPConfig
+  websocket?: WebSocketConfig
+  grpc?: GRPCConfig
   browser?: BrowserConfig
   jms?: JMSConfig
   observability?: ObservabilityConfig
+}
+
+export interface WebSocketConfig {
+  read_timeout_ms?: number
+  write_timeout_ms?: number
+  max_message_size?: number
+  subprotocol?: string
+  origin?: string
+  compression?: boolean
+}
+
+export interface GRPCConfig {
+  proto_files?: string[]
+  use_reflection?: boolean
+  plain_text?: boolean
+  max_recv_msg_size?: number
+  timeout_ms?: number
+  metadata?: Record<string, string>
+  authority?: string
 }
 
 export interface ScriptDataSource {

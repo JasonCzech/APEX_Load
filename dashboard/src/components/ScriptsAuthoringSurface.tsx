@@ -7,6 +7,7 @@ import JMeterImport from './JMeterImport'
 import JavaHttpImport from './JavaHttpImport'
 import RecordingStudio from './RecordingStudio'
 import SampleScriptImport from './SampleScriptImport'
+import ProtocolAssetImport from './ProtocolAssetImport'
 import { type DraftEditorFocus, type ImportedSaveResult, type ScriptsAuthoringSubView } from './useScriptsAuthoringState'
 
 interface Props {
@@ -80,6 +81,16 @@ export default function ScriptsAuthoringSurface({
     case 'java-http-import':
       return renderCreateOptionsSurface(
         <JavaHttpImport onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
+        onOpenCreateOptions,
+      )
+    case 'devweb-import':
+      return renderCreateOptionsSurface(
+        <ProtocolAssetImport kind="devweb" projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
+        onOpenCreateOptions,
+      )
+    case 'har-import':
+      return renderCreateOptionsSurface(
+        <ProtocolAssetImport kind="har" projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
         onOpenCreateOptions,
       )
     default:

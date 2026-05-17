@@ -44,6 +44,8 @@ export default function ScriptsAuthoringShell({
         onStartJmsScript={createOptionActions.startJmsScript}
         onOpenLoadRunnerImport={createOptionActions.openLoadRunnerImport}
         onOpenJMeterImport={createOptionActions.openJMeterImport}
+        onOpenDevWebImport={createOptionActions.openDevWebImport}
+        onOpenHARImport={createOptionActions.openHARImport}
       />
     )
   }

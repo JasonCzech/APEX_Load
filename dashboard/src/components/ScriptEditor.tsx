@@ -1126,6 +1126,34 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
           shouldSelectFirstAction = true
         }
       }
+      if (protocol === 'websocket') {
+        next.config.websocket = {
+          read_timeout_ms: next.config.websocket?.read_timeout_ms || 30000,
+          write_timeout_ms: next.config.websocket?.write_timeout_ms || 10000,
+          max_message_size: next.config.websocket?.max_message_size || 1048576,
+          subprotocol: next.config.websocket?.subprotocol || '',
+          origin: next.config.websocket?.origin || '',
+          compression: next.config.websocket?.compression ?? false,
+        }
+        if (next.actions.length === 0) {
+          next.actions = [{ ...JSON.parse(JSON.stringify(EMPTY_ACTION)), name: 'Connect_WebSocket', type: 'ws_connect', target: '/ws' }]
+          shouldSelectFirstAction = true
+        }
+      }
+      if (protocol === 'grpc') {
+        next.config.grpc = {
+          use_reflection: next.config.grpc?.use_reflection ?? true,
+          plain_text: next.config.grpc?.plain_text ?? false,
+          timeout_ms: next.config.grpc?.timeout_ms || 30000,
+          max_recv_msg_size: next.config.grpc?.max_recv_msg_size || 4194304,
+          metadata: next.config.grpc?.metadata || {},
+          authority: next.config.grpc?.authority || '',
+        }
+        if (next.actions.length === 0) {
+          next.actions = [{ ...JSON.parse(JSON.stringify(EMPTY_ACTION)), name: 'Unary_Call', type: 'grpc_unary', target: 'package.Service/Method', body: '{}' }]
+          shouldSelectFirstAction = true
+        }
+      }
       if (protocol === 'browser' && next.actions.length === 0) {
         next.actions = [{ ...JSON.parse(JSON.stringify(EMPTY_BROWSER_ACTION)), name: 'Navigate' }]
         shouldSelectFirstAction = true
@@ -2382,6 +2410,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                         <option value="https">HTTPS API</option>
                         <option value="java_http">Java over HTTP</option>
                         <option value="soap">Web Services (SOAP)</option>
+                        <option value="websocket">WebSocket</option>
+                        <option value="grpc">gRPC</option>
                         <option value="browser">Web/HTML Browser</option>
                         <option value="jms-solace">JMS Solace</option>
                       </select>

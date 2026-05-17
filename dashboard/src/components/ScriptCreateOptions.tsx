@@ -10,6 +10,8 @@ interface Props {
   onStartJmsScript: () => void
   onOpenLoadRunnerImport: () => void
   onOpenJMeterImport: () => void
+  onOpenDevWebImport: () => void
+  onOpenHARImport: () => void
 }
 
 export default function ScriptCreateOptions({
@@ -24,6 +26,8 @@ export default function ScriptCreateOptions({
   onStartJmsScript,
   onOpenLoadRunnerImport,
   onOpenJMeterImport,
+  onOpenDevWebImport,
+  onOpenHARImport,
 }: Props) {
   return (
     <div className="page">
@@ -130,6 +134,16 @@ export default function ScriptCreateOptions({
               <span className="script-create-type-badge import">JMX</span>
               <h3>Import JMeter</h3>
               <p>Convert a JMeter .jmx plan into HTTP scripts with warnings, unsupported elements, and scenario draft context.</p>
+            </button>
+            <button className="script-create-option" onClick={onOpenDevWebImport}>
+              <span className="script-create-type-badge import">DEV</span>
+              <h3>Import DevWeb</h3>
+              <p>Convert DevWeb JavaScript assets into HTTP, WebSocket, or gRPC script drafts for review.</p>
+            </button>
+            <button className="script-create-option" onClick={onOpenHARImport}>
+              <span className="script-create-type-badge import">HAR</span>
+              <h3>Import HAR</h3>
+              <p>Convert Chrome DevTools HAR traffic into an HTTP script with detected base URL and correlations.</p>
             </button>
           </div>
         </section>

@@ -49,6 +49,12 @@ export default function TestExecutionSummary({ transactions, metrics, baseline, 
     .filter((tx) => hasJMSMessagingTelemetry(tx))
     .sort((left, right) => totalObservedMessages(right) - totalObservedMessages(left))
     .slice(0, 4)
+  const protocolStreamTransactions = transactions
+    .filter((tx) => isProtocolStreamTransaction(tx) && hasProtocolMessagingTelemetry(tx))
+  const protocolStreamProfiles = buildProtocolStreamProfiles(protocolStreamTransactions)
+  const topProtocolStreams = [...protocolStreamTransactions]
+    .sort((left, right) => totalObservedMessages(right) - totalObservedMessages(left))
+    .slice(0, 4)
   const soapOperations = Object.values(metrics?.soap_operations ?? {})
   const topSOAPOperations = [...soapOperations]
     .sort((left, right) => ((right.server_telemetry?.avg_server_processing_ms ?? right.avg_ms ?? 0) - (left.server_telemetry?.avg_server_processing_ms ?? left.avg_ms ?? 0)))
@@ -627,6 +633,73 @@ export default function TestExecutionSummary({ transactions, metrics, baseline, 
         </div>
       )}
 
+      {topProtocolStreams.length > 0 && (
+        <div className="tx-section">
+          <h3 className="chart-title">Live WebSocket and gRPC Streams</h3>
+          <p className="server-telemetry-subtitle">Message throughput, call latency, and protocol status from live WebSocket and gRPC actions.</p>
+          {protocolStreamProfiles.length > 0 && (
+            <div className="server-telemetry-grid">
+              {protocolStreamProfiles.map((profile) => (
+                <div key={profile.label} className="server-telemetry-card">
+                  <div className="server-telemetry-card-header">
+                    <span className="server-telemetry-name">{profile.label}</span>
+                    <span className="server-telemetry-target">{profile.transaction.name}</span>
+                  </div>
+                  <div className="server-telemetry-stat-grid">
+                    <div className="server-telemetry-stat">
+                      <span className="server-telemetry-label">Signal</span>
+                      <span className="server-telemetry-value">{profile.metricValue}</span>
+                    </div>
+                    <div className="server-telemetry-stat">
+                      <span className="server-telemetry-label">Protocol</span>
+                      <span className="server-telemetry-value">{formatProtocolLabel(profile.transaction.dependency_type)}</span>
+                    </div>
+                    <div className="server-telemetry-stat">
+                      <span className="server-telemetry-label">Sent / Recv</span>
+                      <span className="server-telemetry-value">{profile.transaction.server_telemetry?.messages_sent ?? 0} / {profile.transaction.server_telemetry?.messages_received ?? 0}</span>
+                    </div>
+                    <div className="server-telemetry-stat">
+                      <span className="server-telemetry-label">Rates</span>
+                      <span className="server-telemetry-value">{formatTelemetryValue(profile.transaction.server_telemetry?.avg_messages_sent_per_sec, ' msg/s')} / {formatTelemetryValue(profile.transaction.server_telemetry?.avg_messages_received_per_sec, ' msg/s')}</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          <table className="tx-table">
+            <thead>
+              <tr>
+                <th>Action</th>
+                <th>Protocol</th>
+                <th>Sent</th>
+                <th>Received</th>
+                <th>Avg Send Rate</th>
+                <th>Avg Receive Rate</th>
+                <th>Latency</th>
+                <th>Status / Error</th>
+                <th>Target</th>
+              </tr>
+            </thead>
+            <tbody>
+              {topProtocolStreams.map((tx) => (
+                <tr key={tx.name}>
+                  <td className="tx-name">{tx.name}</td>
+                  <td>{formatProtocolLabel(tx.dependency_type)}</td>
+                  <td>{tx.server_telemetry?.messages_sent ?? 0}</td>
+                  <td>{tx.server_telemetry?.messages_received ?? 0}</td>
+                  <td>{formatTelemetryValue(tx.server_telemetry?.avg_messages_sent_per_sec, ' msg/s')}</td>
+                  <td>{formatTelemetryValue(tx.server_telemetry?.avg_messages_received_per_sec, ' msg/s')}</td>
+                  <td>{formatTelemetryValue(tx.server_telemetry?.avg_message_latency_ms ?? tx.avg_ms, ' ms')}</td>
+                  <td>{formatProtocolStatus(tx)}</td>
+                  <td>{tx.dependency_target || tx.dependency_type || 'protocol stream'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       {jmsLagTrend && (
         <div className="tx-section server-telemetry-section">
           <div className="server-telemetry-header">
@@ -772,6 +845,12 @@ interface JMSPayloadProfile {
 }
 
 interface JMSMessagingProfile {
+  label: string
+  metricValue: string
+  transaction: TxMetrics
+}
+
+interface ProtocolStreamProfile {
   label: string
   metricValue: string
   transaction: TxMetrics
@@ -939,6 +1018,38 @@ function buildJMSMessagingProfile(
   metric: (transaction: TxMetrics) => number,
   format: (transaction: TxMetrics) => string,
 ): JMSMessagingProfile | null {
+  const candidate = [...transactions].sort((left, right) => metric(right) - metric(left))[0]
+  if (!candidate || metric(candidate) <= 0) {
+    return null
+  }
+  return {
+    label,
+    metricValue: format(candidate),
+    transaction: candidate,
+  }
+}
+
+function buildProtocolStreamProfiles(transactions: TxMetrics[]): ProtocolStreamProfile[] {
+  if (transactions.length === 0) {
+    return []
+  }
+
+  const candidates: Array<ProtocolStreamProfile | null> = [
+    buildProtocolStreamProfile('Highest Message Latency', transactions, (tx) => tx.server_telemetry?.avg_message_latency_ms ?? tx.avg_ms ?? -1, (tx) => formatTelemetryValue(tx.server_telemetry?.avg_message_latency_ms ?? tx.avg_ms, ' ms')),
+    buildProtocolStreamProfile('Fastest Send Rate', transactions, (tx) => tx.server_telemetry?.avg_messages_sent_per_sec ?? -1, (tx) => formatTelemetryValue(tx.server_telemetry?.avg_messages_sent_per_sec, ' msg/s')),
+    buildProtocolStreamProfile('Fastest Receive Rate', transactions, (tx) => tx.server_telemetry?.avg_messages_received_per_sec ?? -1, (tx) => formatTelemetryValue(tx.server_telemetry?.avg_messages_received_per_sec, ' msg/s')),
+    buildProtocolStreamProfile('Largest Message Volume', transactions, (tx) => totalObservedMessages(tx), (tx) => `${totalObservedMessages(tx)} msgs`),
+  ]
+
+  return candidates.filter((candidate): candidate is ProtocolStreamProfile => Boolean(candidate))
+}
+
+function buildProtocolStreamProfile(
+  label: string,
+  transactions: TxMetrics[],
+  metric: (transaction: TxMetrics) => number,
+  format: (transaction: TxMetrics) => string,
+): ProtocolStreamProfile | null {
   const candidate = [...transactions].sort((left, right) => metric(right) - metric(left))[0]
   if (!candidate || metric(candidate) <= 0) {
     return null
@@ -1180,11 +1291,40 @@ function totalObservedMessages(transaction: TxMetrics): number {
   return (transaction.server_telemetry?.messages_sent ?? 0) + (transaction.server_telemetry?.messages_received ?? 0)
 }
 
+function isProtocolStreamTransaction(transaction: TxMetrics): boolean {
+  return transaction.dependency_type === 'websocket' || transaction.dependency_type === 'grpc'
+}
+
+function hasProtocolMessagingTelemetry(transaction: TxMetrics): boolean {
+  return totalObservedMessages(transaction) > 0
+    || (transaction.server_telemetry?.avg_message_latency_ms ?? 0) > 0
+    || (transaction.server_telemetry?.avg_messages_sent_per_sec ?? 0) > 0
+    || (transaction.server_telemetry?.avg_messages_received_per_sec ?? 0) > 0
+}
+
 function hasJMSMessagingTelemetry(transaction: TxMetrics): boolean {
   return totalObservedMessages(transaction) > 0
     || (transaction.server_telemetry?.avg_message_latency_ms ?? 0) > 0
     || (transaction.server_telemetry?.avg_messages_sent_per_sec ?? 0) > 0
     || (transaction.server_telemetry?.avg_messages_received_per_sec ?? 0) > 0
+}
+
+function formatProtocolLabel(dependencyType?: string): string {
+  if (dependencyType === 'grpc') {
+    return 'gRPC'
+  }
+  if (dependencyType === 'websocket') {
+    return 'WebSocket'
+  }
+  return dependencyType || 'Protocol'
+}
+
+function formatProtocolStatus(transaction: TxMetrics): string {
+  const errorPct = transactionErrorPct(transaction)
+  if (errorPct > 0) {
+    return `${errorPct.toFixed(1)}% errors`
+  }
+  return transaction.dependency_type === 'grpc' ? 'OK' : 'Open'
 }
 
 function formatJMSTopicFanOut(topic: JMSTopicFanOutBucket): string {

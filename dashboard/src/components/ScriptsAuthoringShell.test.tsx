@@ -84,6 +84,8 @@ function createActions(overrides: Partial<ScriptsCreateOptionActions> = {}): Scr
     openRecorder: vi.fn(),
     openSampleImport: vi.fn(),
     openJavaHttpImport: vi.fn(),
+    openDevWebImport: vi.fn(),
+    openHARImport: vi.fn(),
     ...overrides,
   }
 }
@@ -144,6 +146,8 @@ describe('ScriptsAuthoringShell', () => {
 
     expect(container.textContent).toContain('Create Script')
     expect(container.textContent).toContain('Import LoadRunner')
+    expect(container.textContent).toContain('Import DevWeb')
+    expect(container.textContent).toContain('Import HAR')
 
     await clickButton('Import LoadRunner')
     expect(actions.openLoadRunnerImport).toHaveBeenCalled()

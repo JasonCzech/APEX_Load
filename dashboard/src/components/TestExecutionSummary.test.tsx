@@ -581,4 +581,71 @@ describe('TestExecutionSummary', () => {
 		expect(container.textContent).toContain('45.0 ms')
 		expect(container.textContent).toContain('Window Peak')
 	})
+
+	it('renders WebSocket and gRPC stream telemetry when protocol message metrics are available', async () => {
+		const websocketSend: TxMetrics = {
+			name: 'WS_Send_Order',
+			dependency_type: 'websocket',
+			dependency_target: 'stream.example.test/ws',
+			count: 24,
+			errors: 0,
+			avg_ms: 18,
+			p50_ms: 14,
+			p90_ms: 24,
+			p99_ms: 36,
+			server_telemetry: {
+				samples: 24,
+				messages_sent: 24,
+				avg_messages_sent_per_sec: 48,
+				avg_message_latency_ms: 18,
+			},
+		}
+		const grpcStream: TxMetrics = {
+			name: 'OrderService/Watch',
+			dependency_type: 'grpc',
+			dependency_target: 'grpc.example.test:443',
+			count: 8,
+			errors: 1,
+			avg_ms: 42,
+			p50_ms: 40,
+			p90_ms: 56,
+			p99_ms: 80,
+			server_telemetry: {
+				samples: 8,
+				messages_sent: 8,
+				messages_received: 32,
+				avg_messages_sent_per_sec: 7.5,
+				avg_messages_received_per_sec: 30,
+				avg_message_latency_ms: 42,
+			},
+		}
+
+		await act(async () => {
+			root.render(
+				<TestExecutionSummary
+					transactions={[websocketSend, grpcStream]}
+					metrics={{ p50_ms: 40, p90_ms: 56, p95_ms: 70, p99_ms: 80 }}
+				/>,
+			)
+		})
+
+		expect(container.textContent).toContain('Live WebSocket and gRPC Streams')
+		expect(container.textContent).toContain('Message throughput, call latency, and protocol status')
+		expect(container.textContent).toContain('Highest Message Latency')
+		expect(container.textContent).toContain('OrderService/Watch')
+		expect(container.textContent).toContain('42.0 ms')
+		expect(container.textContent).toContain('Fastest Send Rate')
+		expect(container.textContent).toContain('48.0 msg/s')
+		expect(container.textContent).toContain('Fastest Receive Rate')
+		expect(container.textContent).toContain('30.0 msg/s')
+		expect(container.textContent).toContain('Largest Message Volume')
+		expect(container.textContent).toContain('40 msgs')
+		expect(container.textContent).toContain('WebSocket')
+		expect(container.textContent).toContain('gRPC')
+		expect(container.textContent).toContain('24')
+		expect(container.textContent).toContain('32')
+		expect(container.textContent).toContain('12.5% errors')
+		expect(container.textContent).toContain('stream.example.test/ws')
+		expect(container.textContent).toContain('grpc.example.test:443')
+	})
 })

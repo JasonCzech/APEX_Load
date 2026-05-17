@@ -490,6 +490,9 @@ if len(grpcCfg.Metadata) > 0 {
 | DevWeb converter API | `pkg/api/handlers_scripts_test.go` | ✅ `/api/v1/scripts/import/devweb` JSON import |
 | HAR converter | `pkg/convert/har/converter_test.go` | ✅ Entry mapping, correlations, base URL |
 | HAR converter API | `pkg/api/handlers_scripts_test.go` | ✅ `/api/v1/scripts/import/har` JSON import |
+| Dashboard DevWeb/HAR import | `dashboard/src/components/ScriptsAuthoringShell.test.tsx` | ✅ Script create flow exposes DevWeb and HAR import routes |
+| Dashboard protocol authoring | `dashboard/src/components/scriptAuthoringAssist.test.ts` | ✅ WebSocket and gRPC starter actions are available in the authoring assist palette |
+| Dashboard protocol metrics | `dashboard/src/components/TestExecutionSummary.test.tsx` | ✅ WebSocket and gRPC live message throughput/status telemetry renders in execution summaries |
 | Engine config wiring | `pkg/engine/config_test.go` | ✅ WebSocket and gRPC config propagation |
 | DSL parsing | `pkg/dsl/validate_test.go` | ✅ WebSocket and gRPC config/action validation |
 
@@ -511,7 +514,7 @@ if len(grpcCfg.Metadata) > 0 {
 | **Phase 2** | **gRPC Protocol** | ✅ `pkg/protocol/grpc`, reflection and descriptor-set loading, unary + streaming runtime paths, DSL config, unit tests | Complete | Unary calls execute with dynamic message construction; streaming client paths execute through the same dynamic protobuf transport |
 | **Phase 3** | **DevWeb Script Import** | ✅ `pkg/convert/devweb` parser and converter, API endpoint, unit tests | Complete | DevWeb `.js` files with `load.WebRequest`, `load.WebSocket`, and `grpcClient.invoke` calls convert to reviewable DSL scripts |
 | **Phase 4** | **HAR Import** | ✅ `pkg/convert/har` converter, API endpoint, unit tests | Complete | `.har` files from Chrome DevTools convert to HTTP DSL scripts |
-| **Phase 5** | **Dashboard Integration** | Protocol selector, import UI, WebSocket/gRPC execution metrics, config panels | 3-4 days | Users can create, import, and monitor WebSocket and gRPC scenarios |
+| **Phase 5** | **Dashboard Integration** | ✅ Protocol selector, DevWeb/HAR import UI, WebSocket/gRPC starter actions, live protocol stream metrics | Complete | Users can create, import, and monitor WebSocket and gRPC scenarios |
 | **Phase 6** | **Benchmarks + Hardening** | Throughput and memory benchmarks, connection error recovery, reconnection logic | 2-3 days | Published performance measurements; documented scale guidance |
 
 **Total estimate: 22-32 days**

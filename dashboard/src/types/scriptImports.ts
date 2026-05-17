@@ -145,6 +145,19 @@ export interface SampleImportStats {
   correlations_detected: number
 }
 
+export interface DevWebImportStats {
+  total_steps: number
+  converted_actions: number
+  http_requests: number
+  websocket_actions: number
+  grpc_calls: number
+  think_times: number
+  skipped: number
+  unsupported_calls?: string[]
+}
+
+export type HARImportStats = SampleImportStats
+
 export interface SampleCorrelation {
   name: string
   source: string
@@ -167,6 +180,8 @@ export interface RecorderCorrelation {
 export type LoadRunnerImportResult = ScriptImportResult<LoadRunnerConvertStats, unknown, ScriptDefinition, unknown, LoadRunnerImportSummary>
 export type JMeterImportResult = ScriptImportResult<JMeterConvertStats, unknown, ScriptDefinition, JMeterScenarioDraft, JMeterImportSummary>
 export type SampleImportResult = ScriptImportResult<SampleImportStats, SampleCorrelation>
+export type DevWebImportResult = ScriptImportResult<DevWebImportStats, unknown>
+export type HARImportResult = ScriptImportResult<HARImportStats, SampleCorrelation>
 export type RecorderImportResult = ScriptImportResult<Record<string, unknown>, RecorderCorrelation>
 
 export interface JMeterSupportMatrixResponse {

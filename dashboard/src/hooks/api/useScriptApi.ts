@@ -15,7 +15,7 @@ import {
   TestSummary,
 } from '../../types'
 import { type ScriptDefinition, type ScriptExportResponse, type ScriptReplayResponse, type ScriptValidationResponse } from '../../types/scripts'
-import { type JMeterImportResult, type JMeterSupportMatrixResponse, type LoadRunnerImportResult, type LoadRunnerSupportMatrixResponse, type SampleImportResult, type SaveJMeterImportRequest, type SaveJMeterImportResponse } from '../../types/scriptImports'
+import { type DevWebImportResult, type HARImportResult, type JMeterImportResult, type JMeterSupportMatrixResponse, type LoadRunnerImportResult, type LoadRunnerSupportMatrixResponse, type SampleImportResult, type SaveJMeterImportRequest, type SaveJMeterImportResponse } from '../../types/scriptImports'
 import { BASE, request } from '../apiClient'
 
 type ScriptListResponse = {
@@ -326,6 +326,42 @@ export function useScriptApi() {
     [],
   )
 
+  const importDevWeb = useCallback(
+    async (file: File, options?: { name?: string; base_url?: string; project_id?: string }): Promise<DevWebImportResult> => {
+      const formData = new FormData()
+      formData.append('file', file)
+      if (options?.name) formData.append('name', options.name)
+      if (options?.project_id) formData.append('project_id', options.project_id)
+      if (options?.base_url) formData.append('base_url', options.base_url)
+
+      const res = await fetch(`${BASE}/scripts/import/devweb`, { method: 'POST', body: formData })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: res.statusText }))
+        throw new Error(body.error || res.statusText)
+      }
+      return res.json() as Promise<DevWebImportResult>
+    },
+    [],
+  )
+
+  const importHAR = useCallback(
+    async (file: File, options?: { name?: string; base_url?: string; project_id?: string }): Promise<HARImportResult> => {
+      const formData = new FormData()
+      formData.append('file', file)
+      if (options?.name) formData.append('name', options.name)
+      if (options?.project_id) formData.append('project_id', options.project_id)
+      if (options?.base_url) formData.append('base_url', options.base_url)
+
+      const res = await fetch(`${BASE}/scripts/import/har`, { method: 'POST', body: formData })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: res.statusText }))
+        throw new Error(body.error || res.statusText)
+      }
+      return res.json() as Promise<HARImportResult>
+    },
+    [],
+  )
+
   const listScenarios = useCallback((projectId?: string) => request<ScenarioListResponse>(`/scenarios${buildScenarioQuery(projectId)}`), [])
 
   const createScenario = useCallback(
@@ -424,6 +460,8 @@ export function useScriptApi() {
       getJMeterSupportMatrix,
       saveJMeterImport,
       importSample,
+      importDevWeb,
+      importHAR,
       listScenarios,
       createScenario,
       getScenario,
@@ -467,6 +505,8 @@ export function useScriptApi() {
       getJMeterSupportMatrix,
       saveJMeterImport,
       importSample,
+      importDevWeb,
+      importHAR,
       listScenarios,
       createScenario,
       getScenario,

@@ -5,7 +5,7 @@ import { type ScriptDefinition } from '../types/scripts'
 import { useApi } from '../hooks/useApi'
 import { createApiDraft, createJavaHttpDraft, createJmsDraft, createSoapDraft, createWebDraft } from './scriptDraftFactories'
 
-export type ScriptsAuthoringSubView = 'list' | 'create-options' | 'create' | 'edit' | 'import' | 'jmeter-import' | 'recorder' | 'sample' | 'java-http-import'
+export type ScriptsAuthoringSubView = 'list' | 'create-options' | 'create' | 'edit' | 'import' | 'jmeter-import' | 'recorder' | 'sample' | 'java-http-import' | 'devweb-import' | 'har-import'
 
 export interface DraftEditorFocus {
 	targetAction?: string | null
@@ -45,6 +45,8 @@ export interface ScriptsCreateOptionActions {
   openRecorder: () => void
   openSampleImport: () => void
   openJavaHttpImport: () => void
+  openDevWebImport: () => void
+  openHARImport: () => void
 }
 
 interface ScriptsAuthoringStateModel {
@@ -129,6 +131,14 @@ export function useScriptsAuthoringState({
 
   const openJavaHttpImport = useCallback(() => {
     setSubview('java-http-import')
+  }, [setSubview])
+
+  const openDevWebImport = useCallback(() => {
+    setSubview('devweb-import')
+  }, [setSubview])
+
+  const openHARImport = useCallback(() => {
+    setSubview('har-import')
   }, [setSubview])
 
   const openDraftEditor = useCallback((script: ScriptDefinition, focus?: DraftEditorFocus) => {
@@ -222,6 +232,8 @@ export function useScriptsAuthoringState({
       openRecorder,
       openSampleImport,
       openJavaHttpImport,
+      openDevWebImport,
+      openHARImport,
     },
   }
 }

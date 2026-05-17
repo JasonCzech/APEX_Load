@@ -294,6 +294,42 @@ export function buildProtocolStarterTemplates(protocol: string, nextIndex: numbe
           action: { name: `Request_Reply_${sequence}`, type: 'jms_request_reply', target: 'orders.rpc', headers: {}, body: '{"command":"ping"}', params: {}, metadata: { reply_to: 'orders.reply' }, extractors: [], assertions: [{ type: 'message_received' }], think_time_after: true },
         },
       ]
+    case 'websocket':
+      return [
+        {
+          key: 'websocket-connect',
+          label: 'Connect',
+          description: 'Open a persistent WebSocket connection.',
+          action: { name: `WS_Connect_${sequence}`, type: 'ws_connect', target: '/ws', headers: {}, params: {}, extractors: [], assertions: [], think_time_after: true },
+        },
+        {
+          key: 'websocket-send',
+          label: 'Send Message',
+          description: 'Send a text message on the open connection.',
+          action: { name: `WS_Send_${sequence}`, type: 'ws_send', target: '', body: '{"type":"ping"}', headers: {}, params: { type: 'text' }, extractors: [], assertions: [], think_time_after: true },
+        },
+        {
+          key: 'websocket-receive',
+          label: 'Receive Message',
+          description: 'Wait for a message and assert it arrived.',
+          action: { name: `WS_Receive_${sequence}`, type: 'ws_receive', target: '', headers: {}, params: { timeout_ms: 30000 }, extractors: [], assertions: [{ type: 'message_received' }], think_time_after: true },
+        },
+      ]
+    case 'grpc':
+      return [
+        {
+          key: 'grpc-unary',
+          label: 'Unary Call',
+          description: 'Invoke one reflected gRPC method with a JSON protobuf body.',
+          action: { name: `gRPC_Unary_${sequence}`, type: 'grpc_unary', target: 'package.Service/Method', body: '{}', headers: {}, params: { timeout_ms: 30000 }, extractors: [], assertions: [{ type: 'grpc_status', expected: 0 }], think_time_after: true },
+        },
+        {
+          key: 'grpc-bidi',
+          label: 'Bidirectional Stream',
+          description: 'Seed a bidirectional streaming call with one JSON message.',
+          action: { name: `gRPC_Stream_${sequence}`, type: 'grpc_bidi_stream', target: 'package.Service/Stream', body: '', headers: {}, params: { max_messages: 1, messages: ['{}'] }, extractors: [], assertions: [{ type: 'grpc_status', expected: 0 }], think_time_after: true },
+        },
+      ]
     case 'https':
     case 'http':
     default:
