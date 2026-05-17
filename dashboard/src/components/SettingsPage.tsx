@@ -936,6 +936,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
   const hasUnsavedChanges = useMemo(() => JSON.stringify(settings) !== JSON.stringify(savedSettings), [settings, savedSettings])
   const authDiagnosticsStale = useMemo(() => JSON.stringify(settings.auth) !== JSON.stringify(savedSettings.auth), [settings.auth, savedSettings.auth])
   const canManageSystem = useMemo(() => isEffectiveOperationAllowed(effectiveAuthAccessResources, 'manage_system'), [effectiveAuthAccessResources])
+  const canManageProjects = useMemo(() => isEffectiveOperationAllowed(effectiveAuthAccessResources, 'manage_projects'), [effectiveAuthAccessResources])
   const canManageServiceAccounts = useMemo(() => isEffectiveOperationAllowed(effectiveAuthAccessResources, 'manage_service_accounts'), [effectiveAuthAccessResources])
   const canViewAudit = useMemo(() => isEffectiveOperationAllowed(effectiveAuthAccessResources, 'view_audit'), [effectiveAuthAccessResources])
   const canSave = validationErrors.length === 0 && !loading && hasUnsavedChanges && canManageSystem
@@ -1450,6 +1451,11 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
   }
 
   const createProject = async () => {
+    if (!canManageProjects) {
+      setProjectActionError('Current session cannot manage projects.')
+      setProjectActionMessage('')
+      return
+    }
     const name = newProjectName.trim()
     if (!name) return
     try {
@@ -1485,6 +1491,11 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
 
   const saveProjectCompliance = async () => {
     if (!selectedProject) return
+    if (!canManageProjects) {
+      setProjectActionError('Current session cannot manage this project.')
+      setProjectActionMessage('')
+      return
+    }
     if (projectDraftValidationError) {
       setProjectActionError(projectDraftValidationError)
       setProjectActionMessage('')
@@ -3015,7 +3026,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
                   onChange={event => setNewProjectName(event.target.value)}
                   placeholder="Create project, e.g. Customer Portal"
                 />
-                <button className="btn btn-secondary" type="button" onClick={createProject} disabled={!newProjectName.trim()}>
+                <button className="btn btn-secondary" type="button" onClick={createProject} disabled={!newProjectName.trim() || !canManageProjects}>
                   Add Project
                 </button>
               </div>
@@ -3133,16 +3144,17 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
                   )}
 
                   {projectDraftValidationError && <p className="settings-error-inline">{projectDraftValidationError}</p>}
+                  {!canManageProjects && <p className="settings-error-inline">Current session can view this project but cannot change project governance.</p>}
 
                   <div className="settings-inline-actions">
-                    <button className="btn btn-secondary" type="button" onClick={addProjectRule}>
+                    <button className="btn btn-secondary" type="button" onClick={addProjectRule} disabled={!canManageProjects}>
                       Add Rule
                     </button>
                     <button
                       className="btn btn-primary"
                       type="button"
                       onClick={saveProjectCompliance}
-                      disabled={!projectHasUnsavedChanges || Boolean(projectDraftValidationError)}
+                      disabled={!projectHasUnsavedChanges || Boolean(projectDraftValidationError) || !canManageProjects}
                     >
                       Save Project Governance
                     </button>

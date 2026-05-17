@@ -496,7 +496,7 @@ describe('SettingsPage', () => {
 
     const addRuleButton = findButton('Add Rule')
     expect(addRuleButton).toBeDefined()
-  if (!addRuleButton) return
+    if (!addRuleButton) return
 
     await act(async () => {
       addRuleButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -543,6 +543,54 @@ describe('SettingsPage', () => {
       },
     })
     expect(container.textContent).toContain('Saved project governance defaults for Customer Portal.')
+  })
+
+  it('disables project governance actions when effective RBAC denies project management', async () => {
+    apiMock.getAuthEffectiveAccess.mockResolvedValue({
+      enabled: true,
+      authenticated: true,
+      project_id: 'project-1',
+      resources: [
+        {
+          id: 'projects_and_folders',
+          name: 'Projects and Folders',
+          description: 'Project catalog.',
+          operations: [
+            { id: 'view_projects', label: 'View projects', allowed: true, grant_source: 'project' },
+            { id: 'manage_projects', label: 'Manage projects', allowed: false },
+          ],
+        },
+      ],
+    })
+
+    await act(async () => {
+      root.render(<SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+
+    await flushPromises()
+    await flushPromises()
+
+    const projectSection = container.querySelector('#settings-section-projects')
+    expect(projectSection).toBeTruthy()
+    if (!projectSection) return
+
+    const newProjectInput = Array.from(projectSection.querySelectorAll('input')).find(input => input.placeholder?.includes('Create project')) as HTMLInputElement | undefined
+    expect(newProjectInput).toBeDefined()
+    if (!newProjectInput) return
+    await setFieldValue(newProjectInput, 'Restricted Project')
+
+    expect(findButton('Add Project')?.disabled).toBe(true)
+    expect(findButton('Add Rule')?.disabled).toBe(true)
+    expect(projectSection.textContent).toContain('Current session can view this project but cannot change project governance.')
+
+    const quotaInputs = Array.from(projectSection.querySelectorAll('input')).filter(input => input.placeholder === 'Unlimited') as HTMLInputElement[]
+    expect(quotaInputs).toHaveLength(2)
+    if (quotaInputs.length !== 2) return
+
+    await setFieldValue(quotaInputs[0], '3')
+    const saveButton = findButton('Save Project Governance')
+    expect(saveButton?.disabled).toBe(true)
+    expect(projectApiMock.updateProject).not.toHaveBeenCalled()
   })
 
   it('blocks saving project compliance when a rule is missing its regex pattern', async () => {
