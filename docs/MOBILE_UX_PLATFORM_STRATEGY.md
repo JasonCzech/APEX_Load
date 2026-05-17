@@ -239,7 +239,7 @@ The existing plans define tactical phases. This section maps them to the strateg
 - Step-to-action mapping for navigate, click, fill, select, wait, conservative verify assertions, transaction-preserved names, and simple decomposed JavaScript fill/click statements
 - Device profile extraction from LoadRunner runtime settings
 
-**Remaining effort:** 3-5 days for non-decomposable JavaScript hardening, import review UX refinements, and broader replay-validation coverage. Simple TruClient JavaScript scroll statements now map to `browser_swipe`, reducing one of the previous review-only repair paths.
+**Remaining effort:** 3-5 days for non-decomposable JavaScript hardening, import review UX refinements, and broader replay-validation coverage. Simple TruClient JavaScript scroll statements now map to `browser_swipe`, and JavaScript `location` navigation statements map to `browser_navigate`, reducing previous review-only repair paths.
 
 ### Stage 6: UX Intelligence (Future)
 - Frustration detection: rage taps, repeated navigation, abandonment patterns

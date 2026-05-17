@@ -374,6 +374,52 @@ func TestConvertEvaluateJavaScriptMapsScrollDirection(t *testing.T) {
 	}
 }
 
+func TestSplitJavaScriptStatementsPreservesURLStringLiterals(t *testing.T) {
+	statements := splitJavaScriptStatements("window.location.href = 'https://m.example.com/cart'; // redirect to cart\n$('#q').val('stormrunner')")
+	if len(statements) != 2 {
+		t.Fatalf("statements = %#v, want 2 statements", statements)
+	}
+	if statements[0] != "window.location.href = 'https://m.example.com/cart'" {
+		t.Fatalf("first statement = %q, want full URL assignment", statements[0])
+	}
+	if statements[1] != "$('#q').val('stormrunner')" {
+		t.Fatalf("second statement = %q, want jQuery value call", statements[1])
+	}
+}
+
+func TestConvertArchiveMapsEvaluateJavaScriptLocationNavigation(t *testing.T) {
+	result, err := ConvertArchive(map[string]string{
+		"default.xml": encodeUTF16LE(`<?xml version="1.0" encoding="utf-16"?>
+<truScript>
+  <step type="block" action="action" actionName="Action">
+    <step type="testObject" action="Navigate" index="1" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://m.example.com/profile\&quot;&quot;}}" />
+    <step type="util" action="Evaluate JavaScript" index="2" arguments="{&quot;Code&quot;:{&quot;value&quot;:&quot;window.location.href = 'https://m.example.com/cart';\nlocation.assign('/checkout')&quot;}}" />
+  </step>
+</truScript>`),
+	}, ConvertOptions{ScriptName: "Navigation JavaScript"})
+	if err != nil {
+		t.Fatalf("ConvertArchive returned error: %v", err)
+	}
+	if len(result.Script.Actions) != 3 {
+		t.Fatalf("actions len = %d, want 3", len(result.Script.Actions))
+	}
+	if action := result.Script.Actions[1]; action.Type != "browser_navigate" || action.Target != "https://m.example.com/cart" {
+		t.Fatalf("action[1] = %#v, want browser navigate to cart", action)
+	}
+	if action := result.Script.Actions[2]; action.Type != "browser_navigate" || action.Target != "/checkout" {
+		t.Fatalf("action[2] = %#v, want browser navigate to /checkout", action)
+	}
+	if result.Stats.TotalSteps != 2 || result.Stats.ConvertedActions != 3 || result.Stats.Skipped != 0 {
+		t.Fatalf("stats = %#v, want total=2 converted=3 skipped=0", result.Stats)
+	}
+	if len(result.Stats.UnsupportedSteps) != 0 {
+		t.Fatalf("unsupported steps = %#v, want none", result.Stats.UnsupportedSteps)
+	}
+	if len(result.Warnings) != 0 {
+		t.Fatalf("warnings = %#v, want none", result.Warnings)
+	}
+}
+
 func encodeUTF16LE(text string) string {
 	words := utf16.Encode([]rune(text))
 	bytes := make([]byte, 0, len(words)*2)

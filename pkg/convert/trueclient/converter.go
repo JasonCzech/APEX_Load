@@ -60,6 +60,8 @@ var (
 	reQuerySelectorClick = regexp.MustCompile(`^document\.querySelector\(\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\)\.click\(\s*\)$`)
 	reQuerySelectorValue = regexp.MustCompile(`^document\.querySelector\(\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\)\.value\s*=\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')$`)
 	reWindowScroll       = regexp.MustCompile(`^window\.scroll(?:To|By)\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\)$`)
+	reLocationAssign     = regexp.MustCompile(`^(?:window\.)?location(?:\.href)?\s*=\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')$`)
+	reLocationMethod     = regexp.MustCompile(`^(?:window\.)?location\.(?:assign|replace)\(\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\)$`)
 )
 
 // ConvertArchive converts a TruClient Mobile Web archive into a Stormrunner browser script.
@@ -610,11 +612,32 @@ func splitJavaScriptStatements(code string) []string {
 }
 
 func stripLineComment(line string) string {
-	index := strings.Index(line, "//")
-	if index == -1 {
-		return line
+	var quote rune
+	escaped := false
+	for index, r := range line {
+		if escaped {
+			escaped = false
+			continue
+		}
+		if r == '\\' {
+			escaped = true
+			continue
+		}
+		if quote != 0 {
+			if r == quote {
+				quote = 0
+			}
+			continue
+		}
+		if r == '\'' || r == '"' {
+			quote = r
+			continue
+		}
+		if r == '/' && index+1 < len(line) && line[index+1] == '/' {
+			return line[:index]
+		}
 	}
-	return line[:index]
+	return line
 }
 
 func convertJavaScriptStatement(statement string, baseName string, position int) (dsl.Action, bool) {
@@ -701,7 +724,33 @@ func convertJavaScriptStatement(statement string, baseName string, position int)
 			},
 		}, true
 	}
+	if action, ok := convertJavaScriptLocationNavigation(statement, baseName, position); ok {
+		return action, true
+	}
 	return dsl.Action{}, false
+}
+
+func convertJavaScriptLocationNavigation(statement string, baseName string, position int) (dsl.Action, bool) {
+	matches := reLocationAssign.FindStringSubmatch(statement)
+	if len(matches) != 2 {
+		matches = reLocationMethod.FindStringSubmatch(statement)
+	}
+	if len(matches) != 2 {
+		return dsl.Action{}, false
+	}
+	target, ok := decodeJSStringLiteral(matches[1])
+	if !ok || strings.TrimSpace(target) == "" {
+		return dsl.Action{}, false
+	}
+	return dsl.Action{
+		Name:   fmt.Sprintf("%s Navigate %d", baseName, position),
+		Type:   "browser_navigate",
+		Target: strings.TrimSpace(target),
+		Metadata: map[string]any{
+			"source":        "truclient_evaluate_javascript",
+			"source_script": statement,
+		},
+	}, true
 }
 
 func scrollGesture(x, y float64) (string, int) {

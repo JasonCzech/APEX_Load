@@ -428,6 +428,7 @@ Before claiming practical parity in these target areas, all of the following sho
 - Network emulation now has attribution as well as shaping: transaction results include a normalized `network_profile`, live metrics expose `network_profiles`, and archive reports aggregate response/error stats under `by_network_profile`.
 - Browser/mobile capacity advice now classifies scenarios as `http`, `browser`, or `mixed`, applies conservative device-tier density caps for browser VUsers, and warns users that browser runtimes are diagnostic canaries rather than HTTP-scale goroutine VUsers.
 - TrueClient MobileWeb import now converts simple JavaScript scroll intent (`window.scrollTo` / `window.scrollBy`) into `browser_swipe` actions, reducing blocker repair items for common mobile review-only steps.
+- TrueClient MobileWeb import now also maps JavaScript `location` navigation assignments and `assign` / `replace` calls into `browser_navigate`, shrinking the unsupported JavaScript envelope for common page-transition scripts.
 
 ## Suggested Milestones
 
