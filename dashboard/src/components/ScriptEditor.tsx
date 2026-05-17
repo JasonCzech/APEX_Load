@@ -714,7 +714,11 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     if (initialFocusedSection === 'runtime') {
       setOpenSections(prev => ({ ...prev, runtime: true }))
     }
-  }, [hydrateEditorState, initialFocusedActionName, initialFocusedSection, initialScript, setActiveAction, setOpenSections])
+
+    if (initialFocusedSection === 'parameter-data') {
+      setIsParameterDialogOpen(true)
+    }
+  }, [hydrateEditorState, initialFocusedActionName, initialFocusedSection, initialScript, setActiveAction, setIsParameterDialogOpen, setOpenSections])
 
   useEffect(() => {
     if (!scriptId || initialScript) return

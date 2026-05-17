@@ -591,6 +591,15 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('Web HTTP/HTML Compatibility')
   })
 
+  it('opens parameter data when a draft opens with a parameter-data focus hint', async () => {
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={initialScript} initialFocusedSection="parameter-data" />)
+    })
+
+    expect(container.querySelector('.parameter-data-dialog')).not.toBeNull()
+    expect(container.textContent).toContain('Named Parameters')
+  })
+
   it('includes the active project id in draft replay payloads', async () => {
     await act(async () => {
       root.render(<ScriptEditor initialScript={initialScript} projectId="project-1" />)

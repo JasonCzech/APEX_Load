@@ -531,6 +531,13 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
                       <strong>Generated Data Sources</strong>
                       <span>{generatedDataSources.length}</span>
                     </div>
+                    {onEdit && (
+                      <div className="replay-panel-actions" style={{ marginBottom: 12, justifyContent: 'flex-start' }}>
+                        <button className="btn btn-secondary btn-sm" onClick={() => openImportedScriptInEditor({ targetSection: 'parameter-data' })}>
+                          Open Parameter Data In Editor
+                        </button>
+                      </div>
+                    )}
                     <ul>
                       {generatedDataSources.map((source) => (
                         <li key={source.name}>

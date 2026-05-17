@@ -8,7 +8,7 @@ export type ScriptsAuthoringSubView = 'list' | 'create-options' | 'create' | 'ed
 
 export interface DraftEditorFocus {
 	targetAction?: string | null
-  targetSection?: 'runtime' | null
+  targetSection?: 'runtime' | 'parameter-data' | null
 }
 
 export interface AuthoringState {
@@ -52,7 +52,9 @@ interface ScriptsAuthoringStateModel {
 function normalizeDraftEditorFocus(focus?: DraftEditorFocus | null): DraftEditorFocus | null {
 	if (!focus) return null
 	const targetAction = focus.targetAction?.trim()
-  const targetSection = focus.targetSection === 'runtime' ? 'runtime' : null
+  const targetSection = focus.targetSection === 'runtime' || focus.targetSection === 'parameter-data'
+    ? focus.targetSection
+    : null
   if (!targetAction && !targetSection) return null
   return {
     ...(targetAction ? { targetAction } : {}),

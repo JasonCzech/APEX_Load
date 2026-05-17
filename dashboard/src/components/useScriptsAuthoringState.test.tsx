@@ -35,6 +35,7 @@ function AuthoringStateHarness({ api, initialMode, initialEditId }: HarnessProps
       <button data-testid="draft-edit" onClick={() => model.handleDraftEdit({ name: 'Edited Draft', protocol: 'http', config: {}, actions: [] } as never)}>draft-edit</button>
       <button data-testid="draft-edit-focused" onClick={() => model.handleDraftEdit({ name: 'Focused Draft', protocol: 'http', config: {}, actions: [] } as never, { targetAction: 'Submit Order' })}>draft-edit-focused</button>
       <button data-testid="draft-edit-runtime-focused" onClick={() => model.handleDraftEdit({ name: 'Runtime Draft', protocol: 'http', config: {}, actions: [] } as never, { targetSection: 'runtime' })}>draft-edit-runtime-focused</button>
+      <button data-testid="draft-edit-parameter-data-focused" onClick={() => model.handleDraftEdit({ name: 'Parameter Draft', protocol: 'http', config: {}, actions: [] } as never, { targetSection: 'parameter-data' })}>draft-edit-parameter-data-focused</button>
       <button data-testid="load-edit" onClick={() => void model.handleEdit('script-1')}>load-edit</button>
       <button data-testid="open-sample" onClick={model.createOptionActions.openSampleImport}>open-sample</button>
       <button data-testid="start-java-http" onClick={model.createOptionActions.startJavaHttpScript}>start-java-http</button>
@@ -96,6 +97,13 @@ describe('useScriptsAuthoringState', () => {
     expect(readTestId('draft-name')).toBe('Runtime Draft')
     expect(readTestId('draft-target-action')).toBe('none')
     expect(readTestId('draft-target-section')).toBe('runtime')
+
+    await click('draft-edit-parameter-data-focused')
+
+    expect(readTestId('subview')).toBe('create')
+    expect(readTestId('draft-name')).toBe('Parameter Draft')
+    expect(readTestId('draft-target-action')).toBe('none')
+    expect(readTestId('draft-target-section')).toBe('parameter-data')
 
     await click('open-library')
 
