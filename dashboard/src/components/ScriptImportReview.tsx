@@ -10,6 +10,7 @@ interface Props<TScript extends ImportedScript = ImportedScript> {
   warnings?: string[]
   warningsTitle?: string
   saving?: boolean
+  saveDisabled?: boolean
   saveLabel?: string
   editLabel?: string
   previewTitle?: string
@@ -26,6 +27,7 @@ export default function ScriptImportReview<TScript extends ImportedScript = Impo
   warnings = [],
   warningsTitle = 'Warnings',
   saving = false,
+  saveDisabled = false,
   saveLabel = 'Save To Script Library',
   editLabel = 'Open In Visual Editor',
   previewTitle = 'Generated Script Preview',
@@ -42,7 +44,7 @@ export default function ScriptImportReview<TScript extends ImportedScript = Impo
         </div>
         <div className="script-import-review-actions">
           {onEdit && <button className="btn btn-secondary" onClick={onEdit}>{editLabel}</button>}
-          {onSave && <button className="btn btn-primary" onClick={onSave} disabled={saving}>{saving ? 'Saving...' : saveLabel}</button>}
+          {onSave && <button className="btn btn-primary" onClick={onSave} disabled={saving || saveDisabled}>{saving ? 'Saving...' : saveLabel}</button>}
         </div>
       </div>
 

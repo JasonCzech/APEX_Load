@@ -222,6 +222,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
   const repairSuggestions = result?.repair_suggestions || []
   const supportMatrixSections = summarizeLoadRunnerSupportMatrix(supportMatrix)
   const migrationReadiness: LoadRunnerMigrationReadiness | null = reviewSummary?.migration_readiness || null
+  const saveBlockedByMigrationPolicy = Boolean(migrationReadiness?.blocked)
   const browserImport = isBrowserImport(importedScript)
   const runtimeBlockingSettings = importSummary.runtimeSettingReadiness?.blocking_settings || []
   const generatedDataSources = importedScript
@@ -483,6 +484,10 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
 
   const handleSaveConverted = async () => {
     if (!importedScript) return
+    if (saveBlockedByMigrationPolicy) {
+      setError('Saving is disabled while migration readiness is blocked by the active policy. Relax the policy or resolve the blocking runtime settings first.')
+      return
+    }
     try {
       await api.createScript(importedScript, projectId)
       onImported?.(importedScript)
@@ -668,11 +673,16 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
           <ScriptImportReview
             title={reviewMode === 'validation' ? 'Validation Review' : 'Conversion Complete'}
             subtitle={reviewMode === 'validation'
-              ? 'This preview came from the dry-run validator. You can still save the reviewed script if the output looks correct.'
-              : 'Review the generated script, preserved metadata, and warnings before saving.'}
+              ? (saveBlockedByMigrationPolicy
+                  ? 'This preview came from the dry-run validator. Saving is disabled until the migration readiness blockers are resolved or the active policy is relaxed.'
+                  : 'This preview came from the dry-run validator. You can still save the reviewed script if the output looks correct.')
+              : (saveBlockedByMigrationPolicy
+                  ? 'Review the generated script, preserved metadata, and warnings. Saving is disabled until the migration readiness blockers are resolved or the active policy is relaxed.'
+                  : 'Review the generated script, preserved metadata, and warnings before saving.')}
             script={importedScript}
             warnings={result.warnings}
             warningsTitle={`Conversion Warnings (${result.warnings.length})`}
+            saveDisabled={saveBlockedByMigrationPolicy}
             saveLabel={reviewMode === 'validation' ? 'Save Reviewed Script' : 'Save to Script Library'}
             onSave={handleSaveConverted}
             onEdit={onEdit ? () => openImportedScriptInEditor() : undefined}

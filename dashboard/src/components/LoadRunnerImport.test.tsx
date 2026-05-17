@@ -423,6 +423,108 @@ describe('LoadRunnerImport', () => {
     expect(container.textContent).toContain('Unsupported LoadRunner Functions (1)')
   })
 
+  it('disables saving while migration readiness is blocked by the active policy', async () => {
+    apiMock.importLoadRunner.mockResolvedValueOnce({
+      script: {
+        name: 'Blocked Runtime Script',
+        protocol: 'http',
+        actions: [{ name: 'Homepage' }],
+      },
+      warnings: [],
+      unsupported_elements: [],
+      assumptions: [],
+      review_sections: [
+        {
+          key: 'runtime_settings_migration_readiness',
+          title: 'Migration Readiness',
+          severity: 'warning',
+          summary: 'Runtime settings currently block promotion under the active policy.',
+          items: ['Logging'],
+        },
+      ],
+      repair_suggestions: [],
+      summary: {
+        project_file: 'Demo.usr',
+        mapped_runtime_file: 'default.cfg',
+        project_sections: ['Actions'],
+        runtime_files: ['default.cfg'],
+        migration_readiness: {
+          score_pct: 72,
+          blocked: true,
+          summary: 'Migration readiness score 72%. Blocking runtime settings matched the selected block statuses: partial.',
+          blocking_statuses: ['partial'],
+          blocking_settings: [
+            {
+              id: 'logging',
+              area: 'Logging',
+              concept: 'Log level, error-only, and extended logging options',
+              status: 'partial',
+              runtime_files: ['default.cfg'],
+            },
+          ],
+          policy: { block_statuses: ['blocked', 'partial', 'compatibility_only'] },
+        },
+        unsupported_function_count: 0,
+      },
+      stats: {
+        total_functions: 1,
+        converted_actions: 1,
+        extractors: 0,
+        think_times: 0,
+        transactions: 0,
+        skipped: 0,
+      },
+    })
+
+    await act(async () => {
+      root.render(<LoadRunnerImport />)
+    })
+
+    await flushPromises()
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
+    expect(fileInput).not.toBeNull()
+    if (!fileInput) {
+      return
+    }
+
+    const file = new File(['zip-content'], 'demo.zip', { type: 'application/zip' })
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [file],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert LoadRunner Script'))
+    expect(convertButton).toBeDefined()
+    if (!convertButton) {
+      return
+    }
+
+    await act(async () => {
+      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushPromises()
+
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save to Script Library')) as HTMLButtonElement | undefined
+    expect(saveButton).toBeDefined()
+    if (!saveButton) {
+      return
+    }
+
+    expect(saveButton.disabled).toBe(true)
+    expect(container.textContent).toContain('Saving is disabled until the migration readiness blockers are resolved or the active policy is relaxed.')
+
+    await act(async () => {
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(apiMock.createScript).not.toHaveBeenCalled()
+  })
+
   it('opens targeted repair suggestions in the visual editor with an action focus hint', async () => {
     const onEdit = vi.fn()
 
