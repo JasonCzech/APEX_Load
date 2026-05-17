@@ -321,6 +321,7 @@ interface Props {
   scriptId?: string | null
   initialScript?: ScriptData | null
   initialFocusedActionName?: string | null
+  initialFocusedSection?: string | null
   projectId?: string
   folderId?: string | null
   onSave?: (script: StoredScript) => void
@@ -449,7 +450,7 @@ interface ReplayScreenshotSelection {
 }
 
 
-export default function ScriptEditor({ scriptId, initialScript, initialFocusedActionName, projectId, folderId, onSave, onClose }: Props) {
+export default function ScriptEditor({ scriptId, initialScript, initialFocusedActionName, initialFocusedSection, projectId, folderId, onSave, onClose }: Props) {
   const api = useApi()
   const showProtocolSelector = Boolean(scriptId)
   const {
@@ -709,7 +710,11 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
 		if (focusedActionIndex !== null) {
 			setActiveAction(focusedActionIndex)
 		}
-  }, [hydrateEditorState, initialFocusedActionName, initialScript, setActiveAction])
+
+    if (initialFocusedSection === 'runtime') {
+      setOpenSections(prev => ({ ...prev, runtime: true }))
+    }
+  }, [hydrateEditorState, initialFocusedActionName, initialFocusedSection, initialScript, setActiveAction, setOpenSections])
 
   useEffect(() => {
     if (!scriptId || initialScript) return

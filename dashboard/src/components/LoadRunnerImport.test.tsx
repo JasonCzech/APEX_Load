@@ -417,6 +417,58 @@ describe('LoadRunnerImport', () => {
     }), { targetAction: 'Homepage' })
   })
 
+  it('opens imported runtime review in the visual editor with a runtime focus hint', async () => {
+    const onEdit = vi.fn()
+
+    await act(async () => {
+      root.render(<LoadRunnerImport onEdit={onEdit} />)
+    })
+
+    await flushPromises()
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
+    expect(fileInput).not.toBeNull()
+    if (!fileInput) {
+      return
+    }
+
+    const file = new File(['zip-content'], 'demo.zip', { type: 'application/zip' })
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [file],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert LoadRunner Script'))
+    expect(convertButton).toBeDefined()
+    if (!convertButton) {
+      return
+    }
+
+    await act(async () => {
+      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushPromises()
+
+    const openRuntimeButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Open Runtime Settings In Editor'))
+    expect(openRuntimeButton).toBeDefined()
+    if (!openRuntimeButton) {
+      return
+    }
+
+    await act(async () => {
+      openRuntimeButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Demo LoadRunner Script',
+      protocol: 'http',
+    }), { targetSection: 'runtime' })
+  })
+
   it('starts draft browser replay validation for converted browser imports before save', async () => {
     apiMock.importLoadRunner.mockResolvedValueOnce({
       script: {

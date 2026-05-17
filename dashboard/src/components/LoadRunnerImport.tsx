@@ -105,9 +105,9 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
     })
     : []
 
-  const openImportedScriptInEditor = (targetAction?: string) => {
+  const openImportedScriptInEditor = (focus?: DraftEditorFocus) => {
 		if (!importedScript || !onEdit) return
-		onEdit(toScriptDefinition(importedScript), targetAction ? { targetAction } : undefined)
+    onEdit(toScriptDefinition(importedScript), focus)
 	}
 
   const resetReplayValidation = () => {
@@ -443,7 +443,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
                     {suggestion.action && <ul><li>{suggestion.action}</li></ul>}
                     {suggestion.target_action && onEdit && (
                       <div className="replay-panel-actions" style={{ marginTop: 12, justifyContent: 'flex-start' }}>
-                        <button className="btn btn-secondary btn-sm" onClick={() => openImportedScriptInEditor(suggestion.target_action)}>
+                        <button className="btn btn-secondary btn-sm" onClick={() => openImportedScriptInEditor({ targetAction: suggestion.target_action })}>
                           Open Target Action In Editor
                         </button>
                       </div>
@@ -470,6 +470,13 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
                     <span className="lr-preserved-label">Mapped Runtime</span>
                     <strong>{reviewSummary?.mapped_runtime_file || 'None mapped'}</strong>
                     <small>{runtimeFiles.join(', ') || 'No runtime files found'}</small>
+                    {onEdit && (
+                      <div className="replay-panel-actions" style={{ marginTop: 12, justifyContent: 'flex-start' }}>
+                        <button className="btn btn-secondary btn-sm" onClick={() => openImportedScriptInEditor({ targetSection: 'runtime' })}>
+                          Open Runtime Settings In Editor
+                        </button>
+                      </div>
+                    )}
                   </div>
                   <div className="lr-preserved-card">
                     <span className="lr-preserved-label">Parameter Files</span>

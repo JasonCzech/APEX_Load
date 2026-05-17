@@ -27,12 +27,14 @@ function AuthoringStateHarness({ api, initialMode, initialEditId }: HarnessProps
       <span data-testid="draft-name">{model.authoringState.draftScript?.name || 'none'}</span>
       <span data-testid="draft-protocol">{model.authoringState.draftScript?.protocol || 'none'}</span>
       <span data-testid="draft-target-action">{model.authoringState.draftEditorFocus?.targetAction || 'none'}</span>
+      <span data-testid="draft-target-section">{model.authoringState.draftEditorFocus?.targetSection || 'none'}</span>
       <button data-testid="open-library" onClick={model.openLibrary}>open-library</button>
       <button data-testid="open-create-options" onClick={model.openCreateOptions}>open-create-options</button>
       <button data-testid="set-jmeter" onClick={() => model.setSubview('jmeter-import')}>set-jmeter</button>
       <button data-testid="start-draft" onClick={() => model.startDraft(() => ({ name: 'Draft Checkout', protocol: 'http', config: {}, actions: [] } as never))}>start-draft</button>
       <button data-testid="draft-edit" onClick={() => model.handleDraftEdit({ name: 'Edited Draft', protocol: 'http', config: {}, actions: [] } as never)}>draft-edit</button>
       <button data-testid="draft-edit-focused" onClick={() => model.handleDraftEdit({ name: 'Focused Draft', protocol: 'http', config: {}, actions: [] } as never, { targetAction: 'Submit Order' })}>draft-edit-focused</button>
+      <button data-testid="draft-edit-runtime-focused" onClick={() => model.handleDraftEdit({ name: 'Runtime Draft', protocol: 'http', config: {}, actions: [] } as never, { targetSection: 'runtime' })}>draft-edit-runtime-focused</button>
       <button data-testid="load-edit" onClick={() => void model.handleEdit('script-1')}>load-edit</button>
       <button data-testid="open-sample" onClick={model.createOptionActions.openSampleImport}>open-sample</button>
       <button data-testid="start-java-http" onClick={model.createOptionActions.startJavaHttpScript}>start-java-http</button>
@@ -88,11 +90,19 @@ describe('useScriptsAuthoringState', () => {
     expect(readTestId('draft-name')).toBe('Focused Draft')
     expect(readTestId('draft-target-action')).toBe('Submit Order')
 
+    await click('draft-edit-runtime-focused')
+
+    expect(readTestId('subview')).toBe('create')
+    expect(readTestId('draft-name')).toBe('Runtime Draft')
+    expect(readTestId('draft-target-action')).toBe('none')
+    expect(readTestId('draft-target-section')).toBe('runtime')
+
     await click('open-library')
 
     expect(readTestId('subview')).toBe('list')
     expect(readTestId('draft-name')).toBe('none')
     expect(readTestId('draft-target-action')).toBe('none')
+    expect(readTestId('draft-target-section')).toBe('none')
   })
 
   it('loads the requested script into edit mode and resets when switching subviews', async () => {

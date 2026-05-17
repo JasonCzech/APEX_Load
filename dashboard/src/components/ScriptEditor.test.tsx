@@ -583,6 +583,14 @@ describe('ScriptEditor', () => {
     expect(activeAction?.textContent).toContain('Submit Order')
   })
 
+  it('opens the runtime panel when a draft opens with a runtime focus hint', async () => {
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={initialScript} initialFocusedSection="runtime" />)
+    })
+
+    expect(container.textContent).toContain('Web HTTP/HTML Compatibility')
+  })
+
   it('includes the active project id in draft replay payloads', async () => {
     await act(async () => {
       root.render(<ScriptEditor initialScript={initialScript} projectId="project-1" />)
