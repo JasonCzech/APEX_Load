@@ -63,6 +63,8 @@ var (
 	reElementByIDValue    = regexp.MustCompile(`^document\.getElementById\(\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\)\.value\s*=\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')$`)
 	reElementsByNameClick = regexp.MustCompile(`^document\.getElementsByName\(\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\)\s*\[\s*0\s*\]\.click\(\s*\)$`)
 	reElementsByNameValue = regexp.MustCompile(`^document\.getElementsByName\(\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\)\s*\[\s*0\s*\]\.value\s*=\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')$`)
+	reFormElementClick    = regexp.MustCompile(`^document\.forms\s*\[\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*'|\d+)\s*\]\.elements\s*\[\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\]\.click\(\s*\)$`)
+	reFormElementValue    = regexp.MustCompile(`^document\.forms\s*\[\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*'|\d+)\s*\]\.elements\s*\[\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\]\.value\s*=\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')$`)
 	reWindowScroll        = regexp.MustCompile(`^window\.scroll(?:To|By)\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\)$`)
 	reLocationAssign      = regexp.MustCompile(`^(?:window\.)?location(?:\.href)?\s*=\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')$`)
 	reLocationMethod      = regexp.MustCompile(`^(?:window\.)?location\.(?:assign|replace)\(\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\)$`)
@@ -822,6 +824,30 @@ func convertJavaScriptStatement(statement string, baseName string, position int)
 			Value:    value,
 		}, true
 	}
+	if matches := reFormElementValue.FindStringSubmatch(statement); len(matches) == 4 {
+		name, ok := decodeJSStringLiteral(matches[2])
+		if !ok {
+			return dsl.Action{}, false
+		}
+		value, ok := decodeJSStringLiteral(matches[3])
+		if !ok {
+			return dsl.Action{}, false
+		}
+		selector := elementNameSelector(name)
+		if selector == "" {
+			return dsl.Action{}, false
+		}
+		return dsl.Action{
+			Name:     fmt.Sprintf("%s Fill %d", baseName, position),
+			Type:     "browser_fill",
+			Target:   selector,
+			Selector: selector,
+			Value:    value,
+			Metadata: map[string]any{
+				"source": "truclient_form_element",
+			},
+		}, true
+	}
 	if matches := reJQueryClick.FindStringSubmatch(statement); len(matches) == 2 {
 		selector, ok := decodeJSStringLiteral(matches[1])
 		if !ok {
@@ -876,6 +902,25 @@ func convertJavaScriptStatement(statement string, baseName string, position int)
 			Type:     "browser_click",
 			Target:   selector,
 			Selector: selector,
+		}, true
+	}
+	if matches := reFormElementClick.FindStringSubmatch(statement); len(matches) == 3 {
+		name, ok := decodeJSStringLiteral(matches[2])
+		if !ok {
+			return dsl.Action{}, false
+		}
+		selector := elementNameSelector(name)
+		if selector == "" {
+			return dsl.Action{}, false
+		}
+		return dsl.Action{
+			Name:     fmt.Sprintf("%s Click %d", baseName, position),
+			Type:     "browser_click",
+			Target:   selector,
+			Selector: selector,
+			Metadata: map[string]any{
+				"source": "truclient_form_element",
+			},
 		}, true
 	}
 	if matches := reWindowScroll.FindStringSubmatch(statement); len(matches) == 3 {
