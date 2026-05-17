@@ -423,6 +423,12 @@ func convertStep(step truXMLStep) ([]dsl.Action, []string, bool, error) {
 			Selector: selector,
 			Value:    value,
 		}}, nil, false, nil
+	case "Scroll":
+		action, err := convertScrollStep(step)
+		if err != nil {
+			return nil, nil, false, err
+		}
+		return []dsl.Action{action}, nil, false, nil
 	case "Wait":
 		waitAction, ok, err := convertWaitStep(step)
 		if err != nil {
@@ -452,6 +458,80 @@ func convertStep(step truXMLStep) ([]dsl.Action, []string, bool, error) {
 			return nil, nil, false, nil
 		}
 		return nil, []string{fmt.Sprintf("TruClient step %q is not supported yet and was skipped during import", actionName)}, true, nil
+	}
+}
+
+func convertScrollStep(step truXMLStep) (dsl.Action, error) {
+	selector := "body"
+	if rawSelector, err := parseFirstArgumentValue(step.Arguments, "Selector", "selector", "Target", "target", "Element", "element"); err != nil {
+		return dsl.Action{}, fmt.Errorf("parse TruClient Scroll step selector arguments: %w", err)
+	} else if rawSelector = trimQuotedValue(rawSelector); rawSelector != "" {
+		selector = rawSelector
+	}
+
+	direction := ""
+	if rawDirection, err := parseFirstArgumentValue(step.Arguments, "Direction", "direction"); err != nil {
+		return dsl.Action{}, fmt.Errorf("parse TruClient Scroll step direction arguments: %w", err)
+	} else if rawDirection = strings.ToLower(strings.TrimSpace(trimQuotedValue(rawDirection))); rawDirection != "" {
+		direction = normalizeScrollDirection(rawDirection)
+	}
+
+	distance := 0
+	if rawDistance, err := parseFirstArgumentValue(step.Arguments, "Distance", "distance", "Amount", "amount", "Pixels", "pixels"); err != nil {
+		return dsl.Action{}, fmt.Errorf("parse TruClient Scroll step distance arguments: %w", err)
+	} else {
+		distance = parsePositiveInt(trimQuotedValue(rawDistance))
+	}
+
+	if direction == "" {
+		x := 0
+		y := 300
+		if rawX, err := parseFirstArgumentValue(step.Arguments, "X", "x", "DeltaX", "delta_x", "Horizontal", "horizontal"); err != nil {
+			return dsl.Action{}, fmt.Errorf("parse TruClient Scroll step X arguments: %w", err)
+		} else if parsed := parseSignedInt(trimQuotedValue(rawX)); parsed != 0 {
+			x = parsed
+		}
+		if rawY, err := parseFirstArgumentValue(step.Arguments, "Y", "y", "DeltaY", "delta_y", "Vertical", "vertical"); err != nil {
+			return dsl.Action{}, fmt.Errorf("parse TruClient Scroll step Y arguments: %w", err)
+		} else if parsed := parseSignedInt(trimQuotedValue(rawY)); parsed != 0 {
+			y = parsed
+		}
+		direction, distance = scrollGesture(float64(x), float64(y))
+	}
+	if direction == "" {
+		direction = "up"
+	}
+	if distance <= 0 {
+		distance = 300
+	}
+
+	return dsl.Action{
+		Name:     stepDisplayName(step, "Scroll"),
+		Type:     "browser_swipe",
+		Target:   selector,
+		Selector: selector,
+		Params: map[string]any{
+			"direction": direction,
+			"distance":  distance,
+		},
+		Metadata: map[string]any{
+			"source": "truclient_scroll",
+		},
+	}, nil
+}
+
+func normalizeScrollDirection(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "up", "north":
+		return "up"
+	case "down", "south":
+		return "down"
+	case "left", "west":
+		return "left"
+	case "right", "east":
+		return "right"
+	default:
+		return ""
 	}
 }
 
@@ -575,6 +655,27 @@ func parseTimeoutMs(raw string) int {
 		return 0
 	}
 	return timeout
+}
+
+func parsePositiveInt(value string) int {
+	parsed := parseSignedInt(value)
+	if parsed < 0 {
+		return -parsed
+	}
+	return parsed
+}
+
+func parseSignedInt(value string) int {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0
+	}
+	value = strings.TrimSuffix(strings.ToLower(value), "px")
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return 0
+	}
+	return parsed
 }
 
 func convertEvaluateJavaScript(code string, baseName string) ([]dsl.Action, []string) {

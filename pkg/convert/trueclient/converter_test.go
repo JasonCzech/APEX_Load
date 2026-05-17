@@ -205,6 +205,40 @@ func TestConvertArchiveMapsSelectStep(t *testing.T) {
 	}
 }
 
+func TestConvertArchiveMapsDirectScrollStep(t *testing.T) {
+	result, err := ConvertArchive(map[string]string{
+		"default.xml": encodeUTF16LE(`<?xml version="1.0" encoding="utf-16"?>
+<truScript>
+  <step type="block" action="action" actionName="Action">
+    <step type="testObject" action="Navigate" index="1" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://m.example.com/catalog\&quot;&quot;}}" />
+    <step type="testObject" action="Scroll" index="2" arguments="{&quot;Selector&quot;:{&quot;value&quot;:&quot;\&quot;#product-list\&quot;&quot;},&quot;Direction&quot;:{&quot;value&quot;:&quot;\&quot;down\&quot;&quot;},&quot;Distance&quot;:{&quot;value&quot;:&quot;450px&quot;}}" />
+  </step>
+</truScript>`),
+	}, ConvertOptions{ScriptName: "Scroll Flow"})
+	if err != nil {
+		t.Fatalf("ConvertArchive returned error: %v", err)
+	}
+	if len(result.Script.Actions) != 2 {
+		t.Fatalf("actions len = %d, want 2", len(result.Script.Actions))
+	}
+	scroll := result.Script.Actions[1]
+	if scroll.Type != "browser_swipe" || scroll.Selector != "#product-list" {
+		t.Fatalf("scroll action = %#v, want browser_swipe on #product-list", scroll)
+	}
+	if scroll.Params["direction"] != "down" || scroll.Params["distance"] != 450 {
+		t.Fatalf("scroll params = %#v, want direction=down distance=450", scroll.Params)
+	}
+	if scroll.Metadata["source"] != "truclient_scroll" {
+		t.Fatalf("scroll metadata = %#v, want source truclient_scroll", scroll.Metadata)
+	}
+	if result.Stats.TotalSteps != 2 || result.Stats.ConvertedActions != 2 || result.Stats.Skipped != 0 {
+		t.Fatalf("stats = %#v, want total=2 converted=2 skipped=0", result.Stats)
+	}
+	if len(result.Warnings) != 0 {
+		t.Fatalf("warnings = %#v, want none", result.Warnings)
+	}
+}
+
 func TestConvertArchiveMapsWaitAndPreservesTransactions(t *testing.T) {
 	result, err := ConvertArchive(map[string]string{
 		"default.xml": encodeUTF16LE(`<?xml version="1.0" encoding="utf-16"?>

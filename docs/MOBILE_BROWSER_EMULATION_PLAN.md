@@ -19,7 +19,7 @@ This is positioned as a configuration extension of the existing `pkg/protocol/br
 - Script-editor authoring and replay flows support browser engine selection, device profiles, touch mode, orientation, and saved-script validation.
 
 ### Remaining
-- TruClient MobileWeb import is shipped for the current MVP browser step envelope. Simple `window.scrollTo` / `window.scrollBy` statements now convert to `browser_swipe`, and JavaScript `location` navigation assignments/method calls convert to `browser_navigate`; non-decomposable `Evaluate JavaScript` shapes still need sample-backed hardening.
+- TruClient MobileWeb import is shipped for the current MVP browser step envelope. Direct `Scroll` steps and simple `window.scrollTo` / `window.scrollBy` statements now convert to `browser_swipe`, and JavaScript `location` navigation assignments/method calls convert to `browser_navigate`; non-decomposable `Evaluate JavaScript` shapes still need sample-backed hardening.
 - Production hardening beyond the conservative browser envelope below is still open, but scenario capacity advice now treats browser VUsers as real browser runtimes rather than HTTP goroutines.
 - Broader scenario-level/dashboard mobile UX polish is still incomplete compared with the script-editor/browser-replay surfaces.
 
@@ -404,7 +404,7 @@ Current step support matrix:
 ### Current Importer Behavior
 
 - `pkg/convert/loadrunner/zip.go` now checks the parsed `.usr` type before trying to parse C action files.
-- A `TruClient - Mobile Web` archive with `default.xml` now imports into a browser script with URL navigation, click, fill, select, wait, conservative verify assertions, simple decomposed JavaScript fill/click, transaction-preserved action names, and mobile device settings from LoadRunner runtime configuration.
+- A `TruClient - Mobile Web` archive with `default.xml` now imports into a browser script with URL navigation, click, fill, select, scroll, wait, conservative verify assertions, simple decomposed JavaScript fill/click/scroll/navigation, transaction-preserved action names, and mobile device settings from LoadRunner runtime configuration.
 - Import responses now include standardized `review_sections` for warnings, unsupported steps, preserved metadata, and browser-import assumptions so cleanup can be rendered consistently across API and dashboard flows.
 - Import responses now include deterministic `repair_suggestions` for unsupported constructs, selector validation, wait refinement, runtime-setting review, and replay validation.
 - Dashboard import review now exposes draft browser replay validation for converted browser imports before save, using the converted script and carried-forward browser configuration to start a browser replay session and show status, warnings, and errors inline.
@@ -470,7 +470,7 @@ When editing a browser script with a device profile:
 | **Phase 1** | **Complete** | **Device Profiles + Runtime Emulation** | Device profile registry, orientation support, DSL extensions, engine config wiring, browser-family-aware runtime selection, unit tests | Named device profiles launch with the expected viewport, scale, mobile flag, user agent, and browser engine |
 | **Phase 2** | **Complete** | **Touch Event Simulation** | `browser_tap`, `browser_swipe`, `browser_long_press` action types, auto click-to-tap mapping, touch emulation, unit tests | Touch actions execute on mobile-configured browser; `browser_click` dispatches touch interactions in mobile mode |
 | **Phase 3** | **Partially Complete** | **Dashboard UX** | Script-editor device profile selector, orientation toggle, replay/config validation warnings, mobile/browser settings authoring | Core mobile browser scenarios can be authored and replayed from the dashboard, but broader scenario-level UX is still incomplete |
-| **Phase 4** | **Partially Complete** | **TrueClient Import** | `pkg/convert/trueclient` package, step-to-action mapping, device profile extraction from `.usr` + `default.cfg`, API endpoint, unit tests, JavaScript scroll-to-swipe conversion, JavaScript location navigation conversion | A TrueClient MobileWeb `.zip` import produces a runnable Stormrunner browser script with correct device profile and mapped actions; remaining work is sample-backed coverage for less common TruClient constructs |
+| **Phase 4** | **Partially Complete** | **TrueClient Import** | `pkg/convert/trueclient` package, step-to-action mapping, device profile extraction from `.usr` + `default.cfg`, API endpoint, unit tests, direct Scroll conversion, JavaScript scroll-to-swipe conversion, JavaScript location navigation conversion | A TrueClient MobileWeb `.zip` import produces a runnable Stormrunner browser script with correct device profile and mapped actions; remaining work is sample-backed coverage for less common TruClient constructs |
 | **Phase 5** | **Partially Complete** | **Hardening + Benchmarks** | Browser-aware capacity advice, memory benchmarks, touch latency benchmarks, documented scale guidance, edge case coverage | Capacity planning now exposes conservative mobile browser VUser density; measured memory/latency benchmark publication remains open |
 
 ## 9. Risks And Mitigations
