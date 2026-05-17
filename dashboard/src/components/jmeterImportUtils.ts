@@ -1,4 +1,4 @@
-import { type ImportedAction, type ImportedExtractor, type ImportedScript, type ImportRepairSuggestion, type ImportReviewSection, type JMeterImportResult as ImportResult, type SupportMatrix } from '../types/scriptImports'
+import { type ImportedAction, type ImportedExtractor, type ImportedScript, type SupportMatrix } from '../types/scriptImports'
 
 export interface SupportMatrixSection {
   key: 'supported' | 'partial' | 'unsupported'
@@ -14,91 +14,6 @@ export interface ImportExtractorSummary {
   extractorName: string
   extractorType: string
   expression: string
-}
-
-function isObjectRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null
-}
-
-function normalizeReviewSections(value: unknown): ImportReviewSection[] {
-  if (!Array.isArray(value)) {
-    return []
-  }
-  return value
-    .filter(isObjectRecord)
-    .map(section => ({
-      key: typeof section.key === 'string' ? section.key : '',
-      title: typeof section.title === 'string' ? section.title : '',
-      severity: typeof section.severity === 'string' ? section.severity : 'info',
-      summary: typeof section.summary === 'string' ? section.summary : '',
-      items: Array.isArray(section.items) ? section.items.filter((item): item is string => typeof item === 'string') : [],
-    }))
-    .filter(section => section.key && section.title)
-}
-
-function normalizeRepairSuggestions(value: unknown): ImportRepairSuggestion[] {
-  if (!Array.isArray(value)) {
-    return []
-  }
-  return value
-    .filter(isObjectRecord)
-    .map(suggestion => ({
-      id: typeof suggestion.id === 'string' ? suggestion.id : '',
-      category: typeof suggestion.category === 'string' ? suggestion.category : '',
-      severity: typeof suggestion.severity === 'string' ? suggestion.severity : 'info',
-      title: typeof suggestion.title === 'string' ? suggestion.title : '',
-      description: typeof suggestion.description === 'string' ? suggestion.description : '',
-      action: typeof suggestion.action === 'string' ? suggestion.action : '',
-      target_action: typeof suggestion.target_action === 'string' ? suggestion.target_action : undefined,
-    }))
-    .filter(suggestion => suggestion.id && suggestion.title)
-}
-
-function normalizeSharedImportFields(response: unknown): Pick<ImportResult, 'scripts' | 'script' | 'scenario_draft' | 'warnings' | 'unsupported_elements' | 'assumptions' | 'review_sections' | 'repair_suggestions' | 'correlations'> {
-  const payload = isObjectRecord(response) ? response : {}
-  const script = payload.script as ImportedScript | undefined
-  const scripts = Array.isArray(payload.scripts)
-    ? payload.scripts as ImportedScript[]
-    : (script ? [script] : [])
-
-  return {
-    scripts,
-    script,
-    scenario_draft: payload.scenario_draft as ImportResult['scenario_draft'] | undefined,
-    warnings: Array.isArray(payload.warnings) ? payload.warnings as string[] : [],
-    unsupported_elements: Array.isArray(payload.unsupported_elements) ? payload.unsupported_elements as string[] : [],
-    assumptions: Array.isArray(payload.assumptions) ? payload.assumptions as string[] : [],
-    review_sections: normalizeReviewSections(payload.review_sections),
-    repair_suggestions: normalizeRepairSuggestions(payload.repair_suggestions),
-    correlations: Array.isArray(payload.correlations) ? payload.correlations : [],
-  }
-}
-
-export function normalizeImportResult(response: unknown): ImportResult {
-  const payload = isObjectRecord(response) ? response : {}
-  const statsPayload = isObjectRecord(payload.stats) ? payload.stats : {}
-  const summaryPayload = isObjectRecord(payload.summary) ? payload.summary : {}
-
-  return {
-    ...normalizeSharedImportFields(response),
-    stats: {
-      thread_groups: 0,
-      samplers: 0,
-      converted_actions: 0,
-      headers: 0,
-      variables: 0,
-      csv_sources: 0,
-      assertions: 0,
-      timers: 0,
-      unsupported: 0,
-      ...statsPayload,
-    },
-    summary: {
-      thread_group_count: 0,
-      sampler_count: 0,
-      ...summaryPayload,
-    },
-  }
 }
 
 export function summarizeSupportMatrix(matrix?: SupportMatrix | null): SupportMatrixSection[] {

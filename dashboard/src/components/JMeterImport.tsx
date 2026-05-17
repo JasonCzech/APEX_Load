@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useApi } from '../hooks/useApi'
-import { normalizeImportResult, summarizeImportExtractors, summarizeSupportMatrix } from './jmeterImportUtils'
+import { summarizeImportExtractors, summarizeSupportMatrix } from './jmeterImportUtils'
 import { type ImportedAction, type ImportedScript, type JMeterImportResult as ImportResult, type JMeterSupportMatrixResponse, type SupportMatrix } from '../types/scriptImports'
 import { type StoredScript } from '../types'
 import { type ScriptDefinition } from '../types/scripts'
@@ -102,7 +102,7 @@ export default function JMeterImport({ projectId, onImported, onEdit, onClose }:
         include_assertions: options.include_assertions,
         scenario_draft: options.scenario_draft,
       })
-      setResult(normalizeImportResult(response))
+      setResult(response)
       setReviewMode('conversion')
       setNotice('Conversion complete. Review the generated scripts, warnings, and assumptions before saving.')
     } catch (error: unknown) {
@@ -126,7 +126,7 @@ export default function JMeterImport({ projectId, onImported, onEdit, onClose }:
         include_assertions: options.include_assertions,
         scenario_draft: options.scenario_draft,
       })
-      setResult(normalizeImportResult(response))
+      setResult(response)
       setReviewMode('validation')
       setNotice('Validation complete. Review the generated scripts and warnings before saving.')
     } catch (error: unknown) {
