@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"unicode/utf16"
 
@@ -58,6 +59,7 @@ var (
 	reJQueryClick        = regexp.MustCompile(`^\$\(\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\)\.click\(\s*\)$`)
 	reQuerySelectorClick = regexp.MustCompile(`^document\.querySelector\(\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\)\.click\(\s*\)$`)
 	reQuerySelectorValue = regexp.MustCompile(`^document\.querySelector\(\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\)\.value\s*=\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')$`)
+	reWindowScroll       = regexp.MustCompile(`^window\.scroll(?:To|By)\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\)$`)
 )
 
 // ConvertArchive converts a TruClient Mobile Web archive into a Stormrunner browser script.
@@ -674,7 +676,58 @@ func convertJavaScriptStatement(statement string, baseName string, position int)
 			Selector: selector,
 		}, true
 	}
+	if matches := reWindowScroll.FindStringSubmatch(statement); len(matches) == 3 {
+		x, xErr := strconv.ParseFloat(matches[1], 64)
+		y, yErr := strconv.ParseFloat(matches[2], 64)
+		if xErr != nil || yErr != nil {
+			return dsl.Action{}, false
+		}
+		direction, distance := scrollGesture(x, y)
+		if distance <= 0 {
+			return dsl.Action{}, false
+		}
+		return dsl.Action{
+			Name:     fmt.Sprintf("%s Scroll %d", baseName, position),
+			Type:     "browser_swipe",
+			Target:   "body",
+			Selector: "body",
+			Params: map[string]any{
+				"direction": direction,
+				"distance":  distance,
+			},
+			Metadata: map[string]any{
+				"source":        "truclient_evaluate_javascript",
+				"source_script": statement,
+			},
+		}, true
+	}
 	return dsl.Action{}, false
+}
+
+func scrollGesture(x, y float64) (string, int) {
+	if absFloat(y) >= absFloat(x) {
+		if y > 0 {
+			return "up", int(absFloat(y))
+		}
+		if y < 0 {
+			return "down", int(absFloat(y))
+		}
+		return "", 0
+	}
+	if x > 0 {
+		return "left", int(absFloat(x))
+	}
+	if x < 0 {
+		return "right", int(absFloat(x))
+	}
+	return "", 0
+}
+
+func absFloat(value float64) float64 {
+	if value < 0 {
+		return -value
+	}
+	return value
 }
 
 func decodeJSStringLiteral(value string) (string, bool) {

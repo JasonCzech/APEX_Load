@@ -1178,7 +1178,7 @@ TouchMode=1
 	}
 }
 
-func TestHandleImportLoadRunnerSurfacesTruClientUnsupportedStepsInReviewSections(t *testing.T) {
+func TestHandleImportLoadRunnerMapsTruClientScrollToSwipe(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	var body bytes.Buffer
 	writer := zip.NewWriter(&body)
@@ -1237,24 +1237,28 @@ DeviceProfile=iPhone_SE
 			ConvertedActions int `json:"converted_actions"`
 			Skipped          int `json:"skipped"`
 		} `json:"stats"`
+		Scripts []dsl.Script `json:"scripts"`
 	}
 	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
 		t.Fatalf("json.Unmarshal returned error: %v", err)
 	}
-	if result.Stats.ConvertedActions != 1 || result.Stats.Skipped != 1 {
-		t.Fatalf("stats = %#v, want converted_actions=1 skipped=1", result.Stats)
+	if result.Stats.ConvertedActions != 2 || result.Stats.Skipped != 0 {
+		t.Fatalf("stats = %#v, want converted_actions=2 skipped=0", result.Stats)
 	}
-	if len(result.UnsupportedElements) != 1 || result.UnsupportedElements[0] != "Evaluate JavaScript" {
-		t.Fatalf("unsupported_elements = %#v, want [Evaluate JavaScript]", result.UnsupportedElements)
+	if len(result.UnsupportedElements) != 0 {
+		t.Fatalf("unsupported_elements = %#v, want none", result.UnsupportedElements)
 	}
-	if len(result.Warnings) == 0 {
-		t.Fatal("warnings len = 0, want unsupported JavaScript warning")
+	if len(result.Warnings) != 0 {
+		t.Fatalf("warnings = %#v, want none", result.Warnings)
 	}
-	assertReviewSection(t, result.ReviewSections, "warnings", "warning", result.Warnings[0])
-	assertReviewSection(t, result.ReviewSections, "unsupported_elements", "blocker", "Evaluate JavaScript")
+	if len(result.Scripts) != 1 || len(result.Scripts[0].Actions) != 2 {
+		t.Fatalf("scripts/actions = %#v, want one script with navigate and swipe", result.Scripts)
+	}
+	scroll := result.Scripts[0].Actions[1]
+	if scroll.Type != "browser_swipe" || scroll.Selector != "body" || scroll.Params["direction"] != "up" || scroll.Params["distance"] != float64(400) {
+		t.Fatalf("scroll action = %#v, want browser_swipe body direction=up distance=400", scroll)
+	}
 	assertReviewSection(t, result.ReviewSections, "browser_import_assumptions", "info", "Selector fidelity should be checked with browser replay before production use.")
-	assertRepairSuggestion(t, result.RepairSuggestions, "unsupported", "blocker", "Replace unsupported Evaluate JavaScript")
-	assertRepairSuggestionActionContains(t, result.RepairSuggestions, "unsupported", "Replace unsupported Evaluate JavaScript", "browser_swipe")
 	assertRepairSuggestion(t, result.RepairSuggestions, "replay", "warning", "Run browser replay before saving as production-ready")
 }
 
@@ -1322,19 +1326,15 @@ TouchMode=1
 	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
 		t.Fatalf("json.Unmarshal returned error: %v", err)
 	}
-	if result.Stats.ConvertedActions != 2 || result.Stats.Skipped != 1 {
-		t.Fatalf("stats = %#v, want converted_actions=2 skipped=1", result.Stats)
+	if result.Stats.ConvertedActions != 3 || result.Stats.Skipped != 0 {
+		t.Fatalf("stats = %#v, want converted_actions=3 skipped=0", result.Stats)
 	}
-	if len(result.UnsupportedElements) != 1 || result.UnsupportedElements[0] != "Evaluate JavaScript" {
-		t.Fatalf("unsupported_elements = %#v, want [Evaluate JavaScript]", result.UnsupportedElements)
+	if len(result.UnsupportedElements) != 0 {
+		t.Fatalf("unsupported_elements = %#v, want none", result.UnsupportedElements)
 	}
-	if len(result.Warnings) != 1 || !strings.Contains(result.Warnings[0], "window.scrollTo(0, 400)") {
-		t.Fatalf("warnings = %#v, want skipped scroll warning", result.Warnings)
+	if len(result.Warnings) != 0 {
+		t.Fatalf("warnings = %#v, want none", result.Warnings)
 	}
-	assertReviewSection(t, result.ReviewSections, "warnings", "warning", result.Warnings[0])
-	assertReviewSection(t, result.ReviewSections, "unsupported_elements", "blocker", "Evaluate JavaScript")
-	assertRepairSuggestion(t, result.RepairSuggestions, "unsupported", "blocker", "Replace unsupported Evaluate JavaScript")
-	assertRepairSuggestionActionContains(t, result.RepairSuggestions, "unsupported", "Replace unsupported Evaluate JavaScript", "browser_swipe")
 }
 
 func TestHandleImportJMeter(t *testing.T) {

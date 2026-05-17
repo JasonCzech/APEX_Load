@@ -308,7 +308,7 @@ func TestConvertArchiveWarnsWhenVerifyHasNoPrecedingImportedAction(t *testing.T)
 	}
 }
 
-func TestConvertArchiveTracksMixedEvaluateJavaScriptUnsupportedStatements(t *testing.T) {
+func TestConvertArchiveMapsEvaluateJavaScriptScrollToSwipe(t *testing.T) {
 	result, err := ConvertArchive(map[string]string{
 		"default.xml": encodeUTF16LE(`<?xml version="1.0" encoding="utf-16"?>
 <truScript>
@@ -321,20 +321,56 @@ func TestConvertArchiveTracksMixedEvaluateJavaScriptUnsupportedStatements(t *tes
 	if err != nil {
 		t.Fatalf("ConvertArchive returned error: %v", err)
 	}
-	if len(result.Script.Actions) != 2 {
-		t.Fatalf("actions len = %d, want 2", len(result.Script.Actions))
+	if len(result.Script.Actions) != 3 {
+		t.Fatalf("actions len = %d, want 3", len(result.Script.Actions))
 	}
 	if action := result.Script.Actions[1]; action.Type != "browser_fill" || action.Selector != "#displayName" || action.Value != "Stormrunner QA" {
 		t.Fatalf("action = %#v, want browser_fill for #displayName", action)
 	}
-	if result.Stats.TotalSteps != 2 || result.Stats.ConvertedActions != 2 || result.Stats.Skipped != 1 {
-		t.Fatalf("stats = %#v, want total=2 converted=2 skipped=1", result.Stats)
+	scroll := result.Script.Actions[2]
+	if scroll.Type != "browser_swipe" || scroll.Selector != "body" {
+		t.Fatalf("scroll action = %#v, want browser_swipe on body", scroll)
 	}
-	if len(result.Stats.UnsupportedSteps) != 1 || result.Stats.UnsupportedSteps[0] != "Evaluate JavaScript" {
-		t.Fatalf("unsupported steps = %#v, want [Evaluate JavaScript]", result.Stats.UnsupportedSteps)
+	if scroll.Params["direction"] != "up" || scroll.Params["distance"] != 400 {
+		t.Fatalf("scroll params = %#v, want direction=up distance=400", scroll.Params)
 	}
-	if len(result.Warnings) != 1 || !strings.Contains(result.Warnings[0], "window.scrollTo(0, 400)") {
-		t.Fatalf("warnings = %#v, want skipped scroll warning", result.Warnings)
+	if scroll.Metadata["source_script"] != "window.scrollTo(0, 400)" {
+		t.Fatalf("source_script = %#v, want original scroll statement", scroll.Metadata["source_script"])
+	}
+	if result.Stats.TotalSteps != 2 || result.Stats.ConvertedActions != 3 || result.Stats.Skipped != 0 {
+		t.Fatalf("stats = %#v, want total=2 converted=3 skipped=0", result.Stats)
+	}
+	if len(result.Stats.UnsupportedSteps) != 0 {
+		t.Fatalf("unsupported steps = %#v, want none", result.Stats.UnsupportedSteps)
+	}
+	if len(result.Warnings) != 0 {
+		t.Fatalf("warnings = %#v, want none", result.Warnings)
+	}
+}
+
+func TestConvertEvaluateJavaScriptMapsScrollDirection(t *testing.T) {
+	tests := []struct {
+		statement     string
+		wantDirection string
+		wantDistance  int
+	}{
+		{statement: "window.scrollTo(0, 400)", wantDirection: "up", wantDistance: 400},
+		{statement: "window.scrollBy(0, -250)", wantDirection: "down", wantDistance: 250},
+		{statement: "window.scrollBy(300, 0)", wantDirection: "left", wantDistance: 300},
+		{statement: "window.scrollBy(-125, 0)", wantDirection: "right", wantDistance: 125},
+	}
+
+	for _, tc := range tests {
+		action, ok := convertJavaScriptStatement(tc.statement, "Evaluate JavaScript", 1)
+		if !ok {
+			t.Fatalf("convertJavaScriptStatement(%q) = false, want true", tc.statement)
+		}
+		if action.Type != "browser_swipe" {
+			t.Fatalf("action type for %q = %q, want browser_swipe", tc.statement, action.Type)
+		}
+		if action.Params["direction"] != tc.wantDirection || action.Params["distance"] != tc.wantDistance {
+			t.Fatalf("params for %q = %#v, want direction=%s distance=%d", tc.statement, action.Params, tc.wantDirection, tc.wantDistance)
+		}
 	}
 }
 

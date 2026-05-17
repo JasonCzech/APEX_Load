@@ -1447,7 +1447,7 @@ TouchMode=1
 	}
 }
 
-func TestConvertZipTracksMixedTruClientEvaluateJavaScriptUnsupportedStatements(t *testing.T) {
+func TestConvertZipMapsMixedTruClientEvaluateJavaScriptScrollStatements(t *testing.T) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 	addFile := func(name string, content string) {
@@ -1483,20 +1483,23 @@ TouchMode=1
 	if err != nil {
 		t.Fatalf("ConvertZip returned error: %v", err)
 	}
-	if len(result.Script.Actions) != 2 {
-		t.Fatalf("actions len = %d, want 2", len(result.Script.Actions))
+	if len(result.Script.Actions) != 3 {
+		t.Fatalf("actions len = %d, want 3", len(result.Script.Actions))
 	}
 	if action := result.Script.Actions[1]; action.Type != "browser_fill" || action.Selector != "#displayName" || action.Value != "Stormrunner QA" {
 		t.Fatalf("action = %#v, want browser fill for #displayName", action)
 	}
-	if result.Stats.TotalFunctions != 2 || result.Stats.ConvertedActions != 2 || result.Stats.Skipped != 1 {
-		t.Fatalf("stats = %#v, want total=2 converted=2 skipped=1", result.Stats)
+	if action := result.Script.Actions[2]; action.Type != "browser_swipe" || action.Selector != "body" || action.Params["direction"] != "up" || action.Params["distance"] != 400 {
+		t.Fatalf("action = %#v, want browser swipe up on body", action)
 	}
-	if len(result.Stats.UnsupportedFuncs) != 1 || result.Stats.UnsupportedFuncs[0] != "Evaluate JavaScript" {
-		t.Fatalf("unsupported funcs = %#v, want [Evaluate JavaScript]", result.Stats.UnsupportedFuncs)
+	if result.Stats.TotalFunctions != 2 || result.Stats.ConvertedActions != 3 || result.Stats.Skipped != 0 {
+		t.Fatalf("stats = %#v, want total=2 converted=3 skipped=0", result.Stats)
 	}
-	if len(result.Warnings) != 1 || !strings.Contains(result.Warnings[0], "window.scrollTo(0, 400)") {
-		t.Fatalf("warnings = %#v, want skipped scroll warning", result.Warnings)
+	if len(result.Stats.UnsupportedFuncs) != 0 {
+		t.Fatalf("unsupported funcs = %#v, want none", result.Stats.UnsupportedFuncs)
+	}
+	if len(result.Warnings) != 0 {
+		t.Fatalf("warnings = %#v, want none", result.Warnings)
 	}
 }
 

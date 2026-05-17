@@ -19,7 +19,7 @@ This is positioned as a configuration extension of the existing `pkg/protocol/br
 - Script-editor authoring and replay flows support browser engine selection, device profiles, touch mode, orientation, and saved-script validation.
 
 ### Remaining
-- TruClient MobileWeb import is shipped for the current MVP browser step envelope, but review-only constructs such as `Scroll` and non-decomposable `Evaluate JavaScript` still need sample-backed hardening.
+- TruClient MobileWeb import is shipped for the current MVP browser step envelope. Simple `window.scrollTo` / `window.scrollBy` statements now convert to `browser_swipe`; non-decomposable `Evaluate JavaScript` shapes still need sample-backed hardening.
 - Production hardening beyond the conservative browser envelope below is still open, but scenario capacity advice now treats browser VUsers as real browser runtimes rather than HTTP goroutines.
 - Broader scenario-level/dashboard mobile UX polish is still incomplete compared with the script-editor/browser-replay surfaces.
 
@@ -470,7 +470,7 @@ When editing a browser script with a device profile:
 | **Phase 1** | **Complete** | **Device Profiles + Runtime Emulation** | Device profile registry, orientation support, DSL extensions, engine config wiring, browser-family-aware runtime selection, unit tests | Named device profiles launch with the expected viewport, scale, mobile flag, user agent, and browser engine |
 | **Phase 2** | **Complete** | **Touch Event Simulation** | `browser_tap`, `browser_swipe`, `browser_long_press` action types, auto click-to-tap mapping, touch emulation, unit tests | Touch actions execute on mobile-configured browser; `browser_click` dispatches touch interactions in mobile mode |
 | **Phase 3** | **Partially Complete** | **Dashboard UX** | Script-editor device profile selector, orientation toggle, replay/config validation warnings, mobile/browser settings authoring | Core mobile browser scenarios can be authored and replayed from the dashboard, but broader scenario-level UX is still incomplete |
-| **Phase 4** | **Not Started** | **TrueClient Import** | `pkg/convert/trueclient` package, step-to-action mapping, device profile extraction from `.usr` + `default.cfg`, API endpoint, unit tests | A TrueClient MobileWeb `.zip` import produces a runnable Stormrunner browser script with correct device profile and mapped actions |
+| **Phase 4** | **Partially Complete** | **TrueClient Import** | `pkg/convert/trueclient` package, step-to-action mapping, device profile extraction from `.usr` + `default.cfg`, API endpoint, unit tests, JavaScript scroll-to-swipe conversion | A TrueClient MobileWeb `.zip` import produces a runnable Stormrunner browser script with correct device profile and mapped actions; remaining work is sample-backed coverage for less common TruClient constructs |
 | **Phase 5** | **Partially Complete** | **Hardening + Benchmarks** | Browser-aware capacity advice, memory benchmarks, touch latency benchmarks, documented scale guidance, edge case coverage | Capacity planning now exposes conservative mobile browser VUser density; measured memory/latency benchmark publication remains open |
 
 ## 9. Risks And Mitigations
