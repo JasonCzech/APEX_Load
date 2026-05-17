@@ -2186,6 +2186,18 @@ describe('LoadRunnerImport', () => {
       },
       warnings: [],
     })
+    apiMock.startDraftBrowserReplaySession.mockResolvedValueOnce({
+      script_id: '',
+      replay_session_id: 'draft-browser-validation-rerun',
+      session: {
+        id: 'draft-browser-validation-rerun',
+        status: 'running',
+        group: 'default',
+        protocol: 'browser',
+        current_event_index: 0,
+      },
+      warnings: [],
+    })
     apiMock.getBrowserReplaySession.mockResolvedValueOnce({
       session: {
         id: 'draft-browser-validation',
@@ -2252,6 +2264,23 @@ describe('LoadRunnerImport', () => {
       expect(container.textContent).toContain('Rerun Browser Replay Before Saving')
       expect(container.textContent).toContain('Rerun a draft browser replay before saving the reviewed script.')
       expect(container.textContent).toContain('Rerun a draft replay against the converted browser script before saving it to the library.')
+
+      const rerunReplayButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Rerun Browser Replay')
+      expect(rerunReplayButton).toBeDefined()
+      if (!rerunReplayButton) {
+        return
+      }
+
+      await act(async () => {
+        rerunReplayButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+
+      await flushPromises()
+
+      expect(apiMock.startDraftBrowserReplaySession).toHaveBeenCalledTimes(2)
+      expect(container.textContent).toContain('Browser replay validation restarted. Review the refreshed draft session before saving this import.')
+      expect(container.textContent).toContain('Session: draft-browser-validation-rerun')
+      expect(container.textContent).toContain('Status: Running')
     } finally {
       vi.useRealTimers()
     }
