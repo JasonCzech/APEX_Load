@@ -26,12 +26,17 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     setProjects(nextProjects)
 
     const storedId = localStorage.getItem(STORAGE_KEY)
-    const selected = nextProjects.find(project => project.id === storedId) || activeProject || nextProjects[0] || null
-    if (selected) {
-      setActiveProjectState(selected)
-      localStorage.setItem(STORAGE_KEY, selected.id)
-    }
-  }, [api, activeProject])
+    setActiveProjectState(prev => {
+      const selected = nextProjects.find(project => project.id === storedId)
+        || nextProjects.find(project => project.id === prev?.id)
+        || nextProjects[0]
+        || null
+      if (selected) {
+        localStorage.setItem(STORAGE_KEY, selected.id)
+      }
+      return selected
+    })
+  }, [api])
 
   const createAndSelectProject = useCallback(async (project: { name: string; settings?: import('../types').ProjectSettings } | string) => {
     const payload = typeof project === 'string' ? { name: project } : project
