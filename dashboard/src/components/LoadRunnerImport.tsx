@@ -247,6 +247,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
   const saveBlockedByMigrationPolicy = Boolean(migrationReadiness?.blocked)
   const browserImport = isBrowserImport(importedScript)
   const browserReplayStatus = replayValidationSession?.status || null
+  const browserReplayStatusLabel = formatRuntimeSettingStatusLabel(browserReplayStatus || 'not run')
   const browserReplayWasStarted = browserImport && replayValidationSession !== null
   const browserReplayInProgress = browserImport && (browserReplayStatus === 'queued' || browserReplayStatus === 'running' || browserReplayStatus === 'paused')
   const browserReplayNeedsRerun = browserImport && (replayValidationSession === null || browserReplayStatus === 'failed' || browserReplayStatus === 'stopped')
@@ -814,7 +815,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
                 <div className="lr-review-section">
                   <div className="lr-review-section-header">
                     <strong>Browser Replay Validation</strong>
-                    <span>{replayValidationSession?.status || 'not run'}</span>
+                    <span>{browserReplayStatusLabel}</span>
                   </div>
                   <p>{replayPanelDescription}</p>
                   <div className="replay-panel-actions" style={{ marginTop: 12, justifyContent: 'flex-start' }}>
@@ -825,7 +826,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
                   {replayValidationSession && (
                     <ul>
                       <li>Session: {replayValidationSession.id}</li>
-                      <li>Status: {replayValidationSession.status}</li>
+                      <li>Status: {browserReplayStatusLabel}</li>
                       <li>Group: {replayValidationSession.group}</li>
                     </ul>
                   )}

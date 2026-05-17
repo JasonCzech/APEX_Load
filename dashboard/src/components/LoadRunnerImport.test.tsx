@@ -1815,7 +1815,7 @@ describe('LoadRunnerImport', () => {
     await flushPromises()
 
     expect(container.textContent).toContain('Browser Replay Validation')
-    expect(container.textContent).toContain('not run')
+    expect(container.textContent).toContain('Not Run')
 
     const validateReplayButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Validate Browser Replay'))
     expect(validateReplayButton).toBeDefined()
@@ -1848,7 +1848,7 @@ describe('LoadRunnerImport', () => {
     }))
     expect(container.textContent).toContain('Browser replay validation started. Review the draft session before saving this import.')
     expect(container.textContent).toContain('Session: draft-browser-validation')
-    expect(container.textContent).toContain('Status: running')
+    expect(container.textContent).toContain('Status: Running')
     expect(container.textContent).toContain('selector repair recommended')
     expect(container.textContent).toContain('Wait for the draft replay to finish before saving it to the library.')
     const inProgressReplayButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Browser Replay In Progress')) as HTMLButtonElement | undefined
@@ -2001,7 +2001,7 @@ describe('LoadRunnerImport', () => {
       expect(apiMock.createScript).not.toHaveBeenCalled()
       expect(container.textContent).toContain('Browser replay validation started. Review the draft session before saving this import.')
       expect(container.textContent).toContain('Session: draft-browser-validation')
-      expect(container.textContent).toContain('Status: running')
+      expect(container.textContent).toContain('Status: Running')
       expect(container.textContent).toContain('Browser Replay In Progress')
       expect(container.textContent).toContain('Wait for the draft replay to finish before saving it to the library.')
 
@@ -2012,7 +2012,7 @@ describe('LoadRunnerImport', () => {
       await flushPromises()
 
       expect(apiMock.getBrowserReplaySession).toHaveBeenCalledWith('draft-browser-validation')
-      expect(container.textContent).toContain('Status: completed')
+      expect(container.textContent).toContain('Status: Completed')
       expect(container.textContent).toContain('The latest draft replay completed. Review the replay results before saving it to the library.')
 
       const finalSaveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save to Script Library'))
@@ -2248,7 +2248,7 @@ describe('LoadRunnerImport', () => {
       await flushPromises()
 
       expect(apiMock.getBrowserReplaySession).toHaveBeenCalledWith('draft-browser-validation')
-      expect(container.textContent).toContain('Status: failed')
+      expect(container.textContent).toContain('Status: Failed')
       expect(container.textContent).toContain('Rerun Browser Replay Before Saving')
       expect(container.textContent).toContain('Rerun a draft browser replay before saving the reviewed script.')
       expect(container.textContent).toContain('Rerun a draft replay against the converted browser script before saving it to the library.')
