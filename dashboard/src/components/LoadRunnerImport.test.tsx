@@ -1849,6 +1849,9 @@ describe('LoadRunnerImport', () => {
     expect(container.textContent).toContain('Session: draft-browser-validation')
     expect(container.textContent).toContain('Status: running')
     expect(container.textContent).toContain('selector repair recommended')
+    const inProgressReplayButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Browser Replay In Progress')) as HTMLButtonElement | undefined
+    expect(inProgressReplayButton).toBeDefined()
+    expect(inProgressReplayButton?.disabled).toBe(true)
   })
 
   it('starts draft browser replay validation when saving a browser import for the first time', async () => {
