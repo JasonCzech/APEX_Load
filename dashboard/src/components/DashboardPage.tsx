@@ -111,6 +111,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
   const api = useApi()
   const { activeApplication, activeRelease } = useApplication()
   const { activeProject } = useProject()
+  const dashboardScopeReady = Boolean(activeProject?.id && activeApplication?.id)
   const [tests, setTests] = useState<TestSummary[]>([])
   const [health, setHealth] = useState<HealthData | null>(null)
   const [inventory, setInventory] = useState<SystemInventoryResponse | null>(null)
@@ -123,13 +124,17 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
   )
 
   useEffect(() => {
+    if (!dashboardScopeReady) {
+      return
+    }
+
     const load = async () => {
       if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
         return
       }
       try {
         const [testRes, healthRes, inventoryRes] = await Promise.all([
-          api.listTests(activeApplication?.id ? { application_id: activeApplication.id, project_id: activeProject?.id } : (activeProject?.id ? { project_id: activeProject.id } : undefined)),
+          api.listTests({ application_id: activeApplication!.id, project_id: activeProject!.id }),
           api.getHealth().catch(() => null),
           api.getSystemInventory().catch(() => null),
         ])
@@ -158,7 +163,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
         document.removeEventListener('visibilitychange', handleVisibilityChange)
       }
     }
-  }, [api, activeApplication?.id, activeProject?.id])
+  }, [api, activeApplication?.id, activeProject?.id, dashboardScopeReady])
 
   const resolvedTests = useMemo(() =>
     tests.map(t => ({

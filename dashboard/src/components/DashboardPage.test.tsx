@@ -246,6 +246,73 @@ describe('DashboardPage', () => {
     expect(onNavigate).toHaveBeenCalledWith('tests')
   })
 
+  it('waits for the active application before loading dashboard data', async () => {
+    const previousApplication = applicationState.activeApplication
+    const previousRelease = applicationState.activeRelease
+    applicationState.activeApplication = null as never
+    applicationState.activeRelease = null as never
+
+    try {
+      await act(async () => {
+        root.render(
+          <DashboardPage
+            testStatuses={{}}
+            metricsHistory={{}}
+            connectionState="connected"
+            onSelectTest={onSelectTest}
+            onNavigate={onNavigate}
+          />,
+        )
+      })
+
+      await act(async () => {
+        await Promise.resolve()
+      })
+
+      expect(apiMock.listTests).not.toHaveBeenCalled()
+      expect(apiMock.getHealth).not.toHaveBeenCalled()
+      expect(apiMock.getSystemInventory).not.toHaveBeenCalled()
+
+      applicationState.activeApplication = {
+        id: 'app-1',
+        name: 'Storefront',
+        created_at: '2026-05-01T00:00:00Z',
+        updated_at: '2026-05-01T00:00:00Z',
+      } as typeof applicationState.activeApplication
+      applicationState.activeRelease = {
+        id: 'rel-1',
+        application_id: 'app-1',
+        name: 'Sprint 24',
+        created_at: '2026-05-02T00:00:00Z',
+        updated_at: '2026-05-02T00:00:00Z',
+      } as typeof applicationState.activeRelease
+
+      await act(async () => {
+        root.render(
+          <DashboardPage
+            testStatuses={{}}
+            metricsHistory={{}}
+            connectionState="connected"
+            onSelectTest={onSelectTest}
+            onNavigate={onNavigate}
+          />,
+        )
+      })
+
+      await act(async () => {
+        await Promise.resolve()
+      })
+
+      expect(apiMock.listTests).toHaveBeenCalledTimes(1)
+      expect(apiMock.listTests).toHaveBeenCalledWith({ application_id: 'app-1', project_id: 'project-1' })
+      expect(apiMock.getHealth).toHaveBeenCalledTimes(1)
+      expect(apiMock.getSystemInventory).toHaveBeenCalledTimes(1)
+    } finally {
+      applicationState.activeApplication = previousApplication
+      applicationState.activeRelease = previousRelease
+    }
+  })
+
   function clickButtonByText(text: string) {
     const button = getButtonByText(text)
     button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
