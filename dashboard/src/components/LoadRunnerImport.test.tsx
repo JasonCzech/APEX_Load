@@ -1820,7 +1820,7 @@ describe('LoadRunnerImport', () => {
     expect(container.textContent).toContain('Browser Replay Validation')
     expect(container.textContent).toContain('Not Run')
 
-    const validateReplayButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Start Browser Replay'))
+    const validateReplayButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Start Draft Browser Replay'))
     expect(validateReplayButton).toBeDefined()
     if (!validateReplayButton) {
       return
@@ -1835,7 +1835,7 @@ describe('LoadRunnerImport', () => {
     expect(container.textContent).toContain('Starting')
     expect(container.textContent).toContain('Wait for the draft browser replay to finish before saving it to the library.')
     expect(container.textContent).toContain('Review the generated script, preserved metadata, and warnings. Wait for the draft browser replay to finish before saving.')
-    const startingReplayButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Starting Browser Replay...')) as HTMLButtonElement | undefined
+    const startingReplayButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Starting Draft Browser Replay...')) as HTMLButtonElement | undefined
     expect(startingReplayButton).toBeDefined()
     expect(startingReplayButton?.disabled).toBe(true)
     const inProgressSaveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Draft Browser Replay In Progress')) as HTMLButtonElement | undefined
@@ -2002,7 +2002,7 @@ describe('LoadRunnerImport', () => {
 
       await flushPromises()
 
-      const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Start Browser Replay Before Saving'))
+      const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Start Draft Browser Replay Before Saving'))
       expect(saveButton).toBeDefined()
       if (!saveButton) {
         return
@@ -2180,7 +2180,7 @@ describe('LoadRunnerImport', () => {
 
     await flushPromises()
 
-    const startReplayButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Start Browser Replay'))
+    const startReplayButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Start Draft Browser Replay'))
     expect(startReplayButton).toBeDefined()
     if (!startReplayButton) {
       return
@@ -2193,7 +2193,7 @@ describe('LoadRunnerImport', () => {
     await flushPromises()
 
     expect(container.textContent).toContain('Draft browser replay failed to start')
-    expect(container.textContent).toContain('Start Browser Replay')
+    expect(container.textContent).toContain('Start Draft Browser Replay')
     expect(container.textContent).toContain('Not Run')
   })
 
@@ -2278,7 +2278,7 @@ describe('LoadRunnerImport', () => {
 
     await flushPromises()
 
-    const replayFirstSaveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Start Browser Replay Before Saving'))
+    const replayFirstSaveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Start Draft Browser Replay Before Saving'))
     expect(replayFirstSaveButton).toBeDefined()
     expect(Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save Reviewed Script'))).toBeUndefined()
     expect(container.textContent).toContain('Run a draft browser replay before saving the reviewed script.')
@@ -2402,7 +2402,7 @@ describe('LoadRunnerImport', () => {
 
       await flushPromises()
 
-      const replayFirstSaveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Start Browser Replay Before Saving'))
+      const replayFirstSaveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Start Draft Browser Replay Before Saving'))
       expect(replayFirstSaveButton).toBeDefined()
       if (!replayFirstSaveButton) {
         return
@@ -2422,11 +2422,11 @@ describe('LoadRunnerImport', () => {
 
       expect(apiMock.getBrowserReplaySession).toHaveBeenCalledWith('draft-browser-validation')
       expect(container.textContent).toContain('Status: Failed')
-      expect(container.textContent).toContain('Rerun Browser Replay Before Saving')
+      expect(container.textContent).toContain('Rerun Draft Browser Replay Before Saving')
       expect(container.textContent).toContain('Rerun a draft browser replay before saving the reviewed script.')
       expect(container.textContent).toContain('Rerun a draft browser replay against the converted browser script before saving it to the library.')
 
-      const rerunReplayButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Rerun Browser Replay')
+      const rerunReplayButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Rerun Draft Browser Replay')
       expect(rerunReplayButton).toBeDefined()
       if (!rerunReplayButton) {
         return
@@ -2544,7 +2544,7 @@ describe('LoadRunnerImport', () => {
 
       await flushPromises()
 
-      const replayFirstSaveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Start Browser Replay Before Saving'))
+      const replayFirstSaveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Start Draft Browser Replay Before Saving'))
       expect(replayFirstSaveButton).toBeDefined()
       if (!replayFirstSaveButton) {
         return
@@ -2562,7 +2562,7 @@ describe('LoadRunnerImport', () => {
 
       await flushPromises()
 
-      const rerunReplayButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Rerun Browser Replay')
+      const rerunReplayButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Rerun Draft Browser Replay')
       expect(rerunReplayButton).toBeDefined()
       if (!rerunReplayButton) {
         return
@@ -2578,8 +2578,8 @@ describe('LoadRunnerImport', () => {
       expect(container.textContent).toContain('Draft browser replay failed to start')
       expect(container.textContent).toContain('Status: Failed')
       expect(container.textContent).toContain('Session: draft-browser-validation')
-      expect(container.textContent).toContain('Rerun Browser Replay')
-      expect(container.textContent).toContain('Rerun Browser Replay Before Saving')
+      expect(container.textContent).toContain('Rerun Draft Browser Replay')
+      expect(container.textContent).toContain('Rerun Draft Browser Replay Before Saving')
     } finally {
       vi.useRealTimers()
     }

@@ -258,13 +258,13 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
   const saveActionLabel = browserReplayInProgress
     ? 'Draft Browser Replay In Progress'
     : (saveRequiresBrowserReplay
-        ? (browserReplayWasStarted ? 'Rerun Browser Replay Before Saving' : 'Start Browser Replay Before Saving')
+        ? (browserReplayWasStarted ? 'Rerun Draft Browser Replay Before Saving' : 'Start Draft Browser Replay Before Saving')
         : (reviewMode === 'validation' ? 'Save Reviewed Script' : 'Save to Script Library'))
   const replayActionLabel = replayValidationLoading
-    ? 'Starting Browser Replay...'
+    ? 'Starting Draft Browser Replay...'
     : (browserReplayInProgress
         ? 'Draft Browser Replay In Progress'
-      : (browserReplayWasStarted ? 'Rerun Browser Replay' : 'Start Browser Replay'))
+      : (browserReplayWasStarted ? 'Rerun Draft Browser Replay' : 'Start Draft Browser Replay'))
   const replayPanelDescription = browserReplayInProgress
     ? 'Wait for the draft browser replay to finish before saving it to the library.'
     : (saveRequiresBrowserReplay
