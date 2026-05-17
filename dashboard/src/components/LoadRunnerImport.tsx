@@ -255,6 +255,21 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
     : (saveRequiresBrowserReplay
         ? (replayValidationSession ? 'Rerun Browser Replay Before Saving' : 'Start Browser Replay Before Saving')
         : (reviewMode === 'validation' ? 'Save Reviewed Script' : 'Save to Script Library'))
+    const reviewSubtitle = reviewMode === 'validation'
+    ? (saveBlockedByMigrationPolicy
+      ? 'This preview came from the dry-run validator. Saving is disabled until the migration readiness blockers are resolved or the active policy is relaxed.'
+      : (browserReplayInProgress
+        ? 'This preview came from the dry-run validator. Wait for the draft browser replay to finish before saving the reviewed script.'
+        : (saveRequiresBrowserReplay
+          ? 'This preview came from the dry-run validator. Run a draft browser replay before saving the reviewed script.'
+          : 'This preview came from the dry-run validator. You can still save the reviewed script if the output looks correct.')))
+    : (saveBlockedByMigrationPolicy
+      ? 'Review the generated script, preserved metadata, and warnings. Saving is disabled until the migration readiness blockers are resolved or the active policy is relaxed.'
+      : (browserReplayInProgress
+        ? 'Review the generated script, preserved metadata, and warnings. Wait for the draft browser replay to finish before saving.'
+        : (saveRequiresBrowserReplay
+          ? 'Review the generated script, preserved metadata, and warnings. Run a draft browser replay before saving.'
+          : 'Review the generated script, preserved metadata, and warnings before saving.')))
   const runtimeBlockingSettings = importSummary.runtimeSettingReadiness?.blocking_settings || []
   const generatedDataSources = importedScript
     ? (toScriptDefinition(importedScript).data_sources || []).map((source, index) => {
@@ -764,13 +779,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
         <div className="lr-result">
           <ScriptImportReview
             title={reviewMode === 'validation' ? 'Validation Review' : 'Conversion Complete'}
-            subtitle={reviewMode === 'validation'
-              ? (saveBlockedByMigrationPolicy
-                  ? 'This preview came from the dry-run validator. Saving is disabled until the migration readiness blockers are resolved or the active policy is relaxed.'
-                  : 'This preview came from the dry-run validator. You can still save the reviewed script if the output looks correct.')
-              : (saveBlockedByMigrationPolicy
-                  ? 'Review the generated script, preserved metadata, and warnings. Saving is disabled until the migration readiness blockers are resolved or the active policy is relaxed.'
-                  : 'Review the generated script, preserved metadata, and warnings before saving.')}
+            subtitle={reviewSubtitle}
             script={importedScript}
             warnings={result.warnings}
             warningsTitle={`Conversion Warnings (${result.warnings.length})`}

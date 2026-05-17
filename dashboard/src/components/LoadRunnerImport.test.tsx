@@ -2113,6 +2113,7 @@ describe('LoadRunnerImport', () => {
     const replayFirstSaveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Start Browser Replay Before Saving'))
     expect(replayFirstSaveButton).toBeDefined()
     expect(Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save Reviewed Script'))).toBeUndefined()
+    expect(container.textContent).toContain('Run a draft browser replay before saving the reviewed script.')
   })
 
   it('opens a browser replay repair suggestion in the visual editor without an additional focus hint', async () => {
