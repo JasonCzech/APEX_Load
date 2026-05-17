@@ -55,22 +55,24 @@ type truArgument struct {
 }
 
 var (
-	reJQueryVal            = regexp.MustCompile(`^\$\(\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\)\.val\(\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\)$`)
-	reJQueryClick          = regexp.MustCompile(`^\$\(\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\)\.click\(\s*\)$`)
-	reQuerySelectorClick   = regexp.MustCompile(`^document\.querySelector\(\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\)\.click\(\s*\)$`)
-	reQuerySelectorValue   = regexp.MustCompile(`^document\.querySelector\(\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\)\.value\s*=\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')$`)
-	reElementByIDClick     = regexp.MustCompile(`^document\.getElementById\(\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\)\.click\(\s*\)$`)
-	reElementByIDValue     = regexp.MustCompile(`^document\.getElementById\(\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\)\.value\s*=\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')$`)
-	reElementsByClassClick = regexp.MustCompile(`^document\.getElementsByClassName\(\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\)\s*\[\s*0\s*\]\.click\(\s*\)$`)
-	reElementsByClassValue = regexp.MustCompile(`^document\.getElementsByClassName\(\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\)\s*\[\s*0\s*\]\.value\s*=\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')$`)
-	reElementsByNameClick  = regexp.MustCompile(`^document\.getElementsByName\(\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\)\s*\[\s*0\s*\]\.click\(\s*\)$`)
-	reElementsByNameValue  = regexp.MustCompile(`^document\.getElementsByName\(\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\)\s*\[\s*0\s*\]\.value\s*=\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')$`)
-	reFormElementClick     = regexp.MustCompile(`^document\.forms\s*\[\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*'|\d+)\s*\]\.elements\s*\[\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\]\.click\(\s*\)$`)
-	reFormElementValue     = regexp.MustCompile(`^document\.forms\s*\[\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*'|\d+)\s*\]\.elements\s*\[\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\]\.value\s*=\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')$`)
-	reWindowScroll         = regexp.MustCompile(`^window\.scroll(?:To|By)\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\)$`)
-	reLocationAssign       = regexp.MustCompile(`^(?:window\.)?location(?:\.href)?\s*=\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')$`)
-	reLocationMethod       = regexp.MustCompile(`^(?:window\.)?location\.(?:assign|replace)\(\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\)$`)
-	reSimpleCSSClassToken  = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_-]*$`)
+	reJQueryVal             = regexp.MustCompile(`^\$\(\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\)\.val\(\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\)$`)
+	reJQueryClick           = regexp.MustCompile(`^\$\(\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\)\.click\(\s*\)$`)
+	reQuerySelectorClick    = regexp.MustCompile(`^document\.querySelector\(\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\)\.click\(\s*\)$`)
+	reQuerySelectorValue    = regexp.MustCompile(`^document\.querySelector\(\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\)\.value\s*=\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')$`)
+	reQuerySelectorAllClick = regexp.MustCompile(`^document\.querySelectorAll\(\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\)\s*\[\s*0\s*\]\.click\(\s*\)$`)
+	reQuerySelectorAllValue = regexp.MustCompile(`^document\.querySelectorAll\(\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\)\s*\[\s*0\s*\]\.value\s*=\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')$`)
+	reElementByIDClick      = regexp.MustCompile(`^document\.getElementById\(\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\)\.click\(\s*\)$`)
+	reElementByIDValue      = regexp.MustCompile(`^document\.getElementById\(\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\)\.value\s*=\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')$`)
+	reElementsByClassClick  = regexp.MustCompile(`^document\.getElementsByClassName\(\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\)\s*\[\s*0\s*\]\.click\(\s*\)$`)
+	reElementsByClassValue  = regexp.MustCompile(`^document\.getElementsByClassName\(\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\)\s*\[\s*0\s*\]\.value\s*=\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')$`)
+	reElementsByNameClick   = regexp.MustCompile(`^document\.getElementsByName\(\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\)\s*\[\s*0\s*\]\.click\(\s*\)$`)
+	reElementsByNameValue   = regexp.MustCompile(`^document\.getElementsByName\(\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\)\s*\[\s*0\s*\]\.value\s*=\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')$`)
+	reFormElementClick      = regexp.MustCompile(`^document\.forms\s*\[\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*'|\d+)\s*\]\.elements\s*\[\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\]\.click\(\s*\)$`)
+	reFormElementValue      = regexp.MustCompile(`^document\.forms\s*\[\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*'|\d+)\s*\]\.elements\s*\[\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\]\.value\s*=\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')$`)
+	reWindowScroll          = regexp.MustCompile(`^window\.scroll(?:To|By)\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\)$`)
+	reLocationAssign        = regexp.MustCompile(`^(?:window\.)?location(?:\.href)?\s*=\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')$`)
+	reLocationMethod        = regexp.MustCompile(`^(?:window\.)?location\.(?:assign|replace)\(\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\)$`)
+	reSimpleCSSClassToken   = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_-]*$`)
 )
 
 // ConvertArchive converts a TruClient Mobile Web archive into a Stormrunner browser script.
@@ -794,6 +796,27 @@ func convertJavaScriptStatement(statement string, baseName string, position int)
 			Value:    value,
 		}, true
 	}
+	if matches := reQuerySelectorAllValue.FindStringSubmatch(statement); len(matches) == 3 {
+		selector, ok := decodeJSStringLiteral(matches[1])
+		if !ok || strings.TrimSpace(selector) == "" {
+			return dsl.Action{}, false
+		}
+		value, ok := decodeJSStringLiteral(matches[2])
+		if !ok {
+			return dsl.Action{}, false
+		}
+		selector = strings.TrimSpace(selector)
+		return dsl.Action{
+			Name:     fmt.Sprintf("%s Fill %d", baseName, position),
+			Type:     "browser_fill",
+			Target:   selector,
+			Selector: selector,
+			Value:    value,
+			Metadata: map[string]any{
+				"source": "truclient_query_selector_all",
+			},
+		}, true
+	}
 	if matches := reElementByIDValue.FindStringSubmatch(statement); len(matches) == 3 {
 		id, ok := decodeJSStringLiteral(matches[1])
 		if !ok {
@@ -906,6 +929,22 @@ func convertJavaScriptStatement(statement string, baseName string, position int)
 			Type:     "browser_click",
 			Target:   selector,
 			Selector: selector,
+		}, true
+	}
+	if matches := reQuerySelectorAllClick.FindStringSubmatch(statement); len(matches) == 2 {
+		selector, ok := decodeJSStringLiteral(matches[1])
+		if !ok || strings.TrimSpace(selector) == "" {
+			return dsl.Action{}, false
+		}
+		selector = strings.TrimSpace(selector)
+		return dsl.Action{
+			Name:     fmt.Sprintf("%s Click %d", baseName, position),
+			Type:     "browser_click",
+			Target:   selector,
+			Selector: selector,
+			Metadata: map[string]any{
+				"source": "truclient_query_selector_all",
+			},
 		}, true
 	}
 	if matches := reElementByIDClick.FindStringSubmatch(statement); len(matches) == 2 {
