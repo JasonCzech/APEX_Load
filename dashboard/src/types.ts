@@ -1088,6 +1088,7 @@ export interface DashboardAuthStatus {
   provider_name?: string
   login_url?: string
   logout_url?: string
+  logout_csrf_token?: string
   authenticated: boolean
   user?: DashboardAuthenticatedUser
 }

@@ -30,8 +30,13 @@ type AuthStatusResponse struct {
 	ProviderName  string           `json:"provider_name,omitempty"`
 	LoginURL      string           `json:"login_url,omitempty"`
 	LogoutURL     string           `json:"logout_url,omitempty"`
+	LogoutCSRF    string           `json:"logout_csrf_token,omitempty"`
 	Authenticated bool             `json:"authenticated"`
 	User          *AuthUserSummary `json:"user,omitempty"`
+}
+
+type AuthLogoutResponse struct {
+	RedirectURL string `json:"redirect_url"`
 }
 
 type AuthDiagnosticsCheck struct {
@@ -280,6 +285,11 @@ func (s *Server) handleGetAuthStatus(w http.ResponseWriter, r *http.Request) {
 
 	response.Authenticated = true
 	response.User = authUserSummary(resolution.User)
+	if settings.Mode == authModeOIDC {
+		if csrfToken, err := issueOIDCLogoutCSRFToken(resolution.User, settings); err == nil {
+			response.LogoutCSRF = csrfToken
+		}
+	}
 	writeJSON(w, http.StatusOK, response)
 }
 

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { type WebSocketConnectionState } from '../hooks/useWebSocket'
+import { useAuthApi } from '../hooks/api/useAuthApi'
 import { Application, DashboardAuthStatus, Project, Release } from '../types'
 import ProjectModal from './ProjectModal'
 import './Sidebar.css'
@@ -124,6 +125,9 @@ export default function Sidebar({
   const [applicationOpen, setApplicationOpen] = useState(false)
   const [showProjectModal, setShowProjectModal] = useState(false)
   const [showApplicationModal, setShowApplicationModal] = useState(false)
+  const [logoutPending, setLogoutPending] = useState(false)
+  const [logoutError, setLogoutError] = useState('')
+  const { logout } = useAuthApi()
   const connectionClass = connectionState === 'connected' ? 'connected' : connectionState === 'connecting' ? 'connecting' : 'disconnected'
   const connectionLabel = connectionState === 'connected' ? 'Live' : connectionState === 'connecting' ? 'Connecting' : 'Disconnected'
   const identityName = formatIdentityName(authStatus)
@@ -131,6 +135,7 @@ export default function Sidebar({
   const identityMeta = formatIdentityMeta(authStatus)
   const identityTitle = formatIdentityTitle(authStatus, identityMeta)
   const logoutURL = authStatus?.authenticated ? authStatus.logout_url?.trim() || '' : ''
+  const canPostLogout = authStatus?.authenticated && authStatus.mode === 'oidc' && Boolean(authStatus.logout_csrf_token?.trim())
 
   const handleNewProject = async (name: string) => {
     if (!onCreateProject) return
@@ -142,6 +147,23 @@ export default function Sidebar({
     if (!onCreateApplication) return
     await onCreateApplication(name)
     setApplicationOpen(false)
+  }
+
+  const handleLogout = async () => {
+    if (!authStatus?.logout_csrf_token || !logoutURL || logoutPending) {
+      return
+    }
+    setLogoutPending(true)
+    setLogoutError('')
+    try {
+      const res = await logout(authStatus.logout_csrf_token)
+      if (typeof window !== 'undefined') {
+        window.location.assign(res.redirect_url || logoutURL)
+      }
+    } catch (error) {
+      setLogoutError(error instanceof Error ? error.message : 'Unable to sign out.')
+      setLogoutPending(false)
+    }
   }
 
   return (
@@ -286,7 +308,19 @@ export default function Sidebar({
                 <div className="sidebar-identity-copy">
                   <span className="sidebar-identity-name">{identityName}</span>
                   {identityMeta && <span className="sidebar-identity-meta">{identityMeta}</span>}
-                  {logoutURL && <a className="sidebar-identity-action" href={logoutURL}>Sign out</a>}
+                  {logoutURL && (canPostLogout ? (
+                    <button
+                      type="button"
+                      className="sidebar-identity-action sidebar-identity-action-button"
+                      onClick={handleLogout}
+                      disabled={logoutPending}
+                    >
+                      {logoutPending ? 'Signing out…' : 'Sign out'}
+                    </button>
+                  ) : (
+                    <a className="sidebar-identity-action" href={logoutURL}>Sign out</a>
+                  ))}
+                  {logoutError && <span className="sidebar-identity-meta">{logoutError}</span>}
                 </div>
               </div>
             )}

@@ -14,7 +14,7 @@ The remaining backlog is mostly about hardening, lifecycle ownership, and archit
 
 - Implemented claims for multi-tenant governance, notifications, schedules, provenance, analysis depth, and ecosystem integration still line up with code.
 - The material remaining auth gap is not basic sign-in anymore; it is long-term identity ownership and operational hardening.
-- The main post-implementation blind spot found during review is that logout still uses a `GET` route, which is easy to trigger from top-level navigation and should be hardened before treating the OIDC slice as production-complete.
+- Native OIDC logout now uses an explicit `POST /api/v1/auth/logout` flow with CSRF proof from the dashboard rather than a plain top-level `GET`, which closes the most obvious session-mutation gap from the first implementation pass.
 
 ## Ticket 1: Harden OIDC Logout and Session CSRF Boundaries
 
@@ -30,6 +30,7 @@ The remaining backlog is mostly about hardening, lifecycle ownership, and archit
   - Requests missing the CSRF proof fail cleanly.
   - Dashboard sign-out still clears the local Stormrunner session and then redirects to the configured post-logout destination.
   - Regression tests cover success and rejection paths.
+- Status: Implemented for logout. Future session-mutating auth endpoints should reuse the same CSRF posture rather than reintroducing link-triggered state changes.
 
 ## Ticket 2: Expand OIDC Runtime Health and Misconfiguration Diagnostics
 

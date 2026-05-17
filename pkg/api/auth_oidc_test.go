@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -49,6 +50,9 @@ func TestHandleGetAuthStatusReturnsOIDCLoginAndLogoutURLs(t *testing.T) {
 	}
 	if payload.Authenticated {
 		t.Fatal("expected unauthenticated auth status before oidc login")
+	}
+	if payload.LogoutCSRF != "" {
+		t.Fatalf("logout csrf token = %q, want empty for unauthenticated status", payload.LogoutCSRF)
 	}
 }
 
@@ -163,6 +167,9 @@ func TestOIDCLoginCallbackCreatesSessionAndAuthorizesProtectedRoutes(t *testing.
 	if len(statusPayload.User.GlobalRoles) == 0 || statusPayload.User.GlobalRoles[0] != RoleSystemAdmin {
 		t.Fatalf("global roles = %#v, want system_admin present", statusPayload.User.GlobalRoles)
 	}
+	if strings.TrimSpace(statusPayload.LogoutCSRF) == "" {
+		t.Fatal("expected authenticated oidc status to include logout csrf token")
+	}
 
 	protectedReq := httptest.NewRequest(http.MethodGet, "/api/v1/system/settings", nil)
 	protectedReq.AddCookie(sessionCookie)
@@ -172,16 +179,24 @@ func TestOIDCLoginCallbackCreatesSessionAndAuthorizesProtectedRoutes(t *testing.
 		t.Fatalf("protected route status = %d, want %d body=%s", protectedResp.Code, http.StatusOK, protectedResp.Body.String())
 	}
 
-	logoutReq := httptest.NewRequest(http.MethodGet, oidcLogoutPath, nil)
+	logoutReq := httptest.NewRequest(http.MethodPost, oidcLogoutPath, nil)
 	logoutReq.AddCookie(sessionCookie)
+	logoutReq.Header.Set("X-Stormrunner-CSRF-Token", statusPayload.LogoutCSRF)
 	logoutResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(logoutResp, logoutReq)
-	if logoutResp.Code != http.StatusSeeOther {
-		t.Fatalf("logout status = %d, want %d body=%s", logoutResp.Code, http.StatusSeeOther, logoutResp.Body.String())
+	if logoutResp.Code != http.StatusOK {
+		t.Fatalf("logout status = %d, want %d body=%s", logoutResp.Code, http.StatusOK, logoutResp.Body.String())
 	}
 	cleared := findResponseCookie(t, logoutResp.Result().Cookies(), oidcSessionCookieName)
 	if cleared.MaxAge != -1 {
 		t.Fatalf("cleared session max age = %d, want -1", cleared.MaxAge)
+	}
+	var logoutPayload AuthLogoutResponse
+	if err := json.Unmarshal(logoutResp.Body.Bytes(), &logoutPayload); err != nil {
+		t.Fatalf("unmarshal logout response: %v", err)
+	}
+	if logoutPayload.RedirectURL != "/" {
+		t.Fatalf("logout redirect url = %q, want /", logoutPayload.RedirectURL)
 	}
 
 	events, err := store.ListAuditEvents(storage.AuditEventFilter{Action: "auth.oidc.logout", Limit: 10})
@@ -190,6 +205,27 @@ func TestOIDCLoginCallbackCreatesSessionAndAuthorizesProtectedRoutes(t *testing.
 	}
 	if len(events) == 0 || events[0].ActorSubject != "alice" {
 		t.Fatalf("logout audit events = %#v, want oidc logout for alice", events)
+	}
+}
+
+func TestOIDCLogoutRejectsMissingCSRFToken(t *testing.T) {
+	provider := newFakeOIDCProvider(t)
+	defer provider.Close()
+	t.Setenv("STORMRUNNER_OIDC_CLIENT_SECRET", "test-client-secret")
+	t.Setenv("STORMRUNNER_AUTH_SESSION_SECRET", "test-session-secret")
+
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	enableOIDCAuth(t, server, provider.Issuer)
+
+	sessionCookie := issueOIDCTestSessionCookie(t, server, "alice")
+
+	logoutReq := httptest.NewRequest(http.MethodPost, oidcLogoutPath, nil)
+	logoutReq.AddCookie(sessionCookie)
+	logoutResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(logoutResp, logoutReq)
+
+	if logoutResp.Code != http.StatusForbidden {
+		t.Fatalf("logout status = %d, want %d body=%s", logoutResp.Code, http.StatusForbidden, logoutResp.Body.String())
 	}
 }
 
@@ -234,6 +270,29 @@ func enableOIDCAuth(t *testing.T, server *Server, issuerURL string) {
 	if _, err := server.runner.UpdateSystemSettings(settings); err != nil {
 		t.Fatalf("UpdateSystemSettings returned error: %v", err)
 	}
+}
+
+func issueOIDCTestSessionCookie(t *testing.T, server *Server, subject string) *http.Cookie {
+	t.Helper()
+	settings := normalizeAuthSettings(server.runner.GetSystemSettings().Auth)
+	encodedSession, err := encodeSignedCookieValue(oidcSessionToken{
+		Subject:   subject,
+		IssuedAt:  time.Now().UTC(),
+		ExpiresAt: time.Now().UTC().Add(time.Hour),
+	}, strings.TrimSpace(getenvOrFatal(t, settings.SessionSecretEnvVar)))
+	if err != nil {
+		t.Fatalf("encodeSignedCookieValue returned error: %v", err)
+	}
+	return &http.Cookie{Name: oidcSessionCookieName, Value: encodedSession, Path: "/"}
+}
+
+func getenvOrFatal(t *testing.T, key string) string {
+	t.Helper()
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		t.Fatalf("env %s is not set", key)
+	}
+	return value
 }
 
 type fakeOIDCProvider struct {

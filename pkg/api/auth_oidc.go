@@ -24,6 +24,8 @@ const (
 	oidcStateCookieName   = "stormrunner_auth_state"
 	oidcSessionTTL        = 12 * time.Hour
 	oidcStateTTL          = 10 * time.Minute
+	oidcLogoutCSRFPath    = "/api/v1/auth/logout"
+	oidcLogoutCSRFTTL     = 10 * time.Minute
 	oidcLoginPath         = "/api/v1/auth/login"
 	oidcLogoutPath        = "/api/v1/auth/logout"
 	defaultOIDCReturnTo   = "/"
@@ -43,6 +45,13 @@ type oidcStateToken struct {
 	State     string    `json:"state"`
 	Nonce     string    `json:"nonce"`
 	ReturnTo  string    `json:"return_to"`
+	ExpiresAt time.Time `json:"exp"`
+	IssuedAt  time.Time `json:"iat"`
+}
+
+type oidcLogoutCSRFToken struct {
+	Subject   string    `json:"sub"`
+	Action    string    `json:"action"`
 	ExpiresAt time.Time `json:"exp"`
 	IssuedAt  time.Time `json:"iat"`
 }
@@ -208,16 +217,23 @@ func (s *Server) handleOIDCLogout(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "oidc logout is not enabled")
 		return
 	}
-	if user, err := authenticatedUserFromOIDCSession(r, settings); err == nil {
-		s.recordAuditEvent(withAuthenticatedContext(r, authResolution{User: user}), "auth.oidc.logout", "success", "auth_session", user.Subject, "", nil)
+	user, err := authenticatedUserFromOIDCSession(r, settings)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, err.Error())
+		return
 	}
+	if err := validateOIDCLogoutCSRFToken(r, user, settings); err != nil {
+		writeError(w, http.StatusForbidden, err.Error())
+		return
+	}
+	s.recordAuditEvent(withAuthenticatedContext(r, authResolution{User: user}), "auth.oidc.logout", "success", "auth_session", user.Subject, "", nil)
 	clearAuthCookie(w, settings, oidcSessionCookieName, "/")
 	clearAuthCookie(w, settings, oidcStateCookieName, "/api/v1/auth")
 	destination := settings.LogoutURL
 	if strings.TrimSpace(destination) == "" {
 		destination = defaultOIDCReturnTo
 	}
-	http.Redirect(w, r, destination, http.StatusSeeOther)
+	writeJSON(w, http.StatusOK, AuthLogoutResponse{RedirectURL: destination})
 }
 
 type oidcRuntime struct {
@@ -337,6 +353,45 @@ func randomToken(byteLen int) (string, error) {
 		return "", err
 	}
 	return base64.RawURLEncoding.EncodeToString(buf), nil
+}
+
+func issueOIDCLogoutCSRFToken(user *AuthenticatedUser, settings AuthSettings) (string, error) {
+	if user == nil || strings.TrimSpace(user.Subject) == "" {
+		return "", fmt.Errorf("authentication required")
+	}
+	secret, err := authSessionSecret(settings)
+	if err != nil {
+		return "", err
+	}
+	now := time.Now().UTC()
+	return encodeSignedCookieValue(oidcLogoutCSRFToken{
+		Subject:   user.Subject,
+		Action:    "logout",
+		ExpiresAt: now.Add(oidcLogoutCSRFTTL),
+		IssuedAt:  now,
+	}, secret)
+}
+
+func validateOIDCLogoutCSRFToken(r *http.Request, user *AuthenticatedUser, settings AuthSettings) error {
+	if user == nil || strings.TrimSpace(user.Subject) == "" {
+		return fmt.Errorf("authentication required")
+	}
+	secret, err := authSessionSecret(settings)
+	if err != nil {
+		return err
+	}
+	tokenValue := strings.TrimSpace(r.Header.Get("X-Stormrunner-CSRF-Token"))
+	if tokenValue == "" {
+		return fmt.Errorf("missing csrf token")
+	}
+	var token oidcLogoutCSRFToken
+	if err := decodeSignedCookieValue(tokenValue, secret, &token); err != nil {
+		return fmt.Errorf("invalid csrf token")
+	}
+	if token.Action != "logout" || time.Now().UTC().After(token.ExpiresAt) || strings.TrimSpace(token.Subject) != user.Subject {
+		return fmt.Errorf("invalid csrf token")
+	}
+	return nil
 }
 
 func setSignedAuthCookie(w http.ResponseWriter, settings AuthSettings, cookie *http.Cookie) {

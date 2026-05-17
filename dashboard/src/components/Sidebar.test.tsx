@@ -8,14 +8,30 @@ import Sidebar from './Sidebar'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
+const authApiMock = {
+  logout: vi.fn(),
+}
+
+vi.mock('../hooks/api/useAuthApi', () => ({
+  useAuthApi: () => authApiMock,
+}))
+
 describe('Sidebar', () => {
   let container: HTMLDivElement
   let root: Root
+  const originalLocation = window.location
 
   beforeEach(() => {
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: {
+        ...originalLocation,
+        assign: vi.fn(),
+      },
+    })
   })
 
   afterEach(async () => {
@@ -24,6 +40,10 @@ describe('Sidebar', () => {
     })
     container.remove()
     vi.clearAllMocks()
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: originalLocation,
+    })
   })
 
   it('shows the authenticated identity summary in the footer', async () => {
@@ -53,6 +73,46 @@ describe('Sidebar', () => {
     const logoutLink = container.querySelector('.sidebar-identity-action') as HTMLAnchorElement | null
     expect(logoutLink?.getAttribute('href')).toBe('/logout')
     expect(logoutLink?.textContent).toBe('Sign out')
+  })
+
+  it('posts native oidc logout with the csrf token and redirects to the returned destination', async () => {
+    authApiMock.logout.mockResolvedValue({ redirect_url: '/' })
+
+    await act(async () => {
+      root.render(
+        <Sidebar
+          active="dashboard"
+          onNavigate={vi.fn()}
+          connectionState="connected"
+          authStatus={{
+            enabled: true,
+            mode: 'oidc',
+            logout_url: '/api/v1/auth/logout',
+            logout_csrf_token: 'csrf-token',
+            authenticated: true,
+            user: {
+              subject: 'alice',
+              display_name: 'Alice Admin',
+              global_roles: ['system_admin'],
+            },
+          }}
+        />,
+      )
+    })
+
+    const logoutButton = container.querySelector('.sidebar-identity-action-button') as HTMLButtonElement | null
+    expect(logoutButton?.textContent).toBe('Sign out')
+    if (!logoutButton) {
+      return
+    }
+
+    await act(async () => {
+      logoutButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(authApiMock.logout).toHaveBeenCalledWith('csrf-token')
+    expect(window.location.assign).toHaveBeenCalledWith('/')
   })
 
   it('renders the active project and switches projects from the selector', async () => {

@@ -293,6 +293,19 @@
   text-decoration: none;
 }
 
+.sidebar-identity-action-button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sidebar-identity-action-button:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
 .sidebar-identity-action:hover {
   text-decoration: underline;
 }
