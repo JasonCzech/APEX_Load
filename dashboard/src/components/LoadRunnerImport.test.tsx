@@ -1850,6 +1850,141 @@ describe('LoadRunnerImport', () => {
     expect(container.textContent).toContain('selector repair recommended')
   })
 
+  it('starts draft browser replay validation when saving a browser import for the first time', async () => {
+    apiMock.importLoadRunner.mockResolvedValueOnce({
+      script: {
+        name: 'Imported TruClient Mobile Web',
+        version: '1.0',
+        protocol: 'browser',
+        config: {
+          base_url: 'https://shop.example.test',
+          browser: {
+            engine: 'webkit',
+            headless: true,
+            device_profile: 'iphone_15_pro',
+            touch_mode: true,
+            orientation: 'portrait',
+            viewport: { width: 393, height: 852 },
+            capture_screenshots: 'on_failure',
+          },
+        },
+        actions: [
+          { name: 'Open Store', type: 'browser_navigate', url: '/store' },
+        ],
+        metadata: {
+          import: {
+            source: 'trueclient_mobile_web',
+            source_script_name: 'default.xml',
+            preserved: {},
+          },
+        },
+      },
+      warnings: [],
+      unsupported_elements: [],
+      assumptions: [],
+      review_sections: [],
+      repair_suggestions: [],
+      summary: {
+        project_file: 'default.xml',
+        mapped_runtime_file: '',
+        project_sections: [],
+        runtime_files: [],
+        migration_readiness: {
+          score_pct: 100,
+          blocked: false,
+          summary: 'Ready',
+          policy: { block_statuses: ['blocked'] },
+        },
+        unsupported_function_count: 0,
+      },
+      stats: {
+        total_functions: 1,
+        converted_actions: 1,
+        extractors: 0,
+        think_times: 0,
+        transactions: 0,
+        skipped: 0,
+      },
+    })
+    apiMock.startDraftBrowserReplaySession.mockResolvedValueOnce({
+      script_id: '',
+      replay_session_id: 'draft-browser-validation',
+      session: {
+        id: 'draft-browser-validation',
+        status: 'running',
+        group: 'default',
+        protocol: 'browser',
+        current_event_index: 0,
+      },
+      warnings: ['selector repair recommended'],
+    })
+
+    await act(async () => {
+      root.render(<LoadRunnerImport projectId="project-1" />)
+    })
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
+    expect(fileInput).not.toBeNull()
+    if (!fileInput) {
+      return
+    }
+
+    const file = new File(['zip-content'], 'truclient.zip', { type: 'application/zip' })
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [file],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert LoadRunner Script'))
+    expect(convertButton).toBeDefined()
+    if (!convertButton) {
+      return
+    }
+
+    await act(async () => {
+      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushPromises()
+
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save to Script Library'))
+    expect(saveButton).toBeDefined()
+    if (!saveButton) {
+      return
+    }
+
+    await act(async () => {
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushPromises()
+
+    expect(apiMock.startDraftBrowserReplaySession).toHaveBeenCalledWith(expect.objectContaining({
+      ignore_think_time: true,
+      browser: expect.objectContaining({
+        engine: 'webkit',
+        headless: true,
+        device_profile: 'iphone_15_pro',
+        touch_mode: true,
+        orientation: 'portrait',
+        capture_screenshots: 'per_action',
+        viewport: { width: 393, height: 852 },
+      }),
+      script: expect.objectContaining({
+        name: 'Imported TruClient Mobile Web',
+        protocol: 'browser',
+        project_id: 'project-1',
+      }),
+    }))
+    expect(apiMock.createScript).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('Browser replay validation started. Review the draft session before saving this import.')
+    expect(container.textContent).toContain('Session: draft-browser-validation')
+    expect(container.textContent).toContain('Status: running')
+  })
+
   it('opens a browser replay repair suggestion in the visual editor without an additional focus hint', async () => {
     const onEdit = vi.fn()
 

@@ -504,21 +504,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
     } finally { setWorkingMode(null) }
   }
 
-  const handleSaveConverted = async () => {
-    if (!importedScript) return
-    if (saveBlockedByMigrationPolicy) {
-      setError('Saving is disabled while migration readiness is blocked by the active policy. Relax the policy or resolve the blocking runtime settings first.')
-      return
-    }
-    try {
-      await api.createScript(importedScript, projectId)
-      onImported?.(importedScript)
-    } catch (error: unknown) {
-      setError(getErrorMessage(error, 'Failed to save script'))
-    }
-  }
-
-  const handleValidateBrowserReplay = async () => {
+  const startBrowserReplayValidation = async () => {
     if (!importedScript) return
     const script = toScriptDefinition(importedScript)
 
@@ -534,11 +520,38 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
       }))
       setReplayValidationSession(res.session)
       setReplayValidationWarnings(Array.isArray(res.warnings) ? res.warnings : [])
+      return true
     } catch (error: unknown) {
       setReplayValidationError(getErrorMessage(error, 'Browser replay validation failed'))
+      return false
     } finally {
       setReplayValidationLoading(false)
     }
+  }
+
+  const handleSaveConverted = async () => {
+    if (!importedScript) return
+    if (saveBlockedByMigrationPolicy) {
+      setError('Saving is disabled while migration readiness is blocked by the active policy. Relax the policy or resolve the blocking runtime settings first.')
+      return
+    }
+    if (browserImport && !replayValidationSession) {
+      const started = await startBrowserReplayValidation()
+      if (started) {
+        setNotice('Browser replay validation started. Review the draft session before saving this import.')
+      }
+      return
+    }
+    try {
+      await api.createScript(importedScript, projectId)
+      onImported?.(importedScript)
+    } catch (error: unknown) {
+      setError(getErrorMessage(error, 'Failed to save script'))
+    }
+  }
+
+  const handleValidateBrowserReplay = async () => {
+    await startBrowserReplayValidation()
   }
 
   return (
