@@ -479,6 +479,12 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
     setReplayValidationSession(null)
   }
 
+  const setBrowserReplayStartedNotice = (wasStarted: boolean) => {
+    setNotice(wasStarted
+      ? 'Browser replay validation restarted. Review the refreshed draft session before saving this import.'
+      : 'Browser replay validation started. Review the draft session before saving this import.')
+  }
+
   useEffect(() => {
     let cancelled = false
 
@@ -611,11 +617,10 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
       return
     }
     if (browserReplayNeedsRerun) {
+      const wasStarted = browserReplayWasStarted
       const started = await startBrowserReplayValidation()
       if (started) {
-        setNotice(replayValidationSession
-          ? 'Browser replay validation restarted. Review the refreshed draft session before saving this import.'
-          : 'Browser replay validation started. Review the draft session before saving this import.')
+        setBrowserReplayStartedNotice(wasStarted)
       }
       return
     }
@@ -628,7 +633,11 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
   }
 
   const handleValidateBrowserReplay = async () => {
-    await startBrowserReplayValidation()
+    const wasStarted = browserReplayWasStarted
+    const started = await startBrowserReplayValidation()
+    if (started) {
+      setBrowserReplayStartedNotice(wasStarted)
+    }
   }
 
   return (

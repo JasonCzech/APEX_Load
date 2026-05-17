@@ -1846,6 +1846,7 @@ describe('LoadRunnerImport', () => {
         project_id: 'project-1',
       }),
     }))
+    expect(container.textContent).toContain('Browser replay validation started. Review the draft session before saving this import.')
     expect(container.textContent).toContain('Session: draft-browser-validation')
     expect(container.textContent).toContain('Status: running')
     expect(container.textContent).toContain('selector repair recommended')
