@@ -26,11 +26,12 @@ DevWeb is OpenText's JavaScript-based protocol-level HTTP testing engine. Stormr
 | Data parameterization | ✅ Implemented | `engine/vuser.go` interpolate() |
 | Think time / pacing | ✅ Implemented | `engine/vuser.go`, `engine/pacing.go` |
 | Cross-platform execution | ✅ Implemented | Go binary |
+| WebSocket connect/send/receive/ping/close | ✅ Implemented | `pkg/protocol/websocket` |
+| WebSocket DSL config + engine wiring | ✅ Implemented | `pkg/dsl/types.go`, `pkg/engine/config.go` |
 
 ### Not Yet Implemented
 | DevWeb Capability | Priority | Notes |
 |:---|:---|:---|
-| WebSocket connections | High | New protocol: `pkg/protocol/websocket` |
 | gRPC calls (unary + streaming) | High | New protocol: `pkg/protocol/grpc` |
 | DevWeb `.js` script import | Medium | New converter: `pkg/convert/devweb` |
 | HAR file import | Medium | Separate from DevWeb but complementary |
@@ -421,19 +422,22 @@ Extend `pkg/engine/config.go` `buildProtoConfig()` for new protocols:
 // WebSocket config
 wsCfg := script.Config.WebSocket
 if wsCfg.ReadTimeoutMs > 0 {
-    cfg["ws_read_timeout_ms"] = float64(wsCfg.ReadTimeoutMs)
+    cfg["websocket_read_timeout_ms"] = float64(wsCfg.ReadTimeoutMs)
 }
 if wsCfg.WriteTimeoutMs > 0 {
-    cfg["ws_write_timeout_ms"] = float64(wsCfg.WriteTimeoutMs)
+    cfg["websocket_write_timeout_ms"] = float64(wsCfg.WriteTimeoutMs)
 }
 if wsCfg.MaxMessageSize > 0 {
-    cfg["ws_max_message_size"] = float64(wsCfg.MaxMessageSize)
+    cfg["websocket_max_message_size"] = float64(wsCfg.MaxMessageSize)
 }
 if wsCfg.Subprotocol != "" {
-    cfg["ws_subprotocol"] = wsCfg.Subprotocol
+    cfg["websocket_subprotocol"] = wsCfg.Subprotocol
+}
+if wsCfg.Origin != "" {
+    cfg["websocket_origin"] = wsCfg.Origin
 }
 if wsCfg.Compression {
-    cfg["ws_compression"] = true
+    cfg["websocket_compression"] = true
 }
 
 // gRPC config
@@ -473,16 +477,17 @@ if len(grpcCfg.Metadata) > 0 {
 
 | Test Area | File | Coverage |
 |:---|:---|:---|
-| WebSocket connect/send/receive/close | `websocket/websocket_test.go` | All action types against local echo server |
-| WebSocket config parsing | `websocket/websocket_test.go` | Timeout, subprotocol, compression |
+| WebSocket connect/send/receive/close | `pkg/protocol/websocket/websocket_test.go` | ✅ All action types against local echo server, plus message extractors |
+| WebSocket config parsing | `pkg/protocol/websocket/websocket_test.go` | ✅ Timeout, subprotocol, origin, compression |
+| WebSocket engine execution | `pkg/engine/websocket_integration_test.go` | ✅ Init/action/teardown script through the VUser engine |
 | gRPC unary invocation | `grpc/grpc_test.go` | Dynamic invoke with test proto |
 | gRPC streaming | `grpc/grpc_test.go` | Server-stream, client-stream, bidi |
 | gRPC reflection fallback | `grpc/grpc_test.go` | Reflection vs. file-based descriptors |
 | DevWeb JS parser | `convert/devweb/parser_test.go` | WebRequest, WebSocket, GrpcClient extraction |
 | DevWeb converter | `convert/devweb/converter_test.go` | SDK mapping, protocol detection, warnings |
 | HAR converter | `convert/har/converter_test.go` | Entry mapping, resource filtering, base URL |
-| Engine config wiring | `engine/config_test.go` | WebSocket and gRPC config propagation |
-| DSL parsing | `dsl/types_test.go` | New config fields serialize/deserialize |
+| Engine config wiring | `pkg/engine/config_test.go` | ✅ WebSocket config propagation; gRPC pending |
+| DSL parsing | `pkg/dsl/validate_test.go` | ✅ WebSocket config/action validation; gRPC pending |
 
 ### Benchmark Tests
 
@@ -498,7 +503,7 @@ if len(grpcCfg.Metadata) > 0 {
 
 | Phase | Milestone | Deliverables | Effort | Exit Criteria |
 |:---|:---|:---|:---|:---|
-| **Phase 1** | **WebSocket Protocol** | `pkg/protocol/websocket`, DSL config, engine wiring, action types, unit tests with echo server | 5-7 days | WebSocket script executes end-to-end through the engine with connect, send, receive, close |
+| **Phase 1** | **WebSocket Protocol** | ✅ `pkg/protocol/websocket`, DSL config, engine wiring, action types, unit tests with echo server | Complete | WebSocket script executes end-to-end through the engine with connect, send, receive, ping, close |
 | **Phase 2** | **gRPC Protocol** | `pkg/protocol/grpc`, proto file loading, dynamic invocation, streaming support, unit tests | 7-10 days | Unary and server-streaming gRPC calls execute with dynamic message construction |
 | **Phase 3** | **DevWeb Script Import** | `pkg/convert/devweb` parser and converter, API endpoint, unit tests | 3-5 days | DevWeb `.js` files with `load.WebRequest` calls convert to runnable HTTP DSL scripts |
 | **Phase 4** | **HAR Import** | `pkg/convert/har` converter, API endpoint, resource filtering, unit tests | 2-3 days | `.har` files from Chrome DevTools convert to HTTP DSL scripts |

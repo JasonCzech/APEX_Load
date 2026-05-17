@@ -51,6 +51,11 @@ func ValidateScriptIssues(script *Script) []string {
 			continue
 		}
 
+		if script.Protocol == "websocket" {
+			issues = append(issues, validateWebSocketActionIssues(i, action)...)
+			continue
+		}
+
 		if action.Target == "" {
 			issues = append(issues, fmt.Sprintf("actions[%d] %q: missing target", i, action.Name))
 		}
@@ -65,9 +70,55 @@ func ValidateScriptIssues(script *Script) []string {
 
 	issues = append(issues, validateParameterIssues(script)...)
 	issues = append(issues, validateBrowserConfigIssues(script)...)
+	issues = append(issues, validateWebSocketConfigIssues(script)...)
 	issues = append(issues, validateWebRuntimeIssues(script)...)
 	issues = append(issues, validateGoalConfigIssues(script.GoalConfig)...)
 
+	return issues
+}
+
+func validateWebSocketConfigIssues(script *Script) []string {
+	if script == nil || strings.TrimSpace(script.Protocol) != "websocket" {
+		return nil
+	}
+	cfg := script.Config.WebSocket
+	var issues []string
+	if cfg.ReadTimeoutMs < 0 {
+		issues = append(issues, "config.websocket.read_timeout_ms must be zero or greater")
+	}
+	if cfg.WriteTimeoutMs < 0 {
+		issues = append(issues, "config.websocket.write_timeout_ms must be zero or greater")
+	}
+	if cfg.MaxMessageSize < 0 {
+		issues = append(issues, "config.websocket.max_message_size must be zero or greater")
+	}
+	return issues
+}
+
+func validateWebSocketActionIssues(index int, action Action) []string {
+	label := fmt.Sprintf("actions[%d] %q", index, action.Name)
+	var issues []string
+	switch action.Type {
+	case "ws_connect":
+		if strings.TrimSpace(action.Target) == "" {
+			issues = append(issues, fmt.Sprintf("%s: missing target", label))
+		}
+	case "ws_send":
+		if action.Body == "" {
+			issues = append(issues, fmt.Sprintf("%s: ws_send requires body", label))
+		}
+		if messageType, ok := actionParamStringValue(action.Params, "type"); ok && !isAllowedValue(messageType, "text", "binary") {
+			issues = append(issues, fmt.Sprintf("%s: ws_send type must be text or binary", label))
+		}
+	case "ws_receive":
+		if timeoutMs, ok := actionParamIntValue(action.Params, "timeout_ms"); ok && timeoutMs < 0 {
+			issues = append(issues, fmt.Sprintf("%s: ws_receive timeout_ms must be zero or greater", label))
+		}
+	case "ws_close":
+	case "ws_ping":
+	default:
+		issues = append(issues, fmt.Sprintf("%s: unsupported websocket action type %q", label, action.Type))
+	}
 	return issues
 }
 

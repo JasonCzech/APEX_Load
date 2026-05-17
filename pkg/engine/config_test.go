@@ -671,3 +671,40 @@ func TestBuildProtoConfig_JMS(t *testing.T) {
 		t.Errorf("jms_mock = %v, want true", cfg["jms_mock"])
 	}
 }
+
+func TestBuildProtoConfig_WebSocket(t *testing.T) {
+	script := &dsl.Script{
+		Config: dsl.ScriptConfig{
+			BaseURL: "wss://api.example.test",
+			WebSocket: dsl.WebSocketConfig{
+				ReadTimeoutMs:  5000,
+				WriteTimeoutMs: 2500,
+				MaxMessageSize: 65536,
+				Subprotocol:    "graphql-ws",
+				Origin:         "https://app.example.test",
+				Compression:    true,
+			},
+		},
+	}
+
+	cfg := buildProtoConfig(script)
+
+	if cfg["websocket_read_timeout_ms"] != float64(5000) {
+		t.Errorf("websocket_read_timeout_ms = %v, want 5000", cfg["websocket_read_timeout_ms"])
+	}
+	if cfg["websocket_write_timeout_ms"] != float64(2500) {
+		t.Errorf("websocket_write_timeout_ms = %v, want 2500", cfg["websocket_write_timeout_ms"])
+	}
+	if cfg["websocket_max_message_size"] != float64(65536) {
+		t.Errorf("websocket_max_message_size = %v, want 65536", cfg["websocket_max_message_size"])
+	}
+	if cfg["websocket_subprotocol"] != "graphql-ws" {
+		t.Errorf("websocket_subprotocol = %v, want graphql-ws", cfg["websocket_subprotocol"])
+	}
+	if cfg["websocket_origin"] != "https://app.example.test" {
+		t.Errorf("websocket_origin = %v, want https://app.example.test", cfg["websocket_origin"])
+	}
+	if cfg["websocket_compression"] != true {
+		t.Errorf("websocket_compression = %v, want true", cfg["websocket_compression"])
+	}
+}

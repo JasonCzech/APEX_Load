@@ -348,6 +348,94 @@ func TestValidateScriptIssues_BrowserValidation(t *testing.T) {
 	assertIssue(t, issues, `actions[4] "bad long press": browser_long_press duration_ms must be greater than zero`)
 }
 
+func TestValidateScriptIssues_WebSocketValidation(t *testing.T) {
+	script := &Script{
+		Name:     "websocket-invalid",
+		Protocol: "websocket",
+		Config: ScriptConfig{
+			BaseURL: "wss://example.test",
+			WebSocket: WebSocketConfig{
+				ReadTimeoutMs:  -1,
+				WriteTimeoutMs: -2,
+				MaxMessageSize: -3,
+			},
+		},
+		Actions: []Action{{
+			Name: "missing target",
+			Type: "ws_connect",
+		}, {
+			Name: "missing body",
+			Type: "ws_send",
+		}, {
+			Name:   "bad type",
+			Type:   "ws_send",
+			Body:   "hello",
+			Params: map[string]any{"type": "stream"},
+		}, {
+			Name:   "bad timeout",
+			Type:   "ws_receive",
+			Params: map[string]any{"timeout_ms": -1},
+		}, {
+			Name: "unsupported",
+			Type: "ws_subscribe",
+		}},
+	}
+
+	issues := ValidateScriptIssues(script)
+
+	assertIssue(t, issues, "config.websocket.read_timeout_ms must be zero or greater")
+	assertIssue(t, issues, "config.websocket.write_timeout_ms must be zero or greater")
+	assertIssue(t, issues, "config.websocket.max_message_size must be zero or greater")
+	assertIssue(t, issues, `actions[0] "missing target": missing target`)
+	assertIssue(t, issues, `actions[1] "missing body": ws_send requires body`)
+	assertIssue(t, issues, `actions[2] "bad type": ws_send type must be text or binary`)
+	assertIssue(t, issues, `actions[3] "bad timeout": ws_receive timeout_ms must be zero or greater`)
+	assertIssue(t, issues, `actions[4] "unsupported": unsupported websocket action type "ws_subscribe"`)
+}
+
+func TestValidateScriptIssues_WebSocketValidationAllowsSupportedFields(t *testing.T) {
+	script := &Script{
+		Name:     "websocket-valid",
+		Protocol: "websocket",
+		Config: ScriptConfig{
+			BaseURL: "wss://example.test",
+			WebSocket: WebSocketConfig{
+				ReadTimeoutMs:  5000,
+				WriteTimeoutMs: 2500,
+				MaxMessageSize: 65536,
+				Subprotocol:    "graphql-ws",
+				Origin:         "https://app.example.test",
+				Compression:    true,
+			},
+		},
+		Actions: []Action{{
+			Name:   "connect",
+			Type:   "ws_connect",
+			Target: "/ws",
+		}, {
+			Name:   "send",
+			Type:   "ws_send",
+			Body:   `{"type":"ping"}`,
+			Params: map[string]any{"type": "text"},
+		}, {
+			Name:   "receive",
+			Type:   "ws_receive",
+			Params: map[string]any{"timeout_ms": 1000},
+		}, {
+			Name: "ping",
+			Type: "ws_ping",
+		}, {
+			Name: "close",
+			Type: "ws_close",
+		}},
+	}
+
+	issues := ValidateScriptIssues(script)
+	if len(issues) != 0 {
+		t.Fatalf("issues = %v, want none", issues)
+	}
+}
+
 func TestValidateScriptIssues_BrowserValidationAllowsSupportedFields(t *testing.T) {
 	touchMode := true
 	clientMetrics := true

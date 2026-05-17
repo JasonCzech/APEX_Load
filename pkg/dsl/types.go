@@ -53,6 +53,7 @@ type ScriptConfig struct {
 	Pacing        PacingConfig        `json:"pacing,omitempty"`
 	HTTP          HTTPConfig          `json:"http,omitempty"`
 	WebRuntime    WebRuntimeConfig    `json:"web_runtime,omitempty"`
+	WebSocket     WebSocketConfig     `json:"websocket,omitempty"`
 	JavaHTTP      JavaHTTPConfig      `json:"java_http,omitempty"`
 	SOAP          SOAPConfig          `json:"soap,omitempty"`
 	Browser       BrowserConfig       `json:"browser,omitempty"`
@@ -86,6 +87,15 @@ type JavaHTTPConfig struct {
 	ResponseMapping      map[string]string `json:"response_mapping,omitempty"`
 	ExtractorType        string            `json:"extractor_type,omitempty"`
 	PreserveBinaryResult bool              `json:"preserve_binary_result,omitempty"`
+}
+
+type WebSocketConfig struct {
+	ReadTimeoutMs  int    `json:"read_timeout_ms,omitempty"`
+	WriteTimeoutMs int    `json:"write_timeout_ms,omitempty"`
+	MaxMessageSize int64  `json:"max_message_size,omitempty"`
+	Subprotocol    string `json:"subprotocol,omitempty"`
+	Origin         string `json:"origin,omitempty"`
+	Compression    bool   `json:"compression,omitempty"`
 }
 
 type SOAPConfig struct {

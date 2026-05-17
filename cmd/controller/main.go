@@ -15,6 +15,7 @@ import (
 	_ "github.com/jasonczech/stormrunner/pkg/protocol/java_http"
 	_ "github.com/jasonczech/stormrunner/pkg/protocol/jms"
 	_ "github.com/jasonczech/stormrunner/pkg/protocol/soap"
+	_ "github.com/jasonczech/stormrunner/pkg/protocol/websocket"
 	"github.com/jasonczech/stormrunner/pkg/storage"
 )
 

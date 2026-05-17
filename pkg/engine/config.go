@@ -17,6 +17,7 @@ func buildProtoConfigWithSecretResolver(script *dsl.Script, resolver SecretResol
 
 	httpCfg := script.Config.HTTP
 	javaHTTPCfg := script.Config.JavaHTTP
+	webSocketCfg := script.Config.WebSocket
 	soapCfg := script.Config.SOAP
 
 	// Timeouts
@@ -100,6 +101,24 @@ func buildProtoConfigWithSecretResolver(script *dsl.Script, resolver SecretResol
 		if networkCfg.PacketLossPct > 0 {
 			cfg["web_network_simulation_packet_loss_pct"] = networkCfg.PacketLossPct
 		}
+	}
+	if webSocketCfg.ReadTimeoutMs > 0 {
+		cfg["websocket_read_timeout_ms"] = float64(webSocketCfg.ReadTimeoutMs)
+	}
+	if webSocketCfg.WriteTimeoutMs > 0 {
+		cfg["websocket_write_timeout_ms"] = float64(webSocketCfg.WriteTimeoutMs)
+	}
+	if webSocketCfg.MaxMessageSize > 0 {
+		cfg["websocket_max_message_size"] = float64(webSocketCfg.MaxMessageSize)
+	}
+	if webSocketCfg.Subprotocol != "" {
+		cfg["websocket_subprotocol"] = webSocketCfg.Subprotocol
+	}
+	if webSocketCfg.Origin != "" {
+		cfg["websocket_origin"] = webSocketCfg.Origin
+	}
+	if webSocketCfg.Compression {
+		cfg["websocket_compression"] = true
 	}
 	if javaHTTPCfg.Codec != "" {
 		cfg["java_http_codec"] = javaHTTPCfg.Codec
