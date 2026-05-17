@@ -2029,6 +2029,92 @@ describe('LoadRunnerImport', () => {
     }
   })
 
+  it('shows the replay-first save label for browser validation reviews', async () => {
+    apiMock.validateLoadRunnerImport.mockResolvedValueOnce({
+      script: {
+        name: 'Imported TruClient Mobile Web',
+        version: '1.0',
+        protocol: 'browser',
+        config: {
+          base_url: 'https://shop.example.test',
+          browser: {
+            engine: 'webkit',
+            headless: true,
+            device_profile: 'iphone_15_pro',
+            touch_mode: true,
+            orientation: 'portrait',
+            viewport: { width: 393, height: 852 },
+            capture_screenshots: 'on_failure',
+          },
+        },
+        actions: [
+          { name: 'Open Store', type: 'browser_navigate', url: '/store' },
+        ],
+      },
+      warnings: ['validation review'],
+      unsupported_elements: [],
+      assumptions: [],
+      review_sections: [],
+      repair_suggestions: [],
+      summary: {
+        project_file: 'default.xml',
+        mapped_runtime_file: '',
+        project_sections: [],
+        runtime_files: [],
+        migration_readiness: {
+          score_pct: 100,
+          blocked: false,
+          summary: 'Ready',
+          policy: { block_statuses: ['blocked'] },
+        },
+        unsupported_function_count: 0,
+      },
+      stats: {
+        total_functions: 1,
+        converted_actions: 1,
+        extractors: 0,
+        think_times: 0,
+        transactions: 0,
+        skipped: 0,
+      },
+    })
+
+    await act(async () => {
+      root.render(<LoadRunnerImport projectId="project-1" />)
+    })
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
+    expect(fileInput).not.toBeNull()
+    if (!fileInput) {
+      return
+    }
+
+    const file = new File(['zip-content'], 'truclient.zip', { type: 'application/zip' })
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [file],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const validateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Validate Only'))
+    expect(validateButton).toBeDefined()
+    if (!validateButton) {
+      return
+    }
+
+    await act(async () => {
+      validateButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushPromises()
+
+    const replayFirstSaveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Start Browser Replay Before Saving'))
+    expect(replayFirstSaveButton).toBeDefined()
+    expect(Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save Reviewed Script'))).toBeUndefined()
+  })
+
   it('opens a browser replay repair suggestion in the visual editor without an additional focus hint', async () => {
     const onEdit = vi.fn()
 

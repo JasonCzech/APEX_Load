@@ -250,6 +250,11 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
   const browserReplayInProgress = browserImport && (browserReplayStatus === 'queued' || browserReplayStatus === 'running' || browserReplayStatus === 'paused')
   const browserReplayNeedsRerun = browserImport && (replayValidationSession === null || browserReplayStatus === 'failed' || browserReplayStatus === 'stopped')
   const saveRequiresBrowserReplay = browserReplayNeedsRerun
+  const saveActionLabel = browserReplayInProgress
+    ? 'Browser Replay In Progress'
+    : (saveRequiresBrowserReplay
+        ? (replayValidationSession ? 'Rerun Browser Replay Before Saving' : 'Start Browser Replay Before Saving')
+        : (reviewMode === 'validation' ? 'Save Reviewed Script' : 'Save to Script Library'))
   const runtimeBlockingSettings = importSummary.runtimeSettingReadiness?.blocking_settings || []
   const generatedDataSources = importedScript
     ? (toScriptDefinition(importedScript).data_sources || []).map((source, index) => {
@@ -770,13 +775,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
             warnings={result.warnings}
             warningsTitle={`Conversion Warnings (${result.warnings.length})`}
             saveDisabled={saveBlockedByMigrationPolicy || replayValidationLoading || browserReplayInProgress}
-            saveLabel={reviewMode === 'validation'
-              ? 'Save Reviewed Script'
-              : (browserReplayInProgress
-                  ? 'Browser Replay In Progress'
-                  : (saveRequiresBrowserReplay
-                      ? (replayValidationSession ? 'Rerun Browser Replay Before Saving' : 'Start Browser Replay Before Saving')
-                      : 'Save to Script Library'))}
+            saveLabel={saveActionLabel}
             onSave={handleSaveConverted}
             onEdit={onEdit ? () => openImportedScriptInEditor() : undefined}
           >
