@@ -305,6 +305,7 @@ Progress:
 - G1.1/G1.2 are implemented with support for trusted-header gateway auth and native OIDC, with trusted headers still recommended when an upstream identity gateway already owns browser sign-in.
 - G1.3 now has OIDC provider presets in the dashboard settings UX for Microsoft Entra ID and generic OIDC. Presets apply safe defaults for provider labels, scopes, RBAC claim names, secret environment-variable names, and post-logout redirect behavior while preserving deployment-specific issuer URL, client ID, and redirect URL values.
 - G1.4 now includes backend-owned auth diagnostics for trusted-header and OIDC readiness, current-session state, issuer discovery, and local session expiry/invalid-cookie states.
+- G1.5 now has self-hosted break-glass bootstrap and recovery guidance in `docs/AUTH_RBAC_OPERATIONS_RUNBOOK.md`, including temporary `dev` mode controls, production-mode restoration, diagnostics checks, and audit export expectations for the recovery window.
 - Native SAML is intentionally out of scope for this wave; SAML-backed deployments should terminate at an upstream gateway and use the trusted-header contract.
 
 ### Epic G2: RBAC Coverage And Enforcement
@@ -341,6 +342,7 @@ Acceptance criteria:
 
 Progress:
 - G3.2 has an audit-export slice: `GET /api/v1/auth/audit-events/export` emits filtered CSV evidence through the same system-admin RBAC boundary as audit viewing, and the dashboard settings audit panel can download the current action/actor/status filtered result set.
+- G3.4 now has the first auth/RBAC operations runbook covering supported production modes, OIDC bootstrap, trusted-header claim contracts, break-glass recovery, service-account handling, audit export, and common recovery checks.
 - G3.5 has a first hardening pass: native OIDC logout is a CSRF-protected `POST`, `/auth/me` reports session expiry metadata, the dashboard warns on imminent local-session expiry, and representative OIDC callback failures are audited without persisting authorization codes, raw tokens, client secrets, or signed cookie material.
 
 ### Epic G4: Directory And Lifecycle Extensions
