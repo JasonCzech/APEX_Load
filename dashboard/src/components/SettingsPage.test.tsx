@@ -675,6 +675,60 @@ describe('SettingsPage', () => {
     expect(container.textContent).toContain('Settings saved.')
   })
 
+  it('applies OIDC provider presets without overwriting deployment-specific values', async () => {
+    await act(async () => {
+      root.render(<SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+
+    await flushPromises()
+
+    const generalSection = container.querySelector('#settings-section-general')
+    expect(generalSection).toBeTruthy()
+    if (!generalSection) return
+
+    const authModeSelect = findSettingSelect(generalSection, 'Access Control Mode')
+    expect(authModeSelect).toBeTruthy()
+    if (!authModeSelect) return
+
+    await setFieldValue(authModeSelect, 'oidc')
+
+    const issuerInput = findSettingInput(generalSection, 'Issuer URL')
+    const clientIDInput = findSettingInput(generalSection, 'Client ID')
+    const redirectURLInput = findSettingInput(generalSection, 'Redirect URL')
+    expect(issuerInput).toBeTruthy()
+    expect(clientIDInput).toBeTruthy()
+    expect(redirectURLInput).toBeTruthy()
+    if (!issuerInput || !clientIDInput || !redirectURLInput) return
+
+    await setFieldValue(issuerInput, 'https://idp.example.test/tenant')
+    await setFieldValue(clientIDInput, 'existing-client')
+    await setFieldValue(redirectURLInput, 'https://stormrunner.example.test/api/v1/auth/callback')
+
+    const entraPresetButton = findButton('Microsoft Entra ID OIDC')
+    expect(entraPresetButton).toBeDefined()
+    if (!entraPresetButton) return
+
+    await act(async () => {
+      entraPresetButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const providerInput = findSettingInput(generalSection, 'Provider Label')
+    const scopesInput = findSettingInput(generalSection, 'Scopes')
+    const rolesClaimInput = findSettingInput(generalSection, 'Roles Claim')
+    const projectRolesClaimInput = findSettingInput(generalSection, 'Project Roles Claim')
+    const logoutInput = findSettingInput(generalSection, 'Post-Logout Redirect URL')
+
+    expect(providerInput?.value).toBe('Microsoft Entra ID')
+    expect(scopesInput?.value).toBe('openid, profile, email')
+    expect(rolesClaimInput?.value).toBe('roles')
+    expect(projectRolesClaimInput?.value).toBe('project_roles')
+    expect(logoutInput?.value).toBe('/')
+    expect(issuerInput.value).toBe('https://idp.example.test/tenant')
+    expect(clientIDInput.value).toBe('existing-client')
+    expect(redirectURLInput.value).toBe('https://stormrunner.example.test/api/v1/auth/callback')
+    expect(generalSection.textContent).toContain('Issuer URL, client ID, and redirect URL stay deployment-specific.')
+  })
+
   it('shows dev-mode auth admin panels and provisions service accounts', async () => {
     apiMock.listAuthServiceAccounts
       .mockResolvedValueOnce({

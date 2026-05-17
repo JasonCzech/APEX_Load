@@ -303,6 +303,7 @@ Acceptance criteria:
 
 Progress:
 - G1.1/G1.2 are implemented with support for trusted-header gateway auth and native OIDC, with trusted headers still recommended when an upstream identity gateway already owns browser sign-in.
+- G1.3 now has OIDC provider presets in the dashboard settings UX for Microsoft Entra ID and generic OIDC. Presets apply safe defaults for provider labels, scopes, RBAC claim names, secret environment-variable names, and post-logout redirect behavior while preserving deployment-specific issuer URL, client ID, and redirect URL values.
 - G1.4 now includes backend-owned auth diagnostics for trusted-header and OIDC readiness, current-session state, issuer discovery, and local session expiry/invalid-cookie states.
 - Native SAML is intentionally out of scope for this wave; SAML-backed deployments should terminate at an upstream gateway and use the trusted-header contract.
 

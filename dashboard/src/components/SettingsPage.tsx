@@ -73,6 +73,33 @@ const GENERATOR_PRESETS = [
   { id: 'large', label: 'Large Pod', cpu_cores: 8, memory_mb: 16384, network_mbps: 2500, max_vusers: 20000 },
 ] as const
 
+const OIDC_PROVIDER_PRESETS = [
+  {
+    id: 'entra',
+    label: 'Microsoft Entra ID OIDC',
+    provider_name: 'Microsoft Entra ID',
+    scopes: ['openid', 'profile', 'email'],
+    roles_claim: 'roles',
+    project_roles_claim: 'project_roles',
+    client_secret_env_var: 'STORMRUNNER_OIDC_CLIENT_SECRET',
+    session_secret_env_var: 'STORMRUNNER_AUTH_SESSION_SECRET',
+    logout_url: '/',
+    description: 'Uses Entra application roles or shaped group claims for Stormrunner RBAC.',
+  },
+  {
+    id: 'generic',
+    label: 'Generic OIDC',
+    provider_name: 'OIDC Provider',
+    scopes: ['openid', 'profile', 'email'],
+    roles_claim: 'roles',
+    project_roles_claim: 'project_roles',
+    client_secret_env_var: 'STORMRUNNER_OIDC_CLIENT_SECRET',
+    session_secret_env_var: 'STORMRUNNER_AUTH_SESSION_SECRET',
+    logout_url: '/',
+    description: 'Keeps the standard OIDC scope and claim contract for any compliant issuer.',
+  },
+] as const
+
 type SettingsSectionId = typeof SETTINGS_SECTIONS[number]['id']
 
 type DraftRedactionRule = {
@@ -1279,6 +1306,25 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
     setRequestError('')
   }
 
+  const applyOIDCProviderPreset = (preset: typeof OIDC_PROVIDER_PRESETS[number]) => {
+    setSettings(prev => ({
+      ...prev,
+      auth: {
+        ...prev.auth,
+        mode: 'oidc',
+        provider_name: preset.provider_name,
+        scopes: [...preset.scopes],
+        roles_claim: preset.roles_claim,
+        project_roles_claim: preset.project_roles_claim,
+        client_secret_env_var: preset.client_secret_env_var,
+        session_secret_env_var: preset.session_secret_env_var,
+        logout_url: preset.logout_url,
+      },
+    }))
+    setSaveMessage('')
+    setRequestError('')
+  }
+
   const applyLiveGeneratorPreset = async () => {
     try {
       const inventory = await api.getSystemInventory()
@@ -2056,6 +2102,20 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
               )}
               {settings.auth.mode === 'oidc' && (
                 <>
+                  <div className="settings-subsection">
+                    <div>
+                      <span className="setting-label">OIDC Provider Presets</span>
+                      <span className="setting-desc">Apply safe provider defaults for label, scopes, claim names, and secret environment variables. Issuer URL, client ID, and redirect URL stay deployment-specific.</span>
+                    </div>
+                    <div className="settings-preset-row">
+                      {OIDC_PROVIDER_PRESETS.map(preset => (
+                        <button key={preset.id} type="button" className="btn btn-secondary" onClick={() => applyOIDCProviderPreset(preset)}>
+                          {preset.label}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="setting-desc">{OIDC_PROVIDER_PRESETS.find(preset => preset.provider_name === settings.auth.provider_name)?.description || 'Choose a preset, then fill the issuer, client, and callback values registered with your identity provider.'}</p>
+                  </div>
                   <div className="setting-row">
                     <div className="setting-info">
                       <span className="setting-label">Provider Label</span>
