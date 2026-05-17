@@ -59,6 +59,8 @@ var (
 	reJQueryClick        = regexp.MustCompile(`^\$\(\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\)\.click\(\s*\)$`)
 	reQuerySelectorClick = regexp.MustCompile(`^document\.querySelector\(\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\)\.click\(\s*\)$`)
 	reQuerySelectorValue = regexp.MustCompile(`^document\.querySelector\(\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\)\.value\s*=\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')$`)
+	reElementByIDClick   = regexp.MustCompile(`^document\.getElementById\(\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\)\.click\(\s*\)$`)
+	reElementByIDValue   = regexp.MustCompile(`^document\.getElementById\(\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\)\.value\s*=\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')$`)
 	reWindowScroll       = regexp.MustCompile(`^window\.scroll(?:To|By)\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\)$`)
 	reLocationAssign     = regexp.MustCompile(`^(?:window\.)?location(?:\.href)?\s*=\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')$`)
 	reLocationMethod     = regexp.MustCompile(`^(?:window\.)?location\.(?:assign|replace)\(\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\)$`)
@@ -776,6 +778,27 @@ func convertJavaScriptStatement(statement string, baseName string, position int)
 			Value:    value,
 		}, true
 	}
+	if matches := reElementByIDValue.FindStringSubmatch(statement); len(matches) == 3 {
+		id, ok := decodeJSStringLiteral(matches[1])
+		if !ok {
+			return dsl.Action{}, false
+		}
+		value, ok := decodeJSStringLiteral(matches[2])
+		if !ok {
+			return dsl.Action{}, false
+		}
+		selector := elementIDSelector(id)
+		if selector == "" {
+			return dsl.Action{}, false
+		}
+		return dsl.Action{
+			Name:     fmt.Sprintf("%s Fill %d", baseName, position),
+			Type:     "browser_fill",
+			Target:   selector,
+			Selector: selector,
+			Value:    value,
+		}, true
+	}
 	if matches := reJQueryClick.FindStringSubmatch(statement); len(matches) == 2 {
 		selector, ok := decodeJSStringLiteral(matches[1])
 		if !ok {
@@ -791,6 +814,22 @@ func convertJavaScriptStatement(statement string, baseName string, position int)
 	if matches := reQuerySelectorClick.FindStringSubmatch(statement); len(matches) == 2 {
 		selector, ok := decodeJSStringLiteral(matches[1])
 		if !ok {
+			return dsl.Action{}, false
+		}
+		return dsl.Action{
+			Name:     fmt.Sprintf("%s Click %d", baseName, position),
+			Type:     "browser_click",
+			Target:   selector,
+			Selector: selector,
+		}, true
+	}
+	if matches := reElementByIDClick.FindStringSubmatch(statement); len(matches) == 2 {
+		id, ok := decodeJSStringLiteral(matches[1])
+		if !ok {
+			return dsl.Action{}, false
+		}
+		selector := elementIDSelector(id)
+		if selector == "" {
 			return dsl.Action{}, false
 		}
 		return dsl.Action{
@@ -829,6 +868,14 @@ func convertJavaScriptStatement(statement string, baseName string, position int)
 		return action, true
 	}
 	return dsl.Action{}, false
+}
+
+func elementIDSelector(id string) string {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return ""
+	}
+	return "#" + strings.ReplaceAll(id, `"`, `\"`)
 }
 
 func convertJavaScriptLocationNavigation(statement string, baseName string, position int) (dsl.Action, bool) {
