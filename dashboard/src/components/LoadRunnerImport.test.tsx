@@ -2817,7 +2817,8 @@ describe('LoadRunnerImport', () => {
 
     await flushPromises()
 
-    expect(container.textContent).toContain('Run browser replay before saving as production-ready')
+    expect(container.textContent).toContain('Run draft browser replay before saving as production-ready')
+    expect(container.textContent).toContain('Open the imported draft in the visual editor and run draft browser replay. Update selectors or waits for any failed action.')
 
     const openImportedScriptButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Open Imported Script In Editor'))
     expect(openImportedScriptButton).toBeDefined()

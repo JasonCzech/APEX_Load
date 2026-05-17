@@ -112,6 +112,14 @@ function formatRuntimeSettingStatusLabel(status?: string | null) {
   return normalized.replace(/\b\w/g, char => char.toUpperCase())
 }
 
+function normalizeReplaySuggestionCopy(value?: string | null) {
+  if (!value) return ''
+
+  return value.replace(/\bbrowser replay\b/gi, (match) => (
+    match[0] === 'B' ? 'Draft Browser Replay' : 'draft browser replay'
+  ))
+}
+
 function formatMigrationBlockPolicySummary(options: Pick<ImportOptions, 'block_partial' | 'block_compatibility_only' | 'block_non_applicable'>) {
   return buildMigrationBlockStatuses(options)
     .map((status) => formatRuntimeSettingStatusLabel(status))
@@ -908,15 +916,26 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
             {repairSuggestions.length > 0 && (
               <div className="lr-warnings">
                 <h4>Repair Suggestions ({repairSuggestions.length})</h4>
-                {repairSuggestions.map(suggestion => (
+                {repairSuggestions.map(suggestion => {
+                  const suggestionTitle = suggestion.category === 'replay'
+                    ? normalizeReplaySuggestionCopy(suggestion.title)
+                    : suggestion.title
+                  const suggestionDescription = suggestion.category === 'replay'
+                    ? normalizeReplaySuggestionCopy(suggestion.description)
+                    : suggestion.description
+                  const suggestionAction = suggestion.category === 'replay'
+                    ? normalizeReplaySuggestionCopy(suggestion.action)
+                    : suggestion.action
+
+                  return (
                   <div key={suggestion.id} className="lr-review-section">
                     <div className="lr-review-section-header">
-                      <strong>{suggestion.title}</strong>
+                      <strong>{suggestionTitle}</strong>
                       <span>{suggestion.severity}</span>
                     </div>
                     {suggestion.target_action && <p>Action: {suggestion.target_action}</p>}
-                    {suggestion.description && <p>{suggestion.description}</p>}
-                    {suggestion.action && <ul><li>{suggestion.action}</li></ul>}
+                    {suggestionDescription && <p>{suggestionDescription}</p>}
+                    {suggestionAction && <ul><li>{suggestionAction}</li></ul>}
                     {suggestion.target_action && onEdit && (
                       renderEditorActionButtons([
                         {
@@ -955,7 +974,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
                       ])
                     )}
                   </div>
-                ))}
+                )})}
               </div>
             )}
 
