@@ -428,6 +428,64 @@ func TestHandleImportSampleBadRequest(t *testing.T) {
 	}
 }
 
+func TestHandleImportDevWebJSON(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	payload := map[string]any{
+		"name": "Socket Import",
+		"content": `
+load.action("Socket Flow", async function() {
+  const ws = new load.WebSocket("wss://stream.example.test/orders");
+  ws.send("{\"type\":\"subscribe\"}");
+  ws.receive();
+  ws.close();
+});`,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("json.Marshal returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/devweb", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var result struct {
+		Script struct {
+			Name     string `json:"name"`
+			Protocol string `json:"protocol"`
+			Actions  []struct {
+				Type string `json:"type"`
+				Body string `json:"body"`
+			} `json:"actions"`
+		} `json:"script"`
+		Stats struct {
+			ConvertedActions int `json:"converted_actions"`
+			WebSocketActions int `json:"websocket_actions"`
+		} `json:"stats"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if result.Script.Name != "Socket_Import" {
+		t.Fatalf("script name = %q, want Socket_Import", result.Script.Name)
+	}
+	if result.Script.Protocol != "websocket" {
+		t.Fatalf("protocol = %q, want websocket", result.Script.Protocol)
+	}
+	if result.Stats.ConvertedActions != 4 || result.Stats.WebSocketActions != 4 {
+		t.Fatalf("stats = %#v", result.Stats)
+	}
+	if result.Script.Actions[1].Body != `{"type":"subscribe"}` {
+		t.Fatalf("send body = %q", result.Script.Actions[1].Body)
+	}
+}
+
 func TestHandleImportLoadRunnerReturnsStandardizedEnvelope(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	var body bytes.Buffer

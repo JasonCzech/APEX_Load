@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/jasonczech/stormrunner/pkg/convert/devweb"
 	"github.com/jasonczech/stormrunner/pkg/convert/jmeter"
 	"github.com/jasonczech/stormrunner/pkg/convert/loadrunner"
 	"github.com/jasonczech/stormrunner/pkg/convert/sample"
@@ -28,6 +29,14 @@ type loadRunnerImportRequest struct {
 	ProjectID       string
 	Opts            loadrunner.ConvertOptions
 	ReadinessPolicy loadrunner.RuntimeSettingMigrationPolicy
+}
+
+type devWebImportRequest struct {
+	Data      []byte
+	ProjectID string
+	Name      string
+	IsZip     bool
+	Opts      devweb.ConvertOptions
 }
 
 type loadRunnerImportSummary struct {
@@ -142,6 +151,110 @@ func (s *Server) handleLoadRunnerSupportMatrix(w http.ResponseWriter, r *http.Re
 		"notes":           loadrunner.GetRTSSupportMatrixNotes(),
 		"tested_examples": loadrunner.GetRTSSupportMatrixExamples(),
 	})
+}
+
+// handleImportDevWeb handles POST /api/v1/scripts/import/devweb.
+// Accepts JSON, raw .js, raw .zip, or multipart uploads and returns a generated script preview.
+func (s *Server) handleImportDevWeb(w http.ResponseWriter, r *http.Request) {
+	importReq, ok := readDevWebImportRequest(w, r)
+	if !ok {
+		return
+	}
+
+	var (
+		result *devweb.ConvertResult
+		err    error
+	)
+	if importReq.IsZip {
+		result, err = devweb.ConvertZip(importReq.Data, importReq.Opts)
+	} else {
+		result, err = devweb.Convert(devweb.ImportRequest{
+			Name:      importReq.Name,
+			ProjectID: importReq.ProjectID,
+			Content:   string(importReq.Data),
+			Options:   importReq.Opts,
+		})
+	}
+	if err != nil {
+		writeError(w, http.StatusUnprocessableEntity, "conversion failed: "+err.Error())
+		return
+	}
+	if result.Script != nil {
+		result.Script.ProjectID = normalizeProjectID(importReq.ProjectID)
+	}
+	issues := validateScript(result.Script)
+	if len(issues) > 0 {
+		result.Warnings = append(result.Warnings, issues...)
+	}
+
+	writeJSON(w, http.StatusOK, newScriptImportResponse(scriptImportResponseOptions{
+		Result:   result,
+		Script:   result.Script,
+		Warnings: result.Warnings,
+		Stats:    result.Stats,
+	}))
+}
+
+func readDevWebImportRequest(w http.ResponseWriter, r *http.Request) (*devWebImportRequest, bool) {
+	r.Body = http.MaxBytesReader(w, r.Body, 20<<20)
+	contentType := r.Header.Get("Content-Type")
+	if strings.HasPrefix(contentType, "application/json") {
+		var req devweb.ImportRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+			return nil, false
+		}
+		return &devWebImportRequest{
+			Data:      []byte(req.Content),
+			ProjectID: req.ProjectID,
+			Name:      req.Name,
+			Opts:      req.Options,
+		}, true
+	}
+
+	if strings.HasPrefix(contentType, "multipart/form-data") {
+		if err := r.ParseMultipartForm(20 << 20); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid multipart form: "+err.Error())
+			return nil, false
+		}
+		file, header, err := r.FormFile("file")
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "file field is required")
+			return nil, false
+		}
+		defer file.Close()
+		data, err := io.ReadAll(file)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "failed to read uploaded file: "+err.Error())
+			return nil, false
+		}
+		opts := devweb.ConvertOptions{
+			BaseURL: r.FormValue("base_url"),
+		}
+		return &devWebImportRequest{
+			Data:      data,
+			ProjectID: r.FormValue("project_id"),
+			Name:      strings.TrimSuffix(header.Filename, filepath.Ext(header.Filename)),
+			IsZip:     strings.EqualFold(filepath.Ext(header.Filename), ".zip"),
+			Opts:      opts,
+		}, true
+	}
+
+	data, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "failed to read request body: "+err.Error())
+		return nil, false
+	}
+	filename := r.URL.Query().Get("filename")
+	return &devWebImportRequest{
+		Data:      data,
+		ProjectID: r.URL.Query().Get("project_id"),
+		Name:      strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename)),
+		IsZip:     strings.EqualFold(filepath.Ext(filename), ".zip") || strings.HasPrefix(contentType, "application/zip"),
+		Opts: devweb.ConvertOptions{
+			BaseURL: r.URL.Query().Get("base_url"),
+		},
+	}, true
 }
 
 func readJMeterImportRequest(w http.ResponseWriter, r *http.Request) (*jmeterImportRequest, bool) {
