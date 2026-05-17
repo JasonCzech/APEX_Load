@@ -1944,18 +1944,21 @@ describe('LoadRunnerImport', () => {
         skipped: 0,
       },
     })
-    apiMock.startDraftBrowserReplaySession.mockResolvedValueOnce({
-      script_id: '',
-      replay_session_id: 'draft-browser-validation',
+    let resolveReplayStart: ((value: {
+      script_id: string
+      replay_session_id: string
       session: {
-        id: 'draft-browser-validation',
-        status: 'running',
-        group: 'default',
-        protocol: 'browser',
-        current_event_index: 0,
-      },
-      warnings: ['selector repair recommended'],
-    })
+        id: string
+        status: string
+        group: string
+        protocol: string
+        current_event_index: number
+      }
+      warnings: string[]
+    }) => void) | null = null
+    apiMock.startDraftBrowserReplaySession.mockReturnValueOnce(new Promise((resolve) => {
+      resolveReplayStart = resolve
+    }))
     apiMock.getBrowserReplaySession.mockResolvedValueOnce({
       session: {
         id: 'draft-browser-validation',
@@ -2011,6 +2014,29 @@ describe('LoadRunnerImport', () => {
 
       await flushPromises()
 
+      expect(apiMock.createScript).not.toHaveBeenCalled()
+      expect(container.textContent).toContain('Starting')
+      expect(container.textContent).toContain('Browser Replay In Progress')
+      expect(container.textContent).toContain('Review the generated script, preserved metadata, and warnings. Wait for the draft browser replay to finish before saving.')
+      expect(container.textContent).toContain('Wait for the draft replay to finish before saving it to the library.')
+
+      await act(async () => {
+        resolveReplayStart?.({
+          script_id: '',
+          replay_session_id: 'draft-browser-validation',
+          session: {
+            id: 'draft-browser-validation',
+            status: 'running',
+            group: 'default',
+            protocol: 'browser',
+            current_event_index: 0,
+          },
+          warnings: ['selector repair recommended'],
+        })
+      })
+
+      await flushPromises()
+
       expect(apiMock.startDraftBrowserReplaySession).toHaveBeenCalledWith(expect.objectContaining({
         ignore_think_time: true,
         browser: expect.objectContaining({
@@ -2028,7 +2054,6 @@ describe('LoadRunnerImport', () => {
           project_id: 'project-1',
         }),
       }))
-      expect(apiMock.createScript).not.toHaveBeenCalled()
       expect(container.textContent).toContain('Browser replay validation started. Review the draft session before saving this import.')
       expect(container.textContent).toContain('Session: draft-browser-validation')
       expect(container.textContent).toContain('Status: Running')
