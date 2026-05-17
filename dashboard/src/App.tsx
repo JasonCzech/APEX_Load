@@ -5,13 +5,7 @@ import { ApplicationProvider } from './hooks/ApplicationProvider'
 import { useApplication } from './hooks/useApplication'
 import { MetricsHistoryPoint, TelemetryDiagnostic, TelemetryDiagnosticEntry, WSMessage } from './types'
 import Sidebar, { NavPage } from './components/Sidebar'
-import TestHub from './components/TestHub'
-import TestExecution from './components/TestExecution'
 import DashboardPage from './components/DashboardPage'
-import ResultsPage from './components/ResultsPage'
-import NewTestPage from './components/NewTestPage'
-import MonitoringPage from './components/MonitoringPage'
-import SettingsPage from './components/SettingsPage'
 import { appendTelemetryDiagnostic } from './components/monitoringTelemetryDiagnostics'
 import AuthGate from './components/AuthGate'
 import { useAuthStatus } from './hooks/useAuthStatus'
@@ -21,6 +15,12 @@ import './App.css'
 import './components/Pages.css'
 
 const ScriptsPage = lazy(() => import('./components/ScriptsPage'))
+const TestHub = lazy(() => import('./components/TestHub'))
+const TestExecution = lazy(() => import('./components/TestExecution'))
+const ResultsPage = lazy(() => import('./components/ResultsPage'))
+const NewTestPage = lazy(() => import('./components/NewTestPage'))
+const MonitoringPage = lazy(() => import('./components/MonitoringPage'))
+const SettingsPage = lazy(() => import('./components/SettingsPage'))
 
 type View =
   | { page: NavPage }
@@ -128,54 +128,54 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
         onCreateApplication={createAndSelectApplication}
       />
       <main className="main-content">
-        {view.page === 'dashboard' && (
-          <DashboardPage
-            testStatuses={testStatuses}
-            metricsHistory={metricsHistory}
-            connectionState={connectionState}
-            onSelectTest={navigateToTest}
-            onNavigate={handleNavigate}
-          />
-        )}
-        {view.page === 'tests' && (
-          <TestHub
-            testStatuses={testStatuses}
-            onSelectTest={navigateToTest}
-          />
-        )}
-        {view.page === 'new-test' && (
-          <NewTestPage
-            activeApplication={activeApplication}
-            activeRelease={activeRelease}
-            releases={releases}
-            onSelectTest={navigateToTest}
-            onCreateRelease={createAndSelectRelease}
-          />
-        )}
-        {view.page === 'test' && (
-          <TestExecution
-            testId={view.testId}
-            history={metricsHistory[view.testId] || []}
-            onBack={() => setView({ page: 'tests' })}
-            onEditScript={navigateToScriptEdit}
-            onSelectTest={navigateToTest}
-          />
-        )}
-        {view.page === 'scripts' && (
-          <Suspense fallback={<div className="page">Loading scripts...</div>}>
+        <Suspense fallback={<div className="page">Loading page...</div>}>
+          {view.page === 'dashboard' && (
+            <DashboardPage
+              testStatuses={testStatuses}
+              metricsHistory={metricsHistory}
+              connectionState={connectionState}
+              onSelectTest={navigateToTest}
+              onNavigate={handleNavigate}
+            />
+          )}
+          {view.page === 'tests' && (
+            <TestHub
+              testStatuses={testStatuses}
+              onSelectTest={navigateToTest}
+            />
+          )}
+          {view.page === 'new-test' && (
+            <NewTestPage
+              activeApplication={activeApplication}
+              activeRelease={activeRelease}
+              releases={releases}
+              onSelectTest={navigateToTest}
+              onCreateRelease={createAndSelectRelease}
+            />
+          )}
+          {view.page === 'test' && (
+            <TestExecution
+              testId={view.testId}
+              history={metricsHistory[view.testId] || []}
+              onBack={() => setView({ page: 'tests' })}
+              onEditScript={navigateToScriptEdit}
+              onSelectTest={navigateToTest}
+            />
+          )}
+          {view.page === 'scripts' && (
             <ScriptsPage initialMode={scriptMode} initialEditId={scriptEditId} onSelectScenario={navigateToTest} />
-          </Suspense>
-        )}
-        {view.page === 'results' && (
-          <ResultsPage
-            testStatuses={testStatuses}
-            onSelectTest={navigateToTest}
-            activeApplication={activeApplication}
-            activeRelease={activeRelease}
-          />
-        )}
-        {view.page === 'monitoring' && <MonitoringPage connectionState={connectionState} telemetryDiagnostics={telemetryDiagnostics} />}
-        {view.page === 'settings' && <SettingsPage theme={theme} onThemeChange={setTheme} authStatus={authStatus} />}
+          )}
+          {view.page === 'results' && (
+            <ResultsPage
+              testStatuses={testStatuses}
+              onSelectTest={navigateToTest}
+              activeApplication={activeApplication}
+              activeRelease={activeRelease}
+            />
+          )}
+          {view.page === 'monitoring' && <MonitoringPage connectionState={connectionState} telemetryDiagnostics={telemetryDiagnostics} />}
+          {view.page === 'settings' && <SettingsPage theme={theme} onThemeChange={setTheme} authStatus={authStatus} />}
+        </Suspense>
       </main>
     </div>
   )
