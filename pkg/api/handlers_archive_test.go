@@ -276,6 +276,38 @@ func TestArchiveQueryEndpoints(t *testing.T) {
 	})
 }
 
+func TestArchiveReportReturnsNotFoundWhenManifestMissing(t *testing.T) {
+	archiveDir := t.TempDir()
+	store := &metricsStoreSpy{
+		listedTests: []*storage.TestRecord{{
+			ID:          "test-missing-archive",
+			Name:        "Recovered Run",
+			Status:      "COMPLETE",
+			ProjectID:   storage.DefaultProjectID,
+			TotalVUsers: 1,
+		}},
+		archiveByTestID: map[string]*storage.RunArchiveRecord{
+			"test-missing-archive": {
+				TestID:       "test-missing-archive",
+				ArchivePath:  archiveDir,
+				ManifestPath: filepath.Join(archiveDir, "manifest.json"),
+			},
+		},
+	}
+	server := NewServer(ServerConfig{Store: store})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/test-missing-archive/archive/report", nil)
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusNotFound {
+		t.Fatalf("report status = %d, want %d body=%s", resp.Code, http.StatusNotFound, resp.Body.String())
+	}
+	if !strings.Contains(resp.Body.String(), "archive not found") {
+		t.Fatalf("expected archive not found error, got %q", resp.Body.String())
+	}
+}
+
 func TestArchiveTransactionsApplyConfiguredRedactionRules(t *testing.T) {
 	archiveDir := t.TempDir()
 	t.Setenv("STORMRUNNER_ARCHIVE_DIR", archiveDir)

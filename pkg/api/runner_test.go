@@ -1977,7 +1977,12 @@ func TestScriptAndTestCrudPersistThroughStoreHelpers(t *testing.T) {
 }
 
 func TestNewTestRunnerLoadsPersistedScriptsAndTests(t *testing.T) {
-	archive := &storage.RunArchiveRecord{TestID: "test-1", ArchivePath: "/tmp/archive", ManifestPath: "/tmp/archive/manifest.json"}
+	archiveDir := t.TempDir()
+	manifestPath := filepath.Join(archiveDir, "manifest.json")
+	if err := os.WriteFile(manifestPath, []byte(`{"test_id":"test-1"}`), 0o644); err != nil {
+		t.Fatalf("WriteFile returned error: %v", err)
+	}
+	archive := &storage.RunArchiveRecord{TestID: "test-1", ArchivePath: archiveDir, ManifestPath: manifestPath}
 	store := &metricsStoreSpy{
 		listedScripts: []*dsl.Script{{
 			ID:        "script-1",
@@ -2040,6 +2045,37 @@ func TestNewTestRunnerLoadsPersistedScriptsAndTests(t *testing.T) {
 	}
 	if cachedArchive, ok := runner.GetRunArchive("test-1"); !ok || cachedArchive != archive {
 		t.Fatalf("expected archive cache lookup to return persisted archive, got %#v ok=%v", cachedArchive, ok)
+	}
+}
+
+func TestNewTestRunnerSkipsPersistedArchiveWhenManifestMissing(t *testing.T) {
+	archiveDir := t.TempDir()
+	archive := &storage.RunArchiveRecord{
+		TestID:       "test-1",
+		ArchivePath:  archiveDir,
+		ManifestPath: filepath.Join(archiveDir, "manifest.json"),
+	}
+	store := &metricsStoreSpy{
+		listedTests: []*storage.TestRecord{{
+			ID:         "test-1",
+			Name:       "Recovered Run",
+			Status:     "COMPLETE",
+			TotalVUsers: 1,
+		}},
+		archiveByTestID: map[string]*storage.RunArchiveRecord{"test-1": archive},
+	}
+
+	runner := NewTestRunner(2, NewHub(), store)
+
+	testRun, ok := runner.GetTest("test-1")
+	if !ok {
+		t.Fatal("expected persisted test to be loaded")
+	}
+	if testRun.Archive != nil {
+		t.Fatalf("expected missing manifest archive to be skipped, got %#v", testRun.Archive)
+	}
+	if cachedArchive, ok := runner.GetRunArchive("test-1"); ok || cachedArchive != nil {
+		t.Fatalf("expected GetRunArchive to report missing archive, got %#v ok=%v", cachedArchive, ok)
 	}
 }
 

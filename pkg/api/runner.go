@@ -762,6 +762,9 @@ func (tr *TestRunner) loadStoredTestArchive(test *ManagedTest) {
 	if err != nil {
 		return
 	}
+	if !runArchiveRecordAvailable(archive) {
+		return
+	}
 	test.Archive = archive
 	tr.archives[test.ID] = archive
 }
@@ -2540,6 +2543,14 @@ func (tr *TestRunner) GetRunArchive(id string) (*storage.RunArchiveRecord, bool)
 	if !ok {
 		return nil, false
 	}
+	if !runArchiveRecordAvailable(record) {
+		tr.mu.Lock()
+		if test, exists := tr.tests[id]; exists {
+			test.Archive = nil
+		}
+		tr.mu.Unlock()
+		return nil, false
+	}
 	tr.mu.Lock()
 	tr.archives[id] = record
 	if test, exists := tr.tests[id]; exists {
@@ -2547,6 +2558,14 @@ func (tr *TestRunner) GetRunArchive(id string) (*storage.RunArchiveRecord, bool)
 	}
 	tr.mu.Unlock()
 	return record, true
+}
+
+func runArchiveRecordAvailable(record *storage.RunArchiveRecord) bool {
+	if record == nil || record.ManifestPath == "" {
+		return false
+	}
+	_, err := os.Stat(record.ManifestPath)
+	return err == nil
 }
 
 func (tr *TestRunner) GetRunArchiveManifest(id string) (*RunArchiveManifest, error) {
