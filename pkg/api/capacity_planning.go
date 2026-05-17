@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/stormrunner/pkg/dsl"
+	browserprotocol "github.com/jasonczech/stormrunner/pkg/protocol/browser"
 )
 
 type CapacityResourceEstimate struct {
@@ -27,6 +28,9 @@ type CapacityAdvisory struct {
 	TotalVUsers                   int                              `json:"total_vusers"`
 	DurationSeconds               int                              `json:"duration_seconds"`
 	BaselineWindowEnabled         bool                             `json:"baseline_window_enabled"`
+	WorkloadClass                 string                           `json:"workload_class,omitempty"`
+	BrowserVUsers                 int                              `json:"browser_vusers,omitempty"`
+	MaxBrowserVUsersPerGenerator  int                              `json:"max_browser_vusers_per_generator,omitempty"`
 	HeadroomPct                   float64                          `json:"headroom_pct"`
 	ComplexityScore               float64                          `json:"complexity_score"`
 	Bottleneck                    string                           `json:"bottleneck"`
@@ -50,6 +54,16 @@ type CapacityAvailabilitySnapshot struct {
 	LiveAvailableGenerators       *int
 	EffectiveAvailableGenerators  int
 	Warnings                      []string
+}
+
+type capacityWorkloadProfile struct {
+	Class                        string
+	BrowserVUsers                int
+	MaxBrowserVUsersPerGenerator int
+	BrowserMemoryMBPerVUser      float64
+	BrowserCPUCoresPerVUser      float64
+	BrowserNetworkMbpsPerVUser   float64
+	Warnings                     []string
 }
 
 func cloneCapacityAdvisory(in *CapacityAdvisory) *CapacityAdvisory {
@@ -87,18 +101,39 @@ func estimateCapacityAdvisoryWithAvailability(settings SystemSettings, availabil
 	}
 
 	complexityScore, warnings := calculateScenarioComplexity(groups, runtimeSettings)
-	perVUser := estimatePerVUserFootprint(complexityScore)
+	workloadProfile := classifyCapacityWorkload(groups, runtimeSettings)
+	if workloadProfile.BrowserVUsers > 0 && workloadProfile.BrowserVUsers < totalVUsers {
+		workloadProfile.Class = "mixed"
+	}
+	warnings = append(warnings, workloadProfile.Warnings...)
+	perVUser := estimatePerVUserFootprint(complexityScore, workloadProfile)
 	totalEstimate := CapacityResourceEstimate{
 		CPUCores:    perVUser.CPUCores * float64(totalVUsers),
 		MemoryMB:    perVUser.MemoryMB * float64(totalVUsers),
 		NetworkMbps: perVUser.NetworkMbps * float64(totalVUsers),
 	}
 
+	if workloadProfile.BrowserVUsers > 0 && workloadProfile.BrowserVUsers < totalVUsers {
+		httpVUsers := totalVUsers - workloadProfile.BrowserVUsers
+		httpPerVUser := estimatePerVUserFootprint(complexityScore, capacityWorkloadProfile{Class: "http"})
+		totalEstimate = CapacityResourceEstimate{
+			CPUCores:    workloadProfile.BrowserCPUCoresPerVUser*float64(workloadProfile.BrowserVUsers) + httpPerVUser.CPUCores*float64(httpVUsers),
+			MemoryMB:    workloadProfile.BrowserMemoryMBPerVUser*float64(workloadProfile.BrowserVUsers) + httpPerVUser.MemoryMB*float64(httpVUsers),
+			NetworkMbps: workloadProfile.BrowserNetworkMbpsPerVUser*float64(workloadProfile.BrowserVUsers) + httpPerVUser.NetworkMbps*float64(httpVUsers),
+		}
+	}
+
+	vuserRecommendation := estimateRequiredGenerators(float64(totalVUsers), float64(usableVUsers))
+	if workloadProfile.MaxBrowserVUsersPerGenerator > 0 {
+		browserDensityRecommendation := estimateRequiredGenerators(float64(workloadProfile.BrowserVUsers), float64(workloadProfile.MaxBrowserVUsersPerGenerator))
+		vuserRecommendation = maxInt(vuserRecommendation, browserDensityRecommendation)
+	}
+
 	recommendations := CapacityDimensionRecommendations{
 		CPU:     estimateRequiredGenerators(totalEstimate.CPUCores, usableCPU),
 		Memory:  estimateRequiredGenerators(totalEstimate.MemoryMB, usableMemory),
 		Network: estimateRequiredGenerators(totalEstimate.NetworkMbps, usableNetwork),
-		VUsers:  estimateRequiredGenerators(float64(totalVUsers), float64(usableVUsers)),
+		VUsers:  vuserRecommendation,
 	}
 
 	recommended := recommendations.CPU
@@ -134,6 +169,9 @@ func estimateCapacityAdvisoryWithAvailability(settings SystemSettings, availabil
 		TotalVUsers:                   totalVUsers,
 		DurationSeconds:               int(duration.Seconds()),
 		BaselineWindowEnabled:         resourceBaseline,
+		WorkloadClass:                 workloadProfile.Class,
+		BrowserVUsers:                 workloadProfile.BrowserVUsers,
+		MaxBrowserVUsersPerGenerator:  workloadProfile.MaxBrowserVUsersPerGenerator,
 		HeadroomPct:                   settings.CapacityPlanning.HeadroomPct,
 		ComplexityScore:               roundCapacityValue(complexityScore),
 		Bottleneck:                    bottleneck,
@@ -296,9 +334,97 @@ func runtimeOverheadScore(config dsl.ScriptConfig, runtimeSettings *RuntimeSetti
 	return score
 }
 
-func estimatePerVUserFootprint(complexityScore float64) CapacityResourceEstimate {
+func classifyCapacityWorkload(groups []TestGroup, runtimeSettings *RuntimeSettingsOverride) capacityWorkloadProfile {
+	profile := capacityWorkloadProfile{Class: "http"}
+	for _, group := range groups {
+		if !isBrowserCapacityGroup(group) {
+			continue
+		}
+		profile.BrowserVUsers += group.VUsers
+		profile.Class = "browser"
+		deviceName := browserDeviceProfileForCapacity(group, runtimeSettings)
+		device, ok := browserprotocol.LookupDevice(deviceName)
+		if !ok {
+			if strings.TrimSpace(deviceName) != "" {
+				profile.Warnings = append(profile.Warnings, "Browser capacity advisor could not resolve the configured device profile; using conservative mobile browser density.")
+			}
+			profile = mergeBrowserCapacityProfile(profile, browserCapacityProfileForTier("unknown"))
+			continue
+		}
+		profile = mergeBrowserCapacityProfile(profile, browserCapacityProfileForTier(device.DeviceTier))
+	}
+	if profile.BrowserVUsers == 0 {
+		return profile
+	}
+	profile.Warnings = append(profile.Warnings, "Browser VUsers launch real browser runtimes; capacity guidance uses diagnostic canary density rather than HTTP goroutine density.")
+	if profile.MaxBrowserVUsersPerGenerator == 0 {
+		profile = mergeBrowserCapacityProfile(profile, browserCapacityProfileForTier("unknown"))
+	}
+	return profile
+}
+
+func isBrowserCapacityGroup(group TestGroup) bool {
+	if strings.EqualFold(strings.TrimSpace(group.Protocol), "browser") {
+		return true
+	}
+	if group.script == nil {
+		return false
+	}
+	if strings.EqualFold(strings.TrimSpace(group.script.Protocol), "browser") {
+		return true
+	}
+	return strings.TrimSpace(group.script.Config.Browser.Engine) != "" || strings.TrimSpace(group.script.Config.Browser.DeviceProfile) != ""
+}
+
+func browserDeviceProfileForCapacity(group TestGroup, runtimeSettings *RuntimeSettingsOverride) string {
+	if runtimeSettings != nil && runtimeSettings.Browser != nil && strings.TrimSpace(runtimeSettings.Browser.DeviceProfile) != "" {
+		return strings.TrimSpace(runtimeSettings.Browser.DeviceProfile)
+	}
+	if group.script == nil {
+		return ""
+	}
+	return strings.TrimSpace(group.script.Config.Browser.DeviceProfile)
+}
+
+func browserCapacityProfileForTier(tier string) capacityWorkloadProfile {
+	switch strings.ToLower(strings.TrimSpace(tier)) {
+	case "low":
+		return capacityWorkloadProfile{MaxBrowserVUsersPerGenerator: 40, BrowserMemoryMBPerVUser: 180, BrowserCPUCoresPerVUser: 0.055, BrowserNetworkMbpsPerVUser: 0.25}
+	case "mid":
+		return capacityWorkloadProfile{MaxBrowserVUsersPerGenerator: 32, BrowserMemoryMBPerVUser: 220, BrowserCPUCoresPerVUser: 0.07, BrowserNetworkMbpsPerVUser: 0.35}
+	case "high":
+		return capacityWorkloadProfile{MaxBrowserVUsersPerGenerator: 25, BrowserMemoryMBPerVUser: 260, BrowserCPUCoresPerVUser: 0.085, BrowserNetworkMbpsPerVUser: 0.45}
+	default:
+		return capacityWorkloadProfile{MaxBrowserVUsersPerGenerator: 20, BrowserMemoryMBPerVUser: 280, BrowserCPUCoresPerVUser: 0.09, BrowserNetworkMbpsPerVUser: 0.5}
+	}
+}
+
+func mergeBrowserCapacityProfile(left capacityWorkloadProfile, right capacityWorkloadProfile) capacityWorkloadProfile {
+	if right.MaxBrowserVUsersPerGenerator > 0 && (left.MaxBrowserVUsersPerGenerator == 0 || right.MaxBrowserVUsersPerGenerator < left.MaxBrowserVUsersPerGenerator) {
+		left.MaxBrowserVUsersPerGenerator = right.MaxBrowserVUsersPerGenerator
+	}
+	if right.BrowserMemoryMBPerVUser > left.BrowserMemoryMBPerVUser {
+		left.BrowserMemoryMBPerVUser = right.BrowserMemoryMBPerVUser
+	}
+	if right.BrowserCPUCoresPerVUser > left.BrowserCPUCoresPerVUser {
+		left.BrowserCPUCoresPerVUser = right.BrowserCPUCoresPerVUser
+	}
+	if right.BrowserNetworkMbpsPerVUser > left.BrowserNetworkMbpsPerVUser {
+		left.BrowserNetworkMbpsPerVUser = right.BrowserNetworkMbpsPerVUser
+	}
+	return left
+}
+
+func estimatePerVUserFootprint(complexityScore float64, workloadProfile capacityWorkloadProfile) CapacityResourceEstimate {
 	if complexityScore < 0.7 {
 		complexityScore = 0.7
+	}
+	if workloadProfile.BrowserVUsers > 0 {
+		return CapacityResourceEstimate{
+			CPUCores:    math.Max(0.055, workloadProfile.BrowserCPUCoresPerVUser*complexityScore),
+			MemoryMB:    math.Max(180, workloadProfile.BrowserMemoryMBPerVUser),
+			NetworkMbps: math.Max(0.25, workloadProfile.BrowserNetworkMbpsPerVUser),
+		}
 	}
 	return CapacityResourceEstimate{
 		CPUCores:    math.Max(0.00018, 0.00025*complexityScore),

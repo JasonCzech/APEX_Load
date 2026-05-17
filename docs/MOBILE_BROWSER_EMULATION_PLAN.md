@@ -20,7 +20,7 @@ This is positioned as a configuration extension of the existing `pkg/protocol/br
 
 ### Remaining
 - TruClient MobileWeb import is shipped for the current MVP browser step envelope, but review-only constructs such as `Scroll` and non-decomposable `Evaluate JavaScript` still need sample-backed hardening.
-- Production hardening beyond the conservative browser envelope below is still open.
+- Production hardening beyond the conservative browser envelope below is still open, but scenario capacity advice now treats browser VUsers as real browser runtimes rather than HTTP goroutines.
 - Broader scenario-level/dashboard mobile UX polish is still incomplete compared with the script-editor/browser-replay surfaces.
 
 ### Supported Browser And Device Profile Envelope
@@ -42,6 +42,19 @@ Rules that are already enforced:
 - `desktop_1080p`, `galaxy_s24`, and `pixel_8` require `chromium`.
 - `touch_mode` and `orientation` overrides are valid on top of the selected device profile, but the profile remains the source of truth for platform, tier, and default viewport.
 - Headed or headless execution is supported for both engines, but headed mode should be treated as a diagnostic workflow rather than a scaling target.
+
+### Capacity Guidance
+
+Stormrunner capacity estimates now classify scenarios as `http`, `browser`, or `mixed`. Browser VUsers use conservative per-generator density caps based on device tier:
+
+| Device Tier | Max Browser VUsers / Generator | Memory Estimate / VUser | CPU Estimate / VUser |
+|:---|---:|---:|---:|
+| low | 40 | 180 MB | 0.055 cores |
+| mid | 32 | 220 MB | 0.070 cores |
+| high | 25 | 260 MB | 0.085 cores |
+| unknown | 20 | 280 MB | 0.090 cores |
+
+This guidance is intentionally conservative. Mobile/browser VUsers should be used as diagnostic canaries and fidelity probes around larger HTTP workloads until benchmark calibration publishes higher-confidence pod-density targets.
 
 ### Conservative Benchmark Guidance
 
@@ -458,7 +471,7 @@ When editing a browser script with a device profile:
 | **Phase 2** | **Complete** | **Touch Event Simulation** | `browser_tap`, `browser_swipe`, `browser_long_press` action types, auto click-to-tap mapping, touch emulation, unit tests | Touch actions execute on mobile-configured browser; `browser_click` dispatches touch interactions in mobile mode |
 | **Phase 3** | **Partially Complete** | **Dashboard UX** | Script-editor device profile selector, orientation toggle, replay/config validation warnings, mobile/browser settings authoring | Core mobile browser scenarios can be authored and replayed from the dashboard, but broader scenario-level UX is still incomplete |
 | **Phase 4** | **Not Started** | **TrueClient Import** | `pkg/convert/trueclient` package, step-to-action mapping, device profile extraction from `.usr` + `default.cfg`, API endpoint, unit tests | A TrueClient MobileWeb `.zip` import produces a runnable Stormrunner browser script with correct device profile and mapped actions |
-| **Phase 5** | **Not Started** | **Hardening + Benchmarks** | Memory benchmarks, touch latency benchmarks, documented scale guidance, edge case coverage | Published memory/latency measurements; documented operational guidance for mobile browser VUser density |
+| **Phase 5** | **Partially Complete** | **Hardening + Benchmarks** | Browser-aware capacity advice, memory benchmarks, touch latency benchmarks, documented scale guidance, edge case coverage | Capacity planning now exposes conservative mobile browser VUser density; measured memory/latency benchmark publication remains open |
 
 ## 9. Risks And Mitigations
 

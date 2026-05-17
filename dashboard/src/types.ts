@@ -1258,6 +1258,9 @@ export interface CapacityAdvisory {
   total_vusers: number
   duration_seconds: number
   baseline_window_enabled: boolean
+  workload_class?: 'http' | 'browser' | 'mixed'
+  browser_vusers?: number
+  max_browser_vusers_per_generator?: number
   headroom_pct: number
   complexity_score: number
   bottleneck: 'cpu' | 'memory' | 'network' | 'vusers'

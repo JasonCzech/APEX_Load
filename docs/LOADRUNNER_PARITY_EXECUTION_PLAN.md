@@ -426,6 +426,7 @@ Before claiming practical parity in these target areas, all of the following sho
 - Lifecycle notification webhooks now support Dynatrace Events API v2 payloads with API-token auth, optional entity selectors, event timeouts, and failure events mapped to Dynatrace `ERROR_EVENT` annotations.
 - Scripts can import target-side Prometheus text metrics through `config.observability.external_metrics`, carrying selected CPU, memory, queue-depth, or application gauges into live resource snapshots and archived resource samples.
 - Network emulation now has attribution as well as shaping: transaction results include a normalized `network_profile`, live metrics expose `network_profiles`, and archive reports aggregate response/error stats under `by_network_profile`.
+- Browser/mobile capacity advice now classifies scenarios as `http`, `browser`, or `mixed`, applies conservative device-tier density caps for browser VUsers, and warns users that browser runtimes are diagnostic canaries rather than HTTP-scale goroutine VUsers.
 
 ## Suggested Milestones
 

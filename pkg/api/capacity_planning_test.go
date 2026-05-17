@@ -93,6 +93,96 @@ func TestEstimateCapacityAdvisoryIncreasesForHeavierScripts(t *testing.T) {
 	}
 }
 
+func TestEstimateCapacityAdvisoryUsesBrowserVUserDensity(t *testing.T) {
+	settings := defaultSystemSettings(4)
+	settings.CapacityPlanning.Availability.ConfiguredAvailableGenerators = 1
+
+	advisory := estimateCapacityAdvisory(settings, []TestGroup{{
+		Name:     "mobile checkout",
+		Protocol: "browser",
+		VUsers:   30,
+		script: &dsl.Script{
+			Protocol: "browser",
+			Config: dsl.ScriptConfig{
+				Browser: dsl.BrowserConfig{DeviceProfile: "iphone_15_pro"},
+			},
+			Actions: []dsl.Action{{Name: "Open", Type: "browser_navigate", Target: "https://example.test"}},
+		},
+	}}, 30, 10*time.Minute, false, nil)
+
+	if advisory == nil {
+		t.Fatal("expected advisory to be returned")
+	}
+	if advisory.WorkloadClass != "browser" {
+		t.Fatalf("workload class = %q, want browser", advisory.WorkloadClass)
+	}
+	if advisory.BrowserVUsers != 30 {
+		t.Fatalf("browser vusers = %d, want 30", advisory.BrowserVUsers)
+	}
+	if advisory.MaxBrowserVUsersPerGenerator != 25 {
+		t.Fatalf("max browser vusers per generator = %d, want 25", advisory.MaxBrowserVUsersPerGenerator)
+	}
+	if advisory.DimensionRecommendations.VUsers != 2 {
+		t.Fatalf("vuser recommendation = %d, want 2", advisory.DimensionRecommendations.VUsers)
+	}
+	if !advisory.RequiresOverride {
+		t.Fatal("expected browser density shortfall to require override with one available generator")
+	}
+	if advisory.EstimatedPerVUser.MemoryMB < 250 {
+		t.Fatalf("browser per-vuser memory = %v, want mobile browser scale estimate", advisory.EstimatedPerVUser.MemoryMB)
+	}
+	if !containsSubstring(advisory.Warnings, "Browser VUsers launch real browser runtimes") {
+		t.Fatalf("warnings = %#v, want browser runtime guidance", advisory.Warnings)
+	}
+}
+
+func TestEstimateCapacityAdvisoryUsesRuntimeBrowserOverrideForDensity(t *testing.T) {
+	settings := defaultSystemSettings(4)
+	settings.CapacityPlanning.Availability.ConfiguredAvailableGenerators = 3
+
+	advisory := estimateCapacityAdvisory(settings, []TestGroup{
+		{
+			Name:     "api",
+			Protocol: "http",
+			VUsers:   5000,
+			script:   &dsl.Script{Protocol: "http", Actions: []dsl.Action{{Name: "Home", Type: "GET", Target: "/"}}},
+		},
+		{
+			Name:     "browser canary",
+			Protocol: "browser",
+			VUsers:   35,
+			script: &dsl.Script{
+				Protocol: "browser",
+				Config: dsl.ScriptConfig{
+					Browser: dsl.BrowserConfig{DeviceProfile: "pixel_8"},
+				},
+				Actions: []dsl.Action{{Name: "Open", Type: "browser_navigate", Target: "https://example.test"}},
+			},
+		},
+	}, 5035, 10*time.Minute, false, &RuntimeSettingsOverride{
+		Browser: &RuntimeBrowserOverride{DeviceProfile: "iphone_se"},
+	})
+
+	if advisory == nil {
+		t.Fatal("expected advisory to be returned")
+	}
+	if advisory.WorkloadClass != "mixed" {
+		t.Fatalf("workload class = %q, want mixed", advisory.WorkloadClass)
+	}
+	if advisory.BrowserVUsers != 35 {
+		t.Fatalf("browser vusers = %d, want 35", advisory.BrowserVUsers)
+	}
+	if advisory.MaxBrowserVUsersPerGenerator != 40 {
+		t.Fatalf("max browser vusers per generator = %d, want runtime override iphone_se density", advisory.MaxBrowserVUsersPerGenerator)
+	}
+	if advisory.DimensionRecommendations.VUsers != 1 {
+		t.Fatalf("vuser recommendation = %d, want mixed scenario to cap only browser vusers by browser density", advisory.DimensionRecommendations.VUsers)
+	}
+	if advisory.EstimatedTotal.MemoryMB <= 7000 {
+		t.Fatalf("estimated total memory = %v, want mixed HTTP plus browser footprint", advisory.EstimatedTotal.MemoryMB)
+	}
+}
+
 func TestCreateTestAttachesCapacityAdvisory(t *testing.T) {
 	hub := NewHub()
 	runner := NewTestRunner(2, hub, nil)
@@ -125,6 +215,15 @@ func TestCreateTestAttachesCapacityAdvisory(t *testing.T) {
 	if test.CapacityAdvisory.RecommendedGenerators < 2 {
 		t.Fatalf("recommended generators = %d, want at least 2", test.CapacityAdvisory.RecommendedGenerators)
 	}
+}
+
+func containsSubstring(values []string, needle string) bool {
+	for _, value := range values {
+		if strings.Contains(value, needle) {
+			return true
+		}
+	}
+	return false
 }
 
 func TestEstimateDraftCapacityReturnsAdvisoryWithoutPersistingTest(t *testing.T) {

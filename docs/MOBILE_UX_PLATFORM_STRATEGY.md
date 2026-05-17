@@ -207,7 +207,7 @@ The existing plans define tactical phases. This section maps them to the strateg
 - `browser.go Init()` applies CPU throttling from profile
 - Unit tests confirming profile defaults are wired; benchmark calibration and timing validation are still open
 
-**Remaining work:** benchmark calibration, decide whether to add memory-pressure simulation, and publish operational guidance for how approximate the simulated profile timings are.
+**Remaining work:** benchmark calibration, decide whether to add memory-pressure simulation, and publish operational guidance for how approximate the simulated profile timings are. Scenario capacity planning now uses conservative tier-based browser VUser density caps so users get safer generator estimates while benchmark calibration is still in progress.
 
 ### Stage 3: Client Metrics Collection (Browser Client Metrics Plan Phases 1-2)
 - `ClientMetrics` struct on `protocol.Result`
