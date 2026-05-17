@@ -113,7 +113,7 @@ var stepScopes = []StepScope{
 		DisplayName:      "Evaluate JavaScript",
 		Status:           ScopeReviewOnly,
 		StormrunnerShape: "browser_fill, browser_click, browser_swipe, or browser_navigate when decomposable",
-		Notes:            "Simple jQuery, document.querySelector, document.getElementById, first-match document.getElementsByName, and document.forms[].elements[] fill/click statements plus window scroll and location navigation statements are decomposed; unsupported shapes stay in guided review with warnings, blocker repair suggestions, and preserved unsupported-step reporting because Stormrunner does not expose a public browser-eval action.",
+		Notes:            "Simple jQuery, document.querySelector, document.getElementById, first-match document.getElementsByName, first-match document.getElementsByClassName with safe class tokens, and document.forms[].elements[] fill/click statements plus window scroll and location navigation statements are decomposed; unsupported shapes stay in guided review with warnings, blocker repair suggestions, and preserved unsupported-step reporting because Stormrunner does not expose a public browser-eval action.",
 	},
 }
 

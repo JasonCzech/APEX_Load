@@ -436,6 +436,7 @@ Before claiming practical parity in these target areas, all of the following sho
 - Browser archive event inspection now includes a compact navigation/resource waterfall summary from persisted client metrics, showing DOM readiness, load event timing, resource counts, blocking resources, and transfer size.
 - TrueClient MobileWeb import now decomposes first-match `document.getElementsByName(...)[0]` fill/click JavaScript into name-selector `browser_fill` and `browser_click` actions.
 - TrueClient MobileWeb import now decomposes `document.forms[...].elements[...]` fill/click JavaScript into name-selector browser actions for common form-driven scripts.
+- TrueClient MobileWeb import now decomposes first-match `document.getElementsByClassName(...)[0]` fill/click JavaScript into safe class-token browser selectors, leaving ambiguous class expressions in guided review.
 
 ## Suggested Milestones
 

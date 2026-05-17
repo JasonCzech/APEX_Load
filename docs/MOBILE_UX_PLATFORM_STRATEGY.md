@@ -16,7 +16,7 @@ This plan is the strategic umbrella that aligns the existing `MOBILE_BROWSER_EMU
 ### Remaining
 - Stage 2 is only partially complete: device profiles now carry `CPUThrottleRate` and `NetworkPreset`, and the runtime applies them, but calibration against real devices, benchmark evidence, and any memory-pressure model are still open.
 - Stage 4 still has UX gaps: dedicated device-comparison views, richer per-resource waterfall drilldown, and broader manual browser validation on real applications are not finished. Archive event inspection now includes a compact navigation/resource waterfall summary from persisted client metrics.
-- Stage 5 TrueClient MobileWeb import has not started and remains blocked on representative fixture scripts.
+- Stage 5 TrueClient MobileWeb import is partially shipped for the current browser step envelope, including runtime-setting extraction and common decomposed JavaScript fill/click, scroll, and navigation patterns; broader fixture-backed hardening remains open.
 - Stage 6 UX intelligence work has not started.
 
 ## Why This Matters
@@ -239,7 +239,7 @@ The existing plans define tactical phases. This section maps them to the strateg
 - Step-to-action mapping for navigate, click, fill, select, wait, conservative verify assertions, transaction-preserved names, and simple decomposed JavaScript fill/click statements
 - Device profile extraction from LoadRunner runtime settings
 
-**Remaining effort:** 3-5 days for non-decomposable JavaScript hardening, import review UX refinements, and broader replay-validation coverage. Simple TruClient JavaScript scroll statements now map to `browser_swipe`, and JavaScript `location` navigation statements map to `browser_navigate`, reducing previous review-only repair paths.
+**Remaining effort:** 3-5 days for non-decomposable JavaScript hardening, import review UX refinements, and broader replay-validation coverage. Simple TruClient JavaScript fill/click, scroll, and location-navigation statements now map to browser DSL actions, reducing previous review-only repair paths.
 
 ### Stage 6: UX Intelligence (Future)
 - Frustration detection: rage taps, repeated navigation, abandonment patterns
