@@ -1877,7 +1877,7 @@ describe('LoadRunnerImport', () => {
       }),
     }))
     expect(container.textContent).toContain('Draft browser replay started. Review the draft browser replay session before saving this import.')
-    expect(container.textContent).toContain('Session: draft-browser-validation')
+    expect(container.textContent).toContain('Replay Session: draft-browser-validation')
     expect(container.textContent).toContain('Status: Running')
     expect(container.textContent).toContain('selector repair recommended')
     expect(container.textContent).toContain('Wait for the draft browser replay to finish before saving it to the library.')
@@ -2055,7 +2055,7 @@ describe('LoadRunnerImport', () => {
         }),
       }))
       expect(container.textContent).toContain('Draft browser replay started. Review the draft browser replay session before saving this import.')
-      expect(container.textContent).toContain('Session: draft-browser-validation')
+      expect(container.textContent).toContain('Replay Session: draft-browser-validation')
       expect(container.textContent).toContain('Status: Running')
       expect(container.textContent).toContain('Draft Browser Replay In Progress')
       expect(container.textContent).toContain('Wait for the draft browser replay to finish before saving it to the library.')
@@ -2571,7 +2571,7 @@ describe('LoadRunnerImport', () => {
 
       expect(apiMock.startDraftBrowserReplaySession).toHaveBeenCalledTimes(2)
       expect(container.textContent).toContain('Draft browser replay restarted. Review the refreshed draft browser replay session before saving this import.')
-      expect(container.textContent).toContain('Session: draft-browser-validation-rerun')
+      expect(container.textContent).toContain('Replay Session: draft-browser-validation-rerun')
       expect(container.textContent).toContain('Status: Running')
     } finally {
       vi.useRealTimers()
@@ -2708,7 +2708,7 @@ describe('LoadRunnerImport', () => {
       expect(apiMock.startDraftBrowserReplaySession).toHaveBeenCalledTimes(2)
       expect(container.textContent).toContain('Draft browser replay failed to start')
       expect(container.textContent).toContain('Status: Failed')
-      expect(container.textContent).toContain('Session: draft-browser-validation')
+      expect(container.textContent).toContain('Replay Session: draft-browser-validation')
       expect(container.textContent).toContain('Rerun Draft Browser Replay')
       expect(container.textContent).toContain('Rerun Draft Browser Replay Before Saving')
     } finally {
