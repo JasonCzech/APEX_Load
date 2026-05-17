@@ -13,9 +13,6 @@ export default defineConfig({
           if (id.includes('/recharts/')) {
             return 'vendor-recharts'
           }
-          if (id.includes('/react/') || id.includes('/react-dom/')) {
-            return 'vendor-react'
-          }
           return 'vendor'
         },
       },
