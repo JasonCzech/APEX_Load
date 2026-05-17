@@ -7,6 +7,8 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -663,6 +665,71 @@ BufferSizeSeconds=30
 	readiness, ok := result.Summary["migration_readiness"].(map[string]any)
 	if !ok || readiness["score_pct"] != float64(71) || readiness["blocked"] != true {
 		t.Fatalf("summary.migration_readiness = %#v, want score=71 blocked=true", result.Summary["migration_readiness"])
+	}
+}
+
+func TestHandleImportLoadRunnerGoldenFixtureRuntimeParity(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	body, contentType := loadRunnerFixtureMultipartBody(t, "../convert/loadrunner/testdata/golden_web_http_html", "golden-web.zip", map[string]string{
+		"include_assertions":       "true",
+		"preserve_transactions":    "true",
+		"migration_block_statuses": "partial,compatibility_only",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/loadrunner", bytes.NewReader(body))
+	req.Header.Set("Content-Type", contentType)
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var result struct {
+		Warnings       []string        `json:"warnings"`
+		ReviewSections []reviewSection `json:"review_sections"`
+		Summary        map[string]any  `json:"summary"`
+		Script         struct {
+			Protocol string `json:"protocol"`
+			Config   struct {
+				BaseURL string `json:"base_url"`
+				Browser struct {
+					DownloadResources string `json:"download_resources"`
+					DeviceProfile     string `json:"device_profile"`
+				} `json:"browser"`
+			} `json:"config"`
+		} `json:"script"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+
+	if result.Script.Protocol != "http" || result.Script.Config.BaseURL != "https://shop.example.test" {
+		t.Fatalf("script = %#v, want converted golden HTTP script", result.Script)
+	}
+	if result.Script.Config.Browser.DownloadResources != "recorded" || result.Script.Config.Browser.DeviceProfile != "pixel_7" {
+		t.Fatalf("browser config = %#v, want recorded pixel_7 settings", result.Script.Config.Browser)
+	}
+	if len(result.Warnings) != 1 || !strings.Contains(strings.ToLower(result.Warnings[0]), "media playback semantics") {
+		t.Fatalf("warnings = %#v, want streaming compatibility warning", result.Warnings)
+	}
+	assertReviewSection(t, result.ReviewSections, "runtime_settings_parity", "warning", "Executed: HTTP / Timeouts, redirects, and connection reuse [default.cfg]")
+	assertReviewSection(t, result.ReviewSections, "runtime_settings_migration_readiness", "blocker", "Blocking setting: Logging / Log level, error-only, and extended logging options")
+
+	statusCounts, ok := result.Summary["runtime_settings_status_counts"].(map[string]any)
+	if !ok {
+		t.Fatalf("summary.runtime_settings_status_counts = %#v, want map", result.Summary["runtime_settings_status_counts"])
+	}
+	if statusCounts["executed"] != float64(20) || statusCounts["partial"] != float64(5) || statusCounts["compatibility_only"] != float64(2) {
+		t.Fatalf("runtime_settings_status_counts = %#v, want executed=20 partial=5 compatibility_only=2", statusCounts)
+	}
+	runtimeParity, ok := result.Summary["runtime_settings_parity"].([]any)
+	if !ok || len(runtimeParity) != 27 {
+		t.Fatalf("summary.runtime_settings_parity = %#v, want 27 entries", result.Summary["runtime_settings_parity"])
+	}
+	readiness, ok := result.Summary["migration_readiness"].(map[string]any)
+	if !ok || readiness["score_pct"] != float64(87) || readiness["blocked"] != true {
+		t.Fatalf("summary.migration_readiness = %#v, want score=87 blocked=true", result.Summary["migration_readiness"])
 	}
 }
 
@@ -1590,6 +1657,16 @@ func TestHandleLoadRunnerSupportMatrix(t *testing.T) {
 	if len(result.TestedExamples) == 0 || result.TestedExamples[0].Title == "" || result.TestedExamples[0].Test == "" {
 		t.Fatalf("tested_examples = %#v, want populated tested examples", result.TestedExamples)
 	}
+	if !containsLoadRunnerSupportMatrixExample(result.TestedExamples, "Golden Web HTTP/HTML fixture") {
+		t.Fatalf("tested_examples = %#v, want golden fixture example", result.TestedExamples)
+	}
+}
+
+type reviewSection struct {
+	Key      string   `json:"key"`
+	Severity string   `json:"severity"`
+	Summary  string   `json:"summary"`
+	Items    []string `json:"items"`
 }
 
 func containsLoadRunnerSupportMatrixStatus(entries []struct {
@@ -1606,6 +1683,63 @@ func containsLoadRunnerSupportMatrixStatus(entries []struct {
 		}
 	}
 	return false
+}
+
+func containsLoadRunnerSupportMatrixExample(entries []struct {
+	Title    string `json:"title"`
+	Coverage string `json:"coverage"`
+	Test     string `json:"test"`
+}, want string) bool {
+	for _, entry := range entries {
+		if entry.Title == want {
+			return true
+		}
+	}
+	return false
+}
+
+func loadRunnerFixtureMultipartBody(t *testing.T, fixtureDir string, archiveName string, fields map[string]string) ([]byte, string) {
+	t.Helper()
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	for key, value := range fields {
+		if err := writer.WriteField(key, value); err != nil {
+			t.Fatalf("WriteField(%q) returned error: %v", key, err)
+		}
+	}
+	part, err := writer.CreateFormFile("file", archiveName)
+	if err != nil {
+		t.Fatalf("CreateFormFile returned error: %v", err)
+	}
+	zipWriter := zip.NewWriter(part)
+	entries, err := os.ReadDir(fixtureDir)
+	if err != nil {
+		t.Fatalf("ReadDir(%q) returned error: %v", fixtureDir, err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		content, err := os.ReadFile(filepath.Join(fixtureDir, name))
+		if err != nil {
+			t.Fatalf("ReadFile(%q) returned error: %v", name, err)
+		}
+		fileWriter, err := zipWriter.Create(name)
+		if err != nil {
+			t.Fatalf("zip.Create(%q) returned error: %v", name, err)
+		}
+		if _, err := fileWriter.Write(content); err != nil {
+			t.Fatalf("zip.Write(%q) returned error: %v", name, err)
+		}
+	}
+	if err := zipWriter.Close(); err != nil {
+		t.Fatalf("zip.Close returned error: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("multipart.Close returned error: %v", err)
+	}
+	return body.Bytes(), writer.FormDataContentType()
 }
 
 func TestHandleSaveJMeterImportPersistsScriptsAndScenario(t *testing.T) {

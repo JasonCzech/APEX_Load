@@ -282,6 +282,7 @@ Acceptance criteria:
 
 Recent progress:
 - R3.1/R3.2 now have an initial golden Web HTTP/HTML fixture under `pkg/convert/loadrunner/testdata/golden_web_http_html`. The regression test converts the archive, verifies generated DSL runtime settings, preserved recorded-resource metadata, and side-by-side expected support statuses for executed, partial, and compatibility-only settings.
+- R3.3 now exercises that same golden fixture through the LoadRunner import API envelope, asserting user-visible warnings, review sections, status counts, migration readiness, and support-matrix tested-example metadata.
 - R3.4 now references the golden fixture from the code-owned support-matrix examples and `docs/LOADRUNNER_RTS_REFERENCE.md`, keeping the public runtime-settings matrix tied to executable coverage.
 
 ### Runtime Parity Workstream Notes
