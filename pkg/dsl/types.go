@@ -54,6 +54,7 @@ type ScriptConfig struct {
 	HTTP          HTTPConfig          `json:"http,omitempty"`
 	WebRuntime    WebRuntimeConfig    `json:"web_runtime,omitempty"`
 	WebSocket     WebSocketConfig     `json:"websocket,omitempty"`
+	GRPC          GRPCConfig          `json:"grpc,omitempty"`
 	JavaHTTP      JavaHTTPConfig      `json:"java_http,omitempty"`
 	SOAP          SOAPConfig          `json:"soap,omitempty"`
 	Browser       BrowserConfig       `json:"browser,omitempty"`
@@ -96,6 +97,16 @@ type WebSocketConfig struct {
 	Subprotocol    string `json:"subprotocol,omitempty"`
 	Origin         string `json:"origin,omitempty"`
 	Compression    bool   `json:"compression,omitempty"`
+}
+
+type GRPCConfig struct {
+	ProtoFiles     []string          `json:"proto_files,omitempty"`
+	UseReflection  bool              `json:"use_reflection,omitempty"`
+	PlainText      bool              `json:"plain_text,omitempty"`
+	MaxRecvMsgSize int               `json:"max_recv_msg_size,omitempty"`
+	TimeoutMs      int               `json:"timeout_ms,omitempty"`
+	Metadata       map[string]string `json:"metadata,omitempty"`
+	Authority      string            `json:"authority,omitempty"`
 }
 
 type SOAPConfig struct {

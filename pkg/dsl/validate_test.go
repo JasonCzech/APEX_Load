@@ -436,6 +436,82 @@ func TestValidateScriptIssues_WebSocketValidationAllowsSupportedFields(t *testin
 	}
 }
 
+func TestValidateScriptIssues_GRPCValidation(t *testing.T) {
+	script := &Script{
+		Name:     "grpc-invalid",
+		Protocol: "grpc",
+		Config: ScriptConfig{
+			BaseURL: "grpc.example.test:443",
+			GRPC: GRPCConfig{
+				ProtoFiles:     []string{""},
+				MaxRecvMsgSize: -1,
+				TimeoutMs:      -2,
+			},
+		},
+		Actions: []Action{{
+			Name: "missing target",
+			Type: "grpc_unary",
+		}, {
+			Name:   "bad target",
+			Type:   "grpc_unary",
+			Target: "stormrunner.v1.GeneratorControl",
+		}, {
+			Name:   "bad timeout",
+			Type:   "grpc_unary",
+			Target: "stormrunner.v1.GeneratorControl/DistributeScript",
+			Params: map[string]any{"timeout_ms": -1},
+		}, {
+			Name:   "streaming",
+			Type:   "grpc_server_stream",
+			Target: "stormrunner.v1.GeneratorControl/StreamMetrics",
+		}, {
+			Name: "unsupported",
+			Type: "grpc_batch",
+		}},
+	}
+
+	issues := ValidateScriptIssues(script)
+
+	assertIssue(t, issues, "config.grpc.max_recv_msg_size must be zero or greater")
+	assertIssue(t, issues, "config.grpc.timeout_ms must be zero or greater")
+	assertIssue(t, issues, "config.grpc.proto_files[0] must be non-empty")
+	assertIssue(t, issues, `actions[0] "missing target": missing target`)
+	assertIssue(t, issues, `actions[1] "bad target": grpc_unary target must be service/method`)
+	assertIssue(t, issues, `actions[2] "bad timeout": grpc_unary timeout_ms must be zero or greater`)
+	assertIssue(t, issues, `actions[3] "streaming": grpc_server_stream is planned but not implemented yet`)
+	assertIssue(t, issues, `actions[4] "unsupported": unsupported grpc action type "grpc_batch"`)
+}
+
+func TestValidateScriptIssues_GRPCValidationAllowsUnaryReflection(t *testing.T) {
+	script := &Script{
+		Name:     "grpc-valid",
+		Protocol: "grpc",
+		Config: ScriptConfig{
+			BaseURL: "grpc.example.test:443",
+			GRPC: GRPCConfig{
+				UseReflection:  true,
+				PlainText:      true,
+				MaxRecvMsgSize: 1048576,
+				TimeoutMs:      5000,
+				Metadata:       map[string]string{"x-env": "perf"},
+				Authority:      "orders.example.test",
+			},
+		},
+		Actions: []Action{{
+			Name:   "cache",
+			Type:   "grpc_unary",
+			Target: "stormrunner.v1.GeneratorControl/DistributeScript",
+			Body:   `{"scriptId":"script-1"}`,
+			Params: map[string]any{"timeout_ms": 1000},
+		}},
+	}
+
+	issues := ValidateScriptIssues(script)
+	if len(issues) != 0 {
+		t.Fatalf("issues = %v, want none", issues)
+	}
+}
+
 func TestValidateScriptIssues_BrowserValidationAllowsSupportedFields(t *testing.T) {
 	touchMode := true
 	clientMetrics := true

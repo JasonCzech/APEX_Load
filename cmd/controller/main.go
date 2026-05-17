@@ -11,6 +11,7 @@ import (
 
 	"github.com/jasonczech/stormrunner/pkg/api"
 	_ "github.com/jasonczech/stormrunner/pkg/protocol/browser"
+	_ "github.com/jasonczech/stormrunner/pkg/protocol/grpc"
 	_ "github.com/jasonczech/stormrunner/pkg/protocol/http"
 	_ "github.com/jasonczech/stormrunner/pkg/protocol/java_http"
 	_ "github.com/jasonczech/stormrunner/pkg/protocol/jms"

@@ -55,6 +55,10 @@ func ValidateScriptIssues(script *Script) []string {
 			issues = append(issues, validateWebSocketActionIssues(i, action)...)
 			continue
 		}
+		if script.Protocol == "grpc" {
+			issues = append(issues, validateGRPCActionIssues(i, action)...)
+			continue
+		}
 
 		if action.Target == "" {
 			issues = append(issues, fmt.Sprintf("actions[%d] %q: missing target", i, action.Name))
@@ -71,9 +75,51 @@ func ValidateScriptIssues(script *Script) []string {
 	issues = append(issues, validateParameterIssues(script)...)
 	issues = append(issues, validateBrowserConfigIssues(script)...)
 	issues = append(issues, validateWebSocketConfigIssues(script)...)
+	issues = append(issues, validateGRPCConfigIssues(script)...)
 	issues = append(issues, validateWebRuntimeIssues(script)...)
 	issues = append(issues, validateGoalConfigIssues(script.GoalConfig)...)
 
+	return issues
+}
+
+func validateGRPCConfigIssues(script *Script) []string {
+	if script == nil || strings.TrimSpace(script.Protocol) != "grpc" {
+		return nil
+	}
+	cfg := script.Config.GRPC
+	var issues []string
+	if cfg.MaxRecvMsgSize < 0 {
+		issues = append(issues, "config.grpc.max_recv_msg_size must be zero or greater")
+	}
+	if cfg.TimeoutMs < 0 {
+		issues = append(issues, "config.grpc.timeout_ms must be zero or greater")
+	}
+	for index, protoFile := range cfg.ProtoFiles {
+		if strings.TrimSpace(protoFile) == "" {
+			issues = append(issues, fmt.Sprintf("config.grpc.proto_files[%d] must be non-empty", index))
+		}
+	}
+	return issues
+}
+
+func validateGRPCActionIssues(index int, action Action) []string {
+	label := fmt.Sprintf("actions[%d] %q", index, action.Name)
+	var issues []string
+	switch action.Type {
+	case "grpc_unary":
+		if strings.TrimSpace(action.Target) == "" {
+			issues = append(issues, fmt.Sprintf("%s: missing target", label))
+		} else if !strings.Contains(strings.Trim(action.Target, "/"), "/") {
+			issues = append(issues, fmt.Sprintf("%s: grpc_unary target must be service/method", label))
+		}
+		if timeoutMs, ok := actionParamIntValue(action.Params, "timeout_ms"); ok && timeoutMs < 0 {
+			issues = append(issues, fmt.Sprintf("%s: grpc_unary timeout_ms must be zero or greater", label))
+		}
+	case "grpc_server_stream", "grpc_client_stream", "grpc_bidi_stream":
+		issues = append(issues, fmt.Sprintf("%s: %s is planned but not implemented yet", label, action.Type))
+	default:
+		issues = append(issues, fmt.Sprintf("%s: unsupported grpc action type %q", label, action.Type))
+	}
 	return issues
 }
 

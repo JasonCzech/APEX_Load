@@ -18,6 +18,7 @@ func buildProtoConfigWithSecretResolver(script *dsl.Script, resolver SecretResol
 	httpCfg := script.Config.HTTP
 	javaHTTPCfg := script.Config.JavaHTTP
 	webSocketCfg := script.Config.WebSocket
+	grpcCfg := script.Config.GRPC
 	soapCfg := script.Config.SOAP
 
 	// Timeouts
@@ -119,6 +120,27 @@ func buildProtoConfigWithSecretResolver(script *dsl.Script, resolver SecretResol
 	}
 	if webSocketCfg.Compression {
 		cfg["websocket_compression"] = true
+	}
+	if len(grpcCfg.ProtoFiles) > 0 {
+		cfg["grpc_proto_files"] = grpcCfg.ProtoFiles
+	}
+	if grpcCfg.UseReflection {
+		cfg["grpc_use_reflection"] = true
+	}
+	if grpcCfg.PlainText {
+		cfg["grpc_plain_text"] = true
+	}
+	if grpcCfg.MaxRecvMsgSize > 0 {
+		cfg["grpc_max_recv_msg_size"] = float64(grpcCfg.MaxRecvMsgSize)
+	}
+	if grpcCfg.TimeoutMs > 0 {
+		cfg["grpc_timeout_ms"] = float64(grpcCfg.TimeoutMs)
+	}
+	if len(grpcCfg.Metadata) > 0 {
+		cfg["grpc_metadata"] = grpcCfg.Metadata
+	}
+	if grpcCfg.Authority != "" {
+		cfg["grpc_authority"] = grpcCfg.Authority
 	}
 	if javaHTTPCfg.Codec != "" {
 		cfg["java_http_codec"] = javaHTTPCfg.Codec

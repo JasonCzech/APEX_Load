@@ -708,3 +708,46 @@ func TestBuildProtoConfig_WebSocket(t *testing.T) {
 		t.Errorf("websocket_compression = %v, want true", cfg["websocket_compression"])
 	}
 }
+
+func TestBuildProtoConfig_GRPC(t *testing.T) {
+	script := &dsl.Script{
+		Config: dsl.ScriptConfig{
+			BaseURL: "grpc.example.test:443",
+			GRPC: dsl.GRPCConfig{
+				ProtoFiles:     []string{"order.proto"},
+				UseReflection:  true,
+				PlainText:      true,
+				MaxRecvMsgSize: 1048576,
+				TimeoutMs:      5000,
+				Metadata:       map[string]string{"x-env": "perf"},
+				Authority:      "orders.example.test",
+			},
+		},
+	}
+
+	cfg := buildProtoConfig(script)
+
+	if cfg["grpc_use_reflection"] != true {
+		t.Errorf("grpc_use_reflection = %v, want true", cfg["grpc_use_reflection"])
+	}
+	if cfg["grpc_plain_text"] != true {
+		t.Errorf("grpc_plain_text = %v, want true", cfg["grpc_plain_text"])
+	}
+	if cfg["grpc_max_recv_msg_size"] != float64(1048576) {
+		t.Errorf("grpc_max_recv_msg_size = %v, want 1048576", cfg["grpc_max_recv_msg_size"])
+	}
+	if cfg["grpc_timeout_ms"] != float64(5000) {
+		t.Errorf("grpc_timeout_ms = %v, want 5000", cfg["grpc_timeout_ms"])
+	}
+	protoFiles, ok := cfg["grpc_proto_files"].([]string)
+	if !ok || len(protoFiles) != 1 || protoFiles[0] != "order.proto" {
+		t.Errorf("grpc_proto_files = %v, want order.proto", cfg["grpc_proto_files"])
+	}
+	metadata, ok := cfg["grpc_metadata"].(map[string]string)
+	if !ok || metadata["x-env"] != "perf" {
+		t.Errorf("grpc_metadata = %v, want x-env=perf", cfg["grpc_metadata"])
+	}
+	if cfg["grpc_authority"] != "orders.example.test" {
+		t.Errorf("grpc_authority = %v, want orders.example.test", cfg["grpc_authority"])
+	}
+}
