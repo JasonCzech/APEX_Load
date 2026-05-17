@@ -102,18 +102,19 @@ type TransactionEvent struct {
 }
 
 type ResourceSample struct {
-	Timestamp     time.Time `json:"timestamp"`
-	TestID        string    `json:"test_id"`
-	TestName      string    `json:"test_name"`
-	ActiveVUsers  int64     `json:"active_vusers"`
-	CPUProcessPct float64   `json:"cpu_process_pct"`
-	CPUFreePct    float64   `json:"cpu_free_pct"`
-	MemProcessMB  float64   `json:"mem_process_mb"`
-	MemFreeMB     float64   `json:"mem_free_mb"`
-	NetSentKbps   float64   `json:"net_sent_kbps"`
-	NetRecvKbps   float64   `json:"net_recv_kbps"`
-	DiskReadKbps  float64   `json:"disk_read_kbps"`
-	DiskWriteKbps float64   `json:"disk_write_kbps"`
+	Timestamp     time.Time          `json:"timestamp"`
+	TestID        string             `json:"test_id"`
+	TestName      string             `json:"test_name"`
+	ActiveVUsers  int64              `json:"active_vusers"`
+	CPUProcessPct float64            `json:"cpu_process_pct"`
+	CPUFreePct    float64            `json:"cpu_free_pct"`
+	MemProcessMB  float64            `json:"mem_process_mb"`
+	MemFreeMB     float64            `json:"mem_free_mb"`
+	NetSentKbps   float64            `json:"net_sent_kbps"`
+	NetRecvKbps   float64            `json:"net_recv_kbps"`
+	DiskReadKbps  float64            `json:"disk_read_kbps"`
+	DiskWriteKbps float64            `json:"disk_write_kbps"`
+	External      map[string]float64 `json:"external_metrics,omitempty"`
 }
 
 type IntervalSummaryRecord struct {
@@ -495,6 +496,7 @@ func (w *runArchiveWriter) RecordResourceSample(timestamp time.Time, activeVUser
 		NetRecvKbps:   resources.NetRecvKbps,
 		DiskReadKbps:  resources.DiskReadKbps,
 		DiskWriteKbps: resources.DiskWriteKbps,
+		External:      cloneFloat64Map(resources.External),
 	}
 	if err := w.resourceEncoder.Encode(record); err != nil {
 		return err

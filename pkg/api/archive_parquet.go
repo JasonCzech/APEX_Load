@@ -54,6 +54,7 @@ type parquetResourceSample struct {
 	NetRecvKbps      float64 `parquet:"name=net_recv_kbps, type=DOUBLE"`
 	DiskReadKbps     float64 `parquet:"name=disk_read_kbps, type=DOUBLE"`
 	DiskWriteKbps    float64 `parquet:"name=disk_write_kbps, type=DOUBLE"`
+	ExternalJSON     string  `parquet:"name=external_metrics_json, type=BYTE_ARRAY, convertedtype=UTF8"`
 }
 
 type parquetIntervalSummary struct {
@@ -199,6 +200,7 @@ func toParquetResources(items []ResourceSample) []parquetResourceSample {
 			NetRecvKbps:      item.NetRecvKbps,
 			DiskReadKbps:     item.DiskReadKbps,
 			DiskWriteKbps:    item.DiskWriteKbps,
+			ExternalJSON:     mustJSON(item.External),
 		})
 	}
 	return rows

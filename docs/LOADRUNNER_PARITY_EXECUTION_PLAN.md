@@ -424,6 +424,7 @@ Before claiming practical parity in these target areas, all of the following sho
 - Multi-region execution is now observable as well as configurable: `/metrics` exports region-labeled generator count, available VUser capacity, and active VUsers from live generator inventory, so regional placement can be tracked in Grafana/APM workflows.
 - APM cross-reference is now explicit in archives: W3C `traceparent` correlation IDs are decomposed into `trace_id` and `span_id` fields in JSONL and Parquet transaction results, and archive transaction queries can filter directly by `trace_id`.
 - Lifecycle notification webhooks now support Dynatrace Events API v2 payloads with API-token auth, optional entity selectors, event timeouts, and failure events mapped to Dynatrace `ERROR_EVENT` annotations.
+- Scripts can import target-side Prometheus text metrics through `config.observability.external_metrics`, carrying selected CPU, memory, queue-depth, or application gauges into live resource snapshots and archived resource samples.
 
 ## Suggested Milestones
 

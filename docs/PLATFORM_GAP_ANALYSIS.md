@@ -179,7 +179,7 @@ The most powerful analysis comes from correlating load test metrics with applica
 - **Dynatrace event injection** — push test start/stop events to Dynatrace for timeline correlation
 - **External metrics import** — pull target system metrics (CPU, memory, queue depth) during test execution
 
-**Current direction:** HTTP and SOAP execution now propagates or preserves W3C `traceparent` headers, archives extracted `trace_id` and `span_id` values alongside transaction events in JSONL and Parquet, and allows archived transaction queries to filter by `trace_id`. Prometheus controller and generator inventory metrics are also available, including region-labeled generator capacity gauges. Lifecycle notifications can now post Dynatrace Events API v2 payloads with service entity selectors so test start, stop, pause, resume, completion, and failure events appear on APM timelines.
+**Current direction:** HTTP and SOAP execution now propagates or preserves W3C `traceparent` headers, archives extracted `trace_id` and `span_id` values alongside transaction events in JSONL and Parquet, and allows archived transaction queries to filter by `trace_id`. Prometheus controller and generator inventory metrics are also available, including region-labeled generator capacity gauges. Lifecycle notifications can now post Dynatrace Events API v2 payloads with service entity selectors so test start, stop, pause, resume, completion, and failure events appear on APM timelines. Scripts can also declare Prometheus-format external metric scrapes under `config.observability.external_metrics`; matching samples are attached to live `resources.external_metrics`, JSONL resource archives, and the Parquet `external_metrics_json` column.
 
 ---
 

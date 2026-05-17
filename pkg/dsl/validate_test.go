@@ -136,6 +136,13 @@ func TestValidateScriptIssues_WebRuntimeValidation(t *testing.T) {
 					Chain: []DFETransform{{Type: ""}},
 				},
 			},
+			Observability: ObservabilityConfig{
+				ExternalMetrics: []ExternalMetricConfig{{
+					URL:        "ftp://metrics.example.test/metrics",
+					Format:     "json",
+					MetricName: "",
+				}},
+			},
 		},
 		Actions: []Action{{
 			Name:   "home",
@@ -161,6 +168,10 @@ func TestValidateScriptIssues_WebRuntimeValidation(t *testing.T) {
 	assertIssue(t, issues, "config.web_runtime.network_simulation.packet_loss_pct must be between 0 and 100")
 	assertIssue(t, issues, "config.web_runtime.streaming.buffer_size_seconds must be zero or greater")
 	assertIssue(t, issues, "config.web_runtime.streaming.fixed_bitrate_kbps must be greater than zero when mode is fixed")
+	assertIssue(t, issues, "config.observability.external_metrics[0].name is required")
+	assertIssue(t, issues, "config.observability.external_metrics[0].url must be a valid http or https URL")
+	assertIssue(t, issues, "config.observability.external_metrics[0].format must be prometheus")
+	assertIssue(t, issues, "config.observability.external_metrics[0].metric_name is required")
 	assertIssue(t, issues, "config.web_runtime.data_formatting.chain[0].type is required")
 }
 

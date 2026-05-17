@@ -449,16 +449,16 @@ type ScenarioScriptRef struct {
 }
 
 const (
-	generatorAssignmentModeAuto          = "auto"
-	generatorAssignmentModeSpecificHosts = "specific_hosts"
+	generatorAssignmentModeAuto           = "auto"
+	generatorAssignmentModeSpecificHosts  = "specific_hosts"
 	generatorAssignmentModeRegionWeighted = "region_weighted"
-	maxManagedTestHistory                = 3600
-	telemetryDiagnosticSampleInterval    = 5 * time.Second
-	maxTelemetryDiagnosticSamples        = 3
-	slowTransactionDiagnosticThresholdMs = 1000.0
-	jmsBrokerPressureMinLagMs            = 200.0
-	jmsBrokerPressureLagMultiplier       = 2.0
-	jmsBrokerPressureSendRecvRatio       = 1.5
+	maxManagedTestHistory                 = 3600
+	telemetryDiagnosticSampleInterval     = 5 * time.Second
+	maxTelemetryDiagnosticSamples         = 3
+	slowTransactionDiagnosticThresholdMs  = 1000.0
+	jmsBrokerPressureMinLagMs             = 200.0
+	jmsBrokerPressureLagMultiplier        = 2.0
+	jmsBrokerPressureSendRecvRatio        = 1.5
 )
 
 var runtimeOverrideEnvPattern = regexp.MustCompile(`\{\{\s*env\.([^{}\s]+)\s*\}\}`)
@@ -501,8 +501,9 @@ type archiveRecorder interface {
 }
 
 type runArtifacts struct {
-	recorder   archiveRecorder
-	saveRecord func(record *storage.RunArchiveRecord) error
+	recorder        archiveRecorder
+	saveRecord      func(record *storage.RunArchiveRecord) error
+	externalMetrics *externalMetricCollector
 }
 
 func NewTestRunner(maxTests int, hub *Hub, store storage.Store) *TestRunner {
@@ -3887,6 +3888,7 @@ func (tr *TestRunner) publishLiveMetrics(test *ManagedTest, live *LiveMetrics, a
 	live.Telemetry.WebsocketClients = hubStats.ConnectedClients
 	live.Telemetry.WebsocketDroppedMessages = hubStats.DroppedClientMessages
 	live.Telemetry.WebsocketDroppedEvents = hubStats.DroppedBroadcasts
+	artifacts.enrichLiveMetrics(test, live)
 	diagnostic, diagnosticSignature := buildTelemetryDiagnostic(test, live)
 	publishDiagnostic := false
 

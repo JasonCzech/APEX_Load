@@ -59,7 +59,20 @@ type ScriptConfig struct {
 	JMS           JMSConfig           `json:"jms,omitempty"`
 	ErrorHandling ErrorHandlingConfig `json:"error_handling,omitempty"`
 	RunLogic      RunLogicConfig      `json:"run_logic,omitempty"`
+	Observability ObservabilityConfig `json:"observability,omitempty"`
 	Log           LogConfig           `json:"log,omitempty"`
+}
+
+type ObservabilityConfig struct {
+	ExternalMetrics []ExternalMetricConfig `json:"external_metrics,omitempty"`
+}
+
+type ExternalMetricConfig struct {
+	Name       string            `json:"name,omitempty"`
+	URL        string            `json:"url,omitempty"`
+	Format     string            `json:"format,omitempty"`
+	MetricName string            `json:"metric_name,omitempty"`
+	Labels     map[string]string `json:"labels,omitempty"`
 }
 
 type JavaHTTPConfig struct {

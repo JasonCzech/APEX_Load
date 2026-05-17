@@ -182,6 +182,18 @@ export interface DataFormattingConfig {
   chain?: DFETransform[]
 }
 
+export interface ExternalMetricConfig {
+  name?: string
+  url?: string
+  format?: 'prometheus'
+  metric_name?: string
+  labels?: Record<string, string>
+}
+
+export interface ObservabilityConfig {
+  external_metrics?: ExternalMetricConfig[]
+}
+
 export interface WebRuntimeConfig {
   additional_attributes?: Record<string, string>
   download_filters?: DownloadFiltersConfig
@@ -264,6 +276,7 @@ export interface ScriptConfig {
   soap?: SOAPConfig
   browser?: BrowserConfig
   jms?: JMSConfig
+  observability?: ObservabilityConfig
 }
 
 export interface ScriptDataSource {

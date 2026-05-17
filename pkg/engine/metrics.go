@@ -113,14 +113,15 @@ type TelemetryMetrics struct {
 }
 
 type SystemResources struct {
-	CPUProcessPct float64 `json:"cpu_process_pct"` // CPU used by vuser processes
-	CPUFreePct    float64 `json:"cpu_free_pct"`    // CPU headroom
-	MemProcessMb  float64 `json:"mem_process_mb"`  // Memory used by vuser processes
-	MemFreeMb     float64 `json:"mem_free_mb"`     // Total system memory free
-	NetSentKbps   float64 `json:"net_sent_kbps"`   // Network egress
-	NetRecvKbps   float64 `json:"net_recv_kbps"`   // Network ingress
-	DiskReadKbps  float64 `json:"disk_read_kbps"`  // Disk Read I/O
-	DiskWriteKbps float64 `json:"disk_write_kbps"` // Disk Write I/O
+	CPUProcessPct float64            `json:"cpu_process_pct"`            // CPU used by vuser processes
+	CPUFreePct    float64            `json:"cpu_free_pct"`               // CPU headroom
+	MemProcessMb  float64            `json:"mem_process_mb"`             // Memory used by vuser processes
+	MemFreeMb     float64            `json:"mem_free_mb"`                // Total system memory free
+	NetSentKbps   float64            `json:"net_sent_kbps"`              // Network egress
+	NetRecvKbps   float64            `json:"net_recv_kbps"`              // Network ingress
+	DiskReadKbps  float64            `json:"disk_read_kbps"`             // Disk Read I/O
+	DiskWriteKbps float64            `json:"disk_write_kbps"`            // Disk Write I/O
+	External      map[string]float64 `json:"external_metrics,omitempty"` // Target-side imported metrics
 }
 
 type GroupMetrics struct {

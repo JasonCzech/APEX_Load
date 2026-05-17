@@ -88,7 +88,7 @@ func newRunArtifacts(tr *TestRunner, test *ManagedTest, saveRecord func(record *
 	if err != nil {
 		return nil, err
 	}
-	return &runArtifacts{recorder: recorder, saveRecord: saveRecord}, nil
+	return &runArtifacts{recorder: recorder, saveRecord: saveRecord, externalMetrics: newExternalMetricCollector(nil)}, nil
 }
 
 func buildRunArchiveProvenance(tr *TestRunner, test *ManagedTest) RunArchiveProvenance {
@@ -151,6 +151,14 @@ func (a *runArtifacts) recordLiveMetrics(test *ManagedTest, live *LiveMetrics) {
 	if err := a.recorder.RecordResourceSample(live.Timestamp, live.ActiveVUsers, live.Resources); err != nil {
 		slog.Warn("failed to record resource sample", "test_id", test.ID, "error", err)
 	}
+}
+
+func (a *runArtifacts) enrichLiveMetrics(test *ManagedTest, live *LiveMetrics) {
+	if a == nil || live == nil || a.externalMetrics == nil {
+		return
+	}
+	values := a.externalMetrics.collect(context.Background(), externalMetricTargetsForTest(test))
+	live.Resources = attachExternalMetrics(live.Resources, values)
 }
 
 func (a *runArtifacts) finalize(test *ManagedTest, finalStatus string, endTime time.Time, finalError string) (*storage.RunArchiveRecord, string, string) {

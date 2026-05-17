@@ -731,6 +731,7 @@ export interface SystemResources {
   net_recv_kbps: number
   disk_read_kbps: number
   disk_write_kbps: number
+  external_metrics?: Record<string, number>
 }
 
 export interface TxMetrics {

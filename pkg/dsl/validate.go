@@ -2,6 +2,7 @@ package dsl
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -484,6 +485,25 @@ func validateWebRuntimeIssues(script *Script) []string {
 	}
 	if streaming.BandwidthEstimation != "" && !isAllowedValue(streaming.BandwidthEstimation, "rolling", "instant") {
 		issues = append(issues, "config.web_runtime.streaming.bandwidth_estimation must be rolling or instant")
+	}
+
+	for index, metric := range script.Config.Observability.ExternalMetrics {
+		prefix := fmt.Sprintf("config.observability.external_metrics[%d]", index)
+		if strings.TrimSpace(metric.Name) == "" {
+			issues = append(issues, prefix+".name is required")
+		}
+		if strings.TrimSpace(metric.URL) == "" {
+			issues = append(issues, prefix+".url is required")
+		} else if parsed, err := url.ParseRequestURI(metric.URL); err != nil || parsed == nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+			issues = append(issues, prefix+".url must be a valid http or https URL")
+		}
+		format := strings.TrimSpace(metric.Format)
+		if format != "" && !isAllowedValue(format, "prometheus") {
+			issues = append(issues, prefix+".format must be prometheus")
+		}
+		if strings.TrimSpace(metric.MetricName) == "" {
+			issues = append(issues, prefix+".metric_name is required")
+		}
 	}
 
 	for index, transform := range script.Config.WebRuntime.DataFormatting.Chain {
