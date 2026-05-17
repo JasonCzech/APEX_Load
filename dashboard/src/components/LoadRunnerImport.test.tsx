@@ -1834,7 +1834,7 @@ describe('LoadRunnerImport', () => {
 
     expect(container.textContent).toContain('Starting')
     expect(container.textContent).toContain('Wait for the draft browser replay to finish before saving it to the library.')
-    expect(container.textContent).toContain('Review the generated script, preserved metadata, and warnings. Wait for the draft browser replay to finish before saving.')
+    expect(container.textContent).toContain('Review the generated script, preserved metadata, and warnings. Wait for the draft browser replay to finish before saving it to the library.')
     const startingReplayButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Starting Draft Browser Replay...')) as HTMLButtonElement | undefined
     expect(startingReplayButton).toBeDefined()
     expect(startingReplayButton?.disabled).toBe(true)
@@ -2018,7 +2018,7 @@ describe('LoadRunnerImport', () => {
       expect(apiMock.createScript).not.toHaveBeenCalled()
       expect(container.textContent).toContain('Starting')
       expect(container.textContent).toContain('Draft Browser Replay In Progress')
-      expect(container.textContent).toContain('Review the generated script, preserved metadata, and warnings. Wait for the draft browser replay to finish before saving.')
+      expect(container.textContent).toContain('Review the generated script, preserved metadata, and warnings. Wait for the draft browser replay to finish before saving it to the library.')
       expect(container.textContent).toContain('Wait for the draft browser replay to finish before saving it to the library.')
 
       await act(async () => {
@@ -2414,7 +2414,7 @@ describe('LoadRunnerImport', () => {
     const replayFirstSaveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Start Draft Browser Replay Before Saving'))
     expect(replayFirstSaveButton).toBeDefined()
     expect(Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save Reviewed Script'))).toBeUndefined()
-    expect(container.textContent).toContain('Run a draft browser replay before saving the reviewed script.')
+    expect(container.textContent).toContain('Run a draft browser replay before saving it to the library.')
   })
 
   it('shows rerun copy after a browser validation replay fails', async () => {
@@ -2556,7 +2556,7 @@ describe('LoadRunnerImport', () => {
       expect(apiMock.getBrowserReplaySession).toHaveBeenCalledWith('draft-browser-validation')
       expect(container.textContent).toContain('Replay Status: Failed')
       expect(container.textContent).toContain('Rerun Draft Browser Replay Before Saving')
-      expect(container.textContent).toContain('Rerun a draft browser replay before saving the reviewed script.')
+      expect(container.textContent).toContain('Rerun a draft browser replay before saving it to the library.')
       expect(container.textContent).toContain('Rerun a draft browser replay against the converted browser script before saving it to the library.')
 
       const rerunReplayButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Rerun Draft Browser Replay')

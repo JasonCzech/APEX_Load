@@ -282,16 +282,16 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
     ? (saveBlockedByMigrationPolicy
         ? 'This preview came from the dry-run validator. Saving is disabled until the migration readiness blockers are resolved or the active policy is relaxed.'
         : (browserReplayInProgress
-            ? 'This preview came from the dry-run validator. Wait for the draft browser replay to finish before saving the reviewed script.'
+        ? 'This preview came from the dry-run validator. Wait for the draft browser replay to finish before saving it to the library.'
             : (saveRequiresBrowserReplay
-                ? `This preview came from the dry-run validator. ${browserReplayWasStarted ? 'Rerun' : 'Run'} a draft browser replay before saving the reviewed script.`
+          ? `This preview came from the dry-run validator. ${browserReplayWasStarted ? 'Rerun' : 'Run'} a draft browser replay before saving it to the library.`
                 : 'This preview came from the dry-run validator. You can still save the reviewed script if the output looks correct.')))
     : (saveBlockedByMigrationPolicy
         ? 'Review the generated script, preserved metadata, and warnings. Saving is disabled until the migration readiness blockers are resolved or the active policy is relaxed.'
         : (browserReplayInProgress
-            ? 'Review the generated script, preserved metadata, and warnings. Wait for the draft browser replay to finish before saving.'
+        ? 'Review the generated script, preserved metadata, and warnings. Wait for the draft browser replay to finish before saving it to the library.'
             : (saveRequiresBrowserReplay
-                ? `Review the generated script, preserved metadata, and warnings. ${browserReplayWasStarted ? 'Rerun' : 'Run'} a draft browser replay before saving.`
+          ? `Review the generated script, preserved metadata, and warnings. ${browserReplayWasStarted ? 'Rerun' : 'Run'} a draft browser replay before saving it to the library.`
                 : 'Review the generated script, preserved metadata, and warnings before saving.')))
   const runtimeBlockingSettings = importSummary.runtimeSettingReadiness?.blocking_settings || []
   const generatedDataSources = importedScript
