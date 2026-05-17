@@ -438,6 +438,7 @@ Before claiming practical parity in these target areas, all of the following sho
 - TrueClient MobileWeb import now decomposes `document.forms[...].elements[...]` fill/click JavaScript into name-selector browser actions for common form-driven scripts.
 - TrueClient MobileWeb import now decomposes first-match `document.getElementsByClassName(...)[0]` fill/click JavaScript into safe class-token browser selectors, leaving ambiguous class expressions in guided review.
 - TrueClient MobileWeb import now decomposes first-match `document.querySelectorAll(...)[0]` fill/click JavaScript into direct CSS-selector browser actions.
+- TrueClient MobileWeb import now decomposes first-match `document.getElementsByTagName(...)[0]` fill/click JavaScript into safe tag-token browser selectors, while preserving unsafe tag expressions for repair review.
 
 ## Suggested Milestones
 

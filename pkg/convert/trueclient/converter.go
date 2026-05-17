@@ -65,6 +65,8 @@ var (
 	reElementByIDValue      = regexp.MustCompile(`^document\.getElementById\(\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\)\.value\s*=\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')$`)
 	reElementsByClassClick  = regexp.MustCompile(`^document\.getElementsByClassName\(\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\)\s*\[\s*0\s*\]\.click\(\s*\)$`)
 	reElementsByClassValue  = regexp.MustCompile(`^document\.getElementsByClassName\(\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\)\s*\[\s*0\s*\]\.value\s*=\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')$`)
+	reElementsByTagClick    = regexp.MustCompile(`^document\.getElementsByTagName\(\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\)\s*\[\s*0\s*\]\.click\(\s*\)$`)
+	reElementsByTagValue    = regexp.MustCompile(`^document\.getElementsByTagName\(\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\)\s*\[\s*0\s*\]\.value\s*=\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')$`)
 	reElementsByNameClick   = regexp.MustCompile(`^document\.getElementsByName\(\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\)\s*\[\s*0\s*\]\.click\(\s*\)$`)
 	reElementsByNameValue   = regexp.MustCompile(`^document\.getElementsByName\(\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\)\s*\[\s*0\s*\]\.value\s*=\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')$`)
 	reFormElementClick      = regexp.MustCompile(`^document\.forms\s*\[\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*'|\d+)\s*\]\.elements\s*\[\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\]\.click\(\s*\)$`)
@@ -73,6 +75,7 @@ var (
 	reLocationAssign        = regexp.MustCompile(`^(?:window\.)?location(?:\.href)?\s*=\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')$`)
 	reLocationMethod        = regexp.MustCompile(`^(?:window\.)?location\.(?:assign|replace)\(\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\)$`)
 	reSimpleCSSClassToken   = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_-]*$`)
+	reSimpleHTMLTagToken    = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9-]*$`)
 )
 
 // ConvertArchive converts a TruClient Mobile Web archive into a Stormrunner browser script.
@@ -883,6 +886,30 @@ func convertJavaScriptStatement(statement string, baseName string, position int)
 			},
 		}, true
 	}
+	if matches := reElementsByTagValue.FindStringSubmatch(statement); len(matches) == 3 {
+		tagName, ok := decodeJSStringLiteral(matches[1])
+		if !ok {
+			return dsl.Action{}, false
+		}
+		value, ok := decodeJSStringLiteral(matches[2])
+		if !ok {
+			return dsl.Action{}, false
+		}
+		selector := elementTagSelector(tagName)
+		if selector == "" {
+			return dsl.Action{}, false
+		}
+		return dsl.Action{
+			Name:     fmt.Sprintf("%s Fill %d", baseName, position),
+			Type:     "browser_fill",
+			Target:   selector,
+			Selector: selector,
+			Value:    value,
+			Metadata: map[string]any{
+				"source": "truclient_tag_element",
+			},
+		}, true
+	}
 	if matches := reFormElementValue.FindStringSubmatch(statement); len(matches) == 4 {
 		name, ok := decodeJSStringLiteral(matches[2])
 		if !ok {
@@ -998,6 +1025,25 @@ func convertJavaScriptStatement(statement string, baseName string, position int)
 			},
 		}, true
 	}
+	if matches := reElementsByTagClick.FindStringSubmatch(statement); len(matches) == 2 {
+		tagName, ok := decodeJSStringLiteral(matches[1])
+		if !ok {
+			return dsl.Action{}, false
+		}
+		selector := elementTagSelector(tagName)
+		if selector == "" {
+			return dsl.Action{}, false
+		}
+		return dsl.Action{
+			Name:     fmt.Sprintf("%s Click %d", baseName, position),
+			Type:     "browser_click",
+			Target:   selector,
+			Selector: selector,
+			Metadata: map[string]any{
+				"source": "truclient_tag_element",
+			},
+		}, true
+	}
 	if matches := reFormElementClick.FindStringSubmatch(statement); len(matches) == 3 {
 		name, ok := decodeJSStringLiteral(matches[2])
 		if !ok {
@@ -1075,6 +1121,14 @@ func elementClassSelector(className string) string {
 		}
 	}
 	return "." + strings.Join(tokens, ".")
+}
+
+func elementTagSelector(tagName string) string {
+	tagName = strings.ToLower(strings.TrimSpace(tagName))
+	if tagName == "" || !reSimpleHTMLTagToken.MatchString(tagName) {
+		return ""
+	}
+	return tagName
 }
 
 func convertJavaScriptLocationNavigation(statement string, baseName string, position int) (dsl.Action, bool) {

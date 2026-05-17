@@ -244,6 +244,66 @@ func TestConvertArchiveMapsGetElementsByClassNameJavaScript(t *testing.T) {
 	}
 }
 
+func TestConvertArchiveMapsGetElementsByTagNameJavaScript(t *testing.T) {
+	result, err := ConvertArchive(map[string]string{
+		"default.xml": encodeUTF16LE(`<?xml version="1.0" encoding="utf-16"?>
+<truScript>
+  <step type="block" action="action" actionName="Action">
+    <step type="testObject" action="Navigate" index="1" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://m.example.com/search\&quot;&quot;}}" />
+    <step type="util" action="Evaluate JavaScript" index="2" arguments="{&quot;Code&quot;:{&quot;value&quot;:&quot;document.getElementsByTagName('input')[0].value = 'stormrunner';\ndocument.getElementsByTagName('button')[0].click()&quot;}}" />
+  </step>
+</truScript>`),
+	}, ConvertOptions{ScriptName: "Element Tag JavaScript"})
+	if err != nil {
+		t.Fatalf("ConvertArchive returned error: %v", err)
+	}
+	if len(result.Script.Actions) != 3 {
+		t.Fatalf("actions len = %d, want 3", len(result.Script.Actions))
+	}
+	if action := result.Script.Actions[1]; action.Type != "browser_fill" || action.Selector != "input" || action.Value != "stormrunner" {
+		t.Fatalf("action[1] = %#v, want browser fill for first input tag", action)
+	}
+	if action := result.Script.Actions[2]; action.Type != "browser_click" || action.Selector != "button" {
+		t.Fatalf("action[2] = %#v, want browser click for first button tag", action)
+	}
+	if result.Stats.TotalSteps != 2 || result.Stats.ConvertedActions != 3 || result.Stats.Skipped != 0 {
+		t.Fatalf("stats = %#v, want total=2 converted=3 skipped=0", result.Stats)
+	}
+	if len(result.Stats.UnsupportedSteps) != 0 {
+		t.Fatalf("unsupported steps = %#v, want none", result.Stats.UnsupportedSteps)
+	}
+	if len(result.Warnings) != 0 {
+		t.Fatalf("warnings = %#v, want none", result.Warnings)
+	}
+}
+
+func TestConvertArchiveLeavesUnsafeTagNameJavaScriptForReview(t *testing.T) {
+	result, err := ConvertArchive(map[string]string{
+		"default.xml": encodeUTF16LE(`<?xml version="1.0" encoding="utf-16"?>
+<truScript>
+  <step type="block" action="action" actionName="Action">
+    <step type="testObject" action="Navigate" index="1" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://m.example.com/search\&quot;&quot;}}" />
+    <step type="util" action="Evaluate JavaScript" index="2" arguments="{&quot;Code&quot;:{&quot;value&quot;:&quot;document.getElementsByTagName('input.primary')[0].click()&quot;}}" />
+  </step>
+</truScript>`),
+	}, ConvertOptions{ScriptName: "Unsafe Tag JavaScript"})
+	if err != nil {
+		t.Fatalf("ConvertArchive returned error: %v", err)
+	}
+	if len(result.Script.Actions) != 1 {
+		t.Fatalf("actions len = %d, want only the navigation action", len(result.Script.Actions))
+	}
+	if result.Stats.TotalSteps != 2 || result.Stats.ConvertedActions != 1 || result.Stats.Skipped != 1 {
+		t.Fatalf("stats = %#v, want total=2 converted=1 skipped=1", result.Stats)
+	}
+	if len(result.Stats.UnsupportedSteps) != 1 || result.Stats.UnsupportedSteps[0] != "Evaluate JavaScript" {
+		t.Fatalf("unsupported steps = %#v, want Evaluate JavaScript", result.Stats.UnsupportedSteps)
+	}
+	if len(result.Warnings) != 1 || !strings.Contains(result.Warnings[0], "document.getElementsByTagName('input.primary')[0].click()") {
+		t.Fatalf("warnings = %#v, want skipped tag-name JavaScript warning", result.Warnings)
+	}
+}
+
 func TestConvertArchiveLeavesUnsafeClassNameJavaScriptForReview(t *testing.T) {
 	result, err := ConvertArchive(map[string]string{
 		"default.xml": encodeUTF16LE(`<?xml version="1.0" encoding="utf-16"?>
