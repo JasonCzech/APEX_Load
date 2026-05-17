@@ -277,7 +277,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
     ? 'Wait for the draft browser replay to finish before saving it to the library.'
     : (saveRequiresBrowserReplay
       ? `${browserReplayWasStarted ? 'Rerun' : 'Run'} a draft browser replay against the converted browser script before saving it to the library.`
-      : 'The latest draft browser replay completed. Review the replay results before saving it to the library.')
+      : 'The latest draft browser replay completed. Review the draft browser replay results before saving it to the library.')
   const reviewSubtitle = reviewMode === 'validation'
     ? (saveBlockedByMigrationPolicy
         ? 'This preview came from the dry-run validator. Saving is disabled until the migration readiness blockers are resolved or the active policy is relaxed.'

@@ -2070,7 +2070,7 @@ describe('LoadRunnerImport', () => {
 
       expect(apiMock.getBrowserReplaySession).toHaveBeenCalledWith('draft-browser-validation')
       expect(container.textContent).toContain('Replay Status: Completed')
-      expect(container.textContent).toContain('The latest draft browser replay completed. Review the replay results before saving it to the library.')
+      expect(container.textContent).toContain('The latest draft browser replay completed. Review the draft browser replay results before saving it to the library.')
 
       const finalSaveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save to Script Library'))
       expect(finalSaveButton).toBeDefined()
