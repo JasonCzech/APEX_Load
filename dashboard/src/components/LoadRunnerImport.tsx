@@ -603,7 +603,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
       setReplayValidationWarnings(Array.isArray(res.warnings) ? res.warnings : [])
       return true
     } catch (error: unknown) {
-      setReplayValidationError(getErrorMessage(error, 'Browser replay validation failed'))
+      setReplayValidationError(getErrorMessage(error, 'Draft browser replay failed to start'))
       return false
     } finally {
       setReplayValidationLoading(false)
