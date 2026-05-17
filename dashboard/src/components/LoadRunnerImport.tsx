@@ -247,7 +247,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
   const saveBlockedByMigrationPolicy = Boolean(migrationReadiness?.blocked)
   const browserImport = isBrowserImport(importedScript)
   const browserReplayStatus = replayValidationSession?.status || null
-  const browserReplayStarting = browserImport && replayValidationLoading && replayValidationSession === null
+  const browserReplayStarting = browserImport && replayValidationLoading
   const browserReplayStatusLabel = browserReplayStarting
     ? 'Starting'
     : formatRuntimeSettingStatusLabel(browserReplayStatus || 'not run')
@@ -515,7 +515,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
 
   useEffect(() => {
     const sessionId = replayValidationSession?.id
-    if (!sessionId || !browserReplayInProgress) {
+    if (!sessionId || !browserReplayInProgress || replayValidationLoading) {
       return
     }
 
@@ -547,7 +547,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
       cancelled = true
       window.clearInterval(intervalId)
     }
-  }, [api, browserReplayInProgress, replayValidationSession?.id])
+  }, [api, browserReplayInProgress, replayValidationLoading, replayValidationSession?.id])
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault(); setDragOver(false)
@@ -592,7 +592,6 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
     setReplayValidationLoading(true)
     setReplayValidationError('')
     setReplayValidationWarnings([])
-    setReplayValidationSession(null)
 
     try {
       const res = await api.startDraftBrowserReplaySession(buildReplayStartPayload(script, {
@@ -826,7 +825,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
                       {replayValidationLoading ? <><span className="spinner" /> {replayActionLabel}</> : replayActionLabel}
                     </button>
                   </div>
-                  {replayValidationSession && (
+                  {replayValidationSession && !replayValidationLoading && (
                     <ul>
                       <li>Session: {replayValidationSession.id}</li>
                       <li>Status: {browserReplayStatusLabel}</li>
