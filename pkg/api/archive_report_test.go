@@ -74,3 +74,22 @@ func TestBuildRunArchiveReportClustersErrorPatterns(t *testing.T) {
 		t.Fatalf("pattern timing = %#v, want first=%s latest=%s", pattern, timestamp, timestamp.Add(20*time.Second))
 	}
 }
+
+func TestTraceparentIDsExtractsAPMIdentifiers(t *testing.T) {
+	const traceparent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+
+	traceID, spanID := traceparentIDs(traceparent)
+
+	if traceID != "4bf92f3577b34da6a3ce929d0e0e4736" {
+		t.Fatalf("trace id = %q, want W3C trace id", traceID)
+	}
+	if spanID != "00f067aa0ba902b7" {
+		t.Fatalf("span id = %q, want W3C span id", spanID)
+	}
+	if traceID, spanID := traceparentIDs("corr-archive-1"); traceID != "" || spanID != "" {
+		t.Fatalf("non-traceparent ids = (%q, %q), want empty", traceID, spanID)
+	}
+	if traceID, spanID := traceparentIDs("00-00000000000000000000000000000000-0000000000000000-01"); traceID != "" || spanID != "" {
+		t.Fatalf("zero traceparent ids = (%q, %q), want empty", traceID, spanID)
+	}
+}

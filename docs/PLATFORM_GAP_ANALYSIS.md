@@ -179,6 +179,8 @@ The most powerful analysis comes from correlating load test metrics with applica
 - **Dynatrace event injection** — push test start/stop events to Dynatrace for timeline correlation
 - **External metrics import** — pull target system metrics (CPU, memory, queue depth) during test execution
 
+**Current direction:** HTTP and SOAP execution now propagates or preserves W3C `traceparent` headers, archives extracted `trace_id` and `span_id` values alongside transaction events in JSONL and Parquet, and allows archived transaction queries to filter by `trace_id`. Prometheus controller and generator inventory metrics are also available, including region-labeled generator capacity gauges.
+
 ---
 
 ## Gap 9: User Management & RBAC

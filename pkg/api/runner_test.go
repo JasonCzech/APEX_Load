@@ -284,7 +284,7 @@ func (p *archiveStubProtocol) Execute(_ context.Context, action *protocol.Action
 		BytesReceived:    512,
 		StatusCode:       200,
 		Success:          true,
-		CorrelationID:    "corr-archive-1",
+		CorrelationID:    "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
 		DependencyType:   "http",
 		DependencyTarget: "archive.example.test",
 		Extractions:      map[string]string{"soap_operation": "CreateOrder"},
@@ -2057,9 +2057,9 @@ func TestNewTestRunnerSkipsPersistedArchiveWhenManifestMissing(t *testing.T) {
 	}
 	store := &metricsStoreSpy{
 		listedTests: []*storage.TestRecord{{
-			ID:         "test-1",
-			Name:       "Recovered Run",
-			Status:     "COMPLETE",
+			ID:          "test-1",
+			Name:        "Recovered Run",
+			Status:      "COMPLETE",
 			TotalVUsers: 1,
 		}},
 		archiveByTestID: map[string]*storage.RunArchiveRecord{"test-1": archive},

@@ -313,6 +313,8 @@ export interface TransactionEvent {
   group?: string
   action_name?: string
   correlation_id?: string
+  trace_id?: string
+  span_id?: string
   dependency_type?: string
   dependency_target?: string
   duration_ms: number

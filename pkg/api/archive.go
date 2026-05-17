@@ -81,6 +81,8 @@ type TransactionEvent struct {
 	Group            string                    `json:"group,omitempty"`
 	ActionName       string                    `json:"action_name,omitempty"`
 	CorrelationID    string                    `json:"correlation_id,omitempty"`
+	TraceID          string                    `json:"trace_id,omitempty"`
+	SpanID           string                    `json:"span_id,omitempty"`
 	DependencyType   string                    `json:"dependency_type,omitempty"`
 	DependencyTarget string                    `json:"dependency_target,omitempty"`
 	DurationMs       float64                   `json:"duration_ms"`
@@ -142,6 +144,7 @@ type transactionEventFilter struct {
 	SOAPOperation    string
 	Group            string
 	CorrelationID    string
+	TraceID          string
 	DependencyType   string
 	DependencyTarget string
 	Success          *bool
@@ -447,6 +450,8 @@ func (w *runArchiveWriter) RecordResult(result *protocol.Result) error {
 		Group:            result.Group,
 		ActionName:       result.ActionName,
 		CorrelationID:    result.CorrelationID,
+		TraceID:          traceIDFromCorrelationID(result.CorrelationID),
+		SpanID:           spanIDFromCorrelationID(result.CorrelationID),
 		DependencyType:   result.DependencyType,
 		DependencyTarget: result.DependencyTarget,
 		DurationMs:       durationMillis(result.Duration),
@@ -620,6 +625,9 @@ func loadArchiveTransactions(record *storage.RunArchiveRecord, filter transactio
 			return false
 		}
 		if filter.CorrelationID != "" && !strings.EqualFold(item.CorrelationID, filter.CorrelationID) {
+			return false
+		}
+		if filter.TraceID != "" && !strings.EqualFold(item.TraceID, filter.TraceID) {
 			return false
 		}
 		if filter.DependencyType != "" && !strings.EqualFold(item.DependencyType, filter.DependencyType) {
@@ -976,6 +984,47 @@ func archiveTransactionHasBrowserDiagnostics(tx TransactionEvent) bool {
 		len(tx.Snapshot.ConsoleEntries) > 0 ||
 		len(tx.Snapshot.NetworkEntries) > 0 ||
 		tx.Snapshot.DOMSummary != nil
+}
+
+func traceIDFromCorrelationID(correlationID string) string {
+	traceID, _ := traceparentIDs(correlationID)
+	return traceID
+}
+
+func spanIDFromCorrelationID(correlationID string) string {
+	_, spanID := traceparentIDs(correlationID)
+	return spanID
+}
+
+func traceparentIDs(correlationID string) (string, string) {
+	parts := strings.Split(strings.TrimSpace(correlationID), "-")
+	if len(parts) != 4 {
+		return "", ""
+	}
+	traceID := strings.ToLower(strings.TrimSpace(parts[1]))
+	spanID := strings.ToLower(strings.TrimSpace(parts[2]))
+	if len(traceID) != 32 || len(spanID) != 16 || !isLowerHex(traceID) || !isLowerHex(spanID) || isAllZeroHex(traceID) || isAllZeroHex(spanID) {
+		return "", ""
+	}
+	return traceID, spanID
+}
+
+func isLowerHex(value string) bool {
+	for _, ch := range value {
+		if (ch < '0' || ch > '9') && (ch < 'a' || ch > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+func isAllZeroHex(value string) bool {
+	for _, ch := range value {
+		if ch != '0' {
+			return false
+		}
+	}
+	return true
 }
 
 func writeRunArchiveBrowserDiagnosticsZip(bundle *BrowserDiagnosticsBundle, dst io.Writer) error {

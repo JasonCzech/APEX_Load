@@ -257,6 +257,7 @@ func parseTransactionEventFilter(w http.ResponseWriter, r *http.Request) (transa
 		SOAPOperation:    r.URL.Query().Get("soap_operation"),
 		Group:            r.URL.Query().Get("group"),
 		CorrelationID:    r.URL.Query().Get("correlation_id"),
+		TraceID:          r.URL.Query().Get("trace_id"),
 		DependencyType:   r.URL.Query().Get("dependency_type"),
 		DependencyTarget: r.URL.Query().Get("dependency_target"),
 	}
