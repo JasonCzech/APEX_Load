@@ -1134,6 +1134,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
           subprotocol: next.config.websocket?.subprotocol || '',
           origin: next.config.websocket?.origin || '',
           compression: next.config.websocket?.compression ?? false,
+          reconnect: next.config.websocket?.reconnect ?? true,
         }
         if (next.actions.length === 0) {
           next.actions = [{ ...JSON.parse(JSON.stringify(EMPTY_ACTION)), name: 'Connect_WebSocket', type: 'ws_connect', target: '/ws' }]

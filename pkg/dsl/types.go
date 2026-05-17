@@ -97,6 +97,7 @@ type WebSocketConfig struct {
 	Subprotocol    string `json:"subprotocol,omitempty"`
 	Origin         string `json:"origin,omitempty"`
 	Compression    bool   `json:"compression,omitempty"`
+	Reconnect      bool   `json:"reconnect,omitempty"`
 }
 
 type GRPCConfig struct {

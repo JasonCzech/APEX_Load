@@ -288,6 +288,7 @@ export interface WebSocketConfig {
   subprotocol?: string
   origin?: string
   compression?: boolean
+  reconnect?: boolean
 }
 
 export interface GRPCConfig {

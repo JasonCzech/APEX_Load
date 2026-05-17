@@ -232,7 +232,85 @@ func TestWebSocketSendRequiresOpenConnection(t *testing.T) {
 	}
 }
 
-func newEchoServer(t *testing.T, subprotocol string) *httptest.Server {
+func TestWebSocketSendReconnectsAfterClosedConnection(t *testing.T) {
+	server := newEchoServer(t, "")
+	defer server.Close()
+
+	ws := &WebSocket{}
+	if err := ws.Init(context.Background(), map[string]any{
+		"base_url":                   server.URL,
+		"websocket_reconnect":        true,
+		"websocket_read_timeout_ms":  float64(1000),
+		"websocket_write_timeout_ms": float64(1000),
+	}); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	if result, _ := ws.Execute(context.Background(), &protocol.Action{Name: "connect", Type: "ws_connect", Target: "/ws"}); !result.Success {
+		t.Fatalf("connect failed: %s", result.ErrorMessage)
+	}
+
+	ws.mu.Lock()
+	stale := ws.conn
+	ws.mu.Unlock()
+	if stale == nil {
+		t.Fatal("expected open connection")
+	}
+	_ = stale.Close()
+
+	send, err := ws.Execute(context.Background(), &protocol.Action{Name: "send", Type: "ws_send", Body: []byte("reconnected")})
+	if err != nil {
+		t.Fatalf("send Execute returned error: %v", err)
+	}
+	if !send.Success {
+		t.Fatalf("send failed after reconnect: %s", send.ErrorMessage)
+	}
+
+	receive, err := ws.Execute(context.Background(), &protocol.Action{Name: "receive", Type: "ws_receive", Params: map[string]any{"timeout_ms": float64(1000)}})
+	if err != nil {
+		t.Fatalf("receive Execute returned error: %v", err)
+	}
+	if !receive.Success {
+		t.Fatalf("receive failed after reconnect: %s", receive.ErrorMessage)
+	}
+	if receive.ResponseBody != "reconnected" {
+		t.Fatalf("ResponseBody = %q, want reconnected", receive.ResponseBody)
+	}
+}
+
+func BenchmarkWebSocketEchoRoundTrip(b *testing.B) {
+	server := newEchoServer(b, "")
+	defer server.Close()
+
+	ws := &WebSocket{}
+	if err := ws.Init(context.Background(), map[string]any{
+		"base_url":                   server.URL,
+		"websocket_read_timeout_ms":  float64(5000),
+		"websocket_write_timeout_ms": float64(5000),
+		"websocket_max_message_size": float64(4096),
+	}); err != nil {
+		b.Fatalf("Init: %v", err)
+	}
+	defer ws.Teardown(context.Background())
+	if result, _ := ws.Execute(context.Background(), &protocol.Action{Name: "connect", Type: "ws_connect", Target: "/ws"}); !result.Success {
+		b.Fatalf("connect failed: %s", result.ErrorMessage)
+	}
+
+	send := &protocol.Action{Name: "send", Type: "ws_send", Body: []byte(`{"type":"ping","id":"benchmark"}`)}
+	receive := &protocol.Action{Name: "receive", Type: "ws_receive", Params: map[string]any{"timeout_ms": float64(5000)}}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if result, _ := ws.Execute(context.Background(), send); !result.Success {
+			b.Fatalf("send failed: %s", result.ErrorMessage)
+		}
+		if result, _ := ws.Execute(context.Background(), receive); !result.Success {
+			b.Fatalf("receive failed: %s", result.ErrorMessage)
+		}
+	}
+}
+
+func newEchoServer(t testing.TB, subprotocol string) *httptest.Server {
 	t.Helper()
 	upgrader := gorillawebsocket.Upgrader{
 		EnableCompression: true,

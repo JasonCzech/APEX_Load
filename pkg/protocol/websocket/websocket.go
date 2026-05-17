@@ -38,6 +38,9 @@ type WebSocket struct {
 	writeTimeout   time.Duration
 	maxMessageSize int64
 	origin         string
+	reconnect      bool
+	lastTarget     string
+	lastHeaders    http.Header
 	mu             sync.Mutex
 }
 
@@ -49,6 +52,7 @@ func (w *WebSocket) Init(_ context.Context, config map[string]any) error {
 	w.writeTimeout = durationConfig(config, "websocket_write_timeout_ms", defaultWriteTimeout)
 	w.maxMessageSize = int64Config(config, "websocket_max_message_size", defaultMaxMessageSize)
 	w.origin, _ = stringConfig(config, "websocket_origin")
+	w.reconnect = boolConfigDefault(config, "websocket_reconnect", true)
 
 	subprotocol, _ := stringConfig(config, "websocket_subprotocol")
 	compression, _ := boolConfig(config, "websocket_compression")
@@ -78,11 +82,11 @@ func (w *WebSocket) Execute(ctx context.Context, action *protocol.Action) (*prot
 	case "ws_connect":
 		err = w.connect(ctx, action, result)
 	case "ws_send":
-		err = w.send(action, result)
+		err = w.send(ctx, action, result)
 	case "ws_receive":
 		err = w.receive(action, result)
 	case "ws_ping":
-		err = w.ping(action, result)
+		err = w.ping(ctx, action, result)
 	case "ws_close":
 		err = w.close(action, result)
 	default:
@@ -157,6 +161,8 @@ func (w *WebSocket) connect(ctx context.Context, action *protocol.Action, result
 		_ = w.conn.Close()
 	}
 	w.conn = conn
+	w.lastTarget = target
+	w.lastHeaders = cloneHeader(headers)
 	w.mu.Unlock()
 
 	result.StatusCode = http.StatusSwitchingProtocols
@@ -164,7 +170,7 @@ func (w *WebSocket) connect(ctx context.Context, action *protocol.Action, result
 	return nil
 }
 
-func (w *WebSocket) send(action *protocol.Action, result *protocol.Result) error {
+func (w *WebSocket) send(ctx context.Context, action *protocol.Action, result *protocol.Result) error {
 	conn, err := w.currentConn()
 	if err != nil {
 		return err
@@ -173,11 +179,17 @@ func (w *WebSocket) send(action *protocol.Action, result *protocol.Result) error
 	if err != nil {
 		return err
 	}
-	if err := conn.SetWriteDeadline(time.Now().Add(w.writeTimeout)); err != nil {
-		return err
-	}
-	if err := conn.WriteMessage(messageType, action.Body); err != nil {
-		return err
+	if err := w.writeMessage(conn, messageType, action.Body); err != nil {
+		if !w.reconnect {
+			return err
+		}
+		conn, reconnectErr := w.reconnectConn(ctx, result)
+		if reconnectErr != nil {
+			return fmt.Errorf("%w; reconnect failed: %v", err, reconnectErr)
+		}
+		if retryErr := w.writeMessage(conn, messageType, action.Body); retryErr != nil {
+			return retryErr
+		}
 	}
 	result.BytesSent = int64(len(action.Body))
 	result.ServerTelemetry = &protocol.ServerTelemetry{MessagesSent: 1}
@@ -197,6 +209,7 @@ func (w *WebSocket) receive(action *protocol.Action, result *protocol.Result) er
 	}
 	messageType, message, err := conn.ReadMessage()
 	if err != nil {
+		w.discardConn(conn)
 		return err
 	}
 	result.BytesReceived = int64(len(message))
@@ -220,14 +233,24 @@ func (w *WebSocket) receive(action *protocol.Action, result *protocol.Result) er
 	return nil
 }
 
-func (w *WebSocket) ping(action *protocol.Action, result *protocol.Result) error {
+func (w *WebSocket) ping(ctx context.Context, action *protocol.Action, result *protocol.Result) error {
 	conn, err := w.currentConn()
 	if err != nil {
 		return err
 	}
 	deadline := time.Now().Add(w.writeTimeout)
 	if err := conn.WriteControl(gorillawebsocket.PingMessage, action.Body, deadline); err != nil {
-		return err
+		if !w.reconnect {
+			return err
+		}
+		conn, reconnectErr := w.reconnectConn(ctx, result)
+		if reconnectErr != nil {
+			return fmt.Errorf("%w; reconnect failed: %v", err, reconnectErr)
+		}
+		deadline = time.Now().Add(w.writeTimeout)
+		if retryErr := conn.WriteControl(gorillawebsocket.PingMessage, action.Body, deadline); retryErr != nil {
+			return retryErr
+		}
 	}
 	result.BytesSent = int64(len(action.Body))
 	result.ServerTelemetry = &protocol.ServerTelemetry{MessagesSent: 1}
@@ -259,6 +282,60 @@ func (w *WebSocket) currentConn() (*gorillawebsocket.Conn, error) {
 		return nil, fmt.Errorf("websocket connection is not open")
 	}
 	return w.conn, nil
+}
+
+func (w *WebSocket) writeMessage(conn *gorillawebsocket.Conn, messageType int, body []byte) error {
+	if err := conn.SetWriteDeadline(time.Now().Add(w.writeTimeout)); err != nil {
+		return err
+	}
+	return conn.WriteMessage(messageType, body)
+}
+
+func (w *WebSocket) reconnectConn(ctx context.Context, result *protocol.Result) (*gorillawebsocket.Conn, error) {
+	w.mu.Lock()
+	target := w.lastTarget
+	headers := cloneHeader(w.lastHeaders)
+	oldConn := w.conn
+	w.conn = nil
+	w.mu.Unlock()
+
+	if oldConn != nil {
+		_ = oldConn.Close()
+	}
+	if target == "" {
+		return nil, fmt.Errorf("no previous websocket connection target")
+	}
+
+	conn, resp, err := w.dialer.DialContext(ctx, target, headers)
+	if resp != nil {
+		result.StatusCode = resp.StatusCode
+	}
+	if err != nil {
+		return nil, err
+	}
+	if w.maxMessageSize > 0 {
+		conn.SetReadLimit(w.maxMessageSize)
+	}
+
+	w.mu.Lock()
+	if w.conn != nil {
+		_ = w.conn.Close()
+	}
+	w.conn = conn
+	w.mu.Unlock()
+
+	result.DependencyTarget = dependencyTarget(target)
+	result.ServerTelemetry = &protocol.ServerTelemetry{ConnectionReused: false}
+	return conn, nil
+}
+
+func (w *WebSocket) discardConn(conn *gorillawebsocket.Conn) {
+	w.mu.Lock()
+	if w.conn == conn {
+		w.conn = nil
+	}
+	w.mu.Unlock()
+	_ = conn.Close()
 }
 
 func (w *WebSocket) resolveURL(target string) (string, error) {
@@ -631,4 +708,12 @@ func boolConfig(config map[string]any, key string) (bool, bool) {
 	}
 	value, ok := raw.(bool)
 	return value, ok
+}
+
+func boolConfigDefault(config map[string]any, key string, fallback bool) bool {
+	value, ok := boolConfig(config, key)
+	if !ok {
+		return fallback
+	}
+	return value
 }

@@ -188,7 +188,44 @@ func TestGRPCUnaryRequiresServiceMethodTarget(t *testing.T) {
 	}
 }
 
-func startReflectionGenerator(t *testing.T) (string, func()) {
+func BenchmarkGRPCUnaryDescriptorSet(b *testing.B) {
+	addr, stop := startReflectionGenerator(b)
+	defer stop()
+
+	client := &GRPC{}
+	err := client.Init(context.Background(), map[string]any{
+		"base_url":        addr,
+		"grpc_plain_text": true,
+		"grpc_proto_files": []string{
+			writeGeneratorDescriptorSet(b),
+		},
+	})
+	if err != nil {
+		b.Fatalf("Init: %v", err)
+	}
+	defer client.Teardown(context.Background())
+
+	action := &protocol.Action{
+		Name:   "cache script",
+		Type:   "grpc_unary",
+		Target: "stormrunner.v1.GeneratorControl/DistributeScript",
+		Body:   []byte(`{"scriptId":"bench-script","content":"e30=","contentHash":"bench-hash"}`),
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		result, err := client.Execute(context.Background(), action)
+		if err != nil {
+			b.Fatalf("Execute returned error: %v", err)
+		}
+		if !result.Success {
+			b.Fatalf("Execute failed: %s", result.ErrorMessage)
+		}
+	}
+}
+
+func startReflectionGenerator(t testing.TB) (string, func()) {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -206,7 +243,7 @@ func startReflectionGenerator(t *testing.T) (string, func()) {
 	}
 }
 
-func writeGeneratorDescriptorSet(t *testing.T) string {
+func writeGeneratorDescriptorSet(t testing.TB) string {
 	t.Helper()
 	file, err := protoregistry.GlobalFiles.FindFileByPath("api/proto/generator.proto")
 	if err != nil {

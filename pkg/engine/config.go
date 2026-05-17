@@ -121,6 +121,9 @@ func buildProtoConfigWithSecretResolver(script *dsl.Script, resolver SecretResol
 	if webSocketCfg.Compression {
 		cfg["websocket_compression"] = true
 	}
+	if webSocketCfg.Reconnect {
+		cfg["websocket_reconnect"] = true
+	}
 	if len(grpcCfg.ProtoFiles) > 0 {
 		cfg["grpc_proto_files"] = grpcCfg.ProtoFiles
 	}

@@ -683,6 +683,7 @@ func TestBuildProtoConfig_WebSocket(t *testing.T) {
 				Subprotocol:    "graphql-ws",
 				Origin:         "https://app.example.test",
 				Compression:    true,
+				Reconnect:      true,
 			},
 		},
 	}
@@ -706,6 +707,9 @@ func TestBuildProtoConfig_WebSocket(t *testing.T) {
 	}
 	if cfg["websocket_compression"] != true {
 		t.Errorf("websocket_compression = %v, want true", cfg["websocket_compression"])
+	}
+	if cfg["websocket_reconnect"] != true {
+		t.Errorf("websocket_reconnect = %v, want true", cfg["websocket_reconnect"])
 	}
 }
 

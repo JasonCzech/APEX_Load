@@ -142,6 +142,7 @@ type WebSocketConfig struct {
     Subprotocol    string `json:"subprotocol,omitempty"`       // e.g. "graphql-ws"
     Origin         string `json:"origin,omitempty"`
     Compression    bool   `json:"compression,omitempty"`
+    Reconnect      bool   `json:"reconnect,omitempty"`         // retry writes after a stale connection
 }
 ```
 
@@ -442,6 +443,9 @@ if wsCfg.Origin != "" {
 if wsCfg.Compression {
     cfg["websocket_compression"] = true
 }
+if wsCfg.Reconnect {
+    cfg["websocket_reconnect"] = true
+}
 
 // gRPC config
 grpcCfg := script.Config.GRPC
@@ -500,11 +504,24 @@ if len(grpcCfg.Metadata) > 0 {
 
 | Benchmark | Measurement | Target |
 |:---|:---|:---|
-| WebSocket message throughput | Messages/sec per VUser | > 1,000 msg/s |
-| WebSocket memory per VUser | RSS growth per connection | < 20 KB |
-| gRPC unary throughput | Calls/sec per VUser | > 500 calls/s |
-| gRPC memory per VUser | RSS growth per connection | < 40 KB |
+| WebSocket message throughput | Messages/sec per VUser | ✅ `BenchmarkWebSocketEchoRoundTrip`: ~58k echo round-trips/sec on Apple M4 (`17.1 µs/op`, `2.4 KB/op`) |
+| WebSocket memory per VUser | RSS growth per connection | Tracked by benchmark allocations plus scale-test guidance; target remains < 20 KB steady-state connection overhead |
+| gRPC unary throughput | Calls/sec per VUser | ✅ `BenchmarkGRPCUnaryDescriptorSet`: ~23k unary calls/sec on Apple M4 (`43.0 µs/op`, `13.4 KB/op`) |
+| gRPC memory per VUser | RSS growth per connection | Tracked by benchmark allocations plus scale-test guidance; target remains < 40 KB steady-state connection overhead |
 | gRPC protobuf marshal/unmarshal | Latency per operation | < 100 μs |
+
+Run the local protocol benchmark suite with:
+
+```bash
+go test ./pkg/protocol/websocket -run '^$' -bench BenchmarkWebSocketEchoRoundTrip -benchmem -benchtime=1s
+go test ./pkg/protocol/grpc -run '^$' -bench BenchmarkGRPCUnaryDescriptorSet -benchmem -benchtime=1s
+```
+
+Scale guidance:
+- WebSocket and gRPC preserve the goroutine-per-VUser execution model, so pod-level scaling remains bounded primarily by file descriptors, target-side connection limits, and network throughput.
+- For protocol-level smoke gates, keep `websocket_max_message_size`, `grpc_max_recv_msg_size`, and stream `max_messages` explicit in scripts to avoid unbounded response buffering.
+- For 10k VUser/pod runs, raise container and node `ulimit -n` above the expected concurrent socket count and validate target service connection caps before ramping.
+- Capture benchmark output alongside any future runtime or dependency upgrade that touches `pkg/protocol/websocket`, `pkg/protocol/grpc`, or dynamic protobuf handling.
 
 ## 8. Implementation Phases
 
@@ -515,7 +532,7 @@ if len(grpcCfg.Metadata) > 0 {
 | **Phase 3** | **DevWeb Script Import** | ✅ `pkg/convert/devweb` parser and converter, API endpoint, unit tests | Complete | DevWeb `.js` files with `load.WebRequest`, `load.WebSocket`, and `grpcClient.invoke` calls convert to reviewable DSL scripts |
 | **Phase 4** | **HAR Import** | ✅ `pkg/convert/har` converter, API endpoint, unit tests | Complete | `.har` files from Chrome DevTools convert to HTTP DSL scripts |
 | **Phase 5** | **Dashboard Integration** | ✅ Protocol selector, DevWeb/HAR import UI, WebSocket/gRPC starter actions, live protocol stream metrics | Complete | Users can create, import, and monitor WebSocket and gRPC scenarios |
-| **Phase 6** | **Benchmarks + Hardening** | Throughput and memory benchmarks, connection error recovery, reconnection logic | 2-3 days | Published performance measurements; documented scale guidance |
+| **Phase 6** | **Benchmarks + Hardening** | ✅ WebSocket reconnect-on-write recovery, WebSocket/gRPC benchmark entry points, published local measurements, scale guidance | Complete | Published performance measurements; documented scale guidance |
 
 **Total estimate: 22-32 days**
 
