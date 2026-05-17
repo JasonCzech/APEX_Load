@@ -262,6 +262,7 @@ Acceptance criteria:
 - High-value imported scripts do not silently degrade at runtime
 
 Recent progress:
+- R2.2 now expands snapshot-on-error evidence beyond HTTP/browser/SOAP response failures into Java-over-HTTP preflight failures. Invalid serialized payloads retain the resolved request URL, method, headers, original encoded body, dependency type, and serialization telemetry before the request leaves the process.
 - R2.5 has a first warning/validation slice for preserved-only streaming and media runtime settings. Import and validation responses now warn that media playback semantics are not executed, include preserved streaming values for review, and keep those settings classified as compatibility-only in parity metadata.
 
 ### Epic R3: Parity Verification Harness

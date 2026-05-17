@@ -21,6 +21,7 @@ func init() {
 
 type JavaHTTP struct {
 	http                 *httpproto.HTTP
+	baseURL              string
 	codec                string
 	helperMode           string
 	contentType          string
@@ -32,6 +33,9 @@ type JavaHTTP struct {
 func (j *JavaHTTP) Name() string { return "java_http" }
 
 func (j *JavaHTTP) Init(ctx context.Context, config map[string]any) error {
+	if baseURL, ok := config["base_url"].(string); ok {
+		j.baseURL = strings.TrimSpace(baseURL)
+	}
 	j.codec = supportedCodec
 	if value, ok := config["java_http_codec"].(string); ok && strings.TrimSpace(value) != "" {
 		j.codec = strings.TrimSpace(value)
@@ -88,8 +92,14 @@ func (j *JavaHTTP) Execute(ctx context.Context, action *protocol.Action) (*proto
 		serializationDuration = time.Since(startedAt)
 		if err != nil {
 			return &protocol.Result{
-				ActionName:   action.Name,
-				ErrorMessage: fmt.Sprintf("invalid base64 java_http body: %v", err),
+				ActionName:      action.Name,
+				StartTime:       startedAt,
+				Duration:        serializationDuration,
+				DependencyType:  "java_http",
+				BytesSent:       int64(len(action.Body)),
+				ErrorMessage:    fmt.Sprintf("invalid base64 java_http body: %v", err),
+				ServerTelemetry: &protocol.ServerTelemetry{SerializationMs: durationToMilliseconds(serializationDuration)},
+				Snapshot:        buildJavaHTTPPreflightSnapshot(j.baseURL, &prepared),
 			}, nil
 		}
 		prepared.Body = decoded
@@ -149,6 +159,44 @@ func firstHeaderValue(headers map[string]string, key string) string {
 		}
 	}
 	return ""
+}
+
+func buildJavaHTTPPreflightSnapshot(baseURL string, action *protocol.Action) *protocol.ErrorSnapshot {
+	if action == nil {
+		return nil
+	}
+	method := strings.ToUpper(strings.TrimSpace(action.Method))
+	if method == "" {
+		method = "GET"
+	}
+	requestURL := resolveJavaHTTPURL(baseURL, action.Target)
+	if strings.TrimSpace(action.RedactedTarget) != "" {
+		requestURL = resolveJavaHTTPURL(baseURL, action.RedactedTarget)
+	}
+	requestBody := string(action.Body)
+	if len(action.RedactedBody) > 0 {
+		requestBody = string(action.RedactedBody)
+	}
+	requestHeaders := cloneHeaders(action.Headers)
+	for key, value := range action.RedactedHeaders {
+		requestHeaders[key] = value
+	}
+	return &protocol.ErrorSnapshot{
+		RequestMethod:  method,
+		RequestURL:     requestURL,
+		RequestHeaders: requestHeaders,
+		RequestBody:    requestBody,
+	}
+}
+
+func resolveJavaHTTPURL(baseURL string, target string) string {
+	if strings.HasPrefix(target, "http://") || strings.HasPrefix(target, "https://") {
+		return target
+	}
+	if strings.TrimSpace(baseURL) == "" {
+		return target
+	}
+	return strings.TrimRight(baseURL, "/") + "/" + strings.TrimLeft(target, "/")
 }
 
 func durationToMilliseconds(duration time.Duration) float64 {

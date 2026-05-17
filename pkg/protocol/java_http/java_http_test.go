@@ -109,12 +109,44 @@ func TestJavaHTTPExecuteRejectsInvalidBase64(t *testing.T) {
 		t.Fatalf("Init returned error: %v", err)
 	}
 
-	result, err := p.Execute(context.Background(), &protocol.Action{Name: "bad", Target: "/", Body: []byte("not-base64%%")})
+	result, err := p.Execute(context.Background(), &protocol.Action{
+		Name:   "bad",
+		Method: "POST",
+		Target: "/invoke",
+		Headers: map[string]string{
+			"X-Request-ID": "req-123",
+		},
+		Body: []byte("not-base64%%"),
+	})
 	if err != nil {
 		t.Fatalf("Execute returned error: %v", err)
 	}
 	if result == nil || result.ErrorMessage == "" {
 		t.Fatalf("result = %#v, want validation error", result)
+	}
+	if result.DependencyType != "java_http" {
+		t.Fatalf("DependencyType = %q, want java_http", result.DependencyType)
+	}
+	if result.ServerTelemetry == nil {
+		t.Fatalf("ServerTelemetry = %#v, want serialization timing", result.ServerTelemetry)
+	}
+	if result.Snapshot == nil {
+		t.Fatal("Snapshot = nil, want retained Java HTTP preflight request")
+	}
+	if result.Snapshot.RequestMethod != "POST" {
+		t.Fatalf("Snapshot.RequestMethod = %q, want POST", result.Snapshot.RequestMethod)
+	}
+	if result.Snapshot.RequestURL != "https://example.com/invoke" {
+		t.Fatalf("Snapshot.RequestURL = %q, want https://example.com/invoke", result.Snapshot.RequestURL)
+	}
+	if result.Snapshot.RequestHeaders["Content-Type"] != "application/x-java-serialized-object" {
+		t.Fatalf("Snapshot.RequestHeaders Content-Type = %q, want application/x-java-serialized-object", result.Snapshot.RequestHeaders["Content-Type"])
+	}
+	if result.Snapshot.RequestHeaders["X-Request-ID"] != "req-123" {
+		t.Fatalf("Snapshot.RequestHeaders X-Request-ID = %q, want req-123", result.Snapshot.RequestHeaders["X-Request-ID"])
+	}
+	if result.Snapshot.RequestBody != "not-base64%%" {
+		t.Fatalf("Snapshot.RequestBody = %q, want original encoded body", result.Snapshot.RequestBody)
 	}
 }
 
