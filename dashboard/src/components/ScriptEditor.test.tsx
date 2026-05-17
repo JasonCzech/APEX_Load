@@ -452,6 +452,8 @@ describe('ScriptEditor', () => {
   expect(container.textContent).toContain('Executed: Run Logic')
   expect(container.textContent).toContain('Iterations')
   expect(container.textContent).toContain('default.cfg')
+    expect(container.textContent).toContain('Open Run Logic Settings')
+    expect(container.textContent).toContain('Open Logging Settings')
     expect(container.textContent).toContain('Parameter Files')
     expect(container.textContent).toContain('LoginUsers.prm')
     expect(container.textContent).toContain('Parameter File Mappings')
@@ -490,6 +492,34 @@ describe('ScriptEditor', () => {
     const activeAction = container.querySelector('.action-item.active') as HTMLDivElement | null
     expect(activeAction).not.toBeNull()
     expect(activeAction?.textContent).toContain('Complete Checkout')
+
+    const openRunLogicSettingsButton = Array.from(container.querySelectorAll('button')).find(button =>
+      button.textContent?.trim() === 'Open Run Logic Settings',
+    )
+    expect(openRunLogicSettingsButton).toBeDefined()
+    if (!openRunLogicSettingsButton) {
+      return
+    }
+
+    await act(async () => {
+      openRunLogicSettingsButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.textContent).toContain('Block Scheduling')
+
+    const openLoggingSettingsButton = Array.from(container.querySelectorAll('button')).find(button =>
+      button.textContent?.trim() === 'Open Logging Settings',
+    )
+    expect(openLoggingSettingsButton).toBeDefined()
+    if (!openLoggingSettingsButton) {
+      return
+    }
+
+    await act(async () => {
+      openLoggingSettingsButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.textContent).toContain('Parameter substitution')
 
     const openMappedDataSourceButton = Array.from(container.querySelectorAll('button')).find(button =>
       button.textContent?.trim() === 'Open Mapped Data Source',

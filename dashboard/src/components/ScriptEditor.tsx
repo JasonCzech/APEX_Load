@@ -404,6 +404,37 @@ function findImportedParameterMappingDataSourceIndex(dataSources: ScriptDataSour
   return findDataSourceIndexByName(dataSources, sanitizeImportedParameterDataSourceName(dataFile))
 }
 
+function getImportedRuntimeSectionId(area?: string | null): string | null {
+  const normalizedArea = area?.trim().toLowerCase()
+  switch (normalizedArea) {
+    case 'think time':
+      return 'think'
+    case 'pacing':
+      return 'pacing'
+    case 'run logic':
+      return 'runlogic'
+    case 'error handling':
+      return 'errors'
+    case 'logging':
+      return 'log'
+    case 'http':
+      return 'http'
+    case 'web http/html':
+    case 'web runtime':
+      return 'web_runtime'
+    case 'soap':
+    case 'soap settings':
+      return 'soap'
+    case 'java http':
+    case 'java over http':
+      return 'java_http'
+    case 'jms':
+      return 'jms'
+    default:
+      return null
+  }
+}
+
 function upsertReplayActivity(items: ReplayActivityItem[], next: ReplayActivityItem): ReplayActivityItem[] {
   const index = items.findIndex(item => item.id === next.id)
   if (index === -1) return [...items, next]
@@ -461,6 +492,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     setJsonMode,
     setJsonText,
     setOpenDataEditor,
+    setOpenSections,
     setParameterCandidates,
     setPendingParameterDraft,
     setReplayActivity,
@@ -542,6 +574,16 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       setOpenDataEditor(sourceIndex)
     }
   }, [script.data_sources, setIsParameterDialogOpen, setOpenDataEditor])
+  const openImportedRuntimeSettings = useCallback((area?: string | null) => {
+    const sectionId = getImportedRuntimeSectionId(area)
+    setOpenSections(prev => {
+      const next: Record<string, boolean> = { ...prev, runtime: true }
+      if (sectionId) {
+        next[sectionId] = true
+      }
+      return next
+    })
+  }, [setOpenSections])
   const selectedBrowserEngine = script.config.browser?.engine || 'chromium'
   const selectedBrowserProfile = lookupBrowserDeviceProfile(script.config.browser?.device_profile)
   const browserEngineAdvisory = selectedBrowserProfile && selectedBrowserProfile.engine !== selectedBrowserEngine
@@ -2814,6 +2856,13 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                               <strong>{formatRuntimeSettingStatusLabel(entry.status)}: {entry.area}</strong>
                               <span>{entry.concept}</span>
                               <span>{entry.runtime_files.length > 0 ? entry.runtime_files.join(', ') : 'No runtime file recorded'}</span>
+                              {getImportedRuntimeSectionId(entry.area) && (
+                                <div className="replay-panel-actions" style={{ marginTop: 12, justifyContent: 'flex-start', flexWrap: 'wrap' }}>
+                                  <button className="btn btn-secondary btn-sm" type="button" onClick={() => openImportedRuntimeSettings(entry.area)}>
+                                    {`Open ${entry.area} Settings`}
+                                  </button>
+                                </div>
+                              )}
                             </div>
                           ))}
                         </div>
@@ -2831,6 +2880,13 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                             <strong>{formatRuntimeSettingStatusLabel(entry.status)}: {entry.area}</strong>
                             <span>{entry.concept}</span>
                             <span>{entry.runtime_files.length > 0 ? entry.runtime_files.join(', ') : 'No runtime file recorded'}</span>
+                            {getImportedRuntimeSectionId(entry.area) && (
+                              <div className="replay-panel-actions" style={{ marginTop: 12, justifyContent: 'flex-start', flexWrap: 'wrap' }}>
+                                <button className="btn btn-secondary btn-sm" type="button" onClick={() => openImportedRuntimeSettings(entry.area)}>
+                                  {`Open ${entry.area} Settings`}
+                                </button>
+                              </div>
+                            )}
                           </div>
                         ))}
                       </div>
@@ -5187,6 +5243,7 @@ function useScriptEditorState(initialScript?: ScriptData | null) {
     setJsonMode,
     setJsonText,
     setOpenDataEditor,
+    setOpenSections,
     setParameterCandidates,
     setPendingParameterDraft,
     setReplayActivity,
