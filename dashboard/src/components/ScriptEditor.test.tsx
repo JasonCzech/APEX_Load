@@ -347,6 +347,21 @@ describe('ScriptEditor', () => {
   it('shows imported correlation suggestions inside the metadata panel', async () => {
     const importedScript: ScriptDefinition = {
       ...initialScript,
+      actions: [
+        initialScript.actions[0],
+        {
+          name: 'Complete Checkout',
+          type: 'request',
+          method: 'POST',
+          target: '/checkout',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: '{"cart_id":"demo"}',
+          extractors: [],
+          assertions: [{ type: 'status_code', expected: 200 }],
+        },
+      ],
       metadata: {
         import: {
           source: 'sample-import',
@@ -451,6 +466,24 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('response via $.sessionId')
     expect(container.textContent).toContain('Step 1 -> Step 2')
     expect(container.textContent).toContain('abc123')
+    expect(container.textContent).toContain('Open Step 1')
+    expect(container.textContent).toContain('Open Step 2')
+
+    const openDependentStepButton = Array.from(container.querySelectorAll('button')).find(button =>
+      button.textContent?.trim() === 'Open Step 2',
+    )
+    expect(openDependentStepButton).toBeDefined()
+    if (!openDependentStepButton) {
+      return
+    }
+
+    await act(async () => {
+      openDependentStepButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const activeAction = container.querySelector('.action-item.active') as HTMLDivElement | null
+    expect(activeAction).not.toBeNull()
+    expect(activeAction?.textContent).toContain('Complete Checkout')
   })
 
   it('preselects the requested action when a draft opens with a focus hint', async () => {

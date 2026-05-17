@@ -339,6 +339,21 @@ function findActionIndexByName(actions: ScriptActionDefinition[], targetName?: s
 	return caseInsensitiveMatch >= 0 ? caseInsensitiveMatch : null
 }
 
+function findActionIndexByImportedLocation(actions: ScriptActionDefinition[], location?: string | null): number | null {
+  const normalizedLocation = location?.trim()
+  if (!normalizedLocation) return null
+
+  const match = normalizedLocation.match(/^(?:Step|Request)\s+(\d+)$/i)
+  if (!match) return null
+
+  const actionIndex = Number.parseInt(match[1], 10) - 1
+  if (!Number.isInteger(actionIndex) || actionIndex < 0 || actionIndex >= actions.length) {
+    return null
+  }
+
+  return actionIndex
+}
+
 function upsertReplayActivity(items: ReplayActivityItem[], next: ReplayActivityItem): ReplayActivityItem[] {
   const index = items.findIndex(item => item.id === next.id)
   if (index === -1) return [...items, next]
@@ -423,6 +438,21 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const isSoapScript = script.protocol === 'soap'
   const importMetadata = script.metadata?.import
   const importSummary = getImportSummary(importMetadata)
+  const importedCorrelationFocusTargets = importSummary.correlationSuggestions.map((correlation) => {
+    const foundAtActionIndex = findActionIndexByImportedLocation(script.actions, correlation.found_at)
+    const usedAtTargets = correlation.used_at
+      .map((location) => ({
+        location,
+        actionIndex: findActionIndexByImportedLocation(script.actions, location),
+      }))
+      .filter((target): target is { location: string; actionIndex: number } => target.actionIndex !== null)
+
+    return {
+      correlation,
+      foundAtActionIndex,
+      usedAtTargets,
+    }
+  })
   const runtimeSettingParitySummary = Object.entries(importSummary.runtimeSettingStatusCounts)
     .filter(([, count]) => count > 0)
     .map(([status, count]) => `${count} ${formatRuntimeSettingStatusLabel(status)}`)
@@ -2742,12 +2772,26 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                       <h4>Correlation Suggestions</h4>
                       <p>Review the imported extractor mappings before you rename variables or rewrite dependent requests.</p>
                       <div className="import-correlation-list">
-                        {importSummary.correlationSuggestions.map((correlation) => (
+                        {importedCorrelationFocusTargets.map(({ correlation, foundAtActionIndex, usedAtTargets }) => (
                           <div key={`${correlation.name}:${correlation.expression}:${correlation.found_at}`} className="import-correlation-card">
                             <strong>{correlation.name}</strong>
                             <span>{correlation.source} via {correlation.expression}</span>
                             <span>{correlation.found_at}{correlation.used_at.length > 0 ? ` -> ${correlation.used_at.join(', ')}` : ''}</span>
                             {correlation.sample_value && <code>{correlation.sample_value}</code>}
+                            {(foundAtActionIndex !== null || usedAtTargets.length > 0) && (
+                              <div className="replay-panel-actions" style={{ marginTop: 12, justifyContent: 'flex-start', flexWrap: 'wrap' }}>
+                                {foundAtActionIndex !== null && (
+                                  <button className="btn btn-secondary btn-sm" type="button" onClick={() => setActiveAction(foundAtActionIndex)}>
+                                    Open {correlation.found_at}
+                                  </button>
+                                )}
+                                {usedAtTargets.map(({ location, actionIndex }) => (
+                                  <button key={`${correlation.name}:${location}`} className="btn btn-secondary btn-sm" type="button" onClick={() => setActiveAction(actionIndex)}>
+                                    Open {location}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         ))}
                       </div>
