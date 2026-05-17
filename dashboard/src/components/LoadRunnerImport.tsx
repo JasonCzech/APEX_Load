@@ -1,6 +1,6 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, type CSSProperties } from 'react'
 import { useApi } from '../hooks/useApi'
-import { type ImportedScript, type LoadRunnerImportResult, type LoadRunnerImportSummary, type LoadRunnerMigrationReadiness, type LoadRunnerSupportMatrixEntry, type LoadRunnerSupportMatrixExample, type LoadRunnerSupportMatrixResponse } from '../types/scriptImports'
+import { type ImportRepairSuggestion, type ImportedScript, type LoadRunnerImportResult, type LoadRunnerImportSummary, type LoadRunnerMigrationReadiness, type LoadRunnerSupportMatrixEntry, type LoadRunnerSupportMatrixExample, type LoadRunnerSupportMatrixResponse } from '../types/scriptImports'
 import { type BrowserReplaySession } from '../types'
 import { type ScriptDefinition } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
@@ -45,6 +45,12 @@ type LoadRunnerSupportMatrixSection = {
   title: string
   items: LoadRunnerSupportMatrixEntry[]
   preview: string
+}
+
+type EditorActionButton = {
+  key: string
+  label: string
+  onClick: () => void
 }
 
 function getImportedRuntimeSectionId(area?: string | null): string | null {
@@ -97,6 +103,45 @@ function findImportedActionName(script?: ImportedScript | null, location?: strin
   }
 
   return script.actions[actionIndex]?.name?.trim() || null
+}
+
+function findFirstImportedActionTarget(script: ImportedScript | null, locations: Array<string | null | undefined>): { location: string; actionName: string } | null {
+  for (const location of locations) {
+    const normalizedLocation = location?.trim()
+    if (!normalizedLocation) continue
+
+    const actionName = findImportedActionName(script, normalizedLocation)
+    if (actionName) {
+      return { location: normalizedLocation, actionName }
+    }
+  }
+
+  return null
+}
+
+function findFirstImportedRuntimeArea(entries?: Array<{ area?: string | null }> | null): string | null {
+  if (!Array.isArray(entries)) return null
+
+  for (const entry of entries) {
+    const area = entry?.area?.trim()
+    if (area && getImportedRuntimeSectionId(area)) {
+      return area
+    }
+  }
+
+  return null
+}
+
+function findUnsupportedRepairSuggestion(repairSuggestions: ImportRepairSuggestion[], unsupportedFunction: string): ImportRepairSuggestion | null {
+  const normalizedFunction = unsupportedFunction.trim().toLowerCase()
+  if (!normalizedFunction) return null
+
+  return repairSuggestions.find((suggestion) => {
+    if (suggestion.category !== 'unsupported' || !suggestion.target_action?.trim()) {
+      return false
+    }
+    return suggestion.title.toLowerCase().includes(normalizedFunction)
+  }) || null
 }
 
 export default function LoadRunnerImport({ projectId, onImported, onEdit, onClose }: Props) {
@@ -157,6 +202,23 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
       }
     })
     : []
+  const firstCorrelationSourceTarget = importSummary.correlationSuggestions
+    .map((correlation) => findFirstImportedActionTarget(importedScript, [correlation.found_at]))
+    .find((target): target is { location: string; actionName: string } => Boolean(target)) || null
+  const firstCorrelationUsageTarget = importSummary.correlationSuggestions
+    .map((correlation) => findFirstImportedActionTarget(importedScript, correlation.used_at))
+    .find((target): target is { location: string; actionName: string } => Boolean(target)) || null
+  const firstRuntimeBlockingArea = findFirstImportedRuntimeArea(runtimeBlockingSettings)
+  const firstRuntimeParityArea = findFirstImportedRuntimeArea(importSummary.runtimeSettingsParity)
+  const firstMappedParameterDataSourceName = importSummary.parameterFileSections
+    .map((section) => findImportedParameterMappingDataSourceName(generatedDataSources, section.values))
+    .find((sourceName): sourceName is string => Boolean(sourceName)) || null
+  const firstGeneratedDataSourceName = generatedDataSources[0]?.name || null
+  const firstUnsupportedTargetAction = repairSuggestions
+    .find((suggestion) => suggestion.category === 'unsupported' && Boolean(suggestion.target_action?.trim()))
+    ?.target_action?.trim() || null
+  const actionWrapStyle: CSSProperties = { marginTop: 12, justifyContent: 'flex-start', flexWrap: 'wrap' }
+  const sectionActionStyle: CSSProperties = { marginBottom: 12, justifyContent: 'flex-start', flexWrap: 'wrap' }
 
   const openImportedScriptInEditor = (focus?: DraftEditorFocus) => {
 		if (!importedScript || !onEdit) return
@@ -165,6 +227,116 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
 
   const openImportedRuntimeSettingsInEditor = (area: string) => {
     openImportedScriptInEditor({ targetSection: 'runtime', targetRuntimeArea: area })
+  }
+
+  const openImportedDataSourceInEditor = (sourceName?: string | null) => {
+    const normalizedSourceName = sourceName?.trim()
+    if (!normalizedSourceName) return
+    openImportedScriptInEditor({ targetSection: 'parameter-data', targetDataSource: normalizedSourceName })
+  }
+
+  const renderEditorActionButtons = (buttons: EditorActionButton[], style: CSSProperties = actionWrapStyle) => {
+    const seenKeys = new Set<string>()
+    const availableButtons = buttons.filter((button) => {
+      if (seenKeys.has(button.key)) return false
+      seenKeys.add(button.key)
+      return true
+    })
+    if (availableButtons.length === 0) return null
+
+    return (
+      <div className="replay-panel-actions" style={style}>
+        {availableButtons.map((button) => (
+          <button key={button.key} className="btn btn-secondary btn-sm" onClick={button.onClick}>
+            {button.label}
+          </button>
+        ))}
+      </div>
+    )
+  }
+
+  const getReviewSectionActions = (sectionKey: string): EditorActionButton[] => {
+    if (!onEdit) return []
+
+    const buttons: EditorActionButton[] = []
+    switch (sectionKey) {
+      case 'unsupported_elements':
+        if (firstUnsupportedTargetAction) {
+          buttons.push({
+            key: 'review-unsupported-action',
+            label: 'Open First Unsupported Action In Editor',
+            onClick: () => openImportedScriptInEditor({ targetAction: firstUnsupportedTargetAction }),
+          })
+        }
+        buttons.push({
+          key: 'review-unsupported-script',
+          label: 'Open Imported Script In Editor',
+          onClick: () => openImportedScriptInEditor(),
+        })
+        break
+      case 'preserved_metadata':
+        if (runtimeFiles.length > 0 || reviewSummary?.mapped_runtime_file) {
+          buttons.push({
+            key: 'review-preserved-runtime',
+            label: 'Open Runtime Settings In Editor',
+            onClick: () => openImportedScriptInEditor({ targetSection: 'runtime' }),
+          })
+        }
+        if (parameterFiles.length > 0) {
+          buttons.push({
+            key: 'review-preserved-parameter-files',
+            label: 'Open Parameter Files In Editor',
+            onClick: () => openImportedScriptInEditor({ targetSection: 'parameter-data' }),
+          })
+        }
+        if (firstGeneratedDataSourceName) {
+          buttons.push({
+            key: 'review-preserved-source',
+            label: 'Open First Data Source In Editor',
+            onClick: () => openImportedDataSourceInEditor(firstGeneratedDataSourceName),
+          })
+        }
+        break
+      case 'runtime_settings_parity':
+        buttons.push({
+          key: 'review-runtime-parity',
+          label: 'Open Runtime Review In Editor',
+          onClick: () => openImportedScriptInEditor({ targetSection: 'runtime' }),
+        })
+        if (firstRuntimeParityArea) {
+          buttons.push({
+            key: 'review-runtime-parity-area',
+            label: 'Open First Runtime Setting In Editor',
+            onClick: () => openImportedRuntimeSettingsInEditor(firstRuntimeParityArea),
+          })
+        }
+        break
+      case 'runtime_settings_migration_readiness':
+        buttons.push({
+          key: 'review-runtime-readiness',
+          label: 'Open Runtime Review In Editor',
+          onClick: () => openImportedScriptInEditor({ targetSection: 'runtime' }),
+        })
+        if (firstRuntimeBlockingArea) {
+          buttons.push({
+            key: 'review-runtime-blocking-area',
+            label: 'Open First Blocking Setting In Editor',
+            onClick: () => openImportedRuntimeSettingsInEditor(firstRuntimeBlockingArea),
+          })
+        }
+        break
+      case 'browser_import_assumptions':
+        buttons.push({
+          key: 'review-browser-import-script',
+          label: 'Open Imported Script In Editor',
+          onClick: () => openImportedScriptInEditor(),
+        })
+        break
+      default:
+        break
+    }
+
+    return buttons
   }
 
   const resetReplayValidation = () => {
@@ -464,7 +636,36 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
             {unsupportedFunctions.length > 0 && (
               <div className="lr-warnings">
                 <h4>Unsupported LoadRunner Functions ({unsupportedFunctions.length})</h4>
-                <ul>{unsupportedFunctions.map((fnName, index) => <li key={`${fnName}-${index}`}>{fnName}</li>)}</ul>
+                <ul>
+                  {unsupportedFunctions.map((fnName, index) => {
+                    const repairSuggestion = findUnsupportedRepairSuggestion(repairSuggestions, fnName)
+                    return (
+                      <li key={`${fnName}-${index}`}>
+                        {fnName}
+                        {repairSuggestion?.target_action && onEdit && (
+                          <>
+                            {' '}
+                            <button className="btn btn-secondary btn-sm" onClick={() => openImportedScriptInEditor({ targetAction: repairSuggestion.target_action })}>
+                              Open Fix In Editor
+                            </button>
+                          </>
+                        )}
+                      </li>
+                    )
+                  })}
+                </ul>
+                {onEdit && renderEditorActionButtons([
+                  firstUnsupportedTargetAction ? {
+                    key: 'unsupported-summary-action',
+                    label: 'Open First Unsupported Action In Editor',
+                    onClick: () => openImportedScriptInEditor({ targetAction: firstUnsupportedTargetAction }),
+                  } : null,
+                  {
+                    key: 'unsupported-summary-script',
+                    label: 'Open Imported Script In Editor',
+                    onClick: () => openImportedScriptInEditor(),
+                  },
+                ].filter((button): button is EditorActionButton => Boolean(button)), sectionActionStyle)}
               </div>
             )}
 
@@ -478,6 +679,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
                       <span>{section.severity}</span>
                     </div>
                     {section.summary && <p>{section.summary}</p>}
+                    {renderEditorActionButtons(getReviewSectionActions(section.key), sectionActionStyle)}
                     {section.items.length > 0 && (
                       <ul>{section.items.slice(0, 6).map((item, index) => <li key={`${section.key}-${index}`}>{item}</li>)}</ul>
                     )}
@@ -499,18 +701,36 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
                     {suggestion.description && <p>{suggestion.description}</p>}
                     {suggestion.action && <ul><li>{suggestion.action}</li></ul>}
                     {suggestion.target_action && onEdit && (
-                      <div className="replay-panel-actions" style={{ marginTop: 12, justifyContent: 'flex-start' }}>
-                        <button className="btn btn-secondary btn-sm" onClick={() => openImportedScriptInEditor({ targetAction: suggestion.target_action })}>
-                          Open Target Action In Editor
-                        </button>
-                      </div>
+                      renderEditorActionButtons([
+                        {
+                          key: `${suggestion.id}:target-action`,
+                          label: 'Open Target Action In Editor',
+                          onClick: () => openImportedScriptInEditor({ targetAction: suggestion.target_action }),
+                        },
+                      ])
                     )}
                     {!suggestion.target_action && suggestion.category === 'runtime' && onEdit && (
-                      <div className="replay-panel-actions" style={{ marginTop: 12, justifyContent: 'flex-start' }}>
-                        <button className="btn btn-secondary btn-sm" onClick={() => openImportedScriptInEditor({ targetSection: 'runtime' })}>
-                          Open Runtime Review In Editor
-                        </button>
-                      </div>
+                      renderEditorActionButtons([
+                        {
+                          key: `${suggestion.id}:runtime-review`,
+                          label: 'Open Runtime Review In Editor',
+                          onClick: () => openImportedScriptInEditor({ targetSection: 'runtime' }),
+                        },
+                        firstRuntimeBlockingArea && suggestion.id === 'runtime:migration-readiness' ? {
+                          key: `${suggestion.id}:blocking-area`,
+                          label: 'Open First Blocking Setting In Editor',
+                          onClick: () => openImportedRuntimeSettingsInEditor(firstRuntimeBlockingArea),
+                        } : null,
+                      ].filter((button): button is EditorActionButton => Boolean(button)))
+                    )}
+                    {!suggestion.target_action && suggestion.category === 'replay' && onEdit && (
+                      renderEditorActionButtons([
+                        {
+                          key: `${suggestion.id}:open-script`,
+                          label: 'Open Imported Script In Editor',
+                          onClick: () => openImportedScriptInEditor(),
+                        },
+                      ])
                     )}
                   </div>
                 ))}
@@ -529,35 +749,64 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
                     <span className="lr-preserved-label">Project File</span>
                     <strong>{reviewSummary?.project_file || importMetadata.source_script_name || importedScript.name}</strong>
                     <small>{importMetadata.source || 'loadrunner'}</small>
+                    {onEdit && renderEditorActionButtons([
+                      {
+                        key: 'summary-project-file-script',
+                        label: 'Open Imported Script In Editor',
+                        onClick: () => openImportedScriptInEditor(),
+                      },
+                    ])}
                   </div>
                   <div className="lr-preserved-card">
                     <span className="lr-preserved-label">Mapped Runtime</span>
                     <strong>{reviewSummary?.mapped_runtime_file || 'None mapped'}</strong>
                     <small>{runtimeFiles.join(', ') || 'No runtime files found'}</small>
-                    {onEdit && (
-                      <div className="replay-panel-actions" style={{ marginTop: 12, justifyContent: 'flex-start' }}>
-                        <button className="btn btn-secondary btn-sm" onClick={() => openImportedScriptInEditor({ targetSection: 'runtime' })}>
-                          Open Runtime Settings In Editor
-                        </button>
-                      </div>
-                    )}
+                    {onEdit && renderEditorActionButtons([
+                      {
+                        key: 'summary-runtime-review',
+                        label: 'Open Runtime Settings In Editor',
+                        onClick: () => openImportedScriptInEditor({ targetSection: 'runtime' }),
+                      },
+                      firstRuntimeParityArea ? {
+                        key: 'summary-runtime-area',
+                        label: 'Open First Runtime Setting In Editor',
+                        onClick: () => openImportedRuntimeSettingsInEditor(firstRuntimeParityArea),
+                      } : null,
+                    ].filter((button): button is EditorActionButton => Boolean(button)))}
                   </div>
                   <div className="lr-preserved-card">
                     <span className="lr-preserved-label">Parameter Files</span>
                     <strong>{parameterFiles.length}</strong>
                     <small>{parameterFiles.join(', ') || 'No parameter files found'}</small>
-                    {onEdit && parameterFiles.length > 0 && (
-                      <div className="replay-panel-actions" style={{ marginTop: 12, justifyContent: 'flex-start' }}>
-                        <button className="btn btn-secondary btn-sm" onClick={() => openImportedScriptInEditor({ targetSection: 'parameter-data' })}>
-                          Open Parameter Files In Editor
-                        </button>
-                      </div>
-                    )}
+                    {onEdit && parameterFiles.length > 0 && renderEditorActionButtons([
+                      {
+                        key: 'summary-parameter-files',
+                        label: 'Open Parameter Files In Editor',
+                        onClick: () => openImportedScriptInEditor({ targetSection: 'parameter-data' }),
+                      },
+                      firstMappedParameterDataSourceName ? {
+                        key: 'summary-parameter-source',
+                        label: 'Open First Data Source In Editor',
+                        onClick: () => openImportedDataSourceInEditor(firstMappedParameterDataSourceName),
+                      } : null,
+                    ].filter((button): button is EditorActionButton => Boolean(button)))}
                   </div>
                   <div className="lr-preserved-card">
                     <span className="lr-preserved-label">Correlation Suggestions</span>
                     <strong>{importSummary.correlationSuggestions.length}</strong>
                     <small>{importSummary.correlationSuggestions.length > 0 ? 'Imported from preserved metadata' : 'None detected'}</small>
+                    {onEdit && importSummary.correlationSuggestions.length > 0 && renderEditorActionButtons([
+                      firstCorrelationSourceTarget ? {
+                        key: 'summary-correlation-source',
+                        label: 'Open First Correlation Source In Editor',
+                        onClick: () => openImportedScriptInEditor({ targetAction: firstCorrelationSourceTarget.actionName }),
+                      } : null,
+                      firstCorrelationUsageTarget ? {
+                        key: 'summary-correlation-usage',
+                        label: 'Open First Correlation Use In Editor',
+                        onClick: () => openImportedScriptInEditor({ targetAction: firstCorrelationUsageTarget.actionName }),
+                      } : null,
+                    ].filter((button): button is EditorActionButton => Boolean(button)))}
                   </div>
                   <div className="lr-preserved-card">
                     <span className="lr-preserved-label">Project Sections</span>
@@ -568,17 +817,43 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
                     <span className="lr-preserved-label">Unsupported Functions</span>
                     <strong>{reviewSummary?.unsupported_function_count ?? unsupportedFunctions.length}</strong>
                     <small>{unsupportedFunctions.slice(0, 4).join(', ') || 'None'}</small>
+                    {onEdit && firstUnsupportedTargetAction && renderEditorActionButtons([
+                      {
+                        key: 'summary-unsupported-action',
+                        label: 'Open First Unsupported Action In Editor',
+                        onClick: () => openImportedScriptInEditor({ targetAction: firstUnsupportedTargetAction }),
+                      },
+                    ])}
                   </div>
                   <div className="lr-preserved-card">
                     <span className="lr-preserved-label">Source</span>
                     <strong>{importMetadata.source || 'loadrunner'}</strong>
                     <small>{importedScript.name}</small>
+                    {onEdit && renderEditorActionButtons([
+                      {
+                        key: 'summary-source-script',
+                        label: 'Open Imported Script In Editor',
+                        onClick: () => openImportedScriptInEditor(),
+                      },
+                    ])}
                   </div>
                   {migrationReadiness && (
                     <div className="lr-preserved-card">
                       <span className="lr-preserved-label">Migration Readiness</span>
                       <strong>{migrationReadiness.score_pct}%</strong>
                       <small>{migrationReadiness.blocked ? 'Blocked by current policy' : migrationReadiness.summary || 'Ready for review'}</small>
+                      {onEdit && renderEditorActionButtons([
+                        {
+                          key: 'summary-migration-runtime-review',
+                          label: 'Open Runtime Review In Editor',
+                          onClick: () => openImportedScriptInEditor({ targetSection: 'runtime' }),
+                        },
+                        firstRuntimeBlockingArea ? {
+                          key: 'summary-migration-blocking-area',
+                          label: 'Open First Blocking Setting In Editor',
+                          onClick: () => openImportedRuntimeSettingsInEditor(firstRuntimeBlockingArea),
+                        } : null,
+                      ].filter((button): button is EditorActionButton => Boolean(button)))}
                     </div>
                   )}
                 </div>
@@ -589,6 +864,18 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
                       <strong>Parameter File Mappings</strong>
                       <span>{importSummary.parameterFileSections.length}</span>
                     </div>
+                    {onEdit && renderEditorActionButtons([
+                      {
+                        key: 'parameter-mappings-review',
+                        label: 'Open Parameter Files In Editor',
+                        onClick: () => openImportedScriptInEditor({ targetSection: 'parameter-data' }),
+                      },
+                      firstMappedParameterDataSourceName ? {
+                        key: 'parameter-mappings-source',
+                        label: 'Open First Data Source In Editor',
+                        onClick: () => openImportedDataSourceInEditor(firstMappedParameterDataSourceName),
+                      } : null,
+                    ].filter((button): button is EditorActionButton => Boolean(button)), sectionActionStyle)}
                     <ul>
                       {importSummary.parameterFileSections.map((section) => {
                         const mappedSourceName = findImportedParameterMappingDataSourceName(generatedDataSources, section.values)
@@ -618,6 +905,18 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
                       <strong>Correlation Suggestions</strong>
                       <span>{importSummary.correlationSuggestions.length}</span>
                     </div>
+                    {onEdit && renderEditorActionButtons([
+                      firstCorrelationSourceTarget ? {
+                        key: 'correlation-review-source',
+                        label: 'Open First Correlation Source In Editor',
+                        onClick: () => openImportedScriptInEditor({ targetAction: firstCorrelationSourceTarget.actionName }),
+                      } : null,
+                      firstCorrelationUsageTarget ? {
+                        key: 'correlation-review-usage',
+                        label: 'Open First Correlation Use In Editor',
+                        onClick: () => openImportedScriptInEditor({ targetAction: firstCorrelationUsageTarget.actionName }),
+                      } : null,
+                    ].filter((button): button is EditorActionButton => Boolean(button)), sectionActionStyle)}
                     <ul>
                       {importSummary.correlationSuggestions.map((correlation) => {
                         const sourceActionName = findImportedActionName(importedScript, correlation.found_at)
@@ -640,12 +939,9 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
                             </>
                           )}
                           {usedActionTargets.map(({ location, actionName }) => (
-                            <>
-                              {' '}
-                              <button key={`${correlation.name}:${location}`} className="btn btn-secondary btn-sm" onClick={() => openImportedScriptInEditor({ targetAction: actionName })}>
-                                {`Open ${location} In Editor`}
-                              </button>
-                            </>
+                            <button key={`${correlation.name}:${location}`} className="btn btn-secondary btn-sm" onClick={() => openImportedScriptInEditor({ targetAction: actionName })}>
+                              {`Open ${location} In Editor`}
+                            </button>
                           ))}
                         </li>
                       )})}
@@ -659,6 +955,18 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
                       <strong>Migration Readiness Blocking Settings</strong>
                       <span>{runtimeBlockingSettings.length}</span>
                     </div>
+                    {onEdit && renderEditorActionButtons([
+                      {
+                        key: 'runtime-blocking-review',
+                        label: 'Open Runtime Review In Editor',
+                        onClick: () => openImportedScriptInEditor({ targetSection: 'runtime' }),
+                      },
+                      firstRuntimeBlockingArea ? {
+                        key: 'runtime-blocking-area',
+                        label: 'Open First Blocking Setting In Editor',
+                        onClick: () => openImportedRuntimeSettingsInEditor(firstRuntimeBlockingArea),
+                      } : null,
+                    ].filter((button): button is EditorActionButton => Boolean(button)), sectionActionStyle)}
                     <ul>
                       {runtimeBlockingSettings.map((entry) => (
                         <li key={`blocking-${entry.id}`}>
@@ -685,6 +993,18 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
                       <strong>Runtime Settings Parity</strong>
                       <span>{importSummary.runtimeSettingsParity.length}</span>
                     </div>
+                    {onEdit && renderEditorActionButtons([
+                      {
+                        key: 'runtime-parity-review',
+                        label: 'Open Runtime Review In Editor',
+                        onClick: () => openImportedScriptInEditor({ targetSection: 'runtime' }),
+                      },
+                      firstRuntimeParityArea ? {
+                        key: 'runtime-parity-area',
+                        label: 'Open First Runtime Setting In Editor',
+                        onClick: () => openImportedRuntimeSettingsInEditor(firstRuntimeParityArea),
+                      } : null,
+                    ].filter((button): button is EditorActionButton => Boolean(button)), sectionActionStyle)}
                     <ul>
                       {importSummary.runtimeSettingsParity.map((entry) => (
                         <li key={`parity-${entry.id}`}>
@@ -711,13 +1031,18 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
                       <strong>Generated Data Sources</strong>
                       <span>{generatedDataSources.length}</span>
                     </div>
-                    {onEdit && (
-                      <div className="replay-panel-actions" style={{ marginBottom: 12, justifyContent: 'flex-start' }}>
-                        <button className="btn btn-secondary btn-sm" onClick={() => openImportedScriptInEditor({ targetSection: 'parameter-data' })}>
-                          Open Parameter Data In Editor
-                        </button>
-                      </div>
-                    )}
+                    {onEdit && renderEditorActionButtons([
+                      {
+                        key: 'generated-sources-review',
+                        label: 'Open Parameter Data In Editor',
+                        onClick: () => openImportedScriptInEditor({ targetSection: 'parameter-data' }),
+                      },
+                      firstGeneratedDataSourceName ? {
+                        key: 'generated-sources-source',
+                        label: 'Open First Data Source In Editor',
+                        onClick: () => openImportedDataSourceInEditor(firstGeneratedDataSourceName),
+                      } : null,
+                    ].filter((button): button is EditorActionButton => Boolean(button)), sectionActionStyle)}
                     <ul>
                       {generatedDataSources.map((source) => (
                         <li key={source.name}>
