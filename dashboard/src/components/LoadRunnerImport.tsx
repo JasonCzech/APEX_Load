@@ -816,7 +816,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
               <div className="lr-warnings">
                 <div className="lr-review-section">
                   <div className="lr-review-section-header">
-                    <strong>Browser Replay Validation</strong>
+                    <strong>Draft Browser Replay Validation</strong>
                     <span>{browserReplayStatusLabel}</span>
                   </div>
                   <p>{replayPanelDescription}</p>

@@ -1817,7 +1817,7 @@ describe('LoadRunnerImport', () => {
 
     await flushPromises()
 
-    expect(container.textContent).toContain('Browser Replay Validation')
+    expect(container.textContent).toContain('Draft Browser Replay Validation')
     expect(container.textContent).toContain('Not Run')
 
     const validateReplayButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Start Draft Browser Replay'))
