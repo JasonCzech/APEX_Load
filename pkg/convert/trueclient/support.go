@@ -34,7 +34,7 @@ var scriptTypeScopes = []ScriptTypeScope{
 		CanonicalName: "truclient_mobile_web",
 		DisplayName:   "TruClient - Mobile Web",
 		Status:        ScopeSupported,
-		Notes:         "The MVP importer maps navigation, click, fill, select, wait, conservative verify assertions, simple JavaScript-derived fill or click, and transaction flows into browser DSL actions.",
+		Notes:         "The MVP importer maps navigation, click, fill, select, wait, conservative verify assertions, simple JavaScript-derived fill or click, jQuery attr/trigger, and transaction flows into browser DSL actions.",
 	},
 	{
 		CanonicalName: "truclient_web",
@@ -113,7 +113,7 @@ var stepScopes = []StepScope{
 		DisplayName:      "Evaluate JavaScript",
 		Status:           ScopeReviewOnly,
 		StormrunnerShape: "browser_fill, browser_click, browser_swipe, or browser_navigate when decomposable",
-		Notes:            "Simple jQuery, document.querySelector, first-match document.querySelectorAll, document.getElementById, first-match document.getElementsByName, first-match document.getElementsByClassName with safe class tokens, first-match document.getElementsByTagName with safe tag tokens, and document.forms[].elements[] fill/click statements plus window scroll and location navigation statements are decomposed. Collection first-match access supports both [0] and item(0); unsupported shapes stay in guided review with warnings, blocker repair suggestions, and preserved unsupported-step reporting because Stormrunner does not expose a public browser-eval action.",
+		Notes:            "Simple jQuery .val(...), .attr('value', ...), .click(), and .trigger('click'), document.querySelector, first-match document.querySelectorAll, document.getElementById, first-match document.getElementsByName, first-match document.getElementsByClassName with safe class tokens, first-match document.getElementsByTagName with safe tag tokens, and document.forms[].elements[] fill/click statements plus window scroll and location navigation statements are decomposed. Collection first-match access supports both [0] and item(0); unsupported shapes stay in guided review with warnings, blocker repair suggestions, and preserved unsupported-step reporting because Stormrunner does not expose a public browser-eval action.",
 	},
 }
 

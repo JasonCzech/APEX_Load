@@ -85,6 +85,39 @@ func TestConvertArchiveMapsQuerySelectorValueAssignment(t *testing.T) {
 	}
 }
 
+func TestConvertArchiveMapsJQueryAttrAndTriggerJavaScript(t *testing.T) {
+	result, err := ConvertArchive(map[string]string{
+		"default.xml": encodeUTF16LE(`<?xml version="1.0" encoding="utf-16"?>
+<truScript>
+  <step type="block" action="action" actionName="Action">
+    <step type="testObject" action="Navigate" index="1" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://m.example.com/preferences\&quot;&quot;}}" />
+    <step type="util" action="Evaluate JavaScript" index="2" arguments="{&quot;Code&quot;:{&quot;value&quot;:&quot;$('#email').attr('value', 'qa@example.com');\n$('#save').trigger('click')&quot;}}" />
+  </step>
+</truScript>`),
+	}, ConvertOptions{ScriptName: "jQuery Attr Trigger Flow"})
+	if err != nil {
+		t.Fatalf("ConvertArchive returned error: %v", err)
+	}
+	if len(result.Script.Actions) != 3 {
+		t.Fatalf("actions len = %d, want 3", len(result.Script.Actions))
+	}
+	if action := result.Script.Actions[1]; action.Type != "browser_fill" || action.Selector != "#email" || action.Value != "qa@example.com" || action.Metadata["source"] != "truclient_jquery_attr" {
+		t.Fatalf("action[1] = %#v, want browser fill from jQuery attr value", action)
+	}
+	if action := result.Script.Actions[2]; action.Type != "browser_click" || action.Selector != "#save" || action.Metadata["source"] != "truclient_jquery_trigger" {
+		t.Fatalf("action[2] = %#v, want browser click from jQuery trigger click", action)
+	}
+	if result.Stats.TotalSteps != 2 || result.Stats.ConvertedActions != 3 || result.Stats.Skipped != 0 {
+		t.Fatalf("stats = %#v, want total=2 converted=3 skipped=0", result.Stats)
+	}
+	if len(result.Stats.UnsupportedSteps) != 0 {
+		t.Fatalf("unsupported steps = %#v, want none", result.Stats.UnsupportedSteps)
+	}
+	if len(result.Warnings) != 0 {
+		t.Fatalf("warnings = %#v, want none", result.Warnings)
+	}
+}
+
 func TestConvertArchiveMapsQuerySelectorAllJavaScript(t *testing.T) {
 	result, err := ConvertArchive(map[string]string{
 		"default.xml": encodeUTF16LE(`<?xml version="1.0" encoding="utf-16"?>

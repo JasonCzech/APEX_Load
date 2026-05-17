@@ -13,10 +13,10 @@ This plan is the strategic umbrella that aligns the existing `MOBILE_BROWSER_EMU
 - Layer 2 collection is in place for the current browser metric contract: per-action `ClientMetrics`, optional `browser.client_metrics`, live `browser` and `browser_by_device` summaries, archive persistence, canonical archive `browser_by_engine` / `browser_by_platform` / `browser_by_device` rollups, and dashboard drilldown are implemented.
 - Validation and replay now surface actionable WebKit prerequisite warnings before execution, and saved scripts can be validated directly from the editor.
 
-### Remaining
+### External Evidence And Future Evolution
 - Stage 2 is implementation-complete for the current runtime: device profiles carry `CPUThrottleRate` and `NetworkPreset`, the runtime applies them, and an opt-in mobile-browser benchmark harness/runbook exists. Calibration against real devices, measured benchmark evidence, and any memory-pressure model are still external evidence/hardening work.
 - Stage 4 dashboard UX is complete for the current first-cut mobile/browser workflow: script editing, scenario authoring, queued previews, archive drilldown, run comparisons, and archived browser resource waterfall diagnostics preserve and surface browser runtime settings. Broader manual browser validation on real applications remains product-hardening work.
-- Stage 5 TrueClient MobileWeb import is partially shipped for the current browser step envelope, including runtime-setting extraction and common decomposed JavaScript fill/click, scroll, and navigation patterns; broader fixture-backed hardening remains open.
+- Stage 5 TrueClient MobileWeb import is shipped for the current browser step envelope, including runtime-setting extraction and common decomposed JavaScript fill/click, jQuery attr/trigger, scroll, and navigation patterns. Broader fixture-backed hardening depends on representative customer or lab-generated TrueClient MobileWeb archives.
 - Stage 6 has a first explainable slice: archived browser summaries now produce deterministic UX intelligence signals with a health score, weakest-device callout, and threshold-backed issue cards. Frustration-pattern detection, heatmaps, anomaly detection, and business-impact scoring remain future product evolution.
 
 ## Why This Matters
@@ -196,7 +196,7 @@ The existing plans define tactical phases. This section maps them to the strateg
 
 **Strategic gate:** After this stage, validate that mobile-configured browsers serve mobile CSS, fire touch events, and render responsively. If visual fidelity is poor, stop and fix before adding performance measurement.
 
-### Stage 2: Performance Simulation (Partially Complete)
+### Stage 2: Performance Simulation (Implementation Complete, Evidence Pending)
 - Extend device profiles with `CPUThrottleRate` and `NetworkPreset`
 - Apply `Emulation.setCPUThrottlingRate` during `Init()`
 - Wire device-specific network presets to existing throttling infrastructure
@@ -207,7 +207,7 @@ The existing plans define tactical phases. This section maps them to the strateg
 - `browser.go Init()` applies CPU throttling from profile
 - Unit tests confirming profile defaults are wired; benchmark calibration and timing validation are still open
 
-**Remaining work:** benchmark calibration, decide whether to add memory-pressure simulation, and publish operational guidance for how approximate the simulated profile timings are. Scenario capacity planning now uses conservative tier-based browser VUser density caps, and `docs/MOBILE_BROWSER_BENCHMARK_RUNBOOK.md` defines the evidence path for changing those limits.
+**Evidence pending:** benchmark calibration, decide whether to add memory-pressure simulation, and publish operational guidance for how approximate the simulated profile timings are. Scenario capacity planning now uses conservative tier-based browser VUser density caps, and `docs/MOBILE_BROWSER_BENCHMARK_RUNBOOK.md` defines the evidence path for changing those limits.
 
 ### Stage 3: Client Metrics Collection (Browser Client Metrics Plan Phases 1-2)
 - `ClientMetrics` struct on `protocol.Result`
@@ -222,7 +222,7 @@ The existing plans define tactical phases. This section maps them to the strateg
 - `protocol.Result.ClientMetrics` populated per action
 - Config flag: `browser.client_metrics: true` enables collection
 
-**Effort:** 5-7 days
+**Status:** complete for the current metric contract. Browser actions populate `ClientMetrics`, live summaries carry browser dimensions, and archived reports preserve client-side performance details for post-run analysis.
 
 ### Stage 4: Aggregation + Dashboard (Browser Client Metrics Plan Phases 3-4 + Mobile Plan Phase 3)
 - Device-segmented metric aggregation in `engine/metrics.go`
@@ -236,10 +236,10 @@ The existing plans define tactical phases. This section maps them to the strateg
 ### Stage 5: TrueClient Import (Mobile Emulation Plan Phase 4)
 - `pkg/convert/trueclient` converter
 - MVP implemented for `TruClientMobileWeb` LoadRunner ZIP archives
-- Step-to-action mapping for navigate, click, fill, select, wait, conservative verify assertions, transaction-preserved names, and simple decomposed JavaScript fill/click statements
+- Step-to-action mapping for navigate, click, fill, select, wait, conservative verify assertions, transaction-preserved names, and simple decomposed JavaScript fill/click statements including jQuery `.attr('value', ...)` and `.trigger('click')` forms
 - Device profile extraction from LoadRunner runtime settings
 
-**Remaining effort:** 3-5 days for non-decomposable JavaScript hardening, import review UX refinements, and broader replay-validation coverage. Simple TruClient JavaScript fill/click, scroll, and location-navigation statements now map to browser DSL actions, reducing previous review-only repair paths.
+**Evidence pending:** fixture-backed hardening for less common object-identification shapes and broader replay-validation coverage once representative TrueClient MobileWeb archives are available. Simple TruClient JavaScript fill/click, jQuery value/attr/trigger, scroll, and location-navigation statements now map to browser DSL actions, reducing previous review-only repair paths.
 
 ### Stage 6: UX Intelligence (First Slice Complete)
 - Explainable archive UX scoring from current browser summaries is implemented: LCP, INP, CLS, long tasks, blocking resources, browser CPU, and browser RSS produce a deterministic health score and issue signals.
@@ -413,9 +413,10 @@ Dashboard renders side-by-side Core Web Vitals per device group — immediate vi
 - Live and archived results expose browser summaries plus engine/platform/device browser segmentation, and the dashboard can drill into archived client metrics with normalized `Platform · Engine · Tier` labels.
 - Archived browser summaries include explainable UX intelligence: a threshold-backed health score, issue signals, and weakest-device context.
 
-### Still Required To Close Stage 2 And Stage 4
+### External Evidence Still Required
 - Publish evidence that the configured CPU/network profile differences produce meaningful timing separation on representative applications.
 - Expand manual browser validation coverage, especially on WebKit hosts with Playwright assets installed.
+- Collect representative TrueClient MobileWeb fixture archives for importer hardening beyond the current synthetic coverage.
 - Extend UX intelligence beyond threshold summaries into frustration detection, heatmaps, business-impact scoring, and anomaly detection once baseline comparison data is reliable.
 
 ### Long-Term

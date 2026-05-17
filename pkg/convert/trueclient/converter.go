@@ -57,6 +57,8 @@ type truArgument struct {
 var (
 	reJQueryVal             = regexp.MustCompile(`^\$\(\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\)\.val\(\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\)$`)
 	reJQueryClick           = regexp.MustCompile(`^\$\(\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\)\.click\(\s*\)$`)
+	reJQueryTriggerClick    = regexp.MustCompile(`^\$\(\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\)\.trigger\(\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\)$`)
+	reJQueryAttrValue       = regexp.MustCompile(`^\$\(\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\)\.attr\(\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*,\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\)$`)
 	reQuerySelectorClick    = regexp.MustCompile(`^document\.querySelector\(\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\)\.click\(\s*\)$`)
 	reQuerySelectorValue    = regexp.MustCompile(`^document\.querySelector\(\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\)\.value\s*=\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')$`)
 	reQuerySelectorAllClick = regexp.MustCompile(`^document\.querySelectorAll\(\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')\s*\)(?:\s*\[\s*0\s*\]|\s*\.item\(\s*0\s*\))\.click\(\s*\)$`)
@@ -782,6 +784,30 @@ func convertJavaScriptStatement(statement string, baseName string, position int)
 			Value:    value,
 		}, true
 	}
+	if matches := reJQueryAttrValue.FindStringSubmatch(statement); len(matches) == 4 {
+		selector, ok := decodeJSStringLiteral(matches[1])
+		if !ok {
+			return dsl.Action{}, false
+		}
+		attribute, ok := decodeJSStringLiteral(matches[2])
+		if !ok || !strings.EqualFold(strings.TrimSpace(attribute), "value") {
+			return dsl.Action{}, false
+		}
+		value, ok := decodeJSStringLiteral(matches[3])
+		if !ok {
+			return dsl.Action{}, false
+		}
+		return dsl.Action{
+			Name:     fmt.Sprintf("%s Fill %d", baseName, position),
+			Type:     "browser_fill",
+			Target:   selector,
+			Selector: selector,
+			Value:    value,
+			Metadata: map[string]any{
+				"source": "truclient_jquery_attr",
+			},
+		}, true
+	}
 	if matches := reQuerySelectorValue.FindStringSubmatch(statement); len(matches) == 3 {
 		selector, ok := decodeJSStringLiteral(matches[1])
 		if !ok {
@@ -944,6 +970,25 @@ func convertJavaScriptStatement(statement string, baseName string, position int)
 			Type:     "browser_click",
 			Target:   selector,
 			Selector: selector,
+		}, true
+	}
+	if matches := reJQueryTriggerClick.FindStringSubmatch(statement); len(matches) == 3 {
+		selector, ok := decodeJSStringLiteral(matches[1])
+		if !ok {
+			return dsl.Action{}, false
+		}
+		eventName, ok := decodeJSStringLiteral(matches[2])
+		if !ok || !strings.EqualFold(strings.TrimSpace(eventName), "click") {
+			return dsl.Action{}, false
+		}
+		return dsl.Action{
+			Name:     fmt.Sprintf("%s Click %d", baseName, position),
+			Type:     "browser_click",
+			Target:   selector,
+			Selector: selector,
+			Metadata: map[string]any{
+				"source": "truclient_jquery_trigger",
+			},
 		}, true
 	}
 	if matches := reQuerySelectorClick.FindStringSubmatch(statement); len(matches) == 2 {
