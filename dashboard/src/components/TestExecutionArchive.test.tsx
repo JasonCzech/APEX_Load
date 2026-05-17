@@ -234,7 +234,12 @@ describe('TestExecutionArchive', () => {
         lcp_ms: 240,
         cls_score: 0.031,
         inp_ms: 56,
+        dom_content_loaded_ms: 180,
+        dom_complete_ms: 320,
+        load_event_ms: 340,
         blocking_resource_count: 2,
+        total_resource_count: 14,
+        resource_transfer_kb: 128.5,
         long_task_count: 1,
       },
       snapshot: {
@@ -334,6 +339,12 @@ describe('TestExecutionArchive', () => {
     expect(archiveDeviceTierTexts).toEqual(['1 samples', 'WebKit · 1 samples', 'iOS · WebKit · low tier'])
     expect(container.textContent).toContain('Client Metrics')
     expect(container.textContent).toContain('iphone_se · iOS · WebKit · low tier')
+    expect(container.textContent).toContain('Navigation Waterfall')
+    expect(container.textContent).toContain('DOM content loaded: 180.0 ms')
+    expect(container.textContent).toContain('DOM complete: 320.0 ms')
+    expect(container.textContent).toContain('Load event: 340.0 ms')
+    expect(container.textContent).toContain('Resources: 14 total / 2 blocking')
+    expect(container.textContent).toContain('Transfer: 128.50 KB')
     const detailValueTexts = Array.from(container.querySelectorAll('.scenario-script-detail-value')).map(node => node.textContent)
     expect(detailValueTexts).toContain('iphone_se · iOS · WebKit · low tier')
     expect(detailValueTexts).not.toContain('iphone_se · WebKit · low tier')

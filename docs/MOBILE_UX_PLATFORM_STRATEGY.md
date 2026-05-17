@@ -15,7 +15,7 @@ This plan is the strategic umbrella that aligns the existing `MOBILE_BROWSER_EMU
 
 ### Remaining
 - Stage 2 is only partially complete: device profiles now carry `CPUThrottleRate` and `NetworkPreset`, and the runtime applies them, but calibration against real devices, benchmark evidence, and any memory-pressure model are still open.
-- Stage 4 still has UX gaps: dedicated device-comparison views, richer resource-waterfall drilldown, and broader manual browser validation on real applications are not finished.
+- Stage 4 still has UX gaps: dedicated device-comparison views, richer per-resource waterfall drilldown, and broader manual browser validation on real applications are not finished. Archive event inspection now includes a compact navigation/resource waterfall summary from persisted client metrics.
 - Stage 5 TrueClient MobileWeb import has not started and remains blocked on representative fixture scripts.
 - Stage 6 UX intelligence work has not started.
 
@@ -415,7 +415,7 @@ Dashboard renders side-by-side Core Web Vitals per device group — immediate vi
 
 ### Still Required To Close Stage 2 And Stage 4
 - Publish evidence that the configured CPU/network profile differences produce meaningful timing separation on representative applications.
-- Add richer dashboard comparison UX beyond the current overall/platform/engine/device rollups, plus per-action waterfall-style diagnostics.
+- Add richer dashboard comparison UX beyond the current overall/platform/engine/device rollups, plus per-resource waterfall diagnostics beyond the compact archive event summary.
 - Expand manual browser validation coverage, especially on WebKit hosts with Playwright assets installed.
 
 ### Long-Term

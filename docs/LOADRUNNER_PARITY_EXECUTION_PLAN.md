@@ -433,6 +433,7 @@ Before claiming practical parity in these target areas, all of the following sho
 - Scenario-level browser UX now surfaces saved runtime device overrides in queued run previews, so users can verify device profile, orientation, touch mode, and headed/headless state before start or revision.
 - Archived run comparisons now display saved browser runtime overrides alongside browser KPI cards, making device-profile differences visible when comparing two mobile/browser runs.
 - TrueClient MobileWeb import now decomposes common `document.getElementById(...).value` and `.click()` JavaScript statements into `browser_fill` and `browser_click`, covering another frequent object-identification pattern without blocker review.
+- Browser archive event inspection now includes a compact navigation/resource waterfall summary from persisted client metrics, showing DOM readiness, load event timing, resource counts, blocking resources, and transfer size.
 
 ## Suggested Milestones
 

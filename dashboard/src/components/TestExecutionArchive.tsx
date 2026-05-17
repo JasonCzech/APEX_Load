@@ -69,6 +69,25 @@ function formatBrowserScore(value: number | undefined): string {
   return value.toFixed(3)
 }
 
+function formatBrowserWaterfall(metrics?: TransactionEvent['client_metrics']): string | null {
+  if (!metrics) return null
+  const hasTiming =
+    metrics.dom_content_loaded_ms !== undefined ||
+    metrics.dom_complete_ms !== undefined ||
+    metrics.load_event_ms !== undefined ||
+    metrics.total_resource_count !== undefined ||
+    metrics.resource_transfer_kb !== undefined
+  if (!hasTiming) return null
+
+  return [
+    `DOM content loaded: ${formatBrowserMetric(metrics.dom_content_loaded_ms, ' ms')}`,
+    `DOM complete: ${formatBrowserMetric(metrics.dom_complete_ms, ' ms')}`,
+    `Load event: ${formatBrowserMetric(metrics.load_event_ms, ' ms')}`,
+    `Resources: ${formatBrowserMetric(metrics.total_resource_count, '', 0)} total / ${formatBrowserMetric(metrics.blocking_resource_count, '', 0)} blocking`,
+    `Transfer: ${formatBrowserMetric(metrics.resource_transfer_kb, ' KB', 2)}`,
+  ].join('\n')
+}
+
 function buildArchiveStatsEntries(stats?: Record<string, RunArchiveActionStats>) {
   return Object.entries(stats || {}).sort((left, right) => right[1].transactions - left[1].transactions)
 }
@@ -866,6 +885,7 @@ export default function TestExecutionArchive({
                       const rowKey = `${event.timestamp}-${index}`
                       const hasSnapshot = Boolean(event.snapshot)
                       const hasInspectDetails = hasSnapshot || Boolean(event.client_metrics) || Boolean(event.server_telemetry)
+                      const browserWaterfall = formatBrowserWaterfall(event.client_metrics)
                       const isExpanded = expandedArchiveEvent === rowKey
                       const soapFault = extractSOAPFaultSummaryFromBody(event.snapshot?.response_body)
                       const snapshotSections = [
@@ -951,6 +971,12 @@ export default function TestExecutionArchive({
                                         Browser CPU: {formatBrowserMetric(event.client_metrics.browser_process_cpu_pct, '%')}{'\n'}
                                         Browser memory: {formatBrowserMetric(event.client_metrics.browser_process_mem_mb, ' MB')}
                                       </pre>
+                                      {browserWaterfall && (
+                                        <>
+                                          <span className="scenario-script-detail-label">Navigation Waterfall</span>
+                                          <pre className="archive-event-detail-pre">{browserWaterfall}</pre>
+                                        </>
+                                      )}
                                     </div>
                                   )}
                                   {event.server_telemetry && (
