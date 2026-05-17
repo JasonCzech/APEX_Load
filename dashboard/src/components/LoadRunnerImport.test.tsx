@@ -1394,6 +1394,7 @@ describe('LoadRunnerImport', () => {
     const checkboxes = Array.from(container.querySelectorAll('input[type="checkbox"]')) as HTMLInputElement[]
     expect(checkboxes[2]?.checked).toBe(false)
     expect(container.textContent).toContain('Active migration block policy: Blocked, Compatibility Only')
+    expect(container.textContent).toContain('Conversion refreshed with migration block policy: Blocked, Compatibility Only.')
 
     const restorePolicyButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Restore Recommended Block Policy'))
     expect(restorePolicyButton).toBeDefined()
@@ -1421,6 +1422,7 @@ describe('LoadRunnerImport', () => {
     ])
     expect(checkboxes[2]?.checked).toBe(true)
     expect(container.textContent).toContain('Active migration block policy: Blocked, Partial, Compatibility Only')
+    expect(container.textContent).toContain('Conversion refreshed with migration block policy: Blocked, Partial, Compatibility Only.')
   })
 
   it('opens a mapped parameter source in the visual editor with a mapping focus hint', async () => {

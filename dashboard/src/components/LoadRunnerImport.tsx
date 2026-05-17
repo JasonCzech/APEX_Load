@@ -124,6 +124,11 @@ function hasCustomMigrationBlockPolicy(options: Pick<ImportOptions, 'block_parti
     || options.block_non_applicable !== DEFAULT_IMPORT_OPTIONS.block_non_applicable
 }
 
+function buildMigrationPolicyRefreshNotice(mode: 'convert' | 'validate', options: Pick<ImportOptions, 'block_partial' | 'block_compatibility_only' | 'block_non_applicable'>) {
+  const prefix = mode === 'validate' ? 'Validation refreshed' : 'Conversion refreshed'
+  return `${prefix} with migration block policy: ${formatMigrationBlockPolicySummary(options)}.`
+}
+
 function findImportedActionName(script?: ImportedScript | null, location?: string | null): string | null {
   const normalizedLocation = location?.trim()
   if (!normalizedLocation || !Array.isArray(script?.actions)) return null
@@ -277,7 +282,8 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
         if (!nextOptions) return
 
         setOptions(nextOptions)
-        void runReview(reviewMode === 'validation' ? 'validate' : 'convert', nextOptions)
+        const nextMode = reviewMode === 'validation' ? 'validate' : 'convert'
+        void runReview(nextMode, nextOptions, buildMigrationPolicyRefreshNotice(nextMode, nextOptions))
       },
     }))
   }
@@ -292,7 +298,8 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
 
     setOptions(nextOptions)
     if (reviewMode) {
-      void runReview(reviewMode === 'validation' ? 'validate' : 'convert', nextOptions)
+      const nextMode = reviewMode === 'validation' ? 'validate' : 'convert'
+      void runReview(nextMode, nextOptions, buildMigrationPolicyRefreshNotice(nextMode, nextOptions))
     }
   }
 
@@ -451,7 +458,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
     if (f) { setFile(f); setError(''); setNotice(''); setResult(null); setReviewMode(null); resetReplayValidation() }
   }
 
-  const runReview = async (mode: 'convert' | 'validate', reviewOptions: ImportOptions = options) => {
+  const runReview = async (mode: 'convert' | 'validate', reviewOptions: ImportOptions = options, completionNotice?: string) => {
     if (!file) return
     setWorkingMode(mode); setError(''); setNotice(''); setResult(null); resetReplayValidation()
     try {
@@ -466,9 +473,9 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
       })
       setResult(res)
       setReviewMode(mode === 'validate' ? 'validation' : 'conversion')
-      setNotice(mode === 'validate'
+      setNotice(completionNotice || (mode === 'validate'
         ? 'Validation complete. Review the generated script, warnings, and preserved settings before saving.'
-        : 'Conversion complete. Review the generated script, warnings, and preserved settings before saving.')
+        : 'Conversion complete. Review the generated script, warnings, and preserved settings before saving.'))
     } catch (error: unknown) {
       setError(getErrorMessage(error, mode === 'validate' ? 'Validation failed' : 'Import failed'))
     } finally { setWorkingMode(null) }
