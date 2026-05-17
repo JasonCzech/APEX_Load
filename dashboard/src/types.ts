@@ -329,6 +329,11 @@ export interface TransactionEvent {
   success: boolean
   error_message?: string
   extractions?: Record<string, string>
+  page_url?: string
+  page_title?: string
+  console_entries?: BrowserReplayConsoleEntry[]
+  network_entries?: BrowserReplayNetworkEntry[]
+  dom_summary?: BrowserReplayDomSummary
   client_metrics?: ClientMetrics
   server_telemetry?: ServerTelemetry
   snapshot?: {
@@ -518,7 +523,23 @@ export interface RunArchiveReport {
   browser_by_engine?: Record<string, BrowserEngineLiveMetrics>
   browser_by_platform?: Record<string, BrowserPlatformLiveMetrics>
   browser_by_device?: Record<string, BrowserDeviceLiveMetrics>
+  browser_resources?: BrowserResourceTiming[]
   resource_peaks: RunArchiveResourcePeaks
+}
+
+export interface BrowserResourceTiming {
+  timestamp: string
+  action_name?: string
+  page_url?: string
+  url?: string
+  method?: string
+  status_code?: number
+  resource_type?: string
+  duration_ms?: number
+  bytes_received?: number
+  device_profile?: string
+  device_platform?: string
+  browser_engine?: string
 }
 
 export interface BrowserEngineLiveMetrics extends BrowserLiveMetrics {

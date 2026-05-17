@@ -97,6 +97,11 @@ type TransactionEvent struct {
 	Success          bool                      `json:"success"`
 	ErrorMessage     string                    `json:"error_message,omitempty"`
 	Extractions      map[string]string         `json:"extractions,omitempty"`
+	PageURL          string                    `json:"page_url,omitempty"`
+	PageTitle        string                    `json:"page_title,omitempty"`
+	ConsoleEntries   []protocol.ConsoleEntry   `json:"console_entries,omitempty"`
+	NetworkEntries   []protocol.NetworkEntry   `json:"network_entries,omitempty"`
+	DOMSummary       *protocol.DOMSummary      `json:"dom_summary,omitempty"`
 	ClientMetrics    *protocol.ClientMetrics   `json:"client_metrics,omitempty"`
 	ServerTelemetry  *protocol.ServerTelemetry `json:"server_telemetry,omitempty"`
 	Snapshot         *protocol.ErrorSnapshot   `json:"snapshot,omitempty"`
@@ -167,7 +172,23 @@ type RunArchiveReport struct {
 	BrowserByEngine     map[string]*BrowserEngineLiveMetrics   `json:"browser_by_engine,omitempty"`
 	BrowserByPlatform   map[string]*BrowserPlatformLiveMetrics `json:"browser_by_platform,omitempty"`
 	BrowserByDevice     map[string]*BrowserDeviceLiveMetrics   `json:"browser_by_device,omitempty"`
+	BrowserResources    []BrowserResourceTiming                `json:"browser_resources,omitempty"`
 	ResourcePeaks       RunArchiveResourcePeaks                `json:"resource_peaks"`
+}
+
+type BrowserResourceTiming struct {
+	Timestamp      time.Time `json:"timestamp"`
+	ActionName     string    `json:"action_name,omitempty"`
+	PageURL        string    `json:"page_url,omitempty"`
+	URL            string    `json:"url,omitempty"`
+	Method         string    `json:"method,omitempty"`
+	StatusCode     int       `json:"status_code,omitempty"`
+	ResourceType   string    `json:"resource_type,omitempty"`
+	DurationMs     float64   `json:"duration_ms,omitempty"`
+	BytesReceived  int64     `json:"bytes_received,omitempty"`
+	DeviceProfile  string    `json:"device_profile,omitempty"`
+	DevicePlatform string    `json:"device_platform,omitempty"`
+	BrowserEngine  string    `json:"browser_engine,omitempty"`
 }
 
 type RunArchiveSummaryPoint struct {
@@ -469,6 +490,11 @@ func (w *runArchiveWriter) RecordResult(result *protocol.Result) error {
 		Success:          result.Success,
 		ErrorMessage:     result.ErrorMessage,
 		Extractions:      result.Extractions,
+		PageURL:          result.PageURL,
+		PageTitle:        result.PageTitle,
+		ConsoleEntries:   cloneProtocolConsoleEntries(result.ConsoleEntries),
+		NetworkEntries:   cloneProtocolNetworkEntries(result.NetworkEntries),
+		DOMSummary:       cloneProtocolDOMSummary(result.DOMSummary),
 		ClientMetrics:    result.ClientMetrics,
 		ServerTelemetry:  result.ServerTelemetry,
 		Snapshot:         result.Snapshot,
@@ -765,6 +791,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 				mergeReportBrowserDeviceMetrics(deviceMetrics, tx.ClientMetrics)
 			}
 		}
+		report.BrowserResources = append(report.BrowserResources, browserResourceTimingsFromTransaction(tx)...)
 	}
 	if report.Overview.Transactions > 0 {
 		report.Overview.AvgResponseMs = totalDuration / float64(report.Overview.Transactions)
@@ -811,6 +838,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	if len(report.BrowserByDevice) == 0 {
 		report.BrowserByDevice = nil
 	}
+	report.BrowserResources = finalizeBrowserResourceTimings(report.BrowserResources, 50)
 	for action, stats := range report.ByAction {
 		report.ByAction[action] = finalizeRunArchiveActionStats(stats)
 	}
@@ -961,6 +989,21 @@ func buildRunArchiveBrowserDiagnostics(record *storage.RunArchiveRecord) (*Brows
 			event.screenshotBase64 = snapshot.ScreenshotBase64
 			event.html = snapshot.HTML
 		}
+		if event.PageURL == "" {
+			event.PageURL = tx.PageURL
+		}
+		if event.PageTitle == "" {
+			event.PageTitle = tx.PageTitle
+		}
+		if len(event.ConsoleEntries) == 0 {
+			event.ConsoleEntries = cloneProtocolConsoleEntries(tx.ConsoleEntries)
+		}
+		if len(event.NetworkEntries) == 0 {
+			event.NetworkEntries = cloneProtocolNetworkEntries(tx.NetworkEntries)
+		}
+		if event.DOMSummary == nil {
+			event.DOMSummary = cloneProtocolDOMSummary(tx.DOMSummary)
+		}
 		if event.screenshotBase64 != "" {
 			bundle.Overview.ScreenshotArtifacts++
 		}
@@ -989,6 +1032,13 @@ func archiveTransactionHasBrowserDiagnostics(tx TransactionEvent) bool {
 	if strings.HasPrefix(strings.ToLower(tx.ActionName), "browser_") {
 		return true
 	}
+	if tx.PageURL != "" ||
+		tx.PageTitle != "" ||
+		len(tx.ConsoleEntries) > 0 ||
+		len(tx.NetworkEntries) > 0 ||
+		tx.DOMSummary != nil {
+		return true
+	}
 	if tx.Snapshot == nil {
 		return false
 	}
@@ -999,6 +1049,59 @@ func archiveTransactionHasBrowserDiagnostics(tx TransactionEvent) bool {
 		len(tx.Snapshot.ConsoleEntries) > 0 ||
 		len(tx.Snapshot.NetworkEntries) > 0 ||
 		tx.Snapshot.DOMSummary != nil
+}
+
+func browserResourceTimingsFromTransaction(tx TransactionEvent) []BrowserResourceTiming {
+	entries := tx.NetworkEntries
+	if len(entries) == 0 && tx.Snapshot != nil {
+		entries = tx.Snapshot.NetworkEntries
+	}
+	if len(entries) == 0 {
+		return nil
+	}
+	timings := make([]BrowserResourceTiming, 0, len(entries))
+	for _, entry := range entries {
+		if strings.TrimSpace(entry.URL) == "" {
+			continue
+		}
+		timing := BrowserResourceTiming{
+			Timestamp:     tx.Timestamp,
+			ActionName:    tx.ActionName,
+			PageURL:       tx.PageURL,
+			URL:           entry.URL,
+			Method:        entry.Method,
+			StatusCode:    entry.StatusCode,
+			ResourceType:  entry.ResourceType,
+			DurationMs:    entry.DurationMs,
+			BytesReceived: entry.BytesReceived,
+		}
+		if timing.PageURL == "" && tx.Snapshot != nil {
+			timing.PageURL = tx.Snapshot.PageURL
+		}
+		if tx.ClientMetrics != nil {
+			timing.DeviceProfile = tx.ClientMetrics.DeviceProfile
+			timing.DevicePlatform = tx.ClientMetrics.DevicePlatform
+			timing.BrowserEngine = tx.ClientMetrics.BrowserEngine
+		}
+		timings = append(timings, timing)
+	}
+	return timings
+}
+
+func finalizeBrowserResourceTimings(entries []BrowserResourceTiming, limit int) []BrowserResourceTiming {
+	if len(entries) == 0 {
+		return nil
+	}
+	sort.SliceStable(entries, func(left, right int) bool {
+		if entries[left].DurationMs == entries[right].DurationMs {
+			return entries[left].URL < entries[right].URL
+		}
+		return entries[left].DurationMs > entries[right].DurationMs
+	})
+	if limit > 0 && len(entries) > limit {
+		entries = entries[:limit]
+	}
+	return entries
 }
 
 func traceIDFromCorrelationID(correlationID string) string {

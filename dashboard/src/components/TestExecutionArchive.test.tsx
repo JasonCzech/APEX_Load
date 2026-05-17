@@ -183,6 +183,20 @@ describe('TestExecutionArchive', () => {
         avg_inp_ms: 56,
       },
     },
+    browser_resources: [{
+      timestamp: '2026-05-14T20:00:30Z',
+      action_name: 'browser_navigate',
+      page_url: 'https://example.test/home',
+      url: 'https://example.test/assets/app.js',
+      method: 'GET',
+      status_code: 200,
+      resource_type: 'script',
+      duration_ms: 45,
+      bytes_received: 2048,
+      device_profile: 'iphone_se',
+      device_platform: 'ios',
+      browser_engine: 'webkit',
+    }],
     resource_peaks: {
       cpu_process_pct: 0,
       mem_process_mb: 0,
@@ -353,6 +367,12 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('DOM completion gap: 140.0 ms')
     expect(container.textContent).toContain('Load-event gap: 20.0 ms')
     expect(container.textContent).toContain('Blocking-resource pressure: 14.3%')
+    expect(container.textContent).toContain('Browser Resource Waterfall')
+    expect(container.textContent).toContain('Slowest browser sub-resources captured from archived network entries.')
+    expect(container.textContent).toContain('example.test/assets/app.js')
+    expect(container.textContent).toContain('script')
+    expect(container.textContent).toContain('45.0 ms')
+    expect(container.textContent).toContain('2.00 KB')
     const detailValueTexts = Array.from(container.querySelectorAll('.scenario-script-detail-value')).map(node => node.textContent)
     expect(detailValueTexts).toContain('iphone_se · iOS · WebKit · low tier')
     expect(detailValueTexts).not.toContain('iphone_se · WebKit · low tier')

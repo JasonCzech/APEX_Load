@@ -102,6 +102,23 @@ function formatBrowserWaterfall(metrics?: TransactionEvent['client_metrics']): s
   return lines.join('\n')
 }
 
+function formatBrowserResourceBytes(value?: number): string {
+  if (value === undefined) return 'n/a'
+  if (value >= 1024 * 1024) return `${(value / 1024 / 1024).toFixed(2)} MB`
+  if (value >= 1024) return `${(value / 1024).toFixed(2)} KB`
+  return `${value} B`
+}
+
+function formatBrowserResourceURL(value?: string): string {
+  if (!value) return 'n/a'
+  try {
+    const parsed = new URL(value)
+    return `${parsed.host}${parsed.pathname}`
+  } catch {
+    return value
+  }
+}
+
 function buildArchiveStatsEntries(stats?: Record<string, RunArchiveActionStats>) {
   return Object.entries(stats || {}).sort((left, right) => right[1].transactions - left[1].transactions)
 }
@@ -560,6 +577,44 @@ export default function TestExecutionArchive({
             archiveReport.browser_by_engine,
             browserBreakdown,
             setBrowserBreakdown,
+          )}
+
+          {archiveReport.browser_resources && archiveReport.browser_resources.length > 0 && (
+            <div className="tx-section archive-summary-section">
+              <div className="archive-section-header archive-section-header-stack">
+                <div>
+                  <h3 className="chart-title">Browser Resource Waterfall</h3>
+                  <p className="archive-section-copy">Slowest browser sub-resources captured from archived network entries.</p>
+                </div>
+                <span className="archive-chip">{archiveReport.browser_resources.length} resources</span>
+              </div>
+              <table className="tx-table">
+                <thead>
+                  <tr>
+                    <th>Resource</th>
+                    <th>Type</th>
+                    <th>Status</th>
+                    <th>Duration</th>
+                    <th>Transfer</th>
+                    <th>Action</th>
+                    <th>Device</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {archiveReport.browser_resources.slice(0, 12).map((resource, index) => (
+                    <tr key={`${resource.url}-${resource.action_name}-${index}`}>
+                      <td className="tx-name" title={resource.url}>{formatBrowserResourceURL(resource.url)}</td>
+                      <td>{resource.resource_type || 'resource'}</td>
+                      <td>{resource.status_code || 'n/a'}</td>
+                      <td>{formatBrowserMetric(resource.duration_ms, ' ms')}</td>
+                      <td>{formatBrowserResourceBytes(resource.bytes_received)}</td>
+                      <td>{resource.action_name || 'n/a'}</td>
+                      <td>{resource.device_profile || resource.device_platform || resource.browser_engine || 'n/a'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
 
           <div className="archive-artifact-row">

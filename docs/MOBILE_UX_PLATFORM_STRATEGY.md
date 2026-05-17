@@ -15,7 +15,7 @@ This plan is the strategic umbrella that aligns the existing `MOBILE_BROWSER_EMU
 
 ### Remaining
 - Stage 2 is implementation-complete for the current runtime: device profiles carry `CPUThrottleRate` and `NetworkPreset`, the runtime applies them, and an opt-in mobile-browser benchmark harness/runbook exists. Calibration against real devices, measured benchmark evidence, and any memory-pressure model are still external evidence/hardening work.
-- Stage 4 dashboard UX is complete for the current first-cut mobile/browser workflow: script editing, scenario authoring, queued previews, archive drilldown, and run comparisons preserve and surface browser runtime settings. Dedicated charted comparison views, per-resource waterfall drilldown, and broader manual browser validation on real applications remain product-hardening work.
+- Stage 4 dashboard UX is complete for the current first-cut mobile/browser workflow: script editing, scenario authoring, queued previews, archive drilldown, run comparisons, and archived browser resource waterfall diagnostics preserve and surface browser runtime settings. Broader manual browser validation on real applications remains product-hardening work.
 - Stage 5 TrueClient MobileWeb import is partially shipped for the current browser step envelope, including runtime-setting extraction and common decomposed JavaScript fill/click, scroll, and navigation patterns; broader fixture-backed hardening remains open.
 - Stage 6 has a first explainable slice: archived browser summaries now produce deterministic UX intelligence signals with a health score, weakest-device callout, and threshold-backed issue cards. Frustration-pattern detection, heatmaps, anomaly detection, and business-impact scoring remain future product evolution.
 
@@ -231,7 +231,7 @@ The existing plans define tactical phases. This section maps them to the strateg
 - Dashboard: device profile selector, Core Web Vitals charts, resource waterfall view
 - Dashboard: device comparison mode (side-by-side LCP/FCP across profiles)
 
-**Effort:** 5-7 days
+**Status:** complete for the current metric contract. Archive reports now include device/engine/platform browser rollups, charted LCP/INP/CLS comparison, per-action client-metric drilldown, and a capped browser resource waterfall from archived network entries.
 
 ### Stage 5: TrueClient Import (Mobile Emulation Plan Phase 4)
 - `pkg/convert/trueclient` converter
@@ -415,7 +415,6 @@ Dashboard renders side-by-side Core Web Vitals per device group — immediate vi
 
 ### Still Required To Close Stage 2 And Stage 4
 - Publish evidence that the configured CPU/network profile differences produce meaningful timing separation on representative applications.
-- Add richer charted comparison UX beyond the current overall/platform/engine/device rollups, plus per-resource waterfall diagnostics beyond the event-level archive waterfall summary.
 - Expand manual browser validation coverage, especially on WebKit hosts with Playwright assets installed.
 - Extend UX intelligence beyond threshold summaries into frustration detection, heatmaps, business-impact scoring, and anomaly detection once baseline comparison data is reliable.
 

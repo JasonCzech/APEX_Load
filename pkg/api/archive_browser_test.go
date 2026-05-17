@@ -41,6 +41,11 @@ func TestBuildRunArchiveReportAggregatesBrowserMetrics(t *testing.T) {
 			ActionName: "browser_navigate",
 			DurationMs: 150,
 			Success:    true,
+			PageURL:    "https://example.test/home",
+			NetworkEntries: []protocol.NetworkEntry{
+				{URL: "https://example.test/app.js", Method: "GET", StatusCode: 200, ResourceType: "script", DurationMs: 45, BytesReceived: 2048},
+				{URL: "https://example.test/styles.css", Method: "GET", StatusCode: 200, ResourceType: "stylesheet", DurationMs: 20, BytesReceived: 1024},
+			},
 			ClientMetrics: &protocol.ClientMetrics{
 				DeviceProfile:         "iphone_se",
 				DevicePlatform:        "ios",
@@ -171,6 +176,15 @@ func TestBuildRunArchiveReportAggregatesBrowserMetrics(t *testing.T) {
 	}
 	if report.BrowserByEngine["chromium"] == nil || report.BrowserByEngine["chromium"].AvgLCPMs != 180 {
 		t.Fatalf("chromium summary = %#v, want AvgLCPMs 180", report.BrowserByEngine["chromium"])
+	}
+	if len(report.BrowserResources) != 2 {
+		t.Fatalf("browser resources = %d, want 2", len(report.BrowserResources))
+	}
+	if report.BrowserResources[0].URL != "https://example.test/app.js" || report.BrowserResources[0].DurationMs != 45 {
+		t.Fatalf("first browser resource = %#v, want app.js sorted by duration", report.BrowserResources[0])
+	}
+	if report.BrowserResources[0].DeviceProfile != "iphone_se" || report.BrowserResources[0].BrowserEngine != "webkit" {
+		t.Fatalf("first browser resource device context = %#v", report.BrowserResources[0])
 	}
 }
 
