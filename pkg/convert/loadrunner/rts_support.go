@@ -229,8 +229,8 @@ var loadRunnerRTSSupportDefinitions = []runtimeSettingSupportDefinition{
 			Area:    "Misc",
 			Concept: "Snapshot on error",
 			Fields:  []string{"config.error_handling.snapshot_on_error"},
-			Status:  RuntimeSettingStatusPartial,
-			Notes:   "HTTP and browser runtimes capture snapshots today, but broader protocol parity is incomplete.",
+			Status:  RuntimeSettingStatusExecuted,
+			Notes:   "HTTP, browser, SOAP, Java-over-HTTP, WebSocket, and gRPC failure paths populate snapshots where request/response artifacts exist.",
 		},
 		matchers: []runtimeSettingMatcher{matcher([]string{"Misc", "Miscellaneous"}, []string{"SnapshotOnError", "GenerateSnapshotOnError"})},
 	},
@@ -405,7 +405,7 @@ var loadRunnerRTSSupportMatrixNotes = []string{
 	"download_resources = recorded still depends on preserved recorded-resource metadata; manually authored scripts without those URLs cannot execute that mode yet.",
 	"Streaming and media playback settings remain compatibility-only and do not execute browser media semantics.",
 	"DFE parity is intentionally bounded to the current HTTP response transform chain instead of the full LoadRunner surface.",
-	"Extended logging and snapshot-on-error behavior are narrower than full VuGen parity even when the settings are imported and preserved.",
+	"Extended logging fidelity is narrower than full VuGen tracing even when the settings are imported and preserved.",
 }
 
 var loadRunnerRTSSupportMatrixExamples = []RuntimeSettingSupportExample{

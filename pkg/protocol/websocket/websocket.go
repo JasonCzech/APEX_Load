@@ -97,6 +97,7 @@ func (w *WebSocket) Execute(ctx context.Context, action *protocol.Action) (*prot
 	if err != nil {
 		result.Success = false
 		result.ErrorMessage = err.Error()
+		result.Snapshot = w.buildSnapshot(action, result)
 		return result, nil
 	}
 	result.Success = true
@@ -338,6 +339,43 @@ func (w *WebSocket) discardConn(conn *gorillawebsocket.Conn) {
 	_ = conn.Close()
 }
 
+func (w *WebSocket) buildSnapshot(action *protocol.Action, result *protocol.Result) *protocol.ErrorSnapshot {
+	if action == nil || result == nil {
+		return nil
+	}
+	requestURL := strings.TrimSpace(action.Target)
+	if action.RedactedTarget != "" {
+		requestURL = strings.TrimSpace(action.RedactedTarget)
+	}
+	if requestURL != "" {
+		if resolved, err := w.resolveURL(requestURL); err == nil {
+			requestURL = resolved
+		}
+	}
+	if requestURL == "" {
+		w.mu.Lock()
+		requestURL = w.lastTarget
+		w.mu.Unlock()
+	}
+
+	headers := cloneStringHeaders(action.Headers)
+	if len(action.RedactedHeaders) > 0 {
+		headers = cloneStringHeaders(action.RedactedHeaders)
+	}
+	body := string(action.Body)
+	if len(action.RedactedBody) > 0 {
+		body = string(action.RedactedBody)
+	}
+	return &protocol.ErrorSnapshot{
+		RequestMethod:  action.Type,
+		RequestURL:     requestURL,
+		RequestHeaders: headers,
+		RequestBody:    body,
+		ResponseStatus: result.StatusCode,
+		ResponseBody:   result.ResponseBody,
+	}
+}
+
 func (w *WebSocket) resolveURL(target string) (string, error) {
 	raw := strings.TrimSpace(target)
 	if raw == "" {
@@ -408,6 +446,17 @@ func cloneHeader(headers http.Header) http.Header {
 		for _, value := range values {
 			cloned.Add(key, value)
 		}
+	}
+	return cloned
+}
+
+func cloneStringHeaders(headers map[string]string) map[string]string {
+	if len(headers) == 0 {
+		return nil
+	}
+	cloned := make(map[string]string, len(headers))
+	for key, value := range headers {
+		cloned[key] = value
 	}
 	return cloned
 }

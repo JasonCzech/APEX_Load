@@ -878,7 +878,7 @@ func TestGoldenWebHTTPHTMLFixtureRuntimeParity(t *testing.T) {
 		"think_time":                          RuntimeSettingStatusExecuted,
 		"logging":                             RuntimeSettingStatusPartial,
 		"continue_on_error":                   RuntimeSettingStatusExecuted,
-		"snapshot_on_error":                   RuntimeSettingStatusPartial,
+		"snapshot_on_error":                   RuntimeSettingStatusExecuted,
 		"browser_device_emulation":            RuntimeSettingStatusExecuted,
 		"browser_cache_enabled":               RuntimeSettingStatusExecuted,
 		"browser_cache_content_urls":          RuntimeSettingStatusExecuted,
@@ -897,8 +897,8 @@ func TestGoldenWebHTTPHTMLFixtureRuntimeParity(t *testing.T) {
 		assertRuntimeSettingParityEntry(t, parity, id, status)
 	}
 	counts := RuntimeSettingStatusCounts(parity)
-	if counts[string(RuntimeSettingStatusExecuted)] != 20 || counts[string(RuntimeSettingStatusPartial)] != 5 || counts[string(RuntimeSettingStatusCompatibilityOnly)] != 2 {
-		t.Fatalf("status counts = %#v, want executed=20 partial=5 compatibility_only=2", counts)
+	if counts[string(RuntimeSettingStatusExecuted)] != 21 || counts[string(RuntimeSettingStatusPartial)] != 4 || counts[string(RuntimeSettingStatusCompatibilityOnly)] != 2 {
+		t.Fatalf("status counts = %#v, want executed=21 partial=4 compatibility_only=2", counts)
 	}
 }
 

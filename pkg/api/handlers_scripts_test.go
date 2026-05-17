@@ -840,16 +840,16 @@ func TestHandleImportLoadRunnerGoldenFixtureRuntimeParity(t *testing.T) {
 	if !ok {
 		t.Fatalf("summary.runtime_settings_status_counts = %#v, want map", result.Summary["runtime_settings_status_counts"])
 	}
-	if statusCounts["executed"] != float64(20) || statusCounts["partial"] != float64(5) || statusCounts["compatibility_only"] != float64(2) {
-		t.Fatalf("runtime_settings_status_counts = %#v, want executed=20 partial=5 compatibility_only=2", statusCounts)
+	if statusCounts["executed"] != float64(21) || statusCounts["partial"] != float64(4) || statusCounts["compatibility_only"] != float64(2) {
+		t.Fatalf("runtime_settings_status_counts = %#v, want executed=21 partial=4 compatibility_only=2", statusCounts)
 	}
 	runtimeParity, ok := result.Summary["runtime_settings_parity"].([]any)
 	if !ok || len(runtimeParity) != 27 {
 		t.Fatalf("summary.runtime_settings_parity = %#v, want 27 entries", result.Summary["runtime_settings_parity"])
 	}
 	readiness, ok := result.Summary["migration_readiness"].(map[string]any)
-	if !ok || readiness["score_pct"] != float64(87) || readiness["blocked"] != true {
-		t.Fatalf("summary.migration_readiness = %#v, want score=87 blocked=true", result.Summary["migration_readiness"])
+	if !ok || readiness["score_pct"] != float64(89) || readiness["blocked"] != true {
+		t.Fatalf("summary.migration_readiness = %#v, want score=89 blocked=true", result.Summary["migration_readiness"])
 	}
 }
 

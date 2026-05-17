@@ -172,6 +172,18 @@ func TestWebSocketReceiveMatchFailure(t *testing.T) {
 	if !strings.Contains(receive.ErrorMessage, "missing") {
 		t.Fatalf("ErrorMessage = %q", receive.ErrorMessage)
 	}
+	if receive.Snapshot == nil {
+		t.Fatal("Snapshot = nil, want populated websocket snapshot")
+	}
+	if receive.Snapshot.RequestMethod != "ws_receive" {
+		t.Fatalf("Snapshot.RequestMethod = %q, want ws_receive", receive.Snapshot.RequestMethod)
+	}
+	if receive.Snapshot.RequestURL == "" || !strings.Contains(receive.Snapshot.RequestURL, "/ws") {
+		t.Fatalf("Snapshot.RequestURL = %q, want websocket URL", receive.Snapshot.RequestURL)
+	}
+	if receive.Snapshot.ResponseBody != "actual message" {
+		t.Fatalf("Snapshot.ResponseBody = %q, want actual message", receive.Snapshot.ResponseBody)
+	}
 }
 
 func TestWebSocketExtractors(t *testing.T) {

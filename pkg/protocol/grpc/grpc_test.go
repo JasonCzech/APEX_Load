@@ -170,6 +170,60 @@ func TestGRPCBidiStreamWithReflection(t *testing.T) {
 	}
 }
 
+func TestGRPCFailurePopulatesSnapshot(t *testing.T) {
+	addr, stop := startReflectionGenerator(t)
+	defer stop()
+
+	client := &GRPC{}
+	if err := client.Init(context.Background(), map[string]any{
+		"base_url":            addr,
+		"grpc_plain_text":     true,
+		"grpc_use_reflection": true,
+		"grpc_timeout_ms":     float64(1000),
+	}); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	defer client.Teardown(context.Background())
+
+	result, err := client.Execute(context.Background(), &protocol.Action{
+		Name:            "cache script",
+		Type:            "grpc_unary",
+		Target:          "stormrunner.v1.GeneratorControl/DistributeScript",
+		Body:            []byte(`{"scriptId":"script-3","content":"e30=","contentHash":"secret-hash"}`),
+		RedactedBody:    []byte(`{"scriptId":"script-3","content":"[REDACTED]","contentHash":"[REDACTED]"}`),
+		Headers:         map[string]string{"authorization": "Bearer secret"},
+		RedactedHeaders: map[string]string{"authorization": "Bearer [REDACTED]"},
+		Assertions: []protocol.Assertion{{
+			Type:  "body_contains",
+			Value: "missing-hash",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if result.Success {
+		t.Fatal("Execute should fail for unmet assertion")
+	}
+	if result.Snapshot == nil {
+		t.Fatal("Snapshot = nil, want populated grpc snapshot")
+	}
+	if result.Snapshot.RequestMethod != "grpc_unary" {
+		t.Fatalf("Snapshot.RequestMethod = %q, want grpc_unary", result.Snapshot.RequestMethod)
+	}
+	if !strings.Contains(result.Snapshot.RequestURL, "stormrunner.v1.GeneratorControl/DistributeScript") {
+		t.Fatalf("Snapshot.RequestURL = %q, want full method", result.Snapshot.RequestURL)
+	}
+	if strings.Contains(result.Snapshot.RequestBody, "secret-hash") || !strings.Contains(result.Snapshot.RequestBody, "[REDACTED]") {
+		t.Fatalf("Snapshot.RequestBody = %q, want redacted body", result.Snapshot.RequestBody)
+	}
+	if result.Snapshot.RequestHeaders["authorization"] != "Bearer [REDACTED]" {
+		t.Fatalf("Snapshot.RequestHeaders = %#v, want redacted authorization", result.Snapshot.RequestHeaders)
+	}
+	if !strings.Contains(result.Snapshot.ResponseBody, `"contentHash":"secret-hash"`) {
+		t.Fatalf("Snapshot.ResponseBody = %q, want grpc response body", result.Snapshot.ResponseBody)
+	}
+}
+
 func TestGRPCUnaryRequiresServiceMethodTarget(t *testing.T) {
 	client := &GRPC{}
 	result, err := client.Execute(context.Background(), &protocol.Action{

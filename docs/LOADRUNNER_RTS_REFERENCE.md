@@ -24,7 +24,7 @@ The code-owned source of truth for this matrix now lives in `pkg/convert/loadrun
 | Think Time | Ignore, multiplier, limit | `config.think_time.*` | Executed | Applied in the engine after action execution. |
 | Logging | Log level, error-only, extended options | `config.log.*` | Partial | Extended logging now emits configured request/response and trace metadata for `parameter_substitution`, `data_returned`, and `advanced_trace`, but fidelity is still narrower than VuGen extended tracing. |
 | Misc | Continue on error | `config.error_handling.continue_on_error` | Executed | Supported through runtime error handling paths. |
-| Misc | Snapshot on error | `config.error_handling.snapshot_on_error` | Partial | HTTP captures request/response snapshots on failures and browser captures page-state snapshots; broader protocol parity is still incomplete. |
+| Misc | Snapshot on error | `config.error_handling.snapshot_on_error` | Executed | HTTP, browser, SOAP, Java-over-HTTP, WebSocket, and gRPC failure paths populate snapshots where request/response artifacts exist. |
 | Browser Emulation | Cache enabled | `config.browser.cache_enabled` | Executed | Browser runtime toggles Chrome cache usage. |
 | Browser Emulation | Cache URLs requiring content | `config.browser.cache_content_urls` | Executed | Browser runtime forces content request revalidation when disabled. |
 | Browser Emulation | Check for newer versions | `config.browser.check_newer_versions` | Executed | Browser runtime injects revalidation headers. |
@@ -53,7 +53,6 @@ The code-owned source of truth for this matrix now lives in `pkg/convert/loadrun
 - Streaming/media playback semantics are intentionally compatibility-only for now.
 - Browser/runtime-wide DFE parity is not complete beyond the current HTTP response transform chain.
 - Logging fidelity is narrower than full VuGen extended trace behavior.
-- Snapshot-on-error parity is still incomplete outside the HTTP and browser runtimes.
 
 ## Tested examples
 

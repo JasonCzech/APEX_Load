@@ -117,11 +117,52 @@ func (g *GRPC) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		result.Success = false
 		result.StatusCode = int(grpcstatus.Code(err))
 		result.ErrorMessage = err.Error()
+		result.Snapshot = g.buildSnapshot(action, result)
 		return result, nil
 	}
 	result.Success = true
 	result.StatusCode = int(codes.OK)
 	return result, nil
+}
+
+func (g *GRPC) buildSnapshot(action *protocol.Action, result *protocol.Result) *protocol.ErrorSnapshot {
+	if action == nil || result == nil {
+		return nil
+	}
+	requestURL := strings.TrimSpace(action.Target)
+	if action.RedactedTarget != "" {
+		requestURL = strings.TrimSpace(action.RedactedTarget)
+	}
+	if g.target != "" && requestURL != "" && !strings.Contains(requestURL, "://") {
+		requestURL = strings.TrimRight(g.target, "/") + "/" + strings.TrimLeft(requestURL, "/")
+	}
+	headers := cloneMetadataHeaders(action.Headers)
+	if len(action.RedactedHeaders) > 0 {
+		headers = cloneMetadataHeaders(action.RedactedHeaders)
+	}
+	body := string(action.Body)
+	if len(action.RedactedBody) > 0 {
+		body = string(action.RedactedBody)
+	}
+	return &protocol.ErrorSnapshot{
+		RequestMethod:  action.Type,
+		RequestURL:     requestURL,
+		RequestHeaders: headers,
+		RequestBody:    body,
+		ResponseStatus: result.StatusCode,
+		ResponseBody:   result.ResponseBody,
+	}
+}
+
+func cloneMetadataHeaders(headers map[string]string) map[string]string {
+	if len(headers) == 0 {
+		return nil
+	}
+	cloned := make(map[string]string, len(headers))
+	for key, value := range headers {
+		cloned[key] = value
+	}
+	return cloned
 }
 
 func (g *GRPC) Teardown(_ context.Context) error {
