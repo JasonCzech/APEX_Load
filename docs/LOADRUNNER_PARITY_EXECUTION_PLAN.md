@@ -170,6 +170,7 @@ Status:
 - A1.4 has started with a typed save handoff from `ScriptEditor` through the shared authoring surface. Create and update saves now pass the stored script returned by the API into the shell callback, so downstream authoring state can react to the actual persisted script rather than a generic completion signal.
 - A1.4 now keeps the authoring lifecycle inside the editor after save. Saving a draft transitions the shared authoring state into persisted edit mode for the returned script, preserving the draft body when the API response omits an embedded script payload and keeping the library list refreshed in the background.
 - A1.4 now applies that same persisted-script handoff to import and recorder saves. LoadRunner, JMeter, sample-import, Java-over-HTTP sample-import, and recorder save actions now return stored scripts into the shared authoring shell so saved imports reopen in persisted edit mode instead of dropping back to the library.
+- A1.4 now preserves follow-on context for multi-script imports. When an import saves multiple scripts and/or a scenario draft, the shared authoring shell reopens the first persisted script in edit mode and shows a notice about the additional saved artifacts instead of silently dropping that context.
 
 Acceptance criteria:
 - Every script acquisition path resolves into the same lifecycle model

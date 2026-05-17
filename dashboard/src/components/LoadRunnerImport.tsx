@@ -6,7 +6,7 @@ import { type ScriptDefinition } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import { buildReplayStartPayload, getImportSummary, summarizeInlineData } from './scriptEditorUtils'
 import ScriptImportReview from './ScriptImportReview'
-import { type DraftEditorFocus } from './useScriptsAuthoringState'
+import { type DraftEditorFocus, type ImportedSaveResult } from './useScriptsAuthoringState'
 import './LoadRunnerImport.css'
 
 interface ImportMetadata {
@@ -33,7 +33,7 @@ function isBrowserImport(script: ImportedScript | null): boolean {
 
 interface Props {
   projectId?: string
-  onImported?: (script: StoredScript) => void
+  onImported?: (result: ImportedSaveResult) => void
   onEdit?: (script: ScriptDefinition, focus?: DraftEditorFocus) => void
   onClose?: () => void
 }
@@ -639,7 +639,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
     }
     try {
       const savedScript = await api.createScript(importedScript, projectId)
-      onImported?.(savedScript)
+      onImported?.({ scripts: [savedScript] })
     } catch (error: unknown) {
       setError(getErrorMessage(error, 'Failed to save script'))
     }

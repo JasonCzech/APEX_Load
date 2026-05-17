@@ -223,10 +223,11 @@ That order minimizes churn and avoids rebuilding the UI around unstable backend 
 - The script editor now returns the API's stored-script payload through the shared save callback, giving the authoring shell a concrete persisted-script handoff for both create and update saves.
 - Saving a draft script now advances the shared authoring state into persisted edit mode instead of dropping back to the library immediately, so create/edit/save flows stay in one continuous editor lifecycle while the script library refreshes in parallel.
 - LoadRunner, JMeter, sample-import, Java-over-HTTP sample-import, and recorder save actions now use that same persisted-script handoff, so saved import review flows reopen in the canonical editor instead of ending at the library list.
+- Multi-script import saves now preserve that lifecycle context too: the shared shell reopens the first persisted script in edit mode and surfaces a follow-on notice when the import also saved additional scripts and/or a scenario draft.
 
 ### Remaining High-Value Work
 - Finish the scenario assembly path by tightening `TestExecution` adjacencies and shared execution/result models now that `CreateTestModal` is aligned on one shared draft state owner.
-- Continue shared authoring lifecycle work by tightening any remaining reopen-after-save inconsistencies, especially around multi-script import review and scenario-draft follow-on flows.
+- Continue shared authoring lifecycle work by tightening any remaining reopen-after-save inconsistencies beyond the current multi-script import and scenario-draft follow-on coverage.
 - Run the end-to-end parity pass, then remove any temporary normalization or migration adapters that remain after validation.
 
 ### Current Cleanup Note

@@ -37,26 +37,28 @@ vi.mock('./ScriptEditor', () => ({
 }))
 
 vi.mock('./LoadRunnerImport', () => ({
-  default: ({ onImported }: { onImported?: (script: { id: string; name: string; protocol: string; script?: { name: string; version: string; protocol: string; config: { base_url: string }; actions: unknown[] } }) => void }) => (
+  default: ({ onImported }: { onImported?: (result: { scripts: Array<{ id: string; name: string; protocol: string; script?: { name: string; version: string; protocol: string; config: { base_url: string }; actions: unknown[] } }>; scenario?: { name?: string } | null }) => void }) => (
     <div data-testid="loadrunner-import">
       <button onClick={() => onImported?.({
-        id: 'imported-script-1',
-        name: 'Imported LoadRunner Script',
-        protocol: 'http',
-        script: {
+        scripts: [{
+          id: 'imported-script-1',
           name: 'Imported LoadRunner Script',
-          version: '1.0.0',
           protocol: 'http',
-          config: { base_url: 'https://import.example.com' },
-          actions: [],
-        },
+          script: {
+            name: 'Imported LoadRunner Script',
+            version: '1.0.0',
+            protocol: 'http',
+            config: { base_url: 'https://import.example.com' },
+            actions: [],
+          },
+        }],
       })}>mock-loadrunner-save</button>
     </div>
   ),
 }))
 
 vi.mock('./JMeterImport', () => ({
-  default: ({ onEdit }: { onEdit?: (script: { name: string, version: string, protocol: string, config: { base_url: string }, actions: unknown[] }) => void }) => (
+  default: ({ onEdit, onImported }: { onEdit?: (script: { name: string, version: string, protocol: string, config: { base_url: string }, actions: unknown[] }) => void, onImported?: (result: { scripts: Array<{ id: string; name: string; protocol: string; script?: { name: string; version: string; protocol: string; config: { base_url: string }; actions: unknown[] } }>; scenario?: { name?: string } | null }) => void }) => (
     <div data-testid="jmeter-import">
       <button onClick={() => onEdit?.({
         name: 'JMeter Draft',
@@ -66,6 +68,29 @@ vi.mock('./JMeterImport', () => ({
         actions: [],
       })}
       >mock-jmeter-edit</button>
+      <button onClick={() => onImported?.({
+        scripts: [
+          {
+            id: 'jmeter-script-1',
+            name: 'Auth Users',
+            protocol: 'http',
+            script: {
+              name: 'Auth Users',
+              version: '1.0.0',
+              protocol: 'http',
+              config: { base_url: 'https://jmeter.example.com' },
+              actions: [],
+            },
+          },
+          {
+            id: 'jmeter-script-2',
+            name: 'Checkout Users',
+            protocol: 'http',
+          },
+        ],
+        scenario: { name: 'Imported JMeter Scenario' },
+      })}
+      >mock-jmeter-save</button>
     </div>
   ),
 }))
@@ -251,6 +276,52 @@ describe('ScriptsPage', () => {
 
     expect(container.querySelector('[data-testid="script-editor"]')).not.toBeNull()
     expect(container.textContent).toContain('editor:JMeter Draft')
+  })
+
+  it('shows a follow-on notice when a multi-script import also saves a scenario draft', async () => {
+    await act(async () => {
+      root.render(<ScriptsPage />)
+    })
+
+    await flushPromises()
+
+    const createButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('+ Create Script'))
+    expect(createButton).toBeDefined()
+    if (!createButton) {
+      return
+    }
+
+    await act(async () => {
+      createButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const jmeterButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Import JMeter'))
+    expect(jmeterButton).toBeDefined()
+    if (!jmeterButton) {
+      return
+    }
+
+    await act(async () => {
+      jmeterButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const importSaveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('mock-jmeter-save'))
+    expect(importSaveButton).toBeDefined()
+    if (!importSaveButton) {
+      return
+    }
+
+    await act(async () => {
+      importSaveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushPromises()
+
+    expect(apiMock.listScripts).toHaveBeenCalledTimes(2)
+    expect(container.querySelector('[data-testid="script-editor"]')).not.toBeNull()
+    expect(container.textContent).toContain('editor:Auth Users')
+    expect(container.textContent).toContain('script-id:jmeter-script-1')
+    expect(container.textContent).toContain('Saved 2 scripts and scenario draft "Imported JMeter Scenario". Reviewing the first saved script.')
   })
 
   it('keeps the persisted editor open after an import save handoff', async () => {

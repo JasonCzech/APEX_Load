@@ -6,12 +6,13 @@ import JMeterImport from './JMeterImport'
 import JavaHttpImport from './JavaHttpImport'
 import RecordingStudio from './RecordingStudio'
 import SampleScriptImport from './SampleScriptImport'
-import { type DraftEditorFocus, type ScriptsAuthoringSubView } from './useScriptsAuthoringState'
+import { type DraftEditorFocus, type ImportedSaveResult, type ScriptsAuthoringSubView } from './useScriptsAuthoringState'
 
 interface Props {
   subView: ScriptsAuthoringSubView
   draftScript: ScriptDefinition | null
   draftEditorFocus: DraftEditorFocus | null
+  authoringNotice: string | null
   editingId: string | null
   editingScript: ScriptDefinition | null
   projectId?: string
@@ -19,7 +20,7 @@ interface Props {
   onSaved: (script: StoredScript) => void
   onOpenLibrary: () => void
   onOpenCreateOptions: () => void
-  onImported: (script: StoredScript) => void
+  onImported: (result: ImportedSaveResult) => void
   onEditDraft: (script: ScriptDefinition, focus?: DraftEditorFocus) => void
 }
 
@@ -27,6 +28,7 @@ export default function ScriptsAuthoringSurface({
   subView,
   draftScript,
   draftEditorFocus,
+  authoringNotice,
   editingId,
   editingScript,
   projectId,
@@ -39,9 +41,9 @@ export default function ScriptsAuthoringSurface({
 }: Props) {
   switch (subView) {
     case 'create':
-      return <div className="page"><ScriptEditor initialScript={draftScript} initialFocusedActionName={draftEditorFocus?.targetAction || null} initialFocusedSection={draftEditorFocus?.targetSection || null} initialFocusedDataSourceName={draftEditorFocus?.targetDataSource || null} initialFocusedRuntimeArea={draftEditorFocus?.targetRuntimeArea || null} projectId={projectId} onSave={onSaved} onClose={onOpenLibrary} /></div>
+      return <div className="page">{authoringNotice && <div className="settings-notice">{authoringNotice}</div>}<ScriptEditor initialScript={draftScript} initialFocusedActionName={draftEditorFocus?.targetAction || null} initialFocusedSection={draftEditorFocus?.targetSection || null} initialFocusedDataSourceName={draftEditorFocus?.targetDataSource || null} initialFocusedRuntimeArea={draftEditorFocus?.targetRuntimeArea || null} projectId={projectId} onSave={onSaved} onClose={onOpenLibrary} /></div>
     case 'edit':
-      return <div className="page"><ScriptEditor scriptId={editingId} initialScript={editingScript} projectId={projectId} onSave={onSaved} onClose={onOpenLibrary} /></div>
+      return <div className="page">{authoringNotice && <div className="settings-notice">{authoringNotice}</div>}<ScriptEditor scriptId={editingId} initialScript={editingScript} projectId={projectId} onSave={onSaved} onClose={onOpenLibrary} /></div>
     case 'import':
       return <div className="page"><LoadRunnerImport projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenLibrary} /></div>
     case 'jmeter-import':

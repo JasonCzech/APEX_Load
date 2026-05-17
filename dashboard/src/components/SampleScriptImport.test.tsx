@@ -146,16 +146,18 @@ describe('SampleScriptImport', () => {
       }),
     }), undefined)
     expect(onImported).toHaveBeenCalledWith(expect.objectContaining({
-      id: 'script-1',
-      name: 'POST_v1_session',
-      protocol: 'http',
-      script: expect.objectContaining({
-        metadata: expect.objectContaining({
-          import: expect.objectContaining({
-            source: 'sample-import',
+      scripts: [expect.objectContaining({
+        id: 'script-1',
+        name: 'POST_v1_session',
+        protocol: 'http',
+        script: expect.objectContaining({
+          metadata: expect.objectContaining({
+            import: expect.objectContaining({
+              source: 'sample-import',
+            }),
           }),
         }),
-      }),
+      })],
     }))
   })
 
@@ -211,7 +213,9 @@ describe('SampleScriptImport', () => {
       }),
     }), undefined)
     expect(onImported).toHaveBeenCalledWith(expect.objectContaining({
-      protocol: 'java_http',
+      scripts: [expect.objectContaining({
+        protocol: 'java_http',
+      })],
     }))
   })
 

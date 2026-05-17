@@ -5,12 +5,26 @@ import { useProject } from '../hooks/useProject'
 import ScriptsAuthoringShell from './ScriptsAuthoringShell'
 import ScriptsLibraryTable from './ScriptsLibraryTable'
 import { useScriptsLibraryModel } from './useScriptsLibraryModel'
-import { type ScriptsAuthoringSubView, useScriptsAuthoringState } from './useScriptsAuthoringState'
+import { type ImportedSaveResult, type ScriptsAuthoringSubView, useScriptsAuthoringState } from './useScriptsAuthoringState'
 
 interface Props {
   initialMode?: ScriptsAuthoringSubView
   initialEditId?: string
   onSelectScenario?: (id: string) => void
+}
+
+function buildImportedSaveNotice(result: ImportedSaveResult): string | null {
+  const savedCount = result.scripts.length
+  if (savedCount === 0) return null
+
+  const scenarioName = result.scenario?.name?.trim()
+  if (savedCount === 1 && !scenarioName) return null
+
+  const scriptText = `${savedCount} script${savedCount === 1 ? '' : 's'}`
+  if (scenarioName) {
+    return `Saved ${scriptText} and scenario draft "${scenarioName}". Reviewing the first saved script.`
+  }
+  return `Saved ${scriptText}. Reviewing the first saved script.`
 }
 
 export default function ScriptsPage({ initialMode = 'list', initialEditId, onSelectScenario }: Props) {
@@ -70,9 +84,13 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
     handleSavedScript(script)
   }, [handleSavedScript, refresh])
 
-  const handleImported = useCallback((script: StoredScript) => {
+  const handleImported = useCallback((result: ImportedSaveResult) => {
     void refresh()
-    handleSavedScript(script)
+    if (result.scripts[0]) {
+      handleSavedScript(result.scripts[0], buildImportedSaveNotice(result))
+      return
+    }
+    openLibrary()
   }, [handleSavedScript, refresh])
 
   return (

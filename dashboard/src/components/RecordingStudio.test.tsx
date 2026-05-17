@@ -221,8 +221,10 @@ describe('RecordingStudio', () => {
     }), undefined)
     expect(container.textContent).toContain('Script "Checkout Preview" created with 1 correlations detected')
     expect(onImported).toHaveBeenCalledWith(expect.objectContaining({
-      name: 'Checkout Preview',
-      protocol: 'http',
+      scripts: [expect.objectContaining({
+        name: 'Checkout Preview',
+        protocol: 'http',
+      })],
     }))
   })
 })

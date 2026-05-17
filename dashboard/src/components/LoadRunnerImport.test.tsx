@@ -373,8 +373,10 @@ describe('LoadRunnerImport', () => {
       protocol: 'http',
     }), undefined)
     expect(onImported).toHaveBeenCalledWith(expect.objectContaining({
-      name: 'Demo LoadRunner Script',
-      protocol: 'http',
+      scripts: [expect.objectContaining({
+        name: 'Demo LoadRunner Script',
+        protocol: 'http',
+      })],
     }))
   })
 

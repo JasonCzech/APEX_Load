@@ -16,6 +16,7 @@ vi.mock('./ScriptsAuthoringSurface', () => ({
   default: ({
     subView,
     draftScript,
+    authoringNotice,
     editingId,
     projectId,
     onSaved,
@@ -26,17 +27,19 @@ vi.mock('./ScriptsAuthoringSurface', () => ({
   }: {
     subView: string
     draftScript?: { name?: string } | null
+    authoringNotice?: string | null
     editingId?: string | null
     projectId?: string
     onSaved?: (script: StoredScript) => void
     onOpenLibrary?: () => void
     onOpenCreateOptions?: () => void
-    onImported?: (script: StoredScript) => void
+    onImported?: (result: { scripts: StoredScript[]; scenario?: { name?: string } | null }) => void
     onEditDraft?: (script: { name: string; version: string; protocol: string; config: { base_url: string }; actions: unknown[] }) => void
   }) => (
     <div data-testid="authoring-surface">
       <span>subview:{subView}</span>
       <span>draft:{draftScript?.name || 'none'}</span>
+      <span>notice:{authoringNotice || 'none'}</span>
       <span>editing:{editingId || 'none'}</span>
       <span>project:{projectId || 'none'}</span>
       <button onClick={() => onSaved?.({
@@ -49,11 +52,13 @@ vi.mock('./ScriptsAuthoringSurface', () => ({
       <button onClick={onOpenLibrary}>surface-library</button>
       <button onClick={onOpenCreateOptions}>surface-create-options</button>
       <button onClick={() => onImported?.({
-        id: 'imported-script-1',
-        name: 'Imported Script',
-        protocol: 'http',
-        version: '1.0.0',
-        created_at: '2026-05-17T00:00:00Z',
+        scripts: [{
+          id: 'imported-script-1',
+          name: 'Imported Script',
+          protocol: 'http',
+          version: '1.0.0',
+          created_at: '2026-05-17T00:00:00Z',
+        }],
       })}>surface-imported</button>
       <button onClick={() => onEditDraft?.({
         name: 'Surface Draft',
@@ -90,6 +95,7 @@ function createState(subView: AuthoringState['subView'], overrides: Partial<Auth
     editingScript: null,
     draftScript: null,
     draftEditorFocus: null,
+    authoringNotice: null,
     ...overrides,
   }
 }
@@ -163,6 +169,7 @@ describe('ScriptsAuthoringShell', () => {
             config: { base_url: 'https://example.com' },
             actions: [],
           },
+          authoringNotice: 'Saved 2 scripts. Reviewing the first saved script.',
         }),
         onSaved,
         onOpenLibrary,
@@ -175,6 +182,7 @@ describe('ScriptsAuthoringShell', () => {
     expect(container.querySelector('[data-testid="authoring-surface"]')).not.toBeNull()
     expect(container.textContent).toContain('subview:create')
     expect(container.textContent).toContain('draft:Draft Script')
+    expect(container.textContent).toContain('notice:Saved 2 scripts. Reviewing the first saved script.')
     expect(container.textContent).toContain('project:project-1')
 
     await clickButton('surface-save')
@@ -186,7 +194,9 @@ describe('ScriptsAuthoringShell', () => {
     expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ id: 'saved-script-1', name: 'Saved Script' }))
     expect(onOpenLibrary).toHaveBeenCalled()
     expect(onOpenCreateOptions).toHaveBeenCalled()
-    expect(onImported).toHaveBeenCalledWith(expect.objectContaining({ id: 'imported-script-1', name: 'Imported Script' }))
+    expect(onImported).toHaveBeenCalledWith(expect.objectContaining({
+      scripts: [expect.objectContaining({ id: 'imported-script-1', name: 'Imported Script' })],
+    }))
     expect(onEditDraft).toHaveBeenCalledWith(expect.objectContaining({ name: 'Surface Draft' }))
   })
 
@@ -205,7 +215,7 @@ describe('ScriptsAuthoringShell', () => {
     onSaved?: (script: StoredScript) => void
     onOpenLibrary?: () => void
     onOpenCreateOptions?: () => void
-    onImported?: (script: StoredScript) => void
+    onImported?: (result: { scripts: StoredScript[]; scenario?: { name?: string } | null }) => void
     onEditDraft?: (script: ScriptDefinition) => void
     children?: ReactNode
   }) {

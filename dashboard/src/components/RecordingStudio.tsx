@@ -7,6 +7,7 @@ import { Project, type StoredScript } from '../types'
 import { type RecorderImportResult } from '../types/scriptImports'
 import { type ScriptDefinition } from '../types/scripts'
 import { attachImportCorrelationSuggestions } from './scriptEditorUtils'
+import { type ImportedSaveResult } from './useScriptsAuthoringState'
 import './RecordingStudio.css'
 
 interface RecordedRequest {
@@ -74,7 +75,7 @@ interface RecorderStatus {
 
 interface RecordingStudioProps {
   activeProject?: Project | null
-  onImported?: (script: StoredScript) => void
+  onImported?: (result: ImportedSaveResult) => void
   onEdit?: (script: ScriptDefinition) => void
 }
 
@@ -315,7 +316,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
     try {
       const savedScript = await api.createScript(script, activeProject?.id)
       showFeedback(`Script "${script.name}" created with ${convertTask.value?.correlations?.length || 0} correlations detected`)
-      onImported?.(savedScript)
+      onImported?.({ scripts: [savedScript] })
     } catch (e: any) {
       showFeedback(e.message, 'error')
     }

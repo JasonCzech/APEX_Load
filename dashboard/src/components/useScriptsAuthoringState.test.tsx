@@ -30,6 +30,7 @@ function AuthoringStateHarness({ api, initialMode, initialEditId }: HarnessProps
       <span data-testid="draft-target-section">{model.authoringState.draftEditorFocus?.targetSection || 'none'}</span>
       <span data-testid="draft-target-data-source">{model.authoringState.draftEditorFocus?.targetDataSource || 'none'}</span>
       <span data-testid="draft-target-runtime-area">{model.authoringState.draftEditorFocus?.targetRuntimeArea || 'none'}</span>
+      <span data-testid="authoring-notice">{model.authoringState.authoringNotice || 'none'}</span>
       <button data-testid="open-library" onClick={model.openLibrary}>open-library</button>
       <button data-testid="open-create-options" onClick={model.openCreateOptions}>open-create-options</button>
       <button data-testid="set-jmeter" onClick={() => model.setSubview('jmeter-import')}>set-jmeter</button>
@@ -42,6 +43,7 @@ function AuthoringStateHarness({ api, initialMode, initialEditId }: HarnessProps
       <button data-testid="draft-edit-data-source-focused" onClick={() => model.handleDraftEdit({ name: 'Data Source Draft', protocol: 'http', config: {}, actions: [] } as never, { targetSection: 'parameter-data', targetDataSource: 'login_users' })}>draft-edit-data-source-focused</button>
       <button data-testid="load-edit" onClick={() => void model.handleEdit('script-1')}>load-edit</button>
       <button data-testid="save-script" onClick={() => model.handleSavedScript({ id: 'saved-script-1', name: 'Saved Draft', protocol: 'http', version: '1.0.0', created_at: '2026-05-17T00:00:00Z' })}>save-script</button>
+      <button data-testid="save-script-with-notice" onClick={() => model.handleSavedScript({ id: 'saved-script-3', name: 'Saved Notice Draft', protocol: 'http', version: '1.0.0', created_at: '2026-05-17T00:00:00Z' }, 'Saved 2 scripts. Reviewing the first saved script.')}>save-script-with-notice</button>
       <button data-testid="save-script-with-payload" onClick={() => model.handleSavedScript({ id: 'saved-script-2', name: 'Saved Payload', protocol: 'http', version: '1.0.0', created_at: '2026-05-17T00:00:00Z', script: { name: 'Persisted Checkout', protocol: 'http', config: {}, actions: [] } as never })}>save-script-with-payload</button>
       <button data-testid="open-sample" onClick={model.createOptionActions.openSampleImport}>open-sample</button>
       <button data-testid="start-java-http" onClick={model.createOptionActions.startJavaHttpScript}>start-java-http</button>
@@ -137,6 +139,13 @@ describe('useScriptsAuthoringState', () => {
     expect(readTestId('draft-target-section')).toBe('none')
     expect(readTestId('draft-target-data-source')).toBe('none')
     expect(readTestId('draft-target-runtime-area')).toBe('none')
+    expect(readTestId('authoring-notice')).toBe('none')
+
+    await click('save-script-with-notice')
+
+    expect(readTestId('subview')).toBe('edit')
+    expect(readTestId('editing-id')).toBe('saved-script-3')
+    expect(readTestId('authoring-notice')).toBe('Saved 2 scripts. Reviewing the first saved script.')
 
     await click('open-library')
 
@@ -146,6 +155,7 @@ describe('useScriptsAuthoringState', () => {
     expect(readTestId('draft-target-section')).toBe('none')
     expect(readTestId('draft-target-data-source')).toBe('none')
     expect(readTestId('draft-target-runtime-area')).toBe('none')
+    expect(readTestId('authoring-notice')).toBe('none')
   })
 
   it('loads the requested script into edit mode and resets when switching subviews', async () => {
@@ -198,6 +208,7 @@ describe('useScriptsAuthoringState', () => {
     expect(readTestId('editing-id')).toBe('saved-script-2')
     expect(readTestId('editing-name')).toBe('Persisted Checkout')
     expect(readTestId('draft-name')).toBe('none')
+    expect(readTestId('authoring-notice')).toBe('none')
   })
 
   it('owns semantic create and import route actions for the scripts page', async () => {

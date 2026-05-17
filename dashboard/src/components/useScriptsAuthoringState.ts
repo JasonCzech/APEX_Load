@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 
-import { type StoredScript } from '../types'
+import { type StoredScenario, type StoredScript } from '../types'
 import { type ScriptDefinition } from '../types/scripts'
 import { useApi } from '../hooks/useApi'
 import { createApiDraft, createJavaHttpDraft, createJmsDraft, createSoapDraft, createWebDraft } from './scriptDraftFactories'
@@ -20,6 +20,12 @@ export interface AuthoringState {
   editingScript: ScriptDefinition | null
   draftScript: ScriptDefinition | null
   draftEditorFocus: DraftEditorFocus | null
+  authoringNotice: string | null
+}
+
+export interface ImportedSaveResult {
+  scripts: StoredScript[]
+  scenario?: StoredScenario | null
 }
 
 interface UseScriptsAuthoringStateOptions {
@@ -47,7 +53,7 @@ interface ScriptsAuthoringStateModel {
   openLibrary: () => void
   openCreateOptions: () => void
   handleEdit: (id: string) => Promise<void>
-  handleSavedScript: (script: StoredScript) => void
+  handleSavedScript: (script: StoredScript, notice?: string | null) => void
   handleDraftEdit: (script: ScriptDefinition, focus?: DraftEditorFocus) => void
   startDraft: (factory: () => ScriptDefinition) => void
   createOptionActions: ScriptsCreateOptionActions
@@ -82,6 +88,7 @@ function createAuthoringState(mode?: ScriptsAuthoringSubView, editId?: string): 
     editingScript: null,
     draftScript: null,
     draftEditorFocus: null,
+    authoringNotice: null,
   }
 }
 
@@ -93,7 +100,7 @@ export function useScriptsAuthoringState({
   const [authoringState, setAuthoringState] = useState<AuthoringState>(() => createAuthoringState(initialMode, initialEditId))
 
   const setSubview = useCallback((subView: ScriptsAuthoringSubView) => {
-    setAuthoringState({ subView, editingId: null, editingScript: null, draftScript: null, draftEditorFocus: null })
+    setAuthoringState({ subView, editingId: null, editingScript: null, draftScript: null, draftEditorFocus: null, authoringNotice: null })
   }, [])
 
   const openLibrary = useCallback(() => {
@@ -131,6 +138,7 @@ export function useScriptsAuthoringState({
       editingScript: null,
       draftScript: script,
       draftEditorFocus: normalizeDraftEditorFocus(focus),
+      authoringNotice: null,
     })
   }, [])
 
@@ -167,19 +175,21 @@ export function useScriptsAuthoringState({
         editingScript: res.script ?? null,
         draftScript: null,
         draftEditorFocus: null,
+        authoringNotice: null,
       })
     } catch {
       // Ignore edit-load failures to preserve existing page behavior.
     }
   }, [api])
 
-  const handleSavedScript = useCallback((savedScript: StoredScript) => {
+  const handleSavedScript = useCallback((savedScript: StoredScript, notice?: string | null) => {
     setAuthoringState(previous => ({
       subView: 'edit',
       editingId: savedScript.id,
       editingScript: savedScript.script ?? previous.draftScript ?? previous.editingScript,
       draftScript: null,
       draftEditorFocus: null,
+      authoringNotice: notice?.trim() || null,
     }))
   }, [])
 

@@ -318,9 +318,11 @@ describe('JMeterImport', () => {
     await flushPromises()
 
     expect(onImported).toHaveBeenCalledWith(expect.objectContaining({
-      id: 'jmeter-script-1',
-      name: 'Auth_Users',
-      protocol: 'http',
+      scripts: [expect.objectContaining({
+        id: 'jmeter-script-1',
+        name: 'Auth_Users',
+        protocol: 'http',
+      })],
     }))
   })
 

@@ -6,11 +6,12 @@ import { type StoredScript } from '../types'
 import { type ScriptDefinition } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import ScriptImportReview from './ScriptImportReview'
+import { type ImportedSaveResult } from './useScriptsAuthoringState'
 import './LoadRunnerImport.css'
 
 interface Props {
   projectId?: string
-  onImported?: (script: StoredScript) => void
+  onImported?: (result: ImportedSaveResult) => void
   onEdit?: (script: ScriptDefinition) => void
   onClose?: () => void
 }
@@ -147,8 +148,11 @@ export default function JMeterImport({ projectId, onImported, onEdit, onClose }:
       })
       const scenarioText = response.scenario ? ' and scenario draft' : ''
       setNotice(`Saved ${response.count || result.scripts.length} script${result.scripts.length === 1 ? '' : 's'}${scenarioText} to the library.`)
-      if (response.scripts?.[0]) {
-        onImported?.(response.scripts[0])
+      if (response.scripts?.length) {
+        onImported?.({
+          scripts: response.scripts,
+          scenario: response.scenario,
+        })
       }
     } catch (error: unknown) {
       setError(getErrorMessage(error, 'Failed to save converted scripts'))
