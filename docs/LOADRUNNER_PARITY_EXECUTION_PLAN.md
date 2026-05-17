@@ -234,12 +234,12 @@ Status: Complete for the planned W3 scope. Remaining non-executed areas are expl
 ### Epic R1: Runtime Settings Inventory And Classification
 Goal: turn the current reference doc into an executable backlog and user-visible status system.
 
-| ID | Story | Size | Dependencies |
-| --- | --- | --- | --- |
-| R1.1 | Convert the RTS reference into a machine-readable support matrix owned by code and tests | L | none |
-| R1.2 | Add support classification metadata to import results and validation responses | M | R1.1 |
-| R1.3 | Surface executed/partial/preserved/non-applicable status in import review and script editor | M | R1.2 |
-| R1.4 | Add migration readiness scoring with configurable block conditions for critical unsupported settings | L | R1.2 |
+| ID | Story | Size | Dependencies | Status |
+| --- | --- | --- | --- | --- |
+| R1.1 | Convert the RTS reference into a machine-readable support matrix owned by code and tests | L | none | Complete |
+| R1.2 | Add support classification metadata to import results and validation responses | M | R1.1 | Complete |
+| R1.3 | Surface executed/partial/preserved/non-applicable status in import review and script editor | M | R1.2 | Complete |
+| R1.4 | Add migration readiness scoring with configurable block conditions for critical unsupported settings | L | R1.2 | Complete |
 
 Acceptance criteria:
 - Runtime-setting support is not doc-only; it is available through APIs and UI
@@ -254,13 +254,13 @@ Recent progress:
 ### Epic R2: Highest-Value Web HTTP/HTML Execution Gaps
 Goal: close the runtime behaviors most likely to break real migrations.
 
-| ID | Story | Size | Dependencies |
-| --- | --- | --- | --- |
-| R2.1 | Improve extended logging fidelity for imported Web HTTP/HTML runtime settings | L | R1.1 |
-| R2.2 | Expand snapshot-on-error parity beyond current HTTP/browser coverage where execution paths already support artifacts | L | R1.1 |
-| R2.3 | Complete `download_resources = recorded` behavior for imported and manually-authored browser flows with preserved metadata | L | B3.2 helpful, not required |
-| R2.4 | Expand DFE/data-formatting chain execution beyond current transforms and document remaining intentional exclusions | L | R1.1 |
-| R2.5 | Add stronger replay semantics and warnings for preserved-only streaming/media settings | M | R1.2 |
+| ID | Story | Size | Dependencies | Status |
+| --- | --- | --- | --- | --- |
+| R2.1 | Improve extended logging fidelity for imported Web HTTP/HTML runtime settings | L | R1.1 | Complete |
+| R2.2 | Expand snapshot-on-error parity beyond current HTTP/browser coverage where execution paths already support artifacts | L | R1.1 | Complete |
+| R2.3 | Complete `download_resources = recorded` behavior for imported and manually-authored browser flows with preserved metadata | L | B3.2 helpful, not required | Complete |
+| R2.4 | Expand DFE/data-formatting chain execution beyond current transforms and document remaining intentional exclusions | L | R1.1 | Complete |
+| R2.5 | Add stronger replay semantics and warnings for preserved-only streaming/media settings | M | R1.2 | Complete |
 
 Acceptance criteria:
 - Common migrated Web HTTP/HTML settings execute consistently
@@ -277,12 +277,12 @@ Recent progress:
 ### Epic R3: Parity Verification Harness
 Goal: make parity claims testable and regression-resistant.
 
-| ID | Story | Size | Dependencies |
-| --- | --- | --- | --- |
-| R3.1 | Build golden import/runtime fixtures for representative LoadRunner Web HTTP/HTML scripts | XL | R1.1 |
-| R3.2 | Add side-by-side expected support assertions for converter output and runtime execution behavior | L | R3.1 |
-| R3.3 | Add parity-focused regression tests around import review envelopes and validation responses | M | R1.2 |
-| R3.4 | Publish a maintained support matrix with tested examples and known caveats | M | R3.1 |
+| ID | Story | Size | Dependencies | Status |
+| --- | --- | --- | --- | --- |
+| R3.1 | Build golden import/runtime fixtures for representative LoadRunner Web HTTP/HTML scripts | XL | R1.1 | Complete |
+| R3.2 | Add side-by-side expected support assertions for converter output and runtime execution behavior | L | R3.1 | Complete |
+| R3.3 | Add parity-focused regression tests around import review envelopes and validation responses | M | R1.2 | Complete |
+| R3.4 | Publish a maintained support matrix with tested examples and known caveats | M | R3.1 | Complete |
 
 Acceptance criteria:
 - The repo contains parity fixtures that prove support claims
@@ -293,6 +293,11 @@ Recent progress:
 - R3.1/R3.2 now have a maintained golden Web HTTP/HTML fixture under `pkg/convert/loadrunner/testdata/golden_web_http_html`. The regression test converts the archive, verifies generated DSL runtime settings, preserved recorded-resource metadata, and side-by-side expected support statuses for executed, partial, and compatibility-only settings.
 - R3.3 now exercises that same golden fixture through the LoadRunner import API envelope, asserting user-visible warnings, review sections, status counts, migration readiness, and support-matrix tested-example metadata.
 - R3.4 now references the golden fixture from the code-owned support-matrix examples and `docs/LOADRUNNER_RTS_REFERENCE.md`, keeping the public runtime-settings matrix tied to executable coverage.
+
+### Runtime Parity Completion Ledger
+- R1 inventory/classification: complete through the code-owned LoadRunner RTS matrix, import metadata, validation metadata, dashboard/script-editor visibility, and migration-readiness scoring.
+- R2 execution gaps: complete for the planned Web HTTP/HTML scope through bounded extended logging, cross-protocol error snapshots, recorded-resource enforcement, expanded DFE execution, and explicit streaming/media compatibility warnings.
+- R3 verification harness: complete through golden Web HTTP/HTML fixtures, side-by-side support assertions, API-envelope parity regressions, and the published support matrix with tested examples.
 
 ### Runtime Parity Workstream Notes
 - Existing seams: `docs/LOADRUNNER_RTS_REFERENCE.md`, converter packages, `pkg/protocol/http`, browser protocol, validation APIs
