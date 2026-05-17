@@ -60,7 +60,7 @@ The current controller can run in either local or distributed mode without chang
 
 ## Requirements
 
-- Go `1.25+`
+- Go `1.26+`
 - Node.js `18+` (recommended for dashboard builds)
 
 ## Quick Start

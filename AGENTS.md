@@ -146,4 +146,4 @@ go test ./...
 6. Scale & Harden (Wk 37–44): 50k VUsers, HA, production readiness
 
 ## Tech Stack
-Go 1.22+ | PostgreSQL 16 | Redis 7 | React 18 + TS | OpenTelemetry | gRPC | AKS | Helm | Terraform
+Go 1.26+ | PostgreSQL 16 | Redis 7 | React 18 + TS | OpenTelemetry | gRPC | AKS | Helm | Terraform
