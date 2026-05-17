@@ -1394,6 +1394,33 @@ describe('LoadRunnerImport', () => {
     const checkboxes = Array.from(container.querySelectorAll('input[type="checkbox"]')) as HTMLInputElement[]
     expect(checkboxes[2]?.checked).toBe(false)
     expect(container.textContent).toContain('Active migration block policy: Blocked, Compatibility Only')
+
+    const restorePolicyButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Restore Recommended Block Policy'))
+    expect(restorePolicyButton).toBeDefined()
+    if (!restorePolicyButton) {
+      return
+    }
+
+    await act(async () => {
+      restorePolicyButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushPromises()
+
+    expect(apiMock.importLoadRunner).toHaveBeenCalledTimes(3)
+    expect(apiMock.importLoadRunner.mock.calls[2]).toEqual([
+      file,
+      {
+        name: undefined,
+        project_id: undefined,
+        base_url: undefined,
+        include_assertions: true,
+        preserve_transactions: true,
+        migration_block_statuses: ['blocked', 'partial', 'compatibility_only'],
+      },
+    ])
+    expect(checkboxes[2]?.checked).toBe(true)
+    expect(container.textContent).toContain('Active migration block policy: Blocked, Partial, Compatibility Only')
   })
 
   it('opens a mapped parameter source in the visual editor with a mapping focus hint', async () => {

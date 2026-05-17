@@ -65,6 +65,16 @@ type ImportOptions = {
 
 type RelaxableMigrationBlockStatus = 'partial' | 'compatibility_only' | 'non_applicable'
 
+const DEFAULT_IMPORT_OPTIONS: ImportOptions = {
+  name: '',
+  base_url: '',
+  include_assertions: true,
+  preserve_transactions: true,
+  block_partial: true,
+  block_compatibility_only: true,
+  block_non_applicable: false,
+}
+
 function getImportedRuntimeSectionId(area?: string | null): string | null {
   const normalizedArea = area?.trim().toLowerCase()
   switch (normalizedArea) {
@@ -106,6 +116,12 @@ function formatMigrationBlockPolicySummary(options: Pick<ImportOptions, 'block_p
   return buildMigrationBlockStatuses(options)
     .map((status) => formatRuntimeSettingStatusLabel(status))
     .join(', ')
+}
+
+function hasCustomMigrationBlockPolicy(options: Pick<ImportOptions, 'block_partial' | 'block_compatibility_only' | 'block_non_applicable'>) {
+  return options.block_partial !== DEFAULT_IMPORT_OPTIONS.block_partial
+    || options.block_compatibility_only !== DEFAULT_IMPORT_OPTIONS.block_compatibility_only
+    || options.block_non_applicable !== DEFAULT_IMPORT_OPTIONS.block_non_applicable
 }
 
 function findImportedActionName(script?: ImportedScript | null, location?: string | null): string | null {
@@ -180,10 +196,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
   const [replayValidationWarnings, setReplayValidationWarnings] = useState<string[]>([])
   const [replayValidationSession, setReplayValidationSession] = useState<BrowserReplaySession | null>(null)
 
-  const [options, setOptions] = useState<ImportOptions>({
-    name: '', base_url: '', include_assertions: true, preserve_transactions: true,
-    block_partial: true, block_compatibility_only: true, block_non_applicable: false,
-  })
+  const [options, setOptions] = useState<ImportOptions>(DEFAULT_IMPORT_OPTIONS)
   const importedScript = result?.script ?? result?.scripts?.[0] ?? null
   const importMetadata = getImportMetadata(importedScript || undefined)
   const importSummary = getImportSummary(importMetadata)
@@ -267,6 +280,20 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
         void runReview(reviewMode === 'validation' ? 'validate' : 'convert', nextOptions)
       },
     }))
+  }
+
+  const restoreRecommendedMigrationPolicy = () => {
+    const nextOptions = {
+      ...options,
+      block_partial: DEFAULT_IMPORT_OPTIONS.block_partial,
+      block_compatibility_only: DEFAULT_IMPORT_OPTIONS.block_compatibility_only,
+      block_non_applicable: DEFAULT_IMPORT_OPTIONS.block_non_applicable,
+    }
+
+    setOptions(nextOptions)
+    if (reviewMode) {
+      void runReview(reviewMode === 'validation' ? 'validate' : 'convert', nextOptions)
+    }
   }
 
   const renderEditorActionButtons = (buttons: EditorActionButton[], style: CSSProperties = actionWrapStyle) => {
@@ -547,6 +574,13 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
           </label>
         </div>
         <p className="lr-subtitle">Active migration block policy: {formatMigrationBlockPolicySummary(options)}</p>
+        {hasCustomMigrationBlockPolicy(options) && (
+          <div className="replay-panel-actions" style={actionWrapStyle}>
+            <button className="btn btn-secondary btn-sm" onClick={restoreRecommendedMigrationPolicy}>
+              Restore Recommended Block Policy
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="settings-notice">
