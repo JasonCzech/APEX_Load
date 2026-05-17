@@ -1255,6 +1255,144 @@ describe('LoadRunnerImport', () => {
     }), { targetSection: 'runtime', targetRuntimeArea: 'Logging' })
   })
 
+  it('relaxes a blocked runtime migration policy and reruns the current review', async () => {
+    apiMock.importLoadRunner.mockResolvedValueOnce({
+      script: {
+        name: 'Blocked Runtime Script',
+        protocol: 'http',
+        actions: [{ name: 'Homepage' }],
+        metadata: {
+          import: {
+            source: 'loadrunner',
+            source_script_name: 'Demo.usr',
+            preserved: {
+              runtime_settings_migration_readiness: {
+                score_pct: 72,
+                blocked: true,
+                summary: 'Migration readiness score 72%. Blocking runtime settings matched the selected block statuses: partial.',
+                blocking_statuses: ['partial'],
+                blocking_settings: [
+                  {
+                    id: 'logging',
+                    area: 'Logging',
+                    concept: 'Log level, error-only, and extended logging options',
+                    status: 'partial',
+                    runtime_files: ['default.cfg'],
+                  },
+                ],
+              },
+            },
+          },
+        },
+      },
+      warnings: [],
+      unsupported_elements: [],
+      assumptions: [],
+      review_sections: [
+        {
+          key: 'runtime_settings_migration_readiness',
+          title: 'Migration Readiness',
+          severity: 'warning',
+          summary: 'Runtime settings currently block promotion under the active policy.',
+          items: ['Logging'],
+        },
+      ],
+      repair_suggestions: [],
+      summary: {
+        project_file: 'Demo.usr',
+        mapped_runtime_file: 'default.cfg',
+        project_sections: ['Actions'],
+        runtime_files: ['default.cfg'],
+        migration_readiness: {
+          score_pct: 72,
+          blocked: true,
+          summary: 'Migration readiness score 72%. Blocking runtime settings matched the selected block statuses: partial.',
+          blocking_statuses: ['partial'],
+          blocking_settings: [
+            {
+              id: 'logging',
+              area: 'Logging',
+              concept: 'Log level, error-only, and extended logging options',
+              status: 'partial',
+              runtime_files: ['default.cfg'],
+            },
+          ],
+          policy: { block_statuses: ['blocked', 'partial', 'compatibility_only'] },
+        },
+        unsupported_function_count: 0,
+      },
+      stats: {
+        total_functions: 1,
+        converted_actions: 1,
+        extractors: 0,
+        think_times: 0,
+        transactions: 0,
+        skipped: 0,
+      },
+    })
+
+    await act(async () => {
+      root.render(<LoadRunnerImport />)
+    })
+
+    await flushPromises()
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
+    expect(fileInput).not.toBeNull()
+    if (!fileInput) {
+      return
+    }
+
+    const file = new File(['zip-content'], 'demo.zip', { type: 'application/zip' })
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [file],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert LoadRunner Script'))
+    expect(convertButton).toBeDefined()
+    if (!convertButton) {
+      return
+    }
+
+    await act(async () => {
+      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushPromises()
+
+    const relaxPolicyButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Allow Partial Runtime Settings And Refresh Review'))
+    expect(relaxPolicyButton).toBeDefined()
+    if (!relaxPolicyButton) {
+      return
+    }
+
+    await act(async () => {
+      relaxPolicyButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushPromises()
+
+    expect(apiMock.importLoadRunner).toHaveBeenCalledTimes(2)
+    expect(apiMock.importLoadRunner.mock.calls[1]).toEqual([
+      file,
+      {
+        name: undefined,
+        project_id: undefined,
+        base_url: undefined,
+        include_assertions: true,
+        preserve_transactions: true,
+        migration_block_statuses: ['blocked', 'compatibility_only'],
+      },
+    ])
+
+    const checkboxes = Array.from(container.querySelectorAll('input[type="checkbox"]')) as HTMLInputElement[]
+    expect(checkboxes[2]?.checked).toBe(false)
+  })
+
   it('opens a mapped parameter source in the visual editor with a mapping focus hint', async () => {
     const onEdit = vi.fn()
 

@@ -53,6 +53,18 @@ type EditorActionButton = {
   onClick: () => void
 }
 
+type ImportOptions = {
+  name: string
+  base_url: string
+  include_assertions: boolean
+  preserve_transactions: boolean
+  block_partial: boolean
+  block_compatibility_only: boolean
+  block_non_applicable: boolean
+}
+
+type RelaxableMigrationBlockStatus = 'partial' | 'compatibility_only' | 'non_applicable'
+
 function getImportedRuntimeSectionId(area?: string | null): string | null {
   const normalizedArea = area?.trim().toLowerCase()
   switch (normalizedArea) {
@@ -162,7 +174,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
   const [replayValidationWarnings, setReplayValidationWarnings] = useState<string[]>([])
   const [replayValidationSession, setReplayValidationSession] = useState<BrowserReplaySession | null>(null)
 
-  const [options, setOptions] = useState({
+  const [options, setOptions] = useState<ImportOptions>({
     name: '', base_url: '', include_assertions: true, preserve_transactions: true,
     block_partial: true, block_compatibility_only: true, block_non_applicable: false,
   })
@@ -235,6 +247,22 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
     openImportedScriptInEditor({ targetSection: 'parameter-data', targetDataSource: normalizedSourceName })
   }
 
+  const buildMigrationPolicyRelaxationButtons = (keyPrefix: string): EditorActionButton[] => {
+    if (!migrationReadiness?.blocked || !reviewMode) return []
+
+    return getRelaxableMigrationBlockStatuses(migrationReadiness, options).map((status) => ({
+      key: `${keyPrefix}:${status}`,
+      label: `Allow ${formatRuntimeSettingStatusLabel(status)} Runtime Settings And Refresh Review`,
+      onClick: () => {
+        const nextOptions = getRelaxedMigrationBlockOptions(options, status)
+        if (!nextOptions) return
+
+        setOptions(nextOptions)
+        void runReview(reviewMode === 'validation' ? 'validate' : 'convert', nextOptions)
+      },
+    }))
+  }
+
   const renderEditorActionButtons = (buttons: EditorActionButton[], style: CSSProperties = actionWrapStyle) => {
     const seenKeys = new Set<string>()
     const availableButtons = buttons.filter((button) => {
@@ -256,40 +284,40 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
   }
 
   const getReviewSectionActions = (sectionKey: string): EditorActionButton[] => {
-    if (!onEdit) return []
-
     const buttons: EditorActionButton[] = []
     switch (sectionKey) {
       case 'unsupported_elements':
-        if (firstUnsupportedTargetAction) {
+        if (onEdit && firstUnsupportedTargetAction) {
           buttons.push({
             key: 'review-unsupported-action',
             label: 'Open First Unsupported Action In Editor',
             onClick: () => openImportedScriptInEditor({ targetAction: firstUnsupportedTargetAction }),
           })
         }
-        buttons.push({
-          key: 'review-unsupported-script',
-          label: 'Open Imported Script In Editor',
-          onClick: () => openImportedScriptInEditor(),
-        })
+        if (onEdit) {
+          buttons.push({
+            key: 'review-unsupported-script',
+            label: 'Open Imported Script In Editor',
+            onClick: () => openImportedScriptInEditor(),
+          })
+        }
         break
       case 'preserved_metadata':
-        if (runtimeFiles.length > 0 || reviewSummary?.mapped_runtime_file) {
+        if (onEdit && (runtimeFiles.length > 0 || reviewSummary?.mapped_runtime_file)) {
           buttons.push({
             key: 'review-preserved-runtime',
             label: 'Open Runtime Settings In Editor',
             onClick: () => openImportedScriptInEditor({ targetSection: 'runtime' }),
           })
         }
-        if (parameterFiles.length > 0) {
+        if (onEdit && parameterFiles.length > 0) {
           buttons.push({
             key: 'review-preserved-parameter-files',
             label: 'Open Parameter Files In Editor',
             onClick: () => openImportedScriptInEditor({ targetSection: 'parameter-data' }),
           })
         }
-        if (firstGeneratedDataSourceName) {
+        if (onEdit && firstGeneratedDataSourceName) {
           buttons.push({
             key: 'review-preserved-source',
             label: 'Open First Data Source In Editor',
@@ -298,39 +326,46 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
         }
         break
       case 'runtime_settings_parity':
-        buttons.push({
-          key: 'review-runtime-parity',
-          label: 'Open Runtime Review In Editor',
-          onClick: () => openImportedScriptInEditor({ targetSection: 'runtime' }),
-        })
-        if (firstRuntimeParityArea) {
+        if (onEdit) {
           buttons.push({
-            key: 'review-runtime-parity-area',
-            label: 'Open First Runtime Setting In Editor',
-            onClick: () => openImportedRuntimeSettingsInEditor(firstRuntimeParityArea),
+            key: 'review-runtime-parity',
+            label: 'Open Runtime Review In Editor',
+            onClick: () => openImportedScriptInEditor({ targetSection: 'runtime' }),
           })
+          if (firstRuntimeParityArea) {
+            buttons.push({
+              key: 'review-runtime-parity-area',
+              label: 'Open First Runtime Setting In Editor',
+              onClick: () => openImportedRuntimeSettingsInEditor(firstRuntimeParityArea),
+            })
+          }
         }
         break
       case 'runtime_settings_migration_readiness':
-        buttons.push({
-          key: 'review-runtime-readiness',
-          label: 'Open Runtime Review In Editor',
-          onClick: () => openImportedScriptInEditor({ targetSection: 'runtime' }),
-        })
-        if (firstRuntimeBlockingArea) {
+        if (onEdit) {
           buttons.push({
-            key: 'review-runtime-blocking-area',
-            label: 'Open First Blocking Setting In Editor',
-            onClick: () => openImportedRuntimeSettingsInEditor(firstRuntimeBlockingArea),
+            key: 'review-runtime-readiness',
+            label: 'Open Runtime Review In Editor',
+            onClick: () => openImportedScriptInEditor({ targetSection: 'runtime' }),
           })
+          if (firstRuntimeBlockingArea) {
+            buttons.push({
+              key: 'review-runtime-blocking-area',
+              label: 'Open First Blocking Setting In Editor',
+              onClick: () => openImportedRuntimeSettingsInEditor(firstRuntimeBlockingArea),
+            })
+          }
         }
+        buttons.push(...buildMigrationPolicyRelaxationButtons('review-runtime-relax'))
         break
       case 'browser_import_assumptions':
-        buttons.push({
-          key: 'review-browser-import-script',
-          label: 'Open Imported Script In Editor',
-          onClick: () => openImportedScriptInEditor(),
-        })
+        if (onEdit) {
+          buttons.push({
+            key: 'review-browser-import-script',
+            label: 'Open Imported Script In Editor',
+            onClick: () => openImportedScriptInEditor(),
+          })
+        }
         break
       default:
         break
@@ -383,18 +418,18 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
     if (f) { setFile(f); setError(''); setNotice(''); setResult(null); setReviewMode(null); resetReplayValidation() }
   }
 
-  const runReview = async (mode: 'convert' | 'validate') => {
+  const runReview = async (mode: 'convert' | 'validate', reviewOptions: ImportOptions = options) => {
     if (!file) return
     setWorkingMode(mode); setError(''); setNotice(''); setResult(null); resetReplayValidation()
     try {
       const request = mode === 'validate' ? api.validateLoadRunnerImport : api.importLoadRunner
       const res = await request(file, {
-        name: options.name || undefined,
+        name: reviewOptions.name || undefined,
         project_id: projectId,
-        base_url: options.base_url || undefined,
-        include_assertions: options.include_assertions,
-        preserve_transactions: options.preserve_transactions,
-        migration_block_statuses: buildMigrationBlockStatuses(options),
+        base_url: reviewOptions.base_url || undefined,
+        include_assertions: reviewOptions.include_assertions,
+        preserve_transactions: reviewOptions.preserve_transactions,
+        migration_block_statuses: buildMigrationBlockStatuses(reviewOptions),
       })
       setResult(res)
       setReviewMode(mode === 'validate' ? 'validation' : 'conversion')
@@ -709,18 +744,23 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
                         },
                       ])
                     )}
-                    {!suggestion.target_action && suggestion.category === 'runtime' && onEdit && (
+                    {!suggestion.target_action && suggestion.category === 'runtime' && (
                       renderEditorActionButtons([
-                        {
+                        onEdit ? {
                           key: `${suggestion.id}:runtime-review`,
                           label: 'Open Runtime Review In Editor',
                           onClick: () => openImportedScriptInEditor({ targetSection: 'runtime' }),
-                        },
-                        firstRuntimeBlockingArea && suggestion.id === 'runtime:migration-readiness' ? {
+                        } : null,
+                        onEdit && firstRuntimeBlockingArea && suggestion.id === 'runtime:migration-readiness' ? {
                           key: `${suggestion.id}:blocking-area`,
                           label: 'Open First Blocking Setting In Editor',
                           onClick: () => openImportedRuntimeSettingsInEditor(firstRuntimeBlockingArea),
                         } : null,
+                        ...(
+                          suggestion.id === 'runtime:migration-readiness'
+                            ? buildMigrationPolicyRelaxationButtons(`${suggestion.id}:relax`)
+                            : []
+                        ),
                       ].filter((button): button is EditorActionButton => Boolean(button)))
                     )}
                     {!suggestion.target_action && suggestion.category === 'replay' && onEdit && (
@@ -842,17 +882,18 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
                       <span className="lr-preserved-label">Migration Readiness</span>
                       <strong>{migrationReadiness.score_pct}%</strong>
                       <small>{migrationReadiness.blocked ? 'Blocked by current policy' : migrationReadiness.summary || 'Ready for review'}</small>
-                      {onEdit && renderEditorActionButtons([
-                        {
+                      {renderEditorActionButtons([
+                        onEdit ? {
                           key: 'summary-migration-runtime-review',
                           label: 'Open Runtime Review In Editor',
                           onClick: () => openImportedScriptInEditor({ targetSection: 'runtime' }),
-                        },
-                        firstRuntimeBlockingArea ? {
+                        } : null,
+                        onEdit && firstRuntimeBlockingArea ? {
                           key: 'summary-migration-blocking-area',
                           label: 'Open First Blocking Setting In Editor',
                           onClick: () => openImportedRuntimeSettingsInEditor(firstRuntimeBlockingArea),
                         } : null,
+                        ...buildMigrationPolicyRelaxationButtons('summary-migration-relax'),
                       ].filter((button): button is EditorActionButton => Boolean(button)))}
                     </div>
                   )}
@@ -1088,16 +1129,59 @@ function summarizeLoadRunnerSupportMatrix(entries: LoadRunnerSupportMatrixEntry[
   ]
 }
 
-function buildMigrationBlockStatuses(options: {
-  block_partial: boolean
-  block_compatibility_only: boolean
-  block_non_applicable: boolean
-}) {
+function buildMigrationBlockStatuses(options: Pick<ImportOptions, 'block_partial' | 'block_compatibility_only' | 'block_non_applicable'>) {
   const statuses = ['blocked']
   if (options.block_partial) statuses.push('partial')
   if (options.block_compatibility_only) statuses.push('compatibility_only')
   if (options.block_non_applicable) statuses.push('non_applicable')
   return statuses
+}
+
+function normalizeRelaxableMigrationBlockStatus(status?: string | null): RelaxableMigrationBlockStatus | null {
+  switch (status?.trim().toLowerCase()) {
+    case 'partial':
+      return 'partial'
+    case 'compatibility_only':
+      return 'compatibility_only'
+    case 'non_applicable':
+      return 'non_applicable'
+    default:
+      return null
+  }
+}
+
+function getRelaxableMigrationBlockStatuses(
+  readiness: LoadRunnerMigrationReadiness | null,
+  options: Pick<ImportOptions, 'block_partial' | 'block_compatibility_only' | 'block_non_applicable'>,
+): RelaxableMigrationBlockStatus[] {
+  if (!readiness?.blocked || !Array.isArray(readiness.blocking_statuses)) return []
+
+  const statuses = readiness.blocking_statuses
+    .map((status) => normalizeRelaxableMigrationBlockStatus(status))
+    .filter((status): status is RelaxableMigrationBlockStatus => Boolean(status))
+    .filter((status) => {
+      switch (status) {
+        case 'partial':
+          return options.block_partial
+        case 'compatibility_only':
+          return options.block_compatibility_only
+        case 'non_applicable':
+          return options.block_non_applicable
+      }
+    })
+
+  return Array.from(new Set(statuses))
+}
+
+function getRelaxedMigrationBlockOptions(options: ImportOptions, status: RelaxableMigrationBlockStatus): ImportOptions | null {
+  switch (status) {
+    case 'partial':
+      return options.block_partial ? { ...options, block_partial: false } : null
+    case 'compatibility_only':
+      return options.block_compatibility_only ? { ...options, block_compatibility_only: false } : null
+    case 'non_applicable':
+      return options.block_non_applicable ? { ...options, block_non_applicable: false } : null
+  }
 }
 
 function buildLoadRunnerSupportMatrixSection(status: string, title: string, entries: LoadRunnerSupportMatrixEntry[]): LoadRunnerSupportMatrixSection {
