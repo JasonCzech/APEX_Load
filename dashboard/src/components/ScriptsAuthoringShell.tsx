@@ -13,7 +13,7 @@ interface Props {
   onSaved: (script: StoredScript) => void
   onOpenLibrary: () => void
   onOpenCreateOptions: () => void
-  onImported: () => void
+  onImported: (script: StoredScript) => void
   onEditDraft: NonNullable<ComponentProps<typeof ScriptsAuthoringSurface>['onEditDraft']>
   children: ReactNode
 }

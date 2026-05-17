@@ -119,7 +119,14 @@ describe('RecordingStudio', () => {
       stats: {},
       summary: {},
     })
-    apiMock.createScript.mockResolvedValue({ id: 'script-1' })
+    apiMock.createScript.mockImplementation(async (script: { name?: string; protocol?: string; version?: string }) => ({
+      id: 'script-1',
+      name: script.name || 'Saved Script',
+      protocol: script.protocol || 'http',
+      version: script.version || '1.0.0',
+      created_at: '2026-05-17T00:00:00Z',
+      script,
+    }))
   })
 
   afterEach(async () => {

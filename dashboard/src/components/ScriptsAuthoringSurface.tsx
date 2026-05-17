@@ -19,7 +19,7 @@ interface Props {
   onSaved: (script: StoredScript) => void
   onOpenLibrary: () => void
   onOpenCreateOptions: () => void
-  onImported: () => void
+  onImported: (script: StoredScript) => void
   onEditDraft: (script: ScriptDefinition, focus?: DraftEditorFocus) => void
 }
 

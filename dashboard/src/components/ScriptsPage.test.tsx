@@ -37,7 +37,22 @@ vi.mock('./ScriptEditor', () => ({
 }))
 
 vi.mock('./LoadRunnerImport', () => ({
-  default: () => <div data-testid="loadrunner-import">loadrunner-import</div>,
+  default: ({ onImported }: { onImported?: (script: { id: string; name: string; protocol: string; script?: { name: string; version: string; protocol: string; config: { base_url: string }; actions: unknown[] } }) => void }) => (
+    <div data-testid="loadrunner-import">
+      <button onClick={() => onImported?.({
+        id: 'imported-script-1',
+        name: 'Imported LoadRunner Script',
+        protocol: 'http',
+        script: {
+          name: 'Imported LoadRunner Script',
+          version: '1.0.0',
+          protocol: 'http',
+          config: { base_url: 'https://import.example.com' },
+          actions: [],
+        },
+      })}>mock-loadrunner-save</button>
+    </div>
+  ),
 }))
 
 vi.mock('./JMeterImport', () => ({
@@ -236,6 +251,53 @@ describe('ScriptsPage', () => {
 
     expect(container.querySelector('[data-testid="script-editor"]')).not.toBeNull()
     expect(container.textContent).toContain('editor:JMeter Draft')
+  })
+
+  it('keeps the persisted editor open after an import save handoff', async () => {
+    await act(async () => {
+      root.render(<ScriptsPage />)
+    })
+
+    await flushPromises()
+
+    const createButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('+ Create Script'))
+    expect(createButton).toBeDefined()
+    if (!createButton) {
+      return
+    }
+
+    await act(async () => {
+      createButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const loadRunnerButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Import LoadRunner'))
+    expect(loadRunnerButton).toBeDefined()
+    if (!loadRunnerButton) {
+      return
+    }
+
+    await act(async () => {
+      loadRunnerButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.querySelector('[data-testid="loadrunner-import"]')).not.toBeNull()
+
+    const importSaveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('mock-loadrunner-save'))
+    expect(importSaveButton).toBeDefined()
+    if (!importSaveButton) {
+      return
+    }
+
+    await act(async () => {
+      importSaveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushPromises()
+
+    expect(apiMock.listScripts).toHaveBeenCalledTimes(2)
+    expect(container.querySelector('[data-testid="script-editor"]')).not.toBeNull()
+    expect(container.textContent).toContain('editor:Imported LoadRunner Script')
+    expect(container.textContent).toContain('script-id:imported-script-1')
   })
 
   it('shows SOAP and Java-over-HTTP create options and routes them into the draft editor', async () => {

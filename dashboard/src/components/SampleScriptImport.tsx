@@ -13,6 +13,7 @@ import {
   type SampleFormat,
 } from './sampleImportUtils'
 import { type ImportedScript, type SampleImportResult } from '../types/scriptImports'
+import { type StoredScript } from '../types'
 import { type ScriptDefinition } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import { createJavaHttpDraft } from './scriptDraftFactories'
@@ -50,7 +51,7 @@ type SampleImportOptionsAction =
 
 interface Props {
   projectId?: string
-  onImported?: (script: ImportedScript) => void
+  onImported?: (script: StoredScript) => void
   onEdit?: (script: ScriptDefinition) => void
   onClose?: () => void
   preset?: SampleImportPreset
@@ -241,7 +242,7 @@ export default function SampleScriptImport({ projectId, onImported, onEdit, onCl
   const [dragTarget, setDragTarget] = useState<'primary' | 'secondary' | null>(null)
   const [messageError, setMessageError] = useState('')
   const convertTask = useAsyncTask<SampleImportResult>()
-  const saveTask = useAsyncTask<boolean>()
+  const saveTask = useAsyncTask<StoredScript>()
   const [options, dispatchOptions] = useReducer(sampleImportOptionsReducer, initialOptions)
 
   const updateOption = <K extends keyof SampleImportOptions>(field: K, value: SampleImportOptions[K]) => {
@@ -422,11 +423,10 @@ export default function SampleScriptImport({ projectId, onImported, onEdit, onCl
     if (!reviewedScript) return
     setMessageError('')
     try {
-      await saveTask.run(async () => {
-        await api.createScript(reviewedScript, projectId)
-        return true
+      const savedScript = await saveTask.run(async () => {
+        return api.createScript(reviewedScript, projectId)
       })
-      onImported?.(reviewedScript)
+      onImported?.(savedScript)
     } catch (error: unknown) {
       setMessageError(getErrorMessage(error, 'Failed to save generated script'))
     }

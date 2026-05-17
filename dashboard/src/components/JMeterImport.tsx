@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useApi } from '../hooks/useApi'
 import { normalizeImportResult, summarizeImportExtractors, summarizeSupportMatrix } from './jmeterImportUtils'
 import { type ImportedAction, type ImportedScript, type JMeterImportResult as ImportResult, type JMeterSupportMatrixResponse, type SupportMatrix } from '../types/scriptImports'
+import { type StoredScript } from '../types'
 import { type ScriptDefinition } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import ScriptImportReview from './ScriptImportReview'
@@ -9,7 +10,7 @@ import './LoadRunnerImport.css'
 
 interface Props {
   projectId?: string
-  onImported?: (script: ImportedScript) => void
+  onImported?: (script: StoredScript) => void
   onEdit?: (script: ScriptDefinition) => void
   onClose?: () => void
 }
@@ -146,7 +147,9 @@ export default function JMeterImport({ projectId, onImported, onEdit, onClose }:
       })
       const scenarioText = response.scenario ? ' and scenario draft' : ''
       setNotice(`Saved ${response.count || result.scripts.length} script${result.scripts.length === 1 ? '' : 's'}${scenarioText} to the library.`)
-      onImported?.(result.scripts[0])
+      if (response.scripts?.[0]) {
+        onImported?.(response.scripts[0])
+      }
     } catch (error: unknown) {
       setError(getErrorMessage(error, 'Failed to save converted scripts'))
     } finally {

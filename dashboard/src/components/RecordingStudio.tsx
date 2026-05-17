@@ -3,7 +3,7 @@ import { downloadBlob } from '../utils/fileUtils'
 import { useAsyncTask } from '../hooks/useAsyncTask'
 import { useApi } from '../hooks/useApi'
 import { BASE } from '../hooks/apiClient'
-import { Project } from '../types'
+import { Project, type StoredScript } from '../types'
 import { type RecorderImportResult } from '../types/scriptImports'
 import { type ScriptDefinition } from '../types/scripts'
 import { attachImportCorrelationSuggestions } from './scriptEditorUtils'
@@ -74,7 +74,7 @@ interface RecorderStatus {
 
 interface RecordingStudioProps {
   activeProject?: Project | null
-  onImported?: (script: ScriptDefinition) => void
+  onImported?: (script: StoredScript) => void
   onEdit?: (script: ScriptDefinition) => void
 }
 
@@ -313,9 +313,9 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
       return
     }
     try {
-      await api.createScript(script, activeProject?.id)
+      const savedScript = await api.createScript(script, activeProject?.id)
       showFeedback(`Script "${script.name}" created with ${convertTask.value?.correlations?.length || 0} correlations detected`)
-      onImported?.(script)
+      onImported?.(savedScript)
     } catch (e: any) {
       showFeedback(e.message, 'error')
     }

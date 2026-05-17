@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef, type CSSProperties } from 'react'
 import { useApi } from '../hooks/useApi'
 import { type ImportRepairSuggestion, type ImportedScript, type LoadRunnerImportResult, type LoadRunnerImportSummary, type LoadRunnerMigrationReadiness, type LoadRunnerSupportMatrixEntry, type LoadRunnerSupportMatrixExample, type LoadRunnerSupportMatrixResponse } from '../types/scriptImports'
-import { type BrowserReplaySession } from '../types'
+import { type BrowserReplaySession, type StoredScript } from '../types'
 import { type ScriptDefinition } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import { buildReplayStartPayload, getImportSummary, summarizeInlineData } from './scriptEditorUtils'
@@ -33,7 +33,7 @@ function isBrowserImport(script: ImportedScript | null): boolean {
 
 interface Props {
   projectId?: string
-  onImported?: (script: ImportedScript) => void
+  onImported?: (script: StoredScript) => void
   onEdit?: (script: ScriptDefinition, focus?: DraftEditorFocus) => void
   onClose?: () => void
 }
@@ -638,8 +638,8 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
       return
     }
     try {
-      await api.createScript(importedScript, projectId)
-      onImported?.(importedScript)
+      const savedScript = await api.createScript(importedScript, projectId)
+      onImported?.(savedScript)
     } catch (error: unknown) {
       setError(getErrorMessage(error, 'Failed to save script'))
     }

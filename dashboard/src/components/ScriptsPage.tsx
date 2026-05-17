@@ -70,10 +70,10 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
     handleSavedScript(script)
   }, [handleSavedScript, refresh])
 
-  const handleImported = useCallback(() => {
+  const handleImported = useCallback((script: StoredScript) => {
     void refresh()
-    openLibrary()
-  }, [openLibrary, refresh])
+    handleSavedScript(script)
+  }, [handleSavedScript, refresh])
 
   return (
     <ScriptsAuthoringShell

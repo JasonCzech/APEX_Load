@@ -1,9 +1,10 @@
+import { type StoredScript } from '../types'
 import { type ImportedScript } from '../types/scriptImports'
 import { type ScriptDefinition } from '../types/scripts'
 import SampleScriptImport from './SampleScriptImport'
 
 interface Props {
-  onImported?: (script: ImportedScript) => void
+  onImported?: (script: StoredScript) => void
   onEdit?: (script: ScriptDefinition) => void
   onClose?: () => void
 }

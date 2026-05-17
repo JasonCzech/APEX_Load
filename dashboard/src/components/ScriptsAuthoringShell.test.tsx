@@ -31,7 +31,7 @@ vi.mock('./ScriptsAuthoringSurface', () => ({
     onSaved?: (script: StoredScript) => void
     onOpenLibrary?: () => void
     onOpenCreateOptions?: () => void
-    onImported?: () => void
+    onImported?: (script: StoredScript) => void
     onEditDraft?: (script: { name: string; version: string; protocol: string; config: { base_url: string }; actions: unknown[] }) => void
   }) => (
     <div data-testid="authoring-surface">
@@ -48,7 +48,13 @@ vi.mock('./ScriptsAuthoringSurface', () => ({
       })}>surface-save</button>
       <button onClick={onOpenLibrary}>surface-library</button>
       <button onClick={onOpenCreateOptions}>surface-create-options</button>
-      <button onClick={onImported}>surface-imported</button>
+      <button onClick={() => onImported?.({
+        id: 'imported-script-1',
+        name: 'Imported Script',
+        protocol: 'http',
+        version: '1.0.0',
+        created_at: '2026-05-17T00:00:00Z',
+      })}>surface-imported</button>
       <button onClick={() => onEditDraft?.({
         name: 'Surface Draft',
         version: '1.0.0',
@@ -180,7 +186,7 @@ describe('ScriptsAuthoringShell', () => {
     expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ id: 'saved-script-1', name: 'Saved Script' }))
     expect(onOpenLibrary).toHaveBeenCalled()
     expect(onOpenCreateOptions).toHaveBeenCalled()
-    expect(onImported).toHaveBeenCalled()
+    expect(onImported).toHaveBeenCalledWith(expect.objectContaining({ id: 'imported-script-1', name: 'Imported Script' }))
     expect(onEditDraft).toHaveBeenCalledWith(expect.objectContaining({ name: 'Surface Draft' }))
   })
 
@@ -199,7 +205,7 @@ describe('ScriptsAuthoringShell', () => {
     onSaved?: (script: StoredScript) => void
     onOpenLibrary?: () => void
     onOpenCreateOptions?: () => void
-    onImported?: () => void
+    onImported?: (script: StoredScript) => void
     onEditDraft?: (script: ScriptDefinition) => void
     children?: ReactNode
   }) {

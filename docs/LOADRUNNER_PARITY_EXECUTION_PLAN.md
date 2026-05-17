@@ -169,6 +169,7 @@ Status:
 - A1.3 now has a draft validation endpoint at `POST /api/v1/scripts/validate`, giving unsaved editor drafts the same validator and warning payload shape used by saved script validation. The dashboard editor now exposes one validation action for saved and unsaved scripts, with parity coverage across draft validation, stored validation, replay, and browser replay paths.
 - A1.4 has started with a typed save handoff from `ScriptEditor` through the shared authoring surface. Create and update saves now pass the stored script returned by the API into the shell callback, so downstream authoring state can react to the actual persisted script rather than a generic completion signal.
 - A1.4 now keeps the authoring lifecycle inside the editor after save. Saving a draft transitions the shared authoring state into persisted edit mode for the returned script, preserving the draft body when the API response omits an embedded script payload and keeping the library list refreshed in the background.
+- A1.4 now applies that same persisted-script handoff to import and recorder saves. LoadRunner, JMeter, sample-import, Java-over-HTTP sample-import, and recorder save actions now return stored scripts into the shared authoring shell so saved imports reopen in persisted edit mode instead of dropping back to the library.
 
 Acceptance criteria:
 - Every script acquisition path resolves into the same lifecycle model

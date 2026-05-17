@@ -1,3 +1,4 @@
+import { type StoredScenario, type StoredScript } from '../types'
 import { type ScriptActionDefinition, type ScriptDefinition, type ScriptExtractorDefinition } from './scripts'
 
 export type ImportedExtractor = Partial<ScriptExtractorDefinition>
@@ -194,6 +195,7 @@ export interface SaveJMeterImportRequest {
 }
 
 export interface SaveJMeterImportResponse {
+  scripts?: StoredScript[]
   count?: number
-  scenario?: JMeterScenarioDraft
+  scenario?: StoredScenario
 }

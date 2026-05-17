@@ -196,7 +196,18 @@ describe('JMeterImport', () => {
   })
 
   it('adds the active project id when saving reviewed scripts', async () => {
-    apiMock.saveJMeterImport.mockResolvedValueOnce({ count: 1 })
+    apiMock.saveJMeterImport.mockResolvedValueOnce({
+      count: 1,
+      scripts: [
+        {
+          id: 'jmeter-script-1',
+          name: 'Auth_Users',
+          protocol: 'http',
+          version: '1.0.0',
+          created_at: '2026-05-17T00:00:00Z',
+        },
+      ],
+    })
 
     await act(async () => {
       root.render(<JMeterImport projectId="project-1" />)
@@ -243,6 +254,73 @@ describe('JMeterImport', () => {
 
     expect(apiMock.saveJMeterImport).toHaveBeenCalledWith(expect.objectContaining({
       scripts: [expect.objectContaining({ project_id: 'project-1' })],
+    }))
+  })
+
+  it('returns the first persisted script through the import save handoff', async () => {
+    const onImported = vi.fn()
+    apiMock.saveJMeterImport.mockResolvedValueOnce({
+      count: 1,
+      scripts: [
+        {
+          id: 'jmeter-script-1',
+          name: 'Auth_Users',
+          protocol: 'http',
+          version: '1.0.0',
+          created_at: '2026-05-17T00:00:00Z',
+        },
+      ],
+    })
+
+    await act(async () => {
+      root.render(<JMeterImport onImported={onImported} />)
+    })
+
+    await flushPromises()
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
+    expect(fileInput).not.toBeNull()
+    if (!fileInput) {
+      return
+    }
+
+    const file = new File(['<jmeterTestPlan />'], 'extractors.jmx', { type: 'application/xml' })
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [file],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const validateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Validate Only'))
+    expect(validateButton).toBeDefined()
+    if (!validateButton) {
+      return
+    }
+
+    await act(async () => {
+      validateButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushPromises()
+
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save Reviewed 1 Script'))
+    expect(saveButton).toBeDefined()
+    if (!saveButton) {
+      return
+    }
+
+    await act(async () => {
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushPromises()
+
+    expect(onImported).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'jmeter-script-1',
+      name: 'Auth_Users',
+      protocol: 'http',
     }))
   })
 
