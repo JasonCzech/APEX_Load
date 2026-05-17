@@ -316,6 +316,11 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('STORMRUNNER_SAMPLE_FLAG=enabled')
     expect(container.textContent).toContain('generator-1 · healthy · 50 available')
     expect(container.textContent).toContain('Browser Metrics')
+    expect(container.textContent).toContain('UX Intelligence')
+    expect(container.textContent).toContain('Healthy · 100/100')
+    expect(container.textContent).toContain('Browser UX signals are within the current canary thresholds; weakest device is iphone_se.')
+    expect(container.textContent).toContain('Weakest: iphone_se')
+    expect(container.textContent).toContain('Largest Contentful Paint reflects perceived page-load speed.')
     const reportLink = container.querySelector('a[href="/api/v1/tests/test-1/report"]') as HTMLAnchorElement | null
     expect(reportLink).toBeTruthy()
     expect(reportLink?.textContent).toContain('Download Report')
@@ -583,6 +588,94 @@ describe('TestExecutionArchive', () => {
 
     expect(container.textContent).toContain('180.0 ms')
     expect(container.textContent).toContain('255.0 ms')
+  })
+
+  it('surfaces degraded browser UX signals from archive metrics', async () => {
+    const degradedReport: RunArchiveReport = {
+      ...archiveReport,
+      overview: {
+        ...archiveReport.overview,
+        browser: {
+          samples: 4,
+          avg_fcp_ms: 2800,
+          avg_lcp_ms: 4300,
+          avg_cls_score: 0.18,
+          avg_inp_ms: 320,
+          avg_long_task_count: 4,
+          avg_blocking_resources: 12,
+          avg_browser_process_cpu_pct: 74,
+          avg_browser_process_mem_mb: 264,
+        },
+      },
+      browser_by_device: {
+        iphone_se: {
+          device_profile: 'iphone_se',
+          device_platform: 'ios',
+          device_tier: 'low',
+          browser_engine: 'webkit',
+          samples: 2,
+          avg_lcp_ms: 4400,
+          avg_cls_score: 0.2,
+          avg_inp_ms: 520,
+        },
+        pixel_8: {
+          device_profile: 'pixel_8',
+          device_platform: 'android',
+          device_tier: 'high',
+          browser_engine: 'chromium',
+          samples: 2,
+          avg_lcp_ms: 2100,
+          avg_cls_score: 0.02,
+          avg_inp_ms: 120,
+        },
+      },
+    }
+
+    await act(async () => {
+      root.render(
+        <TestExecutionArchive
+          hasArchive={true}
+          test={test}
+          archiveError=""
+          archiveLoading={false}
+          archiveReport={degradedReport}
+          onDownloadBrowserDiagnostics={vi.fn()}
+          onDownloadArchiveArtifact={vi.fn()}
+          archiveActionEntries={[]}
+          archiveSOAPOperationEntries={[]}
+          selectedArchiveAction=""
+          onSelectedArchiveActionChange={vi.fn()}
+          selectedArchiveSOAPOperation=""
+          onSelectedArchiveSOAPOperationChange={vi.fn()}
+          archiveGroups={[]}
+          selectedArchiveGroup=""
+          onSelectedArchiveGroupChange={vi.fn()}
+          archiveErrorsOnly={false}
+          onArchiveErrorsOnlyChange={vi.fn()}
+          archiveTransactionsLoading={false}
+          archiveTransactionsTotal={0}
+          archivePageStart={0}
+          archivePageEnd={0}
+          archiveTransactionsOffset={0}
+          archivePageSize={50}
+          onPreviousPage={vi.fn()}
+          onNextPage={vi.fn()}
+          archiveTransactions={[]}
+          expandedArchiveEvent={null}
+          onExpandedArchiveEventChange={vi.fn()}
+        />,
+      )
+    })
+
+    expect(container.textContent).toContain('UX Intelligence')
+    expect(container.textContent).toContain('Poor ·')
+    expect(container.textContent).toContain('UX signals need attention; weakest device is iphone_se.')
+    expect(container.textContent).toContain('LCP')
+    expect(container.textContent).toContain('4300.0 ms')
+    expect(container.textContent).toContain('Blocking resources')
+    expect(container.textContent).toContain('12.0')
+    expect(container.textContent).toContain('Browser RSS')
+    expect(container.textContent).toContain('264.0 MB')
   })
 
   it('shows server telemetry for archived events without requiring a snapshot', async () => {

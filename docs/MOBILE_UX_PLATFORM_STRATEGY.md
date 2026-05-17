@@ -17,7 +17,7 @@ This plan is the strategic umbrella that aligns the existing `MOBILE_BROWSER_EMU
 - Stage 2 is implementation-complete for the current runtime: device profiles carry `CPUThrottleRate` and `NetworkPreset`, the runtime applies them, and an opt-in mobile-browser benchmark harness/runbook exists. Calibration against real devices, measured benchmark evidence, and any memory-pressure model are still external evidence/hardening work.
 - Stage 4 dashboard UX is complete for the current first-cut mobile/browser workflow: script editing, scenario authoring, queued previews, archive drilldown, and run comparisons preserve and surface browser runtime settings. Dedicated charted comparison views, per-resource waterfall drilldown, and broader manual browser validation on real applications remain product-hardening work.
 - Stage 5 TrueClient MobileWeb import is partially shipped for the current browser step envelope, including runtime-setting extraction and common decomposed JavaScript fill/click, scroll, and navigation patterns; broader fixture-backed hardening remains open.
-- Stage 6 UX intelligence work has not started.
+- Stage 6 has a first explainable slice: archived browser summaries now produce deterministic UX intelligence signals with a health score, weakest-device callout, and threshold-backed issue cards. Frustration-pattern detection, heatmaps, anomaly detection, and business-impact scoring remain future product evolution.
 
 ## Why This Matters
 Traditional performance testing measures server response time. Modern web applications spend 40-70% of perceived latency in **client-side rendering, JavaScript execution, and layout computation**. A user on an iPhone SE over 4G experiences a fundamentally different application than a user on a desktop with fiber — even when the server response is identical.
@@ -241,11 +241,10 @@ The existing plans define tactical phases. This section maps them to the strateg
 
 **Remaining effort:** 3-5 days for non-decomposable JavaScript hardening, import review UX refinements, and broader replay-validation coverage. Simple TruClient JavaScript fill/click, scroll, and location-navigation statements now map to browser DSL actions, reducing previous review-only repair paths.
 
-### Stage 6: UX Intelligence (Future)
-- Frustration detection: rage taps, repeated navigation, abandonment patterns
-- Interaction heatmap generation from touch/click coordinates
-- Business impact scoring: correlate client metric degradation with conversion funnel position
-- Anomaly detection: flag actions where client metrics regress vs. baseline
+### Stage 6: UX Intelligence (First Slice Complete)
+- Explainable archive UX scoring from current browser summaries is implemented: LCP, INP, CLS, long tasks, blocking resources, browser CPU, and browser RSS produce a deterministic health score and issue signals.
+- Archive views now call out the weakest device profile when device-segmented metrics are present.
+- Future work: frustration detection, rage taps, repeated navigation, abandonment patterns, interaction heatmaps, business impact scoring, and anomaly detection against baselines.
 
 **Effort:** This is a product evolution, not a single implementation phase. Begin only after Stages 1-4 are stable and producing real data.
 
@@ -412,11 +411,13 @@ Dashboard renders side-by-side Core Web Vitals per device group — immediate vi
 - A browser script can run against named device profiles with browser-family-aware routing (`chromium` or `webkit`), touch semantics, and per-action client metrics.
 - `ClientMetrics` are attached per browser action and remain nil for non-browser protocols.
 - Live and archived results expose browser summaries plus engine/platform/device browser segmentation, and the dashboard can drill into archived client metrics with normalized `Platform · Engine · Tier` labels.
+- Archived browser summaries include explainable UX intelligence: a threshold-backed health score, issue signals, and weakest-device context.
 
 ### Still Required To Close Stage 2 And Stage 4
 - Publish evidence that the configured CPU/network profile differences produce meaningful timing separation on representative applications.
 - Add richer charted comparison UX beyond the current overall/platform/engine/device rollups, plus per-resource waterfall diagnostics beyond the event-level archive waterfall summary.
 - Expand manual browser validation coverage, especially on WebKit hosts with Playwright assets installed.
+- Extend UX intelligence beyond threshold summaries into frustration detection, heatmaps, business-impact scoring, and anomaly detection once baseline comparison data is reliable.
 
 ### Long-Term
 - Teams should eventually be able to answer: "Will this release degrade the checkout experience on iPhone SE over 4G?" before deploying to production, with anomaly detection layered on top of the collected metrics.

@@ -23,6 +23,36 @@ export interface BrowserBreakdownSource {
   engines?: Record<string, BrowserEngineLiveMetrics>
 }
 
+export type BrowserUXSeverity = 'good' | 'watch' | 'poor'
+
+export interface BrowserUXSignal {
+  label: string
+  value: string
+  severity: BrowserUXSeverity
+  detail: string
+}
+
+export interface BrowserUXInsight {
+  score: number
+  severity: BrowserUXSeverity
+  label: string
+  summary: string
+  signals: BrowserUXSignal[]
+  worstDevice?: string
+}
+
+type BrowserUXMetricSource = Pick<
+  BrowserLiveMetrics,
+  | 'samples'
+  | 'avg_lcp_ms'
+  | 'avg_inp_ms'
+  | 'avg_cls_score'
+  | 'avg_blocking_resources'
+  | 'avg_long_task_count'
+  | 'avg_browser_process_cpu_pct'
+  | 'avg_browser_process_mem_mb'
+>
+
 export function formatBrowserBreakdownTooltipValue(value: unknown, format: 'ms' | 'score' = 'ms'): string {
   if (typeof value !== 'number' || !Number.isFinite(value)) {
     return 'n/a'
@@ -52,6 +82,96 @@ export function formatBrowserBreakdownTooltipLabel(value: unknown, segmentLabel 
     return `${segmentLabel}: unknown`
   }
   return `${segmentLabel}: ${value}`
+}
+
+function finiteNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
+function scoreThreshold(value: number | undefined, good: number, poor: number): number {
+  if (value === undefined) return 100
+  if (value <= good) return 100
+  if (value >= poor) return 0
+  return Math.max(0, Math.round(100 - ((value - good) / (poor - good)) * 100))
+}
+
+function severityFromScore(score: number): BrowserUXSeverity {
+  if (score >= 85) return 'good'
+  if (score >= 65) return 'watch'
+  return 'poor'
+}
+
+function severityLabel(severity: BrowserUXSeverity): string {
+  if (severity === 'good') return 'Healthy'
+  if (severity === 'watch') return 'Watch'
+  return 'Poor'
+}
+
+function formatSignalNumber(value: number | undefined, suffix: string, digits = 1): string {
+  if (value === undefined) return 'n/a'
+  return `${value.toFixed(digits)}${suffix}`
+}
+
+function buildSignal(label: string, value: number | undefined, good: number, poor: number, suffix: string, detail: string, digits = 1): BrowserUXSignal {
+  const score = scoreThreshold(value, good, poor)
+  return {
+    label,
+    value: formatSignalNumber(value, suffix, digits),
+    severity: severityFromScore(score),
+    detail,
+  }
+}
+
+function buildBrowserUXSignals(metrics: BrowserUXMetricSource): BrowserUXSignal[] {
+  return [
+    buildSignal('LCP', finiteNumber(metrics.avg_lcp_ms), 2500, 4000, ' ms', 'Largest Contentful Paint reflects perceived page-load speed.'),
+    buildSignal('INP', finiteNumber(metrics.avg_inp_ms), 200, 500, ' ms', 'Interaction to Next Paint highlights interaction responsiveness.'),
+    buildSignal('CLS', finiteNumber(metrics.avg_cls_score), 0.1, 0.25, '', 'Cumulative Layout Shift flags visual instability.', 3),
+    buildSignal('Long tasks', finiteNumber(metrics.avg_long_task_count), 1, 5, '', 'Long main-thread tasks indicate JavaScript contention.'),
+    buildSignal('Blocking resources', finiteNumber(metrics.avg_blocking_resources), 2, 10, '', 'Blocking resources point to render-path pressure.'),
+    buildSignal('Browser CPU', finiteNumber(metrics.avg_browser_process_cpu_pct), 65, 90, '%', 'High browser CPU can hide server improvements from users.'),
+    buildSignal('Browser RSS', finiteNumber(metrics.avg_browser_process_mem_mb), 200, 300, ' MB', 'Browser memory pressure limits safe canary density.'),
+  ]
+}
+
+export function buildBrowserUXInsight(
+  summary?: BrowserUXMetricSource,
+  devices?: Record<string, BrowserDeviceLiveMetrics>,
+): BrowserUXInsight | null {
+  if (!summary || !summary.samples) {
+    return null
+  }
+
+  const scores = [
+    scoreThreshold(finiteNumber(summary.avg_lcp_ms), 2500, 4000),
+    scoreThreshold(finiteNumber(summary.avg_inp_ms), 200, 500),
+    scoreThreshold(finiteNumber(summary.avg_cls_score), 0.1, 0.25),
+    scoreThreshold(finiteNumber(summary.avg_long_task_count), 1, 5),
+    scoreThreshold(finiteNumber(summary.avg_blocking_resources), 2, 10),
+    scoreThreshold(finiteNumber(summary.avg_browser_process_cpu_pct), 65, 90),
+    scoreThreshold(finiteNumber(summary.avg_browser_process_mem_mb), 200, 300),
+  ]
+  const score = Math.round(scores.reduce((sum, item) => sum + item, 0) / scores.length)
+  const severity = severityFromScore(score)
+  const deviceEntries = Object.entries(devices ?? {})
+    .map(([profile, metrics]) => ({
+      profile,
+      score: buildBrowserUXInsight(metrics, undefined)?.score ?? 100,
+    }))
+    .sort((left, right) => left.score - right.score || left.profile.localeCompare(right.profile))
+  const worstDevice = deviceEntries.length > 0 ? deviceEntries[0].profile : undefined
+  const weakSignals = buildBrowserUXSignals(summary).filter(signal => signal.severity !== 'good')
+
+  return {
+    score,
+    severity,
+    label: severityLabel(severity),
+    summary: weakSignals.length > 0
+      ? `${weakSignals.length} UX signal${weakSignals.length === 1 ? '' : 's'} need attention${worstDevice ? `; weakest device is ${worstDevice}` : ''}.`
+      : `Browser UX signals are within the current canary thresholds${worstDevice ? `; weakest device is ${worstDevice}` : ''}.`,
+    signals: buildBrowserUXSignals(summary),
+    worstDevice,
+  }
 }
 
 export function getBrowserBreakdownSegmentLabel(breakdown: BrowserBreakdown): string {

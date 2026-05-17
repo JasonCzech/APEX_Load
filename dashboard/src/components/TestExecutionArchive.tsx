@@ -6,6 +6,7 @@ import {
   BrowserBreakdown,
   buildBrowserBreakdownData,
   buildArchiveBrowserBreakdownSeries,
+  buildBrowserUXInsight,
   formatBrowserEngineLabel,
   formatDevicePlatformLabel,
   getBrowserBreakdownChartCopy,
@@ -162,6 +163,7 @@ function renderBrowserSummary(
   const chartTitle = getBrowserBreakdownTitle(breakdown, 'Breakdown', 'LCP / INP / CLS')
   const chartCopy = getBrowserBreakdownChartCopy(breakdownSeries)
   const segmentLabel = getBrowserBreakdownSegmentLabel(breakdown)
+  const uxInsight = buildBrowserUXInsight(summary, devices)
 
   return (
     <div className="archive-browser-section">
@@ -207,6 +209,30 @@ function renderBrowserSummary(
           <span className="scenario-script-detail-value">{formatBrowserMetric(summary.avg_browser_process_mem_mb, ' MB')}</span>
         </div>
       </div>
+
+      {uxInsight && (
+        <div className={`browser-ux-card ${uxInsight.severity}`}>
+          <div className="browser-ux-header">
+            <div>
+              <span className="results-compare-label">UX Intelligence</span>
+              <h4 className="browser-ux-title">{uxInsight.label} · {uxInsight.score}/100</h4>
+            </div>
+            {uxInsight.worstDevice && <span className="archive-chip">Weakest: {uxInsight.worstDevice}</span>}
+          </div>
+          <p className="archive-section-copy">{uxInsight.summary}</p>
+          <div className="browser-ux-signal-grid">
+            {uxInsight.signals.map(signal => (
+              <div key={signal.label} className={`browser-ux-signal ${signal.severity}`}>
+                <div className="browser-ux-signal-row">
+                  <span className="browser-ux-signal-label">{signal.label}</span>
+                  <span className="browser-ux-signal-value">{signal.value}</span>
+                </div>
+                <span className="browser-ux-signal-detail">{signal.detail}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {onBreakdownChange && breakdownChartData.length > 0 && (
         <>

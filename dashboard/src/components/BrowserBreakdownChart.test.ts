@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   buildBrowserBreakdownData,
   buildArchiveBrowserBreakdownSeries,
+  buildBrowserUXInsight,
   buildComparisonBrowserBreakdownSeries,
   formatBrowserBreakdownTooltipLabel,
   formatBrowserBreakdownTooltipValue,
@@ -70,5 +71,44 @@ describe('BrowserBreakdownChart helpers', () => {
     ).toEqual([
       { segment: 'Overall', lcp: 220, inp: 50, cls: 0.02 },
     ])
+  })
+
+  it('derives explainable UX intelligence from browser metric thresholds', () => {
+    const insight = buildBrowserUXInsight({
+      samples: 6,
+      avg_lcp_ms: 4300,
+      avg_inp_ms: 260,
+      avg_cls_score: 0.08,
+      avg_blocking_resources: 12,
+      avg_long_task_count: 3,
+      avg_browser_process_cpu_pct: 72,
+      avg_browser_process_mem_mb: 260,
+    }, {
+      iphone_se: {
+        samples: 3,
+        avg_lcp_ms: 4400,
+        avg_inp_ms: 520,
+        avg_cls_score: 0.12,
+      },
+      pixel_8: {
+        samples: 3,
+        avg_lcp_ms: 2100,
+        avg_inp_ms: 120,
+        avg_cls_score: 0.02,
+      },
+    })
+
+    expect(insight?.severity).toBe('poor')
+    expect(insight?.label).toBe('Poor')
+    expect(insight?.worstDevice).toBe('iphone_se')
+    expect(insight?.summary).toContain('UX signals need attention')
+    expect(insight?.signals.find(signal => signal.label === 'LCP')).toMatchObject({
+      value: '4300.0 ms',
+      severity: 'poor',
+    })
+    expect(insight?.signals.find(signal => signal.label === 'Browser RSS')).toMatchObject({
+      value: '260.0 MB',
+      severity: 'poor',
+    })
   })
 })
