@@ -5,7 +5,7 @@ import { useProjectApi } from '../hooks/api/useProjectApi'
 import { useApplication } from '../hooks/useApplication'
 import { useProject } from '../hooks/useProject'
 import { useApi } from '../hooks/useApi'
-import { DashboardAuditEvent, DashboardAuthAccessResource, DashboardAuthEffectiveAccessResource, DashboardAuthRoleDefinition, DashboardAuthStatus, DashboardServiceAccount, DashboardSystemSettings, HealthResponse, Project, RedactionRule, SharedDataPool, SharedDataPoolRow, SystemInventoryResponse } from '../types'
+import { DashboardAuditEvent, DashboardAuthAccessResource, DashboardAuthDiagnostics, DashboardAuthDiagnosticsCheck, DashboardAuthEffectiveAccessResource, DashboardAuthRoleDefinition, DashboardAuthStatus, DashboardServiceAccount, DashboardSystemSettings, HealthResponse, Project, RedactionRule, SharedDataPool, SharedDataPoolRow, SystemInventoryResponse } from '../types'
 import { getErrorMessage } from '../utils/errorUtils'
 
 const DEFAULT_SETTINGS: DashboardSystemSettings = {
@@ -217,6 +217,28 @@ function formatGrantSource(grantSource?: string): string {
 function formatHeaderContractValue(value?: string, fallback = 'Not configured'): string {
   const normalized = value?.trim() || ''
   return normalized || fallback
+}
+
+function formatAuthDiagnosticStatus(status?: string): string {
+  switch (status) {
+    case 'pass':
+      return 'Pass'
+    case 'warn':
+      return 'Advisory'
+    case 'fail':
+      return 'Action Required'
+    case 'info':
+      return 'Info'
+    default:
+      return status || 'Unknown'
+  }
+}
+
+function formatAuthDiagnosticsHeadline(diagnostics: DashboardAuthDiagnostics | null): string {
+  if (!diagnostics) {
+    return 'Diagnostics unavailable'
+  }
+  return diagnostics.ready ? 'Ready' : 'Needs attention'
 }
 
 function normalizeDashboardAuthMode(mode?: DashboardSystemSettings['auth']['mode']): DashboardSystemSettings['auth']['mode'] {
@@ -601,6 +623,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
   const [savedSettings, setSavedSettings] = useState<DashboardSystemSettings>(DEFAULT_SETTINGS)
   const [health, setHealth] = useState<HealthResponse | null>(null)
   const [authAccessResources, setAuthAccessResources] = useState<DashboardAuthAccessResource[]>([])
+  const [authDiagnostics, setAuthDiagnostics] = useState<DashboardAuthDiagnostics | null>(null)
   const [effectiveAuthAccessResources, setEffectiveAuthAccessResources] = useState<DashboardAuthEffectiveAccessResource[]>([])
   const [authRoles, setAuthRoles] = useState<DashboardAuthRoleDefinition[]>([])
   const [serviceAccounts, setServiceAccounts] = useState<DashboardServiceAccount[]>([])
@@ -699,6 +722,27 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
       cancelled = true
     }
   }, [activeProject?.id, api])
+
+  useEffect(() => {
+  let cancelled = false
+  const loadAuthDiagnostics = async () => {
+    try {
+      const response = await api.getAuthDiagnostics()
+      if (!cancelled) {
+        setAuthDiagnostics(response)
+      }
+    } catch {
+      if (!cancelled) {
+        setAuthDiagnostics(null)
+      }
+    }
+  }
+
+  loadAuthDiagnostics()
+  return () => {
+    cancelled = true
+  }
+  }, [api])
 
   useEffect(() => {
   let cancelled = false
@@ -827,6 +871,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
 
   const validationErrors = useMemo(() => validateSettings(settings), [settings])
   const hasUnsavedChanges = useMemo(() => JSON.stringify(settings) !== JSON.stringify(savedSettings), [settings, savedSettings])
+  const authDiagnosticsStale = useMemo(() => JSON.stringify(settings.auth) !== JSON.stringify(savedSettings.auth), [settings.auth, savedSettings.auth])
   const canSave = validationErrors.length === 0 && !loading && hasUnsavedChanges
   const selectedProject = useMemo(
     () => projects.find(project => project.id === selectedProjectId) || null,
@@ -1163,12 +1208,22 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
     }
   }
 
+  const refreshAuthDiagnostics = async () => {
+    try {
+      const response = await api.getAuthDiagnostics()
+      setAuthDiagnostics(response)
+    } catch {
+      setAuthDiagnostics(null)
+    }
+  }
+
   const saveSettings = async () => {
     if (!canSave) return
     try {
       const response = await api.updateSystemSettings(settings)
       setSettings(response)
       setSavedSettings(response)
+      await refreshAuthDiagnostics()
       setSaveMessage('Settings saved.')
       setRequestError('')
     } catch (error: unknown) {
@@ -1183,6 +1238,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
       const response = await api.updateSystemSettings(DEFAULT_SETTINGS)
       setSettings(response)
       setSavedSettings(response)
+      await refreshAuthDiagnostics()
       setSaveMessage('Settings reset to defaults.')
       setRequestError('')
     } catch (error: unknown) {
@@ -2140,6 +2196,57 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
                     </div>
                   </div>
                 </>
+              )}
+              {(settings.auth.mode === 'trusted_headers' || settings.auth.mode === 'oidc') && (
+                <div className="settings-subsection">
+                  <div className="settings-manager-summary">
+                    <div>
+                      <span className="setting-label">Auth Diagnostics</span>
+                      <span className="setting-desc">Backend-owned readiness checks for the active auth mode. These checks surface missing env vars, invalid URLs, discovery failures, and missing gateway guidance before sign-in failures turn into guesswork.</span>
+                    </div>
+                    <strong>{formatAuthDiagnosticsHeadline(authDiagnostics)}</strong>
+                  </div>
+                  {authDiagnostics ? (
+                    <>
+                      <div className="setting-row">
+                        <div className="setting-info">
+                          <span className="setting-label">Readiness Summary</span>
+                          <span className="setting-desc">Overall backend assessment for the current saved auth mode.</span>
+                        </div>
+                        <span className="settings-value-display">{authDiagnostics.summary}</span>
+                      </div>
+                      {authDiagnosticsStale && (
+                        <div className="setting-row">
+                          <div className="setting-info">
+                            <span className="setting-label">Draft Changes Pending</span>
+                            <span className="setting-desc">These diagnostics still reflect the last saved auth configuration.</span>
+                          </div>
+                          <span className="settings-value-display">Save changes to refresh diagnostics</span>
+                        </div>
+                      )}
+                      {authDiagnostics.checks.map((check: DashboardAuthDiagnosticsCheck) => (
+                        <div className="setting-row" key={check.id}>
+                          <div className="setting-info">
+                            <span className="setting-label">{check.label}</span>
+                            <span className="setting-desc">{check.summary}</span>
+                          </div>
+                          <span className="settings-value-display">
+                            {formatAuthDiagnosticStatus(check.status)}
+                            {check.detail ? ` | ${check.detail}` : ''}
+                          </span>
+                        </div>
+                      ))}
+                    </>
+                  ) : (
+                    <div className="setting-row">
+                      <div className="setting-info">
+                        <span className="setting-label">Diagnostics Status</span>
+                        <span className="setting-desc">Stormrunner could not load the auth diagnostics payload for this session.</span>
+                      </div>
+                      <span className="settings-value-display">Unavailable</span>
+                    </div>
+                  )}
+                </div>
               )}
               <div className="settings-subsection">
                     <div className="settings-manager-summary">

@@ -122,6 +122,84 @@ func TestHandleGetAuthStatusReturnsTrustedHeaderIdentity(t *testing.T) {
 	}
 }
 
+func TestHandleGetAuthDiagnosticsReturnsTrustedHeaderReadiness(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	settings := enableTrustedHeaderAuth(t, server)
+	settings.Auth.ProviderName = "Microsoft Entra ID"
+	settings.Auth.LoginURL = "https://login.example.test/oauth2/start"
+	if _, err := server.runner.UpdateSystemSettings(settings); err != nil {
+		t.Fatalf("UpdateSystemSettings returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/diagnostics", nil)
+	req.Header.Set("X-Auth-Request-User", "alice")
+	req.Header.Set("X-Stormrunner-Roles", RoleSystemAdmin)
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var payload AuthDiagnosticsResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal auth diagnostics: %v", err)
+	}
+	if !payload.Ready {
+		t.Fatalf("expected trusted header diagnostics to be ready, got %#v", payload)
+	}
+	if payload.ProviderModel != "upstream_gateway" {
+		t.Fatalf("provider model = %q, want upstream_gateway", payload.ProviderModel)
+	}
+	if payload.Mode != authModeTrustedHeaders {
+		t.Fatalf("mode = %q, want %q", payload.Mode, authModeTrustedHeaders)
+	}
+	if len(payload.Checks) < 4 {
+		t.Fatalf("checks = %#v, want trusted header diagnostics", payload.Checks)
+	}
+	if payload.Checks[0].Status != "pass" || payload.Checks[1].Status != "pass" {
+		t.Fatalf("first checks = %#v, want configured subject and role header checks", payload.Checks[:2])
+	}
+}
+
+func TestHandleGetAuthDiagnosticsFailsOIDCReadinessWhenSecretsMissing(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	settings := server.runner.GetSystemSettings()
+	settings.Auth.Mode = authModeOIDC
+	settings.Auth.ProviderName = "Example OIDC"
+	settings.Auth.IssuerURL = "https://login.example.test/tenant/v2.0"
+	settings.Auth.ClientID = "stormrunner-dashboard"
+	settings.Auth.ClientSecretEnvVar = "STORMRUNNER_OIDC_CLIENT_SECRET"
+	settings.Auth.RedirectURL = "https://stormrunner.example.test/api/v1/auth/callback"
+	settings.Auth.SessionSecretEnvVar = "STORMRUNNER_AUTH_SESSION_SECRET"
+	if _, err := server.runner.UpdateSystemSettings(settings); err != nil {
+		t.Fatalf("UpdateSystemSettings returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/diagnostics", nil)
+	req.Header.Set("X-Auth-Request-User", "sysadmin")
+	req.Header.Set("X-Stormrunner-Roles", RoleSystemAdmin)
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var payload AuthDiagnosticsResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal auth diagnostics: %v", err)
+	}
+	if payload.Ready {
+		t.Fatalf("expected oidc diagnostics to report missing env vars, got %#v", payload)
+	}
+	if payload.ProviderModel != "native_oidc" {
+		t.Fatalf("provider model = %q, want native_oidc", payload.ProviderModel)
+	}
+}
+
 func TestHandleGetAuthRoleCatalogReturnsBuiltInRoles(t *testing.T) {
 	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/roles", nil)
@@ -186,6 +264,13 @@ func TestHandleGetAuthAccessMatrixReturnsResourcePolicies(t *testing.T) {
 	}
 	if payload.Resources[1].Operations[1].ProjectRoles[0] != RoleProjectAdmin {
 		t.Fatalf("project governance roles = %#v, want project admin project scope", payload.Resources[1].Operations[1].ProjectRoles)
+	}
+	identityAndAudit := payload.Resources[len(payload.Resources)-1]
+	if identityAndAudit.ID != "identity_and_audit" {
+		t.Fatalf("last resource = %#v, want identity_and_audit", identityAndAudit)
+	}
+	if len(identityAndAudit.Operations) != 3 || identityAndAudit.Operations[0].ID != "view_auth_diagnostics" {
+		t.Fatalf("identity and audit operations = %#v, want diagnostics + audit + service account operations", identityAndAudit.Operations)
 	}
 }
 

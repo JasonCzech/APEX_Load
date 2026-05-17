@@ -2,6 +2,7 @@ import { useCallback, useMemo } from 'react'
 
 import {
   DashboardAuthAccessMatrix,
+  DashboardAuthDiagnostics,
   DashboardAuthEffectiveAccess,
   DashboardAuthRoleCatalog,
   DashboardAuditEventListResponse,
@@ -19,6 +20,7 @@ import { request } from '../apiClient'
 export function useSystemApi() {
   const getAuthEffectiveAccess = useCallback((projectId?: string) => request<DashboardAuthEffectiveAccess>(`/auth/effective-access${projectId ? `?project_id=${encodeURIComponent(projectId)}` : ''}`), [])
 	const getAuthAccessMatrix = useCallback(() => request<DashboardAuthAccessMatrix>('/auth/access-matrix'), [])
+  const getAuthDiagnostics = useCallback(() => request<DashboardAuthDiagnostics>('/auth/diagnostics'), [])
   const getAuthRoleCatalog = useCallback(() => request<DashboardAuthRoleCatalog>('/auth/roles'), [])
   const listAuthServiceAccounts = useCallback(() => request<DashboardServiceAccountListResponse>('/auth/service-accounts'), [])
   const createAuthServiceAccount = useCallback(
@@ -62,6 +64,7 @@ export function useSystemApi() {
     () => ({
 		getAuthEffectiveAccess,
 		getAuthAccessMatrix,
+      getAuthDiagnostics,
       getAuthRoleCatalog,
       listAuthServiceAccounts,
       createAuthServiceAccount,
@@ -74,6 +77,6 @@ export function useSystemApi() {
       getSystemSettings,
       updateSystemSettings,
     }),
-    [getAuthEffectiveAccess, getAuthAccessMatrix, getAuthRoleCatalog, listAuthServiceAccounts, createAuthServiceAccount, updateAuthServiceAccount, rotateAuthServiceAccount, deleteAuthServiceAccount, listAuthAuditEvents, getHealth, getSystemInventory, getSystemSettings, updateSystemSettings],
+    [getAuthEffectiveAccess, getAuthAccessMatrix, getAuthDiagnostics, getAuthRoleCatalog, listAuthServiceAccounts, createAuthServiceAccount, updateAuthServiceAccount, rotateAuthServiceAccount, deleteAuthServiceAccount, listAuthAuditEvents, getHealth, getSystemInventory, getSystemSettings, updateSystemSettings],
   )
 }

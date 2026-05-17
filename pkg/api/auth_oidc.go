@@ -40,9 +40,9 @@ type oidcSessionToken struct {
 }
 
 type oidcStateToken struct {
-	State    string    `json:"state"`
-	Nonce    string    `json:"nonce"`
-	ReturnTo string    `json:"return_to"`
+	State     string    `json:"state"`
+	Nonce     string    `json:"nonce"`
+	ReturnTo  string    `json:"return_to"`
 	ExpiresAt time.Time `json:"exp"`
 	IssuedAt  time.Time `json:"iat"`
 }
@@ -102,9 +102,9 @@ func (s *Server) handleOIDCLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	now := time.Now().UTC()
 	encodedState, err := encodeSignedCookieValue(oidcStateToken{
-		State:    state,
-		Nonce:    nonce,
-		ReturnTo: sanitizeReturnTo(r.URL.Query().Get("return_to")),
+		State:     state,
+		Nonce:     nonce,
+		ReturnTo:  sanitizeReturnTo(r.URL.Query().Get("return_to")),
 		ExpiresAt: now.Add(oidcStateTTL),
 		IssuedAt:  now,
 	}, runtime.sessionSecret)
@@ -235,7 +235,7 @@ func newOIDCRuntime(ctx context.Context, settings AuthSettings) (*oidcRuntime, e
 	if err != nil {
 		return nil, err
 	}
-	provider, err := oidc.NewProvider(ctx, settings.IssuerURL)
+	provider, err := newOIDCProvider(ctx, settings.IssuerURL)
 	if err != nil {
 		return nil, fmt.Errorf("oidc discovery failed: %w", err)
 	}
@@ -250,6 +250,10 @@ func newOIDCRuntime(ctx context.Context, settings AuthSettings) (*oidcRuntime, e
 		verifier:      provider.Verifier(&oidc.Config{ClientID: settings.ClientID}),
 		sessionSecret: sessionSecret,
 	}, nil
+}
+
+func newOIDCProvider(ctx context.Context, issuerURL string) (*oidc.Provider, error) {
+	return oidc.NewProvider(ctx, issuerURL)
 }
 
 func authenticatedUserFromOIDCClaims(claims map[string]any, expiry time.Time, settings AuthSettings) (*AuthenticatedUser, oidcSessionToken, error) {

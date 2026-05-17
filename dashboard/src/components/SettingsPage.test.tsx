@@ -11,6 +11,7 @@ import SettingsPage from './SettingsPage'
 const apiMock = {
   getAuthEffectiveAccess: vi.fn(),
   getAuthAccessMatrix: vi.fn(),
+  getAuthDiagnostics: vi.fn(),
   getAuthRoleCatalog: vi.fn(),
   listAuthServiceAccounts: vi.fn(),
   createAuthServiceAccount: vi.fn(),
@@ -174,6 +175,22 @@ describe('SettingsPage', () => {
               global_roles: ['system_admin'],
             },
           ],
+        },
+      ],
+    })
+    apiMock.getAuthDiagnostics.mockResolvedValue({
+      enabled: false,
+      mode: 'dev',
+      provider_model: 'development_bypass',
+      ready: true,
+      summary: 'Development bypass is active. Switch to Trusted Headers or Native OIDC before production use.',
+      checks: [
+        {
+          id: 'development_bypass',
+          label: 'Development Bypass',
+          status: 'info',
+          summary: 'Stormrunner is running with local auth bypass enabled.',
+          detail: 'All requests are allowed locally until you switch to Trusted Headers or Native OIDC.',
         },
       ],
     })
@@ -817,6 +834,53 @@ describe('SettingsPage', () => {
   })
 
   it('shows the current authenticated identity and effective roles when trusted-header auth is enabled', async () => {
+    apiMock.getSystemSettings.mockResolvedValueOnce({
+      general: {
+        api_endpoint: ':8080',
+        max_concurrent_tests: 10,
+        metrics_interval_seconds: 1,
+      },
+      thresholds: {},
+      capacity_planning: {
+        headroom_pct: 20,
+        generator: {
+          cpu_cores: 4,
+          memory_mb: 8192,
+          network_mbps: 1000,
+          max_vusers: 10000,
+        },
+        availability: {
+          source: 'configured',
+          configured_available_generators: 1,
+        },
+      },
+      notifications: { webhooks: [] },
+      auth: {
+        mode: 'trusted_headers',
+        provider_name: 'Microsoft Entra ID',
+        login_url: 'https://login.example.test/start',
+        logout_url: '',
+        user_header: 'X-Auth-Request-User',
+        name_header: 'X-Auth-Request-Name',
+        email_header: 'X-Auth-Request-Email',
+        roles_header: 'X-Stormrunner-Roles',
+        project_roles_header: 'X-Stormrunner-Project-Roles',
+      },
+    })
+    apiMock.getAuthDiagnostics.mockResolvedValueOnce({
+      enabled: true,
+      mode: 'trusted_headers',
+      provider_name: 'Microsoft Entra ID',
+      provider_model: 'upstream_gateway',
+      ready: true,
+      summary: 'Auth mode is ready with 1 advisory check(s) still worth reviewing.',
+      checks: [
+        { id: 'subject_header', label: 'Subject Header', status: 'pass', summary: 'Configured', detail: 'X-Auth-Request-User' },
+        { id: 'role_headers', label: 'Role Header Mapping', status: 'pass', summary: 'Configured', detail: 'X-Stormrunner-Roles | X-Stormrunner-Project-Roles' },
+        { id: 'current_request_identity', label: 'Current Request Identity', status: 'pass', summary: 'Trusted headers authenticated the current request.', detail: 'alice-admin' },
+      ],
+    })
+
     await act(async () => {
       root.render(
         <SettingsPage
@@ -877,6 +941,84 @@ describe('SettingsPage', () => {
     expect(generalSection.textContent).toContain('X-Stormrunner-Roles')
     expect(generalSection.textContent).toContain('Microsoft Entra ID Troubleshooting')
     expect(generalSection.textContent).toContain('Headers detected')
+    expect(generalSection.textContent).toContain('Auth Diagnostics')
+    expect(generalSection.textContent).toContain('Auth mode is ready with 1 advisory check(s) still worth reviewing.')
+    expect(generalSection.textContent).toContain('Current Request Identity')
+    expect(generalSection.textContent).toContain('Pass | alice-admin')
+  })
+
+  it('renders OIDC diagnostics from the backend readiness payload', async () => {
+    apiMock.getSystemSettings.mockResolvedValueOnce({
+      general: {
+        api_endpoint: ':8080',
+        max_concurrent_tests: 10,
+        metrics_interval_seconds: 1,
+      },
+      thresholds: {},
+      capacity_planning: {
+        headroom_pct: 20,
+        generator: {
+          cpu_cores: 4,
+          memory_mb: 8192,
+          network_mbps: 1000,
+          max_vusers: 10000,
+        },
+        availability: {
+          source: 'configured',
+          configured_available_generators: 1,
+        },
+      },
+      notifications: { webhooks: [] },
+      auth: {
+        mode: 'oidc',
+        provider_name: 'Example OIDC',
+        issuer_url: 'https://login.example.test/tenant/v2.0',
+        client_id: 'stormrunner-dashboard',
+        client_secret_env_var: 'STORMRUNNER_OIDC_CLIENT_SECRET',
+        redirect_url: 'https://stormrunner.example.test/api/v1/auth/callback',
+        scopes: ['openid', 'profile', 'email'],
+        roles_claim: 'roles',
+        project_roles_claim: 'project_roles',
+        session_secret_env_var: 'STORMRUNNER_AUTH_SESSION_SECRET',
+        logout_url: '/',
+        login_url: '',
+        user_header: 'X-Auth-Request-User',
+        name_header: 'X-Auth-Request-Name',
+        email_header: 'X-Auth-Request-Email',
+        roles_header: 'X-Stormrunner-Roles',
+        project_roles_header: 'X-Stormrunner-Project-Roles',
+      },
+    })
+    apiMock.getAuthDiagnostics.mockResolvedValueOnce({
+      enabled: true,
+      mode: 'oidc',
+      provider_name: 'Example OIDC',
+      provider_model: 'native_oidc',
+      ready: false,
+      summary: 'Auth mode is not ready yet. Resolve 2 failing check(s) before relying on this configuration.',
+      checks: [
+        { id: 'client_secret_env', label: 'Client Secret Environment Variable', status: 'fail', summary: 'Environment variable is not set on the controller.', detail: 'STORMRUNNER_OIDC_CLIENT_SECRET' },
+        { id: 'issuer_discovery', label: 'OIDC Discovery', status: 'fail', summary: 'Stormrunner could not reach the issuer discovery document.', detail: 'dial tcp: lookup login.example.test: no such host' },
+      ],
+    })
+
+    await act(async () => {
+      root.render(<SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+
+    await flushPromises()
+
+    const generalSection = container.querySelector('#settings-section-general')
+    expect(generalSection).toBeTruthy()
+    if (!generalSection) return
+
+    expect(generalSection.textContent).toContain('Native OIDC Session Flow')
+    expect(generalSection.textContent).toContain('Auth Diagnostics')
+    expect(generalSection.textContent).toContain('Needs attention')
+    expect(generalSection.textContent).toContain('Auth mode is not ready yet. Resolve 2 failing check(s) before relying on this configuration.')
+    expect(generalSection.textContent).toContain('Client Secret Environment Variable')
+    expect(generalSection.textContent).toContain('Action Required | STORMRUNNER_OIDC_CLIENT_SECRET')
+    expect(generalSection.textContent).toContain('OIDC Discovery')
   })
 
   it('saves notification webhook settings through system settings', async () => {

@@ -1,11 +1,13 @@
 package api
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"net/http"
-	"encoding/json"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -30,6 +32,24 @@ type AuthStatusResponse struct {
 	LogoutURL     string           `json:"logout_url,omitempty"`
 	Authenticated bool             `json:"authenticated"`
 	User          *AuthUserSummary `json:"user,omitempty"`
+}
+
+type AuthDiagnosticsCheck struct {
+	ID      string `json:"id"`
+	Label   string `json:"label"`
+	Status  string `json:"status"`
+	Summary string `json:"summary"`
+	Detail  string `json:"detail,omitempty"`
+}
+
+type AuthDiagnosticsResponse struct {
+	Enabled       bool                   `json:"enabled"`
+	Mode          string                 `json:"mode"`
+	ProviderName  string                 `json:"provider_name,omitempty"`
+	ProviderModel string                 `json:"provider_model"`
+	Ready         bool                   `json:"ready"`
+	Summary       string                 `json:"summary"`
+	Checks        []AuthDiagnosticsCheck `json:"checks"`
 }
 
 type AuthRoleDefinition struct {
@@ -72,9 +92,9 @@ type AuthEffectiveAccessOperation struct {
 }
 
 type AuthEffectiveAccessResource struct {
-	ID          string                        `json:"id"`
-	Name        string                        `json:"name"`
-	Description string                        `json:"description"`
+	ID          string                         `json:"id"`
+	Name        string                         `json:"name"`
+	Description string                         `json:"description"`
 	Operations  []AuthEffectiveAccessOperation `json:"operations"`
 }
 
@@ -229,6 +249,7 @@ var authAccessMatrix = []AuthAccessResource{
 		Name:        "Identity, Service Accounts, and Audit",
 		Description: "Service-account API keys, auth troubleshooting, and governance audit history.",
 		Operations: []AuthAccessOperation{
+			{ID: "view_auth_diagnostics", Label: "View auth diagnostics", GlobalRoles: []string{RoleSystemAdmin}},
 			{ID: "view_audit", Label: "View audit events", GlobalRoles: []string{RoleSystemAdmin}},
 			{ID: "manage_service_accounts", Label: "Create, disable, rotate, and delete service-account API keys", GlobalRoles: []string{RoleSystemAdmin}},
 		},
@@ -262,6 +283,22 @@ func (s *Server) handleGetAuthStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, response)
 }
 
+func (s *Server) handleGetAuthDiagnostics(w http.ResponseWriter, r *http.Request) {
+	settings := normalizeAuthSettings(s.runner.GetSystemSettings().Auth)
+	if settings.Mode == authModeTrustedHeaders {
+		resolution, err := resolveRequestAuth(r, settings, s.store)
+		if err != nil {
+			writeError(w, http.StatusUnauthorized, err.Error())
+			return
+		}
+		if resolution.User == nil || !resolution.User.hasGlobalRole(RoleSystemAdmin) {
+			writeError(w, http.StatusForbidden, "forbidden")
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, buildAuthDiagnosticsResponse(r, settings, s.store))
+}
+
 func (s *Server) handleGetAuthRoleCatalog(w http.ResponseWriter, _ *http.Request) {
 	providerModel := "upstream_gateway"
 	if normalizeAuthSettings(s.runner.GetSystemSettings().Auth).Mode == authModeOIDC {
@@ -271,6 +308,84 @@ func (s *Server) handleGetAuthRoleCatalog(w http.ResponseWriter, _ *http.Request
 		ProviderModel: providerModel,
 		Roles:         authRoleCatalog,
 	})
+}
+
+func buildAuthDiagnosticsResponse(r *http.Request, settings AuthSettings, store storage.Store) AuthDiagnosticsResponse {
+	response := AuthDiagnosticsResponse{
+		Enabled:       !isAuthBypassMode(settings.Mode),
+		Mode:          settings.Mode,
+		ProviderName:  settings.ProviderName,
+		ProviderModel: authProviderModel(settings),
+		Checks:        make([]AuthDiagnosticsCheck, 0, 8),
+	}
+
+	switch settings.Mode {
+	case authModeTrustedHeaders:
+		response.Checks = append(response.Checks,
+			buildTrustedHeaderConfiguredCheck("subject_header", "Subject Header", settings.UserHeader != "", settings.UserHeader, "Stormrunner needs a subject header to resolve the authenticated user."),
+			buildTrustedHeaderConfiguredCheck("role_headers", "Role Header Mapping", settings.RolesHeader != "" || settings.ProjectRolesHeader != "", strings.TrimSpace(settings.RolesHeader)+" | "+strings.TrimSpace(settings.ProjectRolesHeader), "Configure at least one global or project role header so RBAC can grant access."),
+			buildOptionalOperatorCheck("provider_label", "Provider Label", settings.ProviderName, "Add a provider label so the sign-in gate points operators at the right upstream gateway."),
+			buildOptionalOperatorCheck("login_url", "Login Entry Point", settings.LoginURL, "Set an upstream login URL so blocked users have a clear path back into the authenticating gateway."),
+		)
+		if resolution, err := resolveRequestAuth(r, settings, store); err == nil && resolution.User != nil {
+			response.Checks = append(response.Checks, AuthDiagnosticsCheck{
+				ID:      "current_request_identity",
+				Label:   "Current Request Identity",
+				Status:  "pass",
+				Summary: "Trusted headers authenticated the current request.",
+				Detail:  resolution.User.Subject,
+			})
+		} else {
+			response.Checks = append(response.Checks, AuthDiagnosticsCheck{
+				ID:      "current_request_identity",
+				Label:   "Current Request Identity",
+				Status:  "warn",
+				Summary: "No authenticated identity reached Stormrunner on the current request.",
+				Detail:  "Open the dashboard through the authenticating gateway and verify the configured subject and role headers are forwarded.",
+			})
+		}
+	case authModeOIDC:
+		response.Checks = append(response.Checks,
+			buildRequiredURLCheck("issuer_url", "Issuer URL", settings.IssuerURL),
+			buildRequiredURLCheck("redirect_url", "Redirect URL", settings.RedirectURL),
+			buildEnvVarCheck("client_secret_env", "Client Secret Environment Variable", settings.ClientSecretEnvVar),
+			buildEnvVarCheck("session_secret_env", "Session Secret Environment Variable", settings.SessionSecretEnvVar),
+			buildScopesCheck(settings.Scopes),
+			buildOptionalOperatorCheck("provider_label", "Provider Label", settings.ProviderName, "Add a provider label so the dashboard sign-in flow names the IdP clearly for operators."),
+		)
+		response.Checks = append(response.Checks, buildOIDCDiscoveryCheck(r.Context(), settings))
+		if user, err := authenticatedUserFromOIDCSession(r, settings); err == nil && user != nil {
+			response.Checks = append(response.Checks, AuthDiagnosticsCheck{
+				ID:      "current_session",
+				Label:   "Current Session",
+				Status:  "pass",
+				Summary: "Stormrunner has an active signed OIDC session for the current request.",
+				Detail:  user.Subject,
+			})
+		} else {
+			response.Checks = append(response.Checks, AuthDiagnosticsCheck{
+				ID:      "current_session",
+				Label:   "Current Session",
+				Status:  "warn",
+				Summary: "No active Stormrunner OIDC session is present on the current request.",
+				Detail:  "Use the native OIDC login flow after the issuer, redirect URL, and secret environment variables are configured.",
+			})
+		}
+	default:
+		response.Checks = append(response.Checks,
+			AuthDiagnosticsCheck{
+				ID:      "development_bypass",
+				Label:   "Development Bypass",
+				Status:  "info",
+				Summary: "Stormrunner is running with local auth bypass enabled.",
+				Detail:  "All requests are allowed locally until you switch to Trusted Headers or Native OIDC.",
+			},
+		)
+	}
+
+	response.Ready = authDiagnosticsReady(response.Checks)
+	response.Summary = buildAuthDiagnosticsSummary(response.Mode, response.Ready, response.Checks)
+	return response
 }
 
 func (s *Server) handleGetAuthAccessMatrix(w http.ResponseWriter, _ *http.Request) {
@@ -654,4 +769,184 @@ func sortedRoles(roles map[string]struct{}) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+func authProviderModel(settings AuthSettings) string {
+	switch settings.Mode {
+	case authModeOIDC:
+		return "native_oidc"
+	case authModeTrustedHeaders:
+		return "upstream_gateway"
+	default:
+		return "development_bypass"
+	}
+}
+
+func buildTrustedHeaderConfiguredCheck(id string, label string, configured bool, configuredValue string, remediation string) AuthDiagnosticsCheck {
+	if configured {
+		return AuthDiagnosticsCheck{
+			ID:      id,
+			Label:   label,
+			Status:  "pass",
+			Summary: "Configured",
+			Detail:  strings.TrimSpace(configuredValue),
+		}
+	}
+	return AuthDiagnosticsCheck{
+		ID:      id,
+		Label:   label,
+		Status:  "fail",
+		Summary: "Missing required header mapping.",
+		Detail:  remediation,
+	}
+}
+
+func buildOptionalOperatorCheck(id string, label string, value string, remediation string) AuthDiagnosticsCheck {
+	trimmed := strings.TrimSpace(value)
+	if trimmed != "" {
+		return AuthDiagnosticsCheck{
+			ID:      id,
+			Label:   label,
+			Status:  "pass",
+			Summary: "Configured",
+			Detail:  trimmed,
+		}
+	}
+	return AuthDiagnosticsCheck{
+		ID:      id,
+		Label:   label,
+		Status:  "warn",
+		Summary: "Not configured.",
+		Detail:  remediation,
+	}
+}
+
+func buildRequiredURLCheck(id string, label string, value string) AuthDiagnosticsCheck {
+	if err := validateRequiredAuthURL(strings.TrimSpace(id), value); err != nil {
+		return AuthDiagnosticsCheck{
+			ID:      id,
+			Label:   label,
+			Status:  "fail",
+			Summary: err.Error(),
+		}
+	}
+	return AuthDiagnosticsCheck{
+		ID:      id,
+		Label:   label,
+		Status:  "pass",
+		Summary: "Configured",
+		Detail:  strings.TrimSpace(value),
+	}
+}
+
+func buildEnvVarCheck(id string, label string, envVar string) AuthDiagnosticsCheck {
+	trimmed := strings.TrimSpace(envVar)
+	if trimmed == "" {
+		return AuthDiagnosticsCheck{
+			ID:      id,
+			Label:   label,
+			Status:  "fail",
+			Summary: "Environment variable name is not configured.",
+		}
+	}
+	if _, ok := os.LookupEnv(trimmed); !ok {
+		return AuthDiagnosticsCheck{
+			ID:      id,
+			Label:   label,
+			Status:  "fail",
+			Summary: "Environment variable is not set on the controller.",
+			Detail:  trimmed,
+		}
+	}
+	return AuthDiagnosticsCheck{
+		ID:      id,
+		Label:   label,
+		Status:  "pass",
+		Summary: "Environment variable is available to the controller.",
+		Detail:  trimmed,
+	}
+}
+
+func buildScopesCheck(scopes []string) AuthDiagnosticsCheck {
+	normalized := normalizeAuthScopes(scopes)
+	if len(normalized) == 0 {
+		return AuthDiagnosticsCheck{
+			ID:      "scopes",
+			Label:   "Requested Scopes",
+			Status:  "fail",
+			Summary: "At least one OIDC scope is required.",
+		}
+	}
+	return AuthDiagnosticsCheck{
+		ID:      "scopes",
+		Label:   "Requested Scopes",
+		Status:  "pass",
+		Summary: "Configured",
+		Detail:  strings.Join(normalized, ", "),
+	}
+}
+
+func buildOIDCDiscoveryCheck(ctx context.Context, settings AuthSettings) AuthDiagnosticsCheck {
+	if err := validateRequiredAuthURL("issuer_url", settings.IssuerURL); err != nil {
+		return AuthDiagnosticsCheck{
+			ID:      "issuer_discovery",
+			Label:   "OIDC Discovery",
+			Status:  "fail",
+			Summary: "Issuer discovery is blocked until the issuer URL is valid.",
+			Detail:  err.Error(),
+		}
+	}
+
+	discoveryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	if _, err := newOIDCProvider(discoveryCtx, settings.IssuerURL); err != nil {
+		return AuthDiagnosticsCheck{
+			ID:      "issuer_discovery",
+			Label:   "OIDC Discovery",
+			Status:  "fail",
+			Summary: "Stormrunner could not reach the issuer discovery document.",
+			Detail:  err.Error(),
+		}
+	}
+
+	return AuthDiagnosticsCheck{
+		ID:      "issuer_discovery",
+		Label:   "OIDC Discovery",
+		Status:  "pass",
+		Summary: "Issuer discovery succeeded.",
+		Detail:  strings.TrimSpace(settings.IssuerURL),
+	}
+}
+
+func authDiagnosticsReady(checks []AuthDiagnosticsCheck) bool {
+	for _, check := range checks {
+		if check.Status == "fail" {
+			return false
+		}
+	}
+	return true
+}
+
+func buildAuthDiagnosticsSummary(mode string, ready bool, checks []AuthDiagnosticsCheck) string {
+	failed := 0
+	warned := 0
+	for _, check := range checks {
+		switch check.Status {
+		case "fail":
+			failed++
+		case "warn":
+			warned++
+		}
+	}
+
+	if isAuthBypassMode(mode) {
+		return "Development bypass is active. Switch to Trusted Headers or Native OIDC before production use."
+	}
+	if ready {
+		if warned > 0 {
+			return fmt.Sprintf("Auth mode is ready with %d advisory check(s) still worth reviewing.", warned)
+		}
+		return "Auth mode is ready."
+	}
+	return fmt.Sprintf("Auth mode is not ready yet. Resolve %d failing check(s) before relying on this configuration.", failed)
 }

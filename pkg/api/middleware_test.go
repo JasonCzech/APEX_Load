@@ -783,6 +783,36 @@ func TestTrustedHeaderAuthRequiresViewerForLoadRunnerSupportMatrix(t *testing.T)
 	}
 }
 
+func TestTrustedHeaderAuthRequiresSystemAdminForAuthDiagnostics(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	enableTrustedHeaderAuth(t, server)
+
+	unauthorizedReq := httptest.NewRequest(http.MethodGet, "/api/v1/auth/diagnostics", nil)
+	unauthorizedResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(unauthorizedResp, unauthorizedReq)
+	if unauthorizedResp.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthorized auth diagnostics status = %d, want %d body=%s", unauthorizedResp.Code, http.StatusUnauthorized, unauthorizedResp.Body.String())
+	}
+
+	viewerReq := httptest.NewRequest(http.MethodGet, "/api/v1/auth/diagnostics", nil)
+	viewerReq.Header.Set("X-Auth-Request-User", "viewer-user")
+	viewerReq.Header.Set("X-Stormrunner-Roles", RoleViewer)
+	viewerResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(viewerResp, viewerReq)
+	if viewerResp.Code != http.StatusForbidden {
+		t.Fatalf("viewer auth diagnostics status = %d, want %d body=%s", viewerResp.Code, http.StatusForbidden, viewerResp.Body.String())
+	}
+
+	adminReq := httptest.NewRequest(http.MethodGet, "/api/v1/auth/diagnostics", nil)
+	adminReq.Header.Set("X-Auth-Request-User", "admin-user")
+	adminReq.Header.Set("X-Stormrunner-Roles", RoleSystemAdmin)
+	adminResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(adminResp, adminReq)
+	if adminResp.Code != http.StatusOK {
+		t.Fatalf("system admin auth diagnostics status = %d, want %d body=%s", adminResp.Code, http.StatusOK, adminResp.Body.String())
+	}
+}
+
 func TestTrustedHeaderAuthProjectRoleGuardsImportPreviewEndpoints(t *testing.T) {
 	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
 	enableTrustedHeaderAuth(t, server)

@@ -31,15 +31,16 @@ The remaining backlog is mostly about hardening, lifecycle ownership, and archit
   - Dashboard sign-out still clears the local Stormrunner session and then redirects to the configured post-logout destination.
   - Regression tests cover success and rejection paths.
 
-## Ticket 2: Add OIDC Runtime Health and Misconfiguration Diagnostics
+## Ticket 2: Expand OIDC Runtime Health and Misconfiguration Diagnostics
 
 - Priority: High
-- Problem: OIDC settings validate field shape, but operators still have to discover some runtime failures only when sign-in is attempted, such as missing client-secret or session-secret environment variables or broken issuer discovery.
+- Problem: Stormrunner now exposes a first-pass auth diagnostics surface for trusted-header and native OIDC readiness, but operators still need broader runtime and post-login diagnostics before the auth lane feels fully production-hardened.
 - Scope:
-  - Add an auth diagnostics surface that checks environment-variable presence and issuer discovery reachability without exposing secrets.
+  - Build on the existing diagnostics surface that already checks environment-variable presence, URL validity, trusted-header mappings, issuer discovery reachability, and current request/session status without exposing secrets.
+  - Add deeper post-login diagnostics for callback/session/cookie failures.
   - Surface OIDC readiness in system settings or health output.
   - Return actionable error messages for common runtime misconfiguration cases.
-  - Add dashboard visibility for OIDC readiness so operators can distinguish config errors from ordinary unauthenticated requests.
+  - Keep dashboard visibility strong enough that operators can distinguish config errors from ordinary unauthenticated requests.
 - Acceptance Criteria:
   - Missing OIDC env vars are detectable before first login attempt.
   - Discovery failures are surfaced as operator-readable diagnostics.

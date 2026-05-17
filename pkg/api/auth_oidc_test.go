@@ -52,6 +52,40 @@ func TestHandleGetAuthStatusReturnsOIDCLoginAndLogoutURLs(t *testing.T) {
 	}
 }
 
+func TestHandleGetAuthDiagnosticsReturnsHealthyOIDCReadiness(t *testing.T) {
+	provider := newFakeOIDCProvider(t)
+	defer provider.Close()
+	t.Setenv("STORMRUNNER_OIDC_CLIENT_SECRET", "test-client-secret")
+	t.Setenv("STORMRUNNER_AUTH_SESSION_SECRET", "0123456789abcdef0123456789abcdef")
+
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	enableOIDCAuth(t, server, provider.Issuer)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/diagnostics", nil)
+	req.Header.Set("X-Auth-Request-User", "alice")
+	req.Header.Set("X-Stormrunner-Roles", RoleSystemAdmin)
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var payload AuthDiagnosticsResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal auth diagnostics: %v", err)
+	}
+	if !payload.Ready {
+		t.Fatalf("expected healthy oidc diagnostics, got %#v", payload)
+	}
+	if payload.ProviderModel != "native_oidc" {
+		t.Fatalf("provider model = %q, want native_oidc", payload.ProviderModel)
+	}
+	if len(payload.Checks) < 6 {
+		t.Fatalf("checks = %#v, want oidc diagnostics", payload.Checks)
+	}
+}
+
 func TestOIDCLoginCallbackCreatesSessionAndAuthorizesProtectedRoutes(t *testing.T) {
 	provider := newFakeOIDCProvider(t)
 	defer provider.Close()

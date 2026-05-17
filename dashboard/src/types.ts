@@ -1092,6 +1092,24 @@ export interface DashboardAuthStatus {
   user?: DashboardAuthenticatedUser
 }
 
+export interface DashboardAuthDiagnosticsCheck {
+  id: string
+  label: string
+  status: 'pass' | 'warn' | 'fail' | 'info' | string
+  summary: string
+  detail?: string
+}
+
+export interface DashboardAuthDiagnostics {
+  enabled: boolean
+  mode: DashboardAuthSettings['mode']
+  provider_name?: string
+  provider_model: string
+  ready: boolean
+  summary: string
+  checks: DashboardAuthDiagnosticsCheck[]
+}
+
 export interface DashboardAuthRoleDefinition {
   id: string
   name: string
