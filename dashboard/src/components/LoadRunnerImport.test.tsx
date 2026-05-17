@@ -1879,6 +1879,7 @@ describe('LoadRunnerImport', () => {
     expect(container.textContent).toContain('Draft browser replay started. Review the draft browser replay session before saving this import.')
     expect(container.textContent).toContain('Replay Session: draft-browser-validation')
     expect(container.textContent).toContain('Status: Running')
+    expect(container.textContent).toContain('Replay Group: default')
     expect(container.textContent).toContain('selector repair recommended')
     expect(container.textContent).toContain('Wait for the draft browser replay to finish before saving it to the library.')
     const inProgressReplayButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Draft Browser Replay In Progress')) as HTMLButtonElement | undefined
@@ -2057,6 +2058,7 @@ describe('LoadRunnerImport', () => {
       expect(container.textContent).toContain('Draft browser replay started. Review the draft browser replay session before saving this import.')
       expect(container.textContent).toContain('Replay Session: draft-browser-validation')
       expect(container.textContent).toContain('Status: Running')
+      expect(container.textContent).toContain('Replay Group: default')
       expect(container.textContent).toContain('Draft Browser Replay In Progress')
       expect(container.textContent).toContain('Wait for the draft browser replay to finish before saving it to the library.')
 

@@ -837,7 +837,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
                     <ul>
                       <li>Replay Session: {replayValidationSession.id}</li>
                       <li>Status: {browserReplayStatusLabel}</li>
-                      <li>Group: {replayValidationSession.group}</li>
+                      <li>Replay Group: {replayValidationSession.group}</li>
                     </ul>
                   )}
                   {replayValidationWarnings.length > 0 && (
