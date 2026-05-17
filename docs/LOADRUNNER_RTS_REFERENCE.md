@@ -43,15 +43,15 @@ The code-owned source of truth for this matrix now lives in `pkg/convert/loadrun
 | Streaming | Buffer size | `config.web_runtime.streaming.buffer_size_seconds` | Compatibility-only | Preserved for parity only and surfaced in streaming compatibility warnings. |
 | Streaming | Fixed bitrate | `config.web_runtime.streaming.fixed_bitrate_kbps` | Compatibility-only | Preserved for parity only and surfaced in streaming compatibility warnings. |
 | Streaming | Bandwidth estimation | `config.web_runtime.streaming.bandwidth_estimation` | Compatibility-only | Preserved for parity only and surfaced in streaming compatibility warnings. |
-| Data Formatting | Auto-detect DFEs | `config.web_runtime.data_formatting.auto_detect` | Partial | HTTP runtime auto-detects obvious base64-encoded text payloads before extraction and assertions; broader DFE parity is still incomplete. |
-| Data Formatting | DFE transform chain | `config.web_runtime.data_formatting.chain[]` | Partial | HTTP runtime executes `base64`, `gzip`, `json_to_xml`, `url_decode`, and `html_unescape`; broader parity is still incomplete. |
+| Data Formatting | Auto-detect DFEs | `config.web_runtime.data_formatting.auto_detect` | Partial | HTTP runtime conservatively auto-detects obvious base64 text and gzip-compressed text payloads before extraction and assertions; broader DFE parity is still incomplete. |
+| Data Formatting | DFE transform chain | `config.web_runtime.data_formatting.chain[]` | Partial | HTTP runtime executes `base64`, `gzip`, `json_to_xml`, `xml_to_json`, `url_decode`, `url_encode`, `html_unescape`, and `html_escape`; broader parity is still incomplete. |
 | Replay engine mode | WinInet / process-vs-thread runtime concepts | N/A | Non-applicable | Stormrunner uses Go HTTP/browser runtimes and goroutine VUsers instead of WinInet or Windows process/thread replay modes. |
 
-## Current gaps
+## Intentional Caveats
 
 - `download_resources = recorded` depends on preserved recorded-resource metadata. Browser replay now enforces it for import/recording flows that capture those URLs, but manually authored scripts without metadata still cannot execute that mode.
 - Streaming/media playback semantics are intentionally compatibility-only for now.
-- Browser/runtime-wide DFE parity is not complete beyond the current HTTP response transform chain.
+- Browser/runtime-wide DFE parity is intentionally bounded to the current HTTP response transform chain.
 - Logging fidelity is narrower than full VuGen extended trace behavior.
 
 ## Tested examples

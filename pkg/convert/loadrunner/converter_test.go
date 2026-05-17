@@ -560,7 +560,7 @@ BandwidthEstimation=instant
 
 [Data Formatting]
 AutoDetect=1
-Chain=base64,gzip mode=decode,html_unescape
+Chain=base64,gzip mode=decode,html_unescape,xml_to_json,url_encode,html_escape
 `)
 
 	config := runtimeCfg.ToScriptConfig()
@@ -612,14 +612,17 @@ Chain=base64,gzip mode=decode,html_unescape
 	if config.WebRuntime.Streaming.Mode != "fixed" || config.WebRuntime.Streaming.FixedBitrateKbps != 1800 || config.WebRuntime.Streaming.BandwidthEstimation != "instant" {
 		t.Fatalf("streaming = %#v, want fixed bitrate streaming", config.WebRuntime.Streaming)
 	}
-	if !config.WebRuntime.DataFormatting.AutoDetect || len(config.WebRuntime.DataFormatting.Chain) != 3 || config.WebRuntime.DataFormatting.Chain[0].Type != "base64" {
+	if !config.WebRuntime.DataFormatting.AutoDetect || len(config.WebRuntime.DataFormatting.Chain) != 6 || config.WebRuntime.DataFormatting.Chain[0].Type != "base64" {
 		t.Fatalf("data formatting = %#v, want autodetect + DFE chain", config.WebRuntime.DataFormatting)
 	}
 	if config.WebRuntime.DataFormatting.Chain[1].Type != "gzip" || config.WebRuntime.DataFormatting.Chain[1].Options["mode"] != "decode" {
 		t.Fatalf("gzip data formatting = %#v, want mode=decode", config.WebRuntime.DataFormatting.Chain[1])
 	}
-	if config.WebRuntime.DataFormatting.Chain[2].Type != "html_unescape" {
-		t.Fatalf("trailing data formatting = %#v, want html_unescape", config.WebRuntime.DataFormatting.Chain[2])
+	wantDFEChain := []string{"base64", "gzip", "html_unescape", "xml_to_json", "url_encode", "html_escape"}
+	for index, want := range wantDFEChain {
+		if config.WebRuntime.DataFormatting.Chain[index].Type != want {
+			t.Fatalf("data formatting chain[%d] = %#v, want %s", index, config.WebRuntime.DataFormatting.Chain[index], want)
+		}
 	}
 }
 
@@ -847,8 +850,8 @@ func TestGoldenWebHTTPHTMLFixtureRuntimeParity(t *testing.T) {
 	if config.WebRuntime.Streaming.Mode != "fixed" || config.WebRuntime.Streaming.FixedBitrateKbps != 1800 {
 		t.Fatalf("streaming = %#v, want preserved fixed streaming settings", config.WebRuntime.Streaming)
 	}
-	if !config.WebRuntime.DataFormatting.AutoDetect || len(config.WebRuntime.DataFormatting.Chain) != 4 {
-		t.Fatalf("data formatting = %#v, want autodetect plus four transforms", config.WebRuntime.DataFormatting)
+	if !config.WebRuntime.DataFormatting.AutoDetect || len(config.WebRuntime.DataFormatting.Chain) != 5 {
+		t.Fatalf("data formatting = %#v, want autodetect plus five transforms", config.WebRuntime.DataFormatting)
 	}
 
 	preserved := result.Script.Metadata.Import.Preserved

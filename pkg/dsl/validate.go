@@ -605,8 +605,13 @@ func validateWebRuntimeIssues(script *Script) []string {
 	}
 
 	for index, transform := range script.Config.WebRuntime.DataFormatting.Chain {
-		if strings.TrimSpace(transform.Type) == "" {
+		transformType := strings.TrimSpace(transform.Type)
+		if transformType == "" {
 			issues = append(issues, fmt.Sprintf("config.web_runtime.data_formatting.chain[%d].type is required", index))
+			continue
+		}
+		if !isAllowedDataFormattingTransform(transformType) {
+			issues = append(issues, fmt.Sprintf("config.web_runtime.data_formatting.chain[%d].type %q is not supported", index, transform.Type))
 		}
 	}
 
@@ -637,6 +642,19 @@ func isAllowedValue(value string, allowed ...string) bool {
 		}
 	}
 	return false
+}
+
+func isAllowedDataFormattingTransform(value string) bool {
+	return isAllowedValue(value,
+		"base64",
+		"gzip",
+		"json_to_xml",
+		"xml_to_json",
+		"url_decode",
+		"url_encode",
+		"html_unescape",
+		"html_escape",
+	)
 }
 
 func validateSOAPScriptIssues(script *Script) []string {

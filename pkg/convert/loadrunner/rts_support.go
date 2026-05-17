@@ -384,7 +384,7 @@ var loadRunnerRTSSupportDefinitions = []runtimeSettingSupportDefinition{
 			Concept: "Auto-detect DFEs",
 			Fields:  []string{"config.web_runtime.data_formatting.auto_detect"},
 			Status:  RuntimeSettingStatusPartial,
-			Notes:   "HTTP runtime auto-detects a narrow set of encoded payloads today.",
+			Notes:   "HTTP runtime conservatively auto-detects obvious base64 text and gzip-compressed text payloads before extraction and assertions.",
 		},
 		matchers: []runtimeSettingMatcher{matcher([]string{"Data Formatting", "DataFormatting"}, []string{"AutoDetect", "DFEAutoDetect"})},
 	},
@@ -395,16 +395,16 @@ var loadRunnerRTSSupportDefinitions = []runtimeSettingSupportDefinition{
 			Concept: "DFE transform chain",
 			Fields:  []string{"config.web_runtime.data_formatting.chain"},
 			Status:  RuntimeSettingStatusPartial,
-			Notes:   "Stormrunner executes a bounded transform chain instead of the full DFE surface.",
+			Notes:   "HTTP runtime executes base64, gzip, JSON/XML, URL, and HTML encode/decode transforms; full LoadRunner DFE parity remains intentionally bounded.",
 		},
 		matchers: []runtimeSettingMatcher{matcher([]string{"Data Formatting", "DataFormatting"}, []string{"Chain", "DFEChain"})},
 	},
 }
 
 var loadRunnerRTSSupportMatrixNotes = []string{
-	"download_resources = recorded still depends on preserved recorded-resource metadata; manually authored scripts without those URLs cannot execute that mode yet.",
+	"download_resources = recorded depends on preserved recorded-resource metadata; manually authored scripts without those URLs cannot execute that mode.",
 	"Streaming and media playback settings remain compatibility-only and do not execute browser media semantics.",
-	"DFE parity is intentionally bounded to the current HTTP response transform chain instead of the full LoadRunner surface.",
+	"DFE parity is intentionally bounded to the current HTTP response transform chain: base64, gzip, JSON/XML, URL, and HTML transforms plus conservative base64/gzip auto-detection.",
 	"Extended logging fidelity is narrower than full VuGen tracing even when the settings are imported and preserved.",
 }
 

@@ -133,7 +133,7 @@ func TestValidateScriptIssues_WebRuntimeValidation(t *testing.T) {
 					BufferSizeSeconds: -1,
 				},
 				DataFormatting: DataFormattingConfig{
-					Chain: []DFETransform{{Type: ""}},
+					Chain: []DFETransform{{Type: ""}, {Type: "custom_dfe"}},
 				},
 			},
 			Observability: ObservabilityConfig{
@@ -173,6 +173,7 @@ func TestValidateScriptIssues_WebRuntimeValidation(t *testing.T) {
 	assertIssue(t, issues, "config.observability.external_metrics[0].format must be prometheus")
 	assertIssue(t, issues, "config.observability.external_metrics[0].metric_name is required")
 	assertIssue(t, issues, "config.web_runtime.data_formatting.chain[0].type is required")
+	assertIssue(t, issues, "config.web_runtime.data_formatting.chain[1].type \"custom_dfe\" is not supported")
 }
 
 func TestValidateScriptIssues_WebRuntimeValidationAllowsSupportedFields(t *testing.T) {
@@ -237,9 +238,16 @@ func TestValidateScriptIssues_WebRuntimeValidationAllowsSupportedFields(t *testi
 				},
 				DataFormatting: DataFormattingConfig{
 					AutoDetect: true,
-					Chain: []DFETransform{{
-						Type: "base64",
-					}},
+					Chain: []DFETransform{
+						{Type: "base64"},
+						{Type: "gzip"},
+						{Type: "json_to_xml"},
+						{Type: "xml_to_json"},
+						{Type: "url_decode"},
+						{Type: "url_encode"},
+						{Type: "html_unescape"},
+						{Type: "html_escape"},
+					},
 				},
 			},
 		},

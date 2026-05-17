@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
+	"html"
 	"io"
 	"net/url"
 	"sort"
@@ -105,9 +106,15 @@ func applyDataFormattingChain(body []byte, autoDetect bool, chain []dataFormatti
 
 func applyAutoDetectedDataFormatting(body []byte, allowBase64 bool) []byte {
 	formatted := append([]byte(nil), body...)
+	if decoded, ok := detectGzipPayload(formatted); ok {
+		formatted = decoded
+	}
 	if allowBase64 {
 		if decoded, ok := detectBase64Payload(formatted); ok {
 			formatted = decoded
+			if gzipDecoded, ok := detectGzipPayload(formatted); ok {
+				formatted = gzipDecoded
+			}
 		}
 	}
 	return formatted
@@ -145,14 +152,24 @@ func applyDataFormattingTransform(body []byte, transform dataFormattingTransform
 			return nil, err
 		}
 		return converted, nil
+	case "xml_to_json":
+		converted, err := xmlToJSON(body)
+		if err != nil {
+			return nil, err
+		}
+		return converted, nil
 	case "url_decode":
 		decoded, err := url.QueryUnescape(strings.TrimSpace(string(body)))
 		if err != nil {
 			return nil, err
 		}
 		return []byte(decoded), nil
+	case "url_encode":
+		return []byte(url.QueryEscape(string(body))), nil
 	case "html_unescape":
-		return []byte(strings.NewReplacer("&lt;", "<", "&gt;", ">", "&amp;", "&", "&quot;", `"`, "&#39;", "'").Replace(string(body))), nil
+		return []byte(html.UnescapeString(string(body))), nil
+	case "html_escape":
+		return []byte(html.EscapeString(string(body))), nil
 	default:
 		return body, nil
 	}
@@ -206,6 +223,24 @@ func detectBase64Payload(body []byte) ([]byte, bool) {
 		return nil, false
 	}
 	decoded, err := decodeBase64Body([]byte(trimmed))
+	if err != nil {
+		return nil, false
+	}
+	if isLikelyAutoDecodedPayload(decoded) {
+		return decoded, true
+	}
+	if gzipDecoded, ok := detectGzipPayload(decoded); ok {
+		return gzipDecoded, true
+	}
+	return nil, false
+}
+
+func detectGzipPayload(body []byte) ([]byte, bool) {
+	trimmed := bytes.TrimSpace(body)
+	if len(trimmed) < 2 || trimmed[0] != 0x1f || trimmed[1] != 0x8b {
+		return nil, false
+	}
+	decoded, err := decodeGzipBody(trimmed)
 	if err != nil || !isLikelyAutoDecodedPayload(decoded) {
 		return nil, false
 	}
@@ -227,6 +262,13 @@ func isLikelyAutoDecodedPayload(body []byte) bool {
 	return strings.Contains(text, "=") || strings.Contains(text, "&")
 }
 
+type xmlJSONNode struct {
+	name     string
+	attrs    map[string]string
+	text     []string
+	children map[string][]any
+}
+
 func jsonToXML(body []byte) ([]byte, error) {
 	var payload any
 	if err := json.Unmarshal(body, &payload); err != nil {
@@ -239,6 +281,103 @@ func jsonToXML(body []byte) ([]byte, error) {
 	}
 	buf.WriteString("</json>")
 	return buf.Bytes(), nil
+}
+
+func xmlToJSON(body []byte) ([]byte, error) {
+	decoder := xml.NewDecoder(bytes.NewReader(body))
+	stack := make([]*xmlJSONNode, 0)
+	var root map[string]any
+
+	for {
+		token, err := decoder.Token()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+
+		switch typed := token.(type) {
+		case xml.StartElement:
+			node := &xmlJSONNode{
+				name:     sanitizeXMLName(typed.Name.Local),
+				attrs:    make(map[string]string),
+				children: make(map[string][]any),
+			}
+			for _, attr := range typed.Attr {
+				key := sanitizeXMLName(attr.Name.Local)
+				if key != "" {
+					node.attrs[key] = attr.Value
+				}
+			}
+			if len(node.attrs) == 0 {
+				node.attrs = nil
+			}
+			stack = append(stack, node)
+		case xml.CharData:
+			if len(stack) == 0 {
+				continue
+			}
+			if text := strings.TrimSpace(string(typed)); text != "" {
+				stack[len(stack)-1].text = append(stack[len(stack)-1].text, text)
+			}
+		case xml.EndElement:
+			if len(stack) == 0 {
+				return nil, fmt.Errorf("unexpected closing element %q", typed.Name.Local)
+			}
+			node := stack[len(stack)-1]
+			stack = stack[:len(stack)-1]
+			value := node.toJSONValue()
+			if len(stack) == 0 {
+				root = map[string]any{node.name: value}
+				continue
+			}
+			parent := stack[len(stack)-1]
+			parent.children[node.name] = append(parent.children[node.name], value)
+		}
+	}
+
+	if len(stack) != 0 {
+		return nil, fmt.Errorf("unclosed XML element %q", stack[len(stack)-1].name)
+	}
+	if root == nil {
+		return nil, fmt.Errorf("empty XML payload")
+	}
+	return json.Marshal(root)
+}
+
+func (node *xmlJSONNode) toJSONValue() any {
+	text := strings.Join(node.text, " ")
+	if len(node.attrs) == 0 && len(node.children) == 0 {
+		return text
+	}
+
+	value := make(map[string]any)
+	if len(node.attrs) > 0 {
+		attrs := make(map[string]string, len(node.attrs))
+		for key, attrValue := range node.attrs {
+			attrs[key] = attrValue
+		}
+		value["@attributes"] = attrs
+	}
+	if text != "" {
+		value["#text"] = text
+	}
+
+	keys := make([]string, 0, len(node.children))
+	for key := range node.children {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		children := node.children[key]
+		if len(children) == 1 {
+			value[key] = children[0]
+			continue
+		}
+		value[key] = children
+	}
+	return value
 }
 
 func writeXMLValue(buf *bytes.Buffer, name string, value any) error {
