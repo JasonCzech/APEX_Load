@@ -54,3 +54,54 @@ func TestHandlePrometheusMetricsExportsControllerState(t *testing.T) {
 		}
 	}
 }
+
+func TestHandlePrometheusMetricsExportsGeneratorRegionStats(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	server.runner.setExecutionBackend(stubInventoryBackend{entries: []GeneratorInventoryEntry{
+		{
+			Target:            "gen-a:9090",
+			GeneratorID:       "gen-a",
+			Region:            "us-east",
+			Status:            "connected",
+			AvailableCapacity: 9000,
+			ActiveVUsers:      1000,
+		},
+		{
+			Target:            "gen-b:9090",
+			GeneratorID:       "gen-b",
+			Region:            "us-east",
+			Status:            "connected",
+			AvailableCapacity: 7000,
+			ActiveVUsers:      3000,
+		},
+		{
+			Target:            "gen-c:9090",
+			GeneratorID:       "gen-c",
+			Status:            "connected",
+			AvailableCapacity: 5000,
+			ActiveVUsers:      0,
+		},
+	}})
+
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	body := resp.Body.String()
+	checks := []string{
+		"stormrunner_generator_region_count{region=\"us-east\"} 2",
+		"stormrunner_generator_region_available_capacity{region=\"us-east\"} 16000",
+		"stormrunner_generator_region_active_vusers{region=\"us-east\"} 4000",
+		"stormrunner_generator_region_count{region=\"unassigned\"} 1",
+		"stormrunner_generator_region_available_capacity{region=\"unassigned\"} 5000",
+		"stormrunner_generator_region_active_vusers{region=\"unassigned\"} 0",
+	}
+	for _, check := range checks {
+		if !strings.Contains(body, check) {
+			t.Fatalf("expected metrics body to contain %q, got %q", check, body)
+		}
+	}
+}

@@ -163,6 +163,8 @@ The distributed backend supports multiple generators but doesn't model geographi
 - **Latency baseline per region** — separate expected response times by region
 - **Region selector in Create Scenario** — dropdown or map-based selection
 
+**Current direction:** Generator region tags, region-weighted assignment, and inventory exposure are implemented. Prometheus now exports generator count, available capacity, and active VUsers by region, giving operators a first Grafana-ready regional visibility layer while deeper response-time-by-region analysis remains tied to archived transaction attribution.
+
 ---
 
 ## Gap 8: APM / Observability Correlation

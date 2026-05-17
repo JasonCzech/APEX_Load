@@ -420,6 +420,9 @@ Before claiming practical parity in these target areas, all of the following sho
 5. RBAC enforcement and dashboard gating are consistent across major resources.
 6. Browser-scale and mobile-browser claims are backed by published benchmark guidance.
 
+### Workstream 5 Progress
+- Multi-region execution is now observable as well as configurable: `/metrics` exports region-labeled generator count, available VUser capacity, and active VUsers from live generator inventory, so regional placement can be tracked in Grafana/APM workflows.
+
 ## Suggested Milestones
 
 | Milestone | Exit Criteria |

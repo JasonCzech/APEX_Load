@@ -1,10 +1,12 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -496,6 +498,7 @@ func (s *Server) handlePrometheusMetrics(w http.ResponseWriter, r *http.Request)
 	settings := s.runner.GetSystemSettings()
 	availability := resolveCapacityAvailability(settings)
 	tests := s.runner.ListTests()
+	regionStats := s.generatorRegionStats(r.Context())
 	statusCounts := make(map[string]int)
 	for _, test := range tests {
 		if test == nil || strings.TrimSpace(test.Status) == "" {
@@ -527,6 +530,25 @@ func (s *Server) handlePrometheusMetrics(w http.ResponseWriter, r *http.Request)
 	if availability.LiveAvailableGenerators != nil {
 		fmt.Fprintf(&body, "stormrunner_capacity_available_generators{scope=%q} %d\n", "live", *availability.LiveAvailableGenerators)
 	}
+	if len(regionStats) > 0 {
+		body.WriteString("# HELP stormrunner_generator_region_count Number of configured generator inventory entries by region.\n")
+		body.WriteString("# TYPE stormrunner_generator_region_count gauge\n")
+		body.WriteString("# HELP stormrunner_generator_region_available_capacity Available VUser capacity reported by generators by region.\n")
+		body.WriteString("# TYPE stormrunner_generator_region_available_capacity gauge\n")
+		body.WriteString("# HELP stormrunner_generator_region_active_vusers Active VUsers reported by generators by region.\n")
+		body.WriteString("# TYPE stormrunner_generator_region_active_vusers gauge\n")
+		regions := make([]string, 0, len(regionStats))
+		for region := range regionStats {
+			regions = append(regions, region)
+		}
+		sort.Strings(regions)
+		for _, region := range regions {
+			stats := regionStats[region]
+			fmt.Fprintf(&body, "stormrunner_generator_region_count{region=%q} %d\n", region, stats.Count)
+			fmt.Fprintf(&body, "stormrunner_generator_region_available_capacity{region=%q} %d\n", region, stats.AvailableCapacity)
+			fmt.Fprintf(&body, "stormrunner_generator_region_active_vusers{region=%q} %d\n", region, stats.ActiveVUsers)
+		}
+	}
 	body.WriteString("# HELP stormrunner_max_concurrent_tests Configured maximum concurrent tests.\n")
 	body.WriteString("# TYPE stormrunner_max_concurrent_tests gauge\n")
 	fmt.Fprintf(&body, "stormrunner_max_concurrent_tests %d\n", settings.General.MaxConcurrentTests)
@@ -534,6 +556,32 @@ func (s *Server) handlePrometheusMetrics(w http.ResponseWriter, r *http.Request)
 	body.WriteString("# TYPE stormrunner_metrics_interval_seconds gauge\n")
 	fmt.Fprintf(&body, "stormrunner_metrics_interval_seconds %d\n", settings.General.MetricsIntervalSeconds)
 	_, _ = w.Write([]byte(body.String()))
+}
+
+type generatorRegionStats struct {
+	Count             int
+	AvailableCapacity int64
+	ActiveVUsers      int64
+}
+
+func (s *Server) generatorRegionStats(ctx context.Context) map[string]generatorRegionStats {
+	inventory := s.systemInventory(ctx)
+	if len(inventory.Generators) == 0 {
+		return nil
+	}
+	stats := make(map[string]generatorRegionStats)
+	for _, generator := range inventory.Generators {
+		region := strings.TrimSpace(generator.Region)
+		if region == "" {
+			region = "unassigned"
+		}
+		current := stats[region]
+		current.Count++
+		current.AvailableCapacity += int64(generator.AvailableCapacity)
+		current.ActiveVUsers += int64(generator.ActiveVUsers)
+		stats[region] = current
+	}
+	return stats
 }
 
 func (s *Server) handleGetSystemSettings(w http.ResponseWriter, r *http.Request) {
