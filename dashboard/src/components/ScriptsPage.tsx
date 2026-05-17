@@ -30,6 +30,7 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
     openLibrary,
     openCreateOptions,
     handleEdit,
+    handleSavedScript,
     handleDraftEdit,
     createOptionActions,
   } = useScriptsAuthoringState({
@@ -64,10 +65,10 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
     try { await api.deleteScript(id); refresh() } catch { /* ignore */ }
   }
 
-  const handleSaved = useCallback(() => {
+  const handleSaved = useCallback((script: StoredScript) => {
     void refresh()
-    openLibrary()
-  }, [openLibrary, refresh])
+    handleSavedScript(script)
+  }, [handleSavedScript, refresh])
 
   const handleImported = useCallback(() => {
     void refresh()

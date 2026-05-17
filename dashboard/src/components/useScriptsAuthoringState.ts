@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 
+import { type StoredScript } from '../types'
 import { type ScriptDefinition } from '../types/scripts'
 import { useApi } from '../hooks/useApi'
 import { createApiDraft, createJavaHttpDraft, createJmsDraft, createSoapDraft, createWebDraft } from './scriptDraftFactories'
@@ -46,6 +47,7 @@ interface ScriptsAuthoringStateModel {
   openLibrary: () => void
   openCreateOptions: () => void
   handleEdit: (id: string) => Promise<void>
+  handleSavedScript: (script: StoredScript) => void
   handleDraftEdit: (script: ScriptDefinition, focus?: DraftEditorFocus) => void
   startDraft: (factory: () => ScriptDefinition) => void
   createOptionActions: ScriptsCreateOptionActions
@@ -171,6 +173,16 @@ export function useScriptsAuthoringState({
     }
   }, [api])
 
+  const handleSavedScript = useCallback((savedScript: StoredScript) => {
+    setAuthoringState(previous => ({
+      subView: 'edit',
+      editingId: savedScript.id,
+      editingScript: savedScript.script ?? previous.draftScript ?? previous.editingScript,
+      draftScript: null,
+      draftEditorFocus: null,
+    }))
+  }, [])
+
   useEffect(() => {
     if (initialMode === 'edit' && initialEditId) {
       void handleEdit(initialEditId)
@@ -186,6 +198,7 @@ export function useScriptsAuthoringState({
     openLibrary,
     openCreateOptions,
     handleEdit,
+    handleSavedScript,
     handleDraftEdit: openDraftEditor,
     startDraft,
     createOptionActions: {

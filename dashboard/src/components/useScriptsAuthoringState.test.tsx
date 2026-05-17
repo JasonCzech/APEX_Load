@@ -41,6 +41,8 @@ function AuthoringStateHarness({ api, initialMode, initialEditId }: HarnessProps
       <button data-testid="draft-edit-parameter-data-focused" onClick={() => model.handleDraftEdit({ name: 'Parameter Draft', protocol: 'http', config: {}, actions: [] } as never, { targetSection: 'parameter-data' })}>draft-edit-parameter-data-focused</button>
       <button data-testid="draft-edit-data-source-focused" onClick={() => model.handleDraftEdit({ name: 'Data Source Draft', protocol: 'http', config: {}, actions: [] } as never, { targetSection: 'parameter-data', targetDataSource: 'login_users' })}>draft-edit-data-source-focused</button>
       <button data-testid="load-edit" onClick={() => void model.handleEdit('script-1')}>load-edit</button>
+      <button data-testid="save-script" onClick={() => model.handleSavedScript({ id: 'saved-script-1', name: 'Saved Draft', protocol: 'http', version: '1.0.0', created_at: '2026-05-17T00:00:00Z' })}>save-script</button>
+      <button data-testid="save-script-with-payload" onClick={() => model.handleSavedScript({ id: 'saved-script-2', name: 'Saved Payload', protocol: 'http', version: '1.0.0', created_at: '2026-05-17T00:00:00Z', script: { name: 'Persisted Checkout', protocol: 'http', config: {}, actions: [] } as never })}>save-script-with-payload</button>
       <button data-testid="open-sample" onClick={model.createOptionActions.openSampleImport}>open-sample</button>
       <button data-testid="start-java-http" onClick={model.createOptionActions.startJavaHttpScript}>start-java-http</button>
     </div>
@@ -125,6 +127,17 @@ describe('useScriptsAuthoringState', () => {
     expect(readTestId('draft-target-section')).toBe('parameter-data')
     expect(readTestId('draft-target-data-source')).toBe('login_users')
 
+    await click('save-script')
+
+    expect(readTestId('subview')).toBe('edit')
+    expect(readTestId('editing-id')).toBe('saved-script-1')
+    expect(readTestId('editing-name')).toBe('Data Source Draft')
+    expect(readTestId('draft-name')).toBe('none')
+    expect(readTestId('draft-target-action')).toBe('none')
+    expect(readTestId('draft-target-section')).toBe('none')
+    expect(readTestId('draft-target-data-source')).toBe('none')
+    expect(readTestId('draft-target-runtime-area')).toBe('none')
+
     await click('open-library')
 
     expect(readTestId('subview')).toBe('list')
@@ -167,6 +180,24 @@ describe('useScriptsAuthoringState', () => {
     await click('set-jmeter')
 
     expect(readTestId('subview')).toBe('jmeter-import')
+  })
+
+  it('prefers the persisted script payload when save returns one', async () => {
+    const api = {
+      getScript: vi.fn(),
+    }
+
+    await act(async () => {
+      root.render(<AuthoringStateHarness api={api} initialMode="list" />)
+    })
+
+    await click('start-draft')
+    await click('save-script-with-payload')
+
+    expect(readTestId('subview')).toBe('edit')
+    expect(readTestId('editing-id')).toBe('saved-script-2')
+    expect(readTestId('editing-name')).toBe('Persisted Checkout')
+    expect(readTestId('draft-name')).toBe('none')
   })
 
   it('owns semantic create and import route actions for the scripts page', async () => {

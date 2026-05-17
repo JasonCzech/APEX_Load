@@ -127,7 +127,7 @@ describe('ScriptsPage', () => {
     vi.clearAllMocks()
   })
 
-  it('routes sample import edit handoff through the draft editor and back to the library', async () => {
+  it('routes sample import edit handoff through the draft editor and into persisted edit mode after save', async () => {
     await act(async () => {
       root.render(<ScriptsPage />)
     })
@@ -190,8 +190,9 @@ describe('ScriptsPage', () => {
 
     expect(apiMock.listScripts).toHaveBeenCalledTimes(2)
     expect(apiMock.listScripts).toHaveBeenLastCalledWith('project-1')
-    expect(container.textContent).toContain('Scripts')
-    expect(container.textContent).toContain('Existing Script')
+    expect(container.querySelector('[data-testid="script-editor"]')).not.toBeNull()
+    expect(container.textContent).toContain('editor:Sample Draft')
+    expect(container.textContent).toContain('script-id:saved-script-1')
   })
 
   it('routes jmeter import edit handoff through the draft editor', async () => {
