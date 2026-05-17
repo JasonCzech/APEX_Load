@@ -1,3 +1,4 @@
+import { type ReactNode } from 'react'
 import { type ScriptDefinition } from '../types/scripts'
 import { Project, type StoredScript } from '../types'
 import ScriptEditor from './ScriptEditor'
@@ -24,6 +25,18 @@ interface Props {
   onEditDraft: (script: ScriptDefinition, focus?: DraftEditorFocus) => void
 }
 
+function renderCreateOptionsSurface(
+  content: ReactNode,
+  onBack: () => void,
+) {
+  return (
+    <div className="page">
+      <button className="btn btn-secondary" onClick={onBack} style={{ alignSelf: 'flex-start' }}>Back to Create Script</button>
+      {content}
+    </div>
+  )
+}
+
 export default function ScriptsAuthoringSurface({
   subView,
   draftScript,
@@ -45,29 +58,29 @@ export default function ScriptsAuthoringSurface({
     case 'edit':
       return <div className="page">{authoringNotice && <div className="settings-notice">{authoringNotice}</div>}<ScriptEditor scriptId={editingId} initialScript={editingScript} projectId={projectId} onSave={onSaved} onClose={onOpenLibrary} /></div>
     case 'import':
-      return <div className="page"><LoadRunnerImport projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenLibrary} /></div>
+      return renderCreateOptionsSurface(
+        <LoadRunnerImport projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
+        onOpenCreateOptions,
+      )
     case 'jmeter-import':
-      return <div className="page"><JMeterImport projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenLibrary} /></div>
+      return renderCreateOptionsSurface(
+        <JMeterImport projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
+        onOpenCreateOptions,
+      )
     case 'recorder':
-      return (
-        <div className="page">
-          <button className="btn btn-secondary" onClick={onOpenCreateOptions} style={{ alignSelf: 'flex-start' }}>Back to Create Script</button>
-          <RecordingStudio activeProject={activeProject} onImported={onImported} onEdit={onEditDraft} />
-        </div>
+      return renderCreateOptionsSurface(
+        <RecordingStudio activeProject={activeProject} onImported={onImported} onEdit={onEditDraft} />,
+        onOpenCreateOptions,
       )
     case 'sample':
-      return (
-        <div className="page">
-          <button className="btn btn-secondary" onClick={onOpenCreateOptions} style={{ alignSelf: 'flex-start' }}>Back to Create Script</button>
-          <SampleScriptImport projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />
-        </div>
+      return renderCreateOptionsSurface(
+        <SampleScriptImport projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
+        onOpenCreateOptions,
       )
     case 'java-http-import':
-      return (
-        <div className="page">
-          <button className="btn btn-secondary" onClick={onOpenCreateOptions} style={{ alignSelf: 'flex-start' }}>Back to Create Script</button>
-          <JavaHttpImport onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />
-        </div>
+      return renderCreateOptionsSurface(
+        <JavaHttpImport onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
+        onOpenCreateOptions,
       )
     default:
       return null

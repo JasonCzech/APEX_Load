@@ -37,7 +37,7 @@ vi.mock('./ScriptEditor', () => ({
 }))
 
 vi.mock('./LoadRunnerImport', () => ({
-  default: ({ onImported }: { onImported?: (result: { scripts: Array<{ id: string; name: string; protocol: string; script?: { name: string; version: string; protocol: string; config: { base_url: string }; actions: unknown[] } }>; scenario?: { name?: string } | null }) => void }) => (
+  default: ({ onImported, onClose }: { onImported?: (result: { scripts: Array<{ id: string; name: string; protocol: string; script?: { name: string; version: string; protocol: string; config: { base_url: string }; actions: unknown[] } }>; scenario?: { name?: string } | null }) => void, onClose?: () => void }) => (
     <div data-testid="loadrunner-import">
       <button onClick={() => onImported?.({
         scripts: [{
@@ -53,12 +53,13 @@ vi.mock('./LoadRunnerImport', () => ({
           },
         }],
       })}>mock-loadrunner-save</button>
+      <button onClick={onClose}>mock-loadrunner-close</button>
     </div>
   ),
 }))
 
 vi.mock('./JMeterImport', () => ({
-  default: ({ onEdit, onImported }: { onEdit?: (script: { name: string, version: string, protocol: string, config: { base_url: string }, actions: unknown[] }) => void, onImported?: (result: { scripts: Array<{ id: string; name: string; protocol: string; script?: { name: string; version: string; protocol: string; config: { base_url: string }; actions: unknown[] } }>; scenario?: { name?: string } | null }) => void }) => (
+  default: ({ onEdit, onImported, onClose }: { onEdit?: (script: { name: string, version: string, protocol: string, config: { base_url: string }, actions: unknown[] }) => void, onImported?: (result: { scripts: Array<{ id: string; name: string; protocol: string; script?: { name: string; version: string; protocol: string; config: { base_url: string }; actions: unknown[] } }>; scenario?: { name?: string } | null }) => void, onClose?: () => void }) => (
     <div data-testid="jmeter-import">
       <button onClick={() => onEdit?.({
         name: 'JMeter Draft',
@@ -91,6 +92,7 @@ vi.mock('./JMeterImport', () => ({
         scenario: { name: 'Imported JMeter Scenario' },
       })}
       >mock-jmeter-save</button>
+      <button onClick={onClose}>mock-jmeter-close</button>
     </div>
   ),
 }))
@@ -369,6 +371,96 @@ describe('ScriptsPage', () => {
     expect(container.querySelector('[data-testid="script-editor"]')).not.toBeNull()
     expect(container.textContent).toContain('editor:Imported LoadRunner Script')
     expect(container.textContent).toContain('script-id:imported-script-1')
+  })
+
+  it('returns LoadRunner import close actions to the create options shell', async () => {
+    await act(async () => {
+      root.render(<ScriptsPage />)
+    })
+
+    await flushPromises()
+
+    const createButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('+ Create Script'))
+    expect(createButton).toBeDefined()
+    if (!createButton) {
+      return
+    }
+
+    await act(async () => {
+      createButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const loadRunnerButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Import LoadRunner'))
+    expect(loadRunnerButton).toBeDefined()
+    if (!loadRunnerButton) {
+      return
+    }
+
+    await act(async () => {
+      loadRunnerButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.querySelector('[data-testid="loadrunner-import"]')).not.toBeNull()
+    expect(container.textContent).toContain('Back to Create Script')
+
+    const closeButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('mock-loadrunner-close'))
+    expect(closeButton).toBeDefined()
+    if (!closeButton) {
+      return
+    }
+
+    await act(async () => {
+      closeButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.querySelector('[data-testid="loadrunner-import"]')).toBeNull()
+    expect(container.textContent).toContain('Create Script')
+    expect(container.textContent).toContain('Import JMeter')
+  })
+
+  it('returns JMeter import close actions to the create options shell', async () => {
+    await act(async () => {
+      root.render(<ScriptsPage />)
+    })
+
+    await flushPromises()
+
+    const createButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('+ Create Script'))
+    expect(createButton).toBeDefined()
+    if (!createButton) {
+      return
+    }
+
+    await act(async () => {
+      createButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const jmeterButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Import JMeter'))
+    expect(jmeterButton).toBeDefined()
+    if (!jmeterButton) {
+      return
+    }
+
+    await act(async () => {
+      jmeterButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.querySelector('[data-testid="jmeter-import"]')).not.toBeNull()
+    expect(container.textContent).toContain('Back to Create Script')
+
+    const closeButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('mock-jmeter-close'))
+    expect(closeButton).toBeDefined()
+    if (!closeButton) {
+      return
+    }
+
+    await act(async () => {
+      closeButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.querySelector('[data-testid="jmeter-import"]')).toBeNull()
+    expect(container.textContent).toContain('Create Script')
+    expect(container.textContent).toContain('Import LoadRunner')
   })
 
   it('shows SOAP and Java-over-HTTP create options and routes them into the draft editor', async () => {

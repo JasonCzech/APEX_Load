@@ -172,6 +172,7 @@ Status:
 - A1.4 now applies that same persisted-script handoff to import and recorder saves. LoadRunner, JMeter, sample-import, Java-over-HTTP sample-import, and recorder save actions now return stored scripts into the shared authoring shell so saved imports reopen in persisted edit mode instead of dropping back to the library.
 - A1.4 now preserves follow-on context for multi-script imports. When an import saves multiple scripts and/or a scenario draft, the shared authoring shell reopens the first persisted script in edit mode and shows a notice about the additional saved artifacts instead of silently dropping that context.
 - A1.4 now also hydrates thin import save responses with the reviewed draft payload. If an import save returns persisted ids and metadata without embedding the full script body, the shared authoring handoff still reopens the editor with the reviewed script content instead of a blank persisted shell.
+- A1.4 now aligns import navigation around the create-options shell. LoadRunner, JMeter, sample, Java-over-HTTP, and recorder authoring surfaces all expose the same `Back to Create Script` return path, and import components' own close actions now land there instead of jumping back to the library.
 
 Acceptance criteria:
 - Every script acquisition path resolves into the same lifecycle model
