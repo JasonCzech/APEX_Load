@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useApi } from '../hooks/useApi'
 import { summarizeImportExtractors, summarizeSupportMatrix } from './jmeterImportUtils'
-import { type ImportedScript, type JMeterImportResult as ImportResult, type JMeterSupportMatrixResponse, type SupportMatrix } from '../types/scriptImports'
+import { type JMeterImportResult as ImportResult, type JMeterSupportMatrixResponse, type SupportMatrix } from '../types/scriptImports'
 import { type ScriptDefinition } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import ScriptImportReview from './ScriptImportReview'
@@ -18,11 +18,11 @@ interface Props {
 
 type ReviewMode = 'validation' | 'conversion'
 
-function getPrimaryScript(result: ImportResult | null): ImportedScript | null {
+function getPrimaryScript(result: ImportResult | null): ScriptDefinition | null {
   return result?.script || result?.scripts?.[0] || null
 }
 
-function buildFallbackPrimaryScript(name: string): ImportedScript {
+function buildFallbackPrimaryScript(name: string): ScriptDefinition {
   return {
     name,
     version: '1.0.0',
@@ -335,7 +335,7 @@ export default function JMeterImport({ projectId, onImported, onEdit, onClose }:
                 <span>{result.summary?.file_name || file?.name}</span>
               </div>
               <div className="lr-preserved-grid">
-                {(result.scripts || []).map((script: ImportedScript) => (
+                {(result.scripts || []).map((script: ScriptDefinition) => (
                   <div className="lr-preserved-card" key={script.name}>
                     <span className="lr-preserved-label">Script</span>
                     <strong>{script.name}</strong>

@@ -1,4 +1,5 @@
-import { type ImportedAction, type ImportedExtractor, type ImportedScript, type SupportMatrix } from '../types/scriptImports'
+import { type ScriptActionDefinition, type ScriptDefinition, type ScriptExtractorDefinition } from '../types/scripts'
+import { type SupportMatrix } from '../types/scriptImports'
 
 export interface SupportMatrixSection {
   key: 'supported' | 'partial' | 'unsupported'
@@ -50,7 +51,7 @@ export function summarizeSupportMatrix(matrix?: SupportMatrix | null): SupportMa
   ]
 }
 
-export function summarizeImportExtractors(scripts: ImportedScript[]): ImportExtractorSummary[] {
+export function summarizeImportExtractors(scripts: ScriptDefinition[]): ImportExtractorSummary[] {
   if (!Array.isArray(scripts) || scripts.length === 0) {
     return []
   }
@@ -58,10 +59,10 @@ export function summarizeImportExtractors(scripts: ImportedScript[]): ImportExtr
   const summaries: ImportExtractorSummary[] = []
   for (const script of scripts) {
     const scriptName = typeof script?.name === 'string' && script.name ? script.name : 'Imported Script'
-    const actions: ImportedAction[] = Array.isArray(script?.actions) ? script.actions : []
+    const actions: ScriptActionDefinition[] = Array.isArray(script?.actions) ? script.actions : []
     for (const action of actions) {
       const actionName = typeof action?.name === 'string' && action.name ? action.name : 'Unnamed Action'
-      const extractors: ImportedExtractor[] = Array.isArray(action?.extractors) ? action.extractors : []
+      const extractors: ScriptExtractorDefinition[] = Array.isArray(action?.extractors) ? action.extractors : []
       for (const extractor of extractors) {
         if (!extractor?.name || !extractor?.type) {
           continue

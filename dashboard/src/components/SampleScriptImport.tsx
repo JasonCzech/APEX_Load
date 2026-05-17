@@ -12,7 +12,7 @@ import {
   type LoadedSample,
   type SampleFormat,
 } from './sampleImportUtils'
-import { type ImportedScript, type SampleImportResult } from '../types/scriptImports'
+import { type SampleImportResult } from '../types/scriptImports'
 import { type StoredScript } from '../types'
 import { type ScriptDefinition } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'

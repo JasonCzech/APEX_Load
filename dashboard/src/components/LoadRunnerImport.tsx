@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, type CSSProperties } from 'react'
 import { useApi } from '../hooks/useApi'
-import { type ImportRepairSuggestion, type ImportedScript, type LoadRunnerImportResult, type LoadRunnerImportSummary, type LoadRunnerMigrationReadiness, type LoadRunnerSupportMatrixEntry, type LoadRunnerSupportMatrixExample, type LoadRunnerSupportMatrixResponse } from '../types/scriptImports'
+import { type ImportRepairSuggestion, type LoadRunnerImportResult, type LoadRunnerImportSummary, type LoadRunnerMigrationReadiness, type LoadRunnerSupportMatrixEntry, type LoadRunnerSupportMatrixExample, type LoadRunnerSupportMatrixResponse } from '../types/scriptImports'
 import { type BrowserReplaySession } from '../types'
 import { type ScriptDefinition } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
@@ -16,7 +16,7 @@ interface ImportMetadata {
   preserved?: Record<string, unknown>
 }
 
-function getImportMetadata(script?: ImportedScript): ImportMetadata | null {
+function getImportMetadata(script?: ScriptDefinition): ImportMetadata | null {
   return script?.metadata?.import || null
 }
 
@@ -24,7 +24,7 @@ function getSummaryList(values?: string[]) {
   return Array.isArray(values) ? values : []
 }
 
-function isBrowserImport(script: ImportedScript | null): boolean {
+function isBrowserImport(script: ScriptDefinition | null): boolean {
   return script?.protocol === 'browser'
 }
 
@@ -154,7 +154,7 @@ function buildMigrationPolicyRefreshNotice(mode: 'convert' | 'validate', options
   return `${prefix} with migration block policy: ${formatMigrationBlockPolicySummary(options)}.`
 }
 
-function findImportedActionName(script?: ImportedScript | null, location?: string | null): string | null {
+function findImportedActionName(script?: ScriptDefinition | null, location?: string | null): string | null {
   const normalizedLocation = location?.trim()
   if (!normalizedLocation || !Array.isArray(script?.actions)) return null
 
@@ -169,7 +169,7 @@ function findImportedActionName(script?: ImportedScript | null, location?: strin
   return script.actions[actionIndex]?.name?.trim() || null
 }
 
-function findFirstImportedActionTarget(script: ImportedScript | null, locations: Array<string | null | undefined>): { location: string; actionName: string } | null {
+function findFirstImportedActionTarget(script: ScriptDefinition | null, locations: Array<string | null | undefined>): { location: string; actionName: string } | null {
   for (const location of locations) {
     const normalizedLocation = location?.trim()
     if (!normalizedLocation) continue

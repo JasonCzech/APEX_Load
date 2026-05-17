@@ -1,9 +1,5 @@
 import { type StoredScenario, type StoredScript } from '../types'
-import { type ScriptActionDefinition, type ScriptDefinition, type ScriptExtractorDefinition } from './scripts'
-
-export type ImportedExtractor = ScriptExtractorDefinition
-export type ImportedAction = ScriptActionDefinition
-export type ImportedScript = ScriptDefinition
+import { type ScriptDefinition } from './scripts'
 
 export interface SupportMatrix {
   supported: string[]
@@ -33,7 +29,7 @@ export interface ImportRepairSuggestion {
 export interface ScriptImportResult<
   TStats = Record<string, unknown>,
   TCorrelation = unknown,
-  TScript extends ImportedScript = ImportedScript,
+  TScript extends ScriptDefinition = ScriptDefinition,
   TScenarioDraft = unknown,
   TSummary = Record<string, unknown>,
 > {
@@ -168,8 +164,8 @@ export interface RecorderCorrelation {
   sample_value: string
 }
 
-export type LoadRunnerImportResult = ScriptImportResult<LoadRunnerConvertStats, unknown, ImportedScript, unknown, LoadRunnerImportSummary>
-export type JMeterImportResult = ScriptImportResult<JMeterConvertStats, unknown, ImportedScript, JMeterScenarioDraft, JMeterImportSummary>
+export type LoadRunnerImportResult = ScriptImportResult<LoadRunnerConvertStats, unknown, ScriptDefinition, unknown, LoadRunnerImportSummary>
+export type JMeterImportResult = ScriptImportResult<JMeterConvertStats, unknown, ScriptDefinition, JMeterScenarioDraft, JMeterImportSummary>
 export type SampleImportResult = ScriptImportResult<SampleImportStats, SampleCorrelation>
 export type RecorderImportResult = ScriptImportResult<Record<string, unknown>, RecorderCorrelation>
 
@@ -184,7 +180,7 @@ export interface LoadRunnerSupportMatrixResponse {
 }
 
 export interface SaveJMeterImportRequest {
-  scripts: ImportedScript[]
+  scripts: ScriptDefinition[]
   scenario_draft?: JMeterScenarioDraft
 }
 
