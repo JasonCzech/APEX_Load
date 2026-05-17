@@ -262,7 +262,10 @@ Acceptance criteria:
 - High-value imported scripts do not silently degrade at runtime
 
 Recent progress:
+- R2.1 has a first execution slice for imported extended logging. VUser logs now honor `config.log.level`, `on_error_only`, and extended options for parameter substitution, returned data, and advanced timing/correlation trace fields, with secret-aware redaction coverage in `pkg/engine/vuser_test.go`.
 - R2.2 now expands snapshot-on-error evidence beyond HTTP/browser/SOAP response failures into Java-over-HTTP preflight failures. Invalid serialized payloads retain the resolved request URL, method, headers, original encoded body, dependency type, and serialization telemetry before the request leaves the process.
+- R2.3 is implemented for imported and manually authored browser scripts when preserved recorded-resource metadata is present. The engine forwards `recorded_resource_urls` into browser protocol config, browser replay enforces recorded-only resource loading, and validation warns when `download_resources = recorded` lacks the required metadata.
+- R2.4 has a bounded execution slice for DFE/data-formatting chains. HTTP replay applies explicit `base64`, `gzip`, `json_to_xml`, `url_decode`, and `html_unescape` transforms plus conservative base64 auto-detection, while `docs/LOADRUNNER_RTS_REFERENCE.md` documents the remaining intentional exclusions.
 - R2.5 has a first warning/validation slice for preserved-only streaming and media runtime settings. Import and validation responses now warn that media playback semantics are not executed, include preserved streaming values for review, and keep those settings classified as compatibility-only in parity metadata.
 
 ### Epic R3: Parity Verification Harness
