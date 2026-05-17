@@ -537,7 +537,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
         })
         .catch((error: unknown) => {
           if (!cancelled) {
-            setReplayValidationError(getErrorMessage(error, 'Browser replay status refresh failed'))
+            setReplayValidationError(getErrorMessage(error, 'Draft browser replay status refresh failed'))
           }
         })
     }
