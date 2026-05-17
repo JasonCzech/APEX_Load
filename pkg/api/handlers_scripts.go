@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/jasonczech/stormrunner/pkg/convert/devweb"
+	"github.com/jasonczech/stormrunner/pkg/convert/har"
 	"github.com/jasonczech/stormrunner/pkg/convert/jmeter"
 	"github.com/jasonczech/stormrunner/pkg/convert/loadrunner"
 	"github.com/jasonczech/stormrunner/pkg/convert/sample"
@@ -37,6 +38,12 @@ type devWebImportRequest struct {
 	Name      string
 	IsZip     bool
 	Opts      devweb.ConvertOptions
+}
+
+type harImportRequest struct {
+	Data      []byte
+	ProjectID string
+	Opts      har.ConvertOptions
 }
 
 type loadRunnerImportSummary struct {
@@ -193,6 +200,94 @@ func (s *Server) handleImportDevWeb(w http.ResponseWriter, r *http.Request) {
 		Warnings: result.Warnings,
 		Stats:    result.Stats,
 	}))
+}
+
+// handleImportHAR handles POST /api/v1/scripts/import/har.
+// Accepts JSON, raw HAR, or multipart uploads and returns a generated HTTP script preview.
+func (s *Server) handleImportHAR(w http.ResponseWriter, r *http.Request) {
+	importReq, ok := readHARImportRequest(w, r)
+	if !ok {
+		return
+	}
+
+	result, err := har.Convert(importReq.Data, importReq.Opts)
+	if err != nil {
+		writeError(w, http.StatusUnprocessableEntity, "conversion failed: "+err.Error())
+		return
+	}
+	if result.Script != nil {
+		result.Script.ProjectID = normalizeProjectID(importReq.ProjectID)
+	}
+	issues := validateScript(result.Script)
+	if len(issues) > 0 {
+		result.Warnings = append(result.Warnings, issues...)
+	}
+
+	writeJSON(w, http.StatusOK, newScriptImportResponse(scriptImportResponseOptions{
+		Result:       result,
+		Script:       result.Script,
+		Warnings:     result.Warnings,
+		Stats:        result.Stats,
+		Correlations: result.Correlations,
+	}))
+}
+
+func readHARImportRequest(w http.ResponseWriter, r *http.Request) (*harImportRequest, bool) {
+	r.Body = http.MaxBytesReader(w, r.Body, 50<<20)
+	contentType := r.Header.Get("Content-Type")
+	if strings.HasPrefix(contentType, "application/json") {
+		var req struct {
+			Name      string             `json:"name,omitempty"`
+			ProjectID string             `json:"project_id,omitempty"`
+			Content   string             `json:"content"`
+			Options   har.ConvertOptions `json:"options,omitempty"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+			return nil, false
+		}
+		req.Options.ScriptName = firstNonEmpty(req.Options.ScriptName, req.Name)
+		return &harImportRequest{Data: []byte(req.Content), ProjectID: req.ProjectID, Opts: req.Options}, true
+	}
+	if strings.HasPrefix(contentType, "multipart/form-data") {
+		if err := r.ParseMultipartForm(50 << 20); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid multipart form: "+err.Error())
+			return nil, false
+		}
+		file, header, err := r.FormFile("file")
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "file field is required")
+			return nil, false
+		}
+		defer file.Close()
+		data, err := io.ReadAll(file)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "failed to read uploaded file: "+err.Error())
+			return nil, false
+		}
+		return &harImportRequest{
+			Data:      data,
+			ProjectID: r.FormValue("project_id"),
+			Opts: har.ConvertOptions{
+				ScriptName: strings.TrimSuffix(header.Filename, filepath.Ext(header.Filename)),
+				BaseURL:    r.FormValue("base_url"),
+			},
+		}, true
+	}
+	data, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "failed to read request body: "+err.Error())
+		return nil, false
+	}
+	filename := r.URL.Query().Get("filename")
+	return &harImportRequest{
+		Data:      data,
+		ProjectID: r.URL.Query().Get("project_id"),
+		Opts: har.ConvertOptions{
+			ScriptName: strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename)),
+			BaseURL:    r.URL.Query().Get("base_url"),
+		},
+	}, true
 }
 
 func readDevWebImportRequest(w http.ResponseWriter, r *http.Request) (*devWebImportRequest, bool) {

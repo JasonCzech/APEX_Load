@@ -486,6 +486,68 @@ load.action("Socket Flow", async function() {
 	}
 }
 
+func TestHandleImportHARJSON(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	payload := map[string]any{
+		"name": "HAR Import",
+		"content": `{
+  "log": {
+    "entries": [{
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.test/health",
+        "headers": []
+      },
+      "response": {"status": 200, "content": {"text": "{\"ok\":true}"}}
+    }]
+  }
+}`,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("json.Marshal returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/har", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var result struct {
+		Script struct {
+			Name     string `json:"name"`
+			Protocol string `json:"protocol"`
+			Actions  []struct {
+				Method string `json:"method"`
+				Target string `json:"target"`
+			} `json:"actions"`
+		} `json:"script"`
+		Stats struct {
+			ConvertedActions int `json:"converted_actions"`
+		} `json:"stats"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if result.Script.Name != "HAR Import" {
+		t.Fatalf("script name = %q, want HAR Import", result.Script.Name)
+	}
+	if result.Script.Protocol != "http" {
+		t.Fatalf("protocol = %q, want http", result.Script.Protocol)
+	}
+	if result.Stats.ConvertedActions != 1 {
+		t.Fatalf("converted actions = %d, want 1", result.Stats.ConvertedActions)
+	}
+	if result.Script.Actions[0].Method != "GET" || result.Script.Actions[0].Target != "/health" {
+		t.Fatalf("action = %#v", result.Script.Actions[0])
+	}
+}
+
 func TestHandleImportLoadRunnerReturnsStandardizedEnvelope(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	var body bytes.Buffer
