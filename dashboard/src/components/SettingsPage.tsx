@@ -84,6 +84,7 @@ type DraftRedactionRule = {
 const NOTIFICATION_FORMAT_OPTIONS = [
   { value: 'slack', label: 'Slack Block Kit' },
   { value: 'teams', label: 'Microsoft Teams Adaptive Card' },
+  { value: 'dynatrace', label: 'Dynatrace Events API v2' },
 ] as const
 
 const AUTH_ROLE_LABELS: Record<string, string> = {
@@ -489,8 +490,16 @@ function validateSettings(settings: DashboardSystemSettings): string[] {
         errors.push(`${label} URL must be a valid absolute URL.`)
       }
     }
-    if (webhook.format !== 'slack' && webhook.format !== 'teams') {
-      errors.push(`${label} format must be Slack or Microsoft Teams.`)
+    if (webhook.format !== 'slack' && webhook.format !== 'teams' && webhook.format !== 'dynatrace') {
+      errors.push(`${label} format must be Slack, Microsoft Teams, or Dynatrace.`)
+    }
+    if (webhook.format === 'dynatrace') {
+      if (!webhook.api_token?.trim()) {
+        errors.push(`${label} requires a Dynatrace API token.`)
+      }
+      if (webhook.timeout_minutes !== undefined && (!Number.isFinite(webhook.timeout_minutes) || webhook.timeout_minutes < 0 || webhook.timeout_minutes > 360)) {
+        errors.push(`${label} Dynatrace timeout must be between 0 and 360 minutes.`)
+      }
     }
   })
   return errors
@@ -1534,6 +1543,8 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
             url: '',
             format: 'slack',
             events: [],
+            api_token: '',
+            entity_selector: '',
           },
         ],
       },
@@ -3148,7 +3159,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
               <div className="settings-manager-summary">
                 <div>
                   <span className="setting-label">Lifecycle Notification Webhooks</span>
-                  <span className="setting-desc">Send Slack Block Kit or Microsoft Teams Adaptive Card notifications when tests change state.</span>
+                  <span className="setting-desc">Send Slack, Microsoft Teams, or Dynatrace Events API notifications when tests change state.</span>
                 </div>
                 <strong>{notificationWebhookCount}</strong>
               </div>
@@ -3182,7 +3193,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
                           <select
                             className="settings-select"
                             value={webhook.format}
-                            onChange={event => updateNotificationWebhook(index, { format: event.target.value as 'slack' | 'teams' })}
+                            onChange={event => updateNotificationWebhook(index, { format: event.target.value as DashboardSystemSettings['notifications']['webhooks'][number]['format'] })}
                           >
                             {NOTIFICATION_FORMAT_OPTIONS.map(option => (
                               <option key={option.value} value={option.value}>{option.label}</option>
@@ -3197,9 +3208,47 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
                           className="settings-input"
                           value={webhook.url}
                           onChange={event => updateNotificationWebhook(index, { url: event.target.value })}
-                          placeholder="https://hooks.slack.com/services/..."
+                          placeholder={webhook.format === 'dynatrace' ? 'https://{environment}.live.dynatrace.com/api/v2/events/ingest' : 'https://hooks.slack.com/services/...'}
                         />
                       </label>
+
+                      {webhook.format === 'dynatrace' && (
+                        <div className="project-redaction-rule-grid">
+                          <label className="project-redaction-rule-field">
+                            <span>Dynatrace API Token</span>
+                            <input
+                              className="settings-input"
+                              type="password"
+                              value={webhook.api_token || ''}
+                              onChange={event => updateNotificationWebhook(index, { api_token: event.target.value })}
+                              placeholder="dt0c01..."
+                            />
+                          </label>
+                          <label className="project-redaction-rule-field">
+                            <span>Event Timeout (minutes)</span>
+                            <input
+                              className="settings-input"
+                              type="number"
+                              min="0"
+                              max="360"
+                              value={webhook.timeout_minutes ?? ''}
+                              onChange={event => updateNotificationWebhook(index, {
+                                timeout_minutes: event.target.value.trim() === '' ? undefined : Number(event.target.value),
+                              })}
+                              placeholder="15"
+                            />
+                          </label>
+                          <label className="project-redaction-rule-field project-redaction-rule-field-wide">
+                            <span>Entity Selector</span>
+                            <input
+                              className="settings-input"
+                              value={webhook.entity_selector || ''}
+                              onChange={event => updateNotificationWebhook(index, { entity_selector: event.target.value })}
+                              placeholder="type(SERVICE),entityName.equals(CheckoutService)"
+                            />
+                          </label>
+                        </div>
+                      )}
 
                       <div className="setting-row">
                         <div className="setting-info">

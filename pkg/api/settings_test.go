@@ -308,6 +308,41 @@ func TestSystemSettingsValidationRejectsInvalidNotifications(t *testing.T) {
 	}
 }
 
+func TestSystemSettingsValidationRejectsDynatraceWebhookWithoutToken(t *testing.T) {
+	err := validateSystemSettings(SystemSettings{
+		General: GeneralSettings{
+			APIEndpoint:            ":8080",
+			MaxConcurrentTests:     2,
+			MetricsIntervalSeconds: 1,
+		},
+		Thresholds: ThresholdSettings{},
+		CapacityPlanning: CapacityPlanningSettings{
+			HeadroomPct: 20,
+			Generator: GeneratorCapacitySettings{
+				CPUCores:    4,
+				MemoryMB:    8192,
+				NetworkMbps: 1000,
+				MaxVUsers:   10000,
+			},
+			Availability: AvailabilitySettings{
+				Source:                        capacityAvailabilityConfigured,
+				ConfiguredAvailableGenerators: 1,
+			},
+		},
+		Notifications: NotificationsSettings{
+			Webhooks: []NotificationWebhookSettings{{
+				Enabled: true,
+				URL:     "https://example.live.dynatrace.com/api/v2/events/ingest",
+				Format:  notificationFormatDynatrace,
+			}},
+		},
+		Auth: defaultAuthSettings(),
+	})
+	if err == nil {
+		t.Fatal("expected Dynatrace notifications without an API token to fail validation")
+	}
+}
+
 func TestSystemSettingsValidationRejectsInvalidAuthSettings(t *testing.T) {
 	err := validateSystemSettings(SystemSettings{
 		General: GeneralSettings{
@@ -391,13 +426,13 @@ func TestSystemSettingsValidationRejectsInvalidAuthSettings(t *testing.T) {
 			},
 		},
 		Auth: AuthSettings{
-			Mode:               authModeOIDC,
-			IssuerURL:          "https://login.example.test",
-			ClientID:           "stormrunner-dashboard",
-			ClientSecretEnvVar: "STORMRUNNER_OIDC_CLIENT_SECRET",
-			RedirectURL:        "https://stormrunner.example.test/api/v1/auth/callback",
+			Mode:                authModeOIDC,
+			IssuerURL:           "https://login.example.test",
+			ClientID:            "stormrunner-dashboard",
+			ClientSecretEnvVar:  "STORMRUNNER_OIDC_CLIENT_SECRET",
+			RedirectURL:         "https://stormrunner.example.test/api/v1/auth/callback",
 			SessionSecretEnvVar: "STORMRUNNER_AUTH_SESSION_SECRET",
-			Scopes:             []string{"openid", "profile", "email"},
+			Scopes:              []string{"openid", "profile", "email"},
 		},
 	})
 	if err != nil {
@@ -425,9 +460,9 @@ func TestSystemSettingsValidationRejectsInvalidAuthSettings(t *testing.T) {
 			},
 		},
 		Auth: AuthSettings{
-			Mode:       authModeOIDC,
-			IssuerURL:  "https://login.example.test",
-			ClientID:   "stormrunner-dashboard",
+			Mode:        authModeOIDC,
+			IssuerURL:   "https://login.example.test",
+			ClientID:    "stormrunner-dashboard",
 			RedirectURL: "https://stormrunner.example.test/api/v1/auth/callback",
 		},
 	})
@@ -475,7 +510,7 @@ func TestNormalizeLoadedSystemSettingsBackfillsCapacityPlanningDefaults(t *testi
 			MetricsIntervalSeconds: 2,
 		},
 		Thresholds: ThresholdSettings{},
-		Auth: AuthSettings{Mode: authModeDisabled},
+		Auth:       AuthSettings{Mode: authModeDisabled},
 	}, 4)
 	if normalizedAlias.Auth.Mode != authModeDev {
 		t.Fatalf("normalized disabled alias auth mode = %q, want %q", normalizedAlias.Auth.Mode, authModeDev)

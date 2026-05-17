@@ -12,8 +12,9 @@ import (
 )
 
 const (
-	notificationFormatSlack = "slack"
-	notificationFormatTeams = "teams"
+	notificationFormatSlack     = "slack"
+	notificationFormatTeams     = "teams"
+	notificationFormatDynatrace = "dynatrace"
 )
 
 var supportedNotificationEvents = map[string]struct{}{
@@ -32,11 +33,14 @@ type NotificationsSettings struct {
 }
 
 type NotificationWebhookSettings struct {
-	Name    string   `json:"name,omitempty"`
-	Enabled bool     `json:"enabled"`
-	URL     string   `json:"url"`
-	Format  string   `json:"format"`
-	Events  []string `json:"events,omitempty"`
+	Name           string   `json:"name,omitempty"`
+	Enabled        bool     `json:"enabled"`
+	URL            string   `json:"url"`
+	Format         string   `json:"format"`
+	Events         []string `json:"events,omitempty"`
+	APIToken       string   `json:"api_token,omitempty"`
+	EntitySelector string   `json:"entity_selector,omitempty"`
+	TimeoutMinutes int      `json:"timeout_minutes,omitempty"`
 }
 
 type NotificationEvent struct {
@@ -82,9 +86,17 @@ func validateNotificationsSettings(settings NotificationsSettings) error {
 			return fmt.Errorf("%s.url must be a valid http or https URL", prefix)
 		}
 		switch webhook.Format {
-		case notificationFormatSlack, notificationFormatTeams:
+		case notificationFormatSlack, notificationFormatTeams, notificationFormatDynatrace:
 		default:
-			return fmt.Errorf("%s.format must be one of %q or %q", prefix, notificationFormatSlack, notificationFormatTeams)
+			return fmt.Errorf("%s.format must be one of %q, %q, or %q", prefix, notificationFormatSlack, notificationFormatTeams, notificationFormatDynatrace)
+		}
+		if webhook.Format == notificationFormatDynatrace {
+			if strings.TrimSpace(webhook.APIToken) == "" {
+				return fmt.Errorf("%s.api_token is required for Dynatrace webhooks", prefix)
+			}
+			if webhook.TimeoutMinutes < 0 || webhook.TimeoutMinutes > 360 {
+				return fmt.Errorf("%s.timeout_minutes must be between 0 and 360", prefix)
+			}
 		}
 		for _, eventType := range webhook.Events {
 			if _, ok := supportedNotificationEvents[eventType]; !ok {
@@ -103,7 +115,7 @@ func (d *notificationDispatcher) Dispatch(settings NotificationsSettings, event 
 		if !webhook.Enabled || !notificationWebhookMatchesEvent(webhook, event.Type) {
 			continue
 		}
-		payload, err := buildNotificationPayload(webhook.Format, event)
+		payload, err := buildNotificationPayloadForWebhook(webhook, event)
 		if err != nil {
 			slog.Warn("notification payload build failed", "event", event.Type, "format", webhook.Format, "err", err)
 			continue
@@ -125,11 +137,18 @@ func notificationWebhookMatchesEvent(webhook NotificationWebhookSettings, eventT
 }
 
 func buildNotificationPayload(format string, event NotificationEvent) (any, error) {
+	return buildNotificationPayloadForWebhook(NotificationWebhookSettings{Format: format}, event)
+}
+
+func buildNotificationPayloadForWebhook(webhook NotificationWebhookSettings, event NotificationEvent) (any, error) {
+	format := webhook.Format
 	switch format {
 	case notificationFormatSlack:
 		return buildSlackNotificationPayload(event), nil
 	case notificationFormatTeams:
 		return buildTeamsNotificationPayload(event), nil
+	case notificationFormatDynatrace:
+		return buildDynatraceNotificationPayload(webhook, event), nil
 	default:
 		return nil, fmt.Errorf("unsupported notification format %q", format)
 	}
@@ -195,6 +214,33 @@ func buildTeamsNotificationPayload(event NotificationEvent) map[string]any {
 	}
 }
 
+func buildDynatraceNotificationPayload(webhook NotificationWebhookSettings, event NotificationEvent) map[string]any {
+	eventType := "CUSTOM_INFO"
+	if event.Type == "test_failed" {
+		eventType = "ERROR_EVENT"
+	}
+	payload := map[string]any{
+		"eventType": eventType,
+		"title":     fmt.Sprintf("Stormrunner %s: %s", humanizeNotificationEvent(event.Type), event.TestName),
+		"startTime": event.Timestamp.UTC().UnixMilli(),
+		"properties": map[string]string{
+			"Tool":                   "Stormrunner",
+			"stormrunner.event_type": event.Type,
+			"stormrunner.project_id": fallbackNotificationValue(event.ProjectID),
+			"stormrunner.status":     event.Status,
+			"stormrunner.test_id":    event.TestID,
+			"stormrunner.test_name":  event.TestName,
+		},
+	}
+	if selector := strings.TrimSpace(webhook.EntitySelector); selector != "" {
+		payload["entitySelector"] = selector
+	}
+	if webhook.TimeoutMinutes > 0 {
+		payload["timeout"] = webhook.TimeoutMinutes
+	}
+	return payload
+}
+
 func humanizeNotificationEvent(eventType string) string {
 	parts := strings.Split(strings.TrimSpace(eventType), "_")
 	for index, part := range parts {
@@ -225,6 +271,9 @@ func (d *notificationDispatcher) postJSON(webhook NotificationWebhookSettings, p
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if webhook.Format == notificationFormatDynatrace && strings.TrimSpace(webhook.APIToken) != "" {
+		req.Header.Set("Authorization", "Api-Token "+strings.TrimSpace(webhook.APIToken))
+	}
 	resp, err := d.client.Do(req)
 	if err != nil {
 		slog.Warn("notification delivery failed", "format", webhook.Format, "url", webhook.URL, "err", err)

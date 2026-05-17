@@ -1068,8 +1068,11 @@ export interface DashboardNotificationWebhook {
   name?: string
   enabled: boolean
   url: string
-  format: 'slack' | 'teams'
+  format: 'slack' | 'teams' | 'dynatrace'
   events?: string[]
+  api_token?: string
+  entity_selector?: string
+  timeout_minutes?: number
 }
 
 export interface DashboardNotificationsSettings {

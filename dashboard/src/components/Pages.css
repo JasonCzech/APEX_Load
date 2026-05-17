@@ -1650,6 +1650,10 @@
   font-size: 12px;
 }
 
+.project-redaction-rule-field-wide {
+  grid-column: 1 / -1;
+}
+
 .project-redaction-rule-field span {
   color: var(--text-muted);
   font-size: 11px;

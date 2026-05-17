@@ -594,7 +594,6 @@ describe('SettingsPage', () => {
     const saveButton = findButton('Save Changes')
     expect(saveButton).toBeDefined()
     if (!saveButton) return
-
     await act(async () => {
       saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
@@ -1075,6 +1074,97 @@ describe('SettingsPage', () => {
           enabled: true,
           url: 'https://hooks.slack.test/services/T000/B000/abc123',
           format: 'slack',
+        })],
+      },
+    }))
+    expect(container.textContent).toContain('Settings saved.')
+  })
+
+  it('saves Dynatrace notification metadata through system settings', async () => {
+    apiMock.updateSystemSettings.mockImplementation(async (settings) => settings)
+
+    await act(async () => {
+      root.render(<SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+
+    await flushPromises()
+
+    const addWebhookButton = findButton('Add Webhook')
+    expect(addWebhookButton).toBeDefined()
+    if (!addWebhookButton) return
+
+    await act(async () => {
+      addWebhookButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const integrationsSection = container.querySelector('#settings-section-integrations')
+    let webhookCard = integrationsSection?.querySelector('.settings-notification-webhook-card')
+    expect(webhookCard).toBeTruthy()
+    if (!webhookCard) return
+
+    const formatSelect = webhookCard.querySelector('select') as HTMLSelectElement | null
+    expect(formatSelect).toBeTruthy()
+    if (!formatSelect) return
+
+    await setFieldValue(formatSelect, 'dynatrace')
+    await flushPromises()
+
+    webhookCard = container.querySelector('#settings-section-integrations .settings-notification-webhook-card')
+    expect(webhookCard).toBeTruthy()
+    if (!webhookCard) return
+
+    const urlInput = webhookCard.querySelector('input[placeholder="https://{environment}.live.dynatrace.com/api/v2/events/ingest"]') as HTMLInputElement | null
+    let tokenInput = webhookCard.querySelector('input[placeholder="dt0c01..."]') as HTMLInputElement | null
+    let timeoutInput = webhookCard.querySelector('input[placeholder="15"]') as HTMLInputElement | null
+    let entityInput = webhookCard.querySelector('input[placeholder="type(SERVICE),entityName.equals(CheckoutService)"]') as HTMLInputElement | null
+    expect(urlInput).toBeTruthy()
+    expect(tokenInput).toBeTruthy()
+    expect(timeoutInput).toBeTruthy()
+    expect(entityInput).toBeTruthy()
+    if (!urlInput || !tokenInput || !timeoutInput || !entityInput) return
+
+    await setFieldValue(urlInput, 'https://example.live.dynatrace.com/api/v2/events/ingest')
+    await flushPromises()
+    tokenInput = container.querySelector('#settings-section-integrations input[placeholder="dt0c01..."]') as HTMLInputElement | null
+    timeoutInput = container.querySelector('#settings-section-integrations input[placeholder="15"]') as HTMLInputElement | null
+    entityInput = container.querySelector('#settings-section-integrations input[placeholder="type(SERVICE),entityName.equals(CheckoutService)"]') as HTMLInputElement | null
+    expect(tokenInput).toBeTruthy()
+    expect(timeoutInput).toBeTruthy()
+    expect(entityInput).toBeTruthy()
+    if (!tokenInput || !timeoutInput || !entityInput) return
+    await setFieldValue(tokenInput, 'dt-token')
+    await flushPromises()
+    timeoutInput = container.querySelector('#settings-section-integrations input[placeholder="15"]') as HTMLInputElement | null
+    entityInput = container.querySelector('#settings-section-integrations input[placeholder="type(SERVICE),entityName.equals(CheckoutService)"]') as HTMLInputElement | null
+    expect(timeoutInput).toBeTruthy()
+    expect(entityInput).toBeTruthy()
+    if (!timeoutInput || !entityInput) return
+    await setFieldValue(timeoutInput, '30')
+    await flushPromises()
+    entityInput = container.querySelector('#settings-section-integrations input[placeholder="type(SERVICE),entityName.equals(CheckoutService)"]') as HTMLInputElement | null
+    expect(entityInput).toBeTruthy()
+    if (!entityInput) return
+    await setFieldValue(entityInput, 'type(SERVICE),entityName.equals(CheckoutService)')
+    await flushPromises()
+
+    const saveButton = findButton('Save Changes')
+    expect(saveButton).toBeDefined()
+    if (!saveButton) return
+    await act(async () => {
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushPromises()
+
+    expect(apiMock.updateSystemSettings).toHaveBeenCalledWith(expect.objectContaining({
+      notifications: {
+        webhooks: [expect.objectContaining({
+          enabled: true,
+          url: 'https://example.live.dynatrace.com/api/v2/events/ingest',
+          format: 'dynatrace',
+          api_token: 'dt-token',
+          timeout_minutes: 30,
+          entity_selector: 'type(SERVICE),entityName.equals(CheckoutService)',
         })],
       },
     }))

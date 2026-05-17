@@ -145,13 +145,14 @@ The 19 gaps are organized into five sequential delivery waves. Each wave targets
 **Goal:** Connect to the observability ecosystem and support edge-case loads.
 
 ### Implemented Status
-- **5.1 APM / Observability Correlation:** Stormrunner now injects W3C `traceparent` headers into HTTP and SOAP test requests, preserves caller-supplied trace headers, archives extracted trace/span IDs in JSONL and Parquet transaction results, supports archive filtering by `trace_id`, and exposes a Prometheus-compatible `/metrics` endpoint with health, websocket, in-memory test counts, test status breakdowns, capacity-planning gauges, and per-region generator inventory gauges.
+- **5.1 APM / Observability Correlation:** Stormrunner now injects W3C `traceparent` headers into HTTP and SOAP test requests, preserves caller-supplied trace headers, archives extracted trace/span IDs in JSONL and Parquet transaction results, supports archive filtering by `trace_id`, emits Dynatrace Events API v2 lifecycle annotations through notification webhooks, and exposes a Prometheus-compatible `/metrics` endpoint with health, websocket, in-memory test counts, test status breakdowns, capacity-planning gauges, and per-region generator inventory gauges.
 - **5.2 Iteration & Rendezvous Control:** Fixed-iteration execution is supported through `run_logic.iterations`, and scripts can now use a `rendezvous` action to synchronize VUsers at a specific point before proceeding.
 
 ### 5.1 APM / Observability Correlation (P2)
 **Effort:** 5-8 days
 - **Trace Injection:** Generate W3C `traceparent` headers for test requests.
 - **Prometheus Exporter:** Expose controller telemetry in Prometheus format.
+- **Dynatrace Events:** Send test lifecycle events to Dynatrace Events API v2 for load-test timeline annotation.
 
 ### 5.2 Iteration & Rendezvous Control (P2)
 **Effort:** 3-4 days
