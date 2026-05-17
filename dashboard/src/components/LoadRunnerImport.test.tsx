@@ -1432,6 +1432,90 @@ describe('LoadRunnerImport', () => {
         skipped: 0,
       },
     })
+    apiMock.importLoadRunner.mockResolvedValueOnce({
+      script: {
+        name: 'Blocked Runtime Script',
+        protocol: 'http',
+        actions: [{ name: 'Homepage' }],
+      },
+      warnings: [],
+      unsupported_elements: [],
+      assumptions: [],
+      review_sections: [],
+      repair_suggestions: [],
+      summary: {
+        project_file: 'Demo.usr',
+        mapped_runtime_file: 'default.cfg',
+        project_sections: ['Actions'],
+        runtime_files: ['default.cfg'],
+        migration_readiness: {
+          score_pct: 100,
+          blocked: false,
+          summary: 'Migration readiness score 100%. No imported runtime settings matched the selected block statuses: blocked, compatibility_only.',
+          policy: { block_statuses: ['blocked', 'compatibility_only'] },
+        },
+        unsupported_function_count: 0,
+      },
+      stats: {
+        total_functions: 1,
+        converted_actions: 1,
+        extractors: 0,
+        think_times: 0,
+        transactions: 0,
+        skipped: 0,
+      },
+    })
+    apiMock.importLoadRunner.mockResolvedValueOnce({
+      script: {
+        name: 'Blocked Runtime Script',
+        protocol: 'http',
+        actions: [{ name: 'Homepage' }],
+      },
+      warnings: [],
+      unsupported_elements: [],
+      assumptions: [],
+      review_sections: [
+        {
+          key: 'runtime_settings_migration_readiness',
+          title: 'Migration Readiness',
+          severity: 'warning',
+          summary: 'Runtime settings currently block promotion under the active policy.',
+          items: ['Logging'],
+        },
+      ],
+      repair_suggestions: [],
+      summary: {
+        project_file: 'Demo.usr',
+        mapped_runtime_file: 'default.cfg',
+        project_sections: ['Actions'],
+        runtime_files: ['default.cfg'],
+        migration_readiness: {
+          score_pct: 72,
+          blocked: true,
+          summary: 'Migration readiness score 72%. Blocking runtime settings matched the selected block statuses: partial.',
+          blocking_statuses: ['partial'],
+          blocking_settings: [
+            {
+              id: 'logging',
+              area: 'Logging',
+              concept: 'Log level, error-only, and extended logging options',
+              status: 'partial',
+              runtime_files: ['default.cfg'],
+            },
+          ],
+          policy: { block_statuses: ['blocked', 'partial', 'compatibility_only'] },
+        },
+        unsupported_function_count: 0,
+      },
+      stats: {
+        total_functions: 1,
+        converted_actions: 1,
+        extractors: 0,
+        think_times: 0,
+        transactions: 0,
+        skipped: 0,
+      },
+    })
 
     await act(async () => {
       root.render(<LoadRunnerImport />)
@@ -1466,7 +1550,8 @@ describe('LoadRunnerImport', () => {
 
     await flushPromises()
 
-    expect(container.textContent).toContain('Active migration block policy: Blocked, Partial, Compatibility Only')
+    expect(container.textContent).toContain('Selected migration block policy: Blocked, Partial, Compatibility Only')
+    expect(container.textContent).toContain('Reviewed migration block policy: Blocked, Partial, Compatibility Only')
 
     const relaxPolicyButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Allow Partial Runtime Settings And Refresh Review'))
     expect(relaxPolicyButton).toBeDefined()
@@ -1495,7 +1580,8 @@ describe('LoadRunnerImport', () => {
 
     const checkboxes = Array.from(container.querySelectorAll('input[type="checkbox"]')) as HTMLInputElement[]
     expect(checkboxes[2]?.checked).toBe(false)
-    expect(container.textContent).toContain('Active migration block policy: Blocked, Compatibility Only')
+    expect(container.textContent).toContain('Selected migration block policy: Blocked, Compatibility Only')
+    expect(container.textContent).toContain('Reviewed migration block policy: Blocked, Compatibility Only')
     expect(container.textContent).toContain('Conversion refreshed with migration block policy: Blocked, Compatibility Only.')
 
     const restorePolicyButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Restore Recommended Block Policy'))
@@ -1523,8 +1609,56 @@ describe('LoadRunnerImport', () => {
       },
     ])
     expect(checkboxes[2]?.checked).toBe(true)
-    expect(container.textContent).toContain('Active migration block policy: Blocked, Partial, Compatibility Only')
+    expect(container.textContent).toContain('Selected migration block policy: Blocked, Partial, Compatibility Only')
+    expect(container.textContent).toContain('Reviewed migration block policy: Blocked, Partial, Compatibility Only')
     expect(container.textContent).toContain('Conversion refreshed with migration block policy: Blocked, Partial, Compatibility Only.')
+  })
+
+  it('shows pending migration policy changes until the review is refreshed', async () => {
+    await act(async () => {
+      root.render(<LoadRunnerImport />)
+    })
+
+    await flushPromises()
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
+    expect(fileInput).not.toBeNull()
+    if (!fileInput) {
+      return
+    }
+
+    const file = new File(['zip-content'], 'demo.zip', { type: 'application/zip' })
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [file],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert LoadRunner Script'))
+    expect(convertButton).toBeDefined()
+    if (!convertButton) {
+      return
+    }
+
+    await act(async () => {
+      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushPromises()
+
+    expect(container.textContent).toContain('Selected migration block policy: Blocked, Partial, Compatibility Only')
+    expect(container.textContent).toContain('Reviewed migration block policy: Blocked, Partial, Compatibility Only')
+
+    const checkboxes = Array.from(container.querySelectorAll('input[type="checkbox"]')) as HTMLInputElement[]
+    await act(async () => {
+      checkboxes[2]?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.textContent).toContain('Selected migration block policy: Blocked, Compatibility Only')
+    expect(container.textContent).toContain('Reviewed migration block policy: Blocked, Partial, Compatibility Only')
+    expect(container.textContent).toContain('Refresh review to apply the selected migration block policy.')
   })
 
   it('opens a mapped parameter source in the visual editor with a mapping focus hint', async () => {

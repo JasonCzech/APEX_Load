@@ -124,6 +124,24 @@ function hasCustomMigrationBlockPolicy(options: Pick<ImportOptions, 'block_parti
     || options.block_non_applicable !== DEFAULT_IMPORT_OPTIONS.block_non_applicable
 }
 
+function buildMigrationPolicyOptions(statuses?: string[] | null): Pick<ImportOptions, 'block_partial' | 'block_compatibility_only' | 'block_non_applicable'> {
+  const normalizedStatuses = new Set((statuses || []).map((status) => status.trim().toLowerCase()).filter(Boolean))
+  return {
+    block_partial: normalizedStatuses.has('partial'),
+    block_compatibility_only: normalizedStatuses.has('compatibility_only'),
+    block_non_applicable: normalizedStatuses.has('non_applicable'),
+  }
+}
+
+function sameMigrationBlockPolicy(
+  left: Pick<ImportOptions, 'block_partial' | 'block_compatibility_only' | 'block_non_applicable'>,
+  right: Pick<ImportOptions, 'block_partial' | 'block_compatibility_only' | 'block_non_applicable'>,
+) {
+  return left.block_partial === right.block_partial
+    && left.block_compatibility_only === right.block_compatibility_only
+    && left.block_non_applicable === right.block_non_applicable
+}
+
 function buildMigrationPolicyRefreshNotice(mode: 'convert' | 'validate', options: Pick<ImportOptions, 'block_partial' | 'block_compatibility_only' | 'block_non_applicable'>) {
   const prefix = mode === 'validate' ? 'Validation refreshed' : 'Conversion refreshed'
   return `${prefix} with migration block policy: ${formatMigrationBlockPolicySummary(options)}.`
@@ -222,6 +240,10 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
   const repairSuggestions = result?.repair_suggestions || []
   const supportMatrixSections = summarizeLoadRunnerSupportMatrix(supportMatrix)
   const migrationReadiness: LoadRunnerMigrationReadiness | null = reviewSummary?.migration_readiness || null
+  const reviewedMigrationPolicy = migrationReadiness?.policy?.block_statuses
+    ? buildMigrationPolicyOptions(migrationReadiness.policy.block_statuses)
+    : null
+  const hasPendingMigrationPolicyChanges = reviewedMigrationPolicy !== null && !sameMigrationBlockPolicy(options, reviewedMigrationPolicy)
   const saveBlockedByMigrationPolicy = Boolean(migrationReadiness?.blocked)
   const browserImport = isBrowserImport(importedScript)
   const runtimeBlockingSettings = importSummary.runtimeSettingReadiness?.blocking_settings || []
@@ -585,7 +607,13 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
             <span>Treat non-applicable runtime settings as blockers</span>
           </label>
         </div>
-        <p className="lr-subtitle">Active migration block policy: {formatMigrationBlockPolicySummary(options)}</p>
+        <p className="lr-subtitle">Selected migration block policy: {formatMigrationBlockPolicySummary(options)}</p>
+        {reviewedMigrationPolicy && (
+          <p className="lr-subtitle">Reviewed migration block policy: {formatMigrationBlockPolicySummary(reviewedMigrationPolicy)}</p>
+        )}
+        {hasPendingMigrationPolicyChanges && (
+          <p className="lr-subtitle">Refresh review to apply the selected migration block policy.</p>
+        )}
         {hasCustomMigrationBlockPolicy(options) && (
           <div className="replay-panel-actions" style={actionWrapStyle}>
             <button className="btn btn-secondary btn-sm" onClick={restoreRecommendedMigrationPolicy}>
