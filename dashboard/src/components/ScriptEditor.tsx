@@ -6,6 +6,7 @@ import {
   BrowserReplayReport,
   BrowserReplaySession,
   BrowserReplaySnapshot,
+  StoredScript,
   WSMessage,
 } from '../types'
 import {
@@ -321,7 +322,7 @@ interface Props {
   initialScript?: ScriptData | null
   projectId?: string
   folderId?: string | null
-  onSave?: () => void
+  onSave?: (script: StoredScript) => void
   onClose?: () => void
 }
 
@@ -1131,14 +1132,15 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
     setError(''); setSuccess(''); setWarnings([]); setSaving(true)
     try {
       const currentScript = resolveCurrentScript()
+      let savedScript: StoredScript
       if (scriptId) {
-        await api.updateScript(scriptId, currentScript)
+        savedScript = await api.updateScript(scriptId, currentScript)
       } else {
-        await api.createScript(currentScript, projectId, folderId)
+        savedScript = await api.createScript(currentScript, projectId, folderId)
       }
       if (jsonMode) setScript(currentScript)
       setSuccess('Script saved successfully!')
-      onSave?.()
+      onSave?.(savedScript)
     } catch (e: unknown) {
       setError(getErrorMessage(e, 'Failed to save script'))
     } finally { setSaving(false) }

@@ -1,5 +1,5 @@
 import { type ScriptDefinition } from '../types/scripts'
-import { Project } from '../types'
+import { Project, type StoredScript } from '../types'
 import ScriptEditor from './ScriptEditor'
 import LoadRunnerImport from './LoadRunnerImport'
 import JMeterImport from './JMeterImport'
@@ -15,7 +15,7 @@ interface Props {
   editingScript: ScriptDefinition | null
   projectId?: string
   activeProject?: Project | null
-  onSaved: () => void
+  onSaved: (script: StoredScript) => void
   onOpenLibrary: () => void
   onOpenCreateOptions: () => void
   onImported: () => void

@@ -6,6 +6,7 @@ import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import ScriptsAuthoringShell from './ScriptsAuthoringShell'
+import { type StoredScript } from '../types'
 import { type ScriptDefinition } from '../types/scripts'
 import { type AuthoringState, type ScriptsCreateOptionActions } from './useScriptsAuthoringState'
 
@@ -27,7 +28,7 @@ vi.mock('./ScriptsAuthoringSurface', () => ({
     draftScript?: { name?: string } | null
     editingId?: string | null
     projectId?: string
-    onSaved?: () => void
+    onSaved?: (script: StoredScript) => void
     onOpenLibrary?: () => void
     onOpenCreateOptions?: () => void
     onImported?: () => void
@@ -38,7 +39,13 @@ vi.mock('./ScriptsAuthoringSurface', () => ({
       <span>draft:{draftScript?.name || 'none'}</span>
       <span>editing:{editingId || 'none'}</span>
       <span>project:{projectId || 'none'}</span>
-      <button onClick={onSaved}>surface-save</button>
+      <button onClick={() => onSaved?.({
+        id: 'saved-script-1',
+        name: 'Saved Script',
+        protocol: 'http',
+        version: '1.0.0',
+        created_at: '2026-05-17T00:00:00Z',
+      })}>surface-save</button>
       <button onClick={onOpenLibrary}>surface-library</button>
       <button onClick={onOpenCreateOptions}>surface-create-options</button>
       <button onClick={onImported}>surface-imported</button>
@@ -169,7 +176,7 @@ describe('ScriptsAuthoringShell', () => {
     await clickButton('surface-imported')
     await clickButton('surface-edit-draft')
 
-    expect(onSaved).toHaveBeenCalled()
+    expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ id: 'saved-script-1', name: 'Saved Script' }))
     expect(onOpenLibrary).toHaveBeenCalled()
     expect(onOpenCreateOptions).toHaveBeenCalled()
     expect(onImported).toHaveBeenCalled()
@@ -188,7 +195,7 @@ describe('ScriptsAuthoringShell', () => {
   }: {
     authoringState: AuthoringState
     createOptionActions?: ScriptsCreateOptionActions
-    onSaved?: () => void
+    onSaved?: (script: StoredScript) => void
     onOpenLibrary?: () => void
     onOpenCreateOptions?: () => void
     onImported?: () => void

@@ -1,6 +1,6 @@
 import { type ComponentProps, type ReactNode } from 'react'
 
-import { type Project } from '../types'
+import { type Project, type StoredScript } from '../types'
 import ScriptCreateOptions from './ScriptCreateOptions'
 import ScriptsAuthoringSurface from './ScriptsAuthoringSurface'
 import { type AuthoringState, type ScriptsCreateOptionActions } from './useScriptsAuthoringState'
@@ -10,7 +10,7 @@ interface Props {
   projectId?: string
   activeProject?: Project | null
   createOptionActions: ScriptsCreateOptionActions
-  onSaved: () => void
+  onSaved: (script: StoredScript) => void
   onOpenLibrary: () => void
   onOpenCreateOptions: () => void
   onImported: () => void

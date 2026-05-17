@@ -26,11 +26,11 @@ vi.mock('../hooks/useProject', () => ({
 }))
 
 vi.mock('./ScriptEditor', () => ({
-  default: ({ initialScript, scriptId, onSave, onClose }: { initialScript?: { name?: string }, scriptId?: string | null, onSave?: () => void, onClose?: () => void }) => (
+  default: ({ initialScript, scriptId, onSave, onClose }: { initialScript?: { name?: string }, scriptId?: string | null, onSave?: (script: { id: string; name: string }) => void, onClose?: () => void }) => (
     <div data-testid="script-editor">
       <span>editor:{initialScript?.name || 'blank'}</span>
       <span>script-id:{scriptId || 'none'}</span>
-      <button onClick={onSave}>mock-save</button>
+      <button onClick={() => onSave?.({ id: 'saved-script-1', name: initialScript?.name || 'Saved Script' })}>mock-save</button>
       <button onClick={onClose}>mock-close</button>
     </div>
   ),

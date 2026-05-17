@@ -220,10 +220,11 @@ That order minimizes churn and avoids rebuilding the UI around unstable backend 
 - The scripts library now renders list, create-options, and active authoring subviews through a dedicated `ScriptsAuthoringShell`, leaving `ScriptsPage` focused on library fetch, refresh, delete, and table callbacks.
 - Editor replay and LoadRunner browser-import replay validation now build replay requests through one shared helper, so draft, saved, and imported browser paths agree on project binding, group names, variables, browser defaults, viewport fallback, and screenshot-capture behavior.
 - Draft script validation now has a first-class API endpoint and the script editor uses one validation action for both unsaved drafts and stored scripts, keeping browser compatibility warnings and validation issues aligned before save.
+- The script editor now returns the API's stored-script payload through the shared save callback, giving the authoring shell a concrete persisted-script handoff for both create and update saves.
 
 ### Remaining High-Value Work
 - Finish the scenario assembly path by tightening `TestExecution` adjacencies and shared execution/result models now that `CreateTestModal` is aligned on one shared draft state owner.
-- Continue shared authoring lifecycle work by aligning save handoffs and remaining acquire/review/edit state transitions now that route branching, replay request construction, and draft validation are shared.
+- Continue shared authoring lifecycle work by using the stored-script save handoff to align remaining acquire/review/edit/validate/save state transitions across import and recorder paths.
 - Run the end-to-end parity pass, then remove any temporary normalization or migration adapters that remain after validation.
 
 ### Current Cleanup Note

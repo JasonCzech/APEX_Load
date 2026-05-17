@@ -556,6 +556,41 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('Draft browser config will use Chromium defaults.')
   })
 
+  it('passes the stored script response through the save callback', async () => {
+    const onSave = vi.fn()
+    apiMock.createScript.mockResolvedValueOnce({
+      id: 'script-saved-1',
+      name: initialScript.name,
+      protocol: initialScript.protocol,
+      version: initialScript.version,
+      created_at: '2026-05-17T00:00:00Z',
+      script: initialScript,
+    })
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={initialScript} onSave={onSave} />)
+    })
+
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button =>
+      button.textContent?.includes('Save Script'),
+    )
+    expect(saveButton).toBeDefined()
+    if (!saveButton) {
+      return
+    }
+
+    await act(async () => {
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'script-saved-1',
+      name: initialScript.name,
+    }))
+    expect(container.textContent).toContain('Script saved successfully!')
+  })
+
   it('renders the new Web HTTP/HTML runtime sections from the draft model', async () => {
     await act(async () => {
       root.render(<ScriptEditor initialScript={initialScript} />)
