@@ -25,14 +25,17 @@ type AuthUserSummary struct {
 }
 
 type AuthStatusResponse struct {
-	Enabled       bool             `json:"enabled"`
-	Mode          string           `json:"mode"`
-	ProviderName  string           `json:"provider_name,omitempty"`
-	LoginURL      string           `json:"login_url,omitempty"`
-	LogoutURL     string           `json:"logout_url,omitempty"`
-	LogoutCSRF    string           `json:"logout_csrf_token,omitempty"`
-	Authenticated bool             `json:"authenticated"`
-	User          *AuthUserSummary `json:"user,omitempty"`
+	Enabled           bool             `json:"enabled"`
+	Mode              string           `json:"mode"`
+	ProviderName      string           `json:"provider_name,omitempty"`
+	LoginURL          string           `json:"login_url,omitempty"`
+	LogoutURL         string           `json:"logout_url,omitempty"`
+	LogoutCSRF        string           `json:"logout_csrf_token,omitempty"`
+	Authenticated     bool             `json:"authenticated"`
+	SessionStatus     string           `json:"session_status,omitempty"`
+	SessionExpiresAt  string           `json:"session_expires_at,omitempty"`
+	SessionTTLSeconds int64            `json:"session_ttl_seconds,omitempty"`
+	User              *AuthUserSummary `json:"user,omitempty"`
 }
 
 type AuthLogoutResponse struct {
@@ -277,6 +280,28 @@ func (s *Server) handleGetAuthStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if settings.Mode == authModeOIDC {
+		sessionResolution := resolveOIDCSession(r, settings)
+		response.SessionStatus = sessionResolution.Status
+		if !sessionResolution.Session.ExpiresAt.IsZero() {
+			response.SessionExpiresAt = sessionResolution.Session.ExpiresAt.Format(time.RFC3339)
+			if ttl := int64(time.Until(sessionResolution.Session.ExpiresAt).Seconds()); ttl > 0 {
+				response.SessionTTLSeconds = ttl
+			}
+		}
+		if sessionResolution.User == nil {
+			writeJSON(w, http.StatusOK, response)
+			return
+		}
+		response.Authenticated = true
+		response.User = authUserSummary(sessionResolution.User)
+		if csrfToken, err := issueOIDCLogoutCSRFToken(sessionResolution.User, settings); err == nil {
+			response.LogoutCSRF = csrfToken
+		}
+		writeJSON(w, http.StatusOK, response)
+		return
+	}
+
 	resolution, err := resolveRequestAuth(r, settings, s.store)
 	if err != nil {
 		writeJSON(w, http.StatusOK, response)
@@ -285,11 +310,6 @@ func (s *Server) handleGetAuthStatus(w http.ResponseWriter, r *http.Request) {
 
 	response.Authenticated = true
 	response.User = authUserSummary(resolution.User)
-	if settings.Mode == authModeOIDC {
-		if csrfToken, err := issueOIDCLogoutCSRFToken(resolution.User, settings); err == nil {
-			response.LogoutCSRF = csrfToken
-		}
-	}
 	writeJSON(w, http.StatusOK, response)
 }
 
@@ -364,13 +384,30 @@ func buildAuthDiagnosticsResponse(r *http.Request, settings AuthSettings, store 
 			buildOptionalOperatorCheck("provider_label", "Provider Label", settings.ProviderName, "Add a provider label so the dashboard sign-in flow names the IdP clearly for operators."),
 		)
 		response.Checks = append(response.Checks, buildOIDCDiscoveryCheck(r.Context(), settings))
-		if user, err := authenticatedUserFromOIDCSession(r, settings); err == nil && user != nil {
+		sessionResolution := resolveOIDCSession(r, settings)
+		if sessionResolution.User != nil {
 			response.Checks = append(response.Checks, AuthDiagnosticsCheck{
 				ID:      "current_session",
 				Label:   "Current Session",
 				Status:  "pass",
 				Summary: "Stormrunner has an active signed OIDC session for the current request.",
-				Detail:  user.Subject,
+				Detail:  sessionResolution.User.Subject,
+			})
+		} else if sessionResolution.Status == "expired" {
+			response.Checks = append(response.Checks, AuthDiagnosticsCheck{
+				ID:      "current_session",
+				Label:   "Current Session",
+				Status:  "warn",
+				Summary: "The local Stormrunner OIDC session has expired.",
+				Detail:  "Sign in again through the native OIDC flow.",
+			})
+		} else if sessionResolution.Status == "invalid" {
+			response.Checks = append(response.Checks, AuthDiagnosticsCheck{
+				ID:      "current_session",
+				Label:   "Current Session",
+				Status:  "warn",
+				Summary: "Stormrunner could not verify the local OIDC session cookie.",
+				Detail:  "Clear the browser session cookie and sign in again.",
 			})
 		} else {
 			response.Checks = append(response.Checks, AuthDiagnosticsCheck{

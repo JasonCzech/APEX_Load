@@ -95,6 +95,20 @@ describe('AuthGate', () => {
     expect(link?.getAttribute('href')).toBe('/api/v1/auth/login')
     expect(container.textContent).not.toContain('Protected content')
   })
+
+  it('explains when the native oidc session expired', async () => {
+    await act(async () => {
+      root.render(
+        <AuthGate state={readyState({ enabled: true, mode: 'oidc', provider_name: 'Microsoft Entra ID', login_url: '/api/v1/auth/login', authenticated: false, session_status: 'expired' })}>
+          <div data-testid="protected">Protected content</div>
+        </AuthGate>,
+      )
+    })
+
+    expect(container.textContent).toContain('session has expired')
+    expect(container.textContent).toContain('Continue to Microsoft Entra ID')
+    expect(container.textContent).not.toContain('Protected content')
+  })
 })
 
 function readyState(auth: ReadyAuthState): AuthStatusState {

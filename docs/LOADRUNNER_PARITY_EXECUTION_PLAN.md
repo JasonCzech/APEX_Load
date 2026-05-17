@@ -301,6 +301,11 @@ Acceptance criteria:
 - Auth mode choice is explicit and documented
 - Production diagnostics make auth misconfiguration visible quickly
 
+Progress:
+- G1.1/G1.2 are implemented with support for trusted-header gateway auth and native OIDC, with trusted headers still recommended when an upstream identity gateway already owns browser sign-in.
+- G1.4 now includes backend-owned auth diagnostics for trusted-header and OIDC readiness, current-session state, issuer discovery, and local session expiry/invalid-cookie states.
+- Native SAML is intentionally out of scope for this wave; SAML-backed deployments should terminate at an upstream gateway and use the trusted-header contract.
+
 ### Epic G2: RBAC Coverage And Enforcement
 Goal: ensure roles mean the same thing across API and dashboard behavior.
 
@@ -332,6 +337,9 @@ Acceptance criteria:
 - Service accounts are production-manageable
 - Audit evidence is queryable and exportable
 - Security-sensitive auth flows are explicitly reviewed and documented
+
+Progress:
+- G3.5 has a first hardening pass: native OIDC logout is a CSRF-protected `POST`, `/auth/me` reports session expiry metadata, the dashboard warns on imminent local-session expiry, and representative OIDC callback failures are audited without persisting authorization codes, raw tokens, client secrets, or signed cookie material.
 
 ### Epic G4: Directory And Lifecycle Extensions
 Goal: handle the remaining parity gap between Stormrunner's current platform auth and a mature enterprise identity model.

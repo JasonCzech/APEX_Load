@@ -54,6 +54,9 @@ func TestHandleGetAuthStatusReturnsOIDCLoginAndLogoutURLs(t *testing.T) {
 	if payload.LogoutCSRF != "" {
 		t.Fatalf("logout csrf token = %q, want empty for unauthenticated status", payload.LogoutCSRF)
 	}
+	if payload.SessionStatus != "missing" {
+		t.Fatalf("session status = %q, want missing", payload.SessionStatus)
+	}
 }
 
 func TestHandleGetAuthDiagnosticsReturnsHealthyOIDCReadiness(t *testing.T) {
@@ -170,6 +173,12 @@ func TestOIDCLoginCallbackCreatesSessionAndAuthorizesProtectedRoutes(t *testing.
 	if strings.TrimSpace(statusPayload.LogoutCSRF) == "" {
 		t.Fatal("expected authenticated oidc status to include logout csrf token")
 	}
+	if statusPayload.SessionStatus != "active" {
+		t.Fatalf("session status = %q, want active", statusPayload.SessionStatus)
+	}
+	if statusPayload.SessionExpiresAt == "" || statusPayload.SessionTTLSeconds <= 0 {
+		t.Fatalf("session expiry metadata = (%q, %d), want populated", statusPayload.SessionExpiresAt, statusPayload.SessionTTLSeconds)
+	}
 
 	protectedReq := httptest.NewRequest(http.MethodGet, "/api/v1/system/settings", nil)
 	protectedReq.AddCookie(sessionCookie)
@@ -229,6 +238,85 @@ func TestOIDCLogoutRejectsMissingCSRFToken(t *testing.T) {
 	}
 }
 
+func TestHandleGetAuthStatusReportsExpiredOIDCSession(t *testing.T) {
+	provider := newFakeOIDCProvider(t)
+	defer provider.Close()
+	t.Setenv("STORMRUNNER_OIDC_CLIENT_SECRET", "test-client-secret")
+	t.Setenv("STORMRUNNER_AUTH_SESSION_SECRET", "test-session-secret")
+
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	enableOIDCAuth(t, server, provider.Issuer)
+	expiredCookie := issueOIDCTestSessionCookieWithExpiry(t, server, "alice", time.Now().UTC().Add(-time.Minute))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/me", nil)
+	req.AddCookie(expiredCookie)
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var payload AuthStatusResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal auth status: %v", err)
+	}
+	if payload.Authenticated {
+		t.Fatalf("expected expired session to be unauthenticated, got %#v", payload)
+	}
+	if payload.SessionStatus != "expired" {
+		t.Fatalf("session status = %q, want expired", payload.SessionStatus)
+	}
+	if payload.SessionExpiresAt == "" {
+		t.Fatalf("session expires at should remain visible for expired sessions")
+	}
+}
+
+func TestOIDCCallbackFailureIsAuditedWithoutSensitiveMaterial(t *testing.T) {
+	provider := newFakeOIDCProvider(t)
+	defer provider.Close()
+	t.Setenv("STORMRUNNER_OIDC_CLIENT_SECRET", "test-client-secret")
+	t.Setenv("STORMRUNNER_AUTH_SESSION_SECRET", "test-session-secret")
+
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	enableOIDCAuth(t, server, provider.Issuer)
+
+	loginReq := httptest.NewRequest(http.MethodGet, oidcLoginPath, nil)
+	loginResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(loginResp, loginReq)
+	stateCookie := findResponseCookie(t, loginResp.Result().Cookies(), oidcStateCookieName)
+
+	callbackReq := httptest.NewRequest(http.MethodGet, "/api/v1/auth/callback?state=wrong-state&code=secret-code", nil)
+	callbackReq.AddCookie(stateCookie)
+	callbackResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(callbackResp, callbackReq)
+
+	if callbackResp.Code != http.StatusUnauthorized {
+		t.Fatalf("callback status = %d, want %d body=%s", callbackResp.Code, http.StatusUnauthorized, callbackResp.Body.String())
+	}
+	events, err := store.ListAuditEvents(storage.AuditEventFilter{Action: "auth.oidc.callback", Limit: 10})
+	if err != nil {
+		t.Fatalf("ListAuditEvents returned error: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("audit events = %#v, want one callback failure", events)
+	}
+	if events[0].Status != "failure" {
+		t.Fatalf("audit status = %q, want failure", events[0].Status)
+	}
+	if events[0].Details["reason"] != "state_mismatch" {
+		t.Fatalf("audit details = %#v, want state_mismatch reason", events[0].Details)
+	}
+	if _, ok := events[0].Details["code"]; ok {
+		t.Fatalf("audit details leaked code: %#v", events[0].Details)
+	}
+}
+
 func TestHandleGetAuthAccessMatrixReturnsRBACVersionWhenOIDCEnabled(t *testing.T) {
 	provider := newFakeOIDCProvider(t)
 	defer provider.Close()
@@ -274,11 +362,16 @@ func enableOIDCAuth(t *testing.T, server *Server, issuerURL string) {
 
 func issueOIDCTestSessionCookie(t *testing.T, server *Server, subject string) *http.Cookie {
 	t.Helper()
+	return issueOIDCTestSessionCookieWithExpiry(t, server, subject, time.Now().UTC().Add(time.Hour))
+}
+
+func issueOIDCTestSessionCookieWithExpiry(t *testing.T, server *Server, subject string, expiresAt time.Time) *http.Cookie {
+	t.Helper()
 	settings := normalizeAuthSettings(server.runner.GetSystemSettings().Auth)
 	encodedSession, err := encodeSignedCookieValue(oidcSessionToken{
 		Subject:   subject,
 		IssuedAt:  time.Now().UTC(),
-		ExpiresAt: time.Now().UTC().Add(time.Hour),
+		ExpiresAt: expiresAt,
 	}, strings.TrimSpace(getenvOrFatal(t, settings.SessionSecretEnvVar)))
 	if err != nil {
 		t.Fatalf("encodeSignedCookieValue returned error: %v", err)

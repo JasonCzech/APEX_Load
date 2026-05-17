@@ -286,6 +286,12 @@
   font-size: 12px;
 }
 
+.sidebar-identity-session {
+  color: var(--warning);
+  font-size: 12px;
+  font-weight: 600;
+}
+
 .sidebar-identity-action {
   color: var(--accent);
   font-size: 12px;

@@ -136,6 +136,7 @@ export default function Sidebar({
   const identityTitle = formatIdentityTitle(authStatus, identityMeta)
   const logoutURL = authStatus?.authenticated ? authStatus.logout_url?.trim() || '' : ''
   const canPostLogout = authStatus?.authenticated && authStatus.mode === 'oidc' && Boolean(authStatus.logout_csrf_token?.trim())
+  const sessionExpiryNotice = formatSessionExpiryNotice(authStatus)
 
   const handleNewProject = async (name: string) => {
     if (!onCreateProject) return
@@ -308,6 +309,7 @@ export default function Sidebar({
                 <div className="sidebar-identity-copy">
                   <span className="sidebar-identity-name">{identityName}</span>
                   {identityMeta && <span className="sidebar-identity-meta">{identityMeta}</span>}
+                  {sessionExpiryNotice && <span className="sidebar-identity-session">{sessionExpiryNotice}</span>}
                   {logoutURL && (canPostLogout ? (
                     <button
                       type="button"
@@ -417,4 +419,16 @@ function formatIdentityTitle(authStatus?: DashboardAuthStatus, identityMeta?: st
     parts.push(identityMeta)
   }
   return parts.join(' • ')
+}
+
+function formatSessionExpiryNotice(authStatus?: DashboardAuthStatus): string {
+  if (!authStatus?.authenticated || authStatus.mode !== 'oidc') {
+    return ''
+  }
+  const ttl = authStatus.session_ttl_seconds
+  if (typeof ttl !== 'number' || Number.isNaN(ttl) || ttl <= 0 || ttl > 15 * 60) {
+    return ''
+  }
+  const minutes = Math.max(1, Math.ceil(ttl / 60))
+  return `Session expires in ${minutes} min`
 }

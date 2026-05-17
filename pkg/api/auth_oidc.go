@@ -56,6 +56,12 @@ type oidcLogoutCSRFToken struct {
 	IssuedAt  time.Time `json:"iat"`
 }
 
+type oidcSessionResolution struct {
+	User    *AuthenticatedUser
+	Session oidcSessionToken
+	Status  string
+}
+
 func authStatusURLs(settings AuthSettings) (string, string) {
 	if settings.Mode == authModeOIDC {
 		return oidcLoginPath, oidcLogoutPath
@@ -64,28 +70,39 @@ func authStatusURLs(settings AuthSettings) (string, string) {
 }
 
 func authenticatedUserFromOIDCSession(r *http.Request, settings AuthSettings) (*AuthenticatedUser, error) {
+	resolution := resolveOIDCSession(r, settings)
+	if resolution.User == nil {
+		return nil, fmt.Errorf("authentication required")
+	}
+	return resolution.User, nil
+}
+
+func resolveOIDCSession(r *http.Request, settings AuthSettings) oidcSessionResolution {
 	secret, err := authSessionSecret(settings)
 	if err != nil {
-		return nil, fmt.Errorf("authentication required")
+		return oidcSessionResolution{Status: "unavailable"}
 	}
 	cookie, err := r.Cookie(oidcSessionCookieName)
 	if err != nil {
-		return nil, fmt.Errorf("authentication required")
+		return oidcSessionResolution{Status: "missing"}
 	}
 	var session oidcSessionToken
 	if err := decodeSignedCookieValue(cookie.Value, secret, &session); err != nil {
-		return nil, fmt.Errorf("authentication required")
+		return oidcSessionResolution{Status: "invalid"}
 	}
-	if session.Subject == "" || time.Now().UTC().After(session.ExpiresAt) {
-		return nil, fmt.Errorf("authentication required")
+	if session.Subject == "" {
+		return oidcSessionResolution{Session: session, Status: "invalid"}
 	}
-	return &AuthenticatedUser{
+	if time.Now().UTC().After(session.ExpiresAt) {
+		return oidcSessionResolution{Session: session, Status: "expired"}
+	}
+	return oidcSessionResolution{Status: "active", Session: session, User: &AuthenticatedUser{
 		Subject:      session.Subject,
 		DisplayName:  session.DisplayName,
 		Email:        session.Email,
 		GlobalRoles:  sliceToRoleSet(session.GlobalRoles),
 		ProjectRoles: mapToProjectRoleSet(session.ProjectRoles),
-	}, nil
+	}}
 }
 
 func (s *Server) handleOIDCLogin(w http.ResponseWriter, r *http.Request) {
@@ -141,59 +158,71 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	runtime, err := newOIDCRuntime(r.Context(), settings)
 	if err != nil {
+		s.recordOIDCCallbackFailure(r, "runtime_initialization_failed", map[string]any{"error": err.Error()})
 		writeError(w, http.StatusServiceUnavailable, err.Error())
 		return
 	}
 	stateCookie, err := r.Cookie(oidcStateCookieName)
 	if err != nil {
+		s.recordOIDCCallbackFailure(r, "missing_state_cookie", nil)
 		writeError(w, http.StatusUnauthorized, "authentication required")
 		return
 	}
 	var loginState oidcStateToken
 	if err := decodeSignedCookieValue(stateCookie.Value, runtime.sessionSecret, &loginState); err != nil || loginState.State == "" || time.Now().UTC().After(loginState.ExpiresAt) {
+		s.recordOIDCCallbackFailure(r, "invalid_or_expired_state_cookie", nil)
 		writeError(w, http.StatusUnauthorized, "authentication required")
 		return
 	}
 	if subtleQueryValue(r.URL.Query().Get("state")) != loginState.State {
+		s.recordOIDCCallbackFailure(r, "state_mismatch", nil)
 		writeError(w, http.StatusUnauthorized, "authentication required")
 		return
 	}
 	code := strings.TrimSpace(r.URL.Query().Get("code"))
 	if code == "" {
+		s.recordOIDCCallbackFailure(r, "missing_authorization_code", nil)
 		writeError(w, http.StatusBadRequest, "authorization code is required")
 		return
 	}
 	token, err := runtime.oauth2Config.Exchange(r.Context(), code)
 	if err != nil {
+		s.recordOIDCCallbackFailure(r, "token_exchange_failed", nil)
 		writeError(w, http.StatusUnauthorized, "oidc token exchange failed")
 		return
 	}
 	rawIDToken, ok := token.Extra("id_token").(string)
 	if !ok || strings.TrimSpace(rawIDToken) == "" {
+		s.recordOIDCCallbackFailure(r, "missing_id_token", nil)
 		writeError(w, http.StatusUnauthorized, "oidc id_token is missing")
 		return
 	}
 	idToken, err := runtime.verifier.Verify(r.Context(), rawIDToken)
 	if err != nil {
+		s.recordOIDCCallbackFailure(r, "id_token_verification_failed", nil)
 		writeError(w, http.StatusUnauthorized, "oidc id_token verification failed")
 		return
 	}
 	var claims map[string]any
 	if err := idToken.Claims(&claims); err != nil {
+		s.recordOIDCCallbackFailure(r, "id_token_claims_invalid", nil)
 		writeError(w, http.StatusUnauthorized, "oidc id_token claims are invalid")
 		return
 	}
 	if strings.TrimSpace(stringClaim(claims["nonce"])) != loginState.Nonce {
+		s.recordOIDCCallbackFailure(r, "nonce_mismatch", nil)
 		writeError(w, http.StatusUnauthorized, "oidc nonce verification failed")
 		return
 	}
 	user, session, err := authenticatedUserFromOIDCClaims(claims, idToken.Expiry, settings)
 	if err != nil {
+		s.recordOIDCCallbackFailure(r, "claim_mapping_failed", map[string]any{"error": err.Error()})
 		writeError(w, http.StatusUnauthorized, err.Error())
 		return
 	}
 	encodedSession, err := encodeSignedCookieValue(session, runtime.sessionSecret)
 	if err != nil {
+		s.recordOIDCCallbackFailure(r, "session_creation_failed", map[string]any{"error": err.Error()})
 		writeError(w, http.StatusInternalServerError, "failed to create oidc session")
 		return
 	}
@@ -209,6 +238,18 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	clearAuthCookie(w, settings, oidcStateCookieName, "/api/v1/auth")
 	s.recordAuditEvent(withAuthenticatedContext(r, authResolution{User: user}), "auth.oidc.login", "success", "auth_session", user.Subject, "", nil)
 	http.Redirect(w, r, loginState.ReturnTo, http.StatusSeeOther)
+}
+
+func (s *Server) recordOIDCCallbackFailure(r *http.Request, reason string, details map[string]any) {
+	safeDetails := map[string]any{"reason": reason}
+	for key, value := range details {
+		normalizedKey := strings.ToLower(strings.TrimSpace(key))
+		if normalizedKey == "" || strings.Contains(normalizedKey, "token") || strings.Contains(normalizedKey, "code") || strings.Contains(normalizedKey, "secret") {
+			continue
+		}
+		safeDetails[normalizedKey] = value
+	}
+	s.recordAuditEvent(r, "auth.oidc.callback", "failure", "auth_session", "", "", safeDetails)
 }
 
 func (s *Server) handleOIDCLogout(w http.ResponseWriter, r *http.Request) {

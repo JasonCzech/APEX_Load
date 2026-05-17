@@ -11,7 +11,11 @@ export default function AuthGate({ children, state }: { children: ReactNode; sta
       : 'access gateway'
 
   const blockedMessage = state.status === 'ready' && state.auth.mode === 'oidc'
-    ? `This dashboard is configured for native OIDC authentication. Complete sign-in with ${providerLabel} so Stormrunner can establish your session.`
+    ? state.auth.session_status === 'expired'
+      ? `Your Stormrunner session has expired. Sign in with ${providerLabel} again to continue.`
+      : state.auth.session_status === 'invalid'
+        ? `Stormrunner could not verify the local session cookie. Sign in with ${providerLabel} again to continue.`
+        : `This dashboard is configured for native OIDC authentication. Complete sign-in with ${providerLabel} so Stormrunner can establish your session.`
     : `This dashboard is configured for trusted-header authentication. Complete sign-in through the configured upstream ${providerLabel} so Stormrunner receives your identity headers.`
 
   if (state.status === 'loading') {

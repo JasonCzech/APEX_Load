@@ -1090,6 +1090,9 @@ export interface DashboardAuthStatus {
   logout_url?: string
   logout_csrf_token?: string
   authenticated: boolean
+  session_status?: 'active' | 'expired' | 'invalid' | 'missing' | 'unavailable' | string
+  session_expires_at?: string
+  session_ttl_seconds?: number
   user?: DashboardAuthenticatedUser
 }
 

@@ -115,6 +115,36 @@ describe('Sidebar', () => {
     expect(window.location.assign).toHaveBeenCalledWith('/')
   })
 
+  it('shows imminent native oidc session expiry without replacing identity metadata', async () => {
+    await act(async () => {
+      root.render(
+        <Sidebar
+          active="dashboard"
+          onNavigate={vi.fn()}
+          connectionState="connected"
+          authStatus={{
+            enabled: true,
+            mode: 'oidc',
+            logout_url: '/api/v1/auth/logout',
+            logout_csrf_token: 'csrf-token',
+            authenticated: true,
+            session_status: 'active',
+            session_ttl_seconds: 240,
+            user: {
+              subject: 'alice',
+              display_name: 'Alice Admin',
+              global_roles: ['system_admin'],
+            },
+          }}
+        />,
+      )
+    })
+
+    expect(container.textContent).toContain('Alice Admin')
+    expect(container.textContent).toContain('System Admin')
+    expect(container.textContent).toContain('Session expires in 4 min')
+  })
+
   it('renders the active project and switches projects from the selector', async () => {
     const onProjectChange = vi.fn()
 

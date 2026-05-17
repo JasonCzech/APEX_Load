@@ -6,7 +6,7 @@ This document turns the remaining 3.1 platform-gap work into issue-ready tickets
 - `trusted_headers` mode
 - `oidc` mode with local login, callback, logout, signed session cookies, and RBAC claim mapping
 - service-account API keys
-- audit coverage for service-account lifecycle changes and OIDC login/logout events
+- audit coverage for service-account lifecycle changes plus OIDC login, logout, and representative callback failure events
 
 The remaining backlog is mostly about hardening, lifecycle ownership, and architectural decisions rather than missing foundational RBAC primitives.
 
@@ -15,6 +15,7 @@ The remaining backlog is mostly about hardening, lifecycle ownership, and archit
 - Implemented claims for multi-tenant governance, notifications, schedules, provenance, analysis depth, and ecosystem integration still line up with code.
 - The material remaining auth gap is not basic sign-in anymore; it is long-term identity ownership and operational hardening.
 - Native OIDC logout now uses an explicit `POST /api/v1/auth/logout` flow with CSRF proof from the dashboard rather than a plain top-level `GET`, which closes the most obvious session-mutation gap from the first implementation pass.
+- Native OIDC sessions now report active, missing, invalid, or expired state through `/api/v1/auth/me`, and the dashboard warns users before short-lived sessions expire instead of letting them discover expiry through abrupt protected-route failures.
 
 ## Ticket 1: Harden OIDC Logout and Session CSRF Boundaries
 
@@ -47,6 +48,7 @@ The remaining backlog is mostly about hardening, lifecycle ownership, and archit
   - Discovery failures are surfaced as operator-readable diagnostics.
   - Dashboard settings clearly show whether OIDC is configured, reachable, and ready.
   - Tests cover missing env vars, discovery failure, and healthy configuration.
+- Status: Implemented for configuration readiness, issuer discovery, current-session state, and expired/invalid local-session diagnostics. Remaining future depth is provider-specific callback troubleshooting beyond the generic safe audit details now captured for failures.
 
 ## Ticket 3: Decide and Implement Long-Term Role-Binding Ownership
 
@@ -67,6 +69,8 @@ The remaining backlog is mostly about hardening, lifecycle ownership, and archit
   - The product has an explicit, documented ownership model for RBAC identity data.
   - If local bindings are implemented, they are persisted, auditable, and test-covered.
   - If upstream ownership is retained, the supported claim contract is documented and validated.
+- Decision: Option A. Stormrunner remains a policy consumer for human users. User and group lifecycle stays upstream-owned through trusted-header gateways or native OIDC claim shaping, while Stormrunner owns service-account principals for automation. The supported claim contract is `roles` for global roles and `project_roles` for project-scoped role mappings unless configured otherwise in system settings.
+- Status: Implemented as an explicit product decision. Native user/group binding tables and admin workflows are intentionally deferred until there is a concrete enterprise requirement that upstream IdP claim shaping cannot satisfy.
 
 ## Ticket 4: Add OIDC Session Refresh and Expiry UX
 
@@ -80,6 +84,8 @@ The remaining backlog is mostly about hardening, lifecycle ownership, and archit
   - Expired sessions fail predictably and guide the user back into sign-in.
   - Operators understand whether the platform supports renewal or requires explicit reauthentication.
   - Tests cover expired-session behavior and the chosen renewal strategy.
+- Decision: Refresh-token-backed silent renewal is out of scope for the current control plane. Stormrunner signs a bounded local session from the verified ID token and requires explicit reauthentication after expiry.
+- Status: Implemented for explicit expiry reporting and dashboard warning UX. `/api/v1/auth/me` reports `session_status`, `session_expires_at`, and `session_ttl_seconds` for native OIDC sessions, and the dashboard shows imminent-expiry guidance.
 
 ## Ticket 5: Evaluate Native SAML Support vs. Explicit Non-Goal
 
@@ -92,6 +98,8 @@ The remaining backlog is mostly about hardening, lifecycle ownership, and archit
 - Acceptance Criteria:
   - The roadmap explicitly says whether SAML is supported natively, indirectly through gateway integration, or intentionally out of scope.
   - The plan no longer implies parity without a product decision.
+- Decision: Native SAML is not a first-class Stormrunner runtime mode for this parity phase. Enterprises that require SAML should terminate SAML at an upstream gateway and forward identity through the supported trusted-header contract.
+- Status: Implemented as a roadmap decision; no SAML ACS, metadata, certificate, or native logout endpoints are planned in Workstream 4.
 
 ## Ticket 6: Expand Auth-Audit Coverage for Session Lifecycle and Failures
 
@@ -105,3 +113,4 @@ The remaining backlog is mostly about hardening, lifecycle ownership, and archit
   - Failed interactive auth attempts produce safe, queryable audit records.
   - Sensitive auth material is never persisted in audit details.
   - Tests cover both success and representative failure paths.
+- Status: Implemented for representative OIDC callback failures. The audit event `auth.oidc.callback` records safe failure reasons such as state mismatch without persisting authorization codes, raw tokens, client secrets, or signed cookie material.
