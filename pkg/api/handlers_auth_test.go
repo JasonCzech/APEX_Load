@@ -361,6 +361,7 @@ func TestHandleServiceAccountCRUD(t *testing.T) {
 		"description":            "Runs automation",
 		"global_roles":           []string{"system_admin"},
 		"project_roles":          map[string][]string{"project-a": {"editor"}},
+		"scopes":                 []string{"tests:run", "results:read"},
 		"expires_at":             expiresAt.Format(time.RFC3339),
 		"rotation_interval_days": 30,
 	})
@@ -384,6 +385,9 @@ func TestHandleServiceAccountCRUD(t *testing.T) {
 	}
 	if created.ServiceAccount.GlobalRoles[0] != RoleSystemAdmin {
 		t.Fatalf("global roles = %#v, want system_admin", created.ServiceAccount.GlobalRoles)
+	}
+	if len(created.ServiceAccount.Scopes) != 2 || created.ServiceAccount.Scopes[0] != "tests:run" {
+		t.Fatalf("scopes = %#v, want tests:run/results:read", created.ServiceAccount.Scopes)
 	}
 	if created.ServiceAccount.ExpiresAt == nil || !created.ServiceAccount.ExpiresAt.Equal(expiresAt) {
 		t.Fatalf("expires_at = %#v, want %v", created.ServiceAccount.ExpiresAt, expiresAt)

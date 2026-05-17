@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -101,6 +102,46 @@ func TestTrustedHeaderAuthAllowsServiceAccountAPIKeyForSystemSettings(t *testing
 
 	if resp.Code != http.StatusOK {
 		t.Fatalf("service account GET status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+}
+
+func TestTrustedHeaderAuthRejectsServiceAccountWithoutRouteScope(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	key := "stormrunner-limited-service-account-key"
+	sum := sha256.Sum256([]byte(key))
+	now := time.Now()
+	if err := store.SaveServiceAccount(&storage.ServiceAccount{
+		ID:          "svc-limited",
+		Name:        "Limited Automation",
+		KeyHash:     fmt.Sprintf("%x", sum[:]),
+		Active:      true,
+		GlobalRoles: []string{RoleSystemAdmin},
+		Scopes:      []string{"results:read"},
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}); err != nil {
+		t.Fatalf("SaveServiceAccount returned error: %v", err)
+	}
+
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	enableTrustedHeaderAuth(t, server)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/system/settings", nil)
+	req.Header.Set("X-Stormrunner-API-Key", key)
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusForbidden {
+		t.Fatalf("limited service account status = %d, want %d body=%s", resp.Code, http.StatusForbidden, resp.Body.String())
+	}
+	if !strings.Contains(resp.Body.String(), "token scope") {
+		t.Fatalf("limited service account body = %s, want token scope error", resp.Body.String())
 	}
 }
 

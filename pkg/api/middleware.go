@@ -42,6 +42,7 @@ type AuthenticatedServiceAccount struct {
 	ID          string
 	Name        string
 	Description string
+	Scopes      []string
 }
 
 type accessRequirement struct {
@@ -85,6 +86,10 @@ func authMiddleware(settings func() AuthSettings, store storage.Store) func(http
 			user := resolution.User
 
 			if len(requirement.GlobalRoles) > 0 && user.hasGlobalRole(requirement.GlobalRoles...) {
+				if !serviceAccountAllowsRequest(resolution.ServiceAccount, r) {
+					writeError(w, http.StatusForbidden, "service account token scope does not allow this operation")
+					return
+				}
 				next.ServeHTTP(w, withAuthenticatedContext(r, resolution))
 				return
 			}
@@ -96,6 +101,10 @@ func authMiddleware(settings func() AuthSettings, store storage.Store) func(http
 					return
 				}
 				if user.hasProjectRole(projectID, requirement.ProjectRoles...) {
+					if !serviceAccountAllowsRequest(resolution.ServiceAccount, r) {
+						writeError(w, http.StatusForbidden, "service account token scope does not allow this operation")
+						return
+					}
 					next.ServeHTTP(w, withAuthenticatedContext(r, resolution))
 					return
 				}
@@ -123,6 +132,10 @@ func projectScopedAuthMiddleware(settings func() AuthSettings, store storage.Sto
 			user := resolution.User
 
 			if len(globalRoles) > 0 && user.hasGlobalRole(globalRoles...) {
+				if !serviceAccountAllowsRequest(resolution.ServiceAccount, r) {
+					writeError(w, http.StatusForbidden, "service account token scope does not allow this operation")
+					return
+				}
 				next.ServeHTTP(w, withAuthenticatedContext(r, resolution))
 				return
 			}
@@ -134,6 +147,10 @@ func projectScopedAuthMiddleware(settings func() AuthSettings, store storage.Sto
 					return
 				}
 				if user.hasProjectRole(projectID, projectRoles...) {
+					if !serviceAccountAllowsRequest(resolution.ServiceAccount, r) {
+						writeError(w, http.StatusForbidden, "service account token scope does not allow this operation")
+						return
+					}
 					next.ServeHTTP(w, withAuthenticatedContext(r, resolution))
 					return
 				}
@@ -205,7 +222,7 @@ func authenticatedUserFromAPIKey(r *http.Request, store storage.Store) (*Authent
 		account.LastUsedAt = &usedAt
 	}
 	user := authenticatedUserFromServiceAccount(account)
-	return &AuthenticatedServiceAccount{ID: account.ID, Name: account.Name, Description: account.Description}, user, true, nil
+	return &AuthenticatedServiceAccount{ID: account.ID, Name: account.Name, Description: account.Description, Scopes: normalizeAuthenticatedServiceAccountScopes(account.Scopes)}, user, true, nil
 }
 
 func extractAPIKey(r *http.Request) string {
@@ -227,6 +244,85 @@ func extractAPIKey(r *http.Request) string {
 func hashAPIKey(key string) string {
 	sum := sha256.Sum256([]byte(strings.TrimSpace(key)))
 	return fmt.Sprintf("%x", sum[:])
+}
+
+func serviceAccountAllowsRequest(account *AuthenticatedServiceAccount, r *http.Request) bool {
+	if account == nil {
+		return true
+	}
+	required := requiredServiceAccountScope(r)
+	if required == "" {
+		return true
+	}
+	scopes := normalizeAuthenticatedServiceAccountScopes(account.Scopes)
+	for _, scope := range scopes {
+		if scope == "*" || scope == "automation:*" || scope == required {
+			return true
+		}
+		if required == "read" && (scope == "results:read" || scope == "system:read" || scope == "audit:read") {
+			return true
+		}
+		if required == "write" && (scope == "scripts:write" || scope == "tests:run" || scope == "settings:manage" || scope == "service_accounts:manage") {
+			return true
+		}
+	}
+	return false
+}
+
+func requiredServiceAccountScope(r *http.Request) string {
+	path := r.URL.Path
+	method := r.Method
+	if strings.HasPrefix(path, "/api/v1/auth/service-accounts") {
+		return "service_accounts:manage"
+	}
+	if strings.HasPrefix(path, "/api/v1/auth/audit-events") {
+		return "audit:read"
+	}
+	if path == "/api/v1/system/settings" && method != http.MethodGet {
+		return "settings:manage"
+	}
+	if strings.HasPrefix(path, "/api/v1/system/") {
+		return "system:read"
+	}
+	if strings.HasPrefix(path, "/api/v1/scripts") {
+		if method == http.MethodGet || method == http.MethodHead {
+			return "read"
+		}
+		return "scripts:write"
+	}
+	if strings.HasPrefix(path, "/api/v1/tests") || strings.HasPrefix(path, "/api/v1/scenarios") {
+		if method == http.MethodGet || method == http.MethodHead {
+			return "results:read"
+		}
+		return "tests:run"
+	}
+	if method == http.MethodGet || method == http.MethodHead {
+		return "read"
+	}
+	return "write"
+}
+
+func normalizeAuthenticatedServiceAccountScopes(scopes []string) []string {
+	if len(scopes) == 0 {
+		return []string{"automation:*"}
+	}
+	out := make([]string, 0, len(scopes))
+	seen := map[string]struct{}{}
+	for _, scope := range scopes {
+		normalized := strings.ToLower(strings.TrimSpace(scope))
+		if normalized == "" {
+			continue
+		}
+		if _, ok := seen[normalized]; ok {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		out = append(out, normalized)
+	}
+	if len(out) == 0 {
+		return []string{"automation:*"}
+	}
+	return out
 }
 
 func authenticatedUserFromServiceAccount(account *storage.ServiceAccount) *AuthenticatedUser {

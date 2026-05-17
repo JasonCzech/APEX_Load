@@ -691,6 +691,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
   const [serviceAccountDescription, setServiceAccountDescription] = useState('')
   const [serviceAccountGlobalRoles, setServiceAccountGlobalRoles] = useState('viewer')
   const [serviceAccountProjectRoles, setServiceAccountProjectRoles] = useState('')
+  const [serviceAccountScopes, setServiceAccountScopes] = useState('automation:*')
   const [serviceAccountExpiresAt, setServiceAccountExpiresAt] = useState('')
   const [serviceAccountRotationDays, setServiceAccountRotationDays] = useState('90')
   const [serviceAccountActionMessage, setServiceAccountActionMessage] = useState('')
@@ -1249,6 +1250,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
         description: serviceAccountDescription.trim() || undefined,
         global_roles: parseRoleInput(serviceAccountGlobalRoles),
         project_roles: parseServiceAccountProjectRoles(serviceAccountProjectRoles),
+        scopes: parseRoleInput(serviceAccountScopes),
         expires_at: parseOptionalFutureDate(serviceAccountExpiresAt),
         rotation_interval_days: parsePositiveInteger(serviceAccountRotationDays, 90),
       })
@@ -1258,6 +1260,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
       setServiceAccountDescription('')
       setServiceAccountGlobalRoles('viewer')
       setServiceAccountProjectRoles('')
+      setServiceAccountScopes('automation:*')
       setServiceAccountExpiresAt('')
       setServiceAccountRotationDays('90')
       await Promise.all([loadServiceAccounts(), loadAuditEvents()])
@@ -2436,6 +2439,13 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
                     </div>
                     <div className="setting-row">
                       <div className="setting-info">
+                        <span className="setting-label">Token Scopes</span>
+                        <span className="setting-desc">Comma or pipe-delimited API key scopes. Use automation:* for full automation, or narrow to read, tests:run, scripts:write, results:read, system:read, settings:manage, service_accounts:manage, audit:read.</span>
+                      </div>
+                      <input className="settings-input cell-mono" value={serviceAccountScopes} onChange={(e) => setServiceAccountScopes(e.target.value)} placeholder="automation:*" />
+                    </div>
+                    <div className="setting-row">
+                      <div className="setting-info">
                         <span className="setting-label">Expires At</span>
                         <span className="setting-desc">Optional service-account expiration. Expired API keys are rejected even if the account remains enabled.</span>
                       </div>
@@ -2477,6 +2487,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
                           <span className="setting-desc">{account.description || 'No description provided.'}</span>
                           <span className="setting-desc">Global roles: {formatAuthRoleList(account.global_roles)}</span>
                           <span className="setting-desc">Project roles: {formatProjectRoleAssignments(account.project_roles)}</span>
+                          <span className="setting-desc">Token scopes: {formatAuthRoleList(account.scopes)}</span>
                           <span className="setting-desc">Created: {formatAuditTimestamp(account.created_at)}{account.last_used_at ? ` | Last used: ${formatAuditTimestamp(account.last_used_at)}` : ''}</span>
                           <span className="setting-desc">Expires: {account.expires_at ? formatAuditTimestamp(account.expires_at) : 'No expiration'} | Key rotated: {formatAuditTimestamp(account.key_rotated_at || account.created_at)}</span>
                           <span className="setting-desc">Rotation policy: every {account.rotation_interval_days || 90} days{account.rotation_due_at ? ` | Due: ${formatAuditTimestamp(account.rotation_due_at)}` : ''}</span>

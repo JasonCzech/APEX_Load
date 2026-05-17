@@ -1110,6 +1110,7 @@ export interface DashboardAuthenticatedUser {
   email?: string
   global_roles?: string[]
   project_roles?: Record<string, string[]>
+  scopes?: string[]
 }
 
 export interface DashboardAuthStatus {
@@ -1204,6 +1205,7 @@ export interface DashboardServiceAccount {
   active: boolean
   global_roles?: string[]
   project_roles?: Record<string, string[]>
+  scopes?: string[]
   last_used_at?: string
   expires_at?: string
   key_rotated_at?: string
@@ -1223,6 +1225,7 @@ export interface DashboardCreateServiceAccountRequest {
   description?: string
   global_roles?: string[]
   project_roles?: Record<string, string[]>
+  scopes?: string[]
   expires_at?: string
   rotation_interval_days?: number
 }

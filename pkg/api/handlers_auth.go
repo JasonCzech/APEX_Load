@@ -119,6 +119,7 @@ type AuthServiceAccountRequest struct {
 	Description          string              `json:"description,omitempty"`
 	GlobalRoles          []string            `json:"global_roles,omitempty"`
 	ProjectRoles         map[string][]string `json:"project_roles,omitempty"`
+	Scopes               []string            `json:"scopes,omitempty"`
 	ExpiresAt            string              `json:"expires_at,omitempty"`
 	RotationIntervalDays int                 `json:"rotation_interval_days,omitempty"`
 }
@@ -701,6 +702,10 @@ func buildServiceAccount(req AuthServiceAccountRequest) (*storage.ServiceAccount
 	if err != nil {
 		return nil, "", err
 	}
+	scopes, err := normalizeServiceAccountScopes(req.Scopes)
+	if err != nil {
+		return nil, "", err
+	}
 	var expiresAt *time.Time
 	if raw := strings.TrimSpace(req.ExpiresAt); raw != "" {
 		parsed, err := time.Parse(time.RFC3339, raw)
@@ -733,6 +738,7 @@ func buildServiceAccount(req AuthServiceAccountRequest) (*storage.ServiceAccount
 		Active:               true,
 		GlobalRoles:          globalRoles,
 		ProjectRoles:         projectRoles,
+		Scopes:               scopes,
 		CreatedAt:            now,
 		UpdatedAt:            now,
 		ExpiresAt:            expiresAt,
@@ -742,6 +748,48 @@ func buildServiceAccount(req AuthServiceAccountRequest) (*storage.ServiceAccount
 	due := now.AddDate(0, 0, rotationIntervalDays)
 	account.RotationDueAt = &due
 	return account, apiKey, nil
+}
+
+func normalizeServiceAccountScopes(scopes []string) ([]string, error) {
+	allowed := map[string]struct{}{
+		"*":                       {},
+		"automation:*":            {},
+		"read":                    {},
+		"write":                   {},
+		"tests:run":               {},
+		"scripts:write":           {},
+		"results:read":            {},
+		"system:read":             {},
+		"settings:manage":         {},
+		"service_accounts:manage": {},
+		"audit:read":              {},
+	}
+	if len(scopes) == 0 {
+		return []string{"automation:*"}, nil
+	}
+	set := make(map[string]struct{})
+	out := make([]string, 0, len(scopes))
+	for _, scope := range scopes {
+		for _, token := range strings.FieldsFunc(scope, func(r rune) bool {
+			return r == ',' || r == '|' || r == ' ' || r == '\t' || r == '\n'
+		}) {
+			normalized := strings.ToLower(strings.TrimSpace(token))
+			if normalized == "" {
+				continue
+			}
+			if _, ok := allowed[normalized]; !ok {
+				return nil, fmt.Errorf("unsupported service account scope %q", normalized)
+			}
+			if _, exists := set[normalized]; !exists {
+				set[normalized] = struct{}{}
+				out = append(out, normalized)
+			}
+		}
+	}
+	if len(out) == 0 {
+		return []string{"automation:*"}, nil
+	}
+	return out, nil
 }
 
 func normalizeServiceAccountRoles(globalRoles []string, projectRoles map[string][]string) ([]string, map[string][]string, error) {

@@ -107,6 +107,7 @@ type ServiceAccount struct {
 	Active               bool                `json:"active"`
 	GlobalRoles          []string            `json:"global_roles,omitempty"`
 	ProjectRoles         map[string][]string `json:"project_roles,omitempty"`
+	Scopes               []string            `json:"scopes,omitempty"`
 	CreatedAt            time.Time           `json:"created_at"`
 	UpdatedAt            time.Time           `json:"updated_at"`
 	LastUsedAt           *time.Time          `json:"last_used_at,omitempty"`

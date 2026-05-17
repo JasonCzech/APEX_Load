@@ -315,6 +315,7 @@ func (s *SQLiteStore) init() error {
 			active INTEGER NOT NULL DEFAULT 1,
 			global_roles_json TEXT,
 			project_roles_json TEXT,
+			scopes_json TEXT,
 			created_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL,
 			last_used_at DATETIME,
@@ -422,6 +423,7 @@ func (s *SQLiteStore) init() error {
 		{`ALTER TABLE service_accounts ADD COLUMN expires_at DATETIME`, "service_accounts.expires_at"},
 		{`ALTER TABLE service_accounts ADD COLUMN key_rotated_at DATETIME`, "service_accounts.key_rotated_at"},
 		{`ALTER TABLE service_accounts ADD COLUMN rotation_interval_days INTEGER`, "service_accounts.rotation_interval_days"},
+		{`ALTER TABLE service_accounts ADD COLUMN scopes_json TEXT`, "service_accounts.scopes_json"},
 	} {
 		if _, err := s.db.Exec(migration.query); err != nil && !isDuplicateColumnErr(err) {
 			return fmt.Errorf("failed to add %s column: %w", migration.name, err)
@@ -2229,8 +2231,12 @@ func (s *SQLiteStore) SaveServiceAccount(account *ServiceAccount) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.db.Exec(`INSERT INTO service_accounts (id, name, description, key_hash, active, global_roles_json, project_roles_json, created_at, updated_at, last_used_at, expires_at, key_rotated_at, rotation_interval_days)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	scopesJSON, err := json.Marshal(account.Scopes)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`INSERT INTO service_accounts (id, name, description, key_hash, active, global_roles_json, project_roles_json, scopes_json, created_at, updated_at, last_used_at, expires_at, key_rotated_at, rotation_interval_days)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			name=excluded.name,
 			description=excluded.description,
@@ -2238,6 +2244,7 @@ func (s *SQLiteStore) SaveServiceAccount(account *ServiceAccount) error {
 			active=excluded.active,
 			global_roles_json=excluded.global_roles_json,
 			project_roles_json=excluded.project_roles_json,
+			scopes_json=excluded.scopes_json,
 			updated_at=excluded.updated_at,
 			last_used_at=excluded.last_used_at,
 			expires_at=excluded.expires_at,
@@ -2250,6 +2257,7 @@ func (s *SQLiteStore) SaveServiceAccount(account *ServiceAccount) error {
 		boolToSQLite(account.Active),
 		string(globalRolesJSON),
 		string(projectRolesJSON),
+		string(scopesJSON),
 		account.CreatedAt,
 		account.UpdatedAt,
 		account.LastUsedAt,
@@ -2269,7 +2277,7 @@ func (s *SQLiteStore) GetServiceAccountByKeyHash(keyHash string) (*ServiceAccoun
 }
 
 func serviceAccountSelectColumns() string {
-	return `SELECT id, name, description, key_hash, active, global_roles_json, project_roles_json, created_at, updated_at, last_used_at, expires_at, key_rotated_at, rotation_interval_days`
+	return `SELECT id, name, description, key_hash, active, global_roles_json, project_roles_json, COALESCE(scopes_json, ''), created_at, updated_at, last_used_at, expires_at, key_rotated_at, rotation_interval_days`
 }
 
 func (s *SQLiteStore) getServiceAccountByQuery(query string, args ...any) (*ServiceAccount, error) {
@@ -2277,6 +2285,7 @@ func (s *SQLiteStore) getServiceAccountByQuery(query string, args ...any) (*Serv
 	var active int
 	var globalRolesJSON string
 	var projectRolesJSON string
+	var scopesJSON string
 	var lastUsedAt sql.NullTime
 	var expiresAt sql.NullTime
 	var keyRotatedAt sql.NullTime
@@ -2289,6 +2298,7 @@ func (s *SQLiteStore) getServiceAccountByQuery(query string, args ...any) (*Serv
 		&active,
 		&globalRolesJSON,
 		&projectRolesJSON,
+		&scopesJSON,
 		&account.CreatedAt,
 		&account.UpdatedAt,
 		&lastUsedAt,
@@ -2318,6 +2328,9 @@ func (s *SQLiteStore) getServiceAccountByQuery(query string, args ...any) (*Serv
 	if err := json.Unmarshal([]byte(projectRolesJSON), &account.ProjectRoles); err != nil && strings.TrimSpace(projectRolesJSON) != "" {
 		return nil, err
 	}
+	if err := json.Unmarshal([]byte(scopesJSON), &account.Scopes); err != nil && strings.TrimSpace(scopesJSON) != "" {
+		return nil, err
+	}
 	if account.ProjectRoles == nil {
 		account.ProjectRoles = map[string][]string{}
 	}
@@ -2337,11 +2350,12 @@ func (s *SQLiteStore) ListServiceAccounts() ([]*ServiceAccount, error) {
 		var active int
 		var globalRolesJSON string
 		var projectRolesJSON string
+		var scopesJSON string
 		var lastUsedAt sql.NullTime
 		var expiresAt sql.NullTime
 		var keyRotatedAt sql.NullTime
 		var rotationIntervalDays sql.NullInt64
-		if err := rows.Scan(&account.ID, &account.Name, &account.Description, &account.KeyHash, &active, &globalRolesJSON, &projectRolesJSON, &account.CreatedAt, &account.UpdatedAt, &lastUsedAt, &expiresAt, &keyRotatedAt, &rotationIntervalDays); err != nil {
+		if err := rows.Scan(&account.ID, &account.Name, &account.Description, &account.KeyHash, &active, &globalRolesJSON, &projectRolesJSON, &scopesJSON, &account.CreatedAt, &account.UpdatedAt, &lastUsedAt, &expiresAt, &keyRotatedAt, &rotationIntervalDays); err != nil {
 			return nil, err
 		}
 		account.Active = active != 0
@@ -2361,6 +2375,9 @@ func (s *SQLiteStore) ListServiceAccounts() ([]*ServiceAccount, error) {
 			return nil, err
 		}
 		if err := json.Unmarshal([]byte(projectRolesJSON), &account.ProjectRoles); err != nil && strings.TrimSpace(projectRolesJSON) != "" {
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(scopesJSON), &account.Scopes); err != nil && strings.TrimSpace(scopesJSON) != "" {
 			return nil, err
 		}
 		if account.ProjectRoles == nil {

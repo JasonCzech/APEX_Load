@@ -212,6 +212,7 @@ describe('SettingsPage', () => {
           active: true,
           global_roles: ['viewer'],
           project_roles: { 'project-1': ['editor'] },
+          scopes: ['automation:*'],
           created_at: '2026-05-16T00:00:00Z',
           updated_at: '2026-05-16T00:00:00Z',
         },
@@ -243,6 +244,7 @@ describe('SettingsPage', () => {
         active: true,
         global_roles: ['editor'],
         project_roles: {},
+        scopes: ['automation:*'],
         created_at: '2026-05-16T02:00:00Z',
         updated_at: '2026-05-16T02:00:00Z',
       },
@@ -257,6 +259,7 @@ describe('SettingsPage', () => {
         active: true,
         global_roles: ['viewer'],
         project_roles: { 'project-1': ['editor'] },
+        scopes: ['automation:*'],
         created_at: '2026-05-16T00:00:00Z',
         updated_at: '2026-05-16T03:00:00Z',
       },
@@ -964,11 +967,13 @@ describe('SettingsPage', () => {
       name: 'Release Automation',
       description: 'Runs release checks',
       global_roles: ['viewer'],
+      scopes: ['automation:*'],
       rotation_interval_days: 90,
     }))
     expect(generalSection.textContent).toContain('Copy the issued API key now')
     expect(generalSection.textContent).toContain('srk_test_key')
     expect(generalSection.textContent).toContain('Rotation policy')
+    expect(generalSection.textContent).toContain('Token scopes')
 
     const rotateButton = Array.from(generalSection.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Rotate Key') as HTMLButtonElement | undefined
     expect(rotateButton).toBeDefined()
