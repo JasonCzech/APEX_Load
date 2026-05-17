@@ -17,6 +17,7 @@ import {
   getBrowserBreakdownSegmentLabel,
   getBrowserBreakdownTitle,
 } from './browserBreakdownModel'
+import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
 import StatusBadge from './StatusBadge'
 
 interface Props {
@@ -804,6 +805,7 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
                         const deviceEntries = getBrowserDeviceEntries(report)
                         const platformEntries = getBrowserPlatformEntries(report)
                         const engineEntries = getBrowserEngineEntries(report)
+                        const browserRuntimeSummary = formatBrowserRuntimeSummary(report?.manifest.provenance?.runtime_settings?.browser)
 
                         return (
                           <>
@@ -841,6 +843,12 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
                         </div>
                         {(hasBrowserOverview(report) || comparisonCards.some(item => hasBrowserOverview(item.report))) && (
                           <>
+                            {browserRuntimeSummary && (
+                              <div className="results-compare-metric">
+                                <span className="results-compare-label">Browser Runtime</span>
+                                <span className="results-compare-value">{browserRuntimeSummary}</span>
+                              </div>
+                            )}
                             <div className="results-compare-metric">
                               <span className="results-compare-label">Avg LCP</span>
                               <span className="results-compare-value">{formatBrowserMetric(report!.overview.browser?.avg_lcp_ms, ' ms')}</span>

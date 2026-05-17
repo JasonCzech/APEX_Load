@@ -431,6 +431,7 @@ Before claiming practical parity in these target areas, all of the following sho
 - TrueClient MobileWeb import now also maps JavaScript `location` navigation assignments and `assign` / `replace` calls into `browser_navigate`, shrinking the unsupported JavaScript envelope for common page-transition scripts.
 - TrueClient MobileWeb direct `Scroll` steps now map to `browser_swipe` actions with selector, direction, and distance handling, bringing the support matrix in line with executable converter behavior.
 - Scenario-level browser UX now surfaces saved runtime device overrides in queued run previews, so users can verify device profile, orientation, touch mode, and headed/headless state before start or revision.
+- Archived run comparisons now display saved browser runtime overrides alongside browser KPI cards, making device-profile differences visible when comparing two mobile/browser runs.
 
 ## Suggested Milestones
 

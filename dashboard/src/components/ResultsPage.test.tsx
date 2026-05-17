@@ -62,7 +62,16 @@ describe('ResultsPage', () => {
       ],
     })
     apiMock.getTestArchiveReport.mockImplementation(async (id: string) => ({
-      manifest: { test_id: id },
+      manifest: {
+        test_id: id,
+        provenance: {
+          runtime_settings: {
+            browser: id === 'run-a'
+              ? { device_profile: 'iphone_se', orientation: 'portrait', touch_mode: true, headless: false }
+              : { device_profile: 'ipad_air', orientation: 'landscape', touch_mode: true, headless: true },
+          },
+        },
+      },
       overview: {
         transactions: id === 'run-a' ? 1000 : 1100,
         errors: 0,
@@ -219,6 +228,9 @@ describe('ResultsPage', () => {
     expect(container.textContent).toContain('Run Comparison')
     expect(container.textContent).toContain('Browser Device Comparison (LCP / INP)')
     expect(container.textContent).toContain('Avg LCP')
+    expect(container.textContent).toContain('Browser Runtime')
+    expect(container.textContent).toContain('iphone_se · Portrait · Touch enabled · Headed')
+    expect(container.textContent).toContain('ipad_air · Landscape · Touch enabled · Headless')
     expect(container.textContent).toContain('240.0 ms')
     expect(container.textContent).toContain('280.0 ms')
     expect(container.textContent).toContain('Avg INP')
