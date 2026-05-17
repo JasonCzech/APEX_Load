@@ -100,16 +100,20 @@ type Store interface {
 }
 
 type ServiceAccount struct {
-	ID           string              `json:"id"`
-	Name         string              `json:"name"`
-	Description  string              `json:"description,omitempty"`
-	KeyHash      string              `json:"-"`
-	Active       bool                `json:"active"`
-	GlobalRoles  []string            `json:"global_roles,omitempty"`
-	ProjectRoles map[string][]string `json:"project_roles,omitempty"`
-	CreatedAt    time.Time           `json:"created_at"`
-	UpdatedAt    time.Time           `json:"updated_at"`
-	LastUsedAt   *time.Time          `json:"last_used_at,omitempty"`
+	ID                   string              `json:"id"`
+	Name                 string              `json:"name"`
+	Description          string              `json:"description,omitempty"`
+	KeyHash              string              `json:"-"`
+	Active               bool                `json:"active"`
+	GlobalRoles          []string            `json:"global_roles,omitempty"`
+	ProjectRoles         map[string][]string `json:"project_roles,omitempty"`
+	CreatedAt            time.Time           `json:"created_at"`
+	UpdatedAt            time.Time           `json:"updated_at"`
+	LastUsedAt           *time.Time          `json:"last_used_at,omitempty"`
+	ExpiresAt            *time.Time          `json:"expires_at,omitempty"`
+	KeyRotatedAt         *time.Time          `json:"key_rotated_at,omitempty"`
+	RotationIntervalDays int                 `json:"rotation_interval_days,omitempty"`
+	RotationDueAt        *time.Time          `json:"rotation_due_at,omitempty"`
 }
 
 type AuditEventFilter struct {
@@ -182,20 +186,20 @@ type ScenarioScript struct {
 }
 
 type ScenarioSchedule struct {
-	ID                string     `json:"id"`
-	ScenarioID        string     `json:"scenario_id"`
-	Name              string     `json:"name"`
-	CronExpr          string     `json:"cron_expr"`
-	Timezone          string     `json:"timezone,omitempty"`
-	ReleaseID         string     `json:"release_id,omitempty"`
-	RunNameTemplate   string     `json:"run_name_template,omitempty"`
-	Enabled           bool       `json:"enabled"`
-	LastRunTestID     string     `json:"last_run_test_id,omitempty"`
-	LastRunAt         *time.Time `json:"last_run_at,omitempty"`
-	NextRunAt         *time.Time `json:"next_run_at,omitempty"`
-	LastError         string     `json:"last_error,omitempty"`
-	CreatedAt         time.Time  `json:"created_at"`
-	UpdatedAt         time.Time  `json:"updated_at"`
+	ID              string     `json:"id"`
+	ScenarioID      string     `json:"scenario_id"`
+	Name            string     `json:"name"`
+	CronExpr        string     `json:"cron_expr"`
+	Timezone        string     `json:"timezone,omitempty"`
+	ReleaseID       string     `json:"release_id,omitempty"`
+	RunNameTemplate string     `json:"run_name_template,omitempty"`
+	Enabled         bool       `json:"enabled"`
+	LastRunTestID   string     `json:"last_run_test_id,omitempty"`
+	LastRunAt       *time.Time `json:"last_run_at,omitempty"`
+	NextRunAt       *time.Time `json:"next_run_at,omitempty"`
+	LastError       string     `json:"last_error,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
 }
 
 type SharedDataPool struct {

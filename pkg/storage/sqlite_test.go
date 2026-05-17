@@ -162,6 +162,8 @@ func TestSQLiteStoreServiceAccountsAndAuditEvents(t *testing.T) {
 
 	sum := sha256.Sum256([]byte("stormrunner-key"))
 	now := time.Now().UTC().Truncate(time.Second)
+	expiresAt := now.Add(24 * time.Hour)
+	keyRotatedAt := now.Add(-24 * time.Hour)
 	account := &ServiceAccount{
 		ID:          "svc-1",
 		Name:        "CI Pipeline",
@@ -172,9 +174,12 @@ func TestSQLiteStoreServiceAccountsAndAuditEvents(t *testing.T) {
 		ProjectRoles: map[string][]string{
 			"project-a": {"editor"},
 		},
-		CreatedAt:  now,
-		UpdatedAt:  now,
-		LastUsedAt: &now,
+		CreatedAt:            now,
+		UpdatedAt:            now,
+		LastUsedAt:           &now,
+		ExpiresAt:            &expiresAt,
+		KeyRotatedAt:         &keyRotatedAt,
+		RotationIntervalDays: 30,
 	}
 	if err := store.SaveServiceAccount(account); err != nil {
 		t.Fatalf("SaveServiceAccount returned error: %v", err)
@@ -192,6 +197,13 @@ func TestSQLiteStoreServiceAccountsAndAuditEvents(t *testing.T) {
 	}
 	if got := byID.ProjectRoles["project-a"]; len(got) != 1 || got[0] != "editor" {
 		t.Fatalf("project roles = %#v, want editor for project-a", byID.ProjectRoles)
+	}
+	if byID.ExpiresAt == nil || !byID.ExpiresAt.Equal(expiresAt) {
+		t.Fatalf("expires_at = %#v, want %v", byID.ExpiresAt, expiresAt)
+	}
+	wantRotationDue := keyRotatedAt.AddDate(0, 0, 30)
+	if byID.KeyRotatedAt == nil || !byID.KeyRotatedAt.Equal(keyRotatedAt) || byID.RotationDueAt == nil || !byID.RotationDueAt.Equal(wantRotationDue) {
+		t.Fatalf("rotation metadata = key_rotated_at %#v due %#v, want %v/%v", byID.KeyRotatedAt, byID.RotationDueAt, keyRotatedAt, wantRotationDue)
 	}
 
 	byHash, err := store.GetServiceAccountByKeyHash(account.KeyHash)
@@ -233,6 +245,32 @@ func TestSQLiteStoreServiceAccountsAndAuditEvents(t *testing.T) {
 	}
 	if rotatedAccount.LastUsedAt == nil || !rotatedAccount.LastUsedAt.Equal(lastUsedAt) {
 		t.Fatalf("last used at = %#v, want %v", rotatedAccount.LastUsedAt, lastUsedAt)
+	}
+	wantRotatedAt := now.Add(time.Minute)
+	wantRotatedDue := wantRotatedAt.AddDate(0, 0, 30)
+	if rotatedAccount.KeyRotatedAt == nil || !rotatedAccount.KeyRotatedAt.Equal(wantRotatedAt) || rotatedAccount.RotationDueAt == nil || !rotatedAccount.RotationDueAt.Equal(wantRotatedDue) {
+		t.Fatalf("rotated metadata = key_rotated_at %#v due %#v, want %v/%v", rotatedAccount.KeyRotatedAt, rotatedAccount.RotationDueAt, wantRotatedAt, wantRotatedDue)
+	}
+
+	expiredHash := sha256.Sum256([]byte("expired-key"))
+	expiredAt := now.Add(-time.Minute)
+	if err := store.SaveServiceAccount(&ServiceAccount{
+		ID:                   "svc-expired",
+		Name:                 "Expired",
+		KeyHash:              fmt.Sprintf("%x", expiredHash[:]),
+		Active:               true,
+		GlobalRoles:          []string{"viewer"},
+		ProjectRoles:         map[string][]string{},
+		CreatedAt:            now,
+		UpdatedAt:            now,
+		ExpiresAt:            &expiredAt,
+		KeyRotatedAt:         &now,
+		RotationIntervalDays: 30,
+	}); err != nil {
+		t.Fatalf("SaveServiceAccount expired returned error: %v", err)
+	}
+	if _, err := store.GetServiceAccountByKeyHash(fmt.Sprintf("%x", expiredHash[:])); err != sql.ErrNoRows {
+		t.Fatalf("expected expired service account lookup to miss, got %v", err)
 	}
 
 	event := &AuditEvent{

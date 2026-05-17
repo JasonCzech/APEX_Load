@@ -1205,6 +1205,10 @@ export interface DashboardServiceAccount {
   global_roles?: string[]
   project_roles?: Record<string, string[]>
   last_used_at?: string
+  expires_at?: string
+  key_rotated_at?: string
+  rotation_interval_days?: number
+  rotation_due_at?: string
   created_at: string
   updated_at: string
 }
@@ -1219,6 +1223,8 @@ export interface DashboardCreateServiceAccountRequest {
   description?: string
   global_roles?: string[]
   project_roles?: Record<string, string[]>
+  expires_at?: string
+  rotation_interval_days?: number
 }
 
 export interface DashboardCreateServiceAccountResponse {

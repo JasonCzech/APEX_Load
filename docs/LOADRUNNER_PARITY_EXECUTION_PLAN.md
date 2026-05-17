@@ -341,6 +341,7 @@ Acceptance criteria:
 - Security-sensitive auth flows are explicitly reviewed and documented
 
 Progress:
+- G3.1 now has first-class service-account expiration and rotation policy metadata. Created accounts can carry an optional `expires_at`, stored keys track `key_rotated_at`, list responses include derived `rotation_due_at`, expired API keys are rejected during authentication, and the dashboard displays expiration, last-use, and rotation policy status.
 - G3.2 has an audit-export slice: `GET /api/v1/auth/audit-events/export` emits filtered CSV evidence through the same system-admin RBAC boundary as audit viewing, and the dashboard settings audit panel can download the current action/actor/status filtered result set.
 - G3.4 now has the first auth/RBAC operations runbook covering supported production modes, OIDC bootstrap, trusted-header claim contracts, break-glass recovery, service-account handling, audit export, and common recovery checks.
 - G3.5 has a first hardening pass: native OIDC logout is a CSRF-protected `POST`, `/auth/me` reports session expiry metadata, the dashboard warns on imminent local-session expiry, and representative OIDC callback failures are audited without persisting authorization codes, raw tokens, client secrets, or signed cookie material.

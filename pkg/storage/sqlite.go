@@ -317,7 +317,10 @@ func (s *SQLiteStore) init() error {
 			project_roles_json TEXT,
 			created_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL,
-			last_used_at DATETIME
+			last_used_at DATETIME,
+			expires_at DATETIME,
+			key_rotated_at DATETIME,
+			rotation_interval_days INTEGER
 		)`,
 		`CREATE TABLE IF NOT EXISTS audit_events (
 			id TEXT PRIMARY KEY,
@@ -416,6 +419,9 @@ func (s *SQLiteStore) init() error {
 		{`ALTER TABLE test_interval_summaries ADD COLUMN browser_json TEXT`, "test_interval_summaries.browser_json"},
 		{`ALTER TABLE test_interval_summaries ADD COLUMN browser_by_device_json TEXT`, "test_interval_summaries.browser_by_device_json"},
 		{`ALTER TABLE service_accounts ADD COLUMN active INTEGER NOT NULL DEFAULT 1`, "service_accounts.active"},
+		{`ALTER TABLE service_accounts ADD COLUMN expires_at DATETIME`, "service_accounts.expires_at"},
+		{`ALTER TABLE service_accounts ADD COLUMN key_rotated_at DATETIME`, "service_accounts.key_rotated_at"},
+		{`ALTER TABLE service_accounts ADD COLUMN rotation_interval_days INTEGER`, "service_accounts.rotation_interval_days"},
 	} {
 		if _, err := s.db.Exec(migration.query); err != nil && !isDuplicateColumnErr(err) {
 			return fmt.Errorf("failed to add %s column: %w", migration.name, err)
@@ -2223,8 +2229,8 @@ func (s *SQLiteStore) SaveServiceAccount(account *ServiceAccount) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.db.Exec(`INSERT INTO service_accounts (id, name, description, key_hash, active, global_roles_json, project_roles_json, created_at, updated_at, last_used_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	_, err = s.db.Exec(`INSERT INTO service_accounts (id, name, description, key_hash, active, global_roles_json, project_roles_json, created_at, updated_at, last_used_at, expires_at, key_rotated_at, rotation_interval_days)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			name=excluded.name,
 			description=excluded.description,
@@ -2233,7 +2239,10 @@ func (s *SQLiteStore) SaveServiceAccount(account *ServiceAccount) error {
 			global_roles_json=excluded.global_roles_json,
 			project_roles_json=excluded.project_roles_json,
 			updated_at=excluded.updated_at,
-			last_used_at=excluded.last_used_at`,
+			last_used_at=excluded.last_used_at,
+			expires_at=excluded.expires_at,
+			key_rotated_at=excluded.key_rotated_at,
+			rotation_interval_days=excluded.rotation_interval_days`,
 		account.ID,
 		account.Name,
 		account.Description,
@@ -2244,25 +2253,35 @@ func (s *SQLiteStore) SaveServiceAccount(account *ServiceAccount) error {
 		account.CreatedAt,
 		account.UpdatedAt,
 		account.LastUsedAt,
+		account.ExpiresAt,
+		account.KeyRotatedAt,
+		account.RotationIntervalDays,
 	)
 	return err
 }
 
 func (s *SQLiteStore) GetServiceAccount(id string) (*ServiceAccount, error) {
-	return s.getServiceAccountByQuery(`SELECT id, name, description, key_hash, active, global_roles_json, project_roles_json, created_at, updated_at, last_used_at FROM service_accounts WHERE id = ?`, id)
+	return s.getServiceAccountByQuery(serviceAccountSelectColumns()+` FROM service_accounts WHERE id = ?`, id)
 }
 
 func (s *SQLiteStore) GetServiceAccountByKeyHash(keyHash string) (*ServiceAccount, error) {
-	return s.getServiceAccountByQuery(`SELECT id, name, description, key_hash, active, global_roles_json, project_roles_json, created_at, updated_at, last_used_at FROM service_accounts WHERE key_hash = ? AND active = 1`, keyHash)
+	return s.getServiceAccountByQuery(serviceAccountSelectColumns()+` FROM service_accounts WHERE key_hash = ? AND active = 1 AND (expires_at IS NULL OR expires_at > ?)`, keyHash, time.Now().UTC())
 }
 
-func (s *SQLiteStore) getServiceAccountByQuery(query string, arg string) (*ServiceAccount, error) {
+func serviceAccountSelectColumns() string {
+	return `SELECT id, name, description, key_hash, active, global_roles_json, project_roles_json, created_at, updated_at, last_used_at, expires_at, key_rotated_at, rotation_interval_days`
+}
+
+func (s *SQLiteStore) getServiceAccountByQuery(query string, args ...any) (*ServiceAccount, error) {
 	var account ServiceAccount
 	var active int
 	var globalRolesJSON string
 	var projectRolesJSON string
 	var lastUsedAt sql.NullTime
-	err := s.db.QueryRow(query, arg).Scan(
+	var expiresAt sql.NullTime
+	var keyRotatedAt sql.NullTime
+	var rotationIntervalDays sql.NullInt64
+	err := s.db.QueryRow(query, args...).Scan(
 		&account.ID,
 		&account.Name,
 		&account.Description,
@@ -2273,6 +2292,9 @@ func (s *SQLiteStore) getServiceAccountByQuery(query string, arg string) (*Servi
 		&account.CreatedAt,
 		&account.UpdatedAt,
 		&lastUsedAt,
+		&expiresAt,
+		&keyRotatedAt,
+		&rotationIntervalDays,
 	)
 	if err != nil {
 		return nil, err
@@ -2280,6 +2302,15 @@ func (s *SQLiteStore) getServiceAccountByQuery(query string, arg string) (*Servi
 	account.Active = active != 0
 	if lastUsedAt.Valid {
 		account.LastUsedAt = &lastUsedAt.Time
+	}
+	if expiresAt.Valid {
+		account.ExpiresAt = &expiresAt.Time
+	}
+	if keyRotatedAt.Valid {
+		account.KeyRotatedAt = &keyRotatedAt.Time
+	}
+	if rotationIntervalDays.Valid {
+		account.RotationIntervalDays = int(rotationIntervalDays.Int64)
 	}
 	if err := json.Unmarshal([]byte(globalRolesJSON), &account.GlobalRoles); err != nil && strings.TrimSpace(globalRolesJSON) != "" {
 		return nil, err
@@ -2290,11 +2321,12 @@ func (s *SQLiteStore) getServiceAccountByQuery(query string, arg string) (*Servi
 	if account.ProjectRoles == nil {
 		account.ProjectRoles = map[string][]string{}
 	}
+	populateServiceAccountDerivedFields(&account)
 	return &account, nil
 }
 
 func (s *SQLiteStore) ListServiceAccounts() ([]*ServiceAccount, error) {
-	rows, err := s.db.Query(`SELECT id, name, description, key_hash, active, global_roles_json, project_roles_json, created_at, updated_at, last_used_at FROM service_accounts ORDER BY created_at DESC`)
+	rows, err := s.db.Query(serviceAccountSelectColumns() + ` FROM service_accounts ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -2306,12 +2338,24 @@ func (s *SQLiteStore) ListServiceAccounts() ([]*ServiceAccount, error) {
 		var globalRolesJSON string
 		var projectRolesJSON string
 		var lastUsedAt sql.NullTime
-		if err := rows.Scan(&account.ID, &account.Name, &account.Description, &account.KeyHash, &active, &globalRolesJSON, &projectRolesJSON, &account.CreatedAt, &account.UpdatedAt, &lastUsedAt); err != nil {
+		var expiresAt sql.NullTime
+		var keyRotatedAt sql.NullTime
+		var rotationIntervalDays sql.NullInt64
+		if err := rows.Scan(&account.ID, &account.Name, &account.Description, &account.KeyHash, &active, &globalRolesJSON, &projectRolesJSON, &account.CreatedAt, &account.UpdatedAt, &lastUsedAt, &expiresAt, &keyRotatedAt, &rotationIntervalDays); err != nil {
 			return nil, err
 		}
 		account.Active = active != 0
 		if lastUsedAt.Valid {
 			account.LastUsedAt = &lastUsedAt.Time
+		}
+		if expiresAt.Valid {
+			account.ExpiresAt = &expiresAt.Time
+		}
+		if keyRotatedAt.Valid {
+			account.KeyRotatedAt = &keyRotatedAt.Time
+		}
+		if rotationIntervalDays.Valid {
+			account.RotationIntervalDays = int(rotationIntervalDays.Int64)
 		}
 		if err := json.Unmarshal([]byte(globalRolesJSON), &account.GlobalRoles); err != nil && strings.TrimSpace(globalRolesJSON) != "" {
 			return nil, err
@@ -2322,14 +2366,27 @@ func (s *SQLiteStore) ListServiceAccounts() ([]*ServiceAccount, error) {
 		if account.ProjectRoles == nil {
 			account.ProjectRoles = map[string][]string{}
 		}
+		populateServiceAccountDerivedFields(&account)
 		accounts = append(accounts, &account)
 	}
 	return accounts, rows.Err()
 }
 
 func (s *SQLiteStore) RotateServiceAccountKey(id string, keyHash string, updatedAt time.Time) error {
-	_, err := s.db.Exec(`UPDATE service_accounts SET key_hash = ?, updated_at = ? WHERE id = ?`, keyHash, updatedAt, id)
+	_, err := s.db.Exec(`UPDATE service_accounts SET key_hash = ?, updated_at = ?, key_rotated_at = ? WHERE id = ?`, keyHash, updatedAt, updatedAt, id)
 	return err
+}
+
+func populateServiceAccountDerivedFields(account *ServiceAccount) {
+	if account == nil || account.RotationIntervalDays <= 0 {
+		return
+	}
+	anchor := account.CreatedAt
+	if account.KeyRotatedAt != nil {
+		anchor = *account.KeyRotatedAt
+	}
+	due := anchor.AddDate(0, 0, account.RotationIntervalDays)
+	account.RotationDueAt = &due
 }
 
 func (s *SQLiteStore) UpdateServiceAccountLastUsed(id string, lastUsedAt time.Time) error {

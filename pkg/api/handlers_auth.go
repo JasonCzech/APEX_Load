@@ -115,10 +115,12 @@ type AuthEffectiveAccessResponse struct {
 }
 
 type AuthServiceAccountRequest struct {
-	Name         string              `json:"name"`
-	Description  string              `json:"description,omitempty"`
-	GlobalRoles  []string            `json:"global_roles,omitempty"`
-	ProjectRoles map[string][]string `json:"project_roles,omitempty"`
+	Name                 string              `json:"name"`
+	Description          string              `json:"description,omitempty"`
+	GlobalRoles          []string            `json:"global_roles,omitempty"`
+	ProjectRoles         map[string][]string `json:"project_roles,omitempty"`
+	ExpiresAt            string              `json:"expires_at,omitempty"`
+	RotationIntervalDays int                 `json:"rotation_interval_days,omitempty"`
 }
 
 type AuthServiceAccountUpdateRequest struct {
@@ -572,6 +574,11 @@ func (s *Server) handleRotateServiceAccount(w http.ResponseWriter, r *http.Reque
 	}
 	account.KeyHash = hashedKey
 	account.UpdatedAt = updatedAt
+	account.KeyRotatedAt = &updatedAt
+	if account.RotationIntervalDays > 0 {
+		due := updatedAt.AddDate(0, 0, account.RotationIntervalDays)
+		account.RotationDueAt = &due
+	}
 	s.recordAuditEvent(r, "auth.service_account.rotate", "success", "service_account", account.ID, "", map[string]any{"name": account.Name})
 	writeJSON(w, http.StatusOK, AuthServiceAccountCreateResponse{ServiceAccount: account, APIKey: apiKey})
 }
@@ -694,22 +701,46 @@ func buildServiceAccount(req AuthServiceAccountRequest) (*storage.ServiceAccount
 	if err != nil {
 		return nil, "", err
 	}
+	var expiresAt *time.Time
+	if raw := strings.TrimSpace(req.ExpiresAt); raw != "" {
+		parsed, err := time.Parse(time.RFC3339, raw)
+		if err != nil {
+			return nil, "", fmt.Errorf("service account expires_at must be an RFC3339 timestamp")
+		}
+		parsed = parsed.UTC()
+		if !parsed.After(time.Now().UTC()) {
+			return nil, "", fmt.Errorf("service account expires_at must be in the future")
+		}
+		expiresAt = &parsed
+	}
+	rotationIntervalDays := req.RotationIntervalDays
+	if rotationIntervalDays < 0 {
+		return nil, "", fmt.Errorf("service account rotation_interval_days must be zero or greater")
+	}
+	if rotationIntervalDays == 0 {
+		rotationIntervalDays = 90
+	}
 	apiKey, err := generateAPIKey()
 	if err != nil {
 		return nil, "", err
 	}
 	now := time.Now().UTC()
 	account := &storage.ServiceAccount{
-		ID:           uuid.New().String(),
-		Name:         name,
-		Description:  strings.TrimSpace(req.Description),
-		KeyHash:      hashAPIKey(apiKey),
-		Active:       true,
-		GlobalRoles:  globalRoles,
-		ProjectRoles: projectRoles,
-		CreatedAt:    now,
-		UpdatedAt:    now,
+		ID:                   uuid.New().String(),
+		Name:                 name,
+		Description:          strings.TrimSpace(req.Description),
+		KeyHash:              hashAPIKey(apiKey),
+		Active:               true,
+		GlobalRoles:          globalRoles,
+		ProjectRoles:         projectRoles,
+		CreatedAt:            now,
+		UpdatedAt:            now,
+		ExpiresAt:            expiresAt,
+		KeyRotatedAt:         &now,
+		RotationIntervalDays: rotationIntervalDays,
 	}
+	due := now.AddDate(0, 0, rotationIntervalDays)
+	account.RotationDueAt = &due
 	return account, apiKey, nil
 }
 

@@ -345,6 +345,18 @@ function parseServiceAccountProjectRoles(value: string): Record<string, string[]
   }, {})
 }
 
+function parseOptionalFutureDate(value: string): string | undefined {
+  const trimmed = value.trim()
+  if (!trimmed) return undefined
+  const parsed = new Date(trimmed)
+  return Number.isNaN(parsed.getTime()) ? undefined : parsed.toISOString()
+}
+
+function parsePositiveInteger(value: string, fallback: number): number {
+  const parsed = Number(value)
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback
+}
+
 function formatAuditActor(event: DashboardAuditEvent): string {
   return event.actor_display_name || event.actor_subject || event.actor_type
 }
@@ -669,6 +681,8 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
   const [serviceAccountDescription, setServiceAccountDescription] = useState('')
   const [serviceAccountGlobalRoles, setServiceAccountGlobalRoles] = useState('viewer')
   const [serviceAccountProjectRoles, setServiceAccountProjectRoles] = useState('')
+  const [serviceAccountExpiresAt, setServiceAccountExpiresAt] = useState('')
+  const [serviceAccountRotationDays, setServiceAccountRotationDays] = useState('90')
   const [serviceAccountActionMessage, setServiceAccountActionMessage] = useState('')
   const [serviceAccountActionError, setServiceAccountActionError] = useState('')
   const [auditActionMessage, setAuditActionMessage] = useState('')
@@ -1211,6 +1225,8 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
         description: serviceAccountDescription.trim() || undefined,
         global_roles: parseRoleInput(serviceAccountGlobalRoles),
         project_roles: parseServiceAccountProjectRoles(serviceAccountProjectRoles),
+        expires_at: parseOptionalFutureDate(serviceAccountExpiresAt),
+        rotation_interval_days: parsePositiveInteger(serviceAccountRotationDays, 90),
       })
       setIssuedServiceAccountKey(response.api_key)
       setServiceAccountActionMessage(`Created service account ${response.service_account.name}. Copy the issued API key now; it is only returned once.`)
@@ -1218,6 +1234,8 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
       setServiceAccountDescription('')
       setServiceAccountGlobalRoles('viewer')
       setServiceAccountProjectRoles('')
+      setServiceAccountExpiresAt('')
+      setServiceAccountRotationDays('90')
       await Promise.all([loadServiceAccounts(), loadAuditEvents()])
     } catch (error: unknown) {
       setServiceAccountActionError(getErrorMessage(error, 'Unable to create service account'))
@@ -2378,6 +2396,20 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
                     </div>
                     <div className="setting-row">
                       <div className="setting-info">
+                        <span className="setting-label">Expires At</span>
+                        <span className="setting-desc">Optional service-account expiration. Expired API keys are rejected even if the account remains enabled.</span>
+                      </div>
+                      <input className="settings-input cell-mono" type="datetime-local" value={serviceAccountExpiresAt} onChange={(e) => setServiceAccountExpiresAt(e.target.value)} />
+                    </div>
+                    <div className="setting-row">
+                      <div className="setting-info">
+                        <span className="setting-label">Rotation Interval (days)</span>
+                        <span className="setting-desc">Policy interval used to show when the current API key is due for rotation.</span>
+                      </div>
+                      <input className="settings-input settings-input-number" type="number" min={1} step={1} value={serviceAccountRotationDays} onChange={(e) => setServiceAccountRotationDays(e.target.value)} />
+                    </div>
+                    <div className="setting-row">
+                      <div className="setting-info">
                         <span className="setting-label">Provisioning</span>
                         <span className="setting-desc">Stormrunner returns the generated API key exactly once. Store it in your secret manager after creation.</span>
                       </div>
@@ -2406,6 +2438,8 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
                           <span className="setting-desc">Global roles: {formatAuthRoleList(account.global_roles)}</span>
                           <span className="setting-desc">Project roles: {formatProjectRoleAssignments(account.project_roles)}</span>
                           <span className="setting-desc">Created: {formatAuditTimestamp(account.created_at)}{account.last_used_at ? ` | Last used: ${formatAuditTimestamp(account.last_used_at)}` : ''}</span>
+                          <span className="setting-desc">Expires: {account.expires_at ? formatAuditTimestamp(account.expires_at) : 'No expiration'} | Key rotated: {formatAuditTimestamp(account.key_rotated_at || account.created_at)}</span>
+                          <span className="setting-desc">Rotation policy: every {account.rotation_interval_days || 90} days{account.rotation_due_at ? ` | Due: ${formatAuditTimestamp(account.rotation_due_at)}` : ''}</span>
                         </div>
                         <div className="settings-inline-actions">
                           <button className="btn btn-secondary" type="button" onClick={() => rotateServiceAccount(account)}>

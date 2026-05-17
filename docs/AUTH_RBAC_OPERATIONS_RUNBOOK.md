@@ -68,10 +68,12 @@ Service accounts are Stormrunner-owned automation principals. Create one per aut
 Operational guidance:
 
 - Assign the narrowest global and project roles that the automation needs.
+- Set an expiration date for temporary or vendor-owned automation.
+- Use the rotation interval to make key-age review visible in Settings.
 - Copy the API key immediately; it is returned only at creation or rotation time.
 - Rotate keys after staff changes, CI secret exposure, or periodic policy windows.
 - Disable stale accounts before deletion when you need a reversible pause.
-- Use `last_used_at` in Settings to identify inactive automation principals.
+- Use `last_used_at`, `expires_at`, `key_rotated_at`, and `rotation_due_at` in Settings to identify inactive, expired, or overdue automation principals.
 
 ## Audit Evidence
 

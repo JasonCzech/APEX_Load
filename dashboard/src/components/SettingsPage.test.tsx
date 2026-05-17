@@ -856,9 +856,11 @@ describe('SettingsPage', () => {
       name: 'Release Automation',
       description: 'Runs release checks',
       global_roles: ['viewer'],
+      rotation_interval_days: 90,
     }))
     expect(generalSection.textContent).toContain('Copy the issued API key now')
     expect(generalSection.textContent).toContain('srk_test_key')
+    expect(generalSection.textContent).toContain('Rotation policy')
 
     const rotateButton = Array.from(generalSection.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Rotate Key') as HTMLButtonElement | undefined
     expect(rotateButton).toBeDefined()

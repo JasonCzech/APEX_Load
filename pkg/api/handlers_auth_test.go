@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jasonczech/stormrunner/pkg/storage"
 )
@@ -354,7 +355,15 @@ func TestHandleServiceAccountCRUD(t *testing.T) {
 	defer store.Close()
 
 	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
-	body := []byte(`{"name":"Nightly CI","description":"Runs automation","global_roles":["system_admin"],"project_roles":{"project-a":["editor"]}}`)
+	expiresAt := time.Now().UTC().Add(24 * time.Hour).Truncate(time.Second)
+	body, _ := json.Marshal(map[string]any{
+		"name":                   "Nightly CI",
+		"description":            "Runs automation",
+		"global_roles":           []string{"system_admin"},
+		"project_roles":          map[string][]string{"project-a": {"editor"}},
+		"expires_at":             expiresAt.Format(time.RFC3339),
+		"rotation_interval_days": 30,
+	})
 	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/service-accounts", bytes.NewReader(body))
 	createResp := httptest.NewRecorder()
 
@@ -375,6 +384,12 @@ func TestHandleServiceAccountCRUD(t *testing.T) {
 	}
 	if created.ServiceAccount.GlobalRoles[0] != RoleSystemAdmin {
 		t.Fatalf("global roles = %#v, want system_admin", created.ServiceAccount.GlobalRoles)
+	}
+	if created.ServiceAccount.ExpiresAt == nil || !created.ServiceAccount.ExpiresAt.Equal(expiresAt) {
+		t.Fatalf("expires_at = %#v, want %v", created.ServiceAccount.ExpiresAt, expiresAt)
+	}
+	if created.ServiceAccount.KeyRotatedAt == nil || created.ServiceAccount.RotationIntervalDays != 30 || created.ServiceAccount.RotationDueAt == nil {
+		t.Fatalf("rotation metadata = %#v, want key_rotated_at, interval, and due date", created.ServiceAccount)
 	}
 
 	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/auth/service-accounts", nil)
@@ -403,6 +418,9 @@ func TestHandleServiceAccountCRUD(t *testing.T) {
 	}
 	if rotated.APIKey == "" || rotated.APIKey == created.APIKey {
 		t.Fatalf("rotate payload = %#v, want new api key", rotated)
+	}
+	if rotated.ServiceAccount == nil || rotated.ServiceAccount.KeyRotatedAt == nil || !rotated.ServiceAccount.KeyRotatedAt.After(*created.ServiceAccount.KeyRotatedAt) {
+		t.Fatalf("rotated metadata = %#v, want newer key_rotated_at", rotated.ServiceAccount)
 	}
 
 	updateReq := httptest.NewRequest(http.MethodPatch, "/api/v1/auth/service-accounts/"+created.ServiceAccount.ID, bytes.NewReader([]byte(`{"active":false}`)))
