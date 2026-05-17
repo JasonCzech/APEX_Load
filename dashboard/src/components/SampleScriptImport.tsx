@@ -326,7 +326,7 @@ export default function SampleScriptImport({ projectId, onImported, onEdit, onCl
     }
   }
 
-  const buildScriptWithOptions = (baseScript?: ImportedScript) => {
+  const buildScriptWithOptions = (baseScript?: ScriptDefinition) => {
     const script = JSON.parse(JSON.stringify(baseScript || {})) as ScriptDefinition
     script.name = options.name.trim() || script.name
     script.config = script.config || {}

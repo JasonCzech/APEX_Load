@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useApi } from '../hooks/useApi'
 import { summarizeImportExtractors, summarizeSupportMatrix } from './jmeterImportUtils'
-import { type ImportedAction, type ImportedScript, type JMeterImportResult as ImportResult, type JMeterSupportMatrixResponse, type SupportMatrix } from '../types/scriptImports'
-import { type StoredScript } from '../types'
+import { type ImportedScript, type JMeterImportResult as ImportResult, type JMeterSupportMatrixResponse, type SupportMatrix } from '../types/scriptImports'
 import { type ScriptDefinition } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import ScriptImportReview from './ScriptImportReview'
@@ -340,7 +339,7 @@ export default function JMeterImport({ projectId, onImported, onEdit, onClose }:
                   <div className="lr-preserved-card" key={script.name}>
                     <span className="lr-preserved-label">Script</span>
                     <strong>{script.name}</strong>
-                    <small>{script.actions?.length || 0} actions / {script.data_sources?.length || 0} data sources / {script.actions?.reduce((count: number, action: ImportedAction) => count + (action.extractors?.length || 0), 0) || 0} extractors</small>
+                    <small>{script.actions?.length || 0} actions / {script.data_sources?.length || 0} data sources / {script.actions?.reduce((count, action) => count + (action.extractors?.length || 0), 0) || 0} extractors</small>
                   </div>
                 ))}
                 {result.scenario_draft && (

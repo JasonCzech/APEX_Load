@@ -15,7 +15,7 @@ import {
   TestSummary,
 } from '../../types'
 import { type ScriptDefinition, type ScriptExportResponse, type ScriptReplayResponse, type ScriptValidationResponse } from '../../types/scripts'
-import { type ImportedScript, type JMeterImportResult, type JMeterSupportMatrixResponse, type LoadRunnerImportResult, type LoadRunnerSupportMatrixResponse, type SampleImportResult, type SaveJMeterImportRequest, type SaveJMeterImportResponse } from '../../types/scriptImports'
+import { type JMeterImportResult, type JMeterSupportMatrixResponse, type LoadRunnerImportResult, type LoadRunnerSupportMatrixResponse, type SampleImportResult, type SaveJMeterImportRequest, type SaveJMeterImportResponse } from '../../types/scriptImports'
 import { BASE, request } from '../apiClient'
 
 type ScriptListResponse = {
@@ -117,7 +117,7 @@ export function useScriptApi() {
   )
 
   const createScript = useCallback(
-    (script: ScriptDefinition | ImportedScript, projectId?: string, folderId?: string | null) =>
+    (script: ScriptDefinition, projectId?: string, folderId?: string | null) =>
       request<StoredScript>('/scripts', { method: 'POST', body: JSON.stringify({ script, project_id: projectId, folder_id: folderId }) }),
     [],
   )
@@ -125,7 +125,7 @@ export function useScriptApi() {
   const getScript = useCallback((id: string) => request<StoredScript>(`/scripts/${id}`), [])
 
   const updateScript = useCallback(
-    (id: string, script: ScriptDefinition | ImportedScript) =>
+    (id: string, script: ScriptDefinition) =>
       request<StoredScript>(`/scripts/${id}`, { method: 'PUT', body: JSON.stringify({ script }) }),
     [],
   )
@@ -141,7 +141,7 @@ export function useScriptApi() {
   const validateScript = useCallback((id: string) => request<ScriptValidationResponse>(`/scripts/${id}/validate`, { method: 'POST' }), [])
 
   const validateDraftScript = useCallback(
-    (script: ScriptDefinition | ImportedScript, projectId?: string, folderId?: string | null) =>
+    (script: ScriptDefinition, projectId?: string, folderId?: string | null) =>
       request<ScriptValidationResponse>('/scripts/validate', { method: 'POST', body: JSON.stringify({ script, project_id: projectId, folder_id: folderId }) }),
     [],
   )

@@ -1,11 +1,11 @@
 import { type ReactNode } from 'react'
 
-import { type ImportedScript } from '../types/scriptImports'
+import { type ScriptDefinition } from '../types/scripts'
 
-interface Props<TScript extends ImportedScript = ImportedScript> {
+interface Props {
   title: string
   subtitle?: ReactNode
-  script: TScript
+  script: ScriptDefinition
   previewData?: unknown
   warnings?: string[]
   warningsTitle?: string
@@ -19,7 +19,7 @@ interface Props<TScript extends ImportedScript = ImportedScript> {
   children?: ReactNode
 }
 
-export default function ScriptImportReview<TScript extends ImportedScript = ImportedScript>({
+export default function ScriptImportReview({
   title,
   subtitle,
   script,
@@ -34,7 +34,7 @@ export default function ScriptImportReview<TScript extends ImportedScript = Impo
   onSave,
   onEdit,
   children,
-}: Props<TScript>) {
+}: Props) {
   return (
     <div className="script-import-review">
       <div className="script-import-review-header">

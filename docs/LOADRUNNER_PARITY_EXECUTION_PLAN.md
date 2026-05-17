@@ -175,6 +175,7 @@ Status:
 - A1.4 now aligns import navigation around the create-options shell. LoadRunner, JMeter, sample, Java-over-HTTP, and recorder authoring surfaces all expose the same `Back to Create Script` return path, and import components' own close actions now land there instead of jumping back to the library.
 - A1.5 has started by removing the frontend JMeter import-result normalizer. The API already guarantees non-nil import envelope arrays plus populated `stats` and `summary`, so `JMeterImport` now consumes the typed backend response directly and the adapter has been deleted instead of maintained.
 - A1.5 now also tightens the imported-script contract on the dashboard side. Import flows treat returned scripts as full `ScriptDefinition` payloads, which removes cast helpers from JMeter, LoadRunner, and sample-import handoffs and makes the remaining save/edit plumbing rely on one real DSL shape.
+- A1.5 now removes the last `ScriptDefinition | ImportedScript` split from the shared dashboard surfaces. The script API hook, import review surface, and Java-over-HTTP wrapper now speak in the single canonical script type, trimming another leftover migration seam.
 
 Acceptance criteria:
 - Every script acquisition path resolves into the same lifecycle model

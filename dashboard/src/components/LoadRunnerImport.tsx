@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef, type CSSProperties } from 'react'
 import { useApi } from '../hooks/useApi'
 import { type ImportRepairSuggestion, type ImportedScript, type LoadRunnerImportResult, type LoadRunnerImportSummary, type LoadRunnerMigrationReadiness, type LoadRunnerSupportMatrixEntry, type LoadRunnerSupportMatrixExample, type LoadRunnerSupportMatrixResponse } from '../types/scriptImports'
-import { type BrowserReplaySession, type StoredScript } from '../types'
+import { type BrowserReplaySession } from '../types'
 import { type ScriptDefinition } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import { buildReplayStartPayload, getImportSummary, summarizeInlineData } from './scriptEditorUtils'
