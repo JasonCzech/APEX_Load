@@ -134,6 +134,12 @@ func (s *Server) handleJMeterSupportMatrix(w http.ResponseWriter, r *http.Reques
 	})
 }
 
+func (s *Server) handleLoadRunnerSupportMatrix(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"support_matrix": loadrunner.GetRTSSupportMatrix(),
+	})
+}
+
 func readJMeterImportRequest(w http.ResponseWriter, r *http.Request) (*jmeterImportRequest, bool) {
 	r.Body = http.MaxBytesReader(w, r.Body, 50<<20)
 

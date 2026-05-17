@@ -1504,6 +1504,56 @@ func TestHandleJMeterSupportMatrix(t *testing.T) {
 	}
 }
 
+func TestHandleLoadRunnerSupportMatrix(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/scripts/import/loadrunner/support-matrix", nil)
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var result struct {
+		SupportMatrix []struct {
+			ID      string   `json:"id"`
+			Area    string   `json:"area"`
+			Concept string   `json:"concept"`
+			Fields  []string `json:"fields"`
+			Status  string   `json:"status"`
+			Notes   string   `json:"notes"`
+		} `json:"support_matrix"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if len(result.SupportMatrix) == 0 {
+		t.Fatal("expected loadrunner support matrix entries")
+	}
+	if result.SupportMatrix[0].ID == "" || result.SupportMatrix[0].Area == "" || result.SupportMatrix[0].Status == "" {
+		t.Fatalf("unexpected support matrix entry: %#v", result.SupportMatrix[0])
+	}
+	if !containsLoadRunnerSupportMatrixStatus(result.SupportMatrix, "partial") {
+		t.Fatalf("expected at least one partial loadrunner support matrix entry, got %#v", result.SupportMatrix)
+	}
+}
+
+func containsLoadRunnerSupportMatrixStatus(entries []struct {
+	ID      string   `json:"id"`
+	Area    string   `json:"area"`
+	Concept string   `json:"concept"`
+	Fields  []string `json:"fields"`
+	Status  string   `json:"status"`
+	Notes   string   `json:"notes"`
+}, want string) bool {
+	for _, entry := range entries {
+		if entry.Status == want {
+			return true
+		}
+	}
+	return false
+}
+
 func TestHandleSaveJMeterImportPersistsScriptsAndScenario(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	payload := map[string]any{

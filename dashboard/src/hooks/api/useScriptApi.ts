@@ -19,7 +19,7 @@ import { type ImportedScript, type JMeterImportResult, type JMeterSupportMatrixR
 import { BASE, request } from '../apiClient'
 
 type ScriptListResponse = {
-  scripts: StoredScript[]
+import { type ImportedScript, type JMeterImportResult, type JMeterSupportMatrixResponse, type LoadRunnerImportResult, type LoadRunnerSupportMatrixResponse, type SampleImportResult, type SaveJMeterImportRequest, type SaveJMeterImportResponse } from '../../types/scriptImports'
   count: number
 }
 
@@ -239,6 +239,11 @@ export function useScriptApi() {
     [],
   )
 
+  const getLoadRunnerSupportMatrix = useCallback(
+		() => request<LoadRunnerSupportMatrixResponse>('/scripts/import/loadrunner/support-matrix'),
+		[],
+	)
+
   const importJMeter = useCallback(
     async (file: File, options?: { name?: string; base_url?: string; include_assertions?: boolean; scenario_draft?: boolean; project_id?: string }): Promise<JMeterImportResult> => {
       const formData = new FormData()
@@ -404,6 +409,7 @@ export function useScriptApi() {
       exportScript,
       importLoadRunner,
       validateLoadRunnerImport,
+      getLoadRunnerSupportMatrix,
       importJMeter,
       validateJMeterImport,
       getJMeterSupportMatrix,
@@ -445,6 +451,7 @@ export function useScriptApi() {
       exportScript,
       importLoadRunner,
       validateLoadRunnerImport,
+      getLoadRunnerSupportMatrix,
       importJMeter,
       validateJMeterImport,
       getJMeterSupportMatrix,

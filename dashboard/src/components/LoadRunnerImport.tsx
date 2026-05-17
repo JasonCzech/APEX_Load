@@ -1,6 +1,6 @@
-import { useState, useRef } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useApi } from '../hooks/useApi'
-import { type ImportedScript, type LoadRunnerImportResult, type LoadRunnerImportSummary } from '../types/scriptImports'
+import { type ImportedScript, type LoadRunnerImportResult, type LoadRunnerImportSummary, type LoadRunnerSupportMatrixEntry, type LoadRunnerSupportMatrixResponse } from '../types/scriptImports'
 import { type ScriptDefinition } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import ScriptImportReview from './ScriptImportReview'
@@ -48,6 +48,13 @@ interface Props {
 
 type ReviewMode = 'validation' | 'conversion'
 
+type LoadRunnerSupportMatrixSection = {
+  key: string
+  title: string
+  items: LoadRunnerSupportMatrixEntry[]
+  preview: string
+}
+
 export default function LoadRunnerImport({ projectId, onImported, onEdit, onClose }: Props) {
   const api = useApi()
   const fileRef = useRef<HTMLInputElement>(null)
@@ -58,6 +65,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
   const [notice, setNotice] = useState('')
   const [result, setResult] = useState<LoadRunnerImportResult | null>(null)
   const [reviewMode, setReviewMode] = useState<ReviewMode | null>(null)
+  const [supportMatrix, setSupportMatrix] = useState<LoadRunnerSupportMatrixEntry[]>([])
 
   const [options, setOptions] = useState({
     name: '', base_url: '', include_assertions: true, preserve_transactions: true,
@@ -80,6 +88,27 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
     : metadataSummary.unsupportedFunctions
   const reviewSections = result?.review_sections || []
   const repairSuggestions = result?.repair_suggestions || []
+  const supportMatrixSections = summarizeLoadRunnerSupportMatrix(supportMatrix)
+
+  useEffect(() => {
+    let cancelled = false
+
+    api.getLoadRunnerSupportMatrix()
+      .then((response: LoadRunnerSupportMatrixResponse) => {
+        if (!cancelled) {
+          setSupportMatrix(Array.isArray(response.support_matrix) ? response.support_matrix : [])
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSupportMatrix([])
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [api])
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault(); setDragOver(false)
@@ -185,6 +214,39 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
       <div className="settings-notice">
         SOAP-aware detection is enabled for LoadRunner request assets that already resolve to SOAP-style calls or envelopes. Java-over-HTTP import remains unavailable until the dedicated runtime and transport format are implemented.
       </div>
+
+      {supportMatrix.length > 0 && (
+        <div className="lr-preserved">
+          <div className="lr-preserved-header">
+            <h4>Runtime Settings Coverage</h4>
+            <span>Code-owned LoadRunner Web HTTP/HTML runtime support matrix</span>
+          </div>
+
+          <div className="lr-preserved-grid">
+            {supportMatrixSections.map(section => (
+              <div className="lr-preserved-card" key={section.key}>
+                <span className="lr-preserved-label">{section.title}</span>
+                <strong>{section.items.length}</strong>
+                <small>{section.preview || 'No entries'}</small>
+              </div>
+            ))}
+          </div>
+
+          <div className="lr-warnings">
+            <h4>Coverage Details</h4>
+            {supportMatrixSections.map(section => (
+              <details key={section.key}>
+                <summary>{section.title} ({section.items.length})</summary>
+                <ul>
+                  {section.items.map(entry => (
+                    <li key={entry.id}>{entry.area}: {entry.concept}</li>
+                  ))}
+                </ul>
+              </details>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="replay-panel-actions">
         <button className="btn btn-secondary btn-lg" onClick={() => runReview('validate')} disabled={!file || workingMode !== null}>
@@ -317,4 +379,24 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
       )}
     </div>
   )
+}
+
+function summarizeLoadRunnerSupportMatrix(entries: LoadRunnerSupportMatrixEntry[]): LoadRunnerSupportMatrixSection[] {
+  return [
+    buildLoadRunnerSupportMatrixSection('executed', 'Executed', entries),
+    buildLoadRunnerSupportMatrixSection('partial', 'Partial', entries),
+    buildLoadRunnerSupportMatrixSection('compatibility_only', 'Compatibility-only', entries),
+    buildLoadRunnerSupportMatrixSection('non_applicable', 'Non-applicable', entries),
+    buildLoadRunnerSupportMatrixSection('blocked', 'Blocked', entries),
+  ]
+}
+
+function buildLoadRunnerSupportMatrixSection(status: string, title: string, entries: LoadRunnerSupportMatrixEntry[]): LoadRunnerSupportMatrixSection {
+  const items = entries.filter(entry => entry.status === status)
+  return {
+    key: status,
+    title,
+    items,
+    preview: items.slice(0, 2).map(entry => `${entry.area}: ${entry.concept}`).join(' • '),
+  }
 }

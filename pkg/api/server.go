@@ -216,6 +216,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("GET /api/v1/scripts/{id}/download", cors(log(auth(http.HandlerFunc(s.handleDownloadScript)))))
 	s.mux.Handle("POST /api/v1/scripts/import/loadrunner", cors(log(auth(http.HandlerFunc(s.handleImportLoadRunner)))))
 	s.mux.Handle("POST /api/v1/scripts/import/loadrunner/validate", cors(log(auth(http.HandlerFunc(s.handleValidateLoadRunnerImport)))))
+	s.mux.Handle("GET /api/v1/scripts/import/loadrunner/support-matrix", cors(log(auth(http.HandlerFunc(s.handleLoadRunnerSupportMatrix)))))
 	s.mux.Handle("POST /api/v1/scripts/import/jmeter", cors(log(auth(http.HandlerFunc(s.handleImportJMeter)))))
 	s.mux.Handle("POST /api/v1/scripts/import/jmeter/save", cors(log(auth(http.HandlerFunc(s.handleSaveJMeterImport)))))
 	s.mux.Handle("POST /api/v1/scripts/import/jmeter/validate", cors(log(auth(http.HandlerFunc(s.handleValidateJMeterImport)))))

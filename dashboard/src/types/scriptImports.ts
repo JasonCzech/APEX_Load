@@ -71,7 +71,22 @@ export interface LoadRunnerImportSummary {
   project_sections?: string[]
   runtime_files?: string[]
   parameter_files?: string[]
+  runtime_settings_parity?: LoadRunnerRuntimeSettingParity[]
+  runtime_settings_status_counts?: Record<string, number>
   unsupported_function_count: number
+}
+
+export interface LoadRunnerSupportMatrixEntry {
+  id: string
+  area: string
+  concept: string
+  fields?: string[]
+  status: string
+  notes?: string
+}
+
+export interface LoadRunnerRuntimeSettingParity extends LoadRunnerSupportMatrixEntry {
+  runtime_files?: string[]
 }
 
 export interface JMeterConvertStats {
@@ -145,6 +160,10 @@ export type RecorderImportResult = ScriptImportResult<Record<string, unknown>, R
 
 export interface JMeterSupportMatrixResponse {
   support_matrix?: SupportMatrix
+}
+
+export interface LoadRunnerSupportMatrixResponse {
+  support_matrix?: LoadRunnerSupportMatrixEntry[]
 }
 
 export interface SaveJMeterImportRequest {

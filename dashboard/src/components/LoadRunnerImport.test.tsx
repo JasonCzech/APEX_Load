@@ -9,6 +9,7 @@ import LoadRunnerImport from './LoadRunnerImport'
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 const apiMock = {
+  getLoadRunnerSupportMatrix: vi.fn(),
   importLoadRunner: vi.fn(),
   validateLoadRunnerImport: vi.fn(),
   createScript: vi.fn(),
@@ -27,6 +28,28 @@ describe('LoadRunnerImport', () => {
     document.body.appendChild(container)
     root = createRoot(container)
 
+    apiMock.getLoadRunnerSupportMatrix.mockResolvedValue({
+      support_matrix: [
+        {
+          id: 'http_transport',
+          area: 'HTTP',
+          concept: 'Timeouts, redirects, and connection reuse',
+          status: 'executed',
+        },
+        {
+          id: 'logging',
+          area: 'Logging',
+          concept: 'Log level, error-only, and extended logging options',
+          status: 'partial',
+        },
+        {
+          id: 'streaming',
+          area: 'Streaming',
+          concept: 'Adaptive or fixed playback settings',
+          status: 'compatibility_only',
+        },
+      ],
+    })
     apiMock.importLoadRunner.mockResolvedValue({
       script: {
         name: 'Demo LoadRunner Script',
@@ -142,8 +165,15 @@ describe('LoadRunnerImport', () => {
       root.render(<LoadRunnerImport onImported={onImported} />)
     })
 
+    await flushPromises()
+
     expect(container.textContent).toContain('SOAP-aware detection is enabled for LoadRunner request assets')
     expect(container.textContent).toContain('Java-over-HTTP import remains unavailable')
+    expect(container.textContent).toContain('Runtime Settings Coverage')
+    expect(container.textContent).toContain('Executed')
+    expect(container.textContent).toContain('Partial')
+    expect(container.textContent).toContain('Compatibility-only')
+    expect(container.textContent).toContain('HTTP: Timeouts, redirects, and connection reuse')
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
     expect(fileInput).not.toBeNull()
