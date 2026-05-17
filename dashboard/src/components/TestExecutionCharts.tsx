@@ -35,6 +35,7 @@ interface Props {
   onChartMouseDown: (activeLabel?: string | number) => void
   onChartMouseMove: (activeLabel?: string | number) => void
   onZoom: () => void
+  onChartScrollWheel: (event: React.WheelEvent<HTMLDivElement>) => void
   showRefArea: boolean
   refAreaLeft: string | number
   refAreaEnd: string | number
@@ -99,6 +100,7 @@ export default function TestExecutionCharts({
   onChartMouseDown,
   onChartMouseMove,
   onZoom,
+  onChartScrollWheel,
   showRefArea,
   refAreaLeft,
   refAreaEnd,
@@ -230,6 +232,7 @@ export default function TestExecutionCharts({
               onDragOver={event => handleChartDragOver(event, chart.id)}
               onDrop={event => handleChartDrop(event, chart.id)}
               onDragEnd={() => setDraggedChartId(null)}
+              onWheel={onChartScrollWheel}
             >
               <div className="chart-card-header">
                 <div className="chart-title-wrap">

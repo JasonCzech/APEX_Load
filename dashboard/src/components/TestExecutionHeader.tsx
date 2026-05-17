@@ -59,10 +59,8 @@ export default function TestExecutionHeader({
         <div className="time-range-selector">
           <button className={`btn-chip ${timeRange === '3m' ? 'active' : ''}`} onClick={() => onTimeRangeChange('3m')}>3m</button>
           <button className={`btn-chip ${timeRange === '10m' ? 'active' : ''}`} onClick={() => onTimeRangeChange('10m')}>10m</button>
-          <button className={`btn-chip ${timeRange === 'all' ? 'active' : ''}`} onClick={() => onTimeRangeChange('all')}>All</button>
-          {timeRange === 'custom' && (
-            <button className="btn-chip active zoom-reset" onClick={() => onTimeRangeChange('all')}>Reset Zoom</button>
-          )}
+          <button className={`btn-chip ${timeRange === 'custom' ? 'active' : ''}`} onClick={() => onTimeRangeChange('custom')}>Custom</button>
+          <button className={`btn-chip ${timeRange === 'all' ? 'active' : ''}`} onClick={() => onTimeRangeChange('all')}>Max</button>
         </div>
         <TestExecutionQueuedRunActions
           test={test}

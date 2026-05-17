@@ -17,6 +17,7 @@ export type ExecutionChartZoomAction =
   | { type: 'beginSelection'; activeLabel?: string | number }
   | { type: 'updateSelection'; activeLabel?: string | number }
   | { type: 'applySelection' }
+  | { type: 'setZoomRange'; zoomRange: ExecutionChartZoomRange | null }
 
 export const initialExecutionChartZoomState: ExecutionChartZoomState = {
   timeRange: 'all',
@@ -34,6 +35,12 @@ export function executionChartZoomReducer(
       return {
         ...state,
         timeRange: action.value,
+      }
+    case 'setZoomRange':
+      return {
+        ...state,
+        timeRange: action.zoomRange ? 'custom' : 'all',
+        zoomRange: action.zoomRange,
       }
     case 'beginSelection':
       if (action.activeLabel === undefined) {
