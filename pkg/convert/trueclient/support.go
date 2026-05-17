@@ -104,16 +104,16 @@ var stepScopes = []StepScope{
 	{
 		CanonicalName:    "scroll",
 		DisplayName:      "Scroll",
-		Status:           ScopeReviewOnly,
-		StormrunnerShape: "browser_swipe or preserved review note",
-		Notes:            "Scroll intent depends on viewport state and may need manual repair during import review.",
+		Status:           ScopeSupported,
+		StormrunnerShape: "browser_swipe",
+		Notes:            "Direct Scroll steps and simple JavaScript scrollTo/scrollBy statements map to browser_swipe; viewport-specific behavior should still be replay-validated.",
 	},
 	{
 		CanonicalName:    "evaluate_javascript",
 		DisplayName:      "Evaluate JavaScript",
 		Status:           ScopeReviewOnly,
-		StormrunnerShape: "browser_fill or browser_click when decomposable",
-		Notes:            "Simple jQuery and document.querySelector fill/click statements are decomposed; unsupported shapes stay in guided review with warnings, blocker repair suggestions, and preserved unsupported-step reporting because Stormrunner does not expose a public browser-eval action.",
+		StormrunnerShape: "browser_fill, browser_click, browser_swipe, or browser_navigate when decomposable",
+		Notes:            "Simple jQuery/document.querySelector fill/click, window scroll, and location navigation statements are decomposed; unsupported shapes stay in guided review with warnings, blocker repair suggestions, and preserved unsupported-step reporting because Stormrunner does not expose a public browser-eval action.",
 	},
 }
 

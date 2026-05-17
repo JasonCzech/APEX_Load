@@ -398,8 +398,8 @@ Current step support matrix:
 | Start Transaction | Supported | transaction metadata | Transaction preservation prefixes converted action names when requested. |
 | End Transaction | Supported | transaction metadata | Close events stay in scope with the same preservation model. |
 | Select | Supported | `browser_select` | Select inputs map to a native browser select action that chooses an option by value, text, or label. |
-| Scroll | Review only | `browser_swipe` or preserved review note | Scroll intent depends on viewport state and may require repair suggestions. |
-| Evaluate JavaScript | Review only | `browser_fill` or `browser_click` when decomposable | Simple jQuery and `document.querySelector` fill/click statements are decomposed; unsupported shapes remain in guided review with warnings and blocker repair suggestions because Stormrunner does not expose a supported public browser-eval action. |
+| Scroll | Supported | `browser_swipe` | Direct Scroll steps and simple JavaScript `window.scrollTo` / `window.scrollBy` statements map to browser swipes; viewport-specific behavior should still be replay-validated. |
+| Evaluate JavaScript | Review only | `browser_fill`, `browser_click`, `browser_swipe`, or `browser_navigate` when decomposable | Simple jQuery/document.querySelector fill/click, window scroll, and location navigation statements are decomposed; unsupported shapes remain in guided review with warnings and blocker repair suggestions because Stormrunner does not expose a supported public browser-eval action. |
 
 ### Current Importer Behavior
 
@@ -414,7 +414,7 @@ Current step support matrix:
 - TrueClient step format is proprietary and not publicly documented
 - Object identification methods may not map cleanly to CSS selectors
 - End events may require custom `wait_for` logic
-- Review-only steps such as `Scroll` will still need importer warnings, repair guidance, and representative sample fixtures before they are practical in a shared import flow
+- Non-decomposable JavaScript and less common object-identification forms still need importer warnings, repair guidance, and representative sample fixtures before they are practical in a shared import flow
 
 Mitigation: Require 3–5 sample TrueClient MobileWeb scripts as test fixtures before starting this phase. Accept partial import coverage with clear warnings for unmapped steps.
 

@@ -39,16 +39,18 @@ func TestLookupScriptTypeScope(t *testing.T) {
 
 func TestLookupStepScope(t *testing.T) {
 	tests := []struct {
-		stepName string
-		wantName string
-		wantType string
-		wantOK   bool
+		stepName   string
+		wantName   string
+		wantStatus ScopeStatus
+		wantType   string
+		wantOK     bool
 	}{
-		{stepName: "Set / Type", wantName: "Set / Type", wantType: "browser_fill", wantOK: true},
-		{stepName: "Select", wantName: "Select", wantType: "browser_select", wantOK: true},
-		{stepName: "Verify", wantName: "Verify", wantType: "action assertions", wantOK: true},
-		{stepName: "Start Transaction", wantName: "Start Transaction", wantType: "transaction metadata", wantOK: true},
-		{stepName: "Evaluate JavaScript", wantName: "Evaluate JavaScript", wantType: "browser_fill or browser_click when decomposable", wantOK: true},
+		{stepName: "Set / Type", wantName: "Set / Type", wantStatus: ScopeSupported, wantType: "browser_fill", wantOK: true},
+		{stepName: "Select", wantName: "Select", wantStatus: ScopeSupported, wantType: "browser_select", wantOK: true},
+		{stepName: "Verify", wantName: "Verify", wantStatus: ScopeSupported, wantType: "action assertions", wantOK: true},
+		{stepName: "Start Transaction", wantName: "Start Transaction", wantStatus: ScopeSupported, wantType: "transaction metadata", wantOK: true},
+		{stepName: "Scroll", wantName: "Scroll", wantStatus: ScopeSupported, wantType: "browser_swipe", wantOK: true},
+		{stepName: "Evaluate JavaScript", wantName: "Evaluate JavaScript", wantStatus: ScopeReviewOnly, wantType: "browser_fill, browser_click, browser_swipe, or browser_navigate when decomposable", wantOK: true},
 		{stepName: "Unknown Step", wantOK: false},
 	}
 
@@ -60,8 +62,8 @@ func TestLookupStepScope(t *testing.T) {
 		if !tt.wantOK {
 			continue
 		}
-		if scope.DisplayName != tt.wantName || scope.StormrunnerShape != tt.wantType {
-			t.Fatalf("LookupStepScope(%q) = %#v, want name=%q type=%q", tt.stepName, scope, tt.wantName, tt.wantType)
+		if scope.DisplayName != tt.wantName || scope.Status != tt.wantStatus || scope.StormrunnerShape != tt.wantType {
+			t.Fatalf("LookupStepScope(%q) = %#v, want name=%q status=%q type=%q", tt.stepName, scope, tt.wantName, tt.wantStatus, tt.wantType)
 		}
 	}
 }
