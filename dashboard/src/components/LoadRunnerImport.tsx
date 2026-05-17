@@ -514,13 +514,24 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
                       <span>{importSummary.parameterFileSections.length}</span>
                     </div>
                     <ul>
-                      {importSummary.parameterFileSections.map((section) => (
-                        <li key={`${section.file}:${section.name}`}>
-                          <strong>{section.file}</strong>
-                          {`: ${section.name}`}
-                          {renderParameterMappingDetails(section.values)}
-                        </li>
-                      ))}
+                      {importSummary.parameterFileSections.map((section) => {
+                        const mappedSourceName = findImportedParameterMappingDataSourceName(generatedDataSources, section.values)
+                        return (
+                          <li key={`${section.file}:${section.name}`}>
+                            <strong>{section.file}</strong>
+                            {`: ${section.name}`}
+                            {renderParameterMappingDetails(section.values)}
+                            {mappedSourceName && onEdit && (
+                              <>
+                                {' '}
+                                <button className="btn btn-secondary btn-sm" onClick={() => openImportedScriptInEditor({ targetSection: 'parameter-data', targetDataSource: mappedSourceName })}>
+                                  Open Mapped Data Source In Editor
+                                </button>
+                              </>
+                            )}
+                          </li>
+                        )
+                      })}
                     </ul>
                   </div>
                 )}
@@ -603,6 +614,41 @@ function buildLoadRunnerSupportMatrixSection(status: string, title: string, entr
     items,
     preview: items.slice(0, 2).map(entry => `${entry.area}: ${entry.concept}`).join(' • '),
   }
+}
+
+function getImportedParameterMappingValue(values: Record<string, string>, aliases: string[]): string {
+  const normalizedAliases = aliases.map(alias => alias.toLowerCase())
+  const match = Object.entries(values).find(([key]) => normalizedAliases.includes(key.toLowerCase()))
+  return match?.[1]?.trim() || ''
+}
+
+function sanitizeImportedParameterDataSourceName(dataFile?: string | null): string {
+  const normalizedFile = dataFile?.trim()
+  if (!normalizedFile) return 'parameter_data'
+
+  const baseName = normalizedFile.split(/[\\/]/).pop() || normalizedFile
+  const withoutExtension = baseName.replace(/\.[^.]+$/, '')
+  const normalized = withoutExtension
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+
+  return normalized || 'parameter_data'
+}
+
+function findImportedParameterMappingDataSourceName(
+  dataSources: Array<{ name: string }> | undefined,
+  values: Record<string, string>,
+): string | null {
+  const dataFile = getImportedParameterMappingValue(values, ['table', 'filename', 'file', 'datafile', 'sourcefile'])
+  if (!dataFile || !dataSources?.length) return null
+
+  const sanitizedName = sanitizeImportedParameterDataSourceName(dataFile)
+  const exactMatch = dataSources.find(source => source.name.trim() === sanitizedName)
+  if (exactMatch) return exactMatch.name
+
+  const lowerMatch = dataSources.find(source => source.name.trim().toLowerCase() === sanitizedName)
+  return lowerMatch?.name || null
 }
 
 function renderParameterMappingDetails(values: Record<string, string>) {

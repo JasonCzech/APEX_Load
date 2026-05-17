@@ -89,7 +89,7 @@ describe('LoadRunnerImport', () => {
         },
         data_sources: [
           {
-            name: 'login_users',
+            name: 'users',
             type: 'csv',
             first_row_header: true,
             inline_data: 'username\nalice\nbob',
@@ -287,7 +287,7 @@ describe('LoadRunnerImport', () => {
     expect(container.textContent).toContain('column username')
     expect(container.textContent).toContain('table Users.dat')
     expect(container.textContent).toContain('Generated Data Sources')
-    expect(container.textContent).toContain('login_users')
+    expect(container.textContent).toContain('users')
     expect(container.textContent).toContain('2 rows')
 
     const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save to Script Library'))
@@ -570,7 +570,59 @@ describe('LoadRunnerImport', () => {
     expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
       name: 'Demo LoadRunner Script',
       protocol: 'http',
-    }), { targetSection: 'parameter-data', targetDataSource: 'login_users' })
+    }), { targetSection: 'parameter-data', targetDataSource: 'users' })
+  })
+
+  it('opens a mapped parameter source in the visual editor with a mapping focus hint', async () => {
+    const onEdit = vi.fn()
+
+    await act(async () => {
+      root.render(<LoadRunnerImport onEdit={onEdit} />)
+    })
+
+    await flushPromises()
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
+    expect(fileInput).not.toBeNull()
+    if (!fileInput) {
+      return
+    }
+
+    const file = new File(['zip-content'], 'demo.zip', { type: 'application/zip' })
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [file],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert LoadRunner Script'))
+    expect(convertButton).toBeDefined()
+    if (!convertButton) {
+      return
+    }
+
+    await act(async () => {
+      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushPromises()
+
+    const openMappedDataSourceButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Open Mapped Data Source In Editor'))
+    expect(openMappedDataSourceButton).toBeDefined()
+    if (!openMappedDataSourceButton) {
+      return
+    }
+
+    await act(async () => {
+      openMappedDataSourceButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Demo LoadRunner Script',
+      protocol: 'http',
+    }), { targetSection: 'parameter-data', targetDataSource: 'users' })
   })
 
   it('starts draft browser replay validation for converted browser imports before save', async () => {
