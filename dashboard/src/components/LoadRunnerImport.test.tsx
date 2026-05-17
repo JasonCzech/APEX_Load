@@ -1849,6 +1849,7 @@ describe('LoadRunnerImport', () => {
     expect(container.textContent).toContain('Session: draft-browser-validation')
     expect(container.textContent).toContain('Status: running')
     expect(container.textContent).toContain('selector repair recommended')
+    expect(container.textContent).toContain('Wait for the draft replay to finish before saving it to the library.')
     const inProgressReplayButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Browser Replay In Progress')) as HTMLButtonElement | undefined
     expect(inProgressReplayButton).toBeDefined()
     expect(inProgressReplayButton?.disabled).toBe(true)
@@ -2001,6 +2002,7 @@ describe('LoadRunnerImport', () => {
       expect(container.textContent).toContain('Session: draft-browser-validation')
       expect(container.textContent).toContain('Status: running')
       expect(container.textContent).toContain('Browser Replay In Progress')
+      expect(container.textContent).toContain('Wait for the draft replay to finish before saving it to the library.')
 
       await act(async () => {
         vi.advanceTimersByTime(2000)
@@ -2010,6 +2012,7 @@ describe('LoadRunnerImport', () => {
 
       expect(apiMock.getBrowserReplaySession).toHaveBeenCalledWith('draft-browser-validation')
       expect(container.textContent).toContain('Status: completed')
+      expect(container.textContent).toContain('The latest draft replay completed. Review the replay results before saving it to the library.')
 
       const finalSaveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save to Script Library'))
       expect(finalSaveButton).toBeDefined()
@@ -2247,6 +2250,7 @@ describe('LoadRunnerImport', () => {
       expect(container.textContent).toContain('Status: failed')
       expect(container.textContent).toContain('Rerun Browser Replay Before Saving')
       expect(container.textContent).toContain('Rerun a draft browser replay before saving the reviewed script.')
+      expect(container.textContent).toContain('Rerun a draft replay against the converted browser script before saving it to the library.')
     } finally {
       vi.useRealTimers()
     }

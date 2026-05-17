@@ -261,6 +261,11 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
     : (browserReplayInProgress
         ? 'Browser Replay In Progress'
         : (browserReplayWasStarted ? 'Rerun Browser Replay' : 'Validate Browser Replay'))
+  const replayPanelDescription = browserReplayInProgress
+    ? 'Wait for the draft replay to finish before saving it to the library.'
+    : (saveRequiresBrowserReplay
+        ? `${browserReplayWasStarted ? 'Rerun' : 'Run'} a draft replay against the converted browser script before saving it to the library.`
+        : 'The latest draft replay completed. Review the replay results before saving it to the library.')
   const reviewSubtitle = reviewMode === 'validation'
     ? (saveBlockedByMigrationPolicy
         ? 'This preview came from the dry-run validator. Saving is disabled until the migration readiness blockers are resolved or the active policy is relaxed.'
@@ -802,7 +807,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
                     <strong>Browser Replay Validation</strong>
                     <span>{replayValidationSession?.status || 'not run'}</span>
                   </div>
-                  <p>Run a draft replay against the converted browser script before saving it to the library.</p>
+                  <p>{replayPanelDescription}</p>
                   <div className="replay-panel-actions" style={{ marginTop: 12, justifyContent: 'flex-start' }}>
                     <button className="btn btn-secondary" onClick={handleValidateBrowserReplay} disabled={replayValidationLoading || browserReplayInProgress}>
                       {replayValidationLoading ? <><span className="spinner" /> {replayActionLabel}</> : replayActionLabel}
