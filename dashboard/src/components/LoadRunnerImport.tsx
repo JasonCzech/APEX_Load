@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { useApi } from '../hooks/useApi'
 import { type ImportedScript, type LoadRunnerImportResult, type LoadRunnerImportSummary, type LoadRunnerMigrationReadiness, type LoadRunnerSupportMatrixEntry, type LoadRunnerSupportMatrixExample, type LoadRunnerSupportMatrixResponse } from '../types/scriptImports'
+import { type BrowserReplaySession } from '../types'
 import { type ScriptDefinition } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import ScriptImportReview from './ScriptImportReview'
@@ -39,6 +40,10 @@ function getSummaryList(values?: string[]) {
   return Array.isArray(values) ? values : []
 }
 
+function isBrowserImport(script: ImportedScript | null): boolean {
+  return script?.protocol === 'browser'
+}
+
 interface Props {
   projectId?: string
   onImported?: (script: ImportedScript) => void
@@ -68,6 +73,10 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
   const [supportMatrix, setSupportMatrix] = useState<LoadRunnerSupportMatrixEntry[]>([])
   const [supportMatrixNotes, setSupportMatrixNotes] = useState<string[]>([])
   const [supportMatrixExamples, setSupportMatrixExamples] = useState<LoadRunnerSupportMatrixExample[]>([])
+  const [replayValidationLoading, setReplayValidationLoading] = useState(false)
+  const [replayValidationError, setReplayValidationError] = useState('')
+  const [replayValidationWarnings, setReplayValidationWarnings] = useState<string[]>([])
+  const [replayValidationSession, setReplayValidationSession] = useState<BrowserReplaySession | null>(null)
 
   const [options, setOptions] = useState({
     name: '', base_url: '', include_assertions: true, preserve_transactions: true,
@@ -93,6 +102,14 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
   const repairSuggestions = result?.repair_suggestions || []
   const supportMatrixSections = summarizeLoadRunnerSupportMatrix(supportMatrix)
   const migrationReadiness: LoadRunnerMigrationReadiness | null = reviewSummary?.migration_readiness || null
+  const browserImport = isBrowserImport(importedScript)
+
+  const resetReplayValidation = () => {
+    setReplayValidationLoading(false)
+    setReplayValidationError('')
+    setReplayValidationWarnings([])
+    setReplayValidationSession(null)
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -122,18 +139,18 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
     e.preventDefault(); setDragOver(false)
     const f = e.dataTransfer.files[0]
     if (f && (f.name.endsWith('.zip') || f.type === 'application/zip')) {
-      setFile(f); setError(''); setNotice(''); setResult(null); setReviewMode(null)
+      setFile(f); setError(''); setNotice(''); setResult(null); setReviewMode(null); resetReplayValidation()
     } else { setError('Please upload a ZIP file containing a LoadRunner script folder.') }
   }
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]
-    if (f) { setFile(f); setError(''); setNotice(''); setResult(null); setReviewMode(null) }
+    if (f) { setFile(f); setError(''); setNotice(''); setResult(null); setReviewMode(null); resetReplayValidation() }
   }
 
   const runReview = async (mode: 'convert' | 'validate') => {
     if (!file) return
-    setWorkingMode(mode); setError(''); setNotice(''); setResult(null)
+    setWorkingMode(mode); setError(''); setNotice(''); setResult(null); resetReplayValidation()
     try {
       const request = mode === 'validate' ? api.validateLoadRunnerImport : api.importLoadRunner
       const res = await request(file, {
@@ -161,6 +178,42 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
       onImported?.(importedScript)
     } catch (error: unknown) {
       setError(getErrorMessage(error, 'Failed to save script'))
+    }
+  }
+
+  const handleValidateBrowserReplay = async () => {
+    if (!importedScript) return
+    const script = toScriptDefinition(importedScript)
+    const browser = script.config?.browser
+
+    setReplayValidationLoading(true)
+    setReplayValidationError('')
+    setReplayValidationWarnings([])
+    setReplayValidationSession(null)
+
+    try {
+      const res = await api.startDraftBrowserReplaySession({
+        script: projectId ? { ...script, project_id: projectId } : script,
+        ignore_think_time: true,
+        browser: {
+          engine: browser?.engine || 'chromium',
+          headless: browser?.headless ?? true,
+          slow_mo_ms: browser?.slow_mo_ms,
+          user_agent: browser?.user_agent,
+          device_profile: browser?.device_profile,
+          touch_mode: browser?.touch_mode,
+          orientation: browser?.orientation,
+          client_metrics: browser?.client_metrics,
+          capture_screenshots: browser?.capture_screenshots,
+          viewport: browser?.viewport,
+        },
+      })
+      setReplayValidationSession(res.session)
+      setReplayValidationWarnings(Array.isArray(res.warnings) ? res.warnings : [])
+    } catch (error: unknown) {
+      setReplayValidationError(getErrorMessage(error, 'Browser replay validation failed'))
+    } finally {
+      setReplayValidationLoading(false)
     }
   }
 
@@ -319,6 +372,34 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
             onSave={handleSaveConverted}
             onEdit={onEdit ? () => onEdit(toScriptDefinition(importedScript)) : undefined}
           >
+
+            {browserImport && (
+              <div className="lr-warnings">
+                <div className="lr-review-section">
+                  <div className="lr-review-section-header">
+                    <strong>Browser Replay Validation</strong>
+                    <span>{replayValidationSession?.status || 'not run'}</span>
+                  </div>
+                  <p>Run a draft replay against the converted browser script before saving it to the library.</p>
+                  <div className="replay-panel-actions" style={{ marginTop: 12, justifyContent: 'flex-start' }}>
+                    <button className="btn btn-secondary" onClick={handleValidateBrowserReplay} disabled={replayValidationLoading}>
+                      {replayValidationLoading ? <><span className="spinner" /> Validating Replay...</> : 'Validate Browser Replay'}
+                    </button>
+                  </div>
+                  {replayValidationSession && (
+                    <ul>
+                      <li>Session: {replayValidationSession.id}</li>
+                      <li>Status: {replayValidationSession.status}</li>
+                      <li>Group: {replayValidationSession.group}</li>
+                    </ul>
+                  )}
+                  {replayValidationWarnings.length > 0 && (
+                    <ul>{replayValidationWarnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul>
+                  )}
+                  {replayValidationError && <div className="lr-error">{replayValidationError}</div>}
+                </div>
+              </div>
+            )}
 
             {/* Stats */}
             <div className="lr-stats-grid">

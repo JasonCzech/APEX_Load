@@ -136,6 +136,7 @@ Status:
 - B3.2 now has an MVP implementation for `TruClientMobileWeb` LoadRunner ZIP archives. The importer routes supported Mobile Web archives through `pkg/convert/trueclient`, reads UTF-16 `default.xml`, maps navigate/click/fill/select/wait plus conservative verify assertions and simple decomposed JavaScript fill/click into browser DSL actions, preserves transaction names when requested, applies mobile browser runtime settings, and keeps legacy desktop `TruClient` explicitly out of scope.
 - B3.3 now has a shared `review_sections` response shape on import envelopes. LoadRunner and TruClient imports surface warnings, unsupported elements, preserved source metadata, and browser-import assumptions as machine-readable sections with stable keys, severity, summary, and item lists.
 - B3.4 now has deterministic `repair_suggestions` on LoadRunner and TruClient import envelopes. Suggestions call out unsupported constructs, browser selector validation, wait refinement, runtime-setting review, and browser replay validation with stable IDs and categories that the dashboard can render.
+- B3.5 now has a dashboard validation path for imported browser scripts. Converted `browser` protocol imports show a draft replay validation action before save, call the draft browser replay API with the converted script and mobile browser settings, and surface the returned session status, ID, group, warnings, and errors in the import review.
 
 Acceptance criteria:
 - Imported browser scripts land in the same review/edit/save flow as other authoring paths

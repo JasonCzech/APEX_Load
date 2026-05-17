@@ -3923,7 +3923,7 @@ function formatRuntimeSettingStatusLabel(status: string) {
     case 'non_applicable':
       return 'Non-applicable'
     default:
-      return status.replaceAll('_', ' ')
+      return status.replace(/_/g, ' ')
   }
 }
 
