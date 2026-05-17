@@ -624,7 +624,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
       return
     }
     if (browserReplayInProgress) {
-      setNotice('Draft browser replay is still running. Wait for it to finish before saving this import.')
+      setNotice('Draft browser replay is still running. Wait for it to finish before saving it to the library.')
       return
     }
     if (browserReplayNeedsRerun) {
