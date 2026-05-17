@@ -93,3 +93,56 @@ func TestTraceparentIDsExtractsAPMIdentifiers(t *testing.T) {
 		t.Fatalf("zero traceparent ids = (%q, %q), want empty", traceID, spanID)
 	}
 }
+
+func TestBuildRunArchiveReportGroupsByNetworkProfile(t *testing.T) {
+	tempDir := t.TempDir()
+	manifest := RunArchiveManifest{
+		TestID:                "test-network-profile",
+		TestName:              "Network Profile Run",
+		TransactionsFile:      "transactions.jsonl",
+		ResourceSamplesFile:   "resources.jsonl",
+		IntervalSummariesFile: "interval_summaries.jsonl",
+	}
+	manifestBytes, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatalf("marshal manifest: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tempDir, "manifest.json"), manifestBytes, 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+	transactions := []TransactionEvent{
+		{Timestamp: time.Now(), TestID: manifest.TestID, TestName: manifest.TestName, ActionName: "home", NetworkProfile: "preset:dsl", DurationMs: 100, Success: true},
+		{Timestamp: time.Now(), TestID: manifest.TestID, TestName: manifest.TestName, ActionName: "checkout", NetworkProfile: "preset:dsl", DurationMs: 300, Success: false},
+		{Timestamp: time.Now(), TestID: manifest.TestID, TestName: manifest.TestName, ActionName: "home", NetworkProfile: "custom:latency=200ms", DurationMs: 200, Success: true},
+	}
+	txFile, err := os.Create(filepath.Join(tempDir, manifest.TransactionsFile))
+	if err != nil {
+		t.Fatalf("create transactions: %v", err)
+	}
+	encoder := json.NewEncoder(txFile)
+	for _, tx := range transactions {
+		if err := encoder.Encode(tx); err != nil {
+			t.Fatalf("encode transaction: %v", err)
+		}
+	}
+	if err := txFile.Close(); err != nil {
+		t.Fatalf("close transactions: %v", err)
+	}
+	for _, name := range []string{manifest.ResourceSamplesFile, manifest.IntervalSummariesFile} {
+		if err := os.WriteFile(filepath.Join(tempDir, name), nil, 0o644); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+
+	report, err := buildRunArchiveReport(&storage.RunArchiveRecord{TestID: manifest.TestID, ArchivePath: tempDir, ManifestPath: filepath.Join(tempDir, "manifest.json")})
+	if err != nil {
+		t.Fatalf("buildRunArchiveReport returned error: %v", err)
+	}
+	dsl := report.ByNetworkProfile["preset:dsl"]
+	if dsl.Transactions != 2 || dsl.Errors != 1 || dsl.AvgResponseMs != 200 {
+		t.Fatalf("preset:dsl stats = %#v, want two tx, one error, avg 200", dsl)
+	}
+	if report.ByNetworkProfile["custom:latency=200ms"].Transactions != 1 {
+		t.Fatalf("custom network profile stats = %#v, want one tx", report.ByNetworkProfile["custom:latency=200ms"])
+	}
+}

@@ -49,6 +49,7 @@ type MetricsSnapshot struct {
 	ByAction               map[string]*ActionMetrics
 	ByDependencyTarget     map[string]*ActionMetrics `json:"by_dependency_target,omitempty"`
 	BySOAPOperation        map[string]*ActionMetrics `json:"by_soap_operation,omitempty"`
+	ByNetworkProfile       map[string]*ActionMetrics `json:"by_network_profile,omitempty"`
 	ByGroup                map[string]*GroupMetrics
 	Browser                *BrowserMetricsSummary           `json:"browser,omitempty"`
 	BrowserByDevice        map[string]*BrowserDeviceMetrics `json:"browser_by_device,omitempty"`
@@ -321,6 +322,7 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 		ByAction:           make(map[string]*ActionMetrics),
 		ByDependencyTarget: make(map[string]*ActionMetrics),
 		BySOAPOperation:    make(map[string]*ActionMetrics),
+		ByNetworkProfile:   make(map[string]*ActionMetrics),
 		ByGroup:            make(map[string]*GroupMetrics),
 		BrowserByDevice:    make(map[string]*BrowserDeviceMetrics),
 		Telemetry: &TelemetryMetrics{
@@ -343,6 +345,8 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 	dependencyDurationSum := make(map[string]time.Duration)
 	soapDigests := make(map[string]*TDigest)
 	soapDurationSum := make(map[string]time.Duration)
+	networkProfileDigests := make(map[string]*TDigest)
+	networkProfileDurationSum := make(map[string]time.Duration)
 	groupDigests := make(map[string]*TDigest)
 	groupDurationSum := make(map[string]time.Duration)
 
@@ -392,6 +396,20 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 			}
 			mergeActionResult(om, r)
 			recordDurationSample(soapDigests, soapDurationSum, operation, r.Duration)
+		}
+
+		if profile := strings.TrimSpace(r.NetworkProfile); profile != "" {
+			pm, ok := snap.ByNetworkProfile[profile]
+			if !ok {
+				pm = &ActionMetrics{
+					Name:        profile,
+					MinDuration: r.Duration,
+					MaxDuration: r.Duration,
+				}
+				snap.ByNetworkProfile[profile] = pm
+			}
+			mergeActionResult(pm, r)
+			recordDurationSample(networkProfileDigests, networkProfileDurationSum, profile, r.Duration)
 		}
 
 		if r.Group != "" {
@@ -462,6 +480,12 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 	}
 	for name, am := range snap.BySOAPOperation {
 		finalizeActionMetrics(am, soapDurationSum[name], soapDigests[name])
+	}
+	for name, am := range snap.ByNetworkProfile {
+		finalizeActionMetrics(am, networkProfileDurationSum[name], networkProfileDigests[name])
+	}
+	if len(snap.ByNetworkProfile) == 0 {
+		snap.ByNetworkProfile = nil
 	}
 	finalizeBrowserMetricsSummary(snap.Browser)
 	for _, metrics := range snap.BrowserByDevice {

@@ -83,6 +83,7 @@ type TransactionEvent struct {
 	CorrelationID    string                    `json:"correlation_id,omitempty"`
 	TraceID          string                    `json:"trace_id,omitempty"`
 	SpanID           string                    `json:"span_id,omitempty"`
+	NetworkProfile   string                    `json:"network_profile,omitempty"`
 	DependencyType   string                    `json:"dependency_type,omitempty"`
 	DependencyTarget string                    `json:"dependency_target,omitempty"`
 	DurationMs       float64                   `json:"duration_ms"`
@@ -158,6 +159,7 @@ type RunArchiveReport struct {
 	SummaryTimeline     []RunArchiveSummaryPoint               `json:"summary_timeline,omitempty"`
 	ByAction            map[string]RunArchiveActionStats       `json:"by_action"`
 	BySOAPOperation     map[string]RunArchiveActionStats       `json:"by_soap_operation,omitempty"`
+	ByNetworkProfile    map[string]RunArchiveActionStats       `json:"by_network_profile,omitempty"`
 	BySOAPFaultCode     map[string]int64                       `json:"by_soap_fault_code,omitempty"`
 	BySOAPFaultCategory map[string]int64                       `json:"by_soap_fault_category,omitempty"`
 	SOAPFaultTimeline   []RunArchiveSOAPFaultTimelineBucket    `json:"soap_fault_timeline,omitempty"`
@@ -453,6 +455,7 @@ func (w *runArchiveWriter) RecordResult(result *protocol.Result) error {
 		CorrelationID:    result.CorrelationID,
 		TraceID:          traceIDFromCorrelationID(result.CorrelationID),
 		SpanID:           spanIDFromCorrelationID(result.CorrelationID),
+		NetworkProfile:   result.NetworkProfile,
 		DependencyType:   result.DependencyType,
 		DependencyTarget: result.DependencyTarget,
 		DurationMs:       durationMillis(result.Duration),
@@ -685,6 +688,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 		Manifest:            manifest,
 		ByAction:            make(map[string]RunArchiveActionStats),
 		BySOAPOperation:     make(map[string]RunArchiveActionStats),
+		ByNetworkProfile:    make(map[string]RunArchiveActionStats),
 		BySOAPFaultCode:     make(map[string]int64),
 		BySOAPFaultCategory: make(map[string]int64),
 		BrowserByEngine:     make(map[string]*BrowserEngineLiveMetrics),
@@ -717,6 +721,9 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 		mergeArchiveSOAPPayloadTimelineBucket(payloadTimelineBuckets, tx)
 		if operation := archiveSOAPOperation(tx); operation != "" {
 			report.BySOAPOperation[operation] = mergeRunArchiveActionStats(report.BySOAPOperation[operation], tx)
+		}
+		if tx.NetworkProfile != "" {
+			report.ByNetworkProfile[tx.NetworkProfile] = mergeRunArchiveActionStats(report.ByNetworkProfile[tx.NetworkProfile], tx)
 		}
 		incrementArchiveCount(report.BySOAPFaultCode, archiveSOAPFaultCode(tx))
 		incrementArchiveCount(report.BySOAPFaultCategory, archiveSOAPFaultCategory(tx))
@@ -812,6 +819,12 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	}
 	if len(report.BySOAPOperation) == 0 {
 		report.BySOAPOperation = nil
+	}
+	for profile, stats := range report.ByNetworkProfile {
+		report.ByNetworkProfile[profile] = finalizeRunArchiveActionStats(stats)
+	}
+	if len(report.ByNetworkProfile) == 0 {
+		report.ByNetworkProfile = nil
 	}
 	if len(report.BySOAPFaultCode) == 0 {
 		report.BySOAPFaultCode = nil

@@ -321,6 +321,8 @@ Testing from uncontended Kubernetes pods masks real-world network turbulence exp
 - **Profile allocation** — run a percentage of VUsers on specific profiles (e.g., "30% 3G, 70% 4G")
 - **Per-profile metrics** — break down response times by network profile
 
+**Current direction:** Runtime network shaping is implemented for HTTP-family protocols through `config.web_runtime.network_simulation`, including preset and custom latency, bandwidth, jitter, and packet-loss settings. Results now retain a normalized `network_profile` label, with live `network_profiles` metrics and archive `by_network_profile` summaries so teams can compare response time and errors across shaped groups.
+
 ---
 
 ## Gap 19: Ephemeral Environment Target Resolution

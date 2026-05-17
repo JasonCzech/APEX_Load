@@ -21,6 +21,22 @@ func TestBuildProtoConfig_BaseURL(t *testing.T) {
 	}
 }
 
+func TestNetworkProfileLabel(t *testing.T) {
+	if got := networkProfileLabel(dsl.NetworkSimulationConfig{Mode: "preset", Preset: "dsl"}); got != "preset:dsl" {
+		t.Fatalf("preset label = %q, want preset:dsl", got)
+	}
+	got := networkProfileLabel(dsl.NetworkSimulationConfig{
+		Mode:          "custom",
+		BandwidthKbps: 2048,
+		LatencyMs:     125,
+		JitterMs:      15,
+		PacketLossPct: 1.5,
+	})
+	if got != "custom:bandwidth=2048kbps,latency=125ms,jitter=15ms,loss=1.5%" {
+		t.Fatalf("custom label = %q, want stable custom profile label", got)
+	}
+}
+
 func TestBuildProtoConfig_Timeouts(t *testing.T) {
 	script := &dsl.Script{
 		Config: dsl.ScriptConfig{

@@ -300,12 +300,47 @@ func (vu *VUser) recordResult(result *protocol.Result, errCfg dsl.ErrorHandlingC
 		return
 	}
 	result.Group = vu.Group
+	if result.NetworkProfile == "" && vu.Script != nil {
+		result.NetworkProfile = networkProfileLabel(vu.Script.Config.WebRuntime.NetworkSimulation)
+	}
 	vu.Metrics.Record(result)
 	vu.mergeExtractions(result)
 	scrubSensitiveResult(result, vu.RedactionConfig)
 	vu.handleSnapshot(result, errCfg)
 	if vu.ResultSink != nil {
 		_ = vu.ResultSink.RecordResult(result)
+	}
+}
+
+func networkProfileLabel(config dsl.NetworkSimulationConfig) string {
+	switch strings.TrimSpace(config.Mode) {
+	case "preset":
+		if config.Preset != "" {
+			return "preset:" + config.Preset
+		}
+		return "preset"
+	case "custom":
+		parts := make([]string, 0, 4)
+		if config.BandwidthKbps > 0 {
+			parts = append(parts, fmt.Sprintf("bandwidth=%dkbps", config.BandwidthKbps))
+		}
+		if config.LatencyMs > 0 {
+			parts = append(parts, fmt.Sprintf("latency=%dms", config.LatencyMs))
+		}
+		if config.JitterMs > 0 {
+			parts = append(parts, fmt.Sprintf("jitter=%dms", config.JitterMs))
+		}
+		if config.PacketLossPct > 0 {
+			parts = append(parts, fmt.Sprintf("loss=%.2g%%", config.PacketLossPct))
+		}
+		if len(parts) == 0 {
+			return "custom"
+		}
+		return "custom:" + strings.Join(parts, ",")
+	case "max":
+		return "max"
+	default:
+		return ""
 	}
 }
 

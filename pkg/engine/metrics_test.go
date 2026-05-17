@@ -392,6 +392,30 @@ func TestMetricsCollector_ByActionCapturesDependencyAndCorrelationMetadata(t *te
 	}
 }
 
+func TestMetricsCollector_AggregatesByNetworkProfile(t *testing.T) {
+	mc := NewMetricsCollector(100)
+	snap := mc.computeSnapshot([]*protocol.Result{
+		{ActionName: "home", Success: true, Duration: 10 * time.Millisecond, NetworkProfile: "preset:dsl"},
+		{ActionName: "checkout", Success: false, Duration: 30 * time.Millisecond, NetworkProfile: "preset:dsl"},
+		{ActionName: "home", Success: true, Duration: 20 * time.Millisecond, NetworkProfile: "custom:latency=200ms"},
+	}, time.Second)
+
+	dsl := snap.ByNetworkProfile["preset:dsl"]
+	if dsl == nil {
+		t.Fatal("missing preset:dsl network profile metrics")
+	}
+	if dsl.Count != 2 || dsl.Errors != 1 {
+		t.Fatalf("preset:dsl metrics = %#v, want count 2 errors 1", dsl)
+	}
+	if dsl.AvgDuration != 20*time.Millisecond {
+		t.Fatalf("preset:dsl avg = %v, want 20ms", dsl.AvgDuration)
+	}
+	custom := snap.ByNetworkProfile["custom:latency=200ms"]
+	if custom == nil || custom.Count != 1 {
+		t.Fatalf("custom metrics = %#v, want one sample", custom)
+	}
+}
+
 func TestMetricsCollector_ByActionAggregatesServerTelemetry(t *testing.T) {
 	mc := NewMetricsCollector(100)
 	snap := mc.computeSnapshot([]*protocol.Result{

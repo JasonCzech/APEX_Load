@@ -23,6 +23,7 @@ type parquetTransactionEvent struct {
 	CorrelationID       string  `parquet:"name=correlation_id, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
 	TraceID             string  `parquet:"name=trace_id, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
 	SpanID              string  `parquet:"name=span_id, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	NetworkProfile      string  `parquet:"name=network_profile, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
 	DependencyType      string  `parquet:"name=dependency_type, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
 	DependencyTarget    string  `parquet:"name=dependency_target, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
 	DurationMs          float64 `parquet:"name=duration_ms, type=DOUBLE"`
@@ -163,6 +164,7 @@ func toParquetTransactions(items []TransactionEvent) []parquetTransactionEvent {
 			CorrelationID:       item.CorrelationID,
 			TraceID:             item.TraceID,
 			SpanID:              item.SpanID,
+			NetworkProfile:      item.NetworkProfile,
 			DependencyType:      item.DependencyType,
 			DependencyTarget:    item.DependencyTarget,
 			DurationMs:          item.DurationMs,

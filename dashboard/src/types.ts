@@ -315,6 +315,7 @@ export interface TransactionEvent {
   correlation_id?: string
   trace_id?: string
   span_id?: string
+  network_profile?: string
   dependency_type?: string
   dependency_target?: string
   duration_ms: number
@@ -509,6 +510,7 @@ export interface RunArchiveReport {
   summary_timeline?: RunArchiveSummaryPoint[]
   by_action: Record<string, RunArchiveActionStats>
   by_soap_operation?: Record<string, RunArchiveActionStats>
+  by_network_profile?: Record<string, RunArchiveActionStats>
   by_soap_fault_code?: Record<string, number>
   by_soap_fault_category?: Record<string, number>
   soap_fault_timeline?: RunArchiveSOAPFaultTimelineBucket[]
@@ -630,6 +632,7 @@ export interface LiveMetrics {
   transactions?: Record<string, TxMetrics>
   dependency_health?: Record<string, TxMetrics>
   soap_operations?: Record<string, TxMetrics>
+  network_profiles?: Record<string, TxMetrics>
   groups?: Record<string, GroupLiveMetrics>
   browser?: BrowserLiveMetrics
   browser_by_device?: Record<string, BrowserDeviceLiveMetrics>

@@ -211,6 +211,7 @@ type Result struct {
 	StartTime        time.Time     // When the action started
 	Duration         time.Duration // Time to execute action
 	CorrelationID    string        // Correlation or request id when the protocol exposes one
+	NetworkProfile   string        // Effective network emulation profile used for this result
 	DependencyType   string        // Classified dependency type (http, jms_queue, etc.)
 	DependencyTarget string        // Classified downstream target (host, queue, topic, etc.)
 	DNSTime          time.Duration // DNS lookup time (if applicable)

@@ -425,6 +425,7 @@ Before claiming practical parity in these target areas, all of the following sho
 - APM cross-reference is now explicit in archives: W3C `traceparent` correlation IDs are decomposed into `trace_id` and `span_id` fields in JSONL and Parquet transaction results, and archive transaction queries can filter directly by `trace_id`.
 - Lifecycle notification webhooks now support Dynatrace Events API v2 payloads with API-token auth, optional entity selectors, event timeouts, and failure events mapped to Dynatrace `ERROR_EVENT` annotations.
 - Scripts can import target-side Prometheus text metrics through `config.observability.external_metrics`, carrying selected CPU, memory, queue-depth, or application gauges into live resource snapshots and archived resource samples.
+- Network emulation now has attribution as well as shaping: transaction results include a normalized `network_profile`, live metrics expose `network_profiles`, and archive reports aggregate response/error stats under `by_network_profile`.
 
 ## Suggested Milestones
 

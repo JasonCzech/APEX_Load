@@ -193,6 +193,7 @@ type LiveMetrics struct {
 	Transactions           map[string]*TxMetrics                `json:"transactions,omitempty"`
 	DependencyHealth       map[string]*TxMetrics                `json:"dependency_health,omitempty"`
 	SOAPOperations         map[string]*TxMetrics                `json:"soap_operations,omitempty"`
+	NetworkProfiles        map[string]*TxMetrics                `json:"network_profiles,omitempty"`
 	GroupMetrics           map[string]*GroupLiveMetrics         `json:"groups,omitempty"`
 	Browser                *BrowserLiveMetrics                  `json:"browser,omitempty"`
 	BrowserByDevice        map[string]*BrowserDeviceLiveMetrics `json:"browser_by_device,omitempty"`
@@ -3246,6 +3247,7 @@ func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[s
 		DependencyHealth:       make(map[string]*TxMetrics),
 		SOAPOperations:         make(map[string]*TxMetrics),
 		GroupMetrics:           make(map[string]*GroupLiveMetrics),
+		NetworkProfiles:        make(map[string]*TxMetrics),
 		Resources:              snap.Resources,
 	}
 	if snap.Browser != nil {
@@ -3304,6 +3306,10 @@ func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[s
 
 	for name, am := range snap.BySOAPOperation {
 		live.SOAPOperations[name] = buildTxMetricsFromAction(name, am)
+	}
+
+	for name, am := range snap.ByNetworkProfile {
+		live.NetworkProfiles[name] = buildTxMetricsFromAction(name, am)
 	}
 
 	for name, gm := range snap.ByGroup {

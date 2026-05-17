@@ -164,7 +164,7 @@ The 19 gaps are organized into five sequential delivery waves. Each wave targets
 ### 5.3 Network Emulation & Traffic Shaping (P2)
 **Effort:** 5-8 days
 - **Traffic Profiles:** Apply bandwidth, jitter, and packet loss constraints via a custom Go dialer.
-- **Status:** Implemented. `config.web_runtime.network_simulation` now supports jitter and packet-loss fields, and HTTP-family protocols apply transport shaping through a custom dialer/connection wrapper while browser tests continue to honor the existing preset throttling surface.
+- **Status:** Implemented. `config.web_runtime.network_simulation` now supports jitter and packet-loss fields, HTTP-family protocols apply transport shaping through a custom dialer/connection wrapper, and transaction results carry `network_profile` attribution so live metrics and archive reports can break down response time by preset/custom profile. Browser tests continue to honor the existing preset throttling surface.
 
 ### 5.4 Multi-Region Distribution (P3)
 **Effort:** 8-12 days
