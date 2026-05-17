@@ -10,6 +10,7 @@ export interface DraftEditorFocus {
 	targetAction?: string | null
   targetSection?: 'runtime' | 'parameter-data' | null
   targetDataSource?: string | null
+	targetRuntimeArea?: string | null
 }
 
 export interface AuthoringState {
@@ -57,11 +58,13 @@ function normalizeDraftEditorFocus(focus?: DraftEditorFocus | null): DraftEditor
     ? focus.targetSection
     : null
   const targetDataSource = focus.targetDataSource?.trim()
-  if (!targetAction && !targetSection && !targetDataSource) return null
+  const targetRuntimeArea = focus.targetRuntimeArea?.trim()
+  if (!targetAction && !targetSection && !targetDataSource && !targetRuntimeArea) return null
   return {
     ...(targetAction ? { targetAction } : {}),
     ...(targetSection ? { targetSection } : {}),
     ...(targetDataSource ? { targetDataSource } : {}),
+    ...(targetRuntimeArea ? { targetRuntimeArea } : {}),
   }
 }
 

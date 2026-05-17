@@ -47,6 +47,43 @@ type LoadRunnerSupportMatrixSection = {
   preview: string
 }
 
+function getImportedRuntimeSectionId(area?: string | null): string | null {
+  const normalizedArea = area?.trim().toLowerCase()
+  switch (normalizedArea) {
+    case 'think time':
+      return 'think'
+    case 'pacing':
+      return 'pacing'
+    case 'run logic':
+      return 'runlogic'
+    case 'error handling':
+      return 'errors'
+    case 'logging':
+      return 'log'
+    case 'http':
+      return 'http'
+    case 'web http/html':
+    case 'web runtime':
+      return 'web_runtime'
+    case 'soap':
+    case 'soap settings':
+      return 'soap'
+    case 'java http':
+    case 'java over http':
+      return 'java_http'
+    case 'jms':
+      return 'jms'
+    default:
+      return null
+  }
+}
+
+function formatRuntimeSettingStatusLabel(status?: string | null) {
+  const normalized = status?.trim().replace(/[_-]+/g, ' ')
+  if (!normalized) return 'Unknown'
+  return normalized.replace(/\b\w/g, char => char.toUpperCase())
+}
+
 export default function LoadRunnerImport({ projectId, onImported, onEdit, onClose }: Props) {
   const api = useApi()
   const fileRef = useRef<HTMLInputElement>(null)
@@ -90,6 +127,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
   const supportMatrixSections = summarizeLoadRunnerSupportMatrix(supportMatrix)
   const migrationReadiness: LoadRunnerMigrationReadiness | null = reviewSummary?.migration_readiness || null
   const browserImport = isBrowserImport(importedScript)
+  const runtimeBlockingSettings = importSummary.runtimeSettingReadiness?.blocking_settings || []
   const generatedDataSources = importedScript
     ? (toScriptDefinition(importedScript).data_sources || []).map((source, index) => {
       const summary = summarizeInlineData(source)
@@ -109,6 +147,10 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
 		if (!importedScript || !onEdit) return
     onEdit(toScriptDefinition(importedScript), focus)
 	}
+
+  const openImportedRuntimeSettingsInEditor = (area: string) => {
+    openImportedScriptInEditor({ targetSection: 'runtime', targetRuntimeArea: area })
+  }
 
   const resetReplayValidation = () => {
     setReplayValidationLoading(false)
@@ -532,6 +574,58 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
                           </li>
                         )
                       })}
+                    </ul>
+                  </div>
+                )}
+
+                {runtimeBlockingSettings.length > 0 && (
+                  <div className="lr-review-section">
+                    <div className="lr-review-section-header">
+                      <strong>Migration Readiness Blocking Settings</strong>
+                      <span>{runtimeBlockingSettings.length}</span>
+                    </div>
+                    <ul>
+                      {runtimeBlockingSettings.map((entry) => (
+                        <li key={`blocking-${entry.id}`}>
+                          <strong>{formatRuntimeSettingStatusLabel(entry.status)}: {entry.area}</strong>
+                          {`: ${entry.concept}`}
+                          {entry.runtime_files.length > 0 ? ` • ${entry.runtime_files.join(', ')}` : ''}
+                          {onEdit && getImportedRuntimeSectionId(entry.area) && (
+                            <>
+                              {' '}
+                              <button className="btn btn-secondary btn-sm" onClick={() => openImportedRuntimeSettingsInEditor(entry.area)}>
+                                {`Open ${entry.area} Settings In Editor`}
+                              </button>
+                            </>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {importSummary.runtimeSettingsParity.length > 0 && (
+                  <div className="lr-review-section">
+                    <div className="lr-review-section-header">
+                      <strong>Runtime Settings Parity</strong>
+                      <span>{importSummary.runtimeSettingsParity.length}</span>
+                    </div>
+                    <ul>
+                      {importSummary.runtimeSettingsParity.map((entry) => (
+                        <li key={`parity-${entry.id}`}>
+                          <strong>{formatRuntimeSettingStatusLabel(entry.status)}: {entry.area}</strong>
+                          {`: ${entry.concept}`}
+                          {entry.runtime_files.length > 0 ? ` • ${entry.runtime_files.join(', ')}` : ''}
+                          {onEdit && getImportedRuntimeSectionId(entry.area) && (
+                            <>
+                              {' '}
+                              <button className="btn btn-secondary btn-sm" onClick={() => openImportedRuntimeSettingsInEditor(entry.area)}>
+                                {`Open ${entry.area} Settings In Editor`}
+                              </button>
+                            </>
+                          )}
+                        </li>
+                      ))}
                     </ul>
                   </div>
                 )}

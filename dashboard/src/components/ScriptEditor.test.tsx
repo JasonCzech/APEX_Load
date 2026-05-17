@@ -591,6 +591,14 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('Web HTTP/HTML Compatibility')
   })
 
+  it('opens the requested runtime area when a draft opens with a runtime area focus hint', async () => {
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={initialScript} initialFocusedRuntimeArea="Logging" />)
+    })
+
+    expect(container.textContent).toContain('Parameter substitution')
+  })
+
   it('opens parameter data when a draft opens with a parameter-data focus hint', async () => {
     await act(async () => {
       root.render(<ScriptEditor initialScript={initialScript} initialFocusedSection="parameter-data" />)

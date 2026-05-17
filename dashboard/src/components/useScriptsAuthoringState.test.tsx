@@ -29,6 +29,7 @@ function AuthoringStateHarness({ api, initialMode, initialEditId }: HarnessProps
       <span data-testid="draft-target-action">{model.authoringState.draftEditorFocus?.targetAction || 'none'}</span>
       <span data-testid="draft-target-section">{model.authoringState.draftEditorFocus?.targetSection || 'none'}</span>
       <span data-testid="draft-target-data-source">{model.authoringState.draftEditorFocus?.targetDataSource || 'none'}</span>
+      <span data-testid="draft-target-runtime-area">{model.authoringState.draftEditorFocus?.targetRuntimeArea || 'none'}</span>
       <button data-testid="open-library" onClick={model.openLibrary}>open-library</button>
       <button data-testid="open-create-options" onClick={model.openCreateOptions}>open-create-options</button>
       <button data-testid="set-jmeter" onClick={() => model.setSubview('jmeter-import')}>set-jmeter</button>
@@ -36,6 +37,7 @@ function AuthoringStateHarness({ api, initialMode, initialEditId }: HarnessProps
       <button data-testid="draft-edit" onClick={() => model.handleDraftEdit({ name: 'Edited Draft', protocol: 'http', config: {}, actions: [] } as never)}>draft-edit</button>
       <button data-testid="draft-edit-focused" onClick={() => model.handleDraftEdit({ name: 'Focused Draft', protocol: 'http', config: {}, actions: [] } as never, { targetAction: 'Submit Order' })}>draft-edit-focused</button>
       <button data-testid="draft-edit-runtime-focused" onClick={() => model.handleDraftEdit({ name: 'Runtime Draft', protocol: 'http', config: {}, actions: [] } as never, { targetSection: 'runtime' })}>draft-edit-runtime-focused</button>
+      <button data-testid="draft-edit-runtime-area-focused" onClick={() => model.handleDraftEdit({ name: 'Runtime Area Draft', protocol: 'http', config: {}, actions: [] } as never, { targetSection: 'runtime', targetRuntimeArea: 'Logging' })}>draft-edit-runtime-area-focused</button>
       <button data-testid="draft-edit-parameter-data-focused" onClick={() => model.handleDraftEdit({ name: 'Parameter Draft', protocol: 'http', config: {}, actions: [] } as never, { targetSection: 'parameter-data' })}>draft-edit-parameter-data-focused</button>
       <button data-testid="draft-edit-data-source-focused" onClick={() => model.handleDraftEdit({ name: 'Data Source Draft', protocol: 'http', config: {}, actions: [] } as never, { targetSection: 'parameter-data', targetDataSource: 'login_users' })}>draft-edit-data-source-focused</button>
       <button data-testid="load-edit" onClick={() => void model.handleEdit('script-1')}>load-edit</button>
@@ -100,6 +102,14 @@ describe('useScriptsAuthoringState', () => {
     expect(readTestId('draft-target-action')).toBe('none')
     expect(readTestId('draft-target-section')).toBe('runtime')
 
+    await click('draft-edit-runtime-area-focused')
+
+    expect(readTestId('subview')).toBe('create')
+    expect(readTestId('draft-name')).toBe('Runtime Area Draft')
+    expect(readTestId('draft-target-action')).toBe('none')
+    expect(readTestId('draft-target-section')).toBe('runtime')
+    expect(readTestId('draft-target-runtime-area')).toBe('Logging')
+
     await click('draft-edit-parameter-data-focused')
 
     expect(readTestId('subview')).toBe('create')
@@ -122,6 +132,7 @@ describe('useScriptsAuthoringState', () => {
     expect(readTestId('draft-target-action')).toBe('none')
     expect(readTestId('draft-target-section')).toBe('none')
     expect(readTestId('draft-target-data-source')).toBe('none')
+    expect(readTestId('draft-target-runtime-area')).toBe('none')
   })
 
   it('loads the requested script into edit mode and resets when switching subviews', async () => {

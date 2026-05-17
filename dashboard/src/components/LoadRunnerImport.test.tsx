@@ -82,6 +82,37 @@ describe('LoadRunnerImport', () => {
                   },
                 },
               },
+              runtime_settings_migration_readiness: {
+                score_pct: 72,
+                blocked: true,
+                summary: 'Migration readiness score 72%. Blocking runtime settings matched the selected block statuses: partial.',
+                blocking_statuses: ['partial'],
+                blocking_settings: [
+                  {
+                    id: 'logging',
+                    area: 'Logging',
+                    concept: 'Log level, error-only, and extended logging options',
+                    status: 'partial',
+                    runtime_files: ['default.cfg'],
+                  },
+                ],
+              },
+              runtime_settings_parity: [
+                {
+                  id: 'run_logic_iterations',
+                  area: 'Run Logic',
+                  concept: 'Iterations',
+                  status: 'executed',
+                  runtime_files: ['default.cfg'],
+                },
+                {
+                  id: 'logging',
+                  area: 'Logging',
+                  concept: 'Log level, error-only, and extended logging options',
+                  status: 'partial',
+                  runtime_files: ['default.cfg'],
+                },
+              ],
               project_settings: { General: { Type: 'Web' } },
               unsupported_functions: ['web_set_max_html_param_len'],
             },
@@ -281,6 +312,10 @@ describe('LoadRunnerImport', () => {
     expect(container.textContent).toContain('default.cfg')
     expect(container.textContent).toContain('Migration Readiness')
     expect(container.textContent).toContain('100%')
+    expect(container.textContent).toContain('Migration Readiness Blocking Settings')
+    expect(container.textContent).toContain('Partial: Logging')
+    expect(container.textContent).toContain('Runtime Settings Parity')
+    expect(container.textContent).toContain('Executed: Run Logic')
     expect(container.textContent).toContain('Parameter File Mappings')
     expect(container.textContent).toContain('LoginUsers.prm')
     expect(container.textContent).toContain('LoginUser')
@@ -467,6 +502,58 @@ describe('LoadRunnerImport', () => {
       name: 'Demo LoadRunner Script',
       protocol: 'http',
     }), { targetSection: 'runtime' })
+  })
+
+  it('opens a specific runtime area in the visual editor with a runtime area focus hint', async () => {
+    const onEdit = vi.fn()
+
+    await act(async () => {
+      root.render(<LoadRunnerImport onEdit={onEdit} />)
+    })
+
+    await flushPromises()
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
+    expect(fileInput).not.toBeNull()
+    if (!fileInput) {
+      return
+    }
+
+    const file = new File(['zip-content'], 'demo.zip', { type: 'application/zip' })
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [file],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert LoadRunner Script'))
+    expect(convertButton).toBeDefined()
+    if (!convertButton) {
+      return
+    }
+
+    await act(async () => {
+      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushPromises()
+
+    const openLoggingButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Open Logging Settings In Editor'))
+    expect(openLoggingButton).toBeDefined()
+    if (!openLoggingButton) {
+      return
+    }
+
+    await act(async () => {
+      openLoggingButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Demo LoadRunner Script',
+      protocol: 'http',
+    }), { targetSection: 'runtime', targetRuntimeArea: 'Logging' })
   })
 
   it('opens imported parameter data review in the visual editor with a parameter-data focus hint', async () => {

@@ -39,7 +39,7 @@ export default function ScriptsAuthoringSurface({
 }: Props) {
   switch (subView) {
     case 'create':
-      return <div className="page"><ScriptEditor initialScript={draftScript} initialFocusedActionName={draftEditorFocus?.targetAction || null} initialFocusedSection={draftEditorFocus?.targetSection || null} initialFocusedDataSourceName={draftEditorFocus?.targetDataSource || null} projectId={projectId} onSave={onSaved} onClose={onOpenLibrary} /></div>
+      return <div className="page"><ScriptEditor initialScript={draftScript} initialFocusedActionName={draftEditorFocus?.targetAction || null} initialFocusedSection={draftEditorFocus?.targetSection || null} initialFocusedDataSourceName={draftEditorFocus?.targetDataSource || null} initialFocusedRuntimeArea={draftEditorFocus?.targetRuntimeArea || null} projectId={projectId} onSave={onSaved} onClose={onOpenLibrary} /></div>
     case 'edit':
       return <div className="page"><ScriptEditor scriptId={editingId} initialScript={editingScript} projectId={projectId} onSave={onSaved} onClose={onOpenLibrary} /></div>
     case 'import':

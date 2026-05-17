@@ -323,6 +323,7 @@ interface Props {
   initialFocusedActionName?: string | null
   initialFocusedSection?: string | null
   initialFocusedDataSourceName?: string | null
+  initialFocusedRuntimeArea?: string | null
   projectId?: string
   folderId?: string | null
   onSave?: (script: StoredScript) => void
@@ -451,7 +452,7 @@ interface ReplayScreenshotSelection {
 }
 
 
-export default function ScriptEditor({ scriptId, initialScript, initialFocusedActionName, initialFocusedSection, initialFocusedDataSourceName, projectId, folderId, onSave, onClose }: Props) {
+export default function ScriptEditor({ scriptId, initialScript, initialFocusedActionName, initialFocusedSection, initialFocusedDataSourceName, initialFocusedRuntimeArea, projectId, folderId, onSave, onClose }: Props) {
   const api = useApi()
   const showProtocolSelector = Boolean(scriptId)
   const {
@@ -716,6 +717,17 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       setOpenSections(prev => ({ ...prev, runtime: true }))
     }
 
+    if (initialFocusedRuntimeArea) {
+      const sectionId = getImportedRuntimeSectionId(initialFocusedRuntimeArea)
+      setOpenSections(prev => {
+        const next: Record<string, boolean> = { ...prev, runtime: true }
+        if (sectionId) {
+          next[sectionId] = true
+        }
+        return next
+      })
+    }
+
     if (initialFocusedSection === 'parameter-data') {
       setIsParameterDialogOpen(true)
     }
@@ -725,7 +737,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       setIsParameterDialogOpen(true)
       setOpenDataEditor(focusedDataSourceIndex)
     }
-  }, [hydrateEditorState, initialFocusedActionName, initialFocusedDataSourceName, initialFocusedSection, initialScript, setActiveAction, setIsParameterDialogOpen, setOpenDataEditor, setOpenSections])
+  }, [hydrateEditorState, initialFocusedActionName, initialFocusedDataSourceName, initialFocusedRuntimeArea, initialFocusedSection, initialScript, setActiveAction, setIsParameterDialogOpen, setOpenDataEditor, setOpenSections])
 
   useEffect(() => {
     if (!scriptId || initialScript) return
