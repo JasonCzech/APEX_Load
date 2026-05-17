@@ -407,6 +407,10 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
   const isSoapScript = script.protocol === 'soap'
   const importMetadata = script.metadata?.import
   const importSummary = getImportSummary(importMetadata)
+  const runtimeSettingParitySummary = Object.entries(importSummary.runtimeSettingStatusCounts)
+    .filter(([, count]) => count > 0)
+    .map(([status, count]) => `${count} ${formatRuntimeSettingStatusLabel(status)}`)
+    .join(', ')
   const selectedBrowserEngine = script.config.browser?.engine || 'chromium'
   const selectedBrowserProfile = lookupBrowserDeviceProfile(script.config.browser?.device_profile)
   const browserEngineAdvisory = selectedBrowserProfile && selectedBrowserProfile.engine !== selectedBrowserEngine
@@ -2677,7 +2681,28 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
                       <strong>{importSummary.correlationSuggestions.length}</strong>
                       <small>{importSummary.correlationSuggestions.length > 0 ? 'Imported from the conversion preview' : 'None detected'}</small>
                     </div>
+                    <div className="import-metadata-card">
+                      <span>Runtime Setting Parity</span>
+                      <strong>{importSummary.runtimeSettingsParity.length}</strong>
+                      <small>{runtimeSettingParitySummary || 'No classified runtime settings found'}</small>
+                    </div>
                   </div>
+
+                  {importSummary.runtimeSettingsParity.length > 0 && (
+                    <div className="import-correlation-section">
+                      <h4>Runtime Settings Parity</h4>
+                      <p>These imported LoadRunner runtime settings were classified against Stormrunner&apos;s code-owned support matrix.</p>
+                      <div className="import-correlation-list">
+                        {importSummary.runtimeSettingsParity.map((entry) => (
+                          <div key={entry.id} className="import-correlation-card">
+                            <strong>{formatRuntimeSettingStatusLabel(entry.status)}: {entry.area}</strong>
+                            <span>{entry.concept}</span>
+                            <span>{entry.runtime_files.length > 0 ? entry.runtime_files.join(', ') : 'No runtime file recorded'}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   {importSummary.correlationSuggestions.length > 0 && (
                     <div className="import-correlation-section">
@@ -3857,6 +3882,23 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
       )}
     </div>
   )
+}
+
+function formatRuntimeSettingStatusLabel(status: string) {
+  switch (status) {
+    case 'executed':
+      return 'Executed'
+    case 'partial':
+      return 'Partial'
+    case 'compatibility_only':
+      return 'Compatibility-only'
+    case 'blocked':
+      return 'Blocked'
+    case 'non_applicable':
+      return 'Non-applicable'
+    default:
+      return status.replaceAll('_', ' ')
+  }
 }
 
 interface ReplayScreenshotDialogProps {

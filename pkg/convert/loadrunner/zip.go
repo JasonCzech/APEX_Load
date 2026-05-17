@@ -340,6 +340,10 @@ func attachLoadRunnerMetadata(script *dsl.Script, result *ConvertResult, project
 	runtimeSections := collectRuntimeSections(files)
 	if len(runtimeSections) > 0 {
 		preserved["runtime_files"] = runtimeSections
+		if parity := BuildRTSParityReport(runtimeSections); len(parity) > 0 {
+			preserved["runtime_settings_parity"] = parity
+			preserved["runtime_settings_status_counts"] = RuntimeSettingStatusCounts(parity)
+		}
 	}
 	if runtimeFileName != "" {
 		preserved["mapped_runtime_file"] = filepath.Base(runtimeFileName)

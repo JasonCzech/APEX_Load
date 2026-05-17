@@ -770,6 +770,69 @@ FailIfFound=1
 	if result.Script.Config.WebRuntime.DownloadFilters.Mode != "block_list" || len(result.Script.Config.WebRuntime.ContentChecks) != 1 {
 		t.Fatalf("web runtime = %#v, want download filter and content check", result.Script.Config.WebRuntime)
 	}
+	if result.Script.Metadata == nil || result.Script.Metadata.Import == nil {
+		t.Fatal("expected import metadata to be preserved")
+	}
+	parity, ok := result.Script.Metadata.Import.Preserved["runtime_settings_parity"].([]RuntimeSettingParityEntry)
+	if !ok || len(parity) == 0 {
+		t.Fatalf("runtime_settings_parity = %#v, want non-empty []RuntimeSettingParityEntry", result.Script.Metadata.Import.Preserved["runtime_settings_parity"])
+	}
+	assertRuntimeSettingParityEntry(t, parity, "http_transport", RuntimeSettingStatusExecuted)
+	assertRuntimeSettingParityEntry(t, parity, "run_logic_iterations", RuntimeSettingStatusExecuted)
+	assertRuntimeSettingParityEntry(t, parity, "logging", RuntimeSettingStatusPartial)
+	assertRuntimeSettingParityEntry(t, parity, "browser_download_resources_all", RuntimeSettingStatusExecuted)
+	assertRuntimeSettingParityEntry(t, parity, "download_filters", RuntimeSettingStatusExecuted)
+}
+
+func TestBuildRTSParityReportClassifiesConfiguredSettings(t *testing.T) {
+	runtimeSections := map[string]map[string]map[string]string{
+		"default.cfg": ParseConfigSections(`[Run Logic]
+Iterations=5
+
+[Logging]
+Level=extended
+OnErrorOnly=1
+
+[Streaming]
+Mode=fixed
+BufferSizeSeconds=30
+
+[Data Formatting]
+AutoDetect=1
+Chain=base64,gzip mode=decode
+`),
+	}
+
+	parity := BuildRTSParityReport(runtimeSections)
+	if len(parity) != 5 {
+		t.Fatalf("parity count = %d, want 5 entries", len(parity))
+	}
+	assertRuntimeSettingParityEntry(t, parity, "run_logic_iterations", RuntimeSettingStatusExecuted)
+	assertRuntimeSettingParityEntry(t, parity, "logging", RuntimeSettingStatusPartial)
+	assertRuntimeSettingParityEntry(t, parity, "streaming", RuntimeSettingStatusCompatibilityOnly)
+	assertRuntimeSettingParityEntry(t, parity, "data_formatting_auto_detect", RuntimeSettingStatusPartial)
+	assertRuntimeSettingParityEntry(t, parity, "data_formatting_chain", RuntimeSettingStatusPartial)
+	counts := RuntimeSettingStatusCounts(parity)
+	if counts[string(RuntimeSettingStatusExecuted)] != 1 || counts[string(RuntimeSettingStatusPartial)] != 3 || counts[string(RuntimeSettingStatusCompatibilityOnly)] != 1 {
+		t.Fatalf("status counts = %#v, want executed=1 partial=3 compatibility_only=1", counts)
+	}
+}
+
+func assertRuntimeSettingParityEntry(t *testing.T, entries []RuntimeSettingParityEntry, wantID string, wantStatus RuntimeSettingStatus) {
+	t.Helper()
+	for _, entry := range entries {
+		if entry.ID != wantID {
+			continue
+		}
+		if entry.Status != wantStatus {
+			t.Fatalf("parity[%s].status = %q, want %q", wantID, entry.Status, wantStatus)
+		}
+		if len(entry.RuntimeFiles) == 0 {
+			t.Fatalf("parity[%s].runtime_files = %#v, want non-empty list", wantID, entry.RuntimeFiles)
+		}
+		return
+	}
+	t.Fatalf("parity entry %q not found in %#v", wantID, entries)
 }
 
 func TestConvertZipMapsMobileBrowserRuntimeSettings(t *testing.T) {

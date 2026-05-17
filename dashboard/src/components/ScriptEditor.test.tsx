@@ -345,6 +345,26 @@ describe('ScriptEditor', () => {
           source: 'sample-import',
           source_script_name: 'checkout.har',
           preserved: {
+            runtime_settings_parity: [
+              {
+                id: 'run_logic_iterations',
+                area: 'Run Logic',
+                concept: 'Iterations',
+                status: 'executed',
+                runtime_files: ['default.cfg'],
+              },
+              {
+                id: 'logging',
+                area: 'Logging',
+                concept: 'Log level, error-only, and extended logging options',
+                status: 'partial',
+                runtime_files: ['default.cfg'],
+              },
+            ],
+            runtime_settings_status_counts: {
+              executed: 1,
+              partial: 1,
+            },
             correlation_suggestions: [
               {
                 name: 'session_id',
@@ -365,6 +385,11 @@ describe('ScriptEditor', () => {
     })
 
     expect(container.textContent).toContain('Imported Metadata')
+  expect(container.textContent).toContain('Runtime Setting Parity')
+  expect(container.textContent).toContain('1 Executed, 1 Partial')
+  expect(container.textContent).toContain('Executed: Run Logic')
+  expect(container.textContent).toContain('Iterations')
+  expect(container.textContent).toContain('default.cfg')
     expect(container.textContent).toContain('Correlation Suggestions')
     expect(container.textContent).toContain('session_id')
     expect(container.textContent).toContain('response via $.sessionId')

@@ -520,6 +520,7 @@ UpdateValueOn=Each Iteration
 	}
 	assertReviewSection(t, result.ReviewSections, "unsupported_elements", "blocker", "web_set_max_html_param_len")
 	assertReviewSection(t, result.ReviewSections, "preserved_metadata", "info", "Project file: Demo.usr")
+	assertReviewSection(t, result.ReviewSections, "runtime_settings_parity", "info", "Executed: HTTP / Timeouts, redirects, and connection reuse [default.cfg]")
 	assertRepairSuggestion(t, result.RepairSuggestions, "unsupported", "blocker", "Replace unsupported web_set_max_html_param_len")
 	assertRepairSuggestion(t, result.RepairSuggestions, "runtime", "info", "Review preserved runtime settings")
 	if got := result.Summary["project_file"]; got != "Demo.usr" {
@@ -538,6 +539,88 @@ UpdateValueOn=Each Iteration
 	}
 	if got := result.Summary["unsupported_function_count"]; got != float64(1) {
 		t.Fatalf("summary.unsupported_function_count = %#v, want 1", got)
+	}
+	runtimeParity, ok := result.Summary["runtime_settings_parity"].([]any)
+	if !ok || len(runtimeParity) == 0 {
+		t.Fatalf("summary.runtime_settings_parity = %#v, want non-empty slice", result.Summary["runtime_settings_parity"])
+	}
+	statusCounts, ok := result.Summary["runtime_settings_status_counts"].(map[string]any)
+	if !ok || statusCounts["executed"] != float64(1) {
+		t.Fatalf("summary.runtime_settings_status_counts = %#v, want executed=1", result.Summary["runtime_settings_status_counts"])
+	}
+}
+
+func TestHandleImportLoadRunnerSummarizesRuntimeSettingParity(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	var body bytes.Buffer
+	writer := zip.NewWriter(&body)
+	addFile := func(name string, content string) {
+		entry, err := writer.Create(name)
+		if err != nil {
+			t.Fatalf("Create(%q) returned error: %v", name, err)
+		}
+		if _, err := entry.Write([]byte(content)); err != nil {
+			t.Fatalf("Write(%q) returned error: %v", name, err)
+		}
+	}
+	addFile("Demo.usr", `[General]
+Type=Web
+RuntimeSettings=default.cfg
+
+[Actions]
+Action1=Action.c
+`)
+	addFile("Action.c", sampleLoadRunnerActionC)
+	addFile("default.cfg", `[Run Logic]
+Iterations=5
+AutoTransactions=per_action
+
+[Logging]
+Level=extended
+OnErrorOnly=1
+
+[Streaming]
+Mode=fixed
+BufferSizeSeconds=30
+`)
+	if err := writer.Close(); err != nil {
+		t.Fatalf("zip.Close returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/loadrunner", bytes.NewReader(body.Bytes()))
+	req.Header.Set("Content-Type", "application/zip")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var result struct {
+		ReviewSections []struct {
+			Key      string   `json:"key"`
+			Severity string   `json:"severity"`
+			Summary  string   `json:"summary"`
+			Items    []string `json:"items"`
+		} `json:"review_sections"`
+		Summary map[string]any `json:"summary"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+
+	assertReviewSection(t, result.ReviewSections, "runtime_settings_parity", "warning", "Partial: Logging / Log level, error-only, and extended logging options [default.cfg]")
+	statusCounts, ok := result.Summary["runtime_settings_status_counts"].(map[string]any)
+	if !ok {
+		t.Fatalf("summary.runtime_settings_status_counts = %#v, want map", result.Summary["runtime_settings_status_counts"])
+	}
+	if statusCounts["executed"] != float64(2) || statusCounts["partial"] != float64(1) || statusCounts["compatibility_only"] != float64(1) {
+		t.Fatalf("summary.runtime_settings_status_counts = %#v, want executed=2 partial=1 compatibility_only=1", statusCounts)
+	}
+	runtimeParity, ok := result.Summary["runtime_settings_parity"].([]any)
+	if !ok || len(runtimeParity) != 4 {
+		t.Fatalf("summary.runtime_settings_parity = %#v, want 4 entries", result.Summary["runtime_settings_parity"])
 	}
 }
 

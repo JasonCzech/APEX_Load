@@ -30,12 +30,14 @@ type loadRunnerImportRequest struct {
 }
 
 type loadRunnerImportSummary struct {
-	ProjectFile              string   `json:"project_file,omitempty"`
-	MappedRuntimeFile        string   `json:"mapped_runtime_file,omitempty"`
-	ProjectSections          []string `json:"project_sections,omitempty"`
-	RuntimeFiles             []string `json:"runtime_files,omitempty"`
-	ParameterFiles           []string `json:"parameter_files,omitempty"`
-	UnsupportedFunctionCount int      `json:"unsupported_function_count"`
+	ProjectFile                 string                                 `json:"project_file,omitempty"`
+	MappedRuntimeFile           string                                 `json:"mapped_runtime_file,omitempty"`
+	ProjectSections             []string                               `json:"project_sections,omitempty"`
+	RuntimeFiles                []string                               `json:"runtime_files,omitempty"`
+	ParameterFiles              []string                               `json:"parameter_files,omitempty"`
+	RuntimeSettingsParity       []loadrunner.RuntimeSettingParityEntry `json:"runtime_settings_parity,omitempty"`
+	RuntimeSettingsStatusCounts map[string]int                         `json:"runtime_settings_status_counts,omitempty"`
+	UnsupportedFunctionCount    int                                    `json:"unsupported_function_count"`
 }
 
 // handleImportLoadRunner handles POST /api/v1/scripts/import/loadrunner
@@ -454,6 +456,16 @@ func buildLoadRunnerImportReviewSections(result *loadrunner.ConvertResult, unsup
 		})
 	}
 
+	if len(summary.RuntimeSettingsParity) > 0 {
+		sections = append(sections, scriptImportReviewSection{
+			Key:      "runtime_settings_parity",
+			Title:    "Runtime Settings Parity",
+			Severity: runtimeSettingsParitySeverity(summary.RuntimeSettingsParity),
+			Summary:  runtimeSettingsParitySummary(summary.RuntimeSettingsStatusCounts),
+			Items:    runtimeSettingsParityItems(summary.RuntimeSettingsParity),
+		})
+	}
+
 	if result.Script != nil && result.Script.Protocol == "browser" {
 		sections = append(sections, scriptImportReviewSection{
 			Key:      "browser_import_assumptions",
@@ -490,8 +502,143 @@ func buildLoadRunnerImportSummary(result *loadrunner.ConvertResult, unsupportedE
 	summary.ProjectSections = sortedRecordKeys(preserved["project_settings"])
 	summary.RuntimeFiles = sortedRecordKeys(preserved["runtime_files"])
 	summary.ParameterFiles = stringSliceValue(preserved["parameter_files"])
+	summary.RuntimeSettingsParity = runtimeSettingsParityValue(preserved["runtime_settings_parity"])
+	summary.RuntimeSettingsStatusCounts = intMapValue(preserved["runtime_settings_status_counts"])
 
 	return summary
+}
+
+func runtimeSettingsParityValue(value any) []loadrunner.RuntimeSettingParityEntry {
+	switch typed := value.(type) {
+	case []loadrunner.RuntimeSettingParityEntry:
+		return append([]loadrunner.RuntimeSettingParityEntry(nil), typed...)
+	case []any:
+		entries := make([]loadrunner.RuntimeSettingParityEntry, 0, len(typed))
+		for _, item := range typed {
+			mapping, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			entry := loadrunner.RuntimeSettingParityEntry{
+				ID:           stringValue(mapping["id"]),
+				Area:         stringValue(mapping["area"]),
+				Concept:      stringValue(mapping["concept"]),
+				Fields:       stringSliceValue(mapping["fields"]),
+				Status:       loadrunner.RuntimeSettingStatus(stringValue(mapping["status"])),
+				Notes:        stringValue(mapping["notes"]),
+				RuntimeFiles: stringSliceValue(mapping["runtime_files"]),
+			}
+			if entry.ID == "" {
+				continue
+			}
+			entries = append(entries, entry)
+		}
+		return entries
+	default:
+		return nil
+	}
+}
+
+func intMapValue(value any) map[string]int {
+	switch typed := value.(type) {
+	case map[string]int:
+		if len(typed) == 0 {
+			return nil
+		}
+		clone := make(map[string]int, len(typed))
+		for key, count := range typed {
+			clone[key] = count
+		}
+		return clone
+	case map[string]any:
+		if len(typed) == 0 {
+			return nil
+		}
+		clone := make(map[string]int, len(typed))
+		for key, raw := range typed {
+			switch count := raw.(type) {
+			case int:
+				clone[key] = count
+			case float64:
+				clone[key] = int(count)
+			}
+		}
+		if len(clone) == 0 {
+			return nil
+		}
+		return clone
+	default:
+		return nil
+	}
+}
+
+func runtimeSettingsParitySeverity(entries []loadrunner.RuntimeSettingParityEntry) string {
+	severity := "info"
+	for _, entry := range entries {
+		switch entry.Status {
+		case loadrunner.RuntimeSettingStatusBlocked:
+			return "blocker"
+		case loadrunner.RuntimeSettingStatusPartial, loadrunner.RuntimeSettingStatusCompatibilityOnly:
+			severity = "warning"
+		}
+	}
+	return severity
+}
+
+func runtimeSettingsParitySummary(counts map[string]int) string {
+	if len(counts) == 0 {
+		return "Imported runtime settings were classified against Stormrunner's code-owned LoadRunner RTS matrix."
+	}
+	parts := make([]string, 0, 5)
+	for _, status := range []string{
+		string(loadrunner.RuntimeSettingStatusExecuted),
+		string(loadrunner.RuntimeSettingStatusPartial),
+		string(loadrunner.RuntimeSettingStatusCompatibilityOnly),
+		string(loadrunner.RuntimeSettingStatusBlocked),
+		string(loadrunner.RuntimeSettingStatusNonApplicable),
+	} {
+		if counts[status] == 0 {
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("%d %s", counts[status], strings.ReplaceAll(status, "_", "-")))
+	}
+	if len(parts) == 0 {
+		return "Imported runtime settings were classified against Stormrunner's code-owned LoadRunner RTS matrix."
+	}
+	return "Imported runtime settings were classified against Stormrunner's code-owned LoadRunner RTS matrix: " + strings.Join(parts, ", ") + "."
+}
+
+func runtimeSettingsParityItems(entries []loadrunner.RuntimeSettingParityEntry) []string {
+	items := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		item := fmt.Sprintf("%s: %s / %s", runtimeSettingStatusLabel(entry.Status), entry.Area, entry.Concept)
+		if len(entry.RuntimeFiles) > 0 {
+			item += " [" + strings.Join(entry.RuntimeFiles, ", ") + "]"
+		}
+		items = append(items, item)
+	}
+	return items
+}
+
+func runtimeSettingStatusLabel(status loadrunner.RuntimeSettingStatus) string {
+	switch status {
+	case loadrunner.RuntimeSettingStatusExecuted:
+		return "Executed"
+	case loadrunner.RuntimeSettingStatusPartial:
+		return "Partial"
+	case loadrunner.RuntimeSettingStatusCompatibilityOnly:
+		return "Compatibility-only"
+	case loadrunner.RuntimeSettingStatusBlocked:
+		return "Blocked"
+	case loadrunner.RuntimeSettingStatusNonApplicable:
+		return "Non-applicable"
+	default:
+		label := strings.ReplaceAll(string(status), "_", " ")
+		if label == "" {
+			return "Unknown"
+		}
+		return strings.ToUpper(label[:1]) + label[1:]
+	}
 }
 
 func stringSliceValue(value any) []string {

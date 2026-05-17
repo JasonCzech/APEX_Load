@@ -31,6 +31,14 @@ type ImportCorrelationSuggestion = {
   used_at: string[]
 }
 
+type ImportRuntimeSettingParity = {
+  id: string
+  area: string
+  concept: string
+  status: string
+  runtime_files: string[]
+}
+
 export const EMPTY_SCRIPT: ScriptDefinition = {
   name: '', version: '1.0.0', protocol: 'http',
   config: {
@@ -98,12 +106,20 @@ export function getImportSummary(metadata?: ScriptImportMetadata | null) {
       .map(normalizeImportCorrelationSuggestion)
       .filter((suggestion): suggestion is ImportCorrelationSuggestion => suggestion !== null)
     : []
+  const runtimeSettingsParity = Array.isArray(preserved.runtime_settings_parity)
+    ? preserved.runtime_settings_parity
+      .map(normalizeImportRuntimeSettingParity)
+      .filter((entry): entry is ImportRuntimeSettingParity => entry !== null)
+    : []
+  const runtimeSettingStatusCounts = normalizeRuntimeSettingStatusCounts(preserved.runtime_settings_status_counts)
 
   return {
     runtimeFiles: Object.keys(preserved.runtime_files || {}),
     projectSections: Object.keys(preserved.project_settings || {}),
     unsupportedFunctions: Array.isArray(preserved.unsupported_functions) ? preserved.unsupported_functions : [],
     correlationSuggestions,
+    runtimeSettingsParity,
+    runtimeSettingStatusCounts,
   }
 }
 
@@ -176,6 +192,52 @@ function buildImportCorrelationSuggestion(correlation: SampleCorrelation | Recor
     found_at: foundAt,
     used_at: normalizeIndexedLocations('Request', correlation.used_in_seqs),
   }
+}
+
+function normalizeImportRuntimeSettingParity(value: unknown): ImportRuntimeSettingParity | null {
+  if (!value || typeof value !== 'object') {
+    return null
+  }
+
+  const entry = value as Record<string, unknown>
+  const id = normalizeString(entry.id)
+  const area = normalizeString(entry.area)
+  const concept = normalizeString(entry.concept)
+  const status = normalizeString(entry.status)
+  if (!id || !area || !concept || !status) {
+    return null
+  }
+
+  return {
+    id,
+    area,
+    concept,
+    status,
+    runtime_files: normalizeStringArray(entry.runtime_files),
+  }
+}
+
+function normalizeRuntimeSettingStatusCounts(value: unknown): Record<string, number> {
+  if (!value || typeof value !== 'object') {
+    return {}
+  }
+
+  const counts: Record<string, number> = {}
+  for (const [key, rawCount] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof rawCount === 'number' && Number.isFinite(rawCount)) {
+      counts[key] = rawCount
+    }
+  }
+  return counts
+}
+
+function normalizeStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return []
+  }
+  return value
+    .map(item => normalizeString(item))
+    .filter((item): item is string => item.length > 0)
 }
 
 function normalizeImportCorrelationSuggestion(value: unknown): ImportCorrelationSuggestion | null {
