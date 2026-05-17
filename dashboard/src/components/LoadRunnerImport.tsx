@@ -115,9 +115,11 @@ function formatRuntimeSettingStatusLabel(status?: string | null) {
 function normalizeReplaySuggestionCopy(value?: string | null) {
   if (!value) return ''
 
-  return value.replace(/\bbrowser replay\b/gi, (match) => (
-    match[0] === 'B' ? 'Draft Browser Replay' : 'draft browser replay'
-  ))
+  return value
+    .replace(/\bbrowser replay\b/gi, (match) => (
+      match[0] === 'B' ? 'Draft Browser Replay' : 'draft browser replay'
+    ))
+    .replace(/before saving as production-ready/gi, 'before saving it to the library')
 }
 
 function formatMigrationBlockPolicySummary(options: Pick<ImportOptions, 'block_partial' | 'block_compatibility_only' | 'block_non_applicable'>) {
