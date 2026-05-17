@@ -79,13 +79,26 @@ function formatBrowserWaterfall(metrics?: TransactionEvent['client_metrics']): s
     metrics.resource_transfer_kb !== undefined
   if (!hasTiming) return null
 
-  return [
+  const lines = [
     `DOM content loaded: ${formatBrowserMetric(metrics.dom_content_loaded_ms, ' ms')}`,
     `DOM complete: ${formatBrowserMetric(metrics.dom_complete_ms, ' ms')}`,
     `Load event: ${formatBrowserMetric(metrics.load_event_ms, ' ms')}`,
     `Resources: ${formatBrowserMetric(metrics.total_resource_count, '', 0)} total / ${formatBrowserMetric(metrics.blocking_resource_count, '', 0)} blocking`,
     `Transfer: ${formatBrowserMetric(metrics.resource_transfer_kb, ' KB', 2)}`,
-  ].join('\n')
+  ]
+
+  if (metrics.dom_complete_ms !== undefined && metrics.dom_content_loaded_ms !== undefined && metrics.dom_complete_ms >= metrics.dom_content_loaded_ms) {
+    lines.push(`DOM completion gap: ${formatBrowserMetric(metrics.dom_complete_ms - metrics.dom_content_loaded_ms, ' ms')}`)
+  }
+  if (metrics.load_event_ms !== undefined && metrics.dom_complete_ms !== undefined && metrics.load_event_ms >= metrics.dom_complete_ms) {
+    lines.push(`Load-event gap: ${formatBrowserMetric(metrics.load_event_ms - metrics.dom_complete_ms, ' ms')}`)
+  }
+  if (metrics.total_resource_count !== undefined && metrics.total_resource_count > 0 && metrics.blocking_resource_count !== undefined) {
+    const blockingPct = (metrics.blocking_resource_count / metrics.total_resource_count) * 100
+    lines.push(`Blocking-resource pressure: ${blockingPct.toFixed(1)}%`)
+  }
+
+  return lines.join('\n')
 }
 
 function buildArchiveStatsEntries(stats?: Record<string, RunArchiveActionStats>) {

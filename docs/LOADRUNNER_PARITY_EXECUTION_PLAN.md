@@ -440,6 +440,7 @@ Before claiming practical parity in these target areas, all of the following sho
 - TrueClient MobileWeb import now decomposes first-match `document.querySelectorAll(...)[0]` fill/click JavaScript into direct CSS-selector browser actions.
 - TrueClient MobileWeb import now decomposes first-match `document.getElementsByTagName(...)[0]` fill/click JavaScript into safe tag-token browser selectors, while preserving unsafe tag expressions for repair review.
 - TrueClient MobileWeb import now accepts both `[0]` and `.item(0)` for supported first-match JavaScript collection access patterns.
+- Browser archive event inspection now expands the persisted navigation/resource waterfall summary with DOM completion gap, load-event gap, and blocking-resource pressure diagnostics.
 
 ## Suggested Milestones
 

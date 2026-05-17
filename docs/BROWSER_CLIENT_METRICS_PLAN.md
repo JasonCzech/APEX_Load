@@ -59,7 +59,7 @@ Primary seams:
 
 ### Remaining
 - Chromium browser-process CPU and OS-memory sampling are now captured through CDP process information plus OS RSS lookup when `browser.client_metrics` is enabled. WebKit process attribution remains open because the current Playwright WebKit runtime does not expose stable browser process IDs through the public integration path.
-- Dedicated comparison charts beyond the current overall/platform/engine/device card breakdowns are still open. Archive event drilldown now includes a compact navigation/resource waterfall summary from persisted client metrics, while richer per-resource waterfall UX remains open.
+- Dedicated comparison charts beyond the current overall/platform/engine/device card breakdowns are still open. Archive event drilldown now includes a richer navigation/resource waterfall summary from persisted client metrics, including DOM/load phase gaps and blocking-resource pressure; per-resource waterfall UX remains open until the archive stores resource-level timing rows.
 - Benchmark publication and final positioning guidance for density/overhead are still open.
 
 ## Implementation Phases
@@ -104,7 +104,7 @@ Status: partially complete.
 - Expose capture settings in authoring and validation flows.
 
 Remaining in this phase:
-- add charted comparison views and richer per-resource waterfall diagnostics where the current archive/debug surfaces still emphasize summary cards and compact event drilldown.
+- add charted comparison views and per-resource waterfall diagnostics where the current archive/debug surfaces still emphasize summary cards and event-level waterfall summaries.
 
 ### Phase 5: Benchmark And Positioning
 Status: not complete.
