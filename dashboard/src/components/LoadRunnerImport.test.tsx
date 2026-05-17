@@ -14,6 +14,7 @@ const apiMock = {
   validateLoadRunnerImport: vi.fn(),
   createScript: vi.fn(),
   startDraftBrowserReplaySession: vi.fn(),
+  getBrowserReplaySession: vi.fn(),
 }
 
 vi.mock('../hooks/useApi', () => ({
@@ -1851,6 +1852,8 @@ describe('LoadRunnerImport', () => {
   })
 
   it('starts draft browser replay validation when saving a browser import for the first time', async () => {
+    vi.useFakeTimers()
+
     apiMock.importLoadRunner.mockResolvedValueOnce({
       script: {
         name: 'Imported TruClient Mobile Web',
@@ -1918,71 +1921,112 @@ describe('LoadRunnerImport', () => {
       },
       warnings: ['selector repair recommended'],
     })
-
-    await act(async () => {
-      root.render(<LoadRunnerImport projectId="project-1" />)
+    apiMock.getBrowserReplaySession.mockResolvedValueOnce({
+      session: {
+        id: 'draft-browser-validation',
+        status: 'completed',
+        group: 'default',
+        protocol: 'browser',
+        current_event_index: 1,
+      },
+      warnings: ['selector repair recommended'],
     })
 
-    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-    expect(fileInput).not.toBeNull()
-    if (!fileInput) {
-      return
-    }
-
-    const file = new File(['zip-content'], 'truclient.zip', { type: 'application/zip' })
-    await act(async () => {
-      Object.defineProperty(fileInput, 'files', {
-        configurable: true,
-        value: [file],
+    try {
+      await act(async () => {
+        root.render(<LoadRunnerImport projectId="project-1" />)
       })
-      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
-    })
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert LoadRunner Script'))
-    expect(convertButton).toBeDefined()
-    if (!convertButton) {
-      return
-    }
+      const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
+      expect(fileInput).not.toBeNull()
+      if (!fileInput) {
+        return
+      }
 
-    await act(async () => {
-      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
+      const file = new File(['zip-content'], 'truclient.zip', { type: 'application/zip' })
+      await act(async () => {
+        Object.defineProperty(fileInput, 'files', {
+          configurable: true,
+          value: [file],
+        })
+        fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+      })
 
-    await flushPromises()
+      const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert LoadRunner Script'))
+      expect(convertButton).toBeDefined()
+      if (!convertButton) {
+        return
+      }
 
-    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Start Browser Replay Before Saving'))
-    expect(saveButton).toBeDefined()
-    if (!saveButton) {
-      return
-    }
+      await act(async () => {
+        convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
 
-    await act(async () => {
-      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
+      await flushPromises()
 
-    await flushPromises()
+      const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Start Browser Replay Before Saving'))
+      expect(saveButton).toBeDefined()
+      if (!saveButton) {
+        return
+      }
 
-    expect(apiMock.startDraftBrowserReplaySession).toHaveBeenCalledWith(expect.objectContaining({
-      ignore_think_time: true,
-      browser: expect.objectContaining({
-        engine: 'webkit',
-        headless: true,
-        device_profile: 'iphone_15_pro',
-        touch_mode: true,
-        orientation: 'portrait',
-        capture_screenshots: 'per_action',
-        viewport: { width: 393, height: 852 },
-      }),
-      script: expect.objectContaining({
+      await act(async () => {
+        saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+
+      await flushPromises()
+
+      expect(apiMock.startDraftBrowserReplaySession).toHaveBeenCalledWith(expect.objectContaining({
+        ignore_think_time: true,
+        browser: expect.objectContaining({
+          engine: 'webkit',
+          headless: true,
+          device_profile: 'iphone_15_pro',
+          touch_mode: true,
+          orientation: 'portrait',
+          capture_screenshots: 'per_action',
+          viewport: { width: 393, height: 852 },
+        }),
+        script: expect.objectContaining({
+          name: 'Imported TruClient Mobile Web',
+          protocol: 'browser',
+          project_id: 'project-1',
+        }),
+      }))
+      expect(apiMock.createScript).not.toHaveBeenCalled()
+      expect(container.textContent).toContain('Browser replay validation started. Review the draft session before saving this import.')
+      expect(container.textContent).toContain('Session: draft-browser-validation')
+      expect(container.textContent).toContain('Status: running')
+      expect(container.textContent).toContain('Browser Replay In Progress')
+
+      await act(async () => {
+        vi.advanceTimersByTime(2000)
+      })
+
+      await flushPromises()
+
+      expect(apiMock.getBrowserReplaySession).toHaveBeenCalledWith('draft-browser-validation')
+      expect(container.textContent).toContain('Status: completed')
+
+      const finalSaveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save to Script Library'))
+      expect(finalSaveButton).toBeDefined()
+      if (!finalSaveButton) {
+        return
+      }
+
+      await act(async () => {
+        finalSaveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+
+      await flushPromises()
+
+      expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({
         name: 'Imported TruClient Mobile Web',
         protocol: 'browser',
-        project_id: 'project-1',
-      }),
-    }))
-    expect(apiMock.createScript).not.toHaveBeenCalled()
-    expect(container.textContent).toContain('Browser replay validation started. Review the draft session before saving this import.')
-    expect(container.textContent).toContain('Session: draft-browser-validation')
-    expect(container.textContent).toContain('Status: running')
+      }), 'project-1')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('opens a browser replay repair suggestion in the visual editor without an additional focus hint', async () => {

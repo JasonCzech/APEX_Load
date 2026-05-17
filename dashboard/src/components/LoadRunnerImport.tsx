@@ -246,7 +246,10 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
   const hasPendingMigrationPolicyChanges = reviewedMigrationPolicy !== null && !sameMigrationBlockPolicy(options, reviewedMigrationPolicy)
   const saveBlockedByMigrationPolicy = Boolean(migrationReadiness?.blocked)
   const browserImport = isBrowserImport(importedScript)
-  const saveRequiresBrowserReplay = browserImport && !replayValidationSession
+  const browserReplayStatus = replayValidationSession?.status || null
+  const browserReplayInProgress = browserImport && (browserReplayStatus === 'queued' || browserReplayStatus === 'running' || browserReplayStatus === 'paused')
+  const browserReplayNeedsRerun = browserImport && (replayValidationSession === null || browserReplayStatus === 'failed' || browserReplayStatus === 'stopped')
+  const saveRequiresBrowserReplay = browserReplayNeedsRerun
   const runtimeBlockingSettings = importSummary.runtimeSettingReadiness?.blocking_settings || []
   const generatedDataSources = importedScript
     ? (toScriptDefinition(importedScript).data_sources || []).map((source, index) => {
@@ -469,6 +472,42 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
     }
   }, [api])
 
+  useEffect(() => {
+    const sessionId = replayValidationSession?.id
+    if (!sessionId || !browserReplayInProgress) {
+      return
+    }
+
+    let cancelled = false
+
+    const refreshSession = () => {
+      void api.getBrowserReplaySession(sessionId)
+        .then((response) => {
+          if (cancelled || !response?.session) {
+            return
+          }
+          setReplayValidationSession(response.session)
+          if (Array.isArray(response.warnings)) {
+            setReplayValidationWarnings(response.warnings)
+          }
+          if (response.session.status === 'failed' && response.session.error) {
+            setReplayValidationError(response.session.error)
+          }
+        })
+        .catch((error: unknown) => {
+          if (!cancelled) {
+            setReplayValidationError(getErrorMessage(error, 'Browser replay status refresh failed'))
+          }
+        })
+    }
+
+    const intervalId = window.setInterval(refreshSession, 2000)
+    return () => {
+      cancelled = true
+      window.clearInterval(intervalId)
+    }
+  }, [api, browserReplayInProgress, replayValidationSession?.id])
+
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault(); setDragOver(false)
     const f = e.dataTransfer.files[0]
@@ -536,10 +575,16 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
       setError('Saving is disabled while migration readiness is blocked by the active policy. Relax the policy or resolve the blocking runtime settings first.')
       return
     }
-    if (browserImport && !replayValidationSession) {
+    if (browserReplayInProgress) {
+      setNotice('Browser replay validation is still running. Wait for it to finish before saving this import.')
+      return
+    }
+    if (browserReplayNeedsRerun) {
       const started = await startBrowserReplayValidation()
       if (started) {
-        setNotice('Browser replay validation started. Review the draft session before saving this import.')
+        setNotice(replayValidationSession
+          ? 'Browser replay validation restarted. Review the refreshed draft session before saving this import.'
+          : 'Browser replay validation started. Review the draft session before saving this import.')
       }
       return
     }
@@ -724,10 +769,14 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
             script={importedScript}
             warnings={result.warnings}
             warningsTitle={`Conversion Warnings (${result.warnings.length})`}
-            saveDisabled={saveBlockedByMigrationPolicy || replayValidationLoading}
+            saveDisabled={saveBlockedByMigrationPolicy || replayValidationLoading || browserReplayInProgress}
             saveLabel={reviewMode === 'validation'
               ? 'Save Reviewed Script'
-              : (saveRequiresBrowserReplay ? 'Start Browser Replay Before Saving' : 'Save to Script Library')}
+              : (browserReplayInProgress
+                  ? 'Browser Replay In Progress'
+                  : (saveRequiresBrowserReplay
+                      ? (replayValidationSession ? 'Rerun Browser Replay Before Saving' : 'Start Browser Replay Before Saving')
+                      : 'Save to Script Library'))}
             onSave={handleSaveConverted}
             onEdit={onEdit ? () => openImportedScriptInEditor() : undefined}
           >
