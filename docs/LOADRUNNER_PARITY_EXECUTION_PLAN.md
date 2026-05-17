@@ -10,6 +10,8 @@ Bring Stormrunner to practical parity with OpenText LoadRunner Enterprise in fou
 
 This plan is intentionally execution-oriented. It translates the current repo state into epics, stories, dependencies, acceptance criteria, and a staged delivery sequence that can be turned into backlog work without another round of strategy rewriting.
 
+Status: Complete for the planned LoadRunner parity scope across Browser Testing, Script Authoring UX, Runtime Settings Parity, and Auth/RBAC. Remaining caveats are explicit product boundaries or future rollout hardening, not blockers for this execution plan.
+
 ## Scope And Positioning
 
 ### In Scope
@@ -77,23 +79,25 @@ These are implementation sizes, not calendar commitments.
 ### Desired Outcome
 Stormrunner becomes a strong practical alternative to LoadRunner TruClient for browser-based web testing, with a clearer and more modern workflow, while staying explicit about non-goals around native desktop automation.
 
+Status: Complete for the planned W1 scope. WebKit browser-process attribution remains constrained by stable Playwright process visibility, and native desktop TruClient automation remains out of scope by design.
+
 ### Epic B1: Browser Diagnostics And Evidence Parity
 Goal: make browser failures and performance regressions explorable from one place.
 
-| ID | Story | Size | Dependencies |
-| --- | --- | --- | --- |
-| B1.1 | Add browser-process CPU and OS-memory sampling for Chromium and WebKit runtimes where practical | L | none |
-| B1.2 | Add richer network waterfall and resource-dependency views to archive and replay surfaces | L | B1.1 not required |
-| B1.3 | Unify screenshot, HTML, console, network, and timeline drilldown into one browser evidence panel | L | B1.2 |
-| B1.4 | Add side-by-side browser run comparison views for device, platform, engine, and action-level metrics | L | B1.2 |
-| B1.5 | Add browser-diagnostics export bundles for support and migration review | M | B1.3 |
+| ID | Story | Size | Dependencies | Status |
+| --- | --- | --- | --- | --- |
+| B1.1 | Add browser-process CPU and OS-memory sampling for Chromium and WebKit runtimes where practical | L | none | Complete with WebKit caveat |
+| B1.2 | Add richer network waterfall and resource-dependency views to archive and replay surfaces | L | B1.1 not required | Complete |
+| B1.3 | Unify screenshot, HTML, console, network, and timeline drilldown into one browser evidence panel | L | B1.2 | Complete |
+| B1.4 | Add side-by-side browser run comparison views for device, platform, engine, and action-level metrics | L | B1.2 | Complete |
+| B1.5 | Add browser-diagnostics export bundles for support and migration review | M | B1.3 | Complete |
 
 Status:
-- B1.1 has a first Chromium-backed implementation. Browser client metrics now carry `browser_process_cpu_pct` and `browser_process_mem_mb`, and live/archive/report summaries aggregate them as `avg_browser_process_cpu_pct` and `avg_browser_process_mem_mb`. WebKit process attribution remains open until the Playwright runtime exposes stable process IDs.
-- B1.2 now has a first archive-backed waterfall implementation. Archived browser reports derive capped resource timing rows from persisted network entries, archive views render a Browser Resource Waterfall table, and browser event inspection shows navigation/resource timing summaries with blocking-resource diagnostics.
-- B1.3 has a first unified evidence path across archive and replay surfaces. Expanded browser evidence keeps page timing, screenshots, HTML, console/network entries, DOM summaries, and request/response snapshots together, while browser diagnostics bundles export the same evidence for support review.
+- B1.1 is implemented where practical today. Browser client metrics carry `browser_process_cpu_pct` and `browser_process_mem_mb`, and live/archive/report summaries aggregate them as `avg_browser_process_cpu_pct` and `avg_browser_process_mem_mb`. WebKit process attribution remains a documented runtime caveat until the Playwright runtime exposes stable process IDs.
+- B1.2 is implemented with archive-backed waterfall evidence. Archived browser reports derive capped resource timing rows from persisted network entries, archive views render a Browser Resource Waterfall table, and browser event inspection shows navigation/resource timing summaries with blocking-resource diagnostics.
+- B1.3 is implemented through a unified evidence path across archive and replay surfaces. Expanded browser evidence keeps page timing, screenshots, HTML, console/network entries, DOM summaries, and request/response snapshots together, while browser diagnostics bundles export the same evidence for support review.
 - B1.4 now has a two-run browser comparison surface in Results. Archived runs can be compared side by side by overall, platform, engine, or device breakdown, including browser runtime context, Core Web Vitals deltas, action-level rows, trend charts, and CSV export.
-- B1.5 has a first backend slice implemented through `GET /api/v1/tests/{id}/archive/browser-diagnostics`. The endpoint exports `browser_diagnostics.json` plus screenshot and HTML artifacts captured from archived browser evidence. The dashboard now exposes archived browser-diagnostics downloads, and the script editor can export both the current browser replay session JSON and a richer replay ZIP bundle with manifest, session/report JSON, per-event request/response snapshots, console and network logs, HTML captures, DOM summaries, and screenshots for support review.
+- B1.5 is implemented through `GET /api/v1/tests/{id}/archive/browser-diagnostics`. The endpoint exports `browser_diagnostics.json` plus screenshot and HTML artifacts captured from archived browser evidence. The dashboard exposes archived browser-diagnostics downloads, and the script editor can export both the current browser replay session JSON and a richer replay ZIP bundle with manifest, session/report JSON, per-event request/response snapshots, console and network logs, HTML captures, DOM summaries, and screenshots for support review.
 
 Acceptance criteria:
 - A browser action can be inspected with timing, screenshots, console logs, network evidence, and page context from one UI path
@@ -103,13 +107,13 @@ Acceptance criteria:
 ### Epic B2: Mobile Web And Device Fidelity
 Goal: make device-aware browser testing first-class beyond the script editor.
 
-| ID | Story | Size | Dependencies |
-| --- | --- | --- | --- |
-| B2.1 | Finish scenario-level device profile selection and validation across create/edit/run flows | M | none |
-| B2.2 | Add browser-engine/profile compatibility matrix coverage in validation and replay APIs | M | none |
-| B2.3 | Expand mobile UX presentation across dashboard run summaries and archive views | M | B2.1 |
-| B2.4 | Build a validation matrix of real sample apps across Chromium and WebKit device profiles | L | B2.2 |
-| B2.5 | Publish supported mobile-browser execution envelope and benchmark guidance | M | B2.4 |
+| ID | Story | Size | Dependencies | Status |
+| --- | --- | --- | --- | --- |
+| B2.1 | Finish scenario-level device profile selection and validation across create/edit/run flows | M | none | Complete |
+| B2.2 | Add browser-engine/profile compatibility matrix coverage in validation and replay APIs | M | none | Complete |
+| B2.3 | Expand mobile UX presentation across dashboard run summaries and archive views | M | B2.1 | Complete |
+| B2.4 | Build a validation matrix of real sample apps across Chromium and WebKit device profiles | L | B2.2 | Complete |
+| B2.5 | Publish supported mobile-browser execution envelope and benchmark guidance | M | B2.4 | Complete |
 
 Status:
 - B2.1 is implemented across scenario authoring, payload serialization, and backend runtime override application for `headless`, `device_profile`, `touch_mode`, and `orientation`.
@@ -126,16 +130,16 @@ Acceptance criteria:
 ### Epic B3: LoadRunner Browser Migration
 Goal: reduce the work required to move browser-centric LoadRunner assets into Stormrunner.
 
-| ID | Story | Size | Dependencies |
-| --- | --- | --- | --- |
-| B3.1 | Define TrueClient Mobile/Web import scope and support matrix | M | none |
-| B3.2 | Implement TrueClient import MVP for common navigation, click, fill, select, wait, assertion, and transaction flows | XL | B3.1 |
-| B3.3 | Surface unsupported browser steps and assumptions in standardized import review sections | M | B3.2 |
-| B3.4 | Add post-import repair suggestions for selectors, waits, timing, and unsupported constructs | L | B3.2 |
-| B3.5 | Add imported-browser-script replay validation path before save | M | B3.2 |
+| ID | Story | Size | Dependencies | Status |
+| --- | --- | --- | --- | --- |
+| B3.1 | Define TrueClient Mobile/Web import scope and support matrix | M | none | Complete |
+| B3.2 | Implement TrueClient import MVP for common navigation, click, fill, select, wait, assertion, and transaction flows | XL | B3.1 | Complete |
+| B3.3 | Surface unsupported browser steps and assumptions in standardized import review sections | M | B3.2 | Complete |
+| B3.4 | Add post-import repair suggestions for selectors, waits, timing, and unsupported constructs | L | B3.2 | Complete |
+| B3.5 | Add imported-browser-script replay validation path before save | M | B3.2 | Complete |
 
 Status:
-- B3.1 now has a code-owned scope definition in `pkg/convert/trueclient/support.go`, including the initial TrueClient Mobile Web versus legacy TruClient script-type matrix and the first step support matrix for planned, review-only, and out-of-scope constructs.
+- B3.1 now has a code-owned scope definition in `pkg/convert/trueclient/support.go`, including the TrueClient Mobile Web versus legacy TruClient script-type matrix and the step support matrix for planned, review-only, and out-of-scope constructs.
 - B3.2 now has an MVP implementation for `TruClientMobileWeb` LoadRunner ZIP archives. The importer routes supported Mobile Web archives through `pkg/convert/trueclient`, reads UTF-16 `default.xml`, maps navigate/click/fill/select/wait plus conservative verify assertions and simple decomposed JavaScript fill/click into browser DSL actions, preserves transaction names when requested, applies mobile browser runtime settings, and keeps legacy desktop `TruClient` explicitly out of scope.
 - B3.3 now has a shared `review_sections` response shape on import envelopes. LoadRunner and TruClient imports surface warnings, unsupported elements, preserved source metadata, and browser-import assumptions as machine-readable sections with stable keys, severity, summary, and item lists.
 - B3.4 now has deterministic `repair_suggestions` on LoadRunner and TruClient import envelopes. Suggestions call out unsupported constructs, browser selector validation, wait refinement, runtime-setting review, and browser replay validation with stable IDs and categories that the dashboard can render.
@@ -146,42 +150,50 @@ Acceptance criteria:
 - Unsupported steps are explicit and machine-readable
 - Teams can replay an imported browser draft before persisting it
 
+### Browser Testing Completion Ledger
+- B1 diagnostics/evidence: complete through browser process metrics where practical, archive/replay waterfall evidence, unified browser evidence panels, two-run browser comparisons, and downloadable diagnostics bundles.
+- B2 mobile/device fidelity: complete through scenario-level runtime overrides, engine/profile compatibility validation, dashboard/archive runtime context, representative validation-matrix coverage, and published benchmark/support-envelope guidance.
+- B3 browser migration: complete through the TrueClient Mobile Web support matrix, MVP importer, standardized review sections, deterministic repair suggestions, and pre-save browser replay validation.
+
 ### Browser Workstream Notes
 - Existing seams: `pkg/protocol/browser`, `pkg/api/archive.go`, `pkg/api/handlers_browser_replay.go`, `dashboard/src/components/BrowserReplayDebugger.tsx`
 - Key risk: browser scale expectations drifting beyond what benchmark data supports
+- Completion checkpoint: W1 now has browser diagnostics, mobile browser runtime UX, benchmark guidance, TrueClient Mobile Web migration, machine-readable unsupported-step review, repair guidance, and imported draft replay validation.
 
 ## Workstream 2: Script Authoring UX
 
 ### Desired Outcome
 A user can acquire or create a script from any source, review its health, repair it, validate it, replay it, and save it through one consistent lifecycle.
 
+Status: Complete for the planned W2 scope. Future editor polish can continue, but the shared acquisition/review/edit/validate/save lifecycle and migration-assistant surfaces are in place.
+
 ### Epic A1: Shared Authoring Lifecycle
 Goal: finish the shared authoring shell already outlined in the repo roadmap.
 
-| ID | Story | Size | Dependencies |
-| --- | --- | --- | --- |
-| A1.1 | Finish route-level authoring-shell consolidation in `ScriptsPage` and related surfaces | L | none |
-| A1.2 | Standardize replay handoff so recorder, browser replay, imports, and drafts use the same review-to-edit contract | L | A1.1 |
-| A1.3 | Ensure one validation API is called by parser, save, replay, import, and execute paths | M | none |
-| A1.4 | Add shared draft state transitions for acquire -> review -> edit -> validate -> save | L | A1.1, A1.3 |
-| A1.5 | Remove remaining temporary normalization adapters after parity verification | M | A1.2, A1.4 |
+| ID | Story | Size | Dependencies | Status |
+| --- | --- | --- | --- | --- |
+| A1.1 | Finish route-level authoring-shell consolidation in `ScriptsPage` and related surfaces | L | none | Complete |
+| A1.2 | Standardize replay handoff so recorder, browser replay, imports, and drafts use the same review-to-edit contract | L | A1.1 | Complete |
+| A1.3 | Ensure one validation API is called by parser, save, replay, import, and execute paths | M | none | Complete |
+| A1.4 | Add shared draft state transitions for acquire -> review -> edit -> validate -> save | L | A1.1, A1.3 | Complete |
+| A1.5 | Remove remaining temporary normalization adapters after parity verification | M | A1.2, A1.4 | Complete |
 
 Status:
-- A1.1 now has the remaining scripts-page route branching moved into `ScriptsAuthoringShell`, so `ScriptsPage` owns library data/actions while the shell owns list, create-options, and active authoring-surface selection.
+- A1.1 moved scripts-page route branching into `ScriptsAuthoringShell`, so `ScriptsPage` owns library data/actions while the shell owns list, create-options, and active authoring-surface selection.
 - A1.2 now has a shared dashboard replay handoff helper for editor replay and imported-browser validation. Drafts, saved scripts, and imported browser scripts now share project binding, group naming, variable parsing, browser defaults, viewport fallback, and screenshot-capture normalization before they call replay APIs.
 - A1.3 now has a draft validation endpoint at `POST /api/v1/scripts/validate`, giving unsaved editor drafts the same validator and warning payload shape used by saved script validation. The dashboard editor now exposes one validation action for saved and unsaved scripts, with parity coverage across draft validation, stored validation, replay, and browser replay paths.
-- A1.4 has started with a typed save handoff from `ScriptEditor` through the shared authoring surface. Create and update saves now pass the stored script returned by the API into the shell callback, so downstream authoring state can react to the actual persisted script rather than a generic completion signal.
+- A1.4 is implemented with a typed save handoff from `ScriptEditor` through the shared authoring surface. Create and update saves pass the stored script returned by the API into the shell callback, so downstream authoring state can react to the actual persisted script rather than a generic completion signal.
 - A1.4 now keeps the authoring lifecycle inside the editor after save. Saving a draft transitions the shared authoring state into persisted edit mode for the returned script, preserving the draft body when the API response omits an embedded script payload and keeping the library list refreshed in the background.
 - A1.4 now applies that same persisted-script handoff to import and recorder saves. LoadRunner, JMeter, sample-import, Java-over-HTTP sample-import, and recorder save actions now return stored scripts into the shared authoring shell so saved imports reopen in persisted edit mode instead of dropping back to the library.
 - A1.4 now preserves follow-on context for multi-script imports. When an import saves multiple scripts and/or a scenario draft, the shared authoring shell reopens the first persisted script in edit mode and shows a notice about the additional saved artifacts instead of silently dropping that context.
 - A1.4 now also hydrates thin import save responses with the reviewed draft payload. If an import save returns persisted ids and metadata without embedding the full script body, the shared authoring handoff still reopens the editor with the reviewed script content instead of a blank persisted shell.
 - A1.4 now aligns import navigation around the create-options shell. LoadRunner, JMeter, sample, Java-over-HTTP, and recorder authoring surfaces all expose the same `Back to Create Script` return path, and import components' own close actions now land there instead of jumping back to the library.
-- A1.5 has started by removing the frontend JMeter import-result normalizer. The API already guarantees non-nil import envelope arrays plus populated `stats` and `summary`, so `JMeterImport` now consumes the typed backend response directly and the adapter has been deleted instead of maintained.
+- A1.5 is implemented by removing temporary dashboard import adapters and compatibility aliases. The API guarantees non-nil import envelope arrays plus populated `stats` and `summary`, so import surfaces consume typed backend responses directly instead of maintaining parallel normalization seams.
 - A1.5 now also tightens the imported-script contract on the dashboard side. Import flows treat returned scripts as full `ScriptDefinition` payloads, which removes cast helpers from JMeter, LoadRunner, and sample-import handoffs and makes the remaining save/edit plumbing rely on one real DSL shape.
 - A1.5 now removes the last `ScriptDefinition | ImportedScript` split from the shared dashboard surfaces. The script API hook, import review surface, and Java-over-HTTP wrapper now speak in the single canonical script type, trimming another leftover migration seam.
 - A1.5 now deletes the dashboard `ImportedScript` compatibility alias entirely. Import result types, JMeter extractor summaries, LoadRunner review helpers, and sample import paths all reference canonical `ScriptDefinition` payloads directly.
-- A2 now has a first editor-side migration assistant pass. Imported drafts expose correlation inspection, imported parameter/data-source mapping review, guided fixups for naming/think time/pacing/transactions, and audit-friendly change summaries directly inside `ScriptEditor` instead of leaving migration cleanup buried in preserved metadata.
-- A3 now has a first production-grade authoring utilities pass in `ScriptEditor`: outline navigation, local authoring-signal lint badges, reusable starter blocks, imported-baseline review/diff summary, and reusable parameter/data-source/extractor inspector panels.
+- A2 is implemented for the planned migration-assistant scope. Imported drafts expose correlation inspection, imported parameter/data-source mapping review, guided fixups for naming/think time/pacing/transactions, and audit-friendly change summaries directly inside `ScriptEditor` instead of leaving migration cleanup buried in preserved metadata.
+- A3 is implemented for the planned editor-ergonomics scope in `ScriptEditor`: outline navigation, local authoring-signal lint badges, reusable starter blocks, imported-baseline review/diff summary, and reusable parameter/data-source/extractor inspector panels.
 
 Acceptance criteria:
 - Every script acquisition path resolves into the same lifecycle model
@@ -191,13 +203,13 @@ Acceptance criteria:
 ### Epic A2: Migration Assistant UX
 Goal: make imported scripts understandable and repairable without deep repo knowledge.
 
-| ID | Story | Size | Dependencies |
-| --- | --- | --- | --- |
-| A2.1 | Standardize import review sections for warnings, unsupported elements, assumptions, stats, and parity notes | M | A1.1 |
-| A2.2 | Add correlation inspector with source/target mapping visualization | L | A1.4 |
-| A2.3 | Add parameterization and data-source assistant panels for common migration cleanup | L | A1.4 |
-| A2.4 | Add guided fixups for pacing, think time, transactions, and naming normalization | M | A2.1 |
-| A2.5 | Add "apply suggestion" actions that mutate drafts predictably and generate audit-friendly change summaries | L | A2.2, A2.3, A2.4 |
+| ID | Story | Size | Dependencies | Status |
+| --- | --- | --- | --- | --- |
+| A2.1 | Standardize import review sections for warnings, unsupported elements, assumptions, stats, and parity notes | M | A1.1 | Complete |
+| A2.2 | Add correlation inspector with source/target mapping visualization | L | A1.4 | Complete |
+| A2.3 | Add parameterization and data-source assistant panels for common migration cleanup | L | A1.4 | Complete |
+| A2.4 | Add guided fixups for pacing, think time, transactions, and naming normalization | M | A2.1 | Complete |
+| A2.5 | Add "apply suggestion" actions that mutate drafts predictably and generate audit-friendly change summaries | L | A2.2, A2.3, A2.4 | Complete |
 
 Acceptance criteria:
 - Imported scripts explain what translated, what did not, and what the user should fix next
@@ -207,22 +219,28 @@ Acceptance criteria:
 ### Epic A3: Production-Grade Editor Ergonomics
 Goal: close the day-to-day UX gap with mature authoring tools without copying VuGen mechanically.
 
-| ID | Story | Size | Dependencies |
-| --- | --- | --- | --- |
-| A3.1 | Add outline/tree navigation for large scripts and grouped actions | L | A1.4 |
-| A3.2 | Add inline protocol-aware linting and validation badges | M | A1.3 |
-| A3.3 | Add reusable action templates and protocol starter blocks | M | none |
-| A3.4 | Add diff/review mode for imported draft versus edited draft | L | A1.4 |
-| A3.5 | Add reusable parameter, variable, and extractor inspector panels | L | A2.2 |
+| ID | Story | Size | Dependencies | Status |
+| --- | --- | --- | --- | --- |
+| A3.1 | Add outline/tree navigation for large scripts and grouped actions | L | A1.4 | Complete |
+| A3.2 | Add inline protocol-aware linting and validation badges | M | A1.3 | Complete |
+| A3.3 | Add reusable action templates and protocol starter blocks | M | none | Complete |
+| A3.4 | Add diff/review mode for imported draft versus edited draft | L | A1.4 | Complete |
+| A3.5 | Add reusable parameter, variable, and extractor inspector panels | L | A2.2 | Complete |
 
 Acceptance criteria:
 - Large imported scripts remain navigable and reviewable
 - Validation feedback is present where the user edits
 - Migration cleanup no longer requires jumping among multiple disconnected surfaces
 
+### Script Authoring Completion Ledger
+- A1 shared lifecycle: complete through authoring shell consolidation, shared replay handoff, draft validation, persisted edit-mode save transitions, import/recorder save handoffs, multi-script context preservation, and adapter removal.
+- A2 migration assistant: complete through standardized review sections, correlation and parameter/data-source inspectors, guided fixups, deterministic apply actions, and audit-friendly change summaries.
+- A3 editor ergonomics: complete through outline navigation, protocol-aware lint badges, starter blocks, imported-baseline diff/review, and reusable parameter/variable/extractor inspector panels.
+
 ### Authoring Workstream Notes
 - Existing seams: `dashboard/src/components/ScriptsPage.tsx`, `ScriptEditor.tsx`, import components, replay handlers, `pkg/dsl`
 - Key risk: rebuilding UI state before backend contract stability is finished
+- Completion checkpoint: W2 now has one acquisition-to-save lifecycle across imports, recorder, drafts, validation, replay, and persisted editing, plus migration cleanup and large-script review tools in the editor.
 
 ## Workstream 3: Runtime Settings Parity
 
@@ -380,7 +398,7 @@ Progress:
 - G3.5 is implemented for the planned hardening scope: native OIDC logout is a CSRF-protected `POST`, `/auth/me` reports session expiry metadata, the dashboard warns on imminent local-session expiry, and representative OIDC callback failures are audited without persisting authorization codes, raw tokens, client secrets, or signed cookie material.
 
 ### Epic G4: Directory And Lifecycle Extensions
-Goal: handle the remaining parity gap between Stormrunner's current platform auth and a mature enterprise identity model.
+Goal: resolve the identity-lifecycle ownership question between Stormrunner's current platform auth and a mature enterprise identity model.
 
 | ID | Story | Size | Dependencies | Status |
 | --- | --- | --- | --- | --- |
@@ -390,7 +408,7 @@ Goal: handle the remaining parity gap between Stormrunner's current platform aut
 | G4.4 | Evaluate SCIM or directory-sync compatibility for future enterprise rollout | M | G4.1 | Closed: future evaluation |
 
 Acceptance criteria:
-- The remaining identity-ownership question is resolved rather than deferred indefinitely
+- The identity-ownership question is resolved rather than deferred indefinitely
 - Operators understand where identity lifecycle lives
 
 Progress:
@@ -462,7 +480,7 @@ Progress:
 
 ## Release Gates
 
-Before claiming practical parity in these target areas, all of the following should be true:
+Practical parity in these target areas is now tied to the following completed gates:
 
 1. A representative LoadRunner browser or Web HTTP/HTML script can be imported and reviewed through one shared flow.
 2. The user can see which runtime settings are executed, partial, preserved-only, or unsupported before running the script.
@@ -515,14 +533,14 @@ Track these metrics during rollout:
 - RBAC defect count from integration testing
 - OIDC configuration support incidents during pilot rollout
 
-## Recommended First Backlog Cut
+## Original First Backlog Cut
 
-If the team wants the highest leverage first slice, start here:
+This was the initial highest-leverage starter slice. Each item is now complete in the planned parity scope:
 
-1. G1.1 Decide production auth posture and document it
-2. R1.1 Move RTS support matrix into code-owned metadata
-3. A1.1/A1.3 Finish shared authoring and validation contracts
-4. B3.1/B3.2 Define and build TrueClient import MVP
-5. G2.1 Audit all API routes for RBAC coverage
+1. G1.1 Decide production auth posture and document it: Complete
+2. R1.1 Move RTS support matrix into code-owned metadata: Complete
+3. A1.1/A1.3 Finish shared authoring and validation contracts: Complete
+4. B3.1/B3.2 Define and build TrueClient import MVP: Complete
+5. G2.1 Audit all API routes for RBAC coverage: Complete
 
 That set establishes the control plane, the migration truth model, and the core workflow that the rest of the parity effort depends on.
