@@ -76,6 +76,12 @@ describe('TestExecutionScenarioPreview', () => {
             runtime_settings: {
               pacing: { type: 'fixed_delay', delay_ms: 1200 },
               think_time: { type: 'fixed', mean_ms: 900 },
+              browser: {
+                device_profile: 'iphone_se',
+                orientation: 'portrait',
+                touch_mode: true,
+                headless: false,
+              },
               error_handling: { continue_on_error: true, snapshot_on_error: true },
             },
             created_at: '2026-05-12T20:00:00Z',
@@ -168,6 +174,8 @@ describe('TestExecutionScenarioPreview', () => {
     expect(container.textContent).toContain('Fixed delay · 1200ms')
     expect(container.textContent).toContain('Think Time')
     expect(container.textContent).toContain('fixed · 900ms')
+    expect(container.textContent).toContain('Browser Runtime')
+    expect(container.textContent).toContain('iphone_se · Portrait · Touch enabled · Headed')
     expect(container.textContent).toContain('Continue On Error')
     expect(container.textContent).toContain('Enabled')
 

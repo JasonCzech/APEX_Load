@@ -4,6 +4,7 @@ import {
 } from 'recharts'
 
 import { CapacityAdvisory, TestSummary } from '../types'
+import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
 import { QueuedScenarioPreview, QueuedScenarioRow, ScenarioScriptDetail } from './testExecutionScenarioModel'
 import { formatTimeCompact } from '../utils/timeUtils'
 
@@ -153,6 +154,7 @@ export default function TestExecutionScenarioPreview({
   if (test.status !== 'QUEUED' && test.status !== 'PENDING') {
     return null
   }
+  const browserRuntimeSummary = formatBrowserRuntimeSummary(test.runtime_settings?.browser)
 
   return (
     <>
@@ -400,6 +402,10 @@ export default function TestExecutionScenarioPreview({
             <div className="scenario-setting-card">
               <span className="scenario-setting-label">Think Time</span>
               <span className="scenario-setting-value">{formatOverrideThinkTime(test)}</span>
+            </div>
+            <div className="scenario-setting-card">
+              <span className="scenario-setting-label">Browser Runtime</span>
+              <span className="scenario-setting-value">{browserRuntimeSummary || 'Script default'}</span>
             </div>
             <div className="scenario-setting-card">
               <span className="scenario-setting-label">Continue On Error</span>

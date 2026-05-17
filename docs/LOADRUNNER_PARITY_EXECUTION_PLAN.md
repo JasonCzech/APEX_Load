@@ -430,6 +430,7 @@ Before claiming practical parity in these target areas, all of the following sho
 - TrueClient MobileWeb import now converts simple JavaScript scroll intent (`window.scrollTo` / `window.scrollBy`) into `browser_swipe` actions, reducing blocker repair items for common mobile review-only steps.
 - TrueClient MobileWeb import now also maps JavaScript `location` navigation assignments and `assign` / `replace` calls into `browser_navigate`, shrinking the unsupported JavaScript envelope for common page-transition scripts.
 - TrueClient MobileWeb direct `Scroll` steps now map to `browser_swipe` actions with selector, direction, and distance handling, bringing the support matrix in line with executable converter behavior.
+- Scenario-level browser UX now surfaces saved runtime device overrides in queued run previews, so users can verify device profile, orientation, touch mode, and headed/headless state before start or revision.
 
 ## Suggested Milestones
 
