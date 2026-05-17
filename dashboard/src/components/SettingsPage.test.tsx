@@ -628,6 +628,66 @@ describe('SettingsPage', () => {
     expect(container.textContent).toContain('Settings saved.')
   })
 
+  it('disables settings, service-account, and audit actions when effective RBAC denies them', async () => {
+    apiMock.getAuthEffectiveAccess.mockResolvedValue({
+      enabled: true,
+      authenticated: true,
+      project_id: 'project-1',
+      resources: [
+        {
+          id: 'system_configuration',
+          name: 'System Configuration',
+          description: 'Controller-wide settings.',
+          operations: [
+            { id: 'view_system', label: 'View settings', allowed: true, grant_source: 'global' },
+            { id: 'manage_system', label: 'Update settings', allowed: false },
+          ],
+        },
+        {
+          id: 'identity_and_audit',
+          name: 'Identity, Service Accounts, and Audit',
+          description: 'Identity operations.',
+          operations: [
+            { id: 'view_audit', label: 'View audit events', allowed: false },
+            { id: 'manage_service_accounts', label: 'Manage service accounts', allowed: false },
+          ],
+        },
+      ],
+    })
+
+    await act(async () => {
+      root.render(<SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+
+    await flushPromises()
+
+    const generalSection = container.querySelector('#settings-section-general')
+    expect(generalSection).toBeTruthy()
+    if (!generalSection) return
+
+    const apiEndpointInput = findSettingInput(generalSection, 'API Endpoint')
+    expect(apiEndpointInput).toBeTruthy()
+    if (!apiEndpointInput) return
+    await setFieldValue(apiEndpointInput, ':9090')
+
+    const saveButton = findButton('Save Changes')
+    const resetButton = findButton('Reset All Settings')
+    expect(saveButton?.disabled).toBe(true)
+    expect(resetButton?.disabled).toBe(true)
+    expect(container.textContent).toContain('Current session can view settings but cannot save global configuration changes.')
+
+    const serviceAccountNameInput = findSettingInput(generalSection, 'Service Account Name')
+    expect(serviceAccountNameInput).toBeTruthy()
+    if (!serviceAccountNameInput) return
+    await setFieldValue(serviceAccountNameInput, 'Restricted CI')
+
+    expect(findButton('Create Service Account')?.disabled).toBe(true)
+    expect(findButton('Rotate Key')?.disabled).toBe(true)
+    expect(findButton('Disable')?.disabled).toBe(true)
+    expect(findButton('Delete')?.disabled).toBe(true)
+    expect(findButton('Export CSV')?.disabled).toBe(true)
+  })
+
   it('saves native OIDC auth settings through system settings', async () => {
     apiMock.updateSystemSettings.mockImplementation(async (settings) => settings)
 

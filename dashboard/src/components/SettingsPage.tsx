@@ -243,6 +243,16 @@ function formatGrantSource(grantSource?: string): string {
   }
 }
 
+function isEffectiveOperationAllowed(resources: DashboardAuthEffectiveAccessResource[], operationID: string): boolean {
+  for (const resource of resources) {
+    const operation = resource.operations.find(item => item.id === operationID)
+    if (operation) {
+      return operation.allowed
+    }
+  }
+  return true
+}
+
 function formatHeaderContractValue(value?: string, fallback = 'Not configured'): string {
   const normalized = value?.trim() || ''
   return normalized || fallback
@@ -925,7 +935,10 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
   const validationErrors = useMemo(() => validateSettings(settings), [settings])
   const hasUnsavedChanges = useMemo(() => JSON.stringify(settings) !== JSON.stringify(savedSettings), [settings, savedSettings])
   const authDiagnosticsStale = useMemo(() => JSON.stringify(settings.auth) !== JSON.stringify(savedSettings.auth), [settings.auth, savedSettings.auth])
-  const canSave = validationErrors.length === 0 && !loading && hasUnsavedChanges
+  const canManageSystem = useMemo(() => isEffectiveOperationAllowed(effectiveAuthAccessResources, 'manage_system'), [effectiveAuthAccessResources])
+  const canManageServiceAccounts = useMemo(() => isEffectiveOperationAllowed(effectiveAuthAccessResources, 'manage_service_accounts'), [effectiveAuthAccessResources])
+  const canViewAudit = useMemo(() => isEffectiveOperationAllowed(effectiveAuthAccessResources, 'view_audit'), [effectiveAuthAccessResources])
+  const canSave = validationErrors.length === 0 && !loading && hasUnsavedChanges && canManageSystem
   const selectedProject = useMemo(
     () => projects.find(project => project.id === selectedProjectId) || null,
     [projects, selectedProjectId],
@@ -1194,6 +1207,11 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
   }
 
   const exportAuditEvents = async () => {
+    if (!canViewAudit) {
+      setAuditActionError('Current session cannot export audit events.')
+      setAuditActionMessage('')
+      return
+    }
     try {
       const blob = await api.downloadAuthAuditEvents({
         limit: 1000,
@@ -1212,6 +1230,11 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
   }
 
   const createServiceAccount = async () => {
+    if (!canManageServiceAccounts) {
+      setServiceAccountActionError('Current session cannot manage service accounts.')
+      setServiceAccountActionMessage('')
+      return
+    }
     if (!serviceAccountName.trim()) {
       setServiceAccountActionError('Service account name is required.')
       setServiceAccountActionMessage('')
@@ -1244,6 +1267,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
   }
 
   const deleteServiceAccount = async (account: DashboardServiceAccount) => {
+    if (!canManageServiceAccounts) return
     setServiceAccountActionError('')
     setServiceAccountActionMessage('')
     try {
@@ -1257,6 +1281,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
   }
 
   const setServiceAccountActive = async (account: DashboardServiceAccount, active: boolean) => {
+    if (!canManageServiceAccounts) return
     setServiceAccountActionError('')
     setServiceAccountActionMessage('')
     try {
@@ -1270,6 +1295,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
   }
 
   const rotateServiceAccount = async (account: DashboardServiceAccount) => {
+    if (!canManageServiceAccounts) return
     setServiceAccountActionError('')
     setServiceAccountActionMessage('')
     try {
@@ -1739,13 +1765,16 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
               Discard Changes
             </button>
           )}
-          <button className="btn btn-secondary" onClick={resetSettings}>
+          <button className="btn btn-secondary" onClick={resetSettings} disabled={!canManageSystem}>
             Reset All Settings
           </button>
           <button className="btn btn-primary" disabled={!canSave} onClick={saveSettings}>
             {hasUnsavedChanges ? 'Save Changes' : 'Saved'}
           </button>
         </div>
+        {!canManageSystem && (
+          <p className="settings-error">Current session can view settings but cannot save global configuration changes.</p>
+        )}
       </div>
 
       <div className="settings-overview">
@@ -2414,7 +2443,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
                         <span className="setting-desc">Stormrunner returns the generated API key exactly once. Store it in your secret manager after creation.</span>
                       </div>
                       <div className="settings-inline-actions">
-                        <button className="btn btn-secondary" type="button" onClick={createServiceAccount} disabled={!serviceAccountName.trim()}>
+                        <button className="btn btn-secondary" type="button" onClick={createServiceAccount} disabled={!serviceAccountName.trim() || !canManageServiceAccounts}>
                           Create Service Account
                         </button>
                       </div>
@@ -2442,13 +2471,13 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
                           <span className="setting-desc">Rotation policy: every {account.rotation_interval_days || 90} days{account.rotation_due_at ? ` | Due: ${formatAuditTimestamp(account.rotation_due_at)}` : ''}</span>
                         </div>
                         <div className="settings-inline-actions">
-                          <button className="btn btn-secondary" type="button" onClick={() => rotateServiceAccount(account)}>
+                          <button className="btn btn-secondary" type="button" onClick={() => rotateServiceAccount(account)} disabled={!canManageServiceAccounts}>
                             Rotate Key
                           </button>
-                          <button className="btn btn-secondary" type="button" onClick={() => setServiceAccountActive(account, !account.active)}>
+                          <button className="btn btn-secondary" type="button" onClick={() => setServiceAccountActive(account, !account.active)} disabled={!canManageServiceAccounts}>
                             {account.active ? 'Disable' : 'Enable'}
                           </button>
-                          <button className="btn btn-ghost" style={{ color: 'var(--danger)' }} type="button" onClick={() => deleteServiceAccount(account)}>
+                          <button className="btn btn-ghost" style={{ color: 'var(--danger)' }} type="button" onClick={() => deleteServiceAccount(account)} disabled={!canManageServiceAccounts}>
                             Delete
                           </button>
                         </div>
@@ -2479,7 +2508,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
                         <input className="settings-input cell-mono" value={auditActionFilter} onChange={(e) => setAuditActionFilter(e.target.value)} placeholder="action" />
                         <input className="settings-input cell-mono" value={auditActorTypeFilter} onChange={(e) => setAuditActorTypeFilter(e.target.value)} placeholder="actor_type" />
                         <input className="settings-input cell-mono" value={auditStatusFilter} onChange={(e) => setAuditStatusFilter(e.target.value)} placeholder="status" />
-                        <button className="btn btn-secondary" type="button" onClick={exportAuditEvents}>
+                        <button className="btn btn-secondary" type="button" onClick={exportAuditEvents} disabled={!canViewAudit}>
                           Export CSV
                         </button>
                       </div>
