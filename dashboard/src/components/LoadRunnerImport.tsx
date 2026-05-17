@@ -102,6 +102,12 @@ function formatRuntimeSettingStatusLabel(status?: string | null) {
   return normalized.replace(/\b\w/g, char => char.toUpperCase())
 }
 
+function formatMigrationBlockPolicySummary(options: Pick<ImportOptions, 'block_partial' | 'block_compatibility_only' | 'block_non_applicable'>) {
+  return buildMigrationBlockStatuses(options)
+    .map((status) => formatRuntimeSettingStatusLabel(status))
+    .join(', ')
+}
+
 function findImportedActionName(script?: ImportedScript | null, location?: string | null): string | null {
   const normalizedLocation = location?.trim()
   if (!normalizedLocation || !Array.isArray(script?.actions)) return null
@@ -540,6 +546,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
             <span>Treat non-applicable runtime settings as blockers</span>
           </label>
         </div>
+        <p className="lr-subtitle">Active migration block policy: {formatMigrationBlockPolicySummary(options)}</p>
       </div>
 
       <div className="settings-notice">

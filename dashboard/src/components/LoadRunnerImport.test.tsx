@@ -1364,6 +1364,8 @@ describe('LoadRunnerImport', () => {
 
     await flushPromises()
 
+    expect(container.textContent).toContain('Active migration block policy: Blocked, Partial, Compatibility Only')
+
     const relaxPolicyButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Allow Partial Runtime Settings And Refresh Review'))
     expect(relaxPolicyButton).toBeDefined()
     if (!relaxPolicyButton) {
@@ -1391,6 +1393,7 @@ describe('LoadRunnerImport', () => {
 
     const checkboxes = Array.from(container.querySelectorAll('input[type="checkbox"]')) as HTMLInputElement[]
     expect(checkboxes[2]?.checked).toBe(false)
+    expect(container.textContent).toContain('Active migration block policy: Blocked, Compatibility Only')
   })
 
   it('opens a mapped parameter source in the visual editor with a mapping focus hint', async () => {
