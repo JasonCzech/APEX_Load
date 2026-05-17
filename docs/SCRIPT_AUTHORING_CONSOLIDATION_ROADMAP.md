@@ -218,10 +218,11 @@ That order minimizes churn and avoids rebuilding the UI around unstable backend 
 - The scripts library table and linked-run drill-down markup now render through a dedicated table component instead of keeping the entire sortable library table inline in `ScriptsPage`.
 - The scripts library now sources protocol-specific starter drafts from a dedicated factory module instead of keeping HTTP, browser, and JMS default draft definitions inline in `ScriptsPage`.
 - The scripts library now renders list, create-options, and active authoring subviews through a dedicated `ScriptsAuthoringShell`, leaving `ScriptsPage` focused on library fetch, refresh, delete, and table callbacks.
+- Editor replay and LoadRunner browser-import replay validation now build replay requests through one shared helper, so draft, saved, and imported browser paths agree on project binding, group names, variables, browser defaults, viewport fallback, and screenshot-capture behavior.
 
 ### Remaining High-Value Work
 - Finish the scenario assembly path by tightening `TestExecution` adjacencies and shared execution/result models now that `CreateTestModal` is aligned on one shared draft state owner.
-- Continue shared authoring lifecycle work by aligning validation/replay/save handoffs now that the scripts-page route branching is shell-owned.
+- Continue shared authoring lifecycle work by aligning validation and save handoffs now that route branching and replay request construction are shared.
 - Run the end-to-end parity pass, then remove any temporary normalization or migration adapters that remain after validation.
 
 ### Current Cleanup Note

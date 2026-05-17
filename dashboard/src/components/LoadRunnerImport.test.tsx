@@ -459,7 +459,7 @@ describe('LoadRunnerImport', () => {
         device_profile: 'iphone_15_pro',
         touch_mode: true,
         orientation: 'portrait',
-        capture_screenshots: 'on_failure',
+        capture_screenshots: 'per_action',
         viewport: { width: 393, height: 852 },
       }),
       script: expect.objectContaining({

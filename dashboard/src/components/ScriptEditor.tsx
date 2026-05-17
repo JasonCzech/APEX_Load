@@ -34,6 +34,7 @@ import {
   EMPTY_PARAMETER,
   EMPTY_SCRIPT,
   EMPTY_SOAP_ACTION,
+  buildReplayStartPayload,
   buildReplayVariableDiffs,
   cloneDataSource,
   createReplaySessionId,
@@ -53,6 +54,7 @@ import {
   isLikelyParameterValue,
   mergeReplayVariables,
   normalizeHeaders,
+  parseReplayVariablesText,
   parseInlineData,
   sanitizeVarName,
   stringifyInlineData,
@@ -1174,18 +1176,17 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
     let browserSessionStarted = false
     try {
       const currentScript = resolveCurrentScript()
-      let variables: Record<string, string> | undefined
-      const trimmed = replayOptions.variablesText.trim()
-      if (trimmed && trimmed !== '{}' && trimmed !== '{\n  \n}') {
-        const parsed = JSON.parse(trimmed)
-        if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') {
-          throw new Error('Replay variables must be a JSON object')
-        }
-        variables = Object.fromEntries(Object.entries(parsed).map(([key, value]) => [key, String(value ?? '')]))
-      }
-
+      const variables = parseReplayVariablesText(replayOptions.variablesText)
       const replaySessionId = createReplaySessionId()
-      const replayGroup = replayOptions.groupName.trim() || `${currentScript.name || 'script'}-replay`
+      const payload = buildReplayStartPayload(currentScript, {
+        projectId,
+        groupName: replayOptions.groupName,
+        replaySessionId,
+        variables,
+        ignoreThinkTime: replayOptions.ignoreThinkTime,
+        startPaused: replayOptions.startPaused,
+      })
+      const replayGroup = payload.group_name || `${currentScript.name || 'script'}-replay`
       setActiveReplaySessionId(replaySessionId)
       setBrowserReplaySession(null)
       setReplaySeedVariables(variables || {})
@@ -1208,43 +1209,6 @@ export default function ScriptEditor({ scriptId, initialScript, projectId, folde
         final_variables: variables,
       })
       setExpandedReplayEvent(null)
-
-      const captureScreenshots: 'off' | 'on_error' | 'per_action' =
-        currentScript.config.browser?.capture_screenshots === 'off' ||
-        currentScript.config.browser?.capture_screenshots === 'on_error' ||
-        currentScript.config.browser?.capture_screenshots === 'per_action'
-          ? currentScript.config.browser.capture_screenshots
-          : 'per_action'
-
-      const replayScript = projectId && !currentScript.project_id
-        ? { ...currentScript, project_id: projectId }
-        : currentScript
-
-      const payload = {
-        group_name: replayGroup,
-        replay_session_id: replaySessionId,
-        ignore_think_time: replayOptions.ignoreThinkTime,
-        start_paused: currentScript.protocol === 'browser' ? replayOptions.startPaused : undefined,
-        variables,
-        script: replayScript,
-        browser: currentScript.protocol === 'browser' ? {
-          engine: currentScript.config.browser?.engine || 'chromium',
-          headless: currentScript.config.browser?.headless ?? true,
-          slow_mo_ms: currentScript.config.browser?.slow_mo_ms,
-          user_agent: currentScript.config.browser?.user_agent,
-          device_profile: currentScript.config.browser?.device_profile,
-          touch_mode: currentScript.config.browser?.touch_mode,
-          orientation: currentScript.config.browser?.orientation,
-          client_metrics: currentScript.config.browser?.client_metrics,
-          capture_screenshots: captureScreenshots,
-          viewport: currentScript.config.browser?.viewport?.width || currentScript.config.browser?.viewport?.height
-            ? {
-                width: currentScript.config.browser?.viewport?.width || 1440,
-                height: currentScript.config.browser?.viewport?.height || 900,
-              }
-            : undefined,
-        } : undefined,
-      }
 
       if (currentScript.protocol === 'browser') {
         const res = scriptId

@@ -1,4 +1,5 @@
 import {
+  type BrowserReplayStartRequest,
   BrowserReplayConsoleEntry,
   BrowserReplayEvent,
   BrowserReplayNetworkEntry,
@@ -21,6 +22,7 @@ type ParameterConfig = ScriptParameterDefinition
 type ConsoleEntry = BrowserReplayConsoleEntry
 type NetworkEntry = BrowserReplayNetworkEntry
 type ReplayActionEvent = BrowserReplayEvent
+export type ReplayStartPayload = BrowserReplayStartRequest & { script: ScriptDefinition }
 
 type ImportCorrelationSuggestion = {
   name: string
@@ -567,6 +569,74 @@ export function createReplaySessionId(): string {
     return crypto.randomUUID()
   }
   return `replay-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+}
+
+export function parseReplayVariablesText(text: string): Record<string, string> | undefined {
+  const trimmed = text.trim()
+  if (!trimmed || trimmed === '{}' || trimmed === '{\n  \n}') {
+    return undefined
+  }
+
+  const parsed = JSON.parse(trimmed)
+  if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') {
+    throw new Error('Replay variables must be a JSON object')
+  }
+
+  return Object.fromEntries(Object.entries(parsed).map(([key, value]) => [key, String(value ?? '')]))
+}
+
+export function buildReplayStartPayload(
+  script: ScriptDefinition,
+  options: {
+    projectId?: string
+    groupName?: string
+    replaySessionId?: string
+    variables?: Record<string, string>
+    ignoreThinkTime?: boolean
+    startPaused?: boolean
+  } = {},
+): ReplayStartPayload {
+  const groupName = options.groupName?.trim() || `${script.name || 'script'}-replay`
+  const replayScript = options.projectId && !script.project_id
+    ? { ...script, project_id: options.projectId }
+    : script
+
+  return {
+    group_name: groupName,
+    replay_session_id: options.replaySessionId,
+    ignore_think_time: options.ignoreThinkTime,
+    start_paused: script.protocol === 'browser' ? options.startPaused : undefined,
+    variables: options.variables,
+    script: replayScript,
+    browser: script.protocol === 'browser' ? buildBrowserReplayConfig(script) : undefined,
+  }
+}
+
+function buildBrowserReplayConfig(script: ScriptDefinition): BrowserReplayStartRequest['browser'] {
+  const browser = script.config.browser
+  const viewport = browser?.viewport?.width || browser?.viewport?.height
+    ? {
+        width: browser?.viewport?.width || 1440,
+        height: browser?.viewport?.height || 900,
+      }
+    : undefined
+
+  return {
+    engine: browser?.engine || 'chromium',
+    headless: browser?.headless ?? true,
+    slow_mo_ms: browser?.slow_mo_ms,
+    user_agent: browser?.user_agent,
+    device_profile: browser?.device_profile,
+    touch_mode: browser?.touch_mode,
+    orientation: browser?.orientation,
+    client_metrics: browser?.client_metrics,
+    capture_screenshots: normalizeBrowserCaptureScreenshots(browser?.capture_screenshots),
+    viewport,
+  }
+}
+
+function normalizeBrowserCaptureScreenshots(value?: string): 'off' | 'on_error' | 'per_action' {
+  return value === 'off' || value === 'on_error' || value === 'per_action' ? value : 'per_action'
 }
 
 export function getErrorMessage(error: unknown, fallback: string): string {

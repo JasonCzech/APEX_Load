@@ -4,6 +4,7 @@ import { type ImportedScript, type LoadRunnerImportResult, type LoadRunnerImport
 import { type BrowserReplaySession } from '../types'
 import { type ScriptDefinition } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
+import { buildReplayStartPayload } from './scriptEditorUtils'
 import ScriptImportReview from './ScriptImportReview'
 import './LoadRunnerImport.css'
 
@@ -184,7 +185,6 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
   const handleValidateBrowserReplay = async () => {
     if (!importedScript) return
     const script = toScriptDefinition(importedScript)
-    const browser = script.config?.browser
 
     setReplayValidationLoading(true)
     setReplayValidationError('')
@@ -192,22 +192,10 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
     setReplayValidationSession(null)
 
     try {
-      const res = await api.startDraftBrowserReplaySession({
-        script: projectId ? { ...script, project_id: projectId } : script,
-        ignore_think_time: true,
-        browser: {
-          engine: browser?.engine || 'chromium',
-          headless: browser?.headless ?? true,
-          slow_mo_ms: browser?.slow_mo_ms,
-          user_agent: browser?.user_agent,
-          device_profile: browser?.device_profile,
-          touch_mode: browser?.touch_mode,
-          orientation: browser?.orientation,
-          client_metrics: browser?.client_metrics,
-          capture_screenshots: browser?.capture_screenshots,
-          viewport: browser?.viewport,
-        },
-      })
+      const res = await api.startDraftBrowserReplaySession(buildReplayStartPayload(script, {
+        projectId,
+        ignoreThinkTime: true,
+      }))
       setReplayValidationSession(res.session)
       setReplayValidationWarnings(Array.isArray(res.warnings) ? res.warnings : [])
     } catch (error: unknown) {
