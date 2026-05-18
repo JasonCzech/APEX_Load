@@ -132,12 +132,16 @@ func (s *SQLiteStore) init() error {
 		`CREATE TABLE IF NOT EXISTS scenario_schedules (
 			id TEXT PRIMARY KEY,
 			scenario_id TEXT NOT NULL,
+			project_id TEXT,
 			name TEXT NOT NULL,
 			cron_expr TEXT NOT NULL,
 			timezone TEXT,
 			release_id TEXT,
 			run_name_template TEXT,
 			enabled INTEGER DEFAULT 1,
+			owner_subject TEXT,
+			owner_display_name TEXT,
+			governance_json TEXT,
 			last_run_test_id TEXT,
 			last_run_at DATETIME,
 			next_run_at DATETIME,
@@ -438,6 +442,10 @@ func (s *SQLiteStore) init() error {
 		{`ALTER TABLE service_accounts ADD COLUMN rotation_interval_days INTEGER`, "service_accounts.rotation_interval_days"},
 		{`ALTER TABLE service_accounts ADD COLUMN scopes_json TEXT`, "service_accounts.scopes_json"},
 		{`ALTER TABLE scenario_scripts ADD COLUMN stages_json TEXT`, "scenario_scripts.stages_json"},
+		{`ALTER TABLE scenario_schedules ADD COLUMN project_id TEXT`, "scenario_schedules.project_id"},
+		{`ALTER TABLE scenario_schedules ADD COLUMN owner_subject TEXT`, "scenario_schedules.owner_subject"},
+		{`ALTER TABLE scenario_schedules ADD COLUMN owner_display_name TEXT`, "scenario_schedules.owner_display_name"},
+		{`ALTER TABLE scenario_schedules ADD COLUMN governance_json TEXT`, "scenario_schedules.governance_json"},
 	} {
 		if _, err := s.db.Exec(migration.query); err != nil && !isDuplicateColumnErr(err) {
 			return fmt.Errorf("failed to add %s column: %w", migration.name, err)
@@ -864,24 +872,30 @@ func (s *SQLiteStore) SaveScenarioSchedule(schedule *ScenarioSchedule) error {
 	if schedule.UpdatedAt.IsZero() {
 		schedule.UpdatedAt = time.Now()
 	}
-	_, err := s.db.Exec(`INSERT INTO scenario_schedules (id, scenario_id, name, cron_expr, timezone, release_id, run_name_template, enabled, last_run_test_id, last_run_at, next_run_at, last_error, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(id) DO UPDATE SET scenario_id=excluded.scenario_id, name=excluded.name, cron_expr=excluded.cron_expr,
+	schedule.ProjectID = normalizeProjectID(schedule.ProjectID)
+	governanceJSON, err := json.Marshal(schedule.Governance)
+	if err != nil {
+		return fmt.Errorf("marshal scenario schedule governance: %w", err)
+	}
+	_, err = s.db.Exec(`INSERT INTO scenario_schedules (id, scenario_id, project_id, name, cron_expr, timezone, release_id, run_name_template, enabled, owner_subject, owner_display_name, governance_json, last_run_test_id, last_run_at, next_run_at, last_error, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET scenario_id=excluded.scenario_id, project_id=excluded.project_id, name=excluded.name, cron_expr=excluded.cron_expr,
 		timezone=excluded.timezone, release_id=excluded.release_id, run_name_template=excluded.run_name_template,
-		enabled=excluded.enabled, last_run_test_id=excluded.last_run_test_id, last_run_at=excluded.last_run_at,
+		enabled=excluded.enabled, owner_subject=excluded.owner_subject, owner_display_name=excluded.owner_display_name,
+		governance_json=excluded.governance_json, last_run_test_id=excluded.last_run_test_id, last_run_at=excluded.last_run_at,
 		next_run_at=excluded.next_run_at, last_error=excluded.last_error, updated_at=excluded.updated_at`,
-		schedule.ID, schedule.ScenarioID, schedule.Name, schedule.CronExpr, schedule.Timezone, schedule.ReleaseID, schedule.RunNameTemplate, schedule.Enabled,
+		schedule.ID, schedule.ScenarioID, schedule.ProjectID, schedule.Name, schedule.CronExpr, schedule.Timezone, schedule.ReleaseID, schedule.RunNameTemplate, schedule.Enabled, schedule.OwnerSubject, schedule.OwnerDisplayName, string(governanceJSON),
 		schedule.LastRunTestID, schedule.LastRunAt, schedule.NextRunAt, schedule.LastError, schedule.CreatedAt, schedule.UpdatedAt)
 	return err
 }
 
 func (s *SQLiteStore) GetScenarioSchedule(id string) (*ScenarioSchedule, error) {
-	row := s.db.QueryRow(`SELECT id, scenario_id, name, cron_expr, COALESCE(timezone, ''), COALESCE(release_id, ''), COALESCE(run_name_template, ''), COALESCE(enabled, 1), COALESCE(last_run_test_id, ''), last_run_at, next_run_at, COALESCE(last_error, ''), created_at, updated_at FROM scenario_schedules WHERE id = ?`, id)
+	row := s.db.QueryRow(`SELECT id, scenario_id, COALESCE(project_id, ''), name, cron_expr, COALESCE(timezone, ''), COALESCE(release_id, ''), COALESCE(run_name_template, ''), COALESCE(enabled, 1), COALESCE(owner_subject, ''), COALESCE(owner_display_name, ''), COALESCE(governance_json, ''), COALESCE(last_run_test_id, ''), last_run_at, next_run_at, COALESCE(last_error, ''), created_at, updated_at FROM scenario_schedules WHERE id = ?`, id)
 	return scanScenarioSchedule(row)
 }
 
 func (s *SQLiteStore) ListScenarioSchedules(scenarioID string) ([]*ScenarioSchedule, error) {
-	rows, err := s.db.Query(`SELECT id, scenario_id, name, cron_expr, COALESCE(timezone, ''), COALESCE(release_id, ''), COALESCE(run_name_template, ''), COALESCE(enabled, 1), COALESCE(last_run_test_id, ''), last_run_at, next_run_at, COALESCE(last_error, ''), created_at, updated_at FROM scenario_schedules WHERE scenario_id = ? ORDER BY created_at ASC`, scenarioID)
+	rows, err := s.db.Query(`SELECT id, scenario_id, COALESCE(project_id, ''), name, cron_expr, COALESCE(timezone, ''), COALESCE(release_id, ''), COALESCE(run_name_template, ''), COALESCE(enabled, 1), COALESCE(owner_subject, ''), COALESCE(owner_display_name, ''), COALESCE(governance_json, ''), COALESCE(last_run_test_id, ''), last_run_at, next_run_at, COALESCE(last_error, ''), created_at, updated_at FROM scenario_schedules WHERE scenario_id = ? ORDER BY created_at ASC`, scenarioID)
 	if err != nil {
 		return nil, err
 	}
@@ -890,7 +904,7 @@ func (s *SQLiteStore) ListScenarioSchedules(scenarioID string) ([]*ScenarioSched
 }
 
 func (s *SQLiteStore) ListAllScenarioSchedules() ([]*ScenarioSchedule, error) {
-	rows, err := s.db.Query(`SELECT id, scenario_id, name, cron_expr, COALESCE(timezone, ''), COALESCE(release_id, ''), COALESCE(run_name_template, ''), COALESCE(enabled, 1), COALESCE(last_run_test_id, ''), last_run_at, next_run_at, COALESCE(last_error, ''), created_at, updated_at FROM scenario_schedules ORDER BY created_at ASC`)
+	rows, err := s.db.Query(`SELECT id, scenario_id, COALESCE(project_id, ''), name, cron_expr, COALESCE(timezone, ''), COALESCE(release_id, ''), COALESCE(run_name_template, ''), COALESCE(enabled, 1), COALESCE(owner_subject, ''), COALESCE(owner_display_name, ''), COALESCE(governance_json, ''), COALESCE(last_run_test_id, ''), last_run_at, next_run_at, COALESCE(last_error, ''), created_at, updated_at FROM scenario_schedules ORDER BY created_at ASC`)
 	if err != nil {
 		return nil, err
 	}
@@ -1010,15 +1024,20 @@ type scanner interface {
 func scanScenarioSchedule(row scanner) (*ScenarioSchedule, error) {
 	var schedule ScenarioSchedule
 	var enabled int
+	var governanceJSON string
 	err := row.Scan(
 		&schedule.ID,
 		&schedule.ScenarioID,
+		&schedule.ProjectID,
 		&schedule.Name,
 		&schedule.CronExpr,
 		&schedule.Timezone,
 		&schedule.ReleaseID,
 		&schedule.RunNameTemplate,
 		&enabled,
+		&schedule.OwnerSubject,
+		&schedule.OwnerDisplayName,
+		&governanceJSON,
 		&schedule.LastRunTestID,
 		&schedule.LastRunAt,
 		&schedule.NextRunAt,
@@ -1030,6 +1049,13 @@ func scanScenarioSchedule(row scanner) (*ScenarioSchedule, error) {
 		return nil, err
 	}
 	schedule.Enabled = enabled != 0
+	schedule.ProjectID = normalizeProjectID(schedule.ProjectID)
+	if governanceJSON != "" && governanceJSON != "null" {
+		var governance ScenarioScheduleGovernance
+		if err := json.Unmarshal([]byte(governanceJSON), &governance); err == nil {
+			schedule.Governance = &governance
+		}
+	}
 	return &schedule, nil
 }
 

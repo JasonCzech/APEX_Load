@@ -23,12 +23,15 @@ type scenarioScheduler struct {
 }
 
 type CreateScenarioScheduleRequest struct {
-	Name            string `json:"name"`
-	CronExpr        string `json:"cron_expr"`
-	Timezone        string `json:"timezone,omitempty"`
-	ReleaseID       string `json:"release_id,omitempty"`
-	RunNameTemplate string `json:"run_name_template,omitempty"`
-	Enabled         *bool  `json:"enabled,omitempty"`
+	Name             string `json:"name"`
+	CronExpr         string `json:"cron_expr"`
+	Timezone         string `json:"timezone,omitempty"`
+	ReleaseID        string `json:"release_id,omitempty"`
+	RunNameTemplate  string `json:"run_name_template,omitempty"`
+	Enabled          *bool  `json:"enabled,omitempty"`
+	OwnerSubject     string `json:"-"`
+	OwnerDisplayName string `json:"-"`
+	RBACReviewSource string `json:"-"`
 }
 
 func newScenarioScheduler(runner *TestRunner) *scenarioScheduler {
@@ -311,6 +314,7 @@ func (tr *TestRunner) upsertScenarioScheduleLocked(scenarioID string, scheduleID
 	schedule := &storage.ScenarioSchedule{
 		ID:              scheduleID,
 		ScenarioID:      scenarioID,
+		ProjectID:       normalizeProjectID(scenario.ProjectID),
 		Name:            name,
 		CronExpr:        cronExpr,
 		Timezone:        strings.TrimSpace(req.Timezone),
@@ -322,10 +326,19 @@ func (tr *TestRunner) upsertScenarioScheduleLocked(scenarioID string, scheduleID
 	}
 	if existing != nil {
 		schedule.CreatedAt = existing.CreatedAt
+		schedule.OwnerSubject = existing.OwnerSubject
+		schedule.OwnerDisplayName = existing.OwnerDisplayName
 		schedule.LastRunTestID = existing.LastRunTestID
 		schedule.LastRunAt = existing.LastRunAt
 		schedule.LastError = existing.LastError
 	}
+	if strings.TrimSpace(schedule.OwnerSubject) == "" {
+		schedule.OwnerSubject = strings.TrimSpace(req.OwnerSubject)
+	}
+	if strings.TrimSpace(schedule.OwnerDisplayName) == "" {
+		schedule.OwnerDisplayName = strings.TrimSpace(req.OwnerDisplayName)
+	}
+	schedule.Governance = tr.scenarioScheduleGovernanceLocked(scenario, schedule, req, now)
 	if schedule.Timezone == "" {
 		schedule.Timezone = "UTC"
 	}
@@ -344,4 +357,59 @@ func (tr *TestRunner) upsertScenarioScheduleLocked(scenarioID string, scheduleID
 		return nil, err
 	}
 	return cloneScenarioSchedule(schedule), nil
+}
+
+func (tr *TestRunner) scenarioScheduleGovernanceLocked(scenario *StoredScenario, schedule *storage.ScenarioSchedule, req CreateScenarioScheduleRequest, now time.Time) *storage.ScenarioScheduleGovernance {
+	projectID := storage.DefaultProjectID
+	if scenario != nil {
+		projectID = normalizeProjectID(scenario.ProjectID)
+	}
+	reviewer := strings.TrimSpace(req.OwnerSubject)
+	if reviewer == "" && schedule != nil {
+		reviewer = strings.TrimSpace(schedule.OwnerSubject)
+	}
+	reviewSource := strings.TrimSpace(req.RBACReviewSource)
+	if reviewSource == "" {
+		reviewSource = "api"
+	}
+	estimatedPeak := 0
+	if scenario != nil {
+		for _, script := range scenario.Scripts {
+			estimatedPeak += script.VUsers
+		}
+	}
+	maxConcurrent := tr.projectMaxConcurrentTests(projectID)
+	maxVUsers := tr.projectMaxVUsers(projectID)
+	findings := []string{"Schedule mutation authorized for scenario project scope."}
+	quotaDecision := "allowed"
+	if maxConcurrent > 0 {
+		findings = append(findings, fmt.Sprintf("Project allows %d concurrent test(s).", maxConcurrent))
+	}
+	if maxVUsers > 0 {
+		findings = append(findings, fmt.Sprintf("Project allows %d active VUser(s).", maxVUsers))
+		if estimatedPeak > maxVUsers {
+			quotaDecision = "exceeds_project_vuser_limit"
+			findings = append(findings, fmt.Sprintf("Scheduled scenario peak %d VUsers exceeds project limit.", estimatedPeak))
+		}
+	}
+	if maxConcurrent == 0 && maxVUsers == 0 {
+		findings = append(findings, "No project-specific quota limit configured; global capacity controls still apply at materialization.")
+	}
+	return &storage.ScenarioScheduleGovernance{
+		PolicyVersion: "schedule-governance.v1",
+		RBACReview: storage.ScenarioScheduleRBACReview{
+			Decision:      "allowed",
+			ReviewedAt:    now,
+			ReviewedBy:    reviewer,
+			RequiredRoles: []string{RoleEditor, RoleProjectAdmin},
+			ReviewSource:  reviewSource,
+		},
+		QuotaReview: storage.ScenarioScheduleQuotaReview{
+			Decision:             quotaDecision,
+			ProjectMaxConcurrent: maxConcurrent,
+			ProjectMaxVUsers:     maxVUsers,
+			EstimatedPeakVUsers:  estimatedPeak,
+			Findings:             findings,
+		},
+	}
 }

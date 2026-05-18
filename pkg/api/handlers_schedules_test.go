@@ -54,6 +54,12 @@ func TestHandleScenarioScheduleCRUD(t *testing.T) {
 	if created.ID == "" || created.NextRunAt == nil {
 		t.Fatalf("created schedule = %#v, want id and next_run_at", created)
 	}
+	if created.ProjectID != "project-schedule" || created.OwnerSubject != "dev-mode" || created.Governance == nil {
+		t.Fatalf("created schedule governance = %#v, want project ownership and governance review", created)
+	}
+	if created.Governance.RBACReview.Decision != "allowed" || created.Governance.QuotaReview.Decision != "allowed" || created.Governance.QuotaReview.EstimatedPeakVUsers != 1 {
+		t.Fatalf("created governance = %#v, want allowed RBAC/quota review for one VUser", created.Governance)
+	}
 
 	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/scenarios/"+scenario.ID+"/schedules", nil)
 	listResp := httptest.NewRecorder()
@@ -107,6 +113,9 @@ func TestHandleScenarioScheduleCRUD(t *testing.T) {
 	}
 	if events[0].Action != "scenario.schedule.delete" || events[1].Action != "scenario.schedule.update" || events[2].Action != "scenario.schedule.create" {
 		t.Fatalf("audit actions = [%s %s %s], want delete/update/create", events[0].Action, events[1].Action, events[2].Action)
+	}
+	if events[2].Details["governance"] == nil || events[2].Details["owner"] == nil {
+		t.Fatalf("create audit details = %#v, want governance and owner metadata", events[2].Details)
 	}
 }
 

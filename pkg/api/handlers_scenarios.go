@@ -3,6 +3,8 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+
+	"github.com/jasonczech/stormrunner/pkg/storage"
 )
 
 func (s *Server) handleCreateScenario(w http.ResponseWriter, r *http.Request) {
@@ -99,6 +101,10 @@ func (s *Server) handleCreateScenarioSchedule(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
 	}
+	_, actorSubject, actorDisplayName := s.resolveAuditActor(r)
+	req.OwnerSubject = actorSubject
+	req.OwnerDisplayName = actorDisplayName
+	req.RBACReviewSource = "api"
 	schedule, err := s.runner.CreateScenarioSchedule(r.PathValue("id"), req)
 	if err != nil {
 		status := http.StatusBadRequest
@@ -112,7 +118,7 @@ func (s *Server) handleCreateScenarioSchedule(w http.ResponseWriter, r *http.Req
 	if scenario, ok := s.runner.GetScenario(r.PathValue("id")); ok {
 		projectID = scenario.ProjectID
 	}
-	s.recordAuditEvent(r, "scenario.schedule.create", "success", "scenario_schedule", schedule.ID, projectID, map[string]any{"scenario_id": schedule.ScenarioID, "name": schedule.Name, "cron_expr": schedule.CronExpr, "enabled": schedule.Enabled})
+	s.recordAuditEvent(r, "scenario.schedule.create", "success", "scenario_schedule", schedule.ID, projectID, scenarioScheduleAuditDetails(schedule))
 	writeJSON(w, http.StatusCreated, schedule)
 }
 
@@ -131,6 +137,10 @@ func (s *Server) handleUpdateScenarioSchedule(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
 	}
+	_, actorSubject, actorDisplayName := s.resolveAuditActor(r)
+	req.OwnerSubject = actorSubject
+	req.OwnerDisplayName = actorDisplayName
+	req.RBACReviewSource = "api"
 	schedule, ok, err := s.runner.UpdateScenarioSchedule(r.PathValue("id"), r.PathValue("schedule_id"), req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -144,7 +154,7 @@ func (s *Server) handleUpdateScenarioSchedule(w http.ResponseWriter, r *http.Req
 	if scenario, ok := s.runner.GetScenario(r.PathValue("id")); ok {
 		projectID = scenario.ProjectID
 	}
-	s.recordAuditEvent(r, "scenario.schedule.update", "success", "scenario_schedule", schedule.ID, projectID, map[string]any{"scenario_id": schedule.ScenarioID, "name": schedule.Name, "cron_expr": schedule.CronExpr, "enabled": schedule.Enabled})
+	s.recordAuditEvent(r, "scenario.schedule.update", "success", "scenario_schedule", schedule.ID, projectID, scenarioScheduleAuditDetails(schedule))
 	writeJSON(w, http.StatusOK, schedule)
 }
 
@@ -159,4 +169,24 @@ func (s *Server) handleDeleteScenarioSchedule(w http.ResponseWriter, r *http.Req
 	}
 	s.recordAuditEvent(r, "scenario.schedule.delete", "success", "scenario_schedule", r.PathValue("schedule_id"), projectID, map[string]any{"scenario_id": r.PathValue("id")})
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": r.PathValue("schedule_id")})
+}
+
+func scenarioScheduleAuditDetails(schedule *storage.ScenarioSchedule) map[string]any {
+	if schedule == nil {
+		return nil
+	}
+	details := map[string]any{
+		"scenario_id": schedule.ScenarioID,
+		"name":        schedule.Name,
+		"cron_expr":   schedule.CronExpr,
+		"enabled":     schedule.Enabled,
+		"owner": map[string]string{
+			"subject":      schedule.OwnerSubject,
+			"display_name": schedule.OwnerDisplayName,
+		},
+	}
+	if schedule.Governance != nil {
+		details["governance"] = schedule.Governance
+	}
+	return details
 }

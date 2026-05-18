@@ -209,20 +209,46 @@ type LoadStage struct {
 }
 
 type ScenarioSchedule struct {
-	ID              string     `json:"id"`
-	ScenarioID      string     `json:"scenario_id"`
-	Name            string     `json:"name"`
-	CronExpr        string     `json:"cron_expr"`
-	Timezone        string     `json:"timezone,omitempty"`
-	ReleaseID       string     `json:"release_id,omitempty"`
-	RunNameTemplate string     `json:"run_name_template,omitempty"`
-	Enabled         bool       `json:"enabled"`
-	LastRunTestID   string     `json:"last_run_test_id,omitempty"`
-	LastRunAt       *time.Time `json:"last_run_at,omitempty"`
-	NextRunAt       *time.Time `json:"next_run_at,omitempty"`
-	LastError       string     `json:"last_error,omitempty"`
-	CreatedAt       time.Time  `json:"created_at"`
-	UpdatedAt       time.Time  `json:"updated_at"`
+	ID               string                      `json:"id"`
+	ScenarioID       string                      `json:"scenario_id"`
+	ProjectID        string                      `json:"project_id,omitempty"`
+	Name             string                      `json:"name"`
+	CronExpr         string                      `json:"cron_expr"`
+	Timezone         string                      `json:"timezone,omitempty"`
+	ReleaseID        string                      `json:"release_id,omitempty"`
+	RunNameTemplate  string                      `json:"run_name_template,omitempty"`
+	Enabled          bool                        `json:"enabled"`
+	OwnerSubject     string                      `json:"owner_subject,omitempty"`
+	OwnerDisplayName string                      `json:"owner_display_name,omitempty"`
+	Governance       *ScenarioScheduleGovernance `json:"governance,omitempty"`
+	LastRunTestID    string                      `json:"last_run_test_id,omitempty"`
+	LastRunAt        *time.Time                  `json:"last_run_at,omitempty"`
+	NextRunAt        *time.Time                  `json:"next_run_at,omitempty"`
+	LastError        string                      `json:"last_error,omitempty"`
+	CreatedAt        time.Time                   `json:"created_at"`
+	UpdatedAt        time.Time                   `json:"updated_at"`
+}
+
+type ScenarioScheduleGovernance struct {
+	RBACReview    ScenarioScheduleRBACReview  `json:"rbac_review"`
+	QuotaReview   ScenarioScheduleQuotaReview `json:"quota_review"`
+	PolicyVersion string                      `json:"policy_version,omitempty"`
+}
+
+type ScenarioScheduleRBACReview struct {
+	Decision      string    `json:"decision"`
+	ReviewedAt    time.Time `json:"reviewed_at"`
+	ReviewedBy    string    `json:"reviewed_by,omitempty"`
+	RequiredRoles []string  `json:"required_roles,omitempty"`
+	ReviewSource  string    `json:"review_source,omitempty"`
+}
+
+type ScenarioScheduleQuotaReview struct {
+	Decision             string   `json:"decision"`
+	ProjectMaxConcurrent int      `json:"project_max_concurrent_tests,omitempty"`
+	ProjectMaxVUsers     int      `json:"project_max_vusers,omitempty"`
+	EstimatedPeakVUsers  int      `json:"estimated_peak_vusers,omitempty"`
+	Findings             []string `json:"findings,omitempty"`
 }
 
 type SharedDataPool struct {

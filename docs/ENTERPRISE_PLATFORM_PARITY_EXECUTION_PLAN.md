@@ -266,12 +266,12 @@ Scheduling becomes an enterprise control plane for recurring, queued, blackout-a
 
 ### Epic P7.1: Schedule Governance
 
-| ID | Story | Size | Dependencies |
-| --- | --- | --- | --- |
-| P7.1 | Add schedule ownership, project quotas, and RBAC review to every schedule mutation and materialized run | M | P1.6 |
-| P7.2 | Add blackout windows, maintenance calendars, and environment availability windows | L | P1.8 |
-| P7.3 | Add approval workflows for high-cost, off-hours, production, or quota-burst schedules | L | P1.8, P2.7 |
-| P7.4 | Add schedule conflict detection across capacity pools, releases, environments, and project quotas | L | P2.6 |
+| ID | Story | Size | Dependencies | Status |
+| --- | --- | --- | --- | --- |
+| P7.1 | Add schedule ownership, project quotas, and RBAC review to every schedule mutation and materialized run | M | P1.6 | Partial backend complete - schedule mutations now persist project ownership, owner identity, RBAC review metadata, and project quota review details in schedule payloads and audit events; materialized-run decision events remain for P7.6 |
+| P7.2 | Add blackout windows, maintenance calendars, and environment availability windows | L | P1.8 | Not started |
+| P7.3 | Add approval workflows for high-cost, off-hours, production, or quota-burst schedules | L | P1.8, P2.7 | Not started |
+| P7.4 | Add schedule conflict detection across capacity pools, releases, environments, and project quotas | L | P2.6 | Not started |
 
 Acceptance criteria:
 - Recurring runs cannot bypass RBAC, quotas, blackout windows, or capacity controls.
