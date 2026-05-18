@@ -2403,29 +2403,11 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         </div>
       ) : (
         <div className="editor-body">
-          <div className="editor-support-toolbar" aria-label="Script support tools">
-            <button type="button" className="editor-support-button" onClick={() => openEditorSection('config')}>
-              <strong>Config</strong>
-              <span>{script.protocol || 'http'} · v{script.version || '1.0.0'}</span>
-            </button>
-            <button type="button" className="editor-support-button" onClick={() => openEditorSection('runtime')}>
-              <strong>Runtime / RTS</strong>
-              <span>{script.config.run_logic?.iterations ? `${script.config.run_logic.iterations} iterations` : 'Open runtime settings'}</span>
-            </button>
-            <button type="button" className="editor-support-button" onClick={() => setIsParameterDialogOpen(true)}>
-              <strong>Parameters</strong>
-              <span>{script.parameters?.length || 0} parameters · {script.data_sources?.length || 0} sources</span>
-            </button>
-            <button type="button" className="editor-support-button" onClick={() => openEditorSection('replay')}>
-              <strong>Replay</strong>
-              <span>{replaying ? 'Replay running' : replayReport ? `${replayReport.events.length} events` : 'No replay yet'}</span>
-            </button>
-            {importMetadata && (
-              <button type="button" className="editor-support-button" onClick={() => openEditorSection('import')}>
-                <strong>Import</strong>
-                <span>{migrationSuggestions.length} suggestions</span>
-              </button>
-            )}
+          <div className="script-name-panel" aria-label="Script identity">
+            <label className="script-name-field">
+              <span>Script Name</span>
+              <input value={script.name} onChange={e => updateField('name', e.target.value)} placeholder="My_Test_Script" />
+            </label>
           </div>
 
           {/* Script Config Panel */}
@@ -2437,10 +2419,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
             {(
               <div className="panel-body">
                 <div className="form-grid">
-                  <label>
-                    <span>Name</span>
-                    <input value={script.name} onChange={e => updateField('name', e.target.value)} placeholder="My_Test_Script" />
-                  </label>
                   {showProtocolSelector && (
                     <label>
                       <span>Protocol</span>
@@ -4281,8 +4259,10 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                   </div>
                   <div className="editor-outline-list">
                     <button className="editor-outline-link" type="button" onClick={() => openEditorSection('config')}>Script Configuration</button>
+                    <button className="editor-outline-link" type="button" onClick={() => openEditorSection('runtime')}>Runtime / RTS</button>
                     {importMetadata && <button className="editor-outline-link" type="button" onClick={() => openEditorSection('import')}>Imported Metadata</button>}
                     <button className="editor-outline-link" type="button" onClick={() => openEditorSection('parameter-data')}>Parameter Data</button>
+                    <button className="editor-outline-link" type="button" onClick={() => openEditorSection('replay')}>Replay Output</button>
                   </div>
                 </div>
                 <div className="actions-sidebar-header">

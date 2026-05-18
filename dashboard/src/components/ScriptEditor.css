@@ -114,6 +114,38 @@
 .config-panel, .actions-layout {
   background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden;
 }
+.script-name-panel {
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-card);
+}
+.script-name-field {
+  display: grid;
+  gap: 6px;
+  max-width: 420px;
+}
+.script-name-field span {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.script-name-field input {
+  width: 100%;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 9px 12px;
+  color: var(--text-primary);
+  font-size: 13px;
+  outline: none;
+}
+.script-name-field input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.12);
+}
 .editor-support-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -1590,7 +1622,21 @@
   display: grid;
   gap: 6px;
 }
-.editor-outline-link,
+.editor-outline-link {
+  border: none;
+  border-left: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 12px;
+  text-align: left;
+  padding: 7px 8px;
+  cursor: pointer;
+}
+.editor-outline-link:hover {
+  border-left-color: rgba(99, 102, 241, 0.55);
+  background: rgba(99, 102, 241, 0.06);
+}
 .utility-link-button {
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -1601,7 +1647,6 @@
   padding: 8px 10px;
   cursor: pointer;
 }
-.editor-outline-link:hover,
 .utility-link-button:hover {
   border-color: rgba(99, 102, 241, 0.28);
   background: rgba(99, 102, 241, 0.06);

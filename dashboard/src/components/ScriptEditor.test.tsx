@@ -228,23 +228,24 @@ describe('ScriptEditor', () => {
     vi.clearAllMocks()
   })
 
-  it('keeps support panels behind dialog launchers so the action workspace remains primary', async () => {
+  it('keeps the landing editor focused on script name while support tools live in the outline', async () => {
     await act(async () => {
       root.render(<ScriptEditor initialScript={initialScript} />)
     })
 
-    const toolbar = container.querySelector('.editor-support-toolbar')
-    expect(toolbar).toBeTruthy()
-    expect(toolbar?.textContent).toContain('Config')
-    expect(toolbar?.textContent).toContain('Runtime / RTS')
-    expect(toolbar?.textContent).toContain('Parameters')
-    expect(toolbar?.textContent).toContain('Replay')
-    expect(toolbar?.textContent).not.toContain('Replay Output')
+    expect(container.querySelector('.editor-support-toolbar')).toBeNull()
+    const namePanel = container.querySelector('.script-name-panel')
+    expect(namePanel).toBeTruthy()
+    expect(namePanel?.textContent).toContain('Script Name')
+    expect(namePanel?.textContent).not.toContain('Runtime / RTS')
+    expect(namePanel?.textContent).not.toContain('Replay Output')
+    expect(container.querySelectorAll('input[placeholder="My_Test_Script"]')).toHaveLength(1)
+
     const outline = container.querySelector('.editor-outline-list')
     expect(outline?.textContent).toContain('Script Configuration')
+    expect(outline?.textContent).toContain('Runtime / RTS')
     expect(outline?.textContent).toContain('Parameter Data')
-    expect(outline?.textContent).not.toContain('Replay Output')
-    expect(outline?.textContent).not.toContain('Runtime Settings')
+    expect(outline?.textContent).toContain('Replay Output')
 
     const configDialog = container.querySelector('[aria-label="Script Configuration"]')
     const replayDialog = container.querySelector('[aria-label="Replay Output"]')
@@ -256,7 +257,7 @@ describe('ScriptEditor', () => {
     expect(replayDialog?.className).not.toContain('open')
     expect(runtimeDialog?.className).not.toContain('open')
 
-    const configLauncher = Array.from(container.querySelectorAll('.editor-support-button')).find(button => button.textContent?.includes('Config'))
+    const configLauncher = Array.from(container.querySelectorAll('.editor-outline-link')).find(button => button.textContent?.includes('Script Configuration'))
     expect(configLauncher).toBeDefined()
     if (!configLauncher) return
 
