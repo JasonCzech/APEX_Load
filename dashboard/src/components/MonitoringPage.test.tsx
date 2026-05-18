@@ -8,6 +8,7 @@ import MonitoringPage from './MonitoringPage'
 
 const apiMock = {
   getHealth: vi.fn(),
+  getParityStatus: vi.fn(),
   getScheduleHealth: vi.fn(),
   getSystemInventory: vi.fn(),
   listTests: vi.fn(),
@@ -50,6 +51,29 @@ describe('MonitoringPage', () => {
       failed: 0,
       pending_approval: 0,
       status_counts: {},
+    })
+    apiMock.getParityStatus.mockResolvedValue({
+      generated_at: '2026-05-18T12:00:00Z',
+      overall: 'partial',
+      areas: [
+        {
+          id: 'fleet',
+          name: 'Fleet And Scale-Out',
+          status: 'partial',
+          summary: 'Fleet evidence is partially available.',
+          evidence: ['/api/v1/fleet/alerts'],
+          remaining: ['Publish benchmark-calibrated density envelopes and deployment autoscaling evidence.'],
+          release_gate: true,
+        },
+        {
+          id: 'monitoring',
+          name: 'Real-Time Monitoring',
+          status: 'complete',
+          summary: 'Operator checklist is available.',
+          evidence: ['/api/v1/system/parity-status'],
+          release_gate: true,
+        },
+      ],
     })
     apiMock.listTests.mockResolvedValue({ tests: [] })
     container = document.createElement('div')
@@ -99,6 +123,10 @@ describe('MonitoringPage', () => {
 
     expect(container.textContent).toContain('Telemetry Diagnostics')
     expect(container.textContent).toContain('Controller')
+    expect(container.textContent).toContain('Parity Checklist')
+    expect(container.textContent).toContain('Fleet And Scale-Out: partial')
+    expect(container.textContent).toContain('Real-Time Monitoring: complete')
+    expect(container.textContent).toContain('Release Gates')
     expect(container.textContent).toContain('Generator Inventory')
     expect(container.textContent).toContain('0/0 connected')
     expect(container.textContent).toContain('danger')

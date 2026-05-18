@@ -69,9 +69,9 @@ func buildParityStatus(now time.Time) ParityStatusResponse {
 			ID:          "monitoring",
 			Name:        "Real-Time Monitoring",
 			Status:      "partial",
-			Summary:     "Live metrics, telemetry lag, fleet alerts, schedule health, browser/JMS diagnostics, and Prometheus export are available.",
-			Evidence:    []string{"/metrics", "/api/v1/schedules/health", "/api/v1/fleet/alerts"},
-			Remaining:   []string{"Complete final operator parity checklist dashboard."},
+			Summary:     "Live metrics, telemetry lag, fleet alerts, schedule health, browser/JMS diagnostics, Prometheus export, and the operator parity checklist dashboard are available.",
+			Evidence:    []string{"/metrics", "/api/v1/schedules/health", "/api/v1/fleet/alerts", "/api/v1/system/parity-status"},
+			Remaining:   []string{"Complete final monitoring benchmark evidence."},
 			ReleaseGate: true,
 		},
 		{

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, type DragEvent, type ReactNo
 import { type WebSocketConnectionState } from '../hooks/useWebSocket'
 import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
-import { HealthResponse, ScenarioScheduleHealth, SystemInventoryResponse, TelemetryDiagnosticEntry, TestSummary } from '../types'
+import { HealthResponse, ParityStatusResponse, ScenarioScheduleHealth, SystemInventoryResponse, TelemetryDiagnosticEntry, TestSummary } from '../types'
 import { formatTelemetryDiagnosticTime, telemetryDiagnosticSeverityClass } from './monitoringTelemetryDiagnostics'
 
 interface Props {
@@ -11,6 +11,7 @@ interface Props {
 }
 
 const EMPTY_GENERATORS: SystemInventoryResponse['generators'] = []
+const EMPTY_PARITY_AREAS: ParityStatusResponse['areas'] = []
 
 export default function MonitoringPage({ connectionState, telemetryDiagnostics = [] }: Props) {
   const api = useApi()
@@ -18,6 +19,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const [health, setHealth] = useState<HealthResponse | null>(null)
   const [scheduleHealth, setScheduleHealth] = useState<ScenarioScheduleHealth | null>(null)
   const [inventory, setInventory] = useState<SystemInventoryResponse | null>(null)
+  const [parityStatus, setParityStatus] = useState<ParityStatusResponse | null>(null)
   const [tests, setTests] = useState<TestSummary[]>([])
   const [isTelemetryModalOpen, setIsTelemetryModalOpen] = useState(false)
   const [isGeneratorsModalOpen, setIsGeneratorsModalOpen] = useState(false)
@@ -87,22 +89,38 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
             : scheduleHealth.total > 0
               ? `${scheduleHealth.enabled}/${scheduleHealth.total} enabled`
               : 'no schedules'
+  const parityAreas = parityStatus?.areas ?? EMPTY_PARITY_AREAS
+  const parityBlockingCount = parityAreas.filter(area => area.blocking_gate || area.status === 'blocked').length
+  const parityPartialCount = parityAreas.filter(area => area.status === 'partial').length
+  const parityCompleteCount = parityAreas.filter(area => area.status === 'complete').length
+  const parityHeaderSeverity = parityBlockingCount > 0
+    ? 'danger'
+    : parityPartialCount > 0
+      ? 'warning'
+      : parityStatus
+        ? 'healthy'
+        : 'unknown'
+  const parityHeaderLabel = parityStatus
+    ? parityStatus.overall
+    : 'checking'
 
   const refresh = useCallback(async () => {
     if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
       return
     }
     try {
-      const [healthRes, testsRes, inventoryRes, scheduleHealthRes] = await Promise.all([
+      const [healthRes, testsRes, inventoryRes, scheduleHealthRes, parityStatusRes] = await Promise.all([
         api.getHealth(),
         api.listTests(activeProject?.id ? { project_id: activeProject.id } : undefined).catch(() => ({ tests: [] })),
         api.getSystemInventory().catch(() => null),
         api.getScheduleHealth().catch(() => null),
+        api.getParityStatus().catch(() => null),
       ])
       setHealth(healthRes)
       setTests(testsRes.tests || [])
       setInventory(inventoryRes)
       setScheduleHealth(scheduleHealthRes)
+      setParityStatus(parityStatusRes)
     } catch {
       // API not available
     }
@@ -309,6 +327,56 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
               {health.capacity_availability.warnings.map(warning => <p key={warning}>{warning}</p>)}
             </div>
           ) : null}
+        </div>
+      ),
+    },
+    {
+      id: 'parity-checklist',
+      title: 'Parity Checklist',
+      headerBadge: (
+        <span className={`monitor-header-badge ${parityHeaderSeverity}`}>
+          {parityHeaderLabel}
+        </span>
+      ),
+      icon: (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M9 11l3 3L22 4" />
+          <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+        </svg>
+      ),
+      content: (
+        <div className="monitor-body">
+          {!parityStatus ? (
+            <p className="monitor-hint">Parity status is unavailable. Check controller readiness and RBAC access for /api/v1/system/parity-status.</p>
+          ) : (
+            <>
+              <div className="telemetry-summary-metrics">
+                <div className="telemetry-summary-metric">
+                  <span className={`telemetry-summary-value ${parityBlockingCount > 0 ? 'text-danger' : ''}`}>{parityBlockingCount}</span>
+                  <span className="telemetry-summary-label">Blocked</span>
+                </div>
+                <div className="telemetry-summary-metric">
+                  <span className={`telemetry-summary-value ${parityPartialCount > 0 ? 'telemetry-text-warning' : ''}`}>{parityPartialCount}</span>
+                  <span className="telemetry-summary-label">Partial</span>
+                </div>
+                <div className="telemetry-summary-metric">
+                  <span className="telemetry-summary-value">{parityCompleteCount}</span>
+                  <span className="telemetry-summary-label">Complete</span>
+                </div>
+              </div>
+              <div className="monitor-warning-list">
+                {parityAreas.map(area => (
+                  <p key={area.id} className={area.blocking_gate || area.status === 'blocked' ? 'text-danger' : area.status === 'partial' ? 'telemetry-text-warning' : ''}>
+                    {area.name}: {area.status}{area.remaining?.length ? ` - ${area.remaining[0]}` : ''}
+                  </p>
+                ))}
+              </div>
+              <div className="monitor-row">
+                <span className="monitor-label">Release Gates</span>
+                <span className="monitor-value">{parityAreas.filter(area => area.release_gate).length}/{parityAreas.length}</span>
+              </div>
+            </>
+          )}
         </div>
       ),
     },
@@ -528,7 +596,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
         </div>
       ),
     },
-  ], [controllerGeneratorInventoryLabel, controllerHeaderSeverity, controllerStatusLabel, fleetAlertHeaderLabel, fleetAlertHeaderSeverity, fleetAlerts, generatorActiveVUsers, generatorAvailableCapacity, generatorConnectedCount, generatorHeaderLabel, generatorHeaderSeverity, generatorIssueCount, generators.length, health, inventory, scheduleCompletedCount, scheduleHeaderLabel, scheduleHeaderSeverity, scheduleHealth, scheduleMaterializedCount, scheduleSkippedCount, telemetryDangerCount, telemetryHeaderLabel, telemetryHeaderSeverity, telemetryLatestEntry, telemetryDiagnostics, telemetryWarningCount, timeline, websocketLabel, websocketValueClass])
+  ], [controllerGeneratorInventoryLabel, controllerHeaderSeverity, controllerStatusLabel, fleetAlertHeaderLabel, fleetAlertHeaderSeverity, fleetAlerts, generatorActiveVUsers, generatorAvailableCapacity, generatorConnectedCount, generatorHeaderLabel, generatorHeaderSeverity, generatorIssueCount, generators.length, health, inventory, parityAreas, parityBlockingCount, parityCompleteCount, parityHeaderLabel, parityHeaderSeverity, parityPartialCount, parityStatus, scheduleCompletedCount, scheduleHeaderLabel, scheduleHeaderSeverity, scheduleHealth, scheduleMaterializedCount, scheduleSkippedCount, telemetryDangerCount, telemetryHeaderLabel, telemetryHeaderSeverity, telemetryLatestEntry, telemetryDiagnostics, telemetryWarningCount, timeline, websocketLabel, websocketValueClass])
 
   useEffect(() => {
     setCardOrder(prev => mergeOrder(prev, cards.map(card => card.id)))

@@ -1282,6 +1282,23 @@ export interface SystemInventoryResponse {
   generators: SystemInventoryGenerator[]
 }
 
+export interface ParityStatusArea {
+  id: string
+  name: string
+  status: 'complete' | 'partial' | 'blocked' | string
+  summary: string
+  evidence?: string[]
+  remaining?: string[]
+  release_gate: boolean
+  blocking_gate?: boolean
+}
+
+export interface ParityStatusResponse {
+  generated_at: string
+  overall: 'complete' | 'partial' | 'blocked' | string
+  areas: ParityStatusArea[]
+}
+
 export interface DashboardThresholdSettings {
   max_error_rate_pct?: number
   max_p99_latency_ms?: number

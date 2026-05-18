@@ -13,6 +13,7 @@ import {
   DashboardSystemSettings,
   DashboardUpdateServiceAccountRequest,
   HealthResponse,
+  ParityStatusResponse,
   SystemInventoryResponse,
 } from '../../types'
 import { BASE, request } from '../apiClient'
@@ -64,6 +65,7 @@ export function useSystemApi() {
   const downloadAuthAuditEvents = useCallback((filter: DashboardAuditEventFilter = {}) => fetchBlob(`/auth/audit-events/export${buildQuery({ limit: 1000, ...filter })}`), [])
   const getHealth = useCallback(() => request<HealthResponse>('/system/health'), [])
   const getSystemInventory = useCallback(() => request<SystemInventoryResponse>('/system/inventory'), [])
+  const getParityStatus = useCallback(() => request<ParityStatusResponse>('/system/parity-status'), [])
 
   const getSystemSettings = useCallback(() => request<DashboardSystemSettings>('/system/settings'), [])
 
@@ -87,9 +89,10 @@ export function useSystemApi() {
       downloadAuthAuditEvents,
       getHealth,
       getSystemInventory,
+      getParityStatus,
       getSystemSettings,
       updateSystemSettings,
     }),
-    [getAuthEffectiveAccess, getAuthAccessMatrix, getAuthDiagnostics, getAuthRoleCatalog, listAuthServiceAccounts, createAuthServiceAccount, updateAuthServiceAccount, rotateAuthServiceAccount, deleteAuthServiceAccount, listAuthAuditEvents, downloadAuthAuditEvents, getHealth, getSystemInventory, getSystemSettings, updateSystemSettings],
+    [getAuthEffectiveAccess, getAuthAccessMatrix, getAuthDiagnostics, getAuthRoleCatalog, listAuthServiceAccounts, createAuthServiceAccount, updateAuthServiceAccount, rotateAuthServiceAccount, deleteAuthServiceAccount, listAuthAuditEvents, downloadAuthAuditEvents, getHealth, getSystemInventory, getParityStatus, getSystemSettings, updateSystemSettings],
   )
 }
