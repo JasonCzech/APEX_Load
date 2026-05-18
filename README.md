@@ -54,6 +54,7 @@ The current controller can run in either local or distributed mode without chang
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** — System architecture, data flow diagrams, engine internals, metrics collection, performance characteristics
 - **[API_AND_DSL_REFERENCE.md](API_AND_DSL_REFERENCE.md)** — Complete REST API reference, DSL syntax guide, example scripts, template variables
 - **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** — Common issues, debugging techniques, solutions
+- **[docs/ENTERPRISE_PLATFORM_PARITY_EXECUTION_PLAN.md](docs/ENTERPRISE_PLATFORM_PARITY_EXECUTION_PLAN.md)** — Platform parity roadmap for architecture, scale-out, authoring, load modeling, monitoring, reporting, and scheduling
 - **[docs/LOADRUNNER_PARITY_EXECUTION_PLAN.md](docs/LOADRUNNER_PARITY_EXECUTION_PLAN.md)** — Epic backlog and delivery plan to close practical parity gaps with LoadRunner in browser testing, script authoring UX, runtime settings, and auth/RBAC
 - **[docs/MOBILE_BROWSER_EMULATION_PLAN.md](docs/MOBILE_BROWSER_EMULATION_PLAN.md)** — Current browser engine and device profile support matrix plus conservative mobile-browser benchmark guidance
 - **[docs/AUTH_RBAC_OPERATIONS_RUNBOOK.md](docs/AUTH_RBAC_OPERATIONS_RUNBOOK.md)** — Self-hosted auth/RBAC operations, break-glass recovery, service-account handling, and audit export guidance
