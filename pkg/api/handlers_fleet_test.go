@@ -99,6 +99,67 @@ func TestDistributedPlannerRejectsIncompatibleGeneratorVersion(t *testing.T) {
 	}
 }
 
+func TestHandleGetFleetAlertsSummarizesInventoryRisks(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	server.runner.setExecutionBackend(stubInventoryBackend{entries: []GeneratorInventoryEntry{
+		{
+			Target:             "gen-a:9090",
+			GeneratorID:        "gen-a",
+			Region:             "us-east",
+			Status:             "connected",
+			Version:            "0.1.0",
+			DrainState:         "cordoned",
+			CapacityState:      "available",
+			AvailableCapacity:  100,
+			ActiveVUsers:       50,
+			MaxVUsers:          1000,
+			CompatibilityState: "compatible",
+		},
+		{
+			Target:              "gen-b:9090",
+			GeneratorID:         "gen-b",
+			Region:              "us-west",
+			Status:              "unreachable",
+			Version:             "1.0.0",
+			DrainState:          "active",
+			CapacityState:       "saturated",
+			AvailableCapacity:   0,
+			ActiveVUsers:        2000,
+			MaxVUsers:           2000,
+			CompatibilityState:  "protocol_mismatch",
+			CompatibilityIssues: []string{"missing grpc runtime"},
+		},
+	}})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/fleet/alerts", nil)
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var payload FleetAlertsResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if payload.Count != 5 || len(payload.Alerts) != 5 {
+		t.Fatalf("payload = %#v, want five alerts", payload)
+	}
+	byType := map[string]FleetAlert{}
+	for _, alert := range payload.Alerts {
+		byType[alert.Type] = alert
+	}
+	if byType["drain_state"].Target != "gen-a" || byType["unreachable"].Severity != "danger" || byType["saturation"].Target != "gen-b" {
+		t.Fatalf("alerts by type = %#v, want drain/unreachable/saturation", byType)
+	}
+	if !strings.Contains(byType["compatibility"].Summary, "missing grpc runtime") {
+		t.Fatalf("compatibility alert = %#v, want runtime reason", byType["compatibility"])
+	}
+	if !strings.Contains(byType["version_mismatch"].Summary, "1.0.0") {
+		t.Fatalf("version alert = %#v, want generator version", byType["version_mismatch"])
+	}
+}
+
 func TestHandleSetGeneratorDrainStateRejectsInvalidState(t *testing.T) {
 	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
 	server.runner.setExecutionBackend(newDistributedExecutionBackend([]string{"gen-a:9090"}, time.Second, nil))
