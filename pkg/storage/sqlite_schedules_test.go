@@ -110,6 +110,38 @@ func TestSQLiteStorePersistsScenarioSchedules(t *testing.T) {
 	if len(bySchedule) != 1 || bySchedule[0].ID != occurrence.ID {
 		t.Fatalf("schedule occurrences = %#v, want %s", bySchedule, occurrence.ID)
 	}
+	approval := &ScenarioScheduleApproval{
+		ID:               "approval-1",
+		ScheduleID:       schedule.ID,
+		ScenarioID:       scenario.ID,
+		ProjectID:        "checkout",
+		ScheduleRevision: schedule.Revision,
+		Policy:           "production",
+		Status:           "pending",
+		RequestedBy:      "user:qa-lead",
+		RequestedAt:      nextRun,
+		RequiredRole:     "project_admin",
+		CreatedAt:        nextRun,
+		UpdatedAt:        nextRun,
+	}
+	if err := store.SaveScenarioScheduleApproval(approval); err != nil {
+		t.Fatalf("SaveScenarioScheduleApproval returned error: %v", err)
+	}
+	approval.Status = "approved"
+	approval.ResolvedBy = "user:release-manager"
+	approval.ResolvedAt = &materializedAt
+	approval.DecisionReason = "release window approved"
+	approval.UpdatedAt = materializedAt
+	if err := store.SaveScenarioScheduleApproval(approval); err != nil {
+		t.Fatalf("SaveScenarioScheduleApproval update returned error: %v", err)
+	}
+	approvalRoundTrip, err := store.GetScenarioScheduleApproval(approval.ID)
+	if err != nil {
+		t.Fatalf("GetScenarioScheduleApproval returned error: %v", err)
+	}
+	if approvalRoundTrip.Status != "approved" || approvalRoundTrip.ResolvedAt == nil || approvalRoundTrip.DecisionReason != "release window approved" {
+		t.Fatalf("round trip approval = %#v, want approved decision", approvalRoundTrip)
+	}
 	listed, err := store.ListScenarioSchedules(scenario.ID)
 	if err != nil {
 		t.Fatalf("ListScenarioSchedules returned error: %v", err)

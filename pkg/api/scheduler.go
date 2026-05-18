@@ -20,6 +20,9 @@ type scenarioSchedulePersistence interface {
 	GetScenarioScheduleOccurrenceByScheduleAndPlannedAt(scheduleID string, plannedAt time.Time) (*storage.ScenarioScheduleOccurrence, error)
 	ListScenarioScheduleOccurrences(scheduleID string) ([]*storage.ScenarioScheduleOccurrence, error)
 	ListAllScenarioScheduleOccurrences() ([]*storage.ScenarioScheduleOccurrence, error)
+	SaveScenarioScheduleApproval(approval *storage.ScenarioScheduleApproval) error
+	GetScenarioScheduleApproval(id string) (*storage.ScenarioScheduleApproval, error)
+	ListScenarioScheduleApprovals(scheduleID string) ([]*storage.ScenarioScheduleApproval, error)
 }
 
 type scenarioScheduler struct {
@@ -279,6 +282,20 @@ func (tr *TestRunner) runScenarioScheduleLocked(schedule *storage.ScenarioSchedu
 	if schedule.NextRunAt != nil {
 		plannedAt = *schedule.NextRunAt
 	}
+	if schedule.NextRequiredAction == "approval_required" && schedule.PendingApprovalID != "" {
+		occurrence := tr.buildScenarioScheduleOccurrence(schedule, plannedAt, "blocked", "approval_required", "Schedule requires approval before materialization.", nil, now)
+		occurrence.ApprovalID = schedule.PendingApprovalID
+		if err := tr.saveScenarioScheduleOccurrenceLocked(occurrence); err != nil {
+			return nil, err
+		}
+		schedule.LastOccurrence = cloneScenarioScheduleOccurrence(occurrence)
+		schedule.LastError = "schedule requires approval"
+		schedule.UpdatedAt = now
+		if err := tr.saveScenarioScheduleLocked(schedule); err != nil {
+			return nil, err
+		}
+		return nil, nil
+	}
 	occurrence := tr.buildScenarioScheduleOccurrence(schedule, plannedAt, "materializing", "due", "", nil, now)
 	if err := tr.saveScenarioScheduleOccurrenceLocked(occurrence); err != nil {
 		return nil, err
@@ -526,6 +543,13 @@ func (tr *TestRunner) upsertScenarioScheduleLocked(scenarioID string, scheduleID
 	}
 	schedule.ConflictSummary = tr.scenarioScheduleConflictSummaryLocked(schedule)
 	schedule.NextRequiredAction = scenarioScheduleNextRequiredAction(schedule)
+	var approvalToSave *storage.ScenarioScheduleApproval
+	if schedule.NextRequiredAction == "approval_required" {
+		approvalToSave = tr.buildScenarioScheduleApproval(schedule, now, strings.TrimSpace(req.OwnerSubject))
+		schedule.PendingApprovalID = approvalToSave.ID
+	} else {
+		schedule.PendingApprovalID = ""
+	}
 	nextRun, err := nextScenarioScheduleRun(schedule, now)
 	if err != nil {
 		return nil, err
@@ -537,7 +561,91 @@ func (tr *TestRunner) upsertScenarioScheduleLocked(scenarioID string, scheduleID
 	if err := tr.saveScenarioScheduleLocked(schedule); err != nil {
 		return nil, err
 	}
+	if approvalToSave != nil {
+		if err := tr.saveScenarioScheduleApprovalLocked(approvalToSave); err != nil {
+			return nil, err
+		}
+	}
 	return cloneScenarioSchedule(schedule), nil
+}
+
+func (tr *TestRunner) buildScenarioScheduleApproval(schedule *storage.ScenarioSchedule, now time.Time, requestedBy string) *storage.ScenarioScheduleApproval {
+	return &storage.ScenarioScheduleApproval{
+		ID:               uuid.New().String(),
+		ScheduleID:       schedule.ID,
+		ScenarioID:       schedule.ScenarioID,
+		ProjectID:        normalizeProjectID(schedule.ProjectID),
+		ScheduleRevision: schedule.Revision,
+		Policy:           schedule.ApprovalPolicy,
+		Status:           "pending",
+		RequestedBy:      requestedBy,
+		RequestedAt:      now,
+		RequiredRole:     RoleProjectAdmin,
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	}
+}
+
+func (tr *TestRunner) saveScenarioScheduleApprovalLocked(approval *storage.ScenarioScheduleApproval) error {
+	if approval == nil {
+		return fmt.Errorf("schedule approval is required")
+	}
+	if tr.scenarioStore != nil {
+		return tr.scenarioStore.SaveScenarioScheduleApproval(approval)
+	}
+	return nil
+}
+
+func (tr *TestRunner) ResolveScenarioScheduleApproval(scenarioID string, scheduleID string, approvalID string, approved bool, resolvedBy string, reason string) (*storage.ScenarioScheduleApproval, *storage.ScenarioSchedule, bool, error) {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	scenario, ok := tr.scenarios[scenarioID]
+	if !ok {
+		return nil, nil, false, nil
+	}
+	var schedule *storage.ScenarioSchedule
+	for _, candidate := range scenario.Schedules {
+		if candidate != nil && candidate.ID == scheduleID {
+			schedule = cloneScenarioSchedule(candidate)
+			break
+		}
+	}
+	if schedule == nil {
+		return nil, nil, false, nil
+	}
+	if tr.scenarioStore == nil {
+		return nil, nil, false, fmt.Errorf("schedule approval store is not configured")
+	}
+	approval, err := tr.scenarioStore.GetScenarioScheduleApproval(approvalID)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	if approval == nil || approval.ScheduleID != scheduleID {
+		return nil, nil, false, nil
+	}
+	now := time.Now().UTC()
+	approval.ResolvedBy = strings.TrimSpace(resolvedBy)
+	approval.ResolvedAt = &now
+	approval.DecisionReason = strings.TrimSpace(reason)
+	approval.UpdatedAt = now
+	if approved {
+		approval.Status = "approved"
+		schedule.PendingApprovalID = ""
+		schedule.NextRequiredAction = ""
+		schedule.LastError = ""
+	} else {
+		approval.Status = "rejected"
+		schedule.NextRequiredAction = "approval_rejected"
+		schedule.LastError = "schedule approval rejected"
+	}
+	if err := tr.scenarioStore.SaveScenarioScheduleApproval(approval); err != nil {
+		return nil, nil, false, err
+	}
+	schedule.UpdatedAt = now
+	if err := tr.saveScenarioScheduleLocked(schedule); err != nil {
+		return nil, nil, false, err
+	}
+	return approval, cloneScenarioSchedule(schedule), true, nil
 }
 
 func normalizeScenarioScheduleApprovalPolicy(raw string) string {

@@ -39,6 +39,9 @@ type Store interface {
 	GetScenarioScheduleOccurrenceByScheduleAndPlannedAt(scheduleID string, plannedAt time.Time) (*ScenarioScheduleOccurrence, error)
 	ListScenarioScheduleOccurrences(scheduleID string) ([]*ScenarioScheduleOccurrence, error)
 	ListAllScenarioScheduleOccurrences() ([]*ScenarioScheduleOccurrence, error)
+	SaveScenarioScheduleApproval(approval *ScenarioScheduleApproval) error
+	GetScenarioScheduleApproval(id string) (*ScenarioScheduleApproval, error)
+	ListScenarioScheduleApprovals(scheduleID string) ([]*ScenarioScheduleApproval, error)
 	SaveScenarioDataPoolBindings(scenarioID string, bindings []ScenarioDataPoolBinding) error
 	ListScenarioDataPoolBindings(scenarioID string) ([]ScenarioDataPoolBinding, error)
 	DeleteScenarioDataPoolBinding(id string) error
@@ -229,6 +232,7 @@ type ScenarioSchedule struct {
 	ConflictSummary     string                      `json:"conflict_summary,omitempty"`
 	LastOccurrence      *ScenarioScheduleOccurrence `json:"last_occurrence,omitempty"`
 	NextRequiredAction  string                      `json:"next_required_action,omitempty"`
+	PendingApprovalID   string                      `json:"pending_approval_id,omitempty"`
 	OwnerSubject        string                      `json:"owner_subject,omitempty"`
 	OwnerDisplayName    string                      `json:"owner_display_name,omitempty"`
 	Governance          *ScenarioScheduleGovernance `json:"governance,omitempty"`
@@ -285,6 +289,24 @@ type ScenarioScheduleOccurrence struct {
 	TestID           string     `json:"test_id,omitempty"`
 	ApprovalID       string     `json:"approval_id,omitempty"`
 	ConflictSummary  string     `json:"conflict_summary,omitempty"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
+}
+
+type ScenarioScheduleApproval struct {
+	ID               string     `json:"id"`
+	ScheduleID       string     `json:"schedule_id"`
+	ScenarioID       string     `json:"scenario_id"`
+	ProjectID        string     `json:"project_id,omitempty"`
+	ScheduleRevision int        `json:"schedule_revision,omitempty"`
+	Policy           string     `json:"policy"`
+	Status           string     `json:"status"`
+	RequestedBy      string     `json:"requested_by,omitempty"`
+	RequestedAt      time.Time  `json:"requested_at"`
+	ResolvedBy       string     `json:"resolved_by,omitempty"`
+	ResolvedAt       *time.Time `json:"resolved_at,omitempty"`
+	DecisionReason   string     `json:"decision_reason,omitempty"`
+	RequiredRole     string     `json:"required_role,omitempty"`
 	CreatedAt        time.Time  `json:"created_at"`
 	UpdatedAt        time.Time  `json:"updated_at"`
 }

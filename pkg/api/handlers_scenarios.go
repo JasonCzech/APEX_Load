@@ -185,6 +185,45 @@ func (s *Server) handleScenarioScheduleHealth(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusOK, s.runner.ScenarioScheduleHealth(time.Now().UTC()))
 }
 
+func (s *Server) handleApproveScenarioScheduleApproval(w http.ResponseWriter, r *http.Request) {
+	s.handleResolveScenarioScheduleApproval(w, r, true)
+}
+
+func (s *Server) handleRejectScenarioScheduleApproval(w http.ResponseWriter, r *http.Request) {
+	s.handleResolveScenarioScheduleApproval(w, r, false)
+}
+
+func (s *Server) handleResolveScenarioScheduleApproval(w http.ResponseWriter, r *http.Request, approved bool) {
+	var req struct {
+		Reason string `json:"reason,omitempty"`
+	}
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&req)
+	}
+	_, actorSubject, _ := s.resolveAuditActor(r)
+	approval, schedule, ok, err := s.runner.ResolveScenarioScheduleApproval(r.PathValue("id"), r.PathValue("schedule_id"), r.PathValue("approval_id"), approved, actorSubject, req.Reason)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if !ok {
+		writeError(w, http.StatusNotFound, "scenario schedule approval not found")
+		return
+	}
+	status := "rejected"
+	action := "scenario.schedule.approval.reject"
+	if approved {
+		status = "approved"
+		action = "scenario.schedule.approval.approve"
+	}
+	projectID := ""
+	if schedule != nil {
+		projectID = schedule.ProjectID
+	}
+	s.recordAuditEvent(r, action, "success", "scenario_schedule_approval", approval.ID, projectID, map[string]any{"scenario_id": r.PathValue("id"), "schedule_id": r.PathValue("schedule_id"), "decision": status, "reason": req.Reason})
+	writeJSON(w, http.StatusOK, map[string]any{"approval": approval, "schedule": schedule})
+}
+
 func scenarioScheduleAuditDetails(schedule *storage.ScenarioSchedule) map[string]any {
 	if schedule == nil {
 		return nil

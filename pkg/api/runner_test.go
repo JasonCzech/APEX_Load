@@ -36,6 +36,7 @@ type metricsStoreSpy struct {
 	archiveByTestID       map[string]*storage.RunArchiveRecord
 	schedulesByID         map[string]*storage.ScenarioSchedule
 	occurrencesByID       map[string]*storage.ScenarioScheduleOccurrence
+	approvalsByID         map[string]*storage.ScenarioScheduleApproval
 }
 
 var runnerTestProtocolCounter atomic.Uint64
@@ -194,6 +195,33 @@ func (s *metricsStoreSpy) ListAllScenarioScheduleOccurrences() ([]*storage.Scena
 	out := make([]*storage.ScenarioScheduleOccurrence, 0, len(s.occurrencesByID))
 	for _, occurrence := range s.occurrencesByID {
 		out = append(out, occurrence)
+	}
+	return out, nil
+}
+func (s *metricsStoreSpy) SaveScenarioScheduleApproval(approval *storage.ScenarioScheduleApproval) error {
+	if s.approvalsByID == nil {
+		s.approvalsByID = make(map[string]*storage.ScenarioScheduleApproval)
+	}
+	clone := *approval
+	if approval.ResolvedAt != nil {
+		resolvedAt := *approval.ResolvedAt
+		clone.ResolvedAt = &resolvedAt
+	}
+	s.approvalsByID[approval.ID] = &clone
+	return nil
+}
+func (s *metricsStoreSpy) GetScenarioScheduleApproval(id string) (*storage.ScenarioScheduleApproval, error) {
+	if s.approvalsByID == nil {
+		return nil, nil
+	}
+	return s.approvalsByID[id], nil
+}
+func (s *metricsStoreSpy) ListScenarioScheduleApprovals(scheduleID string) ([]*storage.ScenarioScheduleApproval, error) {
+	out := []*storage.ScenarioScheduleApproval{}
+	for _, approval := range s.approvalsByID {
+		if approval.ScheduleID == scheduleID {
+			out = append(out, approval)
+		}
 	}
 	return out, nil
 }
@@ -4051,6 +4079,72 @@ func TestScenarioSchedulerRunDueSchedulesCreatesAndStartsRun(t *testing.T) {
 	}
 	if len(occurrences) != 1 || occurrences[0].Status != "materialized" || occurrences[0].TestID != updated.LastRunTestID {
 		t.Fatalf("occurrences = %#v, want one materialized occurrence for %s", occurrences, updated.LastRunTestID)
+	}
+}
+
+func TestScenarioSchedulerBlocksDueSchedulePendingApproval(t *testing.T) {
+	store := &metricsStoreSpy{}
+	runner := NewTestRunner(2, NewHub(), store)
+	backend := &scheduleExecutionBackend{started: make(chan string, 1)}
+	runner.setExecutionBackend(backend)
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-schedule-approval",
+		Name:     "Scheduled Approval Script",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Actions:  []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+	scenario, err := runner.StoreScenario(CreateScenarioRequest{
+		Name:     "Approval Scenario",
+		Duration: "1m",
+		Groups: []CreateGroupEntry{{
+			ScriptID: "script-schedule-approval",
+			VUsers:   1,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("StoreScenario returned error: %v", err)
+	}
+	now := time.Date(2026, time.May, 16, 12, 0, 0, 0, time.UTC)
+	due := now.Add(-time.Minute)
+	schedule := &storage.ScenarioSchedule{
+		ID:                 "schedule-approval",
+		ScenarioID:         scenario.ID,
+		Name:               "Production Run",
+		CronExpr:           "*/5 * * * *",
+		RunNameTemplate:    "Production Smoke",
+		Enabled:            true,
+		ApprovalPolicy:     "production",
+		NextRequiredAction: "approval_required",
+		PendingApprovalID:  "approval-1",
+		NextRunAt:          &due,
+		CreatedAt:          now.Add(-time.Hour),
+		UpdatedAt:          now.Add(-time.Hour),
+	}
+	runner.mu.Lock()
+	if err := runner.saveScenarioScheduleLocked(schedule); err != nil {
+		runner.mu.Unlock()
+		t.Fatalf("saveScenarioScheduleLocked returned error: %v", err)
+	}
+	runner.mu.Unlock()
+
+	scheduler := newScenarioScheduler(runner)
+	scheduler.now = func() time.Time { return now }
+	if err := scheduler.RunDueSchedules(); err != nil {
+		t.Fatalf("RunDueSchedules returned error: %v", err)
+	}
+
+	select {
+	case testID := <-backend.started:
+		t.Fatalf("unexpected scheduled test start: %s", testID)
+	default:
+	}
+	occurrences, err := store.ListScenarioScheduleOccurrences(schedule.ID)
+	if err != nil {
+		t.Fatalf("ListScenarioScheduleOccurrences returned error: %v", err)
+	}
+	if len(occurrences) != 1 || occurrences[0].Status != "blocked" || occurrences[0].ReasonCode != "approval_required" || occurrences[0].ApprovalID != "approval-1" {
+		t.Fatalf("occurrences = %#v, want approval-blocked occurrence", occurrences)
 	}
 }
 

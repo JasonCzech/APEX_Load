@@ -56,6 +56,9 @@ type scenarioPersistence interface {
 	GetScenarioScheduleOccurrenceByScheduleAndPlannedAt(scheduleID string, plannedAt time.Time) (*storage.ScenarioScheduleOccurrence, error)
 	ListScenarioScheduleOccurrences(scheduleID string) ([]*storage.ScenarioScheduleOccurrence, error)
 	ListAllScenarioScheduleOccurrences() ([]*storage.ScenarioScheduleOccurrence, error)
+	SaveScenarioScheduleApproval(approval *storage.ScenarioScheduleApproval) error
+	GetScenarioScheduleApproval(id string) (*storage.ScenarioScheduleApproval, error)
+	ListScenarioScheduleApprovals(scheduleID string) ([]*storage.ScenarioScheduleApproval, error)
 	SaveScenarioDataPoolBindings(scenarioID string, bindings []storage.ScenarioDataPoolBinding) error
 	ListScenarioDataPoolBindings(scenarioID string) ([]storage.ScenarioDataPoolBinding, error)
 }

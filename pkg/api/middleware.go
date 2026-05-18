@@ -838,6 +838,14 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 		}
 	}
 
+	if r.PathValue("id") != "" && strings.Contains(path, "/schedules/") && strings.Contains(path, "/approvals/") && method == http.MethodPost {
+		return accessRequirement{
+			GlobalRoles:   []string{RoleProjectAdmin, RoleSystemAdmin},
+			ProjectRoles:  []string{RoleProjectAdmin},
+			ProjectLookup: resolveScenarioProjectID,
+		}, true
+	}
+
 	if r.PathValue("id") != "" && strings.HasPrefix(path, "/api/v1/scenarios/") {
 		switch method {
 		case http.MethodGet:
