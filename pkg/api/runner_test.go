@@ -664,6 +664,40 @@ func TestCompileManagedTestGroupLockedAppliesEphemeralTargetOverridesWithoutMuta
 	}
 }
 
+func TestCompileManagedTestGroupLockedDerivesRampFromStages(t *testing.T) {
+	hub := NewHub()
+	runner := NewTestRunner(1, hub, nil)
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-staged-load",
+		Name:     "Staged Load Script",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Config:   dsl.ScriptConfig{BaseURL: "https://example.com"},
+		Actions:  []dsl.Action{{Name: "step", Type: "GET", Target: "/orders"}},
+	})
+
+	testGroup, engineGroup, err := runner.compileManagedTestGroupLocked(0, 1, CreateGroupEntry{
+		ScriptID: "script-staged-load",
+		Stages: []storage.LoadStage{
+			{Name: "Warmup", Type: "ramp_up", Duration: "30s", TargetVUsers: 20},
+			{Name: "Hold", Type: "hold", Duration: "2m", TargetVUsers: 20},
+			{Name: "Cooldown", Type: "ramp_down", Duration: "15s", TargetVUsers: 1},
+		},
+	}, nil, nil)
+	if err != nil {
+		t.Fatalf("compileManagedTestGroupLocked returned error: %v", err)
+	}
+	if testGroup.VUsers != 20 || testGroup.RampUp != "30s" || testGroup.RampDown != "15s" {
+		t.Fatalf("test group = %#v, want stage-derived vusers/ramp", testGroup)
+	}
+	if len(testGroup.Stages) != 3 {
+		t.Fatalf("stages = %#v, want preserved staged model", testGroup.Stages)
+	}
+	if engineGroup.VUsers != 20 || engineGroup.RampUp != 30*time.Second || engineGroup.RampDown != 15*time.Second {
+		t.Fatalf("engine group = %#v, want compatibility ramp durations", engineGroup)
+	}
+}
+
 func TestCompileManagedTestGroupLockedAppliesHeadlessOverrideWithoutMutatingStoredScript(t *testing.T) {
 	hub := NewHub()
 	runner := NewTestRunner(1, hub, nil)

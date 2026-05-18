@@ -188,15 +188,24 @@ type Scenario struct {
 }
 
 type ScenarioScript struct {
-	ScenarioID     string `json:"scenario_id,omitempty"`
-	Order          int    `json:"order"`
-	Name           string `json:"name,omitempty"`
-	ScriptID       string `json:"script_id"`
-	VUsers         int    `json:"vusers"`
-	RampUp         string `json:"ramp_up,omitempty"`
-	RampDown       string `json:"ramp_down,omitempty"`
-	Iterations     *int   `json:"iterations,omitempty"`
-	Initialization string `json:"initialization,omitempty"`
+	ScenarioID     string      `json:"scenario_id,omitempty"`
+	Order          int         `json:"order"`
+	Name           string      `json:"name,omitempty"`
+	ScriptID       string      `json:"script_id"`
+	VUsers         int         `json:"vusers"`
+	RampUp         string      `json:"ramp_up,omitempty"`
+	RampDown       string      `json:"ramp_down,omitempty"`
+	Stages         []LoadStage `json:"stages,omitempty"`
+	Iterations     *int        `json:"iterations,omitempty"`
+	Initialization string      `json:"initialization,omitempty"`
+}
+
+type LoadStage struct {
+	Name         string   `json:"name,omitempty"`
+	Type         string   `json:"type"`
+	Duration     string   `json:"duration"`
+	TargetVUsers int      `json:"target_vusers,omitempty"`
+	TargetTPS    *float64 `json:"target_tps,omitempty"`
 }
 
 type ScenarioSchedule struct {

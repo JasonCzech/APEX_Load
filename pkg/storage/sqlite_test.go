@@ -546,7 +546,16 @@ func TestSQLiteStoreApplicationsReleasesScenariosAndContext(t *testing.T) {
 		ScenarioMode: "vuser_driven",
 		CreatedAt:    time.Now(),
 	}
-	groups := []ScenarioScript{{Order: 0, ScriptID: script.ID, VUsers: 25, Initialization: "at_runtime"}}
+	groups := []ScenarioScript{{
+		Order:          0,
+		ScriptID:       script.ID,
+		VUsers:         25,
+		Initialization: "at_runtime",
+		Stages: []LoadStage{
+			{Name: "Warmup", Type: "ramp_up", Duration: "30s", TargetVUsers: 25},
+			{Name: "Hold", Type: "hold", Duration: "2m", TargetVUsers: 25},
+		},
+	}}
 	if err := store.SaveScenario(scenario, groups); err != nil {
 		t.Fatalf("SaveScenario returned error: %v", err)
 	}
@@ -556,6 +565,9 @@ func TestSQLiteStoreApplicationsReleasesScenariosAndContext(t *testing.T) {
 	}
 	if roundTrip.Name != scenario.Name || len(scripts) != 1 || scripts[0].ScriptID != script.ID {
 		t.Fatalf("unexpected scenario round trip: %#v scripts=%#v", roundTrip, scripts)
+	}
+	if len(scripts[0].Stages) != 2 || scripts[0].Stages[0].Type != "ramp_up" || scripts[0].Stages[0].TargetVUsers != 25 {
+		t.Fatalf("scenario stages = %#v, want persisted staged load model", scripts[0].Stages)
 	}
 
 	record := &TestRecord{

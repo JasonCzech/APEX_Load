@@ -19,6 +19,25 @@ Query parameters:
 
 - `shape_id`: optional exact filter matching a support-matrix ID, such as `closed-vuser`, `open-arrival-rate`, or `mixed-protocol`
 
+Scenario and test group payloads can now carry staged load segments:
+
+```json
+{
+  "groups": [
+    {
+      "script_id": "checkout",
+      "stages": [
+        { "name": "Warmup", "type": "ramp_up", "duration": "5m", "target_vusers": 100 },
+        { "name": "Steady", "type": "hold", "duration": "20m", "target_vusers": 100 },
+        { "name": "Cooldown", "type": "ramp_down", "duration": "2m", "target_vusers": 1 }
+      ]
+    }
+  ]
+}
+```
+
+Supported stage types are `ramp_up`, `hold`, and `ramp_down`. Each stage requires `duration` plus either `target_vusers` or `target_tps`. The current runtime derives compatibility `ramp_up`, `ramp_down`, and group VUsers from the staged model while preserving the full stage list in API and SQLite scenario records.
+
 Status values:
 
 | Status | Meaning |
@@ -57,3 +76,4 @@ The first template catalog covers:
 | --- | --- | --- |
 | P4.1 Load-model support matrix | Complete for backend matrix | `GET /api/v1/scenarios/load-models/support-matrix` |
 | P4.2 Workload-shape templates | Complete for backend templates | `GET /api/v1/scenarios/load-models/templates` |
+| P4.3 Staged ramp segments | Partial backend complete | Group `stages` round-trip through API/storage and derive compatibility ramp execution |

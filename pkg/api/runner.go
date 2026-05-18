@@ -162,15 +162,16 @@ type ManagedTest struct {
 }
 
 type TestGroup struct {
-	Name           string `json:"name"`
-	ScriptID       string `json:"script_id"`
-	ScriptName     string `json:"script_name"`
-	Protocol       string `json:"protocol"`
-	VUsers         int    `json:"vusers"`
-	RampUp         string `json:"ramp_up,omitempty"`
-	RampDown       string `json:"ramp_down,omitempty"`
-	Iterations     *int   `json:"iterations,omitempty"`
-	Initialization string `json:"initialization,omitempty"`
+	Name           string              `json:"name"`
+	ScriptID       string              `json:"script_id"`
+	ScriptName     string              `json:"script_name"`
+	Protocol       string              `json:"protocol"`
+	VUsers         int                 `json:"vusers"`
+	RampUp         string              `json:"ramp_up,omitempty"`
+	RampDown       string              `json:"ramp_down,omitempty"`
+	Stages         []storage.LoadStage `json:"stages,omitempty"`
+	Iterations     *int                `json:"iterations,omitempty"`
+	Initialization string              `json:"initialization,omitempty"`
 	rampUpDur      time.Duration
 	script         *dsl.Script
 }
@@ -437,16 +438,17 @@ type StoredScenario struct {
 }
 
 type ScenarioScriptRef struct {
-	Order          int    `json:"order"`
-	Name           string `json:"name,omitempty"`
-	ScriptID       string `json:"script_id"`
-	ScriptName     string `json:"script_name,omitempty"`
-	Protocol       string `json:"protocol,omitempty"`
-	VUsers         int    `json:"vusers"`
-	RampUp         string `json:"ramp_up,omitempty"`
-	RampDown       string `json:"ramp_down,omitempty"`
-	Iterations     *int   `json:"iterations,omitempty"`
-	Initialization string `json:"initialization,omitempty"`
+	Order          int                 `json:"order"`
+	Name           string              `json:"name,omitempty"`
+	ScriptID       string              `json:"script_id"`
+	ScriptName     string              `json:"script_name,omitempty"`
+	Protocol       string              `json:"protocol,omitempty"`
+	VUsers         int                 `json:"vusers"`
+	RampUp         string              `json:"ramp_up,omitempty"`
+	RampDown       string              `json:"ramp_down,omitempty"`
+	Stages         []storage.LoadStage `json:"stages,omitempty"`
+	Iterations     *int                `json:"iterations,omitempty"`
+	Initialization string              `json:"initialization,omitempty"`
 }
 
 const (
@@ -604,6 +606,7 @@ func (tr *TestRunner) buildStoredScenario(scenario *storage.Scenario, scripts []
 			VUsers:         script.VUsers,
 			RampUp:         script.RampUp,
 			RampDown:       script.RampDown,
+			Stages:         cloneLoadStages(script.Stages),
 			Iterations:     script.Iterations,
 			Initialization: script.Initialization,
 		}
@@ -1077,6 +1080,7 @@ func (tr *TestRunner) storeScenarioLocked(id string, req CreateScenarioRequest) 
 			VUsers:         group.VUsers,
 			RampUp:         group.RampUp,
 			RampDown:       group.RampDown,
+			Stages:         cloneLoadStages(group.Stages),
 			Iterations:     group.Iterations,
 			Initialization: group.InitStrategy,
 		})
@@ -1404,13 +1408,14 @@ type RuntimeSettingsOverride struct {
 }
 
 type CreateGroupEntry struct {
-	Name         string `json:"name"`
-	ScriptID     string `json:"script_id"`
-	VUsers       int    `json:"vusers"`
-	RampUp       string `json:"ramp_up,omitempty"`
-	RampDown     string `json:"ramp_down,omitempty"`
-	Iterations   *int   `json:"iterations,omitempty"`
-	InitStrategy string `json:"initialization,omitempty"` // "at_runtime", "at_once"
+	Name         string              `json:"name"`
+	ScriptID     string              `json:"script_id"`
+	VUsers       int                 `json:"vusers"`
+	RampUp       string              `json:"ramp_up,omitempty"`
+	RampDown     string              `json:"ramp_down,omitempty"`
+	Stages       []storage.LoadStage `json:"stages,omitempty"`
+	Iterations   *int                `json:"iterations,omitempty"`
+	InitStrategy string              `json:"initialization,omitempty"` // "at_runtime", "at_once"
 }
 
 type StartTestOptions struct {
@@ -2021,18 +2026,30 @@ func (tr *TestRunner) compileManagedTestGroupLocked(index int, totalGroups int, 
 	}
 
 	vusers := group.VUsers
+	derivedRampUp, derivedRampDown, derivedVUsers, err := loadStageCompatibility(group.Stages, index)
+	if err != nil {
+		return TestGroup{}, engine.GroupConfig{}, err
+	}
+	if vusers <= 0 && derivedVUsers > 0 {
+		vusers = derivedVUsers
+	}
 	if vusers <= 0 {
 		vusers = 10
+	}
+	rampUpValue := firstNonEmpty(group.RampUp, derivedRampUp)
+	rampDownValue := firstNonEmpty(group.RampDown, derivedRampDown)
+	if len(group.Stages) > 0 && derivedVUsers > 0 && vusers != derivedVUsers {
+		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: vusers must match the maximum target_vusers from stages (%d)", index, derivedVUsers)
 	}
 	if group.Iterations != nil && *group.Iterations < 1 {
 		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: iterations must be greater than 0", index)
 	}
 
-	rampUp, err := parseOptionalGroupDuration(group.RampUp, index, "ramp_up")
+	rampUp, err := parseOptionalGroupDuration(rampUpValue, index, "ramp_up")
 	if err != nil {
 		return TestGroup{}, engine.GroupConfig{}, err
 	}
-	rampDown, err := parseOptionalGroupDuration(group.RampDown, index, "ramp_down")
+	rampDown, err := parseOptionalGroupDuration(rampDownValue, index, "ramp_down")
 	if err != nil {
 		return TestGroup{}, engine.GroupConfig{}, err
 	}
@@ -2056,8 +2073,9 @@ func (tr *TestRunner) compileManagedTestGroupLocked(index int, totalGroups int, 
 		ScriptName:     script.Name,
 		Protocol:       script.Protocol,
 		VUsers:         vusers,
-		RampUp:         group.RampUp,
-		RampDown:       group.RampDown,
+		RampUp:         rampUpValue,
+		RampDown:       rampDownValue,
+		Stages:         cloneLoadStages(group.Stages),
 		Iterations:     group.Iterations,
 		Initialization: initStrategy,
 		rampUpDur:      rampUp,
@@ -2196,7 +2214,7 @@ func cloneDataSources(sources []dsl.DataSource) []dsl.DataSource {
 }
 
 func parseOptionalGroupDuration(value string, index int, fieldName string) (time.Duration, error) {
-	if value == "" {
+	if strings.TrimSpace(value) == "" {
 		return 0, nil
 	}
 	duration, err := time.ParseDuration(value)
@@ -2204,6 +2222,72 @@ func parseOptionalGroupDuration(value string, index int, fieldName string) (time
 		return 0, fmt.Errorf("group[%d]: invalid %s: %w", index, fieldName, err)
 	}
 	return duration, nil
+}
+
+func loadStageCompatibility(stages []storage.LoadStage, groupIndex int) (string, string, int, error) {
+	if len(stages) == 0 {
+		return "", "", 0, nil
+	}
+	var rampUp time.Duration
+	var rampDown time.Duration
+	maxVUsers := 0
+	for index, stage := range stages {
+		stageType := strings.ToLower(strings.TrimSpace(stage.Type))
+		if stageType == "" {
+			return "", "", 0, fmt.Errorf("group[%d].stages[%d]: type is required", groupIndex, index)
+		}
+		if stageType != "ramp_up" && stageType != "hold" && stageType != "ramp_down" {
+			return "", "", 0, fmt.Errorf("group[%d].stages[%d]: type must be ramp_up, hold, or ramp_down", groupIndex, index)
+		}
+		duration, err := time.ParseDuration(stage.Duration)
+		if err != nil {
+			return "", "", 0, fmt.Errorf("group[%d].stages[%d]: duration is invalid: %w", groupIndex, index, err)
+		}
+		if duration <= 0 {
+			return "", "", 0, fmt.Errorf("group[%d].stages[%d]: duration must be greater than zero", groupIndex, index)
+		}
+		if stage.TargetVUsers < 0 {
+			return "", "", 0, fmt.Errorf("group[%d].stages[%d]: target_vusers must be zero or greater", groupIndex, index)
+		}
+		if stage.TargetTPS != nil && *stage.TargetTPS <= 0 {
+			return "", "", 0, fmt.Errorf("group[%d].stages[%d]: target_tps must be greater than zero", groupIndex, index)
+		}
+		if stage.TargetVUsers == 0 && stage.TargetTPS == nil {
+			return "", "", 0, fmt.Errorf("group[%d].stages[%d]: target_vusers or target_tps is required", groupIndex, index)
+		}
+		if stage.TargetVUsers > maxVUsers {
+			maxVUsers = stage.TargetVUsers
+		}
+		switch stageType {
+		case "ramp_up":
+			rampUp += duration
+		case "ramp_down":
+			rampDown += duration
+		}
+	}
+	return durationStringOrEmpty(rampUp), durationStringOrEmpty(rampDown), maxVUsers, nil
+}
+
+func durationStringOrEmpty(duration time.Duration) string {
+	if duration <= 0 {
+		return ""
+	}
+	return duration.String()
+}
+
+func cloneLoadStages(stages []storage.LoadStage) []storage.LoadStage {
+	if len(stages) == 0 {
+		return nil
+	}
+	out := make([]storage.LoadStage, len(stages))
+	copy(out, stages)
+	for index := range out {
+		if stages[index].TargetTPS != nil {
+			value := *stages[index].TargetTPS
+			out[index].TargetTPS = &value
+		}
+	}
+	return out
 }
 
 func deriveManagedTestName(requestName string, groups []TestGroup) string {
