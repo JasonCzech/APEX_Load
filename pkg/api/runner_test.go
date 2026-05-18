@@ -3894,6 +3894,33 @@ func TestNextScenarioScheduleRun(t *testing.T) {
 	}
 }
 
+func TestNextScenarioScheduleRunHonorsBlackoutAndAvailabilityWindows(t *testing.T) {
+	schedule := &storage.ScenarioSchedule{
+		CronExpr: "0 * * * *",
+		Timezone: "UTC",
+		BlackoutWindows: []storage.ScenarioScheduleWindow{{
+			Name:       "maintenance",
+			DaysOfWeek: []int{int(time.Saturday)},
+			StartTime:  "10:00",
+			EndTime:    "12:00",
+		}},
+		AvailabilityWindows: []storage.ScenarioScheduleWindow{{
+			Name:       "business-hours",
+			DaysOfWeek: []int{int(time.Saturday)},
+			StartTime:  "09:00",
+			EndTime:    "17:00",
+		}},
+	}
+	next, err := nextScenarioScheduleRun(schedule, time.Date(2026, time.May, 16, 9, 30, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("nextScenarioScheduleRun returned error: %v", err)
+	}
+	want := time.Date(2026, time.May, 16, 12, 0, 0, 0, time.UTC)
+	if next == nil || !next.Equal(want) {
+		t.Fatalf("next run = %v, want %s", next, want)
+	}
+}
+
 func TestScenarioSchedulerRunDueSchedulesCreatesAndStartsRun(t *testing.T) {
 	store := &metricsStoreSpy{}
 	runner := NewTestRunner(2, NewHub(), store)

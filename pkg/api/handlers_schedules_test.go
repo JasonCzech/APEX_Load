@@ -39,7 +39,7 @@ func TestHandleScenarioScheduleCRUD(t *testing.T) {
 		t.Fatalf("StoreScenario returned error: %v", err)
 	}
 
-	createBody := bytes.NewBufferString(`{"name":"Nightly Smoke","cron_expr":"*/10 * * * *","run_name_template":"Nightly Checkout"}`)
+	createBody := bytes.NewBufferString(`{"name":"Nightly Smoke","cron_expr":"*/10 * * * *","run_name_template":"Nightly Checkout","blackout_windows":[{"name":"maintenance","days_of_week":[0],"start_time":"00:00","end_time":"06:00"}],"availability_windows":[{"name":"business-hours","days_of_week":[1,2,3,4,5],"start_time":"09:00","end_time":"17:00"}]}`)
 	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/scenarios/"+scenario.ID+"/schedules", createBody)
 	createReq.Header.Set("Content-Type", "application/json")
 	createResp := httptest.NewRecorder()
@@ -59,6 +59,9 @@ func TestHandleScenarioScheduleCRUD(t *testing.T) {
 	}
 	if created.Governance.RBACReview.Decision != "allowed" || created.Governance.QuotaReview.Decision != "allowed" || created.Governance.QuotaReview.EstimatedPeakVUsers != 1 {
 		t.Fatalf("created governance = %#v, want allowed RBAC/quota review for one VUser", created.Governance)
+	}
+	if len(created.BlackoutWindows) != 1 || len(created.AvailabilityWindows) != 1 {
+		t.Fatalf("created schedule windows = blackout %#v availability %#v, want persisted schedule windows", created.BlackoutWindows, created.AvailabilityWindows)
 	}
 
 	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/scenarios/"+scenario.ID+"/schedules", nil)
@@ -114,7 +117,7 @@ func TestHandleScenarioScheduleCRUD(t *testing.T) {
 	if events[0].Action != "scenario.schedule.delete" || events[1].Action != "scenario.schedule.update" || events[2].Action != "scenario.schedule.create" {
 		t.Fatalf("audit actions = [%s %s %s], want delete/update/create", events[0].Action, events[1].Action, events[2].Action)
 	}
-	if events[2].Details["governance"] == nil || events[2].Details["owner"] == nil {
+	if events[2].Details["governance"] == nil || events[2].Details["owner"] == nil || events[2].Details["blackout_windows"] == nil || events[2].Details["availability_windows"] == nil {
 		t.Fatalf("create audit details = %#v, want governance and owner metadata", events[2].Details)
 	}
 }

@@ -188,5 +188,11 @@ func scenarioScheduleAuditDetails(schedule *storage.ScenarioSchedule) map[string
 	if schedule.Governance != nil {
 		details["governance"] = schedule.Governance
 	}
+	if len(schedule.BlackoutWindows) > 0 {
+		details["blackout_windows"] = schedule.BlackoutWindows
+	}
+	if len(schedule.AvailabilityWindows) > 0 {
+		details["availability_windows"] = schedule.AvailabilityWindows
+	}
 	return details
 }

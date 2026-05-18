@@ -45,6 +45,18 @@ func TestSQLiteStorePersistsScenarioSchedules(t *testing.T) {
 				Findings:            []string{"Schedule mutation authorized for scenario project scope."},
 			},
 		},
+		BlackoutWindows: []ScenarioScheduleWindow{{
+			Name:       "maintenance",
+			DaysOfWeek: []int{0, 6},
+			StartTime:  "00:00",
+			EndTime:    "06:00",
+		}},
+		AvailabilityWindows: []ScenarioScheduleWindow{{
+			Name:       "business-hours",
+			DaysOfWeek: []int{1, 2, 3, 4, 5},
+			StartTime:  "09:00",
+			EndTime:    "17:00",
+		}},
 		NextRunAt: &nextRun,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
@@ -62,6 +74,9 @@ func TestSQLiteStorePersistsScenarioSchedules(t *testing.T) {
 	}
 	if roundTrip.ProjectID != "checkout" || roundTrip.OwnerSubject != "user:qa-lead" || roundTrip.Governance == nil || roundTrip.Governance.QuotaReview.ProjectMaxVUsers != 500 {
 		t.Fatalf("round trip governance = %#v, want owner/project/quota metadata", roundTrip)
+	}
+	if len(roundTrip.BlackoutWindows) != 1 || roundTrip.BlackoutWindows[0].Name != "maintenance" || len(roundTrip.AvailabilityWindows) != 1 {
+		t.Fatalf("round trip windows = blackout %#v availability %#v, want persisted windows", roundTrip.BlackoutWindows, roundTrip.AvailabilityWindows)
 	}
 	listed, err := store.ListScenarioSchedules(scenario.ID)
 	if err != nil {

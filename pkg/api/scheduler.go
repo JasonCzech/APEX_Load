@@ -23,15 +23,17 @@ type scenarioScheduler struct {
 }
 
 type CreateScenarioScheduleRequest struct {
-	Name             string `json:"name"`
-	CronExpr         string `json:"cron_expr"`
-	Timezone         string `json:"timezone,omitempty"`
-	ReleaseID        string `json:"release_id,omitempty"`
-	RunNameTemplate  string `json:"run_name_template,omitempty"`
-	Enabled          *bool  `json:"enabled,omitempty"`
-	OwnerSubject     string `json:"-"`
-	OwnerDisplayName string `json:"-"`
-	RBACReviewSource string `json:"-"`
+	Name                string                           `json:"name"`
+	CronExpr            string                           `json:"cron_expr"`
+	Timezone            string                           `json:"timezone,omitempty"`
+	ReleaseID           string                           `json:"release_id,omitempty"`
+	RunNameTemplate     string                           `json:"run_name_template,omitempty"`
+	Enabled             *bool                            `json:"enabled,omitempty"`
+	BlackoutWindows     []storage.ScenarioScheduleWindow `json:"blackout_windows,omitempty"`
+	AvailabilityWindows []storage.ScenarioScheduleWindow `json:"availability_windows,omitempty"`
+	OwnerSubject        string                           `json:"-"`
+	OwnerDisplayName    string                           `json:"-"`
+	RBACReviewSource    string                           `json:"-"`
 }
 
 func newScenarioScheduler(runner *TestRunner) *scenarioScheduler {
@@ -86,6 +88,11 @@ func nextScenarioScheduleRun(schedule *storage.ScenarioSchedule, from time.Time)
 			cronFieldMatches(fields[2], int(candidate.Day()), 1, 31) &&
 			cronFieldMatches(fields[3], int(candidate.Month()), 1, 12) &&
 			cronFieldMatches(fields[4], int(candidate.Weekday()), 0, 6) {
+			if allowed, err := scheduleAllowsCandidate(schedule, candidate); err != nil {
+				return nil, err
+			} else if !allowed {
+				continue
+			}
 			next := candidate.UTC()
 			return &next, nil
 		}
@@ -161,6 +168,79 @@ func parseCronNumber(raw string, min int, max int) (int, bool) {
 	return value, true
 }
 
+func scheduleAllowsCandidate(schedule *storage.ScenarioSchedule, candidate time.Time) (bool, error) {
+	for _, window := range schedule.BlackoutWindows {
+		matches, err := scheduleWindowContains(window, schedule.Timezone, candidate)
+		if err != nil {
+			return false, err
+		}
+		if matches {
+			return false, nil
+		}
+	}
+	if len(schedule.AvailabilityWindows) == 0 {
+		return true, nil
+	}
+	for _, window := range schedule.AvailabilityWindows {
+		matches, err := scheduleWindowContains(window, schedule.Timezone, candidate)
+		if err != nil {
+			return false, err
+		}
+		if matches {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func scheduleWindowContains(window storage.ScenarioScheduleWindow, fallbackTimezone string, candidate time.Time) (bool, error) {
+	timezone := firstNonEmpty(strings.TrimSpace(window.Timezone), strings.TrimSpace(fallbackTimezone))
+	if timezone == "" {
+		timezone = "UTC"
+	}
+	location, err := time.LoadLocation(timezone)
+	if err != nil {
+		return false, fmt.Errorf("invalid schedule window timezone %q: %w", timezone, err)
+	}
+	local := candidate.In(location)
+	if len(window.DaysOfWeek) > 0 && !scheduleWindowDayMatches(window.DaysOfWeek, int(local.Weekday())) {
+		return false, nil
+	}
+	startMinute, err := parseScheduleWindowMinute(window.StartTime)
+	if err != nil {
+		return false, err
+	}
+	endMinute, err := parseScheduleWindowMinute(window.EndTime)
+	if err != nil {
+		return false, err
+	}
+	minuteOfDay := local.Hour()*60 + local.Minute()
+	if startMinute == endMinute {
+		return true, nil
+	}
+	if startMinute < endMinute {
+		return minuteOfDay >= startMinute && minuteOfDay < endMinute, nil
+	}
+	return minuteOfDay >= startMinute || minuteOfDay < endMinute, nil
+}
+
+func scheduleWindowDayMatches(days []int, weekday int) bool {
+	for _, day := range days {
+		if day == weekday {
+			return true
+		}
+	}
+	return false
+}
+
+func parseScheduleWindowMinute(raw string) (int, error) {
+	parsed, err := time.Parse("15:04", strings.TrimSpace(raw))
+	if err != nil {
+		return 0, fmt.Errorf("invalid schedule window time %q: expected HH:MM", raw)
+	}
+	return parsed.Hour()*60 + parsed.Minute(), nil
+}
+
 func (tr *TestRunner) listAllScenarioSchedulesLocked() []*storage.ScenarioSchedule {
 	out := make([]*storage.ScenarioSchedule, 0)
 	for _, scenario := range tr.scenarios {
@@ -225,6 +305,8 @@ func cloneScenarioSchedule(schedule *storage.ScenarioSchedule) *storage.Scenario
 		nextRun := *schedule.NextRunAt
 		cloned.NextRunAt = &nextRun
 	}
+	cloned.BlackoutWindows = append([]storage.ScenarioScheduleWindow(nil), schedule.BlackoutWindows...)
+	cloned.AvailabilityWindows = append([]storage.ScenarioScheduleWindow(nil), schedule.AvailabilityWindows...)
 	return &cloned
 }
 
@@ -332,6 +414,8 @@ func (tr *TestRunner) upsertScenarioScheduleLocked(scenarioID string, scheduleID
 		schedule.LastRunAt = existing.LastRunAt
 		schedule.LastError = existing.LastError
 	}
+	schedule.BlackoutWindows = append([]storage.ScenarioScheduleWindow(nil), req.BlackoutWindows...)
+	schedule.AvailabilityWindows = append([]storage.ScenarioScheduleWindow(nil), req.AvailabilityWindows...)
 	if strings.TrimSpace(schedule.OwnerSubject) == "" {
 		schedule.OwnerSubject = strings.TrimSpace(req.OwnerSubject)
 	}

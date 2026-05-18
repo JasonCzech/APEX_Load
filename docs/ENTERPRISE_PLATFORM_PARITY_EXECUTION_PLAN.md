@@ -269,7 +269,7 @@ Scheduling becomes an enterprise control plane for recurring, queued, blackout-a
 | ID | Story | Size | Dependencies | Status |
 | --- | --- | --- | --- | --- |
 | P7.1 | Add schedule ownership, project quotas, and RBAC review to every schedule mutation and materialized run | M | P1.6 | Partial backend complete - schedule mutations now persist project ownership, owner identity, RBAC review metadata, and project quota review details in schedule payloads and audit events; materialized-run decision events remain for P7.6 |
-| P7.2 | Add blackout windows, maintenance calendars, and environment availability windows | L | P1.8 | Not started |
+| P7.2 | Add blackout windows, maintenance calendars, and environment availability windows | L | P1.8 | Partial backend complete - schedules now persist blackout and availability windows, expose them through the API, include them in schedule audit details, and skip disallowed cron candidates when calculating `next_run_at`; shared maintenance calendars remain future work |
 | P7.3 | Add approval workflows for high-cost, off-hours, production, or quota-burst schedules | L | P1.8, P2.7 | Not started |
 | P7.4 | Add schedule conflict detection across capacity pools, releases, environments, and project quotas | L | P2.6 | Not started |
 

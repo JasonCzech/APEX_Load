@@ -209,24 +209,26 @@ type LoadStage struct {
 }
 
 type ScenarioSchedule struct {
-	ID               string                      `json:"id"`
-	ScenarioID       string                      `json:"scenario_id"`
-	ProjectID        string                      `json:"project_id,omitempty"`
-	Name             string                      `json:"name"`
-	CronExpr         string                      `json:"cron_expr"`
-	Timezone         string                      `json:"timezone,omitempty"`
-	ReleaseID        string                      `json:"release_id,omitempty"`
-	RunNameTemplate  string                      `json:"run_name_template,omitempty"`
-	Enabled          bool                        `json:"enabled"`
-	OwnerSubject     string                      `json:"owner_subject,omitempty"`
-	OwnerDisplayName string                      `json:"owner_display_name,omitempty"`
-	Governance       *ScenarioScheduleGovernance `json:"governance,omitempty"`
-	LastRunTestID    string                      `json:"last_run_test_id,omitempty"`
-	LastRunAt        *time.Time                  `json:"last_run_at,omitempty"`
-	NextRunAt        *time.Time                  `json:"next_run_at,omitempty"`
-	LastError        string                      `json:"last_error,omitempty"`
-	CreatedAt        time.Time                   `json:"created_at"`
-	UpdatedAt        time.Time                   `json:"updated_at"`
+	ID                  string                      `json:"id"`
+	ScenarioID          string                      `json:"scenario_id"`
+	ProjectID           string                      `json:"project_id,omitempty"`
+	Name                string                      `json:"name"`
+	CronExpr            string                      `json:"cron_expr"`
+	Timezone            string                      `json:"timezone,omitempty"`
+	ReleaseID           string                      `json:"release_id,omitempty"`
+	RunNameTemplate     string                      `json:"run_name_template,omitempty"`
+	Enabled             bool                        `json:"enabled"`
+	OwnerSubject        string                      `json:"owner_subject,omitempty"`
+	OwnerDisplayName    string                      `json:"owner_display_name,omitempty"`
+	Governance          *ScenarioScheduleGovernance `json:"governance,omitempty"`
+	BlackoutWindows     []ScenarioScheduleWindow    `json:"blackout_windows,omitempty"`
+	AvailabilityWindows []ScenarioScheduleWindow    `json:"availability_windows,omitempty"`
+	LastRunTestID       string                      `json:"last_run_test_id,omitempty"`
+	LastRunAt           *time.Time                  `json:"last_run_at,omitempty"`
+	NextRunAt           *time.Time                  `json:"next_run_at,omitempty"`
+	LastError           string                      `json:"last_error,omitempty"`
+	CreatedAt           time.Time                   `json:"created_at"`
+	UpdatedAt           time.Time                   `json:"updated_at"`
 }
 
 type ScenarioScheduleGovernance struct {
@@ -249,6 +251,14 @@ type ScenarioScheduleQuotaReview struct {
 	ProjectMaxVUsers     int      `json:"project_max_vusers,omitempty"`
 	EstimatedPeakVUsers  int      `json:"estimated_peak_vusers,omitempty"`
 	Findings             []string `json:"findings,omitempty"`
+}
+
+type ScenarioScheduleWindow struct {
+	Name       string `json:"name,omitempty"`
+	DaysOfWeek []int  `json:"days_of_week,omitempty"`
+	StartTime  string `json:"start_time"`
+	EndTime    string `json:"end_time"`
+	Timezone   string `json:"timezone,omitempty"`
 }
 
 type SharedDataPool struct {

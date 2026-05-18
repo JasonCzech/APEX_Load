@@ -142,6 +142,8 @@ func (s *SQLiteStore) init() error {
 			owner_subject TEXT,
 			owner_display_name TEXT,
 			governance_json TEXT,
+			blackout_windows_json TEXT,
+			availability_windows_json TEXT,
 			last_run_test_id TEXT,
 			last_run_at DATETIME,
 			next_run_at DATETIME,
@@ -446,6 +448,8 @@ func (s *SQLiteStore) init() error {
 		{`ALTER TABLE scenario_schedules ADD COLUMN owner_subject TEXT`, "scenario_schedules.owner_subject"},
 		{`ALTER TABLE scenario_schedules ADD COLUMN owner_display_name TEXT`, "scenario_schedules.owner_display_name"},
 		{`ALTER TABLE scenario_schedules ADD COLUMN governance_json TEXT`, "scenario_schedules.governance_json"},
+		{`ALTER TABLE scenario_schedules ADD COLUMN blackout_windows_json TEXT`, "scenario_schedules.blackout_windows_json"},
+		{`ALTER TABLE scenario_schedules ADD COLUMN availability_windows_json TEXT`, "scenario_schedules.availability_windows_json"},
 	} {
 		if _, err := s.db.Exec(migration.query); err != nil && !isDuplicateColumnErr(err) {
 			return fmt.Errorf("failed to add %s column: %w", migration.name, err)
@@ -877,25 +881,34 @@ func (s *SQLiteStore) SaveScenarioSchedule(schedule *ScenarioSchedule) error {
 	if err != nil {
 		return fmt.Errorf("marshal scenario schedule governance: %w", err)
 	}
-	_, err = s.db.Exec(`INSERT INTO scenario_schedules (id, scenario_id, project_id, name, cron_expr, timezone, release_id, run_name_template, enabled, owner_subject, owner_display_name, governance_json, last_run_test_id, last_run_at, next_run_at, last_error, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	blackoutWindowsJSON, err := json.Marshal(schedule.BlackoutWindows)
+	if err != nil {
+		return fmt.Errorf("marshal scenario schedule blackout windows: %w", err)
+	}
+	availabilityWindowsJSON, err := json.Marshal(schedule.AvailabilityWindows)
+	if err != nil {
+		return fmt.Errorf("marshal scenario schedule availability windows: %w", err)
+	}
+	_, err = s.db.Exec(`INSERT INTO scenario_schedules (id, scenario_id, project_id, name, cron_expr, timezone, release_id, run_name_template, enabled, owner_subject, owner_display_name, governance_json, blackout_windows_json, availability_windows_json, last_run_test_id, last_run_at, next_run_at, last_error, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET scenario_id=excluded.scenario_id, project_id=excluded.project_id, name=excluded.name, cron_expr=excluded.cron_expr,
 		timezone=excluded.timezone, release_id=excluded.release_id, run_name_template=excluded.run_name_template,
 		enabled=excluded.enabled, owner_subject=excluded.owner_subject, owner_display_name=excluded.owner_display_name,
-		governance_json=excluded.governance_json, last_run_test_id=excluded.last_run_test_id, last_run_at=excluded.last_run_at,
+		governance_json=excluded.governance_json, blackout_windows_json=excluded.blackout_windows_json,
+		availability_windows_json=excluded.availability_windows_json, last_run_test_id=excluded.last_run_test_id, last_run_at=excluded.last_run_at,
 		next_run_at=excluded.next_run_at, last_error=excluded.last_error, updated_at=excluded.updated_at`,
-		schedule.ID, schedule.ScenarioID, schedule.ProjectID, schedule.Name, schedule.CronExpr, schedule.Timezone, schedule.ReleaseID, schedule.RunNameTemplate, schedule.Enabled, schedule.OwnerSubject, schedule.OwnerDisplayName, string(governanceJSON),
+		schedule.ID, schedule.ScenarioID, schedule.ProjectID, schedule.Name, schedule.CronExpr, schedule.Timezone, schedule.ReleaseID, schedule.RunNameTemplate, schedule.Enabled, schedule.OwnerSubject, schedule.OwnerDisplayName, string(governanceJSON), string(blackoutWindowsJSON), string(availabilityWindowsJSON),
 		schedule.LastRunTestID, schedule.LastRunAt, schedule.NextRunAt, schedule.LastError, schedule.CreatedAt, schedule.UpdatedAt)
 	return err
 }
 
 func (s *SQLiteStore) GetScenarioSchedule(id string) (*ScenarioSchedule, error) {
-	row := s.db.QueryRow(`SELECT id, scenario_id, COALESCE(project_id, ''), name, cron_expr, COALESCE(timezone, ''), COALESCE(release_id, ''), COALESCE(run_name_template, ''), COALESCE(enabled, 1), COALESCE(owner_subject, ''), COALESCE(owner_display_name, ''), COALESCE(governance_json, ''), COALESCE(last_run_test_id, ''), last_run_at, next_run_at, COALESCE(last_error, ''), created_at, updated_at FROM scenario_schedules WHERE id = ?`, id)
+	row := s.db.QueryRow(`SELECT id, scenario_id, COALESCE(project_id, ''), name, cron_expr, COALESCE(timezone, ''), COALESCE(release_id, ''), COALESCE(run_name_template, ''), COALESCE(enabled, 1), COALESCE(owner_subject, ''), COALESCE(owner_display_name, ''), COALESCE(governance_json, ''), COALESCE(blackout_windows_json, ''), COALESCE(availability_windows_json, ''), COALESCE(last_run_test_id, ''), last_run_at, next_run_at, COALESCE(last_error, ''), created_at, updated_at FROM scenario_schedules WHERE id = ?`, id)
 	return scanScenarioSchedule(row)
 }
 
 func (s *SQLiteStore) ListScenarioSchedules(scenarioID string) ([]*ScenarioSchedule, error) {
-	rows, err := s.db.Query(`SELECT id, scenario_id, COALESCE(project_id, ''), name, cron_expr, COALESCE(timezone, ''), COALESCE(release_id, ''), COALESCE(run_name_template, ''), COALESCE(enabled, 1), COALESCE(owner_subject, ''), COALESCE(owner_display_name, ''), COALESCE(governance_json, ''), COALESCE(last_run_test_id, ''), last_run_at, next_run_at, COALESCE(last_error, ''), created_at, updated_at FROM scenario_schedules WHERE scenario_id = ? ORDER BY created_at ASC`, scenarioID)
+	rows, err := s.db.Query(`SELECT id, scenario_id, COALESCE(project_id, ''), name, cron_expr, COALESCE(timezone, ''), COALESCE(release_id, ''), COALESCE(run_name_template, ''), COALESCE(enabled, 1), COALESCE(owner_subject, ''), COALESCE(owner_display_name, ''), COALESCE(governance_json, ''), COALESCE(blackout_windows_json, ''), COALESCE(availability_windows_json, ''), COALESCE(last_run_test_id, ''), last_run_at, next_run_at, COALESCE(last_error, ''), created_at, updated_at FROM scenario_schedules WHERE scenario_id = ? ORDER BY created_at ASC`, scenarioID)
 	if err != nil {
 		return nil, err
 	}
@@ -904,7 +917,7 @@ func (s *SQLiteStore) ListScenarioSchedules(scenarioID string) ([]*ScenarioSched
 }
 
 func (s *SQLiteStore) ListAllScenarioSchedules() ([]*ScenarioSchedule, error) {
-	rows, err := s.db.Query(`SELECT id, scenario_id, COALESCE(project_id, ''), name, cron_expr, COALESCE(timezone, ''), COALESCE(release_id, ''), COALESCE(run_name_template, ''), COALESCE(enabled, 1), COALESCE(owner_subject, ''), COALESCE(owner_display_name, ''), COALESCE(governance_json, ''), COALESCE(last_run_test_id, ''), last_run_at, next_run_at, COALESCE(last_error, ''), created_at, updated_at FROM scenario_schedules ORDER BY created_at ASC`)
+	rows, err := s.db.Query(`SELECT id, scenario_id, COALESCE(project_id, ''), name, cron_expr, COALESCE(timezone, ''), COALESCE(release_id, ''), COALESCE(run_name_template, ''), COALESCE(enabled, 1), COALESCE(owner_subject, ''), COALESCE(owner_display_name, ''), COALESCE(governance_json, ''), COALESCE(blackout_windows_json, ''), COALESCE(availability_windows_json, ''), COALESCE(last_run_test_id, ''), last_run_at, next_run_at, COALESCE(last_error, ''), created_at, updated_at FROM scenario_schedules ORDER BY created_at ASC`)
 	if err != nil {
 		return nil, err
 	}
@@ -1025,6 +1038,8 @@ func scanScenarioSchedule(row scanner) (*ScenarioSchedule, error) {
 	var schedule ScenarioSchedule
 	var enabled int
 	var governanceJSON string
+	var blackoutWindowsJSON string
+	var availabilityWindowsJSON string
 	err := row.Scan(
 		&schedule.ID,
 		&schedule.ScenarioID,
@@ -1038,6 +1053,8 @@ func scanScenarioSchedule(row scanner) (*ScenarioSchedule, error) {
 		&schedule.OwnerSubject,
 		&schedule.OwnerDisplayName,
 		&governanceJSON,
+		&blackoutWindowsJSON,
+		&availabilityWindowsJSON,
 		&schedule.LastRunTestID,
 		&schedule.LastRunAt,
 		&schedule.NextRunAt,
@@ -1055,6 +1072,12 @@ func scanScenarioSchedule(row scanner) (*ScenarioSchedule, error) {
 		if err := json.Unmarshal([]byte(governanceJSON), &governance); err == nil {
 			schedule.Governance = &governance
 		}
+	}
+	if blackoutWindowsJSON != "" && blackoutWindowsJSON != "null" {
+		_ = json.Unmarshal([]byte(blackoutWindowsJSON), &schedule.BlackoutWindows)
+	}
+	if availabilityWindowsJSON != "" && availabilityWindowsJSON != "null" {
+		_ = json.Unmarshal([]byte(availabilityWindowsJSON), &schedule.AvailabilityWindows)
 	}
 	return &schedule, nil
 }
