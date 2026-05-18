@@ -2709,6 +2709,9 @@ func TestGetTestIncludesPreviousRunComparisonBaseline(t *testing.T) {
 	if testRun.ComparisonBaseline.SourceTestID != "baseline" {
 		t.Fatalf("expected baseline source test id baseline, got %q", testRun.ComparisonBaseline.SourceTestID)
 	}
+	if testRun.ComparisonBaseline.Policy != "latest_successful" {
+		t.Fatalf("expected latest_successful baseline policy, got %q", testRun.ComparisonBaseline.Policy)
+	}
 	if testRun.ComparisonBaseline.Transactions["POST /checkout"] == nil {
 		t.Fatal("expected baseline transaction metrics to be available")
 	}
@@ -2769,6 +2772,64 @@ func TestGetTestPrefersPinnedComparisonBaseline(t *testing.T) {
 	}
 	if testRun.ComparisonBaseline.SourceTestID != "baseline-pinned" {
 		t.Fatalf("expected pinned baseline to win, got %q", testRun.ComparisonBaseline.SourceTestID)
+	}
+	if testRun.ComparisonBaseline.Policy != "pinned" {
+		t.Fatalf("expected pinned baseline policy, got %q", testRun.ComparisonBaseline.Policy)
+	}
+}
+
+func TestGetTestPrefersLatestSuccessfulComparisonBaselineOverFailedRun(t *testing.T) {
+	runner := NewTestRunner(2, NewHub(), nil)
+	successCompletedAt := time.Date(2026, time.May, 10, 9, 0, 0, 0, time.UTC)
+	failedCompletedAt := successCompletedAt.Add(30 * time.Minute)
+	runner.tests["baseline-success"] = &ManagedTest{
+		ID:         "baseline-success",
+		Name:       "Checkout Run",
+		Status:     "COMPLETE",
+		ScenarioID: "scenario-1",
+		CreatedAt:  successCompletedAt.Add(-5 * time.Minute),
+		EndedAt:    &successCompletedAt,
+		History: []*LiveMetrics{{
+			Timestamp: successCompletedAt,
+			Transactions: map[string]*TxMetrics{
+				"POST /checkout": {Name: "POST /checkout", Count: 10, AvgMs: 120},
+			},
+		}},
+	}
+	runner.tests["baseline-failed"] = &ManagedTest{
+		ID:         "baseline-failed",
+		Name:       "Checkout Run",
+		Status:     "FAILED",
+		ScenarioID: "scenario-1",
+		CreatedAt:  failedCompletedAt.Add(-5 * time.Minute),
+		EndedAt:    &failedCompletedAt,
+		History: []*LiveMetrics{{
+			Timestamp: failedCompletedAt,
+			Transactions: map[string]*TxMetrics{
+				"POST /checkout": {Name: "POST /checkout", Count: 10, AvgMs: 250},
+			},
+		}},
+	}
+	runner.tests["current"] = &ManagedTest{
+		ID:         "current",
+		Name:       "Checkout Run",
+		Status:     "RUNNING",
+		ScenarioID: "scenario-1",
+		CreatedAt:  failedCompletedAt.Add(10 * time.Minute),
+	}
+
+	testRun, ok := runner.GetTest("current")
+	if !ok {
+		t.Fatal("expected current test to be found")
+	}
+	if testRun.ComparisonBaseline == nil {
+		t.Fatal("expected comparison baseline to be populated")
+	}
+	if testRun.ComparisonBaseline.SourceTestID != "baseline-success" {
+		t.Fatalf("expected latest successful baseline to win, got %q", testRun.ComparisonBaseline.SourceTestID)
+	}
+	if testRun.ComparisonBaseline.Policy != "latest_successful" {
+		t.Fatalf("expected latest_successful baseline policy, got %q", testRun.ComparisonBaseline.Policy)
 	}
 }
 

@@ -158,6 +158,7 @@ export interface GoalStatus {
 export interface RunComparisonBaseline {
   source_test_id: string
   source_test_name: string
+  policy?: 'pinned' | 'latest_successful' | 'latest_finished' | string
   completed_at?: string
   transactions?: Record<string, TxMetrics>
   dependency_health?: Record<string, TxMetrics>

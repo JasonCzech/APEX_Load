@@ -47,6 +47,7 @@ describe('TestExecutionSummary', () => {
 		const baseline: RunComparisonBaseline = {
 			source_test_id: 'test-0',
 			source_test_name: 'Checkout Run - Previous',
+			policy: 'latest_successful',
 			completed_at: '2026-05-15T18:59:59Z',
 			transactions: {
 				'POST /checkout': {
@@ -74,7 +75,7 @@ describe('TestExecutionSummary', () => {
 		})
 
 		expect(container.textContent).toContain('Live Server Telemetry')
-		expect(container.textContent).toContain('Baseline: Checkout Run - Previous')
+		expect(container.textContent).toContain('Baseline: Checkout Run - Previous (latest successful)')
 		expect(container.textContent).toContain('Server Telemetry')
 		expect(container.textContent).toContain('Server 48.0 ms (+6.0 ms vs prev)')
 		expect(container.textContent).toContain('Transfer 14.0 ms (-4.0 ms vs prev)')

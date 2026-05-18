@@ -76,7 +76,7 @@ export default function TestExecutionSummary({ transactions, metrics, baseline, 
               <h3 className="chart-title">Live Server Telemetry</h3>
               <p className="server-telemetry-subtitle">
                 Server-processing and transfer hotspots from the current run.
-                {baseline?.source_test_name ? ` Baseline: ${baseline.source_test_name}` : ' No previous run baseline available.'}
+                {baseline?.source_test_name ? ` Baseline: ${baseline.source_test_name}${baseline.policy ? ` (${formatBaselinePolicy(baseline.policy)})` : ''}` : ' No previous run baseline available.'}
               </p>
             </div>
             {baseline?.completed_at && (
@@ -1549,6 +1549,19 @@ function formatDependencyStatus(status?: string): string {
       return 'Danger'
     default:
       return 'Unknown'
+  }
+}
+
+function formatBaselinePolicy(policy?: string): string {
+  switch (policy) {
+    case 'pinned':
+      return 'pinned'
+    case 'latest_successful':
+      return 'latest successful'
+    case 'latest_finished':
+      return 'latest finished'
+    default:
+      return policy?.replace(/_/g, ' ') || 'automatic'
   }
 }
 

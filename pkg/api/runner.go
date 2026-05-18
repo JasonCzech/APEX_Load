@@ -350,6 +350,7 @@ type GoalStatus struct {
 type RunComparisonBaseline struct {
 	SourceTestID     string                `json:"source_test_id"`
 	SourceTestName   string                `json:"source_test_name"`
+	Policy           string                `json:"policy,omitempty"`
 	CompletedAt      time.Time             `json:"completed_at,omitempty"`
 	Transactions     map[string]*TxMetrics `json:"transactions,omitempty"`
 	DependencyHealth map[string]*TxMetrics `json:"dependency_health,omitempty"`
@@ -2420,8 +2421,10 @@ func (tr *TestRunner) buildRunComparisonBaselineLocked(test *ManagedTest) *RunCo
 	var pinned *ManagedTest
 	var pinnedMarkedAt time.Time
 	var pinnedCompletedAt time.Time
-	var selected *ManagedTest
-	var selectedCompletedAt time.Time
+	var latestSuccessful *ManagedTest
+	var latestSuccessfulCompletedAt time.Time
+	var latestFinished *ManagedTest
+	var latestFinishedCompletedAt time.Time
 	for _, candidate := range tr.tests {
 		if !isComparableBaselineCandidate(test, candidate) {
 			continue
@@ -2442,14 +2445,29 @@ func (tr *TestRunner) buildRunComparisonBaselineLocked(test *ManagedTest) *RunCo
 			}
 			continue
 		}
-		if selected == nil || completedAt.After(selectedCompletedAt) {
-			selected = candidate
-			selectedCompletedAt = completedAt
+		if candidate.Status == "COMPLETE" {
+			if latestSuccessful == nil || completedAt.After(latestSuccessfulCompletedAt) {
+				latestSuccessful = candidate
+				latestSuccessfulCompletedAt = completedAt
+			}
+			continue
+		}
+		if latestFinished == nil || completedAt.After(latestFinishedCompletedAt) {
+			latestFinished = candidate
+			latestFinishedCompletedAt = completedAt
 		}
 	}
+	policy := "latest_successful"
+	selected := latestSuccessful
+	selectedCompletedAt := latestSuccessfulCompletedAt
 	if pinned != nil {
 		selected = pinned
 		selectedCompletedAt = pinnedCompletedAt
+		policy = "pinned"
+	} else if selected == nil {
+		selected = latestFinished
+		selectedCompletedAt = latestFinishedCompletedAt
+		policy = "latest_finished"
 	}
 	if selected == nil {
 		return nil
@@ -2461,6 +2479,7 @@ func (tr *TestRunner) buildRunComparisonBaselineLocked(test *ManagedTest) *RunCo
 	return &RunComparisonBaseline{
 		SourceTestID:     selected.ID,
 		SourceTestName:   selected.Name,
+		Policy:           policy,
 		CompletedAt:      selectedCompletedAt,
 		Transactions:     cloneTxMetricsMap(metrics.Transactions),
 		DependencyHealth: cloneTxMetricsMap(metrics.DependencyHealth),
