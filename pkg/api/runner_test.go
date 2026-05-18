@@ -4248,6 +4248,74 @@ func TestScenarioSchedulerAppliesMissedRunPolicies(t *testing.T) {
 	}
 }
 
+func TestScenarioScheduleConflictDetectionBlocksMaterialization(t *testing.T) {
+	store := &metricsStoreSpy{projectsByID: map[string]*storage.Project{
+		"project-schedule-conflict": {
+			ID:   "project-schedule-conflict",
+			Name: "Schedule Conflict",
+			Settings: storage.ProjectSettings{
+				MaxVUsers: 5,
+			},
+		},
+	}}
+	runner := NewTestRunner(2, NewHub(), store)
+	backend := &scheduleExecutionBackend{started: make(chan string, 1)}
+	runner.setExecutionBackend(backend)
+	runner.StoreScript(&dsl.Script{
+		ID:        "script-schedule-conflict",
+		Name:      "Schedule Conflict Script",
+		Protocol:  "http",
+		Version:   "1.0.0",
+		ProjectID: "project-schedule-conflict",
+		Actions:   []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+	scenario, err := runner.StoreScenario(CreateScenarioRequest{
+		Name:     "Conflict Scenario",
+		Duration: "1m",
+		Groups: []CreateGroupEntry{{
+			ScriptID: "script-schedule-conflict",
+			VUsers:   10,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("StoreScenario returned error: %v", err)
+	}
+	created, err := runner.CreateScenarioSchedule(scenario.ID, CreateScenarioScheduleRequest{Name: "Conflict Schedule", CronExpr: "*/5 * * * *"})
+	if err != nil {
+		t.Fatalf("CreateScenarioSchedule returned error: %v", err)
+	}
+	if created.ConflictSummary == "" || created.NextRequiredAction != "resolve_conflict" {
+		t.Fatalf("created conflict = %q action=%q, want conflict resolution required", created.ConflictSummary, created.NextRequiredAction)
+	}
+	now := time.Date(2026, time.May, 16, 12, 0, 0, 0, time.UTC)
+	due := now.Add(-time.Minute)
+	created.NextRunAt = &due
+	runner.mu.Lock()
+	if err := runner.saveScenarioScheduleLocked(created); err != nil {
+		runner.mu.Unlock()
+		t.Fatalf("saveScenarioScheduleLocked returned error: %v", err)
+	}
+	runner.mu.Unlock()
+
+	scheduler := newScenarioScheduler(runner)
+	scheduler.now = func() time.Time { return now }
+	if err := scheduler.RunDueSchedules(); err != nil {
+		t.Fatalf("RunDueSchedules returned error: %v", err)
+	}
+	select {
+	case testID := <-backend.started:
+		t.Fatalf("unexpected scheduled test start: %s", testID)
+	default:
+	}
+	occurrences, err := store.ListScenarioScheduleOccurrences(created.ID)
+	if err != nil {
+		t.Fatalf("ListScenarioScheduleOccurrences returned error: %v", err)
+	}
+	if len(occurrences) != 1 || occurrences[0].Status != "blocked" || occurrences[0].ReasonCode != "schedule_conflict" {
+		t.Fatalf("occurrences = %#v, want schedule_conflict block", occurrences)
+	}
+}
+
 func TestDeleteTestRemovesArchiveBundle(t *testing.T) {
 	archiveDir := t.TempDir()
 	t.Setenv("STORMRUNNER_ARCHIVE_DIR", archiveDir)

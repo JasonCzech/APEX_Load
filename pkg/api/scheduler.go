@@ -341,12 +341,28 @@ func (tr *TestRunner) runScenarioScheduleLocked(schedule *storage.ScenarioSchedu
 	if schedule == nil {
 		return nil, fmt.Errorf("schedule is required")
 	}
-	if _, ok := tr.scenarios[schedule.ScenarioID]; !ok {
+	scenario, ok := tr.scenarios[schedule.ScenarioID]
+	if !ok {
 		return nil, fmt.Errorf("scenario not found: %s", schedule.ScenarioID)
 	}
 	plannedAt := now
 	if schedule.NextRunAt != nil {
 		plannedAt = *schedule.NextRunAt
+	}
+	schedule.ConflictSummary = tr.scenarioScheduleConflictSummaryLocked(schedule, scenario)
+	if strings.TrimSpace(schedule.ConflictSummary) != "" {
+		occurrence := tr.buildScenarioScheduleOccurrence(schedule, plannedAt, "blocked", "schedule_conflict", schedule.ConflictSummary, nil, now)
+		if err := tr.saveScenarioScheduleOccurrenceLocked(occurrence); err != nil {
+			return nil, err
+		}
+		schedule.LastOccurrence = cloneScenarioScheduleOccurrence(occurrence)
+		schedule.NextRequiredAction = "resolve_conflict"
+		schedule.LastError = schedule.ConflictSummary
+		schedule.UpdatedAt = now
+		if err := tr.saveScenarioScheduleLocked(schedule); err != nil {
+			return nil, err
+		}
+		return nil, nil
 	}
 	if schedule.NextRequiredAction == "approval_required" && schedule.PendingApprovalID != "" {
 		occurrence := tr.buildScenarioScheduleOccurrence(schedule, plannedAt, "blocked", "approval_required", "Schedule requires approval before materialization.", nil, now)
@@ -607,7 +623,7 @@ func (tr *TestRunner) upsertScenarioScheduleLocked(scenarioID string, scheduleID
 	if schedule.RunNameTemplate == "" {
 		schedule.RunNameTemplate = scenario.Name
 	}
-	schedule.ConflictSummary = tr.scenarioScheduleConflictSummaryLocked(schedule)
+	schedule.ConflictSummary = tr.scenarioScheduleConflictSummaryLocked(schedule, scenario)
 	schedule.NextRequiredAction = scenarioScheduleNextRequiredAction(schedule)
 	var approvalToSave *storage.ScenarioScheduleApproval
 	if schedule.NextRequiredAction == "approval_required" {
@@ -736,14 +752,47 @@ func normalizeScenarioScheduleMissedRunPolicy(raw string) string {
 	}
 }
 
-func (tr *TestRunner) scenarioScheduleConflictSummaryLocked(schedule *storage.ScenarioSchedule) string {
+func (tr *TestRunner) scenarioScheduleConflictSummaryLocked(schedule *storage.ScenarioSchedule, scenario *StoredScenario) string {
 	if schedule == nil || schedule.Governance == nil {
 		return ""
 	}
+	findings := make([]string, 0)
 	if schedule.Governance.QuotaReview.Decision == "exceeds_project_vuser_limit" {
-		return strings.Join(schedule.Governance.QuotaReview.Findings, " ")
+		findings = append(findings, strings.Join(schedule.Governance.QuotaReview.Findings, " "))
 	}
-	return ""
+	if scenario != nil {
+		preview, err := tr.buildManagedTestLocked(CreateTestRequest{
+			Name:       schedule.Name,
+			ScenarioID: scenario.ID,
+			ReleaseID:  schedule.ReleaseID,
+		}, "schedule-conflict-preview", "DRAFT")
+		if err == nil && preview != nil {
+			if blocked, reason := tr.evaluateQuotaBlockLocked(preview, ""); blocked {
+				findings = append(findings, "Quota conflict: "+reason+".")
+			}
+			if preview.CapacityAdvisory != nil && preview.CapacityAdvisory.RequiresOverride {
+				findings = append(findings, fmt.Sprintf("Capacity pool conflict: recommended %d generator%s but only %d available.", preview.CapacityAdvisory.RecommendedGenerators, pluralSuffix(preview.CapacityAdvisory.RecommendedGenerators), preview.CapacityAdvisory.AvailableGenerators))
+			}
+		}
+	}
+	return strings.Join(compactScheduleConflictFindings(findings), " ")
+}
+
+func compactScheduleConflictFindings(findings []string) []string {
+	out := make([]string, 0, len(findings))
+	seen := map[string]struct{}{}
+	for _, finding := range findings {
+		finding = strings.TrimSpace(finding)
+		if finding == "" {
+			continue
+		}
+		if _, exists := seen[finding]; exists {
+			continue
+		}
+		seen[finding] = struct{}{}
+		out = append(out, finding)
+	}
+	return out
 }
 
 func scenarioScheduleNextRequiredAction(schedule *storage.ScenarioSchedule) string {
