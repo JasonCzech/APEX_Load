@@ -1,5 +1,5 @@
 import { Fragment, memo, useCallback, useEffect, useMemo, useState } from 'react'
-import { DraftCapacityEstimate, GoalConfig, LoadModelTemplate, LoadModelValidationReport, LoadStageDraft, ScenarioDataPoolBinding, ScenarioMode, SharedDataPool, StoredScenario, StoredScript, TestSummary } from '../types'
+import { DraftCapacityEstimate, GoalConfig, LoadModelSupportEntry, LoadModelTemplate, LoadModelValidationReport, LoadStageDraft, ScenarioDataPoolBinding, ScenarioMode, SharedDataPool, StoredScenario, StoredScript, TestSummary } from '../types'
 import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
 import { getErrorMessage } from '../utils/errorUtils'
@@ -99,8 +99,8 @@ function createDefaultStages(vusers: number, rampUp = '2m', hold = '5m', rampDow
 }
 
 function getLoadModelStatusClass(status?: string) {
-  if (status === 'ready') return 'ready'
-  if (status === 'blocked') return 'blocked'
+  if (status === 'ready' || status === 'executed') return 'ready'
+  if (status === 'blocked' || status === 'planned') return 'blocked'
   return 'needs-review'
 }
 
@@ -194,6 +194,7 @@ function TestHub({ onSelectTest }: Props) {
   const [scripts, setScripts] = useState<StoredScript[]>([])
   const [dataPools, setDataPools] = useState<SharedDataPool[]>([])
   const [loadModelTemplates, setLoadModelTemplates] = useState<LoadModelTemplate[]>([])
+  const [loadModelSupportMatrix, setLoadModelSupportMatrix] = useState<LoadModelSupportEntry[]>([])
   const [selectedLoadModelTemplateId, setSelectedLoadModelTemplateId] = useState('')
   const [loadModelValidation, setLoadModelValidation] = useState<LoadModelValidationReport | null>(null)
   const [loadModelValidationLoading, setLoadModelValidationLoading] = useState(false)
@@ -261,11 +262,12 @@ function TestHub({ onSelectTest }: Props) {
 
   const refresh = useCallback(async () => {
     try {
-      const [scenarioRes, scriptRes, dataPoolRes, templateRes] = await Promise.all([
+      const [scenarioRes, scriptRes, dataPoolRes, templateRes, supportRes] = await Promise.all([
         api.listScenarios(activeProject?.id),
         api.listScripts(activeProject?.id),
         api.listDataPools(activeProject?.id),
         api.listLoadModelTemplates(),
+        api.getLoadModelSupportMatrix(),
       ])
       const nextScenarios = scenarioRes.scenarios || []
       const nextScripts = scriptRes.scripts || []
@@ -273,6 +275,7 @@ function TestHub({ onSelectTest }: Props) {
       setScripts(nextScripts)
       setDataPools(dataPoolRes.data_pools || [])
       setLoadModelTemplates(templateRes.templates || [])
+      setLoadModelSupportMatrix(supportRes.support_matrix || [])
       setForm(prev => ({
         ...prev,
         script_id: nextScripts.some(script => script.id === prev.script_id) ? prev.script_id : nextScripts[0]?.id || '',
@@ -736,6 +739,36 @@ function TestHub({ onSelectTest }: Props) {
                   ))}
                 </div>
               </div>
+            )}
+          </div>
+          <div className="scenario-support-panel">
+            <div className="scenario-assignment-header">
+              <div>
+                <h4>Workload Shape Support</h4>
+                <p>Code-owned support matrix for enterprise workload models and the Stormrunner fields that implement them.</p>
+              </div>
+            </div>
+            {loadModelSupportMatrix.length > 0 ? (
+              <div className="scenario-support-grid">
+                {loadModelSupportMatrix.map(entry => (
+                  <div key={entry.id} className="scenario-support-card">
+                    <div className="scenario-support-card-header">
+                      <div>
+                        <strong>{entry.name}</strong>
+                        <span>{entry.category}</span>
+                      </div>
+                      <span className={`scenario-load-status ${getLoadModelStatusClass(entry.status)}`}>{formatLoadModelDimension(entry.status)}</span>
+                    </div>
+                    <p>{entry.stormrunner_shape}</p>
+                    <div className="scenario-support-fields">
+                      {entry.fields.map(field => <code key={field}>{field}</code>)}
+                    </div>
+                    <small>{entry.notes}</small>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="scenario-assignment-copy secondary">No workload support matrix is available from this controller.</p>
             )}
           </div>
           {showBrowserRuntimeSettings && (

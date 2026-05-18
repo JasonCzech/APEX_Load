@@ -1759,6 +1759,22 @@ export interface LoadModelTemplate {
   notes?: string[]
 }
 
+export interface LoadModelSupportEntry {
+  id: string
+  name: string
+  category: string
+  status: 'executed' | 'partial' | 'planned' | string
+  stormrunner_shape: string
+  fields: string[]
+  notes: string
+}
+
+export interface LoadModelSupportMatrixResponse {
+  support_matrix: LoadModelSupportEntry[]
+  status_counts: Record<string, number>
+  notes: string[]
+}
+
 export interface LoadModelTemplatesResponse {
   templates: LoadModelTemplate[]
   count: number

@@ -6,6 +6,7 @@ import {
   GeneratorAssignmentSettings,
   GoalConfig,
   IntervalSummaryRecord,
+  LoadModelSupportMatrixResponse,
   LoadModelTemplatesResponse,
   LoadModelValidationReport,
   LiveMetrics,
@@ -200,6 +201,11 @@ export function useTestApi() {
     [],
   )
 
+  const getLoadModelSupportMatrix = useCallback(
+    () => request<LoadModelSupportMatrixResponse>('/scenarios/load-models/support-matrix'),
+    [],
+  )
+
   const validateScenarioLoadModel = useCallback(
     (data: unknown) => request<LoadModelValidationReport>('/scenarios/validate-load-model', { method: 'POST', body: JSON.stringify(data) }),
     [],
@@ -359,6 +365,7 @@ export function useTestApi() {
       getTest,
       createTest,
       estimateTest,
+      getLoadModelSupportMatrix,
       listLoadModelTemplates,
       validateScenarioLoadModel,
       startTest,
@@ -395,6 +402,7 @@ export function useTestApi() {
       getTest,
       createTest,
       estimateTest,
+      getLoadModelSupportMatrix,
       listLoadModelTemplates,
       validateScenarioLoadModel,
       startTest,

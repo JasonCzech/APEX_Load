@@ -4,7 +4,7 @@ This document tracks Workstream P4's shared workload-shape contract.
 
 ## API Contract
 
-`GET /api/v1/scenarios/load-models/support-matrix` returns the code-owned load-model support matrix:
+`GET /api/v1/scenarios/load-models/support-matrix` returns the code-owned load-model support matrix. The dashboard scenario authoring flow renders the same matrix so authors can see supported workload shapes, field mappings, status, and caveats before saving:
 
 - `support_matrix`: supported workload shapes with stable IDs, categories, status, Stormrunner shape, fields, and notes
 - `status_counts`: count of entries by status
@@ -91,7 +91,7 @@ The first template catalog covers:
 
 | Plan item | Status | Artifact |
 | --- | --- | --- |
-| P4.1 Load-model support matrix | Complete for backend matrix | `GET /api/v1/scenarios/load-models/support-matrix` |
+| P4.1 Load-model support matrix | Complete for backend and scenario-authoring UI | `GET /api/v1/scenarios/load-models/support-matrix`; dashboard scenario form support matrix panel |
 | P4.2 Workload-shape templates | Complete for backend and scenario-authoring UI | `GET /api/v1/scenarios/load-models/templates`; dashboard scenario form template picker |
 | P4.3 Staged ramp segments | Partial backend and UI complete | Group `stages` round-trip through API/storage, derive compatibility ramp execution, and can be authored from the dashboard scenario form |
 | P4.4 Capacity validation | Partial backend and UI complete | Draft validation checks modeled demand, capacity, browser canaries, data-pool rows, data-source fit, and generator placement; dashboard scenario form renders pre-save findings |

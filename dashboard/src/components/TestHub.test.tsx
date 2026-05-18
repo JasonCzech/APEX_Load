@@ -13,6 +13,7 @@ const apiMock = {
   listScripts: vi.fn(),
   listDataPools: vi.fn(),
   listLoadModelTemplates: vi.fn(),
+  getLoadModelSupportMatrix: vi.fn(),
   validateScenarioLoadModel: vi.fn(),
   estimateTest: vi.fn(),
   createScenario: vi.fn(),
@@ -66,6 +67,30 @@ describe('TestHub', () => {
         },
       }],
       count: 1,
+    })
+    apiMock.getLoadModelSupportMatrix.mockResolvedValue({
+      support_matrix: [
+        {
+          id: 'closed-vuser',
+          name: 'Closed VUser',
+          category: 'vuser',
+          status: 'executed',
+          stormrunner_shape: 'Scenario groups with fixed VUsers and duration.',
+          fields: ['groups[].vusers', 'duration', 'groups[].ramp_up'],
+          notes: 'Primary execution model.',
+        },
+        {
+          id: 'stepped-ramp',
+          name: 'Stepped Ramp',
+          category: 'ramp',
+          status: 'partial',
+          stormrunner_shape: 'Staged segments with hold, ramp-up, and ramp-down.',
+          fields: ['groups[].stages', 'groups[].stages[].target_vusers'],
+          notes: 'Dedicated staged segments are available in scenario authoring.',
+        },
+      ],
+      status_counts: { executed: 1, partial: 1 },
+      notes: [],
     })
     apiMock.validateScenarioLoadModel.mockResolvedValue({
       status: 'needs_review',
@@ -122,6 +147,7 @@ describe('TestHub', () => {
     expect(apiMock.listScripts).toHaveBeenCalledWith('project-1')
     expect(apiMock.listDataPools).toHaveBeenCalledWith('project-1')
     expect(apiMock.listLoadModelTemplates).toHaveBeenCalled()
+    expect(apiMock.getLoadModelSupportMatrix).toHaveBeenCalled()
 
     const newScenarioButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('New Scenario'))
     expect(newScenarioButton).toBeDefined()
@@ -385,6 +411,32 @@ describe('TestHub', () => {
     expect(container.textContent).toContain('Needs Review')
     expect(container.textContent).toContain('Generator Placement')
     expect(container.textContent).toContain('Auto-assignment will use configured generators.')
+  })
+
+  it('renders the workload shape support matrix in scenario authoring', async () => {
+    const onSelectTest = vi.fn()
+
+    await act(async () => {
+      root.render(<TestHub testStatuses={{}} onSelectTest={onSelectTest} />)
+    })
+
+    await flushPromises()
+
+    const newScenarioButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('New Scenario'))
+    expect(newScenarioButton).toBeDefined()
+    if (!newScenarioButton) return
+
+    await act(async () => {
+      newScenarioButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.textContent).toContain('Workload Shape Support')
+    expect(container.textContent).toContain('Closed VUser')
+    expect(container.textContent).toContain('Executed')
+    expect(container.textContent).toContain('groups[].vusers')
+    expect(container.textContent).toContain('Stepped Ramp')
+    expect(container.textContent).toContain('Partial')
+    expect(container.textContent).toContain('groups[].stages[].target_vusers')
   })
 
   it('creates a scenario with explicit staged load segments', async () => {

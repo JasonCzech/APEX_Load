@@ -343,6 +343,77 @@
   background: var(--bg-primary);
 }
 
+.scenario-support-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 16px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-primary);
+}
+
+.scenario-support-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.scenario-support-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+}
+
+.scenario-support-card-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.scenario-support-card-header strong {
+  display: block;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.scenario-support-card-header span:not(.scenario-load-status) {
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.scenario-support-card p,
+.scenario-support-card small {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.scenario-support-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.scenario-support-fields code {
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  background: var(--bg-primary);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
 .scenario-stage-panel {
   display: flex;
   flex-direction: column;
