@@ -203,10 +203,28 @@ type LiveMetrics struct {
 	Browser                *BrowserLiveMetrics                  `json:"browser,omitempty"`
 	BrowserByDevice        map[string]*BrowserDeviceLiveMetrics `json:"browser_by_device,omitempty"`
 	GoalStatus             *GoalStatus                          `json:"goal_status,omitempty"`
+	CapacityStatus         *LiveCapacityStatus                  `json:"capacity_status,omitempty"`
 	TelemetryStatus        *TelemetryRunHealth                  `json:"telemetry_status,omitempty"`
 	Telemetry              *TelemetryHealth                     `json:"telemetry,omitempty"`
 	Resources              *engine.SystemResources              `json:"resources,omitempty"`
 	Latency                *NetworkLatency                      `json:"latency,omitempty"`
+}
+
+type LiveCapacityStatus struct {
+	AllocatedVUsers       int                               `json:"allocated_vusers"`
+	AvailableGenerators   int                               `json:"available_generators"`
+	RecommendedGenerators int                               `json:"recommended_generators"`
+	Saturated             bool                              `json:"saturated"`
+	QueuedVUsers          int                               `json:"queued_vusers"`
+	RejectedVUsers        int                               `json:"rejected_vusers"`
+	ByProtocol            map[string]*LiveCapacityBreakdown `json:"by_protocol,omitempty"`
+	ByRegion              map[string]*LiveCapacityBreakdown `json:"by_region,omitempty"`
+}
+
+type LiveCapacityBreakdown struct {
+	AllocatedVUsers int `json:"allocated_vusers,omitempty"`
+	QueuedVUsers    int `json:"queued_vusers,omitempty"`
+	RejectedVUsers  int `json:"rejected_vusers,omitempty"`
 }
 
 type BrowserLiveMetrics struct {
@@ -4407,6 +4425,151 @@ func shouldStopForGoalStatus(live *LiveMetrics) bool {
 	return live.GoalStatus != nil && live.GoalStatus.StopTriggered
 }
 
+func buildLiveCapacityStatus(current *ManagedTest, live *LiveMetrics, tests []*ManagedTest) *LiveCapacityStatus {
+	if current == nil || current.CapacityAdvisory == nil {
+		return nil
+	}
+	status := &LiveCapacityStatus{
+		AllocatedVUsers:       int(liveActiveVUsers(live, current)),
+		AvailableGenerators:   current.CapacityAdvisory.AvailableGenerators,
+		RecommendedGenerators: current.CapacityAdvisory.RecommendedGenerators,
+		Saturated:             current.CapacityAdvisory.RequiresOverride || current.CapacityAdvisory.ShortfallGenerators > 0 || current.CapacityAdvisory.RecommendedGenerators >= current.CapacityAdvisory.AvailableGenerators,
+		ByProtocol:            make(map[string]*LiveCapacityBreakdown),
+		ByRegion:              make(map[string]*LiveCapacityBreakdown),
+	}
+	for _, test := range tests {
+		if test == nil {
+			continue
+		}
+		switch test.Status {
+		case "INITIALIZING", "RUNNING", "PAUSED":
+			addCapacityDemand(status, test, "allocated")
+		case "QUEUED", "PENDING":
+			status.QueuedVUsers += test.TotalVUsers
+			addCapacityDemand(status, test, "queued")
+		}
+		if test.CapacityAdvisory != nil && test.CapacityAdvisory.RequiresOverride {
+			status.RejectedVUsers += test.TotalVUsers
+			addCapacityDemand(status, test, "rejected")
+		}
+	}
+	if len(status.ByProtocol) == 0 {
+		status.ByProtocol = nil
+	}
+	if len(status.ByRegion) == 0 {
+		status.ByRegion = nil
+	}
+	return status
+}
+
+func liveActiveVUsers(live *LiveMetrics, test *ManagedTest) int64 {
+	if live != nil && live.ActiveVUsers > 0 {
+		return live.ActiveVUsers
+	}
+	if test != nil && (test.Status == "INITIALIZING" || test.Status == "RUNNING" || test.Status == "PAUSED") {
+		return int64(test.TotalVUsers)
+	}
+	return 0
+}
+
+func addCapacityDemand(status *LiveCapacityStatus, test *ManagedTest, bucket string) {
+	for protocol, vusers := range capacityDemandByProtocol(test.Groups) {
+		addCapacityBreakdown(status.ByProtocol, protocol, bucket, vusers)
+	}
+	for region, vusers := range capacityDemandByRegion(test) {
+		addCapacityBreakdown(status.ByRegion, region, bucket, vusers)
+	}
+}
+
+func addCapacityBreakdown(target map[string]*LiveCapacityBreakdown, key string, bucket string, vusers int) {
+	if vusers <= 0 {
+		return
+	}
+	key = strings.TrimSpace(key)
+	if key == "" {
+		key = "unknown"
+	}
+	breakdown := target[key]
+	if breakdown == nil {
+		breakdown = &LiveCapacityBreakdown{}
+		target[key] = breakdown
+	}
+	switch bucket {
+	case "allocated":
+		breakdown.AllocatedVUsers += vusers
+	case "queued":
+		breakdown.QueuedVUsers += vusers
+	case "rejected":
+		breakdown.RejectedVUsers += vusers
+	}
+}
+
+func capacityDemandByProtocol(groups []TestGroup) map[string]int {
+	out := make(map[string]int)
+	for _, group := range groups {
+		protocol := strings.TrimSpace(group.Protocol)
+		if protocol == "" {
+			protocol = "unknown"
+		}
+		out[protocol] += group.VUsers
+	}
+	return out
+}
+
+func capacityDemandByRegion(test *ManagedTest) map[string]int {
+	out := make(map[string]int)
+	if test == nil || test.TotalVUsers <= 0 {
+		return out
+	}
+	assignment := test.Assignment
+	if assignment == nil || assignment.Mode == "" || assignment.Mode == generatorAssignmentModeAuto {
+		out["auto"] = test.TotalVUsers
+		return out
+	}
+	if assignment.Mode == generatorAssignmentModeSpecificHosts {
+		if len(assignment.SelectedTargets) == 0 {
+			out["selected_hosts"] = test.TotalVUsers
+			return out
+		}
+		for _, target := range assignment.SelectedTargets {
+			out[firstNonEmpty(strings.TrimSpace(target), "selected_hosts")] += test.TotalVUsers / len(assignment.SelectedTargets)
+		}
+		remainder := test.TotalVUsers % len(assignment.SelectedTargets)
+		if remainder > 0 {
+			out[firstNonEmpty(strings.TrimSpace(assignment.SelectedTargets[0]), "selected_hosts")] += remainder
+		}
+		return out
+	}
+	if assignment.Mode == generatorAssignmentModeRegionWeighted && len(assignment.RegionWeights) > 0 {
+		totalWeight := 0
+		regions := make([]string, 0, len(assignment.RegionWeights))
+		for region, weight := range assignment.RegionWeights {
+			if weight <= 0 {
+				continue
+			}
+			regions = append(regions, region)
+			totalWeight += weight
+		}
+		sort.Strings(regions)
+		allocated := 0
+		for index, region := range regions {
+			vusers := 0
+			if index == len(regions)-1 {
+				vusers = test.TotalVUsers - allocated
+			} else {
+				vusers = test.TotalVUsers * assignment.RegionWeights[region] / totalWeight
+				allocated += vusers
+			}
+			out[firstNonEmpty(strings.TrimSpace(region), "unassigned")] += vusers
+		}
+		if len(out) > 0 {
+			return out
+		}
+	}
+	out["unassigned"] = test.TotalVUsers
+	return out
+}
+
 func (tr *TestRunner) publishLiveMetrics(test *ManagedTest, live *LiveMetrics, artifacts *runArtifacts) {
 	now := time.Now()
 	hubStats := HubStats{}
@@ -4439,9 +4602,14 @@ func (tr *TestRunner) publishLiveMetrics(test *ManagedTest, live *LiveMetrics, a
 	var previousTelemetryRunHealth *TelemetryRunHealth
 
 	tr.mu.Lock()
+	tests := make([]*ManagedTest, 0, len(tr.tests))
+	for _, candidate := range tr.tests {
+		tests = append(tests, candidate)
+	}
 	previousTelemetryRunHealth = cloneTelemetryRunHealth(test.TelemetryHealth)
 	telemetryRunHealth = updateTelemetryRunHealth(&test.telemetryDiagnostic, diagnostic, diagnosticSignature, now)
 	live.TelemetryStatus = cloneTelemetryRunHealth(telemetryRunHealth)
+	live.CapacityStatus = buildLiveCapacityStatus(test, live, tests)
 	test.errorPatterns = updateLiveErrorPatterns(test.errorPatterns, live, test.ID)
 	live.ErrorPatterns = liveErrorPatternsList(test.errorPatterns)
 	test.TelemetryHealth = cloneTelemetryRunHealth(telemetryRunHealth)

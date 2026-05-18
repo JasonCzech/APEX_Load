@@ -335,4 +335,69 @@ describe('TestExecutionStatusPanels', () => {
     expect(container.textContent).toContain('east: 800 VUsers')
     expect(container.textContent).toContain('west: 400 VUsers')
   })
+
+  it('prefers live capacity status breakdowns when metrics provide them', async () => {
+    await act(async () => {
+      root.render(
+        <TestExecutionStatusPanels
+          isGoalOriented={false}
+          goalDescription=""
+          test={{
+            id: 'test-1',
+            name: 'Live Capacity Run',
+            status: 'RUNNING',
+            total_vusers: 900,
+            duration: '15m',
+            created_at: '2026-05-12T20:00:00Z',
+            groups: [],
+            capacity_advisory: {
+              total_vusers: 900,
+              duration_seconds: 900,
+              baseline_window_enabled: false,
+              headroom_pct: 20,
+              complexity_score: 1,
+              bottleneck: 'vusers',
+              recommended_generators: 2,
+              available_generators: 4,
+              estimated_per_vuser: { cpu_cores: 0.001, memory_mb: 0.5, network_mbps: 0.01 },
+              estimated_total: { cpu_cores: 0.9, memory_mb: 450, network_mbps: 9 },
+              usable_per_generator: { cpu_cores: 3.2, memory_mb: 6400, network_mbps: 800 },
+              dimension_recommendations: { cpu: 1, memory: 1, network: 1, vusers: 2 },
+            },
+          } as never}
+          metrics={{
+            active_vusers: 900,
+            capacity_status: {
+              allocated_vusers: 900,
+              available_generators: 4,
+              recommended_generators: 2,
+              saturated: false,
+              queued_vusers: 300,
+              rejected_vusers: 100,
+              by_protocol: {
+                http: { allocated_vusers: 900, queued_vusers: 200 },
+                browser: { rejected_vusers: 100 },
+              },
+              by_region: {
+                east: { allocated_vusers: 600, queued_vusers: 200 },
+                west: { allocated_vusers: 300, rejected_vusers: 100 },
+              },
+            },
+          }}
+          isMultiGroup={false}
+          groupMetrics={[]}
+          groupColors={[]}
+        />,
+      )
+    })
+
+    expect(container.textContent).toContain('Queued Demand')
+    expect(container.textContent).toContain('300')
+    expect(container.textContent).toContain('Rejected Demand')
+    expect(container.textContent).toContain('100')
+    expect(container.textContent).toContain('http: 1,100 VUsers')
+    expect(container.textContent).toContain('browser: 100 VUsers')
+    expect(container.textContent).toContain('east: 800 VUsers')
+    expect(container.textContent).toContain('west: 400 VUsers')
+  })
 })

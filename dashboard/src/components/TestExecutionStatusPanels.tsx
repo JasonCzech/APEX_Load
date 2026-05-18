@@ -1,4 +1,4 @@
-import { BrowserDeviceLiveMetrics, BrowserLiveMetrics, CapacityAdvisory, GoalStatus, GroupLiveMetrics, TelemetryHealth, TestSummary } from '../types'
+import { BrowserDeviceLiveMetrics, BrowserLiveMetrics, CapacityAdvisory, GoalStatus, GroupLiveMetrics, LiveCapacityStatus, TelemetryHealth, TestSummary } from '../types'
 import { formatTimeCompact } from '../utils/timeUtils'
 import { formatBrowserEngineLabel, formatDevicePlatformLabel } from './browserBreakdownModel'
 
@@ -11,6 +11,7 @@ interface LiveMetricsSummary {
   telemetry?: TelemetryHealth
   browser?: BrowserLiveMetrics
   browser_by_device?: Record<string, BrowserDeviceLiveMetrics>
+  capacity_status?: LiveCapacityStatus
 }
 
 interface Props {
@@ -74,10 +75,16 @@ function capacityBadgeClass(advisory?: CapacityAdvisory): 'healthy' | 'warning' 
   return 'healthy'
 }
 
-function capacityBadgeLabel(advisory?: CapacityAdvisory): string {
-  if (!advisory) return 'Untracked'
-  if (advisory.requires_override || (advisory.shortfall_generators ?? 0) > 0) return 'Rejected Demand'
-  if (advisory.recommended_generators >= advisory.available_generators) return 'Saturated'
+function capacityStatusBadgeClass(status?: LiveCapacityStatus, advisory?: CapacityAdvisory): 'healthy' | 'warning' | 'danger' {
+  if (status?.rejected_vusers) return 'danger'
+  if (status?.saturated) return 'warning'
+  return capacityBadgeClass(advisory)
+}
+
+function capacityBadgeLabel(status?: LiveCapacityStatus, advisory?: CapacityAdvisory): string {
+  if (!status && !advisory) return 'Untracked'
+  if ((status?.rejected_vusers ?? 0) > 0 || advisory?.requires_override || (advisory?.shortfall_generators ?? 0) > 0) return 'Rejected Demand'
+  if (status?.saturated || (advisory && advisory.recommended_generators >= advisory.available_generators)) return 'Saturated'
   return 'Available'
 }
 
@@ -96,6 +103,24 @@ function protocolDemand(groups: TestSummary['groups']): Array<[string, number]> 
     demand.set(protocol, (demand.get(protocol) || 0) + group.vusers)
   }
   return Array.from(demand.entries()).sort((left, right) => left[0].localeCompare(right[0]))
+}
+
+function capacityProtocolRows(test: TestSummary, status?: LiveCapacityStatus): Array<[string, number]> {
+  if (status?.by_protocol) {
+    return Object.entries(status.by_protocol)
+      .map(([protocol, demand]) => [protocol, (demand.allocated_vusers || 0) + (demand.queued_vusers || 0) + (demand.rejected_vusers || 0)] as [string, number])
+      .sort((left, right) => left[0].localeCompare(right[0]))
+  }
+  return protocolDemand(test.groups)
+}
+
+function capacityRegionRows(test: TestSummary, status?: LiveCapacityStatus): Array<[string, number]> {
+  if (status?.by_region) {
+    return Object.entries(status.by_region)
+      .map(([region, demand]) => [region, (demand.allocated_vusers || 0) + (demand.queued_vusers || 0) + (demand.rejected_vusers || 0)] as [string, number])
+      .sort((left, right) => left[0].localeCompare(right[0]))
+  }
+  return regionDemand(test)
 }
 
 function regionDemand(test: TestSummary): Array<[string, number]> {
@@ -164,47 +189,48 @@ export default function TestExecutionStatusPanels({
 }: Props) {
   const browserDevices = Object.entries(metrics?.browser_by_device ?? {})
   const capacityAdvisory = test.capacity_advisory
-  const protocolRows = protocolDemand(test.groups)
-  const regionRows = regionDemand(test)
+  const capacityStatus = metrics?.capacity_status
+  const protocolRows = capacityProtocolRows(test, capacityStatus)
+  const regionRows = capacityRegionRows(test, capacityStatus)
 
   return (
     <>
-      {capacityAdvisory && (
+      {(capacityAdvisory || capacityStatus) && (
         <div className="goal-status-card capacity-live-card">
           <div className="goal-status-header">
             <div>
               <h3 className="goal-status-title">Live Capacity</h3>
               <p className="goal-status-subtitle">Generator demand, saturation, queue pressure, and protocol mix for this run.</p>
             </div>
-            <div className={`goal-status-badge ${capacityBadgeClass(capacityAdvisory)}`}>
-              {capacityBadgeLabel(capacityAdvisory)}
+            <div className={`goal-status-badge ${capacityStatusBadgeClass(capacityStatus, capacityAdvisory)}`}>
+              {capacityBadgeLabel(capacityStatus, capacityAdvisory)}
             </div>
           </div>
 
           <div className="goal-status-grid">
             <div className="goal-status-metric">
               <span className="goal-status-label">Allocated VUsers</span>
-              <span className="goal-status-value">{formatCapacityNumber(metrics?.active_vusers ?? (test.status === 'RUNNING' ? test.total_vusers : 0))}</span>
+              <span className="goal-status-value">{formatCapacityNumber(capacityStatus?.allocated_vusers ?? metrics?.active_vusers ?? (test.status === 'RUNNING' ? test.total_vusers : 0))}</span>
             </div>
             <div className="goal-status-metric">
               <span className="goal-status-label">Available Generators</span>
-              <span className="goal-status-value">{formatCapacityNumber(capacityAdvisory.available_generators)}</span>
+              <span className="goal-status-value">{formatCapacityNumber(capacityStatus?.available_generators ?? capacityAdvisory?.available_generators)}</span>
             </div>
             <div className="goal-status-metric">
               <span className="goal-status-label">Recommended</span>
-              <span className="goal-status-value">{formatCapacityNumber(capacityAdvisory.recommended_generators)}</span>
+              <span className="goal-status-value">{formatCapacityNumber(capacityStatus?.recommended_generators ?? capacityAdvisory?.recommended_generators)}</span>
             </div>
             <div className="goal-status-metric">
               <span className="goal-status-label">Saturated</span>
-              <span className="goal-status-value">{capacityBadgeClass(capacityAdvisory) === 'healthy' ? 'No' : 'Yes'}</span>
+              <span className="goal-status-value">{(capacityStatus?.saturated ?? capacityBadgeClass(capacityAdvisory) !== 'healthy') ? 'Yes' : 'No'}</span>
             </div>
             <div className="goal-status-metric">
               <span className="goal-status-label">Queued Demand</span>
-              <span className="goal-status-value">{formatCapacityNumber(demandForStatus(test, 'queued'))}</span>
+              <span className="goal-status-value">{formatCapacityNumber(capacityStatus?.queued_vusers ?? demandForStatus(test, 'queued'))}</span>
             </div>
             <div className="goal-status-metric">
               <span className="goal-status-label">Rejected Demand</span>
-              <span className="goal-status-value">{formatCapacityNumber(demandForStatus(test, 'rejected'))}</span>
+              <span className="goal-status-value">{formatCapacityNumber(capacityStatus?.rejected_vusers ?? demandForStatus(test, 'rejected'))}</span>
             </div>
           </div>
 

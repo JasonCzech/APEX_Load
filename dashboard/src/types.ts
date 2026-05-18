@@ -692,6 +692,7 @@ export interface LiveMetrics {
   groups?: Record<string, GroupLiveMetrics>
   browser?: BrowserLiveMetrics
   browser_by_device?: Record<string, BrowserDeviceLiveMetrics>
+  capacity_status?: LiveCapacityStatus
   goal_status?: GoalStatus
   telemetry_status?: TelemetryRunHealth
   telemetry?: TelemetryHealth
@@ -710,6 +711,23 @@ export interface BrowserLiveMetrics {
   avg_js_heap_used_mb?: number
   avg_browser_process_cpu_pct?: number
   avg_browser_process_mem_mb?: number
+}
+
+export interface LiveCapacityStatus {
+  allocated_vusers: number
+  available_generators: number
+  recommended_generators: number
+  saturated: boolean
+  queued_vusers: number
+  rejected_vusers: number
+  by_protocol?: Record<string, LiveCapacityBreakdown>
+  by_region?: Record<string, LiveCapacityBreakdown>
+}
+
+export interface LiveCapacityBreakdown {
+  allocated_vusers?: number
+  queued_vusers?: number
+  rejected_vusers?: number
 }
 
 export interface BrowserDeviceLiveMetrics extends BrowserLiveMetrics {

@@ -1223,6 +1223,65 @@ func TestUpdateLiveErrorPatternsTracksFirstLatestAndSnapshotQuery(t *testing.T) 
 	}
 }
 
+func TestBuildLiveCapacityStatusAggregatesDemandByProtocolAndRegion(t *testing.T) {
+	current := &ManagedTest{
+		ID:          "active",
+		Status:      "RUNNING",
+		TotalVUsers: 1200,
+		Groups: []TestGroup{
+			{Name: "buyers", Protocol: "http", VUsers: 900},
+			{Name: "canaries", Protocol: "browser", VUsers: 300},
+		},
+		Assignment: &GeneratorAssignmentSettings{
+			Mode:          generatorAssignmentModeRegionWeighted,
+			RegionWeights: map[string]int{"east": 2, "west": 1},
+		},
+		CapacityAdvisory: &CapacityAdvisory{
+			RecommendedGenerators: 4,
+			AvailableGenerators:   3,
+			ShortfallGenerators:   1,
+			RequiresOverride:      true,
+		},
+	}
+	queued := &ManagedTest{
+		ID:          "queued",
+		Status:      "PENDING",
+		TotalVUsers: 200,
+		Groups:      []TestGroup{{Name: "workers", Protocol: "grpc", VUsers: 200}},
+		Assignment:  &GeneratorAssignmentSettings{Mode: generatorAssignmentModeAuto},
+	}
+	rejected := &ManagedTest{
+		ID:          "rejected",
+		Status:      "QUEUED",
+		TotalVUsers: 100,
+		Groups:      []TestGroup{{Name: "publishers", Protocol: "jms", VUsers: 100}},
+		Assignment:  &GeneratorAssignmentSettings{Mode: generatorAssignmentModeSpecificHosts, SelectedTargets: []string{"gen-a", "gen-b"}},
+		CapacityAdvisory: &CapacityAdvisory{
+			RequiresOverride: true,
+		},
+	}
+
+	status := buildLiveCapacityStatus(current, &LiveMetrics{ActiveVUsers: 1000}, []*ManagedTest{current, queued, rejected})
+	if status == nil {
+		t.Fatal("expected live capacity status")
+	}
+	if status.AllocatedVUsers != 1000 || status.AvailableGenerators != 3 || status.RecommendedGenerators != 4 || !status.Saturated {
+		t.Fatalf("capacity status headline = %#v", status)
+	}
+	if status.QueuedVUsers != 300 || status.RejectedVUsers != 1300 {
+		t.Fatalf("queued/rejected = %d/%d, want 300/1300", status.QueuedVUsers, status.RejectedVUsers)
+	}
+	if status.ByProtocol["http"].AllocatedVUsers != 900 || status.ByProtocol["browser"].AllocatedVUsers != 300 || status.ByProtocol["grpc"].QueuedVUsers != 200 || status.ByProtocol["jms"].RejectedVUsers != 100 {
+		t.Fatalf("protocol breakdown = %#v", status.ByProtocol)
+	}
+	if status.ByRegion["east"].AllocatedVUsers != 800 || status.ByRegion["west"].AllocatedVUsers != 400 || status.ByRegion["auto"].QueuedVUsers != 200 {
+		t.Fatalf("region breakdown = %#v", status.ByRegion)
+	}
+	if status.ByRegion["gen-a"].RejectedVUsers != 50 || status.ByRegion["gen-b"].RejectedVUsers != 50 {
+		t.Fatalf("specific-host rejected breakdown = %#v", status.ByRegion)
+	}
+}
+
 func TestBuildThresholdAlerts(t *testing.T) {
 	p99Threshold := 750.0
 	errorThreshold := 2.5
