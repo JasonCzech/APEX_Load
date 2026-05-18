@@ -29,6 +29,12 @@ type authoringSessionRequest struct {
 	ReviewState map[string]any `json:"review_state,omitempty"`
 }
 
+type authoringSessionApprovalResponse struct {
+	Session         *storage.AuthoringSession `json:"session"`
+	Script          *StoredScript             `json:"script"`
+	AuthoringHealth AuthoringHealth           `json:"authoring_health"`
+}
+
 func (s *Server) handleCreateAuthoringSession(w http.ResponseWriter, r *http.Request) {
 	req, ok := readAuthoringSessionRequest(w, r)
 	if !ok {
@@ -117,6 +123,53 @@ func (s *Server) handleDeleteAuthoringSession(w http.ResponseWriter, r *http.Req
 	}
 	s.recordAuditEvent(r, "script.authoring_session.delete", "success", "authoring_session", id, session.ProjectID, map[string]any{"name": session.Name, "source": session.Source})
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})
+}
+
+func (s *Server) handleApproveAuthoringSession(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	session, ok := s.getAuthoringSession(w, id)
+	if !ok {
+		return
+	}
+	if session.Draft == nil {
+		writeError(w, http.StatusBadRequest, "authoring session draft is required")
+		return
+	}
+
+	validation := buildScriptValidationResponse("", session.Draft)
+	if !validation.Valid || validation.AuthoringHealth.Status == "blocked" {
+		s.recordAuditEvent(r, "script.authoring_session.approve", "failure", "authoring_session", session.ID, session.ProjectID, map[string]any{
+			"health_status": validation.AuthoringHealth.Status,
+			"issues":        validation.Issues,
+		})
+		writeJSON(w, http.StatusBadRequest, validation)
+		return
+	}
+
+	session.Draft.ProjectID = normalizeProjectID(firstNonEmpty(session.Draft.ProjectID, session.ProjectID))
+	stored := s.runner.StoreScript(session.Draft)
+	now := time.Now()
+	session.Status = "approved"
+	session.UpdatedAt = now
+	session.LastAccessedAt = now
+	session.ReviewState = cloneReviewState(session.ReviewState)
+	if session.ReviewState == nil {
+		session.ReviewState = map[string]any{}
+	}
+	session.ReviewState["approved_script_id"] = stored.ID
+	session.ReviewState["approved_at"] = now.Format(time.RFC3339Nano)
+	session.ReviewState["approval_health_status"] = validation.AuthoringHealth.Status
+	if err := s.saveAuthoringSession(session); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	s.recordAuditEvent(r, "script.authoring_session.approve", "success", "authoring_session", session.ID, session.ProjectID, map[string]any{"script_id": stored.ID, "health_status": validation.AuthoringHealth.Status})
+	writeJSON(w, http.StatusOK, authoringSessionApprovalResponse{
+		Session:         session,
+		Script:          stored,
+		AuthoringHealth: validation.AuthoringHealth,
+	})
 }
 
 func readAuthoringSessionRequest(w http.ResponseWriter, r *http.Request) (authoringSessionRequest, bool) {

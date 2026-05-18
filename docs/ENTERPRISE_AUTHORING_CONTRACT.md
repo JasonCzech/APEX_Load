@@ -21,8 +21,11 @@ Authoring sessions persist unsaved drafts and repair workflow state:
 | `GET /api/v1/scripts/authoring/sessions/{id}` | Fetch one draft session and refresh its last-accessed timestamp. |
 | `PUT /api/v1/scripts/authoring/sessions/{id}` | Replace the draft payload, status, and review state after edits or repairs. |
 | `DELETE /api/v1/scripts/authoring/sessions/{id}` | Remove a draft session after save, approval, or discard. |
+| `POST /api/v1/scripts/authoring/sessions/{id}/approve` | Validate a ready draft, block unsafe health states, promote the draft into the reusable script library, and stamp approval metadata on the session. |
 
 SQLite-backed controllers persist these sessions in `authoring_sessions`. Controllers without a metadata store keep a local in-memory fallback for development and tests.
+
+Approval is the final backend handoff before a migrated, recorded, manual, or generated draft becomes a reusable scenario asset. The approval endpoint returns HTTP 400 with the standard validation payload when validation fails or the authoring health status is `blocked`. Successful approval stores the draft through the normal script library path, marks the session `approved`, and records `approved_script_id`, `approved_at`, and `approval_health_status` in `review_state`.
 
 ## Sources
 

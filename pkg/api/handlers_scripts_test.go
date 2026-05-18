@@ -1935,6 +1935,109 @@ func TestAuthoringSessionLifecyclePersistsDraftReviewState(t *testing.T) {
 	}
 }
 
+func TestApproveAuthoringSessionPromotesDraftToScriptLibrary(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	body := []byte(`{
+		"project_id":"project-authoring",
+		"source":"loadrunner",
+		"name":"Checkout approval",
+		"status":"ready",
+		"draft":{"name":"Checkout Approved","version":"1.0.0","protocol":"http","config":{"base_url":"https://example.test"},"actions":[{"name":"Home","type":"request","target":"/"}]},
+		"review_state":{"reviewer":"qa-lead"}
+	}`)
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/authoring/sessions", bytes.NewReader(body))
+	createResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(createResp, createReq)
+	if createResp.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want %d body=%s", createResp.Code, http.StatusCreated, createResp.Body.String())
+	}
+	var created storage.AuthoringSession
+	if err := json.Unmarshal(createResp.Body.Bytes(), &created); err != nil {
+		t.Fatalf("unmarshal created session: %v", err)
+	}
+
+	approveReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/authoring/sessions/"+created.ID+"/approve", nil)
+	approveResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(approveResp, approveReq)
+	if approveResp.Code != http.StatusOK {
+		t.Fatalf("approve status = %d, want %d body=%s", approveResp.Code, http.StatusOK, approveResp.Body.String())
+	}
+	var approved authoringSessionApprovalResponse
+	if err := json.Unmarshal(approveResp.Body.Bytes(), &approved); err != nil {
+		t.Fatalf("unmarshal approval response: %v", err)
+	}
+	if approved.Script == nil || approved.Script.ID == "" || approved.Script.ProjectID != "project-authoring" {
+		t.Fatalf("approved script = %#v, want project-bound stored script", approved.Script)
+	}
+	if approved.Session == nil || approved.Session.Status != "approved" {
+		t.Fatalf("approved session = %#v, want approved status", approved.Session)
+	}
+	if approved.Session.ReviewState["approved_script_id"] != approved.Script.ID {
+		t.Fatalf("review state = %#v, want approved script id %q", approved.Session.ReviewState, approved.Script.ID)
+	}
+	if approved.AuthoringHealth.Status == "blocked" {
+		t.Fatalf("authoring health = %#v, want promotable health", approved.AuthoringHealth)
+	}
+	if _, ok := server.runner.GetScript(approved.Script.ID); !ok {
+		t.Fatalf("script %q was not stored in reusable library", approved.Script.ID)
+	}
+
+	persisted, err := store.GetAuthoringSession(created.ID)
+	if err != nil {
+		t.Fatalf("GetAuthoringSession returned error: %v", err)
+	}
+	if persisted.Status != "approved" || persisted.ReviewState["approved_script_id"] != approved.Script.ID {
+		t.Fatalf("persisted session = %#v, want approval state", persisted)
+	}
+}
+
+func TestApproveAuthoringSessionRejectsBlockedDraft(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	body := []byte(`{
+		"project_id":"project-authoring",
+		"source":"loadrunner",
+		"name":"Broken approval",
+		"status":"ready",
+		"draft":{"name":"","version":"1.0.0","protocol":"http","actions":[]}
+	}`)
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/authoring/sessions", bytes.NewReader(body))
+	createResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(createResp, createReq)
+	if createResp.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want %d body=%s", createResp.Code, http.StatusCreated, createResp.Body.String())
+	}
+	var created storage.AuthoringSession
+	if err := json.Unmarshal(createResp.Body.Bytes(), &created); err != nil {
+		t.Fatalf("unmarshal created session: %v", err)
+	}
+
+	approveReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/authoring/sessions/"+created.ID+"/approve", nil)
+	approveResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(approveResp, approveReq)
+	if approveResp.Code != http.StatusBadRequest {
+		t.Fatalf("approve status = %d, want %d body=%s", approveResp.Code, http.StatusBadRequest, approveResp.Body.String())
+	}
+	var validation scriptValidationResponse
+	if err := json.Unmarshal(approveResp.Body.Bytes(), &validation); err != nil {
+		t.Fatalf("unmarshal validation response: %v", err)
+	}
+	if validation.Valid || validation.AuthoringHealth.Status != "blocked" {
+		t.Fatalf("validation = %#v, want blocked invalid draft", validation)
+	}
+	sessions, err := server.listAuthoringSessions("project-authoring")
+	if err != nil {
+		t.Fatalf("listAuthoringSessions returned error: %v", err)
+	}
+	if len(sessions) != 1 || sessions[0].Status != "ready" {
+		t.Fatalf("sessions = %#v, want original ready session without approval", sessions)
+	}
+}
+
 type reviewSection struct {
 	Key      string   `json:"key"`
 	Severity string   `json:"severity"`
