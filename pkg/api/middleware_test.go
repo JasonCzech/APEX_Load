@@ -40,6 +40,7 @@ func TestAccessRequirementCoversAuthGovernanceRoutes(t *testing.T) {
 		{name: "export usage accounting", method: http.MethodGet, path: "/api/v1/system/usage/export", globalRoles: allGlobalReaders},
 		{name: "list usage snapshots", method: http.MethodGet, path: "/api/v1/system/usage/snapshots", globalRoles: allGlobalReaders},
 		{name: "capture usage snapshot", method: http.MethodPost, path: "/api/v1/system/usage/snapshots", globalRoles: systemAdminOnly},
+		{name: "read parity status", method: http.MethodGet, path: "/api/v1/system/parity-status", globalRoles: allGlobalReaders},
 		{name: "plan archive retention", method: http.MethodPost, path: "/api/v1/archives/retention/plan", globalRoles: systemAdminOnly},
 		{name: "apply archive retention", method: http.MethodPost, path: "/api/v1/archives/retention/apply", globalRoles: systemAdminOnly},
 		{name: "read system settings", method: http.MethodGet, path: "/api/v1/system/settings", globalRoles: allGlobalReaders},

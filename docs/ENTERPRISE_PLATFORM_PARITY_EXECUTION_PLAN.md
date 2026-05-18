@@ -323,6 +323,8 @@ Before calling platform parity complete:
 6. Historical reports include provenance, completeness scoring, baseline policy, and trend analytics.
 7. Schedules honor RBAC, quotas, blackout windows, approvals, and HA reconciliation.
 
+`GET /api/v1/system/parity-status` exposes the current machine-readable parity gate summary across architecture, fleet, authoring, load modeling, monitoring, reporting, and scheduling. Each area reports status, evidence endpoints, remaining work, and release-gate participation.
+
 ## Success Metrics
 
 - Time from generator failure to operator-visible placement/drain diagnosis.
