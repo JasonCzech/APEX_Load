@@ -80,6 +80,7 @@ import './ScriptEditor.css'
 type Action = ScriptActionDefinition
 type Assertion = ScriptAssertionDefinition
 type ScriptData = ScriptDefinition
+type ValidationEvidence = Pick<ScriptValidationResponse, 'data_source_fit' | 'ai_guardrails' | 'authoring_health'>
 
 type ReplaySnapshot = BrowserReplaySnapshot
 type ReplayActionEvent = BrowserReplayEvent
@@ -650,6 +651,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   }, [setOpenSections])
   const selectedBrowserEngine = script.config.browser?.engine || 'chromium'
   const [assistantChangeLog, setAssistantChangeLog] = useState<AssistantChangeLogItem[]>([])
+  const [validationEvidence, setValidationEvidence] = useState<ValidationEvidence | null>(null)
   const authoringIssues = collectAuthoringIssues(script)
   const actionIssueBuckets = groupIssuesByAction(authoringIssues, script.actions.length)
   const scriptLevelIssues = authoringIssues.filter((issue) => typeof issue.actionIndex !== 'number')
@@ -1452,6 +1454,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
 
   const handleSave = async () => {
     setError(''); setSuccess(''); setWarnings([]); setSaving(true)
+    setValidationEvidence(null)
     try {
       const currentScript = resolveCurrentScript()
       let savedScript: StoredScript
@@ -1472,6 +1475,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     setError('')
     setSuccess('')
     setWarnings([])
+    setValidationEvidence(null)
     setValidating(true)
     try {
       const currentScript = resolveCurrentScript()
@@ -1480,6 +1484,11 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         : await api.validateDraftScript(currentScript, projectId, folderId)
       const validationScript = applyValidationRuntimeSettingsMetadata(currentScript, res)
       const validationWarnings = normalizeWarnings(res.warnings)
+      setValidationEvidence({
+        data_source_fit: res.data_source_fit,
+        ai_guardrails: res.ai_guardrails,
+        authoring_health: res.authoring_health,
+      })
       setWarnings(validationWarnings)
       if (jsonMode || validationScript !== currentScript) {
         setScript(validationScript)
@@ -1492,6 +1501,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     } catch (e: unknown) {
       const validationWarnings = normalizeWarnings(getErrorWarnings(e))
       setWarnings(validationWarnings)
+      setValidationEvidence(null)
       setError(getErrorMessage(e, 'Script validation failed'))
     } finally {
       setValidating(false)
@@ -2382,6 +2392,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
           </div>
         )}
         {success && <div className="editor-toast success">{success}</div>}
+        {validationEvidence && <ValidationEvidencePanel evidence={validationEvidence} />}
       </div>
 
       {jsonMode ? (
@@ -5545,6 +5556,80 @@ function ActionParameterMenu({ selectionState, onOpenParameterEditor }: ActionPa
       )}
     </div>
   )
+}
+
+function ValidationEvidencePanel({ evidence }: { evidence: ValidationEvidence }) {
+  const dataFit = evidence.data_source_fit
+  const aiGuardrails = evidence.ai_guardrails
+  const health = evidence.authoring_health
+  if (!dataFit && !aiGuardrails && !health) {
+    return null
+  }
+
+  return (
+    <div className="validation-evidence-panel">
+      {health && (
+        <div className="validation-evidence-summary">
+          <strong>Authoring Health</strong>
+          <span className={`validation-evidence-status ${health.status}`}>{formatValidationStatus(health.status)} · {health.score}</span>
+        </div>
+      )}
+      {dataFit && (
+        <section className="validation-evidence-section">
+          <div className="validation-evidence-section-header">
+            <strong>Data-Source Fit</strong>
+            <span className={`validation-evidence-status ${dataFit.status}`}>{formatValidationStatus(dataFit.status)}</span>
+          </div>
+          {dataFit.items.length === 0 ? (
+            <p>Data sources match referenced parameters and modeled row usage.</p>
+          ) : (
+            <ul>
+              {dataFit.items.slice(0, 5).map((item, index) => (
+                <li key={`${item.data_source || 'source'}:${item.parameter || 'parameter'}:${item.column || 'column'}:${index}`}>
+                  <span className={`validation-evidence-status ${item.status}`}>{formatValidationStatus(item.status)}</span>
+                  <span>{item.summary}</span>
+                  <small>{formatDataSourceFitContext(item)}</small>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
+      {aiGuardrails && (
+        <section className="validation-evidence-section">
+          <div className="validation-evidence-section-header">
+            <strong>AI Draft Guardrails</strong>
+            <span className={`validation-evidence-status ${aiGuardrails.status}`}>{formatValidationStatus(aiGuardrails.status)}</span>
+          </div>
+          <ul>
+            {aiGuardrails.items.map(item => (
+              <li key={item.key}>
+                <span className={`validation-evidence-status ${item.status}`}>{formatValidationStatus(item.status)}</span>
+                <span>{item.summary}</span>
+                <small>{formatValidationStatus(item.key)}</small>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+    </div>
+  )
+}
+
+function formatValidationStatus(value: string): string {
+  const text = String(value || '').trim()
+  if (!text) return 'Unknown'
+  return text.replace(/_/g, ' ').replace(/\b\w/g, char => char.toUpperCase())
+}
+
+function formatDataSourceFitContext(item: NonNullable<ValidationEvidence['data_source_fit']>['items'][number]): string {
+  const parts = [
+    item.data_source ? `Source ${item.data_source}` : '',
+    item.parameter ? `Parameter ${item.parameter}` : '',
+    item.column ? `Column ${item.column}` : '',
+    item.required_rows || item.available_rows ? `${item.available_rows || 0}/${item.required_rows || 0} rows` : '',
+  ].filter(Boolean)
+  return parts.join(' · ')
 }
 
 function useScriptEditorState(initialScript?: ScriptData | null) {

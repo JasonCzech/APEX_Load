@@ -98,6 +98,8 @@ Validation responses also include `data_source_fit` when a draft declares data s
 
 AI-generated drafts include `ai_guardrails` in validation responses when `generated_by`, `generated_from`, or import source metadata identifies an AI/LLM source. Guardrails require source provenance, structural validation, diff-review evidence, and replay-before-save evidence. Missing guardrail evidence contributes to `authoring_health.status = blocked`, so AI drafts cannot be approved into reusable assets until review and replay proof are attached.
 
+The ScriptEditor renders validation evidence for both reports after draft or saved-script validation. Authors see authoring health, data-source fit status, row-count context, and AI guardrail blockers in the same validation flow used before replay, save, or approval.
+
 ## Plan Mapping
 
 | Plan item | Status | Artifact |
@@ -108,6 +110,6 @@ AI-generated drafts include `ai_guardrails` in validation responses when `genera
 | P3.4 Authoring session persistence | Complete for API and SQLite persistence | `authoring_sessions` table and session CRUD endpoints |
 | P3.5 Approval handoff | Partial backend/UI complete | Session approval validates health, stores reusable scripts, stamps approval metadata, and the Scripts dashboard exposes resume/approve/discard actions for open sessions |
 | P3.6 Guided correlation repair | Partial backend/UI complete | Session correlation preview/apply returns extractor insertion and sample-replacement diffs; dashboard review queue can preview/apply repairs and display diff summaries |
-| P3.7 Data-source fit checks | Partial backend complete | Validation responses include `data_source_fit` and health scoring for source/column/row-count readiness |
+| P3.7 Data-source fit checks | Partial backend/UI complete | Validation responses include `data_source_fit` and health scoring for source/column/row-count readiness; ScriptEditor displays fit evidence after validation |
 | P3.8 Protocol starter templates | Partial backend/UI complete | `GET /api/v1/scripts/authoring/templates` returns validated protocol starter DSLs and scenario hints; dashboard create flow opens selected templates in the shared draft editor |
-| P3.9 AI generation guardrails | Partial backend complete | Validation responses include `ai_guardrails` and block approval health without provenance, diff review, validation, and replay evidence |
+| P3.9 AI generation guardrails | Partial backend/UI complete | Validation responses include `ai_guardrails`, block approval health without provenance, diff review, validation, and replay evidence, and ScriptEditor displays guardrail evidence after validation |

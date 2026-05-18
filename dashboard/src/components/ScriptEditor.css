@@ -16,6 +16,86 @@
 .editor-toast.success { background: rgba(34,197,94,0.12); color: var(--success); border: 1px solid rgba(34,197,94,0.2); }
 .editor-toast.warning { background: rgba(245,158,11,0.12); color: #f59e0b; border: 1px solid rgba(245,158,11,0.24); }
 .editor-toast.warning > div + div { margin-top: 4px; }
+.validation-evidence-panel {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-card);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.validation-evidence-summary,
+.validation-evidence-section-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+.validation-evidence-summary strong,
+.validation-evidence-section-header strong {
+  font-size: 13px;
+}
+.validation-evidence-status {
+  width: fit-content;
+  border: 1px solid rgba(99,102,241,0.35);
+  border-radius: 999px;
+  padding: 3px 8px;
+  color: var(--accent);
+  background: rgba(99,102,241,0.1);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.validation-evidence-status.ready,
+.validation-evidence-status.pass {
+  border-color: rgba(34,197,94,0.35);
+  color: var(--success);
+  background: rgba(34,197,94,0.1);
+}
+.validation-evidence-status.blocked,
+.validation-evidence-status.blocker {
+  border-color: rgba(239,68,68,0.35);
+  color: #fca5a5;
+  background: rgba(239,68,68,0.1);
+}
+.validation-evidence-status.needs_review,
+.validation-evidence-status.warning {
+  border-color: rgba(245,158,11,0.35);
+  color: #f59e0b;
+  background: rgba(245,158,11,0.1);
+}
+.validation-evidence-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.validation-evidence-section p {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.validation-evidence-section ul {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.validation-evidence-section li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 6px 10px;
+  align-items: start;
+}
+.validation-evidence-section li > span:not(.validation-evidence-status) {
+  color: var(--text-primary);
+  font-size: 12px;
+}
+.validation-evidence-section li small {
+  grid-column: 2;
+  color: var(--text-muted);
+  font-size: 11px;
+}
 @keyframes slideIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
 
 /* JSON mode */

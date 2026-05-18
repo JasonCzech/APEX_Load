@@ -766,6 +766,66 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('Draft browser config will use Chromium defaults.')
   })
 
+  it('surfaces validation data-source fit and AI guardrail evidence', async () => {
+    apiMock.validateDraftScript.mockResolvedValueOnce({
+      script_id: '',
+      valid: true,
+      issues: [],
+      warnings: [],
+      data_source_fit: {
+        status: 'blocked',
+        status_counts: { ready: 0, needs_review: 0, blocked: 1 },
+        items: [{
+          data_source: 'users',
+          parameter: 'login_email',
+          column: 'email',
+          status: 'blocked',
+          required_rows: 10,
+          available_rows: 3,
+          summary: 'Unique data usage requires more rows than the data source provides.',
+        }],
+      },
+      ai_guardrails: {
+        status: 'blocked',
+        status_counts: { ready: 2, needs_review: 0, blocked: 2 },
+        items: [
+          { key: 'provenance', status: 'ready', summary: 'AI source provenance is attached.' },
+          { key: 'replay_before_save', status: 'blocked', summary: 'AI-generated drafts require replay evidence before promotion.' },
+        ],
+      },
+      authoring_health: {
+        score: 58,
+        status: 'blocked',
+        inputs: [],
+      },
+    })
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={initialScript} projectId="project-1" />)
+    })
+
+    const validateButton = Array.from(container.querySelectorAll('button')).find(button =>
+      button.textContent?.trim() === 'Validate Draft',
+    )
+    expect(validateButton).toBeDefined()
+    if (!validateButton) {
+      return
+    }
+
+    await act(async () => {
+      validateButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('Authoring Health')
+    expect(container.textContent).toContain('Blocked · 58')
+    expect(container.textContent).toContain('Data-Source Fit')
+    expect(container.textContent).toContain('Unique data usage requires more rows than the data source provides.')
+    expect(container.textContent).toContain('Source users · Parameter login_email · Column email · 3/10 rows')
+    expect(container.textContent).toContain('AI Draft Guardrails')
+    expect(container.textContent).toContain('AI-generated drafts require replay evidence before promotion.')
+  })
+
   it('refreshes imported runtime parity metadata from validation responses', async () => {
     const importedScript: ScriptDefinition = {
       ...initialScript,

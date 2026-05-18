@@ -459,6 +459,45 @@ export interface ScriptValidationMigrationReadiness {
   policy?: ScriptValidationMigrationPolicy
 }
 
+export interface DataSourceFitItem {
+  data_source?: string
+  parameter?: string
+  column?: string
+  status: string
+  required_rows?: number
+  available_rows?: number
+  summary: string
+}
+
+export interface DataSourceFitReport {
+  status: string
+  status_counts?: Record<string, number>
+  items: DataSourceFitItem[]
+}
+
+export interface AIGuardrailItem {
+  key: string
+  status: string
+  summary: string
+}
+
+export interface AIGuardrailReport {
+  status: string
+  status_counts?: Record<string, number>
+  items: AIGuardrailItem[]
+}
+
+export interface ScriptValidationAuthoringHealth {
+  score: number
+  status: string
+  inputs?: Array<{
+    key: string
+    status: string
+    count?: number
+    summary?: string
+  }>
+}
+
 export interface ScriptValidationResponse {
   script_id: string
   valid: boolean
@@ -467,6 +506,9 @@ export interface ScriptValidationResponse {
   runtime_settings_parity?: ScriptValidationRuntimeSettingParity[]
   runtime_settings_status_counts?: Record<string, number>
   migration_readiness?: ScriptValidationMigrationReadiness
+  data_source_fit?: DataSourceFitReport
+  ai_guardrails?: AIGuardrailReport
+  authoring_health?: ScriptValidationAuthoringHealth
 }
 
 export interface ScriptExportResponse {
