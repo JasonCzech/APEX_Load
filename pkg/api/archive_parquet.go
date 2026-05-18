@@ -59,20 +59,23 @@ type parquetResourceSample struct {
 }
 
 type parquetIntervalSummary struct {
-	TimestampUnixMs  int64   `parquet:"name=timestamp_unix_ms, type=INT64"`
-	TimestampRFC3339 string  `parquet:"name=timestamp_rfc3339, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
-	TestID           string  `parquet:"name=test_id, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
-	TestName         string  `parquet:"name=test_name, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
-	ActiveVUsers     int64   `parquet:"name=active_vusers, type=INT64"`
-	TPS              float64 `parquet:"name=tps, type=DOUBLE"`
-	AvgResponseMs    float64 `parquet:"name=avg_response_ms, type=DOUBLE"`
-	ErrorPct         float64 `parquet:"name=error_pct, type=DOUBLE"`
-	TotalTx          int64   `parquet:"name=total_transactions, type=INT64"`
-	TotalErrors      int64   `parquet:"name=total_errors, type=INT64"`
-	P50Ms            float64 `parquet:"name=p50_ms, type=DOUBLE"`
-	P90Ms            float64 `parquet:"name=p90_ms, type=DOUBLE"`
-	P95Ms            float64 `parquet:"name=p95_ms, type=DOUBLE"`
-	P99Ms            float64 `parquet:"name=p99_ms, type=DOUBLE"`
+	TimestampUnixMs        int64   `parquet:"name=timestamp_unix_ms, type=INT64"`
+	TimestampRFC3339       string  `parquet:"name=timestamp_rfc3339, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	TestID                 string  `parquet:"name=test_id, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	TestName               string  `parquet:"name=test_name, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	ActiveVUsers           int64   `parquet:"name=active_vusers, type=INT64"`
+	TPS                    float64 `parquet:"name=tps, type=DOUBLE"`
+	TargetTPS              float64 `parquet:"name=target_tps, type=DOUBLE"`
+	ThroughputGapPct       float64 `parquet:"name=throughput_gap_pct, type=DOUBLE"`
+	ThroughputTargetMissed bool    `parquet:"name=throughput_target_missed, type=BOOLEAN"`
+	AvgResponseMs          float64 `parquet:"name=avg_response_ms, type=DOUBLE"`
+	ErrorPct               float64 `parquet:"name=error_pct, type=DOUBLE"`
+	TotalTx                int64   `parquet:"name=total_transactions, type=INT64"`
+	TotalErrors            int64   `parquet:"name=total_errors, type=INT64"`
+	P50Ms                  float64 `parquet:"name=p50_ms, type=DOUBLE"`
+	P90Ms                  float64 `parquet:"name=p90_ms, type=DOUBLE"`
+	P95Ms                  float64 `parquet:"name=p95_ms, type=DOUBLE"`
+	P99Ms                  float64 `parquet:"name=p99_ms, type=DOUBLE"`
 }
 
 func writeArchiveParquetFiles(rootDir string, manifest *RunArchiveManifest) error {
@@ -212,20 +215,23 @@ func toParquetSummaries(items []IntervalSummaryRecord) []parquetIntervalSummary 
 	rows := make([]parquetIntervalSummary, 0, len(items))
 	for _, item := range items {
 		rows = append(rows, parquetIntervalSummary{
-			TimestampUnixMs:  item.Timestamp.UnixMilli(),
-			TimestampRFC3339: item.Timestamp.Format(time.RFC3339Nano),
-			TestID:           item.TestID,
-			TestName:         item.TestName,
-			ActiveVUsers:     item.ActiveVUsers,
-			TPS:              item.TPS,
-			AvgResponseMs:    item.AvgResponseMs,
-			ErrorPct:         item.ErrorPct,
-			TotalTx:          item.TotalTx,
-			TotalErrors:      item.TotalErrors,
-			P50Ms:            item.P50Ms,
-			P90Ms:            item.P90Ms,
-			P95Ms:            item.P95Ms,
-			P99Ms:            item.P99Ms,
+			TimestampUnixMs:        item.Timestamp.UnixMilli(),
+			TimestampRFC3339:       item.Timestamp.Format(time.RFC3339Nano),
+			TestID:                 item.TestID,
+			TestName:               item.TestName,
+			ActiveVUsers:           item.ActiveVUsers,
+			TPS:                    item.TPS,
+			TargetTPS:              item.TargetTPS,
+			ThroughputGapPct:       item.ThroughputGapPct,
+			ThroughputTargetMissed: item.ThroughputTargetMissed,
+			AvgResponseMs:          item.AvgResponseMs,
+			ErrorPct:               item.ErrorPct,
+			TotalTx:                item.TotalTx,
+			TotalErrors:            item.TotalErrors,
+			P50Ms:                  item.P50Ms,
+			P90Ms:                  item.P90Ms,
+			P95Ms:                  item.P95Ms,
+			P99Ms:                  item.P99Ms,
 		})
 	}
 	return rows

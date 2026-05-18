@@ -295,6 +295,11 @@ var runArchiveReportTemplate = template.Must(template.New("run-archive-report").
           <span class="metric-value">{{formatFloat .Report.Overview.PeakTPS}}</span>
         </div>
         <div class="metric">
+          <span class="metric-label">Throughput Gap</span>
+          <span class="metric-value">{{formatPercent .Report.Overview.MaxThroughputGapPct}}</span>
+          <p class="muted">{{.Report.Overview.ThroughputMissedIntervals}} missed interval(s), target {{formatFloat .Report.Overview.PeakTargetTPS}} TPS</p>
+        </div>
+        <div class="metric">
           <span class="metric-label">Peak Active VUsers</span>
           <span class="metric-value">{{.Report.Overview.PeakActiveVUsers}}</span>
         </div>
@@ -319,6 +324,8 @@ var runArchiveReportTemplate = template.Must(template.New("run-archive-report").
             <th>Timestamp</th>
             <th>Active VUsers</th>
             <th>TPS</th>
+            <th>Target TPS</th>
+            <th>Gap</th>
             <th>P95 (ms)</th>
             <th>Error %</th>
             <th>Total Tx</th>
@@ -331,6 +338,8 @@ var runArchiveReportTemplate = template.Must(template.New("run-archive-report").
             <td>{{formatTime .Timestamp}}</td>
             <td>{{.ActiveVUsers}}</td>
             <td>{{formatFloat .TPS}}</td>
+            <td>{{formatFloat .TargetTPS}}</td>
+            <td><span class="status {{if .ThroughputTargetMissed}}danger{{end}}">{{formatPercent .ThroughputGapPct}}</span></td>
             <td>{{formatFloat .P95Ms}}</td>
             <td>{{formatPercent .ErrorPct}}</td>
             <td>{{.TotalTx}}</td>

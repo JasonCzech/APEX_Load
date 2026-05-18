@@ -146,3 +146,98 @@ func TestBuildRunArchiveReportGroupsByNetworkProfile(t *testing.T) {
 		t.Fatalf("custom network profile stats = %#v, want one tx", report.ByNetworkProfile["custom:latency=200ms"])
 	}
 }
+
+func TestBuildRunArchiveReportIncludesThroughputGapEvidence(t *testing.T) {
+	tempDir := t.TempDir()
+	manifest := RunArchiveManifest{
+		TestID:                "test-throughput-gap",
+		TestName:              "Open Workload",
+		TransactionsFile:      "transactions.jsonl",
+		ResourceSamplesFile:   "resources.jsonl",
+		IntervalSummariesFile: "interval_summaries.jsonl",
+	}
+	manifestBytes, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatalf("marshal manifest: %v", err)
+	}
+	manifestPath := filepath.Join(tempDir, "manifest.json")
+	if err := os.WriteFile(manifestPath, manifestBytes, 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+	for _, name := range []string{manifest.TransactionsFile, manifest.ResourceSamplesFile} {
+		if err := os.WriteFile(filepath.Join(tempDir, name), nil, 0o644); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+	summaryFile, err := os.Create(filepath.Join(tempDir, manifest.IntervalSummariesFile))
+	if err != nil {
+		t.Fatalf("create summaries: %v", err)
+	}
+	encoder := json.NewEncoder(summaryFile)
+	start := time.Date(2026, time.May, 18, 14, 0, 0, 0, time.UTC)
+	for _, summary := range []IntervalSummaryRecord{
+		{Timestamp: start, TestID: manifest.TestID, TestName: manifest.TestName, ActiveVUsers: 5, TPS: 24, TargetTPS: 25, ThroughputGapPct: 4, TotalTx: 24},
+		{Timestamp: start.Add(time.Second), TestID: manifest.TestID, TestName: manifest.TestName, ActiveVUsers: 8, TPS: 18, TargetTPS: 25, ThroughputGapPct: 28, ThroughputTargetMissed: true, TotalTx: 42},
+	} {
+		if err := encoder.Encode(summary); err != nil {
+			t.Fatalf("encode summary: %v", err)
+		}
+	}
+	if err := summaryFile.Close(); err != nil {
+		t.Fatalf("close summaries: %v", err)
+	}
+
+	report, err := buildRunArchiveReport(&storage.RunArchiveRecord{ArchivePath: tempDir, ManifestPath: manifestPath})
+	if err != nil {
+		t.Fatalf("buildRunArchiveReport returned error: %v", err)
+	}
+	if report.Overview.PeakTargetTPS != 25 {
+		t.Fatalf("peak target TPS = %v, want 25", report.Overview.PeakTargetTPS)
+	}
+	if report.Overview.MaxThroughputGapPct != 28 {
+		t.Fatalf("max throughput gap = %v, want 28", report.Overview.MaxThroughputGapPct)
+	}
+	if report.Overview.ThroughputMissedIntervals != 1 {
+		t.Fatalf("missed intervals = %d, want 1", report.Overview.ThroughputMissedIntervals)
+	}
+	if len(report.SummaryTimeline) != 2 {
+		t.Fatalf("summary timeline len = %d, want 2", len(report.SummaryTimeline))
+	}
+	if !report.SummaryTimeline[1].ThroughputTargetMissed || report.SummaryTimeline[1].ThroughputGapPct != 28 {
+		t.Fatalf("summary timeline[1] = %#v, want archived throughput miss", report.SummaryTimeline[1])
+	}
+}
+
+func TestRunArchiveWriterPersistsThroughputGapSummary(t *testing.T) {
+	t.Setenv("STORMRUNNER_ARCHIVE_DIR", t.TempDir())
+	writer, err := newRunArchiveWriter(&ManagedTest{ID: "test-throughput-persist", Name: "Open Persist"}, RunArchiveProvenance{})
+	if err != nil {
+		t.Fatalf("newRunArchiveWriter returned error: %v", err)
+	}
+	if err := writer.RecordIntervalSummary(&LiveMetrics{
+		Timestamp:              time.Date(2026, time.May, 18, 15, 0, 0, 0, time.UTC),
+		ActiveVUsers:           12,
+		TPS:                    40,
+		TargetTPS:              50,
+		ThroughputGapPct:       20,
+		ThroughputTargetMissed: true,
+		TotalTx:                40,
+	}); err != nil {
+		t.Fatalf("RecordIntervalSummary returned error: %v", err)
+	}
+	record, err := writer.Finalize("COMPLETE", time.Now(), "", false, nil)
+	if err != nil {
+		t.Fatalf("Finalize returned error: %v", err)
+	}
+
+	summaries, err := readAllArchiveSummaries(record)
+	if err != nil {
+		t.Fatalf("readAllArchiveSummaries returned error: %v", err)
+	}
+	if len(summaries) != 1 {
+		t.Fatalf("summaries len = %d, want 1", len(summaries))
+	}
+	if summaries[0].TargetTPS != 50 || summaries[0].ThroughputGapPct != 20 || !summaries[0].ThroughputTargetMissed {
+		t.Fatalf("summary = %#v, want throughput gap evidence persisted", summaries[0])
+	}
+}

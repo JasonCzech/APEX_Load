@@ -124,21 +124,24 @@ type ResourceSample struct {
 }
 
 type IntervalSummaryRecord struct {
-	Timestamp       time.Time                            `json:"timestamp"`
-	TestID          string                               `json:"test_id"`
-	TestName        string                               `json:"test_name"`
-	ActiveVUsers    int64                                `json:"active_vusers"`
-	TPS             float64                              `json:"tps"`
-	AvgResponseMs   float64                              `json:"avg_response_ms"`
-	ErrorPct        float64                              `json:"error_pct"`
-	TotalTx         int64                                `json:"total_transactions"`
-	TotalErrors     int64                                `json:"total_errors"`
-	P50Ms           float64                              `json:"p50_ms"`
-	P90Ms           float64                              `json:"p90_ms"`
-	P95Ms           float64                              `json:"p95_ms"`
-	P99Ms           float64                              `json:"p99_ms"`
-	Browser         *BrowserLiveMetrics                  `json:"browser,omitempty"`
-	BrowserByDevice map[string]*BrowserDeviceLiveMetrics `json:"browser_by_device,omitempty"`
+	Timestamp              time.Time                            `json:"timestamp"`
+	TestID                 string                               `json:"test_id"`
+	TestName               string                               `json:"test_name"`
+	ActiveVUsers           int64                                `json:"active_vusers"`
+	TPS                    float64                              `json:"tps"`
+	TargetTPS              float64                              `json:"target_tps,omitempty"`
+	ThroughputGapPct       float64                              `json:"throughput_gap_pct,omitempty"`
+	ThroughputTargetMissed bool                                 `json:"throughput_target_missed,omitempty"`
+	AvgResponseMs          float64                              `json:"avg_response_ms"`
+	ErrorPct               float64                              `json:"error_pct"`
+	TotalTx                int64                                `json:"total_transactions"`
+	TotalErrors            int64                                `json:"total_errors"`
+	P50Ms                  float64                              `json:"p50_ms"`
+	P90Ms                  float64                              `json:"p90_ms"`
+	P95Ms                  float64                              `json:"p95_ms"`
+	P99Ms                  float64                              `json:"p99_ms"`
+	Browser                *BrowserLiveMetrics                  `json:"browser,omitempty"`
+	BrowserByDevice        map[string]*BrowserDeviceLiveMetrics `json:"browser_by_device,omitempty"`
 }
 
 type archivePage struct {
@@ -192,13 +195,16 @@ type BrowserResourceTiming struct {
 }
 
 type RunArchiveSummaryPoint struct {
-	Timestamp    time.Time `json:"timestamp"`
-	ActiveVUsers int64     `json:"active_vusers"`
-	TPS          float64   `json:"tps"`
-	ErrorPct     float64   `json:"error_pct"`
-	P95Ms        float64   `json:"p95_ms"`
-	TotalTx      int64     `json:"total_transactions"`
-	TotalErrors  int64     `json:"total_errors"`
+	Timestamp              time.Time `json:"timestamp"`
+	ActiveVUsers           int64     `json:"active_vusers"`
+	TPS                    float64   `json:"tps"`
+	TargetTPS              float64   `json:"target_tps,omitempty"`
+	ThroughputGapPct       float64   `json:"throughput_gap_pct,omitempty"`
+	ThroughputTargetMissed bool      `json:"throughput_target_missed,omitempty"`
+	ErrorPct               float64   `json:"error_pct"`
+	P95Ms                  float64   `json:"p95_ms"`
+	TotalTx                int64     `json:"total_transactions"`
+	TotalErrors            int64     `json:"total_errors"`
 }
 
 type RunArchiveErrorPattern struct {
@@ -257,17 +263,20 @@ type BrowserPlatformLiveMetrics struct {
 }
 
 type RunArchiveOverview struct {
-	Transactions      int64               `json:"transactions"`
-	Errors            int64               `json:"errors"`
-	ErrorPct          float64             `json:"error_pct"`
-	AvgResponseMs     float64             `json:"avg_response_ms"`
-	MinResponseMs     float64             `json:"min_response_ms"`
-	MaxResponseMs     float64             `json:"max_response_ms"`
-	ResourceSamples   int64               `json:"resource_samples"`
-	IntervalSummaries int64               `json:"interval_summaries"`
-	PeakTPS           float64             `json:"peak_tps"`
-	PeakActiveVUsers  int64               `json:"peak_active_vusers"`
-	Browser           *BrowserLiveMetrics `json:"browser,omitempty"`
+	Transactions              int64               `json:"transactions"`
+	Errors                    int64               `json:"errors"`
+	ErrorPct                  float64             `json:"error_pct"`
+	AvgResponseMs             float64             `json:"avg_response_ms"`
+	MinResponseMs             float64             `json:"min_response_ms"`
+	MaxResponseMs             float64             `json:"max_response_ms"`
+	ResourceSamples           int64               `json:"resource_samples"`
+	IntervalSummaries         int64               `json:"interval_summaries"`
+	PeakTPS                   float64             `json:"peak_tps"`
+	PeakTargetTPS             float64             `json:"peak_target_tps,omitempty"`
+	MaxThroughputGapPct       float64             `json:"max_throughput_gap_pct,omitempty"`
+	ThroughputMissedIntervals int64               `json:"throughput_missed_intervals,omitempty"`
+	PeakActiveVUsers          int64               `json:"peak_active_vusers"`
+	Browser                   *BrowserLiveMetrics `json:"browser,omitempty"`
 }
 
 type RunArchiveActionStats struct {
@@ -541,21 +550,24 @@ func (w *runArchiveWriter) RecordIntervalSummary(live *LiveMetrics) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	record := IntervalSummaryRecord{
-		Timestamp:       live.Timestamp,
-		TestID:          w.manifest.TestID,
-		TestName:        w.manifest.TestName,
-		ActiveVUsers:    live.ActiveVUsers,
-		TPS:             live.TPS,
-		AvgResponseMs:   live.AvgResponseMs,
-		ErrorPct:        live.ErrorPct,
-		TotalTx:         live.TotalTx,
-		TotalErrors:     live.TotalErrors,
-		P50Ms:           live.P50Ms,
-		P90Ms:           live.P90Ms,
-		P95Ms:           live.P95Ms,
-		P99Ms:           live.P99Ms,
-		Browser:         cloneBrowserLiveMetrics(live.Browser),
-		BrowserByDevice: cloneBrowserByDeviceMetrics(live.BrowserByDevice),
+		Timestamp:              live.Timestamp,
+		TestID:                 w.manifest.TestID,
+		TestName:               w.manifest.TestName,
+		ActiveVUsers:           live.ActiveVUsers,
+		TPS:                    live.TPS,
+		TargetTPS:              live.TargetTPS,
+		ThroughputGapPct:       live.ThroughputGapPct,
+		ThroughputTargetMissed: live.ThroughputTargetMissed,
+		AvgResponseMs:          live.AvgResponseMs,
+		ErrorPct:               live.ErrorPct,
+		TotalTx:                live.TotalTx,
+		TotalErrors:            live.TotalErrors,
+		P50Ms:                  live.P50Ms,
+		P90Ms:                  live.P90Ms,
+		P95Ms:                  live.P95Ms,
+		P99Ms:                  live.P99Ms,
+		Browser:                cloneBrowserLiveMetrics(live.Browser),
+		BrowserByDevice:        cloneBrowserByDeviceMetrics(live.BrowserByDevice),
 	}
 	if err := w.summaryEncoder.Encode(record); err != nil {
 		return err
@@ -918,17 +930,29 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 		if summary.TPS > report.Overview.PeakTPS {
 			report.Overview.PeakTPS = summary.TPS
 		}
+		if summary.TargetTPS > report.Overview.PeakTargetTPS {
+			report.Overview.PeakTargetTPS = summary.TargetTPS
+		}
+		if summary.ThroughputGapPct > report.Overview.MaxThroughputGapPct {
+			report.Overview.MaxThroughputGapPct = summary.ThroughputGapPct
+		}
+		if summary.ThroughputTargetMissed {
+			report.Overview.ThroughputMissedIntervals++
+		}
 		if summary.ActiveVUsers > report.Overview.PeakActiveVUsers {
 			report.Overview.PeakActiveVUsers = summary.ActiveVUsers
 		}
 		report.SummaryTimeline = append(report.SummaryTimeline, RunArchiveSummaryPoint{
-			Timestamp:    summary.Timestamp,
-			ActiveVUsers: summary.ActiveVUsers,
-			TPS:          summary.TPS,
-			ErrorPct:     summary.ErrorPct,
-			P95Ms:        summary.P95Ms,
-			TotalTx:      summary.TotalTx,
-			TotalErrors:  summary.TotalErrors,
+			Timestamp:              summary.Timestamp,
+			ActiveVUsers:           summary.ActiveVUsers,
+			TPS:                    summary.TPS,
+			TargetTPS:              summary.TargetTPS,
+			ThroughputGapPct:       summary.ThroughputGapPct,
+			ThroughputTargetMissed: summary.ThroughputTargetMissed,
+			ErrorPct:               summary.ErrorPct,
+			P95Ms:                  summary.P95Ms,
+			TotalTx:                summary.TotalTx,
+			TotalErrors:            summary.TotalErrors,
 		})
 	}
 

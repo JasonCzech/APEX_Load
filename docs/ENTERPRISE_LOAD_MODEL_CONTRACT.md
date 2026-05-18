@@ -98,3 +98,4 @@ The first template catalog covers:
 | P4.5 Rendezvous points | Complete | Runtime `rendezvous` actions synchronize VUsers and validation reports spike readiness |
 | P4.6 Global goals | Partial backend complete | Runtime enforces group-level `global_iterations` and `max_transactions` across VUsers |
 | P4.7 Once-only scopes | Partial backend complete | Multi-group runtime honors `initialization: at_once` for group-level init/teardown |
+| P4.8 Coordinated-omission reporting | Partial backend complete | Archive interval summaries, JSON reports, HTML reports, and Parquet exports preserve target TPS, throughput gap, and miss flags |
