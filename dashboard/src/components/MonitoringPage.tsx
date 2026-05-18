@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, type DragEvent, type ReactNo
 import { type WebSocketConnectionState } from '../hooks/useWebSocket'
 import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
-import { FleetAlert, FleetCapacityResponse, HealthResponse, ParityStatusResponse, ScenarioScheduleHealth, SystemInventoryResponse, TelemetryDiagnosticEntry, TestSummary } from '../types'
+import { FleetAlert, FleetCapacityResponse, HealthResponse, ParityStatusResponse, ScenarioScheduleHealth, SystemInventoryResponse, SystemReadinessResponse, TelemetryDiagnosticEntry, TestSummary } from '../types'
 import { formatTelemetryDiagnosticTime, telemetryDiagnosticSeverityClass } from './monitoringTelemetryDiagnostics'
 
 interface Props {
@@ -13,12 +13,43 @@ interface Props {
 const EMPTY_GENERATORS: SystemInventoryResponse['generators'] = []
 const EMPTY_PARITY_AREAS: ParityStatusResponse['areas'] = []
 
+function formatReadinessStatus(status?: string): string {
+  switch (status) {
+    case 'ready':
+      return 'Ready'
+    case 'degraded':
+      return 'Degraded'
+    case 'not_ready':
+      return 'Not Ready'
+    default:
+      return status || 'checking'
+  }
+}
+
+function formatReadinessCheckName(name: string): string {
+  const labels: Record<string, string> = {
+    metadata_store: 'Metadata Store',
+    archive_writer: 'Archive Writer',
+    generator_rpc: 'Generator RPC',
+    telemetry_fanout: 'Telemetry Fan-out',
+    auth_mode: 'Auth Mode',
+    scheduler_state: 'Scheduler State',
+  }
+  if (labels[name]) return labels[name]
+  return name
+    .split('_')
+    .filter(Boolean)
+    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
+}
+
 export default function MonitoringPage({ connectionState, telemetryDiagnostics = [] }: Props) {
   const api = useApi()
   const { activeProject } = useProject()
   const [health, setHealth] = useState<HealthResponse | null>(null)
   const [scheduleHealth, setScheduleHealth] = useState<ScenarioScheduleHealth | null>(null)
   const [inventory, setInventory] = useState<SystemInventoryResponse | null>(null)
+  const [systemReadiness, setSystemReadiness] = useState<SystemReadinessResponse | null>(null)
   const [parityStatus, setParityStatus] = useState<ParityStatusResponse | null>(null)
   const [fleetAlerts, setFleetAlerts] = useState<FleetAlert[]>([])
   const [fleetCapacity, setFleetCapacity] = useState<FleetCapacityResponse | null>(null)
@@ -104,16 +135,28 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const parityHeaderLabel = parityStatus
     ? parityStatus.overall
     : 'checking'
+  const readinessReadyCount = systemReadiness?.checks.filter(check => check.status === 'ready').length ?? 0
+  const readinessDegradedCount = systemReadiness?.checks.filter(check => check.status === 'degraded').length ?? 0
+  const readinessBlockedCount = systemReadiness?.checks.filter(check => check.status === 'not_ready').length ?? 0
+  const readinessHeaderSeverity = systemReadiness?.status === 'not_ready'
+    ? 'danger'
+    : systemReadiness?.status === 'degraded'
+      ? 'warning'
+      : systemReadiness?.status === 'ready'
+        ? 'healthy'
+        : 'unknown'
+  const readinessHeaderLabel = formatReadinessStatus(systemReadiness?.status)
 
   const refresh = useCallback(async () => {
     if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
       return
     }
     try {
-      const [healthRes, testsRes, inventoryRes, scheduleHealthRes, parityStatusRes, fleetAlertsRes, fleetCapacityRes] = await Promise.all([
+      const [healthRes, testsRes, inventoryRes, readinessRes, scheduleHealthRes, parityStatusRes, fleetAlertsRes, fleetCapacityRes] = await Promise.all([
         api.getHealth(),
         api.listTests(activeProject?.id ? { project_id: activeProject.id } : undefined).catch(() => ({ tests: [] })),
         api.getSystemInventory().catch(() => null),
+        api.getSystemReadiness().catch(() => null),
         api.getScheduleHealth().catch(() => null),
         api.getParityStatus().catch(() => null),
         api.getFleetAlerts().catch(() => ({ alerts: [] })),
@@ -122,6 +165,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       setHealth(healthRes)
       setTests(testsRes.tests || [])
       setInventory(inventoryRes)
+      setSystemReadiness(readinessRes)
       setScheduleHealth(scheduleHealthRes)
       setParityStatus(parityStatusRes)
       setFleetAlerts(fleetAlertsRes.alerts || [])
@@ -171,6 +215,52 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
             <span className="monitor-value">{health?.status || 'Checking...'}</span>
           </div>
           <p className="monitor-hint">API health is polled every 5 seconds while the page is visible.</p>
+        </div>
+      ),
+    },
+    {
+      id: 'production-readiness',
+      title: 'Production Readiness',
+      headerBadge: (
+        <span className={`monitor-header-badge ${readinessHeaderSeverity}`}>
+          {readinessHeaderLabel}
+        </span>
+      ),
+      icon: (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M20 13c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V5l8-3 8 3v8Z" />
+          <path d="m9 12 2 2 4-5" />
+        </svg>
+      ),
+      content: (
+        <div className="monitor-body">
+          <div className="monitor-row">
+            <span className="monitor-label">Ready Checks</span>
+            <span className="monitor-value">{systemReadiness ? `${readinessReadyCount}/${systemReadiness.checks.length}` : '-'}</span>
+          </div>
+          <div className="monitor-row">
+            <span className="monitor-label">Degraded</span>
+            <span className={`monitor-value ${readinessDegradedCount > 0 ? 'telemetry-text-warning' : ''}`}>{systemReadiness ? readinessDegradedCount : '-'}</span>
+          </div>
+          <div className="monitor-row">
+            <span className="monitor-label">Blocked</span>
+            <span className={`monitor-value ${readinessBlockedCount > 0 ? 'text-danger' : ''}`}>{systemReadiness ? readinessBlockedCount : '-'}</span>
+          </div>
+          {systemReadiness ? (
+            <div className="monitor-warning-list">
+              {systemReadiness.checks
+                .filter(check => check.status !== 'ready')
+                .slice(0, 4)
+                .map(check => (
+                  <p key={check.name} className={check.status === 'not_ready' ? 'text-danger' : ''}>
+                    {formatReadinessCheckName(check.name)}: {check.message}
+                  </p>
+                ))}
+              {systemReadiness.checks.every(check => check.status === 'ready') && <p>All production readiness checks are passing.</p>}
+            </div>
+          ) : (
+            <p className="monitor-hint">Waiting for /api/v1/system/readiness.</p>
+          )}
         </div>
       ),
     },
@@ -620,7 +710,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
         </div>
       ),
     },
-  ], [controllerGeneratorInventoryLabel, controllerHeaderSeverity, controllerStatusLabel, fleetAlertHeaderLabel, fleetAlertHeaderSeverity, fleetAlerts, fleetCapacity, generatorActiveVUsers, generatorAvailableCapacity, generatorConnectedCount, generatorHeaderLabel, generatorHeaderSeverity, generatorIssueCount, generators.length, health, inventory, parityAreas, parityBlockingCount, parityCompleteCount, parityHeaderLabel, parityHeaderSeverity, parityPartialCount, parityStatus, scheduleCompletedCount, scheduleHeaderLabel, scheduleHeaderSeverity, scheduleHealth, scheduleMaterializedCount, scheduleSkippedCount, telemetryDangerCount, telemetryHeaderLabel, telemetryHeaderSeverity, telemetryLatestEntry, telemetryDiagnostics, telemetryWarningCount, timeline, websocketLabel, websocketValueClass])
+  ], [controllerGeneratorInventoryLabel, controllerHeaderSeverity, controllerStatusLabel, fleetAlertHeaderLabel, fleetAlertHeaderSeverity, fleetAlerts, fleetCapacity, generatorActiveVUsers, generatorAvailableCapacity, generatorConnectedCount, generatorHeaderLabel, generatorHeaderSeverity, generatorIssueCount, generators.length, health, inventory, parityAreas, parityBlockingCount, parityCompleteCount, parityHeaderLabel, parityHeaderSeverity, parityPartialCount, parityStatus, readinessBlockedCount, readinessDegradedCount, readinessHeaderLabel, readinessHeaderSeverity, readinessReadyCount, scheduleCompletedCount, scheduleHeaderLabel, scheduleHeaderSeverity, scheduleHealth, scheduleMaterializedCount, scheduleSkippedCount, systemReadiness, telemetryDangerCount, telemetryHeaderLabel, telemetryHeaderSeverity, telemetryLatestEntry, telemetryDiagnostics, telemetryWarningCount, timeline, websocketLabel, websocketValueClass])
 
   useEffect(() => {
     setCardOrder(prev => mergeOrder(prev, cards.map(card => card.id)))

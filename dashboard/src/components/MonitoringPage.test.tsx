@@ -13,6 +13,7 @@ const apiMock = {
   getFleetCapacity: vi.fn(),
   getScheduleHealth: vi.fn(),
   getSystemInventory: vi.fn(),
+  getSystemReadiness: vi.fn(),
   listTests: vi.fn(),
 }
 
@@ -44,6 +45,18 @@ describe('MonitoringPage', () => {
         execution_mode: 'distributed',
       },
       generators: [],
+    })
+    apiMock.getSystemReadiness.mockResolvedValue({
+      status: 'degraded',
+      generated_at: '2026-05-18T12:05:00Z',
+      checks: [
+        { name: 'metadata_store', status: 'ready', message: 'metadata store is reachable' },
+        { name: 'archive_writer', status: 'ready', message: 'archive root is writable' },
+        { name: 'generator_rpc', status: 'degraded', message: 'some generator RPC targets are not reachable' },
+        { name: 'telemetry_fanout', status: 'ready', message: 'telemetry fan-out is initialized' },
+        { name: 'auth_mode', status: 'degraded', message: 'development auth bypass is enabled' },
+        { name: 'scheduler_state', status: 'ready', message: 'scheduler state is initialized' },
+      ],
     })
     apiMock.getScheduleHealth.mockResolvedValue({
       total: 0,
@@ -137,6 +150,11 @@ describe('MonitoringPage', () => {
 
     expect(container.textContent).toContain('Telemetry Diagnostics')
     expect(container.textContent).toContain('Controller')
+    expect(container.textContent).toContain('Production Readiness')
+    expect(container.textContent).toContain('Ready Checks')
+    expect(container.textContent).toContain('4/6')
+    expect(container.textContent).toContain('Generator RPC: some generator RPC targets are not reachable')
+    expect(container.textContent).toContain('Auth Mode: development auth bypass is enabled')
     expect(container.textContent).toContain('Parity Checklist')
     expect(container.textContent).toContain('Fleet And Scale-Out: partial')
     expect(container.textContent).toContain('Real-Time Monitoring: complete')
@@ -163,6 +181,7 @@ describe('MonitoringPage', () => {
     expect(apiMock.listTests).toHaveBeenCalledWith({ project_id: 'project-1' })
     expect(apiMock.getFleetAlerts).toHaveBeenCalled()
     expect(apiMock.getFleetCapacity).toHaveBeenCalledWith({ project_id: 'project-1' })
+    expect(apiMock.getSystemReadiness).toHaveBeenCalled()
   })
 
   it('renders JMS broker diagnostics with lag and throughput details', async () => {
