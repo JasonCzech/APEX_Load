@@ -122,7 +122,7 @@ Reference artifact: `docs/ENTERPRISE_AUTOSCALING_SIGNALS.md`.
 | ID | Story | Size | Dependencies | Status |
 | --- | --- | --- | --- | --- |
 | P2.5 | Define HPA/KEDA scaling signals for queued VUsers, active runs, protocol mix, and generator saturation | L | P2.1 | Complete for Prometheus signal contract; cluster manifests remain future work |
-| P2.6 | Add capacity reservations and reserved pools for critical projects or environments | L | P1.8, P2.1 | Complete for settings/advisory/metrics primitives; fair-share placement remains future work |
+| P2.6 | Add capacity reservations and reserved pools for critical projects or environments | L | P1.8, P2.1 | Complete for first-pass API/settings/advisory/metrics primitives - capacity reservations feed advisory behavior, metrics expose fleet state, and `GET /api/v1/fleet/capacity?project_id=&region=&protocol=` reports filtered active, available, reserved, and rejected capacity; fair-share placement remains future work |
 | P2.7 | Add fair-share placement when multiple projects contend for distributed capacity | L | P1.8, P2.1 | Complete for controller pending-queue promotion; distributed slot accounting remains future work |
 | P2.8 | Publish protocol-specific density envelopes for HTTP, JMS, WebSocket, gRPC, SOAP, Java-over-HTTP, and browser canaries | M | P2.1 | Complete for code-owned advisory envelopes; benchmark calibration remains future hardening |
 

@@ -4,12 +4,28 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 )
 
 type FleetAlertsResponse struct {
 	Alerts []FleetAlert `json:"alerts"`
 	Count  int          `json:"count"`
+}
+
+type FleetCapacityResponse struct {
+	ProjectID          string   `json:"project_id,omitempty"`
+	Region             string   `json:"region,omitempty"`
+	Protocol           string   `json:"protocol,omitempty"`
+	TotalGenerators    int      `json:"total_generators"`
+	EligibleGenerators int      `json:"eligible_generators"`
+	ActiveSlots        int      `json:"active_slots"`
+	AvailableSlots     int      `json:"available_slots"`
+	ReservedGenerators int      `json:"reserved_generators,omitempty"`
+	ReservedSlots      int      `json:"reserved_slots,omitempty"`
+	MaxSlots           int      `json:"max_slots"`
+	CompatibleFeatures []string `json:"compatible_features,omitempty"`
+	RejectionReasons   []string `json:"rejection_reasons,omitempty"`
 }
 
 type FleetAlert struct {
@@ -28,6 +44,14 @@ type GeneratorDrainRequest struct {
 func (s *Server) handleGetFleetAlerts(w http.ResponseWriter, r *http.Request) {
 	alerts := buildFleetAlerts(s.systemInventory(r.Context()))
 	writeJSON(w, http.StatusOK, FleetAlertsResponse{Alerts: alerts, Count: len(alerts)})
+}
+
+func (s *Server) handleGetFleetCapacity(w http.ResponseWriter, r *http.Request) {
+	projectID := strings.TrimSpace(r.URL.Query().Get("project_id"))
+	region := strings.TrimSpace(r.URL.Query().Get("region"))
+	protocolName := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("protocol")))
+	capacity := buildFleetCapacity(s.systemInventory(r.Context()), s.runner.GetSystemSettings(), projectID, region, protocolName)
+	writeJSON(w, http.StatusOK, capacity)
 }
 
 func (s *Server) handleSetGeneratorDrainState(w http.ResponseWriter, r *http.Request) {
@@ -141,6 +165,126 @@ func buildFleetAlerts(inventory SystemInventoryResponse) []FleetAlert {
 		})
 	}
 	return alerts
+}
+
+func buildFleetCapacity(inventory SystemInventoryResponse, settings SystemSettings, projectID string, region string, protocolName string) FleetCapacityResponse {
+	out := FleetCapacityResponse{
+		ProjectID: projectID,
+		Region:    region,
+		Protocol:  protocolName,
+	}
+	featureSet := map[string]struct{}{}
+	for _, generator := range inventory.Generators {
+		if region != "" && !strings.EqualFold(strings.TrimSpace(generator.Region), region) {
+			continue
+		}
+		out.TotalGenerators++
+		out.ActiveSlots += int(generator.ActiveVUsers)
+		out.MaxSlots += int(generator.MaxVUsers)
+		for _, feature := range generator.SupportedProtocols {
+			feature = strings.TrimSpace(feature)
+			if feature != "" {
+				featureSet[feature] = struct{}{}
+			}
+		}
+		reasons := generatorCapacityRejectionReasons(generator, protocolName)
+		if len(reasons) > 0 {
+			out.RejectionReasons = append(out.RejectionReasons, reasons...)
+			continue
+		}
+		out.EligibleGenerators++
+		out.AvailableSlots += int(generator.AvailableCapacity)
+	}
+	if out.TotalGenerators == 0 {
+		if region != "" {
+			out.RejectionReasons = append(out.RejectionReasons, "No generators matched region "+region+".")
+		} else {
+			out.RejectionReasons = append(out.RejectionReasons, "No generator inventory is available.")
+		}
+	}
+	if protocolName != "" && out.TotalGenerators > 0 && out.EligibleGenerators == 0 {
+		out.RejectionReasons = append(out.RejectionReasons, "No eligible generators support protocol "+protocolName+".")
+	}
+	if projectID != "" {
+		_, projectReserved := capacityReservationTotals(settings, projectID)
+		out.ProjectID = normalizeProjectID(projectID)
+		out.ReservedGenerators = projectReserved
+		out.ReservedSlots = projectReserved * settings.CapacityPlanning.Generator.MaxVUsers
+	}
+	out.CompatibleFeatures = sortedStringSet(featureSet)
+	out.RejectionReasons = sortedUniqueStrings(out.RejectionReasons)
+	return out
+}
+
+func generatorCapacityRejectionReasons(generator GeneratorInventoryEntry, protocolName string) []string {
+	reasons := make([]string, 0, 3)
+	target := firstNonEmpty(generator.GeneratorID, generator.Target)
+	status := strings.ToLower(strings.TrimSpace(generator.Status))
+	if status != "" && status != "connected" && status != "healthy" && status != "ready" {
+		reasons = append(reasons, target+" is "+status+".")
+	}
+	drainState := strings.ToLower(strings.TrimSpace(generator.DrainState))
+	if drainState == "" {
+		drainState = "active"
+	}
+	if drainState != "active" {
+		reasons = append(reasons, target+" is "+drainState+".")
+	}
+	compatibilityState := strings.ToLower(strings.TrimSpace(generator.CompatibilityState))
+	if compatibilityState != "" && compatibilityState != "compatible" {
+		reason := compatibilityState
+		if len(generator.CompatibilityIssues) > 0 && strings.TrimSpace(generator.CompatibilityIssues[0]) != "" {
+			reason = strings.TrimSpace(generator.CompatibilityIssues[0])
+		}
+		reasons = append(reasons, target+" is incompatible: "+reason+".")
+	}
+	if protocolName != "" && !generatorSupportsProtocol(generator, protocolName) {
+		reasons = append(reasons, target+" does not support protocol "+protocolName+".")
+	}
+	if generator.AvailableCapacity <= 0 {
+		reasons = append(reasons, target+" has no available slots.")
+	}
+	return reasons
+}
+
+func generatorSupportsProtocol(generator GeneratorInventoryEntry, protocolName string) bool {
+	protocolName = strings.ToLower(strings.TrimSpace(protocolName))
+	if protocolName == "" {
+		return true
+	}
+	for _, supported := range generator.SupportedProtocols {
+		if strings.EqualFold(strings.TrimSpace(supported), protocolName) {
+			return true
+		}
+	}
+	return false
+}
+
+func sortedStringSet(values map[string]struct{}) []string {
+	out := make([]string, 0, len(values))
+	for value := range values {
+		out = append(out, value)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func sortedUniqueStrings(values []string) []string {
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func leadingMajorVersion(version string) string {

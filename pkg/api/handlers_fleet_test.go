@@ -10,6 +10,15 @@ import (
 	"time"
 )
 
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
 func TestHandleSetGeneratorDrainStateUpdatesInventory(t *testing.T) {
 	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
 	backend := newDistributedExecutionBackend([]string{"gen-a:9090|region=us-east", "gen-b:9090|region=us-east"}, time.Second, nil)
@@ -157,6 +166,91 @@ func TestHandleGetFleetAlertsSummarizesInventoryRisks(t *testing.T) {
 	}
 	if !strings.Contains(byType["version_mismatch"].Summary, "1.0.0") {
 		t.Fatalf("version alert = %#v, want generator version", byType["version_mismatch"])
+	}
+}
+
+func TestHandleGetFleetCapacityFiltersRegionProtocolAndReservations(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	settings := server.runner.GetSystemSettings()
+	settings.CapacityPlanning.Generator.MaxVUsers = 1000
+	settings.CapacityPlanning.Availability.ConfiguredAvailableGenerators = 3
+	settings.CapacityPlanning.Reservations = []CapacityReservation{{
+		ProjectID:          "checkout",
+		ReservedGenerators: 2,
+	}}
+	if _, err := server.runner.UpdateSystemSettings(settings); err != nil {
+		t.Fatalf("UpdateSystemSettings returned error: %v", err)
+	}
+	server.runner.setExecutionBackend(stubInventoryBackend{entries: []GeneratorInventoryEntry{
+		{
+			Target:             "gen-a:9090",
+			GeneratorID:        "gen-a",
+			Region:             "us-east",
+			Status:             "connected",
+			Version:            "0.1.0",
+			SupportedProtocols: []string{"http", "grpc"},
+			DrainState:         "active",
+			CapacityState:      "available",
+			AvailableCapacity:  800,
+			ActiveVUsers:       200,
+			MaxVUsers:          1000,
+			CompatibilityState: "compatible",
+		},
+		{
+			Target:             "gen-b:9090",
+			GeneratorID:        "gen-b",
+			Region:             "us-east",
+			Status:             "connected",
+			Version:            "0.1.0",
+			SupportedProtocols: []string{"http"},
+			DrainState:         "active",
+			CapacityState:      "available",
+			AvailableCapacity:  700,
+			ActiveVUsers:       300,
+			MaxVUsers:          1000,
+			CompatibilityState: "compatible",
+		},
+		{
+			Target:             "gen-c:9090",
+			GeneratorID:        "gen-c",
+			Region:             "eu-west",
+			Status:             "connected",
+			Version:            "0.1.0",
+			SupportedProtocols: []string{"grpc"},
+			DrainState:         "active",
+			CapacityState:      "available",
+			AvailableCapacity:  900,
+			ActiveVUsers:       100,
+			MaxVUsers:          1000,
+			CompatibilityState: "compatible",
+		},
+	}})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/fleet/capacity?project_id=checkout&region=us-east&protocol=grpc", nil)
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var payload FleetCapacityResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if payload.ProjectID != "checkout" || payload.Region != "us-east" || payload.Protocol != "grpc" {
+		t.Fatalf("filters = %#v, want checkout/us-east/grpc", payload)
+	}
+	if payload.TotalGenerators != 2 || payload.EligibleGenerators != 1 || payload.AvailableSlots != 800 || payload.ActiveSlots != 500 || payload.MaxSlots != 2000 {
+		t.Fatalf("capacity payload = %#v, want filtered slot accounting", payload)
+	}
+	if payload.ReservedGenerators != 2 || payload.ReservedSlots != 2000 {
+		t.Fatalf("reservation payload = %#v, want two reserved generators", payload)
+	}
+	if !containsString(payload.CompatibleFeatures, "grpc") || !containsString(payload.CompatibleFeatures, "http") {
+		t.Fatalf("compatible features = %#v, want grpc and http", payload.CompatibleFeatures)
+	}
+	if len(payload.RejectionReasons) != 1 || !strings.Contains(payload.RejectionReasons[0], "gen-b does not support protocol grpc") {
+		t.Fatalf("rejection reasons = %#v, want gen-b protocol rejection", payload.RejectionReasons)
 	}
 }
 
