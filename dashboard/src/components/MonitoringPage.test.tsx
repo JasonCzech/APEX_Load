@@ -77,7 +77,7 @@ describe('MonitoringPage', () => {
           status: 'partial',
           summary: 'Fleet evidence is partially available.',
           evidence: ['/api/v1/fleet/alerts'],
-          remaining: ['Publish benchmark-calibrated density envelopes and deployment autoscaling evidence.'],
+          remaining: ['Complete production deployment autoscaling evidence.'],
           release_gate: true,
         },
         {

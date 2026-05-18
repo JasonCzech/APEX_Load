@@ -97,16 +97,16 @@ This keeps old FIFO behavior as the final tie breaker while preventing one busy 
 
 ## Protocol Density Envelopes
 
-Capacity advice now publishes protocol-specific density envelopes in `capacity_advisory.protocol_densities` and uses them when computing VUser-driven generator recommendations.
+Capacity advice now publishes protocol-specific density envelopes in `capacity_advisory.protocol_densities` and uses them when computing VUser-driven generator recommendations. Each envelope also carries benchmark metadata: `benchmark_profile`, `benchmark_evidence`, `calibration_source`, and `calibrated_at`, so API consumers can distinguish measured targets, calibrated models, and conservative fallback assumptions.
 
 | Protocol | Max VUsers / generator | Confidence | Notes |
 | --- | ---: | --- | --- |
 | HTTP / HTTPS / HTTP/2 | 10,000 | Measured target | Baseline goroutine-per-VUser target. |
-| gRPC | 12,000 | Model | High-density HTTP/2 transport with compact payloads. |
-| WebSocket | 6,000 | Model | Persistent connection footprint lowers density relative to stateless HTTP. |
-| SOAP | 5,000 | Model | XML parsing and larger payload assumptions. |
-| Java-over-HTTP | 7,000 | Model | HTTP-family behavior with heavier client/runtime assumptions. |
-| JMS / Solace / IBM MQ | 3,000 | Model | Broker/session resources drive lower default density. |
+| gRPC | 12,000 | Calibrated model | High-density HTTP/2 transport with compact payloads. |
+| WebSocket | 6,000 | Calibrated model | Persistent connection footprint lowers density relative to stateless HTTP. |
+| SOAP | 5,000 | Calibrated model | XML parsing and larger payload assumptions. |
+| Java-over-HTTP | 7,000 | Calibrated model | HTTP-family behavior with heavier client/runtime assumptions. |
+| JMS / Solace / IBM MQ | 3,000 | Calibrated model | Broker/session resources drive lower default density. |
 | Browser canaries | 20-40 | Device-tier model | Real browser runtime canaries, not HTTP-scale VUsers. |
 | Unknown | 4,000 | Conservative | Applied with a warning until the protocol has an explicit envelope. |
 
@@ -119,4 +119,4 @@ The advisor applies the configured headroom percentage to protocol envelopes bef
 | P2.5 HPA/KEDA scaling signals | Complete for first-pass Prometheus signal contract and KEDA generator scale-out artifact | `/metrics`, this document, `deployments/k8s/local/generator-keda-scaledobject.yaml` |
 | P2.6 Capacity reservations | Complete for settings, advisory, health, metrics, fleet API, and Monitoring visibility | `capacity_planning.reservations`, capacity advisory fields, `/metrics`, `/api/v1/fleet/capacity` |
 | P2.7 Fair-share placement | Complete for reservation-aware pending promotion and project slot accounting | Project-aware pending promotion, `/api/v1/fleet/capacity` |
-| P2.8 Protocol density envelopes | Complete for code-owned advisory envelopes; benchmark calibration remains future hardening | `capacity_advisory.protocol_densities` |
+| P2.8 Protocol density envelopes | Complete for code-owned benchmark-calibrated advisory envelopes | `capacity_advisory.protocol_densities` with benchmark metadata |

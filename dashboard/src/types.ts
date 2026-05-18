@@ -1828,9 +1828,10 @@ export interface CapacityAdvisory {
   total_vusers: number
   duration_seconds: number
   baseline_window_enabled: boolean
-  workload_class?: 'http' | 'browser' | 'mixed'
+  workload_class?: 'http' | 'browser' | 'mixed' | string
   browser_vusers?: number
   max_browser_vusers_per_generator?: number
+  protocol_densities?: ProtocolDensityEnvelope[]
   headroom_pct: number
   complexity_score: number
   bottleneck: 'cpu' | 'memory' | 'network' | 'vusers'
@@ -1846,6 +1847,20 @@ export interface CapacityAdvisory {
   usable_per_generator: CapacityResourceEstimate
   dimension_recommendations: CapacityDimensionRecommendations
   warnings?: string[]
+}
+
+export interface ProtocolDensityEnvelope {
+  protocol: string
+  vusers: number
+  max_vusers_per_generator: number
+  cpu_cores_per_vuser: number
+  memory_mb_per_vuser: number
+  network_mbps_per_vuser: number
+  compatibility_confidence?: string
+  benchmark_profile?: string
+  benchmark_evidence?: string
+  calibration_source?: string
+  calibrated_at?: string
 }
 
 export interface LoadModelTemplateGroup {

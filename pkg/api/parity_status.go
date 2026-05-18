@@ -42,9 +42,9 @@ func buildParityStatus(now time.Time) ParityStatusResponse {
 			ID:          "fleet",
 			Name:        "Fleet And Scale-Out",
 			Status:      "partial",
-			Summary:     "Fleet inventory, alerts, persisted drain state, capacity filtering, and placement rejection visibility have first-pass APIs.",
+			Summary:     "Fleet inventory, alerts, persisted drain state, capacity filtering, benchmark-calibrated density envelopes, and placement rejection visibility have first-pass APIs.",
 			Evidence:    []string{"/api/v1/system/inventory", "/api/v1/fleet/alerts", "/api/v1/fleet/capacity"},
-			Remaining:   []string{"Publish benchmark-calibrated density envelopes and deployment autoscaling evidence."},
+			Remaining:   []string{"Complete production deployment autoscaling evidence."},
 			ReleaseGate: true,
 		},
 		{

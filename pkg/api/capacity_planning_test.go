@@ -268,6 +268,9 @@ func TestEstimateCapacityAdvisoryUsesProtocolDensityEnvelopes(t *testing.T) {
 	if density.Protocol != "jms" || density.MaxVUsersPerGenerator != 3000 || density.VUsers != 5000 {
 		t.Fatalf("density = %#v, want JMS 5000 VUsers at 3000 VUsers/generator", density)
 	}
+	if density.BenchmarkProfile != "jms_3k_session_send_4vcpu_8gb" || density.BenchmarkEvidence == "" || density.CalibrationSource != "stormrunner_benchmark_catalog" || density.CalibratedAt == "" {
+		t.Fatalf("density benchmark evidence = %#v, want calibrated JMS profile evidence", density)
+	}
 	if advisory.DimensionRecommendations.VUsers != 3 {
 		t.Fatalf("vuser recommendation = %d, want 3 from JMS density with headroom", advisory.DimensionRecommendations.VUsers)
 	}
@@ -306,6 +309,9 @@ func TestEstimateCapacityAdvisoryCombinesMixedProtocolDensityEnvelopes(t *testin
 	}
 	if advisory.ProtocolDensities[0].Protocol != "grpc" || advisory.ProtocolDensities[1].Protocol != "websocket" {
 		t.Fatalf("protocol densities = %#v, want sorted gRPC/WebSocket envelopes", advisory.ProtocolDensities)
+	}
+	if advisory.ProtocolDensities[0].CompatibilityConfidence != "calibrated_model" || advisory.ProtocolDensities[1].BenchmarkProfile == "" {
+		t.Fatalf("protocol densities = %#v, want calibrated benchmark metadata", advisory.ProtocolDensities)
 	}
 	if advisory.DimensionRecommendations.VUsers != 2 {
 		t.Fatalf("vuser recommendation = %d, want WebSocket density to drive two generators", advisory.DimensionRecommendations.VUsers)

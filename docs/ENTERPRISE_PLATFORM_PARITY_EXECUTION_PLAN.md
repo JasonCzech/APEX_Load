@@ -124,7 +124,7 @@ Reference artifact: `docs/ENTERPRISE_AUTOSCALING_SIGNALS.md`.
 | P2.5 | Define HPA/KEDA scaling signals for queued VUsers, active runs, protocol mix, and generator saturation | L | P2.1 | Complete for first-pass Prometheus signal contract and KEDA generator scale-out artifact in `deployments/k8s/local/generator-keda-scaledobject.yaml` |
 | P2.6 | Add capacity reservations and reserved pools for critical projects or environments | L | P1.8, P2.1 | Complete for API/settings/advisory/metrics primitives - capacity reservations feed advisory behavior, metrics expose fleet state, `GET /api/v1/fleet/capacity?project_id=&region=&protocol=` reports filtered active/available/reserved/rejected capacity plus per-project slot accounting, and the Monitoring capacity card displays the backend placement snapshot |
 | P2.7 | Add fair-share placement when multiple projects contend for distributed capacity | L | P1.8, P2.1 | Complete for controller pending-queue promotion and distributed slot accounting: pending promotion uses reservation-aware fair-share ranking, and fleet capacity responses expose project active/pending slots with reserved/shared tiers |
-| P2.8 | Publish protocol-specific density envelopes for HTTP, JMS, WebSocket, gRPC, SOAP, Java-over-HTTP, and browser canaries | M | P2.1 | Complete for code-owned advisory envelopes; benchmark calibration remains future hardening |
+| P2.8 | Publish protocol-specific density envelopes for HTTP, JMS, WebSocket, gRPC, SOAP, Java-over-HTTP, and browser canaries | M | P2.1 | Complete for code-owned benchmark-calibrated advisory envelopes published in capacity responses |
 
 Acceptance criteria:
 - Scale-out behavior is driven by observable queue/capacity signals.
@@ -157,8 +157,8 @@ Acceptance criteria:
 
 | ID | Story | Size | Dependencies | Status |
 | --- | --- | --- | --- | --- |
-| P3.6 | Expand correlation suggestions into guided variable creation and extractor insertion with preview diffs | L | P3.3 | Partial backend/UI complete: session preview/apply endpoint plus dashboard guided repair controls and diff summary |
-| P3.7 | Add data-source fit checks for required columns, exhaustion policy, uniqueness, and row-count versus load model | M | P3.3 | Partial backend/UI complete: validation response and health scoring cover source/column/row-count readiness and ScriptEditor surfaces fit evidence |
+| P3.6 | Expand correlation suggestions into guided variable creation and extractor insertion with preview diffs | L | P3.3 | Complete: session preview/apply endpoint plus dashboard guided repair controls and diff summary |
+| P3.7 | Add data-source fit checks for required columns, exhaustion policy, uniqueness, and row-count versus load model | M | P3.3 | Complete: validation response and health scoring cover source/column/row-count readiness and ScriptEditor surfaces fit evidence |
 | P3.8 | Add protocol-aware starter templates for common enterprise flows and CI/CD smoke tests | M | P3.2 | Complete for first-pass backend/UI catalog: HTTP, browser, SOAP, Java-over-HTTP, WebSocket, gRPC, JMS Solace, JMeter, HAR, and DevWeb starters are exposed by the controller-owned template endpoint and surfaced in the dashboard create flow with use-case/tag context |
 | P3.9 | Add AI-assisted script generation guardrails: provenance, validation, diff review, and replay-before-save requirements | L | P3.1 | Complete for current authoring flow: validation health includes AI guardrail evidence, approval responses expose blocker inputs and next actions, the dashboard disables blocked promotion, and ScriptEditor surfaces guardrail evidence for review |
 
