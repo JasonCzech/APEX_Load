@@ -183,6 +183,64 @@ func TestEstimateCapacityAdvisoryUsesRuntimeBrowserOverrideForDensity(t *testing
 	}
 }
 
+func TestEstimateCapacityAdvisoryAppliesProjectReservations(t *testing.T) {
+	settings := defaultSystemSettings(5)
+	settings.CapacityPlanning.Availability.ConfiguredAvailableGenerators = 5
+	settings.CapacityPlanning.Reservations = []CapacityReservation{{
+		ProjectID:          "critical-checkout",
+		ReservedGenerators: 2,
+	}}
+	groups := []TestGroup{{
+		Name:     "buyers",
+		Protocol: "http",
+		VUsers:   32000,
+		script: &dsl.Script{
+			Protocol: "http",
+			Actions:  []dsl.Action{{Name: "home", Type: "request", Target: "/"}},
+		},
+	}}
+
+	sharedPoolAdvisory := estimateCapacityAdvisoryForProject(settings, "standard-project", groups, 32000, 30*time.Minute, false, nil)
+	if sharedPoolAdvisory == nil {
+		t.Fatal("expected shared-pool advisory")
+	}
+	if sharedPoolAdvisory.AvailableGenerators != 3 {
+		t.Fatalf("shared-pool available generators = %d, want 3", sharedPoolAdvisory.AvailableGenerators)
+	}
+	if sharedPoolAdvisory.SharedAvailableGenerators != 3 {
+		t.Fatalf("shared-pool shared generators = %d, want 3", sharedPoolAdvisory.SharedAvailableGenerators)
+	}
+	if sharedPoolAdvisory.ReservedGenerators != 0 {
+		t.Fatalf("shared-pool reserved generators = %d, want 0", sharedPoolAdvisory.ReservedGenerators)
+	}
+	if !sharedPoolAdvisory.RequiresOverride || sharedPoolAdvisory.ShortfallGenerators != 1 {
+		t.Fatalf("shared-pool shortfall = %d override=%v, want one-generator shortfall", sharedPoolAdvisory.ShortfallGenerators, sharedPoolAdvisory.RequiresOverride)
+	}
+	if !containsSubstring(sharedPoolAdvisory.Warnings, "reserved for other projects") {
+		t.Fatalf("shared-pool warnings = %#v, want reservation warning", sharedPoolAdvisory.Warnings)
+	}
+
+	reservedProjectAdvisory := estimateCapacityAdvisoryForProject(settings, "critical-checkout", groups, 32000, 30*time.Minute, false, nil)
+	if reservedProjectAdvisory == nil {
+		t.Fatal("expected reserved-project advisory")
+	}
+	if reservedProjectAdvisory.AvailableGenerators != 5 {
+		t.Fatalf("reserved-project available generators = %d, want 5", reservedProjectAdvisory.AvailableGenerators)
+	}
+	if reservedProjectAdvisory.SharedAvailableGenerators != 3 {
+		t.Fatalf("reserved-project shared generators = %d, want 3", reservedProjectAdvisory.SharedAvailableGenerators)
+	}
+	if reservedProjectAdvisory.ReservedGenerators != 2 {
+		t.Fatalf("reserved-project reserved generators = %d, want 2", reservedProjectAdvisory.ReservedGenerators)
+	}
+	if reservedProjectAdvisory.RequiresOverride {
+		t.Fatalf("reserved-project advisory unexpectedly requires override: %#v", reservedProjectAdvisory)
+	}
+	if !containsSubstring(reservedProjectAdvisory.Warnings, "Capacity reservation applied") {
+		t.Fatalf("reserved-project warnings = %#v, want reservation applied warning", reservedProjectAdvisory.Warnings)
+	}
+}
+
 func TestCreateTestAttachesCapacityAdvisory(t *testing.T) {
 	hub := NewHub()
 	runner := NewTestRunner(2, hub, nil)

@@ -489,6 +489,8 @@ func (s *Server) handleHealthCheck(w http.ResponseWriter, r *http.Request) {
 			"configured_available_generators": availability.ConfiguredAvailableGenerators,
 			"effective_available_generators":  availability.EffectiveAvailableGenerators,
 			"live_available_generators":       availability.LiveAvailableGenerators,
+			"reserved_generators":             availability.ReservedGenerators,
+			"shared_available_generators":     availability.SharedAvailableGenerators,
 			"warnings":                        availability.Warnings,
 		},
 	})
@@ -540,6 +542,8 @@ func (s *Server) handlePrometheusMetrics(w http.ResponseWriter, r *http.Request)
 	body.WriteString("# TYPE stormrunner_capacity_available_generators gauge\n")
 	fmt.Fprintf(&body, "stormrunner_capacity_available_generators{scope=%q} %d\n", "configured", availability.ConfiguredAvailableGenerators)
 	fmt.Fprintf(&body, "stormrunner_capacity_available_generators{scope=%q} %d\n", "effective", availability.EffectiveAvailableGenerators)
+	fmt.Fprintf(&body, "stormrunner_capacity_available_generators{scope=%q} %d\n", "reserved", availability.ReservedGenerators)
+	fmt.Fprintf(&body, "stormrunner_capacity_available_generators{scope=%q} %d\n", "shared", availability.SharedAvailableGenerators)
 	if availability.LiveAvailableGenerators != nil {
 		fmt.Fprintf(&body, "stormrunner_capacity_available_generators{scope=%q} %d\n", "live", *availability.LiveAvailableGenerators)
 	}

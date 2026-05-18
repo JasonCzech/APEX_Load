@@ -16,6 +16,7 @@ func TestHandlePrometheusMetricsExportsControllerState(t *testing.T) {
 	settings.General.MetricsIntervalSeconds = 3
 	settings.CapacityPlanning.Availability.Source = capacityAvailabilityConfiguredPlusLive
 	settings.CapacityPlanning.Availability.ConfiguredAvailableGenerators = 5
+	settings.CapacityPlanning.Reservations = []CapacityReservation{{ProjectID: "critical-checkout", ReservedGenerators: 1}}
 	if _, err := server.runner.UpdateSystemSettings(settings); err != nil {
 		t.Fatalf("UpdateSystemSettings returned error: %v", err)
 	}
@@ -55,6 +56,8 @@ func TestHandlePrometheusMetricsExportsControllerState(t *testing.T) {
 		"stormrunner_scaling_protocol_vusers{state=\"active\",protocol=\"http\"} 12",
 		"stormrunner_capacity_available_generators{scope=\"configured\"} 5",
 		"stormrunner_capacity_available_generators{scope=\"effective\"} 3",
+		"stormrunner_capacity_available_generators{scope=\"reserved\"} 1",
+		"stormrunner_capacity_available_generators{scope=\"shared\"} 2",
 		"stormrunner_capacity_available_generators{scope=\"live\"} 3",
 		"stormrunner_max_concurrent_tests 7",
 		"stormrunner_metrics_interval_seconds 3",

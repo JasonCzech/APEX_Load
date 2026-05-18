@@ -34,6 +34,7 @@ type CapacityPlanningSettings struct {
 	HeadroomPct  float64                   `json:"headroom_pct"`
 	Generator    GeneratorCapacitySettings `json:"generator"`
 	Availability AvailabilitySettings      `json:"availability"`
+	Reservations []CapacityReservation     `json:"reservations,omitempty"`
 }
 
 type GeneratorCapacitySettings struct {
@@ -48,24 +49,29 @@ type AvailabilitySettings struct {
 	ConfiguredAvailableGenerators int    `json:"configured_available_generators"`
 }
 
+type CapacityReservation struct {
+	ProjectID          string `json:"project_id"`
+	ReservedGenerators int    `json:"reserved_generators"`
+}
+
 type AuthSettings struct {
-	Mode               string `json:"mode"`
-	ProviderName       string `json:"provider_name,omitempty"`
-	LoginURL           string `json:"login_url,omitempty"`
-	LogoutURL          string `json:"logout_url,omitempty"`
-	IssuerURL          string `json:"issuer_url,omitempty"`
-	ClientID           string `json:"client_id,omitempty"`
-	ClientSecretEnvVar string `json:"client_secret_env_var,omitempty"`
-	RedirectURL        string `json:"redirect_url,omitempty"`
-	Scopes             []string `json:"scopes,omitempty"`
-	RolesClaim         string `json:"roles_claim,omitempty"`
-	ProjectRolesClaim  string `json:"project_roles_claim,omitempty"`
-	SessionSecretEnvVar string `json:"session_secret_env_var,omitempty"`
-	UserHeader         string `json:"user_header,omitempty"`
-	NameHeader         string `json:"name_header,omitempty"`
-	EmailHeader        string `json:"email_header,omitempty"`
-	RolesHeader        string `json:"roles_header,omitempty"`
-	ProjectRolesHeader string `json:"project_roles_header,omitempty"`
+	Mode                string   `json:"mode"`
+	ProviderName        string   `json:"provider_name,omitempty"`
+	LoginURL            string   `json:"login_url,omitempty"`
+	LogoutURL           string   `json:"logout_url,omitempty"`
+	IssuerURL           string   `json:"issuer_url,omitempty"`
+	ClientID            string   `json:"client_id,omitempty"`
+	ClientSecretEnvVar  string   `json:"client_secret_env_var,omitempty"`
+	RedirectURL         string   `json:"redirect_url,omitempty"`
+	Scopes              []string `json:"scopes,omitempty"`
+	RolesClaim          string   `json:"roles_claim,omitempty"`
+	ProjectRolesClaim   string   `json:"project_roles_claim,omitempty"`
+	SessionSecretEnvVar string   `json:"session_secret_env_var,omitempty"`
+	UserHeader          string   `json:"user_header,omitempty"`
+	NameHeader          string   `json:"name_header,omitempty"`
+	EmailHeader         string   `json:"email_header,omitempty"`
+	RolesHeader         string   `json:"roles_header,omitempty"`
+	ProjectRolesHeader  string   `json:"project_roles_header,omitempty"`
 }
 
 const (
@@ -79,16 +85,16 @@ const (
 
 func defaultAuthSettings() AuthSettings {
 	return AuthSettings{
-		Mode:               authModeDev,
-		Scopes:             []string{"openid", "profile", "email"},
-		RolesClaim:         "roles",
-		ProjectRolesClaim:  "project_roles",
+		Mode:                authModeDev,
+		Scopes:              []string{"openid", "profile", "email"},
+		RolesClaim:          "roles",
+		ProjectRolesClaim:   "project_roles",
 		SessionSecretEnvVar: "STORMRUNNER_AUTH_SESSION_SECRET",
-		UserHeader:         "X-Auth-Request-User",
-		NameHeader:         "X-Auth-Request-Name",
-		EmailHeader:        "X-Auth-Request-Email",
-		RolesHeader:        "X-Stormrunner-Roles",
-		ProjectRolesHeader: "X-Stormrunner-Project-Roles",
+		UserHeader:          "X-Auth-Request-User",
+		NameHeader:          "X-Auth-Request-Name",
+		EmailHeader:         "X-Auth-Request-Email",
+		RolesHeader:         "X-Stormrunner-Roles",
+		ProjectRolesHeader:  "X-Stormrunner-Project-Roles",
 	}
 }
 
@@ -197,6 +203,9 @@ func cloneSystemSettings(in SystemSettings) SystemSettings {
 		out.Thresholds.MaxAvgTransferMs = &v
 	}
 	out.Notifications = cloneNotificationsSettings(in.Notifications)
+	if in.CapacityPlanning.Reservations != nil {
+		out.CapacityPlanning.Reservations = append([]CapacityReservation(nil), in.CapacityPlanning.Reservations...)
+	}
 	out.Auth = in.Auth
 	if in.Auth.Scopes != nil {
 		out.Auth.Scopes = append([]string(nil), in.Auth.Scopes...)
@@ -238,6 +247,7 @@ func normalizeLoadedSystemSettings(in SystemSettings, defaultMaxConcurrent int) 
 	if out.CapacityPlanning.Availability.ConfiguredAvailableGenerators == 0 {
 		out.CapacityPlanning.Availability.ConfiguredAvailableGenerators = defaults.CapacityPlanning.Availability.ConfiguredAvailableGenerators
 	}
+	out.CapacityPlanning.Reservations = normalizeCapacityReservations(out.CapacityPlanning.Reservations)
 	out.Notifications = cloneNotificationsSettings(out.Notifications)
 	out.Auth = normalizeAuthSettings(out.Auth)
 
@@ -297,6 +307,19 @@ func validateSystemSettings(settings SystemSettings) error {
 	default:
 		return fmt.Errorf("capacity_planning.availability.source must be one of %q or %q", capacityAvailabilityConfigured, capacityAvailabilityConfiguredPlusLive)
 	}
+	totalReserved := 0
+	for _, reservation := range settings.CapacityPlanning.Reservations {
+		if reservation.ReservedGenerators < 0 {
+			return fmt.Errorf("capacity_planning.reservations.reserved_generators must be greater than or equal to 0")
+		}
+		if strings.TrimSpace(reservation.ProjectID) == "" || reservation.ReservedGenerators == 0 {
+			continue
+		}
+		totalReserved += reservation.ReservedGenerators
+	}
+	if totalReserved > settings.CapacityPlanning.Availability.ConfiguredAvailableGenerators {
+		return fmt.Errorf("capacity_planning.reservations cannot exceed configured available generators")
+	}
 	if err := validateNotificationsSettings(settings.Notifications); err != nil {
 		return err
 	}
@@ -304,6 +327,21 @@ func validateSystemSettings(settings SystemSettings) error {
 		return err
 	}
 	return nil
+}
+
+func normalizeCapacityReservations(reservations []CapacityReservation) []CapacityReservation {
+	out := make([]CapacityReservation, 0, len(reservations))
+	for _, reservation := range reservations {
+		rawProjectID := strings.TrimSpace(reservation.ProjectID)
+		if rawProjectID == "" || reservation.ReservedGenerators == 0 {
+			continue
+		}
+		out = append(out, CapacityReservation{
+			ProjectID:          normalizeProjectID(rawProjectID),
+			ReservedGenerators: reservation.ReservedGenerators,
+		})
+	}
+	return out
 }
 
 func validateAuthSettings(settings AuthSettings) error {

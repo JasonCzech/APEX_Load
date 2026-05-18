@@ -81,6 +81,10 @@ func TestSystemSettingsAPIAndPersistence(t *testing.T) {
 				Source:                        capacityAvailabilityConfiguredPlusLive,
 				ConfiguredAvailableGenerators: 6,
 			},
+			Reservations: []CapacityReservation{{
+				ProjectID:          "checkout",
+				ReservedGenerators: 2,
+			}},
 		},
 		Notifications: NotificationsSettings{
 			Webhooks: []NotificationWebhookSettings{{
@@ -152,6 +156,9 @@ func TestSystemSettingsAPIAndPersistence(t *testing.T) {
 	if updated.CapacityPlanning.Availability.ConfiguredAvailableGenerators != 6 {
 		t.Fatalf("configured available generators = %d, want 6", updated.CapacityPlanning.Availability.ConfiguredAvailableGenerators)
 	}
+	if len(updated.CapacityPlanning.Reservations) != 1 || updated.CapacityPlanning.Reservations[0].ProjectID != "checkout" || updated.CapacityPlanning.Reservations[0].ReservedGenerators != 2 {
+		t.Fatalf("capacity reservations = %#v, want checkout reservation", updated.CapacityPlanning.Reservations)
+	}
 	if len(updated.Notifications.Webhooks) != 1 {
 		t.Fatalf("notification webhooks = %d, want 1", len(updated.Notifications.Webhooks))
 	}
@@ -184,6 +191,9 @@ func TestSystemSettingsAPIAndPersistence(t *testing.T) {
 	}
 	if persisted.CapacityPlanning.Availability.Source != capacityAvailabilityConfiguredPlusLive {
 		t.Fatalf("persisted availability source = %q, want %q", persisted.CapacityPlanning.Availability.Source, capacityAvailabilityConfiguredPlusLive)
+	}
+	if len(persisted.CapacityPlanning.Reservations) != 1 || persisted.CapacityPlanning.Reservations[0].ProjectID != "checkout" || persisted.CapacityPlanning.Reservations[0].ReservedGenerators != 2 {
+		t.Fatalf("persisted capacity reservations = %#v, want checkout reservation", persisted.CapacityPlanning.Reservations)
 	}
 	if len(persisted.Notifications.Webhooks) != 1 || persisted.Notifications.Webhooks[0].URL != "https://hooks.slack.test/services/T000/B000/abc123" {
 		t.Fatalf("persisted notifications = %#v, want webhook URL", persisted.Notifications.Webhooks)
@@ -269,6 +279,64 @@ func TestSystemSettingsValidationRejectsInvalidCapacityPlanning(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected invalid capacity planning settings to fail validation")
+	}
+
+	err = validateSystemSettings(SystemSettings{
+		General: GeneralSettings{
+			APIEndpoint:            ":8080",
+			MaxConcurrentTests:     2,
+			MetricsIntervalSeconds: 1,
+		},
+		Thresholds: ThresholdSettings{},
+		CapacityPlanning: CapacityPlanningSettings{
+			HeadroomPct: 20,
+			Generator: GeneratorCapacitySettings{
+				CPUCores:    4,
+				MemoryMB:    8192,
+				NetworkMbps: 1000,
+				MaxVUsers:   10000,
+			},
+			Availability: AvailabilitySettings{
+				Source:                        capacityAvailabilityConfigured,
+				ConfiguredAvailableGenerators: 2,
+			},
+			Reservations: []CapacityReservation{{
+				ProjectID:          "checkout",
+				ReservedGenerators: 3,
+			}},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected capacity reservations exceeding configured availability to fail validation")
+	}
+
+	err = validateSystemSettings(SystemSettings{
+		General: GeneralSettings{
+			APIEndpoint:            ":8080",
+			MaxConcurrentTests:     2,
+			MetricsIntervalSeconds: 1,
+		},
+		Thresholds: ThresholdSettings{},
+		CapacityPlanning: CapacityPlanningSettings{
+			HeadroomPct: 20,
+			Generator: GeneratorCapacitySettings{
+				CPUCores:    4,
+				MemoryMB:    8192,
+				NetworkMbps: 1000,
+				MaxVUsers:   10000,
+			},
+			Availability: AvailabilitySettings{
+				Source:                        capacityAvailabilityConfigured,
+				ConfiguredAvailableGenerators: 2,
+			},
+			Reservations: []CapacityReservation{{
+				ProjectID:          "checkout",
+				ReservedGenerators: -1,
+			}},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected negative capacity reservation to fail validation")
 	}
 }
 

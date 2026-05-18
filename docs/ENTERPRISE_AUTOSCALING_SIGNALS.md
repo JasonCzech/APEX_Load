@@ -14,6 +14,7 @@ Stormrunner exposes these Prometheus metrics for generator autoscaling:
 | `stormrunner_generator_capacity_state_count` | `region`, `state` | Saturation signal for available, constrained, saturated, unknown, and unavailable generator capacity. |
 | `stormrunner_generator_region_available_capacity` | `region` | Regional headroom signal. |
 | `stormrunner_generator_region_active_vusers` | `region` | Regional allocation signal. |
+| `stormrunner_capacity_available_generators` | `scope=configured|effective|live|reserved|shared` | Controller capacity-planning envelope, including reserved and shared generator pools. |
 
 `queued` includes tests in `QUEUED` and `PENDING`. `active` includes `INITIALIZING`, `RUNNING`, and `PAUSED`, because paused tests may still reserve execution capacity.
 
@@ -41,8 +42,39 @@ Example regional trigger query:
 sum by (region) (stormrunner_generator_region_active_vusers)
 ```
 
+## Capacity Reservations
+
+System settings now include project-level reserved generator pools under `capacity_planning.reservations`:
+
+```json
+{
+  "capacity_planning": {
+    "availability": {
+      "source": "configured",
+      "configured_available_generators": 5
+    },
+    "reservations": [
+      {
+        "project_id": "critical-checkout",
+        "reserved_generators": 2
+      }
+    ]
+  }
+}
+```
+
+Capacity advice evaluates reservations against the test project:
+
+- Tests from a reserved project can use the shared pool plus their reserved generators.
+- Tests from other projects only see the shared pool after all reservations are removed.
+- Advisory responses include `reservation_project_id`, `reserved_generators`, and `shared_available_generators` so schedulers and dashboards can explain capacity shortfalls.
+- `/api/v1/system/health` and `/metrics` expose reserved/shared capacity rollups for operator visibility.
+
+This is the first reserved-pool primitive. Future fair-share placement will consume the same reservation contract when multiple projects contend for generator slots.
+
 ## Plan Mapping
 
 | Plan item | Status | Artifact |
 | --- | --- | --- |
 | P2.5 HPA/KEDA scaling signals | Complete for Prometheus signal contract; cluster manifests remain future work | `/metrics` and this document |
+| P2.6 Capacity reservations | Complete for settings, advisory, health, and metrics primitives; placement fair-share remains future work | `capacity_planning.reservations`, capacity advisory fields, `/metrics` |

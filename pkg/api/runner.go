@@ -1688,8 +1688,8 @@ func adjustCapacityAdvisoryForAssignment(advisory *CapacityAdvisory, assignment 
 	return cloned
 }
 
-func (tr *TestRunner) estimateCapacityAdvisoryForAssignment(groups []TestGroup, totalVUsers int, duration time.Duration, resourceBaseline bool, runtimeSettings *RuntimeSettingsOverride, assignment *GeneratorAssignmentSettings) *CapacityAdvisory {
-	advisory := estimateCapacityAdvisory(tr.settings, groups, totalVUsers, duration, resourceBaseline, runtimeSettings)
+func (tr *TestRunner) estimateCapacityAdvisoryForAssignment(projectID string, groups []TestGroup, totalVUsers int, duration time.Duration, resourceBaseline bool, runtimeSettings *RuntimeSettingsOverride, assignment *GeneratorAssignmentSettings) *CapacityAdvisory {
+	advisory := estimateCapacityAdvisoryForProject(tr.settings, projectID, groups, totalVUsers, duration, resourceBaseline, runtimeSettings)
 	return adjustCapacityAdvisoryForAssignment(advisory, assignment, tr.assignmentTargetSpecs())
 }
 
@@ -1852,7 +1852,7 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 		FolderID:         req.FolderID,
 		Groups:           testGroups,
 		Assignment:       cloneGeneratorAssignmentSettings(req.Assignment),
-		CapacityAdvisory: tr.estimateCapacityAdvisoryForAssignment(testGroups, totalVUsers, dur, req.ResourceBaseline, effectiveRuntimeSettings, req.Assignment),
+		CapacityAdvisory: tr.estimateCapacityAdvisoryForAssignment(projectID, testGroups, totalVUsers, dur, req.ResourceBaseline, effectiveRuntimeSettings, req.Assignment),
 		ScenarioMode:     scenarioMode,
 		ScriptShakeout:   req.ScriptShakeout,
 		ResourceBaseline: req.ResourceBaseline,
@@ -2845,7 +2845,7 @@ func (tr *TestRunner) refreshCapacityAdvisoryLocked(test *ManagedTest) {
 		return
 	}
 	groups := tr.hydrateCapacityGroupsLocked(test.Groups)
-	test.CapacityAdvisory = estimateCapacityAdvisory(tr.settings, groups, test.TotalVUsers, test.Duration, test.ResourceBaseline, test.RuntimeSettings)
+	test.CapacityAdvisory = tr.estimateCapacityAdvisoryForAssignment(test.ProjectID, groups, test.TotalVUsers, test.Duration, test.ResourceBaseline, test.RuntimeSettings, test.Assignment)
 }
 
 func (tr *TestRunner) loadRunArchiveFromStore(id string) (*storage.RunArchiveRecord, bool) {

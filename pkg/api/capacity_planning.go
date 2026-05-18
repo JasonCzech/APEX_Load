@@ -37,6 +37,9 @@ type CapacityAdvisory struct {
 	AvailabilitySource            string                           `json:"availability_source,omitempty"`
 	ConfiguredAvailableGenerators int                              `json:"configured_available_generators,omitempty"`
 	LiveAvailableGenerators       *int                             `json:"live_available_generators,omitempty"`
+	ReservationProjectID          string                           `json:"reservation_project_id,omitempty"`
+	ReservedGenerators            int                              `json:"reserved_generators,omitempty"`
+	SharedAvailableGenerators     int                              `json:"shared_available_generators,omitempty"`
 	RecommendedGenerators         int                              `json:"recommended_generators"`
 	AvailableGenerators           int                              `json:"available_generators"`
 	ShortfallGenerators           int                              `json:"shortfall_generators,omitempty"`
@@ -53,6 +56,9 @@ type CapacityAvailabilitySnapshot struct {
 	ConfiguredAvailableGenerators int
 	LiveAvailableGenerators       *int
 	EffectiveAvailableGenerators  int
+	ReservationProjectID          string
+	ReservedGenerators            int
+	SharedAvailableGenerators     int
 	Warnings                      []string
 }
 
@@ -83,6 +89,11 @@ func cloneCapacityAdvisory(in *CapacityAdvisory) *CapacityAdvisory {
 
 func estimateCapacityAdvisory(settings SystemSettings, groups []TestGroup, totalVUsers int, duration time.Duration, resourceBaseline bool, runtimeSettings *RuntimeSettingsOverride) *CapacityAdvisory {
 	availability := resolveCapacityAvailability(settings)
+	return estimateCapacityAdvisoryWithAvailability(settings, availability, groups, totalVUsers, duration, resourceBaseline, runtimeSettings)
+}
+
+func estimateCapacityAdvisoryForProject(settings SystemSettings, projectID string, groups []TestGroup, totalVUsers int, duration time.Duration, resourceBaseline bool, runtimeSettings *RuntimeSettingsOverride) *CapacityAdvisory {
+	availability := resolveCapacityAvailabilityForProject(settings, projectID)
 	return estimateCapacityAdvisoryWithAvailability(settings, availability, groups, totalVUsers, duration, resourceBaseline, runtimeSettings)
 }
 
@@ -178,6 +189,9 @@ func estimateCapacityAdvisoryWithAvailability(settings SystemSettings, availabil
 		AvailabilitySource:            availability.Source,
 		ConfiguredAvailableGenerators: availability.ConfiguredAvailableGenerators,
 		LiveAvailableGenerators:       availability.LiveAvailableGenerators,
+		ReservationProjectID:          availability.ReservationProjectID,
+		ReservedGenerators:            availability.ReservedGenerators,
+		SharedAvailableGenerators:     availability.SharedAvailableGenerators,
 		RecommendedGenerators:         recommended,
 		AvailableGenerators:           available,
 		ShortfallGenerators:           shortfall,
@@ -199,23 +213,92 @@ func resolveCapacityAvailability(settings SystemSettings) CapacityAvailabilitySn
 	}
 
 	if settings.CapacityPlanning.Availability.Source != capacityAvailabilityConfiguredPlusLive {
-		return snapshot
+		return applyGlobalCapacityReservationSummary(settings, snapshot)
 	}
 
 	rawLive := strings.TrimSpace(os.Getenv("STORMRUNNER_LIVE_AVAILABLE_GENERATORS"))
 	if rawLive == "" {
 		snapshot.Warnings = append(snapshot.Warnings, "Live generator availability is enabled but no runtime snapshot was provided; using configured generator inventory.")
-		return snapshot
+		return applyGlobalCapacityReservationSummary(settings, snapshot)
 	}
 
 	live, err := strconv.Atoi(rawLive)
 	if err != nil || live < 0 {
 		snapshot.Warnings = append(snapshot.Warnings, "Live generator availability snapshot is invalid; using configured generator inventory.")
-		return snapshot
+		return applyGlobalCapacityReservationSummary(settings, snapshot)
 	}
 
 	snapshot.LiveAvailableGenerators = &live
 	snapshot.EffectiveAvailableGenerators = minInt(configured, live)
+	return applyGlobalCapacityReservationSummary(settings, snapshot)
+}
+
+func applyGlobalCapacityReservationSummary(settings SystemSettings, snapshot CapacityAvailabilitySnapshot) CapacityAvailabilitySnapshot {
+	totalReserved := 0
+	for _, reservation := range normalizeCapacityReservations(settings.CapacityPlanning.Reservations) {
+		if reservation.ReservedGenerators < 0 {
+			continue
+		}
+		totalReserved += reservation.ReservedGenerators
+	}
+	if totalReserved <= 0 {
+		return snapshot
+	}
+	if totalReserved > snapshot.EffectiveAvailableGenerators {
+		totalReserved = snapshot.EffectiveAvailableGenerators
+	}
+	snapshot.ReservedGenerators = totalReserved
+	snapshot.SharedAvailableGenerators = snapshot.EffectiveAvailableGenerators - totalReserved
+	if snapshot.SharedAvailableGenerators < 0 {
+		snapshot.SharedAvailableGenerators = 0
+	}
+	return snapshot
+}
+
+func resolveCapacityAvailabilityForProject(settings SystemSettings, projectID string) CapacityAvailabilitySnapshot {
+	snapshot := resolveCapacityAvailability(settings)
+	normalizedProjectID := normalizeProjectID(strings.TrimSpace(projectID))
+	reservations := normalizeCapacityReservations(settings.CapacityPlanning.Reservations)
+	if normalizedProjectID == "" || len(reservations) == 0 {
+		return snapshot
+	}
+
+	totalReserved := 0
+	projectReserved := 0
+	for _, reservation := range reservations {
+		if reservation.ReservedGenerators < 0 {
+			continue
+		}
+		totalReserved += reservation.ReservedGenerators
+		if reservation.ProjectID == normalizedProjectID {
+			projectReserved += reservation.ReservedGenerators
+		}
+	}
+	if totalReserved == 0 {
+		return snapshot
+	}
+
+	if totalReserved > snapshot.EffectiveAvailableGenerators {
+		totalReserved = snapshot.EffectiveAvailableGenerators
+	}
+	shared := snapshot.EffectiveAvailableGenerators - totalReserved
+	if shared < 0 {
+		shared = 0
+	}
+	effective := shared + projectReserved
+	if effective > snapshot.EffectiveAvailableGenerators {
+		effective = snapshot.EffectiveAvailableGenerators
+	}
+
+	snapshot.ReservationProjectID = normalizedProjectID
+	snapshot.ReservedGenerators = projectReserved
+	snapshot.SharedAvailableGenerators = shared
+	snapshot.EffectiveAvailableGenerators = effective
+	if projectReserved > 0 {
+		snapshot.Warnings = append(snapshot.Warnings, "Capacity reservation applied: project "+normalizedProjectID+" has "+strconv.Itoa(projectReserved)+" reserved generator"+pluralSuffix(projectReserved)+".")
+	} else {
+		snapshot.Warnings = append(snapshot.Warnings, strconv.Itoa(totalReserved)+" generator"+pluralSuffix(totalReserved)+" reserved for other projects; using shared pool capacity.")
+	}
 	return snapshot
 }
 

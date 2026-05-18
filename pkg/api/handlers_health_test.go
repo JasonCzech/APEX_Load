@@ -14,6 +14,7 @@ func TestHandleHealthCheckReturnsCapacityAvailabilitySnapshot(t *testing.T) {
 	settings := server.runner.GetSystemSettings()
 	settings.CapacityPlanning.Availability.Source = capacityAvailabilityConfiguredPlusLive
 	settings.CapacityPlanning.Availability.ConfiguredAvailableGenerators = 5
+	settings.CapacityPlanning.Reservations = []CapacityReservation{{ProjectID: "critical-checkout", ReservedGenerators: 1}}
 	if _, err := server.runner.UpdateSystemSettings(settings); err != nil {
 		t.Fatalf("UpdateSystemSettings returned error: %v", err)
 	}
@@ -33,6 +34,8 @@ func TestHandleHealthCheckReturnsCapacityAvailabilitySnapshot(t *testing.T) {
 			ConfiguredAvailableGenerators int      `json:"configured_available_generators"`
 			EffectiveAvailableGenerators  int      `json:"effective_available_generators"`
 			LiveAvailableGenerators       *int     `json:"live_available_generators"`
+			ReservedGenerators            int      `json:"reserved_generators"`
+			SharedAvailableGenerators     int      `json:"shared_available_generators"`
 			Warnings                      []string `json:"warnings"`
 		} `json:"capacity_availability"`
 	}
@@ -50,5 +53,11 @@ func TestHandleHealthCheckReturnsCapacityAvailabilitySnapshot(t *testing.T) {
 	}
 	if payload.CapacityAvailability.LiveAvailableGenerators == nil || *payload.CapacityAvailability.LiveAvailableGenerators != 3 {
 		t.Fatalf("live available generators = %#v, want 3", payload.CapacityAvailability.LiveAvailableGenerators)
+	}
+	if payload.CapacityAvailability.ReservedGenerators != 1 {
+		t.Fatalf("reserved generators = %d, want 1", payload.CapacityAvailability.ReservedGenerators)
+	}
+	if payload.CapacityAvailability.SharedAvailableGenerators != 2 {
+		t.Fatalf("shared available generators = %d, want 2", payload.CapacityAvailability.SharedAvailableGenerators)
 	}
 }
