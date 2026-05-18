@@ -314,6 +314,8 @@ export interface RunArchiveManifest {
   transaction_count: number
   resource_sample_count: number
   interval_summary_count: number
+  sla_breached?: boolean
+  sla_details?: string[]
 }
 
 export interface TransactionEvent {

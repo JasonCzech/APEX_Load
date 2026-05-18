@@ -441,6 +441,41 @@
   padding: 16px;
 }
 
+.trend-signal-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.trend-signal-card {
+  min-width: 0;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-primary);
+}
+
+.trend-signal-value,
+.trend-signal-label {
+  display: block;
+}
+
+.trend-signal-value {
+  color: var(--text-primary);
+  font-size: 17px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.trend-signal-label {
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
 .trend-table-wrap {
   overflow-x: auto;
   border: 1px solid var(--border);
@@ -451,7 +486,7 @@
 .trend-table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 760px;
+  min-width: 1180px;
 }
 
 .trend-table th,

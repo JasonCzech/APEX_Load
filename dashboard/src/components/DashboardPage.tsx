@@ -38,6 +38,12 @@ interface GraphCardSettings {
   showGraph: boolean
 }
 
+interface PerformanceTrendEntry {
+  test: TestSummary
+  report: RunArchiveReport
+  runtimeSummary: string | null
+}
+
 const defaultGraphCardSettings: GraphCardSettings = {
   metric: 'tps',
   showGraph: true,
@@ -58,12 +64,43 @@ function formatBrowserMs(value?: number, digits = 0) {
   return typeof value === 'number' && Number.isFinite(value) ? value.toFixed(digits) : '—'
 }
 
+function formatOptionalNumber(value?: number, digits = 0) {
+  return typeof value === 'number' && Number.isFinite(value) ? value.toFixed(digits) : '—'
+}
+
 function formatDateTime(value?: string) {
   return value ? new Date(value).toLocaleString() : 'Never'
 }
 
 function completionTime(test: TestSummary) {
   return new Date(test.ended_at || test.start_time || test.created_at || 0).getTime()
+}
+
+function buildReleaseTrendStats(entries: PerformanceTrendEntry[]) {
+  if (entries.length === 0) {
+    return {
+      slaBreaches: 0,
+      avgCompleteness: 0,
+      peakVUsers: 0,
+      maxCPU: 0,
+      maxMemoryMB: 0,
+      telemetryBreached: 0,
+    }
+  }
+  const completenessScores = entries
+    .map(entry => entry.report.completeness?.score_pct)
+    .filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
+  const avgCompleteness = completenessScores.length
+    ? completenessScores.reduce((sum, value) => sum + value, 0) / completenessScores.length
+    : 0
+  return {
+    slaBreaches: entries.filter(entry => entry.report.manifest?.sla_breached).length,
+    avgCompleteness,
+    peakVUsers: Math.max(...entries.map(entry => entry.report.overview.peak_active_vusers || 0)),
+    maxCPU: Math.max(...entries.map(entry => entry.report.resource_peaks?.cpu_process_pct || 0)),
+    maxMemoryMB: Math.max(...entries.map(entry => entry.report.resource_peaks?.mem_process_mb || 0)),
+    telemetryBreached: entries.filter(entry => entry.report.overview.telemetry?.status === 'breached').length,
+  }
 }
 
 function getHistoryMetric(point: MetricsHistoryPoint, metric: CardMetricKey) {
@@ -288,9 +325,11 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
           runtimeSummary: formatBrowserRuntimeSummary(report.manifest?.provenance?.runtime_settings?.browser ?? test.runtime_settings?.browser),
         }
       })
-      .filter((entry): entry is { test: TestSummary; report: RunArchiveReport; runtimeSummary: string | null } => Boolean(entry)),
+      .filter((entry): entry is PerformanceTrendEntry => Boolean(entry)),
     [archivedReleaseRuns, archiveReports],
   )
+
+  const releaseTrendStats = useMemo(() => buildReleaseTrendStats(performanceTrend), [performanceTrend])
 
   const stats = useMemo(() => {
     const completed = resolvedTests.filter(t => t.status === 'COMPLETE').length
@@ -546,43 +585,85 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
             <span>No archived performance reports yet</span>
           </div>
         ) : (
-          <div className="trend-table-wrap">
-            <table className="trend-table">
-              <thead>
-                <tr>
-                  <th>Run</th>
-                  <th>Completed</th>
-                  <th>Browser Runtime</th>
-                  <th className="num">Peak TPS</th>
-                  <th className="num">Avg ms</th>
-                  <th className="num">LCP ms</th>
-                  <th className="num">Errors</th>
-                  <th className="num">Peak VUsers</th>
-                  <th className="num">Transactions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {performanceTrend.map(({ test, report, runtimeSummary }) => (
-                  <tr key={test.id} onClick={() => onSelectTest(test.id)}>
-                    <td>
-                      <span className="trend-run-name">{test.name}</span>
-                      <span className="trend-run-meta">{test.script_name || `${test.total_vusers} VUsers`}</span>
-                    </td>
-                    <td>{formatDateTime(test.ended_at || test.start_time || test.created_at)}</td>
-                    <td>{runtimeSummary || 'Default browser'}</td>
-                    <td className="num strong">{formatNumber(report.overview.peak_tps, 1)}</td>
-                    <td className="num">{formatNumber(report.overview.avg_response_ms)}</td>
-                    <td className="num">{formatBrowserMs(report.overview.browser?.avg_lcp_ms)}</td>
-                    <td className={`num ${report.overview.error_pct > 0 ? 'text-danger strong' : ''}`}>
-                      {formatNumber(report.overview.error_pct, 2)}%
-                    </td>
-                    <td className="num">{report.overview.peak_active_vusers.toLocaleString()}</td>
-                    <td className="num">{report.overview.transactions.toLocaleString()}</td>
+          <>
+            <div className="trend-signal-grid">
+              <div className="trend-signal-card">
+                <span className="trend-signal-value">{releaseTrendStats.slaBreaches}</span>
+                <span className="trend-signal-label">SLA Breaches</span>
+              </div>
+              <div className="trend-signal-card">
+                <span className="trend-signal-value">{formatNumber(releaseTrendStats.avgCompleteness, 0)}%</span>
+                <span className="trend-signal-label">Avg Completeness</span>
+              </div>
+              <div className="trend-signal-card">
+                <span className="trend-signal-value">{releaseTrendStats.peakVUsers.toLocaleString()}</span>
+                <span className="trend-signal-label">Peak VUsers</span>
+              </div>
+              <div className="trend-signal-card">
+                <span className="trend-signal-value">{formatNumber(releaseTrendStats.maxCPU, 1)}%</span>
+                <span className="trend-signal-label">Max CPU</span>
+              </div>
+              <div className="trend-signal-card">
+                <span className="trend-signal-value">{formatNumber(releaseTrendStats.maxMemoryMB, 0)} MB</span>
+                <span className="trend-signal-label">Max Memory</span>
+              </div>
+              <div className="trend-signal-card">
+                <span className="trend-signal-value">{releaseTrendStats.telemetryBreached}</span>
+                <span className="trend-signal-label">Telemetry Breaches</span>
+              </div>
+            </div>
+            <div className="trend-table-wrap">
+              <table className="trend-table">
+                <thead>
+                  <tr>
+                    <th>Run</th>
+                    <th>Completed</th>
+                    <th>Browser Runtime</th>
+                    <th className="num">Peak TPS</th>
+                    <th className="num">Avg ms</th>
+                    <th className="num">LCP ms</th>
+                    <th className="num">Errors</th>
+                    <th className="num">SLA</th>
+                    <th className="num">Complete</th>
+                    <th className="num">CPU</th>
+                    <th className="num">Memory</th>
+                    <th className="num">Telemetry</th>
+                    <th className="num">Peak VUsers</th>
+                    <th className="num">Transactions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {performanceTrend.map(({ test, report, runtimeSummary }) => (
+                    <tr key={test.id} onClick={() => onSelectTest(test.id)}>
+                      <td>
+                        <span className="trend-run-name">{test.name}</span>
+                        <span className="trend-run-meta">{test.script_name || `${test.total_vusers} VUsers`}</span>
+                      </td>
+                      <td>{formatDateTime(test.ended_at || test.start_time || test.created_at)}</td>
+                      <td>{runtimeSummary || 'Default browser'}</td>
+                      <td className="num strong">{formatNumber(report.overview.peak_tps, 1)}</td>
+                      <td className="num">{formatNumber(report.overview.avg_response_ms)}</td>
+                      <td className="num">{formatBrowserMs(report.overview.browser?.avg_lcp_ms)}</td>
+                      <td className={`num ${report.overview.error_pct > 0 ? 'text-danger strong' : ''}`}>
+                        {formatNumber(report.overview.error_pct, 2)}%
+                      </td>
+                      <td className={`num ${report.manifest?.sla_breached ? 'text-danger strong' : 'text-success'}`}>
+                        {report.manifest?.sla_breached ? 'Breached' : 'Passed'}
+                      </td>
+                      <td className="num">{formatOptionalNumber(report.completeness?.score_pct, 0)}%</td>
+                      <td className="num">{formatOptionalNumber(report.resource_peaks?.cpu_process_pct, 1)}%</td>
+                      <td className="num">{formatOptionalNumber(report.resource_peaks?.mem_process_mb, 0)} MB</td>
+                      <td className={`num ${report.overview.telemetry?.status === 'breached' ? 'text-danger strong' : ''}`}>
+                        {report.overview.telemetry?.status || 'n/a'}
+                      </td>
+                      <td className="num">{report.overview.peak_active_vusers.toLocaleString()}</td>
+                      <td className="num">{report.overview.transactions.toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </section>
 

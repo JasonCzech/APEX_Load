@@ -155,6 +155,7 @@ describe('DashboardPage', () => {
     })
     apiMock.getTestArchiveReport.mockResolvedValue({
       manifest: {
+        sla_breached: true,
         provenance: {
           runtime_settings: {
             browser: {
@@ -172,9 +173,26 @@ describe('DashboardPage', () => {
         browser: {
           avg_lcp_ms: 240,
         },
+        telemetry: {
+          status: 'breached',
+          samples: 3,
+          breached_intervals: 1,
+        },
         error_pct: 0,
         peak_active_vusers: 12,
         transactions: 1200,
+      },
+      completeness: {
+        score_pct: 88,
+        status: 'needs_review',
+      },
+      resource_peaks: {
+        cpu_process_pct: 64.2,
+        mem_process_mb: 512,
+        net_sent_kbps: 120,
+        net_recv_kbps: 140,
+        disk_read_kbps: 0,
+        disk_write_kbps: 0,
       },
     })
     container = document.createElement('div')
@@ -217,6 +235,15 @@ describe('DashboardPage', () => {
     expect(getButtonByText('Generators Available').textContent).toContain('1')
     expect(container.textContent).toContain('LCP ms')
     expect(container.textContent).toContain('240')
+    expect(container.textContent).toContain('SLA Breaches')
+    expect(container.textContent).toContain('Avg Completeness')
+    expect(container.textContent).toContain('88%')
+    expect(container.textContent).toContain('Max CPU')
+    expect(container.textContent).toContain('64.2%')
+    expect(container.textContent).toContain('Max Memory')
+    expect(container.textContent).toContain('512 MB')
+    expect(container.textContent).toContain('Telemetry Breaches')
+    expect(container.textContent).toContain('Breached')
     expect(container.textContent).toContain('Browser Runtime')
     expect(container.textContent).toContain('iphone_se · Portrait · Touch enabled · Headed')
     expect(container.textContent).toContain('pixel_8 · Landscape · Touch enabled · Headless')
