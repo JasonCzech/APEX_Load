@@ -241,6 +241,80 @@ func TestEstimateCapacityAdvisoryAppliesProjectReservations(t *testing.T) {
 	}
 }
 
+func TestEstimateCapacityAdvisoryUsesProtocolDensityEnvelopes(t *testing.T) {
+	settings := defaultSystemSettings(5)
+	settings.CapacityPlanning.Availability.ConfiguredAvailableGenerators = 2
+
+	advisory := estimateCapacityAdvisory(settings, []TestGroup{{
+		Name:     "mq-orders",
+		Protocol: "jms",
+		VUsers:   5000,
+		script: &dsl.Script{
+			Protocol: "jms",
+			Actions:  []dsl.Action{{Name: "send", Type: "jms_send", Target: "queue://orders"}},
+		},
+	}}, 5000, 30*time.Minute, false, nil)
+
+	if advisory == nil {
+		t.Fatal("expected advisory")
+	}
+	if advisory.WorkloadClass != "jms" {
+		t.Fatalf("workload class = %q, want jms", advisory.WorkloadClass)
+	}
+	if len(advisory.ProtocolDensities) != 1 {
+		t.Fatalf("protocol densities = %#v, want one JMS envelope", advisory.ProtocolDensities)
+	}
+	density := advisory.ProtocolDensities[0]
+	if density.Protocol != "jms" || density.MaxVUsersPerGenerator != 3000 || density.VUsers != 5000 {
+		t.Fatalf("density = %#v, want JMS 5000 VUsers at 3000 VUsers/generator", density)
+	}
+	if advisory.DimensionRecommendations.VUsers != 3 {
+		t.Fatalf("vuser recommendation = %d, want 3 from JMS density with headroom", advisory.DimensionRecommendations.VUsers)
+	}
+	if !advisory.RequiresOverride || advisory.ShortfallGenerators != 1 {
+		t.Fatalf("shortfall = %d override=%v, want one-generator JMS density shortfall", advisory.ShortfallGenerators, advisory.RequiresOverride)
+	}
+}
+
+func TestEstimateCapacityAdvisoryCombinesMixedProtocolDensityEnvelopes(t *testing.T) {
+	settings := defaultSystemSettings(5)
+	settings.CapacityPlanning.Availability.ConfiguredAvailableGenerators = 4
+
+	advisory := estimateCapacityAdvisory(settings, []TestGroup{
+		{
+			Name:     "api",
+			Protocol: "grpc",
+			VUsers:   6000,
+			script:   &dsl.Script{Protocol: "grpc", Actions: []dsl.Action{{Name: "call", Type: "grpc_unary", Target: "/payments.Service/Authorize"}}},
+		},
+		{
+			Name:     "notifications",
+			Protocol: "websocket",
+			VUsers:   6000,
+			script:   &dsl.Script{Protocol: "websocket", Actions: []dsl.Action{{Name: "connect", Type: "websocket_connect", Target: "wss://example.test/ws"}}},
+		},
+	}, 12000, 30*time.Minute, false, nil)
+
+	if advisory == nil {
+		t.Fatal("expected advisory")
+	}
+	if advisory.WorkloadClass != "mixed" {
+		t.Fatalf("workload class = %q, want mixed", advisory.WorkloadClass)
+	}
+	if len(advisory.ProtocolDensities) != 2 {
+		t.Fatalf("protocol densities = %#v, want gRPC and WebSocket envelopes", advisory.ProtocolDensities)
+	}
+	if advisory.ProtocolDensities[0].Protocol != "grpc" || advisory.ProtocolDensities[1].Protocol != "websocket" {
+		t.Fatalf("protocol densities = %#v, want sorted gRPC/WebSocket envelopes", advisory.ProtocolDensities)
+	}
+	if advisory.DimensionRecommendations.VUsers != 2 {
+		t.Fatalf("vuser recommendation = %d, want WebSocket density to drive two generators", advisory.DimensionRecommendations.VUsers)
+	}
+	if advisory.EstimatedPerVUser.MemoryMB <= 0.35 {
+		t.Fatalf("estimated per-vuser memory = %v, want protocol envelope above HTTP default", advisory.EstimatedPerVUser.MemoryMB)
+	}
+}
+
 func TestCreateTestAttachesCapacityAdvisory(t *testing.T) {
 	hub := NewHub()
 	runner := NewTestRunner(2, hub, nil)

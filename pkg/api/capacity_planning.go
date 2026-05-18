@@ -3,6 +3,7 @@ package api
 import (
 	"math"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -24,6 +25,16 @@ type CapacityDimensionRecommendations struct {
 	VUsers  int `json:"vusers"`
 }
 
+type ProtocolDensityEnvelope struct {
+	Protocol                string  `json:"protocol"`
+	VUsers                  int     `json:"vusers"`
+	MaxVUsersPerGenerator   int     `json:"max_vusers_per_generator"`
+	CPUCoresPerVUser        float64 `json:"cpu_cores_per_vuser"`
+	MemoryMBPerVUser        float64 `json:"memory_mb_per_vuser"`
+	NetworkMbpsPerVUser     float64 `json:"network_mbps_per_vuser"`
+	CompatibilityConfidence string  `json:"compatibility_confidence,omitempty"`
+}
+
 type CapacityAdvisory struct {
 	TotalVUsers                   int                              `json:"total_vusers"`
 	DurationSeconds               int                              `json:"duration_seconds"`
@@ -31,6 +42,7 @@ type CapacityAdvisory struct {
 	WorkloadClass                 string                           `json:"workload_class,omitempty"`
 	BrowserVUsers                 int                              `json:"browser_vusers,omitempty"`
 	MaxBrowserVUsersPerGenerator  int                              `json:"max_browser_vusers_per_generator,omitempty"`
+	ProtocolDensities             []ProtocolDensityEnvelope        `json:"protocol_densities,omitempty"`
 	HeadroomPct                   float64                          `json:"headroom_pct"`
 	ComplexityScore               float64                          `json:"complexity_score"`
 	Bottleneck                    string                           `json:"bottleneck"`
@@ -69,6 +81,7 @@ type capacityWorkloadProfile struct {
 	BrowserMemoryMBPerVUser      float64
 	BrowserCPUCoresPerVUser      float64
 	BrowserNetworkMbpsPerVUser   float64
+	ProtocolDensities            []ProtocolDensityEnvelope
 	Warnings                     []string
 }
 
@@ -83,6 +96,9 @@ func cloneCapacityAdvisory(in *CapacityAdvisory) *CapacityAdvisory {
 	if in.LiveAvailableGenerators != nil {
 		v := *in.LiveAvailableGenerators
 		out.LiveAvailableGenerators = &v
+	}
+	if in.ProtocolDensities != nil {
+		out.ProtocolDensities = append([]ProtocolDensityEnvelope(nil), in.ProtocolDensities...)
 	}
 	return &out
 }
@@ -117,24 +133,17 @@ func estimateCapacityAdvisoryWithAvailability(settings SystemSettings, availabil
 		workloadProfile.Class = "mixed"
 	}
 	warnings = append(warnings, workloadProfile.Warnings...)
-	perVUser := estimatePerVUserFootprint(complexityScore, workloadProfile)
-	totalEstimate := CapacityResourceEstimate{
-		CPUCores:    perVUser.CPUCores * float64(totalVUsers),
-		MemoryMB:    perVUser.MemoryMB * float64(totalVUsers),
-		NetworkMbps: perVUser.NetworkMbps * float64(totalVUsers),
-	}
-
-	if workloadProfile.BrowserVUsers > 0 && workloadProfile.BrowserVUsers < totalVUsers {
-		httpVUsers := totalVUsers - workloadProfile.BrowserVUsers
-		httpPerVUser := estimatePerVUserFootprint(complexityScore, capacityWorkloadProfile{Class: "http"})
-		totalEstimate = CapacityResourceEstimate{
-			CPUCores:    workloadProfile.BrowserCPUCoresPerVUser*float64(workloadProfile.BrowserVUsers) + httpPerVUser.CPUCores*float64(httpVUsers),
-			MemoryMB:    workloadProfile.BrowserMemoryMBPerVUser*float64(workloadProfile.BrowserVUsers) + httpPerVUser.MemoryMB*float64(httpVUsers),
-			NetworkMbps: workloadProfile.BrowserNetworkMbpsPerVUser*float64(workloadProfile.BrowserVUsers) + httpPerVUser.NetworkMbps*float64(httpVUsers),
-		}
-	}
+	perVUser, totalEstimate := estimateCapacityFootprint(complexityScore, workloadProfile, totalVUsers)
 
 	vuserRecommendation := estimateRequiredGenerators(float64(totalVUsers), float64(usableVUsers))
+	for _, density := range workloadProfile.ProtocolDensities {
+		usableProtocolVUsers := int(math.Floor(float64(density.MaxVUsersPerGenerator) * (1 - headroomFraction)))
+		if usableProtocolVUsers < 1 {
+			usableProtocolVUsers = 1
+		}
+		protocolRecommendation := estimateRequiredGenerators(float64(density.VUsers), float64(usableProtocolVUsers))
+		vuserRecommendation = maxInt(vuserRecommendation, protocolRecommendation)
+	}
 	if workloadProfile.MaxBrowserVUsersPerGenerator > 0 {
 		browserDensityRecommendation := estimateRequiredGenerators(float64(workloadProfile.BrowserVUsers), float64(workloadProfile.MaxBrowserVUsersPerGenerator))
 		vuserRecommendation = maxInt(vuserRecommendation, browserDensityRecommendation)
@@ -183,6 +192,7 @@ func estimateCapacityAdvisoryWithAvailability(settings SystemSettings, availabil
 		WorkloadClass:                 workloadProfile.Class,
 		BrowserVUsers:                 workloadProfile.BrowserVUsers,
 		MaxBrowserVUsersPerGenerator:  workloadProfile.MaxBrowserVUsersPerGenerator,
+		ProtocolDensities:             cloneProtocolDensityEnvelopes(workloadProfile.ProtocolDensities),
 		HeadroomPct:                   settings.CapacityPlanning.HeadroomPct,
 		ComplexityScore:               roundCapacityValue(complexityScore),
 		Bottleneck:                    bottleneck,
@@ -310,9 +320,9 @@ func calculateScenarioComplexity(groups []TestGroup, runtimeSettings *RuntimeSet
 
 	for _, group := range groups {
 		scriptScore := 1.0
-		protocol := strings.ToLower(group.Protocol)
+		protocol := canonicalCapacityProtocol(group)
 		switch protocol {
-		case "http", "http/1.1", "http/2", "https":
+		case "http", "grpc", "websocket", "soap", "java_http", "jms", "browser":
 			scriptScore += 0
 		case "":
 			unknownProtocol = true
@@ -414,31 +424,105 @@ func runtimeOverheadScore(config dsl.ScriptConfig, runtimeSettings *RuntimeSetti
 
 func classifyCapacityWorkload(groups []TestGroup, runtimeSettings *RuntimeSettingsOverride) capacityWorkloadProfile {
 	profile := capacityWorkloadProfile{Class: "http"}
+	protocolVUsers := make(map[string]int)
 	for _, group := range groups {
-		if !isBrowserCapacityGroup(group) {
-			continue
-		}
-		profile.BrowserVUsers += group.VUsers
-		profile.Class = "browser"
-		deviceName := browserDeviceProfileForCapacity(group, runtimeSettings)
-		device, ok := browserprotocol.LookupDevice(deviceName)
-		if !ok {
-			if strings.TrimSpace(deviceName) != "" {
-				profile.Warnings = append(profile.Warnings, "Browser capacity advisor could not resolve the configured device profile; using conservative mobile browser density.")
+		if isBrowserCapacityGroup(group) {
+			profile.BrowserVUsers += group.VUsers
+			profile.Class = "browser"
+			deviceName := browserDeviceProfileForCapacity(group, runtimeSettings)
+			device, ok := browserprotocol.LookupDevice(deviceName)
+			if !ok {
+				if strings.TrimSpace(deviceName) != "" {
+					profile.Warnings = append(profile.Warnings, "Browser capacity advisor could not resolve the configured device profile; using conservative mobile browser density.")
+				}
+				profile = mergeBrowserCapacityProfile(profile, browserCapacityProfileForTier("unknown"))
+				continue
 			}
-			profile = mergeBrowserCapacityProfile(profile, browserCapacityProfileForTier("unknown"))
+			profile = mergeBrowserCapacityProfile(profile, browserCapacityProfileForTier(device.DeviceTier))
 			continue
 		}
-		profile = mergeBrowserCapacityProfile(profile, browserCapacityProfileForTier(device.DeviceTier))
+		protocol := canonicalCapacityProtocol(group)
+		if protocol == "" {
+			protocol = "unknown"
+		}
+		protocolVUsers[protocol] += group.VUsers
 	}
+	profile.ProtocolDensities = protocolDensityEnvelopesForVUsers(protocolVUsers)
 	if profile.BrowserVUsers == 0 {
+		if len(profile.ProtocolDensities) == 1 {
+			profile.Class = profile.ProtocolDensities[0].Protocol
+		} else if len(profile.ProtocolDensities) > 1 {
+			profile.Class = "mixed"
+		}
 		return profile
+	}
+	if len(profile.ProtocolDensities) > 0 {
+		profile.Class = "mixed"
 	}
 	profile.Warnings = append(profile.Warnings, "Browser VUsers launch real browser runtimes; capacity guidance uses diagnostic canary density rather than HTTP goroutine density.")
 	if profile.MaxBrowserVUsersPerGenerator == 0 {
 		profile = mergeBrowserCapacityProfile(profile, browserCapacityProfileForTier("unknown"))
 	}
 	return profile
+}
+
+func canonicalCapacityProtocol(group TestGroup) string {
+	protocol := strings.ToLower(strings.TrimSpace(group.Protocol))
+	if protocol == "" && group.script != nil {
+		protocol = strings.ToLower(strings.TrimSpace(group.script.Protocol))
+	}
+	switch protocol {
+	case "https", "http/1.1", "http/2", "web_http", "web":
+		return "http"
+	case "java-http", "java_http", "java over http", "java-over-http":
+		return "java_http"
+	case "jms", "jms-solace", "jms_solace", "solace", "ibm-mq", "ibm_mq", "mq":
+		return "jms"
+	case "ws", "websocket":
+		return "websocket"
+	default:
+		return protocol
+	}
+}
+
+func protocolDensityEnvelopesForVUsers(protocolVUsers map[string]int) []ProtocolDensityEnvelope {
+	if len(protocolVUsers) == 0 {
+		return nil
+	}
+	protocols := make([]string, 0, len(protocolVUsers))
+	for protocol, vusers := range protocolVUsers {
+		if vusers <= 0 {
+			continue
+		}
+		protocols = append(protocols, protocol)
+	}
+	sort.Strings(protocols)
+	out := make([]ProtocolDensityEnvelope, 0, len(protocols))
+	for _, protocol := range protocols {
+		envelope := protocolDensityEnvelope(protocol)
+		envelope.VUsers = protocolVUsers[protocol]
+		out = append(out, envelope)
+	}
+	return out
+}
+
+func protocolDensityEnvelope(protocol string) ProtocolDensityEnvelope {
+	switch strings.ToLower(strings.TrimSpace(protocol)) {
+	case "http":
+		return ProtocolDensityEnvelope{Protocol: "http", MaxVUsersPerGenerator: 10000, CPUCoresPerVUser: 0.00025, MemoryMBPerVUser: 0.35, NetworkMbpsPerVUser: 0.08, CompatibilityConfidence: "measured_target"}
+	case "grpc":
+		return ProtocolDensityEnvelope{Protocol: "grpc", MaxVUsersPerGenerator: 12000, CPUCoresPerVUser: 0.00022, MemoryMBPerVUser: 0.30, NetworkMbpsPerVUser: 0.06, CompatibilityConfidence: "model"}
+	case "websocket":
+		return ProtocolDensityEnvelope{Protocol: "websocket", MaxVUsersPerGenerator: 6000, CPUCoresPerVUser: 0.00030, MemoryMBPerVUser: 0.50, NetworkMbpsPerVUser: 0.04, CompatibilityConfidence: "model"}
+	case "soap":
+		return ProtocolDensityEnvelope{Protocol: "soap", MaxVUsersPerGenerator: 5000, CPUCoresPerVUser: 0.00040, MemoryMBPerVUser: 0.65, NetworkMbpsPerVUser: 0.12, CompatibilityConfidence: "model"}
+	case "java_http":
+		return ProtocolDensityEnvelope{Protocol: "java_http", MaxVUsersPerGenerator: 7000, CPUCoresPerVUser: 0.00032, MemoryMBPerVUser: 0.45, NetworkMbpsPerVUser: 0.09, CompatibilityConfidence: "model"}
+	case "jms":
+		return ProtocolDensityEnvelope{Protocol: "jms", MaxVUsersPerGenerator: 3000, CPUCoresPerVUser: 0.00050, MemoryMBPerVUser: 0.80, NetworkMbpsPerVUser: 0.05, CompatibilityConfidence: "model"}
+	default:
+		return ProtocolDensityEnvelope{Protocol: "unknown", MaxVUsersPerGenerator: 4000, CPUCoresPerVUser: 0.00045, MemoryMBPerVUser: 0.75, NetworkMbpsPerVUser: 0.10, CompatibilityConfidence: "conservative"}
+	}
 }
 
 func isBrowserCapacityGroup(group TestGroup) bool {
@@ -493,6 +577,49 @@ func mergeBrowserCapacityProfile(left capacityWorkloadProfile, right capacityWor
 	return left
 }
 
+func estimateCapacityFootprint(complexityScore float64, workloadProfile capacityWorkloadProfile, totalVUsers int) (CapacityResourceEstimate, CapacityResourceEstimate) {
+	total := CapacityResourceEstimate{}
+	for _, density := range workloadProfile.ProtocolDensities {
+		perProtocolVUser := protocolDensityFootprint(complexityScore, density)
+		total.CPUCores += perProtocolVUser.CPUCores * float64(density.VUsers)
+		total.MemoryMB += perProtocolVUser.MemoryMB * float64(density.VUsers)
+		total.NetworkMbps += perProtocolVUser.NetworkMbps * float64(density.VUsers)
+	}
+	if workloadProfile.BrowserVUsers > 0 {
+		browserPerVUser := estimatePerVUserFootprint(complexityScore, workloadProfile)
+		total.CPUCores += browserPerVUser.CPUCores * float64(workloadProfile.BrowserVUsers)
+		total.MemoryMB += browserPerVUser.MemoryMB * float64(workloadProfile.BrowserVUsers)
+		total.NetworkMbps += browserPerVUser.NetworkMbps * float64(workloadProfile.BrowserVUsers)
+	}
+	if totalVUsers < 1 {
+		totalVUsers = 1
+	}
+	if total.CPUCores == 0 && total.MemoryMB == 0 && total.NetworkMbps == 0 {
+		perVUser := estimatePerVUserFootprint(complexityScore, workloadProfile)
+		return perVUser, CapacityResourceEstimate{
+			CPUCores:    perVUser.CPUCores * float64(totalVUsers),
+			MemoryMB:    perVUser.MemoryMB * float64(totalVUsers),
+			NetworkMbps: perVUser.NetworkMbps * float64(totalVUsers),
+		}
+	}
+	return CapacityResourceEstimate{
+		CPUCores:    total.CPUCores / float64(totalVUsers),
+		MemoryMB:    total.MemoryMB / float64(totalVUsers),
+		NetworkMbps: total.NetworkMbps / float64(totalVUsers),
+	}, total
+}
+
+func protocolDensityFootprint(complexityScore float64, density ProtocolDensityEnvelope) CapacityResourceEstimate {
+	if complexityScore < 0.7 {
+		complexityScore = 0.7
+	}
+	return CapacityResourceEstimate{
+		CPUCores:    math.Max(density.CPUCoresPerVUser, density.CPUCoresPerVUser*complexityScore),
+		MemoryMB:    math.Max(density.MemoryMBPerVUser, density.MemoryMBPerVUser*complexityScore),
+		NetworkMbps: math.Max(density.NetworkMbpsPerVUser, density.NetworkMbpsPerVUser*complexityScore),
+	}
+}
+
 func estimatePerVUserFootprint(complexityScore float64, workloadProfile capacityWorkloadProfile) CapacityResourceEstimate {
 	if complexityScore < 0.7 {
 		complexityScore = 0.7
@@ -509,6 +636,13 @@ func estimatePerVUserFootprint(complexityScore float64, workloadProfile capacity
 		MemoryMB:    math.Max(0.20, 0.35*complexityScore),
 		NetworkMbps: math.Max(0.02, 0.08*complexityScore),
 	}
+}
+
+func cloneProtocolDensityEnvelopes(in []ProtocolDensityEnvelope) []ProtocolDensityEnvelope {
+	if len(in) == 0 {
+		return nil
+	}
+	return append([]ProtocolDensityEnvelope(nil), in...)
 }
 
 func estimateRequiredGenerators(total float64, usablePerGenerator float64) int {

@@ -83,6 +83,23 @@ Pending test promotion now uses a project-aware fair-share order:
 
 This keeps old FIFO behavior as the final tie breaker while preventing one busy project from indefinitely occupying every newly available start slot. Capacity shortfall checks still run before promotion, so non-reserved projects cannot consume generator capacity that has been removed from their shared-pool advisory.
 
+## Protocol Density Envelopes
+
+Capacity advice now publishes protocol-specific density envelopes in `capacity_advisory.protocol_densities` and uses them when computing VUser-driven generator recommendations.
+
+| Protocol | Max VUsers / generator | Confidence | Notes |
+| --- | ---: | --- | --- |
+| HTTP / HTTPS / HTTP/2 | 10,000 | Measured target | Baseline goroutine-per-VUser target. |
+| gRPC | 12,000 | Model | High-density HTTP/2 transport with compact payloads. |
+| WebSocket | 6,000 | Model | Persistent connection footprint lowers density relative to stateless HTTP. |
+| SOAP | 5,000 | Model | XML parsing and larger payload assumptions. |
+| Java-over-HTTP | 7,000 | Model | HTTP-family behavior with heavier client/runtime assumptions. |
+| JMS / Solace / IBM MQ | 3,000 | Model | Broker/session resources drive lower default density. |
+| Browser canaries | 20-40 | Device-tier model | Real browser runtime canaries, not HTTP-scale VUsers. |
+| Unknown | 4,000 | Conservative | Applied with a warning until the protocol has an explicit envelope. |
+
+The advisor applies the configured headroom percentage to protocol envelopes before calculating required generators. For mixed workloads, the advisory includes one envelope per protocol and the generator recommendation is the maximum of CPU, memory, network, global VUser density, and protocol-specific density.
+
 ## Plan Mapping
 
 | Plan item | Status | Artifact |
@@ -90,3 +107,4 @@ This keeps old FIFO behavior as the final tie breaker while preventing one busy 
 | P2.5 HPA/KEDA scaling signals | Complete for Prometheus signal contract; cluster manifests remain future work | `/metrics` and this document |
 | P2.6 Capacity reservations | Complete for settings, advisory, health, and metrics primitives; placement fair-share remains future work | `capacity_planning.reservations`, capacity advisory fields, `/metrics` |
 | P2.7 Fair-share placement | Complete for controller pending-queue promotion; distributed per-generator slot accounting remains future work | Project-aware pending promotion |
+| P2.8 Protocol density envelopes | Complete for code-owned advisory envelopes; benchmark calibration remains future hardening | `capacity_advisory.protocol_densities` |
