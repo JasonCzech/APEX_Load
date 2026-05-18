@@ -425,7 +425,17 @@ export default function TestExecutionArchive({
             <div className="scenario-script-detail-card">
               <span className="scenario-script-detail-label">Peak TPS</span>
               <span className="scenario-script-detail-value">{archiveReport.overview.peak_tps.toFixed(1)}</span>
+              {archiveReport.overview.peak_target_tps ? (
+                <span className="capacity-advisory-detail">Target {archiveReport.overview.peak_target_tps.toFixed(1)} TPS</span>
+              ) : null}
             </div>
+            {archiveReport.overview.max_throughput_gap_pct !== undefined && (
+              <div className="scenario-script-detail-card">
+                <span className="scenario-script-detail-label">Throughput Gap</span>
+                <span className="scenario-script-detail-value">{archiveReport.overview.max_throughput_gap_pct.toFixed(1)}%</span>
+                <span className="capacity-advisory-detail">{archiveReport.overview.throughput_missed_intervals || 0} missed target interval{archiveReport.overview.throughput_missed_intervals === 1 ? '' : 's'}</span>
+              </div>
+            )}
             <div className="scenario-script-detail-card">
               <span className="scenario-script-detail-label">Peak Active VUsers</span>
               <span className="scenario-script-detail-value">{archiveReport.overview.peak_active_vusers}</span>
@@ -576,7 +586,7 @@ export default function TestExecutionArchive({
                   <div className="archive-report-badges">
                     {archiveReport.manifest.provenance.groups.map(group => (
                       <span key={`${group.script_id}-${group.name}`} className="archive-chip">
-                        {group.name || group.script_name || group.script_id} · {group.vusers} VUsers
+                        {group.name || group.script_name || group.script_id} · {group.vusers} VUsers{group.initialization === 'at_once' ? ' · init once' : ''}
                       </span>
                     ))}
                   </div>

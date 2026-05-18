@@ -189,9 +189,9 @@ Acceptance criteria:
 | ID | Story | Size | Dependencies | Status |
 | --- | --- | --- | --- | --- |
 | P4.5 | Add rendezvous points for synchronized VUser release at named actions | L | P4.1 | Complete: runtime `rendezvous` actions synchronize VUsers and load-model validation reports spike readiness |
-| P4.6 | Add global iteration and transaction-count goals across all VUsers, not only per-VUser iteration loops | M | P4.1 | Partial backend complete: runtime enforces group-level `global_iterations` and `max_transactions` across VUsers |
+| P4.6 | Add global iteration and transaction-count goals across all VUsers, not only per-VUser iteration loops | M | P4.1 | Partial backend/UI complete: runtime enforces group-level `global_iterations` and `max_transactions` across VUsers, and dashboard script authoring exposes both caps |
 | P4.7 | Add init-once and teardown-once action scopes for shared seed/setup flows | M | P4.1 | Partial backend/UI complete: multi-group runtime honors `initialization: at_once` for group-level init/teardown, and dashboard scenario authoring can persist the scope |
-| P4.8 | Add coordinated-omission reporting to historical reports, not only live metrics | M | P4.1, P6.1 | Partial backend complete: archive interval summaries, JSON reports, HTML reports, Parquet exports, and archived two-run comparison CSV exports preserve target TPS, throughput gap, missed interval counts, and miss flags |
+| P4.8 | Add coordinated-omission reporting to historical reports, not only live metrics | M | P4.1, P6.1 | Partial backend/UI complete: archive interval summaries, JSON reports, HTML reports, Parquet exports, archived two-run comparison CSV exports, and the archive UI preserve target TPS, throughput gap, missed interval counts, and miss flags |
 
 Acceptance criteria:
 - Spike and once-only setup patterns are modeled explicitly.

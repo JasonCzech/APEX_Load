@@ -125,7 +125,7 @@ describe('TestExecutionArchive', () => {
             },
           },
         },
-        groups: [{ name: 'buyers', script_id: 'script-1', script_name: 'Checkout', protocol: 'soap', vusers: 1 }],
+        groups: [{ name: 'buyers', script_id: 'script-1', script_name: 'Checkout', protocol: 'soap', vusers: 1, initialization: 'at_once' }],
         controller_env: {
           STORMRUNNER_SAMPLE_FLAG: 'enabled',
         },
@@ -148,6 +148,9 @@ describe('TestExecutionArchive', () => {
       resource_samples: 0,
       interval_summaries: 0,
       peak_tps: 1,
+      peak_target_tps: 2,
+      max_throughput_gap_pct: 50,
+      throughput_missed_intervals: 3,
       peak_active_vusers: 1,
       browser: {
         samples: 1,
@@ -355,6 +358,10 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('2026-05-14 20:00Z')
     expect(container.textContent).toContain('120.0 ms')
     expect(container.textContent).toContain('Run Provenance')
+    expect(container.textContent).toContain('Target 2.0 TPS')
+    expect(container.textContent).toContain('Throughput Gap')
+    expect(container.textContent).toContain('3 missed target intervals')
+    expect(container.textContent).toContain('buyers · 1 VUsers · init once')
     expect(container.textContent).toContain('Completeness Score')
     expect(container.textContent).toContain('92% · needs review')
     expect(container.textContent).toContain('telemetry gaps')

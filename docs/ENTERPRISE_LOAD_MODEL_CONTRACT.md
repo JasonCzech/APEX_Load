@@ -45,7 +45,7 @@ Scenario and test group payloads can now carry staged load segments. The dashboa
 
 Supported stage types are `ramp_up`, `hold`, and `ramp_down`. Each stage requires `duration` plus either `target_vusers` or `target_tps`. The current runtime derives compatibility `ramp_up`, `ramp_down`, and group VUsers from the staged model while preserving the full stage list in API and SQLite scenario records.
 
-Scripts can also set shared run goals in `config.run_logic`:
+Scripts can also set shared run goals in `config.run_logic`. The dashboard script editor exposes these fields in Runtime Settings > Run Logic:
 
 - `global_iterations`: maximum total started iterations across all VUsers in the executing script group
 - `max_transactions`: maximum total protocol action attempts across all VUsers in the executing script group
@@ -96,6 +96,6 @@ The first template catalog covers:
 | P4.3 Staged ramp segments | Partial backend and UI complete | Group `stages` round-trip through API/storage, derive compatibility ramp execution, and can be authored from the dashboard scenario form |
 | P4.4 Capacity validation | Partial backend and UI complete | Draft validation checks modeled demand, capacity, browser canaries, data-pool rows, data-source fit, and generator placement; dashboard scenario form renders pre-save findings |
 | P4.5 Rendezvous points | Complete | Runtime `rendezvous` actions synchronize VUsers and validation reports spike readiness |
-| P4.6 Global goals | Partial backend complete | Runtime enforces group-level `global_iterations` and `max_transactions` across VUsers |
+| P4.6 Global goals | Partial backend and UI complete | Runtime enforces group-level `global_iterations` and `max_transactions` across VUsers, and the dashboard script editor can author both caps |
 | P4.7 Once-only scopes | Partial backend and UI complete | Multi-group runtime honors `initialization: at_once` for group-level init/teardown, and dashboard scenario authoring can persist the scope |
-| P4.8 Coordinated-omission reporting | Partial backend complete | Archive interval summaries, JSON reports, HTML reports, and Parquet exports preserve target TPS, throughput gap, and miss flags |
+| P4.8 Coordinated-omission reporting | Partial backend/UI complete | Archive interval summaries, JSON reports, HTML reports, Parquet exports, archived comparison CSV exports, and the archive UI preserve target TPS, throughput gap, missed interval counts, and miss flags |

@@ -3328,7 +3328,11 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                     <span className="section-icon">{'\ud83d\udd01'}</span>
                     <span className="section-label">Run Logic</span>
                     <span className="section-summary">
-                      {script.config.run_logic?.iterations ? `${script.config.run_logic.iterations} iterations` : 'Run until duration'}
+                      {script.config.run_logic?.global_iterations
+                        ? `${script.config.run_logic.global_iterations} shared iterations`
+                        : script.config.run_logic?.max_transactions
+                          ? `${script.config.run_logic.max_transactions} max transactions`
+                          : script.config.run_logic?.iterations ? `${script.config.run_logic.iterations} iterations` : 'Run until duration'}
                     </span>
                     <span className="chevron">{openSections['runlogic'] ? '▾' : '▸'}</span>
                   </button>
@@ -3339,6 +3343,24 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                           <span>Iterations</span>
                           <input type="number" value={script.config.run_logic?.iterations || 0} placeholder="0 = run until duration"
                             onChange={e => updateField('config.run_logic', { ...script.config.run_logic, iterations: Number(e.target.value) })} />
+                        </label>
+                        <label>
+                          <span>Global Iterations</span>
+                          <input type="number" value={script.config.run_logic?.global_iterations || 0} placeholder="0 = no shared cap"
+                            onChange={e => updateField('config.run_logic', { ...script.config.run_logic, global_iterations: Number(e.target.value) })} />
+                        </label>
+                        <label>
+                          <span>Max Transactions</span>
+                          <input type="number" value={script.config.run_logic?.max_transactions || 0} placeholder="0 = no transaction cap"
+                            onChange={e => updateField('config.run_logic', { ...script.config.run_logic, max_transactions: Number(e.target.value) })} />
+                        </label>
+                        <label>
+                          <span>Workload Model</span>
+                          <select value={script.config.run_logic?.workload_model || 'closed'}
+                            onChange={e => updateField('config.run_logic', { ...script.config.run_logic, workload_model: e.target.value })}>
+                            <option value="closed">Closed VUser</option>
+                            <option value="open">Open arrival-rate</option>
+                          </select>
                         </label>
                         <label>
                           <span>Auto-Transactions</span>

@@ -71,6 +71,9 @@ export interface PacingConfig {
 
 export interface RunLogicConfig {
   iterations?: number
+  global_iterations?: number
+  max_transactions?: number
+  workload_model?: string
   auto_transactions?: string
   block_scheduling?: string
   action_sequence?: string[]

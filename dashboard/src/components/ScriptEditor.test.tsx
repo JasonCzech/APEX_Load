@@ -1000,6 +1000,10 @@ describe('ScriptEditor', () => {
     })
 
     expect(container.textContent).toContain('Block Scheduling')
+    expect(container.textContent).toContain('Global Iterations')
+    expect(container.textContent).toContain('Max Transactions')
+    expect(container.textContent).toContain('Workload Model')
+    expect(container.textContent).toContain('Open arrival-rate')
     expect(container.textContent).toContain('Parameter substitution')
 
     const compatibilityToggle = Array.from(container.querySelectorAll('button')).find(button =>
