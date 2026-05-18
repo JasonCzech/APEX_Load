@@ -8,6 +8,7 @@ import MonitoringPage from './MonitoringPage'
 
 const apiMock = {
   getHealth: vi.fn(),
+  getScheduleHealth: vi.fn(),
   getSystemInventory: vi.fn(),
   listTests: vi.fn(),
 }
@@ -40,6 +41,15 @@ describe('MonitoringPage', () => {
         execution_mode: 'distributed',
       },
       generators: [],
+    })
+    apiMock.getScheduleHealth.mockResolvedValue({
+      total: 0,
+      enabled: 0,
+      due: 0,
+      blocked: 0,
+      failed: 0,
+      pending_approval: 0,
+      status_counts: {},
     })
     apiMock.listTests.mockResolvedValue({ tests: [] })
     container = document.createElement('div')
@@ -256,6 +266,41 @@ describe('MonitoringPage', () => {
     expect(container.textContent).toContain('2 cores')
     expect(container.textContent).toContain('2 GB')
     expect(container.textContent).toContain('Close')
+  })
+
+  it('renders schedule health counts for operator triage', async () => {
+    apiMock.getScheduleHealth.mockResolvedValue({
+      total: 6,
+      enabled: 5,
+      due: 2,
+      blocked: 1,
+      failed: 0,
+      pending_approval: 3,
+      status_counts: {
+        materialized: 9,
+        skipped: 4,
+        completed: 8,
+      },
+    })
+
+    await act(async () => {
+      root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} />)
+    })
+
+    expect(container.textContent).toContain('Schedule Health')
+    expect(container.textContent).toContain('1 blocked')
+    expect(container.textContent).toContain('Due')
+    expect(container.textContent).toContain('Blocked')
+    expect(container.textContent).toContain('Approval')
+    expect(container.textContent).toContain('Enabled Schedules')
+    expect(container.textContent).toContain('5/6')
+    expect(container.textContent).toContain('Materialized')
+    expect(container.textContent).toContain('9')
+    expect(container.textContent).toContain('Skipped')
+    expect(container.textContent).toContain('4')
+    expect(container.textContent).toContain('Completed')
+    expect(container.textContent).toContain('8')
+    expect(apiMock.getScheduleHealth).toHaveBeenCalled()
   })
 
   it('shows pending queue details in the run timeline', async () => {

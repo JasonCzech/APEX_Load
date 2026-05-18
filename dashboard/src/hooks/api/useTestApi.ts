@@ -11,6 +11,7 @@ import {
   RunArchiveReport,
   RuntimeSettingsOverride,
   ScenarioSchedule,
+  ScenarioScheduleHealth,
   ScenarioDataPoolBinding,
   ScenarioMode,
   TestSummary,
@@ -85,6 +86,8 @@ type ScenarioScheduleRequest = {
   release_id?: string
   run_name_template?: string
   enabled?: boolean
+  approval_policy?: string
+  missed_run_policy?: string
 }
 
 type ScenarioScheduleListResponse = {
@@ -226,6 +229,8 @@ export function useTestApi() {
     [],
   )
 
+  const getScheduleHealth = useCallback(() => request<ScenarioScheduleHealth>('/schedules/health'), [])
+
   const moveTest = useCallback(
     (id: string, folderId: string | null) =>
       request<MoveTestResponse>(`/tests/${id}/move`, { method: 'PATCH', body: JSON.stringify({ folder_id: folderId }) }),
@@ -329,6 +334,7 @@ export function useTestApi() {
       createScenarioSchedule,
       updateScenarioSchedule,
       deleteScenarioSchedule,
+      getScheduleHealth,
     }),
     [
       listTests,
@@ -347,6 +353,7 @@ export function useTestApi() {
       createScenarioSchedule,
       updateScenarioSchedule,
       deleteScenarioSchedule,
+      getScheduleHealth,
       moveTest,
       getMetrics,
       getTestArchiveManifest,

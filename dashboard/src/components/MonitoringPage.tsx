@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, type DragEvent, type ReactNo
 import { type WebSocketConnectionState } from '../hooks/useWebSocket'
 import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
-import { HealthResponse, SystemInventoryResponse, TelemetryDiagnosticEntry, TestSummary } from '../types'
+import { HealthResponse, ScenarioScheduleHealth, SystemInventoryResponse, TelemetryDiagnosticEntry, TestSummary } from '../types'
 import { formatTelemetryDiagnosticTime, telemetryDiagnosticSeverityClass } from './monitoringTelemetryDiagnostics'
 
 interface Props {
@@ -14,6 +14,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const api = useApi()
   const { activeProject } = useProject()
   const [health, setHealth] = useState<HealthResponse | null>(null)
+  const [scheduleHealth, setScheduleHealth] = useState<ScenarioScheduleHealth | null>(null)
   const [inventory, setInventory] = useState<SystemInventoryResponse | null>(null)
   const [tests, setTests] = useState<TestSummary[]>([])
   const [isTelemetryModalOpen, setIsTelemetryModalOpen] = useState(false)
@@ -53,20 +54,48 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const generatorHeaderLabel = generators.length > 0
     ? `${generatorConnectedCount}/${generators.length} online`
     : 'no inventory'
+  const scheduleStatusCounts = scheduleHealth?.status_counts ?? {}
+  const scheduleMaterializedCount = scheduleStatusCounts.materialized ?? scheduleStatusCounts.queued ?? 0
+  const scheduleSkippedCount = scheduleStatusCounts.skipped ?? 0
+  const scheduleCompletedCount = scheduleStatusCounts.completed ?? 0
+  const scheduleHeaderSeverity = !scheduleHealth
+    ? 'unknown'
+    : scheduleHealth.failed > 0 || scheduleHealth.blocked > 0
+      ? 'danger'
+      : scheduleHealth.pending_approval > 0 || scheduleHealth.due > 0
+        ? 'warning'
+        : scheduleHealth.total > 0
+          ? 'healthy'
+          : 'unknown'
+  const scheduleHeaderLabel = !scheduleHealth
+    ? 'checking'
+    : scheduleHealth.failed > 0
+      ? `${scheduleHealth.failed} failed`
+      : scheduleHealth.blocked > 0
+        ? `${scheduleHealth.blocked} blocked`
+        : scheduleHealth.pending_approval > 0
+          ? `${scheduleHealth.pending_approval} approval`
+          : scheduleHealth.due > 0
+            ? `${scheduleHealth.due} due`
+            : scheduleHealth.total > 0
+              ? `${scheduleHealth.enabled}/${scheduleHealth.total} enabled`
+              : 'no schedules'
 
   const refresh = useCallback(async () => {
     if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
       return
     }
     try {
-      const [healthRes, testsRes, inventoryRes] = await Promise.all([
+      const [healthRes, testsRes, inventoryRes, scheduleHealthRes] = await Promise.all([
         api.getHealth(),
         api.listTests(activeProject?.id ? { project_id: activeProject.id } : undefined).catch(() => ({ tests: [] })),
         api.getSystemInventory().catch(() => null),
+        api.getScheduleHealth().catch(() => null),
       ])
       setHealth(healthRes)
       setTests(testsRes.tests || [])
       setInventory(inventoryRes)
+      setScheduleHealth(scheduleHealthRes)
     } catch {
       // API not available
     }
@@ -277,6 +306,58 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       ),
     },
     {
+      id: 'schedule-health',
+      title: 'Schedule Health',
+      headerBadge: (
+        <span className={`monitor-header-badge ${scheduleHeaderSeverity}`}>
+          {scheduleHeaderLabel}
+        </span>
+      ),
+      icon: (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="3" y="4" width="18" height="18" rx="2" />
+          <line x1="16" y1="2" x2="16" y2="6" />
+          <line x1="8" y1="2" x2="8" y2="6" />
+          <line x1="3" y1="10" x2="21" y2="10" />
+          <path d="m9 16 2 2 4-5" />
+        </svg>
+      ),
+      content: (
+        <div className="monitor-body">
+          <div className="telemetry-summary-metrics">
+            <div className="telemetry-summary-metric">
+              <span className={`telemetry-summary-value ${scheduleHealth?.due ? 'telemetry-text-warning' : ''}`}>{scheduleHealth?.due ?? '-'}</span>
+              <span className="telemetry-summary-label">Due</span>
+            </div>
+            <div className="telemetry-summary-metric">
+              <span className={`telemetry-summary-value ${scheduleHealth?.blocked ? 'text-danger' : ''}`}>{scheduleHealth?.blocked ?? '-'}</span>
+              <span className="telemetry-summary-label">Blocked</span>
+            </div>
+            <div className="telemetry-summary-metric">
+              <span className={`telemetry-summary-value ${scheduleHealth?.pending_approval ? 'telemetry-text-warning' : ''}`}>{scheduleHealth?.pending_approval ?? '-'}</span>
+              <span className="telemetry-summary-label">Approval</span>
+            </div>
+          </div>
+          <div className="monitor-row">
+            <span className="monitor-label">Enabled Schedules</span>
+            <span className="monitor-value">{scheduleHealth ? `${scheduleHealth.enabled}/${scheduleHealth.total}` : '-'}</span>
+          </div>
+          <div className="monitor-row">
+            <span className="monitor-label">Materialized</span>
+            <span className="monitor-value">{scheduleHealth ? scheduleMaterializedCount.toLocaleString() : '-'}</span>
+          </div>
+          <div className="monitor-row">
+            <span className="monitor-label">Skipped</span>
+            <span className="monitor-value">{scheduleHealth ? scheduleSkippedCount.toLocaleString() : '-'}</span>
+          </div>
+          <div className="monitor-row">
+            <span className="monitor-label">Completed</span>
+            <span className="monitor-value">{scheduleHealth ? scheduleCompletedCount.toLocaleString() : '-'}</span>
+          </div>
+        </div>
+      ),
+    },
+    {
       id: 'generators',
       title: 'Generators',
       headerBadge: (
@@ -406,7 +487,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
         </div>
       ),
     },
-  ], [controllerGeneratorInventoryLabel, controllerHeaderSeverity, controllerStatusLabel, generatorActiveVUsers, generatorAvailableCapacity, generatorConnectedCount, generatorHeaderLabel, generatorHeaderSeverity, generatorIssueCount, generators.length, health, inventory, telemetryDangerCount, telemetryHeaderLabel, telemetryHeaderSeverity, telemetryLatestEntry, telemetryDiagnostics, telemetryWarningCount, timeline, websocketLabel, websocketValueClass])
+  ], [controllerGeneratorInventoryLabel, controllerHeaderSeverity, controllerStatusLabel, generatorActiveVUsers, generatorAvailableCapacity, generatorConnectedCount, generatorHeaderLabel, generatorHeaderSeverity, generatorIssueCount, generators.length, health, inventory, scheduleCompletedCount, scheduleHeaderLabel, scheduleHeaderSeverity, scheduleHealth, scheduleMaterializedCount, scheduleSkippedCount, telemetryDangerCount, telemetryHeaderLabel, telemetryHeaderSeverity, telemetryLatestEntry, telemetryDiagnostics, telemetryWarningCount, timeline, websocketLabel, websocketValueClass])
 
   useEffect(() => {
     setCardOrder(prev => mergeOrder(prev, cards.map(card => card.id)))

@@ -721,12 +721,64 @@ export interface ScenarioSchedule {
   release_id?: string
   run_name_template?: string
   enabled: boolean
+  revision?: number
+  approval_policy?: 'auto' | 'manual_review' | 'high_cost' | 'off_hours' | 'production' | 'quota_burst' | string
+  missed_run_policy?: 'skip' | 'catch_up_once' | 'catch_up_all' | 'require_operator_decision' | string
+  conflict_summary?: string
+  last_occurrence?: ScenarioScheduleOccurrence
+  next_required_action?: string
+  pending_approval_id?: string
   last_run_test_id?: string
   last_run_at?: string
   next_run_at?: string
   last_error?: string
   created_at: string
   updated_at: string
+}
+
+export interface ScenarioScheduleOccurrence {
+  id: string
+  schedule_id: string
+  scenario_id: string
+  project_id?: string
+  schedule_revision: number
+  planned_at: string
+  materialized_at?: string
+  status: 'planned' | 'materialized' | 'queued' | 'blocked' | 'skipped' | 'failed' | 'approved' | 'completed' | string
+  reason_code?: string
+  test_id?: string
+  approval_id?: string
+  conflict_summary?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface ScenarioScheduleApproval {
+  id: string
+  schedule_id: string
+  scenario_id: string
+  project_id?: string
+  schedule_revision: number
+  policy: string
+  status: 'pending' | 'approved' | 'rejected' | string
+  requested_by?: string
+  requested_at?: string
+  resolved_by?: string
+  resolved_at?: string
+  decision_reason?: string
+  required_role?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface ScenarioScheduleHealth {
+  total: number
+  enabled: number
+  due: number
+  blocked: number
+  failed: number
+  pending_approval: number
+  status_counts?: Record<string, number>
 }
 
 export type TestStatus =
