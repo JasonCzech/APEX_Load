@@ -1,10 +1,12 @@
 package api
 
 import (
+	"encoding/csv"
 	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -36,6 +38,35 @@ func (s *Server) handleGetUsageAccounting(w http.ResponseWriter, r *http.Request
 		projectID = normalizeProjectID(projectID)
 	}
 	writeJSON(w, http.StatusOK, s.usageAccounting(projectID))
+}
+
+func (s *Server) handleExportUsageAccounting(w http.ResponseWriter, r *http.Request) {
+	projectID := strings.TrimSpace(r.URL.Query().Get("project_id"))
+	if projectID != "" {
+		projectID = normalizeProjectID(projectID)
+	}
+	usage := s.usageAccounting(projectID)
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="stormrunner-usage-accounting.csv"`)
+
+	writer := csv.NewWriter(w)
+	_ = writer.Write([]string{
+		"generated_at",
+		"project_id",
+		"scope",
+		"key",
+		"run_count",
+		"group_count",
+		"total_vusers",
+		"duration_seconds",
+		"vuser_seconds",
+		"archive_bytes",
+		"status_counts",
+	})
+	for _, row := range usageAccountingCSVRows(usage) {
+		_ = writer.Write(row)
+	}
+	writer.Flush()
 }
 
 func (s *Server) usageAccounting(projectID string) UsageAccountingResponse {
@@ -95,6 +126,61 @@ func (s *Server) usageAccounting(projectID string) UsageAccountingResponse {
 		response.ByProject = nil
 	}
 	return response
+}
+
+func usageAccountingCSVRows(usage UsageAccountingResponse) [][]string {
+	generatedAt := usage.GeneratedAt.Format(time.RFC3339)
+	rows := [][]string{usageAccountingCSVRow(generatedAt, usage.ProjectID, "totals", "", usage.Totals)}
+	for _, bucket := range usage.ByProject {
+		rows = append(rows, usageAccountingCSVRow(generatedAt, usage.ProjectID, "project", bucket.Key, bucket))
+	}
+	for _, bucket := range usage.ByProtocol {
+		rows = append(rows, usageAccountingCSVRow(generatedAt, usage.ProjectID, "protocol", bucket.Key, bucket))
+	}
+	for _, bucket := range usage.ByRegion {
+		rows = append(rows, usageAccountingCSVRow(generatedAt, usage.ProjectID, "region", bucket.Key, bucket))
+	}
+	return rows
+}
+
+func usageAccountingCSVRow(generatedAt string, projectID string, scope string, key string, bucket UsageAccountingBucket) []string {
+	return []string{
+		generatedAt,
+		projectID,
+		scope,
+		key,
+		intToString(bucket.RunCount),
+		intToString(bucket.GroupCount),
+		int64ToString(bucket.TotalVUsers),
+		int64ToString(bucket.DurationSeconds),
+		int64ToString(bucket.VUserSeconds),
+		int64ToString(bucket.ArchiveBytes),
+		formatUsageStatusCounts(bucket.StatusCounts),
+	}
+}
+
+func formatUsageStatusCounts(statusCounts map[string]int) string {
+	if len(statusCounts) == 0 {
+		return ""
+	}
+	statuses := make([]string, 0, len(statusCounts))
+	for status := range statusCounts {
+		statuses = append(statuses, status)
+	}
+	sort.Strings(statuses)
+	parts := make([]string, 0, len(statuses))
+	for _, status := range statuses {
+		parts = append(parts, status+"="+intToString(statusCounts[status]))
+	}
+	return strings.Join(parts, ";")
+}
+
+func intToString(value int) string {
+	return strconv.Itoa(value)
+}
+
+func int64ToString(value int64) string {
+	return strconv.FormatInt(value, 10)
 }
 
 func usageBucket(buckets map[string]*UsageAccountingBucket, key string) *UsageAccountingBucket {

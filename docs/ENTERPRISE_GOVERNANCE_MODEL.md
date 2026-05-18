@@ -45,6 +45,8 @@ Until then, use projects for governance and preserve team-like concepts as exter
 - Buckets by project, protocol, and requested generator region.
 - Run counts, group counts, total VUsers, duration seconds, VUser-seconds, archive bytes, and status counts.
 
+`GET /api/v1/system/usage/export` returns the same rollups as CSV for chargeback, capacity review, and external governance packs. The export includes one totals row plus project, protocol, and region bucket rows, with deterministic status-count encoding.
+
 This is intentionally a primitive, not a billing engine. It gives quota, fair-share, and capacity-planning work a shared source of usage facts without requiring raw archive replay.
 
 Known limits for the initial primitive:

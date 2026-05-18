@@ -1,11 +1,13 @@
 package api
 
 import (
+	"encoding/csv"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -88,6 +90,64 @@ func TestHandleGetUsageAccountingSummarizesProjectProtocolRegionAndArchives(t *t
 	}
 }
 
+func TestHandleExportUsageAccountingEmitsCSV(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	server.runner.mu.Lock()
+	server.runner.tests["test-a"] = &ManagedTest{
+		ID:          "test-a",
+		Name:        "Checkout",
+		Status:      "COMPLETE",
+		ProjectID:   "project-a",
+		TotalVUsers: 15,
+		Duration:    2 * time.Minute,
+		Groups: []TestGroup{
+			{Name: "buyers", Protocol: "http", VUsers: 10},
+			{Name: "checkout-api", Protocol: "grpc", VUsers: 5},
+		},
+		Assignment: &GeneratorAssignmentSettings{RegionWeights: map[string]int{"us-east": 100}},
+	}
+	server.runner.tests["test-b"] = &ManagedTest{
+		ID:          "test-b",
+		Name:        "Search",
+		Status:      "FAILED",
+		ProjectID:   "project-b",
+		TotalVUsers: 20,
+		Duration:    time.Minute,
+		Groups:      []TestGroup{{Name: "search", Protocol: "http", VUsers: 20}},
+	}
+	server.runner.mu.Unlock()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/system/usage/export?project_id=project-a", nil)
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	if got := resp.Header().Get("Content-Type"); !strings.HasPrefix(got, "text/csv") {
+		t.Fatalf("content type = %q, want text/csv", got)
+	}
+	if got := resp.Header().Get("Content-Disposition"); !strings.Contains(got, "stormrunner-usage-accounting.csv") {
+		t.Fatalf("content disposition = %q, want usage filename", got)
+	}
+
+	rows, err := csv.NewReader(strings.NewReader(resp.Body.String())).ReadAll()
+	if err != nil {
+		t.Fatalf("read csv: %v", err)
+	}
+	if len(rows) != 5 {
+		t.Fatalf("rows = %#v, want header plus totals, two protocols, and region", rows)
+	}
+	header := []string{"generated_at", "project_id", "scope", "key", "run_count", "group_count", "total_vusers", "duration_seconds", "vuser_seconds", "archive_bytes", "status_counts"}
+	if strings.Join(rows[0], "|") != strings.Join(header, "|") {
+		t.Fatalf("header = %#v, want %#v", rows[0], header)
+	}
+	assertUsageCSVRow(t, rows, "totals", "", "1", "0", "15", "120", "1800", "COMPLETE=1")
+	assertUsageCSVRow(t, rows, "protocol", "grpc", "1", "1", "5", "120", "600", "COMPLETE=1")
+	assertUsageCSVRow(t, rows, "protocol", "http", "1", "1", "10", "120", "1200", "COMPLETE=1")
+	assertUsageCSVRow(t, rows, "region", "us-east", "1", "0", "15", "120", "1800", "COMPLETE=1")
+}
+
 func findUsageBucket(t *testing.T, buckets []UsageAccountingBucket, key string) UsageAccountingBucket {
 	t.Helper()
 	for _, bucket := range buckets {
@@ -97,4 +157,18 @@ func findUsageBucket(t *testing.T, buckets []UsageAccountingBucket, key string) 
 	}
 	t.Fatalf("missing usage bucket %q in %#v", key, buckets)
 	return UsageAccountingBucket{}
+}
+
+func assertUsageCSVRow(t *testing.T, rows [][]string, scope string, key string, runCount string, groupCount string, totalVUsers string, durationSeconds string, vuserSeconds string, statusCounts string) {
+	t.Helper()
+	for _, row := range rows[1:] {
+		if row[2] != scope || row[3] != key {
+			continue
+		}
+		if row[1] != "project-a" || row[4] != runCount || row[5] != groupCount || row[6] != totalVUsers || row[7] != durationSeconds || row[8] != vuserSeconds || row[10] != statusCounts {
+			t.Fatalf("row for %s/%s = %#v", scope, key, row)
+		}
+		return
+	}
+	t.Fatalf("missing row for %s/%s in %#v", scope, key, rows)
 }
