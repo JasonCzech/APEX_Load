@@ -54,7 +54,9 @@ func NewServer(cfg ServerConfig) *Server {
 	hub := NewHub()
 	runner := NewTestRunner(cfg.MaxConcurrent, hub, cfg.Store)
 	if len(cfg.GeneratorTargets) > 0 {
-		runner.setExecutionBackend(newDistributedExecutionBackend(cfg.GeneratorTargets, cfg.GeneratorTimeout, nil))
+		backend := newDistributedExecutionBackend(cfg.GeneratorTargets, cfg.GeneratorTimeout, nil)
+		backend.ApplyGeneratorDrainStates(loadGeneratorDrainStates(cfg.Store))
+		runner.setExecutionBackend(backend)
 	}
 	rec := recorder.New(cfg.ProxyAddr)
 

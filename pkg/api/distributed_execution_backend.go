@@ -134,6 +134,33 @@ func (b *distributedExecutionBackend) SetGeneratorDrainState(target string, stat
 	return nil
 }
 
+func (b *distributedExecutionBackend) ApplyGeneratorDrainStates(states map[string]string) {
+	b.drainMu.Lock()
+	defer b.drainMu.Unlock()
+	b.drainStates = make(map[string]string)
+	for target, state := range states {
+		target = strings.TrimSpace(target)
+		state = strings.ToLower(strings.TrimSpace(state))
+		if target == "" || state == "" || state == "active" {
+			continue
+		}
+		switch state {
+		case "cordoned", "draining":
+			b.drainStates[target] = state
+		}
+	}
+}
+
+func (b *distributedExecutionBackend) GeneratorDrainStates() map[string]string {
+	b.drainMu.RLock()
+	defer b.drainMu.RUnlock()
+	out := make(map[string]string, len(b.drainStates))
+	for target, state := range b.drainStates {
+		out[target] = state
+	}
+	return out
+}
+
 func (b *distributedExecutionBackend) generatorDrainState(target string) string {
 	b.drainMu.RLock()
 	defer b.drainMu.RUnlock()

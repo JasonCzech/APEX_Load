@@ -8,6 +8,14 @@ import (
 	"strings"
 )
 
+const generatorDrainStatesStoreKey = "generator_drain_states"
+
+type persistentDrainBackend interface {
+	drainableExecutionBackend
+	ApplyGeneratorDrainStates(states map[string]string)
+	GeneratorDrainStates() map[string]string
+}
+
 type FleetAlertsResponse struct {
 	Alerts []FleetAlert `json:"alerts"`
 	Count  int          `json:"count"`
@@ -79,12 +87,44 @@ func (s *Server) handleSetGeneratorDrainState(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if persistent, ok := backend.(persistentDrainBackend); ok {
+		if err := s.saveGeneratorDrainStates(persistent.GeneratorDrainStates()); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to persist generator drain state: "+err.Error())
+			return
+		}
+	}
 
 	s.recordAuditEvent(r, "generator.drain_state.update", "success", "generator", req.Target, "", map[string]any{"drain_state": req.DrainState})
 	writeJSON(w, http.StatusOK, map[string]string{
 		"target":      req.Target,
 		"drain_state": req.DrainState,
 	})
+}
+
+func (s *Server) saveGeneratorDrainStates(states map[string]string) error {
+	if s == nil || s.store == nil {
+		return nil
+	}
+	payload, err := json.Marshal(states)
+	if err != nil {
+		return err
+	}
+	return s.store.SaveSetting(generatorDrainStatesStoreKey, string(payload))
+}
+
+func loadGeneratorDrainStates(store settingsPersistence) map[string]string {
+	if store == nil {
+		return nil
+	}
+	raw, err := store.GetSetting(generatorDrainStatesStoreKey)
+	if err != nil || strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	var states map[string]string
+	if err := json.Unmarshal([]byte(raw), &states); err != nil {
+		return nil
+	}
+	return states
 }
 
 func buildFleetAlerts(inventory SystemInventoryResponse) []FleetAlert {

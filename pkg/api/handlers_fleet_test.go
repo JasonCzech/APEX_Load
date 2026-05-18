@@ -5,9 +5,12 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jasonczech/stormrunner/pkg/storage"
 )
 
 func containsString(values []string, want string) bool {
@@ -46,6 +49,42 @@ func TestHandleSetGeneratorDrainStateUpdatesInventory(t *testing.T) {
 	}
 	if drainStates["gen-b:9090"] != "active" {
 		t.Fatalf("gen-b drain_state = %q, want active", drainStates["gen-b:9090"])
+	}
+}
+
+func TestHandleSetGeneratorDrainStatePersistsAcrossServerRestart(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	targets := []string{"gen-a:9090|region=us-east", "gen-b:9090|region=us-east"}
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080", GeneratorTargets: targets, GeneratorTimeout: time.Millisecond})
+	body := bytes.NewBufferString(`{"target":"gen-a:9090","drain_state":"cordoned"}`)
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/system/generators/drain", body)
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	raw, err := store.GetSetting(generatorDrainStatesStoreKey)
+	if err != nil {
+		t.Fatalf("GetSetting returned error: %v", err)
+	}
+	if !strings.Contains(raw, "gen-a:9090") || !strings.Contains(raw, "cordoned") {
+		t.Fatalf("stored drain states = %q, want gen-a cordoned", raw)
+	}
+
+	restarted := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080", GeneratorTargets: targets, GeneratorTimeout: time.Millisecond})
+	inventory := restarted.systemInventory(req.Context())
+	drainStates := map[string]string{}
+	for _, generator := range inventory.Generators {
+		drainStates[generator.Target] = generator.DrainState
+	}
+	if drainStates["gen-a:9090"] != "cordoned" {
+		t.Fatalf("restarted gen-a drain_state = %q, want cordoned", drainStates["gen-a:9090"])
 	}
 }
 
