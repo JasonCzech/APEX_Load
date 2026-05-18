@@ -13,6 +13,7 @@ const apiMock = {
   getTestArchiveSummaries: vi.fn(),
   deleteTest: vi.fn(),
   downloadTestArchive: vi.fn(),
+  downloadTestArchiveComparison: vi.fn(),
 }
 
 vi.mock('../hooks/useApi', () => ({
@@ -164,6 +165,7 @@ describe('ResultsPage', () => {
     apiMock.getTestArchiveSummaries.mockResolvedValue({ summaries: [] })
     apiMock.deleteTest.mockResolvedValue(undefined)
     apiMock.downloadTestArchive.mockResolvedValue(new Blob())
+    apiMock.downloadTestArchiveComparison.mockResolvedValue(new Blob(['backend comparison csv'], { type: 'text/csv' }))
 
     container = document.createElement('div')
     document.body.appendChild(container)
@@ -283,13 +285,12 @@ describe('ResultsPage', () => {
       await Promise.resolve()
     })
 
+    expect(apiMock.downloadTestArchiveComparison).toHaveBeenCalledWith('run-b', 'run-a', 'engine')
     expect(downloadBlob).toHaveBeenCalledTimes(1)
     const [blob, filename] = vi.mocked(downloadBlob).mock.calls[0]
-    expect(filename).toBe('browser-comparison-engine.csv')
+    expect(filename).toBe('archive-comparison-run-b-run-a-engine.csv')
     const csv = await blob.text()
-    expect(csv).toContain('breakdown,segment_key,device_platform,browser_engine')
-    expect(csv).toContain('engine,webkit,,webkit')
-    expect(csv).toContain('engine,chromium,,chromium')
+    expect(csv).toBe('backend comparison csv')
 
     await act(async () => {
       overallToggle.dispatchEvent(new MouseEvent('click', { bubbles: true }))

@@ -40,6 +40,10 @@ function formatShortDate(value?: string) {
   return value ? new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Never'
 }
 
+function runStartedAt(test: TestSummary) {
+  return new Date(test.start_time || test.created_at || 0).getTime()
+}
+
 function formatBrowserMetric(value?: number, suffix = '', digits = 1) {
   return typeof value === 'number' && Number.isFinite(value) ? `${value.toFixed(digits)}${suffix}` : 'n/a'
 }
@@ -156,13 +160,6 @@ function getBrowserEngineEntries(report?: RunArchiveReport): BrowserEngineLiveMe
     .sort((left, right) => formatBrowserEngineLabel(left.browser_engine).localeCompare(formatBrowserEngineLabel(right.browser_engine)))
 }
 
-function csvEscape(value: string | number | undefined): string {
-  if (value === undefined) return ''
-  const stringValue = String(value)
-  if (!/[",\n]/.test(stringValue)) return stringValue
-  return `"${stringValue.replace(/"/g, '""')}"`
-}
-
 function resolveStatus(test: TestSummary, testStatuses: Record<string, string>) {
   return testStatuses[test.id] || test.status
 }
@@ -240,7 +237,7 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
     const aborted = completed.filter(test => resolveStatus(test, testStatuses) === 'ABORTED').length
     const archivesReady = completed.filter(test => Boolean(test.archive)).length
     const latestRun = [...completed]
-      .sort((a, b) => new Date(b.start_time || b.created_at || 0).getTime() - new Date(a.start_time || a.created_at || 0).getTime())[0]
+      .sort((a, b) => runStartedAt(b) - runStartedAt(a))[0]
     return { complete, failed, aborted, archivesReady, latestRun }
   }, [completed, testStatuses])
 
@@ -284,8 +281,8 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
           bValue = b.groups?.length || 1
           break
         case 'started':
-          aValue = new Date(a.start_time || a.created_at || 0).getTime()
-          bValue = new Date(b.start_time || b.created_at || 0).getTime()
+          aValue = runStartedAt(a)
+          bValue = runStartedAt(b)
           break
         case 'duration':
           aValue = a.duration || ''
@@ -375,128 +372,23 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
     [comparisonCards],
   )
 
-  const exportComparison = useCallback(() => {
+  const exportComparison = useCallback(async () => {
     if (comparisonCards.length !== 2 || !comparisonCards.every(item => item.report)) {
       return
     }
 
-    const rows: Array<Record<string, string | number | undefined>> = []
-    for (const { test, report } of comparisonCards) {
-      if (!report) continue
-
-      if (comparisonBreakdown === 'overall') {
-        rows.push({
-          run_id: test.id,
-          run_name: test.name,
-          breakdown: 'overall',
-          segment_key: 'overall',
-          device_platform: '',
-          browser_engine: '',
-          device_tier: '',
-          samples: report.overview.browser?.samples,
-          avg_lcp_ms: report.overview.browser?.avg_lcp_ms,
-          avg_cls_score: report.overview.browser?.avg_cls_score,
-          avg_inp_ms: report.overview.browser?.avg_inp_ms,
-          transactions: report.overview.transactions,
-          error_pct: report.overview.error_pct,
-          peak_tps: report.overview.peak_tps,
-          peak_active_vusers: report.overview.peak_active_vusers,
-        })
-        continue
-      }
-
-      if (comparisonBreakdown === 'platform') {
-        for (const metrics of getBrowserPlatformEntries(report)) {
-          rows.push({
-            run_id: test.id,
-            run_name: test.name,
-            breakdown: 'platform',
-            segment_key: metrics.device_platform || 'unknown',
-            device_platform: metrics.device_platform,
-            browser_engine: metrics.browser_engine,
-            device_tier: '',
-            samples: metrics.samples,
-            avg_lcp_ms: metrics.avg_lcp_ms,
-            avg_cls_score: metrics.avg_cls_score,
-            avg_inp_ms: metrics.avg_inp_ms,
-            transactions: report.overview.transactions,
-            error_pct: report.overview.error_pct,
-            peak_tps: report.overview.peak_tps,
-            peak_active_vusers: report.overview.peak_active_vusers,
-          })
-        }
-        continue
-      }
-
-      if (comparisonBreakdown === 'engine') {
-        for (const metrics of getBrowserEngineEntries(report)) {
-          rows.push({
-            run_id: test.id,
-            run_name: test.name,
-            breakdown: 'engine',
-            segment_key: metrics.browser_engine || 'browser',
-            device_platform: '',
-            browser_engine: metrics.browser_engine,
-            device_tier: '',
-            samples: metrics.samples,
-            avg_lcp_ms: metrics.avg_lcp_ms,
-            avg_cls_score: metrics.avg_cls_score,
-            avg_inp_ms: metrics.avg_inp_ms,
-            transactions: report.overview.transactions,
-            error_pct: report.overview.error_pct,
-            peak_tps: report.overview.peak_tps,
-            peak_active_vusers: report.overview.peak_active_vusers,
-          })
-        }
-        continue
-      }
-
-      for (const [profile, metrics] of getBrowserDeviceEntries(report)) {
-        rows.push({
-          run_id: test.id,
-          run_name: test.name,
-          breakdown: 'device',
-          segment_key: profile,
-          device_platform: metrics.device_platform,
-          browser_engine: metrics.browser_engine,
-          device_tier: metrics.device_tier,
-          samples: metrics.samples,
-          avg_lcp_ms: metrics.avg_lcp_ms,
-          avg_cls_score: metrics.avg_cls_score,
-          avg_inp_ms: metrics.avg_inp_ms,
-          transactions: report.overview.transactions,
-          error_pct: report.overview.error_pct,
-          peak_tps: report.overview.peak_tps,
-          peak_active_vusers: report.overview.peak_active_vusers,
-        })
-      }
+    const [first, second] = comparisonCards
+    const [current, baseline] = runStartedAt(first.test) >= runStartedAt(second.test)
+      ? [first, second]
+      : [second, first]
+    try {
+      const blob = await api.downloadTestArchiveComparison(current.test.id, baseline.test.id, comparisonBreakdown)
+      downloadBlob(blob, `archive-comparison-${current.test.id}-${baseline.test.id}-${comparisonBreakdown}.csv`)
+      setComparisonError('')
+    } catch (error: unknown) {
+      setComparisonError(getErrorMessage(error, 'Unable to export comparison CSV'))
     }
-
-    const headers = [
-      'run_id',
-      'run_name',
-      'breakdown',
-      'segment_key',
-      'device_platform',
-      'browser_engine',
-      'device_tier',
-      'samples',
-      'avg_lcp_ms',
-      'avg_cls_score',
-      'avg_inp_ms',
-      'transactions',
-      'error_pct',
-      'peak_tps',
-      'peak_active_vusers',
-    ]
-    const csv = [
-      headers.join(','),
-      ...rows.map(row => headers.map(header => csvEscape(row[header])).join(',')),
-    ].join('\n')
-
-    const filename = `browser-comparison-${comparisonBreakdown}.csv`
-    downloadBlob(new Blob([csv], { type: 'text/csv;charset=utf-8' }), filename)
-  }, [comparisonBreakdown, comparisonCards])
+  }, [api, comparisonBreakdown, comparisonCards])
 
   const comparisonActionRows = useMemo(() => {
     if (comparisonCards.length !== 2 || !comparisonCards[0].report || !comparisonCards[1].report) return []
