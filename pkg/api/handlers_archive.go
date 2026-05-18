@@ -122,6 +122,15 @@ func (s *Server) handleGetRunArchiveTransactions(w http.ResponseWriter, r *http.
 		writeError(w, http.StatusInternalServerError, "failed to read archive transactions: "+err.Error())
 		return
 	}
+	if strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("format")), "csv") {
+		testID := r.PathValue("id")
+		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+		w.Header().Set("Content-Disposition", "attachment; filename=\"stormrunner-archive-transactions-"+testID+".csv\"")
+		if err := writeArchiveTransactionsCSV(items, w); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to write archive transactions csv: "+err.Error())
+		}
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"transactions": items,
 		"count":        len(items),
@@ -151,6 +160,15 @@ func (s *Server) handleGetRunArchiveResources(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusInternalServerError, "failed to read archive resources: "+err.Error())
 		return
 	}
+	if strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("format")), "csv") {
+		testID := r.PathValue("id")
+		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+		w.Header().Set("Content-Disposition", "attachment; filename=\"stormrunner-archive-resources-"+testID+".csv\"")
+		if err := writeArchiveResourcesCSV(items, w); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to write archive resources csv: "+err.Error())
+		}
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"resources": items,
 		"count":     len(items),
@@ -172,6 +190,15 @@ func (s *Server) handleGetRunArchiveSummaries(w http.ResponseWriter, r *http.Req
 	items, total, err := loadArchiveIntervalSummaries(record, page)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to read archive summaries: "+err.Error())
+		return
+	}
+	if strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("format")), "csv") {
+		testID := r.PathValue("id")
+		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+		w.Header().Set("Content-Disposition", "attachment; filename=\"stormrunner-archive-summaries-"+testID+".csv\"")
+		if err := writeArchiveSummariesCSV(items, w); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to write archive summaries csv: "+err.Error())
+		}
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{

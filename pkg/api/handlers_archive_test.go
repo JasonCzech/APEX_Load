@@ -180,6 +180,26 @@ func TestArchiveQueryEndpoints(t *testing.T) {
 		}
 	})
 
+	t.Run("transactions csv", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/archive/transactions?format=csv&limit=5&action=step-1", nil)
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusOK {
+			t.Fatalf("transactions csv status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+		}
+		rows, err := csv.NewReader(strings.NewReader(resp.Body.String())).ReadAll()
+		if err != nil {
+			t.Fatalf("read transactions csv: %v", err)
+		}
+		if len(rows) < 2 || rows[0][4] != "action_name" || rows[1][4] != "step-1" {
+			t.Fatalf("transactions csv rows = %#v, want action_name step-1", rows)
+		}
+		if got := resp.Header().Get("Content-Disposition"); !strings.Contains(got, "archive-transactions") {
+			t.Fatalf("transactions csv content disposition = %q, want archive-transactions", got)
+		}
+	})
+
 	t.Run("summaries", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/archive/summaries?limit=5", nil)
 		resp := httptest.NewRecorder()
@@ -200,6 +220,23 @@ func TestArchiveQueryEndpoints(t *testing.T) {
 		}
 	})
 
+	t.Run("summaries csv", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/archive/summaries?format=csv&limit=5", nil)
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusOK {
+			t.Fatalf("summaries csv status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+		}
+		rows, err := csv.NewReader(strings.NewReader(resp.Body.String())).ReadAll()
+		if err != nil {
+			t.Fatalf("read summaries csv: %v", err)
+		}
+		if len(rows) < 2 || rows[0][4] != "tps" {
+			t.Fatalf("summaries csv rows = %#v, want tps header", rows)
+		}
+	})
+
 	t.Run("resources", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/archive/resources?limit=5", nil)
 		resp := httptest.NewRecorder()
@@ -217,6 +254,23 @@ func TestArchiveQueryEndpoints(t *testing.T) {
 		}
 		if payload.Total == 0 || len(payload.Resources) == 0 {
 			t.Fatal("expected at least one resource sample")
+		}
+	})
+
+	t.Run("resources csv", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/archive/resources?format=csv&limit=5", nil)
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusOK {
+			t.Fatalf("resources csv status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+		}
+		rows, err := csv.NewReader(strings.NewReader(resp.Body.String())).ReadAll()
+		if err != nil {
+			t.Fatalf("read resources csv: %v", err)
+		}
+		if len(rows) < 2 || rows[0][3] != "active_vusers" {
+			t.Fatalf("resources csv rows = %#v, want active_vusers header", rows)
 		}
 	})
 
