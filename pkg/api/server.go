@@ -29,6 +29,7 @@ type Server struct {
 	authoringMu   sync.Mutex
 	authoring     map[string]*storage.AuthoringSession
 	mux           *http.ServeMux
+	usageCancel   context.CancelFunc
 }
 
 // ServerConfig configures API server startup behavior and integrations.
@@ -348,6 +349,7 @@ func (s *Server) Start() error {
 	if err := s.recorder.StartProxy(); err != nil {
 		return fmt.Errorf("starting recording proxy: %w", err)
 	}
+	s.startUsageAccountingSnapshotCadence()
 
 	slog.Info("stormrunner API server starting", "addr", s.httpServer.Addr)
 	if err := s.httpServer.ListenAndServe(); err != http.ErrServerClosed {
@@ -358,9 +360,30 @@ func (s *Server) Start() error {
 
 func (s *Server) Shutdown(ctx context.Context) error {
 	// Stop background components before closing active HTTP listeners.
+	if s.usageCancel != nil {
+		s.usageCancel()
+		s.usageCancel = nil
+	}
 	s.hub.Stop()
 	s.recorder.StopProxy()
 	return s.httpServer.Shutdown(ctx)
+}
+
+func (s *Server) startUsageAccountingSnapshotCadence() {
+	if s == nil || s.runner == nil || s.usageCancel != nil {
+		return
+	}
+	interval := s.runner.UsageAccountingSnapshotInterval()
+	if interval <= 0 {
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	s.usageCancel = cancel
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		s.runner.RunUsageAccountingSnapshotCadence(ctx, ticker.C)
+	}()
 }
 
 func (s *Server) RunDueSchedules() error {

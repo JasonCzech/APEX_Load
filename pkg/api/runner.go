@@ -5002,21 +5002,72 @@ func (tr *TestRunner) captureUsageSnapshotForTerminalRunLocked(testID string, pr
 	for _, test := range tr.tests {
 		tests = append(tests, test)
 	}
+	if _, err := tr.saveUsageAccountingSnapshotFromTests(projectID, tests); err != nil {
+		slog.Warn("failed to save usage accounting snapshot", "test_id", testID, "project_id", projectID, "error", err)
+	}
+}
+
+func (tr *TestRunner) captureUsageSnapshotForCadence(projectID string) (*storage.UsageAccountingSnapshot, error) {
+	if tr == nil || tr.usageStore == nil {
+		return nil, nil
+	}
+	projectID = strings.TrimSpace(projectID)
+	if projectID != "" {
+		projectID = normalizeProjectID(projectID)
+	}
+	tr.mu.RLock()
+	tests := make([]*ManagedTest, 0, len(tr.tests))
+	for _, test := range tr.tests {
+		tests = append(tests, test)
+	}
+	tr.mu.RUnlock()
+	return tr.saveUsageAccountingSnapshotFromTests(projectID, tests)
+}
+
+func (tr *TestRunner) saveUsageAccountingSnapshotFromTests(projectID string, tests []*ManagedTest) (*storage.UsageAccountingSnapshot, error) {
 	usage := usageAccountingFromTests(projectID, tests)
 	payload, err := json.Marshal(usage)
 	if err != nil {
-		slog.Warn("failed to encode usage accounting snapshot", "test_id", testID, "project_id", projectID, "error", err)
-		return
+		return nil, fmt.Errorf("encode usage accounting snapshot: %w", err)
 	}
 	now := time.Now().UTC()
-	if err := tr.usageStore.SaveUsageAccountingSnapshot(&storage.UsageAccountingSnapshot{
+	snapshot := &storage.UsageAccountingSnapshot{
 		ID:          uuid.NewString(),
 		ProjectID:   projectID,
 		GeneratedAt: usage.GeneratedAt,
 		PayloadJSON: string(payload),
 		CreatedAt:   now,
-	}); err != nil {
-		slog.Warn("failed to save usage accounting snapshot", "test_id", testID, "project_id", projectID, "error", err)
+	}
+	if err := tr.usageStore.SaveUsageAccountingSnapshot(snapshot); err != nil {
+		return nil, err
+	}
+	return snapshot, nil
+}
+
+func (tr *TestRunner) UsageAccountingSnapshotInterval() time.Duration {
+	if tr == nil {
+		return 0
+	}
+	seconds := tr.GetSystemSettings().General.UsageSnapshotIntervalSeconds
+	if seconds <= 0 {
+		return 0
+	}
+	return time.Duration(seconds) * time.Second
+}
+
+func (tr *TestRunner) RunUsageAccountingSnapshotCadence(ctx context.Context, ticks <-chan time.Time) {
+	if tr == nil || ticks == nil {
+		return
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticks:
+			if _, err := tr.captureUsageSnapshotForCadence(""); err != nil {
+				slog.Warn("failed to save cadence usage accounting snapshot", "error", err)
+			}
+		}
 	}
 }
 

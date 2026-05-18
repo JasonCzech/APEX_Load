@@ -27,9 +27,10 @@ type SystemSettings struct {
 }
 
 type GeneralSettings struct {
-	APIEndpoint            string `json:"api_endpoint"`
-	MaxConcurrentTests     int    `json:"max_concurrent_tests"`
-	MetricsIntervalSeconds int    `json:"metrics_interval_seconds"`
+	APIEndpoint                  string `json:"api_endpoint"`
+	MaxConcurrentTests           int    `json:"max_concurrent_tests"`
+	MetricsIntervalSeconds       int    `json:"metrics_interval_seconds"`
+	UsageSnapshotIntervalSeconds int    `json:"usage_snapshot_interval_seconds,omitempty"`
 }
 
 type ThresholdSettings struct {
@@ -191,9 +192,10 @@ func defaultSystemSettings(maxConcurrent int) SystemSettings {
 	}
 	return SystemSettings{
 		General: GeneralSettings{
-			APIEndpoint:            ":8080",
-			MaxConcurrentTests:     maxConcurrent,
-			MetricsIntervalSeconds: 1,
+			APIEndpoint:                  ":8080",
+			MaxConcurrentTests:           maxConcurrent,
+			MetricsIntervalSeconds:       1,
+			UsageSnapshotIntervalSeconds: 0,
 		},
 		Thresholds: defaultThresholdSettings(),
 		CapacityPlanning: CapacityPlanningSettings{
@@ -323,6 +325,9 @@ func validateSystemSettings(settings SystemSettings) error {
 	}
 	if settings.General.MetricsIntervalSeconds < 1 {
 		return fmt.Errorf("general.metrics_interval_seconds must be >= 1")
+	}
+	if settings.General.UsageSnapshotIntervalSeconds < 0 {
+		return fmt.Errorf("general.usage_snapshot_interval_seconds must be >= 0")
 	}
 	if settings.Thresholds.MaxErrorRatePct != nil {
 		if *settings.Thresholds.MaxErrorRatePct < 0 || *settings.Thresholds.MaxErrorRatePct > 100 {

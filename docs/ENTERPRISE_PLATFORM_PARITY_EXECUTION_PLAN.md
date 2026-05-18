@@ -88,7 +88,7 @@ Reference artifact: `docs/ENTERPRISE_GOVERNANCE_MODEL.md`.
 | --- | --- | --- | --- | --- |
 | P1.6 | Normalize project, release, scenario, script, data pool, run, and archive ownership semantics | M | none | Complete |
 | P1.7 | Decide whether first-class teams are required beyond projects for quotas and chargeback | M | P1.6 | Complete; project-first model remains primary |
-| P1.8 | Add usage accounting primitives by project, protocol, generator region, VUsers, duration, and archive size | L | P1.6 | Partial completion: live rollups, CSV export, durable snapshot capture/list APIs, terminal-run automatic snapshots, and snapshot audit events are implemented; wall-clock cadence-based capture remains future work |
+| P1.8 | Add usage accounting primitives by project, protocol, generator region, VUsers, duration, and archive size | L | P1.6 | Complete for first-pass usage operations: live rollups, CSV export, durable snapshot capture/list APIs, terminal-run automatic snapshots, configurable wall-clock cadence snapshots, and snapshot audit events are implemented |
 | P1.9 | Extend audit events for governance-policy changes, schedule decisions, run promotions, and capacity rejections | M | P1.8 | Defined; implementation continues with policy engines |
 
 Acceptance criteria:

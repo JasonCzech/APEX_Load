@@ -325,6 +325,19 @@ func TestSystemSettingsValidationRejectsInvalidTelemetryThresholds(t *testing.T)
 	}
 }
 
+func TestSystemSettingsValidationRejectsInvalidUsageSnapshotCadence(t *testing.T) {
+	settings := defaultSystemSettings(2)
+	settings.General.UsageSnapshotIntervalSeconds = -1
+
+	err := validateSystemSettings(settings)
+	if err == nil {
+		t.Fatal("expected invalid usage snapshot cadence to fail validation")
+	}
+	if got := err.Error(); got != "general.usage_snapshot_interval_seconds must be >= 0" {
+		t.Fatalf("validation error = %q, want usage snapshot cadence error", got)
+	}
+}
+
 func TestSystemSettingsValidationRejectsInvalidCapacityPlanning(t *testing.T) {
 	err := validateSystemSettings(SystemSettings{
 		General: GeneralSettings{

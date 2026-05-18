@@ -4716,6 +4716,52 @@ func TestRunnerCapturesUsageSnapshotWhenRunCompletes(t *testing.T) {
 	}
 }
 
+func TestRunnerCapturesUsageSnapshotOnCadenceTick(t *testing.T) {
+	store := &metricsStoreSpy{}
+	runner := NewTestRunner(2, NewHub(), store)
+	test := &ManagedTest{
+		ID:          "usage-cadence",
+		Name:        "Usage Cadence",
+		Status:      "COMPLETE",
+		ProjectID:   "project-b",
+		TotalVUsers: 3,
+		Duration:    2 * time.Minute,
+		Groups:      []TestGroup{{Name: "grpc", Protocol: "grpc", VUsers: 3}},
+	}
+	runner.mu.Lock()
+	runner.tests[test.ID] = test
+	runner.mu.Unlock()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ticks := make(chan time.Time, 1)
+	done := make(chan struct{})
+	go func() {
+		runner.RunUsageAccountingSnapshotCadence(ctx, ticks)
+		close(done)
+	}()
+
+	ticks <- time.Now()
+
+	deadline := time.Now().Add(time.Second)
+	for len(store.usageSnapshots) == 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+	<-done
+
+	if len(store.usageSnapshots) != 1 {
+		t.Fatalf("usage snapshots = %#v, want one cadence snapshot", store.usageSnapshots)
+	}
+	var usage UsageAccountingResponse
+	if err := json.Unmarshal([]byte(store.usageSnapshots[0].PayloadJSON), &usage); err != nil {
+		t.Fatalf("unmarshal snapshot usage: %v", err)
+	}
+	if usage.ProjectID != "" || usage.Totals.RunCount != 1 || usage.Totals.VUserSeconds != 360 {
+		t.Fatalf("cadence snapshot usage = %#v, want all-project usage", usage)
+	}
+}
+
 func waitForTestStatus(t *testing.T, runner *TestRunner, testID string, want string) *ManagedTest {
 	return waitForTestStatusWithin(t, runner, testID, 12*time.Second, want)
 }
