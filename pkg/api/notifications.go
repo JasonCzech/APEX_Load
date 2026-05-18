@@ -26,6 +26,10 @@ var supportedNotificationEvents = map[string]struct{}{
 	"test_resumed":  {},
 	"test_failed":   {},
 	"test_complete": {},
+
+	"telemetry_degraded":  {},
+	"telemetry_breached":  {},
+	"telemetry_recovered": {},
 }
 
 type NotificationsSettings struct {
@@ -44,12 +48,15 @@ type NotificationWebhookSettings struct {
 }
 
 type NotificationEvent struct {
-	Type      string    `json:"type"`
-	TestID    string    `json:"test_id"`
-	ProjectID string    `json:"project_id,omitempty"`
-	TestName  string    `json:"test_name"`
-	Status    string    `json:"status"`
-	Timestamp time.Time `json:"timestamp"`
+	Type       string    `json:"type"`
+	TestID     string    `json:"test_id"`
+	ProjectID  string    `json:"project_id,omitempty"`
+	TestName   string    `json:"test_name"`
+	Status     string    `json:"status"`
+	Severity   string    `json:"severity,omitempty"`
+	Summary    string    `json:"summary,omitempty"`
+	Conditions []string  `json:"conditions,omitempty"`
+	Timestamp  time.Time `json:"timestamp"`
 }
 
 type notificationDispatcher struct {
@@ -168,13 +175,8 @@ func buildSlackNotificationPayload(event NotificationEvent) map[string]any {
 				},
 			},
 			{
-				"type": "section",
-				"fields": []map[string]any{
-					{"type": "mrkdwn", "text": fmt.Sprintf("*Test*\n%s", event.TestName)},
-					{"type": "mrkdwn", "text": fmt.Sprintf("*Status*\n%s", event.Status)},
-					{"type": "mrkdwn", "text": fmt.Sprintf("*Test ID*\n%s", event.TestID)},
-					{"type": "mrkdwn", "text": fmt.Sprintf("*Project*\n%s", fallbackNotificationValue(event.ProjectID))},
-				},
+				"type":   "section",
+				"fields": notificationSlackFields(event),
 			},
 			{
 				"type": "context",
@@ -185,6 +187,25 @@ func buildSlackNotificationPayload(event NotificationEvent) map[string]any {
 			},
 		},
 	}
+}
+
+func notificationSlackFields(event NotificationEvent) []map[string]any {
+	fields := []map[string]any{
+		{"type": "mrkdwn", "text": fmt.Sprintf("*Test*\n%s", event.TestName)},
+		{"type": "mrkdwn", "text": fmt.Sprintf("*Status*\n%s", event.Status)},
+		{"type": "mrkdwn", "text": fmt.Sprintf("*Test ID*\n%s", event.TestID)},
+		{"type": "mrkdwn", "text": fmt.Sprintf("*Project*\n%s", fallbackNotificationValue(event.ProjectID))},
+	}
+	if strings.TrimSpace(event.Severity) != "" {
+		fields = append(fields, map[string]any{"type": "mrkdwn", "text": fmt.Sprintf("*Severity*\n%s", event.Severity)})
+	}
+	if strings.TrimSpace(event.Summary) != "" {
+		fields = append(fields, map[string]any{"type": "mrkdwn", "text": fmt.Sprintf("*Summary*\n%s", event.Summary)})
+	}
+	if len(event.Conditions) > 0 {
+		fields = append(fields, map[string]any{"type": "mrkdwn", "text": fmt.Sprintf("*Conditions*\n%s", strings.Join(event.Conditions, ", "))})
+	}
+	return fields
 }
 
 func buildTeamsNotificationPayload(event NotificationEvent) map[string]any {
@@ -200,24 +221,40 @@ func buildTeamsNotificationPayload(event NotificationEvent) map[string]any {
 				"version": "1.4",
 				"body": []map[string]any{
 					{"type": "TextBlock", "weight": "Bolder", "size": "Medium", "text": title},
-					{"type": "FactSet", "facts": []map[string]any{
-						{"title": "Test", "value": event.TestName},
-						{"title": "Status", "value": event.Status},
-						{"title": "Test ID", "value": event.TestID},
-						{"title": "Project", "value": fallbackNotificationValue(event.ProjectID)},
-						{"title": "Event", "value": event.Type},
-						{"title": "Timestamp", "value": event.Timestamp.UTC().Format(time.RFC3339)},
-					}},
+					{"type": "FactSet", "facts": notificationTeamsFacts(event)},
 				},
 			},
 		}},
 	}
 }
 
+func notificationTeamsFacts(event NotificationEvent) []map[string]any {
+	facts := []map[string]any{
+		{"title": "Test", "value": event.TestName},
+		{"title": "Status", "value": event.Status},
+		{"title": "Test ID", "value": event.TestID},
+		{"title": "Project", "value": fallbackNotificationValue(event.ProjectID)},
+		{"title": "Event", "value": event.Type},
+		{"title": "Timestamp", "value": event.Timestamp.UTC().Format(time.RFC3339)},
+	}
+	if strings.TrimSpace(event.Severity) != "" {
+		facts = append(facts, map[string]any{"title": "Severity", "value": event.Severity})
+	}
+	if strings.TrimSpace(event.Summary) != "" {
+		facts = append(facts, map[string]any{"title": "Summary", "value": event.Summary})
+	}
+	if len(event.Conditions) > 0 {
+		facts = append(facts, map[string]any{"title": "Conditions", "value": strings.Join(event.Conditions, ", ")})
+	}
+	return facts
+}
+
 func buildDynatraceNotificationPayload(webhook NotificationWebhookSettings, event NotificationEvent) map[string]any {
 	eventType := "CUSTOM_INFO"
-	if event.Type == "test_failed" {
+	if event.Type == "test_failed" || event.Type == "telemetry_breached" {
 		eventType = "ERROR_EVENT"
+	} else if event.Type == "telemetry_degraded" {
+		eventType = "CUSTOM_ALERT"
 	}
 	payload := map[string]any{
 		"eventType": eventType,
@@ -231,6 +268,16 @@ func buildDynatraceNotificationPayload(webhook NotificationWebhookSettings, even
 			"stormrunner.test_id":    event.TestID,
 			"stormrunner.test_name":  event.TestName,
 		},
+	}
+	properties := payload["properties"].(map[string]string)
+	if strings.TrimSpace(event.Severity) != "" {
+		properties["stormrunner.severity"] = event.Severity
+	}
+	if strings.TrimSpace(event.Summary) != "" {
+		properties["stormrunner.summary"] = event.Summary
+	}
+	if len(event.Conditions) > 0 {
+		properties["stormrunner.conditions"] = strings.Join(event.Conditions, ",")
 	}
 	if selector := strings.TrimSpace(webhook.EntitySelector); selector != "" {
 		payload["entitySelector"] = selector

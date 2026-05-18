@@ -97,6 +97,54 @@ func TestBuildDynatraceNotificationPayloadUsesErrorEventForFailures(t *testing.T
 	}
 }
 
+func TestBuildTelemetryNotificationPayloadIncludesDiagnosticContext(t *testing.T) {
+	event := NotificationEvent{
+		Type:       "telemetry_breached",
+		TestID:     "test-telemetry",
+		ProjectID:  "project-7",
+		TestName:   "Checkout Load",
+		Status:     "breached",
+		Severity:   "danger",
+		Summary:    "collector dropped 3 metric samples",
+		Conditions: []string{"collector_drops", "websocket_drops"},
+		Timestamp:  time.Date(2026, time.May, 18, 14, 0, 0, 0, time.UTC),
+	}
+
+	slack := buildSlackNotificationPayload(event)
+	blocks := slack["blocks"].([]map[string]any)
+	fields := blocks[1]["fields"].([]map[string]any)
+	if len(fields) < 7 {
+		t.Fatalf("slack fields = %#v, want diagnostic context fields", fields)
+	}
+
+	dynatrace := buildDynatraceNotificationPayload(NotificationWebhookSettings{}, event)
+	if dynatrace["eventType"] != "ERROR_EVENT" {
+		t.Fatalf("dynatrace event type = %#v, want ERROR_EVENT", dynatrace["eventType"])
+	}
+	properties := dynatrace["properties"].(map[string]string)
+	if properties["stormrunner.severity"] != "danger" || properties["stormrunner.summary"] != event.Summary {
+		t.Fatalf("dynatrace diagnostic properties = %#v", properties)
+	}
+	if properties["stormrunner.conditions"] != "collector_drops,websocket_drops" {
+		t.Fatalf("dynatrace conditions = %#v", properties["stormrunner.conditions"])
+	}
+}
+
+func TestValidateNotificationsAllowsTelemetryEvents(t *testing.T) {
+	err := validateNotificationsSettings(NotificationsSettings{
+		Webhooks: []NotificationWebhookSettings{{
+			Name:    "Telemetry Alerts",
+			Enabled: true,
+			URL:     "https://hooks.example.test/stormrunner",
+			Format:  notificationFormatSlack,
+			Events:  []string{"telemetry_degraded", "telemetry_breached", "telemetry_recovered"},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("expected telemetry notification events to validate, got %v", err)
+	}
+}
+
 func TestBroadcastEventDispatchesConfiguredNotificationWebhook(t *testing.T) {
 	received := make(chan map[string]any, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

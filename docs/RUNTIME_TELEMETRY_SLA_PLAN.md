@@ -115,6 +115,12 @@ The tenth implementation slice now adds run-level telemetry health transitions:
 - Telemetry warnings enter `degraded` first and transition to `breached` only when they remain active for the sustained breach window; data-loss conditions such as collector drops still breach immediately.
 - Recovery clears the breach timer and emits a healthy transition through the existing diagnostic sampling path.
 
+The eleventh implementation slice now connects telemetry health transitions to alert hooks:
+
+- Webhooks can subscribe to `telemetry_degraded`, `telemetry_breached`, and `telemetry_recovered` events in the existing notification settings.
+- Slack, Teams, and Dynatrace notification payloads now carry telemetry severity, summary, and condition metadata so freshness, dropped-sample, websocket, and generator-lag alerts remain actionable.
+- Live websocket consumers also receive `telemetry_health_changed` events when the run-level monitoring state transitions.
+
 ## Recommended Next Steps
 1. Expand correlation and dependency metadata coverage to the remaining protocols so distributed telemetry diagnostics stay consistent outside HTTP and JMS.
-2. Add alert hooks for telemetry freshness, dropped samples, websocket backpressure, and generator stream degradation using the new run-level telemetry health state.
+2. Add live telemetry SLA summaries to run archives so post-run reports can prove when monitoring stayed healthy or explain when confidence was reduced.

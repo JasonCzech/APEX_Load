@@ -4172,8 +4172,10 @@ func (tr *TestRunner) publishLiveMetrics(test *ManagedTest, live *LiveMetrics, a
 	diagnostic, diagnosticSignature := buildTelemetryDiagnostic(test, live, tr.GetSystemSettings().Thresholds)
 	publishDiagnostic := false
 	var telemetryRunHealth *TelemetryRunHealth
+	var previousTelemetryRunHealth *TelemetryRunHealth
 
 	tr.mu.Lock()
+	previousTelemetryRunHealth = cloneTelemetryRunHealth(test.TelemetryHealth)
 	telemetryRunHealth = updateTelemetryRunHealth(&test.telemetryDiagnostic, diagnostic, diagnosticSignature, now)
 	live.TelemetryStatus = cloneTelemetryRunHealth(telemetryRunHealth)
 	test.TelemetryHealth = cloneTelemetryRunHealth(telemetryRunHealth)
@@ -4207,6 +4209,61 @@ func (tr *TestRunner) publishLiveMetrics(test *ManagedTest, live *LiveMetrics, a
 			"test_name":  test.Name,
 			"timestamp":  now,
 			"data":       diagnostic,
+		})
+	}
+	tr.broadcastTelemetryHealthTransition(test, previousTelemetryRunHealth, telemetryRunHealth, now)
+}
+
+func (tr *TestRunner) broadcastTelemetryHealthTransition(test *ManagedTest, previous *TelemetryRunHealth, current *TelemetryRunHealth, now time.Time) {
+	if tr == nil || test == nil || current == nil {
+		return
+	}
+	previousStatus := ""
+	if previous != nil {
+		previousStatus = previous.Status
+	}
+	if previousStatus == current.Status {
+		return
+	}
+
+	eventType := ""
+	switch current.Status {
+	case "degraded":
+		eventType = "telemetry_degraded"
+	case "breached":
+		eventType = "telemetry_breached"
+	case "healthy":
+		if previousStatus == "" || previousStatus == "healthy" {
+			return
+		}
+		eventType = "telemetry_recovered"
+	default:
+		return
+	}
+
+	message := map[string]any{
+		"type":       "telemetry_health_changed",
+		"event_type": eventType,
+		"test_id":    test.ID,
+		"project_id": normalizeProjectID(test.ProjectID),
+		"test_name":  test.Name,
+		"timestamp":  now,
+		"data":       current,
+	}
+	if tr.hub != nil {
+		tr.hub.BroadcastJSON(message)
+	}
+	if tr.notifier != nil {
+		tr.notifier.Dispatch(tr.currentNotificationSettings(), NotificationEvent{
+			Type:       eventType,
+			TestID:     test.ID,
+			ProjectID:  normalizeProjectID(test.ProjectID),
+			TestName:   test.Name,
+			Status:     current.Status,
+			Severity:   current.Severity,
+			Summary:    current.Summary,
+			Conditions: append([]string(nil), current.Conditions...),
+			Timestamp:  now,
 		})
 	}
 }

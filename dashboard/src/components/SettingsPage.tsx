@@ -3428,8 +3428,8 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
             <div className="settings-subsection">
               <div className="settings-manager-summary">
                 <div>
-                  <span className="setting-label">Lifecycle Notification Webhooks</span>
-                  <span className="setting-desc">Send Slack, Microsoft Teams, or Dynatrace Events API notifications when tests change state.</span>
+                  <span className="setting-label">Notification Webhooks</span>
+                  <span className="setting-desc">Send Slack, Microsoft Teams, or Dynatrace Events API notifications when tests or telemetry health change state.</span>
                 </div>
                 <strong>{notificationWebhookCount}</strong>
               </div>
@@ -3441,7 +3441,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
                       <div className="project-redaction-rule-header">
                         <div>
                           <strong>{webhook.name?.trim() || `Webhook ${index + 1}`}</strong>
-                          <p className="setting-desc">All test lifecycle events are sent. Event filtering is supported by the backend and can be added to the UI later.</p>
+                          <p className="setting-desc">All test lifecycle and telemetry health events are sent. Event filtering is supported by the backend and can be added to the UI later.</p>
                         </div>
                         <button className="btn btn-sm btn-ghost" type="button" onClick={() => removeNotificationWebhook(index)}>
                           Remove

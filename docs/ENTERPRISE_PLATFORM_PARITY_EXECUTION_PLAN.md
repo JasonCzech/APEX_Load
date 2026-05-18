@@ -208,7 +208,7 @@ Live monitoring stays under the documented two-second target, shows health of th
 | --- | --- | --- | --- | --- |
 | P5.1 | Convert telemetry stage budgets into configurable thresholds for generator, transport, controller, fan-out, and browser-render lag | M | none | Complete - system settings now carry configurable telemetry budgets, live diagnostics evaluate measured lag stages against those budgets, and the Settings page exposes the controls. |
 | P5.2 | Add sustained telemetry breach detection and run-level health state transitions | L | P5.1 | Complete - live telemetry diagnostics now drive run-level `healthy`, `degraded`, and `breached` transitions with sustained-warning detection and immediate breach on data-loss conditions. |
-| P5.3 | Add alert hooks for telemetry freshness, dropped samples, websocket backpressure, and generator stream degradation | M | P5.2 | Planned |
+| P5.3 | Add alert hooks for telemetry freshness, dropped samples, websocket backpressure, and generator stream degradation | M | P5.2 | Complete - telemetry health transitions now emit websocket events and notification webhook events with severity, summary, and condition metadata. |
 | P5.4 | Add live telemetry SLA summaries to run archives for post-run confidence review | M | P5.2, P6.1 | Planned |
 
 Acceptance criteria:

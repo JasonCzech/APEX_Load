@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -1494,6 +1496,81 @@ func TestPublishLiveMetricsUsesConfiguredTelemetryBudgets(t *testing.T) {
 	}
 }
 
+func TestPublishLiveMetricsDispatchesTelemetryBreachNotifications(t *testing.T) {
+	received := make(chan map[string]any, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Errorf("decode webhook payload: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		received <- payload
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	hub := NewHub()
+	runner := NewTestRunner(2, hub, nil)
+	runner.notifier = newNotificationDispatcher(server.Client())
+	settings := runner.GetSystemSettings()
+	settings.Notifications = NotificationsSettings{
+		Webhooks: []NotificationWebhookSettings{{
+			Name:    "Telemetry Alerts",
+			Enabled: true,
+			URL:     server.URL,
+			Format:  notificationFormatSlack,
+			Events:  []string{"telemetry_breached"},
+		}},
+	}
+	if _, err := runner.UpdateSystemSettings(settings); err != nil {
+		t.Fatalf("UpdateSystemSettings returned error: %v", err)
+	}
+
+	testRun := &ManagedTest{ID: "test-1", Name: "Telemetry Breach", ProjectID: "project-7"}
+	runner.publishLiveMetrics(testRun, &LiveMetrics{
+		Timestamp: time.Now(),
+		Telemetry: &TelemetryHealth{DroppedResults: 3},
+	}, nil)
+
+	messageTypes := make([]string, 0, 3)
+	for i := 0; i < 3; i++ {
+		select {
+		case msg := <-hub.broadcast:
+			var envelope struct {
+				Type      string              `json:"type"`
+				EventType string              `json:"event_type"`
+				Data      *TelemetryRunHealth `json:"data"`
+			}
+			if err := json.Unmarshal(msg, &envelope); err != nil {
+				t.Fatalf("failed to decode broadcast payload: %v", err)
+			}
+			messageTypes = append(messageTypes, envelope.Type)
+			if envelope.Type == "telemetry_health_changed" {
+				if envelope.EventType != "telemetry_breached" || envelope.Data == nil || envelope.Data.Status != "breached" {
+					t.Fatalf("unexpected telemetry health event: %#v", envelope)
+				}
+			}
+		default:
+			t.Fatalf("expected telemetry health broadcast, got %#v", messageTypes)
+		}
+	}
+	if strings.Join(messageTypes, ",") != "metrics_update,telemetry_diagnostic,telemetry_health_changed" {
+		t.Fatalf("message types = %#v, want metrics/diagnostic/health change", messageTypes)
+	}
+
+	select {
+	case payload := <-received:
+		text, _ := payload["text"].(string)
+		if !strings.Contains(text, "Stormrunner Telemetry Breached") || !strings.Contains(text, "Telemetry Breach") {
+			t.Fatalf("payload text = %#v", payload["text"])
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected telemetry breach webhook delivery")
+	}
+}
+
 func TestUpdateTelemetryRunHealthTracksSustainedBreachAndRecovery(t *testing.T) {
 	now := time.Date(2026, 5, 18, 10, 0, 0, 0, time.UTC)
 	state := telemetryDiagnosticState{}
@@ -1778,31 +1855,51 @@ func TestPublishLiveMetricsSamplesTelemetryDiagnosticUntilStateChanges(t *testin
 		Telemetry: &TelemetryHealth{},
 	}, nil)
 
-	messageTypes := make([]string, 0, 5)
-	var recovery struct {
+	messageTypes := make([]string, 0, 7)
+	var recoveryDiagnostic struct {
 		Type string               `json:"type"`
 		Data *TelemetryDiagnostic `json:"data"`
 	}
-	for i := 0; i < 5; i++ {
+	var recoveryHealth struct {
+		Type string              `json:"type"`
+		Data *TelemetryRunHealth `json:"data"`
+	}
+	for i := 0; i < 7; i++ {
 		select {
 		case msg := <-hub.broadcast:
-			if err := json.Unmarshal(msg, &recovery); err != nil {
+			var envelope struct {
+				Type string `json:"type"`
+			}
+			if err := json.Unmarshal(msg, &envelope); err != nil {
 				t.Fatalf("failed to decode diagnostic payload: %v", err)
 			}
-			messageTypes = append(messageTypes, recovery.Type)
+			messageTypes = append(messageTypes, envelope.Type)
+			if envelope.Type == "telemetry_diagnostic" {
+				if err := json.Unmarshal(msg, &recoveryDiagnostic); err != nil {
+					t.Fatalf("failed to decode diagnostic payload: %v", err)
+				}
+			}
+			if envelope.Type == "telemetry_health_changed" {
+				if err := json.Unmarshal(msg, &recoveryHealth); err != nil {
+					t.Fatalf("failed to decode telemetry health payload: %v", err)
+				}
+			}
 		default:
-			t.Fatalf("expected 5 broadcast messages, got %d", len(messageTypes))
+			t.Fatalf("expected 7 broadcast messages, got %d", len(messageTypes))
 		}
 	}
-	if len(messageTypes) != 5 {
-		t.Fatalf("expected 5 broadcast messages, got %#v", messageTypes)
+	if len(messageTypes) != 7 {
+		t.Fatalf("expected 7 broadcast messages, got %#v", messageTypes)
 	}
 	joined := strings.Join(messageTypes, ",")
-	if joined != "metrics_update,telemetry_diagnostic,metrics_update,metrics_update,telemetry_diagnostic" {
+	if joined != "metrics_update,telemetry_diagnostic,telemetry_health_changed,metrics_update,metrics_update,telemetry_diagnostic,telemetry_health_changed" {
 		t.Fatalf("unexpected broadcast sequence: %s", joined)
 	}
-	if recovery.Type != "telemetry_diagnostic" || recovery.Data == nil || recovery.Data.Severity != "healthy" {
-		t.Fatalf("expected final recovery diagnostic, got %#v", recovery)
+	if recoveryDiagnostic.Type != "telemetry_diagnostic" || recoveryDiagnostic.Data == nil || recoveryDiagnostic.Data.Severity != "healthy" {
+		t.Fatalf("expected final recovery diagnostic, got %#v", recoveryDiagnostic)
+	}
+	if recoveryHealth.Type != "telemetry_health_changed" || recoveryHealth.Data == nil || recoveryHealth.Data.Status != "healthy" {
+		t.Fatalf("expected final recovery health transition, got %#v", recoveryHealth)
 	}
 }
 
@@ -2289,8 +2386,8 @@ func TestProcessMetricsSnapshotBroadcastsAlertAndStopRequest(t *testing.T) {
 		t.Fatalf("expected live metrics with 10%% error rate, got %#v", testRun.LiveMetrics)
 	}
 
-	messageTypes := make([]string, 0, 4)
-	for i := 0; i < 4; i++ {
+	messageTypes := make([]string, 0, 5)
+	for i := 0; i < 5; i++ {
 		select {
 		case msg := <-hub.broadcast:
 			var payload struct {
@@ -2301,11 +2398,11 @@ func TestProcessMetricsSnapshotBroadcastsAlertAndStopRequest(t *testing.T) {
 			}
 			messageTypes = append(messageTypes, payload.Type)
 		default:
-			t.Fatalf("expected 4 broadcast messages, got %d", len(messageTypes))
+			t.Fatalf("expected 5 broadcast messages, got %d", len(messageTypes))
 		}
 	}
 
-	if messageTypes[0] != "metrics_update" || messageTypes[1] != "telemetry_diagnostic" || messageTypes[2] != "threshold_alert" || messageTypes[3] != "test_stopping" {
+	if messageTypes[0] != "metrics_update" || messageTypes[1] != "telemetry_diagnostic" || messageTypes[2] != "telemetry_health_changed" || messageTypes[3] != "threshold_alert" || messageTypes[4] != "test_stopping" {
 		t.Fatalf("unexpected broadcast order: %#v", messageTypes)
 	}
 }
