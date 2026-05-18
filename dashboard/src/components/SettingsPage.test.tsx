@@ -813,6 +813,14 @@ describe('SettingsPage', () => {
     await flushPromises()
     await flushPromises()
 
+    const projectsTab = findButton('Projects & Compliance')
+    expect(projectsTab).toBeDefined()
+    if (projectsTab) {
+      await act(async () => {
+        projectsTab.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+    }
+
     const projectSection = container.querySelector('#settings-section-projects')
     expect(projectSection).toBeTruthy()
     expect(projectSection?.textContent).toContain('Customer Portal')
@@ -1051,7 +1059,7 @@ describe('SettingsPage', () => {
     await setFieldValue(apiEndpointInput, ':9090')
 
     const saveButton = findButton('Save Changes')
-    const resetButton = findButton('Reset All Settings')
+    const resetButton = findButton('Reset All Settings to Defaults')
     expect(saveButton?.disabled).toBe(true)
     expect(resetButton?.disabled).toBe(true)
     expect(container.textContent).toContain('Current session can view settings but cannot save global configuration changes.')

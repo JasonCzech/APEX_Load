@@ -7,6 +7,7 @@ import { useProject } from '../hooks/useProject'
 import { useApi } from '../hooks/useApi'
 import { ArchiveRetentionPlanResponse, DashboardAuditEvent, DashboardAuthAccessResource, DashboardAuthDiagnostics, DashboardAuthDiagnosticsCheck, DashboardAuthEffectiveAccessResource, DashboardAuthRoleDefinition, DashboardAuthStatus, DashboardServiceAccount, DashboardSystemSettings, HealthResponse, Project, RedactionRule, SharedDataPool, SharedDataPoolRow, SystemInventoryResponse, SystemReadinessResponse, UsageAccountingResponse, UsageAccountingSnapshot } from '../types'
 import { getErrorMessage } from '../utils/errorUtils'
+import './CreateTestModal.css'
 import { downloadBlob } from '../utils/fileUtils'
 
 const DEFAULT_SETTINGS: DashboardSystemSettings = {
@@ -825,6 +826,8 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
   const [loading, setLoading] = useState(true)
   const [saveMessage, setSaveMessage] = useState('')
   const [requestError, setRequestError] = useState('')
+  const [activeSection, setActiveSection] = useState<SettingsSectionId>('general')
+  const [confirmingResetAll, setConfirmingResetAll] = useState(false)
   const [customizingSections, setCustomizingSections] = useState(false)
   const [draggedSectionId, setDraggedSectionId] = useState<SettingsSectionId | null>(null)
   const [sectionOrder, setSectionOrder] = useState<SettingsSectionId[]>(() => readSettingsSectionArray('stormrunner.settings.sectionOrder'))
@@ -833,6 +836,15 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
   const [managedReleases, setManagedReleases] = useState(releases)
   const [newApplicationName, setNewApplicationName] = useState('')
   const [applicationActionError, setApplicationActionError] = useState('')
+  const [renamingApplicationName, setRenamingApplicationName] = useState<string | null>(null)
+  const [renamingReleaseId, setRenamingReleaseId] = useState<string | null>(null)
+  const [renamingReleaseName, setRenamingReleaseName] = useState('')
+  const [confirmDeleteApp, setConfirmDeleteApp] = useState(false)
+  const [confirmDeleteRelease, setConfirmDeleteRelease] = useState<{ id: string; name: string } | null>(null)
+  const [confirmArchiveRelease, setConfirmArchiveRelease] = useState<{ id: string; name: string } | null>(null)
+  const [confirmApplyRetention, setConfirmApplyRetention] = useState(false)
+  const [confirmDeletePool, setConfirmDeletePool] = useState<SharedDataPool | null>(null)
+  const [confirmDeleteRow, setConfirmDeleteRow] = useState<SharedDataPoolRow | null>(null)
   const [projects, setProjects] = useState<Project[]>([])
   const [selectedProjectId, setSelectedProjectId] = useState('')
   const [newProjectName, setNewProjectName] = useState('')
@@ -1395,7 +1407,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
       setArchiveRetentionActionMessage('')
       return
     }
-    if (!window.confirm('Apply archive retention pruning for the current plan?')) return
+    setConfirmApplyRetention(false)
     try {
       const plan = await api.applyArchiveRetention()
       setArchiveRetentionPlan(plan)
@@ -1624,7 +1636,6 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
   }
 
   const resetSettings = async () => {
-    if (!window.confirm('Reset all system settings to defaults?')) return
     try {
       const response = await api.updateSystemSettings(DEFAULT_SETTINGS)
       setSettings(response)
@@ -1632,9 +1643,11 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
       await refreshAuthDiagnostics()
       setSaveMessage('Settings reset to defaults.')
       setRequestError('')
+      setConfirmingResetAll(false)
     } catch (error: unknown) {
       setRequestError(getErrorMessage(error, 'Unable to reset settings'))
       setSaveMessage('')
+      setConfirmingResetAll(false)
     }
   }
 
@@ -1806,15 +1819,21 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
     }
   }
 
-  const renameApplication = async () => {
+  const startRenamingApplication = () => {
     if (!activeApplication) return
-    const name = window.prompt('Application name', activeApplication.name)
-    if (!name?.trim()) return
+    setRenamingApplicationName(activeApplication.name)
+  }
+
+  const confirmRenameApplication = async () => {
+    if (!activeApplication || renamingApplicationName === null) return
+    const name = renamingApplicationName.trim()
+    if (!name) return
     try {
-      const updated = await applicationApi.updateApplication(activeApplication.id, { name: name.trim() })
+      const updated = await applicationApi.updateApplication(activeApplication.id, { name })
       await refreshApplications()
       setActiveApplication(updated)
       setApplicationActionError('')
+      setRenamingApplicationName(null)
     } catch (error: unknown) {
       setApplicationActionError(getErrorMessage(error, 'Unable to rename application'))
     }
@@ -1822,26 +1841,35 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
 
   const deleteApplication = async () => {
     if (!activeApplication) return
-    if (!window.confirm(`Delete application "${activeApplication.name}" and its releases?`)) return
     try {
       await applicationApi.deleteApplication(activeApplication.id)
       await refreshApplications()
       setApplicationActionError('')
+      setConfirmDeleteApp(false)
     } catch (error: unknown) {
       setApplicationActionError(getErrorMessage(error, 'Unable to delete application'))
+      setConfirmDeleteApp(false)
     }
   }
 
-  const renameRelease = async (releaseId: string, currentName: string) => {
-    const name = window.prompt('Release name', currentName)
-    if (!name?.trim()) return
+  const startRenamingRelease = (releaseId: string, currentName: string) => {
+    setRenamingReleaseId(releaseId)
+    setRenamingReleaseName(currentName)
+  }
+
+  const confirmRenameRelease = async () => {
+    if (!renamingReleaseId) return
+    const name = renamingReleaseName.trim()
+    if (!name) return
     try {
-      const updated = await applicationApi.updateRelease(releaseId, { name: name.trim() })
+      const updated = await applicationApi.updateRelease(renamingReleaseId, { name })
       await refreshReleases(activeApplication?.id)
       const response = await applicationApi.listReleases(activeApplication?.id || '', true)
       setManagedReleases(response.releases || [])
       if (!updated.archived_at) setActiveRelease(updated)
       setApplicationActionError('')
+      setRenamingReleaseId(null)
+      setRenamingReleaseName('')
     } catch (error: unknown) {
       setApplicationActionError(getErrorMessage(error, 'Unable to rename release'))
     }
@@ -1851,17 +1879,19 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
     const results = await api.listTests({ application_id: activeApplication?.id, release_id: releaseId })
     if ((results.tests || []).length > 0) {
       setApplicationActionError(`Release "${releaseName}" still has associated results. Archive or delete those results before archiving the release.`)
+      setConfirmArchiveRelease(null)
       return
     }
-    if (!window.confirm(`Archive release "${releaseName}"? If this release still had associated results, you would need to archive or delete those results first.`)) return
     try {
       await applicationApi.archiveRelease(releaseId)
       await refreshReleases(activeApplication?.id)
       const response = await applicationApi.listReleases(activeApplication?.id || '', true)
       setManagedReleases(response.releases || [])
       setApplicationActionError('')
+      setConfirmArchiveRelease(null)
     } catch (error: unknown) {
       setApplicationActionError(getErrorMessage(error, 'Unable to archive release'))
+      setConfirmArchiveRelease(null)
     }
   }
 
@@ -1869,17 +1899,19 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
     const results = await api.listTests({ application_id: activeApplication?.id, release_id: releaseId })
     if ((results.tests || []).length > 0) {
       setApplicationActionError(`Release "${releaseName}" still has associated results. Archive or delete those results before deleting the release.`)
+      setConfirmDeleteRelease(null)
       return
     }
-    if (!window.confirm(`Delete release "${releaseName}"? If this release still had associated results, you would need to archive or delete those results first.`)) return
     try {
       await applicationApi.deleteRelease(releaseId)
       await refreshReleases(activeApplication?.id)
       const response = await applicationApi.listReleases(activeApplication?.id || '', true)
       setManagedReleases(response.releases || [])
       setApplicationActionError('')
+      setConfirmDeleteRelease(null)
     } catch (error: unknown) {
       setApplicationActionError(getErrorMessage(error, 'Unable to delete release'))
+      setConfirmDeleteRelease(null)
     }
   }
 
@@ -1898,7 +1930,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
   }
 
   const deleteDataPool = async (pool: SharedDataPool) => {
-    if (!window.confirm(`Delete data pool "${pool.name}"? Data pools bound to scenarios must be unbound first.`)) return
+    setConfirmDeletePool(null)
     try {
       await api.deleteDataPool(pool.id)
       await loadDataPools('')
@@ -1992,7 +2024,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
 
   const deleteDataPoolRow = async (row: SharedDataPoolRow) => {
     if (!selectedDataPoolId) return
-    if (!window.confirm('Delete this data row?')) return
+    setConfirmDeleteRow(null)
     try {
       await api.deleteDataPoolRow(selectedDataPoolId, row.id)
       const response = await api.getDataPool(selectedDataPoolId)
@@ -2028,7 +2060,11 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
   const renderSettingsHeader = (id: SettingsSectionId, title: string) => (
     <h3 className="settings-card-title">
       <span className="settings-title-main">
-        {customizingSections && <span className="settings-drag-handle" title="Drag to reorder">::</span>}
+        {customizingSections && (
+          <span className="settings-drag-handle" title="Drag to reorder">
+            <svg width="10" height="16" viewBox="0 0 10 16" fill="currentColor"><circle cx="2" cy="2" r="1.5"/><circle cx="8" cy="2" r="1.5"/><circle cx="2" cy="8" r="1.5"/><circle cx="8" cy="8" r="1.5"/><circle cx="2" cy="14" r="1.5"/><circle cx="8" cy="14" r="1.5"/></svg>
+          </span>
+        )}
         {title}
       </span>
       <span className="settings-card-controls">
@@ -2044,6 +2080,27 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
     </h3>
   )
 
+  const sectionMessages = useMemo(() => {
+    const msgs: Record<SettingsSectionId, { notices: string[]; errors: string[] }> = {
+      general: { notices: [], errors: [] },
+      thresholds: { notices: [], errors: [] },
+      capacity: { notices: [], errors: [] },
+      applications: { notices: [], errors: [] },
+      projects: { notices: [], errors: [] },
+      'data-pools': { notices: [], errors: [] },
+      integrations: { notices: [], errors: [] },
+    }
+    if (saveMessage) msgs[activeSection].notices.push(saveMessage)
+    if (requestError) msgs[activeSection].errors.push(requestError)
+    if (applicationActionError) msgs.applications.errors.push(applicationActionError)
+    if (projectActionMessage) msgs.projects.notices.push(projectActionMessage)
+    if (projectActionError) msgs.projects.errors.push(projectActionError)
+    if (dataPoolActionError) msgs['data-pools'].errors.push(dataPoolActionError)
+    return msgs
+  }, [saveMessage, requestError, applicationActionError, projectActionMessage, projectActionError, dataPoolActionError, activeSection])
+
+  const activeSectionMessages = sectionMessages[activeSection]
+
   return (
     <div className="page settings-page">
       <div className="page-header">
@@ -2052,22 +2109,11 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
           <p className="page-subtitle">Configuration, thresholds, and integrations</p>
         </div>
         <div className="settings-actions">
-          {customizingSections && (
-            <button className="btn btn-secondary" onClick={resetSectionLayout}>
-              Reset Layout
-            </button>
-          )}
-          <button className={`btn ${customizingSections ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setCustomizingSections(value => !value)}>
-            {customizingSections ? 'Done' : 'Customize Layout'}
-          </button>
           {hasUnsavedChanges && (
             <button className="btn btn-secondary" onClick={discardChanges}>
               Discard Changes
             </button>
           )}
-          <button className="btn btn-secondary" onClick={resetSettings} disabled={!canManageSystem}>
-            Reset All Settings
-          </button>
           <button className="btn btn-primary" disabled={!canSave} onClick={saveSettings}>
             {hasUnsavedChanges ? 'Save Changes' : 'Saved'}
           </button>
@@ -2096,44 +2142,41 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
         </div>
       </div>
 
-      <div className="settings-quick-nav">
-        {visibleSections.map(section => (
-          <button key={section.id} type="button" className="btn btn-secondary" onClick={() => scrollToSection(section.id)}>
-            {section.title}
-          </button>
-        ))}
-      </div>
-
-      {loading && <p className="settings-notice">Loading settings...</p>}
-      {!loading && saveMessage && <p className="settings-notice">{saveMessage}</p>}
-      {projectActionMessage && <p className="settings-notice">{projectActionMessage}</p>}
-      {requestError && <p className="settings-error-inline">{requestError}</p>}
-      {applicationActionError && <p className="settings-error-inline">{applicationActionError}</p>}
-      {projectActionError && <p className="settings-error-inline">{projectActionError}</p>}
-      {dataPoolActionError && <p className="settings-error-inline">{dataPoolActionError}</p>}
-      {validationErrors.length > 0 && (
-        <div className="settings-errors" role="alert">
-          {validationErrors.map((error) => (
-            <p key={error}>{error}</p>
-          ))}
-        </div>
-      )}
-
-      {customizingSections && hiddenSections.length > 0 && (
-        <div className="hidden-chart-list">
-          {hiddenSections.map(section => (
-            <button key={section.id} className="hidden-chart-pill" type="button" onClick={() => toggleHiddenSection(section.id)}>
-              Show {section.title}
+      <div className="settings-tabbed-layout">
+        <nav className="settings-sidebar">
+          {SETTINGS_SECTIONS.map(section => (
+            <button
+              key={section.id}
+              type="button"
+              className={`settings-sidebar-item ${activeSection === section.id ? 'active' : ''}`}
+              onClick={() => setActiveSection(section.id)}
+            >
+              {section.title}
             </button>
           ))}
-        </div>
-      )}
+        </nav>
 
-      <div className="settings-grid">
+        <div className="settings-main">
+          {loading && <p className="settings-notice">Loading settings...</p>}
+          {activeSectionMessages.notices.map(msg => (
+            <p key={msg} className="settings-notice">{msg}</p>
+          ))}
+          {activeSectionMessages.errors.map(msg => (
+            <p key={msg} className="settings-error-inline">{msg}</p>
+          ))}
+          {validationErrors.length > 0 && (
+            <div className="settings-errors" role="alert">
+              {validationErrors.map((error) => (
+                <p key={error}>{error}</p>
+              ))}
+            </div>
+          )}
+
+          <div className="settings-grid">
         <div
           id="settings-section-general"
           className={sectionClass('general')}
-          hidden={!visibleSections.some(section => section.id === 'general')}
+          hidden={activeSection !== 'general'}
           draggable={customizingSections}
           onDragStart={event => handleSectionDragStart(event, 'general')}
           onDragOver={event => handleSectionDragOver(event, 'general')}
@@ -2145,8 +2188,8 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
           <div className="settings-group">
             <div className="setting-row">
               <div className="setting-info">
-                <span className="setting-label">API Endpoint</span>
-                <span className="setting-desc">Controller API server address</span>
+                <span className="setting-label">API Endpoint <span className="settings-restart-badge">Restart required</span></span>
+                <span className="setting-desc">Controller API server address. Changes take effect after restarting the controller.</span>
               </div>
               <input
                 className="settings-input cell-mono"
@@ -2300,8 +2343,8 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
               </div>
               <div className="setting-row">
                 <div className="setting-info">
-                  <span className="setting-label">Access Control Mode</span>
-                  <span className="setting-desc">Dev Bypass keeps local development open by default. Trusted Headers expects an authenticating reverse proxy to inject user and role headers before requests reach Stormrunner. In production this is expected to be Microsoft Entra ID-backed.</span>
+                  <span className="setting-label">Access Control Mode <span className="settings-restart-badge">Restart required</span></span>
+                  <span className="setting-desc">Dev Bypass keeps local development open by default. Trusted Headers expects an authenticating reverse proxy to inject user and role headers before requests reach Stormrunner. Changes to auth mode take effect after restarting the controller.</span>
                 </div>
                 <select
                   className="settings-input"
@@ -3012,7 +3055,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
         <div
           id="settings-section-thresholds"
           className={sectionClass('thresholds')}
-          hidden={!visibleSections.some(section => section.id === 'thresholds')}
+          hidden={activeSection !== 'thresholds'}
           draggable={customizingSections}
           onDragStart={event => handleSectionDragStart(event, 'thresholds')}
           onDragOver={event => handleSectionDragOver(event, 'thresholds')}
@@ -3022,6 +3065,10 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
         >
           {renderSettingsHeader('thresholds', 'Performance Thresholds')}
           <div className="settings-group">
+            <div className="settings-subgroup-header">
+              <span className="settings-subgroup-title">Performance SLAs</span>
+              <span className="settings-subgroup-desc">Alert and auto-stop thresholds for transaction-level quality gates</span>
+            </div>
             <div className="setting-row">
               <div className="setting-info">
                 <span className="setting-label">Max Error Rate (%)</span>
@@ -3082,6 +3129,10 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
                 onChange={(e) => updateThreshold('max_avg_transfer_ms', e.target.value)}
                 placeholder="Not configured"
               />
+            </div>
+            <div className="settings-subgroup-header">
+              <span className="settings-subgroup-title">Telemetry Pipeline</span>
+              <span className="settings-subgroup-desc">Time budgets for each stage of the live metrics pipeline: generator capture, transport, controller fan-out, and browser render</span>
             </div>
             <div className="setting-row">
               <div className="setting-info">
@@ -3164,7 +3215,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
         <div
           id="settings-section-capacity"
           className={sectionClass('capacity')}
-          hidden={!visibleSections.some(section => section.id === 'capacity')}
+          hidden={activeSection !== 'capacity'}
           draggable={customizingSections}
           onDragStart={event => handleSectionDragStart(event, 'capacity')}
           onDragOver={event => handleSectionDragOver(event, 'capacity')}
@@ -3366,7 +3417,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
                 <button className="btn btn-secondary" type="button" onClick={planArchiveRetention} disabled={!canManageSystem}>
                   Plan Retention
                 </button>
-                <button className="btn btn-ghost" style={{ color: 'var(--danger)' }} type="button" onClick={applyArchiveRetention} disabled={!canManageSystem || !archiveRetentionPlan?.summary.candidate_count}>
+                <button className="btn btn-ghost" style={{ color: 'var(--danger)' }} type="button" onClick={() => setConfirmApplyRetention(true)} disabled={!canManageSystem || !archiveRetentionPlan?.summary.candidate_count}>
                   Apply Retention
                 </button>
               </div>
@@ -3398,7 +3449,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
         <div
           id="settings-section-applications"
           className={sectionClass('applications')}
-          hidden={!visibleSections.some(section => section.id === 'applications')}
+          hidden={activeSection !== 'applications'}
           draggable={customizingSections}
           onDragStart={event => handleSectionDragStart(event, 'applications')}
           onDragOver={event => handleSectionDragOver(event, 'applications')}
@@ -3448,13 +3499,30 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
                 <span className="setting-desc">Rename or delete the selected application.</span>
               </div>
               <div className="settings-inline-actions">
-                <span className="setting-value">{activeApplication?.name || 'No application selected'}</span>
-                <button className="btn btn-secondary" type="button" onClick={renameApplication} disabled={!activeApplication}>
-                  Rename
-                </button>
-                <button className="btn btn-ghost" style={{ color: 'var(--danger)' }} type="button" onClick={deleteApplication} disabled={!activeApplication}>
-                  Delete
-                </button>
+                {renamingApplicationName !== null ? (
+                  <>
+                    <input
+                      type="text"
+                      className="input"
+                      value={renamingApplicationName}
+                      onChange={e => setRenamingApplicationName(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') confirmRenameApplication(); if (e.key === 'Escape') setRenamingApplicationName(null); }}
+                      autoFocus
+                    />
+                    <button className="btn btn-primary" type="button" onClick={confirmRenameApplication}>Save</button>
+                    <button className="btn btn-secondary" type="button" onClick={() => setRenamingApplicationName(null)}>Cancel</button>
+                  </>
+                ) : (
+                  <>
+                    <span className="setting-value">{activeApplication?.name || 'No application selected'}</span>
+                    <button className="btn btn-secondary" type="button" onClick={startRenamingApplication} disabled={!activeApplication}>
+                      Rename
+                    </button>
+                    <button className="btn btn-ghost" style={{ color: 'var(--danger)' }} type="button" onClick={() => setConfirmDeleteApp(true)} disabled={!activeApplication}>
+                      Delete
+                    </button>
+                  </>
+                )}
               </div>
             </div>
 
@@ -3486,17 +3554,34 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
                         </small>
                       </button>
                       <div className="settings-inline-actions">
-                        <button className="btn btn-secondary" type="button" onClick={() => renameRelease(release.id, release.name)}>
-                          Rename
-                        </button>
-                        {!release.archived_at && (
-                          <button className="btn btn-secondary" type="button" onClick={() => archiveRelease(release.id, release.name)}>
-                            Archive
-                          </button>
+                        {renamingReleaseId === release.id ? (
+                          <>
+                            <input
+                              type="text"
+                              className="input"
+                              value={renamingReleaseName}
+                              onChange={e => setRenamingReleaseName(e.target.value)}
+                              onKeyDown={e => { if (e.key === 'Enter') confirmRenameRelease(); if (e.key === 'Escape') { setRenamingReleaseId(null); setRenamingReleaseName(''); } }}
+                              autoFocus
+                            />
+                            <button className="btn btn-primary" type="button" onClick={confirmRenameRelease}>Save</button>
+                            <button className="btn btn-secondary" type="button" onClick={() => { setRenamingReleaseId(null); setRenamingReleaseName(''); }}>Cancel</button>
+                          </>
+                        ) : (
+                          <>
+                            <button className="btn btn-secondary" type="button" onClick={() => startRenamingRelease(release.id, release.name)}>
+                              Rename
+                            </button>
+                            {!release.archived_at && (
+                              <button className="btn btn-secondary" type="button" onClick={() => setConfirmArchiveRelease({ id: release.id, name: release.name })}>
+                                Archive
+                              </button>
+                            )}
+                            <button className="btn btn-ghost" style={{ color: 'var(--danger)' }} type="button" onClick={() => setConfirmDeleteRelease({ id: release.id, name: release.name })}>
+                              Delete
+                            </button>
+                          </>
                         )}
-                        <button className="btn btn-ghost" style={{ color: 'var(--danger)' }} type="button" onClick={() => deleteRelease(release.id, release.name)}>
-                          Delete
-                        </button>
                       </div>
                     </div>
                   ))}
@@ -3511,7 +3596,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
         <div
           id="settings-section-projects"
           className={sectionClass('projects')}
-          hidden={!visibleSections.some(section => section.id === 'projects')}
+          hidden={activeSection !== 'projects'}
           draggable={customizingSections}
           onDragStart={event => handleSectionDragStart(event, 'projects')}
           onDragOver={event => handleSectionDragOver(event, 'projects')}
@@ -3703,7 +3788,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
         <div
           id="settings-section-data-pools"
           className={sectionClass('data-pools')}
-          hidden={!visibleSections.some(section => section.id === 'data-pools')}
+          hidden={activeSection !== 'data-pools'}
           draggable={customizingSections}
           onDragStart={event => handleSectionDragStart(event, 'data-pools')}
           onDragOver={event => handleSectionDragOver(event, 'data-pools')}
@@ -3757,7 +3842,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
                         <small>{pool.description || `Updated ${new Date(pool.updated_at).toLocaleDateString()}`}</small>
                       </button>
                       <div className="settings-inline-actions">
-                        <button className="btn btn-ghost" style={{ color: 'var(--danger)' }} type="button" onClick={() => deleteDataPool(pool)}>
+                        <button className="btn btn-ghost" style={{ color: 'var(--danger)' }} type="button" onClick={() => setConfirmDeletePool(pool)}>
                           Delete
                         </button>
                       </div>
@@ -3819,7 +3904,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
                                 <button className="btn btn-sm btn-secondary" type="button" onClick={() => editDataPoolRow(row)}>
                                   Edit
                                 </button>
-                                <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} type="button" onClick={() => deleteDataPoolRow(row)}>
+                                <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} type="button" onClick={() => setConfirmDeleteRow(row)}>
                                   Delete
                                 </button>
                               </div>
@@ -3840,7 +3925,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
         <div
           id="settings-section-integrations"
           className={sectionClass('integrations')}
-          hidden={!visibleSections.some(section => section.id === 'integrations')}
+          hidden={activeSection !== 'integrations'}
           draggable={customizingSections}
           onDragStart={event => handleSectionDragStart(event, 'integrations')}
           onDragOver={event => handleSectionDragOver(event, 'integrations')}
@@ -3974,7 +4059,146 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
             </div>
           </div>
         </div>
+          </div>
+
+          <div className="settings-section-footer">
+            <button className="btn btn-danger-outline btn-sm" type="button" onClick={() => setConfirmingResetAll(true)} disabled={!canManageSystem}>
+              Reset All Settings to Defaults
+            </button>
+          </div>
+        </div>
       </div>
+
+      {confirmDeleteApp && (
+        <div className="modal-overlay" onClick={() => setConfirmDeleteApp(false)}>
+          <div className="modal" role="dialog" aria-modal="true" onClick={event => event.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Delete Application</h3>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setConfirmDeleteApp(false)}>Cancel</button>
+            </div>
+            <div className="monitor-body">
+              <p>Permanently delete <strong>{activeApplication?.name}</strong>? All associated releases and test results will also be removed.</p>
+              <p style={{ color: 'var(--danger)', fontWeight: 600 }}>This action cannot be undone.</p>
+              <div className="settings-inline-actions">
+                <button className="btn btn-secondary" type="button" onClick={() => setConfirmDeleteApp(false)}>Cancel</button>
+                <button className="btn btn-danger" type="button" onClick={deleteApplication}>Delete Application</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmDeleteRelease && (
+        <div className="modal-overlay" onClick={() => setConfirmDeleteRelease(null)}>
+          <div className="modal" role="dialog" aria-modal="true" onClick={event => event.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Delete Release</h3>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setConfirmDeleteRelease(null)}>Cancel</button>
+            </div>
+            <div className="monitor-body">
+              <p>Permanently delete release <strong>{confirmDeleteRelease.name}</strong>?</p>
+              <p style={{ color: 'var(--danger)', fontWeight: 600 }}>This action cannot be undone.</p>
+              <div className="settings-inline-actions">
+                <button className="btn btn-secondary" type="button" onClick={() => setConfirmDeleteRelease(null)}>Cancel</button>
+                <button className="btn btn-danger" type="button" onClick={() => deleteRelease(confirmDeleteRelease.id, confirmDeleteRelease.name)}>Delete Release</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmArchiveRelease && (
+        <div className="modal-overlay" onClick={() => setConfirmArchiveRelease(null)}>
+          <div className="modal" role="dialog" aria-modal="true" onClick={event => event.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Archive Release</h3>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setConfirmArchiveRelease(null)}>Cancel</button>
+            </div>
+            <div className="monitor-body">
+              <p>Archive release <strong>{confirmArchiveRelease.name}</strong>? Archived releases are read-only and cannot be used for new tests.</p>
+              <div className="settings-inline-actions">
+                <button className="btn btn-secondary" type="button" onClick={() => setConfirmArchiveRelease(null)}>Cancel</button>
+                <button className="btn btn-primary" type="button" onClick={() => archiveRelease(confirmArchiveRelease.id, confirmArchiveRelease.name)}>Archive Release</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmApplyRetention && (
+        <div className="modal-overlay" onClick={() => setConfirmApplyRetention(false)}>
+          <div className="modal" role="dialog" aria-modal="true" onClick={event => event.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Apply Archive Retention</h3>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setConfirmApplyRetention(false)}>Cancel</button>
+            </div>
+            <div className="monitor-body">
+              <p>Apply archive retention pruning for the current plan? This will permanently remove {archiveRetentionPlan?.summary.candidate_count || 0} archive{(archiveRetentionPlan?.summary.candidate_count || 0) === 1 ? '' : 's'}.</p>
+              <p style={{ color: 'var(--danger)', fontWeight: 600 }}>This action cannot be undone.</p>
+              <div className="settings-inline-actions">
+                <button className="btn btn-secondary" type="button" onClick={() => setConfirmApplyRetention(false)}>Cancel</button>
+                <button className="btn btn-danger" type="button" onClick={applyArchiveRetention}>Apply Retention</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmDeletePool && (
+        <div className="modal-overlay" onClick={() => setConfirmDeletePool(null)}>
+          <div className="modal" role="dialog" aria-modal="true" onClick={event => event.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Delete Data Pool</h3>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setConfirmDeletePool(null)}>Cancel</button>
+            </div>
+            <div className="monitor-body">
+              <p>Delete data pool <strong>{confirmDeletePool.name}</strong>? Data pools bound to scenarios must be unbound first.</p>
+              <p style={{ color: 'var(--danger)', fontWeight: 600 }}>This action cannot be undone.</p>
+              <div className="settings-inline-actions">
+                <button className="btn btn-secondary" type="button" onClick={() => setConfirmDeletePool(null)}>Cancel</button>
+                <button className="btn btn-danger" type="button" onClick={() => deleteDataPool(confirmDeletePool)}>Delete Data Pool</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmDeleteRow && (
+        <div className="modal-overlay" onClick={() => setConfirmDeleteRow(null)}>
+          <div className="modal" role="dialog" aria-modal="true" onClick={event => event.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Delete Data Row</h3>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setConfirmDeleteRow(null)}>Cancel</button>
+            </div>
+            <div className="monitor-body">
+              <p>Permanently delete this data row?</p>
+              <div className="settings-inline-actions">
+                <button className="btn btn-secondary" type="button" onClick={() => setConfirmDeleteRow(null)}>Cancel</button>
+                <button className="btn btn-danger" type="button" onClick={() => deleteDataPoolRow(confirmDeleteRow)}>Delete Row</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmingResetAll && (
+        <div className="modal-overlay" onClick={() => setConfirmingResetAll(false)}>
+          <div className="modal" role="dialog" aria-modal="true" aria-labelledby="reset-confirm-title" onClick={event => event.stopPropagation()}>
+            <div className="modal-header">
+              <h3 id="reset-confirm-title">Reset All Settings</h3>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setConfirmingResetAll(false)}>Cancel</button>
+            </div>
+            <div className="monitor-body">
+              <p>This will reset every system setting to its factory default, including thresholds, capacity planning, notifications, and auth configuration.</p>
+              <p style={{ color: 'var(--danger)', fontWeight: 600 }}>This action cannot be undone.</p>
+              <div className="settings-inline-actions">
+                <button className="btn btn-secondary" type="button" onClick={() => setConfirmingResetAll(false)}>Cancel</button>
+                <button className="btn btn-danger" type="button" onClick={resetSettings}>Reset All Settings</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

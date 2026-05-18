@@ -60,6 +60,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const [draggedCardId, setDraggedCardId] = useState<string | null>(null)
   const [cardOrder, setCardOrder] = useState<string[]>(() => readStringArray('stormrunner.monitoring.cardOrder'))
   const [hiddenCardIds, setHiddenCardIds] = useState<string[]>(() => readStringArray('stormrunner.monitoring.hiddenCards'))
+  const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null)
   const websocketValueClass = connectionState === 'connected' ? 'text-success' : connectionState === 'disconnected' ? 'text-danger' : ''
   const websocketLabel = connectionState === 'connected' ? 'Connected' : connectionState === 'connecting' ? 'Connecting' : 'Disconnected'
   const telemetryWarningCount = telemetryDiagnostics.filter(entry => entry.diagnostic.severity === 'warning').length
@@ -171,6 +172,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       setParityStatus(parityStatusRes)
       setFleetAlerts(fleetAlertsRes.alerts || [])
       setFleetCapacity(fleetCapacityRes)
+      setLastRefreshed(new Date())
     } catch {
       // API not available
     }
@@ -203,7 +205,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const cards = useMemo<MonitorCard[]>(() => [
     {
       id: 'system-health',
-      title: 'System Health',
+      title: 'System & Connection',
       icon: (
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
@@ -215,7 +217,20 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
             <span className={`monitor-indicator ${health ? 'healthy' : 'unknown'}`} />
             <span className="monitor-value">{health?.status || 'Checking...'}</span>
           </div>
-          <p className="monitor-hint">API health is polled every 5 seconds while the page is visible.</p>
+          <div className="monitor-row">
+            <span className="monitor-label">Version</span>
+            <span className="monitor-value">{health?.version || '-'}</span>
+          </div>
+          <div className="monitor-row">
+            <span className="monitor-label">WebSocket</span>
+            <span className={`monitor-value ${websocketValueClass}`}>
+              {websocketLabel}
+            </span>
+          </div>
+          <div className="monitor-row">
+            <span className="monitor-label">WS Endpoint</span>
+            <span className="monitor-value cell-mono">/api/v1/ws</span>
+          </div>
         </div>
       ),
     },
@@ -318,32 +333,6 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       ),
     },
     {
-      id: 'websocket',
-      title: 'WebSocket',
-      icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M5 12.55a11 11 0 0 1 14.08 0" />
-          <path d="M1.42 9a16 16 0 0 1 21.16 0" />
-          <path d="M8.53 16.11a6 6 0 0 1 6.95 0" />
-          <line x1="12" y1="20" x2="12.01" y2="20" />
-        </svg>
-      ),
-      content: (
-        <div className="monitor-body">
-          <div className="monitor-row">
-            <span className="monitor-label">Connection</span>
-            <span className={`monitor-value ${websocketValueClass}`}>
-              {websocketLabel}
-            </span>
-          </div>
-          <div className="monitor-row">
-            <span className="monitor-label">Endpoint</span>
-            <span className="monitor-value cell-mono">/api/v1/ws</span>
-          </div>
-        </div>
-      ),
-    },
-    {
       id: 'telemetry-diagnostics',
       title: 'Telemetry Diagnostics',
       headerBadge: (
@@ -406,6 +395,26 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       ),
       content: (
         <div className="monitor-body">
+          {(() => {
+            const totalSlots = (fleetCapacity?.active_slots || 0) + (fleetCapacity?.available_slots || 0) + (fleetCapacity?.reserved_slots || 0)
+            const usedSlots = (fleetCapacity?.active_slots || 0) + (fleetCapacity?.reserved_slots || 0)
+            const usagePct = totalSlots > 0 ? Math.round((usedSlots / totalSlots) * 100) : 0
+            return totalSlots > 0 ? (
+              <div className="capacity-gauge">
+                <div className="capacity-gauge-header">
+                  <span className="capacity-gauge-label">Utilization</span>
+                  <span className={`capacity-gauge-pct ${usagePct > 85 ? 'text-danger' : usagePct > 60 ? 'telemetry-text-warning' : ''}`}>{usagePct}%</span>
+                </div>
+                <div className="capacity-gauge-track">
+                  <span className={`capacity-gauge-fill ${usagePct > 85 ? 'over' : ''}`} style={{ width: `${Math.min(100, usagePct)}%` }} />
+                </div>
+                <div className="capacity-gauge-legend">
+                  <span>{usedSlots.toLocaleString()} used</span>
+                  <span>{(fleetCapacity?.available_slots || 0).toLocaleString()} available</span>
+                </div>
+              </div>
+            ) : null
+          })()}
           <div className="monitor-row">
             <span className="monitor-label">Effective Available</span>
             <span className="monitor-value">{fleetCapacity?.available_slots?.toLocaleString() ?? health?.capacity_availability?.effective_available_generators ?? '-'}</span>
@@ -677,7 +686,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
         </svg>
       ),
       content: (
-        <div className="monitor-body timeline-body">
+        <div className={`monitor-body timeline-body ${timeline.runs.length === 0 ? 'timeline-empty' : ''}`}>
           <div className="timeline-summary-grid">
             <div className="timeline-summary-item">
               <span className="timeline-summary-value">{timeline.runs.length}</span>
@@ -789,6 +798,36 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
     setDraggedCardId(null)
   }
 
+  const severityEntries = useMemo(() => {
+    const entries: { label: string; severity: string }[] = [
+      { label: 'API', severity: health ? 'healthy' : 'unknown' },
+      { label: 'WebSocket', severity: connectionState === 'connected' ? 'healthy' : connectionState === 'disconnected' ? 'danger' : 'warning' },
+      { label: 'Readiness', severity: readinessHeaderSeverity },
+      { label: 'Controller', severity: controllerHeaderSeverity },
+      { label: 'Generators', severity: generatorHeaderSeverity },
+      { label: 'Telemetry', severity: telemetryHeaderSeverity },
+      { label: 'Fleet', severity: fleetAlertHeaderSeverity },
+      { label: 'Schedules', severity: scheduleHeaderSeverity },
+    ]
+    return entries
+  }, [health, connectionState, readinessHeaderSeverity, controllerHeaderSeverity, generatorHeaderSeverity, telemetryHeaderSeverity, fleetAlertHeaderSeverity, scheduleHeaderSeverity])
+
+  const overallSeverity = useMemo(() => {
+    if (severityEntries.some(e => e.severity === 'danger')) return 'danger'
+    if (severityEntries.some(e => e.severity === 'warning')) return 'warning'
+    if (severityEntries.every(e => e.severity === 'unknown')) return 'unknown'
+    return 'healthy'
+  }, [severityEntries])
+
+  const issueCount = severityEntries.filter(e => e.severity === 'danger' || e.severity === 'warning').length
+  const overallLabel = overallSeverity === 'danger'
+    ? `${issueCount} issue${issueCount === 1 ? '' : 's'} need attention`
+    : overallSeverity === 'warning'
+      ? `${issueCount} advisory warning${issueCount === 1 ? '' : 's'}`
+      : overallSeverity === 'unknown'
+        ? 'Waiting for system data...'
+        : 'All systems operational'
+
   return (
     <div className="page">
       <div className="page-header">
@@ -797,12 +836,29 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
           <p className="page-subtitle">System health, generator pods, and connection status</p>
         </div>
         <div className="monitor-actions">
+          {lastRefreshed && (
+            <span className="monitor-last-refreshed">
+              Updated {lastRefreshed.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' })}
+            </span>
+          )}
           {customizing && (
             <button className="btn btn-secondary btn-sm" type="button" onClick={resetCards}>Reset Cards</button>
           )}
           <button className={`btn btn-sm ${customizing ? 'btn-primary' : 'btn-secondary'}`} type="button" onClick={() => setCustomizing(value => !value)}>
             {customizing ? 'Done' : 'Customize Cards'}
           </button>
+        </div>
+      </div>
+
+      <div className={`monitor-health-banner ${overallSeverity}`}>
+        <div className="monitor-health-banner-main">
+          <span className={`monitor-indicator ${overallSeverity}`} />
+          <span className="monitor-health-banner-label">{overallLabel}</span>
+        </div>
+        <div className="monitor-health-banner-chips">
+          {severityEntries.map(entry => (
+            <span key={entry.label} className={`monitor-health-chip ${entry.severity}`}>{entry.label}</span>
+          ))}
         </div>
       </div>
 
@@ -828,7 +884,11 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
             onDragEnd={() => setDraggedCardId(null)}
           >
             <div className="monitor-header">
-              {customizing && <span className="monitor-drag-handle" title="Drag to reorder">::</span>}
+              {customizing && (
+              <span className="monitor-drag-handle" title="Drag to reorder">
+                <svg width="10" height="16" viewBox="0 0 10 16" fill="currentColor"><circle cx="2" cy="2" r="1.5"/><circle cx="8" cy="2" r="1.5"/><circle cx="2" cy="8" r="1.5"/><circle cx="8" cy="8" r="1.5"/><circle cx="2" cy="14" r="1.5"/><circle cx="8" cy="14" r="1.5"/></svg>
+              </span>
+            )}
               {card.icon}
               <span>{card.title}</span>
               {card.headerBadge}
