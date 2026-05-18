@@ -4281,9 +4281,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                   </div>
                   <div className="editor-outline-list">
                     <button className="editor-outline-link" type="button" onClick={() => openEditorSection('config')}>Script Configuration</button>
-                    <button className="editor-outline-link" type="button" onClick={() => openEditorSection('replay')}>Replay Output</button>
                     {importMetadata && <button className="editor-outline-link" type="button" onClick={() => openEditorSection('import')}>Imported Metadata</button>}
-                    <button className="editor-outline-link" type="button" onClick={() => openEditorSection('runtime')}>Runtime Settings</button>
                     <button className="editor-outline-link" type="button" onClick={() => openEditorSection('parameter-data')}>Parameter Data</button>
                   </div>
                 </div>

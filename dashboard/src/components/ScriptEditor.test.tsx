@@ -240,6 +240,11 @@ describe('ScriptEditor', () => {
     expect(toolbar?.textContent).toContain('Parameters')
     expect(toolbar?.textContent).toContain('Replay')
     expect(toolbar?.textContent).not.toContain('Replay Output')
+    const outline = container.querySelector('.editor-outline-list')
+    expect(outline?.textContent).toContain('Script Configuration')
+    expect(outline?.textContent).toContain('Parameter Data')
+    expect(outline?.textContent).not.toContain('Replay Output')
+    expect(outline?.textContent).not.toContain('Runtime Settings')
 
     const configDialog = container.querySelector('[aria-label="Script Configuration"]')
     const replayDialog = container.querySelector('[aria-label="Replay Output"]')
