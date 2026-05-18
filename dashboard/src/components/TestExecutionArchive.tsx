@@ -444,6 +444,26 @@ export default function TestExecutionArchive({
                 <span className="capacity-advisory-detail">{archiveReport.overview.throughput_missed_intervals || 0} missed target interval{archiveReport.overview.throughput_missed_intervals === 1 ? '' : 's'}</span>
               </div>
             )}
+            {archiveReport.overview.goal_completion && (
+              <div className="scenario-script-detail-card">
+                <span className="scenario-script-detail-label">Goal Completion</span>
+                <span className="scenario-script-detail-value">{archiveReport.overview.goal_completion.transaction_completion_pct !== undefined ? `${archiveReport.overview.goal_completion.transaction_completion_pct.toFixed(1)}%` : archiveReport.overview.goal_completion.achieved_transactions.toLocaleString()}</span>
+                <span className="capacity-advisory-detail">
+                  {archiveReport.overview.goal_completion.configured_max_transactions
+                    ? `${archiveReport.overview.goal_completion.achieved_transactions.toLocaleString()} / ${archiveReport.overview.goal_completion.configured_max_transactions.toLocaleString()} transactions`
+                    : archiveReport.overview.goal_completion.configured_global_iterations
+                      ? `${archiveReport.overview.goal_completion.configured_global_iterations.toLocaleString()} configured global iterations`
+                      : `${archiveReport.overview.goal_completion.throughput_missed_intervals || 0} missed throughput intervals`}
+                </span>
+              </div>
+            )}
+            {archiveReport.overview.load_model_goals?.stage_count ? (
+              <div className="scenario-script-detail-card">
+                <span className="scenario-script-detail-label">Staged Load</span>
+                <span className="scenario-script-detail-value">{archiveReport.overview.load_model_goals.stage_count}</span>
+                <span className="capacity-advisory-detail">{archiveReport.overview.load_model_goals.staged_groups || 0} group{archiveReport.overview.load_model_goals.staged_groups === 1 ? '' : 's'} · {archiveReport.overview.load_model_goals.once_only_groups || 0} once-only</span>
+              </div>
+            ) : null}
             <div className="scenario-script-detail-card">
               <span className="scenario-script-detail-label">Peak Active VUsers</span>
               <span className="scenario-script-detail-value">{archiveReport.overview.peak_active_vusers}</span>

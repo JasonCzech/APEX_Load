@@ -496,6 +496,27 @@ export interface RunArchiveOverview {
   peak_active_vusers: number
   browser?: BrowserLiveMetrics
   telemetry?: RunArchiveTelemetrySummary
+  load_model_goals?: RunArchiveLoadModelGoals
+  goal_completion?: RunArchiveGoalCompletion
+}
+
+export interface RunArchiveLoadModelGoals {
+  configured_global_iterations?: number
+  configured_max_transactions?: number
+  target_tps?: number
+  staged_groups?: number
+  stage_count?: number
+  once_only_groups?: number
+}
+
+export interface RunArchiveGoalCompletion {
+  achieved_transactions: number
+  configured_max_transactions?: number
+  transaction_completion_pct?: number
+  configured_global_iterations?: number
+  iteration_evidence?: string
+  throughput_target_tps?: number
+  throughput_missed_intervals?: number
 }
 
 export interface RunArchiveTelemetrySummary {

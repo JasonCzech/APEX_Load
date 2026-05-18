@@ -152,6 +152,22 @@ describe('TestExecutionArchive', () => {
       max_throughput_gap_pct: 50,
       throughput_missed_intervals: 3,
       peak_active_vusers: 1,
+      load_model_goals: {
+        configured_global_iterations: 5,
+        configured_max_transactions: 10,
+        target_tps: 2,
+        staged_groups: 1,
+        stage_count: 2,
+        once_only_groups: 1,
+      },
+      goal_completion: {
+        achieved_transactions: 1,
+        configured_max_transactions: 10,
+        transaction_completion_pct: 10,
+        configured_global_iterations: 5,
+        throughput_target_tps: 2,
+        throughput_missed_intervals: 3,
+      },
       browser: {
         samples: 1,
         avg_fcp_ms: 130,
@@ -362,6 +378,10 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('Target 2.0 TPS')
     expect(container.textContent).toContain('Throughput Gap')
     expect(container.textContent).toContain('3 missed target intervals')
+    expect(container.textContent).toContain('Goal Completion')
+    expect(container.textContent).toContain('1 / 10 transactions')
+    expect(container.textContent).toContain('Staged Load')
+    expect(container.textContent).toContain('1 group · 1 once-only')
     expect(container.textContent).toContain('buyers · 1 VUsers · init once')
     expect(container.textContent).toContain('Completeness Score')
     expect(container.textContent).toContain('92% · needs review')

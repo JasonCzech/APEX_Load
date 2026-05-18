@@ -180,18 +180,24 @@ type ManagedTest struct {
 }
 
 type TestGroup struct {
-	Name           string              `json:"name"`
-	ScriptID       string              `json:"script_id"`
-	ScriptName     string              `json:"script_name"`
-	Protocol       string              `json:"protocol"`
-	VUsers         int                 `json:"vusers"`
-	RampUp         string              `json:"ramp_up,omitempty"`
-	RampDown       string              `json:"ramp_down,omitempty"`
-	Stages         []storage.LoadStage `json:"stages,omitempty"`
-	Iterations     *int                `json:"iterations,omitempty"`
-	Initialization string              `json:"initialization,omitempty"`
+	Name           string                `json:"name"`
+	ScriptID       string                `json:"script_id"`
+	ScriptName     string                `json:"script_name"`
+	Protocol       string                `json:"protocol"`
+	VUsers         int                   `json:"vusers"`
+	RampUp         string                `json:"ramp_up,omitempty"`
+	RampDown       string                `json:"ramp_down,omitempty"`
+	Stages         []storage.LoadStage   `json:"stages,omitempty"`
+	Iterations     *int                  `json:"iterations,omitempty"`
+	RunLogicGoals  *RunLogicGoalSnapshot `json:"run_logic_goals,omitempty"`
+	Initialization string                `json:"initialization,omitempty"`
 	rampUpDur      time.Duration
 	script         *dsl.Script
+}
+
+type RunLogicGoalSnapshot struct {
+	GlobalIterations int   `json:"global_iterations,omitempty"`
+	MaxTransactions  int64 `json:"max_transactions,omitempty"`
 }
 
 type LiveMetrics struct {
@@ -2335,6 +2341,7 @@ func (tr *TestRunner) compileManagedTestGroupLocked(index int, totalGroups int, 
 		RampDown:       rampDownValue,
 		Stages:         cloneLoadStages(group.Stages),
 		Iterations:     group.Iterations,
+		RunLogicGoals:  runLogicGoalSnapshot(script.Script),
 		Initialization: initStrategy,
 		rampUpDur:      rampUp,
 		script:         script.Script,
@@ -3233,6 +3240,20 @@ func recommendedGeneratorCountForTest(test *ManagedTest) int {
 		return 1
 	}
 	return 0
+}
+
+func runLogicGoalSnapshot(script *dsl.Script) *RunLogicGoalSnapshot {
+	if script == nil {
+		return nil
+	}
+	goals := RunLogicGoalSnapshot{
+		GlobalIterations: script.Config.RunLogic.GlobalIterations,
+		MaxTransactions:  script.Config.RunLogic.MaxTransactions,
+	}
+	if goals.GlobalIterations <= 0 && goals.MaxTransactions <= 0 {
+		return nil
+	}
+	return &goals
 }
 
 func (tr *TestRunner) refreshPendingQueueMetadataLocked() {

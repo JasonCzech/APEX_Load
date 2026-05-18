@@ -43,12 +43,14 @@ Scenario and test group payloads can now carry staged load segments. The dashboa
 }
 ```
 
-Supported stage types are `ramp_up`, `hold`, and `ramp_down`. Each stage requires `duration` plus either `target_vusers` or `target_tps`. The current runtime derives compatibility `ramp_up`, `ramp_down`, and group VUsers from the staged model while preserving the full stage list in API and SQLite scenario records.
+Supported stage types are `ramp_up`, `hold`, and `ramp_down`. Each stage requires `duration` plus either `target_vusers` or `target_tps`. The runtime derives compatible `ramp_up`, `ramp_down`, and group VUsers from the staged model while preserving the full stage list in API, SQLite scenario records, run provenance, archive reports, and the dashboard archive overview.
 
 Scripts can also set shared run goals in `config.run_logic`. The dashboard script editor exposes these fields in Runtime Settings > Run Logic:
 
 - `global_iterations`: maximum total started iterations across all VUsers in the executing script group
 - `max_transactions`: maximum total protocol action attempts across all VUsers in the executing script group
+
+Archive reports expose `overview.load_model_goals` and `overview.goal_completion` for configured staged groups, once-only scopes, target TPS, global iteration goals, max-transaction goals, achieved transactions, transaction completion percentage, and throughput miss counts.
 
 Scenario groups support `initialization` values. The dashboard scenario form exposes this scope so reusable scenarios can preserve shared setup/teardown behavior:
 
@@ -71,10 +73,10 @@ The first backend matrix covers:
 | --- | --- | --- |
 | Closed VUser | Executed | Scenario groups with fixed VUsers, duration, ramp-up, and ramp-down. |
 | Open arrival-rate | Executed | Open workload runtime with TPS targets and throughput-gap telemetry. |
-| Stepped ramp | Partial | Approximate with multiple groups and timing offsets until staged segments land. |
+| Stepped ramp | Executed | Scenario groups with `stages` plus archive/report provenance for staged evidence. |
 | Rendezvous spike | Executed | `rendezvous` actions synchronize VUsers before a target transaction. |
 | Soak | Executed | Long-duration closed or open workload. |
-| Stress | Partial | High VUser/TPS targets with capacity advice and goal control. |
+| Stress | Executed | High VUser/TPS targets with capacity advice, goal control, and archived goal completion. |
 | Goal-based | Executed | Goal controller adjusts VUsers within guardrails. |
 | Mixed protocol | Executed | Scenario groups can reference different protocol scripts with density-aware capacity advice. |
 
@@ -93,9 +95,9 @@ The first template catalog covers:
 | --- | --- | --- |
 | P4.1 Load-model support matrix | Complete for backend and scenario-authoring UI | `GET /api/v1/scenarios/load-models/support-matrix`; dashboard scenario form support matrix panel |
 | P4.2 Workload-shape templates | Complete for backend and scenario-authoring UI | `GET /api/v1/scenarios/load-models/templates`; dashboard scenario form template picker |
-| P4.3 Staged ramp segments | Partial backend and UI complete | Group `stages` round-trip through API/storage, derive compatibility ramp execution, and can be authored from the dashboard scenario form |
-| P4.4 Capacity validation | Partial backend and UI complete | Draft validation checks modeled demand, capacity, browser canaries, data-pool rows, data-source fit, and generator placement; dashboard scenario form renders pre-save findings |
+| P4.3 Staged ramp segments | Complete | Group `stages` round-trip through API/storage, derive compatibility ramp execution, can be authored from the dashboard scenario form, and appear in archive load-model goals |
+| P4.4 Capacity validation | Complete for current placement model | Draft validation checks modeled demand, capacity, browser canaries, data-pool rows, data-source fit, and generator placement; dashboard scenario form renders pre-save findings |
 | P4.5 Rendezvous points | Complete | Runtime `rendezvous` actions synchronize VUsers and validation reports spike readiness |
-| P4.6 Global goals | Partial backend and UI complete | Runtime enforces group-level `global_iterations` and `max_transactions` across VUsers, and the dashboard script editor can author both caps |
-| P4.7 Once-only scopes | Partial backend and UI complete | Multi-group runtime honors `initialization: at_once` for group-level init/teardown, and dashboard scenario authoring can persist the scope |
-| P4.8 Coordinated-omission reporting | Partial backend/UI complete | Archive interval summaries, JSON reports, HTML reports, Parquet exports, archived comparison CSV exports, and the archive UI preserve target TPS, throughput gap, missed interval counts, and miss flags |
+| P4.6 Global goals | Complete | Runtime enforces group-level `global_iterations` and `max_transactions` across VUsers, dashboard script editor can author both caps, and archive reports expose configured goals plus achieved transaction completion |
+| P4.7 Once-only scopes | Complete | Multi-group runtime honors `initialization: at_once` for group-level init/teardown, dashboard scenario authoring can persist the scope, and archive reports summarize once-only groups |
+| P4.8 Coordinated-omission reporting | Complete | Archive interval summaries, JSON reports, HTML reports, Parquet exports, archived comparison CSV exports, and the archive UI preserve target TPS, throughput gap, missed interval counts, miss flags, and goal completion context |

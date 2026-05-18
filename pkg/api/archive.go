@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -350,6 +351,27 @@ type RunArchiveOverview struct {
 	PeakActiveVUsers          int64                       `json:"peak_active_vusers"`
 	Browser                   *BrowserLiveMetrics         `json:"browser,omitempty"`
 	Telemetry                 *RunArchiveTelemetrySummary `json:"telemetry,omitempty"`
+	LoadModelGoals            *RunArchiveLoadModelGoals   `json:"load_model_goals,omitempty"`
+	GoalCompletion            *RunArchiveGoalCompletion   `json:"goal_completion,omitempty"`
+}
+
+type RunArchiveLoadModelGoals struct {
+	ConfiguredGlobalIterations int64   `json:"configured_global_iterations,omitempty"`
+	ConfiguredMaxTransactions  int64   `json:"configured_max_transactions,omitempty"`
+	TargetTPS                  float64 `json:"target_tps,omitempty"`
+	StagedGroups               int     `json:"staged_groups,omitempty"`
+	StageCount                 int     `json:"stage_count,omitempty"`
+	OnceOnlyGroups             int     `json:"once_only_groups,omitempty"`
+}
+
+type RunArchiveGoalCompletion struct {
+	AchievedTransactions       int64   `json:"achieved_transactions"`
+	ConfiguredMaxTransactions  int64   `json:"configured_max_transactions,omitempty"`
+	TransactionCompletionPct   float64 `json:"transaction_completion_pct,omitempty"`
+	ConfiguredGlobalIterations int64   `json:"configured_global_iterations,omitempty"`
+	IterationEvidence          string  `json:"iteration_evidence,omitempty"`
+	ThroughputTargetTPS        float64 `json:"throughput_target_tps,omitempty"`
+	ThroughputMissedIntervals  int64   `json:"throughput_missed_intervals,omitempty"`
 }
 
 type RunArchiveTelemetrySummary struct {
@@ -1059,6 +1081,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	if telemetrySummary.Samples > 0 {
 		report.Overview.Telemetry = finalizeRunArchiveTelemetrySummary(telemetrySummary)
 	}
+	report.Overview.LoadModelGoals, report.Overview.GoalCompletion = buildRunArchiveGoalCompletion(manifest.Provenance, report.Overview)
 	report.EvidenceTiers = buildRunArchiveEvidenceTiers(manifest, report, transactions, resources, summaries)
 	report.Compatibility = buildRunArchiveReportCompatibility(record, manifest)
 	report.Completeness = buildRunArchiveCompletenessScore(manifest, report, transactions, resources, summaries)
@@ -1066,6 +1089,52 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	report.ReportProfiles = buildRunArchiveReportProfiles()
 
 	return report, nil
+}
+
+func buildRunArchiveGoalCompletion(provenance RunArchiveProvenance, overview RunArchiveOverview) (*RunArchiveLoadModelGoals, *RunArchiveGoalCompletion) {
+	goals := &RunArchiveLoadModelGoals{}
+	for _, group := range provenance.Groups {
+		if len(group.Stages) > 0 {
+			goals.StagedGroups++
+			goals.StageCount += len(group.Stages)
+			for _, stage := range group.Stages {
+				if stage.TargetTPS != nil && *stage.TargetTPS > goals.TargetTPS {
+					goals.TargetTPS = *stage.TargetTPS
+				}
+			}
+		}
+		if strings.EqualFold(strings.TrimSpace(group.Initialization), "at_once") {
+			goals.OnceOnlyGroups++
+		}
+		if group.RunLogicGoals != nil {
+			if group.RunLogicGoals.GlobalIterations > 0 {
+				goals.ConfiguredGlobalIterations += int64(group.RunLogicGoals.GlobalIterations)
+			}
+			if group.RunLogicGoals.MaxTransactions > 0 {
+				goals.ConfiguredMaxTransactions += group.RunLogicGoals.MaxTransactions
+			}
+		}
+	}
+	if overview.PeakTargetTPS > goals.TargetTPS {
+		goals.TargetTPS = overview.PeakTargetTPS
+	}
+	if goals.ConfiguredGlobalIterations == 0 && goals.ConfiguredMaxTransactions == 0 && goals.TargetTPS == 0 && goals.StageCount == 0 && goals.OnceOnlyGroups == 0 {
+		return nil, nil
+	}
+	completion := &RunArchiveGoalCompletion{
+		AchievedTransactions:       overview.Transactions,
+		ConfiguredMaxTransactions:  goals.ConfiguredMaxTransactions,
+		ConfiguredGlobalIterations: goals.ConfiguredGlobalIterations,
+		ThroughputTargetTPS:        goals.TargetTPS,
+		ThroughputMissedIntervals:  overview.ThroughputMissedIntervals,
+	}
+	if goals.ConfiguredMaxTransactions > 0 {
+		completion.TransactionCompletionPct = math.Min(100, float64(overview.Transactions)/float64(goals.ConfiguredMaxTransactions)*100)
+	}
+	if goals.ConfiguredGlobalIterations > 0 {
+		completion.IterationEvidence = "Configured global iteration goals are archived; achieved iteration counts are inferred from transaction archives when action topology allows."
+	}
+	return goals, completion
 }
 
 func buildRunArchiveReportProfiles() []RunArchiveReportProfile {

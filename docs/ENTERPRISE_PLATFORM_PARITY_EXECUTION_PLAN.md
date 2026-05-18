@@ -177,8 +177,8 @@ Stormrunner supports the workload models enterprise performance engineers expect
 | --- | --- | --- | --- | --- |
 | P4.1 | Publish a code-owned load-model support matrix for closed, open, stepped, spike, soak, stress, goal-based, and mixed workloads | M | none | Complete for backend matrix and dashboard scenario authoring panel |
 | P4.2 | Add reusable workload-shape templates in scenario authoring | M | P4.1 | Complete for backend catalog and dashboard scenario authoring picker |
-| P4.3 | Add staged ramp segments with hold, ramp-up, ramp-down, and target throughput or VUser constraints per segment | L | P4.1 | Partial backend/UI complete: group stages persist, derive compatibility ramp execution, and can be authored from the dashboard scenario form |
-| P4.4 | Add capacity validation that checks modeled arrivals, VUsers, browser canaries, data-pool rows, and generator placement before save/run | L | P2.1, P4.1 | Partial backend/UI complete: draft validation endpoint reports modeled demand, capacity, browser canary, data-pool, data-source fit, and placement findings, and the dashboard scenario form renders pre-save findings |
+| P4.3 | Add staged ramp segments with hold, ramp-up, ramp-down, and target throughput or VUser constraints per segment | L | P4.1 | Complete for API/UI/storage/runtime compatibility and archive evidence: group stages persist, derive compatibility ramp execution, can be authored from the dashboard scenario form, and appear in load-model goal reports |
+| P4.4 | Add capacity validation that checks modeled arrivals, VUsers, browser canaries, data-pool rows, and generator placement before save/run | L | P2.1, P4.1 | Complete for current placement model: draft validation endpoint reports modeled demand, capacity, browser canary, data-pool, data-source fit, and placement findings, and the dashboard scenario form renders pre-save findings |
 
 Acceptance criteria:
 - Scenario authors can pick common enterprise workload shapes without hand-building timing rules.
@@ -189,9 +189,9 @@ Acceptance criteria:
 | ID | Story | Size | Dependencies | Status |
 | --- | --- | --- | --- | --- |
 | P4.5 | Add rendezvous points for synchronized VUser release at named actions | L | P4.1 | Complete: runtime `rendezvous` actions synchronize VUsers and load-model validation reports spike readiness |
-| P4.6 | Add global iteration and transaction-count goals across all VUsers, not only per-VUser iteration loops | M | P4.1 | Partial backend/UI complete: runtime enforces group-level `global_iterations` and `max_transactions` across VUsers, and dashboard script authoring exposes both caps |
-| P4.7 | Add init-once and teardown-once action scopes for shared seed/setup flows | M | P4.1 | Partial backend/UI complete: multi-group runtime honors `initialization: at_once` for group-level init/teardown, and dashboard scenario authoring can persist the scope |
-| P4.8 | Add coordinated-omission reporting to historical reports, not only live metrics | M | P4.1, P6.1 | Partial backend/UI complete: archive interval summaries, JSON reports, HTML reports, Parquet exports, archived two-run comparison CSV exports, and the archive UI preserve target TPS, throughput gap, missed interval counts, and miss flags |
+| P4.6 | Add global iteration and transaction-count goals across all VUsers, not only per-VUser iteration loops | M | P4.1 | Complete: runtime enforces group-level `global_iterations` and `max_transactions` across VUsers, dashboard script authoring exposes both caps, and archive/dashboard reports show configured goals plus achieved transaction completion |
+| P4.7 | Add init-once and teardown-once action scopes for shared seed/setup flows | M | P4.1 | Complete: multi-group runtime honors `initialization: at_once` for group-level init/teardown, dashboard scenario authoring can persist the scope, and archive/dashboard reports summarize once-only groups |
+| P4.8 | Add coordinated-omission reporting to historical reports, not only live metrics | M | P4.1, P6.1 | Complete: archive interval summaries, JSON reports, HTML reports, Parquet exports, archived two-run comparison CSV exports, and the archive UI preserve target TPS, throughput gap, missed interval counts, miss flags, and goal-completion context |
 
 Acceptance criteria:
 - Spike and once-only setup patterns are modeled explicitly.

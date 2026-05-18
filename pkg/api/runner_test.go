@@ -3965,7 +3965,7 @@ func TestBuildRunArchiveProvenanceCapturesExecutionSnapshots(t *testing.T) {
 		StartDelay:       "3s",
 		TotalVUsers:      25,
 		DurationStr:      "1m0s",
-		Groups:           []TestGroup{{Name: "buyers", ScriptID: "script-1", ScriptName: "Checkout", Protocol: "http", VUsers: 25}},
+		Groups:           []TestGroup{{Name: "buyers", ScriptID: "script-1", ScriptName: "Checkout", Protocol: "http", VUsers: 25, RunLogicGoals: &RunLogicGoalSnapshot{GlobalIterations: 4, MaxTransactions: 40}}},
 		Assignment:       &GeneratorAssignmentSettings{Mode: "specific_hosts", SelectedTargets: []string{"generator-1"}},
 		GoalConfig:       &GoalConfig{MaxErrorPct: &maxErrorPct},
 		CreatedAt:        time.Date(2026, time.May, 13, 12, 0, 0, 0, time.UTC),
@@ -3982,6 +3982,9 @@ func TestBuildRunArchiveProvenanceCapturesExecutionSnapshots(t *testing.T) {
 	}
 	if len(provenance.GeneratorInventory) != 1 || provenance.GeneratorInventory[0].Target != "generator-1" {
 		t.Fatalf("generator inventory = %#v, want generator-1", provenance.GeneratorInventory)
+	}
+	if len(provenance.Groups) != 1 || provenance.Groups[0].RunLogicGoals == nil || provenance.Groups[0].RunLogicGoals.GlobalIterations != 4 || provenance.Groups[0].RunLogicGoals.MaxTransactions != 40 {
+		t.Fatalf("provenance groups = %#v, want run logic goal snapshot", provenance.Groups)
 	}
 	if provenance.ControllerEnv["STORMRUNNER_SAMPLE_FLAG"] != "enabled" {
 		t.Fatalf("controller env = %#v, want STORMRUNNER_SAMPLE_FLAG", provenance.ControllerEnv)

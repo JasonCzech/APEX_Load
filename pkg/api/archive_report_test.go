@@ -498,6 +498,17 @@ func TestBuildRunArchiveReportIncludesThroughputGapEvidence(t *testing.T) {
 		TransactionsFile:      "transactions.jsonl",
 		ResourceSamplesFile:   "resources.jsonl",
 		IntervalSummariesFile: "interval_summaries.jsonl",
+		Provenance: RunArchiveProvenance{
+			Groups: []TestGroup{{
+				Name:           "buyers",
+				ScriptID:       "script-1",
+				Protocol:       "http",
+				VUsers:         8,
+				Stages:         []storage.LoadStage{{Name: "Warmup", Type: "ramp_up", Duration: "1m", TargetVUsers: 8}, {Name: "Steady", Type: "hold", Duration: "2m", TargetVUsers: 8}},
+				RunLogicGoals:  &RunLogicGoalSnapshot{GlobalIterations: 10, MaxTransactions: 50},
+				Initialization: "at_once",
+			}},
+		},
 	}
 	manifestBytes, err := json.Marshal(manifest)
 	if err != nil {
@@ -542,6 +553,12 @@ func TestBuildRunArchiveReportIncludesThroughputGapEvidence(t *testing.T) {
 	}
 	if report.Overview.ThroughputMissedIntervals != 1 {
 		t.Fatalf("missed intervals = %d, want 1", report.Overview.ThroughputMissedIntervals)
+	}
+	if report.Overview.LoadModelGoals == nil || report.Overview.LoadModelGoals.StageCount != 2 || report.Overview.LoadModelGoals.ConfiguredMaxTransactions != 50 || report.Overview.LoadModelGoals.OnceOnlyGroups != 1 {
+		t.Fatalf("load model goals = %#v, want staged max-transaction once-only evidence", report.Overview.LoadModelGoals)
+	}
+	if report.Overview.GoalCompletion == nil || report.Overview.GoalCompletion.ConfiguredMaxTransactions != 50 || report.Overview.GoalCompletion.TransactionCompletionPct != 0 {
+		t.Fatalf("goal completion = %#v, want configured transaction goal evidence", report.Overview.GoalCompletion)
 	}
 	if len(report.SummaryTimeline) != 2 {
 		t.Fatalf("summary timeline len = %d, want 2", len(report.SummaryTimeline))

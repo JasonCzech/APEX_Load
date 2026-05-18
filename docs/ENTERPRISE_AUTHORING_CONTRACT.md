@@ -106,10 +106,10 @@ The ScriptEditor renders validation evidence for both reports after draft or sav
 | --- | --- | --- |
 | P3.1 Generic authoring contract | Complete for API contract | `GET /api/v1/scripts/authoring/capabilities` |
 | P3.2 Source capability matrix | Complete for backend matrix | `sources` and `source_map` in the authoring capabilities response |
-| P3.3 Draft health scoring | Complete for validation response scoring; dashboard badges remain future work | `authoring_health` in script validation responses |
+| P3.3 Draft health scoring | Complete for validation response scoring and dashboard list/review health badges | `authoring_health` in script validation responses |
 | P3.4 Authoring session persistence | Complete for API and SQLite persistence | `authoring_sessions` table and session CRUD endpoints |
 | P3.5 Approval handoff | Complete | Session approval validates health, stores reusable scripts, stamps approval metadata, exposes approval readiness and next actions, and the Scripts dashboard exposes resume/approve/discard actions for open sessions |
-| P3.6 Guided correlation repair | Partial backend/UI complete | Session correlation preview/apply returns extractor insertion and sample-replacement diffs; dashboard review queue can preview/apply repairs and display diff summaries |
-| P3.7 Data-source fit checks | Partial backend/UI complete | Validation responses include `data_source_fit` and health scoring for source/column/row-count readiness; ScriptEditor displays fit evidence after validation |
-| P3.8 Protocol starter templates | Partial backend/UI complete | `GET /api/v1/scripts/authoring/templates` returns validated protocol starter DSLs and scenario hints; dashboard create flow opens selected templates in the shared draft editor |
+| P3.6 Guided correlation repair | Complete | Session correlation preview/apply returns extractor insertion and sample-replacement diffs; dashboard review queue can preview/apply repairs and display diff summaries |
+| P3.7 Data-source fit checks | Complete | Validation responses include `data_source_fit` and health scoring for source/column/row-count readiness; ScriptEditor displays fit evidence after validation |
+| P3.8 Protocol starter templates | Complete | `GET /api/v1/scripts/authoring/templates` returns validated protocol starter DSLs and scenario hints; dashboard create flow opens selected templates in the shared draft editor |
 | P3.9 AI generation guardrails | Complete for current authoring flow | Validation responses include `ai_guardrails`, block approval health without provenance, diff review, validation, and replay evidence, ScriptEditor displays guardrail evidence after validation, and the authoring review queue disables blocked promotion with next actions |
