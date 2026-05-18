@@ -68,6 +68,18 @@ Placement enforces these declarations before work is assigned:
 
 The inventory response exposes `compatibility_state` and `compatibility_issues` so operators can see why a target is excluded before a run starts.
 
+## Saturation Metrics And Rejection Reasons
+
+Prometheus exposes fleet rollups for dashboarding and alerts:
+
+- `stormrunner_generator_capacity_state_count{region,state}`
+- `stormrunner_generator_drain_state_count{region,state}`
+- `stormrunner_generator_compatibility_state_count{region,state}`
+- `stormrunner_generator_region_available_capacity{region}`
+- `stormrunner_generator_region_active_vusers{region}`
+
+Placement rejection messages now include compatibility causes when no target can run a group, including unsupported protocol and incompatible declared generator version.
+
 ## Plan Mapping
 
 | Plan item | Status | Artifact |
@@ -75,4 +87,4 @@ The inventory response exposes `compatibility_state` and `compatibility_issues` 
 | P2.1 Formal fleet model | In progress | Inventory fields and this model |
 | P2.2 Drain/cordon workflows | Complete for controller-local placement control; persistence remains future work | `PATCH /api/v1/system/generators/drain` |
 | P2.3 Version compatibility checks | Complete for target-declared protocol/version compatibility; generator-side negotiation remains future work | `version`, `protocols`, `compatibility_state`, placement rejection reasons |
-| P2.4 Saturation alerts and rejection reasons | Planned | Capacity state primitive added |
+| P2.4 Saturation alerts and rejection reasons | Complete for API/metrics primitives; dashboard alert cards remain future work | Fleet Prometheus metrics and placement rejection messages |

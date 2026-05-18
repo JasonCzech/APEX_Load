@@ -537,6 +537,12 @@ func (s *Server) handlePrometheusMetrics(w http.ResponseWriter, r *http.Request)
 		body.WriteString("# TYPE stormrunner_generator_region_available_capacity gauge\n")
 		body.WriteString("# HELP stormrunner_generator_region_active_vusers Active VUsers reported by generators by region.\n")
 		body.WriteString("# TYPE stormrunner_generator_region_active_vusers gauge\n")
+		body.WriteString("# HELP stormrunner_generator_capacity_state_count Number of generators by region and capacity state.\n")
+		body.WriteString("# TYPE stormrunner_generator_capacity_state_count gauge\n")
+		body.WriteString("# HELP stormrunner_generator_drain_state_count Number of generators by region and drain state.\n")
+		body.WriteString("# TYPE stormrunner_generator_drain_state_count gauge\n")
+		body.WriteString("# HELP stormrunner_generator_compatibility_state_count Number of generators by region and compatibility state.\n")
+		body.WriteString("# TYPE stormrunner_generator_compatibility_state_count gauge\n")
 		regions := make([]string, 0, len(regionStats))
 		for region := range regionStats {
 			regions = append(regions, region)
@@ -547,6 +553,9 @@ func (s *Server) handlePrometheusMetrics(w http.ResponseWriter, r *http.Request)
 			fmt.Fprintf(&body, "stormrunner_generator_region_count{region=%q} %d\n", region, stats.Count)
 			fmt.Fprintf(&body, "stormrunner_generator_region_available_capacity{region=%q} %d\n", region, stats.AvailableCapacity)
 			fmt.Fprintf(&body, "stormrunner_generator_region_active_vusers{region=%q} %d\n", region, stats.ActiveVUsers)
+			writeLabeledCounts(&body, "stormrunner_generator_capacity_state_count", "region", region, "state", stats.CapacityStates)
+			writeLabeledCounts(&body, "stormrunner_generator_drain_state_count", "region", region, "state", stats.DrainStates)
+			writeLabeledCounts(&body, "stormrunner_generator_compatibility_state_count", "region", region, "state", stats.CompatibilityStates)
 		}
 	}
 	body.WriteString("# HELP stormrunner_max_concurrent_tests Configured maximum concurrent tests.\n")
@@ -559,9 +568,12 @@ func (s *Server) handlePrometheusMetrics(w http.ResponseWriter, r *http.Request)
 }
 
 type generatorRegionStats struct {
-	Count             int
-	AvailableCapacity int64
-	ActiveVUsers      int64
+	Count               int
+	AvailableCapacity   int64
+	ActiveVUsers        int64
+	CapacityStates      map[string]int
+	DrainStates         map[string]int
+	CompatibilityStates map[string]int
 }
 
 func (s *Server) generatorRegionStats(ctx context.Context) map[string]generatorRegionStats {
@@ -576,12 +588,35 @@ func (s *Server) generatorRegionStats(ctx context.Context) map[string]generatorR
 			region = "unassigned"
 		}
 		current := stats[region]
+		if current.CapacityStates == nil {
+			current.CapacityStates = make(map[string]int)
+		}
+		if current.DrainStates == nil {
+			current.DrainStates = make(map[string]int)
+		}
+		if current.CompatibilityStates == nil {
+			current.CompatibilityStates = make(map[string]int)
+		}
 		current.Count++
 		current.AvailableCapacity += int64(generator.AvailableCapacity)
 		current.ActiveVUsers += int64(generator.ActiveVUsers)
+		current.CapacityStates[usageKey(generator.CapacityState, "unknown")]++
+		current.DrainStates[usageKey(generator.DrainState, "active")]++
+		current.CompatibilityStates[usageKey(generator.CompatibilityState, "compatible")]++
 		stats[region] = current
 	}
 	return stats
+}
+
+func writeLabeledCounts(body *strings.Builder, metricName string, labelA string, valueA string, labelB string, counts map[string]int) {
+	keys := make([]string, 0, len(counts))
+	for key := range counts {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		fmt.Fprintf(body, "%s{%s=%q,%s=%q} %d\n", metricName, labelA, valueA, labelB, key, counts[key])
+	}
 }
 
 func (s *Server) handleGetSystemSettings(w http.ResponseWriter, r *http.Request) {
