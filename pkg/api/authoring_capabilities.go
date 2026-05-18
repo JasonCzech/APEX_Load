@@ -47,19 +47,20 @@ type AuthoringHealthItem struct {
 	Summary string `json:"summary"`
 }
 
-func buildAuthoringHealth(issues []string, warnings []string, parityCounts map[string]int, scriptHasProvenance bool) AuthoringHealth {
+func buildAuthoringHealth(issues []string, warnings []string, parityCounts map[string]int, dataSourceFit *DataSourceFitReport, scriptHasProvenance bool) AuthoringHealth {
 	score := 100
 	inputs := []AuthoringHealthItem{
 		{Key: "validation_issues", Status: "pass", Count: len(issues), Summary: "Script validation passed."},
 		{Key: "warnings", Status: "pass", Count: len(warnings), Summary: "No validation warnings."},
 		{Key: "runtime_parity", Status: "pass", Summary: "No runtime parity blockers were detected."},
+		{Key: "data_source_fit", Status: "pass", Summary: "Data sources match referenced parameters and load-model needs."},
 		{Key: "replay_readiness", Status: "pass", Summary: "Draft is structurally ready for replay."},
 		{Key: "provenance", Status: "info", Summary: "No source provenance is required for manually authored drafts."},
 	}
 	if len(issues) > 0 {
 		score -= 45
 		inputs[0] = AuthoringHealthItem{Key: "validation_issues", Status: "blocker", Count: len(issues), Summary: "Script has validation issues that block save or replay."}
-		inputs[3] = AuthoringHealthItem{Key: "replay_readiness", Status: "blocker", Summary: "Replay should wait until validation blockers are fixed."}
+		inputs[4] = AuthoringHealthItem{Key: "replay_readiness", Status: "blocker", Summary: "Replay should wait until validation blockers are fixed."}
 	}
 	if len(warnings) > 0 {
 		score -= minInt(15, len(warnings)*5)
@@ -70,16 +71,27 @@ func buildAuthoringHealth(issues []string, warnings []string, parityCounts map[s
 		score -= parityPenalty
 		inputs[2] = AuthoringHealthItem{Key: "runtime_parity", Status: "warning", Count: parityPenalty, Summary: "Runtime parity has partial, compatibility-only, or blocked settings."}
 	}
+	if dataSourceFit != nil {
+		blocked := dataSourceFit.StatusCounts["blocked"]
+		needsReview := dataSourceFit.StatusCounts["needs_review"]
+		if blocked > 0 {
+			score -= minInt(35, blocked*15)
+			inputs[3] = AuthoringHealthItem{Key: "data_source_fit", Status: "blocker", Count: blocked, Summary: "Data-source fit checks found missing columns, missing sources, or insufficient unique rows."}
+		} else if needsReview > 0 {
+			score -= minInt(15, needsReview*5)
+			inputs[3] = AuthoringHealthItem{Key: "data_source_fit", Status: "warning", Count: needsReview, Summary: "Data-source fit checks need review before high-volume execution."}
+		}
+	}
 	if scriptHasProvenance {
-		inputs[4] = AuthoringHealthItem{Key: "provenance", Status: "pass", Summary: "Source provenance is attached to the draft."}
+		inputs[5] = AuthoringHealthItem{Key: "provenance", Status: "pass", Summary: "Source provenance is attached to the draft."}
 	}
 	if score < 0 {
 		score = 0
 	}
 	status := "ready"
-	if score < 60 || len(issues) > 0 {
+	if score < 60 || len(issues) > 0 || (dataSourceFit != nil && dataSourceFit.StatusCounts["blocked"] > 0) {
 		status = "blocked"
-	} else if score < 85 || len(warnings) > 0 || parityPenalty > 0 {
+	} else if score < 85 || len(warnings) > 0 || parityPenalty > 0 || (dataSourceFit != nil && dataSourceFit.StatusCounts["needs_review"] > 0) {
 		status = "needs_review"
 	}
 	return AuthoringHealth{Score: score, Status: status, Inputs: inputs}

@@ -733,6 +733,7 @@ type scriptValidationResponse struct {
 	RuntimeSettingsParity       []loadrunner.RuntimeSettingParityEntry       `json:"runtime_settings_parity,omitempty"`
 	RuntimeSettingsStatusCounts map[string]int                               `json:"runtime_settings_status_counts,omitempty"`
 	MigrationReadiness          *loadrunner.RuntimeSettingMigrationReadiness `json:"migration_readiness,omitempty"`
+	DataSourceFit               *DataSourceFitReport                         `json:"data_source_fit,omitempty"`
 	AuthoringHealth             AuthoringHealth                              `json:"authoring_health"`
 }
 
@@ -742,6 +743,7 @@ func buildScriptValidationResponse(scriptID string, script *dsl.Script) scriptVa
 	parity := buildValidationRuntimeSettingsParity(script)
 	counts := loadrunner.RuntimeSettingStatusCounts(parity)
 	readiness := loadrunner.BuildRTSMigrationReadiness(parity, validationRuntimeSettingMigrationPolicy(script))
+	dataSourceFit := buildDataSourceFitReport(script)
 
 	return scriptValidationResponse{
 		ScriptID:                    scriptID,
@@ -751,7 +753,8 @@ func buildScriptValidationResponse(scriptID string, script *dsl.Script) scriptVa
 		RuntimeSettingsParity:       parity,
 		RuntimeSettingsStatusCounts: counts,
 		MigrationReadiness:          readiness,
-		AuthoringHealth:             buildAuthoringHealth(issues, warnings, counts, scriptHasAuthoringProvenance(script)),
+		DataSourceFit:               dataSourceFit,
+		AuthoringHealth:             buildAuthoringHealth(issues, warnings, counts, dataSourceFit, scriptHasAuthoringProvenance(script)),
 	}
 }
 

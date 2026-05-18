@@ -1856,6 +1856,44 @@ func TestDraftValidationReturnsBlockedAuthoringHealth(t *testing.T) {
 	}
 }
 
+func TestDraftValidationReturnsDataSourceFitHealth(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	body := []byte(`{"script":{
+		"name":"data-fit",
+		"version":"1.0.0",
+		"protocol":"http",
+		"goal_config":{"max_vusers":2},
+		"config":{"base_url":"https://example.test","run_logic":{"iterations":3}},
+		"data_sources":[{"name":"users","type":"csv","strategy":"unique","inline_data":"username\nalice\nbob\n","first_row_header":true}],
+		"parameters":[{"name":"user","type":"file","data_source":"users","column":"username","selection":"unique","on_exhaustion":"error"},{"name":"missing","type":"file","data_source":"users","column":"password"}],
+		"actions":[{"name":"Home","type":"request","target":"/"}]
+	}}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/validate", bytes.NewReader(body))
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var payload scriptValidationResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if !payload.Valid {
+		t.Fatalf("valid = false, want structural validation to pass; issues=%v", payload.Issues)
+	}
+	if payload.DataSourceFit == nil || payload.DataSourceFit.Status != "blocked" {
+		t.Fatalf("data_source_fit = %#v, want blocked fit report", payload.DataSourceFit)
+	}
+	if payload.DataSourceFit.StatusCounts["blocked"] < 2 {
+		t.Fatalf("status counts = %#v, want missing column and row-count blockers", payload.DataSourceFit.StatusCounts)
+	}
+	if payload.AuthoringHealth.Status != "blocked" {
+		t.Fatalf("authoring health = %#v, want blocked from data-source fit", payload.AuthoringHealth)
+	}
+}
+
 func TestAuthoringSessionLifecyclePersistsDraftReviewState(t *testing.T) {
 	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
 	if err != nil {

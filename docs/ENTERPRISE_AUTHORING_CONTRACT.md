@@ -83,6 +83,8 @@ P3.3 scoring normalizes these inputs instead of creating source-specific scoring
 - Replay readiness
 - Provenance and diff-review evidence
 
+Validation responses also include `data_source_fit` when a draft declares data sources or data-backed parameters. The fit report checks source existence, required columns, uniqueness/pop strategies, exhaustion posture, and available inline rows against the script's iteration and goal VUser settings. Blocked data-source fit contributes to `authoring_health.status = blocked`, which prevents approval promotion.
+
 ## Plan Mapping
 
 | Plan item | Status | Artifact |
@@ -93,3 +95,4 @@ P3.3 scoring normalizes these inputs instead of creating source-specific scoring
 | P3.4 Authoring session persistence | Complete for API and SQLite persistence | `authoring_sessions` table and session CRUD endpoints |
 | P3.5 Approval handoff | Complete for backend gate | Session approval validates health, stores reusable scripts, and stamps approval metadata |
 | P3.6 Guided correlation repair | Partial backend complete | Session correlation preview/apply returns extractor insertion and sample-replacement diffs |
+| P3.7 Data-source fit checks | Partial backend complete | Validation responses include `data_source_fit` and health scoring for source/column/row-count readiness |

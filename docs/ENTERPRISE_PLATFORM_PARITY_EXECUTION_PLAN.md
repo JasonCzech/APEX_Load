@@ -158,7 +158,7 @@ Acceptance criteria:
 | ID | Story | Size | Dependencies | Status |
 | --- | --- | --- | --- | --- |
 | P3.6 | Expand correlation suggestions into guided variable creation and extractor insertion with preview diffs | L | P3.3 | Partial backend complete: session preview/apply endpoint with extractor insertion and field diffs |
-| P3.7 | Add data-source fit checks for required columns, exhaustion policy, uniqueness, and row-count versus load model | M | P3.3 | Planned |
+| P3.7 | Add data-source fit checks for required columns, exhaustion policy, uniqueness, and row-count versus load model | M | P3.3 | Partial backend complete: validation response and health scoring cover source/column/row-count readiness |
 | P3.8 | Add protocol-aware starter templates for common enterprise flows and CI/CD smoke tests | M | P3.2 | Planned |
 | P3.9 | Add AI-assisted script generation guardrails: provenance, validation, diff review, and replay-before-save requirements | L | P3.1 | Planned |
 
