@@ -321,6 +321,26 @@ var runArchiveReportTemplate = template.Must(template.New("run-archive-report").
       </div>
     </section>
 
+    <section>
+      <h2>Schema Compatibility</h2>
+      <p class="section-copy">Report schema {{.Report.SchemaVersion}} is {{.Report.Compatibility.Status}} with archive manifest {{.Report.Compatibility.ManifestSchemaVersion}}.</p>
+      <table>
+        <thead>
+          <tr><th>Output</th><th>Artifact</th><th>Status</th><th>Schema</th></tr>
+        </thead>
+        <tbody>
+          {{range .Report.Compatibility.Outputs}}
+          <tr>
+            <td>{{.Format}}</td>
+            <td>{{if .Artifact}}{{.Artifact}}{{else}}n/a{{end}}</td>
+            <td>{{.Status}}</td>
+            <td>{{if .SchemaVersion}}{{.SchemaVersion}}{{else}}n/a{{end}}</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </section>
+
     {{if .Report.SummaryTimeline}}
     <section>
       <h2>Summary Timeline</h2>

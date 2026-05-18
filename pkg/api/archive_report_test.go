@@ -184,6 +184,100 @@ func TestBuildRunArchiveReportDeclaresEvidenceTiers(t *testing.T) {
 	}
 }
 
+func TestBuildRunArchiveReportDeclaresSchemaCompatibility(t *testing.T) {
+	archiveDir := t.TempDir()
+	manifestPath := filepath.Join(archiveDir, "manifest.json")
+	manifest := RunArchiveManifest{
+		SchemaVersion:                archiveSchemaVersion,
+		TestID:                       "test-schema",
+		TestName:                     "Schema Run",
+		TransactionsFile:             "transactions.jsonl",
+		TransactionsParquetFile:      "transactions.parquet",
+		ResourceSamplesFile:          "resources.jsonl",
+		ResourceSamplesParquetFile:   "resources.parquet",
+		IntervalSummariesFile:        "interval_summaries.jsonl",
+		IntervalSummariesParquetFile: "interval_summaries.parquet",
+	}
+	manifestBytes, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatalf("json.Marshal manifest returned error: %v", err)
+	}
+	if err := os.WriteFile(manifestPath, manifestBytes, 0o644); err != nil {
+		t.Fatalf("WriteFile manifest returned error: %v", err)
+	}
+	for _, name := range []string{
+		manifest.TransactionsFile,
+		manifest.TransactionsParquetFile,
+		manifest.ResourceSamplesFile,
+		manifest.ResourceSamplesParquetFile,
+		manifest.IntervalSummariesFile,
+		manifest.IntervalSummariesParquetFile,
+	} {
+		if err := os.WriteFile(filepath.Join(archiveDir, name), nil, 0o644); err != nil {
+			t.Fatalf("WriteFile %s returned error: %v", name, err)
+		}
+	}
+
+	report, err := buildRunArchiveReport(&storage.RunArchiveRecord{ArchivePath: archiveDir, ManifestPath: manifestPath})
+	if err != nil {
+		t.Fatalf("buildRunArchiveReport returned error: %v", err)
+	}
+	if report.SchemaVersion != runArchiveReportSchemaVersion {
+		t.Fatalf("report schema = %q, want %q", report.SchemaVersion, runArchiveReportSchemaVersion)
+	}
+	if report.Compatibility.Status != "compatible" || report.Compatibility.ManifestSchemaVersion != archiveSchemaVersion {
+		t.Fatalf("compatibility = %#v, want compatible archive schema", report.Compatibility)
+	}
+	outputs := make(map[string]RunArchiveOutputCompatibility)
+	for _, output := range report.Compatibility.Outputs {
+		outputs[output.Format] = output
+	}
+	for _, format := range []string{"json", "standalone_html", "transaction_jsonl", "resource_jsonl", "interval_summary_jsonl", "transactions_parquet", "resources_parquet", "interval_summaries_parquet"} {
+		if outputs[format].Status != "compatible" {
+			t.Fatalf("output %q = %#v, want compatible", format, outputs[format])
+		}
+	}
+	if outputs["csv"].Status != "unsupported" {
+		t.Fatalf("csv output = %#v, want unsupported declaration", outputs["csv"])
+	}
+}
+
+func TestBuildRunArchiveReportFlagsUnsupportedManifestSchema(t *testing.T) {
+	archiveDir := t.TempDir()
+	manifestPath := filepath.Join(archiveDir, "manifest.json")
+	manifest := RunArchiveManifest{
+		SchemaVersion:         "stormrunner.archive.v999",
+		TestID:                "test-schema-old",
+		TestName:              "Unsupported Schema Run",
+		TransactionsFile:      "transactions.jsonl",
+		ResourceSamplesFile:   "resources.jsonl",
+		IntervalSummariesFile: "interval_summaries.jsonl",
+	}
+	manifestBytes, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatalf("json.Marshal manifest returned error: %v", err)
+	}
+	if err := os.WriteFile(manifestPath, manifestBytes, 0o644); err != nil {
+		t.Fatalf("WriteFile manifest returned error: %v", err)
+	}
+	for _, name := range []string{manifest.TransactionsFile, manifest.ResourceSamplesFile, manifest.IntervalSummariesFile} {
+		if err := os.WriteFile(filepath.Join(archiveDir, name), nil, 0o644); err != nil {
+			t.Fatalf("WriteFile %s returned error: %v", name, err)
+		}
+	}
+
+	report, err := buildRunArchiveReport(&storage.RunArchiveRecord{ArchivePath: archiveDir, ManifestPath: manifestPath})
+	if err != nil {
+		t.Fatalf("buildRunArchiveReport returned error: %v", err)
+	}
+	if report.Compatibility.Status != "incompatible" {
+		t.Fatalf("compatibility status = %q, want incompatible", report.Compatibility.Status)
+	}
+	if len(report.Compatibility.Issues) == 0 || report.Compatibility.Issues[0].Code != "unsupported_manifest_schema" {
+		t.Fatalf("compatibility issues = %#v, want unsupported manifest issue", report.Compatibility.Issues)
+	}
+}
+
 func TestTraceparentIDsExtractsAPMIdentifiers(t *testing.T) {
 	const traceparent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
 

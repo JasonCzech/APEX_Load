@@ -43,6 +43,19 @@ describe('TestExecutionArchive', () => {
   }
 
   const archiveReport: RunArchiveReport = {
+    schema_version: 'stormrunner.archive_report.v1',
+    compatibility: {
+      status: 'compatible',
+      report_schema_version: 'stormrunner.archive_report.v1',
+      manifest_schema_version: 'stormrunner.archive.v1',
+      supported_manifest_schemas: ['stormrunner.archive.v1'],
+      outputs: [
+        { format: 'json', artifact: 'archive/report', schema_version: 'stormrunner.archive_report.v1', status: 'compatible' },
+        { format: 'standalone_html', artifact: 'report', schema_version: 'stormrunner.archive_report.v1', status: 'compatible' },
+        { format: 'transactions_parquet', artifact: 'transactions.parquet', schema_version: 'stormrunner.archive.v1', status: 'missing' },
+        { format: 'csv', status: 'unsupported', reason: 'CSV archive exports are not registered for this report schema yet.' },
+      ],
+    },
     manifest: {
       schema_version: '1',
       test_id: 'test-1',
@@ -321,6 +334,9 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('2026-05-14 20:00Z')
     expect(container.textContent).toContain('120.0 ms')
     expect(container.textContent).toContain('Run Provenance')
+    expect(container.textContent).toContain('Schema Compatibility')
+    expect(container.textContent).toContain('stormrunner.archive_report.v1')
+    expect(container.textContent).toContain('standalone html')
     expect(container.textContent).toContain('Evidence Tiers')
     expect(container.textContent).toContain('Summary')
     expect(container.textContent).toContain('present · 3')

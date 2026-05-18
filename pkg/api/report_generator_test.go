@@ -11,6 +11,19 @@ import (
 func TestRenderRunArchiveHTMLReportIncludesBrowserAndSOAPSections(t *testing.T) {
 	now := time.Date(2026, time.May, 15, 12, 30, 0, 0, time.UTC)
 	report := &RunArchiveReport{
+		SchemaVersion: runArchiveReportSchemaVersion,
+		Compatibility: RunArchiveReportCompatibility{
+			Status:                   "compatible",
+			ReportSchemaVersion:      runArchiveReportSchemaVersion,
+			ManifestSchemaVersion:    archiveSchemaVersion,
+			SupportedManifestSchemas: []string{archiveSchemaVersion},
+			Outputs: []RunArchiveOutputCompatibility{{
+				Format:        "standalone_html",
+				Artifact:      "report",
+				SchemaVersion: runArchiveReportSchemaVersion,
+				Status:        "compatible",
+			}},
+		},
 		Manifest: &RunArchiveManifest{
 			TestID:      "test-123",
 			TestName:    "Checkout Flow",
@@ -111,6 +124,8 @@ func TestRenderRunArchiveHTMLReportIncludesBrowserAndSOAPSections(t *testing.T) 
 		"@page",
 		"break-inside: avoid",
 		"Summary Timeline",
+		"Schema Compatibility",
+		runArchiveReportSchemaVersion,
 		"Error Patterns",
 		"soap fault: Request validation failed for order 1001",
 		"retained",

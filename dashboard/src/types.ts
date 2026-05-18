@@ -542,6 +542,8 @@ export interface RunArchiveSummaryPoint {
 }
 
 export interface RunArchiveReport {
+  schema_version?: string
+  compatibility?: RunArchiveReportCompatibility
   manifest: RunArchiveManifest
   overview: RunArchiveOverview
   evidence_tiers?: RunArchiveEvidenceTier[]
@@ -559,6 +561,29 @@ export interface RunArchiveReport {
   browser_by_device?: Record<string, BrowserDeviceLiveMetrics>
   browser_resources?: BrowserResourceTiming[]
   resource_peaks: RunArchiveResourcePeaks
+}
+
+export interface RunArchiveReportCompatibility {
+  status: 'compatible' | 'incompatible' | string
+  report_schema_version: string
+  manifest_schema_version?: string
+  supported_manifest_schemas: string[]
+  outputs: RunArchiveOutputCompatibility[]
+  issues?: RunArchiveCompatibilityIssue[]
+}
+
+export interface RunArchiveOutputCompatibility {
+  format: string
+  artifact?: string
+  schema_version?: string
+  status: 'compatible' | 'missing' | 'incompatible' | 'unsupported' | string
+  reason?: string
+}
+
+export interface RunArchiveCompatibilityIssue {
+  severity: 'info' | 'warning' | 'error' | string
+  code: string
+  message: string
 }
 
 export interface RunArchiveEvidenceTier {

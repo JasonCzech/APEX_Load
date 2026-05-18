@@ -447,6 +447,34 @@ export default function TestExecutionArchive({
             </div>
           </div>
 
+          {archiveReport.compatibility && (
+            <div className="tx-section archive-summary-section">
+              <div className="archive-section-header archive-section-header-stack">
+                <div>
+                  <h3 className="chart-title">Schema Compatibility</h3>
+                  <p className="archive-section-copy">Report, archive, and export contract status for downstream tools.</p>
+                </div>
+                <span className={`archive-chip ${archiveReport.compatibility.status === 'incompatible' ? 'danger' : ''}`}>
+                  {archiveReport.compatibility.status}
+                </span>
+              </div>
+              <div className="archive-overview-grid">
+                <div className="scenario-script-detail-card">
+                  <span className="scenario-script-detail-label">Report Schema</span>
+                  <span className="scenario-script-detail-value">{archiveReport.compatibility.report_schema_version}</span>
+                  <span className="capacity-advisory-detail">Manifest {archiveReport.compatibility.manifest_schema_version || 'unknown'}</span>
+                </div>
+                {archiveReport.compatibility.outputs.slice(0, 8).map(output => (
+                  <div key={`${output.format}-${output.artifact || 'generated'}`} className="scenario-script-detail-card">
+                    <span className="scenario-script-detail-label">{output.format.replace(/_/g, ' ')}</span>
+                    <span className="scenario-script-detail-value">{output.status}</span>
+                    <span className="capacity-advisory-detail">{output.artifact || output.reason || output.schema_version}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {archiveReport.evidence_tiers && archiveReport.evidence_tiers.length > 0 && (
             <div className="tx-section archive-summary-section">
               <div className="archive-section-header archive-section-header-stack">

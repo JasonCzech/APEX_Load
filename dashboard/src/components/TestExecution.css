@@ -1528,6 +1528,11 @@
   font-weight: 600;
 }
 
+.archive-chip.danger {
+  border-color: rgba(239, 68, 68, 0.35);
+  color: var(--danger);
+}
+
 .archive-overview-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));

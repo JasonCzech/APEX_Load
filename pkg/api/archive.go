@@ -20,6 +20,7 @@ import (
 )
 
 const archiveSchemaVersion = "stormrunner.archive.v1"
+const runArchiveReportSchemaVersion = "stormrunner.archive_report.v1"
 const browserDiagnosticsSchemaVersion = "stormrunner.browser_diagnostics.v1"
 
 type RunArchiveManifest struct {
@@ -163,6 +164,8 @@ type transactionEventFilter struct {
 }
 
 type RunArchiveReport struct {
+	SchemaVersion       string                                 `json:"schema_version"`
+	Compatibility       RunArchiveReportCompatibility          `json:"compatibility"`
 	Manifest            *RunArchiveManifest                    `json:"manifest"`
 	Overview            RunArchiveOverview                     `json:"overview"`
 	EvidenceTiers       []RunArchiveEvidenceTier               `json:"evidence_tiers,omitempty"`
@@ -180,6 +183,29 @@ type RunArchiveReport struct {
 	BrowserByDevice     map[string]*BrowserDeviceLiveMetrics   `json:"browser_by_device,omitempty"`
 	BrowserResources    []BrowserResourceTiming                `json:"browser_resources,omitempty"`
 	ResourcePeaks       RunArchiveResourcePeaks                `json:"resource_peaks"`
+}
+
+type RunArchiveReportCompatibility struct {
+	Status                   string                          `json:"status"`
+	ReportSchemaVersion      string                          `json:"report_schema_version"`
+	ManifestSchemaVersion    string                          `json:"manifest_schema_version,omitempty"`
+	SupportedManifestSchemas []string                        `json:"supported_manifest_schemas"`
+	Outputs                  []RunArchiveOutputCompatibility `json:"outputs"`
+	Issues                   []RunArchiveCompatibilityIssue  `json:"issues,omitempty"`
+}
+
+type RunArchiveOutputCompatibility struct {
+	Format        string `json:"format"`
+	Artifact      string `json:"artifact,omitempty"`
+	SchemaVersion string `json:"schema_version,omitempty"`
+	Status        string `json:"status"`
+	Reason        string `json:"reason,omitempty"`
+}
+
+type RunArchiveCompatibilityIssue struct {
+	Severity string `json:"severity"`
+	Code     string `json:"code"`
+	Message  string `json:"message"`
 }
 
 type RunArchiveEvidenceTier struct {
@@ -664,6 +690,9 @@ func loadRunArchiveManifest(manifestPath string) (*RunArchiveManifest, error) {
 	if err := json.Unmarshal(data, &manifest); err != nil {
 		return nil, err
 	}
+	if strings.TrimSpace(manifest.SchemaVersion) == "" {
+		manifest.SchemaVersion = archiveSchemaVersion
+	}
 	return &manifest, nil
 }
 
@@ -758,6 +787,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	}
 
 	report := &RunArchiveReport{
+		SchemaVersion:       runArchiveReportSchemaVersion,
 		Manifest:            manifest,
 		ByAction:            make(map[string]RunArchiveActionStats),
 		BySOAPOperation:     make(map[string]RunArchiveActionStats),
@@ -996,8 +1026,125 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 		report.Overview.Telemetry = finalizeRunArchiveTelemetrySummary(telemetrySummary)
 	}
 	report.EvidenceTiers = buildRunArchiveEvidenceTiers(manifest, report, transactions, resources, summaries)
+	report.Compatibility = buildRunArchiveReportCompatibility(record, manifest)
 
 	return report, nil
+}
+
+func buildRunArchiveReportCompatibility(record *storage.RunArchiveRecord, manifest *RunArchiveManifest) RunArchiveReportCompatibility {
+	compatibility := RunArchiveReportCompatibility{
+		Status:                   "compatible",
+		ReportSchemaVersion:      runArchiveReportSchemaVersion,
+		SupportedManifestSchemas: []string{archiveSchemaVersion},
+	}
+	if manifest != nil {
+		compatibility.ManifestSchemaVersion = manifest.SchemaVersion
+	}
+	if !supportedArchiveManifestSchema(compatibility.ManifestSchemaVersion) {
+		compatibility.Status = "incompatible"
+		compatibility.Issues = append(compatibility.Issues, RunArchiveCompatibilityIssue{
+			Severity: "error",
+			Code:     "unsupported_manifest_schema",
+			Message:  fmt.Sprintf("manifest schema %q is not supported by report schema %q", compatibility.ManifestSchemaVersion, runArchiveReportSchemaVersion),
+		})
+	}
+
+	manifestOK := compatibility.Status == "compatible"
+	compatibility.Outputs = []RunArchiveOutputCompatibility{
+		reportOutputCompatibility("json", "archive/report", runArchiveReportSchemaVersion, manifestOK, "JSON report is generated from the archive manifest and event files."),
+		reportOutputCompatibility("standalone_html", "report", runArchiveReportSchemaVersion, manifestOK, "Standalone HTML report is rendered from the JSON report schema."),
+		archiveFileOutputCompatibility(record, manifestField(manifest, "transactions_jsonl"), "transaction_jsonl", "transactions.jsonl", archiveSchemaVersion),
+		archiveFileOutputCompatibility(record, manifestField(manifest, "resources_jsonl"), "resource_jsonl", "resources.jsonl", archiveSchemaVersion),
+		archiveFileOutputCompatibility(record, manifestField(manifest, "interval_summaries_jsonl"), "interval_summary_jsonl", "interval_summaries.jsonl", archiveSchemaVersion),
+		archiveFileOutputCompatibility(record, manifestField(manifest, "transactions_parquet"), "transactions_parquet", "transactions.parquet", archiveSchemaVersion),
+		archiveFileOutputCompatibility(record, manifestField(manifest, "resources_parquet"), "resources_parquet", "resources.parquet", archiveSchemaVersion),
+		archiveFileOutputCompatibility(record, manifestField(manifest, "interval_summaries_parquet"), "interval_summaries_parquet", "interval_summaries.parquet", archiveSchemaVersion),
+		{
+			Format: "csv",
+			Status: "unsupported",
+			Reason: "CSV archive exports are not registered for this report schema yet.",
+		},
+	}
+	for _, output := range compatibility.Outputs {
+		switch output.Status {
+		case "missing":
+			compatibility.Issues = append(compatibility.Issues, RunArchiveCompatibilityIssue{
+				Severity: "warning",
+				Code:     "missing_output",
+				Message:  fmt.Sprintf("%s output %q is missing", output.Format, output.Artifact),
+			})
+		case "incompatible":
+			compatibility.Status = "incompatible"
+			compatibility.Issues = append(compatibility.Issues, RunArchiveCompatibilityIssue{
+				Severity: "error",
+				Code:     "incompatible_output",
+				Message:  fmt.Sprintf("%s output %q is incompatible: %s", output.Format, output.Artifact, output.Reason),
+			})
+		}
+	}
+	return compatibility
+}
+
+func supportedArchiveManifestSchema(version string) bool {
+	return version == archiveSchemaVersion
+}
+
+func reportOutputCompatibility(format, artifact, schemaVersion string, compatible bool, reason string) RunArchiveOutputCompatibility {
+	status := "compatible"
+	if !compatible {
+		status = "incompatible"
+	}
+	return RunArchiveOutputCompatibility{
+		Format:        format,
+		Artifact:      artifact,
+		SchemaVersion: schemaVersion,
+		Status:        status,
+		Reason:        reason,
+	}
+}
+
+func archiveFileOutputCompatibility(record *storage.RunArchiveRecord, artifactName, format, fallbackArtifact, schemaVersion string) RunArchiveOutputCompatibility {
+	if strings.TrimSpace(artifactName) == "" {
+		artifactName = fallbackArtifact
+	}
+	output := RunArchiveOutputCompatibility{
+		Format:        format,
+		Artifact:      artifactName,
+		SchemaVersion: schemaVersion,
+		Status:        "compatible",
+	}
+	if record == nil || strings.TrimSpace(record.ArchivePath) == "" {
+		output.Status = "missing"
+		output.Reason = "archive root is not available"
+		return output
+	}
+	if _, err := os.Stat(filepath.Join(record.ArchivePath, artifactName)); err != nil {
+		output.Status = "missing"
+		output.Reason = "artifact is not present in the archive bundle"
+	}
+	return output
+}
+
+func manifestField(manifest *RunArchiveManifest, field string) string {
+	if manifest == nil {
+		return ""
+	}
+	switch field {
+	case "transactions_jsonl":
+		return manifest.TransactionsFile
+	case "resources_jsonl":
+		return manifest.ResourceSamplesFile
+	case "interval_summaries_jsonl":
+		return manifest.IntervalSummariesFile
+	case "transactions_parquet":
+		return manifest.TransactionsParquetFile
+	case "resources_parquet":
+		return manifest.ResourceSamplesParquetFile
+	case "interval_summaries_parquet":
+		return manifest.IntervalSummariesParquetFile
+	default:
+		return ""
+	}
 }
 
 func buildRunArchiveEvidenceTiers(manifest *RunArchiveManifest, report *RunArchiveReport, transactions []TransactionEvent, resources []ResourceSample, summaries []IntervalSummaryRecord) []RunArchiveEvidenceTier {
