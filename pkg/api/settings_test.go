@@ -43,6 +43,9 @@ func TestSystemSettingsAPIAndPersistence(t *testing.T) {
 	if initial.CapacityPlanning.Availability.Source != capacityAvailabilityConfigured {
 		t.Fatalf("initial availability source = %q, want %q", initial.CapacityPlanning.Availability.Source, capacityAvailabilityConfigured)
 	}
+	if initial.ArchiveRetention.DefaultRetentionDays != 90 || initial.ArchiveRetention.Enabled {
+		t.Fatalf("initial archive retention = %#v, want disabled 90-day default", initial.ArchiveRetention)
+	}
 	if len(initial.Notifications.Webhooks) != 0 {
 		t.Fatalf("initial notifications = %#v, want none", initial.Notifications.Webhooks)
 	}
@@ -100,6 +103,17 @@ func TestSystemSettingsAPIAndPersistence(t *testing.T) {
 			Reservations: []CapacityReservation{{
 				ProjectID:          "checkout",
 				ReservedGenerators: 2,
+			}},
+		},
+		ArchiveRetention: ArchiveRetentionSettings{
+			Enabled:              true,
+			DefaultRetentionDays: 45,
+			Policies: []ArchiveRetentionPolicy{{
+				Name:          "failed-checkout",
+				ProjectID:     "checkout",
+				RunStatus:     "failed",
+				ArtifactType:  "bundle",
+				RetentionDays: 7,
 			}},
 		},
 		Notifications: NotificationsSettings{
@@ -189,6 +203,12 @@ func TestSystemSettingsAPIAndPersistence(t *testing.T) {
 	}
 	if len(updated.CapacityPlanning.Reservations) != 1 || updated.CapacityPlanning.Reservations[0].ProjectID != "checkout" || updated.CapacityPlanning.Reservations[0].ReservedGenerators != 2 {
 		t.Fatalf("capacity reservations = %#v, want checkout reservation", updated.CapacityPlanning.Reservations)
+	}
+	if !updated.ArchiveRetention.Enabled || updated.ArchiveRetention.DefaultRetentionDays != 45 {
+		t.Fatalf("archive retention = %#v, want enabled 45-day default", updated.ArchiveRetention)
+	}
+	if len(updated.ArchiveRetention.Policies) != 1 || updated.ArchiveRetention.Policies[0].RunStatus != "FAILED" || updated.ArchiveRetention.Policies[0].RetentionDays != 7 {
+		t.Fatalf("archive retention policies = %#v, want normalized failed-checkout policy", updated.ArchiveRetention.Policies)
 	}
 	if len(updated.Notifications.Webhooks) != 1 {
 		t.Fatalf("notification webhooks = %d, want 1", len(updated.Notifications.Webhooks))
@@ -616,6 +636,35 @@ func TestSystemSettingsValidationRejectsInvalidAuthSettings(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected missing oidc secret settings to fail validation")
+	}
+
+	err = validateSystemSettings(SystemSettings{
+		General: GeneralSettings{
+			APIEndpoint:            ":8080",
+			MaxConcurrentTests:     2,
+			MetricsIntervalSeconds: 1,
+		},
+		Thresholds: ThresholdSettings{},
+		CapacityPlanning: CapacityPlanningSettings{
+			HeadroomPct: 20,
+			Generator: GeneratorCapacitySettings{
+				CPUCores:    4,
+				MemoryMB:    8192,
+				NetworkMbps: 1000,
+				MaxVUsers:   10000,
+			},
+			Availability: AvailabilitySettings{
+				Source:                        capacityAvailabilityConfigured,
+				ConfiguredAvailableGenerators: 1,
+			},
+		},
+		ArchiveRetention: ArchiveRetentionSettings{
+			DefaultRetentionDays: -1,
+		},
+		Auth: AuthSettings{Mode: authModeDev},
+	})
+	if err == nil {
+		t.Fatal("expected invalid archive retention default to fail validation")
 	}
 }
 

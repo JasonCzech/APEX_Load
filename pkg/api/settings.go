@@ -21,6 +21,7 @@ type SystemSettings struct {
 	General          GeneralSettings          `json:"general"`
 	Thresholds       ThresholdSettings        `json:"thresholds"`
 	CapacityPlanning CapacityPlanningSettings `json:"capacity_planning"`
+	ArchiveRetention ArchiveRetentionSettings `json:"archive_retention"`
 	Notifications    NotificationsSettings    `json:"notifications"`
 	Auth             AuthSettings             `json:"auth"`
 }
@@ -65,6 +66,22 @@ type AvailabilitySettings struct {
 type CapacityReservation struct {
 	ProjectID          string `json:"project_id"`
 	ReservedGenerators int    `json:"reserved_generators"`
+}
+
+type ArchiveRetentionSettings struct {
+	Enabled              bool                     `json:"enabled"`
+	DefaultRetentionDays int                      `json:"default_retention_days"`
+	Policies             []ArchiveRetentionPolicy `json:"policies,omitempty"`
+}
+
+type ArchiveRetentionPolicy struct {
+	Name          string `json:"name,omitempty"`
+	ProjectID     string `json:"project_id,omitempty"`
+	ReleaseID     string `json:"release_id,omitempty"`
+	RunStatus     string `json:"run_status,omitempty"`
+	RunType       string `json:"run_type,omitempty"`
+	ArtifactType  string `json:"artifact_type,omitempty"`
+	RetentionDays int    `json:"retention_days"`
 }
 
 type AuthSettings struct {
@@ -192,6 +209,10 @@ func defaultSystemSettings(maxConcurrent int) SystemSettings {
 				ConfiguredAvailableGenerators: 1,
 			},
 		},
+		ArchiveRetention: ArchiveRetentionSettings{
+			Enabled:              false,
+			DefaultRetentionDays: 90,
+		},
 		Notifications: NotificationsSettings{},
 		Auth:          defaultAuthSettings(),
 	}
@@ -239,6 +260,9 @@ func cloneSystemSettings(in SystemSettings) SystemSettings {
 	if in.CapacityPlanning.Reservations != nil {
 		out.CapacityPlanning.Reservations = append([]CapacityReservation(nil), in.CapacityPlanning.Reservations...)
 	}
+	if in.ArchiveRetention.Policies != nil {
+		out.ArchiveRetention.Policies = append([]ArchiveRetentionPolicy(nil), in.ArchiveRetention.Policies...)
+	}
 	out.Auth = in.Auth
 	if in.Auth.Scopes != nil {
 		out.Auth.Scopes = append([]string(nil), in.Auth.Scopes...)
@@ -280,6 +304,7 @@ func normalizeLoadedSystemSettings(in SystemSettings, defaultMaxConcurrent int) 
 	if out.CapacityPlanning.Availability.ConfiguredAvailableGenerators == 0 {
 		out.CapacityPlanning.Availability.ConfiguredAvailableGenerators = defaults.CapacityPlanning.Availability.ConfiguredAvailableGenerators
 	}
+	out.ArchiveRetention = normalizeArchiveRetentionSettings(out.ArchiveRetention)
 	out.CapacityPlanning.Reservations = normalizeCapacityReservations(out.CapacityPlanning.Reservations)
 	out.Thresholds = normalizeThresholdSettings(out.Thresholds)
 	out.Notifications = cloneNotificationsSettings(out.Notifications)
@@ -289,6 +314,7 @@ func normalizeLoadedSystemSettings(in SystemSettings, defaultMaxConcurrent int) 
 }
 
 func validateSystemSettings(settings SystemSettings) error {
+	settings.ArchiveRetention = normalizeArchiveRetentionSettings(settings.ArchiveRetention)
 	if settings.General.APIEndpoint == "" {
 		return fmt.Errorf("general.api_endpoint is required")
 	}
@@ -370,6 +396,9 @@ func validateSystemSettings(settings SystemSettings) error {
 		return fmt.Errorf("capacity_planning.reservations cannot exceed configured available generators")
 	}
 	if err := validateNotificationsSettings(settings.Notifications); err != nil {
+		return err
+	}
+	if err := validateArchiveRetentionSettings(settings.ArchiveRetention); err != nil {
 		return err
 	}
 	if err := validateAuthSettings(settings.Auth); err != nil {
@@ -475,6 +504,46 @@ func normalizeCapacityReservations(reservations []CapacityReservation) []Capacit
 		})
 	}
 	return out
+}
+
+func normalizeArchiveRetentionPolicies(policies []ArchiveRetentionPolicy) []ArchiveRetentionPolicy {
+	out := make([]ArchiveRetentionPolicy, 0, len(policies))
+	for _, policy := range policies {
+		normalized := ArchiveRetentionPolicy{
+			Name:          strings.TrimSpace(policy.Name),
+			ProjectID:     strings.TrimSpace(policy.ProjectID),
+			ReleaseID:     strings.TrimSpace(policy.ReleaseID),
+			RunStatus:     strings.ToUpper(strings.TrimSpace(policy.RunStatus)),
+			RunType:       strings.TrimSpace(policy.RunType),
+			ArtifactType:  strings.TrimSpace(policy.ArtifactType),
+			RetentionDays: policy.RetentionDays,
+		}
+		if normalized.ArtifactType == "" {
+			normalized.ArtifactType = "bundle"
+		}
+		out = append(out, normalized)
+	}
+	return out
+}
+
+func normalizeArchiveRetentionSettings(settings ArchiveRetentionSettings) ArchiveRetentionSettings {
+	if settings.DefaultRetentionDays == 0 {
+		settings.DefaultRetentionDays = defaultSystemSettings(0).ArchiveRetention.DefaultRetentionDays
+	}
+	settings.Policies = normalizeArchiveRetentionPolicies(settings.Policies)
+	return settings
+}
+
+func validateArchiveRetentionSettings(settings ArchiveRetentionSettings) error {
+	if settings.DefaultRetentionDays < 1 {
+		return fmt.Errorf("archive_retention.default_retention_days must be greater than 0")
+	}
+	for index, policy := range settings.Policies {
+		if policy.RetentionDays < 1 {
+			return fmt.Errorf("archive_retention.policies[%d].retention_days must be greater than 0", index)
+		}
+	}
+	return nil
 }
 
 func validateAuthSettings(settings AuthSettings) error {
@@ -649,6 +718,7 @@ func (tr *TestRunner) currentNotificationSettings() NotificationsSettings {
 func (tr *TestRunner) UpdateSystemSettings(settings SystemSettings) (SystemSettings, error) {
 	normalized := cloneSystemSettings(settings)
 	normalized.Thresholds = normalizeThresholdSettings(normalized.Thresholds)
+	normalized.ArchiveRetention = normalizeArchiveRetentionSettings(normalized.ArchiveRetention)
 	normalized.Auth = normalizeAuthSettings(normalized.Auth)
 	if err := validateSystemSettings(normalized); err != nil {
 		return SystemSettings{}, err

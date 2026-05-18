@@ -238,7 +238,7 @@ Completed runs produce durable evidence for release decisions: standalone report
 | ID | Story | Size | Dependencies | Status |
 | --- | --- | --- | --- | --- |
 | P6.1 | Define report data tiers: summary, intervals, sampled diagnostics, transaction archive, browser artifacts, provenance, and external metrics | M | none | Complete - archive reports now declare evidence tiers with present/missing status, counts, descriptions, and missing reasons, and the archive UI renders the tier coverage. |
-| P6.2 | Add archive retention and pruning policies by project, release, run type, artifact type, and compliance class | L | P1.8 | Planned |
+| P6.2 | Add archive retention and pruning policies by project, release, run type, artifact type, and compliance class | L | P1.8 | Partial backend complete - system settings now persist archive retention defaults and scoped policies, and the retention planner identifies expired archive bundles by project, release, status, run type, artifact type, and completion age. |
 | P6.3 | Add report schema versioning and compatibility checks for standalone HTML, JSON, CSV, and Parquet outputs | M | P6.1 | Planned |
 | P6.4 | Add report completeness scoring for missing intervals, telemetry gaps, archive writer errors, and artifact truncation | M | P6.1 | Planned |
 
