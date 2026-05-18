@@ -142,6 +142,8 @@ type IntervalSummaryRecord struct {
 	P99Ms                  float64                              `json:"p99_ms"`
 	Browser                *BrowserLiveMetrics                  `json:"browser,omitempty"`
 	BrowserByDevice        map[string]*BrowserDeviceLiveMetrics `json:"browser_by_device,omitempty"`
+	Telemetry              *TelemetryHealth                     `json:"telemetry,omitempty"`
+	TelemetryStatus        *TelemetryRunHealth                  `json:"telemetry_status,omitempty"`
 }
 
 type archivePage struct {
@@ -263,20 +265,41 @@ type BrowserPlatformLiveMetrics struct {
 }
 
 type RunArchiveOverview struct {
-	Transactions              int64               `json:"transactions"`
-	Errors                    int64               `json:"errors"`
-	ErrorPct                  float64             `json:"error_pct"`
-	AvgResponseMs             float64             `json:"avg_response_ms"`
-	MinResponseMs             float64             `json:"min_response_ms"`
-	MaxResponseMs             float64             `json:"max_response_ms"`
-	ResourceSamples           int64               `json:"resource_samples"`
-	IntervalSummaries         int64               `json:"interval_summaries"`
-	PeakTPS                   float64             `json:"peak_tps"`
-	PeakTargetTPS             float64             `json:"peak_target_tps,omitempty"`
-	MaxThroughputGapPct       float64             `json:"max_throughput_gap_pct,omitempty"`
-	ThroughputMissedIntervals int64               `json:"throughput_missed_intervals,omitempty"`
-	PeakActiveVUsers          int64               `json:"peak_active_vusers"`
-	Browser                   *BrowserLiveMetrics `json:"browser,omitempty"`
+	Transactions              int64                       `json:"transactions"`
+	Errors                    int64                       `json:"errors"`
+	ErrorPct                  float64                     `json:"error_pct"`
+	AvgResponseMs             float64                     `json:"avg_response_ms"`
+	MinResponseMs             float64                     `json:"min_response_ms"`
+	MaxResponseMs             float64                     `json:"max_response_ms"`
+	ResourceSamples           int64                       `json:"resource_samples"`
+	IntervalSummaries         int64                       `json:"interval_summaries"`
+	PeakTPS                   float64                     `json:"peak_tps"`
+	PeakTargetTPS             float64                     `json:"peak_target_tps,omitempty"`
+	MaxThroughputGapPct       float64                     `json:"max_throughput_gap_pct,omitempty"`
+	ThroughputMissedIntervals int64                       `json:"throughput_missed_intervals,omitempty"`
+	PeakActiveVUsers          int64                       `json:"peak_active_vusers"`
+	Browser                   *BrowserLiveMetrics         `json:"browser,omitempty"`
+	Telemetry                 *RunArchiveTelemetrySummary `json:"telemetry,omitempty"`
+}
+
+type RunArchiveTelemetrySummary struct {
+	Status                      string           `json:"status"`
+	Samples                     int64            `json:"samples"`
+	HealthyIntervals            int64            `json:"healthy_intervals,omitempty"`
+	DegradedIntervals           int64            `json:"degraded_intervals,omitempty"`
+	BreachedIntervals           int64            `json:"breached_intervals,omitempty"`
+	SustainedBreachIntervals    int64            `json:"sustained_breach_intervals,omitempty"`
+	DroppedResults              int64            `json:"dropped_results,omitempty"`
+	WebsocketDroppedMessages    int64            `json:"websocket_dropped_messages,omitempty"`
+	WebsocketDroppedEvents      int64            `json:"websocket_dropped_events,omitempty"`
+	MaxSampleAgeMs              float64          `json:"max_sample_age_ms,omitempty"`
+	MaxGeneratorProcessingLagMs float64          `json:"max_generator_processing_lag_ms,omitempty"`
+	MaxTransportLagMs           float64          `json:"max_transport_lag_ms,omitempty"`
+	MaxControllerFanoutLagMs    float64          `json:"max_controller_fanout_lag_ms,omitempty"`
+	MaxBrowserRenderLagMs       float64          `json:"max_browser_render_lag_ms,omitempty"`
+	FirstBreachAt               *time.Time       `json:"first_breach_at,omitempty"`
+	LastBreachAt                *time.Time       `json:"last_breach_at,omitempty"`
+	ConditionCounts             map[string]int64 `json:"condition_counts,omitempty"`
 }
 
 type RunArchiveActionStats struct {
@@ -568,6 +591,8 @@ func (w *runArchiveWriter) RecordIntervalSummary(live *LiveMetrics) error {
 		P99Ms:                  live.P99Ms,
 		Browser:                cloneBrowserLiveMetrics(live.Browser),
 		BrowserByDevice:        cloneBrowserByDeviceMetrics(live.BrowserByDevice),
+		Telemetry:              cloneTelemetryHealth(live.Telemetry),
+		TelemetryStatus:        cloneTelemetryRunHealth(live.TelemetryStatus),
 	}
 	if err := w.summaryEncoder.Encode(record); err != nil {
 		return err
@@ -926,6 +951,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	if len(summaries) > 0 {
 		report.SummaryTimeline = make([]RunArchiveSummaryPoint, 0, len(summaries))
 	}
+	telemetrySummary := RunArchiveTelemetrySummary{}
 	for _, summary := range summaries {
 		if summary.TPS > report.Overview.PeakTPS {
 			report.Overview.PeakTPS = summary.TPS
@@ -942,6 +968,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 		if summary.ActiveVUsers > report.Overview.PeakActiveVUsers {
 			report.Overview.PeakActiveVUsers = summary.ActiveVUsers
 		}
+		mergeRunArchiveTelemetrySummary(&telemetrySummary, summary)
 		report.SummaryTimeline = append(report.SummaryTimeline, RunArchiveSummaryPoint{
 			Timestamp:              summary.Timestamp,
 			ActiveVUsers:           summary.ActiveVUsers,
@@ -955,8 +982,90 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 			TotalErrors:            summary.TotalErrors,
 		})
 	}
+	if telemetrySummary.Samples > 0 {
+		report.Overview.Telemetry = finalizeRunArchiveTelemetrySummary(telemetrySummary)
+	}
 
 	return report, nil
+}
+
+func mergeRunArchiveTelemetrySummary(summary *RunArchiveTelemetrySummary, point IntervalSummaryRecord) {
+	if summary == nil || (point.Telemetry == nil && point.TelemetryStatus == nil) {
+		return
+	}
+	summary.Samples++
+	if point.Telemetry != nil {
+		summary.DroppedResults += point.Telemetry.DroppedResults
+		summary.WebsocketDroppedMessages += point.Telemetry.WebsocketDroppedMessages
+		summary.WebsocketDroppedEvents += point.Telemetry.WebsocketDroppedEvents
+		if point.Telemetry.SampleAgeMs > summary.MaxSampleAgeMs {
+			summary.MaxSampleAgeMs = point.Telemetry.SampleAgeMs
+		}
+		if point.Telemetry.GeneratorProcessingLagMs > summary.MaxGeneratorProcessingLagMs {
+			summary.MaxGeneratorProcessingLagMs = point.Telemetry.GeneratorProcessingLagMs
+		}
+		if point.Telemetry.TransportLagMs > summary.MaxTransportLagMs {
+			summary.MaxTransportLagMs = point.Telemetry.TransportLagMs
+		}
+		if point.Telemetry.ControllerFanoutLagMs > summary.MaxControllerFanoutLagMs {
+			summary.MaxControllerFanoutLagMs = point.Telemetry.ControllerFanoutLagMs
+		}
+		if point.Telemetry.BrowserRenderLagMs > summary.MaxBrowserRenderLagMs {
+			summary.MaxBrowserRenderLagMs = point.Telemetry.BrowserRenderLagMs
+		}
+	}
+	if point.TelemetryStatus == nil {
+		return
+	}
+	switch point.TelemetryStatus.Status {
+	case "breached":
+		summary.BreachedIntervals++
+		recordTelemetryBreachTime(summary, point.Timestamp)
+	case "degraded":
+		summary.DegradedIntervals++
+	case "healthy":
+		summary.HealthyIntervals++
+	}
+	if point.TelemetryStatus.SustainedBreach {
+		summary.SustainedBreachIntervals++
+	}
+	if len(point.TelemetryStatus.Conditions) > 0 && summary.ConditionCounts == nil {
+		summary.ConditionCounts = map[string]int64{}
+	}
+	for _, condition := range point.TelemetryStatus.Conditions {
+		if condition == "" {
+			continue
+		}
+		summary.ConditionCounts[condition]++
+	}
+}
+
+func recordTelemetryBreachTime(summary *RunArchiveTelemetrySummary, timestamp time.Time) {
+	if summary == nil || timestamp.IsZero() {
+		return
+	}
+	if summary.FirstBreachAt == nil || timestamp.Before(*summary.FirstBreachAt) {
+		first := timestamp
+		summary.FirstBreachAt = &first
+	}
+	if summary.LastBreachAt == nil || timestamp.After(*summary.LastBreachAt) {
+		last := timestamp
+		summary.LastBreachAt = &last
+	}
+}
+
+func finalizeRunArchiveTelemetrySummary(summary RunArchiveTelemetrySummary) *RunArchiveTelemetrySummary {
+	if summary.BreachedIntervals > 0 {
+		summary.Status = "breached"
+	} else if summary.DegradedIntervals > 0 {
+		summary.Status = "degraded"
+	} else {
+		summary.Status = "healthy"
+	}
+	if len(summary.ConditionCounts) == 0 {
+		summary.ConditionCounts = nil
+	}
+	return &summary
 }
 
 func buildRunArchiveBrowserDiagnostics(record *storage.RunArchiveRecord) (*BrowserDiagnosticsBundle, error) {

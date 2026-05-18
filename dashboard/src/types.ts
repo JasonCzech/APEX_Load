@@ -484,8 +484,32 @@ export interface RunArchiveOverview {
   resource_samples: number
   interval_summaries: number
   peak_tps: number
+  peak_target_tps?: number
+  max_throughput_gap_pct?: number
+  throughput_missed_intervals?: number
   peak_active_vusers: number
   browser?: BrowserLiveMetrics
+  telemetry?: RunArchiveTelemetrySummary
+}
+
+export interface RunArchiveTelemetrySummary {
+  status: 'healthy' | 'degraded' | 'breached'
+  samples: number
+  healthy_intervals?: number
+  degraded_intervals?: number
+  breached_intervals?: number
+  sustained_breach_intervals?: number
+  dropped_results?: number
+  websocket_dropped_messages?: number
+  websocket_dropped_events?: number
+  max_sample_age_ms?: number
+  max_generator_processing_lag_ms?: number
+  max_transport_lag_ms?: number
+  max_controller_fanout_lag_ms?: number
+  max_browser_render_lag_ms?: number
+  first_breach_at?: string
+  last_breach_at?: string
+  condition_counts?: Record<string, number>
 }
 
 export interface RunArchiveSOAPFaultTimelineBucket {

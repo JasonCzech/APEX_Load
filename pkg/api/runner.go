@@ -4044,6 +4044,14 @@ func cloneTelemetryRunHealth(in *TelemetryRunHealth) *TelemetryRunHealth {
 	return &out
 }
 
+func cloneTelemetryHealth(in *TelemetryHealth) *TelemetryHealth {
+	if in == nil {
+		return nil
+	}
+	out := *in
+	return &out
+}
+
 func buildThresholdAlerts(test *ManagedTest, live *LiveMetrics, thresholds ThresholdSettings) []map[string]any {
 	alerts := make([]map[string]any, 0, 5)
 	if thresholds.MaxP99LatencyMs != nil && live.P99Ms > *thresholds.MaxP99LatencyMs {

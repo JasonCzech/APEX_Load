@@ -121,6 +121,12 @@ The eleventh implementation slice now connects telemetry health transitions to a
 - Slack, Teams, and Dynatrace notification payloads now carry telemetry severity, summary, and condition metadata so freshness, dropped-sample, websocket, and generator-lag alerts remain actionable.
 - Live websocket consumers also receive `telemetry_health_changed` events when the run-level monitoring state transitions.
 
+The twelfth implementation slice now keeps telemetry confidence evidence in run archives:
+
+- Interval summaries persist telemetry lag counters and run-level telemetry health status alongside the performance timeline.
+- Archive reports aggregate telemetry status, healthy/degraded/breached interval counts, sustained breach counts, dropped samples, websocket drops, maximum lag by stage, breach timestamps, and condition counts.
+- HTML reports include a Telemetry Health overview metric so archived results can explain whether monitoring stayed trustworthy during the run.
+
 ## Recommended Next Steps
 1. Expand correlation and dependency metadata coverage to the remaining protocols so distributed telemetry diagnostics stay consistent outside HTTP and JMS.
-2. Add live telemetry SLA summaries to run archives so post-run reports can prove when monitoring stayed healthy or explain when confidence was reduced.
+2. Expand live operator monitoring with dependency maps and error-pattern cards now that telemetry health is measurable, alertable, and retained.

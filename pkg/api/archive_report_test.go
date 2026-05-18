@@ -208,6 +208,99 @@ func TestBuildRunArchiveReportIncludesThroughputGapEvidence(t *testing.T) {
 	}
 }
 
+func TestBuildRunArchiveReportIncludesTelemetryHealthEvidence(t *testing.T) {
+	tempDir := t.TempDir()
+	manifest := RunArchiveManifest{
+		TestID:                "test-telemetry-health",
+		TestName:              "Telemetry Evidence",
+		TransactionsFile:      "transactions.jsonl",
+		ResourceSamplesFile:   "resources.jsonl",
+		IntervalSummariesFile: "interval_summaries.jsonl",
+	}
+	manifestBytes, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatalf("marshal manifest: %v", err)
+	}
+	manifestPath := filepath.Join(tempDir, "manifest.json")
+	if err := os.WriteFile(manifestPath, manifestBytes, 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+	for _, name := range []string{manifest.TransactionsFile, manifest.ResourceSamplesFile} {
+		if err := os.WriteFile(filepath.Join(tempDir, name), nil, 0o644); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+	summaryFile, err := os.Create(filepath.Join(tempDir, manifest.IntervalSummariesFile))
+	if err != nil {
+		t.Fatalf("create summaries: %v", err)
+	}
+	encoder := json.NewEncoder(summaryFile)
+	start := time.Date(2026, time.May, 18, 16, 0, 0, 0, time.UTC)
+	for _, summary := range []IntervalSummaryRecord{
+		{
+			Timestamp: start,
+			TestID:    manifest.TestID,
+			TestName:  manifest.TestName,
+			Telemetry: &TelemetryHealth{
+				SampleAgeMs:              900,
+				GeneratorProcessingLagMs: 120,
+			},
+			TelemetryStatus: &TelemetryRunHealth{Status: "healthy", Severity: "healthy"},
+		},
+		{
+			Timestamp: start.Add(time.Second),
+			TestID:    manifest.TestID,
+			TestName:  manifest.TestName,
+			Telemetry: &TelemetryHealth{
+				DroppedResults:           2,
+				WebsocketDroppedMessages: 3,
+				SampleAgeMs:              2500,
+				GeneratorProcessingLagMs: 750,
+				TransportLagMs:           450,
+				ControllerFanoutLagMs:    350,
+				BrowserRenderLagMs:       225,
+			},
+			TelemetryStatus: &TelemetryRunHealth{
+				Status:          "breached",
+				Severity:        "danger",
+				SustainedBreach: true,
+				Conditions:      []string{"collector_drops", "stale_sample"},
+			},
+		},
+	} {
+		if err := encoder.Encode(summary); err != nil {
+			t.Fatalf("encode summary: %v", err)
+		}
+	}
+	if err := summaryFile.Close(); err != nil {
+		t.Fatalf("close summaries: %v", err)
+	}
+
+	report, err := buildRunArchiveReport(&storage.RunArchiveRecord{ArchivePath: tempDir, ManifestPath: manifestPath})
+	if err != nil {
+		t.Fatalf("buildRunArchiveReport returned error: %v", err)
+	}
+	telemetry := report.Overview.Telemetry
+	if telemetry == nil {
+		t.Fatal("expected telemetry overview")
+	}
+	if telemetry.Status != "breached" || telemetry.Samples != 2 || telemetry.BreachedIntervals != 1 || telemetry.HealthyIntervals != 1 {
+		t.Fatalf("telemetry overview = %#v, want breached summary", telemetry)
+	}
+	if telemetry.DroppedResults != 2 || telemetry.WebsocketDroppedMessages != 3 {
+		t.Fatalf("telemetry drops = %#v, want collector/websocket drops", telemetry)
+	}
+	if telemetry.MaxSampleAgeMs != 2500 || telemetry.MaxGeneratorProcessingLagMs != 750 || telemetry.MaxBrowserRenderLagMs != 225 {
+		t.Fatalf("telemetry lag maxima = %#v", telemetry)
+	}
+	if telemetry.ConditionCounts["collector_drops"] != 1 || telemetry.ConditionCounts["stale_sample"] != 1 {
+		t.Fatalf("condition counts = %#v", telemetry.ConditionCounts)
+	}
+	if telemetry.FirstBreachAt == nil || !telemetry.FirstBreachAt.Equal(start.Add(time.Second)) {
+		t.Fatalf("first breach at = %#v, want second summary timestamp", telemetry.FirstBreachAt)
+	}
+}
+
 func TestRunArchiveWriterPersistsThroughputGapSummary(t *testing.T) {
 	t.Setenv("STORMRUNNER_ARCHIVE_DIR", t.TempDir())
 	writer, err := newRunArchiveWriter(&ManagedTest{ID: "test-throughput-persist", Name: "Open Persist"}, RunArchiveProvenance{})
@@ -222,6 +315,15 @@ func TestRunArchiveWriterPersistsThroughputGapSummary(t *testing.T) {
 		ThroughputGapPct:       20,
 		ThroughputTargetMissed: true,
 		TotalTx:                40,
+		Telemetry: &TelemetryHealth{
+			SampleAgeMs:              2100,
+			GeneratorProcessingLagMs: 650,
+		},
+		TelemetryStatus: &TelemetryRunHealth{
+			Status:     "degraded",
+			Severity:   "warning",
+			Conditions: []string{"stale_sample", "generator_lag"},
+		},
 	}); err != nil {
 		t.Fatalf("RecordIntervalSummary returned error: %v", err)
 	}
@@ -239,5 +341,11 @@ func TestRunArchiveWriterPersistsThroughputGapSummary(t *testing.T) {
 	}
 	if summaries[0].TargetTPS != 50 || summaries[0].ThroughputGapPct != 20 || !summaries[0].ThroughputTargetMissed {
 		t.Fatalf("summary = %#v, want throughput gap evidence persisted", summaries[0])
+	}
+	if summaries[0].Telemetry == nil || summaries[0].Telemetry.SampleAgeMs != 2100 || summaries[0].Telemetry.GeneratorProcessingLagMs != 650 {
+		t.Fatalf("summary telemetry = %#v, want telemetry lag evidence persisted", summaries[0].Telemetry)
+	}
+	if summaries[0].TelemetryStatus == nil || summaries[0].TelemetryStatus.Status != "degraded" || len(summaries[0].TelemetryStatus.Conditions) != 2 {
+		t.Fatalf("summary telemetry status = %#v, want degraded telemetry health persisted", summaries[0].TelemetryStatus)
 	}
 }

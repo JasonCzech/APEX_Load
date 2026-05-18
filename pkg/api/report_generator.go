@@ -299,6 +299,13 @@ var runArchiveReportTemplate = template.Must(template.New("run-archive-report").
           <span class="metric-value">{{formatPercent .Report.Overview.MaxThroughputGapPct}}</span>
           <p class="muted">{{.Report.Overview.ThroughputMissedIntervals}} missed interval(s), target {{formatFloat .Report.Overview.PeakTargetTPS}} TPS</p>
         </div>
+        {{with .Report.Overview.Telemetry}}
+        <div class="metric">
+          <span class="metric-label">Telemetry Health</span>
+          <span class="metric-value">{{.Status}}</span>
+          <p class="muted">{{.BreachedIntervals}} breached, {{.DegradedIntervals}} degraded interval(s); max age {{formatFloat .MaxSampleAgeMs}} ms</p>
+        </div>
+        {{end}}
         <div class="metric">
           <span class="metric-label">Peak Active VUsers</span>
           <span class="metric-value">{{.Report.Overview.PeakActiveVUsers}}</span>
