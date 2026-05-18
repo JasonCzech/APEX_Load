@@ -266,6 +266,7 @@ export interface TestSummary {
   started_at?: string
   ended_at?: string
   live_metrics?: LiveMetrics
+  telemetry_health?: TelemetryRunHealth
   error?: string
   history?: LiveMetrics[]
   comparison_baseline?: RunComparisonBaseline
@@ -663,6 +664,7 @@ export interface LiveMetrics {
   browser?: BrowserLiveMetrics
   browser_by_device?: Record<string, BrowserDeviceLiveMetrics>
   goal_status?: GoalStatus
+  telemetry_status?: TelemetryRunHealth
   telemetry?: TelemetryHealth
   resources?: SystemResources
   latency?: NetworkLatency
@@ -706,6 +708,20 @@ export interface TelemetryHealth {
   delivery_lag_ms?: number
   end_to_end_age_ms?: number
   sample_age_ms?: number
+}
+
+export interface TelemetryRunHealth {
+  status: 'healthy' | 'degraded' | 'breached'
+  severity: 'healthy' | 'warning' | 'danger'
+  summary?: string
+  current_signature?: string
+  conditions?: string[]
+  breach_active?: boolean
+  sustained_breach?: boolean
+  breach_duration_sec?: number
+  breach_started_at?: string
+  last_observed_at: string
+  last_transition_at?: string
 }
 
 export interface TelemetryDiagnostic {

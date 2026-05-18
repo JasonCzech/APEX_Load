@@ -138,6 +138,7 @@ type ManagedTest struct {
 	History            []*LiveMetrics               `json:"history,omitempty"`
 	ComparisonBaseline *RunComparisonBaseline       `json:"comparison_baseline,omitempty"`
 	Archive            *storage.RunArchiveRecord    `json:"archive,omitempty"`
+	TelemetryHealth    *TelemetryRunHealth          `json:"telemetry_health,omitempty"`
 	Error              string                       `json:"error,omitempty"`
 
 	// deprecated single-script fields kept for backwards compat in JSON
@@ -199,6 +200,7 @@ type LiveMetrics struct {
 	Browser                *BrowserLiveMetrics                  `json:"browser,omitempty"`
 	BrowserByDevice        map[string]*BrowserDeviceLiveMetrics `json:"browser_by_device,omitempty"`
 	GoalStatus             *GoalStatus                          `json:"goal_status,omitempty"`
+	TelemetryStatus        *TelemetryRunHealth                  `json:"telemetry_status,omitempty"`
 	Telemetry              *TelemetryHealth                     `json:"telemetry,omitempty"`
 	Resources              *engine.SystemResources              `json:"resources,omitempty"`
 	Latency                *NetworkLatency                      `json:"latency,omitempty"`
@@ -271,6 +273,20 @@ type TelemetryHealth struct {
 	ControllerFanoutLagMs    float64   `json:"controller_fanout_lag_ms,omitempty"`
 	BrowserRenderLagMs       float64   `json:"browser_render_lag_ms,omitempty"`
 	SampleAgeMs              float64   `json:"sample_age_ms,omitempty"`
+}
+
+type TelemetryRunHealth struct {
+	Status            string     `json:"status"`
+	Severity          string     `json:"severity"`
+	Summary           string     `json:"summary,omitempty"`
+	CurrentSignature  string     `json:"current_signature,omitempty"`
+	Conditions        []string   `json:"conditions,omitempty"`
+	BreachActive      bool       `json:"breach_active,omitempty"`
+	SustainedBreach   bool       `json:"sustained_breach,omitempty"`
+	BreachDurationSec int        `json:"breach_duration_sec,omitempty"`
+	BreachStartedAt   *time.Time `json:"breach_started_at,omitempty"`
+	LastObservedAt    time.Time  `json:"last_observed_at"`
+	LastTransitionAt  time.Time  `json:"last_transition_at,omitempty"`
 }
 
 type NetworkLatency struct {
@@ -353,6 +369,8 @@ type goalControllerState struct {
 type telemetryDiagnosticState struct {
 	LastSignature   string
 	LastPublishedAt time.Time
+	Health          *TelemetryRunHealth
+	BreachStartedAt *time.Time
 }
 
 type goalControllerUpdate struct {
@@ -458,6 +476,7 @@ const (
 	generatorAssignmentModeRegionWeighted = "region_weighted"
 	maxManagedTestHistory                 = 3600
 	telemetryDiagnosticSampleInterval     = 5 * time.Second
+	telemetrySustainedBreachWindow        = 15 * time.Second
 	maxTelemetryDiagnosticSamples         = 3
 	slowTransactionDiagnosticThresholdMs  = 1000.0
 	jmsBrokerPressureMinLagMs             = 200.0
@@ -3944,6 +3963,87 @@ func shouldPublishTelemetryDiagnostic(state *telemetryDiagnosticState, signature
 	return false
 }
 
+func updateTelemetryRunHealth(state *telemetryDiagnosticState, diagnostic *TelemetryDiagnostic, signature string, now time.Time) *TelemetryRunHealth {
+	if state == nil {
+		return nil
+	}
+	if diagnostic == nil {
+		diagnostic = &TelemetryDiagnostic{Severity: "healthy", Summary: "live telemetry healthy"}
+		signature = "healthy"
+	}
+	if signature == "" {
+		signature = "healthy"
+	}
+
+	status := "healthy"
+	sustained := false
+	breachActive := false
+	breachDurationSec := 0
+	if diagnostic.Severity != "" && diagnostic.Severity != "healthy" {
+		breachActive = true
+		if state.BreachStartedAt == nil {
+			startedAt := now
+			state.BreachStartedAt = &startedAt
+		}
+		breachDurationSec = int(now.Sub(*state.BreachStartedAt).Seconds())
+		if diagnostic.Severity == "danger" || now.Sub(*state.BreachStartedAt) >= telemetrySustainedBreachWindow {
+			status = "breached"
+			sustained = diagnostic.Severity != "danger"
+		} else {
+			status = "degraded"
+		}
+	} else {
+		state.BreachStartedAt = nil
+	}
+
+	lastTransitionAt := now
+	if state.Health != nil && state.Health.Status == status && !state.Health.LastTransitionAt.IsZero() {
+		lastTransitionAt = state.Health.LastTransitionAt
+	}
+	health := &TelemetryRunHealth{
+		Status:            status,
+		Severity:          normalizedTelemetrySeverity(diagnostic.Severity),
+		Summary:           diagnostic.Summary,
+		CurrentSignature:  signature,
+		Conditions:        append([]string(nil), diagnostic.Conditions...),
+		BreachActive:      breachActive,
+		SustainedBreach:   sustained,
+		BreachDurationSec: breachDurationSec,
+		LastObservedAt:    now,
+		LastTransitionAt:  lastTransitionAt,
+	}
+	if state.BreachStartedAt != nil {
+		startedAt := *state.BreachStartedAt
+		health.BreachStartedAt = &startedAt
+	}
+	state.Health = health
+	return cloneTelemetryRunHealth(health)
+}
+
+func normalizedTelemetrySeverity(severity string) string {
+	switch severity {
+	case "danger", "warning":
+		return severity
+	default:
+		return "healthy"
+	}
+}
+
+func cloneTelemetryRunHealth(in *TelemetryRunHealth) *TelemetryRunHealth {
+	if in == nil {
+		return nil
+	}
+	out := *in
+	if in.Conditions != nil {
+		out.Conditions = append([]string(nil), in.Conditions...)
+	}
+	if in.BreachStartedAt != nil {
+		startedAt := *in.BreachStartedAt
+		out.BreachStartedAt = &startedAt
+	}
+	return &out
+}
+
 func buildThresholdAlerts(test *ManagedTest, live *LiveMetrics, thresholds ThresholdSettings) []map[string]any {
 	alerts := make([]map[string]any, 0, 5)
 	if thresholds.MaxP99LatencyMs != nil && live.P99Ms > *thresholds.MaxP99LatencyMs {
@@ -4071,8 +4171,12 @@ func (tr *TestRunner) publishLiveMetrics(test *ManagedTest, live *LiveMetrics, a
 	artifacts.enrichLiveMetrics(test, live)
 	diagnostic, diagnosticSignature := buildTelemetryDiagnostic(test, live, tr.GetSystemSettings().Thresholds)
 	publishDiagnostic := false
+	var telemetryRunHealth *TelemetryRunHealth
 
 	tr.mu.Lock()
+	telemetryRunHealth = updateTelemetryRunHealth(&test.telemetryDiagnostic, diagnostic, diagnosticSignature, now)
+	live.TelemetryStatus = cloneTelemetryRunHealth(telemetryRunHealth)
+	test.TelemetryHealth = cloneTelemetryRunHealth(telemetryRunHealth)
 	test.LiveMetrics = live
 	test.History = append(test.History, live)
 	if len(test.History) > maxManagedTestHistory {

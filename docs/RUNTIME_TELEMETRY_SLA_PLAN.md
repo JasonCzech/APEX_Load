@@ -109,6 +109,12 @@ The ninth implementation slice now turns those measured stages into configurable
 - Existing persisted settings are normalized with defaults of 2000 ms end-to-end sample age and 500 ms per stage so upgraded controllers enforce the live monitoring budget without manual migration.
 - Live `telemetry_diagnostic` events now use the configured thresholds instead of a hard-coded sample-age check, and the Settings page exposes the budgets alongside the existing performance thresholds.
 
+The tenth implementation slice now adds run-level telemetry health transitions:
+
+- Active runs carry a `telemetry_health` summary and every live metrics payload carries `telemetry_status` so operators can separate application failures from Stormrunner monitoring health.
+- Telemetry warnings enter `degraded` first and transition to `breached` only when they remain active for the sustained breach window; data-loss conditions such as collector drops still breach immediately.
+- Recovery clears the breach timer and emits a healthy transition through the existing diagnostic sampling path.
+
 ## Recommended Next Steps
 1. Expand correlation and dependency metadata coverage to the remaining protocols so distributed telemetry diagnostics stay consistent outside HTTP and JMS.
-2. Add sustained-breach reporting and run-level telemetry health transitions so isolated lag spikes can be separated from persistent monitoring SLA failures.
+2. Add alert hooks for telemetry freshness, dropped samples, websocket backpressure, and generator stream degradation using the new run-level telemetry health state.

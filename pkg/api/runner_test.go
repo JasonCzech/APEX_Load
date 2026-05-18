@@ -1486,6 +1486,67 @@ func TestPublishLiveMetricsUsesConfiguredTelemetryBudgets(t *testing.T) {
 	if !strings.Contains(diagnosticPayload.Data.Summary, "sample age") || !strings.Contains(diagnosticPayload.Data.Summary, "browser render lag") {
 		t.Fatalf("unexpected diagnostic summary: %s", diagnosticPayload.Data.Summary)
 	}
+	if testRun.TelemetryHealth == nil || testRun.TelemetryHealth.Status != "degraded" || !testRun.TelemetryHealth.BreachActive {
+		t.Fatalf("expected degraded run telemetry health, got %#v", testRun.TelemetryHealth)
+	}
+	if testRun.LiveMetrics == nil || testRun.LiveMetrics.TelemetryStatus == nil || testRun.LiveMetrics.TelemetryStatus.Status != "degraded" {
+		t.Fatalf("expected live metrics telemetry status, got %#v", testRun.LiveMetrics)
+	}
+}
+
+func TestUpdateTelemetryRunHealthTracksSustainedBreachAndRecovery(t *testing.T) {
+	now := time.Date(2026, 5, 18, 10, 0, 0, 0, time.UTC)
+	state := telemetryDiagnosticState{}
+	warningDiagnostic := &TelemetryDiagnostic{
+		Severity:   "warning",
+		Summary:    "sample age 250 ms exceeds the 100 ms telemetry budget",
+		Conditions: []string{"stale_sample"},
+	}
+
+	first := updateTelemetryRunHealth(&state, warningDiagnostic, "stale_sample", now)
+	if first == nil || first.Status != "degraded" || first.SustainedBreach || first.BreachDurationSec != 0 {
+		t.Fatalf("first health = %#v, want degraded unsustained breach", first)
+	}
+	if first.BreachStartedAt == nil || !first.BreachStartedAt.Equal(now) {
+		t.Fatalf("breach started at = %#v, want %s", first.BreachStartedAt, now)
+	}
+
+	sustainedAt := now.Add(telemetrySustainedBreachWindow + time.Second)
+	sustained := updateTelemetryRunHealth(&state, warningDiagnostic, "stale_sample", sustainedAt)
+	if sustained == nil || sustained.Status != "breached" || !sustained.SustainedBreach {
+		t.Fatalf("sustained health = %#v, want sustained breach", sustained)
+	}
+	if sustained.BreachDurationSec != int((telemetrySustainedBreachWindow + time.Second).Seconds()) {
+		t.Fatalf("breach duration = %d, want sustained window plus one second", sustained.BreachDurationSec)
+	}
+	if !sustained.LastTransitionAt.Equal(sustainedAt) {
+		t.Fatalf("last transition at = %s, want %s", sustained.LastTransitionAt, sustainedAt)
+	}
+
+	recoveredAt := sustainedAt.Add(time.Second)
+	recovered := updateTelemetryRunHealth(&state, &TelemetryDiagnostic{Severity: "healthy", Summary: "live telemetry healthy"}, "healthy", recoveredAt)
+	if recovered == nil || recovered.Status != "healthy" || recovered.BreachActive || recovered.BreachStartedAt != nil {
+		t.Fatalf("recovered health = %#v, want healthy with cleared breach", recovered)
+	}
+	if !recovered.LastTransitionAt.Equal(recoveredAt) {
+		t.Fatalf("recovery transition at = %s, want %s", recovered.LastTransitionAt, recoveredAt)
+	}
+}
+
+func TestUpdateTelemetryRunHealthBreachesImmediatelyOnDanger(t *testing.T) {
+	now := time.Date(2026, 5, 18, 11, 0, 0, 0, time.UTC)
+	health := updateTelemetryRunHealth(&telemetryDiagnosticState{}, &TelemetryDiagnostic{
+		Severity:   "danger",
+		Summary:    "collector dropped 3 metric samples",
+		Conditions: []string{"collector_drops"},
+	}, "collector_drops", now)
+
+	if health == nil || health.Status != "breached" || health.SustainedBreach {
+		t.Fatalf("health = %#v, want immediate unsustained breach for danger", health)
+	}
+	if health.BreachStartedAt == nil || !health.BreachStartedAt.Equal(now) {
+		t.Fatalf("breach started at = %#v, want %s", health.BreachStartedAt, now)
+	}
 }
 
 func TestPublishLiveMetricsBroadcastsSampledTransactionDiagnostics(t *testing.T) {
