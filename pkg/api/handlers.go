@@ -104,6 +104,9 @@ func (s *Server) handleStartTest(w http.ResponseWriter, r *http.Request) {
 	if err := s.runner.StartTestWithOptions(id, req); err != nil {
 		var capacityErr *CapacityShortfallError
 		if errors.As(err, &capacityErr) {
+			if test, ok := s.runner.GetTest(id); ok {
+				s.recordAuditEvent(r, "capacity.placement.reject", "blocked", "test", id, test.ProjectID, capacityShortfallAuditDetails(capacityErr.Advisory, req.OverrideCapacityShortfall))
+			}
 			writeJSON(w, http.StatusConflict, map[string]any{
 				"error":              capacityErr.Error(),
 				"code":               "capacity_shortfall",
@@ -122,7 +125,9 @@ func (s *Server) handleStartTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if test.Status == "PENDING" {
-		s.recordAuditEvent(r, "test.start", "pending", "test", id, test.ProjectID, map[string]any{"status": test.Status})
+		details := map[string]any{"status": test.Status, "pending_reason": test.PendingReason, "queue_position": test.QueuePosition}
+		s.recordAuditEvent(r, "test.start", "pending", "test", id, test.ProjectID, details)
+		s.recordAuditEvent(r, "capacity.fair_share.defer", "blocked", "test", id, test.ProjectID, details)
 		writeJSON(w, http.StatusOK, map[string]any{
 			"status":  "pending",
 			"test_id": id,
@@ -132,6 +137,26 @@ func (s *Server) handleStartTest(w http.ResponseWriter, r *http.Request) {
 	}
 	s.recordAuditEvent(r, "test.start", "success", "test", id, test.ProjectID, map[string]any{"status": test.Status})
 	writeJSON(w, http.StatusOK, map[string]string{"status": "started", "test_id": id})
+}
+
+func capacityShortfallAuditDetails(advisory *CapacityAdvisory, overrideRequested bool) map[string]any {
+	details := map[string]any{
+		"reason":             "capacity_shortfall",
+		"override_requested": overrideRequested,
+	}
+	if advisory == nil {
+		return details
+	}
+	details["total_vusers"] = advisory.TotalVUsers
+	details["recommended_generators"] = advisory.RecommendedGenerators
+	details["available_generators"] = advisory.AvailableGenerators
+	details["shortfall_generators"] = advisory.ShortfallGenerators
+	details["requires_override"] = advisory.RequiresOverride
+	details["availability_source"] = advisory.AvailabilitySource
+	if len(advisory.Warnings) > 0 {
+		details["warnings"] = append([]string(nil), advisory.Warnings...)
+	}
+	return details
 }
 
 func (s *Server) handlePinComparisonBaseline(w http.ResponseWriter, r *http.Request) {

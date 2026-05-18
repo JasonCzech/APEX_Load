@@ -5094,9 +5094,32 @@ func (tr *TestRunner) promotePendingTests() {
 		}
 		tr.mu.Unlock()
 		tr.saveManagedTestRecord(pending)
+		tr.recordSystemTestAudit("test.pending.promote", "success", pending, map[string]any{
+			"status": pending.Status,
+			"reason": "fair_share_capacity_available",
+		})
 		tr.broadcastEvent("test_started", pending)
 		go tr.runTest(pending)
 	}
+}
+
+func (tr *TestRunner) recordSystemTestAudit(action string, status string, test *ManagedTest, details map[string]any) {
+	if tr == nil || tr.scenarioStore == nil || test == nil {
+		return
+	}
+	_ = tr.scenarioStore.SaveAuditEvent(&storage.AuditEvent{
+		ID:               uuid.New().String(),
+		Action:           action,
+		ActorType:        "system",
+		ActorSubject:     "test-runner",
+		ActorDisplayName: "Test Runner",
+		ProjectID:        normalizeProjectID(test.ProjectID),
+		ResourceType:     "test",
+		ResourceID:       test.ID,
+		Status:           status,
+		Details:          details,
+		CreatedAt:        time.Now().UTC(),
+	})
 }
 
 func (tr *TestRunner) nextPromotablePendingTestLocked() *ManagedTest {

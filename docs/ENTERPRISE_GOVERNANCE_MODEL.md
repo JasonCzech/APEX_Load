@@ -61,14 +61,14 @@ Known limits for the initial primitive:
 
 ## Audit Extensions
 
-Current audit coverage includes script, scenario, schedule, test lifecycle, service account, settings, release, comparison baseline, recorder, and browser replay actions. Remaining governance events should be added as the related policy engines land:
+Current audit coverage includes script, scenario, schedule, test lifecycle, service account, settings, release, comparison baseline, recorder, browser replay, usage snapshots, retention pruning, and capacity governance actions. Capacity governance audit events are emitted when a run is blocked by insufficient generator capacity, deferred by quota/fair-share policy, or promoted by the system after capacity becomes available.
 
 | Event family | Example actions |
 | --- | --- |
 | Usage policy | `usage.policy.create`, `usage.policy.update`, `usage.policy.delete` |
-| Quota and fair share | `capacity.quota.reject`, `capacity.fair_share.defer`, `capacity.reservation.consume` |
-| Schedule decisions | `scenario.schedule.materialize`, `scenario.schedule.skip`, `scenario.schedule.reject`, `scenario.schedule.approval_required` |
-| Run promotion | `test.result.promote`, `test.result.reject`, `test.baseline.update` |
+| Quota and fair share | `capacity.placement.reject`, `capacity.fair_share.defer`, `capacity.reservation.consume` |
+| Schedule decisions | `scenario.schedule.occurrence.materialized`, `scenario.schedule.occurrence.skipped`, `scenario.schedule.occurrence.blocked`, `scenario.schedule.approval_required` |
+| Run promotion | `test.pending.promote`, `test.result.promote`, `test.result.reject`, `test.baseline.update` |
 | Retention | `archive.retention.prune`, `archive.retention.hold`, `archive.retention.release` |
 
 Audit details should include the policy revision, evaluated project, actor, decision reason, and affected run or schedule ID.
@@ -85,4 +85,4 @@ Archive retention is exposed as an operator-controlled dry-run/apply workflow:
 | P1.6 Ownership semantics | Complete | Ownership model table |
 | P1.7 First-class teams decision | Complete | Teams decision section |
 | P1.8 Usage accounting primitives | Complete for first-pass live rollups, CSV export, manual snapshot capture/listing, terminal-run snapshot capture, configurable cadence snapshots, and audit events | `/api/v1/system/usage`, `/api/v1/system/usage/export`, `/api/v1/system/usage/snapshots`, `general.usage_snapshot_interval_seconds` |
-| P1.9 Governance audit extensions | Defined; implementation continues with policy engines | Audit extensions section |
+| P1.9 Governance audit extensions | Complete for current policy engines: settings, resource lifecycle, usage snapshots, retention pruning, schedule decisions, capacity rejection/defer, and pending-run promotion emit audit evidence | Audit extensions section |

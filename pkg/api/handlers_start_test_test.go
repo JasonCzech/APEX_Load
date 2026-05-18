@@ -12,7 +12,8 @@ import (
 )
 
 func TestHandleStartTestReturnsCapacityShortfallPayload(t *testing.T) {
-	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	store := &metricsStoreSpy{}
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
 	server.runner.StoreScript(&dsl.Script{
 		ID:       "script-api-capacity",
 		Name:     "API Capacity Script",
@@ -62,6 +63,19 @@ func TestHandleStartTestReturnsCapacityShortfallPayload(t *testing.T) {
 	}
 	if !payload.OverrideAvailable {
 		t.Fatal("expected override_available to be true")
+	}
+	events, err := store.ListAuditEvents(storage.AuditEventFilter{Action: "capacity.placement.reject", Limit: 10})
+	if err != nil {
+		t.Fatalf("ListAuditEvents returned error: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("audit event count = %d, want 1", len(events))
+	}
+	if events[0].Status != "blocked" || events[0].ResourceID != testRun.ID {
+		t.Fatalf("audit event = %#v, want blocked placement rejection for test", events[0])
+	}
+	if events[0].Details["recommended_generators"] == nil || events[0].Details["available_generators"] == nil || events[0].Details["reason"] != "capacity_shortfall" {
+		t.Fatalf("audit details = %#v, want capacity shortfall sizing evidence", events[0].Details)
 	}
 }
 
@@ -156,5 +170,18 @@ func TestHandleStartTestReturnsPendingWhenProjectQuotaReached(t *testing.T) {
 	}
 	if payload.TestID != second.ID {
 		t.Fatalf("test_id = %q, want %q", payload.TestID, second.ID)
+	}
+	events, err := store.ListAuditEvents(storage.AuditEventFilter{Action: "capacity.fair_share.defer", ProjectID: "project-1", Limit: 10})
+	if err != nil {
+		t.Fatalf("ListAuditEvents returned error: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("audit event count = %d, want 1", len(events))
+	}
+	if events[0].Status != "blocked" || events[0].ResourceID != second.ID {
+		t.Fatalf("audit event = %#v, want blocked fair-share deferral for second test", events[0])
+	}
+	if events[0].Details["pending_reason"] == "" {
+		t.Fatalf("audit details = %#v, want pending reason", events[0].Details)
 	}
 }

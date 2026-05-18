@@ -3615,6 +3615,45 @@ func TestNextPromotablePendingTestPrefersUnusedReservedProjectShare(t *testing.T
 	}
 }
 
+func TestPromotePendingTestsWritesSystemAuditEvent(t *testing.T) {
+	store := &metricsStoreSpy{}
+	hub := NewHub()
+	runner := NewTestRunner(10, hub, store)
+	runner.StoreScript(&dsl.Script{
+		ID:        "script-promotion-audit",
+		Name:      "Promotion Audit Script",
+		Protocol:  "http",
+		Version:   "1.0.0",
+		ProjectID: "project-promotion",
+		Actions:   []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+
+	testRun, err := runner.CreateTest(CreateTestRequest{Name: "Pending Promotion", Duration: "1ms", ScriptID: "script-promotion-audit", VUsers: 1})
+	if err != nil {
+		t.Fatalf("CreateTest returned error: %v", err)
+	}
+	runner.mu.Lock()
+	runner.tests[testRun.ID].Status = "PENDING"
+	runner.tests[testRun.ID].PendingReason = "ready to start when the queue advances"
+	runner.mu.Unlock()
+
+	runner.promotePendingTests()
+
+	events, err := store.ListAuditEvents(storage.AuditEventFilter{Action: "test.pending.promote", ProjectID: "project-promotion", Limit: 10})
+	if err != nil {
+		t.Fatalf("ListAuditEvents returned error: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("audit event count = %d, want 1", len(events))
+	}
+	if events[0].ActorType != "system" || events[0].ResourceID != testRun.ID || events[0].Status != "success" {
+		t.Fatalf("audit event = %#v, want system promotion success for pending test", events[0])
+	}
+	if events[0].Details["reason"] != "fair_share_capacity_available" {
+		t.Fatalf("audit details = %#v, want promotion reason", events[0].Details)
+	}
+}
+
 func TestNextPromotablePendingTestBalancesActiveProjectLoad(t *testing.T) {
 	hub := NewHub()
 	runner := NewTestRunner(10, hub, nil)
