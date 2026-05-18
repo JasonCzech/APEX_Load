@@ -74,6 +74,8 @@ All reconciler loops must be idempotent:
 
 Overall status is `ready`, `degraded`, or `not_ready`. `not_ready` returns HTTP 503 so Kubernetes readiness probes can hold traffic away from an unsafe controller.
 
+The dashboard Settings > General surface also renders this payload for operators, including the aggregate state, per-check state, messages, and detail fields. Use the panel before release windows or controller maintenance to confirm the backend readiness probe matches what platform users will see.
+
 ## Upgrade And Migration Policy
 
 Metadata migrations must be additive, idempotent, and safe to run at controller startup. SQLite remains suitable for local development and single-node evaluation. PostgreSQL is the production target for shared enterprise deployments because controller replicas and singleton leases need shared transactional coordination.
@@ -118,6 +120,6 @@ Before promoting an environment:
 | --- | --- | --- |
 | P1.1 Control-plane boundaries | Complete | This runbook |
 | P1.2 HA controller behavior | Complete for architecture contract; implementation remains in P7.5 | HA behavior and restart contract sections |
-| P1.3 Production readiness checks | Complete for initial API surface; extend as new dependencies land | `/api/v1/system/readiness` |
+| P1.3 Production readiness checks | Complete for initial API surface and dashboard operator visibility; extend as new dependencies land | `/api/v1/system/readiness`, Settings > General |
 | P1.4 Upgrade and migration policy | Complete | Upgrade and migration policy section |
 | P1.5 Operator architecture runbook | Complete | This runbook |

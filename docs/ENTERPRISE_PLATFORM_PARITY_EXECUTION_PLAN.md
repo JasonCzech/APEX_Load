@@ -71,7 +71,7 @@ Reference artifact: `docs/ENTERPRISE_PLATFORM_ARCHITECTURE_RUNBOOK.md`.
 | --- | --- | --- | --- | --- |
 | P1.1 | Document controller, generator, dashboard, storage, and telemetry boundaries as the production reference architecture | M | none | Complete |
 | P1.2 | Define HA controller behavior: singleton scheduler responsibilities, leader election, idempotent reconciler loops, and safe restart contracts | L | P1.1 | Complete for architecture contract; implementation continues in P7.5 |
-| P1.3 | Add production readiness checks for storage, generator RPC, archive writer, telemetry fan-out, auth mode, and scheduler state | M | P1.1 | Complete for initial API surface via `GET /api/v1/system/readiness`; extend as new dependencies land |
+| P1.3 | Add production readiness checks for storage, generator RPC, archive writer, telemetry fan-out, auth mode, and scheduler state | M | P1.1 | Complete for initial API surface via `GET /api/v1/system/readiness` and Settings dashboard visibility; extend as new dependencies land |
 | P1.4 | Define upgrade and migration policy for SQLite/PostgreSQL metadata, archive schema versions, and dashboard static assets | M | P1.1 | Complete |
 | P1.5 | Publish an operator architecture runbook with failure modes and recovery flows | M | P1.2, P1.3 | Complete |
 

@@ -1456,6 +1456,19 @@ export interface DashboardGeneralSettings {
   usage_snapshot_interval_seconds?: number
 }
 
+export interface SystemReadinessCheck {
+  name: string
+  status: 'ready' | 'degraded' | 'not_ready' | string
+  message: string
+  details?: Record<string, unknown>
+}
+
+export interface SystemReadinessResponse {
+  status: 'ready' | 'degraded' | 'not_ready' | string
+  generated_at: string
+  checks: SystemReadinessCheck[]
+}
+
 export interface UsageAccountingBucket {
   key?: string
   run_count: number

@@ -27,6 +27,7 @@ const apiMock = {
   getSystemSettings: vi.fn(),
   getHealth: vi.fn(),
   getSystemInventory: vi.fn(),
+  getSystemReadiness: vi.fn(),
   getUsageAccounting: vi.fn(),
   listUsageAccountingSnapshots: vi.fn(),
   captureUsageAccountingSnapshot: vi.fn(),
@@ -343,6 +344,46 @@ describe('SettingsPage', () => {
         },
       ],
     })
+    apiMock.getSystemReadiness.mockResolvedValue({
+      status: 'degraded',
+      generated_at: '2026-05-18T12:05:00Z',
+      checks: [
+        {
+          name: 'metadata_store',
+          status: 'ready',
+          message: 'metadata store is reachable',
+        },
+        {
+          name: 'archive_writer',
+          status: 'ready',
+          message: 'archive root is writable',
+          details: { archive_root: '/tmp/stormrunner-archives' },
+        },
+        {
+          name: 'generator_rpc',
+          status: 'degraded',
+          message: 'some generator RPC targets are not reachable',
+          details: { generators: 2, available: 1, unreachable: 1 },
+        },
+        {
+          name: 'telemetry_fanout',
+          status: 'ready',
+          message: 'telemetry fan-out is initialized',
+          details: { ws_clients: 1, metrics_interval_seconds: 1 },
+        },
+        {
+          name: 'auth_mode',
+          status: 'degraded',
+          message: 'development auth bypass is enabled',
+        },
+        {
+          name: 'scheduler_state',
+          status: 'ready',
+          message: 'scheduler state is initialized',
+          details: { schedules_enabled: 1, schedules_due: 0 },
+        },
+      ],
+    })
     apiMock.listDataPools.mockResolvedValue({ data_pools: [] })
     apiMock.getDataPool.mockResolvedValue({ rows: [] })
     apiMock.listTests.mockResolvedValue({ tests: [] })
@@ -579,6 +620,52 @@ describe('SettingsPage', () => {
 
     expect(apiMock.downloadUsageAccounting).toHaveBeenCalledWith('project-1')
     expect(downloadBlobMock).toHaveBeenCalledWith(expect.any(Blob), expect.stringMatching(/^stormrunner-usage-accounting-\d{4}-\d{2}-\d{2}\.csv$/))
+  })
+
+  it('surfaces production readiness checks and refreshes the backend payload', async () => {
+    await act(async () => {
+      root.render(<SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+
+    await flushPromises()
+
+    const generalSection = container.querySelector('#settings-section-general')
+    expect(generalSection).toBeTruthy()
+    if (!generalSection) return
+
+    expect(generalSection.textContent).toContain('Production Readiness')
+    expect(generalSection.textContent).toContain('Degraded')
+    expect(generalSection.textContent).toContain('Metadata Store')
+    expect(generalSection.textContent).toContain('metadata store is reachable')
+    expect(generalSection.textContent).toContain('Generator RPC')
+    expect(generalSection.textContent).toContain('some generator RPC targets are not reachable')
+    expect(generalSection.textContent).toContain('available: 1')
+    expect(generalSection.textContent).toContain('Blocked')
+    expect(apiMock.getSystemReadiness).toHaveBeenCalledTimes(1)
+
+    apiMock.getSystemReadiness.mockResolvedValueOnce({
+      status: 'ready',
+      generated_at: '2026-05-18T12:10:00Z',
+      checks: [
+        {
+          name: 'metadata_store',
+          status: 'ready',
+          message: 'metadata store is reachable',
+        },
+      ],
+    })
+
+    const refreshButton = Array.from(generalSection.querySelectorAll('button')).find(button => button.textContent?.includes('Refresh Readiness'))
+    expect(refreshButton).toBeDefined()
+    if (!refreshButton) return
+
+    await act(async () => {
+      refreshButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.getSystemReadiness).toHaveBeenCalledTimes(2)
+    expect(generalSection.textContent).toContain('Production readiness refreshed.')
   })
 
   it('edits telemetry SLA budgets in performance thresholds', async () => {

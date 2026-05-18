@@ -5,7 +5,7 @@ import { useProjectApi } from '../hooks/api/useProjectApi'
 import { useApplication } from '../hooks/useApplication'
 import { useProject } from '../hooks/useProject'
 import { useApi } from '../hooks/useApi'
-import { ArchiveRetentionPlanResponse, DashboardAuditEvent, DashboardAuthAccessResource, DashboardAuthDiagnostics, DashboardAuthDiagnosticsCheck, DashboardAuthEffectiveAccessResource, DashboardAuthRoleDefinition, DashboardAuthStatus, DashboardServiceAccount, DashboardSystemSettings, HealthResponse, Project, RedactionRule, SharedDataPool, SharedDataPoolRow, SystemInventoryResponse, UsageAccountingResponse, UsageAccountingSnapshot } from '../types'
+import { ArchiveRetentionPlanResponse, DashboardAuditEvent, DashboardAuthAccessResource, DashboardAuthDiagnostics, DashboardAuthDiagnosticsCheck, DashboardAuthEffectiveAccessResource, DashboardAuthRoleDefinition, DashboardAuthStatus, DashboardServiceAccount, DashboardSystemSettings, HealthResponse, Project, RedactionRule, SharedDataPool, SharedDataPoolRow, SystemInventoryResponse, SystemReadinessResponse, UsageAccountingResponse, UsageAccountingSnapshot } from '../types'
 import { getErrorMessage } from '../utils/errorUtils'
 import { downloadBlob } from '../utils/fileUtils'
 
@@ -230,6 +230,61 @@ function formatBytes(value?: number): string {
 function formatStatusCounts(counts?: Record<string, number>): string {
   const entries = Object.entries(counts || {}).sort(([left], [right]) => left.localeCompare(right))
   return entries.length ? entries.map(([status, count]) => `${status}=${count}`).join(', ') : 'none'
+}
+
+function formatReadinessStatus(status?: string): string {
+  switch (status) {
+    case 'ready':
+      return 'Ready'
+    case 'degraded':
+      return 'Degraded'
+    case 'not_ready':
+      return 'Not Ready'
+    default:
+      return status || 'Unknown'
+  }
+}
+
+function readinessTone(status?: string): string {
+  switch (status) {
+    case 'ready':
+      return 'healthy'
+    case 'degraded':
+      return 'warning'
+    case 'not_ready':
+      return 'danger'
+    default:
+      return ''
+  }
+}
+
+function formatReadinessCheckName(name: string): string {
+  const labels: Record<string, string> = {
+    metadata_store: 'Metadata Store',
+    archive_writer: 'Archive Writer',
+    generator_rpc: 'Generator RPC',
+    telemetry_fanout: 'Telemetry Fan-out',
+    auth_mode: 'Auth Mode',
+    scheduler_state: 'Scheduler State',
+  }
+  if (labels[name]) return labels[name]
+  return name
+    .split('_')
+    .filter(Boolean)
+    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
+}
+
+function formatReadinessDetails(details?: Record<string, unknown>): string {
+  const entries = Object.entries(details || {})
+    .filter(([, value]) => value !== undefined && value !== null && value !== '')
+    .sort(([left], [right]) => left.localeCompare(right))
+
+  if (entries.length === 0) return ''
+  return entries.map(([key, value]) => {
+    const formattedValue = Array.isArray(value) ? value.join(', ') : String(value)
+    return `${key}: ${formattedValue}`
+  }).join(' | ')
 }
 
 function formatAuthStatusSummary(authStatus?: DashboardAuthStatus): string {
@@ -794,6 +849,9 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
   const [usageSnapshots, setUsageSnapshots] = useState<UsageAccountingSnapshot[]>([])
   const [usageActionError, setUsageActionError] = useState('')
   const [usageActionMessage, setUsageActionMessage] = useState('')
+  const [systemReadiness, setSystemReadiness] = useState<SystemReadinessResponse | null>(null)
+  const [readinessActionError, setReadinessActionError] = useState('')
+  const [readinessActionMessage, setReadinessActionMessage] = useState('')
   const [dataPools, setDataPools] = useState<SharedDataPool[]>([])
   const [selectedDataPoolId, setSelectedDataPoolId] = useState('')
   const [dataPoolRows, setDataPoolRows] = useState<SharedDataPoolRow[]>([])
@@ -994,6 +1052,27 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
       cancelled = true
     }
   }, [activeProject?.id, api])
+
+  useEffect(() => {
+    let cancelled = false
+    const loadReadiness = async () => {
+      try {
+        const response = await api.getSystemReadiness()
+        if (!cancelled) {
+          setSystemReadiness(response)
+        }
+      } catch {
+        if (!cancelled) {
+          setSystemReadiness(null)
+        }
+      }
+    }
+
+    loadReadiness()
+    return () => {
+      cancelled = true
+    }
+  }, [api])
 
   useEffect(() => {
     let cancelled = false
@@ -1373,6 +1452,18 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
     } catch (error: unknown) {
       setUsageActionError(getErrorMessage(error, 'Unable to export usage accounting'))
       setUsageActionMessage('')
+    }
+  }
+
+  const refreshSystemReadiness = async () => {
+    try {
+      const response = await api.getSystemReadiness()
+      setSystemReadiness(response)
+      setReadinessActionMessage('Production readiness refreshed.')
+      setReadinessActionError('')
+    } catch (error: unknown) {
+      setReadinessActionError(getErrorMessage(error, 'Unable to refresh production readiness'))
+      setReadinessActionMessage('')
     }
   }
 
@@ -2145,6 +2236,44 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
                   </div>
                 ))}
                 {usageSnapshots.length === 0 && <p className="new-test-inline-note">No usage snapshots captured yet.</p>}
+              </div>
+            </div>
+            <div className="settings-subsection">
+              <div className="settings-manager-summary">
+                <div>
+                  <span className="setting-label">Production Readiness</span>
+                  <span className="setting-desc">Controller-owned readiness checks for storage, archive writes, generator RPC, telemetry, auth, and scheduler state.</span>
+                </div>
+                <strong>{formatReadinessStatus(systemReadiness?.status)}</strong>
+              </div>
+              <div className="new-test-summary-grid">
+                <div><span>Generated</span><strong>{systemReadiness ? formatDateTime(systemReadiness.generated_at) : '-'}</strong></div>
+                <div><span>Ready</span><strong>{systemReadiness ? systemReadiness.checks.filter(check => check.status === 'ready').length : '-'}</strong></div>
+                <div><span>Degraded</span><strong>{systemReadiness ? systemReadiness.checks.filter(check => check.status === 'degraded').length : '-'}</strong></div>
+                <div><span>Blocked</span><strong>{systemReadiness ? systemReadiness.checks.filter(check => check.status === 'not_ready').length : '-'}</strong></div>
+              </div>
+              <div className="settings-inline-actions">
+                <button className="btn btn-secondary" type="button" onClick={refreshSystemReadiness}>
+                  Refresh Readiness
+                </button>
+              </div>
+              {readinessActionMessage && <p className="settings-notice">{readinessActionMessage}</p>}
+              {readinessActionError && <p className="settings-error-inline">{readinessActionError}</p>}
+              <div className="settings-release-list">
+                {(systemReadiness?.checks || []).map(check => {
+                  const details = formatReadinessDetails(check.details)
+                  return (
+                    <div key={check.name} className="settings-release-row">
+                      <div className="settings-release-main">
+                        <span>{formatReadinessCheckName(check.name)}</span>
+                        <small>{check.message}</small>
+                        {details && <small>{details}</small>}
+                      </div>
+                      <span className={`script-health-token ${readinessTone(check.status)}`}>{formatReadinessStatus(check.status)}</span>
+                    </div>
+                  )
+                })}
+                {!systemReadiness && <p className="new-test-inline-note">Production readiness is unavailable.</p>}
               </div>
             </div>
             <div className="setting-row">
