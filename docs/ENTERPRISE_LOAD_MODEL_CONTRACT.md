@@ -10,7 +10,7 @@ This document tracks Workstream P4's shared workload-shape contract.
 - `status_counts`: count of entries by status
 - `notes`: status semantics for operator and dashboard display
 
-`GET /api/v1/scenarios/load-models/templates` returns reusable scenario-shape starters:
+`GET /api/v1/scenarios/load-models/templates` returns reusable scenario-shape starters. The dashboard scenario authoring flow consumes this catalog so operators can apply LoadRunner-style workload starters before saving:
 
 - `templates`: scenario drafts with stable IDs, `shape_id`, default duration, group timing, VUser counts, and optional `goal_config`
 - `count`: number of returned templates
@@ -19,7 +19,7 @@ Query parameters:
 
 - `shape_id`: optional exact filter matching a support-matrix ID, such as `closed-vuser`, `open-arrival-rate`, or `mixed-protocol`
 
-`POST /api/v1/scenarios/validate-load-model` accepts the same draft payload as scenario create and returns a pre-save validation report:
+`POST /api/v1/scenarios/validate-load-model` accepts the same draft payload as scenario create and returns a pre-save validation report. The dashboard exposes this report in the scenario form before save:
 
 - `status`: `ready`, `needs_review`, or `blocked`
 - `items`: findings across `modeled_demand`, `rendezvous`, `capacity`, `browser_canary`, `data_pool_rows`, `data_source_fit`, and `generator_placement`
@@ -92,9 +92,9 @@ The first template catalog covers:
 | Plan item | Status | Artifact |
 | --- | --- | --- |
 | P4.1 Load-model support matrix | Complete for backend matrix | `GET /api/v1/scenarios/load-models/support-matrix` |
-| P4.2 Workload-shape templates | Complete for backend templates | `GET /api/v1/scenarios/load-models/templates` |
+| P4.2 Workload-shape templates | Complete for backend and scenario-authoring UI | `GET /api/v1/scenarios/load-models/templates`; dashboard scenario form template picker |
 | P4.3 Staged ramp segments | Partial backend complete | Group `stages` round-trip through API/storage and derive compatibility ramp execution |
-| P4.4 Capacity validation | Partial backend complete | Draft validation checks modeled demand, capacity, browser canaries, data-pool rows, data-source fit, and generator placement |
+| P4.4 Capacity validation | Partial backend and UI complete | Draft validation checks modeled demand, capacity, browser canaries, data-pool rows, data-source fit, and generator placement; dashboard scenario form renders pre-save findings |
 | P4.5 Rendezvous points | Complete | Runtime `rendezvous` actions synchronize VUsers and validation reports spike readiness |
 | P4.6 Global goals | Partial backend complete | Runtime enforces group-level `global_iterations` and `max_transactions` across VUsers |
 | P4.7 Once-only scopes | Partial backend complete | Multi-group runtime honors `initialization: at_once` for group-level init/teardown |

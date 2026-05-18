@@ -1,5 +1,5 @@
 import { Fragment, memo, useCallback, useEffect, useMemo, useState } from 'react'
-import { DraftCapacityEstimate, ScenarioDataPoolBinding, SharedDataPool, StoredScenario, StoredScript, TestSummary } from '../types'
+import { DraftCapacityEstimate, GoalConfig, LoadModelTemplate, LoadModelValidationReport, ScenarioDataPoolBinding, ScenarioMode, SharedDataPool, StoredScenario, StoredScript, TestSummary } from '../types'
 import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
 import { getErrorMessage } from '../utils/errorUtils'
@@ -17,6 +17,14 @@ interface ScenarioFormState {
   duration: string
   script_id: string
   vusers: number
+  ramp_up: string
+  ramp_down: string
+  scenario_mode: ScenarioMode
+  goal_target_average_tps?: number
+  goal_min_vusers?: number
+  goal_max_vusers?: number
+  goal_p95_latency_ms?: number
+  goal_max_error_pct?: number
   browser_device_profile?: string
   browser_orientation?: string
   browser_touch_mode?: '' | 'true' | 'false'
@@ -35,6 +43,9 @@ function emptyScenarioForm(scriptId = ''): ScenarioFormState {
     duration: '1m',
     script_id: scriptId,
     vusers: 10,
+    ramp_up: '',
+    ramp_down: '',
+    scenario_mode: 'vuser_driven',
     browser_device_profile: '',
     browser_orientation: '',
     browser_touch_mode: '',
@@ -46,6 +57,26 @@ function emptyScenarioForm(scriptId = ''): ScenarioFormState {
     data_pool_access_mode: 'read_only',
     data_pool_selection_strategy: 'sequential',
   }
+}
+
+function goalConfigFromForm(form: ScenarioFormState): GoalConfig {
+  return {
+    ...(form.goal_target_average_tps ? { target_average_tps: Number(form.goal_target_average_tps) } : {}),
+    ...(form.goal_min_vusers ? { min_vusers: Number(form.goal_min_vusers) } : {}),
+    ...(form.goal_max_vusers ? { max_vusers: Number(form.goal_max_vusers) } : {}),
+    ...(form.goal_p95_latency_ms ? { p95_latency_ms: Number(form.goal_p95_latency_ms) } : {}),
+    ...(form.goal_max_error_pct ? { max_error_pct: Number(form.goal_max_error_pct) } : {}),
+  }
+}
+
+function getLoadModelStatusClass(status?: string) {
+  if (status === 'ready') return 'ready'
+  if (status === 'blocked') return 'blocked'
+  return 'needs-review'
+}
+
+function formatLoadModelDimension(value: string) {
+  return value.replace(/_/g, ' ').replace(/\b\w/g, char => char.toUpperCase())
 }
 
 function browserRuntimeFromForm(form: ScenarioFormState) {
@@ -133,6 +164,11 @@ function TestHub({ onSelectTest }: Props) {
   const [scenarios, setScenarios] = useState<StoredScenario[]>([])
   const [scripts, setScripts] = useState<StoredScript[]>([])
   const [dataPools, setDataPools] = useState<SharedDataPool[]>([])
+  const [loadModelTemplates, setLoadModelTemplates] = useState<LoadModelTemplate[]>([])
+  const [selectedLoadModelTemplateId, setSelectedLoadModelTemplateId] = useState('')
+  const [loadModelValidation, setLoadModelValidation] = useState<LoadModelValidationReport | null>(null)
+  const [loadModelValidationLoading, setLoadModelValidationLoading] = useState(false)
+  const [loadModelValidationError, setLoadModelValidationError] = useState('')
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState<ScenarioFormState>(emptyScenarioForm())
@@ -150,14 +186,61 @@ function TestHub({ onSelectTest }: Props) {
   const selectedScript = scripts.find(script => script.id === form.script_id)
   const showBrowserRuntimeSettings = selectedScript?.protocol === 'browser'
 
+  const buildScenarioDraftPayload = useCallback((draftForm: ScenarioFormState = form) => {
+    const dataPoolsPayload = draftForm.data_pool_id ? [{
+      pool_id: draftForm.data_pool_id,
+      alias: (draftForm.data_pool_alias || dataPools.find(pool => pool.id === draftForm.data_pool_id)?.name || 'data').trim().toLowerCase().replace(/\s+/g, '_'),
+      access_mode: draftForm.data_pool_access_mode || 'read_only',
+      selection_strategy: draftForm.data_pool_selection_strategy || 'sequential',
+    }] : []
+
+    return buildScenarioUpsertPayload({
+      name: draftForm.name || 'Draft scenario',
+      duration: draftForm.duration || '1m',
+      startDelay: '',
+      scenarioMode: draftForm.scenario_mode,
+      scriptShakeout: false,
+      resourceBaseline: false,
+      assignment: draftForm.assignment_mode === 'specific_hosts'
+        ? { mode: 'specific_hosts', selected_targets: draftForm.assignment_targets }
+        : { mode: 'auto', selected_targets: [] },
+      groups: [{
+        name: '',
+        scriptId: draftForm.script_id,
+        vusers: Number(draftForm.vusers) || 10,
+        rampUp: draftForm.ramp_up,
+        rampDown: draftForm.ramp_down,
+        initialization: 'at_runtime',
+      }],
+      goalConfig: goalConfigFromForm(draftForm),
+      runtimeSettings: {
+        iterations: undefined,
+        pacing: undefined,
+        think_time: undefined,
+        browser: showBrowserRuntimeSettings ? browserRuntimeFromForm(draftForm) : undefined,
+        log_level: '',
+        auto_transactions: '',
+        continue_on_error: false,
+        snapshot_on_error: false,
+      },
+      dataPools: dataPoolsPayload,
+    })
+  }, [dataPools, form, showBrowserRuntimeSettings])
+
   const refresh = useCallback(async () => {
     try {
-      const [scenarioRes, scriptRes, dataPoolRes] = await Promise.all([api.listScenarios(activeProject?.id), api.listScripts(activeProject?.id), api.listDataPools(activeProject?.id)])
+      const [scenarioRes, scriptRes, dataPoolRes, templateRes] = await Promise.all([
+        api.listScenarios(activeProject?.id),
+        api.listScripts(activeProject?.id),
+        api.listDataPools(activeProject?.id),
+        api.listLoadModelTemplates(),
+      ])
       const nextScenarios = scenarioRes.scenarios || []
       const nextScripts = scriptRes.scripts || []
       setScenarios(nextScenarios)
       setScripts(nextScripts)
       setDataPools(dataPoolRes.data_pools || [])
+      setLoadModelTemplates(templateRes.templates || [])
       setForm(prev => ({
         ...prev,
         script_id: nextScripts.some(script => script.id === prev.script_id) ? prev.script_id : nextScripts[0]?.id || '',
@@ -181,29 +264,24 @@ function TestHub({ onSelectTest }: Props) {
     setEstimateLoading(true)
     setEstimateError('')
 
-    const estimateAssignment = form.assignment_mode === 'specific_hosts' && form.assignment_targets.length === 0
-      ? { mode: 'auto' as const, selected_targets: [] }
-      : form.assignment_mode === 'specific_hosts'
-        ? { mode: 'specific_hosts' as const, selected_targets: form.assignment_targets }
-        : { mode: 'auto' as const, selected_targets: [] }
-
+    const draftPayload = buildScenarioDraftPayload()
     api.estimateTest(buildCreateTestPayload({
       name: form.name,
-      duration: form.duration || '1m',
+      duration: draftPayload.duration,
       startDelay: '',
-      scenarioMode: 'vuser_driven',
+      scenarioMode: draftPayload.scenario_mode,
       scriptShakeout: false,
       resourceBaseline: false,
-      assignment: estimateAssignment,
+      assignment: draftPayload.assignment,
       groups: [{
         name: '',
         scriptId: form.script_id,
         vusers: Number(form.vusers) || 10,
-        rampUp: '',
-        rampDown: '',
+        rampUp: form.ramp_up,
+        rampDown: form.ramp_down,
         initialization: 'at_runtime',
       }],
-      goalConfig: {},
+      goalConfig: goalConfigFromForm(form),
       runtimeSettings: {
         iterations: undefined,
         pacing: undefined,
@@ -230,7 +308,7 @@ function TestHub({ onSelectTest }: Props) {
       })
 
     return () => { cancelled = true }
-  }, [api, form, showBrowserRuntimeSettings, showForm])
+  }, [api, buildScenarioDraftPayload, form, showBrowserRuntimeSettings, showForm])
 
   const sorted = useMemo(() => {
     return [...scenarios].sort((a, b) => {
@@ -291,6 +369,9 @@ function TestHub({ onSelectTest }: Props) {
   const openCreate = () => {
     setEditingId(null)
     setForm(emptyScenarioForm(scripts[0]?.id || ''))
+    setSelectedLoadModelTemplateId('')
+    setLoadModelValidation(null)
+    setLoadModelValidationError('')
     setShowForm(true)
   }
 
@@ -303,6 +384,14 @@ function TestHub({ onSelectTest }: Props) {
       duration: scenario.duration,
       script_id: first?.script_id || scripts[0]?.id || '',
       vusers: first?.vusers || 10,
+      ramp_up: first?.ramp_up || '',
+      ramp_down: first?.ramp_down || '',
+      scenario_mode: scenario.scenario_mode || 'vuser_driven',
+      goal_target_average_tps: scenario.goal_config?.target_average_tps,
+      goal_min_vusers: scenario.goal_config?.min_vusers,
+      goal_max_vusers: scenario.goal_config?.max_vusers,
+      goal_p95_latency_ms: scenario.goal_config?.p95_latency_ms,
+      goal_max_error_pct: scenario.goal_config?.max_error_pct,
       browser_device_profile: scenario.runtime_settings?.browser?.device_profile || '',
       browser_orientation: scenario.runtime_settings?.browser?.orientation || '',
       browser_touch_mode: booleanSelectValue(scenario.runtime_settings?.browser?.touch_mode),
@@ -314,7 +403,50 @@ function TestHub({ onSelectTest }: Props) {
       data_pool_access_mode: firstPool?.access_mode || 'read_only',
       data_pool_selection_strategy: firstPool?.selection_strategy || 'sequential',
     })
+    setSelectedLoadModelTemplateId('')
+    setLoadModelValidation(null)
+    setLoadModelValidationError('')
     setShowForm(true)
+  }
+
+  const applyLoadModelTemplate = (templateId: string) => {
+    setSelectedLoadModelTemplateId(templateId)
+    setLoadModelValidation(null)
+    setLoadModelValidationError('')
+    const template = loadModelTemplates.find(item => item.id === templateId)
+    if (!template) return
+    const firstGroup = template.scenario.groups[0]
+    setForm(prev => ({
+      ...prev,
+      duration: template.scenario.duration || prev.duration,
+      scenario_mode: template.scenario.scenario_mode || 'vuser_driven',
+      vusers: firstGroup?.vusers || prev.vusers,
+      ramp_up: firstGroup?.ramp_up || '',
+      ramp_down: firstGroup?.ramp_down || '',
+      goal_target_average_tps: template.scenario.goal_config?.target_average_tps,
+      goal_min_vusers: template.scenario.goal_config?.min_vusers,
+      goal_max_vusers: template.scenario.goal_config?.max_vusers,
+      goal_p95_latency_ms: template.scenario.goal_config?.p95_latency_ms,
+      goal_max_error_pct: template.scenario.goal_config?.max_error_pct,
+    }))
+  }
+
+  const validateLoadModel = async () => {
+    if (!form.script_id) {
+      setLoadModelValidationError('Select a script before validating the load model.')
+      return
+    }
+    setLoadModelValidationLoading(true)
+    setLoadModelValidationError('')
+    try {
+      const report = await api.validateScenarioLoadModel(buildScenarioDraftPayload())
+      setLoadModelValidation(report)
+    } catch (err: unknown) {
+      setLoadModelValidation(null)
+      setLoadModelValidationError(getErrorMessage(err, 'Unable to validate load model'))
+    } finally {
+      setLoadModelValidationLoading(false)
+    }
   }
 
   const saveScenario = async () => {
@@ -322,43 +454,7 @@ function TestHub({ onSelectTest }: Props) {
       setError('Scenario name and script are required.')
       return
     }
-    const dataPoolsPayload = form.data_pool_id ? [{
-      pool_id: form.data_pool_id,
-      alias: (form.data_pool_alias || dataPools.find(pool => pool.id === form.data_pool_id)?.name || 'data').trim().toLowerCase().replace(/\s+/g, '_'),
-      access_mode: form.data_pool_access_mode || 'read_only',
-      selection_strategy: form.data_pool_selection_strategy || 'sequential',
-    }] : []
-    const payload = buildScenarioUpsertPayload({
-      name: form.name,
-      duration: form.duration || '1m',
-      startDelay: '',
-      scenarioMode: 'vuser_driven',
-      scriptShakeout: false,
-      resourceBaseline: false,
-      assignment: form.assignment_mode === 'specific_hosts'
-        ? { mode: 'specific_hosts', selected_targets: form.assignment_targets }
-        : { mode: 'auto', selected_targets: [] },
-      groups: [{
-        name: '',
-        scriptId: form.script_id,
-        vusers: Number(form.vusers) || 10,
-        rampUp: '',
-        rampDown: '',
-        initialization: 'at_runtime',
-      }],
-      goalConfig: {},
-      runtimeSettings: {
-        iterations: undefined,
-        pacing: undefined,
-        think_time: undefined,
-        browser: showBrowserRuntimeSettings ? browserRuntimeFromForm(form) : undefined,
-        log_level: '',
-        auto_transactions: '',
-        continue_on_error: false,
-        snapshot_on_error: false,
-      },
-      dataPools: dataPoolsPayload,
-    })
+    const payload = buildScenarioDraftPayload()
     try {
       if (editingId) await api.updateScenario(editingId, payload)
       else await api.createScenario(payload)
@@ -413,6 +509,12 @@ function TestHub({ onSelectTest }: Props) {
               {scripts.map(script => <option key={script.id} value={script.id}>{script.name}</option>)}
             </select>
             <input className="settings-input" type="number" min={1} value={form.vusers} onChange={event => setForm({ ...form, vusers: Number(event.target.value) })} />
+            <input className="settings-input" value={form.ramp_up} onChange={event => setForm({ ...form, ramp_up: event.target.value })} placeholder="Ramp up, e.g. 2m" />
+            <input className="settings-input" value={form.ramp_down} onChange={event => setForm({ ...form, ramp_down: event.target.value })} placeholder="Ramp down, e.g. 1m" />
+            <select className="settings-input" value={form.scenario_mode} onChange={event => setForm({ ...form, scenario_mode: event.target.value as ScenarioMode })}>
+              <option value="vuser_driven">VUser driven</option>
+              <option value="goal_oriented">Goal oriented</option>
+            </select>
             <select className="settings-input" value={form.data_pool_id || ''} onChange={event => setForm({ ...form, data_pool_id: event.target.value })}>
               <option value="">No shared data pool</option>
               {dataPools.map(pool => <option key={pool.id} value={pool.id}>{pool.name}</option>)}
@@ -444,6 +546,89 @@ function TestHub({ onSelectTest }: Props) {
               <option value="random">Random rows</option>
               <option value="unique">Unique rows</option>
             </select>
+          </div>
+          {form.scenario_mode === 'goal_oriented' && (
+            <div className="scenario-browser-panel">
+              <div className="scenario-assignment-header">
+                <div>
+                  <h4>Goal Controller</h4>
+                  <p>Persist goal-oriented load settings with the scenario draft so validation and execution use the same target envelope.</p>
+                </div>
+              </div>
+              <div className="scenario-browser-grid">
+                <label>
+                  <span>Target average TPS</span>
+                  <input className="settings-input" type="number" min={0} value={form.goal_target_average_tps || ''} onChange={event => setForm({ ...form, goal_target_average_tps: Number(event.target.value) || undefined })} />
+                </label>
+                <label>
+                  <span>Min VUsers</span>
+                  <input className="settings-input" type="number" min={0} value={form.goal_min_vusers || ''} onChange={event => setForm({ ...form, goal_min_vusers: Number(event.target.value) || undefined })} />
+                </label>
+                <label>
+                  <span>Max VUsers</span>
+                  <input className="settings-input" type="number" min={0} value={form.goal_max_vusers || ''} onChange={event => setForm({ ...form, goal_max_vusers: Number(event.target.value) || undefined })} />
+                </label>
+                <label>
+                  <span>P95 latency ms</span>
+                  <input className="settings-input" type="number" min={0} value={form.goal_p95_latency_ms || ''} onChange={event => setForm({ ...form, goal_p95_latency_ms: Number(event.target.value) || undefined })} />
+                </label>
+                <label>
+                  <span>Max error %</span>
+                  <input className="settings-input" type="number" min={0} value={form.goal_max_error_pct || ''} onChange={event => setForm({ ...form, goal_max_error_pct: Number(event.target.value) || undefined })} />
+                </label>
+              </div>
+            </div>
+          )}
+          <div className="scenario-load-model-panel">
+            <div className="scenario-assignment-header">
+              <div>
+                <h4>Workload Shape Templates</h4>
+                <p>Apply a starter shape, then validate modeled demand, capacity, data fit, and generator placement before saving.</p>
+              </div>
+              <button type="button" className="btn btn-secondary" onClick={validateLoadModel} disabled={loadModelValidationLoading}>
+                {loadModelValidationLoading ? 'Validating...' : 'Validate Load Model'}
+              </button>
+            </div>
+            <div className="scenario-template-grid">
+              {loadModelTemplates.map(template => (
+                <button
+                  key={template.id}
+                  type="button"
+                  className={`scenario-template-card ${selectedLoadModelTemplateId === template.id ? 'selected' : ''}`}
+                  onClick={() => applyLoadModelTemplate(template.id)}
+                >
+                  <span>{template.name}</span>
+                  <strong>{template.shape_id}</strong>
+                  <small>{template.description}</small>
+                </button>
+              ))}
+              {loadModelTemplates.length === 0 && <p className="scenario-assignment-copy secondary">No workload templates are available from this controller.</p>}
+            </div>
+            {selectedLoadModelTemplateId && (
+              <p className="scenario-assignment-copy secondary">
+                Applied {loadModelTemplates.find(template => template.id === selectedLoadModelTemplateId)?.name}. Review script assignment and capacity validation before saving.
+              </p>
+            )}
+            {loadModelValidationError && <div className="settings-error-inline">{loadModelValidationError}</div>}
+            {loadModelValidation && (
+              <div className="scenario-load-validation">
+                <div className={`scenario-load-validation-summary ${getLoadModelStatusClass(loadModelValidation.status)}`}>
+                  <strong>{formatLoadModelDimension(loadModelValidation.status)}</strong>
+                  <span>{loadModelValidation.total_vusers} VUsers{loadModelValidation.peak_target_tps ? ` · ${loadModelValidation.peak_target_tps} TPS peak` : ''}</span>
+                </div>
+                <div className="scenario-load-validation-items">
+                  {loadModelValidation.items.map((item, index) => (
+                    <div key={`${item.dimension}-${item.group || 'all'}-${index}`} className="scenario-load-validation-item">
+                      <span className={`scenario-load-status ${getLoadModelStatusClass(item.status)}`}>{formatLoadModelDimension(item.status)}</span>
+                      <div>
+                        <strong>{formatLoadModelDimension(item.dimension)}{item.group ? ` · ${item.group}` : ''}</strong>
+                        <p>{item.summary}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
           {showBrowserRuntimeSettings && (
             <div className="scenario-browser-panel">

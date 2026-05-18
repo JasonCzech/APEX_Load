@@ -6,6 +6,8 @@ import {
   GeneratorAssignmentSettings,
   GoalConfig,
   IntervalSummaryRecord,
+  LoadModelTemplatesResponse,
+  LoadModelValidationReport,
   LiveMetrics,
   RunArchiveManifest,
   RunArchiveReport,
@@ -185,6 +187,17 @@ export function useTestApi() {
     [],
   )
 
+  const listLoadModelTemplates = useCallback(
+    (params?: { shape_id?: string }) =>
+      request<LoadModelTemplatesResponse>(`/scenarios/load-models/templates${buildQuery({ shape_id: params?.shape_id })}`),
+    [],
+  )
+
+  const validateScenarioLoadModel = useCallback(
+    (data: unknown) => request<LoadModelValidationReport>('/scenarios/validate-load-model', { method: 'POST', body: JSON.stringify(data) }),
+    [],
+  )
+
   const startTest = useCallback(
     (id: string, options?: StartTestOptions) =>
       request<TestActionResponse>(`/tests/${id}/start`, {
@@ -339,6 +352,8 @@ export function useTestApi() {
       getTest,
       createTest,
       estimateTest,
+      listLoadModelTemplates,
+      validateScenarioLoadModel,
       startTest,
       pinComparisonBaseline,
       unpinComparisonBaseline,
@@ -373,6 +388,8 @@ export function useTestApi() {
       getTest,
       createTest,
       estimateTest,
+      listLoadModelTemplates,
+      validateScenarioLoadModel,
       startTest,
       pinComparisonBaseline,
       unpinComparisonBaseline,

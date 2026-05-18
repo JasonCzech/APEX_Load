@@ -12,6 +12,8 @@ const apiMock = {
   listScenarios: vi.fn(),
   listScripts: vi.fn(),
   listDataPools: vi.fn(),
+  listLoadModelTemplates: vi.fn(),
+  validateScenarioLoadModel: vi.fn(),
   estimateTest: vi.fn(),
   createScenario: vi.fn(),
   updateScenario: vi.fn(),
@@ -44,6 +46,37 @@ describe('TestHub', () => {
       count: 1,
     })
     apiMock.listDataPools.mockResolvedValue({ data_pools: [], count: 0 })
+    apiMock.listLoadModelTemplates.mockResolvedValue({
+      templates: [{
+        id: 'open-api-arrival-rate',
+        name: 'Open API Arrival Rate',
+        shape_id: 'open-arrival-rate',
+        description: 'Throughput-oriented API load shape for queueing-sensitive services.',
+        scenario: {
+          scenario_mode: 'goal_oriented',
+          duration: '10m',
+          goal_config: {
+            target_average_tps: 25,
+            min_vusers: 5,
+            max_vusers: 50,
+            p95_latency_ms: 800,
+            max_error_pct: 1,
+          },
+          groups: [{ name: 'arrival-rate', vusers: 10, ramp_up: '2m' }],
+        },
+      }],
+      count: 1,
+    })
+    apiMock.validateScenarioLoadModel.mockResolvedValue({
+      status: 'needs_review',
+      status_counts: { ready: 2, needs_review: 1 },
+      total_vusers: 10,
+      peak_target_tps: 25,
+      items: [
+        { dimension: 'modeled_demand', status: 'ready', summary: 'Closed workload uses 10 VUsers.', target_vusers: 10 },
+        { dimension: 'generator_placement', status: 'needs_review', summary: 'Auto-assignment will use configured generators.' },
+      ],
+    })
     apiMock.estimateTest.mockResolvedValue({
       duration: '1m',
       groups: [],
@@ -88,6 +121,7 @@ describe('TestHub', () => {
     expect(apiMock.listScenarios).toHaveBeenCalledWith('project-1')
     expect(apiMock.listScripts).toHaveBeenCalledWith('project-1')
     expect(apiMock.listDataPools).toHaveBeenCalledWith('project-1')
+    expect(apiMock.listLoadModelTemplates).toHaveBeenCalled()
 
     const newScenarioButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('New Scenario'))
     expect(newScenarioButton).toBeDefined()
@@ -286,6 +320,71 @@ describe('TestHub', () => {
     expect(container.textContent).toContain('Mobile Checkout')
     expect(container.textContent).toContain('Browser')
     expect(container.textContent).toContain('iphone_se · Portrait · Touch enabled · Headed')
+  })
+
+  it('applies workload templates and renders load-model validation findings', async () => {
+    const onSelectTest = vi.fn()
+
+    await act(async () => {
+      root.render(<TestHub testStatuses={{}} onSelectTest={onSelectTest} />)
+    })
+
+    await flushPromises()
+
+    const newScenarioButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('New Scenario'))
+    expect(newScenarioButton).toBeDefined()
+    if (!newScenarioButton) return
+
+    await act(async () => {
+      newScenarioButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.textContent).toContain('Workload Shape Templates')
+    const templateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Open API Arrival Rate'))
+    expect(templateButton).toBeDefined()
+    if (!templateButton) return
+
+    await act(async () => {
+      templateButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const inputs = Array.from(container.querySelectorAll('input'))
+    const durationInput = inputs.find(input => input.placeholder === 'Duration, e.g. 5m')
+    const rampUpInput = inputs.find(input => input.placeholder === 'Ramp up, e.g. 2m')
+    const modeSelect = Array.from(container.querySelectorAll('select')).find(select => select.value === 'goal_oriented') as HTMLSelectElement | undefined
+
+    expect(durationInput?.value).toBe('10m')
+    expect(rampUpInput?.value).toBe('2m')
+    expect(modeSelect?.value).toBe('goal_oriented')
+    expect(container.textContent).toContain('Goal Controller')
+
+    const validateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Validate Load Model'))
+    expect(validateButton).toBeDefined()
+    if (!validateButton) return
+
+    await act(async () => {
+      validateButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushPromises()
+
+    expect(apiMock.validateScenarioLoadModel).toHaveBeenCalledWith(expect.objectContaining({
+      duration: '10m',
+      scenario_mode: 'goal_oriented',
+      goal_config: expect.objectContaining({
+        target_average_tps: 25,
+        min_vusers: 5,
+        max_vusers: 50,
+      }),
+      groups: [expect.objectContaining({
+        script_id: 'script-1',
+        vusers: 10,
+        ramp_up: '2m',
+      })],
+    }))
+    expect(container.textContent).toContain('Needs Review')
+    expect(container.textContent).toContain('Generator Placement')
+    expect(container.textContent).toContain('Auto-assignment will use configured generators.')
   })
 })
 

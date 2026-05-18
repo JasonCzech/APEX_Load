@@ -1726,6 +1726,55 @@ export interface CapacityAdvisory {
   warnings?: string[]
 }
 
+export interface LoadModelTemplateGroup {
+  name: string
+  vusers: number
+  ramp_up?: string
+  ramp_down?: string
+  iterations?: number
+  start_delay?: string
+}
+
+export interface LoadModelTemplate {
+  id: string
+  name: string
+  shape_id: string
+  description: string
+  scenario: {
+    scenario_mode?: ScenarioMode
+    duration: string
+    goal_config?: GoalConfig
+    groups: LoadModelTemplateGroup[]
+  }
+  notes?: string[]
+}
+
+export interface LoadModelTemplatesResponse {
+  templates: LoadModelTemplate[]
+  count: number
+}
+
+export interface LoadModelValidationItem {
+  dimension: string
+  group?: string
+  status: 'ready' | 'needs_review' | 'blocked' | string
+  summary: string
+  required_rows?: number
+  available_rows?: number
+  target_vusers?: number
+  target_tps?: number
+}
+
+export interface LoadModelValidationReport {
+  status: 'ready' | 'needs_review' | 'blocked' | string
+  status_counts: Record<string, number>
+  items: LoadModelValidationItem[]
+  total_vusers: number
+  peak_target_tps?: number
+  capacity_advisory?: CapacityAdvisory
+  assignment_recommendation?: AssignmentRecommendation
+}
+
 export interface DraftCapacityEstimate {
   scenario_mode?: ScenarioMode
   total_vusers: number
