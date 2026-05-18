@@ -110,6 +110,44 @@ func TestHandleScenarioScheduleCRUD(t *testing.T) {
 	}
 }
 
+func TestLoadModelSupportMatrixEndpoint(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/scenarios/load-models/support-matrix", nil)
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var payload struct {
+		SupportMatrix []LoadModelSupportEntry `json:"support_matrix"`
+		StatusCounts  map[string]int          `json:"status_counts"`
+		Notes         []string                `json:"notes"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if len(payload.SupportMatrix) < 8 {
+		t.Fatalf("support_matrix = %d, want core workload shapes", len(payload.SupportMatrix))
+	}
+	if payload.StatusCounts["executed"] == 0 || payload.StatusCounts["partial"] == 0 {
+		t.Fatalf("status_counts = %#v, want executed and partial coverage", payload.StatusCounts)
+	}
+	if !containsLoadModelSupportEntry(payload.SupportMatrix, "open-arrival-rate", "executed") {
+		t.Fatalf("support_matrix = %#v, want executed open arrival-rate entry", payload.SupportMatrix)
+	}
+}
+
+func containsLoadModelSupportEntry(entries []LoadModelSupportEntry, id string, status string) bool {
+	for _, entry := range entries {
+		if entry.ID == id && entry.Status == status {
+			return true
+		}
+	}
+	return false
+}
+
 func TestHandleScenarioCRUDWritesAuditEvents(t *testing.T) {
 	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
 	if err != nil {

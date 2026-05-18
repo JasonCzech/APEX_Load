@@ -173,12 +173,12 @@ Stormrunner supports the workload models enterprise performance engineers expect
 
 ### Epic P4.1: Workload Shape Library
 
-| ID | Story | Size | Dependencies |
-| --- | --- | --- | --- |
-| P4.1 | Publish a code-owned load-model support matrix for closed, open, stepped, spike, soak, stress, goal-based, and mixed workloads | M | none |
-| P4.2 | Add reusable workload-shape templates in scenario authoring | M | P4.1 |
-| P4.3 | Add staged ramp segments with hold, ramp-up, ramp-down, and target throughput or VUser constraints per segment | L | P4.1 |
-| P4.4 | Add capacity validation that checks modeled arrivals, VUsers, browser canaries, data-pool rows, and generator placement before save/run | L | P2.1, P4.1 |
+| ID | Story | Size | Dependencies | Status |
+| --- | --- | --- | --- | --- |
+| P4.1 | Publish a code-owned load-model support matrix for closed, open, stepped, spike, soak, stress, goal-based, and mixed workloads | M | none | Complete for backend matrix |
+| P4.2 | Add reusable workload-shape templates in scenario authoring | M | P4.1 | Planned |
+| P4.3 | Add staged ramp segments with hold, ramp-up, ramp-down, and target throughput or VUser constraints per segment | L | P4.1 | Planned |
+| P4.4 | Add capacity validation that checks modeled arrivals, VUsers, browser canaries, data-pool rows, and generator placement before save/run | L | P2.1, P4.1 | Planned |
 
 Acceptance criteria:
 - Scenario authors can pick common enterprise workload shapes without hand-building timing rules.
