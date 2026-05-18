@@ -1074,6 +1074,39 @@ export interface AuthoringSession {
   last_accessed_at: string
 }
 
+export interface AuthoringCorrelationPreviewRequest {
+  name: string
+  source?: string
+  type?: string
+  expression: string
+  sample_value?: string
+  found_action_index?: number
+  used_action_indexes?: number[]
+  replace_sample_value?: boolean
+  apply?: boolean
+}
+
+export interface AuthoringCorrelationDiff {
+  kind: string
+  path: string
+  before?: string
+  after?: string
+}
+
+export interface AuthoringCorrelationPreviewResponse {
+  session_id: string
+  applied: boolean
+  extractor: {
+    name: string
+    source: string
+    type: string
+    expression: string
+  }
+  draft?: ScriptDefinition
+  changes: AuthoringCorrelationDiff[]
+  authoring_health: AuthoringHealth
+}
+
 export interface AuthoringHealth {
   score: number
   status: 'healthy' | 'needs_review' | 'blocked' | string

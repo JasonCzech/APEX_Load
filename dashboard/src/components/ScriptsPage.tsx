@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { AuthoringSession, StoredScript } from '../types'
+import { AuthoringCorrelationPreviewRequest, AuthoringCorrelationPreviewResponse, AuthoringSession, StoredScript } from '../types'
 import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
 import AuthoringSessionsPanel from './AuthoringSessionsPanel'
@@ -33,6 +33,8 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
   const { activeProject } = useProject()
   const [scripts, setScripts] = useState<StoredScript[]>([])
   const [authoringSessions, setAuthoringSessions] = useState<AuthoringSession[]>([])
+  const [correlationPreviews, setCorrelationPreviews] = useState<Record<string, AuthoringCorrelationPreviewResponse>>({})
+  const [correlationErrors, setCorrelationErrors] = useState<Record<string, string>>({})
 
   const refresh = useCallback(async () => {
     try {
@@ -127,6 +129,27 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
     } catch { /* ignore */ }
   }, [api, refreshAuthoringSessions])
 
+  const handlePreviewAuthoringCorrelation = useCallback(async (session: AuthoringSession, payload: AuthoringCorrelationPreviewRequest) => {
+    try {
+      const res = await api.previewAuthoringCorrelation(session.id, { ...payload, apply: false })
+      setCorrelationPreviews(prev => ({ ...prev, [session.id]: res }))
+      setCorrelationErrors(prev => ({ ...prev, [session.id]: '' }))
+    } catch (error) {
+      setCorrelationErrors(prev => ({ ...prev, [session.id]: error instanceof Error ? error.message : 'Unable to preview repair.' }))
+    }
+  }, [api])
+
+  const handleApplyAuthoringCorrelation = useCallback(async (session: AuthoringSession, payload: AuthoringCorrelationPreviewRequest) => {
+    try {
+      const res = await api.previewAuthoringCorrelation(session.id, { ...payload, apply: true })
+      setCorrelationPreviews(prev => ({ ...prev, [session.id]: res }))
+      setCorrelationErrors(prev => ({ ...prev, [session.id]: '' }))
+      await refreshAuthoringSessions()
+    } catch (error) {
+      setCorrelationErrors(prev => ({ ...prev, [session.id]: error instanceof Error ? error.message : 'Unable to apply repair.' }))
+    }
+  }, [api, refreshAuthoringSessions])
+
   return (
     <ScriptsAuthoringShell
       authoringState={authoringState}
@@ -154,6 +177,10 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
             onResume={handleResumeAuthoringSession}
             onApprove={(session) => { void handleApproveAuthoringSession(session) }}
             onDiscard={(session) => { void handleDiscardAuthoringSession(session) }}
+            correlationPreviews={correlationPreviews}
+            correlationErrors={correlationErrors}
+            onPreviewCorrelation={(session, payload) => { void handlePreviewAuthoringCorrelation(session, payload) }}
+            onApplyCorrelation={(session, payload) => { void handleApplyAuthoringCorrelation(session, payload) }}
           />
           <h3 className="section-title">Script Library ({scripts.length})</h3>
           <ScriptsLibraryTable

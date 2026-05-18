@@ -556,6 +556,119 @@
   cursor: not-allowed;
 }
 
+.authoring-correlation-repair {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.authoring-correlation-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.authoring-correlation-heading strong {
+  font-size: 13px;
+}
+
+.authoring-correlation-heading span {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.authoring-correlation-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.authoring-correlation-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.authoring-correlation-grid input,
+.authoring-correlation-grid select {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-card);
+  color: var(--text-primary);
+  padding: 8px 10px;
+  font-size: 13px;
+  text-transform: none;
+}
+
+.authoring-correlation-toggle {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.authoring-correlation-preview {
+  border: 1px solid rgba(99, 102, 241, 0.25);
+  border-radius: 8px;
+  background: rgba(99, 102, 241, 0.08);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.authoring-correlation-preview > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.authoring-correlation-preview strong {
+  color: var(--text-primary);
+}
+
+.authoring-correlation-preview ul {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.authoring-correlation-preview li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.authoring-correlation-preview code {
+  color: var(--text-primary);
+  font-size: 11px;
+}
+
+.authoring-correlation-error {
+  color: #fca5a5;
+  font-size: 12px;
+}
+
+@media (max-width: 720px) {
+  .authoring-correlation-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* Data tables */
 .data-table {
   background: var(--bg-card);

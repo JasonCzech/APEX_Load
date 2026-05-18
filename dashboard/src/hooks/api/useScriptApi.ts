@@ -5,6 +5,8 @@ import {
   BrowserReplayStartResponse,
   BrowserReplaySessionResponse,
   AuthoringHealth,
+  AuthoringCorrelationPreviewRequest,
+  AuthoringCorrelationPreviewResponse,
   AuthoringSession,
   GeneratorAssignmentSettings,
   GoalConfig,
@@ -186,6 +188,12 @@ export function useScriptApi() {
 
   const deleteAuthoringSession = useCallback(
     (id: string) => request<{ deleted: string }>(`/scripts/authoring/sessions/${id}`, { method: 'DELETE' }),
+    [],
+  )
+
+  const previewAuthoringCorrelation = useCallback(
+    (id: string, payload: AuthoringCorrelationPreviewRequest) =>
+      request<AuthoringCorrelationPreviewResponse>(`/scripts/authoring/sessions/${id}/correlations/preview`, { method: 'POST', body: JSON.stringify(payload) }),
     [],
   )
 
@@ -490,6 +498,7 @@ export function useScriptApi() {
       listAuthoringSessions,
       approveAuthoringSession,
       deleteAuthoringSession,
+      previewAuthoringCorrelation,
       replayScript,
   		replayDraftScript,
       startBrowserReplaySession,
@@ -539,6 +548,7 @@ export function useScriptApi() {
       listAuthoringSessions,
       approveAuthoringSession,
       deleteAuthoringSession,
+      previewAuthoringCorrelation,
       replayScript,
   		replayDraftScript,
       startBrowserReplaySession,

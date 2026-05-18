@@ -17,6 +17,7 @@ const apiMock = {
   listAuthoringSessions: vi.fn(),
   approveAuthoringSession: vi.fn(),
   deleteAuthoringSession: vi.fn(),
+  previewAuthoringCorrelation: vi.fn(),
 }
 
 vi.mock('../hooks/useApi', () => ({
@@ -178,6 +179,13 @@ describe('ScriptsPage', () => {
       authoring_health: { score: 100, status: 'ready', inputs: [] },
     })
     apiMock.deleteAuthoringSession.mockResolvedValue({ deleted: 'session-1' })
+    apiMock.previewAuthoringCorrelation.mockResolvedValue({
+      session_id: 'session-1',
+      applied: false,
+      extractor: { name: 'correlated_value', source: 'body', type: 'jsonpath', expression: '$.token' },
+      changes: [{ kind: 'extractor_added', path: 'actions[0].extractors' }],
+      authoring_health: { score: 100, status: 'ready', inputs: [] },
+    })
   })
 
   afterEach(async () => {
@@ -696,6 +704,101 @@ describe('ScriptsPage', () => {
     expect(container.querySelector('[data-testid="script-editor"]')).not.toBeNull()
     expect(container.textContent).toContain('script-id:approved-script-1')
     expect(container.textContent).toContain('Approved authoring session "Migrated checkout review". Reviewing the promoted script.')
+  })
+
+  it('previews and applies guided correlation repairs for authoring sessions', async () => {
+    apiMock.listAuthoringSessions.mockResolvedValue({
+      sessions: [{
+        id: 'session-1',
+        project_id: 'project-1',
+        source: 'har',
+        name: 'HAR token repair',
+        status: 'editing',
+        draft: {
+          name: 'HAR token repair',
+          version: '1.0.0',
+          protocol: 'http',
+          config: { base_url: 'https://api.example.com' },
+          actions: [
+            { name: 'Get Token', method: 'GET', target: '/token' },
+            { name: 'Submit Order', method: 'POST', target: '/orders', body: 'token=abc123' },
+          ],
+        },
+        review_state: {},
+        created_at: '2026-05-18T13:00:00Z',
+        updated_at: '2026-05-18T13:05:00Z',
+        last_accessed_at: '2026-05-18T13:05:00Z',
+      }],
+      count: 1,
+    })
+    apiMock.previewAuthoringCorrelation
+      .mockResolvedValueOnce({
+        session_id: 'session-1',
+        applied: false,
+        extractor: { name: 'order_token', source: 'body', type: 'jsonpath', expression: '$.token' },
+        changes: [
+          { kind: 'extractor_added', path: 'actions[0].extractors' },
+          { kind: 'sample_replaced', path: 'actions[1].body', before: 'abc123', after: '{{var.order_token}}' },
+        ],
+        authoring_health: { score: 96, status: 'ready', inputs: [] },
+      })
+      .mockResolvedValueOnce({
+        session_id: 'session-1',
+        applied: true,
+        extractor: { name: 'order_token', source: 'body', type: 'jsonpath', expression: '$.token' },
+        changes: [
+          { kind: 'extractor_added', path: 'actions[0].extractors' },
+          { kind: 'sample_replaced', path: 'actions[1].body', before: 'abc123', after: '{{var.order_token}}' },
+        ],
+        authoring_health: { score: 96, status: 'ready', inputs: [] },
+      })
+
+    await act(async () => {
+      root.render(<ScriptsPage />)
+    })
+
+    await flushPromises()
+
+    expect(container.textContent).toContain('Guided Correlation Repair')
+    expect(container.textContent).toContain('2 actions available')
+
+    const previewButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Preview Repair'))
+    expect(previewButton).toBeDefined()
+    if (!previewButton) {
+      return
+    }
+    await act(async () => {
+      previewButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.previewAuthoringCorrelation).toHaveBeenCalledWith('session-1', expect.objectContaining({
+      name: 'correlated_value',
+      expression: '$.token',
+      found_action_index: 1,
+      used_action_indexes: [2],
+      replace_sample_value: true,
+      apply: false,
+    }))
+    expect(container.textContent).toContain('Preview')
+    expect(container.textContent).toContain('2 changes')
+    expect(container.textContent).toContain('actions[1].body')
+
+    const applyButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Apply Repair'))
+    expect(applyButton).toBeDefined()
+    if (!applyButton) {
+      return
+    }
+    await act(async () => {
+      applyButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.previewAuthoringCorrelation).toHaveBeenLastCalledWith('session-1', expect.objectContaining({
+      name: 'correlated_value',
+      apply: true,
+    }))
+    expect(container.textContent).toContain('Applied')
   })
 
   it('routes the Java-over-HTTP import option into the dedicated Java import surface', async () => {
