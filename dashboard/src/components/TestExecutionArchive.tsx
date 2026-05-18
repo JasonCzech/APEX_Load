@@ -447,6 +447,26 @@ export default function TestExecutionArchive({
             </div>
           </div>
 
+          {archiveReport.evidence_tiers && archiveReport.evidence_tiers.length > 0 && (
+            <div className="tx-section archive-summary-section">
+              <div className="archive-section-header archive-section-header-stack">
+                <div>
+                  <h3 className="chart-title">Evidence Tiers</h3>
+                  <p className="archive-section-copy">Declared report evidence coverage for release, engineering, and audit review.</p>
+                </div>
+              </div>
+              <div className="archive-overview-grid">
+                {archiveReport.evidence_tiers.map(tier => (
+                  <div key={tier.tier} className="scenario-script-detail-card">
+                    <span className="scenario-script-detail-label">{tier.label}</span>
+                    <span className="scenario-script-detail-value">{tier.status} · {tier.count || 0}</span>
+                    <span className="capacity-advisory-detail">{tier.status === 'present' ? tier.description : tier.reason}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {archiveReport.manifest.provenance && (
             <div className="tx-section archive-summary-section">
               <div className="archive-section-header archive-section-header-stack">

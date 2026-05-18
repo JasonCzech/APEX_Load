@@ -165,6 +165,7 @@ type transactionEventFilter struct {
 type RunArchiveReport struct {
 	Manifest            *RunArchiveManifest                    `json:"manifest"`
 	Overview            RunArchiveOverview                     `json:"overview"`
+	EvidenceTiers       []RunArchiveEvidenceTier               `json:"evidence_tiers,omitempty"`
 	ErrorPatterns       []RunArchiveErrorPattern               `json:"error_patterns,omitempty"`
 	SummaryTimeline     []RunArchiveSummaryPoint               `json:"summary_timeline,omitempty"`
 	ByAction            map[string]RunArchiveActionStats       `json:"by_action"`
@@ -179,6 +180,15 @@ type RunArchiveReport struct {
 	BrowserByDevice     map[string]*BrowserDeviceLiveMetrics   `json:"browser_by_device,omitempty"`
 	BrowserResources    []BrowserResourceTiming                `json:"browser_resources,omitempty"`
 	ResourcePeaks       RunArchiveResourcePeaks                `json:"resource_peaks"`
+}
+
+type RunArchiveEvidenceTier struct {
+	Tier        string `json:"tier"`
+	Label       string `json:"label"`
+	Status      string `json:"status"`
+	Count       int64  `json:"count,omitempty"`
+	Description string `json:"description,omitempty"`
+	Reason      string `json:"reason,omitempty"`
 }
 
 type BrowserResourceTiming struct {
@@ -985,8 +995,119 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	if telemetrySummary.Samples > 0 {
 		report.Overview.Telemetry = finalizeRunArchiveTelemetrySummary(telemetrySummary)
 	}
+	report.EvidenceTiers = buildRunArchiveEvidenceTiers(manifest, report, transactions, resources, summaries)
 
 	return report, nil
+}
+
+func buildRunArchiveEvidenceTiers(manifest *RunArchiveManifest, report *RunArchiveReport, transactions []TransactionEvent, resources []ResourceSample, summaries []IntervalSummaryRecord) []RunArchiveEvidenceTier {
+	if report == nil {
+		return nil
+	}
+	externalMetricSamples := countExternalMetricSamples(resources)
+	tiers := []RunArchiveEvidenceTier{
+		evidenceTier("summary", "Summary", report.Overview.Transactions+report.Overview.IntervalSummaries+report.Overview.ResourceSamples, "Aggregated run totals, response-time range, resource peaks, and headline telemetry."),
+		evidenceTier("intervals", "Intervals", int64(len(summaries)), "Per-interval live metric summaries used for timelines, throughput evidence, and telemetry SLA review."),
+		evidenceTier("sampled_diagnostics", "Sampled Diagnostics", int64(len(report.ErrorPatterns)+len(report.BrowserResources)), "Grouped error signatures and sampled browser resource diagnostics for triage."),
+		evidenceTier("transaction_archive", "Transaction Archive", int64(len(transactions)), "Raw transaction events with action, timing, dependency, status, correlation, and snapshot fields."),
+		evidenceTier("browser_artifacts", "Browser Artifacts", countBrowserArtifacts(transactions), "Browser screenshots, HTML captures, DOM summaries, console entries, and network entries."),
+		evidenceTier("provenance", "Provenance", provenanceEvidenceCount(manifest), "Execution inputs, scenario shape, runtime settings, controller environment, and generator inventory."),
+		evidenceTier("external_metrics", "External Metrics", externalMetricSamples, "Target-side or imported resource metrics carried on resource samples."),
+	}
+	for index := range tiers {
+		if tiers[index].Count > 0 {
+			tiers[index].Status = "present"
+			continue
+		}
+		tiers[index].Status = "missing"
+		tiers[index].Reason = evidenceMissingReason(tiers[index].Tier)
+	}
+	return tiers
+}
+
+func evidenceTier(tier string, label string, count int64, description string) RunArchiveEvidenceTier {
+	return RunArchiveEvidenceTier{
+		Tier:        tier,
+		Label:       label,
+		Count:       count,
+		Description: description,
+	}
+}
+
+func evidenceMissingReason(tier string) string {
+	switch tier {
+	case "intervals":
+		return "No interval summary records were archived."
+	case "sampled_diagnostics":
+		return "No error patterns or sampled browser diagnostics were archived."
+	case "transaction_archive":
+		return "No transaction archive records were written."
+	case "browser_artifacts":
+		return "No browser capture artifacts were present in archived transactions."
+	case "provenance":
+		return "Archive manifest does not contain execution provenance."
+	case "external_metrics":
+		return "No external resource metrics were attached to archived resource samples."
+	default:
+		return "No evidence was archived for this tier."
+	}
+}
+
+func countExternalMetricSamples(resources []ResourceSample) int64 {
+	var count int64
+	for _, sample := range resources {
+		if len(sample.External) > 0 {
+			count++
+		}
+	}
+	return count
+}
+
+func countBrowserArtifacts(transactions []TransactionEvent) int64 {
+	var count int64
+	for _, tx := range transactions {
+		if tx.Snapshot != nil {
+			if tx.Snapshot.ScreenshotBase64 != "" {
+				count++
+			}
+			if tx.Snapshot.HTML != "" {
+				count++
+			}
+			if tx.Snapshot.DOMSummary != nil {
+				count++
+			}
+			count += int64(len(tx.Snapshot.ConsoleEntries) + len(tx.Snapshot.NetworkEntries))
+		}
+		count += int64(len(tx.ConsoleEntries) + len(tx.NetworkEntries))
+	}
+	return count
+}
+
+func provenanceEvidenceCount(manifest *RunArchiveManifest) int64 {
+	if manifest == nil {
+		return 0
+	}
+	provenance := manifest.Provenance
+	var count int64
+	if provenance.ApplicationID != "" || provenance.ReleaseID != "" || provenance.ScenarioID != "" || provenance.ProjectID != "" {
+		count++
+	}
+	if !provenance.RequestedAt.IsZero() || provenance.StartedAt != nil || provenance.Duration != "" || provenance.TotalVUsers > 0 {
+		count++
+	}
+	if len(provenance.Groups) > 0 {
+		count++
+	}
+	if len(provenance.ControllerEnv) > 0 {
+		count++
+	}
+	if len(provenance.GeneratorInventory) > 0 {
+		count++
+	}
+	if provenance.RuntimeSettings != nil || provenance.GoalConfig != nil || provenance.Assignment != nil {
+		count++
+	}
+	return count
 }
 
 func mergeRunArchiveTelemetrySummary(summary *RunArchiveTelemetrySummary, point IntervalSummaryRecord) {

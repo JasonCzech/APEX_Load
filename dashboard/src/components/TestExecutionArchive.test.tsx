@@ -125,6 +125,10 @@ describe('TestExecutionArchive', () => {
         avg_blocking_resources: 2,
       },
     },
+    evidence_tiers: [
+      { tier: 'summary', label: 'Summary', status: 'present', count: 3, description: 'Aggregated run totals.' },
+      { tier: 'external_metrics', label: 'External Metrics', status: 'missing', count: 0, reason: 'No external metrics were archived.' },
+    ],
     by_action: {},
     by_soap_operation: {},
     by_soap_fault_code: {},
@@ -317,6 +321,11 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('2026-05-14 20:00Z')
     expect(container.textContent).toContain('120.0 ms')
     expect(container.textContent).toContain('Run Provenance')
+    expect(container.textContent).toContain('Evidence Tiers')
+    expect(container.textContent).toContain('Summary')
+    expect(container.textContent).toContain('present · 3')
+    expect(container.textContent).toContain('External Metrics')
+    expect(container.textContent).toContain('missing · 0')
     expect(container.textContent).toContain('Error Patterns')
     expect(container.textContent).toContain('soap fault: Request validation failed for order 1001')
     expect(container.textContent).toContain('CreateOrder')

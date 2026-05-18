@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jasonczech/stormrunner/pkg/protocol"
 	"github.com/jasonczech/stormrunner/pkg/storage"
 )
 
@@ -72,6 +73,114 @@ func TestBuildRunArchiveReportClustersErrorPatterns(t *testing.T) {
 	}
 	if pattern.FirstSeen != timestamp || pattern.LatestSeen != timestamp.Add(20*time.Second) {
 		t.Fatalf("pattern timing = %#v, want first=%s latest=%s", pattern, timestamp, timestamp.Add(20*time.Second))
+	}
+}
+
+func TestBuildRunArchiveReportDeclaresEvidenceTiers(t *testing.T) {
+	archiveDir := t.TempDir()
+	manifestPath := filepath.Join(archiveDir, "manifest.json")
+	requestedAt := time.Date(2026, time.May, 18, 11, 0, 0, 0, time.UTC)
+	manifest := RunArchiveManifest{
+		SchemaVersion:         archiveSchemaVersion,
+		TestID:                "test-evidence",
+		TestName:              "Evidence Run",
+		TransactionsFile:      "transactions.jsonl",
+		ResourceSamplesFile:   "resources.jsonl",
+		IntervalSummariesFile: "interval_summaries.jsonl",
+		Provenance: RunArchiveProvenance{
+			ProjectID:   "checkout",
+			RequestedAt: requestedAt,
+			TotalVUsers: 25,
+			Duration:    "5m",
+			Groups:      []TestGroup{{Name: "buyers", ScriptID: "script-1", Protocol: "browser", VUsers: 25}},
+		},
+	}
+	manifestBytes, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatalf("json.Marshal manifest returned error: %v", err)
+	}
+	if err := os.WriteFile(manifestPath, manifestBytes, 0o644); err != nil {
+		t.Fatalf("WriteFile manifest returned error: %v", err)
+	}
+
+	txFile, err := os.Create(filepath.Join(archiveDir, manifest.TransactionsFile))
+	if err != nil {
+		t.Fatalf("Create transactions returned error: %v", err)
+	}
+	txEncoder := json.NewEncoder(txFile)
+	if err := txEncoder.Encode(TransactionEvent{
+		Timestamp:    requestedAt,
+		TestID:       manifest.TestID,
+		TestName:     manifest.TestName,
+		ActionName:   "Open Home",
+		DurationMs:   120,
+		Success:      false,
+		ErrorMessage: "browser assertion failed",
+		Snapshot: &protocol.ErrorSnapshot{
+			ScreenshotBase64: "abc",
+			HTML:             "<html></html>",
+			DOMSummary:       &protocol.DOMSummary{Title: "Home"},
+			ConsoleEntries:   []protocol.ConsoleEntry{{Level: "error", Text: "boom"}},
+			NetworkEntries:   []protocol.NetworkEntry{{URL: "https://example.test/app"}},
+		},
+	}); err != nil {
+		t.Fatalf("Encode transaction returned error: %v", err)
+	}
+	if err := txFile.Close(); err != nil {
+		t.Fatalf("Close transactions returned error: %v", err)
+	}
+
+	resourceFile, err := os.Create(filepath.Join(archiveDir, manifest.ResourceSamplesFile))
+	if err != nil {
+		t.Fatalf("Create resources returned error: %v", err)
+	}
+	if err := json.NewEncoder(resourceFile).Encode(ResourceSample{
+		Timestamp: requestedAt,
+		TestID:    manifest.TestID,
+		TestName:  manifest.TestName,
+		External:  map[string]float64{"apm.error_rate": 0.5},
+	}); err != nil {
+		t.Fatalf("Encode resource returned error: %v", err)
+	}
+	if err := resourceFile.Close(); err != nil {
+		t.Fatalf("Close resources returned error: %v", err)
+	}
+
+	summaryFile, err := os.Create(filepath.Join(archiveDir, manifest.IntervalSummariesFile))
+	if err != nil {
+		t.Fatalf("Create summaries returned error: %v", err)
+	}
+	if err := json.NewEncoder(summaryFile).Encode(IntervalSummaryRecord{
+		Timestamp: requestedAt,
+		TestID:    manifest.TestID,
+		TestName:  manifest.TestName,
+		TotalTx:   1,
+	}); err != nil {
+		t.Fatalf("Encode summary returned error: %v", err)
+	}
+	if err := summaryFile.Close(); err != nil {
+		t.Fatalf("Close summaries returned error: %v", err)
+	}
+
+	report, err := buildRunArchiveReport(&storage.RunArchiveRecord{ArchivePath: archiveDir, ManifestPath: manifestPath})
+	if err != nil {
+		t.Fatalf("buildRunArchiveReport returned error: %v", err)
+	}
+	tiers := make(map[string]RunArchiveEvidenceTier)
+	for _, tier := range report.EvidenceTiers {
+		tiers[tier.Tier] = tier
+	}
+	for _, tierName := range []string{"summary", "intervals", "sampled_diagnostics", "transaction_archive", "browser_artifacts", "provenance", "external_metrics"} {
+		tier, ok := tiers[tierName]
+		if !ok {
+			t.Fatalf("missing evidence tier %q in %#v", tierName, report.EvidenceTiers)
+		}
+		if tier.Status != "present" {
+			t.Fatalf("tier %q status = %q, want present", tierName, tier.Status)
+		}
+		if tier.Count == 0 {
+			t.Fatalf("tier %q count = 0, want evidence count", tierName)
+		}
 	}
 }
 

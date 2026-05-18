@@ -544,6 +544,7 @@ export interface RunArchiveSummaryPoint {
 export interface RunArchiveReport {
   manifest: RunArchiveManifest
   overview: RunArchiveOverview
+  evidence_tiers?: RunArchiveEvidenceTier[]
   error_patterns?: RunArchiveErrorPattern[]
   summary_timeline?: RunArchiveSummaryPoint[]
   by_action: Record<string, RunArchiveActionStats>
@@ -558,6 +559,15 @@ export interface RunArchiveReport {
   browser_by_device?: Record<string, BrowserDeviceLiveMetrics>
   browser_resources?: BrowserResourceTiming[]
   resource_peaks: RunArchiveResourcePeaks
+}
+
+export interface RunArchiveEvidenceTier {
+  tier: string
+  label: string
+  status: 'present' | 'missing' | string
+  count?: number
+  description?: string
+  reason?: string
 }
 
 export interface BrowserResourceTiming {
