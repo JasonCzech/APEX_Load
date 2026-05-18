@@ -3378,7 +3378,7 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
                     <div key={`${candidate.test_id}-${candidate.archive_path}`} className="settings-release-row">
                       <div className="settings-release-main">
                         <span>{candidate.test_id}</span>
-                        <small>{candidate.policy_name || 'default'} / {candidate.artifact_type} / expired {new Date(candidate.expired_at).toLocaleDateString()}</small>
+                        <small>{candidate.policy_name || 'default'} / {candidate.artifact_type} / {candidate.compliance_class || 'standard'} / {candidate.reason || 'expired_by_policy'} / expired {new Date(candidate.expired_at).toLocaleDateString()}</small>
                       </div>
                       <span className="setting-value">{candidate.retention_days} days</span>
                     </div>

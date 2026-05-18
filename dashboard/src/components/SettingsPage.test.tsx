@@ -461,6 +461,8 @@ describe('SettingsPage', () => {
           archive_path: '/tmp/run-expired',
           policy_name: 'default',
           artifact_type: 'bundle',
+          compliance_class: 'standard',
+          reason: 'expired_by_policy',
           retention_days: 45,
           completed_at: '2026-03-01T12:00:00Z',
           expired_at: '2026-04-15T12:00:00Z',
@@ -480,12 +482,14 @@ describe('SettingsPage', () => {
           archive_path: '/tmp/run-expired',
           policy_name: 'default',
           artifact_type: 'bundle',
+          compliance_class: 'standard',
+          reason: 'expired_by_policy',
           retention_days: 45,
           completed_at: '2026-03-01T12:00:00Z',
           expired_at: '2026-04-15T12:00:00Z',
         },
       ],
-      results: [{ test_id: 'run-expired', archive_path: '/tmp/run-expired', status: 'pruned' }],
+      results: [{ test_id: 'run-expired', archive_path: '/tmp/run-expired', status: 'pruned', compliance_class: 'standard', reason: 'expired_by_policy' }],
       summary: { candidate_count: 1, pruned_count: 1, failed_count: 0 },
     })
     applicationApiMock.listReleases.mockResolvedValue({ releases: [] })
@@ -574,7 +578,7 @@ describe('SettingsPage', () => {
     expect(apiMock.planArchiveRetention).toHaveBeenCalledTimes(1)
     expect(capacitySection.textContent).toContain('Retention plan found 1 prune candidate.')
     expect(capacitySection.textContent).toContain('run-expired')
-    expect(capacitySection.textContent).toContain('default / bundle')
+    expect(capacitySection.textContent).toContain('default / bundle / standard / expired_by_policy')
   })
 
   it('surfaces usage accounting snapshots and exports chargeback CSV', async () => {

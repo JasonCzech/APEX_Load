@@ -76,13 +76,15 @@ type ArchiveRetentionSettings struct {
 }
 
 type ArchiveRetentionPolicy struct {
-	Name          string `json:"name,omitempty"`
-	ProjectID     string `json:"project_id,omitempty"`
-	ReleaseID     string `json:"release_id,omitempty"`
-	RunStatus     string `json:"run_status,omitempty"`
-	RunType       string `json:"run_type,omitempty"`
-	ArtifactType  string `json:"artifact_type,omitempty"`
-	RetentionDays int    `json:"retention_days"`
+	Name            string `json:"name,omitempty"`
+	ProjectID       string `json:"project_id,omitempty"`
+	ReleaseID       string `json:"release_id,omitempty"`
+	RunStatus       string `json:"run_status,omitempty"`
+	RunType         string `json:"run_type,omitempty"`
+	ArtifactType    string `json:"artifact_type,omitempty"`
+	ComplianceClass string `json:"compliance_class,omitempty"`
+	Reason          string `json:"reason,omitempty"`
+	RetentionDays   int    `json:"retention_days"`
 }
 
 type AuthSettings struct {
@@ -515,16 +517,24 @@ func normalizeArchiveRetentionPolicies(policies []ArchiveRetentionPolicy) []Arch
 	out := make([]ArchiveRetentionPolicy, 0, len(policies))
 	for _, policy := range policies {
 		normalized := ArchiveRetentionPolicy{
-			Name:          strings.TrimSpace(policy.Name),
-			ProjectID:     strings.TrimSpace(policy.ProjectID),
-			ReleaseID:     strings.TrimSpace(policy.ReleaseID),
-			RunStatus:     strings.ToUpper(strings.TrimSpace(policy.RunStatus)),
-			RunType:       strings.TrimSpace(policy.RunType),
-			ArtifactType:  strings.TrimSpace(policy.ArtifactType),
-			RetentionDays: policy.RetentionDays,
+			Name:            strings.TrimSpace(policy.Name),
+			ProjectID:       strings.TrimSpace(policy.ProjectID),
+			ReleaseID:       strings.TrimSpace(policy.ReleaseID),
+			RunStatus:       strings.ToUpper(strings.TrimSpace(policy.RunStatus)),
+			RunType:         strings.TrimSpace(policy.RunType),
+			ArtifactType:    strings.TrimSpace(policy.ArtifactType),
+			ComplianceClass: strings.TrimSpace(policy.ComplianceClass),
+			Reason:          strings.TrimSpace(policy.Reason),
+			RetentionDays:   policy.RetentionDays,
 		}
 		if normalized.ArtifactType == "" {
 			normalized.ArtifactType = "bundle"
+		}
+		if normalized.ComplianceClass == "" {
+			normalized.ComplianceClass = "standard"
+		}
+		if normalized.Reason == "" {
+			normalized.Reason = "expired_by_policy"
 		}
 		out = append(out, normalized)
 	}

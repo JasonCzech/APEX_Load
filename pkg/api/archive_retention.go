@@ -16,10 +16,12 @@ type ArchiveRetentionPlanResponse struct {
 }
 
 type ArchiveRetentionResult struct {
-	TestID      string `json:"test_id"`
-	ArchivePath string `json:"archive_path"`
-	Status      string `json:"status"`
-	Error       string `json:"error,omitempty"`
+	TestID          string `json:"test_id"`
+	ArchivePath     string `json:"archive_path"`
+	Status          string `json:"status"`
+	ComplianceClass string `json:"compliance_class,omitempty"`
+	Reason          string `json:"reason,omitempty"`
+	Error           string `json:"error,omitempty"`
 }
 
 type ArchiveRetentionRunSummary struct {
@@ -29,16 +31,18 @@ type ArchiveRetentionRunSummary struct {
 }
 
 type ArchivePruneCandidate struct {
-	TestID        string    `json:"test_id"`
-	ProjectID     string    `json:"project_id,omitempty"`
-	ReleaseID     string    `json:"release_id,omitempty"`
-	RunStatus     string    `json:"run_status,omitempty"`
-	ArchivePath   string    `json:"archive_path"`
-	PolicyName    string    `json:"policy_name,omitempty"`
-	ArtifactType  string    `json:"artifact_type"`
-	RetentionDays int       `json:"retention_days"`
-	CompletedAt   time.Time `json:"completed_at"`
-	ExpiredAt     time.Time `json:"expired_at"`
+	TestID          string    `json:"test_id"`
+	ProjectID       string    `json:"project_id,omitempty"`
+	ReleaseID       string    `json:"release_id,omitempty"`
+	RunStatus       string    `json:"run_status,omitempty"`
+	ArchivePath     string    `json:"archive_path"`
+	PolicyName      string    `json:"policy_name,omitempty"`
+	ArtifactType    string    `json:"artifact_type"`
+	ComplianceClass string    `json:"compliance_class,omitempty"`
+	Reason          string    `json:"reason,omitempty"`
+	RetentionDays   int       `json:"retention_days"`
+	CompletedAt     time.Time `json:"completed_at"`
+	ExpiredAt       time.Time `json:"expired_at"`
 }
 
 func planArchiveRetentionPrune(now time.Time, settings ArchiveRetentionSettings, tests []*ManagedTest) []ArchivePruneCandidate {
@@ -64,16 +68,18 @@ func planArchiveRetentionPrune(now time.Time, settings ArchiveRetentionSettings,
 			continue
 		}
 		candidates = append(candidates, ArchivePruneCandidate{
-			TestID:        test.ID,
-			ProjectID:     test.ProjectID,
-			ReleaseID:     test.ReleaseID,
-			RunStatus:     test.Status,
-			ArchivePath:   test.Archive.ArchivePath,
-			PolicyName:    policy.Name,
-			ArtifactType:  policy.ArtifactType,
-			RetentionDays: policy.RetentionDays,
-			CompletedAt:   completedAt,
-			ExpiredAt:     expiredAt,
+			TestID:          test.ID,
+			ProjectID:       test.ProjectID,
+			ReleaseID:       test.ReleaseID,
+			RunStatus:       test.Status,
+			ArchivePath:     test.Archive.ArchivePath,
+			PolicyName:      policy.Name,
+			ArtifactType:    policy.ArtifactType,
+			ComplianceClass: policy.ComplianceClass,
+			Reason:          policy.Reason,
+			RetentionDays:   policy.RetentionDays,
+			CompletedAt:     completedAt,
+			ExpiredAt:       expiredAt,
 		})
 	}
 	return candidates
@@ -99,9 +105,11 @@ func matchingArchiveRetentionPolicy(settings ArchiveRetentionSettings, test *Man
 		}
 	}
 	return ArchiveRetentionPolicy{
-		Name:          "default",
-		ArtifactType:  "bundle",
-		RetentionDays: settings.DefaultRetentionDays,
+		Name:            "default",
+		ArtifactType:    "bundle",
+		ComplianceClass: "standard",
+		Reason:          "expired_by_policy",
+		RetentionDays:   settings.DefaultRetentionDays,
 	}
 }
 
@@ -144,9 +152,11 @@ func (s *Server) handleApplyArchiveRetention(w http.ResponseWriter, r *http.Requ
 	summary := ArchiveRetentionRunSummary{CandidateCount: len(candidates)}
 	for _, candidate := range candidates {
 		result := ArchiveRetentionResult{
-			TestID:      candidate.TestID,
-			ArchivePath: candidate.ArchivePath,
-			Status:      "pruned",
+			TestID:          candidate.TestID,
+			ArchivePath:     candidate.ArchivePath,
+			Status:          "pruned",
+			ComplianceClass: candidate.ComplianceClass,
+			Reason:          candidate.Reason,
 		}
 		if err := os.RemoveAll(candidate.ArchivePath); err != nil {
 			result.Status = "failed"
@@ -176,6 +186,8 @@ func archiveRetentionAuditDetails(candidate ArchivePruneCandidate, result Archiv
 		"run_status":       candidate.RunStatus,
 		"policy_name":      candidate.PolicyName,
 		"artifact_type":    candidate.ArtifactType,
+		"compliance_class": candidate.ComplianceClass,
+		"reason":           candidate.Reason,
 		"retention_days":   candidate.RetentionDays,
 		"completed_at":     candidate.CompletedAt,
 		"expired_at":       candidate.ExpiredAt,

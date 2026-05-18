@@ -20,11 +20,13 @@ func TestPlanArchiveRetentionPruneAppliesSpecificPolicies(t *testing.T) {
 		Enabled:              true,
 		DefaultRetentionDays: 30,
 		Policies: []ArchiveRetentionPolicy{{
-			Name:          "failed-checkout",
-			ProjectID:     "checkout",
-			RunStatus:     "FAILED",
-			ArtifactType:  "bundle",
-			RetentionDays: 7,
+			Name:            "failed-checkout",
+			ProjectID:       "checkout",
+			RunStatus:       "FAILED",
+			ArtifactType:    "bundle",
+			ComplianceClass: "regulated",
+			Reason:          "failed_run_short_retention",
+			RetentionDays:   7,
 		}},
 	}
 	tests := []*ManagedTest{
@@ -55,6 +57,9 @@ func TestPlanArchiveRetentionPruneAppliesSpecificPolicies(t *testing.T) {
 	candidate := candidates[0]
 	if candidate.TestID != "old-failed" || candidate.PolicyName != "failed-checkout" || candidate.RetentionDays != 7 {
 		t.Fatalf("candidate = %#v", candidate)
+	}
+	if candidate.ComplianceClass != "regulated" || candidate.Reason != "failed_run_short_retention" {
+		t.Fatalf("candidate governance = %#v, want compliance class and reason", candidate)
 	}
 	if !candidate.ExpiredAt.Equal(oldCompletedAt.Add(7 * 24 * time.Hour)) {
 		t.Fatalf("expired at = %s, want completion + retention", candidate.ExpiredAt)
@@ -121,6 +126,9 @@ func TestArchiveRetentionPlanAndApplyHandlersPruneExpiredArchives(t *testing.T) 
 	if !plan.DryRun || plan.Summary.CandidateCount != 1 || len(plan.Candidates) != 1 || plan.Candidates[0].ProjectID != "project-a" {
 		t.Fatalf("plan = %#v, want one dry-run candidate", plan)
 	}
+	if plan.Candidates[0].ComplianceClass != "standard" || plan.Candidates[0].Reason != "expired_by_policy" {
+		t.Fatalf("plan candidate governance = %#v, want default compliance evidence", plan.Candidates[0])
+	}
 	if _, err := os.Stat(archiveDir); err != nil {
 		t.Fatalf("archive should still exist after plan: %v", err)
 	}
@@ -139,6 +147,9 @@ func TestArchiveRetentionPlanAndApplyHandlersPruneExpiredArchives(t *testing.T) 
 	if applied.DryRun || applied.Summary.PrunedCount != 1 || applied.Summary.FailedCount != 0 || len(applied.Results) != 1 || applied.Results[0].Status != "pruned" {
 		t.Fatalf("applied = %#v, want one pruned result", applied)
 	}
+	if applied.Results[0].ComplianceClass != "standard" || applied.Results[0].Reason != "expired_by_policy" {
+		t.Fatalf("applied result governance = %#v, want retention reason evidence", applied.Results[0])
+	}
 	if _, err := os.Stat(archiveDir); !os.IsNotExist(err) {
 		t.Fatalf("archive dir stat err = %v, want removed", err)
 	}
@@ -148,5 +159,8 @@ func TestArchiveRetentionPlanAndApplyHandlersPruneExpiredArchives(t *testing.T) 
 	}
 	if len(events) != 1 || events[0].ProjectID != "project-a" || events[0].ResourceID != "expired" || events[0].Status != "success" {
 		t.Fatalf("audit events = %#v, want prune audit event", events)
+	}
+	if events[0].Details["compliance_class"] != "standard" || events[0].Details["reason"] != "expired_by_policy" {
+		t.Fatalf("audit details = %#v, want compliance class and reason", events[0].Details)
 	}
 }

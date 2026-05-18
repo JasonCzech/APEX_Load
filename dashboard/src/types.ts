@@ -1568,6 +1568,8 @@ export interface DashboardArchiveRetentionPolicy {
   run_status?: string
   run_type?: string
   artifact_type?: string
+  compliance_class?: string
+  reason?: string
   retention_days: number
 }
 
@@ -1787,6 +1789,8 @@ export interface ArchivePruneCandidate {
   archive_path: string
   policy_name?: string
   artifact_type: string
+  compliance_class?: string
+  reason?: string
   retention_days: number
   completed_at: string
   expired_at: string
@@ -1796,6 +1800,8 @@ export interface ArchiveRetentionResult {
   test_id: string
   archive_path: string
   status: string
+  compliance_class?: string
+  reason?: string
   error?: string
 }
 

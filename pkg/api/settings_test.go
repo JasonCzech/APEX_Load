@@ -109,11 +109,13 @@ func TestSystemSettingsAPIAndPersistence(t *testing.T) {
 			Enabled:              true,
 			DefaultRetentionDays: 45,
 			Policies: []ArchiveRetentionPolicy{{
-				Name:          "failed-checkout",
-				ProjectID:     "checkout",
-				RunStatus:     "failed",
-				ArtifactType:  "bundle",
-				RetentionDays: 7,
+				Name:            "failed-checkout",
+				ProjectID:       "checkout",
+				RunStatus:       "failed",
+				ArtifactType:    "bundle",
+				ComplianceClass: "regulated",
+				Reason:          "failed_run_short_retention",
+				RetentionDays:   7,
 			}},
 		},
 		Notifications: NotificationsSettings{
@@ -207,7 +209,7 @@ func TestSystemSettingsAPIAndPersistence(t *testing.T) {
 	if !updated.ArchiveRetention.Enabled || updated.ArchiveRetention.DefaultRetentionDays != 45 {
 		t.Fatalf("archive retention = %#v, want enabled 45-day default", updated.ArchiveRetention)
 	}
-	if len(updated.ArchiveRetention.Policies) != 1 || updated.ArchiveRetention.Policies[0].RunStatus != "FAILED" || updated.ArchiveRetention.Policies[0].RetentionDays != 7 {
+	if len(updated.ArchiveRetention.Policies) != 1 || updated.ArchiveRetention.Policies[0].RunStatus != "FAILED" || updated.ArchiveRetention.Policies[0].RetentionDays != 7 || updated.ArchiveRetention.Policies[0].ComplianceClass != "regulated" || updated.ArchiveRetention.Policies[0].Reason != "failed_run_short_retention" {
 		t.Fatalf("archive retention policies = %#v, want normalized failed-checkout policy", updated.ArchiveRetention.Policies)
 	}
 	if len(updated.Notifications.Webhooks) != 1 {
