@@ -83,13 +83,13 @@ describe('TestHub', () => {
           id: 'stepped-ramp',
           name: 'Stepped Ramp',
           category: 'ramp',
-          status: 'partial',
+          status: 'executed',
           stormrunner_shape: 'Staged segments with hold, ramp-up, and ramp-down.',
           fields: ['groups[].stages', 'groups[].stages[].target_vusers'],
           notes: 'Dedicated staged segments are available in scenario authoring.',
         },
       ],
-      status_counts: { executed: 1, partial: 1 },
+      status_counts: { executed: 2 },
       notes: [],
     })
     apiMock.validateScenarioLoadModel.mockResolvedValue({
@@ -435,7 +435,7 @@ describe('TestHub', () => {
     expect(container.textContent).toContain('Executed')
     expect(container.textContent).toContain('groups[].vusers')
     expect(container.textContent).toContain('Stepped Ramp')
-    expect(container.textContent).toContain('Partial')
+    expect(container.textContent).toContain('Executed')
     expect(container.textContent).toContain('groups[].stages[].target_vusers')
   })
 

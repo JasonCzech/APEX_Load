@@ -227,8 +227,8 @@ func TestScriptValidationIncludesRuntimeSettingParityForImportedDraftsAndStoredS
 					"runtime_settings_parity": []loadrunner.RuntimeSettingParityEntry{
 						{ID: "run_logic_iterations", Area: "Run Logic", Concept: "Iterations", Status: loadrunner.RuntimeSettingStatusExecuted, RuntimeFiles: []string{"default.cfg"}},
 						{ID: "run_logic_auto_transactions", Area: "Run Logic", Concept: "Auto-transactions", Status: loadrunner.RuntimeSettingStatusExecuted, RuntimeFiles: []string{"default.cfg"}},
-						{ID: "logging", Area: "Logging", Concept: "Log level, error-only, and extended logging options", Status: loadrunner.RuntimeSettingStatusPartial, RuntimeFiles: []string{"default.cfg"}},
-						{ID: "browser_download_resources_recorded", Area: "Browser Emulation", Concept: "Download resources = recorded", Status: loadrunner.RuntimeSettingStatusPartial, RuntimeFiles: []string{"default.cfg"}},
+						{ID: "logging", Area: "Logging", Concept: "Log level, error-only, and extended logging options", Status: loadrunner.RuntimeSettingStatusExecuted, RuntimeFiles: []string{"default.cfg"}},
+						{ID: "browser_download_resources_recorded", Area: "Browser Emulation", Concept: "Download resources = recorded", Status: loadrunner.RuntimeSettingStatusExecuted, RuntimeFiles: []string{"default.cfg"}},
 						{ID: "streaming", Area: "Streaming", Concept: "Adaptive or fixed playback settings", Status: loadrunner.RuntimeSettingStatusCompatibilityOnly, RuntimeFiles: []string{"default.cfg"}},
 					},
 					"runtime_settings_migration_readiness": &loadrunner.RuntimeSettingMigrationReadiness{
@@ -282,16 +282,16 @@ func TestScriptValidationIncludesRuntimeSettingParityForImportedDraftsAndStoredS
 			}
 
 			counts := extractValidationRuntimeSettingStatusCounts(t, resp.Body.Bytes())
-			if counts["executed"] != 2 || counts["partial"] != 2 || counts["compatibility_only"] != 1 {
-				t.Fatalf("runtime_settings_status_counts = %#v, want executed=2 partial=2 compatibility_only=1", counts)
+			if counts["executed"] != 4 || counts["partial"] != 0 || counts["compatibility_only"] != 1 {
+				t.Fatalf("runtime_settings_status_counts = %#v, want executed=4 partial=0 compatibility_only=1", counts)
 			}
 
 			readiness := extractValidationMigrationReadiness(t, resp.Body.Bytes())
 			if readiness == nil {
 				t.Fatal("expected migration_readiness")
 			}
-			if !readiness.Blocked || readiness.ScorePct != 69 {
-				t.Fatalf("migration_readiness = %#v, want blocked score=69", readiness)
+			if !readiness.Blocked || readiness.ScorePct != 85 {
+				t.Fatalf("migration_readiness = %#v, want blocked score=85", readiness)
 			}
 			if len(readiness.Policy.BlockStatuses) != 2 || readiness.Policy.BlockStatuses[0] != loadrunner.RuntimeSettingStatusPartial || readiness.Policy.BlockStatuses[1] != loadrunner.RuntimeSettingStatusCompatibilityOnly {
 				t.Fatalf("migration_readiness.policy = %#v, want partial + compatibility_only", readiness.Policy)

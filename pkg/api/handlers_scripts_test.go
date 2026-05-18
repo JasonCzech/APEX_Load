@@ -780,22 +780,22 @@ BufferSizeSeconds=30
 		t.Fatalf("warnings = %#v, want preserved streaming settings", result.Warnings)
 	}
 	assertReviewSection(t, result.ReviewSections, "warnings", "warning", result.Warnings[0])
-	assertReviewSection(t, result.ReviewSections, "runtime_settings_parity", "warning", "Partial: Logging / Log level, error-only, and extended logging options [default.cfg]")
-	assertReviewSection(t, result.ReviewSections, "runtime_settings_migration_readiness", "blocker", "Blocking setting: Logging / Log level, error-only, and extended logging options")
+	assertReviewSection(t, result.ReviewSections, "runtime_settings_parity", "warning", "Executed: Logging / Log level, error-only, and extended logging options [default.cfg]")
+	assertReviewSection(t, result.ReviewSections, "runtime_settings_migration_readiness", "blocker", "Blocking setting: Streaming / Adaptive or fixed playback settings")
 	statusCounts, ok := result.Summary["runtime_settings_status_counts"].(map[string]any)
 	if !ok {
 		t.Fatalf("summary.runtime_settings_status_counts = %#v, want map", result.Summary["runtime_settings_status_counts"])
 	}
-	if statusCounts["executed"] != float64(2) || statusCounts["partial"] != float64(1) || statusCounts["compatibility_only"] != float64(1) {
-		t.Fatalf("summary.runtime_settings_status_counts = %#v, want executed=2 partial=1 compatibility_only=1", statusCounts)
+	if statusCounts["executed"] != float64(3) || statusCounts["partial"] != nil || statusCounts["compatibility_only"] != float64(1) {
+		t.Fatalf("summary.runtime_settings_status_counts = %#v, want executed=3 compatibility_only=1", statusCounts)
 	}
 	runtimeParity, ok := result.Summary["runtime_settings_parity"].([]any)
 	if !ok || len(runtimeParity) != 4 {
 		t.Fatalf("summary.runtime_settings_parity = %#v, want 4 entries", result.Summary["runtime_settings_parity"])
 	}
 	readiness, ok := result.Summary["migration_readiness"].(map[string]any)
-	if !ok || readiness["score_pct"] != float64(71) || readiness["blocked"] != true {
-		t.Fatalf("summary.migration_readiness = %#v, want score=71 blocked=true", result.Summary["migration_readiness"])
+	if !ok || readiness["score_pct"] != float64(81) || readiness["blocked"] != true {
+		t.Fatalf("summary.migration_readiness = %#v, want score=81 blocked=true", result.Summary["migration_readiness"])
 	}
 }
 
@@ -845,22 +845,22 @@ func TestHandleImportLoadRunnerGoldenFixtureRuntimeParity(t *testing.T) {
 		t.Fatalf("warnings = %#v, want streaming compatibility warning", result.Warnings)
 	}
 	assertReviewSection(t, result.ReviewSections, "runtime_settings_parity", "warning", "Executed: HTTP / Timeouts, redirects, and connection reuse [default.cfg]")
-	assertReviewSection(t, result.ReviewSections, "runtime_settings_migration_readiness", "blocker", "Blocking setting: Logging / Log level, error-only, and extended logging options")
+	assertReviewSection(t, result.ReviewSections, "runtime_settings_migration_readiness", "blocker", "Blocking setting: Additional Attributes / Arbitrary RTS name/value metadata")
 
 	statusCounts, ok := result.Summary["runtime_settings_status_counts"].(map[string]any)
 	if !ok {
 		t.Fatalf("summary.runtime_settings_status_counts = %#v, want map", result.Summary["runtime_settings_status_counts"])
 	}
-	if statusCounts["executed"] != float64(21) || statusCounts["partial"] != float64(4) || statusCounts["compatibility_only"] != float64(2) {
-		t.Fatalf("runtime_settings_status_counts = %#v, want executed=21 partial=4 compatibility_only=2", statusCounts)
+	if statusCounts["executed"] != float64(25) || statusCounts["partial"] != nil || statusCounts["compatibility_only"] != float64(2) {
+		t.Fatalf("runtime_settings_status_counts = %#v, want executed=25 compatibility_only=2", statusCounts)
 	}
 	runtimeParity, ok := result.Summary["runtime_settings_parity"].([]any)
 	if !ok || len(runtimeParity) != 27 {
 		t.Fatalf("summary.runtime_settings_parity = %#v, want 27 entries", result.Summary["runtime_settings_parity"])
 	}
 	readiness, ok := result.Summary["migration_readiness"].(map[string]any)
-	if !ok || readiness["score_pct"] != float64(89) || readiness["blocked"] != true {
-		t.Fatalf("summary.migration_readiness = %#v, want score=89 blocked=true", result.Summary["migration_readiness"])
+	if !ok || readiness["score_pct"] != float64(94) || readiness["blocked"] != true {
+		t.Fatalf("summary.migration_readiness = %#v, want score=94 blocked=true", result.Summary["migration_readiness"])
 	}
 }
 
@@ -1779,8 +1779,11 @@ func TestHandleLoadRunnerSupportMatrix(t *testing.T) {
 	if result.SupportMatrix[0].ID == "" || result.SupportMatrix[0].Area == "" || result.SupportMatrix[0].Status == "" {
 		t.Fatalf("unexpected support matrix entry: %#v", result.SupportMatrix[0])
 	}
-	if !containsLoadRunnerSupportMatrixStatus(result.SupportMatrix, "partial") {
-		t.Fatalf("expected at least one partial loadrunner support matrix entry, got %#v", result.SupportMatrix)
+	if containsLoadRunnerSupportMatrixStatus(result.SupportMatrix, "partial") {
+		t.Fatalf("expected no partial loadrunner support matrix entries after RTS parity reconciliation, got %#v", result.SupportMatrix)
+	}
+	if !containsLoadRunnerSupportMatrixStatus(result.SupportMatrix, "compatibility_only") {
+		t.Fatalf("expected compatibility-only loadrunner support matrix entries, got %#v", result.SupportMatrix)
 	}
 	if len(result.Notes) == 0 {
 		t.Fatal("expected loadrunner support matrix notes")

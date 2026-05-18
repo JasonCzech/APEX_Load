@@ -48,7 +48,7 @@ func (s *Server) handleLoadModelSupportMatrix(w http.ResponseWriter, r *http.Req
 		"status_counts":  counts,
 		"notes": []string{
 			"Executed means the runtime has first-class behavior today.",
-			"Partial means the shape can be approximated through existing fields but needs dedicated authoring or validation work.",
+			"Partial means a future shape can be approximated through existing fields but needs dedicated authoring or validation work; no current matrix entries are partial.",
 			"Planned means the shape is intentionally tracked but not yet represented as a first-class model.",
 		},
 	})
@@ -91,10 +91,10 @@ func loadModelSupportMatrix() []LoadModelSupportEntry {
 			ID:               "stepped-ramp",
 			Name:             "Stepped Ramp",
 			Category:         "ramp",
-			Status:           "partial",
-			StormrunnerShape: "Approximate with multiple groups and per-group ramp timing.",
-			Fields:           []string{"groups[].ramp_up", "groups[].start_delay", "groups[].vusers"},
-			Notes:            "Dedicated staged segments with hold/ramp-up/ramp-down are tracked by P4.3.",
+			Status:           "executed",
+			StormrunnerShape: "First-class staged segments with ramp-up, hold, ramp-down, target VUsers, and target TPS.",
+			Fields:           []string{"groups[].stages[].type", "groups[].stages[].duration", "groups[].stages[].target_vusers", "groups[].stages[].target_tps"},
+			Notes:            "Stage lists round-trip through API/storage, derive compatible runtime ramps, and appear in archive load-model goal evidence.",
 		},
 		{
 			ID:               "spike-rendezvous",
@@ -118,10 +118,10 @@ func loadModelSupportMatrix() []LoadModelSupportEntry {
 			ID:               "stress",
 			Name:             "Stress",
 			Category:         "capacity",
-			Status:           "partial",
-			StormrunnerShape: "Use high VUser or TPS targets with capacity advisory and optional goal control.",
-			Fields:           []string{"groups[].vusers", "goal_config.max_vusers", "capacity_advisory"},
-			Notes:            "Reusable stress templates and staged escalation are tracked by P4.2/P4.3.",
+			Status:           "executed",
+			StormrunnerShape: "High VUser or TPS targets with capacity advisory, staged escalation, goal control, and archived completion evidence.",
+			Fields:           []string{"groups[].vusers", "groups[].stages", "goal_config.max_vusers", "capacity_advisory", "overview.goal_completion"},
+			Notes:            "Stress workloads can be authored through templates or staged groups and are validated before save/run against current capacity envelopes.",
 		},
 		{
 			ID:               "goal-based",

@@ -62,7 +62,7 @@ Status values:
 | Status | Meaning |
 | --- | --- |
 | `executed` | First-class runtime or controller behavior exists today. |
-| `partial` | The shape can be approximated with current fields but still needs dedicated authoring or validation work. |
+| `partial` | A future shape can be approximated with current fields but still needs dedicated authoring or validation work. The current matrix has no partial entries. |
 | `planned` | The shape is tracked but not yet represented as a first-class model. |
 
 ## Initial Matrix
@@ -73,10 +73,10 @@ The first backend matrix covers:
 | --- | --- | --- |
 | Closed VUser | Executed | Scenario groups with fixed VUsers, duration, ramp-up, and ramp-down. |
 | Open arrival-rate | Executed | Open workload runtime with TPS targets and throughput-gap telemetry. |
-| Stepped ramp | Executed | Scenario groups with `stages` plus archive/report provenance for staged evidence. |
+| Stepped ramp | Executed | First-class `groups[].stages` with ramp-up, hold, ramp-down, target VUsers, target TPS, compatible runtime derivation, and archive/report provenance for staged evidence. |
 | Rendezvous spike | Executed | `rendezvous` actions synchronize VUsers before a target transaction. |
 | Soak | Executed | Long-duration closed or open workload. |
-| Stress | Executed | High VUser/TPS targets with capacity advice, goal control, and archived goal completion. |
+| Stress | Executed | High VUser/TPS targets with capacity advice, staged escalation, goal control, pre-run validation, and archived goal completion. |
 | Goal-based | Executed | Goal controller adjusts VUsers within guardrails. |
 | Mixed protocol | Executed | Scenario groups can reference different protocol scripts with density-aware capacity advice. |
 

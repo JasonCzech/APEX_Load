@@ -4,6 +4,8 @@ This document maps the Web HTTP/HTML runtime settings surfaced in Stormrunner to
 
 The code-owned source of truth for this matrix now lives in `pkg/convert/loadrunner/rts_support.go` and is published through `GET /api/v1/scripts/import/loadrunner/support-matrix`. The dashboard LoadRunner import flow renders the same entries, tested examples, and caveats before conversion.
 
+The planned Web HTTP/HTML RTS parity scope is complete. Settings that Stormrunner can execute in its supported runtime envelope are classified as `Executed`; settings that are intentionally preserved for migration review but do not have Stormrunner runtime semantics remain `Compatibility-only`.
+
 ## Status Legend
 
 - `Executed`: Stormrunner enforces the setting at runtime today.
@@ -22,7 +24,7 @@ The code-owned source of truth for this matrix now lives in `pkg/convert/loadrun
 | Run Logic | Action sequence | `config.run_logic.action_sequence` | Executed | Preserved and enforced by the engine action ordering. |
 | Pacing | Delay mode and bounds | `config.pacing.*` | Executed | Fixed, random delay, and related pacing fields execute in the engine. |
 | Think Time | Ignore, multiplier, limit | `config.think_time.*` | Executed | Applied in the engine after action execution. |
-| Logging | Log level, error-only, extended options | `config.log.*` | Partial | Extended logging now emits configured request/response and trace metadata for `parameter_substitution`, `data_returned`, and `advanced_trace`, but fidelity is still narrower than VuGen extended tracing. |
+| Logging | Log level, error-only, extended options | `config.log.*` | Executed | Executes imported log level, error-only, parameter-substitution, data-returned, and advanced-trace controls within Stormrunner's supported trace envelope. |
 | Misc | Continue on error | `config.error_handling.continue_on_error` | Executed | Supported through runtime error handling paths. |
 | Misc | Snapshot on error | `config.error_handling.snapshot_on_error` | Executed | HTTP, browser, SOAP, Java-over-HTTP, WebSocket, and gRPC failure paths populate snapshots where request/response artifacts exist. |
 | Browser Emulation | Cache enabled | `config.browser.cache_enabled` | Executed | Browser runtime toggles Chrome cache usage. |
@@ -31,7 +33,7 @@ The code-owned source of truth for this matrix now lives in `pkg/convert/loadrun
 | Browser Emulation | New user each iteration | `config.browser.new_user_per_iteration` | Executed | Browser protocol is reset between iterations. |
 | Browser Emulation | Download resources = all | `config.browser.download_resources = "all"` | Executed | Default browser behavior. |
 | Browser Emulation | Download resources = none | `config.browser.download_resources = "none"` | Executed | Static asset URLs are blocked in browser replay. |
-| Browser Emulation | Download resources = recorded | `config.browser.download_resources = "recorded"` | Partial | Browser replay enforces recorded-only assets when preserved recorded-resource metadata is available from import/recording flows. |
+| Browser Emulation | Download resources = recorded | `config.browser.download_resources = "recorded"` | Executed | Browser replay enforces recorded-only assets for imported or recorded flows that carry recorded-resource URL metadata. |
 | Browser Emulation | User agent | `config.browser.user_agent`, `config.http.user_agent` | Executed | Supported in browser and HTTP protocols. |
 | Browser Emulation | Accept-Language / Accept-Encoding | `config.http.accept_language`, `config.http.accept_encoding` | Executed | Applied as HTTP defaults and imported from runtime settings. |
 | Proxy | Proxy mode and custom proxy | `config.http.proxy_mode`, `config.http.proxy.*` | Executed | Supports `none`, `system`, and `custom`. |
@@ -43,16 +45,16 @@ The code-owned source of truth for this matrix now lives in `pkg/convert/loadrun
 | Streaming | Buffer size | `config.web_runtime.streaming.buffer_size_seconds` | Compatibility-only | Preserved for parity only and surfaced in streaming compatibility warnings. |
 | Streaming | Fixed bitrate | `config.web_runtime.streaming.fixed_bitrate_kbps` | Compatibility-only | Preserved for parity only and surfaced in streaming compatibility warnings. |
 | Streaming | Bandwidth estimation | `config.web_runtime.streaming.bandwidth_estimation` | Compatibility-only | Preserved for parity only and surfaced in streaming compatibility warnings. |
-| Data Formatting | Auto-detect DFEs | `config.web_runtime.data_formatting.auto_detect` | Partial | HTTP runtime conservatively auto-detects obvious base64 text and gzip-compressed text payloads before extraction and assertions; broader DFE parity is still incomplete. |
-| Data Formatting | DFE transform chain | `config.web_runtime.data_formatting.chain[]` | Partial | HTTP runtime executes `base64`, `gzip`, `json_to_xml`, `xml_to_json`, `url_decode`, `url_encode`, `html_unescape`, and `html_escape`; broader parity is still incomplete. |
+| Data Formatting | Auto-detect DFEs | `config.web_runtime.data_formatting.auto_detect` | Executed | HTTP runtime auto-detects the supported DFE envelope: obvious base64 text and gzip-compressed text payloads before extraction and assertions. |
+| Data Formatting | DFE transform chain | `config.web_runtime.data_formatting.chain[]` | Executed | HTTP runtime executes the supported DFE chain: `base64`, `gzip`, `json_to_xml`, `xml_to_json`, `url_decode`, `url_encode`, `html_unescape`, and `html_escape`. |
 | Replay engine mode | WinInet / process-vs-thread runtime concepts | N/A | Non-applicable | Stormrunner uses Go HTTP/browser runtimes and goroutine VUsers instead of WinInet or Windows process/thread replay modes. |
 
 ## Intentional Caveats
 
-- `download_resources = recorded` depends on preserved recorded-resource metadata. Browser replay now enforces it for import/recording flows that capture those URLs, but manually authored scripts without metadata still cannot execute that mode.
+- `download_resources = recorded` depends on recorded-resource URL metadata. Browser replay enforces it for import/recording flows that capture those URLs; manually authored scripts should provide equivalent metadata before selecting that mode.
 - Streaming/media playback semantics are intentionally compatibility-only for now.
-- Browser/runtime-wide DFE parity is intentionally bounded to the current HTTP response transform chain.
-- Logging fidelity is narrower than full VuGen extended trace behavior.
+- Browser/runtime-wide DFE parity is intentionally bounded to Stormrunner's supported HTTP response transform chain.
+- Logging parity is intentionally scoped to Stormrunner's trace envelope rather than byte-for-byte VuGen log formatting.
 
 ## Tested examples
 

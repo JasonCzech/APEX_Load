@@ -210,8 +210,8 @@ func TestLoadModelSupportMatrixEndpoint(t *testing.T) {
 	if len(payload.SupportMatrix) < 8 {
 		t.Fatalf("support_matrix = %d, want core workload shapes", len(payload.SupportMatrix))
 	}
-	if payload.StatusCounts["executed"] == 0 || payload.StatusCounts["partial"] == 0 {
-		t.Fatalf("status_counts = %#v, want executed and partial coverage", payload.StatusCounts)
+	if payload.StatusCounts["executed"] != len(payload.SupportMatrix) || payload.StatusCounts["partial"] != 0 {
+		t.Fatalf("status_counts = %#v, want all load-model shapes executed", payload.StatusCounts)
 	}
 	if !containsLoadModelSupportEntry(payload.SupportMatrix, "open-arrival-rate", "executed") {
 		t.Fatalf("support_matrix = %#v, want executed open arrival-rate entry", payload.SupportMatrix)

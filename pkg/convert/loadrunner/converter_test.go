@@ -784,7 +784,7 @@ FailIfFound=1
 	}
 	assertRuntimeSettingParityEntry(t, parity, "http_transport", RuntimeSettingStatusExecuted)
 	assertRuntimeSettingParityEntry(t, parity, "run_logic_iterations", RuntimeSettingStatusExecuted)
-	assertRuntimeSettingParityEntry(t, parity, "logging", RuntimeSettingStatusPartial)
+	assertRuntimeSettingParityEntry(t, parity, "logging", RuntimeSettingStatusExecuted)
 	assertRuntimeSettingParityEntry(t, parity, "browser_download_resources_all", RuntimeSettingStatusExecuted)
 	assertRuntimeSettingParityEntry(t, parity, "download_filters", RuntimeSettingStatusExecuted)
 }
@@ -879,7 +879,7 @@ func TestGoldenWebHTTPHTMLFixtureRuntimeParity(t *testing.T) {
 		"run_logic_action_sequence":           RuntimeSettingStatusExecuted,
 		"pacing":                              RuntimeSettingStatusExecuted,
 		"think_time":                          RuntimeSettingStatusExecuted,
-		"logging":                             RuntimeSettingStatusPartial,
+		"logging":                             RuntimeSettingStatusExecuted,
 		"continue_on_error":                   RuntimeSettingStatusExecuted,
 		"snapshot_on_error":                   RuntimeSettingStatusExecuted,
 		"browser_device_emulation":            RuntimeSettingStatusExecuted,
@@ -887,21 +887,21 @@ func TestGoldenWebHTTPHTMLFixtureRuntimeParity(t *testing.T) {
 		"browser_cache_content_urls":          RuntimeSettingStatusExecuted,
 		"browser_check_newer_versions":        RuntimeSettingStatusExecuted,
 		"browser_new_user_per_iteration":      RuntimeSettingStatusExecuted,
-		"browser_download_resources_recorded": RuntimeSettingStatusPartial,
+		"browser_download_resources_recorded": RuntimeSettingStatusExecuted,
 		"additional_attributes":               RuntimeSettingStatusCompatibilityOnly,
 		"download_filters":                    RuntimeSettingStatusExecuted,
 		"content_checks":                      RuntimeSettingStatusExecuted,
 		"network_simulation":                  RuntimeSettingStatusExecuted,
 		"streaming":                           RuntimeSettingStatusCompatibilityOnly,
-		"data_formatting_auto_detect":         RuntimeSettingStatusPartial,
-		"data_formatting_chain":               RuntimeSettingStatusPartial,
+		"data_formatting_auto_detect":         RuntimeSettingStatusExecuted,
+		"data_formatting_chain":               RuntimeSettingStatusExecuted,
 	}
 	for id, status := range expectedStatuses {
 		assertRuntimeSettingParityEntry(t, parity, id, status)
 	}
 	counts := RuntimeSettingStatusCounts(parity)
-	if counts[string(RuntimeSettingStatusExecuted)] != 21 || counts[string(RuntimeSettingStatusPartial)] != 4 || counts[string(RuntimeSettingStatusCompatibilityOnly)] != 2 {
-		t.Fatalf("status counts = %#v, want executed=21 partial=4 compatibility_only=2", counts)
+	if counts[string(RuntimeSettingStatusExecuted)] != 25 || counts[string(RuntimeSettingStatusPartial)] != 0 || counts[string(RuntimeSettingStatusCompatibilityOnly)] != 2 {
+		t.Fatalf("status counts = %#v, want executed=25 partial=0 compatibility_only=2", counts)
 	}
 }
 
@@ -929,13 +929,13 @@ Chain=base64,gzip mode=decode
 		t.Fatalf("parity count = %d, want 5 entries", len(parity))
 	}
 	assertRuntimeSettingParityEntry(t, parity, "run_logic_iterations", RuntimeSettingStatusExecuted)
-	assertRuntimeSettingParityEntry(t, parity, "logging", RuntimeSettingStatusPartial)
+	assertRuntimeSettingParityEntry(t, parity, "logging", RuntimeSettingStatusExecuted)
 	assertRuntimeSettingParityEntry(t, parity, "streaming", RuntimeSettingStatusCompatibilityOnly)
-	assertRuntimeSettingParityEntry(t, parity, "data_formatting_auto_detect", RuntimeSettingStatusPartial)
-	assertRuntimeSettingParityEntry(t, parity, "data_formatting_chain", RuntimeSettingStatusPartial)
+	assertRuntimeSettingParityEntry(t, parity, "data_formatting_auto_detect", RuntimeSettingStatusExecuted)
+	assertRuntimeSettingParityEntry(t, parity, "data_formatting_chain", RuntimeSettingStatusExecuted)
 	counts := RuntimeSettingStatusCounts(parity)
-	if counts[string(RuntimeSettingStatusExecuted)] != 1 || counts[string(RuntimeSettingStatusPartial)] != 3 || counts[string(RuntimeSettingStatusCompatibilityOnly)] != 1 {
-		t.Fatalf("status counts = %#v, want executed=1 partial=3 compatibility_only=1", counts)
+	if counts[string(RuntimeSettingStatusExecuted)] != 4 || counts[string(RuntimeSettingStatusPartial)] != 0 || counts[string(RuntimeSettingStatusCompatibilityOnly)] != 1 {
+		t.Fatalf("status counts = %#v, want executed=4 partial=0 compatibility_only=1", counts)
 	}
 }
 
@@ -974,8 +974,8 @@ func TestBuildRTSParityReportFromScriptClassifiesConfiguredScriptSettings(t *tes
 	assertRuntimeSettingParityStatus(t, parity, "http_transport", RuntimeSettingStatusExecuted)
 	assertRuntimeSettingParityStatus(t, parity, "run_logic_iterations", RuntimeSettingStatusExecuted)
 	assertRuntimeSettingParityStatus(t, parity, "run_logic_auto_transactions", RuntimeSettingStatusExecuted)
-	assertRuntimeSettingParityStatus(t, parity, "logging", RuntimeSettingStatusPartial)
-	assertRuntimeSettingParityStatus(t, parity, "browser_download_resources_recorded", RuntimeSettingStatusPartial)
+	assertRuntimeSettingParityStatus(t, parity, "logging", RuntimeSettingStatusExecuted)
+	assertRuntimeSettingParityStatus(t, parity, "browser_download_resources_recorded", RuntimeSettingStatusExecuted)
 	assertRuntimeSettingParityStatus(t, parity, "streaming", RuntimeSettingStatusCompatibilityOnly)
 }
 
@@ -1004,6 +1004,18 @@ func TestBuildRTSParityReportFromScriptSkipsDefaultCompatibilityNoise(t *testing
 	parity := BuildRTSParityReportFromScript(script)
 	if len(parity) != 0 {
 		t.Fatalf("parity = %#v, want no default-only runtime parity entries", parity)
+	}
+}
+
+func TestRTSSupportMatrixHasNoPartialEntriesAfterParityReconciliation(t *testing.T) {
+	matrix := GetRTSSupportMatrix()
+	if len(matrix) == 0 {
+		t.Fatal("expected RTS support matrix entries")
+	}
+	for _, entry := range matrix {
+		if entry.Status == RuntimeSettingStatusPartial {
+			t.Fatalf("support matrix entry %s is still partial: %#v", entry.ID, entry)
+		}
 	}
 }
 

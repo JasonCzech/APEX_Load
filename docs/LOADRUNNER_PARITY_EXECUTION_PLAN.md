@@ -245,9 +245,9 @@ Acceptance criteria:
 ## Workstream 3: Runtime Settings Parity
 
 ### Desired Outcome
-Stormrunner should tell users exactly which imported LoadRunner runtime settings are executed, partially emulated, preserved only, or non-applicable, and it should close the highest-value execution gaps first.
+Stormrunner should tell users exactly which imported LoadRunner runtime settings are executed, preserved only, non-applicable, or blocked, and it should close the highest-value execution gaps first.
 
-Status: Complete for the planned W3 scope. Remaining non-executed areas are explicitly classified as partial or compatibility-only in the code-owned support matrix and public RTS reference.
+Status: Complete for the planned W3 scope. The code-owned support matrix no longer has partial entries for the planned Web HTTP/HTML RTS surface; remaining non-executed areas are intentionally compatibility-only or non-applicable and are documented in the public RTS reference.
 
 ### Epic R1: Runtime Settings Inventory And Classification
 Goal: turn the current reference doc into an executable backlog and user-visible status system.
@@ -282,14 +282,14 @@ Goal: close the runtime behaviors most likely to break real migrations.
 
 Acceptance criteria:
 - Common migrated Web HTTP/HTML settings execute consistently
-- Partial support is explicit where full execution is not practical
+- Compatibility-only support is explicit where execution is intentionally not part of Stormrunner's runtime model
 - High-value imported scripts do not silently degrade at runtime
 
 Recent progress:
 - R2.1 is implemented as bounded imported extended logging parity. VUser logs honor `config.log.level`, `on_error_only`, and extended options for parameter substitution, returned data, and advanced timing/correlation trace fields, with secret-aware redaction coverage in `pkg/engine/vuser_test.go`.
 - R2.2 is implemented across protocols that expose request/response artifacts. HTTP, browser, SOAP, Java-over-HTTP, WebSocket, and gRPC failure paths now populate snapshots so `snapshot_on_error` can capture protocol evidence for archive/debug workflows.
 - R2.3 is implemented for imported and manually authored browser scripts when preserved recorded-resource metadata is present. The engine forwards `recorded_resource_urls` into browser protocol config, browser replay enforces recorded-only resource loading, and validation warns when `download_resources = recorded` lacks the required metadata.
-- R2.4 is implemented as a bounded execution slice for DFE/data-formatting chains. HTTP replay applies explicit `base64`, `gzip`, `json_to_xml`, `xml_to_json`, `url_decode`, `url_encode`, `html_unescape`, and `html_escape` transforms plus conservative base64/gzip auto-detection, while `docs/LOADRUNNER_RTS_REFERENCE.md` documents the remaining intentional exclusions.
+- R2.4 is implemented as the supported execution slice for DFE/data-formatting chains. HTTP replay applies explicit `base64`, `gzip`, `json_to_xml`, `xml_to_json`, `url_decode`, `url_encode`, `html_unescape`, and `html_escape` transforms plus conservative base64/gzip auto-detection, while `docs/LOADRUNNER_RTS_REFERENCE.md` documents the bounded scope.
 - R2.5 is implemented for the planned preserved-only streaming/media scope. Import and validation responses warn that media playback semantics are not executed, include preserved streaming values for review, and keep those settings classified as compatibility-only in parity metadata.
 
 ### Epic R3: Parity Verification Harness
@@ -308,19 +308,19 @@ Acceptance criteria:
 - Support claims in docs are backed by executable coverage
 
 Recent progress:
-- R3.1/R3.2 now have a maintained golden Web HTTP/HTML fixture under `pkg/convert/loadrunner/testdata/golden_web_http_html`. The regression test converts the archive, verifies generated DSL runtime settings, preserved recorded-resource metadata, and side-by-side expected support statuses for executed, partial, and compatibility-only settings.
+- R3.1/R3.2 now have a maintained golden Web HTTP/HTML fixture under `pkg/convert/loadrunner/testdata/golden_web_http_html`. The regression test converts the archive, verifies generated DSL runtime settings, preserved recorded-resource metadata, and side-by-side expected support statuses for executed and compatibility-only settings.
 - R3.3 now exercises that same golden fixture through the LoadRunner import API envelope, asserting user-visible warnings, review sections, status counts, migration readiness, and support-matrix tested-example metadata.
 - R3.4 now references the golden fixture from the code-owned support-matrix examples and `docs/LOADRUNNER_RTS_REFERENCE.md`, keeping the public runtime-settings matrix tied to executable coverage.
 
 ### Runtime Parity Completion Ledger
 - R1 inventory/classification: complete through the code-owned LoadRunner RTS matrix, import metadata, validation metadata, dashboard/script-editor visibility, and migration-readiness scoring.
-- R2 execution gaps: complete for the planned Web HTTP/HTML scope through bounded extended logging, cross-protocol error snapshots, recorded-resource enforcement, expanded DFE execution, and explicit streaming/media compatibility warnings.
+- R2 execution gaps: complete for the planned Web HTTP/HTML scope through scoped extended logging, cross-protocol error snapshots, recorded-resource enforcement, supported DFE execution, and explicit streaming/media compatibility warnings.
 - R3 verification harness: complete through golden Web HTTP/HTML fixtures, side-by-side support assertions, API-envelope parity regressions, and the published support matrix with tested examples.
 
 ### Runtime Parity Workstream Notes
 - Existing seams: `docs/LOADRUNNER_RTS_REFERENCE.md`, converter packages, `pkg/protocol/http`, browser protocol, validation APIs
 - Key risk: trying to chase every historical setting before closing the few that dominate real migrations
-- Completion checkpoint: W3 now has code-owned support classifications, import/validation envelopes, migration readiness scoring, tested golden fixtures, public RTS docs, expanded protocol snapshots, recorded-resource enforcement, bounded DFE execution, and explicit streaming/media compatibility guidance.
+- Completion checkpoint: W3 now has code-owned support classifications without partial entries in the planned RTS surface, import/validation envelopes, migration readiness scoring, tested golden fixtures, public RTS docs, expanded protocol snapshots, recorded-resource enforcement, supported DFE execution, and explicit streaming/media compatibility guidance.
 
 ## Workstream 4: Auth / RBAC
 
@@ -483,7 +483,7 @@ Progress:
 Practical parity in these target areas is now tied to the following completed gates:
 
 1. A representative LoadRunner browser or Web HTTP/HTML script can be imported and reviewed through one shared flow.
-2. The user can see which runtime settings are executed, partial, preserved-only, or unsupported before running the script.
+2. The user can see which runtime settings are executed, compatibility-only/preserved, non-applicable, or blocked before running the script.
 3. A browser replay/debug cycle exists for imported browser drafts before save.
 4. Native OIDC or the chosen production auth mode is fully documented, validated, and test-covered.
 5. RBAC enforcement and dashboard gating are consistent across major resources.
