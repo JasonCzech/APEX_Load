@@ -19,6 +19,7 @@ interface Props {
   onSelectScenario?: (id: string) => void
   onEdit: (id: string) => void
   onDelete: (id: string) => void
+  emptyMessage?: string
 }
 
 function formatDate(value?: string) {
@@ -93,6 +94,7 @@ export default function ScriptsLibraryTable({
   onSelectScenario,
   onEdit,
   onDelete,
+  emptyMessage = 'No scripts yet.',
 }: Props) {
   return (
     <div className="data-table">
@@ -212,7 +214,7 @@ export default function ScriptsLibraryTable({
               </Fragment>
             )
           })}
-          {scripts.length === 0 && <tr><td colSpan={5} className="cell-muted">No scripts yet.</td></tr>}
+          {scripts.length === 0 && <tr><td colSpan={5} className="cell-muted">{emptyMessage}</td></tr>}
         </tbody>
       </table>
     </div>

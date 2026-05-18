@@ -286,6 +286,35 @@ describe('ScriptsPage', () => {
     expect(container.textContent).toContain('script-id:saved-script-1')
   })
 
+  it('filters the script library by visible script metadata', async () => {
+    await act(async () => {
+      root.render(<ScriptsPage />)
+    })
+
+    await flushPromises()
+
+    const searchInput = container.querySelector('input[type="search"]') as HTMLInputElement | null
+    expect(searchInput).not.toBeNull()
+    if (!searchInput) {
+      return
+    }
+
+    await act(async () => {
+      setInputValue(searchInput, 'needs_review')
+    })
+
+    expect(container.textContent).toContain('Existing Script')
+    expect(container.textContent).toContain('1 matching script')
+
+    await act(async () => {
+      setInputValue(searchInput, 'does-not-exist')
+    })
+
+    expect(container.textContent).toContain('0 matching scripts')
+    expect(container.textContent).toContain('No scripts match this search.')
+    expect(container.textContent).not.toContain('Existing Script')
+  })
+
   it('routes jmeter import edit handoff through the draft editor', async () => {
     await act(async () => {
       root.render(<ScriptsPage />)
@@ -932,4 +961,11 @@ async function flushPromises() {
     await Promise.resolve()
     await Promise.resolve()
   })
+}
+
+function setInputValue(input: HTMLInputElement, value: string) {
+  const prototype = Object.getPrototypeOf(input) as HTMLInputElement
+  const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set
+  setter?.call(input, value)
+  input.dispatchEvent(new Event('input', { bubbles: true }))
 }

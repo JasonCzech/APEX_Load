@@ -181,6 +181,19 @@ function formatScenarioResultCount(scenario: StoredScenario) {
   return `${count} result${count === 1 ? '' : 's'}`
 }
 
+function scenarioSearchText(scenario: StoredScenario) {
+  return [
+    scenario.name,
+    scenario.duration,
+    scenario.assignment?.mode,
+    ...(scenario.assignment?.selected_targets || []),
+    ...(scenario.scripts || []).map(script => script.script_name || script.name || script.script_id),
+    ...(scenario.data_pools || []).map(pool => `${pool.alias} ${pool.pool_name || pool.pool_id}`),
+    ...(scenario.associated_releases || []).map(release => release.name),
+    formatBrowserRuntimeSummary(scenario.runtime_settings?.browser),
+  ].filter(Boolean).join(' ').toLowerCase()
+}
+
 function scenarioAssignmentSummary(scenario: StoredScenario) {
   if (scenario.assignment?.mode === 'specific_hosts') {
     const targets = scenario.assignment.selected_targets || []
@@ -220,6 +233,7 @@ function TestHub({ onSelectTest }: Props) {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState<ScenarioFormState>(emptyScenarioForm())
   const [error, setError] = useState('')
+  const [scenarioQuery, setScenarioQuery] = useState('')
   const [sortField, setSortField] = useState<'name' | 'scripts' | 'data_pools' | 'created_at' | 'associated_releases' | 'last_run_at' | 'result_count'>('last_run_at')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
   const [expandedScenarioId, setExpandedScenarioId] = useState<string | null>(null)
@@ -364,14 +378,18 @@ function TestHub({ onSelectTest }: Props) {
   }, [api, buildScenarioDraftPayload, form, showBrowserRuntimeSettings, showForm])
 
   const sorted = useMemo(() => {
-    return [...scenarios].sort((a, b) => {
+    const query = scenarioQuery.trim().toLowerCase()
+    const filteredScenarios = query
+      ? scenarios.filter(scenario => scenarioSearchText(scenario).includes(query))
+      : scenarios
+    return [...filteredScenarios].sort((a, b) => {
       const aValue = getScenarioSortValue(a, sortField)
       const bValue = getScenarioSortValue(b, sortField)
       if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1
       if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1
       return 0
     })
-  }, [scenarios, sortField, sortDirection])
+  }, [scenarios, scenarioQuery, sortField, sortDirection])
 
   const handleSort = (field: typeof sortField) => {
     if (sortField === field) setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc')
@@ -1003,7 +1021,23 @@ function TestHub({ onSelectTest }: Props) {
       )}
 
       <div className="page-section">
-        <h3 className="section-title">Scenario Library ({scenarios.length})</h3>
+        <div className="library-toolbar">
+          <div>
+            <h3 className="section-title">Scenario Library ({scenarios.length})</h3>
+            <p className="library-toolbar-subtitle">
+              {scenarioQuery.trim() ? `${sorted.length} matching scenario${sorted.length === 1 ? '' : 's'}` : 'Search by scenario, script, data pool, release, host, or browser profile.'}
+            </p>
+          </div>
+          <label className="library-search">
+            <span>Search scenarios</span>
+            <input
+              type="search"
+              value={scenarioQuery}
+              onChange={(event) => setScenarioQuery(event.target.value)}
+              placeholder="Find scenarios..."
+            />
+          </label>
+        </div>
         <div className="data-table">
           <table>
             <thead>
@@ -1118,7 +1152,11 @@ function TestHub({ onSelectTest }: Props) {
                 </Fragment>
               ))}
               {sorted.length === 0 && (
-                <tr><td colSpan={5} className="cell-muted">No scenarios yet. Create a scenario from an existing script.</td></tr>
+                <tr>
+                  <td colSpan={5} className="cell-muted">
+                    {scenarioQuery.trim() ? 'No scenarios match this search.' : 'No scenarios yet. Create a scenario from an existing script.'}
+                  </td>
+                </tr>
               )}
             </tbody>
           </table>

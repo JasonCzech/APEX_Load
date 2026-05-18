@@ -238,6 +238,28 @@ describe('TestHub', () => {
     expect(container.textContent).toContain('No data pools')
     expect(container.textContent).toContain('0 results')
 
+    const searchInput = container.querySelector('input[type="search"]') as HTMLInputElement | null
+    expect(searchInput).not.toBeNull()
+    if (!searchInput) return
+
+    await act(async () => {
+      setInputValue(searchInput, 'gen-b')
+    })
+
+    expect(container.textContent).toContain('1 matching scenario')
+    expect(container.textContent).toContain('Pinned Checkout')
+
+    await act(async () => {
+      setInputValue(searchInput, 'does-not-exist')
+    })
+
+    expect(container.textContent).toContain('0 matching scenarios')
+    expect(container.textContent).toContain('No scenarios match this search.')
+
+    await act(async () => {
+      setInputValue(searchInput, '')
+    })
+
     const viewRunsButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('View Runs'))
     expect(viewRunsButton).toBeDefined()
     if (!viewRunsButton) return

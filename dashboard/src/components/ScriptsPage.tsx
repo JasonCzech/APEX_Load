@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AuthoringCorrelationPreviewRequest, AuthoringCorrelationPreviewResponse, AuthoringSession, StoredScript } from '../types'
 import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
@@ -28,6 +28,17 @@ function buildImportedSaveNotice(result: ImportedSaveResult): string | null {
   return `Saved ${scriptText}. Reviewing the first saved script.`
 }
 
+function scriptSearchText(script: StoredScript) {
+  return [
+    script.name,
+    script.protocol,
+    script.version,
+    script.authoring_health?.status,
+    ...(script.associated_releases || []).map(release => release.name),
+    ...(script.scenario_run_releases || []).map(release => release.name),
+  ].filter(Boolean).join(' ').toLowerCase()
+}
+
 export default function ScriptsPage({ initialMode = 'list', initialEditId, onSelectScenario }: Props) {
   const api = useApi()
   const { activeProject } = useProject()
@@ -35,6 +46,7 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
   const [authoringSessions, setAuthoringSessions] = useState<AuthoringSession[]>([])
   const [correlationPreviews, setCorrelationPreviews] = useState<Record<string, AuthoringCorrelationPreviewResponse>>({})
   const [correlationErrors, setCorrelationErrors] = useState<Record<string, string>>({})
+  const [libraryQuery, setLibraryQuery] = useState('')
 
   const refresh = useCallback(async () => {
     try {
@@ -64,6 +76,12 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
     initialEditId,
   })
 
+  const filteredScripts = useMemo(() => {
+    const query = libraryQuery.trim().toLowerCase()
+    if (!query) return scripts
+    return scripts.filter(script => scriptSearchText(script).includes(query))
+  }, [libraryQuery, scripts])
+
   const {
     sortField,
     sortDirection,
@@ -79,7 +97,7 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
     getSortedInnerRuns,
   } = useScriptsLibraryModel({
     api,
-    scripts,
+    scripts: filteredScripts,
     projectId: activeProject?.id,
   })
 
@@ -182,7 +200,23 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
             onPreviewCorrelation={(session, payload) => { void handlePreviewAuthoringCorrelation(session, payload) }}
             onApplyCorrelation={(session, payload) => { void handleApplyAuthoringCorrelation(session, payload) }}
           />
-          <h3 className="section-title">Script Library ({scripts.length})</h3>
+          <div className="library-toolbar">
+            <div>
+              <h3 className="section-title">Script Library ({scripts.length})</h3>
+              <p className="library-toolbar-subtitle">
+                {libraryQuery.trim() ? `${sortedScripts.length} matching script${sortedScripts.length === 1 ? '' : 's'}` : 'Search by script, protocol, health, or release.'}
+              </p>
+            </div>
+            <label className="library-search">
+              <span>Search scripts</span>
+              <input
+                type="search"
+                value={libraryQuery}
+                onChange={(event) => setLibraryQuery(event.target.value)}
+                placeholder="Find scripts..."
+              />
+            </label>
+          </div>
           <ScriptsLibraryTable
             scripts={sortedScripts}
             sortField={sortField}
@@ -199,6 +233,7 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
             onSelectScenario={onSelectScenario}
             onEdit={(id) => { void handleEdit(id) }}
             onDelete={(id) => { void handleDelete(id) }}
+            emptyMessage={libraryQuery.trim() ? 'No scripts match this search.' : 'No scripts yet.'}
           />
         </div>
       </div>
