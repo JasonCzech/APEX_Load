@@ -38,6 +38,7 @@ type metricsStoreSpy struct {
 	occurrencesByID       map[string]*storage.ScenarioScheduleOccurrence
 	approvalsByID         map[string]*storage.ScenarioScheduleApproval
 	leasesByName          map[string]*storage.SchedulerLease
+	auditEvents           []*storage.AuditEvent
 }
 
 var runnerTestProtocolCounter atomic.Uint64
@@ -347,10 +348,33 @@ func (s *metricsStoreSpy) UpdateServiceAccountActive(id string, active bool, upd
 }
 func (s *metricsStoreSpy) DeleteServiceAccount(id string) error { return nil }
 func (s *metricsStoreSpy) SaveAuditEvent(event *storage.AuditEvent) error {
+	if event != nil {
+		clone := *event
+		if event.Details != nil {
+			clone.Details = map[string]any{}
+			for key, value := range event.Details {
+				clone.Details[key] = value
+			}
+		}
+		s.auditEvents = append(s.auditEvents, &clone)
+	}
 	return nil
 }
 func (s *metricsStoreSpy) ListAuditEvents(filter storage.AuditEventFilter) ([]*storage.AuditEvent, error) {
-	return nil, nil
+	out := make([]*storage.AuditEvent, 0, len(s.auditEvents))
+	for _, event := range s.auditEvents {
+		if event == nil {
+			continue
+		}
+		if filter.ProjectID != "" && event.ProjectID != filter.ProjectID {
+			continue
+		}
+		if filter.Action != "" && event.Action != filter.Action {
+			continue
+		}
+		out = append(out, event)
+	}
+	return out, nil
 }
 func (s *metricsStoreSpy) Close() error { return nil }
 
@@ -4097,6 +4121,13 @@ func TestScenarioSchedulerRunDueSchedulesCreatesAndStartsRun(t *testing.T) {
 	if len(occurrences) != 1 || occurrences[0].Status != "materialized" || occurrences[0].TestID != updated.LastRunTestID {
 		t.Fatalf("occurrences = %#v, want one materialized occurrence for %s", occurrences, updated.LastRunTestID)
 	}
+	auditEvents, err := store.ListAuditEvents(storage.AuditEventFilter{Action: "scenario.schedule.occurrence.materialized", Limit: 10})
+	if err != nil {
+		t.Fatalf("ListAuditEvents returned error: %v", err)
+	}
+	if len(auditEvents) != 1 || auditEvents[0].ResourceID != occurrences[0].ID || auditEvents[0].Details["reason_code"] != "started" {
+		t.Fatalf("audit events = %#v, want materialized occurrence audit", auditEvents)
+	}
 }
 
 func TestScenarioSchedulerReconcilesMaterializedOccurrenceAfterRestart(t *testing.T) {
@@ -4253,6 +4284,13 @@ func TestScenarioSchedulerBlocksDueSchedulePendingApproval(t *testing.T) {
 	}
 	if len(occurrences) != 1 || occurrences[0].Status != "blocked" || occurrences[0].ReasonCode != "approval_required" || occurrences[0].ApprovalID != "approval-1" {
 		t.Fatalf("occurrences = %#v, want approval-blocked occurrence", occurrences)
+	}
+	auditEvents, err := store.ListAuditEvents(storage.AuditEventFilter{Action: "scenario.schedule.occurrence.blocked", Limit: 10})
+	if err != nil {
+		t.Fatalf("ListAuditEvents returned error: %v", err)
+	}
+	if len(auditEvents) != 1 || auditEvents[0].Status != "blocked" || auditEvents[0].Details["approval_id"] != "approval-1" {
+		t.Fatalf("audit events = %#v, want blocked approval occurrence audit", auditEvents)
 	}
 }
 

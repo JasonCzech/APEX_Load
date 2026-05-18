@@ -63,6 +63,7 @@ type scenarioPersistence interface {
 	GetSchedulerLease(name string) (*storage.SchedulerLease, error)
 	SaveScenarioDataPoolBindings(scenarioID string, bindings []storage.ScenarioDataPoolBinding) error
 	ListScenarioDataPoolBindings(scenarioID string) ([]storage.ScenarioDataPoolBinding, error)
+	SaveAuditEvent(event *storage.AuditEvent) error
 }
 
 type dataPoolPersistence interface {
@@ -1334,9 +1335,71 @@ func (tr *TestRunner) saveScenarioScheduleOccurrenceLocked(occurrence *storage.S
 			occurrence.ID = existing.ID
 			occurrence.CreatedAt = existing.CreatedAt
 		}
-		return tr.scenarioStore.SaveScenarioScheduleOccurrence(occurrence)
+		if err := tr.scenarioStore.SaveScenarioScheduleOccurrence(occurrence); err != nil {
+			return err
+		}
+		tr.recordScenarioScheduleOccurrenceAuditLocked(occurrence)
+		return nil
 	}
 	return nil
+}
+
+func (tr *TestRunner) recordScenarioScheduleOccurrenceAuditLocked(occurrence *storage.ScenarioScheduleOccurrence) {
+	if tr == nil || tr.scenarioStore == nil || occurrence == nil {
+		return
+	}
+	action, status, ok := scenarioScheduleOccurrenceAuditAction(occurrence.Status)
+	if !ok {
+		return
+	}
+	details := map[string]any{
+		"schedule_id":       occurrence.ScheduleID,
+		"scenario_id":       occurrence.ScenarioID,
+		"schedule_revision": occurrence.ScheduleRevision,
+		"planned_at":        occurrence.PlannedAt.UTC().Format(time.RFC3339),
+		"occurrence_status": occurrence.Status,
+		"reason_code":       occurrence.ReasonCode,
+	}
+	if occurrence.MaterializedAt != nil {
+		details["materialized_at"] = occurrence.MaterializedAt.UTC().Format(time.RFC3339)
+	}
+	if occurrence.TestID != "" {
+		details["test_id"] = occurrence.TestID
+	}
+	if occurrence.ApprovalID != "" {
+		details["approval_id"] = occurrence.ApprovalID
+	}
+	if occurrence.ConflictSummary != "" {
+		details["conflict_summary"] = occurrence.ConflictSummary
+	}
+	_ = tr.scenarioStore.SaveAuditEvent(&storage.AuditEvent{
+		ID:               uuid.New().String(),
+		Action:           action,
+		ActorType:        "system",
+		ActorSubject:     "scenario-scheduler",
+		ActorDisplayName: "Scenario Scheduler",
+		ProjectID:        normalizeProjectID(occurrence.ProjectID),
+		ResourceType:     "scenario_schedule_occurrence",
+		ResourceID:       occurrence.ID,
+		Status:           status,
+		Details:          details,
+		CreatedAt:        time.Now().UTC(),
+	})
+}
+
+func scenarioScheduleOccurrenceAuditAction(occurrenceStatus string) (string, string, bool) {
+	switch strings.TrimSpace(occurrenceStatus) {
+	case "materialized", "queued", "completed", "approved":
+		return "scenario.schedule.occurrence.materialized", "success", true
+	case "blocked":
+		return "scenario.schedule.occurrence.blocked", "blocked", true
+	case "skipped":
+		return "scenario.schedule.occurrence.skipped", "success", true
+	case "failed":
+		return "scenario.schedule.occurrence.failed", "failure", true
+	default:
+		return "", "", false
+	}
 }
 
 func (tr *TestRunner) ListScenarioScheduleOccurrences(scenarioID string, scheduleID string) ([]*storage.ScenarioScheduleOccurrence, bool) {

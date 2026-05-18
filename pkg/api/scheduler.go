@@ -25,6 +25,7 @@ type scenarioSchedulePersistence interface {
 	ListScenarioScheduleApprovals(scheduleID string) ([]*storage.ScenarioScheduleApproval, error)
 	TryAcquireSchedulerLease(name string, ownerID string, now time.Time, ttl time.Duration) (bool, error)
 	GetSchedulerLease(name string) (*storage.SchedulerLease, error)
+	SaveAuditEvent(event *storage.AuditEvent) error
 }
 
 type scenarioScheduler struct {
