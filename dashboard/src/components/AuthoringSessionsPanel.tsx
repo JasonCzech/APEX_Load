@@ -64,11 +64,25 @@ export default function AuthoringSessionsPanel({
                 {session.draft?.metadata?.import?.source && (
                   <span className="script-health-token">{formatSource(session.draft.metadata.import.source)}</span>
                 )}
+                {session.approval_ready === false && (
+                  <span className="script-health-token danger">approval blocked</span>
+                )}
+                {session.approval_ready === true && (
+                  <span className="script-health-token healthy">approval ready</span>
+                )}
               </div>
+              {session.next_actions?.length ? (
+                <ul className="authoring-session-next-actions">
+                  {session.next_actions.slice(0, 3).map(action => <li key={action}>{action}</li>)}
+                </ul>
+              ) : null}
+              {session.blocking_health_inputs?.length ? (
+                <p className="authoring-session-blockers">Blocking inputs: {session.blocking_health_inputs.join(', ')}</p>
+              ) : null}
             </div>
             <div className="authoring-session-actions">
               <button className="btn btn-secondary" type="button" onClick={() => onResume(session)} disabled={!session.draft}>Resume</button>
-              <button className="btn btn-primary" type="button" onClick={() => onApprove(session)} disabled={!session.draft || session.status === 'blocked'}>Approve</button>
+              <button className="btn btn-primary" type="button" onClick={() => onApprove(session)} disabled={!session.draft || session.status === 'blocked' || session.approval_ready === false}>Approve</button>
               <button className="btn btn-secondary" type="button" onClick={() => onDiscard(session)}>Discard</button>
             </div>
             {session.draft && (

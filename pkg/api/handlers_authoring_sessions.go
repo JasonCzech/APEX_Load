@@ -60,6 +60,7 @@ func (s *Server) handleCreateAuthoringSession(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	enrichAuthoringSession(session)
 	s.recordAuditEvent(r, "script.authoring_session.create", "success", "authoring_session", session.ID, session.ProjectID, map[string]any{"name": session.Name, "source": session.Source})
 	writeJSON(w, http.StatusCreated, session)
 }
@@ -71,6 +72,7 @@ func (s *Server) handleListAuthoringSessions(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	enrichAuthoringSessions(sessions)
 	writeJSON(w, http.StatusOK, map[string]any{"sessions": sessions, "count": len(sessions)})
 }
 
@@ -79,6 +81,7 @@ func (s *Server) handleGetAuthoringSession(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
+	enrichAuthoringSession(session)
 	writeJSON(w, http.StatusOK, session)
 }
 
@@ -107,6 +110,7 @@ func (s *Server) handleUpdateAuthoringSession(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	enrichAuthoringSession(existing)
 	s.recordAuditEvent(r, "script.authoring_session.update", "success", "authoring_session", existing.ID, existing.ProjectID, map[string]any{"name": existing.Name, "source": existing.Source, "status": existing.Status})
 	writeJSON(w, http.StatusOK, existing)
 }
@@ -138,8 +142,11 @@ func (s *Server) handleApproveAuthoringSession(w http.ResponseWriter, r *http.Re
 
 	validation := buildScriptValidationResponse("", session.Draft)
 	if !validation.Valid || validation.AuthoringHealth.Status == "blocked" {
+		updateAuthoringSessionReviewReadiness(session, validation.AuthoringHealth)
+		_ = s.saveAuthoringSession(session)
 		s.recordAuditEvent(r, "script.authoring_session.approve", "failure", "authoring_session", session.ID, session.ProjectID, map[string]any{
 			"health_status": validation.AuthoringHealth.Status,
+			"next_actions":  session.NextActions,
 			"issues":        validation.Issues,
 		})
 		writeJSON(w, http.StatusBadRequest, validation)
@@ -159,10 +166,12 @@ func (s *Server) handleApproveAuthoringSession(w http.ResponseWriter, r *http.Re
 	session.ReviewState["approved_script_id"] = stored.ID
 	session.ReviewState["approved_at"] = now.Format(time.RFC3339Nano)
 	session.ReviewState["approval_health_status"] = validation.AuthoringHealth.Status
+	updateAuthoringSessionReviewReadiness(session, validation.AuthoringHealth)
 	if err := s.saveAuthoringSession(session); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	enrichAuthoringSession(session)
 
 	s.recordAuditEvent(r, "script.authoring_session.approve", "success", "authoring_session", session.ID, session.ProjectID, map[string]any{"script_id": stored.ID, "health_status": validation.AuthoringHealth.Status})
 	writeJSON(w, http.StatusOK, authoringSessionApprovalResponse{
@@ -170,6 +179,100 @@ func (s *Server) handleApproveAuthoringSession(w http.ResponseWriter, r *http.Re
 		Script:          stored,
 		AuthoringHealth: validation.AuthoringHealth,
 	})
+}
+
+func enrichAuthoringSessions(sessions []*storage.AuthoringSession) {
+	for _, session := range sessions {
+		enrichAuthoringSession(session)
+	}
+}
+
+func enrichAuthoringSession(session *storage.AuthoringSession) {
+	if session == nil {
+		return
+	}
+	if session.Status == "approved" {
+		session.ApprovalReady = false
+		if len(session.NextActions) == 0 {
+			session.NextActions = []string{"Session is already approved and promoted to a stored script."}
+		}
+		return
+	}
+	if session.Draft == nil {
+		session.ApprovalReady = false
+		session.BlockingHealthInputs = []string{"draft"}
+		session.NextActions = []string{"Attach or restore a draft before approval."}
+		return
+	}
+	validation := buildScriptValidationResponse("", session.Draft)
+	updateAuthoringSessionReviewReadiness(session, validation.AuthoringHealth)
+}
+
+func updateAuthoringSessionReviewReadiness(session *storage.AuthoringSession, health AuthoringHealth) {
+	if session == nil {
+		return
+	}
+	blocking := authoringHealthInputsWithStatus(health, "blocker")
+	warnings := authoringHealthInputsWithStatus(health, "warning")
+	session.BlockingHealthInputs = blocking
+	session.ApprovalReady = health.Status == "ready" || health.Status == "needs_review"
+	session.NextActions = authoringNextActions(health, blocking, warnings)
+	if session.ReviewState == nil {
+		session.ReviewState = map[string]any{}
+	}
+	session.ReviewState["approval_health_status"] = health.Status
+	session.ReviewState["approval_ready"] = session.ApprovalReady
+	session.ReviewState["blocking_health_inputs"] = append([]string(nil), session.BlockingHealthInputs...)
+	session.ReviewState["next_actions"] = append([]string(nil), session.NextActions...)
+}
+
+func authoringHealthInputsWithStatus(health AuthoringHealth, status string) []string {
+	out := make([]string, 0)
+	for _, input := range health.Inputs {
+		if input.Status == status {
+			out = append(out, input.Key)
+		}
+	}
+	return out
+}
+
+func authoringNextActions(health AuthoringHealth, blocking []string, warnings []string) []string {
+	if len(blocking) == 0 && len(warnings) == 0 {
+		return []string{"Approve this draft for reusable script promotion."}
+	}
+	actions := make([]string, 0, len(blocking)+len(warnings))
+	for _, key := range blocking {
+		actions = append(actions, authoringHealthInputAction(key, true))
+	}
+	for _, key := range warnings {
+		actions = append(actions, authoringHealthInputAction(key, false))
+	}
+	if health.Status == "needs_review" && len(actions) == 0 {
+		actions = append(actions, "Review warning-level health inputs before approval.")
+	}
+	return sortedUniqueStrings(actions)
+}
+
+func authoringHealthInputAction(key string, blocking bool) string {
+	switch key {
+	case "validation_issues":
+		return "Fix validation issues in the draft script."
+	case "runtime_parity":
+		return "Review runtime parity findings and resolve incompatible settings."
+	case "data_source_fit":
+		return "Repair data-source bindings, required columns, or row-count fit."
+	case "ai_guardrails":
+		return "Attach AI provenance, diff review, validation, and replay evidence."
+	case "replay_readiness":
+		return "Run or repair replay readiness before promotion."
+	case "warnings":
+		return "Review validation warnings before promotion."
+	default:
+		if blocking {
+			return "Resolve blocking authoring health input: " + key + "."
+		}
+		return "Review authoring health input: " + key + "."
+	}
 }
 
 func readAuthoringSessionRequest(w http.ResponseWriter, r *http.Request) (authoringSessionRequest, bool) {
@@ -307,5 +410,7 @@ func cloneAuthoringSession(in *storage.AuthoringSession) *storage.AuthoringSessi
 		out.Draft = &draft
 	}
 	out.ReviewState = cloneReviewState(in.ReviewState)
+	out.NextActions = append([]string(nil), in.NextActions...)
+	out.BlockingHealthInputs = append([]string(nil), in.BlockingHealthInputs...)
 	return &out
 }

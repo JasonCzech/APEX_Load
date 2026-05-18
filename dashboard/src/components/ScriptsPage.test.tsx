@@ -650,6 +650,9 @@ describe('ScriptsPage', () => {
           actions: [],
         },
         review_state: { approval_health_status: 'needs_review', pending_repairs: ['correlation'] },
+        approval_ready: true,
+        next_actions: ['Review validation warnings before promotion.'],
+        blocking_health_inputs: [],
         created_at: '2026-05-18T13:00:00Z',
         updated_at: '2026-05-18T13:05:00Z',
         last_accessed_at: '2026-05-18T13:05:00Z',
@@ -680,6 +683,8 @@ describe('ScriptsPage', () => {
     expect(container.textContent).toContain('Loadrunner')
     expect(container.textContent).toContain('Last approval: needs_review')
     expect(container.textContent).toContain('1 pending repair')
+    expect(container.textContent).toContain('approval ready')
+    expect(container.textContent).toContain('Review validation warnings before promotion.')
 
     const resumeButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Resume'))
     expect(resumeButton).toBeDefined()
@@ -723,6 +728,48 @@ describe('ScriptsPage', () => {
     expect(container.querySelector('[data-testid="script-editor"]')).not.toBeNull()
     expect(container.textContent).toContain('script-id:approved-script-1')
     expect(container.textContent).toContain('Approved authoring session "Migrated checkout review". Reviewing the promoted script.')
+  })
+
+  it('disables authoring-session approval when backend health inputs block promotion', async () => {
+    apiMock.listAuthoringSessions.mockResolvedValue({
+      sessions: [{
+        id: 'session-blocked',
+        project_id: 'project-1',
+        source: 'ai_generated',
+        name: 'Generated checkout review',
+        status: 'ready',
+        draft: {
+          name: 'Generated checkout review',
+          version: '1.0.0',
+          protocol: 'http',
+          config: { base_url: 'https://checkout.example.com' },
+          actions: [],
+        },
+        review_state: { approval_health_status: 'blocked' },
+        approval_ready: false,
+        blocking_health_inputs: ['ai_guardrails', 'replay_readiness'],
+        next_actions: ['Attach AI provenance, diff review, validation, and replay evidence.', 'Run or repair replay readiness before promotion.'],
+        created_at: '2026-05-18T13:00:00Z',
+        updated_at: '2026-05-18T13:05:00Z',
+        last_accessed_at: '2026-05-18T13:05:00Z',
+      }],
+      count: 1,
+    })
+
+    await act(async () => {
+      root.render(<ScriptsPage />)
+    })
+
+    await flushPromises()
+
+    expect(container.textContent).toContain('Generated checkout review')
+    expect(container.textContent).toContain('approval blocked')
+    expect(container.textContent).toContain('Blocking inputs: ai_guardrails, replay_readiness')
+    expect(container.textContent).toContain('Attach AI provenance, diff review, validation, and replay evidence.')
+
+    const approveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Approve'))
+    expect(approveButton).toBeDefined()
+    expect(approveButton?.disabled).toBe(true)
   })
 
   it('previews and applies guided correlation repairs for authoring sessions', async () => {

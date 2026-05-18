@@ -1102,6 +1102,9 @@ export interface AuthoringSession {
   status: string
   draft?: ScriptDefinition
   review_state?: Record<string, unknown>
+  next_actions?: string[]
+  blocking_health_inputs?: string[]
+  approval_ready?: boolean
   created_at: string
   updated_at: string
   last_accessed_at: string

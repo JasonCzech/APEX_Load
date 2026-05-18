@@ -146,7 +146,7 @@ Reference artifact: `docs/ENTERPRISE_AUTHORING_CONTRACT.md`.
 | P3.2 | Add an authoring capability matrix for each source: LoadRunner, TrueClient MobileWeb, JMeter, DevWeb, HAR, recorder, sample, manual, AI-generated | M | P3.1 | Complete for backend source matrix |
 | P3.3 | Add consistent draft health scoring across validation issues, runtime parity, unsupported constructs, missing data, and replay readiness | L | P3.1 | Complete for validation response scoring and dashboard list/review health badges with warning/blocker drilldowns |
 | P3.4 | Add authoring session persistence for unsaved drafts and long-running repair workflows | L | P3.1 | Complete for API and SQLite persistence |
-| P3.5 | Add review/approval handoff for migrated scripts before they become reusable scenario assets | M | P3.3 | Partial backend/UI complete: backend approval gate plus dashboard authoring-session review queue for resume, approve, and discard |
+| P3.5 | Add review/approval handoff for migrated scripts before they become reusable scenario assets | M | P3.3 | Complete: authoring sessions persist draft/review state, expose backend-computed `approval_ready`, `blocking_health_inputs`, and `next_actions`, block invalid promotion through the approval endpoint, and the dashboard review queue supports resume, approve, discard, and blocker guidance |
 
 Acceptance criteria:
 - Every acquisition path lands in the same draft contract and health model.
@@ -160,7 +160,7 @@ Acceptance criteria:
 | P3.6 | Expand correlation suggestions into guided variable creation and extractor insertion with preview diffs | L | P3.3 | Partial backend/UI complete: session preview/apply endpoint plus dashboard guided repair controls and diff summary |
 | P3.7 | Add data-source fit checks for required columns, exhaustion policy, uniqueness, and row-count versus load model | M | P3.3 | Partial backend/UI complete: validation response and health scoring cover source/column/row-count readiness and ScriptEditor surfaces fit evidence |
 | P3.8 | Add protocol-aware starter templates for common enterprise flows and CI/CD smoke tests | M | P3.2 | Complete for first-pass backend/UI catalog: HTTP, browser, SOAP, Java-over-HTTP, WebSocket, gRPC, JMS Solace, JMeter, HAR, and DevWeb starters are exposed by the controller-owned template endpoint and surfaced in the dashboard create flow with use-case/tag context |
-| P3.9 | Add AI-assisted script generation guardrails: provenance, validation, diff review, and replay-before-save requirements | L | P3.1 | Partial backend/UI complete: validation/health guardrails block promotion and ScriptEditor surfaces guardrail evidence |
+| P3.9 | Add AI-assisted script generation guardrails: provenance, validation, diff review, and replay-before-save requirements | L | P3.1 | Complete for current authoring flow: validation health includes AI guardrail evidence, approval responses expose blocker inputs and next actions, the dashboard disables blocked promotion, and ScriptEditor surfaces guardrail evidence for review |
 
 Acceptance criteria:
 - Suggested authoring changes are previewable, reversible, and auditable.

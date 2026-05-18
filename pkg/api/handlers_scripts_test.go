@@ -2040,6 +2040,9 @@ func TestAuthoringSessionLifecyclePersistsDraftReviewState(t *testing.T) {
 	if created.Draft == nil || created.Draft.ProjectID != "project-authoring" {
 		t.Fatalf("created draft = %#v, want project-bound draft", created.Draft)
 	}
+	if !created.ApprovalReady || len(created.NextActions) == 0 {
+		t.Fatalf("created readiness = ready %v actions %#v, want promotable next action", created.ApprovalReady, created.NextActions)
+	}
 
 	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/scripts/authoring/sessions?project_id=project-authoring", nil)
 	listResp := httptest.NewRecorder()
@@ -2056,6 +2059,9 @@ func TestAuthoringSessionLifecyclePersistsDraftReviewState(t *testing.T) {
 	}
 	if listed.Count != 1 || listed.Sessions[0].ID != created.ID {
 		t.Fatalf("listed sessions = %#v, want created session", listed)
+	}
+	if !listed.Sessions[0].ApprovalReady || len(listed.Sessions[0].NextActions) == 0 {
+		t.Fatalf("listed readiness = ready %v actions %#v, want computed readiness", listed.Sessions[0].ApprovalReady, listed.Sessions[0].NextActions)
 	}
 
 	updateBody := []byte(`{
@@ -2130,6 +2136,9 @@ func TestApproveAuthoringSessionPromotesDraftToScriptLibrary(t *testing.T) {
 	if approved.Session == nil || approved.Session.Status != "approved" {
 		t.Fatalf("approved session = %#v, want approved status", approved.Session)
 	}
+	if approved.Session.ApprovalReady {
+		t.Fatalf("approved session readiness = %#v, want no further approval", approved.Session)
+	}
 	if approved.Session.ReviewState["approved_script_id"] != approved.Script.ID {
 		t.Fatalf("review state = %#v, want approved script id %q", approved.Session.ReviewState, approved.Script.ID)
 	}
@@ -2186,8 +2195,12 @@ func TestApproveAuthoringSessionRejectsBlockedDraft(t *testing.T) {
 	if err != nil {
 		t.Fatalf("listAuthoringSessions returned error: %v", err)
 	}
+	enrichAuthoringSessions(sessions)
 	if len(sessions) != 1 || sessions[0].Status != "ready" {
 		t.Fatalf("sessions = %#v, want original ready session without approval", sessions)
+	}
+	if sessions[0].ApprovalReady || len(sessions[0].BlockingHealthInputs) == 0 || len(sessions[0].NextActions) == 0 {
+		t.Fatalf("session readiness = ready %v blockers %#v actions %#v, want blocked approval guidance", sessions[0].ApprovalReady, sessions[0].BlockingHealthInputs, sessions[0].NextActions)
 	}
 }
 

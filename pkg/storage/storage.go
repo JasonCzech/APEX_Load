@@ -163,16 +163,19 @@ type UsageAccountingSnapshot struct {
 }
 
 type AuthoringSession struct {
-	ID             string         `json:"id"`
-	ProjectID      string         `json:"project_id,omitempty"`
-	Source         string         `json:"source"`
-	Name           string         `json:"name"`
-	Status         string         `json:"status"`
-	Draft          *dsl.Script    `json:"draft,omitempty"`
-	ReviewState    map[string]any `json:"review_state,omitempty"`
-	CreatedAt      time.Time      `json:"created_at"`
-	UpdatedAt      time.Time      `json:"updated_at"`
-	LastAccessedAt time.Time      `json:"last_accessed_at"`
+	ID                   string         `json:"id"`
+	ProjectID            string         `json:"project_id,omitempty"`
+	Source               string         `json:"source"`
+	Name                 string         `json:"name"`
+	Status               string         `json:"status"`
+	Draft                *dsl.Script    `json:"draft,omitempty"`
+	ReviewState          map[string]any `json:"review_state,omitempty"`
+	NextActions          []string       `json:"next_actions,omitempty"`
+	BlockingHealthInputs []string       `json:"blocking_health_inputs,omitempty"`
+	ApprovalReady        bool           `json:"approval_ready"`
+	CreatedAt            time.Time      `json:"created_at"`
+	UpdatedAt            time.Time      `json:"updated_at"`
+	LastAccessedAt       time.Time      `json:"last_accessed_at"`
 }
 
 type Application struct {

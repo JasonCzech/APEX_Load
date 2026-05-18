@@ -565,6 +565,21 @@
   cursor: not-allowed;
 }
 
+.authoring-session-next-actions {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.authoring-session-next-actions li + li {
+  margin-top: 3px;
+}
+
+.authoring-session-blockers {
+  color: var(--danger) !important;
+}
+
 .authoring-correlation-repair {
   border-top: 1px solid var(--border);
   padding-top: 12px;
