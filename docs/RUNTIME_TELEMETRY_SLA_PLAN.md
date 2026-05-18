@@ -103,6 +103,12 @@ The eighth implementation slice now decomposes distributed freshness into genera
 - The controller stamps batch receipt time, computes generator processing lag plus transport lag before websocket fan-out, and then records controller fan-out lag at publish time.
 - Typed SQLite interval summaries now persist the additional lag-stage timestamps and metrics under a new interval-summary schema version so stored history matches the live execution telemetry card.
 
+The ninth implementation slice now turns those measured stages into configurable SLA budgets:
+
+- System settings include explicit telemetry thresholds for sample age, generator processing lag, generator-to-controller transport lag, controller fan-out lag, and dashboard browser-render lag.
+- Existing persisted settings are normalized with defaults of 2000 ms end-to-end sample age and 500 ms per stage so upgraded controllers enforce the live monitoring budget without manual migration.
+- Live `telemetry_diagnostic` events now use the configured thresholds instead of a hard-coded sample-age check, and the Settings page exposes the budgets alongside the existing performance thresholds.
+
 ## Recommended Next Steps
 1. Expand correlation and dependency metadata coverage to the remaining protocols so distributed telemetry diagnostics stay consistent outside HTTP and JMS.
-2. Turn the documented stage budgets into explicit diagnostic thresholds and sustained-breach reporting so the under-2-second SLA is enforced, not just observed.
+2. Add sustained-breach reporting and run-level telemetry health transitions so isolated lag spikes can be separated from persistent monitoring SLA failures.

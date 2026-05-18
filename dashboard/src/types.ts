@@ -171,6 +171,11 @@ export interface RunArchiveExecutionSettingsSnapshot {
     max_p99_latency_ms?: number
     max_avg_server_processing_ms?: number
     max_avg_transfer_ms?: number
+    max_telemetry_sample_age_ms?: number
+    max_telemetry_generator_lag_ms?: number
+    max_telemetry_transport_lag_ms?: number
+    max_telemetry_controller_fanout_ms?: number
+    max_telemetry_browser_render_lag_ms?: number
   }
   capacity_planning: {
     headroom_pct: number
@@ -697,6 +702,7 @@ export interface TelemetryHealth {
   generator_processing_lag_ms?: number
   transport_lag_ms?: number
   controller_fanout_lag_ms?: number
+  browser_render_lag_ms?: number
   delivery_lag_ms?: number
   end_to_end_age_ms?: number
   sample_age_ms?: number
@@ -1043,6 +1049,11 @@ export interface DashboardThresholdSettings {
   max_p99_latency_ms?: number
   max_avg_server_processing_ms?: number
   max_avg_transfer_ms?: number
+  max_telemetry_sample_age_ms?: number
+  max_telemetry_generator_lag_ms?: number
+  max_telemetry_transport_lag_ms?: number
+  max_telemetry_controller_fanout_ms?: number
+  max_telemetry_browser_render_lag_ms?: number
 }
 
 export interface DashboardGeneralSettings {

@@ -204,12 +204,12 @@ Live monitoring stays under the documented two-second target, shows health of th
 
 ### Epic P5.1: Telemetry SLA Enforcement
 
-| ID | Story | Size | Dependencies |
-| --- | --- | --- | --- |
-| P5.1 | Convert telemetry stage budgets into configurable thresholds for generator, transport, controller, fan-out, and browser-render lag | M | none |
-| P5.2 | Add sustained telemetry breach detection and run-level health state transitions | L | P5.1 |
-| P5.3 | Add alert hooks for telemetry freshness, dropped samples, websocket backpressure, and generator stream degradation | M | P5.2 |
-| P5.4 | Add live telemetry SLA summaries to run archives for post-run confidence review | M | P5.2, P6.1 |
+| ID | Story | Size | Dependencies | Status |
+| --- | --- | --- | --- | --- |
+| P5.1 | Convert telemetry stage budgets into configurable thresholds for generator, transport, controller, fan-out, and browser-render lag | M | none | Complete - system settings now carry configurable telemetry budgets, live diagnostics evaluate measured lag stages against those budgets, and the Settings page exposes the controls. |
+| P5.2 | Add sustained telemetry breach detection and run-level health state transitions | L | P5.1 | Planned |
+| P5.3 | Add alert hooks for telemetry freshness, dropped samples, websocket backpressure, and generator stream degradation | M | P5.2 | Planned |
+| P5.4 | Add live telemetry SLA summaries to run archives for post-run confidence review | M | P5.2, P6.1 | Planned |
 
 Acceptance criteria:
 - Under-2-second monitoring is enforced as a measurable pipeline budget.

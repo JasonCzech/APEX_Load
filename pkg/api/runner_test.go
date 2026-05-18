@@ -1422,6 +1422,72 @@ func TestPublishLiveMetricsBroadcastsTelemetryDiagnosticOnDegradation(t *testing
 	}
 }
 
+func TestPublishLiveMetricsUsesConfiguredTelemetryBudgets(t *testing.T) {
+	hub := NewHub()
+	runner := NewTestRunner(2, hub, nil)
+	settings := runner.GetSystemSettings()
+	sampleAgeBudget := 100.0
+	generatorBudget := 50.0
+	transportBudget := 60.0
+	fanoutBudget := 70.0
+	browserBudget := 80.0
+	settings.Thresholds.MaxTelemetrySampleAgeMs = &sampleAgeBudget
+	settings.Thresholds.MaxTelemetryGeneratorLagMs = &generatorBudget
+	settings.Thresholds.MaxTelemetryTransportLagMs = &transportBudget
+	settings.Thresholds.MaxTelemetryControllerFanoutMs = &fanoutBudget
+	settings.Thresholds.MaxTelemetryBrowserRenderLagMs = &browserBudget
+	if _, err := runner.UpdateSystemSettings(settings); err != nil {
+		t.Fatalf("UpdateSystemSettings returned error: %v", err)
+	}
+
+	now := time.Now()
+	testRun := &ManagedTest{ID: "test-1", Name: "Telemetry Budget"}
+	live := &LiveMetrics{
+		Timestamp: now,
+		Telemetry: &TelemetryHealth{
+			CollectedAt:              now.Add(-250 * time.Millisecond),
+			ControllerReceivedAt:     now.Add(-200 * time.Millisecond),
+			GeneratorProcessingLagMs: 75,
+			TransportLagMs:           90,
+			BrowserRenderLagMs:       120,
+		},
+	}
+
+	runner.publishLiveMetrics(testRun, live, nil)
+
+	select {
+	case <-hub.broadcast:
+	default:
+		t.Fatal("expected metrics_update broadcast")
+	}
+
+	var diagnosticPayload struct {
+		Type string               `json:"type"`
+		Data *TelemetryDiagnostic `json:"data"`
+	}
+	select {
+	case msg := <-hub.broadcast:
+		if err := json.Unmarshal(msg, &diagnosticPayload); err != nil {
+			t.Fatalf("failed to decode diagnostic payload: %v", err)
+		}
+	default:
+		t.Fatal("expected telemetry_diagnostic broadcast payload")
+	}
+	if diagnosticPayload.Type != "telemetry_diagnostic" {
+		t.Fatalf("expected telemetry_diagnostic, got %#v", diagnosticPayload)
+	}
+	if diagnosticPayload.Data == nil || diagnosticPayload.Data.Severity != "warning" {
+		t.Fatalf("expected warning diagnostic, got %#v", diagnosticPayload.Data)
+	}
+	expectedConditions := []string{"stale_sample", "generator_lag", "transport_lag", "controller_fanout_lag", "browser_render_lag"}
+	if strings.Join(diagnosticPayload.Data.Conditions, ",") != strings.Join(expectedConditions, ",") {
+		t.Fatalf("conditions = %#v, want %#v", diagnosticPayload.Data.Conditions, expectedConditions)
+	}
+	if !strings.Contains(diagnosticPayload.Data.Summary, "sample age") || !strings.Contains(diagnosticPayload.Data.Summary, "browser render lag") {
+		t.Fatalf("unexpected diagnostic summary: %s", diagnosticPayload.Data.Summary)
+	}
+}
+
 func TestPublishLiveMetricsBroadcastsSampledTransactionDiagnostics(t *testing.T) {
 	hub := NewHub()
 	runner := NewTestRunner(2, hub, nil)

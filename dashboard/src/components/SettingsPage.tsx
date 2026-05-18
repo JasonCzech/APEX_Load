@@ -20,6 +20,11 @@ const DEFAULT_SETTINGS: DashboardSystemSettings = {
     max_p99_latency_ms: undefined,
     max_avg_server_processing_ms: undefined,
     max_avg_transfer_ms: undefined,
+    max_telemetry_sample_age_ms: 2000,
+    max_telemetry_generator_lag_ms: 500,
+    max_telemetry_transport_lag_ms: 500,
+    max_telemetry_controller_fanout_ms: 500,
+    max_telemetry_browser_render_lag_ms: 500,
   },
   capacity_planning: {
     headroom_pct: 20,
@@ -455,6 +460,21 @@ function validateSettings(settings: DashboardSystemSettings): string[] {
   }
   if (settings.thresholds.max_avg_transfer_ms !== undefined && settings.thresholds.max_avg_transfer_ms <= 0) {
     errors.push('Max average transfer time must be greater than 0 ms.')
+  }
+  if (settings.thresholds.max_telemetry_sample_age_ms !== undefined && settings.thresholds.max_telemetry_sample_age_ms <= 0) {
+    errors.push('Max telemetry sample age must be greater than 0 ms.')
+  }
+  if (settings.thresholds.max_telemetry_generator_lag_ms !== undefined && settings.thresholds.max_telemetry_generator_lag_ms <= 0) {
+    errors.push('Max telemetry generator lag must be greater than 0 ms.')
+  }
+  if (settings.thresholds.max_telemetry_transport_lag_ms !== undefined && settings.thresholds.max_telemetry_transport_lag_ms <= 0) {
+    errors.push('Max telemetry transport lag must be greater than 0 ms.')
+  }
+  if (settings.thresholds.max_telemetry_controller_fanout_ms !== undefined && settings.thresholds.max_telemetry_controller_fanout_ms <= 0) {
+    errors.push('Max telemetry controller fan-out must be greater than 0 ms.')
+  }
+  if (settings.thresholds.max_telemetry_browser_render_lag_ms !== undefined && settings.thresholds.max_telemetry_browser_render_lag_ms <= 0) {
+    errors.push('Max telemetry browser render lag must be greater than 0 ms.')
   }
   if (settings.capacity_planning.headroom_pct < 0 || settings.capacity_planning.headroom_pct >= 100) {
     errors.push('Capacity planning headroom must be between 0 and 100%.')
@@ -2702,6 +2722,81 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
                 value={settings.thresholds.max_avg_transfer_ms ?? ''}
                 onChange={(e) => updateThreshold('max_avg_transfer_ms', e.target.value)}
                 placeholder="Not configured"
+              />
+            </div>
+            <div className="setting-row">
+              <div className="setting-info">
+                <span className="setting-label">Max Telemetry Sample Age (ms)</span>
+                <span className="setting-desc">End-to-end live telemetry budget from collection through controller publish</span>
+              </div>
+              <input
+                className="settings-input settings-input-number"
+                type="number"
+                min={1}
+                step={1}
+                value={settings.thresholds.max_telemetry_sample_age_ms ?? ''}
+                onChange={(e) => updateThreshold('max_telemetry_sample_age_ms', e.target.value)}
+                placeholder="2000"
+              />
+            </div>
+            <div className="setting-row">
+              <div className="setting-info">
+                <span className="setting-label">Max Generator Lag (ms)</span>
+                <span className="setting-desc">Budget for generator-side capture, aggregation, and serialization</span>
+              </div>
+              <input
+                className="settings-input settings-input-number"
+                type="number"
+                min={1}
+                step={1}
+                value={settings.thresholds.max_telemetry_generator_lag_ms ?? ''}
+                onChange={(e) => updateThreshold('max_telemetry_generator_lag_ms', e.target.value)}
+                placeholder="500"
+              />
+            </div>
+            <div className="setting-row">
+              <div className="setting-info">
+                <span className="setting-label">Max Transport Lag (ms)</span>
+                <span className="setting-desc">Budget for generator-to-controller delivery</span>
+              </div>
+              <input
+                className="settings-input settings-input-number"
+                type="number"
+                min={1}
+                step={1}
+                value={settings.thresholds.max_telemetry_transport_lag_ms ?? ''}
+                onChange={(e) => updateThreshold('max_telemetry_transport_lag_ms', e.target.value)}
+                placeholder="500"
+              />
+            </div>
+            <div className="setting-row">
+              <div className="setting-info">
+                <span className="setting-label">Max Controller Fan-out (ms)</span>
+                <span className="setting-desc">Budget for controller receipt through websocket publish</span>
+              </div>
+              <input
+                className="settings-input settings-input-number"
+                type="number"
+                min={1}
+                step={1}
+                value={settings.thresholds.max_telemetry_controller_fanout_ms ?? ''}
+                onChange={(e) => updateThreshold('max_telemetry_controller_fanout_ms', e.target.value)}
+                placeholder="500"
+              />
+            </div>
+            <div className="setting-row">
+              <div className="setting-info">
+                <span className="setting-label">Max Browser Render Lag (ms)</span>
+                <span className="setting-desc">Budget reserved for dashboard client receive-to-render delay</span>
+              </div>
+              <input
+                className="settings-input settings-input-number"
+                type="number"
+                min={1}
+                step={1}
+                value={settings.thresholds.max_telemetry_browser_render_lag_ms ?? ''}
+                onChange={(e) => updateThreshold('max_telemetry_browser_render_lag_ms', e.target.value)}
+                placeholder="500"
               />
             </div>
           </div>

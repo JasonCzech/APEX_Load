@@ -392,6 +392,55 @@ describe('SettingsPage', () => {
     expect(apiMock.getSystemInventory).toHaveBeenCalledTimes(1)
   })
 
+  it('edits telemetry SLA budgets in performance thresholds', async () => {
+    apiMock.updateSystemSettings.mockImplementation(async (settings) => settings)
+
+    await act(async () => {
+      root.render(<SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+
+    await flushPromises()
+
+    const thresholdSection = container.querySelector('#settings-section-thresholds')
+    expect(thresholdSection).toBeTruthy()
+    if (!thresholdSection) return
+
+    const sampleAgeInput = findSettingInput(thresholdSection, 'Max Telemetry Sample Age (ms)')
+    const generatorInput = findSettingInput(thresholdSection, 'Max Generator Lag (ms)')
+    const transportInput = findSettingInput(thresholdSection, 'Max Transport Lag (ms)')
+    const fanoutInput = findSettingInput(thresholdSection, 'Max Controller Fan-out (ms)')
+    const browserInput = findSettingInput(thresholdSection, 'Max Browser Render Lag (ms)')
+    expect(sampleAgeInput?.value).toBe('2000')
+    expect(generatorInput?.value).toBe('500')
+    expect(transportInput?.value).toBe('500')
+    expect(fanoutInput?.value).toBe('500')
+    expect(browserInput?.value).toBe('500')
+    if (!sampleAgeInput || !fanoutInput || !browserInput) return
+
+    await setFieldValue(sampleAgeInput, '1750')
+    await setFieldValue(fanoutInput, '275')
+    await setFieldValue(browserInput, '325')
+
+    const saveButton = findButton('Save Changes')
+    expect(saveButton).toBeDefined()
+    if (!saveButton) return
+    await act(async () => {
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushPromises()
+
+    expect(apiMock.updateSystemSettings).toHaveBeenCalledWith(expect.objectContaining({
+      thresholds: expect.objectContaining({
+        max_telemetry_sample_age_ms: 1750,
+        max_telemetry_generator_lag_ms: 500,
+        max_telemetry_transport_lag_ms: 500,
+        max_telemetry_controller_fanout_ms: 275,
+        max_telemetry_browser_render_lag_ms: 325,
+      }),
+    }))
+  })
+
   it('applies live pod capacity to the generator cpu, memory, max vusers, and available generators fields when requested manually', async () => {
     apiMock.getSystemSettings.mockResolvedValue({
       general: {

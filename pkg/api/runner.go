@@ -269,6 +269,7 @@ type TelemetryHealth struct {
 	GeneratorProcessingLagMs float64   `json:"generator_processing_lag_ms,omitempty"`
 	TransportLagMs           float64   `json:"transport_lag_ms,omitempty"`
 	ControllerFanoutLagMs    float64   `json:"controller_fanout_lag_ms,omitempty"`
+	BrowserRenderLagMs       float64   `json:"browser_render_lag_ms,omitempty"`
 	SampleAgeMs              float64   `json:"sample_age_ms,omitempty"`
 }
 
@@ -3536,10 +3537,11 @@ func buildLiveMetricsForBroadcast(snap engine.MetricsSnapshot, groupVUsers map[s
 	return live
 }
 
-func buildTelemetryDiagnostic(test *ManagedTest, live *LiveMetrics) (*TelemetryDiagnostic, string) {
+func buildTelemetryDiagnostic(test *ManagedTest, live *LiveMetrics, thresholds ThresholdSettings) (*TelemetryDiagnostic, string) {
 	if live == nil {
 		return nil, "healthy"
 	}
+	thresholds = normalizeThresholdSettings(thresholds)
 
 	conditions := make([]string, 0, 5)
 	summaries := make([]string, 0, 5)
@@ -3559,12 +3561,11 @@ func buildTelemetryDiagnostic(test *ManagedTest, live *LiveMetrics) (*TelemetryD
 			signatureParts = append(signatureParts, "websocket_drops")
 			severity = maxDiagnosticSeverity(severity, "danger")
 		}
-		if live.Telemetry.SampleAgeMs > 2000 {
-			conditions = append(conditions, "stale_sample")
-			summaries = append(summaries, fmt.Sprintf("sample age %.0f ms exceeds the 2000 ms SLA budget", live.Telemetry.SampleAgeMs))
-			signatureParts = append(signatureParts, "stale_sample")
-			severity = maxDiagnosticSeverity(severity, "warning")
-		}
+		appendTelemetryBudgetDiagnostic(&conditions, &summaries, &signatureParts, &severity, "stale_sample", "sample age", live.Telemetry.SampleAgeMs, thresholds.MaxTelemetrySampleAgeMs)
+		appendTelemetryBudgetDiagnostic(&conditions, &summaries, &signatureParts, &severity, "generator_lag", "generator processing lag", live.Telemetry.GeneratorProcessingLagMs, thresholds.MaxTelemetryGeneratorLagMs)
+		appendTelemetryBudgetDiagnostic(&conditions, &summaries, &signatureParts, &severity, "transport_lag", "transport lag", live.Telemetry.TransportLagMs, thresholds.MaxTelemetryTransportLagMs)
+		appendTelemetryBudgetDiagnostic(&conditions, &summaries, &signatureParts, &severity, "controller_fanout_lag", "controller fan-out lag", live.Telemetry.ControllerFanoutLagMs, thresholds.MaxTelemetryControllerFanoutMs)
+		appendTelemetryBudgetDiagnostic(&conditions, &summaries, &signatureParts, &severity, "browser_render_lag", "browser render lag", live.Telemetry.BrowserRenderLagMs, thresholds.MaxTelemetryBrowserRenderLagMs)
 	}
 
 	samples, sampleConditions, sampleSummaries, sampleSeverity, sampleSignature := sampleTransactionDiagnostics(test, live)
@@ -3610,6 +3611,16 @@ func buildTelemetryDiagnostic(test *ManagedTest, live *LiveMetrics) (*TelemetryD
 		Samples:    samples,
 		Telemetry:  live.Telemetry,
 	}, signature
+}
+
+func appendTelemetryBudgetDiagnostic(conditions *[]string, summaries *[]string, signatureParts *[]string, severity *string, condition string, label string, value float64, threshold *float64) {
+	if threshold == nil || value <= 0 || value <= *threshold {
+		return
+	}
+	*conditions = append(*conditions, condition)
+	*summaries = append(*summaries, fmt.Sprintf("%s %.0f ms exceeds the %.0f ms telemetry budget", label, value, *threshold))
+	*signatureParts = append(*signatureParts, condition)
+	*severity = maxDiagnosticSeverity(*severity, "warning")
 }
 
 func sampleTransactionDiagnostics(test *ManagedTest, live *LiveMetrics) ([]DiagnosticSample, []string, []string, string, []string) {
@@ -4058,7 +4069,7 @@ func (tr *TestRunner) publishLiveMetrics(test *ManagedTest, live *LiveMetrics, a
 	live.Telemetry.WebsocketDroppedMessages = hubStats.DroppedClientMessages
 	live.Telemetry.WebsocketDroppedEvents = hubStats.DroppedBroadcasts
 	artifacts.enrichLiveMetrics(test, live)
-	diagnostic, diagnosticSignature := buildTelemetryDiagnostic(test, live)
+	diagnostic, diagnosticSignature := buildTelemetryDiagnostic(test, live, tr.GetSystemSettings().Thresholds)
 	publishDiagnostic := false
 
 	tr.mu.Lock()

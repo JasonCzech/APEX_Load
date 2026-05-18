@@ -9,6 +9,14 @@ import (
 
 const systemSettingsStoreKey = "system_settings"
 
+const (
+	defaultTelemetrySampleAgeBudgetMs           = 2000.0
+	defaultTelemetryGeneratorProcessingBudgetMs = 500.0
+	defaultTelemetryTransportBudgetMs           = 500.0
+	defaultTelemetryControllerFanoutBudgetMs    = 500.0
+	defaultTelemetryBrowserRenderBudgetMs       = 500.0
+)
+
 type SystemSettings struct {
 	General          GeneralSettings          `json:"general"`
 	Thresholds       ThresholdSettings        `json:"thresholds"`
@@ -24,10 +32,15 @@ type GeneralSettings struct {
 }
 
 type ThresholdSettings struct {
-	MaxErrorRatePct          *float64 `json:"max_error_rate_pct,omitempty"`
-	MaxP99LatencyMs          *float64 `json:"max_p99_latency_ms,omitempty"`
-	MaxAvgServerProcessingMs *float64 `json:"max_avg_server_processing_ms,omitempty"`
-	MaxAvgTransferMs         *float64 `json:"max_avg_transfer_ms,omitempty"`
+	MaxErrorRatePct                *float64 `json:"max_error_rate_pct,omitempty"`
+	MaxP99LatencyMs                *float64 `json:"max_p99_latency_ms,omitempty"`
+	MaxAvgServerProcessingMs       *float64 `json:"max_avg_server_processing_ms,omitempty"`
+	MaxAvgTransferMs               *float64 `json:"max_avg_transfer_ms,omitempty"`
+	MaxTelemetrySampleAgeMs        *float64 `json:"max_telemetry_sample_age_ms,omitempty"`
+	MaxTelemetryGeneratorLagMs     *float64 `json:"max_telemetry_generator_lag_ms,omitempty"`
+	MaxTelemetryTransportLagMs     *float64 `json:"max_telemetry_transport_lag_ms,omitempty"`
+	MaxTelemetryControllerFanoutMs *float64 `json:"max_telemetry_controller_fanout_ms,omitempty"`
+	MaxTelemetryBrowserRenderLagMs *float64 `json:"max_telemetry_browser_render_lag_ms,omitempty"`
 }
 
 type CapacityPlanningSettings struct {
@@ -165,7 +178,7 @@ func defaultSystemSettings(maxConcurrent int) SystemSettings {
 			MaxConcurrentTests:     maxConcurrent,
 			MetricsIntervalSeconds: 1,
 		},
-		Thresholds: ThresholdSettings{},
+		Thresholds: defaultThresholdSettings(),
 		CapacityPlanning: CapacityPlanningSettings{
 			HeadroomPct: 20,
 			Generator: GeneratorCapacitySettings{
@@ -201,6 +214,26 @@ func cloneSystemSettings(in SystemSettings) SystemSettings {
 	if in.Thresholds.MaxAvgTransferMs != nil {
 		v := *in.Thresholds.MaxAvgTransferMs
 		out.Thresholds.MaxAvgTransferMs = &v
+	}
+	if in.Thresholds.MaxTelemetrySampleAgeMs != nil {
+		v := *in.Thresholds.MaxTelemetrySampleAgeMs
+		out.Thresholds.MaxTelemetrySampleAgeMs = &v
+	}
+	if in.Thresholds.MaxTelemetryGeneratorLagMs != nil {
+		v := *in.Thresholds.MaxTelemetryGeneratorLagMs
+		out.Thresholds.MaxTelemetryGeneratorLagMs = &v
+	}
+	if in.Thresholds.MaxTelemetryTransportLagMs != nil {
+		v := *in.Thresholds.MaxTelemetryTransportLagMs
+		out.Thresholds.MaxTelemetryTransportLagMs = &v
+	}
+	if in.Thresholds.MaxTelemetryControllerFanoutMs != nil {
+		v := *in.Thresholds.MaxTelemetryControllerFanoutMs
+		out.Thresholds.MaxTelemetryControllerFanoutMs = &v
+	}
+	if in.Thresholds.MaxTelemetryBrowserRenderLagMs != nil {
+		v := *in.Thresholds.MaxTelemetryBrowserRenderLagMs
+		out.Thresholds.MaxTelemetryBrowserRenderLagMs = &v
 	}
 	out.Notifications = cloneNotificationsSettings(in.Notifications)
 	if in.CapacityPlanning.Reservations != nil {
@@ -248,6 +281,7 @@ func normalizeLoadedSystemSettings(in SystemSettings, defaultMaxConcurrent int) 
 		out.CapacityPlanning.Availability.ConfiguredAvailableGenerators = defaults.CapacityPlanning.Availability.ConfiguredAvailableGenerators
 	}
 	out.CapacityPlanning.Reservations = normalizeCapacityReservations(out.CapacityPlanning.Reservations)
+	out.Thresholds = normalizeThresholdSettings(out.Thresholds)
 	out.Notifications = cloneNotificationsSettings(out.Notifications)
 	out.Auth = normalizeAuthSettings(out.Auth)
 
@@ -283,6 +317,21 @@ func validateSystemSettings(settings SystemSettings) error {
 		if *settings.Thresholds.MaxAvgTransferMs <= 0 {
 			return fmt.Errorf("thresholds.max_avg_transfer_ms must be > 0")
 		}
+	}
+	if err := validateOptionalPositiveThreshold("thresholds.max_telemetry_sample_age_ms", settings.Thresholds.MaxTelemetrySampleAgeMs); err != nil {
+		return err
+	}
+	if err := validateOptionalPositiveThreshold("thresholds.max_telemetry_generator_lag_ms", settings.Thresholds.MaxTelemetryGeneratorLagMs); err != nil {
+		return err
+	}
+	if err := validateOptionalPositiveThreshold("thresholds.max_telemetry_transport_lag_ms", settings.Thresholds.MaxTelemetryTransportLagMs); err != nil {
+		return err
+	}
+	if err := validateOptionalPositiveThreshold("thresholds.max_telemetry_controller_fanout_ms", settings.Thresholds.MaxTelemetryControllerFanoutMs); err != nil {
+		return err
+	}
+	if err := validateOptionalPositiveThreshold("thresholds.max_telemetry_browser_render_lag_ms", settings.Thresholds.MaxTelemetryBrowserRenderLagMs); err != nil {
+		return err
 	}
 	if settings.CapacityPlanning.HeadroomPct < 0 || settings.CapacityPlanning.HeadroomPct >= 100 {
 		return fmt.Errorf("capacity_planning.headroom_pct must be between 0 and 100")
@@ -325,6 +374,90 @@ func validateSystemSettings(settings SystemSettings) error {
 	}
 	if err := validateAuthSettings(settings.Auth); err != nil {
 		return err
+	}
+	return nil
+}
+
+func defaultThresholdSettings() ThresholdSettings {
+	return ThresholdSettings{
+		MaxTelemetrySampleAgeMs:        float64Setting(defaultTelemetrySampleAgeBudgetMs),
+		MaxTelemetryGeneratorLagMs:     float64Setting(defaultTelemetryGeneratorProcessingBudgetMs),
+		MaxTelemetryTransportLagMs:     float64Setting(defaultTelemetryTransportBudgetMs),
+		MaxTelemetryControllerFanoutMs: float64Setting(defaultTelemetryControllerFanoutBudgetMs),
+		MaxTelemetryBrowserRenderLagMs: float64Setting(defaultTelemetryBrowserRenderBudgetMs),
+	}
+}
+
+func normalizeThresholdSettings(in ThresholdSettings) ThresholdSettings {
+	defaults := defaultThresholdSettings()
+	out := in
+	if out.MaxTelemetrySampleAgeMs == nil {
+		out.MaxTelemetrySampleAgeMs = defaults.MaxTelemetrySampleAgeMs
+	}
+	if out.MaxTelemetryGeneratorLagMs == nil {
+		out.MaxTelemetryGeneratorLagMs = defaults.MaxTelemetryGeneratorLagMs
+	}
+	if out.MaxTelemetryTransportLagMs == nil {
+		out.MaxTelemetryTransportLagMs = defaults.MaxTelemetryTransportLagMs
+	}
+	if out.MaxTelemetryControllerFanoutMs == nil {
+		out.MaxTelemetryControllerFanoutMs = defaults.MaxTelemetryControllerFanoutMs
+	}
+	if out.MaxTelemetryBrowserRenderLagMs == nil {
+		out.MaxTelemetryBrowserRenderLagMs = defaults.MaxTelemetryBrowserRenderLagMs
+	}
+	return cloneThresholdSettings(out)
+}
+
+func cloneThresholdSettings(in ThresholdSettings) ThresholdSettings {
+	out := in
+	if in.MaxErrorRatePct != nil {
+		v := *in.MaxErrorRatePct
+		out.MaxErrorRatePct = &v
+	}
+	if in.MaxP99LatencyMs != nil {
+		v := *in.MaxP99LatencyMs
+		out.MaxP99LatencyMs = &v
+	}
+	if in.MaxAvgServerProcessingMs != nil {
+		v := *in.MaxAvgServerProcessingMs
+		out.MaxAvgServerProcessingMs = &v
+	}
+	if in.MaxAvgTransferMs != nil {
+		v := *in.MaxAvgTransferMs
+		out.MaxAvgTransferMs = &v
+	}
+	if in.MaxTelemetrySampleAgeMs != nil {
+		v := *in.MaxTelemetrySampleAgeMs
+		out.MaxTelemetrySampleAgeMs = &v
+	}
+	if in.MaxTelemetryGeneratorLagMs != nil {
+		v := *in.MaxTelemetryGeneratorLagMs
+		out.MaxTelemetryGeneratorLagMs = &v
+	}
+	if in.MaxTelemetryTransportLagMs != nil {
+		v := *in.MaxTelemetryTransportLagMs
+		out.MaxTelemetryTransportLagMs = &v
+	}
+	if in.MaxTelemetryControllerFanoutMs != nil {
+		v := *in.MaxTelemetryControllerFanoutMs
+		out.MaxTelemetryControllerFanoutMs = &v
+	}
+	if in.MaxTelemetryBrowserRenderLagMs != nil {
+		v := *in.MaxTelemetryBrowserRenderLagMs
+		out.MaxTelemetryBrowserRenderLagMs = &v
+	}
+	return out
+}
+
+func float64Setting(value float64) *float64 {
+	v := value
+	return &v
+}
+
+func validateOptionalPositiveThreshold(field string, value *float64) error {
+	if value != nil && *value <= 0 {
+		return fmt.Errorf("%s must be > 0", field)
 	}
 	return nil
 }
@@ -515,6 +648,7 @@ func (tr *TestRunner) currentNotificationSettings() NotificationsSettings {
 
 func (tr *TestRunner) UpdateSystemSettings(settings SystemSettings) (SystemSettings, error) {
 	normalized := cloneSystemSettings(settings)
+	normalized.Thresholds = normalizeThresholdSettings(normalized.Thresholds)
 	normalized.Auth = normalizeAuthSettings(normalized.Auth)
 	if err := validateSystemSettings(normalized); err != nil {
 		return SystemSettings{}, err

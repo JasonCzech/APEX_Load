@@ -52,11 +52,22 @@ func TestSystemSettingsAPIAndPersistence(t *testing.T) {
 	if initial.Auth.UserHeader != "X-Auth-Request-User" {
 		t.Fatalf("initial auth user header = %q, want X-Auth-Request-User", initial.Auth.UserHeader)
 	}
+	if initial.Thresholds.MaxTelemetrySampleAgeMs == nil || *initial.Thresholds.MaxTelemetrySampleAgeMs != defaultTelemetrySampleAgeBudgetMs {
+		t.Fatalf("initial telemetry sample age threshold = %#v, want %v", initial.Thresholds.MaxTelemetrySampleAgeMs, defaultTelemetrySampleAgeBudgetMs)
+	}
+	if initial.Thresholds.MaxTelemetryGeneratorLagMs == nil || *initial.Thresholds.MaxTelemetryGeneratorLagMs != defaultTelemetryGeneratorProcessingBudgetMs {
+		t.Fatalf("initial generator lag threshold = %#v, want %v", initial.Thresholds.MaxTelemetryGeneratorLagMs, defaultTelemetryGeneratorProcessingBudgetMs)
+	}
 
 	maxErr := 1.5
 	maxP99 := 1800.0
 	maxServer := 350.0
 	maxTransfer := 120.0
+	maxSampleAge := 1500.0
+	maxGeneratorLag := 300.0
+	maxTransportLag := 400.0
+	maxFanoutLag := 250.0
+	maxBrowserRenderLag := 350.0
 	update := SystemSettings{
 		General: GeneralSettings{
 			APIEndpoint:            ":9090",
@@ -64,10 +75,15 @@ func TestSystemSettingsAPIAndPersistence(t *testing.T) {
 			MetricsIntervalSeconds: 2,
 		},
 		Thresholds: ThresholdSettings{
-			MaxErrorRatePct:          &maxErr,
-			MaxP99LatencyMs:          &maxP99,
-			MaxAvgServerProcessingMs: &maxServer,
-			MaxAvgTransferMs:         &maxTransfer,
+			MaxErrorRatePct:                &maxErr,
+			MaxP99LatencyMs:                &maxP99,
+			MaxAvgServerProcessingMs:       &maxServer,
+			MaxAvgTransferMs:               &maxTransfer,
+			MaxTelemetrySampleAgeMs:        &maxSampleAge,
+			MaxTelemetryGeneratorLagMs:     &maxGeneratorLag,
+			MaxTelemetryTransportLagMs:     &maxTransportLag,
+			MaxTelemetryControllerFanoutMs: &maxFanoutLag,
+			MaxTelemetryBrowserRenderLagMs: &maxBrowserRenderLag,
 		},
 		CapacityPlanning: CapacityPlanningSettings{
 			HeadroomPct: 25,
@@ -147,6 +163,21 @@ func TestSystemSettingsAPIAndPersistence(t *testing.T) {
 	if updated.Thresholds.MaxAvgTransferMs == nil || *updated.Thresholds.MaxAvgTransferMs != maxTransfer {
 		t.Fatalf("max avg transfer = %#v, want %v", updated.Thresholds.MaxAvgTransferMs, maxTransfer)
 	}
+	if updated.Thresholds.MaxTelemetrySampleAgeMs == nil || *updated.Thresholds.MaxTelemetrySampleAgeMs != maxSampleAge {
+		t.Fatalf("max telemetry sample age = %#v, want %v", updated.Thresholds.MaxTelemetrySampleAgeMs, maxSampleAge)
+	}
+	if updated.Thresholds.MaxTelemetryGeneratorLagMs == nil || *updated.Thresholds.MaxTelemetryGeneratorLagMs != maxGeneratorLag {
+		t.Fatalf("max telemetry generator lag = %#v, want %v", updated.Thresholds.MaxTelemetryGeneratorLagMs, maxGeneratorLag)
+	}
+	if updated.Thresholds.MaxTelemetryTransportLagMs == nil || *updated.Thresholds.MaxTelemetryTransportLagMs != maxTransportLag {
+		t.Fatalf("max telemetry transport lag = %#v, want %v", updated.Thresholds.MaxTelemetryTransportLagMs, maxTransportLag)
+	}
+	if updated.Thresholds.MaxTelemetryControllerFanoutMs == nil || *updated.Thresholds.MaxTelemetryControllerFanoutMs != maxFanoutLag {
+		t.Fatalf("max telemetry controller fanout = %#v, want %v", updated.Thresholds.MaxTelemetryControllerFanoutMs, maxFanoutLag)
+	}
+	if updated.Thresholds.MaxTelemetryBrowserRenderLagMs == nil || *updated.Thresholds.MaxTelemetryBrowserRenderLagMs != maxBrowserRenderLag {
+		t.Fatalf("max telemetry browser render = %#v, want %v", updated.Thresholds.MaxTelemetryBrowserRenderLagMs, maxBrowserRenderLag)
+	}
 	if updated.CapacityPlanning.HeadroomPct != 25 {
 		t.Fatalf("headroom = %v, want 25", updated.CapacityPlanning.HeadroomPct)
 	}
@@ -189,6 +220,9 @@ func TestSystemSettingsAPIAndPersistence(t *testing.T) {
 	if persisted.General.MetricsIntervalSeconds != 2 {
 		t.Fatalf("persisted metrics interval = %d, want 2", persisted.General.MetricsIntervalSeconds)
 	}
+	if persisted.Thresholds.MaxTelemetryControllerFanoutMs == nil || *persisted.Thresholds.MaxTelemetryControllerFanoutMs != maxFanoutLag {
+		t.Fatalf("persisted telemetry fanout threshold = %#v, want %v", persisted.Thresholds.MaxTelemetryControllerFanoutMs, maxFanoutLag)
+	}
 	if persisted.CapacityPlanning.Availability.Source != capacityAvailabilityConfiguredPlusLive {
 		t.Fatalf("persisted availability source = %q, want %q", persisted.CapacityPlanning.Availability.Source, capacityAvailabilityConfiguredPlusLive)
 	}
@@ -203,6 +237,38 @@ func TestSystemSettingsAPIAndPersistence(t *testing.T) {
 	}
 	if persisted.Auth.LoginURL != "https://login.example.test/stormrunner/start" {
 		t.Fatalf("persisted login url = %q, want configured login url", persisted.Auth.LoginURL)
+	}
+}
+
+func TestNormalizeLoadedSystemSettingsBackfillsTelemetryThresholds(t *testing.T) {
+	normalized := normalizeLoadedSystemSettings(SystemSettings{
+		General: GeneralSettings{
+			APIEndpoint:            ":8080",
+			MaxConcurrentTests:     2,
+			MetricsIntervalSeconds: 1,
+		},
+		Thresholds: ThresholdSettings{},
+		CapacityPlanning: CapacityPlanningSettings{
+			HeadroomPct: 20,
+			Generator: GeneratorCapacitySettings{
+				CPUCores:    4,
+				MemoryMB:    8192,
+				NetworkMbps: 1000,
+				MaxVUsers:   10000,
+			},
+			Availability: AvailabilitySettings{
+				Source:                        capacityAvailabilityConfigured,
+				ConfiguredAvailableGenerators: 1,
+			},
+		},
+		Auth: defaultAuthSettings(),
+	}, 2)
+
+	if normalized.Thresholds.MaxTelemetrySampleAgeMs == nil || *normalized.Thresholds.MaxTelemetrySampleAgeMs != defaultTelemetrySampleAgeBudgetMs {
+		t.Fatalf("sample age threshold = %#v, want default", normalized.Thresholds.MaxTelemetrySampleAgeMs)
+	}
+	if normalized.Thresholds.MaxTelemetryBrowserRenderLagMs == nil || *normalized.Thresholds.MaxTelemetryBrowserRenderLagMs != defaultTelemetryBrowserRenderBudgetMs {
+		t.Fatalf("browser render threshold = %#v, want default", normalized.Thresholds.MaxTelemetryBrowserRenderLagMs)
 	}
 }
 
@@ -222,6 +288,20 @@ func TestSystemSettingsValidation(t *testing.T) {
 	server.mux.ServeHTTP(resp, req)
 	if resp.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d", resp.Code, http.StatusBadRequest)
+	}
+}
+
+func TestSystemSettingsValidationRejectsInvalidTelemetryThresholds(t *testing.T) {
+	settings := defaultSystemSettings(2)
+	invalid := 0.0
+	settings.Thresholds.MaxTelemetryTransportLagMs = &invalid
+
+	err := validateSystemSettings(settings)
+	if err == nil {
+		t.Fatal("expected invalid telemetry threshold to fail validation")
+	}
+	if got := err.Error(); got != "thresholds.max_telemetry_transport_lag_ms must be > 0" {
+		t.Fatalf("validation error = %q, want telemetry threshold error", got)
 	}
 }
 
