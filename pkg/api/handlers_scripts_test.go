@@ -1782,6 +1782,49 @@ func TestHandleLoadRunnerSupportMatrix(t *testing.T) {
 	}
 }
 
+func TestAuthoringCapabilitiesEndpoint(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/scripts/authoring/capabilities", nil)
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var payload AuthoringCapabilityResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if payload.ContractVersion != "authoring.v1" {
+		t.Fatalf("contract version = %q, want authoring.v1", payload.ContractVersion)
+	}
+	if len(payload.Sources) < 9 {
+		t.Fatalf("sources = %d, want source matrix entries", len(payload.Sources))
+	}
+	loadRunner, ok := payload.SourceMap["loadrunner"]
+	if !ok {
+		t.Fatal("expected loadrunner source map entry")
+	}
+	if !loadRunner.ImportReview || !loadRunner.RepairSuggestions || !loadRunner.SaveHandoff {
+		t.Fatalf("loadrunner features = %#v, want shared review/repair/save lifecycle", loadRunner)
+	}
+	jmeter, ok := payload.SourceMap["jmeter"]
+	if !ok {
+		t.Fatal("expected jmeter source map entry")
+	}
+	if !jmeter.MultiScript || !jmeter.ScenarioDraft {
+		t.Fatalf("jmeter features = %#v, want multi-script scenario draft support", jmeter)
+	}
+	aiGenerated, ok := payload.SourceMap["ai_generated"]
+	if !ok {
+		t.Fatal("expected ai_generated source map entry")
+	}
+	if !aiGenerated.Provenance || !aiGenerated.ApprovalGateCandidate {
+		t.Fatalf("ai generated features = %#v, want provenance and approval gate candidate", aiGenerated)
+	}
+}
+
 type reviewSection struct {
 	Key      string   `json:"key"`
 	Severity string   `json:"severity"`

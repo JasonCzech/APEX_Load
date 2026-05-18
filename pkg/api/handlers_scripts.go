@@ -160,6 +160,10 @@ func (s *Server) handleLoadRunnerSupportMatrix(w http.ResponseWriter, r *http.Re
 	})
 }
 
+func (s *Server) handleAuthoringCapabilities(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, authoringCapabilityResponse())
+}
+
 // handleImportDevWeb handles POST /api/v1/scripts/import/devweb.
 // Accepts JSON, raw .js, raw .zip, or multipart uploads and returns a generated script preview.
 func (s *Server) handleImportDevWeb(w http.ResponseWriter, r *http.Request) {
