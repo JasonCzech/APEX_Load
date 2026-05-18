@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -169,6 +170,7 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 	}
 
 	totalTargetTPS := 0.0
+	atOnceGroups := make([]GroupConfig, 0)
 	for gi, _ := range mge.groups {
 		if mge.groups[gi].Script.Config.Pacing.Type == "tps" && mge.groups[gi].Script.Config.Pacing.TPS > 0 {
 			targetTPS := mge.groups[gi].Script.Config.Pacing.TPS
@@ -185,6 +187,13 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 		groupResults[gi] = GroupResult{Name: group.Name}
 
 		protoConfig := buildProtoConfig(group.Script)
+		if groupLifecycleAtOnce(group) {
+			if !mge.runGroupLifecycleBlock(mge.baseCtx, group, protoConfig, group.Script.Init, "init") {
+				baseCancel()
+				return nil, fmt.Errorf("group %q init-once failed", group.Name)
+			}
+			atOnceGroups = append(atOnceGroups, group)
+		}
 		if isOpenWorkload(group.Script) {
 			arrivals, bounded := boundedArrivalLimit(group.Script, group.VUsers)
 			wg.Add(1)
@@ -231,6 +240,10 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 	}
 
 	wg.Wait()
+	for _, group := range atOnceGroups {
+		protoConfig := buildProtoConfig(group.Script)
+		mge.runGroupLifecycleBlock(context.Background(), group, protoConfig, group.Script.Teardown, "teardown")
+	}
 	if err := waitForBaselineWindow(ctx, mge.postBaseline); err != nil {
 		return nil, err
 	}
@@ -246,6 +259,39 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 		result.FinalSnapshot = snap
 	}
 	return result, nil
+}
+
+func groupLifecycleAtOnce(group GroupConfig) bool {
+	return strings.EqualFold(strings.TrimSpace(group.InitStrategy), "at_once")
+}
+
+func (mge *MultiGroupEngine) runGroupLifecycleBlock(ctx context.Context, group GroupConfig, protoConfig map[string]any, actions []dsl.Action, phase string) bool {
+	if len(actions) == 0 {
+		return true
+	}
+	vuProto, err := protocol.Get(group.Script.Protocol)
+	if err != nil {
+		slog.Error("failed to create lifecycle protocol", "group", group.Name, "phase", phase, "err", err)
+		return false
+	}
+	if err := vuProto.Init(ctx, protoConfig); err != nil {
+		slog.Error("failed to init lifecycle protocol", "group", group.Name, "phase", phase, "err", err)
+		return false
+	}
+	defer vuProto.Teardown(context.Background())
+
+	vu := &VUser{
+		ID:              -1,
+		TotalVUsers:     group.VUsers,
+		Group:           group.Name,
+		Proto:           vuProto,
+		Script:          group.Script,
+		Metrics:         mge.metrics,
+		ResultSink:      group.ResultSink,
+		RedactionConfig: group.RedactionConfig,
+		Rendezvous:      group.rendezvous,
+	}
+	return vu.RunLifecycleBlock(ctx, actions, phase)
 }
 
 func waitForBaselineWindow(ctx context.Context, duration time.Duration) error {
@@ -319,6 +365,8 @@ func (mge *MultiGroupEngine) spawnVUser(vuserID int, group GroupConfig, protoCon
 			IterationRateLimiter: group.rateLimiter,
 			Rendezvous:           group.rendezvous,
 			ExecutionGoals:       group.executionGoals,
+			SkipInit:             groupLifecycleAtOnce(group),
+			SkipTeardown:         groupLifecycleAtOnce(group),
 		}
 		vu.Run(vuCtx)
 	}()
@@ -386,6 +434,8 @@ func (mge *MultiGroupEngine) spawnOpenWorker(vuserID int, group GroupConfig, pro
 			RedactionConfig: group.RedactionConfig,
 			PauseControl:    mge,
 			ExecutionGoals:  group.executionGoals,
+			SkipInit:        groupLifecycleAtOnce(group),
+			SkipTeardown:    groupLifecycleAtOnce(group),
 		}
 		vu.Run(vuCtx)
 	}()

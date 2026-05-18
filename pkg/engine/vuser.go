@@ -32,6 +32,8 @@ type VUser struct {
 	IterationRateLimiter *TokenBucket
 	Rendezvous           *RendezvousCoordinator
 	ExecutionGoals       *ExecutionGoalLimiter
+	SkipInit             bool
+	SkipTeardown         bool
 }
 
 type PauseController interface {
@@ -74,46 +76,11 @@ func (vu *VUser) Run(ctx context.Context) {
 	logCfg := cfg.Log
 	logger := vu.makeLogger(logCfg)
 
-	vu.Variables = make(map[string]string)
-	vu.Parameters = NewParameterRuntime(vu.Script.Parameters, vu.DataProvider, vu.ID)
-	if vu.Parameters != nil {
-		vu.Parameters.Prime()
-	}
-
-	// Load initial data source row
-	vu.loadDataRow()
+	vu.prepareRuntimeState()
 
 	// --- Init phase ---
-	for _, action := range vu.Script.Init {
-		if vu.PauseControl != nil {
-			if err := vu.PauseControl.WaitIfPaused(ctx); err != nil {
-				return
-			}
-		}
-		if ctx.Err() != nil {
-			return
-		}
-		if handled, err := vu.handleEngineAction(ctx, action); handled {
-			if err != nil {
-				logger.Error("init action failed", "action", action.Name, "err", err)
-				return
-			}
-			continue
-		}
-		resolved := vu.resolveAction(action)
-		result, err := vu.executeWithRetry(ctx, resolved, cfg.ErrorHandling)
-		if err != nil {
-			logger.Error("init action failed", "action", action.Name, "err", err)
-			return
-		}
-		vu.recordResult(result, cfg.ErrorHandling)
-
-		if !result.Success {
-			if logCfg.OnErrorOnly || logCfg.Level == "extended" {
-				logger.Error("init action unsuccessful", "action", action.Name, "status", result.StatusCode, "error", result.ErrorMessage)
-			} else {
-				logger.Warn("init action unsuccessful", "action", action.Name, "error", result.ErrorMessage)
-			}
+	if !vu.SkipInit {
+		if ok := vu.runLifecycleActions(ctx, vu.Script.Init, "init", false, logger, logCfg, cfg.ErrorHandling); !ok {
 			return
 		}
 	}
@@ -290,16 +257,73 @@ func (vu *VUser) Run(ctx context.Context) {
 	}
 
 teardown:
-	for _, action := range vu.Script.Teardown {
-		if handled, _ := vu.handleEngineAction(context.Background(), action); handled {
+	if !vu.SkipTeardown {
+		vu.runLifecycleActions(context.Background(), vu.Script.Teardown, "teardown", true, logger, logCfg, cfg.ErrorHandling)
+	}
+}
+
+func (vu *VUser) RunLifecycleBlock(ctx context.Context, actions []dsl.Action, phase string) bool {
+	if vu == nil || vu.Script == nil {
+		return true
+	}
+	cfg := vu.Script.Config
+	logCfg := cfg.Log
+	vu.prepareRuntimeState()
+	return vu.runLifecycleActions(ctx, actions, phase, false, vu.makeLogger(logCfg), logCfg, cfg.ErrorHandling)
+}
+
+func (vu *VUser) prepareRuntimeState() {
+	if vu.Variables == nil {
+		vu.Variables = make(map[string]string)
+	}
+	vu.Parameters = NewParameterRuntime(vu.Script.Parameters, vu.DataProvider, vu.ID)
+	if vu.Parameters != nil {
+		vu.Parameters.Prime()
+	}
+	vu.loadDataRow()
+}
+
+func (vu *VUser) runLifecycleActions(ctx context.Context, actions []dsl.Action, phase string, ignoreErrors bool, logger *slog.Logger, logCfg dsl.LogConfig, errCfg dsl.ErrorHandlingConfig) bool {
+	for _, action := range actions {
+		if vu.PauseControl != nil {
+			if err := vu.PauseControl.WaitIfPaused(ctx); err != nil {
+				return false
+			}
+		}
+		if ctx.Err() != nil {
+			return false
+		}
+		if handled, err := vu.handleEngineAction(ctx, action); handled {
+			if err != nil {
+				logger.Error(phase+" action failed", "action", action.Name, "err", err)
+				if !ignoreErrors {
+					return false
+				}
+			}
 			continue
 		}
 		resolved := vu.resolveAction(action)
-		result, _ := vu.Proto.Execute(context.Background(), resolved)
-		if result != nil {
-			vu.recordResult(result, cfg.ErrorHandling)
+		result, err := vu.executeWithRetry(ctx, resolved, errCfg)
+		if err != nil {
+			logger.Error(phase+" action failed", "action", action.Name, "err", err)
+			if !ignoreErrors {
+				return false
+			}
+			continue
+		}
+		vu.recordResult(result, errCfg)
+		if result != nil && !result.Success {
+			if logCfg.OnErrorOnly || logCfg.Level == "extended" {
+				logger.Error(phase+" action unsuccessful", "action", action.Name, "status", result.StatusCode, "error", result.ErrorMessage)
+			} else {
+				logger.Warn(phase+" action unsuccessful", "action", action.Name, "error", result.ErrorMessage)
+			}
+			if !ignoreErrors {
+				return false
+			}
 		}
 	}
+	return true
 }
 
 func (vu *VUser) recordResult(result *protocol.Result, errCfg dsl.ErrorHandlingConfig) {

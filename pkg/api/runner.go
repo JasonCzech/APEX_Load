@@ -2063,9 +2063,14 @@ func (tr *TestRunner) compileManagedTestGroupLocked(index int, totalGroups int, 
 		}
 	}
 
-	initStrategy := group.InitStrategy
+	initStrategy := strings.ToLower(strings.TrimSpace(group.InitStrategy))
 	if initStrategy == "" {
 		initStrategy = "at_runtime"
+	}
+	switch initStrategy {
+	case "at_runtime", "at_once":
+	default:
+		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: initialization must be at_runtime or at_once", index)
 	}
 
 	testGroup := TestGroup{

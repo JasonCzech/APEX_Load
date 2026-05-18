@@ -2612,6 +2612,28 @@ func TestCompileManagedTestGroupsRejectsInvalidGroupIterations(t *testing.T) {
 	}
 }
 
+func TestCompileManagedTestGroupsRejectsInvalidInitializationStrategy(t *testing.T) {
+	hub := NewHub()
+	runner := NewTestRunner(2, hub, nil)
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-init-strategy",
+		Name:     "Checkout",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Config:   dsl.ScriptConfig{},
+	})
+
+	_, _, _, err := runner.compileManagedTestGroupsLocked([]CreateGroupEntry{{
+		ScriptID:     "script-init-strategy",
+		VUsers:       10,
+		InitStrategy: "before_all",
+	}}, nil)
+
+	if err == nil {
+		t.Fatal("expected invalid initialization strategy to fail compilation")
+	}
+}
+
 func TestDistributeTargetVUsersPreservesTotal(t *testing.T) {
 	targets := distributeTargetVUsers([]TestGroup{
 		{Name: "buyers", VUsers: 20},

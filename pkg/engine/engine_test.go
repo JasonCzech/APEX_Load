@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -17,6 +18,11 @@ type stubProtocol struct {
 }
 
 type slowStubProtocol struct{}
+type lifecycleCountingProtocol struct{}
+
+var lifecycleInitActions atomic.Int64
+var lifecycleMainActions atomic.Int64
+var lifecycleTeardownActions atomic.Int64
 
 func (s *stubProtocol) Name() string { return "stub" }
 func (s *stubProtocol) Init(_ context.Context, config map[string]any) error {
@@ -51,12 +57,33 @@ func (s *slowStubProtocol) Execute(_ context.Context, action *protocol.Action) (
 func (s *slowStubProtocol) Teardown(_ context.Context) error    { return nil }
 func (s *slowStubProtocol) HealthCheck(_ context.Context) error { return nil }
 
+func (p *lifecycleCountingProtocol) Name() string { return "lifecycle-counting" }
+func (p *lifecycleCountingProtocol) Init(_ context.Context, _ map[string]any) error {
+	return nil
+}
+func (p *lifecycleCountingProtocol) Execute(_ context.Context, action *protocol.Action) (*protocol.Result, error) {
+	switch action.Name {
+	case "setup":
+		lifecycleInitActions.Add(1)
+	case "main":
+		lifecycleMainActions.Add(1)
+	case "cleanup":
+		lifecycleTeardownActions.Add(1)
+	}
+	return &protocol.Result{ActionName: action.Name, Success: true, Duration: time.Millisecond}, nil
+}
+func (p *lifecycleCountingProtocol) Teardown(_ context.Context) error    { return nil }
+func (p *lifecycleCountingProtocol) HealthCheck(_ context.Context) error { return nil }
+
 func init() {
 	protocol.Register("stub", func() protocol.Protocol {
 		return &stubProtocol{}
 	})
 	protocol.Register("slow-stub", func() protocol.Protocol {
 		return &slowStubProtocol{}
+	})
+	protocol.Register("lifecycle-counting", func() protocol.Protocol {
+		return &lifecycleCountingProtocol{}
 	})
 }
 
@@ -188,6 +215,89 @@ func TestEngine_RunStopsAtGlobalTransactionGoal(t *testing.T) {
 	if result.TotalTransactions != 4 {
 		t.Fatalf("total transactions = %d, want 4 from global transaction goal", result.TotalTransactions)
 	}
+}
+
+func TestMultiGroupRunExecutesAtOnceLifecycleOncePerGroup(t *testing.T) {
+	resetLifecycleCountingProtocol()
+	script := &dsl.Script{
+		Name:     "at-once-lifecycle",
+		Protocol: "lifecycle-counting",
+		Config: dsl.ScriptConfig{
+			RunLogic: dsl.RunLogicConfig{Iterations: 1},
+		},
+		Init:     []dsl.Action{{Name: "setup", Type: "request", Target: "/setup"}},
+		Actions:  []dsl.Action{{Name: "main", Type: "request", Target: "/main"}},
+		Teardown: []dsl.Action{{Name: "cleanup", Type: "request", Target: "/cleanup"}},
+	}
+	engine, err := NewMultiGroup(MultiGroupConfig{
+		Duration: time.Second,
+		Groups: []GroupConfig{{
+			Name:         "buyers",
+			Script:       script,
+			VUsers:       3,
+			InitStrategy: "at_once",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("NewMultiGroup: %v", err)
+	}
+
+	if _, err := engine.Run(context.Background()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got := lifecycleInitActions.Load(); got != 1 {
+		t.Fatalf("init actions = %d, want 1", got)
+	}
+	if got := lifecycleMainActions.Load(); got != 3 {
+		t.Fatalf("main actions = %d, want 3", got)
+	}
+	if got := lifecycleTeardownActions.Load(); got != 1 {
+		t.Fatalf("teardown actions = %d, want 1", got)
+	}
+}
+
+func TestMultiGroupRunKeepsDefaultLifecyclePerVUser(t *testing.T) {
+	resetLifecycleCountingProtocol()
+	script := &dsl.Script{
+		Name:     "at-runtime-lifecycle",
+		Protocol: "lifecycle-counting",
+		Config: dsl.ScriptConfig{
+			RunLogic: dsl.RunLogicConfig{Iterations: 1},
+		},
+		Init:     []dsl.Action{{Name: "setup", Type: "request", Target: "/setup"}},
+		Actions:  []dsl.Action{{Name: "main", Type: "request", Target: "/main"}},
+		Teardown: []dsl.Action{{Name: "cleanup", Type: "request", Target: "/cleanup"}},
+	}
+	engine, err := NewMultiGroup(MultiGroupConfig{
+		Duration: time.Second,
+		Groups: []GroupConfig{{
+			Name:   "buyers",
+			Script: script,
+			VUsers: 3,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("NewMultiGroup: %v", err)
+	}
+
+	if _, err := engine.Run(context.Background()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got := lifecycleInitActions.Load(); got != 3 {
+		t.Fatalf("init actions = %d, want 3", got)
+	}
+	if got := lifecycleMainActions.Load(); got != 3 {
+		t.Fatalf("main actions = %d, want 3", got)
+	}
+	if got := lifecycleTeardownActions.Load(); got != 3 {
+		t.Fatalf("teardown actions = %d, want 3", got)
+	}
+}
+
+func resetLifecycleCountingProtocol() {
+	lifecycleInitActions.Store(0)
+	lifecycleMainActions.Store(0)
+	lifecycleTeardownActions.Store(0)
 }
 
 func TestEngine_Stop(t *testing.T) {
