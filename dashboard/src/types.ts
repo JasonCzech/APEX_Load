@@ -549,6 +549,7 @@ export interface RunArchiveReport {
   compatibility?: RunArchiveReportCompatibility
   completeness?: RunArchiveCompletenessScore
   change_attribution?: RunArchiveChangeAttribution
+  report_profiles?: RunArchiveReportProfile[]
   manifest: RunArchiveManifest
   overview: RunArchiveOverview
   evidence_tiers?: RunArchiveEvidenceTier[]
@@ -566,6 +567,14 @@ export interface RunArchiveReport {
   browser_by_device?: Record<string, BrowserDeviceLiveMetrics>
   browser_resources?: BrowserResourceTiming[]
   resource_peaks: RunArchiveResourcePeaks
+}
+
+export interface RunArchiveReportProfile {
+  id: string
+  label: string
+  description: string
+  export_formats: string[]
+  included_sections: string[]
 }
 
 export interface RunArchiveChangeAttribution {

@@ -160,8 +160,9 @@ function buildArchiveSummaryTimelineEntries(points?: RunArchiveReport['summary_t
   return [...(points || [])].sort((left, right) => left.timestamp.localeCompare(right.timestamp))
 }
 
-function buildReportHref(testId: string) {
-  return `/api/v1/tests/${encodeURIComponent(testId)}/report`
+function buildReportHref(testId: string, profile?: string) {
+  const base = `/api/v1/tests/${encodeURIComponent(testId)}/report`
+  return profile ? `${base}?profile=${encodeURIComponent(profile)}` : base
 }
 
 function renderBrowserSummary(
@@ -747,6 +748,18 @@ export default function TestExecutionArchive({
               >
                 Download Report
               </a>
+              {archiveReport.report_profiles?.map(profile => (
+                <a
+                  key={profile.id}
+                  className="btn btn-secondary btn-sm"
+                  href={buildReportHref(test.id, profile.id)}
+                  target="_blank"
+                  rel="noreferrer"
+                  title={profile.description}
+                >
+                  {profile.label}
+                </a>
+              ))}
             </div>
             <div className="archive-artifact-group">
               <span className="archive-artifact-label">JSONL</span>

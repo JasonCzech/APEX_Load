@@ -245,6 +245,9 @@ func TestBuildRunArchiveReportDeclaresSchemaCompatibility(t *testing.T) {
 	if report.SchemaVersion != runArchiveReportSchemaVersion {
 		t.Fatalf("report schema = %q, want %q", report.SchemaVersion, runArchiveReportSchemaVersion)
 	}
+	if len(report.ReportProfiles) != 3 || report.ReportProfiles[0].ID != "executive" || report.ReportProfiles[2].ID != "audit" {
+		t.Fatalf("report profiles = %#v, want executive, engineer, audit", report.ReportProfiles)
+	}
 	if report.Compatibility.Status != "compatible" || report.Compatibility.ManifestSchemaVersion != archiveSchemaVersion {
 		t.Fatalf("compatibility = %#v, want compatible archive schema", report.Compatibility)
 	}

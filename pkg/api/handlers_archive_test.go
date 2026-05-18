@@ -253,7 +253,7 @@ func TestArchiveQueryEndpoints(t *testing.T) {
 	})
 
 	t.Run("html report", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/report", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/report?profile=executive", nil)
 		resp := httptest.NewRecorder()
 		server.mux.ServeHTTP(resp, req)
 
@@ -270,11 +270,24 @@ func TestArchiveQueryEndpoints(t *testing.T) {
 		if !strings.Contains(body, testRun.Name) {
 			t.Fatalf("expected report to contain test name %q", testRun.Name)
 		}
+		if !strings.Contains(body, "Executive profile") {
+			t.Fatalf("expected report to contain executive profile label, got %q", body)
+		}
 		if !strings.Contains(body, "Action Summary") {
 			t.Fatalf("expected report to contain action summary, got %q", body)
 		}
 		if !strings.Contains(body, "Summary Timeline") {
 			t.Fatalf("expected report to contain summary timeline, got %q", body)
+		}
+	})
+
+	t.Run("unknown html report profile", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/report?profile=unknown", nil)
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusBadRequest {
+			t.Fatalf("unknown profile status = %d, want %d body=%s", resp.Code, http.StatusBadRequest, resp.Body.String())
 		}
 	})
 }

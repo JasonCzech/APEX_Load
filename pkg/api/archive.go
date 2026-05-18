@@ -168,6 +168,7 @@ type RunArchiveReport struct {
 	Compatibility       RunArchiveReportCompatibility          `json:"compatibility"`
 	Completeness        RunArchiveCompletenessScore            `json:"completeness"`
 	ChangeAttribution   RunArchiveChangeAttribution            `json:"change_attribution"`
+	ReportProfiles      []RunArchiveReportProfile              `json:"report_profiles,omitempty"`
 	Manifest            *RunArchiveManifest                    `json:"manifest"`
 	Overview            RunArchiveOverview                     `json:"overview"`
 	EvidenceTiers       []RunArchiveEvidenceTier               `json:"evidence_tiers,omitempty"`
@@ -185,6 +186,14 @@ type RunArchiveReport struct {
 	BrowserByDevice     map[string]*BrowserDeviceLiveMetrics   `json:"browser_by_device,omitempty"`
 	BrowserResources    []BrowserResourceTiming                `json:"browser_resources,omitempty"`
 	ResourcePeaks       RunArchiveResourcePeaks                `json:"resource_peaks"`
+}
+
+type RunArchiveReportProfile struct {
+	ID               string   `json:"id"`
+	Label            string   `json:"label"`
+	Description      string   `json:"description"`
+	ExportFormats    []string `json:"export_formats"`
+	IncludedSections []string `json:"included_sections"`
 }
 
 type RunArchiveChangeAttribution struct {
@@ -1054,8 +1063,48 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	report.Compatibility = buildRunArchiveReportCompatibility(record, manifest)
 	report.Completeness = buildRunArchiveCompletenessScore(manifest, report, transactions, resources, summaries)
 	report.ChangeAttribution = buildRunArchiveChangeAttribution(manifest)
+	report.ReportProfiles = buildRunArchiveReportProfiles()
 
 	return report, nil
+}
+
+func buildRunArchiveReportProfiles() []RunArchiveReportProfile {
+	return []RunArchiveReportProfile{
+		{
+			ID:               "executive",
+			Label:            "Executive",
+			Description:      "Decision-focused summary with SLA, error rate, throughput, completeness, and change attribution.",
+			ExportFormats:    []string{"html", "json"},
+			IncludedSections: []string{"overview", "sla", "completeness", "change_attribution", "evidence_tiers"},
+		},
+		{
+			ID:               "engineer",
+			Label:            "Engineer",
+			Description:      "Engineering drilldown with timelines, action stats, browser diagnostics, resource peaks, and error patterns.",
+			ExportFormats:    []string{"html", "json", "jsonl", "parquet"},
+			IncludedSections: []string{"overview", "summary_timeline", "actions", "browser", "resources", "errors", "raw_exports"},
+		},
+		{
+			ID:               "audit",
+			Label:            "Audit",
+			Description:      "Governance package with schema compatibility, evidence tiers, completeness findings, provenance, and artifact inventory.",
+			ExportFormats:    []string{"html", "json"},
+			IncludedSections: []string{"schema_compatibility", "evidence_tiers", "completeness", "provenance", "change_attribution", "artifact_inventory"},
+		},
+	}
+}
+
+func lookupRunArchiveReportProfile(profileID string) (RunArchiveReportProfile, bool) {
+	profileID = strings.ToLower(strings.TrimSpace(profileID))
+	if profileID == "" {
+		profileID = "engineer"
+	}
+	for _, profile := range buildRunArchiveReportProfiles() {
+		if profile.ID == profileID {
+			return profile, true
+		}
+	}
+	return RunArchiveReportProfile{}, false
 }
 
 func buildRunArchiveChangeAttribution(manifest *RunArchiveManifest) RunArchiveChangeAttribution {

@@ -139,6 +139,7 @@ func TestRenderRunArchiveHTMLReportIncludesBrowserAndSOAPSections(t *testing.T) 
 	body := string(html)
 	checks := []string{
 		"Checkout Flow",
+		"Engineer profile",
 		"@media print",
 		"@page",
 		"break-inside: avoid",
@@ -172,5 +173,29 @@ func TestRenderRunArchiveHTMLReportIncludesBrowserAndSOAPSections(t *testing.T) 
 		if !strings.Contains(body, check) {
 			t.Fatalf("expected report HTML to contain %q, got %q", check, body)
 		}
+	}
+}
+
+func TestRenderRunArchiveHTMLReportSupportsProfiles(t *testing.T) {
+	report := &RunArchiveReport{
+		Manifest: &RunArchiveManifest{
+			TestID:   "test-123",
+			TestName: "Checkout Flow",
+			Status:   "COMPLETE",
+		},
+		Overview: RunArchiveOverview{},
+		ByAction: map[string]RunArchiveActionStats{},
+	}
+
+	html, err := renderRunArchiveHTMLReportWithProfile(report, "executive")
+	if err != nil {
+		t.Fatalf("renderRunArchiveHTMLReportWithProfile returned error: %v", err)
+	}
+	if !strings.Contains(string(html), "Executive profile") {
+		t.Fatalf("expected executive profile label in HTML, got %q", string(html))
+	}
+
+	if _, err := renderRunArchiveHTMLReportWithProfile(report, "unknown"); err == nil {
+		t.Fatal("expected unknown profile to fail")
 	}
 }

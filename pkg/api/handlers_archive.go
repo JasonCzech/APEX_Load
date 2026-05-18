@@ -205,9 +205,13 @@ func (s *Server) handleGetTestHTMLReport(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusInternalServerError, "failed to build archive report: "+err.Error())
 		return
 	}
-	html, err := renderRunArchiveHTMLReport(report)
+	profile := r.URL.Query().Get("profile")
+	if profile == "" {
+		profile = "engineer"
+	}
+	html, err := renderRunArchiveHTMLReportWithProfile(report, profile)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to render archive report: "+err.Error())
+		writeError(w, http.StatusBadRequest, "failed to render archive report: "+err.Error())
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

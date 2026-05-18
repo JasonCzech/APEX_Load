@@ -38,6 +38,7 @@ type runArchiveHTMLSOAPPayloadBucketRow struct {
 type runArchiveHTMLReportData struct {
 	GeneratedAt           time.Time
 	Report                *RunArchiveReport
+	Profile               RunArchiveReportProfile
 	ActionRows            []runArchiveHTMLActionRow
 	SOAPOperationRows     []runArchiveHTMLActionRow
 	SOAPFaultCodeRows     []runArchiveHTMLCountRow
@@ -255,7 +256,7 @@ var runArchiveReportTemplate = template.Must(template.New("run-archive-report").
     <section class="hero">
       <p class="eyebrow">Stormrunner standalone report</p>
       <h1>{{.Report.Manifest.TestName}}</h1>
-      <p class="subhead">Generated from the archived run bundle for test {{.Report.Manifest.TestID}}. This report is self-contained and suitable for CI artifacts or human review.</p>
+      <p class="subhead">{{.Profile.Label}} profile generated from the archived run bundle for test {{.Report.Manifest.TestID}}. {{.Profile.Description}}</p>
       <div class="meta">
         <div class="card">
           <span class="metric-label">Status</span>
@@ -771,8 +772,16 @@ var runArchiveReportTemplate = template.Must(template.New("run-archive-report").
 </html>`))
 
 func renderRunArchiveHTMLReport(report *RunArchiveReport) ([]byte, error) {
+	return renderRunArchiveHTMLReportWithProfile(report, "engineer")
+}
+
+func renderRunArchiveHTMLReportWithProfile(report *RunArchiveReport, profileID string) ([]byte, error) {
 	if report == nil || report.Manifest == nil {
 		return nil, fmt.Errorf("archive report is incomplete")
+	}
+	profile, ok := lookupRunArchiveReportProfile(profileID)
+	if !ok {
+		return nil, fmt.Errorf("unknown report profile %q", profileID)
 	}
 
 	actionRows := make([]runArchiveHTMLActionRow, 0, len(report.ByAction))
@@ -808,6 +817,7 @@ func renderRunArchiveHTMLReport(report *RunArchiveReport) ([]byte, error) {
 	data := runArchiveHTMLReportData{
 		GeneratedAt:           time.Now().UTC(),
 		Report:                report,
+		Profile:               profile,
 		ActionRows:            actionRows,
 		SOAPOperationRows:     soapOperationRows,
 		SOAPFaultCodeRows:     soapFaultCodeRows,

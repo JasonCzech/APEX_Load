@@ -72,6 +72,11 @@ describe('TestExecutionArchive', () => {
       runtime_overrides: true,
       runtime_override_fields: ['browser', 'log_level'],
     },
+    report_profiles: [
+      { id: 'executive', label: 'Executive', description: 'Decision-focused summary.', export_formats: ['html', 'json'], included_sections: ['overview'] },
+      { id: 'engineer', label: 'Engineer', description: 'Engineering drilldown.', export_formats: ['html', 'jsonl'], included_sections: ['actions'] },
+      { id: 'audit', label: 'Audit', description: 'Governance package.', export_formats: ['html', 'json'], included_sections: ['evidence'] },
+    ],
     manifest: {
       schema_version: '1',
       test_id: 'test-1',
@@ -361,6 +366,10 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('present · 3')
     expect(container.textContent).toContain('External Metrics')
     expect(container.textContent).toContain('missing · 0')
+    expect(container.textContent).toContain('Executive')
+    expect(container.textContent).toContain('Engineer')
+    expect(container.textContent).toContain('Audit')
+    expect(container.querySelector('a[href="/api/v1/tests/test-1/report?profile=executive"]')).toBeTruthy()
     expect(container.textContent).toContain('Error Patterns')
     expect(container.textContent).toContain('soap fault: Request validation failed for order 1001')
     expect(container.textContent).toContain('CreateOrder')
