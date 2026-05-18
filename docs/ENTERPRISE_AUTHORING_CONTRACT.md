@@ -12,6 +12,13 @@ This document tracks Workstream P3's shared authoring lifecycle.
 - `sources`: source-specific capability matrix
 - `source_map`: compact lookup of feature flags by source key
 
+`GET /api/v1/scripts/authoring/templates` returns code-owned protocol starter templates. Query parameters:
+
+- `protocol`: optional exact protocol filter, such as `http`, `browser`, or `soap`
+- `use_case`: optional exact use-case filter, such as `ci_smoke` or `enterprise_flow`
+
+Each template includes an executable DSL draft plus `recommended_scenario` hints for duration, VUsers, ramp-up, and iteration count. The initial catalog covers HTTP API smoke, browser checkout canary, and SOAP service smoke starters.
+
 Authoring sessions persist unsaved drafts and repair workflow state:
 
 | Endpoint | Purpose |
@@ -96,3 +103,4 @@ Validation responses also include `data_source_fit` when a draft declares data s
 | P3.5 Approval handoff | Complete for backend gate | Session approval validates health, stores reusable scripts, and stamps approval metadata |
 | P3.6 Guided correlation repair | Partial backend complete | Session correlation preview/apply returns extractor insertion and sample-replacement diffs |
 | P3.7 Data-source fit checks | Partial backend complete | Validation responses include `data_source_fit` and health scoring for source/column/row-count readiness |
+| P3.8 Protocol starter templates | Partial backend complete | `GET /api/v1/scripts/authoring/templates` returns validated protocol starter DSLs and scenario hints |

@@ -1830,6 +1830,36 @@ func TestAuthoringCapabilitiesEndpoint(t *testing.T) {
 	}
 }
 
+func TestAuthoringTemplatesEndpointReturnsValidProtocolStarters(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/scripts/authoring/templates?protocol=http", nil)
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var payload struct {
+		Templates []AuthoringTemplate `json:"templates"`
+		Count     int                 `json:"count"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if payload.Count != 1 || payload.Templates[0].Protocol != "http" {
+		t.Fatalf("payload = %#v, want one HTTP template", payload)
+	}
+	if payload.Templates[0].RecommendedScenario.VUsers == 0 || payload.Templates[0].RecommendedScenario.Duration == "" {
+		t.Fatalf("recommended scenario = %#v, want runnable scenario hints", payload.Templates[0].RecommendedScenario)
+	}
+	for _, template := range authoringTemplateCatalog() {
+		if issues := validateScript(&template.Script); len(issues) != 0 {
+			t.Fatalf("template %s validation issues = %v", template.ID, issues)
+		}
+	}
+}
+
 func TestDraftValidationReturnsBlockedAuthoringHealth(t *testing.T) {
 	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
 	body := []byte(`{"script":{"name":"","version":"1.0.0","protocol":"http","actions":[]}}`)
