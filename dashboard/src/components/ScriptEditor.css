@@ -653,9 +653,11 @@
 }
 
 .replay-panel {
-  display: flex;
   flex-direction: column;
   gap: 14px;
+}
+.replay-panel:not(.editor-support-dialog) {
+  display: flex;
 }
 
 .replay-panel-actions {
@@ -2084,9 +2086,12 @@
 
 /* Runtime Settings Accordion */
 .runtime-settings {
-  display: flex; flex-direction: column; gap: 0;
+  flex-direction: column; gap: 0;
   background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
   overflow: hidden;
+}
+.runtime-settings:not(.editor-support-dialog) {
+  display: flex;
 }
 .runtime-settings-grid {
   display: grid;
