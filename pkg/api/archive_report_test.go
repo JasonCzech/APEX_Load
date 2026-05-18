@@ -197,6 +197,7 @@ func TestBuildRunArchiveReportDeclaresSchemaCompatibility(t *testing.T) {
 		ResourceSamplesParquetFile:   "resources.parquet",
 		IntervalSummariesFile:        "interval_summaries.jsonl",
 		IntervalSummariesParquetFile: "interval_summaries.parquet",
+		IntervalSummaryCount:         1,
 	}
 	manifestBytes, err := json.Marshal(manifest)
 	if err != nil {
@@ -210,12 +211,30 @@ func TestBuildRunArchiveReportDeclaresSchemaCompatibility(t *testing.T) {
 		manifest.TransactionsParquetFile,
 		manifest.ResourceSamplesFile,
 		manifest.ResourceSamplesParquetFile,
-		manifest.IntervalSummariesFile,
 		manifest.IntervalSummariesParquetFile,
 	} {
 		if err := os.WriteFile(filepath.Join(archiveDir, name), nil, 0o644); err != nil {
 			t.Fatalf("WriteFile %s returned error: %v", name, err)
 		}
+	}
+	summaryFile, err := os.Create(filepath.Join(archiveDir, manifest.IntervalSummariesFile))
+	if err != nil {
+		t.Fatalf("Create interval summaries returned error: %v", err)
+	}
+	if err := json.NewEncoder(summaryFile).Encode(IntervalSummaryRecord{
+		Timestamp: time.Date(2026, time.May, 18, 12, 0, 0, 0, time.UTC),
+		TestID:    manifest.TestID,
+		TestName:  manifest.TestName,
+		Telemetry: &TelemetryHealth{SampleAgeMs: 50},
+		TelemetryStatus: &TelemetryRunHealth{
+			Status:   "healthy",
+			Severity: "healthy",
+		},
+	}); err != nil {
+		t.Fatalf("Encode interval summary returned error: %v", err)
+	}
+	if err := summaryFile.Close(); err != nil {
+		t.Fatalf("Close interval summaries returned error: %v", err)
 	}
 
 	report, err := buildRunArchiveReport(&storage.RunArchiveRecord{ArchivePath: archiveDir, ManifestPath: manifestPath})
@@ -227,6 +246,9 @@ func TestBuildRunArchiveReportDeclaresSchemaCompatibility(t *testing.T) {
 	}
 	if report.Compatibility.Status != "compatible" || report.Compatibility.ManifestSchemaVersion != archiveSchemaVersion {
 		t.Fatalf("compatibility = %#v, want compatible archive schema", report.Compatibility)
+	}
+	if report.Completeness.Status != "complete" || report.Completeness.ScorePct != 100 {
+		t.Fatalf("completeness = %#v, want complete score", report.Completeness)
 	}
 	outputs := make(map[string]RunArchiveOutputCompatibility)
 	for _, output := range report.Compatibility.Outputs {
@@ -275,6 +297,56 @@ func TestBuildRunArchiveReportFlagsUnsupportedManifestSchema(t *testing.T) {
 	}
 	if len(report.Compatibility.Issues) == 0 || report.Compatibility.Issues[0].Code != "unsupported_manifest_schema" {
 		t.Fatalf("compatibility issues = %#v, want unsupported manifest issue", report.Compatibility.Issues)
+	}
+}
+
+func TestBuildRunArchiveReportScoresCompletenessFindings(t *testing.T) {
+	archiveDir := t.TempDir()
+	manifestPath := filepath.Join(archiveDir, "manifest.json")
+	manifest := RunArchiveManifest{
+		SchemaVersion:         archiveSchemaVersion,
+		TestID:                "test-incomplete",
+		TestName:              "Incomplete Run",
+		Error:                 "failed to flush interval archive",
+		TransactionsFile:      "transactions.jsonl",
+		ResourceSamplesFile:   "resources.jsonl",
+		IntervalSummariesFile: "interval_summaries.jsonl",
+		TransactionCount:      3,
+		ResourceSampleCount:   2,
+		IntervalSummaryCount:  2,
+	}
+	manifestBytes, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatalf("json.Marshal manifest returned error: %v", err)
+	}
+	if err := os.WriteFile(manifestPath, manifestBytes, 0o644); err != nil {
+		t.Fatalf("WriteFile manifest returned error: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(archiveDir, manifest.TransactionsFile), []byte(`{"test_id":"test-incomplete","success":true}`+"\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile transactions returned error: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(archiveDir, manifest.ResourceSamplesFile), nil, 0o644); err != nil {
+		t.Fatalf("WriteFile resources returned error: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(archiveDir, manifest.IntervalSummariesFile), nil, 0o644); err != nil {
+		t.Fatalf("WriteFile summaries returned error: %v", err)
+	}
+
+	report, err := buildRunArchiveReport(&storage.RunArchiveRecord{ArchivePath: archiveDir, ManifestPath: manifestPath})
+	if err != nil {
+		t.Fatalf("buildRunArchiveReport returned error: %v", err)
+	}
+	if report.Completeness.Status != "incomplete" || report.Completeness.ScorePct >= 75 {
+		t.Fatalf("completeness = %#v, want incomplete score below review threshold", report.Completeness)
+	}
+	findings := make(map[string]bool)
+	for _, finding := range report.Completeness.Findings {
+		findings[finding.Dimension] = true
+	}
+	for _, dimension := range []string{"archive_writer", "artifact_truncation", "missing_intervals"} {
+		if !findings[dimension] {
+			t.Fatalf("missing completeness dimension %q in %#v", dimension, report.Completeness.Findings)
+		}
 	}
 }
 

@@ -447,6 +447,31 @@ export default function TestExecutionArchive({
             </div>
           </div>
 
+          {archiveReport.completeness && (
+            <div className="tx-section archive-summary-section">
+              <div className="archive-section-header archive-section-header-stack">
+                <div>
+                  <h3 className="chart-title">Completeness Score</h3>
+                  <p className="archive-section-copy">Archive coverage score for intervals, telemetry, writer health, and artifact availability.</p>
+                </div>
+                <span className={`archive-chip ${archiveReport.completeness.status === 'incomplete' ? 'danger' : ''}`}>
+                  {archiveReport.completeness.score_pct.toFixed(0)}% · {archiveReport.completeness.status.replace(/_/g, ' ')}
+                </span>
+              </div>
+              {archiveReport.completeness.findings && archiveReport.completeness.findings.length > 0 && (
+                <div className="archive-overview-grid">
+                  {archiveReport.completeness.findings.map((finding, index) => (
+                    <div key={`${finding.dimension}-${index}`} className="scenario-script-detail-card">
+                      <span className="scenario-script-detail-label">{finding.dimension.replace(/_/g, ' ')}</span>
+                      <span className="scenario-script-detail-value">{finding.severity} · -{finding.penalty.toFixed(0)}</span>
+                      <span className="capacity-advisory-detail">{finding.message}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {archiveReport.compatibility && (
             <div className="tx-section archive-summary-section">
               <div className="archive-section-header archive-section-header-stack">

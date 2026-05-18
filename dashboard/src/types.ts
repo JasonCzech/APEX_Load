@@ -544,6 +544,7 @@ export interface RunArchiveSummaryPoint {
 export interface RunArchiveReport {
   schema_version?: string
   compatibility?: RunArchiveReportCompatibility
+  completeness?: RunArchiveCompletenessScore
   manifest: RunArchiveManifest
   overview: RunArchiveOverview
   evidence_tiers?: RunArchiveEvidenceTier[]
@@ -561,6 +562,19 @@ export interface RunArchiveReport {
   browser_by_device?: Record<string, BrowserDeviceLiveMetrics>
   browser_resources?: BrowserResourceTiming[]
   resource_peaks: RunArchiveResourcePeaks
+}
+
+export interface RunArchiveCompletenessScore {
+  score_pct: number
+  status: 'complete' | 'needs_review' | 'incomplete' | string
+  findings?: RunArchiveCompletenessFinding[]
+}
+
+export interface RunArchiveCompletenessFinding {
+  dimension: string
+  severity: 'info' | 'warning' | 'critical' | string
+  penalty: number
+  message: string
 }
 
 export interface RunArchiveReportCompatibility {

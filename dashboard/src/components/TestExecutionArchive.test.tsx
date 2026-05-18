@@ -56,6 +56,13 @@ describe('TestExecutionArchive', () => {
         { format: 'csv', status: 'unsupported', reason: 'CSV archive exports are not registered for this report schema yet.' },
       ],
     },
+    completeness: {
+      score_pct: 92,
+      status: 'needs_review',
+      findings: [
+        { dimension: 'telemetry_gaps', severity: 'warning', penalty: 8, message: 'Telemetry was degraded for one or more archived intervals.' },
+      ],
+    },
     manifest: {
       schema_version: '1',
       test_id: 'test-1',
@@ -334,6 +341,9 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('2026-05-14 20:00Z')
     expect(container.textContent).toContain('120.0 ms')
     expect(container.textContent).toContain('Run Provenance')
+    expect(container.textContent).toContain('Completeness Score')
+    expect(container.textContent).toContain('92% · needs review')
+    expect(container.textContent).toContain('telemetry gaps')
     expect(container.textContent).toContain('Schema Compatibility')
     expect(container.textContent).toContain('stormrunner.archive_report.v1')
     expect(container.textContent).toContain('standalone html')

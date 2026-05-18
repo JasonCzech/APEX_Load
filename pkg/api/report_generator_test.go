@@ -12,6 +12,16 @@ func TestRenderRunArchiveHTMLReportIncludesBrowserAndSOAPSections(t *testing.T) 
 	now := time.Date(2026, time.May, 15, 12, 30, 0, 0, time.UTC)
 	report := &RunArchiveReport{
 		SchemaVersion: runArchiveReportSchemaVersion,
+		Completeness: RunArchiveCompletenessScore{
+			ScorePct: 92,
+			Status:   "needs_review",
+			Findings: []RunArchiveCompletenessFinding{{
+				Dimension: "telemetry_gaps",
+				Severity:  "warning",
+				Penalty:   8,
+				Message:   "Telemetry was degraded for one or more archived intervals.",
+			}},
+		},
 		Compatibility: RunArchiveReportCompatibility{
 			Status:                   "compatible",
 			ReportSchemaVersion:      runArchiveReportSchemaVersion,
@@ -124,6 +134,8 @@ func TestRenderRunArchiveHTMLReportIncludesBrowserAndSOAPSections(t *testing.T) 
 		"@page",
 		"break-inside: avoid",
 		"Summary Timeline",
+		"Completeness Score",
+		"Telemetry was degraded",
 		"Schema Compatibility",
 		runArchiveReportSchemaVersion,
 		"Error Patterns",

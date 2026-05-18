@@ -322,6 +322,28 @@ var runArchiveReportTemplate = template.Must(template.New("run-archive-report").
     </section>
 
     <section>
+      <h2>Completeness Score</h2>
+      <p class="section-copy">{{formatFloat .Report.Completeness.ScorePct}}% - {{.Report.Completeness.Status}}</p>
+      {{if .Report.Completeness.Findings}}
+      <table>
+        <thead>
+          <tr><th>Dimension</th><th>Severity</th><th>Penalty</th><th>Finding</th></tr>
+        </thead>
+        <tbody>
+          {{range .Report.Completeness.Findings}}
+          <tr>
+            <td>{{.Dimension}}</td>
+            <td>{{.Severity}}</td>
+            <td>-{{formatFloat .Penalty}}</td>
+            <td>{{.Message}}</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+      {{end}}
+    </section>
+
+    <section>
       <h2>Schema Compatibility</h2>
       <p class="section-copy">Report schema {{.Report.SchemaVersion}} is {{.Report.Compatibility.Status}} with archive manifest {{.Report.Compatibility.ManifestSchemaVersion}}.</p>
       <table>

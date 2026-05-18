@@ -166,6 +166,7 @@ type transactionEventFilter struct {
 type RunArchiveReport struct {
 	SchemaVersion       string                                 `json:"schema_version"`
 	Compatibility       RunArchiveReportCompatibility          `json:"compatibility"`
+	Completeness        RunArchiveCompletenessScore            `json:"completeness"`
 	Manifest            *RunArchiveManifest                    `json:"manifest"`
 	Overview            RunArchiveOverview                     `json:"overview"`
 	EvidenceTiers       []RunArchiveEvidenceTier               `json:"evidence_tiers,omitempty"`
@@ -183,6 +184,19 @@ type RunArchiveReport struct {
 	BrowserByDevice     map[string]*BrowserDeviceLiveMetrics   `json:"browser_by_device,omitempty"`
 	BrowserResources    []BrowserResourceTiming                `json:"browser_resources,omitempty"`
 	ResourcePeaks       RunArchiveResourcePeaks                `json:"resource_peaks"`
+}
+
+type RunArchiveCompletenessScore struct {
+	ScorePct float64                         `json:"score_pct"`
+	Status   string                          `json:"status"`
+	Findings []RunArchiveCompletenessFinding `json:"findings,omitempty"`
+}
+
+type RunArchiveCompletenessFinding struct {
+	Dimension string  `json:"dimension"`
+	Severity  string  `json:"severity"`
+	Penalty   float64 `json:"penalty"`
+	Message   string  `json:"message"`
 }
 
 type RunArchiveReportCompatibility struct {
@@ -1027,8 +1041,72 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	}
 	report.EvidenceTiers = buildRunArchiveEvidenceTiers(manifest, report, transactions, resources, summaries)
 	report.Compatibility = buildRunArchiveReportCompatibility(record, manifest)
+	report.Completeness = buildRunArchiveCompletenessScore(manifest, report, transactions, resources, summaries)
 
 	return report, nil
+}
+
+func buildRunArchiveCompletenessScore(manifest *RunArchiveManifest, report *RunArchiveReport, transactions []TransactionEvent, resources []ResourceSample, summaries []IntervalSummaryRecord) RunArchiveCompletenessScore {
+	score := RunArchiveCompletenessScore{ScorePct: 100, Status: "complete"}
+	addFinding := func(dimension, severity string, penalty float64, message string) {
+		score.Findings = append(score.Findings, RunArchiveCompletenessFinding{
+			Dimension: dimension,
+			Severity:  severity,
+			Penalty:   penalty,
+			Message:   message,
+		})
+		score.ScorePct -= penalty
+	}
+	if manifest == nil {
+		addFinding("summary", "critical", 40, "Archive manifest is missing.")
+	} else {
+		if strings.TrimSpace(manifest.Error) != "" {
+			addFinding("archive_writer", "critical", 25, "Archive writer recorded an error: "+manifest.Error)
+		}
+		if manifest.TransactionCount > int64(len(transactions)) {
+			addFinding("artifact_truncation", "critical", 20, fmt.Sprintf("Transaction archive contains %d of %d expected events.", len(transactions), manifest.TransactionCount))
+		}
+		if manifest.ResourceSampleCount > int64(len(resources)) {
+			addFinding("artifact_truncation", "warning", 10, fmt.Sprintf("Resource archive contains %d of %d expected samples.", len(resources), manifest.ResourceSampleCount))
+		}
+		if manifest.IntervalSummaryCount > int64(len(summaries)) {
+			addFinding("missing_intervals", "critical", 20, fmt.Sprintf("Interval archive contains %d of %d expected summaries.", len(summaries), manifest.IntervalSummaryCount))
+		}
+	}
+	if len(summaries) == 0 {
+		addFinding("missing_intervals", "warning", 15, "No interval summaries were archived for timeline or telemetry review.")
+	} else if report == nil || report.Overview.Telemetry == nil || report.Overview.Telemetry.Samples == 0 {
+		addFinding("telemetry_gaps", "warning", 15, "Interval summaries do not include telemetry health samples.")
+	} else {
+		telemetry := report.Overview.Telemetry
+		if telemetry.DroppedResults > 0 || telemetry.WebsocketDroppedMessages > 0 || telemetry.WebsocketDroppedEvents > 0 {
+			addFinding("telemetry_gaps", "warning", 10, "Telemetry reported dropped collector or websocket samples during the run.")
+		}
+		if telemetry.BreachedIntervals > 0 || telemetry.SustainedBreachIntervals > 0 {
+			addFinding("telemetry_gaps", "critical", 15, "Telemetry SLA breaches were archived for one or more intervals.")
+		} else if telemetry.DegradedIntervals > 0 {
+			addFinding("telemetry_gaps", "warning", 8, "Telemetry was degraded for one or more archived intervals.")
+		}
+	}
+	if report != nil {
+		for _, output := range report.Compatibility.Outputs {
+			if output.Status == "missing" {
+				addFinding("artifact_truncation", "warning", 5, fmt.Sprintf("Expected %s output %q is missing.", output.Format, output.Artifact))
+			}
+		}
+	}
+	if score.ScorePct < 0 {
+		score.ScorePct = 0
+	}
+	switch {
+	case score.ScorePct >= 95:
+		score.Status = "complete"
+	case score.ScorePct >= 75:
+		score.Status = "needs_review"
+	default:
+		score.Status = "incomplete"
+	}
+	return score
 }
 
 func buildRunArchiveReportCompatibility(record *storage.RunArchiveRecord, manifest *RunArchiveManifest) RunArchiveReportCompatibility {
