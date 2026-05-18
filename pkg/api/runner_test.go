@@ -32,6 +32,7 @@ type metricsStoreSpy struct {
 	listedScripts         []*dsl.Script
 	listedTests           []*storage.TestRecord
 	projectsByID          map[string]*storage.Project
+	releasesByID          map[string]*storage.Release
 	historyByTestID       map[string][]any
 	archiveByTestID       map[string]*storage.RunArchiveRecord
 	schedulesByID         map[string]*storage.ScenarioSchedule
@@ -102,6 +103,13 @@ func (s *metricsStoreSpy) ListApplications() ([]*storage.Application, error) { r
 func (s *metricsStoreSpy) DeleteApplication(id string) error                 { return nil }
 func (s *metricsStoreSpy) SaveRelease(release *storage.Release) error        { return nil }
 func (s *metricsStoreSpy) GetRelease(id string) (*storage.Release, error) {
+	if s.releasesByID != nil {
+		release, ok := s.releasesByID[id]
+		if !ok {
+			return nil, errors.New("release not found")
+		}
+		return release, nil
+	}
 	return &storage.Release{ID: id, ApplicationID: storage.LegacyApplicationID, Name: id}, nil
 }
 func (s *metricsStoreSpy) ListReleases(applicationID string, includeArchived bool) ([]*storage.Release, error) {
@@ -4274,6 +4282,87 @@ func TestScenarioSchedulerReconcilesMaterializedOccurrenceAfterRestart(t *testin
 	}
 }
 
+func TestScenarioSchedulerLeasePreventsStandbyControllerMaterialization(t *testing.T) {
+	store := &metricsStoreSpy{}
+	runner := NewTestRunner(2, NewHub(), store)
+	backend := &scheduleExecutionBackend{started: make(chan string, 1)}
+	runner.setExecutionBackend(backend)
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-schedule-lease",
+		Name:     "Scheduled Lease Script",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Config:   dsl.ScriptConfig{BaseURL: "https://example.com"},
+		Actions:  []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+	scenario, err := runner.StoreScenario(CreateScenarioRequest{
+		Name:     "Lease Scenario",
+		Duration: "1m",
+		Groups:   []CreateGroupEntry{{ScriptID: "script-schedule-lease", VUsers: 1}},
+	})
+	if err != nil {
+		t.Fatalf("StoreScenario returned error: %v", err)
+	}
+	now := time.Date(2026, time.May, 16, 12, 0, 0, 0, time.UTC)
+	due := now.Add(-time.Minute)
+	schedule := &storage.ScenarioSchedule{
+		ID:              "schedule-lease",
+		ScenarioID:      scenario.ID,
+		Name:            "Lease Run",
+		CronExpr:        "*/5 * * * *",
+		RunNameTemplate: "Lease Smoke",
+		Enabled:         true,
+		MissedRunPolicy: "catch_up_once",
+		NextRunAt:       &due,
+		CreatedAt:       now.Add(-time.Hour),
+		UpdatedAt:       now.Add(-time.Hour),
+	}
+	runner.mu.Lock()
+	if err := runner.saveScenarioScheduleLocked(schedule); err != nil {
+		runner.mu.Unlock()
+		t.Fatalf("saveScenarioScheduleLocked returned error: %v", err)
+	}
+	runner.mu.Unlock()
+	if acquired, err := store.TryAcquireSchedulerLease("scenario-scheduler", "controller-a", now, time.Minute); err != nil || !acquired {
+		t.Fatalf("pre-acquire lease acquired=%v err=%v, want active controller-a lease", acquired, err)
+	}
+
+	standby := newScenarioScheduler(runner)
+	standby.ownerID = "controller-b"
+	standby.leaseTTL = time.Minute
+	standby.now = func() time.Time { return now.Add(10 * time.Second) }
+	if err := standby.RunDueSchedules(); err != nil {
+		t.Fatalf("standby RunDueSchedules returned error: %v", err)
+	}
+	select {
+	case testID := <-backend.started:
+		t.Fatalf("unexpected standby materialization: %s", testID)
+	default:
+	}
+	occurrences, err := store.ListScenarioScheduleOccurrences(schedule.ID)
+	if err != nil {
+		t.Fatalf("ListScenarioScheduleOccurrences returned error: %v", err)
+	}
+	if len(occurrences) != 0 {
+		t.Fatalf("occurrences = %#v, want none while standby lacks lease", occurrences)
+	}
+
+	active := newScenarioScheduler(runner)
+	active.ownerID = "controller-b"
+	active.leaseTTL = time.Minute
+	active.now = func() time.Time { return now.Add(2 * time.Minute) }
+	if err := active.RunDueSchedules(); err != nil {
+		t.Fatalf("active RunDueSchedules returned error: %v", err)
+	}
+	occurrences, err = store.ListScenarioScheduleOccurrences(schedule.ID)
+	if err != nil {
+		t.Fatalf("ListScenarioScheduleOccurrences returned error: %v", err)
+	}
+	if len(occurrences) != 1 || occurrences[0].Status != "materialized" || occurrences[0].TestID == "" {
+		t.Fatalf("occurrence = %+v, want one materialized occurrence after lease takeover", occurrences[0])
+	}
+}
+
 func TestScenarioSchedulerBlocksDueSchedulePendingApproval(t *testing.T) {
 	store := &metricsStoreSpy{}
 	runner := NewTestRunner(2, NewHub(), store)
@@ -4584,6 +4673,99 @@ func TestScenarioScheduleConflictDetectionBlocksMaterialization(t *testing.T) {
 	}
 	if len(occurrences) != 1 || occurrences[0].Status != "blocked" || occurrences[0].ReasonCode != "schedule_conflict" {
 		t.Fatalf("occurrences = %#v, want schedule_conflict block", occurrences)
+	}
+}
+
+func TestScenarioScheduleConflictDetectionBlocksArchivedRelease(t *testing.T) {
+	archivedAt := time.Date(2026, time.May, 16, 8, 0, 0, 0, time.UTC)
+	store := &metricsStoreSpy{releasesByID: map[string]*storage.Release{
+		"rel-archived": {
+			ID:            "rel-archived",
+			ApplicationID: storage.LegacyApplicationID,
+			Name:          "Archived Release",
+			ArchivedAt:    &archivedAt,
+		},
+	}}
+	runner := NewTestRunner(2, NewHub(), store)
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-release-conflict",
+		Name:     "Release Conflict Script",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Actions:  []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+	scenario, err := runner.StoreScenario(CreateScenarioRequest{
+		Name:     "Release Conflict Scenario",
+		Duration: "1m",
+		Groups:   []CreateGroupEntry{{ScriptID: "script-release-conflict", VUsers: 1}},
+	})
+	if err != nil {
+		t.Fatalf("StoreScenario returned error: %v", err)
+	}
+
+	created, err := runner.CreateScenarioSchedule(scenario.ID, CreateScenarioScheduleRequest{Name: "Archived Release Schedule", CronExpr: "*/5 * * * *", ReleaseID: "rel-archived"})
+	if err != nil {
+		t.Fatalf("CreateScenarioSchedule returned error: %v", err)
+	}
+	if !strings.Contains(created.ConflictSummary, "Release conflict") || created.NextRequiredAction != "resolve_conflict" {
+		t.Fatalf("created conflict = %q action=%q, want archived release conflict", created.ConflictSummary, created.NextRequiredAction)
+	}
+}
+
+func TestScenarioScheduleMaterializationBlocksEnvironmentUnavailable(t *testing.T) {
+	store := &metricsStoreSpy{}
+	runner := NewTestRunner(2, NewHub(), store)
+	backend := &scheduleExecutionBackend{started: make(chan string, 1)}
+	runner.setExecutionBackend(backend)
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-env-conflict",
+		Name:     "Environment Conflict Script",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Actions:  []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+	scenario, err := runner.StoreScenario(CreateScenarioRequest{
+		Name:     "Environment Conflict Scenario",
+		Duration: "1m",
+		Groups:   []CreateGroupEntry{{ScriptID: "script-env-conflict", VUsers: 1}},
+	})
+	if err != nil {
+		t.Fatalf("StoreScenario returned error: %v", err)
+	}
+	created, err := runner.CreateScenarioSchedule(scenario.ID, CreateScenarioScheduleRequest{Name: "Environment Schedule", CronExpr: "*/5 * * * *"})
+	if err != nil {
+		t.Fatalf("CreateScenarioSchedule returned error: %v", err)
+	}
+	now := time.Date(2026, time.May, 16, 12, 0, 0, 0, time.UTC)
+	due := now.Add(-time.Minute)
+	created.NextRunAt = &due
+	created.AvailabilityWindows = []storage.ScenarioScheduleWindow{{Name: "overnight", StartTime: "00:00", EndTime: "01:00", Timezone: "UTC"}}
+	runner.mu.Lock()
+	if err := runner.saveScenarioScheduleLocked(created); err != nil {
+		runner.mu.Unlock()
+		t.Fatalf("saveScenarioScheduleLocked returned error: %v", err)
+	}
+	runner.mu.Unlock()
+
+	scheduler := newScenarioScheduler(runner)
+	scheduler.now = func() time.Time { return now }
+	if err := scheduler.RunDueSchedules(); err != nil {
+		t.Fatalf("RunDueSchedules returned error: %v", err)
+	}
+	select {
+	case testID := <-backend.started:
+		t.Fatalf("unexpected scheduled test start: %s", testID)
+	default:
+	}
+	occurrences, err := store.ListScenarioScheduleOccurrences(created.ID)
+	if err != nil {
+		t.Fatalf("ListScenarioScheduleOccurrences returned error: %v", err)
+	}
+	if len(occurrences) != 1 || occurrences[0].Status != "blocked" || occurrences[0].ReasonCode != "environment_unavailable" {
+		t.Fatalf("occurrences = %#v, want environment_unavailable block", occurrences)
+	}
+	if !strings.Contains(occurrences[0].ConflictSummary, "Environment availability conflict") {
+		t.Fatalf("conflict summary = %q, want environment availability conflict", occurrences[0].ConflictSummary)
 	}
 }
 

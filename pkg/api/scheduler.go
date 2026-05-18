@@ -372,6 +372,23 @@ func (tr *TestRunner) runScenarioScheduleLocked(schedule *storage.ScenarioSchedu
 	} else if handled {
 		return nil, nil
 	}
+	if allowed, err := scheduleAllowsCandidate(schedule, plannedAt); err != nil {
+		return nil, err
+	} else if !allowed {
+		schedule.ConflictSummary = "Environment availability conflict: planned occurrence falls outside allowed schedule windows."
+		occurrence := tr.buildScenarioScheduleOccurrence(schedule, plannedAt, "blocked", "environment_unavailable", schedule.ConflictSummary, nil, now)
+		if err := tr.saveScenarioScheduleOccurrenceLocked(occurrence); err != nil {
+			return nil, err
+		}
+		schedule.LastOccurrence = cloneScenarioScheduleOccurrence(occurrence)
+		schedule.NextRequiredAction = "resolve_conflict"
+		schedule.LastError = schedule.ConflictSummary
+		schedule.UpdatedAt = now
+		if err := tr.saveScenarioScheduleLocked(schedule); err != nil {
+			return nil, err
+		}
+		return nil, nil
+	}
 	schedule.ConflictSummary = tr.scenarioScheduleConflictSummaryLocked(schedule, scenario)
 	if strings.TrimSpace(schedule.ConflictSummary) != "" {
 		occurrence := tr.buildScenarioScheduleOccurrence(schedule, plannedAt, "blocked", "schedule_conflict", schedule.ConflictSummary, nil, now)
@@ -851,6 +868,7 @@ func (tr *TestRunner) scenarioScheduleConflictSummaryLocked(schedule *storage.Sc
 	if schedule.Governance.QuotaReview.Decision == "exceeds_project_vuser_limit" {
 		findings = append(findings, strings.Join(schedule.Governance.QuotaReview.Findings, " "))
 	}
+	findings = append(findings, tr.scenarioScheduleReleaseConflictFindingsLocked(schedule)...)
 	if scenario != nil {
 		preview, err := tr.buildManagedTestLocked(CreateTestRequest{
 			Name:       schedule.Name,
@@ -867,6 +885,21 @@ func (tr *TestRunner) scenarioScheduleConflictSummaryLocked(schedule *storage.Sc
 		}
 	}
 	return strings.Join(compactScheduleConflictFindings(findings), " ")
+}
+
+func (tr *TestRunner) scenarioScheduleReleaseConflictFindingsLocked(schedule *storage.ScenarioSchedule) []string {
+	if tr == nil || tr.releaseStore == nil || schedule == nil || strings.TrimSpace(schedule.ReleaseID) == "" {
+		return nil
+	}
+	releaseID := strings.TrimSpace(schedule.ReleaseID)
+	release, err := tr.releaseStore.GetRelease(releaseID)
+	if err != nil || release == nil {
+		return []string{fmt.Sprintf("Release conflict: release %s could not be resolved.", releaseID)}
+	}
+	if release.ArchivedAt != nil {
+		return []string{fmt.Sprintf("Release conflict: release %s is archived.", firstNonEmpty(release.Name, release.ID))}
+	}
+	return nil
 }
 
 func compactScheduleConflictFindings(findings []string) []string {
