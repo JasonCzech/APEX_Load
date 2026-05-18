@@ -41,6 +41,11 @@ function scenarioRunReleaseList(script: StoredScript) {
   return releases.map((release) => release.name).join(', ')
 }
 
+function formatScenarioCount(script: StoredScript) {
+  const count = script.scenario_count || 0
+  return `${count} scenario${count === 1 ? '' : 's'}`
+}
+
 function authoringHealthLabel(script: StoredScript) {
   const health = script.authoring_health
   if (!health) return 'Unknown'
@@ -94,14 +99,9 @@ export default function ScriptsLibraryTable({
       <table>
         <thead>
           <tr>
-            <th onClick={() => onSort('name')} className="sortable">Name <SortIndicator active={sortField === 'name'} direction={sortDirection} /></th>
-            <th onClick={() => onSort('protocol')} className="sortable">Protocol <SortIndicator active={sortField === 'protocol'} direction={sortDirection} /></th>
-            <th onClick={() => onSort('version')} className="sortable">Version <SortIndicator active={sortField === 'version'} direction={sortDirection} /></th>
+            <th onClick={() => onSort('name')} className="sortable">Script <SortIndicator active={sortField === 'name'} direction={sortDirection} /></th>
             <th onClick={() => onSort('authoring_health')} className="sortable">Health <SortIndicator active={sortField === 'authoring_health'} direction={sortDirection} /></th>
-            <th onClick={() => onSort('created_at')} className="sortable">Created <SortIndicator active={sortField === 'created_at'} direction={sortDirection} /></th>
-            <th onClick={() => onSort('scenario_count')} className="sortable">Linked Scenarios <SortIndicator active={sortField === 'scenario_count'} direction={sortDirection} /></th>
-            <th onClick={() => onSort('associated_releases')} className="sortable">Associated Releases <SortIndicator active={sortField === 'associated_releases'} direction={sortDirection} /></th>
-            <th onClick={() => onSort('scenario_run_releases')} className="sortable">Scenario Run Releases <SortIndicator active={sortField === 'scenario_run_releases'} direction={sortDirection} /></th>
+            <th onClick={() => onSort('scenario_count')} className="sortable">Usage <SortIndicator active={sortField === 'scenario_count'} direction={sortDirection} /></th>
             <th onClick={() => onSort('last_run_at')} className="sortable">Last Run <SortIndicator active={sortField === 'last_run_at'} direction={sortDirection} /></th>
             <th style={{ textAlign: 'right' }}>Actions</th>
           </tr>
@@ -112,9 +112,14 @@ export default function ScriptsLibraryTable({
             return (
               <Fragment key={script.id}>
                 <tr key={script.id} className="clickable-row" onClick={() => onToggleScriptRuns(script)}>
-                  <td className="cell-name">{script.name}</td>
-                  <td><span className="protocol-badge">{script.protocol}</span></td>
-                  <td>{script.version || '—'}</td>
+                  <td className="cell-name">
+                    <div>{script.name}</div>
+                    <div className="script-table-meta">
+                      <span className="protocol-badge">{script.protocol}</span>
+                      <span className="script-health-token">v{script.version || '—'}</span>
+                      <span className="cell-muted">Created {formatDate(script.created_at)}</span>
+                    </div>
+                  </td>
                   <td>
                     <span className={`protocol-badge ${authoringHealthClass(script)}`}>{authoringHealthLabel(script)}</span>
                     {script.authoring_health && (
@@ -125,10 +130,13 @@ export default function ScriptsLibraryTable({
                       </div>
                     )}
                   </td>
-                  <td className="cell-muted">{formatDate(script.created_at)}</td>
-                  <td>{script.scenario_count || 0}</td>
-                  <td className="cell-muted">{releaseList(script)}</td>
-                  <td className="cell-muted">{scenarioRunReleaseList(script)}</td>
+                  <td>
+                    <div className="script-table-usage">
+                      <strong>{formatScenarioCount(script)}</strong>
+                      <span>{releaseList(script)}</span>
+                      <span>{scenarioRunReleaseList(script)}</span>
+                    </div>
+                  </td>
                   <td className="cell-muted">{formatDate(script.last_run_at)}</td>
                   <td style={{ textAlign: 'right' }}>
                     <button className="btn btn-sm btn-ghost" onClick={(event) => { event.stopPropagation(); onEdit(script.id) }}>Edit</button>
@@ -137,7 +145,7 @@ export default function ScriptsLibraryTable({
                 </tr>
                 {expandedScriptId === script.id && (
                   <tr className="no-hover">
-                    <td colSpan={10} style={{ background: 'var(--bg-primary)' }}>
+                    <td colSpan={5} style={{ background: 'var(--bg-primary)' }}>
                       <div style={{ padding: '10px 4px' }}>
                         <div className="cell-muted" style={{ marginBottom: 8 }}>
                           Linked Scenario Runs {loadingRunsFor === script.id ? '(loading...)' : `(${(scriptRuns[script.id] || []).length})`}
@@ -204,7 +212,7 @@ export default function ScriptsLibraryTable({
               </Fragment>
             )
           })}
-          {scripts.length === 0 && <tr><td colSpan={10} className="cell-muted">No scripts yet.</td></tr>}
+          {scripts.length === 0 && <tr><td colSpan={5} className="cell-muted">No scripts yet.</td></tr>}
         </tbody>
       </table>
     </div>

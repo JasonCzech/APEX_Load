@@ -164,6 +164,23 @@ function releaseList(scenario: StoredScenario) {
   return releases.map(release => release.name).join(', ')
 }
 
+function formatScenarioScripts(scenario: StoredScenario) {
+  const scripts = scenario.scripts || []
+  if (scripts.length === 0) return 'No scripts assigned'
+  return scripts.map(script => script.script_name || script.name || script.script_id).join(', ')
+}
+
+function formatScenarioDataPools(scenario: StoredScenario) {
+  const pools = scenario.data_pools || []
+  if (pools.length === 0) return 'No data pools'
+  return pools.map(pool => `${pool.alias} (${pool.pool_name || pool.pool_id})`).join(', ')
+}
+
+function formatScenarioResultCount(scenario: StoredScenario) {
+  const count = scenario.result_count || 0
+  return `${count} result${count === 1 ? '' : 's'}`
+}
+
 function scenarioAssignmentSummary(scenario: StoredScenario) {
   if (scenario.assignment?.mode === 'specific_hosts') {
     const targets = scenario.assignment.selected_targets || []
@@ -991,13 +1008,10 @@ function TestHub({ onSelectTest }: Props) {
           <table>
             <thead>
               <tr>
-                <th onClick={() => handleSort('name')} className="sortable">Name <SortIndicator active={sortField === 'name'} direction={sortDirection} /></th>
-                <th onClick={() => handleSort('scripts')} className="sortable">Scripts <SortIndicator active={sortField === 'scripts'} direction={sortDirection} /></th>
-                <th onClick={() => handleSort('data_pools')} className="sortable">Data Pools <SortIndicator active={sortField === 'data_pools'} direction={sortDirection} /></th>
-                <th onClick={() => handleSort('created_at')} className="sortable">Created <SortIndicator active={sortField === 'created_at'} direction={sortDirection} /></th>
-                <th onClick={() => handleSort('associated_releases')} className="sortable">Associated Releases <SortIndicator active={sortField === 'associated_releases'} direction={sortDirection} /></th>
+                <th onClick={() => handleSort('name')} className="sortable">Scenario <SortIndicator active={sortField === 'name'} direction={sortDirection} /></th>
+                <th onClick={() => handleSort('scripts')} className="sortable">Workload <SortIndicator active={sortField === 'scripts'} direction={sortDirection} /></th>
+                <th onClick={() => handleSort('associated_releases')} className="sortable">Releases <SortIndicator active={sortField === 'associated_releases'} direction={sortDirection} /></th>
                 <th onClick={() => handleSort('last_run_at')} className="sortable">Last Run <SortIndicator active={sortField === 'last_run_at'} direction={sortDirection} /></th>
-                <th onClick={() => handleSort('result_count')} className="sortable">Results <SortIndicator active={sortField === 'result_count'} direction={sortDirection} /></th>
                 <th style={{ textAlign: 'right' }}>Actions</th>
               </tr>
             </thead>
@@ -1020,25 +1034,37 @@ function TestHub({ onSelectTest }: Props) {
                         </div>
                       )}
                     </td>
-                    <td>{scenario.scripts.map(script => script.script_name || script.name || script.script_id).join(', ')}</td>
-                    <td className="cell-muted">{(scenario.data_pools || []).map(pool => `${pool.alias} (${pool.pool_name || pool.pool_id})`).join(', ') || 'None'}</td>
-                    <td className="cell-muted">{formatDate(scenario.created_at)}</td>
-                    <td className="cell-muted">{releaseList(scenario)}</td>
-                    <td className="cell-muted">{formatDate(scenario.last_run_at)}</td>
-                    <td>{scenario.result_count || 0}</td>
+                    <td>
+                      <div className="scenario-table-workload">
+                        <strong>{formatScenarioScripts(scenario)}</strong>
+                        <span>{formatScenarioDataPools(scenario)}</span>
+                        <span>{formatScenarioResultCount(scenario)}</span>
+                      </div>
+                    </td>
+                    <td>
+                      <div className="scenario-table-workload">
+                        <strong>{releaseList(scenario)}</strong>
+                        <span>Created {formatDate(scenario.created_at)}</span>
+                      </div>
+                    </td>
+                    <td className="cell-muted">
+                      <div className="scenario-table-workload">
+                        <strong>{formatDate(scenario.last_run_at)}</strong>
+                        <span>{formatScenarioResultCount(scenario)}</span>
+                      </div>
+                    </td>
                     <td style={{ textAlign: 'right' }}>
                       <button className="btn btn-sm btn-secondary" onClick={(event) => {
                         event.stopPropagation()
-                        const first = (scenarioRuns[scenario.id] || [])[0]
-                        if (first) onSelectTest(first.id)
-                      }}>Results</button>
+                        void toggleScenarioRuns(scenario)
+                      }}>{expandedScenarioId === scenario.id ? 'Hide Runs' : 'View Runs'}</button>
                       <button className="btn btn-sm btn-ghost" onClick={(event) => { event.stopPropagation(); openEdit(scenario) }}>Edit</button>
                       <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={(event) => { event.stopPropagation(); deleteScenario(scenario.id) }}>Delete</button>
                     </td>
                   </tr>
                   {expandedScenarioId === scenario.id && (
                     <tr className="no-hover">
-                      <td colSpan={8} style={{ background: 'var(--bg-primary)' }}>
+                      <td colSpan={5} style={{ background: 'var(--bg-primary)' }}>
                         <div style={{ padding: '10px 4px' }}>
                           <div className="cell-muted" style={{ marginBottom: 8 }}>
                             Linked Scenario Runs {loadingRunsFor === scenario.id ? '(loading...)' : `(${(scenarioRuns[scenario.id] || []).length})`}
@@ -1092,7 +1118,7 @@ function TestHub({ onSelectTest }: Props) {
                 </Fragment>
               ))}
               {sorted.length === 0 && (
-                <tr><td colSpan={8} className="cell-muted">No scenarios yet. Create a scenario from an existing script.</td></tr>
+                <tr><td colSpan={5} className="cell-muted">No scenarios yet. Create a scenario from an existing script.</td></tr>
               )}
             </tbody>
           </table>

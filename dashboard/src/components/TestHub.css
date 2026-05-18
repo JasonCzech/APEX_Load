@@ -930,6 +930,22 @@
   line-height: 1.4;
 }
 
+.scenario-table-workload {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.scenario-table-workload strong {
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
 .empty-state {
   color: var(--text-muted);
   font-size: 14px;

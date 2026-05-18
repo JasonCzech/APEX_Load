@@ -228,9 +228,28 @@ describe('TestHub', () => {
 
     await flushPromises()
 
+    const libraryHeaders = Array.from(container.querySelectorAll('th')).map(th => th.textContent || '')
+    expect(libraryHeaders.some(header => header.includes('Scenario'))).toBe(true)
+    expect(libraryHeaders.some(header => header.includes('Workload'))).toBe(true)
+    expect(libraryHeaders.some(header => header.includes('Releases'))).toBe(true)
     expect(container.textContent).toContain('Pinned Checkout')
     expect(container.textContent).toContain('Specific Hosts')
     expect(container.textContent).toContain('gen-a, gen-b')
+    expect(container.textContent).toContain('No data pools')
+    expect(container.textContent).toContain('0 results')
+
+    const viewRunsButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('View Runs'))
+    expect(viewRunsButton).toBeDefined()
+    if (!viewRunsButton) return
+
+    await act(async () => {
+      viewRunsButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushPromises()
+
+    expect(apiMock.listScenarioResults).toHaveBeenCalledWith('scenario-1')
+    expect(container.textContent).toContain('No runs for this scenario yet.')
   })
 
   it('creates a browser scenario with mobile runtime overrides', async () => {

@@ -920,6 +920,30 @@
   margin-bottom: 12px;
 }
 
+.script-table-meta,
+.script-table-usage {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.script-table-usage {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.script-table-usage strong {
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
 .schedule-governance-chips,
 .schedule-status-stack {
   display: flex;

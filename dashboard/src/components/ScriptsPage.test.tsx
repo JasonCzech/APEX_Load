@@ -209,6 +209,10 @@ describe('ScriptsPage', () => {
     expect(container.textContent).toContain('Existing Script')
     expect(container.textContent).toContain('Needs Review · 72')
     expect(container.textContent).toContain('1 warnings')
+    const libraryHeaders = Array.from(container.querySelectorAll('th')).map(th => th.textContent || '')
+    expect(libraryHeaders.some(header => header.includes('Script'))).toBe(true)
+    expect(libraryHeaders.some(header => header.includes('Usage'))).toBe(true)
+    expect(container.textContent).toContain('0 scenarios')
 
     const existingRow = Array.from(container.querySelectorAll('tr')).find(row => row.textContent?.includes('Existing Script'))
     expect(existingRow).toBeDefined()
