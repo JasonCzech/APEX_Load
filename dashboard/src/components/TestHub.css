@@ -354,6 +354,17 @@
   background: var(--bg-primary);
 }
 
+.scenario-init-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 16px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-primary);
+}
+
 .scenario-stage-list {
   display: flex;
   flex-direction: column;

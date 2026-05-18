@@ -20,6 +20,7 @@ interface ScenarioFormState {
   ramp_up: string
   ramp_down: string
   stages: LoadStageDraft[]
+  initialization: 'at_runtime' | 'at_once'
   scenario_mode: ScenarioMode
   goal_target_average_tps?: number
   goal_min_vusers?: number
@@ -47,6 +48,7 @@ function emptyScenarioForm(scriptId = ''): ScenarioFormState {
     ramp_up: '',
     ramp_down: '',
     stages: [],
+    initialization: 'at_runtime',
     scenario_mode: 'vuser_driven',
     browser_device_profile: '',
     browser_orientation: '',
@@ -240,7 +242,7 @@ function TestHub({ onSelectTest }: Props) {
         rampUp: draftForm.ramp_up,
         rampDown: draftForm.ramp_down,
         stages: draftForm.stages.map(normalizeStageForPayload),
-        initialization: 'at_runtime',
+        initialization: draftForm.initialization,
       }],
       goalConfig: goalConfigFromForm(draftForm),
       runtimeSettings: {
@@ -310,7 +312,7 @@ function TestHub({ onSelectTest }: Props) {
         rampUp: form.ramp_up,
         rampDown: form.ramp_down,
         stages: form.stages.map(normalizeStageForPayload),
-        initialization: 'at_runtime',
+        initialization: form.initialization,
       }],
       goalConfig: goalConfigFromForm(form),
       runtimeSettings: {
@@ -418,6 +420,7 @@ function TestHub({ onSelectTest }: Props) {
       ramp_up: first?.ramp_up || '',
       ramp_down: first?.ramp_down || '',
       stages: first?.stages ? [...first.stages] : [],
+      initialization: first?.initialization || 'at_runtime',
       scenario_mode: scenario.scenario_mode || 'vuser_driven',
       goal_target_average_tps: scenario.goal_config?.target_average_tps,
       goal_min_vusers: scenario.goal_config?.min_vusers,
@@ -573,6 +576,10 @@ function TestHub({ onSelectTest }: Props) {
               <option value="vuser_driven">VUser driven</option>
               <option value="goal_oriented">Goal oriented</option>
             </select>
+            <select className="settings-input" value={form.initialization} onChange={event => setForm({ ...form, initialization: event.target.value as ScenarioFormState['initialization'] })}>
+              <option value="at_runtime">Init/teardown per VUser</option>
+              <option value="at_once">Init/teardown once per group</option>
+            </select>
             <select className="settings-input" value={form.data_pool_id || ''} onChange={event => setForm({ ...form, data_pool_id: event.target.value })}>
               <option value="">No shared data pool</option>
               {dataPools.map(pool => <option key={pool.id} value={pool.id}>{pool.name}</option>)}
@@ -637,6 +644,17 @@ function TestHub({ onSelectTest }: Props) {
               </div>
             </div>
           )}
+          <div className="scenario-init-panel">
+            <div className="scenario-assignment-header">
+              <div>
+                <h4>Initialization Scope</h4>
+                <p>{form.initialization === 'at_once'
+                  ? 'Script init and teardown run once for this group, useful for shared seed or setup flows.'
+                  : 'Each VUser runs script init and teardown independently, matching the default closed-model behavior.'}</p>
+              </div>
+              <span className="scenario-assignment-status">{form.initialization === 'at_once' ? 'Once per group' : 'Per VUser'}</span>
+            </div>
+          </div>
           <div className="scenario-stage-panel">
             <div className="scenario-assignment-header">
               <div>

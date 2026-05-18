@@ -444,6 +444,56 @@ describe('TestHub', () => {
       })],
     }))
   })
+
+  it('persists once-only init and teardown scope from the scenario form', async () => {
+    const onSelectTest = vi.fn()
+
+    await act(async () => {
+      root.render(<TestHub testStatuses={{}} onSelectTest={onSelectTest} />)
+    })
+
+    await flushPromises()
+
+    const newScenarioButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('New Scenario'))
+    expect(newScenarioButton).toBeDefined()
+    if (!newScenarioButton) return
+
+    await act(async () => {
+      newScenarioButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const nameInput = Array.from(container.querySelectorAll('input')).find(input => input.placeholder === 'Scenario name')
+    const initializationSelect = Array.from(container.querySelectorAll('select')).find(select => select.textContent?.includes('Init/teardown once per group')) as HTMLSelectElement | undefined
+    expect(nameInput).toBeDefined()
+    expect(initializationSelect).toBeDefined()
+    if (!nameInput || !initializationSelect) return
+
+    await act(async () => {
+      setInputValue(nameInput, 'Once Setup Scenario')
+      setSelectValue(initializationSelect, 'at_once')
+    })
+
+    expect(container.textContent).toContain('Once per group')
+    expect(container.textContent).toContain('Script init and teardown run once for this group')
+
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save Scenario'))
+    expect(saveButton).toBeDefined()
+    if (!saveButton) return
+
+    await act(async () => {
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushPromises()
+
+    expect(apiMock.createScenario).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Once Setup Scenario',
+      groups: [expect.objectContaining({
+        script_id: 'script-1',
+        initialization: 'at_once',
+      })],
+    }))
+  })
 })
 
 async function flushPromises() {

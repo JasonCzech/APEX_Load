@@ -50,7 +50,7 @@ Scripts can also set shared run goals in `config.run_logic`:
 - `global_iterations`: maximum total started iterations across all VUsers in the executing script group
 - `max_transactions`: maximum total protocol action attempts across all VUsers in the executing script group
 
-Scenario groups support `initialization` values:
+Scenario groups support `initialization` values. The dashboard scenario form exposes this scope so reusable scenarios can preserve shared setup/teardown behavior:
 
 - `at_runtime`: default; every VUser executes script `init` and `teardown`
 - `at_once`: the group executes script `init` once before VUsers start and script `teardown` once after the group completes
@@ -97,5 +97,5 @@ The first template catalog covers:
 | P4.4 Capacity validation | Partial backend and UI complete | Draft validation checks modeled demand, capacity, browser canaries, data-pool rows, data-source fit, and generator placement; dashboard scenario form renders pre-save findings |
 | P4.5 Rendezvous points | Complete | Runtime `rendezvous` actions synchronize VUsers and validation reports spike readiness |
 | P4.6 Global goals | Partial backend complete | Runtime enforces group-level `global_iterations` and `max_transactions` across VUsers |
-| P4.7 Once-only scopes | Partial backend complete | Multi-group runtime honors `initialization: at_once` for group-level init/teardown |
+| P4.7 Once-only scopes | Partial backend and UI complete | Multi-group runtime honors `initialization: at_once` for group-level init/teardown, and dashboard scenario authoring can persist the scope |
 | P4.8 Coordinated-omission reporting | Partial backend complete | Archive interval summaries, JSON reports, HTML reports, and Parquet exports preserve target TPS, throughput gap, and miss flags |
