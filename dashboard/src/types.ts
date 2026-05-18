@@ -716,6 +716,7 @@ export interface ScenarioDataPoolBinding {
 export interface ScenarioSchedule {
   id: string
   scenario_id: string
+  project_id?: string
   name: string
   cron_expr: string
   timezone?: string
@@ -729,12 +730,43 @@ export interface ScenarioSchedule {
   last_occurrence?: ScenarioScheduleOccurrence
   next_required_action?: string
   pending_approval_id?: string
+  owner_subject?: string
+  owner_display_name?: string
+  governance?: ScenarioScheduleGovernance
+  blackout_windows?: ScenarioScheduleWindow[]
+  availability_windows?: ScenarioScheduleWindow[]
   last_run_test_id?: string
   last_run_at?: string
   next_run_at?: string
   last_error?: string
   created_at: string
   updated_at: string
+}
+
+export interface ScenarioScheduleGovernance {
+  rbac_review?: {
+    decision?: string
+    reviewed_at?: string
+    reviewed_by?: string
+    required_roles?: string[]
+    review_source?: string
+  }
+  quota_review?: {
+    decision?: string
+    project_max_concurrent_tests?: number
+    project_max_vusers?: number
+    estimated_peak_vusers?: number
+    findings?: string[]
+  }
+  policy_version?: string
+}
+
+export interface ScenarioScheduleWindow {
+  name?: string
+  days_of_week?: number[]
+  start_time: string
+  end_time: string
+  timezone?: string
 }
 
 export interface ScenarioScheduleOccurrence {

@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Application, DashboardAuthEffectiveAccessResource, Release, ScenarioSchedule, StoredScenario } from '../types'
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
+import { Application, DashboardAuthEffectiveAccessResource, Release, ScenarioSchedule, ScenarioScheduleOccurrence, StoredScenario } from '../types'
 import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
 import { getErrorMessage } from '../utils/errorUtils'
@@ -12,6 +12,21 @@ interface Props {
   onCreateRelease: (name: string) => Promise<Release | null>
 }
 
+type ScheduleDraft = {
+  name: string
+  cron_expr: string
+  timezone: string
+  release_id: string
+  run_name_template: string
+  enabled: boolean
+  approval_policy: string
+  missed_run_policy: string
+  blackout_start_time: string
+  blackout_end_time: string
+  availability_start_time: string
+  availability_end_time: string
+}
+
 function formatDate(value?: string) {
   return value ? new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Never'
 }
@@ -22,6 +37,23 @@ function formatScheduleTimestamp(value?: string) {
 
 function formatScenarioMode(value?: StoredScenario['scenario_mode']) {
   return value === 'goal_oriented' ? 'Goal Oriented' : 'VUser Driven'
+}
+
+function formatScheduleToken(value?: string) {
+  return value ? value.replace(/_/g, ' ') : ''
+}
+
+function formatScheduleWindow(window: { name?: string, start_time: string, end_time: string, timezone?: string }) {
+  const label = window.name ? `${window.name}: ` : ''
+  return `${label}${window.start_time}-${window.end_time}${window.timezone ? ` ${window.timezone}` : ''}`
+}
+
+function scheduleStatusTone(value?: string) {
+  if (!value) return ''
+  if (['blocked', 'failed', 'rejected'].includes(value)) return 'danger'
+  if (['approval_required', 'operator_decision_required', 'pending', 'skipped'].includes(value)) return 'warning'
+  if (['materialized', 'queued', 'approved', 'completed', 'enabled'].includes(value)) return 'healthy'
+  return ''
 }
 
 function formatRuntimePacing(scenario?: StoredScenario | null) {
@@ -51,11 +83,16 @@ function buildDefaultScheduleDraft(scenario?: StoredScenario | null, releaseId?:
   return {
     name: scenario ? `${scenario.name} Schedule` : '',
     cron_expr: '0 9 * * 1-5',
+    timezone: 'UTC',
     release_id: releaseId || '',
     run_name_template: scenario?.name || '',
     enabled: true,
     approval_policy: 'auto',
     missed_run_policy: 'skip',
+    blackout_start_time: '',
+    blackout_end_time: '',
+    availability_start_time: '',
+    availability_end_time: '',
   }
 }
 
@@ -80,7 +117,10 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
   const [scheduleLoading, setScheduleLoading] = useState(false)
   const [scheduleSubmitting, setScheduleSubmitting] = useState(false)
   const [editingScheduleId, setEditingScheduleId] = useState<string | null>(null)
-  const [scheduleDraft, setScheduleDraft] = useState(buildDefaultScheduleDraft())
+  const [expandedScheduleId, setExpandedScheduleId] = useState<string | null>(null)
+  const [scheduleOccurrenceLoading, setScheduleOccurrenceLoading] = useState<string | null>(null)
+  const [scheduleOccurrences, setScheduleOccurrences] = useState<Record<string, ScenarioScheduleOccurrence[]>>({})
+  const [scheduleDraft, setScheduleDraft] = useState<ScheduleDraft>(buildDefaultScheduleDraft())
   const [runName, setRunName] = useState('')
   const [newReleaseName, setNewReleaseName] = useState('')
   const [creating, setCreating] = useState(false)
@@ -155,6 +195,8 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
   const canManageTests = useMemo(() => isEffectiveOperationAllowed(effectiveAuthAccessResources, 'manage_tests'), [effectiveAuthAccessResources])
   const canLaunch = readiness.every(item => item.ready) && !creating && canManageTests
   const nextScheduledRun = useMemo(() => schedules.filter(item => item.enabled && item.next_run_at).sort((left, right) => (left.next_run_at || '').localeCompare(right.next_run_at || ''))[0], [schedules])
+  const schedulesNeedingAction = useMemo(() => schedules.filter(item => item.next_required_action || item.pending_approval_id || item.conflict_summary || item.last_error).length, [schedules])
+  const scheduleConflictCount = useMemo(() => schedules.filter(item => item.conflict_summary).length, [schedules])
 
   useEffect(() => {
     if (scenario && !runName) setRunName(scenario.name)
@@ -221,11 +263,25 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
 	const payload = {
 	  name: scheduleDraft.name.trim(),
 	  cron_expr: scheduleDraft.cron_expr.trim(),
+	  timezone: scheduleDraft.timezone.trim() || 'UTC',
 	  release_id: scheduleDraft.release_id || undefined,
 	  run_name_template: scheduleDraft.run_name_template.trim() || undefined,
 	  enabled: scheduleDraft.enabled,
 	  approval_policy: scheduleDraft.approval_policy,
 	  missed_run_policy: scheduleDraft.missed_run_policy,
+	  blackout_windows: scheduleDraft.blackout_start_time && scheduleDraft.blackout_end_time ? [{
+	    name: 'dashboard-blackout',
+	    start_time: scheduleDraft.blackout_start_time,
+	    end_time: scheduleDraft.blackout_end_time,
+	    timezone: scheduleDraft.timezone.trim() || 'UTC',
+	  }] : undefined,
+	  availability_windows: scheduleDraft.availability_start_time && scheduleDraft.availability_end_time ? [{
+	    name: 'dashboard-availability',
+	    days_of_week: [1, 2, 3, 4, 5],
+	    start_time: scheduleDraft.availability_start_time,
+	    end_time: scheduleDraft.availability_end_time,
+	    timezone: scheduleDraft.timezone.trim() || 'UTC',
+	  }] : undefined,
 	}
 	try {
 	  if (editingScheduleId) {
@@ -248,11 +304,16 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
 	setScheduleDraft({
 	  name: schedule.name,
 	  cron_expr: schedule.cron_expr,
+	  timezone: schedule.timezone || 'UTC',
 	  release_id: schedule.release_id || '',
 	  run_name_template: schedule.run_name_template || '',
 	  enabled: schedule.enabled,
 	  approval_policy: schedule.approval_policy || 'auto',
 	  missed_run_policy: schedule.missed_run_policy || 'skip',
+	  blackout_start_time: schedule.blackout_windows?.[0]?.start_time || '',
+	  blackout_end_time: schedule.blackout_windows?.[0]?.end_time || '',
+	  availability_start_time: schedule.availability_windows?.[0]?.start_time || '',
+	  availability_end_time: schedule.availability_windows?.[0]?.end_time || '',
 	})
   }
 
@@ -267,11 +328,14 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
 	  await api.updateScenarioSchedule(scenario.id, schedule.id, {
 	    name: schedule.name,
 	    cron_expr: schedule.cron_expr,
+	    timezone: schedule.timezone || 'UTC',
 	    release_id: schedule.release_id || undefined,
 	    run_name_template: schedule.run_name_template || undefined,
 	    enabled: !schedule.enabled,
 	    approval_policy: schedule.approval_policy || 'auto',
 	    missed_run_policy: schedule.missed_run_policy || 'skip',
+	    blackout_windows: schedule.blackout_windows,
+	    availability_windows: schedule.availability_windows,
 	  })
 	  await refreshSchedules(scenario.id)
 	} catch (err: unknown) {
@@ -314,6 +378,28 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
       await refreshSchedules(scenario.id)
     } catch (err: unknown) {
       setError(getErrorMessage(err, approved ? 'Unable to approve schedule' : 'Unable to reject schedule'))
+    }
+  }
+
+  const toggleScheduleOccurrences = async (schedule: ScenarioSchedule) => {
+    if (!scenario) return
+    if (expandedScheduleId === schedule.id) {
+      setExpandedScheduleId(null)
+      return
+    }
+    setExpandedScheduleId(schedule.id)
+    if (scheduleOccurrences[schedule.id]) {
+      return
+    }
+    setScheduleOccurrenceLoading(schedule.id)
+    setError('')
+    try {
+      const response = await api.listScenarioScheduleOccurrences(scenario.id, schedule.id)
+      setScheduleOccurrences(prev => ({ ...prev, [schedule.id]: response.occurrences || [] }))
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Unable to load schedule occurrences'))
+    } finally {
+      setScheduleOccurrenceLoading(null)
     }
   }
 
@@ -371,6 +457,13 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
                 </div>
                 <div className="setting-row">
                   <div className="setting-info">
+                    <span className="setting-label">Timezone</span>
+                    <span className="setting-desc">IANA timezone used for cron and calendar windows</span>
+                  </div>
+                  <input className="settings-input" value={scheduleDraft.timezone} onChange={(event) => setScheduleDraft(prev => ({ ...prev, timezone: event.target.value }))} placeholder="UTC" />
+                </div>
+                <div className="setting-row">
+                  <div className="setting-info">
                     <span className="setting-label">Release Context</span>
                     <span className="setting-desc">Optional release to attach to scheduled runs</span>
                   </div>
@@ -412,6 +505,26 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
                     <option value="require_operator_decision">Require operator decision</option>
                   </select>
                 </div>
+                <div className="setting-row">
+                  <div className="setting-info">
+                    <span className="setting-label">Blackout Window</span>
+                    <span className="setting-desc">Optional daily no-run range in the schedule timezone</span>
+                  </div>
+                  <div className="inline-create-row">
+                    <input className="settings-input" value={scheduleDraft.blackout_start_time} onChange={(event) => setScheduleDraft(prev => ({ ...prev, blackout_start_time: event.target.value }))} placeholder="00:00" />
+                    <input className="settings-input" value={scheduleDraft.blackout_end_time} onChange={(event) => setScheduleDraft(prev => ({ ...prev, blackout_end_time: event.target.value }))} placeholder="06:00" />
+                  </div>
+                </div>
+                <div className="setting-row">
+                  <div className="setting-info">
+                    <span className="setting-label">Availability Window</span>
+                    <span className="setting-desc">Optional weekday allowed-run range in the schedule timezone</span>
+                  </div>
+                  <div className="inline-create-row">
+                    <input className="settings-input" value={scheduleDraft.availability_start_time} onChange={(event) => setScheduleDraft(prev => ({ ...prev, availability_start_time: event.target.value }))} placeholder="09:00" />
+                    <input className="settings-input" value={scheduleDraft.availability_end_time} onChange={(event) => setScheduleDraft(prev => ({ ...prev, availability_end_time: event.target.value }))} placeholder="17:00" />
+                  </div>
+                </div>
                 <label className="setting-row" style={{ alignItems: 'center', gap: 12 }}>
                   <input type="checkbox" checked={scheduleDraft.enabled} onChange={(event) => setScheduleDraft(prev => ({ ...prev, enabled: event.target.checked }))} />
                   <div className="setting-info">
@@ -452,36 +565,137 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
                       </tr>
                     </thead>
                     <tbody>
-                      {schedules.map(item => (
-                        <tr key={item.id}>
-                          <td className="cell-name">{item.name}</td>
-                          <td className="cell-mono">{item.cron_expr}</td>
-                          <td>{formatScheduleTimestamp(item.next_run_at)}</td>
-                          <td>{formatScheduleTimestamp(item.last_run_at)}</td>
-                          <td>{releases.find(releaseItem => releaseItem.id === item.release_id)?.name || 'None'}</td>
-                          <td>{(item.approval_policy || 'auto').replace(/_/g, ' ')} / {(item.missed_run_policy || 'skip').replace(/_/g, ' ')}</td>
-                          <td>
-                            {item.enabled ? 'Enabled' : 'Paused'}
-                            {item.next_required_action ? ` · ${item.next_required_action.replace(/_/g, ' ')}` : ''}
-                            {item.conflict_summary ? ` · ${item.conflict_summary}` : ''}
-                            {item.last_occurrence?.status ? ` · last ${item.last_occurrence.status}` : ''}
-                            {item.last_error ? ` · ${item.last_error}` : ''}
-                          </td>
-                          <td>
-                            <div className="inline-create-row">
-                              {item.next_required_action === 'approval_required' && item.pending_approval_id && (
-                                <>
-                                  <button className="btn btn-secondary" onClick={() => resolveScheduleApproval(item, true)} disabled={!canManageTests}>Approve</button>
-                                  <button className="btn btn-secondary" onClick={() => resolveScheduleApproval(item, false)} disabled={!canManageTests}>Reject</button>
-                                </>
-                              )}
-                              <button className="btn btn-secondary" onClick={() => editSchedule(item)} disabled={!canManageTests}>Edit</button>
-                              <button className="btn btn-secondary" onClick={() => toggleSchedule(item)} disabled={!canManageTests}>{item.enabled ? 'Pause' : 'Enable'}</button>
-                              <button className="btn btn-secondary" onClick={() => deleteSchedule(item.id)} disabled={!canManageTests}>Delete</button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
+                      {schedules.map(item => {
+                        const occurrences = scheduleOccurrences[item.id] || []
+                        const lastOccurrence = item.last_occurrence
+                        return (
+                          <Fragment key={item.id}>
+                            <tr>
+                              <td className="cell-name">
+                                {item.name}
+                                <div className="schedule-governance-chips">
+                                  <span className="script-health-token">rev {item.revision || 1}</span>
+                                  {item.owner_display_name && <span className="script-health-token">owner {item.owner_display_name}</span>}
+                                  {item.pending_approval_id && <span className="script-health-token warning">approval pending</span>}
+                                  {item.conflict_summary && <span className="script-health-token danger">conflict</span>}
+                                </div>
+                              </td>
+                              <td className="cell-mono">
+                                {item.cron_expr}
+                                <div className="schedule-governance-chips">
+                                  <span className="script-health-token">{item.timezone || 'UTC'}</span>
+                                  {!!item.blackout_windows?.length && <span className="script-health-token warning">{item.blackout_windows.length} blackout</span>}
+                                  {!!item.availability_windows?.length && <span className="script-health-token healthy">{item.availability_windows.length} availability</span>}
+                                </div>
+                              </td>
+                              <td>{formatScheduleTimestamp(item.next_run_at)}</td>
+                              <td>{formatScheduleTimestamp(item.last_run_at)}</td>
+                              <td>{releases.find(releaseItem => releaseItem.id === item.release_id)?.name || 'None'}</td>
+                              <td>
+                                <div className="schedule-governance-chips">
+                                  <span className="script-health-token">{formatScheduleToken(item.approval_policy || 'auto')}</span>
+                                  <span className="script-health-token">{formatScheduleToken(item.missed_run_policy || 'skip')}</span>
+                                </div>
+                              </td>
+                              <td>
+                                <div className="schedule-status-stack">
+                                  <span className={`script-health-token ${item.enabled ? 'healthy' : 'warning'}`}>{item.enabled ? 'Enabled' : 'Paused'}</span>
+                                  {item.next_required_action && <span className={`script-health-token ${scheduleStatusTone(item.next_required_action)}`}>{formatScheduleToken(item.next_required_action)}</span>}
+                                  {lastOccurrence?.status && <span className={`script-health-token ${scheduleStatusTone(lastOccurrence.status)}`}>last {formatScheduleToken(lastOccurrence.status)}</span>}
+                                  {lastOccurrence?.reason_code && <span className="script-health-token">{formatScheduleToken(lastOccurrence.reason_code)}</span>}
+                                </div>
+                                {item.conflict_summary && <div className="schedule-governance-detail text-danger">{item.conflict_summary}</div>}
+                                {item.last_error && <div className="schedule-governance-detail text-danger">{item.last_error}</div>}
+                                {item.governance?.rbac_review?.decision && (
+                                  <div className="schedule-governance-detail">
+                                    RBAC {formatScheduleToken(item.governance.rbac_review.decision)}
+                                    {item.governance.rbac_review.review_source ? ` via ${formatScheduleToken(item.governance.rbac_review.review_source)}` : ''}
+                                  </div>
+                                )}
+                                {item.governance?.quota_review?.decision && (
+                                  <div className="schedule-governance-detail">
+                                    Quota {formatScheduleToken(item.governance.quota_review.decision)}
+                                    {item.governance.quota_review.estimated_peak_vusers ? ` · peak ${item.governance.quota_review.estimated_peak_vusers} VUsers` : ''}
+                                  </div>
+                                )}
+                                {item.governance?.quota_review?.findings?.slice(0, 1).map(finding => (
+                                  <div key={finding} className="schedule-governance-detail text-danger">{finding}</div>
+                                ))}
+                              </td>
+                              <td>
+                                <div className="inline-create-row">
+                                  {item.next_required_action === 'approval_required' && item.pending_approval_id && (
+                                    <>
+                                      <button className="btn btn-secondary" onClick={() => resolveScheduleApproval(item, true)} disabled={!canManageTests}>Approve</button>
+                                      <button className="btn btn-secondary" onClick={() => resolveScheduleApproval(item, false)} disabled={!canManageTests}>Reject</button>
+                                    </>
+                                  )}
+                                  <button className="btn btn-secondary" onClick={() => toggleScheduleOccurrences(item)}>{expandedScheduleId === item.id ? 'Hide Audit' : 'Audit Trail'}</button>
+                                  <button className="btn btn-secondary" onClick={() => editSchedule(item)} disabled={!canManageTests}>Edit</button>
+                                  <button className="btn btn-secondary" onClick={() => toggleSchedule(item)} disabled={!canManageTests}>{item.enabled ? 'Pause' : 'Enable'}</button>
+                                  <button className="btn btn-secondary" onClick={() => deleteSchedule(item.id)} disabled={!canManageTests}>Delete</button>
+                                </div>
+                              </td>
+                            </tr>
+                            {expandedScheduleId === item.id && (
+                              <tr className="no-hover" key={`${item.id}-occurrences`}>
+                                <td colSpan={8} style={{ background: 'var(--bg-primary)' }}>
+                                  <div className="schedule-occurrence-panel">
+                                    <div className="schedule-occurrence-header">
+                                      <strong>Occurrence Audit Trail</strong>
+                                      <span>{scheduleOccurrenceLoading === item.id ? 'Loading...' : `${occurrences.length} records`}</span>
+                                    </div>
+                                    {scheduleOccurrenceLoading === item.id ? (
+                                      <div className="cell-muted">Loading schedule occurrence history...</div>
+                                    ) : occurrences.length === 0 ? (
+                                      <div className="cell-muted">No materialized occurrences recorded yet.</div>
+                                    ) : (
+                                      <div className="data-table">
+                                        <table>
+                                          <thead>
+                                            <tr>
+                                              <th>Planned</th>
+                                              <th>Materialized</th>
+                                              <th>Status</th>
+                                              <th>Reason</th>
+                                              <th>Test</th>
+                                              <th>Approval</th>
+                                              <th>Conflict</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            {occurrences.map(occurrence => (
+                                              <tr key={occurrence.id}>
+                                                <td>{formatScheduleTimestamp(occurrence.planned_at)}</td>
+                                                <td>{formatScheduleTimestamp(occurrence.materialized_at)}</td>
+                                                <td><span className={`script-health-token ${scheduleStatusTone(occurrence.status)}`}>{formatScheduleToken(occurrence.status)}</span></td>
+                                                <td>{formatScheduleToken(occurrence.reason_code) || 'None'}</td>
+                                                <td className="cell-mono">{occurrence.test_id || 'None'}</td>
+                                                <td className="cell-mono">{occurrence.approval_id || 'None'}</td>
+                                                <td>{occurrence.conflict_summary || 'None'}</td>
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    )}
+                                    {(item.blackout_windows?.length || item.availability_windows?.length) ? (
+                                      <div className="schedule-window-summary">
+                                        {item.blackout_windows?.map(window => (
+                                          <span key={`blackout-${window.name || window.start_time}`} className="script-health-token warning">Blackout {formatScheduleWindow(window)}</span>
+                                        ))}
+                                        {item.availability_windows?.map(window => (
+                                          <span key={`availability-${window.name || window.start_time}`} className="script-health-token healthy">Availability {formatScheduleWindow(window)}</span>
+                                        ))}
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </Fragment>
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -497,6 +711,8 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
               <div><span>Scenario</span><strong>{scenario?.name || 'None'}</strong></div>
               <div><span>Schedules</span><strong>{schedules.length}</strong></div>
               <div><span>Enabled</span><strong>{schedules.filter(item => item.enabled).length}</strong></div>
+              <div><span>Needs Action</span><strong>{schedulesNeedingAction}</strong></div>
+              <div><span>Conflicts</span><strong>{scheduleConflictCount}</strong></div>
               <div><span>Next Run</span><strong>{nextScheduledRun ? formatScheduleTimestamp(nextScheduledRun.next_run_at) : 'Not scheduled'}</strong></div>
             </div>
             <div className="readiness-list">

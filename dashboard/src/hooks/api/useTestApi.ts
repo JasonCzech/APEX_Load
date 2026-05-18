@@ -14,6 +14,7 @@ import {
   RunArchiveReport,
   RuntimeSettingsOverride,
   ScenarioSchedule,
+  ScenarioScheduleOccurrence,
   ScenarioScheduleHealth,
   ScenarioDataPoolBinding,
   ScenarioMode,
@@ -98,10 +99,17 @@ type ScenarioScheduleRequest = {
   enabled?: boolean
   approval_policy?: string
   missed_run_policy?: string
+  blackout_windows?: Array<{ name?: string, days_of_week?: number[], start_time: string, end_time: string, timezone?: string }>
+  availability_windows?: Array<{ name?: string, days_of_week?: number[], start_time: string, end_time: string, timezone?: string }>
 }
 
 type ScenarioScheduleListResponse = {
   schedules: ScenarioSchedule[]
+  count: number
+}
+
+type ScenarioScheduleOccurrencesResponse = {
+  occurrences: ScenarioScheduleOccurrence[]
   count: number
 }
 
@@ -260,6 +268,11 @@ export function useTestApi() {
     [],
   )
 
+  const listScenarioScheduleOccurrences = useCallback(
+    (scenarioId: string, scheduleId: string) => request<ScenarioScheduleOccurrencesResponse>(`/scenarios/${scenarioId}/schedules/${scheduleId}/occurrences`),
+    [],
+  )
+
   const getScheduleHealth = useCallback(() => request<ScenarioScheduleHealth>('/schedules/health'), [])
 
   const approveScenarioScheduleApproval = useCallback(
@@ -393,6 +406,7 @@ export function useTestApi() {
       createScenarioSchedule,
       updateScenarioSchedule,
       deleteScenarioSchedule,
+      listScenarioScheduleOccurrences,
       getScheduleHealth,
       approveScenarioScheduleApproval,
       rejectScenarioScheduleApproval,
@@ -417,6 +431,7 @@ export function useTestApi() {
       createScenarioSchedule,
       updateScenarioSchedule,
       deleteScenarioSchedule,
+      listScenarioScheduleOccurrences,
       getScheduleHealth,
       approveScenarioScheduleApproval,
       rejectScenarioScheduleApproval,

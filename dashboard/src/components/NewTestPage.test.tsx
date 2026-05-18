@@ -11,6 +11,7 @@ import NewTestPage from './NewTestPage'
 const apiMock = {
   listScenarios: vi.fn(),
   listScenarioSchedules: vi.fn(),
+  listScenarioScheduleOccurrences: vi.fn(),
   createScenarioSchedule: vi.fn(),
   updateScenarioSchedule: vi.fn(),
   deleteScenarioSchedule: vi.fn(),
@@ -73,6 +74,7 @@ describe('NewTestPage', () => {
     apiMock.createTest.mockResolvedValue({ id: 'test-1' })
     apiMock.startTest.mockResolvedValue({})
     apiMock.listScenarioSchedules.mockResolvedValue({ schedules: [], count: 0 })
+    apiMock.listScenarioScheduleOccurrences.mockResolvedValue({ occurrences: [], count: 0 })
     apiMock.createScenarioSchedule.mockResolvedValue({ id: 'schedule-1' })
     apiMock.approveScenarioScheduleApproval.mockResolvedValue({ schedule: { id: 'schedule-1' } })
     apiMock.rejectScenarioScheduleApproval.mockResolvedValue({ schedule: { id: 'schedule-1' } })
@@ -164,6 +166,7 @@ describe('NewTestPage', () => {
     expect(apiMock.createScenarioSchedule).toHaveBeenCalledWith('scenario-1', expect.objectContaining({
       name: 'Multi-group (3 groups) Schedule',
       cron_expr: '0 9 * * 1-5',
+      timezone: 'UTC',
       enabled: true,
       approval_policy: 'auto',
       missed_run_policy: 'skip',
@@ -181,10 +184,24 @@ describe('NewTestPage', () => {
           release_id: 'release-1',
           run_name_template: 'Production Nightly',
           enabled: true,
+          revision: 2,
+          timezone: 'America/New_York',
+          owner_display_name: 'Project Admin',
+          governance: {
+            rbac_review: { decision: 'allowed', review_source: 'project_role' },
+            quota_review: {
+              decision: 'blocked',
+              estimated_peak_vusers: 1500,
+              findings: ['Estimated VUsers exceed project quota.'],
+            },
+          },
+          blackout_windows: [{ name: 'maintenance', start_time: '00:00', end_time: '06:00', timezone: 'America/New_York' }],
+          availability_windows: [{ name: 'business-hours', start_time: '09:00', end_time: '17:00', timezone: 'America/New_York' }],
           approval_policy: 'production',
           missed_run_policy: 'catch_up_once',
           next_required_action: 'approval_required',
           pending_approval_id: 'approval-1',
+          conflict_summary: 'Project quota exceeded by 20 VUsers.',
           last_occurrence: {
             id: 'occ-1',
             schedule_id: 'schedule-1',
@@ -202,6 +219,38 @@ describe('NewTestPage', () => {
         },
       ],
       count: 1,
+    })
+    apiMock.listScenarioScheduleOccurrences.mockResolvedValue({
+      occurrences: [
+        {
+          id: 'occ-1',
+          schedule_id: 'schedule-1',
+          scenario_id: 'scenario-1',
+          schedule_revision: 2,
+          planned_at: '2026-05-18T06:00:00Z',
+          materialized_at: '2026-05-18T06:00:03Z',
+          status: 'blocked',
+          reason_code: 'schedule_conflict',
+          approval_id: 'approval-1',
+          conflict_summary: 'Project quota exceeded by 20 VUsers.',
+          created_at: '2026-05-18T06:00:00Z',
+          updated_at: '2026-05-18T06:00:00Z',
+        },
+        {
+          id: 'occ-2',
+          schedule_id: 'schedule-1',
+          scenario_id: 'scenario-1',
+          schedule_revision: 2,
+          planned_at: '2026-05-17T06:00:00Z',
+          materialized_at: '2026-05-17T06:00:05Z',
+          status: 'materialized',
+          reason_code: 'started',
+          test_id: 'test-17',
+          created_at: '2026-05-17T06:00:00Z',
+          updated_at: '2026-05-17T06:00:00Z',
+        },
+      ],
+      count: 2,
     })
 
     await act(async () => {
@@ -224,8 +273,35 @@ describe('NewTestPage', () => {
     })
 
     expect(container.textContent).toContain('Production Nightly')
-    expect(container.textContent).toContain('production / catch up once')
-    expect(container.textContent).toContain('Enabled · approval required · last blocked')
+    expect(container.textContent).toContain('rev 2')
+    expect(container.textContent).toContain('owner Project Admin')
+    expect(container.textContent).toContain('America/New_York')
+    expect(container.textContent).toContain('1 blackout')
+    expect(container.textContent).toContain('1 availability')
+    expect(container.textContent).toContain('production')
+    expect(container.textContent).toContain('catch up once')
+    expect(container.textContent).toContain('approval required')
+    expect(container.textContent).toContain('Project quota exceeded by 20 VUsers.')
+    expect(container.textContent).toContain('RBAC allowed via project role')
+    expect(container.textContent).toContain('Quota blocked · peak 1500 VUsers')
+    expect(container.textContent).toContain('Estimated VUsers exceed project quota.')
+    expect(container.textContent).toContain('Needs Action')
+    expect(container.textContent).toContain('Conflicts')
+
+    const auditButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Audit Trail')
+    expect(auditButton).toBeTruthy()
+    await act(async () => {
+      auditButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.listScenarioScheduleOccurrences).toHaveBeenCalledWith('scenario-1', 'schedule-1')
+    expect(container.textContent).toContain('Occurrence Audit Trail')
+    expect(container.textContent).toContain('2 records')
+    expect(container.textContent).toContain('schedule conflict')
+    expect(container.textContent).toContain('test-17')
+    expect(container.textContent).toContain('Blackout maintenance: 00:00-06:00 America/New_York')
+    expect(container.textContent).toContain('Availability business-hours: 09:00-17:00 America/New_York')
 
     const approveButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Approve')
     expect(approveButton).toBeTruthy()

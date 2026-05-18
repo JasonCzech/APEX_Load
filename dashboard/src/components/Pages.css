@@ -822,6 +822,46 @@
   margin-bottom: 12px;
 }
 
+.schedule-governance-chips,
+.schedule-status-stack {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 5px;
+}
+
+.schedule-governance-detail {
+  margin-top: 6px;
+  max-width: 280px;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.schedule-occurrence-panel {
+  padding: 12px 4px;
+}
+
+.schedule-occurrence-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+  color: var(--text-primary);
+}
+
+.schedule-occurrence-header span {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.schedule-window-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
 .text-success { color: var(--success); }
 .text-danger { color: var(--danger); }
 .text-muted { color: var(--text-muted); }
