@@ -65,13 +65,15 @@ Stormrunner has a clear enterprise architecture: stateless API/controller replic
 
 ### Epic P1.1: Control Plane Topology
 
-| ID | Story | Size | Dependencies |
-| --- | --- | --- | --- |
-| P1.1 | Document controller, generator, dashboard, storage, and telemetry boundaries as the production reference architecture | M | none |
-| P1.2 | Define HA controller behavior: singleton scheduler responsibilities, leader election, idempotent reconciler loops, and safe restart contracts | L | P1.1 |
-| P1.3 | Add production readiness checks for storage, generator RPC, archive writer, telemetry fan-out, auth mode, and scheduler state | M | P1.1 |
-| P1.4 | Define upgrade and migration policy for SQLite/PostgreSQL metadata, archive schema versions, and dashboard static assets | M | P1.1 |
-| P1.5 | Publish an operator architecture runbook with failure modes and recovery flows | M | P1.2, P1.3 |
+Reference artifact: `docs/ENTERPRISE_PLATFORM_ARCHITECTURE_RUNBOOK.md`.
+
+| ID | Story | Size | Dependencies | Status |
+| --- | --- | --- | --- | --- |
+| P1.1 | Document controller, generator, dashboard, storage, and telemetry boundaries as the production reference architecture | M | none | Complete |
+| P1.2 | Define HA controller behavior: singleton scheduler responsibilities, leader election, idempotent reconciler loops, and safe restart contracts | L | P1.1 | Complete for architecture contract; implementation continues in P7.5 |
+| P1.3 | Add production readiness checks for storage, generator RPC, archive writer, telemetry fan-out, auth mode, and scheduler state | M | P1.1 | Complete for initial API surface via `GET /api/v1/system/readiness`; extend as new dependencies land |
+| P1.4 | Define upgrade and migration policy for SQLite/PostgreSQL metadata, archive schema versions, and dashboard static assets | M | P1.1 | Complete |
+| P1.5 | Publish an operator architecture runbook with failure modes and recovery flows | M | P1.2, P1.3 | Complete |
 
 Acceptance criteria:
 - Operators can explain which component owns each state family.
