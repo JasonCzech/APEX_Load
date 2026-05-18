@@ -30,6 +30,10 @@ type inventoryExecutionBackend interface {
 	SystemInventory(ctx context.Context) []GeneratorInventoryEntry
 }
 
+type drainableExecutionBackend interface {
+	SetGeneratorDrainState(target string, state string) error
+}
+
 type pausableExecutionBackend interface {
 	PauseTest(tr *TestRunner, test *ManagedTest) error
 	ResumeTest(tr *TestRunner, test *ManagedTest) error

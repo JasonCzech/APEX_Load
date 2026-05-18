@@ -281,6 +281,9 @@ func requiredServiceAccountScope(r *http.Request) string {
 	if path == "/api/v1/system/settings" && method != http.MethodGet {
 		return "settings:manage"
 	}
+	if path == "/api/v1/system/generators/drain" && method == http.MethodPatch {
+		return "settings:manage"
+	}
 	if strings.HasPrefix(path, "/api/v1/system/") {
 		return "system:read"
 	}
@@ -481,6 +484,10 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 
 	if (path == "/api/v1/system/inventory" || path == "/api/v1/system/usage") && method == http.MethodGet {
 		return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
+	}
+
+	if path == "/api/v1/system/generators/drain" && method == http.MethodPatch {
+		return accessRequirement{GlobalRoles: []string{RoleSystemAdmin}}, true
 	}
 
 	if path == "/api/v1/recorder/status" && method == http.MethodGet {

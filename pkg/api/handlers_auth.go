@@ -199,7 +199,7 @@ var authAccessMatrix = []AuthAccessResource{
 		Description: "Controller-wide settings, infrastructure inventory, usage accounting, and global observer surfaces.",
 		Operations: []AuthAccessOperation{
 			{ID: "view_system", Label: "View settings, inventory, and usage accounting", GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}},
-			{ID: "manage_system", Label: "Update system settings", GlobalRoles: []string{RoleSystemAdmin}},
+			{ID: "manage_system", Label: "Update system settings and generator drain state", GlobalRoles: []string{RoleSystemAdmin}},
 		},
 	},
 	{

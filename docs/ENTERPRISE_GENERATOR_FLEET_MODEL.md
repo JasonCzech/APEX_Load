@@ -35,11 +35,22 @@ Capacity state is intentionally simple at this stage:
 
 ## Drain State
 
-The current API reports every configured generator as `active`. P2.2 will add explicit cordon/drain mutations and persist operator intent separately from heartbeat reachability:
+Operators can update generator placement state with `PATCH /api/v1/system/generators/drain`:
+
+```json
+{
+  "target": "stormrunner-generator-0.stormrunner-generator:9090",
+  "drain_state": "cordoned"
+}
+```
+
+Supported states:
 
 - `active`: eligible for new placements.
 - `cordoned`: no new placements, existing runs continue.
 - `draining`: no new placements and existing work should finish or migrate where supported.
+
+Drain state is currently controller-local. A future production HA implementation should persist this operator intent in the metadata store so all controller replicas share the same placement view.
 
 ## Version And Protocol Compatibility
 
@@ -50,6 +61,6 @@ The initial inventory model reserves `version` and `supported_protocols` so P2.3
 | Plan item | Status | Artifact |
 | --- | --- | --- |
 | P2.1 Formal fleet model | In progress | Inventory fields and this model |
-| P2.2 Drain/cordon workflows | Planned | Drain state vocabulary reserved |
+| P2.2 Drain/cordon workflows | Complete for controller-local placement control; persistence remains future work | `PATCH /api/v1/system/generators/drain` |
 | P2.3 Version compatibility checks | Planned | Version and protocol fields reserved |
 | P2.4 Saturation alerts and rejection reasons | Planned | Capacity state primitive added |

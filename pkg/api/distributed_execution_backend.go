@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jasonczech/stormrunner/pkg/distributed/generatorrpc"
@@ -52,9 +53,11 @@ type generatorTargetSpec struct {
 }
 
 type distributedExecutionBackend struct {
-	targets []generatorTargetSpec
-	timeout time.Duration
-	dial    generatorDial
+	targets     []generatorTargetSpec
+	timeout     time.Duration
+	dial        generatorDial
+	drainMu     sync.RWMutex
+	drainStates map[string]string
 }
 
 func newDistributedExecutionBackend(targets []string, timeout time.Duration, dial generatorDial) *distributedExecutionBackend {
@@ -76,15 +79,19 @@ func newDistributedExecutionBackend(targets []string, timeout time.Duration, dia
 		clonedTargets = append(clonedTargets, spec)
 	}
 	return &distributedExecutionBackend{
-		targets: clonedTargets,
-		timeout: timeout,
-		dial:    dial,
+		targets:     clonedTargets,
+		timeout:     timeout,
+		dial:        dial,
+		drainStates: make(map[string]string),
 	}
 }
 
 func (b *distributedExecutionBackend) configuredTargets() []string {
 	targets := make([]string, 0, len(b.targets))
 	for _, target := range b.targets {
+		if b.generatorDrainState(target.Address) != "active" {
+			continue
+		}
 		targets = append(targets, target.Address)
 	}
 	return targets
@@ -92,6 +99,46 @@ func (b *distributedExecutionBackend) configuredTargets() []string {
 
 func (b *distributedExecutionBackend) configuredTargetSpecs() []generatorTargetSpec {
 	return append([]generatorTargetSpec(nil), b.targets...)
+}
+
+func (b *distributedExecutionBackend) SetGeneratorDrainState(target string, state string) error {
+	target = strings.TrimSpace(target)
+	state = strings.TrimSpace(state)
+	switch state {
+	case "", "active":
+		state = "active"
+	case "cordoned", "draining":
+	default:
+		return fmt.Errorf("unsupported drain_state %q", state)
+	}
+	found := false
+	for _, configured := range b.targets {
+		if configured.Address == target {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("generator target %q is not configured on this controller", target)
+	}
+
+	b.drainMu.Lock()
+	defer b.drainMu.Unlock()
+	if state == "active" {
+		delete(b.drainStates, target)
+		return nil
+	}
+	b.drainStates[target] = state
+	return nil
+}
+
+func (b *distributedExecutionBackend) generatorDrainState(target string) string {
+	b.drainMu.RLock()
+	defer b.drainMu.RUnlock()
+	if state := b.drainStates[target]; state != "" {
+		return state
+	}
+	return "active"
 }
 
 func (b *distributedExecutionBackend) SystemInventory(ctx context.Context) []GeneratorInventoryEntry {
@@ -104,7 +151,7 @@ func (b *distributedExecutionBackend) SystemInventory(ctx context.Context) []Gen
 			Status:             "unreachable",
 			Version:            "unknown",
 			SupportedProtocols: defaultSupportedProtocols(),
-			DrainState:         "active",
+			DrainState:         b.generatorDrainState(target.Address),
 			CapacityState:      generatorCapacityState(0, 0, false),
 			HealthScore:        generatorHealthScore(false, "unavailable"),
 		}
@@ -159,6 +206,9 @@ func (b *distributedExecutionBackend) allowedTargetsForTest(test *ManagedTest) (
 	for _, target := range assignment.SelectedTargets {
 		if _, ok := configured[target]; !ok {
 			return nil, fmt.Errorf("assignment target %q is not configured on this controller", target)
+		}
+		if drainState := b.generatorDrainState(target); drainState != "active" {
+			return nil, fmt.Errorf("assignment target %q is %s and cannot accept new work", target, drainState)
 		}
 		allowed = append(allowed, target)
 	}
