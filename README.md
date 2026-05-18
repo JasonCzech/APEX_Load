@@ -297,6 +297,7 @@ DELETE /api/v1/scenarios/{id}/schedules/{schedule_id} — Delete a recurring sch
 GET    /api/v1/system/health            — Health check
 GET    /api/v1/system/readiness         — Production readiness checks
 GET    /api/v1/system/inventory         — Controller and generator inventory
+GET    /api/v1/system/usage             — Usage accounting rollups
 ```
 
 **CI/CD Templates:**
