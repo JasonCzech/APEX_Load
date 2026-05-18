@@ -59,6 +59,20 @@ func (s *Server) handleUpdateScenario(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, scenario)
 }
 
+func (s *Server) handleValidateScenarioLoadModel(w http.ResponseWriter, r *http.Request) {
+	var req CreateScenarioRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+	report, err := s.runner.ValidateScenarioLoadModel(req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, report)
+}
+
 func (s *Server) handleDeleteScenario(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	projectID := ""

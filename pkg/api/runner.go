@@ -1913,6 +1913,7 @@ func createTestRequestFromScenario(req CreateTestRequest, scenario *StoredScenar
 				VUsers:       script.VUsers,
 				RampUp:       script.RampUp,
 				RampDown:     script.RampDown,
+				Stages:       cloneLoadStages(script.Stages),
 				Iterations:   script.Iterations,
 				InitStrategy: script.Initialization,
 			})
