@@ -78,9 +78,9 @@ func buildParityStatus(now time.Time) ParityStatusResponse {
 			ID:          "reporting",
 			Name:        "Historical Reporting",
 			Status:      "partial",
-			Summary:     "Archives, standalone reports, comparison baselines, usage CSV export, archive dataset CSV export, profile-shaped CSV reports, usage snapshots, cadence capture, and retention apply workflow are implemented.",
+			Summary:     "Archives, standalone reports, comparison baselines, usage CSV export, archive dataset CSV export, profile-shaped CSV reports, comparison CSV export, usage snapshots, cadence capture, and retention apply workflow are implemented.",
 			Evidence:    []string{"/api/v1/system/usage/export", "/api/v1/system/usage/snapshots", "/api/v1/archives/retention/apply"},
-			Remaining:   []string{"Complete browser/comparison CSV parity."},
+			Remaining:   []string{"Complete remaining release trend export polish."},
 			ReleaseGate: true,
 		},
 		{

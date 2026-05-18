@@ -86,6 +86,20 @@ func TestArchiveQueryEndpoints(t *testing.T) {
 	if completed.Archive == nil {
 		t.Fatal("expected archive metadata after completion")
 	}
+	baselineID := "baseline-" + testRun.ID
+	baselineArchive := *completed.Archive
+	baselineArchive.TestID = baselineID
+	server.runner.mu.Lock()
+	server.runner.tests[baselineID] = &ManagedTest{
+		ID:        baselineID,
+		Name:      "Archive API Baseline",
+		Status:    "COMPLETE",
+		CreatedAt: completed.CreatedAt.Add(-time.Minute),
+		EndedAt:   completed.EndedAt,
+		Archive:   &baselineArchive,
+	}
+	server.runner.archives[baselineID] = &baselineArchive
+	server.runner.mu.Unlock()
 
 	t.Run("manifest", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/archive/manifest", nil)
@@ -386,6 +400,39 @@ func TestArchiveQueryEndpoints(t *testing.T) {
 
 		if resp.Code != http.StatusBadRequest {
 			t.Fatalf("unknown csv profile status = %d, want %d body=%s", resp.Code, http.StatusBadRequest, resp.Body.String())
+		}
+	})
+
+	t.Run("comparison csv", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/archive/comparison?format=csv&baseline_id="+baselineID+"&breakdown=overall", nil)
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusOK {
+			t.Fatalf("comparison csv status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+		}
+		rows, err := csv.NewReader(strings.NewReader(resp.Body.String())).ReadAll()
+		if err != nil {
+			t.Fatalf("read comparison csv: %v", err)
+		}
+		if len(rows) != 3 {
+			t.Fatalf("comparison csv rows = %#v, want header plus two runs", rows)
+		}
+		if rows[0][0] != "run_id" || rows[0][2] != "breakdown" || rows[1][2] != "overall" || rows[2][2] != "overall" {
+			t.Fatalf("comparison csv rows = %#v, want overall comparison rows", rows)
+		}
+		if got := resp.Header().Get("Content-Disposition"); !strings.Contains(got, "archive-comparison") {
+			t.Fatalf("comparison csv content disposition = %q, want archive-comparison", got)
+		}
+	})
+
+	t.Run("comparison csv rejects invalid breakdown", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/archive/comparison?format=csv&baseline_id="+baselineID+"&breakdown=unknown", nil)
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusBadRequest {
+			t.Fatalf("invalid comparison breakdown status = %d, want %d body=%s", resp.Code, http.StatusBadRequest, resp.Body.String())
 		}
 	})
 

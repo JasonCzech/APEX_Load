@@ -236,6 +236,63 @@ func (s *Server) handleGetRunArchiveReport(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, report)
 }
 
+func (s *Server) handleGetRunArchiveComparison(w http.ResponseWriter, r *http.Request) {
+	currentRecord, ok := s.requireRunArchive(w, r)
+	if !ok {
+		return
+	}
+	baselineID := strings.TrimSpace(r.URL.Query().Get("baseline_id"))
+	if baselineID == "" {
+		writeError(w, http.StatusBadRequest, "baseline_id is required")
+		return
+	}
+	if _, ok := s.runner.GetTest(baselineID); !ok {
+		writeError(w, http.StatusNotFound, "baseline test not found")
+		return
+	}
+	baselineRecord, ok := s.runner.GetRunArchive(baselineID)
+	if !ok {
+		writeError(w, http.StatusNotFound, "baseline archive not found")
+		return
+	}
+	breakdown := normalizeArchiveComparisonBreakdown(strings.ToLower(strings.TrimSpace(r.URL.Query().Get("breakdown"))))
+	if breakdown == "" {
+		writeError(w, http.StatusBadRequest, "unsupported comparison breakdown")
+		return
+	}
+	currentReport, err := buildRunArchiveReport(currentRecord)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to build archive report: "+err.Error())
+		return
+	}
+	baselineReport, err := buildRunArchiveReport(baselineRecord)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to build baseline archive report: "+err.Error())
+		return
+	}
+	currentID := r.PathValue("id")
+	currentName := currentID
+	if test, ok := s.runner.GetTest(currentID); ok {
+		currentName = test.Name
+	}
+	baselineName := baselineID
+	if test, ok := s.runner.GetTest(baselineID); ok {
+		baselineName = test.Name
+	}
+	if format := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("format"))); format != "" && format != "csv" {
+		writeError(w, http.StatusBadRequest, "unsupported comparison format")
+		return
+	}
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", "attachment; filename=\"stormrunner-archive-comparison-"+currentID+"-"+baselineID+".csv\"")
+	if err := writeArchiveComparisonCSV(w, breakdown,
+		archiveComparisonRun{ID: baselineID, Name: baselineName, Report: baselineReport},
+		archiveComparisonRun{ID: currentID, Name: currentName, Report: currentReport},
+	); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to write archive comparison csv: "+err.Error())
+	}
+}
+
 func (s *Server) handleGetTestHTMLReport(w http.ResponseWriter, r *http.Request) {
 	record, ok := s.requireRunArchive(w, r)
 	if !ok {
