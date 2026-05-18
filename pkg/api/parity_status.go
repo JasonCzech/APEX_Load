@@ -60,9 +60,9 @@ func buildParityStatus(now time.Time) ParityStatusResponse {
 			ID:          "load_modeling",
 			Name:        "Load Modeling",
 			Status:      "partial",
-			Summary:     "Staged ramps, rendezvous actions, arrival modeling, validation fit checks, and goal reporting have backend coverage.",
-			Evidence:    []string{"/api/v1/scenarios/validate-load-model", "/api/v1/tests/{id}/archive/report"},
-			Remaining:   []string{"Close remaining cross-report coordinated-omission comparison polish."},
+			Summary:     "Staged ramps, rendezvous actions, arrival modeling, validation fit checks, goal reporting, and coordinated-omission comparison export evidence have backend coverage.",
+			Evidence:    []string{"/api/v1/scenarios/validate-load-model", "/api/v1/tests/{id}/archive/report", "/api/v1/tests/{id}/archive/comparison"},
+			Remaining:   []string{"Complete final load-model benchmark evidence."},
 			ReleaseGate: true,
 		},
 		{

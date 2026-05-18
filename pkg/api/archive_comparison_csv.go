@@ -41,6 +41,10 @@ func writeArchiveComparisonCSV(writer io.Writer, breakdown string, runs ...archi
 		"transactions",
 		"error_pct",
 		"peak_tps",
+		"peak_target_tps",
+		"max_throughput_gap_pct",
+		"throughput_missed_intervals",
+		"throughput_target_missed",
 		"peak_active_vusers",
 	}
 	if err := csvWriter.Write(headers); err != nil {
@@ -124,6 +128,10 @@ func archiveComparisonCSVRow(run archiveComparisonRun, breakdown string, segment
 		formatCSVInt(run.Report.Overview.Transactions),
 		formatCSVFloat(run.Report.Overview.ErrorPct),
 		formatCSVFloat(run.Report.Overview.PeakTPS),
+		formatCSVFloat(run.Report.Overview.PeakTargetTPS),
+		formatCSVFloat(run.Report.Overview.MaxThroughputGapPct),
+		formatCSVInt(run.Report.Overview.ThroughputMissedIntervals),
+		fmt.Sprintf("%t", run.Report.Overview.ThroughputMissedIntervals > 0),
 		formatCSVInt(run.Report.Overview.PeakActiveVUsers),
 	}
 }
