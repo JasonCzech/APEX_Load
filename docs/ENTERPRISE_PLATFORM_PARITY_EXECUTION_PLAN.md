@@ -217,12 +217,12 @@ Acceptance criteria:
 
 ### Epic P5.2: Operator Monitoring Experience
 
-| ID | Story | Size | Dependencies |
-| --- | --- | --- | --- |
-| P5.5 | Add live dependency map from transaction dependency metadata and protocol classifications | L | P5.1 |
-| P5.6 | Add live error-pattern cards with first-seen, last-seen, affected groups, and snapshot links | M | P5.1 |
-| P5.7 | Add live capacity panel showing allocated, available, saturated, queued, and rejected demand by region and protocol | M | P2.1 |
-| P5.8 | Add monitor presets for run operator, performance engineer, platform admin, and release approver views | M | P5.5 |
+| ID | Story | Size | Dependencies | Status |
+| --- | --- | --- | --- | --- |
+| P5.5 | Add live dependency map from transaction dependency metadata and protocol classifications | L | P5.1 | Complete - live metrics now include a source-to-dependency map derived from dependency target rollups, protocol classification, latency, and error health, and the run summary renders the map for operators. |
+| P5.6 | Add live error-pattern cards with first-seen, last-seen, affected groups, and snapshot links | M | P5.1 | Planned |
+| P5.7 | Add live capacity panel showing allocated, available, saturated, queued, and rejected demand by region and protocol | M | P2.1 | Planned |
+| P5.8 | Add monitor presets for run operator, performance engineer, platform admin, and release approver views | M | P5.5 | Planned |
 
 Acceptance criteria:
 - Active-run dashboards answer "is the test healthy?", "is the system under test healthy?", and "is Stormrunner healthy?" separately.

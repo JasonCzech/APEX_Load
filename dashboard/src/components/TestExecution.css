@@ -1158,6 +1158,111 @@
   font-variant-numeric: tabular-nums;
 }
 
+.dependency-map {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.28fr) minmax(0, 1fr);
+  gap: 14px;
+  align-items: stretch;
+}
+
+.dependency-map-source,
+.dependency-map-node {
+  min-width: 0;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  background: rgba(15, 23, 42, 0.36);
+  border-radius: 10px;
+  padding: 14px;
+}
+
+.dependency-map-source {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  border-color: rgba(0, 163, 255, 0.28);
+}
+
+.dependency-map-nodes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 10px;
+}
+
+.dependency-map-node {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dependency-map-node.warning {
+  border-color: rgba(245, 158, 11, 0.42);
+}
+
+.dependency-map-node.danger {
+  border-color: rgba(239, 68, 68, 0.48);
+}
+
+.dependency-map-node-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.dependency-map-node-title {
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.dependency-map-node-meta {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.dependency-map-status {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: rgba(34, 197, 94, 0.14);
+  color: #86efac;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.dependency-map-status.warning {
+  background: rgba(245, 158, 11, 0.14);
+  color: #fbbf24;
+}
+
+.dependency-map-status.danger {
+  background: rgba(239, 68, 68, 0.16);
+  color: #fca5a5;
+}
+
+.dependency-map-status.unknown {
+  background: rgba(148, 163, 184, 0.16);
+  color: var(--text-muted);
+}
+
+.dependency-map-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 760px) {
+  .dependency-map {
+    grid-template-columns: 1fr;
+  }
+}
+
 .tx-table {
   width: 100%;
   border-collapse: collapse;

@@ -194,6 +194,7 @@ type LiveMetrics struct {
 	P99Ms                  float64                              `json:"p99_ms"`
 	Transactions           map[string]*TxMetrics                `json:"transactions,omitempty"`
 	DependencyHealth       map[string]*TxMetrics                `json:"dependency_health,omitempty"`
+	DependencyMap          *LiveDependencyMap                   `json:"dependency_map,omitempty"`
 	SOAPOperations         map[string]*TxMetrics                `json:"soap_operations,omitempty"`
 	NetworkProfiles        map[string]*TxMetrics                `json:"network_profiles,omitempty"`
 	GroupMetrics           map[string]*GroupLiveMetrics         `json:"groups,omitempty"`
@@ -401,6 +402,33 @@ type TxMetrics struct {
 	P90Ms            float64                 `json:"p90_ms"`
 	P95Ms            float64                 `json:"p95_ms,omitempty"`
 	P99Ms            float64                 `json:"p99_ms"`
+}
+
+type LiveDependencyMap struct {
+	Nodes []LiveDependencyNode `json:"nodes"`
+	Edges []LiveDependencyEdge `json:"edges"`
+}
+
+type LiveDependencyNode struct {
+	ID             string  `json:"id"`
+	Label          string  `json:"label"`
+	Kind           string  `json:"kind"`
+	DependencyType string  `json:"dependency_type,omitempty"`
+	Status         string  `json:"status,omitempty"`
+	Transactions   int64   `json:"transactions,omitempty"`
+	Errors         int64   `json:"errors,omitempty"`
+	ErrorPct       float64 `json:"error_pct,omitempty"`
+	P95Ms          float64 `json:"p95_ms,omitempty"`
+}
+
+type LiveDependencyEdge struct {
+	Source         string  `json:"source"`
+	Target         string  `json:"target"`
+	DependencyType string  `json:"dependency_type,omitempty"`
+	Transactions   int64   `json:"transactions,omitempty"`
+	Errors         int64   `json:"errors,omitempty"`
+	ErrorPct       float64 `json:"error_pct,omitempty"`
+	P95Ms          float64 `json:"p95_ms,omitempty"`
 }
 
 type GroupLiveMetrics struct {
@@ -3486,6 +3514,7 @@ func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[s
 	for name, am := range snap.ByDependencyTarget {
 		live.DependencyHealth[name] = buildTxMetricsFromAction(name, am)
 	}
+	live.DependencyMap = buildLiveDependencyMap(live.DependencyHealth)
 
 	for name, am := range snap.BySOAPOperation {
 		live.SOAPOperations[name] = buildTxMetricsFromAction(name, am)
@@ -3513,6 +3542,77 @@ func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[s
 	}
 
 	return live
+}
+
+func buildLiveDependencyMap(dependencies map[string]*TxMetrics) *LiveDependencyMap {
+	if len(dependencies) == 0 {
+		return nil
+	}
+	targets := make([]string, 0, len(dependencies))
+	for target, tx := range dependencies {
+		if tx == nil {
+			continue
+		}
+		targets = append(targets, target)
+	}
+	if len(targets) == 0 {
+		return nil
+	}
+	sort.Strings(targets)
+	nodes := []LiveDependencyNode{{
+		ID:     "stormrunner",
+		Label:  "Stormrunner VUsers",
+		Kind:   "source",
+		Status: "healthy",
+	}}
+	edges := make([]LiveDependencyEdge, 0, len(targets))
+	for _, target := range targets {
+		tx := dependencies[target]
+		nodeID := "dependency:" + target
+		status := dependencyHealthStatus(tx)
+		errorPct := txErrorPct(tx)
+		nodes = append(nodes, LiveDependencyNode{
+			ID:             nodeID,
+			Label:          target,
+			Kind:           "dependency",
+			DependencyType: firstNonEmpty(tx.DependencyType, "unknown"),
+			Status:         status,
+			Transactions:   tx.Count,
+			Errors:         tx.Errors,
+			ErrorPct:       errorPct,
+			P95Ms:          tx.P95Ms,
+		})
+		edges = append(edges, LiveDependencyEdge{
+			Source:         "stormrunner",
+			Target:         nodeID,
+			DependencyType: firstNonEmpty(tx.DependencyType, "unknown"),
+			Transactions:   tx.Count,
+			Errors:         tx.Errors,
+			ErrorPct:       errorPct,
+			P95Ms:          tx.P95Ms,
+		})
+	}
+	return &LiveDependencyMap{Nodes: nodes, Edges: edges}
+}
+
+func dependencyHealthStatus(tx *TxMetrics) string {
+	if tx == nil {
+		return "unknown"
+	}
+	if tx.Errors > 0 {
+		return "danger"
+	}
+	if tx.P95Ms >= slowTransactionDiagnosticThresholdMs {
+		return "warning"
+	}
+	return "healthy"
+}
+
+func txErrorPct(tx *TxMetrics) float64 {
+	if tx == nil || tx.Count <= 0 {
+		return 0
+	}
+	return float64(tx.Errors) / float64(tx.Count) * 100
 }
 
 func buildTxMetricsFromAction(name string, am *engine.ActionMetrics) *TxMetrics {

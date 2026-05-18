@@ -1119,6 +1119,23 @@ func TestBuildLiveMetricsFromSnapshot(t *testing.T) {
 	if live.DependencyHealth["api.example.test"].P95Ms != 330 || live.DependencyHealth["api.example.test"].ServerTelemetry == nil || live.DependencyHealth["api.example.test"].ServerTelemetry.AvgServerProcessingMs != 58 {
 		t.Fatalf("expected dependency health p95 and telemetry to be mapped, got %#v", live.DependencyHealth["api.example.test"])
 	}
+	if live.DependencyMap == nil {
+		t.Fatal("expected live dependency map")
+	}
+	if len(live.DependencyMap.Nodes) != 2 || len(live.DependencyMap.Edges) != 1 {
+		t.Fatalf("dependency map = %#v, want source and one dependency edge", live.DependencyMap)
+	}
+	dependencyNode := live.DependencyMap.Nodes[1]
+	if dependencyNode.ID != "dependency:api.example.test" || dependencyNode.DependencyType != "http" || dependencyNode.Status != "danger" {
+		t.Fatalf("dependency node = %#v, want HTTP danger node", dependencyNode)
+	}
+	if dependencyNode.Transactions != 12 || dependencyNode.Errors != 2 || dependencyNode.ErrorPct != float64(2)/12*100 {
+		t.Fatalf("dependency node metrics = %#v", dependencyNode)
+	}
+	dependencyEdge := live.DependencyMap.Edges[0]
+	if dependencyEdge.Source != "stormrunner" || dependencyEdge.Target != dependencyNode.ID || dependencyEdge.P95Ms != 330 {
+		t.Fatalf("dependency edge = %#v, want source-to-dependency edge", dependencyEdge)
+	}
 
 	buyers, ok := live.GroupMetrics["buyers"]
 	if !ok {

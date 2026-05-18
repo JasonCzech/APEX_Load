@@ -323,6 +323,37 @@ describe('TestExecutionSummary', () => {
 								},
 							},
 						},
+						dependency_map: {
+							nodes: [
+								{ id: 'stormrunner', label: 'Stormrunner VUsers', kind: 'source', status: 'healthy' },
+								{
+									id: 'dependency:storefront.example.test',
+									label: 'storefront.example.test',
+									kind: 'dependency',
+									dependency_type: 'http',
+									status: 'warning',
+									transactions: 12,
+									errors: 0,
+									error_pct: 0,
+									p95_ms: 172,
+								},
+								{
+									id: 'dependency:api.example.test',
+									label: 'api.example.test',
+									kind: 'dependency',
+									dependency_type: 'http',
+									status: 'danger',
+									transactions: 8,
+									errors: 1,
+									error_pct: 12.5,
+									p95_ms: 134,
+								},
+							],
+							edges: [
+								{ source: 'stormrunner', target: 'dependency:storefront.example.test', dependency_type: 'http', transactions: 12, errors: 0, error_pct: 0, p95_ms: 172 },
+								{ source: 'stormrunner', target: 'dependency:api.example.test', dependency_type: 'http', transactions: 8, errors: 1, error_pct: 12.5, p95_ms: 134 },
+							],
+						},
 					}}
 					baseline={baseline}
 					goalConfig={{
@@ -335,6 +366,13 @@ describe('TestExecutionSummary', () => {
 		})
 
 		expect(container.textContent).toContain('Live HTTP Dependency Health')
+		expect(container.textContent).toContain('Live Dependency Map')
+		expect(container.textContent).toContain('Stormrunner VUsers')
+		expect(container.textContent).toContain('2 downstream links')
+		expect(container.textContent).toContain('Warning')
+		expect(container.textContent).toContain('12 tx')
+		expect(container.textContent).toContain('0.0% errors')
+		expect(container.textContent).toContain('134.0 ms P95')
 		expect(container.textContent).toContain('storefront.example.test')
 		expect(container.textContent).toContain('172.0 ms (+22.0 ms vs prev)')
 		expect(container.textContent).toContain('12.5%')

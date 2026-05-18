@@ -682,6 +682,7 @@ export interface LiveMetrics {
   p99_ms: number
   transactions?: Record<string, TxMetrics>
   dependency_health?: Record<string, TxMetrics>
+  dependency_map?: LiveDependencyMap
   soap_operations?: Record<string, TxMetrics>
   network_profiles?: Record<string, TxMetrics>
   groups?: Record<string, GroupLiveMetrics>
@@ -822,6 +823,33 @@ export interface TxMetrics {
   p90_ms: number
   p95_ms?: number
   p99_ms: number
+}
+
+export interface LiveDependencyMap {
+  nodes: LiveDependencyNode[]
+  edges: LiveDependencyEdge[]
+}
+
+export interface LiveDependencyNode {
+  id: string
+  label: string
+  kind: 'source' | 'dependency'
+  dependency_type?: string
+  status?: 'healthy' | 'warning' | 'danger' | 'unknown'
+  transactions?: number
+  errors?: number
+  error_pct?: number
+  p95_ms?: number
+}
+
+export interface LiveDependencyEdge {
+  source: string
+  target: string
+  dependency_type?: string
+  transactions?: number
+  errors?: number
+  error_pct?: number
+  p95_ms?: number
 }
 
 export interface GroupLiveMetrics {

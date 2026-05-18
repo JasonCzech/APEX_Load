@@ -1,4 +1,4 @@
-import { GoalConfig, MetricsHistoryPoint, RunComparisonBaseline, TxMetrics } from '../types'
+import { GoalConfig, LiveDependencyMap, MetricsHistoryPoint, RunComparisonBaseline, TxMetrics } from '../types'
 
 interface MetricsSummary {
   p50_ms?: number
@@ -6,6 +6,7 @@ interface MetricsSummary {
   p95_ms?: number
   p99_ms?: number
   dependency_health?: Record<string, TxMetrics>
+  dependency_map?: LiveDependencyMap
   soap_operations?: Record<string, TxMetrics>
 }
 
@@ -32,6 +33,9 @@ export default function TestExecutionSummary({ transactions, metrics, baseline, 
     .filter((tx) => tx.dependency_type?.startsWith('http') === true)
     .sort((left, right) => ((right.p95_ms ?? right.p99_ms ?? 0) - (left.p95_ms ?? left.p99_ms ?? 0)))
     .slice(0, 4)
+  const dependencyMap = metrics?.dependency_map
+  const dependencySource = dependencyMap?.nodes.find((node) => node.kind === 'source')
+  const dependencyNodes = dependencyMap?.nodes.filter((node) => node.kind === 'dependency') ?? []
   const jmsTransactions = transactions.filter((tx) => tx.dependency_type?.startsWith('jms_') && tx.server_telemetry)
   const jmsPayloadProfiles = buildJMSPayloadProfiles(jmsTransactions)
   const jmsMessagingProfiles = buildJMSMessagingProfiles(jmsTransactions)
@@ -255,6 +259,35 @@ export default function TestExecutionSummary({ transactions, metrics, baseline, 
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {dependencyMap && dependencyNodes.length > 0 && (
+        <div className="tx-section">
+          <h3 className="chart-title">Live Dependency Map</h3>
+          <p className="server-telemetry-subtitle">Runtime dependency topology built from live transaction metadata, protocol classification, latency, and errors.</p>
+          <div className="dependency-map">
+            <div className="dependency-map-source">
+              <span className="dependency-map-node-title">{dependencySource?.label || 'Stormrunner VUsers'}</span>
+              <span className="dependency-map-node-meta">{dependencyMap.edges.length} downstream links</span>
+            </div>
+            <div className="dependency-map-nodes">
+              {dependencyNodes.map((node) => (
+                <div key={node.id} className={`dependency-map-node ${node.status || 'unknown'}`}>
+                  <div className="dependency-map-node-header">
+                    <span className="dependency-map-node-title">{node.label}</span>
+                    <span className={`dependency-map-status ${node.status || 'unknown'}`}>{formatDependencyStatus(node.status)}</span>
+                  </div>
+                  <div className="dependency-map-node-meta">{node.dependency_type || 'unknown'} dependency</div>
+                  <div className="dependency-map-stats">
+                    <span>{node.transactions || 0} tx</span>
+                    <span>{formatPercentage(node.error_pct || 0)} errors</span>
+                    <span>{formatTelemetryValue(node.p95_ms, ' ms')} P95</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       )}
 
@@ -1475,6 +1508,19 @@ function formatPercentage(value?: number, digits = 1): string {
     return 'n/a'
   }
   return `${value.toFixed(digits)}%`
+}
+
+function formatDependencyStatus(status?: string): string {
+  switch (status) {
+    case 'healthy':
+      return 'Healthy'
+    case 'warning':
+      return 'Warning'
+    case 'danger':
+      return 'Danger'
+    default:
+      return 'Unknown'
+  }
 }
 
 function formatTelemetryDelta(current?: number, previous?: number, suffix = ' ms', digits = 1): string {
