@@ -110,6 +110,13 @@ func TestSQLiteStorePersistsScenarioSchedules(t *testing.T) {
 	if len(bySchedule) != 1 || bySchedule[0].ID != occurrence.ID {
 		t.Fatalf("schedule occurrences = %#v, want %s", bySchedule, occurrence.ID)
 	}
+	missingOccurrence, err := store.GetScenarioScheduleOccurrenceByScheduleAndPlannedAt(schedule.ID, nextRun.Add(time.Hour))
+	if err != nil {
+		t.Fatalf("GetScenarioScheduleOccurrenceByScheduleAndPlannedAt missing returned error: %v", err)
+	}
+	if missingOccurrence != nil {
+		t.Fatalf("missing occurrence = %#v, want nil", missingOccurrence)
+	}
 	approval := &ScenarioScheduleApproval{
 		ID:               "approval-1",
 		ScheduleID:       schedule.ID,

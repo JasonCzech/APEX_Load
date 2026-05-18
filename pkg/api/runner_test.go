@@ -4099,6 +4099,97 @@ func TestScenarioSchedulerRunDueSchedulesCreatesAndStartsRun(t *testing.T) {
 	}
 }
 
+func TestScenarioSchedulerReconcilesMaterializedOccurrenceAfterRestart(t *testing.T) {
+	store := &metricsStoreSpy{}
+	runner := NewTestRunner(2, NewHub(), store)
+	backend := &scheduleExecutionBackend{started: make(chan string, 1)}
+	runner.setExecutionBackend(backend)
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-schedule-restart",
+		Name:     "Scheduled Restart Script",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Actions:  []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+	scenario, err := runner.StoreScenario(CreateScenarioRequest{
+		Name:     "Restart Scenario",
+		Duration: "1m",
+		Groups: []CreateGroupEntry{{
+			ScriptID: "script-schedule-restart",
+			VUsers:   1,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("StoreScenario returned error: %v", err)
+	}
+	now := time.Date(2026, time.May, 16, 12, 0, 0, 0, time.UTC)
+	due := now.Add(-time.Minute)
+	materializedAt := now.Add(-30 * time.Second)
+	schedule := &storage.ScenarioSchedule{
+		ID:              "schedule-restart",
+		ScenarioID:      scenario.ID,
+		Revision:        1,
+		Name:            "Restart Safe Run",
+		CronExpr:        "*/5 * * * *",
+		RunNameTemplate: "Restart Smoke",
+		Enabled:         true,
+		NextRunAt:       &due,
+		CreatedAt:       now.Add(-time.Hour),
+		UpdatedAt:       now.Add(-time.Hour),
+	}
+	if err := store.SaveScenarioScheduleOccurrence(&storage.ScenarioScheduleOccurrence{
+		ID:               "occurrence-restart",
+		ScheduleID:       schedule.ID,
+		ScenarioID:       scenario.ID,
+		ScheduleRevision: 1,
+		PlannedAt:        due,
+		MaterializedAt:   &materializedAt,
+		Status:           "materialized",
+		ReasonCode:       "started",
+		TestID:           "test-already-started",
+		CreatedAt:        materializedAt,
+		UpdatedAt:        materializedAt,
+	}); err != nil {
+		t.Fatalf("SaveScenarioScheduleOccurrence returned error: %v", err)
+	}
+	runner.mu.Lock()
+	if err := runner.saveScenarioScheduleLocked(schedule); err != nil {
+		runner.mu.Unlock()
+		t.Fatalf("saveScenarioScheduleLocked returned error: %v", err)
+	}
+	runner.mu.Unlock()
+
+	scheduler := newScenarioScheduler(runner)
+	scheduler.now = func() time.Time { return now }
+	if err := scheduler.RunDueSchedules(); err != nil {
+		t.Fatalf("RunDueSchedules returned error: %v", err)
+	}
+
+	select {
+	case testID := <-backend.started:
+		t.Fatalf("unexpected duplicate scheduled test start: %s", testID)
+	default:
+	}
+	storedSchedules, ok := runner.ListScenarioSchedules(scenario.ID)
+	if !ok || len(storedSchedules) != 1 {
+		t.Fatalf("stored schedules = %#v ok=%v, want one", storedSchedules, ok)
+	}
+	updated := storedSchedules[0]
+	if updated.LastRunTestID != "test-already-started" {
+		t.Fatalf("LastRunTestID = %q, want existing test", updated.LastRunTestID)
+	}
+	if updated.NextRunAt == nil || !updated.NextRunAt.After(now) {
+		t.Fatalf("NextRunAt = %v, want advanced after restart reconciliation", updated.NextRunAt)
+	}
+	occurrences, err := store.ListScenarioScheduleOccurrences(schedule.ID)
+	if err != nil {
+		t.Fatalf("ListScenarioScheduleOccurrences returned error: %v", err)
+	}
+	if len(occurrences) != 1 || occurrences[0].ID != "occurrence-restart" {
+		t.Fatalf("occurrences = %#v, want original materialized occurrence only", occurrences)
+	}
+}
+
 func TestScenarioSchedulerBlocksDueSchedulePendingApproval(t *testing.T) {
 	store := &metricsStoreSpy{}
 	runner := NewTestRunner(2, NewHub(), store)

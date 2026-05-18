@@ -1328,6 +1328,12 @@ func (tr *TestRunner) saveScenarioScheduleOccurrenceLocked(occurrence *storage.S
 		return fmt.Errorf("schedule occurrence is required")
 	}
 	if tr.scenarioStore != nil {
+		if existing, err := tr.scenarioStore.GetScenarioScheduleOccurrenceByScheduleAndPlannedAt(occurrence.ScheduleID, occurrence.PlannedAt); err != nil {
+			return err
+		} else if existing != nil && existing.ID != "" {
+			occurrence.ID = existing.ID
+			occurrence.CreatedAt = existing.CreatedAt
+		}
 		return tr.scenarioStore.SaveScenarioScheduleOccurrence(occurrence)
 	}
 	return nil

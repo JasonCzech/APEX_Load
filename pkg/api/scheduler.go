@@ -349,6 +349,11 @@ func (tr *TestRunner) runScenarioScheduleLocked(schedule *storage.ScenarioSchedu
 	if schedule.NextRunAt != nil {
 		plannedAt = *schedule.NextRunAt
 	}
+	if handled, err := tr.reconcileScenarioScheduleOccurrenceLocked(schedule, plannedAt, now); err != nil {
+		return nil, err
+	} else if handled {
+		return nil, nil
+	}
 	schedule.ConflictSummary = tr.scenarioScheduleConflictSummaryLocked(schedule, scenario)
 	if strings.TrimSpace(schedule.ConflictSummary) != "" {
 		occurrence := tr.buildScenarioScheduleOccurrence(schedule, plannedAt, "blocked", "schedule_conflict", schedule.ConflictSummary, nil, now)
@@ -435,6 +440,70 @@ func (tr *TestRunner) runScenarioScheduleLocked(schedule *storage.ScenarioSchedu
 		return nil, err
 	}
 	return prepared, nil
+}
+
+func (tr *TestRunner) reconcileScenarioScheduleOccurrenceLocked(schedule *storage.ScenarioSchedule, plannedAt time.Time, now time.Time) (bool, error) {
+	if tr == nil || tr.scenarioStore == nil || schedule == nil {
+		return false, nil
+	}
+	existing, err := tr.scenarioStore.GetScenarioScheduleOccurrenceByScheduleAndPlannedAt(schedule.ID, plannedAt.UTC())
+	if err != nil || existing == nil {
+		return false, err
+	}
+	status := strings.TrimSpace(existing.Status)
+	if status == "" || status == "materializing" {
+		return false, nil
+	}
+	if existing.ScheduleRevision != schedule.Revision && (status == "blocked" || status == "failed") {
+		return false, nil
+	}
+	schedule.LastOccurrence = cloneScenarioScheduleOccurrence(existing)
+	schedule.UpdatedAt = now
+	switch status {
+	case "materialized", "queued", "completed", "approved":
+		if existing.TestID != "" {
+			schedule.LastRunTestID = existing.TestID
+		}
+		if existing.MaterializedAt != nil {
+			materializedAt := *existing.MaterializedAt
+			schedule.LastRunAt = &materializedAt
+		}
+		next, err := nextScenarioScheduleRun(schedule, now)
+		if err != nil {
+			return true, err
+		}
+		schedule.NextRunAt = next
+		schedule.NextRequiredAction = ""
+		schedule.LastError = ""
+	case "skipped":
+		next, err := nextScenarioScheduleRun(schedule, now)
+		if err != nil {
+			return true, err
+		}
+		schedule.NextRunAt = next
+		schedule.NextRequiredAction = ""
+		schedule.LastError = ""
+	case "blocked":
+		schedule.LastError = firstNonEmpty(existing.ConflictSummary, existing.ReasonCode)
+		switch existing.ReasonCode {
+		case "approval_required":
+			schedule.NextRequiredAction = "approval_required"
+			schedule.PendingApprovalID = existing.ApprovalID
+		case "schedule_conflict":
+			schedule.NextRequiredAction = "resolve_conflict"
+		case "missed_run_requires_decision":
+			schedule.NextRequiredAction = "operator_decision_required"
+		}
+	case "failed":
+		schedule.LastError = firstNonEmpty(existing.ConflictSummary, existing.ReasonCode)
+		schedule.NextRequiredAction = "operator_decision_required"
+	default:
+		return false, nil
+	}
+	if err := tr.saveScenarioScheduleLocked(schedule); err != nil {
+		return true, err
+	}
+	return true, nil
 }
 
 func (tr *TestRunner) buildScenarioScheduleOccurrence(schedule *storage.ScenarioSchedule, plannedAt time.Time, status string, reasonCode string, conflictSummary string, materializedAt *time.Time, now time.Time) *storage.ScenarioScheduleOccurrence {

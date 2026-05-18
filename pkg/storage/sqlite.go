@@ -1034,7 +1034,11 @@ func (s *SQLiteStore) GetScenarioScheduleOccurrence(id string) (*ScenarioSchedul
 
 func (s *SQLiteStore) GetScenarioScheduleOccurrenceByScheduleAndPlannedAt(scheduleID string, plannedAt time.Time) (*ScenarioScheduleOccurrence, error) {
 	row := s.db.QueryRow(`SELECT id, schedule_id, scenario_id, COALESCE(project_id, ''), COALESCE(schedule_revision, 1), planned_at, materialized_at, status, COALESCE(reason_code, ''), COALESCE(test_id, ''), COALESCE(approval_id, ''), COALESCE(conflict_summary, ''), created_at, updated_at FROM scenario_schedule_occurrences WHERE schedule_id = ? AND planned_at = ?`, scheduleID, plannedAt)
-	return scanScenarioScheduleOccurrence(row)
+	occurrence, err := scanScenarioScheduleOccurrence(row)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	return occurrence, err
 }
 
 func (s *SQLiteStore) ListScenarioScheduleOccurrences(scheduleID string) ([]*ScenarioScheduleOccurrence, error) {
