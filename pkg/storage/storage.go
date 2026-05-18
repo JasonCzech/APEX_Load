@@ -142,6 +142,19 @@ type AuditEvent struct {
 	CreatedAt        time.Time      `json:"created_at"`
 }
 
+type AuthoringSession struct {
+	ID             string         `json:"id"`
+	ProjectID      string         `json:"project_id,omitempty"`
+	Source         string         `json:"source"`
+	Name           string         `json:"name"`
+	Status         string         `json:"status"`
+	Draft          *dsl.Script    `json:"draft,omitempty"`
+	ReviewState    map[string]any `json:"review_state,omitempty"`
+	CreatedAt      time.Time      `json:"created_at"`
+	UpdatedAt      time.Time      `json:"updated_at"`
+	LastAccessedAt time.Time      `json:"last_accessed_at"`
+}
+
 type Application struct {
 	ID        string    `json:"id"`
 	ProjectID string    `json:"project_id,omitempty"`

@@ -12,6 +12,18 @@ This document tracks Workstream P3's shared authoring lifecycle.
 - `sources`: source-specific capability matrix
 - `source_map`: compact lookup of feature flags by source key
 
+Authoring sessions persist unsaved drafts and repair workflow state:
+
+| Endpoint | Purpose |
+| --- | --- |
+| `POST /api/v1/scripts/authoring/sessions` | Create a persisted draft session with source, status, draft DSL, and review state. |
+| `GET /api/v1/scripts/authoring/sessions?project_id=...` | List resumable sessions, optionally scoped to a project. |
+| `GET /api/v1/scripts/authoring/sessions/{id}` | Fetch one draft session and refresh its last-accessed timestamp. |
+| `PUT /api/v1/scripts/authoring/sessions/{id}` | Replace the draft payload, status, and review state after edits or repairs. |
+| `DELETE /api/v1/scripts/authoring/sessions/{id}` | Remove a draft session after save, approval, or discard. |
+
+SQLite-backed controllers persist these sessions in `authoring_sessions`. Controllers without a metadata store keep a local in-memory fallback for development and tests.
+
 ## Sources
 
 The matrix covers:
@@ -72,3 +84,4 @@ P3.3 scoring normalizes these inputs instead of creating source-specific scoring
 | P3.1 Generic authoring contract | Complete for API contract | `GET /api/v1/scripts/authoring/capabilities` |
 | P3.2 Source capability matrix | Complete for backend matrix | `sources` and `source_map` in the authoring capabilities response |
 | P3.3 Draft health scoring | Complete for validation response scoring; dashboard badges remain future work | `authoring_health` in script validation responses |
+| P3.4 Authoring session persistence | Complete for API and SQLite persistence | `authoring_sessions` table and session CRUD endpoints |

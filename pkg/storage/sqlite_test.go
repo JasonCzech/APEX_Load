@@ -74,6 +74,62 @@ func TestSQLiteStoreSaveScriptPreservesMetadata(t *testing.T) {
 	}
 }
 
+func TestSQLiteStoreAuthoringSessionsRoundTrip(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	session := &AuthoringSession{
+		ID:        "session-1",
+		ProjectID: "project-1",
+		Source:    "loadrunner",
+		Name:      "Checkout migration",
+		Status:    "editing",
+		Draft: &dsl.Script{
+			Name:     "Checkout",
+			Version:  "1.0.0",
+			Protocol: "http",
+			Config:   dsl.ScriptConfig{BaseURL: "https://example.test"},
+			Actions:  []dsl.Action{{Name: "Home", Type: "request", Target: "/"}},
+		},
+		ReviewState: map[string]any{"active_tab": "runtime", "blockers": []any{"correlation"}},
+		CreatedAt:   time.Now().Add(-time.Hour),
+	}
+	if err := store.SaveAuthoringSession(session); err != nil {
+		t.Fatalf("SaveAuthoringSession returned error: %v", err)
+	}
+
+	roundTrip, err := store.GetAuthoringSession(session.ID)
+	if err != nil {
+		t.Fatalf("GetAuthoringSession returned error: %v", err)
+	}
+	if roundTrip.ProjectID != "project-1" || roundTrip.Source != "loadrunner" || roundTrip.Name != "Checkout migration" {
+		t.Fatalf("roundTrip metadata = %#v", roundTrip)
+	}
+	if roundTrip.Draft == nil || roundTrip.Draft.Name != "Checkout" || roundTrip.Draft.Config.BaseURL != "https://example.test" {
+		t.Fatalf("roundTrip draft = %#v", roundTrip.Draft)
+	}
+	if roundTrip.ReviewState["active_tab"] != "runtime" {
+		t.Fatalf("review state = %#v, want active_tab runtime", roundTrip.ReviewState)
+	}
+
+	listed, err := store.ListAuthoringSessions("project-1")
+	if err != nil {
+		t.Fatalf("ListAuthoringSessions returned error: %v", err)
+	}
+	if len(listed) != 1 || listed[0].ID != session.ID {
+		t.Fatalf("listed sessions = %#v, want session-1", listed)
+	}
+	if err := store.DeleteAuthoringSession(session.ID); err != nil {
+		t.Fatalf("DeleteAuthoringSession returned error: %v", err)
+	}
+	if _, err := store.GetAuthoringSession(session.ID); err == nil {
+		t.Fatal("expected deleted authoring session lookup to fail")
+	}
+}
+
 func TestSQLiteStoreProjectsFoldersAndFiltering(t *testing.T) {
 	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
 	if err != nil {

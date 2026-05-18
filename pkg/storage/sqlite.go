@@ -336,6 +336,18 @@ func (s *SQLiteStore) init() error {
 			details_json TEXT,
 			created_at DATETIME NOT NULL
 		)`,
+		`CREATE TABLE IF NOT EXISTS authoring_sessions (
+			id TEXT PRIMARY KEY,
+			project_id TEXT,
+			source TEXT NOT NULL,
+			name TEXT NOT NULL,
+			status TEXT NOT NULL,
+			draft_json TEXT,
+			review_state_json TEXT,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL,
+			last_accessed_at DATETIME NOT NULL
+		)`,
 	}
 
 	for _, q := range queries {
@@ -1580,6 +1592,101 @@ func (s *SQLiteStore) DeleteScript(id string) error {
 func (s *SQLiteStore) MoveScript(id string, folderID *string) error {
 	_, err := s.db.Exec(`UPDATE scripts SET folder_id = ?, updated_at = ? WHERE id = ?`, folderID, time.Now(), id)
 	return err
+}
+
+func (s *SQLiteStore) SaveAuthoringSession(session *AuthoringSession) error {
+	if session == nil {
+		return errors.New("authoring session is required")
+	}
+	session.ProjectID = normalizeProjectID(session.ProjectID)
+	now := time.Now()
+	if session.CreatedAt.IsZero() {
+		session.CreatedAt = now
+	}
+	session.UpdatedAt = now
+	if session.LastAccessedAt.IsZero() {
+		session.LastAccessedAt = now
+	}
+	draftJSON, err := json.Marshal(session.Draft)
+	if err != nil {
+		return fmt.Errorf("marshal authoring draft: %w", err)
+	}
+	reviewStateJSON, err := json.Marshal(session.ReviewState)
+	if err != nil {
+		return fmt.Errorf("marshal authoring review state: %w", err)
+	}
+	_, err = s.db.Exec(`INSERT INTO authoring_sessions (id, project_id, source, name, status, draft_json, review_state_json, created_at, updated_at, last_accessed_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			project_id=excluded.project_id,
+			source=excluded.source,
+			name=excluded.name,
+			status=excluded.status,
+			draft_json=excluded.draft_json,
+			review_state_json=excluded.review_state_json,
+			updated_at=excluded.updated_at,
+			last_accessed_at=excluded.last_accessed_at`,
+		session.ID, session.ProjectID, session.Source, session.Name, session.Status, string(draftJSON), string(reviewStateJSON), session.CreatedAt, session.UpdatedAt, session.LastAccessedAt)
+	return err
+}
+
+func (s *SQLiteStore) GetAuthoringSession(id string) (*AuthoringSession, error) {
+	var session AuthoringSession
+	var draftJSON, reviewStateJSON string
+	err := s.db.QueryRow(`SELECT id, COALESCE(project_id, ''), source, name, status, COALESCE(draft_json, ''), COALESCE(review_state_json, ''), created_at, updated_at, last_accessed_at FROM authoring_sessions WHERE id = ?`, id).Scan(
+		&session.ID, &session.ProjectID, &session.Source, &session.Name, &session.Status, &draftJSON, &reviewStateJSON, &session.CreatedAt, &session.UpdatedAt, &session.LastAccessedAt)
+	if err != nil {
+		return nil, err
+	}
+	decodeAuthoringSessionJSON(&session, draftJSON, reviewStateJSON)
+	now := time.Now()
+	if _, err := s.db.Exec(`UPDATE authoring_sessions SET last_accessed_at = ? WHERE id = ?`, now, id); err == nil {
+		session.LastAccessedAt = now
+	}
+	return &session, nil
+}
+
+func (s *SQLiteStore) ListAuthoringSessions(projectID string) ([]*AuthoringSession, error) {
+	args := []any{}
+	query := `SELECT id, COALESCE(project_id, ''), source, name, status, COALESCE(draft_json, ''), COALESCE(review_state_json, ''), created_at, updated_at, last_accessed_at FROM authoring_sessions`
+	if projectID != "" {
+		query += ` WHERE project_id = ?`
+		args = append(args, normalizeProjectID(projectID))
+	}
+	query += ` ORDER BY updated_at DESC`
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	sessions := make([]*AuthoringSession, 0)
+	for rows.Next() {
+		var session AuthoringSession
+		var draftJSON, reviewStateJSON string
+		if err := rows.Scan(&session.ID, &session.ProjectID, &session.Source, &session.Name, &session.Status, &draftJSON, &reviewStateJSON, &session.CreatedAt, &session.UpdatedAt, &session.LastAccessedAt); err != nil {
+			return nil, err
+		}
+		decodeAuthoringSessionJSON(&session, draftJSON, reviewStateJSON)
+		sessions = append(sessions, &session)
+	}
+	return sessions, nil
+}
+
+func (s *SQLiteStore) DeleteAuthoringSession(id string) error {
+	_, err := s.db.Exec(`DELETE FROM authoring_sessions WHERE id = ?`, id)
+	return err
+}
+
+func decodeAuthoringSessionJSON(session *AuthoringSession, draftJSON string, reviewStateJSON string) {
+	if draftJSON != "" && draftJSON != "null" {
+		var script dsl.Script
+		if err := json.Unmarshal([]byte(draftJSON), &script); err == nil {
+			session.Draft = &script
+		}
+	}
+	if reviewStateJSON != "" && reviewStateJSON != "null" {
+		_ = json.Unmarshal([]byte(reviewStateJSON), &session.ReviewState)
+	}
 }
 
 func (s *SQLiteStore) SaveTest(test *TestRecord) error {

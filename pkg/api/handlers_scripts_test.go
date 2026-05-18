@@ -15,6 +15,7 @@ import (
 	"unicode/utf16"
 
 	"github.com/jasonczech/stormrunner/pkg/dsl"
+	"github.com/jasonczech/stormrunner/pkg/storage"
 )
 
 const sampleLoadRunnerActionC = `
@@ -1852,6 +1853,85 @@ func TestDraftValidationReturnsBlockedAuthoringHealth(t *testing.T) {
 	}
 	if payload.AuthoringHealth.Score >= 60 {
 		t.Fatalf("authoring health score = %d, want below 60", payload.AuthoringHealth.Score)
+	}
+}
+
+func TestAuthoringSessionLifecyclePersistsDraftReviewState(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	body := []byte(`{
+		"project_id":"project-authoring",
+		"source":"loadrunner",
+		"name":"Checkout repair",
+		"status":"reviewing",
+		"draft":{"name":"Checkout","version":"1.0.0","protocol":"http","config":{"base_url":"https://example.test"},"actions":[{"name":"Home","type":"request","target":"/"}]},
+		"review_state":{"active_tab":"runtime","pending_repairs":["correlation"]}
+	}`)
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/authoring/sessions", bytes.NewReader(body))
+	createResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(createResp, createReq)
+	if createResp.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want %d body=%s", createResp.Code, http.StatusCreated, createResp.Body.String())
+	}
+	var created storage.AuthoringSession
+	if err := json.Unmarshal(createResp.Body.Bytes(), &created); err != nil {
+		t.Fatalf("unmarshal created session: %v", err)
+	}
+	if created.ID == "" || created.ProjectID != "project-authoring" || created.Source != "loadrunner" {
+		t.Fatalf("created session = %#v", created)
+	}
+	if created.Draft == nil || created.Draft.ProjectID != "project-authoring" {
+		t.Fatalf("created draft = %#v, want project-bound draft", created.Draft)
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/scripts/authoring/sessions?project_id=project-authoring", nil)
+	listResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(listResp, listReq)
+	if listResp.Code != http.StatusOK {
+		t.Fatalf("list status = %d, want %d body=%s", listResp.Code, http.StatusOK, listResp.Body.String())
+	}
+	var listed struct {
+		Sessions []*storage.AuthoringSession `json:"sessions"`
+		Count    int                         `json:"count"`
+	}
+	if err := json.Unmarshal(listResp.Body.Bytes(), &listed); err != nil {
+		t.Fatalf("unmarshal listed sessions: %v", err)
+	}
+	if listed.Count != 1 || listed.Sessions[0].ID != created.ID {
+		t.Fatalf("listed sessions = %#v, want created session", listed)
+	}
+
+	updateBody := []byte(`{
+		"project_id":"project-authoring",
+		"source":"loadrunner",
+		"name":"Checkout repair updated",
+		"status":"editing",
+		"draft":{"name":"Checkout Updated","version":"1.0.0","protocol":"http","config":{"base_url":"https://example.test"},"actions":[{"name":"Cart","type":"request","target":"/cart"}]},
+		"review_state":{"active_tab":"parameters"}
+	}`)
+	updateReq := httptest.NewRequest(http.MethodPut, "/api/v1/scripts/authoring/sessions/"+created.ID, bytes.NewReader(updateBody))
+	updateResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(updateResp, updateReq)
+	if updateResp.Code != http.StatusOK {
+		t.Fatalf("update status = %d, want %d body=%s", updateResp.Code, http.StatusOK, updateResp.Body.String())
+	}
+	var updated storage.AuthoringSession
+	if err := json.Unmarshal(updateResp.Body.Bytes(), &updated); err != nil {
+		t.Fatalf("unmarshal updated session: %v", err)
+	}
+	if updated.Status != "editing" || updated.Draft == nil || updated.Draft.Name != "Checkout Updated" || updated.ReviewState["active_tab"] != "parameters" {
+		t.Fatalf("updated session = %#v", updated)
+	}
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/v1/scripts/authoring/sessions/"+created.ID, nil)
+	deleteResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(deleteResp, deleteReq)
+	if deleteResp.Code != http.StatusOK {
+		t.Fatalf("delete status = %d, want %d body=%s", deleteResp.Code, http.StatusOK, deleteResp.Body.String())
 	}
 }
 
