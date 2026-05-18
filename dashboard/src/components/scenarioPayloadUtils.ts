@@ -8,6 +8,13 @@ export type ScenarioGroupPayload = {
   vusers: number
   ramp_up?: string
   ramp_down?: string
+  stages?: Array<{
+    name?: string
+    type: 'ramp_up' | 'hold' | 'ramp_down' | string
+    duration: string
+    target_vusers?: number
+    target_tps?: number
+  }>
   iterations?: number
   initialization: ScenarioDraftGroup['initialization']
 }
@@ -98,6 +105,17 @@ export function buildScenarioGroupPayloads(groups: ScenarioDraftGroup[]): Scenar
 
     if (group.rampDown) {
       payload.ramp_down = group.rampDown
+    }
+
+    if (group.stages && group.stages.length > 0) {
+      payload.stages = group.stages
+        .map(stage => ({
+          ...(stage.name ? { name: stage.name } : {}),
+          type: stage.type,
+          duration: stage.duration,
+          ...(stage.target_vusers !== undefined ? { target_vusers: Number(stage.target_vusers) } : {}),
+          ...(stage.target_tps !== undefined ? { target_tps: Number(stage.target_tps) } : {}),
+        }))
     }
 
     if (group.iterations !== undefined) {
@@ -276,7 +294,7 @@ export function buildCreateTestPayload({
   }
 
   const normalizedGroups = buildScenarioGroupPayloads(groups)
-  if (normalizedGroups.length === 1 && !normalizedGroups[0].name && normalizedGroups[0].iterations === undefined) {
+  if (normalizedGroups.length === 1 && !normalizedGroups[0].name && normalizedGroups[0].iterations === undefined && !normalizedGroups[0].stages?.length) {
     payload.script_id = normalizedGroups[0].script_id
     payload.vusers = normalizedGroups[0].vusers
     payload.ramp_up = normalizedGroups[0].ramp_up

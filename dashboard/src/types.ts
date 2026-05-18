@@ -662,6 +662,7 @@ export interface ScenarioDraftGroup {
   vusers: number
   rampUp: string
   rampDown: string
+  stages?: LoadStageDraft[]
   iterations?: number
   initialization: 'at_runtime' | 'at_once'
 }
@@ -1140,6 +1141,7 @@ export interface StoredScenario {
     vusers: number
     ramp_up?: string
     ramp_down?: string
+    stages?: LoadStageDraft[]
     initialization?: 'at_runtime' | 'at_once'
   }>
   schedules?: ScenarioSchedule[]
@@ -1733,6 +1735,14 @@ export interface LoadModelTemplateGroup {
   ramp_down?: string
   iterations?: number
   start_delay?: string
+}
+
+export interface LoadStageDraft {
+  name?: string
+  type: 'ramp_up' | 'hold' | 'ramp_down' | string
+  duration: string
+  target_vusers?: number
+  target_tps?: number
 }
 
 export interface LoadModelTemplate {

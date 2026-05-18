@@ -26,7 +26,7 @@ Query parameters:
 - `capacity_advisory`: the same capacity envelope used before execution starts
 - `assignment_recommendation`: placement guidance for auto, selected-host, or region-weighted generator assignment
 
-Scenario and test group payloads can now carry staged load segments:
+Scenario and test group payloads can now carry staged load segments. The dashboard scenario form includes a staged segment editor that emits this same `groups[].stages` contract and validates the draft before save:
 
 ```json
 {
@@ -93,7 +93,7 @@ The first template catalog covers:
 | --- | --- | --- |
 | P4.1 Load-model support matrix | Complete for backend matrix | `GET /api/v1/scenarios/load-models/support-matrix` |
 | P4.2 Workload-shape templates | Complete for backend and scenario-authoring UI | `GET /api/v1/scenarios/load-models/templates`; dashboard scenario form template picker |
-| P4.3 Staged ramp segments | Partial backend complete | Group `stages` round-trip through API/storage and derive compatibility ramp execution |
+| P4.3 Staged ramp segments | Partial backend and UI complete | Group `stages` round-trip through API/storage, derive compatibility ramp execution, and can be authored from the dashboard scenario form |
 | P4.4 Capacity validation | Partial backend and UI complete | Draft validation checks modeled demand, capacity, browser canaries, data-pool rows, data-source fit, and generator placement; dashboard scenario form renders pre-save findings |
 | P4.5 Rendezvous points | Complete | Runtime `rendezvous` actions synchronize VUsers and validation reports spike readiness |
 | P4.6 Global goals | Partial backend complete | Runtime enforces group-level `global_iterations` and `max_transactions` across VUsers |

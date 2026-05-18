@@ -50,6 +50,13 @@ type TestCreateGroupEntry = {
   vusers?: number
   ramp_up?: string
   ramp_down?: string
+  stages?: Array<{
+    name?: string
+    type: string
+    duration: string
+    target_vusers?: number
+    target_tps?: number
+  }>
   initialization?: 'at_runtime' | 'at_once'
 }
 

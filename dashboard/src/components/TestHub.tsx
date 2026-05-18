@@ -1,5 +1,5 @@
 import { Fragment, memo, useCallback, useEffect, useMemo, useState } from 'react'
-import { DraftCapacityEstimate, GoalConfig, LoadModelTemplate, LoadModelValidationReport, ScenarioDataPoolBinding, ScenarioMode, SharedDataPool, StoredScenario, StoredScript, TestSummary } from '../types'
+import { DraftCapacityEstimate, GoalConfig, LoadModelTemplate, LoadModelValidationReport, LoadStageDraft, ScenarioDataPoolBinding, ScenarioMode, SharedDataPool, StoredScenario, StoredScript, TestSummary } from '../types'
 import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
 import { getErrorMessage } from '../utils/errorUtils'
@@ -19,6 +19,7 @@ interface ScenarioFormState {
   vusers: number
   ramp_up: string
   ramp_down: string
+  stages: LoadStageDraft[]
   scenario_mode: ScenarioMode
   goal_target_average_tps?: number
   goal_min_vusers?: number
@@ -45,6 +46,7 @@ function emptyScenarioForm(scriptId = ''): ScenarioFormState {
     vusers: 10,
     ramp_up: '',
     ramp_down: '',
+    stages: [],
     scenario_mode: 'vuser_driven',
     browser_device_profile: '',
     browser_orientation: '',
@@ -59,6 +61,8 @@ function emptyScenarioForm(scriptId = ''): ScenarioFormState {
   }
 }
 
+type LoadStageType = 'ramp_up' | 'hold' | 'ramp_down'
+
 function goalConfigFromForm(form: ScenarioFormState): GoalConfig {
   return {
     ...(form.goal_target_average_tps ? { target_average_tps: Number(form.goal_target_average_tps) } : {}),
@@ -67,6 +71,29 @@ function goalConfigFromForm(form: ScenarioFormState): GoalConfig {
     ...(form.goal_p95_latency_ms ? { p95_latency_ms: Number(form.goal_p95_latency_ms) } : {}),
     ...(form.goal_max_error_pct ? { max_error_pct: Number(form.goal_max_error_pct) } : {}),
   }
+}
+
+function maxStageVUsers(stages: LoadStageDraft[]) {
+  return stages.reduce((max, stage) => Math.max(max, Number(stage.target_vusers) || 0), 0)
+}
+
+function normalizeStageForPayload(stage: LoadStageDraft) {
+  return {
+    ...(stage.name ? { name: stage.name } : {}),
+    type: stage.type,
+    duration: stage.duration,
+    ...(stage.target_vusers !== undefined ? { target_vusers: Number(stage.target_vusers) || 0 } : {}),
+    ...(stage.target_tps !== undefined ? { target_tps: Number(stage.target_tps) || 0 } : {}),
+  }
+}
+
+function createDefaultStages(vusers: number, rampUp = '2m', hold = '5m', rampDown = '1m'): LoadStageDraft[] {
+  const target = Number(vusers) || 10
+  return [
+    { name: 'Warmup', type: 'ramp_up', duration: rampUp || '2m', target_vusers: target },
+    { name: 'Steady', type: 'hold', duration: hold, target_vusers: target },
+    { name: 'Cooldown', type: 'ramp_down', duration: rampDown || '1m', target_vusers: 1 },
+  ]
 }
 
 function getLoadModelStatusClass(status?: string) {
@@ -187,6 +214,8 @@ function TestHub({ onSelectTest }: Props) {
   const showBrowserRuntimeSettings = selectedScript?.protocol === 'browser'
 
   const buildScenarioDraftPayload = useCallback((draftForm: ScenarioFormState = form) => {
+    const stagedPeak = maxStageVUsers(draftForm.stages)
+    const resolvedVUsers = stagedPeak || Number(draftForm.vusers) || 10
     const dataPoolsPayload = draftForm.data_pool_id ? [{
       pool_id: draftForm.data_pool_id,
       alias: (draftForm.data_pool_alias || dataPools.find(pool => pool.id === draftForm.data_pool_id)?.name || 'data').trim().toLowerCase().replace(/\s+/g, '_'),
@@ -207,9 +236,10 @@ function TestHub({ onSelectTest }: Props) {
       groups: [{
         name: '',
         scriptId: draftForm.script_id,
-        vusers: Number(draftForm.vusers) || 10,
+        vusers: resolvedVUsers,
         rampUp: draftForm.ramp_up,
         rampDown: draftForm.ramp_down,
+        stages: draftForm.stages.map(normalizeStageForPayload),
         initialization: 'at_runtime',
       }],
       goalConfig: goalConfigFromForm(draftForm),
@@ -276,9 +306,10 @@ function TestHub({ onSelectTest }: Props) {
       groups: [{
         name: '',
         scriptId: form.script_id,
-        vusers: Number(form.vusers) || 10,
+        vusers: maxStageVUsers(form.stages) || Number(form.vusers) || 10,
         rampUp: form.ramp_up,
         rampDown: form.ramp_down,
+        stages: form.stages.map(normalizeStageForPayload),
         initialization: 'at_runtime',
       }],
       goalConfig: goalConfigFromForm(form),
@@ -386,6 +417,7 @@ function TestHub({ onSelectTest }: Props) {
       vusers: first?.vusers || 10,
       ramp_up: first?.ramp_up || '',
       ramp_down: first?.ramp_down || '',
+      stages: first?.stages ? [...first.stages] : [],
       scenario_mode: scenario.scenario_mode || 'vuser_driven',
       goal_target_average_tps: scenario.goal_config?.target_average_tps,
       goal_min_vusers: scenario.goal_config?.min_vusers,
@@ -423,12 +455,38 @@ function TestHub({ onSelectTest }: Props) {
       vusers: firstGroup?.vusers || prev.vusers,
       ramp_up: firstGroup?.ramp_up || '',
       ramp_down: firstGroup?.ramp_down || '',
+      stages: [],
       goal_target_average_tps: template.scenario.goal_config?.target_average_tps,
       goal_min_vusers: template.scenario.goal_config?.min_vusers,
       goal_max_vusers: template.scenario.goal_config?.max_vusers,
       goal_p95_latency_ms: template.scenario.goal_config?.p95_latency_ms,
       goal_max_error_pct: template.scenario.goal_config?.max_error_pct,
     }))
+  }
+
+  const enableDefaultStages = () => {
+    const nextStages = createDefaultStages(form.vusers, form.ramp_up || '2m', form.duration || '5m', form.ramp_down || '1m')
+    setForm({ ...form, stages: nextStages, vusers: maxStageVUsers(nextStages), ramp_up: '', ramp_down: '' })
+    setLoadModelValidation(null)
+  }
+
+  const updateStage = (index: number, patch: Partial<LoadStageDraft>) => {
+    const stages = form.stages.map((stage, stageIndex) => stageIndex === index ? { ...stage, ...patch } : stage)
+    const peak = maxStageVUsers(stages)
+    setForm({ ...form, stages, vusers: peak || form.vusers })
+    setLoadModelValidation(null)
+  }
+
+  const addStage = () => {
+    const stages = [...form.stages, { name: `Stage ${form.stages.length + 1}`, type: 'hold' as LoadStageType, duration: '1m', target_vusers: Number(form.vusers) || 10 }]
+    setForm({ ...form, stages, vusers: maxStageVUsers(stages) || form.vusers })
+    setLoadModelValidation(null)
+  }
+
+  const removeStage = (index: number) => {
+    const stages = form.stages.filter((_, stageIndex) => stageIndex !== index)
+    setForm({ ...form, stages, vusers: maxStageVUsers(stages) || form.vusers })
+    setLoadModelValidation(null)
   }
 
   const validateLoadModel = async () => {
@@ -579,6 +637,38 @@ function TestHub({ onSelectTest }: Props) {
               </div>
             </div>
           )}
+          <div className="scenario-stage-panel">
+            <div className="scenario-assignment-header">
+              <div>
+                <h4>Staged Load Segments</h4>
+                <p>Model ramp-up, hold, and ramp-down segments explicitly. When stages are enabled, the peak target VUsers becomes the group VUser count.</p>
+              </div>
+              <button type="button" className="btn btn-secondary" onClick={form.stages.length > 0 ? addStage : enableDefaultStages}>
+                {form.stages.length > 0 ? '+ Add Stage' : 'Enable Stages'}
+              </button>
+            </div>
+            {form.stages.length > 0 ? (
+              <div className="scenario-stage-list">
+                {form.stages.map((stage, index) => (
+                  <div key={`${stage.name || 'stage'}-${index}`} className="scenario-stage-row">
+                    <input className="settings-input" value={stage.name || ''} onChange={event => updateStage(index, { name: event.target.value })} placeholder="Stage name" />
+                    <select className="settings-input" value={stage.type} onChange={event => updateStage(index, { type: event.target.value as LoadStageType })}>
+                      <option value="ramp_up">Ramp up</option>
+                      <option value="hold">Hold</option>
+                      <option value="ramp_down">Ramp down</option>
+                    </select>
+                    <input className="settings-input" value={stage.duration} onChange={event => updateStage(index, { duration: event.target.value })} placeholder="Duration" />
+                    <input className="settings-input" type="number" min={0} value={stage.target_vusers ?? ''} onChange={event => updateStage(index, { target_vusers: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="Target VUsers" />
+                    <input className="settings-input" type="number" min={0} value={stage.target_tps ?? ''} onChange={event => updateStage(index, { target_tps: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="Target TPS" />
+                    <button type="button" className="btn btn-sm btn-ghost" onClick={() => removeStage(index)}>Remove</button>
+                  </div>
+                ))}
+                <p className="scenario-assignment-copy secondary">Peak staged VUsers: {maxStageVUsers(form.stages) || 0}. Validation will reject stages missing duration plus either VUsers or TPS.</p>
+              </div>
+            ) : (
+              <p className="scenario-assignment-copy secondary">Use simple ramp fields above, or enable stages for stepped ramps and mixed target constraints.</p>
+            )}
+          </div>
           <div className="scenario-load-model-panel">
             <div className="scenario-assignment-header">
               <div>

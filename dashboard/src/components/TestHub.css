@@ -343,6 +343,34 @@
   background: var(--bg-primary);
 }
 
+.scenario-stage-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 16px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-primary);
+}
+
+.scenario-stage-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.scenario-stage-row {
+  display: grid;
+  grid-template-columns: minmax(130px, 1.2fr) minmax(120px, 0.9fr) minmax(110px, 0.9fr) minmax(120px, 0.8fr) minmax(110px, 0.8fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.scenario-stage-row .btn {
+  justify-self: end;
+}
+
 .scenario-template-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -710,6 +738,10 @@
 }
 
 @media (max-width: 768px) {
+  .scenario-stage-row {
+    grid-template-columns: 1fr 1fr;
+  }
+
   .scenario-date,
   .scenario-latest-label {
     display: none;

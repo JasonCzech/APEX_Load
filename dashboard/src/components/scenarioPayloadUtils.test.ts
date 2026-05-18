@@ -188,6 +188,52 @@ describe('scenarioPayloadUtils', () => {
     expect(payload.script_id).toBeUndefined()
   })
 
+  it('keeps staged single-group drafts in the groups array', () => {
+    const payload = buildCreateTestPayload({
+      name: '',
+      duration: '8m',
+      startDelay: '',
+      scenarioMode: 'vuser_driven',
+      scriptShakeout: false,
+      resourceBaseline: false,
+      groups: [{
+        name: '',
+        scriptId: 'script-1',
+        vusers: 25,
+        rampUp: '',
+        rampDown: '',
+        stages: [
+          { name: 'Warmup', type: 'ramp_up', duration: '2m', target_vusers: 25 },
+          { name: 'Steady', type: 'hold', duration: '5m', target_vusers: 25 },
+          { name: 'Cooldown', type: 'ramp_down', duration: '1m', target_vusers: 1 },
+        ],
+        initialization: 'at_runtime',
+      }],
+      goalConfig: {},
+      runtimeSettings: {
+        iterations: undefined,
+        pacing: undefined,
+        think_time: undefined,
+        log_level: '',
+        auto_transactions: '',
+        continue_on_error: false,
+        snapshot_on_error: false,
+      },
+    })
+
+    expect(payload.script_id).toBeUndefined()
+    expect(payload.groups).toEqual([{
+      script_id: 'script-1',
+      vusers: 25,
+      stages: [
+        { name: 'Warmup', type: 'ramp_up', duration: '2m', target_vusers: 25 },
+        { name: 'Steady', type: 'hold', duration: '5m', target_vusers: 25 },
+        { name: 'Cooldown', type: 'ramp_down', duration: '1m', target_vusers: 1 },
+      ],
+      initialization: 'at_runtime',
+    }])
+  })
+
   it('serializes explicit hostname assignment into scenario and test payloads', () => {
     const payload = buildCreateTestPayload({
       name: 'Explicit Host Run',

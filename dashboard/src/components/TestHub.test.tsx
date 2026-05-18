@@ -386,6 +386,64 @@ describe('TestHub', () => {
     expect(container.textContent).toContain('Generator Placement')
     expect(container.textContent).toContain('Auto-assignment will use configured generators.')
   })
+
+  it('creates a scenario with explicit staged load segments', async () => {
+    const onSelectTest = vi.fn()
+
+    await act(async () => {
+      root.render(<TestHub testStatuses={{}} onSelectTest={onSelectTest} />)
+    })
+
+    await flushPromises()
+
+    const newScenarioButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('New Scenario'))
+    expect(newScenarioButton).toBeDefined()
+    if (!newScenarioButton) return
+
+    await act(async () => {
+      newScenarioButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const nameInput = Array.from(container.querySelectorAll('input')).find(input => input.placeholder === 'Scenario name')
+    expect(nameInput).toBeDefined()
+    if (!nameInput) return
+
+    await act(async () => {
+      setInputValue(nameInput, 'Staged Checkout Scenario')
+    })
+
+    const enableStagesButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Enable Stages'))
+    expect(enableStagesButton).toBeDefined()
+    if (!enableStagesButton) return
+
+    await act(async () => {
+      enableStagesButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.textContent).toContain('Peak staged VUsers: 10')
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save Scenario'))
+    expect(saveButton).toBeDefined()
+    if (!saveButton) return
+
+    await act(async () => {
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushPromises()
+
+    expect(apiMock.createScenario).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Staged Checkout Scenario',
+      groups: [expect.objectContaining({
+        script_id: 'script-1',
+        vusers: 10,
+        stages: [
+          { name: 'Warmup', type: 'ramp_up', duration: '2m', target_vusers: 10 },
+          { name: 'Steady', type: 'hold', duration: '1m', target_vusers: 10 },
+          { name: 'Cooldown', type: 'ramp_down', duration: '1m', target_vusers: 1 },
+        ],
+      })],
+    }))
+  })
 })
 
 async function flushPromises() {
