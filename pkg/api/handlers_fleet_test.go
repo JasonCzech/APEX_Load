@@ -63,6 +63,42 @@ func TestDistributedBackendSkipsCordonedTargetsForPlacement(t *testing.T) {
 	}
 }
 
+func TestDistributedPlannerSkipsIncompatibleProtocolTargets(t *testing.T) {
+	groups := []TestGroup{{Name: "grpc-users", Protocol: "grpc", VUsers: 5}}
+	loadByTarget := map[string]generatorLoadSnapshot{
+		"gen-http:9090": {Target: "gen-http:9090", AvailableCapacity: 100},
+		"gen-grpc:9090": {Target: "gen-grpc:9090", AvailableCapacity: 50},
+	}
+	specs := []generatorTargetSpec{
+		parseGeneratorTargetSpec("gen-http:9090|protocols=http|version=0.1.0"),
+		parseGeneratorTargetSpec("gen-grpc:9090|protocols=grpc,http|version=0.1.0"),
+	}
+
+	assignments := planDistributedGroupTargets(groups, loadByTarget, []string{"gen-http:9090", "gen-grpc:9090"}, nil, specs)
+	if assignments["grpc-users"] != "gen-grpc:9090" {
+		t.Fatalf("assignment = %q, want gen-grpc:9090", assignments["grpc-users"])
+	}
+}
+
+func TestDistributedPlannerRejectsIncompatibleGeneratorVersion(t *testing.T) {
+	groups := []TestGroup{{Name: "http-users", Protocol: "http", VUsers: 5}}
+	loadByTarget := map[string]generatorLoadSnapshot{
+		"gen-old:9090": {Target: "gen-old:9090", AvailableCapacity: 100},
+	}
+	specs := []generatorTargetSpec{
+		parseGeneratorTargetSpec("gen-old:9090|protocols=http|version=2.0.0"),
+	}
+
+	assignments := planDistributedGroupTargets(groups, loadByTarget, []string{"gen-old:9090"}, nil, specs)
+	if assignments["http-users"] != "" {
+		t.Fatalf("assignment = %q, want empty target for incompatible generator version", assignments["http-users"])
+	}
+	message := generatorPlacementRejectionMessage(groups[0], loadByTarget, specs)
+	if !strings.Contains(message, "incompatible") || !strings.Contains(message, "2.0.0") {
+		t.Fatalf("rejection message = %q, want incompatible version detail", message)
+	}
+}
+
 func TestHandleSetGeneratorDrainStateRejectsInvalidState(t *testing.T) {
 	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
 	server.runner.setExecutionBackend(newDistributedExecutionBackend([]string{"gen-a:9090"}, time.Second, nil))

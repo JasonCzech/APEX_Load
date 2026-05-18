@@ -54,7 +54,19 @@ Drain state is currently controller-local. A future production HA implementation
 
 ## Version And Protocol Compatibility
 
-The initial inventory model reserves `version` and `supported_protocols` so P2.3 can reject incompatible placements before execution starts. Until generator-side version negotiation lands, version remains `unknown` and protocol support mirrors controller-compiled protocol plugins.
+Controller generator targets can declare version and protocol compatibility in `STORMRUNNER_GENERATORS`:
+
+```text
+stormrunner-generator-0.stormrunner-generator:9090|region=us-east|version=0.1.0|protocols=http,grpc,websocket
+```
+
+Placement enforces these declarations before work is assigned:
+
+- A group can only be placed on a generator whose `supported_protocols` contains the group's script protocol.
+- A generator with an explicit incompatible major version is excluded from placement.
+- `version=unknown` remains allowed for backwards compatibility with generators that do not yet negotiate version metadata.
+
+The inventory response exposes `compatibility_state` and `compatibility_issues` so operators can see why a target is excluded before a run starts.
 
 ## Plan Mapping
 
@@ -62,5 +74,5 @@ The initial inventory model reserves `version` and `supported_protocols` so P2.3
 | --- | --- | --- |
 | P2.1 Formal fleet model | In progress | Inventory fields and this model |
 | P2.2 Drain/cordon workflows | Complete for controller-local placement control; persistence remains future work | `PATCH /api/v1/system/generators/drain` |
-| P2.3 Version compatibility checks | Planned | Version and protocol fields reserved |
+| P2.3 Version compatibility checks | Complete for target-declared protocol/version compatibility; generator-side negotiation remains future work | `version`, `protocols`, `compatibility_state`, placement rejection reasons |
 | P2.4 Saturation alerts and rejection reasons | Planned | Capacity state primitive added |

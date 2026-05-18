@@ -24,23 +24,25 @@ type ControllerInventoryEntry struct {
 }
 
 type GeneratorInventoryEntry struct {
-	Target             string   `json:"target"`
-	GeneratorID        string   `json:"generator_id"`
-	Region             string   `json:"region,omitempty"`
-	Status             string   `json:"status"`
-	Version            string   `json:"version,omitempty"`
-	SupportedProtocols []string `json:"supported_protocols,omitempty"`
-	DrainState         string   `json:"drain_state"`
-	CapacityState      string   `json:"capacity_state"`
-	HealthScore        int      `json:"health_score"`
-	AvailableCapacity  int32    `json:"available_capacity"`
-	ActiveVUsers       int32    `json:"active_vusers"`
-	CPUPercent         float64  `json:"cpu_percent"`
-	MemoryBytes        int64    `json:"memory_bytes"`
-	GoroutineCount     int32    `json:"goroutine_count"`
-	CPULimitCores      float64  `json:"cpu_limit_cores"`
-	MemoryLimitBytes   int64    `json:"memory_limit_bytes"`
-	MaxVUsers          int32    `json:"max_vusers"`
+	Target              string   `json:"target"`
+	GeneratorID         string   `json:"generator_id"`
+	Region              string   `json:"region,omitempty"`
+	Status              string   `json:"status"`
+	Version             string   `json:"version,omitempty"`
+	SupportedProtocols  []string `json:"supported_protocols,omitempty"`
+	CompatibilityState  string   `json:"compatibility_state,omitempty"`
+	CompatibilityIssues []string `json:"compatibility_issues,omitempty"`
+	DrainState          string   `json:"drain_state"`
+	CapacityState       string   `json:"capacity_state"`
+	HealthScore         int      `json:"health_score"`
+	AvailableCapacity   int32    `json:"available_capacity"`
+	ActiveVUsers        int32    `json:"active_vusers"`
+	CPUPercent          float64  `json:"cpu_percent"`
+	MemoryBytes         int64    `json:"memory_bytes"`
+	GoroutineCount      int32    `json:"goroutine_count"`
+	CPULimitCores       float64  `json:"cpu_limit_cores"`
+	MemoryLimitBytes    int64    `json:"memory_limit_bytes"`
+	MaxVUsers           int32    `json:"max_vusers"`
 }
 
 func (s *Server) handleGetSystemInventory(w http.ResponseWriter, r *http.Request) {
@@ -83,6 +85,9 @@ func normalizeGeneratorInventoryEntry(entry GeneratorInventoryEntry) GeneratorIn
 	}
 	if len(entry.SupportedProtocols) == 0 {
 		entry.SupportedProtocols = defaultSupportedProtocols()
+	}
+	if entry.CompatibilityState == "" {
+		entry.CompatibilityState = "compatible"
 	}
 	if entry.DrainState == "" {
 		entry.DrainState = "active"

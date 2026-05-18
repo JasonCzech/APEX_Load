@@ -48,8 +48,10 @@ type generatorLoadSnapshot struct {
 }
 
 type generatorTargetSpec struct {
-	Address string
-	Region  string
+	Address   string
+	Region    string
+	Version   string
+	Protocols []string
 }
 
 type distributedExecutionBackend struct {
@@ -145,15 +147,17 @@ func (b *distributedExecutionBackend) SystemInventory(ctx context.Context) []Gen
 	entries := make([]GeneratorInventoryEntry, 0, len(b.targets))
 	for _, target := range b.targets {
 		entry := GeneratorInventoryEntry{
-			Target:             target.Address,
-			GeneratorID:        target.Address,
-			Region:             target.Region,
-			Status:             "unreachable",
-			Version:            "unknown",
-			SupportedProtocols: defaultSupportedProtocols(),
-			DrainState:         b.generatorDrainState(target.Address),
-			CapacityState:      generatorCapacityState(0, 0, false),
-			HealthScore:        generatorHealthScore(false, "unavailable"),
+			Target:              target.Address,
+			GeneratorID:         target.Address,
+			Region:              target.Region,
+			Status:              "unreachable",
+			Version:             generatorSpecVersion(target),
+			SupportedProtocols:  generatorSpecProtocols(target),
+			DrainState:          b.generatorDrainState(target.Address),
+			CapacityState:       generatorCapacityState(0, 0, false),
+			HealthScore:         generatorHealthScore(false, "unavailable"),
+			CompatibilityState:  generatorCompatibilityState(target),
+			CompatibilityIssues: generatorCompatibilityIssues(target),
 		}
 
 		probeCtx, cancel := context.WithTimeout(ctx, b.timeout)
@@ -278,6 +282,11 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		}
 
 		target := groupTargets[group.Name]
+		if target == "" {
+			cleanup()
+			tr.failTestBeforeRun(test, generatorPlacementRejectionMessage(group, loadByTarget, b.targets))
+			return
+		}
 		client := clientsByTarget[target]
 		if client == nil {
 			cleanup()
@@ -971,9 +980,130 @@ func parseGeneratorTargetSpec(raw string) generatorTargetSpec {
 		switch strings.TrimSpace(strings.ToLower(key)) {
 		case "region":
 			spec.Region = strings.TrimSpace(value)
+		case "version":
+			spec.Version = strings.TrimSpace(value)
+		case "protocols":
+			for _, protocol := range strings.Split(value, ",") {
+				protocol = strings.TrimSpace(protocol)
+				if protocol != "" {
+					spec.Protocols = append(spec.Protocols, protocol)
+				}
+			}
 		}
 	}
 	return spec
+}
+
+func generatorSpecVersion(spec generatorTargetSpec) string {
+	if strings.TrimSpace(spec.Version) == "" {
+		return "unknown"
+	}
+	return strings.TrimSpace(spec.Version)
+}
+
+func generatorSpecProtocols(spec generatorTargetSpec) []string {
+	if len(spec.Protocols) == 0 {
+		return defaultSupportedProtocols()
+	}
+	protocols := append([]string(nil), spec.Protocols...)
+	sort.Strings(protocols)
+	return protocols
+}
+
+func generatorCompatibilityState(spec generatorTargetSpec) string {
+	if len(generatorCompatibilityIssues(spec)) > 0 {
+		return "incompatible"
+	}
+	return "compatible"
+}
+
+func generatorCompatibilityIssues(spec generatorTargetSpec) []string {
+	issues := []string{}
+	version := generatorSpecVersion(spec)
+	if version != "unknown" && !compatibleMajorVersion(version, "0.1.0") {
+		issues = append(issues, fmt.Sprintf("generator version %s is incompatible with controller version 0.1.0", version))
+	}
+	return issues
+}
+
+func compatibleMajorVersion(candidate string, required string) bool {
+	candidateMajor, candidateOK := leadingVersionPart(candidate)
+	requiredMajor, requiredOK := leadingVersionPart(required)
+	if !candidateOK || !requiredOK {
+		return true
+	}
+	return candidateMajor == requiredMajor
+}
+
+func leadingVersionPart(version string) (string, bool) {
+	version = strings.TrimSpace(version)
+	if version == "" || version == "unknown" {
+		return "", false
+	}
+	part, _, _ := strings.Cut(version, ".")
+	part = strings.TrimSpace(part)
+	if part == "" {
+		return "", false
+	}
+	return part, true
+}
+
+func targetSupportsProtocol(spec generatorTargetSpec, protocolName string) bool {
+	protocolName = strings.TrimSpace(protocolName)
+	if protocolName == "" {
+		return true
+	}
+	for _, supported := range generatorSpecProtocols(spec) {
+		if supported == protocolName {
+			return true
+		}
+	}
+	return false
+}
+
+type generatorCompatibilityIndex struct {
+	byTarget map[string]generatorTargetSpec
+}
+
+func newGeneratorCompatibilityIndex(specs []generatorTargetSpec) *generatorCompatibilityIndex {
+	index := &generatorCompatibilityIndex{byTarget: make(map[string]generatorTargetSpec, len(specs))}
+	for _, spec := range specs {
+		index.byTarget[spec.Address] = spec
+	}
+	return index
+}
+
+func (i *generatorCompatibilityIndex) targetCanRun(target string, protocolName string) bool {
+	if i == nil {
+		return true
+	}
+	spec, ok := i.byTarget[target]
+	if !ok {
+		return true
+	}
+	return generatorCompatibilityState(spec) == "compatible" && targetSupportsProtocol(spec, protocolName)
+}
+
+func generatorPlacementRejectionMessage(group TestGroup, loadByTarget map[string]generatorLoadSnapshot, specs []generatorTargetSpec) string {
+	protocolName := usageKey(group.Protocol, "unknown")
+	reasons := make([]string, 0)
+	for _, spec := range specs {
+		if _, reachable := loadByTarget[spec.Address]; !reachable {
+			continue
+		}
+		if issues := generatorCompatibilityIssues(spec); len(issues) > 0 {
+			reasons = append(reasons, fmt.Sprintf("%s incompatible: %s", spec.Address, strings.Join(issues, "; ")))
+			continue
+		}
+		if !targetSupportsProtocol(spec, group.Protocol) {
+			reasons = append(reasons, fmt.Sprintf("%s does not support protocol %s", spec.Address, protocolName))
+		}
+	}
+	if len(reasons) == 0 {
+		return fmt.Sprintf("no compatible generator target is available for group %q using protocol %s", group.Name, protocolName)
+	}
+	sort.Strings(reasons)
+	return fmt.Sprintf("no compatible generator target is available for group %q using protocol %s: %s", group.Name, protocolName, strings.Join(reasons, "; "))
 }
 
 type regionPlacementState struct {
@@ -1063,9 +1193,13 @@ func planDistributedGroupTargets(groups []TestGroup, loadByTarget map[string]gen
 		projected[key] = value
 	}
 	regionState := newRegionPlacementState(groups, assignment, targetSpecs)
+	compatibility := newGeneratorCompatibilityIndex(targetSpecs)
 	for _, group := range groups {
-		target := chooseGeneratorTargetForGroup(group, projected, preferred, regionState)
+		target := chooseGeneratorTargetForGroup(group, projected, preferred, regionState, compatibility)
 		assignments[group.Name] = target
+		if target == "" {
+			continue
+		}
 		snapshot := projected[target]
 		snapshot.AvailableCapacity -= int32(group.VUsers)
 		snapshot.Stats.ActiveVUsers += int32(group.VUsers)
@@ -1075,17 +1209,25 @@ func planDistributedGroupTargets(groups []TestGroup, loadByTarget map[string]gen
 	return assignments
 }
 
-func chooseGeneratorTargetForGroup(group TestGroup, loadByTarget map[string]generatorLoadSnapshot, preferred []string, regionState *regionPlacementState) string {
+func chooseGeneratorTargetForGroup(group TestGroup, loadByTarget map[string]generatorLoadSnapshot, preferred []string, regionState *regionPlacementState, compatibility *generatorCompatibilityIndex) string {
 	ordered := orderedLoadTargets(loadByTarget, preferred, regionState)
 	if len(ordered) == 0 {
 		return ""
 	}
 	for _, target := range ordered {
+		if compatibility != nil && !compatibility.targetCanRun(target, group.Protocol) {
+			continue
+		}
 		if loadByTarget[target].AvailableCapacity >= int32(group.VUsers) {
 			return target
 		}
 	}
-	return ordered[0]
+	for _, target := range ordered {
+		if compatibility == nil || compatibility.targetCanRun(target, group.Protocol) {
+			return target
+		}
+	}
+	return ""
 }
 
 func orderedLoadTargets(loadByTarget map[string]generatorLoadSnapshot, preferred []string, regionState *regionPlacementState) []string {
