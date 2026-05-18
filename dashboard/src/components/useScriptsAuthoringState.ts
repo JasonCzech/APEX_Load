@@ -40,6 +40,7 @@ export interface ScriptsCreateOptionActions {
   startJavaHttpScript: () => void
   startWebScript: () => void
   startJmsScript: () => void
+  startTemplateScript: (script: ScriptDefinition) => void
   openLoadRunnerImport: () => void
   openJMeterImport: () => void
   openRecorder: () => void
@@ -176,6 +177,10 @@ export function useScriptsAuthoringState({
     startDraft(createJmsDraft)
   }, [startDraft])
 
+  const startTemplateScript = useCallback((script: ScriptDefinition) => {
+    openDraftEditor(script)
+  }, [openDraftEditor])
+
   const handleEdit = useCallback(async (id: string) => {
     try {
       const res = await api.getScript(id)
@@ -227,6 +232,7 @@ export function useScriptsAuthoringState({
       startJavaHttpScript,
       startWebScript,
       startJmsScript,
+      startTemplateScript,
       openLoadRunnerImport,
       openJMeterImport,
       openRecorder,

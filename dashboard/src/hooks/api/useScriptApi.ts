@@ -15,6 +15,7 @@ import {
   StoredScript,
   TestSummary,
 } from '../../types'
+import { type AuthoringTemplate } from '../../types'
 import { type ScriptDefinition, type ScriptExportResponse, type ScriptReplayResponse, type ScriptValidationResponse } from '../../types/scripts'
 import { type DevWebImportResult, type HARImportResult, type JMeterImportResult, type JMeterSupportMatrixResponse, type LoadRunnerImportResult, type LoadRunnerSupportMatrixResponse, type SampleImportResult, type SaveJMeterImportRequest, type SaveJMeterImportResponse } from '../../types/scriptImports'
 import { BASE, request } from '../apiClient'
@@ -92,6 +93,11 @@ type ScenarioDataPoolResponse = {
   count: number
 }
 
+type AuthoringTemplatesResponse = {
+  templates: AuthoringTemplate[]
+  count: number
+}
+
 function buildScriptQuery(projectId?: string, folderId?: string | null) {
   const query = new URLSearchParams()
   if (projectId) query.set('project_id', projectId)
@@ -141,6 +147,17 @@ export function useScriptApi() {
   const validateDraftScript = useCallback(
     (script: ScriptDefinition, projectId?: string, folderId?: string | null) =>
       request<ScriptValidationResponse>('/scripts/validate', { method: 'POST', body: JSON.stringify({ script, project_id: projectId, folder_id: folderId }) }),
+    [],
+  )
+
+  const listAuthoringTemplates = useCallback(
+    (params?: { protocol?: string; use_case?: string }) => {
+      const query = new URLSearchParams()
+      if (params?.protocol) query.set('protocol', params.protocol)
+      if (params?.use_case) query.set('use_case', params.use_case)
+      const suffix = query.toString()
+      return request<AuthoringTemplatesResponse>(`/scripts/authoring/templates${suffix ? `?${suffix}` : ''}`)
+    },
     [],
   )
 
@@ -441,7 +458,8 @@ export function useScriptApi() {
       moveScript,
       validateScript,
       validateDraftScript,
-  		replayScript,
+      listAuthoringTemplates,
+      replayScript,
   		replayDraftScript,
       startBrowserReplaySession,
       startDraftBrowserReplaySession,
@@ -486,7 +504,8 @@ export function useScriptApi() {
       moveScript,
       validateScript,
       validateDraftScript,
-  		replayScript,
+      listAuthoringTemplates,
+      replayScript,
   		replayDraftScript,
       startBrowserReplaySession,
       startDraftBrowserReplaySession,

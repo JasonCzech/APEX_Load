@@ -19,6 +19,8 @@ This document tracks Workstream P3's shared authoring lifecycle.
 
 Each template includes an executable DSL draft plus `recommended_scenario` hints for duration, VUsers, ramp-up, and iteration count. The initial catalog covers HTTP API smoke, browser checkout canary, and SOAP service smoke starters.
 
+The dashboard script creation flow loads this backend catalog and renders starter templates ahead of the manual/import lanes. Choosing a template opens the shared draft editor with the executable DSL payload so template-based scripts use the same validation, replay, and save path as manual drafts.
+
 Authoring sessions persist unsaved drafts and repair workflow state:
 
 | Endpoint | Purpose |
@@ -105,5 +107,5 @@ AI-generated drafts include `ai_guardrails` in validation responses when `genera
 | P3.5 Approval handoff | Complete for backend gate | Session approval validates health, stores reusable scripts, and stamps approval metadata |
 | P3.6 Guided correlation repair | Partial backend complete | Session correlation preview/apply returns extractor insertion and sample-replacement diffs |
 | P3.7 Data-source fit checks | Partial backend complete | Validation responses include `data_source_fit` and health scoring for source/column/row-count readiness |
-| P3.8 Protocol starter templates | Partial backend complete | `GET /api/v1/scripts/authoring/templates` returns validated protocol starter DSLs and scenario hints |
+| P3.8 Protocol starter templates | Partial backend/UI complete | `GET /api/v1/scripts/authoring/templates` returns validated protocol starter DSLs and scenario hints; dashboard create flow opens selected templates in the shared draft editor |
 | P3.9 AI generation guardrails | Partial backend complete | Validation responses include `ai_guardrails` and block approval health without provenance, diff review, validation, and replay evidence |

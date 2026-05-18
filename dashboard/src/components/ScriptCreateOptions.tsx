@@ -1,3 +1,8 @@
+import { useEffect, useState } from 'react'
+import { type AuthoringTemplate } from '../types'
+import { type ScriptDefinition } from '../types/scripts'
+import { useApi } from '../hooks/useApi'
+
 interface Props {
   onBack: () => void
   onStartApiScript: () => void
@@ -8,6 +13,7 @@ interface Props {
   onStartWebScript: () => void
   onOpenRecorder: () => void
   onStartJmsScript: () => void
+  onStartTemplateScript: (script: ScriptDefinition) => void
   onOpenLoadRunnerImport: () => void
   onOpenJMeterImport: () => void
   onOpenDevWebImport: () => void
@@ -24,11 +30,29 @@ export default function ScriptCreateOptions({
   onStartWebScript,
   onOpenRecorder,
   onStartJmsScript,
+  onStartTemplateScript,
   onOpenLoadRunnerImport,
   onOpenJMeterImport,
   onOpenDevWebImport,
   onOpenHARImport,
 }: Props) {
+  const api = useApi()
+  const [templates, setTemplates] = useState<AuthoringTemplate[]>([])
+
+  useEffect(() => {
+    let cancelled = false
+    api.listAuthoringTemplates()
+      .then(response => {
+        if (!cancelled) setTemplates(response.templates || [])
+      })
+      .catch(() => {
+        if (!cancelled) setTemplates([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [api])
+
   return (
     <div className="page">
       <div className="page-header">
@@ -39,6 +63,28 @@ export default function ScriptCreateOptions({
         <button className="btn btn-secondary" onClick={onBack}>Back to Library</button>
       </div>
       <div className="script-create-lanes">
+        {templates.length > 0 && (
+          <section className="script-create-lane api">
+            <div className="script-create-lane-header">
+              <span className="script-create-kicker">Backend catalog</span>
+              <h3>Starter Templates</h3>
+              <p>Start from the controller-owned template catalog so UI choices stay aligned with validated backend DSL examples.</p>
+            </div>
+            <div className="script-create-grid">
+              {templates.map(template => (
+                <button key={template.id} className="script-create-option" type="button" onClick={() => onStartTemplateScript(template.script)}>
+                  <span className="script-create-type-badge">{template.protocol.toUpperCase()}</span>
+                  <h3>{template.name}</h3>
+                  <p>{template.description}</p>
+                  {template.recommended_scenario && (
+                    <small>{template.recommended_scenario.vusers || 1} VUsers / {template.recommended_scenario.duration || 'script default'}</small>
+                  )}
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
+
         <section className="script-create-lane api">
           <div className="script-create-lane-header">
             <span className="script-create-kicker">API level</span>

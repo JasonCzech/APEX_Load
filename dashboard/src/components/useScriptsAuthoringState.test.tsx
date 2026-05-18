@@ -47,6 +47,7 @@ function AuthoringStateHarness({ api, initialMode, initialEditId }: HarnessProps
       <button data-testid="save-script-with-payload" onClick={() => model.handleSavedScript({ id: 'saved-script-2', name: 'Saved Payload', protocol: 'http', version: '1.0.0', created_at: '2026-05-17T00:00:00Z', script: { name: 'Persisted Checkout', protocol: 'http', config: {}, actions: [] } as never })}>save-script-with-payload</button>
       <button data-testid="open-sample" onClick={model.createOptionActions.openSampleImport}>open-sample</button>
       <button data-testid="start-java-http" onClick={model.createOptionActions.startJavaHttpScript}>start-java-http</button>
+      <button data-testid="start-template" onClick={() => model.createOptionActions.startTemplateScript({ name: 'Template Draft', protocol: 'browser', config: {}, actions: [] } as never)}>start-template</button>
     </div>
   )
 }
@@ -230,6 +231,12 @@ describe('useScriptsAuthoringState', () => {
     expect(readTestId('subview')).toBe('create')
     expect(readTestId('draft-name')).toBe('none')
     expect(readTestId('draft-protocol')).toBe('java_http')
+
+    await click('start-template')
+
+    expect(readTestId('subview')).toBe('create')
+    expect(readTestId('draft-name')).toBe('Template Draft')
+    expect(readTestId('draft-protocol')).toBe('browser')
   })
 
   it('keeps the current edit shell when the script fetch fails', async () => {

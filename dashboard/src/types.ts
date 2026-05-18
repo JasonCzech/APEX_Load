@@ -1045,6 +1045,22 @@ export interface StoredScript {
   script?: ScriptDefinition
 }
 
+export interface AuthoringTemplate {
+  id: string
+  name: string
+  protocol: string
+  use_case: string
+  description: string
+  tags?: string[]
+  script: ScriptDefinition
+  recommended_scenario?: {
+    duration?: string
+    vusers?: number
+    ramp_up?: string
+    iterations?: number
+  }
+}
+
 export interface AuthoringHealth {
   score: number
   status: 'healthy' | 'needs_review' | 'blocked' | string

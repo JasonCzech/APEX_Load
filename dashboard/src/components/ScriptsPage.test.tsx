@@ -13,6 +13,7 @@ const apiMock = {
   getScript: vi.fn(),
   deleteScript: vi.fn(),
   listTests: vi.fn(),
+  listAuthoringTemplates: vi.fn(),
 }
 
 vi.mock('../hooks/useApi', () => ({
@@ -166,6 +167,7 @@ describe('ScriptsPage', () => {
     apiMock.getScript.mockResolvedValue({ script: null })
     apiMock.deleteScript.mockResolvedValue({})
     apiMock.listTests.mockResolvedValue({ tests: [] })
+    apiMock.listAuthoringTemplates.mockResolvedValue({ templates: [], count: 0 })
   })
 
   afterEach(async () => {
@@ -536,6 +538,65 @@ describe('ScriptsPage', () => {
     })
 
     expect(container.querySelector('[data-testid="script-editor"]')).not.toBeNull()
+  })
+
+  it('opens backend starter templates in the draft editor', async () => {
+    apiMock.listAuthoringTemplates.mockResolvedValueOnce({
+      templates: [{
+        id: 'template-browser-canary',
+        name: 'Browser Checkout Canary',
+        protocol: 'browser',
+        use_case: 'ci_smoke',
+        description: 'Open checkout and prove the critical rendered path is alive.',
+        script: {
+          name: 'Browser Checkout Canary',
+          version: '1.0.0',
+          protocol: 'browser',
+          config: { base_url: 'https://shop.example.com' },
+          actions: [],
+        },
+        recommended_scenario: {
+          duration: '90s',
+          vusers: 1,
+        },
+      }],
+      count: 1,
+    })
+
+    await act(async () => {
+      root.render(<ScriptsPage />)
+    })
+
+    await flushPromises()
+
+    const createButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('+ Create Script'))
+    expect(createButton).toBeDefined()
+    if (!createButton) {
+      return
+    }
+
+    await act(async () => {
+      createButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushPromises()
+
+    expect(apiMock.listAuthoringTemplates).toHaveBeenCalledTimes(1)
+    expect(container.textContent).toContain('Starter Templates')
+    expect(container.textContent).toContain('Browser Checkout Canary')
+
+    const templateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Browser Checkout Canary'))
+    expect(templateButton).toBeDefined()
+    if (!templateButton) {
+      return
+    }
+
+    await act(async () => {
+      templateButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.querySelector('[data-testid="script-editor"]')).not.toBeNull()
+    expect(container.textContent).toContain('editor:Browser Checkout Canary')
   })
 
   it('routes the Java-over-HTTP import option into the dedicated Java import surface', async () => {

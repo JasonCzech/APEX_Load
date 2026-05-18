@@ -12,6 +12,14 @@ import { type AuthoringState, type ScriptsCreateOptionActions } from './useScrip
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
+const apiMock = {
+  listAuthoringTemplates: vi.fn(),
+}
+
+vi.mock('../hooks/useApi', () => ({
+  useApi: () => apiMock,
+}))
+
 vi.mock('./ScriptsAuthoringSurface', () => ({
   default: ({
     subView,
@@ -79,6 +87,7 @@ function createActions(overrides: Partial<ScriptsCreateOptionActions> = {}): Scr
     startJavaHttpScript: vi.fn(),
     startWebScript: vi.fn(),
     startJmsScript: vi.fn(),
+    startTemplateScript: vi.fn(),
     openLoadRunnerImport: vi.fn(),
     openJMeterImport: vi.fn(),
     openRecorder: vi.fn(),
@@ -110,6 +119,7 @@ describe('ScriptsAuthoringShell', () => {
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
+    apiMock.listAuthoringTemplates.mockResolvedValue({ templates: [], count: 0 })
   })
 
   afterEach(async () => {
@@ -154,6 +164,51 @@ describe('ScriptsAuthoringShell', () => {
 
     await clickButton('Back to Library')
     expect(onOpenLibrary).toHaveBeenCalled()
+  })
+
+  it('renders backend starter templates and delegates template drafts', async () => {
+    const actions = createActions()
+    apiMock.listAuthoringTemplates.mockResolvedValueOnce({
+      templates: [{
+        id: 'template-http-smoke',
+        name: 'HTTP Smoke',
+        protocol: 'http',
+        use_case: 'ci_smoke',
+        description: 'Exercise one critical API path before release promotion.',
+        script: {
+          name: 'HTTP Smoke',
+          version: '1.0.0',
+          protocol: 'http',
+          config: { base_url: 'https://api.example.com' },
+          actions: [],
+        },
+        recommended_scenario: {
+          duration: '2m',
+          vusers: 3,
+        },
+      }],
+      count: 1,
+    })
+
+    await act(async () => {
+      root.render(renderShell({
+        authoringState: createState('create-options'),
+        createOptionActions: actions,
+      }))
+    })
+
+    await flushPromises()
+
+    expect(apiMock.listAuthoringTemplates).toHaveBeenCalledTimes(1)
+    expect(container.textContent).toContain('Starter Templates')
+    expect(container.textContent).toContain('HTTP Smoke')
+    expect(container.textContent).toContain('3 VUsers / 2m')
+
+    await clickButton('HTTP Smoke')
+    expect(actions.startTemplateScript).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'HTTP Smoke',
+      protocol: 'http',
+    }))
   })
 
   it('renders authoring subviews through the shared authoring surface', async () => {
@@ -248,6 +303,13 @@ describe('ScriptsAuthoringShell', () => {
     }
     await act(async () => {
       button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+  }
+
+  async function flushPromises() {
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
     })
   }
 })
