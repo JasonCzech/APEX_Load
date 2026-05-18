@@ -564,57 +564,118 @@ function TestHub({ onSelectTest }: Props) {
       {error && <div className="settings-error-inline">{error}</div>}
 
       {showForm && (
-        <div className="page-section">
-          <h3 className="section-title">{editingId ? 'Edit Scenario' : 'New Scenario'}</h3>
-          <div className="settings-grid">
-            <input className="settings-input" value={form.name} onChange={event => setForm({ ...form, name: event.target.value })} placeholder="Scenario name" />
-            <input className="settings-input" value={form.duration} onChange={event => setForm({ ...form, duration: event.target.value })} placeholder="Duration, e.g. 5m" />
-            <select className="settings-input" value={form.script_id} onChange={event => setForm({ ...form, script_id: event.target.value })}>
-              {scripts.map(script => <option key={script.id} value={script.id}>{script.name}</option>)}
-            </select>
-            <input className="settings-input" type="number" min={1} value={form.vusers} onChange={event => setForm({ ...form, vusers: Number(event.target.value) })} />
-            <input className="settings-input" value={form.ramp_up} onChange={event => setForm({ ...form, ramp_up: event.target.value })} placeholder="Ramp up, e.g. 2m" />
-            <input className="settings-input" value={form.ramp_down} onChange={event => setForm({ ...form, ramp_down: event.target.value })} placeholder="Ramp down, e.g. 1m" />
-            <select className="settings-input" value={form.scenario_mode} onChange={event => setForm({ ...form, scenario_mode: event.target.value as ScenarioMode })}>
-              <option value="vuser_driven">VUser driven</option>
-              <option value="goal_oriented">Goal oriented</option>
-            </select>
-            <select className="settings-input" value={form.initialization} onChange={event => setForm({ ...form, initialization: event.target.value as ScenarioFormState['initialization'] })}>
-              <option value="at_runtime">Init/teardown per VUser</option>
-              <option value="at_once">Init/teardown once per group</option>
-            </select>
-            <select className="settings-input" value={form.data_pool_id || ''} onChange={event => setForm({ ...form, data_pool_id: event.target.value })}>
-              <option value="">No shared data pool</option>
-              {dataPools.map(pool => <option key={pool.id} value={pool.id}>{pool.name}</option>)}
-            </select>
-            <input
-              className="settings-input"
-              value={form.data_pool_alias || ''}
-              onChange={event => setForm({ ...form, data_pool_alias: event.target.value })}
-              placeholder="Pool alias, e.g. customers"
-              disabled={!form.data_pool_id}
-            />
-            <select
-              className="settings-input"
-              value={form.data_pool_access_mode || 'read_only'}
-              onChange={event => setForm({ ...form, data_pool_access_mode: event.target.value as 'read_only' | 'read_write' | 'consume' })}
-              disabled={!form.data_pool_id}
-            >
-              <option value="read_only">Read only</option>
-              <option value="read_write">Read/write</option>
-              <option value="consume">Consume rows</option>
-            </select>
-            <select
-              className="settings-input"
-              value={form.data_pool_selection_strategy || 'sequential'}
-              onChange={event => setForm({ ...form, data_pool_selection_strategy: event.target.value as 'sequential' | 'random' | 'unique' })}
-              disabled={!form.data_pool_id}
-            >
-              <option value="sequential">Sequential rows</option>
-              <option value="random">Random rows</option>
-              <option value="unique">Unique rows</option>
-            </select>
+        <div className="page-section scenario-builder">
+          <div className="scenario-builder-header">
+            <div>
+              <h3 className="section-title">{editingId ? 'Edit Scenario' : 'New Scenario'}</h3>
+              <p className="page-subtitle">Complete the core setup first; open advanced sections only when the workload needs them.</p>
+            </div>
+            <div className="scenario-builder-progress">
+              <span className={form.name.trim() ? 'ready' : ''}>Basics</span>
+              <span className={form.script_id ? 'ready' : ''}>Script</span>
+              <span className={loadModelValidation?.status === 'blocked' ? 'blocked' : loadModelValidation ? 'ready' : ''}>Validation</span>
+            </div>
           </div>
+
+          <section className="scenario-builder-card">
+            <div className="scenario-builder-card-header">
+              <div>
+                <h4>Basics</h4>
+                <p>Name the reusable workload and choose the primary script group.</p>
+              </div>
+            </div>
+            <div className="settings-grid scenario-core-grid">
+              <label className="scenario-field">
+                <span>Scenario Name</span>
+                <input className="settings-input" value={form.name} onChange={event => setForm({ ...form, name: event.target.value })} placeholder="Scenario name" />
+              </label>
+              <label className="scenario-field">
+                <span>Duration</span>
+                <input className="settings-input" value={form.duration} onChange={event => setForm({ ...form, duration: event.target.value })} placeholder="Duration, e.g. 5m" />
+              </label>
+              <label className="scenario-field">
+                <span>Script</span>
+                <select className="settings-input" value={form.script_id} onChange={event => setForm({ ...form, script_id: event.target.value })}>
+                  {scripts.map(script => <option key={script.id} value={script.id}>{script.name}</option>)}
+                </select>
+              </label>
+              <label className="scenario-field">
+                <span>VUsers</span>
+                <input className="settings-input" type="number" min={1} value={form.vusers} onChange={event => setForm({ ...form, vusers: Number(event.target.value) })} />
+              </label>
+              <label className="scenario-field">
+                <span>Ramp Up</span>
+                <input className="settings-input" value={form.ramp_up} onChange={event => setForm({ ...form, ramp_up: event.target.value })} placeholder="Ramp up, e.g. 2m" />
+              </label>
+              <label className="scenario-field">
+                <span>Ramp Down</span>
+                <input className="settings-input" value={form.ramp_down} onChange={event => setForm({ ...form, ramp_down: event.target.value })} placeholder="Ramp down, e.g. 1m" />
+              </label>
+              <label className="scenario-field">
+                <span>Scenario Mode</span>
+                <select className="settings-input" value={form.scenario_mode} onChange={event => setForm({ ...form, scenario_mode: event.target.value as ScenarioMode })}>
+                  <option value="vuser_driven">VUser driven</option>
+                  <option value="goal_oriented">Goal oriented</option>
+                </select>
+              </label>
+              <label className="scenario-field">
+                <span>Initialization Scope</span>
+                <select className="settings-input" value={form.initialization} onChange={event => setForm({ ...form, initialization: event.target.value as ScenarioFormState['initialization'] })}>
+                  <option value="at_runtime">Init/teardown per VUser</option>
+                  <option value="at_once">Init/teardown once per group</option>
+                </select>
+              </label>
+            </div>
+          </section>
+
+          <details className="scenario-builder-disclosure">
+            <summary>Data Pool Options</summary>
+            <div className="settings-grid scenario-core-grid">
+              <label className="scenario-field">
+                <span>Shared Data Pool</span>
+                <select className="settings-input" value={form.data_pool_id || ''} onChange={event => setForm({ ...form, data_pool_id: event.target.value })}>
+                  <option value="">No shared data pool</option>
+                  {dataPools.map(pool => <option key={pool.id} value={pool.id}>{pool.name}</option>)}
+                </select>
+              </label>
+              <label className="scenario-field">
+                <span>Pool Alias</span>
+                <input
+                  className="settings-input"
+                  value={form.data_pool_alias || ''}
+                  onChange={event => setForm({ ...form, data_pool_alias: event.target.value })}
+                  placeholder="Pool alias, e.g. customers"
+                  disabled={!form.data_pool_id}
+                />
+              </label>
+              <label className="scenario-field">
+                <span>Access Mode</span>
+                <select
+                  className="settings-input"
+                  value={form.data_pool_access_mode || 'read_only'}
+                  onChange={event => setForm({ ...form, data_pool_access_mode: event.target.value as 'read_only' | 'read_write' | 'consume' })}
+                  disabled={!form.data_pool_id}
+                >
+                  <option value="read_only">Read only</option>
+                  <option value="read_write">Read/write</option>
+                  <option value="consume">Consume rows</option>
+                </select>
+              </label>
+              <label className="scenario-field">
+                <span>Selection Strategy</span>
+                <select
+                  className="settings-input"
+                  value={form.data_pool_selection_strategy || 'sequential'}
+                  onChange={event => setForm({ ...form, data_pool_selection_strategy: event.target.value as 'sequential' | 'random' | 'unique' })}
+                  disabled={!form.data_pool_id}
+                >
+                  <option value="sequential">Sequential rows</option>
+                  <option value="random">Random rows</option>
+                  <option value="unique">Unique rows</option>
+                </select>
+              </label>
+            </div>
+          </details>
           {form.scenario_mode === 'goal_oriented' && (
             <div className="scenario-browser-panel">
               <div className="scenario-assignment-header">
@@ -741,7 +802,9 @@ function TestHub({ onSelectTest }: Props) {
               </div>
             )}
           </div>
-          <div className="scenario-support-panel">
+          <details className="scenario-builder-disclosure">
+            <summary>Workload Shape Support</summary>
+          <div className="scenario-support-panel compact">
             <div className="scenario-assignment-header">
               <div>
                 <h4>Workload Shape Support</h4>
@@ -771,6 +834,7 @@ function TestHub({ onSelectTest }: Props) {
               <p className="scenario-assignment-copy secondary">No workload support matrix is available from this controller.</p>
             )}
           </div>
+          </details>
           {showBrowserRuntimeSettings && (
             <div className="scenario-browser-panel">
               <div className="scenario-assignment-header">
@@ -913,8 +977,9 @@ function TestHub({ onSelectTest }: Props) {
               </div>
             )}
           </div>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
+          <div className="scenario-builder-actions">
             <button className="btn btn-secondary" onClick={() => setShowForm(false)}>Cancel</button>
+            <button className="btn btn-secondary" onClick={validateLoadModel} disabled={loadModelValidationLoading}>{loadModelValidationLoading ? 'Validating...' : 'Validate Load Model'}</button>
             <button className="btn btn-primary" onClick={saveScenario}>Save Scenario</button>
           </div>
         </div>

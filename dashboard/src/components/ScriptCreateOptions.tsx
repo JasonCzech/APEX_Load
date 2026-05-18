@@ -38,6 +38,7 @@ export default function ScriptCreateOptions({
 }: Props) {
   const api = useApi()
   const [templates, setTemplates] = useState<AuthoringTemplate[]>([])
+  const [workflow, setWorkflow] = useState<'templates' | 'manual' | 'record' | 'import'>('templates')
 
   useEffect(() => {
     let cancelled = false
@@ -58,20 +59,50 @@ export default function ScriptCreateOptions({
       <div className="page-header">
         <div>
           <h2>Create Script</h2>
-          <p className="page-subtitle">Choose how you want to create a reusable script.</p>
+          <p className="page-subtitle">Start from a template, build manually, record a browser flow, or import an existing asset.</p>
         </div>
         <button className="btn btn-secondary" onClick={onBack}>Back to Library</button>
       </div>
-      <div className="script-create-lanes">
-        {templates.length > 0 && (
-          <section className="script-create-lane api">
+
+      <div className="script-workflow-picker" aria-label="Script creation workflows">
+        <button type="button" className={`script-workflow-card ${workflow === 'templates' ? 'active' : ''}`} onClick={() => setWorkflow('templates')}>
+          <span>1</span>
+          <strong>Use Template</strong>
+          <small>Fastest path for common protocols and smoke tests.</small>
+        </button>
+        <button type="button" className={`script-workflow-card ${workflow === 'manual' ? 'active' : ''}`} onClick={() => setWorkflow('manual')}>
+          <span>2</span>
+          <strong>Build Manually</strong>
+          <small>Create API, SOAP, Java-over-HTTP, browser, or JMS scripts.</small>
+        </button>
+        <button type="button" className={`script-workflow-card ${workflow === 'record' ? 'active' : ''}`} onClick={() => setWorkflow('record')}>
+          <span>3</span>
+          <strong>Record Browser</strong>
+          <small>Capture a user journey and review it before save.</small>
+        </button>
+        <button type="button" className={`script-workflow-card ${workflow === 'import' ? 'active' : ''}`} onClick={() => setWorkflow('import')}>
+          <span>4</span>
+          <strong>Import Existing</strong>
+          <small>Bring forward LoadRunner, JMeter, DevWeb, HAR, or Java samples.</small>
+        </button>
+      </div>
+
+      <div className="script-quick-actions" aria-label="Common script creation actions">
+        <button type="button" className="btn btn-primary" onClick={onStartApiScript}>API Visual Editor</button>
+        <button type="button" className="btn btn-secondary" onClick={onOpenRecorder}>Browser Recorder</button>
+        <button type="button" className="btn btn-secondary" onClick={onOpenLoadRunnerImport}>Import LoadRunner</button>
+      </div>
+
+      <div className="script-create-lanes compact">
+        {(
+          <section className="script-create-lane api full">
             <div className="script-create-lane-header">
               <span className="script-create-kicker">Backend catalog</span>
               <h3>Starter Templates</h3>
               <p>Start from the controller-owned template catalog so UI choices stay aligned with validated backend DSL examples.</p>
             </div>
             <div className="script-create-grid">
-              {templates.map(template => (
+              {templates.length > 0 ? templates.map(template => (
                 <button key={template.id} className="script-create-option" type="button" onClick={() => onStartTemplateScript(template.script)}>
                   <span className="script-create-type-badge">{template.protocol.toUpperCase()}</span>
                   <h3>{template.name}</h3>
@@ -85,16 +116,19 @@ export default function ScriptCreateOptions({
                     <small>{template.recommended_scenario.vusers || 1} VUsers / {template.recommended_scenario.duration || 'script default'}</small>
                   )}
                 </button>
-              ))}
+              )) : (
+                <div className="script-create-empty">No starter templates are available from this controller.</div>
+              )}
             </div>
           </section>
         )}
 
-        <section className="script-create-lane api">
+        {(
+        <section className="script-create-lane api full">
           <div className="script-create-lane-header">
-            <span className="script-create-kicker">API level</span>
-            <h3>HTTP/API Scripts</h3>
-            <p>Exercise service endpoints directly with HTTP methods, headers, payloads, extractors, assertions, and parameter data.</p>
+            <span className="script-create-kicker">Manual authoring</span>
+            <h3>Build Manually</h3>
+            <p>Choose the protocol editor first; advanced runtime and validation controls stay inside the editor.</p>
           </div>
           <div className="script-create-grid">
             <button className="script-create-option primary" onClick={onStartApiScript}>
@@ -117,36 +151,11 @@ export default function ScriptCreateOptions({
               <h3>Build From Sample</h3>
               <p>Generate an API script from sample traffic or payload examples.</p>
             </button>
-          </div>
-        </section>
-
-        <section className="script-create-lane web">
-          <div className="script-create-lane-header">
-            <span className="script-create-kicker">Web / HTML</span>
-            <h3>Browser Scripts</h3>
-            <p>Drive a rendered page with browser navigation, clicks, form fills, waits, screenshots, DOM capture, and browser replay.</p>
-          </div>
-          <div className="script-create-grid">
             <button className="script-create-option primary" onClick={onStartWebScript}>
               <span className="script-create-type-badge web">WEB</span>
               <h3>Web/HTML Visual Editor</h3>
               <p>Build a browser-level script that interacts with the page like a user.</p>
             </button>
-            <button className="script-create-option" onClick={onOpenRecorder}>
-              <span className="script-create-type-badge web">WEB</span>
-              <h3>Browser Recorder</h3>
-              <p>Capture a browser session and convert selected traffic into reusable Web/HTML script assets.</p>
-            </button>
-          </div>
-        </section>
-
-        <section className="script-create-lane jms">
-          <div className="script-create-lane-header">
-            <span className="script-create-kicker">Messaging</span>
-            <h3>JMS Scripts</h3>
-            <p>Model Solace queue/topic workloads with reusable publish, consume, and request/reply actions.</p>
-          </div>
-          <div className="script-create-grid">
             <button className="script-create-option primary" onClick={onStartJmsScript}>
               <span className="script-create-type-badge jms">JMS</span>
               <h3>JMS Solace Script</h3>
@@ -154,11 +163,30 @@ export default function ScriptCreateOptions({
             </button>
           </div>
         </section>
+        )}
 
-        <section className="script-create-lane import">
+        {(
+        <section className="script-create-lane web full">
+          <div className="script-create-lane-header">
+            <span className="script-create-kicker">Browser capture</span>
+            <h3>Record Browser</h3>
+            <p>Capture a rendered browser flow, then review and edit the generated draft before promotion.</p>
+          </div>
+          <div className="script-create-grid">
+            <button className="script-create-option" onClick={onOpenRecorder}>
+              <span className="script-create-type-badge web">WEB</span>
+              <h3>Browser Recorder</h3>
+              <p>Capture a browser session and convert selected traffic into reusable Web/HTML script assets.</p>
+            </button>
+          </div>
+        </section>
+        )}
+
+        {(
+        <section className="script-create-lane import full">
           <div className="script-create-lane-header">
             <span className="script-create-kicker">Migration</span>
-            <h3>Migration Imports</h3>
+            <h3>Import Existing</h3>
             <p>Bring existing LoadRunner and JMeter assets forward while preserving source metadata and conversion notes for review.</p>
           </div>
           <div className="script-create-grid">
@@ -198,6 +226,7 @@ export default function ScriptCreateOptions({
             </button>
           </div>
         </section>
+        )}
       </div>
     </div>
   )

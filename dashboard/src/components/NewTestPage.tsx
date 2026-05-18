@@ -407,7 +407,7 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
     <div className="page">
       <div className="page-header">
         <div>
-          <h2>New Test</h2>
+          <h2>Run Test</h2>
           <p className="page-subtitle">Choose the release context, scenario, and run setup.</p>
         </div>
         <div className="inline-create-row">
@@ -479,52 +479,58 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
                   </div>
                   <input className="settings-input" value={scheduleDraft.run_name_template} onChange={(event) => setScheduleDraft(prev => ({ ...prev, run_name_template: event.target.value }))} placeholder={scenario?.name || 'Scheduled run'} />
                 </div>
-                <div className="setting-row">
-                  <div className="setting-info">
-                    <span className="setting-label">Approval Policy</span>
-                    <span className="setting-desc">Require approval before materialization for governed schedules.</span>
+                <details className="new-test-disclosure" open>
+                  <summary>Governance</summary>
+                  <div className="setting-row">
+                    <div className="setting-info">
+                      <span className="setting-label">Approval Policy</span>
+                      <span className="setting-desc">Require approval before materialization for governed schedules.</span>
+                    </div>
+                    <select className="settings-input" value={scheduleDraft.approval_policy} onChange={(event) => setScheduleDraft(prev => ({ ...prev, approval_policy: event.target.value }))}>
+                      <option value="auto">Auto approve</option>
+                      <option value="manual_review">Manual review</option>
+                      <option value="high_cost">High cost</option>
+                      <option value="off_hours">Off hours</option>
+                      <option value="production">Production</option>
+                      <option value="quota_burst">Quota burst</option>
+                    </select>
                   </div>
-                  <select className="settings-input" value={scheduleDraft.approval_policy} onChange={(event) => setScheduleDraft(prev => ({ ...prev, approval_policy: event.target.value }))}>
-                    <option value="auto">Auto approve</option>
-                    <option value="manual_review">Manual review</option>
-                    <option value="high_cost">High cost</option>
-                    <option value="off_hours">Off hours</option>
-                    <option value="production">Production</option>
-                    <option value="quota_burst">Quota burst</option>
-                  </select>
-                </div>
-                <div className="setting-row">
-                  <div className="setting-info">
-                    <span className="setting-label">Missed Run Policy</span>
-                    <span className="setting-desc">Choose how restart reconciliation handles missed cron windows.</span>
+                  <div className="setting-row">
+                    <div className="setting-info">
+                      <span className="setting-label">Missed Run Policy</span>
+                      <span className="setting-desc">Choose how restart reconciliation handles missed cron windows.</span>
+                    </div>
+                    <select className="settings-input" value={scheduleDraft.missed_run_policy} onChange={(event) => setScheduleDraft(prev => ({ ...prev, missed_run_policy: event.target.value }))}>
+                      <option value="skip">Skip missed runs</option>
+                      <option value="catch_up_once">Catch up once</option>
+                      <option value="catch_up_all">Catch up all</option>
+                      <option value="require_operator_decision">Require operator decision</option>
+                    </select>
                   </div>
-                  <select className="settings-input" value={scheduleDraft.missed_run_policy} onChange={(event) => setScheduleDraft(prev => ({ ...prev, missed_run_policy: event.target.value }))}>
-                    <option value="skip">Skip missed runs</option>
-                    <option value="catch_up_once">Catch up once</option>
-                    <option value="catch_up_all">Catch up all</option>
-                    <option value="require_operator_decision">Require operator decision</option>
-                  </select>
-                </div>
-                <div className="setting-row">
-                  <div className="setting-info">
-                    <span className="setting-label">Blackout Window</span>
-                    <span className="setting-desc">Optional daily no-run range in the schedule timezone</span>
+                </details>
+                <details className="new-test-disclosure">
+                  <summary>Calendar Windows</summary>
+                  <div className="setting-row">
+                    <div className="setting-info">
+                      <span className="setting-label">Blackout Window</span>
+                      <span className="setting-desc">Optional daily no-run range in the schedule timezone</span>
+                    </div>
+                    <div className="inline-create-row">
+                      <input className="settings-input" value={scheduleDraft.blackout_start_time} onChange={(event) => setScheduleDraft(prev => ({ ...prev, blackout_start_time: event.target.value }))} placeholder="00:00" />
+                      <input className="settings-input" value={scheduleDraft.blackout_end_time} onChange={(event) => setScheduleDraft(prev => ({ ...prev, blackout_end_time: event.target.value }))} placeholder="06:00" />
+                    </div>
                   </div>
-                  <div className="inline-create-row">
-                    <input className="settings-input" value={scheduleDraft.blackout_start_time} onChange={(event) => setScheduleDraft(prev => ({ ...prev, blackout_start_time: event.target.value }))} placeholder="00:00" />
-                    <input className="settings-input" value={scheduleDraft.blackout_end_time} onChange={(event) => setScheduleDraft(prev => ({ ...prev, blackout_end_time: event.target.value }))} placeholder="06:00" />
+                  <div className="setting-row">
+                    <div className="setting-info">
+                      <span className="setting-label">Availability Window</span>
+                      <span className="setting-desc">Optional weekday allowed-run range in the schedule timezone</span>
+                    </div>
+                    <div className="inline-create-row">
+                      <input className="settings-input" value={scheduleDraft.availability_start_time} onChange={(event) => setScheduleDraft(prev => ({ ...prev, availability_start_time: event.target.value }))} placeholder="09:00" />
+                      <input className="settings-input" value={scheduleDraft.availability_end_time} onChange={(event) => setScheduleDraft(prev => ({ ...prev, availability_end_time: event.target.value }))} placeholder="17:00" />
+                    </div>
                   </div>
-                </div>
-                <div className="setting-row">
-                  <div className="setting-info">
-                    <span className="setting-label">Availability Window</span>
-                    <span className="setting-desc">Optional weekday allowed-run range in the schedule timezone</span>
-                  </div>
-                  <div className="inline-create-row">
-                    <input className="settings-input" value={scheduleDraft.availability_start_time} onChange={(event) => setScheduleDraft(prev => ({ ...prev, availability_start_time: event.target.value }))} placeholder="09:00" />
-                    <input className="settings-input" value={scheduleDraft.availability_end_time} onChange={(event) => setScheduleDraft(prev => ({ ...prev, availability_end_time: event.target.value }))} placeholder="17:00" />
-                  </div>
-                </div>
+                </details>
                 <label className="setting-row" style={{ alignItems: 'center', gap: 12 }}>
                   <input type="checkbox" checked={scheduleDraft.enabled} onChange={(event) => setScheduleDraft(prev => ({ ...prev, enabled: event.target.checked }))} />
                   <div className="setting-info">
@@ -532,7 +538,7 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
                     <span className="setting-desc">Disabled schedules stay saved but do not trigger</span>
                   </div>
                 </label>
-                <div className="inline-create-row">
+                <div className="new-test-form-actions">
                   <button className="btn btn-primary" onClick={submitSchedule} disabled={!scenario || scheduleSubmitting || !canManageTests}>{editingScheduleId ? 'Update Schedule' : 'Save Schedule'}</button>
                   {editingScheduleId && <button className="btn btn-secondary" onClick={() => { setEditingScheduleId(null); setScheduleDraft(buildDefaultScheduleDraft(scenario, releaseId)) }}>Cancel Edit</button>}
                 </div>

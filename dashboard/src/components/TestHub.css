@@ -321,6 +321,127 @@
   background: rgba(255, 255, 255, 0.02);
 }
 
+.scenario-builder {
+  gap: 14px;
+}
+
+.scenario-builder-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.scenario-builder-header .section-title {
+  margin-bottom: 4px;
+}
+
+.scenario-builder-progress {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.scenario-builder-progress span {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 5px 9px;
+  color: var(--text-muted);
+  background: var(--bg-card);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.scenario-builder-progress span.ready {
+  color: var(--success);
+  border-color: rgba(34, 197, 94, 0.28);
+  background: rgba(34, 197, 94, 0.08);
+}
+
+.scenario-builder-progress span.blocked {
+  color: var(--danger);
+  border-color: rgba(239, 68, 68, 0.28);
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.scenario-builder-card,
+.scenario-builder-disclosure {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-card);
+  overflow: hidden;
+}
+
+.scenario-builder-card-header {
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.scenario-builder-card-header h4 {
+  margin: 0 0 4px;
+  color: var(--text-primary);
+  font-size: 15px;
+}
+
+.scenario-builder-card-header p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.scenario-builder-disclosure summary {
+  cursor: pointer;
+  padding: 14px 18px;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.scenario-builder-disclosure[open] summary {
+  border-bottom: 1px solid var(--border);
+}
+
+.scenario-core-grid {
+  padding: 16px 18px;
+}
+
+.scenario-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.scenario-field > span {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.scenario-support-panel.compact {
+  margin-top: 0;
+  border: 0;
+  border-radius: 0;
+}
+
+.scenario-builder-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 0 0;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0), var(--bg-primary) 26%);
+}
+
 .scenario-browser-panel {
   display: flex;
   flex-direction: column;
