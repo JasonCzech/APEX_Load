@@ -30,7 +30,33 @@ The matrix covers:
 
 ## Health Inputs
 
-Future P3.3 scoring should normalize these inputs instead of creating source-specific scoring paths:
+Validation responses now include `authoring_health`:
+
+```json
+{
+  "authoring_health": {
+    "score": 90,
+    "status": "ready",
+    "inputs": [
+      {
+        "key": "validation_issues",
+        "status": "pass",
+        "summary": "Script validation passed."
+      }
+    ]
+  }
+}
+```
+
+The shared status values are:
+
+| Status | Meaning |
+| --- | --- |
+| `ready` | Draft can proceed through replay/save with no blocking health inputs. |
+| `needs_review` | Draft is structurally usable but has warnings or parity gaps that should be reviewed. |
+| `blocked` | Draft has validation blockers or a health score below the promotion threshold. |
+
+P3.3 scoring normalizes these inputs instead of creating source-specific scoring paths:
 
 - Validation issues
 - Runtime parity
@@ -45,3 +71,4 @@ Future P3.3 scoring should normalize these inputs instead of creating source-spe
 | --- | --- | --- |
 | P3.1 Generic authoring contract | Complete for API contract | `GET /api/v1/scripts/authoring/capabilities` |
 | P3.2 Source capability matrix | Complete for backend matrix | `sources` and `source_map` in the authoring capabilities response |
+| P3.3 Draft health scoring | Complete for validation response scoring; dashboard badges remain future work | `authoring_health` in script validation responses |

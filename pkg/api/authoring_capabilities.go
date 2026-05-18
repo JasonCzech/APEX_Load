@@ -1,5 +1,7 @@
 package api
 
+import "github.com/jasonczech/stormrunner/pkg/convert/loadrunner"
+
 type AuthoringCapabilityResponse struct {
 	ContractVersion string                       `json:"contract_version"`
 	DraftLifecycle  []string                     `json:"draft_lifecycle"`
@@ -30,6 +32,71 @@ type AuthoringFeatures struct {
 	ScenarioDraft         bool `json:"scenario_draft"`
 	Provenance            bool `json:"provenance"`
 	ApprovalGateCandidate bool `json:"approval_gate_candidate"`
+}
+
+type AuthoringHealth struct {
+	Score  int                   `json:"score"`
+	Status string                `json:"status"`
+	Inputs []AuthoringHealthItem `json:"inputs"`
+}
+
+type AuthoringHealthItem struct {
+	Key     string `json:"key"`
+	Status  string `json:"status"`
+	Count   int    `json:"count,omitempty"`
+	Summary string `json:"summary"`
+}
+
+func buildAuthoringHealth(issues []string, warnings []string, parityCounts map[string]int, scriptHasProvenance bool) AuthoringHealth {
+	score := 100
+	inputs := []AuthoringHealthItem{
+		{Key: "validation_issues", Status: "pass", Count: len(issues), Summary: "Script validation passed."},
+		{Key: "warnings", Status: "pass", Count: len(warnings), Summary: "No validation warnings."},
+		{Key: "runtime_parity", Status: "pass", Summary: "No runtime parity blockers were detected."},
+		{Key: "replay_readiness", Status: "pass", Summary: "Draft is structurally ready for replay."},
+		{Key: "provenance", Status: "info", Summary: "No source provenance is required for manually authored drafts."},
+	}
+	if len(issues) > 0 {
+		score -= 45
+		inputs[0] = AuthoringHealthItem{Key: "validation_issues", Status: "blocker", Count: len(issues), Summary: "Script has validation issues that block save or replay."}
+		inputs[3] = AuthoringHealthItem{Key: "replay_readiness", Status: "blocker", Summary: "Replay should wait until validation blockers are fixed."}
+	}
+	if len(warnings) > 0 {
+		score -= minInt(15, len(warnings)*5)
+		inputs[1] = AuthoringHealthItem{Key: "warnings", Status: "warning", Count: len(warnings), Summary: "Validation warnings need review before promotion."}
+	}
+	parityPenalty := runtimeParityHealthPenalty(parityCounts)
+	if parityPenalty > 0 {
+		score -= parityPenalty
+		inputs[2] = AuthoringHealthItem{Key: "runtime_parity", Status: "warning", Count: parityPenalty, Summary: "Runtime parity has partial, compatibility-only, or blocked settings."}
+	}
+	if scriptHasProvenance {
+		inputs[4] = AuthoringHealthItem{Key: "provenance", Status: "pass", Summary: "Source provenance is attached to the draft."}
+	}
+	if score < 0 {
+		score = 0
+	}
+	status := "ready"
+	if score < 60 || len(issues) > 0 {
+		status = "blocked"
+	} else if score < 85 || len(warnings) > 0 || parityPenalty > 0 {
+		status = "needs_review"
+	}
+	return AuthoringHealth{Score: score, Status: status, Inputs: inputs}
+}
+
+func runtimeParityHealthPenalty(counts map[string]int) int {
+	if len(counts) == 0 {
+		return 0
+	}
+	penalty := 0
+	penalty += counts[string(loadrunner.RuntimeSettingStatusBlocked)] * 20
+	penalty += counts[string(loadrunner.RuntimeSettingStatusPartial)] * 5
+	penalty += counts[string(loadrunner.RuntimeSettingStatusCompatibilityOnly)] * 8
+	if penalty > 30 {
+		return 30
+	}
+	return penalty
 }
 
 func authoringCapabilityResponse() AuthoringCapabilityResponse {

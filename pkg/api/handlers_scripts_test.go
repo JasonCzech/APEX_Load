@@ -172,14 +172,18 @@ func TestHandleCreateAndUpdateScriptPreservesExtendedRTSSettings(t *testing.T) {
 	}
 
 	var validatePayload struct {
-		Valid  bool     `json:"valid"`
-		Issues []string `json:"issues"`
+		Valid           bool            `json:"valid"`
+		Issues          []string        `json:"issues"`
+		AuthoringHealth AuthoringHealth `json:"authoring_health"`
 	}
 	if err := json.Unmarshal(validateResp.Body.Bytes(), &validatePayload); err != nil {
 		t.Fatalf("json.Unmarshal(validate) returned error: %v", err)
 	}
 	if !validatePayload.Valid || len(validatePayload.Issues) != 0 {
 		t.Fatalf("validate payload = %#v, want valid script with no issues", validatePayload)
+	}
+	if validatePayload.AuthoringHealth.Status != "needs_review" || validatePayload.AuthoringHealth.Score < 60 {
+		t.Fatalf("authoring health = %#v, want reviewable score", validatePayload.AuthoringHealth)
 	}
 
 	updatedScript := *created.Script
@@ -1822,6 +1826,32 @@ func TestAuthoringCapabilitiesEndpoint(t *testing.T) {
 	}
 	if !aiGenerated.Provenance || !aiGenerated.ApprovalGateCandidate {
 		t.Fatalf("ai generated features = %#v, want provenance and approval gate candidate", aiGenerated)
+	}
+}
+
+func TestDraftValidationReturnsBlockedAuthoringHealth(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	body := []byte(`{"script":{"name":"","version":"1.0.0","protocol":"http","actions":[]}}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/validate", bytes.NewReader(body))
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var payload scriptValidationResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if payload.Valid {
+		t.Fatal("expected invalid draft")
+	}
+	if payload.AuthoringHealth.Status != "blocked" {
+		t.Fatalf("authoring health status = %q, want blocked", payload.AuthoringHealth.Status)
+	}
+	if payload.AuthoringHealth.Score >= 60 {
+		t.Fatalf("authoring health score = %d, want below 60", payload.AuthoringHealth.Score)
 	}
 }
 
