@@ -122,6 +122,34 @@ func TestCreateTestRequestFromScenarioPreservesStages(t *testing.T) {
 	}
 }
 
+func TestValidateScenarioLoadModelReportsRendezvousReadiness(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	server.runner.StoreScript(&dsl.Script{
+		ID:       "script-rendezvous-validate",
+		Name:     "Rendezvous Checkout",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Actions: []dsl.Action{
+			{Name: "Sync buyers", Type: "rendezvous", Params: map[string]any{"count": 5, "timeout_ms": 1000}},
+			{Name: "Checkout", Type: "request", Target: "/checkout"},
+		},
+	})
+
+	report, err := server.runner.ValidateScenarioLoadModel(CreateScenarioRequest{
+		Name:     "Rendezvous Spike",
+		Duration: "2m",
+		Groups: []CreateGroupEntry{{
+			Name:     "buyers",
+			ScriptID: "script-rendezvous-validate",
+			VUsers:   5,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("ValidateScenarioLoadModel returned error: %v", err)
+	}
+	assertLoadModelValidationItem(t, report.Items, "rendezvous", "ready")
+}
+
 func assertLoadModelValidationItem(t *testing.T, items []LoadModelValidationItem, dimension string, status string) {
 	t.Helper()
 	for _, item := range items {

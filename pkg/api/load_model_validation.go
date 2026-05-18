@@ -50,6 +50,7 @@ func (tr *TestRunner) ValidateScenarioLoadModel(req CreateScenarioRequest) (*Loa
 	}
 
 	report.Items = append(report.Items, validateModeledDemand(preview.Groups)...)
+	report.Items = append(report.Items, validateRendezvousDemand(preview.Groups)...)
 	report.Items = append(report.Items, validateCapacityAdvisory(preview.CapacityAdvisory)...)
 	report.Items = append(report.Items, validateBrowserCanaryDemand(preview.CapacityAdvisory)...)
 	report.Items = append(report.Items, validateAssignmentPlacement(preview, recommendation)...)
@@ -110,6 +111,32 @@ func validateModeledDemand(groups []TestGroup) []LoadModelValidationItem {
 			Summary:      summary,
 			TargetVUsers: maxStageVUsers,
 			TargetTPS:    roundCapacityValue(maxStageTPS),
+		})
+	}
+	return items
+}
+
+func validateRendezvousDemand(groups []TestGroup) []LoadModelValidationItem {
+	items := make([]LoadModelValidationItem, 0)
+	for _, group := range groups {
+		if group.script == nil {
+			continue
+		}
+		count := 0
+		for _, action := range group.script.Actions {
+			if strings.EqualFold(strings.TrimSpace(action.Type), "rendezvous") {
+				count++
+			}
+		}
+		if count == 0 {
+			continue
+		}
+		items = append(items, LoadModelValidationItem{
+			Dimension:    "rendezvous",
+			Group:        group.Name,
+			Status:       "ready",
+			Summary:      fmt.Sprintf("Script contains %d rendezvous point%s for synchronized VUser release.", count, pluralSuffix(count)),
+			TargetVUsers: group.VUsers,
 		})
 	}
 	return items
