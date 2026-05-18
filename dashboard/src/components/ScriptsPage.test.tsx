@@ -153,6 +153,13 @@ describe('ScriptsPage', () => {
           associated_releases: [],
           scenario_run_releases: [],
           last_run_at: '',
+          authoring_health: {
+            score: 72,
+            status: 'needs_review',
+            inputs: [
+              { key: 'warnings', status: 'warning', count: 1, summary: 'Validation warnings need review before promotion.' },
+            ],
+          },
         },
       ],
     })
@@ -180,6 +187,7 @@ describe('ScriptsPage', () => {
 
     expect(container.textContent).toContain('Scripts')
     expect(container.textContent).toContain('Existing Script')
+    expect(container.textContent).toContain('Needs Review · 72')
 
     const createButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('+ Create Script'))
     expect(createButton).toBeDefined()

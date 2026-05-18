@@ -1,6 +1,9 @@
 package api
 
-import "github.com/jasonczech/stormrunner/pkg/convert/loadrunner"
+import (
+	"github.com/jasonczech/stormrunner/pkg/convert/loadrunner"
+	"github.com/jasonczech/stormrunner/pkg/dsl"
+)
 
 type AuthoringCapabilityResponse struct {
 	ContractVersion string                       `json:"contract_version"`
@@ -45,6 +48,14 @@ type AuthoringHealthItem struct {
 	Status  string `json:"status"`
 	Count   int    `json:"count,omitempty"`
 	Summary string `json:"summary"`
+}
+
+func buildStoredScriptAuthoringHealth(script *dsl.Script) *AuthoringHealth {
+	if script == nil {
+		return nil
+	}
+	health := buildScriptValidationResponse(script.ID, script).AuthoringHealth
+	return &health
 }
 
 func buildAuthoringHealth(issues []string, warnings []string, parityCounts map[string]int, dataSourceFit *DataSourceFitReport, aiGuardrails *AIGuardrailReport, scriptHasProvenance bool) AuthoringHealth {

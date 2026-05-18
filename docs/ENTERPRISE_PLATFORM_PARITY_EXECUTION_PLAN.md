@@ -317,7 +317,7 @@ Before calling platform parity complete:
 
 1. Controller HA and scheduler ownership are documented, tested, and restart-safe.
 2. Generator fleet placement can explain capacity, protocol, version, drain, and regional decisions.
-3. Script authoring health scoring is source-agnostic and enforced before save/run.
+3. Script authoring health scoring is source-agnostic, returned on stored script summaries, surfaced as dashboard list badges, and enforced before save/run.
 4. Closed, open, staged, goal-based, and rendezvous workload models have validation and reporting coverage.
 5. Live telemetry SLA budgets are enforced and archived.
 6. Historical reports include provenance, completeness scoring, baseline policy, and trend analytics.

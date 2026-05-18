@@ -1041,7 +1041,21 @@ export interface StoredScript {
   associated_releases?: ReleaseRef[]
   scenario_run_releases?: ReleaseRef[]
   last_run_at?: string
+  authoring_health?: AuthoringHealth
   script?: ScriptDefinition
+}
+
+export interface AuthoringHealth {
+  score: number
+  status: 'healthy' | 'needs_review' | 'blocked' | string
+  inputs: AuthoringHealthInput[]
+}
+
+export interface AuthoringHealthInput {
+  key: string
+  status: 'pass' | 'info' | 'warning' | 'blocker' | string
+  count?: number
+  summary: string
 }
 
 export interface StoredScenario {

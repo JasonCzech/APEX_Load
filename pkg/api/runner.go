@@ -500,18 +500,19 @@ type GroupLiveMetrics struct {
 }
 
 type StoredScript struct {
-	ID                  string       `json:"id"`
-	Name                string       `json:"name"`
-	Protocol            string       `json:"protocol"`
-	Version             string       `json:"version"`
-	ProjectID           string       `json:"project_id,omitempty"`
-	FolderID            *string      `json:"folder_id,omitempty"`
-	CreatedAt           time.Time    `json:"created_at"`
-	ScenarioCount       int          `json:"scenario_count,omitempty"`
-	AssociatedReleases  []ReleaseRef `json:"associated_releases,omitempty"`
-	ScenarioRunReleases []ReleaseRef `json:"scenario_run_releases,omitempty"`
-	LastRunAt           *time.Time   `json:"last_run_at,omitempty"`
-	Script              *dsl.Script  `json:"script"`
+	ID                  string           `json:"id"`
+	Name                string           `json:"name"`
+	Protocol            string           `json:"protocol"`
+	Version             string           `json:"version"`
+	ProjectID           string           `json:"project_id,omitempty"`
+	FolderID            *string          `json:"folder_id,omitempty"`
+	CreatedAt           time.Time        `json:"created_at"`
+	ScenarioCount       int              `json:"scenario_count,omitempty"`
+	AssociatedReleases  []ReleaseRef     `json:"associated_releases,omitempty"`
+	ScenarioRunReleases []ReleaseRef     `json:"scenario_run_releases,omitempty"`
+	LastRunAt           *time.Time       `json:"last_run_at,omitempty"`
+	AuthoringHealth     *AuthoringHealth `json:"authoring_health,omitempty"`
+	Script              *dsl.Script      `json:"script"`
 }
 
 type StoredScenario struct {
@@ -665,14 +666,15 @@ func (tr *TestRunner) loadStoredScripts() {
 	}
 	for _, script := range scripts {
 		tr.scripts[script.ID] = &StoredScript{
-			ID:        script.ID,
-			Name:      script.Name,
-			Protocol:  script.Protocol,
-			Version:   script.Version,
-			ProjectID: script.ProjectID,
-			FolderID:  script.FolderID,
-			CreatedAt: script.CreatedAt,
-			Script:    script,
+			ID:              script.ID,
+			Name:            script.Name,
+			Protocol:        script.Protocol,
+			Version:         script.Version,
+			ProjectID:       script.ProjectID,
+			FolderID:        script.FolderID,
+			CreatedAt:       script.CreatedAt,
+			AuthoringHealth: buildStoredScriptAuthoringHealth(script),
+			Script:          script,
 		}
 	}
 }
@@ -985,14 +987,15 @@ func (tr *TestRunner) StoreScript(script *dsl.Script) *StoredScript {
 	script.ProjectID = normalizeProjectID(script.ProjectID)
 
 	stored := &StoredScript{
-		ID:        script.ID,
-		Name:      script.Name,
-		Protocol:  script.Protocol,
-		Version:   script.Version,
-		ProjectID: script.ProjectID,
-		FolderID:  script.FolderID,
-		CreatedAt: time.Now(),
-		Script:    script,
+		ID:              script.ID,
+		Name:            script.Name,
+		Protocol:        script.Protocol,
+		Version:         script.Version,
+		ProjectID:       script.ProjectID,
+		FolderID:        script.FolderID,
+		CreatedAt:       time.Now(),
+		AuthoringHealth: buildStoredScriptAuthoringHealth(script),
+		Script:          script,
 	}
 
 	tr.saveStoredScript(script)
@@ -1098,6 +1101,7 @@ func (tr *TestRunner) UpdateScript(id string, script *dsl.Script) (*StoredScript
 	}
 	existing.ProjectID = script.ProjectID
 	existing.FolderID = script.FolderID
+	existing.AuthoringHealth = buildStoredScriptAuthoringHealth(script)
 	existing.Script = script
 	tr.saveStoredScript(script)
 	return existing, true

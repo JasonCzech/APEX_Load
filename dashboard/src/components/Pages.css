@@ -550,6 +550,21 @@
   text-transform: uppercase;
 }
 
+.protocol-badge.healthy {
+  background: rgba(16, 185, 129, 0.14);
+  color: var(--success);
+}
+
+.protocol-badge.warning {
+  background: rgba(245, 158, 11, 0.14);
+  color: var(--warning);
+}
+
+.protocol-badge.danger {
+  background: rgba(239, 68, 68, 0.14);
+  color: var(--danger);
+}
+
 .text-success { color: var(--success); }
 .text-danger { color: var(--danger); }
 .text-muted { color: var(--text-muted); }

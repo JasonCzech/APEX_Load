@@ -51,9 +51,9 @@ func buildParityStatus(now time.Time) ParityStatusResponse {
 			ID:          "authoring",
 			Name:        "Authoring UX",
 			Status:      "partial",
-			Summary:     "Imports, validation, replay evidence, templates, runtime parity scoring, and migration guardrails are implemented across backend and dashboard slices.",
+			Summary:     "Imports, validation, replay evidence, templates, runtime parity scoring, migration guardrails, and list-level authoring health badges are implemented across backend and dashboard slices.",
 			Evidence:    []string{"/api/v1/scripts/import/loadrunner", "/api/v1/scripts/{id}/validate"},
-			Remaining:   []string{"Finish list-level dashboard health badges for all authoring assets."},
+			Remaining:   []string{"Complete final authoring benchmark evidence."},
 			ReleaseGate: true,
 		},
 		{

@@ -154,6 +154,9 @@ func TestHandleCreateAndUpdateScriptPreservesExtendedRTSSettings(t *testing.T) {
 	if created.Script == nil {
 		t.Fatal("created script = nil")
 	}
+	if created.AuthoringHealth == nil || created.AuthoringHealth.Status != "needs_review" {
+		t.Fatalf("created authoring health = %#v, want needs_review", created.AuthoringHealth)
+	}
 	if !reflect.DeepEqual(created.Script.Config.WebRuntime, script.Config.WebRuntime) {
 		t.Fatalf("created web_runtime = %#v, want %#v", created.Script.Config.WebRuntime, script.Config.WebRuntime)
 	}
@@ -223,6 +226,9 @@ func TestHandleCreateAndUpdateScriptPreservesExtendedRTSSettings(t *testing.T) {
 	}
 	if updated.Script == nil {
 		t.Fatal("updated script = nil")
+	}
+	if updated.AuthoringHealth == nil || updated.AuthoringHealth.Status != "needs_review" {
+		t.Fatalf("updated authoring health = %#v, want needs_review", updated.AuthoringHealth)
 	}
 	if updated.Script.Config.Browser.DownloadResources != "none" {
 		t.Fatalf("updated download_resources = %q, want none", updated.Script.Config.Browser.DownloadResources)
