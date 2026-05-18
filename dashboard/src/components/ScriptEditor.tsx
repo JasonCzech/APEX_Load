@@ -2246,7 +2246,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
 
   const scanForAutoParameters = () => {
     const candidates = buildAutoParameterCandidates(script)
-    setOpenSections(prev => ({ ...prev, config: true }))
+    setIsParameterDialogOpen(true)
     setParameterCandidates(candidates)
     if (candidates.length === 0) {
       setSuccess('No strong parameterization candidates were detected.')
@@ -2479,54 +2479,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                 {isJavaHttpScript && (
                   <div className="parameter-empty-state" style={{ marginTop: 12 }}>
                     Java-over-HTTP scripts reuse the HTTP transport client, support embedded or sidecar helper modes, and currently ship with the `java_serialized_object_base64` codec where request bodies are base64-encoded serialized bytes.
-                  </div>
-                )}
-                <div className="auto-parameter-toolbar">
-                  <button className="btn btn-sm btn-ghost" onClick={scanForAutoParameters}>Auto Parameterization</button>
-                  <span className="cell-muted">Scans targets, headers, and body fields for likely parameter candidates.</span>
-                </div>
-                {parameterCandidates.length > 0 && (
-                  <div className="auto-parameter-panel">
-                    <div className="auto-parameter-header">
-                      <h4>Review Candidates</h4>
-                      <button className="btn btn-sm btn-accent" onClick={applyAutoParameterization}>Apply Selected</button>
-                    </div>
-                    <div className="auto-parameter-table-wrap">
-                      <table className="auto-parameter-table">
-                        <thead>
-                          <tr>
-                            <th>Use</th>
-                            <th>Field Hint</th>
-                            <th>Current Value</th>
-                            <th>Variable Name</th>
-                            <th>Hits</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {parameterCandidates.map(candidate => (
-                            <tr key={candidate.id}>
-                              <td>
-                                <input
-                                  type="checkbox"
-                                  checked={candidate.selected}
-                                  onChange={e => updateCandidate(candidate.id, { selected: e.target.checked })}
-                                />
-                              </td>
-                              <td className="cell-mono">{candidate.keyHint}</td>
-                              <td className="cell-mono">{candidate.value}</td>
-                              <td>
-                                <input
-                                  value={candidate.varName}
-                                  onChange={e => updateCandidate(candidate.id, { varName: sanitizeVarName(e.target.value) })}
-                                  placeholder="parameter_name"
-                                />
-                              </td>
-                              <td>{candidate.occurrences.length}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
                   </div>
                 )}
               </div>
@@ -4540,6 +4492,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
               onApplyDedupeHeaders={applyDedupeHeaders}
               onApplyFillHeaders={applyFillHeaders}
               onApplyNormalizeRows={applyNormalizeRows}
+              onApplyAutoParameterization={applyAutoParameterization}
               onApplyPendingParameterDraft={applyPendingParameterDraft}
               onAutoFixDataSource={autoFixDataSource}
               onClearPendingParameterDraft={clearPendingParameterDraft}
@@ -4558,10 +4511,13 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
               onUpdateDataColumnName={updateDataColumnName}
               onUpdateDataSource={updateDataSource}
               onUpdateParameter={updateParameter}
+              onUpdateParameterCandidate={updateCandidate}
               onUpdateParameterDraftName={updatePendingParameterDraftName}
               onUpdateParameterDraftValue={updatePendingParameterDraftValue}
               onUpdateParameterType={updateParameterType}
+              onScanForAutoParameters={scanForAutoParameters}
               openDataEditor={openDataEditor}
+              parameterCandidates={parameterCandidates}
               pendingParameterDraft={pendingParameterDraft}
               script={script}
             />
@@ -4648,6 +4604,7 @@ interface ParameterDataDialogProps {
   onApplyDedupeHeaders: (idx: number) => void
   onApplyFillHeaders: (idx: number) => void
   onApplyNormalizeRows: (idx: number) => void
+  onApplyAutoParameterization: () => void
   onApplyPendingParameterDraft: () => void
   onAutoFixDataSource: (idx: number) => void
   onClearPendingParameterDraft: () => void
@@ -4666,10 +4623,13 @@ interface ParameterDataDialogProps {
   onUpdateDataColumnName: (idx: number, colIdx: number, value: string) => void
   onUpdateDataSource: (idx: number, field: keyof DataSourceConfig, value: unknown, trackHistory?: boolean) => void
   onUpdateParameter: (idx: number, field: keyof ParameterConfig, value: unknown) => void
+  onUpdateParameterCandidate: (id: string, patch: Partial<ParameterCandidate>) => void
   onUpdateParameterDraftName: (value: string) => void
   onUpdateParameterDraftValue: (value: string) => void
   onUpdateParameterType: (idx: number, nextType: string) => void
+  onScanForAutoParameters: () => void
   openDataEditor: number | null
+  parameterCandidates: ParameterCandidate[]
   pendingParameterDraft: ActionEditorParameterDraft | null
   script: ScriptData
 }
@@ -4684,6 +4644,7 @@ function ParameterDataDialog({
   onApplyDedupeHeaders,
   onApplyFillHeaders,
   onApplyNormalizeRows,
+  onApplyAutoParameterization,
   onApplyPendingParameterDraft,
   onAutoFixDataSource,
   onClearPendingParameterDraft,
@@ -4702,10 +4663,13 @@ function ParameterDataDialog({
   onUpdateDataColumnName,
   onUpdateDataSource,
   onUpdateParameter,
+  onUpdateParameterCandidate,
   onUpdateParameterDraftName,
   onUpdateParameterDraftValue,
   onUpdateParameterType,
+  onScanForAutoParameters,
   openDataEditor,
+  parameterCandidates,
   pendingParameterDraft,
   script,
 }: ParameterDataDialogProps) {
@@ -4735,6 +4699,12 @@ function ParameterDataDialog({
               onUpdateParameterDraftValue={onUpdateParameterDraftValue}
             />
           )}
+          <AutoParameterizationSection
+            onApplyAutoParameterization={onApplyAutoParameterization}
+            onScanForAutoParameters={onScanForAutoParameters}
+            onUpdateParameterCandidate={onUpdateParameterCandidate}
+            parameterCandidates={parameterCandidates}
+          />
           <ParameterDefinitionsSection
             onAddParameter={onAddParameter}
             onRemoveParameter={onRemoveParameter}
@@ -4823,6 +4793,76 @@ function ParameterDraftPanel({
           Cancel
         </button>
       </div>
+    </div>
+  )
+}
+
+interface AutoParameterizationSectionProps {
+  onApplyAutoParameterization: () => void
+  onScanForAutoParameters: () => void
+  onUpdateParameterCandidate: (id: string, patch: Partial<ParameterCandidate>) => void
+  parameterCandidates: ParameterCandidate[]
+}
+
+function AutoParameterizationSection({
+  onApplyAutoParameterization,
+  onScanForAutoParameters,
+  onUpdateParameterCandidate,
+  parameterCandidates,
+}: AutoParameterizationSectionProps) {
+  return (
+    <div className="auto-parameter-section">
+      <div className="panel-title-row" style={{ marginBottom: 0 }}>
+        <div>
+          <strong style={{ display: 'block', marginBottom: 4 }}>Auto Parameterization</strong>
+          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Scan targets, headers, and body fields for values that can become reusable parameter data.</span>
+        </div>
+        <button className="btn btn-sm btn-ghost" onClick={onScanForAutoParameters}>Auto Parameterization</button>
+      </div>
+      {parameterCandidates.length > 0 && (
+        <div className="auto-parameter-panel">
+          <div className="auto-parameter-header">
+            <h4>Review Candidates</h4>
+            <button className="btn btn-sm btn-accent" onClick={onApplyAutoParameterization}>Apply Selected</button>
+          </div>
+          <div className="auto-parameter-table-wrap">
+            <table className="auto-parameter-table">
+              <thead>
+                <tr>
+                  <th>Use</th>
+                  <th>Field Hint</th>
+                  <th>Current Value</th>
+                  <th>Variable Name</th>
+                  <th>Hits</th>
+                </tr>
+              </thead>
+              <tbody>
+                {parameterCandidates.map(candidate => (
+                  <tr key={candidate.id}>
+                    <td>
+                      <input
+                        type="checkbox"
+                        checked={candidate.selected}
+                        onChange={e => onUpdateParameterCandidate(candidate.id, { selected: e.target.checked })}
+                      />
+                    </td>
+                    <td className="cell-mono">{candidate.keyHint}</td>
+                    <td className="cell-mono">{candidate.value}</td>
+                    <td>
+                      <input
+                        value={candidate.varName}
+                        onChange={e => onUpdateParameterCandidate(candidate.id, { varName: sanitizeVarName(e.target.value) })}
+                        placeholder="parameter_name"
+                      />
+                    </td>
+                    <td>{candidate.occurrences.length}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

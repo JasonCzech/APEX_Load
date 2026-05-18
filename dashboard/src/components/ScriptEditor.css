@@ -623,11 +623,13 @@
   transition: border-color 0.15s;
 }
 .form-grid input:focus, .form-grid select:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(99,102,241,0.12); }
-.auto-parameter-toolbar {
-  margin-top: 14px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
+.auto-parameter-section {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid rgba(99, 102, 241, 0.18);
+  border-radius: 10px;
+  background: rgba(99, 102, 241, 0.04);
 }
 .auto-parameter-panel {
   margin-top: 12px;

@@ -315,8 +315,58 @@ describe('ScriptEditor', () => {
     })
 
     expect(container.querySelector('.parameter-data-dialog')).not.toBeNull()
+    expect(container.textContent).toContain('Auto Parameterization')
     expect(container.textContent).toContain('Named Parameters')
     expect(container.textContent).toContain('session_id')
+  })
+
+  it('runs auto parameterization from the parameter data dialog', async () => {
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={initialScript} />)
+    })
+
+    const parameterButton = Array.from(container.querySelectorAll('button')).find(button =>
+      button.textContent?.includes('Parameter Data'),
+    )
+    expect(parameterButton).toBeDefined()
+    if (!parameterButton) {
+      return
+    }
+
+    await act(async () => {
+      parameterButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const autoButton = Array.from(container.querySelectorAll('button')).find(button =>
+      button.textContent?.trim() === 'Auto Parameterization',
+    )
+    expect(autoButton).toBeDefined()
+    if (!autoButton) {
+      return
+    }
+
+    await act(async () => {
+      autoButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.textContent).toContain('Review Candidates')
+    expect(container.textContent).toContain('username')
+    expect(container.textContent).toContain('demo')
+
+    const applyButton = Array.from(container.querySelectorAll('button')).find(button =>
+      button.textContent?.trim() === 'Apply Selected',
+    )
+    expect(applyButton).toBeDefined()
+    if (!applyButton) {
+      return
+    }
+
+    await act(async () => {
+      applyButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.textContent).toContain('Applied auto-parameterization for 1 candidate.')
+    expect(container.textContent).toContain('auto_params')
   })
 
   it('renders jitter and packet loss inputs for network emulation', async () => {
