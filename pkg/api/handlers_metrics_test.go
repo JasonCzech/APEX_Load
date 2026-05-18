@@ -21,7 +21,9 @@ func TestHandlePrometheusMetricsExportsControllerState(t *testing.T) {
 	}
 	completedAt := time.Date(2026, time.May, 16, 12, 0, 0, 0, time.UTC)
 	server.runner.tests["complete"] = &ManagedTest{ID: "complete", Name: "Checkout", Status: "COMPLETE", CreatedAt: completedAt.Add(-time.Minute), EndedAt: &completedAt}
-	server.runner.tests["running"] = &ManagedTest{ID: "running", Name: "Checkout", Status: "RUNNING", CreatedAt: completedAt}
+	server.runner.tests["running"] = &ManagedTest{ID: "running", Name: "Checkout", Status: "RUNNING", CreatedAt: completedAt, TotalVUsers: 12, Groups: []TestGroup{{Name: "buyers", Protocol: "http", VUsers: 12}}}
+	server.runner.tests["pending"] = &ManagedTest{ID: "pending", Name: "API", Status: "PENDING", CreatedAt: completedAt, TotalVUsers: 8, Groups: []TestGroup{{Name: "api", Protocol: "grpc", VUsers: 8}}}
+	server.runner.tests["queued"] = &ManagedTest{ID: "queued", Name: "Browse", Status: "QUEUED", CreatedAt: completedAt, TotalVUsers: 5, Groups: []TestGroup{{Name: "browse", Protocol: "http", VUsers: 5}}}
 	server.runner.tests["failed"] = &ManagedTest{ID: "failed", Name: "Checkout", Status: "FAILED", CreatedAt: completedAt.Add(time.Minute), EndedAt: &completedAt}
 
 	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
@@ -38,10 +40,19 @@ func TestHandlePrometheusMetricsExportsControllerState(t *testing.T) {
 	checks := []string{
 		"stormrunner_up 1",
 		"stormrunner_websocket_clients 0",
-		"stormrunner_test_count 3",
+		"stormrunner_test_count 5",
 		"stormrunner_tests_by_status{status=\"COMPLETE\"} 1",
 		"stormrunner_tests_by_status{status=\"RUNNING\"} 1",
+		"stormrunner_tests_by_status{status=\"PENDING\"} 1",
+		"stormrunner_tests_by_status{status=\"QUEUED\"} 1",
 		"stormrunner_tests_by_status{status=\"FAILED\"} 1",
+		"stormrunner_scaling_vusers{state=\"queued\"} 13",
+		"stormrunner_scaling_vusers{state=\"active\"} 12",
+		"stormrunner_scaling_tests{state=\"queued\"} 2",
+		"stormrunner_scaling_tests{state=\"active\"} 1",
+		"stormrunner_scaling_protocol_vusers{state=\"queued\",protocol=\"grpc\"} 8",
+		"stormrunner_scaling_protocol_vusers{state=\"queued\",protocol=\"http\"} 5",
+		"stormrunner_scaling_protocol_vusers{state=\"active\",protocol=\"http\"} 12",
 		"stormrunner_capacity_available_generators{scope=\"configured\"} 5",
 		"stormrunner_capacity_available_generators{scope=\"effective\"} 3",
 		"stormrunner_capacity_available_generators{scope=\"live\"} 3",

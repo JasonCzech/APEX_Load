@@ -499,6 +499,7 @@ func (s *Server) handlePrometheusMetrics(w http.ResponseWriter, r *http.Request)
 	availability := resolveCapacityAvailability(settings)
 	tests := s.runner.ListTests()
 	regionStats := s.generatorRegionStats(r.Context())
+	scalingStats := scalingSignalStats(tests)
 	statusCounts := make(map[string]int)
 	for _, test := range tests {
 		if test == nil || strings.TrimSpace(test.Status) == "" {
@@ -523,6 +524,18 @@ func (s *Server) handlePrometheusMetrics(w http.ResponseWriter, r *http.Request)
 	for status, count := range statusCounts {
 		fmt.Fprintf(&body, "stormrunner_tests_by_status{status=%q} %d\n", status, count)
 	}
+	body.WriteString("# HELP stormrunner_scaling_vusers VUsers by autoscaling demand state.\n")
+	body.WriteString("# TYPE stormrunner_scaling_vusers gauge\n")
+	fmt.Fprintf(&body, "stormrunner_scaling_vusers{state=%q} %d\n", "queued", scalingStats.QueuedVUsers)
+	fmt.Fprintf(&body, "stormrunner_scaling_vusers{state=%q} %d\n", "active", scalingStats.ActiveVUsers)
+	body.WriteString("# HELP stormrunner_scaling_tests Tests by autoscaling demand state.\n")
+	body.WriteString("# TYPE stormrunner_scaling_tests gauge\n")
+	fmt.Fprintf(&body, "stormrunner_scaling_tests{state=%q} %d\n", "queued", scalingStats.QueuedTests)
+	fmt.Fprintf(&body, "stormrunner_scaling_tests{state=%q} %d\n", "active", scalingStats.ActiveTests)
+	body.WriteString("# HELP stormrunner_scaling_protocol_vusers VUsers by autoscaling demand state and protocol.\n")
+	body.WriteString("# TYPE stormrunner_scaling_protocol_vusers gauge\n")
+	writeScalingProtocolVUsers(&body, "queued", scalingStats.QueuedProtocolVUsers)
+	writeScalingProtocolVUsers(&body, "active", scalingStats.ActiveProtocolVUsers)
 	body.WriteString("# HELP stormrunner_capacity_available_generators Available generators from capacity planning.\n")
 	body.WriteString("# TYPE stormrunner_capacity_available_generators gauge\n")
 	fmt.Fprintf(&body, "stormrunner_capacity_available_generators{scope=%q} %d\n", "configured", availability.ConfiguredAvailableGenerators)
@@ -574,6 +587,55 @@ type generatorRegionStats struct {
 	CapacityStates      map[string]int
 	DrainStates         map[string]int
 	CompatibilityStates map[string]int
+}
+
+type scalingSignals struct {
+	QueuedTests          int
+	ActiveTests          int
+	QueuedVUsers         int
+	ActiveVUsers         int
+	QueuedProtocolVUsers map[string]int
+	ActiveProtocolVUsers map[string]int
+}
+
+func scalingSignalStats(tests []*ManagedTest) scalingSignals {
+	stats := scalingSignals{
+		QueuedProtocolVUsers: make(map[string]int),
+		ActiveProtocolVUsers: make(map[string]int),
+	}
+	for _, test := range tests {
+		if test == nil {
+			continue
+		}
+		switch test.Status {
+		case "QUEUED", "PENDING":
+			stats.QueuedTests++
+			stats.QueuedVUsers += test.TotalVUsers
+			addProtocolVUsers(stats.QueuedProtocolVUsers, test.Groups)
+		case "INITIALIZING", "RUNNING", "PAUSED":
+			stats.ActiveTests++
+			stats.ActiveVUsers += test.TotalVUsers
+			addProtocolVUsers(stats.ActiveProtocolVUsers, test.Groups)
+		}
+	}
+	return stats
+}
+
+func addProtocolVUsers(out map[string]int, groups []TestGroup) {
+	for _, group := range groups {
+		out[usageKey(group.Protocol, "unknown")] += group.VUsers
+	}
+}
+
+func writeScalingProtocolVUsers(body *strings.Builder, state string, protocolVUsers map[string]int) {
+	protocols := make([]string, 0, len(protocolVUsers))
+	for protocol := range protocolVUsers {
+		protocols = append(protocols, protocol)
+	}
+	sort.Strings(protocols)
+	for _, protocol := range protocols {
+		fmt.Fprintf(body, "stormrunner_scaling_protocol_vusers{state=%q,protocol=%q} %d\n", state, protocol, protocolVUsers[protocol])
+	}
 }
 
 func (s *Server) generatorRegionStats(ctx context.Context) map[string]generatorRegionStats {
