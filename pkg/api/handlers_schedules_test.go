@@ -139,6 +139,31 @@ func TestLoadModelSupportMatrixEndpoint(t *testing.T) {
 	}
 }
 
+func TestLoadModelTemplatesEndpointFiltersByShape(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/scenarios/load-models/templates?shape_id=open-arrival-rate", nil)
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var payload struct {
+		Templates []LoadModelTemplate `json:"templates"`
+		Count     int                 `json:"count"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if payload.Count != 1 || payload.Templates[0].ShapeID != "open-arrival-rate" {
+		t.Fatalf("payload = %#v, want one open-arrival-rate template", payload)
+	}
+	if payload.Templates[0].Scenario.GoalConfig == nil || payload.Templates[0].Scenario.GoalConfig.TargetAverageTPS == nil {
+		t.Fatalf("scenario = %#v, want throughput goal hints", payload.Templates[0].Scenario)
+	}
+}
+
 func containsLoadModelSupportEntry(entries []LoadModelSupportEntry, id string, status string) bool {
 	for _, entry := range entries {
 		if entry.ID == id && entry.Status == status {

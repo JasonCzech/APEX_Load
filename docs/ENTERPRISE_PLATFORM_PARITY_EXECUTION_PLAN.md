@@ -176,7 +176,7 @@ Stormrunner supports the workload models enterprise performance engineers expect
 | ID | Story | Size | Dependencies | Status |
 | --- | --- | --- | --- | --- |
 | P4.1 | Publish a code-owned load-model support matrix for closed, open, stepped, spike, soak, stress, goal-based, and mixed workloads | M | none | Complete for backend matrix |
-| P4.2 | Add reusable workload-shape templates in scenario authoring | M | P4.1 | Planned |
+| P4.2 | Add reusable workload-shape templates in scenario authoring | M | P4.1 | Complete for backend template catalog |
 | P4.3 | Add staged ramp segments with hold, ramp-up, ramp-down, and target throughput or VUser constraints per segment | L | P4.1 | Planned |
 | P4.4 | Add capacity validation that checks modeled arrivals, VUsers, browser canaries, data-pool rows, and generator placement before save/run | L | P2.1, P4.1 | Planned |
 

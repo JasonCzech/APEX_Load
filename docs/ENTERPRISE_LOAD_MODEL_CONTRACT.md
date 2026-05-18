@@ -10,6 +10,15 @@ This document tracks Workstream P4's shared workload-shape contract.
 - `status_counts`: count of entries by status
 - `notes`: status semantics for operator and dashboard display
 
+`GET /api/v1/scenarios/load-models/templates` returns reusable scenario-shape starters:
+
+- `templates`: scenario drafts with stable IDs, `shape_id`, default duration, group timing, VUser counts, and optional `goal_config`
+- `count`: number of returned templates
+
+Query parameters:
+
+- `shape_id`: optional exact filter matching a support-matrix ID, such as `closed-vuser`, `open-arrival-rate`, or `mixed-protocol`
+
 Status values:
 
 | Status | Meaning |
@@ -33,8 +42,18 @@ The first backend matrix covers:
 | Goal-based | Executed | Goal controller adjusts VUsers within guardrails. |
 | Mixed protocol | Executed | Scenario groups can reference different protocol scripts with density-aware capacity advice. |
 
+The first template catalog covers:
+
+| Template | Shape | Purpose |
+| --- | --- | --- |
+| CI API Smoke | Closed VUser | Pull-request or release-candidate smoke gates. |
+| Open API Arrival Rate | Open arrival-rate | Throughput-oriented API testing with goal guardrails. |
+| Rendezvous Spike | Rendezvous spike | Spike scenarios for scripts with rendezvous actions. |
+| Mixed HTTP Load With Browser Canary | Mixed protocol | Bulk HTTP load plus low-density browser UX canaries. |
+
 ## Plan Mapping
 
 | Plan item | Status | Artifact |
 | --- | --- | --- |
 | P4.1 Load-model support matrix | Complete for backend matrix | `GET /api/v1/scenarios/load-models/support-matrix` |
+| P4.2 Workload-shape templates | Complete for backend templates | `GET /api/v1/scenarios/load-models/templates` |

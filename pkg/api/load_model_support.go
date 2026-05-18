@@ -12,6 +12,31 @@ type LoadModelSupportEntry struct {
 	Notes            string   `json:"notes"`
 }
 
+type LoadModelTemplate struct {
+	ID          string                 `json:"id"`
+	Name        string                 `json:"name"`
+	ShapeID     string                 `json:"shape_id"`
+	Description string                 `json:"description"`
+	Scenario    LoadModelScenarioDraft `json:"scenario"`
+	Notes       []string               `json:"notes,omitempty"`
+}
+
+type LoadModelScenarioDraft struct {
+	ScenarioMode string                   `json:"scenario_mode,omitempty"`
+	Duration     string                   `json:"duration"`
+	GoalConfig   *GoalConfig              `json:"goal_config,omitempty"`
+	Groups       []LoadModelTemplateGroup `json:"groups"`
+}
+
+type LoadModelTemplateGroup struct {
+	Name       string `json:"name"`
+	VUsers     int    `json:"vusers"`
+	RampUp     string `json:"ramp_up,omitempty"`
+	RampDown   string `json:"ramp_down,omitempty"`
+	Iterations int    `json:"iterations,omitempty"`
+	StartDelay string `json:"start_delay,omitempty"`
+}
+
 func (s *Server) handleLoadModelSupportMatrix(w http.ResponseWriter, r *http.Request) {
 	matrix := loadModelSupportMatrix()
 	counts := map[string]int{}
@@ -27,6 +52,19 @@ func (s *Server) handleLoadModelSupportMatrix(w http.ResponseWriter, r *http.Req
 			"Planned means the shape is intentionally tracked but not yet represented as a first-class model.",
 		},
 	})
+}
+
+func (s *Server) handleLoadModelTemplates(w http.ResponseWriter, r *http.Request) {
+	shapeID := r.URL.Query().Get("shape_id")
+	templates := loadModelTemplates()
+	filtered := make([]LoadModelTemplate, 0, len(templates))
+	for _, template := range templates {
+		if shapeID != "" && template.ShapeID != shapeID {
+			continue
+		}
+		filtered = append(filtered, template)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"templates": filtered, "count": len(filtered)})
 }
 
 func loadModelSupportMatrix() []LoadModelSupportEntry {
@@ -102,6 +140,64 @@ func loadModelSupportMatrix() []LoadModelSupportEntry {
 			StormrunnerShape: "Scenario groups can reference different script protocols.",
 			Fields:           []string{"groups[].script_id", "groups[].vusers", "capacity_advisory.protocol_densities"},
 			Notes:            "Capacity advice already accounts for protocol-specific density envelopes.",
+		},
+	}
+}
+
+func loadModelTemplates() []LoadModelTemplate {
+	targetTPS := 25.0
+	minVUsers := 5
+	maxVUsers := 50
+	p95 := 800.0
+	maxErrorPct := 1.0
+	return []LoadModelTemplate{
+		{
+			ID:          "ci-api-smoke-closed",
+			Name:        "CI API Smoke",
+			ShapeID:     "closed-vuser",
+			Description: "Small closed-model smoke run suitable for pull-request or release-candidate gates.",
+			Scenario: LoadModelScenarioDraft{
+				Duration: "3m",
+				Groups:   []LoadModelTemplateGroup{{Name: "smoke", VUsers: 5, RampUp: "30s", Iterations: 1}},
+			},
+		},
+		{
+			ID:          "open-api-arrival-rate",
+			Name:        "Open API Arrival Rate",
+			ShapeID:     "open-arrival-rate",
+			Description: "Throughput-oriented API load shape for queueing-sensitive services.",
+			Scenario: LoadModelScenarioDraft{
+				ScenarioMode: "goal_oriented",
+				Duration:     "10m",
+				GoalConfig:   &GoalConfig{TargetAverageTPS: &targetTPS, MinVUsers: &minVUsers, MaxVUsers: &maxVUsers, P95LatencyMs: &p95, MaxErrorPct: &maxErrorPct},
+				Groups:       []LoadModelTemplateGroup{{Name: "arrival-rate", VUsers: 10, RampUp: "2m"}},
+			},
+			Notes: []string{"Pair with script config.run_logic.workload_model=open or pacing TPS settings."},
+		},
+		{
+			ID:          "rendezvous-spike",
+			Name:        "Rendezvous Spike",
+			ShapeID:     "spike-rendezvous",
+			Description: "Spike template for scripts that include a named rendezvous action before a critical transaction.",
+			Scenario: LoadModelScenarioDraft{
+				Duration: "8m",
+				Groups:   []LoadModelTemplateGroup{{Name: "spike", VUsers: 100, RampUp: "1m", RampDown: "1m"}},
+			},
+			Notes: []string{"Script should contain an actions[].type=rendezvous step before the spike transaction."},
+		},
+		{
+			ID:          "mixed-browser-canary",
+			Name:        "Mixed HTTP Load With Browser Canary",
+			ShapeID:     "mixed-protocol",
+			Description: "Enterprise mixed-shape starter with bulk HTTP VUsers and low-density browser canaries.",
+			Scenario: LoadModelScenarioDraft{
+				Duration: "15m",
+				Groups: []LoadModelTemplateGroup{
+					{Name: "api-bulk", VUsers: 500, RampUp: "5m", RampDown: "2m"},
+					{Name: "browser-canary", VUsers: 5, RampUp: "2m", RampDown: "1m"},
+				},
+			},
+			Notes: []string{"Assign scripts after selection; capacity advisory will account for protocol density."},
 		},
 	}
 }
