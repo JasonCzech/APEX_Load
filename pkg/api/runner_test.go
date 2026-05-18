@@ -926,6 +926,9 @@ func TestBuildLiveMetricsFromSnapshot(t *testing.T) {
 				Name:             "login",
 				DependencyType:   "http",
 				DependencyTarget: "api.example.test",
+				LastErrorMessage: "HTTP 503: backend timeout 12345",
+				LastStatusCode:   503,
+				LastErrorAt:      timestamp.Add(2 * time.Second),
 				AvgDNSMs:         8,
 				AvgConnectMs:     14,
 				AvgTLSMs:         6,
@@ -1107,6 +1110,9 @@ func TestBuildLiveMetricsFromSnapshot(t *testing.T) {
 	if login.Count != 10 || login.Errors != 1 {
 		t.Fatalf("unexpected login metrics: %+v", login)
 	}
+	if login.LastErrorMessage != "HTTP 503: backend timeout 12345" || login.LastStatusCode != 503 || !login.LastErrorAt.Equal(timestamp.Add(2*time.Second)) {
+		t.Fatalf("expected login last error metadata, got %+v", login)
+	}
 	if login.AvgDNSMs != 8 || login.AvgConnectMs != 14 || login.AvgTLSMs != 6 || login.AvgTTFBMs != 74 {
 		t.Fatalf("expected login timing phases to be mapped, got %+v", login)
 	}
@@ -1155,6 +1161,65 @@ func TestBuildLiveMetricsFromSnapshot(t *testing.T) {
 	}
 	if buyers.AvgResponseMs != 300 || buyers.P50Ms != 210 || buyers.P90Ms != 420 || buyers.P99Ms != 900 {
 		t.Fatalf("unexpected converted buyers latencies: %+v", buyers)
+	}
+}
+
+func TestUpdateLiveErrorPatternsTracksFirstLatestAndSnapshotQuery(t *testing.T) {
+	firstSeen := time.Date(2026, time.May, 18, 10, 0, 0, 0, time.UTC)
+	latestSeen := firstSeen.Add(30 * time.Second)
+	state := updateLiveErrorPatterns(nil, &LiveMetrics{
+		Timestamp: firstSeen,
+		Transactions: map[string]*TxMetrics{
+			"GET /orders/123": {
+				Name:             "GET /orders/123",
+				Count:            10,
+				Errors:           2,
+				LastErrorMessage: "HTTP 503 backend timeout order 123",
+				LastStatusCode:   503,
+				LastErrorAt:      firstSeen,
+			},
+		},
+		GroupMetrics: map[string]*GroupLiveMetrics{
+			"buyers": {Name: "buyers", Errors: 2},
+		},
+	}, "test/error run")
+	state = updateLiveErrorPatterns(state, &LiveMetrics{
+		Timestamp: latestSeen,
+		Transactions: map[string]*TxMetrics{
+			"GET /orders/456": {
+				Name:             "GET /orders/456",
+				Count:            5,
+				Errors:           1,
+				LastErrorMessage: "HTTP 503 backend timeout order 456",
+				LastStatusCode:   503,
+				LastErrorAt:      latestSeen,
+			},
+		},
+		GroupMetrics: map[string]*GroupLiveMetrics{
+			"buyers": {Name: "buyers", Errors: 1},
+			"admins": {Name: "admins", Errors: 1},
+		},
+	}, "test/error run")
+
+	patterns := liveErrorPatternsList(state)
+	if len(patterns) != 1 {
+		t.Fatalf("patterns = %#v, want one normalized pattern", patterns)
+	}
+	pattern := patterns[0]
+	if pattern.Count != 3 || !pattern.FirstSeen.Equal(firstSeen) || !pattern.LatestSeen.Equal(latestSeen) {
+		t.Fatalf("pattern timeline/count = %#v", pattern)
+	}
+	if pattern.StatusCode != 503 || pattern.ErrorPct != 20 {
+		t.Fatalf("pattern status/error pct = %#v", pattern)
+	}
+	if strings.Join(pattern.Actions, ",") != "GET /orders/123,GET /orders/456" {
+		t.Fatalf("pattern actions = %#v", pattern.Actions)
+	}
+	if strings.Join(pattern.AffectedGroups, ",") != "admins,buyers" {
+		t.Fatalf("pattern groups = %#v", pattern.AffectedGroups)
+	}
+	if pattern.SnapshotURL != "/api/v1/tests/test%2Ferror%20run/archive/transactions?limit=20&success=false" {
+		t.Fatalf("snapshot url = %q", pattern.SnapshotURL)
 	}
 }
 

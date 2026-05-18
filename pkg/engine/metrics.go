@@ -144,6 +144,9 @@ type ActionMetrics struct {
 	Name             string
 	DependencyType   string
 	DependencyTarget string
+	LastErrorMessage string
+	LastStatusCode   int
+	LastErrorAt      time.Time
 	ServerTelemetry  *ServerTelemetrySummary `json:"server_telemetry,omitempty"`
 	AvgDNSMs         float64                 `json:"avg_dns_ms,omitempty"`
 	AvgConnectMs     float64                 `json:"avg_connect_ms,omitempty"`
@@ -523,6 +526,12 @@ func mergeActionResult(metrics *ActionMetrics, result *protocol.Result) {
 	metrics.Count++
 	if !result.Success {
 		metrics.Errors++
+		metrics.LastErrorMessage = strings.TrimSpace(result.ErrorMessage)
+		metrics.LastStatusCode = result.StatusCode
+		metrics.LastErrorAt = result.StartTime
+		if metrics.LastErrorAt.IsZero() {
+			metrics.LastErrorAt = time.Now()
+		}
 	}
 	mergeActionMetadata(metrics, result)
 	metrics.AvgDNSMs += durationToMilliseconds(result.DNSTime)

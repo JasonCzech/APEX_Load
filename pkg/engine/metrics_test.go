@@ -135,7 +135,8 @@ func TestMetricsCollector_ByAction(t *testing.T) {
 	defer mc.Stop()
 
 	mc.Record(&protocol.Result{ActionName: "login", Success: true, Duration: 10 * time.Millisecond, BytesSent: 100, BytesReceived: 500})
-	mc.Record(&protocol.Result{ActionName: "login", Success: false, Duration: 20 * time.Millisecond, ErrorMessage: "timeout"})
+	errorAt := time.Date(2026, time.May, 18, 10, 30, 0, 0, time.UTC)
+	mc.Record(&protocol.Result{ActionName: "login", Success: false, Duration: 20 * time.Millisecond, StartTime: errorAt, StatusCode: 503, ErrorMessage: "timeout"})
 	mc.Record(&protocol.Result{ActionName: "checkout", Success: true, Duration: 5 * time.Millisecond})
 
 	time.Sleep(150 * time.Millisecond)
@@ -154,6 +155,9 @@ func TestMetricsCollector_ByAction(t *testing.T) {
 	}
 	if login.Errors != 1 {
 		t.Errorf("login errors = %d, want 1", login.Errors)
+	}
+	if login.LastErrorMessage != "timeout" || login.LastStatusCode != 503 || !login.LastErrorAt.Equal(errorAt) {
+		t.Errorf("login last error = (%q, %d, %v), want timeout/503/%v", login.LastErrorMessage, login.LastStatusCode, login.LastErrorAt, errorAt)
 	}
 
 	checkout, ok := snap.ByAction["checkout"]

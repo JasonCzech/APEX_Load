@@ -354,6 +354,20 @@ describe('TestExecutionSummary', () => {
 								{ source: 'stormrunner', target: 'dependency:api.example.test', dependency_type: 'http', transactions: 8, errors: 1, error_pct: 12.5, p95_ms: 134 },
 							],
 						},
+						error_patterns: [
+							{
+								signature: 'http ___ backend timeout',
+								sample: 'HTTP 503 backend timeout',
+								count: 3,
+								first_seen: '2026-05-18T10:00:00Z',
+								latest_seen: '2026-05-18T10:00:30Z',
+								actions: ['GET /', 'POST /checkout'],
+								affected_groups: ['buyers'],
+								status_code: 503,
+								error_pct: 12.5,
+								snapshot_url: '/api/v1/tests/test-1/archive/transactions?success=false',
+							},
+						],
 					}}
 					baseline={baseline}
 					goalConfig={{
@@ -366,6 +380,12 @@ describe('TestExecutionSummary', () => {
 		})
 
 		expect(container.textContent).toContain('Live HTTP Dependency Health')
+		expect(container.textContent).toContain('Live Error Patterns')
+		expect(container.textContent).toContain('HTTP 503 backend timeout')
+		expect(container.textContent).toContain('3 hits')
+		expect(container.textContent).toContain('POST /checkout')
+		expect(container.textContent).toContain('buyers')
+		expect(container.textContent).toContain('Snapshot query: /api/v1/tests/test-1/archive/transactions?success=false')
 		expect(container.textContent).toContain('Live Dependency Map')
 		expect(container.textContent).toContain('Stormrunner VUsers')
 		expect(container.textContent).toContain('2 downstream links')

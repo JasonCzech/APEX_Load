@@ -683,6 +683,7 @@ export interface LiveMetrics {
   transactions?: Record<string, TxMetrics>
   dependency_health?: Record<string, TxMetrics>
   dependency_map?: LiveDependencyMap
+  error_patterns?: LiveErrorPattern[]
   soap_operations?: Record<string, TxMetrics>
   network_profiles?: Record<string, TxMetrics>
   groups?: Record<string, GroupLiveMetrics>
@@ -809,6 +810,9 @@ export interface TxMetrics {
   name: string
   dependency_type?: string
   dependency_target?: string
+  last_error_message?: string
+  last_status_code?: number
+  last_error_at?: string
   server_telemetry?: ServerTelemetrySummary
   avg_dns_ms?: number
   avg_connect_ms?: number
@@ -823,6 +827,19 @@ export interface TxMetrics {
   p90_ms: number
   p95_ms?: number
   p99_ms: number
+}
+
+export interface LiveErrorPattern {
+  signature: string
+  sample: string
+  count: number
+  first_seen: string
+  latest_seen: string
+  actions?: string[]
+  affected_groups?: string[]
+  status_code?: number
+  error_pct?: number
+  snapshot_url?: string
 }
 
 export interface LiveDependencyMap {

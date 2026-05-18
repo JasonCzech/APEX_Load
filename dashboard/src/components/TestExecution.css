@@ -1257,6 +1257,60 @@
   font-variant-numeric: tabular-nums;
 }
 
+.error-pattern-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.error-pattern-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  border: 1px solid rgba(239, 68, 68, 0.22);
+  background: rgba(127, 29, 29, 0.12);
+  border-radius: 10px;
+  padding: 14px;
+}
+
+.error-pattern-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.error-pattern-sample {
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.error-pattern-meta,
+.error-pattern-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.error-pattern-tags span {
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.14);
+  color: var(--text-primary);
+  padding: 4px 8px;
+}
+
+.error-pattern-link {
+  color: var(--text-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 760px) {
   .dependency-map {
     grid-template-columns: 1fr;

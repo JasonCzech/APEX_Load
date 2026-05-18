@@ -160,6 +160,7 @@ type ManagedTest struct {
 	remoteTargetStates           map[string]string
 	remoteFinalizing             bool
 	telemetryDiagnostic          telemetryDiagnosticState
+	errorPatterns                map[string]*LiveErrorPattern
 }
 
 type TestGroup struct {
@@ -195,6 +196,7 @@ type LiveMetrics struct {
 	Transactions           map[string]*TxMetrics                `json:"transactions,omitempty"`
 	DependencyHealth       map[string]*TxMetrics                `json:"dependency_health,omitempty"`
 	DependencyMap          *LiveDependencyMap                   `json:"dependency_map,omitempty"`
+	ErrorPatterns          []LiveErrorPattern                   `json:"error_patterns,omitempty"`
 	SOAPOperations         map[string]*TxMetrics                `json:"soap_operations,omitempty"`
 	NetworkProfiles        map[string]*TxMetrics                `json:"network_profiles,omitempty"`
 	GroupMetrics           map[string]*GroupLiveMetrics         `json:"groups,omitempty"`
@@ -388,6 +390,9 @@ type TxMetrics struct {
 	Name             string                  `json:"name"`
 	DependencyType   string                  `json:"dependency_type,omitempty"`
 	DependencyTarget string                  `json:"dependency_target,omitempty"`
+	LastErrorMessage string                  `json:"last_error_message,omitempty"`
+	LastStatusCode   int                     `json:"last_status_code,omitempty"`
+	LastErrorAt      time.Time               `json:"last_error_at,omitempty"`
 	ServerTelemetry  *ServerTelemetrySummary `json:"server_telemetry,omitempty"`
 	AvgDNSMs         float64                 `json:"avg_dns_ms,omitempty"`
 	AvgConnectMs     float64                 `json:"avg_connect_ms,omitempty"`
@@ -402,6 +407,19 @@ type TxMetrics struct {
 	P90Ms            float64                 `json:"p90_ms"`
 	P95Ms            float64                 `json:"p95_ms,omitempty"`
 	P99Ms            float64                 `json:"p99_ms"`
+}
+
+type LiveErrorPattern struct {
+	Signature      string    `json:"signature"`
+	Sample         string    `json:"sample"`
+	Count          int64     `json:"count"`
+	FirstSeen      time.Time `json:"first_seen"`
+	LatestSeen     time.Time `json:"latest_seen"`
+	Actions        []string  `json:"actions,omitempty"`
+	AffectedGroups []string  `json:"affected_groups,omitempty"`
+	StatusCode     int       `json:"status_code,omitempty"`
+	ErrorPct       float64   `json:"error_pct,omitempty"`
+	SnapshotURL    string    `json:"snapshot_url,omitempty"`
 }
 
 type LiveDependencyMap struct {
@@ -3615,6 +3633,141 @@ func txErrorPct(tx *TxMetrics) float64 {
 	return float64(tx.Errors) / float64(tx.Count) * 100
 }
 
+func updateLiveErrorPatterns(existing map[string]*LiveErrorPattern, live *LiveMetrics, testID string) map[string]*LiveErrorPattern {
+	if existing == nil {
+		existing = make(map[string]*LiveErrorPattern)
+	}
+	if live == nil || len(live.Transactions) == 0 {
+		return existing
+	}
+
+	affectedGroups := groupsWithErrors(live.GroupMetrics)
+	actions := make([]string, 0, len(live.Transactions))
+	for action, tx := range live.Transactions {
+		if tx == nil || tx.Errors <= 0 {
+			continue
+		}
+		actions = append(actions, action)
+	}
+	sort.Strings(actions)
+	for _, action := range actions {
+		tx := live.Transactions[action]
+		source := liveErrorPatternSource(tx)
+		signature := normalizeArchiveErrorSignature(source)
+		observedAt := tx.LastErrorAt
+		if observedAt.IsZero() {
+			observedAt = live.Timestamp
+		}
+		pattern, ok := existing[signature]
+		if !ok {
+			pattern = &LiveErrorPattern{
+				Signature: signature,
+				Sample:    source,
+				FirstSeen: observedAt,
+			}
+			existing[signature] = pattern
+		}
+		pattern.Count += tx.Errors
+		pattern.LatestSeen = observedAt
+		if pattern.FirstSeen.IsZero() || observedAt.Before(pattern.FirstSeen) {
+			pattern.FirstSeen = observedAt
+		}
+		if pattern.StatusCode == 0 {
+			pattern.StatusCode = tx.LastStatusCode
+		}
+		pattern.ErrorPct = txErrorPct(tx)
+		pattern.Actions = appendUniqueSorted(pattern.Actions, action)
+		pattern.AffectedGroups = mergeStringSets(pattern.AffectedGroups, affectedGroups)
+		pattern.SnapshotURL = liveErrorPatternSnapshotURL(testID, pattern.Actions)
+	}
+	return existing
+}
+
+func liveErrorPatternSource(tx *TxMetrics) string {
+	if tx == nil {
+		return "transaction failed"
+	}
+	if message := strings.TrimSpace(tx.LastErrorMessage); message != "" {
+		return message
+	}
+	if tx.LastStatusCode > 0 {
+		return fmt.Sprintf("request failed with status %d", tx.LastStatusCode)
+	}
+	return "transaction failed"
+}
+
+func groupsWithErrors(groups map[string]*GroupLiveMetrics) []string {
+	if len(groups) == 0 {
+		return nil
+	}
+	result := make([]string, 0, len(groups))
+	for name, group := range groups {
+		if group != nil && group.Errors > 0 {
+			result = append(result, name)
+		}
+	}
+	sort.Strings(result)
+	return result
+}
+
+func appendUniqueSorted(values []string, value string) []string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return values
+	}
+	for _, existing := range values {
+		if existing == value {
+			return values
+		}
+	}
+	values = append(values, value)
+	sort.Strings(values)
+	return values
+}
+
+func mergeStringSets(left []string, right []string) []string {
+	for _, value := range right {
+		left = appendUniqueSorted(left, value)
+	}
+	return left
+}
+
+func liveErrorPatternSnapshotURL(testID string, actions []string) string {
+	if strings.TrimSpace(testID) == "" {
+		return ""
+	}
+	query := url.Values{}
+	query.Set("success", "false")
+	query.Set("limit", "20")
+	if len(actions) == 1 {
+		query.Set("action", actions[0])
+	}
+	return fmt.Sprintf("/api/v1/tests/%s/archive/transactions?%s", url.PathEscape(testID), query.Encode())
+}
+
+func liveErrorPatternsList(patterns map[string]*LiveErrorPattern) []LiveErrorPattern {
+	if len(patterns) == 0 {
+		return nil
+	}
+	result := make([]LiveErrorPattern, 0, len(patterns))
+	for _, pattern := range patterns {
+		if pattern == nil {
+			continue
+		}
+		clone := *pattern
+		clone.Actions = append([]string(nil), pattern.Actions...)
+		clone.AffectedGroups = append([]string(nil), pattern.AffectedGroups...)
+		result = append(result, clone)
+	}
+	sort.Slice(result, func(left, right int) bool {
+		if result[left].Count == result[right].Count {
+			return result[left].FirstSeen.Before(result[right].FirstSeen)
+		}
+		return result[left].Count > result[right].Count
+	})
+	return result
+}
+
 func buildTxMetricsFromAction(name string, am *engine.ActionMetrics) *TxMetrics {
 	if am == nil {
 		return nil
@@ -3623,6 +3776,9 @@ func buildTxMetricsFromAction(name string, am *engine.ActionMetrics) *TxMetrics 
 		Name:             name,
 		DependencyType:   am.DependencyType,
 		DependencyTarget: am.DependencyTarget,
+		LastErrorMessage: am.LastErrorMessage,
+		LastStatusCode:   am.LastStatusCode,
+		LastErrorAt:      am.LastErrorAt,
 		ServerTelemetry:  cloneEngineServerTelemetrySummary(am.ServerTelemetry),
 		AvgDNSMs:         am.AvgDNSMs,
 		AvgConnectMs:     am.AvgConnectMs,
@@ -4286,6 +4442,8 @@ func (tr *TestRunner) publishLiveMetrics(test *ManagedTest, live *LiveMetrics, a
 	previousTelemetryRunHealth = cloneTelemetryRunHealth(test.TelemetryHealth)
 	telemetryRunHealth = updateTelemetryRunHealth(&test.telemetryDiagnostic, diagnostic, diagnosticSignature, now)
 	live.TelemetryStatus = cloneTelemetryRunHealth(telemetryRunHealth)
+	test.errorPatterns = updateLiveErrorPatterns(test.errorPatterns, live, test.ID)
+	live.ErrorPatterns = liveErrorPatternsList(test.errorPatterns)
 	test.TelemetryHealth = cloneTelemetryRunHealth(telemetryRunHealth)
 	test.LiveMetrics = live
 	test.History = append(test.History, live)
