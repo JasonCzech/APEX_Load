@@ -165,6 +165,14 @@ function buildReportHref(testId: string, profile?: string) {
   return profile ? `${base}?profile=${encodeURIComponent(profile)}` : base
 }
 
+function buildArchiveReportHref(testId: string, format?: string, profile?: string) {
+  const params = new URLSearchParams()
+  if (format) params.set('format', format)
+  if (profile) params.set('profile', profile)
+  const query = params.toString()
+  return `/api/v1/tests/${encodeURIComponent(testId)}/archive/report${query ? `?${query}` : ''}`
+}
+
 function renderBrowserSummary(
   summary: BrowserLiveMetrics,
   devices?: Record<string, BrowserDeviceLiveMetrics>,
@@ -758,6 +766,14 @@ export default function TestExecutionArchive({
               >
                 Download Report
               </a>
+              <a
+                className="btn btn-secondary btn-sm"
+                href={buildArchiveReportHref(test.id)}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Download Report JSON
+              </a>
               {archiveReport.report_profiles?.map(profile => (
                 <a
                   key={profile.id}
@@ -796,6 +812,39 @@ export default function TestExecutionArchive({
               </button>
             </div>
           </div>
+
+          {!!archiveReport.report_profiles?.length && (
+            <div className="archive-profile-grid">
+              {archiveReport.report_profiles.map(profile => (
+                <div key={profile.id} className="archive-profile-card">
+                  <div className="archive-profile-heading">
+                    <strong>{profile.label}</strong>
+                    <span>{profile.export_formats.join(', ')}</span>
+                  </div>
+                  <p>{profile.description}</p>
+                  <div className="archive-report-badges">
+                    {profile.included_sections.map(section => (
+                      <span key={section} className="archive-chip">{section.replace(/_/g, ' ')}</span>
+                    ))}
+                  </div>
+                  <div className="inline-create-row">
+                    {profile.export_formats.includes('html') && (
+                      <a className="btn btn-secondary btn-sm" href={buildReportHref(test.id, profile.id)} target="_blank" rel="noreferrer">{profile.label} HTML</a>
+                    )}
+                    {profile.export_formats.includes('csv') && (
+                      <a className="btn btn-secondary btn-sm" href={buildArchiveReportHref(test.id, 'csv', profile.id)} target="_blank" rel="noreferrer">{profile.label} CSV</a>
+                    )}
+                    {profile.export_formats.includes('jsonl') && (
+                      <button className="btn btn-secondary btn-sm" onClick={() => onDownloadArchiveArtifact(archiveReport.manifest.transactions_file || 'transactions.jsonl')}>{profile.label} JSONL</button>
+                    )}
+                    {profile.export_formats.includes('parquet') && (
+                      <button className="btn btn-secondary btn-sm" onClick={() => onDownloadArchiveArtifact(archiveReport.manifest.transactions_parquet_file || 'transactions.parquet')}>{profile.label} Parquet</button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
 
           {summaryTimelineEntries.length > 0 && (
             <div className="tx-section archive-summary-section">

@@ -73,7 +73,7 @@ describe('TestExecutionArchive', () => {
       runtime_override_fields: ['browser', 'log_level'],
     },
     report_profiles: [
-      { id: 'executive', label: 'Executive', description: 'Decision-focused summary.', export_formats: ['html', 'json'], included_sections: ['overview'] },
+      { id: 'executive', label: 'Executive', description: 'Decision-focused summary.', export_formats: ['html', 'csv'], included_sections: ['overview'] },
       { id: 'engineer', label: 'Engineer', description: 'Engineering drilldown.', export_formats: ['html', 'jsonl'], included_sections: ['actions'] },
       { id: 'audit', label: 'Audit', description: 'Governance package.', export_formats: ['html', 'json'], included_sections: ['evidence'] },
     ],
@@ -268,6 +268,7 @@ describe('TestExecutionArchive', () => {
 
   it('surfaces parsed SOAP fault details from archived snapshots', async () => {
     const onDownloadBrowserDiagnostics = vi.fn()
+    const onDownloadArchiveArtifact = vi.fn()
 
     const transactions: TransactionEvent[] = [{
       timestamp: '2026-05-14T20:00:30Z',
@@ -323,7 +324,7 @@ describe('TestExecutionArchive', () => {
           archiveLoading={false}
           archiveReport={archiveReport}
           onDownloadBrowserDiagnostics={onDownloadBrowserDiagnostics}
-          onDownloadArchiveArtifact={vi.fn()}
+          onDownloadArchiveArtifact={onDownloadArchiveArtifact}
           archiveActionEntries={[]}
           archiveSOAPOperationEntries={[]}
           selectedArchiveAction=""
@@ -377,6 +378,13 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('Engineer')
     expect(container.textContent).toContain('Audit')
     expect(container.querySelector('a[href="/api/v1/tests/test-1/report?profile=executive"]')).toBeTruthy()
+    expect(container.querySelector('a[href="/api/v1/tests/test-1/archive/report"]')).toBeTruthy()
+    const profileCsvLink = Array.from(container.querySelectorAll('a')).find(anchor => anchor.getAttribute('href') === '/api/v1/tests/test-1/archive/report?format=csv&profile=executive')
+    expect(profileCsvLink).toBeTruthy()
+    expect(container.textContent).toContain('Executive HTML')
+    expect(container.textContent).toContain('Executive CSV')
+    expect(container.textContent).toContain('Engineer JSONL')
+    expect(container.textContent).toContain('overview')
     expect(container.textContent).toContain('Error Patterns')
     expect(container.textContent).toContain('soap fault: Request validation failed for order 1001')
     expect(container.textContent).toContain('CreateOrder')
@@ -407,6 +415,12 @@ describe('TestExecutionArchive', () => {
       browserDiagnosticsButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     expect(onDownloadBrowserDiagnostics).toHaveBeenCalledTimes(1)
+    const engineerJSONLButton = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.includes('Engineer JSONL'))
+    expect(engineerJSONLButton).toBeTruthy()
+    await act(async () => {
+      engineerJSONLButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(onDownloadArchiveArtifact).toHaveBeenCalledWith('transactions.jsonl')
     expect(container.textContent).toContain('Browser Device Breakdown (LCP / INP / CLS)')
     expect(container.textContent).toContain('Avg FCP')
     expect(container.textContent).toContain('Engine Rollup')
