@@ -1,12 +1,38 @@
 package api
 
 import (
+	"net/http"
+	"os"
 	"strings"
 	"time"
 )
 
+type ArchiveRetentionPlanResponse struct {
+	GeneratedAt time.Time                  `json:"generated_at"`
+	DryRun      bool                       `json:"dry_run"`
+	Candidates  []ArchivePruneCandidate    `json:"candidates"`
+	Results     []ArchiveRetentionResult   `json:"results,omitempty"`
+	Summary     ArchiveRetentionRunSummary `json:"summary"`
+}
+
+type ArchiveRetentionResult struct {
+	TestID      string `json:"test_id"`
+	ArchivePath string `json:"archive_path"`
+	Status      string `json:"status"`
+	Error       string `json:"error,omitempty"`
+}
+
+type ArchiveRetentionRunSummary struct {
+	CandidateCount int `json:"candidate_count"`
+	PrunedCount    int `json:"pruned_count"`
+	FailedCount    int `json:"failed_count"`
+}
+
 type ArchivePruneCandidate struct {
 	TestID        string    `json:"test_id"`
+	ProjectID     string    `json:"project_id,omitempty"`
+	ReleaseID     string    `json:"release_id,omitempty"`
+	RunStatus     string    `json:"run_status,omitempty"`
 	ArchivePath   string    `json:"archive_path"`
 	PolicyName    string    `json:"policy_name,omitempty"`
 	ArtifactType  string    `json:"artifact_type"`
@@ -39,6 +65,9 @@ func planArchiveRetentionPrune(now time.Time, settings ArchiveRetentionSettings,
 		}
 		candidates = append(candidates, ArchivePruneCandidate{
 			TestID:        test.ID,
+			ProjectID:     test.ProjectID,
+			ReleaseID:     test.ReleaseID,
+			RunStatus:     test.Status,
 			ArchivePath:   test.Archive.ArchivePath,
 			PolicyName:    policy.Name,
 			ArtifactType:  policy.ArtifactType,
@@ -93,4 +122,67 @@ func archiveRetentionPolicyMatches(policy ArchiveRetentionPolicy, test *ManagedT
 		return false
 	}
 	return true
+}
+
+func (s *Server) handlePlanArchiveRetention(w http.ResponseWriter, r *http.Request) {
+	now := time.Now().UTC()
+	candidates := planArchiveRetentionPrune(now, s.runner.GetSystemSettings().ArchiveRetention, s.runner.ListTests())
+	writeJSON(w, http.StatusOK, ArchiveRetentionPlanResponse{
+		GeneratedAt: now,
+		DryRun:      true,
+		Candidates:  candidates,
+		Summary: ArchiveRetentionRunSummary{
+			CandidateCount: len(candidates),
+		},
+	})
+}
+
+func (s *Server) handleApplyArchiveRetention(w http.ResponseWriter, r *http.Request) {
+	now := time.Now().UTC()
+	candidates := planArchiveRetentionPrune(now, s.runner.GetSystemSettings().ArchiveRetention, s.runner.ListTests())
+	results := make([]ArchiveRetentionResult, 0, len(candidates))
+	summary := ArchiveRetentionRunSummary{CandidateCount: len(candidates)}
+	for _, candidate := range candidates {
+		result := ArchiveRetentionResult{
+			TestID:      candidate.TestID,
+			ArchivePath: candidate.ArchivePath,
+			Status:      "pruned",
+		}
+		if err := os.RemoveAll(candidate.ArchivePath); err != nil {
+			result.Status = "failed"
+			result.Error = err.Error()
+			summary.FailedCount++
+			s.recordAuditEvent(r, "archive.retention.prune", "failure", "test", candidate.TestID, candidate.ProjectID, archiveRetentionAuditDetails(candidate, result))
+		} else {
+			summary.PrunedCount++
+			s.recordAuditEvent(r, "archive.retention.prune", "success", "test", candidate.TestID, candidate.ProjectID, archiveRetentionAuditDetails(candidate, result))
+		}
+		results = append(results, result)
+	}
+	writeJSON(w, http.StatusOK, ArchiveRetentionPlanResponse{
+		GeneratedAt: now,
+		DryRun:      false,
+		Candidates:  candidates,
+		Results:     results,
+		Summary:     summary,
+	})
+}
+
+func archiveRetentionAuditDetails(candidate ArchivePruneCandidate, result ArchiveRetentionResult) map[string]any {
+	details := map[string]any{
+		"archive_path":     candidate.ArchivePath,
+		"project_id":       candidate.ProjectID,
+		"release_id":       candidate.ReleaseID,
+		"run_status":       candidate.RunStatus,
+		"policy_name":      candidate.PolicyName,
+		"artifact_type":    candidate.ArtifactType,
+		"retention_days":   candidate.RetentionDays,
+		"completed_at":     candidate.CompletedAt,
+		"expired_at":       candidate.ExpiredAt,
+		"retention_status": result.Status,
+	}
+	if result.Error != "" {
+		details["error"] = result.Error
+	}
+	return details
 }

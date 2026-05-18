@@ -71,6 +71,11 @@ Current audit coverage includes script, scenario, schedule, test lifecycle, serv
 
 Audit details should include the policy revision, evaluated project, actor, decision reason, and affected run or schedule ID.
 
+Archive retention is exposed as an operator-controlled dry-run/apply workflow:
+
+- `POST /api/v1/archives/retention/plan` returns expired archive candidates from the active retention policy without deleting artifacts.
+- `POST /api/v1/archives/retention/apply` removes eligible archive directories and writes `archive.retention.prune` audit events with project, release, run status, policy, artifact type, and retention timing details.
+
 ## Plan Mapping
 
 | Plan item | Status | Artifact |

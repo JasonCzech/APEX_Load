@@ -178,6 +178,8 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("GET /api/v1/tests/{id}/archive/resources", cors(log(auth(http.HandlerFunc(s.handleGetRunArchiveResources)))))
 	s.mux.Handle("GET /api/v1/tests/{id}/archive/summaries", cors(log(auth(http.HandlerFunc(s.handleGetRunArchiveSummaries)))))
 	s.mux.Handle("GET /api/v1/tests/{id}/archive/report", cors(log(auth(http.HandlerFunc(s.handleGetRunArchiveReport)))))
+	s.mux.Handle("POST /api/v1/archives/retention/plan", cors(log(auth(http.HandlerFunc(s.handlePlanArchiveRetention)))))
+	s.mux.Handle("POST /api/v1/archives/retention/apply", cors(log(auth(http.HandlerFunc(s.handleApplyArchiveRetention)))))
 
 	// Reusable scenario definitions.
 	s.mux.Handle("POST /api/v1/scenarios", cors(log(auth(http.HandlerFunc(s.handleCreateScenario)))))

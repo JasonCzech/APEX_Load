@@ -1,6 +1,11 @@
 package api
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -65,5 +70,83 @@ func TestPlanArchiveRetentionPruneHonorsDisabledSetting(t *testing.T) {
 	}})
 	if len(candidates) != 0 {
 		t.Fatalf("candidates = %#v, want none while retention disabled", candidates)
+	}
+}
+
+func TestArchiveRetentionPlanAndApplyHandlersPruneExpiredArchives(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	settings := server.runner.GetSystemSettings()
+	settings.ArchiveRetention = ArchiveRetentionSettings{
+		Enabled:              true,
+		DefaultRetentionDays: 1,
+	}
+	if _, err := server.runner.UpdateSystemSettings(settings); err != nil {
+		t.Fatalf("UpdateSystemSettings returned error: %v", err)
+	}
+
+	archiveDir := filepath.Join(t.TempDir(), "expired-archive")
+	if err := os.MkdirAll(archiveDir, 0o755); err != nil {
+		t.Fatalf("create archive dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(archiveDir, "manifest.json"), []byte(`{"test_id":"expired"}`), 0o644); err != nil {
+		t.Fatalf("write archive file: %v", err)
+	}
+	completedAt := time.Now().UTC().Add(-48 * time.Hour)
+	server.runner.mu.Lock()
+	server.runner.tests["expired"] = &ManagedTest{
+		ID:        "expired",
+		Name:      "Expired",
+		Status:    "COMPLETE",
+		ProjectID: "project-a",
+		Archive:   &storage.RunArchiveRecord{TestID: "expired", ArchivePath: archiveDir, CompletedAt: completedAt},
+	}
+	server.runner.mu.Unlock()
+
+	planReq := httptest.NewRequest(http.MethodPost, "/api/v1/archives/retention/plan", nil)
+	planResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(planResp, planReq)
+
+	if planResp.Code != http.StatusOK {
+		t.Fatalf("plan status = %d, want %d body=%s", planResp.Code, http.StatusOK, planResp.Body.String())
+	}
+	var plan ArchiveRetentionPlanResponse
+	if err := json.Unmarshal(planResp.Body.Bytes(), &plan); err != nil {
+		t.Fatalf("unmarshal plan: %v", err)
+	}
+	if !plan.DryRun || plan.Summary.CandidateCount != 1 || len(plan.Candidates) != 1 || plan.Candidates[0].ProjectID != "project-a" {
+		t.Fatalf("plan = %#v, want one dry-run candidate", plan)
+	}
+	if _, err := os.Stat(archiveDir); err != nil {
+		t.Fatalf("archive should still exist after plan: %v", err)
+	}
+
+	applyReq := httptest.NewRequest(http.MethodPost, "/api/v1/archives/retention/apply", nil)
+	applyResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(applyResp, applyReq)
+
+	if applyResp.Code != http.StatusOK {
+		t.Fatalf("apply status = %d, want %d body=%s", applyResp.Code, http.StatusOK, applyResp.Body.String())
+	}
+	var applied ArchiveRetentionPlanResponse
+	if err := json.Unmarshal(applyResp.Body.Bytes(), &applied); err != nil {
+		t.Fatalf("unmarshal apply: %v", err)
+	}
+	if applied.DryRun || applied.Summary.PrunedCount != 1 || applied.Summary.FailedCount != 0 || len(applied.Results) != 1 || applied.Results[0].Status != "pruned" {
+		t.Fatalf("applied = %#v, want one pruned result", applied)
+	}
+	if _, err := os.Stat(archiveDir); !os.IsNotExist(err) {
+		t.Fatalf("archive dir stat err = %v, want removed", err)
+	}
+	events, err := store.ListAuditEvents(storage.AuditEventFilter{Action: "archive.retention.prune", Limit: 10})
+	if err != nil {
+		t.Fatalf("ListAuditEvents returned error: %v", err)
+	}
+	if len(events) != 1 || events[0].ProjectID != "project-a" || events[0].ResourceID != "expired" || events[0].Status != "success" {
+		t.Fatalf("audit events = %#v, want prune audit event", events)
 	}
 }

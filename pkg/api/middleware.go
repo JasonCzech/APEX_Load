@@ -498,6 +498,10 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 		return accessRequirement{GlobalRoles: []string{RoleSystemAdmin}}, true
 	}
 
+	if (path == "/api/v1/archives/retention/plan" || path == "/api/v1/archives/retention/apply") && method == http.MethodPost {
+		return accessRequirement{GlobalRoles: []string{RoleSystemAdmin}}, true
+	}
+
 	if path == "/api/v1/recorder/status" && method == http.MethodGet {
 		if strings.TrimSpace(r.URL.Query().Get("project_id")) == "" {
 			return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
