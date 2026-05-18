@@ -71,6 +71,14 @@ func (s *scenarioScheduler) RunDueSchedules() error {
 		if schedule == nil || !schedule.Enabled || schedule.NextRunAt == nil || schedule.NextRunAt.After(now) {
 			continue
 		}
+		if handled, err := s.runner.applyMissedRunPolicyLocked(schedule, now); err != nil {
+			schedule.LastError = err.Error()
+			schedule.UpdatedAt = now
+			_ = s.runner.saveScenarioScheduleLocked(schedule)
+			continue
+		} else if handled {
+			continue
+		}
 		test, err := s.runner.runScenarioScheduleLocked(schedule, now)
 		if err != nil {
 			schedule.LastError = err.Error()
@@ -87,6 +95,46 @@ func (s *scenarioScheduler) RunDueSchedules() error {
 		go s.runner.runTest(test)
 	}
 	return nil
+}
+
+func (tr *TestRunner) applyMissedRunPolicyLocked(schedule *storage.ScenarioSchedule, now time.Time) (bool, error) {
+	if schedule == nil || schedule.NextRunAt == nil || now.Sub(*schedule.NextRunAt) <= time.Minute {
+		return false, nil
+	}
+	switch normalizeScenarioScheduleMissedRunPolicy(schedule.MissedRunPolicy) {
+	case "skip":
+		occurrence := tr.buildScenarioScheduleOccurrence(schedule, *schedule.NextRunAt, "skipped", "missed_run_skipped", "Missed scheduled occurrence skipped by policy.", nil, now)
+		if err := tr.saveScenarioScheduleOccurrenceLocked(occurrence); err != nil {
+			return true, err
+		}
+		next, err := nextScenarioScheduleRun(schedule, now)
+		if err != nil {
+			return true, err
+		}
+		schedule.NextRunAt = next
+		schedule.LastOccurrence = cloneScenarioScheduleOccurrence(occurrence)
+		schedule.LastError = ""
+		schedule.UpdatedAt = now
+		if err := tr.saveScenarioScheduleLocked(schedule); err != nil {
+			return true, err
+		}
+		return true, nil
+	case "require_operator_decision":
+		occurrence := tr.buildScenarioScheduleOccurrence(schedule, *schedule.NextRunAt, "blocked", "missed_run_requires_decision", "Missed scheduled occurrence requires an operator decision.", nil, now)
+		if err := tr.saveScenarioScheduleOccurrenceLocked(occurrence); err != nil {
+			return true, err
+		}
+		schedule.LastOccurrence = cloneScenarioScheduleOccurrence(occurrence)
+		schedule.NextRequiredAction = "operator_decision_required"
+		schedule.LastError = "missed scheduled occurrence requires operator decision"
+		schedule.UpdatedAt = now
+		if err := tr.saveScenarioScheduleLocked(schedule); err != nil {
+			return true, err
+		}
+		return true, nil
+	default:
+		return false, nil
+	}
 }
 
 func nextScenarioScheduleRun(schedule *storage.ScenarioSchedule, from time.Time) (*time.Time, error) {

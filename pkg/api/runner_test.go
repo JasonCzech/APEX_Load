@@ -4148,6 +4148,89 @@ func TestScenarioSchedulerBlocksDueSchedulePendingApproval(t *testing.T) {
 	}
 }
 
+func TestScenarioSchedulerAppliesMissedRunPolicies(t *testing.T) {
+	for _, tc := range []struct {
+		name               string
+		policy             string
+		wantStatus         string
+		wantReason         string
+		wantRequiredAction string
+	}{
+		{name: "skip", policy: "skip", wantStatus: "skipped", wantReason: "missed_run_skipped"},
+		{name: "operator-decision", policy: "require_operator_decision", wantStatus: "blocked", wantReason: "missed_run_requires_decision", wantRequiredAction: "operator_decision_required"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := &metricsStoreSpy{}
+			runner := NewTestRunner(2, NewHub(), store)
+			backend := &scheduleExecutionBackend{started: make(chan string, 1)}
+			runner.setExecutionBackend(backend)
+			runner.StoreScript(&dsl.Script{
+				ID:       "script-missed-" + tc.name,
+				Name:     "Missed Policy Script",
+				Protocol: "http",
+				Version:  "1.0.0",
+				Actions:  []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+			})
+			scenario, err := runner.StoreScenario(CreateScenarioRequest{
+				Name:     "Missed Policy Scenario",
+				Duration: "1m",
+				Groups: []CreateGroupEntry{{
+					ScriptID: "script-missed-" + tc.name,
+					VUsers:   1,
+				}},
+			})
+			if err != nil {
+				t.Fatalf("StoreScenario returned error: %v", err)
+			}
+			now := time.Date(2026, time.May, 16, 12, 0, 0, 0, time.UTC)
+			missed := now.Add(-10 * time.Minute)
+			schedule := &storage.ScenarioSchedule{
+				ID:              "schedule-missed-" + tc.name,
+				ScenarioID:      scenario.ID,
+				Name:            "Missed Run",
+				CronExpr:        "*/5 * * * *",
+				RunNameTemplate: "Missed Smoke",
+				Enabled:         true,
+				MissedRunPolicy: tc.policy,
+				NextRunAt:       &missed,
+				CreatedAt:       now.Add(-time.Hour),
+				UpdatedAt:       now.Add(-time.Hour),
+			}
+			runner.mu.Lock()
+			if err := runner.saveScenarioScheduleLocked(schedule); err != nil {
+				runner.mu.Unlock()
+				t.Fatalf("saveScenarioScheduleLocked returned error: %v", err)
+			}
+			runner.mu.Unlock()
+
+			scheduler := newScenarioScheduler(runner)
+			scheduler.now = func() time.Time { return now }
+			if err := scheduler.RunDueSchedules(); err != nil {
+				t.Fatalf("RunDueSchedules returned error: %v", err)
+			}
+			select {
+			case testID := <-backend.started:
+				t.Fatalf("unexpected scheduled test start: %s", testID)
+			default:
+			}
+			occurrences, err := store.ListScenarioScheduleOccurrences(schedule.ID)
+			if err != nil {
+				t.Fatalf("ListScenarioScheduleOccurrences returned error: %v", err)
+			}
+			if len(occurrences) != 1 || occurrences[0].Status != tc.wantStatus || occurrences[0].ReasonCode != tc.wantReason {
+				t.Fatalf("occurrences = %#v, want %s/%s", occurrences, tc.wantStatus, tc.wantReason)
+			}
+			storedSchedules, ok := runner.ListScenarioSchedules(scenario.ID)
+			if !ok || len(storedSchedules) != 1 {
+				t.Fatalf("stored schedules = %#v ok=%v, want one", storedSchedules, ok)
+			}
+			if storedSchedules[0].NextRequiredAction != tc.wantRequiredAction {
+				t.Fatalf("next required action = %q, want %q", storedSchedules[0].NextRequiredAction, tc.wantRequiredAction)
+			}
+		})
+	}
+}
+
 func TestDeleteTestRemovesArchiveBundle(t *testing.T) {
 	archiveDir := t.TempDir()
 	t.Setenv("STORMRUNNER_ARCHIVE_DIR", archiveDir)

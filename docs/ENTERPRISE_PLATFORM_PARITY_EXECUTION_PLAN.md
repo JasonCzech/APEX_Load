@@ -283,7 +283,7 @@ Acceptance criteria:
 | --- | --- | --- | --- | --- |
 | P7.5 | Add scheduler leader-election and replay-safe reconciliation for HA controller deployments | L | P1.2 | Not started |
 | P7.6 | Add schedule materialization audit events with reason codes and originating schedule revision | M | P7.1 | Partial backend complete - materialized schedule occurrences are now persisted with status, reason code, originating schedule revision, planned time, materialized time, and test ID; explicit audit events remain next |
-| P7.7 | Add missed-run policy: skip, catch up once, catch up all, or require operator decision | M | P7.5 | Not started |
+| P7.7 | Add missed-run policy: skip, catch up once, catch up all, or require operator decision | M | P7.5 | Partial backend complete - schedules now persist missed-run policy and the scheduler applies `skip` and `require_operator_decision` outcomes with occurrence reason codes; catch-up policies remain future work |
 | P7.8 | Add schedule health dashboard for due, queued, blocked, failed, skipped, and completed occurrences | M | P7.6 | Partial API complete - `GET /api/v1/schedules/health` reports schedule totals, due/blocked/failed/approval counts, and persisted occurrence status counts; dashboard cards remain next |
 
 Acceptance criteria:
