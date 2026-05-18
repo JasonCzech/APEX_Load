@@ -4377,6 +4377,95 @@ func TestScenarioSchedulerAppliesMissedRunPolicies(t *testing.T) {
 	}
 }
 
+func TestScenarioSchedulerCatchUpAllMaterializesEachMissedOccurrence(t *testing.T) {
+	store := &metricsStoreSpy{}
+	runner := NewTestRunner(8, NewHub(), store)
+	backend := &scheduleExecutionBackend{started: make(chan string, 10)}
+	runner.setExecutionBackend(backend)
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-catch-up-all",
+		Name:     "Catch Up Script",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Config:   dsl.ScriptConfig{BaseURL: "https://example.com"},
+		Actions:  []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+	scenario, err := runner.StoreScenario(CreateScenarioRequest{
+		Name:     "Catch Up Scenario",
+		Duration: "1m",
+		Groups: []CreateGroupEntry{{
+			ScriptID: "script-catch-up-all",
+			VUsers:   1,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("StoreScenario returned error: %v", err)
+	}
+	now := time.Date(2026, time.May, 16, 12, 20, 0, 0, time.UTC)
+	firstMissed := time.Date(2026, time.May, 16, 12, 5, 0, 0, time.UTC)
+	schedule := &storage.ScenarioSchedule{
+		ID:              "schedule-catch-up-all",
+		ScenarioID:      scenario.ID,
+		Revision:        1,
+		Name:            "Catch Up All",
+		CronExpr:        "*/5 * * * *",
+		RunNameTemplate: "Catch Up Smoke",
+		Enabled:         true,
+		MissedRunPolicy: "catch_up_all",
+		NextRunAt:       &firstMissed,
+		CreatedAt:       now.Add(-time.Hour),
+		UpdatedAt:       now.Add(-time.Hour),
+	}
+	runner.mu.Lock()
+	if err := runner.saveScenarioScheduleLocked(schedule); err != nil {
+		runner.mu.Unlock()
+		t.Fatalf("saveScenarioScheduleLocked returned error: %v", err)
+	}
+	runner.mu.Unlock()
+
+	scheduler := newScenarioScheduler(runner)
+	scheduler.now = func() time.Time { return now }
+	if err := scheduler.RunDueSchedules(); err != nil {
+		t.Fatalf("RunDueSchedules returned error: %v", err)
+	}
+
+	started := map[string]bool{}
+	for len(started) < 4 {
+		select {
+		case testID := <-backend.started:
+			started[testID] = true
+		case <-time.After(time.Second):
+			t.Fatalf("timed out waiting for catch-up starts, got %d", len(started))
+		}
+	}
+	occurrences, err := store.ListScenarioScheduleOccurrences(schedule.ID)
+	if err != nil {
+		t.Fatalf("ListScenarioScheduleOccurrences returned error: %v", err)
+	}
+	if len(occurrences) != 4 {
+		t.Fatalf("occurrences = %#v, want four materialized catch-up occurrences", occurrences)
+	}
+	for _, occurrence := range occurrences {
+		if occurrence.Status != "materialized" || occurrence.ReasonCode != "started" || occurrence.TestID == "" {
+			t.Fatalf("occurrence = %#v, want materialized started occurrence", occurrence)
+		}
+	}
+	storedSchedules, ok := runner.ListScenarioSchedules(scenario.ID)
+	if !ok || len(storedSchedules) != 1 {
+		t.Fatalf("stored schedules = %#v ok=%v, want one", storedSchedules, ok)
+	}
+	if storedSchedules[0].NextRunAt == nil || !storedSchedules[0].NextRunAt.After(now) {
+		t.Fatalf("NextRunAt = %v, want catch-up advanced beyond now", storedSchedules[0].NextRunAt)
+	}
+	auditEvents, err := store.ListAuditEvents(storage.AuditEventFilter{Action: "scenario.schedule.occurrence.materialized", Limit: 10})
+	if err != nil {
+		t.Fatalf("ListAuditEvents returned error: %v", err)
+	}
+	if len(auditEvents) != 4 {
+		t.Fatalf("audit events = %#v, want four materialized audits", auditEvents)
+	}
+}
+
 func TestScenarioScheduleConflictDetectionBlocksMaterialization(t *testing.T) {
 	store := &metricsStoreSpy{projectsByID: map[string]*storage.Project{
 		"project-schedule-conflict": {

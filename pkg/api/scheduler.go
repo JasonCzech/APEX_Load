@@ -35,6 +35,8 @@ type scenarioScheduler struct {
 	leaseTTL time.Duration
 }
 
+const maxScheduleCatchUpAllPerSweep = 25
+
 type CreateScenarioScheduleRequest struct {
 	Name                string                           `json:"name"`
 	CronExpr            string                           `json:"cron_expr"`
@@ -83,23 +85,36 @@ func (s *scenarioScheduler) RunDueSchedules() error {
 		if schedule == nil || !schedule.Enabled || schedule.NextRunAt == nil || schedule.NextRunAt.After(now) {
 			continue
 		}
-		if handled, err := s.runner.applyMissedRunPolicyLocked(schedule, now); err != nil {
-			schedule.LastError = err.Error()
-			schedule.UpdatedAt = now
-			_ = s.runner.saveScenarioScheduleLocked(schedule)
-			continue
-		} else if handled {
-			continue
-		}
-		test, err := s.runner.runScenarioScheduleLocked(schedule, now)
-		if err != nil {
-			schedule.LastError = err.Error()
-			schedule.UpdatedAt = now
-			_ = s.runner.saveScenarioScheduleLocked(schedule)
-			continue
-		}
-		if test != nil {
-			toStart = append(toStart, test)
+		catchUpAll := normalizeScenarioScheduleMissedRunPolicy(schedule.MissedRunPolicy) == "catch_up_all"
+		for materialized := 0; schedule.NextRunAt != nil && !schedule.NextRunAt.After(now); materialized++ {
+			if materialized >= maxScheduleCatchUpAllPerSweep {
+				schedule.NextRequiredAction = "catch_up_limit_reached"
+				schedule.LastError = fmt.Sprintf("catch_up_all materialized %d occurrences; next sweep will continue", maxScheduleCatchUpAllPerSweep)
+				schedule.UpdatedAt = now
+				_ = s.runner.saveScenarioScheduleLocked(schedule)
+				break
+			}
+			if handled, err := s.runner.applyMissedRunPolicyLocked(schedule, now); err != nil {
+				schedule.LastError = err.Error()
+				schedule.UpdatedAt = now
+				_ = s.runner.saveScenarioScheduleLocked(schedule)
+				break
+			} else if handled {
+				break
+			}
+			test, err := s.runner.runScenarioScheduleLocked(schedule, now)
+			if err != nil {
+				schedule.LastError = err.Error()
+				schedule.UpdatedAt = now
+				_ = s.runner.saveScenarioScheduleLocked(schedule)
+				break
+			}
+			if test != nil {
+				toStart = append(toStart, test)
+			}
+			if !catchUpAll || test == nil {
+				break
+			}
 		}
 	}
 	s.runner.mu.Unlock()
@@ -114,6 +129,8 @@ func (tr *TestRunner) applyMissedRunPolicyLocked(schedule *storage.ScenarioSched
 		return false, nil
 	}
 	switch normalizeScenarioScheduleMissedRunPolicy(schedule.MissedRunPolicy) {
+	case "catch_up_once", "catch_up_all":
+		return false, nil
 	case "skip":
 		occurrence := tr.buildScenarioScheduleOccurrence(schedule, *schedule.NextRunAt, "skipped", "missed_run_skipped", "Missed scheduled occurrence skipped by policy.", nil, now)
 		if err := tr.saveScenarioScheduleOccurrenceLocked(occurrence); err != nil {
@@ -431,7 +448,11 @@ func (tr *TestRunner) runScenarioScheduleLocked(schedule *storage.ScenarioSchedu
 	schedule.LastOccurrence = cloneScenarioScheduleOccurrence(occurrence)
 	schedule.NextRequiredAction = ""
 	schedule.LastError = ""
-	next, err := nextScenarioScheduleRun(schedule, now)
+	advanceFrom := now
+	if normalizeScenarioScheduleMissedRunPolicy(schedule.MissedRunPolicy) == "catch_up_all" && plannedAt.Before(now) {
+		advanceFrom = plannedAt
+	}
+	next, err := nextScenarioScheduleRun(schedule, advanceFrom)
 	if err != nil {
 		return nil, err
 	}
