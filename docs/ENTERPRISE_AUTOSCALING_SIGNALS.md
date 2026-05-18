@@ -28,7 +28,7 @@ Recommended autoscaling policy:
 4. Avoid scaling on `unavailable` generators alone; use it as an alert and replacement signal.
 5. Scale in only when queued VUsers are zero and active VUsers remain below the pool's lower utilization target for a cooldown window.
 
-For KEDA, the controller metrics endpoint can be used through the Prometheus scaler with queued VUsers as the trigger query.
+For KEDA, scrape the controller `/metrics` endpoint into Prometheus and use the Prometheus scaler with queued VUsers as the trigger query. The local Kubernetes overlay includes `deployments/k8s/local/generator-keda-scaledobject.yaml` as the reference scale-out artifact for the generator StatefulSet.
 
 Example trigger query:
 
@@ -41,6 +41,18 @@ Example regional trigger query:
 ```promql
 sum by (region) (stormrunner_generator_region_active_vusers)
 ```
+
+## Cluster Artifacts
+
+`deployments/k8s/local/generator-keda-scaledobject.yaml` defines a KEDA `ScaledObject` for `stormrunner-generator`:
+
+- `minReplicaCount: 2` and `maxReplicaCount: 50`, matching the enterprise scale-out envelope.
+- Queued VUsers trigger: `sum(stormrunner_scaling_vusers{state="queued"})`.
+- Browser canary trigger: `sum(stormrunner_scaling_protocol_vusers{state="queued",protocol="browser"})`.
+- Saturation trigger: `sum(stormrunner_generator_capacity_state_count{state="saturated"})`.
+- Conservative scale-down stabilization so active or recently queued demand does not collapse the generator pool too quickly.
+
+The default Prometheus endpoint is `http://prometheus-operated.monitoring.svc:9090`; production overlays should replace it when Prometheus uses a different service name or namespace.
 
 ## Capacity Reservations
 
@@ -104,7 +116,7 @@ The advisor applies the configured headroom percentage to protocol envelopes bef
 
 | Plan item | Status | Artifact |
 | --- | --- | --- |
-| P2.5 HPA/KEDA scaling signals | Complete for Prometheus signal contract; cluster manifests remain future work | `/metrics` and this document |
+| P2.5 HPA/KEDA scaling signals | Complete for first-pass Prometheus signal contract and KEDA generator scale-out artifact | `/metrics`, this document, `deployments/k8s/local/generator-keda-scaledobject.yaml` |
 | P2.6 Capacity reservations | Complete for settings, advisory, health, and metrics primitives; placement fair-share remains future work | `capacity_planning.reservations`, capacity advisory fields, `/metrics` |
 | P2.7 Fair-share placement | Complete for controller pending-queue promotion; distributed per-generator slot accounting remains future work | Project-aware pending promotion |
 | P2.8 Protocol density envelopes | Complete for code-owned advisory envelopes; benchmark calibration remains future hardening | `capacity_advisory.protocol_densities` |

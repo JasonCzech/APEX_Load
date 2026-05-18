@@ -8,6 +8,7 @@ resources:
   - controller-deployment.yaml
   - generator-service.yaml
   - generator-statefulset.yaml
+  - generator-keda-scaledobject.yaml
 labels:
   - pairs:
       app.kubernetes.io/part-of: stormrunner
