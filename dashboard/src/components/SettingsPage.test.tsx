@@ -27,6 +27,10 @@ const apiMock = {
   getSystemSettings: vi.fn(),
   getHealth: vi.fn(),
   getSystemInventory: vi.fn(),
+  getUsageAccounting: vi.fn(),
+  listUsageAccountingSnapshots: vi.fn(),
+  captureUsageAccountingSnapshot: vi.fn(),
+  downloadUsageAccounting: vi.fn(),
   updateSystemSettings: vi.fn(),
   planArchiveRetention: vi.fn(),
   applyArchiveRetention: vi.fn(),
@@ -113,6 +117,7 @@ describe('SettingsPage', () => {
         api_endpoint: ':8080',
         max_concurrent_tests: 10,
         metrics_interval_seconds: 1,
+        usage_snapshot_interval_seconds: 3600,
       },
       thresholds: {
         max_error_rate_pct: undefined,
@@ -341,6 +346,68 @@ describe('SettingsPage', () => {
     apiMock.listDataPools.mockResolvedValue({ data_pools: [] })
     apiMock.getDataPool.mockResolvedValue({ rows: [] })
     apiMock.listTests.mockResolvedValue({ tests: [] })
+    apiMock.getUsageAccounting.mockResolvedValue({
+      generated_at: '2026-05-18T12:00:00Z',
+      project_id: 'project-1',
+      totals: {
+        run_count: 2,
+        total_vusers: 15,
+        duration_seconds: 5400,
+        vuser_seconds: 81000,
+        archive_bytes: 2097152,
+        status_counts: { COMPLETE: 2 },
+      },
+      by_protocol: [
+        { key: 'http', run_count: 2, group_count: 2, total_vusers: 15, duration_seconds: 5400, vuser_seconds: 81000, status_counts: { COMPLETE: 2 } },
+      ],
+      by_region: [
+        { key: 'us-east', run_count: 2, total_vusers: 15, duration_seconds: 5400, vuser_seconds: 81000, status_counts: { COMPLETE: 2 } },
+      ],
+    })
+    apiMock.listUsageAccountingSnapshots.mockResolvedValue({
+      snapshots: [
+        {
+          id: 'usage-snapshot-1',
+          project_id: 'project-1',
+          generated_at: '2026-05-18T12:00:00Z',
+          created_at: '2026-05-18T12:01:00Z',
+          usage: {
+            generated_at: '2026-05-18T12:00:00Z',
+            project_id: 'project-1',
+            totals: {
+              run_count: 2,
+              total_vusers: 15,
+              duration_seconds: 5400,
+              vuser_seconds: 81000,
+              archive_bytes: 2097152,
+              status_counts: { COMPLETE: 2 },
+            },
+          },
+        },
+      ],
+      count: 1,
+      limit: 5,
+      offset: 0,
+    })
+    apiMock.captureUsageAccountingSnapshot.mockResolvedValue({
+      id: 'usage-snapshot-2',
+      project_id: 'project-1',
+      generated_at: '2026-05-18T13:00:00Z',
+      created_at: '2026-05-18T13:01:00Z',
+      usage: {
+        generated_at: '2026-05-18T13:00:00Z',
+        project_id: 'project-1',
+        totals: {
+          run_count: 3,
+          total_vusers: 25,
+          duration_seconds: 7200,
+          vuser_seconds: 120000,
+          archive_bytes: 3145728,
+          status_counts: { COMPLETE: 3 },
+        },
+      },
+    })
+    apiMock.downloadUsageAccounting.mockResolvedValue(new Blob(['usage csv'], { type: 'text/csv' }))
     apiMock.planArchiveRetention.mockResolvedValue({
       generated_at: '2026-05-18T12:00:00Z',
       dry_run: true,
@@ -467,6 +534,51 @@ describe('SettingsPage', () => {
     expect(capacitySection.textContent).toContain('Retention plan found 1 prune candidate.')
     expect(capacitySection.textContent).toContain('run-expired')
     expect(capacitySection.textContent).toContain('default / bundle')
+  })
+
+  it('surfaces usage accounting snapshots and exports chargeback CSV', async () => {
+    await act(async () => {
+      root.render(<SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+
+    await flushPromises()
+
+    const generalSection = container.querySelector('#settings-section-general')
+    expect(generalSection).toBeTruthy()
+    if (!generalSection) return
+
+    expect(generalSection.textContent).toContain('Usage Accounting')
+    expect(findSettingInput(generalSection, 'Usage Snapshot Cadence (seconds)')?.value).toBe('3600')
+    expect(generalSection.textContent).toContain('81,000')
+    expect(generalSection.textContent).toContain('1h 30m')
+    expect(generalSection.textContent).toContain('2.00 MB')
+    expect(generalSection.textContent).toContain('COMPLETE=2')
+    expect(generalSection.textContent).toContain('usage-snapshot-1')
+    expect(generalSection.textContent).toContain('project-1 / 2 runs / 81,000 VUser seconds')
+
+    const captureButton = Array.from(generalSection.querySelectorAll('button')).find(button => button.textContent?.includes('Capture Snapshot'))
+    expect(captureButton).toBeDefined()
+    if (!captureButton) return
+
+    await act(async () => {
+      captureButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.captureUsageAccountingSnapshot).toHaveBeenCalledWith('project-1')
+    expect(generalSection.textContent).toContain('Usage snapshot captured for 3 runs.')
+
+    const exportButton = Array.from(generalSection.querySelectorAll('button')).find(button => button.textContent?.includes('Export Usage CSV'))
+    expect(exportButton).toBeDefined()
+    if (!exportButton) return
+
+    await act(async () => {
+      exportButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.downloadUsageAccounting).toHaveBeenCalledWith('project-1')
+    expect(downloadBlobMock).toHaveBeenCalledWith(expect.any(Blob), expect.stringMatching(/^stormrunner-usage-accounting-\d{4}-\d{2}-\d{2}\.csv$/))
   })
 
   it('edits telemetry SLA budgets in performance thresholds', async () => {

@@ -5,7 +5,7 @@ import { useProjectApi } from '../hooks/api/useProjectApi'
 import { useApplication } from '../hooks/useApplication'
 import { useProject } from '../hooks/useProject'
 import { useApi } from '../hooks/useApi'
-import { ArchiveRetentionPlanResponse, DashboardAuditEvent, DashboardAuthAccessResource, DashboardAuthDiagnostics, DashboardAuthDiagnosticsCheck, DashboardAuthEffectiveAccessResource, DashboardAuthRoleDefinition, DashboardAuthStatus, DashboardServiceAccount, DashboardSystemSettings, HealthResponse, Project, RedactionRule, SharedDataPool, SharedDataPoolRow, SystemInventoryResponse } from '../types'
+import { ArchiveRetentionPlanResponse, DashboardAuditEvent, DashboardAuthAccessResource, DashboardAuthDiagnostics, DashboardAuthDiagnosticsCheck, DashboardAuthEffectiveAccessResource, DashboardAuthRoleDefinition, DashboardAuthStatus, DashboardServiceAccount, DashboardSystemSettings, HealthResponse, Project, RedactionRule, SharedDataPool, SharedDataPoolRow, SystemInventoryResponse, UsageAccountingResponse, UsageAccountingSnapshot } from '../types'
 import { getErrorMessage } from '../utils/errorUtils'
 import { downloadBlob } from '../utils/fileUtils'
 
@@ -14,6 +14,7 @@ const DEFAULT_SETTINGS: DashboardSystemSettings = {
     api_endpoint: ':8080',
     max_concurrent_tests: 10,
     metrics_interval_seconds: 1,
+    usage_snapshot_interval_seconds: 0,
   },
   thresholds: {
     max_error_rate_pct: undefined,
@@ -201,6 +202,34 @@ function formatProjectRoleAssignments(projectRoles?: Record<string, string[]>): 
   }
 
   return assignments.join(' | ')
+}
+
+function formatDateTime(value?: string): string {
+  if (!value) return 'Never'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString()
+}
+
+function formatDurationSeconds(value: number): string {
+  if (value < 60) return `${value}s`
+  const hours = Math.floor(value / 3600)
+  const minutes = Math.floor((value % 3600) / 60)
+  if (hours > 0) return `${hours}h ${minutes}m`
+  return `${minutes}m`
+}
+
+function formatBytes(value?: number): string {
+  const bytes = value || 0
+  if (bytes >= 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(2)} KB`
+  return `${bytes} B`
+}
+
+function formatStatusCounts(counts?: Record<string, number>): string {
+  const entries = Object.entries(counts || {}).sort(([left], [right]) => left.localeCompare(right))
+  return entries.length ? entries.map(([status, count]) => `${status}=${count}`).join(', ') : 'none'
 }
 
 function formatAuthStatusSummary(authStatus?: DashboardAuthStatus): string {
@@ -451,6 +480,9 @@ function validateSettings(settings: DashboardSystemSettings): string[] {
   }
   if (!Number.isInteger(settings.general.metrics_interval_seconds) || settings.general.metrics_interval_seconds < 1) {
     errors.push('Metrics interval must be an integer >= 1 second.')
+  }
+  if (settings.general.usage_snapshot_interval_seconds !== undefined && (!Number.isInteger(settings.general.usage_snapshot_interval_seconds) || settings.general.usage_snapshot_interval_seconds < 0)) {
+    errors.push('Usage snapshot interval must be an integer >= 0 seconds.')
   }
   if (settings.thresholds.max_error_rate_pct !== undefined) {
     if (settings.thresholds.max_error_rate_pct < 0 || settings.thresholds.max_error_rate_pct > 100) {
@@ -758,6 +790,10 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
   const [archiveRetentionPlan, setArchiveRetentionPlan] = useState<ArchiveRetentionPlanResponse | null>(null)
   const [archiveRetentionActionError, setArchiveRetentionActionError] = useState('')
   const [archiveRetentionActionMessage, setArchiveRetentionActionMessage] = useState('')
+  const [usageAccounting, setUsageAccounting] = useState<UsageAccountingResponse | null>(null)
+  const [usageSnapshots, setUsageSnapshots] = useState<UsageAccountingSnapshot[]>([])
+  const [usageActionError, setUsageActionError] = useState('')
+  const [usageActionMessage, setUsageActionMessage] = useState('')
   const [dataPools, setDataPools] = useState<SharedDataPool[]>([])
   const [selectedDataPoolId, setSelectedDataPoolId] = useState('')
   const [dataPoolRows, setDataPoolRows] = useState<SharedDataPoolRow[]>([])
@@ -932,6 +968,32 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
       cancelled = true
     }
   }, [api, auditActionFilter, auditActorTypeFilter, auditStatusFilter])
+
+  useEffect(() => {
+    let cancelled = false
+    const loadUsage = async () => {
+      try {
+        const [usageResponse, snapshotResponse] = await Promise.all([
+          api.getUsageAccounting(activeProject?.id),
+          api.listUsageAccountingSnapshots(activeProject?.id),
+        ])
+        if (!cancelled) {
+          setUsageAccounting(usageResponse)
+          setUsageSnapshots(snapshotResponse.snapshots || [])
+        }
+      } catch {
+        if (!cancelled) {
+          setUsageAccounting(null)
+          setUsageSnapshots([])
+        }
+      }
+    }
+
+    loadUsage()
+    return () => {
+      cancelled = true
+    }
+  }, [activeProject?.id, api])
 
   useEffect(() => {
     let cancelled = false
@@ -1263,6 +1325,54 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
     } catch (error: unknown) {
       setArchiveRetentionActionError(getErrorMessage(error, 'Unable to apply archive retention'))
       setArchiveRetentionActionMessage('')
+    }
+  }
+
+  const refreshUsageAccounting = async () => {
+    try {
+      const [usageResponse, snapshotResponse] = await Promise.all([
+        api.getUsageAccounting(activeProject?.id),
+        api.listUsageAccountingSnapshots(activeProject?.id),
+      ])
+      setUsageAccounting(usageResponse)
+      setUsageSnapshots(snapshotResponse.snapshots || [])
+      setUsageActionMessage('Usage accounting refreshed.')
+      setUsageActionError('')
+    } catch (error: unknown) {
+      setUsageActionError(getErrorMessage(error, 'Unable to refresh usage accounting'))
+      setUsageActionMessage('')
+    }
+  }
+
+  const captureUsageSnapshot = async () => {
+    if (!canManageSystem) {
+      setUsageActionError('Current session cannot capture usage snapshots.')
+      setUsageActionMessage('')
+      return
+    }
+    try {
+      const snapshot = await api.captureUsageAccountingSnapshot(activeProject?.id)
+      const response = await api.listUsageAccountingSnapshots(activeProject?.id)
+      setUsageSnapshots(response.snapshots || [snapshot])
+      setUsageAccounting(snapshot.usage)
+      setUsageActionMessage(`Usage snapshot captured for ${snapshot.usage.totals.run_count} run${snapshot.usage.totals.run_count === 1 ? '' : 's'}.`)
+      setUsageActionError('')
+    } catch (error: unknown) {
+      setUsageActionError(getErrorMessage(error, 'Unable to capture usage snapshot'))
+      setUsageActionMessage('')
+    }
+  }
+
+  const exportUsageAccounting = async () => {
+    try {
+      const blob = await api.downloadUsageAccounting(activeProject?.id)
+      const date = new Date().toISOString().slice(0, 10)
+      downloadBlob(blob, `stormrunner-usage-accounting-${date}.csv`)
+      setUsageActionMessage('Usage accounting export downloaded.')
+      setUsageActionError('')
+    } catch (error: unknown) {
+      setUsageActionError(getErrorMessage(error, 'Unable to export usage accounting'))
+      setUsageActionMessage('')
     }
   }
 
@@ -1981,6 +2091,61 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
                 value={settings.general.metrics_interval_seconds}
                 onChange={(e) => updateGeneral('metrics_interval_seconds', e.target.value)}
               />
+            </div>
+            <div className="setting-row">
+              <div className="setting-info">
+                <span className="setting-label">Usage Snapshot Cadence (seconds)</span>
+                <span className="setting-desc">Optional wall-clock cadence for durable usage accounting snapshots. Use 0 to disable scheduled capture.</span>
+              </div>
+              <input
+                className="settings-input settings-input-number"
+                type="number"
+                min={0}
+                step={60}
+                value={settings.general.usage_snapshot_interval_seconds || 0}
+                onChange={(e) => updateGeneral('usage_snapshot_interval_seconds', e.target.value)}
+              />
+            </div>
+            <div className="settings-subsection">
+              <div className="settings-manager-summary">
+                <div>
+                  <span className="setting-label">Usage Accounting</span>
+                  <span className="setting-desc">Current project chargeback rollup plus durable snapshots for governance review.</span>
+                </div>
+                <strong>{usageAccounting ? usageAccounting.totals.run_count : '-'}</strong>
+              </div>
+              <div className="new-test-summary-grid">
+                <div><span>VUser Seconds</span><strong>{usageAccounting ? usageAccounting.totals.vuser_seconds.toLocaleString() : '-'}</strong></div>
+                <div><span>Duration</span><strong>{usageAccounting ? formatDurationSeconds(usageAccounting.totals.duration_seconds) : '-'}</strong></div>
+                <div><span>Archive Bytes</span><strong>{usageAccounting ? formatBytes(usageAccounting.totals.archive_bytes) : '-'}</strong></div>
+                <div><span>Status Counts</span><strong>{usageAccounting ? formatStatusCounts(usageAccounting.totals.status_counts) : '-'}</strong></div>
+              </div>
+              <div className="settings-inline-actions">
+                <button className="btn btn-secondary" type="button" onClick={refreshUsageAccounting}>
+                  Refresh Usage
+                </button>
+                <button className="btn btn-secondary" type="button" onClick={captureUsageSnapshot} disabled={!canManageSystem}>
+                  Capture Snapshot
+                </button>
+                <button className="btn btn-secondary" type="button" onClick={exportUsageAccounting}>
+                  Export Usage CSV
+                </button>
+              </div>
+              {usageActionMessage && <p className="settings-notice">{usageActionMessage}</p>}
+              {usageActionError && <p className="settings-error-inline">{usageActionError}</p>}
+              <div className="settings-release-list">
+                {usageSnapshots.slice(0, 5).map(snapshot => (
+                  <div key={snapshot.id} className="settings-release-row">
+                    <div className="settings-release-main">
+                      <span>{snapshot.id}</span>
+                      <small>Captured {formatDateTime(snapshot.created_at)}</small>
+                      <small>{snapshot.project_id || 'all projects'} / {snapshot.usage.totals.run_count} runs / {snapshot.usage.totals.vuser_seconds.toLocaleString()} VUser seconds</small>
+                    </div>
+                    <span className="setting-value">{formatBytes(snapshot.usage.totals.archive_bytes)}</span>
+                  </div>
+                ))}
+                {usageSnapshots.length === 0 && <p className="new-test-inline-note">No usage snapshots captured yet.</p>}
+              </div>
             </div>
             <div className="setting-row">
               <div className="setting-info">

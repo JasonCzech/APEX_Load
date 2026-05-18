@@ -18,6 +18,9 @@ import {
   HealthResponse,
   ParityStatusResponse,
   SystemInventoryResponse,
+  UsageAccountingResponse,
+  UsageAccountingSnapshot,
+  UsageAccountingSnapshotsResponse,
 } from '../../types'
 import { BASE, request } from '../apiClient'
 
@@ -73,6 +76,10 @@ export function useSystemApi() {
   const getFleetCapacity = useCallback((params: { project_id?: string; region?: string; protocol?: string } = {}) =>
     request<FleetCapacityResponse>(`/fleet/capacity${buildQuery(params)}`),
   [])
+  const getUsageAccounting = useCallback((projectId?: string) => request<UsageAccountingResponse>(`/system/usage${buildQuery({ project_id: projectId })}`), [])
+  const listUsageAccountingSnapshots = useCallback((projectId?: string) => request<UsageAccountingSnapshotsResponse>(`/system/usage/snapshots${buildQuery({ project_id: projectId, limit: 5 })}`), [])
+  const captureUsageAccountingSnapshot = useCallback((projectId?: string) => request<UsageAccountingSnapshot>(`/system/usage/snapshots${buildQuery({ project_id: projectId })}`, { method: 'POST' }), [])
+  const downloadUsageAccounting = useCallback((projectId?: string) => fetchBlob(`/system/usage/export${buildQuery({ project_id: projectId })}`), [])
   const planArchiveRetention = useCallback(() => request<ArchiveRetentionPlanResponse>('/archives/retention/plan', { method: 'POST' }), [])
   const applyArchiveRetention = useCallback(() => request<ArchiveRetentionPlanResponse>('/archives/retention/apply', { method: 'POST' }), [])
 
@@ -101,11 +108,15 @@ export function useSystemApi() {
       getParityStatus,
       getFleetAlerts,
       getFleetCapacity,
+      getUsageAccounting,
+      listUsageAccountingSnapshots,
+      captureUsageAccountingSnapshot,
+      downloadUsageAccounting,
       planArchiveRetention,
       applyArchiveRetention,
       getSystemSettings,
       updateSystemSettings,
     }),
-    [getAuthEffectiveAccess, getAuthAccessMatrix, getAuthDiagnostics, getAuthRoleCatalog, listAuthServiceAccounts, createAuthServiceAccount, updateAuthServiceAccount, rotateAuthServiceAccount, deleteAuthServiceAccount, listAuthAuditEvents, downloadAuthAuditEvents, getHealth, getSystemInventory, getParityStatus, getFleetAlerts, getFleetCapacity, planArchiveRetention, applyArchiveRetention, getSystemSettings, updateSystemSettings],
+    [getAuthEffectiveAccess, getAuthAccessMatrix, getAuthDiagnostics, getAuthRoleCatalog, listAuthServiceAccounts, createAuthServiceAccount, updateAuthServiceAccount, rotateAuthServiceAccount, deleteAuthServiceAccount, listAuthAuditEvents, downloadAuthAuditEvents, getHealth, getSystemInventory, getParityStatus, getFleetAlerts, getFleetCapacity, getUsageAccounting, listUsageAccountingSnapshots, captureUsageAccountingSnapshot, downloadUsageAccounting, planArchiveRetention, applyArchiveRetention, getSystemSettings, updateSystemSettings],
   )
 }

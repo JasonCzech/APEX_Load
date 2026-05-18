@@ -1453,6 +1453,43 @@ export interface DashboardGeneralSettings {
   api_endpoint: string
   max_concurrent_tests: number
   metrics_interval_seconds: number
+  usage_snapshot_interval_seconds?: number
+}
+
+export interface UsageAccountingBucket {
+  key?: string
+  run_count: number
+  group_count?: number
+  total_vusers: number
+  duration_seconds: number
+  vuser_seconds: number
+  archive_bytes?: number
+  status_counts?: Record<string, number>
+}
+
+export interface UsageAccountingResponse {
+  generated_at: string
+  project_id?: string
+  totals: UsageAccountingBucket
+  by_project?: UsageAccountingBucket[]
+  by_protocol?: UsageAccountingBucket[]
+  by_region?: UsageAccountingBucket[]
+  notes?: string[]
+}
+
+export interface UsageAccountingSnapshot {
+  id: string
+  project_id?: string
+  generated_at: string
+  created_at: string
+  usage: UsageAccountingResponse
+}
+
+export interface UsageAccountingSnapshotsResponse {
+  snapshots: UsageAccountingSnapshot[]
+  count: number
+  limit: number
+  offset: number
 }
 
 export interface DashboardCapacityGeneratorSettings {
