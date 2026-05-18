@@ -105,6 +105,8 @@ type Store interface {
 	DeleteServiceAccount(id string) error
 	SaveAuditEvent(event *AuditEvent) error
 	ListAuditEvents(filter AuditEventFilter) ([]*AuditEvent, error)
+	SaveUsageAccountingSnapshot(snapshot *UsageAccountingSnapshot) error
+	ListUsageAccountingSnapshots(projectID string, limit int, offset int) ([]*UsageAccountingSnapshot, error)
 
 	Close() error
 }
@@ -150,6 +152,14 @@ type AuditEvent struct {
 	Status           string         `json:"status"`
 	Details          map[string]any `json:"details,omitempty"`
 	CreatedAt        time.Time      `json:"created_at"`
+}
+
+type UsageAccountingSnapshot struct {
+	ID          string    `json:"id"`
+	ProjectID   string    `json:"project_id,omitempty"`
+	GeneratedAt time.Time `json:"generated_at"`
+	PayloadJSON string    `json:"payload_json"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 type AuthoringSession struct {

@@ -38,6 +38,8 @@ func TestAccessRequirementCoversAuthGovernanceRoutes(t *testing.T) {
 		{name: "read system inventory", method: http.MethodGet, path: "/api/v1/system/inventory", globalRoles: allGlobalReaders},
 		{name: "read usage accounting", method: http.MethodGet, path: "/api/v1/system/usage", globalRoles: allGlobalReaders},
 		{name: "export usage accounting", method: http.MethodGet, path: "/api/v1/system/usage/export", globalRoles: allGlobalReaders},
+		{name: "list usage snapshots", method: http.MethodGet, path: "/api/v1/system/usage/snapshots", globalRoles: allGlobalReaders},
+		{name: "capture usage snapshot", method: http.MethodPost, path: "/api/v1/system/usage/snapshots", globalRoles: systemAdminOnly},
 		{name: "read system settings", method: http.MethodGet, path: "/api/v1/system/settings", globalRoles: allGlobalReaders},
 		{name: "update system settings", method: http.MethodPut, path: "/api/v1/system/settings", globalRoles: systemAdminOnly},
 	}

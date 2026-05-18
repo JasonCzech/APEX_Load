@@ -376,6 +376,12 @@ func (s *metricsStoreSpy) ListAuditEvents(filter storage.AuditEventFilter) ([]*s
 	}
 	return out, nil
 }
+func (s *metricsStoreSpy) SaveUsageAccountingSnapshot(snapshot *storage.UsageAccountingSnapshot) error {
+	return nil
+}
+func (s *metricsStoreSpy) ListUsageAccountingSnapshots(projectID string, limit int, offset int) ([]*storage.UsageAccountingSnapshot, error) {
+	return nil, nil
+}
 func (s *metricsStoreSpy) Close() error { return nil }
 
 func registerRunnerTestProtocol(t *testing.T, prefix string, factory func() protocol.Protocol) string {

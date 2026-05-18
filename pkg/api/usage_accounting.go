@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/csv"
+	"encoding/json"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -9,6 +10,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
+	"github.com/jasonczech/stormrunner/pkg/storage"
 )
 
 type UsageAccountingResponse struct {
@@ -32,12 +36,96 @@ type UsageAccountingBucket struct {
 	StatusCounts    map[string]int `json:"status_counts,omitempty"`
 }
 
+type UsageAccountingSnapshotsResponse struct {
+	Snapshots []UsageAccountingSnapshotView `json:"snapshots"`
+	Count     int                           `json:"count"`
+	Limit     int                           `json:"limit"`
+	Offset    int                           `json:"offset"`
+}
+
+type UsageAccountingSnapshotView struct {
+	ID          string                  `json:"id"`
+	ProjectID   string                  `json:"project_id,omitempty"`
+	GeneratedAt time.Time               `json:"generated_at"`
+	CreatedAt   time.Time               `json:"created_at"`
+	Usage       UsageAccountingResponse `json:"usage"`
+}
+
 func (s *Server) handleGetUsageAccounting(w http.ResponseWriter, r *http.Request) {
 	projectID := strings.TrimSpace(r.URL.Query().Get("project_id"))
 	if projectID != "" {
 		projectID = normalizeProjectID(projectID)
 	}
 	writeJSON(w, http.StatusOK, s.usageAccounting(projectID))
+}
+
+func (s *Server) handleListUsageAccountingSnapshots(w http.ResponseWriter, r *http.Request) {
+	if s.store == nil {
+		writeError(w, http.StatusServiceUnavailable, "metadata store is not configured")
+		return
+	}
+	projectID := strings.TrimSpace(r.URL.Query().Get("project_id"))
+	if projectID != "" {
+		projectID = normalizeProjectID(projectID)
+	}
+	limit := usageSnapshotQueryInt(r, "limit", 100, 500)
+	offset := usageSnapshotQueryInt(r, "offset", 0, 0)
+	snapshots, err := s.store.ListUsageAccountingSnapshots(projectID, limit, offset)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list usage snapshots: "+err.Error())
+		return
+	}
+	views, err := usageAccountingSnapshotViews(snapshots)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to decode usage snapshot: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, UsageAccountingSnapshotsResponse{
+		Snapshots: views,
+		Count:     len(views),
+		Limit:     limit,
+		Offset:    offset,
+	})
+}
+
+func (s *Server) handleCreateUsageAccountingSnapshot(w http.ResponseWriter, r *http.Request) {
+	if s.store == nil {
+		writeError(w, http.StatusServiceUnavailable, "metadata store is not configured")
+		return
+	}
+	projectID := strings.TrimSpace(r.URL.Query().Get("project_id"))
+	if projectID != "" {
+		projectID = normalizeProjectID(projectID)
+	}
+	usage := s.usageAccounting(projectID)
+	payload, err := json.Marshal(usage)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to encode usage snapshot: "+err.Error())
+		return
+	}
+	now := time.Now().UTC()
+	snapshot := &storage.UsageAccountingSnapshot{
+		ID:          uuid.NewString(),
+		ProjectID:   projectID,
+		GeneratedAt: usage.GeneratedAt,
+		PayloadJSON: string(payload),
+		CreatedAt:   now,
+	}
+	if err := s.store.SaveUsageAccountingSnapshot(snapshot); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to save usage snapshot: "+err.Error())
+		return
+	}
+	view, err := usageAccountingSnapshotView(snapshot)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to decode usage snapshot: "+err.Error())
+		return
+	}
+	s.recordAuditEvent(r, "usage.snapshot.capture", "success", "usage_accounting_snapshot", snapshot.ID, projectID, map[string]any{
+		"run_count":        usage.Totals.RunCount,
+		"vuser_seconds":    usage.Totals.VUserSeconds,
+		"duration_seconds": usage.Totals.DurationSeconds,
+	})
+	writeJSON(w, http.StatusCreated, view)
 }
 
 func (s *Server) handleExportUsageAccounting(w http.ResponseWriter, r *http.Request) {
@@ -67,6 +155,50 @@ func (s *Server) handleExportUsageAccounting(w http.ResponseWriter, r *http.Requ
 		_ = writer.Write(row)
 	}
 	writer.Flush()
+}
+
+func usageAccountingSnapshotViews(snapshots []*storage.UsageAccountingSnapshot) ([]UsageAccountingSnapshotView, error) {
+	views := make([]UsageAccountingSnapshotView, 0, len(snapshots))
+	for _, snapshot := range snapshots {
+		view, err := usageAccountingSnapshotView(snapshot)
+		if err != nil {
+			return nil, err
+		}
+		views = append(views, view)
+	}
+	return views, nil
+}
+
+func usageAccountingSnapshotView(snapshot *storage.UsageAccountingSnapshot) (UsageAccountingSnapshotView, error) {
+	if snapshot == nil {
+		return UsageAccountingSnapshotView{}, nil
+	}
+	var usage UsageAccountingResponse
+	if err := json.Unmarshal([]byte(snapshot.PayloadJSON), &usage); err != nil {
+		return UsageAccountingSnapshotView{}, err
+	}
+	return UsageAccountingSnapshotView{
+		ID:          snapshot.ID,
+		ProjectID:   snapshot.ProjectID,
+		GeneratedAt: snapshot.GeneratedAt,
+		CreatedAt:   snapshot.CreatedAt,
+		Usage:       usage,
+	}, nil
+}
+
+func usageSnapshotQueryInt(r *http.Request, key string, fallback int, max int) int {
+	raw := strings.TrimSpace(r.URL.Query().Get(key))
+	if raw == "" {
+		return fallback
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value < 0 {
+		return fallback
+	}
+	if max > 0 && value > max {
+		return max
+	}
+	return value
 }
 
 func (s *Server) usageAccounting(projectID string) UsageAccountingResponse {

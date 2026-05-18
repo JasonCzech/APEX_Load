@@ -47,13 +47,15 @@ Until then, use projects for governance and preserve team-like concepts as exter
 
 `GET /api/v1/system/usage/export` returns the same rollups as CSV for chargeback, capacity review, and external governance packs. The export includes one totals row plus project, protocol, and region bucket rows, with deterministic status-count encoding.
 
+`POST /api/v1/system/usage/snapshots` captures the current rollup into durable metadata storage for audit evidence, and `GET /api/v1/system/usage/snapshots` lists saved snapshots. Both support the same optional `project_id` scope as the live usage API; snapshot capture is system-admin only while snapshot reads follow the global reader roles.
+
 This is intentionally a primitive, not a billing engine. It gives quota, fair-share, and capacity-planning work a shared source of usage facts without requiring raw archive replay.
 
 Known limits for the initial primitive:
 
 - Region buckets use requested assignment metadata, not finalized per-generator placement.
 - Archive bytes are computed from local archive paths visible to the controller.
-- Historical rollups depend on runs loaded into the controller; a future persistent usage table should snapshot terminal runs.
+- Snapshot capture is currently operator/API driven; the next hardening slice should add configurable cadence-based capture for terminal runs and scheduled governance windows.
 
 ## Audit Extensions
 

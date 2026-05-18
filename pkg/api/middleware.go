@@ -486,8 +486,12 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 		return accessRequirement{GlobalRoles: []string{RoleSystemAdmin}}, true
 	}
 
-	if (path == "/api/v1/system/inventory" || path == "/api/v1/system/usage" || path == "/api/v1/system/usage/export" || path == "/api/v1/fleet/alerts" || path == "/api/v1/fleet/capacity") && method == http.MethodGet {
+	if (path == "/api/v1/system/inventory" || path == "/api/v1/system/usage" || path == "/api/v1/system/usage/export" || path == "/api/v1/system/usage/snapshots" || path == "/api/v1/fleet/alerts" || path == "/api/v1/fleet/capacity") && method == http.MethodGet {
 		return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
+	}
+
+	if path == "/api/v1/system/usage/snapshots" && method == http.MethodPost {
+		return accessRequirement{GlobalRoles: []string{RoleSystemAdmin}}, true
 	}
 
 	if path == "/api/v1/system/generators/drain" && method == http.MethodPatch {

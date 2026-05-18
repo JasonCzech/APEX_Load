@@ -891,3 +891,48 @@ func TestSQLiteStoreSharedDataPoolsAndScenarioBindings(t *testing.T) {
 		t.Fatalf("DeleteDataPool returned error after unbinding: %v", err)
 	}
 }
+
+func TestSQLiteStoreUsageAccountingSnapshots(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	firstGeneratedAt := time.Date(2026, 5, 18, 10, 0, 0, 0, time.UTC)
+	secondGeneratedAt := firstGeneratedAt.Add(time.Hour)
+	if err := store.SaveUsageAccountingSnapshot(&UsageAccountingSnapshot{
+		ID:          "usage-snapshot-1",
+		ProjectID:   "project-a",
+		GeneratedAt: firstGeneratedAt,
+		PayloadJSON: `{"project_id":"project-a","totals":{"run_count":1}}`,
+		CreatedAt:   firstGeneratedAt,
+	}); err != nil {
+		t.Fatalf("SaveUsageAccountingSnapshot first returned error: %v", err)
+	}
+	if err := store.SaveUsageAccountingSnapshot(&UsageAccountingSnapshot{
+		ID:          "usage-snapshot-2",
+		ProjectID:   "project-b",
+		GeneratedAt: secondGeneratedAt,
+		PayloadJSON: `{"project_id":"project-b","totals":{"run_count":2}}`,
+		CreatedAt:   secondGeneratedAt,
+	}); err != nil {
+		t.Fatalf("SaveUsageAccountingSnapshot second returned error: %v", err)
+	}
+
+	projectSnapshots, err := store.ListUsageAccountingSnapshots("project-a", 10, 0)
+	if err != nil {
+		t.Fatalf("ListUsageAccountingSnapshots project returned error: %v", err)
+	}
+	if len(projectSnapshots) != 1 || projectSnapshots[0].ID != "usage-snapshot-1" || projectSnapshots[0].PayloadJSON == "" {
+		t.Fatalf("project snapshots = %#v, want project-a snapshot", projectSnapshots)
+	}
+
+	allSnapshots, err := store.ListUsageAccountingSnapshots("", 10, 0)
+	if err != nil {
+		t.Fatalf("ListUsageAccountingSnapshots all returned error: %v", err)
+	}
+	if len(allSnapshots) != 2 || allSnapshots[0].ID != "usage-snapshot-2" || allSnapshots[1].ID != "usage-snapshot-1" {
+		t.Fatalf("all snapshots = %#v, want newest first", allSnapshots)
+	}
+}

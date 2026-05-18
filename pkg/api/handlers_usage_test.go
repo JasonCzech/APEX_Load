@@ -148,6 +148,66 @@ func TestHandleExportUsageAccountingEmitsCSV(t *testing.T) {
 	assertUsageCSVRow(t, rows, "region", "us-east", "1", "0", "15", "120", "1800", "COMPLETE=1")
 }
 
+func TestHandleUsageAccountingSnapshotsCapturesAndListsPersistedSnapshots(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	server.runner.mu.Lock()
+	server.runner.tests["test-a"] = &ManagedTest{
+		ID:          "test-a",
+		Name:        "Checkout",
+		Status:      "COMPLETE",
+		ProjectID:   "project-a",
+		TotalVUsers: 7,
+		Duration:    time.Minute,
+		Groups:      []TestGroup{{Name: "buyers", Protocol: "http", VUsers: 7}},
+	}
+	server.runner.mu.Unlock()
+
+	captureReq := httptest.NewRequest(http.MethodPost, "/api/v1/system/usage/snapshots?project_id=project-a", nil)
+	captureResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(captureResp, captureReq)
+
+	if captureResp.Code != http.StatusCreated {
+		t.Fatalf("capture status = %d, want %d body=%s", captureResp.Code, http.StatusCreated, captureResp.Body.String())
+	}
+	var captured UsageAccountingSnapshotView
+	if err := json.Unmarshal(captureResp.Body.Bytes(), &captured); err != nil {
+		t.Fatalf("unmarshal captured snapshot: %v", err)
+	}
+	if captured.ID == "" || captured.ProjectID != "project-a" || captured.Usage.Totals.RunCount != 1 || captured.Usage.Totals.VUserSeconds != 420 {
+		t.Fatalf("captured snapshot = %#v, want project-a usage snapshot", captured)
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/system/usage/snapshots?project_id=project-a", nil)
+	listResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(listResp, listReq)
+
+	if listResp.Code != http.StatusOK {
+		t.Fatalf("list status = %d, want %d body=%s", listResp.Code, http.StatusOK, listResp.Body.String())
+	}
+	var listed UsageAccountingSnapshotsResponse
+	if err := json.Unmarshal(listResp.Body.Bytes(), &listed); err != nil {
+		t.Fatalf("unmarshal listed snapshots: %v", err)
+	}
+	if listed.Count != 1 || len(listed.Snapshots) != 1 {
+		t.Fatalf("listed snapshots = %#v, want one snapshot", listed)
+	}
+	if listed.Snapshots[0].ID != captured.ID || listed.Snapshots[0].Usage.Totals.TotalVUsers != 7 {
+		t.Fatalf("listed snapshot = %#v, want captured usage", listed.Snapshots[0])
+	}
+	events, err := store.ListAuditEvents(storage.AuditEventFilter{Action: "usage.snapshot.capture", Limit: 10})
+	if err != nil {
+		t.Fatalf("ListAuditEvents returned error: %v", err)
+	}
+	if len(events) != 1 || events[0].ResourceID != captured.ID || events[0].ProjectID != "project-a" {
+		t.Fatalf("audit events = %#v, want capture audit for snapshot", events)
+	}
+}
+
 func findUsageBucket(t *testing.T, buckets []UsageAccountingBucket, key string) UsageAccountingBucket {
 	t.Helper()
 	for _, bucket := range buckets {
