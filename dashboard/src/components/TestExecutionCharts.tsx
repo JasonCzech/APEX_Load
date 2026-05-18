@@ -72,6 +72,13 @@ const chartConfigs: ChartConfig[] = [
   { id: 'network_latency', title: 'Route Latency (ms)', type: 'line-network' },
 ]
 
+export const monitorPresets = [
+  { id: 'run_operator', label: 'Run Operator', chartIds: ['vusers', 'tps', 'latency', 'errors'] },
+  { id: 'performance_engineer', label: 'Performance Engineer', chartIds: ['latency', 'tps', 'errors', 'cpu', 'mem', 'io', 'network_latency', 'vusers'] },
+  { id: 'platform_admin', label: 'Platform Admin', chartIds: ['cpu', 'mem', 'io', 'network_latency', 'vusers', 'tps'] },
+  { id: 'release_approver', label: 'Release Approver', chartIds: ['latency', 'errors', 'tps'] },
+] as const
+
 function readStoredArray(key: string) {
   if (typeof window === 'undefined') return []
   try {
@@ -91,6 +98,16 @@ function moveChartId(ids: string[], draggedId: string, targetId: string) {
   if (targetIndex === -1) return ids
   next.splice(targetIndex, 0, draggedId)
   return next
+}
+
+export function chartStateForMonitorPreset(presetId: string, knownChartIds = chartConfigs.map(chart => chart.id)) {
+  const preset = monitorPresets.find(candidate => candidate.id === presetId)
+  const selected = preset?.chartIds.filter(id => knownChartIds.includes(id)) ?? knownChartIds
+  const remaining = knownChartIds.filter(id => !selected.includes(id))
+  return {
+    chartOrder: [...selected, ...remaining],
+    hiddenChartIds: remaining,
+  }
 }
 
 export default function TestExecutionCharts({
@@ -183,6 +200,12 @@ export default function TestExecutionCharts({
     setHiddenChartIds([])
   }
 
+  const applyMonitorPreset = (presetId: string) => {
+    const next = chartStateForMonitorPreset(presetId)
+    setChartOrder(next.chartOrder)
+    setHiddenChartIds(next.hiddenChartIds)
+  }
+
   return (
     <>
       <div className="charts-customize-bar">
@@ -192,9 +215,18 @@ export default function TestExecutionCharts({
         </div>
         <div className="charts-customize-actions">
           {customizingCharts && (
-            <button className="btn btn-secondary btn-sm" type="button" onClick={resetCharts}>
-              Reset Graphs
-            </button>
+            <>
+              <div className="monitor-preset-buttons">
+                {monitorPresets.map(preset => (
+                  <button key={preset.id} className="btn btn-secondary btn-sm" type="button" onClick={() => applyMonitorPreset(preset.id)}>
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+              <button className="btn btn-secondary btn-sm" type="button" onClick={resetCharts}>
+                Reset Graphs
+              </button>
+            </>
           )}
           <button
             className={`btn btn-sm ${customizingCharts ? 'btn-primary' : 'btn-secondary'}`}

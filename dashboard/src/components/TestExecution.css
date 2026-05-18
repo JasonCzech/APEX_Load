@@ -826,6 +826,13 @@
   flex-shrink: 0;
 }
 
+.monitor-preset-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 .hidden-chart-list {
   display: flex;
   flex-wrap: wrap;

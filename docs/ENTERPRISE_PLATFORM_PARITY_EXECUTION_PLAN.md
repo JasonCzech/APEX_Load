@@ -222,7 +222,7 @@ Acceptance criteria:
 | P5.5 | Add live dependency map from transaction dependency metadata and protocol classifications | L | P5.1 | Complete - live metrics now include a source-to-dependency map derived from dependency target rollups, protocol classification, latency, and error health, and the run summary renders the map for operators. |
 | P5.6 | Add live error-pattern cards with first-seen, last-seen, affected groups, and snapshot links | M | P5.1 | Complete - failed action metrics retain last error/status context, the runner maintains normalized live error patterns across intervals, and the run summary displays first/latest sightings with affected actions, groups, and snapshot query links. |
 | P5.7 | Add live capacity panel showing allocated, available, saturated, queued, and rejected demand by region and protocol | M | P2.1 | Partial UI complete - active runs now surface capacity advisory allocation, availability, saturation, queued/rejected demand, protocol mix, and assignment-region distribution in the run status panels. |
-| P5.8 | Add monitor presets for run operator, performance engineer, platform admin, and release approver views | M | P5.5 | Planned |
+| P5.8 | Add monitor presets for run operator, performance engineer, platform admin, and release approver views | M | P5.5 | Complete - graph customization now includes role presets for run operator, performance engineer, platform admin, and release approver views with persisted chart order/visibility. |
 
 Acceptance criteria:
 - Active-run dashboards answer "is the test healthy?", "is the system under test healthy?", and "is Stormrunner healthy?" separately.
