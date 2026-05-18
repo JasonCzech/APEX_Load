@@ -31,6 +31,7 @@ type VUser struct {
 	PauseControl         PauseController
 	IterationRateLimiter *TokenBucket
 	Rendezvous           *RendezvousCoordinator
+	ExecutionGoals       *ExecutionGoalLimiter
 }
 
 type PauseController interface {
@@ -153,6 +154,9 @@ func (vu *VUser) Run(ctx context.Context) {
 		if maxIter > 0 && iteration >= maxIter {
 			break
 		}
+		if vu.ExecutionGoals != nil && !vu.ExecutionGoals.TryStartIteration() {
+			break
+		}
 		if ctx.Err() != nil {
 			break
 		}
@@ -205,6 +209,9 @@ func (vu *VUser) Run(ctx context.Context) {
 			}
 
 			resolved := vu.resolveAction(action)
+			if vu.ExecutionGoals != nil && !vu.ExecutionGoals.TryStartTransaction() {
+				goto teardown
+			}
 
 			// Track action-level transaction
 			var actionTxStart time.Time

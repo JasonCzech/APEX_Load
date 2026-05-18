@@ -104,6 +104,7 @@ func (e *Engine) Run(ctx context.Context) (*RunResult, error) {
 	ctx, cancel := context.WithTimeout(ctx, e.duration)
 	e.cancel = cancel
 	defer cancel()
+	executionGoals := NewExecutionGoalLimiter(e.script.Config.RunLogic, cancel)
 
 	proto, err := protocol.Get(e.script.Protocol)
 	if err != nil {
@@ -171,6 +172,7 @@ func (e *Engine) Run(ctx context.Context) (*RunResult, error) {
 				Metrics:              e.metrics,
 				IterationRateLimiter: iterationRateLimiter,
 				Rendezvous:           rendezvous,
+				ExecutionGoals:       executionGoals,
 			}
 			vu.Run(ctx)
 		}()
@@ -210,7 +212,8 @@ func (e *Engine) rampDelay() time.Duration {
 func (e *Engine) runOpenWorkload(ctx context.Context, protoConfig map[string]any) (*RunResult, error) {
 	start := time.Now()
 	iterationScript := cloneSingleIterationScript(e.script)
-	arrivals, bounded := openWorkloadArrivalLimit(e.script.Config.RunLogic.Iterations, e.vusers)
+	arrivals, bounded := boundedArrivalLimit(e.script, e.vusers)
+	executionGoals := NewExecutionGoalLimiter(e.script.Config.RunLogic, e.cancel)
 
 	var wg sync.WaitGroup
 	var activeWorkers atomic.Int64
@@ -243,10 +246,11 @@ func (e *Engine) runOpenWorkload(ctx context.Context, protoConfig map[string]any
 			defer vuProto.Teardown(context.Background())
 
 			vu := &VUser{
-				ID:      workerID,
-				Proto:   vuProto,
-				Script:  iterationScript,
-				Metrics: e.metrics,
+				ID:             workerID,
+				Proto:          vuProto,
+				Script:         iterationScript,
+				Metrics:        e.metrics,
+				ExecutionGoals: executionGoals,
 			}
 			vu.Run(ctx)
 		}(arrival)

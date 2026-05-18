@@ -29,6 +29,22 @@ func TestValidateScriptIssues_RendezvousValidation(t *testing.T) {
 	assertIssue(t, issues, `actions[0] "sync-buyers": rendezvous timeout_ms must be zero or greater`)
 }
 
+func TestValidateScriptIssues_RunLogicGlobalGoals(t *testing.T) {
+	script := &Script{
+		Name:     "invalid-global-goals",
+		Protocol: "http",
+		Config: ScriptConfig{
+			BaseURL:  "https://example.test",
+			RunLogic: RunLogicConfig{GlobalIterations: -1, MaxTransactions: -1},
+		},
+		Actions: []Action{{Name: "home", Type: "request", Target: "/"}},
+	}
+
+	issues := ValidateScriptIssues(script)
+	assertIssue(t, issues, "config.run_logic.global_iterations must be zero or greater")
+	assertIssue(t, issues, "config.run_logic.max_transactions must be zero or greater")
+}
+
 func TestValidateScriptIssues_SOAPValidation(t *testing.T) {
 	script := &Script{
 		Name:     "soap-invalid",

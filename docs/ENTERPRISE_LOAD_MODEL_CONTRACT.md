@@ -45,6 +45,11 @@ Scenario and test group payloads can now carry staged load segments:
 
 Supported stage types are `ramp_up`, `hold`, and `ramp_down`. Each stage requires `duration` plus either `target_vusers` or `target_tps`. The current runtime derives compatibility `ramp_up`, `ramp_down`, and group VUsers from the staged model while preserving the full stage list in API and SQLite scenario records.
 
+Scripts can also set shared run goals in `config.run_logic`:
+
+- `global_iterations`: maximum total started iterations across all VUsers in the executing script group
+- `max_transactions`: maximum total protocol action attempts across all VUsers in the executing script group
+
 Status values:
 
 | Status | Meaning |
@@ -86,3 +91,4 @@ The first template catalog covers:
 | P4.3 Staged ramp segments | Partial backend complete | Group `stages` round-trip through API/storage and derive compatibility ramp execution |
 | P4.4 Capacity validation | Partial backend complete | Draft validation checks modeled demand, capacity, browser canaries, data-pool rows, data-source fit, and generator placement |
 | P4.5 Rendezvous points | Complete | Runtime `rendezvous` actions synchronize VUsers and validation reports spike readiness |
+| P4.6 Global goals | Partial backend complete | Runtime enforces group-level `global_iterations` and `max_transactions` across VUsers |

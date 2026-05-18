@@ -77,8 +77,20 @@ func ValidateScriptIssues(script *Script) []string {
 	issues = append(issues, validateWebSocketConfigIssues(script)...)
 	issues = append(issues, validateGRPCConfigIssues(script)...)
 	issues = append(issues, validateWebRuntimeIssues(script)...)
+	issues = append(issues, validateRunLogicIssues(script.Config.RunLogic)...)
 	issues = append(issues, validateGoalConfigIssues(script.GoalConfig)...)
 
+	return issues
+}
+
+func validateRunLogicIssues(runLogic RunLogicConfig) []string {
+	var issues []string
+	if runLogic.GlobalIterations < 0 {
+		issues = append(issues, "config.run_logic.global_iterations must be zero or greater")
+	}
+	if runLogic.MaxTransactions < 0 {
+		issues = append(issues, "config.run_logic.max_transactions must be zero or greater")
+	}
 	return issues
 }
 

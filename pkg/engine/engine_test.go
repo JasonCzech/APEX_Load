@@ -141,6 +141,55 @@ func TestEngine_Run(t *testing.T) {
 	}
 }
 
+func TestEngine_RunStopsAtGlobalIterationGoal(t *testing.T) {
+	script := &dsl.Script{
+		Name:     "global-iteration-goal",
+		Protocol: "stub",
+		Config: dsl.ScriptConfig{
+			RunLogic: dsl.RunLogicConfig{GlobalIterations: 5},
+		},
+		Actions: []dsl.Action{{Name: "homepage", Type: "request", Target: "/"}},
+	}
+	e, err := New(Config{Script: script, VUsers: 3, Duration: time.Second})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	result, err := e.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if result.TotalTransactions != 5 {
+		t.Fatalf("total transactions = %d, want 5 from global iteration goal", result.TotalTransactions)
+	}
+}
+
+func TestEngine_RunStopsAtGlobalTransactionGoal(t *testing.T) {
+	script := &dsl.Script{
+		Name:     "global-transaction-goal",
+		Protocol: "stub",
+		Config: dsl.ScriptConfig{
+			RunLogic: dsl.RunLogicConfig{MaxTransactions: 4},
+		},
+		Actions: []dsl.Action{
+			{Name: "home", Type: "request", Target: "/"},
+			{Name: "checkout", Type: "request", Target: "/checkout"},
+		},
+	}
+	e, err := New(Config{Script: script, VUsers: 3, Duration: time.Second})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	result, err := e.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if result.TotalTransactions != 4 {
+		t.Fatalf("total transactions = %d, want 4 from global transaction goal", result.TotalTransactions)
+	}
+}
+
 func TestEngine_Stop(t *testing.T) {
 	script := &dsl.Script{
 		Name:     "stop-test",

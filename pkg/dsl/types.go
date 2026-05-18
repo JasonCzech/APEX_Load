@@ -240,6 +240,8 @@ type BrowserCaptureOptions struct {
 // RunLogicConfig controls iteration behavior and automatic transaction wrapping.
 type RunLogicConfig struct {
 	Iterations       int      `json:"iterations,omitempty"`        // 0 = run until duration (default)
+	GlobalIterations int      `json:"global_iterations,omitempty"` // 0 = no shared iteration cap across VUsers
+	MaxTransactions  int64    `json:"max_transactions,omitempty"`  // 0 = no shared transaction cap across VUsers
 	WorkloadModel    string   `json:"workload_model,omitempty"`    // "closed" (default), "open"
 	AutoTransactions string   `json:"auto_transactions,omitempty"` // "none" (default), "per_action", "per_iteration"
 	BlockScheduling  string   `json:"block_scheduling,omitempty"`  // "sequential", "random", "percentage"

@@ -22,6 +22,7 @@ type GroupConfig struct {
 	RedactionConfig *RedactionConfig
 	rateLimiter     *TokenBucket
 	rendezvous      *RendezvousCoordinator
+	executionGoals  *ExecutionGoalLimiter
 }
 
 type ResultSink interface {
@@ -120,6 +121,7 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 	baseCtx, baseCancel := context.WithCancel(ctx)
 	mge.baseCtx = baseCtx
 	for i := range mge.groups {
+		mge.groups[i].executionGoals = NewExecutionGoalLimiter(mge.groups[i].Script.Config.RunLogic, baseCancel)
 		if !isOpenWorkload(mge.groups[i].Script) {
 			mge.groups[i].rendezvous = NewRendezvousCoordinator()
 		}
@@ -184,7 +186,7 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 
 		protoConfig := buildProtoConfig(group.Script)
 		if isOpenWorkload(group.Script) {
-			arrivals, bounded := openWorkloadArrivalLimit(group.Script.Config.RunLogic.Iterations, group.VUsers)
+			arrivals, bounded := boundedArrivalLimit(group.Script, group.VUsers)
 			wg.Add(1)
 			go func(group GroupConfig, protoConfig map[string]any, totalArrivals int) {
 				defer wg.Done()
@@ -316,6 +318,7 @@ func (mge *MultiGroupEngine) spawnVUser(vuserID int, group GroupConfig, protoCon
 			PauseControl:         mge,
 			IterationRateLimiter: group.rateLimiter,
 			Rendezvous:           group.rendezvous,
+			ExecutionGoals:       group.executionGoals,
 		}
 		vu.Run(vuCtx)
 	}()
@@ -382,6 +385,7 @@ func (mge *MultiGroupEngine) spawnOpenWorker(vuserID int, group GroupConfig, pro
 			ResultSink:      group.ResultSink,
 			RedactionConfig: group.RedactionConfig,
 			PauseControl:    mge,
+			ExecutionGoals:  group.executionGoals,
 		}
 		vu.Run(vuCtx)
 	}()
