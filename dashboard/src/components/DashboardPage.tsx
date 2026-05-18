@@ -5,6 +5,7 @@ import { useApi } from '../hooks/useApi'
 import { useApplication } from '../hooks/useApplication'
 import { useProject } from '../hooks/useProject'
 import { TestSummary, MetricsHistoryPoint, RunArchiveReport, SystemInventoryResponse } from '../types'
+import { downloadBlob } from '../utils/fileUtils'
 import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
 import { type NavPage } from './Sidebar'
 import StatusBadge from './StatusBadge'
@@ -448,6 +449,12 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
   const navigateToMonitoring = () => onNavigate('monitoring')
   const navigateToTests = () => onNavigate('tests')
   const navigateToResults = () => onNavigate('results')
+  const downloadTrendCsv = async () => {
+    if (!activeRelease?.id) return
+    const blob = await api.downloadReleaseTrend(activeRelease.id)
+    const filename = `${(activeRelease.name || 'release').replace(/\s+/g, '-').toLowerCase()}-${activeRelease.id}-trend.csv`
+    downloadBlob(blob, filename)
+  }
   const navigateToLatestResult = () => {
     if (latestReleaseRun) {
       onSelectTest(latestReleaseRun.id)
@@ -578,7 +585,14 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
       <section className="dash-section dash-performance-trend">
         <div className="dash-section-heading-row">
           <h3 className="dash-section-title">Performance Trend</h3>
-          <span className="dash-context-chip">Last {archivedReleaseRuns.length || 0} archived runs</span>
+          <div className="dash-section-heading-actions">
+            {activeRelease?.id && performanceTrend.length > 0 && (
+              <button type="button" className="btn btn-secondary btn-sm" onClick={downloadTrendCsv}>
+                Export CSV
+              </button>
+            )}
+            <span className="dash-context-chip">Last {archivedReleaseRuns.length || 0} archived runs</span>
+          </div>
         </div>
         {performanceTrend.length === 0 ? (
           <div className="dash-empty small">

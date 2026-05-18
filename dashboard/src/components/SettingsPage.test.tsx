@@ -28,6 +28,8 @@ const apiMock = {
   getHealth: vi.fn(),
   getSystemInventory: vi.fn(),
   updateSystemSettings: vi.fn(),
+  planArchiveRetention: vi.fn(),
+  applyArchiveRetention: vi.fn(),
   listDataPools: vi.fn(),
   getDataPool: vi.fn(),
   createDataPool: vi.fn(),
@@ -130,6 +132,11 @@ describe('SettingsPage', () => {
           source: 'configured',
           configured_available_generators: 1,
         },
+      },
+      archive_retention: {
+        enabled: true,
+        default_retention_days: 45,
+        policies: [],
       },
       notifications: {
         webhooks: [],
@@ -334,6 +341,45 @@ describe('SettingsPage', () => {
     apiMock.listDataPools.mockResolvedValue({ data_pools: [] })
     apiMock.getDataPool.mockResolvedValue({ rows: [] })
     apiMock.listTests.mockResolvedValue({ tests: [] })
+    apiMock.planArchiveRetention.mockResolvedValue({
+      generated_at: '2026-05-18T12:00:00Z',
+      dry_run: true,
+      candidates: [
+        {
+          test_id: 'run-expired',
+          project_id: 'project-1',
+          release_id: 'rel-1',
+          run_status: 'COMPLETE',
+          archive_path: '/tmp/run-expired',
+          policy_name: 'default',
+          artifact_type: 'bundle',
+          retention_days: 45,
+          completed_at: '2026-03-01T12:00:00Z',
+          expired_at: '2026-04-15T12:00:00Z',
+        },
+      ],
+      summary: { candidate_count: 1, pruned_count: 0, failed_count: 0 },
+    })
+    apiMock.applyArchiveRetention.mockResolvedValue({
+      generated_at: '2026-05-18T12:01:00Z',
+      dry_run: false,
+      candidates: [
+        {
+          test_id: 'run-expired',
+          project_id: 'project-1',
+          release_id: 'rel-1',
+          run_status: 'COMPLETE',
+          archive_path: '/tmp/run-expired',
+          policy_name: 'default',
+          artifact_type: 'bundle',
+          retention_days: 45,
+          completed_at: '2026-03-01T12:00:00Z',
+          expired_at: '2026-04-15T12:00:00Z',
+        },
+      ],
+      results: [{ test_id: 'run-expired', archive_path: '/tmp/run-expired', status: 'pruned' }],
+      summary: { candidate_count: 1, pruned_count: 1, failed_count: 0 },
+    })
     applicationApiMock.listReleases.mockResolvedValue({ releases: [] })
     projectApiMock.listProjects.mockResolvedValue({
       projects: [
@@ -390,6 +436,37 @@ describe('SettingsPage', () => {
     expect(container.textContent).toContain('2 CPU / 4096 MB')
     expect(container.textContent).toContain('Up to date')
     expect(apiMock.getSystemInventory).toHaveBeenCalledTimes(1)
+  })
+
+  it('plans archive retention pruning from the capacity settings section', async () => {
+    await act(async () => {
+      root.render(<SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+
+    await flushPromises()
+
+    const capacitySection = container.querySelector('#settings-section-capacity')
+    expect(capacitySection).toBeTruthy()
+    if (!capacitySection) return
+
+    expect(capacitySection.textContent).toContain('Archive Retention Executor')
+    expect(capacitySection.textContent).toContain('Default Retention Days')
+    expect(findSettingInput(capacitySection, 'Default Retention Days')?.value).toBe('45')
+
+    const planButton = Array.from(capacitySection.querySelectorAll('button')).find(button => button.textContent?.includes('Plan Retention'))
+    expect(planButton).toBeDefined()
+    if (!planButton) return
+
+    await act(async () => {
+      planButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushPromises()
+
+    expect(apiMock.planArchiveRetention).toHaveBeenCalledTimes(1)
+    expect(capacitySection.textContent).toContain('Retention plan found 1 prune candidate.')
+    expect(capacitySection.textContent).toContain('run-expired')
+    expect(capacitySection.textContent).toContain('default / bundle')
   })
 
   it('edits telemetry SLA budgets in performance thresholds', async () => {

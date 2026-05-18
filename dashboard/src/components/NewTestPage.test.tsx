@@ -14,6 +14,8 @@ const apiMock = {
   createScenarioSchedule: vi.fn(),
   updateScenarioSchedule: vi.fn(),
   deleteScenarioSchedule: vi.fn(),
+  approveScenarioScheduleApproval: vi.fn(),
+  rejectScenarioScheduleApproval: vi.fn(),
   createTest: vi.fn(),
   startTest: vi.fn(),
   getAuthEffectiveAccess: vi.fn(),
@@ -72,6 +74,8 @@ describe('NewTestPage', () => {
     apiMock.startTest.mockResolvedValue({})
     apiMock.listScenarioSchedules.mockResolvedValue({ schedules: [], count: 0 })
     apiMock.createScenarioSchedule.mockResolvedValue({ id: 'schedule-1' })
+    apiMock.approveScenarioScheduleApproval.mockResolvedValue({ schedule: { id: 'schedule-1' } })
+    apiMock.rejectScenarioScheduleApproval.mockResolvedValue({ schedule: { id: 'schedule-1' } })
     apiMock.getAuthEffectiveAccess.mockResolvedValue({
       enabled: true,
       authenticated: true,
@@ -161,7 +165,76 @@ describe('NewTestPage', () => {
       name: 'Multi-group (3 groups) Schedule',
       cron_expr: '0 9 * * 1-5',
       enabled: true,
+      approval_policy: 'auto',
+      missed_run_policy: 'skip',
     }))
+  })
+
+  it('surfaces governed schedule policies and approval actions', async () => {
+    apiMock.listScenarioSchedules.mockResolvedValue({
+      schedules: [
+        {
+          id: 'schedule-1',
+          scenario_id: 'scenario-1',
+          name: 'Production Nightly',
+          cron_expr: '0 2 * * 1-5',
+          release_id: 'release-1',
+          run_name_template: 'Production Nightly',
+          enabled: true,
+          approval_policy: 'production',
+          missed_run_policy: 'catch_up_once',
+          next_required_action: 'approval_required',
+          pending_approval_id: 'approval-1',
+          last_occurrence: {
+            id: 'occ-1',
+            schedule_id: 'schedule-1',
+            scenario_id: 'scenario-1',
+            schedule_revision: 2,
+            planned_at: '2026-05-18T06:00:00Z',
+            status: 'blocked',
+            reason_code: 'approval_required',
+            approval_id: 'approval-1',
+            created_at: '2026-05-18T06:00:00Z',
+            updated_at: '2026-05-18T06:00:00Z',
+          },
+          created_at: '2026-05-17T00:00:00Z',
+          updated_at: '2026-05-18T00:00:00Z',
+        },
+      ],
+      count: 1,
+    })
+
+    await act(async () => {
+      root.render(
+        <NewTestPage
+          activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+          activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+          releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+          onSelectTest={vi.fn()}
+          onCreateRelease={vi.fn().mockResolvedValue(null)}
+        />,
+      )
+    })
+
+    await flushPromises()
+
+    const schedulesButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Schedules')
+    await act(async () => {
+      schedulesButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.textContent).toContain('Production Nightly')
+    expect(container.textContent).toContain('production / catch up once')
+    expect(container.textContent).toContain('Enabled · approval required · last blocked')
+
+    const approveButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Approve')
+    expect(approveButton).toBeTruthy()
+    await act(async () => {
+      approveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.approveScenarioScheduleApproval).toHaveBeenCalledWith('scenario-1', 'schedule-1', 'approval-1', 'Approved from schedule dashboard.')
   })
 
   it('disables run and schedule mutations when effective RBAC denies test management', async () => {

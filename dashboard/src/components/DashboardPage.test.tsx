@@ -5,13 +5,19 @@ import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import DashboardPage from './DashboardPage'
+import { downloadBlob } from '../utils/fileUtils'
 
 const apiMock = {
   listTests: vi.fn(),
   getHealth: vi.fn(),
   getSystemInventory: vi.fn(),
   getTestArchiveReport: vi.fn(),
+  downloadReleaseTrend: vi.fn(),
 }
+
+vi.mock('../utils/fileUtils', () => ({
+  downloadBlob: vi.fn(),
+}))
 
 const applicationState = {
   activeApplication: { id: 'app-1', name: 'Storefront', created_at: '2026-05-01T00:00:00Z', updated_at: '2026-05-01T00:00:00Z' },
@@ -195,6 +201,7 @@ describe('DashboardPage', () => {
         disk_write_kbps: 0,
       },
     })
+    apiMock.downloadReleaseTrend.mockResolvedValue(new Blob(['release trend csv'], { type: 'text/csv' }))
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -244,6 +251,7 @@ describe('DashboardPage', () => {
     expect(container.textContent).toContain('512 MB')
     expect(container.textContent).toContain('Telemetry Breaches')
     expect(container.textContent).toContain('Breached')
+    expect(container.textContent).toContain('Export CSV')
     expect(container.textContent).toContain('Browser Runtime')
     expect(container.textContent).toContain('iphone_se · Portrait · Touch enabled · Headed')
     expect(container.textContent).toContain('pixel_8 · Landscape · Touch enabled · Headless')
@@ -271,6 +279,14 @@ describe('DashboardPage', () => {
 
     clickButtonByText('Aggregate TPS (active tests)')
     expect(onNavigate).toHaveBeenCalledWith('tests')
+
+    clickButtonByText('Export CSV')
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(apiMock.downloadReleaseTrend).toHaveBeenCalledWith('rel-1')
+    expect(downloadBlob).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(downloadBlob).mock.calls[0][1]).toBe('sprint-24-rel-1-trend.csv')
   })
 
   it('waits for the active application before loading dashboard data', async () => {

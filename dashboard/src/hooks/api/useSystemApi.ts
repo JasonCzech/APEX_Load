@@ -5,6 +5,7 @@ import {
   DashboardAuthDiagnostics,
   DashboardAuthEffectiveAccess,
   DashboardAuthRoleCatalog,
+  ArchiveRetentionPlanResponse,
   DashboardAuditEventListResponse,
   DashboardAuditEventFilter,
   DashboardCreateServiceAccountRequest,
@@ -12,6 +13,8 @@ import {
   DashboardServiceAccountListResponse,
   DashboardSystemSettings,
   DashboardUpdateServiceAccountRequest,
+  FleetAlertsResponse,
+  FleetCapacityResponse,
   HealthResponse,
   ParityStatusResponse,
   SystemInventoryResponse,
@@ -66,6 +69,12 @@ export function useSystemApi() {
   const getHealth = useCallback(() => request<HealthResponse>('/system/health'), [])
   const getSystemInventory = useCallback(() => request<SystemInventoryResponse>('/system/inventory'), [])
   const getParityStatus = useCallback(() => request<ParityStatusResponse>('/system/parity-status'), [])
+  const getFleetAlerts = useCallback(() => request<FleetAlertsResponse>('/fleet/alerts'), [])
+  const getFleetCapacity = useCallback((params: { project_id?: string; region?: string; protocol?: string } = {}) =>
+    request<FleetCapacityResponse>(`/fleet/capacity${buildQuery(params)}`),
+  [])
+  const planArchiveRetention = useCallback(() => request<ArchiveRetentionPlanResponse>('/archives/retention/plan', { method: 'POST' }), [])
+  const applyArchiveRetention = useCallback(() => request<ArchiveRetentionPlanResponse>('/archives/retention/apply', { method: 'POST' }), [])
 
   const getSystemSettings = useCallback(() => request<DashboardSystemSettings>('/system/settings'), [])
 
@@ -90,9 +99,13 @@ export function useSystemApi() {
       getHealth,
       getSystemInventory,
       getParityStatus,
+      getFleetAlerts,
+      getFleetCapacity,
+      planArchiveRetention,
+      applyArchiveRetention,
       getSystemSettings,
       updateSystemSettings,
     }),
-    [getAuthEffectiveAccess, getAuthAccessMatrix, getAuthDiagnostics, getAuthRoleCatalog, listAuthServiceAccounts, createAuthServiceAccount, updateAuthServiceAccount, rotateAuthServiceAccount, deleteAuthServiceAccount, listAuthAuditEvents, downloadAuthAuditEvents, getHealth, getSystemInventory, getParityStatus, getSystemSettings, updateSystemSettings],
+    [getAuthEffectiveAccess, getAuthAccessMatrix, getAuthDiagnostics, getAuthRoleCatalog, listAuthServiceAccounts, createAuthServiceAccount, updateAuthServiceAccount, rotateAuthServiceAccount, deleteAuthServiceAccount, listAuthAuditEvents, downloadAuthAuditEvents, getHealth, getSystemInventory, getParityStatus, getFleetAlerts, getFleetCapacity, planArchiveRetention, applyArchiveRetention, getSystemSettings, updateSystemSettings],
   )
 }

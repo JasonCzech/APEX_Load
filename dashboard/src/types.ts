@@ -1296,6 +1296,34 @@ export interface SystemInventoryResponse {
   generators: SystemInventoryGenerator[]
 }
 
+export interface FleetAlert {
+  type: string
+  target: string
+  region?: string
+  severity: 'warning' | 'danger' | string
+  summary: string
+}
+
+export interface FleetAlertsResponse {
+  alerts: FleetAlert[]
+  count: number
+}
+
+export interface FleetCapacityResponse {
+  project_id?: string
+  region?: string
+  protocol?: string
+  total_generators: number
+  eligible_generators: number
+  active_slots: number
+  available_slots: number
+  reserved_generators?: number
+  reserved_slots?: number
+  max_slots: number
+  compatible_features?: string[]
+  rejection_reasons?: string[]
+}
+
 export interface ParityStatusArea {
   id: string
   name: string
@@ -1347,6 +1375,22 @@ export interface DashboardCapacityPlanningSettings {
   headroom_pct: number
   generator: DashboardCapacityGeneratorSettings
   availability: DashboardCapacityAvailabilitySettings
+}
+
+export interface DashboardArchiveRetentionPolicy {
+  name?: string
+  project_id?: string
+  release_id?: string
+  run_status?: string
+  run_type?: string
+  artifact_type?: string
+  retention_days: number
+}
+
+export interface DashboardArchiveRetentionSettings {
+  enabled: boolean
+  default_retention_days: number
+  policies?: DashboardArchiveRetentionPolicy[]
 }
 
 export interface DashboardAuthSettings {
@@ -1551,6 +1595,38 @@ export interface DashboardAuditEventFilter {
   status?: string
 }
 
+export interface ArchivePruneCandidate {
+  test_id: string
+  project_id?: string
+  release_id?: string
+  run_status?: string
+  archive_path: string
+  policy_name?: string
+  artifact_type: string
+  retention_days: number
+  completed_at: string
+  expired_at: string
+}
+
+export interface ArchiveRetentionResult {
+  test_id: string
+  archive_path: string
+  status: string
+  error?: string
+}
+
+export interface ArchiveRetentionPlanResponse {
+  generated_at: string
+  dry_run: boolean
+  candidates: ArchivePruneCandidate[]
+  results?: ArchiveRetentionResult[]
+  summary: {
+    candidate_count: number
+    pruned_count: number
+    failed_count: number
+  }
+}
+
 export interface CapacityResourceEstimate {
   cpu_cores: number
   memory_mb: number
@@ -1604,6 +1680,7 @@ export interface DashboardSystemSettings {
   general: DashboardGeneralSettings
   thresholds: DashboardThresholdSettings
   capacity_planning: DashboardCapacityPlanningSettings
+  archive_retention: DashboardArchiveRetentionSettings
   notifications: DashboardNotificationsSettings
   auth: DashboardAuthSettings
 }

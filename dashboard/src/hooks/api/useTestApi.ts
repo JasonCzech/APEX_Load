@@ -95,6 +95,11 @@ type ScenarioScheduleListResponse = {
   count: number
 }
 
+type ScenarioScheduleApprovalResponse = {
+  approval: unknown
+  schedule: ScenarioSchedule
+}
+
 type DeleteTestResponse = {
   deleted: string
 }
@@ -231,6 +236,24 @@ export function useTestApi() {
 
   const getScheduleHealth = useCallback(() => request<ScenarioScheduleHealth>('/schedules/health'), [])
 
+  const approveScenarioScheduleApproval = useCallback(
+    (scenarioId: string, scheduleId: string, approvalId: string, reason?: string) =>
+      request<ScenarioScheduleApprovalResponse>(`/scenarios/${scenarioId}/schedules/${scheduleId}/approvals/${approvalId}/approve`, {
+        method: 'POST',
+        body: JSON.stringify({ reason: reason || '' }),
+      }),
+    [],
+  )
+
+  const rejectScenarioScheduleApproval = useCallback(
+    (scenarioId: string, scheduleId: string, approvalId: string, reason?: string) =>
+      request<ScenarioScheduleApprovalResponse>(`/scenarios/${scenarioId}/schedules/${scheduleId}/approvals/${approvalId}/reject`, {
+        method: 'POST',
+        body: JSON.stringify({ reason: reason || '' }),
+      }),
+    [],
+  )
+
   const moveTest = useCallback(
     (id: string, folderId: string | null) =>
       request<MoveTestResponse>(`/tests/${id}/move`, { method: 'PATCH', body: JSON.stringify({ folder_id: folderId }) }),
@@ -342,6 +365,8 @@ export function useTestApi() {
       updateScenarioSchedule,
       deleteScenarioSchedule,
       getScheduleHealth,
+      approveScenarioScheduleApproval,
+      rejectScenarioScheduleApproval,
     }),
     [
       listTests,
@@ -361,6 +386,8 @@ export function useTestApi() {
       updateScenarioSchedule,
       deleteScenarioSchedule,
       getScheduleHealth,
+      approveScenarioScheduleApproval,
+      rejectScenarioScheduleApproval,
       moveTest,
       getMetrics,
       getTestArchiveManifest,

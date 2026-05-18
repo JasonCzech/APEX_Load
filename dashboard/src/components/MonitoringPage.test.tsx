@@ -9,6 +9,8 @@ import MonitoringPage from './MonitoringPage'
 const apiMock = {
   getHealth: vi.fn(),
   getParityStatus: vi.fn(),
+  getFleetAlerts: vi.fn(),
+  getFleetCapacity: vi.fn(),
   getScheduleHealth: vi.fn(),
   getSystemInventory: vi.fn(),
   listTests: vi.fn(),
@@ -74,6 +76,18 @@ describe('MonitoringPage', () => {
           release_gate: true,
         },
       ],
+    })
+    apiMock.getFleetAlerts.mockResolvedValue({ alerts: [], count: 0 })
+    apiMock.getFleetCapacity.mockResolvedValue({
+      project_id: 'project-1',
+      total_generators: 0,
+      eligible_generators: 0,
+      active_slots: 0,
+      available_slots: 0,
+      reserved_slots: 0,
+      max_slots: 0,
+      compatible_features: [],
+      rejection_reasons: [],
     })
     apiMock.listTests.mockResolvedValue({ tests: [] })
     container = document.createElement('div')
@@ -147,6 +161,8 @@ describe('MonitoringPage', () => {
     expect(container.textContent).toContain('payments.example.test')
     expect(container.textContent).toContain('Close')
     expect(apiMock.listTests).toHaveBeenCalledWith({ project_id: 'project-1' })
+    expect(apiMock.getFleetAlerts).toHaveBeenCalled()
+    expect(apiMock.getFleetCapacity).toHaveBeenCalledWith({ project_id: 'project-1' })
   })
 
   it('renders JMS broker diagnostics with lag and throughput details', async () => {
@@ -240,6 +256,17 @@ describe('MonitoringPage', () => {
   })
 
   it('renders live generator inventory when the controller reports it', async () => {
+    apiMock.getFleetCapacity.mockResolvedValue({
+      project_id: 'project-1',
+      total_generators: 1,
+      eligible_generators: 1,
+      active_slots: 400,
+      available_slots: 9600,
+      reserved_slots: 10000,
+      max_slots: 10000,
+      compatible_features: ['http', 'browser'],
+      rejection_reasons: [],
+    })
     apiMock.getSystemInventory.mockResolvedValue({
       execution_mode: 'distributed',
       controller: {
@@ -278,6 +305,12 @@ describe('MonitoringPage', () => {
     expect(container.textContent).toContain('all connected')
     expect(container.textContent).toContain('400 active VUsers across 1 generator')
     expect(container.textContent).toContain('9,600')
+    expect(container.textContent).toContain('Eligible Generators')
+    expect(container.textContent).toContain('1/1')
+    expect(container.textContent).toContain('Reserved Slots')
+    expect(container.textContent).toContain('10,000')
+    expect(container.textContent).toContain('fleet placement API')
+    expect(container.textContent).toContain('http, browser')
 
     const generatorButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('View details'))
     expect(generatorButton).not.toBeUndefined()
@@ -298,6 +331,16 @@ describe('MonitoringPage', () => {
 
   it('renders fleet alert cards from generator inventory health', async () => {
     apiMock.getHealth.mockResolvedValue({ status: 'ok', version: '0.1.0', ws_clients: 2, test_count: 1 })
+    apiMock.getFleetAlerts.mockResolvedValue({
+      count: 5,
+      alerts: [
+        { type: 'drain_state', target: 'gen-a', severity: 'warning', summary: 'gen-a is cordoned; new placements are excluded.' },
+        { type: 'unreachable', target: 'gen-b', severity: 'danger', summary: 'gen-b is unreachable; placement cannot use this generator.' },
+        { type: 'saturation', target: 'gen-b', severity: 'danger', summary: 'gen-b is saturated with 2,000 active VUsers.' },
+        { type: 'compatibility', target: 'gen-b', severity: 'danger', summary: 'gen-b is not placement-compatible: missing grpc runtime.' },
+        { type: 'version_mismatch', target: '1.0.0', severity: 'warning', summary: '1 generator report version 1.0.0, which differs from controller 0.1.0.' },
+      ],
+    })
     apiMock.getSystemInventory.mockResolvedValue({
       execution_mode: 'distributed',
       controller: {

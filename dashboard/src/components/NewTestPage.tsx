@@ -54,6 +54,8 @@ function buildDefaultScheduleDraft(scenario?: StoredScenario | null, releaseId?:
     release_id: releaseId || '',
     run_name_template: scenario?.name || '',
     enabled: true,
+    approval_policy: 'auto',
+    missed_run_policy: 'skip',
   }
 }
 
@@ -222,6 +224,8 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
 	  release_id: scheduleDraft.release_id || undefined,
 	  run_name_template: scheduleDraft.run_name_template.trim() || undefined,
 	  enabled: scheduleDraft.enabled,
+	  approval_policy: scheduleDraft.approval_policy,
+	  missed_run_policy: scheduleDraft.missed_run_policy,
 	}
 	try {
 	  if (editingScheduleId) {
@@ -247,6 +251,8 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
 	  release_id: schedule.release_id || '',
 	  run_name_template: schedule.run_name_template || '',
 	  enabled: schedule.enabled,
+	  approval_policy: schedule.approval_policy || 'auto',
+	  missed_run_policy: schedule.missed_run_policy || 'skip',
 	})
   }
 
@@ -264,6 +270,8 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
 	    release_id: schedule.release_id || undefined,
 	    run_name_template: schedule.run_name_template || undefined,
 	    enabled: !schedule.enabled,
+	    approval_policy: schedule.approval_policy || 'auto',
+	    missed_run_policy: schedule.missed_run_policy || 'skip',
 	  })
 	  await refreshSchedules(scenario.id)
 	} catch (err: unknown) {
@@ -288,6 +296,25 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
 	} catch (err: unknown) {
 	  setError(getErrorMessage(err, 'Unable to delete schedule'))
 	}
+  }
+
+  const resolveScheduleApproval = async (schedule: ScenarioSchedule, approved: boolean) => {
+    if (!canManageTests) {
+      setError('Current session cannot manage scenario schedules for this project.')
+      return
+    }
+    if (!scenario || !schedule.pending_approval_id) return
+    setError('')
+    try {
+      if (approved) {
+        await api.approveScenarioScheduleApproval(scenario.id, schedule.id, schedule.pending_approval_id, 'Approved from schedule dashboard.')
+      } else {
+        await api.rejectScenarioScheduleApproval(scenario.id, schedule.id, schedule.pending_approval_id, 'Rejected from schedule dashboard.')
+      }
+      await refreshSchedules(scenario.id)
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, approved ? 'Unable to approve schedule' : 'Unable to reject schedule'))
+    }
   }
 
   return (
@@ -359,6 +386,32 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
                   </div>
                   <input className="settings-input" value={scheduleDraft.run_name_template} onChange={(event) => setScheduleDraft(prev => ({ ...prev, run_name_template: event.target.value }))} placeholder={scenario?.name || 'Scheduled run'} />
                 </div>
+                <div className="setting-row">
+                  <div className="setting-info">
+                    <span className="setting-label">Approval Policy</span>
+                    <span className="setting-desc">Require approval before materialization for governed schedules.</span>
+                  </div>
+                  <select className="settings-input" value={scheduleDraft.approval_policy} onChange={(event) => setScheduleDraft(prev => ({ ...prev, approval_policy: event.target.value }))}>
+                    <option value="auto">Auto approve</option>
+                    <option value="manual_review">Manual review</option>
+                    <option value="high_cost">High cost</option>
+                    <option value="off_hours">Off hours</option>
+                    <option value="production">Production</option>
+                    <option value="quota_burst">Quota burst</option>
+                  </select>
+                </div>
+                <div className="setting-row">
+                  <div className="setting-info">
+                    <span className="setting-label">Missed Run Policy</span>
+                    <span className="setting-desc">Choose how restart reconciliation handles missed cron windows.</span>
+                  </div>
+                  <select className="settings-input" value={scheduleDraft.missed_run_policy} onChange={(event) => setScheduleDraft(prev => ({ ...prev, missed_run_policy: event.target.value }))}>
+                    <option value="skip">Skip missed runs</option>
+                    <option value="catch_up_once">Catch up once</option>
+                    <option value="catch_up_all">Catch up all</option>
+                    <option value="require_operator_decision">Require operator decision</option>
+                  </select>
+                </div>
                 <label className="setting-row" style={{ alignItems: 'center', gap: 12 }}>
                   <input type="checkbox" checked={scheduleDraft.enabled} onChange={(event) => setScheduleDraft(prev => ({ ...prev, enabled: event.target.checked }))} />
                   <div className="setting-info">
@@ -393,6 +446,7 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
                         <th>Next Run</th>
                         <th>Last Run</th>
                         <th>Release</th>
+                        <th>Policy</th>
                         <th>Status</th>
                         <th>Actions</th>
                       </tr>
@@ -405,9 +459,22 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
                           <td>{formatScheduleTimestamp(item.next_run_at)}</td>
                           <td>{formatScheduleTimestamp(item.last_run_at)}</td>
                           <td>{releases.find(releaseItem => releaseItem.id === item.release_id)?.name || 'None'}</td>
-                          <td>{item.enabled ? 'Enabled' : 'Paused'}{item.last_error ? ` · ${item.last_error}` : ''}</td>
+                          <td>{(item.approval_policy || 'auto').replace(/_/g, ' ')} / {(item.missed_run_policy || 'skip').replace(/_/g, ' ')}</td>
+                          <td>
+                            {item.enabled ? 'Enabled' : 'Paused'}
+                            {item.next_required_action ? ` · ${item.next_required_action.replace(/_/g, ' ')}` : ''}
+                            {item.conflict_summary ? ` · ${item.conflict_summary}` : ''}
+                            {item.last_occurrence?.status ? ` · last ${item.last_occurrence.status}` : ''}
+                            {item.last_error ? ` · ${item.last_error}` : ''}
+                          </td>
                           <td>
                             <div className="inline-create-row">
+                              {item.next_required_action === 'approval_required' && item.pending_approval_id && (
+                                <>
+                                  <button className="btn btn-secondary" onClick={() => resolveScheduleApproval(item, true)} disabled={!canManageTests}>Approve</button>
+                                  <button className="btn btn-secondary" onClick={() => resolveScheduleApproval(item, false)} disabled={!canManageTests}>Reject</button>
+                                </>
+                              )}
                               <button className="btn btn-secondary" onClick={() => editSchedule(item)} disabled={!canManageTests}>Edit</button>
                               <button className="btn btn-secondary" onClick={() => toggleSchedule(item)} disabled={!canManageTests}>{item.enabled ? 'Pause' : 'Enable'}</button>
                               <button className="btn btn-secondary" onClick={() => deleteSchedule(item.id)} disabled={!canManageTests}>Delete</button>

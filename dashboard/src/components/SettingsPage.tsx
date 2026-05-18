@@ -5,7 +5,7 @@ import { useProjectApi } from '../hooks/api/useProjectApi'
 import { useApplication } from '../hooks/useApplication'
 import { useProject } from '../hooks/useProject'
 import { useApi } from '../hooks/useApi'
-import { DashboardAuditEvent, DashboardAuthAccessResource, DashboardAuthDiagnostics, DashboardAuthDiagnosticsCheck, DashboardAuthEffectiveAccessResource, DashboardAuthRoleDefinition, DashboardAuthStatus, DashboardServiceAccount, DashboardSystemSettings, HealthResponse, Project, RedactionRule, SharedDataPool, SharedDataPoolRow, SystemInventoryResponse } from '../types'
+import { ArchiveRetentionPlanResponse, DashboardAuditEvent, DashboardAuthAccessResource, DashboardAuthDiagnostics, DashboardAuthDiagnosticsCheck, DashboardAuthEffectiveAccessResource, DashboardAuthRoleDefinition, DashboardAuthStatus, DashboardServiceAccount, DashboardSystemSettings, HealthResponse, Project, RedactionRule, SharedDataPool, SharedDataPoolRow, SystemInventoryResponse } from '../types'
 import { getErrorMessage } from '../utils/errorUtils'
 import { downloadBlob } from '../utils/fileUtils'
 
@@ -38,6 +38,11 @@ const DEFAULT_SETTINGS: DashboardSystemSettings = {
       source: 'configured',
       configured_available_generators: 1,
     },
+  },
+  archive_retention: {
+    enabled: false,
+    default_retention_days: 90,
+    policies: [],
   },
   notifications: {
     webhooks: [],
@@ -494,6 +499,9 @@ function validateSettings(settings: DashboardSystemSettings): string[] {
   if (!Number.isInteger(settings.capacity_planning.availability.configured_available_generators) || settings.capacity_planning.availability.configured_available_generators < 1) {
     errors.push('Configured available generators must be an integer >= 1.')
   }
+  if (!Number.isInteger(settings.archive_retention.default_retention_days) || settings.archive_retention.default_retention_days < 1) {
+    errors.push('Archive retention default days must be an integer >= 1.')
+  }
   if (settings.auth.mode !== 'dev' && settings.auth.mode !== 'disabled' && settings.auth.mode !== 'trusted_headers' && settings.auth.mode !== 'oidc') {
     errors.push('Access control mode must be Dev Bypass, Trusted Headers, or Native OIDC.')
   }
@@ -596,6 +604,11 @@ function normalizeDashboardSystemSettings(settings: DashboardSystemSettings): Da
         ...DEFAULT_SETTINGS.capacity_planning.availability,
         ...settings.capacity_planning.availability,
       },
+    },
+    archive_retention: {
+      ...DEFAULT_SETTINGS.archive_retention,
+      ...settings.archive_retention,
+      policies: settings.archive_retention?.policies ? [...settings.archive_retention.policies] : [],
     },
     notifications: {
       webhooks: (settings.notifications?.webhooks || []).map(webhook => ({
@@ -742,6 +755,9 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
   const [projectDraftMaxVUsers, setProjectDraftMaxVUsers] = useState('')
   const [projectActionError, setProjectActionError] = useState('')
   const [projectActionMessage, setProjectActionMessage] = useState('')
+  const [archiveRetentionPlan, setArchiveRetentionPlan] = useState<ArchiveRetentionPlanResponse | null>(null)
+  const [archiveRetentionActionError, setArchiveRetentionActionError] = useState('')
+  const [archiveRetentionActionMessage, setArchiveRetentionActionMessage] = useState('')
   const [dataPools, setDataPools] = useState<SharedDataPool[]>([])
   const [selectedDataPoolId, setSelectedDataPoolId] = useState('')
   const [dataPoolRows, setDataPoolRows] = useState<SharedDataPoolRow[]>([])
@@ -1199,6 +1215,55 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
     }))
     setSaveMessage('')
     setRequestError('')
+  }
+
+  const updateArchiveRetention = (key: keyof DashboardSystemSettings['archive_retention'], value: boolean | string) => {
+    setSettings((prev) => ({
+      ...prev,
+      archive_retention: {
+        ...prev.archive_retention,
+        [key]: key === 'enabled' ? Boolean(value) : Math.max(1, Number(value) || 1),
+      },
+    }))
+    setArchiveRetentionActionMessage('')
+    setArchiveRetentionActionError('')
+    setSaveMessage('')
+    setRequestError('')
+  }
+
+  const planArchiveRetention = async () => {
+    if (!canManageSystem) {
+      setArchiveRetentionActionError('Current session cannot manage archive retention.')
+      setArchiveRetentionActionMessage('')
+      return
+    }
+    try {
+      const plan = await api.planArchiveRetention()
+      setArchiveRetentionPlan(plan)
+      setArchiveRetentionActionMessage(`Retention plan found ${plan.summary.candidate_count} prune candidate${plan.summary.candidate_count === 1 ? '' : 's'}.`)
+      setArchiveRetentionActionError('')
+    } catch (error: unknown) {
+      setArchiveRetentionActionError(getErrorMessage(error, 'Unable to plan archive retention'))
+      setArchiveRetentionActionMessage('')
+    }
+  }
+
+  const applyArchiveRetention = async () => {
+    if (!canManageSystem) {
+      setArchiveRetentionActionError('Current session cannot manage archive retention.')
+      setArchiveRetentionActionMessage('')
+      return
+    }
+    if (!window.confirm('Apply archive retention pruning for the current plan?')) return
+    try {
+      const plan = await api.applyArchiveRetention()
+      setArchiveRetentionPlan(plan)
+      setArchiveRetentionActionMessage(`Retention apply pruned ${plan.summary.pruned_count} archive${plan.summary.pruned_count === 1 ? '' : 's'}${plan.summary.failed_count ? ` with ${plan.summary.failed_count} failure${plan.summary.failed_count === 1 ? '' : 's'}` : ''}.`)
+      setArchiveRetentionActionError('')
+    } catch (error: unknown) {
+      setArchiveRetentionActionError(getErrorMessage(error, 'Unable to apply archive retention'))
+      setArchiveRetentionActionMessage('')
+    }
   }
 
   const updateAuth = (key: keyof DashboardSystemSettings['auth'], value: string | string[]) => {
@@ -2966,6 +3031,72 @@ export default function SettingsPage({ theme, onThemeChange, authStatus }: Setti
                 value={settings.capacity_planning.availability.configured_available_generators}
                 onChange={(e) => updateAvailability('configured_available_generators', e.target.value)}
               />
+            </div>
+            <div className="settings-subsection">
+              <div className="settings-manager-summary">
+                <div>
+                  <span className="setting-label">Archive Retention Executor</span>
+                  <span className="setting-desc">Plan and apply audited archive pruning through the same retention executor used by the API.</span>
+                </div>
+                <strong>{archiveRetentionPlan ? archiveRetentionPlan.summary.candidate_count : '-'}</strong>
+              </div>
+              <div className="setting-row">
+                <div className="setting-info">
+                  <span className="setting-label">Retention Enabled</span>
+                  <span className="setting-desc">When enabled, dry-run and apply operations evaluate archived runs against the saved retention policy.</span>
+                </div>
+                <label className="settings-checkbox-label">
+                  <input
+                    type="checkbox"
+                    checked={settings.archive_retention.enabled}
+                    onChange={event => updateArchiveRetention('enabled', event.target.checked)}
+                  />
+                  Enabled
+                </label>
+              </div>
+              <div className="setting-row">
+                <div className="setting-info">
+                  <span className="setting-label">Default Retention Days</span>
+                  <span className="setting-desc">Archives older than this policy window become prune candidates unless a scoped policy matches first.</span>
+                </div>
+                <input
+                  className="settings-input settings-input-number"
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={settings.archive_retention.default_retention_days}
+                  onChange={event => updateArchiveRetention('default_retention_days', event.target.value)}
+                />
+              </div>
+              <div className="settings-inline-actions">
+                <button className="btn btn-secondary" type="button" onClick={planArchiveRetention} disabled={!canManageSystem}>
+                  Plan Retention
+                </button>
+                <button className="btn btn-ghost" style={{ color: 'var(--danger)' }} type="button" onClick={applyArchiveRetention} disabled={!canManageSystem || !archiveRetentionPlan?.summary.candidate_count}>
+                  Apply Retention
+                </button>
+              </div>
+              {archiveRetentionActionMessage && <p className="settings-notice">{archiveRetentionActionMessage}</p>}
+              {archiveRetentionActionError && <p className="settings-error-inline">{archiveRetentionActionError}</p>}
+              {archiveRetentionPlan && (
+                <div className="settings-release-list">
+                  {archiveRetentionPlan.candidates.slice(0, 5).map(candidate => (
+                    <div key={`${candidate.test_id}-${candidate.archive_path}`} className="settings-release-row">
+                      <div className="settings-release-main">
+                        <span>{candidate.test_id}</span>
+                        <small>{candidate.policy_name || 'default'} / {candidate.artifact_type} / expired {new Date(candidate.expired_at).toLocaleDateString()}</small>
+                      </div>
+                      <span className="setting-value">{candidate.retention_days} days</span>
+                    </div>
+                  ))}
+                  {archiveRetentionPlan.candidates.length > 5 && (
+                    <p className="new-test-inline-note">{archiveRetentionPlan.candidates.length - 5} additional candidate{archiveRetentionPlan.candidates.length - 5 === 1 ? '' : 's'} hidden.</p>
+                  )}
+                  {archiveRetentionPlan.results?.length ? (
+                    <p className="new-test-inline-note">{archiveRetentionPlan.summary.pruned_count} pruned / {archiveRetentionPlan.summary.failed_count} failed.</p>
+                  ) : null}
+                </div>
+              )}
             </div>
           </div>
         </div>

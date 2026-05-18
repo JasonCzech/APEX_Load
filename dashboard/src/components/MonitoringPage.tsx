@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, type DragEvent, type ReactNo
 import { type WebSocketConnectionState } from '../hooks/useWebSocket'
 import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
-import { HealthResponse, ParityStatusResponse, ScenarioScheduleHealth, SystemInventoryResponse, TelemetryDiagnosticEntry, TestSummary } from '../types'
+import { FleetAlert, FleetCapacityResponse, HealthResponse, ParityStatusResponse, ScenarioScheduleHealth, SystemInventoryResponse, TelemetryDiagnosticEntry, TestSummary } from '../types'
 import { formatTelemetryDiagnosticTime, telemetryDiagnosticSeverityClass } from './monitoringTelemetryDiagnostics'
 
 interface Props {
@@ -20,6 +20,8 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const [scheduleHealth, setScheduleHealth] = useState<ScenarioScheduleHealth | null>(null)
   const [inventory, setInventory] = useState<SystemInventoryResponse | null>(null)
   const [parityStatus, setParityStatus] = useState<ParityStatusResponse | null>(null)
+  const [fleetAlerts, setFleetAlerts] = useState<FleetAlert[]>([])
+  const [fleetCapacity, setFleetCapacity] = useState<FleetCapacityResponse | null>(null)
   const [tests, setTests] = useState<TestSummary[]>([])
   const [isTelemetryModalOpen, setIsTelemetryModalOpen] = useState(false)
   const [isGeneratorsModalOpen, setIsGeneratorsModalOpen] = useState(false)
@@ -58,7 +60,6 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const generatorHeaderLabel = generators.length > 0
     ? `${generatorConnectedCount}/${generators.length} online`
     : 'no inventory'
-  const fleetAlerts = useMemo(() => buildFleetAlerts(generators, inventory?.controller.version), [generators, inventory?.controller.version])
   const fleetAlertDangerCount = fleetAlerts.filter(alert => alert.severity === 'danger').length
   const fleetAlertWarningCount = fleetAlerts.filter(alert => alert.severity === 'warning').length
   const fleetAlertHeaderSeverity = fleetAlertDangerCount > 0 ? 'danger' : fleetAlertWarningCount > 0 ? 'warning' : generators.length > 0 ? 'healthy' : 'unknown'
@@ -109,18 +110,22 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       return
     }
     try {
-      const [healthRes, testsRes, inventoryRes, scheduleHealthRes, parityStatusRes] = await Promise.all([
+      const [healthRes, testsRes, inventoryRes, scheduleHealthRes, parityStatusRes, fleetAlertsRes, fleetCapacityRes] = await Promise.all([
         api.getHealth(),
         api.listTests(activeProject?.id ? { project_id: activeProject.id } : undefined).catch(() => ({ tests: [] })),
         api.getSystemInventory().catch(() => null),
         api.getScheduleHealth().catch(() => null),
         api.getParityStatus().catch(() => null),
+        api.getFleetAlerts().catch(() => ({ alerts: [] })),
+        api.getFleetCapacity(activeProject?.id ? { project_id: activeProject.id } : undefined).catch(() => null),
       ])
       setHealth(healthRes)
       setTests(testsRes.tests || [])
       setInventory(inventoryRes)
       setScheduleHealth(scheduleHealthRes)
       setParityStatus(parityStatusRes)
+      setFleetAlerts(fleetAlertsRes.alerts || [])
+      setFleetCapacity(fleetCapacityRes)
     } catch {
       // API not available
     }
@@ -312,16 +317,35 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
         <div className="monitor-body">
           <div className="monitor-row">
             <span className="monitor-label">Effective Available</span>
-            <span className="monitor-value">{health?.capacity_availability?.effective_available_generators ?? '-'}</span>
+            <span className="monitor-value">{fleetCapacity?.available_slots?.toLocaleString() ?? health?.capacity_availability?.effective_available_generators ?? '-'}</span>
           </div>
           <div className="monitor-row">
-            <span className="monitor-label">Configured Ceiling</span>
-            <span className="monitor-value">{health?.capacity_availability?.configured_available_generators ?? '-'}</span>
+            <span className="monitor-label">Eligible Generators</span>
+            <span className="monitor-value">{fleetCapacity ? `${fleetCapacity.eligible_generators}/${fleetCapacity.total_generators}` : health?.capacity_availability?.configured_available_generators ?? '-'}</span>
+          </div>
+          <div className="monitor-row">
+            <span className="monitor-label">Active Slots</span>
+            <span className="monitor-value">{fleetCapacity?.active_slots?.toLocaleString() ?? '-'}</span>
+          </div>
+          <div className="monitor-row">
+            <span className="monitor-label">Reserved Slots</span>
+            <span className="monitor-value">{fleetCapacity?.reserved_slots?.toLocaleString() ?? '-'}</span>
           </div>
           <div className="monitor-row">
             <span className="monitor-label">Source</span>
-            <span className="monitor-value">{health?.capacity_availability?.source || '-'}</span>
+            <span className="monitor-value">{fleetCapacity ? 'fleet placement API' : health?.capacity_availability?.source || '-'}</span>
           </div>
+          {fleetCapacity?.compatible_features?.length ? (
+            <div className="monitor-row">
+              <span className="monitor-label">Features</span>
+              <span className="monitor-value">{fleetCapacity.compatible_features.slice(0, 4).join(', ')}</span>
+            </div>
+          ) : null}
+          {fleetCapacity?.rejection_reasons?.length ? (
+            <div className="monitor-warning-list">
+              {fleetCapacity.rejection_reasons.slice(0, 4).map(reason => <p key={reason}>{reason}</p>)}
+            </div>
+          ) : null}
           {health?.capacity_availability?.warnings?.length ? (
             <div className="monitor-warning-list">
               {health.capacity_availability.warnings.map(warning => <p key={warning}>{warning}</p>)}
@@ -596,7 +620,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
         </div>
       ),
     },
-  ], [controllerGeneratorInventoryLabel, controllerHeaderSeverity, controllerStatusLabel, fleetAlertHeaderLabel, fleetAlertHeaderSeverity, fleetAlerts, generatorActiveVUsers, generatorAvailableCapacity, generatorConnectedCount, generatorHeaderLabel, generatorHeaderSeverity, generatorIssueCount, generators.length, health, inventory, parityAreas, parityBlockingCount, parityCompleteCount, parityHeaderLabel, parityHeaderSeverity, parityPartialCount, parityStatus, scheduleCompletedCount, scheduleHeaderLabel, scheduleHeaderSeverity, scheduleHealth, scheduleMaterializedCount, scheduleSkippedCount, telemetryDangerCount, telemetryHeaderLabel, telemetryHeaderSeverity, telemetryLatestEntry, telemetryDiagnostics, telemetryWarningCount, timeline, websocketLabel, websocketValueClass])
+  ], [controllerGeneratorInventoryLabel, controllerHeaderSeverity, controllerStatusLabel, fleetAlertHeaderLabel, fleetAlertHeaderSeverity, fleetAlerts, fleetCapacity, generatorActiveVUsers, generatorAvailableCapacity, generatorConnectedCount, generatorHeaderLabel, generatorHeaderSeverity, generatorIssueCount, generators.length, health, inventory, parityAreas, parityBlockingCount, parityCompleteCount, parityHeaderLabel, parityHeaderSeverity, parityPartialCount, parityStatus, scheduleCompletedCount, scheduleHeaderLabel, scheduleHeaderSeverity, scheduleHealth, scheduleMaterializedCount, scheduleSkippedCount, telemetryDangerCount, telemetryHeaderLabel, telemetryHeaderSeverity, telemetryLatestEntry, telemetryDiagnostics, telemetryWarningCount, timeline, websocketLabel, websocketValueClass])
 
   useEffect(() => {
     setCardOrder(prev => mergeOrder(prev, cards.map(card => card.id)))
@@ -815,52 +839,6 @@ function GeneratorInventoryList({ generators }: { generators: SystemInventoryRes
       ))}
     </div>
   )
-}
-
-type FleetAlert = {
-  type: string
-  target: string
-  severity: 'warning' | 'danger'
-  summary: string
-}
-
-function buildFleetAlerts(generators: SystemInventoryResponse['generators'], controllerVersion?: string): FleetAlert[] {
-  const alerts: FleetAlert[] = []
-  const versions = new Map<string, number>()
-  generators.forEach(generator => {
-    const target = generator.generator_id || generator.target
-    const status = (generator.status || '').toLowerCase()
-    const drainState = (generator.drain_state || 'active').toLowerCase()
-    const capacityState = (generator.capacity_state || '').toLowerCase()
-    const compatibilityState = (generator.compatibility_state || 'compatible').toLowerCase()
-    const version = generator.version || 'unknown'
-    if (version !== 'unknown') {
-      versions.set(version, (versions.get(version) || 0) + 1)
-    }
-    if (status && !['connected', 'healthy', 'ready'].includes(status)) {
-      alerts.push({ type: 'unreachable', target, severity: 'danger', summary: `${target} is ${status}; placement cannot use this generator.` })
-    }
-    if (drainState !== 'active') {
-      alerts.push({ type: 'drain', target, severity: 'warning', summary: `${target} is ${drainState}; new placements are excluded.` })
-    }
-    if (capacityState === 'saturated' || generator.available_capacity <= 0) {
-      alerts.push({ type: 'saturation', target, severity: 'danger', summary: `${target} is saturated with ${generator.active_vusers.toLocaleString()} active VUsers.` })
-    } else if (capacityState === 'constrained') {
-      alerts.push({ type: 'saturation', target, severity: 'warning', summary: `${target} capacity is constrained: ${generator.available_capacity.toLocaleString()} slots remain.` })
-    }
-    if (compatibilityState && compatibilityState !== 'compatible') {
-      const reason = generator.compatibility_issues?.[0] || compatibilityState
-      alerts.push({ type: 'compatibility', target, severity: 'danger', summary: `${target} is not placement-compatible: ${reason}.` })
-    }
-  })
-  const controllerMajor = (controllerVersion || '').split('.')[0]
-  for (const [version, count] of versions) {
-    const generatorMajor = version.split('.')[0]
-    if (controllerMajor && generatorMajor && generatorMajor !== controllerMajor) {
-      alerts.push({ type: 'version', target: version, severity: 'warning', summary: `${count} generator${count === 1 ? '' : 's'} report version ${version}, which differs from controller ${controllerVersion}.` })
-    }
-  }
-  return alerts
 }
 
 function TelemetryDiagnosticList({ telemetryDiagnostics }: { telemetryDiagnostics: TelemetryDiagnosticEntry[] }) {
