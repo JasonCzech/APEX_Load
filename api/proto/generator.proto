@@ -183,6 +183,9 @@ message HeartbeatPong {
   double cpu_limit_cores = 6;
   int64 memory_limit_bytes = 7;
   int32 max_vusers = 8;
+  string version = 9;
+  repeated string supported_protocols = 10;
+  repeated string compatible_features = 11;
 }
 
 message ScriptPayload {

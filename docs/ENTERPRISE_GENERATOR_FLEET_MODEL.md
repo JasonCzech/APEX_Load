@@ -12,9 +12,10 @@ This document defines the scale-out inventory contract for Workstream P2 in `doc
 | `generator_id` | Generator-reported identity when reachable; target address otherwise. |
 | `region` | Placement region from controller target configuration. |
 | `status` | Current reachability, such as `connected` or `unreachable`. |
-| `version` | Generator binary/API version. Initial value is `unknown` until generator negotiation is added. |
-| `supported_protocols` | Protocol names the generator can execute. Initially derived from controller-compiled protocols. |
-| `drain_state` | Scheduling state. Initial value is `active`; future values include `cordoned` and `draining`. |
+| `version` | Generator binary/API version reported by heartbeat when reachable; target metadata or `unknown` otherwise. |
+| `supported_protocols` | Protocol names the generator can execute, negotiated from generator heartbeat when reachable. |
+| `compatible_features` | Negotiated feature/protocol surface used by fleet capacity responses and dashboard filtering. |
+| `drain_state` | Scheduling state: `active`, `cordoned`, or `draining`. |
 | `capacity_state` | `available`, `constrained`, `saturated`, `unknown`, or `unavailable`. |
 | `health_score` | 0-100 rollup for operator scanning and dashboard sort order. |
 | `available_capacity`, `active_vusers`, `max_vusers` | VUser capacity envelope. |
@@ -50,21 +51,21 @@ Supported states:
 - `cordoned`: no new placements, existing runs continue.
 - `draining`: no new placements and existing work should finish or migrate where supported.
 
-Drain state is currently controller-local. A future production HA implementation should persist this operator intent in the metadata store so all controller replicas share the same placement view.
+Drain state persists through controller restarts in the metadata store. Operators can restart a controller without losing cordon/drain intent, and inventory plus fleet alerts continue to reflect the persisted placement view.
 
 ## Version And Protocol Compatibility
 
-Controller generator targets can declare version and protocol compatibility in `STORMRUNNER_GENERATORS`:
+Reachable generators negotiate version and protocol capability through the heartbeat stream. The controller prefers those live values for inventory, placement, and compatibility decisions. Controller generator targets can still declare fallback version and protocol compatibility in `STORMRUNNER_GENERATORS` for bootstrap and legacy generators:
 
 ```text
 stormrunner-generator-0.stormrunner-generator:9090|region=us-east|version=0.1.0|protocols=http,grpc,websocket
 ```
 
-Placement enforces these declarations before work is assigned:
+Placement enforces the effective capability set before work is assigned:
 
 - A group can only be placed on a generator whose `supported_protocols` contains the group's script protocol.
 - A generator with an explicit incompatible major version is excluded from placement.
-- `version=unknown` remains allowed for backwards compatibility with generators that do not yet negotiate version metadata.
+- `version=unknown` remains allowed for backwards compatibility with generators that do not report version metadata.
 
 The inventory response exposes `compatibility_state` and `compatibility_issues` so operators can see why a target is excluded before a run starts.
 
@@ -78,13 +79,13 @@ Prometheus exposes fleet rollups for dashboarding and alerts:
 - `stormrunner_generator_region_available_capacity{region}`
 - `stormrunner_generator_region_active_vusers{region}`
 
-Placement rejection messages now include compatibility causes when no target can run a group, including unsupported protocol and incompatible declared generator version.
+Placement rejection messages now include compatibility causes when no target can run a group, including unsupported protocol and incompatible negotiated or declared generator version.
 
 ## Plan Mapping
 
 | Plan item | Status | Artifact |
 | --- | --- | --- |
-| P2.1 Formal fleet model | In progress | Inventory fields and this model |
-| P2.2 Drain/cordon workflows | Complete for controller-local placement control; persistence remains future work | `PATCH /api/v1/system/generators/drain` |
-| P2.3 Version compatibility checks | Complete for target-declared protocol/version compatibility; generator-side negotiation remains future work | `version`, `protocols`, `compatibility_state`, placement rejection reasons |
-| P2.4 Saturation alerts and rejection reasons | Complete for API/metrics primitives; dashboard alert cards remain future work | Fleet Prometheus metrics and placement rejection messages |
+| P2.1 Formal fleet model | Complete for first-pass negotiated inventory | Inventory fields and this model |
+| P2.2 Drain/cordon workflows | Complete for first-pass persisted placement control | `PATCH /api/v1/system/generators/drain`, persisted drain settings |
+| P2.3 Version compatibility checks | Complete for heartbeat-negotiated and target-declared protocol/version compatibility | `version`, `supported_protocols`, `compatible_features`, `compatibility_state`, placement rejection reasons |
+| P2.4 Saturation alerts and rejection reasons | Complete for API, metrics, and dashboard alert cards | Fleet Prometheus metrics, fleet alert cards, and placement rejection messages |

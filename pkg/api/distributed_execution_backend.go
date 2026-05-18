@@ -37,14 +37,17 @@ type generatorClient interface {
 }
 
 type generatorLoadSnapshot struct {
-	Target            string
-	GeneratorID       string
-	AvailableCapacity int32
-	Stats             generatorrpc.GeneratorStats
-	HeartbeatOK       bool
-	CPULimitCores     float64
-	MemoryLimitBytes  int64
-	MaxVUsers         int32
+	Target             string
+	GeneratorID        string
+	AvailableCapacity  int32
+	Stats              generatorrpc.GeneratorStats
+	HeartbeatOK        bool
+	CPULimitCores      float64
+	MemoryLimitBytes   int64
+	MaxVUsers          int32
+	Version            string
+	SupportedProtocols []string
+	CompatibleFeatures []string
 }
 
 type generatorTargetSpec struct {
@@ -203,6 +206,15 @@ func (b *distributedExecutionBackend) SystemInventory(ctx context.Context) []Gen
 			entry.GeneratorID = snapshot.GeneratorID
 		}
 		if snapshot.HeartbeatOK {
+			effectiveSpec := generatorEffectiveSpec(target, snapshot)
+			entry.Version = generatorSpecVersion(effectiveSpec)
+			entry.SupportedProtocols = generatorSpecProtocols(effectiveSpec)
+			entry.CompatibleFeatures = snapshot.CompatibleFeatures
+			if len(entry.CompatibleFeatures) == 0 {
+				entry.CompatibleFeatures = append([]string(nil), entry.SupportedProtocols...)
+			}
+			entry.CompatibilityState = generatorCompatibilityState(effectiveSpec)
+			entry.CompatibilityIssues = generatorCompatibilityIssues(effectiveSpec)
 			entry.Status = "connected"
 			entry.AvailableCapacity = snapshot.AvailableCapacity
 			entry.ActiveVUsers = snapshot.Stats.ActiveVUsers
@@ -992,6 +1004,9 @@ func (b *distributedExecutionBackend) probeGeneratorLoad(ctx context.Context, ta
 	snapshot.CPULimitCores = response.CPULimitCores
 	snapshot.MemoryLimitBytes = response.MemoryLimitBytes
 	snapshot.MaxVUsers = response.MaxVUsers
+	snapshot.Version = strings.TrimSpace(response.Version)
+	snapshot.SupportedProtocols = normalizedProtocolList(response.SupportedProtocols)
+	snapshot.CompatibleFeatures = normalizedProtocolList(response.CompatibleFeatures)
 	snapshot.HeartbeatOK = true
 	return snapshot
 }
@@ -1032,9 +1047,38 @@ func generatorSpecProtocols(spec generatorTargetSpec) []string {
 	if len(spec.Protocols) == 0 {
 		return defaultSupportedProtocols()
 	}
-	protocols := append([]string(nil), spec.Protocols...)
+	protocols := normalizedProtocolList(spec.Protocols)
 	sort.Strings(protocols)
 	return protocols
+}
+
+func normalizedProtocolList(protocols []string) []string {
+	out := make([]string, 0, len(protocols))
+	seen := make(map[string]struct{}, len(protocols))
+	for _, protocol := range protocols {
+		protocol = strings.TrimSpace(protocol)
+		if protocol == "" {
+			continue
+		}
+		if _, ok := seen[protocol]; ok {
+			continue
+		}
+		seen[protocol] = struct{}{}
+		out = append(out, protocol)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func generatorEffectiveSpec(spec generatorTargetSpec, snapshot generatorLoadSnapshot) generatorTargetSpec {
+	effective := spec
+	if version := strings.TrimSpace(snapshot.Version); version != "" {
+		effective.Version = version
+	}
+	if len(snapshot.SupportedProtocols) > 0 {
+		effective.Protocols = normalizedProtocolList(snapshot.SupportedProtocols)
+	}
+	return effective
 }
 
 func generatorCompatibilityState(spec generatorTargetSpec) string {
@@ -1092,9 +1136,12 @@ type generatorCompatibilityIndex struct {
 	byTarget map[string]generatorTargetSpec
 }
 
-func newGeneratorCompatibilityIndex(specs []generatorTargetSpec) *generatorCompatibilityIndex {
+func newGeneratorCompatibilityIndex(specs []generatorTargetSpec, loadByTarget map[string]generatorLoadSnapshot) *generatorCompatibilityIndex {
 	index := &generatorCompatibilityIndex{byTarget: make(map[string]generatorTargetSpec, len(specs))}
 	for _, spec := range specs {
+		if snapshot, ok := loadByTarget[spec.Address]; ok {
+			spec = generatorEffectiveSpec(spec, snapshot)
+		}
 		index.byTarget[spec.Address] = spec
 	}
 	return index
@@ -1117,6 +1164,9 @@ func generatorPlacementRejectionMessage(group TestGroup, loadByTarget map[string
 	for _, spec := range specs {
 		if _, reachable := loadByTarget[spec.Address]; !reachable {
 			continue
+		}
+		if snapshot, ok := loadByTarget[spec.Address]; ok {
+			spec = generatorEffectiveSpec(spec, snapshot)
 		}
 		if issues := generatorCompatibilityIssues(spec); len(issues) > 0 {
 			reasons = append(reasons, fmt.Sprintf("%s incompatible: %s", spec.Address, strings.Join(issues, "; ")))
@@ -1220,7 +1270,7 @@ func planDistributedGroupTargets(groups []TestGroup, loadByTarget map[string]gen
 		projected[key] = value
 	}
 	regionState := newRegionPlacementState(groups, assignment, targetSpecs)
-	compatibility := newGeneratorCompatibilityIndex(targetSpecs)
+	compatibility := newGeneratorCompatibilityIndex(targetSpecs, loadByTarget)
 	for _, group := range groups {
 		target := chooseGeneratorTargetForGroup(group, projected, preferred, regionState, compatibility)
 		assignments[group.Name] = target

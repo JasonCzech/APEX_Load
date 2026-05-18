@@ -146,14 +146,17 @@ type Heartbeat struct {
 }
 
 type HeartbeatResponse struct {
-	GeneratorID       string
-	TimestampUnixMs   int64
-	ActiveTestIDs     []string
-	Stats             GeneratorStats
-	AvailableCapacity int32
-	CPULimitCores     float64
-	MemoryLimitBytes  int64
-	MaxVUsers         int32
+	GeneratorID        string
+	TimestampUnixMs    int64
+	ActiveTestIDs      []string
+	Stats              GeneratorStats
+	AvailableCapacity  int32
+	CPULimitCores      float64
+	MemoryLimitBytes   int64
+	MaxVUsers          int32
+	Version            string
+	SupportedProtocols []string
+	CompatibleFeatures []string
 }
 
 type GeneratorStats struct {
@@ -329,14 +332,17 @@ func (s *HeartbeatStream) Receive() (HeartbeatResponse, error) {
 	}
 
 	return HeartbeatResponse{
-		GeneratorID:       pong.GetGeneratorId(),
-		TimestampUnixMs:   pong.GetTimestampUnixMs(),
-		ActiveTestIDs:     pong.GetActiveTestIds(),
-		Stats:             stats,
-		AvailableCapacity: pong.GetAvailableCapacity(),
-		CPULimitCores:     pong.GetCpuLimitCores(),
-		MemoryLimitBytes:  pong.GetMemoryLimitBytes(),
-		MaxVUsers:         pong.GetMaxVusers(),
+		GeneratorID:        pong.GetGeneratorId(),
+		TimestampUnixMs:    pong.GetTimestampUnixMs(),
+		ActiveTestIDs:      pong.GetActiveTestIds(),
+		Stats:              stats,
+		AvailableCapacity:  pong.GetAvailableCapacity(),
+		CPULimitCores:      pong.GetCpuLimitCores(),
+		MemoryLimitBytes:   pong.GetMemoryLimitBytes(),
+		MaxVUsers:          pong.GetMaxVusers(),
+		Version:            pong.GetVersion(),
+		SupportedProtocols: append([]string(nil), pong.GetSupportedProtocols()...),
+		CompatibleFeatures: append([]string(nil), pong.GetCompatibleFeatures()...),
 	}, nil
 }
 

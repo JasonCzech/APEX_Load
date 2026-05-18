@@ -221,7 +221,11 @@ func buildFleetCapacity(inventory SystemInventoryResponse, settings SystemSettin
 		out.TotalGenerators++
 		out.ActiveSlots += int(generator.ActiveVUsers)
 		out.MaxSlots += int(generator.MaxVUsers)
-		for _, feature := range generator.SupportedProtocols {
+		features := generator.CompatibleFeatures
+		if len(features) == 0 {
+			features = generator.SupportedProtocols
+		}
+		for _, feature := range features {
 			feature = strings.TrimSpace(feature)
 			if feature != "" {
 				featureSet[feature] = struct{}{}

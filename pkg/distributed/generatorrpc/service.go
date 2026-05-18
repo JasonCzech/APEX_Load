@@ -462,18 +462,27 @@ func (s *Service) Heartbeat(stream pb.GeneratorControl_HeartbeatServer) error {
 		}
 
 		if err := stream.Send(&pb.HeartbeatPong{
-			GeneratorId:       s.generatorID,
-			TimestampUnixMs:   maxInt64(time.Now().UnixMilli(), ping.GetTimestampUnixMs()),
-			ActiveTestIds:     s.activeTestIDs(),
-			Stats:             toProtoStats(GeneratorStats{ActiveVUsers: s.activeVUsersLocked(), GoroutineCount: int32(runtime.NumGoroutine())}),
-			AvailableCapacity: s.availableCapacityLocked(),
-			CpuLimitCores:     s.podResources.CPULimitCores,
-			MemoryLimitBytes:  s.podResources.MemoryLimitBytes,
-			MaxVusers:         s.podResources.MaxVUsers,
+			GeneratorId:        s.generatorID,
+			TimestampUnixMs:    maxInt64(time.Now().UnixMilli(), ping.GetTimestampUnixMs()),
+			ActiveTestIds:      s.activeTestIDs(),
+			Stats:              toProtoStats(GeneratorStats{ActiveVUsers: s.activeVUsersLocked(), GoroutineCount: int32(runtime.NumGoroutine())}),
+			AvailableCapacity:  s.availableCapacityLocked(),
+			CpuLimitCores:      s.podResources.CPULimitCores,
+			MemoryLimitBytes:   s.podResources.MemoryLimitBytes,
+			MaxVusers:          s.podResources.MaxVUsers,
+			Version:            "0.1.0",
+			SupportedProtocols: supportedProtocolNames(),
+			CompatibleFeatures: supportedProtocolNames(),
 		}); err != nil {
 			return err
 		}
 	}
+}
+
+func supportedProtocolNames() []string {
+	names := protocol.List()
+	sort.Strings(names)
+	return names
 }
 
 func (s *Service) activeTestIDs() []string {

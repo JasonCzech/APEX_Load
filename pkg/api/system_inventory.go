@@ -30,6 +30,7 @@ type GeneratorInventoryEntry struct {
 	Status              string   `json:"status"`
 	Version             string   `json:"version,omitempty"`
 	SupportedProtocols  []string `json:"supported_protocols,omitempty"`
+	CompatibleFeatures  []string `json:"compatible_features,omitempty"`
 	CompatibilityState  string   `json:"compatibility_state,omitempty"`
 	CompatibilityIssues []string `json:"compatibility_issues,omitempty"`
 	DrainState          string   `json:"drain_state"`
@@ -85,6 +86,9 @@ func normalizeGeneratorInventoryEntry(entry GeneratorInventoryEntry) GeneratorIn
 	}
 	if len(entry.SupportedProtocols) == 0 {
 		entry.SupportedProtocols = defaultSupportedProtocols()
+	}
+	if len(entry.CompatibleFeatures) == 0 {
+		entry.CompatibleFeatures = append([]string(nil), entry.SupportedProtocols...)
 	}
 	if entry.CompatibilityState == "" {
 		entry.CompatibilityState = "compatible"

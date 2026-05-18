@@ -228,6 +228,7 @@ func TestHandleGetFleetCapacityFiltersRegionProtocolAndReservations(t *testing.T
 			Status:             "connected",
 			Version:            "0.1.0",
 			SupportedProtocols: []string{"http", "grpc"},
+			CompatibleFeatures: []string{"http", "grpc", "browser-canary"},
 			DrainState:         "active",
 			CapacityState:      "available",
 			AvailableCapacity:  800,
@@ -285,8 +286,8 @@ func TestHandleGetFleetCapacityFiltersRegionProtocolAndReservations(t *testing.T
 	if payload.ReservedGenerators != 2 || payload.ReservedSlots != 2000 {
 		t.Fatalf("reservation payload = %#v, want two reserved generators", payload)
 	}
-	if !containsString(payload.CompatibleFeatures, "grpc") || !containsString(payload.CompatibleFeatures, "http") {
-		t.Fatalf("compatible features = %#v, want grpc and http", payload.CompatibleFeatures)
+	if !containsString(payload.CompatibleFeatures, "grpc") || !containsString(payload.CompatibleFeatures, "http") || !containsString(payload.CompatibleFeatures, "browser-canary") {
+		t.Fatalf("compatible features = %#v, want negotiated and fallback features", payload.CompatibleFeatures)
 	}
 	if len(payload.RejectionReasons) != 1 || !strings.Contains(payload.RejectionReasons[0], "gen-b does not support protocol grpc") {
 		t.Fatalf("rejection reasons = %#v, want gen-b protocol rejection", payload.RejectionReasons)

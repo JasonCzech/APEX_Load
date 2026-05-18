@@ -1388,17 +1388,20 @@ func (x *HeartbeatPing) GetStats() *GeneratorStats {
 }
 
 type HeartbeatPong struct {
-	state             protoimpl.MessageState `protogen:"open.v1"`
-	GeneratorId       string                 `protobuf:"bytes,3,opt,name=generator_id,json=generatorId,proto3" json:"generator_id,omitempty"`
-	TimestampUnixMs   int64                  `protobuf:"varint,1,opt,name=timestamp_unix_ms,json=timestampUnixMs,proto3" json:"timestamp_unix_ms,omitempty"`
-	ActiveTestIds     []string               `protobuf:"bytes,2,rep,name=active_test_ids,json=activeTestIds,proto3" json:"active_test_ids,omitempty"`
-	Stats             *GeneratorStats        `protobuf:"bytes,4,opt,name=stats,proto3" json:"stats,omitempty"`
-	AvailableCapacity int32                  `protobuf:"varint,5,opt,name=available_capacity,json=availableCapacity,proto3" json:"available_capacity,omitempty"`
-	CpuLimitCores     float64                `protobuf:"fixed64,6,opt,name=cpu_limit_cores,json=cpuLimitCores,proto3" json:"cpu_limit_cores,omitempty"`
-	MemoryLimitBytes  int64                  `protobuf:"varint,7,opt,name=memory_limit_bytes,json=memoryLimitBytes,proto3" json:"memory_limit_bytes,omitempty"`
-	MaxVusers         int32                  `protobuf:"varint,8,opt,name=max_vusers,json=maxVusers,proto3" json:"max_vusers,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	GeneratorId        string                 `protobuf:"bytes,3,opt,name=generator_id,json=generatorId,proto3" json:"generator_id,omitempty"`
+	TimestampUnixMs    int64                  `protobuf:"varint,1,opt,name=timestamp_unix_ms,json=timestampUnixMs,proto3" json:"timestamp_unix_ms,omitempty"`
+	ActiveTestIds      []string               `protobuf:"bytes,2,rep,name=active_test_ids,json=activeTestIds,proto3" json:"active_test_ids,omitempty"`
+	Stats              *GeneratorStats        `protobuf:"bytes,4,opt,name=stats,proto3" json:"stats,omitempty"`
+	AvailableCapacity  int32                  `protobuf:"varint,5,opt,name=available_capacity,json=availableCapacity,proto3" json:"available_capacity,omitempty"`
+	CpuLimitCores      float64                `protobuf:"fixed64,6,opt,name=cpu_limit_cores,json=cpuLimitCores,proto3" json:"cpu_limit_cores,omitempty"`
+	MemoryLimitBytes   int64                  `protobuf:"varint,7,opt,name=memory_limit_bytes,json=memoryLimitBytes,proto3" json:"memory_limit_bytes,omitempty"`
+	MaxVusers          int32                  `protobuf:"varint,8,opt,name=max_vusers,json=maxVusers,proto3" json:"max_vusers,omitempty"`
+	Version            string                 `protobuf:"bytes,9,opt,name=version,proto3" json:"version,omitempty"`
+	SupportedProtocols []string               `protobuf:"bytes,10,rep,name=supported_protocols,json=supportedProtocols,proto3" json:"supported_protocols,omitempty"`
+	CompatibleFeatures []string               `protobuf:"bytes,11,rep,name=compatible_features,json=compatibleFeatures,proto3" json:"compatible_features,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *HeartbeatPong) Reset() {
@@ -1485,6 +1488,27 @@ func (x *HeartbeatPong) GetMaxVusers() int32 {
 		return x.MaxVusers
 	}
 	return 0
+}
+
+func (x *HeartbeatPong) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
+func (x *HeartbeatPong) GetSupportedProtocols() []string {
+	if x != nil {
+		return x.SupportedProtocols
+	}
+	return nil
+}
+
+func (x *HeartbeatPong) GetCompatibleFeatures() []string {
+	if x != nil {
+		return x.CompatibleFeatures
+	}
+	return nil
 }
 
 type ScriptPayload struct {
@@ -1826,7 +1850,7 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\rHeartbeatPing\x12!\n" +
 	"\fgenerator_id\x18\x01 \x01(\tR\vgeneratorId\x12*\n" +
 	"\x11timestamp_unix_ms\x18\x02 \x01(\x03R\x0ftimestampUnixMs\x124\n" +
-	"\x05stats\x18\x03 \x01(\v2\x1e.stormrunner.v1.GeneratorStatsR\x05stats\"\xe0\x02\n" +
+	"\x05stats\x18\x03 \x01(\v2\x1e.stormrunner.v1.GeneratorStatsR\x05stats\"\xdc\x03\n" +
 	"\rHeartbeatPong\x12!\n" +
 	"\fgenerator_id\x18\x03 \x01(\tR\vgeneratorId\x12*\n" +
 	"\x11timestamp_unix_ms\x18\x01 \x01(\x03R\x0ftimestampUnixMs\x12&\n" +
@@ -1836,7 +1860,11 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x0fcpu_limit_cores\x18\x06 \x01(\x01R\rcpuLimitCores\x12,\n" +
 	"\x12memory_limit_bytes\x18\a \x01(\x03R\x10memoryLimitBytes\x12\x1d\n" +
 	"\n" +
-	"max_vusers\x18\b \x01(\x05R\tmaxVusers\"i\n" +
+	"max_vusers\x18\b \x01(\x05R\tmaxVusers\x12\x18\n" +
+	"\aversion\x18\t \x01(\tR\aversion\x12/\n" +
+	"\x13supported_protocols\x18\n" +
+	" \x03(\tR\x12supportedProtocols\x12/\n" +
+	"\x13compatible_features\x18\v \x03(\tR\x12compatibleFeatures\"i\n" +
 	"\rScriptPayload\x12\x1b\n" +
 	"\tscript_id\x18\x01 \x01(\tR\bscriptId\x12\x18\n" +
 	"\acontent\x18\x02 \x01(\fR\acontent\x12!\n" +

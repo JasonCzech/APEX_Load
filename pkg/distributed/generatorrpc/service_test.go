@@ -238,6 +238,15 @@ func TestClientRoundTripDistributeAssignAndHeartbeat(t *testing.T) {
 	if !reflect.DeepEqual(pong.ActiveTestIDs, []string{"test-1"}) {
 		t.Fatalf("active test ids = %v, want [test-1]", pong.ActiveTestIDs)
 	}
+	if pong.Version != "0.1.0" {
+		t.Fatalf("heartbeat version = %q, want 0.1.0", pong.Version)
+	}
+	if !hasString(pong.SupportedProtocols, "http") {
+		t.Fatalf("supported protocols = %v, want http", pong.SupportedProtocols)
+	}
+	if !hasString(pong.CompatibleFeatures, "http") {
+		t.Fatalf("compatible features = %v, want http", pong.CompatibleFeatures)
+	}
 	if pong.Stats.ActiveVUsers != 12 {
 		t.Fatalf("heartbeat active vusers = %d, want 12", pong.Stats.ActiveVUsers)
 	}
@@ -688,4 +697,13 @@ func TestServiceWithExecutionExposesArchiveArtifacts(t *testing.T) {
 	if err := metrics.CloseSend(); err != nil {
 		t.Fatalf("Metrics CloseSend: %v", err)
 	}
+}
+
+func hasString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }

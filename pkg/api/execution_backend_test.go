@@ -244,6 +244,24 @@ func TestPlanDistributedGroupTargetsUsesRegionWeights(t *testing.T) {
 	}
 }
 
+func TestPlanDistributedGroupTargetsUsesNegotiatedGeneratorProtocols(t *testing.T) {
+	groups := []TestGroup{{Name: "grpc-callers", Protocol: "grpc", VUsers: 5}}
+	loadByTarget := map[string]generatorLoadSnapshot{
+		"gen-a": {Target: "gen-a", AvailableCapacity: 50, SupportedProtocols: []string{"http"}},
+		"gen-b": {Target: "gen-b", AvailableCapacity: 20, SupportedProtocols: []string{"grpc"}},
+	}
+	targetSpecs := []generatorTargetSpec{
+		{Address: "gen-a", Protocols: []string{"http", "grpc"}},
+		{Address: "gen-b", Protocols: []string{"http"}},
+	}
+
+	assignments := planDistributedGroupTargets(groups, loadByTarget, []string{"gen-a", "gen-b"}, nil, targetSpecs)
+
+	if assignments["grpc-callers"] != "gen-b" {
+		t.Fatalf("grpc group assigned to %q, want negotiated grpc-capable gen-b", assignments["grpc-callers"])
+	}
+}
+
 func TestDistributedExecutionBackendStopTestClearsRemoteAssignment(t *testing.T) {
 	const bufSize = 1024 * 1024
 

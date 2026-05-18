@@ -106,9 +106,9 @@ Reference artifact: `docs/ENTERPRISE_GENERATOR_FLEET_MODEL.md`.
 
 | ID | Story | Size | Dependencies | Status |
 | --- | --- | --- | --- | --- |
-| P2.1 | Convert generator inventory into a formal fleet model with health, capacity, protocol support, region, version, and drain state | L | P1.1 | In progress; inventory fields added |
+| P2.1 | Convert generator inventory into a formal fleet model with health, capacity, protocol support, region, version, and drain state | L | P1.1 | Complete for first-pass fleet model: inventory exposes health, capacity, negotiated protocol support, region, version, and persisted drain state |
 | P2.2 | Add generator drain/cordon workflows for maintenance without interrupting unrelated runs | M | P2.1 | Complete for first-pass control and restart persistence: drain/cordon excludes new placements, appears in inventory/fleet alerts, writes audit events, and persists through controller restarts via metadata settings. |
-| P2.3 | Add generator version compatibility checks between controller, DSL features, protocol plugins, and generator binaries | M | P2.1 | Complete for target-declared protocol/version compatibility; generator-side negotiation remains future work |
+| P2.3 | Add generator version compatibility checks between controller, DSL features, protocol plugins, and generator binaries | M | P2.1 | Complete for first-pass generator-side negotiation: heartbeat advertises generator version, supported protocols, and compatible features; placement and inventory prefer negotiated capabilities over static target metadata |
 | P2.4 | Add fleet-level saturation alerts and placement rejection reasons to API, dashboard, and metrics | M | P2.1 | Complete for first-pass API/dashboard parity - `GET /api/v1/fleet/alerts` summarizes unreachable generators, cordon/drain state, saturation/constrained capacity, compatibility issues, and controller/generator version spread, and the Monitoring page renders the same alert classes from live generator inventory |
 
 Acceptance criteria:
