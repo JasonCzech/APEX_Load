@@ -234,13 +234,7 @@ func resolveCapacityAvailability(settings SystemSettings) CapacityAvailabilitySn
 }
 
 func applyGlobalCapacityReservationSummary(settings SystemSettings, snapshot CapacityAvailabilitySnapshot) CapacityAvailabilitySnapshot {
-	totalReserved := 0
-	for _, reservation := range normalizeCapacityReservations(settings.CapacityPlanning.Reservations) {
-		if reservation.ReservedGenerators < 0 {
-			continue
-		}
-		totalReserved += reservation.ReservedGenerators
-	}
+	totalReserved, _ := capacityReservationTotals(settings, "")
 	if totalReserved <= 0 {
 		return snapshot
 	}
@@ -258,22 +252,7 @@ func applyGlobalCapacityReservationSummary(settings SystemSettings, snapshot Cap
 func resolveCapacityAvailabilityForProject(settings SystemSettings, projectID string) CapacityAvailabilitySnapshot {
 	snapshot := resolveCapacityAvailability(settings)
 	normalizedProjectID := normalizeProjectID(strings.TrimSpace(projectID))
-	reservations := normalizeCapacityReservations(settings.CapacityPlanning.Reservations)
-	if normalizedProjectID == "" || len(reservations) == 0 {
-		return snapshot
-	}
-
-	totalReserved := 0
-	projectReserved := 0
-	for _, reservation := range reservations {
-		if reservation.ReservedGenerators < 0 {
-			continue
-		}
-		totalReserved += reservation.ReservedGenerators
-		if reservation.ProjectID == normalizedProjectID {
-			projectReserved += reservation.ReservedGenerators
-		}
-	}
+	totalReserved, projectReserved := capacityReservationTotals(settings, normalizedProjectID)
 	if totalReserved == 0 {
 		return snapshot
 	}
@@ -300,6 +279,22 @@ func resolveCapacityAvailabilityForProject(settings SystemSettings, projectID st
 		snapshot.Warnings = append(snapshot.Warnings, strconv.Itoa(totalReserved)+" generator"+pluralSuffix(totalReserved)+" reserved for other projects; using shared pool capacity.")
 	}
 	return snapshot
+}
+
+func capacityReservationTotals(settings SystemSettings, projectID string) (int, int) {
+	normalizedProjectID := normalizeProjectID(strings.TrimSpace(projectID))
+	totalReserved := 0
+	projectReserved := 0
+	for _, reservation := range normalizeCapacityReservations(settings.CapacityPlanning.Reservations) {
+		if reservation.ReservedGenerators < 0 {
+			continue
+		}
+		totalReserved += reservation.ReservedGenerators
+		if normalizedProjectID != "" && reservation.ProjectID == normalizedProjectID {
+			projectReserved += reservation.ReservedGenerators
+		}
+	}
+	return totalReserved, projectReserved
 }
 
 func minInt(a int, b int) int {

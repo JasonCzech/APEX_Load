@@ -2795,6 +2795,86 @@ func pendingAnchor(test *ManagedTest) time.Time {
 	return time.Time{}
 }
 
+type pendingFairShareRank struct {
+	reservationTier int
+	activeTests     int
+	activeVUsers    int
+	anchor          time.Time
+	createdAt       time.Time
+	id              string
+}
+
+func (tr *TestRunner) sortPendingTestsForFairShareLocked(pending []*ManagedTest) {
+	sort.Slice(pending, func(i, j int) bool {
+		left := tr.pendingFairShareRankLocked(pending[i])
+		right := tr.pendingFairShareRankLocked(pending[j])
+		if left.reservationTier != right.reservationTier {
+			return left.reservationTier < right.reservationTier
+		}
+		if left.activeTests != right.activeTests {
+			return left.activeTests < right.activeTests
+		}
+		if left.activeVUsers != right.activeVUsers {
+			return left.activeVUsers < right.activeVUsers
+		}
+		if !left.anchor.Equal(right.anchor) {
+			return left.anchor.Before(right.anchor)
+		}
+		if !left.createdAt.Equal(right.createdAt) {
+			return left.createdAt.Before(right.createdAt)
+		}
+		return left.id < right.id
+	})
+}
+
+func (tr *TestRunner) pendingFairShareRankLocked(test *ManagedTest) pendingFairShareRank {
+	if test == nil {
+		return pendingFairShareRank{reservationTier: 1, id: ""}
+	}
+	projectID := normalizeProjectID(test.ProjectID)
+	reservationTier := 1
+	_, projectReserved := capacityReservationTotals(tr.settings, projectID)
+	if projectReserved > 0 && tr.countActiveRecommendedGeneratorsForProjectLocked(projectID) < projectReserved {
+		reservationTier = 0
+	}
+	return pendingFairShareRank{
+		reservationTier: reservationTier,
+		activeTests:     tr.countActiveTestsForProjectLocked(projectID),
+		activeVUsers:    tr.countActiveVUsersForProjectLocked(projectID),
+		anchor:          pendingAnchor(test),
+		createdAt:       test.CreatedAt,
+		id:              test.ID,
+	}
+}
+
+func (tr *TestRunner) countActiveRecommendedGeneratorsForProjectLocked(projectID string) int {
+	projectID = normalizeProjectID(projectID)
+	total := 0
+	for _, test := range tr.tests {
+		if test == nil || normalizeProjectID(test.ProjectID) != projectID {
+			continue
+		}
+		if test.Status != "RUNNING" && test.Status != "INITIALIZING" && test.Status != "PAUSED" {
+			continue
+		}
+		total += recommendedGeneratorCountForTest(test)
+	}
+	return total
+}
+
+func recommendedGeneratorCountForTest(test *ManagedTest) int {
+	if test == nil {
+		return 0
+	}
+	if test.CapacityAdvisory != nil && test.CapacityAdvisory.RecommendedGenerators > 0 {
+		return test.CapacityAdvisory.RecommendedGenerators
+	}
+	if test.TotalVUsers > 0 {
+		return 1
+	}
+	return 0
+}
+
 func (tr *TestRunner) refreshPendingQueueMetadataLocked() {
 	pending := make([]*ManagedTest, 0)
 	for _, test := range tr.tests {
@@ -2809,14 +2889,7 @@ func (tr *TestRunner) refreshPendingQueueMetadataLocked() {
 		}
 		pending = append(pending, test)
 	}
-	sort.Slice(pending, func(i, j int) bool {
-		left := pendingAnchor(pending[i])
-		right := pendingAnchor(pending[j])
-		if left.Equal(right) {
-			return pending[i].CreatedAt.Before(pending[j].CreatedAt)
-		}
-		return left.Before(right)
-	})
+	tr.sortPendingTestsForFairShareLocked(pending)
 	for index, test := range pending {
 		test.QueuePosition = index + 1
 		blocked, reason := tr.evaluateQuotaBlockLocked(test, "")
@@ -4075,14 +4148,7 @@ func (tr *TestRunner) nextPromotablePendingTestLocked() *ManagedTest {
 	if len(pending) == 0 {
 		return nil
 	}
-	sort.Slice(pending, func(i, j int) bool {
-		left := pendingAnchor(pending[i])
-		right := pendingAnchor(pending[j])
-		if left.Equal(right) {
-			return pending[i].CreatedAt.Before(pending[j].CreatedAt)
-		}
-		return left.Before(right)
-	})
+	tr.sortPendingTestsForFairShareLocked(pending)
 	for _, test := range pending {
 		tr.refreshCapacityAdvisoryLocked(test)
 		if buildCapacityShortfallStartError(test.ID, test.CapacityAdvisory, StartTestOptions{}) != nil {

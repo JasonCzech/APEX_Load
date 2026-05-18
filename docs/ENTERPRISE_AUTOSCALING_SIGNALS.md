@@ -72,9 +72,21 @@ Capacity advice evaluates reservations against the test project:
 
 This is the first reserved-pool primitive. Future fair-share placement will consume the same reservation contract when multiple projects contend for generator slots.
 
+## Fair-Share Queue Promotion
+
+Pending test promotion now uses a project-aware fair-share order:
+
+1. Prefer a project with reserved generator capacity that is not yet consumed by that project's active tests.
+2. Then prefer the project with fewer active tests.
+3. Then prefer the project with fewer active VUsers.
+4. Use pending age, creation time, and test ID as deterministic tie breakers.
+
+This keeps old FIFO behavior as the final tie breaker while preventing one busy project from indefinitely occupying every newly available start slot. Capacity shortfall checks still run before promotion, so non-reserved projects cannot consume generator capacity that has been removed from their shared-pool advisory.
+
 ## Plan Mapping
 
 | Plan item | Status | Artifact |
 | --- | --- | --- |
 | P2.5 HPA/KEDA scaling signals | Complete for Prometheus signal contract; cluster manifests remain future work | `/metrics` and this document |
 | P2.6 Capacity reservations | Complete for settings, advisory, health, and metrics primitives; placement fair-share remains future work | `capacity_planning.reservations`, capacity advisory fields, `/metrics` |
+| P2.7 Fair-share placement | Complete for controller pending-queue promotion; distributed per-generator slot accounting remains future work | Project-aware pending promotion |

@@ -2960,6 +2960,105 @@ func TestStartTestQueuesWhenProjectVUserLimitReached(t *testing.T) {
 	}
 }
 
+func TestNextPromotablePendingTestPrefersUnusedReservedProjectShare(t *testing.T) {
+	hub := NewHub()
+	runner := NewTestRunner(10, hub, nil)
+	runner.StoreScript(&dsl.Script{
+		ID:        "script-regular-fair-share",
+		Name:      "Regular Script",
+		Protocol:  "http",
+		Version:   "1.0.0",
+		ProjectID: "regular-project",
+		Actions:   []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+	runner.StoreScript(&dsl.Script{
+		ID:        "script-critical-fair-share",
+		Name:      "Critical Script",
+		Protocol:  "http",
+		Version:   "1.0.0",
+		ProjectID: "critical-project",
+		Actions:   []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+	settings := runner.GetSystemSettings()
+	settings.CapacityPlanning.Availability.ConfiguredAvailableGenerators = 3
+	settings.CapacityPlanning.Reservations = []CapacityReservation{{ProjectID: "critical-project", ReservedGenerators: 1}}
+	if _, err := runner.UpdateSystemSettings(settings); err != nil {
+		t.Fatalf("UpdateSystemSettings returned error: %v", err)
+	}
+
+	regular, err := runner.CreateTest(CreateTestRequest{Name: "Regular", Duration: "30s", ScriptID: "script-regular-fair-share", VUsers: 10})
+	if err != nil {
+		t.Fatalf("CreateTest(regular) returned error: %v", err)
+	}
+	critical, err := runner.CreateTest(CreateTestRequest{Name: "Critical", Duration: "30s", ScriptID: "script-critical-fair-share", VUsers: 10})
+	if err != nil {
+		t.Fatalf("CreateTest(critical) returned error: %v", err)
+	}
+
+	older := time.Now().Add(-5 * time.Minute)
+	newer := time.Now().Add(-1 * time.Minute)
+	runner.mu.Lock()
+	runner.tests[regular.ID].Status = "PENDING"
+	runner.tests[regular.ID].PendingSince = &older
+	runner.tests[critical.ID].Status = "PENDING"
+	runner.tests[critical.ID].PendingSince = &newer
+	next := runner.nextPromotablePendingTestLocked()
+	runner.mu.Unlock()
+
+	if next == nil || next.ID != critical.ID {
+		t.Fatalf("next promotable pending test = %#v, want reserved project test %s", next, critical.ID)
+	}
+}
+
+func TestNextPromotablePendingTestBalancesActiveProjectLoad(t *testing.T) {
+	hub := NewHub()
+	runner := NewTestRunner(10, hub, nil)
+	runner.StoreScript(&dsl.Script{
+		ID:        "script-project-a-fair-share",
+		Name:      "Project A Script",
+		Protocol:  "http",
+		Version:   "1.0.0",
+		ProjectID: "project-a",
+		Actions:   []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+	runner.StoreScript(&dsl.Script{
+		ID:        "script-project-b-fair-share",
+		Name:      "Project B Script",
+		Protocol:  "http",
+		Version:   "1.0.0",
+		ProjectID: "project-b",
+		Actions:   []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+
+	active, err := runner.CreateTest(CreateTestRequest{Name: "Active A", Duration: "30s", ScriptID: "script-project-a-fair-share", VUsers: 10})
+	if err != nil {
+		t.Fatalf("CreateTest(active) returned error: %v", err)
+	}
+	pendingA, err := runner.CreateTest(CreateTestRequest{Name: "Pending A", Duration: "30s", ScriptID: "script-project-a-fair-share", VUsers: 10})
+	if err != nil {
+		t.Fatalf("CreateTest(pendingA) returned error: %v", err)
+	}
+	pendingB, err := runner.CreateTest(CreateTestRequest{Name: "Pending B", Duration: "30s", ScriptID: "script-project-b-fair-share", VUsers: 10})
+	if err != nil {
+		t.Fatalf("CreateTest(pendingB) returned error: %v", err)
+	}
+
+	older := time.Now().Add(-5 * time.Minute)
+	newer := time.Now().Add(-1 * time.Minute)
+	runner.mu.Lock()
+	runner.tests[active.ID].Status = "RUNNING"
+	runner.tests[pendingA.ID].Status = "PENDING"
+	runner.tests[pendingA.ID].PendingSince = &older
+	runner.tests[pendingB.ID].Status = "PENDING"
+	runner.tests[pendingB.ID].PendingSince = &newer
+	next := runner.nextPromotablePendingTestLocked()
+	runner.mu.Unlock()
+
+	if next == nil || next.ID != pendingB.ID {
+		t.Fatalf("next promotable pending test = %#v, want less-loaded project test %s", next, pendingB.ID)
+	}
+}
+
 func TestReconcilePendingTestsPromotesQueuedWork(t *testing.T) {
 	hub := NewHub()
 	runner := NewTestRunner(10, hub, nil)
