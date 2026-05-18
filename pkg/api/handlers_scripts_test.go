@@ -2038,6 +2038,146 @@ func TestApproveAuthoringSessionRejectsBlockedDraft(t *testing.T) {
 	}
 }
 
+func TestPreviewAuthoringCorrelationReturnsDiffWithoutPersisting(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	body := []byte(`{
+		"project_id":"project-authoring",
+		"source":"har",
+		"name":"Correlation preview",
+		"status":"reviewing",
+		"draft":{
+			"name":"Correlated Flow",
+			"version":"1.0.0",
+			"protocol":"http",
+			"config":{"base_url":"https://example.test"},
+			"actions":[
+				{"name":"Login","type":"request","method":"POST","target":"/login"},
+				{"name":"Cart","type":"request","method":"GET","target":"/cart?session=abc12345","headers":{"X-Session":"abc12345"}}
+			]
+		}
+	}`)
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/authoring/sessions", bytes.NewReader(body))
+	createResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(createResp, createReq)
+	if createResp.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want %d body=%s", createResp.Code, http.StatusCreated, createResp.Body.String())
+	}
+	var created storage.AuthoringSession
+	if err := json.Unmarshal(createResp.Body.Bytes(), &created); err != nil {
+		t.Fatalf("unmarshal created session: %v", err)
+	}
+
+	previewBody := []byte(`{
+		"name":"corr_session",
+		"source":"body",
+		"type":"jsonpath",
+		"expression":"$.sessionId",
+		"sample_value":"abc12345",
+		"found_action_index":1
+	}`)
+	previewReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/authoring/sessions/"+created.ID+"/correlations/preview", bytes.NewReader(previewBody))
+	previewResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(previewResp, previewReq)
+	if previewResp.Code != http.StatusOK {
+		t.Fatalf("preview status = %d, want %d body=%s", previewResp.Code, http.StatusOK, previewResp.Body.String())
+	}
+	var preview authoringCorrelationPreviewResponse
+	if err := json.Unmarshal(previewResp.Body.Bytes(), &preview); err != nil {
+		t.Fatalf("unmarshal preview response: %v", err)
+	}
+	if preview.Applied {
+		t.Fatal("preview applied = true, want false")
+	}
+	if preview.Draft.Actions[0].Extractors[0].Name != "corr_session" {
+		t.Fatalf("preview extractors = %#v, want corr_session on source action", preview.Draft.Actions[0].Extractors)
+	}
+	if preview.Draft.Actions[1].Target != "/cart?session={{var.corr_session}}" || preview.Draft.Actions[1].Headers["X-Session"] != "{{var.corr_session}}" {
+		t.Fatalf("preview usage action = %#v, want variable replacements", preview.Draft.Actions[1])
+	}
+	if len(preview.Changes) != 3 {
+		t.Fatalf("changes = %#v, want extractor plus target/header diffs", preview.Changes)
+	}
+
+	loaded, ok := server.getAuthoringSession(httptest.NewRecorder(), created.ID)
+	if !ok {
+		t.Fatal("expected persisted authoring session")
+	}
+	if len(loaded.Draft.Actions[0].Extractors) != 0 || loaded.Draft.Actions[1].Target != "/cart?session=abc12345" {
+		t.Fatalf("persisted draft = %#v, want unchanged after preview", loaded.Draft)
+	}
+}
+
+func TestApplyAuthoringCorrelationPersistsDraftAndReviewState(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	body := []byte(`{
+		"project_id":"project-authoring",
+		"source":"har",
+		"name":"Correlation apply",
+		"status":"reviewing",
+		"draft":{
+			"name":"Correlated Flow",
+			"version":"1.0.0",
+			"protocol":"http",
+			"config":{"base_url":"https://example.test"},
+			"actions":[
+				{"name":"Login","type":"request","method":"POST","target":"/login"},
+				{"name":"Cart","type":"request","method":"GET","target":"/cart?session=abc12345"}
+			]
+		}
+	}`)
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/authoring/sessions", bytes.NewReader(body))
+	createResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(createResp, createReq)
+	if createResp.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want %d body=%s", createResp.Code, http.StatusCreated, createResp.Body.String())
+	}
+	var created storage.AuthoringSession
+	if err := json.Unmarshal(createResp.Body.Bytes(), &created); err != nil {
+		t.Fatalf("unmarshal created session: %v", err)
+	}
+
+	applyBody := []byte(`{
+		"name":"corr_session",
+		"expression":"$.sessionId",
+		"sample_value":"abc12345",
+		"found_action":"Login",
+		"apply":true
+	}`)
+	applyReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/authoring/sessions/"+created.ID+"/correlations/preview", bytes.NewReader(applyBody))
+	applyResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(applyResp, applyReq)
+	if applyResp.Code != http.StatusOK {
+		t.Fatalf("apply status = %d, want %d body=%s", applyResp.Code, http.StatusOK, applyResp.Body.String())
+	}
+	var applied authoringCorrelationPreviewResponse
+	if err := json.Unmarshal(applyResp.Body.Bytes(), &applied); err != nil {
+		t.Fatalf("unmarshal apply response: %v", err)
+	}
+	if !applied.Applied {
+		t.Fatal("applied = false, want true")
+	}
+
+	persisted, err := store.GetAuthoringSession(created.ID)
+	if err != nil {
+		t.Fatalf("GetAuthoringSession returned error: %v", err)
+	}
+	if persisted.Status != "editing" {
+		t.Fatalf("status = %q, want editing", persisted.Status)
+	}
+	if persisted.Draft.Actions[0].Extractors[0].Name != "corr_session" || persisted.Draft.Actions[1].Target != "/cart?session={{var.corr_session}}" {
+		t.Fatalf("persisted draft = %#v, want applied correlation", persisted.Draft)
+	}
+	lastPreview, ok := persisted.ReviewState["last_correlation_preview"].(map[string]any)
+	if !ok || lastPreview["name"] != "corr_session" {
+		t.Fatalf("review state = %#v, want last correlation preview metadata", persisted.ReviewState)
+	}
+}
+
 type reviewSection struct {
 	Key      string   `json:"key"`
 	Severity string   `json:"severity"`

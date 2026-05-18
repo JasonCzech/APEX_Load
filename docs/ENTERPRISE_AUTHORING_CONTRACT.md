@@ -22,10 +22,13 @@ Authoring sessions persist unsaved drafts and repair workflow state:
 | `PUT /api/v1/scripts/authoring/sessions/{id}` | Replace the draft payload, status, and review state after edits or repairs. |
 | `DELETE /api/v1/scripts/authoring/sessions/{id}` | Remove a draft session after save, approval, or discard. |
 | `POST /api/v1/scripts/authoring/sessions/{id}/approve` | Validate a ready draft, block unsafe health states, promote the draft into the reusable script library, and stamp approval metadata on the session. |
+| `POST /api/v1/scripts/authoring/sessions/{id}/correlations/preview` | Preview or apply a guided correlation repair by adding an extractor, replacing sample values with `{{var.name}}`, and returning before/after diffs. |
 
 SQLite-backed controllers persist these sessions in `authoring_sessions`. Controllers without a metadata store keep a local in-memory fallback for development and tests.
 
 Approval is the final backend handoff before a migrated, recorded, manual, or generated draft becomes a reusable scenario asset. The approval endpoint returns HTTP 400 with the standard validation payload when validation fails or the authoring health status is `blocked`. Successful approval stores the draft through the normal script library path, marks the session `approved`, and records `approved_script_id`, `approved_at`, and `approval_health_status` in `review_state`.
+
+Guided correlation repair accepts a proposed variable name, extractor source/type/expression, sample value, and source/usage action hints. Preview mode returns a mutated draft and field-level diffs without saving. Apply mode persists the changed draft, resets the session to `editing`, and records `last_correlation_preview` metadata for audit and UI resume.
 
 ## Sources
 
@@ -88,3 +91,5 @@ P3.3 scoring normalizes these inputs instead of creating source-specific scoring
 | P3.2 Source capability matrix | Complete for backend matrix | `sources` and `source_map` in the authoring capabilities response |
 | P3.3 Draft health scoring | Complete for validation response scoring; dashboard badges remain future work | `authoring_health` in script validation responses |
 | P3.4 Authoring session persistence | Complete for API and SQLite persistence | `authoring_sessions` table and session CRUD endpoints |
+| P3.5 Approval handoff | Complete for backend gate | Session approval validates health, stores reusable scripts, and stamps approval metadata |
+| P3.6 Guided correlation repair | Partial backend complete | Session correlation preview/apply returns extractor insertion and sample-replacement diffs |
