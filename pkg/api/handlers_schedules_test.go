@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/jasonczech/stormrunner/pkg/dsl"
 	"github.com/jasonczech/stormrunner/pkg/storage"
@@ -79,6 +80,52 @@ func TestHandleScenarioScheduleCRUD(t *testing.T) {
 	}
 	if listed.Count != 1 || len(listed.Schedules) != 1 {
 		t.Fatalf("list payload = %#v, want exactly one schedule", listed)
+	}
+	plannedAt := time.Date(2026, time.May, 18, 9, 0, 0, 0, time.UTC)
+	if err := store.SaveScenarioScheduleOccurrence(&storage.ScenarioScheduleOccurrence{
+		ID:               "occurrence-1",
+		ScheduleID:       created.ID,
+		ScenarioID:       scenario.ID,
+		ProjectID:        "project-schedule",
+		ScheduleRevision: created.Revision,
+		PlannedAt:        plannedAt,
+		Status:           "materialized",
+		ReasonCode:       "started",
+		TestID:           "test-scheduled",
+		CreatedAt:        plannedAt,
+		UpdatedAt:        plannedAt,
+	}); err != nil {
+		t.Fatalf("SaveScenarioScheduleOccurrence returned error: %v", err)
+	}
+	occurrencesReq := httptest.NewRequest(http.MethodGet, "/api/v1/scenarios/"+scenario.ID+"/schedules/"+created.ID+"/occurrences", nil)
+	occurrencesResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(occurrencesResp, occurrencesReq)
+	if occurrencesResp.Code != http.StatusOK {
+		t.Fatalf("occurrences status = %d, want %d body=%s", occurrencesResp.Code, http.StatusOK, occurrencesResp.Body.String())
+	}
+	var occurrencePayload struct {
+		Occurrences []*storage.ScenarioScheduleOccurrence `json:"occurrences"`
+		Count       int                                   `json:"count"`
+	}
+	if err := json.Unmarshal(occurrencesResp.Body.Bytes(), &occurrencePayload); err != nil {
+		t.Fatalf("json.Unmarshal occurrences returned error: %v", err)
+	}
+	if occurrencePayload.Count != 1 || occurrencePayload.Occurrences[0].Status != "materialized" {
+		t.Fatalf("occurrence payload = %#v, want one materialized occurrence", occurrencePayload)
+	}
+
+	healthReq := httptest.NewRequest(http.MethodGet, "/api/v1/schedules/health", nil)
+	healthResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(healthResp, healthReq)
+	if healthResp.Code != http.StatusOK {
+		t.Fatalf("health status = %d, want %d body=%s", healthResp.Code, http.StatusOK, healthResp.Body.String())
+	}
+	var health ScenarioScheduleHealth
+	if err := json.Unmarshal(healthResp.Body.Bytes(), &health); err != nil {
+		t.Fatalf("json.Unmarshal health returned error: %v", err)
+	}
+	if health.Total != 1 || health.StatusCounts["materialized"] != 1 {
+		t.Fatalf("health = %#v, want one schedule and one materialized occurrence", health)
 	}
 
 	updateBody := bytes.NewBufferString(`{"name":"Nightly Smoke","cron_expr":"0 * * * *","run_name_template":"Hourly Checkout","enabled":false}`)

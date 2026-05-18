@@ -51,6 +51,11 @@ type scenarioPersistence interface {
 	ListScenarioSchedules(scenarioID string) ([]*storage.ScenarioSchedule, error)
 	ListAllScenarioSchedules() ([]*storage.ScenarioSchedule, error)
 	DeleteScenarioSchedule(id string) error
+	SaveScenarioScheduleOccurrence(occurrence *storage.ScenarioScheduleOccurrence) error
+	GetScenarioScheduleOccurrence(id string) (*storage.ScenarioScheduleOccurrence, error)
+	GetScenarioScheduleOccurrenceByScheduleAndPlannedAt(scheduleID string, plannedAt time.Time) (*storage.ScenarioScheduleOccurrence, error)
+	ListScenarioScheduleOccurrences(scheduleID string) ([]*storage.ScenarioScheduleOccurrence, error)
+	ListAllScenarioScheduleOccurrences() ([]*storage.ScenarioScheduleOccurrence, error)
 	SaveScenarioDataPoolBindings(scenarioID string, bindings []storage.ScenarioDataPoolBinding) error
 	ListScenarioDataPoolBindings(scenarioID string) ([]storage.ScenarioDataPoolBinding, error)
 }
@@ -1311,6 +1316,84 @@ func (tr *TestRunner) saveScenarioScheduleLocked(schedule *storage.ScenarioSched
 	}
 	scenario.Schedules = append(scenario.Schedules, cloneScenarioSchedule(schedule))
 	return nil
+}
+
+func (tr *TestRunner) saveScenarioScheduleOccurrenceLocked(occurrence *storage.ScenarioScheduleOccurrence) error {
+	if occurrence == nil {
+		return fmt.Errorf("schedule occurrence is required")
+	}
+	if tr.scenarioStore != nil {
+		return tr.scenarioStore.SaveScenarioScheduleOccurrence(occurrence)
+	}
+	return nil
+}
+
+func (tr *TestRunner) ListScenarioScheduleOccurrences(scenarioID string, scheduleID string) ([]*storage.ScenarioScheduleOccurrence, bool) {
+	tr.mu.RLock()
+	defer tr.mu.RUnlock()
+	scenario, ok := tr.scenarios[scenarioID]
+	if !ok {
+		return nil, false
+	}
+	found := false
+	for _, schedule := range scenario.Schedules {
+		if schedule != nil && schedule.ID == scheduleID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return nil, false
+	}
+	if tr.scenarioStore == nil {
+		return []*storage.ScenarioScheduleOccurrence{}, true
+	}
+	occurrences, err := tr.scenarioStore.ListScenarioScheduleOccurrences(scheduleID)
+	if err != nil {
+		return []*storage.ScenarioScheduleOccurrence{}, true
+	}
+	out := make([]*storage.ScenarioScheduleOccurrence, 0, len(occurrences))
+	for _, occurrence := range occurrences {
+		out = append(out, cloneScenarioScheduleOccurrence(occurrence))
+	}
+	return out, true
+}
+
+func (tr *TestRunner) ScenarioScheduleHealth(now time.Time) ScenarioScheduleHealth {
+	tr.mu.RLock()
+	defer tr.mu.RUnlock()
+	health := ScenarioScheduleHealth{StatusCounts: map[string]int{}}
+	for _, schedule := range tr.listAllScenarioSchedulesLocked() {
+		if schedule == nil {
+			continue
+		}
+		health.Total++
+		if schedule.Enabled {
+			health.Enabled++
+		}
+		if schedule.NextRunAt != nil && !schedule.NextRunAt.After(now) {
+			health.Due++
+		}
+		if strings.TrimSpace(schedule.ConflictSummary) != "" {
+			health.Blocked++
+		}
+		if strings.TrimSpace(schedule.LastError) != "" {
+			health.Failed++
+		}
+		if schedule.NextRequiredAction == "approval_required" {
+			health.PendingApproval++
+		}
+	}
+	if tr.scenarioStore != nil {
+		if occurrences, err := tr.scenarioStore.ListAllScenarioScheduleOccurrences(); err == nil {
+			for _, occurrence := range occurrences {
+				if occurrence != nil {
+					health.StatusCounts[occurrence.Status]++
+				}
+			}
+		}
+	}
+	return health
 }
 
 func (tr *TestRunner) ListScriptsWithUsage() []*StoredScript {

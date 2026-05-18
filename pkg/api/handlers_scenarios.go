@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/jasonczech/stormrunner/pkg/storage"
 )
@@ -169,6 +170,19 @@ func (s *Server) handleDeleteScenarioSchedule(w http.ResponseWriter, r *http.Req
 	}
 	s.recordAuditEvent(r, "scenario.schedule.delete", "success", "scenario_schedule", r.PathValue("schedule_id"), projectID, map[string]any{"scenario_id": r.PathValue("id")})
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": r.PathValue("schedule_id")})
+}
+
+func (s *Server) handleListScenarioScheduleOccurrences(w http.ResponseWriter, r *http.Request) {
+	occurrences, ok := s.runner.ListScenarioScheduleOccurrences(r.PathValue("id"), r.PathValue("schedule_id"))
+	if !ok {
+		writeError(w, http.StatusNotFound, "scenario schedule not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"occurrences": occurrences, "count": len(occurrences)})
+}
+
+func (s *Server) handleScenarioScheduleHealth(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, s.runner.ScenarioScheduleHealth(time.Now().UTC()))
 }
 
 func scenarioScheduleAuditDetails(schedule *storage.ScenarioSchedule) map[string]any {

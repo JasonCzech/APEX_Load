@@ -462,6 +462,10 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 		}
 	}
 
+	if path == "/api/v1/schedules/health" && method == http.MethodGet {
+		return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
+	}
+
 	if strings.HasPrefix(path, "/api/v1/auth/service-accounts/") && method == http.MethodPatch {
 		return accessRequirement{GlobalRoles: []string{RoleSystemAdmin}}, true
 	}

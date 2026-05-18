@@ -35,6 +35,7 @@ type metricsStoreSpy struct {
 	historyByTestID       map[string][]any
 	archiveByTestID       map[string]*storage.RunArchiveRecord
 	schedulesByID         map[string]*storage.ScenarioSchedule
+	occurrencesByID       map[string]*storage.ScenarioScheduleOccurrence
 }
 
 var runnerTestProtocolCounter atomic.Uint64
@@ -153,6 +154,48 @@ func (s *metricsStoreSpy) ListAllScenarioSchedules() ([]*storage.ScenarioSchedul
 func (s *metricsStoreSpy) DeleteScenarioSchedule(id string) error {
 	delete(s.schedulesByID, id)
 	return nil
+}
+func (s *metricsStoreSpy) SaveScenarioScheduleOccurrence(occurrence *storage.ScenarioScheduleOccurrence) error {
+	if s.occurrencesByID == nil {
+		s.occurrencesByID = make(map[string]*storage.ScenarioScheduleOccurrence)
+	}
+	clone := *occurrence
+	if occurrence.MaterializedAt != nil {
+		materializedAt := *occurrence.MaterializedAt
+		clone.MaterializedAt = &materializedAt
+	}
+	s.occurrencesByID[occurrence.ID] = &clone
+	return nil
+}
+func (s *metricsStoreSpy) GetScenarioScheduleOccurrence(id string) (*storage.ScenarioScheduleOccurrence, error) {
+	if s.occurrencesByID == nil {
+		return nil, nil
+	}
+	return s.occurrencesByID[id], nil
+}
+func (s *metricsStoreSpy) GetScenarioScheduleOccurrenceByScheduleAndPlannedAt(scheduleID string, plannedAt time.Time) (*storage.ScenarioScheduleOccurrence, error) {
+	for _, occurrence := range s.occurrencesByID {
+		if occurrence.ScheduleID == scheduleID && occurrence.PlannedAt.Equal(plannedAt) {
+			return occurrence, nil
+		}
+	}
+	return nil, nil
+}
+func (s *metricsStoreSpy) ListScenarioScheduleOccurrences(scheduleID string) ([]*storage.ScenarioScheduleOccurrence, error) {
+	out := []*storage.ScenarioScheduleOccurrence{}
+	for _, occurrence := range s.occurrencesByID {
+		if occurrence.ScheduleID == scheduleID {
+			out = append(out, occurrence)
+		}
+	}
+	return out, nil
+}
+func (s *metricsStoreSpy) ListAllScenarioScheduleOccurrences() ([]*storage.ScenarioScheduleOccurrence, error) {
+	out := make([]*storage.ScenarioScheduleOccurrence, 0, len(s.occurrencesByID))
+	for _, occurrence := range s.occurrencesByID {
+		out = append(out, occurrence)
+	}
+	return out, nil
 }
 func (s *metricsStoreSpy) SaveScenarioDataPoolBindings(scenarioID string, bindings []storage.ScenarioDataPoolBinding) error {
 	return nil
@@ -4001,6 +4044,13 @@ func TestScenarioSchedulerRunDueSchedulesCreatesAndStartsRun(t *testing.T) {
 	}
 	if updated.LastError != "" {
 		t.Fatalf("LastError = %q, want empty", updated.LastError)
+	}
+	occurrences, err := store.ListScenarioScheduleOccurrences(schedule.ID)
+	if err != nil {
+		t.Fatalf("ListScenarioScheduleOccurrences returned error: %v", err)
+	}
+	if len(occurrences) != 1 || occurrences[0].Status != "materialized" || occurrences[0].TestID != updated.LastRunTestID {
+		t.Fatalf("occurrences = %#v, want one materialized occurrence for %s", occurrences, updated.LastRunTestID)
 	}
 }
 

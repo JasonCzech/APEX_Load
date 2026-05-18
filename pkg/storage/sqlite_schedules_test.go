@@ -78,6 +78,38 @@ func TestSQLiteStorePersistsScenarioSchedules(t *testing.T) {
 	if len(roundTrip.BlackoutWindows) != 1 || roundTrip.BlackoutWindows[0].Name != "maintenance" || len(roundTrip.AvailabilityWindows) != 1 {
 		t.Fatalf("round trip windows = blackout %#v availability %#v, want persisted windows", roundTrip.BlackoutWindows, roundTrip.AvailabilityWindows)
 	}
+	materializedAt := nextRun.Add(time.Minute)
+	occurrence := &ScenarioScheduleOccurrence{
+		ID:               "occurrence-1",
+		ScheduleID:       schedule.ID,
+		ScenarioID:       scenario.ID,
+		ProjectID:        "checkout",
+		ScheduleRevision: schedule.Revision,
+		PlannedAt:        nextRun,
+		MaterializedAt:   &materializedAt,
+		Status:           "materialized",
+		ReasonCode:       "started",
+		TestID:           "test-1",
+		CreatedAt:        nextRun,
+		UpdatedAt:        materializedAt,
+	}
+	if err := store.SaveScenarioScheduleOccurrence(occurrence); err != nil {
+		t.Fatalf("SaveScenarioScheduleOccurrence returned error: %v", err)
+	}
+	occurrenceRoundTrip, err := store.GetScenarioScheduleOccurrence(occurrence.ID)
+	if err != nil {
+		t.Fatalf("GetScenarioScheduleOccurrence returned error: %v", err)
+	}
+	if occurrenceRoundTrip.Status != "materialized" || occurrenceRoundTrip.MaterializedAt == nil || !occurrenceRoundTrip.MaterializedAt.Equal(materializedAt) {
+		t.Fatalf("round trip occurrence = %#v, want materialized timestamp", occurrenceRoundTrip)
+	}
+	bySchedule, err := store.ListScenarioScheduleOccurrences(schedule.ID)
+	if err != nil {
+		t.Fatalf("ListScenarioScheduleOccurrences returned error: %v", err)
+	}
+	if len(bySchedule) != 1 || bySchedule[0].ID != occurrence.ID {
+		t.Fatalf("schedule occurrences = %#v, want %s", bySchedule, occurrence.ID)
+	}
 	listed, err := store.ListScenarioSchedules(scenario.ID)
 	if err != nil {
 		t.Fatalf("ListScenarioSchedules returned error: %v", err)
