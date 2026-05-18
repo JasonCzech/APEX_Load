@@ -63,6 +63,15 @@ describe('TestExecutionArchive', () => {
         { dimension: 'telemetry_gaps', severity: 'warning', penalty: 8, message: 'Telemetry was degraded for one or more archived intervals.' },
       ],
     },
+    change_attribution: {
+      script_revisions: ['script-a', 'script-b'],
+      scenario_revision: 'scenario-9',
+      environment: 'perf-lab',
+      generator_versions: ['0.2.0'],
+      data_revision: 'script-a:data,script-b:data',
+      runtime_overrides: true,
+      runtime_override_fields: ['browser', 'log_level'],
+    },
     manifest: {
       schema_version: '1',
       test_id: 'test-1',
@@ -359,6 +368,9 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('goal_oriented · 1 VUsers · 1m')
     expect(container.textContent).toContain('project-1 / release-7 / scenario-9')
     expect(container.textContent).toContain('Shakeout Enabled · Baseline Enabled')
+    expect(container.textContent).toContain('Change Attribution')
+    expect(container.textContent).toContain('script-a, script-b')
+    expect(container.textContent).toContain('perf-lab')
     expect(container.textContent).toContain('Browser Runtime')
     expect(container.textContent).toContain('iphone_se · Portrait · Touch enabled · Headed')
     expect(container.textContent).toContain('Pinned')

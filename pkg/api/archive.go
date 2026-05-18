@@ -167,6 +167,7 @@ type RunArchiveReport struct {
 	SchemaVersion       string                                 `json:"schema_version"`
 	Compatibility       RunArchiveReportCompatibility          `json:"compatibility"`
 	Completeness        RunArchiveCompletenessScore            `json:"completeness"`
+	ChangeAttribution   RunArchiveChangeAttribution            `json:"change_attribution"`
 	Manifest            *RunArchiveManifest                    `json:"manifest"`
 	Overview            RunArchiveOverview                     `json:"overview"`
 	EvidenceTiers       []RunArchiveEvidenceTier               `json:"evidence_tiers,omitempty"`
@@ -184,6 +185,16 @@ type RunArchiveReport struct {
 	BrowserByDevice     map[string]*BrowserDeviceLiveMetrics   `json:"browser_by_device,omitempty"`
 	BrowserResources    []BrowserResourceTiming                `json:"browser_resources,omitempty"`
 	ResourcePeaks       RunArchiveResourcePeaks                `json:"resource_peaks"`
+}
+
+type RunArchiveChangeAttribution struct {
+	ScriptRevisions       []string `json:"script_revisions,omitempty"`
+	ScenarioRevision      string   `json:"scenario_revision,omitempty"`
+	Environment           string   `json:"environment,omitempty"`
+	GeneratorVersions     []string `json:"generator_versions,omitempty"`
+	DataRevision          string   `json:"data_revision,omitempty"`
+	RuntimeOverrides      bool     `json:"runtime_overrides"`
+	RuntimeOverrideFields []string `json:"runtime_override_fields,omitempty"`
 }
 
 type RunArchiveCompletenessScore struct {
@@ -1042,8 +1053,123 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	report.EvidenceTiers = buildRunArchiveEvidenceTiers(manifest, report, transactions, resources, summaries)
 	report.Compatibility = buildRunArchiveReportCompatibility(record, manifest)
 	report.Completeness = buildRunArchiveCompletenessScore(manifest, report, transactions, resources, summaries)
+	report.ChangeAttribution = buildRunArchiveChangeAttribution(manifest)
 
 	return report, nil
+}
+
+func buildRunArchiveChangeAttribution(manifest *RunArchiveManifest) RunArchiveChangeAttribution {
+	if manifest == nil {
+		return RunArchiveChangeAttribution{}
+	}
+	provenance := manifest.Provenance
+	scriptRevisions := make([]string, 0, len(provenance.Groups))
+	seenScripts := map[string]struct{}{}
+	for _, group := range provenance.Groups {
+		revision := strings.TrimSpace(group.ScriptID)
+		if revision == "" {
+			revision = strings.TrimSpace(group.ScriptName)
+		}
+		if revision == "" {
+			continue
+		}
+		if _, ok := seenScripts[revision]; ok {
+			continue
+		}
+		seenScripts[revision] = struct{}{}
+		scriptRevisions = append(scriptRevisions, revision)
+	}
+	sort.Strings(scriptRevisions)
+
+	generatorVersions := make([]string, 0, len(provenance.GeneratorInventory))
+	seenVersions := map[string]struct{}{}
+	for _, entry := range provenance.GeneratorInventory {
+		version := strings.TrimSpace(entry.Version)
+		if version == "" {
+			continue
+		}
+		if _, ok := seenVersions[version]; ok {
+			continue
+		}
+		seenVersions[version] = struct{}{}
+		generatorVersions = append(generatorVersions, version)
+	}
+	sort.Strings(generatorVersions)
+
+	return RunArchiveChangeAttribution{
+		ScriptRevisions:       scriptRevisions,
+		ScenarioRevision:      strings.TrimSpace(provenance.ScenarioID),
+		Environment:           archiveFirstNonEmpty(provenance.ControllerEnv["STORMRUNNER_ENVIRONMENT"], provenance.ControllerEnv["STORMRUNNER_ENV"], provenance.ProjectID),
+		GeneratorVersions:     generatorVersions,
+		DataRevision:          dataRevisionFromGroups(provenance.Groups),
+		RuntimeOverrides:      provenance.RuntimeSettings != nil,
+		RuntimeOverrideFields: runtimeOverrideFieldNames(provenance.RuntimeSettings),
+	}
+}
+
+func dataRevisionFromGroups(groups []TestGroup) string {
+	values := make([]string, 0, len(groups))
+	seen := map[string]struct{}{}
+	for _, group := range groups {
+		if group.ScriptID == "" {
+			continue
+		}
+		value := group.ScriptID + ":data"
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		values = append(values, value)
+	}
+	sort.Strings(values)
+	return strings.Join(values, ",")
+}
+
+func runtimeOverrideFieldNames(settings *RuntimeSettingsOverride) []string {
+	if settings == nil {
+		return nil
+	}
+	fields := make([]string, 0, 6)
+	if settings.Iterations != nil {
+		fields = append(fields, "iterations")
+	}
+	if settings.Pacing != nil {
+		fields = append(fields, "pacing")
+	}
+	if settings.ThinkTime != nil {
+		fields = append(fields, "think_time")
+	}
+	if settings.Browser != nil {
+		fields = append(fields, "browser")
+	}
+	if strings.TrimSpace(settings.LogLevel) != "" {
+		fields = append(fields, "log_level")
+	}
+	if strings.TrimSpace(settings.AutoTransactions) != "" {
+		fields = append(fields, "auto_transactions")
+	}
+	if strings.TrimSpace(settings.BaseURL) != "" {
+		fields = append(fields, "base_url")
+	}
+	if len(settings.Env) > 0 {
+		fields = append(fields, "env")
+	}
+	if len(settings.RedactionRules) > 0 {
+		fields = append(fields, "redaction_rules")
+	}
+	if settings.ErrorHandling != nil {
+		fields = append(fields, "error_handling")
+	}
+	return fields
+}
+
+func archiveFirstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
 }
 
 func buildRunArchiveCompletenessScore(manifest *RunArchiveManifest, report *RunArchiveReport, transactions []TransactionEvent, resources []ResourceSample, summaries []IntervalSummaryRecord) RunArchiveCompletenessScore {

@@ -608,6 +608,44 @@ export default function TestExecutionArchive({
             </div>
           )}
 
+          {archiveReport.change_attribution && (
+            <div className="tx-section archive-summary-section">
+              <div className="archive-section-header archive-section-header-stack">
+                <div>
+                  <h3 className="chart-title">Change Attribution</h3>
+                  <p className="archive-section-copy">Run inputs that explain whether result changes came from scripts, data, environment, generators, or runtime overrides.</p>
+                </div>
+              </div>
+              <div className="archive-overview-grid">
+                <div className="scenario-script-detail-card">
+                  <span className="scenario-script-detail-label">Scripts</span>
+                  <span className="scenario-script-detail-value">{archiveReport.change_attribution.script_revisions?.join(', ') || 'n/a'}</span>
+                </div>
+                <div className="scenario-script-detail-card">
+                  <span className="scenario-script-detail-label">Scenario</span>
+                  <span className="scenario-script-detail-value">{archiveReport.change_attribution.scenario_revision || 'n/a'}</span>
+                </div>
+                <div className="scenario-script-detail-card">
+                  <span className="scenario-script-detail-label">Environment</span>
+                  <span className="scenario-script-detail-value">{archiveReport.change_attribution.environment || 'n/a'}</span>
+                </div>
+                <div className="scenario-script-detail-card">
+                  <span className="scenario-script-detail-label">Generators</span>
+                  <span className="scenario-script-detail-value">{archiveReport.change_attribution.generator_versions?.join(', ') || 'n/a'}</span>
+                </div>
+                <div className="scenario-script-detail-card">
+                  <span className="scenario-script-detail-label">Data</span>
+                  <span className="scenario-script-detail-value">{archiveReport.change_attribution.data_revision || 'n/a'}</span>
+                </div>
+                <div className="scenario-script-detail-card">
+                  <span className="scenario-script-detail-label">Runtime Overrides</span>
+                  <span className="scenario-script-detail-value">{archiveReport.change_attribution.runtime_overrides ? 'Yes' : 'No'}</span>
+                  <span className="capacity-advisory-detail">{archiveReport.change_attribution.runtime_override_fields?.join(', ') || 'No overrides'}</span>
+                </div>
+              </div>
+            </div>
+          )}
+
           {archiveReport.error_patterns && archiveReport.error_patterns.length > 0 && (
             <div className="tx-section archive-summary-section">
               <div className="archive-section-header">

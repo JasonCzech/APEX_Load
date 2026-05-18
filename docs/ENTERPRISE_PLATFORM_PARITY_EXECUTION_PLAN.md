@@ -252,7 +252,7 @@ Acceptance criteria:
 | --- | --- | --- | --- | --- |
 | P6.5 | Add release-level trend views for latency, throughput, error rate, SLA status, capacity, and resource signals | L | P6.1 | Planned |
 | P6.6 | Add baseline comparison policy: pinned, latest successful, release default, or manually selected | M | P6.1 | Partial backend/UI complete - comparison baselines now expose the selected policy, pinned baselines win, and automatic selection prefers the latest successful comparable run before falling back to latest finished. |
-| P6.7 | Add change attribution fields for script revision, scenario revision, environment, generator version, data revision, and runtime overrides | M | P1.6 | Planned |
+| P6.7 | Add change attribution fields for script revision, scenario revision, environment, generator version, data revision, and runtime overrides | M | P1.6 | Partial backend/UI complete - archive reports now surface script, scenario, environment, generator version, data, and runtime override attribution from captured provenance. |
 | P6.8 | Add exportable executive, engineer, and audit report profiles | M | P6.5 | Planned |
 
 Acceptance criteria:

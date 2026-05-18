@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -347,6 +348,73 @@ func TestBuildRunArchiveReportScoresCompletenessFindings(t *testing.T) {
 		if !findings[dimension] {
 			t.Fatalf("missing completeness dimension %q in %#v", dimension, report.Completeness.Findings)
 		}
+	}
+}
+
+func TestBuildRunArchiveReportIncludesChangeAttribution(t *testing.T) {
+	archiveDir := t.TempDir()
+	manifestPath := filepath.Join(archiveDir, "manifest.json")
+	iterations := 3
+	manifest := RunArchiveManifest{
+		SchemaVersion:         archiveSchemaVersion,
+		TestID:                "test-attribution",
+		TestName:              "Attribution Run",
+		TransactionsFile:      "transactions.jsonl",
+		ResourceSamplesFile:   "resources.jsonl",
+		IntervalSummariesFile: "interval_summaries.jsonl",
+		Provenance: RunArchiveProvenance{
+			ScenarioID: "scenario-42",
+			ProjectID:  "checkout",
+			Groups: []TestGroup{
+				{Name: "buyers", ScriptID: "script-a", ScriptName: "Checkout"},
+				{Name: "repeat", ScriptID: "script-a", ScriptName: "Checkout"},
+				{Name: "browse", ScriptID: "script-b", ScriptName: "Browse"},
+			},
+			RuntimeSettings: &RuntimeSettingsOverride{
+				Iterations: &iterations,
+				LogLevel:   "debug",
+				BaseURL:    "https://checkout.example.test",
+			},
+			ControllerEnv: map[string]string{"STORMRUNNER_ENVIRONMENT": "perf-lab"},
+			GeneratorInventory: []GeneratorInventoryEntry{
+				{Target: "generator-a", Version: "0.2.0"},
+				{Target: "generator-b", Version: "0.2.0"},
+				{Target: "generator-c", Version: "0.3.0"},
+			},
+		},
+	}
+	manifestBytes, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatalf("json.Marshal manifest returned error: %v", err)
+	}
+	if err := os.WriteFile(manifestPath, manifestBytes, 0o644); err != nil {
+		t.Fatalf("WriteFile manifest returned error: %v", err)
+	}
+	for _, name := range []string{manifest.TransactionsFile, manifest.ResourceSamplesFile, manifest.IntervalSummariesFile} {
+		if err := os.WriteFile(filepath.Join(archiveDir, name), nil, 0o644); err != nil {
+			t.Fatalf("WriteFile %s returned error: %v", name, err)
+		}
+	}
+
+	report, err := buildRunArchiveReport(&storage.RunArchiveRecord{ArchivePath: archiveDir, ManifestPath: manifestPath})
+	if err != nil {
+		t.Fatalf("buildRunArchiveReport returned error: %v", err)
+	}
+	attribution := report.ChangeAttribution
+	if strings.Join(attribution.ScriptRevisions, ",") != "script-a,script-b" {
+		t.Fatalf("script revisions = %#v, want deduplicated script ids", attribution.ScriptRevisions)
+	}
+	if attribution.ScenarioRevision != "scenario-42" || attribution.Environment != "perf-lab" {
+		t.Fatalf("scenario/environment attribution = %#v", attribution)
+	}
+	if strings.Join(attribution.GeneratorVersions, ",") != "0.2.0,0.3.0" {
+		t.Fatalf("generator versions = %#v, want deduplicated versions", attribution.GeneratorVersions)
+	}
+	if !attribution.RuntimeOverrides || strings.Join(attribution.RuntimeOverrideFields, ",") != "iterations,log_level,base_url" {
+		t.Fatalf("runtime override attribution = %#v", attribution)
+	}
+	if attribution.DataRevision != "script-a:data,script-b:data" {
+		t.Fatalf("data revision = %q, want script data fingerprint", attribution.DataRevision)
 	}
 }
 

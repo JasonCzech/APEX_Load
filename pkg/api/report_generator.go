@@ -363,6 +363,37 @@ var runArchiveReportTemplate = template.Must(template.New("run-archive-report").
       </table>
     </section>
 
+    <section>
+      <h2>Change Attribution</h2>
+      <div class="overview">
+        <div class="metric">
+          <span class="metric-label">Scripts</span>
+          <span class="metric-value">{{if .Report.ChangeAttribution.ScriptRevisions}}{{join .Report.ChangeAttribution.ScriptRevisions}}{{else}}n/a{{end}}</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Scenario</span>
+          <span class="metric-value">{{if .Report.ChangeAttribution.ScenarioRevision}}{{.Report.ChangeAttribution.ScenarioRevision}}{{else}}n/a{{end}}</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Environment</span>
+          <span class="metric-value">{{if .Report.ChangeAttribution.Environment}}{{.Report.ChangeAttribution.Environment}}{{else}}n/a{{end}}</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Generators</span>
+          <span class="metric-value">{{if .Report.ChangeAttribution.GeneratorVersions}}{{join .Report.ChangeAttribution.GeneratorVersions}}{{else}}n/a{{end}}</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Data Revision</span>
+          <span class="metric-value">{{if .Report.ChangeAttribution.DataRevision}}{{.Report.ChangeAttribution.DataRevision}}{{else}}n/a{{end}}</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Runtime Overrides</span>
+          <span class="metric-value">{{if .Report.ChangeAttribution.RuntimeOverrides}}Yes{{else}}No{{end}}</span>
+          <p class="muted">{{if .Report.ChangeAttribution.RuntimeOverrideFields}}{{join .Report.ChangeAttribution.RuntimeOverrideFields}}{{else}}No overrides{{end}}</p>
+        </div>
+      </div>
+    </section>
+
     {{if .Report.SummaryTimeline}}
     <section>
       <h2>Summary Timeline</h2>

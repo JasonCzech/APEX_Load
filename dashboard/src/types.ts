@@ -546,6 +546,7 @@ export interface RunArchiveReport {
   schema_version?: string
   compatibility?: RunArchiveReportCompatibility
   completeness?: RunArchiveCompletenessScore
+  change_attribution?: RunArchiveChangeAttribution
   manifest: RunArchiveManifest
   overview: RunArchiveOverview
   evidence_tiers?: RunArchiveEvidenceTier[]
@@ -563,6 +564,16 @@ export interface RunArchiveReport {
   browser_by_device?: Record<string, BrowserDeviceLiveMetrics>
   browser_resources?: BrowserResourceTiming[]
   resource_peaks: RunArchiveResourcePeaks
+}
+
+export interface RunArchiveChangeAttribution {
+  script_revisions?: string[]
+  scenario_revision?: string
+  environment?: string
+  generator_versions?: string[]
+  data_revision?: string
+  runtime_overrides: boolean
+  runtime_override_fields?: string[]
 }
 
 export interface RunArchiveCompletenessScore {
