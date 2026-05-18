@@ -244,6 +244,9 @@ func scenarioScheduleAuditDetails(schedule *storage.ScenarioSchedule) map[string
 	if len(schedule.BlackoutWindows) > 0 {
 		details["blackout_windows"] = schedule.BlackoutWindows
 	}
+	if len(schedule.MaintenanceWindows) > 0 {
+		details["maintenance_windows"] = schedule.MaintenanceWindows
+	}
 	if len(schedule.AvailabilityWindows) > 0 {
 		details["availability_windows"] = schedule.AvailabilityWindows
 	}

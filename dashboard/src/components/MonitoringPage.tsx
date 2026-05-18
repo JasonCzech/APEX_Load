@@ -96,9 +96,10 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const fleetAlertHeaderSeverity = fleetAlertDangerCount > 0 ? 'danger' : fleetAlertWarningCount > 0 ? 'warning' : generators.length > 0 ? 'healthy' : 'unknown'
   const fleetAlertHeaderLabel = fleetAlerts.length > 0 ? `${fleetAlerts.length} alert${fleetAlerts.length === 1 ? '' : 's'}` : generators.length > 0 ? 'clear' : 'no inventory'
   const scheduleStatusCounts = scheduleHealth?.status_counts ?? {}
-  const scheduleMaterializedCount = scheduleStatusCounts.materialized ?? scheduleStatusCounts.queued ?? 0
-  const scheduleSkippedCount = scheduleStatusCounts.skipped ?? 0
-  const scheduleCompletedCount = scheduleStatusCounts.completed ?? 0
+  const scheduleQueuedCount = scheduleHealth?.queued ?? scheduleStatusCounts.queued ?? 0
+  const scheduleMaterializedCount = scheduleHealth?.materialized ?? scheduleStatusCounts.materialized ?? 0
+  const scheduleSkippedCount = scheduleHealth?.skipped ?? scheduleStatusCounts.skipped ?? 0
+  const scheduleCompletedCount = scheduleHealth?.completed ?? scheduleStatusCounts.completed ?? 0
   const scheduleHeaderSeverity = !scheduleHealth
     ? 'unknown'
     : scheduleHealth.failed > 0 || scheduleHealth.blocked > 0
@@ -549,6 +550,10 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
             <span className="monitor-value">{scheduleHealth ? `${scheduleHealth.enabled}/${scheduleHealth.total}` : '-'}</span>
           </div>
           <div className="monitor-row">
+            <span className="monitor-label">Queued</span>
+            <span className="monitor-value">{scheduleHealth ? scheduleQueuedCount.toLocaleString() : '-'}</span>
+          </div>
+          <div className="monitor-row">
             <span className="monitor-label">Materialized</span>
             <span className="monitor-value">{scheduleHealth ? scheduleMaterializedCount.toLocaleString() : '-'}</span>
           </div>
@@ -727,7 +732,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
         </div>
       ),
     },
-  ], [controllerGeneratorInventoryLabel, controllerHeaderSeverity, controllerStatusLabel, fleetAlertHeaderLabel, fleetAlertHeaderSeverity, fleetAlerts, fleetCapacity, generatorActiveVUsers, generatorAvailableCapacity, generatorConnectedCount, generatorHeaderLabel, generatorHeaderSeverity, generatorIssueCount, generators.length, health, inventory, parityAreas, parityBlockingCount, parityCompleteCount, parityHeaderLabel, parityHeaderSeverity, parityPartialCount, parityStatus, readinessBlockedCount, readinessDegradedCount, readinessHeaderLabel, readinessHeaderSeverity, readinessReadyCount, scheduleCompletedCount, scheduleHeaderLabel, scheduleHeaderSeverity, scheduleHealth, scheduleMaterializedCount, scheduleSkippedCount, systemReadiness, telemetryDangerCount, telemetryHeaderLabel, telemetryHeaderSeverity, telemetryLatestEntry, telemetryDiagnostics, telemetryWarningCount, timeline, websocketLabel, websocketValueClass])
+  ], [controllerGeneratorInventoryLabel, controllerHeaderSeverity, controllerStatusLabel, fleetAlertHeaderLabel, fleetAlertHeaderSeverity, fleetAlerts, fleetCapacity, generatorActiveVUsers, generatorAvailableCapacity, generatorConnectedCount, generatorHeaderLabel, generatorHeaderSeverity, generatorIssueCount, generators.length, health, inventory, parityAreas, parityBlockingCount, parityCompleteCount, parityHeaderLabel, parityHeaderSeverity, parityPartialCount, parityStatus, readinessBlockedCount, readinessDegradedCount, readinessHeaderLabel, readinessHeaderSeverity, readinessReadyCount, scheduleCompletedCount, scheduleHeaderLabel, scheduleHeaderSeverity, scheduleHealth, scheduleMaterializedCount, scheduleQueuedCount, scheduleSkippedCount, systemReadiness, telemetryDangerCount, telemetryHeaderLabel, telemetryHeaderSeverity, telemetryLatestEntry, telemetryDiagnostics, telemetryWarningCount, timeline, websocketLabel, websocketValueClass])
 
   useEffect(() => {
     setCardOrder(prev => mergeOrder(prev, cards.map(card => card.id)))

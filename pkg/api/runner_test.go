@@ -4769,6 +4769,68 @@ func TestScenarioScheduleMaterializationBlocksEnvironmentUnavailable(t *testing.
 	}
 }
 
+func TestScenarioScheduleMaintenanceWindowBlocksMaterialization(t *testing.T) {
+	store := &metricsStoreSpy{}
+	runner := NewTestRunner(2, NewHub(), store)
+	backend := &scheduleExecutionBackend{started: make(chan string, 1)}
+	runner.setExecutionBackend(backend)
+	runner.StoreScript(&dsl.Script{
+		ID:       "script-maintenance-conflict",
+		Name:     "Maintenance Conflict Script",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Config:   dsl.ScriptConfig{BaseURL: "https://example.com"},
+		Actions:  []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+	scenario, err := runner.StoreScenario(CreateScenarioRequest{
+		Name:     "Maintenance Conflict Scenario",
+		Duration: "1m",
+		Groups:   []CreateGroupEntry{{ScriptID: "script-maintenance-conflict", VUsers: 1}},
+	})
+	if err != nil {
+		t.Fatalf("StoreScenario returned error: %v", err)
+	}
+	now := time.Date(2026, time.May, 16, 12, 0, 0, 0, time.UTC)
+	due := now.Add(-time.Minute)
+	schedule := &storage.ScenarioSchedule{
+		ID:                 "schedule-maintenance-conflict",
+		ScenarioID:         scenario.ID,
+		Name:               "Maintenance Schedule",
+		CronExpr:           "*/5 * * * *",
+		RunNameTemplate:    "Maintenance Smoke",
+		Enabled:            true,
+		MissedRunPolicy:    "catch_up_once",
+		MaintenanceWindows: []storage.ScenarioScheduleWindow{{Name: "shared-maintenance", StartTime: "11:00", EndTime: "13:00", Timezone: "UTC"}},
+		NextRunAt:          &due,
+		CreatedAt:          now.Add(-time.Hour),
+		UpdatedAt:          now.Add(-time.Hour),
+	}
+	runner.mu.Lock()
+	if err := runner.saveScenarioScheduleLocked(schedule); err != nil {
+		runner.mu.Unlock()
+		t.Fatalf("saveScenarioScheduleLocked returned error: %v", err)
+	}
+	runner.mu.Unlock()
+
+	scheduler := newScenarioScheduler(runner)
+	scheduler.now = func() time.Time { return now }
+	if err := scheduler.RunDueSchedules(); err != nil {
+		t.Fatalf("RunDueSchedules returned error: %v", err)
+	}
+	select {
+	case testID := <-backend.started:
+		t.Fatalf("unexpected scheduled test start: %s", testID)
+	default:
+	}
+	occurrences, err := store.ListScenarioScheduleOccurrences(schedule.ID)
+	if err != nil {
+		t.Fatalf("ListScenarioScheduleOccurrences returned error: %v", err)
+	}
+	if len(occurrences) != 1 || occurrences[0].Status != "blocked" || occurrences[0].ReasonCode != "environment_unavailable" {
+		t.Fatalf("occurrences = %#v, want maintenance window environment_unavailable block", occurrences)
+	}
+}
+
 func TestDeleteTestRemovesArchiveBundle(t *testing.T) {
 	archiveDir := t.TempDir()
 	t.Setenv("STORMRUNNER_ARCHIVE_DIR", archiveDir)

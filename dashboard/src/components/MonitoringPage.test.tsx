@@ -446,10 +446,12 @@ describe('MonitoringPage', () => {
       blocked: 1,
       failed: 0,
       pending_approval: 3,
+      queued: 2,
+      materialized: 9,
+      skipped: 4,
+      completed: 8,
       status_counts: {
-        materialized: 9,
-        skipped: 4,
-        completed: 8,
+        queued: 2,
       },
     })
 
@@ -464,6 +466,8 @@ describe('MonitoringPage', () => {
     expect(container.textContent).toContain('Approval')
     expect(container.textContent).toContain('Enabled Schedules')
     expect(container.textContent).toContain('5/6')
+    expect(container.textContent).toContain('Queued')
+    expect(container.textContent).toContain('2')
     expect(container.textContent).toContain('Materialized')
     expect(container.textContent).toContain('9')
     expect(container.textContent).toContain('Skipped')

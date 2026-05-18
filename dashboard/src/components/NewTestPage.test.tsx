@@ -196,6 +196,7 @@ describe('NewTestPage', () => {
             },
           },
           blackout_windows: [{ name: 'maintenance', start_time: '00:00', end_time: '06:00', timezone: 'America/New_York' }],
+          maintenance_windows: [{ name: 'shared-maintenance', start_time: '22:00', end_time: '23:00', timezone: 'America/New_York' }],
           availability_windows: [{ name: 'business-hours', start_time: '09:00', end_time: '17:00', timezone: 'America/New_York' }],
           approval_policy: 'production',
           missed_run_policy: 'catch_up_once',
@@ -277,6 +278,7 @@ describe('NewTestPage', () => {
     expect(container.textContent).toContain('owner Project Admin')
     expect(container.textContent).toContain('America/New_York')
     expect(container.textContent).toContain('1 blackout')
+    expect(container.textContent).toContain('1 maintenance')
     expect(container.textContent).toContain('1 availability')
     expect(container.textContent).toContain('production')
     expect(container.textContent).toContain('catch up once')

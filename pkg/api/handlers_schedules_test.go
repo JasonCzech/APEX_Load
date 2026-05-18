@@ -40,7 +40,7 @@ func TestHandleScenarioScheduleCRUD(t *testing.T) {
 		t.Fatalf("StoreScenario returned error: %v", err)
 	}
 
-	createBody := bytes.NewBufferString(`{"name":"Nightly Smoke","cron_expr":"*/10 * * * *","run_name_template":"Nightly Checkout","approval_policy":"production","blackout_windows":[{"name":"maintenance","days_of_week":[0],"start_time":"00:00","end_time":"06:00"}],"availability_windows":[{"name":"business-hours","days_of_week":[1,2,3,4,5],"start_time":"09:00","end_time":"17:00"}]}`)
+	createBody := bytes.NewBufferString(`{"name":"Nightly Smoke","cron_expr":"*/10 * * * *","run_name_template":"Nightly Checkout","approval_policy":"production","blackout_windows":[{"name":"blackout","days_of_week":[0],"start_time":"00:00","end_time":"06:00"}],"maintenance_windows":[{"name":"shared-maintenance","days_of_week":[6],"start_time":"22:00","end_time":"23:00"}],"availability_windows":[{"name":"business-hours","days_of_week":[1,2,3,4,5],"start_time":"09:00","end_time":"17:00"}]}`)
 	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/scenarios/"+scenario.ID+"/schedules", createBody)
 	createReq.Header.Set("Content-Type", "application/json")
 	createResp := httptest.NewRecorder()
@@ -61,8 +61,8 @@ func TestHandleScenarioScheduleCRUD(t *testing.T) {
 	if created.Governance.RBACReview.Decision != "allowed" || created.Governance.QuotaReview.Decision != "allowed" || created.Governance.QuotaReview.EstimatedPeakVUsers != 1 {
 		t.Fatalf("created governance = %#v, want allowed RBAC/quota review for one VUser", created.Governance)
 	}
-	if len(created.BlackoutWindows) != 1 || len(created.AvailabilityWindows) != 1 {
-		t.Fatalf("created schedule windows = blackout %#v availability %#v, want persisted schedule windows", created.BlackoutWindows, created.AvailabilityWindows)
+	if len(created.BlackoutWindows) != 1 || len(created.MaintenanceWindows) != 1 || len(created.AvailabilityWindows) != 1 {
+		t.Fatalf("created schedule windows = blackout %#v maintenance %#v availability %#v, want persisted schedule windows", created.BlackoutWindows, created.MaintenanceWindows, created.AvailabilityWindows)
 	}
 	if created.PendingApprovalID == "" || created.NextRequiredAction != "approval_required" {
 		t.Fatalf("created approval state = id %q action %q, want pending approval", created.PendingApprovalID, created.NextRequiredAction)
@@ -144,7 +144,7 @@ func TestHandleScenarioScheduleCRUD(t *testing.T) {
 	if err := json.Unmarshal(healthResp.Body.Bytes(), &health); err != nil {
 		t.Fatalf("json.Unmarshal health returned error: %v", err)
 	}
-	if health.Total != 1 || health.StatusCounts["materialized"] != 1 {
+	if health.Total != 1 || health.StatusCounts["materialized"] != 1 || health.Materialized != 1 {
 		t.Fatalf("health = %#v, want one schedule and one materialized occurrence", health)
 	}
 
@@ -184,7 +184,7 @@ func TestHandleScenarioScheduleCRUD(t *testing.T) {
 	if events[0].Action != "scenario.schedule.delete" || events[1].Action != "scenario.schedule.update" || events[2].Action != "scenario.schedule.approval.approve" || events[3].Action != "scenario.schedule.create" {
 		t.Fatalf("audit actions = [%s %s %s %s], want delete/update/approve/create", events[0].Action, events[1].Action, events[2].Action, events[3].Action)
 	}
-	if events[3].Details["governance"] == nil || events[3].Details["owner"] == nil || events[3].Details["blackout_windows"] == nil || events[3].Details["availability_windows"] == nil {
+	if events[3].Details["governance"] == nil || events[3].Details["owner"] == nil || events[3].Details["blackout_windows"] == nil || events[3].Details["maintenance_windows"] == nil || events[3].Details["availability_windows"] == nil {
 		t.Fatalf("create audit details = %#v, want governance and owner metadata", events[3].Details)
 	}
 }

@@ -252,6 +252,7 @@ type ScenarioSchedule struct {
 	OwnerDisplayName    string                      `json:"owner_display_name,omitempty"`
 	Governance          *ScenarioScheduleGovernance `json:"governance,omitempty"`
 	BlackoutWindows     []ScenarioScheduleWindow    `json:"blackout_windows,omitempty"`
+	MaintenanceWindows  []ScenarioScheduleWindow    `json:"maintenance_windows,omitempty"`
 	AvailabilityWindows []ScenarioScheduleWindow    `json:"availability_windows,omitempty"`
 	LastRunTestID       string                      `json:"last_run_test_id,omitempty"`
 	LastRunAt           *time.Time                  `json:"last_run_at,omitempty"`

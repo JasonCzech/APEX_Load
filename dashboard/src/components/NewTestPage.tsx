@@ -585,6 +585,7 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
                                 <div className="schedule-governance-chips">
                                   <span className="script-health-token">{item.timezone || 'UTC'}</span>
                                   {!!item.blackout_windows?.length && <span className="script-health-token warning">{item.blackout_windows.length} blackout</span>}
+                                  {!!item.maintenance_windows?.length && <span className="script-health-token warning">{item.maintenance_windows.length} maintenance</span>}
                                   {!!item.availability_windows?.length && <span className="script-health-token healthy">{item.availability_windows.length} availability</span>}
                                 </div>
                               </td>
@@ -679,10 +680,13 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
                                         </table>
                                       </div>
                                     )}
-                                    {(item.blackout_windows?.length || item.availability_windows?.length) ? (
+                                    {(item.blackout_windows?.length || item.maintenance_windows?.length || item.availability_windows?.length) ? (
                                       <div className="schedule-window-summary">
                                         {item.blackout_windows?.map(window => (
                                           <span key={`blackout-${window.name || window.start_time}`} className="script-health-token warning">Blackout {formatScheduleWindow(window)}</span>
+                                        ))}
+                                        {item.maintenance_windows?.map(window => (
+                                          <span key={`maintenance-${window.name || window.start_time}`} className="script-health-token warning">Maintenance {formatScheduleWindow(window)}</span>
                                         ))}
                                         {item.availability_windows?.map(window => (
                                           <span key={`availability-${window.name || window.start_time}`} className="script-health-token healthy">Availability {formatScheduleWindow(window)}</span>

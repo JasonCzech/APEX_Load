@@ -1483,6 +1483,10 @@ func (tr *TestRunner) ScenarioScheduleHealth(now time.Time) ScenarioScheduleHeal
 			}
 		}
 	}
+	health.Queued = health.StatusCounts["queued"]
+	health.Materialized = health.StatusCounts["materialized"]
+	health.Skipped = health.StatusCounts["skipped"]
+	health.Completed = health.StatusCounts["completed"]
 	return health
 }
 

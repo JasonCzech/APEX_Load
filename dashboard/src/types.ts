@@ -755,6 +755,7 @@ export interface ScenarioSchedule {
   owner_display_name?: string
   governance?: ScenarioScheduleGovernance
   blackout_windows?: ScenarioScheduleWindow[]
+  maintenance_windows?: ScenarioScheduleWindow[]
   availability_windows?: ScenarioScheduleWindow[]
   last_run_test_id?: string
   last_run_at?: string
@@ -832,6 +833,10 @@ export interface ScenarioScheduleHealth {
   blocked: number
   failed: number
   pending_approval: number
+  queued?: number
+  materialized?: number
+  skipped?: number
+  completed?: number
   status_counts?: Record<string, number>
 }
 

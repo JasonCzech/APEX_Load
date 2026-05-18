@@ -51,6 +51,12 @@ func TestSQLiteStorePersistsScenarioSchedules(t *testing.T) {
 			StartTime:  "00:00",
 			EndTime:    "06:00",
 		}},
+		MaintenanceWindows: []ScenarioScheduleWindow{{
+			Name:       "shared-maintenance",
+			DaysOfWeek: []int{0},
+			StartTime:  "22:00",
+			EndTime:    "23:00",
+		}},
 		AvailabilityWindows: []ScenarioScheduleWindow{{
 			Name:       "business-hours",
 			DaysOfWeek: []int{1, 2, 3, 4, 5},
@@ -75,8 +81,8 @@ func TestSQLiteStorePersistsScenarioSchedules(t *testing.T) {
 	if roundTrip.ProjectID != "checkout" || roundTrip.OwnerSubject != "user:qa-lead" || roundTrip.Governance == nil || roundTrip.Governance.QuotaReview.ProjectMaxVUsers != 500 {
 		t.Fatalf("round trip governance = %#v, want owner/project/quota metadata", roundTrip)
 	}
-	if len(roundTrip.BlackoutWindows) != 1 || roundTrip.BlackoutWindows[0].Name != "maintenance" || len(roundTrip.AvailabilityWindows) != 1 {
-		t.Fatalf("round trip windows = blackout %#v availability %#v, want persisted windows", roundTrip.BlackoutWindows, roundTrip.AvailabilityWindows)
+	if len(roundTrip.BlackoutWindows) != 1 || roundTrip.BlackoutWindows[0].Name != "maintenance" || len(roundTrip.MaintenanceWindows) != 1 || roundTrip.MaintenanceWindows[0].Name != "shared-maintenance" || len(roundTrip.AvailabilityWindows) != 1 {
+		t.Fatalf("round trip windows = blackout %#v maintenance %#v availability %#v, want persisted windows", roundTrip.BlackoutWindows, roundTrip.MaintenanceWindows, roundTrip.AvailabilityWindows)
 	}
 	materializedAt := nextRun.Add(time.Minute)
 	occurrence := &ScenarioScheduleOccurrence{

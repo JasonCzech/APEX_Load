@@ -47,6 +47,7 @@ type CreateScenarioScheduleRequest struct {
 	ApprovalPolicy      string                           `json:"approval_policy,omitempty"`
 	MissedRunPolicy     string                           `json:"missed_run_policy,omitempty"`
 	BlackoutWindows     []storage.ScenarioScheduleWindow `json:"blackout_windows,omitempty"`
+	MaintenanceWindows  []storage.ScenarioScheduleWindow `json:"maintenance_windows,omitempty"`
 	AvailabilityWindows []storage.ScenarioScheduleWindow `json:"availability_windows,omitempty"`
 	OwnerSubject        string                           `json:"-"`
 	OwnerDisplayName    string                           `json:"-"`
@@ -60,6 +61,10 @@ type ScenarioScheduleHealth struct {
 	Blocked         int            `json:"blocked"`
 	Failed          int            `json:"failed"`
 	PendingApproval int            `json:"pending_approval"`
+	Queued          int            `json:"queued"`
+	Materialized    int            `json:"materialized"`
+	Skipped         int            `json:"skipped"`
+	Completed       int            `json:"completed"`
 	StatusCounts    map[string]int `json:"status_counts"`
 }
 
@@ -274,6 +279,15 @@ func parseCronNumber(raw string, min int, max int) (int, bool) {
 
 func scheduleAllowsCandidate(schedule *storage.ScenarioSchedule, candidate time.Time) (bool, error) {
 	for _, window := range schedule.BlackoutWindows {
+		matches, err := scheduleWindowContains(window, schedule.Timezone, candidate)
+		if err != nil {
+			return false, err
+		}
+		if matches {
+			return false, nil
+		}
+	}
+	for _, window := range schedule.MaintenanceWindows {
 		matches, err := scheduleWindowContains(window, schedule.Timezone, candidate)
 		if err != nil {
 			return false, err
@@ -577,6 +591,7 @@ func cloneScenarioSchedule(schedule *storage.ScenarioSchedule) *storage.Scenario
 		cloned.NextRunAt = &nextRun
 	}
 	cloned.BlackoutWindows = append([]storage.ScenarioScheduleWindow(nil), schedule.BlackoutWindows...)
+	cloned.MaintenanceWindows = append([]storage.ScenarioScheduleWindow(nil), schedule.MaintenanceWindows...)
 	cloned.AvailabilityWindows = append([]storage.ScenarioScheduleWindow(nil), schedule.AvailabilityWindows...)
 	cloned.LastOccurrence = cloneScenarioScheduleOccurrence(schedule.LastOccurrence)
 	return &cloned
@@ -717,6 +732,7 @@ func (tr *TestRunner) upsertScenarioScheduleLocked(scenarioID string, scheduleID
 		schedule.LastOccurrence = cloneScenarioScheduleOccurrence(existing.LastOccurrence)
 	}
 	schedule.BlackoutWindows = append([]storage.ScenarioScheduleWindow(nil), req.BlackoutWindows...)
+	schedule.MaintenanceWindows = append([]storage.ScenarioScheduleWindow(nil), req.MaintenanceWindows...)
 	schedule.AvailabilityWindows = append([]storage.ScenarioScheduleWindow(nil), req.AvailabilityWindows...)
 	if strings.TrimSpace(schedule.OwnerSubject) == "" {
 		schedule.OwnerSubject = strings.TrimSpace(req.OwnerSubject)
@@ -842,7 +858,7 @@ func normalizeScenarioScheduleApprovalPolicy(raw string) string {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case "", "auto":
 		return "auto"
-	case "manual", "high_cost", "off_hours", "production", "quota_burst":
+	case "manual", "manual_review", "high_cost", "off_hours", "production", "quota_burst":
 		return strings.ToLower(strings.TrimSpace(raw))
 	default:
 		return "manual"
