@@ -167,3 +167,40 @@ func TestSQLiteStorePersistsScenarioSchedules(t *testing.T) {
 		t.Fatalf("listed schedules after delete = %#v, want empty", listed)
 	}
 }
+
+func TestSQLiteStoreAcquiresSchedulerLease(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+	now := time.Date(2026, time.May, 18, 10, 0, 0, 0, time.UTC)
+	acquired, err := store.TryAcquireSchedulerLease("scenario-scheduler", "controller-a", now, time.Minute)
+	if err != nil {
+		t.Fatalf("TryAcquireSchedulerLease returned error: %v", err)
+	}
+	if !acquired {
+		t.Fatal("expected first controller to acquire lease")
+	}
+	acquired, err = store.TryAcquireSchedulerLease("scenario-scheduler", "controller-b", now.Add(10*time.Second), time.Minute)
+	if err != nil {
+		t.Fatalf("TryAcquireSchedulerLease second returned error: %v", err)
+	}
+	if acquired {
+		t.Fatal("expected second controller to be blocked by active lease")
+	}
+	acquired, err = store.TryAcquireSchedulerLease("scenario-scheduler", "controller-b", now.Add(2*time.Minute), time.Minute)
+	if err != nil {
+		t.Fatalf("TryAcquireSchedulerLease expired returned error: %v", err)
+	}
+	if !acquired {
+		t.Fatal("expected second controller to acquire expired lease")
+	}
+	lease, err := store.GetSchedulerLease("scenario-scheduler")
+	if err != nil {
+		t.Fatalf("GetSchedulerLease returned error: %v", err)
+	}
+	if lease.OwnerID != "controller-b" {
+		t.Fatalf("lease owner = %q, want controller-b", lease.OwnerID)
+	}
+}

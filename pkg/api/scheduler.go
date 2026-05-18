@@ -23,11 +23,15 @@ type scenarioSchedulePersistence interface {
 	SaveScenarioScheduleApproval(approval *storage.ScenarioScheduleApproval) error
 	GetScenarioScheduleApproval(id string) (*storage.ScenarioScheduleApproval, error)
 	ListScenarioScheduleApprovals(scheduleID string) ([]*storage.ScenarioScheduleApproval, error)
+	TryAcquireSchedulerLease(name string, ownerID string, now time.Time, ttl time.Duration) (bool, error)
+	GetSchedulerLease(name string) (*storage.SchedulerLease, error)
 }
 
 type scenarioScheduler struct {
-	runner *TestRunner
-	now    func() time.Time
+	runner   *TestRunner
+	now      func() time.Time
+	ownerID  string
+	leaseTTL time.Duration
 }
 
 type CreateScenarioScheduleRequest struct {
@@ -57,7 +61,7 @@ type ScenarioScheduleHealth struct {
 }
 
 func newScenarioScheduler(runner *TestRunner) *scenarioScheduler {
-	return &scenarioScheduler{runner: runner, now: time.Now}
+	return &scenarioScheduler{runner: runner, now: time.Now, ownerID: uuid.New().String(), leaseTTL: 30 * time.Second}
 }
 
 func (s *scenarioScheduler) RunDueSchedules() error {
@@ -65,6 +69,13 @@ func (s *scenarioScheduler) RunDueSchedules() error {
 		return nil
 	}
 	now := s.now().UTC()
+	acquired, err := s.runner.acquireScenarioSchedulerLease(now, s.ownerID, s.leaseTTL)
+	if err != nil {
+		return err
+	}
+	if !acquired {
+		return nil
+	}
 	toStart := make([]*ManagedTest, 0)
 	s.runner.mu.Lock()
 	for _, schedule := range s.runner.listAllScenarioSchedulesLocked() {
@@ -135,6 +146,13 @@ func (tr *TestRunner) applyMissedRunPolicyLocked(schedule *storage.ScenarioSched
 	default:
 		return false, nil
 	}
+}
+
+func (tr *TestRunner) acquireScenarioSchedulerLease(now time.Time, ownerID string, ttl time.Duration) (bool, error) {
+	if tr == nil || tr.scenarioStore == nil {
+		return true, nil
+	}
+	return tr.scenarioStore.TryAcquireSchedulerLease("scenario-scheduler", ownerID, now, ttl)
 }
 
 func nextScenarioScheduleRun(schedule *storage.ScenarioSchedule, from time.Time) (*time.Time, error) {

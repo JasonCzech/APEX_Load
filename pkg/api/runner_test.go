@@ -37,6 +37,7 @@ type metricsStoreSpy struct {
 	schedulesByID         map[string]*storage.ScenarioSchedule
 	occurrencesByID       map[string]*storage.ScenarioScheduleOccurrence
 	approvalsByID         map[string]*storage.ScenarioScheduleApproval
+	leasesByName          map[string]*storage.SchedulerLease
 }
 
 var runnerTestProtocolCounter atomic.Uint64
@@ -224,6 +225,22 @@ func (s *metricsStoreSpy) ListScenarioScheduleApprovals(scheduleID string) ([]*s
 		}
 	}
 	return out, nil
+}
+func (s *metricsStoreSpy) TryAcquireSchedulerLease(name string, ownerID string, now time.Time, ttl time.Duration) (bool, error) {
+	if s.leasesByName == nil {
+		s.leasesByName = make(map[string]*storage.SchedulerLease)
+	}
+	if existing, ok := s.leasesByName[name]; ok && existing.ExpiresAt.After(now) && existing.OwnerID != ownerID {
+		return false, nil
+	}
+	s.leasesByName[name] = &storage.SchedulerLease{Name: name, OwnerID: ownerID, AcquiredAt: now, ExpiresAt: now.Add(ttl), UpdatedAt: now}
+	return true, nil
+}
+func (s *metricsStoreSpy) GetSchedulerLease(name string) (*storage.SchedulerLease, error) {
+	if s.leasesByName == nil {
+		return nil, nil
+	}
+	return s.leasesByName[name], nil
 }
 func (s *metricsStoreSpy) SaveScenarioDataPoolBindings(scenarioID string, bindings []storage.ScenarioDataPoolBinding) error {
 	return nil

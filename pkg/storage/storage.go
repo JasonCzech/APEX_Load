@@ -42,6 +42,8 @@ type Store interface {
 	SaveScenarioScheduleApproval(approval *ScenarioScheduleApproval) error
 	GetScenarioScheduleApproval(id string) (*ScenarioScheduleApproval, error)
 	ListScenarioScheduleApprovals(scheduleID string) ([]*ScenarioScheduleApproval, error)
+	TryAcquireSchedulerLease(name string, ownerID string, now time.Time, ttl time.Duration) (bool, error)
+	GetSchedulerLease(name string) (*SchedulerLease, error)
 	SaveScenarioDataPoolBindings(scenarioID string, bindings []ScenarioDataPoolBinding) error
 	ListScenarioDataPoolBindings(scenarioID string) ([]ScenarioDataPoolBinding, error)
 	DeleteScenarioDataPoolBinding(id string) error
@@ -309,6 +311,14 @@ type ScenarioScheduleApproval struct {
 	RequiredRole     string     `json:"required_role,omitempty"`
 	CreatedAt        time.Time  `json:"created_at"`
 	UpdatedAt        time.Time  `json:"updated_at"`
+}
+
+type SchedulerLease struct {
+	Name       string    `json:"name"`
+	OwnerID    string    `json:"owner_id"`
+	AcquiredAt time.Time `json:"acquired_at"`
+	ExpiresAt  time.Time `json:"expires_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
 }
 
 type SharedDataPool struct {

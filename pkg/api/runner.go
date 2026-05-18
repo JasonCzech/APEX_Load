@@ -59,6 +59,8 @@ type scenarioPersistence interface {
 	SaveScenarioScheduleApproval(approval *storage.ScenarioScheduleApproval) error
 	GetScenarioScheduleApproval(id string) (*storage.ScenarioScheduleApproval, error)
 	ListScenarioScheduleApprovals(scheduleID string) ([]*storage.ScenarioScheduleApproval, error)
+	TryAcquireSchedulerLease(name string, ownerID string, now time.Time, ttl time.Duration) (bool, error)
+	GetSchedulerLease(name string) (*storage.SchedulerLease, error)
 	SaveScenarioDataPoolBindings(scenarioID string, bindings []storage.ScenarioDataPoolBinding) error
 	ListScenarioDataPoolBindings(scenarioID string) ([]storage.ScenarioDataPoolBinding, error)
 }

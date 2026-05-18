@@ -197,6 +197,13 @@ func (s *SQLiteStore) init() error {
 			updated_at DATETIME NOT NULL,
 			FOREIGN KEY(schedule_id) REFERENCES scenario_schedules(id)
 		)`,
+		`CREATE TABLE IF NOT EXISTS scheduler_leases (
+			name TEXT PRIMARY KEY,
+			owner_id TEXT NOT NULL,
+			acquired_at DATETIME NOT NULL,
+			expires_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL
+		)`,
 		`CREATE TABLE IF NOT EXISTS scenario_scripts (
 			scenario_id TEXT NOT NULL,
 			sort_order INTEGER NOT NULL,
@@ -1100,6 +1107,45 @@ func (s *SQLiteStore) ListScenarioScheduleApprovals(scheduleID string) ([]*Scena
 	}
 	defer rows.Close()
 	return collectScenarioScheduleApprovals(rows)
+}
+
+func (s *SQLiteStore) TryAcquireSchedulerLease(name string, ownerID string, now time.Time, ttl time.Duration) (bool, error) {
+	name = strings.TrimSpace(name)
+	ownerID = strings.TrimSpace(ownerID)
+	if name == "" {
+		return false, errors.New("scheduler lease name is required")
+	}
+	if ownerID == "" {
+		return false, errors.New("scheduler lease owner_id is required")
+	}
+	if ttl <= 0 {
+		return false, errors.New("scheduler lease ttl must be positive")
+	}
+	now = now.UTC()
+	expiresAt := now.Add(ttl)
+	result, err := s.db.Exec(`INSERT INTO scheduler_leases (name, owner_id, acquired_at, expires_at, updated_at)
+		VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT(name) DO UPDATE SET owner_id=excluded.owner_id, acquired_at=excluded.acquired_at,
+		expires_at=excluded.expires_at, updated_at=excluded.updated_at
+		WHERE scheduler_leases.expires_at <= ? OR scheduler_leases.owner_id = ?`,
+		name, ownerID, now, expiresAt, now, now, ownerID)
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return affected > 0, nil
+}
+
+func (s *SQLiteStore) GetSchedulerLease(name string) (*SchedulerLease, error) {
+	var lease SchedulerLease
+	err := s.db.QueryRow(`SELECT name, owner_id, acquired_at, expires_at, updated_at FROM scheduler_leases WHERE name = ?`, name).Scan(&lease.Name, &lease.OwnerID, &lease.AcquiredAt, &lease.ExpiresAt, &lease.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &lease, nil
 }
 
 func (s *SQLiteStore) GetScenario(id string) (*Scenario, []ScenarioScript, error) {
