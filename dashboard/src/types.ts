@@ -13,8 +13,9 @@ export interface TestGroup {
 }
 
 export interface GeneratorAssignmentSettings {
-  mode?: 'auto' | 'specific_hosts'
+  mode?: 'auto' | 'specific_hosts' | 'region_weighted'
   selected_targets?: string[]
+  region_weights?: Record<string, number>
 }
 
 export interface ScenarioFootprint {
@@ -27,9 +28,11 @@ export interface ScenarioFootprint {
 }
 
 export interface AssignmentRecommendation {
-  mode: 'auto' | 'specific_hosts'
+  mode: 'auto' | 'specific_hosts' | 'region_weighted'
   available_targets?: string[]
   recommended_targets?: string[]
+  available_regions?: string[]
+  region_weights?: Record<string, number>
   summary?: string
   warnings?: string[]
 }

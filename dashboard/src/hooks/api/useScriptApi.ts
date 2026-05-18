@@ -4,6 +4,7 @@ import {
   BrowserReplayStartRequest,
   BrowserReplayStartResponse,
   BrowserReplaySessionResponse,
+  GeneratorAssignmentSettings,
   GoalConfig,
   RuntimeSettingsOverride,
   ScenarioDataPoolBinding,
@@ -61,10 +62,7 @@ type ScenarioUpsertRequest = {
   scenario_mode?: ScenarioMode
   script_shakeout?: boolean
   resource_baseline?: boolean
-  assignment?: {
-    mode?: 'auto' | 'specific_hosts'
-    selected_targets?: string[]
-  }
+  assignment?: GeneratorAssignmentSettings
   goal_config?: GoalConfig
   runtime_settings?: RuntimeSettingsOverride
   groups: ScenarioGroupPayload[]

@@ -3,6 +3,7 @@ import { useCallback, useMemo } from 'react'
 import {
   ArchivePage,
   DraftCapacityEstimate,
+  GeneratorAssignmentSettings,
   GoalConfig,
   IntervalSummaryRecord,
   LiveMetrics,
@@ -60,10 +61,7 @@ type TestCreateRequest = {
   scenario_mode?: ScenarioMode
   script_shakeout?: boolean
   resource_baseline?: boolean
-  assignment?: {
-    mode?: 'auto' | 'specific_hosts'
-    selected_targets?: string[]
-  }
+  assignment?: GeneratorAssignmentSettings
   goal_config?: GoalConfig
   groups?: TestCreateGroupEntry[]
   data_pools?: ScenarioDataPoolBinding[]

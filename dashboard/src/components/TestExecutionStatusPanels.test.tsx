@@ -274,4 +274,65 @@ describe('TestExecutionStatusPanels', () => {
     expect(container.textContent).toContain('Target 120.0 TPS')
     expect(container.textContent).toContain('Gap 25.0%')
   })
+
+  it('renders live capacity allocation, saturation, queue, and placement signals', async () => {
+    await act(async () => {
+      root.render(
+        <TestExecutionStatusPanels
+          isGoalOriented={false}
+          goalDescription=""
+          test={{
+            id: 'test-1',
+            name: 'Capacity Run',
+            status: 'PENDING',
+            total_vusers: 1200,
+            duration: '15m',
+            created_at: '2026-05-12T20:00:00Z',
+            assignment: {
+              mode: 'region_weighted',
+              region_weights: { east: 2, west: 1 },
+            },
+            groups: [
+              { name: 'buyers', script_id: 'script-1', script_name: 'HTTP', protocol: 'http', vusers: 900 },
+              { name: 'canaries', script_id: 'script-2', script_name: 'Browser', protocol: 'browser', vusers: 300 },
+            ],
+            capacity_advisory: {
+              total_vusers: 1200,
+              duration_seconds: 900,
+              baseline_window_enabled: false,
+              workload_class: 'mixed',
+              headroom_pct: 20,
+              complexity_score: 1.4,
+              bottleneck: 'vusers',
+              recommended_generators: 4,
+              available_generators: 3,
+              shortfall_generators: 1,
+              requires_override: true,
+              estimated_per_vuser: { cpu_cores: 0.001, memory_mb: 0.5, network_mbps: 0.01 },
+              estimated_total: { cpu_cores: 1.2, memory_mb: 600, network_mbps: 12 },
+              usable_per_generator: { cpu_cores: 3.2, memory_mb: 6400, network_mbps: 800 },
+              dimension_recommendations: { cpu: 1, memory: 1, network: 1, vusers: 4 },
+            },
+          } as never}
+          metrics={{ active_vusers: 0 }}
+          isMultiGroup={false}
+          groupMetrics={[]}
+          groupColors={[]}
+        />,
+      )
+    })
+
+    expect(container.textContent).toContain('Live Capacity')
+    expect(container.textContent).toContain('Rejected Demand')
+    expect(container.textContent).toContain('Allocated VUsers')
+    expect(container.textContent).toContain('Available Generators')
+    expect(container.textContent).toContain('Recommended')
+    expect(container.textContent).toContain('Saturated')
+    expect(container.textContent).toContain('Queued Demand')
+    expect(container.textContent).toContain('Rejected Demand')
+    expect(container.textContent).toContain('http: 900 VUsers')
+    expect(container.textContent).toContain('browser: 300 VUsers')
+    expect(container.textContent).toContain('east: 800 VUsers')
+    expect(container.textContent).toContain('west: 400 VUsers')
+  })
 })

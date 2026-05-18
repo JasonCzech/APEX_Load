@@ -1,4 +1,4 @@
-import { BrowserDeviceLiveMetrics, BrowserLiveMetrics, GoalStatus, GroupLiveMetrics, TelemetryHealth, TestSummary } from '../types'
+import { BrowserDeviceLiveMetrics, BrowserLiveMetrics, CapacityAdvisory, GoalStatus, GroupLiveMetrics, TelemetryHealth, TestSummary } from '../types'
 import { formatTimeCompact } from '../utils/timeUtils'
 import { formatBrowserEngineLabel, formatDevicePlatformLabel } from './browserBreakdownModel'
 
@@ -62,6 +62,58 @@ function formatThroughputGap(value?: number): string {
   return `${value.toFixed(1)}%`
 }
 
+function formatCapacityNumber(value?: number): string {
+  if (value === undefined || Number.isNaN(value)) return '0'
+  return Math.round(value).toLocaleString()
+}
+
+function capacityBadgeClass(advisory?: CapacityAdvisory): 'healthy' | 'warning' | 'danger' {
+  if (!advisory) return 'healthy'
+  if (advisory.requires_override || (advisory.shortfall_generators ?? 0) > 0) return 'danger'
+  if (advisory.recommended_generators >= advisory.available_generators) return 'warning'
+  return 'healthy'
+}
+
+function capacityBadgeLabel(advisory?: CapacityAdvisory): string {
+  if (!advisory) return 'Untracked'
+  if (advisory.requires_override || (advisory.shortfall_generators ?? 0) > 0) return 'Rejected Demand'
+  if (advisory.recommended_generators >= advisory.available_generators) return 'Saturated'
+  return 'Available'
+}
+
+function demandForStatus(test: TestSummary, status: 'queued' | 'rejected'): number {
+  const normalized = test.status?.toUpperCase()
+  if (status === 'queued') {
+    return normalized === 'QUEUED' || normalized === 'PENDING' ? test.total_vusers : 0
+  }
+  return test.capacity_advisory?.requires_override ? test.total_vusers : 0
+}
+
+function protocolDemand(groups: TestSummary['groups']): Array<[string, number]> {
+  const demand = new Map<string, number>()
+  for (const group of groups || []) {
+    const protocol = group.protocol || 'unknown'
+    demand.set(protocol, (demand.get(protocol) || 0) + group.vusers)
+  }
+  return Array.from(demand.entries()).sort((left, right) => left[0].localeCompare(right[0]))
+}
+
+function regionDemand(test: TestSummary): Array<[string, number]> {
+  const weights = test.assignment?.region_weights
+  if (test.assignment?.mode === 'region_weighted' && weights && Object.keys(weights).length > 0) {
+    const totalWeight = Object.values(weights).reduce((sum, value) => sum + Math.max(0, value), 0)
+    if (totalWeight > 0) {
+      return Object.entries(weights)
+        .map(([region, weight]) => [region, Math.round((Math.max(0, weight) / totalWeight) * test.total_vusers)] as [string, number])
+        .sort((left, right) => left[0].localeCompare(right[0]))
+    }
+  }
+  if (test.assignment?.mode === 'specific_hosts' && test.assignment.selected_targets?.length) {
+    return [['Selected hosts', test.total_vusers]]
+  }
+  return [['Auto pool', test.total_vusers]]
+}
+
 function throughputBadgeClass(metrics?: LiveMetricsSummary): 'healthy' | 'warning' | 'danger' {
   if (!metrics?.target_tps) return 'healthy'
   if (metrics.throughput_target_missed) return 'danger'
@@ -111,9 +163,64 @@ export default function TestExecutionStatusPanels({
   groupColors,
 }: Props) {
   const browserDevices = Object.entries(metrics?.browser_by_device ?? {})
+  const capacityAdvisory = test.capacity_advisory
+  const protocolRows = protocolDemand(test.groups)
+  const regionRows = regionDemand(test)
 
   return (
     <>
+      {capacityAdvisory && (
+        <div className="goal-status-card capacity-live-card">
+          <div className="goal-status-header">
+            <div>
+              <h3 className="goal-status-title">Live Capacity</h3>
+              <p className="goal-status-subtitle">Generator demand, saturation, queue pressure, and protocol mix for this run.</p>
+            </div>
+            <div className={`goal-status-badge ${capacityBadgeClass(capacityAdvisory)}`}>
+              {capacityBadgeLabel(capacityAdvisory)}
+            </div>
+          </div>
+
+          <div className="goal-status-grid">
+            <div className="goal-status-metric">
+              <span className="goal-status-label">Allocated VUsers</span>
+              <span className="goal-status-value">{formatCapacityNumber(metrics?.active_vusers ?? (test.status === 'RUNNING' ? test.total_vusers : 0))}</span>
+            </div>
+            <div className="goal-status-metric">
+              <span className="goal-status-label">Available Generators</span>
+              <span className="goal-status-value">{formatCapacityNumber(capacityAdvisory.available_generators)}</span>
+            </div>
+            <div className="goal-status-metric">
+              <span className="goal-status-label">Recommended</span>
+              <span className="goal-status-value">{formatCapacityNumber(capacityAdvisory.recommended_generators)}</span>
+            </div>
+            <div className="goal-status-metric">
+              <span className="goal-status-label">Saturated</span>
+              <span className="goal-status-value">{capacityBadgeClass(capacityAdvisory) === 'healthy' ? 'No' : 'Yes'}</span>
+            </div>
+            <div className="goal-status-metric">
+              <span className="goal-status-label">Queued Demand</span>
+              <span className="goal-status-value">{formatCapacityNumber(demandForStatus(test, 'queued'))}</span>
+            </div>
+            <div className="goal-status-metric">
+              <span className="goal-status-label">Rejected Demand</span>
+              <span className="goal-status-value">{formatCapacityNumber(demandForStatus(test, 'rejected'))}</span>
+            </div>
+          </div>
+
+          <div className="capacity-live-breakdown">
+            <div>
+              <span className="capacity-live-heading">By Protocol</span>
+              {protocolRows.map(([protocol, vusers]) => <span key={protocol}>{protocol}: {formatCapacityNumber(vusers)} VUsers</span>)}
+            </div>
+            <div>
+              <span className="capacity-live-heading">By Region</span>
+              {regionRows.map(([region, vusers]) => <span key={region}>{region}: {formatCapacityNumber(vusers)} VUsers</span>)}
+            </div>
+          </div>
+        </div>
+      )}
+
       {metrics?.target_tps ? (
         <div className="goal-status-card throughput-status-card">
           <div className="goal-status-header">
