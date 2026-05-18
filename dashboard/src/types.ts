@@ -1257,7 +1257,15 @@ export interface SystemInventoryController {
 export interface SystemInventoryGenerator {
   target: string
   generator_id: string
-  status: 'connected' | 'unreachable'
+  region?: string
+  status: 'connected' | 'healthy' | 'ready' | 'unreachable' | string
+  version?: string
+  supported_protocols?: string[]
+  compatibility_state?: string
+  compatibility_issues?: string[]
+  drain_state?: 'active' | 'cordoned' | 'draining' | string
+  capacity_state?: 'available' | 'constrained' | 'saturated' | 'unavailable' | 'unknown' | string
+  health_score?: number
   available_capacity: number
   active_vusers: number
   cpu_percent: number

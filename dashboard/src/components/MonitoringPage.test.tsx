@@ -268,6 +268,69 @@ describe('MonitoringPage', () => {
     expect(container.textContent).toContain('Close')
   })
 
+  it('renders fleet alert cards from generator inventory health', async () => {
+    apiMock.getHealth.mockResolvedValue({ status: 'ok', version: '0.1.0', ws_clients: 2, test_count: 1 })
+    apiMock.getSystemInventory.mockResolvedValue({
+      execution_mode: 'distributed',
+      controller: {
+        id: 'stormrunner-controller-0',
+        status: 'healthy',
+        address: ':8080',
+        version: '0.1.0',
+        execution_mode: 'distributed',
+      },
+      generators: [
+        {
+          target: 'gen-a:9090',
+          generator_id: 'gen-a',
+          status: 'connected',
+          version: '0.1.0',
+          drain_state: 'cordoned',
+          capacity_state: 'available',
+          compatibility_state: 'compatible',
+          available_capacity: 1000,
+          active_vusers: 100,
+          cpu_percent: 20,
+          memory_bytes: 1000,
+          goroutine_count: 20,
+          cpu_limit_cores: 2,
+          memory_limit_bytes: 2000,
+          max_vusers: 2000,
+        },
+        {
+          target: 'gen-b:9090',
+          generator_id: 'gen-b',
+          status: 'unreachable',
+          version: '1.0.0',
+          drain_state: 'active',
+          capacity_state: 'saturated',
+          compatibility_state: 'protocol_mismatch',
+          compatibility_issues: ['missing grpc runtime'],
+          available_capacity: 0,
+          active_vusers: 2000,
+          cpu_percent: 95,
+          memory_bytes: 1900,
+          goroutine_count: 2000,
+          cpu_limit_cores: 2,
+          memory_limit_bytes: 2000,
+          max_vusers: 2000,
+        },
+      ],
+    })
+
+    await act(async () => {
+      root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} />)
+    })
+
+    expect(container.textContent).toContain('Fleet Alerts')
+    expect(container.textContent).toContain('5 alerts')
+    expect(container.textContent).toContain('gen-a is cordoned')
+    expect(container.textContent).toContain('gen-b is unreachable')
+    expect(container.textContent).toContain('gen-b is saturated')
+    expect(container.textContent).toContain('missing grpc runtime')
+    expect(container.textContent).toContain('version 1.0.0')
+  })
+
   it('renders schedule health counts for operator triage', async () => {
     apiMock.getScheduleHealth.mockResolvedValue({
       total: 6,
