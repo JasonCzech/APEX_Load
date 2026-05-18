@@ -37,6 +37,8 @@ SQLite-backed controllers persist these sessions in `authoring_sessions`. Contro
 
 Approval is the final backend handoff before a migrated, recorded, manual, or generated draft becomes a reusable scenario asset. The approval endpoint returns HTTP 400 with the standard validation payload when validation fails or the authoring health status is `blocked`. Successful approval stores the draft through the normal script library path, marks the session `approved`, and records `approved_script_id`, `approved_at`, and `approval_health_status` in `review_state`.
 
+The dashboard Scripts view lists open authoring sessions for the active project as a review queue. Authors can resume the draft in the shared editor, approve a ready session through `POST /api/v1/scripts/authoring/sessions/{id}/approve`, or discard stale sessions through the delete endpoint.
+
 Guided correlation repair accepts a proposed variable name, extractor source/type/expression, sample value, and source/usage action hints. Preview mode returns a mutated draft and field-level diffs without saving. Apply mode persists the changed draft, resets the session to `editing`, and records `last_correlation_preview` metadata for audit and UI resume.
 
 ## Sources
@@ -104,7 +106,7 @@ AI-generated drafts include `ai_guardrails` in validation responses when `genera
 | P3.2 Source capability matrix | Complete for backend matrix | `sources` and `source_map` in the authoring capabilities response |
 | P3.3 Draft health scoring | Complete for validation response scoring; dashboard badges remain future work | `authoring_health` in script validation responses |
 | P3.4 Authoring session persistence | Complete for API and SQLite persistence | `authoring_sessions` table and session CRUD endpoints |
-| P3.5 Approval handoff | Complete for backend gate | Session approval validates health, stores reusable scripts, and stamps approval metadata |
+| P3.5 Approval handoff | Partial backend/UI complete | Session approval validates health, stores reusable scripts, stamps approval metadata, and the Scripts dashboard exposes resume/approve/discard actions for open sessions |
 | P3.6 Guided correlation repair | Partial backend complete | Session correlation preview/apply returns extractor insertion and sample-replacement diffs |
 | P3.7 Data-source fit checks | Partial backend complete | Validation responses include `data_source_fit` and health scoring for source/column/row-count readiness |
 | P3.8 Protocol starter templates | Partial backend/UI complete | `GET /api/v1/scripts/authoring/templates` returns validated protocol starter DSLs and scenario hints; dashboard create flow opens selected templates in the shared draft editor |

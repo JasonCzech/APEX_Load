@@ -14,6 +14,9 @@ const apiMock = {
   deleteScript: vi.fn(),
   listTests: vi.fn(),
   listAuthoringTemplates: vi.fn(),
+  listAuthoringSessions: vi.fn(),
+  approveAuthoringSession: vi.fn(),
+  deleteAuthoringSession: vi.fn(),
 }
 
 vi.mock('../hooks/useApi', () => ({
@@ -168,6 +171,13 @@ describe('ScriptsPage', () => {
     apiMock.deleteScript.mockResolvedValue({})
     apiMock.listTests.mockResolvedValue({ tests: [] })
     apiMock.listAuthoringTemplates.mockResolvedValue({ templates: [], count: 0 })
+    apiMock.listAuthoringSessions.mockResolvedValue({ sessions: [], count: 0 })
+    apiMock.approveAuthoringSession.mockResolvedValue({
+      session: { id: 'session-1', name: 'Migrated checkout review', status: 'approved' },
+      script: { id: 'approved-script-1', name: 'Approved Script', protocol: 'http', version: '1.0.0', created_at: '2026-05-18T00:00:00Z' },
+      authoring_health: { score: 100, status: 'ready', inputs: [] },
+    })
+    apiMock.deleteAuthoringSession.mockResolvedValue({ deleted: 'session-1' })
   })
 
   afterEach(async () => {
@@ -597,6 +607,95 @@ describe('ScriptsPage', () => {
 
     expect(container.querySelector('[data-testid="script-editor"]')).not.toBeNull()
     expect(container.textContent).toContain('editor:Browser Checkout Canary')
+  })
+
+  it('surfaces resumable authoring sessions and approves them through the backend gate', async () => {
+    apiMock.listAuthoringSessions.mockResolvedValue({
+      sessions: [{
+        id: 'session-1',
+        project_id: 'project-1',
+        source: 'loadrunner',
+        name: 'Migrated checkout review',
+        status: 'ready',
+        draft: {
+          name: 'Migrated checkout review',
+          version: '1.0.0',
+          protocol: 'http',
+          config: { base_url: 'https://checkout.example.com' },
+          actions: [],
+        },
+        review_state: {},
+        created_at: '2026-05-18T13:00:00Z',
+        updated_at: '2026-05-18T13:05:00Z',
+        last_accessed_at: '2026-05-18T13:05:00Z',
+      }],
+      count: 1,
+    })
+    apiMock.approveAuthoringSession.mockResolvedValueOnce({
+      session: { id: 'session-1', name: 'Migrated checkout review', status: 'approved' },
+      script: {
+        id: 'approved-script-1',
+        name: 'Migrated checkout review',
+        protocol: 'http',
+        version: '1.0.0',
+        created_at: '2026-05-18T13:06:00Z',
+      },
+      authoring_health: { score: 100, status: 'ready', inputs: [] },
+    })
+
+    await act(async () => {
+      root.render(<ScriptsPage />)
+    })
+
+    await flushPromises()
+
+    expect(apiMock.listAuthoringSessions).toHaveBeenCalledWith('project-1')
+    expect(container.textContent).toContain('Authoring Sessions')
+    expect(container.textContent).toContain('Migrated checkout review')
+    expect(container.textContent).toContain('Loadrunner')
+
+    const resumeButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Resume'))
+    expect(resumeButton).toBeDefined()
+    if (!resumeButton) {
+      return
+    }
+
+    await act(async () => {
+      resumeButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.querySelector('[data-testid="script-editor"]')).not.toBeNull()
+    expect(container.textContent).toContain('editor:Migrated checkout review')
+
+    const closeButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('mock-close'))
+    expect(closeButton).toBeDefined()
+    if (!closeButton) {
+      return
+    }
+
+    await act(async () => {
+      closeButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushPromises()
+
+    const approveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Approve'))
+    expect(approveButton).toBeDefined()
+    if (!approveButton) {
+      return
+    }
+
+    await act(async () => {
+      approveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushPromises()
+
+    expect(apiMock.approveAuthoringSession).toHaveBeenCalledWith('session-1')
+    expect(apiMock.listScripts).toHaveBeenCalledTimes(2)
+    expect(container.querySelector('[data-testid="script-editor"]')).not.toBeNull()
+    expect(container.textContent).toContain('script-id:approved-script-1')
+    expect(container.textContent).toContain('Approved authoring session "Migrated checkout review". Reviewing the promoted script.')
   })
 
   it('routes the Java-over-HTTP import option into the dedicated Java import surface', async () => {

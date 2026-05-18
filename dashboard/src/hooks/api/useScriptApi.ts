@@ -4,6 +4,8 @@ import {
   BrowserReplayStartRequest,
   BrowserReplayStartResponse,
   BrowserReplaySessionResponse,
+  AuthoringHealth,
+  AuthoringSession,
   GeneratorAssignmentSettings,
   GoalConfig,
   RuntimeSettingsOverride,
@@ -98,6 +100,17 @@ type AuthoringTemplatesResponse = {
   count: number
 }
 
+type AuthoringSessionsResponse = {
+  sessions: AuthoringSession[]
+  count: number
+}
+
+type AuthoringSessionApprovalResponse = {
+  session: AuthoringSession
+  script: StoredScript
+  authoring_health: AuthoringHealth
+}
+
 function buildScriptQuery(projectId?: string, folderId?: string | null) {
   const query = new URLSearchParams()
   if (projectId) query.set('project_id', projectId)
@@ -158,6 +171,21 @@ export function useScriptApi() {
       const suffix = query.toString()
       return request<AuthoringTemplatesResponse>(`/scripts/authoring/templates${suffix ? `?${suffix}` : ''}`)
     },
+    [],
+  )
+
+  const listAuthoringSessions = useCallback(
+    (projectId?: string) => request<AuthoringSessionsResponse>(`/scripts/authoring/sessions${projectId ? `?project_id=${encodeURIComponent(projectId)}` : ''}`),
+    [],
+  )
+
+  const approveAuthoringSession = useCallback(
+    (id: string) => request<AuthoringSessionApprovalResponse>(`/scripts/authoring/sessions/${id}/approve`, { method: 'POST' }),
+    [],
+  )
+
+  const deleteAuthoringSession = useCallback(
+    (id: string) => request<{ deleted: string }>(`/scripts/authoring/sessions/${id}`, { method: 'DELETE' }),
     [],
   )
 
@@ -459,6 +487,9 @@ export function useScriptApi() {
       validateScript,
       validateDraftScript,
       listAuthoringTemplates,
+      listAuthoringSessions,
+      approveAuthoringSession,
+      deleteAuthoringSession,
       replayScript,
   		replayDraftScript,
       startBrowserReplaySession,
@@ -505,6 +536,9 @@ export function useScriptApi() {
       validateScript,
       validateDraftScript,
       listAuthoringTemplates,
+      listAuthoringSessions,
+      approveAuthoringSession,
+      deleteAuthoringSession,
       replayScript,
   		replayDraftScript,
       startBrowserReplaySession,

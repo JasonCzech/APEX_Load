@@ -1061,6 +1061,19 @@ export interface AuthoringTemplate {
   }
 }
 
+export interface AuthoringSession {
+  id: string
+  project_id?: string
+  source: string
+  name: string
+  status: string
+  draft?: ScriptDefinition
+  review_state?: Record<string, unknown>
+  created_at: string
+  updated_at: string
+  last_accessed_at: string
+}
+
 export interface AuthoringHealth {
   score: number
   status: 'healthy' | 'needs_review' | 'blocked' | string

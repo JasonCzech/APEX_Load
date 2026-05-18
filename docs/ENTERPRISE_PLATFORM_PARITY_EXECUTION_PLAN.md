@@ -146,7 +146,7 @@ Reference artifact: `docs/ENTERPRISE_AUTHORING_CONTRACT.md`.
 | P3.2 | Add an authoring capability matrix for each source: LoadRunner, TrueClient MobileWeb, JMeter, DevWeb, HAR, recorder, sample, manual, AI-generated | M | P3.1 | Complete for backend source matrix |
 | P3.3 | Add consistent draft health scoring across validation issues, runtime parity, unsupported constructs, missing data, and replay readiness | L | P3.1 | Complete for validation response scoring; dashboard badges remain future work |
 | P3.4 | Add authoring session persistence for unsaved drafts and long-running repair workflows | L | P3.1 | Complete for API and SQLite persistence |
-| P3.5 | Add review/approval handoff for migrated scripts before they become reusable scenario assets | M | P3.3 | Complete for backend approval gate; dashboard workflow remains future work |
+| P3.5 | Add review/approval handoff for migrated scripts before they become reusable scenario assets | M | P3.3 | Partial backend/UI complete: backend approval gate plus dashboard authoring-session review queue for resume, approve, and discard |
 
 Acceptance criteria:
 - Every acquisition path lands in the same draft contract and health model.

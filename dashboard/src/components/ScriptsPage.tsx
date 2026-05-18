@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
-import { StoredScript } from '../types'
+import { AuthoringSession, StoredScript } from '../types'
 import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
+import AuthoringSessionsPanel from './AuthoringSessionsPanel'
 import ScriptsAuthoringShell from './ScriptsAuthoringShell'
 import ScriptsLibraryTable from './ScriptsLibraryTable'
 import { useScriptsLibraryModel } from './useScriptsLibraryModel'
@@ -31,11 +32,19 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
   const api = useApi()
   const { activeProject } = useProject()
   const [scripts, setScripts] = useState<StoredScript[]>([])
+  const [authoringSessions, setAuthoringSessions] = useState<AuthoringSession[]>([])
 
   const refresh = useCallback(async () => {
     try {
       const res = await api.listScripts(activeProject?.id)
       setScripts(res.scripts || [])
+    } catch { /* API not available */ }
+  }, [api, activeProject?.id])
+
+  const refreshAuthoringSessions = useCallback(async () => {
+    try {
+      const res = await api.listAuthoringSessions(activeProject?.id)
+      setAuthoringSessions(res.sessions || [])
     } catch { /* API not available */ }
   }, [api, activeProject?.id])
 
@@ -73,6 +82,7 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
   })
 
   useEffect(() => { refresh() }, [refresh])
+  useEffect(() => { refreshAuthoringSessions() }, [refreshAuthoringSessions])
 
   const handleDelete = async (id: string) => {
     if (!confirm('Delete this script?')) return
@@ -81,17 +91,41 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
 
   const handleSaved = useCallback((script: StoredScript) => {
     void refresh()
+    void refreshAuthoringSessions()
     handleSavedScript(script)
-  }, [handleSavedScript, refresh])
+  }, [handleSavedScript, refresh, refreshAuthoringSessions])
 
   const handleImported = useCallback((result: ImportedSaveResult) => {
     void refresh()
+    void refreshAuthoringSessions()
     if (result.scripts[0]) {
       handleSavedScript(result.scripts[0], buildImportedSaveNotice(result))
       return
     }
     openLibrary()
-  }, [handleSavedScript, refresh])
+  }, [handleSavedScript, openLibrary, refresh, refreshAuthoringSessions])
+
+  const handleResumeAuthoringSession = useCallback((session: AuthoringSession) => {
+    if (session.draft) {
+      handleDraftEdit(session.draft)
+    }
+  }, [handleDraftEdit])
+
+  const handleApproveAuthoringSession = useCallback(async (session: AuthoringSession) => {
+    try {
+      const res = await api.approveAuthoringSession(session.id)
+      void refresh()
+      void refreshAuthoringSessions()
+      handleSavedScript(res.script, `Approved authoring session "${res.session.name}". Reviewing the promoted script.`)
+    } catch { /* approval errors are surfaced by backend validation in a future detail panel */ }
+  }, [api, handleSavedScript, refresh, refreshAuthoringSessions])
+
+  const handleDiscardAuthoringSession = useCallback(async (session: AuthoringSession) => {
+    try {
+      await api.deleteAuthoringSession(session.id)
+      await refreshAuthoringSessions()
+    } catch { /* ignore */ }
+  }, [api, refreshAuthoringSessions])
 
   return (
     <ScriptsAuthoringShell
@@ -115,6 +149,12 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
         </div>
 
         <div className="page-section">
+          <AuthoringSessionsPanel
+            sessions={authoringSessions}
+            onResume={handleResumeAuthoringSession}
+            onApprove={(session) => { void handleApproveAuthoringSession(session) }}
+            onDiscard={(session) => { void handleDiscardAuthoringSession(session) }}
+          />
           <h3 className="section-title">Script Library ({scripts.length})</h3>
           <ScriptsLibraryTable
             scripts={sortedScripts}
