@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -252,6 +253,35 @@ func TestArchiveQueryEndpoints(t *testing.T) {
 		}
 	})
 
+	t.Run("csv report", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/archive/report?format=csv", nil)
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusOK {
+			t.Fatalf("csv report status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+		}
+		if got := resp.Header().Get("Content-Type"); !strings.Contains(got, "text/csv") {
+			t.Fatalf("csv report content type = %q, want text/csv", got)
+		}
+		rows, err := csv.NewReader(strings.NewReader(resp.Body.String())).ReadAll()
+		if err != nil {
+			t.Fatalf("read csv report: %v", err)
+		}
+		if len(rows) < 4 {
+			t.Fatalf("csv rows = %#v, want header and report rows", rows)
+		}
+		if strings.Join(rows[0], "|") != "section|key|metric|value" {
+			t.Fatalf("csv header = %#v", rows[0])
+		}
+		if !archiveReportCSVHasRow(rows, "overview", "", "transactions") {
+			t.Fatalf("csv rows missing overview transactions: %#v", rows)
+		}
+		if !archiveReportCSVHasRow(rows, "action", "step-1", "transactions") {
+			t.Fatalf("csv rows missing action transactions: %#v", rows)
+		}
+	})
+
 	t.Run("html report", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/report?profile=executive", nil)
 		resp := httptest.NewRecorder()
@@ -322,6 +352,15 @@ func TestArchiveReportReturnsNotFoundWhenManifestMissing(t *testing.T) {
 	if !strings.Contains(resp.Body.String(), "archive not found") {
 		t.Fatalf("expected archive not found error, got %q", resp.Body.String())
 	}
+}
+
+func archiveReportCSVHasRow(rows [][]string, section string, key string, metric string) bool {
+	for _, row := range rows {
+		if len(row) >= 4 && row[0] == section && row[1] == key && row[2] == metric {
+			return true
+		}
+	}
+	return false
 }
 
 func TestArchiveTransactionsApplyConfiguredRedactionRules(t *testing.T) {

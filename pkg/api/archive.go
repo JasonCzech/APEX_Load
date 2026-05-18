@@ -1074,21 +1074,21 @@ func buildRunArchiveReportProfiles() []RunArchiveReportProfile {
 			ID:               "executive",
 			Label:            "Executive",
 			Description:      "Decision-focused summary with SLA, error rate, throughput, completeness, and change attribution.",
-			ExportFormats:    []string{"html", "json"},
+			ExportFormats:    []string{"html", "json", "csv"},
 			IncludedSections: []string{"overview", "sla", "completeness", "change_attribution", "evidence_tiers"},
 		},
 		{
 			ID:               "engineer",
 			Label:            "Engineer",
 			Description:      "Engineering drilldown with timelines, action stats, browser diagnostics, resource peaks, and error patterns.",
-			ExportFormats:    []string{"html", "json", "jsonl", "parquet"},
+			ExportFormats:    []string{"html", "json", "csv", "jsonl", "parquet"},
 			IncludedSections: []string{"overview", "summary_timeline", "actions", "browser", "resources", "errors", "raw_exports"},
 		},
 		{
 			ID:               "audit",
 			Label:            "Audit",
 			Description:      "Governance package with schema compatibility, evidence tiers, completeness findings, provenance, and artifact inventory.",
-			ExportFormats:    []string{"html", "json"},
+			ExportFormats:    []string{"html", "json", "csv"},
 			IncludedSections: []string{"schema_compatibility", "evidence_tiers", "completeness", "provenance", "change_attribution", "artifact_inventory"},
 		},
 	}
@@ -1312,11 +1312,7 @@ func buildRunArchiveReportCompatibility(record *storage.RunArchiveRecord, manife
 		archiveFileOutputCompatibility(record, manifestField(manifest, "transactions_parquet"), "transactions_parquet", "transactions.parquet", archiveSchemaVersion),
 		archiveFileOutputCompatibility(record, manifestField(manifest, "resources_parquet"), "resources_parquet", "resources.parquet", archiveSchemaVersion),
 		archiveFileOutputCompatibility(record, manifestField(manifest, "interval_summaries_parquet"), "interval_summaries_parquet", "interval_summaries.parquet", archiveSchemaVersion),
-		{
-			Format: "csv",
-			Status: "unsupported",
-			Reason: "CSV archive exports are not registered for this report schema yet.",
-		},
+		reportOutputCompatibility("csv", "archive/report?format=csv", runArchiveReportSchemaVersion, manifestOK, "CSV report export is generated from the archive report schema."),
 	}
 	for _, output := range compatibility.Outputs {
 		switch output.Status {

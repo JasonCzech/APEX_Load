@@ -258,13 +258,10 @@ func TestBuildRunArchiveReportDeclaresSchemaCompatibility(t *testing.T) {
 	for _, output := range report.Compatibility.Outputs {
 		outputs[output.Format] = output
 	}
-	for _, format := range []string{"json", "standalone_html", "transaction_jsonl", "resource_jsonl", "interval_summary_jsonl", "transactions_parquet", "resources_parquet", "interval_summaries_parquet"} {
+	for _, format := range []string{"json", "standalone_html", "csv", "transaction_jsonl", "resource_jsonl", "interval_summary_jsonl", "transactions_parquet", "resources_parquet", "interval_summaries_parquet"} {
 		if outputs[format].Status != "compatible" {
 			t.Fatalf("output %q = %#v, want compatible", format, outputs[format])
 		}
-	}
-	if outputs["csv"].Status != "unsupported" {
-		t.Fatalf("csv output = %#v, want unsupported declaration", outputs["csv"])
 	}
 }
 

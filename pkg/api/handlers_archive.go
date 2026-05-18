@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/jasonczech/stormrunner/pkg/storage"
 )
@@ -190,6 +191,15 @@ func (s *Server) handleGetRunArchiveReport(w http.ResponseWriter, r *http.Reques
 	report, err := buildRunArchiveReport(record)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to build archive report: "+err.Error())
+		return
+	}
+	if strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("format")), "csv") {
+		testID := r.PathValue("id")
+		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+		w.Header().Set("Content-Disposition", "attachment; filename=\"stormrunner-archive-report-"+testID+".csv\"")
+		if err := writeRunArchiveReportCSV(report, w); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to write archive report csv: "+err.Error())
+		}
 		return
 	}
 	writeJSON(w, http.StatusOK, report)
