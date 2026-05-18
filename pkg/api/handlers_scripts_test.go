@@ -1924,6 +1924,62 @@ func TestDraftValidationReturnsDataSourceFitHealth(t *testing.T) {
 	}
 }
 
+func TestDraftValidationReturnsAIGuardrails(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	blockedBody := []byte(`{"script":{
+		"name":"ai draft",
+		"version":"1.0.0",
+		"protocol":"http",
+		"generated_by":"openai",
+		"generated_from":"ai_generated",
+		"config":{"base_url":"https://example.test"},
+		"actions":[{"name":"Home","type":"request","target":"/"}]
+	}}`)
+	blockedReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/validate", bytes.NewReader(blockedBody))
+	blockedResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(blockedResp, blockedReq)
+	if blockedResp.Code != http.StatusOK {
+		t.Fatalf("blocked status = %d, want %d body=%s", blockedResp.Code, http.StatusOK, blockedResp.Body.String())
+	}
+	var blocked scriptValidationResponse
+	if err := json.Unmarshal(blockedResp.Body.Bytes(), &blocked); err != nil {
+		t.Fatalf("unmarshal blocked response: %v", err)
+	}
+	if blocked.AIGuardrails == nil || blocked.AIGuardrails.Status != "blocked" {
+		t.Fatalf("ai_guardrails = %#v, want blocked", blocked.AIGuardrails)
+	}
+	if blocked.AuthoringHealth.Status != "blocked" {
+		t.Fatalf("authoring health = %#v, want blocked from AI guardrails", blocked.AuthoringHealth)
+	}
+
+	readyBody := []byte(`{"script":{
+		"name":"ai draft",
+		"version":"1.0.0",
+		"protocol":"http",
+		"generated_by":"openai",
+		"generated_from":"ai_generated",
+		"metadata":{"import":{"source":"ai_generated","preserved":{"diff_reviewed":true,"replay_status":"passed"}}},
+		"config":{"base_url":"https://example.test"},
+		"actions":[{"name":"Home","type":"request","target":"/"}]
+	}}`)
+	readyReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/validate", bytes.NewReader(readyBody))
+	readyResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(readyResp, readyReq)
+	if readyResp.Code != http.StatusOK {
+		t.Fatalf("ready status = %d, want %d body=%s", readyResp.Code, http.StatusOK, readyResp.Body.String())
+	}
+	var ready scriptValidationResponse
+	if err := json.Unmarshal(readyResp.Body.Bytes(), &ready); err != nil {
+		t.Fatalf("unmarshal ready response: %v", err)
+	}
+	if ready.AIGuardrails == nil || ready.AIGuardrails.Status != "ready" {
+		t.Fatalf("ai_guardrails = %#v, want ready", ready.AIGuardrails)
+	}
+	if ready.AuthoringHealth.Status == "blocked" {
+		t.Fatalf("authoring health = %#v, want promotable AI draft", ready.AuthoringHealth)
+	}
+}
+
 func TestAuthoringSessionLifecyclePersistsDraftReviewState(t *testing.T) {
 	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
 	if err != nil {

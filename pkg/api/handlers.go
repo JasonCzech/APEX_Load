@@ -734,6 +734,7 @@ type scriptValidationResponse struct {
 	RuntimeSettingsStatusCounts map[string]int                               `json:"runtime_settings_status_counts,omitempty"`
 	MigrationReadiness          *loadrunner.RuntimeSettingMigrationReadiness `json:"migration_readiness,omitempty"`
 	DataSourceFit               *DataSourceFitReport                         `json:"data_source_fit,omitempty"`
+	AIGuardrails                *AIGuardrailReport                           `json:"ai_guardrails,omitempty"`
 	AuthoringHealth             AuthoringHealth                              `json:"authoring_health"`
 }
 
@@ -744,6 +745,7 @@ func buildScriptValidationResponse(scriptID string, script *dsl.Script) scriptVa
 	counts := loadrunner.RuntimeSettingStatusCounts(parity)
 	readiness := loadrunner.BuildRTSMigrationReadiness(parity, validationRuntimeSettingMigrationPolicy(script))
 	dataSourceFit := buildDataSourceFitReport(script)
+	aiGuardrails := buildAIGuardrailReport(script, len(issues) == 0)
 
 	return scriptValidationResponse{
 		ScriptID:                    scriptID,
@@ -754,7 +756,8 @@ func buildScriptValidationResponse(scriptID string, script *dsl.Script) scriptVa
 		RuntimeSettingsStatusCounts: counts,
 		MigrationReadiness:          readiness,
 		DataSourceFit:               dataSourceFit,
-		AuthoringHealth:             buildAuthoringHealth(issues, warnings, counts, dataSourceFit, scriptHasAuthoringProvenance(script)),
+		AIGuardrails:                aiGuardrails,
+		AuthoringHealth:             buildAuthoringHealth(issues, warnings, counts, dataSourceFit, aiGuardrails, scriptHasAuthoringProvenance(script)),
 	}
 }
 

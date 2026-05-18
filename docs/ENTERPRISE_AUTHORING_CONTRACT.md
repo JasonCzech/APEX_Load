@@ -92,6 +92,8 @@ P3.3 scoring normalizes these inputs instead of creating source-specific scoring
 
 Validation responses also include `data_source_fit` when a draft declares data sources or data-backed parameters. The fit report checks source existence, required columns, uniqueness/pop strategies, exhaustion posture, and available inline rows against the script's iteration and goal VUser settings. Blocked data-source fit contributes to `authoring_health.status = blocked`, which prevents approval promotion.
 
+AI-generated drafts include `ai_guardrails` in validation responses when `generated_by`, `generated_from`, or import source metadata identifies an AI/LLM source. Guardrails require source provenance, structural validation, diff-review evidence, and replay-before-save evidence. Missing guardrail evidence contributes to `authoring_health.status = blocked`, so AI drafts cannot be approved into reusable assets until review and replay proof are attached.
+
 ## Plan Mapping
 
 | Plan item | Status | Artifact |
@@ -104,3 +106,4 @@ Validation responses also include `data_source_fit` when a draft declares data s
 | P3.6 Guided correlation repair | Partial backend complete | Session correlation preview/apply returns extractor insertion and sample-replacement diffs |
 | P3.7 Data-source fit checks | Partial backend complete | Validation responses include `data_source_fit` and health scoring for source/column/row-count readiness |
 | P3.8 Protocol starter templates | Partial backend complete | `GET /api/v1/scripts/authoring/templates` returns validated protocol starter DSLs and scenario hints |
+| P3.9 AI generation guardrails | Partial backend complete | Validation responses include `ai_guardrails` and block approval health without provenance, diff review, validation, and replay evidence |

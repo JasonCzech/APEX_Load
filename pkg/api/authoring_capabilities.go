@@ -47,20 +47,21 @@ type AuthoringHealthItem struct {
 	Summary string `json:"summary"`
 }
 
-func buildAuthoringHealth(issues []string, warnings []string, parityCounts map[string]int, dataSourceFit *DataSourceFitReport, scriptHasProvenance bool) AuthoringHealth {
+func buildAuthoringHealth(issues []string, warnings []string, parityCounts map[string]int, dataSourceFit *DataSourceFitReport, aiGuardrails *AIGuardrailReport, scriptHasProvenance bool) AuthoringHealth {
 	score := 100
 	inputs := []AuthoringHealthItem{
 		{Key: "validation_issues", Status: "pass", Count: len(issues), Summary: "Script validation passed."},
 		{Key: "warnings", Status: "pass", Count: len(warnings), Summary: "No validation warnings."},
 		{Key: "runtime_parity", Status: "pass", Summary: "No runtime parity blockers were detected."},
 		{Key: "data_source_fit", Status: "pass", Summary: "Data sources match referenced parameters and load-model needs."},
+		{Key: "ai_guardrails", Status: "pass", Summary: "No AI-generation guardrails apply to this draft."},
 		{Key: "replay_readiness", Status: "pass", Summary: "Draft is structurally ready for replay."},
 		{Key: "provenance", Status: "info", Summary: "No source provenance is required for manually authored drafts."},
 	}
 	if len(issues) > 0 {
 		score -= 45
 		inputs[0] = AuthoringHealthItem{Key: "validation_issues", Status: "blocker", Count: len(issues), Summary: "Script has validation issues that block save or replay."}
-		inputs[4] = AuthoringHealthItem{Key: "replay_readiness", Status: "blocker", Summary: "Replay should wait until validation blockers are fixed."}
+		inputs[5] = AuthoringHealthItem{Key: "replay_readiness", Status: "blocker", Summary: "Replay should wait until validation blockers are fixed."}
 	}
 	if len(warnings) > 0 {
 		score -= minInt(15, len(warnings)*5)
@@ -82,16 +83,27 @@ func buildAuthoringHealth(issues []string, warnings []string, parityCounts map[s
 			inputs[3] = AuthoringHealthItem{Key: "data_source_fit", Status: "warning", Count: needsReview, Summary: "Data-source fit checks need review before high-volume execution."}
 		}
 	}
+	if aiGuardrails != nil {
+		blocked := aiGuardrails.StatusCounts["blocked"]
+		needsReview := aiGuardrails.StatusCounts["needs_review"]
+		if blocked > 0 {
+			score -= minInt(35, blocked*10)
+			inputs[4] = AuthoringHealthItem{Key: "ai_guardrails", Status: "blocker", Count: blocked, Summary: "AI-generated drafts require provenance, diff review, validation, and replay evidence before promotion."}
+		} else if needsReview > 0 {
+			score -= minInt(10, needsReview*5)
+			inputs[4] = AuthoringHealthItem{Key: "ai_guardrails", Status: "warning", Count: needsReview, Summary: "AI-generation evidence is present but should be reviewed before promotion."}
+		}
+	}
 	if scriptHasProvenance {
-		inputs[5] = AuthoringHealthItem{Key: "provenance", Status: "pass", Summary: "Source provenance is attached to the draft."}
+		inputs[6] = AuthoringHealthItem{Key: "provenance", Status: "pass", Summary: "Source provenance is attached to the draft."}
 	}
 	if score < 0 {
 		score = 0
 	}
 	status := "ready"
-	if score < 60 || len(issues) > 0 || (dataSourceFit != nil && dataSourceFit.StatusCounts["blocked"] > 0) {
+	if score < 60 || len(issues) > 0 || (dataSourceFit != nil && dataSourceFit.StatusCounts["blocked"] > 0) || (aiGuardrails != nil && aiGuardrails.StatusCounts["blocked"] > 0) {
 		status = "blocked"
-	} else if score < 85 || len(warnings) > 0 || parityPenalty > 0 || (dataSourceFit != nil && dataSourceFit.StatusCounts["needs_review"] > 0) {
+	} else if score < 85 || len(warnings) > 0 || parityPenalty > 0 || (dataSourceFit != nil && dataSourceFit.StatusCounts["needs_review"] > 0) || (aiGuardrails != nil && aiGuardrails.StatusCounts["needs_review"] > 0) {
 		status = "needs_review"
 	}
 	return AuthoringHealth{Score: score, Status: status, Inputs: inputs}
