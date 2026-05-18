@@ -224,7 +224,11 @@ func (s *Server) handleGetRunArchiveReport(w http.ResponseWriter, r *http.Reques
 		testID := r.PathValue("id")
 		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 		w.Header().Set("Content-Disposition", "attachment; filename=\"stormrunner-archive-report-"+testID+".csv\"")
-		if err := writeRunArchiveReportCSV(report, w); err != nil {
+		if err := writeRunArchiveReportCSVWithProfile(report, w, r.URL.Query().Get("profile")); err != nil {
+			if strings.Contains(err.Error(), "unknown report profile") {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
 			writeError(w, http.StatusInternalServerError, "failed to write archive report csv: "+err.Error())
 		}
 		return

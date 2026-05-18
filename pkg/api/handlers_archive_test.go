@@ -336,6 +336,59 @@ func TestArchiveQueryEndpoints(t *testing.T) {
 		}
 	})
 
+	t.Run("executive csv report omits drilldown", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/archive/report?format=csv&profile=executive", nil)
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusOK {
+			t.Fatalf("executive csv report status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+		}
+		rows, err := csv.NewReader(strings.NewReader(resp.Body.String())).ReadAll()
+		if err != nil {
+			t.Fatalf("read executive csv report: %v", err)
+		}
+		if !archiveReportCSVHasRow(rows, "overview", "", "transactions") {
+			t.Fatalf("executive csv rows missing overview transactions: %#v", rows)
+		}
+		if archiveReportCSVHasRow(rows, "action", "step-1", "transactions") {
+			t.Fatalf("executive csv rows should omit action drilldown: %#v", rows)
+		}
+	})
+
+	t.Run("audit csv report includes evidence inventory", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/archive/report?format=csv&profile=audit", nil)
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusOK {
+			t.Fatalf("audit csv report status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+		}
+		rows, err := csv.NewReader(strings.NewReader(resp.Body.String())).ReadAll()
+		if err != nil {
+			t.Fatalf("read audit csv report: %v", err)
+		}
+		if !archiveReportCSVHasRow(rows, "schema_compatibility", "", "status") {
+			t.Fatalf("audit csv rows missing schema compatibility: %#v", rows)
+		}
+		if !archiveReportCSVHasRow(rows, "artifact_inventory", "transactions.jsonl", "count") {
+			t.Fatalf("audit csv rows missing artifact inventory: %#v", rows)
+		}
+		if archiveReportCSVHasRow(rows, "action", "step-1", "transactions") {
+			t.Fatalf("audit csv rows should omit action drilldown: %#v", rows)
+		}
+	})
+
+	t.Run("unknown csv report profile", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/archive/report?format=csv&profile=unknown", nil)
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusBadRequest {
+			t.Fatalf("unknown csv profile status = %d, want %d body=%s", resp.Code, http.StatusBadRequest, resp.Body.String())
+		}
+	})
+
 	t.Run("html report", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/report?profile=executive", nil)
 		resp := httptest.NewRecorder()
