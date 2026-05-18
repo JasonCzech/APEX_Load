@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jasonczech/stormrunner/pkg/dsl"
 	"github.com/jasonczech/stormrunner/pkg/storage"
 )
 
@@ -265,6 +266,39 @@ func TestHandleGetFleetCapacityFiltersRegionProtocolAndReservations(t *testing.T
 			CompatibilityState: "compatible",
 		},
 	}})
+	server.runner.StoreScript(&dsl.Script{
+		ID:        "script-fleet-capacity-checkout",
+		Name:      "Checkout Fleet Capacity",
+		Protocol:  "grpc",
+		Version:   "1.0.0",
+		ProjectID: "checkout",
+		Actions:   []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+	server.runner.StoreScript(&dsl.Script{
+		ID:        "script-fleet-capacity-shared",
+		Name:      "Shared Fleet Capacity",
+		Protocol:  "http",
+		Version:   "1.0.0",
+		ProjectID: "shared",
+		Actions:   []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+	active, err := server.runner.CreateTest(CreateTestRequest{Name: "Checkout Active", Duration: "30s", ScriptID: "script-fleet-capacity-checkout", VUsers: 250})
+	if err != nil {
+		t.Fatalf("CreateTest(active) returned error: %v", err)
+	}
+	pending, err := server.runner.CreateTest(CreateTestRequest{Name: "Checkout Pending", Duration: "30s", ScriptID: "script-fleet-capacity-checkout", VUsers: 400})
+	if err != nil {
+		t.Fatalf("CreateTest(pending) returned error: %v", err)
+	}
+	shared, err := server.runner.CreateTest(CreateTestRequest{Name: "Shared Pending", Duration: "30s", ScriptID: "script-fleet-capacity-shared", VUsers: 700})
+	if err != nil {
+		t.Fatalf("CreateTest(shared) returned error: %v", err)
+	}
+	server.runner.mu.Lock()
+	server.runner.tests[active.ID].Status = "RUNNING"
+	server.runner.tests[pending.ID].Status = "PENDING"
+	server.runner.tests[shared.ID].Status = "PENDING"
+	server.runner.mu.Unlock()
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/fleet/capacity?project_id=checkout&region=us-east&protocol=grpc", nil)
 	resp := httptest.NewRecorder()
@@ -286,12 +320,32 @@ func TestHandleGetFleetCapacityFiltersRegionProtocolAndReservations(t *testing.T
 	if payload.ReservedGenerators != 2 || payload.ReservedSlots != 2000 {
 		t.Fatalf("reservation payload = %#v, want two reserved generators", payload)
 	}
+	if payload.ProjectActiveSlots != 250 || payload.ProjectPendingSlots != 400 {
+		t.Fatalf("project slots = active %d pending %d, want 250/400", payload.ProjectActiveSlots, payload.ProjectPendingSlots)
+	}
+	checkoutSlots := findFleetProjectSlots(payload.ProjectSlots, "checkout")
+	if checkoutSlots == nil || checkoutSlots.ActiveSlots != 250 || checkoutSlots.PendingSlots != 400 || checkoutSlots.FairShareTier != "reserved" {
+		t.Fatalf("checkout slots = %#v, want reserved active/pending accounting", checkoutSlots)
+	}
+	sharedSlots := findFleetProjectSlots(payload.ProjectSlots, "shared")
+	if sharedSlots == nil || sharedSlots.PendingSlots != 700 || sharedSlots.FairShareTier != "shared" {
+		t.Fatalf("shared slots = %#v, want shared pending accounting", sharedSlots)
+	}
 	if !containsString(payload.CompatibleFeatures, "grpc") || !containsString(payload.CompatibleFeatures, "http") || !containsString(payload.CompatibleFeatures, "browser-canary") {
 		t.Fatalf("compatible features = %#v, want negotiated and fallback features", payload.CompatibleFeatures)
 	}
 	if len(payload.RejectionReasons) != 1 || !strings.Contains(payload.RejectionReasons[0], "gen-b does not support protocol grpc") {
 		t.Fatalf("rejection reasons = %#v, want gen-b protocol rejection", payload.RejectionReasons)
 	}
+}
+
+func findFleetProjectSlots(slots []FleetProjectSlotAccounting, projectID string) *FleetProjectSlotAccounting {
+	for index := range slots {
+		if slots[index].ProjectID == projectID {
+			return &slots[index]
+		}
+	}
+	return nil
 }
 
 func TestHandleSetGeneratorDrainStateRejectsInvalidState(t *testing.T) {

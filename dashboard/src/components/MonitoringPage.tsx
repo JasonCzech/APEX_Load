@@ -422,9 +422,26 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
             <span className="monitor-value">{fleetCapacity?.reserved_slots?.toLocaleString() ?? '-'}</span>
           </div>
           <div className="monitor-row">
+            <span className="monitor-label">Project Active Slots</span>
+            <span className="monitor-value">{fleetCapacity?.project_active_slots?.toLocaleString() ?? '-'}</span>
+          </div>
+          <div className="monitor-row">
+            <span className="monitor-label">Project Pending Slots</span>
+            <span className={`monitor-value ${(fleetCapacity?.project_pending_slots || 0) > 0 ? 'telemetry-text-warning' : ''}`}>{fleetCapacity?.project_pending_slots?.toLocaleString() ?? '-'}</span>
+          </div>
+          <div className="monitor-row">
             <span className="monitor-label">Source</span>
             <span className="monitor-value">{fleetCapacity ? 'fleet placement API' : health?.capacity_availability?.source || '-'}</span>
           </div>
+          {fleetCapacity?.project_slots?.length ? (
+            <div className="monitor-warning-list">
+              {fleetCapacity.project_slots.slice(0, 3).map(slots => (
+                <p key={slots.project_id}>
+                  {slots.project_id}: {slots.active_slots.toLocaleString()} active / {slots.pending_slots.toLocaleString()} pending slots ({slots.fair_share_tier})
+                </p>
+              ))}
+            </div>
+          ) : null}
           {fleetCapacity?.compatible_features?.length ? (
             <div className="monitor-row">
               <span className="monitor-label">Features</span>

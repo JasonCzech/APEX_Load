@@ -281,10 +281,24 @@ describe('MonitoringPage', () => {
       eligible_generators: 1,
       active_slots: 400,
       available_slots: 9600,
+      project_active_slots: 250,
+      project_pending_slots: 400,
       reserved_slots: 10000,
       max_slots: 10000,
       compatible_features: ['http', 'browser'],
       rejection_reasons: [],
+      project_slots: [
+        {
+          project_id: 'project-1',
+          active_slots: 250,
+          pending_slots: 400,
+          running_tests: 1,
+          pending_tests: 1,
+          reserved_generators: 1,
+          reserved_slots: 10000,
+          fair_share_tier: 'reserved',
+        },
+      ],
     })
     apiMock.getSystemInventory.mockResolvedValue({
       execution_mode: 'distributed',
@@ -328,6 +342,9 @@ describe('MonitoringPage', () => {
     expect(container.textContent).toContain('1/1')
     expect(container.textContent).toContain('Reserved Slots')
     expect(container.textContent).toContain('10,000')
+    expect(container.textContent).toContain('Project Active Slots')
+    expect(container.textContent).toContain('Project Pending Slots')
+    expect(container.textContent).toContain('project-1: 250 active / 400 pending slots (reserved)')
     expect(container.textContent).toContain('fleet placement API')
     expect(container.textContent).toContain('http, browser')
 

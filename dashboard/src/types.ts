@@ -1413,11 +1413,25 @@ export interface FleetCapacityResponse {
   eligible_generators: number
   active_slots: number
   available_slots: number
+  project_active_slots?: number
+  project_pending_slots?: number
   reserved_generators?: number
   reserved_slots?: number
   max_slots: number
   compatible_features?: string[]
   rejection_reasons?: string[]
+  project_slots?: FleetProjectSlotAccounting[]
+}
+
+export interface FleetProjectSlotAccounting {
+  project_id: string
+  active_slots: number
+  pending_slots: number
+  running_tests: number
+  pending_tests: number
+  reserved_generators?: number
+  reserved_slots?: number
+  fair_share_tier: string
 }
 
 export interface ParityStatusArea {

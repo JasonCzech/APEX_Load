@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+
+	"github.com/jasonczech/stormrunner/pkg/storage"
 )
 
 const generatorDrainStatesStoreKey = "generator_drain_states"
@@ -22,18 +24,32 @@ type FleetAlertsResponse struct {
 }
 
 type FleetCapacityResponse struct {
-	ProjectID          string   `json:"project_id,omitempty"`
-	Region             string   `json:"region,omitempty"`
-	Protocol           string   `json:"protocol,omitempty"`
-	TotalGenerators    int      `json:"total_generators"`
-	EligibleGenerators int      `json:"eligible_generators"`
-	ActiveSlots        int      `json:"active_slots"`
-	AvailableSlots     int      `json:"available_slots"`
-	ReservedGenerators int      `json:"reserved_generators,omitempty"`
-	ReservedSlots      int      `json:"reserved_slots,omitempty"`
-	MaxSlots           int      `json:"max_slots"`
-	CompatibleFeatures []string `json:"compatible_features,omitempty"`
-	RejectionReasons   []string `json:"rejection_reasons,omitempty"`
+	ProjectID           string                       `json:"project_id,omitempty"`
+	Region              string                       `json:"region,omitempty"`
+	Protocol            string                       `json:"protocol,omitempty"`
+	TotalGenerators     int                          `json:"total_generators"`
+	EligibleGenerators  int                          `json:"eligible_generators"`
+	ActiveSlots         int                          `json:"active_slots"`
+	AvailableSlots      int                          `json:"available_slots"`
+	ProjectActiveSlots  int                          `json:"project_active_slots,omitempty"`
+	ProjectPendingSlots int                          `json:"project_pending_slots,omitempty"`
+	ReservedGenerators  int                          `json:"reserved_generators,omitempty"`
+	ReservedSlots       int                          `json:"reserved_slots,omitempty"`
+	MaxSlots            int                          `json:"max_slots"`
+	CompatibleFeatures  []string                     `json:"compatible_features,omitempty"`
+	RejectionReasons    []string                     `json:"rejection_reasons,omitempty"`
+	ProjectSlots        []FleetProjectSlotAccounting `json:"project_slots,omitempty"`
+}
+
+type FleetProjectSlotAccounting struct {
+	ProjectID          string `json:"project_id"`
+	ActiveSlots        int    `json:"active_slots"`
+	PendingSlots       int    `json:"pending_slots"`
+	RunningTests       int    `json:"running_tests"`
+	PendingTests       int    `json:"pending_tests"`
+	ReservedGenerators int    `json:"reserved_generators,omitempty"`
+	ReservedSlots      int    `json:"reserved_slots,omitempty"`
+	FairShareTier      string `json:"fair_share_tier"`
 }
 
 type FleetAlert struct {
@@ -58,7 +74,7 @@ func (s *Server) handleGetFleetCapacity(w http.ResponseWriter, r *http.Request) 
 	projectID := strings.TrimSpace(r.URL.Query().Get("project_id"))
 	region := strings.TrimSpace(r.URL.Query().Get("region"))
 	protocolName := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("protocol")))
-	capacity := buildFleetCapacity(s.systemInventory(r.Context()), s.runner.GetSystemSettings(), projectID, region, protocolName)
+	capacity := buildFleetCapacity(s.systemInventory(r.Context()), s.runner.GetSystemSettings(), s.runner.ListTests(), projectID, region, protocolName)
 	writeJSON(w, http.StatusOK, capacity)
 }
 
@@ -207,7 +223,7 @@ func buildFleetAlerts(inventory SystemInventoryResponse) []FleetAlert {
 	return alerts
 }
 
-func buildFleetCapacity(inventory SystemInventoryResponse, settings SystemSettings, projectID string, region string, protocolName string) FleetCapacityResponse {
+func buildFleetCapacity(inventory SystemInventoryResponse, settings SystemSettings, tests []*ManagedTest, projectID string, region string, protocolName string) FleetCapacityResponse {
 	out := FleetCapacityResponse{
 		ProjectID: projectID,
 		Region:    region,
@@ -255,9 +271,82 @@ func buildFleetCapacity(inventory SystemInventoryResponse, settings SystemSettin
 		out.ReservedGenerators = projectReserved
 		out.ReservedSlots = projectReserved * settings.CapacityPlanning.Generator.MaxVUsers
 	}
+	out.ProjectSlots = buildFleetProjectSlotAccounting(settings, tests)
+	if out.ProjectID != "" {
+		for _, slots := range out.ProjectSlots {
+			if slots.ProjectID == out.ProjectID {
+				out.ProjectActiveSlots = slots.ActiveSlots
+				out.ProjectPendingSlots = slots.PendingSlots
+				break
+			}
+		}
+	}
 	out.CompatibleFeatures = sortedStringSet(featureSet)
 	out.RejectionReasons = sortedUniqueStrings(out.RejectionReasons)
 	return out
+}
+
+func buildFleetProjectSlotAccounting(settings SystemSettings, tests []*ManagedTest) []FleetProjectSlotAccounting {
+	byProject := map[string]*FleetProjectSlotAccounting{}
+	for _, reservation := range settings.CapacityPlanning.Reservations {
+		projectID := normalizeProjectID(reservation.ProjectID)
+		if projectID == "" {
+			continue
+		}
+		entry := fleetProjectSlotEntry(byProject, projectID)
+		entry.ReservedGenerators += reservation.ReservedGenerators
+		entry.ReservedSlots += reservation.ReservedGenerators * settings.CapacityPlanning.Generator.MaxVUsers
+	}
+	for _, test := range tests {
+		if test == nil {
+			continue
+		}
+		projectID := normalizeProjectID(test.ProjectID)
+		entry := fleetProjectSlotEntry(byProject, projectID)
+		switch test.Status {
+		case "RUNNING", "INITIALIZING", "PAUSED":
+			entry.ActiveSlots += test.TotalVUsers
+			entry.RunningTests++
+		case "PENDING":
+			entry.PendingSlots += test.TotalVUsers
+			entry.PendingTests++
+		}
+	}
+	out := make([]FleetProjectSlotAccounting, 0, len(byProject))
+	for _, entry := range byProject {
+		if entry.ReservedGenerators > 0 {
+			entry.FairShareTier = "reserved"
+		} else {
+			entry.FairShareTier = "shared"
+		}
+		if entry.ActiveSlots == 0 && entry.PendingSlots == 0 && entry.ReservedGenerators == 0 {
+			continue
+		}
+		out = append(out, *entry)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].PendingSlots != out[j].PendingSlots {
+			return out[i].PendingSlots > out[j].PendingSlots
+		}
+		if out[i].ActiveSlots != out[j].ActiveSlots {
+			return out[i].ActiveSlots > out[j].ActiveSlots
+		}
+		return out[i].ProjectID < out[j].ProjectID
+	})
+	return out
+}
+
+func fleetProjectSlotEntry(values map[string]*FleetProjectSlotAccounting, projectID string) *FleetProjectSlotAccounting {
+	projectID = normalizeProjectID(projectID)
+	if projectID == "" {
+		projectID = storage.DefaultProjectID
+	}
+	if existing, ok := values[projectID]; ok {
+		return existing
+	}
+	entry := &FleetProjectSlotAccounting{ProjectID: projectID}
+	values[projectID] = entry
+	return entry
 }
 
 func generatorCapacityRejectionReasons(generator GeneratorInventoryEntry, protocolName string) []string {
