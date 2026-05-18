@@ -68,6 +68,18 @@ func TestHandleGetSystemInventoryReturnsControllerAndGenerators(t *testing.T) {
 	if payload.Generators[0].AvailableCapacity != 9600 {
 		t.Fatalf("available_capacity = %d, want 9600", payload.Generators[0].AvailableCapacity)
 	}
+	if payload.Generators[0].DrainState != "active" {
+		t.Fatalf("drain_state = %q, want active", payload.Generators[0].DrainState)
+	}
+	if payload.Generators[0].CapacityState != "available" {
+		t.Fatalf("capacity_state = %q, want available", payload.Generators[0].CapacityState)
+	}
+	if payload.Generators[0].HealthScore != 100 {
+		t.Fatalf("health_score = %d, want 100", payload.Generators[0].HealthScore)
+	}
+	if payload.Generators[0].Version != "unknown" {
+		t.Fatalf("version = %q, want unknown", payload.Generators[0].Version)
+	}
 	if payload.Generators[0].CPULimitCores != 2 {
 		t.Fatalf("cpu_limit_cores = %v, want 2", payload.Generators[0].CPULimitCores)
 	}

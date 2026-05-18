@@ -102,12 +102,14 @@ Stormrunner can scale out predictably across generator pools and regions while m
 
 ### Epic P2.1: Generator Fleet Management
 
-| ID | Story | Size | Dependencies |
-| --- | --- | --- | --- |
-| P2.1 | Convert generator inventory into a formal fleet model with health, capacity, protocol support, region, version, and drain state | L | P1.1 |
-| P2.2 | Add generator drain/cordon workflows for maintenance without interrupting unrelated runs | M | P2.1 |
-| P2.3 | Add generator version compatibility checks between controller, DSL features, protocol plugins, and generator binaries | M | P2.1 |
-| P2.4 | Add fleet-level saturation alerts and placement rejection reasons to API, dashboard, and metrics | M | P2.1 |
+Reference artifact: `docs/ENTERPRISE_GENERATOR_FLEET_MODEL.md`.
+
+| ID | Story | Size | Dependencies | Status |
+| --- | --- | --- | --- | --- |
+| P2.1 | Convert generator inventory into a formal fleet model with health, capacity, protocol support, region, version, and drain state | L | P1.1 | In progress; inventory fields added |
+| P2.2 | Add generator drain/cordon workflows for maintenance without interrupting unrelated runs | M | P2.1 | Planned |
+| P2.3 | Add generator version compatibility checks between controller, DSL features, protocol plugins, and generator binaries | M | P2.1 | Planned |
+| P2.4 | Add fleet-level saturation alerts and placement rejection reasons to API, dashboard, and metrics | M | P2.1 | Planned |
 
 Acceptance criteria:
 - Placement failures explain whether capacity, protocol support, region, version, or drain state blocked the run.

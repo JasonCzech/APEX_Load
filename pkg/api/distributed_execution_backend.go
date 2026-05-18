@@ -98,10 +98,15 @@ func (b *distributedExecutionBackend) SystemInventory(ctx context.Context) []Gen
 	entries := make([]GeneratorInventoryEntry, 0, len(b.targets))
 	for _, target := range b.targets {
 		entry := GeneratorInventoryEntry{
-			Target:      target.Address,
-			GeneratorID: target.Address,
-			Region:      target.Region,
-			Status:      "unreachable",
+			Target:             target.Address,
+			GeneratorID:        target.Address,
+			Region:             target.Region,
+			Status:             "unreachable",
+			Version:            "unknown",
+			SupportedProtocols: defaultSupportedProtocols(),
+			DrainState:         "active",
+			CapacityState:      generatorCapacityState(0, 0, false),
+			HealthScore:        generatorHealthScore(false, "unavailable"),
 		}
 
 		probeCtx, cancel := context.WithTimeout(ctx, b.timeout)
@@ -129,6 +134,8 @@ func (b *distributedExecutionBackend) SystemInventory(ctx context.Context) []Gen
 			entry.CPULimitCores = snapshot.CPULimitCores
 			entry.MemoryLimitBytes = snapshot.MemoryLimitBytes
 			entry.MaxVUsers = snapshot.MaxVUsers
+			entry.CapacityState = generatorCapacityState(entry.AvailableCapacity, entry.MaxVUsers, true)
+			entry.HealthScore = generatorHealthScore(true, entry.CapacityState)
 		}
 
 		entries = append(entries, entry)
