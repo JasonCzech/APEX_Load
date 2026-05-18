@@ -93,6 +93,10 @@ type settingsPersistence interface {
 	GetSetting(key string) (string, error)
 }
 
+type usageSnapshotPersistence interface {
+	SaveUsageAccountingSnapshot(snapshot *storage.UsageAccountingSnapshot) error
+}
+
 type TestRunner struct {
 	tests         map[string]*ManagedTest
 	scripts       map[string]*StoredScript
@@ -111,6 +115,7 @@ type TestRunner struct {
 	historyStore  historyPersistence
 	archiveStore  archivePersistence
 	settingsStore settingsPersistence
+	usageStore    usageSnapshotPersistence
 	execution     testExecutionBackend
 	notifier      *notificationDispatcher
 	notifications atomic.Value
@@ -622,6 +627,7 @@ func NewTestRunner(maxTests int, hub *Hub, store storage.Store) *TestRunner {
 		historyStore:  store,
 		archiveStore:  store,
 		settingsStore: store,
+		usageStore:    store,
 		execution:     localExecutionBackend{},
 		notifier:      newNotificationDispatcher(nil),
 	}
@@ -4975,6 +4981,7 @@ func (tr *TestRunner) completeTestRun(test *ManagedTest, finalStatus string, end
 	if archiveRecord != nil {
 		tr.archives[test.ID] = archiveRecord
 	}
+	tr.captureUsageSnapshotForTerminalRunLocked(test.ID, test.ProjectID)
 	tr.mu.Unlock()
 	tr.updateStoredTestStatus(test.ID, finalStatus, &endTime, finalError)
 	if finalStatus == "FAILED" {
@@ -4984,6 +4991,33 @@ func (tr *TestRunner) completeTestRun(test *ManagedTest, finalStatus string, end
 	}
 	tr.broadcastEvent("test_complete", test)
 	tr.promotePendingTests()
+}
+
+func (tr *TestRunner) captureUsageSnapshotForTerminalRunLocked(testID string, projectID string) {
+	if tr == nil || tr.usageStore == nil {
+		return
+	}
+	projectID = normalizeProjectID(projectID)
+	tests := make([]*ManagedTest, 0, len(tr.tests))
+	for _, test := range tr.tests {
+		tests = append(tests, test)
+	}
+	usage := usageAccountingFromTests(projectID, tests)
+	payload, err := json.Marshal(usage)
+	if err != nil {
+		slog.Warn("failed to encode usage accounting snapshot", "test_id", testID, "project_id", projectID, "error", err)
+		return
+	}
+	now := time.Now().UTC()
+	if err := tr.usageStore.SaveUsageAccountingSnapshot(&storage.UsageAccountingSnapshot{
+		ID:          uuid.NewString(),
+		ProjectID:   projectID,
+		GeneratedAt: usage.GeneratedAt,
+		PayloadJSON: string(payload),
+		CreatedAt:   now,
+	}); err != nil {
+		slog.Warn("failed to save usage accounting snapshot", "test_id", testID, "project_id", projectID, "error", err)
+	}
 }
 
 func (tr *TestRunner) promotePendingTests() {

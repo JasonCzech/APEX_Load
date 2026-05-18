@@ -202,7 +202,10 @@ func usageSnapshotQueryInt(r *http.Request, key string, fallback int, max int) i
 }
 
 func (s *Server) usageAccounting(projectID string) UsageAccountingResponse {
-	tests := s.runner.ListTests()
+	return usageAccountingFromTests(projectID, s.runner.ListTests())
+}
+
+func usageAccountingFromTests(projectID string, tests []*ManagedTest) UsageAccountingResponse {
 	byProject := map[string]*UsageAccountingBucket{}
 	byProtocol := map[string]*UsageAccountingBucket{}
 	byRegion := map[string]*UsageAccountingBucket{}

@@ -39,6 +39,7 @@ type metricsStoreSpy struct {
 	approvalsByID         map[string]*storage.ScenarioScheduleApproval
 	leasesByName          map[string]*storage.SchedulerLease
 	auditEvents           []*storage.AuditEvent
+	usageSnapshots        []*storage.UsageAccountingSnapshot
 }
 
 var runnerTestProtocolCounter atomic.Uint64
@@ -377,6 +378,10 @@ func (s *metricsStoreSpy) ListAuditEvents(filter storage.AuditEventFilter) ([]*s
 	return out, nil
 }
 func (s *metricsStoreSpy) SaveUsageAccountingSnapshot(snapshot *storage.UsageAccountingSnapshot) error {
+	if snapshot != nil {
+		clone := *snapshot
+		s.usageSnapshots = append(s.usageSnapshots, &clone)
+	}
 	return nil
 }
 func (s *metricsStoreSpy) ListUsageAccountingSnapshots(projectID string, limit int, offset int) ([]*storage.UsageAccountingSnapshot, error) {
@@ -4674,6 +4679,40 @@ func TestDeleteTestRejectsPausedRuns(t *testing.T) {
 		// The lifecycle path should have emitted pause/resume/stop events; if this ever changes,
 		// the test should fail here rather than silently ignoring a missing active run path.
 		t.Fatal("expected lifecycle broadcasts during pause-delete-resume flow")
+	}
+}
+
+func TestRunnerCapturesUsageSnapshotWhenRunCompletes(t *testing.T) {
+	store := &metricsStoreSpy{}
+	runner := NewTestRunner(2, NewHub(), store)
+	test := &ManagedTest{
+		ID:          "usage-terminal",
+		Name:        "Usage Terminal",
+		Status:      "RUNNING",
+		ProjectID:   "project-a",
+		TotalVUsers: 4,
+		Duration:    time.Minute,
+		Groups:      []TestGroup{{Name: "buyers", Protocol: "http", VUsers: 4}},
+	}
+	runner.mu.Lock()
+	runner.tests[test.ID] = test
+	runner.mu.Unlock()
+
+	runner.completeTestRun(test, "COMPLETE", time.Now().UTC(), "", nil)
+
+	if len(store.usageSnapshots) != 1 {
+		t.Fatalf("usage snapshots = %#v, want one terminal-run snapshot", store.usageSnapshots)
+	}
+	snapshot := store.usageSnapshots[0]
+	if snapshot.ProjectID != "project-a" || snapshot.ID == "" || snapshot.PayloadJSON == "" {
+		t.Fatalf("snapshot = %#v, want project-scoped persisted payload", snapshot)
+	}
+	var usage UsageAccountingResponse
+	if err := json.Unmarshal([]byte(snapshot.PayloadJSON), &usage); err != nil {
+		t.Fatalf("unmarshal snapshot usage: %v", err)
+	}
+	if usage.ProjectID != "project-a" || usage.Totals.RunCount != 1 || usage.Totals.VUserSeconds != 240 {
+		t.Fatalf("usage snapshot payload = %#v, want completed project usage", usage)
 	}
 }
 

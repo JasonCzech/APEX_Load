@@ -47,7 +47,7 @@ Until then, use projects for governance and preserve team-like concepts as exter
 
 `GET /api/v1/system/usage/export` returns the same rollups as CSV for chargeback, capacity review, and external governance packs. The export includes one totals row plus project, protocol, and region bucket rows, with deterministic status-count encoding.
 
-`POST /api/v1/system/usage/snapshots` captures the current rollup into durable metadata storage for audit evidence, and `GET /api/v1/system/usage/snapshots` lists saved snapshots. Both support the same optional `project_id` scope as the live usage API; snapshot capture is system-admin only while snapshot reads follow the global reader roles.
+`POST /api/v1/system/usage/snapshots` captures the current rollup into durable metadata storage for audit evidence, and `GET /api/v1/system/usage/snapshots` lists saved snapshots. Both support the same optional `project_id` scope as the live usage API; snapshot capture is system-admin only while snapshot reads follow the global reader roles. The controller also captures a project-scoped snapshot when a run reaches a terminal completion path, giving usage history a durable checkpoint without depending on dashboard polling.
 
 This is intentionally a primitive, not a billing engine. It gives quota, fair-share, and capacity-planning work a shared source of usage facts without requiring raw archive replay.
 
@@ -55,7 +55,7 @@ Known limits for the initial primitive:
 
 - Region buckets use requested assignment metadata, not finalized per-generator placement.
 - Archive bytes are computed from local archive paths visible to the controller.
-- Snapshot capture is currently operator/API driven; the next hardening slice should add configurable cadence-based capture for terminal runs and scheduled governance windows.
+- Snapshot capture is currently operator/API and terminal-run driven; the next hardening slice should add configurable wall-clock cadence capture for scheduled governance windows.
 
 ## Audit Extensions
 
@@ -82,5 +82,5 @@ Archive retention is exposed as an operator-controlled dry-run/apply workflow:
 | --- | --- | --- |
 | P1.6 Ownership semantics | Complete | Ownership model table |
 | P1.7 First-class teams decision | Complete | Teams decision section |
-| P1.8 Usage accounting primitives | Complete for initial API surface; persistent snapshots remain future work | `/api/v1/system/usage` |
+| P1.8 Usage accounting primitives | Partial completion: live rollups, CSV export, manual snapshot capture/listing, terminal-run snapshot capture, and audit events are implemented; wall-clock cadence remains future work | `/api/v1/system/usage`, `/api/v1/system/usage/export`, `/api/v1/system/usage/snapshots` |
 | P1.9 Governance audit extensions | Defined; implementation continues with policy engines | Audit extensions section |
