@@ -1859,6 +1859,29 @@ func TestAuthoringTemplatesEndpointReturnsValidProtocolStarters(t *testing.T) {
 	if payload.Templates[0].RecommendedScenario.VUsers == 0 || payload.Templates[0].RecommendedScenario.Duration == "" {
 		t.Fatalf("recommended scenario = %#v, want runnable scenario hints", payload.Templates[0].RecommendedScenario)
 	}
+	allReq := httptest.NewRequest(http.MethodGet, "/api/v1/scripts/authoring/templates", nil)
+	allResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(allResp, allReq)
+	if allResp.Code != http.StatusOK {
+		t.Fatalf("all templates status = %d, want %d body=%s", allResp.Code, http.StatusOK, allResp.Body.String())
+	}
+	var allPayload struct {
+		Templates []AuthoringTemplate `json:"templates"`
+		Count     int                 `json:"count"`
+	}
+	if err := json.Unmarshal(allResp.Body.Bytes(), &allPayload); err != nil {
+		t.Fatalf("unmarshal all response: %v", err)
+	}
+	wantProtocols := map[string]bool{
+		"http": true, "browser": true, "soap": true, "java_http": true, "websocket": true,
+		"grpc": true, "jms-solace": true, "jmeter": true, "har": true, "devweb": true,
+	}
+	for _, template := range allPayload.Templates {
+		delete(wantProtocols, template.Protocol)
+	}
+	if len(wantProtocols) != 0 {
+		t.Fatalf("missing template protocols = %#v", wantProtocols)
+	}
 	for _, template := range authoringTemplateCatalog() {
 		if issues := validateScript(&template.Script); len(issues) != 0 {
 			t.Fatalf("template %s validation issues = %v", template.ID, issues)

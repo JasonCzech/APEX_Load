@@ -76,6 +76,11 @@ export default function ScriptCreateOptions({
                   <span className="script-create-type-badge">{template.protocol.toUpperCase()}</span>
                   <h3>{template.name}</h3>
                   <p>{template.description}</p>
+                  {template.tags?.length ? (
+                    <span className="script-create-template-tags">{template.use_case.replace(/_/g, ' ')} · {template.tags.slice(0, 3).join(', ')}</span>
+                  ) : (
+                    <span className="script-create-template-tags">{template.use_case.replace(/_/g, ' ')}</span>
+                  )}
                   {template.recommended_scenario && (
                     <small>{template.recommended_scenario.vusers || 1} VUsers / {template.recommended_scenario.duration || 'script default'}</small>
                   )}

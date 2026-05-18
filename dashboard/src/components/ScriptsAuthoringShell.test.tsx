@@ -175,6 +175,7 @@ describe('ScriptsAuthoringShell', () => {
         protocol: 'http',
         use_case: 'ci_smoke',
         description: 'Exercise one critical API path before release promotion.',
+        tags: ['api', 'ci', 'smoke'],
         script: {
           name: 'HTTP Smoke',
           version: '1.0.0',
@@ -202,6 +203,7 @@ describe('ScriptsAuthoringShell', () => {
     expect(apiMock.listAuthoringTemplates).toHaveBeenCalledTimes(1)
     expect(container.textContent).toContain('Starter Templates')
     expect(container.textContent).toContain('HTTP Smoke')
+    expect(container.textContent).toContain('ci smoke · api, ci, smoke')
     expect(container.textContent).toContain('3 VUsers / 2m')
 
     await clickButton('HTTP Smoke')

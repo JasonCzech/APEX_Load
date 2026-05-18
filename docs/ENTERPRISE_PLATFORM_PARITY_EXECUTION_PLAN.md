@@ -159,7 +159,7 @@ Acceptance criteria:
 | --- | --- | --- | --- | --- |
 | P3.6 | Expand correlation suggestions into guided variable creation and extractor insertion with preview diffs | L | P3.3 | Partial backend/UI complete: session preview/apply endpoint plus dashboard guided repair controls and diff summary |
 | P3.7 | Add data-source fit checks for required columns, exhaustion policy, uniqueness, and row-count versus load model | M | P3.3 | Partial backend/UI complete: validation response and health scoring cover source/column/row-count readiness and ScriptEditor surfaces fit evidence |
-| P3.8 | Add protocol-aware starter templates for common enterprise flows and CI/CD smoke tests | M | P3.2 | Partial backend/UI complete: HTTP, browser, and SOAP template catalog endpoint is surfaced in the dashboard create flow |
+| P3.8 | Add protocol-aware starter templates for common enterprise flows and CI/CD smoke tests | M | P3.2 | Complete for first-pass backend/UI catalog: HTTP, browser, SOAP, Java-over-HTTP, WebSocket, gRPC, JMS Solace, JMeter, HAR, and DevWeb starters are exposed by the controller-owned template endpoint and surfaced in the dashboard create flow with use-case/tag context |
 | P3.9 | Add AI-assisted script generation guardrails: provenance, validation, diff review, and replay-before-save requirements | L | P3.1 | Partial backend/UI complete: validation/health guardrails block promotion and ScriptEditor surfaces guardrail evidence |
 
 Acceptance criteria:
