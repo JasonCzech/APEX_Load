@@ -173,6 +173,87 @@ describe('NewTestPage', () => {
     }))
   })
 
+  it('filters and selects launch scenarios from workload cards', async () => {
+    apiMock.listScenarios.mockResolvedValue({
+      scenarios: [
+        {
+          id: 'scenario-1',
+          name: 'Checkout Smoke',
+          duration: '10m',
+          scenario_mode: 'vuser_driven',
+          scripts: [
+            { order: 1, name: 'Checkout', script_id: 'script-1', script_name: 'Checkout Script', protocol: 'http', vusers: 10 },
+          ],
+          script_count: 1,
+          created_at: '2026-05-12T20:00:00Z',
+          updated_at: '2026-05-12T20:00:00Z',
+          associated_releases: [],
+        },
+        {
+          id: 'scenario-2',
+          name: 'Java Batch Review',
+          duration: '45m',
+          scenario_mode: 'goal_oriented',
+          scripts: [
+            { order: 1, name: 'Batch', script_id: 'script-2', script_name: 'Batch Script', protocol: 'java_http', vusers: 40 },
+          ],
+          data_pools: [{ pool_id: 'pool-1', alias: 'orders', pool_name: 'Order Rows', selection_strategy: 'sequential' }],
+          script_count: 1,
+          created_at: '2026-05-13T20:00:00Z',
+          updated_at: '2026-05-13T20:00:00Z',
+          associated_releases: [{ id: 'release-1', name: 'PI29', application_id: 'app-1' }],
+        },
+      ],
+    })
+
+    await act(async () => {
+      root.render(
+        <NewTestPage
+          activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+          activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+          releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+          onSelectTest={vi.fn()}
+          onCreateRelease={vi.fn().mockResolvedValue(null)}
+        />,
+      )
+    })
+
+    await flushPromises()
+
+    expect(container.textContent).toContain('2 available scenarios')
+    const searchInput = Array.from(container.querySelectorAll('input[type="search"]')).find(input => input.getAttribute('placeholder')?.includes('Find by scenario')) as HTMLInputElement | undefined
+    expect(searchInput).toBeDefined()
+    if (!searchInput) return
+
+    await act(async () => {
+      setInputValue(searchInput, 'java_http')
+    })
+
+    expect(container.textContent).toContain('1 matching scenario')
+    expect(container.textContent).toContain('Java Batch Review')
+    expect(container.querySelectorAll('.new-test-scenario-card')).toHaveLength(1)
+
+    const javaCard = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Java Batch Review'))
+    expect(javaCard).toBeDefined()
+    if (!javaCard) return
+
+    await act(async () => {
+      javaCard.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(container.textContent).toContain('Goal Oriented')
+    expect(container.textContent).toContain('40')
+    expect(container.textContent).toContain('Batch Script')
+
+    await act(async () => {
+      setInputValue(searchInput, 'does-not-exist')
+    })
+
+    expect(container.textContent).toContain('0 matching scenarios')
+    expect(container.textContent).toContain('No scenarios match this search.')
+  })
+
   it('surfaces governed schedule policies and approval actions', async () => {
     apiMock.listScenarioSchedules.mockResolvedValue({
       schedules: [
@@ -371,4 +452,11 @@ async function flushPromises() {
     await Promise.resolve()
     await Promise.resolve()
   })
+}
+
+function setInputValue(input: HTMLInputElement, value: string) {
+  const prototype = Object.getPrototypeOf(input) as HTMLInputElement
+  const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set
+  setter?.call(input, value)
+  input.dispatchEvent(new Event('input', { bubbles: true }))
 }

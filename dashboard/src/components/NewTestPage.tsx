@@ -79,6 +79,33 @@ function formatRuntimeContinueOnError(scenario?: StoredScenario | null) {
   return value ? 'Enabled' : 'Disabled'
 }
 
+function totalScenarioVUsers(scenario?: StoredScenario | null) {
+  return scenario?.scripts.reduce((sum, script) => sum + (script.vusers || 0), 0) || 0
+}
+
+function scenarioProtocolList(scenario?: StoredScenario | null) {
+  const values = new Set((scenario?.scripts || []).map(script => script.protocol || 'http'))
+  return Array.from(values)
+}
+
+function formatScenarioWorkloadSummary(scenario: StoredScenario) {
+  const groupCount = scenario.scripts.length
+  const vusers = totalScenarioVUsers(scenario)
+  return `${groupCount} group${groupCount === 1 ? '' : 's'} · ${vusers} VUsers`
+}
+
+function scenarioSearchText(scenario: StoredScenario) {
+  return [
+    scenario.name,
+    scenario.duration,
+    scenario.scenario_mode,
+    ...scenarioProtocolList(scenario),
+    ...(scenario.scripts || []).map(script => `${script.name || ''} ${script.script_name || ''} ${script.script_id || ''}`),
+    ...(scenario.data_pools || []).map(pool => `${pool.alias} ${pool.pool_name || pool.pool_id}`),
+    ...(scenario.associated_releases || []).map(release => release.name),
+  ].filter(Boolean).join(' ').toLowerCase()
+}
+
 function buildDefaultScheduleDraft(scenario?: StoredScenario | null, releaseId?: string) {
   return {
     name: scenario ? `${scenario.name} Schedule` : '',
@@ -123,6 +150,7 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
   const [scheduleDraft, setScheduleDraft] = useState<ScheduleDraft>(buildDefaultScheduleDraft())
   const [runName, setRunName] = useState('')
   const [newReleaseName, setNewReleaseName] = useState('')
+  const [scenarioQuery, setScenarioQuery] = useState('')
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState('')
   const [effectiveAuthAccessResources, setEffectiveAuthAccessResources] = useState<DashboardAuthEffectiveAccessResource[]>([])
@@ -162,6 +190,11 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
 
   const scenario = useMemo(() => scenarios.find(item => item.id === scenarioId), [scenarios, scenarioId])
   const release = useMemo(() => releases.find(item => item.id === releaseId), [releases, releaseId])
+  const filteredScenarios = useMemo(() => {
+    const query = scenarioQuery.trim().toLowerCase()
+    if (!query) return scenarios
+    return scenarios.filter(item => scenarioSearchText(item).includes(query))
+  }, [scenarioQuery, scenarios])
   const refreshSchedules = useCallback(async (currentScenarioId: string) => {
     if (!currentScenarioId) {
       setSchedules([])
@@ -177,11 +210,8 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
       setScheduleLoading(false)
     }
   }, [api])
-  const totalVUsers = useMemo(() => scenario?.scripts.reduce((sum, script) => sum + (script.vusers || 0), 0) || 0, [scenario])
-  const protocols = useMemo(() => {
-    const values = new Set((scenario?.scripts || []).map(script => script.protocol || 'http'))
-    return Array.from(values)
-  }, [scenario])
+  const totalVUsers = useMemo(() => totalScenarioVUsers(scenario), [scenario])
+  const protocols = useMemo(() => scenarioProtocolList(scenario), [scenario])
   const associatedReleases = useMemo(() => scenario?.associated_releases || [], [scenario])
   const readiness = useMemo(() => {
     const checks = [
@@ -216,6 +246,11 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
     const created = await onCreateRelease(name)
     if (created) setReleaseId(created.id)
     setNewReleaseName('')
+  }
+
+  const selectScenario = (nextScenarioId: string) => {
+    setScenarioId(nextScenarioId)
+    setRunName('')
   }
 
   const createRun = async (start: boolean) => {
@@ -787,10 +822,47 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
                   <span className="setting-label">Reusable Scenario</span>
                   <span className="setting-desc">Scenarios define scripts and runtime shape</span>
                 </div>
-                <select className="settings-input" value={scenarioId} onChange={(event) => { setScenarioId(event.target.value); setRunName('') }}>
+                <select className="settings-input" value={scenarioId} onChange={(event) => selectScenario(event.target.value)}>
                   <option value="">Select scenario</option>
                   {scenarios.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
                 </select>
+              </div>
+              <div className="new-test-scenario-picker">
+                <label className="library-search new-test-scenario-search">
+                  <span>Search scenarios</span>
+                  <input
+                    type="search"
+                    value={scenarioQuery}
+                    onChange={(event) => setScenarioQuery(event.target.value)}
+                    placeholder="Find by scenario, script, protocol, release, or data pool..."
+                  />
+                </label>
+                <div className="new-test-scenario-count">
+                  {scenarioQuery.trim() ? `${filteredScenarios.length} matching scenario${filteredScenarios.length === 1 ? '' : 's'}` : `${scenarios.length} available scenario${scenarios.length === 1 ? '' : 's'}`}
+                </div>
+                {filteredScenarios.length > 0 ? (
+                  <div className="new-test-scenario-card-grid">
+                    {filteredScenarios.map(item => {
+                      const itemProtocols = scenarioProtocolList(item)
+                      const selected = item.id === scenarioId
+                      return (
+                        <button
+                          type="button"
+                          key={item.id}
+                          className={`new-test-scenario-card ${selected ? 'selected' : ''}`}
+                          onClick={() => selectScenario(item.id)}
+                        >
+                          <span className="new-test-scenario-card-title">{item.name}</span>
+                          <span className="new-test-scenario-card-meta">{formatScenarioWorkloadSummary(item)}</span>
+                          <span className="new-test-scenario-card-meta">{item.duration || 'No duration'} · {itemProtocols.length ? itemProtocols.join(', ') : 'No protocol'}</span>
+                          <span className="new-test-scenario-card-meta">{(item.associated_releases || []).length} associated release{(item.associated_releases || []).length === 1 ? '' : 's'}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <div className="new-test-empty compact">No scenarios match this search.</div>
+                )}
               </div>
               <div className="setting-row">
                 <div className="setting-info">
