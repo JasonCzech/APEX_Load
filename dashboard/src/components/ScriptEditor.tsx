@@ -2405,31 +2405,31 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         <div className="editor-body">
           <div className="editor-support-toolbar" aria-label="Script support tools">
             <button type="button" className="editor-support-button" onClick={() => openEditorSection('config')}>
-              <strong>Script Configuration</strong>
+              <strong>Config</strong>
               <span>{script.protocol || 'http'} · v{script.version || '1.0.0'}</span>
             </button>
             <button type="button" className="editor-support-button" onClick={() => openEditorSection('runtime')}>
-              <strong>RTS & Runtime</strong>
+              <strong>Runtime / RTS</strong>
               <span>{script.config.run_logic?.iterations ? `${script.config.run_logic.iterations} iterations` : 'Open runtime settings'}</span>
             </button>
             <button type="button" className="editor-support-button" onClick={() => setIsParameterDialogOpen(true)}>
-              <strong>Parameter Data</strong>
+              <strong>Parameters</strong>
               <span>{script.parameters?.length || 0} parameters · {script.data_sources?.length || 0} sources</span>
             </button>
             <button type="button" className="editor-support-button" onClick={() => openEditorSection('replay')}>
-              <strong>Replay Output</strong>
+              <strong>Replay</strong>
               <span>{replaying ? 'Replay running' : replayReport ? `${replayReport.events.length} events` : 'No replay yet'}</span>
             </button>
             {importMetadata && (
               <button type="button" className="editor-support-button" onClick={() => openEditorSection('import')}>
-                <strong>Imported Metadata</strong>
+                <strong>Import</strong>
                 <span>{migrationSuggestions.length} suggestions</span>
               </button>
             )}
           </div>
 
           {/* Script Config Panel */}
-          <div className={`config-panel editor-support-dialog ${openSections['config'] ? 'open' : ''}`} role="dialog" aria-modal="true" aria-label="Script Configuration">
+          <div className={`config-panel editor-support-dialog support-dialog-config ${openSections['config'] ? 'open' : ''}`} role="dialog" aria-modal="true" aria-label="Script Configuration">
             <button className="panel-header-toggle" onClick={() => toggleSection('config')}>
               <h3 className="panel-title">Script Configuration</h3>
               <span className="chevron">Close</span>
@@ -2555,7 +2555,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
             )}
           </div>
 
-          <div className={`config-panel replay-panel editor-support-dialog ${openSections['replay'] ? 'open' : ''}`} role="dialog" aria-modal="true" aria-label="Replay Output">
+          <div className={`config-panel replay-panel editor-support-dialog support-dialog-replay ${replayReport ? 'has-report' : ''} ${openSections['replay'] ? 'open' : ''}`} role="dialog" aria-modal="true" aria-label="Replay Output">
             <button className="panel-header-toggle" onClick={() => toggleSection('replay')}>
               <div className="panel-title-row">
                 <div>
@@ -3000,7 +3000,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
           </div>
 
           {importMetadata && (
-            <div className={`import-metadata-panel config-panel editor-support-dialog ${openSections['import'] ? 'open' : ''}`} style={{ padding: 0 }} role="dialog" aria-modal="true" aria-label="Imported Metadata">
+            <div className={`import-metadata-panel config-panel editor-support-dialog support-dialog-import ${openSections['import'] ? 'open' : ''}`} style={{ padding: 0 }} role="dialog" aria-modal="true" aria-label="Imported Metadata">
               <button className="panel-header-toggle" onClick={() => toggleSection('import')} style={{ padding: '16px 20px' }}>
                 <div className="import-metadata-header" style={{ marginBottom: 0 }}>
                   <div>
@@ -3211,7 +3211,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
           )}
 
           {/* Runtime Settings Panels */}
-          <div className={`runtime-settings config-panel editor-support-dialog ${openSections['runtime'] ? 'open' : ''}`} style={{ padding: 0 }} role="dialog" aria-modal="true" aria-label="Runtime Settings">
+          <div className={`runtime-settings config-panel editor-support-dialog support-dialog-runtime ${openSections['runtime'] ? 'open' : ''}`} style={{ padding: 0 }} role="dialog" aria-modal="true" aria-label="Runtime Settings">
             <button className="panel-header-toggle" onClick={() => toggleSection('runtime')} style={{ padding: '16px 20px', borderBottom: openSections['runtime'] ? '1px solid var(--border)' : 'none' }}>
               <h3 className="panel-title">Runtime Settings & RTS</h3>
               <span className="chevron">Close</span>

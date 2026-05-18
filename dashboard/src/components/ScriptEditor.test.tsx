@@ -233,19 +233,25 @@ describe('ScriptEditor', () => {
       root.render(<ScriptEditor initialScript={initialScript} />)
     })
 
-    expect(container.textContent).toContain('Script Configuration')
-    expect(container.textContent).toContain('RTS & Runtime')
-    expect(container.textContent).toContain('Parameter Data')
-    expect(container.textContent).toContain('Replay Output')
+    const toolbar = container.querySelector('.editor-support-toolbar')
+    expect(toolbar).toBeTruthy()
+    expect(toolbar?.textContent).toContain('Config')
+    expect(toolbar?.textContent).toContain('Runtime / RTS')
+    expect(toolbar?.textContent).toContain('Parameters')
+    expect(toolbar?.textContent).toContain('Replay')
+    expect(toolbar?.textContent).not.toContain('Replay Output')
 
     const configDialog = container.querySelector('[aria-label="Script Configuration"]')
     const replayDialog = container.querySelector('[aria-label="Replay Output"]')
     const runtimeDialog = container.querySelector('[aria-label="Runtime Settings"]')
+    expect(configDialog?.className).toContain('support-dialog-config')
+    expect(replayDialog?.className).toContain('support-dialog-replay')
+    expect(runtimeDialog?.className).toContain('support-dialog-runtime')
     expect(configDialog?.className).not.toContain('open')
     expect(replayDialog?.className).not.toContain('open')
     expect(runtimeDialog?.className).not.toContain('open')
 
-    const configLauncher = Array.from(container.querySelectorAll('.editor-support-button')).find(button => button.textContent?.includes('Script Configuration'))
+    const configLauncher = Array.from(container.querySelectorAll('.editor-support-button')).find(button => button.textContent?.includes('Config'))
     expect(configLauncher).toBeDefined()
     if (!configLauncher) return
 

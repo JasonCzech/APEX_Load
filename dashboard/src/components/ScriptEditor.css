@@ -115,21 +115,26 @@
   background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden;
 }
 .editor-support-toolbar {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 10px;
-  align-items: stretch;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-card);
 }
 .editor-support-button {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-  padding: 11px 12px;
+  align-items: center;
+  gap: 8px;
+  min-width: fit-content;
+  max-width: 230px;
+  padding: 7px 10px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 6px;
   color: var(--text-secondary);
-  background: var(--bg-card);
+  background: transparent;
   text-align: left;
   cursor: pointer;
 }
@@ -140,11 +145,13 @@
 .editor-support-button strong {
   color: var(--text-primary);
   font-size: 12px;
+  white-space: nowrap;
 }
 .editor-support-button span {
   overflow: hidden;
   color: var(--text-muted);
   font-size: 11px;
+  max-width: 128px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -153,16 +160,38 @@
 }
 .editor-support-dialog.open {
   position: fixed;
-  inset: 24px;
+  top: clamp(24px, 6vh, 64px);
+  left: 50%;
   z-index: 30;
   display: flex;
   flex-direction: column;
-  width: min(1180px, calc(100vw - 48px));
-  max-height: calc(100vh - 48px);
-  margin: auto;
+  width: min(var(--support-dialog-width, 860px), calc(100vw - 48px));
+  max-height: min(var(--support-dialog-max-height, 82vh), calc(100vh - 48px));
+  margin: 0;
   padding: 0;
   border-radius: 14px;
   box-shadow: 0 24px 54px rgba(15, 23, 42, 0.34);
+  transform: translateX(-50%);
+}
+.support-dialog-config {
+  --support-dialog-width: 720px;
+  --support-dialog-max-height: 78vh;
+}
+.support-dialog-replay {
+  --support-dialog-width: 760px;
+  --support-dialog-max-height: 72vh;
+}
+.support-dialog-replay.has-report {
+  --support-dialog-width: 980px;
+  --support-dialog-max-height: 86vh;
+}
+.support-dialog-runtime {
+  --support-dialog-width: 1040px;
+  --support-dialog-max-height: 86vh;
+}
+.support-dialog-import {
+  --support-dialog-width: 980px;
+  --support-dialog-max-height: 86vh;
 }
 .editor-support-dialog > .panel-header-toggle {
   flex-shrink: 0;
@@ -1855,7 +1884,8 @@
   overflow: hidden;
 }
 .parameter-data-dialog {
-  min-height: min(760px, calc(100vh - 48px));
+  width: min(1080px, calc(100vw - 48px));
+  min-height: min(620px, calc(100vh - 48px));
 }
 .editor-dialog-header {
   display: flex;
