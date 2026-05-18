@@ -5,7 +5,7 @@ import { StoredScript, TestSummary } from '../types'
 
 type SortValue = string | number
 
-export type ScriptLibrarySortField = 'name' | 'protocol' | 'version' | 'created_at' | 'scenario_count' | 'associated_releases' | 'scenario_run_releases' | 'last_run_at'
+export type ScriptLibrarySortField = 'name' | 'protocol' | 'version' | 'authoring_health' | 'created_at' | 'scenario_count' | 'associated_releases' | 'scenario_run_releases' | 'last_run_at'
 export type ScriptRunSortField = 'name' | 'status' | 'scenario_id' | 'release_id' | 'start_time' | 'duration'
 
 interface UseScriptsLibraryModelOptions {
@@ -41,6 +41,9 @@ function getScriptSortValue(script: StoredScript, field: ScriptLibrarySortField)
   }
   if (field === 'scenario_run_releases') {
     return (script.scenario_run_releases || []).length
+  }
+  if (field === 'authoring_health') {
+    return script.authoring_health?.score ?? -1
   }
   return String(script[field] || '').toLowerCase()
 }

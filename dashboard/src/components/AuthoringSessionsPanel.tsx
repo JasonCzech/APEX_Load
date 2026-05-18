@@ -52,9 +52,19 @@ export default function AuthoringSessionsPanel({
               <span className={`authoring-session-status ${session.status}`}>{formatStatus(session.status)}</span>
               <h4>{session.name}</h4>
               <p>{formatSource(session.source)} · Updated {formatDate(session.updated_at)}</p>
-              {formatReviewValue(session.review_state?.approval_health_status) && (
-                <small>Last approval health: {formatReviewValue(session.review_state?.approval_health_status)}</small>
-              )}
+              <div className="authoring-session-health-row">
+                {formatReviewValue(session.review_state?.approval_health_status) && (
+                  <span className={`script-health-token ${healthTone(formatReviewValue(session.review_state?.approval_health_status))}`}>
+                    Last approval: {formatReviewValue(session.review_state?.approval_health_status)}
+                  </span>
+                )}
+                {Array.isArray(session.review_state?.pending_repairs) && (
+                  <span className="script-health-token warning">{session.review_state.pending_repairs.length} pending repair{session.review_state.pending_repairs.length === 1 ? '' : 's'}</span>
+                )}
+                {session.draft?.metadata?.import?.source && (
+                  <span className="script-health-token">{formatSource(session.draft.metadata.import.source)}</span>
+                )}
+              </div>
             </div>
             <div className="authoring-session-actions">
               <button className="btn btn-secondary" type="button" onClick={() => onResume(session)} disabled={!session.draft}>Resume</button>
@@ -121,7 +131,7 @@ export default function AuthoringSessionsPanel({
                   <div className="authoring-correlation-preview">
                     <div>
                       <strong>{correlationPreviews[session.id].applied ? 'Applied' : 'Preview'}</strong>
-                      <span>{correlationPreviews[session.id].changes.length} changes · health {correlationPreviews[session.id].authoring_health.status}</span>
+                      <span>{correlationPreviews[session.id].changes.length} changes · health {correlationPreviews[session.id].authoring_health.status} · {correlationPreviews[session.id].authoring_health.score}</span>
                     </div>
                     <ul>
                       {correlationPreviews[session.id].changes.slice(0, 4).map(change => (
@@ -167,6 +177,13 @@ function formatReviewValue(value: unknown): string {
     return ''
   }
   return String(value)
+}
+
+function healthTone(value: string): string {
+  if (value === 'blocked') return 'danger'
+  if (value === 'needs_review') return 'warning'
+  if (value === 'ready' || value === 'healthy') return 'healthy'
+  return ''
 }
 
 function formFor(session: AuthoringSession, forms: Record<string, CorrelationFormState>): CorrelationFormState {

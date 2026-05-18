@@ -777,6 +777,51 @@
   color: var(--danger);
 }
 
+.script-health-inline,
+.authoring-session-health-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 5px;
+}
+
+.script-health-token {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-muted);
+  background: var(--bg-primary);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.script-health-token.healthy {
+  border-color: rgba(34, 197, 94, 0.28);
+  color: var(--success);
+  background: rgba(34, 197, 94, 0.1);
+}
+
+.script-health-token.warning {
+  border-color: rgba(245, 158, 11, 0.3);
+  color: var(--warning);
+  background: rgba(245, 158, 11, 0.12);
+}
+
+.script-health-token.danger {
+  border-color: rgba(239, 68, 68, 0.3);
+  color: var(--danger);
+  background: rgba(239, 68, 68, 0.12);
+}
+
+.script-health-detail {
+  margin-bottom: 12px;
+}
+
 .text-success { color: var(--success); }
 .text-danger { color: var(--danger); }
 .text-muted { color: var(--text-muted); }

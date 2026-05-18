@@ -208,6 +208,23 @@ describe('ScriptsPage', () => {
     expect(container.textContent).toContain('Scripts')
     expect(container.textContent).toContain('Existing Script')
     expect(container.textContent).toContain('Needs Review · 72')
+    expect(container.textContent).toContain('1 warnings')
+
+    const existingRow = Array.from(container.querySelectorAll('tr')).find(row => row.textContent?.includes('Existing Script'))
+    expect(existingRow).toBeDefined()
+    if (!existingRow) {
+      return
+    }
+
+    await act(async () => {
+      existingRow.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushPromises()
+
+    expect(container.textContent).toContain('Authoring Health Inputs')
+    expect(container.textContent).toContain('warnings · warning · 1')
+    expect(container.textContent).toContain('Validation warnings need review before promotion.')
 
     const createButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('+ Create Script'))
     expect(createButton).toBeDefined()
@@ -632,7 +649,7 @@ describe('ScriptsPage', () => {
           config: { base_url: 'https://checkout.example.com' },
           actions: [],
         },
-        review_state: {},
+        review_state: { approval_health_status: 'needs_review', pending_repairs: ['correlation'] },
         created_at: '2026-05-18T13:00:00Z',
         updated_at: '2026-05-18T13:05:00Z',
         last_accessed_at: '2026-05-18T13:05:00Z',
@@ -661,6 +678,8 @@ describe('ScriptsPage', () => {
     expect(container.textContent).toContain('Authoring Sessions')
     expect(container.textContent).toContain('Migrated checkout review')
     expect(container.textContent).toContain('Loadrunner')
+    expect(container.textContent).toContain('Last approval: needs_review')
+    expect(container.textContent).toContain('1 pending repair')
 
     const resumeButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Resume'))
     expect(resumeButton).toBeDefined()
@@ -782,6 +801,7 @@ describe('ScriptsPage', () => {
     }))
     expect(container.textContent).toContain('Preview')
     expect(container.textContent).toContain('2 changes')
+    expect(container.textContent).toContain('health ready · 96')
     expect(container.textContent).toContain('actions[1].body')
 
     const applyButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Apply Repair'))
