@@ -1512,6 +1512,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     setError('')
     setSuccess('')
     setWarnings([])
+    setOpenSections(prev => ({ ...prev, replay: true }))
     setReplaying(true)
     let browserSessionStarted = false
     try {
@@ -2245,6 +2246,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
 
   const scanForAutoParameters = () => {
     const candidates = buildAutoParameterCandidates(script)
+    setOpenSections(prev => ({ ...prev, config: true }))
     setParameterCandidates(candidates)
     if (candidates.length === 0) {
       setSuccess('No strong parameterization candidates were detected.')
@@ -2401,13 +2403,38 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         </div>
       ) : (
         <div className="editor-body">
+          <div className="editor-support-toolbar" aria-label="Script support tools">
+            <button type="button" className="editor-support-button" onClick={() => openEditorSection('config')}>
+              <strong>Script Configuration</strong>
+              <span>{script.protocol || 'http'} · v{script.version || '1.0.0'}</span>
+            </button>
+            <button type="button" className="editor-support-button" onClick={() => openEditorSection('runtime')}>
+              <strong>RTS & Runtime</strong>
+              <span>{script.config.run_logic?.iterations ? `${script.config.run_logic.iterations} iterations` : 'Open runtime settings'}</span>
+            </button>
+            <button type="button" className="editor-support-button" onClick={() => setIsParameterDialogOpen(true)}>
+              <strong>Parameter Data</strong>
+              <span>{script.parameters?.length || 0} parameters · {script.data_sources?.length || 0} sources</span>
+            </button>
+            <button type="button" className="editor-support-button" onClick={() => openEditorSection('replay')}>
+              <strong>Replay Output</strong>
+              <span>{replaying ? 'Replay running' : replayReport ? `${replayReport.events.length} events` : 'No replay yet'}</span>
+            </button>
+            {importMetadata && (
+              <button type="button" className="editor-support-button" onClick={() => openEditorSection('import')}>
+                <strong>Imported Metadata</strong>
+                <span>{migrationSuggestions.length} suggestions</span>
+              </button>
+            )}
+          </div>
+
           {/* Script Config Panel */}
-          <div className={`config-panel ${openSections['config'] ? 'open' : ''}`}>
+          <div className={`config-panel editor-support-dialog ${openSections['config'] ? 'open' : ''}`} role="dialog" aria-modal="true" aria-label="Script Configuration">
             <button className="panel-header-toggle" onClick={() => toggleSection('config')}>
               <h3 className="panel-title">Script Configuration</h3>
-              <span className="chevron">{openSections['config'] ? '▾' : '▸'}</span>
+              <span className="chevron">Close</span>
             </button>
-            {openSections['config'] && (
+            {(
               <div className="panel-body">
                 <div className="form-grid">
                   <label>
@@ -2528,16 +2555,16 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
             )}
           </div>
 
-          <div className={`config-panel replay-panel ${openSections['replay'] ? 'open' : ''}`}>
+          <div className={`config-panel replay-panel editor-support-dialog ${openSections['replay'] ? 'open' : ''}`} role="dialog" aria-modal="true" aria-label="Replay Output">
             <button className="panel-header-toggle" onClick={() => toggleSection('replay')}>
               <div className="panel-title-row">
                 <div>
                   <h3 className="panel-title">Replay Output {replaying && <span className="replaying-dot" />}</h3>
                 </div>
               </div>
-              <span className="chevron">{openSections['replay'] ? '▾' : '▸'}</span>
+              <span className="chevron">Close</span>
             </button>
-            {openSections['replay'] && (
+            {(
               <div className="panel-body">
                 <p className="replay-panel-subtitle">{isBrowserScript ? 'Start an asynchronous browser replay session and inspect live events, failures, and final replay state.' : 'Run the current draft once and inspect resolved requests, extractions, failures, and final replay variables.'}</p>
                 <div className="replay-options-grid">
@@ -2973,7 +3000,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
           </div>
 
           {importMetadata && (
-            <div className={`import-metadata-panel config-panel ${openSections['import'] ? 'open' : ''}`} style={{ padding: 0 }}>
+            <div className={`import-metadata-panel config-panel editor-support-dialog ${openSections['import'] ? 'open' : ''}`} style={{ padding: 0 }} role="dialog" aria-modal="true" aria-label="Imported Metadata">
               <button className="panel-header-toggle" onClick={() => toggleSection('import')} style={{ padding: '16px 20px' }}>
                 <div className="import-metadata-header" style={{ marginBottom: 0 }}>
                   <div>
@@ -2981,10 +3008,10 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                   </div>
                   <span className="import-source-chip">{importMetadata.source || 'loadrunner'}</span>
                 </div>
-                <span className="chevron">{openSections['import'] ? '▾' : '▸'}</span>
+                <span className="chevron">Close</span>
               </button>
 
-              {openSections['import'] && (
+              {(
                 <div className="panel-body" style={{ padding: '0 20px 20px' }}>
                   <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 14 }}>This script retains source-specific import metadata that Stormrunner uses during review but does not edit directly.</p>
                   <div className="import-metadata-grid">
@@ -3184,12 +3211,12 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
           )}
 
           {/* Runtime Settings Panels */}
-          <div className={`runtime-settings config-panel ${openSections['runtime'] ? 'open' : ''}`} style={{ padding: 0 }}>
+          <div className={`runtime-settings config-panel editor-support-dialog ${openSections['runtime'] ? 'open' : ''}`} style={{ padding: 0 }} role="dialog" aria-modal="true" aria-label="Runtime Settings">
             <button className="panel-header-toggle" onClick={() => toggleSection('runtime')} style={{ padding: '16px 20px', borderBottom: openSections['runtime'] ? '1px solid var(--border)' : 'none' }}>
-              <h3 className="panel-title">Runtime Settings</h3>
-              <span className="chevron">{openSections['runtime'] ? '▾' : '▸'}</span>
+              <h3 className="panel-title">Runtime Settings & RTS</h3>
+              <span className="chevron">Close</span>
             </button>
-            {openSections['runtime'] && (
+            {(
               <div className="runtime-settings-grid" style={{ padding: 20 }}>
                 {/* Think Time */}
                 <div className={`settings-section ${openSections['think'] ? 'open' : ''}`}>
@@ -3518,11 +3545,11 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                   </div>
                 )}
 
-                {/* HTTP Protocol */}
+                {/* HTTP transport */}
                 {!isJmsScript && <div className={`settings-section ${openSections['http'] ? 'open' : ''}`}>
                   <button className="section-toggle" onClick={() => toggleSection('http')}>
                     <span className="section-icon">{'\ud83c\udf10'}</span>
-                    <span className="section-label">HTTP Protocol</span>
+                    <span className="section-label">HTTP Transport</span>
                     <span className="section-summary">
                       {script.config.http?.proxy?.url ? 'Proxy configured' : script.config.http?.auth?.type ? `Auth: ${script.config.http.auth.type}` : 'Default'}
                     </span>
@@ -5668,11 +5695,11 @@ function useScriptEditorState(initialScript?: ScriptData | null) {
   const [jsonMode, setJsonMode] = useState(false)
   const [jsonText, setJsonText] = useState('')
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
-    config: true,
+    config: false,
     actions: true,
     runtime: false,
-    import: true,
-    replay: true,
+    import: false,
+    replay: false,
   })
   const [isParameterDialogOpen, setIsParameterDialogOpen] = useState(false)
   const [pendingParameterDraft, setPendingParameterDraft] = useState<ActionEditorParameterDraft | null>(null)

@@ -228,6 +228,42 @@ describe('ScriptEditor', () => {
     vi.clearAllMocks()
   })
 
+  it('keeps support panels behind dialog launchers so the action workspace remains primary', async () => {
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={initialScript} />)
+    })
+
+    expect(container.textContent).toContain('Script Configuration')
+    expect(container.textContent).toContain('RTS & Runtime')
+    expect(container.textContent).toContain('Parameter Data')
+    expect(container.textContent).toContain('Replay Output')
+
+    const configDialog = container.querySelector('[aria-label="Script Configuration"]')
+    const replayDialog = container.querySelector('[aria-label="Replay Output"]')
+    const runtimeDialog = container.querySelector('[aria-label="Runtime Settings"]')
+    expect(configDialog?.className).not.toContain('open')
+    expect(replayDialog?.className).not.toContain('open')
+    expect(runtimeDialog?.className).not.toContain('open')
+
+    const configLauncher = Array.from(container.querySelectorAll('.editor-support-button')).find(button => button.textContent?.includes('Script Configuration'))
+    expect(configLauncher).toBeDefined()
+    if (!configLauncher) return
+
+    await act(async () => {
+      configLauncher.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(configDialog?.className).toContain('open')
+
+    const closeButton = configDialog?.querySelector('.panel-header-toggle')
+    expect(closeButton).toBeTruthy()
+    await act(async () => {
+      closeButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(configDialog?.className).not.toContain('open')
+  })
+
   it('renders the provided script model without fetching from the API', async () => {
     await act(async () => {
       root.render(<ScriptEditor initialScript={initialScript} />)

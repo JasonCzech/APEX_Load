@@ -114,6 +114,64 @@
 .config-panel, .actions-layout {
   background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden;
 }
+.editor-support-toolbar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  align-items: stretch;
+}
+.editor-support-button {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  background: var(--bg-card);
+  text-align: left;
+  cursor: pointer;
+}
+.editor-support-button:hover {
+  border-color: rgba(99, 102, 241, 0.32);
+  background: rgba(99, 102, 241, 0.06);
+}
+.editor-support-button strong {
+  color: var(--text-primary);
+  font-size: 12px;
+}
+.editor-support-button span {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.editor-support-dialog {
+  display: none;
+}
+.editor-support-dialog.open {
+  position: fixed;
+  inset: 24px;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  width: min(1180px, calc(100vw - 48px));
+  max-height: calc(100vh - 48px);
+  margin: auto;
+  padding: 0;
+  border-radius: 14px;
+  box-shadow: 0 24px 54px rgba(15, 23, 42, 0.34);
+}
+.editor-support-dialog > .panel-header-toggle {
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+}
+.editor-support-dialog > .panel-body,
+.editor-support-dialog > .runtime-settings-grid {
+  overflow: auto;
+}
 .import-metadata-panel {
   background: var(--bg-card);
   border: 1px solid var(--border);
