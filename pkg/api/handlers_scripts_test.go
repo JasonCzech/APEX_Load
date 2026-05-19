@@ -1100,6 +1100,90 @@ TouchMode=1
 	}
 }
 
+func TestHandleImportLoadRunnerSurfacesTruClientWeb2ReviewSections(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	var body bytes.Buffer
+	writer := zip.NewWriter(&body)
+	addFile := func(name string, content string) {
+		entry, err := writer.Create(name)
+		if err != nil {
+			t.Fatalf("Create(%q) returned error: %v", name, err)
+		}
+		if _, err := entry.Write([]byte(content)); err != nil {
+			t.Fatalf("Write(%q) returned error: %v", name, err)
+		}
+	}
+	addFile("Web2/Web2.usr", `[General]
+Type=TruClient 2.0 - Web
+RuntimeSettings=default.cfg
+`)
+	addFile("Web2/default.xml", encodeUTF16LEForTruClientZip(`<?xml version="1.0" encoding="utf-16"?>
+<truScript>
+  <step type="block" action="action" actionName="Action">
+    <step type="testObject" action="Navigate" stepId="nav-1" index="1" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://shop.example.com\&quot;&quot;}}" />
+    <step type="testObject" action="Click" stepId="click-1" index="2" arguments="{&quot;Selector&quot;:{&quot;value&quot;:&quot;\&quot;#cart\&quot;&quot;}}" />
+    <step type="util" action="Evaluate JavaScript" stepId="js-1" index="3" arguments="{&quot;Code&quot;:{&quot;value&quot;:&quot;window.app.checkout()&quot;}}" />
+  </step>
+</truScript>`))
+	addFile("Web2/ObjectRepository/MainObjects.xml", "<objects><object name=\"Cart\" /></objects>")
+	addFile("Web2/parameters/users.dat", "username,password\nqa,secret\n")
+	addFile("Web2/default.cfg", "[ThinkTime]\nOptions=RECORDED\n")
+	if err := writer.Close(); err != nil {
+		t.Fatalf("zip.Close returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/loadrunner", bytes.NewReader(body.Bytes()))
+	req.Header.Set("Content-Type", "application/zip")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var result struct {
+		Script struct {
+			Protocol string `json:"protocol"`
+			Actions  []struct {
+				Type string `json:"type"`
+			} `json:"actions"`
+		} `json:"script"`
+		Warnings       []string `json:"warnings"`
+		ReviewSections []struct {
+			Key      string   `json:"key"`
+			Severity string   `json:"severity"`
+			Items    []string `json:"items"`
+		} `json:"review_sections"`
+		Summary map[string]any `json:"summary"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if result.Script.Protocol != "browser" || len(result.Script.Actions) != 2 {
+		t.Fatalf("script = %#v, want browser draft with two converted actions", result.Script)
+	}
+	if !containsString(result.Warnings, "TruClient 2.0 - Web import is review-only; validate selectors, waits, runtime settings, and replay evidence before promotion.") {
+		t.Fatalf("warnings = %#v, want review-only warning", result.Warnings)
+	}
+	assertReviewSection(t, result.ReviewSections, "web2_profile_summary", "warning", "Source script type: TruClient 2.0 - Web")
+	assertReviewSection(t, result.ReviewSections, "web2_unsupported_source_fragments", "warning", "Evaluate JavaScript #3: Review-only TruClient step requires replay or guided repair before approval.")
+	assertReviewSection(t, result.ReviewSections, "web2_object_identification", "warning", "Object repository: ObjectRepository/MainObjects.xml")
+	assertReviewSection(t, result.ReviewSections, "web2_parameter_mapping", "info", "Parameter data: parameters/users.dat")
+	assertReviewSection(t, result.ReviewSections, "web2_replay_readiness", "warning", "Run browser replay against the target application.")
+	assertReviewSection(t, result.ReviewSections, "web2_http_conversion_eligibility", "info", "Capture network requests during replay before generating an HTTP draft.")
+	if result.Summary["source_script_type"] != "TruClient 2.0 - Web" {
+		t.Fatalf("summary.source_script_type = %#v, want TruClient 2.0 - Web", result.Summary["source_script_type"])
+	}
+	inspection, ok := result.Summary["trueclient_archive_inspection"].(map[string]any)
+	if !ok {
+		t.Fatalf("summary.trueclient_archive_inspection = %#v, want object", result.Summary["trueclient_archive_inspection"])
+	}
+	if inspection["step_inventory"] == nil || inspection["unsupported_fragments"] == nil {
+		t.Fatalf("inspection = %#v, want step inventory and unsupported fragments", inspection)
+	}
+}
+
 func TestBrowserSelectorStabilityScoreRanksStableAndBrittleSelectors(t *testing.T) {
 	stableScore, stableSignals := browserSelectorStabilityScore("[data-testid='submit-order']")
 	brittleScore, brittleSignals := browserSelectorStabilityScore("body > div:nth-child(3) > button.generated-4821")

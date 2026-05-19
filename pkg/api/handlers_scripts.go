@@ -56,6 +56,9 @@ type loadRunnerImportSummary struct {
 	RuntimeSettingsParity       []loadrunner.RuntimeSettingParityEntry       `json:"runtime_settings_parity,omitempty"`
 	RuntimeSettingsStatusCounts map[string]int                               `json:"runtime_settings_status_counts,omitempty"`
 	MigrationReadiness          *loadrunner.RuntimeSettingMigrationReadiness `json:"migration_readiness,omitempty"`
+	TrueClientInspection        *trueclient.ArchiveInspection                `json:"trueclient_archive_inspection,omitempty"`
+	SourceScriptType            string                                       `json:"source_script_type,omitempty"`
+	SourceProfile               string                                       `json:"source_profile,omitempty"`
 	UnsupportedFunctionCount    int                                          `json:"unsupported_function_count"`
 }
 
@@ -586,6 +589,116 @@ func loadRunnerWarningsContain(result *loadrunner.ConvertResult, needle string) 
 	return false
 }
 
+func trueClientWeb2ReviewSections(summary loadRunnerImportSummary) []scriptImportReviewSection {
+	inspection := summary.TrueClientInspection
+	if inspection == nil {
+		return nil
+	}
+	sourceType := firstNonEmpty(summary.SourceScriptType, inspection.ScriptType)
+	sourceProfile := summary.SourceProfile
+	if sourceProfile == "" && inspection.ScriptTypeScope != nil {
+		sourceProfile = inspection.ScriptTypeScope.StormrunnerShape
+	}
+	items := []string{
+		fmt.Sprintf("Source script type: %s", firstNonEmpty(sourceType, "TruClient archive")),
+		fmt.Sprintf("Source profile: %s", firstNonEmpty(sourceProfile, "browser profile")),
+		fmt.Sprintf("Executable steps inspected: %d", inspection.StepInventory.Total),
+		fmt.Sprintf("Supported step families: %d", len(inspection.StepInventory.Supported)),
+	}
+	if len(inspection.StepInventory.ReviewOnly) > 0 {
+		items = append(items, fmt.Sprintf("Review-only step families: %d", len(inspection.StepInventory.ReviewOnly)))
+	}
+	if len(inspection.StepInventory.Unsupported) > 0 {
+		items = append(items, fmt.Sprintf("Unsupported step families: %d", len(inspection.StepInventory.Unsupported)))
+	}
+	sections := []scriptImportReviewSection{{
+		Key:      "web2_profile_summary",
+		Title:    "VuGen Web 2.0 Profile Summary",
+		Severity: "warning",
+		Summary:  "This TruClient Web 2.0 archive was converted into a review-only browser draft.",
+		Items:    items,
+	}}
+
+	if len(inspection.UnsupportedFragments) > 0 {
+		fragmentItems := make([]string, 0, len(inspection.UnsupportedFragments))
+		severity := "warning"
+		for _, fragment := range inspection.UnsupportedFragments {
+			if fragment.Status == trueclient.ScopeOutOfScope {
+				severity = "blocker"
+			}
+			label := fragment.Action
+			if fragment.Index != "" {
+				label += " #" + fragment.Index
+			}
+			fragmentItems = append(fragmentItems, fmt.Sprintf("%s: %s", label, fragment.Reason))
+		}
+		sections = append(sections, scriptImportReviewSection{
+			Key:      "web2_unsupported_source_fragments",
+			Title:    "Web 2.0 Source Fragments",
+			Severity: severity,
+			Summary:  "Review-only or unsupported TruClient fragments were preserved for repair before approval.",
+			Items:    fragmentItems,
+		})
+	}
+
+	objectItems := make([]string, 0, len(inspection.ObjectRepositories)+1)
+	for _, file := range inspection.ObjectRepositories {
+		objectItems = append(objectItems, "Object repository: "+file.Path)
+	}
+	objectItems = append(objectItems, "Imported selectors require browser replay before promotion because object descriptor ranking is not complete.")
+	sections = append(sections, scriptImportReviewSection{
+		Key:      "web2_object_identification",
+		Title:    "Object Identification",
+		Severity: "warning",
+		Summary:  fmt.Sprintf("%d object repository file(s) were preserved for selector review.", len(inspection.ObjectRepositories)),
+		Items:    objectItems,
+	})
+
+	if len(inspection.ParameterFiles) > 0 {
+		parameterItems := make([]string, 0, len(inspection.ParameterFiles))
+		for _, file := range inspection.ParameterFiles {
+			parameterItems = append(parameterItems, "Parameter data: "+file.Path)
+		}
+		sections = append(sections, scriptImportReviewSection{
+			Key:      "web2_parameter_mapping",
+			Title:    "Parameter Mapping",
+			Severity: "info",
+			Summary:  "Parameter files were discovered and preserved for data-source fit review.",
+			Items:    parameterItems,
+		})
+	}
+
+	sections = append(sections, scriptImportReviewSection{
+		Key:      "web2_replay_readiness",
+		Title:    "Replay Readiness",
+		Severity: "warning",
+		Summary:  "Browser replay evidence is required before this review-only Web 2.0 draft is approved.",
+		Items: []string{
+			"Run browser replay against the target application.",
+			"Review screenshots, selector failures, wait behavior, and runtime settings parity.",
+			"Do not promote to a reusable production asset until replay evidence is attached.",
+		},
+	})
+	sections = append(sections, scriptImportReviewSection{
+		Key:      "web2_http_conversion_eligibility",
+		Title:    "HTTP Conversion Eligibility",
+		Severity: "info",
+		Summary:  "Browser-to-HTTP conversion remains a governed follow-up flow for Web 2.0 imports.",
+		Items: []string{
+			"Capture network requests during replay before generating an HTTP draft.",
+			"Review correlation candidates and conversion blockers before using HTTP for density load.",
+		},
+	})
+	return sections
+}
+
+func isWeb2TrueClientInspection(inspection *trueclient.ArchiveInspection) bool {
+	if inspection == nil || inspection.ScriptTypeScope == nil {
+		return false
+	}
+	return inspection.ScriptTypeScope.CanonicalName == "truclient2_web" || inspection.ScriptTypeScope.CanonicalName == "truclient_web"
+}
+
 func browserImportRepairSuggestions(script *dsl.Script) []scriptImportRepairSuggestion {
 	suggestions := []scriptImportRepairSuggestion{
 		{
@@ -822,6 +935,10 @@ func buildLoadRunnerImportReviewSections(warnings []string, result *loadrunner.C
 		})
 	}
 
+	if isWeb2TrueClientInspection(summary.TrueClientInspection) {
+		sections = append(sections, trueClientWeb2ReviewSections(summary)...)
+	}
+
 	if result.Script != nil && result.Script.Protocol == "browser" {
 		sections = append(sections, scriptImportReviewSection{
 			Key:      "browser_import_assumptions",
@@ -861,6 +978,9 @@ func buildLoadRunnerImportSummary(result *loadrunner.ConvertResult, unsupportedE
 	summary.RuntimeSettingsParity = runtimeSettingsParityValue(preserved["runtime_settings_parity"])
 	summary.RuntimeSettingsStatusCounts = intMapValue(preserved["runtime_settings_status_counts"])
 	summary.MigrationReadiness = loadRunnerMigrationReadinessValue(preserved["runtime_settings_migration_readiness"])
+	summary.TrueClientInspection = trueClientArchiveInspectionValue(preserved["trueclient_archive_inspection"])
+	summary.SourceScriptType = stringValue(preserved["source_script_type"])
+	summary.SourceProfile = stringValue(preserved["source_profile"])
 	if summary.MigrationReadiness == nil && len(summary.RuntimeSettingsParity) > 0 {
 		summary.MigrationReadiness = loadrunner.BuildRTSMigrationReadiness(summary.RuntimeSettingsParity, readinessPolicy)
 	}
@@ -933,6 +1053,17 @@ func loadRunnerMigrationReadinessValue(value any) *loadrunner.RuntimeSettingMigr
 			return nil
 		}
 		return readiness
+	default:
+		return nil
+	}
+}
+
+func trueClientArchiveInspectionValue(value any) *trueclient.ArchiveInspection {
+	switch typed := value.(type) {
+	case *trueclient.ArchiveInspection:
+		return typed
+	case trueclient.ArchiveInspection:
+		return &typed
 	default:
 		return nil
 	}
