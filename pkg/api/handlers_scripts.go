@@ -599,13 +599,27 @@ func browserImportRepairSuggestions(script *dsl.Script) []scriptImportRepairSugg
 		case "browser_click", "browser_fill", "browser_select", "browser_tap", "browser_long_press", "browser_swipe":
 			selector := firstNonEmpty(action.Selector, action.Target)
 			if selector != "" {
+				score, signals := browserSelectorStabilityScore(selector)
 				suggestions = append(suggestions, scriptImportRepairSuggestion{
-					ID:           fmt.Sprintf("selector:%d:%s", index+1, stableReviewKey(actionID)),
-					Category:     "selector",
-					Severity:     "warning",
-					Title:        "Validate selector for " + actionID,
-					Description:  "Imported selectors can be brittle when they came from recorder object metadata or decomposed JavaScript.",
-					Action:       "Prefer stable attributes such as data-testid, aria labels, or unique form names; confirm the selector with browser replay.",
+					ID:                     fmt.Sprintf("selector:%d:%s", index+1, stableReviewKey(actionID)),
+					Category:               "selector",
+					Severity:               "warning",
+					Title:                  "Validate selector for " + actionID,
+					Description:            fmt.Sprintf("Imported selector stability score is %d/100. Recorder object metadata and decomposed JavaScript selectors should be checked before promotion.", score),
+					Action:                 browserSelectorRepairAction(score),
+					TargetAction:           actionID,
+					SelectorStabilityScore: score,
+					SelectorSignals:        signals,
+				})
+			}
+			if action.WaitFor == nil {
+				suggestions = append(suggestions, scriptImportRepairSuggestion{
+					ID:           fmt.Sprintf("wait-after:%d:%s", index+1, stableReviewKey(actionID)),
+					Category:     "wait",
+					Severity:     "info",
+					Title:        "Add readiness wait after " + actionID,
+					Description:  "Browser interaction steps imported without a readiness condition can race dynamic pages during replay.",
+					Action:       "Attach a wait_for visible/text/url condition to the action or insert a browser_wait step using the page-ready signal seen in replay.",
 					TargetAction: actionID,
 				})
 			}
@@ -627,6 +641,87 @@ func browserImportRepairSuggestions(script *dsl.Script) []scriptImportRepairSugg
 	}
 
 	return suggestions
+}
+
+func browserSelectorRepairAction(score int) string {
+	if score >= 80 {
+		return "Keep the selector if replay is stable; prefer data-testid or aria attributes for future recorder output."
+	}
+	if score >= 60 {
+		return "Prefer stable attributes such as data-testid, aria labels, or unique form names; confirm the selector with browser replay."
+	}
+	return "Replace this selector with a stable data-testid, aria label, role/name, or unique form-name selector before approving the migrated script."
+}
+
+func browserSelectorStabilityScore(selector string) (int, []string) {
+	selector = strings.TrimSpace(selector)
+	if selector == "" {
+		return 0, []string{"empty selector"}
+	}
+	lower := strings.ToLower(selector)
+	score := 45
+	signals := make([]string, 0, 5)
+
+	if strings.Contains(lower, "data-testid") || strings.Contains(lower, "data-test") || strings.Contains(lower, "data-qa") {
+		score += 35
+		signals = append(signals, "stable test attribute")
+	}
+	if strings.Contains(lower, "aria-label") || strings.Contains(lower, "role=") {
+		score += 25
+		signals = append(signals, "accessible selector")
+	}
+	if strings.Contains(lower, "[name=") || strings.Contains(lower, "[name'") || strings.Contains(lower, "[name\"") {
+		score += 20
+		signals = append(signals, "named form field")
+	}
+	if strings.HasPrefix(selector, "#") && !looksGeneratedSelectorToken(selector) {
+		score += 20
+		signals = append(signals, "simple id selector")
+	}
+	if strings.Contains(lower, ":nth-child") || strings.Contains(lower, ":nth-of-type") {
+		score -= 30
+		signals = append(signals, "positional selector")
+	}
+	if strings.HasPrefix(lower, "/html") || strings.HasPrefix(lower, "html > body") || strings.HasPrefix(lower, "body >") {
+		score -= 25
+		signals = append(signals, "absolute DOM path")
+	}
+	if looksGeneratedSelectorToken(selector) {
+		score -= 20
+		signals = append(signals, "generated-looking token")
+	}
+	if strings.Contains(selector, " ") || strings.Contains(selector, ">") {
+		score -= 5
+		signals = append(signals, "composite selector")
+	}
+	if len(signals) == 0 {
+		signals = append(signals, "generic selector")
+	}
+	if score < 0 {
+		score = 0
+	}
+	if score > 100 {
+		score = 100
+	}
+	return score, signals
+}
+
+func looksGeneratedSelectorToken(selector string) bool {
+	token := strings.ToLower(selector)
+	digitCount := 0
+	separatorCount := 0
+	for _, r := range token {
+		switch {
+		case r >= '0' && r <= '9':
+			digitCount++
+		case r == '-' || r == '_' || r == ':':
+			separatorCount++
+		}
+	}
+	if digitCount >= 4 && separatorCount >= 1 {
+		return true
+	}
+	return strings.Contains(token, "ember") || strings.Contains(token, "react-select") || strings.Contains(token, "generated")
 }
 
 func stableReviewKey(value string) string {

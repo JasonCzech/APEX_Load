@@ -2,6 +2,8 @@
 
 This runbook turns the mobile browser emulation benchmark requirements into a repeatable evidence collection path. Normal test runs compile the benchmark code but skip launching browsers. Operators opt in when they have a controlled host with Chromium/Chrome and Playwright WebKit assets installed.
 
+The code-owned artifact manifest is `docs/BROWSER_BENCHMARK_ARTIFACTS.md`. Controllers also expose the same benchmark profile metadata from `GET /api/v1/system/browser-benchmarks` and include profile summaries in `GET /api/v1/system/parity-status`.
+
 ## Scope
 
 The benchmark suite covers:

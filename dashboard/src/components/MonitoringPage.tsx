@@ -13,6 +13,7 @@ interface Props {
 
 const EMPTY_GENERATORS: SystemInventoryResponse['generators'] = []
 const EMPTY_PARITY_AREAS: ParityStatusResponse['areas'] = []
+const EMPTY_BROWSER_BENCHMARKS: NonNullable<ParityStatusResponse['browser_benchmarks']> = []
 type CompetitiveParityAreas = NonNullable<ParityStatusResponse['competitive_parity']>
 const EMPTY_COMPETITIVE_PARITY_AREAS: CompetitiveParityAreas = []
 
@@ -156,6 +157,9 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
               ? `${scheduleHealth.enabled}/${scheduleHealth.total} enabled`
               : 'no schedules'
   const parityAreas = parityStatus?.areas ?? EMPTY_PARITY_AREAS
+  const browserBenchmarkProfiles = parityStatus?.browser_benchmarks ?? EMPTY_BROWSER_BENCHMARKS
+  const browserBenchmarkEvidenceRequiredCount = browserBenchmarkProfiles.filter(profile => profile.evidence_level.includes('release_artifact_required')).length
+  const browserBenchmarkClaimBlockedCount = browserBenchmarkProfiles.filter(profile => !profile.high_density_claim_allowed).length
   const competitiveParityAreas = parityStatus?.competitive_parity ?? EMPTY_COMPETITIVE_PARITY_AREAS
   const parityBlockingCount = parityAreas.filter(area => area.blocking_gate || area.status === 'blocked').length
   const parityPartialCount = parityAreas.filter(area => area.status === 'partial').length
@@ -672,6 +676,37 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
                   </p>
                 ))}
               </div>
+              {browserBenchmarkProfiles.length > 0 && (
+                <div className="monitor-browser-benchmark-summary">
+                  <div className="monitor-row">
+                    <span className="monitor-label">Browser Benchmark Evidence</span>
+                    <span className={`monitor-value ${browserBenchmarkEvidenceRequiredCount > 0 ? 'telemetry-text-warning' : 'text-success'}`}>
+                      {browserBenchmarkProfiles.length} profiles
+                    </span>
+                  </div>
+                  <div className="monitor-browser-benchmark-grid">
+                    {browserBenchmarkProfiles.slice(0, 3).map(profile => (
+                      <div key={profile.id} className="monitor-browser-benchmark-profile">
+                        <div className="monitor-row">
+                          <span className="monitor-value">{profile.name}</span>
+                          <span className="monitor-label">{formatEvidenceLevel(profile.status)}</span>
+                        </div>
+                        <div className="monitor-row">
+                          <span className="monitor-label">Canary Envelope</span>
+                          <span className="monitor-value">{profile.density_envelope.recommended_canary_vusers_per_generator}-{profile.density_envelope.maximum_claimed_vusers_per_generator} VUsers/generator</span>
+                        </div>
+                        <div className="monitor-row">
+                          <span className="monitor-label">Evidence</span>
+                          <span className="monitor-value">{formatEvidenceLevel(profile.evidence_level)}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <p className={`monitor-hint ${browserBenchmarkClaimBlockedCount > 0 ? 'telemetry-text-warning' : ''}`}>
+                    High-density browser load claims are gated separately from browser canary capability.
+                  </p>
+                </div>
+              )}
               <div className="monitor-row">
                 <span className="monitor-label">Release Gates</span>
                 <span className="monitor-value">{parityAreas.filter(area => area.release_gate).length}/{parityAreas.length}</span>
@@ -956,7 +991,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
         </div>
       ),
     },
-  ], [apmHeaderLabel, apmHeaderSeverity, apmProfiles, competitiveEvidenceRequiredCount, competitiveGapCount, competitiveHeaderLabel, competitiveHeaderSeverity, competitiveKnownLimitationCount, competitiveParityAreas, competitivePartialCount, controllerGeneratorInventoryLabel, controllerHeaderSeverity, controllerStatusLabel, fleetAlertHeaderLabel, fleetAlertHeaderSeverity, fleetAlerts, fleetCapacity, generatorActiveVUsers, generatorAvailableCapacity, generatorConnectedCount, generatorHeaderLabel, generatorHeaderSeverity, generatorIssueCount, generators.length, health, inventory, monitorPackContractCount, monitorPackCount, monitorPackHeaderLabel, monitorPackHeaderSeverity, monitorPackSupportedCount, monitorPacks, parityAreas, parityBlockingCount, parityCompleteCount, parityHeaderLabel, parityHeaderSeverity, parityPartialCount, parityStatus, readinessBlockedCount, readinessDegradedCount, readinessHeaderLabel, readinessHeaderSeverity, readinessReadyCount, scheduleCompletedCount, scheduleHeaderLabel, scheduleHeaderSeverity, scheduleHealth, scheduleMaterializedCount, scheduleQueuedCount, scheduleSkippedCount, systemReadiness, telemetryDangerCount, telemetryHeaderLabel, telemetryHeaderSeverity, telemetryLatestEntry, telemetryDiagnostics, telemetryWarningCount, timeline, websocketLabel, websocketValueClass])
+  ], [apmHeaderLabel, apmHeaderSeverity, apmProfiles, browserBenchmarkClaimBlockedCount, browserBenchmarkEvidenceRequiredCount, browserBenchmarkProfiles, competitiveEvidenceRequiredCount, competitiveGapCount, competitiveHeaderLabel, competitiveHeaderSeverity, competitiveKnownLimitationCount, competitiveParityAreas, competitivePartialCount, controllerGeneratorInventoryLabel, controllerHeaderSeverity, controllerStatusLabel, fleetAlertHeaderLabel, fleetAlertHeaderSeverity, fleetAlerts, fleetCapacity, generatorActiveVUsers, generatorAvailableCapacity, generatorConnectedCount, generatorHeaderLabel, generatorHeaderSeverity, generatorIssueCount, generators.length, health, inventory, monitorPackContractCount, monitorPackCount, monitorPackHeaderLabel, monitorPackHeaderSeverity, monitorPackSupportedCount, monitorPacks, parityAreas, parityBlockingCount, parityCompleteCount, parityHeaderLabel, parityHeaderSeverity, parityPartialCount, parityStatus, readinessBlockedCount, readinessDegradedCount, readinessHeaderLabel, readinessHeaderSeverity, readinessReadyCount, scheduleCompletedCount, scheduleHeaderLabel, scheduleHeaderSeverity, scheduleHealth, scheduleMaterializedCount, scheduleQueuedCount, scheduleSkippedCount, systemReadiness, telemetryDangerCount, telemetryHeaderLabel, telemetryHeaderSeverity, telemetryLatestEntry, telemetryDiagnostics, telemetryWarningCount, timeline, websocketLabel, websocketValueClass])
 
   useEffect(() => {
     setCardOrder(prev => mergeOrder(prev, cards.map(card => card.id)))

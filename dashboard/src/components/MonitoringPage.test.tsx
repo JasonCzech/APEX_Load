@@ -142,6 +142,15 @@ describe('MonitoringPage', () => {
           release_gate: true,
         },
         {
+          id: 'browser_testing',
+          name: 'Browser Testing',
+          status: 'partial',
+          summary: 'Browser benchmark evidence is code-owned and gated.',
+          evidence: ['/api/v1/system/browser-benchmarks'],
+          remaining: ['Attach controlled raw benchmark output.'],
+          release_gate: true,
+        },
+        {
           id: 'monitoring',
           name: 'Real-Time Monitoring',
           status: 'complete',
@@ -183,6 +192,37 @@ describe('MonitoringPage', () => {
           remaining: ['Publish explicit non-goal or coexistence guidance.'],
           decision: 'demand_gated_non_goal',
           evidence_level: 'docs',
+        },
+      ],
+      browser_benchmarks: [
+        {
+          id: 'desktop_chromium_1080p',
+          name: 'Desktop Chromium 1080p',
+          browser_engine: 'chromium',
+          device_profile: 'desktop_1080p',
+          device_class: 'desktop',
+          platform: 'desktop',
+          status: 'baseline_artifact_published',
+          evidence_level: 'code+docs+release_artifact_required',
+          artifact_path: 'docs/BROWSER_BENCHMARK_ARTIFACTS.md#desktop-chromium-1080p',
+          acceptance: {
+            launch_p50_target_ms: 3000,
+            action_overhead_target_ms: 10,
+            rss_per_vuser_target_mb: 250,
+            rss_attribution: 'chromium_cdp_process_snapshot',
+            required_raw_run_count: 5,
+            required_benchmark_command: 'benchmark command',
+          },
+          density_envelope: {
+            recommended_canary_vusers_per_generator: 2,
+            maximum_claimed_vusers_per_generator: 5,
+            pairing_model: 'Run beside protocol load.',
+            claim_rule: 'Do not claim high-density browser load.',
+          },
+          benchmark_commands: ['go test ./pkg/protocol/browser'],
+          evidence: ['/api/v1/system/browser-benchmarks'],
+          release_gate: true,
+          high_density_claim_allowed: false,
         },
       ],
     })
@@ -253,6 +293,11 @@ describe('MonitoringPage', () => {
     expect(container.textContent).toContain('Auth Mode: development auth bypass is enabled')
     expect(container.textContent).toContain('Parity Checklist')
     expect(container.textContent).toContain('Fleet And Scale-Out: partial')
+    expect(container.textContent).toContain('Browser Testing: partial')
+    expect(container.textContent).toContain('Browser Benchmark Evidence')
+    expect(container.textContent).toContain('Desktop Chromium 1080p')
+    expect(container.textContent).toContain('2-5 VUsers/generator')
+    expect(container.textContent).toContain('High-density browser load claims are gated separately')
     expect(container.textContent).toContain('Real-Time Monitoring: complete')
     expect(container.textContent).toContain('Release Gates')
     expect(container.textContent).toContain('Competitive Parity')

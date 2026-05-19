@@ -1322,6 +1322,7 @@ export interface BrowserReplaySnapshot {
   console_entries?: BrowserReplayConsoleEntry[]
   network_entries?: BrowserReplayNetworkEntry[]
   dom_summary?: BrowserReplayDomSummary
+  client_metrics?: ClientMetrics
 }
 
 export interface BrowserReplayEvent {
@@ -1348,6 +1349,7 @@ export interface BrowserReplayEvent {
   console_entries?: BrowserReplayConsoleEntry[]
   network_entries?: BrowserReplayNetworkEntry[]
   dom_summary?: BrowserReplayDomSummary
+  client_metrics?: ClientMetrics
   snapshot?: BrowserReplaySnapshot
 }
 
@@ -1540,11 +1542,71 @@ export interface CompetitiveParityArea {
   evidence_level?: string
 }
 
+export interface BrowserBenchmarkAcceptance {
+  launch_p50_target_ms: number
+  action_overhead_target_ms: number
+  rss_per_vuser_target_mb?: number
+  rss_attribution: string
+  required_raw_run_count: number
+  required_benchmark_command: string
+}
+
+export interface BrowserBenchmarkDensityEnvelope {
+  recommended_canary_vusers_per_generator: number
+  maximum_claimed_vusers_per_generator: number
+  pairing_model: string
+  claim_rule: string
+}
+
+export interface BrowserBenchmarkProfile {
+  id: string
+  name: string
+  browser_engine: string
+  device_profile: string
+  device_class: string
+  platform: string
+  status: string
+  evidence_level: string
+  artifact_path: string
+  acceptance: BrowserBenchmarkAcceptance
+  density_envelope: BrowserBenchmarkDensityEnvelope
+  benchmark_commands: string[]
+  evidence: string[]
+  release_gate: boolean
+  high_density_claim_allowed: boolean
+  notes?: string[]
+}
+
+export interface BrowserBenchmarkEvidenceResponse {
+  generated_at: string
+  claim_policy: string
+  hardware_profile: {
+    id: string
+    name: string
+    cpu_cores: number
+    memory_gb: number
+    runtime: string
+    description: string
+  }
+  profiles: BrowserBenchmarkProfile[]
+  environment_matrix: Array<{
+    id: string
+    browser_engine: string
+    device_profiles: string[]
+    validation_command: string
+    ci_expectation: string
+    evidence: string[]
+  }>
+  commands: string[]
+  evidence: string[]
+}
+
 export interface ParityStatusResponse {
   generated_at: string
   overall: 'complete' | 'partial' | 'blocked' | string
   areas: ParityStatusArea[]
   competitive_parity?: CompetitiveParityArea[]
+  browser_benchmarks?: BrowserBenchmarkProfile[]
 }
 
 export interface APMIntegrationProfile {

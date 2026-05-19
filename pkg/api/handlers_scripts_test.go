@@ -1037,10 +1037,12 @@ TouchMode=1
 			Items    []string `json:"items"`
 		} `json:"review_sections"`
 		RepairSuggestions []struct {
-			Category     string `json:"category"`
-			Severity     string `json:"severity"`
-			Title        string `json:"title"`
-			TargetAction string `json:"target_action"`
+			Category               string   `json:"category"`
+			Severity               string   `json:"severity"`
+			Title                  string   `json:"title"`
+			TargetAction           string   `json:"target_action"`
+			SelectorStabilityScore int      `json:"selector_stability_score"`
+			SelectorSignals        []string `json:"selector_signals"`
 		} `json:"repair_suggestions"`
 		Summary map[string]any `json:"summary"`
 		Stats   struct {
@@ -1077,6 +1079,16 @@ TouchMode=1
 	assertReviewSection(t, result.ReviewSections, "browser_import_assumptions", "info", "Legacy desktop TruClient remains out of scope.")
 	assertRepairSuggestion(t, result.RepairSuggestions, "replay", "warning", "Run browser replay before saving as production-ready")
 	assertRepairSuggestion(t, result.RepairSuggestions, "selector", "warning", "Validate selector for Evaluate JavaScript Fill 1")
+	assertRepairSuggestion(t, result.RepairSuggestions, "wait", "info", "Add readiness wait after Evaluate JavaScript Fill 1")
+	selectorScoreSeen := false
+	for _, suggestion := range result.RepairSuggestions {
+		if suggestion.Category == "selector" && suggestion.TargetAction == "Evaluate JavaScript Fill 1" {
+			selectorScoreSeen = suggestion.SelectorStabilityScore > 0 && len(suggestion.SelectorSignals) > 0
+		}
+	}
+	if !selectorScoreSeen {
+		t.Fatalf("repair_suggestions = %#v, want selector stability score and signals", result.RepairSuggestions)
+	}
 	if got := result.Summary["project_file"]; got != "MobileWeb.usr" {
 		t.Fatalf("summary.project_file = %#v, want MobileWeb.usr", got)
 	}
@@ -1085,6 +1097,20 @@ TouchMode=1
 	}
 	if got := result.Summary["unsupported_function_count"]; got != float64(0) {
 		t.Fatalf("summary.unsupported_function_count = %#v, want 0", got)
+	}
+}
+
+func TestBrowserSelectorStabilityScoreRanksStableAndBrittleSelectors(t *testing.T) {
+	stableScore, stableSignals := browserSelectorStabilityScore("[data-testid='submit-order']")
+	brittleScore, brittleSignals := browserSelectorStabilityScore("body > div:nth-child(3) > button.generated-4821")
+	if stableScore < 80 {
+		t.Fatalf("stable score = %d signals=%v, want >= 80", stableScore, stableSignals)
+	}
+	if brittleScore >= stableScore || brittleScore > 40 {
+		t.Fatalf("brittle score = %d stable=%d signals=%v, want lower brittle score", brittleScore, stableScore, brittleSignals)
+	}
+	if !strings.Contains(strings.Join(brittleSignals, ","), "positional selector") {
+		t.Fatalf("brittle signals = %v, want positional selector signal", brittleSignals)
 	}
 }
 

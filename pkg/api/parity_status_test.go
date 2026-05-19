@@ -27,20 +27,24 @@ func TestHandleGetParityStatusReturnsReleaseGateSummary(t *testing.T) {
 	if payload.Overall != "partial" {
 		t.Fatalf("overall = %q, want partial", payload.Overall)
 	}
-	if len(payload.Areas) != 7 {
-		t.Fatalf("area count = %d, want 7", len(payload.Areas))
+	if len(payload.Areas) != 8 {
+		t.Fatalf("area count = %d, want 8", len(payload.Areas))
 	}
 	if len(payload.CompetitiveParity) == 0 {
 		t.Fatalf("competitive parity section is empty")
 	}
+	if len(payload.BrowserBenchmarks) != 3 {
+		t.Fatalf("browser benchmark profiles = %d, want 3", len(payload.BrowserBenchmarks))
+	}
 	required := map[string]bool{
-		"architecture":  false,
-		"fleet":         false,
-		"authoring":     false,
-		"load_modeling": false,
-		"monitoring":    false,
-		"reporting":     false,
-		"scheduling":    false,
+		"architecture":    false,
+		"fleet":           false,
+		"authoring":       false,
+		"load_modeling":   false,
+		"browser_testing": false,
+		"monitoring":      false,
+		"reporting":       false,
+		"scheduling":      false,
 	}
 	for _, area := range payload.Areas {
 		if _, ok := required[area.ID]; ok {
@@ -51,6 +55,52 @@ func TestHandleGetParityStatusReturnsReleaseGateSummary(t *testing.T) {
 		if !ok {
 			t.Fatalf("missing populated parity area %q in %#v", id, payload.Areas)
 		}
+	}
+}
+
+func TestHandleGetBrowserBenchmarkEvidenceReturnsProfilesAndClaimPolicy(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/system/browser-benchmarks", nil)
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var payload BrowserBenchmarkEvidenceResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+	if !strings.Contains(payload.ClaimPolicy, "diagnostic canaries") {
+		t.Fatalf("claim policy = %q, want diagnostic canary policy", payload.ClaimPolicy)
+	}
+	if payload.HardwareProfile.CPUCores != 4 || payload.HardwareProfile.MemoryGB != 8 {
+		t.Fatalf("hardware profile = %#v, want 4 vCPU / 8 GB reference", payload.HardwareProfile)
+	}
+	if len(payload.Profiles) != 3 {
+		t.Fatalf("profiles = %d, want 3", len(payload.Profiles))
+	}
+	seen := map[string]bool{}
+	for _, profile := range payload.Profiles {
+		seen[profile.ID] = true
+		if profile.HighDensityClaimAllowed {
+			t.Fatalf("profile %s allows high-density claims: %#v", profile.ID, profile)
+		}
+		if profile.Acceptance.LaunchP50TargetMs == 0 || profile.Acceptance.ActionOverheadTargetMs == 0 {
+			t.Fatalf("profile %s missing acceptance targets: %#v", profile.ID, profile.Acceptance)
+		}
+		if profile.DensityEnvelope.RecommendedCanaryVUsersPerGenerator <= 0 {
+			t.Fatalf("profile %s missing diagnostic canary envelope: %#v", profile.ID, profile.DensityEnvelope)
+		}
+	}
+	for _, id := range []string{"desktop_chromium_1080p", "mobile_chromium_pixel_8", "mobile_webkit_iphone_15_pro"} {
+		if !seen[id] {
+			t.Fatalf("missing benchmark profile %q in %#v", id, payload.Profiles)
+		}
+	}
+	if len(payload.EnvironmentMatrix) != 2 {
+		t.Fatalf("environment matrix = %d, want Chromium and WebKit entries", len(payload.EnvironmentMatrix))
 	}
 }
 

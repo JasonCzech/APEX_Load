@@ -16,8 +16,11 @@ func TestLookupScriptTypeScope(t *testing.T) {
 		{name: "mobile web", scriptType: "TruClient - Mobile Web", wantName: "TruClient - Mobile Web", wantStatus: ScopeSupported, wantFound: true},
 		{name: "mobile web normalized", scriptType: " truclient_mobile_web ", wantName: "TruClient - Mobile Web", wantStatus: ScopeSupported, wantFound: true},
 		{name: "mobile web compact", scriptType: "TruClientMobileWeb", wantName: "TruClient - Mobile Web", wantStatus: ScopeSupported, wantFound: true},
+		{name: "truclient 2 mobile web", scriptType: "TruClient 2.0 - Mobile Web", wantName: "TruClient - Mobile Web", wantStatus: ScopeSupported, wantFound: true},
+		{name: "truclient 2 mobile web compact", scriptType: "TruClient2MobileWeb", wantName: "TruClient - Mobile Web", wantStatus: ScopeSupported, wantFound: true},
 		{name: "desktop truclient", scriptType: "TruClient", wantName: "TruClient", wantStatus: ScopeOutOfScope, wantFound: true},
 		{name: "desktop truclient compact", scriptType: "TruClientWeb", wantName: "TruClient", wantStatus: ScopeOutOfScope, wantFound: true},
+		{name: "desktop truclient 2", scriptType: "TruClient 2.0", wantName: "TruClient", wantStatus: ScopeOutOfScope, wantFound: true},
 		{name: "unknown", scriptType: "Web", wantFound: false},
 	}
 

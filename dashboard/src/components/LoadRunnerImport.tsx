@@ -933,6 +933,9 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
                       <span>{suggestion.severity}</span>
                     </div>
                     {suggestion.target_action && <p>Action: {suggestion.target_action}</p>}
+                    {typeof suggestion.selector_stability_score === 'number' && (
+                      <p>Selector stability: {suggestion.selector_stability_score}/100{suggestion.selector_signals?.length ? ` - ${suggestion.selector_signals.join(', ')}` : ''}</p>
+                    )}
                     {suggestionDescription && <p>{suggestionDescription}</p>}
                     {suggestionAction && <ul><li>{suggestionAction}</li></ul>}
                     {suggestion.target_action && onEdit && (

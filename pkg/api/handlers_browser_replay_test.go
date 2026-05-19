@@ -162,19 +162,22 @@ func TestBrowserReplaySessionSnapshotReturnsDetachedCopy(t *testing.T) {
 		StartedAt:         &now,
 		CurrentEventIndex: 0,
 		CurrentEvent: &engine.ReplayActionEvent{
-			ActionName: "step-1",
-			Headers:    map[string]string{"Authorization": "Bearer original"},
+			ActionName:    "step-1",
+			Headers:       map[string]string{"Authorization": "Bearer original"},
+			ClientMetrics: &protocol.ClientMetrics{LCPMs: 240},
 		},
 		Events: []engine.ReplayActionEvent{{
-			ActionName: "step-1",
-			Headers:    map[string]string{"Authorization": "Bearer original"},
+			ActionName:    "step-1",
+			Headers:       map[string]string{"Authorization": "Bearer original"},
+			ClientMetrics: &protocol.ClientMetrics{LCPMs: 240},
 		}},
 		FinalReport: &engine.ReplayReport{
 			Group:          "browser",
 			FinalVariables: map[string]string{"token": "original"},
 			Events: []engine.ReplayActionEvent{{
-				ActionName: "step-1",
-				Headers:    map[string]string{"Authorization": "Bearer original"},
+				ActionName:    "step-1",
+				Headers:       map[string]string{"Authorization": "Bearer original"},
+				ClientMetrics: &protocol.ClientMetrics{LCPMs: 240},
 			}},
 		},
 	}
@@ -185,9 +188,12 @@ func TestBrowserReplaySessionSnapshotReturnsDetachedCopy(t *testing.T) {
 	}
 
 	session.CurrentEvent.Headers["Authorization"] = "Bearer updated"
+	session.CurrentEvent.ClientMetrics.LCPMs = 999
 	session.Events[0].Headers["Authorization"] = "Bearer updated"
+	session.Events[0].ClientMetrics.LCPMs = 999
 	session.FinalReport.FinalVariables["token"] = "updated"
 	session.FinalReport.Events[0].Headers["Authorization"] = "Bearer updated"
+	session.FinalReport.Events[0].ClientMetrics.LCPMs = 999
 
 	if got := snapshot.CurrentEvent.Headers["Authorization"]; got != "Bearer original" {
 		t.Fatalf("snapshot current event header = %q, want original value", got)
@@ -200,6 +206,15 @@ func TestBrowserReplaySessionSnapshotReturnsDetachedCopy(t *testing.T) {
 	}
 	if got := snapshot.FinalReport.Events[0].Headers["Authorization"]; got != "Bearer original" {
 		t.Fatalf("snapshot final report header = %q, want original value", got)
+	}
+	if snapshot.CurrentEvent.ClientMetrics == nil || snapshot.CurrentEvent.ClientMetrics.LCPMs != 240 {
+		t.Fatalf("snapshot current event client metrics = %#v, want detached LCP 240", snapshot.CurrentEvent.ClientMetrics)
+	}
+	if snapshot.Events[0].ClientMetrics == nil || snapshot.Events[0].ClientMetrics.LCPMs != 240 {
+		t.Fatalf("snapshot event client metrics = %#v, want detached LCP 240", snapshot.Events[0].ClientMetrics)
+	}
+	if snapshot.FinalReport.Events[0].ClientMetrics == nil || snapshot.FinalReport.Events[0].ClientMetrics.LCPMs != 240 {
+		t.Fatalf("snapshot report client metrics = %#v, want detached LCP 240", snapshot.FinalReport.Events[0].ClientMetrics)
 	}
 }
 

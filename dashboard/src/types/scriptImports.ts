@@ -24,6 +24,8 @@ export interface ImportRepairSuggestion {
   description: string
   action: string
   target_action?: string
+  selector_stability_score?: number
+  selector_signals?: string[]
 }
 
 export interface ScriptImportResult<

@@ -34,33 +34,55 @@ func TestWebAPISampleScriptsValidate(t *testing.T) {
 }
 
 func TestWebAPIMixedScenarioSampleReferencesScripts(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "examples", "web-api", "mixed-http-browser-canary.json"))
-	if err != nil {
-		t.Fatalf("ReadFile returned error: %v", err)
-	}
-	var scenario struct {
-		Name   string `json:"name"`
-		Groups []struct {
-			Name       string      `json:"name"`
-			Protocol   string      `json:"protocol"`
-			ScriptPath string      `json:"script_path"`
-			Script     *dsl.Script `json:"script"`
-		} `json:"groups"`
-	}
-	if err := json.Unmarshal(data, &scenario); err != nil {
-		t.Fatalf("json.Unmarshal returned error: %v", err)
-	}
-	if scenario.Name == "" || len(scenario.Groups) != 2 {
-		t.Fatalf("scenario = %+v, want name and two groups", scenario)
-	}
-	if scenario.Groups[0].ScriptPath != "examples/web-api/ecommerce-http.json" {
-		t.Fatalf("script path = %q", scenario.Groups[0].ScriptPath)
-	}
-	if scenario.Groups[1].Script == nil {
-		t.Fatal("browser canary script is missing")
-	}
-	if issues := dsl.ValidateScriptIssues(scenario.Groups[1].Script); len(issues) > 0 {
-		t.Fatalf("browser canary validation issues = %v", issues)
+	for _, name := range []string{"mixed-http-browser-canary.json", "browser-canary-plus-protocol-load.json"} {
+		t.Run(name, func(t *testing.T) {
+			data, err := os.ReadFile(filepath.Join("..", "..", "examples", "web-api", name))
+			if err != nil {
+				t.Fatalf("ReadFile returned error: %v", err)
+			}
+			var scenario struct {
+				Name        string `json:"name"`
+				ClaimPolicy string `json:"claim_policy"`
+				Groups      []struct {
+					Name             string      `json:"name"`
+					Protocol         string      `json:"protocol"`
+					ScriptPath       string      `json:"script_path"`
+					BenchmarkProfile string      `json:"benchmark_profile"`
+					Script           *dsl.Script `json:"script"`
+				} `json:"groups"`
+			}
+			if err := json.Unmarshal(data, &scenario); err != nil {
+				t.Fatalf("json.Unmarshal returned error: %v", err)
+			}
+			if scenario.Name == "" || len(scenario.Groups) < 2 {
+				t.Fatalf("scenario = %+v, want name and at least two groups", scenario)
+			}
+			if scenario.Groups[0].ScriptPath != "examples/web-api/ecommerce-http.json" {
+				t.Fatalf("script path = %q", scenario.Groups[0].ScriptPath)
+			}
+			browserCanaries := 0
+			for _, group := range scenario.Groups {
+				if group.Protocol != "browser" {
+					continue
+				}
+				browserCanaries++
+				if group.Script == nil {
+					t.Fatalf("browser group %q script is missing", group.Name)
+				}
+				if issues := dsl.ValidateScriptIssues(group.Script); len(issues) > 0 {
+					t.Fatalf("browser canary validation issues = %v", issues)
+				}
+				if name == "browser-canary-plus-protocol-load.json" && group.BenchmarkProfile == "" {
+					t.Fatalf("browser group %q missing benchmark_profile", group.Name)
+				}
+			}
+			if browserCanaries == 0 {
+				t.Fatalf("scenario %s has no browser canary groups", name)
+			}
+			if name == "browser-canary-plus-protocol-load.json" && scenario.ClaimPolicy == "" {
+				t.Fatalf("scenario %s missing claim_policy", name)
+			}
+		})
 	}
 }
 

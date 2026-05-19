@@ -24,13 +24,15 @@ type scriptImportReviewSection struct {
 }
 
 type scriptImportRepairSuggestion struct {
-	ID           string `json:"id"`
-	Category     string `json:"category"`
-	Severity     string `json:"severity"`
-	Title        string `json:"title"`
-	Description  string `json:"description"`
-	Action       string `json:"action"`
-	TargetAction string `json:"target_action,omitempty"`
+	ID                     string   `json:"id"`
+	Category               string   `json:"category"`
+	Severity               string   `json:"severity"`
+	Title                  string   `json:"title"`
+	Description            string   `json:"description"`
+	Action                 string   `json:"action"`
+	TargetAction           string   `json:"target_action,omitempty"`
+	SelectorStabilityScore int      `json:"selector_stability_score,omitempty"`
+	SelectorSignals        []string `json:"selector_signals,omitempty"`
 }
 
 func newScriptImportResponse(opts scriptImportResponseOptions) map[string]any {

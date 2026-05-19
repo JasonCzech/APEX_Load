@@ -333,6 +333,7 @@ func cloneBrowserReplayEvent(event engine.ReplayActionEvent) engine.ReplayAction
 	cloned.Console = cloneBrowserConsoleEntries(event.Console)
 	cloned.Network = cloneBrowserNetworkEntries(event.Network)
 	cloned.DOMSummary = cloneBrowserDOMSummary(event.DOMSummary)
+	cloned.ClientMetrics = cloneBrowserClientMetrics(event.ClientMetrics)
 	if event.Snapshot != nil {
 		snapshot := *event.Snapshot
 		snapshot.RequestHeaders = cloneBrowserStringMap(event.Snapshot.RequestHeaders)
@@ -382,6 +383,14 @@ func cloneBrowserDOMSummary(summary *protocol.DOMSummary) *protocol.DOMSummary {
 	if len(summary.VisibleText) > 0 {
 		cloned.VisibleText = append([]string(nil), summary.VisibleText...)
 	}
+	return &cloned
+}
+
+func cloneBrowserClientMetrics(metrics *protocol.ClientMetrics) *protocol.ClientMetrics {
+	if metrics == nil {
+		return nil
+	}
+	cloned := *metrics
 	return &cloned
 }
 

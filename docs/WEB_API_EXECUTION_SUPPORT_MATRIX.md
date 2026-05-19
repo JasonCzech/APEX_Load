@@ -125,6 +125,7 @@ W1 adds a first-party Web/API sample pack:
 | WebSocket order feed | `examples/web-api/websocket-order-feed.json` |
 | JMS order flow | `examples/web-api/jms-order-flow.json` |
 | Mixed HTTP plus browser canary scenario | `examples/web-api/mixed-http-browser-canary.json` |
+| Browser canary plus protocol load release-gate template | `examples/web-api/browser-canary-plus-protocol-load.json` |
 | Archive smoke fixture contract | `examples/web-api/archive-smoke-fixtures.json` |
 
 The sample pack is intentionally small and reviewable. It exists to let evaluators see protocol-specific script structure, data-source placeholders, diagnostics hooks, archive-signal expectations, and the browser-canary positioning without reading the codebase first.

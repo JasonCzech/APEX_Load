@@ -4,6 +4,7 @@ import {
   BrowserReplayEvent,
   BrowserReplayReport,
   BrowserReplaySession,
+  ClientMetrics,
 } from '../types'
 import { formatConsoleEntries, formatNetworkEntries } from './scriptEditorUtils'
 
@@ -50,12 +51,65 @@ function formatDuration(ms?: number): string {
   return `${ms.toFixed(1)}ms`
 }
 
+function formatWholeMs(ms?: number): string {
+  if (typeof ms !== 'number' || !Number.isFinite(ms) || ms <= 0) return 'n/a'
+  return `${Math.round(ms)}ms`
+}
+
+function eventClientMetrics(event?: BrowserReplayEvent | null): ClientMetrics | undefined {
+  return event?.client_metrics || event?.snapshot?.client_metrics
+}
+
+function timelineNetworkSummary(event: BrowserReplayEvent): string {
+  const entries = event.network_entries || event.snapshot?.network_entries || []
+  if (entries.length === 0) return 'Network 0'
+  const totalDuration = entries.reduce((sum, entry) => sum + (entry.duration_ms || 0), 0)
+  const failed = entries.filter(entry => (entry.status_code || 0) >= 400).length
+  return failed > 0
+    ? `Network ${entries.length} / ${formatDuration(totalDuration)} / ${failed} failed`
+    : `Network ${entries.length} / ${formatDuration(totalDuration)}`
+}
+
+function timelineConsoleSummary(event: BrowserReplayEvent): string {
+  const entries = event.console_entries || event.snapshot?.console_entries || []
+  if (entries.length === 0) return 'Console 0'
+  const errors = entries.filter(entry => entry.level === 'error').length
+  return errors > 0 ? `Console ${entries.length} / ${errors} error` : `Console ${entries.length}`
+}
+
+function timelineVitalsSummary(metrics?: ClientMetrics): string {
+  if (!metrics) return 'Core Web Vitals n/a'
+  const parts = [
+    `LCP ${formatWholeMs(metrics.lcp_ms)}`,
+    `INP ${formatWholeMs(metrics.inp_ms)}`,
+    typeof metrics.cls_score === 'number' ? `CLS ${metrics.cls_score.toFixed(3)}` : 'CLS n/a',
+  ]
+  return parts.join(' / ')
+}
+
+function timelineSnapshotSummary(event: BrowserReplayEvent): string {
+  const hasScreenshot = Boolean(event.screenshot_base64 || event.snapshot?.screenshot_base64)
+  const hasHTML = Boolean(event.html || event.snapshot?.html)
+  if (hasScreenshot && hasHTML) return 'Screenshot + DOM'
+  if (hasScreenshot) return 'Screenshot'
+  if (hasHTML) return 'DOM HTML'
+  return 'No screenshot'
+}
+
+function timelineDOMSummary(event: BrowserReplayEvent): string {
+  const domSummary = event.dom_summary || event.snapshot?.dom_summary
+  if (!domSummary) return 'DOM n/a'
+  const textCount = domSummary.visible_text?.length || 0
+  return `DOM ${domSummary.ready_state || 'unknown'} / ${textCount} lines`
+}
+
 function formatSelectedEventDetails(event: BrowserReplayEvent, index: number): string {
   const pageURL = event.page_url || event.snapshot?.page_url || 'n/a'
   const pageTitle = event.page_title || event.snapshot?.page_title || event.dom_summary?.title || 'n/a'
   const domSummary = event.dom_summary || event.snapshot?.dom_summary
   const consoleEntries = event.console_entries || event.snapshot?.console_entries || []
   const networkEntries = event.network_entries || event.snapshot?.network_entries || []
+  const metrics = eventClientMetrics(event)
   const htmlCaptured = Boolean(event.html || event.snapshot?.html)
 
   return [
@@ -69,6 +123,7 @@ function formatSelectedEventDetails(event: BrowserReplayEvent, index: number): s
     `Visible Text Lines: ${domSummary?.visible_text?.length || 0}`,
     `Console Entries: ${consoleEntries.length}`,
     `Network Entries: ${networkEntries.length}`,
+    `Core Web Vitals: ${timelineVitalsSummary(metrics)}`,
     `HTML Capture: ${htmlCaptured ? 'Captured' : 'Not captured'}`,
     `Error: ${event.error_message || 'None'}`,
   ].join('\n')
@@ -103,6 +158,7 @@ export default function BrowserReplayDebugger({
     [selectedEvent],
   )
   const selectedHTML = selectedEvent?.html || selectedEvent?.snapshot?.html
+  const selectedClientMetrics = eventClientMetrics(selectedEvent)
   const selectedConsoleText = useMemo(() => formatConsoleEntries(selectedConsoleEntries), [selectedConsoleEntries])
   const selectedNetworkText = useMemo(() => formatNetworkEntries(selectedNetworkEntries), [selectedNetworkEntries])
   const [copiedKey, setCopiedKey] = useState<string | null>(null)
@@ -260,6 +316,38 @@ export default function BrowserReplayDebugger({
                 <span className={`browser-debugger-detail-status ${eventStatus(selectedEvent)}`}>{eventStatus(selectedEvent)}</span>
               </div>
             </div>
+            {events.length > 0 && (
+              <div className="browser-debugger-timeline" aria-label="Browser Replay Timeline">
+                <div className="browser-debugger-timeline-header">
+                  <span className="browser-debugger-section-label">Action Timeline</span>
+                  <strong>Network waterfall, console, screenshots, Core Web Vitals, and DOM snapshots</strong>
+                </div>
+                <div className="browser-debugger-timeline-list">
+                  {events.map((event, index) => {
+                    const metrics = eventClientMetrics(event)
+                    return (
+                      <button
+                        key={`${event.phase}-${event.action_name}-${index}-timeline`}
+                        type="button"
+                        className={`browser-debugger-timeline-row ${(selectedEvent === event) ? 'active' : ''} ${event.success ? 'success' : 'error'}`}
+                        onClick={() => onSelectEvent?.(index)}
+                      >
+                        <span className="browser-debugger-timeline-index">{index + 1}</span>
+                        <span className="browser-debugger-timeline-action">
+                          <strong>{eventLabel(event, index)}</strong>
+                          <small>{event.action_type} {formatDuration(event.duration_ms)}</small>
+                        </span>
+                        <span>{timelineNetworkSummary(event)}</span>
+                        <span>{timelineConsoleSummary(event)}</span>
+                        <span>{timelineVitalsSummary(metrics)}</span>
+                        <span>{timelineSnapshotSummary(event)}</span>
+                        <span>{timelineDOMSummary(event)}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
             {selectedEvent ? (
               <div className="browser-debugger-detail-grid">
                 <div className="browser-debugger-detail-item">
@@ -294,6 +382,10 @@ export default function BrowserReplayDebugger({
                 <div className="browser-debugger-detail-item">
                   <span>Visible Text</span>
                   <strong>{selectedDOMSummary?.visible_text?.length || 0} lines</strong>
+                </div>
+                <div className="browser-debugger-detail-item browser-debugger-detail-item-wide">
+                  <span>Core Web Vitals</span>
+                  <strong>{timelineVitalsSummary(selectedClientMetrics)}</strong>
                 </div>
                 <div className="browser-debugger-detail-item">
                   <div className="browser-debugger-detail-item-header">

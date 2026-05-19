@@ -169,13 +169,13 @@ Strengthen Stormrunner's browser story as a trustworthy diagnostic canary workfl
 
 | ID | Work Item | Priority | Status |
 | --- | --- | --- | --- |
-| W4.1 | Publish browser benchmark artifacts for desktop Chromium, mobile Chromium, and mobile WebKit profiles on defined hardware | P0 | Partial runbook only |
-| W4.2 | Add browser benchmark results to `/api/v1/system/parity-status` and dashboard parity checklist | P1 | Not started |
-| W4.3 | Deepen TrueClient Mobile Web and TruClient 2.0 conversion fixtures using representative sample archives | P0 | Partial synthetic fixtures |
-| W4.4 | Add selector stability scoring and wait repair recommendations for browser imports and recorder output | P0 | Partial repair suggestions |
-| W4.5 | Add browser replay timeline view: action timeline, network waterfall, console/errors, screenshots, Core Web Vitals, and DOM snapshots in one aligned display | P1 | Partial through existing evidence panels |
-| W4.6 | Add browser environment matrix validation in CI for Chromium/WebKit/device profiles after dependency upgrades | P1 | Partial |
-| W4.7 | Add explicit "browser canary plus protocol load" scenario templates and examples | P0 | Partial |
+| W4.1 | Publish browser benchmark artifacts for desktop Chromium, mobile Chromium, and mobile WebKit profiles on defined hardware | P0 | Complete - `docs/BROWSER_BENCHMARK_ARTIFACTS.md` and `GET /api/v1/system/browser-benchmarks`; controlled raw release runs remain required before raising density envelopes |
+| W4.2 | Add browser benchmark results to `/api/v1/system/parity-status` and dashboard parity checklist | P1 | Complete - parity status includes `browser_benchmarks`; dashboard checklist shows browser benchmark evidence and claim gating |
+| W4.3 | Deepen TrueClient Mobile Web and TruClient 2.0 conversion fixtures using representative sample archives | P0 | Complete - TruClient 2.0 Mobile Web aliases and representative checkout archive fixture covered |
+| W4.4 | Add selector stability scoring and wait repair recommendations for browser imports and recorder output | P0 | Complete - import repair suggestions include selector stability score/signals and readiness-wait actions; recorder/editor repair flow already applies browser wait/selector fixes |
+| W4.5 | Add browser replay timeline view: action timeline, network waterfall, console/errors, screenshots, Core Web Vitals, and DOM snapshots in one aligned display | P1 | Complete - Browser Replay Debugger timeline aligns action, network, console, vitals, screenshot, and DOM evidence |
+| W4.6 | Add browser environment matrix validation in CI for Chromium/WebKit/device profiles after dependency upgrades | P1 | Complete - benchmark endpoint publishes Chromium/WebKit matrix and `pkg/protocol/browser` tests verify registered profiles in normal CI |
+| W4.7 | Add explicit "browser canary plus protocol load" scenario templates and examples | P0 | Complete - `examples/web-api/browser-canary-plus-protocol-load.json` |
 | W4.8 | Keep high-density browser load as evidence-gated and document it as non-claim until benchmark artifacts prove otherwise | P0 | Complete as claim rule |
 
 ### Acceptance Criteria

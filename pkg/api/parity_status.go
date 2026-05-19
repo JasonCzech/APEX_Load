@@ -8,10 +8,11 @@ import (
 const competitiveSupportMatrixEvidence = "docs/COMPETITIVE_SUPPORT_MATRIX.md"
 
 type ParityStatusResponse struct {
-	GeneratedAt       time.Time               `json:"generated_at"`
-	Overall           string                  `json:"overall"`
-	Areas             []ParityStatusArea      `json:"areas"`
-	CompetitiveParity []CompetitiveParityArea `json:"competitive_parity,omitempty"`
+	GeneratedAt       time.Time                 `json:"generated_at"`
+	Overall           string                    `json:"overall"`
+	Areas             []ParityStatusArea        `json:"areas"`
+	CompetitiveParity []CompetitiveParityArea   `json:"competitive_parity,omitempty"`
+	BrowserBenchmarks []BrowserBenchmarkProfile `json:"browser_benchmarks,omitempty"`
 }
 
 type ParityStatusArea struct {
@@ -43,6 +44,7 @@ func (s *Server) handleGetParityStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func buildParityStatus(now time.Time) ParityStatusResponse {
+	browserBenchmarks := buildBrowserBenchmarkEvidence(now)
 	areas := []ParityStatusArea{
 		{
 			ID:          "architecture",
@@ -81,6 +83,15 @@ func buildParityStatus(now time.Time) ParityStatusResponse {
 			ReleaseGate: true,
 		},
 		{
+			ID:          "browser_testing",
+			Name:        "Browser Testing",
+			Status:      "partial",
+			Summary:     "Browser replay, mobile profiles, client metrics, archive evidence, TruClient Mobile Web conversion, selector/wait repair guidance, and code-owned benchmark artifacts support diagnostic browser canaries.",
+			Evidence:    []string{"/api/v1/system/browser-benchmarks", "/api/v1/browser-replay/sessions/{session_id}", "docs/BROWSER_BENCHMARK_ARTIFACTS.md", "examples/web-api/browser-canary-plus-protocol-load.json"},
+			Remaining:   []string{"Attach controlled raw benchmark output for each release generator image before raising browser density envelopes."},
+			ReleaseGate: true,
+		},
+		{
 			ID:          "monitoring",
 			Name:        "Real-Time Monitoring",
 			Status:      "partial",
@@ -113,6 +124,7 @@ func buildParityStatus(now time.Time) ParityStatusResponse {
 		Overall:           aggregateParityStatus(areas),
 		Areas:             areas,
 		CompetitiveParity: buildCompetitiveParityStatus(),
+		BrowserBenchmarks: browserBenchmarks.Profiles,
 	}
 }
 
@@ -185,11 +197,13 @@ func buildCompetitiveParityStatus() []CompetitiveParityArea {
 			Evidence: []string{
 				competitiveSupportMatrixEvidence,
 				"/api/v1/scripts/browser-replay/sessions",
+				"/api/v1/system/browser-benchmarks",
+				browserBenchmarkArtifactEvidence,
 				"docs/MOBILE_BROWSER_EMULATION_PLAN.md",
 				"docs/BROWSER_CLIENT_METRICS_PLAN.md",
 			},
 			Remaining: []string{
-				"Publish browser benchmark artifacts and keep high-density browser load claims out of release gates until evidence exists.",
+				"Attach controlled raw benchmark artifacts for each release generator image before increasing browser density envelopes.",
 			},
 			Decision:      "bounded_canary_support",
 			EvidenceLevel: "api+docs+external_evidence_required",

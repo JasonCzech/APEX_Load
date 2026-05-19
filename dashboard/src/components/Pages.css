@@ -1576,6 +1576,44 @@
   line-height: 1.4;
 }
 
+.monitor-browser-benchmark-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.monitor-browser-benchmark-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+}
+
+.monitor-browser-benchmark-profile {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.monitor-browser-benchmark-profile .monitor-row {
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.monitor-browser-benchmark-profile .monitor-value,
+.monitor-browser-benchmark-profile .monitor-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .monitor-inventory-list {
   display: flex;
   flex-direction: column;

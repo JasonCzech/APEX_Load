@@ -34,7 +34,7 @@ var scriptTypeScopes = []ScriptTypeScope{
 		CanonicalName: "truclient_mobile_web",
 		DisplayName:   "TruClient - Mobile Web",
 		Status:        ScopeSupported,
-		Notes:         "The MVP importer maps navigation, click, fill, select, wait, conservative verify assertions, simple JavaScript-derived fill or click, jQuery attr/trigger, and transaction flows into browser DSL actions.",
+		Notes:         "The MVP importer maps TruClient Mobile Web and TruClient 2.0 Mobile Web navigation, click, fill, select, wait, conservative verify assertions, simple JavaScript-derived fill or click, jQuery attr/trigger, and transaction flows into browser DSL actions.",
 	},
 	{
 		CanonicalName: "truclient_web",
@@ -165,21 +165,21 @@ func ImportScopeError(scriptType string) error {
 
 func normalizeScriptType(scriptType string) string {
 	value := strings.ToLower(strings.TrimSpace(scriptType))
-	value = strings.NewReplacer("_", " ", "-", " ").Replace(value)
+	value = strings.NewReplacer("_", " ", "-", " ", ".", " ").Replace(value)
 	value = strings.Join(strings.Fields(value), " ")
 	compact := strings.ReplaceAll(value, " ", "")
 
 	switch compact {
-	case "truclientmobileweb":
+	case "truclientmobileweb", "truclient2mobileweb", "truclient20mobileweb":
 		return "truclient_mobile_web"
-	case "truclient", "truclientweb":
+	case "truclient", "truclientweb", "truclient2", "truclient20", "truclient2web", "truclient20web":
 		return "truclient_web"
 	}
 
 	switch value {
-	case "truclient mobile web":
+	case "truclient mobile web", "truclient 2 mobile web", "truclient 2 0 mobile web":
 		return "truclient_mobile_web"
-	case "truclient", "truclient web":
+	case "truclient", "truclient web", "truclient 2", "truclient 2 0", "truclient 2 web", "truclient 2 0 web":
 		return "truclient_web"
 	default:
 		return ""

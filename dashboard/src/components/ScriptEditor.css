@@ -1099,6 +1099,98 @@
   color: var(--danger);
 }
 
+.browser-debugger-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-primary);
+}
+
+.browser-debugger-timeline-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.browser-debugger-timeline-header strong {
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  text-align: right;
+}
+
+.browser-debugger-timeline-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 240px;
+  overflow: auto;
+}
+
+.browser-debugger-timeline-row {
+  display: grid;
+  grid-template-columns: 28px minmax(130px, 1.3fr) repeat(5, minmax(92px, 1fr));
+  gap: 8px;
+  align-items: center;
+  min-width: 760px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+  color: inherit;
+  text-align: left;
+}
+
+.browser-debugger-timeline-row:hover,
+.browser-debugger-timeline-row.active {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.browser-debugger-timeline-row.error {
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+}
+
+.browser-debugger-timeline-row > span {
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.browser-debugger-timeline-index {
+  display: inline-flex;
+  width: 22px;
+  height: 22px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.16);
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+.browser-debugger-timeline-action {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.browser-debugger-timeline-action strong {
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.browser-debugger-timeline-action small {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
 .browser-debugger-detail-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

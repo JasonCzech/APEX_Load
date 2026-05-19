@@ -44,30 +44,31 @@ type ReplayReport struct {
 }
 
 type ReplayActionEvent struct {
-	Phase        string                  `json:"phase"`
-	ActionName   string                  `json:"action_name"`
-	ActionType   string                  `json:"action_type"`
-	Method       string                  `json:"method,omitempty"`
-	Target       string                  `json:"target"`
-	Selector     string                  `json:"selector,omitempty"`
-	Value        string                  `json:"value,omitempty"`
-	Headers      map[string]string       `json:"headers,omitempty"`
-	Body         string                  `json:"body,omitempty"`
-	StartedAt    time.Time               `json:"started_at"`
-	CompletedAt  time.Time               `json:"completed_at"`
-	DurationMs   float64                 `json:"duration_ms"`
-	StatusCode   int                     `json:"status_code,omitempty"`
-	Success      bool                    `json:"success"`
-	ErrorMessage string                  `json:"error_message,omitempty"`
-	Extractions  map[string]string       `json:"extractions,omitempty"`
-	PageURL      string                  `json:"page_url,omitempty"`
-	PageTitle    string                  `json:"page_title,omitempty"`
-	HTML         string                  `json:"html,omitempty"`
-	Screenshot   string                  `json:"screenshot_base64,omitempty"`
-	Console      []protocol.ConsoleEntry `json:"console_entries,omitempty"`
-	Network      []protocol.NetworkEntry `json:"network_entries,omitempty"`
-	DOMSummary   *protocol.DOMSummary    `json:"dom_summary,omitempty"`
-	Snapshot     *protocol.ErrorSnapshot `json:"snapshot,omitempty"`
+	Phase         string                  `json:"phase"`
+	ActionName    string                  `json:"action_name"`
+	ActionType    string                  `json:"action_type"`
+	Method        string                  `json:"method,omitempty"`
+	Target        string                  `json:"target"`
+	Selector      string                  `json:"selector,omitempty"`
+	Value         string                  `json:"value,omitempty"`
+	Headers       map[string]string       `json:"headers,omitempty"`
+	Body          string                  `json:"body,omitempty"`
+	StartedAt     time.Time               `json:"started_at"`
+	CompletedAt   time.Time               `json:"completed_at"`
+	DurationMs    float64                 `json:"duration_ms"`
+	StatusCode    int                     `json:"status_code,omitempty"`
+	Success       bool                    `json:"success"`
+	ErrorMessage  string                  `json:"error_message,omitempty"`
+	Extractions   map[string]string       `json:"extractions,omitempty"`
+	PageURL       string                  `json:"page_url,omitempty"`
+	PageTitle     string                  `json:"page_title,omitempty"`
+	HTML          string                  `json:"html,omitempty"`
+	Screenshot    string                  `json:"screenshot_base64,omitempty"`
+	Console       []protocol.ConsoleEntry `json:"console_entries,omitempty"`
+	Network       []protocol.NetworkEntry `json:"network_entries,omitempty"`
+	DOMSummary    *protocol.DOMSummary    `json:"dom_summary,omitempty"`
+	ClientMetrics *protocol.ClientMetrics `json:"client_metrics,omitempty"`
+	Snapshot      *protocol.ErrorSnapshot `json:"snapshot,omitempty"`
 }
 
 func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (*ReplayReport, error) {
@@ -267,6 +268,7 @@ func runReplayAction(
 	event.Console = cloneConsoleEntries(result.ConsoleEntries)
 	event.Network = cloneNetworkEntries(result.NetworkEntries)
 	event.DOMSummary = cloneDOMSummary(result.DOMSummary)
+	event.ClientMetrics = cloneClientMetrics(result.ClientMetrics)
 	event.Snapshot = result.Snapshot
 	if result.Duration > 0 {
 		event.DurationMs = float64(result.Duration.Microseconds()) / 1000
@@ -358,6 +360,7 @@ func cloneReplayActionEvent(event ReplayActionEvent) *ReplayActionEvent {
 	cloned.Console = cloneConsoleEntries(event.Console)
 	cloned.Network = cloneNetworkEntries(event.Network)
 	cloned.DOMSummary = cloneDOMSummary(event.DOMSummary)
+	cloned.ClientMetrics = cloneClientMetrics(event.ClientMetrics)
 	if event.Snapshot != nil {
 		snapshot := *event.Snapshot
 		snapshot.RequestHeaders = cloneStringMap(event.Snapshot.RequestHeaders)
@@ -430,5 +433,13 @@ func cloneDOMSummary(summary *protocol.DOMSummary) *protocol.DOMSummary {
 	if len(summary.VisibleText) > 0 {
 		cloned.VisibleText = append([]string(nil), summary.VisibleText...)
 	}
+	return &cloned
+}
+
+func cloneClientMetrics(metrics *protocol.ClientMetrics) *protocol.ClientMetrics {
+	if metrics == nil {
+		return nil
+	}
+	cloned := *metrics
 	return &cloned
 }

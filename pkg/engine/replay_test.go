@@ -196,6 +196,7 @@ func TestReplayScriptCarriesBrowserArtifacts(t *testing.T) {
 			ConsoleEntries:   []protocol.ConsoleEntry{{Level: "log", Text: "ready"}},
 			NetworkEntries:   []protocol.NetworkEntry{{URL: "https://example.test/page", Method: "GET", StatusCode: 200}},
 			DOMSummary:       &protocol.DOMSummary{Title: "Example", ReadyState: "complete", VisibleText: []string{"ok"}},
+			ClientMetrics:    &protocol.ClientMetrics{LCPMs: 240, INPMs: 55, CLSScore: 0.03, BrowserEngine: "chromium", DeviceProfile: "desktop_1080p"},
 		}, nil
 	})
 
@@ -227,6 +228,9 @@ func TestReplayScriptCarriesBrowserArtifacts(t *testing.T) {
 	}
 	if event.DOMSummary == nil || event.DOMSummary.Title != "Example" {
 		t.Fatalf("dom summary = %#v", event.DOMSummary)
+	}
+	if event.ClientMetrics == nil || event.ClientMetrics.LCPMs != 240 || event.ClientMetrics.BrowserEngine != "chromium" {
+		t.Fatalf("client metrics = %#v, want browser vitals", event.ClientMetrics)
 	}
 	if event.Selector != "body" || event.Value != "ignored" {
 		t.Fatalf("selector/value = %q/%q, want body/ignored", event.Selector, event.Value)

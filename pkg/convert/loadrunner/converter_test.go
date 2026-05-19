@@ -1247,6 +1247,80 @@ TouchMode=1
 	}
 }
 
+func TestConvertZipImportsTruClient2MobileWebRepresentativeArchive(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	addFile := func(name string, content string) {
+		writer, err := zw.Create(name)
+		if err != nil {
+			t.Fatalf("Create(%q) returned error: %v", name, err)
+		}
+		if _, err := writer.Write([]byte(content)); err != nil {
+			t.Fatalf("Write(%q) returned error: %v", name, err)
+		}
+	}
+
+	addFile("CheckoutMobile.usr", `[General]
+Type=TruClient 2.0 - Mobile Web
+RuntimeSettings=default.cfg
+`)
+	addFile("default.xml", encodeUTF16LEForZip(`<?xml version="1.0" encoding="utf-16"?>
+<truScript>
+  <step type="top" action="TopStep">
+    <step type="block" action="Run Block" actionName="Run">
+      <step type="control" action="Call Action" arguments="{&quot;Action Name&quot;:{&quot;value&quot;:&quot;Checkout&quot;}}" />
+    </step>
+    <step type="block" action="action" actionName="Checkout">
+      <step type="util" action="Start Transaction" index="1" arguments="{&quot;Transaction Name&quot;:{&quot;value&quot;:&quot;\&quot;MobileCheckout\&quot;&quot;}}" />
+      <step type="testObject" action="Navigate" index="2" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://m.example.com/checkout\&quot;&quot;}}" />
+      <step type="testObject" action="Set / Type" index="3" arguments="{&quot;Selector&quot;:{&quot;value&quot;:&quot;\&quot;[data-testid='email']\&quot;&quot;},&quot;Value&quot;:{&quot;value&quot;:&quot;\&quot;qa@example.com\&quot;&quot;}}" />
+      <step type="util" action="Wait" index="4" arguments="{&quot;Selector&quot;:{&quot;value&quot;:&quot;\&quot;[data-testid='pay-now']\&quot;&quot;}}" />
+      <step type="testObject" action="Click" index="5" arguments="{&quot;Selector&quot;:{&quot;value&quot;:&quot;\&quot;[data-testid='pay-now']\&quot;&quot;}}" />
+      <step type="util" action="Verify" index="6" arguments="{&quot;Text&quot;:{&quot;value&quot;:&quot;\&quot;Order received\&quot;&quot;}}" />
+      <step type="util" action="End Transaction" index="7" arguments="{&quot;Transaction Name&quot;:{&quot;value&quot;:&quot;\&quot;MobileCheckout\&quot;&quot;}}" />
+    </step>
+  </step>
+</truScript>`))
+	addFile("default.cfg", `[Browser Emulation]
+DeviceProfile=Pixel_8
+TouchMode=1
+ClientMetrics=1
+CaptureScreenshots=on_error
+`)
+	if err := zw.Close(); err != nil {
+		t.Fatalf("zip.Close returned error: %v", err)
+	}
+
+	result, err := ConvertZip(buf.Bytes(), ConvertOptions{PreserveTransactions: true})
+	if err != nil {
+		t.Fatalf("ConvertZip returned error: %v", err)
+	}
+	if result.Script.Protocol != "browser" || result.Script.Name != "CheckoutMobile" {
+		t.Fatalf("script = %#v, want browser CheckoutMobile", result.Script)
+	}
+	if result.Script.Config.Browser.DeviceProfile != "pixel_8" || result.Script.Config.Browser.Engine != "chromium" {
+		t.Fatalf("browser config = %#v, want Pixel 8 Chromium profile", result.Script.Config.Browser)
+	}
+	if result.Script.Config.Browser.ClientMetrics == nil || !*result.Script.Config.Browser.ClientMetrics {
+		t.Fatalf("client metrics = %#v, want enabled", result.Script.Config.Browser.ClientMetrics)
+	}
+	if len(result.Script.Actions) != 4 {
+		t.Fatalf("actions len = %d, want 4", len(result.Script.Actions))
+	}
+	if action := result.Script.Actions[1]; action.Type != "browser_fill" || action.Selector != "[data-testid='email']" || action.Value != "qa@example.com" {
+		t.Fatalf("action[1] = %#v, want email fill", action)
+	}
+	if action := result.Script.Actions[2]; action.Type != "browser_wait" || action.Selector != "[data-testid='pay-now']" {
+		t.Fatalf("action[2] = %#v, want pay-now wait", action)
+	}
+	if action := result.Script.Actions[3]; action.Type != "browser_click" || len(action.Assertions) != 1 || action.Assertions[0].Value != "Order received" {
+		t.Fatalf("action[3] = %#v, want click with verify assertion", action)
+	}
+	if result.Stats.TotalFunctions != 7 || result.Stats.ConvertedActions != 4 || result.Stats.Transactions != 1 {
+		t.Fatalf("stats = %#v, want total=7 converted=4 transactions=1", result.Stats)
+	}
+}
+
 func TestConvertZipMapsTruClientQuerySelectorValueAssignment(t *testing.T) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
