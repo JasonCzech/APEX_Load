@@ -49,6 +49,18 @@ Web/API source acquisition also uses the shared import review envelope:
 | `POST /api/v1/scripts/import/wsdl` | Convert WSDL into a SOAP draft with operation discovery, SOAPAction preservation, namespace mapping, sample envelopes, and payload-review sections. |
 | `GET /api/v1/scripts/import/devweb/support-matrix` | Publish construct-by-construct DevWeb import support and review requirements. |
 
+AI-assisted authoring now has a dedicated governed workflow envelope:
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /api/v1/ai/authoring/contract` | Publish the AI contract for allowed sources, required evidence, approval gates, audit events, policy endpoint, and review queue. |
+| `GET /api/v1/ai/policy?project_id=...` | Expose enabled/disabled state, provider allow-list, redaction posture, retention posture, project disablement, and audit export paths. |
+| `POST /api/v1/ai/drafts` | Generate deterministic drafts from OpenAPI, HAR, sample requests, user story text, or existing scripts, then save them as blocked authoring sessions by default. |
+| `POST /api/v1/ai/repairs` | Return deterministic repair suggestions and preview scripts for validation failures, data-source fit, correlation gaps, hard-coded data, missing assertions, unstable waits, and runtime parity warnings. |
+| `POST /api/v1/ai/explain` | Explain scripts, scenarios, runtime settings, and reports using local citations. |
+| `GET /api/v1/ai/review-queue?project_id=...` | List AI-generated or AI-repaired sessions waiting on diff review, validation, replay, and approval. |
+| `GET /api/v1/tests/{id}/archive/ai-root-cause` | Wrap archived root-cause evidence in an AI workflow response with citations and limitations. |
+
 SQLite-backed controllers persist these sessions in `authoring_sessions`. Controllers without a metadata store keep a local in-memory fallback for development and tests.
 
 Approval is the final backend handoff before a migrated, recorded, manual, or generated draft becomes a reusable scenario asset. Session responses include backend-computed `approval_ready`, `blocking_health_inputs`, and `next_actions` so dashboards can explain why promotion is allowed or blocked before the user clicks approve. The approval endpoint returns HTTP 400 with the standard validation payload when validation fails or the authoring health status is `blocked`. Successful approval stores the draft through the normal script library path, marks the session `approved`, and records `approved_script_id`, `approved_at`, and `approval_health_status` in `review_state`.
@@ -73,7 +85,7 @@ The matrix covers:
 | Recorder | Active | Recording session preview conversion, correlation suggestions |
 | Sample | Active | Template/curl acquisition and shared save handoff |
 | Manual | Active | Editor draft validation, replay, browser replay for browser scripts |
-| AI Generated | Planned | Provenance, diff review, validation, replay, approval gate candidate |
+| AI Generated | Active | Deterministic draft generation, provenance, policy controls, diff review, validation, replay, repair suggestions, explain mode, review queue, approval gate candidate |
 
 ## Health Inputs
 
@@ -116,6 +128,8 @@ Validation responses also include `data_source_fit` when a draft declares data s
 
 AI-generated drafts include `ai_guardrails` in validation responses when `generated_by`, `generated_from`, or import source metadata identifies an AI/LLM source. Guardrails require source provenance, structural validation, diff-review evidence, and replay-before-save evidence. Missing guardrail evidence contributes to `authoring_health.status = blocked`, so AI drafts cannot be approved into reusable assets until review and replay proof are attached.
 
+AI-generated drafts from `POST /api/v1/ai/drafts` start as authoring sessions, not stored scripts. Their metadata includes `ai_contract_version`, `ai_source_type`, `ai_provider`, `diff_reviewed=false`, `replay_status=not_run`, and `validation_status`, which allows the review queue and approval endpoint to enforce the same evidence gate across generated and repaired drafts.
+
 The ScriptEditor renders validation evidence for both reports after draft or saved-script validation. Authors see authoring health, data-source fit status, row-count context, and AI guardrail blockers in the same validation flow used before replay, save, or approval.
 
 The Script Library adds health filters for blocked drafts, replay evidence gaps, missing data, runtime parity warnings, and AI guardrail warnings. These filters use the same `authoring_health.inputs` payload returned by validation and stored with script records, so dashboard triage follows the backend scoring model rather than a separate UI-only taxonomy.
@@ -137,3 +151,4 @@ The draft editor now carries a convergence checklist across manual, recorder, im
 | P3.9 AI generation guardrails | Complete for current authoring flow | Validation responses include `ai_guardrails`, block approval health without provenance, diff review, validation, and replay evidence, ScriptEditor displays guardrail evidence after validation, and the authoring review queue disables blocked promotion with next actions |
 | C5.6 Reusable component library | Complete | `GET /api/v1/scripts/authoring/components` exposes request groups, auth flows, login transactions, data pools, and teardown blocks; dashboard Create Script shows the catalog beside backend templates and ScriptEditor Flow Assembly inserts protocol-compatible components into drafts |
 | W2 Script authoring UX parity | Complete | Source-guided OpenAPI/WSDL/HAR/DevWeb create flows, insertable component blocks, convergence checklist, draft diff review, guided undo/redo, authoring health filters, and deterministic repair actions |
+| W5 AI-assisted workflow parity | Complete for governed local workflow | `GET /api/v1/ai/authoring/contract`, `POST /api/v1/ai/drafts`, `POST /api/v1/ai/repairs`, `POST /api/v1/ai/explain`, `GET /api/v1/ai/review-queue`, `GET /api/v1/ai/policy`, and `GET /api/v1/tests/{id}/archive/ai-root-cause` |

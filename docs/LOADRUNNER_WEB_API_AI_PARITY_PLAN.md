@@ -51,7 +51,7 @@ Major remaining gaps:
 - No native k6 or DevWeb round-trip parity beyond import/conversion surfaces.
 - No high-confidence benchmark publication for Web/API density and browser canary envelopes.
 - Browser support is strong as diagnostic canaries, but not marketed as high-density real-browser load.
-- AI support is currently guardrails-first, not generation/repair/analysis assistant parity with OpenText Aviator-style workflows.
+- AI support now includes governed deterministic draft generation, repair suggestions, explanation, review queue, policy controls, and evidence-bound archived root-cause summaries. External LLM provider integration remains intentionally demand-gated behind the same policy contract.
 
 ## Importance Bands
 
@@ -70,7 +70,7 @@ Major remaining gaps:
 | Script authoring UX | Guided workflow lanes, templates, reusable components, import review, validation/replay/repair/approval | VuGen, DevWeb, TruClient/TruClient 2.0, web client script creation, AI-assisted scripting | P0 | Improve component insertion, visual flow assembly, OpenAPI/WSDL guided create flows, and one-click repair loops. |
 | Runtime settings | Planned Web HTTP/HTML RTS scope complete with explicit compatibility-only caveats | Deep VuGen protocol-specific RTS across many protocol families | P0/P1 | Expand matrix beyond Web HTTP/HTML and add execution tests for browser and API-specific RTS edge cases. |
 | Browser testing | Browser replay, diagnostics, mobile profiles, TrueClient Mobile Web MVP, archive evidence | TruClient, TruClient 2.0, Mobile Web, Native Mobile via Digital Lab, browser workflow maturity | P0/P1 | Publish browser benchmark evidence, deepen TrueClient 2.0/Mobile Web conversion, and improve selector/wait repair. |
-| AI-assisted workflows | Validation guardrails for AI-generated drafts and approval blocking | AI-assisted scripting and analysis in current OpenText positioning | P1/P2 | Add actual AI draft generation, AI repair suggestions, AI explanation, and AI-assisted report/root-cause summaries with audit controls. |
+| AI-assisted workflows | Governed deterministic draft generation, repair suggestions, explain mode, review queue, policy controls, guardrail blocking, and archive root-cause summaries | AI-assisted scripting and analysis in current OpenText positioning | P1/P2 | External provider integrations and richer dashboard-specific AI affordances remain demand-gated; core governed workflow parity is complete. |
 
 ## Implementation Order
 
@@ -195,14 +195,14 @@ Move beyond AI guardrails into auditable AI assistance for generation, repair, e
 
 | ID | Work Item | Priority | Status |
 | --- | --- | --- | --- |
-| W5.1 | Define the AI authoring contract: inputs, allowed sources, provenance, diff requirements, replay requirements, approval gates, and audit events | P0 | Partial guardrails exist |
-| W5.2 | Add AI draft generation from OpenAPI, HAR, sample requests, user story text, and existing scripts | P0 | Not started |
-| W5.3 | Add AI repair suggestions for validation failures, correlation gaps, hard-coded data, missing assertions, unstable waits, and runtime parity warnings | P0 | Not started |
-| W5.4 | Add AI explain mode for scripts, scenarios, runtime settings, and reports, with cited evidence from local artifacts | P1 | Not started |
-| W5.5 | Add AI-assisted root-cause summary for archived runs using metrics, errors, resource data, browser evidence, and APM/Prometheus imports | P1 | Partial deterministic root-cause exists |
-| W5.6 | Add an AI review queue where generated/repaired drafts are blocked until diff review, validation, replay, and approval are complete | P0 | Partial through authoring sessions/guardrails |
-| W5.7 | Add policy controls: AI disabled/enabled per project, allowed providers, data redaction posture, artifact retention, and audit export | P1 | Not started |
-| W5.8 | Add golden AI fixtures that prove generated output remains deterministic enough for tests through mocked provider responses | P1 | Not started |
+| W5.1 | Define the AI authoring contract: inputs, allowed sources, provenance, diff requirements, replay requirements, approval gates, and audit events | P0 | Complete - `GET /api/v1/ai/authoring/contract` and `docs/AI_ASSISTED_WORKFLOWS.md` |
+| W5.2 | Add AI draft generation from OpenAPI, HAR, sample requests, user story text, and existing scripts | P0 | Complete - `POST /api/v1/ai/drafts` creates governed draft sessions without saving reusable scripts |
+| W5.3 | Add AI repair suggestions for validation failures, correlation gaps, hard-coded data, missing assertions, unstable waits, and runtime parity warnings | P0 | Complete - `POST /api/v1/ai/repairs` returns deterministic suggestions and preview scripts |
+| W5.4 | Add AI explain mode for scripts, scenarios, runtime settings, and reports, with cited evidence from local artifacts | P1 | Complete - `POST /api/v1/ai/explain` supports script, scenario, runtime settings, and report targets |
+| W5.5 | Add AI-assisted root-cause summary for archived runs using metrics, errors, resource data, browser evidence, and APM/Prometheus imports | P1 | Complete - `GET /api/v1/tests/{id}/archive/ai-root-cause` wraps archive root-cause evidence |
+| W5.6 | Add an AI review queue where generated/repaired drafts are blocked until diff review, validation, replay, and approval are complete | P0 | Complete - `GET /api/v1/ai/review-queue` lists AI sessions with guardrails, blockers, and next actions |
+| W5.7 | Add policy controls: AI disabled/enabled per project, allowed providers, data redaction posture, artifact retention, and audit export | P1 | Complete - `GET /api/v1/ai/policy` plus environment-backed project/provider/redaction/retention controls |
+| W5.8 | Add golden AI fixtures that prove generated output remains deterministic enough for tests through mocked provider responses | P1 | Complete - deterministic local and mocked providers are covered by `pkg/api/ai_assistance_test.go` |
 
 ### Acceptance Criteria
 

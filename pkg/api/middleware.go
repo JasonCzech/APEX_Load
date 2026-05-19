@@ -500,6 +500,29 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 		return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
 	}
 
+	if path == "/api/v1/ai/authoring/contract" && method == http.MethodGet {
+		return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
+	}
+
+	if (path == "/api/v1/ai/policy" || path == "/api/v1/ai/review-queue") && method == http.MethodGet {
+		if strings.TrimSpace(r.URL.Query().Get("project_id")) == "" {
+			return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
+		}
+		return accessRequirement{
+			GlobalRoles:   []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+			ProjectRoles:  []string{RoleViewer, RoleEditor, RoleProjectAdmin},
+			ProjectLookup: resolveProjectIDFromQuery,
+		}, true
+	}
+
+	if (path == "/api/v1/ai/drafts" || path == "/api/v1/ai/repairs" || path == "/api/v1/ai/explain") && method == http.MethodPost {
+		return accessRequirement{
+			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
+			ProjectLookup: resolveAIAssistanceProjectID,
+		}, true
+	}
+
 	if path == "/api/v1/results/import" && method == http.MethodPost {
 		return accessRequirement{
 			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
@@ -1460,6 +1483,43 @@ func resolveImportProjectIDFromJSONOrForm(r *http.Request, store storage.Store) 
 		return resolveImportProjectIDFromJSON(r, store)
 	}
 	return "", http.StatusBadRequest, "project_id is required for project-scoped import access"
+}
+
+func resolveAIAssistanceProjectID(r *http.Request, store storage.Store) (string, int, string) {
+	var req struct {
+		ProjectID        string `json:"project_id,omitempty"`
+		ExistingScriptID string `json:"existing_script_id,omitempty"`
+		ScriptID         string `json:"script_id,omitempty"`
+		TargetType       string `json:"target_type,omitempty"`
+		TargetID         string `json:"target_id,omitempty"`
+		Script           *struct {
+			ProjectID string `json:"project_id,omitempty"`
+		} `json:"script,omitempty"`
+	}
+	if err := decodeRequestBody(r, &req); err != nil {
+		return "", http.StatusBadRequest, "invalid request body: " + err.Error()
+	}
+	if projectID := normalizeProjectID(req.ProjectID); projectID != "" {
+		return projectID, 0, ""
+	}
+	if req.Script != nil {
+		return normalizeProjectID(req.Script.ProjectID), 0, ""
+	}
+	scriptID := firstNonEmpty(req.ScriptID, req.ExistingScriptID)
+	if scriptID == "" && strings.EqualFold(strings.TrimSpace(req.TargetType), "script") {
+		scriptID = strings.TrimSpace(req.TargetID)
+	}
+	if scriptID != "" && store != nil {
+		script, err := store.GetScript(scriptID)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return "", http.StatusNotFound, "script not found"
+			}
+			return "", http.StatusInternalServerError, "failed to load script"
+		}
+		return normalizeProjectID(script.ProjectID), 0, ""
+	}
+	return "", 0, ""
 }
 
 func resolveExternalResultImportProjectID(r *http.Request, store storage.Store) (string, int, string) {
