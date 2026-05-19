@@ -9,6 +9,7 @@ import {
   AuthoringCorrelationPreviewRequest,
   AuthoringCorrelationPreviewResponse,
   AuthoringSession,
+  BrowserReplayNetworkEntry,
   GeneratorAssignmentSettings,
   GoalConfig,
   RuntimeSettingsOverride,
@@ -124,6 +125,43 @@ type AuthoringSessionApprovalResponse = {
   session: AuthoringSession
   script: StoredScript
   authoring_health: AuthoringHealth
+}
+
+export type BrowserToHTTPPreviewRequest = {
+  name?: string
+  project_id?: string
+  replay_session_id?: string
+  source_browser_script?: ScriptDefinition
+  network_entries?: BrowserReplayNetworkEntry[]
+  include_static_assets?: boolean
+}
+
+export type BrowserToHTTPPreviewResponse = {
+  schema_version: string
+  generated_at: string
+  replay_session_id?: string
+  source_browser_script?: ScriptDefinition
+  generated_script?: ScriptDefinition
+  warnings?: string[]
+  review: {
+    status: string
+    source_browser_actions: number
+    captured_requests: number
+    generated_http_actions: number
+    skipped_static_assets: number
+    correlation_candidates?: Array<{ name: string; source: string; value?: string; evidence?: string; action?: string }>
+    data_source_candidates?: Array<{ name: string; source: string; value?: string; evidence?: string; action?: string }>
+    auth_findings?: Array<{ severity: string; summary: string; evidence?: string; action?: string }>
+    cookie_findings?: Array<{ severity: string; summary: string; evidence?: string; action?: string }>
+    blocking_findings?: Array<{ severity: string; summary: string; evidence?: string; action?: string }>
+    findings?: string[]
+  }
+  scenario_template: {
+    name: string
+    duration: string
+    groups: Array<{ name: string; script_id: string; protocol: string; vusers: number; purpose: string; claim_policy?: string }>
+    notes?: string[]
+  }
 }
 
 function buildScriptQuery(projectId?: string, folderId?: string | null) {
@@ -242,6 +280,12 @@ export function useScriptApi() {
   const startDraftBrowserReplaySession = useCallback(
     (payload: BrowserReplayStartRequest & { script: ScriptDefinition }) =>
       request<BrowserReplayStartResponse>('/scripts/browser-replay/sessions', { method: 'POST', body: JSON.stringify(payload) }),
+    [],
+  )
+
+  const previewBrowserToHTTP = useCallback(
+    (payload: BrowserToHTTPPreviewRequest) =>
+      request<BrowserToHTTPPreviewResponse>('/scripts/browser-to-http/preview', { method: 'POST', body: JSON.stringify(payload) }),
     [],
   )
 
@@ -565,6 +609,7 @@ export function useScriptApi() {
   		replayDraftScript,
       startBrowserReplaySession,
       startDraftBrowserReplaySession,
+      previewBrowserToHTTP,
       getBrowserReplaySession,
       stopBrowserReplaySession,
       pauseBrowserReplaySession,
@@ -618,6 +663,7 @@ export function useScriptApi() {
   		replayDraftScript,
       startBrowserReplaySession,
       startDraftBrowserReplaySession,
+      previewBrowserToHTTP,
       getBrowserReplaySession,
       stopBrowserReplaySession,
       pauseBrowserReplaySession,

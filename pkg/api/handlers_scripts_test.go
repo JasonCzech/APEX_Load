@@ -1193,6 +1193,16 @@ RuntimeSettings=default.cfg
 	if inspection["step_inventory"] == nil || inspection["unsupported_fragments"] == nil {
 		t.Fatalf("inspection = %#v, want step inventory and unsupported fragments", inspection)
 	}
+	readiness, ok := result.Summary["web2_migration_readiness"].(map[string]any)
+	if !ok {
+		t.Fatalf("summary.web2_migration_readiness = %#v, want readiness report", result.Summary["web2_migration_readiness"])
+	}
+	if readiness["imported_steps"] != float64(3) || readiness["converted_steps"] != float64(2) || readiness["conversion_to_http_readiness"] != "needs_replay_network" {
+		t.Fatalf("web2 readiness = %#v, want import/convert counts and HTTP conversion readiness", readiness)
+	}
+	if readiness["replay_status"] != "required" || readiness["runtime_parity_status"] != "ready" {
+		t.Fatalf("web2 readiness status = %#v, want replay required/runtime ready", readiness)
+	}
 }
 
 func TestBrowserSelectorStabilityScoreRanksStableAndBrittleSelectors(t *testing.T) {
@@ -1995,6 +2005,16 @@ func TestAuthoringCapabilitiesEndpoint(t *testing.T) {
 	}
 	if !containsAuthoringSourceStatus(payload.Sources, "trueclient2_web", "review_only") {
 		t.Fatalf("sources = %#v, want trueclient2_web review_only source", payload.Sources)
+	}
+	vugenWeb2, ok := payload.SourceMap["vugen_web2"]
+	if !ok {
+		t.Fatal("expected vugen_web2 source map entry")
+	}
+	if !vugenWeb2.BrowserReplay || !vugenWeb2.ScenarioDraft || !vugenWeb2.ApprovalGateCandidate {
+		t.Fatalf("vugen_web2 features = %#v, want replay, scenario draft, and approval-gated profile", vugenWeb2)
+	}
+	if !containsAuthoringSourceStatus(payload.Sources, "vugen_web2", "review_only") {
+		t.Fatalf("sources = %#v, want vugen_web2 review_only source", payload.Sources)
 	}
 }
 

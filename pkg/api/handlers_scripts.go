@@ -59,7 +59,20 @@ type loadRunnerImportSummary struct {
 	TrueClientInspection        *trueclient.ArchiveInspection                `json:"trueclient_archive_inspection,omitempty"`
 	SourceScriptType            string                                       `json:"source_script_type,omitempty"`
 	SourceProfile               string                                       `json:"source_profile,omitempty"`
+	Web2MigrationReadiness      *web2MigrationReadinessReport                `json:"web2_migration_readiness,omitempty"`
 	UnsupportedFunctionCount    int                                          `json:"unsupported_function_count"`
+}
+
+type web2MigrationReadinessReport struct {
+	ImportedSteps             int      `json:"imported_steps"`
+	ConvertedSteps            int      `json:"converted_steps"`
+	SkippedReviewSteps        int      `json:"skipped_review_steps"`
+	SelectorConfidencePct     int      `json:"selector_confidence_pct"`
+	ReplayStatus              string   `json:"replay_status"`
+	RuntimeParityStatus       string   `json:"runtime_parity_status"`
+	ConversionToHTTPReadiness string   `json:"conversion_to_http_readiness"`
+	Findings                  []string `json:"findings,omitempty"`
+	NextActions               []string `json:"next_actions,omitempty"`
 }
 
 // handleImportLoadRunner handles POST /api/v1/scripts/import/loadrunner
@@ -778,6 +791,83 @@ func trueClientSelectorCandidateCount(inspection *trueclient.ArchiveInspection) 
 	return count
 }
 
+func buildWeb2MigrationReadinessReport(result *loadrunner.ConvertResult, summary loadRunnerImportSummary) *web2MigrationReadinessReport {
+	inspection := summary.TrueClientInspection
+	if inspection == nil {
+		return nil
+	}
+	converted := 0
+	skipped := 0
+	if result != nil {
+		converted = result.Stats.ConvertedActions
+		skipped = result.Stats.Skipped
+	}
+	reviewSteps := skipped + len(inspection.UnsupportedFragments)
+	for _, count := range inspection.StepInventory.ReviewOnly {
+		reviewSteps += count
+	}
+	for _, count := range inspection.StepInventory.Unsupported {
+		reviewSteps += count
+	}
+	runtimeStatus := "ready"
+	if summary.MigrationReadiness != nil {
+		if summary.MigrationReadiness.Blocked {
+			runtimeStatus = "blocked"
+		} else if summary.MigrationReadiness.ScorePct < 100 {
+			runtimeStatus = "needs_review"
+		}
+	} else if len(summary.RuntimeSettingsParity) > 0 {
+		runtimeStatus = "needs_review"
+	}
+
+	report := &web2MigrationReadinessReport{
+		ImportedSteps:             inspection.StepInventory.Total,
+		ConvertedSteps:            converted,
+		SkippedReviewSteps:        reviewSteps,
+		SelectorConfidencePct:     averageTrueClientSelectorConfidence(inspection),
+		ReplayStatus:              "required",
+		RuntimeParityStatus:       runtimeStatus,
+		ConversionToHTTPReadiness: "needs_replay_network",
+		Findings: []string{
+			fmt.Sprintf("%d imported TruClient Web 2.0 step(s), %d converted browser action(s), %d skipped or review step(s).", inspection.StepInventory.Total, converted, reviewSteps),
+			"Browser replay evidence is required before approval.",
+			"Browser-to-HTTP conversion requires replay network capture and generated HTTP validation.",
+		},
+		NextActions: []string{
+			"Run browser replay and review screenshots, DOM, console, network, and Core Web Vitals evidence.",
+			"Open object descriptors and repair low-confidence selectors before promotion.",
+			"Use /api/v1/scripts/browser-to-http/preview after replay network evidence is available.",
+		},
+	}
+	if runtimeStatus == "blocked" {
+		report.Findings = append(report.Findings, "Runtime parity blockers must be resolved or the import policy relaxed before saving.")
+	}
+	if report.SelectorConfidencePct == 0 {
+		report.Findings = append(report.Findings, "No selector confidence evidence was available in the imported object descriptors.")
+	} else if report.SelectorConfidencePct < 70 {
+		report.Findings = append(report.Findings, "Average selector confidence is below the recommended migration threshold.")
+	}
+	return report
+}
+
+func averageTrueClientSelectorConfidence(inspection *trueclient.ArchiveInspection) int {
+	if inspection == nil {
+		return 0
+	}
+	total := 0
+	count := 0
+	for _, step := range inspection.Steps {
+		for _, candidate := range step.SelectorCandidates {
+			total += candidate.Confidence
+			count++
+		}
+	}
+	if count == 0 {
+		return 0
+	}
+	return int(float64(total)/float64(count) + 0.5)
+}
+
 func browserImportRepairSuggestions(script *dsl.Script) []scriptImportRepairSuggestion {
 	suggestions := []scriptImportRepairSuggestion{
 		{
@@ -1063,6 +1153,9 @@ func buildLoadRunnerImportSummary(result *loadrunner.ConvertResult, unsupportedE
 	if summary.MigrationReadiness == nil && len(summary.RuntimeSettingsParity) > 0 {
 		summary.MigrationReadiness = loadrunner.BuildRTSMigrationReadiness(summary.RuntimeSettingsParity, readinessPolicy)
 	}
+	if isWeb2TrueClientInspection(summary.TrueClientInspection) {
+		summary.Web2MigrationReadiness = buildWeb2MigrationReadinessReport(result, summary)
+	}
 
 	return summary
 }
@@ -1076,6 +1169,9 @@ func persistLoadRunnerImportSummary(result *loadrunner.ConvertResult, summary lo
 	}
 	if summary.MigrationReadiness != nil {
 		result.Script.Metadata.Import.Preserved["runtime_settings_migration_readiness"] = summary.MigrationReadiness
+	}
+	if summary.Web2MigrationReadiness != nil {
+		result.Script.Metadata.Import.Preserved["web2_migration_readiness"] = summary.Web2MigrationReadiness
 	}
 }
 

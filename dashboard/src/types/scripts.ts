@@ -398,6 +398,12 @@ export interface ScriptReplayActionEvent {
   phase: string
   action_name: string
   action_type: string
+  source_profile?: string
+  source_step_id?: string
+  source_step_index?: number
+  source_action?: string
+  source_action_name?: string
+  source_transaction?: string
   method?: string
   target: string
   selector?: string

@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react'
 import { useApi } from '../hooks/useApi'
+import type { BrowserToHTTPPreviewResponse } from '../hooks/api/useScriptApi'
 import { useWebSocket } from '../hooks/useWebSocket'
 import {
   BrowserReplayEvent,
+  BrowserReplayNetworkEntry,
   BrowserReplayReport,
   BrowserReplaySession,
   BrowserReplaySnapshot,
@@ -363,18 +365,48 @@ function buildWeb2ObjectDescriptorReview(script: ScriptData, metadata?: ScriptIm
   }
 }
 
-function buildBrowserHTTPConversionReview(script: ScriptData, replayReport: ReplayReport | null): BrowserHTTPConversionReview {
-  const browserActionCount = script.actions.filter(action => action.type.startsWith('browser_')).length
-  const replayEvents = replayReport?.events || []
-  const networkEvidence = replayEvents.some(event => {
-    const snapshot = event.snapshot as Record<string, unknown> | undefined
-    return Boolean(snapshot?.request_url || snapshot?.request_method || event.network_entries?.length)
+function replayEventsForConversion(replayReport: ReplayReport | null, browserReplaySession?: BrowserReplaySession | null): BrowserReplayEvent[] {
+  if (browserReplaySession?.events?.length) return browserReplaySession.events
+  return replayReport?.events || []
+}
+
+function replayNetworkEntriesForConversion(replayReport: ReplayReport | null, browserReplaySession?: BrowserReplaySession | null): BrowserReplayNetworkEntry[] {
+  const entries: BrowserReplayNetworkEntry[] = []
+  const seen = new Set<string>()
+  replayEventsForConversion(replayReport, browserReplaySession).forEach(event => {
+    const eventEntries = [
+      ...(event.network_entries || []),
+      ...(event.snapshot?.network_entries || []),
+    ]
+    if (event.snapshot?.request_url) {
+      eventEntries.push({
+        url: event.snapshot.request_url,
+        method: event.snapshot.request_method || event.method || 'GET',
+        status_code: event.snapshot.response_status || event.status_code,
+        resource_type: 'document',
+        duration_ms: event.duration_ms,
+      })
+    }
+    eventEntries.forEach(entry => {
+      const url = entry.url?.trim()
+      if (!url) return
+      const method = (entry.method || 'GET').toUpperCase()
+      const key = `${method} ${url}`
+      if (seen.has(key)) return
+      seen.add(key)
+      entries.push({ ...entry, method, url })
+    })
   })
-  const candidateRequestCount = replayEvents.filter(event => {
-    const snapshot = event.snapshot as Record<string, unknown> | undefined
-    return Boolean(snapshot?.request_url || event.network_entries?.length)
-  }).length
-  const replayEvidence = Boolean(replayReport?.completed_at || replayEvents.length > 0)
+  return entries
+}
+
+function buildBrowserHTTPConversionReview(script: ScriptData, replayReport: ReplayReport | null, browserReplaySession?: BrowserReplaySession | null): BrowserHTTPConversionReview {
+  const browserActionCount = script.actions.filter(action => action.type.startsWith('browser_')).length
+  const replayEvents = replayEventsForConversion(replayReport, browserReplaySession)
+  const conversionEntries = replayNetworkEntriesForConversion(replayReport, browserReplaySession)
+  const networkEvidence = conversionEntries.length > 0
+  const candidateRequestCount = conversionEntries.length
+  const replayEvidence = Boolean(replayReport?.completed_at || browserReplaySession?.completed_at || replayEvents.length > 0)
   const status = !replayEvidence ? 'needs_replay' : networkEvidence ? 'ready_for_review' : 'blocked'
   const findings = [
     browserActionCount > 0 ? `${browserActionCount} browser action${browserActionCount === 1 ? '' : 's'} available as conversion context.` : 'No browser actions are available for conversion.',
@@ -810,7 +842,10 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const importMetadata = script.metadata?.import
   const importSummary = getImportSummary(importMetadata)
   const objectDescriptorReview = buildWeb2ObjectDescriptorReview(script, importMetadata)
-  const httpConversionReview = buildBrowserHTTPConversionReview(script, replayReport)
+  const httpConversionReview = buildBrowserHTTPConversionReview(script, replayReport, browserReplaySession)
+  const [httpConversionPreview, setHttpConversionPreview] = useState<BrowserToHTTPPreviewResponse | null>(null)
+  const [httpConversionGenerating, setHttpConversionGenerating] = useState(false)
+  const [httpConversionError, setHttpConversionError] = useState('')
   const importedCorrelationFocusTargets = importSummary.correlationSuggestions.map((correlation) => {
     const foundAtActionIndex = findActionIndexByImportedLocation(script.actions, correlation.found_at)
     const foundAtLabel = formatImportedLocationLabel(script.actions, correlation.found_at, foundAtActionIndex)
@@ -1818,6 +1853,32 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       setError(getErrorMessage(e, 'Script validation failed'))
     } finally {
       setValidating(false)
+    }
+  }
+
+  const handleGenerateBrowserHTTPPreview = async () => {
+    setHttpConversionError('')
+    setSuccess('')
+    const currentScript = resolveCurrentScript()
+    const networkEntries = replayNetworkEntriesForConversion(replayReport, browserReplaySession)
+    setHttpConversionGenerating(true)
+    try {
+      const res = await api.previewBrowserToHTTP({
+        name: `${currentScript.name || 'Browser Script'} HTTP Draft`,
+        project_id: projectId || currentScript.project_id,
+        replay_session_id: browserReplaySession?.id || activeReplaySessionId || undefined,
+        source_browser_script: currentScript,
+        network_entries: networkEntries,
+      })
+      setHttpConversionPreview(res)
+      setWarnings(normalizeWarnings(res.warnings))
+      setSuccess('Generated HTTP draft preview from browser replay evidence.')
+    } catch (e: unknown) {
+      setHttpConversionPreview(null)
+      setWarnings(normalizeWarnings(getErrorWarnings(e)))
+      setHttpConversionError(getErrorMessage(e, 'Failed to generate HTTP draft preview'))
+    } finally {
+      setHttpConversionGenerating(false)
     }
   }
 
@@ -3634,7 +3695,64 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                     ))}
                   </div>
                 </div>
+                {httpConversionError && <div className="error-message">{httpConversionError}</div>}
+                {httpConversionPreview && (
+                  <div className="import-correlation-section">
+                    <h4>Generated HTTP Draft Preview</h4>
+                    <p>{httpConversionPreview.generated_script?.name || 'HTTP draft'} is ready for validation, replay, correlation repair, and approval review.</p>
+                    <div className="import-metadata-grid">
+                      <div className="import-metadata-card">
+                        <span>Backend Status</span>
+                        <strong>{httpConversionPreview.review.status.replace(/_/g, ' ')}</strong>
+                        <small>{httpConversionPreview.review.generated_http_actions} HTTP actions generated</small>
+                      </div>
+                      <div className="import-metadata-card">
+                        <span>Captured Requests</span>
+                        <strong>{httpConversionPreview.review.captured_requests}</strong>
+                        <small>{httpConversionPreview.review.skipped_static_assets} static assets skipped</small>
+                      </div>
+                      <div className="import-metadata-card">
+                        <span>Correlation Candidates</span>
+                        <strong>{httpConversionPreview.review.correlation_candidates?.length || 0}</strong>
+                        <small>Review before approval</small>
+                      </div>
+                      <div className="import-metadata-card">
+                        <span>Data Candidates</span>
+                        <strong>{httpConversionPreview.review.data_source_candidates?.length || 0}</strong>
+                        <small>Bind to parameters or data pools</small>
+                      </div>
+                    </div>
+                    <div className="import-correlation-list">
+                      {(httpConversionPreview.review.correlation_candidates || []).slice(0, 4).map((candidate, index) => (
+                        <div key={`http-correlation-${candidate.name}-${candidate.value}-${index}`} className="import-correlation-card">
+                          <strong>Correlation · {candidate.name}</strong>
+                          <span>{candidate.evidence || candidate.source}</span>
+                          {candidate.value && <code>{candidate.value}</code>}
+                        </div>
+                      ))}
+                      {(httpConversionPreview.review.data_source_candidates || []).slice(0, 4).map((candidate, index) => (
+                        <div key={`http-data-${candidate.name}-${candidate.value}-${index}`} className="import-correlation-card">
+                          <strong>Data Source · {candidate.name}</strong>
+                          <span>{candidate.evidence || candidate.source}</span>
+                          {candidate.value && <code>{candidate.value}</code>}
+                        </div>
+                      ))}
+                    </div>
+                    <div className="import-correlation-card">
+                      <strong>{httpConversionPreview.scenario_template.name}</strong>
+                      <span>{httpConversionPreview.scenario_template.groups.map(group => `${group.name}: ${group.protocol} / ${group.vusers} VUsers`).join(' · ')}</span>
+                    </div>
+                  </div>
+                )}
                 <div className="replay-panel-actions" style={{ justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={handleGenerateBrowserHTTPPreview}
+                    disabled={httpConversionGenerating || !httpConversionReview.networkEvidence}
+                  >
+                    {httpConversionGenerating ? 'Generating...' : 'Generate HTTP Draft Preview'}
+                  </button>
                   <button type="button" className="btn btn-secondary" onClick={() => openEditorSection('replay')}>
                     Open Replay Output
                   </button>

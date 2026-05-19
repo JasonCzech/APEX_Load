@@ -192,10 +192,10 @@ func vugenWeb2RuntimeSupportEntries() []RuntimeSettingsSupportEntry {
 			Area:                "Browser-To-HTTP Conversion",
 			Concept:             "Network capture, request eligibility, correlation/data-source repair, and canary-plus-protocol-load scenario guidance",
 			Fields:              []string{"browser_replay.events[].network_entries", "generated_http_script", "scenario_template"},
-			Status:              "partial",
+			Status:              "executed",
 			ExecutionScope:      "Conversion is a governed review workflow; generated HTTP drafts still require validation, replay, and approval.",
 			ImportSources:       []string{"TruClient 2.0 - Web replay evidence"},
-			Evidence:            []string{"docs/VUGEN_WEB2_TRUCLIENT2_PARITY_PLAN.md"},
+			Evidence:            []string{"pkg/api/browser_to_http_conversion_test.go", "docs/VUGEN_WEB2_TRUCLIENT2_PARITY_PLAN.md"},
 			RecommendedWorkflow: "Keep the browser script as a canary, generate an HTTP draft from captured replay traffic, repair correlation/data issues, then assemble a paired scenario.",
 		},
 	)

@@ -55,7 +55,7 @@ func TestRuntimeSettingsSupportMatrixEndpointCoversW3ProtocolsAndPresets(t *test
 	if !runtimeSettingsSupportEntryContains(payload.SupportMatrix, "vugen_web2_browser_replay_evidence", "executed") {
 		t.Fatalf("support matrix missing Web 2.0 replay evidence classification")
 	}
-	if !runtimeSettingsSupportEntryContains(payload.SupportMatrix, "vugen_web2_http_conversion_readiness", "partial") {
+	if !runtimeSettingsSupportEntryContains(payload.SupportMatrix, "vugen_web2_http_conversion_readiness", "executed") {
 		t.Fatalf("support matrix missing Web 2.0 HTTP conversion readiness classification")
 	}
 	if !runtimeSettingsDecisionContains(payload.Decisions, "streaming-media-runtime", "compatibility_only") {

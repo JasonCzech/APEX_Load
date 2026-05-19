@@ -286,4 +286,43 @@ describe('BrowserReplayDebugger', () => {
     ].join('\n'))
     expect(copyButton.textContent).toContain('Copied')
   })
+
+  it('surfaces VuGen Web2 source step and transaction labels in replay evidence', async () => {
+    const sourceReport: BrowserReplayReport = {
+      ...report,
+      events: [
+        {
+          ...report.events[0],
+          source_profile: 'vugen_web2',
+          source_step_id: 'step-checkout',
+          source_step_index: 3,
+          source_action: 'Click',
+          source_action_name: 'Click Checkout',
+          source_transaction: 'Checkout',
+        },
+      ],
+    }
+
+    await act(async () => {
+      root.render(<BrowserReplayDebugger report={sourceReport} running={false} selectedEventIndex={0} />)
+    })
+
+    expect(container.textContent).toContain('VuGen Source')
+    expect(container.textContent).toContain('Txn Checkout · Step 4 · Click Checkout')
+    expect(container.textContent).toContain('vugen_web2')
+
+    const copyButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Copy details'))
+    expect(copyButton).toBeDefined()
+    if (!copyButton) {
+      return
+    }
+
+    await act(async () => {
+      copyButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining('Source Step: Txn Checkout · Step 4 · Click Checkout'))
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining('Source Profile: vugen_web2'))
+  })
 })

@@ -31,6 +31,15 @@ function eventLabel(event: BrowserReplayEvent, index: number): string {
   return event.action_name || `${event.action_type || 'Action'} ${index + 1}`
 }
 
+function sourceStepLabel(event: BrowserReplayEvent): string {
+  const parts = [
+    event.source_transaction ? `Txn ${event.source_transaction}` : '',
+    typeof event.source_step_index === 'number' ? `Step ${event.source_step_index + 1}` : event.source_step_id ? `Step ${event.source_step_id}` : '',
+    event.source_action_name || event.source_action || '',
+  ].filter(Boolean)
+  return parts.join(' · ')
+}
+
 function findViewportEvent(events: BrowserReplayEvent[], selectedIndex?: number | null) {
   if (typeof selectedIndex === 'number' && selectedIndex >= 0) {
     const selected = events[selectedIndex]
@@ -115,6 +124,8 @@ function formatSelectedEventDetails(event: BrowserReplayEvent, index: number): s
   return [
     `Event: ${eventLabel(event, index)}`,
     `Status: ${eventStatus(event)}`,
+    sourceStepLabel(event) ? `Source Step: ${sourceStepLabel(event)}` : '',
+    event.source_profile ? `Source Profile: ${event.source_profile}` : '',
     `Action: ${event.action_type} ${event.target || event.selector || ''}`.trim(),
     `Duration: ${formatDuration(event.duration_ms)}`,
     `Page Title: ${pageTitle}`,
@@ -126,7 +137,7 @@ function formatSelectedEventDetails(event: BrowserReplayEvent, index: number): s
     `Core Web Vitals: ${timelineVitalsSummary(metrics)}`,
     `HTML Capture: ${htmlCaptured ? 'Captured' : 'Not captured'}`,
     `Error: ${event.error_message || 'None'}`,
-  ].join('\n')
+  ].filter(Boolean).join('\n')
 }
 
 export default function BrowserReplayDebugger({
@@ -325,6 +336,7 @@ export default function BrowserReplayDebugger({
                 <div className="browser-debugger-timeline-list">
                   {events.map((event, index) => {
                     const metrics = eventClientMetrics(event)
+                    const sourceLabel = sourceStepLabel(event)
                     return (
                       <button
                         key={`${event.phase}-${event.action_name}-${index}-timeline`}
@@ -335,7 +347,8 @@ export default function BrowserReplayDebugger({
                         <span className="browser-debugger-timeline-index">{index + 1}</span>
                         <span className="browser-debugger-timeline-action">
                           <strong>{eventLabel(event, index)}</strong>
-                          <small>{event.action_type} {formatDuration(event.duration_ms)}</small>
+                          <small>{sourceLabel || `${event.action_type} ${formatDuration(event.duration_ms)}`}</small>
+                          {sourceLabel && <small>{event.action_type} {formatDuration(event.duration_ms)}</small>}
                         </span>
                         <span>{timelineNetworkSummary(event)}</span>
                         <span>{timelineConsoleSummary(event)}</span>
@@ -354,6 +367,13 @@ export default function BrowserReplayDebugger({
                   <span>Action</span>
                   <strong>{selectedEvent.action_type} {selectedEvent.target || selectedEvent.selector || ''}</strong>
                 </div>
+                {sourceStepLabel(selectedEvent) && (
+                  <div className="browser-debugger-detail-item">
+                    <span>VuGen Source</span>
+                    <strong>{sourceStepLabel(selectedEvent)}</strong>
+                    {selectedEvent.source_profile && <small>{selectedEvent.source_profile}</small>}
+                  </div>
+                )}
                 <div className="browser-debugger-detail-item">
                   <span>Duration</span>
                   <strong>{formatDuration(selectedEvent.duration_ms)}</strong>

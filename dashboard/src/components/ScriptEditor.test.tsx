@@ -29,6 +29,7 @@ const apiMock = {
   replayScript: vi.fn(),
   startDraftBrowserReplaySession: vi.fn(),
   startBrowserReplaySession: vi.fn(),
+  previewBrowserToHTTP: vi.fn(),
   pauseBrowserReplaySession: vi.fn(),
   resumeBrowserReplaySession: vi.fn(),
   stopBrowserReplaySession: vi.fn(),
@@ -214,6 +215,37 @@ describe('ScriptEditor', () => {
         started_at: '2026-05-14T20:00:00Z',
         updated_at: '2026-05-14T20:00:00Z',
         events: [],
+      },
+    })
+    apiMock.previewBrowserToHTTP.mockResolvedValue({
+      schema_version: 'stormrunner.browser_to_http_preview.v1',
+      generated_at: '2026-05-14T20:00:02Z',
+      replay_session_id: 'browser-replay-1',
+      generated_script: {
+        ...initialScript,
+        name: 'Checkout Flow HTTP Draft',
+        protocol: 'http',
+        actions: [
+          { name: 'GET /api/cart', type: 'request', method: 'GET', target: 'https://shop.example.test/api/cart' },
+        ],
+      },
+      review: {
+        status: 'needs_repair',
+        source_browser_actions: 1,
+        captured_requests: 1,
+        generated_http_actions: 1,
+        skipped_static_assets: 0,
+        correlation_candidates: [{ name: 'csrf_token', source: 'query', value: 'abcdef0123456789', evidence: 'GET /api/cart' }],
+        data_source_candidates: [{ name: 'customer_id', source: 'query', value: '123', evidence: 'GET /api/cart' }],
+        findings: ['1 replay network request(s) were converted into an HTTP draft.'],
+      },
+      scenario_template: {
+        name: 'Checkout Flow Canary Plus HTTP Load',
+        duration: '10m',
+        groups: [
+          { name: 'browser_canary', script_id: '{{browser_script_id}}', protocol: 'browser', vusers: 1, purpose: 'UX and migration evidence' },
+          { name: 'protocol_load', script_id: '{{generated_http_script_id}}', protocol: 'http', vusers: 50, purpose: 'Protocol-load density after validation and approval' },
+        ],
       },
     })
     apiMock.pauseBrowserReplaySession.mockResolvedValue({ session: { status: 'paused' } })
@@ -416,7 +448,115 @@ describe('ScriptEditor', () => {
     const conversionDialog = container.querySelector('[aria-label="Browser To HTTP Conversion Review"]')
     expect(conversionDialog?.className).toContain('open')
     expect(conversionDialog?.textContent).toContain('Run browser replay before generating an HTTP draft.')
+    expect(conversionDialog?.textContent).toContain('Generate HTTP Draft Preview')
     expect(conversionDialog?.textContent).toContain('Review Runtime Settings')
+  })
+
+  it('generates a Web2 HTTP draft preview from browser replay network evidence', async () => {
+    apiMock.startDraftBrowserReplaySession.mockResolvedValueOnce({
+      replay_session_id: 'browser-replay-1',
+      session: {
+        id: 'browser-replay-1',
+        group: 'Checkout Web2-browser-replay',
+        protocol: 'browser',
+        status: 'completed',
+        started_at: '2026-05-14T20:00:00Z',
+        completed_at: '2026-05-14T20:00:02Z',
+        events: [
+          {
+            phase: 'action',
+            action_name: 'Click Checkout',
+            action_type: 'browser_click',
+            target: '#checkout',
+            success: true,
+            started_at: '2026-05-14T20:00:00Z',
+            completed_at: '2026-05-14T20:00:01Z',
+            duration_ms: 31,
+            network_entries: [
+              { method: 'GET', url: 'https://shop.example.test/api/cart?customer_id=123&csrf_token=abcdef0123456789', status_code: 200, resource_type: 'fetch', duration_ms: 24 },
+            ],
+          },
+        ],
+      },
+    })
+
+    const importedWeb2Script: ScriptDefinition = {
+      ...initialScript,
+      name: 'Checkout Web2',
+      protocol: 'browser',
+      actions: [
+        {
+          name: 'Click Checkout',
+          type: 'browser_click',
+          target: '#checkout',
+          selector: '#checkout',
+        },
+      ],
+      metadata: {
+        import: {
+          source: 'loadrunner',
+          source_script_name: 'CheckoutWeb2.zip',
+          preserved: {
+            source_script_type: 'TruClient 2.0 - Web',
+          },
+        },
+      },
+    }
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={importedWeb2Script} projectId="project-1" />)
+    })
+
+    const replayButton = Array.from(container.querySelectorAll('button')).find(button =>
+      button.textContent?.trim() === 'Browser Replay',
+    )
+    expect(replayButton).toBeDefined()
+    if (!replayButton) {
+      return
+    }
+
+    await act(async () => {
+      replayButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    const conversionButton = Array.from(container.querySelectorAll('.editor-outline-link')).find(button => button.textContent?.includes('HTTP Conversion Review'))
+    expect(conversionButton).toBeDefined()
+    if (!conversionButton) {
+      return
+    }
+
+    await act(async () => {
+      conversionButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const generateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Generate HTTP Draft Preview')) as HTMLButtonElement | undefined
+    expect(generateButton).toBeDefined()
+    expect(generateButton?.disabled).toBe(false)
+    if (!generateButton) {
+      return
+    }
+
+    await act(async () => {
+      generateButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(apiMock.previewBrowserToHTTP).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Checkout Web2 HTTP Draft',
+      project_id: 'project-1',
+      replay_session_id: 'browser-replay-1',
+      source_browser_script: expect.objectContaining({ name: 'Checkout Web2', protocol: 'browser' }),
+      network_entries: [
+        expect.objectContaining({ method: 'GET', url: 'https://shop.example.test/api/cart?customer_id=123&csrf_token=abcdef0123456789' }),
+      ],
+    }))
+    expect(container.textContent).toContain('Generated HTTP draft preview from browser replay evidence.')
+    expect(container.textContent).toContain('Generated HTTP Draft Preview')
+    expect(container.textContent).toContain('Checkout Flow HTTP Draft')
+    expect(container.textContent).toContain('Correlation · csrf_token')
+    expect(container.textContent).toContain('Data Source · customer_id')
+    expect(container.textContent).toContain('browser_canary: browser / 1 VUsers')
   })
 
   it('renders the provided script model without fetching from the API', async () => {

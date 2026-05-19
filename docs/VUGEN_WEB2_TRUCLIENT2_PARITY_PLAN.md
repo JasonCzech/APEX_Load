@@ -186,11 +186,13 @@ Acceptance:
 
 | ID | Work Item | Priority | Status |
 | --- | --- | --- | --- |
-| V2.7.1 | Add "Generate protocol-load script" action from Web 2.0 browser profile | P1 | Planned |
-| V2.7.2 | Capture replay network flow as HAR-like evidence and convert to Stormrunner HTTP DSL | P1 | Planned |
-| V2.7.3 | Detect dynamic values, candidate correlations, parameter sources, auth headers, cookies, and request body variables | P1 | Planned |
-| V2.7.4 | Produce side-by-side browser script and generated HTTP script review with correlation/data-source repair suggestions | P1 | Planned |
-| V2.7.5 | Add scenario template for "browser canary plus generated protocol load" | P1 | Planned |
+| V2.7.1 | Add "Generate protocol-load script" action from Web 2.0 browser profile | P1 | Complete |
+| V2.7.2 | Capture replay network flow as HAR-like evidence and convert to Stormrunner HTTP DSL | P1 | Complete |
+| V2.7.3 | Detect dynamic values, candidate correlations, parameter sources, auth headers, cookies, and request body variables | P1 | Complete |
+| V2.7.4 | Produce side-by-side browser script and generated HTTP script review with correlation/data-source repair suggestions | P1 | Complete |
+| V2.7.5 | Add scenario template for "browser canary plus generated protocol load" | P1 | Complete |
+
+Implementation note: V2.7 is backed by `POST /api/v1/scripts/browser-to-http/preview`, which accepts browser replay network entries or a replay session ID, converts compact replay network evidence into HAR-like input for the existing HAR importer, and returns a generated HTTP DSL draft plus conversion review evidence. The review flags dynamic query values as correlation/data-source candidates, records auth and cookie follow-up findings, skips static browser assets by default, and emits a browser-canary plus generated-protocol-load scenario template. The dashboard Web 2.0 conversion dialog now includes a `Generate HTTP Draft Preview` action that uses captured browser replay evidence and shows generated action counts, repair candidates, and the scenario template before promotion.
 
 Acceptance:
 
@@ -201,11 +203,13 @@ Acceptance:
 
 | ID | Work Item | Priority | Status |
 | --- | --- | --- | --- |
-| V2.8.1 | Add import API support for TruClient 2.0 Web through existing LoadRunner import endpoint with explicit source metadata | P0 | Planned |
-| V2.8.2 | Extend authoring capabilities with `vugen_web2` source/profile | P0 | Planned |
-| V2.8.3 | Extend `/api/v1/system/parity-status` with a Web 2.0 migration area or evidence item | P1 | Planned |
-| V2.8.4 | Add migration readiness report with imported steps, converted steps, skipped/review steps, selector confidence, replay status, runtime parity, and conversion-to-HTTP readiness | P1 | Planned |
-| V2.8.5 | Update dashboard LoadRunner import review to show Web 2.0 profile-specific review cards and replay/repair actions | P1 | Planned |
+| V2.8.1 | Add import API support for TruClient 2.0 Web through existing LoadRunner import endpoint with explicit source metadata | P0 | Complete |
+| V2.8.2 | Extend authoring capabilities with `vugen_web2` source/profile | P0 | Complete |
+| V2.8.3 | Extend `/api/v1/system/parity-status` with a Web 2.0 migration area or evidence item | P1 | Complete |
+| V2.8.4 | Add migration readiness report with imported steps, converted steps, skipped/review steps, selector confidence, replay status, runtime parity, and conversion-to-HTTP readiness | P1 | Complete |
+| V2.8.5 | Update dashboard LoadRunner import review to show Web 2.0 profile-specific review cards and replay/repair actions | P1 | Complete |
+
+Implementation note: V2.8 extends the existing LoadRunner import endpoint and summary persistence with `web2_migration_readiness`, including imported/converted/skipped step counts, selector confidence, replay status, runtime parity status, conversion-to-HTTP readiness, findings, and next actions. `/api/v1/scripts/authoring/capabilities` now exposes `vugen_web2` as a named browser-replay gated source/profile, `/api/v1/runtime-settings/support-matrix` lists the Web 2.0 conversion-readiness evidence, and `/api/v1/system/parity-status` includes a dedicated `vugen_web2_migration` area. Dashboard Web 2.0 editor workflows expose object-descriptor review, replay evidence, source-step timeline labels, and HTTP conversion preview from the outline dialogs.
 
 Acceptance:
 
