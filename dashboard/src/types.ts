@@ -598,6 +598,43 @@ export interface RunArchiveReportProfile {
   included_sections: string[]
 }
 
+export interface ReportProfilesResponse {
+  generated_at: string
+  default_profile: string
+  profiles: RunArchiveReportProfile[]
+  download_formats: string[]
+}
+
+export interface RootCauseSignal {
+  name: string
+  status: string
+  value?: string
+  severity?: string
+  score?: number
+}
+
+export interface RootCauseFinding {
+  category: string
+  severity: 'critical' | 'warning' | 'healthy' | string
+  title: string
+  detail: string
+  evidence?: string[]
+  score: number
+}
+
+export interface RunRootCauseSummary {
+  schema_version: string
+  test_id: string
+  generated_at: string
+  status: 'healthy' | 'degraded' | 'breached' | 'unknown' | string
+  confidence: 'low' | 'medium' | 'high' | string
+  summary: string
+  signals?: RootCauseSignal[]
+  top_findings?: RootCauseFinding[]
+  next_actions?: string[]
+  evidence?: string[]
+}
+
 export interface RunArchiveChangeAttribution {
   script_revisions?: string[]
   scenario_revision?: string
@@ -1491,6 +1528,118 @@ export interface ParityStatusResponse {
   overall: 'complete' | 'partial' | 'blocked' | string
   areas: ParityStatusArea[]
   competitive_parity?: CompetitiveParityArea[]
+}
+
+export interface APMIntegrationProfile {
+  id: string
+  name: string
+  status: 'supported' | 'configured' | 'available' | string
+  capabilities: string[]
+  supported_signals: string[]
+  correlation_fields: string[]
+  required_settings?: string[]
+  evidence?: string[]
+  setup_actions?: string[]
+}
+
+export interface APMCorrelationContract {
+  status: string
+  propagation: string
+  correlation_fields: string[]
+  evidence?: string[]
+}
+
+export interface APMIntegrationProfilesResponse {
+  generated_at: string
+  configured_count: number
+  profiles: APMIntegrationProfile[]
+  generic_correlation: APMCorrelationContract
+}
+
+export interface InfrastructureMonitorPack {
+  id: string
+  name: string
+  status: 'supported' | 'integration_contract' | string
+  source: string
+  resource_type: string
+  signals: string[]
+  evidence?: string[]
+  setup_actions?: string[]
+}
+
+export interface InfrastructureMonitorPacksResponse {
+  generated_at: string
+  packs: InfrastructureMonitorPack[]
+  evidence?: string[]
+}
+
+export interface ReleaseSLAWaiver {
+  id: string
+  release_id: string
+  project_id?: string
+  scope: string
+  reason: string
+  approved_by?: string
+  status: 'active' | 'expired' | string
+  expires_at?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface ReleaseSLAGovernanceRun {
+  test_id: string
+  test_name?: string
+  status: string
+  completed_at?: string
+  sla_breached: boolean
+  sla_details?: string[]
+  telemetry_status?: string
+  completeness?: string
+}
+
+export interface ReleaseSLAGovernanceResponse {
+  generated_at: string
+  release_id: string
+  release_name?: string
+  application_id?: string
+  project_id?: string
+  owner: {
+    type: string
+    id?: string
+    display_name: string
+  }
+  status: 'passed' | 'failed' | 'waived' | 'no_runs' | string
+  summary: {
+    total_runs: number
+    archived_runs: number
+    passed_runs: number
+    failed_runs: number
+    waived_breaches: number
+    unwaived_breaches: number
+  }
+  breach_history?: ReleaseSLAGovernanceRun[]
+  waivers?: ReleaseSLAWaiver[]
+  audit_trail?: DashboardAuditEvent[]
+  next_actions?: string[]
+}
+
+export interface ExternalResultImport {
+  id: string
+  provider: 'k6' | 'jmeter' | 'gatling' | string
+  name: string
+  project_id?: string
+  release_id?: string
+  scenario_id?: string
+  source?: string
+  summary?: Record<string, unknown>
+  created_at: string
+}
+
+export interface ExternalResultImportsResponse {
+  imports: ExternalResultImport[]
+  count: number
+  limit: number
+  offset: number
 }
 
 export interface DashboardThresholdSettings {

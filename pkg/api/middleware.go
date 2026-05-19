@@ -287,6 +287,12 @@ func requiredServiceAccountScope(r *http.Request) string {
 	if strings.HasPrefix(path, "/api/v1/system/") {
 		return "system:read"
 	}
+	if strings.HasPrefix(path, "/api/v1/results") {
+		if method == http.MethodGet || method == http.MethodHead {
+			return "results:read"
+		}
+		return "tests:run"
+	}
 	if strings.HasPrefix(path, "/api/v1/scripts") {
 		if method == http.MethodGet || method == http.MethodHead {
 			return "read"
@@ -488,6 +494,18 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 
 	if (path == "/api/v1/system/inventory" || path == "/api/v1/system/usage" || path == "/api/v1/system/usage/export" || path == "/api/v1/system/usage/snapshots" || path == "/api/v1/system/parity-status" || path == "/api/v1/fleet/alerts" || path == "/api/v1/fleet/capacity") && method == http.MethodGet {
 		return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
+	}
+
+	if (path == "/api/v1/integrations/apm/profiles" || path == "/api/v1/monitoring/packs" || path == "/api/v1/reports/profiles" || path == "/api/v1/results/imports") && method == http.MethodGet {
+		return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
+	}
+
+	if path == "/api/v1/results/import" && method == http.MethodPost {
+		return accessRequirement{
+			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
+			ProjectLookup: resolveExternalResultImportProjectID,
+		}, true
 	}
 
 	if path == "/api/v1/system/usage/snapshots" && method == http.MethodPost {
@@ -1412,6 +1430,28 @@ func resolveImportProjectIDFromJSON(r *http.Request, _ storage.Store) (string, i
 		return "", http.StatusBadRequest, "project_id is required for project-scoped import access"
 	}
 	return projectID, 0, ""
+}
+
+func resolveExternalResultImportProjectID(r *http.Request, store storage.Store) (string, int, string) {
+	var req struct {
+		ProjectID string `json:"project_id,omitempty"`
+		ReleaseID string `json:"release_id,omitempty"`
+	}
+	if err := decodeRequestBody(r, &req); err != nil {
+		return "", http.StatusBadRequest, "invalid request body: " + err.Error()
+	}
+	if strings.TrimSpace(req.ProjectID) != "" {
+		return normalizeProjectID(req.ProjectID), 0, ""
+	}
+	if releaseID := strings.TrimSpace(req.ReleaseID); releaseID != "" {
+		if store == nil {
+			return "", http.StatusServiceUnavailable, "release storage is not configured"
+		}
+		releaseReq := r.Clone(r.Context())
+		releaseReq.SetPathValue("id", releaseID)
+		return resolveReleaseProjectID(releaseReq, store)
+	}
+	return normalizeProjectID(""), 0, ""
 }
 
 func resolveScriptCreateProjectID(r *http.Request, store storage.Store) (string, int, string) {

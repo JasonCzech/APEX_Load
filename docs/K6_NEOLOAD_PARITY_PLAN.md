@@ -103,7 +103,7 @@ Implementation notes:
 | --- | --- | --- | --- |
 | C2.1 | Add `stormctl script validate --format json` and `stormctl script explain` for local authoring feedback | P0 | Not started |
 | C2.2 | Add first-class checks/threshold authoring in the script and scenario editors, mapped to existing goal/SLA contracts | P0 | Partial via goal/SLA backend |
-| C2.3 | Add k6 result import so teams can centralize k6 JSON summaries and trend them in Stormrunner reports | P1 | Not started |
+| C2.3 | Add k6 result import so teams can centralize k6 JSON summaries and trend them in Stormrunner reports | P1 | Complete via C4 external result ingestion API and dashboard import evidence |
 | C2.4 | Add k6-to-Stormrunner conversion MVP for HTTP scripts: requests, groups, checks, thresholds, sleep, and basic env vars | P1 | Not started |
 | C2.5 | Add Stormrunner-to-k6 export for simple HTTP smoke tests to help developer teams adopt gradually | P2 | Not started |
 | C2.6 | Add official examples for API smoke, staged ramp, arrival-rate, threshold-gated CI, and browser canary patterns | P0 | Partial via templates |
@@ -139,12 +139,12 @@ Acceptance criteria:
 
 | ID | Work Item | Priority | Status |
 | --- | --- | --- | --- |
-| C4.1 | Add APM integration profiles for Dynatrace, Datadog, New Relic, AppDynamics, and generic OpenTelemetry correlation | P0 | Partial via OTel/Prometheus/Dynatrace events |
-| C4.2 | Add infrastructure monitor packs for Kubernetes, Linux hosts, JVM, database, web server, and queue brokers | P0 | Partial via resource snapshots |
-| C4.3 | Add root-cause summary engine that correlates run regressions with dependency, resource, telemetry, and browser signals | P1 | Not started |
-| C4.4 | Add SLA governance dashboard: release pass/fail, breach history, owner, waiver, and audit trail | P1 | Partial via SLA status/release trends |
-| C4.5 | Add report profiles that produce executive, engineer, and audit exports with different section defaults | P1 | Partial |
-| C4.6 | Add external result ingestion for JMeter, Gatling, and k6 to centralize trend reporting | P1 | Partial for JMeter import, not result ingestion |
+| C4.1 | Add APM integration profiles for Dynatrace, Datadog, New Relic, AppDynamics, and generic OpenTelemetry correlation | P0 | Complete: `/api/v1/integrations/apm/profiles`, Monitoring dashboard APM card |
+| C4.2 | Add infrastructure monitor packs for Kubernetes, Linux hosts, JVM, database, web server, and queue brokers | P0 | Complete: `/api/v1/monitoring/packs`, Monitoring dashboard monitor-pack card |
+| C4.3 | Add root-cause summary engine that correlates run regressions with dependency, resource, telemetry, and browser signals | P1 | Complete: `/api/v1/tests/{id}/archive/root-cause`, Results root-cause action |
+| C4.4 | Add SLA governance dashboard: release pass/fail, breach history, owner, waiver, and audit trail | P1 | Complete: `/api/v1/releases/{id}/sla-governance`, waiver endpoint, Results SLA gate card |
+| C4.5 | Add report profiles that produce executive, engineer, and audit exports with different section defaults | P1 | Complete: `/api/v1/reports/profiles` defines executive, engineer, and audit section/export defaults |
+| C4.6 | Add external result ingestion for JMeter, Gatling, and k6 to centralize trend reporting | P1 | Complete: `/api/v1/results/import`, `/api/v1/results/imports`, Results external import card |
 
 Acceptance criteria:
 

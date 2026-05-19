@@ -61,7 +61,7 @@ Known limits for the initial primitive:
 
 ## Audit Extensions
 
-Current audit coverage includes script, scenario, schedule, test lifecycle, service account, settings, release, comparison baseline, recorder, browser replay, usage snapshots, retention pruning, and capacity governance actions. Capacity governance audit events are emitted when a run is blocked by insufficient generator capacity, deferred by quota/fair-share policy, or promoted by the system after capacity becomes available.
+Current audit coverage includes script, scenario, schedule, test lifecycle, service account, settings, release, comparison baseline, release SLA waivers, external result imports, recorder, browser replay, usage snapshots, retention pruning, and capacity governance actions. Capacity governance audit events are emitted when a run is blocked by insufficient generator capacity, deferred by quota/fair-share policy, or promoted by the system after capacity becomes available.
 
 | Event family | Example actions |
 | --- | --- |
@@ -69,6 +69,7 @@ Current audit coverage includes script, scenario, schedule, test lifecycle, serv
 | Quota and fair share | `capacity.placement.reject`, `capacity.fair_share.defer`, `capacity.reservation.consume` |
 | Schedule decisions | `scenario.schedule.occurrence.materialized`, `scenario.schedule.occurrence.skipped`, `scenario.schedule.occurrence.blocked`, `scenario.schedule.approval_required` |
 | Run promotion | `test.pending.promote`, `test.result.promote`, `test.result.reject`, `test.baseline.update` |
+| Analysis governance | `release.sla.waiver.create`, `external_result.import.create` |
 | Retention | `archive.retention.prune`, `archive.retention.hold`, `archive.retention.release` |
 
 Audit details should include the policy revision, evaluated project, actor, decision reason, and affected run or schedule ID.

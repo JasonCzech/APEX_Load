@@ -154,6 +154,40 @@ type AuditEvent struct {
 	CreatedAt        time.Time      `json:"created_at"`
 }
 
+type ReleaseSLAWaiver struct {
+	ID         string     `json:"id"`
+	ReleaseID  string     `json:"release_id"`
+	ProjectID  string     `json:"project_id,omitempty"`
+	Scope      string     `json:"scope"`
+	Reason     string     `json:"reason"`
+	ApprovedBy string     `json:"approved_by,omitempty"`
+	Status     string     `json:"status"`
+	ExpiresAt  *time.Time `json:"expires_at,omitempty"`
+	CreatedAt  time.Time  `json:"created_at"`
+	UpdatedAt  time.Time  `json:"updated_at"`
+}
+
+type ExternalResultImportFilter struct {
+	ProjectID string
+	ReleaseID string
+	Provider  string
+	Limit     int
+	Offset    int
+}
+
+type ExternalResultImport struct {
+	ID         string         `json:"id"`
+	Provider   string         `json:"provider"`
+	Name       string         `json:"name"`
+	ProjectID  string         `json:"project_id,omitempty"`
+	ReleaseID  string         `json:"release_id,omitempty"`
+	ScenarioID string         `json:"scenario_id,omitempty"`
+	Source     string         `json:"source,omitempty"`
+	Summary    map[string]any `json:"summary,omitempty"`
+	RawResult  map[string]any `json:"raw_result,omitempty"`
+	CreatedAt  time.Time      `json:"created_at"`
+}
+
 type UsageAccountingSnapshot struct {
 	ID          string    `json:"id"`
 	ProjectID   string    `json:"project_id,omitempty"`

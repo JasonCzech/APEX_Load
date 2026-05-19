@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, type DragEvent, type ReactNo
 import { type WebSocketConnectionState } from '../hooks/useWebSocket'
 import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
-import { FleetAlert, FleetCapacityResponse, HealthResponse, ParityStatusResponse, ScenarioScheduleHealth, SystemInventoryResponse, SystemReadinessResponse, TelemetryDiagnosticEntry, TestSummary } from '../types'
+import { APMIntegrationProfilesResponse, FleetAlert, FleetCapacityResponse, HealthResponse, InfrastructureMonitorPacksResponse, ParityStatusResponse, ScenarioScheduleHealth, SystemInventoryResponse, SystemReadinessResponse, TelemetryDiagnosticEntry, TestSummary } from '../types'
 import { formatTelemetryDiagnosticTime, telemetryDiagnosticSeverityClass } from './monitoringTelemetryDiagnostics'
 import './CreateTestModal.css'
 
@@ -64,6 +64,14 @@ function formatEvidenceLevel(level?: string): string {
     .split('_').join(' ')
 }
 
+function safeApiCall<T>(request: () => Promise<T>, fallback: T): Promise<T> {
+  try {
+    return request().catch(() => fallback)
+  } catch {
+    return Promise.resolve(fallback)
+  }
+}
+
 export default function MonitoringPage({ connectionState, telemetryDiagnostics = [] }: Props) {
   const api = useApi()
   const { activeProject } = useProject()
@@ -72,6 +80,8 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const [inventory, setInventory] = useState<SystemInventoryResponse | null>(null)
   const [systemReadiness, setSystemReadiness] = useState<SystemReadinessResponse | null>(null)
   const [parityStatus, setParityStatus] = useState<ParityStatusResponse | null>(null)
+  const [apmProfiles, setApmProfiles] = useState<APMIntegrationProfilesResponse | null>(null)
+  const [monitorPacks, setMonitorPacks] = useState<InfrastructureMonitorPacksResponse | null>(null)
   const [fleetAlerts, setFleetAlerts] = useState<FleetAlert[]>([])
   const [fleetCapacity, setFleetCapacity] = useState<FleetCapacityResponse | null>(null)
   const [tests, setTests] = useState<TestSummary[]>([])
@@ -192,19 +202,30 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
         ? 'healthy'
         : 'unknown'
   const readinessHeaderLabel = formatReadinessStatus(systemReadiness?.status)
+  const apmProfileCount = apmProfiles?.profiles.length ?? 0
+  const apmConfiguredCount = apmProfiles?.profiles.filter(profile => profile.status === 'configured' || profile.status === 'supported').length ?? 0
+  const apmHeaderSeverity = !apmProfiles ? 'unknown' : apmConfiguredCount > 0 ? 'healthy' : 'warning'
+  const apmHeaderLabel = !apmProfiles ? 'checking' : `${apmConfiguredCount}/${apmProfileCount} ready`
+  const monitorPackCount = monitorPacks?.packs.length ?? 0
+  const monitorPackSupportedCount = monitorPacks?.packs.filter(pack => pack.status === 'supported').length ?? 0
+  const monitorPackContractCount = monitorPacks?.packs.filter(pack => pack.status === 'integration_contract').length ?? 0
+  const monitorPackHeaderSeverity = !monitorPacks ? 'unknown' : monitorPackSupportedCount === monitorPackCount ? 'healthy' : 'warning'
+  const monitorPackHeaderLabel = !monitorPacks ? 'checking' : `${monitorPackSupportedCount}/${monitorPackCount} native`
 
   const refresh = useCallback(async () => {
     if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
       return
     }
     try {
-      const [healthRes, testsRes, inventoryRes, readinessRes, scheduleHealthRes, parityStatusRes, fleetAlertsRes, fleetCapacityRes] = await Promise.all([
+      const [healthRes, testsRes, inventoryRes, readinessRes, scheduleHealthRes, parityStatusRes, apmProfilesRes, monitorPacksRes, fleetAlertsRes, fleetCapacityRes] = await Promise.all([
         api.getHealth(),
         api.listTests(activeProject?.id ? { project_id: activeProject.id } : undefined).catch(() => ({ tests: [] })),
         api.getSystemInventory().catch(() => null),
         api.getSystemReadiness().catch(() => null),
         api.getScheduleHealth().catch(() => null),
         api.getParityStatus().catch(() => null),
+        safeApiCall(() => api.getAPMIntegrationProfiles(), null),
+        safeApiCall(() => api.getInfrastructureMonitorPacks(), null),
         api.getFleetAlerts().catch(() => ({ alerts: [] })),
         api.getFleetCapacity(activeProject?.id ? { project_id: activeProject.id } : undefined).catch(() => null),
       ])
@@ -214,6 +235,8 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       setSystemReadiness(readinessRes)
       setScheduleHealth(scheduleHealthRes)
       setParityStatus(parityStatusRes)
+      setApmProfiles(apmProfilesRes)
+      setMonitorPacks(monitorPacksRes)
       setFleetAlerts(fleetAlertsRes.alerts || [])
       setFleetCapacity(fleetCapacityRes)
       setLastRefreshed(new Date())
@@ -424,6 +447,99 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
                 <div className="telemetry-summary-cta">View details</div>
               </div>
             </button>
+          )}
+        </div>
+      ),
+    },
+    {
+      id: 'apm-integrations',
+      title: 'APM Profiles',
+      headerBadge: (
+        <span className={`monitor-header-badge ${apmHeaderSeverity}`}>
+          {apmHeaderLabel}
+        </span>
+      ),
+      icon: (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M4 18V6" />
+          <path d="M20 18V6" />
+          <path d="M8 6h8" />
+          <path d="M8 18h8" />
+          <path d="M12 6v12" />
+        </svg>
+      ),
+      content: (
+        <div className="monitor-body">
+          {!apmProfiles ? (
+            <p className="monitor-hint">Waiting for /api/v1/integrations/apm/profiles.</p>
+          ) : (
+            <>
+              <div className="monitor-row">
+                <span className="monitor-label">Correlation</span>
+                <span className="monitor-value">{apmProfiles.generic_correlation.propagation}</span>
+              </div>
+              <div className="monitor-row">
+                <span className="monitor-label">Fields</span>
+                <span className="monitor-value">{apmProfiles.generic_correlation.correlation_fields.slice(0, 4).join(', ')}</span>
+              </div>
+              <div className="monitor-warning-list">
+                {apmProfiles.profiles.slice(0, 5).map(profile => (
+                  <p key={profile.id} className={profile.status === 'available' ? 'telemetry-text-warning' : ''}>
+                    {profile.name}: {profile.status}
+                  </p>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      ),
+    },
+    {
+      id: 'monitor-packs',
+      title: 'Monitor Packs',
+      headerBadge: (
+        <span className={`monitor-header-badge ${monitorPackHeaderSeverity}`}>
+          {monitorPackHeaderLabel}
+        </span>
+      ),
+      icon: (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="3" y="4" width="18" height="14" rx="2" />
+          <path d="M7 20h10" />
+          <path d="M9 9h.01" />
+          <path d="M13 9h4" />
+          <path d="M9 13h.01" />
+          <path d="M13 13h4" />
+        </svg>
+      ),
+      content: (
+        <div className="monitor-body">
+          {!monitorPacks ? (
+            <p className="monitor-hint">Waiting for /api/v1/monitoring/packs.</p>
+          ) : (
+            <>
+              <div className="telemetry-summary-metrics">
+                <div className="telemetry-summary-metric">
+                  <span className="telemetry-summary-value">{monitorPackSupportedCount}</span>
+                  <span className="telemetry-summary-label">Native</span>
+                </div>
+                <div className="telemetry-summary-metric">
+                  <span className={`telemetry-summary-value ${monitorPackContractCount > 0 ? 'telemetry-text-warning' : ''}`}>{monitorPackContractCount}</span>
+                  <span className="telemetry-summary-label">Contracts</span>
+                </div>
+                <div className="telemetry-summary-metric">
+                  <span className="telemetry-summary-value">{monitorPackCount}</span>
+                  <span className="telemetry-summary-label">Total</span>
+                </div>
+              </div>
+              <div className="monitor-warning-list">
+                {monitorPacks.packs.slice(0, 6).map(pack => (
+                  <p key={pack.id} className={pack.status === 'integration_contract' ? 'telemetry-text-warning' : ''}>
+                    {pack.name}: {pack.signals.slice(0, 2).join(', ')}
+                  </p>
+                ))}
+              </div>
+            </>
           )}
         </div>
       ),
@@ -840,7 +956,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
         </div>
       ),
     },
-  ], [competitiveEvidenceRequiredCount, competitiveGapCount, competitiveHeaderLabel, competitiveHeaderSeverity, competitiveKnownLimitationCount, competitiveParityAreas, competitivePartialCount, controllerGeneratorInventoryLabel, controllerHeaderSeverity, controllerStatusLabel, fleetAlertHeaderLabel, fleetAlertHeaderSeverity, fleetAlerts, fleetCapacity, generatorActiveVUsers, generatorAvailableCapacity, generatorConnectedCount, generatorHeaderLabel, generatorHeaderSeverity, generatorIssueCount, generators.length, health, inventory, parityAreas, parityBlockingCount, parityCompleteCount, parityHeaderLabel, parityHeaderSeverity, parityPartialCount, parityStatus, readinessBlockedCount, readinessDegradedCount, readinessHeaderLabel, readinessHeaderSeverity, readinessReadyCount, scheduleCompletedCount, scheduleHeaderLabel, scheduleHeaderSeverity, scheduleHealth, scheduleMaterializedCount, scheduleQueuedCount, scheduleSkippedCount, systemReadiness, telemetryDangerCount, telemetryHeaderLabel, telemetryHeaderSeverity, telemetryLatestEntry, telemetryDiagnostics, telemetryWarningCount, timeline, websocketLabel, websocketValueClass])
+  ], [apmHeaderLabel, apmHeaderSeverity, apmProfiles, competitiveEvidenceRequiredCount, competitiveGapCount, competitiveHeaderLabel, competitiveHeaderSeverity, competitiveKnownLimitationCount, competitiveParityAreas, competitivePartialCount, controllerGeneratorInventoryLabel, controllerHeaderSeverity, controllerStatusLabel, fleetAlertHeaderLabel, fleetAlertHeaderSeverity, fleetAlerts, fleetCapacity, generatorActiveVUsers, generatorAvailableCapacity, generatorConnectedCount, generatorHeaderLabel, generatorHeaderSeverity, generatorIssueCount, generators.length, health, inventory, monitorPackContractCount, monitorPackCount, monitorPackHeaderLabel, monitorPackHeaderSeverity, monitorPackSupportedCount, monitorPacks, parityAreas, parityBlockingCount, parityCompleteCount, parityHeaderLabel, parityHeaderSeverity, parityPartialCount, parityStatus, readinessBlockedCount, readinessDegradedCount, readinessHeaderLabel, readinessHeaderSeverity, readinessReadyCount, scheduleCompletedCount, scheduleHeaderLabel, scheduleHeaderSeverity, scheduleHealth, scheduleMaterializedCount, scheduleQueuedCount, scheduleSkippedCount, systemReadiness, telemetryDangerCount, telemetryHeaderLabel, telemetryHeaderSeverity, telemetryLatestEntry, telemetryDiagnostics, telemetryWarningCount, timeline, websocketLabel, websocketValueClass])
 
   useEffect(() => {
     setCardOrder(prev => mergeOrder(prev, cards.map(card => card.id)))

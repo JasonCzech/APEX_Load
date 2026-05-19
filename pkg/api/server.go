@@ -28,6 +28,9 @@ type Server struct {
 	store         storage.Store
 	authoringMu   sync.Mutex
 	authoring     map[string]*storage.AuthoringSession
+	c4Mu          sync.Mutex
+	slaWaivers    map[string][]*storage.ReleaseSLAWaiver
+	resultImports map[string]*storage.ExternalResultImport
 	mux           *http.ServeMux
 	usageCancel   context.CancelFunc
 }
@@ -69,6 +72,8 @@ func NewServer(cfg ServerConfig) *Server {
 		recorder:      rec,
 		store:         cfg.Store,
 		authoring:     make(map[string]*storage.AuthoringSession),
+		slaWaivers:    make(map[string][]*storage.ReleaseSLAWaiver),
+		resultImports: make(map[string]*storage.ExternalResultImport),
 		mux:           http.NewServeMux(),
 	}
 
@@ -144,6 +149,8 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("PUT /api/v1/releases/{id}", cors(log(auth(http.HandlerFunc(s.handleUpdateRelease)))))
 	s.mux.Handle("POST /api/v1/releases/{id}/archive", cors(log(auth(http.HandlerFunc(s.handleArchiveRelease)))))
 	s.mux.Handle("GET /api/v1/releases/{id}/trend/export", cors(log(auth(http.HandlerFunc(s.handleGetReleaseTrendExport)))))
+	s.mux.Handle("GET /api/v1/releases/{id}/sla-governance", cors(log(auth(http.HandlerFunc(s.handleGetReleaseSLAGovernance)))))
+	s.mux.Handle("POST /api/v1/releases/{id}/sla-governance/waivers", cors(log(auth(http.HandlerFunc(s.handleCreateReleaseSLAWaiver)))))
 	s.mux.Handle("DELETE /api/v1/releases/{id}", cors(log(auth(http.HandlerFunc(s.handleDeleteRelease)))))
 
 	s.mux.Handle("POST /api/v1/projects", cors(log(auth(http.HandlerFunc(s.handleCreateProject)))))
@@ -182,6 +189,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("GET /api/v1/tests/{id}/archive/resources", cors(log(auth(http.HandlerFunc(s.handleGetRunArchiveResources)))))
 	s.mux.Handle("GET /api/v1/tests/{id}/archive/summaries", cors(log(auth(http.HandlerFunc(s.handleGetRunArchiveSummaries)))))
 	s.mux.Handle("GET /api/v1/tests/{id}/archive/report", cors(log(auth(http.HandlerFunc(s.handleGetRunArchiveReport)))))
+	s.mux.Handle("GET /api/v1/tests/{id}/archive/root-cause", cors(log(auth(http.HandlerFunc(s.handleGetRunArchiveRootCause)))))
 	s.mux.Handle("GET /api/v1/tests/{id}/archive/comparison", cors(log(auth(http.HandlerFunc(s.handleGetRunArchiveComparison)))))
 	s.mux.Handle("POST /api/v1/archives/retention/plan", cors(log(auth(http.HandlerFunc(s.handlePlanArchiveRetention)))))
 	s.mux.Handle("POST /api/v1/archives/retention/apply", cors(log(auth(http.HandlerFunc(s.handleApplyArchiveRetention)))))
@@ -297,6 +305,11 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("GET /api/v1/system/usage/snapshots", cors(log(auth(http.HandlerFunc(s.handleListUsageAccountingSnapshots)))))
 	s.mux.Handle("POST /api/v1/system/usage/snapshots", cors(log(auth(http.HandlerFunc(s.handleCreateUsageAccountingSnapshot)))))
 	s.mux.Handle("GET /api/v1/system/parity-status", cors(log(auth(http.HandlerFunc(s.handleGetParityStatus)))))
+	s.mux.Handle("GET /api/v1/integrations/apm/profiles", cors(log(auth(http.HandlerFunc(s.handleListAPMIntegrationProfiles)))))
+	s.mux.Handle("GET /api/v1/monitoring/packs", cors(log(auth(http.HandlerFunc(s.handleListInfrastructureMonitorPacks)))))
+	s.mux.Handle("GET /api/v1/reports/profiles", cors(log(auth(http.HandlerFunc(s.handleListReportProfiles)))))
+	s.mux.Handle("POST /api/v1/results/import", cors(log(auth(http.HandlerFunc(s.handleImportExternalResults)))))
+	s.mux.Handle("GET /api/v1/results/imports", cors(log(auth(http.HandlerFunc(s.handleListExternalResultImports)))))
 	s.mux.Handle("GET /api/v1/fleet/alerts", cors(log(auth(http.HandlerFunc(s.handleGetFleetAlerts)))))
 	s.mux.Handle("GET /api/v1/fleet/capacity", cors(log(auth(http.HandlerFunc(s.handleGetFleetCapacity)))))
 	s.mux.Handle("PATCH /api/v1/system/generators/drain", cors(log(auth(http.HandlerFunc(s.handleSetGeneratorDrainState)))))

@@ -2,7 +2,7 @@ import { memo, useCallback, useEffect, useMemo, useState } from 'react'
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 
 import { downloadBlob } from '../utils/fileUtils'
-import { Application, BrowserDeviceLiveMetrics, BrowserEngineLiveMetrics, BrowserPlatformLiveMetrics, IntervalSummaryRecord, Release, RunArchiveReport, TestSummary } from '../types'
+import { Application, BrowserDeviceLiveMetrics, BrowserEngineLiveMetrics, BrowserPlatformLiveMetrics, ExternalResultImport, IntervalSummaryRecord, Release, ReleaseSLAGovernanceResponse, RunArchiveReport, TestSummary } from '../types'
 import { useApi } from '../hooks/useApi'
 import { getErrorMessage } from '../utils/errorUtils'
 import BrowserBreakdownChart from './BrowserBreakdownChart'
@@ -176,6 +176,48 @@ function formatBaselinePin(value?: string) {
   return value ? new Date(value).toLocaleString() : 'Pinned baseline'
 }
 
+function formatGovernanceStatus(status?: string) {
+  const labels: Record<string, string> = {
+    passed: 'Passed',
+    failed: 'Failed',
+    waived: 'Waived',
+    no_runs: 'No Runs',
+  }
+  return labels[status || ''] || status || 'Checking'
+}
+
+function governanceStatusClass(status?: string) {
+  if (status === 'failed') return 'text-danger'
+  if (status === 'waived') return 'telemetry-text-warning'
+  if (status === 'passed') return 'text-success'
+  return ''
+}
+
+function summaryNumber(summary: Record<string, unknown> | undefined, key: string) {
+  const value = summary?.[key]
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
+function formatExternalImportSummary(result: ExternalResultImport) {
+  const transactions = summaryNumber(result.summary, 'transactions')
+  const errorPct = summaryNumber(result.summary, 'error_pct')
+  if (transactions !== undefined && errorPct !== undefined) {
+    return `${transactions.toLocaleString()} tx / ${errorPct.toFixed(2)}% errors`
+  }
+  if (transactions !== undefined) {
+    return `${transactions.toLocaleString()} tx`
+  }
+  return String(result.summary?.status || 'imported')
+}
+
+function safeApiCall<T>(request: () => Promise<T>, fallback: T): Promise<T> {
+  try {
+    return request().catch(() => fallback)
+  } catch {
+    return Promise.resolve(fallback)
+  }
+}
+
 function SortIcon({ active, direction }: { active: boolean; direction: 'asc' | 'desc' }) {
   if (!active) return <span className="sort-icon">↕</span>
   return <span className="sort-icon active">{direction === 'asc' ? '↑' : '↓'}</span>
@@ -187,6 +229,8 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [comparisonReports, setComparisonReports] = useState<Record<string, RunArchiveReport>>({})
   const [comparisonSummaries, setComparisonSummaries] = useState<Record<string, IntervalSummaryRecord[]>>({})
+  const [slaGovernance, setSlaGovernance] = useState<ReleaseSLAGovernanceResponse | null>(null)
+  const [externalImports, setExternalImports] = useState<ExternalResultImport[]>([])
   const [comparisonLoading, setComparisonLoading] = useState(false)
   const [comparisonError, setComparisonError] = useState('')
   const [comparisonBreakdown, setComparisonBreakdown] = useState<ComparisonBreakdown>('device')
@@ -200,12 +244,20 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
   const refresh = useCallback(async () => {
     if (!activeApplication?.id || !activeRelease?.id) {
       setTests([])
+      setSlaGovernance(null)
+      setExternalImports([])
       setError('')
       return
     }
     try {
-      const res = await api.listTests({ application_id: activeApplication.id, release_id: activeRelease.id })
+      const [res, governanceRes, importsRes] = await Promise.all([
+        api.listTests({ application_id: activeApplication.id, release_id: activeRelease.id }),
+        safeApiCall(() => api.getReleaseSLAGovernance(activeRelease.id), null),
+        safeApiCall(() => api.listExternalResultImports({ release_id: activeRelease.id }), { imports: [], count: 0, limit: 0, offset: 0 }),
+      ])
       setTests(res.tests || [])
+      setSlaGovernance(governanceRes)
+      setExternalImports(importsRes.imports || [])
       setError('')
     } catch (error: unknown) {
       setError(getErrorMessage(error, 'Unable to load results'))
@@ -608,6 +660,76 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
         </div>
       </div>
 
+      <div className="results-governance-grid">
+        <section className="results-governance-card">
+          <div className="results-governance-header">
+            <div>
+              <h3>Release SLA Gate</h3>
+              <p>{slaGovernance?.owner.display_name || 'Project administrators'}</p>
+            </div>
+            <strong className={governanceStatusClass(slaGovernance?.status)}>{formatGovernanceStatus(slaGovernance?.status)}</strong>
+          </div>
+          <div className="results-governance-metrics">
+            <div>
+              <span>Runs</span>
+              <strong>{slaGovernance?.summary.total_runs ?? completed.length}</strong>
+            </div>
+            <div>
+              <span>Breaches</span>
+              <strong className={(slaGovernance?.summary.unwaived_breaches || 0) > 0 ? 'text-danger' : ''}>{slaGovernance?.summary.failed_runs ?? 0}</strong>
+            </div>
+            <div>
+              <span>Waivers</span>
+              <strong className={(slaGovernance?.waivers?.length || 0) > 0 ? 'telemetry-text-warning' : ''}>{slaGovernance?.waivers?.length ?? 0}</strong>
+            </div>
+          </div>
+          {slaGovernance?.breach_history?.length ? (
+            <div className="results-governance-list">
+              {slaGovernance.breach_history.slice(0, 3).map(run => (
+                <p key={run.test_id}>
+                  {run.test_name || run.test_id}: {run.sla_details?.[0] || 'SLA breached'}
+                </p>
+              ))}
+            </div>
+          ) : (
+            <p className="results-governance-hint">No release SLA breaches are currently recorded for this release.</p>
+          )}
+          {slaGovernance?.waivers?.length ? (
+            <div className="results-governance-list">
+              {slaGovernance.waivers.slice(0, 2).map(waiver => (
+                <p key={waiver.id}>
+                  Waiver: {waiver.reason}
+                </p>
+              ))}
+            </div>
+          ) : null}
+          {slaGovernance?.audit_trail?.length ? (
+            <p className="results-governance-hint">{slaGovernance.audit_trail.length} SLA audit event{slaGovernance.audit_trail.length === 1 ? '' : 's'} recorded.</p>
+          ) : null}
+        </section>
+
+        <section className="results-governance-card">
+          <div className="results-governance-header">
+            <div>
+              <h3>External Results</h3>
+              <p>k6, JMeter, and Gatling trend inputs</p>
+            </div>
+            <strong>{externalImports.length}</strong>
+          </div>
+          {externalImports.length === 0 ? (
+            <p className="results-governance-hint">No external result imports are attached to this release.</p>
+          ) : (
+            <div className="results-governance-list">
+              {externalImports.slice(0, 4).map(result => (
+                <p key={result.id}>
+                  {result.provider.toUpperCase()} / {result.name}: {formatExternalImportSummary(result)}
+                </p>
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
+
       <div className="results-filter-bar">
         <input
           className="settings-input"
@@ -919,7 +1041,7 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
                   <th onClick={() => handleSort('started')} className="sortable">Started <SortIcon active={sortField === 'started'} direction={sortDirection} /></th>
                   <th onClick={() => handleSort('duration')} className="sortable">Duration <SortIcon active={sortField === 'duration'} direction={sortDirection} /></th>
                   <th onClick={() => handleSort('archive')} className="sortable">Archive <SortIcon active={sortField === 'archive'} direction={sortDirection} /></th>
-                  <th style={{ textAlign: 'right' }}>Actions</th>
+                  <th className="results-actions-column">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -948,26 +1070,31 @@ function ResultsPage({ testStatuses, onSelectTest, activeApplication, activeRele
                         </>
                       )}
                     </td>
-                    <td style={{ textAlign: 'right' }}>
-                      <button className="btn btn-sm btn-ghost" onClick={event => toggleBaselinePin(test, event)}>
-                        {test.baseline_pinned ? 'Unpin Baseline' : 'Pin Baseline'}
-                      </button>
-                      {test.archive && (
-                        <>
-                          <button className="btn btn-sm btn-secondary" onClick={event => downloadArchive(test, event)}>
-                            Archive
-                          </button>
-                          <a className="btn btn-sm btn-ghost" href={buildTestReportHref(test.id)} target="_blank" rel="noreferrer" onClick={event => event.stopPropagation()}>
-                            Download Report
-                          </a>
-                        </>
-                      )}
-                      <button className="btn btn-sm btn-ghost" onClick={event => { event.stopPropagation(); onSelectTest(test.id) }}>
-                        Open
-                      </button>
-                      <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={event => handleDelete(test.id, event)}>
-                        Delete
-                      </button>
+                    <td>
+                      <div className="results-row-actions">
+                        <button className="btn btn-sm btn-ghost" onClick={event => toggleBaselinePin(test, event)}>
+                          {test.baseline_pinned ? 'Unpin Baseline' : 'Pin Baseline'}
+                        </button>
+                        {test.archive && (
+                          <>
+                            <button className="btn btn-sm btn-secondary" onClick={event => downloadArchive(test, event)}>
+                              Archive
+                            </button>
+                            <a className="btn btn-sm btn-ghost" href={buildTestReportHref(test.id)} target="_blank" rel="noreferrer" onClick={event => event.stopPropagation()}>
+                              Download Report
+                            </a>
+                            <a className="btn btn-sm btn-ghost" href={`/api/v1/tests/${encodeURIComponent(test.id)}/archive/root-cause`} target="_blank" rel="noreferrer" onClick={event => event.stopPropagation()}>
+                              Root Cause
+                            </a>
+                          </>
+                        )}
+                        <button className="btn btn-sm btn-ghost" onClick={event => { event.stopPropagation(); onSelectTest(test.id) }}>
+                          Open
+                        </button>
+                        <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={event => handleDelete(test.id, event)}>
+                          Delete
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}

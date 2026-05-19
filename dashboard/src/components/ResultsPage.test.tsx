@@ -9,6 +9,8 @@ import { downloadBlob } from '../utils/fileUtils'
 
 const apiMock = {
   listTests: vi.fn(),
+  getReleaseSLAGovernance: vi.fn(),
+  listExternalResultImports: vi.fn(),
   getTestArchiveReport: vi.fn(),
   getTestArchiveSummaries: vi.fn(),
   deleteTest: vi.fn(),
@@ -61,6 +63,67 @@ describe('ResultsPage', () => {
           archive: { transaction_count: 1100 },
         },
       ],
+    })
+    apiMock.getReleaseSLAGovernance.mockResolvedValue({
+      generated_at: '2026-05-12T20:00:00Z',
+      release_id: 'rel-1',
+      release_name: 'Sprint 24',
+      application_id: 'app-1',
+      project_id: 'project-1',
+      owner: { type: 'project_admin', display_name: 'Project administrators' },
+      status: 'failed',
+      summary: {
+        total_runs: 2,
+        archived_runs: 2,
+        passed_runs: 1,
+        failed_runs: 1,
+        waived_breaches: 1,
+        unwaived_breaches: 0,
+      },
+      breach_history: [
+        { test_id: 'run-b', test_name: 'iPad Checkout', status: 'COMPLETE', sla_breached: true, sla_details: ['P95 breached'], completed_at: '2026-05-12T19:05:00Z' },
+      ],
+      waivers: [
+        {
+          id: 'waiver-1',
+          release_id: 'rel-1',
+          scope: 'release',
+          reason: 'Known CDN maintenance window',
+          approved_by: 'perf-admin',
+          status: 'active',
+          created_at: '2026-05-12T20:00:00Z',
+          updated_at: '2026-05-12T20:00:00Z',
+        },
+      ],
+      audit_trail: [
+        {
+          id: 'audit-1',
+          action: 'release.sla_waiver.create',
+          actor_type: 'user',
+          status: 'success',
+          resource_type: 'release',
+          resource_id: 'rel-1',
+          actor_subject: 'perf-admin',
+          created_at: '2026-05-12T20:00:00Z',
+          details: { reason: 'Known CDN maintenance window' },
+        },
+      ],
+      next_actions: ['Review breach history before promotion.'],
+    })
+    apiMock.listExternalResultImports.mockResolvedValue({
+      imports: [
+        {
+          id: 'import-1',
+          provider: 'k6',
+          name: 'checkout-smoke.json',
+          release_id: 'rel-1',
+          created_at: '2026-05-12T20:10:00Z',
+          summary: { transactions: 1200, error_pct: 0.25 },
+        },
+      ],
+      count: 1,
+      limit: 50,
+      offset: 0,
     })
     apiMock.getTestArchiveReport.mockImplementation(async (id: string) => ({
       manifest: {
@@ -310,5 +373,31 @@ describe('ResultsPage', () => {
     expect(container.textContent).toContain('Browser Device Comparison (LCP / INP)')
     expect(container.textContent).toContain('Devices')
     expect(container.textContent).toContain('iPhone 14 Pro')
+  })
+
+  it('surfaces C4 SLA governance, external imports, and root-cause actions', async () => {
+    await act(async () => {
+      root.render(
+        <ResultsPage
+          testStatuses={{}}
+          onSelectTest={vi.fn()}
+          activeApplication={{ id: 'app-1', name: 'Storefront', created_at: '2026-05-01T00:00:00Z', updated_at: '2026-05-01T00:00:00Z' }}
+          activeRelease={{ id: 'rel-1', application_id: 'app-1', name: 'Sprint 24', created_at: '2026-05-02T00:00:00Z', updated_at: '2026-05-02T00:00:00Z' }}
+        />,
+      )
+    })
+
+    expect(container.textContent).toContain('Release SLA Gate')
+    expect(container.textContent).toContain('Failed')
+    expect(container.textContent).toContain('Project administrators')
+    expect(container.textContent).toContain('Known CDN maintenance window')
+    expect(container.textContent).toContain('External Results')
+    expect(container.textContent).toContain('k6')
+    expect(container.textContent).toContain('checkout-smoke.json')
+    expect(container.textContent).toContain('1,200 tx / 0.25% errors')
+
+    const rootCauseLink = container.querySelector('a[href="/api/v1/tests/run-a/archive/root-cause"]') as HTMLAnchorElement | null
+    expect(rootCauseLink).toBeTruthy()
+    expect(rootCauseLink?.textContent).toBe('Root Cause')
   })
 })

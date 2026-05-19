@@ -7,7 +7,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import MonitoringPage from './MonitoringPage'
 
 const apiMock = {
+  getAPMIntegrationProfiles: vi.fn(),
   getHealth: vi.fn(),
+  getInfrastructureMonitorPacks: vi.fn(),
   getParityStatus: vi.fn(),
   getFleetAlerts: vi.fn(),
   getFleetCapacity: vi.fn(),
@@ -35,6 +37,65 @@ describe('MonitoringPage', () => {
 
   beforeEach(() => {
     apiMock.getHealth.mockResolvedValue({ status: 'ok', version: 'dev', ws_clients: 2, test_count: 1 })
+    apiMock.getAPMIntegrationProfiles.mockResolvedValue({
+      generated_at: '2026-05-18T12:00:00Z',
+      configured_count: 1,
+      generic_correlation: {
+        propagation: 'W3C trace-context',
+        correlation_fields: ['traceparent', 'trace_id', 'span_id', 'correlation_id'],
+      },
+      profiles: [
+        {
+          id: 'opentelemetry',
+          name: 'OpenTelemetry',
+          vendor: 'OpenTelemetry',
+          status: 'supported',
+          correlation: 'W3C trace-context',
+          required_fields: ['traceparent', 'trace_id', 'span_id'],
+          evidence: ['/metrics'],
+          setup_actions: ['Enable trace propagation'],
+          limitations: [],
+        },
+        {
+          id: 'dynatrace',
+          name: 'Dynatrace',
+          vendor: 'Dynatrace',
+          status: 'available',
+          correlation: 'W3C trace-context',
+          required_fields: ['trace_id'],
+          evidence: [],
+          setup_actions: ['Configure Dynatrace exporter'],
+          limitations: ['Requires external tenant configuration'],
+        },
+      ],
+    })
+    apiMock.getInfrastructureMonitorPacks.mockResolvedValue({
+      generated_at: '2026-05-18T12:00:00Z',
+      packs: [
+        {
+          id: 'kubernetes',
+          name: 'Kubernetes',
+          status: 'supported',
+          source: 'prometheus',
+          resource_type: 'cluster',
+          signals: ['pod saturation', 'active slots'],
+          evidence: ['/api/v1/fleet/capacity'],
+          setup_actions: ['Enable Kubernetes metrics'],
+          limitations: [],
+        },
+        {
+          id: 'jvm',
+          name: 'JVM',
+          status: 'integration_contract',
+          source: 'prometheus',
+          resource_type: 'runtime',
+          signals: ['heap used', 'gc pause'],
+          evidence: [],
+          setup_actions: ['Attach JVM exporter'],
+          limitations: ['Requires target-side instrumentation'],
+        },
+      ],
+    })
     apiMock.getSystemInventory.mockResolvedValue({
       execution_mode: 'distributed',
       controller: {
@@ -219,6 +280,21 @@ describe('MonitoringPage', () => {
     expect(apiMock.getFleetAlerts).toHaveBeenCalled()
     expect(apiMock.getFleetCapacity).toHaveBeenCalledWith({ project_id: 'project-1' })
     expect(apiMock.getSystemReadiness).toHaveBeenCalled()
+  })
+
+  it('renders C4 APM profiles and infrastructure monitor packs', async () => {
+    await act(async () => {
+      root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} />)
+    })
+
+    expect(container.textContent).toContain('APM Profiles')
+    expect(container.textContent).toContain('1/2 ready')
+    expect(container.textContent).toContain('OpenTelemetry: supported')
+    expect(container.textContent).toContain('Dynatrace: available')
+    expect(container.textContent).toContain('Monitor Packs')
+    expect(container.textContent).toContain('1/2 native')
+    expect(container.textContent).toContain('Kubernetes: pod saturation, active slots')
+    expect(container.textContent).toContain('JVM: heap used, gc pause')
   })
 
   it('opens competitive parity details with evidence levels and known limitations', async () => {

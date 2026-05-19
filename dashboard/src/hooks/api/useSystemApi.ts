@@ -13,10 +13,15 @@ import {
   DashboardServiceAccountListResponse,
   DashboardSystemSettings,
   DashboardUpdateServiceAccountRequest,
+  APMIntegrationProfilesResponse,
+  ExternalResultImportsResponse,
   FleetAlertsResponse,
   FleetCapacityResponse,
   HealthResponse,
+  InfrastructureMonitorPacksResponse,
   ParityStatusResponse,
+  ReleaseSLAGovernanceResponse,
+  ReportProfilesResponse,
   SystemInventoryResponse,
   SystemReadinessResponse,
   UsageAccountingResponse,
@@ -74,6 +79,22 @@ export function useSystemApi() {
   const getSystemInventory = useCallback(() => request<SystemInventoryResponse>('/system/inventory'), [])
   const getSystemReadiness = useCallback(() => request<SystemReadinessResponse>('/system/readiness'), [])
   const getParityStatus = useCallback(() => request<ParityStatusResponse>('/system/parity-status'), [])
+  const getAPMIntegrationProfiles = useCallback(() => request<APMIntegrationProfilesResponse>('/integrations/apm/profiles'), [])
+  const getInfrastructureMonitorPacks = useCallback(() => request<InfrastructureMonitorPacksResponse>('/monitoring/packs'), [])
+  const getReportProfiles = useCallback(() => request<ReportProfilesResponse>('/reports/profiles'), [])
+  const getReleaseSLAGovernance = useCallback((releaseId: string) => request<ReleaseSLAGovernanceResponse>(`/releases/${encodeURIComponent(releaseId)}/sla-governance`), [])
+  const createReleaseSLAWaiver = useCallback(
+    (releaseId: string, payload: { scope?: string; reason: string; approved_by?: string; expires_at?: string }) =>
+      request(`/releases/${encodeURIComponent(releaseId)}/sla-governance/waivers`, { method: 'POST', body: JSON.stringify(payload) }),
+    [],
+  )
+  const listExternalResultImports = useCallback((params: { project_id?: string; release_id?: string; provider?: string } = {}) =>
+    request<ExternalResultImportsResponse>(`/results/imports${buildQuery(params)}`),
+  [])
+  const importExternalResults = useCallback(
+    (payload: unknown) => request('/results/import', { method: 'POST', body: JSON.stringify(payload) }),
+    [],
+  )
   const getFleetAlerts = useCallback(() => request<FleetAlertsResponse>('/fleet/alerts'), [])
   const getFleetCapacity = useCallback((params: { project_id?: string; region?: string; protocol?: string } = {}) =>
     request<FleetCapacityResponse>(`/fleet/capacity${buildQuery(params)}`),
@@ -109,6 +130,13 @@ export function useSystemApi() {
       getSystemInventory,
       getSystemReadiness,
       getParityStatus,
+      getAPMIntegrationProfiles,
+      getInfrastructureMonitorPacks,
+      getReportProfiles,
+      getReleaseSLAGovernance,
+      createReleaseSLAWaiver,
+      listExternalResultImports,
+      importExternalResults,
       getFleetAlerts,
       getFleetCapacity,
       getUsageAccounting,
@@ -120,6 +148,6 @@ export function useSystemApi() {
       getSystemSettings,
       updateSystemSettings,
     }),
-    [getAuthEffectiveAccess, getAuthAccessMatrix, getAuthDiagnostics, getAuthRoleCatalog, listAuthServiceAccounts, createAuthServiceAccount, updateAuthServiceAccount, rotateAuthServiceAccount, deleteAuthServiceAccount, listAuthAuditEvents, downloadAuthAuditEvents, getHealth, getSystemInventory, getSystemReadiness, getParityStatus, getFleetAlerts, getFleetCapacity, getUsageAccounting, listUsageAccountingSnapshots, captureUsageAccountingSnapshot, downloadUsageAccounting, planArchiveRetention, applyArchiveRetention, getSystemSettings, updateSystemSettings],
+    [getAuthEffectiveAccess, getAuthAccessMatrix, getAuthDiagnostics, getAuthRoleCatalog, listAuthServiceAccounts, createAuthServiceAccount, updateAuthServiceAccount, rotateAuthServiceAccount, deleteAuthServiceAccount, listAuthAuditEvents, downloadAuthAuditEvents, getHealth, getSystemInventory, getSystemReadiness, getParityStatus, getAPMIntegrationProfiles, getInfrastructureMonitorPacks, getReportProfiles, getReleaseSLAGovernance, createReleaseSLAWaiver, listExternalResultImports, importExternalResults, getFleetAlerts, getFleetCapacity, getUsageAccounting, listUsageAccountingSnapshots, captureUsageAccountingSnapshot, downloadUsageAccounting, planArchiveRetention, applyArchiveRetention, getSystemSettings, updateSystemSettings],
   )
 }
