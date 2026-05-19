@@ -21,6 +21,7 @@ const TestExecution = lazy(() => import('./components/TestExecution'))
 const ResultsPage = lazy(() => import('./components/ResultsPage'))
 const NewTestPage = lazy(() => import('./components/NewTestPage'))
 const MonitoringPage = lazy(() => import('./components/MonitoringPage'))
+const ApiGuidePage = lazy(() => import('./components/ApiGuidePage'))
 const SettingsPage = lazy(() => import('./components/SettingsPage'))
 
 type View =
@@ -192,6 +193,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
             />
           )}
           {view.page === 'monitoring' && <MonitoringPage connectionState={connectionState} telemetryDiagnostics={telemetryDiagnostics} />}
+          {view.page === 'docs' && <ApiGuidePage />}
           {view.page === 'settings' && <SettingsPage theme={theme} onThemeChange={setTheme} authStatus={authStatus} />}
         </Suspense>
       </main>

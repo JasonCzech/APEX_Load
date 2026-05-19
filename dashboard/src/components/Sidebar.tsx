@@ -6,7 +6,7 @@ import { Application, DashboardAuthStatus, Project, Release } from '../types'
 import ProjectModal from './ProjectModal'
 import './Sidebar.css'
 
-export type NavPage = 'dashboard' | 'tests' | 'new-test' | 'scripts' | 'results' | 'monitoring' | 'settings'
+export type NavPage = 'dashboard' | 'tests' | 'new-test' | 'scripts' | 'results' | 'monitoring' | 'docs' | 'settings'
 
 interface Props {
   active: NavPage
@@ -88,6 +88,19 @@ const NAV_ITEMS: { id: NavPage; label: string; icon: JSX.Element }[] = [
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+      </svg>
+    ),
+  },
+  {
+    id: 'docs',
+    label: 'API Guide',
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+        <path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5z" />
+        <path d="M8 7h8" />
+        <path d="M8 11h8" />
+        <path d="M8 15h5" />
       </svg>
     ),
   },

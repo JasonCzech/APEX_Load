@@ -449,6 +449,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
   const navigateToMonitoring = () => onNavigate('monitoring')
   const navigateToTests = () => onNavigate('tests')
   const navigateToResults = () => onNavigate('results')
+  const navigateToApiGuide = () => onNavigate('docs')
   const downloadTrendCsv = async () => {
     if (!activeRelease?.id) return
     const blob = await api.downloadReleaseTrend(activeRelease.id)
@@ -480,6 +481,9 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
           </p>
         </div>
         <div className="dash-customize-actions">
+          <button className="btn btn-secondary btn-sm" onClick={navigateToApiGuide} type="button">
+            API Guide
+          </button>
           {customizingCards && (
             <button className="btn btn-secondary btn-sm" onClick={resetCardLayout} type="button">
               Reset Cards

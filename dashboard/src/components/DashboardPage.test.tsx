@@ -256,6 +256,9 @@ describe('DashboardPage', () => {
     expect(container.textContent).toContain('iphone_se · Portrait · Touch enabled · Headed')
     expect(container.textContent).toContain('pixel_8 · Landscape · Touch enabled · Headless')
 
+    clickButtonByText('API Guide')
+    expect(onNavigate).toHaveBeenCalledWith('docs')
+
     clickButtonByText('API Server')
     expect(onNavigate).toHaveBeenCalledWith('monitoring')
 

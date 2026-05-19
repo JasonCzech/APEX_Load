@@ -192,6 +192,32 @@ describe('Sidebar', () => {
     expect(onProjectChange).toHaveBeenCalledWith({ id: 'project-2', name: 'Search', created_at: '', updated_at: '' })
   })
 
+  it('links the API guide from the main dashboard navigation', async () => {
+    const onNavigate = vi.fn()
+
+    await act(async () => {
+      root.render(
+        <Sidebar
+          active="dashboard"
+          onNavigate={onNavigate}
+          connectionState="connected"
+        />,
+      )
+    })
+
+    const guideButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('API Guide'))
+    expect(guideButton).toBeDefined()
+    if (!guideButton) {
+      return
+    }
+
+    await act(async () => {
+      guideButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(onNavigate).toHaveBeenCalledWith('docs')
+  })
+
   it('renders a dev-only Admin/User toggle that persists user preview and hides admin navigation', async () => {
     const onNavigate = vi.fn()
 
@@ -216,6 +242,7 @@ describe('Sidebar', () => {
     expect(container.textContent).toContain('Admin')
     expect(container.textContent).toContain('User')
     expect(container.textContent).toContain('New Test')
+    expect(container.textContent).toContain('API Guide')
     expect(container.textContent).toContain('Settings')
 
     const userButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'User')
@@ -231,6 +258,7 @@ describe('Sidebar', () => {
     expect(window.localStorage.getItem('stormrunner.devViewMode')).toBe('user')
     expect(container.textContent).toContain('User preview')
     expect(container.textContent).not.toContain('New Test')
+    expect(container.textContent).toContain('API Guide')
     expect(container.textContent).not.toContain('Settings')
   })
 

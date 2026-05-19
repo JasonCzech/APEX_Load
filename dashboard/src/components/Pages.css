@@ -211,6 +211,204 @@
   gap: 12px;
 }
 
+.api-guide-page {
+  gap: 22px;
+}
+
+.api-guide-hero,
+.api-guide-callout {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px;
+}
+
+.api-guide-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(340px, 0.8fr);
+  gap: 18px;
+  align-items: stretch;
+}
+
+.api-guide-kicker,
+.api-guide-meta-grid span,
+.api-guide-status-card span {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.api-guide-hero h3,
+.api-guide-callout h3,
+.api-guide-section-header h3,
+.api-guide-card h4 {
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.api-guide-hero h3 {
+  margin-top: 6px;
+  font-size: 20px;
+  overflow-wrap: anywhere;
+}
+
+.api-guide-hero p,
+.api-guide-callout p,
+.api-guide-section-header p {
+  margin: 6px 0 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.api-guide-meta-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.api-guide-meta-grid div,
+.api-guide-status-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle, var(--border));
+  border-radius: 6px;
+  padding: 10px;
+  min-width: 0;
+}
+
+.api-guide-meta-grid strong {
+  display: block;
+  color: var(--text-primary);
+  font-size: 13px;
+  margin-top: 4px;
+  line-height: 1.35;
+}
+
+.api-guide-section-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-end;
+}
+
+.api-guide-section-header p {
+  max-width: 720px;
+  text-align: right;
+}
+
+.api-guide-code-stack {
+  display: grid;
+  gap: 8px;
+}
+
+.api-guide-code-stack pre,
+.api-guide-card code,
+.api-guide-table-card code,
+.api-guide-callout code,
+.api-guide-section-header code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+}
+
+.api-guide-code-stack pre {
+  margin: 0;
+  overflow-x: auto;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px;
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.api-guide-table-card {
+  overflow-x: auto;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.api-guide-table-card table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.api-guide-table-card th,
+.api-guide-table-card td {
+  padding: 11px 12px;
+  border-bottom: 1px solid var(--border-subtle, var(--border));
+  color: var(--text-secondary);
+  font-size: 13px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.api-guide-table-card th {
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.api-guide-table-card tr:last-child td {
+  border-bottom: 0;
+}
+
+.api-guide-endpoint-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.api-guide-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+  min-width: 0;
+}
+
+.api-guide-card h4 {
+  font-size: 14px;
+  margin-bottom: 10px;
+}
+
+.api-guide-card ul {
+  display: grid;
+  gap: 7px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.api-guide-card li {
+  color: var(--text-secondary);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.api-guide-status-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.api-guide-status-card {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.api-guide-status-card strong {
+  color: var(--text-primary);
+  font-size: 16px;
+}
+
+.api-guide-status-card span {
+  line-height: 1.35;
+}
+
 .results-compare-card {
   background: var(--bg-card);
   border: 1px solid var(--border);
@@ -3048,6 +3246,24 @@
   }
 
   .settings-overview {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .api-guide-hero,
+  .api-guide-endpoint-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .api-guide-section-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .api-guide-section-header p {
+    text-align: left;
+  }
+
+  .api-guide-status-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
