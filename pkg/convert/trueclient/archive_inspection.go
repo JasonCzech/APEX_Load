@@ -39,13 +39,22 @@ type StepInventory struct {
 }
 
 type StepInspection struct {
-	StepID        string      `json:"step_id,omitempty"`
-	Index         string      `json:"index,omitempty"`
-	Action        string      `json:"action"`
-	ActionName    string      `json:"action_name,omitempty"`
-	Status        ScopeStatus `json:"status"`
-	ScopeName     string      `json:"scope_name,omitempty"`
-	SourceSnippet string      `json:"source_snippet,omitempty"`
+	StepID             string              `json:"step_id,omitempty"`
+	Index              string              `json:"index,omitempty"`
+	Action             string              `json:"action"`
+	ActionName         string              `json:"action_name,omitempty"`
+	ObjectDescriptorID string              `json:"object_descriptor_id,omitempty"`
+	Status             ScopeStatus         `json:"status"`
+	ScopeName          string              `json:"scope_name,omitempty"`
+	SelectorCandidates []SelectorCandidate `json:"selector_candidates,omitempty"`
+	SourceSnippet      string              `json:"source_snippet,omitempty"`
+}
+
+type SelectorCandidate struct {
+	Kind       string `json:"kind"`
+	Value      string `json:"value"`
+	Confidence int    `json:"confidence"`
+	Reason     string `json:"reason"`
 }
 
 type SourceFragment struct {
@@ -229,13 +238,15 @@ func web2CapabilityStatusMap() map[string]ScopeStatus {
 
 func inspectStep(step truXMLStep, status ScopeStatus, scopeName string) StepInspection {
 	return StepInspection{
-		StepID:        strings.TrimSpace(step.StepID),
-		Index:         strings.TrimSpace(step.Index),
-		Action:        strings.TrimSpace(step.Action),
-		ActionName:    strings.TrimSpace(step.ActionName),
-		Status:        status,
-		ScopeName:     scopeName,
-		SourceSnippet: compactSourceSnippet(step.Arguments),
+		StepID:             strings.TrimSpace(step.StepID),
+		Index:              strings.TrimSpace(step.Index),
+		Action:             strings.TrimSpace(step.Action),
+		ActionName:         strings.TrimSpace(step.ActionName),
+		ObjectDescriptorID: objectDescriptorID(step.Arguments),
+		Status:             status,
+		ScopeName:          scopeName,
+		SelectorCandidates: selectorCandidates(step.Arguments),
+		SourceSnippet:      compactSourceSnippet(step.Arguments),
 	}
 }
 
@@ -256,4 +267,55 @@ func compactSourceSnippet(value string) string {
 		return value
 	}
 	return value[:500] + "..."
+}
+
+func objectDescriptorID(rawArguments string) string {
+	values, err := parseArgumentValues(rawArguments)
+	if err != nil {
+		return ""
+	}
+	for _, key := range []string{"Object ID", "ObjectID", "object_id", "Descriptor ID", "DescriptorID", "Test Object ID", "Step Object ID"} {
+		if value := argumentValue(values, key); value != "" {
+			return trimQuotedValue(value)
+		}
+	}
+	return ""
+}
+
+func selectorCandidates(rawArguments string) []SelectorCandidate {
+	values, err := parseArgumentValues(rawArguments)
+	if err != nil {
+		return nil
+	}
+	candidates := make([]SelectorCandidate, 0)
+	add := func(kind string, confidence int, reason string, keys ...string) {
+		for _, key := range keys {
+			value := trimQuotedValue(argumentValue(values, key))
+			if value == "" {
+				continue
+			}
+			candidates = append(candidates, SelectorCandidate{
+				Kind:       kind,
+				Value:      value,
+				Confidence: confidence,
+				Reason:     reason,
+			})
+			return
+		}
+	}
+	add("css", 85, "Captured CSS selector from TruClient step arguments.", "Selector", "selector", "CSS", "Css", "css")
+	add("css", 70, "Captured target/element locator from TruClient step arguments.", "Target", "target", "Element", "element")
+	add("xpath", 60, "Captured XPath locator; replay should validate stability.", "XPath", "Xpath", "xpath")
+	add("text", 55, "Captured visible text locator; replay should validate uniqueness.", "Text", "text", "Visible Text", "visible_text")
+	add("role", 65, "Captured role locator; replay should validate accessible role and name.", "Role", "role", "ARIA Role", "aria_role")
+	return candidates
+}
+
+func argumentValue(values map[string]truArgument, key string) string {
+	for existingKey, existingValue := range values {
+		if strings.EqualFold(existingKey, key) && strings.TrimSpace(existingValue.Value) != "" {
+			return existingValue.Value
+		}
+	}
+	return ""
 }

@@ -1174,6 +1174,7 @@ RuntimeSettings=default.cfg
 	assertReviewSection(t, result.ReviewSections, "web2_profile_summary", "warning", "Source script type: TruClient 2.0 - Web")
 	assertReviewSection(t, result.ReviewSections, "web2_unsupported_source_fragments", "warning", "Evaluate JavaScript #3: Review-only TruClient step requires replay or guided repair before approval.")
 	assertReviewSection(t, result.ReviewSections, "web2_object_identification", "warning", "Object repository: ObjectRepository/MainObjects.xml")
+	assertReviewSection(t, result.ReviewSections, "web2_object_identification", "warning", "Selector candidates extracted: 1")
 	assertReviewSection(t, result.ReviewSections, "web2_parameter_mapping", "info", "Parameter data: parameters/users.dat")
 	assertReviewSection(t, result.ReviewSections, "web2_replay_readiness", "warning", "Run browser replay against the target application.")
 	assertReviewSection(t, result.ReviewSections, "web2_http_conversion_eligibility", "info", "Capture network requests during replay before generating an HTTP draft.")

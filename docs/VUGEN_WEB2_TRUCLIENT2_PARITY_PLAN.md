@@ -134,9 +134,9 @@ Implementation note: The converter now maps VuGen Web 2.0 click-like steps inclu
 
 | ID | Work Item | Priority | Status |
 | --- | --- | --- | --- |
-| V2.4.1 | Add object descriptor model to import metadata: selector, XPath, text, role, attributes, ordinal, regex, frame/window context, and fallback candidates | P0 | Planned |
-| V2.4.2 | Map stable descriptors into CSS/role/text selectors where safe | P0 | Planned |
-| V2.4.3 | Add selector confidence and stability scoring to TruClient 2.0 Web import review | P0 | Planned |
+| V2.4.1 | Add object descriptor model to import metadata: selector, XPath, text, role, attributes, ordinal, regex, frame/window context, and fallback candidates | P0 | Partial |
+| V2.4.2 | Map stable descriptors into CSS/role/text selectors where safe | P0 | Partial |
+| V2.4.3 | Add selector confidence and stability scoring to TruClient 2.0 Web import review | P0 | Partial |
 | V2.4.4 | Add guided repair to choose alternate selectors from replay DOM evidence | P1 | Planned |
 | V2.4.5 | Add replay diagnostics for object not found, ambiguous match, frame mismatch, detached DOM, and timing timeout | P1 | Planned |
 
@@ -144,6 +144,8 @@ Acceptance:
 
 - Imported object IDs stay traceable to original VuGen descriptors.
 - Replay failures explain whether the problem is selector, frame/window, timing, or unsupported construct.
+
+Implementation note: Archive inspection now extracts object descriptor IDs plus CSS, XPath, text, and role selector candidates with confidence values from TruClient step arguments. Web 2.0 import review surfaces selector candidate counts; remaining V2.4 work covers richer attributes, ordinal/regex descriptors, frame/window context, replay DOM alternates, and diagnostics.
 
 ## Workstream V2.5: Stormrunner Creation UX
 

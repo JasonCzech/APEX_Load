@@ -53,6 +53,12 @@ func TestInspectArchivePreservesWeb2MetadataInputs(t *testing.T) {
 	if inspection.Steps[0].StepID != "nav-1" || inspection.Steps[0].Index != "1" || inspection.Steps[0].Status != ScopeSupported || inspection.Steps[0].ScopeName != "navigate" {
 		t.Fatalf("steps[0] = %#v, want supported navigate step evidence", inspection.Steps[0])
 	}
+	if inspection.Steps[1].ObjectDescriptorID != "search-box" || !containsSelectorCandidate(inspection.Steps[1].SelectorCandidates, "css", "#search", 85) || !containsSelectorCandidate(inspection.Steps[1].SelectorCandidates, "xpath", "//input[@id='search']", 60) {
+		t.Fatalf("steps[1] = %#v, want object descriptor id and selector candidates", inspection.Steps[1])
+	}
+	if !containsSelectorCandidate(inspection.Steps[3].SelectorCandidates, "text", "Results", 55) {
+		t.Fatalf("steps[3] = %#v, want text selector candidate", inspection.Steps[3])
+	}
 	if len(inspection.UnsupportedFragments) != 2 {
 		t.Fatalf("unsupported fragments = %#v, want review-only JavaScript and unsupported native fragments", inspection.UnsupportedFragments)
 	}
@@ -94,7 +100,7 @@ func web2InspectionDefaultXML() string {
 <truScript>
   <step type="block" action="action" actionName="Action">
     <step type="testObject" action="Navigate" stepId="nav-1" index="1" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://shop.example.com\&quot;&quot;}}" />
-    <step type="testObject" action="Set / Type" stepId="type-1" index="2" arguments="{&quot;Selector&quot;:{&quot;value&quot;:&quot;\&quot;#search\&quot;&quot;},&quot;Value&quot;:{&quot;value&quot;:&quot;\&quot;stormrunner\&quot;&quot;}}" />
+    <step type="testObject" action="Set / Type" stepId="type-1" index="2" arguments="{&quot;Object ID&quot;:{&quot;value&quot;:&quot;\&quot;search-box\&quot;&quot;},&quot;Selector&quot;:{&quot;value&quot;:&quot;\&quot;#search\&quot;&quot;},&quot;XPath&quot;:{&quot;value&quot;:&quot;\&quot;//input[@id='search']\&quot;&quot;},&quot;Value&quot;:{&quot;value&quot;:&quot;\&quot;stormrunner\&quot;&quot;}}" />
     <step type="testObject" action="Click" stepId="click-1" index="3" arguments="{&quot;Selector&quot;:{&quot;value&quot;:&quot;\&quot;#submit\&quot;&quot;}}" />
     <step type="testObject" action="Verify" stepId="verify-1" index="4" arguments="{&quot;Text&quot;:{&quot;value&quot;:&quot;\&quot;Results\&quot;&quot;}}" />
     <step type="util" action="Evaluate JavaScript" stepId="js-1" index="5" arguments="{&quot;Code&quot;:{&quot;value&quot;:&quot;window.app.checkout()&quot;}}" />
@@ -115,6 +121,15 @@ func containsString(values []string, want string) bool {
 func containsSourceFragment(values []SourceFragment, action string, status ScopeStatus, snippet string) bool {
 	for _, value := range values {
 		if value.Action == action && value.Status == status && strings.Contains(value.SourceSnippet, snippet) {
+			return true
+		}
+	}
+	return false
+}
+
+func containsSelectorCandidate(values []SelectorCandidate, kind string, value string, confidence int) bool {
+	for _, candidate := range values {
+		if candidate.Kind == kind && candidate.Value == value && candidate.Confidence == confidence {
 			return true
 		}
 	}

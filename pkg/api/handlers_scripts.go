@@ -710,6 +710,9 @@ func trueClientWeb2ReviewSections(summary loadRunnerImportSummary) []scriptImpor
 	for _, file := range inspection.ObjectRepositories {
 		objectItems = append(objectItems, "Object repository: "+file.Path)
 	}
+	if candidateCount := trueClientSelectorCandidateCount(inspection); candidateCount > 0 {
+		objectItems = append(objectItems, fmt.Sprintf("Selector candidates extracted: %d", candidateCount))
+	}
 	objectItems = append(objectItems, "Imported selectors require browser replay before promotion because object descriptor ranking is not complete.")
 	sections = append(sections, scriptImportReviewSection{
 		Key:      "web2_object_identification",
@@ -762,6 +765,17 @@ func isWeb2TrueClientInspection(inspection *trueclient.ArchiveInspection) bool {
 		return false
 	}
 	return inspection.ScriptTypeScope.CanonicalName == "truclient2_web" || inspection.ScriptTypeScope.CanonicalName == "truclient_web"
+}
+
+func trueClientSelectorCandidateCount(inspection *trueclient.ArchiveInspection) int {
+	if inspection == nil {
+		return 0
+	}
+	count := 0
+	for _, step := range inspection.Steps {
+		count += len(step.SelectorCandidates)
+	}
+	return count
 }
 
 func browserImportRepairSuggestions(script *dsl.Script) []scriptImportRepairSuggestion {
