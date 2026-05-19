@@ -21,6 +21,7 @@ func buildProtoConfigWithSecretResolver(script *dsl.Script, resolver SecretResol
 	grpcCfg := script.Config.GRPC
 	soapCfg := script.Config.SOAP
 	databaseCfg := script.Config.Database
+	networkCfg := script.Config.Network
 
 	// Timeouts
 	if httpCfg.ConnectTimeoutMs > 0 {
@@ -233,6 +234,39 @@ func buildProtoConfigWithSecretResolver(script *dsl.Script, resolver SecretResol
 	}
 	if databaseCfg.RollbackOnTeardown {
 		cfg["database_rollback_on_teardown"] = true
+	}
+	if networkCfg.Subprotocol != "" {
+		cfg["network_subprotocol"] = networkCfg.Subprotocol
+	}
+	if networkCfg.Host != "" {
+		cfg["network_host"] = networkCfg.Host
+	}
+	if networkCfg.Address != "" {
+		cfg["network_address"] = networkCfg.Address
+	}
+	if networkCfg.Port > 0 {
+		cfg["network_port"] = float64(networkCfg.Port)
+	}
+	if networkCfg.TimeoutMs > 0 {
+		cfg["network_timeout_ms"] = float64(networkCfg.TimeoutMs)
+	}
+	if networkCfg.TLS {
+		cfg["network_tls"] = true
+	}
+	if networkCfg.Username != "" {
+		cfg["network_username"] = networkCfg.Username
+	}
+	if networkCfg.Password != "" {
+		cfg["network_password"] = networkCfg.Password
+	}
+	if networkCfg.From != "" {
+		cfg["network_from"] = networkCfg.From
+	}
+	if len(networkCfg.To) > 0 {
+		cfg["network_to"] = networkCfg.To
+	}
+	if networkCfg.BaseDN != "" {
+		cfg["network_base_dn"] = networkCfg.BaseDN
 	}
 
 	browserCfg := script.Config.Browser

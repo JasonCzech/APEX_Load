@@ -495,6 +495,41 @@ func TestBuildProtoConfig_Database(t *testing.T) {
 	}
 }
 
+func TestBuildProtoConfig_Network(t *testing.T) {
+	script := &dsl.Script{
+		Config: dsl.ScriptConfig{
+			Network: dsl.NetworkConfig{
+				Subprotocol: "smtp",
+				Host:        "mail.example.test",
+				Port:        2525,
+				Address:     "mail.example.test:2525",
+				TimeoutMs:   1500,
+				TLS:         true,
+				Username:    "svc",
+				Password:    "secret",
+				From:        "load@example.test",
+				To:          []string{"ops@example.test"},
+				BaseDN:      "dc=example,dc=test",
+			},
+		},
+	}
+
+	cfg := buildProtoConfig(script)
+
+	if cfg["network_subprotocol"] != "smtp" || cfg["network_address"] != "mail.example.test:2525" {
+		t.Fatalf("network string config = %#v", cfg)
+	}
+	if cfg["network_port"] != float64(2525) || cfg["network_timeout_ms"] != float64(1500) {
+		t.Fatalf("network numeric config = %#v", cfg)
+	}
+	if cfg["network_tls"] != true || cfg["network_username"] != "svc" || cfg["network_from"] != "load@example.test" {
+		t.Fatalf("network auth/mail config = %#v", cfg)
+	}
+	if got, ok := cfg["network_to"].([]string); !ok || len(got) != 1 || got[0] != "ops@example.test" {
+		t.Fatalf("network_to = %#v, want recipient slice", cfg["network_to"])
+	}
+}
+
 func TestBuildProtoConfig_EmptyConfig(t *testing.T) {
 	script := &dsl.Script{}
 	cfg := buildProtoConfig(script)

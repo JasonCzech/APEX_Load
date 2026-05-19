@@ -65,6 +65,11 @@ func ValidateScriptIssues(script *Script) []string {
 			continue
 		}
 
+		if script.Protocol == "network" {
+			issues = append(issues, validateNetworkActionIssues(i, action)...)
+			continue
+		}
+
 		if action.Target == "" {
 			issues = append(issues, fmt.Sprintf("actions[%d] %q: missing target", i, action.Name))
 		}
@@ -78,6 +83,9 @@ func ValidateScriptIssues(script *Script) []string {
 	}
 	if script.Protocol == "database" {
 		issues = append(issues, validateDatabaseScriptIssues(script)...)
+	}
+	if script.Protocol == "network" {
+		issues = append(issues, validateNetworkScriptIssues(script)...)
 	}
 
 	issues = append(issues, validateParameterIssues(script)...)
@@ -708,6 +716,67 @@ func validateDatabaseActionIssues(index int, action Action) []string {
 	}
 	if maxRows, ok := actionParamIntValue(action.Params, "max_rows"); ok && maxRows < 0 {
 		issues = append(issues, fmt.Sprintf("%s: max_rows must be zero or greater", label))
+	}
+	return issues
+}
+
+func validateNetworkScriptIssues(script *Script) []string {
+	var issues []string
+	cfg := script.Config.Network
+	if cfg.Subprotocol != "" && !isAllowedValue(strings.ToLower(strings.TrimSpace(cfg.Subprotocol)), "dns", "ftp", "smtp", "pop3", "imap", "ldap", "winsock", "tcp", "udp") {
+		issues = append(issues, fmt.Sprintf("config.network.subprotocol %q is not supported", cfg.Subprotocol))
+	}
+	if cfg.Port < 0 {
+		issues = append(issues, "config.network.port must be zero or greater")
+	}
+	if cfg.TimeoutMs < 0 {
+		issues = append(issues, "config.network.timeout_ms must be zero or greater")
+	}
+	for index, recipient := range cfg.To {
+		if strings.TrimSpace(recipient) == "" {
+			issues = append(issues, fmt.Sprintf("config.network.to[%d] must be non-empty", index))
+		}
+	}
+	return issues
+}
+
+func validateNetworkActionIssues(index int, action Action) []string {
+	label := fmt.Sprintf("actions[%d] %q", index, action.Name)
+	var issues []string
+	actionType := strings.ToLower(strings.TrimSpace(action.Type))
+	switch actionType {
+	case "network_health":
+	case "dns_query", "dns_lookup":
+		if strings.TrimSpace(action.Target) == "" {
+			issues = append(issues, fmt.Sprintf("%s: dns action requires target host", label))
+		}
+		if recordType, ok := actionParamStringValue(action.Params, "record_type"); ok && !isAllowedValue(strings.ToUpper(recordType), "A", "AAAA", "CNAME", "MX", "NS", "TXT") {
+			issues = append(issues, fmt.Sprintf("%s: dns record_type must be A, AAAA, CNAME, MX, NS, or TXT", label))
+		}
+	case "tcp_request", "tcp_send", "winsock_tcp", "udp_request", "udp_send", "winsock_udp":
+		if strings.TrimSpace(action.Target) == "" {
+			issues = append(issues, fmt.Sprintf("%s: socket action requires target address", label))
+		}
+	case "ftp_command", "ftp_login", "ftp_noop", "smtp_send", "pop3_command", "imap_command":
+		if strings.TrimSpace(action.Target) == "" && strings.TrimSpace(action.Value) == "" && strings.TrimSpace(action.Body) == "" {
+			issues = append(issues, fmt.Sprintf("%s: %s requires target, value, or body", label, actionType))
+		}
+	case "ldap_bind":
+	case "ldap_search":
+		if strings.TrimSpace(action.Target) == "" {
+			issues = append(issues, fmt.Sprintf("%s: ldap_search requires target base DN", label))
+		}
+	default:
+		issues = append(issues, fmt.Sprintf("%s: unsupported network action type %q", label, action.Type))
+	}
+	if timeoutMs, ok := actionParamIntValue(action.Params, "timeout_ms"); ok && timeoutMs < 0 {
+		issues = append(issues, fmt.Sprintf("%s: timeout_ms must be zero or greater", label))
+	}
+	if readBytes, ok := actionParamIntValue(action.Params, "read_bytes"); ok && readBytes < 0 {
+		issues = append(issues, fmt.Sprintf("%s: read_bytes must be zero or greater", label))
+	}
+	if maxEntries, ok := actionParamIntValue(action.Params, "max_entries"); ok && maxEntries < 0 {
+		issues = append(issues, fmt.Sprintf("%s: max_entries must be zero or greater", label))
 	}
 	return issues
 }

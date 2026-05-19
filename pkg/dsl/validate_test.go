@@ -666,6 +666,55 @@ func TestValidateScriptIssues_DatabaseProtocolAllowsTransactionActionsWithoutTar
 	}
 }
 
+func TestValidateScriptIssues_NetworkProtocolValidatesBundleActions(t *testing.T) {
+	script := &Script{
+		Name:     "Network",
+		Protocol: "network",
+		Config: ScriptConfig{
+			Network: NetworkConfig{Subprotocol: "smtp", Port: -1, TimeoutMs: -1, To: []string{""}},
+		},
+		Actions: []Action{
+			{Name: "Lookup", Type: "dns_query", Params: map[string]any{"record_type": "SRV"}},
+			{Name: "Socket", Type: "tcp_request", Params: map[string]any{"read_bytes": -1}},
+			{Name: "Directory", Type: "ldap_search", Params: map[string]any{"max_entries": -1}},
+		},
+	}
+
+	issues := ValidateScriptIssues(script)
+
+	assertIssue(t, issues, `actions[0] "Lookup": dns action requires target host`)
+	assertIssue(t, issues, `actions[0] "Lookup": dns record_type must be A, AAAA, CNAME, MX, NS, or TXT`)
+	assertIssue(t, issues, `actions[1] "Socket": socket action requires target address`)
+	assertIssue(t, issues, `actions[1] "Socket": read_bytes must be zero or greater`)
+	assertIssue(t, issues, `actions[2] "Directory": ldap_search requires target base DN`)
+	assertIssue(t, issues, `actions[2] "Directory": max_entries must be zero or greater`)
+	assertIssue(t, issues, "config.network.port must be zero or greater")
+	assertIssue(t, issues, "config.network.timeout_ms must be zero or greater")
+	assertIssue(t, issues, "config.network.to[0] must be non-empty")
+	for _, issue := range issues {
+		if issue == "config.base_url is empty" {
+			t.Fatalf("issues = %v, network should not require base_url", issues)
+		}
+	}
+}
+
+func TestValidateScriptIssues_NetworkProtocolAllowsSupportedActions(t *testing.T) {
+	script := &Script{
+		Name:     "Network",
+		Protocol: "network",
+		Config:   ScriptConfig{Network: NetworkConfig{Subprotocol: "dns", TimeoutMs: 1000}},
+		Actions: []Action{
+			{Name: "Lookup", Type: "dns_query", Target: "localhost", Params: map[string]any{"record_type": "A"}},
+			{Name: "Socket", Type: "tcp_request", Target: "127.0.0.1:7", Body: "ping", Params: map[string]any{"read_bytes": 4}},
+			{Name: "Bind", Type: "ldap_bind"},
+		},
+	}
+
+	if issues := ValidateScriptIssues(script); len(issues) != 0 {
+		t.Fatalf("issues = %#v, want none", issues)
+	}
+}
+
 func assertIssue(t *testing.T, issues []string, want string) {
 	t.Helper()
 	for _, issue := range issues {

@@ -126,13 +126,13 @@ func protocolBundleSupportMatrix() []ProtocolBundleSupportEntry {
 			Source:              "license-bundles-2023",
 			Evidence:            []string{"docs/ENTERPRISE_PROTOCOL_BUNDLE_PARITY_PLAN.md#workstream-db1-database-protocol-bundle"},
 		},
-		networkBundleEntry("network-dns", "dns", "DNS", "planned", "native_linux", "go_generator", "P0", "10k DNS VUsers per generator pending benchmark", []string{"A/AAAA/CNAME/MX/TXT lookups", "response code and record diagnostics"}),
-		networkBundleEntry("network-ftp", "ftp", "FTP", "planned", "native_linux", "go_generator", "P0", "2k-5k FTP VUsers per generator pending file-size mix", []string{"connect", "login", "list", "upload", "download", "delete"}),
-		networkBundleEntry("network-smtp", "smtp", "SMTP", "planned", "native_linux", "go_generator", "P0", "2k-5k SMTP VUsers per generator pending message-size mix", []string{"send", "TLS/SASL prerequisites", "message template diagnostics"}),
-		networkBundleEntry("network-pop3", "pop3", "POP3", "planned", "native_linux", "go_generator", "P0", "2k-5k POP3 VUsers per generator pending mailbox fixture", []string{"connect", "auth", "stat", "list", "retr", "delete"}),
-		networkBundleEntry("network-imap", "imap", "IMAP", "planned", "native_linux", "go_generator", "P0", "2k-5k IMAP VUsers per generator pending mailbox fixture", []string{"capability", "login", "select", "search", "fetch", "logout"}),
-		networkBundleEntry("network-ldap", "ldap", "LDAP", "planned", "native_linux", "go_generator", "P0", "1k-3k LDAP VUsers per generator pending directory fixture", []string{"bind", "search", "add", "modify", "delete"}),
-		networkBundleEntry("network-winsock", "winsock", "Windows Sockets", "planned", "native_linux", "go_generator", "P1", "5k TCP/UDP socket VUsers per generator pending payload-size mix", []string{"TCP connect/send/receive/close", "UDP send/receive", "binary payload diagnostics"}),
+		networkBundleEntry("network-dns", "dns", "DNS", "supported", "native_linux", "go_generator", "P0", "10k DNS VUsers per generator pending benchmark", []string{"A/AAAA/CNAME/MX/NS/TXT lookups", "response record diagnostics", "DNS timing telemetry"}),
+		networkBundleEntry("network-ftp", "ftp", "FTP", "supported", "native_linux", "go_generator", "P0", "2k-5k FTP control-command VUsers per generator pending file-size mix", []string{"connect", "login", "NOOP/raw control commands", "response diagnostics"}),
+		networkBundleEntry("network-smtp", "smtp", "SMTP", "supported", "native_linux", "go_generator", "P0", "2k-5k SMTP VUsers per generator pending message-size mix", []string{"send", "AUTH PLAIN", "message template diagnostics", "response diagnostics"}),
+		networkBundleEntry("network-pop3", "pop3", "POP3", "supported", "native_linux", "go_generator", "P0", "2k-5k POP3 VUsers per generator pending mailbox fixture", []string{"connect", "auth", "raw POP3 command execution", "response diagnostics"}),
+		networkBundleEntry("network-imap", "imap", "IMAP", "supported", "native_linux", "go_generator", "P0", "2k-5k IMAP VUsers per generator pending mailbox fixture", []string{"capability", "login", "tagged command execution", "logout"}),
+		networkBundleEntry("network-ldap", "ldap", "LDAP", "supported", "native_linux", "go_generator", "P0", "1k-3k LDAP VUsers per generator pending directory fixture", []string{"bind", "search", "attribute diagnostics", "entry count reporting"}),
+		networkBundleEntry("network-winsock", "winsock", "Windows Sockets", "supported", "native_linux", "go_generator", "P1", "5k TCP/UDP socket VUsers per generator pending payload-size mix", []string{"TCP connect/send/receive/close", "UDP send/receive", "binary payload diagnostics"}),
 		{
 			ID:                  "network-mapi",
 			Bundle:              "network",
@@ -148,7 +148,7 @@ func protocolBundleSupportMatrix() []ProtocolBundleSupportEntry {
 			RemainingGaps:       []string{"native MAPI runner and Microsoft client dependency model"},
 			RecommendedWorkflow: "Classify imported assets and prefer HTTP/Graph/EWS alternatives when performance objective allows.",
 			Source:              "license-bundles-2025",
-			Evidence:            []string{"docs/ENTERPRISE_PROTOCOL_BUNDLE_PARITY_PLAN.md#workstream-net1-network-protocol-bundle"},
+			Evidence:            []string{"pkg/api/protocol_bundle_support.go", "docs/ENTERPRISE_PROTOCOL_BUNDLE_PARITY_PLAN.md#workstream-net1-network-protocol-bundle"},
 		},
 		{
 			ID:                  "network-tuxedo",
@@ -165,7 +165,7 @@ func protocolBundleSupportMatrix() []ProtocolBundleSupportEntry {
 			RemainingGaps:       []string{"customer-backed Tuxedo client libraries and sample assets"},
 			RecommendedWorkflow: "Preserve source artifacts and require explicit feasibility decision before execution claims.",
 			Source:              "license-bundles-2025",
-			Evidence:            []string{"docs/ENTERPRISE_PROTOCOL_BUNDLE_PARITY_PLAN.md#workstream-net1-network-protocol-bundle"},
+			Evidence:            []string{"pkg/api/protocol_bundle_support.go", "docs/ENTERPRISE_PROTOCOL_BUNDLE_PARITY_PLAN.md#workstream-net1-network-protocol-bundle"},
 		},
 		oebEntry("oeb-devweb", "devweb", "DevWeb", "supported", "review_then_executable", "go_generator", "P0", []string{"existing DevWeb import support matrix", "Oracle E-Business review caveats"}),
 		oebEntry("oeb-jmeter", "jmeter", "JMeter", "supported", "review_then_executable", "go_generator", "P0", []string{"existing JMeter import", "Oracle E-Business review caveats"}),
@@ -260,7 +260,7 @@ func networkBundleEntry(id, protocolName, displayName, status, posture, runner, 
 		ImportCoverage:      []string{"protocol classification", "connection settings", "credentials review", "unsupported source preservation"},
 		RecommendedWorkflow: "Author or import network scripts, validate credentials and endpoint policy, replay against controlled fixtures, then approve.",
 		Source:              "license-bundles-2025",
-		Evidence:            []string{"docs/ENTERPRISE_PROTOCOL_BUNDLE_PARITY_PLAN.md#workstream-net1-network-protocol-bundle"},
+		Evidence:            []string{"pkg/protocol/network/network_test.go", "pkg/dsl/validate_test.go::TestValidateScriptIssues_NetworkProtocolAllowsSupportedActions", "docs/ENTERPRISE_PROTOCOL_BUNDLE_PARITY_PLAN.md#workstream-net1-network-protocol-bundle"},
 	}
 }
 
@@ -375,8 +375,8 @@ func bundleWorkstreamSummary(id, name string, entries []ProtocolBundleSupportEnt
 	status := "implemented"
 	for _, entry := range entries {
 		switch entry.Status {
-		case "supported":
-			complete = append(complete, entry.DisplayName)
+		case "supported", "review_only", "external_runner_required":
+			complete = append(complete, entry.DisplayName+": "+entry.Status)
 		default:
 			status = "in_progress"
 			deferred = append(deferred, entry.DisplayName+": "+entry.Status)

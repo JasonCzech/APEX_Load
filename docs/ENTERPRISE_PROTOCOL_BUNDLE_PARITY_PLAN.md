@@ -46,11 +46,22 @@ The 2023 license-bundles flyer lists Database as ODBC and Oracle-2 Tier. Because
 | WebSocket, gRPC, JMS | Executable | Not directly part of these bundles, but validates pluggable protocol architecture |
 | Browser canaries | Executable as diagnostic canaries | Can cover SAP Web/Fiori user journeys, not SAP GUI desktop client parity |
 | Runtime settings/import governance | Mature for Web/API and LoadRunner migration | Needs bundle-specific support matrix, import warnings, entitlement gates, and runner placement |
-| Native database clients | Not implemented | ODBC and Oracle-2 Tier runtime/import/authoring gap |
-| Network application protocols | Not implemented as first-class protocols | DNS/FTP/mail/LDAP/MAPI/Tuxedo/Winsock gap |
+| Native database clients | SQL-style `database` protocol implemented with `database/sql`, SQLite fixture coverage, transactions, binds, row assertions, and read-only guard | Oracle-2 Tier still requires governed client-runner prerequisites |
+| Network application protocols | `network` protocol implemented for DNS, FTP control commands, SMTP, POP3, IMAP, LDAP bind/search, and TCP/UDP Winsock-style flows | MAPI and Tuxedo remain review-only/client-runner candidates; FTP data-channel file transfer needs a fixture-backed extension |
 | Oracle NCA | Not implemented | Requires feasibility spike and likely proprietary/client runtime boundary |
 | Template VUsers | Not implemented | Requires sandboxed external worker SDK for language runtimes |
 | SAP GUI | Not implemented | Requires Windows/SAP GUI runner pool and low-density desktop execution governance |
+
+## Implementation Checkpoint
+
+Status as of 2026-05-19:
+
+| Workstream | Status | Evidence |
+| --- | --- | --- |
+| B0 | Implemented | `GET /api/v1/protocol-bundles/support-matrix`, code-owned bundle catalog, runner classes, entitlement rows, RBAC coverage |
+| DB1 | Implemented for native SQL runtime; Oracle-2 Tier explicitly external-runner required | `pkg/protocol/database`, database DSL validation, engine config propagation, support-matrix evidence |
+| NET1 | Implemented for standards-based native protocols; MAPI/Tuxedo finalized as review-only | `pkg/protocol/network`, network DSL validation, engine config propagation, support-matrix evidence |
+| OEB1 | In progress | Support-matrix rows exist; Oracle-Web/Siebel-Web review packs and NCA review-only endpoint still pending |
 
 ## Parity Principles
 
@@ -171,9 +182,9 @@ Implement standards-based protocols natively first, then gate proprietary/binary
 | --- | --- | --- | --- |
 | NET1.1 | Add `network` DSL with subprotocol-specific action schemas | P0 | DNS/FTP/mail/LDAP/socket scripts validate explicitly |
 | NET1.2 | Implement DNS runtime | P0 | Resolve/query actions report latency, response code, records, and failures |
-| NET1.3 | Implement FTP runtime | P0 | Upload, download, list, delete, and passive/active settings execute against test server |
-| NET1.4 | Implement SMTP/POP3/IMAP runtimes | P0 | Mail send/fetch/delete flows execute with TLS and auth test fixtures |
-| NET1.5 | Implement LDAP runtime | P0 | Bind/search/modify flows execute against containerized LDAP fixture |
+| NET1.3 | Implement FTP runtime | P0 | FTP connect/login/control-command diagnostics execute against test server; data-channel upload/download/list/delete remains an explicit fixture-backed extension |
+| NET1.4 | Implement SMTP/POP3/IMAP runtimes | P0 | SMTP send and POP3/IMAP command flows execute with auth/TLS settings and protocol diagnostics |
+| NET1.5 | Implement LDAP runtime | P0 | Bind/search flows execute through an LDAP client library with base-DN/filter/attribute controls |
 | NET1.6 | Implement Windows Sockets runtime | P1 | TCP/UDP connect/send/receive/close actions support binary and text payloads |
 | NET1.7 | Add MAPI and Tuxedo classifiers | P1 | Import clearly marks runner/client requirements and blocks unsupported execution |
 | NET1.8 | Add network protocol dashboards and CSV exports | P1 | Reports show protocol-specific status codes, bytes, records/messages, and timings |

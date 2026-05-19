@@ -16,6 +16,7 @@ import (
 	_ "github.com/jasonczech/stormrunner/pkg/protocol/grpc"
 	_ "github.com/jasonczech/stormrunner/pkg/protocol/http"
 	_ "github.com/jasonczech/stormrunner/pkg/protocol/java_http"
+	_ "github.com/jasonczech/stormrunner/pkg/protocol/network"
 	_ "github.com/jasonczech/stormrunner/pkg/protocol/soap"
 	_ "github.com/jasonczech/stormrunner/pkg/protocol/websocket"
 	"google.golang.org/grpc"

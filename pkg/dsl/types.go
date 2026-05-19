@@ -58,6 +58,7 @@ type ScriptConfig struct {
 	JavaHTTP      JavaHTTPConfig      `json:"java_http,omitempty"`
 	SOAP          SOAPConfig          `json:"soap,omitempty"`
 	Database      DatabaseConfig      `json:"database,omitempty"`
+	Network       NetworkConfig       `json:"network,omitempty"`
 	Browser       BrowserConfig       `json:"browser,omitempty"`
 	JMS           JMSConfig           `json:"jms,omitempty"`
 	ErrorHandling ErrorHandlingConfig `json:"error_handling,omitempty"`
@@ -149,6 +150,20 @@ type DatabaseConfig struct {
 	MaxRows            int    `json:"max_rows,omitempty"`
 	ReadOnly           bool   `json:"read_only,omitempty"`
 	RollbackOnTeardown bool   `json:"rollback_on_teardown,omitempty"`
+}
+
+type NetworkConfig struct {
+	Subprotocol string   `json:"subprotocol,omitempty"`
+	Host        string   `json:"host,omitempty"`
+	Port        int      `json:"port,omitempty"`
+	Address     string   `json:"address,omitempty"`
+	TimeoutMs   int      `json:"timeout_ms,omitempty"`
+	TLS         bool     `json:"tls,omitempty"`
+	Username    string   `json:"username,omitempty"`
+	Password    string   `json:"password,omitempty"`
+	From        string   `json:"from,omitempty"`
+	To          []string `json:"to,omitempty"`
+	BaseDN      string   `json:"base_dn,omitempty"`
 }
 
 // JMSConfig holds broker, destination, and reliability settings for JMS scripts.
