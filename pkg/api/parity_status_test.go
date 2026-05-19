@@ -77,6 +77,7 @@ func TestCompetitiveParityStatusExposesEvidenceAndNonGoals(t *testing.T) {
 				area.Decision != "" &&
 				area.EvidenceLevel != "" &&
 				len(area.Evidence) > 0 &&
+				area.Evidence[0] == competitiveSupportMatrixEvidence &&
 				len(area.Remaining) > 0
 		}
 		for _, competitor := range area.Competitors {

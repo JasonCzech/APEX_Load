@@ -5,6 +5,8 @@ import (
 	"time"
 )
 
+const competitiveSupportMatrixEvidence = "docs/COMPETITIVE_SUPPORT_MATRIX.md"
+
 type ParityStatusResponse struct {
 	GeneratedAt       time.Time               `json:"generated_at"`
 	Overall           string                  `json:"overall"`
@@ -123,6 +125,7 @@ func buildCompetitiveParityStatus() []CompetitiveParityArea {
 			Competitors: []string{"k6"},
 			Summary:     "Stormrunner has CLI execution, JSON DSL validation, CI templates, and importable scripts, but it is not yet as familiar or portable as k6's JavaScript-first local/cloud workflow.",
 			Evidence: []string{
+				competitiveSupportMatrixEvidence,
 				"README.md#build--run",
 				"docs/K6_NEOLOAD_PARITY_PLAN.md#phase-c2-k6-aligned-developer-experience",
 				".github/actions/stormrunner-run/action.yml",
@@ -140,6 +143,7 @@ func buildCompetitiveParityStatus() []CompetitiveParityArea {
 			Competitors: []string{"k6", "NeoLoad"},
 			Summary:     "Stormrunner exposes regional generator inventory, capacity APIs, placement rejection visibility, and autoscaling guidance, but still needs named load-zone packaging and published benchmark evidence.",
 			Evidence: []string{
+				competitiveSupportMatrixEvidence,
 				"/api/v1/system/inventory",
 				"/api/v1/fleet/capacity",
 				"/api/v1/fleet/alerts",
@@ -159,6 +163,7 @@ func buildCompetitiveParityStatus() []CompetitiveParityArea {
 			Competitors: []string{"k6", "NeoLoad"},
 			Summary:     "Stormrunner supports script imports, templates, validation, replay evidence, authoring sessions, and guided repair contracts; the remaining gap is workflow polish versus k6 Test Builder and NeoLoad Designer.",
 			Evidence: []string{
+				competitiveSupportMatrixEvidence,
 				"/api/v1/scripts/import/loadrunner",
 				"/api/v1/scripts/import/jmeter",
 				"/api/v1/scripts/import/sample",
@@ -178,6 +183,7 @@ func buildCompetitiveParityStatus() []CompetitiveParityArea {
 			Competitors: []string{"k6", "NeoLoad"},
 			Summary:     "Stormrunner has browser replay, mobile web profile guidance, client metrics, and archive evidence, while deliberately treating browser VUsers as diagnostic canaries until benchmark data supports broader claims.",
 			Evidence: []string{
+				competitiveSupportMatrixEvidence,
 				"/api/v1/scripts/browser-replay/sessions",
 				"docs/MOBILE_BROWSER_EMULATION_PLAN.md",
 				"docs/BROWSER_CLIENT_METRICS_PLAN.md",
@@ -195,6 +201,7 @@ func buildCompetitiveParityStatus() []CompetitiveParityArea {
 			Competitors: []string{"k6", "NeoLoad"},
 			Summary:     "Stormrunner has OpenTelemetry, Prometheus export, archives, comparison reports, release trends, and trace correlation primitives, but lacks NeoLoad-grade packaged root-cause and APM profile workflows.",
 			Evidence: []string{
+				competitiveSupportMatrixEvidence,
 				"/metrics",
 				"/api/v1/tests/{id}/archive/report",
 				"/api/v1/tests/{id}/archive/comparison",
@@ -214,6 +221,7 @@ func buildCompetitiveParityStatus() []CompetitiveParityArea {
 			Competitors: []string{"NeoLoad"},
 			Summary:     "Stormrunner covers HTTP/API, SOAP, Java-over-HTTP, JMS, WebSocket, gRPC, HAR, JMeter, DevWeb, and LoadRunner migration paths, but native SAP GUI, Citrix, Oracle Forms, and desktop UI protocols remain demand-gated non-goals.",
 			Evidence: []string{
+				competitiveSupportMatrixEvidence,
 				"docs/K6_NEOLOAD_PARITY_PLAN.md#phase-c6-specialized-enterprise-protocol-decisions",
 				"docs/PROTOCOL_EXTENSION_PLAN.md",
 				"docs/BROWSER_CLIENT_METRICS_PLAN.md#non-goals",
@@ -231,6 +239,7 @@ func buildCompetitiveParityStatus() []CompetitiveParityArea {
 			Competitors: []string{"k6", "NeoLoad"},
 			Summary:     "Stormrunner has docs, CI templates, dashboard workflows, and several sample/import paths, but evaluators still need canonical demos, a public support matrix, and release notes that connect claims to benchmark artifacts.",
 			Evidence: []string{
+				competitiveSupportMatrixEvidence,
 				"README.md#quick-start",
 				"docs/K6_NEOLOAD_PARITY_PLAN.md#phase-c7-competitive-packaging-samples-and-trust",
 				"docs/LOADRUNNER_RTS_REFERENCE.md",
