@@ -171,6 +171,7 @@ func ConvertArchive(files map[string]string, opts ConvertOptions) (*ConvertResul
 			if opts.PreserveTransactions && currentTransaction != "" {
 				action.Name = sanitizeTransactionActionName(currentTransaction, action.Name)
 			}
+			attachSourceStepMetadata(&action, step, currentTransaction)
 			if baseURL == "" && action.Type == "browser_navigate" {
 				baseURL = detectBaseURL(action.Target)
 			}
@@ -563,6 +564,33 @@ func convertScrollStep(step truXMLStep) (dsl.Action, error) {
 			"source": "truclient_scroll",
 		},
 	}, nil
+}
+
+func attachSourceStepMetadata(action *dsl.Action, step truXMLStep, transaction string) {
+	if action == nil {
+		return
+	}
+	if action.Metadata == nil {
+		action.Metadata = make(map[string]any)
+	}
+	if _, ok := action.Metadata["source"]; !ok {
+		action.Metadata["source"] = "truclient_" + stableActionToken(step.Action)
+	}
+	if value := strings.TrimSpace(step.StepID); value != "" {
+		action.Metadata["source_step_id"] = value
+	}
+	if value := strings.TrimSpace(step.Index); value != "" {
+		action.Metadata["source_step_index"] = value
+	}
+	if value := strings.TrimSpace(step.Action); value != "" {
+		action.Metadata["source_action"] = value
+	}
+	if value := strings.TrimSpace(step.ActionName); value != "" {
+		action.Metadata["source_action_name"] = value
+	}
+	if value := strings.TrimSpace(transaction); value != "" {
+		action.Metadata["source_transaction"] = value
+	}
 }
 
 func normalizeScrollDirection(value string) string {

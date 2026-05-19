@@ -3,6 +3,8 @@ package engine
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jasonczech/stormrunner/pkg/dsl"
@@ -44,31 +46,37 @@ type ReplayReport struct {
 }
 
 type ReplayActionEvent struct {
-	Phase         string                  `json:"phase"`
-	ActionName    string                  `json:"action_name"`
-	ActionType    string                  `json:"action_type"`
-	Method        string                  `json:"method,omitempty"`
-	Target        string                  `json:"target"`
-	Selector      string                  `json:"selector,omitempty"`
-	Value         string                  `json:"value,omitempty"`
-	Headers       map[string]string       `json:"headers,omitempty"`
-	Body          string                  `json:"body,omitempty"`
-	StartedAt     time.Time               `json:"started_at"`
-	CompletedAt   time.Time               `json:"completed_at"`
-	DurationMs    float64                 `json:"duration_ms"`
-	StatusCode    int                     `json:"status_code,omitempty"`
-	Success       bool                    `json:"success"`
-	ErrorMessage  string                  `json:"error_message,omitempty"`
-	Extractions   map[string]string       `json:"extractions,omitempty"`
-	PageURL       string                  `json:"page_url,omitempty"`
-	PageTitle     string                  `json:"page_title,omitempty"`
-	HTML          string                  `json:"html,omitempty"`
-	Screenshot    string                  `json:"screenshot_base64,omitempty"`
-	Console       []protocol.ConsoleEntry `json:"console_entries,omitempty"`
-	Network       []protocol.NetworkEntry `json:"network_entries,omitempty"`
-	DOMSummary    *protocol.DOMSummary    `json:"dom_summary,omitempty"`
-	ClientMetrics *protocol.ClientMetrics `json:"client_metrics,omitempty"`
-	Snapshot      *protocol.ErrorSnapshot `json:"snapshot,omitempty"`
+	Phase             string                  `json:"phase"`
+	ActionName        string                  `json:"action_name"`
+	ActionType        string                  `json:"action_type"`
+	Method            string                  `json:"method,omitempty"`
+	Target            string                  `json:"target"`
+	Selector          string                  `json:"selector,omitempty"`
+	Value             string                  `json:"value,omitempty"`
+	Headers           map[string]string       `json:"headers,omitempty"`
+	Body              string                  `json:"body,omitempty"`
+	StartedAt         time.Time               `json:"started_at"`
+	CompletedAt       time.Time               `json:"completed_at"`
+	DurationMs        float64                 `json:"duration_ms"`
+	StatusCode        int                     `json:"status_code,omitempty"`
+	Success           bool                    `json:"success"`
+	ErrorMessage      string                  `json:"error_message,omitempty"`
+	Extractions       map[string]string       `json:"extractions,omitempty"`
+	PageURL           string                  `json:"page_url,omitempty"`
+	PageTitle         string                  `json:"page_title,omitempty"`
+	HTML              string                  `json:"html,omitempty"`
+	Screenshot        string                  `json:"screenshot_base64,omitempty"`
+	Console           []protocol.ConsoleEntry `json:"console_entries,omitempty"`
+	Network           []protocol.NetworkEntry `json:"network_entries,omitempty"`
+	DOMSummary        *protocol.DOMSummary    `json:"dom_summary,omitempty"`
+	ClientMetrics     *protocol.ClientMetrics `json:"client_metrics,omitempty"`
+	Snapshot          *protocol.ErrorSnapshot `json:"snapshot,omitempty"`
+	SourceStepID      string                  `json:"source_step_id,omitempty"`
+	SourceStepIndex   int                     `json:"source_step_index,omitempty"`
+	SourceAction      string                  `json:"source_action,omitempty"`
+	SourceActionName  string                  `json:"source_action_name,omitempty"`
+	SourceTransaction string                  `json:"source_transaction,omitempty"`
+	SourceProfile     string                  `json:"source_profile,omitempty"`
 }
 
 func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (*ReplayReport, error) {
@@ -216,6 +224,7 @@ func runReplayAction(
 			CompletedAt: now,
 			Success:     err == nil,
 		}
+		applyReplaySourceMetadata(&event, action.Metadata)
 		if err != nil {
 			event.ErrorMessage = err.Error()
 		}
@@ -240,6 +249,7 @@ func runReplayAction(
 		CompletedAt: completedAt,
 		DurationMs:  float64(completedAt.Sub(start).Microseconds()) / 1000,
 	}
+	applyReplaySourceMetadata(&event, action.Metadata)
 
 	if err != nil {
 		event.Success = false
@@ -340,6 +350,45 @@ func scrubReplayBody(action *protocol.Action, config *RedactionConfig) string {
 		body = string(action.RedactedBody)
 	}
 	return scrubSensitiveTextWithConfig(body, config)
+}
+
+func applyReplaySourceMetadata(event *ReplayActionEvent, metadata map[string]any) {
+	if event == nil || len(metadata) == 0 {
+		return
+	}
+	event.SourceStepID = sourceMetadataString(metadata, "source_step_id")
+	event.SourceStepIndex = sourceMetadataInt(metadata, "source_step_index")
+	event.SourceAction = sourceMetadataString(metadata, "source_action")
+	event.SourceActionName = sourceMetadataString(metadata, "source_action_name")
+	event.SourceTransaction = sourceMetadataString(metadata, "source_transaction")
+	event.SourceProfile = sourceMetadataString(metadata, "source_profile")
+}
+
+func sourceMetadataString(metadata map[string]any, key string) string {
+	value, ok := metadata[key]
+	if !ok || value == nil {
+		return ""
+	}
+	switch typed := value.(type) {
+	case string:
+		return strings.TrimSpace(typed)
+	case fmt.Stringer:
+		return strings.TrimSpace(typed.String())
+	default:
+		return strings.TrimSpace(fmt.Sprint(typed))
+	}
+}
+
+func sourceMetadataInt(metadata map[string]any, key string) int {
+	value := sourceMetadataString(metadata, key)
+	if value == "" {
+		return 0
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return 0
+	}
+	return parsed
 }
 
 func cloneStringMap(input map[string]string) map[string]string {

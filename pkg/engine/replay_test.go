@@ -84,6 +84,40 @@ func TestReplayScriptRunsAllPhasesAndInterpolatesExtractions(t *testing.T) {
 	}
 }
 
+func TestReplayScriptPreservesSourceStepLabels(t *testing.T) {
+	protocolName := registerReplayProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+		return &protocol.Result{ActionName: action.Name, Success: true, StatusCode: 200}, nil
+	})
+
+	report, err := ReplayScript(context.Background(), &dsl.Script{
+		Name:     "Web2 Replay",
+		Protocol: protocolName,
+		Actions: []dsl.Action{{
+			Name:   "Checkout_Click",
+			Type:   "browser_click",
+			Target: "#checkout",
+			Metadata: map[string]any{
+				"source_step_id":     "step-checkout",
+				"source_step_index":  "7",
+				"source_action":      "Click",
+				"source_action_name": "Click Checkout",
+				"source_transaction": "Checkout",
+				"source_profile":     "vugen_web2",
+			},
+		}},
+	}, ReplayOptions{IgnoreThinkTime: true})
+	if err != nil {
+		t.Fatalf("ReplayScript returned error: %v", err)
+	}
+	if len(report.Events) != 1 {
+		t.Fatalf("event count = %d, want 1", len(report.Events))
+	}
+	event := report.Events[0]
+	if event.SourceStepID != "step-checkout" || event.SourceStepIndex != 7 || event.SourceTransaction != "Checkout" || event.SourceProfile != "vugen_web2" {
+		t.Fatalf("event source labels = %#v, want Web2 source metadata", event)
+	}
+}
+
 func TestReplayScriptStopsAfterFailureWhenContinueOnErrorDisabled(t *testing.T) {
 	protocolName := registerReplayProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
 		switch action.Name {

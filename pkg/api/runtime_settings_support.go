@@ -141,6 +141,7 @@ func runtimeSettingsSupportMatrix() []RuntimeSettingsSupportEntry {
 			Notes:               entry.Notes,
 		})
 	}
+	matrix = append(matrix, vugenWeb2RuntimeSupportEntries()...)
 	matrix = append(matrix, nativeRuntimeSupportEntries()...)
 	sort.SliceStable(matrix, func(i, j int) bool {
 		if strings.Join(matrix[i].Protocols, ",") == strings.Join(matrix[j].Protocols, ",") {
@@ -149,6 +150,56 @@ func runtimeSettingsSupportMatrix() []RuntimeSettingsSupportEntry {
 		return strings.Join(matrix[i].Protocols, ",") < strings.Join(matrix[j].Protocols, ",")
 	})
 	return matrix
+}
+
+func vugenWeb2RuntimeSupportEntries() []RuntimeSettingsSupportEntry {
+	loadRunnerEntries := loadrunner.GetRTSSupportMatrix()
+	entries := make([]RuntimeSettingsSupportEntry, 0, len(loadRunnerEntries)+2)
+	for _, entry := range loadRunnerEntries {
+		entries = append(entries, RuntimeSettingsSupportEntry{
+			ID:                  "vugen_web2_" + entry.ID,
+			Protocols:           []string{"browser", "vugen_web2", "trueclient2_web"},
+			Source:              "vugen_web2",
+			Area:                entry.Area,
+			Concept:             entry.Concept,
+			Fields:              cloneStringSlice(entry.Fields),
+			Status:              string(entry.Status),
+			ExecutionScope:      "TruClient 2.0 - Web browser-profile runtime settings mapped into Stormrunner browser, web runtime, logging, pacing, think-time, proxy, and capture config where executable.",
+			ImportSources:       []string{"TruClient 2.0 - Web", "VuGen Web 2.0"},
+			Evidence:            []string{"pkg/convert/loadrunner/converter_test.go::TestConvertZipProducesReviewDraftForTruClientWeb2Archive", "docs/VUGEN_WEB2_TRUCLIENT2_PARITY_PLAN.md"},
+			RecommendedWorkflow: "Import through LoadRunner ZIP acquisition, inspect the Web 2.0 review sections, run browser replay, then use the runtime report before promotion.",
+			Notes:               entry.Notes,
+		})
+	}
+	entries = append(entries,
+		RuntimeSettingsSupportEntry{
+			ID:                  "vugen_web2_browser_replay_evidence",
+			Protocols:           []string{"browser", "vugen_web2", "trueclient2_web"},
+			Source:              "vugen_web2",
+			Area:                "Browser Replay Evidence",
+			Concept:             "Screenshots, DOM summary, console entries, network entries, Core Web Vitals, and object-match diagnostics for Web 2.0 migration approval",
+			Fields:              []string{"browser_replay.events", "browser_replay.report", "actions[].metadata.source_*"},
+			Status:              "executed",
+			ExecutionScope:      "Replay/session evidence exported from the browser replay manager and used by authoring review flows.",
+			ImportSources:       []string{"TruClient 2.0 - Web", "VuGen Web 2.0"},
+			Evidence:            []string{"pkg/api/handlers_browser_replay_test.go", "dashboard/src/components/ScriptEditor.test.tsx"},
+			RecommendedWorkflow: "Capture browser replay evidence before approving or converting the Web 2.0 draft.",
+		},
+		RuntimeSettingsSupportEntry{
+			ID:                  "vugen_web2_http_conversion_readiness",
+			Protocols:           []string{"browser", "http", "vugen_web2", "trueclient2_web"},
+			Source:              "vugen_web2",
+			Area:                "Browser-To-HTTP Conversion",
+			Concept:             "Network capture, request eligibility, correlation/data-source repair, and canary-plus-protocol-load scenario guidance",
+			Fields:              []string{"browser_replay.events[].network_entries", "generated_http_script", "scenario_template"},
+			Status:              "partial",
+			ExecutionScope:      "Conversion is a governed review workflow; generated HTTP drafts still require validation, replay, and approval.",
+			ImportSources:       []string{"TruClient 2.0 - Web replay evidence"},
+			Evidence:            []string{"docs/VUGEN_WEB2_TRUCLIENT2_PARITY_PLAN.md"},
+			RecommendedWorkflow: "Keep the browser script as a canary, generate an HTTP draft from captured replay traffic, repair correlation/data issues, then assemble a paired scenario.",
+		},
+	)
+	return entries
 }
 
 func nativeRuntimeSupportEntries() []RuntimeSettingsSupportEntry {
@@ -350,6 +401,36 @@ func runtimeSettingsProfilePresets() []RuntimeSettingsProfilePreset {
 			},
 			ScriptConfigHints: map[string]any{"config.log.extended_options": []string{"parameter_substitution", "data_returned", "advanced_trace"}},
 			ScenarioHints:     map[string]any{"duration": "2m", "requires_runtime_report": true},
+		},
+		{
+			ID:                   "vugen_web2_migration_review",
+			Name:                 "VuGen Web 2.0 Migration Review",
+			Summary:              "Replay-first profile for TruClient 2.0 - Web imports before approval or HTTP conversion.",
+			RecommendedProtocols: []string{"browser", "vugen_web2", "trueclient2_web"},
+			RuntimeSettings: &RuntimeSettingsOverride{
+				Iterations:       &oneIteration,
+				LogLevel:         "extended",
+				AutoTransactions: "per_action",
+				Browser: &RuntimeBrowserOverride{
+					Headless: &headless,
+				},
+				ErrorHandling: &dsl.ErrorHandlingConfig{
+					ContinueOnError: true,
+					SnapshotOnError: true,
+				},
+			},
+			ScriptConfigHints: map[string]any{
+				"config.browser.client_metrics":      true,
+				"config.browser.capture_screenshots": "on_error",
+				"config.log.extended_options":        []string{"parameter_substitution", "data_returned", "advanced_trace"},
+			},
+			ScenarioHints: map[string]any{
+				"duration":                "2m",
+				"requires_browser_replay": true,
+				"requires_runtime_report": true,
+				"claim_policy":            "diagnostic_canary_only",
+			},
+			Evidence: []string{"docs/VUGEN_WEB2_TRUCLIENT2_PARITY_PLAN.md"},
 		},
 		{
 			ID:                   "browser_canary",

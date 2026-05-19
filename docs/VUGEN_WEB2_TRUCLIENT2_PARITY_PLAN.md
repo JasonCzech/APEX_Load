@@ -169,11 +169,13 @@ Implementation note: The authoring capabilities endpoint now exposes `trueclient
 
 | ID | Work Item | Priority | Status |
 | --- | --- | --- | --- |
-| V2.6.1 | Map TruClient 2.0 browser/runtime settings into Stormrunner browser config, web runtime config, log config, think time, pacing, proxy, and capture settings | P0 | Planned |
-| V2.6.2 | Extend runtime settings support matrix with `vugen_web2` profile entries and status classification | P0 | Planned |
-| V2.6.3 | Add browser replay timeline labels that preserve original TruClient step IDs and transaction groups | P1 | Planned |
-| V2.6.4 | Archive screenshots, DOM, console, network, Core Web Vitals, and object-match diagnostics for imported Web 2.0 scripts | P1 | Planned |
-| V2.6.5 | Add report/profile sections for browser Web 2.0 migration evidence | P1 | Planned |
+| V2.6.1 | Map TruClient 2.0 browser/runtime settings into Stormrunner browser config, web runtime config, log config, think time, pacing, proxy, and capture settings | P0 | Complete |
+| V2.6.2 | Extend runtime settings support matrix with `vugen_web2` profile entries and status classification | P0 | Complete |
+| V2.6.3 | Add browser replay timeline labels that preserve original TruClient step IDs and transaction groups | P1 | Complete |
+| V2.6.4 | Archive screenshots, DOM, console, network, Core Web Vitals, and object-match diagnostics for imported Web 2.0 scripts | P1 | Complete |
+| V2.6.5 | Add report/profile sections for browser Web 2.0 migration evidence | P1 | Complete |
+
+Implementation note: V2.6 is backed by first-class `vugen_web2` / `trueclient2_web` runtime settings support-matrix entries and the `vugen_web2_migration_review` preset. TruClient source step IDs, indexes, source actions, transaction groups, and profile labels are now attached during import and carried into browser replay events and archive transaction records. Archive reports include `web2_migration` JSON/CSV evidence for replay status, captured browser artifacts, transaction groups, source profiles, and HTTP-conversion readiness.
 
 Acceptance:
 

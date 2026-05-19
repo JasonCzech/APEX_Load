@@ -147,6 +147,35 @@ func writeRunArchiveReportCSVWithProfile(report *RunArchiveReport, writer io.Wri
 		}
 	}
 
+	if hasCSVSection(sections, "web2_migration") && report.Web2Migration != nil {
+		rows := []struct {
+			metric string
+			value  string
+		}{
+			{"status", report.Web2Migration.Status},
+			{"imported_steps", strconv.Itoa(report.Web2Migration.ImportedSteps)},
+			{"replayed_steps", strconv.Itoa(report.Web2Migration.ReplayedSteps)},
+			{"failed_steps", strconv.Itoa(report.Web2Migration.FailedSteps)},
+			{"conversion_to_http_ready", strconv.FormatBool(report.Web2Migration.ConversionToHTTPReady)},
+			{"transaction_groups", strings.Join(report.Web2Migration.TransactionGroups, ";")},
+			{"source_profiles", strings.Join(report.Web2Migration.SourceProfiles, ";")},
+			{"next_actions", strings.Join(report.Web2Migration.NextActions, ";")},
+		}
+		for _, row := range rows {
+			if row.value == "" {
+				continue
+			}
+			if err := write("web2_migration", "", row.metric, row.value); err != nil {
+				return err
+			}
+		}
+		for _, key := range sortedIntMapKeys(report.Web2Migration.ReplayEvidence) {
+			if err := write("web2_migration_evidence", key, "count", strconv.Itoa(report.Web2Migration.ReplayEvidence[key])); err != nil {
+				return err
+			}
+		}
+	}
+
 	if hasCSVSection(sections, "summary_timeline") {
 		for _, point := range report.SummaryTimeline {
 			key := point.Timestamp.Format("2006-01-02T15:04:05Z07:00")
@@ -187,6 +216,15 @@ func stringSet(values []string) map[string]struct{} {
 func hasCSVSection(sections map[string]struct{}, section string) bool {
 	_, ok := sections[section]
 	return ok
+}
+
+func sortedIntMapKeys(values map[string]int) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func writeChangeAttributionCSVRows(write func(string, string, string, string) error, attribution RunArchiveChangeAttribution) error {

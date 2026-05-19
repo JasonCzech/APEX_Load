@@ -1825,6 +1825,12 @@ Type=TruClient 2.0 - Web
 	if result.Script.Actions[0].Type != "browser_navigate" || result.Script.Actions[1].Type != "browser_click" {
 		t.Fatalf("actions = %#v, want browser navigate and click", result.Script.Actions)
 	}
+	if result.Script.Actions[0].Metadata["source_step_index"] != "1" || result.Script.Actions[0].Metadata["source_action"] != "Navigate" {
+		t.Fatalf("first action metadata = %#v, want TruClient source step metadata", result.Script.Actions[0].Metadata)
+	}
+	if result.Script.Actions[1].Metadata["source_step_index"] != "2" || result.Script.Actions[1].Metadata["source_action"] != "Click" {
+		t.Fatalf("second action metadata = %#v, want TruClient source step metadata", result.Script.Actions[1].Metadata)
+	}
 	if !containsString(result.Warnings, "TruClient 2.0 - Web import is review-only; validate selectors, waits, runtime settings, and replay evidence before promotion.") {
 		t.Fatalf("warnings = %#v, want review-only warning", result.Warnings)
 	}

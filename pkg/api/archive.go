@@ -78,36 +78,42 @@ type RunArchiveProvenance struct {
 }
 
 type TransactionEvent struct {
-	Timestamp        time.Time                 `json:"timestamp"`
-	TestID           string                    `json:"test_id"`
-	TestName         string                    `json:"test_name"`
-	Group            string                    `json:"group,omitempty"`
-	ActionName       string                    `json:"action_name,omitempty"`
-	CorrelationID    string                    `json:"correlation_id,omitempty"`
-	TraceID          string                    `json:"trace_id,omitempty"`
-	SpanID           string                    `json:"span_id,omitempty"`
-	NetworkProfile   string                    `json:"network_profile,omitempty"`
-	DependencyType   string                    `json:"dependency_type,omitempty"`
-	DependencyTarget string                    `json:"dependency_target,omitempty"`
-	DurationMs       float64                   `json:"duration_ms"`
-	DNSMs            float64                   `json:"dns_ms,omitempty"`
-	ConnectMs        float64                   `json:"connect_ms,omitempty"`
-	TLSMs            float64                   `json:"tls_ms,omitempty"`
-	TTFBMs           float64                   `json:"ttfb_ms,omitempty"`
-	BytesSent        int64                     `json:"bytes_sent,omitempty"`
-	BytesReceived    int64                     `json:"bytes_received,omitempty"`
-	StatusCode       int                       `json:"status_code,omitempty"`
-	Success          bool                      `json:"success"`
-	ErrorMessage     string                    `json:"error_message,omitempty"`
-	Extractions      map[string]string         `json:"extractions,omitempty"`
-	PageURL          string                    `json:"page_url,omitempty"`
-	PageTitle        string                    `json:"page_title,omitempty"`
-	ConsoleEntries   []protocol.ConsoleEntry   `json:"console_entries,omitempty"`
-	NetworkEntries   []protocol.NetworkEntry   `json:"network_entries,omitempty"`
-	DOMSummary       *protocol.DOMSummary      `json:"dom_summary,omitempty"`
-	ClientMetrics    *protocol.ClientMetrics   `json:"client_metrics,omitempty"`
-	ServerTelemetry  *protocol.ServerTelemetry `json:"server_telemetry,omitempty"`
-	Snapshot         *protocol.ErrorSnapshot   `json:"snapshot,omitempty"`
+	Timestamp         time.Time                 `json:"timestamp"`
+	TestID            string                    `json:"test_id"`
+	TestName          string                    `json:"test_name"`
+	Group             string                    `json:"group,omitempty"`
+	ActionName        string                    `json:"action_name,omitempty"`
+	CorrelationID     string                    `json:"correlation_id,omitempty"`
+	TraceID           string                    `json:"trace_id,omitempty"`
+	SpanID            string                    `json:"span_id,omitempty"`
+	NetworkProfile    string                    `json:"network_profile,omitempty"`
+	DependencyType    string                    `json:"dependency_type,omitempty"`
+	DependencyTarget  string                    `json:"dependency_target,omitempty"`
+	DurationMs        float64                   `json:"duration_ms"`
+	DNSMs             float64                   `json:"dns_ms,omitempty"`
+	ConnectMs         float64                   `json:"connect_ms,omitempty"`
+	TLSMs             float64                   `json:"tls_ms,omitempty"`
+	TTFBMs            float64                   `json:"ttfb_ms,omitempty"`
+	BytesSent         int64                     `json:"bytes_sent,omitempty"`
+	BytesReceived     int64                     `json:"bytes_received,omitempty"`
+	StatusCode        int                       `json:"status_code,omitempty"`
+	Success           bool                      `json:"success"`
+	ErrorMessage      string                    `json:"error_message,omitempty"`
+	Extractions       map[string]string         `json:"extractions,omitempty"`
+	PageURL           string                    `json:"page_url,omitempty"`
+	PageTitle         string                    `json:"page_title,omitempty"`
+	ConsoleEntries    []protocol.ConsoleEntry   `json:"console_entries,omitempty"`
+	NetworkEntries    []protocol.NetworkEntry   `json:"network_entries,omitempty"`
+	DOMSummary        *protocol.DOMSummary      `json:"dom_summary,omitempty"`
+	ClientMetrics     *protocol.ClientMetrics   `json:"client_metrics,omitempty"`
+	ServerTelemetry   *protocol.ServerTelemetry `json:"server_telemetry,omitempty"`
+	Snapshot          *protocol.ErrorSnapshot   `json:"snapshot,omitempty"`
+	SourceStepID      string                    `json:"source_step_id,omitempty"`
+	SourceStepIndex   int                       `json:"source_step_index,omitempty"`
+	SourceAction      string                    `json:"source_action,omitempty"`
+	SourceActionName  string                    `json:"source_action_name,omitempty"`
+	SourceTransaction string                    `json:"source_transaction,omitempty"`
+	SourceProfile     string                    `json:"source_profile,omitempty"`
 }
 
 type ResourceSample struct {
@@ -187,6 +193,7 @@ type RunArchiveReport struct {
 	BrowserByPlatform   map[string]*BrowserPlatformLiveMetrics `json:"browser_by_platform,omitempty"`
 	BrowserByDevice     map[string]*BrowserDeviceLiveMetrics   `json:"browser_by_device,omitempty"`
 	BrowserResources    []BrowserResourceTiming                `json:"browser_resources,omitempty"`
+	Web2Migration       *RunArchiveWeb2MigrationEvidence       `json:"web2_migration,omitempty"`
 	ResourcePeaks       RunArchiveResourcePeaks                `json:"resource_peaks"`
 }
 
@@ -196,6 +203,18 @@ type RunArchiveReportProfile struct {
 	Description      string   `json:"description"`
 	ExportFormats    []string `json:"export_formats"`
 	IncludedSections []string `json:"included_sections"`
+}
+
+type RunArchiveWeb2MigrationEvidence struct {
+	Status                string         `json:"status"`
+	ImportedSteps         int            `json:"imported_steps"`
+	ReplayedSteps         int            `json:"replayed_steps"`
+	FailedSteps           int            `json:"failed_steps"`
+	TransactionGroups     []string       `json:"transaction_groups,omitempty"`
+	SourceProfiles        []string       `json:"source_profiles,omitempty"`
+	ReplayEvidence        map[string]int `json:"replay_evidence"`
+	ConversionToHTTPReady bool           `json:"conversion_to_http_ready"`
+	NextActions           []string       `json:"next_actions,omitempty"`
 }
 
 type RunArchiveChangeAttribution struct {
@@ -593,36 +612,42 @@ func (w *runArchiveWriter) RecordResult(result *protocol.Result) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	event := TransactionEvent{
-		Timestamp:        result.StartTime,
-		TestID:           w.manifest.TestID,
-		TestName:         w.manifest.TestName,
-		Group:            result.Group,
-		ActionName:       result.ActionName,
-		CorrelationID:    result.CorrelationID,
-		TraceID:          traceIDFromCorrelationID(result.CorrelationID),
-		SpanID:           spanIDFromCorrelationID(result.CorrelationID),
-		NetworkProfile:   result.NetworkProfile,
-		DependencyType:   result.DependencyType,
-		DependencyTarget: result.DependencyTarget,
-		DurationMs:       durationMillis(result.Duration),
-		DNSMs:            durationMillis(result.DNSTime),
-		ConnectMs:        durationMillis(result.ConnectTime),
-		TLSMs:            durationMillis(result.TLSTime),
-		TTFBMs:           durationMillis(result.TTFB),
-		BytesSent:        result.BytesSent,
-		BytesReceived:    result.BytesReceived,
-		StatusCode:       result.StatusCode,
-		Success:          result.Success,
-		ErrorMessage:     result.ErrorMessage,
-		Extractions:      result.Extractions,
-		PageURL:          result.PageURL,
-		PageTitle:        result.PageTitle,
-		ConsoleEntries:   cloneProtocolConsoleEntries(result.ConsoleEntries),
-		NetworkEntries:   cloneProtocolNetworkEntries(result.NetworkEntries),
-		DOMSummary:       cloneProtocolDOMSummary(result.DOMSummary),
-		ClientMetrics:    result.ClientMetrics,
-		ServerTelemetry:  result.ServerTelemetry,
-		Snapshot:         result.Snapshot,
+		Timestamp:         result.StartTime,
+		TestID:            w.manifest.TestID,
+		TestName:          w.manifest.TestName,
+		Group:             result.Group,
+		ActionName:        result.ActionName,
+		CorrelationID:     result.CorrelationID,
+		TraceID:           traceIDFromCorrelationID(result.CorrelationID),
+		SpanID:            spanIDFromCorrelationID(result.CorrelationID),
+		NetworkProfile:    result.NetworkProfile,
+		DependencyType:    result.DependencyType,
+		DependencyTarget:  result.DependencyTarget,
+		DurationMs:        durationMillis(result.Duration),
+		DNSMs:             durationMillis(result.DNSTime),
+		ConnectMs:         durationMillis(result.ConnectTime),
+		TLSMs:             durationMillis(result.TLSTime),
+		TTFBMs:            durationMillis(result.TTFB),
+		BytesSent:         result.BytesSent,
+		BytesReceived:     result.BytesReceived,
+		StatusCode:        result.StatusCode,
+		Success:           result.Success,
+		ErrorMessage:      result.ErrorMessage,
+		Extractions:       result.Extractions,
+		PageURL:           result.PageURL,
+		PageTitle:         result.PageTitle,
+		ConsoleEntries:    cloneProtocolConsoleEntries(result.ConsoleEntries),
+		NetworkEntries:    cloneProtocolNetworkEntries(result.NetworkEntries),
+		DOMSummary:        cloneProtocolDOMSummary(result.DOMSummary),
+		ClientMetrics:     result.ClientMetrics,
+		ServerTelemetry:   result.ServerTelemetry,
+		Snapshot:          result.Snapshot,
+		SourceStepID:      result.SourceStepID,
+		SourceStepIndex:   result.SourceStepIndex,
+		SourceAction:      result.SourceAction,
+		SourceActionName:  result.SourceActionName,
+		SourceTransaction: result.SourceTransaction,
+		SourceProfile:     result.SourceProfile,
 	}
 	if err := w.txEncoder.Encode(event); err != nil {
 		return err
@@ -973,6 +998,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 		report.BrowserByDevice = nil
 	}
 	report.BrowserResources = finalizeBrowserResourceTimings(report.BrowserResources, 50)
+	report.Web2Migration = buildRunArchiveWeb2MigrationEvidence(transactions)
 	for action, stats := range report.ByAction {
 		report.ByAction[action] = finalizeRunArchiveActionStats(stats)
 	}
@@ -1092,6 +1118,107 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	return report, nil
 }
 
+func buildRunArchiveWeb2MigrationEvidence(transactions []TransactionEvent) *RunArchiveWeb2MigrationEvidence {
+	stepSet := make(map[string]struct{})
+	transactionSet := make(map[string]struct{})
+	profileSet := make(map[string]struct{})
+	evidence := map[string]int{
+		"screenshots":        0,
+		"dom_summaries":      0,
+		"console_entries":    0,
+		"network_entries":    0,
+		"client_metrics":     0,
+		"source_step_labels": 0,
+	}
+	var replayed int
+	var failed int
+	for _, tx := range transactions {
+		stepKey := web2SourceStepKey(tx)
+		if stepKey == "" {
+			continue
+		}
+		stepSet[stepKey] = struct{}{}
+		replayed++
+		if !tx.Success {
+			failed++
+		}
+		evidence["source_step_labels"]++
+		if tx.SourceTransaction != "" {
+			transactionSet[tx.SourceTransaction] = struct{}{}
+		}
+		if tx.SourceProfile != "" {
+			profileSet[tx.SourceProfile] = struct{}{}
+		}
+		if tx.Snapshot != nil {
+			if tx.Snapshot.ScreenshotBase64 != "" {
+				evidence["screenshots"]++
+			}
+			if tx.Snapshot.DOMSummary != nil || tx.Snapshot.HTML != "" {
+				evidence["dom_summaries"]++
+			}
+			evidence["console_entries"] += len(tx.Snapshot.ConsoleEntries)
+			evidence["network_entries"] += len(tx.Snapshot.NetworkEntries)
+		}
+		if tx.DOMSummary != nil {
+			evidence["dom_summaries"]++
+		}
+		evidence["console_entries"] += len(tx.ConsoleEntries)
+		evidence["network_entries"] += len(tx.NetworkEntries)
+		if tx.ClientMetrics != nil {
+			evidence["client_metrics"]++
+		}
+	}
+	if replayed == 0 {
+		return nil
+	}
+	status := "ready_for_review"
+	nextActions := []string{"Review browser replay evidence, runtime parity, and selector stability before approval."}
+	if failed > 0 {
+		status = "needs_repair"
+		nextActions = append(nextActions, "Repair failed Web 2.0 replay steps and rerun browser replay.")
+	}
+	conversionReady := evidence["network_entries"] > 0 && failed == 0
+	if !conversionReady {
+		nextActions = append(nextActions, "Capture replay network entries before generating a protocol-load HTTP draft.")
+	}
+	return &RunArchiveWeb2MigrationEvidence{
+		Status:                status,
+		ImportedSteps:         len(stepSet),
+		ReplayedSteps:         replayed,
+		FailedSteps:           failed,
+		TransactionGroups:     sortedArchiveStringSet(transactionSet),
+		SourceProfiles:        sortedArchiveStringSet(profileSet),
+		ReplayEvidence:        evidence,
+		ConversionToHTTPReady: conversionReady,
+		NextActions:           uniqueSortedStrings(nextActions),
+	}
+}
+
+func web2SourceStepKey(tx TransactionEvent) string {
+	if tx.SourceStepID != "" {
+		return tx.SourceStepID
+	}
+	if tx.SourceStepIndex > 0 {
+		return fmt.Sprintf("index:%d", tx.SourceStepIndex)
+	}
+	if tx.SourceAction != "" || tx.SourceActionName != "" || tx.SourceTransaction != "" || tx.SourceProfile != "" {
+		return strings.Join([]string{tx.SourceTransaction, tx.SourceActionName, tx.SourceAction, tx.ActionName}, ":")
+	}
+	return ""
+}
+
+func sortedArchiveStringSet(values map[string]struct{}) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(values))
+	for value := range values {
+		out = append(out, value)
+	}
+	sort.Strings(out)
+	return out
+}
+
 func buildRunArchiveGoalCompletion(provenance RunArchiveProvenance, overview RunArchiveOverview) (*RunArchiveLoadModelGoals, *RunArchiveGoalCompletion) {
 	goals := &RunArchiveLoadModelGoals{}
 	for _, group := range provenance.Groups {
@@ -1152,7 +1279,7 @@ func buildRunArchiveReportProfiles() []RunArchiveReportProfile {
 			Label:            "Engineer",
 			Description:      "Engineering drilldown with timelines, action stats, browser diagnostics, resource peaks, and error patterns.",
 			ExportFormats:    []string{"html", "json", "csv", "jsonl", "parquet"},
-			IncludedSections: []string{"overview", "summary_timeline", "actions", "browser", "resources", "errors", "raw_exports"},
+			IncludedSections: []string{"overview", "summary_timeline", "actions", "browser", "web2_migration", "resources", "errors", "raw_exports"},
 		},
 		{
 			ID:               "audit",
@@ -1476,7 +1603,7 @@ func buildRunArchiveEvidenceTiers(manifest *RunArchiveManifest, report *RunArchi
 		evidenceTier("intervals", "Intervals", int64(len(summaries)), "Per-interval live metric summaries used for timelines, throughput evidence, and telemetry SLA review."),
 		evidenceTier("sampled_diagnostics", "Sampled Diagnostics", int64(len(report.ErrorPatterns)+len(report.BrowserResources)), "Grouped error signatures and sampled browser resource diagnostics for triage."),
 		evidenceTier("transaction_archive", "Transaction Archive", int64(len(transactions)), "Raw transaction events with action, timing, dependency, status, correlation, and snapshot fields."),
-		evidenceTier("browser_artifacts", "Browser Artifacts", countBrowserArtifacts(transactions), "Browser screenshots, HTML captures, DOM summaries, console entries, and network entries."),
+		evidenceTier("browser_artifacts", "Browser Artifacts", countBrowserArtifacts(transactions), "Browser screenshots, HTML captures, DOM summaries, console entries, network entries, Core Web Vitals, and Web 2.0 source-step labels."),
 		evidenceTier("provenance", "Provenance", provenanceEvidenceCount(manifest), "Execution inputs, scenario shape, runtime settings, controller environment, and generator inventory."),
 		evidenceTier("external_metrics", "External Metrics", externalMetricSamples, "Target-side or imported resource metrics carried on resource samples."),
 	}
@@ -1545,6 +1672,18 @@ func countBrowserArtifacts(transactions []TransactionEvent) int64 {
 			count += int64(len(tx.Snapshot.ConsoleEntries) + len(tx.Snapshot.NetworkEntries))
 		}
 		count += int64(len(tx.ConsoleEntries) + len(tx.NetworkEntries))
+		if tx.DOMSummary != nil {
+			count++
+		}
+		if tx.ClientMetrics != nil {
+			count++
+		}
+		if tx.PageURL != "" || tx.PageTitle != "" {
+			count++
+		}
+		if tx.SourceStepID != "" || tx.SourceStepIndex > 0 || tx.SourceTransaction != "" {
+			count++
+		}
 	}
 	return count
 }

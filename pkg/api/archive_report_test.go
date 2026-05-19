@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -182,6 +183,79 @@ func TestBuildRunArchiveReportDeclaresEvidenceTiers(t *testing.T) {
 		if tier.Count == 0 {
 			t.Fatalf("tier %q count = 0, want evidence count", tierName)
 		}
+	}
+}
+
+func TestBuildRunArchiveReportIncludesWeb2MigrationEvidence(t *testing.T) {
+	archiveDir := t.TempDir()
+	manifestPath := filepath.Join(archiveDir, "manifest.json")
+	startedAt := time.Date(2026, time.May, 18, 12, 30, 0, 0, time.UTC)
+	manifest := RunArchiveManifest{
+		SchemaVersion:         archiveSchemaVersion,
+		TestID:                "test-web2",
+		TestName:              "Web2 Migration Evidence",
+		TransactionsFile:      "transactions.jsonl",
+		ResourceSamplesFile:   "resources.jsonl",
+		IntervalSummariesFile: "interval_summaries.jsonl",
+	}
+	manifestBytes, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatalf("json.Marshal manifest returned error: %v", err)
+	}
+	if err := os.WriteFile(manifestPath, manifestBytes, 0o644); err != nil {
+		t.Fatalf("WriteFile manifest returned error: %v", err)
+	}
+	txFile, err := os.Create(filepath.Join(archiveDir, manifest.TransactionsFile))
+	if err != nil {
+		t.Fatalf("Create transactions returned error: %v", err)
+	}
+	if err := json.NewEncoder(txFile).Encode(TransactionEvent{
+		Timestamp:         startedAt,
+		TestID:            manifest.TestID,
+		TestName:          manifest.TestName,
+		ActionName:        "Checkout_Click",
+		DurationMs:        85,
+		Success:           true,
+		NetworkEntries:    []protocol.NetworkEntry{{URL: "https://example.test/api/cart", Method: "POST", StatusCode: 200}},
+		DOMSummary:        &protocol.DOMSummary{Title: "Cart", ReadyState: "complete"},
+		ClientMetrics:     &protocol.ClientMetrics{LCPMs: 250, BrowserEngine: "chromium"},
+		SourceStepID:      "step-checkout",
+		SourceStepIndex:   7,
+		SourceAction:      "Click",
+		SourceActionName:  "Click Checkout",
+		SourceTransaction: "Checkout",
+		SourceProfile:     "vugen_web2",
+	}); err != nil {
+		t.Fatalf("Encode transaction returned error: %v", err)
+	}
+	if err := txFile.Close(); err != nil {
+		t.Fatalf("Close transactions returned error: %v", err)
+	}
+	for _, name := range []string{manifest.ResourceSamplesFile, manifest.IntervalSummariesFile} {
+		if err := os.WriteFile(filepath.Join(archiveDir, name), nil, 0o644); err != nil {
+			t.Fatalf("WriteFile %s returned error: %v", name, err)
+		}
+	}
+
+	report, err := buildRunArchiveReport(&storage.RunArchiveRecord{ArchivePath: archiveDir, ManifestPath: manifestPath})
+	if err != nil {
+		t.Fatalf("buildRunArchiveReport returned error: %v", err)
+	}
+	if report.Web2Migration == nil {
+		t.Fatal("expected Web2 migration evidence")
+	}
+	if report.Web2Migration.Status != "ready_for_review" || !report.Web2Migration.ConversionToHTTPReady {
+		t.Fatalf("web2 migration = %#v, want ready for HTTP conversion review", report.Web2Migration)
+	}
+	if report.Web2Migration.ImportedSteps != 1 || report.Web2Migration.ReplayedSteps != 1 || report.Web2Migration.TransactionGroups[0] != "Checkout" {
+		t.Fatalf("web2 migration counts = %#v, want one replayed Checkout step", report.Web2Migration)
+	}
+	var csvBuf bytes.Buffer
+	if err := writeRunArchiveReportCSVWithProfile(report, &csvBuf, "engineer"); err != nil {
+		t.Fatalf("write engineer csv returned error: %v", err)
+	}
+	if !strings.Contains(csvBuf.String(), "web2_migration") || !strings.Contains(csvBuf.String(), "ready_for_review") {
+		t.Fatalf("engineer csv missing Web2 migration rows:\n%s", csvBuf.String())
 	}
 }
 

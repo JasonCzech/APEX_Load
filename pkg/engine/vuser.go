@@ -485,6 +485,7 @@ func (vu *VUser) executeWithRetry(ctx context.Context, action *protocol.Action, 
 		if err != nil {
 			return nil, err
 		}
+		applyProtocolResultSourceMetadata(result, action.Metadata)
 		lastResult = result
 
 		if result.Success {
@@ -498,6 +499,18 @@ func (vu *VUser) executeWithRetry(ctx context.Context, action *protocol.Action, 
 	}
 
 	return lastResult, nil
+}
+
+func applyProtocolResultSourceMetadata(result *protocol.Result, metadata map[string]any) {
+	if result == nil || len(metadata) == 0 {
+		return
+	}
+	result.SourceStepID = sourceMetadataString(metadata, "source_step_id")
+	result.SourceStepIndex = sourceMetadataInt(metadata, "source_step_index")
+	result.SourceAction = sourceMetadataString(metadata, "source_action")
+	result.SourceActionName = sourceMetadataString(metadata, "source_action_name")
+	result.SourceTransaction = sourceMetadataString(metadata, "source_transaction")
+	result.SourceProfile = sourceMetadataString(metadata, "source_profile")
 }
 
 // loadDataRow populates VUser variables from configured data sources.
