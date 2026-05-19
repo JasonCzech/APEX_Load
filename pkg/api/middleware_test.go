@@ -867,6 +867,65 @@ func TestTrustedHeaderAuthRequiresViewerForLoadRunnerSupportMatrix(t *testing.T)
 	}
 }
 
+func TestTrustedHeaderAuthRequiresViewerForWebAPISupportMatrices(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	enableTrustedHeaderAuth(t, server)
+
+	for _, path := range []string{
+		"/api/v1/scripts/web-api/support-matrix",
+		"/api/v1/scripts/import/devweb/support-matrix",
+	} {
+		unauthorizedReq := httptest.NewRequest(http.MethodGet, path, nil)
+		unauthorizedResp := httptest.NewRecorder()
+		server.mux.ServeHTTP(unauthorizedResp, unauthorizedReq)
+		if unauthorizedResp.Code != http.StatusUnauthorized {
+			t.Fatalf("%s unauthorized status = %d, want %d body=%s", path, unauthorizedResp.Code, http.StatusUnauthorized, unauthorizedResp.Body.String())
+		}
+
+		viewerReq := httptest.NewRequest(http.MethodGet, path, nil)
+		viewerReq.Header.Set("X-Auth-Request-User", "viewer-user")
+		viewerReq.Header.Set("X-Stormrunner-Roles", RoleViewer)
+		viewerResp := httptest.NewRecorder()
+		server.mux.ServeHTTP(viewerResp, viewerReq)
+		if viewerResp.Code != http.StatusOK {
+			t.Fatalf("%s viewer status = %d, want %d body=%s", path, viewerResp.Code, http.StatusOK, viewerResp.Body.String())
+		}
+	}
+}
+
+func TestTrustedHeaderAuthGuardsOpenAPIImport(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	enableTrustedHeaderAuth(t, server)
+	projectID := uuid.New().String()
+	body, err := json.Marshal(map[string]string{
+		"project_id": projectID,
+		"content":    `{"openapi":"3.0.3","info":{"title":"Orders"},"servers":[{"url":"https://api.example.test"}],"paths":{"/orders":{"get":{"operationId":"listOrders","responses":{"200":{}}}}}}`,
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal returned error: %v", err)
+	}
+
+	viewerReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/openapi", bytes.NewReader(body))
+	viewerReq.Header.Set("Content-Type", "application/json")
+	viewerReq.Header.Set("X-Auth-Request-User", "viewer-user")
+	viewerReq.Header.Set("X-Stormrunner-Project-Roles", projectID+"="+RoleViewer)
+	viewerResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(viewerResp, viewerReq)
+	if viewerResp.Code != http.StatusForbidden {
+		t.Fatalf("openapi viewer status = %d, want %d body=%s", viewerResp.Code, http.StatusForbidden, viewerResp.Body.String())
+	}
+
+	editorReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/openapi", bytes.NewReader(body))
+	editorReq.Header.Set("Content-Type", "application/json")
+	editorReq.Header.Set("X-Auth-Request-User", "editor-user")
+	editorReq.Header.Set("X-Stormrunner-Roles", RoleEditor)
+	editorResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(editorResp, editorReq)
+	if editorResp.Code != http.StatusOK {
+		t.Fatalf("openapi editor status = %d, want %d body=%s", editorResp.Code, http.StatusOK, editorResp.Body.String())
+	}
+}
+
 func TestTrustedHeaderAuthRequiresSystemAdminForAuthDiagnostics(t *testing.T) {
 	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
 	enableTrustedHeaderAuth(t, server)

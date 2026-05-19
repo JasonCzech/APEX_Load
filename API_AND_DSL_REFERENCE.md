@@ -632,6 +632,60 @@ Content-Type: application/json
 - SOAP-oriented samples can be promoted onto the `soap` protocol surface when the import set is consistently SOAP-shaped.
 - Java-over-HTTP imports are intentionally narrower: use raw HTTP or cURL samples whose opaque request bodies are already base64-encoded serialized Java bytes. The dashboard then promotes the reviewed draft to `protocol: "java_http"`.
 
+#### Web/API support matrix
+
+```
+GET /api/v1/scripts/web-api/support-matrix
+```
+
+Returns the code-owned Web/API execution support matrix, benchmark envelopes, protocol diagnostics, and first-party sample project references. See `docs/WEB_API_EXECUTION_SUPPORT_MATRIX.md` for the current W1 parity evidence.
+
+#### Convert OpenAPI to HTTP DSL
+
+```
+POST /api/v1/scripts/import/openapi
+Content-Type: application/json
+
+{
+  "name": "Orders API",
+  "project_id": "checkout",
+  "content": "{ \"openapi\": \"3.0.3\", \"info\": {\"title\": \"Orders\"}, \"paths\": {} }",
+  "options": {
+    "base_url": "https://api.example.com",
+    "include_assertions": true
+  }
+}
+```
+
+The importer accepts OpenAPI 3.x and Swagger 2.0 JSON/YAML. It generates HTTP request actions, auth placeholders, path/query parameter data-source seeds, simple request-body templates, status assertions, and review sections.
+
+#### Convert WSDL to SOAP DSL
+
+```
+POST /api/v1/scripts/import/wsdl
+Content-Type: application/json
+
+{
+  "name": "Account SOAP",
+  "project_id": "checkout",
+  "content": "<definitions ...>...</definitions>",
+  "options": {
+    "base_url": "https://soap.example.com/account",
+    "soap_version": "1.1"
+  }
+}
+```
+
+The importer extracts SOAP operations, endpoint addresses, target namespace, SOAPAction values, and generated envelope scaffolds. Complex XSD payloads remain a review step before replay.
+
+#### DevWeb construct support matrix
+
+```
+GET /api/v1/scripts/import/devweb/support-matrix
+```
+
+Returns construct-by-construct DevWeb import support for `load.WebRequest`, `load.WebSocket`, gRPC unary calls, think time, action grouping, dynamic JavaScript, and correlation review requirements.
+
 ### Projects and Folders
 
 #### List projects

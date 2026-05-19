@@ -1,0 +1,73 @@
+{
+  "name": "JMS_Order_Flow",
+  "version": "1.0.0",
+  "protocol": "jms-solace",
+  "generated_by": "stormrunner-sample-pack",
+  "generated_from": "web-api-sample",
+  "config": {
+    "base_url": "",
+    "think_time": {
+      "type": "fixed",
+      "mean_ms": 1000
+    },
+    "pacing": {
+      "type": "none"
+    },
+    "jms": {
+      "provider": "solace",
+      "destination": "orders.in",
+      "destination_type": "queue",
+      "reply_to": "orders.reply",
+      "acknowledgement": "auto",
+      "delivery_mode": "persistent",
+      "timeout_ms": 5000,
+      "mock": true,
+      "properties": {
+        "sample": "web-api"
+      }
+    },
+    "error_handling": {
+      "continue_on_error": false
+    },
+    "run_logic": {
+      "iterations": 0,
+      "auto_transactions": "per_action"
+    },
+    "log": {
+      "level": "standard"
+    }
+  },
+  "data_sources": [
+    {
+      "name": "orders",
+      "type": "csv",
+      "inline_data": "order_id,sku\nord-1001,SKU-123\nord-1002,SKU-456\n",
+      "strategy": "sequential",
+      "delimiter": ",",
+      "first_row_header": true,
+      "columns": ["order_id", "sku"]
+    }
+  ],
+  "actions": [
+    {
+      "name": "Publish_Order",
+      "type": "jms_publish",
+      "target": "orders.in",
+      "body": "{\"orderId\":\"{{data.orders.order_id}}\",\"sku\":\"{{data.orders.sku}}\"}"
+    },
+    {
+      "name": "Request_Order_Status",
+      "type": "jms_request_reply",
+      "target": "orders.status",
+      "body": "{\"orderId\":\"{{data.orders.order_id}}\"}",
+      "params": {
+        "reply_to": "orders.reply"
+      }
+    },
+    {
+      "name": "Consume_Order_Ack",
+      "type": "jms_consume",
+      "target": "orders.reply"
+    }
+  ]
+}

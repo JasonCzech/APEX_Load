@@ -33,12 +33,14 @@ DevWeb is OpenText's JavaScript-based protocol-level HTTP testing engine. Stormr
 | gRPC streaming client paths | ✅ Implemented | `pkg/protocol/grpc` |
 | gRPC DSL config + engine wiring | ✅ Implemented | `pkg/dsl/types.go`, `pkg/engine/config.go` |
 | DevWeb `.js` script import | ✅ Implemented | `pkg/convert/devweb`, `POST /api/v1/scripts/import/devweb` |
+| DevWeb construct support matrix | ✅ Implemented | `GET /api/v1/scripts/import/devweb/support-matrix`, `pkg/convert/devweb/support.go` |
 | HAR file import | ✅ Implemented | `pkg/convert/har`, `POST /api/v1/scripts/import/har` |
+| OpenAPI/Swagger → script | ✅ Implemented for backend import/review | `POST /api/v1/scripts/import/openapi`, `pkg/convert/openapi` |
 
 ### Not Yet Implemented
 | DevWeb Capability | Priority | Notes |
 |:---|:---|:---|
-| OpenAPI/Swagger → script | Low | Planned for Agentic Script Engine (Phase 4) |
+| Full JavaScript runtime compatibility | Demand-gated | DevWeb import remains a static conversion/review workflow, not a JavaScript runtime layer. |
 
 ## Design Principles
 

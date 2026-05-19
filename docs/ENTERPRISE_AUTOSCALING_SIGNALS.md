@@ -112,6 +112,8 @@ Capacity advice now publishes protocol-specific density envelopes in `capacity_a
 
 The advisor applies the configured headroom percentage to protocol envelopes before calculating required generators. For mixed workloads, the advisory includes one envelope per protocol and the generator recommendation is the maximum of CPU, memory, network, global VUser density, and protocol-specific density.
 
+`GET /api/v1/scripts/web-api/support-matrix` republishes these envelopes for evaluator-facing Web/API parity evidence alongside protocol diagnostics and sample-project references. Capacity planning remains anchored here so execution support claims and scheduler/fleet advice do not drift.
+
 ## Plan Mapping
 
 | Plan item | Status | Artifact |

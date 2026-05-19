@@ -270,12 +270,18 @@ POST   /api/v1/scripts/{id}/browser-replay/sessions — Start browser replay for
 POST   /api/v1/scripts/{id}/export      — Export script JSON to disk
 GET    /api/v1/scripts/{id}/download    — Download script JSON
 POST   /api/v1/scripts/import/sample    — Build a script from raw HTTP, cURL, REST JSON, or HAR samples
+GET    /api/v1/scripts/web-api/support-matrix — Get Web/API support, diagnostics, envelopes, and sample projects
 POST   /api/v1/scripts/import/loadrunner — Convert a LoadRunner archive to DSL
 POST   /api/v1/scripts/import/loadrunner/validate — Validate a LoadRunner import draft
 POST   /api/v1/scripts/import/jmeter    — Convert a JMeter plan to DSL
 POST   /api/v1/scripts/import/jmeter/save — Save a reviewed JMeter import draft
 POST   /api/v1/scripts/import/jmeter/validate — Validate a JMeter import draft
 GET    /api/v1/scripts/import/jmeter/support-matrix — Get JMeter support matrix
+POST   /api/v1/scripts/import/devweb   — Convert a DevWeb JavaScript file or archive to DSL
+GET    /api/v1/scripts/import/devweb/support-matrix — Get DevWeb construct support matrix
+POST   /api/v1/scripts/import/har      — Convert a HAR file to HTTP DSL
+POST   /api/v1/scripts/import/openapi  — Convert OpenAPI/Swagger JSON or YAML to HTTP DSL
+POST   /api/v1/scripts/import/wsdl     — Convert WSDL to SOAP DSL
 ```
 
 **Browser Replay:**

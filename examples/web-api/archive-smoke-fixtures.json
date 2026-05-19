@@ -1,0 +1,42 @@
+{
+  "name": "Web/API archive smoke fixture contract",
+  "description": "CI-checked fixture map for validating that each W1 Web/API sample declares the archive diagnostics expected after execution.",
+  "fixtures": [
+    {
+      "id": "ecommerce-http",
+      "protocol": "http",
+      "script_path": "examples/web-api/ecommerce-http.json",
+      "expected_archive_signals": ["status", "ttfb", "tls_connect", "content_assertions", "extractors"]
+    },
+    {
+      "id": "soap-account-service",
+      "protocol": "soap",
+      "script_path": "examples/web-api/soap-account-service.json",
+      "expected_archive_signals": ["soap_operation", "soap_action", "soap_fault_code", "soap_fault_string"]
+    },
+    {
+      "id": "grpc-inventory",
+      "protocol": "grpc",
+      "script_path": "examples/web-api/grpc-inventory.json",
+      "expected_archive_signals": ["grpc_service", "grpc_method", "grpc_status", "stream_message_count"]
+    },
+    {
+      "id": "websocket-order-feed",
+      "protocol": "websocket",
+      "script_path": "examples/web-api/websocket-order-feed.json",
+      "expected_archive_signals": ["connect_latency", "send_count", "receive_count", "message_size"]
+    },
+    {
+      "id": "jms-order-flow",
+      "protocol": "jms-solace",
+      "script_path": "examples/web-api/jms-order-flow.json",
+      "expected_archive_signals": ["jms_destination", "jms_message_id", "jms_correlation_id", "jms_dead_letter_reason"]
+    },
+    {
+      "id": "mixed-http-browser-canary",
+      "protocol": "scenario",
+      "script_path": "examples/web-api/mixed-http-browser-canary.json",
+      "expected_archive_signals": ["http_group_summary", "browser_client_metrics", "screenshots", "console_network_evidence"]
+    }
+  ]
+}

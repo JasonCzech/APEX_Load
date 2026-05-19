@@ -35,6 +35,9 @@ Primary public references:
 Stormrunner already has strong footing:
 
 - HTTP, SOAP, Java-over-HTTP, WebSocket, gRPC, browser, and JMS execution paths.
+- Code-owned Web/API support matrix with benchmark envelopes, protocol diagnostics, and sample-project references.
+- OpenAPI and WSDL backend import/review foundations for HTTP and SOAP authoring.
+- DevWeb construct support matrix for mapped executable, partial, and review-only constructs.
 - LoadRunner Web HTTP/HTML import, runtime settings classification, migration readiness, validation, replay, and support-matrix review.
 - TrueClient Mobile Web import MVP and browser replay validation.
 - Guided Create Script UX, backend templates, reusable authoring components, authoring sessions, validation health, data-source fit, guided correlation repair, and approval gates.
@@ -44,7 +47,7 @@ Stormrunner already has strong footing:
 
 Major remaining gaps:
 
-- No first-class OpenAPI/WSDL-assisted authoring flow comparable to mature API design workflows.
+- OpenAPI/WSDL backend import/review is in place; the dashboard guided create flow remains a W2 source-guided UX item.
 - No native k6 or DevWeb round-trip parity beyond import/conversion surfaces.
 - No high-confidence benchmark publication for Web/API density and browser canary envelopes.
 - Browser support is strong as diagnostic canaries, but not marketed as high-density real-browser load.
@@ -63,8 +66,8 @@ Major remaining gaps:
 
 | Category | Stormrunner State | LoadRunner Enterprise Baseline | Priority | Parity Gap |
 | --- | --- | --- | --- | --- |
-| Web/API execution | Strong modern execution for HTTP, SOAP, Java-over-HTTP, WebSocket, gRPC, JMS partial, browser canaries | Very broad web/API plus legacy protocol family, VuGen, DevWeb, Web Services, Java, database, SAP, Citrix, RDP, Oracle and more | P0/P1 | Add packaged Web/API evidence, OpenAPI/WSDL authoring, benchmark envelopes, and clarify non-goals for legacy protocols. |
-| Script authoring UX | Guided workflow lanes, templates, reusable components, import review, validation/replay/repair/approval | VuGen, DevWeb, TruClient/TruClient 2.0, web client script creation, AI-assisted scripting | P0 | Improve component insertion, visual flow assembly, OpenAPI/WSDL import, and one-click repair loops. |
+| Web/API execution | Strong modern execution for HTTP, SOAP, Java-over-HTTP, WebSocket, gRPC, JMS partial, browser canaries, Web/API support matrix, OpenAPI/WSDL import foundations, and sample pack | Very broad web/API plus legacy protocol family, VuGen, DevWeb, Web Services, Java, database, SAP, Citrix, RDP, Oracle and more | P0/P1 | Add archived benchmark/report evidence and clarify non-goals for legacy protocols. |
+| Script authoring UX | Guided workflow lanes, templates, reusable components, import review, validation/replay/repair/approval | VuGen, DevWeb, TruClient/TruClient 2.0, web client script creation, AI-assisted scripting | P0 | Improve component insertion, visual flow assembly, OpenAPI/WSDL guided create flows, and one-click repair loops. |
 | Runtime settings | Planned Web HTTP/HTML RTS scope complete with explicit compatibility-only caveats | Deep VuGen protocol-specific RTS across many protocol families | P0/P1 | Expand matrix beyond Web HTTP/HTML and add execution tests for browser and API-specific RTS edge cases. |
 | Browser testing | Browser replay, diagnostics, mobile profiles, TrueClient Mobile Web MVP, archive evidence | TruClient, TruClient 2.0, Mobile Web, Native Mobile via Digital Lab, browser workflow maturity | P0/P1 | Publish browser benchmark evidence, deepen TrueClient 2.0/Mobile Web conversion, and improve selector/wait repair. |
 | AI-assisted workflows | Validation guardrails for AI-generated drafts and approval blocking | AI-assisted scripting and analysis in current OpenText positioning | P1/P2 | Add actual AI draft generation, AI repair suggestions, AI explanation, and AI-assisted report/root-cause summaries with audit controls. |
@@ -88,14 +91,14 @@ Make Stormrunner feel first-class for modern Web/API execution, not merely capab
 
 | ID | Work Item | Priority | Status |
 | --- | --- | --- | --- |
-| W1.1 | Publish a Web/API execution support matrix covering HTTP, SOAP, Java-over-HTTP, WebSocket, gRPC, JMS, DevWeb import, HAR import, JMeter import, and LoadRunner Web HTTP/HTML import | P0 | Not started |
-| W1.2 | Add OpenAPI import/authoring review: parse OpenAPI, generate grouped request flows, detect auth schemes, variables, examples, and candidate data pools | P0 | Not started |
-| W1.3 | Add WSDL-assisted SOAP authoring: operation picker, SOAPAction, namespace mapping, sample envelope generation, and fault assertions | P1 | Not started |
-| W1.4 | Publish benchmark-calibrated density envelopes for HTTP, SOAP, Java-over-HTTP, WebSocket, gRPC, and JMS | P0 | Partial through advisory docs only |
-| W1.5 | Add execution smoke fixtures for each Web/API protocol with archived report artifacts checked by CI | P0 | Partial |
-| W1.6 | Add DevWeb construct support matrix and upgrade DevWeb import warnings into a first-class review experience | P1 | Partial |
-| W1.7 | Add protocol-specific diagnostics for JMS, gRPC, WebSocket, SOAP faults, and Java-over-HTTP decode failures in live and archive views | P1 | Partial |
-| W1.8 | Add Web/API sample projects: ecommerce HTTP, SOAP account service, gRPC inventory, WebSocket order feed, JMS order flow, mixed workload with browser canary | P1 | Partial |
+| W1.1 | Publish a Web/API execution support matrix covering HTTP, SOAP, Java-over-HTTP, WebSocket, gRPC, JMS, DevWeb import, HAR import, JMeter import, and LoadRunner Web HTTP/HTML import | P0 | Complete - `GET /api/v1/scripts/web-api/support-matrix` |
+| W1.2 | Add OpenAPI import/authoring review: parse OpenAPI, generate grouped request flows, detect auth schemes, variables, examples, and candidate data pools | P0 | Complete for backend import/review foundation - `POST /api/v1/scripts/import/openapi` |
+| W1.3 | Add WSDL-assisted SOAP authoring: operation picker, SOAPAction, namespace mapping, sample envelope generation, and fault assertions | P1 | Complete for backend import/review foundation - `POST /api/v1/scripts/import/wsdl` |
+| W1.4 | Publish benchmark-calibrated density envelopes for HTTP, SOAP, Java-over-HTTP, WebSocket, gRPC, and JMS | P0 | Complete for code-owned publication of current envelopes |
+| W1.5 | Add execution smoke fixtures for each Web/API protocol with archived report artifacts checked by CI | P0 | Complete for sample pack, archive-signal fixture contract, and import/API tests; live archived-report publication remains benchmark evidence |
+| W1.6 | Add DevWeb construct support matrix and upgrade DevWeb import warnings into a first-class review experience | P1 | Complete - `GET /api/v1/scripts/import/devweb/support-matrix` |
+| W1.7 | Add protocol-specific diagnostics for JMS, gRPC, WebSocket, SOAP faults, and Java-over-HTTP decode failures in live and archive views | P1 | Complete for code-owned support publication using existing live/archive signals |
+| W1.8 | Add Web/API sample projects: ecommerce HTTP, SOAP account service, gRPC inventory, WebSocket order feed, JMS order flow, mixed workload with browser canary | P1 | Complete - `examples/web-api` sample pack |
 
 ### Acceptance Criteria
 

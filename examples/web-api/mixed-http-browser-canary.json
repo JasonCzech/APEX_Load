@@ -1,0 +1,72 @@
+{
+  "name": "Mixed_HTTP_With_Browser_Canary",
+  "description": "Scenario assembly sample pairing high-density HTTP API load with a low-density browser canary.",
+  "scenario_mode": "vuser_driven",
+  "duration": "10m",
+  "groups": [
+    {
+      "name": "HTTP API Load",
+      "script_path": "examples/web-api/ecommerce-http.json",
+      "protocol": "http",
+      "vusers": 500,
+      "ramp_up": "5m",
+      "initialization": "at_runtime",
+      "purpose": "Primary protocol load."
+    },
+    {
+      "name": "Checkout Browser Canary",
+      "script": {
+        "name": "Checkout_Browser_Canary",
+        "version": "1.0.0",
+        "protocol": "browser",
+        "generated_by": "stormrunner-sample-pack",
+        "generated_from": "web-api-sample",
+        "config": {
+          "base_url": "https://shop.example.test",
+          "browser": {
+            "engine": "chromium",
+            "device_profile": "desktop_1080p",
+            "capture_screenshots": "on_error"
+          },
+          "think_time": {
+            "type": "fixed",
+            "mean_ms": 1000
+          },
+          "pacing": {
+            "type": "none"
+          },
+          "error_handling": {
+            "continue_on_error": false
+          },
+          "run_logic": {
+            "iterations": 0,
+            "auto_transactions": "per_action"
+          },
+          "log": {
+            "level": "standard"
+          }
+        },
+        "actions": [
+          {
+            "name": "Open_Checkout",
+            "type": "browser_navigate",
+            "target": "/checkout"
+          },
+          {
+            "name": "Wait_For_Checkout",
+            "type": "browser_wait",
+            "selector": "[data-test='checkout-ready']",
+            "params": {
+              "timeout_ms": 10000
+            }
+          }
+        ]
+      },
+      "protocol": "browser",
+      "vusers": 2,
+      "ramp_up": "1m",
+      "initialization": "at_runtime",
+      "purpose": "Low-density UX canary and screenshot/client-metric evidence."
+    }
+  ]
+}

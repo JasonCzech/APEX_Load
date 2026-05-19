@@ -1,0 +1,101 @@
+{
+  "name": "Ecommerce_HTTP_Checkout",
+  "version": "1.0.0",
+  "protocol": "http",
+  "generated_by": "stormrunner-sample-pack",
+  "generated_from": "web-api-sample",
+  "config": {
+    "base_url": "https://shop.example.test",
+    "think_time": {
+      "type": "fixed",
+      "mean_ms": 750
+    },
+    "pacing": {
+      "type": "none"
+    },
+    "http": {
+      "default_headers": {
+        "Accept": "application/json",
+        "Content-Type": "application/json"
+      },
+      "auth": {
+        "type": "bearer",
+        "token": "{{env.SHOP_API_TOKEN}}"
+      }
+    },
+    "error_handling": {
+      "continue_on_error": false,
+      "snapshot_on_error": true
+    },
+    "run_logic": {
+      "iterations": 0,
+      "auto_transactions": "per_action"
+    },
+    "log": {
+      "level": "standard"
+    }
+  },
+  "data_sources": [
+    {
+      "name": "checkout_users",
+      "type": "csv",
+      "inline_data": "customer_id,sku,quantity\ncust-1001,SKU-123,1\ncust-1002,SKU-456,2\n",
+      "strategy": "sequential",
+      "delimiter": ",",
+      "first_row_header": true,
+      "columns": ["customer_id", "sku", "quantity"]
+    }
+  ],
+  "actions": [
+    {
+      "name": "Browse_Catalog",
+      "type": "request",
+      "method": "GET",
+      "target": "/api/catalog?sku={{data.checkout_users.sku}}",
+      "assertions": [
+        {
+          "type": "status_code",
+          "expected": 200
+        }
+      ]
+    },
+    {
+      "name": "Create_Cart",
+      "type": "request",
+      "method": "POST",
+      "target": "/api/carts",
+      "body": "{\n  \"customerId\": \"{{data.checkout_users.customer_id}}\",\n  \"items\": [{\"sku\": \"{{data.checkout_users.sku}}\", \"quantity\": {{data.checkout_users.quantity}}}]\n}",
+      "extractors": [
+        {
+          "name": "cart_id",
+          "source": "body",
+          "type": "json_path",
+          "expression": "$.cartId"
+        }
+      ],
+      "assertions": [
+        {
+          "type": "status_code",
+          "expected": 201
+        }
+      ]
+    },
+    {
+      "name": "Submit_Order",
+      "type": "request",
+      "method": "POST",
+      "target": "/api/orders",
+      "body": "{\n  \"cartId\": \"{{var.cart_id}}\",\n  \"paymentToken\": \"{{env.SHOP_PAYMENT_TOKEN}}\"\n}",
+      "assertions": [
+        {
+          "type": "status_code",
+          "expected": 202
+        },
+        {
+          "type": "body_contains",
+          "value": "accepted"
+        }
+      ]
+    }
+  ]
+}

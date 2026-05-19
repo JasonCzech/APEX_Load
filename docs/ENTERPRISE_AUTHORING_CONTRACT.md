@@ -40,6 +40,15 @@ Authoring sessions persist unsaved drafts and repair workflow state:
 | `POST /api/v1/scripts/authoring/sessions/{id}/approve` | Validate a ready draft, block unsafe health states, promote the draft into the reusable script library, and stamp approval metadata on the session. |
 | `POST /api/v1/scripts/authoring/sessions/{id}/correlations/preview` | Preview or apply a guided correlation repair by adding an extractor, replacing sample values with `{{var.name}}`, and returning before/after diffs. |
 
+Web/API source acquisition also uses the shared import review envelope:
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /api/v1/scripts/web-api/support-matrix` | Publish Web/API protocol/import support, benchmark envelopes, diagnostics, and sample projects. |
+| `POST /api/v1/scripts/import/openapi` | Convert OpenAPI 3.x or Swagger 2.0 JSON/YAML into an HTTP draft with auth hints, data-source seeds, request body templates, assertions, and review sections. |
+| `POST /api/v1/scripts/import/wsdl` | Convert WSDL into a SOAP draft with operation discovery, SOAPAction preservation, namespace mapping, sample envelopes, and payload-review sections. |
+| `GET /api/v1/scripts/import/devweb/support-matrix` | Publish construct-by-construct DevWeb import support and review requirements. |
+
 SQLite-backed controllers persist these sessions in `authoring_sessions`. Controllers without a metadata store keep a local in-memory fallback for development and tests.
 
 Approval is the final backend handoff before a migrated, recorded, manual, or generated draft becomes a reusable scenario asset. Session responses include backend-computed `approval_ready`, `blocking_health_inputs`, and `next_actions` so dashboards can explain why promotion is allowed or blocked before the user clicks approve. The approval endpoint returns HTTP 400 with the standard validation payload when validation fails or the authoring health status is `blocked`. Successful approval stores the draft through the normal script library path, marks the session `approved`, and records `approved_script_id`, `approved_at`, and `approval_health_status` in `review_state`.
@@ -59,6 +68,8 @@ The matrix covers:
 | JMeter | Active | JMX acquisition, validate-only review, multi-script output, scenario draft generation |
 | DevWeb | Active | JavaScript/ZIP/JSON acquisition, protocol coverage review |
 | HAR | Active | HAR/JSON acquisition, correlation and base URL readiness |
+| OpenAPI | Active | OpenAPI/Swagger JSON/YAML acquisition, auth hints, parameter data-source seeds, request body templates, status assertions, review sections |
+| WSDL | Active | WSDL acquisition, SOAP operation discovery, SOAPAction preservation, namespace mapping, sample envelopes, payload review |
 | Recorder | Active | Recording session preview conversion, correlation suggestions |
 | Sample | Active | Template/curl acquisition and shared save handoff |
 | Manual | Active | Editor draft validation, replay, browser replay for browser scripts |

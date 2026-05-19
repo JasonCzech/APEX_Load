@@ -740,6 +740,10 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 		return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
 	}
 
+	if (path == "/api/v1/scripts/web-api/support-matrix" || path == "/api/v1/scripts/import/devweb/support-matrix") && method == http.MethodGet {
+		return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
+	}
+
 	if (path == "/api/v1/scripts/authoring/capabilities" || path == "/api/v1/scripts/authoring/templates" || path == "/api/v1/scripts/authoring/components") && method == http.MethodGet {
 		return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
 	}
@@ -781,6 +785,14 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
 			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
 			ProjectLookup: resolveImportProjectIDFromJSON,
+		}, true
+	}
+
+	if (path == "/api/v1/scripts/import/devweb" || path == "/api/v1/scripts/import/har" || path == "/api/v1/scripts/import/openapi" || path == "/api/v1/scripts/import/wsdl") && method == http.MethodPost {
+		return accessRequirement{
+			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
+			ProjectLookup: resolveImportProjectIDFromJSONOrForm,
 		}, true
 	}
 
@@ -1434,6 +1446,20 @@ func resolveImportProjectIDFromJSON(r *http.Request, _ storage.Store) (string, i
 		return "", http.StatusBadRequest, "project_id is required for project-scoped import access"
 	}
 	return projectID, 0, ""
+}
+
+func resolveImportProjectIDFromJSONOrForm(r *http.Request, store storage.Store) (string, int, string) {
+	if projectID := normalizeProjectID(r.URL.Query().Get("project_id")); projectID != "" {
+		return projectID, 0, ""
+	}
+	contentType := r.Header.Get("Content-Type")
+	if strings.HasPrefix(contentType, "multipart/form-data") {
+		return resolveImportProjectIDFromForm(r, store)
+	}
+	if strings.HasPrefix(contentType, "application/json") {
+		return resolveImportProjectIDFromJSON(r, store)
+	}
+	return "", http.StatusBadRequest, "project_id is required for project-scoped import access"
 }
 
 func resolveExternalResultImportProjectID(r *http.Request, store storage.Store) (string, int, string) {

@@ -1,0 +1,72 @@
+{
+  "name": "SOAP_Account_Service",
+  "version": "1.0.0",
+  "protocol": "soap",
+  "generated_by": "stormrunner-sample-pack",
+  "generated_from": "web-api-sample",
+  "config": {
+    "base_url": "https://soap.example.test/account",
+    "think_time": {
+      "type": "fixed",
+      "mean_ms": 1000
+    },
+    "pacing": {
+      "type": "none"
+    },
+    "soap": {
+      "version": "1.1",
+      "namespaces": {
+        "tns": "urn:accounts"
+      },
+      "fault_handling": {
+        "fail_on_fault": true
+      }
+    },
+    "error_handling": {
+      "continue_on_error": false,
+      "snapshot_on_error": true
+    },
+    "run_logic": {
+      "iterations": 0,
+      "auto_transactions": "per_action"
+    },
+    "log": {
+      "level": "standard"
+    }
+  },
+  "data_sources": [
+    {
+      "name": "accounts",
+      "type": "csv",
+      "inline_data": "account_id\nacct-1001\nacct-1002\n",
+      "strategy": "sequential",
+      "delimiter": ",",
+      "first_row_header": true,
+      "columns": ["account_id"]
+    }
+  ],
+  "actions": [
+    {
+      "name": "GetAccount",
+      "type": "request",
+      "method": "POST",
+      "target": "/account",
+      "headers": {
+        "Content-Type": "text/xml",
+        "SOAPAction": "urn:GetAccount"
+      },
+      "body": "<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:tns=\"urn:accounts\"><soapenv:Header/><soapenv:Body><tns:GetAccount><tns:accountId>{{data.accounts.account_id}}</tns:accountId></tns:GetAccount></soapenv:Body></soapenv:Envelope>",
+      "soap": {
+        "action": "urn:GetAccount",
+        "operation": "GetAccount",
+        "body_mode": "raw_xml"
+      },
+      "assertions": [
+        {
+          "type": "status_code",
+          "expected": 200
+        }
+      ]
+    }
+  ]
+}
