@@ -4,6 +4,7 @@ import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
 import { FleetAlert, FleetCapacityResponse, HealthResponse, ParityStatusResponse, ScenarioScheduleHealth, SystemInventoryResponse, SystemReadinessResponse, TelemetryDiagnosticEntry, TestSummary } from '../types'
 import { formatTelemetryDiagnosticTime, telemetryDiagnosticSeverityClass } from './monitoringTelemetryDiagnostics'
+import './CreateTestModal.css'
 
 interface Props {
   connectionState: WebSocketConnectionState
@@ -12,6 +13,8 @@ interface Props {
 
 const EMPTY_GENERATORS: SystemInventoryResponse['generators'] = []
 const EMPTY_PARITY_AREAS: ParityStatusResponse['areas'] = []
+type CompetitiveParityAreas = NonNullable<ParityStatusResponse['competitive_parity']>
+const EMPTY_COMPETITIVE_PARITY_AREAS: CompetitiveParityAreas = []
 
 function formatReadinessStatus(status?: string): string {
   switch (status) {
@@ -43,6 +46,24 @@ function formatReadinessCheckName(name: string): string {
     .join(' ')
 }
 
+function formatCompetitiveStatus(status?: string): string {
+  const labels: Record<string, string> = {
+    supported: 'Supported',
+    complete: 'Complete',
+    partial: 'Partial',
+    gap: 'Gap',
+    blocked: 'Blocked',
+  }
+  return labels[status || ''] || status || 'Unknown'
+}
+
+function formatEvidenceLevel(level?: string): string {
+  if (!level) return 'Not linked'
+  return level
+    .split('+').join(' + ')
+    .split('_').join(' ')
+}
+
 export default function MonitoringPage({ connectionState, telemetryDiagnostics = [] }: Props) {
   const api = useApi()
   const { activeProject } = useProject()
@@ -56,6 +77,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const [tests, setTests] = useState<TestSummary[]>([])
   const [isTelemetryModalOpen, setIsTelemetryModalOpen] = useState(false)
   const [isGeneratorsModalOpen, setIsGeneratorsModalOpen] = useState(false)
+  const [isCompetitiveParityModalOpen, setIsCompetitiveParityModalOpen] = useState(false)
   const [customizing, setCustomizing] = useState(false)
   const [draggedCardId, setDraggedCardId] = useState<string | null>(null)
   const [cardOrder, setCardOrder] = useState<string[]>(() => readStringArray('stormrunner.monitoring.cardOrder'))
@@ -124,6 +146,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
               ? `${scheduleHealth.enabled}/${scheduleHealth.total} enabled`
               : 'no schedules'
   const parityAreas = parityStatus?.areas ?? EMPTY_PARITY_AREAS
+  const competitiveParityAreas = parityStatus?.competitive_parity ?? EMPTY_COMPETITIVE_PARITY_AREAS
   const parityBlockingCount = parityAreas.filter(area => area.blocking_gate || area.status === 'blocked').length
   const parityPartialCount = parityAreas.filter(area => area.status === 'partial').length
   const parityCompleteCount = parityAreas.filter(area => area.status === 'complete').length
@@ -137,6 +160,27 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const parityHeaderLabel = parityStatus
     ? parityStatus.overall
     : 'checking'
+  const competitiveBlockedCount = competitiveParityAreas.filter(area => area.status === 'blocked').length
+  const competitiveGapCount = competitiveParityAreas.filter(area => area.status === 'gap').length
+  const competitivePartialCount = competitiveParityAreas.filter(area => area.status === 'partial').length
+  const competitiveEvidenceRequiredCount = competitiveParityAreas.filter(area => area.evidence_level?.includes('external_evidence_required')).length
+  const competitiveKnownLimitationCount = competitiveParityAreas.filter(area => (area.remaining?.length || 0) > 0).length
+  const competitiveHeaderSeverity = !parityStatus || competitiveParityAreas.length === 0
+    ? 'unknown'
+    : competitiveBlockedCount > 0
+      ? 'danger'
+      : competitiveGapCount > 0 || competitivePartialCount > 0 || competitiveEvidenceRequiredCount > 0
+        ? 'warning'
+        : 'healthy'
+  const competitiveHeaderLabel = !parityStatus
+    ? 'checking'
+    : competitiveParityAreas.length === 0
+      ? 'not reported'
+      : competitiveGapCount > 0
+        ? `${competitiveGapCount} gap${competitiveGapCount === 1 ? '' : 's'}`
+        : competitivePartialCount > 0
+          ? `${competitivePartialCount} partial`
+          : 'supported'
   const readinessReadyCount = systemReadiness?.checks.filter(check => check.status === 'ready').length ?? 0
   const readinessDegradedCount = systemReadiness?.checks.filter(check => check.status === 'degraded').length ?? 0
   const readinessBlockedCount = systemReadiness?.checks.filter(check => check.status === 'not_ready').length ?? 0
@@ -522,6 +566,61 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       ),
     },
     {
+      id: 'competitive-parity',
+      title: 'Competitive Parity',
+      headerBadge: (
+        <span className={`monitor-header-badge ${competitiveHeaderSeverity}`}>
+          {competitiveHeaderLabel}
+        </span>
+      ),
+      icon: (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="10" />
+          <path d="M12 6v12" />
+          <path d="M8 10h8" />
+          <path d="M8 14h8" />
+        </svg>
+      ),
+      content: (
+        <div className="monitor-body">
+          {!parityStatus ? (
+            <p className="monitor-hint">Competitive parity status is unavailable until /api/v1/system/parity-status returns release data.</p>
+          ) : competitiveParityAreas.length === 0 ? (
+            <p className="monitor-hint">No competitive parity section was returned by this controller.</p>
+          ) : (
+            <button type="button" className="telemetry-summary-card" onClick={() => setIsCompetitiveParityModalOpen(true)}>
+              <div className="telemetry-summary-metrics">
+                <div className="telemetry-summary-metric">
+                  <span className={`telemetry-summary-value ${competitiveGapCount > 0 ? 'telemetry-text-warning' : ''}`}>{competitiveGapCount}</span>
+                  <span className="telemetry-summary-label">Gaps</span>
+                </div>
+                <div className="telemetry-summary-metric">
+                  <span className={`telemetry-summary-value ${competitivePartialCount > 0 ? 'telemetry-text-warning' : ''}`}>{competitivePartialCount}</span>
+                  <span className="telemetry-summary-label">Partial</span>
+                </div>
+                <div className="telemetry-summary-metric">
+                  <span className={`telemetry-summary-value ${competitiveEvidenceRequiredCount > 0 ? 'telemetry-text-warning' : ''}`}>{competitiveEvidenceRequiredCount}</span>
+                  <span className="telemetry-summary-label">Evidence Req.</span>
+                </div>
+              </div>
+              <div className="telemetry-summary-details">
+                <div className="telemetry-summary-headline">
+                  <span className={`telemetry-diagnostic-badge ${competitiveHeaderSeverity === 'danger' ? 'danger' : competitiveHeaderSeverity === 'warning' ? 'warning' : 'healthy'}`}>
+                    {competitiveHeaderLabel}
+                  </span>
+                  <span className="telemetry-diagnostic-time">{competitiveParityAreas.length} dimensions</span>
+                </div>
+                <div className="telemetry-diagnostic-summary">
+                  {competitiveKnownLimitationCount}/{competitiveParityAreas.length} known limitations tracked across {Array.from(new Set(competitiveParityAreas.flatMap(area => area.competitors || []))).join(', ') || 'competitors'}.
+                </div>
+                <div className="telemetry-summary-cta">View details</div>
+              </div>
+            </button>
+          )}
+        </div>
+      ),
+    },
+    {
       id: 'schedule-health',
       title: 'Schedule Health',
       headerBadge: (
@@ -741,7 +840,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
         </div>
       ),
     },
-  ], [controllerGeneratorInventoryLabel, controllerHeaderSeverity, controllerStatusLabel, fleetAlertHeaderLabel, fleetAlertHeaderSeverity, fleetAlerts, fleetCapacity, generatorActiveVUsers, generatorAvailableCapacity, generatorConnectedCount, generatorHeaderLabel, generatorHeaderSeverity, generatorIssueCount, generators.length, health, inventory, parityAreas, parityBlockingCount, parityCompleteCount, parityHeaderLabel, parityHeaderSeverity, parityPartialCount, parityStatus, readinessBlockedCount, readinessDegradedCount, readinessHeaderLabel, readinessHeaderSeverity, readinessReadyCount, scheduleCompletedCount, scheduleHeaderLabel, scheduleHeaderSeverity, scheduleHealth, scheduleMaterializedCount, scheduleQueuedCount, scheduleSkippedCount, systemReadiness, telemetryDangerCount, telemetryHeaderLabel, telemetryHeaderSeverity, telemetryLatestEntry, telemetryDiagnostics, telemetryWarningCount, timeline, websocketLabel, websocketValueClass])
+  ], [competitiveEvidenceRequiredCount, competitiveGapCount, competitiveHeaderLabel, competitiveHeaderSeverity, competitiveKnownLimitationCount, competitiveParityAreas, competitivePartialCount, controllerGeneratorInventoryLabel, controllerHeaderSeverity, controllerStatusLabel, fleetAlertHeaderLabel, fleetAlertHeaderSeverity, fleetAlerts, fleetCapacity, generatorActiveVUsers, generatorAvailableCapacity, generatorConnectedCount, generatorHeaderLabel, generatorHeaderSeverity, generatorIssueCount, generators.length, health, inventory, parityAreas, parityBlockingCount, parityCompleteCount, parityHeaderLabel, parityHeaderSeverity, parityPartialCount, parityStatus, readinessBlockedCount, readinessDegradedCount, readinessHeaderLabel, readinessHeaderSeverity, readinessReadyCount, scheduleCompletedCount, scheduleHeaderLabel, scheduleHeaderSeverity, scheduleHealth, scheduleMaterializedCount, scheduleQueuedCount, scheduleSkippedCount, systemReadiness, telemetryDangerCount, telemetryHeaderLabel, telemetryHeaderSeverity, telemetryLatestEntry, telemetryDiagnostics, telemetryWarningCount, timeline, websocketLabel, websocketValueClass])
 
   useEffect(() => {
     setCardOrder(prev => mergeOrder(prev, cards.map(card => card.id)))
@@ -807,10 +906,11 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       { label: 'Generators', severity: generatorHeaderSeverity },
       { label: 'Telemetry', severity: telemetryHeaderSeverity },
       { label: 'Fleet', severity: fleetAlertHeaderSeverity },
+      { label: 'Competitive', severity: competitiveHeaderSeverity },
       { label: 'Schedules', severity: scheduleHeaderSeverity },
     ]
     return entries
-  }, [health, connectionState, readinessHeaderSeverity, controllerHeaderSeverity, generatorHeaderSeverity, telemetryHeaderSeverity, fleetAlertHeaderSeverity, scheduleHeaderSeverity])
+  }, [health, connectionState, readinessHeaderSeverity, controllerHeaderSeverity, generatorHeaderSeverity, telemetryHeaderSeverity, fleetAlertHeaderSeverity, competitiveHeaderSeverity, scheduleHeaderSeverity])
 
   const overallSeverity = useMemo(() => {
     if (severityEntries.some(e => e.severity === 'danger')) return 'danger'
@@ -962,6 +1062,75 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
           </div>
         </div>
       )}
+
+      {isCompetitiveParityModalOpen && competitiveParityAreas.length > 0 && (
+        <div className="modal-overlay" onClick={() => setIsCompetitiveParityModalOpen(false)}>
+          <div className="modal modal-wide telemetry-modal" role="dialog" aria-modal="true" aria-labelledby="competitive-parity-title" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header telemetry-modal-header">
+              <div>
+                <h3 id="competitive-parity-title">Competitive Parity</h3>
+                <p className="page-subtitle">k6 and NeoLoad support status, evidence level, product decision, and known limitations.</p>
+              </div>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setIsCompetitiveParityModalOpen(false)}>Close</button>
+            </div>
+            <div className="telemetry-modal-summary">
+              <div className="telemetry-summary-metric">
+                <span className={`telemetry-summary-value ${competitiveGapCount > 0 ? 'telemetry-text-warning' : ''}`}>{competitiveGapCount}</span>
+                <span className="telemetry-summary-label">Gaps</span>
+              </div>
+              <div className="telemetry-summary-metric">
+                <span className={`telemetry-summary-value ${competitivePartialCount > 0 ? 'telemetry-text-warning' : ''}`}>{competitivePartialCount}</span>
+                <span className="telemetry-summary-label">Partial</span>
+              </div>
+              <div className="telemetry-summary-metric">
+                <span className={`telemetry-summary-value ${competitiveEvidenceRequiredCount > 0 ? 'telemetry-text-warning' : ''}`}>{competitiveEvidenceRequiredCount}</span>
+                <span className="telemetry-summary-label">Evidence Required</span>
+              </div>
+            </div>
+            <div className="monitor-body telemetry-modal-body">
+              <CompetitiveParityList areas={competitiveParityAreas} />
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function CompetitiveParityList({ areas }: { areas: CompetitiveParityAreas }) {
+  return (
+    <div className="monitor-inventory-list">
+      {areas.map(area => (
+        <div key={area.id} className={`monitor-inventory-item ${area.status === 'partial' || area.status === 'gap' || area.status === 'blocked' ? 'is-warning' : ''}`}>
+          <div className="monitor-row">
+            <span className="monitor-value">{area.name}</span>
+            <span className={`monitor-value ${area.status === 'blocked' ? 'text-danger' : area.status === 'partial' || area.status === 'gap' ? 'telemetry-text-warning' : 'text-success'}`}>{formatCompetitiveStatus(area.status)}</span>
+          </div>
+          <div className="monitor-row">
+            <span className="monitor-label">Competitors</span>
+            <span className="monitor-value">{area.competitors?.join(', ') || '-'}</span>
+          </div>
+          <div className="monitor-row">
+            <span className="monitor-label">Evidence Level</span>
+            <span className="monitor-value">{formatEvidenceLevel(area.evidence_level)}</span>
+          </div>
+          <div className="monitor-row">
+            <span className="monitor-label">Decision</span>
+            <span className="monitor-value">{formatEvidenceLevel(area.decision)}</span>
+          </div>
+          {area.remaining?.length ? (
+            <div className="monitor-warning-list">
+              {area.remaining.map(item => <p key={item}>{item}</p>)}
+            </div>
+          ) : null}
+          {area.evidence?.length ? (
+            <div className="monitor-row">
+              <span className="monitor-label">Evidence</span>
+              <span className="monitor-value">{area.evidence.slice(0, 3).join(', ')}{area.evidence.length > 3 ? ` +${area.evidence.length - 3}` : ''}</span>
+            </div>
+          ) : null}
+        </div>
+      ))}
     </div>
   )
 }

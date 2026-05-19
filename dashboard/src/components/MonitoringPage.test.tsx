@@ -89,6 +89,41 @@ describe('MonitoringPage', () => {
           release_gate: true,
         },
       ],
+      competitive_parity: [
+        {
+          id: 'developer_experience',
+          name: 'Developer Script-As-Code Experience',
+          status: 'partial',
+          competitors: ['k6'],
+          summary: 'CLI and DSL workflows exist, but k6 conversion is incomplete.',
+          evidence: ['README.md#build--run'],
+          remaining: ['Add k6 result ingestion and local script explain output.'],
+          decision: 'differentiate',
+          evidence_level: 'docs+code',
+        },
+        {
+          id: 'browser_testing',
+          name: 'Browser Testing And Client UX Evidence',
+          status: 'partial',
+          competitors: ['k6', 'NeoLoad'],
+          summary: 'Browser canaries are supported with density claims gated on benchmarks.',
+          evidence: ['docs/MOBILE_BROWSER_EMULATION_PLAN.md'],
+          remaining: ['Publish browser benchmark artifacts.'],
+          decision: 'bounded_canary_support',
+          evidence_level: 'api+docs+external_evidence_required',
+        },
+        {
+          id: 'specialized_enterprise_protocols',
+          name: 'Specialized Enterprise Protocol Breadth',
+          status: 'gap',
+          competitors: ['NeoLoad'],
+          summary: 'Native SAP GUI and Citrix protocols remain demand-gated.',
+          evidence: ['docs/K6_NEOLOAD_PARITY_PLAN.md#phase-c6-specialized-enterprise-protocol-decisions'],
+          remaining: ['Publish explicit non-goal or coexistence guidance.'],
+          decision: 'demand_gated_non_goal',
+          evidence_level: 'docs',
+        },
+      ],
     })
     apiMock.getFleetAlerts.mockResolvedValue({ alerts: [], count: 0 })
     apiMock.getFleetCapacity.mockResolvedValue({
@@ -159,6 +194,8 @@ describe('MonitoringPage', () => {
     expect(container.textContent).toContain('Fleet And Scale-Out: partial')
     expect(container.textContent).toContain('Real-Time Monitoring: complete')
     expect(container.textContent).toContain('Release Gates')
+    expect(container.textContent).toContain('Competitive Parity')
+    expect(container.textContent).toContain('3/3 known limitations tracked across k6, NeoLoad')
     expect(container.textContent).toContain('Generator Inventory')
     expect(container.textContent).toContain('0/0 connected')
     expect(container.textContent).toContain('danger')
@@ -182,6 +219,30 @@ describe('MonitoringPage', () => {
     expect(apiMock.getFleetAlerts).toHaveBeenCalled()
     expect(apiMock.getFleetCapacity).toHaveBeenCalledWith({ project_id: 'project-1' })
     expect(apiMock.getSystemReadiness).toHaveBeenCalled()
+  })
+
+  it('opens competitive parity details with evidence levels and known limitations', async () => {
+    await act(async () => {
+      root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} />)
+    })
+
+    const competitiveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('known limitations tracked'))
+    expect(competitiveButton).not.toBeUndefined()
+
+    await act(async () => {
+      competitiveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.textContent).toContain('k6 and NeoLoad support status')
+    expect(container.textContent).toContain('Developer Script-As-Code Experience')
+    expect(container.textContent).toContain('Evidence Level')
+    expect(container.textContent).toContain('docs + code')
+    expect(container.textContent).toContain('Add k6 result ingestion and local script explain output.')
+    expect(container.textContent).toContain('Browser Testing And Client UX Evidence')
+    expect(container.textContent).toContain('api + docs + external evidence required')
+    expect(container.textContent).toContain('Specialized Enterprise Protocol Breadth')
+    expect(container.textContent).toContain('demand gated non goal')
+    expect(container.textContent).toContain('Publish explicit non-goal or coexistence guidance.')
   })
 
   it('renders JMS broker diagnostics with lag and throughput details', async () => {
@@ -348,7 +409,7 @@ describe('MonitoringPage', () => {
     expect(container.textContent).toContain('fleet placement API')
     expect(container.textContent).toContain('http, browser')
 
-    const generatorButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('View details'))
+    const generatorButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('active VUsers across'))
     expect(generatorButton).not.toBeUndefined()
 
     await act(async () => {
