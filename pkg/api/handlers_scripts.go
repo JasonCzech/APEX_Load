@@ -16,6 +16,7 @@ import (
 	"github.com/jasonczech/stormrunner/pkg/convert/jmeter"
 	"github.com/jasonczech/stormrunner/pkg/convert/loadrunner"
 	"github.com/jasonczech/stormrunner/pkg/convert/sample"
+	"github.com/jasonczech/stormrunner/pkg/convert/trueclient"
 	"github.com/jasonczech/stormrunner/pkg/dsl"
 )
 
@@ -154,9 +155,13 @@ func (s *Server) handleJMeterSupportMatrix(w http.ResponseWriter, r *http.Reques
 
 func (s *Server) handleLoadRunnerSupportMatrix(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
-		"support_matrix":  loadrunner.GetRTSSupportMatrix(),
-		"notes":           loadrunner.GetRTSSupportMatrixNotes(),
-		"tested_examples": loadrunner.GetRTSSupportMatrixExamples(),
+		"support_matrix":            loadrunner.GetRTSSupportMatrix(),
+		"notes":                     loadrunner.GetRTSSupportMatrixNotes(),
+		"tested_examples":           loadrunner.GetRTSSupportMatrixExamples(),
+		"trueclient_script_types":   trueclient.ScriptTypeScopes(),
+		"trueclient_step_matrix":    trueclient.StepScopes(),
+		"web2_profile_capabilities": trueclient.Web2ProfileCapabilityScopes(),
+		"web2_fixture_contract":     trueclient.Web2FixtureContracts(),
 	})
 }
 
@@ -822,9 +827,9 @@ func buildLoadRunnerImportReviewSections(warnings []string, result *loadrunner.C
 			Key:      "browser_import_assumptions",
 			Title:    "Browser Import Assumptions",
 			Severity: "info",
-			Summary:  "TruClient Mobile Web imports map supported steps into browser DSL and require replay validation for selectors, waits, and device behavior.",
+			Summary:  "TruClient Mobile Web imports map supported steps into browser DSL and require replay validation for selectors, waits, and device behavior; TruClient Web and Web 2.0 are tracked as separate planned profiles.",
 			Items: []string{
-				"Legacy desktop TruClient remains out of scope.",
+				"Legacy desktop TruClient remains out of scope; TruClient - Web and TruClient 2.0 - Web are planned under the VuGen Web 2.0 profile.",
 				"Simple JavaScript fill/click statements are decomposed when possible; other JavaScript is preserved as review guidance.",
 				"Selector fidelity should be checked with browser replay before production use.",
 			},

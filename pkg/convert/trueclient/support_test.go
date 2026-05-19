@@ -18,8 +18,11 @@ func TestLookupScriptTypeScope(t *testing.T) {
 		{name: "mobile web compact", scriptType: "TruClientMobileWeb", wantName: "TruClient - Mobile Web", wantStatus: ScopeSupported, wantFound: true},
 		{name: "truclient 2 mobile web", scriptType: "TruClient 2.0 - Mobile Web", wantName: "TruClient - Mobile Web", wantStatus: ScopeSupported, wantFound: true},
 		{name: "truclient 2 mobile web compact", scriptType: "TruClient2MobileWeb", wantName: "TruClient - Mobile Web", wantStatus: ScopeSupported, wantFound: true},
+		{name: "truclient web", scriptType: "TruClient - Web", wantName: "TruClient - Web", wantStatus: ScopePlanned, wantFound: true},
+		{name: "truclient web compact", scriptType: "TruClientWeb", wantName: "TruClient - Web", wantStatus: ScopePlanned, wantFound: true},
+		{name: "truclient 2 web", scriptType: "TruClient 2.0 - Web", wantName: "TruClient 2.0 - Web", wantStatus: ScopePlanned, wantFound: true},
+		{name: "truclient 2 web compact", scriptType: "TruClient20Web", wantName: "TruClient 2.0 - Web", wantStatus: ScopePlanned, wantFound: true},
 		{name: "desktop truclient", scriptType: "TruClient", wantName: "TruClient", wantStatus: ScopeOutOfScope, wantFound: true},
-		{name: "desktop truclient compact", scriptType: "TruClientWeb", wantName: "TruClient", wantStatus: ScopeOutOfScope, wantFound: true},
 		{name: "desktop truclient 2", scriptType: "TruClient 2.0", wantName: "TruClient", wantStatus: ScopeOutOfScope, wantFound: true},
 		{name: "unknown", scriptType: "Web", wantFound: false},
 	}
@@ -77,9 +80,79 @@ func TestImportScopeError(t *testing.T) {
 		t.Fatalf("ImportScopeError mobile web = %v, want nil for supported scope", err)
 	}
 
+	err = ImportScopeError("TruClient 2.0 - Web")
+	if err == nil || !containsAll(err.Error(), "recognized but not implemented yet", "VuGen Web 2.0") {
+		t.Fatalf("ImportScopeError web2 = %v, want planned-scope guidance", err)
+	}
+
 	err = ImportScopeError("TruClient")
 	if err == nil || !containsAll(err.Error(), "out of scope", "desktop-style TruClient parity") {
 		t.Fatalf("ImportScopeError desktop = %v, want out-of-scope guidance", err)
+	}
+}
+
+func TestWeb2ProfileCapabilityScopes(t *testing.T) {
+	scopes := Web2ProfileCapabilityScopes()
+	if len(scopes) == 0 {
+		t.Fatal("Web2ProfileCapabilityScopes returned no scopes")
+	}
+
+	wantStatuses := map[string]ScopeStatus{
+		"archive_detection":          ScopePlanned,
+		"step_mapping":               ScopePlanned,
+		"object_identification":      ScopePlanned,
+		"runtime_settings":           ScopePlanned,
+		"browser_to_http_conversion": ScopePlanned,
+		"native_desktop_automation":  ScopeOutOfScope,
+		"high_density_browser_load":  ScopeOutOfScope,
+	}
+	seen := map[string]ProfileCapabilityScope{}
+	for _, scope := range scopes {
+		seen[scope.CanonicalName] = scope
+	}
+	for name, status := range wantStatuses {
+		scope, ok := seen[name]
+		if !ok {
+			t.Fatalf("Web2ProfileCapabilityScopes missing %q in %#v", name, scopes)
+		}
+		if scope.Status != status {
+			t.Fatalf("Web2ProfileCapabilityScopes[%q].Status = %q, want %q", name, scope.Status, status)
+		}
+		if scope.StormrunnerShape == "" || len(scope.RequiredEvidence) == 0 {
+			t.Fatalf("Web2ProfileCapabilityScopes[%q] = %#v, want shape and evidence", name, scope)
+		}
+	}
+}
+
+func TestWeb2FixtureContracts(t *testing.T) {
+	fixtures := Web2FixtureContracts()
+	if len(fixtures) == 0 {
+		t.Fatal("Web2FixtureContracts returned no fixtures")
+	}
+
+	required := map[string]bool{
+		"web2_spa_checkout":               true,
+		"web2_iframe_window":              true,
+		"web2_custom_javascript_api":      true,
+		"web2_object_repository_variants": true,
+		"web2_runtime_parameters":         true,
+		"web2_browser_to_http_conversion": false,
+	}
+	seen := map[string]FixtureContract{}
+	for _, fixture := range fixtures {
+		seen[fixture.ID] = fixture
+	}
+	for id, requiredFlag := range required {
+		fixture, ok := seen[id]
+		if !ok {
+			t.Fatalf("Web2FixtureContracts missing %q in %#v", id, fixtures)
+		}
+		if fixture.Required != requiredFlag {
+			t.Fatalf("Web2FixtureContracts[%q].Required = %v, want %v", id, fixture.Required, requiredFlag)
+		}
+		if fixture.Status != ScopePlanned || len(fixture.Covers) == 0 || len(fixture.RequiredEvidence) == 0 {
+			t.Fatalf("Web2FixtureContracts[%q] = %#v, want planned fixture with coverage and evidence", id, fixture)
+		}
 	}
 }
 

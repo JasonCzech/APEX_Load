@@ -1076,7 +1076,7 @@ TouchMode=1
 	if len(result.UnsupportedElements) != 0 {
 		t.Fatalf("unsupported_elements = %#v, want none", result.UnsupportedElements)
 	}
-	assertReviewSection(t, result.ReviewSections, "browser_import_assumptions", "info", "Legacy desktop TruClient remains out of scope.")
+	assertReviewSection(t, result.ReviewSections, "browser_import_assumptions", "info", "Legacy desktop TruClient remains out of scope; TruClient - Web and TruClient 2.0 - Web are planned under the VuGen Web 2.0 profile.")
 	assertRepairSuggestion(t, result.RepairSuggestions, "replay", "warning", "Run browser replay before saving as production-ready")
 	assertRepairSuggestion(t, result.RepairSuggestions, "selector", "warning", "Validate selector for Evaluate JavaScript Fill 1")
 	assertRepairSuggestion(t, result.RepairSuggestions, "wait", "info", "Add readiness wait after Evaluate JavaScript Fill 1")
@@ -1795,6 +1795,22 @@ func TestHandleLoadRunnerSupportMatrix(t *testing.T) {
 			Coverage string `json:"coverage"`
 			Test     string `json:"test"`
 		} `json:"tested_examples"`
+		TrueClientScriptTypes []struct {
+			CanonicalName string   `json:"CanonicalName"`
+			DisplayName   string   `json:"DisplayName"`
+			Status        string   `json:"Status"`
+			Inputs        []string `json:"SupportedInputs"`
+		} `json:"trueclient_script_types"`
+		Web2ProfileCapabilities []struct {
+			CanonicalName string `json:"CanonicalName"`
+			DisplayName   string `json:"DisplayName"`
+			Status        string `json:"Status"`
+		} `json:"web2_profile_capabilities"`
+		Web2FixtureContract []struct {
+			ID       string `json:"ID"`
+			Required bool   `json:"Required"`
+			Status   string `json:"Status"`
+		} `json:"web2_fixture_contract"`
 	}
 	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
 		t.Fatalf("json.Unmarshal returned error: %v", err)
@@ -1819,6 +1835,18 @@ func TestHandleLoadRunnerSupportMatrix(t *testing.T) {
 	}
 	if !containsLoadRunnerSupportMatrixExample(result.TestedExamples, "Golden Web HTTP/HTML fixture") {
 		t.Fatalf("tested_examples = %#v, want golden fixture example", result.TestedExamples)
+	}
+	if !containsLoadRunnerTrueClientScriptType(result.TrueClientScriptTypes, "truclient_mobile_web", "supported") {
+		t.Fatalf("trueclient_script_types = %#v, want active Mobile Web row", result.TrueClientScriptTypes)
+	}
+	if !containsLoadRunnerTrueClientScriptType(result.TrueClientScriptTypes, "truclient2_web", "planned") {
+		t.Fatalf("trueclient_script_types = %#v, want planned Web 2.0 row", result.TrueClientScriptTypes)
+	}
+	if !containsLoadRunnerTrueClientCapability(result.Web2ProfileCapabilities, "object_identification", "planned") {
+		t.Fatalf("web2_profile_capabilities = %#v, want planned object identification capability", result.Web2ProfileCapabilities)
+	}
+	if !containsLoadRunnerWeb2Fixture(result.Web2FixtureContract, "web2_spa_checkout", true) {
+		t.Fatalf("web2_fixture_contract = %#v, want required SPA checkout fixture", result.Web2FixtureContract)
 	}
 }
 
@@ -2460,6 +2488,46 @@ func containsLoadRunnerSupportMatrixExample(entries []struct {
 }, want string) bool {
 	for _, entry := range entries {
 		if entry.Title == want {
+			return true
+		}
+	}
+	return false
+}
+
+func containsLoadRunnerTrueClientScriptType(entries []struct {
+	CanonicalName string   `json:"CanonicalName"`
+	DisplayName   string   `json:"DisplayName"`
+	Status        string   `json:"Status"`
+	Inputs        []string `json:"SupportedInputs"`
+}, name string, status string) bool {
+	for _, entry := range entries {
+		if entry.CanonicalName == name && entry.Status == status && entry.DisplayName != "" && len(entry.Inputs) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func containsLoadRunnerTrueClientCapability(entries []struct {
+	CanonicalName string `json:"CanonicalName"`
+	DisplayName   string `json:"DisplayName"`
+	Status        string `json:"Status"`
+}, name string, status string) bool {
+	for _, entry := range entries {
+		if entry.CanonicalName == name && entry.Status == status && entry.DisplayName != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func containsLoadRunnerWeb2Fixture(entries []struct {
+	ID       string `json:"ID"`
+	Required bool   `json:"Required"`
+	Status   string `json:"Status"`
+}, id string, required bool) bool {
+	for _, entry := range entries {
+		if entry.ID == id && entry.Required == required && entry.Status == "planned" {
 			return true
 		}
 	}
