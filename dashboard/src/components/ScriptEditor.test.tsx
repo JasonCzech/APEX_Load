@@ -278,6 +278,63 @@ describe('ScriptEditor', () => {
     expect(configDialog?.className).not.toContain('open')
   })
 
+  it('renders a graphical browser outline with transactions, waits, parameters, and assertions', async () => {
+    const browserScript: ScriptDefinition = {
+      ...initialScript,
+      protocol: 'browser',
+      config: {
+        ...initialScript.config,
+        run_logic: { ...initialScript.config.run_logic, auto_transactions: 'per_action' },
+      },
+      actions: [
+        {
+          name: 'Open login',
+          type: 'browser_navigate',
+          target: '/login?user={{param.username}}',
+          wait_for: { type: 'selector', value: '#login', timeout_ms: 10000 },
+          assertions: [{ type: 'visible_text', value: 'Sign in' }],
+        },
+        {
+          name: 'Submit login',
+          type: 'browser_click',
+          target: '',
+          selector: 'button[type="submit"]',
+        },
+      ],
+    }
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={browserScript} />)
+    })
+
+    const outlineSummary = container.querySelector('[aria-label="Script outline summary"]')
+    expect(outlineSummary?.textContent).toContain('2 browser')
+    expect(outlineSummary?.textContent).toContain('2 txn')
+    expect(outlineSummary?.textContent).toContain('1 params')
+    expect(outlineSummary?.textContent).toContain('1 waits')
+    expect(outlineSummary?.textContent).toContain('1 checks')
+
+    const outline = container.querySelector('[aria-label="Graphical step outline"]')
+    expect(outline?.textContent).toContain('Open login')
+    expect(outline?.textContent).toContain('browser_navigate')
+    expect(outline?.textContent).toContain('Txn')
+    expect(outline?.textContent).toContain('P1')
+    expect(outline?.textContent).toContain('Wait')
+    expect(outline?.textContent).toContain('A1')
+
+    const submitRow = Array.from(container.querySelectorAll('.editor-step-outline-row')).find(row => row.textContent?.includes('Submit login'))
+    expect(submitRow).toBeDefined()
+    if (!submitRow) {
+      return
+    }
+
+    await act(async () => {
+      submitRow.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(submitRow.className).toContain('active')
+  })
+
   it('renders the provided script model without fetching from the API', async () => {
     await act(async () => {
       root.render(<ScriptEditor initialScript={initialScript} />)

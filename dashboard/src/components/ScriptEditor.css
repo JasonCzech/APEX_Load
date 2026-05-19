@@ -1731,6 +1731,104 @@
   border-left-color: rgba(99, 102, 241, 0.55);
   background: rgba(99, 102, 241, 0.06);
 }
+.editor-outline-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 12px;
+}
+.editor-outline-metrics span {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  color: var(--text-muted);
+  background: var(--bg-primary);
+  font-size: 11px;
+}
+.editor-outline-metrics strong {
+  color: var(--text-primary);
+}
+.editor-step-outline {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+}
+.editor-step-outline-row {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 8px;
+  background: transparent;
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+}
+.editor-step-outline-row:hover,
+.editor-step-outline-row.active {
+  border-color: rgba(99, 102, 241, 0.32);
+  background: rgba(99, 102, 241, 0.07);
+}
+.editor-step-outline-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+}
+.editor-step-outline-main {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+.editor-step-outline-main strong,
+.editor-step-outline-main small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.editor-step-outline-main strong {
+  font-size: 12px;
+}
+.editor-step-outline-main small {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.editor-step-outline-badges {
+  grid-column: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.outline-badge {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 6px;
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+  font-size: 10px;
+  font-weight: 700;
+}
+.outline-badge.txn { color: var(--accent); }
+.outline-badge.param { color: #38bdf8; }
+.outline-badge.wait { color: #f59e0b; }
+.outline-badge.assert { color: var(--success); }
+.editor-step-outline-empty {
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
 .utility-link-button {
   border: 1px solid var(--border);
   border-radius: 8px;

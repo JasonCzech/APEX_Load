@@ -180,6 +180,90 @@ function normalizeWarnings(messages?: string[]) {
   return Array.from(new Set(messages.map(message => message.trim()).filter(Boolean)))
 }
 
+interface ScriptOutlineAction {
+  index: number
+  name: string
+  type: string
+  target: string
+  isBrowserAction: boolean
+  hasTransaction: boolean
+  hasWait: boolean
+  assertionCount: number
+  parameterRefs: string[]
+  selector?: string
+}
+
+interface ScriptOutlineSummary {
+  actionCount: number
+  browserActionCount: number
+  transactionCount: number
+  parameterRefCount: number
+  waitCount: number
+  assertionCount: number
+  actions: ScriptOutlineAction[]
+}
+
+function extractParameterReferences(action: Action) {
+  const refs = new Set<string>()
+  const json = JSON.stringify({
+    target: action.target,
+    selector: action.selector,
+    value: action.value,
+    headers: action.headers,
+    body: action.body,
+    params: action.params,
+    metadata: action.metadata,
+  })
+
+  const tokenPattern = /\{\{\s*(?:param|data|var)\.([a-zA-Z0-9_.-]+)/g
+  let match = tokenPattern.exec(json)
+  while (match) {
+    refs.add(match[1])
+    match = tokenPattern.exec(json)
+  }
+
+  return Array.from(refs)
+}
+
+function actionHasWait(action: Action) {
+  if (action.wait_for?.type || action.wait_for?.value || action.wait_for?.timeout_ms) {
+    return true
+  }
+  return action.type === 'browser_wait'
+}
+
+function buildScriptOutlineSummary(script: ScriptData): ScriptOutlineSummary {
+  const autoTransactions = script.config.run_logic?.auto_transactions
+  const actions = script.actions.map((action, index) => {
+    const isBrowserAction = action.type.startsWith('browser_')
+    const assertionCount = action.assertions?.length || 0
+    const parameterRefs = extractParameterReferences(action)
+    const hasTransaction = autoTransactions === 'per_action' || Boolean(action.metadata?.transaction || action.metadata?.transaction_name)
+    return {
+      index,
+      name: action.name || `Action ${index + 1}`,
+      type: action.type || action.method || 'action',
+      target: action.selector || action.target || action.method || '',
+      isBrowserAction,
+      hasTransaction,
+      hasWait: actionHasWait(action),
+      assertionCount,
+      parameterRefs,
+      selector: action.selector,
+    }
+  })
+
+  return {
+    actionCount: actions.length,
+    browserActionCount: actions.filter(action => action.isBrowserAction).length,
+    transactionCount: actions.filter(action => action.hasTransaction).length,
+    parameterRefCount: actions.reduce((sum, action) => sum + action.parameterRefs.length, 0),
+    waitCount: actions.filter(action => action.hasWait).length,
+    assertionCount: actions.reduce((sum, action) => sum + action.assertionCount, 0),
+    actions,
+  }
+}
+
 function hasStructuredReplaySnapshot(snapshot?: ReplaySnapshot | null) {
   return Boolean(
     snapshot?.request_method ||
@@ -601,6 +685,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const isJmsScript = script.protocol === 'jms-solace'
   const isJavaHttpScript = script.protocol === 'java_http'
   const isSoapScript = script.protocol === 'soap'
+  const outlineSummary = buildScriptOutlineSummary(script)
   const importMetadata = script.metadata?.import
   const importSummary = getImportSummary(importMetadata)
   const importedCorrelationFocusTargets = importSummary.correlationSuggestions.map((correlation) => {
@@ -4363,6 +4448,38 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                     {importMetadata && <button className="editor-outline-link" type="button" onClick={() => openEditorSection('import')}>Imported Metadata</button>}
                     <button className="editor-outline-link" type="button" onClick={() => openEditorSection('parameter-data')}>Parameter Data</button>
                     <button className="editor-outline-link" type="button" onClick={() => openEditorSection('replay')}>Replay Output</button>
+                  </div>
+                  <div className="editor-outline-metrics" aria-label="Script outline summary">
+                    <span><strong>{outlineSummary.browserActionCount || outlineSummary.actionCount}</strong> {isBrowserScript ? 'browser' : 'actions'}</span>
+                    <span><strong>{outlineSummary.transactionCount}</strong> txn</span>
+                    <span><strong>{outlineSummary.parameterRefCount}</strong> params</span>
+                    <span><strong>{outlineSummary.waitCount}</strong> waits</span>
+                    <span><strong>{outlineSummary.assertionCount}</strong> checks</span>
+                  </div>
+                  <div className="editor-step-outline" aria-label="Graphical step outline">
+                    {outlineSummary.actions.map((item) => (
+                      <button
+                        key={`${item.index}-${item.name}`}
+                        type="button"
+                        className={`editor-step-outline-row ${activeAction === item.index ? 'active' : ''}`}
+                        onClick={() => setActiveAction(item.index)}
+                      >
+                        <span className="editor-step-outline-index">{item.index + 1}</span>
+                        <span className="editor-step-outline-main">
+                          <strong>{item.name}</strong>
+                          <small>{item.type}{item.target ? ` • ${item.target}` : ''}</small>
+                        </span>
+                        <span className="editor-step-outline-badges">
+                          {item.hasTransaction && <span className="outline-badge txn">Txn</span>}
+                          {item.parameterRefs.length > 0 && <span className="outline-badge param">P{item.parameterRefs.length}</span>}
+                          {item.hasWait && <span className="outline-badge wait">Wait</span>}
+                          {item.assertionCount > 0 && <span className="outline-badge assert">A{item.assertionCount}</span>}
+                        </span>
+                      </button>
+                    ))}
+                    {outlineSummary.actions.length === 0 && (
+                      <div className="editor-step-outline-empty">Add actions to build the executable outline.</div>
+                    )}
                   </div>
                 </div>
                 <div className="actions-sidebar-header">
