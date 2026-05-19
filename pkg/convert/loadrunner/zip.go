@@ -54,6 +54,7 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 	var projectFileName string
 	var projectSections map[string]map[string]string
 	var trueClientScope *trueclient.ScriptTypeScope
+	var trueClientInspection *trueclient.ArchiveInspection
 	for name, content := range files {
 		if strings.HasSuffix(strings.ToLower(name), ".usr") {
 			projectFileName = name
@@ -72,8 +73,13 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 	if projectConfig != nil {
 		if scope, ok := trueclient.LookupScriptTypeScope(projectConfig.ScriptType); ok {
 			switch scope.Status {
-			case trueclient.ScopeSupported:
+			case trueclient.ScopeSupported, trueclient.ScopeReviewOnly:
 				trueClientScope = &scope
+				inspection, inspectErr := trueclient.InspectArchive(files, projectConfig.ScriptType)
+				if inspectErr != nil {
+					return nil, inspectErr
+				}
+				trueClientInspection = inspection
 			case trueclient.ScopePlanned:
 				inspection, inspectErr := trueclient.InspectArchive(files, projectConfig.ScriptType)
 				if inspectErr != nil {
@@ -124,6 +130,9 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 				UnsupportedFuncs: append([]string(nil), trueClientResult.Stats.UnsupportedSteps...),
 			},
 		}
+		if trueClientScope.Status == trueclient.ScopeReviewOnly {
+			result.Warnings = append(result.Warnings, fmt.Sprintf("%s import is review-only; validate selectors, waits, runtime settings, and replay evidence before promotion.", trueClientScope.DisplayName))
+		}
 		parameterSections := make(map[string]map[string]map[string]string)
 		for _, parameterFileName := range parameterFileNames {
 			content, ok := findFile(files, parameterFileName)
@@ -144,7 +153,7 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 				parameterSections[filepath.Base(parameterFileName)] = parsed.Sections
 			}
 		}
-		attachLoadRunnerMetadata(result.Script, result, projectFileName, projectSections, projectConfig, files, runtimeFileName, parameterSections, parameterFileNames)
+		attachLoadRunnerMetadata(result.Script, result, projectFileName, projectSections, projectConfig, files, runtimeFileName, parameterSections, parameterFileNames, trueClientInspection)
 		return result, nil
 	}
 
@@ -228,7 +237,7 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 		}
 	}
 
-	attachLoadRunnerMetadata(result.Script, result, projectFileName, projectSections, projectConfig, files, runtimeFileName, parameterSections, parameterFileNames)
+	attachLoadRunnerMetadata(result.Script, result, projectFileName, projectSections, projectConfig, files, runtimeFileName, parameterSections, parameterFileNames, nil)
 	return result, nil
 }
 
@@ -330,7 +339,7 @@ func uniqueStrings(values []string) []string {
 	return result
 }
 
-func attachLoadRunnerMetadata(script *dsl.Script, result *ConvertResult, projectFileName string, projectSections map[string]map[string]string, projectConfig *ProjectConfig, files map[string]string, runtimeFileName string, parameterSections map[string]map[string]map[string]string, parameterFileNames []string) {
+func attachLoadRunnerMetadata(script *dsl.Script, result *ConvertResult, projectFileName string, projectSections map[string]map[string]string, projectConfig *ProjectConfig, files map[string]string, runtimeFileName string, parameterSections map[string]map[string]map[string]string, parameterFileNames []string, trueClientInspection *trueclient.ArchiveInspection) {
 	if script == nil {
 		return
 	}
@@ -375,6 +384,13 @@ func attachLoadRunnerMetadata(script *dsl.Script, result *ConvertResult, project
 	if result != nil && result.RecordedResourceURLsCaptured {
 		preserved["recorded_resource_urls_available"] = true
 		preserved["recorded_resource_urls"] = append([]string(nil), result.RecordedResourceURLs...)
+	}
+	if trueClientInspection != nil {
+		preserved["trueclient_archive_inspection"] = trueClientInspection
+		if trueClientInspection.ScriptTypeScope != nil {
+			preserved["source_script_type"] = trueClientInspection.ScriptTypeScope.DisplayName
+			preserved["source_profile"] = trueClientInspection.ScriptTypeScope.StormrunnerShape
+		}
 	}
 	if len(preserved) == 0 {
 		return

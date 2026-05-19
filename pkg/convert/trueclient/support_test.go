@@ -20,8 +20,8 @@ func TestLookupScriptTypeScope(t *testing.T) {
 		{name: "truclient 2 mobile web compact", scriptType: "TruClient2MobileWeb", wantName: "TruClient - Mobile Web", wantStatus: ScopeSupported, wantFound: true},
 		{name: "truclient web", scriptType: "TruClient - Web", wantName: "TruClient - Web", wantStatus: ScopePlanned, wantFound: true},
 		{name: "truclient web compact", scriptType: "TruClientWeb", wantName: "TruClient - Web", wantStatus: ScopePlanned, wantFound: true},
-		{name: "truclient 2 web", scriptType: "TruClient 2.0 - Web", wantName: "TruClient 2.0 - Web", wantStatus: ScopePlanned, wantFound: true},
-		{name: "truclient 2 web compact", scriptType: "TruClient20Web", wantName: "TruClient 2.0 - Web", wantStatus: ScopePlanned, wantFound: true},
+		{name: "truclient 2 web", scriptType: "TruClient 2.0 - Web", wantName: "TruClient 2.0 - Web", wantStatus: ScopeReviewOnly, wantFound: true},
+		{name: "truclient 2 web compact", scriptType: "TruClient20Web", wantName: "TruClient 2.0 - Web", wantStatus: ScopeReviewOnly, wantFound: true},
 		{name: "desktop truclient", scriptType: "TruClient", wantName: "TruClient", wantStatus: ScopeOutOfScope, wantFound: true},
 		{name: "desktop truclient 2", scriptType: "TruClient 2.0", wantName: "TruClient", wantStatus: ScopeOutOfScope, wantFound: true},
 		{name: "unknown", scriptType: "Web", wantFound: false},
@@ -81,8 +81,8 @@ func TestImportScopeError(t *testing.T) {
 	}
 
 	err = ImportScopeError("TruClient 2.0 - Web")
-	if err == nil || !containsAll(err.Error(), "recognized but not implemented yet", "VuGen Web 2.0") {
-		t.Fatalf("ImportScopeError web2 = %v, want planned-scope guidance", err)
+	if err == nil || !containsAll(err.Error(), "requires guided import review", "Review-only VuGen Web 2.0") {
+		t.Fatalf("ImportScopeError web2 = %v, want review-only guidance", err)
 	}
 
 	err = ImportScopeError("TruClient")

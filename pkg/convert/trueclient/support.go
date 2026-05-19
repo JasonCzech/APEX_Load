@@ -98,12 +98,12 @@ var scriptTypeScopes = []ScriptTypeScope{
 	{
 		CanonicalName:    "truclient2_web",
 		DisplayName:      "TruClient 2.0 - Web",
-		Status:           ScopePlanned,
+		Status:           ScopeReviewOnly,
 		StormrunnerShape: "vugen_web2 browser profile",
 		SupportedInputs:  []string{"LoadRunner ZIP", ".usr project metadata", "default.xml", "object repository files", "parameter files", "runtime settings"},
 		RequiredEvidence: []string{"fixture-backed parser coverage", "object identification summary", "runtime settings parity", "browser replay evidence", "browser-to-http conversion evidence"},
 		ReviewSections:   []string{"web2_profile_summary", "object_identification", "runtime_settings_parity", "browser_replay_evidence", "conversion_readiness"},
-		Notes:            "Planned VuGen Web 2.0 browser-profile import and creation scope; see docs/VUGEN_WEB2_TRUCLIENT2_PARITY_PLAN.md.",
+		Notes:            "Review-only VuGen Web 2.0 browser-profile import scope; supported step shapes produce a browser draft, but selector identity, waits, runtime parity, and replay evidence must be reviewed before promotion.",
 	},
 	{
 		CanonicalName:    "truclient_web",

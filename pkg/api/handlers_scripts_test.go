@@ -1839,8 +1839,8 @@ func TestHandleLoadRunnerSupportMatrix(t *testing.T) {
 	if !containsLoadRunnerTrueClientScriptType(result.TrueClientScriptTypes, "truclient_mobile_web", "supported") {
 		t.Fatalf("trueclient_script_types = %#v, want active Mobile Web row", result.TrueClientScriptTypes)
 	}
-	if !containsLoadRunnerTrueClientScriptType(result.TrueClientScriptTypes, "truclient2_web", "planned") {
-		t.Fatalf("trueclient_script_types = %#v, want planned Web 2.0 row", result.TrueClientScriptTypes)
+	if !containsLoadRunnerTrueClientScriptType(result.TrueClientScriptTypes, "truclient2_web", "review_only") {
+		t.Fatalf("trueclient_script_types = %#v, want review-only Web 2.0 row", result.TrueClientScriptTypes)
 	}
 	if !containsLoadRunnerTrueClientCapability(result.Web2ProfileCapabilities, "object_identification", "planned") {
 		t.Fatalf("web2_profile_capabilities = %#v, want planned object identification capability", result.Web2ProfileCapabilities)

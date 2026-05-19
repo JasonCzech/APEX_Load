@@ -10,6 +10,7 @@ import (
 	"testing"
 	"unicode/utf16"
 
+	"github.com/jasonczech/stormrunner/pkg/convert/trueclient"
 	"github.com/jasonczech/stormrunner/pkg/dsl"
 )
 
@@ -1781,7 +1782,7 @@ Type=TruClient
 	}
 }
 
-func TestConvertZipInspectsPlannedTruClientWeb2Archive(t *testing.T) {
+func TestConvertZipProducesReviewDraftForTruClientWeb2Archive(t *testing.T) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 	addFile := func(name string, content string) {
@@ -1811,15 +1812,45 @@ Type=TruClient 2.0 - Web
 		t.Fatalf("zip.Close returned error: %v", err)
 	}
 
-	_, err := ConvertZip(buf.Bytes(), ConvertOptions{})
-	if err == nil {
-		t.Fatal("ConvertZip error = nil, want planned TruClient Web 2 guidance")
+	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip returned error: %v", err)
 	}
-	for _, want := range []string{"recognized but not implemented yet", "TruClient 2.0 - Web", "default.xml with 2 executable steps", "1 object repository file(s)", "1 parameter file(s)", "1 runtime file(s)"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Fatalf("ConvertZip error = %q, want substring %q", err.Error(), want)
+	if result.Script.Protocol != "browser" {
+		t.Fatalf("protocol = %q, want browser", result.Script.Protocol)
+	}
+	if len(result.Script.Actions) != 2 {
+		t.Fatalf("actions = %#v, want navigate and click actions", result.Script.Actions)
+	}
+	if result.Script.Actions[0].Type != "browser_navigate" || result.Script.Actions[1].Type != "browser_click" {
+		t.Fatalf("actions = %#v, want browser navigate and click", result.Script.Actions)
+	}
+	if !containsString(result.Warnings, "TruClient 2.0 - Web import is review-only; validate selectors, waits, runtime settings, and replay evidence before promotion.") {
+		t.Fatalf("warnings = %#v, want review-only warning", result.Warnings)
+	}
+	if result.Script.Metadata == nil || result.Script.Metadata.Import == nil {
+		t.Fatal("expected import metadata to be populated")
+	}
+	preserved := result.Script.Metadata.Import.Preserved
+	if preserved["source_script_type"] != "TruClient 2.0 - Web" || preserved["source_profile"] != "vugen_web2 browser profile" {
+		t.Fatalf("preserved source metadata = %#v, want TruClient 2.0 Web profile", preserved)
+	}
+	inspection, ok := preserved["trueclient_archive_inspection"].(*trueclient.ArchiveInspection)
+	if !ok {
+		t.Fatalf("trueclient_archive_inspection = %#v, want *trueclient.ArchiveInspection", preserved["trueclient_archive_inspection"])
+	}
+	if inspection.StepInventory.Total != 2 || len(inspection.ObjectRepositories) != 1 || len(inspection.ParameterFiles) != 1 || len(inspection.RuntimeFiles) != 1 {
+		t.Fatalf("inspection = %#v, want step/object/parameter/runtime inventory", inspection)
+	}
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
 		}
 	}
+	return false
 }
 
 func encodeUTF16LEForZip(text string) string {

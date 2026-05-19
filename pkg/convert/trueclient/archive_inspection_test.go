@@ -14,8 +14,8 @@ func TestInspectArchivePreservesWeb2MetadataInputs(t *testing.T) {
 		t.Fatalf("InspectArchive returned error: %v", err)
 	}
 
-	if inspection.ScriptTypeScope == nil || inspection.ScriptTypeScope.CanonicalName != "truclient2_web" || inspection.ScriptTypeScope.Status != ScopePlanned {
-		t.Fatalf("script type scope = %#v, want planned TruClient 2.0 Web scope", inspection.ScriptTypeScope)
+	if inspection.ScriptTypeScope == nil || inspection.ScriptTypeScope.CanonicalName != "truclient2_web" || inspection.ScriptTypeScope.Status != ScopeReviewOnly {
+		t.Fatalf("script type scope = %#v, want review-only TruClient 2.0 Web scope", inspection.ScriptTypeScope)
 	}
 	if inspection.DefaultXML == nil || inspection.DefaultXML.Path != "Web2/default.xml" || inspection.DefaultXML.Kind != "default_xml" {
 		t.Fatalf("default_xml = %#v, want Web2/default.xml summary", inspection.DefaultXML)
