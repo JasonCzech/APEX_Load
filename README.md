@@ -299,6 +299,7 @@ GET    /api/v1/system/health            — Health check
 GET    /api/v1/system/readiness         — Production readiness checks
 GET    /api/v1/system/inventory         — Controller and generator inventory
 GET    /api/v1/system/usage             — Usage accounting rollups
+GET    /api/v1/system/parity-status     — Platform and competitive parity status
 PATCH  /api/v1/system/generators/drain  — Cordon, drain, or reactivate a generator
 ```
 

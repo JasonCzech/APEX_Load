@@ -6,9 +6,10 @@ import (
 )
 
 type ParityStatusResponse struct {
-	GeneratedAt time.Time          `json:"generated_at"`
-	Overall     string             `json:"overall"`
-	Areas       []ParityStatusArea `json:"areas"`
+	GeneratedAt       time.Time               `json:"generated_at"`
+	Overall           string                  `json:"overall"`
+	Areas             []ParityStatusArea      `json:"areas"`
+	CompetitiveParity []CompetitiveParityArea `json:"competitive_parity,omitempty"`
 }
 
 type ParityStatusArea struct {
@@ -20,6 +21,18 @@ type ParityStatusArea struct {
 	Remaining    []string `json:"remaining,omitempty"`
 	ReleaseGate  bool     `json:"release_gate"`
 	BlockingGate bool     `json:"blocking_gate,omitempty"`
+}
+
+type CompetitiveParityArea struct {
+	ID            string   `json:"id"`
+	Name          string   `json:"name"`
+	Status        string   `json:"status"`
+	Competitors   []string `json:"competitors,omitempty"`
+	Summary       string   `json:"summary"`
+	Evidence      []string `json:"evidence,omitempty"`
+	Remaining     []string `json:"remaining,omitempty"`
+	Decision      string   `json:"decision,omitempty"`
+	EvidenceLevel string   `json:"evidence_level,omitempty"`
 }
 
 func (s *Server) handleGetParityStatus(w http.ResponseWriter, r *http.Request) {
@@ -94,9 +107,140 @@ func buildParityStatus(now time.Time) ParityStatusResponse {
 		},
 	}
 	return ParityStatusResponse{
-		GeneratedAt: now,
-		Overall:     aggregateParityStatus(areas),
-		Areas:       areas,
+		GeneratedAt:       now,
+		Overall:           aggregateParityStatus(areas),
+		Areas:             areas,
+		CompetitiveParity: buildCompetitiveParityStatus(),
+	}
+}
+
+func buildCompetitiveParityStatus() []CompetitiveParityArea {
+	return []CompetitiveParityArea{
+		{
+			ID:          "developer_experience",
+			Name:        "Developer Script-As-Code Experience",
+			Status:      "partial",
+			Competitors: []string{"k6"},
+			Summary:     "Stormrunner has CLI execution, JSON DSL validation, CI templates, and importable scripts, but it is not yet as familiar or portable as k6's JavaScript-first local/cloud workflow.",
+			Evidence: []string{
+				"README.md#build--run",
+				"docs/K6_NEOLOAD_PARITY_PLAN.md#phase-c2-k6-aligned-developer-experience",
+				".github/actions/stormrunner-run/action.yml",
+			},
+			Remaining: []string{
+				"Add local script explain output, JSON validation mode, k6 result ingestion, and constrained k6 HTTP conversion/export.",
+			},
+			Decision:      "differentiate",
+			EvidenceLevel: "docs+code",
+		},
+		{
+			ID:          "managed_scale_load_zones",
+			Name:        "Managed Scale And Load Zones",
+			Status:      "partial",
+			Competitors: []string{"k6", "NeoLoad"},
+			Summary:     "Stormrunner exposes regional generator inventory, capacity APIs, placement rejection visibility, and autoscaling guidance, but still needs named load-zone packaging and published benchmark evidence.",
+			Evidence: []string{
+				"/api/v1/system/inventory",
+				"/api/v1/fleet/capacity",
+				"/api/v1/fleet/alerts",
+				"docs/ENTERPRISE_GENERATOR_FLEET_MODEL.md",
+				"docs/ENTERPRISE_AUTOSCALING_SIGNALS.md",
+			},
+			Remaining: []string{
+				"Promote regions to named load zones with cost/capacity metadata and publish benchmark-backed density envelopes.",
+			},
+			Decision:      "match_with_packaging",
+			EvidenceLevel: "api+docs+tests",
+		},
+		{
+			ID:          "authoring_recording",
+			Name:        "Authoring, Recording, And Guided Repair",
+			Status:      "partial",
+			Competitors: []string{"k6", "NeoLoad"},
+			Summary:     "Stormrunner supports script imports, templates, validation, replay evidence, authoring sessions, and guided repair contracts; the remaining gap is workflow polish versus k6 Test Builder and NeoLoad Designer.",
+			Evidence: []string{
+				"/api/v1/scripts/import/loadrunner",
+				"/api/v1/scripts/import/jmeter",
+				"/api/v1/scripts/import/sample",
+				"docs/ENTERPRISE_AUTHORING_CONTRACT.md",
+				"docs/SCRIPT_AUTHORING_CONSOLIDATION_ROADMAP.md",
+			},
+			Remaining: []string{
+				"Finish guided task flows and unify recorder/import/manual repair review into one calmer operator experience.",
+			},
+			Decision:      "match_core_workflows",
+			EvidenceLevel: "api+docs+dashboard",
+		},
+		{
+			ID:          "browser_testing",
+			Name:        "Browser Testing And Client UX Evidence",
+			Status:      "partial",
+			Competitors: []string{"k6", "NeoLoad"},
+			Summary:     "Stormrunner has browser replay, mobile web profile guidance, client metrics, and archive evidence, while deliberately treating browser VUsers as diagnostic canaries until benchmark data supports broader claims.",
+			Evidence: []string{
+				"/api/v1/scripts/browser-replay/sessions",
+				"docs/MOBILE_BROWSER_EMULATION_PLAN.md",
+				"docs/BROWSER_CLIENT_METRICS_PLAN.md",
+			},
+			Remaining: []string{
+				"Publish browser benchmark artifacts and keep high-density browser load claims out of release gates until evidence exists.",
+			},
+			Decision:      "bounded_canary_support",
+			EvidenceLevel: "api+docs+external_evidence_required",
+		},
+		{
+			ID:          "analysis_integrations",
+			Name:        "Analysis, APM, And Root-Cause Integrations",
+			Status:      "partial",
+			Competitors: []string{"k6", "NeoLoad"},
+			Summary:     "Stormrunner has OpenTelemetry, Prometheus export, archives, comparison reports, release trends, and trace correlation primitives, but lacks NeoLoad-grade packaged root-cause and APM profile workflows.",
+			Evidence: []string{
+				"/metrics",
+				"/api/v1/tests/{id}/archive/report",
+				"/api/v1/tests/{id}/archive/comparison",
+				"docs/RUNTIME_TELEMETRY_SLA_PLAN.md",
+				"docs/PLATFORM_GAP_ANALYSIS.md#51-apm--observability-correlation",
+			},
+			Remaining: []string{
+				"Add APM profiles, infrastructure monitor packs, and an archive root-cause summary engine.",
+			},
+			Decision:      "match_packaged_analysis",
+			EvidenceLevel: "api+docs",
+		},
+		{
+			ID:          "specialized_enterprise_protocols",
+			Name:        "Specialized Enterprise Protocol Breadth",
+			Status:      "gap",
+			Competitors: []string{"NeoLoad"},
+			Summary:     "Stormrunner covers HTTP/API, SOAP, Java-over-HTTP, JMS, WebSocket, gRPC, HAR, JMeter, DevWeb, and LoadRunner migration paths, but native SAP GUI, Citrix, Oracle Forms, and desktop UI protocols remain demand-gated non-goals.",
+			Evidence: []string{
+				"docs/K6_NEOLOAD_PARITY_PLAN.md#phase-c6-specialized-enterprise-protocol-decisions",
+				"docs/PROTOCOL_EXTENSION_PLAN.md",
+				"docs/BROWSER_CLIENT_METRICS_PLAN.md#non-goals",
+			},
+			Remaining: []string{
+				"Complete customer-backed demand assessment and publish explicit non-goal or coexistence guidance for unsupported legacy protocols.",
+			},
+			Decision:      "demand_gated_non_goal",
+			EvidenceLevel: "docs",
+		},
+		{
+			ID:          "packaging_samples_trust",
+			Name:        "Packaging, Samples, And Trust",
+			Status:      "partial",
+			Competitors: []string{"k6", "NeoLoad"},
+			Summary:     "Stormrunner has docs, CI templates, dashboard workflows, and several sample/import paths, but evaluators still need canonical demos, a public support matrix, and release notes that connect claims to benchmark artifacts.",
+			Evidence: []string{
+				"README.md#quick-start",
+				"docs/K6_NEOLOAD_PARITY_PLAN.md#phase-c7-competitive-packaging-samples-and-trust",
+				"docs/LOADRUNNER_RTS_REFERENCE.md",
+			},
+			Remaining: []string{
+				"Publish canonical sample projects, one-command demo seeding, and an honest Stormrunner versus k6 versus NeoLoad matrix.",
+			},
+			Decision:      "evidence_gate",
+			EvidenceLevel: "docs",
+		},
 	}
 }
 

@@ -27,6 +27,9 @@ func TestHandleGetParityStatusReturnsReleaseGateSummary(t *testing.T) {
 	if len(payload.Areas) != 7 {
 		t.Fatalf("area count = %d, want 7", len(payload.Areas))
 	}
+	if len(payload.CompetitiveParity) == 0 {
+		t.Fatalf("competitive parity section is empty")
+	}
 	required := map[string]bool{
 		"architecture":  false,
 		"fleet":         false,
@@ -44,6 +47,60 @@ func TestHandleGetParityStatusReturnsReleaseGateSummary(t *testing.T) {
 	for id, ok := range required {
 		if !ok {
 			t.Fatalf("missing populated parity area %q in %#v", id, payload.Areas)
+		}
+	}
+}
+
+func TestCompetitiveParityStatusExposesEvidenceAndNonGoals(t *testing.T) {
+	areas := buildCompetitiveParityStatus()
+	if len(areas) != 7 {
+		t.Fatalf("competitive area count = %d, want 7", len(areas))
+	}
+
+	required := map[string]bool{
+		"developer_experience":             false,
+		"managed_scale_load_zones":         false,
+		"authoring_recording":              false,
+		"browser_testing":                  false,
+		"analysis_integrations":            false,
+		"specialized_enterprise_protocols": false,
+		"packaging_samples_trust":          false,
+	}
+	competitorCoverage := map[string]bool{
+		"k6":      false,
+		"NeoLoad": false,
+	}
+	for _, area := range areas {
+		if _, ok := required[area.ID]; ok {
+			required[area.ID] = area.Status != "" &&
+				area.Summary != "" &&
+				area.Decision != "" &&
+				area.EvidenceLevel != "" &&
+				len(area.Evidence) > 0 &&
+				len(area.Remaining) > 0
+		}
+		for _, competitor := range area.Competitors {
+			if _, ok := competitorCoverage[competitor]; ok {
+				competitorCoverage[competitor] = true
+			}
+		}
+		if area.ID == "specialized_enterprise_protocols" {
+			if area.Status != "gap" {
+				t.Fatalf("specialized protocol status = %q, want gap", area.Status)
+			}
+			if area.Decision != "demand_gated_non_goal" {
+				t.Fatalf("specialized protocol decision = %q, want demand_gated_non_goal", area.Decision)
+			}
+		}
+	}
+	for id, ok := range required {
+		if !ok {
+			t.Fatalf("missing populated competitive parity area %q in %#v", id, areas)
+		}
+	}
+	for competitor, ok := range competitorCoverage {
+		if !ok {
+			t.Fatalf("missing competitive coverage for %q in %#v", competitor, areas)
 		}
 	}
 }

@@ -772,6 +772,14 @@ GET /api/v1/system/health
 }
 ```
 
+#### Parity status
+
+```
+GET /api/v1/system/parity-status
+```
+
+Returns the release-gate parity checklist for platform areas plus a competitive parity section for k6 and NeoLoad dimensions. Each competitive item includes status, competitors, evidence pointers, remaining work, product decision, and evidence level so release reviews can separate supported claims from partial, bounded, or demand-gated gaps.
+
 #### Global WebSocket stream
 
 ```

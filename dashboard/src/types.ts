@@ -1474,10 +1474,23 @@ export interface ParityStatusArea {
   blocking_gate?: boolean
 }
 
+export interface CompetitiveParityArea {
+  id: string
+  name: string
+  status: 'supported' | 'partial' | 'gap' | 'blocked' | string
+  competitors?: string[]
+  summary: string
+  evidence?: string[]
+  remaining?: string[]
+  decision?: string
+  evidence_level?: string
+}
+
 export interface ParityStatusResponse {
   generated_at: string
   overall: 'complete' | 'partial' | 'blocked' | string
   areas: ParityStatusArea[]
+  competitive_parity?: CompetitiveParityArea[]
 }
 
 export interface DashboardThresholdSettings {
