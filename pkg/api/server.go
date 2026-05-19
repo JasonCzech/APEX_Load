@@ -324,6 +324,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("GET /api/v1/system/parity-status", cors(log(auth(http.HandlerFunc(s.handleGetParityStatus)))))
 	s.mux.Handle("GET /api/v1/system/browser-benchmarks", cors(log(auth(http.HandlerFunc(s.handleGetBrowserBenchmarkEvidence)))))
 	s.mux.Handle("GET /api/v1/runtime-settings/support-matrix", cors(log(auth(http.HandlerFunc(s.handleRuntimeSettingsSupportMatrix)))))
+	s.mux.Handle("GET /api/v1/protocol-bundles/support-matrix", cors(log(auth(http.HandlerFunc(s.handleProtocolBundleSupportMatrix)))))
 	s.mux.Handle("GET /api/v1/integrations/apm/profiles", cors(log(auth(http.HandlerFunc(s.handleListAPMIntegrationProfiles)))))
 	s.mux.Handle("GET /api/v1/monitoring/packs", cors(log(auth(http.HandlerFunc(s.handleListInfrastructureMonitorPacks)))))
 	s.mux.Handle("GET /api/v1/reports/profiles", cors(log(auth(http.HandlerFunc(s.handleListReportProfiles)))))
