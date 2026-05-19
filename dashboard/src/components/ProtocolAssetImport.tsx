@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { useAsyncTask } from '../hooks/useAsyncTask'
 import { useApi } from '../hooks/useApi'
 import { type StoredScript } from '../types'
-import { type DevWebImportResult, type HARImportResult } from '../types/scriptImports'
+import { type DevWebImportResult, type HARImportResult, type OpenAPIImportResult, type WSDLImportResult } from '../types/scriptImports'
 import { type ScriptDefinition } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import ScriptImportReview from './ScriptImportReview'
@@ -11,7 +11,7 @@ import { withFallbackPersistedScript } from './importSaveUtils'
 import { type ImportedSaveResult } from './useScriptsAuthoringState'
 import './SampleScriptImport.css'
 
-type ImportKind = 'devweb' | 'har'
+type ImportKind = 'devweb' | 'har' | 'openapi' | 'wsdl'
 
 interface Props {
   kind: ImportKind
@@ -36,9 +36,23 @@ const copy = {
     drop: 'Drop a .har file here',
     button: 'Convert HAR',
   },
+  openapi: {
+    title: 'Import OpenAPI',
+    subtitle: 'Upload an OpenAPI or Swagger JSON/YAML document and generate grouped REST request flows, auth placeholders, and data-source review notes.',
+    accept: '.json,.yaml,.yml,application/json,application/yaml,text/yaml,text/plain',
+    drop: 'Drop an OpenAPI JSON or YAML file here',
+    button: 'Convert OpenAPI',
+  },
+  wsdl: {
+    title: 'Import WSDL',
+    subtitle: 'Upload a WSDL document and generate SOAP request actions with SOAPAction, namespace, payload, and fault review guidance.',
+    accept: '.wsdl,.xml,text/xml,application/xml',
+    drop: 'Drop a .wsdl or .xml file here',
+    button: 'Convert WSDL',
+  },
 } satisfies Record<ImportKind, Record<string, string>>
 
-type ProtocolImportResult = DevWebImportResult | HARImportResult
+type ProtocolImportResult = DevWebImportResult | HARImportResult | OpenAPIImportResult | WSDLImportResult
 
 export default function ProtocolAssetImport({ kind, projectId, onImported, onEdit, onClose }: Props) {
   const api = useApi()
@@ -48,12 +62,13 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
   const [file, setFile] = useState<File | null>(null)
   const [name, setName] = useState('')
   const [baseURL, setBaseURL] = useState('')
+  const [soapVersion, setSoapVersion] = useState('1.1')
   const [messageError, setMessageError] = useState('')
   const labels = copy[kind]
 
   const handleConvert = async () => {
     if (!file) {
-      setMessageError(`Please upload ${kind === 'devweb' ? 'a DevWeb script' : 'a HAR file'}.`)
+      setMessageError(`Please upload ${kind === 'devweb' ? 'a DevWeb script' : kind === 'har' ? 'a HAR file' : kind === 'openapi' ? 'an OpenAPI document' : 'a WSDL document'}.`)
       return
     }
     setMessageError('')
@@ -64,9 +79,10 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
           base_url: baseURL || undefined,
           project_id: projectId,
         }
-        return kind === 'devweb'
-          ? api.importDevWeb(file, options)
-          : api.importHAR(file, options)
+        if (kind === 'devweb') return api.importDevWeb(file, options)
+        if (kind === 'har') return api.importHAR(file, options)
+        if (kind === 'openapi') return api.importOpenAPI(file, options)
+        return api.importWSDL(file, { ...options, soap_version: soapVersion })
       }, { clearValue: true })
     } catch (error: unknown) {
       setMessageError(getErrorMessage(error, `${labels.title} failed`))
@@ -113,6 +129,15 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
             <span>Base URL Override</span>
             <input value={baseURL} onChange={event => setBaseURL(event.target.value)} placeholder="https://api.example.com" />
           </label>
+          {kind === 'wsdl' && (
+            <label className="sample-import-field">
+              <span>SOAP Version</span>
+              <select value={soapVersion} onChange={event => setSoapVersion(event.target.value)}>
+                <option value="1.1">SOAP 1.1</option>
+                <option value="1.2">SOAP 1.2</option>
+              </select>
+            </label>
+          )}
         </div>
       </div>
 
@@ -128,7 +153,7 @@ export default function ProtocolAssetImport({ kind, projectId, onImported, onEdi
         <div className="sample-import-result">
           <ScriptImportReview
             title="Review Generated Script"
-            subtitle={`${actionCount} action(s) generated from ${kind === 'devweb' ? 'DevWeb source' : 'HAR entries'}.`}
+            subtitle={`${actionCount} action(s) generated from ${kind === 'devweb' ? 'DevWeb source' : kind === 'har' ? 'HAR entries' : kind === 'openapi' ? 'OpenAPI operations' : 'WSDL operations'}.`}
             script={(result.script || result.scripts?.[0])!}
             warnings={result.warnings}
             saving={saveTask.pending}

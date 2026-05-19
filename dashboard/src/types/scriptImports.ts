@@ -158,6 +158,29 @@ export interface DevWebImportStats {
 
 export type HARImportStats = SampleImportStats
 
+export interface OpenAPIImportStats {
+  format: string
+  openapi_version?: string
+  total_paths: number
+  total_operations: number
+  converted_actions: number
+  request_bodies: number
+  assertions: number
+  parameters_detected: number
+  auth_schemes_detected?: string[]
+  skipped_operations?: string[]
+}
+
+export interface WSDLImportStats {
+  format: string
+  services: number
+  port_types: number
+  bindings: number
+  operations_detected: number
+  converted_actions: number
+  soap_actions_detected?: string[]
+}
+
 export interface SampleCorrelation {
   name: string
   source: string
@@ -182,6 +205,8 @@ export type JMeterImportResult = ScriptImportResult<JMeterConvertStats, unknown,
 export type SampleImportResult = ScriptImportResult<SampleImportStats, SampleCorrelation>
 export type DevWebImportResult = ScriptImportResult<DevWebImportStats, unknown>
 export type HARImportResult = ScriptImportResult<HARImportStats, SampleCorrelation>
+export type OpenAPIImportResult = ScriptImportResult<OpenAPIImportStats, unknown>
+export type WSDLImportResult = ScriptImportResult<WSDLImportStats, unknown>
 export type RecorderImportResult = ScriptImportResult<Record<string, unknown>, RecorderCorrelation>
 
 export interface JMeterSupportMatrixResponse {

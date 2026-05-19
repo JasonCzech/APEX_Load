@@ -93,6 +93,16 @@ export default function ScriptsAuthoringSurface({
         <ProtocolAssetImport kind="har" projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
         onOpenCreateOptions,
       )
+    case 'openapi-import':
+      return renderCreateOptionsSurface(
+        <ProtocolAssetImport kind="openapi" projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
+        onOpenCreateOptions,
+      )
+    case 'wsdl-import':
+      return renderCreateOptionsSurface(
+        <ProtocolAssetImport kind="wsdl" projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
+        onOpenCreateOptions,
+      )
     default:
       return null
   }

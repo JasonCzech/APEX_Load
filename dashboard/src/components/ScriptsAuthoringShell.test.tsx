@@ -96,6 +96,8 @@ function createActions(overrides: Partial<ScriptsCreateOptionActions> = {}): Scr
     openJavaHttpImport: vi.fn(),
     openDevWebImport: vi.fn(),
     openHARImport: vi.fn(),
+    openOpenAPIImport: vi.fn(),
+    openWSDLImport: vi.fn(),
     ...overrides,
   }
 }
@@ -158,9 +160,18 @@ describe('ScriptsAuthoringShell', () => {
 
     expect(container.textContent).toContain('Create Script')
     expect(container.textContent).toContain('Import LoadRunner')
+    await clickButton('Start From Source')
+    expect(container.textContent).toContain('OpenAPI / Swagger')
+    expect(container.textContent).toContain('WSDL / SOAP')
+
+    await clickButton('OpenAPI / Swagger')
+    expect(actions.openOpenAPIImport).toHaveBeenCalled()
+
     await clickButton('Import Existing')
     expect(container.textContent).toContain('Import DevWeb')
     expect(container.textContent).toContain('Import HAR')
+    expect(container.textContent).toContain('Import OpenAPI')
+    expect(container.textContent).toContain('Import WSDL')
 
     await clickButton('Import LoadRunner')
     expect(actions.openLoadRunnerImport).toHaveBeenCalled()

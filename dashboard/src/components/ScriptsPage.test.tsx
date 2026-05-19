@@ -138,6 +138,22 @@ vi.mock('./JavaHttpImport', () => ({
   ),
 }))
 
+vi.mock('./ProtocolAssetImport', () => ({
+  default: ({ kind, onEdit }: { kind: string, onEdit?: (script: { name: string, version: string, protocol: string, config: { base_url: string }, actions: unknown[] }) => void }) => (
+    <div data-testid={`protocol-import-${kind}`}>
+      <span>protocol-import:{kind}</span>
+      <button onClick={() => onEdit?.({
+        name: `${kind.toUpperCase()} Draft`,
+        version: '1.0.0',
+        protocol: kind === 'wsdl' ? 'soap' : 'http',
+        config: { base_url: `https://${kind}.example.com` },
+        actions: [],
+      })}
+      >mock-{kind}-edit</button>
+    </div>
+  ),
+}))
+
 describe('ScriptsPage', () => {
   let container: HTMLDivElement
   let root: Root
@@ -315,8 +331,88 @@ describe('ScriptsPage', () => {
     })
 
     expect(container.textContent).toContain('0 matching scripts')
-    expect(container.textContent).toContain('No scripts match this search.')
+    expect(container.textContent).toContain('No scripts match these filters.')
     expect(container.textContent).not.toContain('Existing Script')
+  })
+
+  it('filters the script library by authoring health categories', async () => {
+    apiMock.listScripts.mockResolvedValueOnce({
+      scripts: [
+        {
+          id: 'blocked-script',
+          name: 'Blocked Script',
+          protocol: 'http',
+          version: '1.0.0',
+          created_at: '2026-05-12T20:00:00Z',
+          authoring_health: { score: 20, status: 'blocked', inputs: [{ key: 'validation', status: 'blocker', summary: 'Script has blocking validation errors.' }] },
+        },
+        {
+          id: 'runtime-script',
+          name: 'Runtime Warning Script',
+          protocol: 'http',
+          version: '1.0.0',
+          created_at: '2026-05-12T20:00:00Z',
+          authoring_health: { score: 70, status: 'needs_review', inputs: [{ key: 'runtime_parity', status: 'warning', summary: 'Runtime parity warning requires review.' }] },
+        },
+        {
+          id: 'ai-script',
+          name: 'AI Guardrail Script',
+          protocol: 'http',
+          version: '1.0.0',
+          created_at: '2026-05-12T20:00:00Z',
+          authoring_health: { score: 80, status: 'needs_review', inputs: [{ key: 'ai_guardrails', status: 'warning', summary: 'AI provenance requires approval.' }] },
+        },
+      ],
+    })
+
+    await act(async () => {
+      root.render(<ScriptsPage />)
+    })
+
+    await flushPromises()
+
+    expect(container.textContent).toContain('Blocked')
+    expect(container.textContent).toContain('Runtime Warning')
+    expect(container.textContent).toContain('AI Guardrail')
+
+    await clickButton('Runtime Warning')
+
+    expect(container.textContent).toContain('Runtime Warning Script')
+    expect(container.textContent).not.toContain('Blocked Script')
+    expect(container.textContent).not.toContain('AI Guardrail Script')
+
+    await clickButton('AI Guardrail')
+
+    expect(container.textContent).toContain('AI Guardrail Script')
+    expect(container.textContent).not.toContain('Runtime Warning Script')
+  })
+
+  it('routes source-guided OpenAPI import through the draft editor', async () => {
+    await act(async () => {
+      root.render(<ScriptsPage />)
+    })
+
+    await flushPromises()
+
+    const createButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('+ Create Script'))
+    expect(createButton).toBeDefined()
+    if (!createButton) {
+      return
+    }
+
+    await act(async () => {
+      createButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await clickButton('Start From Source')
+    await clickButton('OpenAPI / Swagger')
+
+    expect(container.querySelector('[data-testid="protocol-import-openapi"]')).not.toBeNull()
+
+    await clickButton('mock-openapi-edit')
+
+    expect(container.querySelector('[data-testid="script-editor"]')).not.toBeNull()
+    expect(container.textContent).toContain('editor:OPENAPI Draft')
   })
 
   it('routes jmeter import edit handoff through the draft editor', async () => {

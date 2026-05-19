@@ -117,14 +117,14 @@ Close the usability gap with VuGen, DevWeb, TruClient, and designer-style workfl
 
 | ID | Work Item | Priority | Status |
 | --- | --- | --- | --- |
-| W2.1 | Add component insertion from the Create Script component library into the ScriptEditor, not only discovery cards | P0 | Not started |
-| W2.2 | Add visual flow assembly for request groups, auth flows, login transactions, data pools, and teardown blocks | P0 | Not started |
-| W2.3 | Add OpenAPI/WSDL/source-file guided create flows to the Create Script workflow picker | P0 | Not started |
-| W2.4 | Add recorder/import/manual convergence checklist inside each draft: validate, repair, replay, approve/save | P0 | Partial |
-| W2.5 | Add visual diff review before saving migrated, generated, or repaired drafts, including a compact summary and full JSON diff | P1 | Partial |
-| W2.6 | Add undo/redo history for guided correlation, parameter, runtime, and component insertion changes | P1 | Partial for parameter data only |
-| W2.7 | Add authoring health dashboard filters: blocked, needs replay, missing data, runtime parity warning, AI guardrail warning | P1 | Partial |
-| W2.8 | Add sample-backed "fix this script" actions for common import warnings: selector instability, missing waits, hard-coded tokens, no data source, missing assertions | P1 | Partial |
+| W2.1 | Add component insertion from the Create Script component library into the ScriptEditor, not only discovery cards | P0 | Complete - ScriptEditor Flow Assembly inserts controller-owned components into drafts |
+| W2.2 | Add visual flow assembly for request groups, auth flows, login transactions, data pools, and teardown blocks | P0 | Complete - grouped request/auth/login/data/teardown blocks are insertable from the editor side lane |
+| W2.3 | Add OpenAPI/WSDL/source-file guided create flows to the Create Script workflow picker | P0 | Complete - Start From Source workflow routes OpenAPI, WSDL, HAR, DevWeb, and samples into review/edit flows |
+| W2.4 | Add recorder/import/manual convergence checklist inside each draft: validate, repair, replay, approve/save | P0 | Complete - every draft now shows a convergence checklist with validate, repair, replay, and approve/save actions |
+| W2.5 | Add visual diff review before saving migrated, generated, or repaired drafts, including a compact summary and full JSON diff | P1 | Complete - Draft Diff Review compares imported or guided-change baselines against current JSON |
+| W2.6 | Add undo/redo history for guided correlation, parameter, runtime, and component insertion changes | P1 | Complete - guided history covers runtime edits, parameterization, repair, migration, starter, and component changes |
+| W2.7 | Add authoring health dashboard filters: blocked, needs replay, missing data, runtime parity warning, AI guardrail warning | P1 | Complete - Script Library includes category chips with counts and filtered results |
+| W2.8 | Add sample-backed "fix this script" actions for common import warnings: selector instability, missing waits, hard-coded tokens, no data source, missing assertions | P1 | Complete - deterministic repair actions cover data sources, tokens, assertions, waits, and selectors |
 
 ### Acceptance Criteria
 

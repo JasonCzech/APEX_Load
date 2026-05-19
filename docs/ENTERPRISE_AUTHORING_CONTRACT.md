@@ -26,7 +26,7 @@ The dashboard script creation flow loads this backend catalog and renders starte
 - `kind`: optional exact component-kind filter, such as `request_group`, `auth_flow`, `login_transaction`, `data_pool`, or `teardown`
 - `protocol`: optional protocol filter; components with wildcard protocol support also match
 
-Each component includes the applicable protocols, summary, tags, and DSL snippets for config, init, actions, teardown, data sources, or parameters. The dashboard Create Script template lane surfaces this component library beside starter templates so authors can discover reusable request groups, auth flows, login transactions, data pools, and teardown blocks before entering the full editor. The ScriptEditor starter-block sidebar remains protocol-specific for in-editor insertion.
+Each component includes the applicable protocols, summary, tags, and DSL snippets for config, init, actions, teardown, data sources, or parameters. The dashboard Create Script template lane surfaces this component library beside starter templates so authors can discover reusable request groups, auth flows, login transactions, data pools, and teardown blocks before entering the full editor. The ScriptEditor Flow Assembly side lane loads the same backend component catalog filtered by the draft protocol and can insert matching blocks directly into the working draft with guided undo/redo history.
 
 Authoring sessions persist unsaved drafts and repair workflow state:
 
@@ -118,6 +118,10 @@ AI-generated drafts include `ai_guardrails` in validation responses when `genera
 
 The ScriptEditor renders validation evidence for both reports after draft or saved-script validation. Authors see authoring health, data-source fit status, row-count context, and AI guardrail blockers in the same validation flow used before replay, save, or approval.
 
+The Script Library adds health filters for blocked drafts, replay evidence gaps, missing data, runtime parity warnings, and AI guardrail warnings. These filters use the same `authoring_health.inputs` payload returned by validation and stored with script records, so dashboard triage follows the backend scoring model rather than a separate UI-only taxonomy.
+
+The draft editor now carries a convergence checklist across manual, recorder, import, OpenAPI, WSDL, HAR, DevWeb, and repair flows: validate, repair, replay, and approve/save. Deterministic repair actions cover missing data sources, hard-coded bearer/session tokens, missing assertions, unstable browser waits, and brittle selectors. Repairs are auditable through the editor change log, reversible through guided history, and visible in Draft Diff Review before save.
+
 ## Plan Mapping
 
 | Plan item | Status | Artifact |
@@ -131,4 +135,5 @@ The ScriptEditor renders validation evidence for both reports after draft or sav
 | P3.7 Data-source fit checks | Complete | Validation responses include `data_source_fit` and health scoring for source/column/row-count readiness; ScriptEditor displays fit evidence after validation |
 | P3.8 Protocol starter templates | Complete | `GET /api/v1/scripts/authoring/templates` returns validated protocol starter DSLs and scenario hints; dashboard create flow opens selected templates in the shared draft editor |
 | P3.9 AI generation guardrails | Complete for current authoring flow | Validation responses include `ai_guardrails`, block approval health without provenance, diff review, validation, and replay evidence, ScriptEditor displays guardrail evidence after validation, and the authoring review queue disables blocked promotion with next actions |
-| C5.6 Reusable component library | Complete | `GET /api/v1/scripts/authoring/components` exposes request groups, auth flows, login transactions, data pools, and teardown blocks; dashboard Create Script shows the catalog beside backend templates |
+| C5.6 Reusable component library | Complete | `GET /api/v1/scripts/authoring/components` exposes request groups, auth flows, login transactions, data pools, and teardown blocks; dashboard Create Script shows the catalog beside backend templates and ScriptEditor Flow Assembly inserts protocol-compatible components into drafts |
+| W2 Script authoring UX parity | Complete | Source-guided OpenAPI/WSDL/HAR/DevWeb create flows, insertable component blocks, convergence checklist, draft diff review, guided undo/redo, authoring health filters, and deterministic repair actions |

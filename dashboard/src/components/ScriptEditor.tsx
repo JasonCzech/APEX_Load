@@ -6,6 +6,7 @@ import {
   BrowserReplayReport,
   BrowserReplaySession,
   BrowserReplaySnapshot,
+  type AuthoringComponent,
   StoredScript,
   WSMessage,
 } from '../types'
@@ -25,15 +26,19 @@ import SnapshotTextPreview from './SnapshotTextPreview'
 import { extractSOAPFaultSummaryFromBody, formatSOAPFaultSummary } from './soapFaultUtils'
 import {
   applyMigrationAssistantSuggestion,
+  applyAuthoringComponentToScript,
+  applyScriptRepairSuggestion,
   buildImportedDraftDiffSummary,
   buildMigrationAssistantSuggestions,
   buildProtocolStarterTemplates,
+  buildScriptRepairSuggestions,
   collectAuthoringIssues,
   groupIssuesByAction,
   summarizeDataSources,
   summarizeParameters,
   type AuthoringIssue,
   type MigrationAssistantSuggestion,
+  type ScriptRepairSuggestion,
 } from './scriptAuthoringAssist'
 import {
   formatSnapshotRequestSection,
@@ -101,6 +106,14 @@ const BROWSER_DEVICE_PROFILES: readonly BrowserDeviceProfileOption[] = [
   { name: 'iphone_se', engine: 'webkit' },
   { name: 'pixel_8', engine: 'chromium' },
 ]
+
+const AUTHORING_COMPONENT_GROUPS = [
+  { kind: 'request_group', label: 'Request Groups' },
+  { kind: 'auth_flow', label: 'Auth Flows' },
+  { kind: 'login_transaction', label: 'Login Transactions' },
+  { kind: 'data_pool', label: 'Data Pools' },
+  { kind: 'teardown', label: 'Teardown Blocks' },
+] as const
 
 const WEBKIT_INSTALL_ADVISORY = 'WebKit execution requires Playwright WebKit assets installed on the controller host. Run go run github.com/playwright-community/playwright-go/cmd/playwright@v0.5700.1 install webkit before running browser tests or replay sessions.'
 
@@ -217,6 +230,11 @@ interface AssistantChangeLogItem {
   id: string
   summary: string
   title: string
+}
+
+interface EditorHistory {
+  past: ScriptData[]
+  future: ScriptData[]
 }
 
 type DataSourceConfig = ScriptDataSource
@@ -651,6 +669,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   }, [setOpenSections])
   const selectedBrowserEngine = script.config.browser?.engine || 'chromium'
   const [assistantChangeLog, setAssistantChangeLog] = useState<AssistantChangeLogItem[]>([])
+  const [editorHistory, setEditorHistory] = useState<EditorHistory>({ past: [], future: [] })
+  const [authoringComponents, setAuthoringComponents] = useState<AuthoringComponent[]>([])
+  const [componentLibraryStatus, setComponentLibraryStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const [validationEvidence, setValidationEvidence] = useState<ValidationEvidence | null>(null)
   const authoringIssues = collectAuthoringIssues(script)
   const actionIssueBuckets = groupIssuesByAction(authoringIssues, script.actions.length)
@@ -659,7 +680,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const warningCount = authoringIssues.filter((issue) => issue.severity === 'warning').length
   const starterTemplates = buildProtocolStarterTemplates(script.protocol, script.actions.length)
   const migrationSuggestions = buildMigrationAssistantSuggestions(script)
-  const importedDraftDiff = importMetadata ? buildImportedDraftDiffSummary(importBaselineScript, script) : null
+  const repairSuggestions = buildScriptRepairSuggestions(script, authoringIssues)
+  const reviewBaselineScript = importBaselineScript || editorHistory.past[editorHistory.past.length - 1] || null
+  const draftDiffSummary = reviewBaselineScript ? buildImportedDraftDiffSummary(reviewBaselineScript, script) : null
   const parameterInspectorItems = summarizeParameters(script.parameters || [])
   const dataSourceInspectorItems = summarizeDataSources(script.data_sources || [])
   const extractorInspectorItems = script.actions.flatMap((action, actionIndex) =>
@@ -675,6 +698,63 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     : selectedBrowserEngine === 'webkit'
       ? WEBKIT_INSTALL_ADVISORY
       : ''
+
+  const pushEditorHistory = useCallback((before: ScriptData) => {
+    setEditorHistory(previous => ({
+      past: [...previous.past, JSON.parse(JSON.stringify(before)) as ScriptData].slice(-30),
+      future: [],
+    }))
+  }, [])
+
+  const replaceScriptWithHistory = useCallback((nextScript: ScriptData, beforeScript: ScriptData = script) => {
+    pushEditorHistory(beforeScript)
+    setScript(nextScript)
+    if (jsonMode) setJsonText(JSON.stringify({ script: nextScript }, null, 2))
+  }, [jsonMode, pushEditorHistory, script, setJsonText, setScript])
+
+  const recordAssistantChange = useCallback((title: string, summary: string) => {
+    setAssistantChangeLog((previous) => [
+      {
+        id: `${title}:${previous.length}:${Date.now()}`,
+        title,
+        summary,
+      },
+      ...previous,
+    ].slice(0, 8))
+  }, [])
+
+  const undoEditorChange = useCallback(() => {
+    setEditorHistory(previous => {
+      const priorScript = previous.past[previous.past.length - 1]
+      if (!priorScript) return previous
+      const nextPast = previous.past.slice(0, -1)
+      const current = JSON.parse(JSON.stringify(script)) as ScriptData
+      setScript(priorScript)
+      if (jsonMode) setJsonText(JSON.stringify({ script: priorScript }, null, 2))
+      setSuccess('Undid the last guided authoring change.')
+      setError('')
+      return {
+        past: nextPast,
+        future: [current, ...previous.future].slice(0, 30),
+      }
+    })
+  }, [jsonMode, script, setError, setJsonText, setScript, setSuccess])
+
+  const redoEditorChange = useCallback(() => {
+    setEditorHistory(previous => {
+      const [nextScript, ...remainingFuture] = previous.future
+      if (!nextScript) return previous
+      const current = JSON.parse(JSON.stringify(script)) as ScriptData
+      setScript(nextScript)
+      if (jsonMode) setJsonText(JSON.stringify({ script: nextScript }, null, 2))
+      setSuccess('Redid the guided authoring change.')
+      setError('')
+      return {
+        past: [...previous.past, current].slice(-30),
+        future: remainingFuture,
+      }
+    })
+  }, [jsonMode, script, setError, setJsonText, setScript, setSuccess])
 
   useEffect(() => {
     if (!isParameterDialogOpen) return
@@ -700,7 +780,27 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
 
   useEffect(() => {
     setAssistantChangeLog([])
+    setEditorHistory({ past: [], future: [] })
   }, [importBaselineScript, initialScript, scriptId])
+
+  useEffect(() => {
+    let cancelled = false
+    setComponentLibraryStatus('loading')
+    api.listAuthoringComponents({ protocol: script.protocol })
+      .then((response) => {
+        if (cancelled) return
+        setAuthoringComponents(response.components || [])
+        setComponentLibraryStatus('ready')
+      })
+      .catch(() => {
+        if (cancelled) return
+        setAuthoringComponents([])
+        setComponentLibraryStatus('error')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [api, script.protocol])
 
   const handleCopyReplaySnapshotSection = async (key: string, value: string) => {
     if (!navigator.clipboard?.writeText) return
@@ -1058,6 +1158,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   }, [activeReplaySessionId, expandedReplayEvent, replayEventRefs])
 
   const updateField = (path: string, value: unknown) => {
+    if (path.startsWith('config.')) {
+      pushEditorHistory(script)
+    }
     setScript(prev => {
       const next = JSON.parse(JSON.stringify(prev)) as ScriptData
       const keys = path.split('.')
@@ -1075,6 +1178,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
 
   const updateProtocol = (protocol: string) => {
     let shouldSelectFirstAction = false
+    pushEditorHistory(script)
     setScript(prev => {
       const next = JSON.parse(JSON.stringify(prev)) as ScriptData
       next.protocol = protocol
@@ -1182,6 +1286,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     const template = starterTemplates.find((candidate) => candidate.key === templateKey)
     if (!template) return
     const nextAction = JSON.parse(JSON.stringify(template.action)) as Action
+    pushEditorHistory(script)
     setScript(prev => ({ ...prev, actions: [...prev.actions, nextAction] }))
     setActiveAction(script.actions.length)
     setSuccess(`Added starter block: ${template.label}.`)
@@ -1983,6 +2088,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const applyPendingParameterDraft = () => {
     if (!pendingParameterDraft) return
 
+    pushEditorHistory(script)
     const name = upsertParameterFromActionEditor({
       selectedText: pendingParameterDraft.seedValue,
       requestedName: pendingParameterDraft.requestedName,
@@ -2277,6 +2383,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       replacementMap.set(candidate.id, `{{data.auto_params.${candidate.varName}}}`)
     })
 
+    pushEditorHistory(script)
     setScript(prev => {
       const next = JSON.parse(JSON.stringify(prev)) as ScriptData
       next.actions = next.actions.map((action, actionIdx) => {
@@ -2346,18 +2453,59 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
 
   const applyMigrationSuggestion = (suggestion: MigrationAssistantSuggestion) => {
     const result = applyMigrationAssistantSuggestion(script, suggestion.key)
-    setScript(result.script)
-    setAssistantChangeLog((previous) => [
-      {
-        id: `${suggestion.key}:${previous.length}:${Date.now()}`,
-        title: suggestion.title,
-        summary: result.summary,
-      },
-      ...previous,
-    ].slice(0, 8))
+    replaceScriptWithHistory(result.script)
+    recordAssistantChange(suggestion.title, result.summary)
     setSuccess(result.summary)
     setError('')
   }
+
+  const applyRepairSuggestion = (suggestion: ScriptRepairSuggestion) => {
+    const result = applyScriptRepairSuggestion(script, suggestion.key)
+    replaceScriptWithHistory(result.script)
+    recordAssistantChange(suggestion.title, result.summary)
+    setSuccess(result.summary)
+    setError('')
+  }
+
+  const insertAuthoringComponent = (component: AuthoringComponent) => {
+    const result = applyAuthoringComponentToScript(script, component)
+    replaceScriptWithHistory(result.script)
+    recordAssistantChange(`Inserted ${component.name}`, result.summary)
+    setActiveAction(result.script.actions.length > 0 ? result.script.actions.length - 1 : null)
+    setSuccess(result.summary)
+    setError('')
+  }
+
+  const convergenceItems = [
+    {
+      key: 'validate',
+      label: 'Validate',
+      status: validationEvidence ? 'done' : errorCount > 0 ? 'needs attention' : 'ready',
+      action: handleValidateScript,
+      disabled: saving || replaying || validating || !script.name,
+    },
+    {
+      key: 'repair',
+      label: 'Repair',
+      status: repairSuggestions.length > 0 ? `${repairSuggestions.length} suggested` : 'done',
+      action: repairSuggestions[0] ? () => applyRepairSuggestion(repairSuggestions[0]) : undefined,
+      disabled: repairSuggestions.length === 0,
+    },
+    {
+      key: 'replay',
+      label: 'Replay',
+      status: replayReport?.completed_at ? (replayReport.success ? 'done' : 'failed') : 'needs replay',
+      action: handleReplay,
+      disabled: replaying || saving || validating || !script.name || script.actions.length === 0,
+    },
+    {
+      key: 'save',
+      label: 'Approve / Save',
+      status: validationEvidence && replayReport?.completed_at && errorCount === 0 ? 'ready' : 'needs evidence',
+      action: handleSave,
+      disabled: saving || validating || !script.name,
+    },
+  ]
 
   return (
     <div className="script-editor">
@@ -4316,6 +4464,98 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                   )}
                 </div>
 
+                <div className="utility-card">
+                  <div className="utility-card-header">
+                    <strong>Convergence Checklist</strong>
+                    <span>validate • repair • replay • save</span>
+                  </div>
+                  <div className="utility-checklist">
+                    {convergenceItems.map(item => (
+                      <div key={item.key} className="utility-checklist-item">
+                        <div>
+                          <strong>{item.label}</strong>
+                          <span>{item.status}</span>
+                        </div>
+                        {item.action && (
+                          <button type="button" className="btn btn-sm btn-secondary" onClick={item.action} disabled={item.disabled}>
+                            {item.label}
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="utility-card">
+                  <div className="utility-card-header">
+                    <strong>Guided History</strong>
+                    <span>{editorHistory.past.length} undo • {editorHistory.future.length} redo</span>
+                  </div>
+                  <div className="utility-inline-actions">
+                    <button type="button" className="btn btn-sm btn-secondary" onClick={undoEditorChange} disabled={editorHistory.past.length === 0}>Undo</button>
+                    <button type="button" className="btn btn-sm btn-secondary" onClick={redoEditorChange} disabled={editorHistory.future.length === 0}>Redo</button>
+                  </div>
+                  <div className="utility-empty-state">Tracks guided component, repair, parameter, and runtime changes.</div>
+                </div>
+
+                <div className="utility-card">
+                  <div className="utility-card-header">
+                    <strong>Flow Assembly</strong>
+                    <span>{componentLibraryStatus === 'ready' ? `${authoringComponents.length} blocks` : componentLibraryStatus}</span>
+                  </div>
+                  {authoringComponents.length > 0 ? (
+                    <div className="utility-stack">
+                      {AUTHORING_COMPONENT_GROUPS.map(group => {
+                        const groupComponents = authoringComponents.filter(component => component.kind === group.kind)
+                        if (groupComponents.length === 0) return null
+                        return (
+                          <div key={group.kind} className="utility-subsection">
+                            <strong>{group.label}</strong>
+                            <div className="utility-stack">
+                              {groupComponents.map(component => (
+                                <div key={component.id} className="utility-suggestion-card">
+                                  <strong>{component.name}</strong>
+                                  <p>{component.summary}</p>
+                                  {component.usage_notes?.length ? <p>{component.usage_notes[0]}</p> : null}
+                                  <button type="button" className="btn btn-sm btn-secondary" onClick={() => insertAuthoringComponent(component)}>
+                                    Insert Block
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    <div className="utility-empty-state">
+                      {componentLibraryStatus === 'error' ? 'Component library is unavailable.' : 'No reusable blocks match this protocol yet.'}
+                    </div>
+                  )}
+                </div>
+
+                <div className="utility-card">
+                  <div className="utility-card-header">
+                    <strong>Repair Actions</strong>
+                    <span>{repairSuggestions.length} suggestion{repairSuggestions.length === 1 ? '' : 's'}</span>
+                  </div>
+                  {repairSuggestions.length > 0 ? (
+                    <div className="utility-stack">
+                      {repairSuggestions.map((suggestion) => (
+                        <div key={suggestion.key} className="utility-suggestion-card">
+                          <strong>{suggestion.title}</strong>
+                          <p>{suggestion.description}</p>
+                          <button type="button" className="btn btn-sm btn-secondary" onClick={() => applyRepairSuggestion(suggestion)}>
+                            {suggestion.applyLabel}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="utility-empty-state">No deterministic repair actions are needed for this draft.</div>
+                  )}
+                </div>
+
                 {importMetadata && (
                   <div className="utility-card">
                     <div className="utility-card-header">
@@ -4353,32 +4593,32 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                   </div>
                 )}
 
-                {importMetadata && importedDraftDiff && (
+                {draftDiffSummary && (importMetadata || assistantChangeLog.length > 0 || editorHistory.past.length > 0) && (
                   <div className="utility-card">
                     <div className="utility-card-header">
-                      <strong>Imported Draft Review</strong>
-                      <span>{importedDraftDiff.changed ? 'Changed' : 'No changes'}</span>
+                      <strong>Draft Diff Review</strong>
+                      <span>{draftDiffSummary.changed ? 'Changed' : 'No changes'}</span>
                     </div>
                     <div className="utility-metric-row">
-                      <span className="action-signal-pill">{importedDraftDiff.actionChanges} action</span>
-                      <span className="action-signal-pill">{importedDraftDiff.parameterChanges} parameter</span>
-                      <span className="action-signal-pill">{importedDraftDiff.dataSourceChanges} data</span>
+                      <span className="action-signal-pill">{draftDiffSummary.actionChanges} action</span>
+                      <span className="action-signal-pill">{draftDiffSummary.parameterChanges} parameter</span>
+                      <span className="action-signal-pill">{draftDiffSummary.dataSourceChanges} data</span>
                     </div>
-                    {importedDraftDiff.details.length > 0 ? (
+                    {draftDiffSummary.details.length > 0 ? (
                       <ul className="utility-list">
-                        {importedDraftDiff.details.map((detail, index) => (
+                        {draftDiffSummary.details.map((detail, index) => (
                           <li key={`imported-diff-${index}`} className="utility-list-item">{detail}</li>
                         ))}
                       </ul>
                     ) : (
-                      <div className="utility-empty-state">Current draft still matches the imported baseline.</div>
+                      <div className="utility-empty-state">Current draft still matches the review baseline.</div>
                     )}
                     <details className="utility-json-review">
                       <summary>Review baseline vs current JSON</summary>
                       <div className="utility-json-grid">
                         <div>
-                          <strong>Imported Baseline</strong>
-                          <pre>{JSON.stringify(importBaselineScript, null, 2)}</pre>
+                          <strong>Review Baseline</strong>
+                          <pre>{JSON.stringify(reviewBaselineScript, null, 2)}</pre>
                         </div>
                         <div>
                           <strong>Current Draft</strong>

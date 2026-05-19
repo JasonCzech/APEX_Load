@@ -47,6 +47,8 @@ export default function ScriptsAuthoringShell({
         onOpenJMeterImport={createOptionActions.openJMeterImport}
         onOpenDevWebImport={createOptionActions.openDevWebImport}
         onOpenHARImport={createOptionActions.openHARImport}
+        onOpenOpenAPIImport={createOptionActions.openOpenAPIImport}
+        onOpenWSDLImport={createOptionActions.openWSDLImport}
       />
     )
   }

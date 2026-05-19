@@ -18,6 +18,8 @@ interface Props {
   onOpenJMeterImport: () => void
   onOpenDevWebImport: () => void
   onOpenHARImport: () => void
+  onOpenOpenAPIImport: () => void
+  onOpenWSDLImport: () => void
 }
 
 export default function ScriptCreateOptions({
@@ -35,11 +37,13 @@ export default function ScriptCreateOptions({
   onOpenJMeterImport,
   onOpenDevWebImport,
   onOpenHARImport,
+  onOpenOpenAPIImport,
+  onOpenWSDLImport,
 }: Props) {
   const api = useApi()
   const [templates, setTemplates] = useState<AuthoringTemplate[]>([])
   const [components, setComponents] = useState<AuthoringComponent[]>([])
-  const [workflow, setWorkflow] = useState<'templates' | 'manual' | 'record' | 'import'>('templates')
+  const [workflow, setWorkflow] = useState<'templates' | 'manual' | 'source' | 'record' | 'import'>('templates')
 
   useEffect(() => {
     let cancelled = false
@@ -90,8 +94,13 @@ export default function ScriptCreateOptions({
           <strong>Record Browser</strong>
           <small>Capture a user journey and review it before save.</small>
         </button>
-        <button type="button" className={`script-workflow-card ${workflow === 'import' ? 'active' : ''}`} onClick={() => setWorkflow('import')}>
+        <button type="button" className={`script-workflow-card ${workflow === 'source' ? 'active' : ''}`} onClick={() => setWorkflow('source')}>
           <span>4</span>
+          <strong>Start From Source</strong>
+          <small>Generate drafts from OpenAPI, WSDL, HAR, DevWeb, or samples.</small>
+        </button>
+        <button type="button" className={`script-workflow-card ${workflow === 'import' ? 'active' : ''}`} onClick={() => setWorkflow('import')}>
+          <span>5</span>
           <strong>Import Existing</strong>
           <small>Bring forward LoadRunner, JMeter, DevWeb, HAR, or Java samples.</small>
         </button>
@@ -219,6 +228,43 @@ export default function ScriptCreateOptions({
         </section>
         )}
 
+        {workflow === 'source' && (
+        <section className="script-create-lane api full">
+          <div className="script-create-lane-header">
+            <span className="script-create-kicker">Guided source authoring</span>
+            <h3>Start From Source</h3>
+            <p>Choose the source asset first, then review generated actions, data fit, auth placeholders, validation, replay, and approval evidence in one draft workflow.</p>
+          </div>
+          <div className="script-create-grid">
+            <button className="script-create-option primary" onClick={onOpenOpenAPIImport}>
+              <span className="script-create-type-badge">OAS</span>
+              <h3>OpenAPI / Swagger</h3>
+              <p>Generate grouped REST request flows with detected auth schemes, examples, variables, and candidate data pools.</p>
+            </button>
+            <button className="script-create-option primary" onClick={onOpenWSDLImport}>
+              <span className="script-create-type-badge">WSDL</span>
+              <h3>WSDL / SOAP</h3>
+              <p>Generate SOAP operation actions with SOAPAction, namespaces, sample envelopes, and fault-review guidance.</p>
+            </button>
+            <button className="script-create-option" onClick={onOpenHARImport}>
+              <span className="script-create-type-badge import">HAR</span>
+              <h3>HAR Traffic</h3>
+              <p>Convert captured browser API traffic into HTTP actions with reviewable correlation and data-source suggestions.</p>
+            </button>
+            <button className="script-create-option" onClick={onOpenDevWebImport}>
+              <span className="script-create-type-badge import">DEV</span>
+              <h3>DevWeb Source</h3>
+              <p>Convert DevWeb JavaScript assets into HTTP, WebSocket, or gRPC script drafts for review.</p>
+            </button>
+            <button className="script-create-option" onClick={onOpenSampleImport}>
+              <span className="script-create-type-badge">API</span>
+              <h3>Request / Response Sample</h3>
+              <p>Build an API draft from raw HTTP, cURL, or payload examples when formal contracts are unavailable.</p>
+            </button>
+          </div>
+        </section>
+        )}
+
         {workflow === 'import' && (
         <section className="script-create-lane import full">
           <div className="script-create-lane-header">
@@ -260,6 +306,16 @@ export default function ScriptCreateOptions({
               <span className="script-create-type-badge import">HAR</span>
               <h3>Import HAR</h3>
               <p>Convert Chrome DevTools HAR traffic into an HTTP script with detected base URL and correlations.</p>
+            </button>
+            <button className="script-create-option" onClick={onOpenOpenAPIImport}>
+              <span className="script-create-type-badge import">OAS</span>
+              <h3>Import OpenAPI</h3>
+              <p>Convert OpenAPI or Swagger contracts into a REST script draft with generated review sections.</p>
+            </button>
+            <button className="script-create-option" onClick={onOpenWSDLImport}>
+              <span className="script-create-type-badge import">WSDL</span>
+              <h3>Import WSDL</h3>
+              <p>Convert WSDL contracts into SOAP request actions and payload review guidance.</p>
             </button>
           </div>
         </section>

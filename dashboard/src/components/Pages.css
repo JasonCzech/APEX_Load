@@ -422,7 +422,7 @@
 
 .script-workflow-picker {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 12px;
 }
 
@@ -1115,6 +1115,43 @@
 .library-search input:focus {
   border-color: var(--accent);
   outline: none;
+}
+
+.library-health-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: -2px 0 14px;
+}
+
+.script-health-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  background: var(--bg-primary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.script-health-filter strong {
+  min-width: 20px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.14);
+  color: var(--text-primary);
+  text-align: center;
+  font-size: 11px;
+}
+
+.script-health-filter:hover,
+.script-health-filter.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(99, 102, 241, 0.08);
 }
 
 .script-table-meta,

@@ -1835,6 +1835,32 @@
   flex-wrap: wrap;
   gap: 8px;
 }
+.utility-checklist {
+  display: grid;
+  gap: 8px;
+}
+.utility-checklist-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(148, 163, 184, 0.04);
+}
+.utility-checklist-item div {
+  display: grid;
+  gap: 2px;
+}
+.utility-checklist-item strong {
+  color: var(--text-primary);
+  font-size: 12px;
+}
+.utility-checklist-item span {
+  color: var(--text-muted);
+  font-size: 11px;
+}
 .utility-list {
   display: grid;
   gap: 8px;

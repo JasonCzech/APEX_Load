@@ -1,4 +1,7 @@
 import {
+  type AuthoringComponent,
+} from '../types'
+import {
   type ScriptActionDefinition,
   type ScriptConfig,
   type ScriptDataSource,
@@ -43,10 +46,36 @@ export interface MigrationAssistantResult {
   summary: string
 }
 
+export interface AuthoringComponentApplyResult {
+  script: ScriptDefinition
+  summary: string
+}
+
+export type ScriptRepairSuggestionKey =
+  | 'parameterize_hard_coded_tokens'
+  | 'create_missing_data_source'
+  | 'add_default_assertions'
+  | 'stabilize_browser_waits'
+  | 'stabilize_browser_selectors'
+
+export interface ScriptRepairSuggestion {
+  key: ScriptRepairSuggestionKey
+  title: string
+  description: string
+  applyLabel: string
+}
+
+export interface ScriptRepairResult {
+  script: ScriptDefinition
+  summary: string
+}
+
 const PARAM_TOKEN = /{{\s*param\.([a-zA-Z0-9_]+)\s*}}/g
 const DATA_TOKEN = /{{\s*data\.([a-zA-Z0-9_]+)\.([a-zA-Z0-9_]+)\s*}}/g
+const TOKENISH_KEY = /(access[_-]?token|auth[_-]?token|bearer|session[_-]?id|csrf|xsrf|jwt)/i
 
 function cloneScript<T>(value: T): T {
+  if (value === undefined) return value
   return JSON.parse(JSON.stringify(value)) as T
 }
 
@@ -92,6 +121,104 @@ function actionNeedsExplicitTarget(action: ScriptActionDefinition): boolean {
     return action.type !== 'browser_screenshot'
   }
   return !['jms_ack', 'jms_commit', 'jms_rollback'].includes(action.type)
+}
+
+function deepMerge(base: Record<string, unknown>, patch?: Record<string, unknown>): Record<string, unknown> {
+  if (!patch) return cloneScript(base)
+  const next = cloneScript(base)
+  Object.entries(patch).forEach(([key, value]) => {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      const current = next[key]
+      next[key] = deepMerge(
+        current && typeof current === 'object' && !Array.isArray(current) ? current as Record<string, unknown> : {},
+        value as Record<string, unknown>,
+      )
+      return
+    }
+    next[key] = cloneScript(value)
+  })
+  return next
+}
+
+function normalizedNames<T extends { name?: string | null }>(items?: T[]): Set<string> {
+  return new Set((items || []).map(item => normalizeTokenName(item.name || '')).filter(Boolean))
+}
+
+function cloneActionForInsertion(action: ScriptActionDefinition, phase?: 'init' | 'teardown'): ScriptActionDefinition {
+  const next = cloneScript(action)
+  if (!phase) return next
+  return {
+    ...next,
+    metadata: {
+      ...(next.metadata || {}),
+      phase,
+    },
+  }
+}
+
+function collectMissingDataReferences(script: ScriptDefinition): Map<string, Set<string>> {
+  const knownSources = normalizedNames(script.data_sources || [])
+  const missing = new Map<string, Set<string>>()
+
+  script.actions.forEach(action => {
+    collectActionStrings(action).forEach(value => {
+      for (const match of value.matchAll(DATA_TOKEN)) {
+        const sourceName = match[1] || ''
+        const columnName = match[2] || ''
+        if (!sourceName || knownSources.has(normalizeTokenName(sourceName))) continue
+        if (!missing.has(sourceName)) missing.set(sourceName, new Set())
+        if (columnName) missing.get(sourceName)?.add(columnName)
+      }
+    })
+  })
+
+  return missing
+}
+
+function isHttpLikeAction(action: ScriptActionDefinition): boolean {
+  return Boolean(action.method || ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS', 'request'].includes(action.type))
+}
+
+function isUnstableSelector(selector?: string): boolean {
+  const value = selector?.trim()
+  if (!value) return false
+  return /nth-child|nth-of-type|>\s*[^>]+>|#[a-z]+_[a-z0-9]{8,}|#[a-z]+-\d{5,}/i.test(value)
+}
+
+function sanitizeRepairName(value: string, fallback: string): string {
+  const normalized = value
+    .trim()
+    .replace(/{{.*?}}/g, '')
+    .replace(/[^a-zA-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .toLowerCase()
+  return normalized || fallback
+}
+
+function ensureListParameter(parameters: ScriptParameterDefinition[], name: string, seed: string) {
+  const normalizedName = normalizeTokenName(name)
+  const existingIdx = parameters.findIndex(parameter => normalizeTokenName(parameter.name || '') === normalizedName)
+  if (existingIdx >= 0) {
+    const current = parameters[existingIdx]
+    const values = [...(current.values || [])]
+    if (seed && !values.includes(seed)) values.unshift(seed)
+    parameters[existingIdx] = {
+      ...current,
+      type: current.type || 'list',
+      update: current.update || 'each_iteration',
+      values,
+    }
+    return
+  }
+
+  parameters.push({
+    name,
+    type: 'list',
+    update: 'each_iteration',
+    selection: 'sequential',
+    on_exhaustion: 'wrap',
+    values: seed ? [seed] : [],
+  })
 }
 
 export function collectAuthoringIssues(script: ScriptDefinition): AuthoringIssue[] {
@@ -219,6 +346,69 @@ export function collectAuthoringIssues(script: ScriptDefinition): AuthoringIssue
   }
 
   return issues
+}
+
+export function applyAuthoringComponentToScript(script: ScriptDefinition, component: AuthoringComponent): AuthoringComponentApplyResult {
+  const nextScript = cloneScript(script)
+  const inserted: string[] = []
+
+  nextScript.config = deepMerge(nextScript.config as unknown as Record<string, unknown>, component.config) as unknown as ScriptConfig
+  if (component.config && Object.keys(component.config).length > 0) {
+    inserted.push('runtime/config settings')
+  }
+
+  const sourceNames = normalizedNames(nextScript.data_sources || [])
+  const nextDataSources = [...(nextScript.data_sources || [])]
+  ;(component.data_sources || []).forEach(source => {
+    const normalized = normalizeTokenName(source.name || '')
+    if (!normalized || sourceNames.has(normalized)) return
+    nextDataSources.push(cloneScript(source))
+    sourceNames.add(normalized)
+  })
+  if (nextDataSources.length !== (nextScript.data_sources || []).length) {
+    nextScript.data_sources = nextDataSources
+    inserted.push(`${nextDataSources.length - (script.data_sources || []).length} data source${nextDataSources.length - (script.data_sources || []).length === 1 ? '' : 's'}`)
+  }
+
+  const parameterNames = normalizedNames(nextScript.parameters || [])
+  const nextParameters = [...(nextScript.parameters || [])]
+  ;(component.parameters || []).forEach(parameter => {
+    const normalized = normalizeTokenName(parameter.name || '')
+    if (!normalized || parameterNames.has(normalized)) return
+    nextParameters.push(cloneScript(parameter))
+    parameterNames.add(normalized)
+  })
+  if (nextParameters.length !== (nextScript.parameters || []).length) {
+    nextScript.parameters = nextParameters
+    inserted.push(`${nextParameters.length - (script.parameters || []).length} parameter${nextParameters.length - (script.parameters || []).length === 1 ? '' : 's'}`)
+  }
+
+  const actionNameSet = normalizedNames(nextScript.actions || [])
+  const buildActions = (actions: ScriptActionDefinition[] | undefined, phase?: 'init' | 'teardown') =>
+    (actions || []).map(action => {
+      const nextAction = cloneActionForInsertion(action, phase)
+      const fallback = `${nextAction.type || 'action'}_${nextScript.actions.length + 1}`
+      nextAction.name = buildUniqueActionName(normalizeActionName(nextAction.name || '', fallback), actionNameSet)
+      return nextAction
+    })
+
+  const initActions = buildActions(component.init, 'init')
+  const mainActions = buildActions(component.actions)
+  const teardownActions = buildActions(component.teardown, 'teardown')
+  const allActions = [...initActions, ...mainActions, ...teardownActions]
+  if (allActions.length > 0) {
+    nextScript.actions = [...nextScript.actions, ...allActions]
+    if (initActions.length > 0) inserted.push(`${initActions.length} init action${initActions.length === 1 ? '' : 's'}`)
+    if (mainActions.length > 0) inserted.push(`${mainActions.length} action${mainActions.length === 1 ? '' : 's'}`)
+    if (teardownActions.length > 0) inserted.push(`${teardownActions.length} teardown action${teardownActions.length === 1 ? '' : 's'}`)
+  }
+
+  return {
+    script: nextScript,
+    summary: inserted.length > 0
+      ? `Inserted ${component.name}: ${inserted.join(', ')}.`
+      : `${component.name} was already represented in this draft.`,
+  }
 }
 
 export function groupIssuesByAction(issues: AuthoringIssue[], actionCount: number): AuthoringIssue[][] {
@@ -495,6 +685,67 @@ export function buildMigrationAssistantSuggestions(script: ScriptDefinition): Mi
   return suggestions
 }
 
+export function buildScriptRepairSuggestions(script: ScriptDefinition, issues: AuthoringIssue[] = collectAuthoringIssues(script)): ScriptRepairSuggestion[] {
+  const suggestions: ScriptRepairSuggestion[] = []
+  const hasMissingData = collectMissingDataReferences(script).size > 0 || issues.some(issue => issue.id.includes(':data:'))
+  const hasMissingAssertions = script.actions.some(action => isHttpLikeAction(action) && (!action.assertions || action.assertions.length === 0))
+  const hasTokenLiterals = script.actions.some(action => {
+    const headerValues = Object.entries(action.headers || {})
+    if (headerValues.some(([key, value]) => TOKENISH_KEY.test(key) && String(value || '').trim() && !String(value).includes('{{'))) return true
+    if (Object.values(action.headers || {}).some(value => /^Bearer\s+\S+/i.test(String(value || '')) && !String(value).includes('{{'))) return true
+    return TOKENISH_KEY.test(action.body || '') && !String(action.body || '').includes('{{')
+  })
+  const hasMissingBrowserWaits = script.actions.some(action =>
+    action.type.startsWith('browser_')
+    && (action.type === 'browser_click' || action.type === 'browser_fill' || action.type === 'browser_navigate')
+    && !action.wait_for,
+  )
+  const hasUnstableBrowserSelectors = script.actions.some(action => action.type.startsWith('browser_') && isUnstableSelector(action.selector || action.target))
+
+  if (hasMissingData) {
+    suggestions.push({
+      key: 'create_missing_data_source',
+      title: 'Create Missing Data Sources',
+      description: 'Add CSV seed data sources for unresolved {{data.source.column}} references so validation and scenario fit checks have concrete rows to inspect.',
+      applyLabel: 'Create Data Sources',
+    })
+  }
+  if (hasTokenLiterals) {
+    suggestions.push({
+      key: 'parameterize_hard_coded_tokens',
+      title: 'Parameterize Hard-Coded Tokens',
+      description: 'Move bearer/session/token literals into list parameters and replace inline values with safe parameter references.',
+      applyLabel: 'Parameterize Tokens',
+    })
+  }
+  if (hasMissingAssertions) {
+    suggestions.push({
+      key: 'add_default_assertions',
+      title: 'Add Default Assertions',
+      description: 'Add response assertions to request actions that currently replay without pass/fail evidence.',
+      applyLabel: 'Add Assertions',
+    })
+  }
+  if (hasMissingBrowserWaits) {
+    suggestions.push({
+      key: 'stabilize_browser_waits',
+      title: 'Add Browser Waits',
+      description: 'Attach page-ready waits to browser navigation and interaction steps that are likely to race during replay.',
+      applyLabel: 'Add Waits',
+    })
+  }
+  if (hasUnstableBrowserSelectors) {
+    suggestions.push({
+      key: 'stabilize_browser_selectors',
+      title: 'Stabilize Selectors',
+      description: 'Replace brittle generated selectors with data-testid placeholders while preserving the original selector in metadata.',
+      applyLabel: 'Stabilize Selectors',
+    })
+  }
+
+  return suggestions
+}
+
 export function applyMigrationAssistantSuggestion(script: ScriptDefinition, key: MigrationAssistantSuggestion['key']): MigrationAssistantResult {
   switch (key) {
     case 'normalize_action_names':
@@ -505,6 +756,159 @@ export function applyMigrationAssistantSuggestion(script: ScriptDefinition, key:
       return applyGentlePacing(script)
     case 'apply_per_action_transactions':
       return applyPerActionTransactions(script)
+  }
+}
+
+export function applyScriptRepairSuggestion(script: ScriptDefinition, key: ScriptRepairSuggestionKey): ScriptRepairResult {
+  switch (key) {
+    case 'create_missing_data_source':
+      return createMissingDataSources(script)
+    case 'parameterize_hard_coded_tokens':
+      return parameterizeHardCodedTokens(script)
+    case 'add_default_assertions':
+      return addDefaultAssertions(script)
+    case 'stabilize_browser_waits':
+      return stabilizeBrowserWaits(script)
+    case 'stabilize_browser_selectors':
+      return stabilizeBrowserSelectors(script)
+  }
+}
+
+function createMissingDataSources(script: ScriptDefinition): ScriptRepairResult {
+  const nextScript = cloneScript(script)
+  const missing = collectMissingDataReferences(nextScript)
+  if (missing.size === 0) {
+    return { script: nextScript, summary: 'No missing data-source references were found.' }
+  }
+
+  nextScript.data_sources = [...(nextScript.data_sources || [])]
+  missing.forEach((columns, sourceName) => {
+    const resolvedColumns = Array.from(columns).filter(Boolean)
+    const finalColumns = resolvedColumns.length > 0 ? resolvedColumns : ['value']
+    nextScript.data_sources?.push({
+      name: sourceName,
+      type: 'csv',
+      path: '',
+      strategy: 'sequential',
+      delimiter: ',',
+      first_row_header: true,
+      columns: [],
+      inline_data: `${finalColumns.join(',')}\n${finalColumns.map(column => `sample_${column}`).join(',')}`,
+    })
+  })
+
+  return {
+    script: nextScript,
+    summary: `Created ${missing.size} missing data source${missing.size === 1 ? '' : 's'} from unresolved data references.`,
+  }
+}
+
+function parameterizeHardCodedTokens(script: ScriptDefinition): ScriptRepairResult {
+  const nextScript = cloneScript(script)
+  const parameters = [...(nextScript.parameters || [])]
+  let replacements = 0
+
+  nextScript.actions = nextScript.actions.map(action => {
+    const updated = { ...action, headers: { ...(action.headers || {}) } }
+    Object.entries(updated.headers || {}).forEach(([key, value]) => {
+      const rawValue = String(value || '').trim()
+      if (!rawValue || rawValue.includes('{{')) return
+      if (TOKENISH_KEY.test(key) || /^Bearer\s+\S+/i.test(rawValue)) {
+        const parameterName = sanitizeRepairName(key.replace(/^authorization$/i, 'access_token'), 'access_token')
+        const seed = rawValue.replace(/^Bearer\s+/i, '')
+        ensureListParameter(parameters, parameterName, seed)
+        updated.headers![key] = /^Bearer\s+/i.test(rawValue) ? `Bearer {{param.${parameterName}}}` : `{{param.${parameterName}}}`
+        replacements += 1
+      }
+    })
+
+    if (updated.body && TOKENISH_KEY.test(updated.body) && !updated.body.includes('{{')) {
+      updated.body = updated.body.replace(/"([^"]*(?:token|session|csrf|xsrf)[^"]*)"\s*:\s*"([^"]+)"/gi, (match, keyName, tokenValue) => {
+        const parameterName = sanitizeRepairName(keyName, 'token_value')
+        ensureListParameter(parameters, parameterName, tokenValue)
+        replacements += 1
+        return `"${keyName}":"{{param.${parameterName}}}"`
+      })
+    }
+
+    return updated
+  })
+
+  nextScript.parameters = parameters
+  return {
+    script: nextScript,
+    summary: replacements > 0
+      ? `Parameterized ${replacements} hard-coded token value${replacements === 1 ? '' : 's'}.`
+      : 'No hard-coded token literals needed repair.',
+  }
+}
+
+function addDefaultAssertions(script: ScriptDefinition): ScriptRepairResult {
+  const nextScript = cloneScript(script)
+  let updatedCount = 0
+  nextScript.actions = nextScript.actions.map(action => {
+    if (!isHttpLikeAction(action) || (action.assertions || []).length > 0) return action
+    updatedCount += 1
+    const expected = action.method === 'POST' || action.type === 'POST' ? 201 : 200
+    return {
+      ...action,
+      assertions: [{ type: 'status_code', expected }],
+    }
+  })
+  return {
+    script: nextScript,
+    summary: updatedCount > 0
+      ? `Added default response assertions to ${updatedCount} request action${updatedCount === 1 ? '' : 's'}.`
+      : 'Every request action already had assertions.',
+  }
+}
+
+function stabilizeBrowserWaits(script: ScriptDefinition): ScriptRepairResult {
+  const nextScript = cloneScript(script)
+  let updatedCount = 0
+  nextScript.actions = nextScript.actions.map(action => {
+    if (!action.type.startsWith('browser_') || action.wait_for) return action
+    if (action.type !== 'browser_click' && action.type !== 'browser_fill' && action.type !== 'browser_navigate') return action
+    updatedCount += 1
+    return {
+      ...action,
+      wait_for: action.type === 'browser_navigate'
+        ? { type: 'load_state', value: 'networkidle', timeout_ms: 10000 }
+        : { type: 'selector', value: action.selector || action.target || 'body', timeout_ms: 10000 },
+    }
+  })
+  return {
+    script: nextScript,
+    summary: updatedCount > 0
+      ? `Added replay waits to ${updatedCount} browser action${updatedCount === 1 ? '' : 's'}.`
+      : 'Browser waits were already present.',
+  }
+}
+
+function stabilizeBrowserSelectors(script: ScriptDefinition): ScriptRepairResult {
+  const nextScript = cloneScript(script)
+  let updatedCount = 0
+  nextScript.actions = nextScript.actions.map((action, index) => {
+    const selector = action.selector || action.target
+    if (!action.type.startsWith('browser_') || !isUnstableSelector(selector)) return action
+    const stableSelector = `[data-testid="${sanitizeRepairName(action.name || `action_${index + 1}`, `action_${index + 1}`)}"]`
+    updatedCount += 1
+    return {
+      ...action,
+      selector: stableSelector,
+      target: action.selector ? action.target : stableSelector,
+      metadata: {
+        ...(action.metadata || {}),
+        original_selector: selector,
+        selector_repair: 'replace_with_data_testid_placeholder',
+      },
+    }
+  })
+  return {
+    script: nextScript,
+    summary: updatedCount > 0
+      ? `Stabilized ${updatedCount} browser selector${updatedCount === 1 ? '' : 's'} with data-testid placeholders.`
+      : 'No unstable browser selectors needed repair.',
   }
 }
 

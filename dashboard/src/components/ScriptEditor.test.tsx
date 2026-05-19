@@ -32,6 +32,7 @@ const apiMock = {
   pauseBrowserReplaySession: vi.fn(),
   resumeBrowserReplaySession: vi.fn(),
   stopBrowserReplaySession: vi.fn(),
+  listAuthoringComponents: vi.fn(),
 }
 
 vi.mock('../hooks/useApi', () => ({
@@ -218,6 +219,7 @@ describe('ScriptEditor', () => {
     apiMock.pauseBrowserReplaySession.mockResolvedValue({ session: { status: 'paused' } })
     apiMock.resumeBrowserReplaySession.mockResolvedValue({ session: { status: 'running' } })
     apiMock.stopBrowserReplaySession.mockResolvedValue(undefined)
+    apiMock.listAuthoringComponents.mockResolvedValue({ components: [], count: 0 })
   })
 
   afterEach(async () => {
@@ -2656,8 +2658,12 @@ describe('ScriptEditor', () => {
 
     expect(container.textContent).toContain('Outline')
     expect(container.textContent).toContain('Starter Blocks')
+    expect(container.textContent).toContain('Convergence Checklist')
+    expect(container.textContent).toContain('Guided History')
+    expect(container.textContent).toContain('Flow Assembly')
+    expect(container.textContent).toContain('Repair Actions')
     expect(container.textContent).toContain('Migration Assistant')
-    expect(container.textContent).toContain('Imported Draft Review')
+    expect(container.textContent).toContain('Draft Diff Review')
     expect(container.textContent).toContain('Correlation Inspector')
     expect(container.textContent).toContain('Parameter & Variable Inspector')
     expect(container.textContent).toContain('0 errors • 2 warnings')
@@ -2727,6 +2733,76 @@ describe('ScriptEditor', () => {
 
     expect(container.textContent).toContain('Added starter block: POST JSON.')
     expect(Array.from(container.querySelectorAll('.action-item')).length).toBe(3)
+  })
+
+  it('inserts reusable authoring components and supports guided undo', async () => {
+    apiMock.listAuthoringComponents.mockResolvedValueOnce({
+      components: [{
+        id: 'http-core-api-request-group',
+        kind: 'request_group',
+        name: 'Core API Request Group',
+        protocols: ['http'],
+        summary: 'Reusable health and lookup transaction group.',
+        actions: [{
+          name: 'Health Check',
+          type: 'GET',
+          method: 'GET',
+          target: '/health',
+          headers: {},
+          body: '',
+          assertions: [{ type: 'status_code', expected: 200 }],
+        }],
+        data_sources: [{
+          name: 'users',
+          type: 'csv',
+          path: '',
+          strategy: 'unique',
+          delimiter: ',',
+          first_row_header: true,
+          columns: ['username'],
+        }],
+      }],
+      count: 1,
+    })
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={initialScript} />)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('Core API Request Group')
+
+    const insertButton = Array.from(container.querySelectorAll('button')).find(button =>
+      button.textContent?.includes('Insert Block'),
+    )
+    expect(insertButton).toBeDefined()
+    if (!insertButton) {
+      return
+    }
+
+    await act(async () => {
+      insertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.textContent).toContain('Inserted Core API Request Group')
+    expect(container.textContent).toContain('Health_Check')
+    expect(Array.from(container.querySelectorAll('.action-item')).length).toBe(initialScript.actions.length + 1)
+
+    const undoButton = Array.from(container.querySelectorAll('button')).find(button =>
+      button.textContent?.trim() === 'Undo',
+    )
+    expect(undoButton).toBeDefined()
+    if (!undoButton) {
+      return
+    }
+
+    await act(async () => {
+      undoButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.textContent).toContain('Undid the last guided authoring change.')
+    expect(Array.from(container.querySelectorAll('.action-item')).length).toBe(initialScript.actions.length)
   })
 
   it('renders Java-over-HTTP settings for java_http drafts', async () => {

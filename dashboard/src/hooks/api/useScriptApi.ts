@@ -22,7 +22,7 @@ import {
 } from '../../types'
 import { type AuthoringTemplate } from '../../types'
 import { type ScriptDefinition, type ScriptExportResponse, type ScriptReplayResponse, type ScriptValidationResponse } from '../../types/scripts'
-import { type DevWebImportResult, type HARImportResult, type JMeterImportResult, type JMeterSupportMatrixResponse, type LoadRunnerImportResult, type LoadRunnerSupportMatrixResponse, type SampleImportResult, type SaveJMeterImportRequest, type SaveJMeterImportResponse } from '../../types/scriptImports'
+import { type DevWebImportResult, type HARImportResult, type JMeterImportResult, type JMeterSupportMatrixResponse, type LoadRunnerImportResult, type LoadRunnerSupportMatrixResponse, type OpenAPIImportResult, type SampleImportResult, type SaveJMeterImportRequest, type SaveJMeterImportResponse, type WSDLImportResult } from '../../types/scriptImports'
 import { BASE, request } from '../apiClient'
 
 type ScriptListResponse = {
@@ -437,6 +437,43 @@ export function useScriptApi() {
     [],
   )
 
+  const importOpenAPI = useCallback(
+    async (file: File, options?: { name?: string; base_url?: string; project_id?: string }): Promise<OpenAPIImportResult> => {
+      const formData = new FormData()
+      formData.append('file', file)
+      if (options?.name) formData.append('script_name', options.name)
+      if (options?.project_id) formData.append('project_id', options.project_id)
+      if (options?.base_url) formData.append('base_url', options.base_url)
+
+      const res = await fetch(`${BASE}/scripts/import/openapi`, { method: 'POST', body: formData })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: res.statusText }))
+        throw new Error(body.error || res.statusText)
+      }
+      return res.json() as Promise<OpenAPIImportResult>
+    },
+    [],
+  )
+
+  const importWSDL = useCallback(
+    async (file: File, options?: { name?: string; base_url?: string; soap_version?: string; project_id?: string }): Promise<WSDLImportResult> => {
+      const formData = new FormData()
+      formData.append('file', file)
+      if (options?.name) formData.append('script_name', options.name)
+      if (options?.project_id) formData.append('project_id', options.project_id)
+      if (options?.base_url) formData.append('base_url', options.base_url)
+      if (options?.soap_version) formData.append('soap_version', options.soap_version)
+
+      const res = await fetch(`${BASE}/scripts/import/wsdl`, { method: 'POST', body: formData })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: res.statusText }))
+        throw new Error(body.error || res.statusText)
+      }
+      return res.json() as Promise<WSDLImportResult>
+    },
+    [],
+  )
+
   const listScenarios = useCallback((projectId?: string) => request<ScenarioListResponse>(`/scenarios${buildScenarioQuery(projectId)}`), [])
 
   const createScenario = useCallback(
@@ -543,6 +580,8 @@ export function useScriptApi() {
       importSample,
       importDevWeb,
       importHAR,
+      importOpenAPI,
+      importWSDL,
       listScenarios,
       createScenario,
       getScenario,
@@ -594,6 +633,8 @@ export function useScriptApi() {
       importSample,
       importDevWeb,
       importHAR,
+      importOpenAPI,
+      importWSDL,
       listScenarios,
       createScenario,
       getScenario,

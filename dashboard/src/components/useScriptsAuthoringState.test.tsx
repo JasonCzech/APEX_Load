@@ -46,6 +46,8 @@ function AuthoringStateHarness({ api, initialMode, initialEditId }: HarnessProps
       <button data-testid="save-script-with-notice" onClick={() => model.handleSavedScript({ id: 'saved-script-3', name: 'Saved Notice Draft', protocol: 'http', version: '1.0.0', created_at: '2026-05-17T00:00:00Z' }, 'Saved 2 scripts. Reviewing the first saved script.')}>save-script-with-notice</button>
       <button data-testid="save-script-with-payload" onClick={() => model.handleSavedScript({ id: 'saved-script-2', name: 'Saved Payload', protocol: 'http', version: '1.0.0', created_at: '2026-05-17T00:00:00Z', script: { name: 'Persisted Checkout', protocol: 'http', config: {}, actions: [] } as never })}>save-script-with-payload</button>
       <button data-testid="open-sample" onClick={model.createOptionActions.openSampleImport}>open-sample</button>
+      <button data-testid="open-openapi" onClick={model.createOptionActions.openOpenAPIImport}>open-openapi</button>
+      <button data-testid="open-wsdl" onClick={model.createOptionActions.openWSDLImport}>open-wsdl</button>
       <button data-testid="start-java-http" onClick={model.createOptionActions.startJavaHttpScript}>start-java-http</button>
       <button data-testid="start-template" onClick={() => model.createOptionActions.startTemplateScript({ name: 'Template Draft', protocol: 'browser', config: {}, actions: [] } as never)}>start-template</button>
     </div>
@@ -225,6 +227,14 @@ describe('useScriptsAuthoringState', () => {
 
     expect(readTestId('subview')).toBe('sample')
     expect(readTestId('draft-name')).toBe('none')
+
+    await click('open-openapi')
+
+    expect(readTestId('subview')).toBe('openapi-import')
+
+    await click('open-wsdl')
+
+    expect(readTestId('subview')).toBe('wsdl-import')
 
     await click('start-java-http')
 

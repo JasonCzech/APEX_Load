@@ -14,6 +14,17 @@ interface Props {
   onSelectScenario?: (id: string) => void
 }
 
+type AuthoringHealthFilter = 'all' | 'blocked' | 'needs_replay' | 'missing_data' | 'runtime_warning' | 'ai_guardrail'
+
+const healthFilters: Array<{ key: AuthoringHealthFilter; label: string }> = [
+  { key: 'all', label: 'All' },
+  { key: 'blocked', label: 'Blocked' },
+  { key: 'needs_replay', label: 'Needs Replay' },
+  { key: 'missing_data', label: 'Missing Data' },
+  { key: 'runtime_warning', label: 'Runtime Warning' },
+  { key: 'ai_guardrail', label: 'AI Guardrail' },
+]
+
 function buildImportedSaveNotice(result: ImportedSaveResult): string | null {
   const savedCount = result.scripts.length
   if (savedCount === 0) return null
@@ -26,6 +37,34 @@ function buildImportedSaveNotice(result: ImportedSaveResult): string | null {
     return `Saved ${scriptText} and scenario draft "${scenarioName}". Reviewing the first saved script.`
   }
   return `Saved ${scriptText}. Reviewing the first saved script.`
+}
+
+function scriptHasHealthText(script: StoredScript, pattern: RegExp) {
+  return (script.authoring_health?.inputs || []).some(input =>
+    input.status !== 'pass'
+    && input.status !== 'info'
+    && (pattern.test(input.key || '') || pattern.test(input.summary || '') || pattern.test(input.status || '')),
+  )
+}
+
+function scriptMatchesHealthFilter(script: StoredScript, filter: AuthoringHealthFilter) {
+  if (filter === 'all') return true
+  if (filter === 'blocked') {
+    return script.authoring_health?.status === 'blocked' || (script.authoring_health?.inputs || []).some(input => input.status === 'blocker')
+  }
+  if (filter === 'needs_replay') {
+    return scriptHasHealthText(script, /replay|evidence/i)
+  }
+  if (filter === 'missing_data') {
+    return scriptHasHealthText(script, /missing[_\s-]?data|data[_\s-]?source|data fit|parameter data/i)
+  }
+  if (filter === 'runtime_warning') {
+    return scriptHasHealthText(script, /runtime|rts|parity/i)
+  }
+  if (filter === 'ai_guardrail') {
+    return scriptHasHealthText(script, /ai|guardrail|provenance/i)
+  }
+  return true
 }
 
 function scriptSearchText(script: StoredScript) {
@@ -47,6 +86,7 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
   const [correlationPreviews, setCorrelationPreviews] = useState<Record<string, AuthoringCorrelationPreviewResponse>>({})
   const [correlationErrors, setCorrelationErrors] = useState<Record<string, string>>({})
   const [libraryQuery, setLibraryQuery] = useState('')
+  const [healthFilter, setHealthFilter] = useState<AuthoringHealthFilter>('all')
 
   const refresh = useCallback(async () => {
     try {
@@ -78,9 +118,26 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
 
   const filteredScripts = useMemo(() => {
     const query = libraryQuery.trim().toLowerCase()
-    if (!query) return scripts
-    return scripts.filter(script => scriptSearchText(script).includes(query))
-  }, [libraryQuery, scripts])
+    return scripts.filter(script => {
+      if (!scriptMatchesHealthFilter(script, healthFilter)) return false
+      if (!query) return true
+      return scriptSearchText(script).includes(query)
+    })
+  }, [healthFilter, libraryQuery, scripts])
+
+  const healthFilterCounts = useMemo(() => {
+    return healthFilters.reduce<Record<AuthoringHealthFilter, number>>((acc, filter) => {
+      acc[filter.key] = scripts.filter(script => scriptMatchesHealthFilter(script, filter.key)).length
+      return acc
+    }, {
+      all: 0,
+      blocked: 0,
+      needs_replay: 0,
+      missing_data: 0,
+      runtime_warning: 0,
+      ai_guardrail: 0,
+    })
+  }, [scripts])
 
   const {
     sortField,
@@ -217,6 +274,19 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
               />
             </label>
           </div>
+          <div className="library-health-filters" aria-label="Authoring health filters">
+            {healthFilters.map(filter => (
+              <button
+                key={filter.key}
+                type="button"
+                className={`script-health-filter ${healthFilter === filter.key ? 'active' : ''}`}
+                onClick={() => setHealthFilter(filter.key)}
+              >
+                <span>{filter.label}</span>
+                <strong>{healthFilterCounts[filter.key] || 0}</strong>
+              </button>
+            ))}
+          </div>
           <ScriptsLibraryTable
             scripts={sortedScripts}
             sortField={sortField}
@@ -233,7 +303,7 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
             onSelectScenario={onSelectScenario}
             onEdit={(id) => { void handleEdit(id) }}
             onDelete={(id) => { void handleDelete(id) }}
-            emptyMessage={libraryQuery.trim() ? 'No scripts match this search.' : 'No scripts yet.'}
+            emptyMessage={libraryQuery.trim() || healthFilter !== 'all' ? 'No scripts match these filters.' : 'No scripts yet.'}
           />
         </div>
       </div>
