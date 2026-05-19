@@ -49,6 +49,8 @@ Web/API source acquisition also uses the shared import review envelope:
 | `POST /api/v1/scripts/import/wsdl` | Convert WSDL into a SOAP draft with operation discovery, SOAPAction preservation, namespace mapping, sample envelopes, and payload-review sections. |
 | `GET /api/v1/scripts/import/devweb/support-matrix` | Publish construct-by-construct DevWeb import support and review requirements. |
 
+VuGen Web 2.0 / TruClient 2.0 Web is now tracked as a planned browser-profile authoring source in `docs/VUGEN_WEB2_TRUCLIENT2_PARITY_PLAN.md`. It will use the LoadRunner acquisition path, preserve TruClient 2.0 Web metadata, map executable browser steps to Stormrunner browser DSL, and add profile-specific replay, repair, runtime, and optional browser-to-HTTP conversion review.
+
 AI-assisted authoring now has a dedicated governed workflow envelope:
 
 | Endpoint | Purpose |
@@ -77,6 +79,7 @@ The matrix covers:
 | --- | --- | --- |
 | LoadRunner | Active | ZIP acquisition, validate-only review, runtime parity, repair suggestions, replay, browser replay where applicable, save handoff |
 | TrueClient Mobile Web | Active | LoadRunner acquisition, browser replay readiness, unsupported-step review, repair suggestions |
+| VuGen Web 2.0 / TruClient 2.0 Web | Planned | LoadRunner acquisition, browser-profile import, object descriptor review, step outline creation, browser replay evidence, optional browser-to-HTTP conversion |
 | JMeter | Active | JMX acquisition, validate-only review, multi-script output, scenario draft generation |
 | DevWeb | Active | JavaScript/ZIP/JSON acquisition, protocol coverage review |
 | HAR | Active | HAR/JSON acquisition, correlation and base URL readiness |
@@ -152,3 +155,4 @@ The draft editor now carries a convergence checklist across manual, recorder, im
 | C5.6 Reusable component library | Complete | `GET /api/v1/scripts/authoring/components` exposes request groups, auth flows, login transactions, data pools, and teardown blocks; dashboard Create Script shows the catalog beside backend templates and ScriptEditor Flow Assembly inserts protocol-compatible components into drafts |
 | W2 Script authoring UX parity | Complete | Source-guided OpenAPI/WSDL/HAR/DevWeb create flows, insertable component blocks, convergence checklist, draft diff review, guided undo/redo, authoring health filters, and deterministic repair actions |
 | W5 AI-assisted workflow parity | Complete for governed local workflow | `GET /api/v1/ai/authoring/contract`, `POST /api/v1/ai/drafts`, `POST /api/v1/ai/repairs`, `POST /api/v1/ai/explain`, `GET /api/v1/ai/review-queue`, `GET /api/v1/ai/policy`, and `GET /api/v1/tests/{id}/archive/ai-root-cause` |
+| W6 VuGen Web 2.0 / TruClient 2.0 Web parity | Planned | `docs/VUGEN_WEB2_TRUCLIENT2_PARITY_PLAN.md` defines import, creation, object identification, replay, runtime, conversion, reporting, and test workstreams |

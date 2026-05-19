@@ -1,0 +1,233 @@
+# VuGen Web 2.0 And TruClient 2.0 Web Parity Plan
+
+## Objective
+
+Add first-class Stormrunner support for OpenText VuGen's browser-driven Web 2.0 scripting profile, represented by **TruClient 2.0 - Web** in the current LoadRunner/VuGen family. The goal is practical parity for import, authoring, replay, repair, and optional protocol-load conversion while preserving Stormrunner's current claim boundary: browser VUsers are diagnostic canaries unless benchmark evidence proves broader density.
+
+This is a new planned scope beyond the completed TruClient Mobile Web MVP. It does not reopen native desktop UI automation as a goal.
+
+## External Baseline
+
+OpenText positions TruClient and TruClient 2.0 as real-browser, Web 2.0 scripting workflows with plain-English steps, transactions, parameterization, JavaScript/API customization, browser recording/replay, and conversion to Web HTTP/HTML when protocol-level density is desired.
+
+Primary references:
+
+- TruClient - Web protocol: https://admhelp.microfocus.com/vugen/en/26.1/help/WebHelp/Content/TruClient/p_truclient_protocol.htm
+- TruClient 2.0 - Web protocol: https://admhelp.microfocus.com/vugen/en/latest/help/WebHelp/Content/TruClient/TruClient-2.0/TC2-intro.htm
+- Convert TruClient to Web HTTP/HTML: https://admhelp.microfocus.com/vugen/en/26.1/help/WebHelp/Content/TruClient/_tc_t_convertTruClientToWebScript.htm
+- Web protocols overview: https://admhelp.microfocus.com/vugen/en/25.1-25.3/help/WebHelp/Content/VuGen/c_web_protocols_overview.htm
+
+## Current Stormrunner Baseline
+
+Stormrunner already has:
+
+- LoadRunner Web HTTP/HTML ZIP import, runtime settings classification, validation, replay, and support-matrix review.
+- TruClient Mobile Web and TruClient 2.0 Mobile Web import MVP for common browser/mobile actions.
+- Browser replay, diagnostics, mobile profiles, screenshots, DOM, console, network evidence, and browser archive reporting.
+- Guided authoring sessions, health scoring, AI guardrails, replay-before-save, and approval gates.
+- Explicit out-of-scope handling for legacy desktop-style TruClient archives.
+
+Remaining gap:
+
+- Desktop browser **TruClient 2.0 - Web / VuGen Web 2.0** archives are not a first-class import target.
+- Stormrunner does not yet expose a named Web 2.0 browser script creation profile with object descriptors, step outline, parameterization, transaction UX, and conversion-to-protocol-load workflow.
+
+## Scope Decision
+
+| Area | Decision |
+| --- | --- |
+| TruClient 2.0 - Web import | In scope |
+| New Stormrunner Web 2.0 browser authoring profile | In scope |
+| Browser replay/debug evidence for imported and newly authored scripts | In scope |
+| Optional browser-to-HTTP conversion for protocol-load density | In scope |
+| Legacy desktop/native application automation | Out of scope |
+| High-density real-browser load claims | Evidence-gated non-claim |
+| Byte-for-byte VuGen proprietary project compatibility | Out of scope; preserve metadata and provide practical conversion |
+
+## Proposed Stormrunner Shape
+
+Add a named script profile:
+
+```json
+{
+  "protocol": "browser",
+  "metadata": {
+    "import": {
+      "source": "vugen_truclient2_web",
+      "preserved": {
+        "stormrunner_profile": "vugen_web2",
+        "source_script_type": "TruClient 2.0 - Web"
+      }
+    }
+  },
+  "config": {
+    "browser": {
+      "engine": "chromium"
+    }
+  }
+}
+```
+
+The execution runtime should remain the existing browser protocol. The new profile is an authoring/import/migration profile layered on top of browser DSL actions, review metadata, runtime settings, and replay evidence.
+
+## Workstream V2.1: Scope Matrix And Fixture Contract
+
+| ID | Work Item | Priority | Status |
+| --- | --- | --- | --- |
+| V2.1.1 | Add code-owned `TruClient 2.0 - Web` support matrix covering archive files, metadata, steps, object identification, parameters, transactions, runtime settings, and conversion limits | P0 | Planned |
+| V2.1.2 | Extend `.usr` script-type detection to distinguish `TruClient 2.0 - Web`, `TruClient - Web`, `TruClient - Mobile Web`, and legacy unsupported desktop/native variants | P0 | Planned |
+| V2.1.3 | Define golden fixture contract with 5-8 representative archives: login form, SPA checkout, dynamic token flow, iframe/window flow, parameterized search, transactions, waits/verify, and custom JavaScript/API step | P0 | Planned |
+| V2.1.4 | Update support endpoints and import review docs so current Mobile Web support and planned Web 2.0 support are separate rows | P0 | Planned |
+
+Acceptance:
+
+- Support matrix names every covered and non-covered construct.
+- Unsupported proprietary constructs become review warnings with stable IDs.
+- Fixture contract is documented before importer behavior expands.
+
+## Workstream V2.2: Import Parser And Metadata Preservation
+
+| ID | Work Item | Priority | Status |
+| --- | --- | --- | --- |
+| V2.2.1 | Extend `pkg/convert/trueclient` archive discovery beyond Mobile Web to parse TruClient 2.0 Web project metadata, `default.xml`, object repositories, parameters, and runtime files when present | P0 | Planned |
+| V2.2.2 | Preserve original script type, browser target, step IDs, object descriptor IDs, transaction names, parameter definitions, snapshots, and unsupported source fragments in import metadata | P0 | Planned |
+| V2.2.3 | Add import response review sections for profile assumptions, unsupported steps, object-identification confidence, runtime settings, parameter mapping, conversion-to-HTTP eligibility, and replay readiness | P0 | Planned |
+| V2.2.4 | Add deterministic repair suggestions for selector stabilization, wait refinement, missing assertions, parameter source repair, unsupported JavaScript/API steps, and conversion blockers | P0 | Planned |
+
+Acceptance:
+
+- A TruClient 2.0 Web ZIP produces a browser-profile draft instead of an out-of-scope error.
+- No unsupported step is silently dropped.
+- Import review can be rendered by the existing LoadRunner import dashboard path.
+
+## Workstream V2.3: Step Mapping
+
+| Step Family | Stormrunner Mapping | Priority |
+| --- | --- | --- |
+| Navigate / page transition | `browser_navigate` | P0 |
+| Click / double-click / submit | `browser_click` plus action metadata | P0 |
+| Type / set / clear | `browser_fill` | P0 |
+| Select / checkbox / radio | `browser_select`, `browser_click` | P0 |
+| Wait / sync / object exists | `browser_wait` or `wait_for` on action | P0 |
+| Verify text/title/url/object | action assertions | P0 |
+| Start/end transaction | transaction metadata and action grouping | P0 |
+| Think time | `think_time` on actions or script config | P0 |
+| Scroll / hover | `browser_swipe`, planned hover action if needed | P1 |
+| Iframe/window/tab context | browser context metadata and replay validation | P1 |
+| Conditions/loops | review-first mapping to grouped action blocks; executable subset where deterministic | P1 |
+| JavaScript/API/C custom code | decompose safe patterns; preserve and warn for unsupported code | P1 |
+| Screenshots/snapshots | browser capture config and archive evidence | P1 |
+
+Acceptance:
+
+- P0 steps replay in Stormrunner browser runtime.
+- P1 steps either replay or show guided review with repair suggestions.
+- Transactions and verification evidence survive import.
+
+## Workstream V2.4: Object Identification
+
+| ID | Work Item | Priority | Status |
+| --- | --- | --- | --- |
+| V2.4.1 | Add object descriptor model to import metadata: selector, XPath, text, role, attributes, ordinal, regex, frame/window context, and fallback candidates | P0 | Planned |
+| V2.4.2 | Map stable descriptors into CSS/role/text selectors where safe | P0 | Planned |
+| V2.4.3 | Add selector confidence and stability scoring to TruClient 2.0 Web import review | P0 | Planned |
+| V2.4.4 | Add guided repair to choose alternate selectors from replay DOM evidence | P1 | Planned |
+| V2.4.5 | Add replay diagnostics for object not found, ambiguous match, frame mismatch, detached DOM, and timing timeout | P1 | Planned |
+
+Acceptance:
+
+- Imported object IDs stay traceable to original VuGen descriptors.
+- Replay failures explain whether the problem is selector, frame/window, timing, or unsupported construct.
+
+## Workstream V2.5: Stormrunner Creation UX
+
+| ID | Work Item | Priority | Status |
+| --- | --- | --- | --- |
+| V2.5.1 | Add "VuGen Web 2.0 / TruClient 2.0 Web" starter profile to Create Script | P0 | Planned |
+| V2.5.2 | Add graphical step outline focused on browser actions, transactions, parameters, waits, and assertions | P0 | Planned |
+| V2.5.3 | Add dialogs for object descriptor editing, parameter data, runtime settings, replay output, and conversion-to-HTTP review | P0 | Planned |
+| V2.5.4 | Add reusable Web 2.0 browser components: login, search, add-to-cart, checkout, iframe flow, modal flow, auth callback, and teardown/logout | P1 | Planned |
+| V2.5.5 | Add AI-assisted repair hooks using the existing governed AI workflow for selector/wait/assertion/data-source repairs | P1 | Planned |
+
+Acceptance:
+
+- Users can create a Web 2.0 browser script without writing JSON.
+- The central script editor remains focused on outline and script code; supporting evidence appears in dialogs or side lanes.
+- New drafts use authoring sessions and approval gates.
+
+## Workstream V2.6: Runtime Settings And Replay Evidence
+
+| ID | Work Item | Priority | Status |
+| --- | --- | --- | --- |
+| V2.6.1 | Map TruClient 2.0 browser/runtime settings into Stormrunner browser config, web runtime config, log config, think time, pacing, proxy, and capture settings | P0 | Planned |
+| V2.6.2 | Extend runtime settings support matrix with `vugen_web2` profile entries and status classification | P0 | Planned |
+| V2.6.3 | Add browser replay timeline labels that preserve original TruClient step IDs and transaction groups | P1 | Planned |
+| V2.6.4 | Archive screenshots, DOM, console, network, Core Web Vitals, and object-match diagnostics for imported Web 2.0 scripts | P1 | Planned |
+| V2.6.5 | Add report/profile sections for browser Web 2.0 migration evidence | P1 | Planned |
+
+Acceptance:
+
+- Runtime settings support is visible before save, before replay, and in reports.
+- Replay evidence can prove or reject migration readiness.
+
+## Workstream V2.7: Browser-To-HTTP Conversion
+
+| ID | Work Item | Priority | Status |
+| --- | --- | --- | --- |
+| V2.7.1 | Add "Generate protocol-load script" action from Web 2.0 browser profile | P1 | Planned |
+| V2.7.2 | Capture replay network flow as HAR-like evidence and convert to Stormrunner HTTP DSL | P1 | Planned |
+| V2.7.3 | Detect dynamic values, candidate correlations, parameter sources, auth headers, cookies, and request body variables | P1 | Planned |
+| V2.7.4 | Produce side-by-side browser script and generated HTTP script review with correlation/data-source repair suggestions | P1 | Planned |
+| V2.7.5 | Add scenario template for "browser canary plus generated protocol load" | P1 | Planned |
+
+Acceptance:
+
+- Users can keep browser Web 2.0 canaries for UX evidence and generate HTTP scripts for density.
+- Generated HTTP scripts go through the same validation, replay, diff review, and approval path.
+
+## Workstream V2.8: Governance, API, And Reporting
+
+| ID | Work Item | Priority | Status |
+| --- | --- | --- | --- |
+| V2.8.1 | Add import API support for TruClient 2.0 Web through existing LoadRunner import endpoint with explicit source metadata | P0 | Planned |
+| V2.8.2 | Extend authoring capabilities with `vugen_web2` source/profile | P0 | Planned |
+| V2.8.3 | Extend `/api/v1/system/parity-status` with a Web 2.0 migration area or evidence item | P1 | Planned |
+| V2.8.4 | Add migration readiness report with imported steps, converted steps, skipped/review steps, selector confidence, replay status, runtime parity, and conversion-to-HTTP readiness | P1 | Planned |
+| V2.8.5 | Update dashboard LoadRunner import review to show Web 2.0 profile-specific review cards and replay/repair actions | P1 | Planned |
+
+Acceptance:
+
+- Operators can see whether Web 2.0 support is ready, partial, or blocked.
+- Import, replay, repair, and approval actions are auditable.
+
+## Test Plan
+
+- Unit tests for script-type detection and support matrix classification.
+- Golden ZIP import fixtures for TruClient 2.0 Web and current Mobile Web to prevent regressions.
+- Parser tests for metadata, steps, object descriptors, parameters, transactions, runtime settings, and unsupported fragments.
+- API handler tests for successful import, unsupported archive review, RBAC allow/deny, review sections, repair suggestions, and authoring health.
+- Browser replay smoke tests for imported P0 step families.
+- Dashboard tests for Create Script profile selection, import review, object descriptor editor, replay dialog, runtime settings dialog, parameter data dialog, and conversion-to-HTTP review.
+- Archive/report tests proving replay evidence and migration readiness sections are exported.
+- Full verification before checkpoints: `go test ./...`, dashboard tests, `npm run build`, and browser smoke for touched dashboard pages.
+
+## Milestones
+
+| Milestone | Scope | Outcome |
+| --- | --- | --- |
+| V2-M1 | Support matrix, fixture contract, script-type detection | Stormrunner can identify TruClient 2.0 Web archives and explain support. |
+| V2-M2 | Parser/import P0 steps, metadata, review sections | Representative archives import into browser-profile drafts. |
+| V2-M3 | Replay/debug evidence and runtime settings | Imported drafts can be replayed and diagnosed with migration evidence. |
+| V2-M4 | Creation UX and authoring profile | Users can create new Stormrunner Web 2.0-style scripts. |
+| V2-M5 | Browser-to-HTTP conversion and scenario template | Users can pair browser canaries with generated protocol load. |
+| V2-M6 | Parity gate, docs, dashboard polish | Web 2.0 parity is visible in status, docs, and operator workflows. |
+
+## Definition Of Done
+
+- TruClient 2.0 Web archives import through the LoadRunner acquisition path with explicit source/profile metadata.
+- P0 Web 2.0 steps replay in Stormrunner browser runtime.
+- Object descriptor issues are scored and repairable.
+- New Web 2.0 scripts can be created in Stormrunner's authoring UX.
+- Conversion to HTTP load scripts is available as an explicit review workflow.
+- Runtime settings, replay evidence, and migration readiness are exportable.
+- High-density browser load remains evidence-gated and separate from Web 2.0 scripting parity.

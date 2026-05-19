@@ -385,6 +385,7 @@ Current script-type scope:
 | `.usr` Type | Current Status | Notes |
 |:---|:---|:---|
 | `TruClient - Mobile Web` | MVP implemented | This is the only browser-import target in scope for the MVP. The current LoadRunner ZIP importer converts `default.xml` steps into browser DSL actions and keeps unsupported constructs visible as warnings. |
+| `TruClient 2.0 - Web` | Planned separately | Desktop browser Web 2.0 scripting is tracked in `docs/VUGEN_WEB2_TRUCLIENT2_PARITY_PLAN.md` as a distinct `vugen_web2` browser-profile import and creation scope. It is not part of the Mobile Web MVP. |
 | `TruClient` | Out of scope | Legacy desktop-style TruClient parity remains outside Stormrunner's browser-import target. |
 
 Current step support matrix:

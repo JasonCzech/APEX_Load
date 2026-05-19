@@ -9,6 +9,7 @@ Bring Stormrunner to practical parity with the modern OpenText LoadRunner Enterp
 - Runtime settings
 - Browser testing
 - AI-assisted workflows
+- VuGen Web 2.0 / TruClient 2.0 Web scripting profile support
 
 This plan extends the completed `docs/LOADRUNNER_PARITY_EXECUTION_PLAN.md`. That earlier plan closed the planned migration-facing scope for browser testing, script authoring, runtime settings, and Auth/RBAC. This follow-on plan is narrower and more product-facing: it targets the remaining gaps that matter when an evaluator compares Stormrunner against the current LoadRunner Enterprise family for modern web, API, browser, and AI-assisted testing.
 
@@ -44,6 +45,7 @@ Stormrunner already has strong footing:
 - Runtime settings parity for the planned Web HTTP/HTML scope, including executed support for run logic, pacing, think time, logging, error behavior, browser emulation, proxy, download filters, content checks, network shaping, and DFE transforms.
 - Browser replay, mobile browser profiles, client metrics, screenshots, DOM, console, network evidence, archive drilldown, comparison views, and diagnostics bundles.
 - AI guardrail evidence in validation and approval flows for AI-generated drafts.
+- A documented plan for VuGen Web 2.0 / TruClient 2.0 Web import and creation as a distinct browser-profile scope.
 
 Major remaining gaps:
 
@@ -52,6 +54,7 @@ Major remaining gaps:
 - No high-confidence benchmark publication for Web/API density and browser canary envelopes.
 - Browser support is strong as diagnostic canaries, but not marketed as high-density real-browser load.
 - AI support now includes governed deterministic draft generation, repair suggestions, explanation, review queue, policy controls, and evidence-bound archived root-cause summaries. External LLM provider integration remains intentionally demand-gated behind the same policy contract.
+- VuGen Web 2.0 / TruClient 2.0 Web desktop-browser archives are planned but not yet implemented as a first-class import or creation profile.
 
 ## Importance Bands
 
@@ -71,6 +74,7 @@ Major remaining gaps:
 | Runtime settings | Planned Web HTTP/HTML RTS scope complete with explicit compatibility-only caveats | Deep VuGen protocol-specific RTS across many protocol families | P0/P1 | Expand matrix beyond Web HTTP/HTML and add execution tests for browser and API-specific RTS edge cases. |
 | Browser testing | Browser replay, diagnostics, mobile profiles, TrueClient Mobile Web MVP, archive evidence | TruClient, TruClient 2.0, Mobile Web, Native Mobile via Digital Lab, browser workflow maturity | P0/P1 | Publish browser benchmark evidence, deepen TrueClient 2.0/Mobile Web conversion, and improve selector/wait repair. |
 | AI-assisted workflows | Governed deterministic draft generation, repair suggestions, explain mode, review queue, policy controls, guardrail blocking, and archive root-cause summaries | AI-assisted scripting and analysis in current OpenText positioning | P1/P2 | External provider integrations and richer dashboard-specific AI affordances remain demand-gated; core governed workflow parity is complete. |
+| VuGen Web 2.0 scripting | Planned as a new `vugen_web2` browser-profile workstream | TruClient 2.0 - Web browser scripting, object identification, replay/debug, parameterization, transactions, and conversion to Web HTTP/HTML | P0/P1 | Implement import and creation profile in `docs/VUGEN_WEB2_TRUCLIENT2_PARITY_PLAN.md`. |
 
 ## Implementation Order
 
@@ -79,7 +83,8 @@ Major remaining gaps:
 3. P0/P1 runtime settings expansion beyond the completed Web HTTP/HTML scope.
 4. P1 browser benchmark and migration-depth improvements.
 5. P1/P2 AI-assisted draft, repair, and analysis workflows.
-6. P2 packaging: demos, docs, sample projects, and parity gate evidence.
+6. P0/P1 VuGen Web 2.0 / TruClient 2.0 Web import and creation profile.
+7. P2 packaging: demos, docs, sample projects, and parity gate evidence.
 
 ## Workstream W1: Web/API Execution Parity
 
@@ -211,14 +216,45 @@ Move beyond AI guardrails into auditable AI assistance for generation, repair, e
 - AI-generated changes are explainable using local artifact evidence, not ungrounded prose.
 - Admins can disable AI or restrict it by project/provider/data policy.
 
+## Workstream W6: VuGen Web 2.0 / TruClient 2.0 Web Parity
+
+### Goal
+
+Add full practical support for VuGen's browser-driven Web 2.0 scripting profile: import TruClient 2.0 - Web archives and create equivalent Stormrunner browser-profile scripts without conflating that scope with legacy native desktop automation or high-density browser-load claims.
+
+Detailed plan: `docs/VUGEN_WEB2_TRUCLIENT2_PARITY_PLAN.md`.
+
+### Work Items
+
+| ID | Work Item | Priority | Status |
+| --- | --- | --- | --- |
+| W6.1 | Publish a code-owned TruClient 2.0 Web support matrix and fixture contract | P0 | Planned |
+| W6.2 | Extend LoadRunner ZIP import detection and parser for TruClient 2.0 - Web metadata, steps, object descriptors, parameters, transactions, and runtime files | P0 | Planned |
+| W6.3 | Add a Stormrunner `vugen_web2` browser authoring profile that preserves VuGen metadata while mapping executable steps to browser DSL | P0 | Planned |
+| W6.4 | Map P0 Web 2.0 steps: navigate, click, fill, select, wait, verify, transactions, think time, and screenshots | P0 | Planned |
+| W6.5 | Add object identification model, selector confidence scoring, and guided selector/wait repair | P0 | Planned |
+| W6.6 | Add Create Script profile UX for Web 2.0 scripts with step outline, object descriptor editor, parameters, runtime settings, replay evidence, and approval gates | P0 | Planned |
+| W6.7 | Extend runtime settings and replay/archive evidence for Web 2.0 migration readiness | P1 | Planned |
+| W6.8 | Add optional browser-to-HTTP conversion workflow for pairing browser canaries with protocol-load scripts | P1 | Planned |
+| W6.9 | Add parity-status, docs, API, dashboard, and report evidence for Web 2.0 support | P1 | Planned |
+
+### Acceptance Criteria
+
+- TruClient 2.0 Web archives import through the existing LoadRunner acquisition path without being rejected as legacy desktop TruClient.
+- Core Web 2.0 steps replay in Stormrunner browser runtime with preserved transactions, parameters, waits, assertions, and screenshots.
+- Unsupported proprietary constructs become review sections and repair suggestions.
+- Users can create a new Stormrunner Web 2.0 browser script from the dashboard without writing JSON first.
+- Browser-to-HTTP conversion is available as an explicit review workflow for density use cases.
+- High-density browser-load claims remain benchmark-gated and separate from scripting-profile parity.
+
 ## Cross-Cutting Evidence Gates
 
 | Gate | Requirement | Applies To |
 | --- | --- | --- |
 | Support matrix | Each feature has a code-owned status matrix or explicit docs-owned claim rule. | W1, W3, W4 |
-| Runnable fixture | Each supported protocol/workflow has a runnable fixture and test coverage. | W1, W2, W3, W4 |
-| Archive evidence | Key scenarios produce archive/report evidence that can be inspected after a run. | W1, W3, W4, W5 |
-| Browser verification | Dashboard authoring/browser workflows are verified in a real browser. | W2, W4, W5 |
+| Runnable fixture | Each supported protocol/workflow has a runnable fixture and test coverage. | W1, W2, W3, W4, W6 |
+| Archive evidence | Key scenarios produce archive/report evidence that can be inspected after a run. | W1, W3, W4, W5, W6 |
+| Browser verification | Dashboard authoring/browser workflows are verified in a real browser. | W2, W4, W5, W6 |
 | Security review | AI and credential-handling changes prove redaction, provenance, and audit behavior. | W2, W5 |
 | Benchmark evidence | Any density or scale claim includes reproducible hardware/run metadata. | W1, W4 |
 
@@ -253,6 +289,14 @@ Outcome: Stormrunner can claim browser canary support with reproducible evidence
 - W5.4, W5.5
 
 Outcome: AI assistance becomes a governed workflow for draft generation, repair, explanation, and report analysis.
+
+### Milestone 5: VuGen Web 2.0 Scripting Profile
+
+- W6.1, W6.2, W6.3, W6.4
+- W6.5, W6.6
+- W6.7, W6.8, W6.9
+
+Outcome: Stormrunner can import and create TruClient 2.0 Web-style browser scripts, replay them with migration evidence, and optionally derive HTTP protocol-load scripts.
 
 ## Out Of Scope Unless Demand-Gated
 
