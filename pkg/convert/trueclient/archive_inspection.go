@@ -17,6 +17,8 @@ type ArchiveInspection struct {
 	ParameterFiles          []ArchiveFileSummary   `json:"parameter_files,omitempty"`
 	RuntimeFiles            []ArchiveFileSummary   `json:"runtime_files,omitempty"`
 	StepInventory           StepInventory          `json:"step_inventory"`
+	Steps                   []StepInspection       `json:"steps,omitempty"`
+	UnsupportedFragments    []SourceFragment       `json:"unsupported_fragments,omitempty"`
 	PreservedMetadataInputs []string               `json:"preserved_metadata_inputs,omitempty"`
 	Warnings                []string               `json:"warnings,omitempty"`
 	CapabilityStatuses      map[string]ScopeStatus `json:"capability_statuses,omitempty"`
@@ -34,6 +36,25 @@ type StepInventory struct {
 	Supported   map[string]int `json:"supported,omitempty"`
 	ReviewOnly  map[string]int `json:"review_only,omitempty"`
 	Unsupported map[string]int `json:"unsupported,omitempty"`
+}
+
+type StepInspection struct {
+	StepID        string      `json:"step_id,omitempty"`
+	Index         string      `json:"index,omitempty"`
+	Action        string      `json:"action"`
+	ActionName    string      `json:"action_name,omitempty"`
+	Status        ScopeStatus `json:"status"`
+	ScopeName     string      `json:"scope_name,omitempty"`
+	SourceSnippet string      `json:"source_snippet,omitempty"`
+}
+
+type SourceFragment struct {
+	StepID        string      `json:"step_id,omitempty"`
+	Index         string      `json:"index,omitempty"`
+	Action        string      `json:"action"`
+	Status        ScopeStatus `json:"status"`
+	SourceSnippet string      `json:"source_snippet,omitempty"`
+	Reason        string      `json:"reason"`
 }
 
 func InspectArchive(files map[string]string, scriptType string) (*ArchiveInspection, error) {
@@ -76,11 +97,13 @@ func InspectArchive(files map[string]string, scriptType string) (*ArchiveInspect
 		summary := archiveFileSummary(xmlName, xmlContent)
 		summary.Kind = "default_xml"
 		inspection.DefaultXML = &summary
-		inventory, err := inspectDefaultXML(xmlName, xmlContent)
+		inventory, steps, fragments, err := inspectDefaultXML(xmlName, xmlContent)
 		if err != nil {
 			return nil, err
 		}
 		inspection.StepInventory = inventory
+		inspection.Steps = steps
+		inspection.UnsupportedFragments = fragments
 	} else {
 		inspection.Warnings = append(inspection.Warnings, "No TruClient default.xml was found in the archive.")
 	}
@@ -89,11 +112,11 @@ func InspectArchive(files map[string]string, scriptType string) (*ArchiveInspect
 	return inspection, nil
 }
 
-func inspectDefaultXML(name string, content string) (StepInventory, error) {
+func inspectDefaultXML(name string, content string) (StepInventory, []StepInspection, []SourceFragment, error) {
 	decoded := normalizeXMLDeclaration(decodeXMLContent(content))
 	var doc truScriptDocument
 	if err := xml.Unmarshal([]byte(decoded), &doc); err != nil {
-		return StepInventory{}, fmt.Errorf("parse TruClient %s for archive inspection: %w", filepath.Base(name), err)
+		return StepInventory{}, nil, nil, fmt.Errorf("parse TruClient %s for archive inspection: %w", filepath.Base(name), err)
 	}
 
 	inventory := StepInventory{
@@ -101,6 +124,8 @@ func inspectDefaultXML(name string, content string) (StepInventory, error) {
 		ReviewOnly:  map[string]int{},
 		Unsupported: map[string]int{},
 	}
+	steps := make([]StepInspection, 0)
+	fragments := make([]SourceFragment, 0)
 	for _, step := range executionSteps(doc.Steps) {
 		action := strings.TrimSpace(step.Action)
 		if action == "" {
@@ -110,6 +135,9 @@ func inspectDefaultXML(name string, content string) (StepInventory, error) {
 		scope, ok := LookupStepScope(action)
 		if !ok {
 			inventory.Unsupported[action]++
+			stepInspection := inspectStep(step, ScopeOutOfScope, "")
+			steps = append(steps, stepInspection)
+			fragments = append(fragments, sourceFragment(stepInspection, "Unsupported TruClient step action is not mapped to a Stormrunner browser action."))
 			continue
 		}
 		switch scope.Status {
@@ -117,11 +145,20 @@ func inspectDefaultXML(name string, content string) (StepInventory, error) {
 			inventory.Supported[scope.CanonicalName]++
 		case ScopeReviewOnly:
 			inventory.ReviewOnly[scope.CanonicalName]++
+			stepInspection := inspectStep(step, scope.Status, scope.CanonicalName)
+			steps = append(steps, stepInspection)
+			fragments = append(fragments, sourceFragment(stepInspection, "Review-only TruClient step requires replay or guided repair before approval."))
+			continue
 		default:
 			inventory.Unsupported[scope.CanonicalName]++
+			stepInspection := inspectStep(step, scope.Status, scope.CanonicalName)
+			steps = append(steps, stepInspection)
+			fragments = append(fragments, sourceFragment(stepInspection, "TruClient step scope is not executable in the current browser draft importer."))
+			continue
 		}
+		steps = append(steps, inspectStep(step, scope.Status, scope.CanonicalName))
 	}
-	return inventory, nil
+	return inventory, steps, fragments, nil
 }
 
 func archiveFileSummary(path string, content string) ArchiveFileSummary {
@@ -188,4 +225,35 @@ func web2CapabilityStatusMap() map[string]ScopeStatus {
 		statuses[scope.CanonicalName] = scope.Status
 	}
 	return statuses
+}
+
+func inspectStep(step truXMLStep, status ScopeStatus, scopeName string) StepInspection {
+	return StepInspection{
+		StepID:        strings.TrimSpace(step.StepID),
+		Index:         strings.TrimSpace(step.Index),
+		Action:        strings.TrimSpace(step.Action),
+		ActionName:    strings.TrimSpace(step.ActionName),
+		Status:        status,
+		ScopeName:     scopeName,
+		SourceSnippet: compactSourceSnippet(step.Arguments),
+	}
+}
+
+func sourceFragment(step StepInspection, reason string) SourceFragment {
+	return SourceFragment{
+		StepID:        step.StepID,
+		Index:         step.Index,
+		Action:        step.Action,
+		Status:        step.Status,
+		SourceSnippet: step.SourceSnippet,
+		Reason:        reason,
+	}
+}
+
+func compactSourceSnippet(value string) string {
+	value = strings.Join(strings.Fields(strings.TrimSpace(value)), " ")
+	if len(value) <= 500 {
+		return value
+	}
+	return value[:500] + "..."
 }

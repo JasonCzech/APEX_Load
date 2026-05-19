@@ -96,7 +96,7 @@ Acceptance:
 | V2.2.3 | Add import response review sections for profile assumptions, unsupported steps, object-identification confidence, runtime settings, parameter mapping, conversion-to-HTTP eligibility, and replay readiness | P0 | Planned |
 | V2.2.4 | Add deterministic repair suggestions for selector stabilization, wait refinement, missing assertions, parameter source repair, unsupported JavaScript/API steps, and conversion blockers | P0 | Planned |
 
-Implementation note: V2.2.1 is backed by `trueclient.InspectArchive`, which classifies project files, `default.xml`, object repositories, parameter files, runtime files, Web 2.0 capability statuses, and executable step inventory. `TruClient 2.0 - Web` archives with supported browser step shapes now produce review-only browser drafts and preserve the archive inspection, source script type, source profile, runtime files, project settings, and parsed parameter files in import metadata. Remaining V2.2.2 work covers richer step IDs, object descriptor IDs, snapshots, and unsupported source fragments.
+Implementation note: V2.2.1 is backed by `trueclient.InspectArchive`, which classifies project files, `default.xml`, object repositories, parameter files, runtime files, Web 2.0 capability statuses, and executable step inventory. `TruClient 2.0 - Web` archives with supported browser step shapes now produce review-only browser drafts and preserve the archive inspection, source script type, source profile, runtime files, project settings, and parsed parameter files in import metadata. V2.2.2 now preserves step-level IDs, indexes, status, and review/unsupported source snippets; remaining V2.2.2 work covers object descriptor IDs, snapshots, and richer parameter definition evidence.
 
 Acceptance:
 
