@@ -12,6 +12,7 @@ import (
 	"github.com/jasonczech/stormrunner/pkg/config"
 	"github.com/jasonczech/stormrunner/pkg/distributed/generatorrpc"
 	_ "github.com/jasonczech/stormrunner/pkg/protocol/browser"
+	_ "github.com/jasonczech/stormrunner/pkg/protocol/database"
 	_ "github.com/jasonczech/stormrunner/pkg/protocol/grpc"
 	_ "github.com/jasonczech/stormrunner/pkg/protocol/http"
 	_ "github.com/jasonczech/stormrunner/pkg/protocol/java_http"

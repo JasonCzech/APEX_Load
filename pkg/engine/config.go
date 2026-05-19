@@ -20,6 +20,7 @@ func buildProtoConfigWithSecretResolver(script *dsl.Script, resolver SecretResol
 	webSocketCfg := script.Config.WebSocket
 	grpcCfg := script.Config.GRPC
 	soapCfg := script.Config.SOAP
+	databaseCfg := script.Config.Database
 
 	// Timeouts
 	if httpCfg.ConnectTimeoutMs > 0 {
@@ -205,6 +206,33 @@ func buildProtoConfigWithSecretResolver(script *dsl.Script, resolver SecretResol
 	}
 	if soapCfg.FaultHandling.FailOnFault {
 		cfg["soap_fault_fail_on_fault"] = true
+	}
+	if databaseCfg.Driver != "" {
+		cfg["database_driver"] = databaseCfg.Driver
+	}
+	if databaseCfg.DSN != "" {
+		cfg["database_dsn"] = databaseCfg.DSN
+	}
+	if databaseCfg.MaxOpenConns > 0 {
+		cfg["database_max_open_conns"] = float64(databaseCfg.MaxOpenConns)
+	}
+	if databaseCfg.MaxIdleConns > 0 {
+		cfg["database_max_idle_conns"] = float64(databaseCfg.MaxIdleConns)
+	}
+	if databaseCfg.ConnMaxLifetimeMs > 0 {
+		cfg["database_conn_max_lifetime_ms"] = float64(databaseCfg.ConnMaxLifetimeMs)
+	}
+	if databaseCfg.QueryTimeoutMs > 0 {
+		cfg["database_query_timeout_ms"] = float64(databaseCfg.QueryTimeoutMs)
+	}
+	if databaseCfg.MaxRows > 0 {
+		cfg["database_max_rows"] = float64(databaseCfg.MaxRows)
+	}
+	if databaseCfg.ReadOnly {
+		cfg["database_read_only"] = true
+	}
+	if databaseCfg.RollbackOnTeardown {
+		cfg["database_rollback_on_teardown"] = true
 	}
 
 	browserCfg := script.Config.Browser

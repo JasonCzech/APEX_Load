@@ -632,6 +632,40 @@ func TestValidateScriptIssues_BrowserValidationRejectsMismatchedDeviceProfileEng
 	assertIssue(t, issues, `config.browser.engine "chromium" is incompatible with device_profile "iphone_se" (requires webkit)`)
 }
 
+func TestValidateScriptIssues_DatabaseProtocolRequiresConfigAndSQL(t *testing.T) {
+	script := &Script{
+		Name:     "DB",
+		Protocol: "database",
+		Config: ScriptConfig{
+			Database: DatabaseConfig{Driver: "sqlite", DSN: ":memory:", MaxRows: -1},
+		},
+		Actions: []Action{{Name: "Query", Type: "db_query"}},
+	}
+
+	issues := ValidateScriptIssues(script)
+
+	assertIssue(t, issues, `actions[0] "Query": database action requires target or body SQL`)
+	assertIssue(t, issues, "config.database.max_rows must be zero or greater")
+	for _, issue := range issues {
+		if issue == "config.base_url is empty" {
+			t.Fatalf("issues = %v, database should not require base_url", issues)
+		}
+	}
+}
+
+func TestValidateScriptIssues_DatabaseProtocolAllowsTransactionActionsWithoutTarget(t *testing.T) {
+	script := &Script{
+		Name:     "DB",
+		Protocol: "database",
+		Config:   ScriptConfig{Database: DatabaseConfig{Driver: "sqlite", DSN: ":memory:"}},
+		Actions:  []Action{{Name: "Begin", Type: "db_begin"}, {Name: "Query", Type: "db_query", Target: "select 1"}},
+	}
+
+	if issues := ValidateScriptIssues(script); len(issues) != 0 {
+		t.Fatalf("issues = %#v, want none", issues)
+	}
+}
+
 func assertIssue(t *testing.T, issues []string, want string) {
 	t.Helper()
 	for _, issue := range issues {

@@ -465,6 +465,36 @@ func TestBuildProtoConfig_JavaHTTPSidecarHelperMode(t *testing.T) {
 	}
 }
 
+func TestBuildProtoConfig_Database(t *testing.T) {
+	script := &dsl.Script{
+		Config: dsl.ScriptConfig{
+			Database: dsl.DatabaseConfig{
+				Driver:             "sqlite",
+				DSN:                ":memory:",
+				MaxOpenConns:       4,
+				MaxIdleConns:       2,
+				ConnMaxLifetimeMs:  60000,
+				QueryTimeoutMs:     1500,
+				MaxRows:            25,
+				ReadOnly:           true,
+				RollbackOnTeardown: true,
+			},
+		},
+	}
+
+	cfg := buildProtoConfig(script)
+
+	if cfg["database_driver"] != "sqlite" || cfg["database_dsn"] != ":memory:" {
+		t.Fatalf("database config = %#v, want driver and dsn", cfg)
+	}
+	if cfg["database_max_open_conns"] != float64(4) || cfg["database_query_timeout_ms"] != float64(1500) || cfg["database_max_rows"] != float64(25) {
+		t.Fatalf("database numeric config = %#v", cfg)
+	}
+	if cfg["database_read_only"] != true || cfg["database_rollback_on_teardown"] != true {
+		t.Fatalf("database boolean config = %#v", cfg)
+	}
+}
+
 func TestBuildProtoConfig_EmptyConfig(t *testing.T) {
 	script := &dsl.Script{}
 	cfg := buildProtoConfig(script)

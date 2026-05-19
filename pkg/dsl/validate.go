@@ -29,7 +29,7 @@ func ValidateScriptIssues(script *Script) []string {
 	if len(script.Actions) == 0 {
 		issues = append(issues, "script must have at least one action")
 	}
-	if script.Protocol != "" && script.Protocol != "browser" && strings.TrimSpace(script.Config.BaseURL) == "" {
+	if script.Protocol != "" && !protocolAllowsEmptyBaseURL(script.Protocol) && strings.TrimSpace(script.Config.BaseURL) == "" {
 		issues = append(issues, "config.base_url is empty")
 	}
 
@@ -60,6 +60,11 @@ func ValidateScriptIssues(script *Script) []string {
 			continue
 		}
 
+		if script.Protocol == "database" {
+			issues = append(issues, validateDatabaseActionIssues(i, action)...)
+			continue
+		}
+
 		if action.Target == "" {
 			issues = append(issues, fmt.Sprintf("actions[%d] %q: missing target", i, action.Name))
 		}
@@ -71,6 +76,9 @@ func ValidateScriptIssues(script *Script) []string {
 	if script.Protocol == "java_http" {
 		issues = append(issues, validateJavaHTTPScriptIssues(script)...)
 	}
+	if script.Protocol == "database" {
+		issues = append(issues, validateDatabaseScriptIssues(script)...)
+	}
 
 	issues = append(issues, validateParameterIssues(script)...)
 	issues = append(issues, validateBrowserConfigIssues(script)...)
@@ -81,6 +89,15 @@ func ValidateScriptIssues(script *Script) []string {
 	issues = append(issues, validateGoalConfigIssues(script.GoalConfig)...)
 
 	return issues
+}
+
+func protocolAllowsEmptyBaseURL(protocolName string) bool {
+	switch strings.TrimSpace(protocolName) {
+	case "browser", "database", "network":
+		return true
+	default:
+		return false
+	}
 }
 
 func validateRunLogicIssues(runLogic RunLogicConfig) []string {
@@ -643,6 +660,54 @@ func validateJavaHTTPScriptIssues(script *Script) []string {
 	}
 	if javaCfg.BodyEncoding != "" && !isAllowedValue(javaCfg.BodyEncoding, "base64") {
 		issues = append(issues, "config.java_http.body_encoding must be base64")
+	}
+	return issues
+}
+
+func validateDatabaseScriptIssues(script *Script) []string {
+	var issues []string
+	cfg := script.Config.Database
+	if strings.TrimSpace(cfg.Driver) == "" {
+		issues = append(issues, "config.database.driver is required")
+	} else if !isAllowedValue(strings.ToLower(strings.TrimSpace(cfg.Driver)), "sqlite", "sqlite3", "postgres", "mysql", "odbc", "oracle") {
+		issues = append(issues, fmt.Sprintf("config.database.driver %q is not supported", cfg.Driver))
+	}
+	if strings.TrimSpace(cfg.DSN) == "" {
+		issues = append(issues, "config.database.dsn is required")
+	}
+	if cfg.MaxOpenConns < 0 {
+		issues = append(issues, "config.database.max_open_conns must be zero or greater")
+	}
+	if cfg.MaxIdleConns < 0 {
+		issues = append(issues, "config.database.max_idle_conns must be zero or greater")
+	}
+	if cfg.ConnMaxLifetimeMs < 0 {
+		issues = append(issues, "config.database.conn_max_lifetime_ms must be zero or greater")
+	}
+	if cfg.QueryTimeoutMs < 0 {
+		issues = append(issues, "config.database.query_timeout_ms must be zero or greater")
+	}
+	if cfg.MaxRows < 0 {
+		issues = append(issues, "config.database.max_rows must be zero or greater")
+	}
+	return issues
+}
+
+func validateDatabaseActionIssues(index int, action Action) []string {
+	label := fmt.Sprintf("actions[%d] %q", index, action.Name)
+	var issues []string
+	actionType := strings.ToLower(strings.TrimSpace(action.Type))
+	switch actionType {
+	case "db_begin", "database_begin", "begin", "db_commit", "database_commit", "commit", "db_rollback", "database_rollback", "rollback", "db_health", "database_health", "ping":
+	case "db_query", "database_query", "query", "select", "db_exec", "database_exec", "exec", "execute", "insert", "update", "delete", "db_procedure", "stored_procedure":
+		if strings.TrimSpace(action.Target) == "" && strings.TrimSpace(action.Body) == "" {
+			issues = append(issues, fmt.Sprintf("%s: database action requires target or body SQL", label))
+		}
+	default:
+		issues = append(issues, fmt.Sprintf("%s: unsupported database action type %q", label, action.Type))
+	}
+	if maxRows, ok := actionParamIntValue(action.Params, "max_rows"); ok && maxRows < 0 {
+		issues = append(issues, fmt.Sprintf("%s: max_rows must be zero or greater", label))
 	}
 	return issues
 }

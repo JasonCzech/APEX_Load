@@ -57,6 +57,7 @@ type ScriptConfig struct {
 	GRPC          GRPCConfig          `json:"grpc,omitempty"`
 	JavaHTTP      JavaHTTPConfig      `json:"java_http,omitempty"`
 	SOAP          SOAPConfig          `json:"soap,omitempty"`
+	Database      DatabaseConfig      `json:"database,omitempty"`
 	Browser       BrowserConfig       `json:"browser,omitempty"`
 	JMS           JMSConfig           `json:"jms,omitempty"`
 	ErrorHandling ErrorHandlingConfig `json:"error_handling,omitempty"`
@@ -136,6 +137,18 @@ type SOAPTimestampConfig struct {
 
 type SOAPFaultHandlingConfig struct {
 	FailOnFault bool `json:"fail_on_fault,omitempty"`
+}
+
+type DatabaseConfig struct {
+	Driver             string `json:"driver,omitempty"`
+	DSN                string `json:"dsn,omitempty"`
+	MaxOpenConns       int    `json:"max_open_conns,omitempty"`
+	MaxIdleConns       int    `json:"max_idle_conns,omitempty"`
+	ConnMaxLifetimeMs  int    `json:"conn_max_lifetime_ms,omitempty"`
+	QueryTimeoutMs     int    `json:"query_timeout_ms,omitempty"`
+	MaxRows            int    `json:"max_rows,omitempty"`
+	ReadOnly           bool   `json:"read_only,omitempty"`
+	RollbackOnTeardown bool   `json:"rollback_on_teardown,omitempty"`
 }
 
 // JMSConfig holds broker, destination, and reliability settings for JMS scripts.
