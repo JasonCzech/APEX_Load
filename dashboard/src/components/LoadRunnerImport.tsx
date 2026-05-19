@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, type CSSProperties } from 'react'
 import { useApi } from '../hooks/useApi'
-import { type ImportRepairSuggestion, type LoadRunnerImportResult, type LoadRunnerImportSummary, type LoadRunnerMigrationReadiness, type LoadRunnerSupportMatrixEntry, type LoadRunnerSupportMatrixExample, type LoadRunnerSupportMatrixResponse } from '../types/scriptImports'
+import { type DetectedLoadRunnerProtocol, type ImportRepairSuggestion, type LoadRunnerImportResult, type LoadRunnerImportSummary, type LoadRunnerMigrationReadiness, type LoadRunnerProtocolSupportEntry, type LoadRunnerReviewArtifact, type LoadRunnerSupportMatrixEntry, type LoadRunnerSupportMatrixExample, type LoadRunnerSupportMatrixResponse } from '../types/scriptImports'
 import { type BrowserReplaySession } from '../types'
 import { type ScriptDefinition } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
@@ -28,6 +28,36 @@ function isBrowserImport(script: ScriptDefinition | null): boolean {
   return script?.protocol === 'browser'
 }
 
+function buildReviewArtifactDraft(
+  artifact: LoadRunnerReviewArtifact,
+  detectedProtocol: DetectedLoadRunnerProtocol | null,
+  projectId?: string,
+  requestedName?: string,
+): ScriptDefinition {
+  const protocol = detectedProtocol?.stormrunner_protocol || detectedProtocol?.canonical_loadrunner_protocol || 'review'
+  const name = requestedName?.trim() || artifact.title || detectedProtocol?.display_name || 'LoadRunner Protocol Review'
+  return {
+    name,
+    version: '1.0.0',
+    protocol,
+    project_id: projectId,
+    generated_by: 'stormrunner-loadrunner-import',
+    generated_from: 'loadrunner',
+    config: { base_url: '' },
+    actions: [],
+    metadata: {
+      import: {
+        source: 'loadrunner',
+        source_script_name: name,
+        preserved: {
+          detected_protocol: detectedProtocol,
+          review_artifact: artifact,
+        },
+      },
+    },
+  } as ScriptDefinition
+}
+
 interface Props {
   projectId?: string
   onImported?: (result: ImportedSaveResult) => void
@@ -41,6 +71,13 @@ type LoadRunnerSupportMatrixSection = {
   key: string
   title: string
   items: LoadRunnerSupportMatrixEntry[]
+  preview: string
+}
+
+type LoadRunnerProtocolCoverageSection = {
+  key: string
+  title: string
+  items: LoadRunnerProtocolSupportEntry[]
   preview: string
 }
 
@@ -221,6 +258,8 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
   const [supportMatrix, setSupportMatrix] = useState<LoadRunnerSupportMatrixEntry[]>([])
   const [supportMatrixNotes, setSupportMatrixNotes] = useState<string[]>([])
   const [supportMatrixExamples, setSupportMatrixExamples] = useState<LoadRunnerSupportMatrixExample[]>([])
+  const [protocolSupportMatrix, setProtocolSupportMatrix] = useState<LoadRunnerProtocolSupportEntry[]>([])
+  const [reviewArtifactSaving, setReviewArtifactSaving] = useState(false)
   const [replayValidationLoading, setReplayValidationLoading] = useState(false)
   const [replayValidationError, setReplayValidationError] = useState('')
   const [replayValidationWarnings, setReplayValidationWarnings] = useState<string[]>([])
@@ -228,6 +267,9 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
 
   const [options, setOptions] = useState<ImportOptions>(DEFAULT_IMPORT_OPTIONS)
   const importedScript = result?.script ?? result?.scripts?.[0] ?? null
+  const detectedProtocol = result?.detected_protocol ?? result?.summary?.detected_protocol ?? null
+  const reviewArtifact = result?.review_artifact ?? result?.summary?.review_artifact ?? null
+  const executableImport = !detectedProtocol || detectedProtocol.import_mode === 'executable'
   const importMetadata = getImportMetadata(importedScript || undefined)
   const importSummary = getImportSummary(importMetadata)
   const reviewSummary: LoadRunnerImportSummary | null = result?.summary || null
@@ -246,12 +288,14 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
   const reviewSections = result?.review_sections || []
   const repairSuggestions = result?.repair_suggestions || []
   const supportMatrixSections = summarizeLoadRunnerSupportMatrix(supportMatrix)
+  const protocolCoverageSections = summarizeLoadRunnerProtocolSupport(protocolSupportMatrix)
   const migrationReadiness: LoadRunnerMigrationReadiness | null = reviewSummary?.migration_readiness || null
   const reviewedMigrationPolicy = migrationReadiness?.policy?.block_statuses
     ? buildMigrationPolicyOptions(migrationReadiness.policy.block_statuses)
     : null
   const hasPendingMigrationPolicyChanges = reviewedMigrationPolicy !== null && !sameMigrationBlockPolicy(options, reviewedMigrationPolicy)
   const saveBlockedByMigrationPolicy = Boolean(migrationReadiness?.blocked)
+  const saveBlockedByProtocolGate = Boolean(detectedProtocol && detectedProtocol.import_mode !== 'executable')
   const browserImport = isBrowserImport(importedScript)
   const browserReplayStatus = replayValidationSession?.status || null
   const browserReplayStarting = browserImport && replayValidationLoading
@@ -261,12 +305,14 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
   const browserReplayWasStarted = browserImport && replayValidationSession !== null
   const browserReplayInProgress = browserImport && (browserReplayStarting || browserReplayStatus === 'queued' || browserReplayStatus === 'running' || browserReplayStatus === 'paused')
   const browserReplayNeedsRerun = browserImport && !browserReplayInProgress && (replayValidationSession === null || browserReplayStatus === 'failed' || browserReplayStatus === 'stopped')
-  const saveRequiresBrowserReplay = browserReplayNeedsRerun
-  const saveActionLabel = browserReplayInProgress
+  const saveRequiresBrowserReplay = executableImport && browserReplayNeedsRerun
+  const saveActionLabel = saveBlockedByProtocolGate
+    ? 'Save Review Artifact Instead'
+    : (browserReplayInProgress
     ? 'Draft Browser Replay In Progress'
     : (saveRequiresBrowserReplay
         ? (browserReplayWasStarted ? 'Rerun Draft Browser Replay Before Saving' : 'Start Draft Browser Replay Before Saving')
-        : (reviewMode === 'validation' ? 'Save Reviewed Script' : 'Save to Script Library'))
+        : (reviewMode === 'validation' ? 'Save Reviewed Script' : 'Save to Script Library')))
   const replayActionLabel = replayValidationLoading
     ? 'Starting Draft Browser Replay...'
     : (browserReplayInProgress
@@ -282,16 +328,20 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
         ? 'This preview came from the dry-run validator. Saving is disabled until the migration readiness blockers are resolved or the active policy is relaxed.'
         : (browserReplayInProgress
         ? 'This preview came from the dry-run validator. Wait for the draft browser replay to finish before saving it to the library.'
-            : (saveRequiresBrowserReplay
+            : (saveBlockedByProtocolGate
+          ? 'Save Review Artifact Before Script Promotion'
+              : (saveRequiresBrowserReplay
           ? `This preview came from the dry-run validator. ${browserReplayWasStarted ? 'Rerun' : 'Run'} a draft browser replay before saving it to the library.`
-                : 'This preview came from the dry-run validator. You can still save the reviewed script if the output looks correct.')))
+                : 'This preview came from the dry-run validator. You can still save the reviewed script if the output looks correct.'))))
     : (saveBlockedByMigrationPolicy
         ? 'Review the generated script, preserved metadata, and warnings. Saving is disabled until the migration readiness blockers are resolved or the active policy is relaxed.'
         : (browserReplayInProgress
         ? 'Review the generated script, preserved metadata, and warnings. Wait for the draft browser replay to finish before saving it to the library.'
-            : (saveRequiresBrowserReplay
+            : (saveBlockedByProtocolGate
+          ? 'Review the protocol classification and save the review artifact; this import is not executable yet.'
+              : (saveRequiresBrowserReplay
           ? `Review the generated script, preserved metadata, and warnings. ${browserReplayWasStarted ? 'Rerun' : 'Run'} a draft browser replay before saving it to the library.`
-                : 'Review the generated script, preserved metadata, and warnings before saving.')))
+                : 'Review the generated script, preserved metadata, and warnings before saving.'))))
   const runtimeBlockingSettings = importSummary.runtimeSettingReadiness?.blocking_settings || []
   const generatedDataSources = importedScript
     ? (importedScript.data_sources || []).map((source, index) => {
@@ -505,6 +555,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
           setSupportMatrix(Array.isArray(response.support_matrix) ? response.support_matrix : [])
           setSupportMatrixNotes(Array.isArray(response.notes) ? response.notes : [])
           setSupportMatrixExamples(Array.isArray(response.tested_examples) ? response.tested_examples : [])
+          setProtocolSupportMatrix(Array.isArray(response.protocol_support_matrix) ? response.protocol_support_matrix : [])
         }
       })
       .catch(() => {
@@ -512,6 +563,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
           setSupportMatrix([])
           setSupportMatrixNotes([])
           setSupportMatrixExamples([])
+          setProtocolSupportMatrix([])
         }
       })
 
@@ -618,6 +670,10 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
 
   const handleSaveConverted = async () => {
     if (!importedScript) return
+    if (saveBlockedByProtocolGate) {
+      setNotice('This import is gated by protocol classification. Save the review artifact instead of promoting it as an executable script.')
+      return
+    }
     if (saveBlockedByMigrationPolicy) {
       setError('Saving is disabled while migration readiness is blocked by the active policy. Relax the policy or resolve the blocking runtime settings first.')
       return
@@ -642,6 +698,33 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
     }
   }
 
+  const handleSaveReviewArtifact = async () => {
+    if (!reviewArtifact) return
+    setReviewArtifactSaving(true)
+    setError('')
+    try {
+      const session = await api.createAuthoringSession({
+        project_id: projectId,
+        source: 'loadrunner_review_artifact',
+        name: reviewArtifact.title || detectedProtocol?.display_name || 'LoadRunner protocol review',
+        status: 'reviewing',
+        draft: importedScript || buildReviewArtifactDraft(reviewArtifact, detectedProtocol, projectId, options.name),
+        review_state: {
+          review_artifact: reviewArtifact,
+          detected_protocol: detectedProtocol,
+          import_summary: result?.summary || {},
+          warnings: result?.warnings || [],
+          required_evidence: reviewArtifact.required_evidence || detectedProtocol?.required_evidence || [],
+        },
+      })
+      setNotice(`Review artifact saved as authoring session ${session.name || session.id}.`)
+    } catch (error: unknown) {
+      setError(getErrorMessage(error, 'Failed to save review artifact'))
+    } finally {
+      setReviewArtifactSaving(false)
+    }
+  }
+
   const handleValidateBrowserReplay = async () => {
     const wasStarted = browserReplayWasStarted
     const started = await startBrowserReplayValidation()
@@ -655,7 +738,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
       <div className="lr-import-header">
         <div>
           <h2>Import LoadRunner Script</h2>
-          <p className="lr-subtitle">Upload a ZIP archive of your LoadRunner Web HTTP/HTML VUser script folder. The converter handles <code>web_url</code>, <code>web_submit_data</code>, <code>web_custom_request</code>, correlations, and think times.</p>
+          <p className="lr-subtitle">Upload a LoadRunner/VuGen ZIP archive. Stormrunner detects the VuGen protocol, routes executable HTTP, SOAP, browser, database, and network imports, and preserves review artifacts for protocols that still require evidence or external runners.</p>
         </div>
         {onClose && <button className="btn btn-ghost" onClick={onClose}>✕</button>}
       </div>
@@ -733,14 +816,14 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
       </div>
 
       <div className="settings-notice">
-        SOAP-aware detection is enabled for LoadRunner request assets that already resolve to SOAP-style calls or envelopes. Java-over-HTTP import remains unavailable until the dedicated runtime and transport format are implemented.
+        Protocol-aware detection uses .usr metadata plus source signatures. Conflicting evidence is gated for review instead of being saved as an executable script.
       </div>
 
       {supportMatrix.length > 0 && (
         <div className="lr-preserved">
           <div className="lr-preserved-header">
             <h4>Runtime Settings Coverage</h4>
-            <span>Code-owned LoadRunner Web HTTP/HTML runtime support matrix</span>
+            <span>Code-owned LoadRunner runtime settings support matrix</span>
           </div>
 
           <div className="lr-preserved-grid">
@@ -792,6 +875,24 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
         </div>
       )}
 
+      {protocolCoverageSections.length > 0 && (
+        <div className="lr-preserved">
+          <div className="lr-preserved-header">
+            <h4>Protocol Import Coverage</h4>
+            <span>Executable, review-only, external-runner, and unsupported VuGen protocol routes</span>
+          </div>
+          <div className="lr-preserved-grid">
+            {protocolCoverageSections.map(section => (
+              <div className="lr-preserved-card" key={section.key}>
+                <span className="lr-preserved-label">{section.title}</span>
+                <strong>{section.items.length}</strong>
+                <small>{section.preview || 'No protocols'}</small>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="replay-panel-actions">
         <button className="btn btn-secondary btn-lg" onClick={() => runReview('validate')} disabled={!file || workingMode !== null}>
           {workingMode === 'validate' ? <><span className="spinner" /> Validating...</> : 'Validate Only'}
@@ -804,7 +905,104 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
       {error && <div className="lr-error">{error}</div>}
       {notice && <div className="settings-notice">{notice}</div>}
 
+      {result && detectedProtocol && (
+        <div className="lr-preserved">
+          <div className="lr-preserved-header">
+            <h4>Detected Protocol</h4>
+            <span>{formatProtocolGateLabel(detectedProtocol)}</span>
+          </div>
+          <div className="lr-preserved-grid">
+            <div className="lr-preserved-card">
+              <span className="lr-preserved-label">LoadRunner Protocol</span>
+              <strong>{detectedProtocol.display_name || detectedProtocol.canonical_loadrunner_protocol}</strong>
+              <small>{detectedProtocol.source_type ? `.usr Type=${detectedProtocol.source_type}` : 'Content-derived'}</small>
+            </div>
+            <div className="lr-preserved-card">
+              <span className="lr-preserved-label">Stormrunner Route</span>
+              <strong>{detectedProtocol.stormrunner_protocol || 'Review artifact'}</strong>
+              <small>{detectedProtocol.bundle || 'No bundle mapped'}</small>
+            </div>
+            <div className="lr-preserved-card">
+              <span className="lr-preserved-label">Import Mode</span>
+              <strong>{formatImportMode(detectedProtocol.import_mode)}</strong>
+              <small>Confidence: {formatImportMode(detectedProtocol.confidence)}</small>
+            </div>
+            <div className="lr-preserved-card">
+              <span className="lr-preserved-label">Required Evidence</span>
+              <strong>{detectedProtocol.required_evidence?.length || 0}</strong>
+              <small>{detectedProtocol.required_evidence?.slice(0, 2).join(', ') || 'None'}</small>
+            </div>
+          </div>
+          {(detectedProtocol.conflicts?.length || detectedProtocol.warnings?.length || detectedProtocol.signals?.length) ? (
+            <div className="lr-warnings">
+              {detectedProtocol.conflicts?.length ? (
+                <div className="lr-review-section">
+                  <div className="lr-review-section-header"><strong>Protocol Conflicts</strong><span>review</span></div>
+                  <ul>{detectedProtocol.conflicts.map((conflict, index) => <li key={`conflict-${index}`}>{conflict}</li>)}</ul>
+                </div>
+              ) : null}
+              {detectedProtocol.warnings?.length ? (
+                <div className="lr-review-section">
+                  <div className="lr-review-section-header"><strong>Protocol Warnings</strong><span>warning</span></div>
+                  <ul>{detectedProtocol.warnings.map((warning, index) => <li key={`protocol-warning-${index}`}>{warning}</li>)}</ul>
+                </div>
+              ) : null}
+              {detectedProtocol.signals?.length ? (
+                <details>
+                  <summary>Detection signals ({detectedProtocol.signals.length})</summary>
+                  <ul>{detectedProtocol.signals.map((signal, index) => <li key={`signal-${index}`}>{signal}</li>)}</ul>
+                </details>
+              ) : null}
+            </div>
+          ) : null}
+          {reviewArtifact && detectedProtocol.import_mode !== 'executable' && (
+            <div className="replay-panel-actions" style={actionWrapStyle}>
+              <button className="btn btn-primary" onClick={handleSaveReviewArtifact} disabled={reviewArtifactSaving}>
+                {reviewArtifactSaving ? <><span className="spinner" /> Saving Review Artifact...</> : 'Save Review Artifact'}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Results */}
+      {result && !importedScript && reviewArtifact && (
+        <div className="lr-result">
+          <div className="lr-result-header">
+            <div>
+              <h3>{reviewMode === 'validation' ? 'Validation Review' : 'Import Review Artifact'}</h3>
+              <p className="lr-subtitle">This archive was classified without creating an executable Stormrunner script.</p>
+            </div>
+            <button className="btn btn-primary" onClick={handleSaveReviewArtifact} disabled={reviewArtifactSaving}>
+              {reviewArtifactSaving ? <><span className="spinner" /> Saving Review Artifact...</> : 'Save Review Artifact'}
+            </button>
+          </div>
+
+          <div className="lr-warnings">
+            <div className="lr-review-section">
+              <div className="lr-review-section-header">
+                <strong>{reviewArtifact.title}</strong>
+                <span>{reviewArtifact.status}</span>
+              </div>
+              <p>{reviewArtifact.summary}</p>
+              {reviewArtifact.required_evidence?.length ? (
+                <ul>{reviewArtifact.required_evidence.map((evidence, index) => <li key={`artifact-evidence-${index}`}>{evidence}</li>)}</ul>
+              ) : null}
+            </div>
+            {reviewSections.map(section => (
+              <div key={section.key} className="lr-review-section">
+                <div className="lr-review-section-header">
+                  <strong>{section.title}</strong>
+                  <span>{section.severity}</span>
+                </div>
+                {section.summary && <p>{section.summary}</p>}
+                {section.items.length > 0 && <ul>{section.items.slice(0, 8).map((item, index) => <li key={`${section.key}-${index}`}>{item}</li>)}</ul>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {result && importedScript && (
         <div className="lr-result">
           <ScriptImportReview
@@ -813,7 +1011,7 @@ export default function LoadRunnerImport({ projectId, onImported, onEdit, onClos
             script={importedScript}
             warnings={result.warnings}
             warningsTitle={`Conversion Warnings (${result.warnings.length})`}
-            saveDisabled={saveBlockedByMigrationPolicy || replayValidationLoading || browserReplayInProgress}
+            saveDisabled={saveBlockedByProtocolGate || saveBlockedByMigrationPolicy || replayValidationLoading || browserReplayInProgress}
             saveLabel={saveActionLabel}
             onSave={handleSaveConverted}
             onEdit={onEdit ? () => openImportedScriptInEditor() : undefined}
@@ -1332,6 +1530,16 @@ function summarizeLoadRunnerSupportMatrix(entries: LoadRunnerSupportMatrixEntry[
   ]
 }
 
+function summarizeLoadRunnerProtocolSupport(entries: LoadRunnerProtocolSupportEntry[]): LoadRunnerProtocolCoverageSection[] {
+  if (entries.length === 0) return []
+  return [
+    buildLoadRunnerProtocolCoverageSection('executable', 'Executable', entries),
+    buildLoadRunnerProtocolCoverageSection('review_only', 'Review-only', entries),
+    buildLoadRunnerProtocolCoverageSection('external_runner_required', 'External Runner', entries),
+    buildLoadRunnerProtocolCoverageSection('unsupported', 'Unsupported', entries),
+  ].filter(section => section.items.length > 0)
+}
+
 function buildMigrationBlockStatuses(options: Pick<ImportOptions, 'block_partial' | 'block_compatibility_only' | 'block_non_applicable'>) {
   const statuses = ['blocked']
   if (options.block_partial) statuses.push('partial')
@@ -1395,6 +1603,49 @@ function buildLoadRunnerSupportMatrixSection(status: string, title: string, entr
     items,
     preview: items.slice(0, 2).map(entry => `${entry.area}: ${entry.concept}`).join(' • '),
   }
+}
+
+function buildLoadRunnerProtocolCoverageSection(mode: string, title: string, entries: LoadRunnerProtocolSupportEntry[]): LoadRunnerProtocolCoverageSection {
+  const items = entries.filter(entry => protocolImportMode(entry) === mode)
+  return {
+    key: mode,
+    title,
+    items,
+    preview: items.slice(0, 2).map(entry => entry.display_name || entry.protocol || entry.id).join(' • '),
+  }
+}
+
+function protocolImportMode(entry: LoadRunnerProtocolSupportEntry): string {
+  const status = entry.status || entry.import_mode || ''
+  switch (status) {
+    case 'supported':
+    case 'review_then_executable':
+      return 'executable'
+    case 'review_only':
+      return 'review_only'
+    case 'external_runner':
+    case 'external_runner_required':
+      return 'external_runner_required'
+    case 'unsupported':
+    case 'out_of_scope':
+      return 'unsupported'
+    default:
+      return entry.runner_requirement ? 'external_runner_required' : 'review_only'
+  }
+}
+
+function formatImportMode(value?: string | null): string {
+  const text = value?.trim()
+  if (!text) return 'Unknown'
+  return text
+    .split('_')
+    .filter(Boolean)
+    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
+}
+
+function formatProtocolGateLabel(detected: DetectedLoadRunnerProtocol): string {
+  return `${formatImportMode(detected.import_mode)} route • ${formatImportMode(detected.confidence)} confidence`
 }
 
 function getImportedParameterMappingValue(values: Record<string, string>, aliases: string[]): string {

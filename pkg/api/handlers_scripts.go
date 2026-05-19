@@ -60,6 +60,9 @@ type loadRunnerImportSummary struct {
 	SourceScriptType            string                                       `json:"source_script_type,omitempty"`
 	SourceProfile               string                                       `json:"source_profile,omitempty"`
 	Web2MigrationReadiness      *web2MigrationReadinessReport                `json:"web2_migration_readiness,omitempty"`
+	DetectedProtocol            *loadrunner.DetectedProtocol                 `json:"detected_protocol,omitempty"`
+	ReviewArtifact              *loadrunner.ReviewArtifact                   `json:"review_artifact,omitempty"`
+	ImportMode                  string                                       `json:"import_mode,omitempty"`
 	UnsupportedFunctionCount    int                                          `json:"unsupported_function_count"`
 }
 
@@ -178,6 +181,7 @@ func (s *Server) handleLoadRunnerSupportMatrix(w http.ResponseWriter, r *http.Re
 		"trueclient_step_matrix":    trueclient.StepScopes(),
 		"web2_profile_capabilities": trueclient.Web2ProfileCapabilityScopes(),
 		"web2_fixture_contract":     trueclient.Web2FixtureContracts(),
+		"protocol_support_matrix":   protocolBundleSupportMatrix(),
 	})
 }
 
@@ -499,6 +503,10 @@ func parseBoolDefault(value string, defaultValue bool) bool {
 }
 
 func writeLoadRunnerImportResponse(w http.ResponseWriter, status int, result *loadrunner.ConvertResult, readinessPolicy loadrunner.RuntimeSettingMigrationPolicy) {
+	if result == nil {
+		writeJSON(w, status, newScriptImportResponse(scriptImportResponseOptions{}))
+		return
+	}
 	unsupportedElements := uniqueSortedStrings(result.Stats.UnsupportedFuncs)
 	warnings := loadRunnerImportWarnings(result)
 	summary := buildLoadRunnerImportSummary(result, unsupportedElements, readinessPolicy)
@@ -515,6 +523,8 @@ func writeLoadRunnerImportResponse(w http.ResponseWriter, status int, result *lo
 		ReviewSections:      reviewSections,
 		RepairSuggestions:   repairSuggestions,
 		Summary:             summary,
+		DetectedProtocol:    result.DetectedProtocol,
+		ReviewArtifact:      result.ReviewArtifact,
 	}))
 }
 
@@ -563,6 +573,17 @@ func buildLoadRunnerImportRepairSuggestions(result *loadrunner.ConvertResult, un
 
 	if isWeb2TrueClientInspection(summary.TrueClientInspection) {
 		suggestions = append(suggestions, trueClientWeb2RepairSuggestions(summary)...)
+	}
+
+	if result.DetectedProtocol != nil && result.DetectedProtocol.ImportMode != loadrunner.ImportModeExecutable {
+		suggestions = append(suggestions, scriptImportRepairSuggestion{
+			ID:          "protocol:review-artifact",
+			Category:    "protocol",
+			Severity:    "blocker",
+			Title:       "Resolve protocol import gate",
+			Description: fmt.Sprintf("%s was classified as %s and is not ready to save as an executable Stormrunner script.", firstNonEmpty(result.DetectedProtocol.DisplayName, result.DetectedProtocol.CanonicalLoadRunnerProtocol), result.DetectedProtocol.ImportMode),
+			Action:      "Save the review artifact, collect the required protocol evidence, and rerun import after the protocol is confirmed or a runner bridge is available.",
+		})
 	}
 
 	if len(summary.RuntimeFiles) > 0 || summary.MappedRuntimeFile != "" {
@@ -1055,6 +1076,57 @@ func buildLoadRunnerImportReviewSections(warnings []string, result *loadrunner.C
 		return sections
 	}
 
+	if result.DetectedProtocol != nil {
+		items := []string{
+			"LoadRunner protocol: " + firstNonEmpty(result.DetectedProtocol.DisplayName, result.DetectedProtocol.CanonicalLoadRunnerProtocol),
+			"Import mode: " + string(result.DetectedProtocol.ImportMode),
+			"Confidence: " + string(result.DetectedProtocol.Confidence),
+		}
+		if result.DetectedProtocol.StormrunnerProtocol != "" {
+			items = append(items, "Stormrunner protocol: "+result.DetectedProtocol.StormrunnerProtocol)
+		}
+		if result.DetectedProtocol.Bundle != "" {
+			items = append(items, "Bundle: "+result.DetectedProtocol.Bundle)
+		}
+		for _, signal := range result.DetectedProtocol.Signals {
+			items = append(items, "Signal: "+signal)
+		}
+		for _, conflict := range result.DetectedProtocol.Conflicts {
+			items = append(items, "Conflict: "+conflict)
+		}
+		severity := "info"
+		if result.DetectedProtocol.ImportMode != loadrunner.ImportModeExecutable || len(result.DetectedProtocol.Conflicts) > 0 {
+			severity = "warning"
+		}
+		sections = append(sections, scriptImportReviewSection{
+			Key:      "detected_protocol",
+			Title:    "Detected LoadRunner Protocol",
+			Severity: severity,
+			Summary:  "Protocol-aware routing classified this archive before conversion.",
+			Items:    items,
+		})
+	}
+
+	if result.ReviewArtifact != nil {
+		items := []string{
+			"Artifact ID: " + result.ReviewArtifact.ID,
+			"Status: " + result.ReviewArtifact.Status,
+		}
+		for _, evidence := range result.ReviewArtifact.RequiredEvidence {
+			items = append(items, "Required evidence: "+evidence)
+		}
+		for _, action := range result.ReviewArtifact.NextActions {
+			items = append(items, "Next action: "+action)
+		}
+		sections = append(sections, scriptImportReviewSection{
+			Key:      "review_artifact",
+			Title:    "Protocol Review Artifact",
+			Severity: "warning",
+			Summary:  result.ReviewArtifact.Summary,
+			Items:    items,
+		})
+	}
+
 	if len(warnings) > 0 {
 		sections = append(sections, scriptImportReviewSection{
 			Key:      "warnings",
@@ -1139,12 +1211,33 @@ func buildLoadRunnerImportReviewSections(warnings []string, result *loadrunner.C
 		})
 	}
 
+	if result.DetectedProtocol != nil && (result.DetectedProtocol.CanonicalLoadRunnerProtocol == "oracle_web" || result.DetectedProtocol.CanonicalLoadRunnerProtocol == "siebel_web") {
+		sections = append(sections, scriptImportReviewSection{
+			Key:      "oracle_ebusiness_review",
+			Title:    "Oracle E-Business Review Pack",
+			Severity: "warning",
+			Summary:  "Oracle-Web and Siebel-Web imports execute through HTTP but require enterprise correlation and session-state review before promotion.",
+			Items: []string{
+				"Review ICX/OA Framework or Siebel session identifiers and correlation candidates.",
+				"Validate login, navigation, and form-post replay evidence against the target environment.",
+				"Confirm Oracle E-Business runtime settings, data fit, and environment-specific tokens before saving reusable assets.",
+			},
+		})
+	}
+
 	return sections
 }
 
 func buildLoadRunnerImportSummary(result *loadrunner.ConvertResult, unsupportedElements []string, readinessPolicy loadrunner.RuntimeSettingMigrationPolicy) loadRunnerImportSummary {
 	summary := loadRunnerImportSummary{
 		UnsupportedFunctionCount: len(unsupportedElements),
+	}
+	if result != nil && result.DetectedProtocol != nil {
+		summary.DetectedProtocol = result.DetectedProtocol
+		summary.ImportMode = string(result.DetectedProtocol.ImportMode)
+	}
+	if result != nil && result.ReviewArtifact != nil {
+		summary.ReviewArtifact = result.ReviewArtifact
 	}
 
 	if result == nil || result.Script == nil || result.Script.Metadata == nil || result.Script.Metadata.Import == nil {

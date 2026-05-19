@@ -79,7 +79,7 @@ The execution runtime should remain the existing browser protocol. The new profi
 | V2.1.3 | Define golden fixture contract with 5-8 representative archives: login form, SPA checkout, dynamic token flow, iframe/window flow, parameterized search, transactions, waits/verify, and custom JavaScript/API step | P0 | Complete |
 | V2.1.4 | Update support endpoints and import review docs so current Mobile Web support and planned Web 2.0 support are separate rows | P0 | Complete |
 
-Implementation note: V2.1 is backed by `pkg/convert/trueclient/support.go`, the LoadRunner support-matrix endpoint, and tests in `pkg/convert/trueclient/support_test.go` plus `pkg/api/handlers_scripts_test.go`. `TruClient - Web` and `TruClient 2.0 - Web` are now recognized as planned scopes and rejected with explicit planned-scope guidance instead of being misclassified as Mobile Web or legacy desktop TruClient.
+Implementation note: V2.1 is backed by `pkg/convert/trueclient/support.go`, the LoadRunner support-matrix endpoint, and tests in `pkg/convert/trueclient/support_test.go` plus `pkg/api/handlers_scripts_test.go`. `TruClient - Web` and `TruClient 2.0 - Web` are now recognized as planned/review scopes and classified with explicit review-artifact guidance instead of being misclassified as Mobile Web or legacy desktop TruClient.
 
 Acceptance:
 

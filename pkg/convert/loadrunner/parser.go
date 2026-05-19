@@ -41,8 +41,8 @@ type ProjectConfig struct {
 
 // regex patterns for LoadRunner C function parsing
 var (
-	// Matches function calls like: web_url("StepName", ...)
-	reFuncCall = regexp.MustCompile(`^\s*((?:web|lr)_[A-Za-z0-9_]+)\s*\(`)
+	// Matches VuGen C function calls such as web_url, lrd_stmt, ftp_command, or sapgui_*.
+	reFuncCall = regexp.MustCompile(`^\s*([A-Za-z_][A-Za-z0-9_]*)\s*\(`)
 
 	// Matches key=value patterns inside ITEMDATA sections
 	reKeyValue = regexp.MustCompile(`"([^"]+)=([^"]*)"`)
@@ -107,8 +107,8 @@ func ParseActionFile(filename string, content string) (*ParsedAction, error) {
 			}
 		}
 
-		// Check if this line starts a recognized function call
-		if !inBlock && reFuncCall.MatchString(trimmed) {
+		// Check if this line starts a recognized VuGen function call.
+		if !inBlock && reFuncCall.MatchString(trimmed) && !isCControlCall(trimmed) {
 			inBlock = true
 			blockStartLine = lineNum
 			currentBlock.Reset()
@@ -132,6 +132,19 @@ func ParseActionFile(filename string, content string) (*ParsedAction, error) {
 	}
 
 	return parsed, nil
+}
+
+func isCControlCall(line string) bool {
+	match := reFuncCall.FindStringSubmatch(line)
+	if len(match) < 2 {
+		return false
+	}
+	switch strings.ToLower(match[1]) {
+	case "if", "for", "while", "switch", "return", "sizeof":
+		return true
+	default:
+		return false
+	}
 }
 
 // parseFunctionBlock parses a complete function call block.

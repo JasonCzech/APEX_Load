@@ -56,6 +56,7 @@ The current controller can run in either local or distributed mode without chang
 - **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** — Common issues, debugging techniques, solutions
 - **[docs/ENTERPRISE_PLATFORM_PARITY_EXECUTION_PLAN.md](docs/ENTERPRISE_PLATFORM_PARITY_EXECUTION_PLAN.md)** — Platform parity roadmap for architecture, scale-out, authoring, load modeling, monitoring, reporting, and scheduling
 - **[docs/LOADRUNNER_PARITY_EXECUTION_PLAN.md](docs/LOADRUNNER_PARITY_EXECUTION_PLAN.md)** — Epic backlog and delivery plan to close practical parity gaps with LoadRunner in browser testing, script authoring UX, runtime settings, and auth/RBAC
+- **[docs/LOADRUNNER_PROTOCOL_IMPORT_ROUTING.md](docs/LOADRUNNER_PROTOCOL_IMPORT_ROUTING.md)** — Protocol-aware LoadRunner/VuGen ZIP import routing, executable/review modes, and review-artifact API contract
 - **[docs/K6_NEOLOAD_PARITY_PLAN.md](docs/K6_NEOLOAD_PARITY_PLAN.md)** — Competitive parity plan for closing Stormrunner gaps against Grafana k6 and Tricentis NeoLoad
 - **[docs/COMPETITIVE_SUPPORT_MATRIX.md](docs/COMPETITIVE_SUPPORT_MATRIX.md)** — Evidence-backed support matrix for k6, NeoLoad, LoadRunner, JMeter, DevWeb, HAR, and native Stormrunner flows
 - **[docs/MOBILE_BROWSER_EMULATION_PLAN.md](docs/MOBILE_BROWSER_EMULATION_PLAN.md)** — Current browser engine and device profile support matrix plus conservative mobile-browser benchmark guidance
@@ -271,8 +272,8 @@ POST   /api/v1/scripts/{id}/export      — Export script JSON to disk
 GET    /api/v1/scripts/{id}/download    — Download script JSON
 POST   /api/v1/scripts/import/sample    — Build a script from raw HTTP, cURL, REST JSON, or HAR samples
 GET    /api/v1/scripts/web-api/support-matrix — Get Web/API support, diagnostics, envelopes, and sample projects
-POST   /api/v1/scripts/import/loadrunner — Convert a LoadRunner archive to DSL
-POST   /api/v1/scripts/import/loadrunner/validate — Validate a LoadRunner import draft
+POST   /api/v1/scripts/import/loadrunner — Detect and route a LoadRunner/VuGen ZIP archive to executable script or review artifact
+POST   /api/v1/scripts/import/loadrunner/validate — Validate a LoadRunner/VuGen import draft without saving
 POST   /api/v1/scripts/import/jmeter    — Convert a JMeter plan to DSL
 POST   /api/v1/scripts/import/jmeter/save — Save a reviewed JMeter import draft
 POST   /api/v1/scripts/import/jmeter/validate — Validate a JMeter import draft

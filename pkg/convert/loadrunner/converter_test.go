@@ -1751,7 +1751,7 @@ TouchMode=1
 	}
 }
 
-func TestConvertZipRejectsLegacyTruClientAsOutOfScope(t *testing.T) {
+func TestConvertZipClassifiesLegacyTruClientAsReviewArtifact(t *testing.T) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 	addFile := func(name string, content string) {
@@ -1771,14 +1771,18 @@ Type=TruClient
 		t.Fatalf("zip.Close returned error: %v", err)
 	}
 
-	_, err := ConvertZip(buf.Bytes(), ConvertOptions{})
-	if err == nil {
-		t.Fatal("ConvertZip error = nil, want out-of-scope TruClient guidance")
+	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip returned error: %v", err)
 	}
-	for _, want := range []string{"out of scope", "desktop-style TruClient parity"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Fatalf("ConvertZip error = %q, want substring %q", err.Error(), want)
-		}
+	if result.Script != nil {
+		t.Fatalf("script = %#v, want nil for review-only legacy TruClient", result.Script)
+	}
+	if result.DetectedProtocol == nil || result.DetectedProtocol.CanonicalLoadRunnerProtocol != "truclient_legacy" || result.DetectedProtocol.ImportMode != ImportModeExternalRunnerRequired {
+		t.Fatalf("detected protocol = %#v, want legacy TruClient external-runner classification", result.DetectedProtocol)
+	}
+	if result.ReviewArtifact == nil || !strings.Contains(result.ReviewArtifact.Summary, "TruClient") {
+		t.Fatalf("review artifact = %#v, want TruClient review guidance", result.ReviewArtifact)
 	}
 }
 

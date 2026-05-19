@@ -13,6 +13,7 @@ const apiMock = {
   importLoadRunner: vi.fn(),
   validateLoadRunnerImport: vi.fn(),
   createScript: vi.fn(),
+  createAuthoringSession: vi.fn(),
   startDraftBrowserReplaySession: vi.fn(),
   getBrowserReplaySession: vi.fn(),
 }
@@ -57,6 +58,21 @@ describe('LoadRunnerImport', () => {
           title: 'Extended Web HTTP/HTML runtime import',
           coverage: 'Parses transport, pacing, logging, browser emulation, and DFE settings into Stormrunner config.',
           test: 'pkg/convert/loadrunner/converter_test.go::TestParseRuntimeCfgToScriptConfigMapsExtendedRuntimeSettings',
+        },
+      ],
+      protocol_support_matrix: [
+        {
+          id: 'web_http_html',
+          protocol: 'web_http_html',
+          display_name: 'Web HTTP/HTML',
+          status: 'supported',
+        },
+        {
+          id: 'sap_gui',
+          protocol: 'sap_gui',
+          display_name: 'SAP GUI',
+          status: 'external_runner',
+          runner_requirement: 'External SAP GUI runner bridge',
         },
       ],
     })
@@ -247,6 +263,15 @@ describe('LoadRunnerImport', () => {
       created_at: '2026-05-17T00:00:00Z',
       script,
     }))
+    apiMock.createAuthoringSession.mockResolvedValue({
+      id: 'review-session',
+      name: 'SAP GUI review artifact',
+      source: 'loadrunner_review_artifact',
+      status: 'reviewing',
+      created_at: '2026-05-17T00:00:00Z',
+      updated_at: '2026-05-17T00:00:00Z',
+      last_accessed_at: '2026-05-17T00:00:00Z',
+    })
     apiMock.startDraftBrowserReplaySession.mockResolvedValue({
       script_id: '',
       replay_session_id: 'draft-browser-validation',
@@ -285,9 +310,11 @@ describe('LoadRunnerImport', () => {
 
     await flushPromises()
 
-    expect(container.textContent).toContain('SOAP-aware detection is enabled for LoadRunner request assets')
-    expect(container.textContent).toContain('Java-over-HTTP import remains unavailable')
+    expect(container.textContent).toContain('Protocol-aware detection uses .usr metadata plus source signatures')
     expect(container.textContent).toContain('Runtime Settings Coverage')
+    expect(container.textContent).toContain('Protocol Import Coverage')
+    expect(container.textContent).toContain('Executable')
+    expect(container.textContent).toContain('External Runner')
     expect(container.textContent).toContain('Executed')
     expect(container.textContent).toContain('Partial')
     expect(container.textContent).toContain('Compatibility-only')
@@ -392,6 +419,114 @@ describe('LoadRunnerImport', () => {
           }),
         }),
       })],
+    }))
+  })
+
+  it('shows protocol review artifacts instead of executable save for external-runner imports', async () => {
+    apiMock.importLoadRunner.mockResolvedValueOnce({
+      scripts: [],
+      script: null,
+      detected_protocol: {
+        canonical_loadrunner_protocol: 'sap_gui',
+        display_name: 'SAP GUI',
+        import_mode: 'external_runner_required',
+        confidence: 'high',
+        bundle: 'Foundation Entitlement',
+        required_evidence: ['External runner bridge approval'],
+        signals: ['.usr [General] Type=SAP GUI'],
+      },
+      review_artifact: {
+        id: 'lr-review-sap',
+        title: 'SAP GUI review artifact',
+        status: 'external_runner_required',
+        protocol: {
+          canonical_loadrunner_protocol: 'sap_gui',
+          display_name: 'SAP GUI',
+          import_mode: 'external_runner_required',
+          confidence: 'high',
+        },
+        summary: 'SAP GUI requires an external SAP GUI runner bridge.',
+        required_evidence: ['External runner bridge approval'],
+        next_actions: ['Attach external runner approval.'],
+      },
+      warnings: ['Import was classified as external_runner_required; no executable Stormrunner script was generated.'],
+      unsupported_elements: [],
+      assumptions: [],
+      review_sections: [
+        {
+          key: 'review_artifact',
+          title: 'Protocol Review Artifact',
+          severity: 'warning',
+          summary: 'SAP GUI requires an external SAP GUI runner bridge.',
+          items: ['Required evidence: External runner bridge approval'],
+        },
+      ],
+      repair_suggestions: [],
+      summary: {
+        import_mode: 'external_runner_required',
+        unsupported_function_count: 0,
+      },
+      stats: {
+        total_functions: 1,
+        converted_actions: 0,
+        extractors: 0,
+        think_times: 0,
+        transactions: 0,
+        skipped: 1,
+      },
+    })
+
+    await act(async () => {
+      root.render(<LoadRunnerImport projectId="project-1" />)
+    })
+    await flushPromises()
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
+    expect(fileInput).not.toBeNull()
+    if (!fileInput) {
+      return
+    }
+    const file = new File(['zip-content'], 'sap.zip', { type: 'application/zip' })
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [file],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert LoadRunner Script'))
+    expect(convertButton).toBeDefined()
+    if (!convertButton) {
+      return
+    }
+    await act(async () => {
+      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(container.textContent).toContain('Detected Protocol')
+    expect(container.textContent).toContain('SAP GUI')
+    expect(container.textContent).toContain('External Runner Required')
+    expect(container.textContent).toContain('SAP GUI review artifact')
+    expect(Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save to Script Library'))).toBeUndefined()
+
+    const saveArtifactButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save Review Artifact'))
+    expect(saveArtifactButton).toBeDefined()
+    if (!saveArtifactButton) {
+      return
+    }
+    await act(async () => {
+      saveArtifactButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.createAuthoringSession).toHaveBeenCalledWith(expect.objectContaining({
+      project_id: 'project-1',
+      source: 'loadrunner_review_artifact',
+      review_state: expect.objectContaining({
+        review_artifact: expect.objectContaining({ id: 'lr-review-sap' }),
+      }),
     }))
   })
 

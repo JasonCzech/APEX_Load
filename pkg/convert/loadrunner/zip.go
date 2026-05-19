@@ -85,13 +85,22 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 				if inspectErr != nil {
 					return nil, inspectErr
 				}
-				if err := trueclient.ImportScopeInspectionError(projectConfig.ScriptType, inspection); err != nil {
-					return nil, err
-				}
+				detected := DetectProtocol(files, projectConfig, nil)
+				detected.ImportMode = ImportModeReviewOnly
+				detected.RequiredEvidence = appendUnique(detected.RequiredEvidence, scope.RequiredEvidence...)
+				detected.Warnings = append(detected.Warnings, fmt.Sprintf("%s import is planned; archive was preserved as a review artifact.", scope.DisplayName))
+				return newLoadRunnerReviewResult(detected, files, nil, map[string]any{
+					"trueclient_archive_inspection": inspection,
+					"source_script_type":            scope.DisplayName,
+					"source_profile":                scope.StormrunnerShape,
+				}), nil
 			default:
-				if err := trueclient.ImportScopeError(projectConfig.ScriptType); err != nil {
-					return nil, err
-				}
+				detected := DetectProtocol(files, projectConfig, nil)
+				return newLoadRunnerReviewResult(detected, files, nil, map[string]any{
+					"source_script_type": scope.DisplayName,
+					"source_profile":     scope.StormrunnerShape,
+					"scope_status":       string(scope.Status),
+				}), nil
 			}
 		}
 	}
@@ -120,8 +129,9 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 			mergeScriptConfig(&trueClientResult.Script.Config, opts.RuntimeSettings)
 		}
 		result := &ConvertResult{
-			Script:   trueClientResult.Script,
-			Warnings: append([]string(nil), trueClientResult.Warnings...),
+			Script:           trueClientResult.Script,
+			Warnings:         append([]string(nil), trueClientResult.Warnings...),
+			DetectedProtocol: ptrDetectedProtocol(DetectProtocol(files, projectConfig, nil)),
 			Stats: ConvertStats{
 				TotalFunctions:   trueClientResult.Stats.TotalSteps,
 				ConvertedActions: trueClientResult.Stats.ConvertedActions,
@@ -129,6 +139,11 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 				Transactions:     trueClientResult.Stats.Transactions,
 				UnsupportedFuncs: append([]string(nil), trueClientResult.Stats.UnsupportedSteps...),
 			},
+		}
+		if result.DetectedProtocol != nil && result.DetectedProtocol.ImportMode != ImportModeExecutable {
+			result.ReviewArtifact = NewReviewArtifact(*result.DetectedProtocol, files, nil, map[string]any{
+				"trueclient_archive_inspection": trueClientInspection,
+			})
 		}
 		if trueClientScope.Status == trueclient.ScopeReviewOnly {
 			result.Warnings = append(result.Warnings, fmt.Sprintf("%s import is review-only; validate selectors, waits, runtime settings, and replay evidence before promotion.", trueClientScope.DisplayName))
@@ -208,13 +223,38 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 	}
 
 	if len(parsedActions) == 0 {
+		detected := DetectProtocol(files, projectConfig, nil)
+		if detected.ImportMode != ImportModeExecutable || detected.CanonicalLoadRunnerProtocol == "unknown" {
+			return newLoadRunnerReviewResult(detected, files, nil, map[string]any{"reason": "no_parseable_c_actions"}), nil
+		}
 		return nil, fmt.Errorf("no parseable .c action files found in the ZIP archive")
 	}
 
-	// Run the converter
-	result, err := Convert(parsedActions, opts)
-	if err != nil {
-		return nil, err
+	detected := DetectProtocol(files, projectConfig, parsedActions)
+	var result *ConvertResult
+	var convertErr error
+	switch {
+	case detected.ImportMode != ImportModeExecutable && detected.StormrunnerProtocol == "":
+		return newLoadRunnerReviewResult(detected, files, parsedActions, map[string]any{"reason": "protocol_review_required"}), nil
+	case detected.StormrunnerProtocol == "database":
+		result, convertErr = ConvertDatabase(parsedActions, opts, detected)
+	case detected.StormrunnerProtocol == "network":
+		result, convertErr = ConvertNetwork(parsedActions, opts, detected)
+	case detected.StormrunnerProtocol == "http" || detected.StormrunnerProtocol == "soap":
+		result, convertErr = Convert(parsedActions, opts)
+		if result != nil {
+			result.DetectedProtocol = &detected
+			if detected.CanonicalLoadRunnerProtocol == "oracle_web" || detected.CanonicalLoadRunnerProtocol == "siebel_web" {
+				result.ReviewArtifact = NewReviewArtifact(detected, files, parsedActions, map[string]any{
+					"review_pack": "oracle_ebusiness_correlation",
+				})
+			}
+		}
+	default:
+		return newLoadRunnerReviewResult(detected, files, parsedActions, map[string]any{"reason": "unsupported_protocol"}), nil
+	}
+	if convertErr != nil {
+		return nil, convertErr
 	}
 	parameterSections := make(map[string]map[string]map[string]string)
 	for _, parameterFileName := range parameterFileNames {
@@ -239,6 +279,37 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 
 	attachLoadRunnerMetadata(result.Script, result, projectFileName, projectSections, projectConfig, files, runtimeFileName, parameterSections, parameterFileNames, nil)
 	return result, nil
+}
+
+func ptrDetectedProtocol(detected DetectedProtocol) *DetectedProtocol {
+	return &detected
+}
+
+func newLoadRunnerReviewResult(detected DetectedProtocol, files map[string]string, actions []*ParsedAction, metadata map[string]any) *ConvertResult {
+	if detected.ImportMode == "" {
+		detected.ImportMode = ImportModeReviewOnly
+	}
+	result := &ConvertResult{
+		DetectedProtocol: &detected,
+		Warnings:         append([]string(nil), detected.Warnings...),
+		ReviewArtifact:   NewReviewArtifact(detected, files, actions, metadata),
+		Stats:            ConvertStats{},
+	}
+	for _, action := range actions {
+		if action == nil {
+			continue
+		}
+		result.Stats.TotalFunctions += len(action.Functions)
+		for _, fn := range action.Functions {
+			result.Stats.UnsupportedFuncs = append(result.Stats.UnsupportedFuncs, fn.Name)
+		}
+	}
+	result.Stats.Skipped = len(result.Stats.UnsupportedFuncs)
+	if detected.ImportMode == ImportModeReviewOnly || detected.ImportMode == ImportModeExternalRunnerRequired || detected.ImportMode == ImportModeUnsupported {
+		result.Warnings = append(result.Warnings, "Import was classified as "+string(detected.ImportMode)+"; no executable Stormrunner script was generated.")
+	}
+	result.Warnings = uniqueSortedStrings(result.Warnings)
+	return result
 }
 
 // findFile looks up a file in the map by base name, handling path variations.
@@ -380,6 +451,12 @@ func attachLoadRunnerMetadata(script *dsl.Script, result *ConvertResult, project
 	}
 	if result != nil && len(result.Warnings) > 0 {
 		preserved["warnings"] = append([]string(nil), result.Warnings...)
+	}
+	if result != nil && result.DetectedProtocol != nil {
+		preserved["detected_protocol"] = result.DetectedProtocol
+	}
+	if result != nil && result.ReviewArtifact != nil {
+		preserved["review_artifact"] = result.ReviewArtifact
 	}
 	if result != nil && result.RecordedResourceURLsCaptured {
 		preserved["recorded_resource_urls_available"] = true

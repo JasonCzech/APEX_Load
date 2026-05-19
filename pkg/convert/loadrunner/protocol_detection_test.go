@@ -1,0 +1,161 @@
+package loadrunner
+
+import (
+	"archive/zip"
+	"bytes"
+	"testing"
+)
+
+func TestDetectProtocolFromUSRType(t *testing.T) {
+	tests := []struct {
+		name       string
+		scriptType string
+		canonical  string
+		storm      string
+		mode       ImportMode
+	}{
+		{name: "web", scriptType: "Web HTTP/HTML", canonical: "web_http_html", storm: "http", mode: ImportModeExecutable},
+		{name: "soap", scriptType: "Web Services", canonical: "soap", storm: "soap", mode: ImportModeExecutable},
+		{name: "mobile", scriptType: "TruClientMobileWeb", canonical: "truclient_mobile_web", storm: "browser", mode: ImportModeExecutable},
+		{name: "web2", scriptType: "TruClient 2.0 - Web", canonical: "truclient2_web", storm: "browser", mode: ImportModeReviewOnly},
+		{name: "database", scriptType: "ODBC", canonical: "database", storm: "database", mode: ImportModeExecutable},
+		{name: "dns", scriptType: "DNS", canonical: "dns", storm: "network", mode: ImportModeExecutable},
+		{name: "ftp", scriptType: "FTP", canonical: "ftp", storm: "network", mode: ImportModeExecutable},
+		{name: "smtp", scriptType: "SMTP", canonical: "smtp", storm: "network", mode: ImportModeExecutable},
+		{name: "pop3", scriptType: "POP3", canonical: "pop3", storm: "network", mode: ImportModeExecutable},
+		{name: "imap", scriptType: "IMAP", canonical: "imap", storm: "network", mode: ImportModeExecutable},
+		{name: "ldap", scriptType: "LDAP", canonical: "ldap", storm: "network", mode: ImportModeExecutable},
+		{name: "winsock", scriptType: "Windows Sockets", canonical: "winsock", storm: "network", mode: ImportModeExecutable},
+		{name: "oracle web", scriptType: "Oracle-Web", canonical: "oracle_web", storm: "http", mode: ImportModeExecutable},
+		{name: "siebel web", scriptType: "Siebel-Web", canonical: "siebel_web", storm: "http", mode: ImportModeExecutable},
+		{name: "oracle nca", scriptType: "Oracle NCA", canonical: "oracle_nca", storm: "", mode: ImportModeExternalRunnerRequired},
+		{name: "sap gui", scriptType: "SAP GUI", canonical: "sap_gui", storm: "", mode: ImportModeExternalRunnerRequired},
+		{name: "template", scriptType: "C Vuser", canonical: "c_vuser", storm: "", mode: ImportModeReviewOnly},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			detected := DetectProtocol(nil, &ProjectConfig{ScriptType: tt.scriptType}, nil)
+			if detected.CanonicalLoadRunnerProtocol != tt.canonical || detected.StormrunnerProtocol != tt.storm || detected.ImportMode != tt.mode {
+				t.Fatalf("detected = %#v, want canonical=%s storm=%s mode=%s", detected, tt.canonical, tt.storm, tt.mode)
+			}
+		})
+	}
+}
+
+func TestDetectProtocolContentFallbackAndConflicts(t *testing.T) {
+	parsed, err := ParseActionFile("Action.c", `Action()
+{
+    lrd_stmt("select id from customers where status = ?", LAST);
+}`)
+	if err != nil {
+		t.Fatalf("ParseActionFile returned error: %v", err)
+	}
+	detected := DetectProtocol(nil, nil, []*ParsedAction{parsed})
+	if detected.CanonicalLoadRunnerProtocol != "database" || detected.Confidence != DetectionConfidenceMedium {
+		t.Fatalf("detected = %#v, want content-only database classification", detected)
+	}
+
+	conflict := DetectProtocol(nil, &ProjectConfig{ScriptType: "ODBC"}, []*ParsedAction{mustParseActionFile(t, `Action()
+{
+    web_url("Home", "URL=https://example.test/", LAST);
+}`)})
+	if conflict.ImportMode != ImportModeReviewOnly || len(conflict.Conflicts) == 0 {
+		t.Fatalf("conflict = %#v, want low-confidence review-only conflict", conflict)
+	}
+}
+
+func TestDetectProtocolKeepsMixedSOAPAndHTTPExecutableHTTP(t *testing.T) {
+	parsed := mustParseActionFile(t, `Action()
+{
+    web_custom_request("Soap", "URL=https://example.test/soap", "Method=POST", "RecContentType=text/xml", "Body=<soap:Envelope></soap:Envelope>", LAST);
+    web_url("Home", "URL=https://example.test/", LAST);
+}`)
+	detected := DetectProtocol(nil, &ProjectConfig{ScriptType: "Web HTTP/HTML"}, []*ParsedAction{parsed})
+	if detected.ImportMode != ImportModeExecutable || detected.StormrunnerProtocol != "http" {
+		t.Fatalf("detected = %#v, want executable HTTP for mixed SOAP/HTTP", detected)
+	}
+	if len(detected.Warnings) == 0 {
+		t.Fatalf("warnings = %#v, want mixed SOAP warning", detected.Warnings)
+	}
+}
+
+func TestConvertZipRoutesDatabaseAndNetworkImports(t *testing.T) {
+	dbResult, err := ConvertZip(buildLoadRunnerProtocolZip(t, "ODBC", `Action()
+{
+    lrd_stmt("select id from customers where status = ?", "ParamStatus=active", LAST);
+}`), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("database ConvertZip returned error: %v", err)
+	}
+	if dbResult.Script == nil || dbResult.Script.Protocol != "database" || len(dbResult.Script.Actions) != 1 {
+		t.Fatalf("database script = %#v, want one database action", dbResult.Script)
+	}
+	if dbResult.Script.Actions[0].Type != "db_query" || dbResult.Script.Config.Database.Driver != "odbc" {
+		t.Fatalf("database action/config = %#v/%#v, want db_query odbc", dbResult.Script.Actions[0], dbResult.Script.Config.Database)
+	}
+
+	networkResult, err := ConvertZip(buildLoadRunnerProtocolZip(t, "DNS", `Action()
+{
+    dns_query("Lookup", "Domain=example.test", "RecordType=MX", LAST);
+}`), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("network ConvertZip returned error: %v", err)
+	}
+	if networkResult.Script == nil || networkResult.Script.Protocol != "network" || networkResult.Script.Config.Network.Subprotocol != "dns" {
+		t.Fatalf("network script = %#v, want DNS network script", networkResult.Script)
+	}
+	if networkResult.Script.Actions[0].Type != "dns_query" || networkResult.Script.Actions[0].Target != "example.test" {
+		t.Fatalf("network action = %#v, want DNS query for example.test", networkResult.Script.Actions[0])
+	}
+}
+
+func TestConvertZipReturnsReviewArtifactForExternalRunnerProtocol(t *testing.T) {
+	result, err := ConvertZip(buildLoadRunnerProtocolZip(t, "SAP GUI", `Action()
+{
+    sapgui_logon("Login", "ASHOST=server", LAST);
+}`), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip returned error: %v", err)
+	}
+	if result.Script != nil {
+		t.Fatalf("script = %#v, want nil for SAP GUI external runner", result.Script)
+	}
+	if result.DetectedProtocol == nil || result.DetectedProtocol.CanonicalLoadRunnerProtocol != "sap_gui" || result.DetectedProtocol.ImportMode != ImportModeExternalRunnerRequired {
+		t.Fatalf("detected protocol = %#v, want SAP GUI external-runner classification", result.DetectedProtocol)
+	}
+	if result.ReviewArtifact == nil || len(result.ReviewArtifact.RequiredEvidence) == 0 {
+		t.Fatalf("review artifact = %#v, want required evidence", result.ReviewArtifact)
+	}
+}
+
+func mustParseActionFile(t *testing.T, content string) *ParsedAction {
+	t.Helper()
+	parsed, err := ParseActionFile("Action.c", content)
+	if err != nil {
+		t.Fatalf("ParseActionFile returned error: %v", err)
+	}
+	return parsed
+}
+
+func buildLoadRunnerProtocolZip(t *testing.T, scriptType string, action string) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	addFile := func(name string, content string) {
+		t.Helper()
+		writer, err := zw.Create(name)
+		if err != nil {
+			t.Fatalf("Create(%q) returned error: %v", name, err)
+		}
+		if _, err := writer.Write([]byte(content)); err != nil {
+			t.Fatalf("Write(%q) returned error: %v", name, err)
+		}
+	}
+	addFile("Protocol.usr", "[General]\nType="+scriptType+"\n")
+	addFile("Action.c", action)
+	if err := zw.Close(); err != nil {
+		t.Fatalf("zip.Close returned error: %v", err)
+	}
+	return buf.Bytes()
+}

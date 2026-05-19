@@ -106,6 +106,8 @@ Goal: create the control-plane foundation before adding individual runtimes.
 | B0.5 | Add dashboard bundle cards and parity gaps | P1 | Operators can see supported, review-only, external-runner, deferred, and blocked protocols |
 | B0.6 | Add audit events for entitlement changes and external-runner execution | P0 | Protocol use is auditable by project, bundle, script, runner pool, and user |
 
+Implementation note: B0.1-B0.2 are backed by `GET /api/v1/protocol-bundles/support-matrix`, and the LoadRunner import support endpoint now reuses the same bundle matrix for dashboard protocol coverage cards. Protocol entitlement enforcement remains a later governance slice.
+
 Recommended API shape:
 
 ```json
@@ -156,6 +158,8 @@ Stormrunner should implement a first-class `database` protocol with two executio
 | DB1.6 | Add dashboard database editor panels | P1 | Authors can edit SQL, binds, transaction behavior, and assertions |
 | DB1.7 | Publish database density benchmarks | P1 | Density envelope includes connection count, query mix, server latency, and client CPU/memory |
 
+Implementation note: DB1.1-DB1.5 are now covered for the native SQL path. LoadRunner/VuGen Database or ODBC ZIP imports route through the protocol detector, extract obvious SQL statements, binds, transaction calls, and placeholder DSN settings into `database` DSL, and preserve unsupported APIs in import review metadata. Oracle-2 Tier remains external-runner gated.
+
 ## Workstream NET1: Network Protocol Bundle
 
 OpenText bundle target: DNS, FTP, IMAP, LDAP, MAPI, POP3, SMTP, Tuxedo, Windows Sockets.
@@ -190,6 +194,8 @@ Implement standards-based protocols natively first, then gate proprietary/binary
 | NET1.8 | Add network protocol dashboards and CSV exports | P1 | Reports show protocol-specific status codes, bytes, records/messages, and timings |
 | NET1.9 | Publish benchmark envelopes | P1 | Each native protocol has generator density guidance and failure-mode evidence |
 
+Implementation note: NET1.1-NET1.7 are covered for the first native/import slice. LoadRunner/VuGen DNS, FTP, SMTP, POP3, IMAP, LDAP, and Winsock ZIP imports route to `network` DSL with subprotocol config and governed endpoint placeholders. MAPI and Tuxedo are classified as review artifacts until runner bridge evidence exists.
+
 ## Workstream OEB1: Oracle E-Business Protocol Bundle
 
 OpenText bundle target: DevWeb, JMeter, Gatling, Oracle NCA, Oracle-Web, Siebel-Web, Web-HTTP/HTML.
@@ -214,6 +220,7 @@ Implemented OEB1 endpoint coverage:
 
 - `GET /api/v1/scripts/import/oracle-ebusiness/support-matrix` exposes Oracle E-Business support rows, correlation-pack status, scenario templates, and the Oracle NCA execution boundary.
 - `POST /api/v1/scripts/import/oracle-ebusiness/review` accepts source text, files, or a Stormrunner script and returns package classification, Oracle-Web/Siebel-Web/NCA token findings, data-source fit findings, repair suggestions, required evidence, and next actions.
+- The LoadRunner/VuGen ZIP importer now routes Oracle-Web and Siebel-Web archives to executable HTTP drafts while attaching protocol review artifacts and Oracle E-Business correlation review sections. Oracle NCA imports remain external-runner/review artifacts.
 
 ## Workstream TPL1: Templates Protocol Bundle
 

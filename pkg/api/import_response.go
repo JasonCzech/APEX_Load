@@ -1,5 +1,7 @@
 package api
 
+import "reflect"
+
 type scriptImportResponseOptions struct {
 	Result              any
 	Scripts             any
@@ -13,6 +15,8 @@ type scriptImportResponseOptions struct {
 	RepairSuggestions   []scriptImportRepairSuggestion
 	ScenarioDraft       any
 	Summary             any
+	DetectedProtocol    any
+	ReviewArtifact      any
 }
 
 type scriptImportReviewSection struct {
@@ -37,8 +41,8 @@ type scriptImportRepairSuggestion struct {
 
 func newScriptImportResponse(opts scriptImportResponseOptions) map[string]any {
 	scripts := opts.Scripts
-	if scripts == nil {
-		if opts.Script != nil {
+	if isNilImportValue(scripts) {
+		if !isNilImportValue(opts.Script) {
 			scripts = []any{opts.Script}
 		} else {
 			scripts = []any{}
@@ -90,12 +94,27 @@ func newScriptImportResponse(opts scriptImportResponseOptions) map[string]any {
 		"repair_suggestions":   repairSuggestions,
 		"scenario_draft":       opts.ScenarioDraft,
 		"summary":              summary,
+		"detected_protocol":    opts.DetectedProtocol,
+		"review_artifact":      opts.ReviewArtifact,
 	}
 	if opts.Result != nil {
 		response["result"] = opts.Result
 	}
 
 	return response
+}
+
+func isNilImportValue(value any) bool {
+	if value == nil {
+		return true
+	}
+	v := reflect.ValueOf(value)
+	switch v.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return v.IsNil()
+	default:
+		return false
+	}
 }
 
 func newRecorderImportStats(actionCount int, correlationCount int) map[string]int {

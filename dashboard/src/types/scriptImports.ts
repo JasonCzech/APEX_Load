@@ -46,6 +46,36 @@ export interface ScriptImportResult<
   correlations: TCorrelation[]
   stats: TStats
   summary: TSummary
+  detected_protocol?: DetectedLoadRunnerProtocol
+  review_artifact?: LoadRunnerReviewArtifact
+}
+
+export interface DetectedLoadRunnerProtocol {
+  canonical_loadrunner_protocol: string
+  stormrunner_protocol?: string
+  bundle?: string
+  import_mode: 'executable' | 'review_only' | 'external_runner_required' | 'unsupported' | string
+  confidence: 'high' | 'medium' | 'low' | string
+  display_name?: string
+  source_type?: string
+  signals?: string[]
+  conflicts?: string[]
+  warnings?: string[]
+  required_evidence?: string[]
+  runner_requirement?: string
+}
+
+export interface LoadRunnerReviewArtifact {
+  id: string
+  title: string
+  status: string
+  protocol: DetectedLoadRunnerProtocol
+  summary: string
+  source_files?: string[]
+  preserved_functions?: string[]
+  required_evidence?: string[]
+  next_actions?: string[]
+  metadata?: Record<string, unknown>
 }
 
 export interface LoadRunnerConvertStats {
@@ -67,7 +97,27 @@ export interface LoadRunnerImportSummary {
   runtime_settings_parity?: LoadRunnerRuntimeSettingParity[]
   runtime_settings_status_counts?: Record<string, number>
   migration_readiness?: LoadRunnerMigrationReadiness
+  detected_protocol?: DetectedLoadRunnerProtocol
+  review_artifact?: LoadRunnerReviewArtifact
+  import_mode?: string
   unsupported_function_count: number
+}
+
+export interface LoadRunnerProtocolSupportEntry {
+  id: string
+  bundle?: string
+  bundle_id?: string
+  bundle_name?: string
+  protocol?: string
+  display_name?: string
+  status?: string
+  execution_posture?: string
+  stormrunner_runtime?: string
+  import_mode?: string
+  runner_class?: string
+  runner_requirement?: string
+  recommended_workflow?: string
+  notes?: string
 }
 
 export interface LoadRunnerSupportMatrixEntry {
@@ -219,6 +269,7 @@ export interface LoadRunnerSupportMatrixResponse {
   support_matrix?: LoadRunnerSupportMatrixEntry[]
   notes?: string[]
   tested_examples?: LoadRunnerSupportMatrixExample[]
+  protocol_support_matrix?: LoadRunnerProtocolSupportEntry[]
 }
 
 export interface SaveJMeterImportRequest {

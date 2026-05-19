@@ -121,6 +121,15 @@ type AuthoringSessionsResponse = {
   count: number
 }
 
+type CreateAuthoringSessionRequest = {
+  project_id?: string
+  source: string
+  name: string
+  status?: string
+  draft: ScriptDefinition
+  review_state?: Record<string, unknown>
+}
+
 type AuthoringSessionApprovalResponse = {
   session: AuthoringSession
   script: StoredScript
@@ -240,6 +249,11 @@ export function useScriptApi() {
 
   const listAuthoringSessions = useCallback(
     (projectId?: string) => request<AuthoringSessionsResponse>(`/scripts/authoring/sessions${projectId ? `?project_id=${encodeURIComponent(projectId)}` : ''}`),
+    [],
+  )
+
+  const createAuthoringSession = useCallback(
+    (payload: CreateAuthoringSessionRequest) => request<AuthoringSession>('/scripts/authoring/sessions', { method: 'POST', body: JSON.stringify(payload) }),
     [],
   )
 
@@ -602,6 +616,7 @@ export function useScriptApi() {
       listAuthoringTemplates,
       listAuthoringComponents,
       listAuthoringSessions,
+      createAuthoringSession,
       approveAuthoringSession,
       deleteAuthoringSession,
       previewAuthoringCorrelation,
@@ -656,6 +671,7 @@ export function useScriptApi() {
       listAuthoringTemplates,
       listAuthoringComponents,
       listAuthoringSessions,
+      createAuthoringSession,
       approveAuthoringSession,
       deleteAuthoringSession,
       previewAuthoringCorrelation,

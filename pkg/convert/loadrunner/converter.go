@@ -14,11 +14,13 @@ import (
 
 // ConvertResult holds the output of a LoadRunner to Stormrunner DSL conversion.
 type ConvertResult struct {
-	Script                       *dsl.Script  `json:"script"`
-	Warnings                     []string     `json:"warnings,omitempty"`
-	Stats                        ConvertStats `json:"stats"`
-	RecordedResourceURLs         []string     `json:"recorded_resource_urls,omitempty"`
-	RecordedResourceURLsCaptured bool         `json:"recorded_resource_urls_captured,omitempty"`
+	Script                       *dsl.Script       `json:"script"`
+	Warnings                     []string          `json:"warnings,omitempty"`
+	Stats                        ConvertStats      `json:"stats"`
+	DetectedProtocol             *DetectedProtocol `json:"detected_protocol,omitempty"`
+	ReviewArtifact               *ReviewArtifact   `json:"review_artifact,omitempty"`
+	RecordedResourceURLs         []string          `json:"recorded_resource_urls,omitempty"`
+	RecordedResourceURLsCaptured bool              `json:"recorded_resource_urls_captured,omitempty"`
 }
 
 // ConvertStats provides conversion statistics for reporting.

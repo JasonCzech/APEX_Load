@@ -971,6 +971,103 @@ func TestHandleValidateLoadRunnerImportMatchesImportEnvelope(t *testing.T) {
 	}
 }
 
+func TestHandleValidateLoadRunnerImportIncludesDetectedProtocol(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	archive := buildLoadRunnerProtocolArchive(t, "ODBC", `Action()
+{
+    lrd_stmt("select id from customers where status = ?", "ParamStatus=active", LAST);
+}`)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/loadrunner/validate", bytes.NewReader(archive))
+	req.Header.Set("Content-Type", "application/zip")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var result struct {
+		Script struct {
+			Protocol string `json:"protocol"`
+			Config   struct {
+				Database struct {
+					Driver string `json:"driver"`
+				} `json:"database"`
+			} `json:"config"`
+		} `json:"script"`
+		DetectedProtocol struct {
+			Canonical string `json:"canonical_loadrunner_protocol"`
+			Storm     string `json:"stormrunner_protocol"`
+			Mode      string `json:"import_mode"`
+		} `json:"detected_protocol"`
+		Summary struct {
+			ImportMode string `json:"import_mode"`
+		} `json:"summary"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if result.Script.Protocol != "database" || result.Script.Config.Database.Driver != "odbc" {
+		t.Fatalf("script = %#v, want database/odbc", result.Script)
+	}
+	if result.DetectedProtocol.Canonical != "database" || result.DetectedProtocol.Storm != "database" || result.DetectedProtocol.Mode != "executable" {
+		t.Fatalf("detected_protocol = %#v, want executable database routing", result.DetectedProtocol)
+	}
+	if result.Summary.ImportMode != "executable" {
+		t.Fatalf("summary.import_mode = %q, want executable", result.Summary.ImportMode)
+	}
+}
+
+func TestHandleImportLoadRunnerReturnsReviewArtifactForExternalRunnerProtocol(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	archive := buildLoadRunnerProtocolArchive(t, "SAP GUI", `Action()
+{
+    sapgui_logon("Login", "ASHOST=server", LAST);
+}`)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/loadrunner", bytes.NewReader(archive))
+	req.Header.Set("Content-Type", "application/zip")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var result struct {
+		Scripts          []json.RawMessage `json:"scripts"`
+		Script           *json.RawMessage  `json:"script"`
+		DetectedProtocol struct {
+			Canonical string `json:"canonical_loadrunner_protocol"`
+			Mode      string `json:"import_mode"`
+		} `json:"detected_protocol"`
+		ReviewArtifact struct {
+			ID               string   `json:"id"`
+			RequiredEvidence []string `json:"required_evidence"`
+		} `json:"review_artifact"`
+		ReviewSections []struct {
+			Key string `json:"key"`
+		} `json:"review_sections"`
+		RepairSuggestions []struct {
+			Category string `json:"category"`
+		} `json:"repair_suggestions"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if len(result.Scripts) != 0 || result.Script != nil {
+		t.Fatalf("scripts/script = %d/%#v, want no executable script", len(result.Scripts), result.Script)
+	}
+	if result.DetectedProtocol.Canonical != "sap_gui" || result.DetectedProtocol.Mode != "external_runner_required" {
+		t.Fatalf("detected_protocol = %#v, want SAP GUI external runner", result.DetectedProtocol)
+	}
+	if result.ReviewArtifact.ID == "" || len(result.ReviewArtifact.RequiredEvidence) == 0 {
+		t.Fatalf("review_artifact = %#v, want stored review evidence guidance", result.ReviewArtifact)
+	}
+	if !responseHasReviewSection(result.ReviewSections, "review_artifact") || !responseHasRepairCategory(result.RepairSuggestions, "protocol") {
+		t.Fatalf("review sections/suggestions = %#v/%#v, want protocol review guidance", result.ReviewSections, result.RepairSuggestions)
+	}
+}
+
 func TestHandleImportLoadRunnerSupportsTruClientMobileWebArchive(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	var body bytes.Buffer
@@ -2875,6 +2972,50 @@ UpdateValueOn=Each Iteration
 	return body.Bytes()
 }
 
+func buildLoadRunnerProtocolArchive(t *testing.T, scriptType string, action string) []byte {
+	t.Helper()
+
+	var body bytes.Buffer
+	writer := zip.NewWriter(&body)
+	addFile := func(name string, content string) {
+		entry, err := writer.Create(name)
+		if err != nil {
+			t.Fatalf("Create(%q) returned error: %v", name, err)
+		}
+		if _, err := entry.Write([]byte(content)); err != nil {
+			t.Fatalf("Write(%q) returned error: %v", name, err)
+		}
+	}
+	addFile("Protocol.usr", "[General]\nType="+scriptType+"\n\n[Actions]\nAction1=Action.c\n")
+	addFile("Action.c", action)
+	if err := writer.Close(); err != nil {
+		t.Fatalf("zip.Close returned error: %v", err)
+	}
+	return body.Bytes()
+}
+
+func responseHasReviewSection(sections []struct {
+	Key string `json:"key"`
+}, key string) bool {
+	for _, section := range sections {
+		if section.Key == key {
+			return true
+		}
+	}
+	return false
+}
+
+func responseHasRepairCategory(suggestions []struct {
+	Category string `json:"category"`
+}, category string) bool {
+	for _, suggestion := range suggestions {
+		if suggestion.Category == category {
+			return true
+		}
+	}
+	return false
+}
+
 func encodeUTF16LEForTruClientZip(text string) string {
 	words := utf16.Encode([]rune(text))
 	bytes := make([]byte, 0, len(words)*2)
@@ -2944,7 +3085,7 @@ func decodeImportEnvelope(t *testing.T, body []byte) map[string]any {
 
 func assertSharedImportEnvelopeKeys(t *testing.T, envelope map[string]any) {
 	t.Helper()
-	for _, key := range []string{"scripts", "script", "warnings", "stats", "correlations", "assumptions", "unsupported_elements", "review_sections", "repair_suggestions", "scenario_draft", "summary", "result"} {
+	for _, key := range []string{"scripts", "script", "warnings", "stats", "correlations", "assumptions", "unsupported_elements", "review_sections", "repair_suggestions", "scenario_draft", "summary", "detected_protocol", "review_artifact", "result"} {
 		if _, ok := envelope[key]; !ok {
 			t.Fatalf("envelope missing key %q: %#v", key, envelope)
 		}
