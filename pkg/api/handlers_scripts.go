@@ -548,6 +548,10 @@ func buildLoadRunnerImportRepairSuggestions(result *loadrunner.ConvertResult, un
 		suggestions = append(suggestions, browserImportRepairSuggestions(result.Script)...)
 	}
 
+	if isWeb2TrueClientInspection(summary.TrueClientInspection) {
+		suggestions = append(suggestions, trueClientWeb2RepairSuggestions(summary)...)
+	}
+
 	if len(summary.RuntimeFiles) > 0 || summary.MappedRuntimeFile != "" {
 		suggestions = append(suggestions, scriptImportRepairSuggestion{
 			ID:          "runtime:review-preserved-settings",
@@ -570,6 +574,67 @@ func buildLoadRunnerImportRepairSuggestions(result *loadrunner.ConvertResult, un
 		})
 	}
 
+	return suggestions
+}
+
+func trueClientWeb2RepairSuggestions(summary loadRunnerImportSummary) []scriptImportRepairSuggestion {
+	inspection := summary.TrueClientInspection
+	if inspection == nil {
+		return nil
+	}
+	suggestions := []scriptImportRepairSuggestion{
+		{
+			ID:          "web2:replay-evidence",
+			Category:    "replay",
+			Severity:    "warning",
+			Title:       "Attach browser replay evidence",
+			Description: "TruClient Web 2.0 imports are review-only until selector, wait, runtime, and screenshot evidence is captured.",
+			Action:      "Run browser replay from the visual editor and attach the replay report before approving the imported draft.",
+		},
+		{
+			ID:          "web2:object-identification",
+			Category:    "selector",
+			Severity:    "warning",
+			Title:       "Review Web 2.0 object identification",
+			Description: fmt.Sprintf("%d object repository file(s) were preserved, but descriptor ranking and fallback selector evidence still require review.", len(inspection.ObjectRepositories)),
+			Action:      "Open the object-identification review section, compare imported selectors with replay evidence, and stabilize brittle selectors before promotion.",
+		},
+		{
+			ID:          "web2:http-conversion",
+			Category:    "conversion",
+			Severity:    "info",
+			Title:       "Gate browser-to-HTTP conversion",
+			Description: "Web 2.0 browser drafts should not be promoted to high-density HTTP load until network capture and correlation findings are reviewed.",
+			Action:      "Capture replay traffic, review conversion blockers and correlation candidates, then generate an HTTP draft only for eligible flows.",
+		},
+	}
+	if len(inspection.ParameterFiles) > 0 {
+		suggestions = append(suggestions, scriptImportRepairSuggestion{
+			ID:          "web2:parameter-fit",
+			Category:    "data",
+			Severity:    "info",
+			Title:       "Verify Web 2.0 parameter data fit",
+			Description: fmt.Sprintf("%d parameter file(s) were discovered for the imported Web 2.0 flow.", len(inspection.ParameterFiles)),
+			Action:      "Open parameter data in the script editor, confirm row strategy and exhaustion behavior, and replay with representative data.",
+		})
+	}
+	if len(inspection.UnsupportedFragments) > 0 {
+		severity := "warning"
+		for _, fragment := range inspection.UnsupportedFragments {
+			if fragment.Status == trueclient.ScopeOutOfScope {
+				severity = "blocker"
+				break
+			}
+		}
+		suggestions = append(suggestions, scriptImportRepairSuggestion{
+			ID:          "web2:source-fragments",
+			Category:    "unsupported",
+			Severity:    severity,
+			Title:       "Resolve Web 2.0 source fragments",
+			Description: fmt.Sprintf("%d review-only or unsupported TruClient fragment(s) were preserved from the source archive.", len(inspection.UnsupportedFragments)),
+			Action:      "Use the Web 2.0 source-fragment review section to replace unsupported JavaScript/API behavior with supported browser actions or documented manual steps.",
+		})
+	}
 	return suggestions
 }
 

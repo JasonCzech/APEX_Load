@@ -1155,6 +1155,11 @@ RuntimeSettings=default.cfg
 			Severity string   `json:"severity"`
 			Items    []string `json:"items"`
 		} `json:"review_sections"`
+		RepairSuggestions []struct {
+			Category string `json:"category"`
+			Severity string `json:"severity"`
+			Title    string `json:"title"`
+		} `json:"repair_suggestions"`
 		Summary map[string]any `json:"summary"`
 	}
 	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
@@ -1172,6 +1177,11 @@ RuntimeSettings=default.cfg
 	assertReviewSection(t, result.ReviewSections, "web2_parameter_mapping", "info", "Parameter data: parameters/users.dat")
 	assertReviewSection(t, result.ReviewSections, "web2_replay_readiness", "warning", "Run browser replay against the target application.")
 	assertReviewSection(t, result.ReviewSections, "web2_http_conversion_eligibility", "info", "Capture network requests during replay before generating an HTTP draft.")
+	assertRepairSuggestion(t, result.RepairSuggestions, "replay", "warning", "Attach browser replay evidence")
+	assertRepairSuggestion(t, result.RepairSuggestions, "selector", "warning", "Review Web 2.0 object identification")
+	assertRepairSuggestion(t, result.RepairSuggestions, "data", "info", "Verify Web 2.0 parameter data fit")
+	assertRepairSuggestion(t, result.RepairSuggestions, "unsupported", "warning", "Resolve Web 2.0 source fragments")
+	assertRepairSuggestion(t, result.RepairSuggestions, "conversion", "info", "Gate browser-to-HTTP conversion")
 	if result.Summary["source_script_type"] != "TruClient 2.0 - Web" {
 		t.Fatalf("summary.source_script_type = %#v, want TruClient 2.0 - Web", result.Summary["source_script_type"])
 	}
