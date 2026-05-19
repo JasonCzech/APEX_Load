@@ -52,11 +52,15 @@ func TestLookupStepScope(t *testing.T) {
 		wantOK     bool
 	}{
 		{stepName: "Set / Type", wantName: "Set / Type", wantStatus: ScopeSupported, wantType: "browser_fill", wantOK: true},
+		{stepName: "Double Click", wantName: "Click / Submit / Check", wantStatus: ScopeSupported, wantType: "browser_click", wantOK: true},
+		{stepName: "Submit", wantName: "Click / Submit / Check", wantStatus: ScopeSupported, wantType: "browser_click", wantOK: true},
+		{stepName: "Select Radio", wantName: "Click / Submit / Check", wantStatus: ScopeSupported, wantType: "browser_click", wantOK: true},
 		{stepName: "Select", wantName: "Select", wantStatus: ScopeSupported, wantType: "browser_select", wantOK: true},
 		{stepName: "Verify", wantName: "Verify", wantStatus: ScopeSupported, wantType: "action assertions", wantOK: true},
 		{stepName: "Start Transaction", wantName: "Start Transaction", wantStatus: ScopeSupported, wantType: "transaction metadata", wantOK: true},
 		{stepName: "Scroll", wantName: "Scroll", wantStatus: ScopeSupported, wantType: "browser_swipe", wantOK: true},
 		{stepName: "Evaluate JavaScript", wantName: "Evaluate JavaScript", wantStatus: ScopeReviewOnly, wantType: "browser_fill, browser_click, browser_swipe, or browser_navigate when decomposable", wantOK: true},
+		{stepName: "Hover", wantName: "Hover", wantStatus: ScopeReviewOnly, wantType: "guided repair", wantOK: true},
 		{stepName: "Unknown Step", wantOK: false},
 	}
 

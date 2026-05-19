@@ -85,6 +85,42 @@ func TestConvertArchiveMapsQuerySelectorValueAssignment(t *testing.T) {
 	}
 }
 
+func TestConvertArchiveMapsClickLikeWeb2Steps(t *testing.T) {
+	result, err := ConvertArchive(map[string]string{
+		"default.xml": encodeUTF16LE(`<?xml version="1.0" encoding="utf-16"?>
+<truScript>
+  <step type="block" action="action" actionName="Action">
+    <step type="testObject" action="Navigate" index="1" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://shop.example.com/cart\&quot;&quot;}}" />
+    <step type="testObject" action="Double Click" index="2" arguments="{&quot;Selector&quot;:{&quot;value&quot;:&quot;\&quot;#quantity\&quot;&quot;}}" />
+    <step type="testObject" action="Submit" index="3" arguments="{&quot;Selector&quot;:{&quot;value&quot;:&quot;\&quot;form#cart\&quot;&quot;}}" />
+    <step type="testObject" action="Check" index="4" arguments="{&quot;Selector&quot;:{&quot;value&quot;:&quot;\&quot;#terms\&quot;&quot;}}" />
+    <step type="testObject" action="Uncheck" index="5" arguments="{&quot;Selector&quot;:{&quot;value&quot;:&quot;\&quot;#newsletter\&quot;&quot;}}" />
+    <step type="testObject" action="Select Radio" index="6" arguments="{&quot;Selector&quot;:{&quot;value&quot;:&quot;\&quot;[name='shipping'][value='express']\&quot;&quot;}}" />
+  </step>
+</truScript>`),
+	}, ConvertOptions{ScriptName: "Click-like Web2 Flow"})
+	if err != nil {
+		t.Fatalf("ConvertArchive returned error: %v", err)
+	}
+	if len(result.Script.Actions) != 6 {
+		t.Fatalf("actions len = %d, want 6", len(result.Script.Actions))
+	}
+	assertBrowserClickAction(t, result.Script.Actions[1], "#quantity", "truclient_double_click", map[string]any{"click_count": 2})
+	assertBrowserClickAction(t, result.Script.Actions[2], "form#cart", "truclient_submit", nil)
+	if result.Script.Actions[2].Metadata["submit"] != true {
+		t.Fatalf("submit metadata = %#v, want submit=true", result.Script.Actions[2].Metadata)
+	}
+	assertBrowserClickAction(t, result.Script.Actions[3], "#terms", "truclient_check", map[string]any{"checked": true})
+	assertBrowserClickAction(t, result.Script.Actions[4], "#newsletter", "truclient_uncheck", map[string]any{"checked": false})
+	assertBrowserClickAction(t, result.Script.Actions[5], "[name='shipping'][value='express']", "truclient_select_radio", map[string]any{"checked": true})
+	if result.Stats.TotalSteps != 6 || result.Stats.ConvertedActions != 6 || result.Stats.Skipped != 0 {
+		t.Fatalf("stats = %#v, want total=6 converted=6 skipped=0", result.Stats)
+	}
+	if len(result.Warnings) != 0 || len(result.Stats.UnsupportedSteps) != 0 {
+		t.Fatalf("warnings=%#v unsupported=%#v, want none", result.Warnings, result.Stats.UnsupportedSteps)
+	}
+}
+
 func TestConvertArchiveMapsJQueryAttrAndTriggerJavaScript(t *testing.T) {
 	result, err := ConvertArchive(map[string]string{
 		"default.xml": encodeUTF16LE(`<?xml version="1.0" encoding="utf-16"?>
@@ -773,4 +809,19 @@ func encodeUTF16LE(text string) string {
 		bytes = append(bytes, byte(word), byte(word>>8))
 	}
 	return string(bytes)
+}
+
+func assertBrowserClickAction(t *testing.T, action dsl.Action, selector string, source string, params map[string]any) {
+	t.Helper()
+	if action.Type != "browser_click" || action.Selector != selector || action.Target != selector {
+		t.Fatalf("action = %#v, want browser_click on %s", action, selector)
+	}
+	if action.Metadata["source"] != source {
+		t.Fatalf("action metadata = %#v, want source=%s", action.Metadata, source)
+	}
+	for key, want := range params {
+		if action.Params[key] != want {
+			t.Fatalf("action params = %#v, want %s=%#v", action.Params, key, want)
+		}
+	}
 }

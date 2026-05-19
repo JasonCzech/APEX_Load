@@ -376,21 +376,12 @@ func convertStep(step truXMLStep) ([]dsl.Action, []string, bool, error) {
 			Type:   "browser_navigate",
 			Target: location,
 		}}, nil, false, nil
-	case "Click":
-		selector, err := parseFirstArgumentValue(step.Arguments, "Selector", "selector", "Target", "target", "Element", "element")
+	case "Click", "Double Click", "Double-click", "DoubleClick", "Submit", "Check", "Uncheck", "Select Radio", "Select Checkbox", "Radio", "Checkbox":
+		action, err := convertClickLikeStep(step)
 		if err != nil {
-			return nil, nil, false, fmt.Errorf("parse TruClient Click step arguments: %w", err)
+			return nil, nil, false, err
 		}
-		selector = trimQuotedValue(selector)
-		if selector == "" {
-			return nil, nil, false, fmt.Errorf("TruClient Click step is missing a selector value")
-		}
-		return []dsl.Action{{
-			Name:     stepDisplayName(step, "Click"),
-			Type:     "browser_click",
-			Target:   selector,
-			Selector: selector,
-		}}, nil, false, nil
+		return []dsl.Action{action}, nil, false, nil
 	case "Set / Type", "Set", "Type":
 		selector, err := parseFirstArgumentValue(step.Arguments, "Selector", "selector", "Target", "target", "Element", "element")
 		if err != nil {
@@ -476,6 +467,43 @@ func convertStep(step truXMLStep) ([]dsl.Action, []string, bool, error) {
 		}
 		return nil, []string{fmt.Sprintf("TruClient step %q is not supported yet and was skipped during import", actionName)}, true, nil
 	}
+}
+
+func convertClickLikeStep(step truXMLStep) (dsl.Action, error) {
+	actionName := strings.TrimSpace(step.Action)
+	selector, err := parseFirstArgumentValue(step.Arguments, "Selector", "selector", "Target", "target", "Element", "element")
+	if err != nil {
+		return dsl.Action{}, fmt.Errorf("parse TruClient %s step arguments: %w", actionName, err)
+	}
+	selector = trimQuotedValue(selector)
+	if selector == "" {
+		return dsl.Action{}, fmt.Errorf("TruClient %s step is missing a selector value", actionName)
+	}
+	action := dsl.Action{
+		Name:     stepDisplayName(step, firstNonEmptyString(actionName, "Click")),
+		Type:     "browser_click",
+		Target:   selector,
+		Selector: selector,
+	}
+	params := map[string]any{}
+	metadata := map[string]any{
+		"source": "truclient_" + stableActionToken(actionName),
+	}
+	switch strings.ToLower(strings.ReplaceAll(actionName, "-", " ")) {
+	case "double click", "doubleclick":
+		params["click_count"] = 2
+	case "check", "select checkbox", "checkbox", "select radio", "radio":
+		params["checked"] = true
+	case "uncheck":
+		params["checked"] = false
+	case "submit":
+		metadata["submit"] = true
+	}
+	if len(params) > 0 {
+		action.Params = params
+	}
+	action.Metadata = metadata
+	return action, nil
 }
 
 func convertScrollStep(step truXMLStep) (dsl.Action, error) {
@@ -1290,6 +1318,40 @@ func stepDisplayName(step truXMLStep, fallback string) string {
 		return action
 	}
 	return fallback
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+func stableActionToken(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
+		return "action"
+	}
+	var b strings.Builder
+	lastUnderscore := false
+	for _, r := range value {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			lastUnderscore = false
+			continue
+		}
+		if !lastUnderscore {
+			b.WriteByte('_')
+			lastUnderscore = true
+		}
+	}
+	token := strings.Trim(b.String(), "_")
+	if token == "" {
+		return "action"
+	}
+	return token
 }
 
 func detectBaseURL(target string) string {

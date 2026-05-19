@@ -128,6 +128,8 @@ Acceptance:
 - P1 steps either replay or show guided review with repair suggestions.
 - Transactions and verification evidence survive import.
 
+Implementation note: The converter now maps VuGen Web 2.0 click-like steps including `Double Click`, `Submit`, checkbox selection, checkbox uncheck, and radio selection into `browser_click` actions with source metadata and intent parameters. Hover remains review-only until a public browser hover action is available.
+
 ## Workstream V2.4: Object Identification
 
 | ID | Work Item | Priority | Status |

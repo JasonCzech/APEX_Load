@@ -137,10 +137,10 @@ var stepScopes = []StepScope{
 	},
 	{
 		CanonicalName:    "click",
-		DisplayName:      "Click",
+		DisplayName:      "Click / Submit / Check",
 		Status:           ScopeSupported,
 		StormrunnerShape: "browser_click",
-		Notes:            "Direct object clicks map to browser click actions with the captured selector.",
+		Notes:            "Direct object clicks, submit actions, checkbox/radio selection actions, and double-click metadata map to browser click actions with the captured selector.",
 	},
 	{
 		CanonicalName:    "set_type",
@@ -197,6 +197,13 @@ var stepScopes = []StepScope{
 		Status:           ScopeReviewOnly,
 		StormrunnerShape: "browser_fill, browser_click, browser_swipe, or browser_navigate when decomposable",
 		Notes:            "Simple jQuery .val(...), .attr('value', ...), .click(), and .trigger('click'), document.querySelector, first-match document.querySelectorAll, document.getElementById, first-match document.getElementsByName, first-match document.getElementsByClassName with safe class tokens, first-match document.getElementsByTagName with safe tag tokens, and document.forms[].elements[] fill/click statements plus window scroll and location navigation statements are decomposed. Collection first-match access supports both [0] and item(0); unsupported shapes stay in guided review with warnings, blocker repair suggestions, and preserved unsupported-step reporting because Stormrunner does not expose a public browser-eval action.",
+	},
+	{
+		CanonicalName:    "hover",
+		DisplayName:      "Hover",
+		Status:           ScopeReviewOnly,
+		StormrunnerShape: "guided repair",
+		Notes:            "Stormrunner does not expose a public browser_hover action yet; imported hover steps stay in review until replay-driven replacement is available.",
 	},
 }
 
@@ -344,6 +351,12 @@ func LookupScriptTypeScope(scriptType string) (ScriptTypeScope, bool) {
 
 func LookupStepScope(stepName string) (StepScope, bool) {
 	normalized := normalizeStepName(stepName)
+	switch normalized {
+	case "double_click", "doubleclick", "submit", "check", "uncheck", "select_radio", "select_checkbox", "radio", "checkbox":
+		normalized = "click"
+	case "set", "type":
+		normalized = "set_type"
+	}
 	for _, scope := range stepScopes {
 		if scope.CanonicalName == normalized {
 			return scope, true
