@@ -18,6 +18,7 @@ type LoadModelValidationReport struct {
 	PeakTargetTPS            float64                   `json:"peak_target_tps,omitempty"`
 	CapacityAdvisory         *CapacityAdvisory         `json:"capacity_advisory,omitempty"`
 	AssignmentRecommendation *AssignmentRecommendation `json:"assignment_recommendation,omitempty"`
+	RuntimeSettingsReview    *RuntimeSettingsReview    `json:"runtime_settings_review,omitempty"`
 }
 
 type LoadModelValidationItem struct {
@@ -47,9 +48,11 @@ func (tr *TestRunner) ValidateScenarioLoadModel(req CreateScenarioRequest) (*Loa
 		TotalVUsers:              preview.TotalVUsers,
 		CapacityAdvisory:         cloneCapacityAdvisory(preview.CapacityAdvisory),
 		AssignmentRecommendation: recommendation,
+		RuntimeSettingsReview:    cloneRuntimeSettingsReview(preview.RuntimeSettingsReview),
 	}
 
 	report.Items = append(report.Items, validateModeledDemand(preview.Groups)...)
+	report.Items = append(report.Items, validateRuntimeSettingsReview(preview.RuntimeSettingsReview)...)
 	report.Items = append(report.Items, validateRendezvousDemand(preview.Groups)...)
 	report.Items = append(report.Items, validateCapacityAdvisory(preview.CapacityAdvisory)...)
 	report.Items = append(report.Items, validateBrowserCanaryDemand(preview.CapacityAdvisory)...)
@@ -114,6 +117,32 @@ func validateModeledDemand(groups []TestGroup) []LoadModelValidationItem {
 		})
 	}
 	return items
+}
+
+func validateRuntimeSettingsReview(review *RuntimeSettingsReview) []LoadModelValidationItem {
+	if review == nil {
+		return []LoadModelValidationItem{{
+			Dimension: "runtime_settings",
+			Status:    "ready",
+			Summary:   "No non-default runtime settings require review.",
+		}}
+	}
+	status := "ready"
+	switch review.Status {
+	case "blocked":
+		status = "blocked"
+	case "needs_review":
+		status = "needs_review"
+	}
+	summary := review.Summary
+	if strings.TrimSpace(summary) == "" {
+		summary = "Runtime settings are executable for the selected scripts and overrides."
+	}
+	return []LoadModelValidationItem{{
+		Dimension: "runtime_settings",
+		Status:    status,
+		Summary:   summary,
+	}}
 }
 
 func validateRendezvousDemand(groups []TestGroup) []LoadModelValidationItem {

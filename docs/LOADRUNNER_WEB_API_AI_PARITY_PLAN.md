@@ -143,14 +143,14 @@ Move from "Web HTTP/HTML RTS parity is complete for the planned scope" to a broa
 
 | ID | Work Item | Priority | Status |
 | --- | --- | --- | --- |
-| W3.1 | Add a unified runtime settings support endpoint across all supported protocols, not only LoadRunner Web HTTP/HTML import | P0 | Not started |
-| W3.2 | Expand RTS matrices for browser, SOAP, Java-over-HTTP, WebSocket, gRPC, JMS, DevWeb, HAR, and JMeter-derived scripts | P0 | Partial |
-| W3.3 | Add runtime compatibility warnings to scenario validation and run creation, not only script validation/import review | P0 | Partial |
-| W3.4 | Add execution tests for browser network/cache/resource RTS edge cases, including recorded-only assets and missing recorded-resource metadata | P1 | Partial |
-| W3.5 | Add protocol-specific log/snapshot behavior tests for SOAP faults, gRPC status codes, WebSocket close/error frames, JMS broker errors, and Java decode failures | P1 | Partial |
-| W3.6 | Add runtime profile presets: CI smoke, release gate, migration replay, browser canary, debug trace, soak/stress | P1 | Not started |
-| W3.7 | Add RTS parity report export per script and per scenario | P1 | Partial through import/validation metadata |
-| W3.8 | Decide whether streaming/media RTS remains compatibility-only or gets a funded runtime implementation | P2 | Not started |
+| W3.1 | Add a unified runtime settings support endpoint across all supported protocols, not only LoadRunner Web HTTP/HTML import | P0 | Complete - `GET /api/v1/runtime-settings/support-matrix` |
+| W3.2 | Expand RTS matrices for browser, SOAP, Java-over-HTTP, WebSocket, gRPC, JMS, DevWeb, HAR, and JMeter-derived scripts | P0 | Complete - unified matrix includes native protocol, import, and migration classifications |
+| W3.3 | Add runtime compatibility warnings to scenario validation and run creation, not only script validation/import review | P0 | Complete - scenario validation, estimates, scenario save, and queued-run creation share `runtime_settings_review`; blocking settings stop save/run |
+| W3.4 | Add execution tests for browser network/cache/resource RTS edge cases, including recorded-only assets and missing recorded-resource metadata | P1 | Complete - browser cache/resource tests now include recorded-resource metadata guard |
+| W3.5 | Add protocol-specific log/snapshot behavior tests for SOAP faults, gRPC status codes, WebSocket close/error frames, JMS broker errors, and Java decode failures | P1 | Complete - support matrix references protocol snapshot/error fixtures for SOAP, gRPC, WebSocket, JMS, and Java-over-HTTP |
+| W3.6 | Add runtime profile presets: CI smoke, release gate, migration replay, browser canary, debug trace, soak/stress | P1 | Complete - presets published by the unified support endpoint |
+| W3.7 | Add RTS parity report export per script and per scenario | P1 | Complete - JSON/CSV reports at script and scenario runtime-settings report endpoints |
+| W3.8 | Decide whether streaming/media RTS remains compatibility-only or gets a funded runtime implementation | P2 | Complete - documented as compatibility-only in `docs/RUNTIME_SETTINGS_PARITY.md` until funded runtime/benchmark evidence exists |
 
 ### Acceptance Criteria
 

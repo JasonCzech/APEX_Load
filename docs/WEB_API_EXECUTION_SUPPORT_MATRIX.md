@@ -7,6 +7,7 @@ This document is the W1 evidence record for modern Web/API execution parity.
 | Endpoint | Purpose |
 | --- | --- |
 | `GET /api/v1/scripts/web-api/support-matrix` | Code-owned Web/API support, benchmark envelope, diagnostics, and sample-project matrix. |
+| `GET /api/v1/runtime-settings/support-matrix` | Unified runtime setting parity matrix, presets, report exports, and streaming/media compatibility decision across Web/API/browser protocols. |
 | `POST /api/v1/scripts/import/openapi` | Imports OpenAPI 3.x or Swagger 2.0 JSON/YAML into a reviewable HTTP script draft. |
 | `POST /api/v1/scripts/import/wsdl` | Imports WSDL into a reviewable SOAP script draft with generated operation envelopes. |
 | `GET /api/v1/scripts/import/devweb/support-matrix` | Publishes DevWeb construct coverage and review requirements. |

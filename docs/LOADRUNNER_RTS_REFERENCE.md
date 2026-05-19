@@ -2,7 +2,7 @@
 
 This document maps the Web HTTP/HTML runtime settings surfaced in Stormrunner to their current support status. The goal is to make imported and manually authored RTS values visible, preserve compatibility where possible, and make execution gaps explicit.
 
-The code-owned source of truth for this matrix now lives in `pkg/convert/loadrunner/rts_support.go` and is published through `GET /api/v1/scripts/import/loadrunner/support-matrix`. The dashboard LoadRunner import flow renders the same entries, tested examples, and caveats before conversion.
+The code-owned source of truth for the LoadRunner Web HTTP/HTML matrix lives in `pkg/convert/loadrunner/rts_support.go` and is published through `GET /api/v1/scripts/import/loadrunner/support-matrix`. The broader cross-protocol W3 matrix is published through `GET /api/v1/runtime-settings/support-matrix` and documented in `docs/RUNTIME_SETTINGS_PARITY.md`. The dashboard LoadRunner import flow renders the same entries, tested examples, and caveats before conversion.
 
 The planned Web HTTP/HTML RTS parity scope is complete. Settings that Stormrunner can execute in its supported runtime envelope are classified as `Executed`; settings that are intentionally preserved for migration review but do not have Stormrunner runtime semantics remain `Compatibility-only`.
 
@@ -62,3 +62,5 @@ The planned Web HTTP/HTML RTS parity scope is complete. Settings that Stormrunne
 - `pkg/convert/loadrunner/converter_test.go::TestConvertZipMapsExtendedRuntimeSettings` verifies that ZIP import preserves runtime metadata and emits per-import parity classifications.
 - `pkg/api/handlers_scripts_test.go::TestHandleImportLoadRunnerSummarizesRuntimeSettingParity` verifies that the shared LoadRunner import envelope carries parity counts and review sections for the imported runtime settings.
 - `pkg/convert/loadrunner/converter_test.go::TestGoldenWebHTTPHTMLFixtureRuntimeParity` converts `pkg/convert/loadrunner/testdata/golden_web_http_html` as a representative Web HTTP/HTML archive and asserts the expected executed, partial, and compatibility-only runtime support statuses side by side with the generated DSL.
+- `pkg/api/runtime_settings_support_test.go::TestRuntimeSettingsReportEndpointsExportScriptAndScenarioEvidence` verifies JSON/CSV runtime settings exports for script and scenario review.
+- `pkg/api/runtime_settings_support_test.go::TestScenarioRuntimeSettingsValidationSurfacesCompatibilityAndBlockers` verifies that scenario validation and run creation surface/block unsafe runtime settings before execution.

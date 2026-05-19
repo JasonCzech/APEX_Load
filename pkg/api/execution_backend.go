@@ -115,6 +115,7 @@ func buildRunArchiveProvenance(tr *TestRunner, test *ManagedTest) RunArchiveProv
 	provenance.Assignment = cloneGeneratorAssignmentSettings(test.Assignment)
 	provenance.GoalConfig = cloneGoalConfig(test.GoalConfig)
 	provenance.RuntimeSettings = cloneRuntimeSettings(test.RuntimeSettings)
+	provenance.RuntimeSettingsReview = cloneRuntimeSettingsReview(test.RuntimeSettingsReview)
 	provenance.Groups = cloneArchiveTestGroups(test.Groups)
 	provenance.BaselinePinned = test.BaselinePinned
 	provenance.BaselinePinnedAt = test.BaselinePinnedAt

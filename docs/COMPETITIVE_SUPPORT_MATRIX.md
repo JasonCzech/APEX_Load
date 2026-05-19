@@ -20,6 +20,7 @@ Internal Stormrunner evidence references:
 - `README.md`
 - `API_AND_DSL_REFERENCE.md`
 - `docs/LOADRUNNER_RTS_REFERENCE.md`
+- `docs/RUNTIME_SETTINGS_PARITY.md`
 - `docs/ENTERPRISE_AUTHORING_CONTRACT.md`
 - `docs/ENTERPRISE_GENERATOR_FLEET_MODEL.md`
 - `docs/ENTERPRISE_LOAD_MODEL_CONTRACT.md`
@@ -60,7 +61,7 @@ Internal Stormrunner evidence references:
 | --- | --- | --- | --- | --- |
 | Native Stormrunner JSON DSL | Supported | Author, validate, replay, run, archive, report, and schedule JSON DSL scripts. | `pkg/dsl`, `/api/v1/scripts`, `/api/v1/tests`, `API_AND_DSL_REFERENCE.md` | Improve local explain output and more first-party examples. |
 | Dashboard script creation | Supported for C5 scope | Guided script creation, backend templates, reusable component library, validation, replay evidence, runtime settings dialogs, and data-source fit surfaces. | `dashboard/src/components/ScriptCreateOptions.tsx`, `dashboard/src/components/ScriptEditor.tsx`, `docs/ENTERPRISE_AUTHORING_CONTRACT.md` | Expand packaged demo projects and insertion affordances for reusable components. |
-| LoadRunner Web HTTP/HTML | Supported for planned RTS scope | ZIP import, runtime setting classification, migration readiness, validation, replay, and support matrix review. | `/api/v1/scripts/import/loadrunner`, `docs/LOADRUNNER_RTS_REFERENCE.md`, `pkg/convert/loadrunner` | Long-tail historical protocol families remain outside the planned LoadRunner parity scope. |
+| LoadRunner Web HTTP/HTML | Supported for planned RTS scope | ZIP import, runtime setting classification, migration readiness, validation, replay, support matrix review, and script/scenario RTS exports. | `/api/v1/scripts/import/loadrunner`, `/api/v1/runtime-settings/support-matrix`, `docs/LOADRUNNER_RTS_REFERENCE.md`, `docs/RUNTIME_SETTINGS_PARITY.md`, `pkg/convert/loadrunner` | Long-tail historical protocol families remain outside the planned LoadRunner parity scope. |
 | TrueClient Mobile Web | Partial | LoadRunner acquisition, mobile web migration review, browser replay readiness, unsupported-step visibility, and repair guidance. | `docs/MOBILE_BROWSER_EMULATION_PLAN.md`, `docs/BROWSER_CLIENT_METRICS_PLAN.md` | Browser VUsers remain diagnostic canaries; desktop TrueClient-style parity is out of scope. |
 | JMeter plan import | Supported for planned import scope | JMeter plan conversion, save, validate, support matrix endpoints, and external result ingestion. | `/api/v1/scripts/import/jmeter`, `/api/v1/scripts/import/jmeter/support-matrix`, `/api/v1/results/import`, `docs/JMETER_IMPORT_PLAN.md` | Expand JMeter fixture coverage and dashboard trend overlays. |
 | OpenAPI import | Supported | OpenAPI 3.x and Swagger 2.0 JSON/YAML import into reviewable HTTP DSL drafts with auth hints, parameter data-source seeds, request body templates, and status assertions. | `/api/v1/scripts/import/openapi`, `pkg/convert/openapi`, `docs/WEB_API_EXECUTION_SUPPORT_MATRIX.md` | Add dashboard guided create flow and customer-grade example packs. |

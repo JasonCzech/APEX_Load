@@ -122,40 +122,41 @@ type TestRunner struct {
 }
 
 type ManagedTest struct {
-	ID                 string                       `json:"id"`
-	Name               string                       `json:"name"`
-	Status             string                       `json:"status"`
-	ApplicationID      string                       `json:"application_id,omitempty"`
-	ReleaseID          string                       `json:"release_id,omitempty"`
-	ScenarioID         string                       `json:"scenario_id,omitempty"`
-	ProjectID          string                       `json:"project_id,omitempty"`
-	FolderID           *string                      `json:"folder_id,omitempty"`
-	Groups             []TestGroup                  `json:"groups"`
-	CapacityAdvisory   *CapacityAdvisory            `json:"capacity_advisory,omitempty"`
-	Assignment         *GeneratorAssignmentSettings `json:"assignment,omitempty"`
-	ScenarioMode       string                       `json:"scenario_mode,omitempty"`
-	ScriptShakeout     bool                         `json:"script_shakeout,omitempty"`
-	ResourceBaseline   bool                         `json:"resource_baseline,omitempty"`
-	StartDelay         string                       `json:"start_delay,omitempty"`
-	GoalConfig         *GoalConfig                  `json:"goal_config,omitempty"`
-	RuntimeSettings    *RuntimeSettingsOverride     `json:"runtime_settings,omitempty"`
-	TotalVUsers        int                          `json:"total_vusers"`
-	Duration           time.Duration                `json:"duration_ns"`
-	DurationStr        string                       `json:"duration"`
-	CreatedAt          time.Time                    `json:"created_at"`
-	PendingSince       *time.Time                   `json:"pending_since,omitempty"`
-	PendingReason      string                       `json:"pending_reason,omitempty"`
-	QueuePosition      int                          `json:"queue_position,omitempty"`
-	BaselinePinned     bool                         `json:"baseline_pinned,omitempty"`
-	BaselinePinnedAt   *time.Time                   `json:"baseline_pinned_at,omitempty"`
-	StartedAt          *time.Time                   `json:"started_at,omitempty"`
-	EndedAt            *time.Time                   `json:"ended_at,omitempty"`
-	LiveMetrics        *LiveMetrics                 `json:"live_metrics,omitempty"`
-	History            []*LiveMetrics               `json:"history,omitempty"`
-	ComparisonBaseline *RunComparisonBaseline       `json:"comparison_baseline,omitempty"`
-	Archive            *storage.RunArchiveRecord    `json:"archive,omitempty"`
-	TelemetryHealth    *TelemetryRunHealth          `json:"telemetry_health,omitempty"`
-	Error              string                       `json:"error,omitempty"`
+	ID                    string                       `json:"id"`
+	Name                  string                       `json:"name"`
+	Status                string                       `json:"status"`
+	ApplicationID         string                       `json:"application_id,omitempty"`
+	ReleaseID             string                       `json:"release_id,omitempty"`
+	ScenarioID            string                       `json:"scenario_id,omitempty"`
+	ProjectID             string                       `json:"project_id,omitempty"`
+	FolderID              *string                      `json:"folder_id,omitempty"`
+	Groups                []TestGroup                  `json:"groups"`
+	CapacityAdvisory      *CapacityAdvisory            `json:"capacity_advisory,omitempty"`
+	RuntimeSettingsReview *RuntimeSettingsReview       `json:"runtime_settings_review,omitempty"`
+	Assignment            *GeneratorAssignmentSettings `json:"assignment,omitempty"`
+	ScenarioMode          string                       `json:"scenario_mode,omitempty"`
+	ScriptShakeout        bool                         `json:"script_shakeout,omitempty"`
+	ResourceBaseline      bool                         `json:"resource_baseline,omitempty"`
+	StartDelay            string                       `json:"start_delay,omitempty"`
+	GoalConfig            *GoalConfig                  `json:"goal_config,omitempty"`
+	RuntimeSettings       *RuntimeSettingsOverride     `json:"runtime_settings,omitempty"`
+	TotalVUsers           int                          `json:"total_vusers"`
+	Duration              time.Duration                `json:"duration_ns"`
+	DurationStr           string                       `json:"duration"`
+	CreatedAt             time.Time                    `json:"created_at"`
+	PendingSince          *time.Time                   `json:"pending_since,omitempty"`
+	PendingReason         string                       `json:"pending_reason,omitempty"`
+	QueuePosition         int                          `json:"queue_position,omitempty"`
+	BaselinePinned        bool                         `json:"baseline_pinned,omitempty"`
+	BaselinePinnedAt      *time.Time                   `json:"baseline_pinned_at,omitempty"`
+	StartedAt             *time.Time                   `json:"started_at,omitempty"`
+	EndedAt               *time.Time                   `json:"ended_at,omitempty"`
+	LiveMetrics           *LiveMetrics                 `json:"live_metrics,omitempty"`
+	History               []*LiveMetrics               `json:"history,omitempty"`
+	ComparisonBaseline    *RunComparisonBaseline       `json:"comparison_baseline,omitempty"`
+	Archive               *storage.RunArchiveRecord    `json:"archive,omitempty"`
+	TelemetryHealth       *TelemetryRunHealth          `json:"telemetry_health,omitempty"`
+	Error                 string                       `json:"error,omitempty"`
 
 	// deprecated single-script fields kept for backwards compat in JSON
 	ScriptID   string `json:"script_id,omitempty"`
@@ -1159,8 +1160,12 @@ func (tr *TestRunner) storeScenarioLocked(id string, req CreateScenarioRequest) 
 	if err != nil {
 		return nil, err
 	}
-	if _, _, _, err := tr.compileManagedTestGroupsLocked(groups, req.RuntimeSettings); err != nil {
+	testGroups, engineGroups, _, err := tr.compileManagedTestGroupsLocked(groups, req.RuntimeSettings)
+	if err != nil {
 		return nil, err
+	}
+	if runtimeSettingsReview := buildRuntimeSettingsScenarioReview(testGroups, engineGroups); runtimeSettingsReview != nil && runtimeSettingsReview.Status == "blocked" {
+		return nil, fmt.Errorf("runtime settings blocked: %s", runtimeSettingsReview.Summary)
 	}
 	now := time.Now()
 	existing := tr.scenarios[id]
@@ -1691,15 +1696,16 @@ type CapacityShortfallError struct {
 }
 
 type DraftCapacityEstimate struct {
-	ScenarioMode     string                       `json:"scenario_mode,omitempty"`
-	TotalVUsers      int                          `json:"total_vusers"`
-	Duration         string                       `json:"duration"`
-	ResourceBaseline bool                         `json:"resource_baseline,omitempty"`
-	Groups           []TestGroup                  `json:"groups"`
-	Assignment       *GeneratorAssignmentSettings `json:"assignment,omitempty"`
-	Footprint        *ScenarioFootprint           `json:"footprint,omitempty"`
-	Recommendation   *AssignmentRecommendation    `json:"assignment_recommendation,omitempty"`
-	CapacityAdvisory *CapacityAdvisory            `json:"capacity_advisory,omitempty"`
+	ScenarioMode          string                       `json:"scenario_mode,omitempty"`
+	TotalVUsers           int                          `json:"total_vusers"`
+	Duration              string                       `json:"duration"`
+	ResourceBaseline      bool                         `json:"resource_baseline,omitempty"`
+	Groups                []TestGroup                  `json:"groups"`
+	Assignment            *GeneratorAssignmentSettings `json:"assignment,omitempty"`
+	Footprint             *ScenarioFootprint           `json:"footprint,omitempty"`
+	Recommendation        *AssignmentRecommendation    `json:"assignment_recommendation,omitempty"`
+	CapacityAdvisory      *CapacityAdvisory            `json:"capacity_advisory,omitempty"`
+	RuntimeSettingsReview *RuntimeSettingsReview       `json:"runtime_settings_review,omitempty"`
 }
 
 func normalizeGeneratorAssignmentSettings(in *GeneratorAssignmentSettings) (*GeneratorAssignmentSettings, error) {
@@ -2022,15 +2028,16 @@ func (tr *TestRunner) EstimateDraftCapacity(req CreateTestRequest) (*DraftCapaci
 	}
 
 	return &DraftCapacityEstimate{
-		ScenarioMode:     preview.ScenarioMode,
-		TotalVUsers:      preview.TotalVUsers,
-		Duration:         preview.DurationStr,
-		ResourceBaseline: preview.ResourceBaseline,
-		Groups:           preview.Groups,
-		Assignment:       cloneGeneratorAssignmentSettings(preview.Assignment),
-		Footprint:        buildScenarioFootprint(preview),
-		Recommendation:   tr.buildAssignmentRecommendation(preview),
-		CapacityAdvisory: cloneCapacityAdvisory(preview.CapacityAdvisory),
+		ScenarioMode:          preview.ScenarioMode,
+		TotalVUsers:           preview.TotalVUsers,
+		Duration:              preview.DurationStr,
+		ResourceBaseline:      preview.ResourceBaseline,
+		Groups:                preview.Groups,
+		Assignment:            cloneGeneratorAssignmentSettings(preview.Assignment),
+		Footprint:             buildScenarioFootprint(preview),
+		Recommendation:        tr.buildAssignmentRecommendation(preview),
+		CapacityAdvisory:      cloneCapacityAdvisory(preview.CapacityAdvisory),
+		RuntimeSettingsReview: cloneRuntimeSettingsReview(preview.RuntimeSettingsReview),
 	}, nil
 }
 
@@ -2084,6 +2091,10 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 	if err != nil {
 		return nil, err
 	}
+	runtimeSettingsReview := buildRuntimeSettingsScenarioReview(testGroups, engineGroups)
+	if status != "DRAFT" && runtimeSettingsReview != nil && runtimeSettingsReview.Status == "blocked" {
+		return nil, fmt.Errorf("runtime settings blocked: %s", runtimeSettingsReview.Summary)
+	}
 
 	testName := deriveManagedTestName(req.Name, testGroups)
 
@@ -2109,28 +2120,29 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 		applicationID = storage.LegacyApplicationID
 	}
 	test := &ManagedTest{
-		ID:               id,
-		Name:             testName,
-		Status:           status,
-		ApplicationID:    applicationID,
-		ReleaseID:        req.ReleaseID,
-		ScenarioID:       req.ScenarioID,
-		ProjectID:        projectID,
-		FolderID:         req.FolderID,
-		Groups:           testGroups,
-		Assignment:       cloneGeneratorAssignmentSettings(req.Assignment),
-		CapacityAdvisory: tr.estimateCapacityAdvisoryForAssignment(projectID, testGroups, totalVUsers, dur, req.ResourceBaseline, effectiveRuntimeSettings, req.Assignment),
-		ScenarioMode:     scenarioMode,
-		ScriptShakeout:   req.ScriptShakeout,
-		ResourceBaseline: req.ResourceBaseline,
-		StartDelay:       req.StartDelay,
-		GoalConfig:       cloneGoalConfig(req.GoalConfig),
-		RuntimeSettings:  cloneRuntimeSettings(effectiveRuntimeSettings),
-		TotalVUsers:      totalVUsers,
-		Duration:         dur,
-		DurationStr:      req.Duration,
-		CreatedAt:        time.Now(),
-		groupSpecs:       engineGroups,
+		ID:                    id,
+		Name:                  testName,
+		Status:                status,
+		ApplicationID:         applicationID,
+		ReleaseID:             req.ReleaseID,
+		ScenarioID:            req.ScenarioID,
+		ProjectID:             projectID,
+		FolderID:              req.FolderID,
+		Groups:                testGroups,
+		Assignment:            cloneGeneratorAssignmentSettings(req.Assignment),
+		CapacityAdvisory:      tr.estimateCapacityAdvisoryForAssignment(projectID, testGroups, totalVUsers, dur, req.ResourceBaseline, effectiveRuntimeSettings, req.Assignment),
+		RuntimeSettingsReview: cloneRuntimeSettingsReview(runtimeSettingsReview),
+		ScenarioMode:          scenarioMode,
+		ScriptShakeout:        req.ScriptShakeout,
+		ResourceBaseline:      req.ResourceBaseline,
+		StartDelay:            req.StartDelay,
+		GoalConfig:            cloneGoalConfig(req.GoalConfig),
+		RuntimeSettings:       cloneRuntimeSettings(effectiveRuntimeSettings),
+		TotalVUsers:           totalVUsers,
+		Duration:              dur,
+		DurationStr:           req.Duration,
+		CreatedAt:             time.Now(),
+		groupSpecs:            engineGroups,
 	}
 
 	if len(testGroups) == 1 {

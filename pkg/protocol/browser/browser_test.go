@@ -337,9 +337,9 @@ func TestBrowserProtocolEvaluatesAssertions(t *testing.T) {
 	defer b.Teardown(context.Background())
 
 	navigate, err := b.Execute(context.Background(), &protocol.Action{
-		Name:   "Open homepage",
-		Type:   "browser_navigate",
-		Target: "/",
+		Name:       "Open homepage",
+		Type:       "browser_navigate",
+		Target:     "/",
 		Assertions: []protocol.Assertion{{Type: "page_title", Value: "Browser Assertions"}, {Type: "url_contains", Value: server.URL}},
 	})
 	if err != nil {
@@ -383,9 +383,9 @@ func TestBrowserProtocolEvaluatesAssertions(t *testing.T) {
 	}
 
 	failed, err := b.Execute(context.Background(), &protocol.Action{
-		Name:     "Fail assertion",
-		Type:     "browser_click",
-		Selector: "#submit",
+		Name:       "Fail assertion",
+		Type:       "browser_click",
+		Selector:   "#submit",
 		Assertions: []protocol.Assertion{{Type: "body_contains", Value: "Never appears"}},
 	})
 	if err != nil {
@@ -456,10 +456,10 @@ func TestBrowserProtocolExecutesSelectAction(t *testing.T) {
 	}
 
 	selectResult, err := b.Execute(context.Background(), &protocol.Action{
-		Name:     "Choose country",
-		Type:     "browser_select",
-		Selector: "#country",
-		Value:    "United States",
+		Name:       "Choose country",
+		Type:       "browser_select",
+		Selector:   "#country",
+		Value:      "United States",
 		Assertions: []protocol.Assertion{{Type: "body_contains", Value: "Selected US"}},
 	})
 	if err != nil {
@@ -1152,6 +1152,21 @@ func TestBrowserProtocolDownloadResourcesNoneBlocksStaticAssets(t *testing.T) {
 	}
 	if got := atomic.LoadInt32(&imageHits); got != 0 {
 		t.Fatalf("image hits = %d, want 0 when download_resources is none", got)
+	}
+}
+
+func TestBrowserProtocolDownloadResourcesRecordedRequiresMetadata(t *testing.T) {
+	b := &Browser{}
+	err := b.Init(context.Background(), map[string]any{
+		"base_url":                   "https://example.test",
+		"browser_headless":           true,
+		"browser_download_resources": "recorded",
+	})
+	if err == nil {
+		t.Fatal("Init returned nil error, want recorded-resource metadata guard")
+	}
+	if !strings.Contains(err.Error(), "recorded resource metadata") {
+		t.Fatalf("Init error = %q, want recorded resource metadata", err.Error())
 	}
 }
 

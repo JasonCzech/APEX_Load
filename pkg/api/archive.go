@@ -53,27 +53,28 @@ type RunArchiveExecutionSettingsSnapshot struct {
 }
 
 type RunArchiveProvenance struct {
-	ApplicationID      string                              `json:"application_id,omitempty"`
-	ReleaseID          string                              `json:"release_id,omitempty"`
-	ScenarioID         string                              `json:"scenario_id,omitempty"`
-	ProjectID          string                              `json:"project_id,omitempty"`
-	RequestedAt        time.Time                           `json:"requested_at,omitempty"`
-	StartedAt          *time.Time                          `json:"started_at,omitempty"`
-	ScenarioMode       string                              `json:"scenario_mode,omitempty"`
-	ScriptShakeout     bool                                `json:"script_shakeout,omitempty"`
-	ResourceBaseline   bool                                `json:"resource_baseline,omitempty"`
-	StartDelay         string                              `json:"start_delay,omitempty"`
-	TotalVUsers        int                                 `json:"total_vusers,omitempty"`
-	Duration           string                              `json:"duration,omitempty"`
-	Assignment         *GeneratorAssignmentSettings        `json:"assignment,omitempty"`
-	GoalConfig         *GoalConfig                         `json:"goal_config,omitempty"`
-	RuntimeSettings    *RuntimeSettingsOverride            `json:"runtime_settings,omitempty"`
-	Groups             []TestGroup                         `json:"groups,omitempty"`
-	BaselinePinned     bool                                `json:"baseline_pinned,omitempty"`
-	BaselinePinnedAt   *time.Time                          `json:"baseline_pinned_at,omitempty"`
-	ExecutionSettings  RunArchiveExecutionSettingsSnapshot `json:"execution_settings"`
-	ControllerEnv      map[string]string                   `json:"controller_env,omitempty"`
-	GeneratorInventory []GeneratorInventoryEntry           `json:"generator_inventory,omitempty"`
+	ApplicationID         string                              `json:"application_id,omitempty"`
+	ReleaseID             string                              `json:"release_id,omitempty"`
+	ScenarioID            string                              `json:"scenario_id,omitempty"`
+	ProjectID             string                              `json:"project_id,omitempty"`
+	RequestedAt           time.Time                           `json:"requested_at,omitempty"`
+	StartedAt             *time.Time                          `json:"started_at,omitempty"`
+	ScenarioMode          string                              `json:"scenario_mode,omitempty"`
+	ScriptShakeout        bool                                `json:"script_shakeout,omitempty"`
+	ResourceBaseline      bool                                `json:"resource_baseline,omitempty"`
+	StartDelay            string                              `json:"start_delay,omitempty"`
+	TotalVUsers           int                                 `json:"total_vusers,omitempty"`
+	Duration              string                              `json:"duration,omitempty"`
+	Assignment            *GeneratorAssignmentSettings        `json:"assignment,omitempty"`
+	GoalConfig            *GoalConfig                         `json:"goal_config,omitempty"`
+	RuntimeSettings       *RuntimeSettingsOverride            `json:"runtime_settings,omitempty"`
+	RuntimeSettingsReview *RuntimeSettingsReview              `json:"runtime_settings_review,omitempty"`
+	Groups                []TestGroup                         `json:"groups,omitempty"`
+	BaselinePinned        bool                                `json:"baseline_pinned,omitempty"`
+	BaselinePinnedAt      *time.Time                          `json:"baseline_pinned_at,omitempty"`
+	ExecutionSettings     RunArchiveExecutionSettingsSnapshot `json:"execution_settings"`
+	ControllerEnv         map[string]string                   `json:"controller_env,omitempty"`
+	GeneratorInventory    []GeneratorInventoryEntry           `json:"generator_inventory,omitempty"`
 }
 
 type TransactionEvent struct {
