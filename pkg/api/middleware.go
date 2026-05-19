@@ -763,7 +763,7 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 		return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
 	}
 
-	if (path == "/api/v1/scripts/web-api/support-matrix" || path == "/api/v1/scripts/import/devweb/support-matrix") && method == http.MethodGet {
+	if (path == "/api/v1/scripts/web-api/support-matrix" || path == "/api/v1/scripts/import/devweb/support-matrix" || path == "/api/v1/scripts/import/oracle-ebusiness/support-matrix") && method == http.MethodGet {
 		return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
 	}
 
@@ -808,6 +808,14 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
 			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
 			ProjectLookup: resolveImportProjectIDFromJSON,
+		}, true
+	}
+
+	if path == "/api/v1/scripts/import/oracle-ebusiness/review" && method == http.MethodPost {
+		return accessRequirement{
+			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+			ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
+			ProjectLookup: resolveImportProjectIDFromJSONOrForm,
 		}, true
 	}
 

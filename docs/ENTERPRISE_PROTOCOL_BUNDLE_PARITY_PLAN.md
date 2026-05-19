@@ -61,7 +61,7 @@ Status as of 2026-05-19:
 | B0 | Implemented | `GET /api/v1/protocol-bundles/support-matrix`, code-owned bundle catalog, runner classes, entitlement rows, RBAC coverage |
 | DB1 | Implemented for native SQL runtime; Oracle-2 Tier explicitly external-runner required | `pkg/protocol/database`, database DSL validation, engine config propagation, support-matrix evidence |
 | NET1 | Implemented for standards-based native protocols; MAPI/Tuxedo finalized as review-only | `pkg/protocol/network`, network DSL validation, engine config propagation, support-matrix evidence |
-| OEB1 | In progress | Support-matrix rows exist; Oracle-Web/Siebel-Web review packs and NCA review-only endpoint still pending |
+| OEB1 | Implemented for HTTP-backed package review and NCA review-only governance | `GET /api/v1/scripts/import/oracle-ebusiness/support-matrix`, `POST /api/v1/scripts/import/oracle-ebusiness/review`, Oracle-Web/Siebel-Web correlation packs, scenario templates, NCA execution boundary |
 
 ## Parity Principles
 
@@ -205,10 +205,15 @@ Stormrunner already has generic HTTP, DevWeb, JMeter, Gatling, and Web/API found
 | OEB1.1 | Add Oracle E-Business bundle rows to support matrix | P0 | DevWeb/JMeter/Gatling/Web-HTTP rows show current support and package-specific caveats |
 | OEB1.2 | Add Oracle-Web import/correlation pack | P1 | Review sections identify session IDs, forms tokens, view state, ICX/session values, and data-source fit |
 | OEB1.3 | Add Siebel-Web import/correlation pack | P1 | Review sections identify Siebel session/correlation tokens, dynamic row IDs, and navigation state |
-| OEB1.4 | Add Oracle E-Business scenario templates | P1 | Authors can start from login, responsibility selection, search/create/update, and logout flows |
+| OEB1.4 | Add Oracle E-Business scenario templates | P1 | Authors can start from login, responsibility selection, search/create/update, and logout flows through the Oracle E-Business support API |
 | OEB1.5 | Add Oracle NCA feasibility spike | P0 | Decision record names runtime approach, required client libraries, sample assets, and support/non-support boundary |
 | OEB1.6 | Add Oracle NCA review-only import | P1 | Imports preserve source fragments and block execution until runner support exists |
 | OEB1.7 | Implement Oracle NCA runner if funded | P2 | End-to-end script runs against representative Oracle Forms/NCA target with diagnostics |
+
+Implemented OEB1 endpoint coverage:
+
+- `GET /api/v1/scripts/import/oracle-ebusiness/support-matrix` exposes Oracle E-Business support rows, correlation-pack status, scenario templates, and the Oracle NCA execution boundary.
+- `POST /api/v1/scripts/import/oracle-ebusiness/review` accepts source text, files, or a Stormrunner script and returns package classification, Oracle-Web/Siebel-Web/NCA token findings, data-source fit findings, repair suggestions, required evidence, and next actions.
 
 ## Workstream TPL1: Templates Protocol Bundle
 

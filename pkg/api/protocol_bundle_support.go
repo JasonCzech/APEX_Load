@@ -170,8 +170,8 @@ func protocolBundleSupportMatrix() []ProtocolBundleSupportEntry {
 		oebEntry("oeb-devweb", "devweb", "DevWeb", "supported", "review_then_executable", "go_generator", "P0", []string{"existing DevWeb import support matrix", "Oracle E-Business review caveats"}),
 		oebEntry("oeb-jmeter", "jmeter", "JMeter", "supported", "review_then_executable", "go_generator", "P0", []string{"existing JMeter import", "Oracle E-Business review caveats"}),
 		oebEntry("oeb-gatling", "gatling", "Gatling", "review_only", "import_review", "go_generator", "P1", []string{"Gatling scripts are classified for Oracle E-Business migration review"}),
-		oebEntry("oeb-oracle-web", "oracle_web", "Oracle-Web", "planned", "review_then_executable", "go_generator", "P1", []string{"Oracle session/correlation pack", "HTTP-backed execution"}),
-		oebEntry("oeb-siebel-web", "siebel_web", "Siebel-Web", "planned", "review_then_executable", "go_generator", "P1", []string{"Siebel session/correlation pack", "HTTP-backed execution"}),
+		oebEntry("oeb-oracle-web", "oracle_web", "Oracle-Web", "supported", "review_then_executable", "go_generator", "P1", []string{"Oracle session/correlation pack", "HTTP-backed execution", "package review endpoint", "scenario templates"}),
+		oebEntry("oeb-siebel-web", "siebel_web", "Siebel-Web", "supported", "review_then_executable", "go_generator", "P1", []string{"Siebel session/correlation pack", "HTTP-backed execution", "package review endpoint", "scenario templates"}),
 		oebEntry("oeb-web-http", "web_http_html", "Web-HTTP/HTML", "supported", "review_then_executable", "go_generator", "P0", []string{"existing LoadRunner Web HTTP/HTML import and runtime settings parity"}),
 		{
 			ID:                  "oeb-oracle-nca",
@@ -188,7 +188,7 @@ func protocolBundleSupportMatrix() []ProtocolBundleSupportEntry {
 			RemainingGaps:       []string{"Oracle Forms/NCA runtime feasibility and representative fixture"},
 			RecommendedWorkflow: "Preserve NCA imports as governed review artifacts until client runner feasibility is approved.",
 			Source:              "license-bundles-2025",
-			Evidence:            []string{"docs/ENTERPRISE_PROTOCOL_BUNDLE_PARITY_PLAN.md#workstream-oeb1-oracle-e-business-protocol-bundle"},
+			Evidence:            []string{"pkg/api/oracle_ebusiness_review.go", "docs/ENTERPRISE_PROTOCOL_BUNDLE_PARITY_PLAN.md#workstream-oeb1-oracle-e-business-protocol-bundle"},
 		},
 		templateEntry("template-c", "c_vuser", "C Vuser", "review_only", "template_worker", "P1"),
 		templateEntry("template-cpp-dotnet", "cpp_dotnet", "C++ .NET", "review_only", "template_worker", "P1"),
@@ -281,7 +281,7 @@ func oebEntry(id, protocolName, displayName, status, posture, runner, importance
 		ImportCoverage:      []string{"Oracle/Siebel token review", "parameter fit", "runtime setting parity", "unsupported source preservation"},
 		RecommendedWorkflow: "Import or author HTTP-backed Oracle E-Business flows, apply package correlation review, replay, then promote.",
 		Source:              "license-bundles-2025",
-		Evidence:            []string{"docs/ENTERPRISE_PROTOCOL_BUNDLE_PARITY_PLAN.md#workstream-oeb1-oracle-e-business-protocol-bundle"},
+		Evidence:            []string{"pkg/api/oracle_ebusiness_review.go", "pkg/api/oracle_ebusiness_review_test.go", "docs/ENTERPRISE_PROTOCOL_BUNDLE_PARITY_PLAN.md#workstream-oeb1-oracle-e-business-protocol-bundle"},
 	}
 }
 
