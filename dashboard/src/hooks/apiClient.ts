@@ -5,6 +5,8 @@ type ApiEnvironment = {
   DEV?: boolean
 }
 
+type ApiLocation = Pick<Location, 'protocol' | 'hostname' | 'port' | 'origin'>
+
 type ApiErrorPayload = {
   error?: string
   code?: string
@@ -19,28 +21,33 @@ function getApiEnvironment(): ApiEnvironment {
   return (import.meta as ImportMeta & { env?: ApiEnvironment }).env ?? {}
 }
 
+function getWindowLocation(): ApiLocation | undefined {
+  return typeof window !== 'undefined' ? window.location : undefined
+}
+
 function isApiErrorPayload(value: unknown): value is ApiErrorPayload {
   return typeof value === 'object' && value !== null
 }
 
-function resolveApiOrigin(): string {
-  const env = getApiEnvironment()
+export function resolveApiOrigin(env: ApiEnvironment = getApiEnvironment(), location: ApiLocation | undefined = getWindowLocation()): string {
   const envOrigin = env.VITE_API_ORIGIN
   if (envOrigin && envOrigin.trim()) {
     return trimTrailingSlash(envOrigin.trim())
   }
-  if (typeof window !== 'undefined' && window.location.protocol === 'file:') {
+  if (location?.protocol === 'file:') {
     return DEFAULT_LOCAL_API_ORIGIN
   }
+  const isLocalHost = location?.hostname === 'localhost' || location?.hostname === '127.0.0.1'
+  const hasUsableOrigin = !!location?.origin && location.origin !== 'null'
   if (
-    typeof window !== 'undefined' &&
-    (env.DEV || window.location.port === '3000') &&
-    (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+    isLocalHost &&
+    hasUsableOrigin &&
+    (env.DEV || location.port === '3000')
   ) {
-    return DEFAULT_LOCAL_API_ORIGIN
+    return trimTrailingSlash(location.origin)
   }
-  if (typeof window !== 'undefined' && window.location.origin) {
-    return trimTrailingSlash(window.location.origin)
+  if (hasUsableOrigin) {
+    return trimTrailingSlash(location.origin)
   }
   return DEFAULT_LOCAL_API_ORIGIN
 }
