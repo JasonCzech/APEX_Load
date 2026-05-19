@@ -74,6 +74,14 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 			switch scope.Status {
 			case trueclient.ScopeSupported:
 				trueClientScope = &scope
+			case trueclient.ScopePlanned:
+				inspection, inspectErr := trueclient.InspectArchive(files, projectConfig.ScriptType)
+				if inspectErr != nil {
+					return nil, inspectErr
+				}
+				if err := trueclient.ImportScopeInspectionError(projectConfig.ScriptType, inspection); err != nil {
+					return nil, err
+				}
 			default:
 				if err := trueclient.ImportScopeError(projectConfig.ScriptType); err != nil {
 					return nil, err

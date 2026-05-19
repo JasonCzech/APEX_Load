@@ -52,6 +52,38 @@ type FixtureContract struct {
 	Notes            string
 }
 
+type PlannedImportError struct {
+	Scope      ScriptTypeScope
+	Inspection *ArchiveInspection
+}
+
+func (e *PlannedImportError) Error() string {
+	if e == nil {
+		return ""
+	}
+	message := fmt.Sprintf("LoadRunner script type %q is recognized but not implemented yet. Current planned scope is %s", e.Scope.DisplayName, e.Scope.Notes)
+	if e.Inspection == nil {
+		return message
+	}
+	parts := make([]string, 0)
+	if e.Inspection.DefaultXML != nil {
+		parts = append(parts, fmt.Sprintf("default.xml with %d executable steps", e.Inspection.StepInventory.Total))
+	}
+	if count := len(e.Inspection.ObjectRepositories); count > 0 {
+		parts = append(parts, fmt.Sprintf("%d object repository file(s)", count))
+	}
+	if count := len(e.Inspection.ParameterFiles); count > 0 {
+		parts = append(parts, fmt.Sprintf("%d parameter file(s)", count))
+	}
+	if count := len(e.Inspection.RuntimeFiles); count > 0 {
+		parts = append(parts, fmt.Sprintf("%d runtime file(s)", count))
+	}
+	if len(parts) > 0 {
+		message += " Archive inspection found " + strings.Join(parts, ", ") + "."
+	}
+	return message
+}
+
 var scriptTypeScopes = []ScriptTypeScope{
 	{
 		CanonicalName:    "truclient_mobile_web",
@@ -336,6 +368,17 @@ func ImportScopeError(scriptType string) error {
 	default:
 		return fmt.Errorf("LoadRunner script type %q requires guided import review. %s", scope.DisplayName, scope.Notes)
 	}
+}
+
+func ImportScopeInspectionError(scriptType string, inspection *ArchiveInspection) error {
+	scope, ok := LookupScriptTypeScope(scriptType)
+	if !ok {
+		return nil
+	}
+	if scope.Status == ScopePlanned {
+		return &PlannedImportError{Scope: scope, Inspection: inspection}
+	}
+	return ImportScopeError(scriptType)
 }
 
 func normalizeScriptType(scriptType string) string {

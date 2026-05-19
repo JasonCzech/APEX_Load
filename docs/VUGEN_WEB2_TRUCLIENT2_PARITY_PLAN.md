@@ -91,10 +91,12 @@ Acceptance:
 
 | ID | Work Item | Priority | Status |
 | --- | --- | --- | --- |
-| V2.2.1 | Extend `pkg/convert/trueclient` archive discovery beyond Mobile Web to parse TruClient 2.0 Web project metadata, `default.xml`, object repositories, parameters, and runtime files when present | P0 | Planned |
+| V2.2.1 | Extend `pkg/convert/trueclient` archive discovery beyond Mobile Web to parse TruClient 2.0 Web project metadata, `default.xml`, object repositories, parameters, and runtime files when present | P0 | Complete |
 | V2.2.2 | Preserve original script type, browser target, step IDs, object descriptor IDs, transaction names, parameter definitions, snapshots, and unsupported source fragments in import metadata | P0 | Planned |
 | V2.2.3 | Add import response review sections for profile assumptions, unsupported steps, object-identification confidence, runtime settings, parameter mapping, conversion-to-HTTP eligibility, and replay readiness | P0 | Planned |
 | V2.2.4 | Add deterministic repair suggestions for selector stabilization, wait refinement, missing assertions, parameter source repair, unsupported JavaScript/API steps, and conversion blockers | P0 | Planned |
+
+Implementation note: V2.2.1 is backed by `trueclient.InspectArchive`, which classifies project files, `default.xml`, object repositories, parameter files, runtime files, Web 2.0 capability statuses, and executable step inventory. Planned Web/Web 2.0 import attempts now run this inspection and include discovered metadata counts in the planned-scope response while runnable draft conversion remains tracked by V2.2.2-V2.2.4 and V2.3.
 
 Acceptance:
 

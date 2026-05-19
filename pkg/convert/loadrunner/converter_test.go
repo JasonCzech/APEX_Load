@@ -1781,6 +1781,47 @@ Type=TruClient
 	}
 }
 
+func TestConvertZipInspectsPlannedTruClientWeb2Archive(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	addFile := func(name string, content string) {
+		writer, err := zw.Create(name)
+		if err != nil {
+			t.Fatalf("Create(%q) returned error: %v", name, err)
+		}
+		if _, err := writer.Write([]byte(content)); err != nil {
+			t.Fatalf("Write(%q) returned error: %v", name, err)
+		}
+	}
+
+	addFile("Web2/Web2.usr", `[General]
+Type=TruClient 2.0 - Web
+`)
+	addFile("Web2/default.xml", encodeUTF16LEForZip(`<?xml version="1.0" encoding="utf-16"?>
+<truScript>
+  <step type="block" action="action" actionName="Action">
+    <step type="testObject" action="Navigate" index="1" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://shop.example.com\&quot;&quot;}}" />
+    <step type="testObject" action="Click" index="2" arguments="{&quot;Selector&quot;:{&quot;value&quot;:&quot;\&quot;#cart\&quot;&quot;}}" />
+  </step>
+</truScript>`))
+	addFile("Web2/ObjectRepository/MainObjects.xml", "<objects><object name=\"Cart\" /></objects>")
+	addFile("Web2/parameters/users.dat", "username,password\nqa,secret\n")
+	addFile("Web2/default.cfg", "[ThinkTime]\nOptions=RECORDED\n")
+	if err := zw.Close(); err != nil {
+		t.Fatalf("zip.Close returned error: %v", err)
+	}
+
+	_, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	if err == nil {
+		t.Fatal("ConvertZip error = nil, want planned TruClient Web 2 guidance")
+	}
+	for _, want := range []string{"recognized but not implemented yet", "TruClient 2.0 - Web", "default.xml with 2 executable steps", "1 object repository file(s)", "1 parameter file(s)", "1 runtime file(s)"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("ConvertZip error = %q, want substring %q", err.Error(), want)
+		}
+	}
+}
+
 func encodeUTF16LEForZip(text string) string {
 	words := utf16.Encode([]rune(text))
 	bytes := make([]byte, 0, len(words)*2)
