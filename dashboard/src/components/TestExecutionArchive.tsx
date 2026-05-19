@@ -22,6 +22,7 @@ import {
   formatSnapshotResponseSection,
 } from '../utils/snapshotFormatUtils'
 import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
+import { ARCHIVE_PAGE_SIZE_OPTIONS } from './useExecutionArchiveModel'
 
 interface Props {
   hasArchive: boolean
@@ -48,6 +49,7 @@ interface Props {
   archivePageEnd: number
   archiveTransactionsOffset: number
   archivePageSize: number
+  onPageSizeChange: (size: number) => void
   onPreviousPage: () => void
   onNextPage: () => void
   archiveTransactions: TransactionEvent[]
@@ -58,6 +60,13 @@ interface Props {
 function formatArchiveTimestamp(value?: string): string {
   if (!value) return 'n/a'
   return new Date(value).toLocaleString()
+}
+
+function formatArchiveTime(value?: string): string {
+  if (!value) return 'n/a'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'n/a'
+  return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3 } as Intl.DateTimeFormatOptions)
 }
 
 function formatBrowserMetric(value: number | undefined, suffix = '', digits = 1): string {
@@ -117,6 +126,41 @@ function formatBrowserResourceURL(value?: string): string {
   } catch {
     return value
   }
+}
+
+function formatClientMetricsBlock(metrics: NonNullable<TransactionEvent['client_metrics']>): string {
+  const lines: string[] = []
+  if (metrics.fcp_ms !== undefined) lines.push(`FCP: ${formatBrowserMetric(metrics.fcp_ms, ' ms')}`)
+  if (metrics.lcp_ms !== undefined) lines.push(`LCP: ${formatBrowserMetric(metrics.lcp_ms, ' ms')}`)
+  if (metrics.cls_score !== undefined) lines.push(`CLS: ${formatBrowserScore(metrics.cls_score)}`)
+  if (metrics.inp_ms !== undefined) lines.push(`INP: ${formatBrowserMetric(metrics.inp_ms, ' ms')}`)
+  if (metrics.blocking_resource_count !== undefined) lines.push(`Blocking resources: ${formatBrowserMetric(metrics.blocking_resource_count, '', 0)}`)
+  if (metrics.long_task_count !== undefined) lines.push(`Long tasks: ${formatBrowserMetric(metrics.long_task_count, '', 0)}`)
+  if (metrics.browser_process_cpu_pct !== undefined) lines.push(`Browser CPU: ${formatBrowserMetric(metrics.browser_process_cpu_pct, '%')}`)
+  if (metrics.browser_process_mem_mb !== undefined) lines.push(`Browser memory: ${formatBrowserMetric(metrics.browser_process_mem_mb, ' MB')}`)
+  return lines.length > 0 ? lines.join('\n') : 'No client metrics captured'
+}
+
+function formatServerTelemetryBlock(telemetry: NonNullable<TransactionEvent['server_telemetry']>): string {
+  const lines: string[] = []
+  if (telemetry.server_processing_ms !== undefined) lines.push(`Server processing: ${formatBrowserMetric(telemetry.server_processing_ms, ' ms')}`)
+  if (telemetry.transfer_ms !== undefined) lines.push(`Transfer: ${formatBrowserMetric(telemetry.transfer_ms, ' ms')}`)
+  if (telemetry.serialization_ms !== undefined) lines.push(`Serialization: ${formatBrowserMetric(telemetry.serialization_ms, ' ms')}`)
+  if (telemetry.deserialization_ms !== undefined) lines.push(`Deserialization: ${formatBrowserMetric(telemetry.deserialization_ms, ' ms')}`)
+  if (telemetry.request_payload_kb !== undefined) lines.push(`Request payload: ${formatBrowserMetric(telemetry.request_payload_kb, ' KB', 2)}`)
+  if (telemetry.request_size_class) lines.push(`Request size class: ${telemetry.request_size_class}`)
+  if (telemetry.response_payload_kb !== undefined) lines.push(`Response payload: ${formatBrowserMetric(telemetry.response_payload_kb, ' KB', 2)}`)
+  if (telemetry.response_size_class) lines.push(`Response size class: ${telemetry.response_size_class}`)
+  if (telemetry.envelope_overhead_kb !== undefined) lines.push(`Envelope overhead: ${formatBrowserMetric(telemetry.envelope_overhead_kb, ' KB', 2)}`)
+  if (telemetry.soap_fault_code) lines.push(`SOAP fault: ${telemetry.soap_fault_code} / ${telemetry.soap_fault_category || 'unknown'}`)
+  if (telemetry.soap_namespace_conflict) lines.push(`SOAP namespace conflict: ${telemetry.soap_namespace_conflict}`)
+  if (telemetry.redirect_count) lines.push(`Redirects: ${telemetry.redirect_count} hops / ${formatBrowserMetric(telemetry.redirect_ms, ' ms')}`)
+  if (telemetry.message_latency_ms !== undefined) lines.push(`Message latency: ${formatBrowserMetric(telemetry.message_latency_ms, ' ms')}`)
+  if (telemetry.messages_sent || telemetry.messages_received) lines.push(`Messages: ${telemetry.messages_sent ?? 0} sent / ${telemetry.messages_received ?? 0} received`)
+  if (telemetry.messages_sent_per_sec !== undefined || telemetry.messages_received_per_sec !== undefined) lines.push(`Message throughput: ${formatBrowserMetric(telemetry.messages_sent_per_sec, ' sent/s')} / ${formatBrowserMetric(telemetry.messages_received_per_sec, ' received/s')}`)
+  if (telemetry.consumer_lag_ms !== undefined) lines.push(`Consumer lag: ${formatBrowserMetric(telemetry.consumer_lag_ms, ' ms')}`)
+  if (telemetry.connection_reused !== undefined) lines.push(`Connection: ${telemetry.connection_reused ? 'reused' : 'new'}`)
+  return lines.length > 0 ? lines.join('\n') : 'No server telemetry captured'
 }
 
 function buildArchiveStatsEntries(stats?: Record<string, RunArchiveActionStats>) {
@@ -374,6 +418,7 @@ export default function TestExecutionArchive({
   archivePageEnd,
   archiveTransactionsOffset,
   archivePageSize,
+  onPageSizeChange,
   onPreviousPage,
   onNextPage,
   archiveTransactions,
@@ -383,13 +428,21 @@ export default function TestExecutionArchive({
   const [copiedSection, setCopiedSection] = useState<string | null>(null)
   const [expandedSnapshotSections, setExpandedSnapshotSections] = useState<Record<string, boolean>>({})
   const [browserBreakdown, setBrowserBreakdown] = useState<BrowserBreakdown>('device')
+  const [summaryTimelineExpanded, setSummaryTimelineExpanded] = useState(false)
+  const [summaryTimelineErrorsOnly, setSummaryTimelineErrorsOnly] = useState(false)
   const soapOperationEntries = archiveSOAPOperationEntries.length > 0 ? archiveSOAPOperationEntries : buildArchiveStatsEntries(archiveReport?.by_soap_operation)
   const soapFaultCodeEntries = buildArchiveCountEntries(archiveReport?.by_soap_fault_code)
   const soapFaultCategoryEntries = buildArchiveCountEntries(archiveReport?.by_soap_fault_category)
   const soapFaultTimelineEntries = buildArchiveFaultTimelineEntries(archiveReport?.soap_fault_timeline)
   const soapPayloadTimelineEntries = buildArchivePayloadTimelineEntries(archiveReport?.soap_payload_timeline)
-  const summaryTimelineEntries = buildArchiveSummaryTimelineEntries(archiveReport?.summary_timeline)
+  const summaryTimelineEntriesAll = buildArchiveSummaryTimelineEntries(archiveReport?.summary_timeline)
+  const summaryTimelineErrorCount = summaryTimelineEntriesAll.filter(p => p.total_errors > 0).length
+  const summaryTimelineFiltered = summaryTimelineErrorsOnly ? summaryTimelineEntriesAll.filter(p => p.total_errors > 0) : summaryTimelineEntriesAll
+  const SUMMARY_TIMELINE_COLLAPSED_LIMIT = 12
+  const summaryTimelineNeedsCollapse = summaryTimelineFiltered.length > SUMMARY_TIMELINE_COLLAPSED_LIMIT
+  const summaryTimelineEntries = summaryTimelineExpanded || !summaryTimelineNeedsCollapse ? summaryTimelineFiltered : summaryTimelineFiltered.slice(0, SUMMARY_TIMELINE_COLLAPSED_LIMIT)
   const runtimeBrowserSummary = formatBrowserRuntimeSummary(archiveReport?.manifest.provenance?.runtime_settings?.browser)
+  const selectedActionStats = archiveReport?.by_action?.[selectedArchiveAction]
 
   const handleCopySection = async (key: string, value: string) => {
     if (!navigator.clipboard?.writeText) return
@@ -502,7 +555,7 @@ export default function TestExecutionArchive({
                   {archiveReport.completeness.findings.map((finding, index) => (
                     <div key={`${finding.dimension}-${index}`} className="scenario-script-detail-card">
                       <span className="scenario-script-detail-label">{finding.dimension.replace(/_/g, ' ')}</span>
-                      <span className="scenario-script-detail-value">{finding.severity} · -{finding.penalty.toFixed(0)}</span>
+                      <span className="scenario-script-detail-value"><span className={`archive-finding-severity ${finding.severity}`}>{finding.severity}</span> · -{finding.penalty.toFixed(0)}</span>
                       <span className="capacity-advisory-detail">{finding.message}</span>
                     </div>
                   ))}
@@ -866,40 +919,67 @@ export default function TestExecutionArchive({
             </div>
           )}
 
-          {summaryTimelineEntries.length > 0 && (
+          {summaryTimelineEntriesAll.length > 0 && (
             <div className="tx-section archive-summary-section">
-              <div className="archive-section-header">
+              <div className="archive-section-header archive-section-header-stack">
                 <div>
                   <h3 className="chart-title">Summary Timeline</h3>
                   <p className="archive-section-copy">Archived interval snapshots for throughput, latency, and error progression across the run.</p>
                 </div>
+                <div className="archive-filter-bar">
+                  <span className="archive-chip">{summaryTimelineEntriesAll.length} intervals</span>
+                  {summaryTimelineErrorCount > 0 && (
+                    <label className="archive-checkbox">
+                      <input
+                        type="checkbox"
+                        checked={summaryTimelineErrorsOnly}
+                        onChange={(event) => { setSummaryTimelineErrorsOnly(event.target.checked); setSummaryTimelineExpanded(false) }}
+                      />
+                      Errors only ({summaryTimelineErrorCount})
+                    </label>
+                  )}
+                </div>
               </div>
-              <table className="tx-table">
-                <thead>
-                  <tr>
-                    <th>Bucket</th>
-                    <th>Active VUsers</th>
-                    <th>TPS</th>
-                    <th>P95</th>
-                    <th>Error %</th>
-                    <th>Total Tx</th>
-                    <th>Total Errors</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {summaryTimelineEntries.map((point) => (
-                    <tr key={point.timestamp}>
-                      <td className="tx-name">{formatArchiveBucketTimestamp(point.timestamp)}</td>
-                      <td>{point.active_vusers}</td>
-                      <td>{point.tps.toFixed(1)}</td>
-                      <td>{point.p95_ms.toFixed(1)} ms</td>
-                      <td>{point.error_pct.toFixed(2)}%</td>
-                      <td>{point.total_transactions}</td>
-                      <td>{point.total_errors}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              {summaryTimelineFiltered.length === 0 ? (
+                <p className="scenario-script-status">No intervals with errors.</p>
+              ) : (
+                <>
+                  <table className="tx-table">
+                    <thead>
+                      <tr>
+                        <th>Bucket</th>
+                        <th>Active VUsers</th>
+                        <th>TPS</th>
+                        <th>P95</th>
+                        <th>Error %</th>
+                        <th>Total Tx</th>
+                        <th>Total Errors</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {summaryTimelineEntries.map((point) => (
+                        <tr key={point.timestamp} className={point.total_errors > 0 ? 'archive-error-row' : ''}>
+                          <td className="tx-name">{formatArchiveBucketTimestamp(point.timestamp)}</td>
+                          <td>{point.active_vusers}</td>
+                          <td>{point.tps.toFixed(1)}</td>
+                          <td>{point.p95_ms.toFixed(1)} ms</td>
+                          <td className={point.error_pct > 0 ? 'error-cell' : ''}>{point.error_pct.toFixed(2)}%</td>
+                          <td>{point.total_transactions}</td>
+                          <td className={point.total_errors > 0 ? 'error-cell' : ''}>{point.total_errors}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {summaryTimelineNeedsCollapse && (
+                    <button
+                      className="btn btn-sm btn-ghost archive-timeline-toggle"
+                      onClick={() => setSummaryTimelineExpanded(prev => !prev)}
+                    >
+                      {summaryTimelineExpanded ? 'Show less' : `Show all ${summaryTimelineFiltered.length} intervals`}
+                    </button>
+                  )}
+                </>
+              )}
             </div>
           )}
 
@@ -1141,11 +1221,33 @@ export default function TestExecutionArchive({
                   </label>
                 </div>
               </div>
+
+              {selectedActionStats && (
+                <div className="archive-drilldown-stats">
+                  <span className="archive-drilldown-stat">{selectedActionStats.transactions.toLocaleString()} total</span>
+                  <span className="archive-drilldown-stat-sep" />
+                  <span className={`archive-drilldown-stat${selectedActionStats.errors > 0 ? ' danger' : ''}`}>{selectedActionStats.error_pct.toFixed(2)}% errors</span>
+                  <span className="archive-drilldown-stat-sep" />
+                  <span className="archive-drilldown-stat">avg {selectedActionStats.avg_response_ms.toFixed(1)} ms</span>
+                  <span className="archive-drilldown-stat-sep" />
+                  <span className="archive-drilldown-stat">max {selectedActionStats.max_response_ms.toFixed(1)} ms</span>
+                </div>
+              )}
+
               <div className="archive-pagination-bar">
                 <span className="archive-pagination-copy">
                   {archiveTransactionsLoading ? 'Loading events…' : archiveTransactionsTotal > 0 ? `${archivePageStart}-${archivePageEnd} of ${archiveTransactionsTotal}` : 'No archived events'}
                 </span>
                 <div className="archive-pagination-actions">
+                  <select
+                    className="archive-page-size-select"
+                    value={archivePageSize}
+                    onChange={(event) => onPageSizeChange(Number(event.target.value))}
+                  >
+                    {ARCHIVE_PAGE_SIZE_OPTIONS.map(size => (
+                      <option key={size} value={size}>{size} / page</option>
+                    ))}
+                  </select>
                   <button
                     className="btn btn-sm btn-secondary"
                     disabled={archiveTransactionsOffset === 0 || archiveTransactionsLoading}
@@ -1169,12 +1271,11 @@ export default function TestExecutionArchive({
                   <thead>
                     <tr>
                       <th>Time</th>
-                      <th>Group</th>
                       <th>Status</th>
                       <th>Duration</th>
                       <th>Bytes</th>
                       <th>Error</th>
-                      <th>Details</th>
+                      <th></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1196,13 +1297,12 @@ export default function TestExecutionArchive({
 
                       return (
                         <Fragment key={rowKey}>
-                          <tr>
-                            <td>{formatArchiveTimestamp(event.timestamp)}</td>
-                            <td>{event.group || 'n/a'}</td>
+                          <tr className={!event.success ? 'archive-error-row' : ''}>
+                            <td className="archive-time-cell">{formatArchiveTime(event.timestamp)}</td>
                             <td className={event.success ? '' : 'error-cell'}>{event.status_code || (event.success ? 'OK' : 'ERR')}</td>
                             <td>{event.duration_ms.toFixed(1)} ms</td>
                             <td>{event.bytes_received || 0}</td>
-                            <td className={!event.success ? 'error-cell' : ''}>{event.error_message || 'None'}</td>
+                            <td className={!event.success ? 'error-cell' : 'cell-muted'}>{event.error_message || '—'}</td>
                             <td>
                               {hasInspectDetails ? (
                                 <button
@@ -1211,14 +1311,12 @@ export default function TestExecutionArchive({
                                 >
                                   {isExpanded ? 'Hide' : 'Inspect'}
                                 </button>
-                              ) : (
-                                <span className="cell-muted">n/a</span>
-                              )}
+                              ) : null}
                             </td>
                           </tr>
                           {isExpanded && hasInspectDetails && (
                             <tr className="archive-event-detail-row">
-                              <td colSpan={7}>
+                              <td colSpan={6}>
                                 <div className="archive-event-detail-grid">
                                   {hasSnapshot && snapshotSections.length > 0 && (
                                     <div className="archive-event-detail-grid-header">
@@ -1258,16 +1356,7 @@ export default function TestExecutionArchive({
                                         <span className="scenario-script-detail-label">Client Metrics</span>
                                       </div>
                                       <span className="scenario-script-detail-value">{event.client_metrics.device_profile || 'browser'} · {formatDevicePlatformLabel(event.client_metrics.device_platform)} · {formatBrowserEngineLabel(event.client_metrics.browser_engine)} · {event.client_metrics.device_tier || 'unknown'} tier</span>
-                                      <pre className="archive-event-detail-pre">
-                                        FCP: {formatBrowserMetric(event.client_metrics.fcp_ms, ' ms')}{'\n'}
-                                        LCP: {formatBrowserMetric(event.client_metrics.lcp_ms, ' ms')}{'\n'}
-                                        CLS: {formatBrowserScore(event.client_metrics.cls_score)}{'\n'}
-                                        INP: {formatBrowserMetric(event.client_metrics.inp_ms, ' ms')}{'\n'}
-                                        Blocking resources: {formatBrowserMetric(event.client_metrics.blocking_resource_count, '', 0)}{'\n'}
-                                        Long tasks: {formatBrowserMetric(event.client_metrics.long_task_count, '', 0)}{'\n'}
-                                        Browser CPU: {formatBrowserMetric(event.client_metrics.browser_process_cpu_pct, '%')}{'\n'}
-                                        Browser memory: {formatBrowserMetric(event.client_metrics.browser_process_mem_mb, ' MB')}
-                                      </pre>
+                                      <pre className="archive-event-detail-pre">{formatClientMetricsBlock(event.client_metrics)}</pre>
                                       {browserWaterfall && (
                                         <>
                                           <span className="scenario-script-detail-label">Navigation Waterfall</span>
@@ -1281,25 +1370,7 @@ export default function TestExecutionArchive({
                                       <div className="archive-event-detail-header">
                                         <span className="scenario-script-detail-label">Server Telemetry</span>
                                       </div>
-                                      <pre className="archive-event-detail-pre">
-                                        Server processing: {formatBrowserMetric(event.server_telemetry.server_processing_ms, ' ms')}{'\n'}
-                                        Transfer: {formatBrowserMetric(event.server_telemetry.transfer_ms, ' ms')}{'\n'}
-                                        Serialization: {formatBrowserMetric(event.server_telemetry.serialization_ms, ' ms')}{'\n'}
-                                        Deserialization: {formatBrowserMetric(event.server_telemetry.deserialization_ms, ' ms')}{'\n'}
-                                        Request payload: {formatBrowserMetric(event.server_telemetry.request_payload_kb, ' KB', 2)}{'\n'}
-                                        Request size class: {event.server_telemetry.request_size_class || 'n/a'}{'\n'}
-                                        Response payload: {formatBrowserMetric(event.server_telemetry.response_payload_kb, ' KB', 2)}{'\n'}
-                                        Response size class: {event.server_telemetry.response_size_class || 'n/a'}{'\n'}
-                                        Envelope overhead: {formatBrowserMetric(event.server_telemetry.envelope_overhead_kb, ' KB', 2)}{'\n'}
-                                        SOAP fault: {event.server_telemetry.soap_fault_code || 'n/a'} / {event.server_telemetry.soap_fault_category || 'n/a'}{'\n'}
-                                        SOAP namespace conflict: {event.server_telemetry.soap_namespace_conflict || 'n/a'}{'\n'}
-                                        Redirects: {event.server_telemetry.redirect_count ?? 0} hops / {formatBrowserMetric(event.server_telemetry.redirect_ms, ' ms')}{'\n'}
-                                        Message latency: {formatBrowserMetric(event.server_telemetry.message_latency_ms, ' ms')}{'\n'}
-                                        Messages: {event.server_telemetry.messages_sent ?? 0} sent / {event.server_telemetry.messages_received ?? 0} received{'\n'}
-                                        Message throughput: {formatBrowserMetric(event.server_telemetry.messages_sent_per_sec, ' sent/s')} / {formatBrowserMetric(event.server_telemetry.messages_received_per_sec, ' received/s')}{'\n'}
-                                        Consumer lag: {formatBrowserMetric(event.server_telemetry.consumer_lag_ms, ' ms')}{'\n'}
-                                        Connection: {event.server_telemetry.connection_reused === undefined ? 'n/a' : event.server_telemetry.connection_reused ? 'reused' : 'new'}
-                                      </pre>
+                                      <pre className="archive-event-detail-pre">{formatServerTelemetryBlock(event.server_telemetry)}</pre>
                                     </div>
                                   )}
                                   {hasSnapshot && (

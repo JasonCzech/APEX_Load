@@ -1542,22 +1542,45 @@
 .archive-artifact-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 12px;
 }
 
 .archive-artifact-group {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .archive-artifact-label {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+  width: 100%;
+}
+
+.archive-finding-severity {
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.archive-finding-severity.warning {
+  color: var(--warning, #f59e0b);
+}
+
+.archive-finding-severity.error,
+.archive-finding-severity.critical {
+  color: var(--danger);
+}
+
+.archive-finding-severity.info {
+  color: var(--text-secondary);
 }
 
 .archive-report-layout {
@@ -1640,8 +1663,62 @@
   gap: 8px;
 }
 
+.archive-report-card .tx-table tbody tr:nth-child(even):not(.archive-event-detail-row) {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.archive-drilldown-stats {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.archive-drilldown-stat.danger {
+  color: var(--danger);
+}
+
+.archive-drilldown-stat-sep {
+  width: 1px;
+  height: 14px;
+  background: rgba(255, 255, 255, 0.1);
+  flex-shrink: 0;
+}
+
+.archive-page-size-select {
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
 .archive-events-table td {
   vertical-align: top;
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
+.archive-time-cell {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.archive-error-row {
+  background: rgba(239, 68, 68, 0.06);
+}
+
+.archive-timeline-toggle {
+  margin-top: 8px;
 }
 
 .archive-detail-toggle {

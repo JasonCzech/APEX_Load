@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
-import { Application, DashboardAuthEffectiveAccessResource, Release, ScenarioSchedule, ScenarioScheduleOccurrence, StoredScenario } from '../types'
+import { Application, DashboardAuthEffectiveAccessResource, DraftCapacityEstimate, Release, ScenarioSchedule, ScenarioScheduleOccurrence, StoredScenario } from '../types'
 import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
 import { getErrorMessage } from '../utils/errorUtils'
@@ -169,6 +169,10 @@ function scenarioProtocolList(scenario?: StoredScenario | null) {
   return Array.from(values)
 }
 
+function formatScenarioModeShort(value?: StoredScenario['scenario_mode']) {
+  return value === 'goal_oriented' ? 'Goal' : 'VUser'
+}
+
 function formatScenarioWorkloadSummary(scenario: StoredScenario) {
   const groupCount = scenario.scripts.length
   const vusers = totalScenarioVUsers(scenario)
@@ -236,6 +240,9 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
   const [error, setError] = useState('')
   const [confirmDeleteScheduleId, setConfirmDeleteScheduleId] = useState<string | null>(null)
   const [showAllRuntimeDefaults, setShowAllRuntimeDefaults] = useState(false)
+  const [showNewRelease, setShowNewRelease] = useState(false)
+  const [draftEstimate, setDraftEstimate] = useState<DraftCapacityEstimate | null>(null)
+  const [estimateLoading, setEstimateLoading] = useState(false)
   const [effectiveAuthAccessResources, setEffectiveAuthAccessResources] = useState<DashboardAuthEffectiveAccessResource[]>([])
 
   const refresh = useCallback(async () => {
@@ -331,6 +338,37 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
       setScheduleDraft(buildDefaultScheduleDraft(scenario, releaseId))
     }
   }, [editingScheduleId, releaseId, scenario])
+
+  useEffect(() => {
+    if (!scenario || !activeApplication) {
+      setDraftEstimate(null)
+      return
+    }
+    let cancelled = false
+    setEstimateLoading(true)
+    const timer = window.setTimeout(async () => {
+      try {
+        const estimate = await api.estimateTest({
+          name: scenario.name,
+          duration: scenario.duration,
+          application_id: activeApplication.id,
+          release_id: releaseId || undefined,
+          scenario_id: scenario.id,
+          project_id: activeProject?.id,
+        })
+        if (!cancelled) setDraftEstimate(estimate)
+      } catch {
+        if (!cancelled) setDraftEstimate(null)
+      } finally {
+        if (!cancelled) setEstimateLoading(false)
+      }
+    }, 400)
+    return () => { cancelled = true; clearTimeout(timer) }
+  }, [activeApplication, activeProject?.id, api, releaseId, scenario])
+
+  const step1Complete = Boolean(activeApplication && release)
+  const step2Complete = Boolean(scenario && scenario.scripts.length > 0)
+  const step3Complete = step1Complete && step2Complete
 
   const createRelease = async () => {
     const name = newReleaseName.trim()
@@ -875,7 +913,7 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
         <div className="new-test-main">
           <section className="new-test-step">
             <div className="new-test-step-header">
-              <span className="new-test-step-index">1</span>
+              <span className={`new-test-step-index${step1Complete ? ' complete' : ''}`}>{step1Complete ? '✓' : '1'}</span>
               <div>
                 <h3>Release Context</h3>
                 <p>Results are always stored against one release.</p>
@@ -898,17 +936,33 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
                   <option value="">Select release</option>
                   {releases.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
                 </select>
-                <div className="inline-create-row">
-                  <input className="settings-input" value={newReleaseName} onChange={event => setNewReleaseName(event.target.value)} placeholder="Create release, e.g. PI30" />
-                  <button className="btn btn-secondary" onClick={createRelease} disabled={!newReleaseName.trim()}>Add Release</button>
-                </div>
+                {showNewRelease ? (
+                  <div className="new-test-release-create-row">
+                    <input className="settings-input" value={newReleaseName} onChange={event => setNewReleaseName(event.target.value)} placeholder="Release name, e.g. PI30" autoFocus />
+                    <button className="btn btn-secondary" onClick={createRelease} disabled={!newReleaseName.trim()}>Add</button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => { setShowNewRelease(false); setNewReleaseName('') }}>Cancel</button>
+                  </div>
+                ) : (
+                  <button className="btn btn-ghost btn-sm new-test-add-release-link" onClick={() => setShowNewRelease(true)}>+ New Release</button>
+                )}
               </div>
+              {scenario && associatedReleases.length > 0 && (
+                <div className="setting-row new-test-associated-inline">
+                  <div className="setting-info">
+                    <span className="setting-label">Previously Tested</span>
+                    <span className="setting-desc">Releases this scenario has been run against</span>
+                  </div>
+                  <div className="new-test-tag-list">
+                    {associatedReleases.map((item) => <span key={item.id} className="new-test-tag">{item.name}</span>)}
+                  </div>
+                </div>
+              )}
             </div>
           </section>
 
           <section className="new-test-step">
             <div className="new-test-step-header">
-              <span className="new-test-step-index">2</span>
+              <span className={`new-test-step-index${step2Complete ? ' complete' : ''}`}>{step2Complete ? '✓' : '2'}</span>
               <div>
                 <h3>Scenario</h3>
                 <p>Choose the reusable workload definition to execute.</p>
@@ -940,10 +994,12 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
                           className={`new-test-scenario-card ${selected ? 'selected' : ''}`}
                           onClick={() => selectScenario(item.id)}
                         >
-                          <span className="new-test-scenario-card-title">{item.name}</span>
-                          <span className="new-test-scenario-card-meta">{formatScenarioWorkloadSummary(item)}</span>
-                          <span className="new-test-scenario-card-meta">{item.duration || 'No duration'} · {itemProtocols.length ? itemProtocols.join(', ') : 'No protocol'}</span>
-                          <span className="new-test-scenario-card-meta">{(item.associated_releases || []).length} associated release{(item.associated_releases || []).length === 1 ? '' : 's'}</span>
+                          <div className="new-test-scenario-card-top">
+                            <span className="new-test-scenario-card-title">{item.name}</span>
+                            <span className={`new-test-scenario-card-mode ${item.scenario_mode === 'goal_oriented' ? 'goal' : ''}`}>{formatScenarioModeShort(item.scenario_mode)}</span>
+                          </div>
+                          <span className="new-test-scenario-card-meta">{formatScenarioWorkloadSummary(item)} · {item.duration || 'No duration'}</span>
+                          <span className="new-test-scenario-card-meta">{itemProtocols.length ? itemProtocols.join(', ') : 'No protocol'}</span>
                         </button>
                       )
                     })}
@@ -966,25 +1022,17 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
                     <span>Last Run</span>
                     <strong>{formatDate(scenario.last_run_at)}</strong>
                   </div>
-                  <div>
-                    <span>Results</span>
-                    <strong>{scenario.result_count ?? 0}</strong>
-                  </div>
-                  <div>
-                    <span>Shared Data Pools</span>
-                    <strong>{scenario.data_pools?.length || 0}</strong>
-                  </div>
-                </div>
-              )}
-              {scenario && (
-                <div className="new-test-associated-row">
-                  <span className="setting-label">Associated Releases</span>
-                  {associatedReleases.length > 0 ? (
-                    <div className="new-test-tag-list">
-                      {associatedReleases.map((item) => <span key={item.id} className="new-test-tag">{item.name}</span>)}
+                  {(scenario.result_count ?? 0) > 0 && (
+                    <div>
+                      <span>Results</span>
+                      <strong>{scenario.result_count}</strong>
                     </div>
-                  ) : (
-                    <p className="new-test-inline-note">This scenario has not been run against a release yet.</p>
+                  )}
+                  {(scenario.data_pools?.length || 0) > 0 && (
+                    <div>
+                      <span>Shared Data Pools</span>
+                      <strong>{scenario.data_pools?.length}</strong>
+                    </div>
                   )}
                 </div>
               )}
@@ -993,7 +1041,7 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
 
           <section className="new-test-step">
             <div className="new-test-step-header">
-              <span className="new-test-step-index">3</span>
+              <span className={`new-test-step-index${step3Complete ? ' complete' : ''}`}>{step3Complete ? '✓' : '3'}</span>
               <div>
                 <h3>Run Review</h3>
                 <p>Confirm the workload before creating the run.</p>
@@ -1007,6 +1055,7 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
               <input className="settings-input" value={runName} onChange={event => setRunName(event.target.value)} placeholder={scenario?.name || 'Run name'} />
             </div>
             {scenario ? (
+              <div className="new-test-table-wrap">
               <div className="data-table">
                 <table>
                   <thead>
@@ -1033,8 +1082,41 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
                   </tbody>
                 </table>
               </div>
+              </div>
             ) : (
               <div className="new-test-empty">Select a scenario to preview scripts, VUsers, and ramp behavior.</div>
+            )}
+            {scenario && draftEstimate?.capacity_advisory && (
+              <div className={`draft-capacity-card new-test-capacity-card ${draftEstimate.capacity_advisory.requires_override ? 'warning' : 'ready'}`}>
+                <div className="draft-capacity-header">
+                  <h4>Capacity Estimate</h4>
+                  {estimateLoading && <span className="draft-capacity-status">Refreshing...</span>}
+                </div>
+                <div className="draft-capacity-metrics">
+                  <div className="draft-capacity-metric">
+                    <span className="draft-capacity-label">Generators</span>
+                    <strong>{draftEstimate.capacity_advisory.recommended_generators}</strong>
+                    <span>{draftEstimate.capacity_advisory.available_generators} available</span>
+                  </div>
+                  <div className="draft-capacity-metric">
+                    <span className="draft-capacity-label">Bottleneck</span>
+                    <strong>{draftEstimate.capacity_advisory.bottleneck}</strong>
+                    <span>{draftEstimate.capacity_advisory.headroom_pct}% headroom</span>
+                  </div>
+                  <div className="draft-capacity-metric">
+                    <span className="draft-capacity-label">Est. Resources</span>
+                    <strong>{draftEstimate.capacity_advisory.estimated_total.cpu_cores.toFixed(1)} CPU</strong>
+                    <span>{Math.round(draftEstimate.capacity_advisory.estimated_total.memory_mb)} MB / {Math.round(draftEstimate.capacity_advisory.estimated_total.network_mbps)} Mbps</span>
+                  </div>
+                </div>
+                {draftEstimate.capacity_advisory.warnings && draftEstimate.capacity_advisory.warnings.length > 0 && (
+                  <div className="draft-capacity-warnings">
+                    {draftEstimate.capacity_advisory.warnings.map((warning) => (
+                      <p key={warning}>{warning}</p>
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
             {scenario && (
               <>

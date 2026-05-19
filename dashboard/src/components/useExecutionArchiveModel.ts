@@ -10,7 +10,8 @@ import {
 import { getErrorMessage } from '../utils/errorUtils'
 import { downloadBlob } from '../utils/fileUtils'
 
-export const ARCHIVE_PAGE_SIZE = 25
+export const ARCHIVE_PAGE_SIZE_DEFAULT = 10
+export const ARCHIVE_PAGE_SIZE_OPTIONS = [10, 25, 50] as const
 
 interface ExecutionArchiveModel {
   hasArchive: boolean
@@ -34,6 +35,7 @@ interface ExecutionArchiveModel {
   archivePageEnd: number
   archiveTransactionsOffset: number
   archivePageSize: number
+  onPageSizeChange: (size: number) => void
   onPreviousPage: () => void
   onNextPage: () => void
   archiveTransactions: TransactionEvent[]
@@ -65,6 +67,7 @@ export function useExecutionArchiveModel(test: TestSummary | null): ExecutionArc
   const [selectedArchiveGroup, setSelectedArchiveGroup] = useState('')
   const [archiveErrorsOnly, setArchiveErrorsOnly] = useState(false)
   const [archiveTransactionsOffset, setArchiveTransactionsOffset] = useState(0)
+  const [archivePageSize, setArchivePageSize] = useState(ARCHIVE_PAGE_SIZE_DEFAULT)
   const [expandedArchiveEvent, setExpandedArchiveEvent] = useState<string | null>(null)
 
   const hasArchive = Boolean(test?.archive)
@@ -136,7 +139,7 @@ export function useExecutionArchiveModel(test: TestSummary | null): ExecutionArc
           soap_operation: selectedArchiveSOAPOperation || undefined,
           group: selectedArchiveGroup || undefined,
           success: archiveErrorsOnly ? false : undefined,
-          limit: ARCHIVE_PAGE_SIZE,
+          limit: archivePageSize,
           offset: archiveTransactionsOffset,
         })
         if (cancelled) return
@@ -160,7 +163,7 @@ export function useExecutionArchiveModel(test: TestSummary | null): ExecutionArc
     return () => {
       cancelled = true
     }
-  }, [api, archiveErrorsOnly, archiveTransactionsOffset, selectedArchiveAction, selectedArchiveGroup, selectedArchiveSOAPOperation, test])
+  }, [api, archiveErrorsOnly, archivePageSize, archiveTransactionsOffset, selectedArchiveAction, selectedArchiveGroup, selectedArchiveSOAPOperation, test])
 
   const archiveActionEntries = useMemo(() => {
     if (!archiveReport) return []
@@ -197,13 +200,18 @@ export function useExecutionArchiveModel(test: TestSummary | null): ExecutionArc
     setArchiveTransactionsOffset(0)
   }, [])
 
-  const onPreviousPage = useCallback(() => {
-    setArchiveTransactionsOffset((current) => Math.max(0, current - ARCHIVE_PAGE_SIZE))
+  const onPageSizeChange = useCallback((size: number) => {
+    setArchivePageSize(size)
+    setArchiveTransactionsOffset(0)
   }, [])
 
+  const onPreviousPage = useCallback(() => {
+    setArchiveTransactionsOffset((current) => Math.max(0, current - archivePageSize))
+  }, [archivePageSize])
+
   const onNextPage = useCallback(() => {
-    setArchiveTransactionsOffset((current) => current + ARCHIVE_PAGE_SIZE)
-  }, [])
+    setArchiveTransactionsOffset((current) => current + archivePageSize)
+  }, [archivePageSize])
 
   const onDownloadArchive = useCallback(async () => {
     if (!test) return
@@ -256,7 +264,8 @@ export function useExecutionArchiveModel(test: TestSummary | null): ExecutionArc
     archivePageStart,
     archivePageEnd,
     archiveTransactionsOffset,
-    archivePageSize: ARCHIVE_PAGE_SIZE,
+    archivePageSize,
+    onPageSizeChange,
     onPreviousPage,
     onNextPage,
     archiveTransactions,

@@ -141,7 +141,7 @@ describe('useExecutionArchiveModel', () => {
       ],
       total: 3,
       count: 1,
-      limit: 25,
+      limit: 10,
       offset: 0,
     })
 
@@ -157,7 +157,7 @@ describe('useExecutionArchiveModel', () => {
       soap_operation: undefined,
       group: undefined,
       success: undefined,
-      limit: 25,
+      limit: 10,
       offset: 0,
     })
     expect(readTestId('loading')).toBe('idle')
@@ -236,7 +236,7 @@ describe('useExecutionArchiveModel', () => {
       ],
       total: 60,
       count: 1,
-      limit: 25,
+      limit: 10,
       offset: 0,
     })
 
@@ -256,10 +256,10 @@ describe('useExecutionArchiveModel', () => {
       soap_operation: undefined,
       group: undefined,
       success: undefined,
-      limit: 25,
-      offset: 25,
+      limit: 10,
+      offset: 10,
     })
-    expect(readTestId('offset')).toBe('25')
+    expect(readTestId('offset')).toBe('10')
 
     await act(async () => {
       container.querySelector('[data-testid="set-group"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -271,7 +271,7 @@ describe('useExecutionArchiveModel', () => {
       soap_operation: undefined,
       group: 'Checkout',
       success: undefined,
-      limit: 25,
+      limit: 10,
       offset: 0,
     })
     expect(readTestId('group')).toBe('Checkout')

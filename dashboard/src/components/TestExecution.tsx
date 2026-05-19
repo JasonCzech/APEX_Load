@@ -114,6 +114,7 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
     archivePageEnd,
     archiveTransactionsOffset,
     archivePageSize,
+    onPageSizeChange,
     onPreviousPage,
     onNextPage,
     archiveTransactions,
@@ -265,6 +266,7 @@ export default function TestExecution({ testId, history, onBack, onEditScript, o
           archivePageEnd={archivePageEnd}
           archiveTransactionsOffset={archiveTransactionsOffset}
           archivePageSize={archivePageSize}
+          onPageSizeChange={onPageSizeChange}
           onPreviousPage={onPreviousPage}
           onNextPage={onNextPage}
           archiveTransactions={archiveTransactions}
