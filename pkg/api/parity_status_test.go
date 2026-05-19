@@ -4,6 +4,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -102,6 +105,40 @@ func TestCompetitiveParityStatusExposesEvidenceAndNonGoals(t *testing.T) {
 	for competitor, ok := range competitorCoverage {
 		if !ok {
 			t.Fatalf("missing competitive coverage for %q in %#v", competitor, areas)
+		}
+	}
+}
+
+func TestCompetitiveSupportMatrixDocumentsParityStatusClaims(t *testing.T) {
+	contentBytes, err := os.ReadFile(filepath.Join("..", "..", competitiveSupportMatrixEvidence))
+	if err != nil {
+		t.Fatalf("read competitive support matrix: %v", err)
+	}
+	content := string(contentBytes)
+	for _, required := range []string{
+		"Competitive Parity API Coverage",
+		"k6",
+		"NeoLoad",
+		"LoadRunner",
+		"JMeter",
+		"DevWeb",
+		"HAR",
+		"Native Stormrunner JSON DSL",
+		"Browser feature support and browser density claims are separate",
+	} {
+		if !strings.Contains(content, required) {
+			t.Fatalf("competitive support matrix missing %q", required)
+		}
+	}
+	for _, area := range buildCompetitiveParityStatus() {
+		if !strings.Contains(content, area.Name) {
+			t.Fatalf("competitive support matrix does not document API dimension %q", area.Name)
+		}
+		if area.Status == "gap" && !strings.Contains(content, "Gap") {
+			t.Fatalf("competitive support matrix missing gap status vocabulary for %q", area.Name)
+		}
+		if area.EvidenceLevel == "" || area.Decision == "" || len(area.Remaining) == 0 {
+			t.Fatalf("competitive parity area %q is missing release-review evidence fields: %#v", area.ID, area)
 		}
 	}
 }

@@ -39,6 +39,20 @@ Internal Stormrunner evidence references:
 | Gap | Stormrunner does not currently provide equivalent support. |
 | Non-goal | Stormrunner should not claim this without a new product decision. |
 
+## Competitive Parity API Coverage
+
+`GET /api/v1/system/parity-status` exposes these competitive dimensions. Each dimension is intentionally backed by this matrix so dashboard and release-review claims stay aligned with docs.
+
+| API dimension | Status | Matrix coverage | Claim rule |
+| --- | --- | --- | --- |
+| Developer Script-As-Code Experience | Partial | Native Stormrunner JSON DSL, k6 script import/export, k6 result import, thresholds/SLAs | Stormrunner differentiates with controlled JSON DSL and CI APIs, but must not imply k6 JavaScript compatibility until import/export is implemented. |
+| Managed Scale And Load Zones | Partial | Distributed execution and load zones, live metrics, OpenTelemetry and Prometheus | Stormrunner can demonstrate fleet capacity and Kubernetes-native placement, but named load zones and benchmark envelopes remain evidence gates. |
+| Authoring, Recording, And Guided Repair | Partial | Dashboard script creation, LoadRunner Web HTTP/HTML, TrueClient Mobile Web, HAR import, raw HTTP/cURL/REST samples | Stormrunner can show multi-source acquisition and repair workflows, but C5 authoring simplification remains in progress. |
+| Browser Testing And Client UX Evidence | Partial | Browser UX canaries, high-density browser load, TrueClient Mobile Web | Browser canaries are supported; high-density browser load remains a separate external-evidence requirement. |
+| Analysis, APM, And Root-Cause Integrations | Partial | OpenTelemetry and Prometheus, archive reports and comparison, root-cause and augmented analysis | Stormrunner has telemetry and archive primitives, but NeoLoad-style packaged root-cause workflows remain incomplete. |
+| Specialized Enterprise Protocol Breadth | Gap | SAP GUI, Citrix, Oracle Forms, desktop UI | These are demand-gated gaps/non-goals unless a customer-backed product decision funds them. |
+| Packaging, Samples, And Trust | Partial | Competitive claim rules plus source/protocol/runtime matrices | Public examples, one-command demos, and benchmark artifacts are required before broad sales claims. |
+
 ## Source And Authoring Flow Matrix
 
 | Source flow | Stormrunner status | Supported path | Evidence | Remaining gap |

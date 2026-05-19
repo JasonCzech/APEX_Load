@@ -79,7 +79,7 @@ Stormrunner should not claim:
 | C1.1 | Add a `competitive_parity` section to `/api/v1/system/parity-status` covering k6 and NeoLoad dimensions | P0 | Complete for backend contract |
 | C1.2 | Publish a docs-owned support matrix for k6, NeoLoad, LoadRunner, JMeter, DevWeb, HAR, and native Stormrunner flows | P0 | Complete |
 | C1.3 | Add dashboard operator view for competitive support status, evidence level, and known limitations | P1 | Complete for Monitoring card |
-| C1.4 | Link every parity claim to code, tests, docs, or explicit external evidence requirements | P1 | Partial via support matrix, parity-status evidence pointers, and Monitoring visibility |
+| C1.4 | Link every parity claim to code, tests, docs, or explicit external evidence requirements | P1 | Complete for current competitive dimensions |
 
 Acceptance criteria:
 
@@ -93,6 +93,7 @@ Implementation notes:
 - The first backend contract deliberately marks browser load and specialized enterprise protocols as bounded or gap areas rather than treating them as supported claims.
 - The Monitoring dashboard now renders a Competitive Parity card with gap, partial, external-evidence, known-limitation, competitor, and per-dimension evidence-level details.
 - `docs/COMPETITIVE_SUPPORT_MATRIX.md` is now the docs-owned source of truth for source/import flows, protocol/runtime support, load modeling, operations, monitoring, reporting, and evidence claim rules across k6, NeoLoad, LoadRunner, JMeter, DevWeb, HAR, and native Stormrunner flows.
+- The API test suite now verifies that each `competitive_parity` dimension is documented in the matrix and carries evidence level, decision, and remaining-work fields.
 
 ### Phase C2: k6-Aligned Developer Experience
 
