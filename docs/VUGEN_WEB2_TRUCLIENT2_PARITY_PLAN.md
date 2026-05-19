@@ -155,7 +155,7 @@ Implementation note: Archive inspection now extracts object descriptor IDs plus 
 | V2.5.2 | Add graphical step outline focused on browser actions, transactions, parameters, waits, and assertions | P0 | Complete |
 | V2.5.3 | Add dialogs for object descriptor editing, parameter data, runtime settings, replay output, and conversion-to-HTTP review | P0 | Complete |
 | V2.5.4 | Add reusable Web 2.0 browser components: login, search, add-to-cart, checkout, iframe flow, modal flow, auth callback, and teardown/logout | P1 | Complete |
-| V2.5.5 | Add AI-assisted repair hooks using the existing governed AI workflow for selector/wait/assertion/data-source repairs | P1 | Planned |
+| V2.5.5 | Add AI-assisted repair hooks using the existing governed AI workflow for selector/wait/assertion/data-source repairs | P1 | Complete |
 
 Acceptance:
 
@@ -163,7 +163,7 @@ Acceptance:
 - The central script editor remains focused on outline and script code; supporting evidence appears in dialogs or side lanes.
 - New drafts use authoring sessions and approval gates.
 
-Implementation note: The authoring capabilities endpoint now exposes `trueclient2_web` as a review-only browser-replay gated source, reusable Web 2.0 browser components can be filtered by the profile, and the backend template catalog includes a `VuGen Web 2.0 Review Profile` starter for migration review drafts. The dashboard script editor now renders a graphical outline that summarizes browser actions, transaction coverage, parameter references, waits, and assertions while keeping configuration, RTS, parameter data, replay output, imported metadata, object descriptor review, and browser-to-HTTP conversion review behind dialogs.
+Implementation note: The authoring capabilities endpoint now exposes `trueclient2_web` as a review-only browser-replay gated source, reusable Web 2.0 browser components can be filtered by the profile, and the backend template catalog includes a `VuGen Web 2.0 Review Profile` starter for migration review drafts. The dashboard script editor now renders a graphical outline that summarizes browser actions, transaction coverage, parameter references, waits, and assertions while keeping configuration, RTS, parameter data, replay output, imported metadata, object descriptor review, and browser-to-HTTP conversion review behind dialogs. Governed AI repair suggestions now include Web 2.0 selector repair hooks alongside existing wait, assertion, and data-source repair categories.
 
 ## Workstream V2.6: Runtime Settings And Replay Evidence
 

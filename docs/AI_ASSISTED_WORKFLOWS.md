@@ -58,6 +58,7 @@ Because diff review and replay evidence start missing, AI-generated sessions are
 - hard-coded bearer/session/token/password data
 - missing assertions
 - unstable browser waits/selectors
+- TruClient Web 2.0 selector repair against imported object descriptors and replay DOM evidence
 - runtime parity warnings
 
 The endpoint also returns a preview script for safe, mechanical fixes such as adding a `status_code` assertion or browser readiness wait. Preview output remains a draft and is not promoted automatically.

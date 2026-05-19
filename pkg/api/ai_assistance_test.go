@@ -248,6 +248,56 @@ func TestAIRepairSuggestionsCoverAuthoringRisks(t *testing.T) {
 	}
 }
 
+func TestAIRepairSuggestsWeb2SelectorRepairs(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	script := dsl.Script{
+		Name:     "Imported Web2 Draft",
+		Version:  "1.0.0",
+		Protocol: "browser",
+		Config:   dsl.ScriptConfig{BaseURL: "https://example.test"},
+		Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{
+			Source: "loadrunner",
+			Preserved: map[string]any{
+				"source_script_type": "TruClient 2.0 - Web",
+				"trueclient_archive_inspection": map[string]any{
+					"steps": []any{map[string]any{"object_descriptor_id": "obj_login"}},
+				},
+			},
+		}},
+		Actions: []dsl.Action{
+			{Name: "Click Login", Type: "browser_click", Target: "", Selector: "div:nth-child(3) > button"},
+			{Name: "Wait For Shell", Type: "browser_wait", Target: "", WaitFor: &dsl.WaitCondition{Type: "selector", Value: "[data-testid='shell']", TimeoutMs: 10000}},
+		},
+	}
+	body, err := json.Marshal(AIRepairRequest{ProjectID: "project-ai", Script: &script, Categories: []string{"selector", "unstable_waits", "assertions", "data_source"}})
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/ai/repairs", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("repair status = %d body=%s", resp.Code, resp.Body.String())
+	}
+	var payload AIRepairResponse
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode repair: %v", err)
+	}
+	categories := map[string]bool{}
+	for _, suggestion := range payload.Suggestions {
+		categories[suggestion.Category] = true
+	}
+	for _, category := range []string{"selector", "unstable_waits", "assertions"} {
+		if !categories[category] {
+			t.Fatalf("missing category %q in suggestions %#v", category, payload.Suggestions)
+		}
+	}
+	if payload.PreviewScript == nil || payload.PreviewScript.Metadata == nil || payload.PreviewScript.Metadata.Import == nil || payload.PreviewScript.Metadata.Import.Preserved["ai_repair_preview"] != true {
+		t.Fatalf("preview script metadata = %#v, want AI repair provenance", payload.PreviewScript)
+	}
+}
+
 func TestAIExplainModeCitesLocalEvidence(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	stored := server.runner.StoreScript(&dsl.Script{

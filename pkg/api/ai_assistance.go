@@ -975,6 +975,9 @@ func buildAIRepairSuggestions(script *dsl.Script, validation scriptValidationRes
 			if script.Protocol == "browser" && browserActionNeedsWaitRepair(action) {
 				add("unstable_waits", "warning", "Add stable browser wait", "Browser action "+action.Name+" has no explicit readiness wait or uses a brittle selector.", "Add a visible/network-idle wait and prefer stable data-testid or role selectors.", []string{path + ".selector", path + ".wait_for"}, path+".wait_for")
 			}
+			if script.Protocol == "browser" && scriptHasWeb2ImportProfile(script) && browserActionNeedsSelectorRepair(action) {
+				add("selector", "warning", "Repair Web 2.0 selector", "Browser action "+action.Name+" needs selector review against imported object descriptors and replay DOM evidence.", "Open the Object Descriptors dialog, choose a stable candidate, and rerun browser replay before approval.", []string{path + ".selector", "metadata.import.preserved.trueclient_archive_inspection"}, path+".selector")
+			}
 		}
 	}
 	for _, entry := range validation.RuntimeSettingsParity {
@@ -1009,6 +1012,30 @@ func applyAIRepairPreview(script *dsl.Script, suggestions []AIRepairSuggestion) 
 	attachAIProvenance(preview, defaultAIProvider, "repair", "ai_repair_preview")
 	preview.Metadata.Import.Preserved["ai_repair_preview"] = true
 	return preview
+}
+
+func scriptHasWeb2ImportProfile(script *dsl.Script) bool {
+	if script == nil || script.Metadata == nil || script.Metadata.Import == nil {
+		return false
+	}
+	preserved := script.Metadata.Import.Preserved
+	sourceType := strings.ToLower(strings.TrimSpace(stringValue(preserved["source_script_type"])))
+	sourceProfile := strings.ToLower(strings.TrimSpace(stringValue(preserved["source_profile"])))
+	return strings.Contains(sourceType, "truclient 2.0") || strings.Contains(sourceType, "truclient2") || strings.Contains(sourceProfile, "truclient2_web")
+}
+
+func browserActionNeedsSelectorRepair(action dsl.Action) bool {
+	switch action.Type {
+	case "browser_click", "browser_fill", "browser_select", "browser_tap", "browser_long_press", "browser_swipe":
+	default:
+		return false
+	}
+	selector := strings.TrimSpace(firstNonEmpty(action.Selector, action.Target))
+	if selector == "" {
+		return true
+	}
+	lower := strings.ToLower(selector)
+	return !(strings.Contains(lower, "data-testid") || strings.Contains(lower, "aria-label") || strings.HasPrefix(selector, "#") || strings.Contains(lower, "[role="))
 }
 
 func (s *Server) buildAIExplainResponse(req AIExplainRequest, provider string, projectID string) (AIExplainResponse, error) {
