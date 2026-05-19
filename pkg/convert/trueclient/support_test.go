@@ -104,9 +104,9 @@ func TestWeb2ProfileCapabilityScopes(t *testing.T) {
 	wantStatuses := map[string]ScopeStatus{
 		"archive_detection":          ScopePlanned,
 		"step_mapping":               ScopePlanned,
-		"object_identification":      ScopePlanned,
+		"object_identification":      ScopeReviewOnly,
 		"runtime_settings":           ScopePlanned,
-		"browser_to_http_conversion": ScopePlanned,
+		"browser_to_http_conversion": ScopeReviewOnly,
 		"native_desktop_automation":  ScopeOutOfScope,
 		"high_density_browser_load":  ScopeOutOfScope,
 	}

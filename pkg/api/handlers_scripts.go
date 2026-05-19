@@ -609,8 +609,8 @@ func trueClientWeb2RepairSuggestions(summary loadRunnerImportSummary) []scriptIm
 			Category:    "selector",
 			Severity:    "warning",
 			Title:       "Review Web 2.0 object identification",
-			Description: fmt.Sprintf("%d object repository file(s) were preserved, but descriptor ranking and fallback selector evidence still require review.", len(inspection.ObjectRepositories)),
-			Action:      "Open the object-identification review section, compare imported selectors with replay evidence, and stabilize brittle selectors before promotion.",
+			Description: fmt.Sprintf("%d object repository file(s), %d descriptor(s), and %d replay diagnostic(s) were preserved for selector repair.", len(inspection.ObjectRepositories), len(inspection.ObjectDescriptors), trueClientReplayDiagnosticCount(inspection)),
+			Action:      "Open the object-identification review section, compare ranked selector candidates with replay evidence, and stabilize brittle selectors before promotion.",
 		},
 		{
 			ID:          "web2:http-conversion",
@@ -723,10 +723,16 @@ func trueClientWeb2ReviewSections(summary loadRunnerImportSummary) []scriptImpor
 	for _, file := range inspection.ObjectRepositories {
 		objectItems = append(objectItems, "Object repository: "+file.Path)
 	}
+	if len(inspection.ObjectDescriptors) > 0 {
+		objectItems = append(objectItems, fmt.Sprintf("Object descriptors parsed: %d", len(inspection.ObjectDescriptors)))
+	}
 	if candidateCount := trueClientSelectorCandidateCount(inspection); candidateCount > 0 {
 		objectItems = append(objectItems, fmt.Sprintf("Selector candidates extracted: %d", candidateCount))
 	}
-	objectItems = append(objectItems, "Imported selectors require browser replay before promotion because object descriptor ranking is not complete.")
+	if diagnosticCount := trueClientReplayDiagnosticCount(inspection); diagnosticCount > 0 {
+		objectItems = append(objectItems, fmt.Sprintf("Replay diagnostics prepared: %d", diagnosticCount))
+	}
+	objectItems = append(objectItems, "Imported selectors are ranked from step arguments and object repositories; replay remains required before promotion.")
 	sections = append(sections, scriptImportReviewSection{
 		Key:      "web2_object_identification",
 		Title:    "Object Identification",
@@ -787,6 +793,17 @@ func trueClientSelectorCandidateCount(inspection *trueclient.ArchiveInspection) 
 	count := 0
 	for _, step := range inspection.Steps {
 		count += len(step.SelectorCandidates)
+	}
+	return count
+}
+
+func trueClientReplayDiagnosticCount(inspection *trueclient.ArchiveInspection) int {
+	if inspection == nil {
+		return 0
+	}
+	count := 0
+	for _, step := range inspection.Steps {
+		count += len(step.ReplayDiagnostics)
 	}
 	return count
 }

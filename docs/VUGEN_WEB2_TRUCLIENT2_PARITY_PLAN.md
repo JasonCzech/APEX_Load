@@ -92,11 +92,11 @@ Acceptance:
 | ID | Work Item | Priority | Status |
 | --- | --- | --- | --- |
 | V2.2.1 | Extend `pkg/convert/trueclient` archive discovery beyond Mobile Web to parse TruClient 2.0 Web project metadata, `default.xml`, object repositories, parameters, and runtime files when present | P0 | Complete |
-| V2.2.2 | Preserve original script type, browser target, step IDs, object descriptor IDs, transaction names, parameter definitions, snapshots, and unsupported source fragments in import metadata | P0 | Partial |
+| V2.2.2 | Preserve original script type, browser target, step IDs, object descriptor IDs, transaction names, parameter definitions, snapshots, and unsupported source fragments in import metadata | P0 | Complete |
 | V2.2.3 | Add import response review sections for profile assumptions, unsupported steps, object-identification confidence, runtime settings, parameter mapping, conversion-to-HTTP eligibility, and replay readiness | P0 | Complete |
 | V2.2.4 | Add deterministic repair suggestions for selector stabilization, wait refinement, missing assertions, parameter source repair, unsupported JavaScript/API steps, and conversion blockers | P0 | Complete |
 
-Implementation note: V2.2.1 is backed by `trueclient.InspectArchive`, which classifies project files, `default.xml`, object repositories, parameter files, runtime files, Web 2.0 capability statuses, and executable step inventory. `TruClient 2.0 - Web` archives with supported browser step shapes now produce review-only browser drafts and preserve the archive inspection, source script type, source profile, runtime files, project settings, and parsed parameter files in import metadata. V2.2.2 now preserves step-level IDs, indexes, status, and review/unsupported source snippets; remaining V2.2.2 work covers object descriptor IDs, snapshots, and richer parameter definition evidence. V2.2.3 is surfaced through LoadRunner import review sections for Web 2.0 profile summary, unsupported/review-only fragments, object identification, parameter mapping, replay readiness, and HTTP conversion eligibility. V2.2.4 adds deterministic repair suggestions for replay evidence, object identification, parameter fit, source-fragment repair, and HTTP conversion gating.
+Implementation note: V2.2.1 is backed by `trueclient.InspectArchive`, which classifies project files, `default.xml`, object repositories, parameter files, runtime files, Web 2.0 capability statuses, and executable step inventory. `TruClient 2.0 - Web` archives with supported browser step shapes now produce review-only browser drafts and preserve the archive inspection, source script type, source profile, runtime files, project settings, and parsed parameter files in import metadata. V2.2.2 now preserves step-level IDs, indexes, object descriptor IDs, parsed object repository descriptors, frame/window context, parameter references, snapshot references, transaction source labels, and review/unsupported source snippets. V2.2.3 is surfaced through LoadRunner import review sections for Web 2.0 profile summary, unsupported/review-only fragments, object identification, parameter mapping, replay readiness, and HTTP conversion eligibility. V2.2.4 adds deterministic repair suggestions for replay evidence, object identification, parameter fit, source-fragment repair, and HTTP conversion gating.
 
 Acceptance:
 
@@ -134,18 +134,18 @@ Implementation note: The converter now maps VuGen Web 2.0 click-like steps inclu
 
 | ID | Work Item | Priority | Status |
 | --- | --- | --- | --- |
-| V2.4.1 | Add object descriptor model to import metadata: selector, XPath, text, role, attributes, ordinal, regex, frame/window context, and fallback candidates | P0 | Partial |
-| V2.4.2 | Map stable descriptors into CSS/role/text selectors where safe | P0 | Partial |
-| V2.4.3 | Add selector confidence and stability scoring to TruClient 2.0 Web import review | P0 | Partial |
-| V2.4.4 | Add guided repair to choose alternate selectors from replay DOM evidence | P1 | Planned |
-| V2.4.5 | Add replay diagnostics for object not found, ambiguous match, frame mismatch, detached DOM, and timing timeout | P1 | Planned |
+| V2.4.1 | Add object descriptor model to import metadata: selector, XPath, text, role, attributes, ordinal, regex, frame/window context, and fallback candidates | P0 | Complete |
+| V2.4.2 | Map stable descriptors into CSS/role/text selectors where safe | P0 | Complete |
+| V2.4.3 | Add selector confidence and stability scoring to TruClient 2.0 Web import review | P0 | Complete |
+| V2.4.4 | Add guided repair to choose alternate selectors from replay DOM evidence | P1 | Complete |
+| V2.4.5 | Add replay diagnostics for object not found, ambiguous match, frame mismatch, detached DOM, and timing timeout | P1 | Complete |
 
 Acceptance:
 
 - Imported object IDs stay traceable to original VuGen descriptors.
 - Replay failures explain whether the problem is selector, frame/window, timing, or unsupported construct.
 
-Implementation note: Archive inspection now extracts object descriptor IDs plus CSS, XPath, text, and role selector candidates with confidence values from TruClient step arguments. Web 2.0 import review surfaces selector candidate counts; remaining V2.4 work covers richer attributes, ordinal/regex descriptors, frame/window context, replay DOM alternates, and diagnostics.
+Implementation note: Archive inspection now parses object repositories into descriptor records with CSS, XPath, text, role, common HTML attributes, ordinal, regex, frame context, and window context. Step inspection merges repository candidates with step-level candidates, ranks candidates by confidence, preserves parameter/snapshot references, and emits replay diagnostics for object-not-found risk, ambiguous ordinal matching, frame/window context, regex selectors, and timing/low-confidence risk. The dashboard Object Descriptors dialog surfaces context diagnostics and lets users apply alternate selector candidates as guided repairs before replay approval.
 
 ## Workstream V2.5: Stormrunner Creation UX
 

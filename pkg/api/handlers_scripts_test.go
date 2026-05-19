@@ -1947,8 +1947,8 @@ func TestHandleLoadRunnerSupportMatrix(t *testing.T) {
 	if !containsLoadRunnerTrueClientScriptType(result.TrueClientScriptTypes, "truclient2_web", "review_only") {
 		t.Fatalf("trueclient_script_types = %#v, want review-only Web 2.0 row", result.TrueClientScriptTypes)
 	}
-	if !containsLoadRunnerTrueClientCapability(result.Web2ProfileCapabilities, "object_identification", "planned") {
-		t.Fatalf("web2_profile_capabilities = %#v, want planned object identification capability", result.Web2ProfileCapabilities)
+	if !containsLoadRunnerTrueClientCapability(result.Web2ProfileCapabilities, "object_identification", "review_only") {
+		t.Fatalf("web2_profile_capabilities = %#v, want review-only object identification capability", result.Web2ProfileCapabilities)
 	}
 	if !containsLoadRunnerWeb2Fixture(result.Web2FixtureContract, "web2_spa_checkout", true) {
 		t.Fatalf("web2_fixture_contract = %#v, want required SPA checkout fixture", result.Web2FixtureContract)

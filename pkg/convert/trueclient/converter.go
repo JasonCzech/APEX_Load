@@ -588,6 +588,27 @@ func attachSourceStepMetadata(action *dsl.Action, step truXMLStep, transaction s
 	if value := strings.TrimSpace(step.ActionName); value != "" {
 		action.Metadata["source_action_name"] = value
 	}
+	if value := objectDescriptorID(step.Arguments); value != "" {
+		action.Metadata["source_object_descriptor_id"] = value
+	}
+	if candidates := selectorCandidates(step.Arguments); len(candidates) > 0 {
+		action.Metadata["source_selector_candidates"] = candidates
+		action.Metadata["source_selector_confidence"] = candidates[0].Confidence
+	}
+	if values, err := parseArgumentValues(step.Arguments); err == nil {
+		if value := trimArgumentValue(values, "Frame", "Frame ID", "FrameContext", "Iframe", "Iframe ID"); value != "" {
+			action.Metadata["source_frame_context"] = value
+		}
+		if value := trimArgumentValue(values, "Window", "Window ID", "WindowContext", "Tab", "Browser Window"); value != "" {
+			action.Metadata["source_window_context"] = value
+		}
+		if refs := parameterReferences(values); len(refs) > 0 {
+			action.Metadata["source_parameter_refs"] = refs
+		}
+		if refs := snapshotReferences(values); len(refs) > 0 {
+			action.Metadata["source_snapshot_refs"] = refs
+		}
+	}
 	if value := strings.TrimSpace(transaction); value != "" {
 		action.Metadata["source_transaction"] = value
 	}

@@ -227,10 +227,10 @@ var web2ProfileCapabilityScopes = []ProfileCapabilityScope{
 	{
 		CanonicalName:    "object_identification",
 		DisplayName:      "Object Identification",
-		Status:           ScopePlanned,
-		StormrunnerShape: "selector candidates with stability scoring and fallback reasons",
+		Status:           ScopeReviewOnly,
+		StormrunnerShape: "object repository descriptors, selector candidates, context evidence, diagnostics, and guided repair",
 		RequiredEvidence: []string{"object repository parse summary", "selector ranking explanation", "replay validation"},
-		Notes:            "Stormrunner must preserve object identity evidence instead of flattening imported steps into opaque selectors.",
+		Notes:            "Stormrunner preserves object identity evidence and ranks selectors, but approval still requires browser replay evidence.",
 	},
 	{
 		CanonicalName:    "runtime_settings",
@@ -243,7 +243,7 @@ var web2ProfileCapabilityScopes = []ProfileCapabilityScope{
 	{
 		CanonicalName:    "browser_to_http_conversion",
 		DisplayName:      "Browser-To-HTTP Conversion",
-		Status:           ScopePlanned,
+		Status:           ScopeReviewOnly,
 		StormrunnerShape: "conversion candidate report and generated HTTP script draft",
 		RequiredEvidence: []string{"request capture summary", "correlation candidate list", "conversion blockers"},
 		Notes:            "Conversion should be treated as a governed draft flow, not an automatic promotion to high-density load.",

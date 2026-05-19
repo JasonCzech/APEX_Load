@@ -220,6 +220,9 @@ interface Web2ObjectDescriptorRow {
   status: string
   actionIndex: number | null
   currentSelector: string
+  frameContext: string
+  windowContext: string
+  replayDiagnostics: string[]
   candidates: Web2SelectorCandidate[]
 }
 
@@ -345,6 +348,13 @@ function buildWeb2ObjectDescriptorReview(script: ScriptData, metadata?: ScriptIm
         .filter((candidate): candidate is Web2SelectorCandidate => candidate !== null)
       const actionIndex = index < script.actions.length && script.actions[index]?.type.startsWith('browser_') ? index : null
       const currentSelector = actionIndex !== null ? script.actions[actionIndex]?.selector || script.actions[actionIndex]?.target || '' : ''
+      const diagnostics = readArray(item.replay_diagnostics)
+        .map((diagnostic) => {
+          if (!diagnostic || typeof diagnostic !== 'object' || Array.isArray(diagnostic)) return ''
+          const detail = diagnostic as Record<string, unknown>
+          return readString(detail.summary) || readString(detail.code)
+        })
+        .filter(Boolean)
       return {
         key: `${readString(item.step_id) || index}:${readString(item.index) || index}`,
         label: readString(item.action_name) || readString(item.action) || `Step ${index + 1}`,
@@ -352,6 +362,9 @@ function buildWeb2ObjectDescriptorReview(script: ScriptData, metadata?: ScriptIm
         status: readString(item.status) || 'review',
         actionIndex,
         currentSelector,
+        frameContext: readString(item.frame_context),
+        windowContext: readString(item.window_context),
+        replayDiagnostics: diagnostics,
         candidates,
       }
     })
@@ -3620,6 +3633,16 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                         <span>Current selector</span>
                         <code>{row.currentSelector || 'No selector applied'}</code>
                       </div>
+                      {(row.frameContext || row.windowContext || row.replayDiagnostics.length > 0) && (
+                        <div className="object-descriptor-current">
+                          <span>Replay diagnostics</span>
+                          {row.frameContext && <code>Frame: {row.frameContext}</code>}
+                          {row.windowContext && <code>Window: {row.windowContext}</code>}
+                          {row.replayDiagnostics.map((diagnostic, index) => (
+                            <code key={`${row.key}-diagnostic-${index}`}>{diagnostic}</code>
+                          ))}
+                        </div>
+                      )}
                       <div className="object-selector-candidates">
                         {row.candidates.map((candidate) => (
                           <div key={`${row.key}:${candidate.kind}:${candidate.value}`} className="object-selector-candidate">

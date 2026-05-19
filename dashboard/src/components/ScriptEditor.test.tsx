@@ -396,6 +396,10 @@ describe('ScriptEditor', () => {
                   action_name: 'Click Checkout',
                   object_descriptor_id: 'obj_checkout',
                   status: 'supported',
+                  frame_context: 'main-frame',
+                  replay_diagnostics: [
+                    { code: 'frame_mismatch_risk', summary: 'The imported step carries iframe/frame context.' },
+                  ],
                   selector_candidates: [
                     { kind: 'css', value: '[data-testid="checkout"]', confidence: 92, reason: 'Stable test id' },
                   ],
@@ -427,6 +431,8 @@ describe('ScriptEditor', () => {
     expect(descriptorDialog?.className).toContain('open')
     expect(descriptorDialog?.textContent).toContain('obj_checkout')
     expect(descriptorDialog?.textContent).toContain('[data-testid="checkout"]')
+    expect(descriptorDialog?.textContent).toContain('Frame: main-frame')
+    expect(descriptorDialog?.textContent).toContain('The imported step carries iframe/frame context.')
 
     const useSelectorButton = Array.from(descriptorDialog?.querySelectorAll('button') || []).find(button => button.textContent?.includes('Use Selector'))
     expect(useSelectorButton).toBeDefined()
