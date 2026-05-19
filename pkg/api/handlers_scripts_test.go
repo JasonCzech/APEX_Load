@@ -2138,6 +2138,25 @@ func TestAuthoringComponentsEndpointReturnsReusableLibrary(t *testing.T) {
 	if web2Payload.Count == 0 || !componentSupportsProtocol(web2Payload.Components[0], "trueclient2_web") {
 		t.Fatalf("web2 components = %#v, want reusable TrueClient 2.0 Web component", web2Payload)
 	}
+	wantWeb2Components := map[string]bool{
+		"browser-login-transaction":    true,
+		"web2-search-flow":             true,
+		"web2-add-to-cart-flow":        true,
+		"web2-checkout-flow":           true,
+		"web2-iframe-flow":             true,
+		"web2-modal-flow":              true,
+		"web2-auth-callback-flow":      true,
+		"web2-browser-logout-teardown": true,
+	}
+	for _, component := range web2Payload.Components {
+		delete(wantWeb2Components, component.ID)
+		if !componentSupportsProtocol(component, "trueclient2_web") {
+			t.Fatalf("web2 component = %#v, want trueclient2_web support", component)
+		}
+	}
+	if len(wantWeb2Components) != 0 {
+		t.Fatalf("missing web2 components = %#v", wantWeb2Components)
+	}
 }
 
 func TestDraftValidationReturnsBlockedAuthoringHealth(t *testing.T) {
