@@ -158,12 +158,12 @@ Acceptance criteria:
 
 | ID | Work Item | Priority | Status |
 | --- | --- | --- | --- |
-| C5.1 | Simplify Create Script, Edit Script, New Test, and New Scenario into guided task flows with fewer standing cards | P0 | In progress |
-| C5.2 | Add scenario-first wizard: choose goal, traffic model, scripts, zones, thresholds, schedule, then review | P0 | Partial |
-| C5.3 | Add recorder-to-script review queue with approval, replay evidence, and promotion to reusable asset | P1 | Partial |
-| C5.4 | Add guided correlation/parameter repair as a unified authoring lane across imports, recorder, and manual scripts | P1 | Partial |
-| C5.5 | Add visual diff and provenance review before saving AI-generated or migrated scripts | P1 | Partial |
-| C5.6 | Add reusable component library for request groups, auth flows, login transactions, data pools, and teardown blocks | P2 | Partial via starter blocks/templates |
+| C5.1 | Simplify Create Script, Edit Script, New Test, and New Scenario into guided task flows with fewer standing cards | P0 | Complete: Create Script uses workflow lanes, ScriptEditor keeps replay/RTS/config/parameter work in dialogs, New Test focuses scenario selection/review, and scenario management uses explicit duplicate/delete dialogs |
+| C5.2 | Add scenario-first wizard: choose goal, traffic model, scripts, zones, thresholds, schedule, then review | P0 | Complete: the Scenario builder guides goal, load model, scripts, capacity/assignment, thresholds/runtime defaults, and review before test creation or scheduling |
+| C5.3 | Add recorder-to-script review queue with approval, replay evidence, and promotion to reusable asset | P1 | Complete: authoring sessions persist recorded/migrated/generated drafts, the Scripts dashboard lists a review queue, and approval promotes ready drafts through the script library endpoint |
+| C5.4 | Add guided correlation/parameter repair as a unified authoring lane across imports, recorder, and manual scripts | P1 | Complete: session correlation preview/apply endpoints and dashboard controls share extractor insertion, sample replacement diffs, parameter data fit, and health scoring across sources |
+| C5.5 | Add visual diff and provenance review before saving AI-generated or migrated scripts | P1 | Complete: validation returns provenance/AI guardrail evidence, correlation repairs return before/after diffs, and approval is blocked until validation, review, and replay evidence are ready |
+| C5.6 | Add reusable component library for request groups, auth flows, login transactions, data pools, and teardown blocks | P2 | Complete: `/api/v1/scripts/authoring/components` and the Create Script component library expose reusable request groups, auth flows, login transactions, data pools, and teardown blocks |
 
 Acceptance criteria:
 

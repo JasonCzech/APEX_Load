@@ -1892,6 +1892,63 @@ func TestAuthoringTemplatesEndpointReturnsValidProtocolStarters(t *testing.T) {
 	}
 }
 
+func TestAuthoringComponentsEndpointReturnsReusableLibrary(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/scripts/authoring/components", nil)
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var payload struct {
+		Components []AuthoringComponent `json:"components"`
+		Count      int                  `json:"count"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if payload.Count != len(payload.Components) {
+		t.Fatalf("count = %d, components = %d", payload.Count, len(payload.Components))
+	}
+	wantKinds := map[string]bool{
+		"request_group":     true,
+		"auth_flow":         true,
+		"login_transaction": true,
+		"data_pool":         true,
+		"teardown":          true,
+	}
+	for _, component := range payload.Components {
+		delete(wantKinds, component.Kind)
+	}
+	if len(wantKinds) != 0 {
+		t.Fatalf("missing component kinds = %#v", wantKinds)
+	}
+
+	filterReq := httptest.NewRequest(http.MethodGet, "/api/v1/scripts/authoring/components?kind=auth_flow&protocol=http", nil)
+	filterResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(filterResp, filterReq)
+	if filterResp.Code != http.StatusOK {
+		t.Fatalf("filtered status = %d, want %d body=%s", filterResp.Code, http.StatusOK, filterResp.Body.String())
+	}
+	var filtered struct {
+		Components []AuthoringComponent `json:"components"`
+		Count      int                  `json:"count"`
+	}
+	if err := json.Unmarshal(filterResp.Body.Bytes(), &filtered); err != nil {
+		t.Fatalf("unmarshal filtered response: %v", err)
+	}
+	if filtered.Count == 0 {
+		t.Fatal("expected at least one HTTP auth flow component")
+	}
+	for _, component := range filtered.Components {
+		if component.Kind != "auth_flow" || !componentSupportsProtocol(component, "http") {
+			t.Fatalf("filtered component = %#v, want HTTP auth flow only", component)
+		}
+	}
+}
+
 func TestDraftValidationReturnsBlockedAuthoringHealth(t *testing.T) {
 	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
 	body := []byte(`{"script":{"name":"","version":"1.0.0","protocol":"http","actions":[]}}`)

@@ -4,6 +4,7 @@ import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
 import { getErrorMessage } from '../utils/errorUtils'
 import './TestHub.css'
+import './CreateTestModal.css'
 import { buildCreateTestPayload, buildScenarioUpsertPayload } from './scenarioPayloadUtils'
 import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
 
@@ -161,7 +162,7 @@ function formatDateTime(value?: string) {
 function releaseList(scenario: StoredScenario) {
   const releases = scenario.associated_releases || []
   if (releases.length === 0) return 'No releases yet'
-  return releases.map(release => release.name).join(', ')
+  return Array.from(new Set(releases.map(release => release.name))).join(', ')
 }
 
 function formatScenarioScripts(scenario: StoredScenario) {
@@ -244,6 +245,7 @@ function TestHub({ onSelectTest }: Props) {
   const [draftEstimate, setDraftEstimate] = useState<DraftCapacityEstimate | null>(null)
   const [estimateLoading, setEstimateLoading] = useState(false)
   const [estimateError, setEstimateError] = useState('')
+  const [confirmDeleteScenarioId, setConfirmDeleteScenarioId] = useState<string | null>(null)
   const selectedScript = scripts.find(script => script.id === form.script_id)
   const showBrowserRuntimeSettings = selectedScript?.protocol === 'browser'
 
@@ -482,6 +484,12 @@ function TestHub({ onSelectTest }: Props) {
     setShowForm(true)
   }
 
+  const duplicateScenario = (scenario: StoredScenario) => {
+    openEdit(scenario)
+    setEditingId(null)
+    setForm(prev => ({ ...prev, name: `${scenario.name} (Copy)` }))
+  }
+
   const applyLoadModelTemplate = (templateId: string) => {
     setSelectedLoadModelTemplateId(templateId)
     setLoadModelValidation(null)
@@ -566,7 +574,7 @@ function TestHub({ onSelectTest }: Props) {
   }
 
   const deleteScenario = async (id: string) => {
-    if (!confirm('Delete this scenario? Scenarios with results cannot be deleted.')) return
+    setConfirmDeleteScenarioId(null)
     try {
       await api.deleteScenario(id)
       refresh()
@@ -1093,7 +1101,8 @@ function TestHub({ onSelectTest }: Props) {
                         void toggleScenarioRuns(scenario)
                       }}>{expandedScenarioId === scenario.id ? 'Hide Runs' : 'View Runs'}</button>
                       <button className="btn btn-sm btn-ghost" onClick={(event) => { event.stopPropagation(); openEdit(scenario) }}>Edit</button>
-                      <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={(event) => { event.stopPropagation(); deleteScenario(scenario.id) }}>Delete</button>
+                      <button className="btn btn-sm btn-ghost" onClick={(event) => { event.stopPropagation(); duplicateScenario(scenario) }}>Duplicate</button>
+                      <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={(event) => { event.stopPropagation(); setConfirmDeleteScenarioId(scenario.id) }}>Delete</button>
                     </td>
                   </tr>
                   {expandedScenarioId === scenario.id && (
@@ -1162,6 +1171,25 @@ function TestHub({ onSelectTest }: Props) {
           </table>
         </div>
       </div>
+
+      {confirmDeleteScenarioId && (
+        <div className="modal-overlay" onClick={() => setConfirmDeleteScenarioId(null)}>
+          <div className="modal" role="dialog" aria-modal="true" onClick={event => event.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Delete Scenario</h3>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setConfirmDeleteScenarioId(null)}>Cancel</button>
+            </div>
+            <div className="monitor-body">
+              <p>Permanently delete <strong>{scenarios.find(s => s.id === confirmDeleteScenarioId)?.name || 'this scenario'}</strong>? Scenarios with linked results cannot be deleted.</p>
+              <p style={{ color: 'var(--danger)', fontWeight: 600 }}>This action cannot be undone.</p>
+              <div className="settings-inline-actions">
+                <button className="btn btn-secondary" type="button" onClick={() => setConfirmDeleteScenarioId(null)}>Cancel</button>
+                <button className="btn btn-danger" type="button" onClick={() => deleteScenario(confirmDeleteScenarioId)}>Delete Scenario</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

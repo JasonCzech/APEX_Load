@@ -3,6 +3,7 @@ import { Application, DashboardAuthEffectiveAccessResource, Release, ScenarioSch
 import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
 import { getErrorMessage } from '../utils/errorUtils'
+import './CreateTestModal.css'
 
 interface Props {
   activeApplication: Application | null
@@ -79,6 +80,86 @@ function formatRuntimeContinueOnError(scenario?: StoredScenario | null) {
   return value ? 'Enabled' : 'Disabled'
 }
 
+const COMMON_TIMEZONES = [
+  'UTC',
+  'America/New_York',
+  'America/Chicago',
+  'America/Denver',
+  'America/Los_Angeles',
+  'America/Phoenix',
+  'America/Anchorage',
+  'Pacific/Honolulu',
+  'America/Toronto',
+  'America/Vancouver',
+  'America/Sao_Paulo',
+  'Europe/London',
+  'Europe/Paris',
+  'Europe/Berlin',
+  'Europe/Amsterdam',
+  'Europe/Stockholm',
+  'Europe/Moscow',
+  'Asia/Dubai',
+  'Asia/Kolkata',
+  'Asia/Shanghai',
+  'Asia/Tokyo',
+  'Asia/Seoul',
+  'Asia/Singapore',
+  'Australia/Sydney',
+  'Australia/Melbourne',
+  'Pacific/Auckland',
+]
+
+function describeCron(expr: string): string {
+  const parts = expr.trim().split(/\s+/)
+  if (parts.length !== 5) return ''
+  const [minute, hour, dom, month, dow] = parts
+
+  const dowNames: Record<string, string> = { '0': 'Sun', '1': 'Mon', '2': 'Tue', '3': 'Wed', '4': 'Thu', '5': 'Fri', '6': 'Sat', '7': 'Sun' }
+  const monthNames: Record<string, string> = { '1': 'Jan', '2': 'Feb', '3': 'Mar', '4': 'Apr', '5': 'May', '6': 'Jun', '7': 'Jul', '8': 'Aug', '9': 'Sep', '10': 'Oct', '11': 'Nov', '12': 'Dec' }
+
+  const formatTime = (h: string, m: string) => {
+    const hNum = parseInt(h, 10)
+    const mNum = parseInt(m, 10)
+    if (isNaN(hNum) || isNaN(mNum)) return null
+    const suffix = hNum >= 12 ? 'PM' : 'AM'
+    const displayH = hNum === 0 ? 12 : hNum > 12 ? hNum - 12 : hNum
+    return `${displayH}:${String(mNum).padStart(2, '0')} ${suffix}`
+  }
+
+  const describeDow = (field: string) => {
+    if (field === '*') return ''
+    return field.split(',').map(part => {
+      if (part.includes('-')) {
+        const [start, end] = part.split('-')
+        return `${dowNames[start] || start}–${dowNames[end] || end}`
+      }
+      return dowNames[part] || part
+    }).join(', ')
+  }
+
+  const describeMonth = (field: string) => {
+    if (field === '*') return ''
+    return field.split(',').map(part => monthNames[part] || part).join(', ')
+  }
+
+  const time = formatTime(hour, minute)
+  const dowDesc = describeDow(dow)
+  const monthDesc = describeMonth(month)
+  const domDesc = dom !== '*' ? `on day ${dom}` : ''
+
+  const segments: string[] = []
+  if (time) segments.push(`At ${time}`)
+  else if (hour === '*' && minute === '*') segments.push('Every minute')
+  else if (hour === '*') segments.push(`At minute ${minute} of every hour`)
+  else segments.push(`At ${hour}:${String(minute).padStart(2, '0')}`)
+
+  if (dowDesc) segments.push(dowDesc)
+  if (domDesc) segments.push(domDesc)
+  if (monthDesc) segments.push(`in ${monthDesc}`)
+
+  return segments.join(', ')
+}
+
 function totalScenarioVUsers(scenario?: StoredScenario | null) {
   return scenario?.scripts.reduce((sum, script) => sum + (script.vusers || 0), 0) || 0
 }
@@ -153,6 +234,8 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
   const [scenarioQuery, setScenarioQuery] = useState('')
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState('')
+  const [confirmDeleteScheduleId, setConfirmDeleteScheduleId] = useState<string | null>(null)
+  const [showAllRuntimeDefaults, setShowAllRuntimeDefaults] = useState(false)
   const [effectiveAuthAccessResources, setEffectiveAuthAccessResources] = useState<DashboardAuthEffectiveAccessResource[]>([])
 
   const refresh = useCallback(async () => {
@@ -212,7 +295,16 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
   }, [api])
   const totalVUsers = useMemo(() => totalScenarioVUsers(scenario), [scenario])
   const protocols = useMemo(() => scenarioProtocolList(scenario), [scenario])
-  const associatedReleases = useMemo(() => scenario?.associated_releases || [], [scenario])
+  const associatedReleases = useMemo(() => {
+    const releases = scenario?.associated_releases || []
+    const seen = new Set<string>()
+    return releases.filter(r => {
+      const key = r.id || `${r.application_id || 'release'}:${r.name}`
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+  }, [scenario])
   const readiness = useMemo(() => {
     const checks = [
       { label: activeApplication ? `Application: ${activeApplication.name}` : 'Select an application', ready: !!activeApplication },
@@ -384,6 +476,7 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
 	  return
 	}
 	if (!scenario) return
+	setConfirmDeleteScheduleId(null)
 	setError('')
 	try {
 	  await api.deleteScenarioSchedule(scenario.id, scheduleId)
@@ -487,6 +580,9 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
                   <div className="setting-info">
                     <span className="setting-label">Cron Expression</span>
                     <span className="setting-desc">Five-field cron format, for example `0 9 * * 1-5`</span>
+                    {scheduleDraft.cron_expr.trim() && describeCron(scheduleDraft.cron_expr) && (
+                      <span className="setting-desc cron-preview">{describeCron(scheduleDraft.cron_expr)}{scheduleDraft.timezone ? ` (${scheduleDraft.timezone})` : ''}</span>
+                    )}
                   </div>
                   <input className="settings-input" value={scheduleDraft.cron_expr} onChange={(event) => setScheduleDraft(prev => ({ ...prev, cron_expr: event.target.value }))} placeholder="0 9 * * 1-5" />
                 </div>
@@ -495,7 +591,9 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
                     <span className="setting-label">Timezone</span>
                     <span className="setting-desc">IANA timezone used for cron and calendar windows</span>
                   </div>
-                  <input className="settings-input" value={scheduleDraft.timezone} onChange={(event) => setScheduleDraft(prev => ({ ...prev, timezone: event.target.value }))} placeholder="UTC" />
+                  <select className="settings-input" value={scheduleDraft.timezone} onChange={(event) => setScheduleDraft(prev => ({ ...prev, timezone: event.target.value }))}>
+                    {COMMON_TIMEZONES.map(tz => <option key={tz} value={tz}>{tz.replace(/_/g, ' ')}</option>)}
+                  </select>
                 </div>
                 <div className="setting-row">
                   <div className="setting-info">
@@ -675,7 +773,7 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
                                   <button className="btn btn-secondary" onClick={() => toggleScheduleOccurrences(item)}>{expandedScheduleId === item.id ? 'Hide Audit' : 'Audit Trail'}</button>
                                   <button className="btn btn-secondary" onClick={() => editSchedule(item)} disabled={!canManageTests}>Edit</button>
                                   <button className="btn btn-secondary" onClick={() => toggleSchedule(item)} disabled={!canManageTests}>{item.enabled ? 'Pause' : 'Enable'}</button>
-                                  <button className="btn btn-secondary" onClick={() => deleteSchedule(item.id)} disabled={!canManageTests}>Delete</button>
+                                  <button className="btn btn-secondary" onClick={() => setConfirmDeleteScheduleId(item.id)} disabled={!canManageTests}>Delete</button>
                                 </div>
                               </td>
                             </tr>
@@ -817,16 +915,6 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
               </div>
             </div>
             <div className="settings-group">
-              <div className="setting-row">
-                <div className="setting-info">
-                  <span className="setting-label">Reusable Scenario</span>
-                  <span className="setting-desc">Scenarios define scripts and runtime shape</span>
-                </div>
-                <select className="settings-input" value={scenarioId} onChange={(event) => selectScenario(event.target.value)}>
-                  <option value="">Select scenario</option>
-                  {scenarios.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
-                </select>
-              </div>
               <div className="new-test-scenario-picker">
                 <label className="library-search new-test-scenario-search">
                   <span>Search scenarios</span>
@@ -863,13 +951,6 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
                 ) : (
                   <div className="new-test-empty compact">No scenarios match this search.</div>
                 )}
-              </div>
-              <div className="setting-row">
-                <div className="setting-info">
-                  <span className="setting-label">Run Name</span>
-                  <span className="setting-desc">Shown in results and monitoring</span>
-                </div>
-                <input className="settings-input" value={runName} onChange={event => setRunName(event.target.value)} placeholder={scenario?.name || 'Run name'} />
               </div>
               {scenario && (
                 <div className="new-test-detail-grid">
@@ -918,6 +999,13 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
                 <p>Confirm the workload before creating the run.</p>
               </div>
             </div>
+            <div className="setting-row">
+              <div className="setting-info">
+                <span className="setting-label">Run Name</span>
+                <span className="setting-desc">Shown in results and monitoring</span>
+              </div>
+              <input className="settings-input" value={runName} onChange={event => setRunName(event.target.value)} placeholder={scenario?.name || 'Run name'} />
+            </div>
             {scenario ? (
               <div className="data-table">
                 <table>
@@ -962,48 +1050,39 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
                   </div>
                 </div>
               )}
-              <div className="new-test-detail-grid review">
-                <div>
-                  <span>Duration</span>
-                  <strong>{scenario.duration}</strong>
-                </div>
-                <div>
-                  <span>Iterations</span>
-                  <strong>{scenario.runtime_settings?.iterations ?? 'Script default'}</strong>
-                </div>
-                <div>
-                  <span>Log Level</span>
-                  <strong>{scenario.runtime_settings?.log_level || 'Script default'}</strong>
-                </div>
-                <div>
-                  <span>Auto Transactions</span>
-                  <strong>{scenario.runtime_settings?.auto_transactions || 'Script default'}</strong>
-                </div>
-                <div>
-                  <span>Pacing</span>
-                  <strong>{formatRuntimePacing(scenario)}</strong>
-                </div>
-                <div>
-                  <span>Think Time</span>
-                  <strong>{formatRuntimeThinkTime(scenario)}</strong>
-                </div>
-                <div>
-                  <span>Continue On Error</span>
-                  <strong>{formatRuntimeContinueOnError(scenario)}</strong>
-                </div>
-                <div>
-                  <span>Snapshot On Error</span>
-                  <strong>{scenario.runtime_settings?.error_handling?.snapshot_on_error ? 'Enabled' : 'Script default'}</strong>
-                </div>
-                <div>
-                  <span>Script Shakeout</span>
-                  <strong>{scenario.script_shakeout ? 'Enabled' : 'Disabled'}</strong>
-                </div>
-                <div>
-                  <span>Resource Baseline</span>
-                  <strong>{scenario.resource_baseline ? '5m before and after' : 'Disabled'}</strong>
-                </div>
-              </div>
+              {(() => {
+                const allCards: Array<{ label: string; value: string; isDefault: boolean }> = [
+                  { label: 'Duration', value: scenario.duration, isDefault: false },
+                  { label: 'Iterations', value: String(scenario.runtime_settings?.iterations ?? 'Script default'), isDefault: !scenario.runtime_settings?.iterations },
+                  { label: 'Log Level', value: scenario.runtime_settings?.log_level || 'Script default', isDefault: !scenario.runtime_settings?.log_level },
+                  { label: 'Auto Transactions', value: scenario.runtime_settings?.auto_transactions || 'Script default', isDefault: !scenario.runtime_settings?.auto_transactions },
+                  { label: 'Pacing', value: formatRuntimePacing(scenario), isDefault: formatRuntimePacing(scenario) === 'Script default' },
+                  { label: 'Think Time', value: formatRuntimeThinkTime(scenario), isDefault: formatRuntimeThinkTime(scenario) === 'Script default' },
+                  { label: 'Continue On Error', value: formatRuntimeContinueOnError(scenario), isDefault: formatRuntimeContinueOnError(scenario) === 'Script default' },
+                  { label: 'Snapshot On Error', value: scenario.runtime_settings?.error_handling?.snapshot_on_error ? 'Enabled' : 'Script default', isDefault: !scenario.runtime_settings?.error_handling?.snapshot_on_error },
+                  { label: 'Script Shakeout', value: scenario.script_shakeout ? 'Enabled' : 'Disabled', isDefault: false },
+                  { label: 'Resource Baseline', value: scenario.resource_baseline ? '5m before and after' : 'Disabled', isDefault: false },
+                ]
+                const visible = showAllRuntimeDefaults ? allCards : allCards.filter(c => !c.isDefault)
+                const hiddenCount = allCards.length - allCards.filter(c => !c.isDefault).length
+                return (
+                  <>
+                    <div className="new-test-detail-grid review">
+                      {visible.map(card => (
+                        <div key={card.label}>
+                          <span>{card.label}</span>
+                          <strong>{card.value}</strong>
+                        </div>
+                      ))}
+                    </div>
+                    {hiddenCount > 0 && (
+                      <button className="btn btn-sm btn-ghost" type="button" onClick={() => setShowAllRuntimeDefaults(prev => !prev)}>
+                        {showAllRuntimeDefaults ? 'Hide defaults' : `Show ${hiddenCount} default${hiddenCount === 1 ? '' : 's'}`}
+                      </button>
+                    )}
+                  </>
+                )
+              })()}
               </>
             )}
           </section>
@@ -1033,6 +1112,25 @@ export default function NewTestPage({ activeApplication, activeRelease, releases
           </div>
         </aside>
       </div>
+      )}
+
+      {confirmDeleteScheduleId && (
+        <div className="modal-overlay" onClick={() => setConfirmDeleteScheduleId(null)}>
+          <div className="modal" role="dialog" aria-modal="true" onClick={event => event.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Delete Schedule</h3>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setConfirmDeleteScheduleId(null)}>Cancel</button>
+            </div>
+            <div className="monitor-body">
+              <p>Permanently delete schedule <strong>{schedules.find(s => s.id === confirmDeleteScheduleId)?.name || 'this schedule'}</strong>? Future runs managed by this schedule will no longer fire.</p>
+              <p style={{ color: 'var(--danger)', fontWeight: 600 }}>This action cannot be undone.</p>
+              <div className="settings-inline-actions">
+                <button className="btn btn-secondary" type="button" onClick={() => setConfirmDeleteScheduleId(null)}>Cancel</button>
+                <button className="btn btn-danger" type="button" onClick={() => deleteSchedule(confirmDeleteScheduleId)}>Delete Schedule</button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

@@ -1,6 +1,7 @@
 import { useCallback, useMemo } from 'react'
 
 import {
+  AuthoringComponent,
   BrowserReplayStartRequest,
   BrowserReplayStartResponse,
   BrowserReplaySessionResponse,
@@ -109,6 +110,11 @@ type AuthoringTemplatesResponse = {
   count: number
 }
 
+type AuthoringComponentsResponse = {
+  components: AuthoringComponent[]
+  count: number
+}
+
 type AuthoringSessionsResponse = {
   sessions: AuthoringSession[]
   count: number
@@ -179,6 +185,17 @@ export function useScriptApi() {
       if (params?.use_case) query.set('use_case', params.use_case)
       const suffix = query.toString()
       return request<AuthoringTemplatesResponse>(`/scripts/authoring/templates${suffix ? `?${suffix}` : ''}`)
+    },
+    [],
+  )
+
+  const listAuthoringComponents = useCallback(
+    (params?: { kind?: string; protocol?: string }) => {
+      const query = new URLSearchParams()
+      if (params?.kind) query.set('kind', params.kind)
+      if (params?.protocol) query.set('protocol', params.protocol)
+      const suffix = query.toString()
+      return request<AuthoringComponentsResponse>(`/scripts/authoring/components${suffix ? `?${suffix}` : ''}`)
     },
     [],
   )
@@ -502,6 +519,7 @@ export function useScriptApi() {
       validateScript,
       validateDraftScript,
       listAuthoringTemplates,
+      listAuthoringComponents,
       listAuthoringSessions,
       approveAuthoringSession,
       deleteAuthoringSession,
@@ -552,6 +570,7 @@ export function useScriptApi() {
       validateScript,
       validateDraftScript,
       listAuthoringTemplates,
+      listAuthoringComponents,
       listAuthoringSessions,
       approveAuthoringSession,
       deleteAuthoringSession,

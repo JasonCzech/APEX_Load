@@ -14,6 +14,7 @@ import { type AuthoringState, type ScriptsCreateOptionActions } from './useScrip
 
 const apiMock = {
   listAuthoringTemplates: vi.fn(),
+  listAuthoringComponents: vi.fn(),
 }
 
 vi.mock('../hooks/useApi', () => ({
@@ -120,6 +121,7 @@ describe('ScriptsAuthoringShell', () => {
     document.body.appendChild(container)
     root = createRoot(container)
     apiMock.listAuthoringTemplates.mockResolvedValue({ templates: [], count: 0 })
+    apiMock.listAuthoringComponents.mockResolvedValue({ components: [], count: 0 })
   })
 
   afterEach(async () => {
@@ -156,6 +158,7 @@ describe('ScriptsAuthoringShell', () => {
 
     expect(container.textContent).toContain('Create Script')
     expect(container.textContent).toContain('Import LoadRunner')
+    await clickButton('Import Existing')
     expect(container.textContent).toContain('Import DevWeb')
     expect(container.textContent).toContain('Import HAR')
 
@@ -190,6 +193,17 @@ describe('ScriptsAuthoringShell', () => {
       }],
       count: 1,
     })
+    apiMock.listAuthoringComponents.mockResolvedValueOnce({
+      components: [{
+        id: 'component-oauth',
+        kind: 'auth_flow',
+        name: 'OAuth Bearer Token Flow',
+        protocols: ['http'],
+        summary: 'Token acquisition action with reusable Authorization header wiring.',
+        tags: ['auth', 'oauth'],
+      }],
+      count: 1,
+    })
 
     await act(async () => {
       root.render(renderShell({
@@ -201,8 +215,11 @@ describe('ScriptsAuthoringShell', () => {
     await flushPromises()
 
     expect(apiMock.listAuthoringTemplates).toHaveBeenCalledTimes(1)
+    expect(apiMock.listAuthoringComponents).toHaveBeenCalledTimes(1)
     expect(container.textContent).toContain('Starter Templates')
+    expect(container.textContent).toContain('Component Library')
     expect(container.textContent).toContain('HTTP Smoke')
+    expect(container.textContent).toContain('OAuth Bearer Token Flow')
     expect(container.textContent).toContain('ci smoke · api, ci, smoke')
     expect(container.textContent).toContain('3 VUsers / 2m')
 

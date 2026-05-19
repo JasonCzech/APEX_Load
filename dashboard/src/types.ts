@@ -1,4 +1,4 @@
-import { type BrowserConfig, type PacingConfig, type ScriptDefinition, type ThinkTimeConfig } from './types/scripts'
+import { type BrowserConfig, type PacingConfig, type ScriptActionDefinition, type ScriptDefinition, type ThinkTimeConfig } from './types/scripts'
 
 export interface TestGroup {
   name: string
@@ -1155,6 +1155,23 @@ export interface AuthoringTemplate {
     ramp_up?: string
     iterations?: number
   }
+}
+
+export interface AuthoringComponent {
+  id: string
+  kind: string
+  name: string
+  protocols: string[]
+  summary: string
+  tags?: string[]
+  config?: Record<string, unknown>
+  data_sources?: ScriptDefinition['data_sources']
+  parameters?: ScriptDefinition['parameters']
+  init?: ScriptActionDefinition[]
+  actions?: ScriptDefinition['actions']
+  teardown?: ScriptActionDefinition[]
+  usage_notes?: string[]
+  variables?: Record<string, string>
 }
 
 export interface AuthoringSession {

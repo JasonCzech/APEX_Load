@@ -14,6 +14,7 @@ const apiMock = {
   deleteScript: vi.fn(),
   listTests: vi.fn(),
   listAuthoringTemplates: vi.fn(),
+  listAuthoringComponents: vi.fn(),
   listAuthoringSessions: vi.fn(),
   approveAuthoringSession: vi.fn(),
   deleteAuthoringSession: vi.fn(),
@@ -172,6 +173,7 @@ describe('ScriptsPage', () => {
     apiMock.deleteScript.mockResolvedValue({})
     apiMock.listTests.mockResolvedValue({ tests: [] })
     apiMock.listAuthoringTemplates.mockResolvedValue({ templates: [], count: 0 })
+    apiMock.listAuthoringComponents.mockResolvedValue({ components: [], count: 0 })
     apiMock.listAuthoringSessions.mockResolvedValue({ sessions: [], count: 0 })
     apiMock.approveAuthoringSession.mockResolvedValue({
       session: { id: 'session-1', name: 'Migrated checkout review', status: 'approved' },
@@ -241,6 +243,8 @@ describe('ScriptsPage', () => {
     })
 
     expect(container.textContent).toContain('Create Script')
+
+    await clickButton('Build Manually')
 
     const sampleButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Build From Sample'))
     expect(sampleButton).toBeDefined()
@@ -332,6 +336,8 @@ describe('ScriptsPage', () => {
       createButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
+    await clickButton('Import Existing')
+
     const jmeterButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Import JMeter'))
     expect(jmeterButton).toBeDefined()
     if (!jmeterButton) {
@@ -374,6 +380,8 @@ describe('ScriptsPage', () => {
     await act(async () => {
       createButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
+
+    await clickButton('Import Existing')
 
     const jmeterButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Import JMeter'))
     expect(jmeterButton).toBeDefined()
@@ -493,6 +501,7 @@ describe('ScriptsPage', () => {
 
     expect(container.querySelector('[data-testid="loadrunner-import"]')).toBeNull()
     expect(container.textContent).toContain('Create Script')
+    await clickButton('Import Existing')
     expect(container.textContent).toContain('Import JMeter')
   })
 
@@ -512,6 +521,8 @@ describe('ScriptsPage', () => {
     await act(async () => {
       createButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
+
+    await clickButton('Import Existing')
 
     const jmeterButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Import JMeter'))
     expect(jmeterButton).toBeDefined()
@@ -558,6 +569,8 @@ describe('ScriptsPage', () => {
       createButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
+    await clickButton('Build Manually')
+
     expect(container.textContent).toContain('Web Services (SOAP)')
     expect(container.textContent).toContain('Java over HTTP')
     expect(container.textContent).toContain('embedded or sidecar helper execution')
@@ -595,6 +608,8 @@ describe('ScriptsPage', () => {
       createButtonAgain.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
+    await clickButton('Build Manually')
+
     const javaButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Java over HTTP'))
     expect(javaButton).toBeDefined()
     if (!javaButton) {
@@ -630,6 +645,17 @@ describe('ScriptsPage', () => {
       }],
       count: 1,
     })
+    apiMock.listAuthoringComponents.mockResolvedValueOnce({
+      components: [{
+        id: 'component-browser-login',
+        kind: 'login_transaction',
+        name: 'Browser Login Transaction',
+        protocols: ['browser'],
+        summary: 'Browser login sequence with page-ready wait and post-login assertion.',
+        tags: ['browser', 'login'],
+      }],
+      count: 1,
+    })
 
     await act(async () => {
       root.render(<ScriptsPage />)
@@ -650,8 +676,11 @@ describe('ScriptsPage', () => {
     await flushPromises()
 
     expect(apiMock.listAuthoringTemplates).toHaveBeenCalledTimes(1)
+    expect(apiMock.listAuthoringComponents).toHaveBeenCalledTimes(1)
     expect(container.textContent).toContain('Starter Templates')
+    expect(container.textContent).toContain('Component Library')
     expect(container.textContent).toContain('Browser Checkout Canary')
+    expect(container.textContent).toContain('Browser Login Transaction')
 
     const templateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Browser Checkout Canary'))
     expect(templateButton).toBeDefined()
@@ -918,6 +947,8 @@ describe('ScriptsPage', () => {
       createButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
+    await clickButton('Import Existing')
+
     const javaImportButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Import Java over HTTP'))
     expect(javaImportButton).toBeDefined()
     if (!javaImportButton) {
@@ -968,4 +999,15 @@ function setInputValue(input: HTMLInputElement, value: string) {
   const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set
   setter?.call(input, value)
   input.dispatchEvent(new Event('input', { bubbles: true }))
+}
+
+async function clickButton(label: string) {
+  const button = Array.from(document.querySelectorAll('button')).find(element => element.textContent?.includes(label))
+  expect(button).toBeDefined()
+  if (!button) {
+    return
+  }
+  await act(async () => {
+    button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+  })
 }

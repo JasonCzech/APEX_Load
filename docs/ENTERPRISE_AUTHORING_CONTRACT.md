@@ -17,9 +17,16 @@ This document tracks Workstream P3's shared authoring lifecycle.
 - `protocol`: optional exact protocol filter, such as `http`, `browser`, or `soap`
 - `use_case`: optional exact use-case filter, such as `ci_smoke` or `enterprise_flow`
 
-Each template includes an executable DSL draft plus `recommended_scenario` hints for duration, VUsers, ramp-up, and iteration count. The initial catalog covers HTTP API smoke, browser checkout canary, and SOAP service smoke starters.
+Each template includes an executable DSL draft plus `recommended_scenario` hints for duration, VUsers, ramp-up, and iteration count. The catalog covers HTTP API smoke, browser checkout canary, SOAP, Java-over-HTTP, WebSocket, gRPC, JMS, JMeter, HAR, and DevWeb starters.
 
 The dashboard script creation flow loads this backend catalog and renders starter templates ahead of the manual/import lanes. Choosing a template opens the shared draft editor with the executable DSL payload so template-based scripts use the same validation, replay, and save path as manual drafts.
+
+`GET /api/v1/scripts/authoring/components` returns reusable authoring blocks. Query parameters:
+
+- `kind`: optional exact component-kind filter, such as `request_group`, `auth_flow`, `login_transaction`, `data_pool`, or `teardown`
+- `protocol`: optional protocol filter; components with wildcard protocol support also match
+
+Each component includes the applicable protocols, summary, tags, and DSL snippets for config, init, actions, teardown, data sources, or parameters. The dashboard Create Script template lane surfaces this component library beside starter templates so authors can discover reusable request groups, auth flows, login transactions, data pools, and teardown blocks before entering the full editor. The ScriptEditor starter-block sidebar remains protocol-specific for in-editor insertion.
 
 Authoring sessions persist unsaved drafts and repair workflow state:
 
@@ -113,3 +120,4 @@ The ScriptEditor renders validation evidence for both reports after draft or sav
 | P3.7 Data-source fit checks | Complete | Validation responses include `data_source_fit` and health scoring for source/column/row-count readiness; ScriptEditor displays fit evidence after validation |
 | P3.8 Protocol starter templates | Complete | `GET /api/v1/scripts/authoring/templates` returns validated protocol starter DSLs and scenario hints; dashboard create flow opens selected templates in the shared draft editor |
 | P3.9 AI generation guardrails | Complete for current authoring flow | Validation responses include `ai_guardrails`, block approval health without provenance, diff review, validation, and replay evidence, ScriptEditor displays guardrail evidence after validation, and the authoring review queue disables blocked promotion with next actions |
+| C5.6 Reusable component library | Complete | `GET /api/v1/scripts/authoring/components` exposes request groups, auth flows, login transactions, data pools, and teardown blocks; dashboard Create Script shows the catalog beside backend templates |

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { type AuthoringTemplate } from '../types'
+import { type AuthoringComponent, type AuthoringTemplate } from '../types'
 import { type ScriptDefinition } from '../types/scripts'
 import { useApi } from '../hooks/useApi'
 
@@ -38,16 +38,26 @@ export default function ScriptCreateOptions({
 }: Props) {
   const api = useApi()
   const [templates, setTemplates] = useState<AuthoringTemplate[]>([])
+  const [components, setComponents] = useState<AuthoringComponent[]>([])
   const [workflow, setWorkflow] = useState<'templates' | 'manual' | 'record' | 'import'>('templates')
 
   useEffect(() => {
     let cancelled = false
-    api.listAuthoringTemplates()
-      .then(response => {
-        if (!cancelled) setTemplates(response.templates || [])
+    Promise.all([
+      api.listAuthoringTemplates(),
+      api.listAuthoringComponents(),
+    ])
+      .then(([templateResponse, componentResponse]) => {
+        if (!cancelled) {
+          setTemplates(templateResponse.templates || [])
+          setComponents(componentResponse.components || [])
+        }
       })
       .catch(() => {
-        if (!cancelled) setTemplates([])
+        if (!cancelled) {
+          setTemplates([])
+          setComponents([])
+        }
       })
     return () => {
       cancelled = true
@@ -94,7 +104,7 @@ export default function ScriptCreateOptions({
       </div>
 
       <div className="script-create-lanes compact">
-        {(
+        {workflow === 'templates' && (
           <section className="script-create-lane api full">
             <div className="script-create-lane-header">
               <span className="script-create-kicker">Backend catalog</span>
@@ -123,7 +133,34 @@ export default function ScriptCreateOptions({
           </section>
         )}
 
-        {(
+        {workflow === 'templates' && (
+          <section className="script-create-lane components full">
+            <div className="script-create-lane-header">
+              <span className="script-create-kicker">Reusable blocks</span>
+              <h3>Component Library</h3>
+              <p>Compose common request groups, auth flows, login transactions, data pools, and teardown blocks from the same controller-owned catalog.</p>
+            </div>
+            <div className="script-create-component-list">
+              {components.length > 0 ? components.map(component => (
+                <article key={component.id} className="script-create-component">
+                  <div>
+                    <span className="script-create-type-badge inline">{component.kind.replace(/_/g, ' ')}</span>
+                    <h3>{component.name}</h3>
+                    <p>{component.summary}</p>
+                  </div>
+                  <div className="script-create-component-meta">
+                    <span>{component.protocols.includes('*') ? 'All protocols' : component.protocols.join(', ')}</span>
+                    {component.tags?.length ? <span>{component.tags.slice(0, 3).join(' / ')}</span> : null}
+                  </div>
+                </article>
+              )) : (
+                <div className="script-create-empty">No reusable components are available from this controller.</div>
+              )}
+            </div>
+          </section>
+        )}
+
+        {workflow === 'manual' && (
         <section className="script-create-lane api full">
           <div className="script-create-lane-header">
             <span className="script-create-kicker">Manual authoring</span>
@@ -165,7 +202,7 @@ export default function ScriptCreateOptions({
         </section>
         )}
 
-        {(
+        {workflow === 'record' && (
         <section className="script-create-lane web full">
           <div className="script-create-lane-header">
             <span className="script-create-kicker">Browser capture</span>
@@ -182,7 +219,7 @@ export default function ScriptCreateOptions({
         </section>
         )}
 
-        {(
+        {workflow === 'import' && (
         <section className="script-create-lane import full">
           <div className="script-create-lane-header">
             <span className="script-create-kicker">Migration</span>

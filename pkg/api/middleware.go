@@ -740,6 +740,10 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 		return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
 	}
 
+	if (path == "/api/v1/scripts/authoring/capabilities" || path == "/api/v1/scripts/authoring/templates" || path == "/api/v1/scripts/authoring/components") && method == http.MethodGet {
+		return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
+	}
+
 	if path == "/api/v1/scripts/import/loadrunner" && method == http.MethodPost {
 		return accessRequirement{
 			GlobalRoles:   []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
