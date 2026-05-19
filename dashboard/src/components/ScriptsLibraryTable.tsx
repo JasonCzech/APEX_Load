@@ -19,6 +19,7 @@ interface Props {
   onSelectScenario?: (id: string) => void
   onEdit: (id: string) => void
   onDelete: (id: string) => void
+  canManageScripts?: boolean
   emptyMessage?: string
 }
 
@@ -94,6 +95,7 @@ export default function ScriptsLibraryTable({
   onSelectScenario,
   onEdit,
   onDelete,
+  canManageScripts = true,
   emptyMessage = 'No scripts yet.',
 }: Props) {
   return (
@@ -141,8 +143,14 @@ export default function ScriptsLibraryTable({
                   </td>
                   <td className="cell-muted">{formatDate(script.last_run_at)}</td>
                   <td style={{ textAlign: 'right' }}>
-                    <button className="btn btn-sm btn-ghost" onClick={(event) => { event.stopPropagation(); onEdit(script.id) }}>Edit</button>
-                    <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={(event) => { event.stopPropagation(); onDelete(script.id) }}>Delete</button>
+                    {canManageScripts ? (
+                      <>
+                        <button className="btn btn-sm btn-ghost" onClick={(event) => { event.stopPropagation(); onEdit(script.id) }}>Edit</button>
+                        <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={(event) => { event.stopPropagation(); onDelete(script.id) }}>Delete</button>
+                      </>
+                    ) : (
+                      <span className="cell-muted">Read-only</span>
+                    )}
                   </td>
                 </tr>
                 {expandedScriptId === script.id && (

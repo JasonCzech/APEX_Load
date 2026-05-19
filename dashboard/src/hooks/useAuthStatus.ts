@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 
 import { DashboardAuthStatus } from '../types'
 import { useAuthApi } from './api/useAuthApi'
+import { useDevView } from './DevViewProvider'
 
 export type AuthStatusState =
   | { status: 'loading' }
@@ -10,6 +11,7 @@ export type AuthStatusState =
 
 export function useAuthStatus(): AuthStatusState {
   const { getAuthStatus } = useAuthApi()
+  const { mode } = useDevView()
   const [state, setState] = useState<AuthStatusState>({ status: 'loading' })
 
   useEffect(() => {
@@ -33,7 +35,7 @@ export function useAuthStatus(): AuthStatusState {
     return () => {
       active = false
     }
-  }, [getAuthStatus])
+  }, [getAuthStatus, mode])
 
   return state
 }

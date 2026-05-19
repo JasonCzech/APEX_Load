@@ -29,7 +29,7 @@ import {
   UsageAccountingSnapshot,
   UsageAccountingSnapshotsResponse,
 } from '../../types'
-import { BASE, request } from '../apiClient'
+import { apiFetch, request } from '../apiClient'
 
 function buildQuery(params: Record<string, string | number | undefined>) {
   const query = new URLSearchParams()
@@ -45,7 +45,7 @@ function buildQuery(params: Record<string, string | number | undefined>) {
 }
 
 async function fetchBlob(path: string): Promise<Blob> {
-  const res = await fetch(`${BASE}${path}`)
+  const res = await apiFetch(path)
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }))
     throw new Error(body.error || res.statusText)

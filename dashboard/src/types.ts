@@ -1887,6 +1887,8 @@ export interface DashboardAuthStatus {
   session_expires_at?: string
   session_ttl_seconds?: number
   user?: DashboardAuthenticatedUser
+  dev_view_mode?: 'admin' | 'user'
+  simulated?: boolean
 }
 
 export interface DashboardAuthDiagnosticsCheck {
@@ -1958,6 +1960,8 @@ export interface DashboardAuthEffectiveAccess {
   authenticated: boolean
   project_id?: string
   resources: DashboardAuthEffectiveAccessResource[]
+  dev_view_mode?: 'admin' | 'user'
+  simulated?: boolean
 }
 
 export interface DashboardServiceAccount {

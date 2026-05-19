@@ -1,6 +1,16 @@
-import { describe, expect, it } from 'vitest'
+// @vitest-environment jsdom
 
-import { resolveApiOrigin } from './apiClient'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+import {
+  DEV_VIEW_STORAGE_KEY,
+  apiFetch,
+  buildDevPreviewHeaders,
+  readStoredDevViewMode,
+  request,
+  resolveApiOrigin,
+  writeStoredDevViewMode,
+} from './apiClient'
 
 describe('resolveApiOrigin', () => {
   it('uses an explicit API origin when configured', () => {
@@ -36,5 +46,65 @@ describe('resolveApiOrigin', () => {
       {},
       { protocol: 'http:', hostname: 'stormrunner.example.test', port: '', origin: 'https://stormrunner.example.test' },
     )).toBe('https://stormrunner.example.test')
+  })
+})
+
+describe('dev preview API headers', () => {
+  beforeEach(() => {
+    window.localStorage.clear()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    window.localStorage.clear()
+  })
+
+  it('defaults to admin mode and includes the active project id when present', () => {
+    window.localStorage.setItem('stormrunner.activeProjectId', 'project-1')
+
+    expect(readStoredDevViewMode()).toBe('admin')
+    expect(buildDevPreviewHeaders()).toEqual({
+      'X-Stormrunner-Dev-View': 'admin',
+      'X-Stormrunner-Dev-Project-ID': 'project-1',
+    })
+  })
+
+  it('persists user mode for subsequent API calls', () => {
+    writeStoredDevViewMode('user')
+
+    expect(window.localStorage.getItem(DEV_VIEW_STORAGE_KEY)).toBe('user')
+    expect(buildDevPreviewHeaders()['X-Stormrunner-Dev-View']).toBe('user')
+  })
+
+  it('attaches preview headers to FormData and blob-style fetches without forcing JSON content type', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{}', {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }))
+    writeStoredDevViewMode('user')
+    window.localStorage.setItem('stormrunner.activeProjectId', 'project-2')
+
+    await apiFetch('/scripts/import/loadrunner', { method: 'POST', body: new FormData() })
+
+    const init = fetchMock.mock.calls[0][1] as RequestInit
+    const headers = init.headers as Headers
+    expect(fetchMock.mock.calls[0][0]).toContain('/api/v1/scripts/import/loadrunner')
+    expect(headers.get('X-Stormrunner-Dev-View')).toBe('user')
+    expect(headers.get('X-Stormrunner-Dev-Project-ID')).toBe('project-2')
+    expect(headers.has('Content-Type')).toBe(false)
+  })
+
+  it('attaches preview headers to JSON requests', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{"ok":true}', {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }))
+
+    await request<{ ok: boolean }>('/auth/me')
+
+    const init = fetchMock.mock.calls[0][1] as RequestInit
+    const headers = init.headers as Headers
+    expect(headers.get('X-Stormrunner-Dev-View')).toBe('admin')
+    expect(headers.get('Content-Type')).toBe('application/json')
   })
 })

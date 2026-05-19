@@ -19,6 +19,7 @@ const apiMock = {
   approveAuthoringSession: vi.fn(),
   deleteAuthoringSession: vi.fn(),
   previewAuthoringCorrelation: vi.fn(),
+  getAuthEffectiveAccess: vi.fn(),
 }
 
 vi.mock('../hooks/useApi', () => ({
@@ -203,6 +204,18 @@ describe('ScriptsPage', () => {
       extractor: { name: 'correlated_value', source: 'body', type: 'jsonpath', expression: '$.token' },
       changes: [{ kind: 'extractor_added', path: 'actions[0].extractors' }],
       authoring_health: { score: 100, status: 'ready', inputs: [] },
+    })
+    apiMock.getAuthEffectiveAccess.mockResolvedValue({
+      enabled: false,
+      authenticated: false,
+      resources: [
+        {
+          id: 'scripts_and_imports',
+          name: 'Scripts, Imports, and Replay',
+          description: '',
+          operations: [{ id: 'manage_scripts', label: 'Manage scripts', allowed: true }],
+        },
+      ],
     })
   })
 
@@ -1056,6 +1069,33 @@ describe('ScriptsPage', () => {
     })
 
     expect(container.querySelector('[data-testid="java-http-import"]')).not.toBeNull()
+  })
+
+  it('renders the script library as read-only when manage_scripts is denied', async () => {
+    apiMock.getAuthEffectiveAccess.mockResolvedValueOnce({
+      enabled: false,
+      authenticated: true,
+      resources: [
+        {
+          id: 'scripts_and_imports',
+          name: 'Scripts, Imports, and Replay',
+          description: '',
+          operations: [{ id: 'manage_scripts', label: 'Manage scripts', allowed: false }],
+        },
+      ],
+    })
+
+    await act(async () => {
+      root.render(<ScriptsPage />)
+    })
+
+    await flushPromises()
+
+    expect(container.textContent).toContain('Existing Script')
+    expect(container.textContent).not.toContain('+ Create Script')
+    expect(container.textContent).not.toContain('Edit')
+    expect(container.textContent).not.toContain('Delete')
+    expect(container.textContent).toContain('Read-only')
   })
 
   it('loads the requested script when opened in edit mode from the parent route', async () => {

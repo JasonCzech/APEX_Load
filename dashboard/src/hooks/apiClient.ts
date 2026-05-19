@@ -1,4 +1,11 @@
 const DEFAULT_LOCAL_API_ORIGIN = 'http://127.0.0.1:8080'
+export const DEV_VIEW_STORAGE_KEY = 'stormrunner.devViewMode'
+export const DEV_VIEW_MODE_CHANGED_EVENT = 'stormrunner:dev-view-mode-changed'
+const ACTIVE_PROJECT_STORAGE_KEY = 'stormrunner.activeProjectId'
+const DEV_VIEW_HEADER = 'X-Stormrunner-Dev-View'
+const DEV_PROJECT_HEADER = 'X-Stormrunner-Dev-Project-ID'
+
+export type DevViewMode = 'admin' | 'user'
 
 type ApiEnvironment = {
   VITE_API_ORIGIN?: string
@@ -23,6 +30,14 @@ function getApiEnvironment(): ApiEnvironment {
 
 function getWindowLocation(): ApiLocation | undefined {
   return typeof window !== 'undefined' ? window.location : undefined
+}
+
+function getLocalStorage(): Storage | undefined {
+  try {
+    return typeof window !== 'undefined' ? window.localStorage : undefined
+  } catch {
+    return undefined
+  }
 }
 
 function isApiErrorPayload(value: unknown): value is ApiErrorPayload {
@@ -54,6 +69,51 @@ export function resolveApiOrigin(env: ApiEnvironment = getApiEnvironment(), loca
 
 export const API_ORIGIN = resolveApiOrigin()
 export const BASE = `${API_ORIGIN}/api/v1`
+
+export function normalizeDevViewMode(value: unknown): DevViewMode {
+  return value === 'user' ? 'user' : 'admin'
+}
+
+export function readStoredDevViewMode(): DevViewMode {
+  return normalizeDevViewMode(getLocalStorage()?.getItem(DEV_VIEW_STORAGE_KEY))
+}
+
+export function writeStoredDevViewMode(mode: DevViewMode): void {
+  const normalized = normalizeDevViewMode(mode)
+  getLocalStorage()?.setItem(DEV_VIEW_STORAGE_KEY, normalized)
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(DEV_VIEW_MODE_CHANGED_EVENT, { detail: normalized }))
+  }
+}
+
+export function buildDevPreviewHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {
+    [DEV_VIEW_HEADER]: readStoredDevViewMode(),
+  }
+  const projectId = getLocalStorage()?.getItem(ACTIVE_PROJECT_STORAGE_KEY)?.trim()
+  if (projectId) {
+    headers[DEV_PROJECT_HEADER] = projectId
+  }
+  return headers
+}
+
+function mergeHeaders(headers?: HeadersInit, previewHeaders = buildDevPreviewHeaders()): Headers {
+  const merged = new Headers(headers)
+  Object.entries(previewHeaders).forEach(([key, value]) => {
+    if (value) {
+      merged.set(key, value)
+    }
+  })
+  return merged
+}
+
+function apiUrl(pathOrURL: string): string {
+  if (/^https?:\/\//i.test(pathOrURL)) {
+    return pathOrURL
+  }
+  const path = pathOrURL.startsWith('/') ? pathOrURL : `/${pathOrURL}`
+  return `${BASE}${path}`
+}
 
 export function wsUrl(path: string): string {
   const wsOrigin = API_ORIGIN.replace(/^http:/, 'ws:').replace(/^https:/, 'wss:')
@@ -89,10 +149,21 @@ export class ApiError extends Error {
   }
 }
 
-export async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+export function apiFetch(pathOrURL: string, options?: RequestInit): Promise<Response> {
+  return fetch(apiUrl(pathOrURL), {
     ...options,
+    headers: mergeHeaders(options?.headers),
+  })
+}
+
+export async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const headers = mergeHeaders(options?.headers)
+  if (!headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json')
+  }
+  const res = await apiFetch(path, {
+    ...options,
+    headers,
   })
   if (!res.ok) {
     const body = await parseJsonResponse(res).catch((): ApiErrorPayload => ({ error: res.statusText }))

@@ -205,6 +205,80 @@ func TestTrustedHeaderAuthSystemSettingsRequireSystemAdmin(t *testing.T) {
 	}
 }
 
+func TestDevUserPreviewEnforcesSystemSettingsRBAC(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	settings := server.runner.GetSystemSettings()
+	body, err := json.Marshal(settings)
+	if err != nil {
+		t.Fatalf("marshal settings: %v", err)
+	}
+
+	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/system/settings", nil)
+	getReq.Header.Set(devViewHeader, devViewModeUser)
+	getResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(getResp, getReq)
+	if getResp.Code != http.StatusOK {
+		t.Fatalf("dev user preview GET status = %d, want %d body=%s", getResp.Code, http.StatusOK, getResp.Body.String())
+	}
+
+	putReq := httptest.NewRequest(http.MethodPut, "/api/v1/system/settings", bytes.NewReader(body))
+	putReq.Header.Set(devViewHeader, devViewModeUser)
+	putResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(putResp, putReq)
+	if putResp.Code != http.StatusForbidden {
+		t.Fatalf("dev user preview PUT status = %d, want %d body=%s", putResp.Code, http.StatusForbidden, putResp.Body.String())
+	}
+
+	adminReq := httptest.NewRequest(http.MethodPut, "/api/v1/system/settings", bytes.NewReader(body))
+	adminReq.Header.Set(devViewHeader, devViewModeAdmin)
+	adminResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(adminResp, adminReq)
+	if adminResp.Code != http.StatusOK {
+		t.Fatalf("dev admin preview PUT status = %d, want %d body=%s", adminResp.Code, http.StatusOK, adminResp.Body.String())
+	}
+}
+
+func TestDevUserPreviewDeniesProtectedCreateRoutes(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stormrunner.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+
+	userReq := httptest.NewRequest(http.MethodPost, "/api/v1/projects", strings.NewReader(`{"name":"Preview Project"}`))
+	userReq.Header.Set(devViewHeader, devViewModeUser)
+	userResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(userResp, userReq)
+	if userResp.Code != http.StatusForbidden {
+		t.Fatalf("dev user preview project create status = %d, want %d body=%s", userResp.Code, http.StatusForbidden, userResp.Body.String())
+	}
+
+	adminReq := httptest.NewRequest(http.MethodPost, "/api/v1/projects", strings.NewReader(`{"name":"Preview Project"}`))
+	adminReq.Header.Set(devViewHeader, devViewModeAdmin)
+	adminResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(adminResp, adminReq)
+	if adminResp.Code != http.StatusCreated {
+		t.Fatalf("dev admin preview project create status = %d, want %d body=%s", adminResp.Code, http.StatusCreated, adminResp.Body.String())
+	}
+}
+
+func TestDevPreviewHeadersIgnoredWhenTrustedHeaderAuthEnabled(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	enableTrustedHeaderAuth(t, server)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/system/settings", nil)
+	req.Header.Set(devViewHeader, devViewModeUser)
+	req.Header.Set(devProjectIDHeader, "project-a")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusUnauthorized {
+		t.Fatalf("trusted-header auth with dev preview status = %d, want %d body=%s", resp.Code, http.StatusUnauthorized, resp.Body.String())
+	}
+}
+
 func TestTrustedHeaderAuthRequiresIdentityForSystemInventory(t *testing.T) {
 	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
 	enableTrustedHeaderAuth(t, server)

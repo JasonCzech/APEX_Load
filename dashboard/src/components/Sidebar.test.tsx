@@ -4,6 +4,7 @@ import { act } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { DevViewProvider } from '../hooks/DevViewProvider'
 import Sidebar from './Sidebar'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -25,6 +26,7 @@ describe('Sidebar', () => {
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
+    window.localStorage.clear()
     Object.defineProperty(window, 'location', {
       configurable: true,
       value: {
@@ -40,6 +42,7 @@ describe('Sidebar', () => {
     })
     container.remove()
     vi.clearAllMocks()
+    window.localStorage.clear()
     Object.defineProperty(window, 'location', {
       configurable: true,
       value: originalLocation,
@@ -187,5 +190,68 @@ describe('Sidebar', () => {
     })
 
     expect(onProjectChange).toHaveBeenCalledWith({ id: 'project-2', name: 'Search', created_at: '', updated_at: '' })
+  })
+
+  it('renders a dev-only Admin/User toggle that persists user preview and hides admin navigation', async () => {
+    const onNavigate = vi.fn()
+
+    await act(async () => {
+      root.render(
+        <DevViewProvider>
+          <Sidebar
+            active="dashboard"
+            onNavigate={onNavigate}
+            connectionState="connected"
+            authStatus={{
+              enabled: false,
+              mode: 'dev',
+              authenticated: false,
+            }}
+          />
+        </DevViewProvider>,
+      )
+    })
+
+    expect(container.textContent).toContain('Dev View')
+    expect(container.textContent).toContain('Admin')
+    expect(container.textContent).toContain('User')
+    expect(container.textContent).toContain('New Test')
+    expect(container.textContent).toContain('Settings')
+
+    const userButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'User')
+    expect(userButton).toBeDefined()
+    if (!userButton) {
+      return
+    }
+
+    await act(async () => {
+      userButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(window.localStorage.getItem('stormrunner.devViewMode')).toBe('user')
+    expect(container.textContent).toContain('User preview')
+    expect(container.textContent).not.toContain('New Test')
+    expect(container.textContent).not.toContain('Settings')
+  })
+
+  it('does not render the dev view toggle for production auth modes', async () => {
+    await act(async () => {
+      root.render(
+        <DevViewProvider>
+          <Sidebar
+            active="dashboard"
+            onNavigate={vi.fn()}
+            connectionState="connected"
+            authStatus={{
+              enabled: true,
+              mode: 'trusted_headers',
+              authenticated: false,
+            }}
+          />
+        </DevViewProvider>,
+      )
+    })
+
+    expect(container.textContent).not.toContain('Dev View')
   })
 })

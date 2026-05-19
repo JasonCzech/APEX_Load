@@ -1,4 +1,4 @@
-import { Suspense, lazy, useState, useCallback } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useState } from 'react'
 import { useDashboardTheme } from './hooks/useDashboardTheme'
 import { useWebSocket } from './hooks/useWebSocket'
 import { ApplicationProvider } from './hooks/ApplicationProvider'
@@ -11,6 +11,7 @@ import AuthGate from './components/AuthGate'
 import { useAuthStatus } from './hooks/useAuthStatus'
 import { ProjectProvider } from './hooks/ProjectProvider'
 import { useProject } from './hooks/useProject'
+import { DevViewProvider, useDevView } from './hooks/DevViewProvider'
 import './App.css'
 import './components/Pages.css'
 
@@ -33,6 +34,8 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   const [testStatuses, setTestStatuses] = useState<Record<string, string>>({})
   const [telemetryDiagnostics, setTelemetryDiagnostics] = useState<TelemetryDiagnosticEntry[]>([])
   const { theme, setTheme } = useDashboardTheme()
+  const { mode: devViewMode } = useDevView()
+  const isDevUserPreview = authStatus?.mode === 'dev' && devViewMode === 'user'
   const scriptMode = view.page === 'scripts' && 'mode' in view ? view.mode : undefined
   const scriptEditId = view.page === 'scripts' && 'scriptId' in view ? view.scriptId : undefined
 
@@ -108,6 +111,21 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
     setView({ page })
   }
 
+  useEffect(() => {
+    if (!isDevUserPreview) {
+      return
+    }
+    setView((current) => {
+      if (current.page === 'new-test' || current.page === 'settings') {
+        return { page: 'dashboard' }
+      }
+      if (current.page === 'scripts' && 'mode' in current && current.mode && current.mode !== 'list') {
+        return { page: 'scripts', mode: 'list' }
+      }
+      return current
+    })
+  }, [isDevUserPreview])
+
   return (
     <div className="app-layout">
       <Sidebar
@@ -182,6 +200,14 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
 }
 
 export default function App() {
+  return (
+    <DevViewProvider>
+      <AppContent />
+    </DevViewProvider>
+  )
+}
+
+function AppContent() {
   const authState = useAuthStatus()
 
   return (

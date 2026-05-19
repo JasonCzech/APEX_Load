@@ -24,7 +24,7 @@ import {
 import { type AuthoringTemplate } from '../../types'
 import { type ScriptDefinition, type ScriptExportResponse, type ScriptReplayResponse, type ScriptValidationResponse } from '../../types/scripts'
 import { type DevWebImportResult, type HARImportResult, type JMeterImportResult, type JMeterSupportMatrixResponse, type LoadRunnerImportResult, type LoadRunnerSupportMatrixResponse, type OpenAPIImportResult, type SampleImportResult, type SaveJMeterImportRequest, type SaveJMeterImportResponse, type WSDLImportResult } from '../../types/scriptImports'
-import { BASE, request } from '../apiClient'
+import { apiFetch, request } from '../apiClient'
 
 type ScriptListResponse = {
   scripts: StoredScript[]
@@ -343,7 +343,7 @@ export function useScriptApi() {
       if (options?.preserve_transactions !== undefined) formData.append('preserve_transactions', String(options.preserve_transactions))
       if (options?.migration_block_statuses?.length) formData.append('migration_block_statuses', options.migration_block_statuses.join(','))
 
-      const res = await fetch(`${BASE}/scripts/import/loadrunner`, {
+      const res = await apiFetch('/scripts/import/loadrunner', {
         method: 'POST',
         body: formData,
       })
@@ -367,7 +367,7 @@ export function useScriptApi() {
       if (options?.preserve_transactions !== undefined) formData.append('preserve_transactions', String(options.preserve_transactions))
       if (options?.migration_block_statuses?.length) formData.append('migration_block_statuses', options.migration_block_statuses.join(','))
 
-      const res = await fetch(`${BASE}/scripts/import/loadrunner/validate`, {
+      const res = await apiFetch('/scripts/import/loadrunner/validate', {
         method: 'POST',
         body: formData,
       })
@@ -395,7 +395,7 @@ export function useScriptApi() {
       if (options?.include_assertions) formData.append('include_assertions', 'true')
       if (options?.scenario_draft) formData.append('scenario_draft', 'true')
 
-      const res = await fetch(`${BASE}/scripts/import/jmeter`, {
+      const res = await apiFetch('/scripts/import/jmeter', {
         method: 'POST',
         body: formData,
       })
@@ -418,7 +418,7 @@ export function useScriptApi() {
       if (options?.include_assertions) formData.append('include_assertions', 'true')
       if (options?.scenario_draft) formData.append('scenario_draft', 'true')
 
-      const res = await fetch(`${BASE}/scripts/import/jmeter/validate`, {
+      const res = await apiFetch('/scripts/import/jmeter/validate', {
         method: 'POST',
         body: formData,
       })
@@ -467,7 +467,7 @@ export function useScriptApi() {
       if (options?.project_id) formData.append('project_id', options.project_id)
       if (options?.base_url) formData.append('base_url', options.base_url)
 
-      const res = await fetch(`${BASE}/scripts/import/devweb`, { method: 'POST', body: formData })
+      const res = await apiFetch('/scripts/import/devweb', { method: 'POST', body: formData })
       if (!res.ok) {
         const body = await res.json().catch(() => ({ error: res.statusText }))
         throw new Error(body.error || res.statusText)
@@ -485,7 +485,7 @@ export function useScriptApi() {
       if (options?.project_id) formData.append('project_id', options.project_id)
       if (options?.base_url) formData.append('base_url', options.base_url)
 
-      const res = await fetch(`${BASE}/scripts/import/har`, { method: 'POST', body: formData })
+      const res = await apiFetch('/scripts/import/har', { method: 'POST', body: formData })
       if (!res.ok) {
         const body = await res.json().catch(() => ({ error: res.statusText }))
         throw new Error(body.error || res.statusText)
@@ -503,7 +503,7 @@ export function useScriptApi() {
       if (options?.project_id) formData.append('project_id', options.project_id)
       if (options?.base_url) formData.append('base_url', options.base_url)
 
-      const res = await fetch(`${BASE}/scripts/import/openapi`, { method: 'POST', body: formData })
+      const res = await apiFetch('/scripts/import/openapi', { method: 'POST', body: formData })
       if (!res.ok) {
         const body = await res.json().catch(() => ({ error: res.statusText }))
         throw new Error(body.error || res.statusText)
@@ -522,7 +522,7 @@ export function useScriptApi() {
       if (options?.base_url) formData.append('base_url', options.base_url)
       if (options?.soap_version) formData.append('soap_version', options.soap_version)
 
-      const res = await fetch(`${BASE}/scripts/import/wsdl`, { method: 'POST', body: formData })
+      const res = await apiFetch('/scripts/import/wsdl', { method: 'POST', body: formData })
       if (!res.ok) {
         const body = await res.json().catch(() => ({ error: res.statusText }))
         throw new Error(body.error || res.statusText)

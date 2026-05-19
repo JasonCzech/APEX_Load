@@ -73,6 +73,12 @@ func authMiddleware(settings func() AuthSettings, store storage.Store) func(http
 			}
 
 			current := normalizeAuthSettings(settings())
+			if resolution, _, ok := devPreviewResolutionForRequest(current, r); ok {
+				if authorizeAccessRequirement(w, r, store, resolution, requirement) {
+					next.ServeHTTP(w, withAuthenticatedContext(r, resolution))
+				}
+				return
+			}
 			if isAuthBypassMode(current.Mode) {
 				next.ServeHTTP(w, r)
 				return
@@ -83,34 +89,9 @@ func authMiddleware(settings func() AuthSettings, store storage.Store) func(http
 				writeError(w, http.StatusUnauthorized, err.Error())
 				return
 			}
-			user := resolution.User
-
-			if len(requirement.GlobalRoles) > 0 && user.hasGlobalRole(requirement.GlobalRoles...) {
-				if !serviceAccountAllowsRequest(resolution.ServiceAccount, r) {
-					writeError(w, http.StatusForbidden, "service account token scope does not allow this operation")
-					return
-				}
+			if authorizeAccessRequirement(w, r, store, resolution, requirement) {
 				next.ServeHTTP(w, withAuthenticatedContext(r, resolution))
-				return
 			}
-
-			if requirement.ProjectLookup != nil {
-				projectID, status, msg := requirement.ProjectLookup(r, store)
-				if status != 0 {
-					writeError(w, status, msg)
-					return
-				}
-				if user.hasProjectRole(projectID, requirement.ProjectRoles...) {
-					if !serviceAccountAllowsRequest(resolution.ServiceAccount, r) {
-						writeError(w, http.StatusForbidden, "service account token scope does not allow this operation")
-						return
-					}
-					next.ServeHTTP(w, withAuthenticatedContext(r, resolution))
-					return
-				}
-			}
-
-			writeError(w, http.StatusForbidden, "forbidden")
 		})
 	}
 }
@@ -119,6 +100,21 @@ func projectScopedAuthMiddleware(settings func() AuthSettings, store storage.Sto
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			current := normalizeAuthSettings(settings())
+			requirement := accessRequirement{
+				GlobalRoles:  globalRoles,
+				ProjectRoles: projectRoles,
+			}
+			if projectLookup != nil {
+				requirement.ProjectLookup = func(r *http.Request, _ storage.Store) (string, int, string) {
+					return projectLookup(r)
+				}
+			}
+			if resolution, _, ok := devPreviewResolutionForRequest(current, r); ok {
+				if authorizeAccessRequirement(w, r, store, resolution, requirement) {
+					next.ServeHTTP(w, withAuthenticatedContext(r, resolution))
+				}
+				return
+			}
 			if isAuthBypassMode(current.Mode) {
 				next.ServeHTTP(w, r)
 				return
@@ -129,36 +125,45 @@ func projectScopedAuthMiddleware(settings func() AuthSettings, store storage.Sto
 				writeError(w, http.StatusUnauthorized, err.Error())
 				return
 			}
-			user := resolution.User
-
-			if len(globalRoles) > 0 && user.hasGlobalRole(globalRoles...) {
-				if !serviceAccountAllowsRequest(resolution.ServiceAccount, r) {
-					writeError(w, http.StatusForbidden, "service account token scope does not allow this operation")
-					return
-				}
+			if authorizeAccessRequirement(w, r, store, resolution, requirement) {
 				next.ServeHTTP(w, withAuthenticatedContext(r, resolution))
-				return
 			}
-
-			if projectLookup != nil {
-				projectID, status, msg := projectLookup(r)
-				if status != 0 {
-					writeError(w, status, msg)
-					return
-				}
-				if user.hasProjectRole(projectID, projectRoles...) {
-					if !serviceAccountAllowsRequest(resolution.ServiceAccount, r) {
-						writeError(w, http.StatusForbidden, "service account token scope does not allow this operation")
-						return
-					}
-					next.ServeHTTP(w, withAuthenticatedContext(r, resolution))
-					return
-				}
-			}
-
-			writeError(w, http.StatusForbidden, "forbidden")
 		})
 	}
+}
+
+func authorizeAccessRequirement(w http.ResponseWriter, r *http.Request, store storage.Store, resolution authResolution, requirement accessRequirement) bool {
+	user := resolution.User
+	if user == nil {
+		writeError(w, http.StatusUnauthorized, "authentication required")
+		return false
+	}
+
+	if len(requirement.GlobalRoles) > 0 && user.hasGlobalRole(requirement.GlobalRoles...) {
+		if !serviceAccountAllowsRequest(resolution.ServiceAccount, r) {
+			writeError(w, http.StatusForbidden, "service account token scope does not allow this operation")
+			return false
+		}
+		return true
+	}
+
+	if requirement.ProjectLookup != nil {
+		projectID, status, msg := requirement.ProjectLookup(r, store)
+		if status != 0 {
+			writeError(w, status, msg)
+			return false
+		}
+		if user.hasProjectRole(projectID, requirement.ProjectRoles...) {
+			if !serviceAccountAllowsRequest(resolution.ServiceAccount, r) {
+				writeError(w, http.StatusForbidden, "service account token scope does not allow this operation")
+				return false
+			}
+			return true
+		}
+	}
+
+	writeError(w, http.StatusForbidden, "forbidden")
+	return false
 }
 
 func AuthenticatedUserFromContext(ctx context.Context) (*AuthenticatedUser, bool) {

@@ -316,6 +316,68 @@
   text-decoration: underline;
 }
 
+.dev-view-control {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-card);
+}
+
+.dev-view-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.dev-view-badge {
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--warning);
+  text-transform: none;
+}
+
+.dev-view-segmented {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+}
+
+.dev-view-segmented button {
+  min-width: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 7px;
+  cursor: pointer;
+}
+
+.dev-view-segmented button.active {
+  background: var(--accent);
+  color: var(--accent-contrast, #fff);
+}
+
+.dev-view-segmented button:hover:not(.active) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
 .sidebar-status {
   display: flex;
   align-items: center;

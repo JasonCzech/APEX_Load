@@ -37,6 +37,8 @@ type AuthStatusResponse struct {
 	SessionExpiresAt  string           `json:"session_expires_at,omitempty"`
 	SessionTTLSeconds int64            `json:"session_ttl_seconds,omitempty"`
 	User              *AuthUserSummary `json:"user,omitempty"`
+	DevViewMode       string           `json:"dev_view_mode,omitempty"`
+	Simulated         bool             `json:"simulated,omitempty"`
 }
 
 type AuthLogoutResponse struct {
@@ -112,6 +114,8 @@ type AuthEffectiveAccessResponse struct {
 	Authenticated bool                          `json:"authenticated"`
 	ProjectID     string                        `json:"project_id,omitempty"`
 	Resources     []AuthEffectiveAccessResource `json:"resources"`
+	DevViewMode   string                        `json:"dev_view_mode,omitempty"`
+	Simulated     bool                          `json:"simulated,omitempty"`
 }
 
 type AuthServiceAccountRequest struct {
@@ -280,6 +284,14 @@ func (s *Server) handleGetAuthStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if isAuthBypassMode(settings.Mode) {
+		if mode, ok := devPreviewModeForRequest(settings, r); ok {
+			response.DevViewMode = mode
+			response.Simulated = true
+			if user := devPreviewUserForRequest(r, mode); user != nil {
+				response.Authenticated = true
+				response.User = authUserSummary(user)
+			}
+		}
 		writeJSON(w, http.StatusOK, response)
 		return
 	}
@@ -459,6 +471,16 @@ func (s *Server) handleGetAuthEffectiveAccess(w http.ResponseWriter, r *http.Req
 	}
 
 	if isAuthBypassMode(settings.Mode) {
+		if mode, ok := devPreviewModeForRequest(settings, r); ok {
+			response.DevViewMode = mode
+			response.Simulated = true
+			if user := devPreviewUserForRequest(r, mode); user != nil {
+				response.Authenticated = true
+				response.Resources = buildUserEffectiveAccess(authAccessMatrix, user, projectID)
+				writeJSON(w, http.StatusOK, response)
+				return
+			}
+		}
 		response.Resources = buildDevModeEffectiveAccess(authAccessMatrix)
 		writeJSON(w, http.StatusOK, response)
 		return

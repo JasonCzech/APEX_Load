@@ -20,6 +20,7 @@ const apiMock = {
   updateScenario: vi.fn(),
   deleteScenario: vi.fn(),
   listScenarioResults: vi.fn(),
+  getAuthEffectiveAccess: vi.fn(),
 }
 
 vi.mock('../hooks/useApi', () => ({
@@ -124,6 +125,18 @@ describe('TestHub', () => {
     apiMock.updateScenario.mockResolvedValue({ id: 'scenario-1' })
     apiMock.deleteScenario.mockResolvedValue({ deleted: 'scenario-1' })
     apiMock.listScenarioResults.mockResolvedValue({ tests: [], count: 0 })
+    apiMock.getAuthEffectiveAccess.mockResolvedValue({
+      enabled: false,
+      authenticated: false,
+      resources: [
+        {
+          id: 'tests_and_scenarios',
+          name: 'Tests and Scenarios',
+          description: '',
+          operations: [{ id: 'manage_tests', label: 'Manage tests', allowed: true }],
+        },
+      ],
+    })
   })
 
   afterEach(async () => {
@@ -586,6 +599,49 @@ describe('TestHub', () => {
         initialization: 'at_once',
       })],
     }))
+  })
+
+  it('renders scenarios as read-only when manage_tests is denied', async () => {
+    const onSelectTest = vi.fn()
+    apiMock.getAuthEffectiveAccess.mockResolvedValueOnce({
+      enabled: false,
+      authenticated: true,
+      resources: [
+        {
+          id: 'tests_and_scenarios',
+          name: 'Tests and Scenarios',
+          description: '',
+          operations: [{ id: 'manage_tests', label: 'Manage tests', allowed: false }],
+        },
+      ],
+    })
+    apiMock.listScenarios.mockResolvedValueOnce({
+      scenarios: [{
+        id: 'scenario-1',
+        name: 'Read Only Checkout',
+        duration: '5m',
+        assignment: { mode: 'auto' },
+        scripts: [{ script_id: 'script-1', script_name: 'Checkout Flow', vusers: 25 }],
+        data_pools: [],
+        associated_releases: [],
+        result_count: 0,
+        created_at: '2026-05-12T00:00:00Z',
+        last_run_at: '',
+      }],
+      count: 1,
+    })
+
+    await act(async () => {
+      root.render(<TestHub testStatuses={{}} onSelectTest={onSelectTest} />)
+    })
+
+    await flushPromises()
+
+    expect(container.textContent).toContain('Read Only Checkout')
+    expect(container.textContent).not.toContain('+ New Scenario')
+    expect(container.textContent).not.toContain('Duplicate')
+    expect(container.textContent).not.toContain('Delete')
+    expect(container.textContent).toContain('Read-only')
   })
 })
 

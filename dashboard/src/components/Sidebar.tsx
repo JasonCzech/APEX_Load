@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { type WebSocketConnectionState } from '../hooks/useWebSocket'
 import { useAuthApi } from '../hooks/api/useAuthApi'
+import { useDevView } from '../hooks/DevViewProvider'
 import { Application, DashboardAuthStatus, Project, Release } from '../types'
 import ProjectModal from './ProjectModal'
 import './Sidebar.css'
@@ -128,6 +129,12 @@ export default function Sidebar({
   const [logoutPending, setLogoutPending] = useState(false)
   const [logoutError, setLogoutError] = useState('')
   const { logout } = useAuthApi()
+  const { mode: devViewMode, setMode: setDevViewMode } = useDevView()
+  const isDevDashboard = authStatus?.mode === 'dev'
+  const isDevUserPreview = isDevDashboard && devViewMode === 'user'
+  const visibleNavItems = isDevUserPreview
+    ? NAV_ITEMS.filter(item => item.id !== 'new-test' && item.id !== 'settings')
+    : NAV_ITEMS
   const connectionClass = connectionState === 'connected' ? 'connected' : connectionState === 'connecting' ? 'connecting' : 'disconnected'
   const connectionLabel = connectionState === 'connected' ? 'Live' : connectionState === 'connecting' ? 'Connecting' : 'Disconnected'
   const identityName = formatIdentityName(authStatus)
@@ -206,19 +213,23 @@ export default function Sidebar({
                 </button>
               ))}
             </div>
-            <button className="project-menu-action" onClick={() => setShowProjectModal(true)}>+ New Project</button>
-            <button
-              className="project-menu-action muted"
-              onClick={() => {
-                if (typeof window !== 'undefined') {
-                  window.localStorage.setItem('stormrunner.settings.focusSection', 'projects')
-                }
-                setProjectOpen(false)
-                onNavigate('settings')
-              }}
-            >
-              Manage Projects
-            </button>
+            {!isDevUserPreview && (
+              <>
+                <button className="project-menu-action" onClick={() => setShowProjectModal(true)}>+ New Project</button>
+                <button
+                  className="project-menu-action muted"
+                  onClick={() => {
+                    if (typeof window !== 'undefined') {
+                      window.localStorage.setItem('stormrunner.settings.focusSection', 'projects')
+                    }
+                    setProjectOpen(false)
+                    onNavigate('settings')
+                  }}
+                >
+                  Manage Projects
+                </button>
+              </>
+            )}
           </div>
         )}
       </div>
@@ -269,25 +280,29 @@ export default function Sidebar({
                 ))}
               </div>
             )}
-            <button className="project-menu-action" onClick={() => setShowApplicationModal(true)}>+ New Application</button>
-            <button
-              className="project-menu-action muted"
-              onClick={() => {
-                if (typeof window !== 'undefined') {
-                  window.localStorage.setItem('stormrunner.settings.focusSection', 'applications')
-                }
-                setApplicationOpen(false)
-                onNavigate('settings')
-              }}
-            >
-              Manage Applications
-            </button>
+            {!isDevUserPreview && (
+              <>
+                <button className="project-menu-action" onClick={() => setShowApplicationModal(true)}>+ New Application</button>
+                <button
+                  className="project-menu-action muted"
+                  onClick={() => {
+                    if (typeof window !== 'undefined') {
+                      window.localStorage.setItem('stormrunner.settings.focusSection', 'applications')
+                    }
+                    setApplicationOpen(false)
+                    onNavigate('settings')
+                  }}
+                >
+                  Manage Applications
+                </button>
+              </>
+            )}
           </div>
         )}
       </div>
 
       <nav className="sidebar-nav">
-        {NAV_ITEMS.map((item) => (
+        {visibleNavItems.map((item) => (
           <button
             key={item.id}
             className={`nav-item ${active === item.id ? 'active' : ''}`}
@@ -323,6 +338,32 @@ export default function Sidebar({
                     <a className="sidebar-identity-action" href={logoutURL}>Sign out</a>
                   ))}
                   {logoutError && <span className="sidebar-identity-meta">{logoutError}</span>}
+                </div>
+              </div>
+            )}
+            {isDevDashboard && (
+              <div className="dev-view-control" aria-label="Development preview mode">
+                <div className="dev-view-label-row">
+                  <span>Dev View</span>
+                  {isDevUserPreview && <span className="dev-view-badge">User preview</span>}
+                </div>
+                <div className="dev-view-segmented" role="group" aria-label="Development dashboard view">
+                  <button
+                    type="button"
+                    className={devViewMode === 'admin' ? 'active' : ''}
+                    aria-pressed={devViewMode === 'admin'}
+                    onClick={() => setDevViewMode('admin')}
+                  >
+                    Admin
+                  </button>
+                  <button
+                    type="button"
+                    className={devViewMode === 'user' ? 'active' : ''}
+                    aria-pressed={devViewMode === 'user'}
+                    onClick={() => setDevViewMode('user')}
+                  >
+                    User
+                  </button>
                 </div>
               </div>
             )}

@@ -1,5 +1,5 @@
 import { Fragment, memo, useCallback, useEffect, useMemo, useState } from 'react'
-import { DraftCapacityEstimate, GoalConfig, LoadModelSupportEntry, LoadModelTemplate, LoadModelValidationReport, LoadStageDraft, ScenarioDataPoolBinding, ScenarioMode, SharedDataPool, StoredScenario, StoredScript, TestSummary } from '../types'
+import { DashboardAuthEffectiveAccessResource, DraftCapacityEstimate, GoalConfig, LoadModelSupportEntry, LoadModelTemplate, LoadModelValidationReport, LoadStageDraft, ScenarioDataPoolBinding, ScenarioMode, SharedDataPool, StoredScenario, StoredScript, TestSummary } from '../types'
 import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
 import { getErrorMessage } from '../utils/errorUtils'
@@ -218,6 +218,16 @@ function SortIndicator({ active, direction }: { active: boolean, direction: 'asc
   )
 }
 
+function isEffectiveOperationAllowed(resources: DashboardAuthEffectiveAccessResource[], operationID: string): boolean {
+  for (const resource of resources) {
+    const operation = resource.operations.find(item => item.id === operationID)
+    if (operation) {
+      return operation.allowed
+    }
+  }
+  return true
+}
+
 function TestHub({ onSelectTest }: Props) {
   const api = useApi()
   const { activeProject } = useProject()
@@ -246,8 +256,13 @@ function TestHub({ onSelectTest }: Props) {
   const [estimateLoading, setEstimateLoading] = useState(false)
   const [estimateError, setEstimateError] = useState('')
   const [confirmDeleteScenarioId, setConfirmDeleteScenarioId] = useState<string | null>(null)
+  const [effectiveAuthAccessResources, setEffectiveAuthAccessResources] = useState<DashboardAuthEffectiveAccessResource[]>([])
   const selectedScript = scripts.find(script => script.id === form.script_id)
   const showBrowserRuntimeSettings = selectedScript?.protocol === 'browser'
+  const canManageTests = useMemo(
+    () => isEffectiveOperationAllowed(effectiveAuthAccessResources, 'manage_tests'),
+    [effectiveAuthAccessResources],
+  )
 
   const buildScenarioDraftPayload = useCallback((draftForm: ScenarioFormState = form) => {
     const stagedPeak = maxStageVUsers(draftForm.stages)
@@ -319,6 +334,32 @@ function TestHub({ onSelectTest }: Props) {
   }, [activeProject?.id, api])
 
   useEffect(() => { refresh() }, [refresh])
+  useEffect(() => {
+    let cancelled = false
+    const loadEffectiveAccess = async () => {
+      try {
+        const response = await api.getAuthEffectiveAccess(activeProject?.id)
+        if (!cancelled) {
+          setEffectiveAuthAccessResources(response.resources || [])
+        }
+      } catch {
+        if (!cancelled) {
+          setEffectiveAuthAccessResources([])
+        }
+      }
+    }
+    loadEffectiveAccess()
+    return () => {
+      cancelled = true
+    }
+  }, [activeProject?.id, api])
+  useEffect(() => {
+    if (!canManageTests) {
+      setShowForm(false)
+      setEditingId(null)
+      setConfirmDeleteScenarioId(null)
+    }
+  }, [canManageTests])
 
   useEffect(() => {
     if (!showForm || !form.script_id) {
@@ -440,6 +481,10 @@ function TestHub({ onSelectTest }: Props) {
   }
 
   const openCreate = () => {
+    if (!canManageTests) {
+      setError('User preview is read-only for scenarios.')
+      return
+    }
     setEditingId(null)
     setForm(emptyScenarioForm(scripts[0]?.id || ''))
     setSelectedLoadModelTemplateId('')
@@ -449,6 +494,10 @@ function TestHub({ onSelectTest }: Props) {
   }
 
   const openEdit = (scenario: StoredScenario) => {
+    if (!canManageTests) {
+      setError('User preview is read-only for scenarios.')
+      return
+    }
     const first = scenario.scripts[0]
     const firstPool = scenario.data_pools?.[0]
     setEditingId(scenario.id)
@@ -485,6 +534,10 @@ function TestHub({ onSelectTest }: Props) {
   }
 
   const duplicateScenario = (scenario: StoredScenario) => {
+    if (!canManageTests) {
+      setError('User preview is read-only for scenarios.')
+      return
+    }
     openEdit(scenario)
     setEditingId(null)
     setForm(prev => ({ ...prev, name: `${scenario.name} (Copy)` }))
@@ -557,6 +610,10 @@ function TestHub({ onSelectTest }: Props) {
   }
 
   const saveScenario = async () => {
+    if (!canManageTests) {
+      setError('User preview is read-only for scenarios.')
+      return
+    }
     if (!form.name.trim() || !form.script_id) {
       setError('Scenario name and script are required.')
       return
@@ -575,6 +632,10 @@ function TestHub({ onSelectTest }: Props) {
 
   const deleteScenario = async (id: string) => {
     setConfirmDeleteScenarioId(null)
+    if (!canManageTests) {
+      setError('User preview is read-only for scenarios.')
+      return
+    }
     try {
       await api.deleteScenario(id)
       refresh()
@@ -601,7 +662,7 @@ function TestHub({ onSelectTest }: Props) {
           <h2>Scenarios</h2>
           <p className="page-subtitle">Reusable scenario definitions linked to scripts, releases, and results.</p>
         </div>
-        <button className="btn btn-primary" onClick={openCreate}>+ New Scenario</button>
+        {canManageTests && <button className="btn btn-primary" onClick={openCreate}>+ New Scenario</button>}
       </div>
 
       {error && <div className="settings-error-inline">{error}</div>}
@@ -1100,9 +1161,15 @@ function TestHub({ onSelectTest }: Props) {
                         event.stopPropagation()
                         void toggleScenarioRuns(scenario)
                       }}>{expandedScenarioId === scenario.id ? 'Hide Runs' : 'View Runs'}</button>
-                      <button className="btn btn-sm btn-ghost" onClick={(event) => { event.stopPropagation(); openEdit(scenario) }}>Edit</button>
-                      <button className="btn btn-sm btn-ghost" onClick={(event) => { event.stopPropagation(); duplicateScenario(scenario) }}>Duplicate</button>
-                      <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={(event) => { event.stopPropagation(); setConfirmDeleteScenarioId(scenario.id) }}>Delete</button>
+                      {canManageTests ? (
+                        <>
+                          <button className="btn btn-sm btn-ghost" onClick={(event) => { event.stopPropagation(); openEdit(scenario) }}>Edit</button>
+                          <button className="btn btn-sm btn-ghost" onClick={(event) => { event.stopPropagation(); duplicateScenario(scenario) }}>Duplicate</button>
+                          <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={(event) => { event.stopPropagation(); setConfirmDeleteScenarioId(scenario.id) }}>Delete</button>
+                        </>
+                      ) : (
+                        <span className="cell-muted">Read-only</span>
+                      )}
                     </td>
                   </tr>
                   {expandedScenarioId === scenario.id && (

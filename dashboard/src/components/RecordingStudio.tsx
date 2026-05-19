@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { downloadBlob } from '../utils/fileUtils'
 import { useAsyncTask } from '../hooks/useAsyncTask'
 import { useApi } from '../hooks/useApi'
-import { BASE } from '../hooks/apiClient'
+import { apiFetch } from '../hooks/apiClient'
 import { Project } from '../types'
 import { type RecorderImportResult } from '../types/scriptImports'
 import { type ScriptDefinition } from '../types/scripts'
@@ -120,8 +120,8 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
 
   const handleDownloadCA = async (format: 'crt' | 'pem' = 'crt') => {
     try {
-      const url = format === 'pem' ? `${BASE}/recorder/ca.pem?format=pem` : `${BASE}/recorder/ca.pem`
-      const res = await fetch(url)
+      const url = format === 'pem' ? '/recorder/ca.pem?format=pem' : '/recorder/ca.pem'
+      const res = await apiFetch(url)
       if (!res.ok) throw new Error('Failed to download CA certificate')
       const blob = await res.blob()
       const filename = format === 'pem' ? 'stormrunner-ca.pem' : 'stormrunner-ca.crt'
@@ -267,7 +267,7 @@ export default function RecordingStudio({ activeProject, onImported, onEdit }: R
 
   const handleExportHAR = async (session: RecordingSession) => {
     try {
-      const res = await fetch(`${BASE}/recorder/${session.id}/export?format=har`)
+      const res = await apiFetch(`/recorder/${session.id}/export?format=har`)
       if (!res.ok) {
         const payload = await res.json().catch(() => ({ error: 'Failed to export HAR' }))
         throw new Error(payload.error || 'Failed to export HAR')

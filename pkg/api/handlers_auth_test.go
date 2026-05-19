@@ -40,6 +40,66 @@ func TestHandleGetAuthStatusReturnsDevByDefault(t *testing.T) {
 	}
 }
 
+func TestHandleGetAuthStatusReturnsDevUserPreview(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/me", nil)
+	req.Header.Set(devViewHeader, devViewModeUser)
+	req.Header.Set(devProjectIDHeader, "project-a")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var payload AuthStatusResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal auth status: %v", err)
+	}
+	if payload.DevViewMode != devViewModeUser || !payload.Simulated {
+		t.Fatalf("dev preview = (%q, %v), want user simulated", payload.DevViewMode, payload.Simulated)
+	}
+	if !payload.Authenticated || payload.User == nil {
+		t.Fatalf("expected synthetic authenticated user, got %#v", payload)
+	}
+	if payload.User.Subject != "dev-user" || payload.User.DisplayName != "Dev User Preview" {
+		t.Fatalf("user = %#v, want dev-user preview", payload.User)
+	}
+	if got := payload.User.GlobalRoles; len(got) != 1 || got[0] != RoleViewer {
+		t.Fatalf("global roles = %#v, want viewer", got)
+	}
+	if got := payload.User.ProjectRoles["project-a"]; len(got) != 1 || got[0] != RoleViewer {
+		t.Fatalf("project-a roles = %#v, want viewer", got)
+	}
+}
+
+func TestHandleGetAuthStatusIgnoresDevPreviewOutsideDevMode(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	enableTrustedHeaderAuth(t, server)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/me", nil)
+	req.Header.Set(devViewHeader, devViewModeUser)
+	req.Header.Set(devProjectIDHeader, "project-a")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var payload AuthStatusResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal auth status: %v", err)
+	}
+	if payload.Simulated || payload.DevViewMode != "" {
+		t.Fatalf("dev preview should be ignored outside dev mode, got %#v", payload)
+	}
+	if payload.Authenticated || payload.User != nil {
+		t.Fatalf("expected unauthenticated trusted-header status without identity, got %#v", payload)
+	}
+}
+
 func TestHandleGetAuthStatusReturnsUnauthenticatedWhenTrustedHeadersEnabled(t *testing.T) {
 	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
 	settings := enableTrustedHeaderAuth(t, server)
@@ -303,6 +363,37 @@ func TestHandleGetAuthEffectiveAccessReturnsOpenAccessWhenDevModeBypassesAuth(t 
 	}
 }
 
+func TestHandleGetAuthEffectiveAccessReturnsDevUserPreviewGrants(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/effective-access?project_id=project-a", nil)
+	req.Header.Set(devViewHeader, devViewModeUser)
+	req.Header.Set(devProjectIDHeader, "project-a")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var payload AuthEffectiveAccessResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal auth effective access: %v", err)
+	}
+	if payload.DevViewMode != devViewModeUser || !payload.Simulated || !payload.Authenticated {
+		t.Fatalf("dev preview metadata = %#v, want authenticated simulated user preview", payload)
+	}
+	if allowed := effectiveAccessOperationAllowed(payload.Resources, "view_tests"); !allowed {
+		t.Fatal("expected dev user preview to allow view_tests")
+	}
+	if allowed := effectiveAccessOperationAllowed(payload.Resources, "manage_tests"); allowed {
+		t.Fatal("expected dev user preview to deny manage_tests")
+	}
+	if allowed := effectiveAccessOperationAllowed(payload.Resources, "manage_system"); allowed {
+		t.Fatal("expected dev user preview to deny manage_system")
+	}
+}
+
 func TestHandleGetAuthEffectiveAccessEvaluatesProjectRoles(t *testing.T) {
 	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
 	enableTrustedHeaderAuth(t, server)
@@ -526,4 +617,15 @@ func TestHandleGetAuditEventsReturnsRecordedSystemSettingsChange(t *testing.T) {
 	if csvRows[1][2] != "system.settings.update" || csvRows[1][4] != "dev_mode" {
 		t.Fatalf("audit export event row = %#v", csvRows[1])
 	}
+}
+
+func effectiveAccessOperationAllowed(resources []AuthEffectiveAccessResource, operationID string) bool {
+	for _, resource := range resources {
+		for _, operation := range resource.Operations {
+			if operation.ID == operationID {
+				return operation.Allowed
+			}
+		}
+	}
+	return false
 }

@@ -46,6 +46,18 @@ Optional identity headers:
 
 At least one role header is required. Human user and group lifecycle remains upstream-owned; Stormrunner consumes the resulting claims and owns service-account principals for automation.
 
+## Local Dev Admin/User Preview
+
+When the controller reports `auth.mode = dev`, the dashboard sidebar shows a dev-only Admin/User segmented control:
+
+- `Admin` is the default and preserves local development bypass behavior.
+- `User` sends `X-Stormrunner-Dev-View: user` and the active project id as `X-Stormrunner-Dev-Project-ID`.
+- User preview simulates subject `dev-user` with global `viewer` and active-project `viewer` roles.
+- User preview keeps read-only dashboard surfaces visible while hiding create/edit/run/admin controls.
+- Backend RBAC still enforces protected APIs in User preview, returning normal `403` responses for manage operations.
+
+The preview headers are ignored when auth mode is `trusted_headers` or `oidc`; production identity and RBAC always come from the configured gateway or OIDC session.
+
 ## Break-Glass Recovery
 
 Use break-glass only when normal admin access is unavailable because of IdP, gateway, claim, or secret misconfiguration.

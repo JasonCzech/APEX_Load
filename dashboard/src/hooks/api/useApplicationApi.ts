@@ -1,14 +1,14 @@
 import { useCallback, useMemo } from 'react'
 
 import { Application, Release } from '../../types'
-import { BASE, request } from '../apiClient'
+import { apiFetch, request } from '../apiClient'
 
 type DeleteEntityResponse = {
   deleted: string
 }
 
 async function fetchBlob(path: string): Promise<Blob> {
-  const res = await fetch(`${BASE}${path}`)
+  const res = await apiFetch(path)
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }))
     throw new Error(body.error || res.statusText)

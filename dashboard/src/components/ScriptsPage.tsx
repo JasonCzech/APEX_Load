@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { AuthoringCorrelationPreviewRequest, AuthoringCorrelationPreviewResponse, AuthoringSession, StoredScript } from '../types'
+import { AuthoringCorrelationPreviewRequest, AuthoringCorrelationPreviewResponse, AuthoringSession, DashboardAuthEffectiveAccessResource, StoredScript } from '../types'
 import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
 import AuthoringSessionsPanel from './AuthoringSessionsPanel'
@@ -78,6 +78,16 @@ function scriptSearchText(script: StoredScript) {
   ].filter(Boolean).join(' ').toLowerCase()
 }
 
+function isEffectiveOperationAllowed(resources: DashboardAuthEffectiveAccessResource[], operationID: string): boolean {
+  for (const resource of resources) {
+    const operation = resource.operations.find(item => item.id === operationID)
+    if (operation) {
+      return operation.allowed
+    }
+  }
+  return true
+}
+
 export default function ScriptsPage({ initialMode = 'list', initialEditId, onSelectScenario }: Props) {
   const api = useApi()
   const { activeProject } = useProject()
@@ -87,6 +97,7 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
   const [correlationErrors, setCorrelationErrors] = useState<Record<string, string>>({})
   const [libraryQuery, setLibraryQuery] = useState('')
   const [healthFilter, setHealthFilter] = useState<AuthoringHealthFilter>('all')
+  const [effectiveAuthAccessResources, setEffectiveAuthAccessResources] = useState<DashboardAuthEffectiveAccessResource[]>([])
 
   const refresh = useCallback(async () => {
     try {
@@ -115,6 +126,11 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
     initialMode,
     initialEditId,
   })
+
+  const canManageScripts = useMemo(
+    () => isEffectiveOperationAllowed(effectiveAuthAccessResources, 'manage_scripts'),
+    [effectiveAuthAccessResources],
+  )
 
   const filteredScripts = useMemo(() => {
     const query = libraryQuery.trim().toLowerCase()
@@ -160,8 +176,33 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
 
   useEffect(() => { refresh() }, [refresh])
   useEffect(() => { refreshAuthoringSessions() }, [refreshAuthoringSessions])
+  useEffect(() => {
+    let cancelled = false
+    const loadEffectiveAccess = async () => {
+      try {
+        const response = await api.getAuthEffectiveAccess(activeProject?.id)
+        if (!cancelled) {
+          setEffectiveAuthAccessResources(response.resources || [])
+        }
+      } catch {
+        if (!cancelled) {
+          setEffectiveAuthAccessResources([])
+        }
+      }
+    }
+    loadEffectiveAccess()
+    return () => {
+      cancelled = true
+    }
+  }, [activeProject?.id, api])
+  useEffect(() => {
+    if (!canManageScripts && authoringState.subView !== 'list') {
+      openLibrary()
+    }
+  }, [authoringState.subView, canManageScripts, openLibrary])
 
   const handleDelete = async (id: string) => {
+    if (!canManageScripts) return
     if (!confirm('Delete this script?')) return
     try { await api.deleteScript(id); refresh() } catch { /* ignore */ }
   }
@@ -236,6 +277,7 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
       onOpenCreateOptions={openCreateOptions}
       onImported={handleImported}
       onEditDraft={handleDraftEdit}
+      canManageScripts={canManageScripts}
     >
       <div className="page">
         <div className="page-header">
@@ -243,20 +285,22 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
             <h2>Scripts</h2>
             <p className="page-subtitle">Reusable scripts. Release associations are inferred from actual test usage.</p>
           </div>
-          <button className="btn btn-primary" onClick={openCreateOptions}>+ Create Script</button>
+          {canManageScripts && <button className="btn btn-primary" onClick={openCreateOptions}>+ Create Script</button>}
         </div>
 
         <div className="page-section">
-          <AuthoringSessionsPanel
-            sessions={authoringSessions}
-            onResume={handleResumeAuthoringSession}
-            onApprove={(session) => { void handleApproveAuthoringSession(session) }}
-            onDiscard={(session) => { void handleDiscardAuthoringSession(session) }}
-            correlationPreviews={correlationPreviews}
-            correlationErrors={correlationErrors}
-            onPreviewCorrelation={(session, payload) => { void handlePreviewAuthoringCorrelation(session, payload) }}
-            onApplyCorrelation={(session, payload) => { void handleApplyAuthoringCorrelation(session, payload) }}
-          />
+          {canManageScripts && (
+            <AuthoringSessionsPanel
+              sessions={authoringSessions}
+              onResume={handleResumeAuthoringSession}
+              onApprove={(session) => { void handleApproveAuthoringSession(session) }}
+              onDiscard={(session) => { void handleDiscardAuthoringSession(session) }}
+              correlationPreviews={correlationPreviews}
+              correlationErrors={correlationErrors}
+              onPreviewCorrelation={(session, payload) => { void handlePreviewAuthoringCorrelation(session, payload) }}
+              onApplyCorrelation={(session, payload) => { void handleApplyAuthoringCorrelation(session, payload) }}
+            />
+          )}
           <div className="library-toolbar">
             <div>
               <h3 className="section-title">Script Library ({scripts.length})</h3>
@@ -303,6 +347,7 @@ export default function ScriptsPage({ initialMode = 'list', initialEditId, onSel
             onSelectScenario={onSelectScenario}
             onEdit={(id) => { void handleEdit(id) }}
             onDelete={(id) => { void handleDelete(id) }}
+            canManageScripts={canManageScripts}
             emptyMessage={libraryQuery.trim() || healthFilter !== 'all' ? 'No scripts match these filters.' : 'No scripts yet.'}
           />
         </div>

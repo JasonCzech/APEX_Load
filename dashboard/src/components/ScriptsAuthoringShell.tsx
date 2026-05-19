@@ -15,6 +15,7 @@ interface Props {
   onOpenCreateOptions: () => void
   onImported: (result: ImportedSaveResult) => void
   onEditDraft: NonNullable<ComponentProps<typeof ScriptsAuthoringSurface>['onEditDraft']>
+  canManageScripts?: boolean
   children: ReactNode
 }
 
@@ -28,8 +29,13 @@ export default function ScriptsAuthoringShell({
   onOpenCreateOptions,
   onImported,
   onEditDraft,
+  canManageScripts = true,
   children,
 }: Props) {
+  if (!canManageScripts) {
+    return <>{children}</>
+  }
+
   if (authoringState.subView === 'create-options') {
     return (
       <ScriptCreateOptions

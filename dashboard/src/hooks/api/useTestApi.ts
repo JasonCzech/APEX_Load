@@ -21,7 +21,7 @@ import {
   TestSummary,
   TransactionEvent,
 } from '../../types'
-import { BASE, request } from '../apiClient'
+import { apiFetch, request } from '../apiClient'
 
 type ArchiveTransactionsParams = {
   limit?: number
@@ -166,7 +166,7 @@ function buildQuery(params?: Record<string, string | number | boolean | undefine
 }
 
 async function fetchBlob(path: string): Promise<Blob> {
-  const res = await fetch(`${BASE}${path}`)
+  const res = await apiFetch(path)
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }))
     throw new Error(body.error || res.statusText)
