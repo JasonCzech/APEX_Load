@@ -100,7 +100,7 @@ func authoringComponentCatalog() []AuthoringComponent {
 			ID:        "browser-login-transaction",
 			Kind:      "login_transaction",
 			Name:      "Browser Login Transaction",
-			Protocols: []string{"browser", "trueclient_mobile_web"},
+			Protocols: []string{"browser", "trueclient_mobile_web", "trueclient2_web"},
 			Summary:   "Browser login sequence with page-ready wait, credentials, submit, and post-login assertion.",
 			Tags:      []string{"browser", "login", "canary"},
 			Actions: []dsl.Action{

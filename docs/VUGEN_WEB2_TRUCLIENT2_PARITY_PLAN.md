@@ -151,7 +151,7 @@ Implementation note: Archive inspection now extracts object descriptor IDs plus 
 
 | ID | Work Item | Priority | Status |
 | --- | --- | --- | --- |
-| V2.5.1 | Add "VuGen Web 2.0 / TruClient 2.0 Web" starter profile to Create Script | P0 | Planned |
+| V2.5.1 | Add "VuGen Web 2.0 / TruClient 2.0 Web" starter profile to Create Script | P0 | Complete |
 | V2.5.2 | Add graphical step outline focused on browser actions, transactions, parameters, waits, and assertions | P0 | Planned |
 | V2.5.3 | Add dialogs for object descriptor editing, parameter data, runtime settings, replay output, and conversion-to-HTTP review | P0 | Planned |
 | V2.5.4 | Add reusable Web 2.0 browser components: login, search, add-to-cart, checkout, iframe flow, modal flow, auth callback, and teardown/logout | P1 | Planned |
@@ -162,6 +162,8 @@ Acceptance:
 - Users can create a Web 2.0 browser script without writing JSON.
 - The central script editor remains focused on outline and script code; supporting evidence appears in dialogs or side lanes.
 - New drafts use authoring sessions and approval gates.
+
+Implementation note: The authoring capabilities endpoint now exposes `trueclient2_web` as a review-only browser-replay gated source, reusable browser login components can be filtered by the profile, and the backend template catalog includes a `VuGen Web 2.0 Review Profile` starter for migration review drafts.
 
 ## Workstream V2.6: Runtime Settings And Replay Evidence
 

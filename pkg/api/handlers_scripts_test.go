@@ -1986,6 +1986,16 @@ func TestAuthoringCapabilitiesEndpoint(t *testing.T) {
 	if !aiGenerated.Provenance || !aiGenerated.ApprovalGateCandidate {
 		t.Fatalf("ai generated features = %#v, want provenance and approval gate candidate", aiGenerated)
 	}
+	web2, ok := payload.SourceMap["trueclient2_web"]
+	if !ok {
+		t.Fatal("expected trueclient2_web source map entry")
+	}
+	if !web2.BrowserReplay || !web2.ApprovalGateCandidate {
+		t.Fatalf("trueclient2_web features = %#v, want review-only browser replay gated profile", web2)
+	}
+	if !containsAuthoringSourceStatus(payload.Sources, "trueclient2_web", "review_only") {
+		t.Fatalf("sources = %#v, want trueclient2_web review_only source", payload.Sources)
+	}
 }
 
 func TestAuthoringTemplatesEndpointReturnsValidProtocolStarters(t *testing.T) {
@@ -2038,6 +2048,22 @@ func TestAuthoringTemplatesEndpointReturnsValidProtocolStarters(t *testing.T) {
 		if issues := validateScript(&template.Script); len(issues) != 0 {
 			t.Fatalf("template %s validation issues = %v", template.ID, issues)
 		}
+	}
+	web2Req := httptest.NewRequest(http.MethodGet, "/api/v1/scripts/authoring/templates?protocol=browser&use_case=migration_review", nil)
+	web2Resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(web2Resp, web2Req)
+	if web2Resp.Code != http.StatusOK {
+		t.Fatalf("web2 template status = %d, want %d body=%s", web2Resp.Code, http.StatusOK, web2Resp.Body.String())
+	}
+	var web2Payload struct {
+		Templates []AuthoringTemplate `json:"templates"`
+		Count     int                 `json:"count"`
+	}
+	if err := json.Unmarshal(web2Resp.Body.Bytes(), &web2Payload); err != nil {
+		t.Fatalf("unmarshal web2 response: %v", err)
+	}
+	if web2Payload.Count != 1 || web2Payload.Templates[0].ID != "vugen-web2-review-profile" {
+		t.Fatalf("web2 payload = %#v, want VuGen Web 2.0 review profile", web2Payload)
 	}
 }
 
@@ -2095,6 +2121,22 @@ func TestAuthoringComponentsEndpointReturnsReusableLibrary(t *testing.T) {
 		if component.Kind != "auth_flow" || !componentSupportsProtocol(component, "http") {
 			t.Fatalf("filtered component = %#v, want HTTP auth flow only", component)
 		}
+	}
+	web2Req := httptest.NewRequest(http.MethodGet, "/api/v1/scripts/authoring/components?protocol=trueclient2_web", nil)
+	web2Resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(web2Resp, web2Req)
+	if web2Resp.Code != http.StatusOK {
+		t.Fatalf("web2 components status = %d, want %d body=%s", web2Resp.Code, http.StatusOK, web2Resp.Body.String())
+	}
+	var web2Payload struct {
+		Components []AuthoringComponent `json:"components"`
+		Count      int                  `json:"count"`
+	}
+	if err := json.Unmarshal(web2Resp.Body.Bytes(), &web2Payload); err != nil {
+		t.Fatalf("unmarshal web2 components: %v", err)
+	}
+	if web2Payload.Count == 0 || !componentSupportsProtocol(web2Payload.Components[0], "trueclient2_web") {
+		t.Fatalf("web2 components = %#v, want reusable TrueClient 2.0 Web component", web2Payload)
 	}
 }
 
@@ -2623,6 +2665,15 @@ func containsLoadRunnerWeb2Fixture(entries []struct {
 }, id string, required bool) bool {
 	for _, entry := range entries {
 		if entry.ID == id && entry.Required == required && entry.Status == "planned" {
+			return true
+		}
+	}
+	return false
+}
+
+func containsAuthoringSourceStatus(sources []AuthoringSourceCapability, source string, status string) bool {
+	for _, item := range sources {
+		if item.Source == source && item.Status == status {
 			return true
 		}
 	}
