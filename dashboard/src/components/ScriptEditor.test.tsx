@@ -335,6 +335,90 @@ describe('ScriptEditor', () => {
     expect(submitRow.className).toContain('active')
   })
 
+  it('opens Web2 object descriptor and HTTP conversion review dialogs from the outline', async () => {
+    const importedWeb2Script: ScriptDefinition = {
+      ...initialScript,
+      protocol: 'browser',
+      actions: [
+        {
+          name: 'Click Checkout',
+          type: 'browser_click',
+          target: '',
+          selector: '',
+        },
+      ],
+      metadata: {
+        import: {
+          source: 'loadrunner',
+          source_script_name: 'CheckoutWeb2.zip',
+          preserved: {
+            source_script_type: 'TruClient 2.0 - Web',
+            trueclient_archive_inspection: {
+              object_repositories: [{ path: 'ObjectRepository/MainObjects.xml' }],
+              unsupported_fragments: [],
+              steps: [
+                {
+                  step_id: 'step-1',
+                  index: '1',
+                  action: 'Click',
+                  action_name: 'Click Checkout',
+                  object_descriptor_id: 'obj_checkout',
+                  status: 'supported',
+                  selector_candidates: [
+                    { kind: 'css', value: '[data-testid="checkout"]', confidence: 92, reason: 'Stable test id' },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+      },
+    }
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={importedWeb2Script} />)
+    })
+
+    const objectButton = Array.from(container.querySelectorAll('.editor-outline-link')).find(button => button.textContent?.includes('Object Descriptors'))
+    const conversionButton = Array.from(container.querySelectorAll('.editor-outline-link')).find(button => button.textContent?.includes('HTTP Conversion Review'))
+    expect(objectButton).toBeDefined()
+    expect(conversionButton).toBeDefined()
+    if (!objectButton || !conversionButton) {
+      return
+    }
+
+    await act(async () => {
+      objectButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const descriptorDialog = container.querySelector('[aria-label="Object Descriptors"]')
+    expect(descriptorDialog?.className).toContain('open')
+    expect(descriptorDialog?.textContent).toContain('obj_checkout')
+    expect(descriptorDialog?.textContent).toContain('[data-testid="checkout"]')
+
+    const useSelectorButton = Array.from(descriptorDialog?.querySelectorAll('button') || []).find(button => button.textContent?.includes('Use Selector'))
+    expect(useSelectorButton).toBeDefined()
+    if (!useSelectorButton) {
+      return
+    }
+
+    await act(async () => {
+      useSelectorButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.textContent).toContain('Applied css selector to Click Checkout.')
+    expect(container.textContent).toContain('[data-testid="checkout"]')
+
+    await act(async () => {
+      conversionButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const conversionDialog = container.querySelector('[aria-label="Browser To HTTP Conversion Review"]')
+    expect(conversionDialog?.className).toContain('open')
+    expect(conversionDialog?.textContent).toContain('Run browser replay before generating an HTTP draft.')
+    expect(conversionDialog?.textContent).toContain('Review Runtime Settings')
+  })
+
   it('renders the provided script model without fetching from the API', async () => {
     await act(async () => {
       root.render(<ScriptEditor initialScript={initialScript} />)

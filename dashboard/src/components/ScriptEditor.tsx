@@ -17,6 +17,7 @@ import {
   type ScriptAssertionDefinition,
   type ScriptDefinition,
   type ScriptDataSource,
+  type ScriptImportMetadata,
   type ScriptParameterDefinition,
   type ScriptValidationResponse,
 } from '../types/scripts'
@@ -203,6 +204,39 @@ interface ScriptOutlineSummary {
   actions: ScriptOutlineAction[]
 }
 
+interface Web2SelectorCandidate {
+  kind: string
+  value: string
+  confidence: number
+  reason: string
+}
+
+interface Web2ObjectDescriptorRow {
+  key: string
+  label: string
+  descriptorId: string
+  status: string
+  actionIndex: number | null
+  currentSelector: string
+  candidates: Web2SelectorCandidate[]
+}
+
+interface Web2ObjectDescriptorReview {
+  rows: Web2ObjectDescriptorRow[]
+  repositoryCount: number
+  candidateCount: number
+  unsupportedCount: number
+}
+
+interface BrowserHTTPConversionReview {
+  browserActionCount: number
+  replayEvidence: boolean
+  networkEvidence: boolean
+  candidateRequestCount: number
+  status: 'blocked' | 'needs_replay' | 'ready_for_review'
+  findings: string[]
+}
+
 function extractParameterReferences(action: Action) {
   const refs = new Set<string>()
   const json = JSON.stringify({
@@ -262,6 +296,93 @@ function buildScriptOutlineSummary(script: ScriptData): ScriptOutlineSummary {
     assertionCount: actions.reduce((sum, action) => sum + action.assertionCount, 0),
     actions,
   }
+}
+
+function readPreservedImportObject(metadata?: ScriptImportMetadata | null, key?: string): Record<string, unknown> | null {
+  if (!metadata?.preserved || !key) return null
+  const value = metadata.preserved[key]
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  return value as Record<string, unknown>
+}
+
+function readString(value: unknown) {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function readNumber(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0
+}
+
+function readArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : []
+}
+
+function normalizeWeb2SelectorCandidate(value: unknown): Web2SelectorCandidate | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const item = value as Record<string, unknown>
+  const candidate = {
+    kind: readString(item.kind) || 'selector',
+    value: readString(item.value),
+    confidence: readNumber(item.confidence),
+    reason: readString(item.reason),
+  }
+  return candidate.value ? candidate : null
+}
+
+function buildWeb2ObjectDescriptorReview(script: ScriptData, metadata?: ScriptImportMetadata | null): Web2ObjectDescriptorReview {
+  const inspection = readPreservedImportObject(metadata, 'trueclient_archive_inspection')
+  const steps = readArray(inspection?.steps)
+  const objectRepositories = readArray(inspection?.object_repositories)
+  const unsupportedFragments = readArray(inspection?.unsupported_fragments)
+  const rows = steps
+    .map((step, index) => {
+      if (!step || typeof step !== 'object' || Array.isArray(step)) return null
+      const item = step as Record<string, unknown>
+      const candidates = readArray(item.selector_candidates)
+        .map(normalizeWeb2SelectorCandidate)
+        .filter((candidate): candidate is Web2SelectorCandidate => candidate !== null)
+      const actionIndex = index < script.actions.length && script.actions[index]?.type.startsWith('browser_') ? index : null
+      const currentSelector = actionIndex !== null ? script.actions[actionIndex]?.selector || script.actions[actionIndex]?.target || '' : ''
+      return {
+        key: `${readString(item.step_id) || index}:${readString(item.index) || index}`,
+        label: readString(item.action_name) || readString(item.action) || `Step ${index + 1}`,
+        descriptorId: readString(item.object_descriptor_id) || 'No descriptor ID',
+        status: readString(item.status) || 'review',
+        actionIndex,
+        currentSelector,
+        candidates,
+      }
+    })
+    .filter((row): row is Web2ObjectDescriptorRow => row !== null && (row.candidates.length > 0 || row.descriptorId !== 'No descriptor ID'))
+
+  return {
+    rows,
+    repositoryCount: objectRepositories.length,
+    candidateCount: rows.reduce((sum, row) => sum + row.candidates.length, 0),
+    unsupportedCount: unsupportedFragments.length,
+  }
+}
+
+function buildBrowserHTTPConversionReview(script: ScriptData, replayReport: ReplayReport | null): BrowserHTTPConversionReview {
+  const browserActionCount = script.actions.filter(action => action.type.startsWith('browser_')).length
+  const replayEvents = replayReport?.events || []
+  const networkEvidence = replayEvents.some(event => {
+    const snapshot = event.snapshot as Record<string, unknown> | undefined
+    return Boolean(snapshot?.request_url || snapshot?.request_method || event.network_entries?.length)
+  })
+  const candidateRequestCount = replayEvents.filter(event => {
+    const snapshot = event.snapshot as Record<string, unknown> | undefined
+    return Boolean(snapshot?.request_url || event.network_entries?.length)
+  }).length
+  const replayEvidence = Boolean(replayReport?.completed_at || replayEvents.length > 0)
+  const status = !replayEvidence ? 'needs_replay' : networkEvidence ? 'ready_for_review' : 'blocked'
+  const findings = [
+    browserActionCount > 0 ? `${browserActionCount} browser action${browserActionCount === 1 ? '' : 's'} available as conversion context.` : 'No browser actions are available for conversion.',
+    replayEvidence ? 'Replay evidence is attached to this draft.' : 'Run browser replay before generating an HTTP draft.',
+    networkEvidence ? `${candidateRequestCount} captured request${candidateRequestCount === 1 ? '' : 's'} can seed HTTP conversion review.` : 'Network capture evidence is required before HTTP conversion.',
+    'Generated HTTP drafts must still pass correlation, parameter data, runtime settings, replay, and approval gates.',
+  ]
+  return { browserActionCount, replayEvidence, networkEvidence, candidateRequestCount, status, findings }
 }
 
 function hasStructuredReplaySnapshot(snapshot?: ReplaySnapshot | null) {
@@ -688,6 +809,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const outlineSummary = buildScriptOutlineSummary(script)
   const importMetadata = script.metadata?.import
   const importSummary = getImportSummary(importMetadata)
+  const objectDescriptorReview = buildWeb2ObjectDescriptorReview(script, importMetadata)
+  const httpConversionReview = buildBrowserHTTPConversionReview(script, replayReport)
   const importedCorrelationFocusTargets = importSummary.correlationSuggestions.map((correlation) => {
     const foundAtActionIndex = findActionIndexByImportedLocation(script.actions, correlation.found_at)
     const foundAtLabel = formatImportedLocationLabel(script.actions, correlation.found_at, foundAtActionIndex)
@@ -2528,12 +2651,23 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     setError('')
   }
 
-  const openEditorSection = (section: 'config' | 'replay' | 'runtime' | 'import' | 'parameter-data') => {
+  const openEditorSection = (section: 'config' | 'replay' | 'runtime' | 'import' | 'parameter-data' | 'object-descriptors' | 'http-conversion') => {
     if (section === 'parameter-data') {
       setIsParameterDialogOpen(true)
       return
     }
     setOpenSections(prev => ({ ...prev, [section]: true }))
+  }
+
+  const applyObjectDescriptorCandidate = (row: Web2ObjectDescriptorRow, candidate: Web2SelectorCandidate) => {
+    if (row.actionIndex === null) {
+      setError('No generated browser action is available for this imported object descriptor.')
+      return
+    }
+    updateAction(row.actionIndex, 'selector', candidate.value)
+    setActiveAction(row.actionIndex)
+    setSuccess(`Applied ${candidate.kind} selector to ${row.label}.`)
+    setError('')
   }
 
   const applyMigrationSuggestion = (suggestion: MigrationAssistantSuggestion) => {
@@ -3370,6 +3504,148 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                   </details>
                 </div>
               )}
+            </div>
+          )}
+
+          {objectDescriptorReview.rows.length > 0 && (
+            <div className={`config-panel editor-support-dialog support-dialog-object ${openSections['object-descriptors'] ? 'open' : ''}`} style={{ padding: 0 }} role="dialog" aria-modal="true" aria-label="Object Descriptors">
+              <button className="panel-header-toggle" onClick={() => toggleSection('object-descriptors')} style={{ padding: '16px 20px' }}>
+                <div className="panel-title-row" style={{ marginBottom: 0 }}>
+                  <div>
+                    <h3 className="panel-title">Object Descriptors</h3>
+                    <p>Review imported TruClient object IDs, current selectors, and extracted fallback candidates.</p>
+                  </div>
+                </div>
+                <span className="chevron">Close</span>
+              </button>
+              <div className="panel-body" style={{ padding: '0 20px 20px' }}>
+                <div className="import-metadata-grid">
+                  <div className="import-metadata-card">
+                    <span>Repositories</span>
+                    <strong>{objectDescriptorReview.repositoryCount}</strong>
+                    <small>Preserved from the source archive</small>
+                  </div>
+                  <div className="import-metadata-card">
+                    <span>Descriptors</span>
+                    <strong>{objectDescriptorReview.rows.length}</strong>
+                    <small>Mapped to review rows</small>
+                  </div>
+                  <div className="import-metadata-card">
+                    <span>Candidates</span>
+                    <strong>{objectDescriptorReview.candidateCount}</strong>
+                    <small>CSS, XPath, text, or role options</small>
+                  </div>
+                  <div className="import-metadata-card">
+                    <span>Source Fragments</span>
+                    <strong>{objectDescriptorReview.unsupportedCount}</strong>
+                    <small>Review-only or unsupported steps</small>
+                  </div>
+                </div>
+                <div className="object-descriptor-list">
+                  {objectDescriptorReview.rows.map((row) => (
+                    <div key={row.key} className="object-descriptor-card">
+                      <div className="object-descriptor-heading">
+                        <div>
+                          <strong>{row.label}</strong>
+                          <span>{row.descriptorId} · {row.status}</span>
+                        </div>
+                        {row.actionIndex !== null && (
+                          <button type="button" className="btn btn-sm btn-secondary" onClick={() => setActiveAction(row.actionIndex)}>
+                            Select Action
+                          </button>
+                        )}
+                      </div>
+                      <div className="object-descriptor-current">
+                        <span>Current selector</span>
+                        <code>{row.currentSelector || 'No selector applied'}</code>
+                      </div>
+                      <div className="object-selector-candidates">
+                        {row.candidates.map((candidate) => (
+                          <div key={`${row.key}:${candidate.kind}:${candidate.value}`} className="object-selector-candidate">
+                            <div>
+                              <strong>{candidate.kind} · {candidate.confidence || 0}%</strong>
+                              <code>{candidate.value}</code>
+                              {candidate.reason && <span>{candidate.reason}</span>}
+                            </div>
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-secondary"
+                              onClick={() => applyObjectDescriptorCandidate(row, candidate)}
+                              disabled={row.actionIndex === null}
+                            >
+                              Use Selector
+                            </button>
+                          </div>
+                        ))}
+                        {row.candidates.length === 0 && (
+                          <div className="utility-empty-state">No alternate selectors were extracted for this object.</div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {isBrowserScript && (
+            <div className={`config-panel editor-support-dialog support-dialog-conversion ${openSections['http-conversion'] ? 'open' : ''}`} style={{ padding: 0 }} role="dialog" aria-modal="true" aria-label="Browser To HTTP Conversion Review">
+              <button className="panel-header-toggle" onClick={() => toggleSection('http-conversion')} style={{ padding: '16px 20px' }}>
+                <div className="panel-title-row" style={{ marginBottom: 0 }}>
+                  <div>
+                    <h3 className="panel-title">Browser To HTTP Conversion Review</h3>
+                    <p>Gate generated HTTP load scripts behind replay, network, correlation, and approval evidence.</p>
+                  </div>
+                </div>
+                <span className="chevron">Close</span>
+              </button>
+              <div className="panel-body" style={{ padding: '0 20px 20px' }}>
+                <div className="import-metadata-grid">
+                  <div className="import-metadata-card">
+                    <span>Status</span>
+                    <strong>{httpConversionReview.status.replace(/_/g, ' ')}</strong>
+                    <small>{httpConversionReview.networkEvidence ? 'Network evidence captured' : 'Network evidence required'}</small>
+                  </div>
+                  <div className="import-metadata-card">
+                    <span>Browser Actions</span>
+                    <strong>{httpConversionReview.browserActionCount}</strong>
+                    <small>Canary flow context</small>
+                  </div>
+                  <div className="import-metadata-card">
+                    <span>Replay Evidence</span>
+                    <strong>{httpConversionReview.replayEvidence ? 'Attached' : 'Missing'}</strong>
+                    <small>Required before conversion</small>
+                  </div>
+                  <div className="import-metadata-card">
+                    <span>Request Candidates</span>
+                    <strong>{httpConversionReview.candidateRequestCount}</strong>
+                    <small>Captured replay requests</small>
+                  </div>
+                </div>
+                <div className="import-correlation-section">
+                  <h4>Conversion Gate</h4>
+                  <p>Keep Web 2.0 browser scripts as canaries until an HTTP draft is generated from captured traffic and passes validation/replay independently.</p>
+                  <div className="import-correlation-list">
+                    {httpConversionReview.findings.map((finding, index) => (
+                      <div key={`http-conversion-${index}`} className="import-correlation-card">
+                        <strong>{index === 0 ? 'Flow' : index === 1 ? 'Replay' : index === 2 ? 'Network' : 'Approval'}</strong>
+                        <span>{finding}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="replay-panel-actions" style={{ justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                  <button type="button" className="btn btn-secondary" onClick={() => openEditorSection('replay')}>
+                    Open Replay Output
+                  </button>
+                  <button type="button" className="btn btn-secondary" onClick={() => openEditorSection('parameter-data')}>
+                    Review Parameter Data
+                  </button>
+                  <button type="button" className="btn btn-secondary" onClick={() => openEditorSection('runtime')}>
+                    Review Runtime Settings
+                  </button>
+                </div>
+              </div>
             </div>
           )}
 
@@ -4446,7 +4722,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                     <button className="editor-outline-link" type="button" onClick={() => openEditorSection('config')}>Script Configuration</button>
                     <button className="editor-outline-link" type="button" onClick={() => openEditorSection('runtime')}>Runtime / RTS</button>
                     {importMetadata && <button className="editor-outline-link" type="button" onClick={() => openEditorSection('import')}>Imported Metadata</button>}
+                    {objectDescriptorReview.rows.length > 0 && <button className="editor-outline-link" type="button" onClick={() => openEditorSection('object-descriptors')}>Object Descriptors</button>}
                     <button className="editor-outline-link" type="button" onClick={() => openEditorSection('parameter-data')}>Parameter Data</button>
+                    {isBrowserScript && <button className="editor-outline-link" type="button" onClick={() => openEditorSection('http-conversion')}>HTTP Conversion Review</button>}
                     <button className="editor-outline-link" type="button" onClick={() => openEditorSection('replay')}>Replay Output</button>
                   </div>
                   <div className="editor-outline-metrics" aria-label="Script outline summary">
