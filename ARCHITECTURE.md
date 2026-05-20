@@ -1,408 +1,273 @@
-# Architecture Overview
+# Stormrunner Architecture
 
-## System Architecture Diagram
+Stormrunner is a Kubernetes-native performance testing platform with a Go control plane, goroutine-based load generators, a React dashboard, a JSON DSL script model, and enterprise data services for shared production deployments. The platform is designed to replace practical LoadRunner Enterprise workflows while keeping local development simple.
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                       Stormrunner Platform                           │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                       │
-│  ┌──────────────────────────────────────────────────────────────┐   │
-│  │                  React Dashboard (Browser)                   │   │
-│  │  ┌─────────────┬─────────────┬─────────────┬─────────────┐  │   │
-│  │  │  Scripts    │  Scenarios  │  Results    │ Monitoring  │  │   │
-│  │  └─────────────┴─────────────┴─────────────┴─────────────┘  │   │
-│  │         ↓ REST API         ↓ WebSocket Stream               │   │
-│  └──────────────────────────────────────────────────────────────┘   │
-│                              ↓                                        │
-│  ┌──────────────────────────────────────────────────────────────┐   │
-│  │           Controller (Go + Embedded Static Assets)           │   │
-│  │                    :8080 HTTP API                            │   │
-│  ├──────────────────────────────────────────────────────────────┤   │
-│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │   │
-│  │  │  REST API    │  │  WebSocket   │  │   Test      │      │   │
-│  │  │  Handlers    │  │  Hub         │  │   Runner    │      │   │
-│  │  └──────────────┘  └──────────────┘  └──────────────┘      │   │
-│  │         ↓                              ↓                    │   │
-│  │  ┌──────────────────────────────────────────────────┐       │   │
-│  │  │           Test Orchestrator                       │       │   │
-│  │  │  - Queue management (queued→running→completed)   │       │   │
-│  │  │  - Metrics aggregation                           │       │   │
-│  │  │  - Persistence (SQLite)                          │       │   │
-│  │  └──────────────────────────────────────────────────┘       │   │
-│  └──────────────────────────────────────────────────────────────┘   │
-│                              ↓                                        │
-│  ┌──────────────────────────────────────────────────────────────┐   │
-│  │       Load Generators (Kubernetes Pods / Local)              │   │
-│  │                                                               │   │
-│  │  ┌────────────────────────────────────────────────────┐      │   │
-│  │  │  Engine Pod 1              Engine Pod 2           │      │   │
-│  │  │  ┌──────────────────────┐  ┌──────────────────┐  │      │   │
-│  │  │  │  VUser Goroutines    │  │  VUser           │  │      │   │
-│  │  │  │  ├─ G1 (user1)       │  │  Goroutines      │  │      │   │
-│  │  │  │  ├─ G2 (user2)       │  │  ├─ G101 (user1) │  │      │   │
-│  │  │  │  └─ G100 (user100)   │  │  └─ ...          │  │      │   │
-│  │  │  └──────────────────────┘  └──────────────────┘  │      │   │
-│  │  │         ↓                        ↓                 │      │   │
-│  │  │  ┌──────────────────────┐  ┌──────────────────┐  │      │   │
-│  │  │  │  Metrics Channels    │  │  Protocol Impl   │  │      │   │
-│  │  │  │  - Buffered (10k cap)│  │  (HTTP, JMS)     │  │      │   │
-│  │  │  │  - Zero-lock         │  │                  │  │      │   │
-│  │  │  └──────────────────────┘  └──────────────────┘  │      │   │
-│  │  └────────────────────────────────────────────────────┘      │   │
-│  │                         ↓                                    │   │
-│  │                    Target System                             │   │
-│  │          (API Server, Message Queue, etc.)                   │   │
-│  └──────────────────────────────────────────────────────────────┘   │
-│                                                                       │
-└─────────────────────────────────────────────────────────────────────┘
+This document reflects the current application architecture. Related operational plans and runbooks live under `docs/`.
+
+## System Context
+
+```text
+Users and automation
+  |
+  |  Browser UI, REST, WebSocket, stormctl, MCP tools
+  v
+Controller API
+  |
+  |-- Dashboard static assets and API handlers
+  |-- Auth/RBAC, audit, service accounts, dev preview mode
+  |-- Script authoring, import, validation, replay
+  |-- Scenario modeling, scheduling, governance
+  |-- Test orchestration and live controls
+  |-- Archive, reporting, usage, parity, fleet APIs
+  |
+  +--> Metadata store: SQLite for local, PostgreSQL for enterprise
+  +--> Cache/live state: memory for local, Redis/Valkey for HA
+  +--> Archive store: filesystem for local, S3/Azure Blob/GCS for enterprise
+  +--> Metrics retention: /metrics plus Prometheus-compatible remote-write
+  |
+  +--> Local engine, or distributed generator gRPC targets
+          |
+          +--> Protocol execution against target systems
 ```
 
-## Data Flow During Test Execution
+## Runtime Surfaces
 
-```
-1. USER ACTION
-   ├─ Create test in Dashboard
-   │  └─ POST /api/v1/tests (queue test with script + vusers)
-   │
-2. CONTROLLER RECEIVES TEST
-   ├─ Validates script
-   ├─ Stores in SQLite
-   ├─ Updates WebSocket clients: "test_created"
-   │
-3. USER STARTS TEST
-   ├─ POST /api/v1/tests/{id}/start
-   │
-4. TEST RUNNER INITIALIZES
-   ├─ Loads script + protocol
-   ├─ Creates Engine with Config{VUsers, Duration, RampUp}
-   │  └─ Engine spawns N goroutines (1 per VUser)
-   │
-5. VUSER EXECUTION (per goroutine)
-   ├─ Init phase
-   │  ├─ Protocol.Init(ctx, config)
-   │  ├─ Execute init actions
-   │  └─ Extract variables (auth_token, etc.)
-   │
-   ├─ Ramp-up scheduling
-   │  ├─ Pacing algorithm delays goroutine start
-   │  ├─ Linear: start at t = (vuser_id / total_vusers) * ramp_up
-   │  └─ Result: smooth VUser increase over ramp_up duration
-   │
-   ├─ Steady-state loop
-   │  ├─ For each action in script.actions:
-   │  │  ├─ Apply templates ({{data.X}}, {{var.Y}}, {{fn.uuid()}})
-   │  │  ├─ Execute action via Protocol.Execute()
-   │  │  ├─ Extract values if Extractors defined
-   │  │  ├─ Validate assertions
-   │  │  ├─ Record metrics: latency, status code, errors
-   │  │  │  └─ Send via buffered metrics channel (cap 10,000)
-   │  │  └─ Apply think time (delay before next action)
-   │  │
-   │  └─ Repeat until test duration expires or stop signal received
-   │
-   ├─ Teardown phase
-   │  ├─ Execute teardown actions (logout, cleanup)
-   │  └─ Protocol.Teardown(ctx)
-   │
-   └─ Goroutine exits
-      └─ Final metrics sent to metrics channel
-      
-6. METRICS AGGREGATION (Controller)
-   ├─ Reads from metrics channel
-   ├─ Updates t-digest percentile algorithm
-   ├─ Computes rolling window statistics (last 5s, 60s)
-   ├─ Emits via WebSocket: "metrics_update"
-   │  └─ Dashboard charts update in real-time
-   │
-7. TEST COMPLETION
-   ├─ All VUsers finish or test duration reached
-   ├─ Compute final metrics snapshot
-   ├─ Store results in SQLite
-   ├─ Emit WebSocket: "test_complete"
-   ├─ Dashboard shows: total throughput, error rate, p95/p99 latency
-   │
-8. RESULTS EXPORT
-   ├─ User downloads results as JSON/CSV
-   ├─ Compare multiple test runs
-   └─ Historical trend analysis
+| Surface | Code | Responsibility |
+| --- | --- | --- |
+| Controller API | `cmd/controller`, `pkg/api` | REST API, WebSocket streams, dashboard hosting, scheduling, orchestration, governance, reporting, readiness, inventory |
+| Dashboard | `dashboard/` | React SPA for administration, repository management, authoring, scenario assembly, monitoring, reports, API guide, access/API keys |
+| CLI | `cmd/stormctl` | Local script execution and controller-backed CI/CD runs |
+| Generator | `cmd/generator`, `pkg/distributed/generatorrpc` | Remote worker that executes assigned groups and streams metrics/artifacts to the controller |
+| MCP server | `mcp/` | FastMCP bridge for agents and automation against the documented REST API |
+
+The controller embeds the built dashboard from `pkg/api/static`. During dashboard development, the Vite dev server proxies API calls to the controller.
+
+## Domain Model
+
+Stormrunner's governance hierarchy is:
+
+```text
+Domain
+  -> Application Repository
+      -> Category
+          -> Project
+              -> Release
+                  -> Scenarios, runs, reports, archives
+              -> Scripts, folders, data pools, scenarios
 ```
 
-## Distributed Controller Path (Current State)
+Administrators grant access at the domain and application repository levels. Project-level roles still act as the main execution boundary for scripts, scenarios, tests, schedules, results, and archives. Existing application/release APIs remain as compatibility aliases while the repository hierarchy is the current product model.
 
-When `STORMRUNNER_GENERATORS` is configured, the controller keeps the same REST and WebSocket contract but swaps test execution to the distributed backend.
+## Data Ownership
 
-```
-1. Controller starts with one or more generator gRPC targets.
-2. Test start selects distributed execution backend instead of local engine execution.
-3. Test groups are assigned across configured generators.
-4. Each generator either runs assigned groups through a real `engine.MultiGroupEngine` or uses the synthetic transport path in tests.
-5. Generators stream `MetricsBatch` snapshots back to the controller over long-lived gRPC streams.
-6. Controller aggregates per-generator batches into one `LiveMetrics` view for the dashboard and REST API.
-7. Stop / pause / resume / duration adjustments still flow through the existing `/api/v1/tests/...` endpoints.
-8. On completion, generators expose archive artifacts over gRPC and the controller merges them into one controller-local archive bundle.
-```
+| State family | Local/dev owner | Enterprise owner | Notes |
+| --- | --- | --- | --- |
+| Domains, repositories, categories, projects, releases, folders | SQLite | PostgreSQL | Authoritative control-plane metadata |
+| Scripts, authoring sessions, imports, review artifacts | SQLite | PostgreSQL | JSON DSL plus import metadata and health signals |
+| Scenarios, schedules, approvals, occurrences, leases | SQLite | PostgreSQL | Scheduler HA uses durable database leases, not Redis-only locks |
+| Queued and terminal run metadata | SQLite | PostgreSQL | Active in-process state is reconciled from durable records on restart |
+| Live run snapshots and generator inventory cache | Memory | Redis/Valkey | Ephemeral, short TTL, not a system of record |
+| Idempotency keys and API-key rate limits | Memory | Redis/Valkey | Optional request coordination layer |
+| WebSocket fanout | Local hub | Redis/Valkey fanout bus plus local hubs | Enables multi-controller live event propagation |
+| Full run evidence | Filesystem archive root | S3, Azure Blob, or GCS | Immutable manifests, JSONL, CSV, Parquet, browser evidence, reports |
+| Long-term operations metrics | Local scrape | Prometheus remote-write target | High-cardinality raw transaction evidence stays in archives |
 
-Current distributed implementation details:
+Configuration entry points include `STORMRUNNER_STORE`, `STORMRUNNER_DATABASE_URL`, `STORMRUNNER_ARCHIVE_BACKEND`, `STORMRUNNER_CACHE_BACKEND`, `STORMRUNNER_REDIS_URL`, and Prometheus remote-write settings.
 
-- Group fan-out is implemented at the controller backend layer, not by changing the public test model.
-- Metrics aggregation happens before publishing `metrics_update`, so the dashboard still sees one test-level stream.
-- Group-level scale requests are routed to the owning generator.
-- Archive/report handlers remain local-filesystem based; the distributed backend stages remote data into the controller archive root under `remote/<test-id>`.
+## Controller Internals
 
-## Engine Execution Flow
-
-```
-┌────────────────────────────────────────┐
-│ Engine.Run(ctx context.Context)        │
-└────────────┬───────────────────────────┘
-             │
-             ▼
-┌────────────────────────────────────────┐
-│ Initialize MetricsCollector            │
-│ Start metrics aggregation goroutine    │
-└────────────┬───────────────────────────┘
-             │
-             ▼
-┌────────────────────────────────────────┐
-│ For each VUser (i = 0 to N-1):         │
-│   Calculate scheduled start time       │
-│   Launch VUser goroutine               │
-│     └─ VUser.Run()                     │
-└────────────┬───────────────────────────┘
-             │
-       ┌─────┴──────┐
-       │ Pacing     │
-       │ Algorithm  │
-       └──────┬─────┘
-              │
-       ┌──────▼────────────┐
-       │ Init phase        │
-       │ Execute init[]    │
-       │ Extract vars      │
-       └──────┬────────────┘
-              │
-       ┌──────▼────────────┐
-       │ Ramp-up delay    │
-       │ (sleep until     │
-       │  scheduled start) │
-       └──────┬────────────┘
-              │
-       ┌──────▼────────────┐
-       │ Steady-state loop │
-       │ for action in     │
-       │   script.actions[]│
-       │ {                 │
-       │   Template        │
-       │   Execute         │
-       │   Extract         │
-       │   Assert          │
-       │   Record metrics  │
-       │   Think time      │
-       │ }                 │
-       └──────┬────────────┘
-              │
-       ┌──────▼────────────┐
-       │ Teardown phase    │
-       │ Execute teardown[]│
-       └──────┬────────────┘
-              │
-       ┌──────▼────────────┐
-       │ Signal completion │
-       │ Goroutine exit    │
-       └─────────┬─────────┘
-                 │
-    ┌────────────▼──────────────┐
-    │ Main goroutine waits for  │
-    │ all VUsers to complete    │
-    │ or context cancellation   │
-    └────────────┬──────────────┘
-                 │
-    ┌────────────▼──────────────┐
-    │ Compute final snapshot    │
-    │ Return RunResult          │
-    └────────────┬──────────────┘
-                 │
-                 ▼
-            ┌──────────┐
-            │ Done     │
-            └──────────┘
+```text
+HTTP server
+  |
+  +-- Middleware
+  |     +-- CORS, logging, auth, project/domain/repository RBAC
+  |     +-- dev Admin/User preview headers in dev mode
+  |     +-- service-account scope checks, rate limits, idempotency keys
+  |
+  +-- API handlers
+  |     +-- domains/repositories/projects/releases
+  |     +-- scripts/imports/authoring/replay
+  |     +-- scenarios/load models/schedules
+  |     +-- tests/live controls/results/archives
+  |     +-- system readiness/inventory/usage/parity
+  |
+  +-- TestRunner
+  |     +-- local execution backend
+  |     +-- distributed execution backend
+  |     +-- live metric publication and archive finalization
+  |
+  +-- WebSocket hub
+        +-- local client filtering by project/test
+        +-- optional Redis fanout envelope for HA controllers
 ```
 
-## Metrics Collection Architecture
+`GET /api/v1/system/readiness` is the production traffic gate. It checks metadata store, archive writer, cache backend, generator RPC state, telemetry fanout, auth mode, and scheduler state. `GET /api/v1/system/inventory` reports controller, generator, and data-platform configuration without exposing secrets.
 
-```
-┌──────────────────────────────────────────────────┐
-│         VUser Goroutines (1 per user)            │
-├──────────────────────────────────────────────────┤
-│                                                   │
-│  ┌──────────────┐  ┌──────────────┐             │
-│  │   G1         │  │   G2         │  ... G100   │
-│  │              │  │              │             │
-│  │ Execute()    │  │ Execute()    │             │
-│  │   ↓          │  │   ↓          │             │
-│  │ Record:      │  │ Record:      │             │
-│  │ - Latency    │  │ - Latency    │             │
-│  │ - Status     │  │ - Status     │             │
-│  │ - Errors     │  │ - Errors     │             │
-│  └──────┬───────┘  └──────┬───────┘             │
-│         │                 │                      │
-│         └────────┬────────┘                      │
-│                  │                               │
-└──────────────────┼───────────────────────────────┘
-                   │ Send via buffered channel
-                   │ (capacity 10,000)
-                   │ (Non-blocking with drop detection)
-                   ▼
-        ┌──────────────────────────┐
-        │ Metrics Channel          │
-        │ [Sample, Sample, ...]    │
-        │ (FIFO queue)             │
-        └──────────────┬───────────┘
-                       │
-         ┌─────────────┴──────────────┐
-         │ Metrics Aggregation        │
-         │ Goroutine                  │
-         │                            │
-         │ Read from channel          │
-         │ ↓                          │
-         │ Update t-digest            │
-         │ (streaming percentiles)    │
-         │ ↓                          │
-         │ Compute window stats       │
-         │ - Last 5s snapshot         │
-         │ - Last 60s aggregate       │
-         │ - Overall stats            │
-         │ ↓                          │
-         │ Emit to WebSocket hub      │
-         │ Type: metrics_update       │
-         │ Every 1-5 seconds          │
-         └────────────┬───────────────┘
-                      │
-        ┌─────────────▼──────────────┐
-        │ WebSocket Hub              │
-        │ Broadcast to dashboard     │
-        │ + other subscribers        │
-        └─────────────┬──────────────┘
-                      │
-        ┌─────────────▼──────────────┐
-        │ Dashboard (Browser)        │
-        │ Recharts graph updates     │
-        │ Real-time metrics display  │
-        └────────────────────────────┘
+## Execution Modes
+
+### Local Mode
+
+If `STORMRUNNER_GENERATORS` is not configured, the controller runs tests in-process through the same engine used by `stormctl`. This is the default for development and small diagnostic runs.
+
+### Distributed Mode
+
+If `STORMRUNNER_GENERATORS` is configured, the controller uses the distributed backend:
+
+1. The controller validates the run, load model, capacity, data fit, and placement constraints.
+2. Groups are assigned to generator targets, with support for drain/cordon state and region-weighted placement.
+3. Generators execute assigned groups and stream `MetricsBatch` snapshots over gRPC.
+4. The controller merges generator metrics into one `LiveMetrics` view.
+5. Live controls such as stop, abort, pause, resume, duration adjustment, and per-group VUser scale are routed to the owning generator.
+6. On completion, generators expose archive artifacts and the controller stages/merges them into the run archive.
+
+The public REST and WebSocket contracts are the same in local and distributed mode.
+
+## Load Engine
+
+The engine uses one goroutine per virtual user. Each VUser executes a JSON DSL script through the selected protocol implementation.
+
+```text
+Run starts
+  -> init actions
+  -> ramp and pacing controls
+  -> iteration loop
+       -> resolve templates and data rows
+       -> execute protocol action
+       -> extract variables
+       -> evaluate assertions
+       -> record metric sample
+       -> apply think time and pacing
+  -> teardown actions
+  -> final metrics and archive flush
 ```
 
-## T-Digest Percentile Algorithm
+Metrics flow through buffered channels and are aggregated into streaming percentile summaries. The hot path avoids database writes for raw transaction events; full-fidelity evidence is written to archive artifacts.
 
-The engine uses t-digest for streaming percentile computation:
+## Protocol And Import Architecture
 
-```
-Why t-digest?
-- Memory efficient: O(k) where k ≈ 100 (not O(n) for all samples)
-- Streaming: Can compute percentiles on-the-fly without storing all samples
-- Accurate: Trade-off between accuracy and memory
+Protocols implement the compiled-in `pkg/protocol.Protocol` interface and are registered in `pkg/protocol/registry.go`. Current protocol/runtime surfaces include:
 
-How it works:
-1. Centroids: Group similar latency values into centroids
-2. Merge: As new samples arrive, merge into nearest centroid
-3. Compute: Interpolate p50, p95, p99 from centroid distribution
+- HTTP/1.1 and HTTP/2
+- SOAP and WSDL import
+- Java-over-HTTP bounded codec support
+- WebSocket
+- gRPC
+- JMS Solace and IBM MQ
+- database and network protocol import/runtime paths where supported
+- browser replay and browser canary diagnostics
 
-Example:
-Latency samples: [10, 15, 20, 25, 30, 100, 105, 110, 1000]
+Script inputs can be created directly in the dashboard, through REST, through `stormctl`, or by import. Import surfaces include LoadRunner/VuGen ZIP, JMeter, DevWeb, HAR, OpenAPI/Swagger, WSDL, raw HTTP, cURL, REST JSON, and sample packs.
 
-t-digest groups into centroids:
-- Centroid 1: ~17 (center, weight 4)
-- Centroid 2: ~105 (center, weight 3)
-- Centroid 3: ~1000 (center, weight 1)
+The LoadRunner importer is protocol-aware. It classifies known VuGen protocol families, returns confidence/signals/conflicts, routes executable protocols to native Stormrunner targets, and creates review artifacts for external-runner or unsupported protocols instead of pretending they are executable.
 
-p50: ~25 (median of distribution)
-p95: ~105 (95th percentile)
-p99: ~1000 (99th percentile)
-```
+## Authoring, Replay, And AI Assistance
 
-## Protocol Extension Points
+Authoring state is represented by stored scripts and authoring sessions. The dashboard emphasizes the script editor as the primary workspace, with runtime settings, replay output, parameter data, and script configuration surfaced through focused dialogs.
 
-Adding a new protocol (e.g., WebSocket, gRPC):
+Key authoring services:
 
-```
-1. Create pkg/protocol/myproto/myproto.go
-   ├─ type MyProtocol struct { ... }
-   ├─ func (p *MyProtocol) Name() string { return "myproto" }
-   ├─ func (p *MyProtocol) Init(ctx, config) error { ... }
-   ├─ func (p *MyProtocol) Execute(ctx, action) (*Result, error) { ... }
-   ├─ func (p *MyProtocol) Teardown(ctx) error { ... }
-   └─ func (p *MyProtocol) HealthCheck(ctx) error { ... }
+- template-backed script creation for supported protocols
+- validation and replay for draft and saved scripts
+- browser replay sessions with evidence capture
+- guided correlation repair preview/apply flows
+- migrated-script review and approval before promotion
+- deterministic AI-assisted drafts, repairs, explanations, policy checks, review queue, and evidence-bound root-cause summaries
 
-2. Register in pkg/protocol/registry.go
-   └─ RegisterProtocol(new(myproto.MyProtocol))
+AI workflows are governed by policy and cite local script, scenario, runtime, or archive evidence. External LLM provider integration is intentionally policy-gated.
 
-3. Update DSL parser to accept "myproto" as config.protocol value
+## Load Modeling And Scheduling
 
-4. VUsers automatically use the protocol when script specifies it
-```
+Scenarios compose one or more scripts, load model settings, data pools, runtime overrides, goals, and placement preferences. Scenario validation returns compiled load plans, capacity fit, data fit, placement fit, and blocking findings.
 
-## Kubernetes Deployment Architecture
+The scheduler persists schedules, revisions, occurrences, approvals, missed-run policy, conflict summaries, and health status. High-cost, off-hours, production, quota-burst, or manually reviewed schedules can require approval. Durable database leases provide singleton scheduler ownership in HA deployments.
 
-```
-┌────────────────────────────────────────────────┐
-│         Kubernetes Cluster (AKS)               │
-├────────────────────────────────────────────────┤
-│                                                │
-│  ┌─────────────────────────────────────────┐  │
-│  │  Controller Deployment (2 replicas)     │  │
-│  │  - Pod 1 (Stormrunner controller)      │  │
-│  │  - Pod 2 (Stormrunner controller)      │  │
-│  │  Services: HTTP :8080                  │  │
-│  │  Runtime: local mode or distributed    │  │
-│  │  mode via STORMRUNNER_GENERATORS       │  │
-│  └─────────────────────────────────────────┘  │
-│                  ↓ gRPC assign/control/metrics│
-│  ┌─────────────────────────────────────────┐  │
-│  │  Generator StatefulSet (1-50 replicas)  │  │
-│  │  - Pod generator-0 (10k VUsers)        │  │
-│  │  - Pod generator-1 (10k VUsers)        │  │
-│  │  - Pod generator-N (up to 50)          │  │
-│  │  Auto-scaling via HPA                  │  │
-│  │  Exposes assign, control, metrics,     │  │
-│  │  heartbeat, and archive artifact RPCs  │  │
-│  └─────────────────────────────────────────┘  │
-│                                                │
-│  ┌─────────────────────────────────────────┐  │
-│  │  PostgreSQL (RDS)                       │  │
-│  │  - Test metadata                        │  │
-│  │  - Script definitions                   │  │
-│  │  - Results archive                      │  │
-│  └─────────────────────────────────────────┘  │
-│                                                │
-│  ┌─────────────────────────────────────────┐  │
-│  │  Redis (ElastiCache)                    │  │
-│  │  - Session state (live tests)           │  │
-│  │  - Real-time metrics cache              │  │
-│  └─────────────────────────────────────────┘  │
-│                                                │
-│  ┌─────────────────────────────────────────┐  │
-│  │  Azure Blob Storage                     │  │
-│  │  - Test results (JSON/Parquet)         │  │
-│  │  - HAR recordings                       │  │
-│  └─────────────────────────────────────────┘  │
-│                                                │
-│  ┌─────────────────────────────────────────┐  │
-│  │  OpenTelemetry Exporter                │  │
-│  │    ↓ Prometheus/Dynatrace/ELK          │  │
-│  └─────────────────────────────────────────┘  │
-│                                                │
-└────────────────────────────────────────────────┘
-```
+## Monitoring And Reporting
 
-## Performance Characteristics
+Live monitoring is fed by WebSocket events:
 
-| Metric | Value | Notes |
-|--------|-------|-------|
-| VUsers per pod | ~10,000 | HTTP; memory-bound (~2–4 KB per goroutine) |
-| Throughput (HTTP) | ~5,000–10,000 req/sec | Per pod; protocol/target dependent |
-| Latency overhead | < 50 μs | Harness overhead per transaction |
-| Metrics latency | < 2 sec | Metrics collection to dashboard display |
-| Ramp-up rate | ~500 VUsers/sec | Smooth scheduling via pacing algorithm |
-| Memory per VUser | ~2–4 KB | Goroutine stack + buffers |
-| CPU per pod | 4 vCPU | For 10k VUsers at steady load |
-| RAM per pod | 8 GB | For 10k VUsers + buffers |
+- `metrics_update`
+- lifecycle events such as created, started, paused, resumed, complete, failed
+- telemetry diagnostics and threshold alerts
+- browser and resource summaries where available
+
+Completed runs write archive bundles with manifests, transaction/resource/summary datasets, browser diagnostics, JSONL/CSV/Parquet exports, HTML/JSON/CSV reports, root-cause summaries, and comparison views. Report profiles support executive, engineer, and audit-oriented outputs.
+
+Usage accounting snapshots, archive retention planning/apply events, release trends, parity status, fleet alerts, and support matrices are exposed through REST and dashboard views.
+
+## Auth, RBAC, And Automation
+
+Stormrunner supports:
+
+- dev mode for local bypass plus dashboard Admin/User preview toggle
+- trusted-header mode for upstream identity gateways
+- OIDC mode
+- service-account API keys for MCP, CI/CD, import automation, and system administration
+- global, domain, application repository, and project-scoped roles
+- scope enforcement for service-account tokens
+- audit events for governance-sensitive operations
+
+Dev preview headers are honored only in dev mode and ignored by trusted-header/OIDC production modes.
+
+## Enterprise Deployment
+
+Production reference deployment uses:
+
+- two or more controller replicas behind a service
+- PostgreSQL 16 or newer for metadata and leases
+- Redis/Valkey for live state, request coordination, and WebSocket fanout
+- object storage for immutable archives
+- Prometheus scraping and optional remote-write to Mimir, Thanos, or managed Prometheus
+- generator StatefulSets with autoscaling signals and region/capability metadata
+- readiness probes on `/api/v1/system/readiness`
+
+Examples live under `deployments/k8s/`, including production data-platform settings, monitoring manifests, HA controller deployment, and Redis/Valkey reference manifests.
+
+## Performance Targets
+
+| Metric | Target | Notes |
+| --- | --- | --- |
+| HTTP VUsers per generator pod | 10,000 | Target envelope for 4 vCPU / 8 GB class pods |
+| Generator pod scale | 1 to 50 | HPA/KEDA signals documented for production tuning |
+| HTTP harness overhead | < 50 microseconds | Per transaction target |
+| Metrics latency | < 2 seconds | Generator/controller collection to dashboard display |
+| Ramp-up rate | 500 VUsers/second/pod | Protocol and target dependent |
+| Browser VUsers | diagnostic canaries | Not intended as HTTP-density load generators |
+
+Protocol-specific density envelopes and benchmark evidence are tracked in the support matrix and browser benchmark documents.
+
+## Extension Points
+
+| Extension | Primary files |
+| --- | --- |
+| Protocol runtime | `pkg/protocol`, `pkg/protocol/registry.go` |
+| Script import converter | `pkg/convert`, `pkg/api/handlers_scripts.go` |
+| API endpoint | `pkg/api/server.go`, matching handler/test file |
+| Dashboard page or workflow | `dashboard/src/` |
+| Storage schema/contract | `pkg/storage` |
+| MCP tool coverage | `mcp/stormrunner_mcp/` |
+| Deployment shape | `deployments/k8s/` |
+
+New features should include tests alongside the changed package and documentation updates for changed public behavior.
+
+## Current Status
+
+Implemented and active:
+
+- controller API and embedded dashboard
+- local and distributed execution
+- JSON DSL, protocol registry, import routing, validation, replay
+- domain/application repository/category/project/release hierarchy
+- Auth/RBAC, service accounts, audit events, dev Admin/User preview
+- scenario load modeling, scheduling governance, approvals, occurrences
+- runtime controls, telemetry diagnostics, archive reports, comparison reports
+- PostgreSQL store option, object archive backends, Redis/Valkey cache option
+- Prometheus-compatible monitoring artifacts
+- MCP API bridge
+
+Deliberate boundaries:
+
+- SQLite, filesystem archives, and memory cache remain the local defaults.
+- PostgreSQL, object storage, and Redis/Valkey are the enterprise shared-deployment path.
+- Redis/Valkey is not authoritative durable state.
+- Raw high-cardinality transaction evidence belongs in archive artifacts, not SQL or Redis.
+- Browser VUsers are diagnostic canaries, not the primary high-density load mechanism.
