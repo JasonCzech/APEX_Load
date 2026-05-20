@@ -4,6 +4,14 @@ const quickStartCommands = [
   'curl -X POST -H "Authorization: Bearer $STORMRUNNER_API_KEY" -H "Content-Type: application/json" -d @script.json http://localhost:8080/api/v1/scripts',
 ]
 
+const mcpResources = [
+  'stormrunner://api-guide',
+  'stormrunner://auth/access-matrix',
+  'stormrunner://system/parity-status',
+  'stormrunner://runtime-settings/support-matrix',
+  'stormrunner://protocol-bundles/support-matrix',
+]
+
 const authRows = [
   ['GET', '/api/v1/auth/me', 'Current auth mode, user, roles, and session metadata.'],
   ['GET', '/api/v1/auth/effective-access', 'Operations allowed for the current principal.'],
@@ -112,6 +120,38 @@ export default function ApiGuidePage() {
           <div><span>Auth</span><strong>Dev, trusted headers, OIDC, service accounts</strong></div>
           <div><span>Payloads</span><strong>JSON plus CSV, HTML, ZIP, and archive downloads</strong></div>
           <div><span>Streams</span><strong>WebSocket at /api/v1/ws</strong></div>
+          <div><span>MCP</span><strong>FastMCP bridge for agent and CI automation</strong></div>
+        </div>
+      </section>
+
+      <section className="page-section api-guide-mcp-section">
+        <div className="api-guide-section-header">
+          <h3>MCP Server</h3>
+          <p>Run the Stormrunner MCP bridge for agent-driven automation. It uses service-account auth and adds confirmation guardrails before mutating API calls.</p>
+        </div>
+        <div className="api-guide-mcp-grid">
+          <article className="api-guide-mcp-card">
+            <h4>Start The Server</h4>
+            <pre><code>{'STORMRUNNER_URL=http://localhost:8080/api/v1 \\\nSTORMRUNNER_API_KEY=srk_... \\\npython3 mcp/server.py'}</code></pre>
+            <a href="https://github.com/jasonczech/stormrunner/blob/main/mcp/README.md" target="_blank" rel="noreferrer">MCP setup guide</a>
+          </article>
+          <article className="api-guide-mcp-card">
+            <h4>Tool Coverage</h4>
+            <p>Structured tools cover system, auth, projects, scripts, scenarios, runs, reports, scheduling, fleet, data pools, imports, and AI assistance.</p>
+            <div className="api-guide-mcp-tags">
+              <span>service accounts</span>
+              <span>confirm=true</span>
+              <span>reason required</span>
+            </div>
+          </article>
+          <article className="api-guide-mcp-card">
+            <h4>Agent Resources</h4>
+            <ul>
+              {mcpResources.map(resource => (
+                <li key={resource}><code>{resource}</code></li>
+              ))}
+            </ul>
+          </article>
         </div>
       </section>
 
