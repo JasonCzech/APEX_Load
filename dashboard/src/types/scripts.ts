@@ -118,6 +118,7 @@ export interface HTTPConfig {
     url?: string
     username?: string
     password?: string
+    no_proxy?: string[]
   }
   auth?: {
     type?: string

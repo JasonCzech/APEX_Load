@@ -2,6 +2,7 @@ package engine
 
 import (
 	"math/rand"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -11,6 +12,7 @@ import (
 )
 
 const defaultDateTimeLayout = "2006-01-02 15:04:05"
+const defaultTimeLayout = "15:04:05"
 
 type ParameterRuntime struct {
 	params   map[string]dsl.Parameter
@@ -142,7 +144,7 @@ func (pr *ParameterRuntime) refresh(name string) {
 }
 
 func (pr *ParameterRuntime) generate(param dsl.Parameter, state *parameterState) (string, bool) {
-	switch param.Type {
+	switch dsl.CanonicalParameterType(param.Type) {
 	case "file", "list":
 		values, ok := pr.valuesForParameter(param, state)
 		if !ok || len(values) == 0 {
@@ -159,6 +161,16 @@ func (pr *ParameterRuntime) generate(param dsl.Parameter, state *parameterState)
 		layout := param.Format
 		if layout == "" {
 			layout = defaultDateTimeLayout
+		}
+		return now.Format(layout), true
+	case "time":
+		now, ok := resolveParameterTime(pr.now, param)
+		if !ok {
+			return "", false
+		}
+		layout := param.Format
+		if layout == "" {
+			layout = defaultTimeLayout
 		}
 		return now.Format(layout), true
 	case "timestamp":
@@ -179,23 +191,18 @@ func (pr *ParameterRuntime) generate(param dsl.Parameter, state *parameterState)
 			return now.Format(param.Format), true
 		}
 	case "counter":
-		if !state.seeded {
-			state.counter = param.Start
-			state.seeded = true
+		return generateCounterValue(param, state)
+	case "current_iteration":
+		iterationParam := param
+		if iterationParam.Start == 0 {
+			iterationParam.Start = 1
 		}
-		current := state.counter
-		if isCounterExhausted(current, param) {
-			handled, ok := handleCounterExhaustion(param, state)
-			if !ok {
-				return "", false
-			}
-			if handled == "" && effectiveOnExhaustion(param) == "empty" {
-				return "", true
-			}
-			current = state.counter
+		if iterationParam.Step == 0 {
+			iterationParam.Step = 1
 		}
-		state.counter += param.Step
-		return formatNumericValue(current, param), true
+		return generateCounterValue(iterationParam, state)
+	case "host":
+		return generateHostValue(param)
 	case "uuid":
 		return uuid.NewString(), true
 	case "random_string":
@@ -203,6 +210,39 @@ func (pr *ParameterRuntime) generate(param dsl.Parameter, state *parameterState)
 	default:
 		return "", false
 	}
+}
+
+func generateCounterValue(param dsl.Parameter, state *parameterState) (string, bool) {
+	if !state.seeded {
+		state.counter = param.Start
+		state.seeded = true
+	}
+	current := state.counter
+	if isCounterExhausted(current, param) {
+		handled, ok := handleCounterExhaustion(param, state)
+		if !ok {
+			return "", false
+		}
+		if handled == "" && effectiveOnExhaustion(param) == "empty" {
+			return "", true
+		}
+		current = state.counter
+	}
+	state.counter += param.Step
+	return formatNumericValue(current, param), true
+}
+
+func generateHostValue(param dsl.Parameter) (string, bool) {
+	for _, value := range param.Values {
+		if strings.TrimSpace(value) != "" {
+			return value, true
+		}
+	}
+	hostname, err := os.Hostname()
+	if err == nil && strings.TrimSpace(hostname) != "" {
+		return hostname, true
+	}
+	return "localhost", true
 }
 
 func resolveParameterTime(now func() time.Time, param dsl.Parameter) (time.Time, bool) {

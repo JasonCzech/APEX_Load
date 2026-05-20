@@ -490,6 +490,22 @@ interface EditorHistory {
 type DataSourceConfig = ScriptDataSource
 type ParameterConfig = ScriptParameterDefinition
 
+const TIMESTAMP_PARAMETER_FORMATS = new Set(['unix', 'unix_ms', 'iso8601', 'rfc3339', 'rfc3339_nano'])
+
+function parameterFormatForType(nextType: string, currentFormat?: string) {
+  const format = currentFormat || ''
+  if (nextType === 'timestamp') {
+    return TIMESTAMP_PARAMETER_FORMATS.has(format) ? format : 'iso8601'
+  }
+  if (nextType === 'date_time') {
+    return format && !TIMESTAMP_PARAMETER_FORMATS.has(format) ? format : '2006-01-02 15:04:05'
+  }
+  if (nextType === 'time') {
+    return format && !TIMESTAMP_PARAMETER_FORMATS.has(format) && format !== '2006-01-02 15:04:05' ? format : '15:04:05'
+  }
+  return currentFormat
+}
+
 interface DataSourceHistory {
   past: DataSourceConfig[]
   future: DataSourceConfig[]
@@ -851,6 +867,12 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const isJmsScript = script.protocol === 'jms-solace'
   const isJavaHttpScript = script.protocol === 'java_http'
   const isSoapScript = script.protocol === 'soap'
+  const httpProxyMode = script.config.http?.proxy_mode || 'none'
+  const httpProxySummary = httpProxyMode === 'system'
+    ? 'System proxy'
+    : httpProxyMode === 'custom' && script.config.http?.proxy?.url
+      ? 'Proxy configured'
+      : 'Default'
   const outlineSummary = buildScriptOutlineSummary(script)
   const importMetadata = script.metadata?.import
   const importSummary = getImportSummary(importMetadata)
@@ -2292,13 +2314,10 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         update: current.update || 'each_iteration',
         selection: current.selection || 'sequential',
         on_exhaustion: current.on_exhaustion || 'wrap',
-        step: nextType === 'counter' ? (current.step || 1) : current.step,
+        start: nextType === 'current_iteration' ? (current.start ?? 1) : current.start,
+        step: (nextType === 'counter' || nextType === 'current_iteration') ? (current.step || 1) : current.step,
         length: nextType === 'random_string' ? (current.length || 12) : current.length,
-        format: nextType === 'timestamp'
-          ? (current.format || 'iso8601')
-          : nextType === 'date_time'
-            ? (current.format || '2006-01-02 15:04:05')
-            : current.format,
+        format: parameterFormatForType(nextType, current.format),
       }
       return { ...prev, parameters }
     })
@@ -4131,7 +4150,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                     <span className="section-icon">{'\ud83c\udf10'}</span>
                     <span className="section-label">HTTP Transport</span>
                     <span className="section-summary">
-                      {script.config.http?.proxy?.url ? 'Proxy configured' : script.config.http?.auth?.type ? `Auth: ${script.config.http.auth.type}` : 'Default'}
+                      {httpProxySummary !== 'Default' ? httpProxySummary : script.config.http?.auth?.type ? `Auth: ${script.config.http.auth.type}` : 'Default'}
                     </span>
                     <span className="chevron">{openSections['http'] ? '▾' : '▸'}</span>
                   </button>
@@ -4193,7 +4212,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                         <div className="form-grid">
                           <label>
                             <span>Proxy Mode</span>
-                            <select value={script.config.http?.proxy_mode || 'none'}
+                            <select value={httpProxyMode}
                               onChange={e => updateField('config.http', { ...script.config.http, proxy_mode: e.target.value })}>
                               <option value="none">No Proxy</option>
                               <option value="system">Use system proxy</option>
@@ -4203,7 +4222,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                           <label className="full-width"><span>Proxy URL</span>
                             <input value={script.config.http?.proxy?.url || ''} placeholder="http://proxy:8080"
                               onChange={e => updateField('config.http', { ...script.config.http, proxy: { ...script.config.http?.proxy, url: e.target.value } })} /></label>
-                          {(script.config.http?.proxy_mode || 'none') === 'custom' && script.config.http?.proxy?.url && (
+                          {httpProxyMode === 'custom' && (
                             <>
                               <label><span>Proxy Username</span>
                                 <input value={script.config.http?.proxy?.username || ''}
@@ -4213,6 +4232,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                                   onChange={e => updateField('config.http', { ...script.config.http, proxy: { ...script.config.http?.proxy, password: e.target.value } })} /></label>
                             </>
                           )}
+                          <label className="full-width"><span>Bypass Hosts</span>
+                            <textarea rows={3} value={formatLineList(script.config.http?.proxy?.no_proxy)} placeholder={'localhost\n*.internal.example.com'}
+                              onChange={e => updateField('config.http', { ...script.config.http, proxy: { ...script.config.http?.proxy, no_proxy: parseLineList(e.target.value) } })} /></label>
                         </div>
                       </div>
                       <div className="settings-sub-group">
@@ -4554,7 +4576,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                     <span className="section-icon">RTS</span>
                     <span className="section-label">Web HTTP/HTML Compatibility</span>
                     <span className="section-summary">
-                      {script.config.web_runtime?.content_checks?.length
+                      {httpProxySummary !== 'Default'
+                        ? httpProxySummary
+                        : script.config.web_runtime?.content_checks?.length
                         ? `${script.config.web_runtime.content_checks.length} content checks`
                         : script.config.web_runtime?.network_simulation?.mode || 'Compatibility settings'}
                     </span>
@@ -4564,6 +4588,36 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
                     <div className="section-body">
                       <div className="cell-muted" style={{ marginBottom: 12 }}>
                         These settings are captured in the draft now so Web HTTP/HTML scripts can mirror VuGen RTS coverage even where full APEX Load execution support is still rolling out.
+                      </div>
+                      <div className="settings-sub-group">
+                        <h5>Proxy Routing</h5>
+                        <div className="form-grid">
+                          <label>
+                            <span>Proxy Mode</span>
+                            <select value={httpProxyMode}
+                              onChange={e => updateField('config.http', { ...script.config.http, proxy_mode: e.target.value })}>
+                              <option value="none">No proxy</option>
+                              <option value="system">Use environment proxy</option>
+                              <option value="custom">Custom proxy</option>
+                            </select>
+                          </label>
+                          <label className="full-width"><span>Proxy URL</span>
+                            <input value={script.config.http?.proxy?.url || ''} placeholder="http://proxy.example.test:8080"
+                              onChange={e => updateField('config.http', { ...script.config.http, proxy: { ...script.config.http?.proxy, url: e.target.value } })} /></label>
+                          {httpProxyMode === 'custom' && (
+                            <>
+                              <label><span>Proxy Username</span>
+                                <input value={script.config.http?.proxy?.username || ''}
+                                  onChange={e => updateField('config.http', { ...script.config.http, proxy: { ...script.config.http?.proxy, username: e.target.value } })} /></label>
+                              <label><span>Proxy Password</span>
+                                <input type="password" value={script.config.http?.proxy?.password || ''}
+                                  onChange={e => updateField('config.http', { ...script.config.http, proxy: { ...script.config.http?.proxy, password: e.target.value } })} /></label>
+                            </>
+                          )}
+                          <label className="full-width"><span>Bypass Hosts</span>
+                            <textarea rows={3} value={formatLineList(script.config.http?.proxy?.no_proxy)} placeholder={'localhost\n*.internal.example.com'}
+                              onChange={e => updateField('config.http', { ...script.config.http, proxy: { ...script.config.http?.proxy, no_proxy: parseLineList(e.target.value) } })} /></label>
+                        </div>
                       </div>
                       <div className="settings-sub-group">
                         <h5>Additional Attributes</h5>
@@ -5669,7 +5723,7 @@ function ParameterDefinitionsSection({
       </div>
 
       {(script.parameters?.length || 0) === 0 ? (
-        <div className="parameter-empty-state" style={{ marginBottom: 20 }}>No named parameters defined. Add one for random, date/time, counter, file, or list-driven values.</div>
+        <div className="parameter-empty-state" style={{ marginBottom: 20 }}>No named parameters defined. Add one for random, date/time, host, counter, file, or list-driven values.</div>
       ) : (
         <div className="parameter-table-wrap" style={{ marginBottom: 20 }}>
           <table className="parameter-table">
@@ -5702,6 +5756,9 @@ function ParameterDefinitionsSection({
                       <option value="date_time">date_time</option>
                       <option value="timestamp">timestamp</option>
                       <option value="counter">counter</option>
+                      <option value="current_iteration">current_iteration</option>
+                      <option value="host">host</option>
+                      <option value="time">time</option>
                       <option value="random_string">random_string</option>
                       <option value="uuid">uuid</option>
                     </select>
@@ -5752,9 +5809,9 @@ function ParameterDefinitionsSection({
                           <input type="number" value={parameter.max ?? 100} onChange={e => onUpdateParameter(idx, 'max', Number(e.target.value))} placeholder="max" />
                         </div>
                       )}
-                      {parameter.type === 'counter' && (
+                      {(parameter.type === 'counter' || parameter.type === 'current_iteration') && (
                         <div style={{ display: 'grid', gap: 8 }}>
-                          <input type="number" value={parameter.start ?? 0} onChange={e => onUpdateParameter(idx, 'start', Number(e.target.value))} placeholder="start" />
+                          <input type="number" value={parameter.start ?? (parameter.type === 'current_iteration' ? 1 : 0)} onChange={e => onUpdateParameter(idx, 'start', Number(e.target.value))} placeholder="start" />
                           <input type="number" value={parameter.end ?? 0} onChange={e => onUpdateParameter(idx, 'end', Number(e.target.value))} placeholder="end (optional)" />
                           <input type="number" value={parameter.step ?? 1} onChange={e => onUpdateParameter(idx, 'step', Number(e.target.value))} placeholder="step" />
                         </div>
@@ -5765,12 +5822,19 @@ function ParameterDefinitionsSection({
                           <input value={parameter.charset || ''} onChange={e => onUpdateParameter(idx, 'charset', e.target.value)} placeholder="charset override" />
                         </div>
                       )}
+                      {parameter.type === 'host' && (
+                        <input
+                          value={(parameter.values || []).join(', ')}
+                          onChange={e => onUpdateParameter(idx, 'values', e.target.value.split(',').map(v => v.trim()).filter(Boolean))}
+                          placeholder="host override (optional)"
+                        />
+                      )}
                       {parameter.type === 'uuid' && <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Generated UUID per update cadence.</span>}
                     </div>
                   </td>
                   <td>
                     <div style={{ display: 'grid', gap: 8 }}>
-                      {(parameter.type === 'date_time' || parameter.type === 'timestamp') && (
+                      {(parameter.type === 'date_time' || parameter.type === 'timestamp' || parameter.type === 'time') && (
                         <>
                           {parameter.type === 'timestamp' ? (
                             <select value={parameter.format || 'iso8601'} onChange={e => onUpdateParameter(idx, 'format', e.target.value)}>
@@ -5787,7 +5851,7 @@ function ParameterDefinitionsSection({
                           <input type="number" value={parameter.offset_seconds ?? 0} onChange={e => onUpdateParameter(idx, 'offset_seconds', Number(e.target.value))} placeholder="offset seconds" />
                         </>
                       )}
-                      {(parameter.type === 'counter' || parameter.type === 'random_number') && (
+                      {(parameter.type === 'counter' || parameter.type === 'current_iteration' || parameter.type === 'random_number') && (
                         <>
                           <input type="number" value={parameter.pad_width ?? 0} onChange={e => onUpdateParameter(idx, 'pad_width', Number(e.target.value))} placeholder="pad width" />
                           <input value={parameter.pad_char || ''} onChange={e => onUpdateParameter(idx, 'pad_char', e.target.value)} placeholder="pad char" />

@@ -40,6 +40,12 @@ func TestValidateScriptIssues_ParametersAllowsSupportedValues(t *testing.T) {
 		},
 		Parameters: []Parameter{
 			{Name: "account_id", Type: "counter", Update: "each_iteration", Step: 1, Start: 1000, End: 1002, OnExhaustion: "wrap", PadWidth: 6},
+			{Name: "iteration", Type: "current_iteration", Update: "each_iteration", PadWidth: 4},
+			{Name: "lg_name", Type: "host", Update: "once"},
+			{Name: "clock", Type: "time", Format: "15:04:05", Timezone: "UTC"},
+			{Name: "lr_iteration_alias", Type: "CurrentIteration", Update: "each_iteration"},
+			{Name: "lr_host_alias", Type: "Host", Update: "once"},
+			{Name: "lr_time_alias", Type: "Time", Format: "15:04:05"},
 			{Name: "region", Type: "list", Selection: "random", Values: []string{"us-east-1", "us-west-2"}, Seed: &seed},
 			{Name: "username", Type: "file", DataSource: "users", Column: "username", Selection: "unique", OnExhaustion: "wrap"},
 			{Name: "timestamp", Type: "timestamp", Format: "iso8601", Timezone: "UTC"},

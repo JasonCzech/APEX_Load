@@ -393,7 +393,7 @@ type DataSource struct {
 
 type Parameter struct {
 	Name          string   `json:"name"`
-	Type          string   `json:"type"` // "file", "list", "random_number", "date_time", "timestamp", "counter", "uuid", "random_string"
+	Type          string   `json:"type"` // "file", "list", "random_number", "date_time", "timestamp", "counter", "current_iteration", "host", "time", "uuid", "random_string"
 	Update        string   `json:"update,omitempty"`
 	Selection     string   `json:"selection,omitempty"`
 	OnExhaustion  string   `json:"on_exhaustion,omitempty"`

@@ -47,19 +47,36 @@ func ParseParameterFile(filename, content string, archiveFiles map[string]string
 		}
 		rawType := strings.ToLower(firstNonEmpty(lower["type"], lower["valuetype"], lower["datatype"], lower["paramtype"]))
 		switch {
+		case isLoadRunnerCurrentIterationType(rawType):
+			param.Type = "current_iteration"
+			param.Update = "each_iteration"
+			param.Start = atoiDefault(firstNonEmpty(lower["startvalue"], lower["start"]), 1)
+			param.Step = atoiDefault(firstNonEmpty(lower["increment"], lower["step"]), 1)
+			param.PadWidth = loadRunnerIntegerFormatPadWidth(lower["format"])
+		case isLoadRunnerHostType(rawType):
+			param.Type = "host"
+			param.Update = "once"
+			if originalValue := firstNonEmpty(lower["originalvalue"]); originalValue != "" {
+				param.Values = []string{originalValue}
+			}
 		case strings.Contains(rawType, "random") && strings.Contains(rawType, "number"):
 			param.Type = "random_number"
 			param.Min = atoiDefault(firstNonEmpty(lower["minimumvalue"], lower["min"], lower["startvalue"]), 0)
 			param.Max = atoiDefault(firstNonEmpty(lower["maximumvalue"], lower["max"], lower["endvalue"]), 100)
 		case strings.Contains(rawType, "date"):
 			param.Type = "date_time"
-			param.Format = firstNonEmpty(lower["format"], lower["dateformat"], lower["datetimeformat"])
+			param.Format = mapLoadRunnerTimeFormat(firstNonEmpty(lower["format"], lower["dateformat"], lower["datetimeformat"]))
 			param.Timezone = firstNonEmpty(lower["timezone"], lower["time_zone"])
 			param.OffsetSeconds = atoiDefault(firstNonEmpty(lower["offsetseconds"], lower["offset"]), 0)
 		case strings.Contains(rawType, "timestamp") || strings.Contains(rawType, "time stamp"):
 			param.Type = "timestamp"
-			param.Format = firstNonEmpty(lower["format"], lower["timestampformat"])
+			param.Format = mapLoadRunnerTimestampFormat(firstNonEmpty(lower["format"], lower["timestampformat"]))
 			param.Timezone = firstNonEmpty(lower["timezone"], lower["time_zone"])
+			param.OffsetSeconds = atoiDefault(firstNonEmpty(lower["offsetseconds"], lower["offset"]), 0)
+		case isLoadRunnerTimeType(rawType):
+			param.Type = "time"
+			param.Format = mapLoadRunnerTimeFormat(firstNonEmpty(lower["format"], lower["dateformat"], lower["datetimeformat"]))
+			param.Timezone = firstNonEmpty(lower["timezone"], lower["time_zone"], loadRunnerTimeFormatTimezone(param.Format))
 			param.OffsetSeconds = atoiDefault(firstNonEmpty(lower["offsetseconds"], lower["offset"]), 0)
 		case strings.Contains(rawType, "counter") || lower["increment"] != "":
 			param.Type = "counter"
@@ -113,7 +130,7 @@ func ParseParameterFile(filename, content string, archiveFiles map[string]string
 				param.OnExhaustion = "wrap"
 			}
 		}
-		if param.Type == "counter" && param.Step == 0 {
+		if (param.Type == "counter" || param.Type == "current_iteration") && param.Step == 0 {
 			param.Step = 1
 		}
 		if param.Type != "" {
@@ -179,6 +196,94 @@ func atoiDefault(value string, fallback int) int {
 		return fallback
 	}
 	return parsed
+}
+
+func isLoadRunnerCurrentIterationType(rawType string) bool {
+	normalized := normalizeParameterType(rawType)
+	return normalized == "currentiteration" || normalized == "currentiterationnumber"
+}
+
+func isLoadRunnerHostType(rawType string) bool {
+	normalized := normalizeParameterType(rawType)
+	return normalized == "host" || normalized == "hostname" || normalized == "loadgenerator" || normalized == "loadgeneratorname"
+}
+
+func isLoadRunnerTimeType(rawType string) bool {
+	normalized := normalizeParameterType(rawType)
+	return normalized == "time" || normalized == "datetime"
+}
+
+func normalizeParameterType(rawType string) string {
+	return strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			return r
+		}
+		return -1
+	}, strings.ToLower(cleanConfigValue(rawType)))
+}
+
+func loadRunnerIntegerFormatPadWidth(format string) int {
+	format = cleanConfigValue(format)
+	if !strings.HasPrefix(format, "%0") || !strings.HasSuffix(format, "d") {
+		return 0
+	}
+	width := strings.TrimSuffix(strings.TrimPrefix(format, "%0"), "d")
+	return atoiDefault(width, 0)
+}
+
+func mapLoadRunnerTimestampFormat(format string) string {
+	format = cleanConfigValue(format)
+	switch strings.ToLower(format) {
+	case "", "%s":
+		return "unix"
+	case "%q", "%ms", "%3":
+		return "unix_ms"
+	default:
+		return mapLoadRunnerTimeFormat(format)
+	}
+}
+
+func mapLoadRunnerTimeFormat(format string) string {
+	format = cleanConfigValue(format)
+	if format == "" {
+		return ""
+	}
+	replacements := []struct {
+		from string
+		to   string
+	}{
+		{"%%", "\x00"},
+		{"%Y", "2006"},
+		{"%y", "06"},
+		{"%m", "01"},
+		{"%d", "02"},
+		{"%e", "_2"},
+		{"%H", "15"},
+		{"%I", "03"},
+		{"%M", "04"},
+		{"%S", "05"},
+		{"%b", "Jan"},
+		{"%B", "January"},
+		{"%a", "Mon"},
+		{"%A", "Monday"},
+		{"%p", "PM"},
+		{"%z", "-0700"},
+		{"%Z", "MST"},
+	}
+	mapped := format
+	for _, replacement := range replacements {
+		mapped = strings.ReplaceAll(mapped, replacement.from, replacement.to)
+	}
+	mapped = strings.ReplaceAll(mapped, "\x00", "%")
+	return mapped
+}
+
+func loadRunnerTimeFormatTimezone(format string) string {
+	format = cleanConfigValue(format)
+	if strings.HasSuffix(format, "Z") && !strings.Contains(format, "MST") && !strings.Contains(format, "-0700") {
+		return "UTC"
+	}
+	return ""
 }
 
 func mapParameterUpdate(value string) string {

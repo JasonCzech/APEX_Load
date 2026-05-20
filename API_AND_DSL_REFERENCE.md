@@ -1026,6 +1026,24 @@ See [docs/LOADRUNNER_RTS_REFERENCE.md](docs/LOADRUNNER_RTS_REFERENCE.md) for the
       "timezone": "UTC"
     },
     {
+      "name": "iteration_no",
+      "type": "current_iteration",
+      "update": "each_iteration",
+      "pad_width": 4
+    },
+    {
+      "name": "lg_name",
+      "type": "host",
+      "update": "once"
+    },
+    {
+      "name": "request_time",
+      "type": "time",
+      "update": "each_iteration",
+      "format": "15:04:05",
+      "timezone": "UTC"
+    },
+    {
       "name": "username",
       "type": "file",
       "update": "each_iteration",
@@ -1040,7 +1058,7 @@ See [docs/LOADRUNNER_RTS_REFERENCE.md](docs/LOADRUNNER_RTS_REFERENCE.md) for the
 
 **Parameter options:**
 - `name`: Parameter name used in templates
-- `type`: `file`, `list`, `random_number`, `date_time`, `timestamp`, `counter`, `uuid`, or `random_string`
+- `type`: `file`, `list`, `random_number`, `date_time`, `timestamp`, `counter`, `current_iteration`, `host`, `time`, `uuid`, or `random_string`
 - `update`: `once`, `each_iteration`, or `each_occurrence`
 - `selection`: For `file` and `list`, `sequential`, `random`, or `unique`
 - `on_exhaustion`: For `file` and `list`, `wrap`, `empty`, or `error`
@@ -1048,9 +1066,14 @@ See [docs/LOADRUNNER_RTS_REFERENCE.md](docs/LOADRUNNER_RTS_REFERENCE.md) for the
 - `values`: Inline list values for `list`
 - `min`, `max`: Bounds for `random_number`
 - `start`, `end`, `step`: Counter configuration
-- `format`, `timezone`, `offset_seconds`: Date/time and timestamp configuration
+- `current_iteration`: LoadRunner-compatible current iteration value, starting at `1` by default and honoring `start`, `step`, `pad_width`, and `pad_char`
+- `host`: LoadRunner-compatible load-generator host value, using the controller/generator hostname by default or `values[0]` as an explicit override
+- `time`: LoadRunner-compatible formatted wall-clock time, using `format`, `timezone`, and `offset_seconds`
+- `format`, `timezone`, `offset_seconds`: Date/time, time, and timestamp configuration
 - `length`, `charset`: Random string configuration
 - `pad_width`, `pad_char`: Left-padding for numeric outputs
+
+APEX uses snake_case canonical parameter types, but script validation and runtime resolution also accept the LoadRunner spellings `CurrentIteration`, `Host`, and `Time` for migration parity.
 
 **Usage in templates:**
 ```json

@@ -469,13 +469,13 @@ func validateParameterIssues(script *Script) []string {
 			seen[name] = struct{}{}
 		}
 
-		paramType := strings.TrimSpace(param.Type)
+		paramType := CanonicalParameterType(param.Type)
 		if paramType == "" {
 			issues = append(issues, fmt.Sprintf("%s %q: type is required", label, name))
 			continue
 		}
-		if !isAllowedValue(paramType, "file", "list", "random_number", "date_time", "timestamp", "counter", "uuid", "random_string") {
-			issues = append(issues, fmt.Sprintf("%s %q: unsupported type %q", label, name, paramType))
+		if !isAllowedValue(paramType, "file", "list", "random_number", "date_time", "timestamp", "counter", "current_iteration", "host", "time", "uuid", "random_string") {
+			issues = append(issues, fmt.Sprintf("%s %q: unsupported type %q", label, name, param.Type))
 		}
 
 		if param.Update != "" && !isAllowedValue(param.Update, "once", "each_iteration", "each_occurrence") {
@@ -507,13 +507,10 @@ func validateParameterIssues(script *Script) []string {
 			if param.Min > param.Max {
 				issues = append(issues, fmt.Sprintf("%s %q: min must be less than or equal to max", label, name))
 			}
-		case "date_time":
-			if strings.TrimSpace(param.Timezone) != "" {
-				if _, err := time.LoadLocation(param.Timezone); err != nil {
-					issues = append(issues, fmt.Sprintf("%s %q: invalid timezone %q", label, name, param.Timezone))
-				}
-			}
+		case "date_time", "time":
+			validateParameterTimezone(&issues, label, name, param.Timezone)
 		case "timestamp":
+			validateParameterTimezone(&issues, label, name, param.Timezone)
 			if param.Format != "" && !isAllowedValue(param.Format, "unix", "unix_ms", "iso8601", "rfc3339", "rfc3339_nano") {
 				issues = append(issues, fmt.Sprintf("%s %q: format must be unix, unix_ms, iso8601, rfc3339, or rfc3339_nano", label, name))
 			}
@@ -529,6 +526,15 @@ func validateParameterIssues(script *Script) []string {
 	}
 
 	return issues
+}
+
+func validateParameterTimezone(issues *[]string, label, name, timezone string) {
+	if strings.TrimSpace(timezone) == "" {
+		return
+	}
+	if _, err := time.LoadLocation(timezone); err != nil {
+		*issues = append(*issues, fmt.Sprintf("%s %q: invalid timezone %q", label, name, timezone))
+	}
 }
 
 func validateWebRuntimeIssues(script *Script) []string {

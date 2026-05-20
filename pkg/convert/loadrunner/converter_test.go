@@ -655,6 +655,71 @@ Type="Table"
 	}
 }
 
+func TestParseParameterFileSupportsLoadRunnerBuiltinParameters(t *testing.T) {
+	parsed := ParseParameterFile("ACME_ISCD_Azure_2024.prm", `[parameter:IterationNo]
+Format="%04d"
+OriginalValue=""
+ParamName="IterationNo"
+Type="CurrentIteration"
+
+[parameter:LGName]
+Format="%s"
+OriginalValue=""
+ParamName="LGName"
+Type="Host"
+
+[parameter:ReqDateTime]
+Format="%Y-%m-%dT%H:%M:%SZ"
+GenerateNewVal="EachIteration"
+Offset=""
+OffsetUI="0"
+OriginalValue=""
+ParamName="ReqDateTime"
+Type="Time"
+WorkingDaysOn="0"
+
+[parameter:Time]
+Format="%H:%M:%S"
+GenerateNewVal="EachIteration"
+OriginalValue=""
+ParamName="Time"
+Type="Time"
+
+[parameter:TimeStamp]
+Format="%Y-%m-%dT%H:%M:%SZ"
+GenerateNewVal="EachIteration"
+OriginalValue=""
+ParamName="TimeStamp"
+Type="Time"
+`, nil)
+
+	if len(parsed.Warnings) != 0 {
+		t.Fatalf("warnings = %#v, want none", parsed.Warnings)
+	}
+	if len(parsed.Parameters) != 5 {
+		t.Fatalf("parameters = %#v, want five built-in parameters", parsed.Parameters)
+	}
+	params := map[string]dsl.Parameter{}
+	for _, parameter := range parsed.Parameters {
+		params[parameter.Name] = parameter
+	}
+	if got := params["IterationNo"]; got.Type != "current_iteration" || got.Start != 1 || got.Step != 1 || got.PadWidth != 4 || got.Update != "each_iteration" {
+		t.Fatalf("IterationNo = %#v, want native current_iteration parameter", got)
+	}
+	if got := params["LGName"]; got.Type != "host" || got.Update != "once" || len(got.Values) != 0 {
+		t.Fatalf("LGName = %#v, want native host parameter without forced fallback value", got)
+	}
+	if got := params["ReqDateTime"]; got.Type != "time" || got.Format != "2006-01-02T15:04:05Z" || got.Timezone != "UTC" || got.Update != "each_iteration" {
+		t.Fatalf("ReqDateTime = %#v, want mapped UTC time parameter", got)
+	}
+	if got := params["Time"]; got.Type != "time" || got.Format != "15:04:05" || got.Update != "each_iteration" {
+		t.Fatalf("Time = %#v, want mapped time-only parameter", got)
+	}
+	if got := params["TimeStamp"]; got.Type != "time" || got.Format != "2006-01-02T15:04:05Z" || got.Timezone != "UTC" {
+		t.Fatalf("TimeStamp = %#v, want mapped timestamp-style time parameter", got)
+	}
+}
+
 func TestParseRuntimeCfgToScriptConfigMapsExtendedRuntimeSettings(t *testing.T) {
 	runtimeCfg := ParseRuntimeCfg(`[HTTP]
 ConnectTimeout=45

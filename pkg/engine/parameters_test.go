@@ -39,6 +39,40 @@ func TestParameterRuntime_CounterUpdateModes(t *testing.T) {
 	}
 }
 
+func TestParameterRuntime_LoadRunnerNativeParameters(t *testing.T) {
+	runtime := NewParameterRuntime([]dsl.Parameter{
+		{Name: "iteration", Type: "current_iteration", Update: "each_iteration", PadWidth: 4},
+		{Name: "lr_iteration_alias", Type: "CurrentIteration", Update: "each_iteration"},
+		{Name: "lg_name", Type: "host", Update: "once", Values: []string{"lg-01"}},
+		{Name: "fallback_lg_name", Type: "Host", Update: "once"},
+		{Name: "clock", Type: "time", Update: "each_occurrence", Format: "15:04:05", Timezone: "UTC"},
+	}, nil, 0)
+	runtime.now = func() time.Time {
+		return time.Date(2024, 3, 4, 5, 6, 7, 0, time.UTC)
+	}
+	runtime.Prime()
+
+	if got, _ := runtime.ResolveNamed("iteration"); got != "0001" {
+		t.Fatalf("iteration initial = %q, want 0001", got)
+	}
+	runtime.RefreshIteration()
+	if got, _ := runtime.ResolveNamed("iteration"); got != "0002" {
+		t.Fatalf("iteration second = %q, want 0002", got)
+	}
+	if got, _ := runtime.ResolveNamed("lr_iteration_alias"); got != "2" {
+		t.Fatalf("lr_iteration_alias after refresh = %q, want 2", got)
+	}
+	if got, _ := runtime.ResolveNamed("lg_name"); got != "lg-01" {
+		t.Fatalf("lg_name = %q, want lg-01", got)
+	}
+	if got, ok := runtime.ResolveNamed("fallback_lg_name"); !ok || got == "" {
+		t.Fatalf("fallback_lg_name = %q, %v; want non-empty host value", got, ok)
+	}
+	if got, _ := runtime.ResolveNamed("clock"); got != "05:06:07" {
+		t.Fatalf("clock = %q, want 05:06:07", got)
+	}
+}
+
 func TestParameterRuntime_DataSourceParameter(t *testing.T) {
 	provider, err := NewDataProvider([]dsl.DataSource{{
 		Name:           "users",

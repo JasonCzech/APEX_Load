@@ -609,6 +609,73 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('session_id')
   })
 
+  it('exposes native LoadRunner parity parameter types in the parameter dialog', async () => {
+    const scriptWithoutParameters: ScriptDefinition = {
+      ...initialScript,
+      parameters: [],
+    }
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={scriptWithoutParameters} />)
+    })
+
+    const parameterButton = Array.from(container.querySelectorAll('button')).find(button =>
+      button.textContent?.includes('Parameter Data'),
+    )
+    expect(parameterButton).toBeDefined()
+    if (!parameterButton) {
+      return
+    }
+
+    await act(async () => {
+      parameterButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const addButton = Array.from(container.querySelectorAll('button')).find(button =>
+      button.textContent?.trim() === '+ Add Parameter',
+    )
+    expect(addButton).toBeDefined()
+    if (!addButton) {
+      return
+    }
+
+    await act(async () => {
+      addButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const dialog = container.querySelector('[aria-label="Parameter Data"]')
+    const typeSelect = dialog?.querySelector('select') as HTMLSelectElement | null
+    expect(typeSelect).not.toBeNull()
+    if (!typeSelect) {
+      return
+    }
+
+    const optionValues = Array.from(typeSelect.options).map(option => option.value)
+    expect(optionValues).toEqual(expect.arrayContaining(['current_iteration', 'host', 'time']))
+
+    await act(async () => {
+      typeSelect.value = 'current_iteration'
+      typeSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    expect((dialog?.querySelector('input[placeholder="start"]') as HTMLInputElement | null)?.value).toBe('1')
+    expect((dialog?.querySelector('input[placeholder="step"]') as HTMLInputElement | null)?.value).toBe('1')
+
+    await act(async () => {
+      typeSelect.value = 'host'
+      typeSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    expect(dialog?.querySelector('input[placeholder="host override (optional)"]')).not.toBeNull()
+
+    await act(async () => {
+      typeSelect.value = 'time'
+      typeSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    expect((dialog?.querySelector('input[placeholder="Go time layout"]') as HTMLInputElement | null)?.value).toBe('15:04:05')
+  })
+
   it('runs auto parameterization from the parameter data dialog', async () => {
     await act(async () => {
       root.render(<ScriptEditor initialScript={initialScript} />)
@@ -2015,6 +2082,96 @@ describe('ScriptEditor', () => {
             auto_detect: true,
             chain: [{ type: 'gzip', options: { mode: 'decode' } }, { type: 'html_unescape' }],
           },
+        }),
+      }),
+    }), undefined, undefined)
+  })
+
+  it('edits proxy routing from the Web HTTP/HTML RTS panel', async () => {
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={initialScript} />)
+    })
+
+    const runtimeToggle = Array.from(container.querySelectorAll('button')).find(button =>
+      button.textContent?.includes('Runtime Settings'),
+    )
+    expect(runtimeToggle).toBeDefined()
+    if (!runtimeToggle) {
+      return
+    }
+
+    await act(async () => {
+      runtimeToggle.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const compatibilityToggle = Array.from(container.querySelectorAll('button')).find(button =>
+      button.textContent?.includes('Web HTTP/HTML Compatibility'),
+    )
+    expect(compatibilityToggle).toBeDefined()
+    if (!compatibilityToggle) {
+      return
+    }
+
+    await act(async () => {
+      compatibilityToggle.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.textContent).toContain('Proxy Routing')
+    expect(container.textContent).toContain('Proxy Mode')
+    expect(container.textContent).toContain('Bypass Hosts')
+
+    const proxyModeSelect = Array.from(container.querySelectorAll('select')).find(select =>
+      Array.from(select.options).some(option => option.value === 'system' && option.textContent?.includes('environment proxy')),
+    ) as HTMLSelectElement | undefined
+    const proxyUrlInput = Array.from(container.querySelectorAll('input')).find(input =>
+      input.getAttribute('placeholder') === 'http://proxy.example.test:8080',
+    ) as HTMLInputElement | undefined
+    const bypassArea = Array.from(container.querySelectorAll('textarea')).find(area =>
+      area.getAttribute('placeholder') === 'localhost\n*.internal.example.com',
+    ) as HTMLTextAreaElement | undefined
+
+    expect(proxyModeSelect?.value).toBe('custom')
+    expect(proxyUrlInput?.value).toBe('http://proxy.example.test:8080')
+    expect(bypassArea).toBeDefined()
+    if (!proxyModeSelect || !proxyUrlInput || !bypassArea) {
+      return
+    }
+
+    await act(async () => {
+      const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+      valueSetter?.call(proxyUrlInput, 'http://edge-proxy.example.test:8080')
+      proxyUrlInput.dispatchEvent(new Event('input', { bubbles: true }))
+      proxyUrlInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    await act(async () => {
+      const valueSetter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+      valueSetter?.call(bypassArea, 'localhost\n*.internal.example.com')
+      bypassArea.dispatchEvent(new Event('input', { bubbles: true }))
+      bypassArea.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button =>
+      button.textContent?.includes('Save Script'),
+    )
+    expect(saveButton).toBeDefined()
+    if (!saveButton) {
+      return
+    }
+
+    await act(async () => {
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({
+      config: expect.objectContaining({
+        http: expect.objectContaining({
+          proxy_mode: 'custom',
+          proxy: expect.objectContaining({
+            url: 'http://edge-proxy.example.test:8080',
+            no_proxy: ['localhost', '*.internal.example.com'],
+          }),
         }),
       }),
     }), undefined, undefined)
