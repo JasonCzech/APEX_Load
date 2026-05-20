@@ -14,6 +14,7 @@ import { useProject } from './hooks/useProject'
 import { DevViewProvider, useDevView } from './hooks/DevViewProvider'
 import { useSystemApi } from './hooks/api/useSystemApi'
 import { useRepositoryApi } from './hooks/api/useRepositoryApi'
+import ThemeToggle from './components/ThemeToggle'
 import './App.css'
 import './components/Pages.css'
 
@@ -263,6 +264,13 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
         showAccess={canManageServiceAccounts}
       />
       <main className="main-content">
+        <div className="main-topbar" aria-label="Dashboard controls">
+          <div className="main-topbar-context">
+            <span className="topbar-domain">{activeDomain?.name || 'Stormrunner'}</span>
+            <span className="topbar-project">{activeProject?.name || 'No project selected'}</span>
+          </div>
+          <ThemeToggle theme={theme} onThemeChange={setTheme} />
+        </div>
         <Suspense fallback={<div className="page">Loading page...</div>}>
           {view.page === 'dashboard' && (
             <DashboardPage

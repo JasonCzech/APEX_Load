@@ -48,24 +48,24 @@
   flex-direction: column;
   gap: 16px;
   padding: 20px;
-  background: linear-gradient(135deg, rgba(0, 163, 255, 0.08), rgba(255, 255, 255, 0.02));
-  border: 1px solid rgba(0, 163, 255, 0.16);
+  background: linear-gradient(135deg, var(--info-bg), var(--bg-card));
+  border: 1px solid var(--info-border);
   border-radius: var(--radius);
 }
 
 .telemetry-status-card {
-  background: linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(255, 255, 255, 0.02));
-  border-color: rgba(16, 185, 129, 0.18);
+  background: linear-gradient(135deg, var(--success-bg), var(--bg-card));
+  border-color: var(--success-border);
 }
 
 .throughput-status-card {
-  background: linear-gradient(135deg, rgba(245, 158, 11, 0.12), rgba(120, 53, 15, 0.08));
-  border-color: rgba(245, 158, 11, 0.24);
+  background: linear-gradient(135deg, var(--warning-bg), var(--bg-card));
+  border-color: var(--warning-border);
 }
 
 .browser-metrics-card {
-  background: linear-gradient(135deg, rgba(249, 115, 22, 0.08), rgba(255, 255, 255, 0.02));
-  border-color: rgba(249, 115, 22, 0.18);
+  background: linear-gradient(135deg, var(--accent-soft), var(--bg-card));
+  border-color: var(--accent-border);
 }
 
 .goal-status-header {
@@ -97,18 +97,18 @@
 }
 
 .goal-status-badge.healthy {
-  background: rgba(34, 197, 94, 0.16);
-  color: var(--success);
+  background: var(--success-bg);
+  color: var(--success-text);
 }
 
 .goal-status-badge.warning {
-  background: rgba(245, 158, 11, 0.16);
-  color: var(--warning);
+  background: var(--warning-bg);
+  color: var(--warning-text);
 }
 
 .goal-status-badge.danger {
-  background: rgba(239, 68, 68, 0.16);
-  color: var(--danger);
+  background: var(--danger-bg);
+  color: var(--danger-text);
 }
 
 .goal-status-grid {
@@ -130,8 +130,8 @@
   min-width: 0;
   padding: 12px 14px;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--subtle-fill);
+  border: 1px solid var(--border-subtle);
   color: var(--text-primary);
   font-size: 13px;
 }
@@ -150,8 +150,8 @@
   gap: 4px;
   padding: 12px 14px;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--subtle-fill);
+  border: 1px solid var(--border-subtle);
 }
 
 @media (max-width: 760px) {
@@ -192,8 +192,8 @@
   gap: 10px;
   padding: 14px;
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--subtle-fill);
+  border: 1px solid var(--border-subtle);
 }
 
 .browser-device-header {
@@ -240,20 +240,20 @@
   gap: 12px;
   padding: 14px;
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-subtle);
+  background: var(--subtle-fill);
 }
 
 .browser-ux-card.good {
-  border-color: rgba(34, 197, 94, 0.26);
+  border-color: var(--success-border);
 }
 
 .browser-ux-card.watch {
-  border-color: rgba(217, 119, 6, 0.32);
+  border-color: var(--warning-border);
 }
 
 .browser-ux-card.poor {
-  border-color: rgba(239, 68, 68, 0.34);
+  border-color: var(--danger-border);
 }
 
 .browser-ux-header,
@@ -282,18 +282,18 @@
   gap: 6px;
   padding: 10px;
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.035);
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: var(--subtle-fill);
+  border: 1px solid var(--border-subtle);
 }
 
 .browser-ux-signal.watch {
-  background: rgba(217, 119, 6, 0.08);
-  border-color: rgba(217, 119, 6, 0.24);
+  background: var(--warning-bg);
+  border-color: var(--warning-border);
 }
 
 .browser-ux-signal.poor {
-  background: rgba(239, 68, 68, 0.08);
-  border-color: rgba(239, 68, 68, 0.28);
+  background: var(--danger-bg);
+  border-color: var(--danger-border);
 }
 
 .browser-ux-signal-label {
@@ -320,17 +320,17 @@
   border-radius: 999px;
   font-size: 12px;
   font-weight: 600;
-  background: rgba(34, 197, 94, 0.1);
-  color: var(--success);
+  background: var(--success-bg);
+  color: var(--success-text);
 }
 
 .goal-flag.alert {
-  background: rgba(239, 68, 68, 0.12);
-  color: var(--danger);
+  background: var(--danger-bg);
+  color: var(--danger-text);
 }
 
 .goal-flag.neutral {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--subtle-fill-strong);
   color: var(--text-secondary);
 }
 
@@ -376,8 +376,8 @@
   gap: 4px;
   padding: 12px 14px;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--subtle-fill);
+  border: 1px solid var(--border-subtle);
 }
 
 .scenario-preview-stat-label {
@@ -404,18 +404,18 @@
   gap: 14px;
   padding: 18px;
   border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02));
+  border: 1px solid var(--border-subtle);
+  background: linear-gradient(135deg, var(--subtle-fill-strong), var(--subtle-fill));
 }
 
 .capacity-advisory-card.ready {
-  border-color: rgba(34, 197, 94, 0.2);
-  background: linear-gradient(135deg, rgba(34, 197, 94, 0.1), rgba(255, 255, 255, 0.02));
+  border-color: var(--success-border);
+  background: linear-gradient(135deg, var(--success-bg), var(--subtle-fill));
 }
 
 .capacity-advisory-card.warning {
-  border-color: rgba(245, 158, 11, 0.26);
-  background: linear-gradient(135deg, rgba(245, 158, 11, 0.12), rgba(255, 255, 255, 0.02));
+  border-color: var(--warning-border);
+  background: linear-gradient(135deg, var(--warning-bg), var(--subtle-fill));
 }
 
 .capacity-advisory-header {
@@ -447,13 +447,13 @@
 }
 
 .capacity-advisory-badge.ready {
-  background: rgba(34, 197, 94, 0.16);
-  color: var(--success);
+  background: var(--success-bg);
+  color: var(--success-text);
 }
 
 .capacity-advisory-badge.warning {
-  background: rgba(245, 158, 11, 0.16);
-  color: var(--warning);
+  background: var(--warning-bg);
+  color: var(--warning-text);
 }
 
 .capacity-advisory-grid {
@@ -472,8 +472,8 @@
   gap: 4px;
   padding: 12px 14px;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--subtle-fill);
+  border: 1px solid var(--border-subtle);
 }
 
 .capacity-advisory-metric.compact {
@@ -510,8 +510,8 @@
   gap: 6px;
   padding: 12px 14px;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px dashed rgba(255, 255, 255, 0.08);
+  background: var(--subtle-fill);
+  border: 1px dashed var(--border-subtle);
 }
 
 .capacity-advisory-warnings p {
@@ -539,8 +539,8 @@
   gap: 4px;
   padding: 12px 14px;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--subtle-fill);
+  border: 1px solid var(--border-subtle);
 }
 
 .scenario-setting-label {
@@ -602,11 +602,11 @@
   border: 1px solid var(--border);
   border-radius: 12px;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--subtle-fill);
 }
 
 .scenario-script-row.expanded {
-  border-color: rgba(255, 255, 255, 0.14);
+  border-color: var(--accent-border);
 }
 
 .scenario-script-summary {
@@ -623,7 +623,7 @@
 }
 
 .scenario-script-summary:hover {
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--control-hover);
 }
 
 .scenario-script-color {
@@ -697,8 +697,8 @@
   gap: 4px;
   padding: 12px 14px;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--subtle-fill);
+  border: 1px solid var(--border-subtle);
 }
 
 .scenario-script-detail-label {
@@ -903,7 +903,7 @@
 .chart-card.expanded {
   grid-column: 1 / -1;
   border-color: var(--accent);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-md);
 }
 
 .chart-card-header {
@@ -1152,8 +1152,8 @@
   gap: 12px;
   padding: 14px;
   border-radius: 12px;
-  background: linear-gradient(135deg, rgba(0, 163, 255, 0.08), rgba(255, 255, 255, 0.02));
-  border: 1px solid rgba(0, 163, 255, 0.16);
+  background: linear-gradient(135deg, var(--info-bg), var(--subtle-fill));
+  border: 1px solid var(--info-border);
 }
 
 .server-telemetry-card-header {
@@ -1521,16 +1521,16 @@
 .archive-chip {
   padding: 7px 10px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--subtle-fill-strong);
+  border: 1px solid var(--border-subtle);
   color: var(--text-secondary);
   font-size: 12px;
   font-weight: 600;
 }
 
 .archive-chip.danger {
-  border-color: rgba(239, 68, 68, 0.35);
-  color: var(--danger);
+  border-color: var(--danger-border);
+  color: var(--danger-text);
 }
 
 .archive-overview-grid {
@@ -1552,8 +1552,8 @@
   gap: 8px;
   padding: 10px 14px;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--subtle-fill);
+  border: 1px solid var(--border-subtle);
 }
 
 .archive-artifact-label {
@@ -1664,7 +1664,7 @@
 }
 
 .archive-report-card .tx-table tbody tr:nth-child(even):not(.archive-event-detail-row) {
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--subtle-fill);
 }
 
 .archive-drilldown-stats {
@@ -1673,8 +1673,8 @@
   gap: 10px;
   padding: 8px 14px;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--subtle-fill);
+  border: 1px solid var(--border-subtle);
   font-size: 12px;
   font-weight: 600;
   color: var(--text-secondary);
@@ -1687,7 +1687,7 @@
 .archive-drilldown-stat-sep {
   width: 1px;
   height: 14px;
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--border);
   flex-shrink: 0;
 }
 
@@ -1714,7 +1714,7 @@
 }
 
 .archive-error-row {
-  background: rgba(239, 68, 68, 0.06);
+  background: var(--danger-bg);
 }
 
 .archive-timeline-toggle {
@@ -1726,7 +1726,7 @@
 }
 
 .archive-event-detail-row td {
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--subtle-fill);
 }
 
 .archive-event-detail-grid {
@@ -1749,8 +1749,8 @@
   gap: 8px;
   padding: 12px 14px;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--subtle-fill);
+  border: 1px solid var(--border-subtle);
 }
 
 .archive-event-detail-header {
@@ -1767,8 +1767,8 @@
   font-size: 12px;
   line-height: 1.5;
   color: var(--text-secondary);
-  background: rgba(0, 0, 0, 0.16);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: var(--code-bg);
+  border: 1px solid var(--border-subtle);
   border-radius: 8px;
   padding: 10px 12px;
   max-height: 180px;
@@ -1869,7 +1869,7 @@
   gap: 12px;
   margin-top: 12px;
   padding-top: 12px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 1px solid var(--border-subtle);
   color: var(--text-secondary);
   font-size: 12px;
   font-weight: 600;
@@ -1974,9 +1974,9 @@
 
 .control-group-preview {
   padding: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border-subtle);
   border-radius: 10px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.015));
+  background: linear-gradient(180deg, var(--subtle-fill-strong), var(--subtle-fill));
 }
 
 .preview-header-row {
@@ -1997,7 +1997,7 @@
   flex-shrink: 0;
   padding: 5px 9px;
   border-radius: 999px;
-  background: rgba(99, 102, 241, 0.14);
+  background: var(--accent-soft);
   color: var(--accent);
   font-size: 11px;
   font-weight: 700;
@@ -2023,8 +2023,8 @@
   gap: 4px;
   padding: 12px 14px;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--subtle-fill);
+  border: 1px solid var(--border-subtle);
 }
 
 .preview-metric-label {
@@ -2102,8 +2102,8 @@
   border-radius: 50%;
   background: var(--accent);
   cursor: pointer;
-  border: 2px solid var(--card-bg);
-  box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+  border: 2px solid var(--bg-card);
+  box-shadow: var(--shadow-sm);
 }
 
 .vuser-input {

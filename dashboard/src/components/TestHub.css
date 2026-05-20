@@ -318,7 +318,7 @@
   padding: 18px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--subtle-fill);
 }
 
 .scenario-builder {
@@ -439,7 +439,7 @@
   justify-content: flex-end;
   gap: 8px;
   padding: 12px 0 0;
-  background: linear-gradient(180deg, rgba(0, 0, 0, 0), var(--bg-primary) 26%);
+  background: linear-gradient(180deg, transparent, var(--bg-primary) 26%);
 }
 
 .scenario-browser-panel {

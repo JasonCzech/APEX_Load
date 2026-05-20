@@ -102,7 +102,7 @@
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 6px;
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.18);
+  box-shadow: var(--shadow-sm);
   overflow: hidden;
   z-index: 20;
 }
@@ -133,7 +133,7 @@
 }
 
 .project-menu-item.active {
-  background: rgba(99, 102, 241, 0.12);
+  background: var(--accent-soft);
   color: var(--accent);
 }
 
@@ -189,7 +189,7 @@
 }
 
 .nav-item.active {
-  background: rgba(99, 102, 241, 0.12);
+  background: var(--accent-soft);
   color: var(--accent);
 }
 
@@ -370,7 +370,7 @@
 
 .dev-view-segmented button.active {
   background: var(--accent);
-  color: var(--accent-contrast, #fff);
+  color: var(--accent-contrast);
 }
 
 .dev-view-segmented button:hover:not(.active) {

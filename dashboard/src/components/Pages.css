@@ -527,22 +527,22 @@
 
 .access-permission-badge.healthy,
 .access-status-badge.healthy {
-  border-color: rgba(34, 197, 94, 0.35);
-  background: rgba(34, 197, 94, 0.12);
-  color: #86efac;
+  border-color: var(--success-border);
+  background: var(--success-bg);
+  color: var(--success-text);
 }
 
 .access-permission-badge.danger,
 .access-status-badge.danger {
-  border-color: rgba(239, 68, 68, 0.35);
-  background: rgba(239, 68, 68, 0.12);
-  color: #fca5a5;
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+  color: var(--danger-text);
 }
 
 .access-status-badge.warning {
-  border-color: rgba(245, 158, 11, 0.35);
-  background: rgba(245, 158, 11, 0.12);
-  color: #fbbf24;
+  border-color: var(--warning-border);
+  background: var(--warning-bg);
+  color: var(--warning-text);
 }
 
 .access-summary-grid {
@@ -663,7 +663,7 @@
 
 .access-preset-card.active {
   border-color: var(--accent);
-  background: rgba(99, 102, 241, 0.1);
+  background: var(--accent-soft);
 }
 
 .access-form-grid {
@@ -701,7 +701,7 @@
 .access-form-grid input:focus,
 .access-project-role-row select:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(0, 163, 255, 0.1);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 .access-control-section {
@@ -735,8 +735,8 @@
 }
 
 .access-chip.active {
-  background: rgba(0, 163, 255, 0.14);
-  border-color: rgba(0, 163, 255, 0.45);
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
   color: var(--accent);
 }
 
@@ -768,18 +768,18 @@
 }
 
 .access-alert {
-  border: 1px solid rgba(34, 197, 94, 0.3);
-  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid var(--success-border);
+  background: var(--success-bg);
   border-radius: 8px;
-  color: #86efac;
+  color: var(--success-text);
   font-size: 13px;
   padding: 10px 12px;
 }
 
 .access-alert.error {
-  border-color: rgba(239, 68, 68, 0.35);
-  background: rgba(239, 68, 68, 0.12);
-  color: #fca5a5;
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+  color: var(--danger-text);
 }
 
 .access-form-actions {
@@ -883,7 +883,7 @@
 .access-modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.62);
+  background: var(--modal-backdrop);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -896,7 +896,7 @@
   background: var(--bg-secondary);
   border: 1px solid var(--border);
   border-radius: 12px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-md);
   display: grid;
   gap: 18px;
   max-height: calc(100vh - 48px);
@@ -974,8 +974,8 @@
   gap: 4px;
   padding: 4px;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  background: var(--control-bg);
 }
 
 .results-compare-controls {
@@ -997,13 +997,13 @@
 }
 
 .results-breakdown-button:hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--control-hover);
   color: var(--text-primary);
 }
 
 .results-breakdown-button.active {
-  background: rgba(255, 255, 255, 0.12);
-  color: var(--text-primary);
+  background: var(--theme-toggle-active-bg);
+  color: var(--theme-toggle-active-text);
 }
 
 .results-compare-status {
@@ -1029,7 +1029,7 @@
   display: flex;
   flex-direction: column;
   gap: 14px;
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--bg-card);
 }
 
 .results-compare-panel-header {
@@ -1062,8 +1062,8 @@
   gap: 4px;
   padding: 12px 14px;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--subtle-fill);
+  border: 1px solid var(--border-subtle);
 }
 
 .results-compare-label {
@@ -1085,7 +1085,7 @@
 }
 
 .results-compare-chart-card {
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 16px;
@@ -2250,7 +2250,7 @@
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--subtle-fill);
 }
 
 .capacity-gauge-header {
@@ -2305,14 +2305,14 @@
   flex-direction: column;
   gap: 4px;
   padding: 10px 12px;
-  border: 1px solid rgba(245, 158, 11, 0.24);
+  border: 1px solid var(--warning-border);
   border-radius: 8px;
-  background: rgba(245, 158, 11, 0.08);
+  background: var(--warning-bg);
 }
 
 .monitor-warning-list p {
   margin: 0;
-  color: #fcd34d;
+  color: var(--warning-text);
   font-size: 12px;
   line-height: 1.4;
 }
@@ -2324,7 +2324,7 @@
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--subtle-fill);
 }
 
 .monitor-browser-benchmark-grid {
@@ -2341,7 +2341,7 @@
   padding: 8px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--subtle-fill);
 }
 
 .monitor-browser-benchmark-profile .monitor-row {
@@ -2368,7 +2368,7 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--subtle-fill);
 }
 
 .monitor-inventory-item.is-warning {
@@ -2384,7 +2384,7 @@
 .telemetry-summary-card {
   border: 1px solid var(--border);
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--subtle-fill);
   color: inherit;
   display: flex;
   flex-direction: column;
@@ -2461,7 +2461,7 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--subtle-fill);
 }
 
 .telemetry-diagnostic-item.warning {
@@ -3109,7 +3109,7 @@
 }
 
 .new-test-disclosure .setting-row {
-  background: rgba(255, 255, 255, 0.015);
+  background: var(--subtle-fill);
 }
 
 .new-test-form-actions {
@@ -3193,7 +3193,7 @@
 }
 
 .settings-sidebar-item.active {
-  background: rgba(99, 102, 241, 0.12);
+  background: var(--accent-soft);
   color: var(--accent);
   font-weight: 600;
 }
@@ -3215,7 +3215,7 @@
 
 .btn-danger {
   background: var(--danger);
-  color: #fff;
+  color: var(--accent-contrast);
   border: 1px solid var(--danger);
 }
 
@@ -3226,11 +3226,11 @@
 .btn-danger-outline {
   background: transparent;
   color: var(--danger);
-  border: 1px solid rgba(239, 68, 68, 0.35);
+  border: 1px solid var(--danger-border);
 }
 
 .btn-danger-outline:hover {
-  background: rgba(239, 68, 68, 0.08);
+  background: var(--danger-bg);
 }
 
 .btn-danger-outline:disabled {
@@ -3576,7 +3576,7 @@
   gap: 12px;
   padding: 16px 18px;
   border-bottom: 1px solid var(--border);
-  background: linear-gradient(135deg, rgba(0, 163, 255, 0.08), rgba(255, 255, 255, 0.02));
+  background: linear-gradient(135deg, var(--info-bg), var(--subtle-fill));
 }
 
 .settings-status-header {
@@ -3604,12 +3604,12 @@
 }
 
 .settings-status-badge.ready {
-  background: rgba(34, 197, 94, 0.16);
-  color: var(--success);
+  background: var(--success-bg);
+  color: var(--success-text);
 }
 
 .settings-status-badge.unknown {
-  background: rgba(148, 163, 184, 0.16);
+  background: var(--subtle-fill-strong);
   color: var(--text-muted);
 }
 
@@ -3625,8 +3625,8 @@
   gap: 4px;
   padding: 12px 14px;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--subtle-fill);
+  border: 1px solid var(--border-subtle);
 }
 
 .settings-status-item strong {

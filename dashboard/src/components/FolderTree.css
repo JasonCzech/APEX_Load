@@ -2,7 +2,7 @@
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--bg-card);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--shadow-sm);
   overflow: hidden;
 }
 
@@ -13,7 +13,7 @@
   gap: 12px;
   padding: 18px 20px;
   border-bottom: 1px solid var(--border);
-  background: linear-gradient(to right, rgba(255, 255, 255, 0.02), transparent);
+  background: linear-gradient(to right, var(--subtle-fill), transparent);
 }
 
 .folder-tree-header h3 {
@@ -172,7 +172,7 @@
 }
 .folder-tree-details {
   border-left: 1px solid var(--border);
-  background: rgba(255, 255, 255, 0.01);
+  background: var(--subtle-fill);
   min-height: 400px;
   overflow-y: auto;
 }
@@ -249,7 +249,7 @@
 .preview-value {
   font-size: 14px;
   color: var(--text-primary);
-  background: var(--bg-body);
+  background: var(--bg-secondary);
   padding: 12px;
   border-radius: 8px;
   border: 1px solid var(--border);
@@ -269,7 +269,7 @@
   align-items: center;
   gap: 12px;
   padding: 10px 14px;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--subtle-fill);
   border: 1px solid var(--border);
   border-radius: 8px;
   font-size: 13px;
@@ -290,7 +290,7 @@
 
 .config-item {
   padding: 12px;
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--subtle-fill);
   border: 1px solid var(--border);
   border-radius: 8px;
   display: flex;

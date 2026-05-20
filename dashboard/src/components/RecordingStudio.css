@@ -87,7 +87,7 @@
   height: 28px;
   border-radius: 50%;
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-contrast);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -177,7 +177,7 @@
   gap: 8px;
   padding: 8px 16px;
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-contrast);
   border: none;
   border-radius: 6px;
   font-size: 13px;

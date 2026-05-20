@@ -1,6 +1,6 @@
 .snapshot-code {
-  background: linear-gradient(180deg, rgba(8, 15, 27, 0.78), rgba(5, 10, 19, 0.92));
-  color: var(--text-primary);
+  background: var(--code-bg);
+  color: var(--code-text);
 }
 
 .snapshot-code-token-key {
@@ -22,7 +22,7 @@
 }
 
 .snapshot-code-token-punctuation {
-  color: rgba(226, 232, 240, 0.78);
+  color: var(--text-muted);
 }
 
 .snapshot-code-token-tag,
@@ -31,5 +31,5 @@
 }
 
 .snapshot-code-token-text {
-  color: rgba(226, 232, 240, 0.92);
+  color: var(--code-text);
 }
