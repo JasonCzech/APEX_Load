@@ -195,6 +195,8 @@ func parseFunctionBlock(block string, lineNum int) (ParsedFunction, error) {
 		if len(fn.RawArgs) > 0 {
 			fn.StepName = fn.RawArgs[0]
 		}
+	case "lr_continue_on_error", "lr_error_message", "lr_exit", "web_cache_cleanup", "web_cleanup_cookies", "web_set_sockets_option", "web_set_timeout":
+		parseLoadRunnerRuntimeControl(&fn, inner)
 	case "web_add_header", "web_add_auto_header":
 		parseWebAddHeader(&fn, inner)
 	default:
@@ -204,6 +206,71 @@ func parseFunctionBlock(block string, lineNum int) (ParsedFunction, error) {
 	}
 
 	return fn, nil
+}
+
+func parseLoadRunnerRuntimeControl(fn *ParsedFunction, inner string) {
+	if len(fn.RawArgs) > 0 {
+		fn.StepName = fn.RawArgs[0]
+	}
+	extractNamedArgs(fn, inner)
+
+	for index, arg := range splitCFunctionArgs(inner) {
+		cleaned := cleanCArgument(arg)
+		if cleaned == "" {
+			continue
+		}
+		fn.Args[fmt.Sprintf("arg%d", index+1)] = cleaned
+		if fn.Args["value"] == "" {
+			fn.Args["value"] = cleaned
+		}
+	}
+}
+
+func splitCFunctionArgs(inner string) []string {
+	args := make([]string, 0)
+	var current strings.Builder
+	inString := false
+	escaped := false
+	depth := 0
+
+	for _, r := range inner {
+		switch {
+		case escaped:
+			current.WriteRune(r)
+			escaped = false
+			continue
+		case inString && r == '\\':
+			current.WriteRune(r)
+			escaped = true
+			continue
+		case r == '"':
+			inString = !inString
+			current.WriteRune(r)
+			continue
+		case !inString && (r == '(' || r == '[' || r == '{'):
+			depth++
+		case !inString && (r == ')' || r == ']' || r == '}') && depth > 0:
+			depth--
+		case !inString && depth == 0 && r == ',':
+			args = append(args, current.String())
+			current.Reset()
+			continue
+		}
+		current.WriteRune(r)
+	}
+
+	if strings.TrimSpace(current.String()) != "" {
+		args = append(args, current.String())
+	}
+	return args
+}
+
+func cleanCArgument(value string) string {
+	cleaned := cleanConfigValue(value)
+	if strings.EqualFold(cleaned, "LAST") {
+		return ""
+	}
+	return cleaned
 }
 
 func parseWebURL(fn *ParsedFunction, inner string) {
@@ -382,7 +449,7 @@ func ParseConfigSections(content string) map[string]map[string]string {
 		if _, ok := sections[section]; !ok {
 			sections[section] = make(map[string]string)
 		}
-		sections[section][strings.TrimSpace(parts[0])] = strings.TrimSpace(parts[1])
+		sections[section][strings.TrimSpace(parts[0])] = cleanConfigValue(parts[1])
 	}
 
 	if len(sections[""]) == 0 {
@@ -418,7 +485,7 @@ func ParseUSRFile(content string) (*ProjectConfig, error) {
 			continue
 		}
 		key := strings.TrimSpace(parts[0])
-		value := strings.TrimSpace(parts[1])
+		value := cleanConfigValue(parts[1])
 		if cfg.RuntimeFile == "" && strings.HasSuffix(strings.ToLower(value), ".cfg") {
 			cfg.RuntimeFile = value
 		}
@@ -454,6 +521,18 @@ func ParseUSRFile(content string) (*ProjectConfig, error) {
 	}
 
 	return cfg, nil
+}
+
+func cleanConfigValue(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if len(trimmed) >= 2 {
+		first := trimmed[0]
+		last := trimmed[len(trimmed)-1]
+		if (first == '"' && last == '"') || (first == '\'' && last == '\'') {
+			trimmed = trimmed[1 : len(trimmed)-1]
+		}
+	}
+	return strings.TrimSpace(trimmed)
 }
 
 // extractThinkTime extracts think time value in seconds from an lr_think_time call.

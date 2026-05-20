@@ -314,14 +314,20 @@ func newLoadRunnerReviewResult(detected DetectedProtocol, files map[string]strin
 
 // findFile looks up a file in the map by base name, handling path variations.
 func findFile(files map[string]string, name string) (string, bool) {
+	name = cleanConfigValue(name)
 	// Direct match
 	if content, ok := files[name]; ok {
 		return content, true
 	}
+	for key, content := range files {
+		if strings.EqualFold(key, name) {
+			return content, true
+		}
+	}
 	// Try base name match
 	baseName := filepath.Base(name)
 	for key, content := range files {
-		if filepath.Base(key) == baseName {
+		if filepath.Base(key) == baseName || strings.EqualFold(filepath.Base(key), baseName) {
 			return content, true
 		}
 	}
@@ -416,6 +422,11 @@ func attachLoadRunnerMetadata(script *dsl.Script, result *ConvertResult, project
 	}
 
 	preserved := make(map[string]any)
+	if script.Metadata != nil && script.Metadata.Import != nil && len(script.Metadata.Import.Preserved) > 0 {
+		for key, value := range script.Metadata.Import.Preserved {
+			preserved[key] = value
+		}
+	}
 	if projectFileName != "" {
 		preserved["project_file"] = filepath.Base(projectFileName)
 	}

@@ -103,6 +103,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 	var pendingHeaders map[string]string
 	var currentTransaction string
 	var thinkTimes []float64
+	var loadRunnerRuntimeControls []ParsedFunction
 
 	actionNameCounts := make(map[string]int)
 
@@ -145,6 +146,40 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 				thinkTimes = append(thinkTimes, sec)
 				result.Stats.ThinkTimes++
 			}
+
+		case "lr_continue_on_error":
+			loadRunnerRuntimeControls = append(loadRunnerRuntimeControls, fn)
+			applyLoadRunnerContinueOnError(result, fn)
+
+		case "lr_error_message":
+			preserveLoadRunnerRuntimeControl(result.Script, "loadrunner_error_messages", fn, map[string]any{
+				"message": firstLoadRunnerControlArg(fn),
+			})
+
+		case "lr_exit":
+			preserveLoadRunnerRuntimeControl(result.Script, "loadrunner_exit_controls", fn, nil)
+
+		case "web_cache_cleanup":
+			loadRunnerRuntimeControls = append(loadRunnerRuntimeControls, fn)
+			setLoadRunnerWebRuntimeAttribute(result.Script, "web_cache_cleanup", "true")
+			preserveLoadRunnerRuntimeControl(result.Script, "loadrunner_runtime_controls", fn, map[string]any{
+				"mapped_to": "config.web_runtime.additional_attributes.web_cache_cleanup",
+			})
+
+		case "web_cleanup_cookies":
+			loadRunnerRuntimeControls = append(loadRunnerRuntimeControls, fn)
+			setLoadRunnerWebRuntimeAttribute(result.Script, "web_cleanup_cookies", "true")
+			preserveLoadRunnerRuntimeControl(result.Script, "loadrunner_runtime_controls", fn, map[string]any{
+				"mapped_to": "config.web_runtime.additional_attributes.web_cleanup_cookies",
+			})
+
+		case "web_set_sockets_option":
+			loadRunnerRuntimeControls = append(loadRunnerRuntimeControls, fn)
+			applyLoadRunnerSocketOption(result, fn)
+
+		case "web_set_timeout":
+			loadRunnerRuntimeControls = append(loadRunnerRuntimeControls, fn)
+			applyLoadRunnerTimeout(result, fn)
 
 		case "web_url", "web_submit_data", "web_submit_form", "web_custom_request", "web_service_call":
 			action, warnings := convertAction(fn, baseURL, currentTransaction, opts)
@@ -235,8 +270,250 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 	if opts.RuntimeSettings != nil {
 		mergeScriptConfig(&result.Script.Config, opts.RuntimeSettings)
 	}
+	for _, fn := range loadRunnerRuntimeControls {
+		reapplyLoadRunnerRuntimeControlConfig(result, fn)
+	}
 
 	return result, nil
+}
+
+func applyLoadRunnerContinueOnError(result *ConvertResult, fn ParsedFunction) {
+	value := firstLoadRunnerControlArg(fn)
+	details := map[string]any{
+		"value":     value,
+		"mapped_to": "config.error_handling.continue_on_error",
+	}
+	if enabled, ok := parseLoadRunnerBool(value); ok {
+		result.Script.Config.ErrorHandling.ContinueOnError = enabled
+		details["enabled"] = enabled
+	}
+	preserveLoadRunnerRuntimeControl(result.Script, "loadrunner_runtime_controls", fn, details)
+}
+
+func applyLoadRunnerSocketOption(result *ConvertResult, fn ParsedFunction) {
+	details := applyLoadRunnerSocketOptionConfig(result, fn)
+	preserveLoadRunnerRuntimeControl(result.Script, "loadrunner_socket_options", fn, details)
+}
+
+func applyLoadRunnerTimeout(result *ConvertResult, fn ParsedFunction) {
+	details := applyLoadRunnerTimeoutConfig(result, fn)
+	preserveLoadRunnerRuntimeControl(result.Script, "loadrunner_timeouts", fn, details)
+}
+
+func applyLoadRunnerTimeoutConfig(result *ConvertResult, fn ParsedFunction) map[string]any {
+	args := loadRunnerControlArgs(fn)
+	timeoutType := ""
+	value := ""
+	if len(args) > 0 {
+		timeoutType = args[0]
+	}
+	if len(args) > 1 {
+		value = args[1]
+	}
+
+	attributeKey := "web_set_timeout"
+	if timeoutType != "" {
+		attributeKey += "." + timeoutType
+	}
+	setLoadRunnerWebRuntimeAttribute(result.Script, attributeKey, value)
+
+	details := map[string]any{
+		"timeout":   timeoutType,
+		"value":     value,
+		"mapped_to": "config.web_runtime.additional_attributes." + attributeKey,
+	}
+	timeoutMs, ok := parseLoadRunnerTimeoutMs(value)
+	if !ok {
+		return details
+	}
+	details["mapped_value"] = timeoutMs
+
+	switch normalizeEnum(timeoutType) {
+	case "connect":
+		result.Script.Config.HTTP.ConnectTimeoutMs = timeoutMs
+		details["mapped_to"] = "config.http.connect_timeout_ms"
+	case "receive", "response", "download":
+		result.Script.Config.HTTP.RequestTimeoutMs = timeoutMs
+		details["mapped_to"] = "config.http.request_timeout_ms"
+	case "step", "step_download", "stepdownload":
+		if result.Script.Config.HTTP.RequestTimeoutMs == 0 {
+			result.Script.Config.HTTP.RequestTimeoutMs = timeoutMs
+			details["mapped_to"] = "config.http.request_timeout_ms"
+		}
+	case "ssl", "tls", "secure":
+		result.Script.Config.HTTP.TLSTimeoutMs = timeoutMs
+		details["mapped_to"] = "config.http.tls_timeout_ms"
+	}
+
+	return details
+}
+
+func applyLoadRunnerSocketOptionConfig(result *ConvertResult, fn ParsedFunction) map[string]any {
+	args := loadRunnerControlArgs(fn)
+	option := ""
+	value := ""
+	if len(args) > 0 {
+		option = args[0]
+	}
+	if len(args) > 1 {
+		value = args[1]
+	}
+
+	attributeKey := "web_set_sockets_option"
+	if option != "" {
+		attributeKey += "." + option
+	}
+	setLoadRunnerWebRuntimeAttribute(result.Script, attributeKey, value)
+
+	details := map[string]any{
+		"option":    option,
+		"value":     value,
+		"mapped_to": "config.web_runtime.additional_attributes." + attributeKey,
+	}
+
+	switch normalizeEnum(option) {
+	case "ssl_version", "tls_version":
+		mapped := mapSSLVersion(value)
+		result.Script.Config.HTTP.TLS.MinVersion = mapped
+		details["mapped_to"] = "config.http.tls.min_version"
+		details["mapped_value"] = mapped
+	case "close_keepalive_connections", "close_keep_alive_connections":
+		if closeConnections, ok := parseLoadRunnerBool(value); ok && closeConnections {
+			keepAlive := false
+			result.Script.Config.HTTP.KeepAlive = &keepAlive
+			details["mapped_to"] = "config.http.keep_alive"
+			details["mapped_value"] = false
+		}
+	case "max_connections_per_host", "max_connections":
+		if maxConnections := parseInt(value); maxConnections > 0 {
+			result.Script.Config.HTTP.MaxConnsPerHost = maxConnections
+			details["mapped_to"] = "config.http.max_conns_per_host"
+			details["mapped_value"] = maxConnections
+		}
+	}
+
+	return details
+}
+
+func reapplyLoadRunnerRuntimeControlConfig(result *ConvertResult, fn ParsedFunction) {
+	if result == nil || result.Script == nil {
+		return
+	}
+	switch fn.Name {
+	case "lr_continue_on_error":
+		if enabled, ok := parseLoadRunnerBool(firstLoadRunnerControlArg(fn)); ok {
+			result.Script.Config.ErrorHandling.ContinueOnError = enabled
+		}
+	case "web_cache_cleanup":
+		setLoadRunnerWebRuntimeAttribute(result.Script, "web_cache_cleanup", "true")
+	case "web_cleanup_cookies":
+		setLoadRunnerWebRuntimeAttribute(result.Script, "web_cleanup_cookies", "true")
+	case "web_set_sockets_option":
+		applyLoadRunnerSocketOptionConfig(result, fn)
+	case "web_set_timeout":
+		applyLoadRunnerTimeoutConfig(result, fn)
+	}
+}
+
+func setLoadRunnerWebRuntimeAttribute(script *dsl.Script, key, value string) {
+	if script == nil {
+		return
+	}
+	if script.Config.WebRuntime.AdditionalAttributes == nil {
+		script.Config.WebRuntime.AdditionalAttributes = make(map[string]string)
+	}
+	script.Config.WebRuntime.AdditionalAttributes[key] = value
+}
+
+func preserveLoadRunnerRuntimeControl(script *dsl.Script, key string, fn ParsedFunction, details map[string]any) {
+	if script == nil || key == "" {
+		return
+	}
+	entry := map[string]any{
+		"function": fn.Name,
+		"line":     fn.LineNumber,
+	}
+	if args := loadRunnerControlArgs(fn); len(args) > 0 {
+		entry["args"] = args
+	}
+	for detailKey, detailValue := range details {
+		switch value := detailValue.(type) {
+		case string:
+			if strings.TrimSpace(value) == "" {
+				continue
+			}
+		case nil:
+			continue
+		}
+		entry[detailKey] = detailValue
+	}
+
+	preserved := ensureLoadRunnerImportPreserved(script)
+	switch existing := preserved[key].(type) {
+	case []map[string]any:
+		preserved[key] = append(existing, entry)
+	case []any:
+		preserved[key] = append(existing, entry)
+	default:
+		preserved[key] = []map[string]any{entry}
+	}
+}
+
+func ensureLoadRunnerImportPreserved(script *dsl.Script) map[string]any {
+	if script.Metadata == nil {
+		script.Metadata = &dsl.ScriptMetadata{}
+	}
+	if script.Metadata.Import == nil {
+		script.Metadata.Import = &dsl.ImportMetadata{Source: "loadrunner"}
+	}
+	if script.Metadata.Import.Preserved == nil {
+		script.Metadata.Import.Preserved = make(map[string]any)
+	}
+	return script.Metadata.Import.Preserved
+}
+
+func firstLoadRunnerControlArg(fn ParsedFunction) string {
+	args := loadRunnerControlArgs(fn)
+	if len(args) == 0 {
+		return ""
+	}
+	return args[0]
+}
+
+func loadRunnerControlArgs(fn ParsedFunction) []string {
+	args := make([]string, 0, len(fn.Args))
+	for index := 1; ; index++ {
+		value, ok := fn.Args[fmt.Sprintf("arg%d", index)]
+		if !ok {
+			break
+		}
+		if strings.TrimSpace(value) != "" {
+			args = append(args, value)
+		}
+	}
+	if len(args) == 0 {
+		args = append(args, fn.RawArgs...)
+	}
+	return args
+}
+
+func parseLoadRunnerBool(value string) (bool, bool) {
+	switch normalizeEnum(cleanConfigValue(value)) {
+	case "lr_on", "lr_true", "continue", "continue_on_error":
+		return true, true
+	case "lr_off", "lr_false", "abort", "stop":
+		return false, true
+	default:
+		return parseBoolExplicit(value)
+	}
+}
+
+func parseLoadRunnerTimeoutMs(value string) (int, bool) {
+	seconds, err := strconv.ParseFloat(cleanConfigValue(value), 64)
+	if err != nil || seconds <= 0 {
+		return 0, false
+	}
+	return int(math.Round(seconds * 1000)), true
 }
 
 func mergeScriptConfig(dst *dsl.ScriptConfig, src *dsl.ScriptConfig) {

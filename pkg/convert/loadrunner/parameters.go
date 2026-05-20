@@ -1,9 +1,12 @@
 package loadrunner
 
 import (
+	"encoding/csv"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
@@ -28,19 +31,19 @@ func ParseParameterFile(filename, content string, archiveFiles map[string]string
 	for sectionName, values := range sections {
 		lower := make(map[string]string, len(values))
 		for key, value := range values {
-			lower[strings.ToLower(strings.TrimSpace(key))] = strings.TrimSpace(value)
+			lower[strings.ToLower(strings.TrimSpace(key))] = cleanConfigValue(value)
 		}
 
-		name := strings.TrimSpace(firstNonEmpty(lower["paramname"], lower["name"], sectionName))
+		name := cleanParameterName(firstNonEmpty(lower["paramname"], lower["name"], sectionName))
 		if name == "" || !looksLikeParameterSection(sectionName, lower) {
 			continue
 		}
 
 		param := dsl.Parameter{
 			Name:         name,
-			Update:       mapParameterUpdate(lower["updatevalueon"]),
+			Update:       mapParameterUpdate(firstNonEmpty(lower["updatevalueon"], lower["generatenewval"])),
 			Selection:    mapParameterSelection(lower["selectnextrow"]),
-			OnExhaustion: mapParameterExhaustion(firstNonEmpty(lower["outofvalues"], lower["whenoutofvalues"])),
+			OnExhaustion: mapParameterExhaustion(firstNonEmpty(lower["outofvalues"], lower["whenoutofvalues"], lower["outofrangepolicy"])),
 		}
 		rawType := strings.ToLower(firstNonEmpty(lower["type"], lower["valuetype"], lower["datatype"], lower["paramtype"]))
 		switch {
@@ -83,16 +86,10 @@ func ParseParameterFile(filename, content string, archiveFiles map[string]string
 					if !exists {
 						dataSourceName = sanitizeParameterDataSourceName(dataFile)
 						dataSourceByFile[strings.ToLower(filepath.Base(dataFile))] = dataSourceName
-						result.DataSources = append(result.DataSources, dsl.DataSource{
-							Name:           dataSourceName,
-							Type:           parameterFileType(dataFile),
-							InlineData:     dataContent,
-							Strategy:       "sequential",
-							FirstRowHeader: true,
-						})
+						result.DataSources = append(result.DataSources, buildParameterDataSource(dataSourceName, dataFile, dataContent, column, lower["delimiter"], name))
 					}
 					param.DataSource = dataSourceName
-					param.Column = column
+					param.Column = resolveParameterColumn(dataContent, column, lower["delimiter"], name, dataFile)
 				} else if dataContent, ok := findFile(archiveFiles, dataFile); ok {
 					param.Type = "list"
 					param.Values = parseDataFileValues(dataContent)
@@ -127,8 +124,24 @@ func ParseParameterFile(filename, content string, archiveFiles map[string]string
 	return result
 }
 
+func buildParameterDataSource(dataSourceName, dataFile, dataContent, column, delimiter, paramName string) dsl.DataSource {
+	firstRowHeader, columns := inferParameterDataSourceColumns(dataContent, column, delimiter, paramName, dataFile)
+	dataSource := dsl.DataSource{
+		Name:           dataSourceName,
+		Type:           parameterFileType(dataFile),
+		InlineData:     dataContent,
+		Strategy:       "sequential",
+		FirstRowHeader: firstRowHeader,
+		Columns:        columns,
+	}
+	if normalized := normalizeParameterDelimiter(delimiter); normalized != "," {
+		dataSource.Delimiter = normalized
+	}
+	return dataSource
+}
+
 func looksLikeParameterSection(sectionName string, values map[string]string) bool {
-	sectionLower := strings.ToLower(sectionName)
+	sectionLower := strings.ToLower(cleanParameterName(sectionName))
 	if sectionLower == "general" || sectionLower == "options" || sectionLower == "global" {
 		return false
 	}
@@ -138,6 +151,14 @@ func looksLikeParameterSection(sectionName string, values map[string]string) boo
 		}
 	}
 	return sectionName != ""
+}
+
+func cleanParameterName(name string) string {
+	name = cleanConfigValue(name)
+	if strings.HasPrefix(strings.ToLower(name), "parameter:") {
+		name = strings.TrimSpace(name[len("parameter:"):])
+	}
+	return name
 }
 
 func firstNonEmpty(values ...string) string {
@@ -217,6 +238,7 @@ func splitListValues(value string) []string {
 }
 
 func sanitizeParameterDataSourceName(dataFile string) string {
+	dataFile = cleanConfigValue(dataFile)
 	base := strings.TrimSuffix(filepath.Base(dataFile), filepath.Ext(dataFile))
 	base = strings.ToLower(base)
 	base = strings.Map(func(r rune) rune {
@@ -233,6 +255,7 @@ func sanitizeParameterDataSourceName(dataFile string) string {
 }
 
 func parameterFileType(dataFile string) string {
+	dataFile = cleanConfigValue(dataFile)
 	if strings.EqualFold(filepath.Ext(dataFile), ".dat") {
 		return "dat"
 	}
@@ -249,4 +272,138 @@ func parseDataFileValues(content string) []string {
 		}
 	}
 	return values
+}
+
+func inferParameterDataSourceColumns(content, column, delimiter, paramName, dataFile string) (bool, []string) {
+	column = cleanConfigValue(column)
+	fields := firstParameterDataRowFields(content, delimiter)
+	if len(fields) == 0 {
+		if column == "" {
+			return false, nil
+		}
+		return false, []string{column}
+	}
+
+	if containsParameterColumn(fields, column) {
+		return true, nil
+	}
+
+	if index, ok := generatedParameterColumnIndex(column); ok {
+		if index < len(fields) && looksLikeParameterHeader(fields[index], paramName, dataFile) {
+			return true, nil
+		}
+		return false, generatedParameterColumns(len(fields), index+1)
+	}
+
+	columns := generatedParameterColumns(len(fields), 1)
+	if column != "" {
+		columns[0] = column
+	}
+	return false, columns
+}
+
+func resolveParameterColumn(content, column, delimiter, paramName, dataFile string) string {
+	column = cleanConfigValue(column)
+	fields := firstParameterDataRowFields(content, delimiter)
+	if index, ok := generatedParameterColumnIndex(column); ok && index < len(fields) && looksLikeParameterHeader(fields[index], paramName, dataFile) {
+		return cleanConfigValue(fields[index])
+	}
+	return column
+}
+
+func firstParameterDataRowFields(content, delimiter string) []string {
+	for _, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(strings.TrimPrefix(line, "\ufeff"))
+		if trimmed == "" {
+			continue
+		}
+		reader := csv.NewReader(strings.NewReader(trimmed))
+		reader.FieldsPerRecord = -1
+		if delim := normalizeParameterDelimiter(delimiter); delim != "" {
+			if r, _ := utf8.DecodeRuneInString(delim); r != utf8.RuneError {
+				reader.Comma = r
+			}
+		}
+		fields, err := reader.Read()
+		if err != nil {
+			fields = strings.Split(trimmed, normalizeParameterDelimiter(delimiter))
+		}
+		for i := range fields {
+			fields[i] = cleanConfigValue(fields[i])
+		}
+		return fields
+	}
+	return nil
+}
+
+func normalizeParameterDelimiter(value string) string {
+	value = cleanConfigValue(value)
+	switch strings.ToLower(value) {
+	case "", ",":
+		return ","
+	case `\t`, "tab":
+		return "\t"
+	default:
+		return value
+	}
+}
+
+var generatedParameterColumnPattern = regexp.MustCompile(`(?i)^col(?:umn)?\s*(\d+)$`)
+
+func generatedParameterColumnIndex(column string) (int, bool) {
+	match := generatedParameterColumnPattern.FindStringSubmatch(strings.TrimSpace(column))
+	if len(match) != 2 {
+		return 0, false
+	}
+	index, err := strconv.Atoi(match[1])
+	if err != nil || index <= 0 {
+		return 0, false
+	}
+	return index - 1, true
+}
+
+func containsParameterColumn(fields []string, column string) bool {
+	normalizedColumn := normalizeParameterHeader(column)
+	if normalizedColumn == "" {
+		return false
+	}
+	for _, field := range fields {
+		if normalizeParameterHeader(field) == normalizedColumn {
+			return true
+		}
+	}
+	return false
+}
+
+func looksLikeParameterHeader(value, paramName, dataFile string) bool {
+	normalized := normalizeParameterHeader(value)
+	if normalized == "" {
+		return false
+	}
+	if normalized == normalizeParameterHeader(paramName) {
+		return true
+	}
+	base := strings.TrimSuffix(filepath.Base(cleanConfigValue(dataFile)), filepath.Ext(cleanConfigValue(dataFile)))
+	return normalized == normalizeParameterHeader(base)
+}
+
+func generatedParameterColumns(fieldCount, minCount int) []string {
+	if fieldCount < minCount {
+		fieldCount = minCount
+	}
+	columns := make([]string, fieldCount)
+	for i := range columns {
+		columns[i] = "Col " + strconv.Itoa(i+1)
+	}
+	return columns
+}
+
+func normalizeParameterHeader(value string) string {
+	value = strings.ToLower(cleanConfigValue(value))
+	return strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			return r
+		}
+		return -1
+	}, value)
 }

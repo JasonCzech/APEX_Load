@@ -231,6 +231,89 @@ func TestConvert(t *testing.T) {
 		result.Stats.TotalFunctions, result.Stats.ConvertedActions, result.Stats.Extractors, result.Stats.ThinkTimes)
 }
 
+func TestConvertSupportsLoadRunnerRuntimeControls(t *testing.T) {
+	actionC := `
+#include "web_api.h"
+
+Action()
+{
+	lr_continue_on_error(1);
+	web_set_timeout("CONNECT", "30");
+	web_set_timeout(RECEIVE, "45");
+	web_set_timeout(STEP, "60");
+	web_set_sockets_option("SSL_VERSION", "TLS1.2");
+	web_set_sockets_option("CLOSE_KEEPALIVE_CONNECTIONS", "1");
+	web_cache_cleanup();
+	web_cleanup_cookies();
+	lr_error_message("Imported error message");
+	lr_exit(LR_EXIT_VUSER, LR_AUTO);
+
+	web_url("Homepage",
+		"URL=https://example.com/app/home",
+		LAST);
+
+	return 0;
+}
+`
+	parsed, err := ParseActionFile("Action.c", actionC)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	result, err := Convert([]*ParsedAction{parsed}, ConvertOptions{})
+	if err != nil {
+		t.Fatalf("convert error: %v", err)
+	}
+	if result.Stats.Skipped != 0 || len(result.Stats.UnsupportedFuncs) != 0 {
+		t.Fatalf("unsupported funcs = %#v skipped=%d, want none", result.Stats.UnsupportedFuncs, result.Stats.Skipped)
+	}
+	if !result.Script.Config.ErrorHandling.ContinueOnError {
+		t.Fatal("continue_on_error = false, want true")
+	}
+	if result.Script.Config.HTTP.ConnectTimeoutMs != 30000 {
+		t.Fatalf("connect timeout = %d, want 30000", result.Script.Config.HTTP.ConnectTimeoutMs)
+	}
+	if result.Script.Config.HTTP.RequestTimeoutMs != 45000 {
+		t.Fatalf("request timeout = %d, want RECEIVE timeout 45000", result.Script.Config.HTTP.RequestTimeoutMs)
+	}
+	if result.Script.Config.HTTP.TLS.MinVersion != "1.2" {
+		t.Fatalf("tls min version = %q, want 1.2", result.Script.Config.HTTP.TLS.MinVersion)
+	}
+	if result.Script.Config.HTTP.KeepAlive == nil || *result.Script.Config.HTTP.KeepAlive {
+		t.Fatalf("keep_alive = %#v, want false", result.Script.Config.HTTP.KeepAlive)
+	}
+	attrs := result.Script.Config.WebRuntime.AdditionalAttributes
+	if attrs["web_cache_cleanup"] != "true" || attrs["web_cleanup_cookies"] != "true" {
+		t.Fatalf("web runtime attrs = %#v, want cleanup controls", attrs)
+	}
+	if attrs["web_set_sockets_option.SSL_VERSION"] != "TLS1.2" {
+		t.Fatalf("socket option attrs = %#v, want SSL_VERSION TLS1.2", attrs)
+	}
+	if attrs["web_set_timeout.CONNECT"] != "30" || attrs["web_set_timeout.RECEIVE"] != "45" || attrs["web_set_timeout.STEP"] != "60" {
+		t.Fatalf("timeout attrs = %#v, want CONNECT/RECEIVE/STEP values", attrs)
+	}
+	if result.Script.Metadata == nil || result.Script.Metadata.Import == nil {
+		t.Fatal("expected import metadata for preserved runtime controls")
+	}
+	preserved := result.Script.Metadata.Import.Preserved
+	messages, ok := preserved["loadrunner_error_messages"].([]map[string]any)
+	if !ok || len(messages) != 1 || messages[0]["message"] != "Imported error message" {
+		t.Fatalf("loadrunner_error_messages = %#v, want preserved lr_error_message", preserved["loadrunner_error_messages"])
+	}
+	exits, ok := preserved["loadrunner_exit_controls"].([]map[string]any)
+	if !ok || len(exits) != 1 {
+		t.Fatalf("loadrunner_exit_controls = %#v, want one preserved lr_exit", preserved["loadrunner_exit_controls"])
+	}
+	timeouts, ok := preserved["loadrunner_timeouts"].([]map[string]any)
+	if !ok || len(timeouts) != 3 {
+		t.Fatalf("loadrunner_timeouts = %#v, want three preserved web_set_timeout calls", preserved["loadrunner_timeouts"])
+	}
+	args, ok := exits[0]["args"].([]string)
+	if !ok || len(args) != 2 || args[0] != "LR_EXIT_VUSER" || args[1] != "LR_AUTO" {
+		t.Fatalf("lr_exit args = %#v, want LR_EXIT_VUSER/LR_AUTO", exits[0]["args"])
+	}
+}
+
 func TestConvertPreserveTransactionsOption(t *testing.T) {
 	parsed, err := ParseActionFile("Action.c", sampleActionC)
 	if err != nil {
@@ -473,6 +556,101 @@ UpdateValueOn=Each Occurrence
 	for _, want := range []string{"\"source\":\"loadrunner\"", "\"project_settings\"", "\"runtime_files\"", "\"parameter_files\"", "LoginUsers.prm", "default.cfg", "\"ConnectTimeout\":\"45\""} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("expected metadata JSON to contain %q, got %s", want, text)
+		}
+	}
+}
+
+func TestConvertZipParsesQuotedParameterDatFiles(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	addFile := func(name string, content string) {
+		writer, err := zw.Create(name)
+		if err != nil {
+			t.Fatalf("Create(%q) returned error: %v", name, err)
+		}
+		if _, err := writer.Write([]byte(content)); err != nil {
+			t.Fatalf("Write(%q) returned error: %v", name, err)
+		}
+	}
+
+	addFile("Quoted.usr", `[General]
+Type="Web"
+RuntimeSettings="default.cfg"
+
+[Parameters]
+Parameter1="QuotedParams.prm"
+
+[Actions]
+Action1="Action.c"
+`)
+	addFile("Action.c", `
+Action()
+{
+	web_url("Homepage",
+		"URL=https://example.com/app/home",
+		LAST);
+	return 0;
+}
+`)
+	addFile("default.cfg", `[HTTP]
+ConnectTimeout="45"
+`)
+	addFile("QuotedParams.prm", `[parameter:UserName]
+ColumnName="Col 1"
+Delimiter=","
+GenerateNewVal="EachIteration"
+OutOfRangePolicy="ContinueWithLast"
+ParamName="UserName"
+SelectNextRow="Sequential"
+Table="UserName.dat"
+Type="Table"
+
+[parameter:billingMarket]
+ColumnName="billingMarket"
+Delimiter=","
+GenerateNewVal="EachIteration"
+ParamName="billingMarket"
+SelectNextRow="Random"
+Table="ACME_IAO.dat"
+Type="Table"
+`)
+	addFile("UserName.dat", "UserName\nalice\n")
+	addFile("ACME_IAO.dat", "subscriberNumber,billingMarket,billingSubMarket\n3868432133,FLP,25\n")
+	if err := zw.Close(); err != nil {
+		t.Fatalf("zip.Close returned error: %v", err)
+	}
+
+	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip returned error: %v", err)
+	}
+	for _, warning := range result.Warnings {
+		if strings.Contains(warning, "unable to resolve data file") {
+			t.Fatalf("warnings = %#v, want quoted .dat files resolved", result.Warnings)
+		}
+	}
+	if result.Script.Config.HTTP.ConnectTimeoutMs != 45000 {
+		t.Fatalf("connect timeout = %d, want quoted runtime setting parsed", result.Script.Config.HTTP.ConnectTimeoutMs)
+	}
+	if len(result.Script.Parameters) != 2 {
+		t.Fatalf("parameters = %#v, want UserName and billingMarket", result.Script.Parameters)
+	}
+	params := map[string]dsl.Parameter{}
+	for _, parameter := range result.Script.Parameters {
+		params[parameter.Name] = parameter
+	}
+	if params["UserName"].DataSource != "username" || params["UserName"].Column != "UserName" {
+		t.Fatalf("UserName parameter = %#v, want quoted Col 1 mapped to UserName data source header", params["UserName"])
+	}
+	if params["billingMarket"].DataSource != "acme_iao" || params["billingMarket"].Column != "billingMarket" {
+		t.Fatalf("billingMarket parameter = %#v, want ACME_IAO billingMarket column", params["billingMarket"])
+	}
+	if len(result.Script.DataSources) != 2 {
+		t.Fatalf("data sources = %#v, want two .dat sources", result.Script.DataSources)
+	}
+	for _, source := range result.Script.DataSources {
+		if !source.FirstRowHeader {
+			t.Fatalf("data source = %#v, want header inference for quoted .dat imports", source)
 		}
 	}
 }
