@@ -888,7 +888,7 @@
   align-items: center;
   justify-content: center;
   z-index: 220;
-  padding: 20px;
+  padding: 24px;
   backdrop-filter: blur(4px);
 }
 
@@ -898,12 +898,12 @@
   border-radius: 12px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
   display: grid;
-  gap: 16px;
-  max-height: 88vh;
-  max-width: 760px;
+  gap: 18px;
+  max-height: calc(100vh - 48px);
+  max-width: 1080px;
   overflow: auto;
-  padding: 22px;
-  width: min(760px, 96vw);
+  padding: 26px;
+  width: min(1080px, calc(100vw - 48px));
 }
 
 .access-modal-header {
@@ -918,10 +918,10 @@
   border: 1px solid var(--border);
   border-radius: 8px;
   display: grid;
-  grid-template-columns: minmax(0, 0.7fr) minmax(0, 1.3fr) auto;
-  gap: 10px;
+  grid-template-columns: minmax(160px, 0.35fr) minmax(520px, 1fr) auto;
+  gap: 14px;
   align-items: center;
-  padding: 12px;
+  padding: 14px;
 }
 
 .access-issued-key-box span {
@@ -934,11 +934,12 @@
 .access-issued-examples code {
   color: var(--text-primary);
   overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .access-issued-examples {
   display: grid;
-  gap: 12px;
+  gap: 14px;
 }
 
 .access-issued-examples pre {
@@ -947,7 +948,8 @@
   border-radius: 8px;
   margin: 8px 0 0;
   overflow-x: auto;
-  padding: 11px;
+  padding: 13px;
+  white-space: pre-wrap;
 }
 
 .results-compare-card {
