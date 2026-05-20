@@ -794,11 +794,18 @@ func (b *distributedExecutionBackend) stageRemoteArchive(test *ManagedTest, requ
 	if err := os.WriteFile(filepath.Join(archiveDir, "manifest.json"), manifestContent, 0o644); err != nil {
 		return nil, err
 	}
+	if err := uploadArchiveDirectory(context.Background(), archiveDir, manifest.TestID); err != nil {
+		return nil, err
+	}
+	archiveBackend := currentArchiveBackend()
 	return &storage.RunArchiveRecord{
 		TestID:               manifest.TestID,
 		SchemaVersion:        manifest.SchemaVersion,
+		ArchiveBackend:       archiveBackend.Backend,
 		ArchivePath:          archiveDir,
 		ManifestPath:         filepath.Join(archiveDir, "manifest.json"),
+		ArchiveURI:           archiveBackend.runURI(manifest.TestID),
+		ManifestURI:          archiveBackend.manifestURI(manifest.TestID),
 		TransactionCount:     manifest.TransactionCount,
 		ResourceSampleCount:  manifest.ResourceSampleCount,
 		IntervalSummaryCount: manifest.IntervalSummaryCount,

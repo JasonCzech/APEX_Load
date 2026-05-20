@@ -141,10 +141,16 @@ npm run dev
 Controller runtime configuration:
 
 - `STORMRUNNER_ADDR`: HTTP bind address (default `:8080`)
+- `STORMRUNNER_STORE`: metadata store backend: `sqlite` or `postgres` (default `sqlite`)
 - `STORMRUNNER_DB`: SQLite DB path (default `stormrunner.db`)
+- `STORMRUNNER_DATABASE_URL`: PostgreSQL connection URL when `STORMRUNNER_STORE=postgres`
+- `STORMRUNNER_DATABASE_MAX_OPEN_CONNS`, `STORMRUNNER_DATABASE_MAX_IDLE_CONNS`, `STORMRUNNER_DATABASE_CONN_MAX_LIFETIME`: production PostgreSQL pool tuning
 - `STORMRUNNER_GENERATORS`: comma-separated generator gRPC targets; when set, the controller uses the distributed backend
 - `STORMRUNNER_GENERATOR_TIMEOUT`: timeout for controller-to-generator RPCs (default `10s`)
+- `STORMRUNNER_ARCHIVE_BACKEND`: archive backend: `filesystem`, `s3`, `azure_blob`, or `gcs` (default `filesystem`)
 - `STORMRUNNER_ARCHIVE_DIR`: archive root for local runs and staged remote archives (default `artifacts/archives`)
+- `STORMRUNNER_ARCHIVE_BUCKET`, `STORMRUNNER_ARCHIVE_CONTAINER`, `STORMRUNNER_ARCHIVE_PREFIX`, `STORMRUNNER_ARCHIVE_REGION`, `STORMRUNNER_ARCHIVE_ENDPOINT`: object archive target metadata for enterprise deployments
+- `STORMRUNNER_PROMETHEUS_REMOTE_WRITE_URL`: optional Prometheus-compatible long-term metrics retention endpoint
 
 ## Build and Test
 

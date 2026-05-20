@@ -478,8 +478,11 @@ type Folder struct {
 type RunArchiveRecord struct {
 	TestID               string    `json:"test_id"`
 	SchemaVersion        string    `json:"schema_version"`
+	ArchiveBackend       string    `json:"archive_backend,omitempty"`
 	ArchivePath          string    `json:"archive_path"`
 	ManifestPath         string    `json:"manifest_path"`
+	ArchiveURI           string    `json:"archive_uri,omitempty"`
+	ManifestURI          string    `json:"manifest_uri,omitempty"`
 	TransactionCount     int64     `json:"transaction_count"`
 	ResourceSampleCount  int64     `json:"resource_sample_count"`
 	IntervalSummaryCount int64     `json:"interval_summary_count"`

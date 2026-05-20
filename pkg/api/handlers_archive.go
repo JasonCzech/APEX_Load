@@ -36,6 +36,10 @@ func (s *Server) handleDownloadRunArchive(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusNotFound, "archive not found")
 		return
 	}
+	if err := ensureArchiveMaterialized(record); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to materialize archive: "+err.Error())
+		return
+	}
 	filename := fmt.Sprintf("%s-%s.zip", sanitizeFilename(test.Name), id)
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
@@ -58,6 +62,10 @@ func (s *Server) handleDownloadRunArchiveArtifact(w http.ResponseWriter, r *http
 	record, ok := s.runner.GetRunArchive(id)
 	if !ok {
 		writeError(w, http.StatusNotFound, "archive not found")
+		return
+	}
+	if err := ensureArchiveMaterialized(record); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to materialize archive: "+err.Error())
 		return
 	}
 	manifest, err := s.runner.GetRunArchiveManifest(id)
@@ -86,6 +94,10 @@ func (s *Server) handleDownloadRunArchiveBrowserDiagnostics(w http.ResponseWrite
 	record, ok := s.runner.GetRunArchive(id)
 	if !ok {
 		writeError(w, http.StatusNotFound, "archive not found")
+		return
+	}
+	if err := ensureArchiveMaterialized(record); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to materialize archive: "+err.Error())
 		return
 	}
 	bundle, err := buildRunArchiveBrowserDiagnostics(record)
@@ -326,6 +338,10 @@ func (s *Server) requireRunArchive(w http.ResponseWriter, r *http.Request) (*sto
 	record, ok := s.runner.GetRunArchive(id)
 	if !ok {
 		writeError(w, http.StatusNotFound, "archive not found")
+		return nil, false
+	}
+	if err := ensureArchiveMaterialized(record); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to materialize archive: "+err.Error())
 		return nil, false
 	}
 	return record, true

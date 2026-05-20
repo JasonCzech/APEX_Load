@@ -40,7 +40,14 @@ func TestHandleSystemReadinessReturnsReadyForConfiguredLocalController(t *testin
 		t.Fatalf("status = %q, want ready payload=%#v", payload.Status, payload)
 	}
 	assertReadinessCheck(t, payload, "metadata_store", readinessStatusReady)
-	assertReadinessCheck(t, payload, "archive_writer", readinessStatusReady)
+	metadata := assertReadinessCheck(t, payload, "metadata_store", readinessStatusReady)
+	if metadata.Details["store_type"] != storage.StoreBackendSQLite {
+		t.Fatalf("metadata store type = %#v, want sqlite", metadata.Details["store_type"])
+	}
+	archive := assertReadinessCheck(t, payload, "archive_writer", readinessStatusReady)
+	if archive.Details["archive_backend"] != archiveBackendFilesystem {
+		t.Fatalf("archive backend = %#v, want filesystem", archive.Details["archive_backend"])
+	}
 	assertReadinessCheck(t, payload, "generator_rpc", readinessStatusReady)
 	assertReadinessCheck(t, payload, "telemetry_fanout", readinessStatusReady)
 	assertReadinessCheck(t, payload, "auth_mode", readinessStatusReady)
@@ -102,15 +109,16 @@ func TestHandleSystemReadinessReturnsNotReadyWhenDistributedGeneratorsUnreachabl
 	assertReadinessCheck(t, payload, "generator_rpc", readinessStatusNotReady)
 }
 
-func assertReadinessCheck(t *testing.T, payload SystemReadinessResponse, name string, status string) {
+func assertReadinessCheck(t *testing.T, payload SystemReadinessResponse, name string, status string) SystemReadinessCheck {
 	t.Helper()
 	for _, check := range payload.Checks {
 		if check.Name == name {
 			if check.Status != status {
 				t.Fatalf("%s status = %q, want %q check=%#v", name, check.Status, status, check)
 			}
-			return
+			return check
 		}
 	}
 	t.Fatalf("missing readiness check %q in %#v", name, payload.Checks)
+	return SystemReadinessCheck{}
 }

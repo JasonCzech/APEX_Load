@@ -7,15 +7,48 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
+	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/jasonczech/stormrunner/pkg/dsl"
 	_ "modernc.org/sqlite"
 )
 
 type SQLiteStore struct {
-	db *sql.DB
+	db      *storeDB
+	backend StoreBackendInfo
+}
+
+type PostgresStore struct {
+	*SQLiteStore
+}
+
+type StoreBackendInfo struct {
+	Type             string `json:"type"`
+	Driver           string `json:"driver"`
+	MigrationVersion string `json:"migration_version"`
+	LeaseCapability  bool   `json:"lease_capability"`
+	DSN              string `json:"-"`
+}
+
+type storeDialect string
+
+const (
+	storeDialectSQLite   storeDialect = "sqlite"
+	storeDialectPostgres storeDialect = "postgres"
+)
+
+type storeDB struct {
+	db      *sql.DB
+	dialect storeDialect
+}
+
+type storeTx struct {
+	tx      *sql.Tx
+	dialect storeDialect
 }
 
 const (
@@ -89,12 +122,224 @@ func NewSQLiteStore(path string) (*SQLiteStore, error) {
 		return nil, fmt.Errorf("failed to open sqlite db: %w", err)
 	}
 
-	s := &SQLiteStore{db: db}
+	s := newSQLStore(db, storeDialectSQLite, StoreBackendInfo{
+		Type:             "sqlite",
+		Driver:           "modernc.org/sqlite",
+		MigrationVersion: archiveRecordSchemaVersion,
+		LeaseCapability:  true,
+		DSN:              path,
+	})
 	if err := s.init(); err != nil {
+		_ = db.Close()
 		return nil, err
 	}
 
 	return s, nil
+}
+
+func NewPostgresStore(databaseURL string, options StoreConnectionOptions) (*PostgresStore, error) {
+	databaseURL = strings.TrimSpace(databaseURL)
+	if databaseURL == "" {
+		return nil, errors.New("postgres database url is required")
+	}
+	db, err := sql.Open("pgx", databaseURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open postgres db: %w", err)
+	}
+	applyConnectionOptions(db, options)
+	if err := db.Ping(); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("failed to ping postgres db: %w", err)
+	}
+	s := newSQLStore(db, storeDialectPostgres, StoreBackendInfo{
+		Type:             "postgres",
+		Driver:           "github.com/jackc/pgx/v5/stdlib",
+		MigrationVersion: archiveRecordSchemaVersion,
+		LeaseCapability:  true,
+		DSN:              databaseURL,
+	})
+	if err := s.init(); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	return &PostgresStore{SQLiteStore: s}, nil
+}
+
+type StoreConnectionOptions struct {
+	MaxOpenConns    int
+	MaxIdleConns    int
+	ConnMaxLifetime time.Duration
+}
+
+func applyConnectionOptions(db *sql.DB, options StoreConnectionOptions) {
+	if db == nil {
+		return
+	}
+	if options.MaxOpenConns > 0 {
+		db.SetMaxOpenConns(options.MaxOpenConns)
+	}
+	if options.MaxIdleConns > 0 {
+		db.SetMaxIdleConns(options.MaxIdleConns)
+	}
+	if options.ConnMaxLifetime > 0 {
+		db.SetConnMaxLifetime(options.ConnMaxLifetime)
+	}
+}
+
+func newSQLStore(db *sql.DB, dialect storeDialect, info StoreBackendInfo) *SQLiteStore {
+	return &SQLiteStore{
+		db: &storeDB{
+			db:      db,
+			dialect: dialect,
+		},
+		backend: info,
+	}
+}
+
+func (s *SQLiteStore) BackendInfo() StoreBackendInfo {
+	if s == nil {
+		return StoreBackendInfo{}
+	}
+	return s.backend
+}
+
+func (s *PostgresStore) BackendInfo() StoreBackendInfo {
+	if s == nil || s.SQLiteStore == nil {
+		return StoreBackendInfo{}
+	}
+	return s.SQLiteStore.BackendInfo()
+}
+
+func (db *storeDB) Exec(query string, args ...any) (sql.Result, error) {
+	return db.db.Exec(rewriteSQL(query, db.dialect), args...)
+}
+
+func (db *storeDB) Query(query string, args ...any) (*sql.Rows, error) {
+	return db.db.Query(rewriteSQL(query, db.dialect), args...)
+}
+
+func (db *storeDB) QueryRow(query string, args ...any) *sql.Row {
+	return db.db.QueryRow(rewriteSQL(query, db.dialect), args...)
+}
+
+func (db *storeDB) Begin() (*storeTx, error) {
+	tx, err := db.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	return &storeTx{tx: tx, dialect: db.dialect}, nil
+}
+
+func (db *storeDB) Close() error {
+	return db.db.Close()
+}
+
+func (db *storeDB) Ping() error {
+	return db.db.Ping()
+}
+
+func (tx *storeTx) Exec(query string, args ...any) (sql.Result, error) {
+	return tx.tx.Exec(rewriteSQL(query, tx.dialect), args...)
+}
+
+func (tx *storeTx) Query(query string, args ...any) (*sql.Rows, error) {
+	return tx.tx.Query(rewriteSQL(query, tx.dialect), args...)
+}
+
+func (tx *storeTx) QueryRow(query string, args ...any) *sql.Row {
+	return tx.tx.QueryRow(rewriteSQL(query, tx.dialect), args...)
+}
+
+func (tx *storeTx) Commit() error {
+	return tx.tx.Commit()
+}
+
+func (tx *storeTx) Rollback() error {
+	return tx.tx.Rollback()
+}
+
+var (
+	insertOrIgnorePattern = regexp.MustCompile(`(?is)^\s*INSERT\s+OR\s+IGNORE\s+INTO\s+(.+)$`)
+	inlineReferences      = regexp.MustCompile(`(?i)\s+REFERENCES\s+[a-zA-Z_][a-zA-Z0-9_]*\s*\([^)]*\)`)
+	trailingCreateComma   = regexp.MustCompile(`,\s*\)`)
+)
+
+func rewriteSQL(query string, dialect storeDialect) string {
+	if dialect != storeDialectPostgres {
+		return query
+	}
+	rewritten := query
+	rewritten = strings.ReplaceAll(rewritten, "DATETIME", "TIMESTAMPTZ")
+	rewritten = strings.ReplaceAll(rewritten, "datetime", "TIMESTAMPTZ")
+	if strings.Contains(strings.ToUpper(rewritten), "CREATE TABLE") || strings.Contains(strings.ToUpper(rewritten), "ALTER TABLE") {
+		rewritten = stripPostgresForeignKeyReferences(rewritten)
+	}
+	for _, replacement := range []struct {
+		old string
+		new string
+	}{
+		{"shakeout_enabled INTEGER DEFAULT 0", "shakeout_enabled BOOLEAN DEFAULT FALSE"},
+		{"resource_baseline_enabled INTEGER DEFAULT 0", "resource_baseline_enabled BOOLEAN DEFAULT FALSE"},
+		{"enabled INTEGER DEFAULT 1", "enabled BOOLEAN DEFAULT TRUE"},
+		{"baseline_pinned INTEGER DEFAULT 0", "baseline_pinned BOOLEAN DEFAULT FALSE"},
+		{"active INTEGER NOT NULL DEFAULT 1", "active BOOLEAN NOT NULL DEFAULT TRUE"},
+		{"ADD COLUMN active INTEGER NOT NULL DEFAULT 1", "ADD COLUMN active BOOLEAN NOT NULL DEFAULT TRUE"},
+		{"COALESCE(shakeout_enabled, 0)", "COALESCE(shakeout_enabled, FALSE)"},
+		{"COALESCE(resource_baseline_enabled, 0)", "COALESCE(resource_baseline_enabled, FALSE)"},
+		{"COALESCE(enabled, 1)", "COALESCE(enabled, TRUE)"},
+		{"COALESCE(baseline_pinned, 0)", "COALESCE(baseline_pinned, FALSE)"},
+		{" active = 1", " active = TRUE"},
+	} {
+		rewritten = strings.ReplaceAll(rewritten, replacement.old, replacement.new)
+	}
+	if matches := insertOrIgnorePattern.FindStringSubmatch(rewritten); len(matches) == 2 {
+		rewritten = "INSERT INTO " + matches[1] + " ON CONFLICT DO NOTHING"
+	}
+	return rewriteQuestionPlaceholders(rewritten)
+}
+
+func stripPostgresForeignKeyReferences(query string) string {
+	lines := strings.Split(query, "\n")
+	filtered := lines[:0]
+	for _, line := range lines {
+		if strings.Contains(strings.ToUpper(line), "FOREIGN KEY") {
+			continue
+		}
+		filtered = append(filtered, inlineReferences.ReplaceAllString(line, ""))
+	}
+	query = strings.Join(filtered, "\n")
+	for trailingCreateComma.MatchString(query) {
+		query = trailingCreateComma.ReplaceAllString(query, ")")
+	}
+	return query
+}
+
+func rewriteQuestionPlaceholders(query string) string {
+	var builder strings.Builder
+	builder.Grow(len(query) + 8)
+	placeholder := 1
+	inSingleQuote := false
+	for i := 0; i < len(query); i++ {
+		ch := query[i]
+		if ch == '\'' {
+			builder.WriteByte(ch)
+			if inSingleQuote && i+1 < len(query) && query[i+1] == '\'' {
+				i++
+				builder.WriteByte(query[i])
+				continue
+			}
+			inSingleQuote = !inSingleQuote
+			continue
+		}
+		if ch == '?' && !inSingleQuote {
+			builder.WriteByte('$')
+			builder.WriteString(strconv.Itoa(placeholder))
+			placeholder++
+			continue
+		}
+		builder.WriteByte(ch)
+	}
+	return builder.String()
 }
 
 func (s *SQLiteStore) init() error {
@@ -396,8 +641,11 @@ func (s *SQLiteStore) init() error {
 		`CREATE TABLE IF NOT EXISTS run_archives (
 			test_id TEXT PRIMARY KEY,
 			schema_version TEXT,
+			archive_backend TEXT,
 			archive_path TEXT,
 			manifest_path TEXT,
+			archive_uri TEXT,
+			manifest_uri TEXT,
 			transaction_count INTEGER,
 			resource_sample_count INTEGER,
 			interval_summary_count INTEGER,
@@ -499,13 +747,13 @@ func (s *SQLiteStore) init() error {
 	}
 
 	if _, err := s.db.Exec(`ALTER TABLE tests ADD COLUMN shakeout_enabled INTEGER DEFAULT 0`); err != nil {
-		if err.Error() != "SQL logic error: duplicate column name: shakeout_enabled (1)" {
+		if !isDuplicateColumnErr(err) {
 			return fmt.Errorf("failed to add shakeout_enabled column: %w", err)
 		}
 	}
 
 	if _, err := s.db.Exec(`ALTER TABLE tests ADD COLUMN resource_baseline_enabled INTEGER DEFAULT 0`); err != nil {
-		if err.Error() != "SQL logic error: duplicate column name: resource_baseline_enabled (1)" {
+		if !isDuplicateColumnErr(err) {
 			return fmt.Errorf("failed to add resource_baseline_enabled column: %w", err)
 		}
 	}
@@ -523,7 +771,7 @@ func (s *SQLiteStore) init() error {
 	}
 
 	if _, err := s.db.Exec(`ALTER TABLE scripts ADD COLUMN metadata_json TEXT`); err != nil {
-		if err.Error() != "SQL logic error: duplicate column name: metadata_json (1)" {
+		if !isDuplicateColumnErr(err) {
 			return fmt.Errorf("failed to add metadata_json column: %w", err)
 		}
 	}
@@ -551,6 +799,9 @@ func (s *SQLiteStore) init() error {
 		{`ALTER TABLE releases ADD COLUMN archived_at DATETIME`, "releases.archived_at"},
 		{`ALTER TABLE test_interval_summaries ADD COLUMN schema_version TEXT`, "test_interval_summaries.schema_version"},
 		{`ALTER TABLE run_archives ADD COLUMN schema_version TEXT`, "run_archives.schema_version"},
+		{`ALTER TABLE run_archives ADD COLUMN archive_backend TEXT`, "run_archives.archive_backend"},
+		{`ALTER TABLE run_archives ADD COLUMN archive_uri TEXT`, "run_archives.archive_uri"},
+		{`ALTER TABLE run_archives ADD COLUMN manifest_uri TEXT`, "run_archives.manifest_uri"},
 		{`ALTER TABLE test_interval_summaries ADD COLUMN generator_published_at DATETIME`, "test_interval_summaries.generator_published_at"},
 		{`ALTER TABLE test_interval_summaries ADD COLUMN controller_received_at DATETIME`, "test_interval_summaries.controller_received_at"},
 		{`ALTER TABLE test_interval_summaries ADD COLUMN generator_processing_lag_ms REAL`, "test_interval_summaries.generator_processing_lag_ms"},
@@ -602,7 +853,8 @@ func (s *SQLiteStore) init() error {
 }
 
 func isDuplicateColumnErr(err error) bool {
-	return strings.Contains(err.Error(), "duplicate column name")
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "duplicate column name") || strings.Contains(message, "already exists")
 }
 
 func (s *SQLiteStore) ensureDefaultDomainHierarchy() error {
@@ -1589,7 +1841,7 @@ type scanner interface {
 
 func scanScenarioSchedule(row scanner) (*ScenarioSchedule, error) {
 	var schedule ScenarioSchedule
-	var enabled int
+	var enabled any
 	var governanceJSON string
 	var blackoutWindowsJSON string
 	var maintenanceWindowsJSON string
@@ -1626,7 +1878,7 @@ func scanScenarioSchedule(row scanner) (*ScenarioSchedule, error) {
 	if err != nil {
 		return nil, err
 	}
-	schedule.Enabled = enabled != 0
+	schedule.Enabled = sqlBool(enabled)
 	schedule.ProjectID = normalizeProjectID(schedule.ProjectID)
 	if schedule.Revision < 1 {
 		schedule.Revision = 1
@@ -2969,12 +3221,15 @@ func (s *SQLiteStore) SaveRunArchive(record *RunArchiveRecord) error {
 		return errors.New("run archive record is nil")
 	}
 	record.SchemaVersion = normalizeTelemetrySchemaVersion(record.SchemaVersion, archiveRecordSchemaVersion)
-	_, err := s.db.Exec(`INSERT INTO run_archives (test_id, schema_version, archive_path, manifest_path, transaction_count, resource_sample_count, interval_summary_count, created_at, completed_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+	_, err := s.db.Exec(`INSERT INTO run_archives (test_id, schema_version, archive_backend, archive_path, manifest_path, archive_uri, manifest_uri, transaction_count, resource_sample_count, interval_summary_count, created_at, completed_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(test_id) DO UPDATE SET
 		schema_version=excluded.schema_version,
+		archive_backend=excluded.archive_backend,
 		archive_path=excluded.archive_path,
 		manifest_path=excluded.manifest_path,
+		archive_uri=excluded.archive_uri,
+		manifest_uri=excluded.manifest_uri,
 		transaction_count=excluded.transaction_count,
 		resource_sample_count=excluded.resource_sample_count,
 		interval_summary_count=excluded.interval_summary_count,
@@ -2982,8 +3237,11 @@ func (s *SQLiteStore) SaveRunArchive(record *RunArchiveRecord) error {
 		completed_at=excluded.completed_at`,
 		record.TestID,
 		record.SchemaVersion,
+		record.ArchiveBackend,
 		record.ArchivePath,
 		record.ManifestPath,
+		record.ArchiveURI,
+		record.ManifestURI,
 		record.TransactionCount,
 		record.ResourceSampleCount,
 		record.IntervalSummaryCount,
@@ -2995,11 +3253,14 @@ func (s *SQLiteStore) SaveRunArchive(record *RunArchiveRecord) error {
 
 func (s *SQLiteStore) GetRunArchive(testID string) (*RunArchiveRecord, error) {
 	var record RunArchiveRecord
-	err := s.db.QueryRow(`SELECT test_id, schema_version, archive_path, manifest_path, transaction_count, resource_sample_count, interval_summary_count, created_at, completed_at FROM run_archives WHERE test_id = ?`, testID).Scan(
+	err := s.db.QueryRow(`SELECT test_id, schema_version, COALESCE(archive_backend, ''), archive_path, manifest_path, COALESCE(archive_uri, ''), COALESCE(manifest_uri, ''), transaction_count, resource_sample_count, interval_summary_count, created_at, completed_at FROM run_archives WHERE test_id = ?`, testID).Scan(
 		&record.TestID,
 		&record.SchemaVersion,
+		&record.ArchiveBackend,
 		&record.ArchivePath,
 		&record.ManifestPath,
+		&record.ArchiveURI,
+		&record.ManifestURI,
 		&record.TransactionCount,
 		&record.ResourceSampleCount,
 		&record.IntervalSummaryCount,
@@ -3083,7 +3344,7 @@ func (s *SQLiteStore) SaveServiceAccount(account *ServiceAccount) error {
 		account.Name,
 		account.Description,
 		account.KeyHash,
-		boolToSQLite(account.Active),
+		s.boolValue(account.Active),
 		string(globalRolesJSON),
 		string(projectRolesJSON),
 		string(domainRolesJSON),
@@ -3113,7 +3374,7 @@ func serviceAccountSelectColumns() string {
 
 func (s *SQLiteStore) getServiceAccountByQuery(query string, args ...any) (*ServiceAccount, error) {
 	var account ServiceAccount
-	var active int
+	var active any
 	var globalRolesJSON string
 	var projectRolesJSON string
 	var domainRolesJSON string
@@ -3144,7 +3405,7 @@ func (s *SQLiteStore) getServiceAccountByQuery(query string, args ...any) (*Serv
 	if err != nil {
 		return nil, err
 	}
-	account.Active = active != 0
+	account.Active = sqlBool(active)
 	if lastUsedAt.Valid {
 		account.LastUsedAt = &lastUsedAt.Time
 	}
@@ -3194,7 +3455,7 @@ func (s *SQLiteStore) ListServiceAccounts() ([]*ServiceAccount, error) {
 	accounts := []*ServiceAccount{}
 	for rows.Next() {
 		var account ServiceAccount
-		var active int
+		var active any
 		var globalRolesJSON string
 		var projectRolesJSON string
 		var domainRolesJSON string
@@ -3207,7 +3468,7 @@ func (s *SQLiteStore) ListServiceAccounts() ([]*ServiceAccount, error) {
 		if err := rows.Scan(&account.ID, &account.Name, &account.Description, &account.KeyHash, &active, &globalRolesJSON, &projectRolesJSON, &domainRolesJSON, &repositoryRolesJSON, &scopesJSON, &account.CreatedAt, &account.UpdatedAt, &lastUsedAt, &expiresAt, &keyRotatedAt, &rotationIntervalDays); err != nil {
 			return nil, err
 		}
-		account.Active = active != 0
+		account.Active = sqlBool(active)
 		if lastUsedAt.Valid {
 			account.LastUsedAt = &lastUsedAt.Time
 		}
@@ -3273,7 +3534,7 @@ func (s *SQLiteStore) UpdateServiceAccountLastUsed(id string, lastUsedAt time.Ti
 }
 
 func (s *SQLiteStore) UpdateServiceAccountActive(id string, active bool, updatedAt time.Time) error {
-	_, err := s.db.Exec(`UPDATE service_accounts SET active = ?, updated_at = ? WHERE id = ?`, boolToSQLite(active), updatedAt, id)
+	_, err := s.db.Exec(`UPDATE service_accounts SET active = ?, updated_at = ? WHERE id = ?`, s.boolValue(active), updatedAt, id)
 	return err
 }
 
@@ -3654,6 +3915,33 @@ func boolToSQLite(value bool) int {
 		return 1
 	}
 	return 0
+}
+
+func (s *SQLiteStore) boolValue(value bool) any {
+	if s != nil && s.db != nil && s.db.dialect == storeDialectPostgres {
+		return value
+	}
+	return boolToSQLite(value)
+}
+
+func sqlBool(value any) bool {
+	switch typed := value.(type) {
+	case bool:
+		return typed
+	case int:
+		return typed != 0
+	case int64:
+		return typed != 0
+	case int32:
+		return typed != 0
+	case []byte:
+		return sqlBool(string(typed))
+	case string:
+		normalized := strings.TrimSpace(strings.ToLower(typed))
+		return normalized == "1" || normalized == "t" || normalized == "true" || normalized == "yes" || normalized == "on"
+	default:
+		return false
+	}
 }
 
 func (s *SQLiteStore) Close() error {

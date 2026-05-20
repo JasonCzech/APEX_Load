@@ -26,6 +26,8 @@ SQLite and filesystem archives remain the default for local development and sing
 
 ### Phase 1: Storage Backend Configuration And PostgreSQL Store
 
+Status: implemented for backend selection, pgx-backed PostgreSQL initialization, shared SQL dialect translation, readiness/inventory metadata, and storage factory tests. Integration against a live PostgreSQL instance is gated by deployment credentials.
+
 - Add storage backend selection:
   - `STORMRUNNER_STORE=sqlite|postgres`, default `sqlite`.
   - `STORMRUNNER_DB` remains the SQLite path.
@@ -39,6 +41,8 @@ SQLite and filesystem archives remain the default for local development and sing
 
 ### Phase 2: Object Archive Store
 
+Status: implemented for archive backend selection, object URI metadata, object-backend staging roots, readiness validation, persisted archive URI fields, provider-backed upload, materialization fallback, and deployment configuration examples.
+
 - Introduce an archive storage abstraction with filesystem and object-store implementations.
 - Add configuration:
   - `STORMRUNNER_ARCHIVE_BACKEND=filesystem|s3|azure_blob|gcs`, default `filesystem`.
@@ -50,6 +54,8 @@ SQLite and filesystem archives remain the default for local development and sing
 - Ensure archive download, report, comparison, browser diagnostics, JSONL, CSV, and Parquet endpoints work identically across filesystem and object storage.
 
 ### Phase 3: Enterprise Time-Series Retention
+
+Status: implemented for Prometheus ServiceMonitor and remote-write deployment examples, inventory retention metadata, readiness-visible archive/metadata configuration, and operator documentation.
 
 - Keep Stormrunner's hot-path telemetry model: compact WebSocket summaries, typed interval summaries, full-fidelity archives.
 - Add production deployment artifacts for Prometheus scraping and remote-write:

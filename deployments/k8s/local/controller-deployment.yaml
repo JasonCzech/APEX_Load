@@ -28,8 +28,12 @@ spec:
               value: ":8080"
             - name: STORMRUNNER_DB
               value: /var/lib/stormrunner/stormrunner.db
+            - name: STORMRUNNER_STORE
+              value: sqlite
             - name: STORMRUNNER_ARCHIVE_DIR
               value: /var/lib/stormrunner/archives
+            - name: STORMRUNNER_ARCHIVE_BACKEND
+              value: filesystem
             - name: STORMRUNNER_GENERATOR_TIMEOUT
               value: 10s
             - name: STORMRUNNER_GENERATORS

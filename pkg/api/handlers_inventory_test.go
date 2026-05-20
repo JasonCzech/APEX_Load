@@ -56,6 +56,9 @@ func TestHandleGetSystemInventoryReturnsControllerAndGenerators(t *testing.T) {
 	if payload.Controller.Address != ":8080" {
 		t.Fatalf("controller address = %q, want :8080", payload.Controller.Address)
 	}
+	if payload.DataPlatform.ArchiveBackend != archiveBackendFilesystem {
+		t.Fatalf("archive backend = %q, want filesystem", payload.DataPlatform.ArchiveBackend)
+	}
 	if len(payload.Generators) != 1 {
 		t.Fatalf("generator count = %d, want 1", len(payload.Generators))
 	}

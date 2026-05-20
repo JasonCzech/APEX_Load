@@ -31,13 +31,7 @@ func main() {
 		addr = ":8080"
 	}
 
-	// SQLite backing store path for scripts, tests, and archived run metadata.
-	dbPath := os.Getenv("STORMRUNNER_DB")
-	if dbPath == "" {
-		dbPath = "stormrunner.db"
-	}
-
-	store, err := storage.NewSQLiteStore(dbPath)
+	store, err := storage.NewStoreFromEnv()
 	if err != nil {
 		slog.Error("failed to initialize storage", "err", err)
 		os.Exit(1)

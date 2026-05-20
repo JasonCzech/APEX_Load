@@ -3,6 +3,7 @@ package api
 import (
 	"archive/zip"
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -598,13 +599,6 @@ func captureStormrunnerEnv() map[string]string {
 	return env
 }
 
-func resolveArchiveRoot() string {
-	if dir := os.Getenv("STORMRUNNER_ARCHIVE_DIR"); dir != "" {
-		return dir
-	}
-	return filepath.Join("artifacts", "archives")
-}
-
 func (w *runArchiveWriter) RecordResult(result *protocol.Result) error {
 	if result == nil {
 		return nil
@@ -749,12 +743,19 @@ func (w *runArchiveWriter) Finalize(status string, completedAt time.Time, errStr
 	if err := os.WriteFile(w.manifestPath, data, 0o644); err != nil {
 		return nil, err
 	}
+	if err := uploadArchiveDirectory(context.Background(), w.rootDir, w.manifest.TestID); err != nil {
+		return nil, err
+	}
 
+	backend := currentArchiveBackend()
 	return &storage.RunArchiveRecord{
 		TestID:               w.manifest.TestID,
 		SchemaVersion:        w.manifest.SchemaVersion,
+		ArchiveBackend:       backend.Backend,
 		ArchivePath:          w.rootDir,
 		ManifestPath:         w.manifestPath,
+		ArchiveURI:           backend.runURI(w.manifest.TestID),
+		ManifestURI:          backend.manifestURI(w.manifest.TestID),
 		TransactionCount:     w.manifest.TransactionCount,
 		ResourceSampleCount:  w.manifest.ResourceSampleCount,
 		IntervalSummaryCount: w.manifest.IntervalSummaryCount,
@@ -798,6 +799,9 @@ func archiveManifestArtifactNames(manifest *RunArchiveManifest) map[string]struc
 }
 
 func loadArchiveTransactions(record *storage.RunArchiveRecord, filter transactionEventFilter, page archivePage) ([]TransactionEvent, int, error) {
+	if err := ensureArchiveMaterialized(record); err != nil {
+		return nil, 0, err
+	}
 	manifest, err := loadRunArchiveManifest(record.ManifestPath)
 	if err != nil {
 		return nil, 0, err
@@ -833,6 +837,9 @@ func loadArchiveTransactions(record *storage.RunArchiveRecord, filter transactio
 }
 
 func loadArchiveResourceSamples(record *storage.RunArchiveRecord, page archivePage) ([]ResourceSample, int, error) {
+	if err := ensureArchiveMaterialized(record); err != nil {
+		return nil, 0, err
+	}
 	manifest, err := loadRunArchiveManifest(record.ManifestPath)
 	if err != nil {
 		return nil, 0, err
@@ -842,6 +849,9 @@ func loadArchiveResourceSamples(record *storage.RunArchiveRecord, page archivePa
 }
 
 func loadArchiveIntervalSummaries(record *storage.RunArchiveRecord, page archivePage) ([]IntervalSummaryRecord, int, error) {
+	if err := ensureArchiveMaterialized(record); err != nil {
+		return nil, 0, err
+	}
 	manifest, err := loadRunArchiveManifest(record.ManifestPath)
 	if err != nil {
 		return nil, 0, err
@@ -851,6 +861,9 @@ func loadArchiveIntervalSummaries(record *storage.RunArchiveRecord, page archive
 }
 
 func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport, error) {
+	if err := ensureArchiveMaterialized(record); err != nil {
+		return nil, err
+	}
 	manifest, err := loadRunArchiveManifest(record.ManifestPath)
 	if err != nil {
 		return nil, err

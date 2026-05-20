@@ -7,12 +7,14 @@ import (
 	"sort"
 
 	"github.com/jasonczech/stormrunner/pkg/protocol"
+	"github.com/jasonczech/stormrunner/pkg/storage"
 )
 
 type SystemInventoryResponse struct {
 	ExecutionMode string                    `json:"execution_mode"`
 	Controller    ControllerInventoryEntry  `json:"controller"`
 	Generators    []GeneratorInventoryEntry `json:"generators"`
+	DataPlatform  DataPlatformInventory     `json:"data_platform,omitempty"`
 }
 
 type ControllerInventoryEntry struct {
@@ -46,6 +48,14 @@ type GeneratorInventoryEntry struct {
 	MaxVUsers           int32    `json:"max_vusers"`
 }
 
+type DataPlatformInventory struct {
+	MetadataStore    string `json:"metadata_store"`
+	ArchiveBackend   string `json:"archive_backend"`
+	ArchiveURIPrefix string `json:"archive_uri_prefix,omitempty"`
+	CacheBackend     string `json:"cache_backend"`
+	MetricsRetention string `json:"metrics_retention"`
+}
+
 func (s *Server) handleGetSystemInventory(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.systemInventory(r.Context()))
 }
@@ -75,7 +85,23 @@ func (s *Server) systemInventory(ctx context.Context) SystemInventoryResponse {
 			Version:       "0.1.0",
 			ExecutionMode: executionMode,
 		},
-		Generators: entries,
+		Generators:   entries,
+		DataPlatform: s.dataPlatformInventory(),
+	}
+}
+
+func (s *Server) dataPlatformInventory() DataPlatformInventory {
+	metadataStore := "unknown"
+	if provider, ok := s.store.(storage.BackendInfoProvider); ok {
+		metadataStore = provider.BackendInfo().Type
+	}
+	archiveBackend := currentArchiveBackend()
+	return DataPlatformInventory{
+		MetadataStore:    metadataStore,
+		ArchiveBackend:   archiveBackend.Backend,
+		ArchiveURIPrefix: archiveBackend.URIPrefix,
+		CacheBackend:     "memory",
+		MetricsRetention: configuredMetricsRetention(),
 	}
 }
 

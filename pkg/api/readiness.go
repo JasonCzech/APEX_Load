@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/jasonczech/stormrunner/pkg/storage"
 )
 
 const (
@@ -85,23 +87,45 @@ func (s *Server) metadataStoreReadiness() SystemReadinessCheck {
 			}
 		}
 	}
+	details := map[string]any{}
+	if provider, ok := s.store.(storage.BackendInfoProvider); ok {
+		info := provider.BackendInfo()
+		if info.Type != "" {
+			details["store_type"] = info.Type
+		}
+		if info.Driver != "" {
+			details["driver"] = info.Driver
+		}
+		if info.MigrationVersion != "" {
+			details["migration_version"] = info.MigrationVersion
+		}
+		details["lease_capability"] = info.LeaseCapability
+	}
 	return SystemReadinessCheck{
 		Name:    "metadata_store",
 		Status:  readinessStatusReady,
 		Message: "metadata store is reachable",
+		Details: details,
 	}
 }
 
 func (s *Server) archiveWriterReadiness() SystemReadinessCheck {
-	root := resolveArchiveRoot()
+	backend := currentArchiveBackend()
+	if err := backend.validate(); err != nil {
+		return SystemReadinessCheck{
+			Name:    "archive_writer",
+			Status:  readinessStatusNotReady,
+			Message: err.Error(),
+			Details: backend.readinessDetails(),
+		}
+	}
+	root := backend.LocalRoot
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return SystemReadinessCheck{
 			Name:    "archive_writer",
 			Status:  readinessStatusNotReady,
 			Message: fmt.Sprintf("archive root cannot be created: %v", err),
-			Details: map[string]any{
-				"archive_root": root,
-			},
+			Details: backend.readinessDetails(),
 		}
 	}
 	probe, err := os.CreateTemp(root, ".readiness-*.tmp")
@@ -110,9 +134,7 @@ func (s *Server) archiveWriterReadiness() SystemReadinessCheck {
 			Name:    "archive_writer",
 			Status:  readinessStatusNotReady,
 			Message: fmt.Sprintf("archive root is not writable: %v", err),
-			Details: map[string]any{
-				"archive_root": root,
-			},
+			Details: backend.readinessDetails(),
 		}
 	}
 	probePath := probe.Name()
@@ -123,22 +145,30 @@ func (s *Server) archiveWriterReadiness() SystemReadinessCheck {
 			Name:    "archive_writer",
 			Status:  readinessStatusDegraded,
 			Message: "archive root is writable but cleanup reported an error",
-			Details: map[string]any{
-				"archive_root": root,
+			Details: mergeReadinessDetails(backend.readinessDetails(), map[string]any{
 				"probe_file":   filepath.Base(probePath),
 				"close_error":  errorString(closeErr),
 				"remove_error": errorString(removeErr),
-			},
+			}),
 		}
 	}
 	return SystemReadinessCheck{
 		Name:    "archive_writer",
 		Status:  readinessStatusReady,
 		Message: "archive root is writable",
-		Details: map[string]any{
-			"archive_root": root,
-		},
+		Details: backend.readinessDetails(),
 	}
+}
+
+func mergeReadinessDetails(base map[string]any, extra map[string]any) map[string]any {
+	merged := map[string]any{}
+	for key, value := range base {
+		merged[key] = value
+	}
+	for key, value := range extra {
+		merged[key] = value
+	}
+	return merged
 }
 
 func (s *Server) generatorRPCReadiness(ctx context.Context) SystemReadinessCheck {

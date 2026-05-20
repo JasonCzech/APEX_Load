@@ -2949,6 +2949,9 @@ func runArchiveRecordAvailable(record *storage.RunArchiveRecord) bool {
 	if record == nil || record.ManifestPath == "" {
 		return false
 	}
+	if err := ensureArchiveMaterialized(record); err != nil {
+		return false
+	}
 	_, err := os.Stat(record.ManifestPath)
 	return err == nil
 }
@@ -2957,6 +2960,9 @@ func (tr *TestRunner) GetRunArchiveManifest(id string) (*RunArchiveManifest, err
 	record, ok := tr.GetRunArchive(id)
 	if !ok {
 		return nil, fmt.Errorf("archive not found: %s", id)
+	}
+	if err := ensureArchiveMaterialized(record); err != nil {
+		return nil, err
 	}
 	return loadRunArchiveManifest(record.ManifestPath)
 }
