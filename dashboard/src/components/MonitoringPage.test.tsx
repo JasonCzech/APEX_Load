@@ -133,12 +133,38 @@ describe('MonitoringPage', () => {
       overall: 'partial',
       areas: [
         {
+          id: 'architecture',
+          name: 'Platform Architecture',
+          status: 'partial',
+          summary: 'Project ownership and readiness checks are in place.',
+          evidence: ['/api/v1/system/readiness'],
+          remaining: ['Complete external dependency evidence and production benchmark gates.'],
+          release_gate: true,
+        },
+        {
           id: 'fleet',
           name: 'Fleet And Scale-Out',
           status: 'partial',
-          summary: 'Fleet evidence is partially available.',
-          evidence: ['/api/v1/fleet/alerts'],
+          summary: 'Fleet inventory and capacity APIs are available.',
+          evidence: ['/api/v1/fleet/alerts', '/api/v1/fleet/capacity'],
           remaining: ['Complete production deployment autoscaling evidence.'],
+          release_gate: true,
+        },
+        {
+          id: 'authoring',
+          name: 'Authoring UX',
+          status: 'partial',
+          summary: 'Imports, validation, replay evidence, and authoring health are implemented.',
+          evidence: ['/api/v1/scripts/import/loadrunner'],
+          remaining: ['Complete final authoring benchmark evidence.'],
+          release_gate: true,
+        },
+        {
+          id: 'ai_assistance',
+          name: 'AI-Assisted Workflows',
+          status: 'complete',
+          summary: 'Governed deterministic AI assistance is implemented.',
+          evidence: ['/api/v1/ai/authoring/contract', '/api/v1/ai/drafts'],
           release_gate: true,
         },
         {
@@ -151,11 +177,48 @@ describe('MonitoringPage', () => {
           release_gate: true,
         },
         {
+          id: 'vugen_web2_migration',
+          name: 'VuGen Web 2.0 Migration',
+          status: 'partial',
+          summary: 'TruClient 2.0 Web review-profile migration evidence is exposed.',
+          evidence: ['/api/v1/scripts/import/loadrunner'],
+          remaining: ['Keep production readiness gated on replay evidence.'],
+          release_gate: true,
+        },
+        {
+          id: 'load_modeling',
+          name: 'Load Modeling',
+          status: 'partial',
+          summary: 'Load-model validation and report evidence have backend coverage.',
+          evidence: ['/api/v1/scenarios/validate-load-model'],
+          remaining: ['Complete final load-model benchmark evidence.'],
+          release_gate: true,
+        },
+        {
           id: 'monitoring',
           name: 'Real-Time Monitoring',
-          status: 'complete',
+          status: 'partial',
           summary: 'Operator checklist is available.',
           evidence: ['/api/v1/system/parity-status'],
+          remaining: ['Complete final monitoring benchmark evidence.'],
+          release_gate: true,
+        },
+        {
+          id: 'reporting',
+          name: 'Historical Reporting',
+          status: 'partial',
+          summary: 'Archives, CSV exports, usage snapshots, and retention apply are implemented.',
+          evidence: ['/api/v1/system/usage/export'],
+          remaining: ['Complete final historical reporting benchmark evidence.'],
+          release_gate: true,
+        },
+        {
+          id: 'scheduling',
+          name: 'Scheduling',
+          status: 'partial',
+          summary: 'Schedules, occurrences, approvals, and health are implemented.',
+          evidence: ['/api/v1/schedules/health'],
+          remaining: ['Expand governance conflict evidence for all external environment calendars.'],
           release_gate: true,
         },
       ],
@@ -172,6 +235,28 @@ describe('MonitoringPage', () => {
           evidence_level: 'docs+code',
         },
         {
+          id: 'managed_scale_load_zones',
+          name: 'Managed Scale And Load Zones',
+          status: 'partial',
+          competitors: ['k6', 'NeoLoad'],
+          summary: 'Regional inventory and capacity APIs exist; load-zone packaging remains.',
+          evidence: ['/api/v1/fleet/capacity'],
+          remaining: ['Promote regions to named load zones with cost/capacity metadata.'],
+          decision: 'match_with_packaging',
+          evidence_level: 'api+docs+tests',
+        },
+        {
+          id: 'authoring_recording',
+          name: 'Authoring, Recording, And Guided Repair',
+          status: 'partial',
+          competitors: ['k6', 'NeoLoad'],
+          summary: 'Imports and guided repair contracts exist; final workflow polish remains.',
+          evidence: ['/api/v1/scripts/import/loadrunner'],
+          remaining: ['Finish guided task flows and unify recorder/import/manual repair review.'],
+          decision: 'match_core_workflows',
+          evidence_level: 'api+docs+dashboard',
+        },
+        {
           id: 'browser_testing',
           name: 'Browser Testing And Client UX Evidence',
           status: 'partial',
@@ -183,6 +268,17 @@ describe('MonitoringPage', () => {
           evidence_level: 'api+docs+external_evidence_required',
         },
         {
+          id: 'analysis_integrations',
+          name: 'Analysis, APM, And Root-Cause Integrations',
+          status: 'partial',
+          competitors: ['k6', 'NeoLoad'],
+          summary: 'Archive root-cause and APM primitives exist; provider workflows remain.',
+          evidence: ['/api/v1/tests/{id}/archive/ai-root-cause'],
+          remaining: ['Deepen APM profile setup guidance with provider-specific fixtures.'],
+          decision: 'match_packaged_analysis',
+          evidence_level: 'api+docs',
+        },
+        {
           id: 'specialized_enterprise_protocols',
           name: 'Specialized Enterprise Protocol Breadth',
           status: 'gap',
@@ -191,6 +287,17 @@ describe('MonitoringPage', () => {
           evidence: ['docs/K6_NEOLOAD_PARITY_PLAN.md#phase-c6-specialized-enterprise-protocol-decisions'],
           remaining: ['Publish explicit non-goal or coexistence guidance.'],
           decision: 'demand_gated_non_goal',
+          evidence_level: 'docs',
+        },
+        {
+          id: 'packaging_samples_trust',
+          name: 'Packaging, Samples, And Trust',
+          status: 'partial',
+          competitors: ['k6', 'NeoLoad'],
+          summary: 'Docs, CI templates, dashboard workflows, and samples exist; release packaging remains.',
+          evidence: ['docs/API_USER_GUIDE.md'],
+          remaining: ['Publish canonical sample projects and one-command demo seeding.'],
+          decision: 'evidence_gate',
           evidence_level: 'docs',
         },
       ],
@@ -287,21 +394,26 @@ describe('MonitoringPage', () => {
     expect(container.textContent).toContain('Telemetry Diagnostics')
     expect(container.textContent).toContain('Controller')
     expect(container.textContent).toContain('Production Readiness')
+    expect(container.textContent).toContain('Parity')
     expect(container.textContent).toContain('Ready Checks')
     expect(container.textContent).toContain('4/6')
     expect(container.textContent).toContain('Generator RPC: some generator RPC targets are not reachable')
     expect(container.textContent).toContain('Auth Mode: development auth bypass is enabled')
     expect(container.textContent).toContain('Parity Checklist')
+    expect(container.textContent).toContain('Tracked Areas')
+    expect(container.textContent).toContain('10/10')
     expect(container.textContent).toContain('Fleet And Scale-Out: partial')
     expect(container.textContent).toContain('Browser Testing: partial')
+    expect(container.textContent).toContain('AI-Assisted Workflows: complete')
+    expect(container.textContent).toContain('VuGen Web 2.0 Migration: partial')
     expect(container.textContent).toContain('Browser Benchmark Evidence')
     expect(container.textContent).toContain('Desktop Chromium 1080p')
     expect(container.textContent).toContain('2-5 VUsers/generator')
     expect(container.textContent).toContain('High-density browser load claims are gated separately')
-    expect(container.textContent).toContain('Real-Time Monitoring: complete')
+    expect(container.textContent).toContain('Real-Time Monitoring: partial')
     expect(container.textContent).toContain('Release Gates')
     expect(container.textContent).toContain('Competitive Parity')
-    expect(container.textContent).toContain('3/3 known limitations tracked across k6, NeoLoad')
+    expect(container.textContent).toContain('7/7 known limitations tracked across k6, NeoLoad')
     expect(container.textContent).toContain('Generator Inventory')
     expect(container.textContent).toContain('0/0 connected')
     expect(container.textContent).toContain('danger')
@@ -340,6 +452,38 @@ describe('MonitoringPage', () => {
     expect(container.textContent).toContain('1/2 native')
     expect(container.textContent).toContain('Kubernetes: pod saturation, active slots')
     expect(container.textContent).toContain('JVM: heap used, gc pause')
+  })
+
+  it('warns when the parity status endpoint is missing current release gates', async () => {
+    apiMock.getParityStatus.mockResolvedValue({
+      generated_at: '2026-05-18T12:00:00Z',
+      overall: 'partial',
+      areas: [
+        { id: 'architecture', name: 'Platform Architecture', status: 'partial', summary: 'Architecture evidence.', evidence: ['/api/v1/system/readiness'], remaining: ['Benchmark evidence.'], release_gate: true },
+        { id: 'fleet', name: 'Fleet And Scale-Out', status: 'partial', summary: 'Fleet evidence.', evidence: ['/api/v1/fleet/alerts'], remaining: ['Autoscaling evidence.'], release_gate: true },
+        { id: 'authoring', name: 'Authoring UX', status: 'partial', summary: 'Authoring evidence.', evidence: ['/api/v1/scripts'], remaining: ['Authoring benchmark evidence.'], release_gate: true },
+        { id: 'load_modeling', name: 'Load Modeling', status: 'partial', summary: 'Load model evidence.', evidence: ['/api/v1/scenarios/validate-load-model'], remaining: ['Load-model benchmark evidence.'], release_gate: true },
+        { id: 'monitoring', name: 'Real-Time Monitoring', status: 'partial', summary: 'Monitoring evidence.', evidence: ['/api/v1/system/parity-status'], remaining: ['Monitoring benchmark evidence.'], release_gate: true },
+        { id: 'reporting', name: 'Historical Reporting', status: 'partial', summary: 'Reporting evidence.', evidence: ['/api/v1/system/usage/export'], remaining: ['Reporting benchmark evidence.'], release_gate: true },
+        { id: 'scheduling', name: 'Scheduling', status: 'partial', summary: 'Scheduling evidence.', evidence: ['/api/v1/schedules/health'], remaining: ['Calendar evidence.'], release_gate: true },
+      ],
+      competitive_parity: [],
+      browser_benchmarks: [],
+    })
+
+    await act(async () => {
+      root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} />)
+    })
+
+    expect(container.textContent).toContain('7/10 tracked')
+    expect(container.textContent).toContain('Tracked Areas')
+    expect(container.textContent).toContain('7/10')
+    expect(container.textContent).toContain('Parity status is missing current release gates')
+    expect(container.textContent).toContain('AI-Assisted Workflows')
+    expect(container.textContent).toContain('Browser Testing')
+    expect(container.textContent).toContain('VuGen Web 2.0 Migration')
+    expect(container.textContent).toContain('0/7 tracked')
+    expect(container.textContent).toContain('Competitive parity status is missing current gates')
   })
 
   it('opens competitive parity details with evidence levels and known limitations', async () => {
