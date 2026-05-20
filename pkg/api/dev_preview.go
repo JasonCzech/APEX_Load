@@ -34,7 +34,7 @@ func devPreviewUserForRequest(r *http.Request, mode string) *AuthenticatedUser {
 	projectID := normalizeProjectID(strings.TrimSpace(r.Header.Get(devProjectIDHeader)))
 	projectRoles := make(map[string]map[string]struct{})
 	if projectID != "" {
-		projectRoles[projectID] = map[string]struct{}{RoleViewer: {}}
+		projectRoles[projectID] = map[string]struct{}{RoleEditor: {}}
 	}
 	return &AuthenticatedUser{
 		Subject:     "dev-user",

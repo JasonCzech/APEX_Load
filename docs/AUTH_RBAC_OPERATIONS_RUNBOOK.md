@@ -52,9 +52,9 @@ When the controller reports `auth.mode = dev`, the dashboard sidebar shows a dev
 
 - `Admin` is the default and preserves local development bypass behavior.
 - `User` sends `X-Stormrunner-Dev-View: user` and the active project id as `X-Stormrunner-Dev-Project-ID`.
-- User preview simulates subject `dev-user` with global `viewer` and active-project `viewer` roles.
-- User preview keeps read-only dashboard surfaces visible while hiding create/edit/run/admin controls.
-- Backend RBAC still enforces protected APIs in User preview, returning normal `403` responses for manage operations.
+- User preview simulates subject `dev-user` with global `viewer` and active-project `editor` roles.
+- User preview keeps script, scenario, run, replay, and application authoring controls available for the active project while hiding system administration and project-governance controls.
+- Backend RBAC still enforces protected APIs in User preview, returning normal `403` responses for admin-only operations.
 
 The preview headers are ignored when auth mode is `trusted_headers` or `oidc`; production identity and RBAC always come from the configured gateway or OIDC session.
 

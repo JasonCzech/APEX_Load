@@ -245,6 +245,11 @@ func TestDevUserPreviewDeniesProtectedCreateRoutes(t *testing.T) {
 	}
 	defer store.Close()
 
+	project := &storage.Project{ID: uuid.New().String(), Name: "Preview Project", CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	if err := store.SaveProject(project); err != nil {
+		t.Fatalf("SaveProject returned error: %v", err)
+	}
+
 	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
 
 	userReq := httptest.NewRequest(http.MethodPost, "/api/v1/projects", strings.NewReader(`{"name":"Preview Project"}`))
@@ -261,6 +266,17 @@ func TestDevUserPreviewDeniesProtectedCreateRoutes(t *testing.T) {
 	server.mux.ServeHTTP(adminResp, adminReq)
 	if adminResp.Code != http.StatusCreated {
 		t.Fatalf("dev admin preview project create status = %d, want %d body=%s", adminResp.Code, http.StatusCreated, adminResp.Body.String())
+	}
+
+	scriptBody := []byte(`{"project_id":"` + project.ID + `","script":{"name":"Preview Script","version":"1.0.0","protocol":"http","config":{"base_url":"https://example.com"},"actions":[{"name":"Open","type":"http","method":"GET","target":"/"}]}}`)
+	scriptReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts", bytes.NewReader(scriptBody))
+	scriptReq.Header.Set("Content-Type", "application/json")
+	scriptReq.Header.Set(devViewHeader, devViewModeUser)
+	scriptReq.Header.Set(devProjectIDHeader, project.ID)
+	scriptResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(scriptResp, scriptReq)
+	if scriptResp.Code != http.StatusCreated {
+		t.Fatalf("dev user preview script create status = %d, want %d body=%s", scriptResp.Code, http.StatusCreated, scriptResp.Body.String())
 	}
 }
 

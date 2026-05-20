@@ -74,7 +74,7 @@ Common status codes:
 
 ## Dev Preview Headers
 
-In local `dev` auth mode, the dashboard can simulate Admin or read-only User views. API clients can use the same preview headers for local checks:
+In local `dev` auth mode, the dashboard can simulate Admin or project editor User views. API clients can use the same preview headers for local checks:
 
 ```text
 X-Stormrunner-Dev-View: admin|user
@@ -82,6 +82,7 @@ X-Stormrunner-Dev-Project-ID: <project-id>
 ```
 
 These headers are honored only when the controller auth mode is `dev`. They are ignored in `trusted_headers` and `oidc` modes.
+`user` mode uses global viewer access plus active-project editor access, so local checks match the common script/scenario authoring persona without granting system administration.
 
 ## Core Workflows
 

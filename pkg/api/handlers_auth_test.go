@@ -69,8 +69,8 @@ func TestHandleGetAuthStatusReturnsDevUserPreview(t *testing.T) {
 	if got := payload.User.GlobalRoles; len(got) != 1 || got[0] != RoleViewer {
 		t.Fatalf("global roles = %#v, want viewer", got)
 	}
-	if got := payload.User.ProjectRoles["project-a"]; len(got) != 1 || got[0] != RoleViewer {
-		t.Fatalf("project-a roles = %#v, want viewer", got)
+	if got := payload.User.ProjectRoles["project-a"]; len(got) != 1 || got[0] != RoleEditor {
+		t.Fatalf("project-a roles = %#v, want editor", got)
 	}
 }
 
@@ -386,11 +386,17 @@ func TestHandleGetAuthEffectiveAccessReturnsDevUserPreviewGrants(t *testing.T) {
 	if allowed := effectiveAccessOperationAllowed(payload.Resources, "view_tests"); !allowed {
 		t.Fatal("expected dev user preview to allow view_tests")
 	}
-	if allowed := effectiveAccessOperationAllowed(payload.Resources, "manage_tests"); allowed {
-		t.Fatal("expected dev user preview to deny manage_tests")
+	if allowed := effectiveAccessOperationAllowed(payload.Resources, "manage_tests"); !allowed {
+		t.Fatal("expected dev user preview to allow manage_tests")
+	}
+	if allowed := effectiveAccessOperationAllowed(payload.Resources, "manage_scripts"); !allowed {
+		t.Fatal("expected dev user preview to allow manage_scripts")
 	}
 	if allowed := effectiveAccessOperationAllowed(payload.Resources, "manage_system"); allowed {
 		t.Fatal("expected dev user preview to deny manage_system")
+	}
+	if allowed := effectiveAccessOperationAllowed(payload.Resources, "manage_projects"); allowed {
+		t.Fatal("expected dev user preview to deny manage_projects")
 	}
 }
 

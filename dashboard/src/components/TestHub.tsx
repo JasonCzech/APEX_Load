@@ -482,7 +482,7 @@ function TestHub({ onSelectTest }: Props) {
 
   const openCreate = () => {
     if (!canManageTests) {
-      setError('User preview is read-only for scenarios.')
+      setError('Current session can view scenarios but cannot create or edit them.')
       return
     }
     setEditingId(null)
@@ -495,7 +495,7 @@ function TestHub({ onSelectTest }: Props) {
 
   const openEdit = (scenario: StoredScenario) => {
     if (!canManageTests) {
-      setError('User preview is read-only for scenarios.')
+      setError('Current session can view scenarios but cannot create or edit them.')
       return
     }
     const first = scenario.scripts[0]
@@ -535,7 +535,7 @@ function TestHub({ onSelectTest }: Props) {
 
   const duplicateScenario = (scenario: StoredScenario) => {
     if (!canManageTests) {
-      setError('User preview is read-only for scenarios.')
+      setError('Current session can view scenarios but cannot create or edit them.')
       return
     }
     openEdit(scenario)
@@ -611,7 +611,7 @@ function TestHub({ onSelectTest }: Props) {
 
   const saveScenario = async () => {
     if (!canManageTests) {
-      setError('User preview is read-only for scenarios.')
+      setError('Current session can view scenarios but cannot create or edit them.')
       return
     }
     if (!form.name.trim() || !form.script_id) {
@@ -633,7 +633,7 @@ function TestHub({ onSelectTest }: Props) {
   const deleteScenario = async (id: string) => {
     setConfirmDeleteScenarioId(null)
     if (!canManageTests) {
-      setError('User preview is read-only for scenarios.')
+      setError('Current session can view scenarios but cannot delete them.')
       return
     }
     try {

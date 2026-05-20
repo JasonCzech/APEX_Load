@@ -218,7 +218,7 @@ describe('Sidebar', () => {
     expect(onNavigate).toHaveBeenCalledWith('docs')
   })
 
-  it('renders a dev-only Admin/User toggle that persists user preview and hides admin navigation', async () => {
+  it('renders a dev-only Admin/User toggle that persists editor preview and hides admin navigation', async () => {
     const onNavigate = vi.fn()
 
     await act(async () => {
@@ -256,8 +256,8 @@ describe('Sidebar', () => {
     })
 
     expect(window.localStorage.getItem('stormrunner.devViewMode')).toBe('user')
-    expect(container.textContent).toContain('User preview')
-    expect(container.textContent).not.toContain('New Test')
+    expect(container.textContent).toContain('Editor preview')
+    expect(container.textContent).toContain('New Test')
     expect(container.textContent).toContain('API Guide')
     expect(container.textContent).not.toContain('Settings')
   })

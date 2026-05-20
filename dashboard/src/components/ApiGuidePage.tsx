@@ -186,7 +186,7 @@ export default function ApiGuidePage() {
 
       <section className="api-guide-callout">
         <h3>Dev Preview Headers</h3>
-        <p>In local dev auth mode only, API clients may send <code>X-Stormrunner-Dev-View: admin|user</code> and <code>X-Stormrunner-Dev-Project-ID: &lt;project-id&gt;</code> to simulate dashboard Admin or read-only User behavior. Production auth modes ignore these headers.</p>
+        <p>In local dev auth mode only, API clients may send <code>X-Stormrunner-Dev-View: admin|user</code> and <code>X-Stormrunner-Dev-Project-ID: &lt;project-id&gt;</code> to simulate dashboard Admin or project editor User behavior. Production auth modes ignore these headers.</p>
       </section>
     </div>
   )

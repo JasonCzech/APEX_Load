@@ -146,7 +146,7 @@ export default function Sidebar({
   const isDevDashboard = authStatus?.mode === 'dev'
   const isDevUserPreview = isDevDashboard && devViewMode === 'user'
   const visibleNavItems = isDevUserPreview
-    ? NAV_ITEMS.filter(item => item.id !== 'new-test' && item.id !== 'settings')
+    ? NAV_ITEMS.filter(item => item.id !== 'settings')
     : NAV_ITEMS
   const connectionClass = connectionState === 'connected' ? 'connected' : connectionState === 'connecting' ? 'connecting' : 'disconnected'
   const connectionLabel = connectionState === 'connected' ? 'Live' : connectionState === 'connecting' ? 'Connecting' : 'Disconnected'
@@ -226,22 +226,20 @@ export default function Sidebar({
                 </button>
               ))}
             </div>
+            {!isDevUserPreview && <button className="project-menu-action" onClick={() => setShowProjectModal(true)}>+ New Project</button>}
             {!isDevUserPreview && (
-              <>
-                <button className="project-menu-action" onClick={() => setShowProjectModal(true)}>+ New Project</button>
-                <button
-                  className="project-menu-action muted"
-                  onClick={() => {
-                    if (typeof window !== 'undefined') {
-                      window.localStorage.setItem('stormrunner.settings.focusSection', 'projects')
-                    }
-                    setProjectOpen(false)
-                    onNavigate('settings')
-                  }}
-                >
-                  Manage Projects
-                </button>
-              </>
+              <button
+                className="project-menu-action muted"
+                onClick={() => {
+                  if (typeof window !== 'undefined') {
+                    window.localStorage.setItem('stormrunner.settings.focusSection', 'projects')
+                  }
+                  setProjectOpen(false)
+                  onNavigate('settings')
+                }}
+              >
+                Manage Projects
+              </button>
             )}
           </div>
         )}
@@ -293,22 +291,20 @@ export default function Sidebar({
                 ))}
               </div>
             )}
+            <button className="project-menu-action" onClick={() => setShowApplicationModal(true)}>+ New Application</button>
             {!isDevUserPreview && (
-              <>
-                <button className="project-menu-action" onClick={() => setShowApplicationModal(true)}>+ New Application</button>
-                <button
-                  className="project-menu-action muted"
-                  onClick={() => {
-                    if (typeof window !== 'undefined') {
-                      window.localStorage.setItem('stormrunner.settings.focusSection', 'applications')
-                    }
-                    setApplicationOpen(false)
-                    onNavigate('settings')
-                  }}
-                >
-                  Manage Applications
-                </button>
-              </>
+              <button
+                className="project-menu-action muted"
+                onClick={() => {
+                  if (typeof window !== 'undefined') {
+                    window.localStorage.setItem('stormrunner.settings.focusSection', 'applications')
+                  }
+                  setApplicationOpen(false)
+                  onNavigate('settings')
+                }}
+              >
+                Manage Applications
+              </button>
             )}
           </div>
         )}
@@ -358,7 +354,7 @@ export default function Sidebar({
               <div className="dev-view-control" aria-label="Development preview mode">
                 <div className="dev-view-label-row">
                   <span>Dev View</span>
-                  {isDevUserPreview && <span className="dev-view-badge">User preview</span>}
+                  {isDevUserPreview && <span className="dev-view-badge">Editor preview</span>}
                 </div>
                 <div className="dev-view-segmented" role="group" aria-label="Development dashboard view">
                   <button

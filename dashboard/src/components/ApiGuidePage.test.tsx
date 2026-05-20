@@ -36,6 +36,7 @@ describe('ApiGuidePage', () => {
     expect(container.textContent).toContain('/api/v1/scripts/import/loadrunner')
     expect(container.textContent).toContain('/api/v1/scenarios/validate-load-model')
     expect(container.textContent).toContain('X-Stormrunner-Dev-View')
+    expect(container.textContent).toContain('project editor User behavior')
 
     const repositoryLink = container.querySelector('a[href*="API_USER_GUIDE.md"]')
     expect(repositoryLink?.textContent).toContain('Repository Guide')

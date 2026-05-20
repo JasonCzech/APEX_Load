@@ -117,11 +117,8 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
       return
     }
     setView((current) => {
-      if (current.page === 'new-test' || current.page === 'settings') {
+      if (current.page === 'settings') {
         return { page: 'dashboard' }
-      }
-      if (current.page === 'scripts' && 'mode' in current && current.mode && current.mode !== 'list') {
-        return { page: 'scripts', mode: 'list' }
       }
       return current
     })
