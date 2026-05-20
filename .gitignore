@@ -52,6 +52,10 @@ vendor/
 .env
 *.pem
 
+# Python
+__pycache__/
+*.py[cod]
+
 # Data and Logs
 *.db
 *.db-journal
